@@ -157,7 +157,7 @@ import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
 import { PRESENTADO_ARCA_COMPRAS, compararConPresentado } from "@/lib/balance/presentado-arca"
 import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/balance/facturas-fijas"
-import { armarTemplatesDelEjercicio } from "@/lib/balance/templates-libro"
+import { armarTemplatesDelEjercicio, desdeCuota } from "@/lib/balance/templates-libro"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
 import { pesosAlCierre, pesoParaValuar } from "@/lib/balance/pesos-hacienda"
@@ -166,7 +166,7 @@ import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
 } from "@/lib/balance/granos-sementeras"
 import {
-  armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados, tipoDesdeTexto, desdeArca, cargadaAMano,
+  armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados, tipoDesdeTexto, desdeArca, desdeHistorico, cargadaAMano,
   type AsientoLibroDiario,
 } from "@/lib/balance/libro-diario"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
@@ -227,8 +227,8 @@ import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
-import { hojaDeAsientosContables, hojaDeTemplates } from "@/lib/balance/export-libro-diario"
-import { juntarTandas } from "@/lib/supabase-paginado"
+import { hojaDeAsientosContables, hojaDeTemplates, bloqueDeLecturas } from "@/lib/balance/export-libro-diario"
+import { juntarTandas, lecturaIncompleta } from "@/lib/supabase-paginado"
 import * as XLSXcasos from "xlsx"
 import { presentarHoja, MONEDA, ENTERO } from "@/lib/balance/formato-excel"
 import { armarFilaDato, leerNumero, textoEstadoGuardado } from "@/lib/balance/datos-usuario-puro"
@@ -8342,6 +8342,16 @@ export function correrCasos(): Resultado[] {
   }
 
   {
+    // ── Histórico: otros_tributos ya incluye las percepciones (A-BUG-1341) ──
+    // Fila real: Sposito 31-5817 del 02/10/2025, tal como está en msa.comprobantes_historico.
+    const sposito = desdeHistorico({ id: "x", anio_contable: 2025, mes_contable: 10, fecha: "2025-10-02", tipo: "1 - Factura A",
+      punto_de_venta: 31, numero_desde: 5817, nro_doc_emisor: "30", denominacion_emisor: "EMPRESA SPOSITO S A",
+      imp_neto_gravado: "1091608.38", imp_neto_no_gravado: "0", imp_op_exentas: "0", otros_tributos: "8732.87",
+      percepcion_iibb: "8732.87", percepcion_iva: "0", iva: "229237.75", imp_total: "1329579.00" })
+    const difSp = Math.round((sposito.total - (sposito.neto_gravado + sposito.no_gravado + sposito.exento + sposito.otros_tributos + sposito.iva)) * 100) / 100
+    chequear("Balance", "Histórico: la percepción ya está dentro de «otros tributos» — no se suma dos veces (antes la apertura no cerraba por $ 2.872,49)",
+      "otros 8732.87 · diferencia 0", `otros ${sposito.otros_tributos} · diferencia ${difSp}`, sposito.otros_tributos === 8732.87 && difSp === 0, "A-BUG-1341")
+
     // ── La base entrega 1000 filas por consulta: se trae por tandas (A-BUG-1339) ──
     const universo = Array.from({ length: 2046 }, (_, i) => i)
     const todo = juntarTandas((d, h) => universo.slice(d, h + 1))
@@ -8352,12 +8362,39 @@ export function correrCasos(): Resultado[] {
     const ve = `${exacto.filas.length} filas en ${exacto.tandas} tandas`
     chequear("Balance", "Traer todo: si son justo 1000, pide una tanda más para confirmar que no hay más (el caso del banco jul→mar)",
       "1000 filas en 2 tandas", ve, ve === "1000 filas en 2 tandas", "A-BUG-1339")
-    const cuotaT = (responsable: string, fecha: string, concepto: string) => ({ id: concepto, fecha, concepto, proveedor: "", categ: "X", cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable, estado: "pagado", monto: 1 })
-    const filasT = hojaDeTemplates({ detalle: [cuotaT("PAM", "2025-08-01", "b"), cuotaT("MSA", "2026-01-01", "c"), cuotaT("MSA", "2025-07-01", "a"), cuotaT("", "2025-07-01", "z")],
-      porMes: [], columnas: [], sinCategoria: [], sinFecha: [], noIncluidas: [], totalNoIncluidas: 0, impagasAlCierre: [], totalImpagas: 0, totalDebitos: 4, totalCreditos: 0 } as any)
-    const orden = filasT.slice(1, 5).map(r => `${r[7] || "(sin)"} ${r[1]}`).join(" · ")
-    chequear("Balance", "Solapa Templates: ordenada por responsable y por fecha; los sin responsable al final",
-      "MSA a · MSA c · PAM b · (sin) z", orden, orden === "MSA a · MSA c · PAM b · (sin) z", "A-FEAT-1338")
+    // ── Templates separados por tipo y ordenados por responsable (A-FEAT-1342 · A-FEAT-1338) ──
+    const ej1342 = armarEjercicio(2026, 6)
+    const cuotaT = (responsable: string, fecha: string, concepto: string, tipo?: "egreso" | "financiero" | "distribucion", monto = 100) =>
+      ({ id: concepto, fecha, concepto, proveedor: "", categ: "X" + (tipo ?? ""), cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable, estado: "pagado", monto, tipo })
+    const tpl = armarTemplatesDelEjercicio([
+      cuotaT("PAM", "2025-08-01", "b", "egreso"), cuotaT("MSA", "2026-01-01", "c", "egreso"), cuotaT("MSA", "2025-07-01", "a", "egreso"),
+      cuotaT("", "2025-07-01", "z", "egreso"), cuotaT("MSA", "2025-09-01", "fci", "financiero", 5000), cuotaT("MSA", "2025-10-01", "retiro", "distribucion", 300),
+      cuotaT("MSA", "2025-11-01", "nada", undefined, 7),
+    ], ej1342)
+    const filasT = hojaDeTemplates(tpl)
+    const conceptos = filasT.slice(1).filter(r => r.length > 2 && r[1] && !String(r[0]).startsWith("Total")).map(r => `${r[7] || "(sin)"} ${r[1]}`).join(" · ")
+    chequear("Balance", "Solapa Templates: primero los egresos (por responsable y fecha, los sin responsable al final), después distribuciones, financiero y sin clasificar",
+      "MSA a · MSA c · PAM b · (sin) z · MSA retiro · MSA fci · MSA nada", conceptos, conceptos === "MSA a · MSA c · PAM b · (sin) z · MSA retiro · MSA fci · MSA nada", "A-FEAT-1342")
+    const grupos = tpl.porTipo.map(g => `${g.tipo} ${g.totalNeto}`).join(" · ")
+    const sumaG = tpl.porTipo.reduce((x, g) => x + g.totalNeto, 0)
+    chequear("Balance", "Templates por tipo: el FCI queda en financiero (no suma al gasto) y la suma de los grupos da el total general",
+      "egreso 400 · distribucion 300 · financiero 5000 · sin clasificar 7 · suma 5707 = total 5707", `${grupos} · suma ${sumaG} = total ${tpl.totalDebitos - tpl.totalCreditos}`,
+      grupos === "egreso 400 · distribucion 300 · financiero 5000 · sin clasificar 7" && sumaG === tpl.totalDebitos - tpl.totalCreditos, "A-FEAT-1342")
+    const dc = (x: Record<string, unknown>, plan?: Record<string, "egreso" | "financiero" | null>) => desdeCuota(x, plan).tipo
+    const vtipo = [dc({ categ: "FCI", egreso: { tipo: "financiero" } }), dc({ categ: "FCI", egreso: {} }, { FCI: "financiero" }), dc({ categ: "RARO", egreso: {} }, {}),
+      dc({ categ: "FCI", egreso: { tipo: "egreso" } }, { FCI: "financiero" })].join(" · ")
+    chequear("Balance", "Tipo de una cuota: manda el del template, si no el del plan de cuentas; sin ninguno queda «sin clasificar» (no se adivina por el signo)",
+      "financiero · financiero · sin clasificar · egreso", vtipo, vtipo === "financiero · financiero · sin clasificar · egreso", "A-FEAT-1342")
+
+    // ── ¿Llegó todo de la base? (A-FEAT-1343) ──
+    const lects = [{ nombre: "Extracto BANCO GALICIA", llegaron: 1000, esperadas: 1563 }, { nombre: "Ventas", llegaron: 9, esperadas: 9 }, { nombre: "Sueldos", llegaron: 103, esperadas: null }]
+    const vl = lects.map(l => lecturaIncompleta(l) ? "incompleta" : "ok").join(" · ")
+    chequear("Balance", "Control de lecturas: 1000 de 1563 es incompleta; 9 de 9 está bien; sin el dato de la base no se inventa un error",
+      "incompleta · ok · ok", vl, vl === "incompleta · ok · ok", "A-FEAT-1343")
+    const bl = bloqueDeLecturas(lects)
+    const vb = `${String(bl[0][0]).includes("NO: 1 consulta") ? "titular NO" : bl[0][0]} · ${bl[2][3]} · ${bl[3][3]} · ${bl[4][3]}`
+    chequear("Balance", "Hoja Control: dice si llegó todo y marca NO CUADRA la consulta cortada (lo que habría avisado el corte de las 1000 filas)",
+      "titular NO · NO CUADRA · cuadra · sin dato", vb, vb === "titular NO · NO CUADRA · cuadra · sin dato", "A-FEAT-1343")
 
     // ── Lo que carga el usuario en el balance se guarda (A-FEAT-1337 paso 1) ──
     const base1337 = { empresa: "MSA", anio_cierre: 2026, papel: "hacienda.precio", clave: "Vaca" }

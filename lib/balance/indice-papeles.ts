@@ -33,6 +33,7 @@ import type { GastosBancarios, RetirosYAportes } from "./papeles-bancarios"
 import type { ValuacionHacienda } from "./hacienda-stock"
 import type { StockInsumos } from "./stock-insumos"
 import type { CuadreGranos, Sementeras } from "./granos-sementeras"
+import { lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
 
 export type EstadoParte = "completo" | "parcial" | "falta" | "lo carga el usuario"
 
@@ -67,6 +68,8 @@ const pesos = (n: number) => `$ ${n.toLocaleString("es-AR", { minimumFractionDig
 /** Qué se le pasa al índice. Todo opcional: el índice tiene que poder armarse con lo que haya. */
 export interface DatosDelIndice {
   libro: LibroDiario
+  /** 🧮 A-FEAT-1343: cuántas filas dijo la base y cuántas llegaron. */
+  lecturas?: Lectura[]
   templates?: TemplatesDelEjercicio | null
   cuentas?: {
     pagar?: CuentasAlCierre; cobrar?: CuentasAlCierre
@@ -109,6 +112,19 @@ function mesesConDatos(gastos: GastosBancarios): number {
 export function armarIndice(d: DatosDelIndice): IndiceDelBalance {
   const partes: ParteDelBalance[] = []
   const { libro } = d
+
+  // ── 00 · ¿Llegó todo de la base? — si no, ningún papel es confiable (A-FEAT-1343) ───────
+  if (d.lecturas && d.lecturas.length > 0) {
+    const mal = d.lecturas.filter(lecturaIncompleta)
+    partes.push({
+      numero: "00", papel: "Lecturas de la base completas",
+      estado: mal.length === 0 ? "completo" : "falta",
+      queTiene: `${d.lecturas.length} consultas · ${d.lecturas.reduce((x, l) => x + l.llegaron, 0)} filas`,
+      queFalta: mal.map(l => `${l.nombre}: la base tiene ${l.esperadas} y llegaron ${l.llegaron}`).join(" · "),
+      solapa: "Control",
+      bloqueante: mal.length > 0,
+    })
+  }
 
   // ── 01 · Libro diario ──────────────────────────────────────────────────────────────────
   /** Un subdiario del ejercicio sin un solo comprobante: o falta cargarlo, o el mes fue vacío. */
@@ -428,13 +444,18 @@ export function armarIndice(d: DatosDelIndice): IndiceDelBalance {
   partes.push({
     numero: "12", papel: "Templates del período (lo que se informa aparte)",
     estado: !d.templates ? "falta"
-      : (d.templates.sinCategoria.length > 0 || d.templates.sinFecha.length > 0) ? "parcial" : "completo",
+      : (d.templates.sinCategoria.length > 0 || d.templates.sinFecha.length > 0
+        || (d.templates.porTipo ?? []).some(g => g.tipo === "sin clasificar")) ? "parcial" : "completo",
+    // 🗂️ A-FEAT-1342: por tipo — el número del gasto es el de EGRESOS; lo financiero no es gasto.
     queTiene: d.templates
-      ? `${pesos(d.templates.totalDebitos - d.templates.totalCreditos)} neto · ${d.templates.detalle.length} cuota(s)`
+      ? (d.templates.porTipo ?? []).map(g => `${g.tipo} ${pesos(g.totalNeto)}`).join(" · ")
+        + ` · ${d.templates.detalle.length} cuota(s)`
       : "nada",
     queFalta: !d.templates ? "armar el papel" : [
       d.templates.sinCategoria.length > 0 ? `${d.templates.sinCategoria.length} cuota(s) sin categoría contable` : null,
       d.templates.sinFecha.length > 0 ? `${d.templates.sinFecha.length} cuota(s) sin fecha de ningún tipo` : null,
+      (d.templates.porTipo ?? []).some(g => g.tipo === "sin clasificar")
+        ? `${d.templates.porTipo.find(g => g.tipo === "sin clasificar")!.cuotas} cuota(s) SIN CLASIFICAR: el template no tiene tipo y su categoría no está en el plan` : null,
     ].filter(Boolean).join(" · "),
     solapa: "Templates · Templates por mes",
     bloqueante: false,

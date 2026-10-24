@@ -41,7 +41,8 @@ import { ProponerFotoBalance } from "./proponer-foto-balance"
 import { ivaConSigno, type DatosDeLosPapeles } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { descargarLibroDiario } from "@/lib/balance/export-libro-diario"
-import { traerTodo } from "@/lib/supabase-paginado"
+import { traerTodo, lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
+import type { TipoCuenta } from "@/lib/presupuesto/templates"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
 import type { AsientoLibroDiario } from "@/lib/balance/libro-diario"
 import { armarCuentasAlCierre, type CuentasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
@@ -119,6 +120,8 @@ export function PapelesDeBalance() {
    * `null` = no se pudo leer (la solapa no sale, y se avisa); `[]` = se leyó y no hay.
    */
   const [asientosContables, setAsientosContables] = useState<AsientoLibroDiario[] | null>(null)
+  /** 🧮 A-FEAT-1343: cuántas filas dijo la base y cuántas llegaron, por consulta. */
+  const [lecturas, setLecturas] = useState<Lectura[] | null>(null)
 
   const generar = async () => {
     setCargando(true)
@@ -131,6 +134,10 @@ export function PapelesDeBalance() {
     setSueldos(null)
     setCuentasCorrientes(null)
     setAsientosContables(null)
+    setLecturas(null)
+    const lect: Lectura[] = []
+    const anotar = (nombre: string, r: { data: unknown[]; esperadas: number | null }) =>
+      lect.push({ nombre, llegaron: r.data.length, esperadas: r.esperadas })
     try {
       const ej = armarEjercicio(anioCierre, empresa.mesCierre)
       // Se traen los DOS años que puede tocar el ejercicio y se filtra en la lógica pura: el corte
@@ -140,13 +147,13 @@ export function PapelesDeBalance() {
       const [arca, historico, ventas, cuotas] = await Promise.all([
         // 📄 A-BUG-1339: todo lo que puede pasar de 1000 filas se trae por tandas.
         traerTodo((d, h) => supabase.schema(empresa.schema).from("comprobantes_arca")
-          .select("*").in("año_contable", anios).order("id").range(d, h)),
+          .select("*", { count: "exact" }).in("año_contable", anios).order("id").range(d, h)),
         // El histórico es sólo de MSA (es lo que migró del sistema anterior) y usa `anio_contable`.
         empresa.id === "MSA"
-          ? traerTodo((d, h) => supabase.schema("msa").from("comprobantes_historico").select("*").in("anio_contable", anios).order("id").range(d, h))
+          ? traerTodo((d, h) => supabase.schema("msa").from("comprobantes_historico").select("*", { count: "exact" }).in("anio_contable", anios).order("id").range(d, h))
           : Promise.resolve({ data: [], error: null }),
         traerTodo((d, h) => supabase.schema(empresa.schema).from("comprobantes_venta")
-          .select("*").in("año_contable", anios).order("id").range(d, h)),
+          .select("*", { count: "exact" }).in("año_contable", anios).order("id").range(d, h)),
         /**
          * 🧾 Los templates viven en `public`, no en el schema de la empresa, y **no tienen
          * subdiario**: se traen por fecha y el corte se hace en `armarTemplatesDelEjercicio`.
@@ -154,13 +161,17 @@ export function PapelesDeBalance() {
          */
         // 🧨 2046 cuotas: sin tandas llegaban 1000 y la solapa Templates salía con meses vacíos.
         traerTodo((d, h) => supabase.from("cuotas_egresos_sin_factura")
-          .select("*, egreso:egresos_sin_factura(nombre_referencia, proveedor, nombre_quien_cobra, categ, centro_costo, responsable, codigo_contable)")
+          .select("*, egreso:egresos_sin_factura(nombre_referencia, proveedor, nombre_quien_cobra, categ, centro_costo, responsable, codigo_contable, tipo)", { count: "exact" })
           .gte("fecha_estimada", `${anioCierre - 2}-01-01`).order("id").range(d, h)),
       ])
 
       for (const r of [arca, historico, ventas, cuotas]) {
         if (r.error) throw new Error(r.error.message)
       }
+      anotar("Compras (ARCA)", arca as { data: unknown[]; esperadas: number | null })
+      if (empresa.id === "MSA") anotar("Compras (sistema anterior)", historico as { data: unknown[]; esperadas: number | null })
+      anotar("Ventas", ventas as { data: unknown[]; esperadas: number | null })
+      anotar("Cuotas de templates", cuotas as { data: unknown[]; esperadas: number | null })
 
       const compras = [
         ...(arca.data ?? []).map(desdeArca),
@@ -307,11 +318,12 @@ export function PapelesDeBalance() {
         const [ant, apl] = await Promise.all([
           traerTodo((d, h) => supabase.from("anticipos_proveedores")
             .select("id, empresa, nombre_proveedor, cuit_proveedor, monto, monto_restante, "
-              + "monto_sicore, descuento_aplicado, fecha_pago, tipo, estado, estado_pago, descripcion").order("id").range(d, h)),
+              + "monto_sicore, descuento_aplicado, fecha_pago, tipo, estado, estado_pago, descripcion", { count: "exact" }).order("id").range(d, h)),
           traerTodo((d, h) => supabase.from("anticipos_facturas")
-            .select("anticipo_id, monto_aplicado, fecha_aplicacion").order("id").range(d, h)),
+            .select("anticipo_id, monto_aplicado, fecha_aplicacion", { count: "exact" }).order("id").range(d, h)),
         ])
         for (const r of [ant, apl]) if (r.error) throw new Error(r.error.message)
+        anotar("Anticipos", ant); anotar("Aplicaciones de anticipos", apl)
 
         const anticipos = armarAnticiposAlCierre(
           (ant.data ?? []) as unknown as AnticipoCrudo[],
@@ -366,17 +378,19 @@ export function PapelesDeBalance() {
           const q = t.schema === "public"
             ? supabase.from(t.tabla)
             : supabase.schema(t.schema).from(t.tabla)
-          const { data, error } = await traerTodo((d, h) => q
+          const leido = await traerTodo((d, h) => q
             /**
              * 🧨 **`orden` no está de adorno.** Es la posición del movimiento dentro del día, y sin
              * ella «el último del ejercicio» es el que la base quiera devolver: el 30/06/2026 hay 10
              * movimientos en Banco Galicia y entre el primero y el último hay **$2,58 M**
              * → A-BUG-1224. Las 7 tablas de extracto y caja la tienen.
              */
-            .select("fecha, descripcion, categ, nro_cuenta, debitos, creditos, saldo, orden")
+            .select("fecha, descripcion, categ, nro_cuenta, debitos, creditos, saldo, orden", { count: "exact" })
             .gte("fecha", `${meses[0]}-01`).lte("fecha", finDelEjercicio)
             // 🧨 A-BUG-1339: jul→mar suman 1000 movimientos; sin tandas abril, mayo y junio no llegaban.
             .order("fecha", { ascending: true }).order("orden", { ascending: true }).order("id").range(d, h))
+          const { data, error } = leido
+          if (!error) anotar(`Extracto ${t.nombre}`, leido)
 
           if (error) {
             // Nada en silencio: una cuenta que no se pudo leer hace faltar gastos del papel.
@@ -445,11 +459,13 @@ export function PapelesDeBalance() {
         const meses = mesesDelEjercicio(anioCierre, empresa.mesCierre)
         const [aa0] = meses[0].split("-").map(Number)
         const [aaN] = meses[11].split("-").map(Number)
-        const { data: periodosSueldo, error: errSueldos } = await traerTodo((d, h) => supabase
+        const leidoSueldos = await traerTodo((d, h) => supabase
           .from("sueldos_periodos")
-          .select("*, empleado:sueldos_empleados(nombre, empresa, tipo_empleado)")
+          .select("*, empleado:sueldos_empleados(nombre, empresa, tipo_empleado)", { count: "exact" })
           .in("anio", aa0 === aaN ? [aa0] : [aa0, aaN]).order("id").range(d, h))
+        const { data: periodosSueldo, error: errSueldos } = leidoSueldos
         if (errSueldos) throw new Error(errSueldos.message)
+        anotar("Sueldos", leidoSueldos)
 
         const armadoSueldos = armarSueldosDelEjercicio(
           (periodosSueldo ?? []) as unknown as PeriodoDeSueldo[], meses)
@@ -497,10 +513,12 @@ export function PapelesDeBalance() {
           const meses = mesesDelEjercicio(anioCierre, empresa.mesCierre)
           const [aaF2, mmF2] = meses[11].split("-").map(Number)
           const finEj = new Date(Date.UTC(aaF2, mmF2, 0)).toISOString().slice(0, 10)
-          const { data: movsCC } = await traerTodo((d, h) => supabase.from("msa_galicia")
-            .select("id, fecha, debitos, creditos, descripcion, detalle, contable, comprobantes_pagados")
+          const leidoCC = await traerTodo((d, h) => supabase.from("msa_galicia")
+            .select("id, fecha, debitos, creditos, descripcion, detalle, contable, comprobantes_pagados", { count: "exact" })
             .gte("fecha", `${meses[0]}-01`).lte("fecha", finEj)
             .not("contable", "is", null).order("id").range(d, h))
+          const movsCC = leidoCC.data
+          anotar("Movimientos de cuentas corrientes", leidoCC)
 
           const armadoCC = armarCuentasCorrientes(
             comprasCC, ventasCC, (movsCC ?? []) as unknown as MovimientoParaCC[])
@@ -517,7 +535,11 @@ export function PapelesDeBalance() {
         }
       }
 
-      setTemplates(armarTemplatesDelEjercicio((cuotas.data ?? []).map(desdeCuota), ej))
+      // 🗂️ A-FEAT-1342: el tipo de cada cuota (egreso, ingreso, financiero…). Respaldo: el del plan.
+      const { data: planTipos } = await supabase.from("cuentas_contables").select("categ, tipo")
+      const tipoDeCateg = Object.fromEntries(((planTipos ?? []) as Array<{ categ: string; tipo: string | null }>)
+        .map(x => [x.categ, x.tipo])) as Record<string, TipoCuenta | null>
+      setTemplates(armarTemplatesDelEjercicio((cuotas.data ?? []).map(f => desdeCuota(f, tipoDeCateg)), ej))
 
       if (armado.compras.length === 0 && armado.ventas.length === 0) {
         toast.warning(`No hay comprobantes en los 12 subdiarios del ejercicio ${ej.etiqueta}.`)
@@ -525,6 +547,7 @@ export function PapelesDeBalance() {
     } catch (e) {
       toast.error("No se pudo armar el libro: " + (e as Error).message)
     } finally {
+      setLecturas(lect)
       setCargando(false)
     }
   }
@@ -609,6 +632,7 @@ export function PapelesDeBalance() {
                 pendientes,
                 saldosDelEjercicioAnterior(ajustes, empresa.id, anioCierre),
                 asientosContables ?? undefined,
+                lecturas ?? undefined,
               )}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               Bajar el Excel{hacienda ? " completo" : " — sin el sector productivo"}
@@ -641,6 +665,19 @@ export function PapelesDeBalance() {
           El período se corta por <strong className="mx-1">el subdiario en el que entró</strong> cada
           comprobante, no por la fecha de la factura. Esta pantalla sólo lee: no modifica nada.
         </p>
+
+        {/* 🧮 A-FEAT-1343: ¿llegó todo de la base? Si no, nada de lo de abajo es confiable. */}
+        {libro && lecturas && lecturas.length > 0 && (() => {
+          const mal = lecturas.filter(lecturaIncompleta)
+          return mal.length === 0 ? (
+            <p className="text-xs text-emerald-700">✓ Llegó todo de la base: {lecturas.length} consultas, {lecturas.reduce((x, l) => x + l.llegaron, 0).toLocaleString("es-AR")} filas.</p>
+          ) : (
+            <div className="text-sm text-red-800 bg-red-50 border-2 border-red-300 rounded px-3 py-2">
+              <div className="font-semibold">🛑 Faltan datos: {mal.length} consulta(s) llegaron incompletas — no entregues este Excel</div>
+              <ul className="list-disc pl-5 text-xs">{mal.map(l => <li key={l.nombre}>{l.nombre}: la base tiene {l.esperadas} y llegaron {l.llegaron}</li>)}</ul>
+            </div>
+          )
+        })()}
 
         {libro && c && (
           <div className="space-y-3 border-t pt-3">

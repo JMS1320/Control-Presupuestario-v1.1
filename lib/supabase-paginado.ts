@@ -27,16 +27,29 @@ export function juntarTandas<T>(pedir: (desde: number, hasta: number) => T[], ta
   }
 }
 
+/**
+ * 🧮 El CONTROL de que llegó todo (A-FEAT-1343): si la consulta pide `{ count: "exact" }`, la base
+ * dice cuántas filas hay, y eso se compara con las que llegaron. Es el mismo número por dos caminos:
+ * si no coinciden, el papel se armó con datos de menos y **no se puede entregar**.
+ */
+export interface Lectura { nombre: string; llegaron: number; esperadas: number | null }
+
+export function lecturaIncompleta(l: Lectura): boolean {
+  return l.esperadas != null && l.llegaron !== l.esperadas
+}
+
 export async function traerTodo<T = any>(
-  hacer: (desde: number, hasta: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  hacer: (desde: number, hasta: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null; count?: number | null }>,
   tanda = TANDA,
-): Promise<{ data: T[]; error: { message: string } | null }> {
+): Promise<{ data: T[]; error: { message: string } | null; esperadas: number | null }> {
   const filas: T[] = []
+  let esperadas: number | null = null
   for (let desde = 0; ; desde += tanda) {
-    const { data, error } = await hacer(desde, desde + tanda - 1)
-    if (error) return { data: filas, error }
+    const { data, error, count } = await hacer(desde, desde + tanda - 1)
+    if (error) return { data: filas, error, esperadas }
+    if (esperadas == null && typeof count === "number") esperadas = count
     const lote = data ?? []
     filas.push(...lote)
-    if (!hayOtraTanda(lote, tanda)) return { data: filas, error: null }
+    if (!hayOtraTanda(lote, tanda)) return { data: filas, error: null, esperadas }
   }
 }
