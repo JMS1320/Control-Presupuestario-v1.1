@@ -2747,20 +2747,21 @@ mismo canal que ya usabas desde el panel de Pendientes.
 El botón rojo **🧾 Planilla de impuestos** abre el reporte de todos los impuestos de un **año
 calendario**, a pantalla completa. Es lo que se le da a quien pide *«el reporte de los impuestos»*.
 
-- **Arriba**: el mismo aviso de vencidos y por vencer que en Principal.
+- **Arriba**: el aviso de vencidos y por vencer de Principal, en un renglón (click para desplegarlo).
 - **El año**: abre en el actual; con las flechas pasás al anterior o al siguiente.
-- **Una fila por impuesto y empresa** (Inmobiliario · MSA, Red Vial · PAM, UATRE · MSA…). Cada cuota
-  aparece en el mes en que vence, con su color: **verde lleno** conciliada, **verde claro** pagada,
-  **punteada gris** sin pagar (lo presupuestado), **punteada roja** vencida sin pagar. Pasando el
-  mouse se ve el detalle de la cuota.
-- **Naranja con borde**: una cuota en **programado** o **echeq**. Cuenta como pagada, pero en un
+- **Una fila por impuesto y empresa** (Inmobiliario · MSA, Red Vial · PAM, UATRE · MSA…), como una
+  planilla: **un número por mes**, completo y sin decimales, que suma las cuotas que vencen ese mes.
+  Color de la celda: **verde fuerte** conciliada, **verde claro** pagada, **gris en cursiva** sin pagar
+  (lo presupuestado), **rojo** vencida sin pagar. Un **◢ rojo en la esquina** avisa que en ese mes hay
+  cuotas pagadas y sin pagar juntas. Pasando el mouse se ven las cuotas una por una.
+- **Naranja con borde**: el mes tiene una cuota en **programado** o **echeq**. Cuenta como pagada, pero en un
   impuesto es raro (suele ser un pago que no se terminó de cerrar): arriba aparece un aviso con cuántas hay.
 - El **ABL compartido** (PAM/MA/Duhau) se muestra en **MA**.
 - **Templates dados de baja**: lo que quedó sin pagar va abajo, en un desplegable cerrado. **No suma**
   en los totales; está para poder revisarlo.
-- **Click en el nombre** del impuesto: se abren sus partidas (o vehículos), una por renglón.
-- **A la derecha**: pagado, adeudado (vencido sin pagar), futuro y total; abajo, por empresa y el
-  total del año. Si las cuentas cierran, arriba dice **✓ control**.
+- **Click en el nombre** del impuesto: se abren sus partidas (o vehículos), una por renglón, también un número por mes. El 🏛️ al lado abre el detalle con el formato de tu planilla.
+- **A la derecha**: pagado, adeudado (vencido sin pagar), futuro y total; abajo, fijo al pie, el total
+  de cada mes por empresa y el del año. Si las cuentas cierran, arriba dice **✓ control**.
 - **Ordenar**: arrastrá una fila desde la manija ⋮⋮. El orden queda guardado en tu cuenta;
   **Orden de siempre** lo vuelve atrás.
 - **Excel**: el resumen con los 12 meses y una hoja con todas las cuotas.
