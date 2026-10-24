@@ -19,6 +19,7 @@
 import { esImpuesto } from "./vencimientos"
 import { estadoDePlanilla, type CuotaPlanilla } from "./planilla"
 import { resolverTC, type TipoCambio } from "@/lib/arrendamientos/calculo"
+import { ordenarColumnas, moverColumna } from "@/lib/cashflow/columnas-usuario"
 
 export type TipoPapel = "inmobiliario" | "red-vial" | "automotores"
 
@@ -210,4 +211,32 @@ export function hectareasDe(
     }
   }
   return r
+}
+
+/**
+ * ↕️ El orden de las partidas que deja el usuario arrastrándolas (usuario 2026-10-24: *«que se puedan
+ * reorganizar las filas como el general… el orden que pongo en inmo o red se aplica para los dos ya que
+ * son las mismas partidas»*). Por eso la clave es el CAMPO (no la partida, que en Red Vial es otro número)
+ * y la lista es UNA para los dos papeles (`preferencias.ordenPartidas`). El complementario queda al final.
+ */
+export const clavePartida = (f: { campo: string }) => f.campo.trim().toLowerCase()
+
+export function ordenarPapel(p: Papel, orden: readonly string[]): Papel {
+  if (!orden.length) return p
+  return {
+    ...p,
+    bloques: p.bloques.map(b => {
+      const normales = ordenarColumnas(b.filas.filter(f => !f.complementario).map(f => ({ key: clavePartida(f), f })), orden).map(x => x.f)
+      return { ...b, filas: [...normales, ...b.filas.filter(f => f.complementario)] }
+    }),
+  }
+}
+
+/**
+ * Mueve `desde` antes de `hasta`. Parte de lo guardado y le suma lo que se ve y no estaba, para no
+ * perder el lugar de las partidas que sólo están en el otro papel (o en otro año).
+ */
+export function moverPartida(orden: readonly string[], visibles: readonly string[], desde: string, hasta: string): string[] {
+  const base = [...orden, ...visibles.filter(k => !orden.includes(k))]
+  return moverColumna(base, desde, hasta, "antes")
 }
