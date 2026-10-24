@@ -35,15 +35,25 @@ export function getRole(user: User | null | undefined): UserRole | null {
 }
 
 /**
+ * Los roles que HOY ven Facturas completa (Modo Admin, marcar pagado). Lista cerrada a propósito.
+ *
+ * `socio` y `productivo` están porque ya existían y lo veían así (socio tiene Egresos): el usuario
+ * pidió que lo existente no cambie hasta que él decida (24/10). Si un socio NO debería ver el Modo
+ * Admin, se lo saca de acá — es una pregunta abierta en A-FEAT-1322.
+ */
+export const ROLES_CON_FACTURAS_COMPLETA: readonly string[] = ["admin", "socio", "productivo"]
+
+/**
  * ¿Facturas va en MODO RESTRINGIDO para este rol? (sin Modo Admin, sin marcar pagado, sin mails a
  * proveedores, sólo las facturas `visible_contable`: lo que ve Ulises).
  *
  * ⚠️ Cambió 2026-10-24 (A-FEAT-1322, etapa 1): antes la pantalla preguntaba `rol === 'contable'`,
- * o sea el NOMBRE. Un rol nuevo («ulises», «pruebas») caía del lado de admin y veía el Modo Admin.
- * Ahora el modo completo es sólo para `admin`; cualquier otro rol entra restringido.
+ * o sea el NOMBRE. Un rol NUEVO («ulises», «pruebas») caía del lado de admin y veía el Modo Admin.
+ * Ahora la puerta es al revés: completo sólo para la lista de arriba; todo lo demás, restringido.
+ * Para los roles que ya existían no cambia nada.
  */
 export function facturasRestringidas(rol: UserRole | null | undefined): boolean {
-  return rol !== "admin"
+  return !ROLES_CON_FACTURAS_COMPLETA.includes(rol ?? "")
 }
 
 export function esAdmin(user: User | null | undefined): boolean {

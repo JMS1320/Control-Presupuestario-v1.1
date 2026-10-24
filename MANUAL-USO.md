@@ -1053,6 +1053,17 @@ Configuración → Roles → tildás las secciones → guardar. Cambia **para to
 🛑 **`admin` no se puede tocar**: si se le pudieran sacar secciones, alguien podría dejar el sistema
 sin nadie que lo administre.
 
+### Crear un rol
+Configuración → Roles → **➕ Crear rol** → le ponés un nombre (ej.: `ulises`), elegís **de qué rol
+copiarlo** y **Crear**. Se copian las secciones y lo destildado de ese rol tal como están ahora; después
+se edita aparte, y cambiar el original no lo mueve. Si no elegís ninguno, nace sin ver nada.
+**Crear un rol no le cambia nada a nadie**: nadie lo tiene hasta que se lo asignás en Usuarios.
+
+El uso típico es el de abajo: armás el rol en `pruebas`, lo probás, y después **creás el de la persona
+copiando de `pruebas`** y se lo asignás. Un rol por persona.
+
+⚠️ Sin probar todavía → [A-TEST-1236](PENDIENTES.md#a-test-1236)
+
 ### Darle un rol a alguien
 Configuración → Usuarios → escribís el mail, elegís el rol, **Crear e invitar**. A quien ya existe
 se le cambia desde el desplegable de su fila.
@@ -1065,7 +1076,8 @@ El método, que es el que usa JMS:
 2. Le das el rol **`pruebas`**.
 3. En Configuración → Roles le ponés a `pruebas` las secciones que querés ensayar.
 4. **Entrás con ese usuario** y mirás qué ve.
-5. Cuando está como querés, se lo das a la persona real.
+5. Cuando está como querés, **creás el rol de la persona copiando de `pruebas`** (ver *Crear un rol*)
+   y se lo asignás. Así `pruebas` queda libre para armar el siguiente.
 
 📌 **Para ver cómo se comporta un rol que YA existe** (`productivo`, `socio`), asignale **ese rol** al
 usuario de prueba — no lo copies dentro de `pruebas`. Una copia envejece: si después cambia el rol

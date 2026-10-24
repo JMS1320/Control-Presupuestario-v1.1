@@ -57,6 +57,7 @@ import { facturasCortas } from "@/lib/pagos/lineas-detalle-pago"
 import { NOMBRE_PARA_TERCEROS, empresaDeSchema } from "@/lib/empresas"
 import { facturasRestringidas } from "@/lib/auth/roles"
 import { etiquetaPersona } from "@/lib/auth/identidad"
+import { armarRolNuevo, normalizarIdRol } from "@/lib/auth/crear-rol"
 import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
 import {
   adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga,
@@ -8209,14 +8210,33 @@ export function correrCasos(): Resultado[] {
 
   // ── Accesos por tarea, etapa 1 (A-FEAT-1322) ──────────────────────────────────────────────
   {
-    const m = ["admin", "contable", "ulises", "pruebas"].map(r => `${r}:${facturasRestringidas(r) ? "restringido" : "completo"}`).join(" · ")
-    chequear("Accesos", "Facturas: el modo completo (Modo Admin, marcar pagado) es sólo de admin; un rol NUEVO entra restringido como Ulises, no como admin",
-      "admin:completo · contable:restringido · ulises:restringido · pruebas:restringido", m,
-      m === "admin:completo · contable:restringido · ulises:restringido · pruebas:restringido", "A-FEAT-1322")
+    const m = ["admin", "socio", "productivo", "contable", "ulises", "pruebas"].map(r => `${r}:${facturasRestringidas(r) ? "restringido" : "completo"}`).join(" · ")
+    chequear("Accesos", "Facturas: los roles que ya existían quedan igual (admin, socio y productivo completos; contable restringido) y un rol NUEVO entra restringido como Ulises, no como admin",
+      "admin:completo · socio:completo · productivo:completo · contable:restringido · ulises:restringido · pruebas:restringido", m,
+      m === "admin:completo · socio:completo · productivo:completo · contable:restringido · ulises:restringido · pruebas:restringido", "A-FEAT-1322")
     const u = (meta: Record<string, unknown>, email?: string) => ({ id: "x", app_metadata: { role: "contable" }, user_metadata: meta, email, aud: "", created_at: "" }) as any
     const e = [etiquetaPersona(u({ nombre: "Ulises" }, "u@x.com")), etiquetaPersona(u({ full_name: "Ulises G" }, "u@x.com")), etiquetaPersona(u({}, "u@x.com")), etiquetaPersona(null)].map(String).join(" | ")
     chequear("Accesos", "Las marcas «para revisar» guardan la PERSONA (su nombre, o su mail si no tiene), nunca el rol",
       "Ulises | Ulises G | u@x.com | null", e, e === "Ulises | Ulises G | u@x.com | null", "A-BUG-1327")
+
+    const roles = [
+      { id: "admin", secciones: ["egresos", "sueldos"], exige_2fa: true, permisos: {} as Record<string, string> },
+      { id: "pruebas", secciones: ["egresos"], exige_2fa: false, permisos: { "egresos.templates": "ninguno" } as Record<string, string> },
+    ]
+    const c = armarRolNuevo({ nombre: "Ulises", copiarDe: "pruebas" }, roles)
+    const fila = c.ok ? c.fila : null
+    // Es COPIA: tocar el original después no mueve el nuevo.
+    roles[1].secciones.push("sueldos"); roles[1].permisos["egresos.seguros"] = "ninguno"
+    const vista = fila ? `${fila.id} · ${fila.secciones.join("+")} · ${Object.keys(fila.permisos).join("+")} · sistema:${fila.es_sistema}` : "error"
+    chequear("Accesos", "Crear rol copiando de pruebas: copia secciones y lo destildado, nunca es de sistema, y cambiar pruebas después no lo mueve",
+      "ulises · egresos · egresos.templates · sistema:false", vista, vista === "ulises · egresos · egresos.templates · sistema:false", "A-FEAT-171")
+    const errores = [
+      armarRolNuevo({ nombre: "PRUEBAS" }, roles), armarRolNuevo({ nombre: "x" }, roles), armarRolNuevo({ nombre: "enrique", copiarDe: "nadie" }, roles),
+    ].map(x => x.ok ? "ok" : "rechaza").join(" · ")
+    const vacio = armarRolNuevo({ nombre: "Enrique Pérez" }, roles)
+    const v = `${errores} · ${normalizarIdRol("Enrique Pérez")} · ${vacio.ok ? vacio.fila.secciones.length : "?"}`
+    chequear("Accesos", "Crear rol: rechaza un nombre repetido (sin importar mayúsculas), uno muy corto y copiar de un rol que no existe; sin rol de origen nace VACÍO",
+      "rechaza · rechaza · rechaza · enrique-perez · 0", v, v === "rechaza · rechaza · rechaza · enrique-perez · 0", "A-FEAT-171")
   }
 
   return r

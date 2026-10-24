@@ -175,6 +175,83 @@ function CasillaMaestra({
   )
 }
 
+/**
+ * ➕ Crear un rol, vacío o copiando de otro (A-FEAT-171; etapa 2 de A-FEAT-1322).
+ *
+ * El caso para el que existe: armar el rol de Ulises en `pruebas`, probarlo con el otro mail, y
+ * después «crear "ulises" copiando de pruebas» y asignárselo en Usuarios. Es una COPIA: cambiar
+ * `pruebas` después no le mueve nada al nuevo. Crear no le cambia nada a nadie hasta que se asigna.
+ */
+function CrearRol({ roles, alCrear }: { roles: string[]; alCrear: () => void }) {
+  const [abierto, setAbierto] = useState(false)
+  const [nombre, setNombre] = useState("")
+  const [descripcion, setDescripcion] = useState("")
+  const [copiarDe, setCopiarDe] = useState("pruebas")
+  const [guardando, setGuardando] = useState(false)
+
+  async function crear() {
+    setGuardando(true)
+    const res = await fetch("/api/admin/roles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nombre, descripcion, copiarDe }),
+    })
+    const json = await res.json().catch(() => ({}))
+    setGuardando(false)
+    if (!res.ok) {
+      toast.error(json.error ?? "No se pudo crear el rol.")
+      return
+    }
+    toast.success(`Rol «${json.id}» creado. Nadie lo tiene hasta que lo asignes en Usuarios.`)
+    setAbierto(false)
+    setNombre("")
+    setDescripcion("")
+    alCrear()
+  }
+
+  if (!abierto) {
+    return (
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={() => setAbierto(true)}>➕ Crear rol</Button>
+      </div>
+    )
+  }
+  return (
+    <Card className="entrada-suave border-sky-300">
+      <CardContent className="space-y-3 p-4 text-sm">
+        <p className="font-medium">Crear rol</p>
+        <p className="text-muted-foreground">
+          Se copian las secciones y lo destildado del rol elegido, tal como están ahora. Después se edita
+          aparte: cambiar el original no lo mueve. Nadie lo tiene hasta que lo asignes en Usuarios.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <label className="space-y-1">
+            <span className="text-xs text-muted-foreground">Nombre (ej.: ulises)</span>
+            <input className="w-full rounded-md border px-2 py-1.5" value={nombre} onChange={(e) => setNombre(e.target.value)} />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs text-muted-foreground">Copiar de</span>
+            <select className="w-full rounded-md border px-2 py-1.5" value={copiarDe} onChange={(e) => setCopiarDe(e.target.value)}>
+              <option value="">— vacío (no ve nada) —</option>
+              {roles.map((id) => <option key={id} value={id}>{id}</option>)}
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs text-muted-foreground">Descripción (opcional)</span>
+            <input className="w-full rounded-md border px-2 py-1.5" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
+          </label>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setAbierto(false)}>Cancelar</Button>
+          <Button size="sm" disabled={guardando || nombre.trim().length < 2} onClick={() => void crear()}>
+            {guardando ? "Creando…" : "Crear"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 function PanelRoles() {
   const { roles, desdeLaBase, falta, aplicados, cuentas, recargar } = useRoles()
   const todas = seccionesDe("admin")   // las 12, con su label e ícono
@@ -292,6 +369,8 @@ function PanelRoles() {
           </CardContent>
         </Card>
       )}
+
+      {desdeLaBase && <CrearRol roles={roles.map((r) => r.id)} alCrear={() => void recargar()} />}
 
       {roles.map((r) => {
         const n = cuentas === null ? undefined : (cuentas[r.id] ?? 0)

@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin"
 import { exigirAdmin } from "@/lib/auth/guard-admin"
 import { leerRoles, SECCIONES_IDS } from "@/lib/auth/permisos"
 import { RECURSOS } from "@/lib/auth/recursos"
+import { armarRolNuevo } from "@/lib/auth/crear-rol"
 
 /** GET — los roles con sus permisos. */
 export async function GET() {
@@ -24,6 +25,47 @@ export async function GET() {
   // `desdeLaBase: false` avisa a la pantalla que está mostrando el paracaídas y que editar no va
   // a servir de nada hasta correr scripts/60. Es preferible a una pantalla que parece editable.
   return NextResponse.json({ roles, desdeLaBase, falta, recursosAplicados })
+}
+
+/**
+ * POST — crear un rol nuevo, vacío o copiando de otro (A-FEAT-171; etapa 2 de A-FEAT-1322).
+ *
+ * Mismas puertas que el PATCH: admin con segundo factor. La regla (id normalizado, que no se repita,
+ * `es_sistema` siempre falso, copia y no vínculo) vive en `lib/auth/crear-rol.ts`, probada en
+ * `npm run probar`. Crear un rol no le cambia nada a nadie: nadie lo tiene hasta que se asigna en
+ * Usuarios.
+ */
+export async function POST(request: Request) {
+  const guard = await exigirAdmin()
+  if (!guard.ok) return NextResponse.json({ error: guard.motivo }, { status: guard.status })
+
+  const body = await request.json().catch(() => null)
+  const { roles, desdeLaBase } = await leerRoles()
+  // Sobre el paracaídas del código no se crea nada: no habría dónde guardarlo.
+  if (!desdeLaBase) {
+    return NextResponse.json({ error: "Falta crear la tabla de roles (scripts/60-roles-permisos.sql)." }, { status: 503 })
+  }
+
+  const r = armarRolNuevo(
+    {
+      nombre: typeof body?.nombre === "string" ? body.nombre : "",
+      descripcion: typeof body?.descripcion === "string" ? body.descripcion : "",
+      copiarDe: typeof body?.copiarDe === "string" && body.copiarDe ? body.copiarDe : null,
+    },
+    roles,
+  )
+  if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 })
+
+  const { error } = await supabaseAdmin.from("roles").insert(r.fila)
+  if (error) {
+    // Dos admins creando el mismo nombre a la vez: la clave primaria lo frena, se dice claro.
+    const repetido = error.code === "23505"
+    return NextResponse.json(
+      { error: repetido ? `Ya existe un rol «${r.fila.id}».` : "No se pudo crear el rol." },
+      { status: repetido ? 409 : 500 },
+    )
+  }
+  return NextResponse.json({ ok: true, id: r.fila.id })
 }
 
 /**
