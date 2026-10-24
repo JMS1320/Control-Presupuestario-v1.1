@@ -1000,6 +1000,12 @@ controle que no quedó nada desparramado).
   antes de borrar. En GAS/Drive están **prohibidos** `setTrashed`, `removeFolder`, `emptyTrash`
   y todo patrón "replace/overwrite" de carpeta. Motivo: un "sobrescribir carpeta" ya le borró un
   backup entero al usuario (2026-06-26).
+- **Un script de DESHACER sólo puede borrar lo que creó SU script — y se verifica en la base antes de correr el
+  script principal.** *(Usuario 2026-10-23: «si es una regla que agrega seguridad, sí».)* Si el script hace
+  `add column if not exists` / `insert … where not exists`, el deshacer **no** puede ser `drop column` / `delete` a
+  secas: la columna o las filas podían existir antes, con datos. Se marca lo que el script crea (como `[script 96]`
+  en `observaciones`) y el deshacer borra sólo eso. *Motivo: el `95-…-deshacer.sql` hacía `drop column` de
+  `pam.comprobantes_arca.medio_pago`, que ya existía con 8 facturas cargadas; se vio al revisarlo antes de correr nada.*
 - **Un test automatizado que escribe en la BD escribe en la BD REAL.** No hay entorno de prueba: la
   app local, la preview y producción usan el mismo Supabase. Entonces un test que crea o edita filas
   tiene que (1) **apuntar a un registro elegido por id**, nunca a *"el primero que aparezca"*, y
