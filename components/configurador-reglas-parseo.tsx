@@ -398,11 +398,17 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
       toast.error("Primero hay que configurar este subtipo: sin reglas propias no se puede dar por bueno.")
       return
     }
+    const marca = revisado ? new Date().toISOString() : null
+    const ids = new Set(rs.map(r => r.id))
     const { error } = await supabase.from("config_parseo_extracto")
-      .update({ revisado_en: revisado ? new Date().toISOString() : null })
-      .in("id", rs.map(r => r.id))
+      .update({ revisado_en: marca })
+      .in("id", [...ids])
     if (error) { toast.error("Error: " + error.message); return }
-    cargar()
+    // 🌙 Nota del usuario 2026-10-24: «cada vez que tildo como revisado… me refresca la página y me
+    // genera perder el lugar donde estaba». Antes se llamaba a `cargar()`, que vuelve a traer todo y
+    // muestra el «cargando…» — se perdían el scroll y lo desplegado. La marca no cambia nada más que
+    // su propio valor, así que alcanza con actualizarla en la pantalla.
+    setReglas(prev => prev.map(r => ids.has(r.id) ? { ...r, revisado_en: marca } : r))
   }
 
   /**
