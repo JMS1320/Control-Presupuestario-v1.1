@@ -77,7 +77,12 @@ export function armarRolNuevo(
       permisos: base ? { ...base.permisos } : {},
       // Cerrado se copia: si el de origen es cerrado, su lista dice lo que DA, y copiarla como
       // abierta le daría todo lo demás al rol nuevo.
-      ...(base && typeof base.cerrado === "boolean" ? { cerrado: base.cerrado } : {}),
+      // Y un rol VACÍO nace cerrado (usuario 2026-10-24: «que esté por defecto apagado todo… a medida
+      // que tildo es como elegir mostrárselo»): si naciera abierto, prender una sección le daría todo
+      // lo de adentro. La ruta no manda la columna si scripts/99 no corrió.
+      ...(base
+        ? typeof base.cerrado === "boolean" ? { cerrado: base.cerrado } : {}
+        : { cerrado: true }),
     },
   }
 }

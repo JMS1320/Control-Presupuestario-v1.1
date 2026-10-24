@@ -1068,7 +1068,7 @@ copiando de `pruebas`** y se lo asignás. Un rol por persona.
 Configuración → Roles → **Editar** un rol → **🔒 Rol cerrado** → Guardar. Lo que el rol ve en ese momento
 **no cambia**. Lo que cambia es qué pasa con lo que se agregue a la app después: en un rol cerrado aparece
 **apagado** hasta que lo tildes; en uno abierto aparece solo. Es para los delegados (Ulises, Enrique): que
-una pantalla nueva no les aparezca sin que lo decidas. Al crear un rol copiando de uno cerrado, nace cerrado.
+una pantalla nueva no les aparezca sin que lo decidas. Al crear un rol copiando de uno cerrado, nace cerrado; un rol creado **vacío** nace cerrado siempre.
 
 ⚠️ Sin probar todavía → [A-TEST-1237](PENDIENTES.md#a-test-1237)
 

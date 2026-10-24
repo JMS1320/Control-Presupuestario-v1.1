@@ -8275,8 +8275,8 @@ export function correrCasos(): Resultado[] {
     const vcopia = [deCerrado.ok ? String(deCerrado.fila.cerrado) : "error",
       sinColumna.ok ? ("cerrado" in sinColumna.fila ? "manda la columna" : "no la manda") : "error",
       copiaCerrada.ok ? ("cerrado" in copiaCerrada.fila ? "manda la columna" : "no la manda") : "error"].join(" · ")
-    chequear("Accesos", "Crear rol copiando de uno CERRADO lo copia cerrado (si no, le daría todo lo demás); sin la columna todavía, no la manda",
-      "true · no la manda · no la manda", vcopia, vcopia === "true · no la manda · no la manda", "A-FEAT-1333")
+    chequear("Accesos", "Crear rol copiando de uno CERRADO lo copia cerrado; copiando de uno sin la columna, no la manda; VACÍO nace cerrado",
+      "true · no la manda · manda la columna", vcopia, vcopia === "true · no la manda · manda la columna" && copiaCerrada.ok && copiaCerrada.fila.cerrado === true, "A-FEAT-1333")
 
     // ── Modo permisos: prender sobre la pantalla (A-FEAT-1334) ──
     const mpVacio = borradorDe({ secciones: [], permisos: {}, cerrado: true })

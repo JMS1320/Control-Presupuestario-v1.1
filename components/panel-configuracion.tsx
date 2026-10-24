@@ -238,7 +238,7 @@ function CrearRol({ roles, alCrear }: { roles: string[]; alCrear: () => void }) 
           <label className="space-y-1">
             <span className="text-xs text-muted-foreground">Copiar de</span>
             <select className="w-full rounded-md border px-2 py-1.5" value={copiarDe} onChange={(e) => setCopiarDe(e.target.value)}>
-              <option value="">— vacío (no ve nada) —</option>
+              <option value="">— vacío y 🔒 cerrado (no ve nada; vas prendiendo) —</option>
               {roles.map((id) => <option key={id} value={id}>{id}</option>)}
             </select>
           </label>
