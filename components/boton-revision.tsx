@@ -34,7 +34,7 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Flag, Loader2, Trash2, ImageOff } from "lucide-react"
 import { toast } from "sonner"
-import { getRoleFromRoute } from "@/config/access-routes"
+import { etiquetaPersona } from "@/lib/auth/identidad"
 import { contextoActual } from "@/lib/contexto-pantalla"
 import { comprimir } from "@/lib/captura-imagen"
 
@@ -56,10 +56,17 @@ export interface RevisionAbierta {
   seguimiento?: { fecha: string; texto: string; autor: string | null }[]
 }
 
-/** El ROL de quien marca, nunca la ruta (A-SEC-04: el 1er segmento ES la contraseña). */
-function rolActual(): string | null {
-  if (typeof window === "undefined") return null
-  return getRoleFromRoute(window.location.pathname.split("/").filter(Boolean)[0] ?? "")
+/**
+ * QUIÉN marca: la persona de la sesión, no el rol ni la URL (A-BUG-1327).
+ * Antes salía del 1er segmento de la ruta (las rutas-contraseña); desde el login real quedaba vacío.
+ */
+async function quienMarca(): Promise<string | null> {
+  try {
+    const { data } = await supabase.auth.getUser()
+    return etiquetaPersona(data.user)
+  } catch {
+    return null
+  }
 }
 
 
@@ -150,7 +157,7 @@ function ModalMarca({
         pantalla: ctx.pantalla,
         subpantalla: ctx.subpantalla,
         ruta: ctx.ruta,
-        creado_por: rolActual(),
+        creado_por: await quienMarca(),
       })
       if (error) throw error
       toast.success("Marcada. La vas a ver en Principal → Para revisar.")

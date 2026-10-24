@@ -20,7 +20,12 @@
  * son 4 pestañas + 8 funcionalidades repartidas en tres modales distintos.
  */
 
-export type TipoRecurso = "pestana" | "funcionalidad"
+/**
+ *   · `accion`        — un BOTÓN suelto (no una solapa). El control no lo busca como `TabsTrigger`
+ *                       sino como `puedeVer("<id>")` en su archivo: verifica que la pantalla de
+ *                       verdad pregunte por el permiso (A-FEAT-1322, etapa 1).
+ */
+export type TipoRecurso = "pestana" | "funcionalidad" | "accion"
 
 export type Recurso = {
   /** `seccion.id` — la clave con la que se guarda el permiso. */
@@ -59,6 +64,7 @@ const EGRESOS = "components/vista-egresos.tsx"
 const EXTRACTO = "components/vista-extracto-bancario.tsx"
 const PRODUCTIVO = "components/vista-sector-productivo.tsx"
 const CASHFLOW = "components/vista-cash-flow.tsx"
+const FACTURAS = "components/vista-facturas-arca.tsx"
 
 export const RECURSOS: Recurso[] = [
   // ── Egresos ──────────────────────────────────────────────────────────────────────────────
@@ -68,6 +74,12 @@ export const RECURSOS: Recurso[] = [
   { id: "egresos.templates",    seccion: "egresos", etiqueta: "Egresos sin Factura", tipo: "pestana", archivo: EGRESOS },
   // A-FEAT-1309: pólizas de seguro y el control «¿tenemos todas?» contra el extracto.
   { id: "egresos.seguros",      seccion: "egresos", etiqueta: "Seguros",             tipo: "pestana", archivo: EGRESOS },
+  // A-FEAT-1322 (etapa 1): las solapas DENTRO de Facturas (las mismas para MSA, PAM y MA) y el botón
+  // de los archivos para IVA Simple. Hasta acá no tenían casilla: no se podían apagar para un rol.
+  { id: "egresos.subdiarios",     seccion: "egresos", etiqueta: "Facturas → Subdiarios",         tipo: "pestana", archivo: FACTURAS },
+  { id: "egresos.historico",      seccion: "egresos", etiqueta: "Facturas → Histórico",          tipo: "pestana", archivo: FACTURAS },
+  { id: "egresos.asignacion",     seccion: "egresos", etiqueta: "Facturas → Asignación Cuentas", tipo: "pestana", archivo: FACTURAS },
+  { id: "egresos.archivos-arca",  seccion: "egresos", etiqueta: "Subdiarios → Archivos para ARCA", tipo: "accion", archivo: FACTURAS },
 
   // ── Extracto Bancario ────────────────────────────────────────────────────────────────────
   { id: "extracto.movimientos", seccion: "extracto", etiqueta: "Movimientos", tipo: "pestana", archivo: EXTRACTO },

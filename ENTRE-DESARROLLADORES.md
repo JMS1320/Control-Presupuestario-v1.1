@@ -52,6 +52,19 @@ De paso: [A-BUG-1327](PENDIENTES.md#a-bug-1327) — las marcas «para revisar» 
 
 📌 Borrá esta entrada cuando la leas.
 
+### 🔑 Etapa 1 de accesos: código en `lib/auth/` (2026-10-24) — rama `jms/personas-accesos`, SIN mergear
+
+JMS aprobó arrancar con lo que no cambia nada para Ulises. **No toca la base ni RLS.** Toqué tu terreno en tres lugares:
+- **`lib/auth/roles.ts`** → `facturasRestringidas(rol)`: en Facturas el modo completo es **sólo de `admin`**; antes era
+  `rol === 'contable'` (lo que anotaste en [A-SEC-13](PENDIENTES.md#a-sec-13)). Un rol nuevo entra restringido.
+- **`lib/auth/recursos.ts`** → 4 recursos nuevos de Egresos (Subdiarios, Histórico, Asignación Cuentas dentro de Facturas,
+  y el botón Archivos para ARCA) y un tipo nuevo **`accion`** (un botón; el control lo verifica buscando `puedeVer("<id>")`
+  en su archivo). `scripts/verificar-recursos-permisos.mts` ahora busca cada recurso **en su propio archivo**.
+- **`lib/auth/identidad.ts`** → `etiquetaPersona(user)`, y `/api/revisiones` toma el autor de la sesión ([A-BUG-1327](PENDIENTES.md#a-bug-1327)).
+Si algo choca con lo tuyo de `jms/vistas-seguras`, avisá acá antes de que se mergee.
+
+📌 Borrá esta entrada cuando la leas.
+
 ### 🗃️ Una columna nueva en `public.proveedores` (2026-10-24) — ✅ APLICADA el 24/10 con JMS presente (aviso previo)
 
 Para [A-FEAT-1332](PENDIENTES.md#a-feat-1332) (control de cantidad de facturas de los proveedores fijos, en Papeles de

@@ -439,7 +439,7 @@ function PanelRoles() {
                                     >
                                       <span className="flex-1">
                                         {r.etiqueta}
-                                        {r.tipo === "funcionalidad" && (
+                                        {r.tipo !== "pestana" && (
                                           <span className="ml-1.5 rounded bg-slate-100 px-1 text-[10px] text-slate-500">
                                             acción
                                           </span>
@@ -763,7 +763,7 @@ function PanelPermisos() {
                       <td className="py-1.5 pr-4 pl-6 text-xs text-muted-foreground">
                         <span className={rec.padre ? "ml-4 border-l pl-2" : ""}>
                           ↳ {rec.etiqueta}
-                          {rec.tipo === "funcionalidad" && (
+                          {rec.tipo !== "pestana" && (
                             <span className="ml-1.5 rounded bg-slate-200 px-1 text-[10px]">acción</span>
                           )}
                         </span>

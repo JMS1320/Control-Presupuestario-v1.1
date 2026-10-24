@@ -768,4 +768,6 @@ Discutido pero no implementado. Con RLS activo, cualquier URL que no sea admin a
 
 ### Ulises — restricciones específicas dentro de Egresos
 
+> ⚠️ **Cambió 2026-10-24 (A-FEAT-1322, etapa 1):** lo de abajo decía que se leía la URL; después pasó a `userRole === 'contable'` (el NOMBRE del rol, así que un rol nuevo veía el Modo Admin). Ahora sale de **`facturasRestringidas(rol)`** en `lib/auth/roles.ts`: el modo completo es **sólo de `admin`** y cualquier otro rol entra restringido. Además las solapas Subdiarios, Histórico y Asignación Cuentas y el botón Archivos para ARCA están en `lib/auth/recursos.ts` y se apagan desde Configuración → Roles.
+
 Las restricciones actuales (Vista de Pagos sin sección Pendiente, sin botón Revertir, etc.) están implementadas en `vista-facturas-arca.tsx` leyendo la URL directamente. Son restricciones de UX/visibilidad, independientes de RLS. Se mantienen igual después de implementar RLS.

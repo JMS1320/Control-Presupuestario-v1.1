@@ -55,6 +55,8 @@ import { esperadaDe, emparejar } from "@/lib/pagos/nc-diferencia-cambio"
 import { calcularVinculo, pctQueCierra } from "@/lib/productivo/compras-factura"
 import { facturasCortas } from "@/lib/pagos/lineas-detalle-pago"
 import { NOMBRE_PARA_TERCEROS, empresaDeSchema } from "@/lib/empresas"
+import { facturasRestringidas } from "@/lib/auth/roles"
+import { etiquetaPersona } from "@/lib/auth/identidad"
 import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
 import {
   adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga,
@@ -8203,6 +8205,18 @@ export function correrCasos(): Resultado[] {
         "Tango Parra 1 · 52948 · 17,23 ha · 116,08/ha", `${fila?.campo} · ${fila?.partida} · ${fila?.has?.toLocaleString("es-AR")} ha · ${fila?.costoHa?.toLocaleString("es-AR")}/ha`,
         fila?.partida === "52948" && fila?.has === 17.23 && fila?.costoHa === 116.08, "A-FEAT-1320")
     }
+  }
+
+  // ── Accesos por tarea, etapa 1 (A-FEAT-1322) ──────────────────────────────────────────────
+  {
+    const m = ["admin", "contable", "ulises", "pruebas"].map(r => `${r}:${facturasRestringidas(r) ? "restringido" : "completo"}`).join(" · ")
+    chequear("Accesos", "Facturas: el modo completo (Modo Admin, marcar pagado) es sólo de admin; un rol NUEVO entra restringido como Ulises, no como admin",
+      "admin:completo · contable:restringido · ulises:restringido · pruebas:restringido", m,
+      m === "admin:completo · contable:restringido · ulises:restringido · pruebas:restringido", "A-FEAT-1322")
+    const u = (meta: Record<string, unknown>, email?: string) => ({ id: "x", app_metadata: { role: "contable" }, user_metadata: meta, email, aud: "", created_at: "" }) as any
+    const e = [etiquetaPersona(u({ nombre: "Ulises" }, "u@x.com")), etiquetaPersona(u({ full_name: "Ulises G" }, "u@x.com")), etiquetaPersona(u({}, "u@x.com")), etiquetaPersona(null)].map(String).join(" | ")
+    chequear("Accesos", "Las marcas «para revisar» guardan la PERSONA (su nombre, o su mail si no tiene), nunca el rol",
+      "Ulises | Ulises G | u@x.com | null", e, e === "Ulises | Ulises G | u@x.com | null", "A-BUG-1327")
   }
 
   return r

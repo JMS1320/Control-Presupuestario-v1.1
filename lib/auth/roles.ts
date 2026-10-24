@@ -34,6 +34,18 @@ export function getRole(user: User | null | undefined): UserRole | null {
   return typeof rol === "string" && rol.trim() !== "" ? rol : null
 }
 
+/**
+ * ¿Facturas va en MODO RESTRINGIDO para este rol? (sin Modo Admin, sin marcar pagado, sin mails a
+ * proveedores, sólo las facturas `visible_contable`: lo que ve Ulises).
+ *
+ * ⚠️ Cambió 2026-10-24 (A-FEAT-1322, etapa 1): antes la pantalla preguntaba `rol === 'contable'`,
+ * o sea el NOMBRE. Un rol nuevo («ulises», «pruebas») caía del lado de admin y veía el Modo Admin.
+ * Ahora el modo completo es sólo para `admin`; cualquier otro rol entra restringido.
+ */
+export function facturasRestringidas(rol: UserRole | null | undefined): boolean {
+  return rol !== "admin"
+}
+
 export function esAdmin(user: User | null | undefined): boolean {
   return getRole(user) === "admin"
 }

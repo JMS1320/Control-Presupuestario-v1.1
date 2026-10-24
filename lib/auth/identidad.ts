@@ -55,6 +55,18 @@ function esNuestra(url: string): boolean {
   return Boolean(base && url.startsWith(base))
 }
 
+/**
+ * QUIÉN ES, en una palabra legible — para guardar «quién hizo esto» (A-BUG-1327).
+ *
+ * El nombre que eligió la persona (o el de Google) y, si no tiene, su mail. Nunca el ROL: un rol lo
+ * comparten varias personas y no dice quién fue. Las marcas «para revisar» guardaban el rol sacado
+ * de la URL, y desde el login real (2026-09-03) la URL ya no lo trae: quedaban vacías.
+ */
+export function etiquetaPersona(user: User | null | undefined): string | null {
+  if (!user) return null
+  return leerIdentidad(user).nombre || texto(user.email) || null
+}
+
 export function leerIdentidad(user: User | null | undefined): Identidad {
   const meta = (user?.user_metadata ?? {}) as Record<string, unknown>
 
