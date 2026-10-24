@@ -18,7 +18,9 @@
  * ese número no se puede entregar todavía. Frenar la generación le sacaría la herramienta justo
  * cuando la necesita para encontrar el problema.
  */
-import * as XLSX from "xlsx"
+// 🎨 `xlsx-js-style` (misma API) para que el Excel guarde negrita y colores — ver `presentarHoja`.
+// Import por DEFAULT: el paquete es CommonJS (ver lib/presupuesto/export.ts).
+import XLSX from "xlsx-js-style"
 import { ETIQUETA_CONCEPTO, type ImpuestoCheque } from "./impuesto-cheque"
 import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
 import { armarEjercicio, nombreSubdiario } from "./ejercicio"
@@ -45,7 +47,7 @@ import type { ValuacionHacienda, PrecioMag, PrecioMercado, PrecioCabeza } from "
 import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
 import type { CuadreGranos, ValuacionGranos, Sementeras } from "./granos-sementeras"
 import {
-  formatearHoja, conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna,
+  formatearHoja, presentarHoja, conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna,
 } from "./formato-excel"
 
 const money = (n: number) => Math.round(n * 100) / 100
@@ -263,6 +265,7 @@ function hojaDeControl(libro: LibroDiario): unknown[][] {
 const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: Columna[]) => {
   const ws = XLSX.utils.aoa_to_sheet(filas)
   if (columnas) formatearHoja(ws, columnas)
+  presentarHoja(ws)
   // 31 caracteres es el máximo que acepta Excel para el nombre de una solapa.
   XLSX.utils.book_append_sheet(wb, ws, nombre.slice(0, 31))
 }

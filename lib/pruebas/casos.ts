@@ -228,6 +228,8 @@ import {
 } from "@/lib/pagos/lineas-detalle-pago"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
 import { hojaDeAsientosContables } from "@/lib/balance/export-libro-diario"
+import * as XLSXcasos from "xlsx"
+import { presentarHoja, MONEDA, ENTERO } from "@/lib/balance/formato-excel"
 import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
 import { leerFacturaDelTexto, precargaDesdeLectura, cuitValido, parsearImporte } from "@/lib/gas-pdf/leer-factura"
 import { controlDeLaCarga, camposDeLaCarga, huellaDeLaCarga, aNegativoSiNC } from "@/lib/facturas/alta-factura"
@@ -8304,6 +8306,33 @@ export function correrCasos(): Resultado[] {
       copiaCerrada.ok ? ("cerrado" in copiaCerrada.fila ? "manda la columna" : "no la manda") : "error"].join(" · ")
     chequear("Accesos", "Crear rol copiando de uno CERRADO lo copia cerrado (si no, le daría todo lo demás); sin la columna todavía, no la manda",
       "true · no la manda · no la manda", vcopia, vcopia === "true · no la manda · no la manda", "A-FEAT-1333")
+  }
+
+  {
+    // ── Presentación del Excel del balance (A-FEAT-1338) ──
+    const ws = XLSXcasos.utils.aoa_to_sheet([
+      ["COMPRAS vs. LO PRESENTADO A ARCA"],
+      ["Subdiario", "App: comprobantes", "App: total", "Diferencia", ""],
+      ["2025-12", 40, 16394196.92, -580510.57, "NO COINCIDE"],
+      ["2026-01", 42, 12233837.36, 0, "coincide"],
+      ["TOTAL", 82, 28628034.28],
+    ])
+    presentarHoja(ws)
+    const sty = (d: string) => ((ws[d] as { s?: { font?: { bold?: boolean; color?: { rgb?: string } }; fill?: unknown } }).s ?? {})
+    const z = (d: string) => (ws[d] as { z?: string }).z
+    const vfmt = [z("C3") === MONEDA ? "importe Contabilidad" : z("C3"), z("B3") === ENTERO ? "cantidad entera" : z("B3"),
+      z("D4") === MONEDA ? "cero con guion" : z("D4")].join(" · ")
+    chequear("Balance", "Excel: todo número lleva formato (importe en Contabilidad, cantidad entera, el cero con guion) aunque la hoja no tenga columnas",
+      "importe Contabilidad · cantidad entera · cero con guion", vfmt, vfmt === "importe Contabilidad · cantidad entera · cero con guion", "A-FEAT-1338")
+    const neg = MONEDA.split(";")[1]
+    chequear("Balance", "Excel: el negativo va entre paréntesis", "entre paréntesis", neg.includes("(#,##0.00)") ? "entre paréntesis" : neg,
+      neg.includes("(#,##0.00)"), "A-FEAT-1338")
+    const vsty = [sty("A1").font?.bold && sty("A1").fill ? "título" : "-", sty("B2").font?.bold && sty("B2").fill ? "encabezado" : "-",
+      sty("A5").font?.bold ? "total" : "-", sty("E3").font?.color?.rgb === "FFA12B2B" ? "aviso rojo" : "-",
+      sty("E4").font?.color?.rgb === "FF2E7A3C" ? "ok verde" : "-", sty("A3").font?.bold ? "fila común en negrita" : "fila común normal"].join(" · ")
+    chequear("Balance", "Excel: título, encabezado y total en negrita; NO COINCIDE en rojo, coincide en verde; las filas comunes sin tocar",
+      "título · encabezado · total · aviso rojo · ok verde · fila común normal", vsty,
+      vsty === "título · encabezado · total · aviso rojo · ok verde · fila común normal", "A-FEAT-1338")
   }
 
   return r
