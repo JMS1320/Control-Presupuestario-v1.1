@@ -4,13 +4,14 @@ import { exigirAdmin } from "@/lib/auth/guard-admin"
 import { leerRoles, SECCIONES_IDS } from "@/lib/auth/permisos"
 import { RECURSOS } from "@/lib/auth/recursos"
 import { armarRolNuevo } from "@/lib/auth/crear-rol"
+import { excepcionesParaEditar, permisosAGuardar } from "@/lib/auth/rol-cerrado"
 
 /** GET — los roles con sus permisos. */
 export async function GET() {
   const guard = await exigirAdmin()
   if (!guard.ok) return NextResponse.json({ error: guard.motivo }, { status: guard.status })
 
-  const { roles, desdeLaBase, falta } = await leerRoles()
+  const { roles, desdeLaBase, falta, tieneCerrado } = await leerRoles()
 
   /**
    * Qué recursos tienen tablas mapeadas en `public.recurso_tablas` — o sea, para cuáles la BASE
@@ -24,7 +25,7 @@ export async function GET() {
   const recursosAplicados = [...new Set((mapeo ?? []).map((m) => m.recurso as string))]
   // `desdeLaBase: false` avisa a la pantalla que está mostrando el paracaídas y que editar no va
   // a servir de nada hasta correr scripts/60. Es preferible a una pantalla que parece editable.
-  return NextResponse.json({ roles, desdeLaBase, falta, recursosAplicados })
+  return NextResponse.json({ roles, desdeLaBase, falta, tieneCerrado, recursosAplicados })
 }
 
 /**
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
   if (!guard.ok) return NextResponse.json({ error: guard.motivo }, { status: guard.status })
 
   const body = await request.json().catch(() => null)
-  const { roles, desdeLaBase } = await leerRoles()
+  const { roles, desdeLaBase, tieneCerrado } = await leerRoles()
   // Sobre el paracaídas del código no se crea nada: no habría dónde guardarlo.
   if (!desdeLaBase) {
     return NextResponse.json({ error: "Falta crear la tabla de roles (scripts/60-roles-permisos.sql)." }, { status: 503 })
@@ -56,7 +57,10 @@ export async function POST(request: Request) {
   )
   if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 })
 
-  const { error } = await supabaseAdmin.from("roles").insert(r.fila)
+  // Sin scripts/99 la columna `cerrado` no existe: mandarla haría fallar el alta entera.
+  const { cerrado, ...sinCerrado } = r.fila
+  const fila = tieneCerrado && cerrado !== undefined ? { ...sinCerrado, cerrado } : sinCerrado
+  const { error } = await supabaseAdmin.from("roles").insert(fila)
   if (error) {
     // Dos admins creando el mismo nombre a la vez: la clave primaria lo frena, se dice claro.
     const repetido = error.code === "23505"
@@ -88,6 +92,8 @@ export async function PATCH(request: Request) {
   const exige2FA = typeof body?.exige_2fa === "boolean" ? body.exige_2fa : null
   // Las excepciones finas: `{ "productivo.insumos": "lectura" }` (A-FEAT-169).
   const permisosPedidos: unknown = body?.permisos
+  // 🔒 Rol cerrado (A-FEAT-1333): lo nuevo nace apagado. Ver lib/auth/rol-cerrado.ts.
+  const cerradoPedido = typeof body?.cerrado === "boolean" ? body.cerrado : null
 
   if (!id || !secciones) {
     return NextResponse.json({ error: "Faltan datos." }, { status: 400 })
@@ -106,7 +112,7 @@ export async function PATCH(request: Request) {
    * mal escrita **no oculta nada y parece que sí**. Es peor que un error: es un permiso falso.
    */
   const NIVELES = new Set(["ninguno", "lectura", "escritura"])
-  const permisos: Record<string, string> = {}
+  const pedidas: Record<string, string> = {}
   if (permisosPedidos !== undefined) {
     if (typeof permisosPedidos !== "object" || permisosPedidos === null || Array.isArray(permisosPedidos)) {
       return NextResponse.json({ error: "Faltan datos." }, { status: 400 })
@@ -121,12 +127,30 @@ export async function PATCH(request: Request) {
       if (typeof nivel !== "string" || !NIVELES.has(nivel)) {
         return NextResponse.json({ error: `Nivel desconocido en ${recurso}: ${String(nivel)}` }, { status: 400 })
       }
-      // `escritura` es el default heredado: guardarlo sería ruido que hay que mantener al día.
-      if (nivel === "escritura") continue
-      // Una excepción sobre una sección que el rol no tiene no hace nada, pero ensucia: al volver
-      // a dar la sección reaparecería una restricción que nadie recuerda haber puesto.
-      if (conSeccion.has(recurso.split(".")[0])) permisos[recurso] = nivel
+      // Qué se guarda lo decide `permisosAGuardar` según el rol sea abierto o cerrado. En uno
+      // abierto, `escritura` no se guarda (es lo heredado). Una excepción sobre una sección que el
+      // rol no tiene se descarta: al volver a dar la sección reaparecería una restricción que nadie
+      // recuerda haber puesto.
+      if (conSeccion.has(recurso.split(".")[0])) pedidas[recurso] = nivel
     }
+  }
+
+  const { roles: actuales, tieneCerrado } = await leerRoles()
+  const previo = actuales.find((r) => r.id === id)
+  if (cerradoPedido !== null && !tieneCerrado) {
+    return NextResponse.json(
+      { error: "Falta la columna del rol cerrado: corré scripts/99-roles-cerrado.sql." },
+      { status: 503 },
+    )
+  }
+  const cerradoFinal = cerradoPedido ?? previo?.cerrado ?? false
+  // Si cambia el modo sin que vengan permisos, se convierte lo que ya tenía: pasar de abierto a
+  // cerrado (o al revés) no puede cambiar lo que el rol ve HOY, sólo lo que le pase a lo nuevo.
+  let permisos: Record<string, string> | undefined
+  if (permisosPedidos !== undefined) {
+    permisos = permisosAGuardar(pedidas, secciones as string[], cerradoFinal)
+  } else if (previo && cerradoPedido !== null && cerradoPedido !== Boolean(previo.cerrado)) {
+    permisos = permisosAGuardar(excepcionesParaEditar(previo), secciones as string[], cerradoFinal)
   }
 
   const { data: actual } = await supabaseAdmin
@@ -144,8 +168,9 @@ export async function PATCH(request: Request) {
     .from("roles")
     .update({
       secciones,
-      ...(permisosPedidos === undefined ? {} : { permisos }),
+      ...(permisos === undefined ? {} : { permisos }),
       ...(exige2FA === null ? {} : { exige_2fa: exige2FA }),
+      ...(cerradoPedido === null ? {} : { cerrado: cerradoPedido }),
       actualizado: new Date().toISOString(),
     })
     .eq("id", id)

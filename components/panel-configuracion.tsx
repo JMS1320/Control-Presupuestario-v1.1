@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { PanelUsuarios } from "@/components/panel-usuarios"
 import { seccionesDe } from "@/components/layout-app"
 import { recursosDe, SIN_RECURSOS, type Recurso } from "@/lib/auth/recursos"
+import { excepcionesParaEditar } from "@/lib/auth/rol-cerrado"
 import { Ayuda } from "@/components/ayuda"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -77,6 +78,8 @@ type RolDB = {
   permisos?: Record<string, string>
   exige_2fa: boolean
   es_sistema: boolean
+  /** 🔒 Rol cerrado (A-FEAT-1333): lo nuevo nace apagado. Ver lib/auth/rol-cerrado.ts. */
+  cerrado?: boolean
 }
 
 /** Los roles y sus permisos, leídos de la base. */
@@ -89,6 +92,8 @@ function useRoles() {
   // Los recursos que la BASE aplica (tienen tablas mapeadas). Ver el comentario en la ruta.
   const [aplicados, setAplicados] = useState<string[]>([])
   const [cuentas, setCuentas] = useState<Record<string, number> | null>(null)
+  // Si ya se corrió scripts/99. Sin la columna, la casilla «rol cerrado» no se muestra.
+  const [tieneCerrado, setTieneCerrado] = useState(false)
 
   const recargar = () =>
     fetch("/api/admin/roles")
@@ -99,6 +104,7 @@ function useRoles() {
         setDesdeLaBase(j.desdeLaBase)
         setFalta(j.falta)
         setAplicados(j.recursosAplicados ?? [])
+        setTieneCerrado(j.tieneCerrado === true)
       })
       .catch(() => {})
 
@@ -115,7 +121,7 @@ function useRoles() {
       .catch(() => {})
   }, [])
 
-  return { roles, desdeLaBase, falta, aplicados, cuentas, recargar }
+  return { roles, desdeLaBase, falta, aplicados, cuentas, recargar, tieneCerrado }
 }
 
 /**
@@ -253,7 +259,8 @@ function CrearRol({ roles, alCrear }: { roles: string[]; alCrear: () => void }) 
 }
 
 function PanelRoles() {
-  const { roles, desdeLaBase, falta, aplicados, cuentas, recargar } = useRoles()
+  const { roles, desdeLaBase, falta, aplicados, cuentas, recargar, tieneCerrado } = useRoles()
+  const [cerrado, setCerrado] = useState(false)
   const todas = seccionesDe("admin")   // las 12, con su label e ícono
 
   const [editando, setEditando] = useState<string | null>(null)
@@ -311,7 +318,10 @@ function PanelRoles() {
   function empezar(r: RolDB) {
     setEditando(r.id)
     setBorrador(new Set(r.secciones))
-    setNiveles({ ...((r.permisos ?? {}) as Record<string, "ninguno" | "lectura" | "escritura">) })
+    // Las casillas muestran lo que el rol VE, sea abierto o cerrado (en uno cerrado, lo no tildado
+    // viene apagado). La pantalla edita igual los dos: la diferencia la resuelve el servidor al guardar.
+    setNiveles(excepcionesParaEditar({ secciones: r.secciones, permisos: r.permisos ?? {}, cerrado: r.cerrado }))
+    setCerrado(Boolean(r.cerrado))
   }
 
   async function guardar(id: string) {
@@ -319,7 +329,7 @@ function PanelRoles() {
     const res = await fetch("/api/admin/roles", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, secciones: [...borrador], permisos: niveles }),
+      body: JSON.stringify({ id, secciones: [...borrador], permisos: niveles, ...(tieneCerrado ? { cerrado } : {}) }),
     })
     const json = await res.json().catch(() => ({}))
     setGuardando(false)
@@ -411,8 +421,32 @@ function PanelRoles() {
                 </div>
               </div>
 
+              {!enEdicion && r.cerrado && (
+                <p className="text-xs text-sky-800">
+                  🔒 <strong>Rol cerrado</strong>: lo que se agregue a la app de ahora en más nace apagado para
+                  este rol. Lo prendés vos acá cuando quieras.
+                </p>
+              )}
+
               {enEdicion ? (
                 <div className="space-y-3">
+                  {tieneCerrado && (
+                    <label className="flex cursor-pointer items-start gap-2 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={cerrado}
+                        onChange={(e) => setCerrado(e.target.checked)}
+                        className="mt-0.5 h-3.5 w-3.5"
+                      />
+                      <span>
+                        <span className="font-medium">🔒 Rol cerrado — lo nuevo nace apagado</span>
+                        <span className="block text-muted-foreground">
+                          Lo que ves tildado abajo no cambia. Cambia qué pasa con lo que se agregue a la app después:
+                          tildado, le aparece apagado hasta que lo prendas; sin tildar, le aparece solo.
+                        </span>
+                      </span>
+                    </label>
+                  )}
                   {/*
                     Cada sección abre lo que tiene adentro (A-FEAT-169). Antes era una grilla plana
                     de 12 casillas y no se veía qué había dentro de cada una.

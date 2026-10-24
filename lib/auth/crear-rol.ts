@@ -21,6 +21,7 @@ export type RolBase = {
   secciones: string[]
   exige_2fa: boolean
   permisos: Record<string, string>
+  cerrado?: boolean
 }
 
 export type FilaRolNuevo = {
@@ -30,6 +31,8 @@ export type FilaRolNuevo = {
   exige_2fa: boolean
   es_sistema: false
   permisos: Record<string, string>
+  /** Sólo si el de origen lo trae (ya se corrió scripts/99). Si no, la columna no existe y no se manda. */
+  cerrado?: boolean
 }
 
 /** «Ulises Gómez» → «ulises-gomez». Lo que queda es lo que se guarda en la cuenta de la persona. */
@@ -72,6 +75,9 @@ export function armarRolNuevo(
       exige_2fa: base ? base.exige_2fa : false,
       es_sistema: false,
       permisos: base ? { ...base.permisos } : {},
+      // Cerrado se copia: si el de origen es cerrado, su lista dice lo que DA, y copiarla como
+      // abierta le daría todo lo demás al rol nuevo.
+      ...(base && typeof base.cerrado === "boolean" ? { cerrado: base.cerrado } : {}),
     },
   }
 }

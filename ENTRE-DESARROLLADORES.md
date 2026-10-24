@@ -52,6 +52,20 @@ De paso: [A-BUG-1327](PENDIENTES.md#a-bug-1327) — las marcas «para revisar» 
 
 📌 Borrá esta entrada cuando la leas.
 
+### 🔒 Una columna nueva en `public.roles`: `cerrado` (2026-10-24) — ⏳ AVISO PREVIO, todavía NO se corrió
+
+Para [A-FEAT-1333](PENDIENTES.md#a-feat-1333) (rol cerrado: lo que se registre después nace apagado para ese rol).
+`scripts/99-roles-cerrado.sql` agrega **`cerrado boolean not null default false`**. **Todos los roles quedan en
+`false` = como hoy.** No toca RLS, políticas, GRANTs ni el trigger `roles_proteger_sistema`.
+- El script **se frena solo si la columna ya existe** y la deja marcada con `[script 99]` en el comentario; el
+  `-deshacer` comprueba esa marca (y que no haya roles cerrados) antes de borrarla.
+- En código (rama `jms/personas-accesos`): `lib/auth/rol-cerrado.ts` (pura) y `nivelesDe()` de `lib/auth/permisos.ts`
+  devuelve el **mapa efectivo** (en un rol cerrado, lo registrado sin tildar viene en `"ninguno"`), así que
+  `exigirEscritura` y la pantalla no cambian. `leerRoles()` lee con o sin la columna (`tieneCerrado`).
+- Si `jms/vistas-seguras` o la RLS por recurso leen `roles.permisos` desde SQL, ojo: en un rol cerrado esa lista
+  es lo que se le **da**, no lo que se le saca. Hoy no hay ningún rol cerrado y no va a haber hasta que JMS tilde uno.
+Lo corre T1 con JMS presente. Si querés que espere, avisá acá.
+
 ### 🔑 Etapa 1 de accesos: código en `lib/auth/` (2026-10-24) — rama `jms/personas-accesos`, SIN mergear
 
 JMS aprobó arrancar con lo que no cambia nada para Ulises. **No toca la base ni RLS.** Toqué tu terreno en tres lugares:

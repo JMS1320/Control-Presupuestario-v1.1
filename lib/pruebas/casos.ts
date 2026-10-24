@@ -58,6 +58,8 @@ import { NOMBRE_PARA_TERCEROS, empresaDeSchema } from "@/lib/empresas"
 import { facturasRestringidas } from "@/lib/auth/roles"
 import { etiquetaPersona } from "@/lib/auth/identidad"
 import { armarRolNuevo, normalizarIdRol } from "@/lib/auth/crear-rol"
+import { nivelesEfectivos, excepcionesParaEditar, permisosAGuardar } from "@/lib/auth/rol-cerrado"
+import { RECURSOS as RECURSOS_PERMISABLES } from "@/lib/auth/recursos"
 import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
 import {
   adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga,
@@ -8237,6 +8239,43 @@ export function correrCasos(): Resultado[] {
     const v = `${errores} · ${normalizarIdRol("Enrique Pérez")} · ${vacio.ok ? vacio.fila.secciones.length : "?"}`
     chequear("Accesos", "Crear rol: rechaza un nombre repetido (sin importar mayúsculas), uno muy corto y copiar de un rol que no existe; sin rol de origen nace VACÍO",
       "rechaza · rechaza · rechaza · enrique-perez · 0", v, v === "rechaza · rechaza · rechaza · enrique-perez · 0", "A-FEAT-171")
+
+    // ── Rol cerrado (A-FEAT-1333) ──
+    const abierto = { secciones: ["egresos"], permisos: { "egresos.templates": "ninguno" } }
+    const sinCambio = JSON.stringify(nivelesEfectivos(abierto)) + " · " + JSON.stringify(nivelesEfectivos({ ...abierto, cerrado: false }))
+    chequear("Accesos", "Rol cerrado: un rol ABIERTO (todos los de hoy, o sin la columna) se lee exactamente igual que antes",
+      '{"egresos.templates":"ninguno"} · {"egresos.templates":"ninguno"}', sinCambio,
+      sinCambio === '{"egresos.templates":"ninguno"} · {"egresos.templates":"ninguno"}', "A-FEAT-1333")
+
+    const cerradoEf = nivelesEfectivos({
+      secciones: ["egresos"], permisos: { "egresos.facturas-msa": "escritura", "egresos.templates": "lectura" }, cerrado: true,
+    })
+    const vc = [cerradoEf["egresos.facturas-msa"], cerradoEf["egresos.templates"], cerradoEf["egresos.subdiarios"],
+      Object.keys(cerradoEf).some((k) => !k.startsWith("egresos.")) ? "se mete en otra sección" : "sólo egresos"].join(" · ")
+    chequear("Accesos", "Rol cerrado: ve sólo lo que tiene tildado; lo que no figura en su lista (como una solapa registrada después) nace APAGADO",
+      "escritura · lectura · ninguno · sólo egresos", vc, vc === "escritura · lectura · ninguno · sólo egresos", "A-FEAT-1333")
+
+    // Pasar de abierto a cerrado y volver no cambia lo que ve en ese momento.
+    const secc = ["egresos", "productivo"]
+    const orig = { secciones: secc, permisos: { "egresos.templates": "ninguno", "egresos.seguros": "lectura" } as Record<string, string> }
+    const comoCerrado = { secciones: secc, permisos: permisosAGuardar(excepcionesParaEditar(orig), secc, true), cerrado: true }
+    const efCerrado = nivelesEfectivos(comoCerrado)
+    const distintos = RECURSOS_PERMISABLES.filter((r) => secc.includes(r.seccion))
+      .filter((r) => (orig.permisos[r.id] ?? "escritura") !== (efCerrado[r.id] ?? "escritura")).length
+    const deVuelta = permisosAGuardar(excepcionesParaEditar(comoCerrado), secc, false)
+    const ida = `${distintos} distintos · vuelta ${JSON.stringify(deVuelta) === JSON.stringify(orig.permisos) ? "igual" : JSON.stringify(deVuelta)}`
+    chequear("Accesos", "Rol cerrado: pasar un rol de abierto a cerrado y volver no cambia nada de lo que ve hoy",
+      "0 distintos · vuelta igual", ida, ida === "0 distintos · vuelta igual", "A-FEAT-1333")
+
+    const base = { id: "pruebas", secciones: ["egresos"], exige_2fa: false, permisos: {} as Record<string, string> }
+    const copiaCerrada = armarRolNuevo({ nombre: "enrique" }, [])
+    const deCerrado = armarRolNuevo({ nombre: "ulises", copiarDe: "pruebas" }, [{ ...base, cerrado: true }])
+    const sinColumna = armarRolNuevo({ nombre: "ulises", copiarDe: "pruebas" }, [base])
+    const vcopia = [deCerrado.ok ? String(deCerrado.fila.cerrado) : "error",
+      sinColumna.ok ? ("cerrado" in sinColumna.fila ? "manda la columna" : "no la manda") : "error",
+      copiaCerrada.ok ? ("cerrado" in copiaCerrada.fila ? "manda la columna" : "no la manda") : "error"].join(" · ")
+    chequear("Accesos", "Crear rol copiando de uno CERRADO lo copia cerrado (si no, le daría todo lo demás); sin la columna todavía, no la manda",
+      "true · no la manda · no la manda", vcopia, vcopia === "true · no la manda · no la manda", "A-FEAT-1333")
   }
 
   return r

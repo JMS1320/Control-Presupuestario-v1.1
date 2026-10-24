@@ -1064,6 +1064,14 @@ copiando de `pruebas`** y se lo asignás. Un rol por persona.
 
 ⚠️ Sin probar todavía → [A-TEST-1236](PENDIENTES.md#a-test-1236)
 
+### Rol cerrado — lo nuevo nace apagado
+Configuración → Roles → **Editar** un rol → **🔒 Rol cerrado** → Guardar. Lo que el rol ve en ese momento
+**no cambia**. Lo que cambia es qué pasa con lo que se agregue a la app después: en un rol cerrado aparece
+**apagado** hasta que lo tildes; en uno abierto aparece solo. Es para los delegados (Ulises, Enrique): que
+una pantalla nueva no les aparezca sin que lo decidas. Al crear un rol copiando de uno cerrado, nace cerrado.
+
+⚠️ Sin probar todavía, y la casilla aparece recién cuando se corre `scripts/99` → [A-TEST-1237](PENDIENTES.md#a-test-1237)
+
 ### Darle un rol a alguien
 Configuración → Usuarios → escribís el mail, elegís el rol, **Crear e invitar**. A quien ya existe
 se le cambia desde el desplegable de su fila.
