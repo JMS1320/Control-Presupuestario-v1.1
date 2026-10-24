@@ -52,7 +52,7 @@ De paso: [A-BUG-1327](PENDIENTES.md#a-bug-1327) — las marcas «para revisar» 
 
 📌 Borrá esta entrada cuando la leas.
 
-### 🗄️ Una tabla nueva: `public.balance_datos_usuario` (2026-10-24) — ⏳ AVISO PREVIO, todavía NO se corrió
+### 🗄️ Una tabla nueva: `public.balance_datos_usuario` (2026-10-24) — ✅ APLICADA el 24/10 con JMS presente (aviso previo): tabla vacía, marcada, RLS activa, 1 fila en recurso_tablas
 
 Para [A-FEAT-1337](PENDIENTES.md#a-feat-1337): lo que JMS carga a mano en los papeles del balance (precios de hacienda, cuadre de granos,
 cuotapartes) se guarda al escribirlo. `scripts/100-balance-datos-usuario.sql` crea **una tabla nueva** y no toca ninguna existente salvo
