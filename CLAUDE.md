@@ -377,8 +377,22 @@ numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits
 ### 🔧 Git
 > **Principio (portable):** nunca commitear a la rama de producción. Se trabaja en una rama y el
 > merge lo autoriza el usuario **después** de confirmar el testing.
-> **📍 Acá:** la rama de trabajo de JMS es **`jms/dia-a-dia`**, la de integración **`desarrollo`** y
-> la de producción **`main`**, con auto-deploy de Vercel (por eso mergear a `main` = publicar).
+> **📍 Acá:** la carpeta principal trabaja **directo en `desarrollo`** (donde prueba JMS); una rama
+> **`jms/<tema>`** sólo para una terminal en paralelo (su árbol), y vuelve **directo a `desarrollo`**; **`main`** es lo que usan los demás usuarios, con auto-deploy de Vercel (por eso
+> mergear a `main` = publicar).
+
+⚠️ **Cambió 2026-10-23 — se saca `jms/dia-a-dia` del medio.** Usuario: *«mi rama de trabajo será
+siempre desarrollo y la de los usuarios main»*, y confirmó *«estaba ok directamente trabajar en
+desarrollo»*. Las ramas de tema salen de `desarrollo` y vuelven a `desarrollo`. `jms/dia-a-dia`
+queda igualada a `desarrollo` y sólo se usa para un commit suelto sin tema. Lo que sigue abajo
+(el esquema de 2026-09-02) vale con esa corrección → [A-DEC-1017](PENDIENTES.md#a-dec-1017).
+
+⚠️ **Y cambió otra vez el mismo 2026-10-23 — la carpeta principal trabaja DIRECTO en `desarrollo`.**
+Usuario, al mergear el arreglo de los dólares: *«dijimos que trabajaríamos en desarrollo así que mergealo pero
+trabajaríamos directo ahí de ahora en más»*. Commits y push van a `desarrollo`; **`main` sigue siendo de los usuarios**
+y mergear ahí sigue pidiendo su OK. Las ramas `jms/<tema>` quedan **sólo para las terminales en paralelo** (cada una
+en su árbol, § Trabajo en paralelo regla 16). Donde abajo diga «pushear siempre a la rama del tema» o «nunca
+commitear directo a `desarrollo`», vale para esas terminales, no para la carpeta principal.
 
 ⚠️ **Cambio de rumbo 2026-09-02** — hasta esa fecha la regla decía *"pushear siempre a `desarrollo`"*.
 **Ya no.** Desde que hay un segundo desarrollador (Javier, en seguridad y logueo), cada uno tiene su
@@ -390,9 +404,10 @@ jms/dia-a-dia ─┐
 javier/…      ─┘   (integración)
 ```
 
-- **Pushear SIEMPRE a `jms/dia-a-dia`.** Nunca commitear directo a `desarrollo` ni a `main`.
-  Cuando el usuario dice *"commiteá"* o *"pusheá"* sin aclarar rama, es **`jms/dia-a-dia`**.
-- Los **dos** merges los autoriza el usuario: `jms/dia-a-dia → desarrollo` y `desarrollo → main`
+- **Pushear SIEMPRE a la rama del tema** (`jms/<tema>`). Nunca commitear directo a `desarrollo` ni a
+  `main`. Cuando el usuario dice *"commiteá"* o *"pusheá"* sin aclarar rama, es **la rama del tema en
+  curso** (o `jms/dia-a-dia` si no hay tema).
+- Los **dos** merges los autoriza el usuario: `jms/<tema> → desarrollo` y `desarrollo → main`
   (este último sólo con el testing confirmado, como siempre).
 - La rama de Javier la crea y la nombra **él**. Al 2026-09-02 todavía no existe en el remoto.
   No adivinar el nombre: `git for-each-ref refs/remotes/origin` lo dice, pero **sólo después de que
@@ -423,7 +438,7 @@ podemos abrir ramas para cada mini cosa»*. Con la regla vieja se abrieron **sei
 
 - **Se declara, no se asume**: `git branch --show-current` y decirlo en voz alta *antes* del primer
   `Edit`. Si la rama actual es de otro tema, **se crea la del tema nuevo** y se dice el nombre.
-- **Una rama por tema GRANDE, colgando de `jms/dia-a-dia`**, y se borra al mergear. *(Esto se había decidido
+- **Una rama por tema GRANDE, colgando de `desarrollo`** *(hasta 2026-10-23 decía `jms/dia-a-dia`)*, y se borra al mergear. *(Esto se había decidido
   el 2026-09-04 y no obligó a nadie — ver el motivo abajo.)*
 - 🧊 **Un tema que se EVALÚA y no se construye también termina en una rama, y se pushea.** No hacer
   el desarrollo **no es no dejar nada**: queda el ítem en `PENDIENTES.md` con su ID, en estado *futuro
@@ -985,6 +1000,12 @@ controle que no quedó nada desparramado).
   antes de borrar. En GAS/Drive están **prohibidos** `setTrashed`, `removeFolder`, `emptyTrash`
   y todo patrón "replace/overwrite" de carpeta. Motivo: un "sobrescribir carpeta" ya le borró un
   backup entero al usuario (2026-06-26).
+- **Un script de DESHACER sólo puede borrar lo que creó SU script — y se verifica en la base antes de correr el
+  script principal.** *(Usuario 2026-10-23: «si es una regla que agrega seguridad, sí».)* Si el script hace
+  `add column if not exists` / `insert … where not exists`, el deshacer **no** puede ser `drop column` / `delete` a
+  secas: la columna o las filas podían existir antes, con datos. Se marca lo que el script crea (como `[script 96]`
+  en `observaciones`) y el deshacer borra sólo eso. *Motivo: el `95-…-deshacer.sql` hacía `drop column` de
+  `pam.comprobantes_arca.medio_pago`, que ya existía con 8 facturas cargadas; se vio al revisarlo antes de correr nada.*
 - **Un test automatizado que escribe en la BD escribe en la BD REAL.** No hay entorno de prueba: la
   app local, la preview y producción usan el mismo Supabase. Entonces un test que crea o edita filas
   tiene que (1) **apuntar a un registro elegido por id**, nunca a *"el primero que aparezca"*, y

@@ -62,6 +62,12 @@ import {
 } from "@/lib/ganaderia/adjudicar-romaneo"
 import { añosHastaElProximo } from "@/lib/fechas"
 import { impuestosAAvisar, diasDeAviso, type CuotaImpuesto } from "@/lib/impuestos/vencimientos"
+import { coincidePorPalabras } from "@/lib/normalizar-texto"
+import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
+import { esBanco, pasaFiltroMedio, marcaPagadoDesde, OPCIONES_PAGADO_DESDE } from "@/lib/pagos/pagado-desde"
+import { armarPlanilla, impuestoDeTemplate, ordenarFilas, type CuotaPlanilla } from "@/lib/impuestos/planilla"
+import { importeDeVenta, cuotasNoFijadas } from "@/lib/arrendamientos/cash-flow"
+import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
 import { armarLibroComprasArca, controlarArchivo, leerCbte, texto as textoArca, type FilaCompraArca } from "@/lib/subdiarios/libro-iva-arca"
@@ -143,6 +149,8 @@ import {
 } from "@/lib/sicore/clave-certificado"
 import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
+import { PRESENTADO_ARCA_COMPRAS, compararConPresentado } from "@/lib/balance/presentado-arca"
+import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/balance/facturas-fijas"
 import { armarTemplatesDelEjercicio } from "@/lib/balance/templates-libro"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
@@ -152,7 +160,7 @@ import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
 } from "@/lib/balance/granos-sementeras"
 import {
-  armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados, tipoDesdeTexto,
+  armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados, tipoDesdeTexto, desdeArca, cargadaAMano,
   type AsientoLibroDiario,
 } from "@/lib/balance/libro-diario"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
@@ -3882,15 +3890,56 @@ export function correrCasos(): Resultado[] {
       dup[0]?.porFuente.find(f => f.fuente === "historico")?.total === 242 &&
       dup[0]?.porFuente.find(f => f.fuente === "arca")?.total === 121, "A-DAT-61")
 
-    const libro = armarLibroDiario(conDiciembreDoble, [], ej)
+    // ⚠️ cambió 2026-10-23: diciembre ya no sirve de ejemplo de mes duplicado — el histórico de
+    // diciembre en adelante queda «superado» (manda la app). El duplicado se prueba con octubre.
+    const conOctubreDoble = [
+      comp({ fuente: "historico", subdiario: "2025-10", numero: 10, total: 121 }),
+      comp({ fuente: "arca", subdiario: "2025-10", numero: 12, total: 121 }),
+    ]
+    const libro = armarLibroDiario(conOctubreDoble, [], ej)
     chequear("Balance · libro diario", "🛑 Con un mes duplicado, el papel NO se puede entregar",
       "frena", libro.controles.sePuedeEntregar ? "deja pasar" : "frena",
       libro.controles.sePuedeEntregar === false, "A-DAT-61")
 
     chequear("Balance · libro diario", "Y el motivo se dice en castellano, no en códigos",
       "menciona el subdiario",
-      libro.controles.motivos.join(" ").includes("2025-12") ? "menciona el subdiario" : "no lo menciona",
-      libro.controles.motivos.join(" ").includes("2025-12"), "A-DAT-61")
+      libro.controles.motivos.join(" ").includes("2025-10") ? "menciona el subdiario" : "no lo menciona",
+      libro.controles.motivos.join(" ").includes("2025-10"), "A-DAT-61")
+
+    // 🗄️ A-DAT-61 (usuario 23/10): de diciembre 2025 en adelante manda la app; el histórico se informa aparte.
+    const conDic = armarLibroDiario(conDiciembreDoble, [], ej)
+    chequear("Balance · libro diario", "🗄️ Diciembre en las dos fuentes: el del histórico queda «superado» y no se cuenta",
+      "2 superados · dic = 1 de ARCA · sin duplicados",
+      `${conDic.historicoSuperado.length} superados · dic = ${conDic.compras.filter(a => a.subdiario === "2025-12").length} de ${conDic.compras.filter(a => a.subdiario === "2025-12").map(a => a.fuente).join(",") === "arca" ? "ARCA" : "?"} · ${conDic.controles.subdiariosDuplicados.length === 0 ? "sin duplicados" : "duplicado"}`,
+      conDic.historicoSuperado.length === 2 && conDic.compras.filter(a => a.subdiario === "2025-12").length === 1
+        && conDic.compras.find(a => a.subdiario === "2025-12")?.fuente === "arca" && conDic.controles.subdiariosDuplicados.length === 0, "A-DAT-61")
+    const novHist = armarLibroDiario([comp({ fuente: "historico", subdiario: "2025-11", numero: 5 })], [], ej)
+    chequear("Balance · libro diario", "Y el histórico de noviembre SÍ cuenta (es el último mes del sistema anterior)",
+      "1 en el libro · 0 superados", `${novHist.compras.length} en el libro · ${novHist.historicoSuperado.length} superados`,
+      novHist.compras.length === 1 && novHist.historicoSuperado.length === 0, "A-DAT-61")
+
+    // 🧾 Contra lo presentado a ARCA (segundo camino).
+    const presentadoDic = { "2025-12": { comprobantes: 1, total: 121 } }
+    const igual = armarLibroDiario([comp({ subdiario: "2025-12", numero: 1, total: 121 })], [], ej, presentadoDic)
+    const fDic = igual.controles.contraPresentado?.find(f => f.subdiario === "2025-12")
+    chequear("Balance · libro diario", "🧾 Diciembre igual a lo presentado → coincide",
+      "coincide", fDic?.ok ? "coincide" : "no coincide", fDic?.ok === true, "A-DAT-61")
+    const deMas = armarLibroDiario([comp({ subdiario: "2025-12", numero: 1, total: 121 }), comp({ subdiario: "2025-12", numero: 2, total: 50 })], [], ej, presentadoDic)
+    const fMas = deMas.controles.contraPresentado?.find(f => f.subdiario === "2025-12")
+    chequear("Balance · libro diario", "🧾 Una de más en la app (las de Coopser / Río Tala) → no coincide, dice +1 y $50, y no se entrega",
+      "+1 · 50 · frena", `${fMas?.diferenciaComprobantes != null && fMas.diferenciaComprobantes > 0 ? "+" : ""}${fMas?.diferenciaComprobantes} · ${fMas?.diferenciaTotal} · ${deMas.controles.sePuedeEntregar ? "deja pasar" : "frena"}`,
+      fMas?.ok === false && fMas.diferenciaComprobantes === 1 && fMas.diferenciaTotal === 50
+        && !deMas.controles.sePuedeEntregar && deMas.controles.motivos.join(" ").includes("presentado"), "A-DAT-61")
+    chequear("Balance · libro diario", "Sin dato de lo presentado para el ejercicio, no hay control (y no inventa errores)",
+      "sin control", armarLibroDiario([comp({ subdiario: "2026-01", numero: 1 })], [], ej, { "2030-01": { comprobantes: 1, total: 1 } }).controles.contraPresentado === null ? "sin control" : "controló",
+      armarLibroDiario([comp({ subdiario: "2026-01", numero: 1 })], [], ej, { "2030-01": { comprobantes: 1, total: 1 } }).controles.contraPresentado === null, "A-DAT-61")
+    // Dato real: diciembre 2025 de MSA = lo presentado (36) + las 4 de Coopser y Río Tala que no se declararon.
+    const p = PRESENTADO_ARCA_COMPRAS.MSA["2025-12"]
+    const real = compararConPresentado(
+      [{ subdiario: "2025-12", total: p.total }, ...[41697.45, 518801.15, 9999.98, 10011.99].map(t => ({ subdiario: "2025-12", total: t }))],
+      ["2025-12"], { "2025-12": { comprobantes: 5, total: p.total } })[0]
+    chequear("Balance · libro diario", "🧾 Caso real: diciembre de MSA con las 4 sin declarar da $580.510,57 de más",
+      "580510.57", String(real.diferenciaTotal), real.diferenciaTotal === 580510.57 && p.comprobantes === 36 && p.total === 15813686.35, "A-DAT-61")
 
     // Un mismo comprobante dos veces (misma identidad) tambien frena.
     const repetido = [comp({ numero: 77 }), comp({ numero: 77, fuente: "historico", subdiario: "2026-01" })]
@@ -3924,6 +3973,121 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · libro diario", "⚠️ Un comprobante sin subdiario no se pierde: queda aparte",
       "1 sin subdiario", `${conHuerfano.sinSubdiario.length} sin subdiario`,
       conHuerfano.sinSubdiario.length === 1, "A-FEAT-1184")
+
+    // ✍️ A-FEAT-1331 — provisión puesta a mano: fecha POSTERIOR al cierre, con motivo.
+    const manual = comp({ id: "m1", subdiario: "2026-08", numero: 300, fecha: "2026-07-15", total: 500, provision_motivo: "servicio de junio" })
+    const conManual = armarLibroDiario([comp({ subdiario: "2026-01", numero: 1 }), manual], [], ej, undefined,
+      { esteEjercicio: [manual], anterior: [] })
+    chequear("Balance · provisión", "✍️ Una factura de fecha posterior al cierre, puesta a mano, entra a la provisión con su motivo",
+      "1 provisión · servicio de junio",
+      `${conManual.provisiones.length} provisión · ${conManual.provisiones[0]?.provision_motivo ?? "-"}`,
+      conManual.provisiones.length === 1 && conManual.provisiones[0].provision_motivo === "servicio de junio", "A-FEAT-1331")
+    const sinMarca = armarLibroDiario([comp({ subdiario: "2026-08", numero: 300, fecha: "2026-07-15" })], [], ej)
+    chequear("Balance · provisión", "Y sin marcarla, la misma factura NO es provisión (la regla de la fecha no la toma)",
+      "0", String(sinMarca.provisiones.length), sinMarca.provisiones.length === 0, "A-FEAT-1331")
+    const autoYManual = comp({ id: "a1", subdiario: "2026-07", numero: 2, fecha: "2026-06-23" })
+    const sinDoble = armarLibroDiario([autoYManual], [], ej, undefined, { esteEjercicio: [{ ...autoYManual, provision_motivo: "x" }], anterior: [] })
+    chequear("Balance · provisión", "Si una ya entraba por la regla y además se marcó a mano, no se cuenta dos veces",
+      "1", String(sinDoble.provisiones.length), sinDoble.provisiones.length === 1, "A-FEAT-1331")
+
+    // 📋 La del ejercicio ANTERIOR: se lista, no se resta.
+    const delAnterior = comp({ id: "h1", fuente: "historico", subdiario: "2025-08", numero: 9, fecha: "2025-06-25", total: 1000 })
+    const conAnterior = armarLibroDiario([delAnterior], [], ej)
+    chequear("Balance · provisión", "📋 Una factura del 24/25 (fecha ≤ 30/06/2025) en el subdiario de ago-25 se lista como provisión del ejercicio anterior",
+      "1 anterior", `${conAnterior.provisionesEjercicioAnterior.length} anterior`,
+      conAnterior.provisionesEjercicioAnterior.length === 1, "A-FEAT-1331")
+    chequear("Balance · provisión", "Y NO se resta: sigue sumando en las compras del 25/26 (el contador lo maneja)",
+      "1 compra · total 1000", `${conAnterior.compras.length} compra · total ${conAnterior.controles.compras.totalGeneral}`,
+      conAnterior.compras.length === 1 && conAnterior.controles.compras.totalGeneral === 1000, "A-FEAT-1331")
+    const manualAnt = comp({ id: "m0", subdiario: "", numero: 77, fecha: "2025-07-10", provision_motivo: "del 24/25" })
+    const conManualAnt = armarLibroDiario([], [], ej, undefined, { esteEjercicio: [], anterior: [manualAnt] })
+    chequear("Balance · provisión", "Las puestas a mano para el ejercicio anterior también se listan ahí",
+      "1", String(conManualAnt.provisionesEjercicioAnterior.length), conManualAnt.provisionesEjercicioAnterior.length === 1, "A-FEAT-1331")
+
+    // 🔢 A-FEAT-1332 — control de cantidad de los proveedores fijos (casos auditados por el usuario).
+    const doce = ej.subdiarios.map(x => claveSubdiario(x.anio, x.mes))
+    const fac = (cuit: string, fecha: string, numero: number, tipo = 11, no_informada?: boolean) =>
+      ({ cuit, fecha, punto_venta: 1, numero, tipo, no_informada })
+    const mesesAFechas = (cuit: string, porMes: number, desde = 1, tipo = 11, noInf?: boolean) =>
+      doce.flatMap((m, i) => Array.from({ length: porMes }, (_, j) => fac(cuit, `${m}-1${j}`, desde + i * 10 + j, tipo, noInf)))
+    const ulises = [fac("20443732145", "2025-07-01", 28), ...mesesAFechas("20443732145", 1, 30)]
+    const [fUl] = controlarFacturasFijas(ulises, [{ cuit: "20443732145", nombre: "SANCHEZ ULISES", facturasPorMes: 1 }], doce)
+    chequear("Balance · proveedores fijos", "🔢 12 del período + la de junio facturada el 1/7 → 13 de 12, julio con 2: no cierra y lo dice",
+      "13 de 12 · con más: jul-25 (2)", explicarFila(fUl),
+      !fUl.ok && fUl.hay === 13 && explicarFila(fUl) === "13 de 12 · con más: jul-25 (2)", "A-FEAT-1332")
+    const sf = mesesAFechas("33717253219", 1).filter(f => !f.fecha.startsWith("2025-07"))
+    const [fSf] = controlarFacturasFijas(sf, [{ cuit: "33-71725321-9", nombre: "SMART FARMING", facturasPorMes: 1 }], doce)
+    chequear("Balance · proveedores fijos", "Smart Farming sin julio → 11 de 12, «con menos: jul-25» (CUIT con guiones igual matchea)",
+      "11 de 12 · con menos: jul-25 (0)", explicarFila(fSf), fSf.hay === 11 && explicarFila(fSf) === "11 de 12 · con menos: jul-25 (0)", "A-FEAT-1332")
+    const medicus = [...mesesAFechas("30546771314", 1, 1, 6), ...mesesAFechas("30546771314", 1, 1, 8)]
+    const [fMe] = controlarFacturasFijas(medicus, [{ cuit: "30546771314", nombre: "MEDICUS", facturasPorMes: 2 }], doce)
+    chequear("Balance · proveedores fijos", "Medicus: factura + NC con el mismo número no son repetidas → 24 de 24",
+      "24 de 24", explicarFila(fMe), fMe.ok && fMe.hay === 24, "A-FEAT-1332")
+    const conRep = [...mesesAFechas("30639453738", 1), fac("30639453738", "2025-12-10", 51)]
+    const [fRep] = controlarFacturasFijas(conRep, [{ cuit: "30639453738", nombre: "TELECOM", facturasPorMes: 1 }], doce)
+    chequear("Balance · proveedores fijos", "Una cargada dos veces (mismo número) se cuenta como repetida, no como factura",
+      "12 · 1 repetida · no cierra", `${fRep.hay} · ${fRep.repetidas} repetida · ${fRep.ok ? "cierra" : "no cierra"}`,
+      fRep.hay === 12 && fRep.repetidas === 1 && !fRep.ok, "A-FEAT-1332")
+    chequear("Balance · proveedores fijos", "Durante el año cuenta sólo los meses terminados: el 15/10/2025 → jul, ago y sep",
+      "2025-07,2025-08,2025-09", mesesTerminados(doce, "2025-10-15").join(","),
+      mesesTerminados(doce, "2025-10-15").join(",") === "2025-07,2025-08,2025-09", "A-FEAT-1332")
+    const [fTala] = controlarFacturasFijas(mesesAFechas("30615803762", 2, 1, 1, true), [{ cuit: "30615803762", nombre: "RIO TALA", facturasPorMes: 2 }], doce)
+    chequear("Balance · proveedores fijos", "Si la mayoría se carga a mano, el proveedor sale «a mano» (va en rojo)",
+      "a mano · 24 de 24", `${fTala.aMano ? "a mano" : "ARCA"} · ${explicarFila(fTala)}`, fTala.aMano && fTala.ok, "A-FEAT-1332")
+    const [fAfa] = controlarFacturasFijas([...mesesAFechas("30525718626", 1, 1, 1, false), fac("30525718626", "2026-04-28", 999, 332, true)],
+      [{ cuit: "30525718626", nombre: "AFA", facturasPorMes: 1 }], doce)
+    chequear("Balance · proveedores fijos", "Una sola cargada a mano no lo vuelve «a mano» (corrección del usuario: AFA sí informa ARCA)",
+      "ARCA", fAfa.aMano ? "a mano" : "ARCA", !fAfa.aMano, "A-FEAT-1332")
+    const casosArchivo: Array<[Record<string, unknown>, boolean, string]> = [
+      [{ origen_factura: "No Informada" }, true, "marcada No Informada"],
+      [{ origen_factura: "ARCA", archivo_origen: "otros comprobantes No AFIP.xlsx" }, false, "marcada ARCA (manda la marca)"],
+      [{ origen_factura: null, archivo_origen: "Mis Comprobantes Recibidos - CUIT 30617786016 - 25-12.xlsx" }, false, "bajada de Mis Comprobantes"],
+      [{ origen_factura: null, archivo_origen: "Mis Comprobantes Recibidos - CUIT 30617786016 - no afip.xlsx" }, true, "Mis Comprobantes… no afip"],
+      [{ origen_factura: null, archivo_origen: "- comprobantes Coop Tala - CUIT 30617786016.xlsx" }, true, "archivo armado a mano"],
+    ]
+    for (const [f, esperado, nombre] of casosArchivo) {
+      chequear("Balance · proveedores fijos", `¿A mano? ${nombre} → ${esperado ? "sí" : "no"}`,
+        esperado ? "sí" : "no", cargadaAMano(f) ? "sí" : "no", cargadaAMano(f) === esperado, "A-FEAT-1332")
+    }
+  }
+  /**
+   * 💵 **LAS FACTURAS EN DÓLARES ENTRAN AL LIBRO DIARIO EN PESOS — A-BUG-1316.**
+   *
+   * Caso REAL: Almacén Veterinario FC 3-2014 del 23/02/2026, USD 3.213,58 a 1.390. En la DDJJ de
+   * IVA presentada figura por $4.466.876,20 (neto $3.854.470 · IVA $612.406,20). El libro diario es
+   * la copia de ese subdiario, así que tiene que dar lo mismo. Con el código viejo entraba por 3.213,58.
+   */
+  {
+    const usd = desdeArca({
+      id: "av-2014", "año_contable": 2026, mes_contable: 2, fecha_emision: "2026-02-23",
+      tipo_comprobante: 1, punto_venta: 3, numero_desde: 2014, cuit: "30714441082",
+      denominacion_emisor: "ALMACEN VETERINARIO S.R.L.", moneda: "USD", tipo_cambio: "1390.00",
+      imp_neto_gravado: "2773.00", imp_neto_no_gravado: "0", imp_op_exentas: "0",
+      otros_tributos: "0", iva: "440.58", imp_total: "3213.58",
+    })
+    const r2 = (x: number) => Math.round(x * 100) / 100
+    chequear("Balance · libro diario", "💵 Una factura en USD entra en PESOS, como en la DDJJ",
+      "4466876.2", String(r2(usd.total)), r2(usd.total) === 4466876.2, "A-BUG-1316")
+    chequear("Balance · libro diario", "Y convierte también neto e IVA, no sólo el total",
+      "3854470 · 612406.2", `${r2(usd.neto_gravado)} · ${r2(usd.iva)}`,
+      r2(usd.neto_gravado) === 3854470 && r2(usd.iva) === 612406.2, "A-BUG-1316")
+    chequear("Balance · libro diario", "La moneda y la cotización quedan a la vista",
+      "DOL · 1390 · USD 3213.58", `${usd.moneda} · ${usd.tipo_cambio} · USD ${usd.total_moneda_original}`,
+      usd.moneda === "DOL" && usd.tipo_cambio === 1390 && usd.total_moneda_original === 3213.58, "A-BUG-1316")
+
+    const pesos = desdeArca({ id: "p1", moneda: "$", tipo_cambio: "1.00", imp_total: "121", iva: "21", imp_neto_gravado: "100" })
+    chequear("Balance · libro diario", "Una factura en pesos queda igual (no se multiplica por nada)",
+      "121 · PES", `${pesos.total} · ${pesos.moneda}`, pesos.total === 121 && pesos.moneda === "PES", "A-BUG-1316")
+
+    // ⚠️ Pesos con una cotización cargada por error: NO se multiplica (manda la moneda, no el TC).
+    const pesosConTc = desdeArca({ id: "p2", moneda: "PES", tipo_cambio: "1390", imp_total: "121" })
+    chequear("Balance · libro diario", "⚠️ Pesos con una cotización cargada por error no se infla",
+      "121", String(pesosConTc.total), pesosConTc.total === 121, "A-BUG-1316")
+
+    const filaExcel = hojaDeAsientosContables([usd], "25/26").find(f => f[6] === "ALMACEN VETERINARIO S.R.L.") ?? []
+    chequear("Balance · export", "El Excel muestra Total en pesos y, al final, USD · 1390 · 3213,58",
+      "4466876.2 | USD | 1390 | 3213.58", `${filaExcel[12]} | ${filaExcel[17]} | ${filaExcel[18]} | ${filaExcel[19]}`,
+      filaExcel[12] === 4466876.2 && filaExcel[17] === "USD" && filaExcel[18] === 1390 && filaExcel[19] === 3213.58, "A-BUG-1316")
   }
   /**
    * 🔤 **El tipo de comprobante del HISTÓRICO es texto libre — A-FEAT-1184.**
@@ -7863,6 +8027,182 @@ export function correrCasos(): Resultado[] {
     chequear("Impuestos", "Días de aviso: «15 dias antes» → 15 · vacío → 10 · y el vencido dice hace cuántos días",
       "15 · 10 · -11", `${diasDeAviso("15 dias antes")} · ${diasDeAviso(null)} · ${r.vencidos.find(x => x.id === "vencido")?.dias}`,
       diasDeAviso("15 dias antes") === 15 && diasDeAviso(null) === 10 && r.vencidos.find(x => x.id === "vencido")?.dias === -11, "A-FEAT-1319")
+  }
+
+  // ══ 🔎 BUSCADOR DEL CASH FLOW POR PALABRAS (A-FEAT-1324) ═══════════════════════════════════
+  {
+    const fila = ["Red Vial Cuota Rojas", "Municipalidad de Rojas", "Impuesto Red Vial", "1234567,89"]
+    const b = (q: string) => coincidePorPalabras(fila, q)
+    chequear("Buscador", "«red vial rojas» encuentra «Red Vial Cuota Rojas» (palabras en cualquier orden y con otras en el medio); también sin tildes y con mayúsculas",
+      "true · true · true", `${b("red vial rojas")} · ${b("ROJAS vial")} · ${b("munícipalidad")}`,
+      b("red vial rojas") && b("ROJAS vial") && b("munícipalidad"), "A-FEAT-1324")
+    chequear("Buscador", "Si UNA palabra no está en ningún campo, no aparece; el monto con puntos de miles sigue encontrándose; búsqueda vacía = todo",
+      "false · true · true", `${b("red vial salto")} · ${b("1.234.567,89")} · ${b("   ")}`,
+      !b("red vial salto") && b("1.234.567,89") && b("   "), "A-FEAT-1324")
+  }
+
+  // ══ 📅 PAGO MANUAL: LA FECHA ES DE PAGO, NO DE VENCIMIENTO (A-BUG-1325) ═══════════════════════
+  {
+    const f = fechasDePagoManual("2026-10-23")
+    chequear("Pago manual", "La fecha del modal va a «fecha de pago» (y a la estimada, que ordena el Cash Flow); el vencimiento queda vacío",
+      "pago 2026-10-23 · estimada 2026-10-23 · venc null", `pago ${f.fecha_pago} · estimada ${f.fecha_estimada} · venc ${f.fecha_vencimiento}`,
+      f.fecha_pago === "2026-10-23" && f.fecha_estimada === "2026-10-23" && f.fecha_vencimiento === null, "A-BUG-1325")
+  }
+
+  // ══ 🏦 «PAGADO DESDE» (A-FEAT-1321) ═════════════════════════════════════════════════════════
+  {
+    chequear("Pagado desde", "Pagado desde MA Galicia SIGUE siendo un pago por banco: el filtro «banco» lo muestra y el de caja no",
+      "true · true · false · true", `${esBanco("ma_galicia")} · ${pasaFiltroMedio("ma_galicia", "banco")} · ${pasaFiltroMedio("ma_galicia", "caja_general")} · ${pasaFiltroMedio(null, "banco")}`,
+      esBanco("ma_galicia") && pasaFiltroMedio("ma_galicia", "banco") && !pasaFiltroMedio("ma_galicia", "caja_general") && pasaFiltroMedio(null, "banco")
+        && !esBanco("caja_sigot") && pasaFiltroMedio("caja_sigot", "caja_sigot") && pasaFiltroMedio("caja_sigot", "todos"), "A-FEAT-1321")
+    const otra = marcaPagadoDesde("ma_galicia", ["MSA"])
+    const propia = marcaPagadoDesde("pam_galicia_cc", ["PAM"])
+    chequear("Pagado desde", "La marca de la fila: una cuota de MSA pagada desde MA Galicia avisa fuerte; PAM desde su CC, suave; banco propio o caja, nada",
+      "desde MA Galicia (otra) · desde PAM Galicia CC (propia) · null · null",
+      `${otra?.texto} (${otra?.deOtraEmpresa ? "otra" : "propia"}) · ${propia?.texto} (${propia?.deOtraEmpresa ? "otra" : "propia"}) · ${marcaPagadoDesde("banco", ["MSA"])} · ${marcaPagadoDesde("caja_ams", ["MSA"])}`,
+      otra?.deOtraEmpresa === true && propia?.deOtraEmpresa === false && marcaPagadoDesde("banco", ["MSA"]) === null && marcaPagadoDesde("caja_ams", ["MSA"]) === null, "A-FEAT-1321")
+    chequear("Pagado desde", "Las opciones: primero el banco propio, después las 4 cuentas Galicia y las 3 cajas (las mismas ids que el motor de conciliación)",
+      "banco · msa_galicia · pam_galicia · pam_galicia_cc · ma_galicia · caja_general · caja_ams · caja_sigot", OPCIONES_PAGADO_DESDE.map(o => o.id).join(" · "),
+      OPCIONES_PAGADO_DESDE.map(o => o.id).join(" · ") === "banco · msa_galicia · pam_galicia · pam_galicia_cc · ma_galicia · caja_general · caja_ams · caja_sigot", "A-FEAT-1321")
+  }
+
+  // ══ 🧾 PLANILLA DE IMPUESTOS (A-FEAT-1320) ══════════════════════════════════════════════════
+  {
+    const tpl = (nombre: string, categ: string, resp = "MSA", o: Partial<CuotaPlanilla["template"]> = {}): CuotaPlanilla["template"] =>
+      ({ nombre_referencia: nombre, categ, responsable: resp, cuenta_agrupadora: "Impuestos Rurales", activo: true, ...o })
+    const c = (id: string, estado: string, venc: string | null, monto: number, t: CuotaPlanilla["template"], o: Partial<CuotaPlanilla> = {}): CuotaPlanilla =>
+      ({ id, estado, fecha_vencimiento: venc, fecha_estimada: null, monto, template: t, ...o })
+    const rojas = tpl("Inmobiliario Cuota Rojas", "Impuesto inmobiliario")
+    const cholo = tpl("Inmobiliario Cuota Cholo 1", "Impuesto inmobiliario")
+    const rv = tpl("Red Vial Cuota Rojas", "Impuesto Red Vial")
+    const uatre = tpl("UATRE", "Impuestos Laborales ARCA", "MSA", { cuenta_agrupadora: "Impuestos General" })
+    const pam = tpl("Inmobiliario Cuota Ombu", "Impuesto inmobiliario", "PAM")
+    const p = armarPlanilla([
+      c("r1", "conciliado", "2026-02-10", 100, rojas), c("r2", "pagado", "2026-05-10", 100, rojas),
+      c("r3", "pendiente", "2026-08-10", 110, rojas), c("r4", "pagar", "2026-11-10", 120, rojas),
+      c("ch1", "anterior", "2026-02-12", 50, cholo),
+      c("rv1", "debito", "2026-03-01", 30, rv),
+      c("u1", "pendiente", null, 40, uatre, { fecha_estimada: "2026-12-15" }),   // sin vencimiento: la estimada
+      c("p1", "pendiente", "2026-02-10", 70, pam),
+      c("x25", "pagado", "2025-12-10", 999, rojas),                            // otro año
+      c("des", "desactivado", "2026-04-10", 999, rojas),                       // no entra
+      c("inact", "pendiente", "2026-04-10", 999, tpl("Inmobiliario Anual Lima", "Impuesto inmobiliario", "MA", { activo: false })), // template dado de baja, sin pagar → no
+      c("banco", "pendiente", "2026-04-10", 999, tpl("Sellos Bancario", "Impuestos ARCA", "MSA", { cuenta_agrupadora: "Impuestos Bancarios", solo_conciliacion: true })),
+    ], 2026, "2026-10-23")
+    const fila = (cl: string) => p.filas.find(f => f.clave === cl)
+    const inm = fila("Inmobiliario|MSA")
+    chequear("Planilla impuestos", "Una fila por impuesto y empresa: las partidas del inmobiliario se juntan (Rojas + Cholo 1); Red Vial, UATRE y el de PAM aparte; lo de otro año, desactivado, de template dado de baja o sólo-banco no entra",
+      "Inmobiliario|MSA · Red Vial|MSA · UATRE|MSA · Inmobiliario|PAM", p.filas.map(f => f.clave).join(" · "),
+      p.filas.map(f => f.clave).sort().join(" · ") === ["Inmobiliario|MSA", "Red Vial|MSA", "UATRE|MSA", "Inmobiliario|PAM"].sort().join(" · ") && inm?.templates.length === 2, "A-FEAT-1320")
+    chequear("Planilla impuestos", "Pagado (conciliado + pagado + anterior) / adeudado (sin pagar vencido al 23/10) / futuro; febrero tiene las dos cuotas del inmobiliario",
+      "pagado 250 · adeudado 110 · futuro 120 · total 480 · feb 2", `pagado ${inm?.pagado} · adeudado ${inm?.adeudado} · futuro ${inm?.futuro} · total ${inm?.total} · feb ${inm?.meses[1].length}`,
+      inm?.pagado === 250 && inm?.adeudado === 110 && inm?.futuro === 120 && inm?.total === 480 && inm?.meses[1].length === 2, "A-FEAT-1320")
+    chequear("Planilla impuestos", "Totales por empresa y generales; el control (meses = total) cierra; los años con datos incluyen 2025 para las flechas",
+      "MSA 550 · PAM 70 · total 620 · control ok · años 2025,2026",
+      `MSA ${p.porEmpresa.find(e => e.empresa === "MSA")?.total} · PAM ${p.porEmpresa.find(e => e.empresa === "PAM")?.total} · total ${p.totales.total} · control ${p.control.cierra ? "ok" : "MAL"} · años ${p.aniosConDatos.join(",")}`,
+      p.porEmpresa.find(e => e.empresa === "MSA")?.total === 550 && p.porEmpresa.find(e => e.empresa === "PAM")?.total === 70 && p.totales.total === 620 && p.control.cierra && p.aniosConDatos.join(",") === "2025,2026", "A-FEAT-1320")
+    chequear("Planilla impuestos", "Nombre de la fila: por categ para los de partida/vehículo; por nombre sin «Cuota»/«Anual» para el resto",
+      "Inmobiliario Complementario · Automotores · IIBB Mensual MSA · Autonomos MA",
+      [impuestoDeTemplate(tpl("Inmobiliario Complementario Cuota MSA", "Impuesto inmobiliario Complementario")), impuestoDeTemplate(tpl("Imp Automotores Gol 2012 Anual", "Impuesto Automotores")),
+        impuestoDeTemplate(tpl("IIBB Mensual MSA", "Impuesto IIBB")), impuestoDeTemplate(tpl("Autonomos MA", "Impuestos Laborales ARCA"))].join(" · "),
+      impuestoDeTemplate(tpl("Inmobiliario Complementario Cuota MSA", "Impuesto inmobiliario Complementario")) === "Inmobiliario Complementario"
+        && impuestoDeTemplate(tpl("Imp Automotores Gol 2012 Anual", "Impuesto Automotores")) === "Automotores"
+        && impuestoDeTemplate(tpl("IIBB Mensual MSA", "Impuesto IIBB")) === "IIBB Mensual MSA", "A-FEAT-1320")
+    // Se guarda la lista COMPLETA de lo que se veía al soltar (ver `soltar` en la planilla).
+    const ord = ordenarFilas(p.filas, ["UATRE|MSA", "ya-no-existe", "Inmobiliario|PAM", "Inmobiliario|MSA", "Red Vial|MSA"]).map(f => f.clave)
+    chequear("Planilla impuestos", "El orden que dejó el usuario arrastrando manda; una clave que ya no existe se ignora",
+      "UATRE|MSA primero, Inmobiliario|PAM segundo, 4 filas", `${ord[0]} · ${ord[1]} · ${ord.length}`,
+      ord[0] === "UATRE|MSA" && ord[1] === "Inmobiliario|PAM" && ord.length === 4, "A-FEAT-1320")
+  }
+
+  // ══ 🌾 COBROS DE ARRENDAMIENTO SIN PESOS EN EL CASH FLOW (A-FEAT-1328) ═══════════════════════
+  {
+    // La base al 23/10: TC cargado sólo en ago y sep; soja por posición.
+    const tcs = [{ anio: 2026, mes: 8, tc_presupuestado: 1450, tc_real: null }, { anio: 2026, mes: 9, tc_presupuestado: 1500, tc_real: null }]
+    const precios = [{ grano: "soja", anio: 2026, mes: 11, precio_usd: 375 }, { grano: "soja", anio: 2027, mes: 5, precio_usd: 360 }]
+    // Cuota 2 de Sanpa: 159,72 tn fijadas a U$S 365, cobro 10/11, sin TC.
+    const fijada = importeDeVenta({ modo: "matba", cantidad: 159.72, precio_usd: 365, tc: null, precio_pesos: null, monto_pesos: null, fecha_cobro: "2026-11-10" }, tcs)
+    chequear("Arrendamiento en Cash Flow", "Cuota fijada sin TC (Sanpa 10/11): ya no queda en $0 — 159,72 tn × U$S 365 × TC 1.500 (el último cargado, sep) y lo dice",
+      "87446700 · estimado · TC estimado a $1.500 (último cargado: sep-26) · U$S 365/tn", `${Math.round(fijada.monto)} · ${fijada.estimado ? "estimado" : "cierto"} · ${fijada.aviso}`,
+      Math.round(fijada.monto) === 87446700 && fijada.estimado && fijada.aviso === "TC estimado a $1.500 (último cargado: sep-26) · U$S 365/tn", "A-FEAT-1328")
+    const cerrada = importeDeVenta({ modo: "pizarra", cantidad: 159.72, precio_usd: null, tc: null, precio_pesos: 490000, monto_pesos: 78262800, fecha_cobro: "2026-07-31" }, tcs)
+    const sinTc = importeDeVenta({ modo: "matba", cantidad: 10, precio_usd: 365, tc: null, precio_pesos: null, monto_pesos: null, fecha_cobro: "2026-11-10" }, [])
+    chequear("Arrendamiento en Cash Flow", "Con los pesos cerrados se usan ésos, sin aviso; sin ningún TC en la base no se inventa: queda en 0 y lo dice",
+      "78262800 sin aviso · 0 con aviso", `${cerrada.monto} ${cerrada.aviso ? "con" : "sin"} aviso · ${sinTc.monto} ${sinTc.aviso ? "con" : "sin"} aviso`,
+      cerrada.monto === 78262800 && !cerrada.aviso && !cerrada.estimado && sinTc.monto === 0 && !!sinTc.aviso, "A-FEAT-1328")
+    const contrato = { id: "c1", empresa: "MSA", campania: "26/27", centro_costo: "Rojas", cliente_cuit: "30712200622", cliente_nombre: "Sanpa Semillas SA", has: 242, qq_ha_total: 24, grano: "soja", cuenta_contable: null, activo: true, notas: null }
+    const cuota = (id: string, n: number, qq: number, fecha: string, pa: number, pm: number) => ({ id, contrato_id: "c1", numero_cuota: n, qq_ha_cuota: qq, fecha_cobro_estimada: fecha, posicion_anio: pa, posicion_mes: pm,
+      fecha_cobro_original: null, posicion_orig_anio: null, posicion_orig_mes: null, estado: "presupuestado" as const, precio_usd_override: null, precio_pesos_override: null, notas: null })
+    const nf = cuotasNoFijadas([contrato], [
+      cuota("q2", 2, 6.6, "2026-11-10", 2026, 11),          // 159,72 tn, todas fijadas → no va
+      cuota("q5", 5, 4.667769, "2027-05-10", 2027, 5),     // sin fijar → va entera
+      cuota("q6", 6, 2, "2027-11-10", 2027, 11),           // fijada en parte (20 de 48,4 tn) → va el saldo
+      cuota("q0", 1, 6.6, "2025-11-20", 2025, 11),         // sin fijar pero con fecha PASADA → no se proyecta
+    ], [{ cuota_id: "q2", tons: 159.72 }, { cuota_id: "q6", tons: 20 }], precios, tcs, "2026-10-23")
+    chequear("Arrendamiento en Cash Flow", "No fijadas: va lo que falta fijar de cada cuota (la 2 está toda fijada; la 6, sólo el saldo de 28,4 tn), con soja de la posición × TC de la base; la de fecha pasada no se proyecta",
+      "q5 112.96 tn $60998405 · q6 28.40 tn $15336000", nf.map(x => `${x.id} ${x.tons.toFixed(2)} tn $${Math.round(x.monto)}`).join(" · "),
+      nf.map(x => `${x.id} ${x.tons.toFixed(2)} tn $${Math.round(x.monto)}`).join(" · ") === "q5 112.96 tn $60998405 · q6 28.40 tn $15336000", "A-FEAT-1328")
+  }
+
+  // ══ 🏛️ DETALLE DE INMOBILIARIO / RED VIAL / AUTOMOTORES (A-FEAT-1320 punto 5) ════════════════
+  {
+    const t = (nombre: string, categ: string, resp: string, partida: string | null = null, activo = true) =>
+      ({ nombre_referencia: nombre, categ, responsable: resp, cuenta_agrupadora: "Impuestos Rurales", activo, partida_arba: partida })
+    const c = (id: string, estado: string, venc: string, monto: number, tpl: ReturnType<typeof t>) =>
+      ({ id, estado, fecha_vencimiento: venc, fecha_estimada: null, monto, template: tpl })
+    const rojas = t("Inmobiliario Cuota Rojas", "Impuesto inmobiliario", "MSA", "090-016369-0")
+    const rojas25 = t("Inmobiliario Cuota Rojas", "Impuesto inmobiliario", "MSA", "090-016369-0", false)
+    const cholo = t("Inmobiliario Cuota Cholo 1", "Impuesto inmobiliario", "MSA", "099-010611-8")
+    const comp = t("Inmobiliario Complementario Cuota MSA", "Impuesto inmobiliario Complementario", "MSA")
+    const casco = t("Inmobiliario Cuota Casco", "Impuesto inmobiliario", "PAM", "099-006595-0")
+    const rv = t("Red Vial Cuota Rojas", "Impuesto Red Vial", "MSA")
+    const cuotas = [
+      c("a1", "pagado", "2025-03-10", 500, rojas25), c("a2", "pagado", "2025-06-10", 500, rojas25),   // año anterior: 4 cuotas, 2.000
+      c("a3", "pagado", "2025-09-10", 500, rojas25), c("a4", "pagado", "2025-11-10", 500, rojas25),
+      c("z1", "pagado", "2025-11-10", 50, casco),                                                       // Casco 2025: 1 cuota sola de 4 → incompleto
+      c("b1", "conciliado", "2026-03-17", 600, rojas), c("b2", "pagado", "2026-06-11", 600, rojas), c("b3", "pendiente", "2026-09-13", 600, rojas), c("b4", "pendiente", "2026-11-13", 600, rojas),
+      c("h1", "pagado", "2026-03-17", 100, cholo),
+      c("k1", "pagado", "2026-03-17", 300, comp),
+      c("p1", "pagado", "2026-03-17", 500, casco), c("p2", "pendiente", "2026-09-13", 500, casco),
+      c("r1", "pagado", "2026-03-17", 999, rv),   // es de Red Vial: no va al papel del inmobiliario
+    ]
+    const tcs = [{ anio: 2026, mes: 3, tc_presupuestado: 1300, tc_real: null }, { anio: 2026, mes: 6, tc_presupuestado: 1300, tc_real: null },
+      { anio: 2026, mes: 9, tc_presupuestado: 1500, tc_real: null }, { anio: 2026, mes: 11, tc_presupuestado: 1600, tc_real: null }]
+    const p = armarPapel("inmobiliario", cuotas as any, 2026, tcs, { "090-016369-0": 245.17 })
+    const msa = p.bloques.find(b => b.empresa === "MSA")
+    const fr = msa?.filas.find(f => f.campo === "Rojas")
+    chequear("Papel inmobiliario", "Por empresa y campo, el complementario al final; Rojas: 4 cuotas, total 2.400 contra 2.000 del año anterior (+20 %); Red Vial no entra",
+      "MSA: Cholo 1 · Rojas · Complementario | PAM: Casco · Rojas 2400 vs 2000 (+20%) · 4 cuotas",
+      `MSA: ${msa?.filas.map(f => f.campo).join(" · ")} | PAM: ${p.bloques.find(b => b.empresa === "PAM")?.filas.map(f => f.campo).join(" · ")} · Rojas ${fr?.costoAnual} vs ${fr?.totalAnterior} (+${Math.round((fr?.aumento ?? 0) * 100)}%) · ${fr?.cuotas.length} cuotas`,
+      msa?.filas.map(f => f.campo).join(" · ") === "Cholo 1 · Rojas · Complementario" && fr?.costoAnual === 2400 && fr?.totalAnterior === 2000
+        && Math.round((fr?.aumento ?? 0) * 100) === 20 && fr?.cuotas.length === 4 && p.total === 3800, "A-FEAT-1320")
+    chequear("Papel inmobiliario", "TC promedio de los meses de las cuotas (como el «TC promedio» de su planilla) y costo por hectárea cuando hay hectáreas; sin hectáreas, vacío y avisa",
+      "Rojas x ha 9.79 · U$S con TC prom. · falta has (Cholo 1, Casco)",
+      `Rojas x ha ${fr?.costoHa} · U$S ${fr?.costoUsd ? "con TC prom." : "—"} · falta has (${p.faltaHas ? "Cholo 1, Casco" : "no"})`,
+      fr?.costoHa === 9.79 && !!fr?.costoUsd && p.faltaHas && !!p.tcPromedio && p.tcPromedio > 1300 && p.tcPromedio < 1600, "A-FEAT-1320")
+    const fc = p.bloques.find(b => b.empresa === "PAM")?.filas.find(f => f.campo === "Casco")
+    chequear("Papel inmobiliario", "Si en la app el año anterior tiene menos cuotas que este (el histórico arranca en jul-25), el aumento NO se calcula: se marca incompleto",
+      "Casco: incompleto, sin aumento", `Casco: ${fc?.anteriorIncompleto ? "incompleto" : "completo"}, ${fc?.aumento == null ? "sin aumento" : "aumento " + fc?.aumento}`,
+      fc?.anteriorIncompleto === true && fc?.aumento == null && fr?.anteriorIncompleto === false, "A-FEAT-1320")
+    chequear("Papel inmobiliario", "El campo sale del nombre del template; las hectáreas se toman de cualquiera de los dos maestros (por partida o por nombre)",
+      "Tango Parra 1 · Lima · Gol 2012 · has 245.17/17.23",
+      `${campoDeTemplate("Inmobiliario Cuota Tango Parra 1")} · ${campoDeTemplate("Red Vial Lima Cuota")} · ${campoDeTemplate("Imp Automotores Gol 2012 Anual")} · has ${hectareasDe([{ partida_inmobiliario: "090-016369-0", has_totales: 245.17 }], [])["090-016369-0"]}/${hectareasDe([], [{ nombre_partida: "Tango Parra 1", has: 17.23 }])["campo:tango parra 1"]}`,
+      campoDeTemplate("Inmobiliario Cuota Tango Parra 1") === "Tango Parra 1" && campoDeTemplate("Red Vial Lima Cuota") === "Lima" && campoDeTemplate("Imp Automotores Gol 2012 Anual") === "Gol 2012"
+        && hectareasDe([{ partida_inmobiliario: "090-016369-0", has_totales: 245.17 }], [])["090-016369-0"] === 245.17, "A-FEAT-1320")
+    {
+      // El maestro de partidas (scripts/96): Red Vial no tiene partida en el template → se cruza por nombre,
+      // y muestra el número de la MUNICIPALIDAD (la «cuenta»), no la partida inmobiliaria.
+      const maestro = [{ campo: "Tango Parra 1", partida_inmobiliario: "099-015883-5", partida_red_vial: "52948", has_totales: 17.23 }]
+      const has = hectareasDe(maestro, [])
+      const rv = cuentasRedVialDe(maestro)
+      const tpl = { categ: "Impuesto Red Vial", nombre_referencia: "Red Vial Cuota Tango Parra 1", responsable: "MSA", cuenta_agrupadora: "Impuestos Rurales", solo_conciliacion: false, activo: true, partida_arba: null }
+      const q = (venc: string, monto: number) => ({ estado: "pagado", monto, fecha_vencimiento: venc, fecha_estimada: venc, template: tpl }) as any
+      const pv = armarPapel("red-vial", [q("2026-03-05", 1000), q("2026-06-05", 1000)], 2026, [], has, rv)
+      const fila = pv.bloques[0]?.filas[0]
+      chequear("Papel inmobiliario", "Red Vial toma las hectáreas del maestro por NOMBRE (su template no tiene partida) y muestra el número de la municipalidad",
+        "Tango Parra 1 · 52948 · 17,23 ha · 116,08/ha", `${fila?.campo} · ${fila?.partida} · ${fila?.has?.toLocaleString("es-AR")} ha · ${fila?.costoHa?.toLocaleString("es-AR")}/ha`,
+        fila?.partida === "52948" && fila?.has === 17.23 && fila?.costoHa === 116.08, "A-FEAT-1320")
+    }
   }
 
   return r

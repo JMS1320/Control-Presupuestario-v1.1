@@ -24,6 +24,9 @@ export interface AjusteBalance {
   monto: number | string
   motivo: string
   origen_anio_cierre: number | null
+  /** A qué registro apunta (`schema.tabla` + id), cuando el ajuste es sobre un comprobante — ej. `incluir` (A-FEAT-1331). */
+  tabla?: string | null
+  registro_id?: string | null
   created_at: string
   anulado_at: string | null
   anulado_motivo?: string | null

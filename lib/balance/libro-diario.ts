@@ -34,8 +34,11 @@ import {
   verificarCuadratura, TIPOS_SIN_CREDITO_COMPRAS, TIPOS_SIN_CREDITO_VENTAS,
   type ResultadoCuadratura, type FilaSubdiario,
 } from "@/lib/subdiarios/cuadratura"
+import { monedaArca } from "@/lib/subdiarios/libro-iva-arca"
+import { compararConPresentado, type FilaContraPresentado, type Presentado } from "./presentado-arca"
+import { controlarFacturasFijas, mesesTerminados, type FilaFacturasFijas, type ProveedorFijo } from "./facturas-fijas"
 import {
-  claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios,
+  armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios,
   type Ejercicio, type Subdiario,
 } from "./ejercicio"
 
@@ -64,6 +67,23 @@ export interface AsientoLibroDiario {
   cuenta_contable: string
   nro_cuenta: string
   centro_costo: string
+  /**
+   * 💵 Moneda del comprobante con el código de ARCA (`PES`, `DOL`…). Vacío = pesos.
+   * ⚠️ Los importes de arriba van SIEMPRE en pesos: si la factura es en otra moneda ya vienen
+   * multiplicados por `tipo_cambio`, igual que en el subdiario y en la DDJJ (A-BUG-1316).
+   */
+  moneda?: string
+  /** Cotización con la que se pasó a pesos. 1 en pesos. */
+  tipo_cambio?: number
+  /** El total como figura en la factura, en su moneda. Sólo para mostrar. */
+  total_moneda_original?: number
+  /**
+   * ✍️ Sólo en una provisión **puesta a mano** (A-FEAT-1331): el motivo que escribió el usuario. Si
+   * está, la factura entró a la provisión por decisión suya y no por la regla de la fecha.
+   */
+  provision_motivo?: string
+  /** Sólo ARCA: true si se cargó a mano («No Informada»). Para el control de cantidad (A-FEAT-1332). */
+  no_informada?: boolean
 }
 
 /** Un comprobante que aparece en las dos fuentes, o dos veces en la misma. */
@@ -93,6 +113,7 @@ export interface SubdiarioDuplicado {
    * histórico, que tiene **4 más** —una NC de Federación Patronal y 3 tickets— - por $86.613, que
    * es exactamente la diferencia. O sea: **el histórico contiene a ARCA**, y la decisión es
    * quedarse con el histórico.
+   * ⚠️ cambió 2026-10-23: se decidió que manda la APP (ver `ULTIMO_SUBDIARIO_HISTORICO`).
    */
   soloEn: Array<{
     fuente: FuenteAsiento
@@ -100,12 +121,41 @@ export interface SubdiarioDuplicado {
   }>
 }
 
+/**
+ * 🗄️ **Hasta qué subdiario vale el histórico** (A-DAT-61, decidido por el usuario 2026-10-23).
+ *
+ * El sistema anterior (`msa.comprobantes_historico`) cubre **julio a noviembre de 2025**. Diciembre
+ * entró **dos veces** por accidente —histórico y app— y se decidió que **manda la app**: es la copia
+ * viva, con pagos, conciliaciones y PDFs (10 de diciembre ya estaban conciliadas, y descartarlas
+ * rompía esos vínculos). Lo del histórico de diciembre en adelante **no se borra**: queda como
+ * archivo de lo que tenía el sistema anterior, y el libro lo informa aparte como «superado».
+ *
+ * ⚠️ Cambió el criterio del 28/09 («manda el histórico»), que ya no se podía aplicar sin romper los
+ * vínculos de la app.
+ */
+export const ULTIMO_SUBDIARIO_HISTORICO = "2025-11"
+
 export interface LibroDiario {
   ejercicio: Ejercicio
+  /**
+   * Comprobantes del histórico con subdiario POSTERIOR a `ULTIMO_SUBDIARIO_HISTORICO`: no entran al
+   * libro porque para esos meses manda la app. Se informan, no se descartan en silencio.
+   */
+  historicoSuperado: AsientoLibroDiario[]
   compras: AsientoLibroDiario[]
   ventas: AsientoLibroDiario[]
-  /** Del ejercicio por fecha, pero entraron en un subdiario POSTERIOR: van al papel 05. */
+  /**
+   * Del ejercicio por fecha, pero entraron en un subdiario POSTERIOR: van al papel 05. Incluye las
+   * **puestas a mano** (fecha posterior al cierre, con `provision_motivo`) — A-FEAT-1331.
+   */
   provisiones: AsientoLibroDiario[]
+  /**
+   * 📋 La provisión del EJERCICIO ANTERIOR (compras): la misma regla aplicada al año anterior más las
+   * que se pusieron a mano para ese año. **Sólo se lista, no se resta** — usuario 2026-10-23: *«el
+   * detalle de provisión que se genera muestra lo de balance anterior y lo de este. el contador lo
+   * maneja»*.
+   */
+  provisionesEjercicioAnterior: AsientoLibroDiario[]
   /**
    * Comprobantes sin `año_contable`/`mes_contable`: no se sabe en qué subdiario van.
    *
@@ -133,6 +183,16 @@ export interface LibroDiario {
      * **podrían faltar** en el libro. Los otros son del mes en curso y no tocan el balance.
      */
     sinSubdiarioQueAfectan: AsientoLibroDiario[]
+    /**
+     * 🧾 Compras de cada subdiario contra lo PRESENTADO a ARCA (segundo camino). `null` si no hay
+     * dato de lo presentado para esta empresa: se dice que no se pudo controlar.
+     */
+    contraPresentado: FilaContraPresentado[] | null
+    /**
+     * 🔢 Proveedores fijos: ¿están todas sus facturas, mes por mes? (A-FEAT-1332). **Avisa, no frena.**
+     * `null` si no se pasó la lista de fijos. Durante el año, sólo los meses ya terminados.
+     */
+    facturasFijas: FilaFacturasFijas[] | null
     /** true sólo si NADA impide entregar el papel. */
     sePuedeEntregar: boolean
     /** Por qué no, en el idioma del usuario. Vacío si se puede. */
@@ -187,8 +247,33 @@ export function tipoDesdeTexto(v: unknown): number | null {
 }
 
 /** `msa.comprobantes_arca` → asiento. */
+/**
+ * ¿La factura se cargó A MANO (no vino de «Mis Comprobantes» de ARCA)? Para el control de cantidad.
+ *
+ * `origen_factura` lo dice cuando está («ARCA» / «No Informada»), pero las cargadas antes de que
+ * existiera la columna lo tienen vacío: ahí manda el **archivo de origen** — lo bajado de ARCA se
+ * llama «Mis Comprobantes Recibidos…», salvo el que el usuario armó a mano con «no afip» en el nombre.
+ * Caso que lo pidió (2026-10-24): Río Tala, toda a mano, salía «ARCA» porque las viejas no tenían marca.
+ */
+export function cargadaAMano(f: Record<string, unknown>): boolean {
+  if (f.origen_factura === "No Informada") return true
+  if (f.origen_factura === "ARCA") return false
+  const archivo = String(f.archivo_origen ?? "").trim()
+  if (!archivo) return false
+  return !/^mis comprobantes recibidos/i.test(archivo) || /no\s*afip/i.test(archivo)
+}
+
 export function desdeArca(f: Record<string, unknown>): AsientoLibroDiario {
+  /**
+   * 💵 A-BUG-1316: `comprobantes_arca` guarda los importes de una factura en dólares EN DÓLARES.
+   * El libro diario es la copia del subdiario presentado en la DDJJ, que va en pesos — se convierte
+   * con la cotización de la propia factura, la misma que ARCA informa y que usa el subdiario.
+   */
+  const moneda = monedaArca(f.moneda == null ? null : String(f.moneda))
+  const tc = moneda === "PES" ? 1 : (n(f.tipo_cambio) || 1)
+  const p = (v: unknown) => n(v) * tc
   return {
+    moneda, tipo_cambio: tc, total_moneda_original: n(f.imp_total),
     id: s(f.id), fuente: "arca",
     subdiario: claveSubdiario(f["año_contable"] as number, f.mes_contable as number),
     fecha: f.fecha_emision ? s(f.fecha_emision).slice(0, 10) : null,
@@ -196,11 +281,12 @@ export function desdeArca(f: Record<string, unknown>): AsientoLibroDiario {
     punto_venta: f.punto_venta == null ? null : Number(f.punto_venta),
     numero: f.numero_desde == null ? null : Number(f.numero_desde),
     cuit: s(f.cuit), denominacion: s(f.denominacion_emisor),
-    neto_gravado: n(f.imp_neto_gravado), no_gravado: n(f.imp_neto_no_gravado),
-    exento: n(f.imp_op_exentas), otros_tributos: n(f.otros_tributos),
-    iva: n(f.iva), total: n(f.imp_total),
+    neto_gravado: p(f.imp_neto_gravado), no_gravado: p(f.imp_neto_no_gravado),
+    exento: p(f.imp_op_exentas), otros_tributos: p(f.otros_tributos),
+    iva: p(f.iva), total: p(f.imp_total),
     cuenta_contable: s(f.cuenta_contable), nro_cuenta: s(f.nro_cuenta),
     centro_costo: s(f.centro_costo),
+    no_informada: cargadaAMano(f),
   }
 }
 
@@ -341,6 +427,16 @@ export function armarLibroDiario(
   comprasCrudas: AsientoLibroDiario[],
   ventasCrudas: AsientoLibroDiario[],
   ej: Ejercicio,
+  /** Lo presentado a ARCA por subdiario (compras), si se conoce → `PRESENTADO_ARCA_COMPRAS`. */
+  presentado?: Record<string, Presentado>,
+  /**
+   * ✍️ Provisiones puestas a mano (A-FEAT-1331): facturas de fecha POSTERIOR al cierre que el usuario
+   * dice que son del ejercicio, cada una con su `provision_motivo`. `anterior` = las de ese tipo que
+   * se pusieron para el ejercicio anterior (sólo para listarlas).
+   */
+  manuales?: { esteEjercicio: AsientoLibroDiario[]; anterior: AsientoLibroDiario[] },
+  /** 🔢 Los proveedores fijos y el día de hoy (argentino), para el control de cantidad. */
+  fijos?: { proveedores: ProveedorFijo[]; hoy: string },
 ): LibroDiario {
   const clasificar = (todos: AsientoLibroDiario[]) => {
     const delEjercicio: AsientoLibroDiario[] = []
@@ -356,7 +452,11 @@ export function armarLibroDiario(
     return { delEjercicio, provisiones, sinSubdiario }
   }
 
-  const c = clasificar(comprasCrudas)
+  // 🗄️ El histórico vale hasta ULTIMO_SUBDIARIO_HISTORICO; después manda la app (A-DAT-61).
+  const historicoSuperado = comprasCrudas.filter(a =>
+    a.fuente === "historico" && !!a.subdiario && a.subdiario > ULTIMO_SUBDIARIO_HISTORICO)
+  const superados = new Set(historicoSuperado)
+  const c = clasificar(comprasCrudas.filter(a => !superados.has(a)))
   const v = clasificar(ventasCrudas)
 
   const subdiariosDuplicados = detectarSubdiariosDuplicados(c.delEjercicio)
@@ -396,21 +496,70 @@ export function armarLibroDiario(
     motivos.push("En ventas, las partes de los comprobantes no suman su propio total.")
   }
 
+  /**
+   * 🧾 Contra lo presentado. El usuario lo fijó así: lo que está en la app y no en la DDJJ (o al
+   * revés) es un error de la app a corregir, y mientras esté el papel no se entrega — pero el Excel
+   * se baja igual para poder ver dónde está.
+   */
+  const clavesEj = ej.subdiarios.map(x => claveSubdiario(x.anio, x.mes))
+  // Sin ningún dato de lo presentado para ESTE ejercicio no hay control (se dice); con datos
+  // parciales, el mes que falta sale «sin dato» y cuenta como no controlado.
+  const contraPresentado = presentado && clavesEj.some(k => presentado[k])
+    ? compararConPresentado(c.delEjercicio, clavesEj, presentado)
+    : null
+  const noCoinciden = (contraPresentado ?? []).filter(f => !f.ok)
+  if (noCoinciden.length > 0) {
+    motivos.push(
+      `${noCoinciden.length} subdiario(s) de compras no coinciden con lo presentado a ARCA: ` +
+      noCoinciden.map(f => f.presentado
+        ? `${f.subdiario} (app ${f.app.comprobantes} por $${f.app.total.toLocaleString("es-AR", { minimumFractionDigits: 2 })}, ` +
+          `presentado ${f.presentado.comprobantes} por $${f.presentado.total.toLocaleString("es-AR", { minimumFractionDigits: 2 })})`
+        : `${f.subdiario} (sin dato de lo presentado)`).join(" · ") + ".",
+    )
+  }
+
   const sinSubdiario = [...c.sinSubdiario, ...v.sinSubdiario]
   // Sólo preocupan los que podrían ser del ejercicio. Sin fecha no se puede descartar, así que
   // entran: ante la duda, se muestra (§ 🧮 nada se descarta en silencio).
   const sinSubdiarioQueAfectan = sinSubdiario.filter(a => !a.fecha || a.fecha <= ej.fechaCierre)
 
+  // ✍️ Las puestas a mano se suman a la provisión; si una ya entraba por la regla, no se duplica.
+  const unirManuales = (auto: AsientoLibroDiario[], man: AsientoLibroDiario[]) => {
+    const ids = new Set(auto.map(a => a.id))
+    return [...auto, ...man.filter(m => !ids.has(m.id))]
+  }
+  const provisiones = unirManuales([...c.provisiones, ...v.provisiones], manuales?.esteEjercicio ?? [])
+
+  // 📋 La del ejercicio anterior, con la misma regla: sólo compras (el papel 05), sólo para listar.
+  const ejAnterior = armarEjercicio(ej.anioCierre - 1, ej.mesCierre)
+  const provAnteriorAuto = comprasCrudas.filter(a => {
+    if (superados.has(a) || !a.subdiario) return false
+    const [anio, mes] = a.subdiario.split("-").map(Number)
+    return esProvision(a.fecha, anio, mes, ejAnterior)
+  })
+  const provisionesEjercicioAnterior = unirManuales(provAnteriorAuto, manuales?.anterior ?? [])
+
+  // 🔢 Control de cantidad: lo que es gasto del ejercicio = sus 12 subdiarios + lo provisionado.
+  const facturasFijas = fijos
+    ? controlarFacturasFijas(
+        [...c.delEjercicio, ...provisiones.filter(a => a.fuente !== "venta")],
+        fijos.proveedores,
+        mesesTerminados(clavesEj, fijos.hoy),
+      )
+    : null
+
   return {
     ejercicio: ej,
+    historicoSuperado,
+    provisionesEjercicioAnterior,
     compras: c.delEjercicio,
     ventas: v.delEjercicio,
-    provisiones: [...c.provisiones, ...v.provisiones],
+    provisiones,
     sinSubdiario,
     controles: {
       compras: controlCompras,
       ventas: controlVentas,
-      subdiariosDuplicados, choques, vacios, sinSubdiarioQueAfectan,
+      subdiariosDuplicados, choques, vacios, sinSubdiarioQueAfectan, contraPresentado, facturasFijas,
       sePuedeEntregar: motivos.length === 0,
       motivos,
     },

@@ -9,6 +9,10 @@ import { supabase } from "@/lib/supabase"
 import { cobroEsperado, TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
 import { cuotasPorCobrar, marcarCuota, type Imputacion } from "@/lib/ventas/hacienda"
 import { EMPRESAS, parseEmpresas, schemaDeEmpresa, schemaDeFila, coincideEmpresa, type Empresa } from "@/lib/empresas"
+import { pasaFiltroMedio } from "@/lib/pagos/pagado-desde"
+import { hoyArgentina } from "@/lib/fechas"
+import { importeDeVenta, cuotasNoFijadas, type CuotaNoFijada } from "@/lib/arrendamientos/cash-flow"
+import type { TipoCambio, PrecioGrano, ContratoArrendamiento, CuotaArrendamiento } from "@/lib/arrendamientos/calculo"
 import { comprobanteDeSueldo, especificacionDeSueldo } from "@/lib/conciliacion/columnas-extracto"
 import { detallePropio, detallePropioDeGrupo, type DetalleDeFactura } from "@/lib/cashflow/detalle-propio"
 import { partirFilasEnEcheqs } from "@/lib/cashflow/echeqs-en-filas"
@@ -173,7 +177,7 @@ export interface CashFlowRow {
   facturas_agrupadas?: number   // > 1 indica fila de grupo
   ids_grupo?: string[]          // IDs de las facturas individuales del grupo
   // Medio de pago
-  medio_pago?: string           // 'banco' | 'caja_general' | 'caja_ams' | 'caja_sigot'
+  medio_pago?: string           // 'banco' | una cuenta puntual ('ma_galicia'…, A-FEAT-1321) | 'caja_general' | 'caja_ams' | 'caja_sigot'
   // Para extracto: texto limpio de comprobantes (sin proveedor mezclado)
   comprobante_display?: string | null
   // Para extracto: detalle puro del usuario (sin FC ni proveedor decorativos)
@@ -192,6 +196,12 @@ export interface CashFlowRow {
    */
   pdf_drive_url?: string | null
   fc?: string | null
+  /**
+   * 🌾 A-FEAT-1328 — la fila es una ESTIMACIÓN (una cuota de arrendamiento sin precio fijado, o
+   * una venta fijada sin TC valuada con el TC de la base). Se dibuja transparente y el motor de
+   * conciliación NO la usa: su importe no es un hecho todavía.
+   */
+  estimada?: boolean
 }
 
 // Filtros para Cash Flow
@@ -716,9 +726,12 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
    * vincula, la venta deja de contar acá y pasa a verse como comprobante — si es
    * factura PARCIAL, sigue el remanente (monto − facturado).
    */
-  const mapearVentasSinFactura = (ventas: any[]): CashFlowRow[] => {
+  const mapearVentasSinFactura = (ventas: any[], tcs: TipoCambio[] = []): CashFlowRow[] => {
     return ventas.flatMap(v => {
-      const monto = Number(v.monto_pesos) || 0
+      // 🌾 A-FEAT-1328 — una venta fijada en dólares sin TC no tiene pesos todavía: se estima con el
+      // TC de la base (mismo cálculo que el Presupuesto) en vez de quedar en 0 y desaparecer.
+      const imp = importeDeVenta(v, tcs)
+      const monto = imp.monto
       const facturado = Number(v.facturado) || 0
       const remanente = monto - facturado
       if (remanente <= 0.01) return []   // ya está toda facturada: la muestra la FC
@@ -738,16 +751,43 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         nombre_proveedor: v.cliente_nombre || '',
         detalle: `Venta ${v.venta_tipo} ${v.centro_costo || ''} — ${Number(v.cantidad).toLocaleString('es-AR', { maximumFractionDigits: 2 })} ${v.unidad}`
           + (parcial ? ` (remanente sin facturar)` : ' (sin factura)')
-          + (v.falta_tc ? ' ⚠ falta fijar TC' : ''),
+          + (imp.aviso ? ` — ${imp.aviso}` : (v.falta_tc ? ' ⚠ falta fijar TC' : '')),
         debitos: 0,
         creditos: remanente,       // Cobro = crédito
         saldo_cta_cte: 0,
         estado: 'a cobrar',
         imp_total: remanente,
         comprobante_display: null,
+        estimada: imp.estimado,
       }]
     })
   }
+
+  /**
+   * 🌾 A-FEAT-1328 — las cuotas de arrendamiento que todavía NO tienen precio fijado (o el saldo en
+   * toneladas de una que se fijó en parte), valorizadas con soja de la posición × TC de la base.
+   * Van transparentes, con estado «presupuestado», y no se concilian.
+   */
+  const mapearCuotasNoFijadas = (xs: CuotaNoFijada[]): CashFlowRow[] => xs.map(x => ({
+    id: `arr-cuota-${x.id}`,
+    origen: 'VENTA' as const,
+    origen_tabla: 'public.cuotas_arrendamiento',
+    empresas: empresasOMsa(x.contrato.empresa),
+    fecha_estimada: x.cuota.fecha_cobro_estimada,
+    fecha_vencimiento: null,
+    categ: 'VENTAS',
+    centro_costo: x.contrato.centro_costo || '',
+    cuit_proveedor: x.contrato.cliente_cuit || '',
+    nombre_proveedor: x.contrato.cliente_nombre || '',
+    detalle: x.detalle,
+    debitos: 0,
+    creditos: x.monto,
+    saldo_cta_cte: 0,
+    estado: 'presupuestado',
+    imp_total: x.monto,
+    comprobante_display: null,
+    estimada: true,
+  }))
 
   // Calcular saldos acumulativos
   const calcularSaldosAcumulativos = (filas: CashFlowRow[]): CashFlowRow[] => {
@@ -811,9 +851,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       }
 
       // Filtro por medio de pago
-      if (filtros.medioPago && filtros.medioPago !== 'todos') {
-        if ((fila.medio_pago || 'banco') !== filtros.medioPago) return false
-      }
+      // A-FEAT-1321: «banco» incluye lo pagado desde una cuenta bancaria puntual (ej. MA Galicia)
+      if (!pasaFiltroMedio(fila.medio_pago, filtros.medioPago)) return false
 
       return true
     })
@@ -970,6 +1009,22 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         .order('fecha_cobro', { ascending: true, nullsFirst: false })
       if (errorVSF) console.error('Error cargando ventas sin factura:', errorVSF)
 
+      // 5d. 🌾 A-FEAT-1328 — lo que hace falta para estimar los cobros de arrendamiento sin pesos:
+      //     TC y precios de la base, y las cuotas sin fijar. Si algo no se puede leer, se sigue sin
+      //     estimar (como antes) y se avisa en la consola: no se inventa nada.
+      const [rTc, rPrecios, rContratos, rCuotasArr, rVentasArr] = await Promise.all([
+        supabase.from('tipos_cambio').select('anio, mes, tc_presupuestado, tc_real'),
+        supabase.from('precios_granos').select('grano, anio, mes, precio_usd'),
+        supabase.from('contratos_arrendamiento').select('*').eq('activo', true),
+        supabase.from('cuotas_arrendamiento').select('*'),
+        supabase.from('ventas_arrendamiento').select('cuota_id, tons'),
+      ])
+      for (const r of [rTc, rPrecios, rContratos, rCuotasArr, rVentasArr]) if (r.error) console.error('Cash Flow: arrendamientos sin estimar', r.error)
+      const tcsArr = (rTc.data ?? []) as TipoCambio[]
+      const noFijadas = (rContratos.error || rCuotasArr.error || rVentasArr.error) ? [] : cuotasNoFijadas(
+        (rContratos.data ?? []) as ContratoArrendamiento[], (rCuotasArr.data ?? []) as CuotaArrendamiento[],
+        (rVentasArr.data ?? []) as Array<{ cuota_id: string; tons: number }>, (rPrecios.data ?? []) as PrecioGrano[], tcsArr, hoyArgentina())
+
       // 6. Mapear todas las fuentes a formato unificado
       const filasArca = resultadosArca.flatMap(r => mapearFacturasArca(r.data, r.empresa))
       const filasTemplates = mapearTemplatesEgresos(templatesEgresos || [])
@@ -1086,7 +1141,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
       // 7. Combinar y ordenar por fecha_estimada
       const filasVentas = mapearVentas(ventasACobrar || [], imputadoPorComp, imputacionesPorComp)
-      const filasVentasSinFC = mapearVentasSinFactura(ventasSinFactura || [])
+      const filasVentasSinFC = [...mapearVentasSinFactura(ventasSinFactura || [], tcsArr), ...mapearCuotasNoFijadas(noFijadas)]
       // 📝 A-FEAT-1282 — un pago en VARIOS echeqs se proyecta echeq por echeq, cada uno en su fecha.
       // Echeqs sólo hay en MSA; se buscan los de las facturas y anticipos que están en 'echeq'.
       const idsEnEcheq = [...filasArca, ...filasAnticipos]
@@ -1285,6 +1340,11 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
          * Sólo el ESTADO: el resto de una venta se edita donde se carga. «Pagado» —el que ofrece el
          * menú del Cash Flow— vale como «cobrado» en una fila que es un ingreso.
          */
+        // 🌾 A-FEAT-1328 — una venta sin factura o una cuota no fijada no tiene comprobante que marcar.
+        const tablaVenta = data.find(f => f.id === id)?.origen_tabla
+        if (tablaVenta === 'public.ventas_unificadas' || tablaVenta === 'public.cuotas_arrendamiento') {
+          throw new Error('Es un cobro de arrendamiento todavía sin factura: se maneja en Ingresos → Arrendamientos')
+        }
         if (campo !== 'estado') throw new Error('En una venta, desde el Cash Flow sólo se cambia el estado: el resto se edita en Ingresos')
         const destino = valor === 'pagado' || valor === 'cobrado' ? 'cobrado' : valor === 'a cobrar' || valor === 'pendiente' ? 'a cobrar' : null
         if (!destino) throw new Error(`«${valor}» no es un estado de venta: usá Cobrado o A cobrar`)

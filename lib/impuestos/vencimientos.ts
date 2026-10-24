@@ -55,7 +55,7 @@ export function diasDeAviso(alertas: string | null | undefined): number {
   return Number.isFinite(n) && n >= 0 ? n : DIAS_AVISO_POR_DEFECTO
 }
 
-export function esImpuesto(t: CuotaImpuesto["template"]): boolean {
+export function esImpuesto(t: Pick<CuotaImpuesto["template"], "cuenta_agrupadora" | "solo_conciliacion">): boolean {
   return /^\s*impuestos?\b/i.test(t.cuenta_agrupadora ?? "") && !t.solo_conciliacion
 }
 

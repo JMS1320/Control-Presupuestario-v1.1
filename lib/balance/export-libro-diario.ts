@@ -21,7 +21,8 @@
 import * as XLSX from "xlsx"
 import { ETIQUETA_CONCEPTO, type ImpuestoCheque } from "./impuesto-cheque"
 import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
-import { nombreSubdiario } from "./ejercicio"
+import { armarEjercicio, nombreSubdiario } from "./ejercicio"
+import { explicarFila } from "./facturas-fijas"
 import { armarLibroPorCuenta, TIPOS_SIN_CREDITO_VENTAS, type LibroPorCuenta } from "./libro-por-cuenta"
 import type { CuentasAlCierre, FilaCuenta } from "./cuentas-al-cierre"
 import type { CadenaDeSaldos } from "./saldos-al-inicio"
@@ -55,8 +56,12 @@ function hojaDeAsientos(asientos: AsientoLibroDiario[]): unknown[][] {
     "Subdiario", "Fecha", "Tipo", "Pto Vta", "Número", "CUIT", "Denominación",
     "Neto Gravado", "No Gravado", "Exentas", "Otros Tributos", "IVA", "Total",
     "Cuenta contable", "Nro cuenta", "Centro de costo", "Origen del dato",
+    // 💵 A-BUG-1316: los importes van en pesos; la moneda y la cotización quedan a la vista al final
+    // (al final y no al lado del Total, para no correr las columnas que suman otras solapas).
+    "Moneda", "Tipo de cambio", "Total en moneda original",
   ]]
   for (const a of asientos) {
+    const enOtraMoneda = !!a.moneda && a.moneda !== "PES"
     filas.push([
       a.subdiario, a.fecha ?? "", a.tipo ?? "", a.punto_venta ?? "", a.numero ?? "",
       a.cuit, a.denominacion,
@@ -64,9 +69,42 @@ function hojaDeAsientos(asientos: AsientoLibroDiario[]): unknown[][] {
       money(a.otros_tributos), money(a.iva), money(a.total),
       a.cuenta_contable, a.nro_cuenta, a.centro_costo,
       a.fuente === "historico" ? "sistema anterior" : a.fuente === "arca" ? "ARCA" : "ventas",
+      enOtraMoneda ? (a.moneda === "DOL" ? "USD" : a.moneda) : "$",
+      enOtraMoneda ? a.tipo_cambio ?? "" : "",
+      enOtraMoneda ? money(a.total_moneda_original ?? 0) : "",
     ])
   }
   return filas
+}
+
+/**
+ * 🧾 Papel 05 — PROVISIÓN DE FACTURAS (A-FEAT-1331). Arriba la de ESTE ejercicio (la que suma a su
+ * gasto), con cómo entró cada una: por la regla (fecha del ejercicio, subdiario posterior) o puesta a
+ * mano con su motivo. Abajo la del ejercicio ANTERIOR, **sólo informativa** — no se resta: *«el
+ * contador lo maneja»* (usuario 2026-10-23).
+ */
+function hojaDeProvision(este: AsientoLibroDiario[], anterior: AsientoLibroDiario[], etiqueta: string, etiquetaAnterior: string): unknown[][] {
+  const conMotivo = (lista: AsientoLibroDiario[]) => {
+    const t = hojaDeAsientos(lista)
+    t[0] = [...t[0], "Cómo entró a provisión", "Motivo"]
+    lista.forEach((a, i) => {
+      t[i + 1] = [...t[i + 1],
+        a.provision_motivo ? "puesta a mano" : `fecha del ejercicio, subdiario ${a.subdiario || "—"}`,
+        a.provision_motivo ?? ""]
+    })
+    return t
+  }
+  const total = (l: AsientoLibroDiario[]) => money(l.reduce((s, a) => s + a.total, 0))
+  const f: unknown[][] = [
+    [`PROVISIÓN DE FACTURAS — ejercicio ${etiqueta} (suman al gasto de este ejercicio)`],
+    [`${este.length} comprobante(s) · total ${total(este).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`],
+    ...conMotivo(este),
+    [],
+    [`PROVISIÓN DEL EJERCICIO ANTERIOR — ${etiquetaAnterior} (sólo informativa: NO se resta)`],
+    [`${anterior.length} comprobante(s) · total ${total(anterior).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`],
+    ...conMotivo(anterior),
+  ]
+  return f
 }
 
 /** La solapa que se abre primero: qué se puede entregar y qué no. */
@@ -107,6 +145,42 @@ function hojaDeControl(libro: LibroDiario): unknown[][] {
   f.push(["Diferencia contra el total", money(c.compras.diferencia),
     c.compras.ok ? (c.compras.soloRedondeo ? "cuadra, con residuo de redondeo" : "cuadra") : "NO CUADRA"])
   f.push([])
+
+  // 🧾 Segundo camino: cada subdiario de compras contra lo presentado a ARCA (A-DAT-61).
+  if (c.contraPresentado) {
+    const mal = c.contraPresentado.filter(x => !x.ok).length
+    f.push([mal === 0
+      ? "COMPRAS vs. LO PRESENTADO A ARCA — los 12 subdiarios coinciden"
+      : `COMPRAS vs. LO PRESENTADO A ARCA — ${mal} subdiario(s) NO coinciden`])
+    f.push(["Subdiario", "App: comprobantes", "App: total", "Presentado: comprobantes", "Presentado: total", "Diferencia", ""])
+    for (const x of c.contraPresentado) {
+      f.push([x.subdiario, x.app.comprobantes, money(x.app.total),
+        x.presentado?.comprobantes ?? "sin dato", x.presentado ? money(x.presentado.total) : "sin dato",
+        money(x.diferenciaTotal), x.ok ? "coincide" : "NO COINCIDE"])
+    }
+    f.push([])
+  } else {
+    f.push(["COMPRAS vs. LO PRESENTADO A ARCA — no hay dato de lo presentado para esta empresa: no se controló."])
+    f.push([])
+  }
+  // 🔢 Proveedores fijos (A-FEAT-1332): aviso, no frena.
+  if (c.facturasFijas && c.facturasFijas.length > 0) {
+    const mal = c.facturasFijas.filter(x => !x.ok).length
+    f.push([mal === 0
+      ? `PROVEEDORES FIJOS — están todas las facturas (${c.facturasFijas[0].mesesContados} meses contados)`
+      : `PROVEEDORES FIJOS — ${mal} no tienen la cantidad esperada (aviso, no frena; ${c.facturasFijas[0].mesesContados} meses contados)`])
+    f.push(["Proveedor", "CUIT", "Por mes", "Esperadas", "Hay", "Carga", "Detalle"])
+    for (const x of c.facturasFijas) {
+      f.push([x.nombre, x.cuit, x.facturasPorMes, x.esperado, x.hay, x.aMano ? "a mano" : "ARCA",
+        x.ok ? "coincide" : explicarFila(x)])
+    }
+    f.push([])
+  }
+  if (libro.historicoSuperado.length > 0) {
+    f.push([`Sistema anterior: ${libro.historicoSuperado.length} comprobante(s) con subdiario posterior a noviembre 2025 NO se cuentan`
+      + " — para esos meses manda la app. Siguen guardados en el histórico."])
+    f.push([])
+  }
 
   if (c.subdiariosDuplicados.length > 0) {
     const nombreFuente = (x: string) =>
@@ -1402,6 +1476,9 @@ const COLS_ASIENTOS: Columna[] = [
   { ancho: 12 },                    // Nro cuenta
   { ancho: 18 },                    // Centro de costo
   { ancho: 17 },                    // Origen del dato
+  { ancho: 8 },                     // Moneda
+  { ancho: 10, z: COEFICIENTE },    // Tipo de cambio
+  { ancho: 16, z: MONEDA },         // Total en moneda original
 ]
 
 /**
@@ -1851,7 +1928,9 @@ export function armarWorkbook(
    */
   const provisionCompras = libro.provisiones.filter(a => a.fuente !== "venta")
   const provisionVentas = libro.provisiones.filter(a => a.fuente === "venta")
-  hoja(wb, "05 Provision", hojaDeAsientos(provisionCompras), COLS_ASIENTOS)
+  hoja(wb, "05 Provision", hojaDeProvision(provisionCompras, libro.provisionesEjercicioAnterior,
+    libro.ejercicio.etiqueta, armarEjercicio(libro.ejercicio.anioCierre - 1, libro.ejercicio.mesCierre).etiqueta),
+    [...COLS_ASIENTOS, { ancho: 30 }, { ancho: 50 }])
   // 💳 Cuentas a pagar y a cobrar al cierre — papeles 03 y 04 (A-FEAT-1187), con sus bloques de
   //    cheques, anticipos y provisión de cobros (A-FEAT-1195).
   if (cuentas?.pagar) {

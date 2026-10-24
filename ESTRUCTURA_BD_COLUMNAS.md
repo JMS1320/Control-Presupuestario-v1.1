@@ -146,6 +146,8 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 ### partidas · partidas_anio · partidas_centro_costo · partidas_titularidad  (impuesto inmobiliario y red vial)
 `partidas: id uuid, campo text, establecimiento text, parcela text, partida_inmobiliario text, partida_red_vial text, has_totales numeric, has_productivas numeric, observaciones text, activo boolean, created_at tstz, updated_at tstz`
 
+> `campo` = el nombre que usan los templates («Tango Parra 1», «Casco»): por ahí se cruza Red Vial, cuyos templates no guardan partida. `partida_red_vial` = el **número de la municipalidad** (la «cuenta»: 52948), **no** la partida inmobiliaria recortada — aclaración del usuario 2026-10-23. Se llena con `scripts/96` (19 partidas, has de la planilla del usuario).
+
 `partidas_anio: id uuid, partida_id uuid→partidas, impuesto text (inmobiliario|red_vial), anio int, valuacion_fiscal numeric, base_imponible numeric, importe_anual numeric, importe_cuota numeric, cantidad_cuotas int, modo_pago text (anual|cuotas), observaciones text` · único por `(partida_id, impuesto, anio)`
 
 `partidas_centro_costo: id uuid, partida_id uuid→partidas, centro_costo text, has numeric, desde_anio int, hasta_anio int`
