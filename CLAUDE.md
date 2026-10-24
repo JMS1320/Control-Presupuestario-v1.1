@@ -377,8 +377,8 @@ numero.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits
 ### 🔧 Git
 > **Principio (portable):** nunca commitear a la rama de producción. Se trabaja en una rama y el
 > merge lo autoriza el usuario **después** de confirmar el testing.
-> **📍 Acá:** cada tema en su rama **`jms/<tema>`**, que se mergea **directo a `desarrollo`** (donde
-> prueba JMS); **`main`** es lo que usan los demás usuarios, con auto-deploy de Vercel (por eso
+> **📍 Acá:** la carpeta principal trabaja **directo en `desarrollo`** (donde prueba JMS); una rama
+> **`jms/<tema>`** sólo para una terminal en paralelo (su árbol), y vuelve **directo a `desarrollo`**; **`main`** es lo que usan los demás usuarios, con auto-deploy de Vercel (por eso
 > mergear a `main` = publicar).
 
 ⚠️ **Cambió 2026-10-23 — se saca `jms/dia-a-dia` del medio.** Usuario: *«mi rama de trabajo será
@@ -386,6 +386,13 @@ siempre desarrollo y la de los usuarios main»*, y confirmó *«estaba ok direct
 desarrollo»*. Las ramas de tema salen de `desarrollo` y vuelven a `desarrollo`. `jms/dia-a-dia`
 queda igualada a `desarrollo` y sólo se usa para un commit suelto sin tema. Lo que sigue abajo
 (el esquema de 2026-09-02) vale con esa corrección → [A-DEC-1017](PENDIENTES.md#a-dec-1017).
+
+⚠️ **Y cambió otra vez el mismo 2026-10-23 — la carpeta principal trabaja DIRECTO en `desarrollo`.**
+Usuario, al mergear el arreglo de los dólares: *«dijimos que trabajaríamos en desarrollo así que mergealo pero
+trabajaríamos directo ahí de ahora en más»*. Commits y push van a `desarrollo`; **`main` sigue siendo de los usuarios**
+y mergear ahí sigue pidiendo su OK. Las ramas `jms/<tema>` quedan **sólo para las terminales en paralelo** (cada una
+en su árbol, § Trabajo en paralelo regla 16). Donde abajo diga «pushear siempre a la rama del tema» o «nunca
+commitear directo a `desarrollo`», vale para esas terminales, no para la carpeta principal.
 
 ⚠️ **Cambio de rumbo 2026-09-02** — hasta esa fecha la regla decía *"pushear siempre a `desarrollo`"*.
 **Ya no.** Desde que hay un segundo desarrollador (Javier, en seguridad y logueo), cada uno tiene su
