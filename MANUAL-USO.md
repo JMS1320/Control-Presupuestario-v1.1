@@ -1072,6 +1072,22 @@ una pantalla nueva no les aparezca sin que lo decidas. Al crear un rol copiando 
 
 ⚠️ Sin probar todavía → [A-TEST-1237](PENDIENTES.md#a-test-1237)
 
+### Prender permisos sobre la pantalla
+Para armarle la pantalla a alguien recorriendo la app en vez de tildar una lista. Configuración → Roles →
+en el rol, **🖱️ Editar sobre la pantalla**. Se abre la app con una barra violeta abajo:
+- Ves **todo**. Lo que ese rol no tiene aparece **atenuado con un candado gris**; apretalo y se prende
+  (verde). Vale para las secciones del menú, las solapas y el botón Archivos para ARCA. Ámbar = lo ve sin editar.
+- En un **rol cerrado**, prender una sección no prende lo de adentro: las solapas se prenden de a una.
+  Prender una sub-solapa (ej. Stock) prende también la de arriba (Insumos).
+- **Ver como lo ve él** esconde lo atenuado: es su pantalla tal cual.
+- **Nada se aplica hasta Guardar.** La barra cuenta los cambios; **Descartar** vuelve a lo guardado y
+  **Salir** te lleva a Roles (si quedó algo sin guardar, pregunta).
+
+Lo de adentro de las ventanas (reglas y asignaciones de Extracto, anticipos de Cash Flow) no tiene candado:
+se elige en la lista de Editar permisos.
+
+⚠️ Sin probar todavía → [A-TEST-1238](PENDIENTES.md#a-test-1238)
+
 ### Darle un rol a alguien
 Configuración → Usuarios → escribís el mail, elegís el rol, **Crear e invitar**. A quien ya existe
 se le cambia desde el desplegable de su fila.

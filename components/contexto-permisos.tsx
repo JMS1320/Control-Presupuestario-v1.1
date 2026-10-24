@@ -1,6 +1,7 @@
 "use client"
 
 import { createContext, useContext, useMemo } from "react"
+import { nivelEnBorrador, type Borrador } from "@/lib/auth/modo-permisos"
 
 /**
  * LOS PERMISOS FINOS, DISPONIBLES EN CUALQUIER VISTA — A-FEAT-169
@@ -33,10 +34,36 @@ export function ProveedorPermisos({
   return <ContextoPermisos.Provider value={valor}>{children}</ContextoPermisos.Provider>
 }
 
+/**
+ * 🖱️ MODO PERMISOS (A-FEAT-1334): un admin recorre la app prendiendo lo que ve OTRO rol. Vive acá,
+ * y no en `modo-permisos.tsx`, porque cambia lo que responde `useNivel`: mientras está activo la
+ * pantalla muestra TODO (para poder prender lo que el rol no tiene, que se ve atenuado), salvo con
+ * «ver como lo ve él», que muestra exactamente lo del borrador. Sólo lo abre un admin
+ * (`app/page.tsx`), así que para cualquier otro usuario esto es siempre `null`.
+ */
+export type EstadoModoPermisos = {
+  rolId: string
+  descripcion: string
+  borrador: Borrador
+  soloLoQueVe: boolean
+  alternarSeccion: (seccion: string) => void
+  alternarRecurso: (recurso: string) => void
+}
+
+export const ContextoModoPermisos = createContext<EstadoModoPermisos | null>(null)
+
+export function useModoPermisos() {
+  return useContext(ContextoModoPermisos)
+}
+
 /** El nivel de un recurso. Sin excepción declarada = `"escritura"` (hereda de la sección). */
 export function useNivel() {
   const niveles = useContext(ContextoPermisos)
-  return useMemo(() => (recurso: string): Nivel => niveles[recurso] ?? "escritura", [niveles])
+  const modo = useModoPermisos()
+  return useMemo(() => (recurso: string): Nivel => {
+    if (modo) return modo.soloLoQueVe ? nivelEnBorrador(modo.borrador, recurso) : "escritura"
+    return niveles[recurso] ?? "escritura"
+  }, [niveles, modo])
 }
 
 /** `puedeVer("productivo.insumos")` — falso sólo si está explícitamente en `"ninguno"`. */

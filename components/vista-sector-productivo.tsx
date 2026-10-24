@@ -9,7 +9,7 @@ import { filtrarStock } from "@/lib/productivo/filtro-stock"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useCallback, Fragment } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
-import { usePuedeVer } from "@/components/contexto-permisos"
+import { Permisable } from "@/components/modo-permisos"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -936,7 +936,6 @@ const exportarOrdenAgricolaImagen = async (orden: OrdenAgricola) => {
 
 export function VistaSectorProductivo() {
   // A-FEAT-169: las pestañas que este rol no ve, no se dibujan.
-  const puedeVer = usePuedeVer()
   const [tabActiva, setTabActiva] = useState("hacienda")
 
   return (
@@ -950,42 +949,42 @@ export function VistaSectorProductivo() {
         <CardContent>
           <Tabs value={tabActiva} onValueChange={setTabActiva}>
             <TabsList className="grid w-full grid-cols-6">
-              {puedeVer("productivo.hacienda") && (
+              <Permisable recurso="productivo.hacienda">
 <TabsTrigger value="hacienda" className="flex items-center gap-2">
                 <Beef className="h-4 w-4" />
                 Hacienda
               </TabsTrigger>
-)}
-              {puedeVer("productivo.evolucion") && (
+</Permisable>
+              <Permisable recurso="productivo.evolucion">
 <TabsTrigger value="evolucion" className="flex items-center gap-2">
                 📈
                 Evolución Rodeo
               </TabsTrigger>
-)}
-              {puedeVer("productivo.cria") && (
+</Permisable>
+              <Permisable recurso="productivo.cria">
 <TabsTrigger value="cria" className="flex items-center gap-2">
                 🐮
                 Cría
               </TabsTrigger>
-)}
-              {puedeVer("productivo.recria") && (
+</Permisable>
+              <Permisable recurso="productivo.recria">
 <TabsTrigger value="recria" className="flex items-center gap-2">
                 🐄
                 Recría / Engorde
               </TabsTrigger>
-)}
-              {puedeVer("productivo.insumos") && (
+</Permisable>
+              <Permisable recurso="productivo.insumos">
 <TabsTrigger value="insumos" className="flex items-center gap-2">
                 <Package className="h-4 w-4" />
                 Insumos
               </TabsTrigger>
-)}
-              {puedeVer("productivo.lotes") && (
+</Permisable>
+              <Permisable recurso="productivo.lotes">
 <TabsTrigger value="lotes" className="flex items-center gap-2">
                 <Wheat className="h-4 w-4" />
                 Lotes Agrícolas
               </TabsTrigger>
-)}
+</Permisable>
             </TabsList>
 
             <TabsContent value="hacienda">
@@ -3552,30 +3551,29 @@ function TabInsumos() {
   const [subTab, setSubTab] = useState("stock")
   // A-FEAT-169. Va acá y no en el componente de arriba: Stock, Órdenes y Compras son SUB-pestañas
   // de Insumos, no hermanas de Hacienda — viven en otro componente del mismo archivo.
-  const puedeVer = usePuedeVer()
 
   return (
     <div className="space-y-4 pt-4">
       <Tabs value={subTab} onValueChange={setSubTab}>
         <TabsList className="grid w-full grid-cols-3">
-          {puedeVer("productivo.stock") && (
+          <Permisable recurso="productivo.stock">
 <TabsTrigger value="stock" className="flex items-center gap-1 text-xs">
             <Package className="h-3.5 w-3.5" />
             Stock & Movimientos
           </TabsTrigger>
-)}
-          {puedeVer("productivo.ordenes") && (
+</Permisable>
+          <Permisable recurso="productivo.ordenes">
 <TabsTrigger value="ordenes" className="flex items-center gap-1 text-xs">
             <Syringe className="h-3.5 w-3.5" />
             Ordenes Aplicacion
           </TabsTrigger>
-)}
-          {puedeVer("productivo.compras") && (
+</Permisable>
+          <Permisable recurso="productivo.compras">
 <TabsTrigger value="compras" className="flex items-center gap-1 text-xs">
             <ShoppingCart className="h-3.5 w-3.5" />
             Necesidad de Compra
           </TabsTrigger>
-)}
+</Permisable>
         </TabsList>
 
         <TabsContent value="stock">

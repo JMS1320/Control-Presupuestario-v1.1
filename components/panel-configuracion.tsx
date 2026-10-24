@@ -734,9 +734,20 @@ function PanelRoles() {
                       secciones, se podría dejar el sistema sin nadie que pueda administrarlo.
                     </p>
                   ) : (
-                    <Button size="sm" variant="secondary" onClick={() => empezar(r)}>
-                      Editar permisos
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="secondary" onClick={() => empezar(r)}>
+                        Editar permisos
+                      </Button>
+                      {/* 🖱️ A-FEAT-1334: recorrer la app y prender lo que ve este rol apretando los candados. */}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        title="Abre la app con un candado en cada sección, solapa y botón: lo atenuado no lo ve este rol, y se lo das apretándolo. Nada se aplica hasta Guardar."
+                        onClick={() => { window.location.href = `/?permisos=${encodeURIComponent(r.id)}` }}
+                      >
+                        🖱️ Editar sobre la pantalla
+                      </Button>
+                    </div>
                   )}
                 </>
               )}

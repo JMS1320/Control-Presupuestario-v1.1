@@ -67,7 +67,9 @@ for (const { id: seccion, etiqueta } of SECCIONES) {
     const sub = r.id.split(".").slice(1).join(".")
     if (r.archivo === archivo && r.tipo !== "accion") return enCodigo.has(sub)
     const src = readFileSync(r.archivo, "utf8")
-    if (r.tipo === "accion") return src.includes(`puedeVer('${r.id}')`) || src.includes(`puedeVer("${r.id}")`)
+    // Desde A-FEAT-1334 también vale `<Permisable recurso="<id>">`, que pregunta lo mismo y además
+    // pone el candado del modo permisos.
+    if (r.tipo === "accion") return src.includes(`puedeVer('${r.id}')`) || src.includes(`puedeVer("${r.id}")`) || src.includes(`recurso="${r.id}"`)
     return pestanasEnCodigo(r.archivo).includes(sub)
   }
   const fantasmas = declarados.filter((r) => !existe(r)).map((r) => r.id.split(".").slice(1).join("."))

@@ -60,6 +60,7 @@ import { etiquetaPersona } from "@/lib/auth/identidad"
 import { armarRolNuevo, normalizarIdRol } from "@/lib/auth/crear-rol"
 import { nivelesEfectivos, excepcionesParaEditar, permisosAGuardar } from "@/lib/auth/rol-cerrado"
 import { RECURSOS as RECURSOS_PERMISABLES } from "@/lib/auth/recursos"
+import { borradorDe, alternarRecurso, alternarSeccion, nivelEnBorrador, contarCambios, cuerpoGuardar } from "@/lib/auth/modo-permisos"
 import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
 import {
   adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga,
@@ -8276,6 +8277,48 @@ export function correrCasos(): Resultado[] {
       copiaCerrada.ok ? ("cerrado" in copiaCerrada.fila ? "manda la columna" : "no la manda") : "error"].join(" · ")
     chequear("Accesos", "Crear rol copiando de uno CERRADO lo copia cerrado (si no, le daría todo lo demás); sin la columna todavía, no la manda",
       "true · no la manda · no la manda", vcopia, vcopia === "true · no la manda · no la manda", "A-FEAT-1333")
+
+    // ── Modo permisos: prender sobre la pantalla (A-FEAT-1334) ──
+    const mpVacio = borradorDe({ secciones: [], permisos: {}, cerrado: true })
+    const mpSeguros = alternarRecurso(mpVacio, "egresos.seguros")
+    const vp = [mpSeguros.secciones.join(","), nivelEnBorrador(mpSeguros, "egresos.seguros"),
+      nivelEnBorrador(mpSeguros, "egresos.facturas-msa"), nivelEnBorrador(mpSeguros, "egresos.subdiarios"),
+      String(contarCambios(mpVacio, mpSeguros))].join(" · ")
+    chequear("Accesos", "Modo permisos: en un rol cerrado y vacío, prender Seguros prende Egresos y SÓLO Seguros (2 cambios)",
+      "egresos · escritura · ninguno · ninguno · 2", vp, vp === "egresos · escritura · ninguno · ninguno · 2", "A-FEAT-1334")
+
+    const mpProdC = alternarSeccion(mpVacio, "productivo")
+    const mpProdA = alternarSeccion(borradorDe({ secciones: [], permisos: {} }), "productivo")
+    const vs = [nivelEnBorrador(mpProdC, "productivo.hacienda"), nivelEnBorrador(mpProdA, "productivo.hacienda")].join(" · ")
+    chequear("Accesos", "Modo permisos: prender una sección en un rol CERRADO no prende sus solapas; en uno abierto entra con todo",
+      "ninguno · escritura", vs, vs === "ninguno · escritura", "A-FEAT-1334")
+
+    const mpStock = alternarRecurso(mpProdC, "productivo.stock")
+    const vh = [nivelEnBorrador(mpStock, "productivo.stock"), nivelEnBorrador(mpStock, "productivo.insumos"),
+      nivelEnBorrador(mpStock, "productivo.ordenes")].join(" · ")
+    chequear("Accesos", "Modo permisos: prender una sub-solapa (Stock) prende también la de arriba (Insumos), no sus hermanas",
+      "escritura · escritura · ninguno", vh, vh === "escritura · escritura · ninguno", "A-FEAT-1334")
+
+    const mpUlises = borradorDe({ secciones: ["egresos"], permisos: { "egresos.facturas-msa": "escritura", "egresos.subdiarios": "lectura" }, cerrado: true })
+    const mpIdaVuelta = alternarRecurso(alternarRecurso(mpUlises, "egresos.facturas-msa"), "egresos.facturas-msa")
+    const vi = `${contarCambios(mpUlises, mpIdaVuelta)} · ${nivelEnBorrador(mpUlises, "egresos.subdiarios")}`
+    chequear("Accesos", "Modo permisos: apagar y volver a prender deja 0 cambios, y lo que estaba en sólo lectura se respeta",
+      "0 · lectura", vi, vi === "0 · lectura", "A-FEAT-1334")
+
+    // Lo que se guarda, leído como lo lee la app, da exactamente lo que se vio en pantalla.
+    const mpCuerpo = cuerpoGuardar("ulises", mpStock)
+    const mpGuardado = permisosAGuardar(mpCuerpo.permisos, mpCuerpo.secciones, true)
+    const mpLeido = nivelesEfectivos({ secciones: mpCuerpo.secciones, permisos: mpGuardado, cerrado: true })
+    const mpDifs = RECURSOS_PERMISABLES.filter((r) => (mpCuerpo.secciones.includes(r.seccion) ? (mpLeido[r.id] ?? "escritura") : "ninguno") !== nivelEnBorrador(mpStock, r.id)).length
+    const vg = `${JSON.stringify(mpGuardado)} · ${mpDifs} distintos`
+    const mpEsperado = '{"productivo.insumos":"escritura","productivo.stock":"escritura"} · 0 distintos'
+    chequear("Accesos", "Modo permisos: Guardar deja en la base lo prendido, y la app lo lee igual que se vio en pantalla",
+      mpEsperado, vg, vg === mpEsperado, "A-FEAT-1334")
+
+    const mpSinEgresos = alternarSeccion(mpUlises, "egresos")
+    const vq = `${mpSinEgresos.secciones.length} · ${Object.keys(cuerpoGuardar("ulises", mpSinEgresos).permisos).length}`
+    chequear("Accesos", "Modo permisos: apagar una sección no deja restricciones colgadas de esa sección",
+      "0 · 0", vq, vq === "0 · 0", "A-FEAT-1334")
   }
 
   return r
