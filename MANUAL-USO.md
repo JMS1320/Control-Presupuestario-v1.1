@@ -2721,6 +2721,50 @@ Cuando abrís un proceso que tiene algo pendiente de probar, arriba del modal ap
 📌 Lo que respondas va a los **comentarios del pendiente**, que Claude lee al abrir sesión. Es el
 mismo canal que ya usabas desde el panel de Pendientes.
 
+## 🧾 Egresos sin Factura → Planilla de impuestos *(2026-10-23)*
+
+El botón rojo **🧾 Planilla de impuestos** abre el reporte de todos los impuestos de un **año
+calendario**, a pantalla completa. Es lo que se le da a quien pide *«el reporte de los impuestos»*.
+
+- **Arriba**: el mismo aviso de vencidos y por vencer que en Principal.
+- **El año**: abre en el actual; con las flechas pasás al anterior o al siguiente.
+- **Una fila por impuesto y empresa** (Inmobiliario · MSA, Red Vial · PAM, UATRE · MSA…). Cada cuota
+  aparece en el mes en que vence, con su color: **verde lleno** conciliada, **verde claro** pagada,
+  **punteada gris** sin pagar (lo presupuestado), **punteada roja** vencida sin pagar. Pasando el
+  mouse se ve el detalle de la cuota.
+- **Click en el nombre** del impuesto: se abren sus partidas (o vehículos), una por renglón.
+- **A la derecha**: pagado, adeudado (vencido sin pagar), futuro y total; abajo, por empresa y el
+  total del año. Si las cuentas cierran, arriba dice **✓ control**.
+- **Ordenar**: arrastrá una fila desde la manija ⋮⋮. El orden queda guardado en tu cuenta;
+  **Orden de siempre** lo vuelve atrás.
+- **Excel**: el resumen con los 12 meses y una hoja con todas las cuotas.
+
+Para que una cuota cambie de color, se marca pagada (o se concilia) como siempre; la planilla sólo lee.
+
+**🏛️ El detalle de inmobiliario, Red Vial y automotores** — botón arriba de la planilla, o **🏛️ detalle**
+al lado de esas filas. Es el papel con el formato de tu planilla: por empresa, una fila por campo con su
+partida, el total del año anterior, el total en cuotas, el aumento, cada cuota con su vencimiento y el
+costo anual en $ y en U$S (con el TC promedio de los meses de las cuotas). El complementario va al final
+de cada empresa. Arriba dice si cierra con la planilla (✓ control). El **Excel** lleva las fórmulas y una
+fila CONTROL que tiene que dar 0. Las hectáreas y el costo por hectárea salen del maestro de partidas
+(cargado desde tu planilla). En la solapa **Red Vial**, la columna de partida muestra el **número de la
+municipalidad** (ej. Tango Parra 1 → 52948), que es con el que te identifica el municipio.
+
+→ A-TEST-1227 · A-TEST-1229
+
+## 🌾 Cash Flow → los cobros de arrendamiento todavía sin pesos *(2026-10-23)*
+
+- **Cuota fijada en dólares, sin TC todavía**: aparece con su importe estimado = toneladas × precio
+  fijado × el **TC de la tabla de tipos de cambio** del mes de cobro (si ese mes no está cargado, el
+  último que haya). El detalle dice *«TC estimado a $X»*. Cuando se fija el TC, pasa al importe real.
+- **Cuota sin precio fijado**: aparece en un renglón **transparente y en itálica**, en estado
+  **presupuestado**, con el precio de la soja de su posición × el TC de la base. Si se fijó una parte,
+  aparece sólo lo que falta. Sólo se muestran las que se cobran de hoy en adelante.
+- Estas filas son estimaciones: **no se concilian** y no se marcan desde el Cash Flow (se manejan en
+  Ingresos → Arrendamientos). Cargando TC y precios de soja en la base, se recalculan solas.
+
+→ A-TEST-1228
+
 ## 💸 Cash Flow → PAGOS: pagar un lote 🟡 *(nuevo 2026-08-10, sin testear)*
 
 > Diseño y motivos → `PENDIENTES.md` § Cash Flow → PAGOS.
@@ -2751,6 +2795,20 @@ decidir. Dice *"Todavía no se guardó nada"* porque es literal.
 | **Retener SICORE — una factura por vez** | abre la cola de siempre |
 | **Pagar sin retener** | guarda el estado, sin retención |
 | **Cancelar — no tocar nada** | 🔑 **aborta todo**, incluidas las que no llevan SICORE |
+
+### 🏦 Pagado desde — cuando pagaste desde otra cuenta *(2026-10-23)*
+Al lado del estado aparece **Pagado desde**. Si no lo tocás (*— como está —*) cada fila queda como
+estaba. Si pagaste desde otra cuenta —por ejemplo, **MA pagó algo de MSA**— elegí la cuenta antes de
+**Aplicar**: queda anotado en cada factura y cuota del lote.
+
+En la grilla, al lado de la empresa, aparece **🏦 desde MA Galicia** (en naranja si la cuenta es de
+otra empresa). Así, cuando mirás el banco de MSA y el pago no está, ya sabés por qué.
+
+Lo mismo se elige en **Pago manual** (Cash Flow y Egresos sin Factura), donde antes decía *Medio de
+pago*. El filtro de medio de pago **Banco** sigue mostrando estos pagos: salieron por banco, sólo
+que de otra cuenta.
+
+→ A-TEST-1226
 
 ### 🔑 Sin fecha de pago no hay SICORE
 Es una regla, no un detalle: **la quincena se calcula siempre desde la fecha de pago**. Si una

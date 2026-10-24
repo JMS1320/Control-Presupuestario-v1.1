@@ -22,6 +22,10 @@ import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
 import { supabase } from "@/lib/supabase"
+import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
+import { OPCIONES_PAGADO_DESDE } from "@/lib/pagos/pagado-desde"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
+import { PlanillaImpuestos } from "@/components/planilla-impuestos"
 import { format } from "date-fns"
 import { TemplateTestSuite } from "@/components/template-test-suite"
 import { usePropagacionCuotas } from "@/hooks/usePropagacionCuotas"
@@ -183,6 +187,7 @@ export function VistaTemplatesEgresos() {
 
   // Estado para modal Pago Manual (templates abiertos)
   const [modalPagoManual, setModalPagoManual] = useState(false)
+  const [mostrarPlanillaImpuestos, setMostrarPlanillaImpuestos] = useState(false)
   const [templatesAbiertos, setTemplatesAbiertos] = useState<{id: string, nombre_referencia: string, categ: string, cuenta_agrupadora: string | null, es_bidireccional: boolean, responsable: string}[]>([])
   const [templateSeleccionado, setTemplateSeleccionado] = useState<string | null>(null)
   const [pasoModal, setPasoModal] = useState<'seleccionar' | 'datos'>('seleccionar')
@@ -964,8 +969,7 @@ export function VistaTemplatesEgresos() {
         .from('cuotas_egresos_sin_factura')
         .insert({
           egreso_id: templateSeleccionado,
-          fecha_estimada: nuevaCuota.fecha,
-          fecha_vencimiento: nuevaCuota.fecha,
+          ...fechasDePagoManual(nuevaCuota.fecha),   // A-BUG-1325: es la fecha de PAGO, no el vencimiento
           monto: parseFloat(nuevaCuota.monto.replace(/\./g, '').replace(',', '.')),
           // 🪪 A-FEAT-138 — lo que el usuario escribe va a `detalle`; la etiqueta se genera.
           detalle: descripcionFinal,
@@ -1476,6 +1480,15 @@ export function VistaTemplatesEgresos() {
           >
             <Plus className="mr-2 h-4 w-4" />
             Renovar campaña
+          </Button>
+
+          {/* 🧾 A-FEAT-1320 — Planilla de impuestos: el año entero, pagado / adeudado / futuro */}
+          <Button
+            onClick={() => setMostrarPlanillaImpuestos(true)}
+            variant="outline"
+            className="border-red-500 text-red-700 hover:bg-red-50"
+          >
+            🧾 Planilla de impuestos
           </Button>
 
           {/* Botón Pago Manual - Templates Abiertos */}
@@ -2168,6 +2181,8 @@ export function VistaTemplatesEgresos() {
       </Dialog>
 
       {/* Modal Pago Manual - Templates Abiertos */}
+      <PlanillaImpuestos open={mostrarPlanillaImpuestos} onOpenChange={setMostrarPlanillaImpuestos} />
+
       <Dialog open={modalPagoManual} onOpenChange={setModalPagoManual}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -2181,6 +2196,7 @@ export function VistaTemplatesEgresos() {
               }
             </DialogDescription>
           </DialogHeader>
+          <TestsDelProceso proceso="templates/pago-manual" pantalla="templates" />
 
           {/* Paso 1: Seleccionar template */}
           {pasoModal === 'seleccionar' && (
@@ -2271,22 +2287,20 @@ export function VistaTemplatesEgresos() {
 
               {/* Medio de pago */}
               <div className="space-y-2">
-                <Label>Medio de Pago</Label>
+                <Label>Pagado desde</Label>
                 <Select value={medioPagoManual} onValueChange={setMedioPagoManual}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="banco">Banco</SelectItem>
-                    <SelectItem value="caja_general">Caja General</SelectItem>
-                    <SelectItem value="caja_ams">Caja AMS</SelectItem>
-                    <SelectItem value="caja_sigot">Caja Sigot</SelectItem>
+                    {/* A-FEAT-1321: además del banco propio y las cajas, una cuenta puntual (ej. MA paga algo de MSA) */}
+                    {OPCIONES_PAGADO_DESDE.map(c => <SelectItem key={c.id} value={c.id}>{c.rotulo}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="fecha-pago">Fecha</Label>
+                <Label htmlFor="fecha-pago">Fecha de pago</Label>
                 <Input
                   id="fecha-pago"
                   type="date"
