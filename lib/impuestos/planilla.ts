@@ -90,6 +90,27 @@ export interface Planilla {
   desactivadas: FilaPlanilla[]
   /** Cuántas cuotas del año están en `programado` o `echeq` (para el aviso). */
   raras: number
+  /** Total de cada mes (la fila de abajo, como en Excel). Entra en el control. */
+  porMes: number[]
+}
+
+/**
+ * 📊 Una celda = UN número (usuario 2026-10-24: *«algo más tipo Excel con los números completos, sin
+ * decimales»* y *«inmobiliario no logro verlo en un solo renglón»*). Las cuotas del mes se suman y la
+ * celda toma el color de lo que más importa mirar: raro > vencida > sin pagar > pagada > conciliada.
+ * `mixta` = hay pagadas y sin pagar en el mismo mes (se marca, para que no se lea como todo pagado).
+ */
+export type EstadoCelda = "rara" | "vencida" | "futura" | "pagada" | "conciliada" | "vacia"
+export function resumenMes(cuotas: CeldaCuota[]): { monto: number; estado: EstadoCelda; mixta: boolean; cantidad: number } {
+  const monto = redondear(cuotas.reduce((s, c) => s + c.monto, 0))
+  if (!cuotas.length) return { monto: 0, estado: "vacia", mixta: false, cantidad: 0 }
+  const pagas = cuotas.filter(c => c.estado !== "sin-pagar").length
+  const mixta = pagas > 0 && pagas < cuotas.length
+  const estado: EstadoCelda = cuotas.some(c => c.rara) ? "rara"
+    : cuotas.some(c => c.vencida) ? "vencida"
+    : cuotas.some(c => c.estado === "sin-pagar") ? "futura"
+    : cuotas.every(c => c.estado === "conciliada") ? "conciliada" : "pagada"
+  return { monto, estado, mixta, cantidad: cuotas.length }
 }
 
 /** Estados que cuentan como pagados pero en un impuesto llaman la atención. */
@@ -204,6 +225,9 @@ export function armarPlanilla(cuotas: CuotaPlanilla[], anio: number, hoy: string
     const porMeses = redondear(f.meses.flat().reduce((s, c) => s + c.monto, 0))
     if (Math.abs(porMeses - f.total) > 0.01) diferencias.push(`${f.impuesto} · ${f.empresa}: meses ${porMeses} ≠ total ${f.total}`)
   }
+  const porMes = Array.from({ length: 12 }, (_, i) => redondear(lista.reduce((s, f) => s + f.meses[i].reduce((t, c) => t + c.monto, 0), 0)))
+  const sumaMeses = redondear(porMes.reduce((s, n) => s + n, 0))
+  if (Math.abs(sumaMeses - totales.total) > 0.01) diferencias.push(`meses ${sumaMeses} ≠ total ${totales.total}`)
   const porEmpresas = redondear(porEmpresa.reduce((s, e) => s + e.total, 0))
   if (Math.abs(porEmpresas - totales.total) > 0.01) diferencias.push(`empresas ${porEmpresas} ≠ total ${totales.total}`)
 
@@ -211,7 +235,7 @@ export function armarPlanilla(cuotas: CuotaPlanilla[], anio: number, hoy: string
     anio, filas: lista, porEmpresa, totales,
     aniosConDatos: [...anios].sort((a, b) => a - b),
     control: { cierra: diferencias.length === 0, diferencias },
-    desactivadas, raras,
+    desactivadas, raras, porMes,
   }
 }
 

@@ -66,7 +66,7 @@ import { coincidePorPalabras } from "@/lib/normalizar-texto"
 import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
 import { camposDePagoManual } from "@/lib/templates/detalle-pago-manual"
 import { esBanco, pasaFiltroMedio, marcaPagadoDesde, OPCIONES_PAGADO_DESDE } from "@/lib/pagos/pagado-desde"
-import { armarPlanilla, impuestoDeTemplate, ordenarFilas, type CuotaPlanilla } from "@/lib/impuestos/planilla"
+import { armarPlanilla, impuestoDeTemplate, ordenarFilas, resumenMes, type CuotaPlanilla } from "@/lib/impuestos/planilla"
 import { importeDeVenta, cuotasNoFijadas } from "@/lib/arrendamientos/cash-flow"
 import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
@@ -8135,6 +8135,12 @@ export function correrCasos(): Resultado[] {
     chequear("Planilla impuestos", "programado y echeq cuentan como pagados pero se marcan (raro en un impuesto); el ABL compartido «PAM/MA/Duhau» va a MA",
       "raras e1,pr1 (2) · pagado 60 · ABL|MA", `raras ${raras.join(",")} (${p2.raras}) · pagado ${p2.filas.find(f => f.clave === "Inmobiliario|MSA")?.pagado} · ${p2.filas.find(f => f.impuesto === "ABL")?.clave}`,
       raras.join(",") === "e1,pr1" && p2.raras === 2 && p2.filas.find(f => f.clave === "Inmobiliario|MSA")?.pagado === 60 && p2.filas.find(f => f.impuesto === "ABL")?.clave === "ABL|MA", "A-FEAT-1320")
+    // Planilla tipo Excel (usuario 24/10): una celda = la suma del mes, con el color de lo que más importa.
+    const feb = resumenMes(inm!.meses[1]), ago = resumenMes(inm!.meses[7]), mar = resumenMes(p2.filas.find(f => f.clave === "Inmobiliario|MSA")!.meses[2])
+    const mixto = resumenMes([...inm!.meses[1], ...inm!.meses[7]])
+    chequear("Planilla impuestos", "Una celda por mes = la suma de sus cuotas: feb inmobiliario (100 conciliada + 50 anterior) da 150 «pagada»; ago sin pagar vencida; echeq «rara»; pagada + vencida = vencida y mixta; los totales por mes suman el total",
+      "150 pagada · 110 vencida · rara · 260 vencida mixta · meses 620 · feb 220", `${feb.monto} ${feb.estado} · ${ago.monto} ${ago.estado} · ${mar.estado} · ${mixto.monto} ${mixto.estado}${mixto.mixta ? " mixta" : ""} · meses ${p.porMes.reduce((s, n) => s + n, 0)} · feb ${p.porMes[1]}`,
+      feb.monto === 150 && feb.estado === "pagada" && ago.estado === "vencida" && mar.estado === "rara" && mixto.monto === 260 && mixto.estado === "vencida" && mixto.mixta && p.porMes.reduce((s, n) => s + n, 0) === 620 && p.porMes[1] === 220, "A-FEAT-1320")
   }
 
   // ══ 🌾 COBROS DE ARRENDAMIENTO SIN PESOS EN EL CASH FLOW (A-FEAT-1328) ═══════════════════════

@@ -23,10 +23,14 @@ const plata = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 
 const fecha = (iso: string) => iso.split("-").reverse().join("/")
 const MOSTRAR = 8
 
-export function AlertaImpuestos() {
+/**
+ * `compacta`: un solo renglón, cerrado (dentro de la planilla, para que la grilla tenga lugar —
+ * usuario 2026-10-24). En Principal va completa, como siempre.
+ */
+export function AlertaImpuestos({ compacta = false }: { compacta?: boolean } = {}) {
   const [datos, setDatos] = useState<ReturnType<typeof impuestosAAvisar> | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [abierto, setAbierto] = useState(true)
+  const [abierto, setAbierto] = useState(!compacta)
 
   const cargar = useCallback(async () => {
     setError(null)
@@ -58,19 +62,19 @@ export function AlertaImpuestos() {
   const rojo = vencidos.length > 0
   return (
     <Card className={rojo ? "border-2 border-red-500 bg-red-50" : "border-2 border-amber-400 bg-amber-50"}>
-      <CardContent className="space-y-3 pt-4">
+      <CardContent className={compacta ? "space-y-2 px-3 py-1.5" : "space-y-3 pt-4"}>
         <button className="flex w-full items-start gap-3 text-left" onClick={() => setAbierto(!abierto)}>
-          {rojo ? <AlertTriangle className="mt-0.5 h-6 w-6 shrink-0 text-red-600" /> : <CalendarClock className="mt-0.5 h-6 w-6 shrink-0 text-amber-600" />}
+          {!compacta && (rojo ? <AlertTriangle className="mt-0.5 h-6 w-6 shrink-0 text-red-600" /> : <CalendarClock className="mt-0.5 h-6 w-6 shrink-0 text-amber-600" />)}
           <div className="flex-1">
-            <p className={`text-lg font-bold ${rojo ? "text-red-800" : "text-amber-800"}`}>
+            <p className={`${compacta ? "text-sm" : "text-lg"} font-bold ${rojo ? "text-red-800" : "text-amber-800"}`}>
               {vencidos.length > 0 && <>🛑 {vencidos.length} {vencidos.length === 1 ? "impuesto vencido" : "impuestos vencidos"} sin pagar · ${plata(totalVencidos)}</>}
               {vencidos.length > 0 && proximos.length > 0 && <span className="mx-2 text-gray-400">|</span>}
               {proximos.length > 0 && <span className="text-amber-800">⏰ {proximos.length} por vencer · ${plata(totalProximos)}</span>}
             </p>
-            <p className="text-sm text-gray-600">
+            {!compacta && <p className="text-sm text-gray-600">
               Sale de las cuotas de los templates de impuestos que siguen en «pendiente» o «pagar». Si ya lo pagaste, marcá la cuota
               como pagada en <b>Egresos → Egresos sin Factura</b> y deja de aparecer acá.
-            </p>
+            </p>}
           </div>
           {abierto ? <ChevronDown className="h-5 w-5 text-gray-500" /> : <ChevronRight className="h-5 w-5 text-gray-500" />}
         </button>
