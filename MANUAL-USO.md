@@ -1095,6 +1095,22 @@ se elige en la lista de Editar permisos.
 
 ⚠️ Sin probar todavía → [A-TEST-1238](PENDIENTES.md#a-test-1238)
 
+### Cierre de sesión por inactividad
+Si nadie toca la app durante un rato, la sesión se cierra sola y hay que volver a entrar. Por default es
+**1 hora**. Un minuto antes aparece arriba un aviso amarillo con la cuenta regresiva: tocando cualquier lado
+se sigue trabajando. Cuenta como actividad tocar, hacer clic, escribir, mover el mouse o desplazarse; que la
+app actualice números sola no cuenta.
+
+Para cambiar el tiempo de un rol: Configuración → Roles → en su tarjeta, el recuadro **cierre por
+inactividad** → ✏️ → los minutos (60 = 1 hora, entre 5 y 1440) → Guardar. Vacío vuelve a 1 hora. Sirve
+también para tu rol (admin). Pensado para el celular: a quien carga desde el campo conviene darle un tiempo
+más corto.
+
+Se cierra sólo en ese aparato: si se le vence a alguien en el celular, en la PC sigue adentro. Y si se
+reabre la app pasado el tiempo, va directo al login sin mostrar nada.
+
+⚠️ Sin probar todavía → [A-TEST-1246](PENDIENTES.md#a-test-1246)
+
 ### Darle un rol a alguien
 Configuración → Usuarios → escribís el mail, elegís el rol, **Crear e invitar**. A quien ya existe
 se le cambia desde el desplegable de su fila.

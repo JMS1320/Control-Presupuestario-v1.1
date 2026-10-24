@@ -5,6 +5,14 @@ import { PanelUsuarios } from "@/components/panel-usuarios"
 import { seccionesDe } from "@/components/layout-app"
 import { recursosDe, SIN_RECURSOS, type Recurso } from "@/lib/auth/recursos"
 import { excepcionesParaEditar } from "@/lib/auth/rol-cerrado"
+import {
+  MINUTOS_INACTIVIDAD_DEFAULT,
+  MINUTOS_INACTIVIDAD_MAX,
+  MINUTOS_INACTIVIDAD_MIN,
+  minutosEfectivos,
+  textoMinutos,
+  validarMinutos,
+} from "@/lib/auth/inactividad"
 import { Ayuda } from "@/components/ayuda"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -94,6 +102,8 @@ function useRoles() {
   const [cuentas, setCuentas] = useState<Record<string, number> | null>(null)
   // Si ya se corrió scripts/99. Sin la columna, la casilla «rol cerrado» no se muestra.
   const [tieneCerrado, setTieneCerrado] = useState(false)
+  // ⏱️ Tiempo de inactividad por rol (A-FEAT-1351). null = falta scripts/101.
+  const [minutosInactividad, setMinutosInactividad] = useState<Record<string, number | null> | null>(null)
 
   const recargar = () =>
     fetch("/api/admin/roles")
@@ -105,6 +115,7 @@ function useRoles() {
         setFalta(j.falta)
         setAplicados(j.recursosAplicados ?? [])
         setTieneCerrado(j.tieneCerrado === true)
+        setMinutosInactividad(j.minutosInactividad ?? null)
       })
       .catch(() => {})
 
@@ -121,7 +132,106 @@ function useRoles() {
       .catch(() => {})
   }, [])
 
-  return { roles, desdeLaBase, falta, aplicados, cuentas, recargar, tieneCerrado }
+  return { roles, desdeLaBase, falta, aplicados, cuentas, recargar, tieneCerrado, minutosInactividad }
+}
+
+/**
+ * ⏱️ El tiempo de inactividad de un rol (A-FEAT-1351). Vale también para los roles de sistema: el
+ * del admin es el del usuario, y tiene que poder achicarlo o agrandarlo.
+ */
+function TiempoInactividad({
+  rolId,
+  guardado,
+  disponible,
+  alGuardar,
+}: {
+  rolId: string
+  /** Lo guardado; null = usa el default (1 hora). */
+  guardado: number | null
+  /** false = todavía no se corrió scripts/101. */
+  disponible: boolean
+  alGuardar: () => void
+}) {
+  const [editando, setEditando] = useState(false)
+  const [texto, setTexto] = useState("")
+  const [guardando, setGuardando] = useState(false)
+  const efectivo = minutosEfectivos(guardado)
+
+  const guardar = async () => {
+    const v = validarMinutos(texto)
+    if (!v.ok) return toast.error(v.motivo)
+    setGuardando(true)
+    try {
+      const r = await fetch("/api/admin/roles/inactividad", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: rolId, minutos: v.valor }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) return toast.error(j.error ?? "No se pudo guardar.")
+      toast.success(`«${rolId}»: la sesión se cierra a ${textoMinutos(minutosEfectivos(v.valor))} sin actividad.`)
+      setEditando(false)
+      alGuardar()
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  if (editando) {
+    return (
+      <div className="rounded-md border bg-white px-3 py-2">
+        <div className="flex items-center gap-1.5">
+          <input
+            type="text"
+            inputMode="numeric"
+            autoFocus
+            className="w-16 rounded border px-1.5 py-0.5 text-sm"
+            placeholder={String(MINUTOS_INACTIVIDAD_DEFAULT)}
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void guardar()
+              if (e.key === "Escape") setEditando(false)
+            }}
+          />
+          <span className="text-xs text-muted-foreground">min</span>
+          <Button size="sm" className="h-6 px-2 text-xs" disabled={guardando} onClick={() => void guardar()}>
+            Guardar
+          </Button>
+          <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setEditando(false)}>
+            ✕
+          </Button>
+        </div>
+        <div className="mt-1 text-[11px] text-muted-foreground">
+          60 = 1 hora · vacío = {textoMinutos(MINUTOS_INACTIVIDAD_DEFAULT)} · entre {MINUTOS_INACTIVIDAD_MIN} y {MINUTOS_INACTIVIDAD_MAX}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      className="rounded-md border bg-white px-3 py-2 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+      disabled={!disponible}
+      title={
+        disponible
+          ? "Cambiar cuánto puede quedar quieta la sesión antes de cerrarse"
+          : "Para cambiarlo falta correr scripts/101-roles-inactividad.sql. Mientras tanto vale 1 hora para todos."
+      }
+      onClick={() => {
+        setTexto(guardado === null ? "" : String(guardado))
+        setEditando(true)
+      }}
+    >
+      <div className="text-lg font-semibold leading-none">
+        {textoMinutos(efectivo)} {disponible && <span className="text-xs font-normal text-muted-foreground">✏️</span>}
+      </div>
+      <div className="mt-1 text-xs text-muted-foreground">
+        cierre por inactividad{guardado === null ? " (el de siempre)" : ""}
+      </div>
+    </button>
+  )
 }
 
 /**
@@ -259,7 +369,7 @@ function CrearRol({ roles, alCrear }: { roles: string[]; alCrear: () => void }) 
 }
 
 function PanelRoles() {
-  const { roles, desdeLaBase, falta, aplicados, cuentas, recargar, tieneCerrado } = useRoles()
+  const { roles, desdeLaBase, falta, aplicados, cuentas, recargar, tieneCerrado, minutosInactividad } = useRoles()
   const [cerrado, setCerrado] = useState(false)
   const todas = seccionesDe("admin")   // las 12, con su label e ícono
 
@@ -419,6 +529,14 @@ function PanelRoles() {
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">exige 2FA</div>
                 </div>
+                {desdeLaBase && (
+                  <TiempoInactividad
+                    rolId={r.id}
+                    guardado={minutosInactividad?.[r.id] ?? null}
+                    disponible={minutosInactividad !== null}
+                    alGuardar={() => void recargar()}
+                  />
+                )}
               </div>
 
               {!enEdicion && r.cerrado && (

@@ -20,6 +20,8 @@ const ERRORES: Record<string, string> = {
     "Ese link ya se usó o venció. Pedile a un administrador que te genere uno nuevo.",
   link_invalido:
     "El link está incompleto. Puede haberse cortado al copiarlo: pedí que te lo manden de nuevo.",
+  // A-FEAT-1351: lo pone el cierre por inactividad (pantalla o servidor).
+  inactividad: "Se cerró la sesión por inactividad. Volvé a entrar para seguir.",
 }
 
 export default async function LoginPage({

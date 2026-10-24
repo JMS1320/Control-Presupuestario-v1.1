@@ -47,6 +47,7 @@ export const RUTAS_RECURSOS: MapeoRuta[] = [
   { ruta: "pendientes/propuestos", sinMapear: "Idem pendientes." },
   { ruta: "revisiones", sinMapear: "Las marcas de revisión son transversales: se ponen desde cualquier pantalla." },
   { ruta: "admin/roles", sinMapear: "Ya exige admin con 2FA (`exigirAdmin`), que es más estricto que cualquier recurso." },
+  { ruta: "admin/roles/inactividad", sinMapear: "El tiempo de inactividad de un rol (A-FEAT-1351). Ya exige admin con 2FA (`exigirAdmin`)." },
 ]
 
 /** El recurso de una ruta, o `null` si está declarada sin mapear. */

@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 import { COOKIE_RECORDAR, ajustarPersistencia } from "@/lib/auth/cookies-sesion"
+import { COOKIE_ACTIVIDAD, sesionDelToken, sesionVencida } from "@/lib/auth/inactividad"
 
 /**
  * MIDDLEWARE DE SESIÓN Y ACCESO
@@ -116,6 +117,40 @@ export async function middleware(request: NextRequest) {
     url.pathname = "/login"
     url.searchParams.set("volver_a", pathname)
     return cabecerasDeSeguridad(NextResponse.redirect(url), urlSupabase)
+  }
+
+  /**
+   * ⏱️ Cierre por inactividad (A-FEAT-1351), la mitad del SERVIDOR. La pantalla
+   * (`components/cierre-inactividad.tsx`) anota la última actividad en una cookie; acá se mira esa
+   * marca ANTES de servir nada. Así, el que reabre la app pasado el tiempo —el celular que quedó en
+   * un cajón— va derecho al login **sin que la página llegue a mostrar datos**.
+   * Sólo cierra si la marca es de ESTA sesión: una vieja de la sesión anterior no cuenta.
+   * Cierra sólo este aparato (`scope: "local"`), no las otras sesiones de la persona.
+   */
+  if (user && !esRutaPublica(pathname)) {
+    const marca = request.cookies.get(COOKIE_ACTIVIDAD)?.value
+    if (marca) {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      if (sesionVencida(decodeURIComponent(marca), sesionDelToken(session?.access_token), Date.now())) {
+        await supabase.auth.signOut({ scope: "local" })
+        const salida = pathname.startsWith("/api/")
+          ? NextResponse.json({ error: "La sesión se cerró por inactividad." }, { status: 401 })
+          : (() => {
+              const url = request.nextUrl.clone()
+              url.pathname = "/login"
+              url.search = ""
+              url.searchParams.set("error", "inactividad")
+              url.searchParams.set("volver_a", pathname)
+              return NextResponse.redirect(url)
+            })()
+        // Las cookies de sesión borradas por signOut viajan en `response`: se copian a la salida.
+        response.cookies.getAll().forEach((c) => salida.cookies.set(c))
+        salida.cookies.delete(COOKIE_ACTIVIDAD)
+        return cabecerasDeSeguridad(salida, urlSupabase)
+      }
+    }
   }
 
   if (user) {

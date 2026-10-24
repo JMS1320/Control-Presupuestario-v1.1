@@ -62,6 +62,7 @@ import { nivelesEfectivos, excepcionesParaEditar, permisosAGuardar } from "@/lib
 import { RECURSOS as RECURSOS_PERMISABLES } from "@/lib/auth/recursos"
 import { borradorDe, alternarRecurso, alternarSeccion, nivelEnBorrador, contarCambios, cuerpoGuardar } from "@/lib/auth/modo-permisos"
 import { motivoCuentaBloqueada } from "@/lib/auth/cuentas-extracto"
+import { minutosEfectivos, validarMinutos, textoMinutos, valorCookieActividad, msRestantes, sesionVencida, sesionDelToken } from "@/lib/auth/inactividad"
 import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
 import {
   adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga,
@@ -8351,6 +8352,38 @@ export function correrCasos(): Resultado[] {
       nivelEnBorrador(ctModo, "extracto.cuenta.pam_galicia"), nivelEnBorrador(ctModo, "extracto.importar")].join(" · ")
     chequear("Accesos", "Cuentas en el modo permisos: prender MSA en un rol vacío prende Extracto y sólo esa cuenta",
       "extracto · escritura · ninguno · ninguno", vmo, vmo === "extracto · escritura · ninguno · ninguno", "A-FEAT-1336")
+
+    // ── Cierre de sesión por inactividad (A-FEAT-1351) ──
+    const inMin = [minutosEfectivos(null), minutosEfectivos(30), minutosEfectivos(3), minutosEfectivos(2000), minutosEfectivos("45")].join(" · ")
+    chequear("Accesos", "Inactividad: un rol sin tiempo propio (o con uno fuera de 5..1440) cierra a los 60 min",
+      "60 · 30 · 60 · 60 · 60", inMin, inMin === "60 · 30 · 60 · 60 · 60", "A-FEAT-1351")
+
+    const inVal = ["", "90", "4", "1,5", "1440", "abc"].map((t) => { const v = validarMinutos(t); return v.ok ? String(v.valor) : "rechaza" }).join(" · ")
+    chequear("Accesos", "Inactividad: lo que se escribe en Roles — vacío vuelve al de siempre, fuera de rango o con coma se rechaza",
+      "null · 90 · rechaza · rechaza · 1440 · rechaza", inVal, inVal === "null · 90 · rechaza · rechaza · 1440 · rechaza", "A-FEAT-1351")
+
+    const inT0 = Date.UTC(2026, 9, 24, 12, 0, 0)
+    const inCookie = valorCookieActividad({ sesion: "ses-1", ultima: inT0, minutos: 60 })
+    const inVen = [
+      sesionVencida(inCookie, "ses-1", inT0 + 59 * 60_000) ? "cierra" : "sigue",
+      sesionVencida(inCookie, "ses-1", inT0 + 61 * 60_000) ? "cierra" : "sigue",
+      // La marca vieja de la sesión anterior no cierra la sesión nueva recién abierta.
+      sesionVencida(inCookie, "ses-2", inT0 + 600 * 60_000) ? "cierra" : "sigue",
+      msRestantes("basura", "ses-1", inT0) === null ? "ignora" : "lee",
+      sesionVencida(valorCookieActividad({ sesion: "ses-1", ultima: inT0, minutos: 15 }), "ses-1", inT0 + 16 * 60_000) ? "cierra" : "sigue",
+    ].join(" · ")
+    chequear("Accesos", "Inactividad: a 1 hora sigue a los 59 min y cierra a los 61; una marca de otra sesión o rota no cierra; con 15 min cierra a los 16",
+      "sigue · cierra · sigue · ignora · cierra", inVen, inVen === "sigue · cierra · sigue · ignora · cierra", "A-FEAT-1351")
+
+    const inB64 = (o: object) => btoa(JSON.stringify(o)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+    const inTok = [sesionDelToken(`${inB64({ alg: "HS256" })}.${inB64({ session_id: "abc-123", sub: "u" })}.firma`) ?? "nada",
+      sesionDelToken("no-es-un-token") ?? "nada", sesionDelToken(null) ?? "nada"].join(" · ")
+    chequear("Accesos", "Inactividad: la sesión sale del token; un token roto no inventa una",
+      "abc-123 · nada · nada", inTok, inTok === "abc-123 · nada · nada", "A-FEAT-1351")
+
+    const inTxt = [60, 120, 90, 30].map(textoMinutos).join(" · ")
+    chequear("Accesos", "Inactividad: la tarjeta del rol lo dice en horas cuando se puede",
+      "1 hora · 2 horas · 1 h 30 min · 30 min", inTxt, inTxt === "1 hora · 2 horas · 1 h 30 min · 30 min", "A-FEAT-1351")
   }
 
   return r
