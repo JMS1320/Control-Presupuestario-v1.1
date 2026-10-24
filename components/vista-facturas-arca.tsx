@@ -7,7 +7,7 @@ import { toggleChip, esSoloEste, tituloChip } from "@/lib/ui/chips"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useRef } from "react"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
-import type { UserRole } from "@/lib/auth/roles"
+import { facturasRestringidas, type UserRole } from "@/lib/auth/roles"
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
@@ -84,6 +84,7 @@ import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { quincenasDelMes } from "@/lib/sicore/quincena"   // A-BUG-193 — el minimo es MENSUAL
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
+import { usePuedeVer } from "@/components/contexto-permisos"
 
 interface FacturaArca {
   id: string
@@ -363,7 +364,11 @@ const calcularSubtotalesSubdiario = (facturas: any[]) =>
   calcularSubtotalesSubdiarioLib(facturas, TIPOS_SIN_CREDITO_COMPRAS)
 
 export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { empresa?: 'MSA' | 'PAM' | 'MA'; userRole?: UserRole } = {}) {
-  const esContable = userRole === 'contable'
+  // Modo restringido (lo que ve Ulises). Sólo admin tiene el modo completo — ver `facturasRestringidas`.
+  const esContable = facturasRestringidas(userRole)
+  // Las solapas y botones de Facturas que se pueden apagar desde Configuración → Roles (A-FEAT-1322,
+  // etapa 1). Sin excepción cargada se ven, igual que antes: registrarlas no le cambia nada a nadie.
+  const puedeVer = usePuedeVer()
   const schemaName = empresa === 'PAM' ? 'pam' : empresa === 'MA' ? 'ma' : 'msa'
   const [facturas, setFacturas] = useState<FacturaArca[]>([])
   const [facturasOriginales, setFacturasOriginales] = useState<FacturaArca[]>([])
@@ -6629,7 +6634,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                 )}
 
                 {/* Archivos de texto para IVA Simple — sólo MSA (PAM y MA no están inscriptas en IVA) */}
-                {empresa === 'MSA' && periodoConsulta && facturasPeriodo.length > 0 && (
+                {empresa === 'MSA' && periodoConsulta && facturasPeriodo.length > 0 && puedeVer('egresos.archivos-arca') && (
                   <Button
                     onClick={() => setMostrarArchivosArca(true)}
                     variant="outline"
@@ -7535,9 +7540,9 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
       }}>
         <TabsList>
           <TabsTrigger value="facturas">Facturas</TabsTrigger>
-          <TabsTrigger value="subdiarios">Subdiarios</TabsTrigger>
-          <TabsTrigger value="historico">Histórico</TabsTrigger>
-          <TabsTrigger value="asignacion">Asignación Cuentas</TabsTrigger>
+          {puedeVer('egresos.subdiarios') && <TabsTrigger value="subdiarios">Subdiarios</TabsTrigger>}
+          {puedeVer('egresos.historico') && <TabsTrigger value="historico">Histórico</TabsTrigger>}
+          {puedeVer('egresos.asignacion') && <TabsTrigger value="asignacion">Asignación Cuentas</TabsTrigger>}
         </TabsList>
 
         {/* Tab Content: Facturas */}
@@ -9071,21 +9076,21 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
         </TabsContent>
 
         {/* Tab Content: Subdiarios */}
-        <TabsContent value="subdiarios" className="space-y-6">
+        {puedeVer('egresos.subdiarios') && <TabsContent value="subdiarios" className="space-y-6">
           {/* Se LLAMA, no se monta como <SubdiariosContent />: es una función nueva en cada render, y montada
               React la desarmaba entera cada vez (el buscador perdía el cursor y las listas sus tildes). No usa hooks. */}
           {SubdiariosContent()}
-        </TabsContent>
+        </TabsContent>}
 
         {/* Tab Content: Histórico */}
-        <TabsContent value="historico" className="space-y-6">
+        {puedeVer('egresos.historico') && <TabsContent value="historico" className="space-y-6">
           <VistaHistoricoFacturas empresa={empresa} />
-        </TabsContent>
+        </TabsContent>}
 
         {/* Tab Content: Asignación Cuentas */}
-        <TabsContent value="asignacion" className="space-y-6">
+        {puedeVer('egresos.asignacion') && <TabsContent value="asignacion" className="space-y-6">
           <VistaAsignacionArca empresa={empresa} esAdmin={userRole === 'admin'} />
-        </TabsContent>
+        </TabsContent>}
       </Tabs>
 
       {/* Modal Imputación */}

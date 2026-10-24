@@ -40,6 +40,47 @@
 
 ## 📨 PARA JAVIER
 
+### 🔑 Propuesta de diseño de accesos POR TAREA y POR PERSONA (2026-10-23) — sólo papel, no toca nada
+
+Para [A-FEAT-1322](PENDIENTES.md#a-feat-1322). **No hay código ni cambios en la base**: es una propuesta que JMS todavía
+tiene que contestar. Te la aviso **antes** porque, si se aprueba, toca tu terreno: `lib/auth/recursos.ts` (un tipo nuevo
+`tarea`), `public.roles` (un rol «cerrado» donde lo no declarado nace apagado, y crear rol desde la app = [A-FEAT-171](PENDIENTES.md#a-feat-171)),
+un registro de cambios por trigger en la base, y tus scripts **66/67** de `jms/vistas-seguras` propuestos como paso previo a dar
+cuentas en celulares. Página: https://claude.ai/artifact/WFrDNJ7ZGC8N9UnKqxTvPG (privada de JMS; pedile que te la comparta).
+De paso: [A-BUG-1327](PENDIENTES.md#a-bug-1327) — las marcas «para revisar» siguen sacando el autor de las rutas viejas
+(`getRoleFromRoute`) y lo guardan vacío.
+
+📌 Borrá esta entrada cuando la leas.
+
+### 🔒 Una columna nueva en `public.roles`: `cerrado` (2026-10-24) — ✅ APLICADA el 24/10 con JMS presente (aviso previo): 5 roles, los 5 en `false`
+
+Para [A-FEAT-1333](PENDIENTES.md#a-feat-1333) (rol cerrado: lo que se registre después nace apagado para ese rol).
+`scripts/99-roles-cerrado.sql` agrega **`cerrado boolean not null default false`**. **Todos los roles quedan en
+`false` = como hoy.** No toca RLS, políticas, GRANTs ni el trigger `roles_proteger_sistema`.
+- El script **se frena solo si la columna ya existe** y la deja marcada con `[script 99]` en el comentario; el
+  `-deshacer` comprueba esa marca (y que no haya roles cerrados) antes de borrarla.
+- En código (rama `jms/personas-accesos`): `lib/auth/rol-cerrado.ts` (pura) y `nivelesDe()` de `lib/auth/permisos.ts`
+  devuelve el **mapa efectivo** (en un rol cerrado, lo registrado sin tildar viene en `"ninguno"`), así que
+  `exigirEscritura` y la pantalla no cambian. `leerRoles()` lee con o sin la columna (`tieneCerrado`).
+- Si `jms/vistas-seguras` o la RLS por recurso leen `roles.permisos` desde SQL, ojo: en un rol cerrado esa lista
+  es lo que se le **da**, no lo que se le saca. Hoy no hay ningún rol cerrado y no va a haber hasta que JMS tilde uno.
+Lo corre T1 con JMS presente. Si querés que espere, avisá acá.
+
+### 🔑 Etapa 1 de accesos: código en `lib/auth/` (2026-10-24) — rama `jms/personas-accesos`, SIN mergear
+
+JMS aprobó arrancar con lo que no cambia nada para Ulises. **No toca la base ni RLS.** Toqué tu terreno en tres lugares:
+- **`lib/auth/roles.ts`** → `facturasRestringidas(rol)`: en Facturas el modo completo es sólo para una lista cerrada
+  (`admin`, `socio`, `productivo`, los que ya lo veían); antes era `rol === 'contable'` (lo que anotaste en [A-SEC-13](PENDIENTES.md#a-sec-13)). Un rol nuevo entra restringido.
+- **`lib/auth/recursos.ts`** → 4 recursos nuevos de Egresos (Subdiarios, Histórico, Asignación Cuentas dentro de Facturas,
+  y el botón Archivos para ARCA) y un tipo nuevo **`accion`** (un botón; el control lo verifica buscando `puedeVer("<id>")`
+  en su archivo). `scripts/verificar-recursos-permisos.mts` ahora busca cada recurso **en su propio archivo**.
+- **`lib/auth/identidad.ts`** → `etiquetaPersona(user)`, y `/api/revisiones` toma el autor de la sesión ([A-BUG-1327](PENDIENTES.md#a-bug-1327)).
+- **`app/api/admin/roles`** → `POST`: crear rol vacío o copiando de otro ([A-FEAT-171](PENDIENTES.md#a-feat-171)), regla en
+  `lib/auth/crear-rol.ts`. Inserta en `public.roles` con `es_sistema=false` siempre; no toca políticas ni el trigger.
+Si algo choca con lo tuyo de `jms/vistas-seguras`, avisá acá antes de que se mergee.
+
+📌 Borrá esta entrada cuando la leas.
+
 ### 🗃️ Una columna nueva en `public.proveedores` (2026-10-24) — ✅ APLICADA el 24/10 con JMS presente (aviso previo)
 
 Para [A-FEAT-1332](PENDIENTES.md#a-feat-1332) (control de cantidad de facturas de los proveedores fijos, en Papeles de

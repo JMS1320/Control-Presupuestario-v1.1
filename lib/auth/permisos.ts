@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin"
+import { nivelesEfectivos } from "@/lib/auth/rol-cerrado"
 
 /** Los ids de las 12 secciones, en el orden en que se muestran. Fuente: el menú lateral. */
 export const SECCIONES_IDS = [
@@ -20,6 +21,12 @@ export type Rol = {
    * Clave = id de `lib/auth/recursos.ts`; hoy el único valor que se escribe es `"ninguno"`.
    */
   permisos: Record<string, Nivel>
+  /**
+   * 🔒 Rol CERRADO (A-FEAT-1333, `scripts/99`): `permisos` dice lo que se le DA y lo que se registre
+   * después nace apagado. Falso o ausente = abierto, como todos los roles hasta hoy. Ver
+   * `lib/auth/rol-cerrado.ts`.
+   */
+  cerrado?: boolean
 }
 
 /**
@@ -55,6 +62,8 @@ export type ResultadoRoles = {
   desdeLaBase: boolean
   /** Qué falta, cuando falta algo. La pantalla necesita distinguirlo para no decir una mentira. */
   falta?: "tabla" | "columna_permisos"
+  /** Si ya se corrió `scripts/99`. Sin la columna, todos los roles son abiertos (lo de siempre). */
+  tieneCerrado: boolean
 }
 
 /**
@@ -78,14 +87,28 @@ export async function leerRoles(): Promise<ResultadoRoles> {
    */
   let falta: ResultadoRoles["falta"]
   let filas: Rol[] | null = null
+  let tieneCerrado = false
 
-  const conPermisos = await supabaseAdmin
+  // Mismo criterio con `cerrado` (scripts/99): si todavía no se corrió, se lee sin ella y todos los
+  // roles quedan abiertos — que es exactamente como funcionan hoy.
+  const conCerrado = await supabaseAdmin
     .from("roles")
-    .select(`${COLUMNAS}, permisos`)
+    .select(`${COLUMNAS}, permisos, cerrado`)
     .order("es_sistema", { ascending: false })
     .order("id")
 
-  if (!conPermisos.error) {
+  const conPermisos = conCerrado.error
+    ? await supabaseAdmin
+        .from("roles")
+        .select(`${COLUMNAS}, permisos`)
+        .order("es_sistema", { ascending: false })
+        .order("id")
+    : null
+
+  if (!conCerrado.error) {
+    filas = conCerrado.data as Rol[]
+    tieneCerrado = true
+  } else if (conPermisos && !conPermisos.error) {
     filas = conPermisos.data as Rol[]
   } else {
     const sinPermisos = await supabaseAdmin
@@ -100,14 +123,14 @@ export async function leerRoles(): Promise<ResultadoRoles> {
   }
 
   if (!filas || filas.length === 0) {
-    return { roles: Object.values(FALLBACK), desdeLaBase: false, falta: "tabla" }
+    return { roles: Object.values(FALLBACK), desdeLaBase: false, falta: "tabla", tieneCerrado: false }
   }
   const data = filas
   // `permisos` puede faltar si todavía no se corrió `scripts/61`: se normaliza a {} (sin
   // excepciones), que es el comportamiento anterior. Igual que el FALLBACK: se falla al reparto
   // que ya había, nunca a "no ve nada" ni a "ve todo".
-  const roles = data.map((r) => ({ ...r, permisos: r.permisos ?? {} }))
-  return { roles, desdeLaBase: true, falta }
+  const roles = data.map((r) => ({ ...r, permisos: r.permisos ?? {}, cerrado: r.cerrado === true }))
+  return { roles, desdeLaBase: true, falta, tieneCerrado }
 }
 
 /**
@@ -136,7 +159,10 @@ export async function recursosOcultosDe(rol: string | null): Promise<string[]> {
 export async function nivelesDe(rol: string | null): Promise<Record<string, Nivel>> {
   if (!rol) return {}
   const { roles } = await leerRoles()
-  return roles.find((r) => r.id === rol)?.permisos ?? {}
+  const encontrado = roles.find((r) => r.id === rol)
+  // El mapa EFECTIVO: en un rol cerrado, lo registrado que no tiene tildado viene en «ninguno».
+  // Así la pantalla y el guard de las rutas no necesitan saber de qué tipo es el rol.
+  return encontrado ? nivelesEfectivos(encontrado) : {}
 }
 
 /** Las secciones que ve un rol. Si el rol no existe en la tabla, no ve nada. */

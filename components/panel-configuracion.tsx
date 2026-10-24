@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { PanelUsuarios } from "@/components/panel-usuarios"
 import { seccionesDe } from "@/components/layout-app"
 import { recursosDe, SIN_RECURSOS, type Recurso } from "@/lib/auth/recursos"
+import { excepcionesParaEditar } from "@/lib/auth/rol-cerrado"
 import { Ayuda } from "@/components/ayuda"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -77,6 +78,8 @@ type RolDB = {
   permisos?: Record<string, string>
   exige_2fa: boolean
   es_sistema: boolean
+  /** 🔒 Rol cerrado (A-FEAT-1333): lo nuevo nace apagado. Ver lib/auth/rol-cerrado.ts. */
+  cerrado?: boolean
 }
 
 /** Los roles y sus permisos, leídos de la base. */
@@ -89,6 +92,8 @@ function useRoles() {
   // Los recursos que la BASE aplica (tienen tablas mapeadas). Ver el comentario en la ruta.
   const [aplicados, setAplicados] = useState<string[]>([])
   const [cuentas, setCuentas] = useState<Record<string, number> | null>(null)
+  // Si ya se corrió scripts/99. Sin la columna, la casilla «rol cerrado» no se muestra.
+  const [tieneCerrado, setTieneCerrado] = useState(false)
 
   const recargar = () =>
     fetch("/api/admin/roles")
@@ -99,6 +104,7 @@ function useRoles() {
         setDesdeLaBase(j.desdeLaBase)
         setFalta(j.falta)
         setAplicados(j.recursosAplicados ?? [])
+        setTieneCerrado(j.tieneCerrado === true)
       })
       .catch(() => {})
 
@@ -115,7 +121,7 @@ function useRoles() {
       .catch(() => {})
   }, [])
 
-  return { roles, desdeLaBase, falta, aplicados, cuentas, recargar }
+  return { roles, desdeLaBase, falta, aplicados, cuentas, recargar, tieneCerrado }
 }
 
 /**
@@ -175,8 +181,86 @@ function CasillaMaestra({
   )
 }
 
+/**
+ * ➕ Crear un rol, vacío o copiando de otro (A-FEAT-171; etapa 2 de A-FEAT-1322).
+ *
+ * El caso para el que existe: armar el rol de Ulises en `pruebas`, probarlo con el otro mail, y
+ * después «crear "ulises" copiando de pruebas» y asignárselo en Usuarios. Es una COPIA: cambiar
+ * `pruebas` después no le mueve nada al nuevo. Crear no le cambia nada a nadie hasta que se asigna.
+ */
+function CrearRol({ roles, alCrear }: { roles: string[]; alCrear: () => void }) {
+  const [abierto, setAbierto] = useState(false)
+  const [nombre, setNombre] = useState("")
+  const [descripcion, setDescripcion] = useState("")
+  const [copiarDe, setCopiarDe] = useState("pruebas")
+  const [guardando, setGuardando] = useState(false)
+
+  async function crear() {
+    setGuardando(true)
+    const res = await fetch("/api/admin/roles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nombre, descripcion, copiarDe }),
+    })
+    const json = await res.json().catch(() => ({}))
+    setGuardando(false)
+    if (!res.ok) {
+      toast.error(json.error ?? "No se pudo crear el rol.")
+      return
+    }
+    toast.success(`Rol «${json.id}» creado. Nadie lo tiene hasta que lo asignes en Usuarios.`)
+    setAbierto(false)
+    setNombre("")
+    setDescripcion("")
+    alCrear()
+  }
+
+  if (!abierto) {
+    return (
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={() => setAbierto(true)}>➕ Crear rol</Button>
+      </div>
+    )
+  }
+  return (
+    <Card className="entrada-suave border-sky-300">
+      <CardContent className="space-y-3 p-4 text-sm">
+        <p className="font-medium">Crear rol</p>
+        <p className="text-muted-foreground">
+          Se copian las secciones y lo destildado del rol elegido, tal como están ahora. Después se edita
+          aparte: cambiar el original no lo mueve. Nadie lo tiene hasta que lo asignes en Usuarios.
+        </p>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <label className="space-y-1">
+            <span className="text-xs text-muted-foreground">Nombre (ej.: ulises)</span>
+            <input className="w-full rounded-md border px-2 py-1.5" value={nombre} onChange={(e) => setNombre(e.target.value)} />
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs text-muted-foreground">Copiar de</span>
+            <select className="w-full rounded-md border px-2 py-1.5" value={copiarDe} onChange={(e) => setCopiarDe(e.target.value)}>
+              <option value="">— vacío (no ve nada) —</option>
+              {roles.map((id) => <option key={id} value={id}>{id}</option>)}
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className="text-xs text-muted-foreground">Descripción (opcional)</span>
+            <input className="w-full rounded-md border px-2 py-1.5" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
+          </label>
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setAbierto(false)}>Cancelar</Button>
+          <Button size="sm" disabled={guardando || nombre.trim().length < 2} onClick={() => void crear()}>
+            {guardando ? "Creando…" : "Crear"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 function PanelRoles() {
-  const { roles, desdeLaBase, falta, aplicados, cuentas, recargar } = useRoles()
+  const { roles, desdeLaBase, falta, aplicados, cuentas, recargar, tieneCerrado } = useRoles()
+  const [cerrado, setCerrado] = useState(false)
   const todas = seccionesDe("admin")   // las 12, con su label e ícono
 
   const [editando, setEditando] = useState<string | null>(null)
@@ -234,7 +318,10 @@ function PanelRoles() {
   function empezar(r: RolDB) {
     setEditando(r.id)
     setBorrador(new Set(r.secciones))
-    setNiveles({ ...((r.permisos ?? {}) as Record<string, "ninguno" | "lectura" | "escritura">) })
+    // Las casillas muestran lo que el rol VE, sea abierto o cerrado (en uno cerrado, lo no tildado
+    // viene apagado). La pantalla edita igual los dos: la diferencia la resuelve el servidor al guardar.
+    setNiveles(excepcionesParaEditar({ secciones: r.secciones, permisos: r.permisos ?? {}, cerrado: r.cerrado }))
+    setCerrado(Boolean(r.cerrado))
   }
 
   async function guardar(id: string) {
@@ -242,7 +329,7 @@ function PanelRoles() {
     const res = await fetch("/api/admin/roles", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, secciones: [...borrador], permisos: niveles }),
+      body: JSON.stringify({ id, secciones: [...borrador], permisos: niveles, ...(tieneCerrado ? { cerrado } : {}) }),
     })
     const json = await res.json().catch(() => ({}))
     setGuardando(false)
@@ -293,6 +380,8 @@ function PanelRoles() {
         </Card>
       )}
 
+      {desdeLaBase && <CrearRol roles={roles.map((r) => r.id)} alCrear={() => void recargar()} />}
+
       {roles.map((r) => {
         const n = cuentas === null ? undefined : (cuentas[r.id] ?? 0)
         const enEdicion = editando === r.id
@@ -332,8 +421,32 @@ function PanelRoles() {
                 </div>
               </div>
 
+              {!enEdicion && r.cerrado && (
+                <p className="text-xs text-sky-800">
+                  🔒 <strong>Rol cerrado</strong>: lo que se agregue a la app de ahora en más nace apagado para
+                  este rol. Lo prendés vos acá cuando quieras.
+                </p>
+              )}
+
               {enEdicion ? (
                 <div className="space-y-3">
+                  {tieneCerrado && (
+                    <label className="flex cursor-pointer items-start gap-2 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={cerrado}
+                        onChange={(e) => setCerrado(e.target.checked)}
+                        className="mt-0.5 h-3.5 w-3.5"
+                      />
+                      <span>
+                        <span className="font-medium">🔒 Rol cerrado — lo nuevo nace apagado</span>
+                        <span className="block text-muted-foreground">
+                          Lo que ves tildado abajo no cambia. Cambia qué pasa con lo que se agregue a la app después:
+                          tildado, le aparece apagado hasta que lo prendas; sin tildar, le aparece solo.
+                        </span>
+                      </span>
+                    </label>
+                  )}
                   {/*
                     Cada sección abre lo que tiene adentro (A-FEAT-169). Antes era una grilla plana
                     de 12 casillas y no se veía qué había dentro de cada una.
@@ -439,7 +552,7 @@ function PanelRoles() {
                                     >
                                       <span className="flex-1">
                                         {r.etiqueta}
-                                        {r.tipo === "funcionalidad" && (
+                                        {r.tipo !== "pestana" && (
                                           <span className="ml-1.5 rounded bg-slate-100 px-1 text-[10px] text-slate-500">
                                             acción
                                           </span>
@@ -763,7 +876,7 @@ function PanelPermisos() {
                       <td className="py-1.5 pr-4 pl-6 text-xs text-muted-foreground">
                         <span className={rec.padre ? "ml-4 border-l pl-2" : ""}>
                           ↳ {rec.etiqueta}
-                          {rec.tipo === "funcionalidad" && (
+                          {rec.tipo !== "pestana" && (
                             <span className="ml-1.5 rounded bg-slate-200 px-1 text-[10px]">acción</span>
                           )}
                         </span>

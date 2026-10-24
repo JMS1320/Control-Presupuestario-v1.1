@@ -60,7 +60,17 @@ for (const { id: seccion, etiqueta } of SECCIONES) {
   const enRegistro = new Set(declarados.map((r) => r.id.split(".").slice(1).join(".")))
 
   const sinRegistrar = [...enCodigo].filter((v) => !enRegistro.has(v))
-  const fantasmas = [...enRegistro].filter((v) => !enCodigo.has(v))
+  // Cada recurso se busca en SU archivo (A-FEAT-1322): las solapas de Facturas viven en
+  // vista-facturas-arca.tsx, no en vista-egresos.tsx. Una `accion` (botón) se busca como
+  // `puedeVer("<id>")`: así se verifica además que la pantalla pregunte por el permiso.
+  const existe = (r: (typeof declarados)[number]) => {
+    const sub = r.id.split(".").slice(1).join(".")
+    if (r.archivo === archivo && r.tipo !== "accion") return enCodigo.has(sub)
+    const src = readFileSync(r.archivo, "utf8")
+    if (r.tipo === "accion") return src.includes(`puedeVer('${r.id}')`) || src.includes(`puedeVer("${r.id}")`)
+    return pestanasEnCodigo(r.archivo).includes(sub)
+  }
+  const fantasmas = declarados.filter((r) => !existe(r)).map((r) => r.id.split(".").slice(1).join("."))
 
   if (sinRegistrar.length === 0 && fantasmas.length === 0) {
     console.log(`  ✅ ${etiqueta}: ${enRegistro.size} recursos, todos existen en el código.`)

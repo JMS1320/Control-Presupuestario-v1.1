@@ -3648,6 +3648,14 @@ ALTER TABLE public.reglas_ctas_import_arca
 ```
 `buscarReglaCuit` selecciona `fc`; el import hace `fc: reglaCuit.fc || 'Buscar'` (la imputación manual lo sigue pisando).
 
+### 2026-10-24 · ROL CERRADO (script 99) — A-FEAT-1333
+
+`public.roles.cerrado boolean not null default false` (comentario con la marca `[script 99]`). En un rol cerrado, `permisos` dice lo que se le DA y lo registrado después nace apagado; `false` = como siempre. Script `scripts/99-roles-cerrado.sql` (se frena si la columna ya existe; el deshacer sólo la borra si lleva la marca y no hay roles cerrados). ✅ **Corrido 2026-10-24** con OK del usuario y aviso previo a Javier: 5 roles, los 5 en `false`.
+
+### 2026-10-24 · FACTURAS POR MES de un proveedor fijo (script 98) — A-FEAT-1332
+
+`public.proveedores.facturas_por_mes smallint` (null = no es fijo; check 1–31). Script `scripts/98-proveedores-facturas-por-mes.sql`. ✅ **Corrido 2026-10-24** con OK del usuario; 11 proveedores cargados.
+
 ### 2026-10-23 · HUELLA de la carga desde el PDF (script 94) — A-FEAT-1318
 
 Seis columnas en `arca_pdf_archivo_digital`: `comprobante_id`, `comprobante_empresa`, `carga_leido`, `carga_correcciones`, `cargado_at`, `cargado_por`. Aditivo. Script `scripts/94-carga-desde-pdf-archivo-digital.sql` (deshacer: `94-…-deshacer.sql`). ✅ **Corrido 2026-10-23** con OK del usuario (verificado: las 6 columnas existen y el `UPDATE` de la app planea bien).
