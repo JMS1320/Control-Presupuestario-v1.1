@@ -229,6 +229,7 @@ import {
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
 import { hojaDeAsientosContables, hojaDeTemplates, bloqueDeLecturas } from "@/lib/balance/export-libro-diario"
 import { juntarTandas, lecturaIncompleta } from "@/lib/supabase-paginado"
+import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
 import * as XLSXcasos from "xlsx"
 import { presentarHoja, MONEDA, ENTERO } from "@/lib/balance/formato-excel"
 import { armarFilaDato, leerNumero, textoEstadoGuardado } from "@/lib/balance/datos-usuario-puro"
@@ -8385,6 +8386,21 @@ export function correrCasos(): Resultado[] {
       dc({ categ: "FCI", egreso: { tipo: "egreso" } }, { FCI: "financiero" })].join(" · ")
     chequear("Balance", "Tipo de una cuota: manda el del template, si no el del plan de cuentas; sin ninguno queda «sin clasificar» (no se adivina por el signo)",
       "financiero · financiero · sin clasificar · egreso", vtipo, vtipo === "financiero · financiero · sin clasificar · egreso", "A-FEAT-1342")
+
+    // ── Reglas por CUIT: el CUIT está en leyendas_adicionales_2 (A-BUG-1344) ──
+    // Movimiento real de PAM cta cte del 17/03/2026 (MSA le transfiere $4.100.000), como viene del banco.
+    const movPam = { descripcion: "Servicio Pago A Proveedores", debitos: 0, creditos: 4100000, numero_de_comprobante: "", observaciones_cliente: "",
+      leyendas_adicionales_1: "MARTINEZ SOBRADO AGRO S.R.L.", leyendas_adicionales_2: "30617786016" }
+    const reglaCuit = (texto: string) => ({ columna_busqueda: "cuit", tipo_match: "exacto", texto_buscar: texto })
+    const vcuit = [evaluarReglaConciliacion(movPam, reglaCuit("30617786016")), evaluarReglaConciliacion(movPam, reglaCuit("30-61778601-6")),
+      evaluarReglaConciliacion(movPam, reglaCuit("20044390222"))].map(String).join(" · ")
+    chequear("Conciliación", "Regla por CUIT: coincide con el CUIT que el banco deja en leyendas 2 (con o sin guiones) y no con otro CUIT — antes no coincidía nunca",
+      "true · true · false", vcuit, vcuit === "true · true · false", "A-BUG-1344")
+    const vdesc = [evaluarReglaConciliacion(movPam, { columna_busqueda: "descripcion", tipo_match: "contiene", texto_buscar: "pago a proveedores" }),
+      evaluarReglaConciliacion(movPam, { columna_busqueda: "monto_credito", tipo_match: "exacto", texto_buscar: "4100000" }),
+      evaluarReglaConciliacion(movPam, { columna_busqueda: "descripcion", tipo_match: "contiene", texto_buscar: "" })].map(String).join(" · ")
+    chequear("Conciliación", "Reglas por descripción y por monto siguen igual; una regla con el texto vacío no coincide con todo",
+      "true · true · false", vdesc, vdesc === "true · true · false", "A-BUG-1344")
 
     // ── ¿Llegó todo de la base? (A-FEAT-1343) ──
     const lects = [{ nombre: "Extracto BANCO GALICIA", llegaron: 1000, esperadas: 1563 }, { nombre: "Ventas", llegaron: 9, esperadas: 9 }, { nombre: "Sueldos", llegaron: 103, esperadas: null }]
