@@ -731,7 +731,7 @@ referencia; el estado real y lo que falta están en el **§ 0**.
 | **Ver y editar** los permisos de un rol | Configuración → Roles | ✅ anda |
 | **Asignar** un rol a alguien | Configuración → Usuarios | ✅ desde [A-BUG-1198](PENDIENTES.md#a-bug-1198) |
 | **Crear** un rol nuevo | Configuración → Roles → ➕ Crear rol (vacío o copiando de otro) | 🟢 hecho 24/10 en `jms/personas-accesos`, sin mergear — [A-FEAT-171](PENDIENTES.md#a-feat-171) · `lib/auth/crear-rol.ts` |
-| **Rol cerrado** (lo nuevo nace apagado) | Configuración → Roles → Editar → 🔒 Rol cerrado. En un rol cerrado, `permisos` es lo que se le **da**; en uno abierto, lo que se le **saca**. `nivelesDe()` devuelve siempre el mapa efectivo, así que la pantalla y `exigirEscritura` no distinguen | 🟢 código 24/10 en `jms/personas-accesos`, sin mergear; **`scripts/99` sin correr** — [A-FEAT-1333](PENDIENTES.md#a-feat-1333) · `lib/auth/rol-cerrado.ts` |
+| **Rol cerrado** (lo nuevo nace apagado) | Configuración → Roles → Editar → 🔒 Rol cerrado. En un rol cerrado, `permisos` es lo que se le **da**; en uno abierto, lo que se le **saca**. `nivelesDe()` devuelve siempre el mapa efectivo, así que la pantalla y `exigirEscritura` no distinguen | 🟢 código 24/10 en `jms/personas-accesos`, sin mergear; `scripts/99` ✅ corrido 24/10 — [A-FEAT-1333](PENDIENTES.md#a-feat-1333) · `lib/auth/rol-cerrado.ts` |
 
 🧨 **El bug que esto tuvo, y vale recordarlo porque es un patrón**: la tabla tenía **cuatro** roles y
 el alta de usuarios validaba contra `const ROLES = ["admin", "contable"]` escrito a mano. Entonces

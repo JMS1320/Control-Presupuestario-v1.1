@@ -52,7 +52,7 @@ De paso: [A-BUG-1327](PENDIENTES.md#a-bug-1327) — las marcas «para revisar» 
 
 📌 Borrá esta entrada cuando la leas.
 
-### 🔒 Una columna nueva en `public.roles`: `cerrado` (2026-10-24) — ⏳ AVISO PREVIO, todavía NO se corrió
+### 🔒 Una columna nueva en `public.roles`: `cerrado` (2026-10-24) — ✅ CORRIDO 24/10 por T1 con JMS (el aviso estaba escrito antes)
 
 Para [A-FEAT-1333](PENDIENTES.md#a-feat-1333) (rol cerrado: lo que se registre después nace apagado para ese rol).
 `scripts/99-roles-cerrado.sql` agrega **`cerrado boolean not null default false`**. **Todos los roles quedan en
@@ -64,7 +64,7 @@ Para [A-FEAT-1333](PENDIENTES.md#a-feat-1333) (rol cerrado: lo que se registre d
   `exigirEscritura` y la pantalla no cambian. `leerRoles()` lee con o sin la columna (`tieneCerrado`).
 - Si `jms/vistas-seguras` o la RLS por recurso leen `roles.permisos` desde SQL, ojo: en un rol cerrado esa lista
   es lo que se le **da**, no lo que se le saca. Hoy no hay ningún rol cerrado y no va a haber hasta que JMS tilde uno.
-Lo corre T1 con JMS presente. Si querés que espere, avisá acá.
+Lo corrió T1 con JMS el 24/10. Todos los roles quedaron abiertos (`cerrado = false`): nada cambió para nadie. Si tenés algo que lea `roles.permisos` desde SQL, avisá acá.
 
 ### 🔑 Etapa 1 de accesos: código en `lib/auth/` (2026-10-24) — rama `jms/personas-accesos`, SIN mergear
 

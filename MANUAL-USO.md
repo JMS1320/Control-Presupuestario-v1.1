@@ -1070,7 +1070,7 @@ Configuración → Roles → **Editar** un rol → **🔒 Rol cerrado** → Guar
 **apagado** hasta que lo tildes; en uno abierto aparece solo. Es para los delegados (Ulises, Enrique): que
 una pantalla nueva no les aparezca sin que lo decidas. Al crear un rol copiando de uno cerrado, nace cerrado.
 
-⚠️ Sin probar todavía, y la casilla aparece recién cuando se corre `scripts/99` → [A-TEST-1237](PENDIENTES.md#a-test-1237)
+⚠️ Sin probar todavía → [A-TEST-1237](PENDIENTES.md#a-test-1237)
 
 ### Darle un rol a alguien
 Configuración → Usuarios → escribís el mail, elegís el rol, **Crear e invitar**. A quien ya existe
