@@ -15,8 +15,15 @@
  * | ¿cómo está? | `conciliado` → **conciliada** · `pagado` / `debito` / `anterior` / `echeq` / `programado` → **pagada** · `pendiente` / `pagar` / `preparado` → **sin pagar** (presupuestada). `desactivado` no entra |
  * | ¿adeudado o futuro? | una cuota sin pagar con vencimiento **anterior a hoy** es adeudada; desde hoy, compromiso futuro |
  *
- * ⚠️ Las cuotas SIN PAGAR de un template **inactivo** no entran (igual que en el aviso): un template
+ * ⚠️ Las cuotas SIN PAGAR de un template **inactivo** no suman (igual que en el aviso): un template
  * que se dio de baja dejó cuotas que ya no se van a pagar. Las pagadas sí, porque son historia.
+ * ⚠️ cambió 2026-10-23 (usuario: *«podrían mostrarse pero colapsadas las desactivadas para poder
+ * chequear»*): ya no se descartan — van aparte en `desactivadas`, fuera de los totales.
+ *
+ * 🟠 `programado` y `echeq` cuentan como pagadas pero se MARCAN (`rara`). Usuario 2026-10-23: *«si algo
+ * la app lo encuentra en programado o echeq lo muestre así para llamar la atención ya que es raro»*.
+ *
+ * 🏢 El ABL compartido (responsable «PAM/MA/Duhau») se muestra en **MA** (usuario 2026-10-23).
  */
 import { esImpuesto } from "./vencimientos"
 import { ordenarColumnas } from "@/lib/cashflow/columnas-usuario"
@@ -51,6 +58,8 @@ export interface CeldaCuota {
   estado: EstadoPlanilla
   estadoOriginal: string
   vencida: boolean
+  /** `programado` o `echeq`: cuenta como pagada pero es raro en un impuesto → se marca. */
+  rara: boolean
   numero_cuota: number | null
 }
 
@@ -77,6 +86,20 @@ export interface Planilla {
   aniosConDatos: number[]
   /** § 🧮 — los meses suman el total de cada fila y las filas el total general. */
   control: { cierra: boolean; diferencias: string[] }
+  /** Cuotas sin pagar de templates dados de baja: se muestran colapsadas y NO suman. */
+  desactivadas: FilaPlanilla[]
+  /** Cuántas cuotas del año están en `programado` o `echeq` (para el aviso). */
+  raras: number
+}
+
+/** Estados que cuentan como pagados pero en un impuesto llaman la atención. */
+const ESTADOS_RAROS = new Set(["programado", "echeq"])
+
+/** La empresa de la fila: la del template, salvo el ABL compartido («PAM/MA/Duhau»), que va a MA. */
+export function empresaDePlanilla(t: CuotaPlanilla["template"], impuesto: string): string {
+  const r = (t.responsable ?? "").trim()
+  if (impuesto === "ABL" && r.includes("/") && /\bMA\b/.test(r)) return "MA"
+  return r || "—"
 }
 
 const ESTADO: Record<string, EstadoPlanilla | null> = {
@@ -112,46 +135,54 @@ const redondear = (n: number) => Math.round(n * 100) / 100
 
 export function armarPlanilla(cuotas: CuotaPlanilla[], anio: number, hoy: string): Planilla {
   const filas = new Map<string, FilaPlanilla>()
+  const bajas = new Map<string, FilaPlanilla>()
   const anios = new Set<number>()
+  let raras = 0
 
   for (const c of cuotas) {
     if (!esImpuesto(c.template)) continue
     const estado = estadoDePlanilla(c.estado)
     if (!estado) continue
-    if (estado === "sin-pagar" && c.template.activo === false) continue
+    const deBaja = estado === "sin-pagar" && c.template.activo === false
     const venc = (c.fecha_vencimiento ?? c.fecha_estimada ?? "").slice(0, 10)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(venc)) continue
     const a = Number(venc.slice(0, 4))
-    anios.add(a)
+    if (!deBaja) anios.add(a)
     if (a !== anio) continue
 
     const impuesto = impuestoDeTemplate(c.template)
-    const empresa = c.template.responsable ?? "—"
+    const empresa = empresaDePlanilla(c.template, impuesto)
     const clave = `${impuesto}|${empresa}`
-    let fila = filas.get(clave)
+    const destino = deBaja ? bajas : filas
+    let fila = destino.get(clave)
     if (!fila) {
       fila = { clave, impuesto, empresa, meses: Array.from({ length: 12 }, () => []), pagado: 0, adeudado: 0, futuro: 0, total: 0, templates: [] }
-      filas.set(clave, fila)
+      destino.set(clave, fila)
     }
+    const rara = ESTADOS_RAROS.has(String(c.estado ?? "").trim().toLowerCase())
+    if (rara) raras++
     const nombreTpl = c.template.nombre_referencia ?? impuesto
     if (!fila.templates.includes(nombreTpl)) fila.templates.push(nombreTpl)
     const monto = Number(c.monto ?? 0)
     const vencida = estado === "sin-pagar" && venc < hoy
     fila.meses[Number(venc.slice(5, 7)) - 1].push({
-      id: c.id, template: nombreTpl, vencimiento: venc, monto, estado, estadoOriginal: c.estado, vencida, numero_cuota: c.numero_cuota ?? null,
+      id: c.id, template: nombreTpl, vencimiento: venc, monto, estado, estadoOriginal: c.estado, vencida, rara, numero_cuota: c.numero_cuota ?? null,
     })
     if (estado !== "sin-pagar") fila.pagado += monto
     else if (vencida) fila.adeudado += monto
     else fila.futuro += monto
   }
 
-  const lista = [...filas.values()].map(f => {
+  const cerrar = (f: FilaPlanilla) => {
     f.pagado = redondear(f.pagado); f.adeudado = redondear(f.adeudado); f.futuro = redondear(f.futuro)
     f.total = redondear(f.pagado + f.adeudado + f.futuro)
     f.meses.forEach(m => m.sort((x, y) => x.vencimiento.localeCompare(y.vencimiento)))
     f.templates.sort()
     return f
-  }).sort((x, y) => x.empresa.localeCompare(y.empresa) || x.impuesto.localeCompare(y.impuesto))
+  }
+  const porNombre = (x: FilaPlanilla, y: FilaPlanilla) => x.empresa.localeCompare(y.empresa) || x.impuesto.localeCompare(y.impuesto)
+  const lista = [...filas.values()].map(cerrar).sort(porNombre)
+  const desactivadas = [...bajas.values()].map(cerrar).sort(porNombre)
 
   const empresas = new Map<string, { empresa: string; pagado: number; adeudado: number; futuro: number; total: number }>()
   for (const f of lista) {
@@ -180,6 +211,7 @@ export function armarPlanilla(cuotas: CuotaPlanilla[], anio: number, hoy: string
     anio, filas: lista, porEmpresa, totales,
     aniosConDatos: [...anios].sort((a, b) => a - b),
     control: { cierra: diferencias.length === 0, diferencias },
+    desactivadas, raras,
   }
 }
 

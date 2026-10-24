@@ -39,12 +39,15 @@ const fecha = (iso: string) => iso.split("-").reverse().join("/")
 
 /** Color y estilo de cada cuota según su estado (definición del usuario, punto 3). */
 function claseCuota(c: CeldaCuota): string {
+  // programado / echeq: cuenta como pagada, pero en un impuesto es raro → que salte a la vista.
+  if (c.rara) return "bg-amber-100 text-amber-900 border-amber-500 ring-2 ring-amber-400 font-semibold"
   if (c.estado === "conciliada") return "bg-green-600 text-white border-green-700"
   if (c.estado === "pagada") return "bg-green-100 text-green-800 border-green-300"
   if (c.vencida) return "bg-red-50 text-red-700 border-red-400 border-dashed font-semibold"
   return "bg-white text-slate-500 border-slate-300 border-dashed italic"
 }
 const ROTULO: Record<string, string> = { conciliada: "conciliada", pagada: "pagada", "sin-pagar": "sin pagar (presupuestada)" }
+const rotulo = (c: CeldaCuota) => c.rara ? `pagada, pero en ${c.estadoOriginal} — raro en un impuesto, revisar` : c.vencida ? "vencida sin pagar" : ROTULO[c.estado]
 
 const SELECT = "id,estado,fecha_vencimiento,fecha_estimada,fecha_pago,monto,numero_cuota,detalle,template:egresos_sin_factura!inner(id,nombre_referencia,responsable,cuenta_agrupadora,categ,solo_conciliacion,activo,partida_arba)"
 
@@ -132,8 +135,13 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
     resumen.push({ Impuesto: "TOTAL GENERAL", Empresa: "", Pagado: planilla.totales.pagado, Adeudado: planilla.totales.adeudado, "Compromisos futuros": planilla.totales.futuro, Total: planilla.totales.total })
     const detalle = filas.flatMap(f => f.meses.flat().map(c => ({
       Impuesto: f.impuesto, Empresa: f.empresa, Template: c.template, Cuota: c.numero_cuota ?? "", Vencimiento: fecha(c.vencimiento),
-      Monto: c.monto, Estado: c.vencida ? "vencida sin pagar" : ROTULO[c.estado], "Estado en la app": c.estadoOriginal,
+      Monto: c.monto, Estado: rotulo(c), "Estado en la app": c.estadoOriginal,
     })))
+    // Las de templates dados de baja van al final, marcadas: no suman en el resumen.
+    for (const f of planilla.desactivadas) for (const c of f.meses.flat()) detalle.push({
+      Impuesto: f.impuesto, Empresa: f.empresa, Template: c.template, Cuota: c.numero_cuota ?? "", Vencimiento: fecha(c.vencimiento),
+      Monto: c.monto, Estado: "template dado de baja — no suma", "Estado en la app": c.estadoOriginal,
+    })
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumen), `Impuestos ${anio}`)
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detalle), "Cuotas")
@@ -179,12 +187,20 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
               <span className="rounded border px-1.5 bg-green-100 text-green-800 border-green-300">pagada</span>
               <span className="rounded border px-1.5 bg-white text-slate-500 border-slate-300 border-dashed italic">sin pagar (presupuestada)</span>
               <span className="rounded border px-1.5 bg-red-50 text-red-700 border-red-400 border-dashed font-semibold">vencida sin pagar</span>
+              <span className="rounded border px-1.5 bg-amber-100 text-amber-900 border-amber-500 ring-2 ring-amber-400 font-semibold">programado / echeq: revisar</span>
               <span className="ml-auto">
                 {planilla.control.cierra
                   ? <span className="text-green-700" title="Las cuotas mes a mes suman el total de cada fila, y las empresas el total general">✓ control: los meses suman los totales</span>
                   : <span className="font-semibold text-red-700" title={planilla.control.diferencias.join("\n")}>⚠️ los totales no cierran: {planilla.control.diferencias.length} diferencia(s)</span>}
               </span>
             </div>
+
+            {planilla.raras > 0 && (
+              <div className="rounded border border-amber-400 bg-amber-50 p-2 text-sm text-amber-900">
+                ⚠️ <b>{planilla.raras}</b> cuota(s) de {anio} en <b>programado</b> o <b>echeq</b>: cuentan como pagadas, pero en un impuesto es raro
+                (suele ser un pago que no se terminó de cerrar). Están marcadas en naranja.
+              </div>
+            )}
 
             {sinDatos ? (
               <p className="rounded border bg-gray-50 p-6 text-center text-sm text-gray-600">
@@ -237,6 +253,27 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
                 </table>
               </div>
             )}
+
+            {planilla.desactivadas.length > 0 && (
+              <details className="rounded border border-dashed bg-gray-50/60">
+                <summary className="cursor-pointer px-3 py-2 text-xs text-gray-600">
+                  Templates dados de baja: {planilla.desactivadas.reduce((n, f) => n + f.meses.flat().length, 0)} cuota(s) sin pagar
+                  por {plata(planilla.desactivadas.reduce((s, f) => s + f.total, 0))} — <b>no suman</b> en los totales; están para poder chequearlas.
+                </summary>
+                <div className="overflow-x-auto opacity-70">
+                  <table className="w-full border-collapse text-xs">
+                    <tbody>
+                      {planilla.desactivadas.map(f => {
+                        const k = `baja:${f.clave}`
+                        return <FilaImpuesto key={k} f={f} abierta={abiertas.has(k)} arrastrada={false}
+                          alternar={() => setAbiertas(s => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n })}
+                          alEmpezar={() => {}} alSoltar={() => {}} />
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            )}
           </>
         )}
       </DialogContent>
@@ -257,7 +294,7 @@ function Cuotas({ cuotas }: { cuotas: CeldaCuota[] }) {
     <div className="flex flex-col items-stretch gap-0.5">
       {cuotas.map(c => (
         <span key={c.id} className={`rounded border px-1 text-center leading-4 ${claseCuota(c)}`}
-          title={`${c.template}${c.numero_cuota ? ` · cuota ${c.numero_cuota}` : ""}\nVence ${fecha(c.vencimiento)} · $${plata(c.monto)}\n${c.vencida ? "vencida sin pagar" : ROTULO[c.estado]} (${c.estadoOriginal})`}>
+          title={`${c.template}${c.numero_cuota ? ` · cuota ${c.numero_cuota}` : ""}\nVence ${fecha(c.vencimiento)} · $${plata(c.monto)}\n${rotulo(c)} (${c.estadoOriginal})`}>
           {corto(c.monto)}
         </span>
       ))}
