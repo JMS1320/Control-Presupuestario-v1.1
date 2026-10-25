@@ -3406,3 +3406,50 @@ escribió. El único control que lo agarra es **mirar la pantalla**.
 
 📌 Y el corolario que más rinde: **en este archivo cada origen tiene dos caminos.** Arreglar el
 suelto sin el agrupado ya rompió algo el 2026-08-31 y volvió a romperlo hoy, en el mismo archivo.
+
+---
+
+## 33 — Cajas de ahorro MA y PAM: reglas por comercio y cuotas precargadas (2026-10-25)
+
+*Nació al preparar la conciliación masiva de las cajas de ahorro de MA y PAM (estudio en Excel respondido por
+el usuario; carga con el script 103). Usuario: «si el comercio es identificado y es pescadería Napoli es
+bastante claro ese método para hacer reglas».*
+
+### 33.1 — Dos columnas nuevas para buscar ([A-FEAT-1362](PENDIENTES.md#a-feat-1362), script 102)
+
+`reglas_conciliacion.columna_busqueda` acepta además **`nombre`** (= `leyendas_adicionales_1`, la contraparte
+que desglosa el parseo) y **`texto`** (concepto + descripción + leyendas 1–4 + observaciones + nº de comprobante
+y de terminal, unidos). La lista y sus etiquetas viven en **un solo lugar**: `COLUMNAS_DE_REGLA` en
+`lib/conciliacion/evaluar-regla.ts`; el selector de la pantalla de reglas la recorre. Sólo rinden en las cajas
+de ahorro, que son las que se desglosan.
+
+### 33.2 — Contra una cuota PRECARGADA: se ata, y si difiere queda a auditar ([A-FEAT-1363](PENDIENTES.md#a-feat-1363))
+
+Usuario: *«si el monto precargado es distinto debe quedar como a auditar en un template… para todas las
+conciliaciones de cualquier cosa… lo mismo con la fecha si es diferencia grande»*.
+- `diferenciaConPrecargada()` (`lib/templates/cuotas-del-template.ts`): monto distinto en más de 1 centavo, o
+  fecha a más de `DIAS_TOLERANCIA_PRECARGADA = 10` días → devuelve el motivo.
+- El motor (`insertarCuotaDeRegla` en `hooks/useMotorConciliacion.ts`) vincula igual, deja el movimiento en
+  `auditar` y suma el motivo a `motivo_revision`, junto con el de CUIT distinto si lo hay.
+- Es un control de **discrepancia**, no de integridad (CLAUDE.md § 🚦): avisa y deja seguir.
+
+### 33.3 — Qué cuota toma ([A-FEAT-1365](PENDIENTES.md#a-feat-1365), *era A-FEAT-1364 — renumerada por choque*)
+
+Antes buscaba sólo cuotas `pendiente` **del mismo mes**: AYSA y ABL de MA —precargadas en `debito` y con el
+ABL cobrado el 23/02 contra la cuota del 05/03— habrían **duplicado** la cuota.
+- `cuotaPendienteDelMes()` toma estados `ESTADOS_QUE_ESPERAN_MOVIMIENTO = ['pendiente','debito']` a
+  `DIAS_VENTANA_CUOTA = 15` días de la fecha prevista; si hay varias, la de **importe más parecido** y después
+  la más cercana. La consulta del motor usa la misma constante (un solo lugar).
+- Sin cuota en la ventana → crea una nueva, como antes.
+
+### 33.4 — Templates de otra empresa aprobados
+
+AYSA Libertad y ABL Libertad son templates de **PAM** y los usa MA: aprobado por el usuario el 25/10 (*«A aysa
+usamos el template existente de PAM, ABL de Libertad también»*). Cualquier otro cruce sigue pidiendo su OK.
+
+### 33.5 — Lo que quedó fuera de las reglas, a propósito
+
+De los 118 movimientos sin conciliar, las reglas toman **85** (simulado antes de cargar). Quedan a mano: Gamboa
+×3 (esperan factura), Shell (contra factura), Provinvest (cobro de arrendamiento), Andrés (manual), 10
+«analizar», 4 «ver» y 13 CUITs sin identificar (los investiga el usuario). AYSA de **enero** está conciliada en
+$0 y el débito del 12/01 crearía cuota nueva → [A-DAT-91](PENDIENTES.md#a-dat-91).

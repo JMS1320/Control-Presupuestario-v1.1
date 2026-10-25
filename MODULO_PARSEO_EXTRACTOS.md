@@ -343,6 +343,16 @@ sobrevive a un cambio **tapa justo lo que había que mirar**.
 📌 **El choque se sigue viendo aunque esté marcado**: eso es integridad, no opinión, y no se tapa
 con un tilde.
 
+🆕 **Tildar acepta la propuesta** ([A-FEAT-1354], 2026-10-24): si el subtipo no tiene reglas, el tilde inserta
+las de la propuesta (`reglasDeLaPropuesta()`) con `revisado_en`; si la propuesta tiene columnas repetidas
+(`columnasRepetidas()`), no deja. 🛑 **Y exige grupo** ([A-FEAT-1360]): `tieneGrupoPrevisto()` — vacío u
+«Otros» no cuentan; el bloque muestra «falta el grupo de conceptos». *Motivo: el usuario tildó sin abrir
+Editar creyendo que guardaba, y MA quedó con tipos sin grupo que el re-parseo marcó como no parseados.*
+
+🔤 **La clave del tipo** ([A-FEAT-1347]): `claveDeTipo()` pasa a mayúsculas, cambia los puntos por espacios y
+saca las palabras de 7+ dígitos (nº de echeq). `DEB. AUTOM. DE SERV.` = `DEB AUTOM DE SERV` (el formato 2025 del
+banco) y `GDE ECHEQ 12345678` = `GDE ECHEQ`. `resolverReglas` junta las reglas de todas las claves iguales.
+
 ---
 
 ## 🔁 El re-parseo
@@ -357,6 +367,10 @@ exactamente la misma lógica que el importador, así que re-parsear algo bien im
   que «todo lo visible» sería sólo lo cargado y el re-parseo tocaría menos de lo que dice.
 - **Nunca escribe en `concepto` ni en `observaciones_cliente`**, ni en los campos de la conciliación
   (`categ`, `detalle`, `contable`, `interno`, estado).
+- 🆕 **Primero ofrece sólo lo no parseado** ([A-FEAT-1358], 2026-10-24): la pasada en seco cuenta
+  `cambiosSinParsear` (`estaSinParsear()`: grupo vacío, «Otros», «Subtipo nuevo» o «Reglas en conflicto») y
+  `cambiosConciliados`; la pantalla pregunta *«¿Re-parsear SÓLO esos N?»* (`soloSinParsear`) y recién si no,
+  todo, avisando cuántos conciliados cambiarían. *Motivo: el usuario re-parseó PAM entera para arreglar 4 tipos.*
 
 ⏳ **El formato 2025 del banco no tiene reglas** *(visto 2026-10-18, histórico PAM)*: en 2025 el Galicia escribía distinto (`DEB AUTOM DE SERV`, `ING BRUTOS S/ CRED`, sin puntos), así que de los 250 movimientos de la CA de PAM cargados como histórico ~200 quedaron **sin desglose** (grupo «Otros»). No se perdió nada: el texto entero está en `concepto`. Cuando haya reglas para esas formas, se re-parsean desde acá filtrando los históricos — el re-parseo no toca la conciliación. → [A-DEC-1010](PENDIENTES.md#a-dec-1010)
 

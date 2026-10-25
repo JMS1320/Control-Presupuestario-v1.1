@@ -3915,13 +3915,26 @@ Cuando un tipo te quede bien, **tildá «revisado»** en su cabecera: se pone ve
 al contador de arriba. Si después cambiás una regla de ese tipo, **la marca se borra sola** — para
 que un «ya lo vi» viejo no te tape un cambio nuevo.
 
+- **Tildar sin abrir Editar acepta la propuesta tal cual**: si el subtipo no tenía reglas, el tilde
+  guarda las que la app propone y lo marca revisado. Si la propuesta tiene un **choque de columnas**,
+  no deja y te dice cuáles son.
+- 🛑 **No deja tildar si falta el grupo de conceptos** (vacío u «Otros»): el bloque muestra
+  **«falta el grupo de conceptos»**. Entrá con Editar, elegí el grupo y recién ahí tildá.
+- **Un punto o un número de echeq no hacen otro tipo**: `DEB. AUTOM. DE SERV.` y `DEB AUTOM DE SERV`
+  son el mismo, y `GDE ECHEQ 12345678` es `GDE ECHEQ`. Aparecen en una sola tarjeta.
+  → [A-TEST-1245](PENDIENTES.md#a-test-1245) · [A-TEST-1247](PENDIENTES.md#a-test-1247)
+
 #### 5 · Corré «Re-parsear»
 
 Recién acá cambian los movimientos que **ya estaban importados**. Está en **Extracto Bancario**, y
 sólo aparece en Caja de Ahorro.
 
 1. Corre **en seco** primero: te dice cuántos movimientos cambiarían y **no toca nada**.
-2. Si convence, **Aplicar**.
+2. **Primero te ofrece re-parsear SÓLO los que estaban sin parsear** (sin grupo, «Otros», subtipo
+   nuevo o reglas en conflicto): *«¿Re-parsear SÓLO esos N?»*. Es lo normal después de arreglar una
+   regla. Si decís que no, te ofrece **todos**, y avisa cuántos de los que cambiarían ya están
+   **conciliados**.
+3. Si convence, **Aplicar**. → [A-TEST-1250](PENDIENTES.md#a-test-1250)
 
 🔎 **El botón te dice sobre qué va a correr**, igual que el de conciliar: con un filtro puesto dice
 **«Re-parsear 15 filtrados»** y se pone ámbar; sin filtro dice **«Re-parsear la cuenta»**.
@@ -4709,6 +4722,9 @@ abre un cartel preguntando **con qué fecha se pagó**, proponiendo hoy.
 - Si pasás varias cuotas juntas con la edición masiva, pregunta **una sola vez** para el lote.
 - Si la cuota **ya tiene** esa misma fecha, no pregunta.
 - Con `pendiente`, `programado`, `crédito` o `anterior` **no pregunta**: no hay pago.
+- **Una cuota en $0 no pide fecha** (no hubo pago): cambia sólo el estado y queda sin fecha de pago.
+  En la edición masiva, si mezclás cuotas en $0 con otras, el cartel te dice cuántas son «sin
+  importe» y la fecha va sólo a las demás. Ojo: una cuota **vacía** no es $0. → [A-TEST-1248](PENDIENTES.md#a-test-1248)
 
 ---
 
@@ -4737,6 +4753,35 @@ estar cargada en otra cuenta.
 la de orden más bajo y la nueva queda sin efecto sin avisar.
 
 ⚠️ Sin probar todavía → A-TEST-120 a A-TEST-125
+
+### Dónde busca la regla — «Columna a buscar»
+
+| Opción | Busca en |
+|---|---|
+| Descripción | el texto del movimiento |
+| **Nombre / comercio** | la contraparte que desglosa el parseo (ej. *Pescadería Napoli*) |
+| CUIT | el CUIT desglosado |
+| **Texto del banco** | todo junto: concepto, descripción y lo desglosado |
+| Débito / Crédito | el importe |
+
+**Nombre / comercio** y **Texto del banco** sirven sólo en las cajas de ahorro de MA y PAM, que son las
+que se desglosan. Cada opción tiene su ayuda debajo del selector. → [A-TEST-1254](PENDIENTES.md#a-test-1254)
+
+---
+
+## 🔗 Conciliar contra una cuota precargada (AYSA, ABL…)
+
+Cuando una regla carga en un template que **ya tiene la cuota precargada**, el movimiento se ata a esa
+cuota en vez de crear otra:
+
+- Toma cuotas en **pendiente** o **débito**, a **±15 días** de la fecha prevista. Si hay varias, la de
+  importe más parecido.
+- **Si el banco cobró otro importe** (más de 1 centavo) **o en otra fecha** (más de 10 días), la ata
+  igual pero el movimiento queda **para auditar** con el motivo: *«Cuota precargada distinta: monto
+  precargado $X, el banco $Y…»*. Lo mirás y das OK.
+- Si no hay ninguna cuota cerca, crea una nueva, como siempre.
+
+→ [A-TEST-1255](PENDIENTES.md#a-test-1255) · [A-TEST-1257](PENDIENTES.md#a-test-1257)
 
 ---
 
