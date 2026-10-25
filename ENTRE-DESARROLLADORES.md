@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 🔎 `public.reglas_conciliacion`: el check de `columna_busqueda` acepta 2 valores más (2026-10-25) — aviso ANTES
+### 🔎 `public.reglas_conciliacion`: el check de `columna_busqueda` acepta 2 valores más (2026-10-25) — ✅ APLICADA el 25/10 con OK de JMS (aviso previo)
 - **`scripts/102-reglas-columna-nombre-texto.sql`**: amplía `reglas_conciliacion_columna_busqueda_check` de 4 valores a 6 —
   suma `'nombre'` (Nombre / comercio = `leyendas_adicionales_1`) y `'texto'` (todo el texto del banco). Los 4 de antes no cambian.
   No toca filas, RLS, GRANTs ni políticas. Se frena si el check no es el esperado; marca `[script 102]`; el deshacer se frena si

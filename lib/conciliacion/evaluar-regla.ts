@@ -23,6 +23,27 @@ export interface ReglaParaEvaluar {
   texto_buscar: string
 }
 
+/** Las columnas de texto de un movimiento que mira «Texto del banco» (todas las cuentas: CA, CC, tarjeta). */
+const TEXTO_DEL_BANCO = [
+  "concepto", "descripcion", "leyendas_adicionales_1", "leyendas_adicionales_2", "leyendas_adicionales_3",
+  "leyendas_adicionales_4", "observaciones_cliente", "numero_de_comprobante", "numero_de_terminal",
+] as const
+
+/**
+ * Dónde puede buscar una regla, con el nombre que ve el usuario. Una sola lista para la pantalla y el
+ * motor (A-FEAT-1362): si se agrega una columna acá, aparece en las dos.
+ */
+export const COLUMNAS_DE_REGLA: { valor: string; etiqueta: string; ayuda: string }[] = [
+  { valor: "descripcion", etiqueta: "Tipo de movimiento / descripción", ayuda: "En caja de ahorro es la primera línea («COMPRA DEBITO», «IVA»)" },
+  { valor: "nombre", etiqueta: "Nombre / comercio", ayuda: "Lo que el parseo deja en Nombre / comercio («PESCADERIA NAPOLI»)" },
+  { valor: "cuit", etiqueta: "CUIT", ayuda: "Con o sin guiones" },
+  { valor: "texto", etiqueta: "Texto del banco (cualquier parte)", ayuda: "Todo lo que mandó el banco: sirve para una partida o un número" },
+  { valor: "monto_debito", etiqueta: "Monto débito", ayuda: "" },
+  { valor: "monto_credito", etiqueta: "Monto crédito", ayuda: "" },
+]
+
+export const etiquetaColumnaRegla = (v: string): string => COLUMNAS_DE_REGLA.find(c => c.valor === v)?.etiqueta ?? v
+
 const normalizarCuit = (s: unknown): string => String(s ?? "").replace(/[-.\s]/g, "")
 
 /** Los valores del movimiento que se comparan contra la regla, según la columna. */
@@ -34,6 +55,13 @@ export function valoresDeColumna(mov: Record<string, unknown>, columna: string):
       // La columna de la convención primero; las otras dos, por compatibilidad.
       return [mov.leyendas_adicionales_2, mov.leyendas_adicionales2, mov.numero_de_comprobante, mov.observaciones_cliente]
         .map(normalizarCuit).filter(Boolean)
+    case "nombre":
+      // 🏪 A-FEAT-1362 — el nombre / comercio que desglosa el parseo («PESCADERIA NAPOLI», «AGUA Y SANE-AYSA»).
+      return [String(mov.leyendas_adicionales_1 ?? "")].filter(Boolean)
+    case "texto":
+      // 🔎 A-FEAT-1362 — todo el texto del banco: el crudo y lo desglosado. Para lo que no tiene columna
+      // propia, como la partida del ABL («007001005392» trae la 1005392).
+      return [TEXTO_DEL_BANCO.map(k => String(mov[k] ?? "")).filter(Boolean).join(" | ")].filter(Boolean)
     case "monto_debito":
       return [String(mov.debitos || 0)]
     case "monto_credito":
