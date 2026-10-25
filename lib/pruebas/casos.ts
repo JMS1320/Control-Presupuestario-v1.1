@@ -222,7 +222,7 @@ import {
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
 import { esHistorico, estadoCuotaAlDesvincular, contarEstadisticasExtracto } from "@/lib/conciliacion/estado-historico"
 import { buscarConDobleAudit, type VinculoEnAuditar } from "@/lib/conciliacion/doble-audit"
-import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA, claveDedupMovimiento, claveDeTipo, tipoDeMovimiento, tieneReglaPropia } from "@/lib/extractos/parseo-movimiento"
+import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA, claveDedupMovimiento, claveDeTipo, tipoDeMovimiento, tieneReglaPropia, columnasRepetidas, reglasDeLaPropuesta } from "@/lib/extractos/parseo-movimiento"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
@@ -8415,6 +8415,18 @@ export function correrCasos(): Resultado[] {
       parsearMovimiento(rawPuntos, mapaPuntos).descripcion].join(" · ")
     chequear("Parseo", "Un movimiento escrito con puntos usa la regla escrita sin puntos; la descripción guardada sigue siendo la del banco",
       "DEB AUTOM DE SERV · true · 000083 · DEB. AUTOM. DE SERV.", vp, vp === "DEB AUTOM DE SERV · true · 000083 · DEB. AUTOM. DE SERV.", "A-FEAT-1347")
+
+    // ── Choque en el editor y tilde que acepta la propuesta (A-BUG-1353, A-FEAT-1354) ──
+    // El movimiento real de MA de 7 líneas: L5 (identificador) y L6 (tarjeta) van a la misma columna.
+    const filasMA = [{ campo: "descripcion", numero: 1 }, { campo: "numero_de_terminal", numero: 5 }, { campo: "numero_de_terminal", numero: 6 }, { campo: "", numero: 7 }, { campo: "", numero: 8 }]
+    const vrep = columnasRepetidas(filasMA).map(r => `${r.campo}:${r.lineas.join("+")}`).join(" · ") || "ninguna"
+    chequear("Parseo", "Editor: Terminal y Tarjeta en la misma columna se detectan como choque (antes decía «0 cambios»); las líneas sin asignar no cuentan",
+      "numero_de_terminal:5+6", vrep, vrep === "numero_de_terminal:5+6", "A-BUG-1353")
+    const prop = reglasDeLaPropuesta(["TRANSFERENCIA DE TERCEROS", "SOLEDAD MARTINEZ", "27260467382", "VARIOS", "BANCO DE GALICIA Y BUENOS AIRES SAU"])
+    const vprop = `${prop.repetidas.length} · ` + prop.reglas.map(r => `L${r.linea}>${r.campo}`).join(" ")
+    const esperado = "0 · L1>descripcion L2>leyendas_adicionales_1 L3>leyendas_adicionales_2 L4>leyendas_adicionales_3 L5>leyendas_adicionales_4"
+    chequear("Parseo", "Tilde sin configurar: guarda lo mismo que muestra «Dónde va a quedar cada línea» (caso real de PAM, 5 líneas)",
+      esperado, vprop, vprop === esperado, "A-FEAT-1354")
 
     // ── ¿Llegó todo de la base? (A-FEAT-1343) ──
     const lects = [{ nombre: "Extracto BANCO GALICIA", llegaron: 1000, esperadas: 1563 }, { nombre: "Ventas", llegaron: 9, esperadas: 9 }, { nombre: "Sueldos", llegaron: 103, esperadas: null }]

@@ -577,6 +577,47 @@ function operacionEnLinea(l: string): { hay: boolean; loAgarra: boolean } {
 }
 
 /**
+ * 🛑 **Qué columnas reclaman dos o más líneas** — el choque, visto ANTES de guardar (A-BUG-1353).
+ *
+ * Si dos líneas van a la misma columna, el movimiento queda «Reglas en conflicto» y no se parsea.
+ * El editor lo usa para decirlo y no dejar guardar así; antes sólo contaba cambios, y cuando el
+ * usuario pasaba una línea de «Terminal» a «Tarjeta» —que van a la MISMA columna— decía
+ * «0 cambios» y no explicaba por qué.
+ */
+export function columnasRepetidas(filas: { campo: string; numero: number }[]): { campo: string; lineas: number[] }[] {
+  const por = new Map<string, number[]>()
+  for (const f of filas) {
+    if (!f.campo) continue
+    por.set(f.campo, [...(por.get(f.campo) ?? []), f.numero])
+  }
+  return [...por.entries()].filter(([, ls]) => ls.length > 1).map(([campo, lineas]) => ({ campo, lineas }))
+}
+
+/**
+ * ✅ **Dar por buena la PROPUESTA sin entrar a configurar** (A-FEAT-1354).
+ *
+ * Pedido del usuario 2026-10-24: *«veo que la app ya propone antes de que yo configure. Si esa
+ * propuesta se pudiera dar por buena dando el tilde sería genial. Sólo entro a configurar cuando
+ * quiero cambiar»*. Devuelve las reglas que se guardarían con lo que la pantalla muestra en
+ * «Dónde va a quedar cada línea» — las líneas sin columna quedan sin asignar, igual que ahí.
+ *
+ * 🛑 Si dos líneas reclaman la misma columna NO se guarda nada (`repetidas` con algo): eso no es
+ * una propuesta aceptable, es un choque, y hay que entrar a decidir.
+ */
+export function reglasDeLaPropuesta(lineas: string[]): {
+  reglas: { linea: number; campo: string; modo: string }[]
+  repetidas: { campo: string; lineas: number[] }[]
+} {
+  const prop = proponerMapeo(lineas)
+  const repetidas = columnasRepetidas(prop)
+  if (repetidas.length > 0) return { reglas: [], repetidas }
+  return {
+    reglas: prop.filter((p) => p.campo).map((p) => ({ linea: p.numero, campo: p.campo, modo: p.modo })),
+    repetidas,
+  }
+}
+
+/**
  * Propone, para cada línea del movimiento, qué es y dónde debería guardarse.
  * Es una **propuesta**: la pantalla la muestra editable y el usuario decide.
  */
