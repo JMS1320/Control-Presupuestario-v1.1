@@ -92,6 +92,9 @@ export const RECURSOS: Recurso[] = [
   { id: "extracto.importar",    seccion: "extracto", etiqueta: "Importar",    tipo: "pestana", archivo: EXTRACTO },
   { id: "extracto.reportes",    seccion: "extracto", etiqueta: "Reportes",    tipo: "pestana", archivo: EXTRACTO },
   { id: "extracto.auditoria",   seccion: "extracto", etiqueta: "Auditoría",   tipo: "pestana", archivo: EXTRACTO },
+  // A-FEAT-1361: todo lo que CONCILIA sin pasar por Asignar — el motor (botón de arriba y el de cada resumen de
+  // tarjeta) y el «✓ OK» de los para revisar (uno y masivo). Para Ulises: cargar sin conciliar.
+  { id: "extracto.conciliar",   seccion: "extracto", etiqueta: "Conciliar (automático y ✓ OK)", tipo: "accion", archivo: EXTRACTO },
   // Las reglas — viven en un modal de configuración, no en la navegación.
   { id: "extracto.conciliacion",     seccion: "extracto", etiqueta: "Reglas de conciliación",   tipo: "funcionalidad", archivo: EXTRACTO },
   { id: "extracto.contable-interno", seccion: "extracto", etiqueta: "Reglas contable e interno", tipo: "funcionalidad", archivo: EXTRACTO },

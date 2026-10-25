@@ -20,7 +20,7 @@ import { heredarDelOrigen, cuitsDiscrepan, motivoCuitDistinto, type TemplateOrig
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { buscarConDobleAudit, cargarVinculosEnAuditar } from "@/lib/conciliacion/doble-audit"
 import { templateParaFecha, detalleDeRegla, motivoFaltaCampana } from "@/lib/conciliacion/template-de-regla"
-import { cuotaPendienteDelMes } from "@/lib/templates/cuotas-del-template"
+import { cuotaPendienteDelMes, diferenciaConPrecargada, ESTADOS_QUE_ESPERAN_MOVIMIENTO } from "@/lib/templates/cuotas-del-template"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { conFechaDeEmision, comprobanteDeCargoDeTarjeta } from "@/lib/conciliacion/pool-tarjeta"
 import { motivoFechaNoExacta, elegirPorImporteCercano } from "@/lib/conciliacion/motivo-fecha"
@@ -988,13 +988,19 @@ export function useMotorConciliacion() {
                   const cuitBanco = extraerCuitBancario(movimiento)
                   const cuitOrigen = cuotaResult.template?.cuit_quien_cobra
                   const hayDiscrepancia = cuitsDiscrepan(cuitBanco, cuitOrigen)
+                  // 🔎 A-FEAT-1363 — la cuota precargada tenía otro monto o una fecha muy distinta.
+                  const motivoDiferencia = (cuotaResult as any).motivoDiferencia as string | null | undefined
+                  const motivosAuditar = [
+                    hayDiscrepancia ? motivoCuitDistinto(String(cuitBanco), String(cuitOrigen)) : null,
+                    motivoDiferencia || null,
+                  ].filter(Boolean) as string[]
 
                   await actualizarMovimientoBD(cuenta, movimiento.id, {
                     template_id: cuotaResult.templateId,
                     template_cuota_id: cuotaResult.cuotaId,
-                    ...(hayDiscrepancia ? {
+                    ...(motivosAuditar.length > 0 ? {
                       estado: 'auditar',
-                      motivo_revision: motivoCuitDistinto(String(cuitBanco), String(cuitOrigen)),
+                      motivo_revision: motivosAuditar.join(' · '),
                     } : {}),
                     proveedor_nombre: herencia.proveedor_nombre,
                     comprobantes_pagados: herencia.comprobantes_pagados,
@@ -1134,9 +1140,12 @@ export function useMotorConciliacion() {
         .from('cuotas_egresos_sin_factura')
         .select('id, fecha_estimada, fecha_vencimiento, monto, estado, detalle')
         .eq('egreso_id', template.id)
-        .eq('estado', 'pendiente')
+        // A-FEAT-1365: también las cuotas «débito» (se pagan por débito automático, esperan su movimiento)
+        .in('estado', [...ESTADOS_QUE_ESPERAN_MOVIMIENTO])
       const pendiente = cuotaPendienteDelMes((delTemplate || []) as any[], movimiento.fecha, Number(monto) || 0)
       if (pendiente) {
+        // 🔎 A-FEAT-1363 — se mira ANTES de pisar la cuota: después ya no queda lo precargado.
+        const motivoDiferencia = diferenciaConPrecargada(pendiente as any, Number(monto) || 0, movimiento.fecha)
         const { error: eUp } = await supabase
           .from('cuotas_egresos_sin_factura')
           .update({
@@ -1156,6 +1165,7 @@ export function useMotorConciliacion() {
             responsable: (template as any).responsable ?? null,
             template: template as TemplateOrigen,
             fechaCuota: movimiento.fecha ?? null,
+            motivoDiferencia,
           }
         }
         console.error('No se pudo conciliar la cuota pendiente del mes; se crea una nueva:', eUp)

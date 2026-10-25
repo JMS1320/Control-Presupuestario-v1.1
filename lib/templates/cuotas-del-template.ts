@@ -111,14 +111,68 @@ export function cuotaDelMovimiento<T extends { id: string; fecha_estimada?: stri
  * mismo importe: la primera conciliación toma una y la segunda la otra). Si no hay, `null`: se crea la
  * cuota nueva como siempre.
  */
+/**
+ * ⚠️ **cambió 2026-10-25 (A-FEAT-1365)** — antes buscaba sólo en el MISMO MES y sólo cuotas «pendiente».
+ * Usuario: *«sí, hacé 1 y 2»*, después de ver que AYSA Libertad tenía sus cuotas en estado **«débito»**
+ * (se pagan por débito automático: siguen esperando el movimiento) y que el ABL pagado el 23/02 tenía su
+ * cuota precargada el 05/03 — los dos casos creaban una cuota nueva y dejaban el mes duplicado.
+ * - Estados que esperan su movimiento: `pendiente` y `debito` (`ESTADOS_QUE_ESPERAN_MOVIMIENTO`).
+ * - Ventana: ±`DIAS_VENTANA_CUOTA` días alrededor de la fecha prevista, no el mes calendario.
+ * - Entre las que entran, la de importe más cercano; a igual importe, la de fecha más cercana.
+ * Si la fecha difiere más de `DIAS_TOLERANCIA_PRECARGADA`, el movimiento igual queda a auditar (A-FEAT-1363).
+ */
+export const ESTADOS_QUE_ESPERAN_MOVIMIENTO = ["pendiente", "debito"] as const
+export const DIAS_VENTANA_CUOTA = 15
+
 export function cuotaPendienteDelMes<T extends { id: string; fecha_estimada?: string | null; fecha_vencimiento?: string | null; monto?: number | string | null; estado?: string | null }>(
   cuotas: T[], fechaMovimiento: string, monto: number,
 ): T | null {
-  const mes = String(fechaMovimiento).slice(0, 7)
-  const libres = cuotas.filter(c => String(c.estado ?? '').toLowerCase() === 'pendiente'
-    && String(c.fecha_vencimiento || c.fecha_estimada || '').slice(0, 7) === mes)
+  const tMov = Date.parse(String(fechaMovimiento).slice(0, 10))
+  const dias = (c: T) => {
+    const f = String(c.fecha_vencimiento || c.fecha_estimada || "").slice(0, 10)
+    return f ? Math.abs(Date.parse(f) - tMov) / 86400000 : Infinity
+  }
+  const libres = cuotas.filter(c =>
+    (ESTADOS_QUE_ESPERAN_MOVIMIENTO as readonly string[]).includes(String(c.estado ?? "").toLowerCase())
+    && dias(c) <= DIAS_VENTANA_CUOTA)
   if (!libres.length) return null
-  return [...libres].sort((a, b) => Math.abs((Number(a.monto) || 0) - monto) - Math.abs((Number(b.monto) || 0) - monto))[0]
+  const difMonto = (c: T) => Math.abs((Number(c.monto) || 0) - monto)
+  return [...libres].sort((a, b) => difMonto(a) - difMonto(b) || dias(a) - dias(b))[0]
+}
+
+/**
+ * 🔎 **A-FEAT-1363 — la cuota PRECARGADA no coincide con el banco: se concilia, pero queda «a auditar».**
+ *
+ * Usuario 2026-10-25: *«si el monto precargado es distinto debe quedar como a auditar… que lo reconozca,
+ * para eso está la regla, pero que quede en audit por diferencia de montos. Lo mismo con la fecha si es
+ * diferencia grande»*. Antes el motor le pisaba el monto a la cuota con el del banco **sin avisar**.
+ *
+ * Devuelve el motivo para `motivo_revision`, o `null` si coincide. Es un aviso, no un freno (§ 🚦): la
+ * diferencia puede tener explicación (un aumento, un mes que se cobró distinto).
+ * - **Monto**: más de 1 centavo de diferencia.
+ * - **Fecha**: más de `DIAS_TOLERANCIA_PRECARGADA` días entre lo previsto y el débito.
+ */
+export const DIAS_TOLERANCIA_PRECARGADA = 10
+
+export function diferenciaConPrecargada(
+  cuota: { monto?: number | string | null; fecha_estimada?: string | null; fecha_vencimiento?: string | null },
+  montoBanco: number, fechaBanco: string,
+): string | null {
+  const fmt = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const ddmm = (f: string) => f.slice(0, 10).split("-").reverse().join("/")
+  const motivos: string[] = []
+  const previsto = Number(cuota.monto)
+  if (Number.isFinite(previsto) && Math.abs(previsto - montoBanco) > 0.01) {
+    motivos.push(`monto precargado $${fmt(previsto)}, el banco $${fmt(montoBanco)} (diferencia $${fmt(montoBanco - previsto)})`)
+  }
+  const fPrevista = String(cuota.fecha_vencimiento || cuota.fecha_estimada || "").slice(0, 10)
+  if (fPrevista && fechaBanco) {
+    const dias = Math.round((Date.parse(fechaBanco.slice(0, 10)) - Date.parse(fPrevista)) / 86400000)
+    if (Math.abs(dias) > DIAS_TOLERANCIA_PRECARGADA) {
+      motivos.push(`fecha prevista ${ddmm(fPrevista)}, el banco ${ddmm(fechaBanco)} (${Math.abs(dias)} días)`)
+    }
+  }
+  return motivos.length ? `Cuota precargada distinta: ${motivos.join(" · ")}` : null
 }
 
 /**

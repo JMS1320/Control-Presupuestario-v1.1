@@ -1091,8 +1091,17 @@ cada cuenta, caja y tarjeta tiene su candado. Quien tiene Extracto ve sólo las 
 todas las solapas, y la app no lo deja importar en las otras. Ej.: para Ulises, Importar + MSA Galicia CC +
 VISA Business MSA.
 
-Lo de adentro de las ventanas (reglas y asignaciones de Extracto, anticipos de Cash Flow) no tiene candado:
-se elige en la lista de Editar permisos.
+**Lo de adentro de las ventanas** (Configuración de reglas y Asignar en Extracto, Anticipos en Cash Flow): abrí la
+ventana y cada solapa tiene su candado. Si a un rol no le dejás ninguna, el botón que abre esa ventana le
+desaparece (en Extracto: Configuración, o los Asignar / Re-asignar de la tabla; en Cash Flow: Anticipo).
+
+⚠️ Las ventanas, sin probar todavía → [A-TEST-1252](PENDIENTES.md#a-test-1252)
+
+**Conciliar** es una casilla aparte en Extracto: saca el botón **Conciliación Bancaria**, el **Conciliar** de cada
+resumen de tarjeta y los **✓ OK** (de a uno y masivo). Sirve para alguien que sólo carga movimientos: con Importar
+y Movimientos prendidos y Conciliar apagado, carga y ve, pero no concilia.
+
+⚠️ Sin probar todavía → [A-TEST-1253](PENDIENTES.md#a-test-1253)
 
 ⚠️ Las cuentas, sin probar todavía → [A-TEST-1239](PENDIENTES.md#a-test-1239)
 
@@ -1213,9 +1222,19 @@ que escribas por qué. Así queda el motivo y no vuelve a aparecer la misma duda
 > 📍 **Hoy está en las facturas del subdiario.** Se va a ir poniendo en otras pantallas a medida que
 > haga falta: ponerla en una grilla nueva es un trabajo de minutos.
 
-> 👥 **Por ahora es una lista tuya.** La app todavía no sabe quién sos, así que no se le puede asignar
-> a nadie. Cuando esté el módulo de usuarios vas a poder decir *"esto lo revisa Ulises"* y que le
-> aparezca a él.
+> 👥 ~~**Por ahora es una lista tuya.** La app todavía no sabe quién sos, así que no se le puede asignar
+> a nadie.~~ ⚠️ **Cambió el 25/10**: ya se le puede mandar a alguien — ver *Mandarle un mensaje a alguien*, acá abajo.
+
+### Mandarle un mensaje a alguien (la 🔔)
+Al marcar algo con 🚩, elegí en **Para** a quién va. Le aparece en la **🔔** de arriba a la derecha, con un número
+rojo, pegado a la cosa que marcaste (la factura, el movimiento, la pantalla). Esa persona puede **Contestar** ahí
+mismo, y su respuesta te llega a tu 🔔, en *Lo que mandé*. Cualquiera de los dos lo da por terminado con **Listo,
+cerrar**, escribiendo qué se hizo.
+
+Sin «Para», la marca queda como siempre: sólo en Principal → Para revisar. La campanita se actualiza sola cada
+2 minutos y cada vez que volvés a la pestaña.
+
+⚠️ Sin probar todavía → [A-TEST-1256](PENDIENTES.md#a-test-1256)
 
 ✅ *Probado el 2026-09-04: el banderín de fila, el warning global con `Alt+R`, la captura y el seguimiento.*
 
@@ -2809,6 +2828,8 @@ calendario**, a pantalla completa. Es lo que se le da a quien pide *«el reporte
 - **Excel**: el resumen con los 12 meses y una hoja con todas las cuotas (siempre todas las empresas).
 - **Chips de empresa** (arriba a la izquierda): click prende o apaga una empresa; **Ctrl+click** deja sólo ésa;
   «todas» vuelve. El total de abajo suma sólo lo que se ve. Entre empresa y empresa hay una línea más gruesa.
+- **Ordenar**: las filas van siempre agrupadas por empresa. Arrastrar dentro de la misma empresa mueve esa fila;
+  soltarla sobre **otra** empresa mueve **el bloque entero** (hacia arriba queda antes, hacia abajo después).
 - **↗ al lado del nombre** (en la fila o en cada partida desplegada): abre **Egresos sin Factura en una
   pestaña nueva**, filtrado por esos templates, para editar las cuotas (por ejemplo, pasar a conciliadas las
   de $0). La planilla queda abierta en la otra pestaña. Arriba de templates se ve **🔗 Filtrado desde la

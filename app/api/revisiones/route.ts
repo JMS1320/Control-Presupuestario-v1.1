@@ -26,6 +26,28 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const todas = searchParams.get('todas') === '1'
 
+    /**
+     * 🔔 `?mias=1` — la campanita (A-FEAT-1364): sólo las marcas CON destinatario que son para mí o
+     * que mandé yo. Quién soy sale de la SESIÓN, nunca del pedido: así nadie pide las de otro.
+     */
+    if (searchParams.get('mias') === '1') {
+      const { data: s } = await (await createClientServer()).auth.getUser()
+      if (!s.user) return NextResponse.json({ ok: false, revisiones: [], error: 'Sin sesión' }, { status: 401 })
+      const yo = { mail: s.user.email ?? null, etiqueta: etiquetaPersona(s.user) }
+      const { data, error } = await supabaseAdmin
+        .from('revisiones')
+        .select('id, schema_ref, tabla_ref, registro_id, descripcion_ref, motivo, pantalla, subpantalla, estado, creado_por, asignado_a, seguimiento, created_at')
+        .eq('estado', 'abierta')
+        .not('asignado_a', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(200)
+      if (error) throw error
+      const n = (x: string | null | undefined) => (x ?? '').trim().toLowerCase()
+      const mias = (data ?? []).filter((r) =>
+        (n(r.asignado_a) === n(yo.mail) && !!n(yo.mail)) || (!!n(r.creado_por) && (n(r.creado_por) === n(yo.mail) || n(r.creado_por) === n(yo.etiqueta))))
+      return NextResponse.json({ ok: true, revisiones: mias, yo })
+    }
+
     let q = supabaseAdmin
       .from('revisiones')
       .select('id, schema_ref, tabla_ref, registro_id, descripcion_ref, motivo, tipo, pantalla, estado, creado_por, asignado_a, seguimiento, resolucion, resuelto_por, resuelto_at, created_at')

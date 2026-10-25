@@ -3648,6 +3648,10 @@ ALTER TABLE public.reglas_ctas_import_arca
 ```
 `buscarReglaCuit` selecciona `fc`; el import hace `fc: reglaCuit.fc || 'Buscar'` (la imputación manual lo sigue pisando).
 
+### 2026-10-25 · REGLAS POR NOMBRE / COMERCIO Y POR TEXTO DEL BANCO (script 102) — A-FEAT-1362
+
+`public.reglas_conciliacion`: el check `reglas_conciliacion_columna_busqueda_check` pasa de 4 a 6 valores — `descripcion`, `cuit`, `monto_debito`, `monto_credito` + **`nombre`** (Nombre / comercio = `leyendas_adicionales_1`) y **`texto`** (todo el texto del banco). Comentario del constraint con la marca `[script 102]`. Script `scripts/102-reglas-columna-nombre-texto.sql` (se frena si el check no es el esperado); el deshacer exige la marca y que ninguna regla use los valores nuevos. ✅ **Corrido 2026-10-25** (T1, con OK del usuario y aviso previo a Javier).
+
 ### 2026-10-24 · TIEMPO DE INACTIVIDAD por rol (script 101) — A-FEAT-1351
 
 Una columna en `public.roles`: `minutos_inactividad integer`, nullable (vacía = 60 min, el default de la app), con

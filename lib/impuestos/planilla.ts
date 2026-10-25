@@ -26,7 +26,7 @@
  * 🏢 El ABL compartido (responsable «PAM/MA/Duhau») se muestra en **MA** (usuario 2026-10-23).
  */
 import { esImpuesto } from "./vencimientos"
-import { ordenarColumnas } from "@/lib/cashflow/columnas-usuario"
+import { moverColumna, ordenarColumnas } from "@/lib/cashflow/columnas-usuario"
 
 export type EstadoPlanilla = "conciliada" | "pagada" | "sin-pagar"
 
@@ -265,7 +265,38 @@ export function armarPlanilla(cuotas: CuotaPlanilla[], anio: number, hoy: string
  * mismo mecanismo que las columnas del Cash Flow (`ordenarColumnas`), que pide `key`.
  */
 export function ordenarFilas(filas: FilaPlanilla[], orden: readonly string[]): FilaPlanilla[] {
-  return ordenarColumnas(filas.map(f => ({ key: f.clave, fila: f })), orden).map(x => x.fila)
+  return agruparPorEmpresa(ordenarColumnas(filas.map(f => ({ key: f.clave, fila: f })), orden).map(x => x.fila))
+}
+
+/**
+ * 🏢 Las filas van siempre en BLOQUES por empresa (usuario 2026-10-24: *«sería bueno que cambie de lugar la
+ * empresa entera… o sea todo el bloque»*). El orden de las empresas es el de su primera fila; dentro de cada
+ * bloque, el orden que dejó el usuario. Así un orden guardado viejo, con empresas mezcladas, se agrupa solo.
+ */
+export function agruparPorEmpresa<T extends { empresa: string }>(filas: readonly T[]): T[] {
+  const bloques = new Map<string, T[]>()
+  for (const f of filas) {
+    const b = bloques.get(f.empresa)
+    if (b) b.push(f); else bloques.set(f.empresa, [f])
+  }
+  return [...bloques.values()].flat()
+}
+
+/**
+ * Arrastrar una fila y soltarla sobre otra. **Misma empresa** → la fila se ubica antes de la otra.
+ * **Otra empresa** → se mueve el BLOQUE entero de su empresa: si iba hacia arriba queda antes del bloque de
+ * destino; si iba hacia abajo, después. Devuelve el orden completo de claves (lo que se guarda).
+ */
+export function moverFilaPlanilla(filas: readonly { clave: string; empresa: string }[], desde: string, hasta: string): string[] {
+  const agrupadas = agruparPorEmpresa(filas)
+  const claves = agrupadas.map(f => f.clave)
+  const a = agrupadas.find(f => f.clave === desde), b = agrupadas.find(f => f.clave === hasta)
+  if (!a || !b || desde === hasta) return claves
+  if (a.empresa === b.empresa) return moverColumna(claves, desde, hasta, "antes")
+  const empresas = [...new Set(agrupadas.map(f => f.empresa))]
+  const haciaAbajo = empresas.indexOf(a.empresa) < empresas.indexOf(b.empresa)
+  const nuevas = moverColumna(empresas, a.empresa, b.empresa, haciaAbajo ? "despues" : "antes")
+  return nuevas.flatMap(e => agrupadas.filter(f => f.empresa === e).map(f => f.clave))
 }
 
 export { moverColumna as moverFila } from "@/lib/cashflow/columnas-usuario"

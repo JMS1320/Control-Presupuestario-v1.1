@@ -3,6 +3,8 @@
 
 import { esMonedaExtranjera, aPagarEnPesos, totalEnPesos, conversionDe } from "@/lib/pagos/moneda-factura"
 import { hoyArgentina } from "@/lib/fechas"
+import { Permisable, useSeMuestra } from "@/components/modo-permisos"
+import { ANTICIPOS_CASHFLOW, primeraPermitida, hayAlguna } from "@/lib/auth/ventanas"
 import { etiquetaTipoComprobante, desdeVentana, pasaVentana, coincideNumeroComprobante, type UnidadVentana } from "@/lib/pagos/filtros-cash-flow"
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { pasaSentido, type Columna } from "@/lib/movimientos/sentido"
@@ -347,6 +349,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // Estado para modal Anticipos (crear + ver existentes)
   const [modalAnticipo, setModalAnticipo] = useState(false)
   const [tabAnticipo, setTabAnticipo] = useState<string>('nuevo')
+  // 🕳️ A-BUG-1335: Cargar anticipo y Anticipos existentes se pueden sacar por rol.
+  const seMuestra = useSeMuestra()
   const [nuevoAnticipo, setNuevoAnticipo] = useState({
     tipo: 'pago' as 'pago' | 'cobro',
     cuit: '',
@@ -2537,7 +2541,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // Funciones para Anticipos
   const abrirModalAnticipo = () => {
     setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '', estado_pago: 'pagado', nro_cuenta: null, categ: null, empresa: null })
-    setTabAnticipo('nuevo')
+    setTabAnticipo(primeraPermitida(ANTICIPOS_CASHFLOW, seMuestra) ?? 'nuevo')
     setModalAnticipo(true)
     cargarAnticiposExistentes()
   }
@@ -4599,7 +4603,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               >
                 📝 ECHEQs
               </Button>
-              {/* Botón Nuevo Anticipo */}
+              {/* Botón Nuevo Anticipo — A-BUG-1335: sin ninguna de sus dos solapas, no se dibuja */}
+              {hayAlguna(ANTICIPOS_CASHFLOW, seMuestra) && (
               <Button
                 variant="outline"
                 size="sm"
@@ -4609,6 +4614,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 <Plus className="h-4 w-4 mr-2" />
                 Anticipo
               </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -5839,10 +5845,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
           <Tabs value={tabAnticipo} onValueChange={setTabAnticipo}>
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="nuevo">Nuevo Anticipo</TabsTrigger>
-              <TabsTrigger value="existentes">
+              <Permisable recurso="cashflow.nuevo"><TabsTrigger value="nuevo">Nuevo Anticipo</TabsTrigger></Permisable>
+              <Permisable recurso="cashflow.existentes"><TabsTrigger value="existentes">
                 Anticipos Existentes {anticiposExistentes.length > 0 && `(${anticiposExistentes.length})`}
-              </TabsTrigger>
+              </TabsTrigger></Permisable>
             </TabsList>
 
             <TabsContent value="nuevo">

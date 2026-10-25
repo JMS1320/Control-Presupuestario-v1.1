@@ -87,6 +87,10 @@ for (const { id: seccion, etiqueta } of SECCIONES) {
       return CUENTAS_EN_CODIGO.has(r.id.slice("extracto.cuenta.".length))
         && readFileSync(r.archivo, "utf8").includes("extracto.cuenta.")
     }
+    // Una `funcionalidad` (solapa dentro de una ventana) además tiene que PREGUNTAR su permiso: hasta
+    // A-BUG-1335 las 10 existían como solapas y ninguna pantalla las consultaba — destildarlas no sacaba nada.
+    const pregunta = (src: string) => src.includes(`puedeVer('${r.id}')`) || src.includes(`puedeVer("${r.id}")`) || src.includes(`recurso="${r.id}"`)
+    if (r.tipo === "funcionalidad") return pestanasEnCodigo(r.archivo).includes(sub) && pregunta(readFileSync(r.archivo, "utf8"))
     if (r.archivo === archivo && r.tipo !== "accion") return enCodigo.has(sub)
     const src = readFileSync(r.archivo, "utf8")
     // Desde A-FEAT-1334 también vale `<Permisable recurso="<id>">`, que pregunta lo mismo y además

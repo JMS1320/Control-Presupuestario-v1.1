@@ -63,6 +63,8 @@ import { RECURSOS as RECURSOS_PERMISABLES } from "@/lib/auth/recursos"
 import { borradorDe, alternarRecurso, alternarSeccion, nivelEnBorrador, contarCambios, cuerpoGuardar } from "@/lib/auth/modo-permisos"
 import { motivoCuentaBloqueada } from "@/lib/auth/cuentas-extracto"
 import { minutosEfectivos, validarMinutos, textoMinutos, valorCookieActividad, msRestantes, sesionVencida, sesionDelToken } from "@/lib/auth/inactividad"
+import { REGLAS_EXTRACTO, ASIGNAR_EXTRACTO, ANTICIPOS_CASHFLOW, primeraPermitida, hayAlguna, tabInicialAsignar } from "@/lib/auth/ventanas"
+import { clasificarCampanita, contarNuevos, soyYo } from "@/lib/revisiones/campanita"
 import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
 import {
   adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga,
@@ -74,7 +76,7 @@ import { coincidePorPalabras } from "@/lib/normalizar-texto"
 import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
 import { camposDePagoManual } from "@/lib/templates/detalle-pago-manual"
 import { esBanco, pasaFiltroMedio, marcaPagadoDesde, OPCIONES_PAGADO_DESDE } from "@/lib/pagos/pagado-desde"
-import { armarPlanilla, impuestoDeTemplate, ordenarFilas, resumenMes, linkTemplates, templatesDelLink, type CuotaPlanilla } from "@/lib/impuestos/planilla"
+import { armarPlanilla, impuestoDeTemplate, ordenarFilas, moverFilaPlanilla, resumenMes, linkTemplates, templatesDelLink, type CuotaPlanilla } from "@/lib/impuestos/planilla"
 import { importeDeVenta, cuotasNoFijadas } from "@/lib/arrendamientos/cash-flow"
 import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPapel, moverPartida, clavePartida } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
@@ -207,7 +209,7 @@ import { controlarPoliza, cotejarConComprobante, repartoDeLaPoliza, repartoDeLas
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
 import { motivoFechaNoExacta, ajusteTarjetaPorEmision, elegirPorImporteCercano } from "@/lib/conciliacion/motivo-fecha"
 import { pesosDeConsumosUsd, cuotaDeConsumoUsd } from "@/lib/conciliacion/consumos-usd"
-import { generarCuotasTemplate, cuotaDelMovimiento, cuotaPendienteDelMes } from "@/lib/templates/cuotas-del-template"
+import { generarCuotasTemplate, cuotaDelMovimiento, cuotaPendienteDelMes, diferenciaConPrecargada } from "@/lib/templates/cuotas-del-template"
 import { elegirDetalleFijo, admiteDetalleFijo } from "@/lib/conciliacion/detalle-fijo"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
@@ -8132,9 +8134,19 @@ export function correrCasos(): Resultado[] {
         && impuestoDeTemplate(tpl("IIBB Mensual MSA", "Impuesto IIBB")) === "IIBB Mensual MSA", "A-FEAT-1320")
     // Se guarda la lista COMPLETA de lo que se veía al soltar (ver `soltar` en la planilla).
     const ord = ordenarFilas(p.filas, ["UATRE|MSA", "ya-no-existe", "Inmobiliario|PAM", "Inmobiliario|MSA", "Red Vial|MSA"]).map(f => f.clave)
-    chequear("Planilla impuestos", "El orden que dejó el usuario arrastrando manda; una clave que ya no existe se ignora",
-      "UATRE|MSA primero, Inmobiliario|PAM segundo, 4 filas", `${ord[0]} · ${ord[1]} · ${ord.length}`,
-      ord[0] === "UATRE|MSA" && ord[1] === "Inmobiliario|PAM" && ord.length === 4, "A-FEAT-1320")
+    // ⚠️ cambió 2026-10-24: las filas van en bloques por empresa — un orden guardado con empresas mezcladas se agrupa.
+    chequear("Planilla impuestos", "El orden que dejó el usuario arrastrando manda, agrupado por empresa; una clave que ya no existe se ignora",
+      "UATRE|MSA · Inmobiliario|MSA · Red Vial|MSA · Inmobiliario|PAM", ord.join(" · "),
+      ord.join(" · ") === "UATRE|MSA · Inmobiliario|MSA · Red Vial|MSA · Inmobiliario|PAM", "A-FEAT-1320")
+    {
+      const fs3 = [{ clave: "A|MA", empresa: "MA" }, { clave: "B|MA", empresa: "MA" }, { clave: "C|MSA", empresa: "MSA" }, { clave: "D|MSA", empresa: "MSA" }, { clave: "E|PAM", empresa: "PAM" }]
+      const arriba = moverFilaPlanilla(fs3, "D|MSA", "B|MA").join(" ")
+      const abajo = moverFilaPlanilla(fs3, "A|MA", "E|PAM").join(" ")
+      const misma = moverFilaPlanilla(fs3, "D|MSA", "C|MSA").join(" ")
+      chequear("Planilla impuestos", "Arrastrar sobre OTRA empresa mueve el bloque entero (arriba: antes; abajo: después); en la misma, sólo la fila",
+        "C|MSA D|MSA A|MA B|MA E|PAM · C|MSA D|MSA E|PAM A|MA B|MA · A|MA B|MA D|MSA C|MSA E|PAM", `${arriba} · ${abajo} · ${misma}`,
+        arriba === "C|MSA D|MSA A|MA B|MA E|PAM" && abajo === "C|MSA D|MSA E|PAM A|MA B|MA" && misma === "A|MA B|MA D|MSA C|MSA E|PAM", "A-FEAT-1320")
+    }
     // Los tres criterios que confirmó el usuario el 23/10.
     const baja = p.desactivadas
     chequear("Planilla impuestos", "Lo sin pagar de un template dado de baja NO suma, pero se muestra aparte (colapsado) para poder chequearlo",
@@ -8445,6 +8457,68 @@ export function correrCasos(): Resultado[] {
       sesionDelToken("no-es-un-token") ?? "nada", sesionDelToken(null) ?? "nada"].join(" · ")
     chequear("Accesos", "Inactividad: la sesión sale del token; un token roto no inventa una",
       "abc-123 · nada · nada", inTok, inTok === "abc-123 · nada · nada", "A-FEAT-1351")
+    // ── Funciones de adentro de las ventanas (A-BUG-1335) ──
+    // Ulises: sólo carga en Extracto (sin reglas ni asignar) y nada de anticipos.
+    const vnUlises = (id: string) => ["extracto.importar", "extracto.movimientos"].includes(id)
+    const vnU = [hayAlguna(REGLAS_EXTRACTO, vnUlises) ? "ve Configuración" : "sin Configuración",
+      tabInicialAsignar(false, vnUlises) ?? "sin Asignar", tabInicialAsignar(true, vnUlises) ?? "sin Asignar",
+      hayAlguna(ANTICIPOS_CASHFLOW, vnUlises) ? "ve Anticipo" : "sin Anticipo"].join(" · ")
+    chequear("Accesos", "Ventanas: un rol sin reglas, sin asignar y sin anticipos no ve ninguno de los tres botones",
+      "sin Configuración · sin Asignar · sin Asignar · sin Anticipo", vnU, vnU === "sin Configuración · sin Asignar · sin Asignar · sin Anticipo", "A-BUG-1335")
+
+    const vnTodo = () => true
+    const vnSinTpl = (id: string) => id !== "extracto.template" && id !== "extracto.venta"
+    const vnA = [tabInicialAsignar(false, vnTodo), tabInicialAsignar(true, vnTodo), tabInicialAsignar(false, vnSinTpl), tabInicialAsignar(true, vnSinTpl)].join(" · ")
+    chequear("Accesos", "Ventanas: Asignar abre en Template (egreso) o Venta (ingreso); si están apagadas, en la primera que el rol tenga",
+      "template · venta · arca · arca", vnA, vnA === "template · venta · arca · arca", "A-BUG-1335")
+
+    // Un débito no se concilia contra una venta: con sólo Venta prendida, en un débito no hay botón.
+    const vnSoloVenta = (id: string) => id === "extracto.venta"
+    const vnV = [tabInicialAsignar(false, vnSoloVenta) ?? "sin Asignar", tabInicialAsignar(true, vnSoloVenta) ?? "sin Asignar"].join(" · ")
+    chequear("Accesos", "Ventanas: con sólo «Asignar a venta», un débito no tiene botón y un crédito abre en Venta",
+      "sin Asignar · venta", vnV, vnV === "sin Asignar · venta", "A-BUG-1335")
+
+    const vnSoloParseo = (id: string) => id === "extracto.parseo" || id === "cashflow.existentes"
+    const vnP = [primeraPermitida(REGLAS_EXTRACTO, vnSoloParseo), primeraPermitida(ANTICIPOS_CASHFLOW, vnSoloParseo), String(ASIGNAR_EXTRACTO.length)].join(" · ")
+    chequear("Accesos", "Ventanas: Configuración abre en la única regla permitida y Anticipos en la única solapa permitida",
+      "parseo · existentes · 5", vnP, vnP === "parseo · existentes · 5", "A-BUG-1335")
+
+    // ── Conciliar como casilla propia (A-FEAT-1361) ──
+    // Un rol CERRADO al que se le prenden Movimientos e Importar (Ulises) no recibe Conciliar: nace apagado.
+    // Uno ABIERTO con Extracto lo sigue teniendo, como antes de existir la casilla.
+    let ccUl = borradorDe({ secciones: [], permisos: {}, cerrado: true })
+    ccUl = alternarRecurso(alternarRecurso(ccUl, "extracto.movimientos"), "extracto.importar")
+    const ccAb = borradorDe({ secciones: ["extracto"], permisos: {}, cerrado: false })
+    const vcc = [nivelEnBorrador(ccUl, "extracto.importar"), nivelEnBorrador(ccUl, "extracto.conciliar"), nivelEnBorrador(ccAb, "extracto.conciliar"),
+      RECURSOS_PERMISABLES.find((r) => r.id === "extracto.conciliar")?.tipo ?? "sin casilla"].join(" · ")
+    chequear("Accesos", "Conciliar tiene su casilla: un rol cerrado con Movimientos e Importar no puede conciliar; uno abierto con Extracto sí",
+      "escritura · ninguno · escritura · accion", vcc, vcc === "escritura · ninguno · escritura · accion", "A-FEAT-1361")
+
+    // ── La campanita (A-FEAT-1364) ──
+    const cpJose = { mail: "jose@x.com", etiqueta: "José" }
+    const cpUli = { mail: "ulises@x.com", etiqueta: "Ulises" }
+    const cpMarcas = [
+      // 1 · José le marca una factura a Ulises, sin respuesta todavía.
+      { id: "m1", estado: "abierta", motivo: "mal cargada", creado_por: "José", asignado_a: "ulises@x.com", created_at: "2026-10-25T10:00:00Z", seguimiento: [] },
+      // 2 · José le marcó otra; Ulises contestó.
+      { id: "m2", estado: "abierta", motivo: "falta PDF", creado_por: "José", asignado_a: "ULISES@x.com", created_at: "2026-10-24T10:00:00Z",
+        seguimiento: [{ fecha: "2026-10-24T12:00:00Z", texto: "lo pedí", autor: "Ulises" }] },
+      // 3 · Una marca sin destinatario: no va a la campanita de nadie.
+      { id: "m3", estado: "abierta", motivo: "revisar", creado_por: "José", asignado_a: null, created_at: "2026-10-24T10:00:00Z", seguimiento: [] },
+      // 4 · Una cerrada: tampoco.
+      { id: "m4", estado: "resuelta", motivo: "x", creado_por: "José", asignado_a: "ulises@x.com", created_at: "2026-10-20T10:00:00Z", seguimiento: [] },
+    ]
+    const cpRes = (yo: typeof cpJose, vistos = {}) => clasificarCampanita(cpMarcas, yo, vistos).map((i) => `${i.id}:${i.tipo}${i.nuevo ? "*" : ""}`).join(" ")
+    const vcp = [cpRes(cpUli), cpRes(cpJose)].join(" | ")
+    chequear("Accesos", "Campanita: a Ulises le llegan las dos que le marcaron (la primera sin contestar es nueva); a José, sólo la que le contestaron",
+      "m1:para-mi* m2:para-mi | m1:enviada m2:enviada*", vcp, vcp === "m1:para-mi* m2:para-mi | m1:enviada m2:enviada*", "A-FEAT-1364")
+
+    // Lo visto deja de contar; una respuesta nueva vuelve a contar.
+    const cpVisto = clasificarCampanita(cpMarcas, cpJose, { m2: 2 })
+    const cpNueva = clasificarCampanita([{ ...cpMarcas[1], seguimiento: [...cpMarcas[1].seguimiento, { fecha: "2026-10-25T09:00:00Z", texto: "ya está", autor: "ulises@x.com" }] }], cpJose, { m2: 2 })
+    const vcv = [contarNuevos(cpVisto), contarNuevos(cpNueva), soyYo("  JOSÉ ", cpJose) ? "soy" : "no", soyYo(null, cpJose) ? "soy" : "no"].join(" · ")
+    chequear("Accesos", "Campanita: lo ya visto no suma; una respuesta nueva sí; el autor se compara sin mayúsculas ni espacios",
+      "0 · 1 · soy · no", vcv, vcv === "0 · 1 · soy · no", "A-FEAT-1364")
 
     const inTxt = [60, 120, 90, 30].map(textoMinutos).join(" · ")
     chequear("Accesos", "Inactividad: la tarjeta del rol lo dice en horas cuando se puede",
@@ -8563,6 +8637,37 @@ export function correrCasos(): Resultado[] {
     const vg = ["Otros", "", null, "000083 - Pagos"].map(g => tieneGrupoPrevisto(g) ? "sí" : "no").join(" ")
     chequear("Parseo", "Grupo previsto: «Otros» (el relleno) o vacío no cuentan; un grupo del banco sí — sin grupo no se puede dar por bueno",
       "no no no sí", vg, vg === "no no no sí", "A-FEAT-1360")
+
+    // ── Reglas por «Nombre / comercio» y por «Texto del banco» (A-FEAT-1362) ──
+    // Movimientos reales de MA (ene–mar 2026) ya re-parseados: el comercio queda en leyendas 1.
+    const compra = { descripcion: "COMPRA DEBITO", debitos: 23000, creditos: 0, leyendas_adicionales_1: "PESCADERIA NAPOLI", concepto: "COMPRA DEBITO\n PESCADERIA NAPOLI\n 4517XXXXXXXXXX29\n A956" }
+    const abl = { descripcion: "PAGO DE SERVICIOS", debitos: 271910.97, creditos: 0, leyendas_adicionales_1: "AGIP INM/ABL", leyendas_adicionales_4: "007001005392", concepto: "PAGO DE SERVICIOS\n AGIP INM/ABL\n 007001005392" }
+    const rr = (col: string, t: string, m = "contiene") => ({ columna_busqueda: col, tipo_match: m, texto_buscar: t })
+    const vnom = [evaluarReglaConciliacion(compra, rr("nombre", "pescaderia napoli")), evaluarReglaConciliacion(compra, rr("descripcion", "PESCADERIA")),
+      evaluarReglaConciliacion(abl, rr("texto", "1005392")), evaluarReglaConciliacion(abl, rr("texto", "2831491")),
+      evaluarReglaConciliacion(compra, rr("nombre", ""))].map(String).join(" · ")
+    chequear("Conciliación", "Regla por comercio encuentra PESCADERIA NAPOLI (por descripción no: ahí está el tipo); por texto del banco encuentra la partida 1005392 y no otra; texto vacío no coincide",
+      "true · false · true · false · false", vnom, vnom === "true · false · true · false · false", "A-FEAT-1362")
+
+    // ── Cuota precargada distinta del banco → a auditar (A-FEAT-1363) ──
+    // AYSA Libertad de MA, 12/01/2026, $129.397,76 contra una cuota precargada.
+    const d1 = diferenciaConPrecargada({ monto: 120000, fecha_vencimiento: "2026-01-10" }, 129397.76, "2026-01-12")
+    const d2 = diferenciaConPrecargada({ monto: "129397.76", fecha_vencimiento: "2026-01-10" }, 129397.76, "2026-01-12")
+    const d3 = diferenciaConPrecargada({ monto: 129397.76, fecha_estimada: "2026-01-01" }, 129397.76, "2026-01-28")
+    const vdif = [d1?.includes("monto precargado $120.000,00, el banco $129.397,76") ? "monto" : String(d1), d2 === null ? "igual" : String(d2), d3?.includes("27 días") ? "fecha" : String(d3)].join(" · ")
+    chequear("Conciliación", "Cuota precargada: monto distinto → motivo con los dos importes; mismo monto y fecha cercana → nada; 27 días de diferencia → motivo de fecha",
+      "monto · igual · fecha", vdif, vdif === "monto · igual · fecha", "A-FEAT-1363")
+
+    // ── La regla encuentra la cuota «débito» y la de ±15 días (A-FEAT-1365) ──
+    // AYSA Libertad 2026: feb y mar en «débito»; ABL Libertad: débito del 23/02, cuota precargada el 05/03.
+    const aysa = [{ id: "ene", fecha_estimada: "2026-01-10", monto: 0, estado: "conciliado" },
+      { id: "feb", fecha_estimada: "2026-02-10", monto: 120123, estado: "debito" }, { id: "mar", fecha_estimada: "2026-03-10", monto: 120123, estado: "debito" }]
+    const ablLib = [{ id: "ene-x", fecha_vencimiento: "2026-01-30", monto: 294509.39, estado: "anterior" }, { id: "mar5", fecha_estimada: "2026-03-05", monto: 270123, estado: "pendiente" }]
+    const vv = [cuotaPendienteDelMes(aysa, "2026-02-18", 132710.48)?.id, cuotaPendienteDelMes(aysa, "2026-03-16", 138018.86)?.id,
+      cuotaPendienteDelMes(aysa, "2026-01-12", 129397.76)?.id ?? "ninguna", cuotaPendienteDelMes(ablLib, "2026-02-23", 271910.97)?.id,
+      cuotaPendienteDelMes(ablLib, "2026-04-10", 271910.97)?.id ?? "ninguna"].join(" · ")
+    chequear("Conciliación", "La regla usa la cuota en «débito» (AYSA feb y mar) y la precargada a ≤15 días (ABL 23/02 → la del 05/03); la conciliada o la que está lejos no",
+      "feb · mar · ninguna · mar5 · ninguna", vv, vv === "feb · mar · ninguna · mar5 · ninguna", "A-FEAT-1365")
 
     // ── ¿Llegó todo de la base? (A-FEAT-1343) ──
     const lects = [{ nombre: "Extracto BANCO GALICIA", llegaron: 1000, esperadas: 1563 }, { nombre: "Ventas", llegaron: 9, esperadas: 9 }, { nombre: "Sueldos", llegaron: 103, esperadas: null }]
