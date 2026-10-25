@@ -69,6 +69,19 @@ export const GRUPO_SUBTIPO_NUEVO = "Subtipo nuevo"
 export const GRUPO_CHOQUE = "Reglas en conflicto"
 
 /**
+ * ¿El tipo tiene un GRUPO DE CONCEPTOS elegido? (A-FEAT-1360) — `Otros` es el relleno que se pone
+ * cuando no hay ninguno (`grupoParaGuardar`), no un grupo del banco.
+ *
+ * Usuario 2026-10-25: *«no debería permitir tildar si no tiene grupo previsto… si ponés esa
+ * restricción la app deberá destildarlo; ahí yo veré enseguida cuáles son y los arreglo»*. Pasó con
+ * 4 tipos de PAM dados por buenos con el tilde: las líneas estaban bien, el grupo no se veía.
+ */
+export function tieneGrupoPrevisto(grupo: string | null | undefined): boolean {
+  const g = String(grupo ?? "").trim()
+  return g !== "" && g !== GRUPO_SIN_REGLA
+}
+
+/**
  * ¿Este movimiento está hoy SIN PARSEAR? (A-FEAT-1358) — su grupo guardado es una de las tres marcas
  * de «no se desglosó» (sin regla, subtipo nuevo, reglas en conflicto) o está vacío.
  *
