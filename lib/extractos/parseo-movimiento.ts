@@ -817,7 +817,7 @@ export function auditarSubtipo(lineas: string[], reglas: ReglaParseo[]): Auditor
 
   propuesta.forEach((p, i) => {
     // La regla que apunta a ESTA línea, según cómo extrae
-    // ⚠️ A-BUG-1356: los modos que BUSCAN (Nº de operación, CUIT…) guardan un PEDAZO de la línea
+    // ⚠️ A-BUG-1359: los modos que BUSCAN (Nº de operación, CUIT…) guardan un PEDAZO de la línea
     // —`2522426` de `OPERACION 2522426`—, así que comparar contra la línea entera daba «hoy no se
     // guarda» con el dato bien guardado. Para esos modos alcanza con que la línea lo contenga.
     const suya = reglas.find(r => {
