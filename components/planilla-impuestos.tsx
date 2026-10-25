@@ -21,7 +21,7 @@ import { hoyArgentina } from "@/lib/fechas"
 import { leerPreferencias } from "@/lib/auth/preferencias"
 import { guardarPreferencias } from "@/lib/auth/guardar-preferencias"
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
-import { armarPlanilla, ordenarFilas, moverFila, resumenMes, linkTemplates, type EstadoCelda, type CuotaPlanilla, type CeldaCuota, type FilaPlanilla } from "@/lib/impuestos/planilla"
+import { armarPlanilla, ordenarFilas, moverFilaPlanilla, resumenMes, linkTemplates, type EstadoCelda, type CuotaPlanilla, type CeldaCuota, type FilaPlanilla } from "@/lib/impuestos/planilla"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { AlertaImpuestos } from "@/components/alerta-impuestos"
@@ -141,8 +141,9 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
 
   const soltar = async (destino: string) => {
     if (!arrastrando || arrastrando === destino) { setArrastrando(null); return }
-    // El orden completo de lo que se ve ahora, para que mover una fila no desordene las otras.
-    const nuevo = moverFila(filas.map(f => f.clave), arrastrando, destino, "antes")
+    // El orden completo (también las empresas ocultas por las chips), para que mover una fila no desordene las otras.
+    // Entre empresas se mueve el bloque entero.
+    const nuevo = moverFilaPlanilla(filas, arrastrando, destino)
     setArrastrando(null)
     setOrden(nuevo)
     const { error: e } = await guardarPreferencias({ ordenImpuestos: nuevo })
@@ -200,7 +201,7 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
             </span>
           </DialogTitle>
           <DialogDescription className="text-xs">
-            Año calendario: cada cuota cae en el mes de su vencimiento; la celda suma las del mes (pasá el mouse para verlas). Arrastrá las filas para ordenarlas.
+            Año calendario: cada cuota cae en el mes de su vencimiento; la celda suma las del mes (pasá el mouse para verlas). Arrastrá las filas para ordenarlas (sobre otra empresa, se mueve la empresa entera).
           </DialogDescription>
         </DialogHeader>
 
