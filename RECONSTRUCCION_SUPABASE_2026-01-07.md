@@ -3648,6 +3648,15 @@ ALTER TABLE public.reglas_ctas_import_arca
 ```
 `buscarReglaCuit` selecciona `fc`; el import hace `fc: reglaCuit.fc || 'Buscar'` (la imputación manual lo sigue pisando).
 
+### 2026-10-24 · TIEMPO DE INACTIVIDAD por rol (script 101) — A-FEAT-1351
+
+Una columna en `public.roles`: `minutos_inactividad integer`, nullable (vacía = 60 min, el default de la app), con
+`constraint roles_minutos_inactividad_rango check (minutos_inactividad between 5 and 1440)` y comentario `[script 101]`.
+Aditivo: no toca filas, RLS, GRANTs ni el trigger `roles_proteger_sistema` (que no congela esta columna, a propósito: el
+admin puede cambiar su propio tiempo). Script `scripts/101-roles-inactividad.sql` (deshacer: `101-…-deshacer.sql`, que
+sólo borra la columna si su comentario dice `[script 101]`). ✅ **Corrido 2026-10-24** (T1, con OK del usuario);
+verificado: los 5 roles (`admin`, `pruebas`, `contable`, `socio`, `productivo`) la tienen, vacía.
+
 ### 2026-10-23 · HUELLA de la carga desde el PDF (script 94) — A-FEAT-1318
 
 Seis columnas en `arca_pdf_archivo_digital`: `comprobante_id`, `comprobante_empresa`, `carga_leido`, `carga_correcciones`, `cargado_at`, `cargado_por`. Aditivo. Script `scripts/94-carga-desde-pdf-archivo-digital.sql` (deshacer: `94-…-deshacer.sql`). ✅ **Corrido 2026-10-23** con OK del usuario (verificado: las 6 columnas existen y el `UPDATE` de la app planea bien).

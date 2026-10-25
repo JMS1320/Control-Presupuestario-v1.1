@@ -52,7 +52,7 @@ De paso: [A-BUG-1327](PENDIENTES.md#a-bug-1327) — las marcas «para revisar» 
 
 📌 Borrá esta entrada cuando la leas.
 
-### ⏱️ Cierre de sesión por inactividad: toca `middleware.ts` y suma una columna a `public.roles` (2026-10-24) — SIN CORRER
+### ⏱️ Cierre de sesión por inactividad: toca `middleware.ts` y suma una columna a `public.roles` (2026-10-24) — ✅ APLICADA el 24/10 con OK de JMS (aviso previo)
 
 Para [A-FEAT-1351](PENDIENTES.md#a-feat-1351) (pedido de JMS: 1 hora sin actividad, configurable). Te aviso ANTES porque
 es tu territorio (login y roles):
@@ -66,7 +66,7 @@ es tu territorio (login y roles):
 - **`scripts/101-roles-inactividad.sql`**: `minutos_inactividad integer` **vacía por default** con check 5..1440. No toca
   RLS, GRANTs ni `roles_proteger_sistema` (que no congela esta columna: el admin puede cambiar su tiempo, a propósito).
   Se frena si la columna existe; marca `[script 101]`; el deshacer la verifica. **Sin el script anda igual, con 1 hora
-  para todos.** Lo corre T1 con OK de JMS.
+  para todos.** ✅ Corrido el 24/10 por T1 con OK de JMS; verificado: los 5 roles tienen la columna, vacía.
 Si algo de esto choca con lo tuyo (por ejemplo, si vas a cambiar el middleware), avisá acá.
 
 📌 Borrá esta entrada cuando la leas.

@@ -724,7 +724,7 @@ referencia; el estado real y lo que falta están en el **§ 0**.
 > Se deja escrito lo viejo porque explica de dónde viene la estructura, no cómo funciona hoy.
 
 **Hoy, un rol es una fila de `public.roles`**: `id` · `descripcion` · `secciones` (las 12 del menú)
-· `exige_2fa` · `es_sistema`.
+· `exige_2fa` · `es_sistema` · `minutos_inactividad` (desde 2026-10-24, `scripts/101`; vacío = 60 min — [A-FEAT-1351](PENDIENTES.md#a-feat-1351)).
 
 | Qué | Dónde | Estado |
 |---|---|---|
