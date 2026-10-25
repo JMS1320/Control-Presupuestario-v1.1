@@ -8658,6 +8658,17 @@ export function correrCasos(): Resultado[] {
     chequear("Conciliación", "Cuota precargada: monto distinto → motivo con los dos importes; mismo monto y fecha cercana → nada; 27 días de diferencia → motivo de fecha",
       "monto · igual · fecha", vdif, vdif === "monto · igual · fecha", "A-FEAT-1363")
 
+    // ── La regla encuentra la cuota «débito» y la de ±15 días (A-FEAT-1364) ──
+    // AYSA Libertad 2026: feb y mar en «débito»; ABL Libertad: débito del 23/02, cuota precargada el 05/03.
+    const aysa = [{ id: "ene", fecha_estimada: "2026-01-10", monto: 0, estado: "conciliado" },
+      { id: "feb", fecha_estimada: "2026-02-10", monto: 120123, estado: "debito" }, { id: "mar", fecha_estimada: "2026-03-10", monto: 120123, estado: "debito" }]
+    const ablLib = [{ id: "ene-x", fecha_vencimiento: "2026-01-30", monto: 294509.39, estado: "anterior" }, { id: "mar5", fecha_estimada: "2026-03-05", monto: 270123, estado: "pendiente" }]
+    const vv = [cuotaPendienteDelMes(aysa, "2026-02-18", 132710.48)?.id, cuotaPendienteDelMes(aysa, "2026-03-16", 138018.86)?.id,
+      cuotaPendienteDelMes(aysa, "2026-01-12", 129397.76)?.id ?? "ninguna", cuotaPendienteDelMes(ablLib, "2026-02-23", 271910.97)?.id,
+      cuotaPendienteDelMes(ablLib, "2026-04-10", 271910.97)?.id ?? "ninguna"].join(" · ")
+    chequear("Conciliación", "La regla usa la cuota en «débito» (AYSA feb y mar) y la precargada a ≤15 días (ABL 23/02 → la del 05/03); la conciliada o la que está lejos no",
+      "feb · mar · ninguna · mar5 · ninguna", vv, vv === "feb · mar · ninguna · mar5 · ninguna", "A-FEAT-1364")
+
     // ── ¿Llegó todo de la base? (A-FEAT-1343) ──
     const lects = [{ nombre: "Extracto BANCO GALICIA", llegaron: 1000, esperadas: 1563 }, { nombre: "Ventas", llegaron: 9, esperadas: 9 }, { nombre: "Sueldos", llegaron: 103, esperadas: null }]
     const vl = lects.map(l => lecturaIncompleta(l) ? "incompleta" : "ok").join(" · ")

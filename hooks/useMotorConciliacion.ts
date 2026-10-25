@@ -20,7 +20,7 @@ import { heredarDelOrigen, cuitsDiscrepan, motivoCuitDistinto, type TemplateOrig
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { buscarConDobleAudit, cargarVinculosEnAuditar } from "@/lib/conciliacion/doble-audit"
 import { templateParaFecha, detalleDeRegla, motivoFaltaCampana } from "@/lib/conciliacion/template-de-regla"
-import { cuotaPendienteDelMes, diferenciaConPrecargada } from "@/lib/templates/cuotas-del-template"
+import { cuotaPendienteDelMes, diferenciaConPrecargada, ESTADOS_QUE_ESPERAN_MOVIMIENTO } from "@/lib/templates/cuotas-del-template"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { conFechaDeEmision, comprobanteDeCargoDeTarjeta } from "@/lib/conciliacion/pool-tarjeta"
 import { motivoFechaNoExacta, elegirPorImporteCercano } from "@/lib/conciliacion/motivo-fecha"
@@ -1140,7 +1140,8 @@ export function useMotorConciliacion() {
         .from('cuotas_egresos_sin_factura')
         .select('id, fecha_estimada, fecha_vencimiento, monto, estado, detalle')
         .eq('egreso_id', template.id)
-        .eq('estado', 'pendiente')
+        // A-FEAT-1364: también las cuotas «débito» (se pagan por débito automático, esperan su movimiento)
+        .in('estado', [...ESTADOS_QUE_ESPERAN_MOVIMIENTO])
       const pendiente = cuotaPendienteDelMes((delTemplate || []) as any[], movimiento.fecha, Number(monto) || 0)
       if (pendiente) {
         // 🔎 A-FEAT-1363 — se mira ANTES de pisar la cuota: después ya no queda lo precargado.
