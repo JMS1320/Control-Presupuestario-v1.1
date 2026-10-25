@@ -112,7 +112,7 @@ export function cuotaDelMovimiento<T extends { id: string; fecha_estimada?: stri
  * cuota nueva como siempre.
  */
 /**
- * ⚠️ **cambió 2026-10-25 (A-FEAT-1364)** — antes buscaba sólo en el MISMO MES y sólo cuotas «pendiente».
+ * ⚠️ **cambió 2026-10-25 (A-FEAT-1365)** — antes buscaba sólo en el MISMO MES y sólo cuotas «pendiente».
  * Usuario: *«sí, hacé 1 y 2»*, después de ver que AYSA Libertad tenía sus cuotas en estado **«débito»**
  * (se pagan por débito automático: siguen esperando el movimiento) y que el ABL pagado el 23/02 tenía su
  * cuota precargada el 05/03 — los dos casos creaban una cuota nueva y dejaban el mes duplicado.

@@ -1140,7 +1140,7 @@ export function useMotorConciliacion() {
         .from('cuotas_egresos_sin_factura')
         .select('id, fecha_estimada, fecha_vencimiento, monto, estado, detalle')
         .eq('egreso_id', template.id)
-        // A-FEAT-1364: también las cuotas «débito» (se pagan por débito automático, esperan su movimiento)
+        // A-FEAT-1365: también las cuotas «débito» (se pagan por débito automático, esperan su movimiento)
         .in('estado', [...ESTADOS_QUE_ESPERAN_MOVIMIENTO])
       const pendiente = cuotaPendienteDelMes((delTemplate || []) as any[], movimiento.fecha, Number(monto) || 0)
       if (pendiente) {
