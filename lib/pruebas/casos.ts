@@ -208,7 +208,7 @@ import { controlarPoliza, cotejarConComprobante, repartoDeLaPoliza, repartoDeLas
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
 import { motivoFechaNoExacta, ajusteTarjetaPorEmision, elegirPorImporteCercano } from "@/lib/conciliacion/motivo-fecha"
 import { pesosDeConsumosUsd, cuotaDeConsumoUsd } from "@/lib/conciliacion/consumos-usd"
-import { generarCuotasTemplate, cuotaDelMovimiento, cuotaPendienteDelMes } from "@/lib/templates/cuotas-del-template"
+import { generarCuotasTemplate, cuotaDelMovimiento, cuotaPendienteDelMes, diferenciaConPrecargada } from "@/lib/templates/cuotas-del-template"
 import { elegirDetalleFijo, admiteDetalleFijo } from "@/lib/conciliacion/detalle-fijo"
 import { filtroDeSentidoYMonto, pasaSentido } from "@/lib/movimientos/sentido"
 import {
@@ -8600,6 +8600,15 @@ export function correrCasos(): Resultado[] {
       evaluarReglaConciliacion(compra, rr("nombre", ""))].map(String).join(" · ")
     chequear("Conciliación", "Regla por comercio encuentra PESCADERIA NAPOLI (por descripción no: ahí está el tipo); por texto del banco encuentra la partida 1005392 y no otra; texto vacío no coincide",
       "true · false · true · false · false", vnom, vnom === "true · false · true · false · false", "A-FEAT-1362")
+
+    // ── Cuota precargada distinta del banco → a auditar (A-FEAT-1363) ──
+    // AYSA Libertad de MA, 12/01/2026, $129.397,76 contra una cuota precargada.
+    const d1 = diferenciaConPrecargada({ monto: 120000, fecha_vencimiento: "2026-01-10" }, 129397.76, "2026-01-12")
+    const d2 = diferenciaConPrecargada({ monto: "129397.76", fecha_vencimiento: "2026-01-10" }, 129397.76, "2026-01-12")
+    const d3 = diferenciaConPrecargada({ monto: 129397.76, fecha_estimada: "2026-01-01" }, 129397.76, "2026-01-28")
+    const vdif = [d1?.includes("monto precargado $120.000,00, el banco $129.397,76") ? "monto" : String(d1), d2 === null ? "igual" : String(d2), d3?.includes("27 días") ? "fecha" : String(d3)].join(" · ")
+    chequear("Conciliación", "Cuota precargada: monto distinto → motivo con los dos importes; mismo monto y fecha cercana → nada; 27 días de diferencia → motivo de fecha",
+      "monto · igual · fecha", vdif, vdif === "monto · igual · fecha", "A-FEAT-1363")
 
     // ── ¿Llegó todo de la base? (A-FEAT-1343) ──
     const lects = [{ nombre: "Extracto BANCO GALICIA", llegaron: 1000, esperadas: 1563 }, { nombre: "Ventas", llegaron: 9, esperadas: 9 }, { nombre: "Sueldos", llegaron: 103, esperadas: null }]

@@ -122,6 +122,41 @@ export function cuotaPendienteDelMes<T extends { id: string; fecha_estimada?: st
 }
 
 /**
+ * 🔎 **A-FEAT-1363 — la cuota PRECARGADA no coincide con el banco: se concilia, pero queda «a auditar».**
+ *
+ * Usuario 2026-10-25: *«si el monto precargado es distinto debe quedar como a auditar… que lo reconozca,
+ * para eso está la regla, pero que quede en audit por diferencia de montos. Lo mismo con la fecha si es
+ * diferencia grande»*. Antes el motor le pisaba el monto a la cuota con el del banco **sin avisar**.
+ *
+ * Devuelve el motivo para `motivo_revision`, o `null` si coincide. Es un aviso, no un freno (§ 🚦): la
+ * diferencia puede tener explicación (un aumento, un mes que se cobró distinto).
+ * - **Monto**: más de 1 centavo de diferencia.
+ * - **Fecha**: más de `DIAS_TOLERANCIA_PRECARGADA` días entre lo previsto y el débito.
+ */
+export const DIAS_TOLERANCIA_PRECARGADA = 10
+
+export function diferenciaConPrecargada(
+  cuota: { monto?: number | string | null; fecha_estimada?: string | null; fecha_vencimiento?: string | null },
+  montoBanco: number, fechaBanco: string,
+): string | null {
+  const fmt = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const ddmm = (f: string) => f.slice(0, 10).split("-").reverse().join("/")
+  const motivos: string[] = []
+  const previsto = Number(cuota.monto)
+  if (Number.isFinite(previsto) && Math.abs(previsto - montoBanco) > 0.01) {
+    motivos.push(`monto precargado $${fmt(previsto)}, el banco $${fmt(montoBanco)} (diferencia $${fmt(montoBanco - previsto)})`)
+  }
+  const fPrevista = String(cuota.fecha_vencimiento || cuota.fecha_estimada || "").slice(0, 10)
+  if (fPrevista && fechaBanco) {
+    const dias = Math.round((Date.parse(fechaBanco.slice(0, 10)) - Date.parse(fPrevista)) / 86400000)
+    if (Math.abs(dias) > DIAS_TOLERANCIA_PRECARGADA) {
+      motivos.push(`fecha prevista ${ddmm(fPrevista)}, el banco ${ddmm(fechaBanco)} (${Math.abs(dias)} días)`)
+    }
+  }
+  return motivos.length ? `Cuota precargada distinta: ${motivos.join(" · ")}` : null
+}
+
+/**
  * 🔎 A-BUG-1317 — el filtro «Campaña» de Templates. La campaña es TEXTO («2026», «25/26»); antes se
  * comparaba con `parseInt(...)` y no daba igual nunca: elegir un año dejaba la lista vacía. Y desde
  * A-DEC-1016 los abiertos no tienen campaña → opción `SIN_CAMPANA`.
