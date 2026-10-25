@@ -190,28 +190,43 @@ export function parsearResumen(texto: string): ResumenParsed {
 
   // Movimientos: dividir por líneas y parsear cada una
   const lineas = texto.split(/\r?\n/)
-  let tarjetaActual: TarjetaAdicional = { tarjeta_nro: null, titular: null }
+  /**
+   * 🐛 A-BUG-1369 — el renglón «TARJETA 9753 Total Consumos de PLACIDO AL MARTINEZ 124.766,16» CIERRA el
+   * bloque de esa tarjeta: los consumos de PLÁCIDO están ARRIBA del subtotal (Movistar + Chubb = 124.766,16
+   * en el resumen PAM dic-25). Antes el titular se aplicaba a los renglones de ABAJO, así que cada bloque
+   * quedaba con el titular del siguiente y el primero sin titular. Los pagos (antes de «DETALLE DEL
+   * CONSUMO») y los cargos del banco (después del último subtotal) no son de ninguna tarjeta.
+   */
+  let inicioBloque: number | null = null
 
   for (const lineaRaw of lineas) {
     const linea = lineaRaw.trim()
     if (!linea) continue
 
-    // Detectar cambio de tarjeta adicional: "TARJETA XXXX Total Consumos de NOMBRE"
+    // Subtotal de una tarjeta: "TARJETA XXXX Total Consumos de NOMBRE"
     const tarjMatch = linea.match(/^TARJETA\s+(\d+)\s+Total\s+Consumos\s+de\s+(.+?)\s+[\d\.,\-]/i)
     if (tarjMatch) {
-      // El subtotal pertenece a la tarjeta que viene NOMBRADA acá
-      tarjetaActual = { tarjeta_nro: tarjMatch[1], titular: tarjMatch[2].trim() }
+      const tarjeta: TarjetaAdicional = { tarjeta_nro: tarjMatch[1], titular: tarjMatch[2].trim() }
+      for (let i = inicioBloque ?? 0; i < out.movimientos.length; i++) {
+        out.movimientos[i].tarjeta = { ...tarjeta }
+      }
+      inicioBloque = out.movimientos.length
+      continue
+    }
+
+    if (/^DETALLE\s+DEL\s+CONSUMO/i.test(linea)) {
+      if (inicioBloque === null) inicioBloque = out.movimientos.length
       continue
     }
 
     // Saltarse líneas de headers/secciones conocidas
-    if (/^(DETALLE\s+DEL\s+CONSUMO|CONSOLIDADO|TOTAL\s+A\s+PAGAR|TOTAL\s+EN\s+PESOS|TOTAL\s+EN\s+D[ÓO]LARES|FECHA\s+REFERENCIA|TASAS|L[ÍI]MITES|PAGO\s+MINIMO|SALDO\s+ANTERIOR)/i.test(linea)) {
+    if (/^(CONSOLIDADO|TOTAL\s+A\s+PAGAR|TOTAL\s+EN\s+PESOS|TOTAL\s+EN\s+D[ÓO]LARES|FECHA\s+REFERENCIA|TASAS|L[ÍI]MITES|PAGO\s+MINIMO|SALDO\s+ANTERIOR)/i.test(linea)) {
       continue
     }
 
     const mov = parsearLineaMovimiento(linea)
     if (mov) {
-      out.movimientos.push({ ...mov, tarjeta: { ...tarjetaActual } })
+      out.movimientos.push({ ...mov, tarjeta: { tarjeta_nro: null, titular: null } })
     }
   }
 

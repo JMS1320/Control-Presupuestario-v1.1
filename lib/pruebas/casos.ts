@@ -243,7 +243,7 @@ import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
 import { leerFacturaDelTexto, precargaDesdeLectura, cuitValido, parsearImporte } from "@/lib/gas-pdf/leer-factura"
 import { controlDeLaCarga, camposDeLaCarga, huellaDeLaCarga, aNegativoSiNC } from "@/lib/facturas/alta-factura"
 import { faltantesDelSubdiario } from "@/lib/gas-pdf/faltantes"
-import { parsearLineaMovimiento } from "@/lib/tarjetas/parseo-resumen-pdf"
+import { parsearLineaMovimiento, parsearResumen as parsearResumenTarjeta } from "@/lib/tarjetas/parseo-resumen-pdf"
 import {
   auditar, origenDe, destinoDelDetalle, vinculoDobleEsLegitimo, comprobanteIdentifica,
   type MovimientoAuditable as MovAuditable, type EntidadOrigen,
@@ -8676,6 +8676,15 @@ export function correrCasos(): Resultado[] {
     const vpun = [pun ? `${pun.pesos}/${pun.dolares}` : "nada", usd ? `${usd.pesos}/${usd.dolares}` : "nada"].join(" · ")
     chequear("Tarjetas", "Resumen PDF: el punitorio toma el ÚLTIMO número como cargo en pesos (el primero es la base); un consumo con pesos y dólares sigue igual",
       "338.84/0 · 47/47", vpun, vpun === "338.84/0 · 47/47", "A-BUG-1368")
+    // ── Tarjeta: el subtotal «TARJETA nnnn Total Consumos de X» CIERRA el bloque de X (A-BUG-1369) ──
+    // Resumen VISA PAM dic-25: Movistar + Chubb son de PLÁCIDO (su subtotal viene DEBAJO); Omint, de MARÍA.
+    const resT = parsearResumenTarjeta(["12-12-25 SU PAGO EN PESOS -450.000,00", "DETALLE DEL CONSUMO",
+      "18-12-25 MOVISTAR HOGAR 000000290040832 25.045,60", "26-12-25 CHUBB SEGUROS 0000002953306-014-000 99.720,56",
+      "TARJETA 9753 Total Consumos de PLACIDO AL MARTINEZ 124.766,16 0,00", "02-12-25 OMINT DE SERVICI 000000048480909 201.762,12",
+      "TARJETA 5316 Total Consumos de MARIA ARECO 201.762,12 0,00", "31-12-25 INTERESES FINANCIACION $ 7.546,13"].join("\n"))
+    const vtit = resT.movimientos.map(m => m.tarjeta.tarjeta_nro ?? "-").join(" ")
+    chequear("Tarjetas", "Resumen PDF: cada consumo queda con el titular del subtotal que viene DEBAJO; el pago y los cargos del banco, sin titular",
+      "- 9753 9753 5316 -", vtit, vtit === "- 9753 9753 5316 -", "A-BUG-1369")
 
     // ── ¿Llegó todo de la base? (A-FEAT-1343) ──
     const lects = [{ nombre: "Extracto BANCO GALICIA", llegaron: 1000, esperadas: 1563 }, { nombre: "Ventas", llegaron: 9, esperadas: 9 }, { nombre: "Sueldos", llegaron: 103, esperadas: null }]
