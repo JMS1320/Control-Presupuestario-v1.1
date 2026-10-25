@@ -3287,7 +3287,7 @@ ${marca}` : marca
             {cuentaSeleccionada
               ? cuentasDisponibles.find(c => c.id === cuentaSeleccionada)?.nombre
               : 'Seleccionar cuenta'}
-          </Button>
+          </Button>
 
           {/* A-BUG-1335: sin ninguna regla permitida, no hay nada que configurar. */}
 
