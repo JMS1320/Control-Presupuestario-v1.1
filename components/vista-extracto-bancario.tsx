@@ -8,7 +8,8 @@ import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
 import { conciliarOrigenDelMovimiento, schemaDeFactura } from "@/lib/conciliacion/confirmar-origen"
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
-import { Permisable } from "@/components/modo-permisos"
+import { Permisable, useSeMuestra } from "@/components/modo-permisos"
+import { REGLAS_EXTRACTO, primeraPermitida, hayAlguna, tabInicialAsignar } from "@/lib/auth/ventanas"
 import { usePuedeVer, usePrimeraVisible } from "@/components/contexto-permisos"
 import { ETIQUETA_SENTIDO, type Sentido } from "@/lib/movimientos/sentido"
 import { Button } from "@/components/ui/button"
@@ -241,6 +242,8 @@ export function VistaExtractoBancario() {
   const puedeVer = usePuedeVer()
   const primeraVisible = usePrimeraVisible()
   const cuentaPermitida = (id: string) => puedeVer(`extracto.cuenta.${id}`)
+  // 🕳️ A-BUG-1335: las funciones de adentro de las ventanas (reglas, asignar a mano). Respeta el modo permisos.
+  const seMuestra = useSeMuestra()
   const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>(
     () => CUENTAS_BANCARIAS.find((c) => cuentaPermitida(c.id))?.id ?? "msa_galicia")
   /**
@@ -1962,7 +1965,8 @@ Pasan a conciliado junto con su factura o cuota. El motivo queda en la nota.`)) 
      * de compra, así que abrir en «Template» es hacerle cambiar de pestaña todas las veces.
      */
     const esIngreso = Number(movimiento.creditos) > 0
-    setTabAsignar(esIngreso ? 'venta' : 'template')
+    // A-BUG-1335: si la de siempre está apagada para este rol, la primera que tenga.
+    setTabAsignar((tabInicialAsignar(esIngreso, seMuestra) ?? (esIngreso ? 'venta' : 'template')) as any)
 
     if (esIngreso) {
       /**
@@ -3283,7 +3287,11 @@ ${marca}` : marca
             {cuentaSeleccionada
               ? cuentasDisponibles.find(c => c.id === cuentaSeleccionada)?.nombre
               : 'Seleccionar cuenta'}
-          </Button>
+          </Button>
+
+          {/* A-BUG-1335: sin ninguna regla permitida, no hay nada que configurar. */}
+
+          {hayAlguna(REGLAS_EXTRACTO, seMuestra) && (<>
 
           <Button
             variant="outline"
@@ -3293,6 +3301,8 @@ ${marca}` : marca
             <Settings className="h-4 w-4" />
             Configuración
           </Button>
+
+          </>)}
 
           {/* Re-parsear: sólo en Caja de Ahorro, que son las que desglosan por reglas */}
           {CUENTAS_CON_PARSEO.includes(cuentaSeleccionada) && (
@@ -4819,7 +4829,7 @@ ${marca}` : marca
                                 {/* ✅ Un movimiento «para revisar» se da por bueno de un click. */}
                                 {/* 📅 A-FEAT-1302 — falta la campaña: en vez del OK (que lo dejaría conciliado sin
                                     cuota), el botón que la crea — abre Asignar → Template, donde está el asistente. */}
-                                {String(movimiento.estado).toLowerCase() === 'auditar' && faltaCampanaDelMotivo(movimiento.motivo_revision) ? (
+                                {String(movimiento.estado).toLowerCase() === 'auditar' && faltaCampanaDelMotivo(movimiento.motivo_revision) ? (seMuestra("extracto.template") &&
                                   <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] text-amber-800 border-amber-400 bg-amber-50 shrink-0"
                                     title="Crea la campaña que falta (copiando el template) y le asigna la cuota de su mes"
                                     onClick={(e) => { e.stopPropagation(); void abrirModalAsignar(movimiento) }}>
@@ -4903,6 +4913,8 @@ ${marca}` : marca
                           )}
                           <TableCell>
                             {(() => {
+                              // A-BUG-1335: si el rol no puede asignar a nada de esta ventana, no hay botón.
+                              if (tabInicialAsignar(Number(movimiento.creditos) > 0, seMuestra) === null) return null
                               const categInvalida = !!movimiento.categ && !cuentasCategSet.has(movimiento.categ.toUpperCase().trim()) && !templateCategSet.has(movimiento.categ.toUpperCase().trim())
                               const sinVincular = movimiento.estado === 'conciliado' && !movimiento.comprobante_arca_id && !movimiento.template_id
                               const esConciliado = movimiento.estado === 'conciliado'
@@ -5444,12 +5456,12 @@ ${marca}` : marca
             </Select>
           </div>
 
-          <Tabs defaultValue="conciliacion" className="w-full">
+          <Tabs defaultValue={primeraPermitida(REGLAS_EXTRACTO, seMuestra) ?? "conciliacion"} className="w-full">
             <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="conciliacion">Reglas Conciliación</TabsTrigger>
-              <TabsTrigger value="contable-interno">Contable e Interno</TabsTrigger>
+              <Permisable recurso="extracto.conciliacion"><TabsTrigger value="conciliacion">Reglas Conciliación</TabsTrigger></Permisable>
+              <Permisable recurso="extracto.contable-interno"><TabsTrigger value="contable-interno">Contable e Interno</TabsTrigger></Permisable>
               {/* Las otras dos son de CONCILIACIÓN; ésta es de IMPORT — otra tabla, otro momento */}
-              <TabsTrigger value="parseo">Reglas de Parseo (import)</TabsTrigger>
+              <Permisable recurso="extracto.parseo"><TabsTrigger value="parseo">Reglas de Parseo (import)</TabsTrigger></Permisable>
             </TabsList>
 
             <TabsContent value="conciliacion" className="mt-4">
@@ -5658,13 +5670,13 @@ ${marca}` : marca
 
           <Tabs value={tabAsignar} onValueChange={(v) => setTabAsignar(v as any)}>
             <TabsList className="w-full">
-              <TabsTrigger value="template" className="flex-1">Template</TabsTrigger>
-              <TabsTrigger value="arca" className="flex-1">Factura ARCA</TabsTrigger>
-              <TabsTrigger value="sueldo" className="flex-1">Sueldo</TabsTrigger>
-              <TabsTrigger value="grupo" className="flex-1">Grupo</TabsTrigger>
+              <Permisable recurso="extracto.template"><TabsTrigger value="template" className="flex-1">Template</TabsTrigger></Permisable>
+              <Permisable recurso="extracto.arca"><TabsTrigger value="arca" className="flex-1">Factura ARCA</TabsTrigger></Permisable>
+              <Permisable recurso="extracto.sueldo"><TabsTrigger value="sueldo" className="flex-1">Sueldo</TabsTrigger></Permisable>
+              <Permisable recurso="extracto.grupo"><TabsTrigger value="grupo" className="flex-1">Grupo</TabsTrigger></Permisable>
               {/* 💰 Sólo para ingresos: un débito nunca se concilia contra una venta. */}
               {Number(movimientoAsignando?.creditos) > 0 && (
-                <TabsTrigger value="venta" className="flex-1">Venta</TabsTrigger>
+                <Permisable recurso="extracto.venta"><TabsTrigger value="venta" className="flex-1">Venta</TabsTrigger></Permisable>
               )}
             </TabsList>
 

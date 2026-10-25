@@ -63,6 +63,7 @@ import { RECURSOS as RECURSOS_PERMISABLES } from "@/lib/auth/recursos"
 import { borradorDe, alternarRecurso, alternarSeccion, nivelEnBorrador, contarCambios, cuerpoGuardar } from "@/lib/auth/modo-permisos"
 import { motivoCuentaBloqueada } from "@/lib/auth/cuentas-extracto"
 import { minutosEfectivos, validarMinutos, textoMinutos, valorCookieActividad, msRestantes, sesionVencida, sesionDelToken } from "@/lib/auth/inactividad"
+import { REGLAS_EXTRACTO, ASIGNAR_EXTRACTO, ANTICIPOS_CASHFLOW, primeraPermitida, hayAlguna, tabInicialAsignar } from "@/lib/auth/ventanas"
 import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
 import {
   adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga,
@@ -8444,6 +8445,31 @@ export function correrCasos(): Resultado[] {
       sesionDelToken("no-es-un-token") ?? "nada", sesionDelToken(null) ?? "nada"].join(" · ")
     chequear("Accesos", "Inactividad: la sesión sale del token; un token roto no inventa una",
       "abc-123 · nada · nada", inTok, inTok === "abc-123 · nada · nada", "A-FEAT-1351")
+    // ── Funciones de adentro de las ventanas (A-BUG-1335) ──
+    // Ulises: sólo carga en Extracto (sin reglas ni asignar) y nada de anticipos.
+    const vnUlises = (id: string) => ["extracto.importar", "extracto.movimientos"].includes(id)
+    const vnU = [hayAlguna(REGLAS_EXTRACTO, vnUlises) ? "ve Configuración" : "sin Configuración",
+      tabInicialAsignar(false, vnUlises) ?? "sin Asignar", tabInicialAsignar(true, vnUlises) ?? "sin Asignar",
+      hayAlguna(ANTICIPOS_CASHFLOW, vnUlises) ? "ve Anticipo" : "sin Anticipo"].join(" · ")
+    chequear("Accesos", "Ventanas: un rol sin reglas, sin asignar y sin anticipos no ve ninguno de los tres botones",
+      "sin Configuración · sin Asignar · sin Asignar · sin Anticipo", vnU, vnU === "sin Configuración · sin Asignar · sin Asignar · sin Anticipo", "A-BUG-1335")
+
+    const vnTodo = () => true
+    const vnSinTpl = (id: string) => id !== "extracto.template" && id !== "extracto.venta"
+    const vnA = [tabInicialAsignar(false, vnTodo), tabInicialAsignar(true, vnTodo), tabInicialAsignar(false, vnSinTpl), tabInicialAsignar(true, vnSinTpl)].join(" · ")
+    chequear("Accesos", "Ventanas: Asignar abre en Template (egreso) o Venta (ingreso); si están apagadas, en la primera que el rol tenga",
+      "template · venta · arca · arca", vnA, vnA === "template · venta · arca · arca", "A-BUG-1335")
+
+    // Un débito no se concilia contra una venta: con sólo Venta prendida, en un débito no hay botón.
+    const vnSoloVenta = (id: string) => id === "extracto.venta"
+    const vnV = [tabInicialAsignar(false, vnSoloVenta) ?? "sin Asignar", tabInicialAsignar(true, vnSoloVenta) ?? "sin Asignar"].join(" · ")
+    chequear("Accesos", "Ventanas: con sólo «Asignar a venta», un débito no tiene botón y un crédito abre en Venta",
+      "sin Asignar · venta", vnV, vnV === "sin Asignar · venta", "A-BUG-1335")
+
+    const vnSoloParseo = (id: string) => id === "extracto.parseo" || id === "cashflow.existentes"
+    const vnP = [primeraPermitida(REGLAS_EXTRACTO, vnSoloParseo), primeraPermitida(ANTICIPOS_CASHFLOW, vnSoloParseo), String(ASIGNAR_EXTRACTO.length)].join(" · ")
+    chequear("Accesos", "Ventanas: Configuración abre en la única regla permitida y Anticipos en la única solapa permitida",
+      "parseo · existentes · 5", vnP, vnP === "parseo · existentes · 5", "A-BUG-1335")
 
     const inTxt = [60, 120, 90, 30].map(textoMinutos).join(" · ")
     chequear("Accesos", "Inactividad: la tarjeta del rol lo dice en horas cuando se puede",

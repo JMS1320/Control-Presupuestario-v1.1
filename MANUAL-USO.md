@@ -1090,8 +1090,11 @@ cada cuenta, caja y tarjeta tiene su candado. Quien tiene Extracto ve sólo las 
 todas las solapas, y la app no lo deja importar en las otras. Ej.: para Ulises, Importar + MSA Galicia CC +
 VISA Business MSA.
 
-Lo de adentro de las ventanas (reglas y asignaciones de Extracto, anticipos de Cash Flow) no tiene candado:
-se elige en la lista de Editar permisos.
+**Lo de adentro de las ventanas** (Configuración de reglas y Asignar en Extracto, Anticipos en Cash Flow): abrí la
+ventana y cada solapa tiene su candado. Si a un rol no le dejás ninguna, el botón que abre esa ventana le
+desaparece (en Extracto: Configuración, o los Asignar / Re-asignar de la tabla; en Cash Flow: Anticipo).
+
+⚠️ Las ventanas, sin probar todavía → [A-TEST-1252](PENDIENTES.md#a-test-1252)
 
 ⚠️ Las cuentas, sin probar todavía → [A-TEST-1239](PENDIENTES.md#a-test-1239)
 
