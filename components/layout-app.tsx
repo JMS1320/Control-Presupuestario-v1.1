@@ -19,6 +19,9 @@ import { Button } from "@/components/ui/button"
 import { BarraSesion } from "@/components/barra-sesion"
 import { Toaster } from "@/components/ui/sonner"
 import { usePendientesPorPantalla } from "@/hooks/usePendientesPorPantalla"
+import { useModoPermisos } from "@/components/contexto-permisos"
+import { Candado } from "@/components/modo-permisos"
+import { tieneSeccion } from "@/lib/auth/modo-permisos"
 import { PREFERENCIAS_DEFAULT, type Preferencias } from "@/lib/auth/preferencias"
 import {
   Menu, Home, BarChart3, Users, FileText, Receipt, ArrowUpRight,
@@ -150,6 +153,12 @@ function MenuLateral({
   // Sólo admin: el endpoint lo exige y el contable no trabaja los pendientes de desarrollo.
   // Y sólo si el usuario los quiere: apagados no se pide nada, no se pide y se esconde.
   const pendientes = usePendientesPorPantalla(userRole === "admin" && contadores)
+  // 🖱️ Modo permisos (A-FEAT-1334): el menú muestra las 12 secciones, con el candado de cada una,
+  // y atenúa las que el rol no tiene. Con «ver como lo ve él», sólo las suyas y sin candados.
+  const modo = useModoPermisos()
+  const lista = modo
+    ? SOLAPAS.filter((s) => !modo.soloLoQueVe || tieneSeccion(modo.borrador, s.id))
+    : secciones
 
   const elegir = (id: string) => {
     onElegir(id)
@@ -172,8 +181,9 @@ function MenuLateral({
       </SidebarHeader>
       <SidebarContent>
         <SidebarMenu className="px-2">
-          {secciones.map(({ id, label, Icono }) => {
-            const c = pendientes[id]
+          {lista.map(({ id, label, Icono }) => {
+            const c = modo ? undefined : pendientes[id]
+            const prendida = !modo || tieneSeccion(modo.borrador, id)
             // Color proporcional a los urgentes, no binario, para que el rojo señale dónde está el
             // bulto de verdad y no se encienda en todas las secciones a la vez.
             const color = !c || c.total === 0 ? null
@@ -182,10 +192,22 @@ function MenuLateral({
               : "bg-gray-200 text-gray-600"
             return (
               <SidebarMenuItem key={id}>
-                <SidebarMenuButton isActive={activa === id} onClick={() => elegir(id)}>
+                <SidebarMenuButton
+                  isActive={activa === id}
+                  onClick={() => elegir(id)}
+                  className={prendida ? undefined : "opacity-40 grayscale"}
+                >
                   <Icono className="h-4 w-4" />
                   <span>{label}</span>
                 </SidebarMenuButton>
+                {modo && !modo.soloLoQueVe && (
+                  <Candado
+                    nivel={prendida ? "escritura" : "ninguno"}
+                    titulo={label}
+                    onClick={() => modo.alternarSeccion(id)}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2"
+                  />
+                )}
                 {color && c && (
                   <SidebarMenuBadge
                     data-nota-ignorar

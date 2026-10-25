@@ -2,6 +2,7 @@ import { createClientServer } from "@/lib/supabase-server"
 import { getRole } from "@/lib/auth/roles"
 import { nivelesDe, seccionesDelRol } from "@/lib/auth/permisos"
 import { RECURSOS } from "@/lib/auth/recursos"
+import { motivoCuentaBloqueada } from "@/lib/auth/cuentas-extracto"
 
 /**
  * ¿ESTA SESIÓN PUEDE ESCRIBIR EN ESTE RECURSO? — A-FEAT-169, etapa 4
@@ -55,4 +56,25 @@ export async function exigirEscritura(recurso: string): Promise<ResultadoRecurso
   }
 
   return { ok: true, rol }
+}
+
+/**
+ * 🏦 ¿ESTE ROL PUEDE IMPORTAR EN ESTA CUENTA DEL EXTRACTO? — A-FEAT-1336
+ *
+ * Lo usan los cinco importadores del Extracto. Frena **sólo** cuando el rol tiene la cuenta
+ * apagada (o en sólo lectura) de forma explícita — que en la práctica es un rol CERRADO con Extracto
+ * y esa cuenta sin prender (el caso de Ulises: sólo MSA cuenta corriente y la VISA MSA).
+ *
+ * ⚠️ No exige la sección Extracto a propósito: `import-excel` también lo usa la sección «Importar
+ * Excel», y un rol que entra por ahí no tiene por qué tener Extracto. Un rol abierto, o uno sin
+ * Extracto, sigue pasando como hasta hoy.
+ */
+export async function exigirCuentaExtracto(cuentaId: string): Promise<ResultadoRecurso> {
+  const supabase = await createClientServer()
+  const { data: { user } } = await supabase.auth.getUser()
+  const rol = getRole(user)
+  if (!rol) return { ok: false, status: 401, motivo: "Sin sesión o sin rol asignado." }
+
+  const motivo = motivoCuentaBloqueada(await nivelesDe(rol), cuentaId)
+  return motivo ? { ok: false, status: 403, motivo } : { ok: true, rol }
 }

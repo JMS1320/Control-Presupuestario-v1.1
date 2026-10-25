@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { ProveedorPermisos } from "./components/contexto-permisos"
+import { ProveedorModoPermisos, type RolEnModo } from "./components/modo-permisos"
 import type { UserRole } from "@/lib/auth/roles"
 import { FiltrosFinancieros } from "./components/filtros-financieros"
 import { TablaResumenFinanciero } from "./components/tabla-resumen-financiero"
@@ -59,9 +60,11 @@ interface ControlPresupuestarioProps {
   secciones?: string[]
   /** Excepciones finas de este rol: `{ "productivo.insumos": "lectura" }` (A-FEAT-169). */
   nivelesPermisos?: Record<string, "ninguno" | "lectura" | "escritura">
+  /** 🖱️ Modo permisos (A-FEAT-1334): el rol cuyos permisos se prenden sobre la pantalla. Sólo admin. */
+  modoPermisos?: RolEnModo | null
 }
 
-export default function ControlPresupuestario({ userRole = 'admin', seccionInicial, secciones, preferencias, nivelesPermisos = {} }: ControlPresupuestarioProps) {
+export default function ControlPresupuestario({ userRole = 'admin', seccionInicial, secciones, preferencias, nivelesPermisos = {}, modoPermisos = null }: ControlPresupuestarioProps) {
   // Cuántos pendientes vivos tiene cada solapa (P-46 etapa 4). Sólo admin: el endpoint lo exige
   // y el contable no trabaja los pendientes de desarrollo.
   const pendientesPorPantalla = usePendientesPorPantalla(userRole === 'admin')
@@ -165,6 +168,7 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
 
   return (
     <ProveedorPermisos niveles={nivelesPermisos}>
+    <ProveedorModoPermisos rol={modoPermisos}>
     <LayoutApp userRole={userRole} secciones={[...permitidas]} seccionActiva={tab} preferencias={preferencias} onElegirSeccion={irA}>
       <Toaster richColors closeButton duration={8000} position="top-right" />
       {/* 📝 Notas para Claude (P-34). A nivel app, fuera de las pestañas: la idea o el bug
@@ -541,6 +545,7 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
           </CardContent>
           </Card>
     </LayoutApp>
+    </ProveedorModoPermisos>
     </ProveedorPermisos>
   )
 }
