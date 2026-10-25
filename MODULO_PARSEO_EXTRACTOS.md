@@ -46,6 +46,61 @@ se pueden reconstruir del todo: nombres a 20 letras y **CBU a 20 dígitos**. Se 
 candidato único de lo ya conocido; el CBU que no se completa **se toma igual como CBU** (`esCbu`
 acepta 20 dígitos, decisión del usuario), así la transferencia conserva su subtipo.
 
+#### Por qué un adaptador y no un parseo aparte *(decisión del usuario 2026-10-24)*
+*«Hay veces que si no se descargan los movimientos a tiempo la única manera es ir vía PDF… un
+adaptador dentro del importador me suena lo mejor.»* El Galicia sólo deja bajar el Excel de los
+últimos meses; lo anterior existe nada más que como resumen PDF. Con el adaptador **hay un solo
+juego de reglas por cuenta**: lo que entra por PDF cae en los mismos tipos y subtipos que lo que
+entra por Excel, y si un día se importa el Excel de un mes ya cargado por PDF, la clave de duplicado
+(sobre el texto) **coincide**, porque el texto es el mismo.
+
+#### Cómo se lee
+1. **Por posición, no por texto plano** (KNOWLEDGE § *Leer un PDF: la posición es dato*): cada
+   renglón se arma por su altura en la página y sus piezas por su posición horizontal
+   (`agruparRenglones` en `lib/polizas/renglones-pdf.ts`, el mismo que usan las pólizas).
+2. **Las columnas se ubican en cada página**, buscando el renglón «Fecha · Descripción · Origen ·
+   Crédito · Débito · Saldo». Entre abril y mayo **se corrieron**: fijarlas a mano habría leído mal
+   el segundo mes sin avisar.
+3. **Saldo vs. importe**: el número a la derecha de la mitad entre «Débito» y «Saldo» es el saldo;
+   el otro es el importe, y **su signo decide** si es débito (con `-`) o crédito. Si la columna en la
+   que cayó no coincide con el signo, se avisa.
+4. **Un movimiento empieza con una fecha**; los renglones sin fecha se suman al anterior, incluso
+   si el movimiento se parte entre dos páginas. El pie de página («Página…», «Resumen de Caja…») se
+   saltea y el renglón **«Total»** cierra la tabla.
+5. **La cabecera** de la página 1 da el CUIT del titular, el número de cuenta, el CBU, el período y
+   los saldos inicial y final.
+
+#### Los controles — cuál frena y cuál avisa (CLAUDE.md § 🚦)
+| Control | Contra qué | Si no cierra |
+|---|---|---|
+| suma de créditos y de débitos | la fila «Total» del propio resumen | 🛑 frena (forzable) |
+| saldo de cada movimiento = anterior ± importe | el propio resumen | 🛑 frena (forzable) |
+| saldo final leído | el «saldo final» de la cabecera | 🛑 frena (forzable) |
+| CUIT del titular | el de la cuenta elegida (`DATOS_FISCALES`) | 🛑 frena (forzable): es el PDF de otra empresa |
+| saldo inicial | el último saldo que ya tiene la app | ⚠️ el control de cadena de siempre, igual que el Excel |
+
+Los cuatro primeros son **integridad**: el papel se contradice o se leyó mal, y no hay explicación de
+negocio. El último es **discrepancia**: puede faltar un mes en el medio.
+
+#### Qué se completa y con qué
+| Dato | El PDF trae | Queda | De dónde sale |
+|---|---|---|---|
+| tarjeta | `4517699027757829` | `4517XXXXXXXXXX29` | se enmascara como el Excel (4 + 10 X + 2) |
+| origen | columna `0279` | última línea `A279` | la letra, de cómo vino ese tipo en la cuenta; si nunca vino, `C` para EXTRACCION EN AUTOSERVICIO y `A` para el resto, **marcada como supuesta** |
+| nombre | 20 letras | completo | sólo si en la misma cuenta hay **un** nombre conocido más largo que empieza igual y el cortado no existe ya tal cual |
+| CBU | 20 dígitos | 22 | sólo si hay **un** CBU conocido (extractos de la cuenta o ficha del proveedor) que empieza igual; con dos, gana el del mismo CUIT; si no, queda de 20 |
+
+Todo lo completado o supuesto se **lista antes de importar** («👁 Ver cómo queda», que no guarda) y
+en el resultado de la importación. Medido con MA abril y mayo 2026: 99 movimientos, 98 desglosados,
+de 10 CBU cortados se completaron 2.
+
+#### Lo que falta y por qué
+- **Cuenta corriente MSA y PAM**: su resumen es otro diseño; hace falta un PDF real de cada una.
+- **El texto original del PDF** no se guarda: `concepto` lleva el texto ya reescrito. La pantalla lo
+  muestra antes de importar («Decía el PDF»); guardarlo después pediría una columna nueva.
+- **PAM caja de ahorro** se armó con el resumen de MA (el banco usa el mismo diseño); el control de
+  CUIT del titular es el que avisa si el de PAM viniera distinto.
+
 ---
 
 ## 🧬 El TIPO es la unidad. El SUBTIPO aparece sólo cuando hace falta

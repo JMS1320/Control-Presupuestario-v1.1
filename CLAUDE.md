@@ -833,6 +833,11 @@ carpeta principal era la única que escribía en la base y mergeaba lo de las de
 - **Merge a `desarrollo` de a una**: avisar en el tablero, `git merge origin/desarrollo` en la propia rama primero,
   resolver los conflictos (quien escribió lo suyo sabe qué versión es la buena), `npm run probar`,
   `type-check:diff` y build en verde, y recién ahí mergear y pushear. `main` sigue siendo sólo con el OK del usuario.
+  📍 **Desde un árbol aparte, `desarrollo` no se puede montar** (está en la carpeta principal y git no deja una rama
+  en dos árboles): se sube con **`git push origin HEAD:desarrollo`**, que sólo entra si es avance directo. Si otra
+  terminal empujó en el medio, el push **se rechaza**: `git fetch`, `git merge origin/desarrollo` otra vez, mirar qué
+  trajo (si es código, volver a correr las pruebas) y reintentar. **Nunca `--force`.** *(Pasó el 2026-10-25: entre
+  las pruebas y el push entró un commit de PENDIENTES de otra terminal; el rechazo lo atajó.)*
 - **La carpeta principal no hace de ventanilla**: no corre ni mergea lo de las otras.
 
 *Motivo: con la carpeta principal como ventanilla única, cada script y cada merge de las otras cortaba el trabajo

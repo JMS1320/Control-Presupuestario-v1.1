@@ -616,7 +616,7 @@ Sale de mirar los 849 movimientos de MSA y los 76 de PAM CC, que son los que el 
 | Columna | Estado |
 |---|---|
 | `tipo_de_movimiento` | era la única sin dueño: `"Imputado"` en el **100 %** de MSA y PAM CC, **vacía** en las CA y **nunca leída** en el código → **hoy guarda el CBU** |
-| `origen` | en CA es `"CA_GALICIA"` en el 100 % — traza de por qué importador entró. Bajo valor, pero ocupada |
+| `origen` | en CA es `"CA_GALICIA"` (entró por el Excel) o, desde 2026-10-25, `"CA_GALICIA_PDF"` (entró por el resumen PDF, texto reescrito al formato del Excel — [A-FEAT-1352](PENDIENTES.md#a-feat-1352)). Es la huella de por dónde entró: texto libre, sin restricción en la base |
 
 ### 🔑 `tipo_de_movimiento` guarda el CBU (decisión del usuario, 2026-08-10)
 **Sí, el nombre no corresponde.** Se eligió a conciencia, después de revisar las **37 columnas** de

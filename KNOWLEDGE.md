@@ -2029,6 +2029,36 @@ Tres cosas que se aprendieron haciéndolo, y que valen para cualquier PDF:
 
 ---
 
+## El resumen PDF de un banco: lo que se aprendió con el Galicia `#parseo #extracto #pdf #2026-10-25`
+
+Al importar la caja de ahorro desde el resumen PDF ([A-FEAT-1352](PENDIENTES.md#a-feat-1352);
+diseño en `MODULO_PARSEO_EXTRACTOS.md` § *Cuando entra por el resumen PDF*):
+
+- **Las columnas se mueven entre resúmenes.** El de abril y el de mayo tienen las mismas columnas en
+  posiciones horizontales distintas. Se ubican **en cada página** leyendo el renglón de títulos; una
+  posición fija lee bien un mes y mal el siguiente, sin error.
+- **El signo dice más que la columna.** El importe trae `-` cuando es débito; decidir por la
+  posición sola falla cuando un número largo se corre hacia la columna vecina. Se decide por el signo
+  y se avisa si la columna no coincide.
+- **El PDF corta datos que el Excel trae enteros**: nombres a 20 letras y CBU a 20 de 22 dígitos. Y
+  trae entero lo que el Excel enmascara (la tarjeta). **Mismo banco, mismo movimiento, dos textos
+  distintos**: si se guardan los dos tal cual, ni las reglas ni el control de duplicados los ven
+  iguales. Por eso se reescribe uno con la forma del otro.
+- **El propio resumen trae su control**: la fila «Total» y los saldos inicial y final. Es el «mismo
+  número por dos caminos» (CLAUDE.md § 🔁) dentro de un solo papel: lo leído tiene que dar lo que el
+  papel imprime, y si no da, se leyó mal → frena.
+- **Completar sólo con un candidato único.** Un nombre cortado que coincide con dos conocidos queda
+  como vino; elegir uno «porque es el más parecido» es inventar un dato.
+
+### Troubleshooting en Windows (scripts de prueba con `tsx`)
+- Un script de la carpeta temporal que importa código del repo da `ERR_MODULE_NOT_FOUND` y, con
+  rutas `D:\…`, `ERR_UNSUPPORTED_ESM_URL_SCHEME`. **Importar con URLs `file:///D:/…`** (de
+  `node_modules` y de `lib/`) lo resuelve.
+- Un heredoc de Python en Git Bash **rompe los acentos** del texto que se compara (`assert` falla sin
+  que el código esté mal). Para reemplazos con acentos, usar la herramienta de edición, no un script.
+
+---
+
 ## El subtotal que se cuela y duplica el total `#parseo #control #2026-09-06`
 
 Dos veces el mismo día, en dos fuentes distintas:
