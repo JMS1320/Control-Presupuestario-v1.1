@@ -1097,6 +1097,12 @@ desaparece (en Extracto: Configuración, o los Asignar / Re-asignar de la tabla;
 
 ⚠️ Las ventanas, sin probar todavía → [A-TEST-1252](PENDIENTES.md#a-test-1252)
 
+**Conciliar** es una casilla aparte en Extracto: saca el botón **Conciliación Bancaria**, el **Conciliar** de cada
+resumen de tarjeta y los **✓ OK** (de a uno y masivo). Sirve para alguien que sólo carga movimientos: con Importar
+y Movimientos prendidos y Conciliar apagado, carga y ve, pero no concilia.
+
+⚠️ Sin probar todavía → [A-TEST-1253](PENDIENTES.md#a-test-1253)
+
 ⚠️ Las cuentas, sin probar todavía → [A-TEST-1239](PENDIENTES.md#a-test-1239)
 
 ⚠️ Sin probar todavía → [A-TEST-1238](PENDIENTES.md#a-test-1238)
@@ -2812,6 +2818,8 @@ calendario**, a pantalla completa. Es lo que se le da a quien pide *«el reporte
 - **Excel**: el resumen con los 12 meses y una hoja con todas las cuotas (siempre todas las empresas).
 - **Chips de empresa** (arriba a la izquierda): click prende o apaga una empresa; **Ctrl+click** deja sólo ésa;
   «todas» vuelve. El total de abajo suma sólo lo que se ve. Entre empresa y empresa hay una línea más gruesa.
+- **Ordenar**: las filas van siempre agrupadas por empresa. Arrastrar dentro de la misma empresa mueve esa fila;
+  soltarla sobre **otra** empresa mueve **el bloque entero** (hacia arriba queda antes, hacia abajo después).
 - **↗ al lado del nombre** (en la fila o en cada partida desplegada): abre **Egresos sin Factura en una
   pestaña nueva**, filtrado por esos templates, para editar las cuotas (por ejemplo, pasar a conciliadas las
   de $0). La planilla queda abierta en la otra pestaña. Arriba de templates se ve **🔗 Filtrado desde la

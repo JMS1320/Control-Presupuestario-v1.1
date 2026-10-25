@@ -3335,6 +3335,8 @@ ${marca}` : marca
 
           {/* El botón anticipa el alcance: sobre cuántos va a correr y si está acotado. Antes eso
               se sabía recién en el confirm — o no se sabía, cuando el filtro no estaba en la lista. */}
+          {/* A-FEAT-1361: conciliar es su propia casilla en Roles. */}
+          <Permisable recurso="extracto.conciliar">
           <Button
             onClick={iniciarConciliacion}
             disabled={procesoEnCurso}
@@ -3362,6 +3364,7 @@ ${marca}` : marca
               </>
             )}
           </Button>
+          </Permisable>
         </div>
       </div>
 
@@ -3773,6 +3776,7 @@ ${marca}` : marca
                 >
                   Auditar ({estadisticas.auditar})
                 </Button>
+                <Permisable recurso="extracto.conciliar">
                 {/* ✓ A-FEAT-1300 — dar OK a varios «auditar» juntos, en esta misma pantalla. */}
                 <Button
                   variant={modoOkAuditar ? "default" : "outline"}
@@ -3783,6 +3787,7 @@ ${marca}` : marca
                 >
                   ✓ OK masivo{modoOkAuditar ? ' (salir)' : ''}
                 </Button>
+                </Permisable>
                 {/* 📜 A-DEC-1009 — el extracto histórico (jul-25 → ene-26), cargado sin clasificar. Sólo aparece si hay. */}
                 {estadisticas.historicos > 0 && (
                   <Button
@@ -4623,7 +4628,7 @@ ${marca}` : marca
                                 </button>
                               )
                             })()}
-                            {item.pendientes > 0 && (
+                            {item.pendientes > 0 && seMuestra("extracto.conciliar") && (
                               <button type="button" disabled={conciliandoNr !== null || procesoEnCurso}
                                 onClick={() => conciliarResumen(item.nr, item.cierre)}
                                 className="px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 whitespace-nowrap">
@@ -4836,7 +4841,7 @@ ${marca}` : marca
                                     onClick={(e) => { e.stopPropagation(); void abrirModalAsignar(movimiento) }}>
                                     📅 Crear campaña
                                   </Button>
-                                ) : String(movimiento.estado).toLowerCase() === 'auditar' && (
+                                ) : String(movimiento.estado).toLowerCase() === 'auditar' && seMuestra("extracto.conciliar") && (
                                   <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] text-green-700 border-green-300 shrink-0"
                                     disabled={confirmandoOk === movimiento.id}
                                     title="Darlo por bueno: pasa a conciliado y el motivo queda en la nota"
