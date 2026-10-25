@@ -270,28 +270,34 @@ export function VistaTemplatesEgresos() {
       setLoading(true)
       setError(null)
       
-      let query = supabase
-        .from('cuotas_egresos_sin_factura')
-        .select(`
-          *,
-          egreso:egresos_sin_factura(*)
-        `)
-        
-      // Filtrar según mostrarDesactivados
-      if (!mostrarDesactivados) {
-        query = query.neq('estado', 'desactivado')
-      }
-      
-      const { data, error: supabaseError } = await query
-        .order('fecha_estimada', { ascending: false })
+      // 🐛 A-BUG-1356: la base devuelve como máximo 1000 filas por consulta. Con más de 2000 cuotas, una
+      // sola consulta cortaba las más viejas (en oct-26 no se veía nada antes de mar-26). Se trae de a 1000.
+      const cuotasCargadas: any[] = []
+      for (let desde = 0; ; desde += 1000) {
+        let query = supabase
+          .from('cuotas_egresos_sin_factura')
+          .select(`
+            *,
+            egreso:egresos_sin_factura(*)
+          `)
+        // Filtrar según mostrarDesactivados
+        if (!mostrarDesactivados) {
+          query = query.neq('estado', 'desactivado')
+        }
+        const { data, error: supabaseError } = await query
+          .order('fecha_estimada', { ascending: false })
+          .order('id')   // desempate estable: sin esto una cuota puede repetirse o perderse entre tandas
+          .range(desde, desde + 999)
 
-      if (supabaseError) {
-        console.error('Error al cargar cuotas:', supabaseError)
-        setError(`Error al cargar cuotas: ${supabaseError.message}`)
-        return
+        if (supabaseError) {
+          console.error('Error al cargar cuotas:', supabaseError)
+          setError(`Error al cargar cuotas: ${supabaseError.message}`)
+          return
+        }
+        cuotasCargadas.push(...(data || []))
+        if (!data || data.length < 1000) break
       }
 
-      const cuotasCargadas = data || []
       setCuotas(cuotasCargadas)
       setCuotasOriginales(cuotasCargadas)
     } catch (error) {
