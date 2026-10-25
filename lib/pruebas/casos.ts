@@ -201,7 +201,8 @@ import { filaNuevaRegla } from "@/lib/conciliacion/fila-regla"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
 import { conFechaDeEmision, etiquetaResumenTarjeta, comprobanteDeCargoDeTarjeta, anterioresLibres } from "@/lib/conciliacion/pool-tarjeta"
 import { parsearPoliza } from "@/lib/polizas/parsear-poliza"
-import { armarRenglones } from "@/lib/polizas/renglones-pdf"
+import { armarRenglones, type TextoUbicado } from "@/lib/polizas/renglones-pdf"
+import { leerResumenCajaAhorro, controlarResumen, armarConocido, resumenComoExcel, adaptarMovimiento } from "@/lib/extractos/pdf-caja-ahorro-galicia"
 import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
 import { controlarPoliza, cotejarConComprobante, repartoDeLaPoliza, repartoDeLasCuotas, repartirImporte, responsableDe } from "@/lib/polizas/controlar-poliza"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
@@ -226,7 +227,7 @@ import {
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
 import { esHistorico, estadoCuotaAlDesvincular, contarEstadisticasExtracto } from "@/lib/conciliacion/estado-historico"
 import { buscarConDobleAudit, type VinculoEnAuditar } from "@/lib/conciliacion/doble-audit"
-import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA, claveDedupMovimiento, claveDeTipo, tipoDeMovimiento, tieneReglaPropia, columnasRepetidas, reglasDeLaPropuesta, estaSinParsear } from "@/lib/extractos/parseo-movimiento"
+import { firmaDeMovimiento, parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA, claveDedupMovimiento, claveDeTipo, tipoDeMovimiento, tieneReglaPropia, columnasRepetidas, reglasDeLaPropuesta, estaSinParsear, tieneGrupoPrevisto } from "@/lib/extractos/parseo-movimiento"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
@@ -8584,6 +8585,11 @@ export function correrCasos(): Resultado[] {
     chequear("Parseo", "Sin parsear = grupo vacío o una de las tres marcas (sin regla, subtipo nuevo, conflicto); un grupo del banco ya está desglosado",
       "sí sí sí sí sí no", vsp, vsp === "sí sí sí sí sí no", "A-FEAT-1358")
 
+    // ── El tilde exige grupo de conceptos (A-FEAT-1360) ──
+    const vg = ["Otros", "", null, "000083 - Pagos"].map(g => tieneGrupoPrevisto(g) ? "sí" : "no").join(" ")
+    chequear("Parseo", "Grupo previsto: «Otros» (el relleno) o vacío no cuentan; un grupo del banco sí — sin grupo no se puede dar por bueno",
+      "no no no sí", vg, vg === "no no no sí", "A-FEAT-1360")
+
     // ── ¿Llegó todo de la base? (A-FEAT-1343) ──
     const lects = [{ nombre: "Extracto BANCO GALICIA", llegaron: 1000, esperadas: 1563 }, { nombre: "Ventas", llegaron: 9, esperadas: 9 }, { nombre: "Sueldos", llegaron: 103, esperadas: null }]
     const vl = lects.map(l => lecturaIncompleta(l) ? "incompleta" : "ok").join(" · ")
@@ -8637,6 +8643,115 @@ export function correrCasos(): Resultado[] {
     chequear("Balance", "Excel: título, encabezado y total en negrita; NO COINCIDE en rojo, coincide en verde; las filas comunes sin tocar",
       "título · encabezado · total · aviso rojo · ok verde · fila común normal", vsty,
       vsty === "título · encabezado · total · aviso rojo · ok verde · fila común normal", "A-FEAT-1338")
+  }
+
+  // ══ 📄 RESUMEN PDF DE CAJA DE AHORRO → FORMATO DEL EXCEL (A-FEAT-1352) ═══════════════════════
+  // El PDF de abajo está armado a mano con la disposición real de MA abril 2026 (mismas columnas,
+  // mismos textos). Los textos «del Excel» son los que ya están cargados en MA por Excel.
+  {
+    const T = (s: string, x: number, y: number): TextoUbicado => ({ s, x, y, h: 8 })
+    const titulos = (y: number) => [T("Fecha", 69, y), T("Descripción", 107, y), T("Origen", 228, y), T("Crédito", 300, y), T("Débito", 399, y), T("Saldo", 499, y)]
+    const pie = (p: string) => [T("Resumen de Caja de Ahorro en Pesos", 67, 92), T("Página", 483, 92), T(p, 514, 92)]
+    const armar = (debitoCompra = "-23.700,00") => [
+      [
+        T("CUIT del Responsable Impositivo : 27-06682461-1", 272, 689), T("N° 4003841-5 360-8", 88, 541),
+        T("$3.687.570,35", 480, 557), T("27/03/2026", 239, 518), T("24/04/2026", 324, 518), T("$3.423.870,35", 480, 518),
+        T("0070360230004003841580", 88, 507),
+        ...titulos(424),
+        T("30/03/26", 69, 406), T("COMPRA DEBITO", 107, 406), T("0279", 228, 406), T(debitoCompra, 398, 406), T("3.663.870,35", 484, 406),
+        T("MERPAGO*LAEXPOSICION", 107, 398), T("4517699027757829", 107, 390),
+        T("01/04/26", 69, 371), T("TRANSFERENCIA A TERCEROS", 107, 371), T("-110.000,00", 395, 371), T("3.553.870,35", 484, 371),
+        T("CU 20208914880", 107, 363), T("01700176200000004481", 107, 355), T("FNCS", 107, 347),
+        // el movimiento sigue en la página siguiente
+        ...pie("1 / 2"),
+      ],
+      [
+        T("Resumen de", 180, 718), ...titulos(670),
+        T("4517699027757829", 107, 652), T("VARIOS", 107, 644),
+        T("07/04/26", 69, 626), T("SERVICIO PAGO A PROVEEDORES", 107, 626), T("5.100.000,00", 294, 626), T("8.653.870,35", 484, 626),
+        T("MARTINEZ SOBRADO AGR", 107, 618), T("30617786016", 107, 610), T("VARIOS", 107, 602), T("BANCO DE GALICIA Y B", 107, 594),
+        T("31/03/26", 69, 576), T("EXTRACCION EN AUTOSERVICIO", 107, 576), T("0018", 228, 576), T("-5.230.000,00", 390, 576), T("3.423.870,35", 484, 576),
+        T("Sucursal: 0018", 107, 568), T("Terminal: 0500", 107, 560),
+        T("Total", 85, 540), T("$ 5.100.000,00", 285, 540), T("-$ 5.363.700,00", 379, 540), T("$ 3.423.870,35", 480, 540),
+        T("Los depósitos en pesos y en moneda extranjera cuentan con la garantía…", 67, 519),
+        ...pie("2 / 2"),
+      ],
+    ]
+    const res = leerResumenCajaAhorro(armar())
+    const ctl = controlarResumen(res)
+
+    const vCab = [res.cuitTitular, res.numeroCuenta, res.desde, res.hasta, res.saldoInicial, res.saldoFinal, res.movimientos.length].join(" · ")
+    chequear("Resumen PDF", "Lee la cabecera: titular, cuenta, período, saldos y cantidad de movimientos",
+      "27066824611 · 4003841-5 360-8 · 2026-03-27 · 2026-04-24 · 3687570.35 · 3423870.35 · 4", vCab,
+      vCab === "27066824611 · 4003841-5 360-8 · 2026-03-27 · 2026-04-24 · 3687570.35 · 3423870.35 · 4", "A-FEAT-1352")
+
+    const [compra, transf, pago, extr] = res.movimientos
+    const vImp = [compra?.debito, compra?.credito, pago?.credito, pago?.debito, extr?.saldo].join(" · ")
+    chequear("Resumen PDF", "El débito sale del signo menos y el crédito de su columna; el saldo es el de la derecha",
+      "23700 · 0 · 5100000 · 0 · 3423870.35", vImp, vImp === "23700 · 0 · 5100000 · 0 · 3423870.35", "A-FEAT-1352")
+
+    const vPartido = (transf?.lineas ?? []).join(" | ")
+    chequear("Resumen PDF", "Un movimiento partido entre dos páginas junta sus renglones (la tarjeta y VARIOS vienen arriba de la página 2)",
+      "TRANSFERENCIA A TERCEROS | CU 20208914880 | 01700176200000004481 | FNCS | 4517699027757829 | VARIOS", vPartido,
+      vPartido === "TRANSFERENCIA A TERCEROS | CU 20208914880 | 01700176200000004481 | FNCS | 4517699027757829 | VARIOS", "A-FEAT-1352")
+
+    chequear("Resumen PDF", "El control cierra cuando lo leído da los totales y la cadena de saldos del resumen",
+      "cierra", ctl.ok ? "cierra" : `no cierra: ${JSON.stringify(ctl.renglones.filter(x => !x.ok))} ${JSON.stringify(ctl.cadenaRota)}`, ctl.ok, "A-FEAT-1352")
+
+    // Adversario: un importe mal leído tiene que romper el control, y señalar DÓNDE
+    const roto = controlarResumen(leerResumenCajaAhorro(armar("-23.000,00")))
+    const vRoto = `${roto.ok ? "cierra" : "no cierra"} · ${roto.cadenaRota[0]?.tipo ?? "-"} · ${roto.renglones.find(x => x.que === "Total de débitos")?.ok ? "débitos ok" : "débitos no"}`
+    chequear("Resumen PDF", "🛑 Un importe que no da el saldo impreso rompe el control y marca el movimiento",
+      "no cierra · COMPRA DEBITO · débitos no", vRoto, vRoto === "no cierra · COMPRA DEBITO · débitos no", "A-FEAT-1352")
+
+    // El adaptador: tiene que dar EXACTAMENTE el texto que trae el Excel (los dos de abajo están cargados en MA)
+    const conocido = armarConocido([
+      "COMPRA DEBITO\r\n MERPAGO*LAEXPOSICION\r\n 4517XXXXXXXXXX29\r\n A279",
+      "TRANSFERENCIA A TERCEROS\r\n CU  20208914880\r\n 0170017620000000448154\r\n FNCS\r\n VARIOS\r\n 4517XXXXXXXXXX29",
+      "SERVICIO PAGO A PROVEEDORES\r\n MARTINEZ SOBRADO AGRO S.R.L.\r\n 30617786016\r\n VARIOS\r\n BANCO DE GALICIA Y BUENOS AIRES SAU",
+      "EXTRACCION EN AUTOSERVICIO\r\n Sucursal: 0018\r\n Terminal: 0500\r\n C018",
+    ], [])
+    const excel = resumenComoExcel(res, conocido)
+    chequear("Resumen PDF", "Compra con débito: tarjeta enmascarada y el origen 0279 como última línea A279 — igual al Excel",
+      JSON.stringify("COMPRA DEBITO\r\n MERPAGO*LAEXPOSICION\r\n 4517XXXXXXXXXX29\r\n A279"), JSON.stringify(excel[0]?.movimiento),
+      excel[0]?.movimiento === "COMPRA DEBITO\r\n MERPAGO*LAEXPOSICION\r\n 4517XXXXXXXXXX29\r\n A279", "A-FEAT-1352")
+    chequear("Resumen PDF", "Transferencia: «CU» con dos espacios, CBU completado, tarjeta al final — igual al Excel",
+      JSON.stringify("TRANSFERENCIA A TERCEROS\r\n CU  20208914880\r\n 0170017620000000448154\r\n FNCS\r\n VARIOS\r\n 4517XXXXXXXXXX29"), JSON.stringify(excel[1]?.movimiento),
+      excel[1]?.movimiento === "TRANSFERENCIA A TERCEROS\r\n CU  20208914880\r\n 0170017620000000448154\r\n FNCS\r\n VARIOS\r\n 4517XXXXXXXXXX29", "A-FEAT-1352")
+    chequear("Resumen PDF", "Nombres cortados a 20 letras se completan con el único candidato de lo ya cargado",
+      "MARTINEZ SOBRADO AGRO S.R.L. · BANCO DE GALICIA Y BUENOS AIRES SAU", splitMovimiento(excel[2]?.movimiento ?? "").filter((_, i) => i === 1 || i === 4).join(" · "),
+      excel[2]?.movimiento === "SERVICIO PAGO A PROVEEDORES\r\n MARTINEZ SOBRADO AGRO S.R.L.\r\n 30617786016\r\n VARIOS\r\n BANCO DE GALICIA Y BUENOS AIRES SAU", "A-FEAT-1352")
+    chequear("Resumen PDF", "Extracción por sucursal: la letra del origen es la que usó la cuenta (C018), no la A de las compras",
+      "C018", splitMovimiento(excel[3]?.movimiento ?? "").slice(-1)[0] ?? "-", splitMovimiento(excel[3]?.movimiento ?? "").slice(-1)[0] === "C018", "A-FEAT-1352")
+
+    // Lo que NO se puede completar queda como viene, y se dice
+    const sinHistoria = resumenComoExcel(res, armarConocido([], []))
+    const tipos = (i: number) => sinHistoria[i]?.cambios.map(c => c.tipo) ?? []
+    const vSin = [tipos(1).includes("cbu_incompleto") ? "CBU incompleto avisado" : "-",
+      splitMovimiento(sinHistoria[2]?.movimiento ?? "")[1] === "MARTINEZ SOBRADO AGR" ? "nombre como vino" : "-",
+      tipos(0).includes("origen_supuesto") ? "origen supuesto avisado" : "-",
+      splitMovimiento(sinHistoria[3]?.movimiento ?? "").slice(-1)[0] === "C018" ? "extracción con C" : "-"].join(" · ")
+    chequear("Resumen PDF", "Sin extractos anteriores: el CBU queda cortado y avisado, el nombre como vino, y la letra del origen se marca supuesta",
+      "CBU incompleto avisado · nombre como vino · origen supuesto avisado · extracción con C", vSin,
+      vSin === "CBU incompleto avisado · nombre como vino · origen supuesto avisado · extracción con C", "A-FEAT-1352")
+
+    // Adversario: dos candidatos para el mismo nombre cortado → no se elige ninguno
+    const ambiguo = adaptarMovimiento({ fecha: "2026-04-01", lineas: ["TRANSFERENCIA A TERCEROS", "MARTINEZ SOBRADO AGR", "30617786016", "VARIOS"], origen: null, credito: 0, debito: 1, saldo: 0, pagina: 1 },
+      armarConocido(["X\r\n MARTINEZ SOBRADO AGRO S.R.L.", "X\r\n MARTINEZ SOBRADO AGRO SRL"], []))
+    chequear("Resumen PDF", "Con dos nombres completos posibles, el cortado NO se completa (no se adivina)",
+      "MARTINEZ SOBRADO AGR", splitMovimiento(ambiguo.texto)[1], splitMovimiento(ambiguo.texto)[1] === "MARTINEZ SOBRADO AGR", "A-FEAT-1352")
+
+    // El CBU completo del proveedor, por CUIT, gana aunque haya otro CBU que empiece igual
+    const porCuit = adaptarMovimiento({ fecha: "2026-04-01", lineas: ["TRANSFERENCIA A TERCEROS", "CU 20208914880", "01700176200000004481", "FNCS", "VARIOS"], origen: null, credito: 0, debito: 1, saldo: 0, pagina: 1 },
+      armarConocido([], [{ cbu: "0170017620000000448154", cuit: "20208914880" }, { cbu: "0170017620000000448199", cuit: "30111111111" }]))
+    chequear("Resumen PDF", "Dos CBU empiezan igual: se completa con el del mismo CUIT",
+      "0170017620000000448154", splitMovimiento(porCuit.texto)[2], splitMovimiento(porCuit.texto)[2] === "0170017620000000448154", "A-FEAT-1352")
+
+    // Decisión del usuario: un CBU cortado se toma como CBU → la transferencia tiene la misma firma que la del Excel
+    const firmaPdf = firmaDeMovimiento(splitMovimiento(sinHistoria[1]?.movimiento ?? ""))
+    const firmaExcel = firmaDeMovimiento(splitMovimiento("TRANSFERENCIA A TERCEROS\r\n CU  20208914880\r\n 0170017620000000448154\r\n FNCS\r\n VARIOS\r\n 4517XXXXXXXXXX29"))
+    chequear("Resumen PDF", "Un CBU de 20 dígitos cuenta como CBU: la transferencia cae en el mismo subtipo que la del Excel (y se desglosa)",
+      firmaExcel, firmaPdf, firmaPdf === firmaExcel, "A-FEAT-1352")
   }
 
   return r

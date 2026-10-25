@@ -35,6 +35,7 @@ import { WizardTemplatesEgresos } from "@/components/wizard-templates-egresos"
 import { cuotaDelMovimiento } from "@/lib/templates/cuotas-del-template"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { AvisoNcTarjeta } from "@/components/aviso-nc-tarjeta"
+import { ResultadoPdfCajaAhorro } from "@/components/resultado-pdf-caja-ahorro"
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -5011,12 +5012,19 @@ ${marca}` : marca
 <SoloLectura recurso="extracto.importar">
           {(() => {
             // Configuración por cuenta. `alt` = importador alternativo (ej: tarjetas tienen PDF default + Excel manual).
-            type ImpCfg = { endpoint: string; formato: string; accept: string; modo: 'excel' | 'pdf' }
+            // `boton` = el texto del selector cuando la cuenta tiene dos modos (default: el de las tarjetas)
+            type ImpCfg = { endpoint: string; formato: string; accept: string; modo: 'excel' | 'pdf'; boton?: string }
+            // 📄 A-FEAT-1352 — caja de ahorro: el resumen PDF entra por la MISMA ruta que el Excel (la ruta lo
+            // convierte a las filas del Excel), para cuando los movimientos no se bajaron a tiempo.
+            const PDF_CA = (quien: string): ImpCfg => ({
+              modo: 'pdf', endpoint: '/api/import-excel-ca', boton: '📄 Resumen PDF', accept: '.pdf',
+              formato: `Resumen PDF ${quien} Galicia Caja de Ahorro (.pdf) — se convierte al formato del Excel del banco`,
+            })
             const CONFIG_IMPORTADORES: Record<string, ImpCfg & { alt?: ImpCfg }> = {
               msa_galicia:     { modo: 'excel', endpoint: '/api/import-excel',      formato: 'Excel MSA Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
               pam_galicia_cc:  { modo: 'excel', endpoint: '/api/import-excel',      formato: 'Excel PAM Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
-              pam_galicia:     { modo: 'excel', endpoint: '/api/import-excel-ca',   formato: 'Excel PAM Galicia CA (.xlsx)',  accept: '.xlsx,.xls' },
-              ma_galicia:      { modo: 'excel', endpoint: '/api/import-excel-ca',   formato: 'Excel MA Galicia CA (.xlsx)',   accept: '.xlsx,.xls' },
+              pam_galicia:     { modo: 'excel', endpoint: '/api/import-excel-ca',   formato: 'Excel PAM Galicia CA (.xlsx)',  accept: '.xlsx,.xls', boton: '📊 Excel del banco', alt: PDF_CA('PAM') },
+              ma_galicia:      { modo: 'excel', endpoint: '/api/import-excel-ca',   formato: 'Excel MA Galicia CA (.xlsx)',   accept: '.xlsx,.xls', boton: '📊 Excel del banco', alt: PDF_CA('MA') },
               caja_general:    { modo: 'excel', endpoint: '/api/import-excel-caja', formato: 'Excel Caja General (.xlsx) — columnas: FECHA / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO', accept: '.xlsx,.xls' },
               caja_ams:        { modo: 'excel', endpoint: '/api/import-excel-caja', formato: 'Excel Caja AMS (.xlsx) — columnas: FECHA / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO',     accept: '.xlsx,.xls' },
               caja_sigot:      { modo: 'excel', endpoint: '/api/import-excel-caja', formato: 'Excel Caja Sigot (.xlsx) — columnas: FECHA / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO',   accept: '.xlsx,.xls' },
@@ -5097,7 +5105,10 @@ ${marca}` : marca
             // Multi-PDF solo aplica al importador de tarjeta (PDF) con más de un archivo
             const esMultiPdf = config.endpoint === '/api/import-pdf-tarjeta' && importFiles.length > 1
 
-            const handleImport = async () => {
+            // 👁 «Ver cómo queda» (sólo resumen PDF de caja de ahorro): procesa todo y no guarda nada
+            const puedePrevisualizar = config.modo === 'pdf' && config.endpoint === '/api/import-excel-ca'
+
+            const handleImport = async (previsualizar = false) => {
               if (!config || (!importFile && importFiles.length === 0)) return
               setImportLoading(true)
               setImportResult(null)
@@ -5141,6 +5152,7 @@ ${marca}` : marca
                     fd.append('saldo_inicial', importSaldoInicial)
                   }
                   if (importForzar) fd.append('forzar', 'true')
+                  if (previsualizar) fd.append('previsualizar', 'true')
                   const res = await fetch(config.endpoint, { method: 'POST', body: fd })
                   const data = await res.json()
                   setImportResult({ ...data, ok: res.ok && data.ok !== false && data.success !== false })
@@ -5178,6 +5190,8 @@ ${marca}` : marca
                 </CardHeader>
                 <CardContent className="space-y-4">
 
+                  {puedePrevisualizar && <TestsDelProceso proceso="extracto/importar-pdf" pantalla="extracto" />}
+
                   {/* Selector tipo de archivo (solo si la cuenta soporta 2 modos, ej. tarjetas: PDF + Excel) */}
                   {cfgBase?.alt && (
                     <div className="space-y-2">
@@ -5190,7 +5204,7 @@ ${marca}` : marca
                           onClick={() => { setImportTipoArchivo('base'); setImportFile(null); setImportResult(null) }}
                           disabled={importLoading}
                         >
-                          📄 PDF Galicia (oficial)
+                          {cfgBase.boton ?? '📄 PDF Galicia (oficial)'}
                         </Button>
                         <Button
                           type="button"
@@ -5199,7 +5213,7 @@ ${marca}` : marca
                           onClick={() => { setImportTipoArchivo('alt'); setImportFile(null); setImportResult(null) }}
                           disabled={importLoading}
                         >
-                          📊 Excel manual
+                          {cfgBase.alt.boton ?? '📊 Excel manual'}
                         </Button>
                       </div>
                     </div>
@@ -5212,7 +5226,7 @@ ${marca}` : marca
                       id="import-file-input"
                       type="file"
                       accept={config.accept}
-                      multiple={config.modo === 'pdf'}
+                      multiple={config.endpoint === '/api/import-pdf-tarjeta'}
                       onChange={handleFileChange}
                       disabled={importLoading}
                     />
@@ -5221,8 +5235,11 @@ ${marca}` : marca
                     ) : importFile && (
                       <p className="text-sm text-muted-foreground">✅ {importFile.name}</p>
                     )}
-                    {config.modo === 'pdf' && (
+                    {config.endpoint === '/api/import-pdf-tarjeta' && (
                       <p className="text-xs text-muted-foreground">Podés seleccionar varios PDFs juntos; se ordenan e importan del más viejo al más nuevo.</p>
+                    )}
+                    {config.modo === 'pdf' && config.endpoint === '/api/import-excel-ca' && (
+                      <p className="text-xs text-muted-foreground">Un resumen por vez, del más viejo al más nuevo. Antes de importar podés tocar «Ver cómo queda»: no guarda nada.</p>
                     )}
                   </div>
 
@@ -5259,7 +5276,12 @@ ${marca}` : marca
                   )}
 
                   {/* Botón */}
-                  <Button onClick={handleImport} disabled={!importFile || importLoading} className="w-full">
+                  {puedePrevisualizar && (
+                    <Button variant="outline" onClick={() => handleImport(true)} disabled={!importFile || importLoading} className="w-full">
+                      👁 Ver cómo queda (no guarda nada)
+                    </Button>
+                  )}
+                  <Button onClick={() => handleImport()} disabled={!importFile || importLoading} className="w-full">
                     {importLoading
                       ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Procesando…</>
                       : <><Upload className="mr-2 h-4 w-4" />Importar movimientos</>
@@ -5295,6 +5317,11 @@ ${marca}` : marca
                             </Alert>
                           ))}
                         </div>
+                      )}
+
+                      {/* 📄 Resumen PDF de caja de ahorro: control, adaptación y vista previa (A-FEAT-1352) */}
+                      {importResult.pdf && (
+                        <ResultadoPdfCajaAhorro pdf={importResult.pdf} filas={importResult.previsualizacion ? importResult.filas : undefined} />
                       )}
 
                       {/* Resumen de tarjeta (PDF) */}

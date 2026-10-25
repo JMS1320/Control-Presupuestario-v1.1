@@ -69,6 +69,19 @@ export const GRUPO_SUBTIPO_NUEVO = "Subtipo nuevo"
 export const GRUPO_CHOQUE = "Reglas en conflicto"
 
 /**
+ * ¿El tipo tiene un GRUPO DE CONCEPTOS elegido? (A-FEAT-1360) — `Otros` es el relleno que se pone
+ * cuando no hay ninguno (`grupoParaGuardar`), no un grupo del banco.
+ *
+ * Usuario 2026-10-25: *«no debería permitir tildar si no tiene grupo previsto… si ponés esa
+ * restricción la app deberá destildarlo; ahí yo veré enseguida cuáles son y los arreglo»*. Pasó con
+ * 4 tipos de PAM dados por buenos con el tilde: las líneas estaban bien, el grupo no se veía.
+ */
+export function tieneGrupoPrevisto(grupo: string | null | undefined): boolean {
+  const g = String(grupo ?? "").trim()
+  return g !== "" && g !== GRUPO_SIN_REGLA
+}
+
+/**
  * ¿Este movimiento está hoy SIN PARSEAR? (A-FEAT-1358) — su grupo guardado es una de las tres marcas
  * de «no se desglosó» (sin regla, subtipo nuevo, reglas en conflicto) o está vacío.
  *
@@ -105,8 +118,15 @@ export function extraerCuit(lineas: string[]): string {
   return ""
 }
 
-/** ¿La línea es un CBU? 22 dígitos. */
-export const esCbu = (l: string) => /^\d{22}$/.test(l.trim())
+/**
+ * ¿La línea es un CBU? 22 dígitos — **o 20**, que es como lo corta el resumen PDF del Galicia.
+ *
+ * Decisión del usuario 2026-10-24 (A-FEAT-1352): un CBU cortado que no se pudo completar *«se toma
+ * como CBU incompleto»*, para que la transferencia se desglose con las reglas de siempre en vez de
+ * quedar «Subtipo nuevo». Medido antes del cambio: **ninguna** línea de 20 dígitos en lo cargado de
+ * MA y PAM, así que no cambia el subtipo de nada que ya esté en la base.
+ */
+export const esCbu = (l: string) => /^\d{22}$|^\d{20}$/.test(l.trim())
 /** ¿La línea es una tarjeta enmascarada? `4517XXXXXXXXXX11`. */
 export const esTarjeta = (l: string) => /X{4,}/i.test(l) && /\d/.test(l)
 /**
@@ -651,7 +671,7 @@ export function proponerMapeo(lineas: string[]): LineaPropuesta[] {
 
     if (esCbu(texto))
       return { ...base, contenido: "cbu" as const, campo: COLUMNA_CBU, modo: "cbu",
-        seguro: true, motivo: "22 dígitos: es un CBU. Va a la columna acordada para CBU, con el modo que lo encuentra en cualquier subtipo" }
+        seguro: true, motivo: texto.trim().length === 20 ? "20 dígitos: es un CBU cortado (así lo trae el resumen PDF). Va a la columna acordada para CBU" : "22 dígitos: es un CBU. Va a la columna acordada para CBU, con el modo que lo encuentra en cualquier subtipo" }
 
     if (esBanco(texto))
       return { ...base, contenido: "banco" as const, campo: "leyendas_adicionales_4", modo: "linea",

@@ -21,8 +21,14 @@ export interface TextoUbicado {
   h: number
 }
 
-/** Pura: textos con su posición → renglones de una página. */
-export function armarRenglones(items: TextoUbicado[]): string[] {
+/**
+ * Pura: textos con su posición → renglones de una página, **conservando la posición** de cada
+ * texto (de arriba hacia abajo, y de izquierda a derecha dentro del renglón).
+ *
+ * La usan los lectores que necesitan saber en qué COLUMNA cae cada texto — el resumen de caja de
+ * ahorro del Galicia (A-FEAT-1352) distingue crédito de débito por eso.
+ */
+export function agruparRenglones(items: TextoUbicado[]): { y: number; items: TextoUbicado[] }[] {
   const vivos = items.filter(i => i.s && i.s.trim())
   vivos.sort((a, b) => b.y - a.y || a.x - b.x)
   const renglones: { y: number; items: TextoUbicado[] }[] = []
@@ -33,14 +39,20 @@ export function armarRenglones(items: TextoUbicado[]): string[] {
     else renglones.push({ y: it.y, items: [it] })
   }
   renglones.sort((a, b) => b.y - a.y)
-  return renglones.map(r => r.items.sort((a, b) => a.x - b.x).map(i => i.s.trim()).join("  "))
+  for (const r of renglones) r.items.sort((a, b) => a.x - b.x)
+  return renglones
 }
 
-/** Lee un PDF y devuelve el texto en renglones, páginas separadas por `\f`. */
-export async function textoEnRenglones(data: Uint8Array): Promise<string> {
+/** Pura: textos con su posición → renglones de una página. */
+export function armarRenglones(items: TextoUbicado[]): string[] {
+  return agruparRenglones(items).map(r => r.items.map(i => i.s.trim()).join("  "))
+}
+
+/** Lee un PDF y devuelve los textos de cada página con su posición. */
+export async function textosUbicadosPorPagina(data: Uint8Array): Promise<TextoUbicado[][]> {
   const { getDocumentProxy } = await import("unpdf")
   const pdf = await getDocumentProxy(data)
-  const paginas: string[] = []
+  const paginas: TextoUbicado[][] = []
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p)
     const tc = await page.getTextContent()
@@ -49,7 +61,13 @@ export async function textoEnRenglones(data: Uint8Array): Promise<string> {
       if (!i.str || !i.transform) continue
       items.push({ s: i.str, x: i.transform[4], y: i.transform[5], h: Math.abs(i.transform[3]) || 8 })
     }
-    paginas.push(armarRenglones(items).join("\n"))
+    paginas.push(items)
   }
-  return paginas.join("\n\f\n")
+  return paginas
+}
+
+/** Lee un PDF y devuelve el texto en renglones, páginas separadas por `\f`. */
+export async function textoEnRenglones(data: Uint8Array): Promise<string> {
+  const paginas = await textosUbicadosPorPagina(data)
+  return paginas.map(items => armarRenglones(items).join("\n")).join("\n\f\n")
 }
