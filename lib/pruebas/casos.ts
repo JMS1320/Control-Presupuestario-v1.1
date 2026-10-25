@@ -88,7 +88,7 @@ import { deduplicarFilasSicore } from "@/lib/sicore/dedup"
 import { parsePendientes, esDelProceso } from "@/lib/pendientes/parse"
 import { calcularCuenta, etiquetaComprobante, restosComoMedios } from "@/lib/pagos/cuenta-detalle-pago"
 import { agruparPagosPorEmpleado } from "@/lib/sueldos/agrupar-pagos"
-import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
+import { hayQuePreguntarFechaPago, separarSinImporte } from "@/lib/pagos/preguntar-fecha-pago"
 import { etiquetaMonto } from "@/lib/conciliacion/etiqueta-monto"
 import { armarCuentaCorriente, leyendaSaldo } from "@/lib/proveedores/cuenta-corriente"
 import {
@@ -8436,6 +8436,14 @@ export function correrCasos(): Resultado[] {
     const vau = `${auAmex.hallazgos.length} hallazgos · ${auAmex.resueltas} resueltas`
     chequear("Parseo", "Auditoría del subtipo: el Nº de operación guardado sin la palabra OPERACION no se marca como «hoy no se guarda»",
       "0 hallazgos · 2 resueltas", vau, vau === "0 hallazgos · 2 resueltas", "A-BUG-1356")
+
+    // ── Cuotas en $0: no hubo nada que pagar, no se pide fecha (A-FEAT-1357) ──
+    // 5 cuotas de IIBB MSA en cero, como llegan de la base (texto), más una con importe y una sin monto.
+    const lote0 = [{ id: "a", monto: "0.00" }, { id: "b", monto: 0 }, { id: "c", monto: "0" }, { id: "d", monto: 15230.5 }, { id: "e", monto: null }]
+    const sep = separarSinImporte(lote0)
+    const v0 = `${sep.sinImporte.map(f => f.id).join("")} · ${sep.conImporte.map(f => f.id).join("")}`
+    chequear("Templates", "Pasar a conciliado: las cuotas en $0 van sin fecha de pago; las que tienen importe —y las de monto vacío, ante la duda— la piden",
+      "abc · de", v0, v0 === "abc · de", "A-FEAT-1357")
 
     // ── ¿Llegó todo de la base? (A-FEAT-1343) ──
     const lects = [{ nombre: "Extracto BANCO GALICIA", llegaron: 1000, esperadas: 1563 }, { nombre: "Ventas", llegaron: 9, esperadas: 9 }, { nombre: "Sueldos", llegaron: 103, esperadas: null }]

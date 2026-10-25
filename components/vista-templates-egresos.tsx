@@ -38,7 +38,7 @@ import { es } from "date-fns/locale"
 import { WizardTemplatesEgresos } from "./wizard-templates-egresos"
 import { GeneradorRenovacionCampana } from "./generador-renovacion-campana"
 import { EditorCampanaTemplate } from "@/components/editor-campana-template"
-import { hayQuePreguntarFechaPago, esEstadoQuePaga } from "@/lib/pagos/preguntar-fecha-pago"
+import { hayQuePreguntarFechaPago, esEstadoQuePaga, separarSinImporte, esSinImporte } from "@/lib/pagos/preguntar-fecha-pago"
 import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { VistaTemplatesAgrupada } from "./vista-templates-agrupada"
@@ -127,6 +127,8 @@ export function VistaTemplatesEgresos() {
    */
   const [modalFechaPagoTpl, setModalFechaPagoTpl] = useState<{
     isOpen: boolean; fecha: string; cuotaIds: string[]; nuevoEstado: string
+    /** A-FEAT-1357: cuántas del lote estaban en $0 y ya pasaron sin fecha. */
+    sinImporte?: number
   }>({ isOpen: false, fecha: '', cuotaIds: [], nuevoEstado: '' })
   
   // Hook para validación de categorías
@@ -319,8 +321,36 @@ export function VistaTemplatesEgresos() {
     }
 
     try {
-      const cuotasIds = Array.from(cuotasSeleccionadasMasiva)
+      let cuotasIds = Array.from(cuotasSeleccionadasMasiva)
       const LOTE_SIZE = 20
+      let pasaronSinImporte = 0
+
+      /**
+       * 0️⃣ **A-FEAT-1357 — las cuotas en $0 pasan SIN fecha de pago**: no hubo nada que pagar, así
+       * que preguntar la fecha sería inventarla. Se escriben primero (sólo el estado) y la pregunta
+       * queda para las que tienen importe.
+       */
+      if (esEstadoQuePaga(nuevoEstadoMasivo)) {
+        const { sinImporte, conImporte } = separarSinImporte(cuotasIds.map(id => ({
+          id, monto: (cuotasOriginales.find(c => c.id === id) as any)?.monto,
+        })))
+        for (let i = 0; i < sinImporte.length; i += LOTE_SIZE) {
+          const { error } = await supabase.from('cuotas_egresos_sin_factura')
+            .update({ estado: nuevoEstadoMasivo, updated_at: new Date().toISOString() })
+            .in('id', sinImporte.slice(i, i + LOTE_SIZE).map(f => f.id))
+          if (error) throw new Error(`Error en las cuotas en $0: ${error.message}`)
+        }
+        pasaronSinImporte = sinImporte.length
+        cuotasIds = conImporte.map(f => f.id)
+        if (cuotasIds.length === 0) {
+          setCuotasSeleccionadasMasiva(new Set())
+          setNuevoEstadoMasivo('')
+          setModoEdicionMasiva(false)
+          await cargarCuotas()
+          alert(`✅ ${pasaronSinImporte} cuota(s) en $0 pasaron a "${nuevoEstadoMasivo}" sin fecha de pago: no hubo nada que pagar.`)
+          return
+        }
+      }
 
       // 📅 A-BUG-157 — el otro camino por el que se llega a «pagado» sin fecha.
       // El lote se confirma junto: basta que UNA no tenga la fecha para preguntar por todas
@@ -331,7 +361,7 @@ export function VistaTemplatesEgresos() {
           fecha_pago: (cuotasOriginales.find(c => c.id === id) as any)?.fecha_pago,
         }))
         if (hayQuePreguntarFechaPago(filas, hoy)) {
-          setModalFechaPagoTpl({ isOpen: true, fecha: hoy, cuotaIds: cuotasIds, nuevoEstado: nuevoEstadoMasivo })
+          setModalFechaPagoTpl({ isOpen: true, fecha: hoy, cuotaIds: cuotasIds, nuevoEstado: nuevoEstadoMasivo, sinImporte: pasaronSinImporte })
           return   // continúa desde el modal
         }
       }
@@ -361,7 +391,8 @@ export function VistaTemplatesEgresos() {
 
       await cargarCuotas()
 
-      alert(`✅ Edición masiva completada: ${cuotasIds.length} cuotas actualizadas a estado "${nuevoEstadoMasivo}"`)
+      alert(`✅ Edición masiva completada: ${cuotasIds.length} cuotas actualizadas a estado "${nuevoEstadoMasivo}"`
+        + (pasaronSinImporte > 0 ? `, y ${pasaronSinImporte} en $0 sin fecha de pago (no hubo nada que pagar)` : ''))
     } catch (error) {
       console.error('Error en edición masiva cuotas:', error)
       alert('Error en edición masiva: ' + (error as Error).message)
@@ -836,7 +867,8 @@ export function VistaTemplatesEgresos() {
     if (celdaEnEdicion.columna === 'estado' && esEstadoQuePaga(nuevoValor)) {
       const cuota = cuotasOriginales.find(c => c.id === celdaEnEdicion.cuotaId)
       const hoy = hoyArgentina()
-      if (hayQuePreguntarFechaPago([{ fecha_pago: (cuota as any)?.fecha_pago }], hoy)) {
+      // A-FEAT-1357: una cuota en $0 no tiene fecha de pago que preguntar.
+      if (!esSinImporte((cuota as any)?.monto) && hayQuePreguntarFechaPago([{ fecha_pago: (cuota as any)?.fecha_pago }], hoy)) {
         setModalFechaPagoTpl({ isOpen: true, fecha: hoy, cuotaIds: [celdaEnEdicion.cuotaId], nuevoEstado: nuevoValor })
         setCeldaEnEdicion(null)
         return   // el guardado continúa desde el modal — mismo patrón que `modalPropagacion`
@@ -2085,6 +2117,11 @@ export function VistaTemplatesEgresos() {
                 ? <>La cuota pasa a <strong>{modalFechaPagoTpl.nuevoEstado}</strong>.</>
                 : <><strong>{modalFechaPagoTpl.cuotaIds.length}</strong> cuotas pasan a <strong>{modalFechaPagoTpl.nuevoEstado}</strong>.</>}
               {' '}De esta fecha sale la quincena de SICORE, así que conviene que sea la real y no la estimada.
+              {(modalFechaPagoTpl.sinImporte ?? 0) > 0 && (
+                <span className="mt-1 block text-emerald-700">
+                  ✓ Otras {modalFechaPagoTpl.sinImporte} estaban en $0 y ya pasaron sin fecha de pago: no hubo nada que pagar.
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
           <Input
