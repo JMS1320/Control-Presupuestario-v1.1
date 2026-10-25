@@ -988,18 +988,41 @@ ${texto.trim()}` : texto.trim()
         .map((c: any) => `  ${c.fecha} ${c.tipo}: ${Object.keys(c.despues).join(', ')}`)
         .join('\n')
 
-      const ok = window.confirm(
-        `${seco.cambiosTotales} de ${seco.totalMovimientos} movimiento(s) cambiarían.\n\n`
-        + `Ejemplos:\n${muestra}\n\n`
-        + `Sólo se tocan los campos del desglose. La cuenta contable, el detalle, contable/interno `
-        + `y el estado NO se modifican.${resumenTipos}\n\n¿Aplicar?`
-      )
-      if (!ok) return
+      const conciliados = seco.cambiosConciliados ?? 0
+      const avisoConciliados = conciliados > 0
+        ? `\n\n⚠️ ${conciliados} de ellos ya están CONCILIADOS (su conciliación no cambia; sí su desglose).`
+        : ''
+      const aclaracion = `Sólo se tocan los campos del desglose. La cuenta contable, el detalle, contable/interno `
+        + `y el estado NO se modifican.`
+
+      /**
+       * 🎯 **A-FEAT-1358 — primero se ofrece SÓLO lo que está sin parsear.** Usuario 2026-10-24: re-parsear
+       * todo no va a ser lo común (el parseo ocurre al importar); si quedan movimientos sin desglosar,
+       * lo normal es arreglar ésos sin volver a tocar los que ya estaban bien.
+       */
+      const sinParsear = seco.cambiosSinParsear ?? 0
+      let soloSinParsear = false
+      if (sinParsear > 0 && sinParsear < seco.cambiosTotales) {
+        soloSinParsear = window.confirm(
+          `Hay ${sinParsear} movimiento(s) SIN PARSEAR que las reglas de hoy desglosarían.\n\n`
+          + `¿Re-parsear SÓLO esos ${sinParsear}?\n\n`
+          + `(Aceptar = sólo los ${sinParsear} · Cancelar = ver la opción de re-parsear los ${seco.cambiosTotales}, `
+          + `incluidos ${seco.cambiosTotales - sinParsear} que ya estaban desglosados y cambiarían)`
+        )
+      }
+      if (!soloSinParsear) {
+        const ok = window.confirm(
+          `${seco.cambiosTotales} de ${seco.totalMovimientos} movimiento(s) cambiarían.\n\n`
+          + `Ejemplos:\n${muestra}\n\n`
+          + `${aclaracion}${avisoConciliados}${resumenTipos}\n\n¿Re-parsear los ${seco.cambiosTotales}?`
+        )
+        if (!ok) return
+      }
 
       const r2 = await fetch('/api/reparsear-extracto', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cuenta: cuentaSeleccionada, aplicar: true, ...(ids ? { ids } : {}) }),
+        body: JSON.stringify({ cuenta: cuentaSeleccionada, aplicar: true, ...(soloSinParsear ? { soloSinParsear: true } : {}), ...(ids ? { ids } : {}) }),
       })
       const res = await r2.json()
       alert(res.message ?? 'Listo')

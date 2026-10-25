@@ -68,6 +68,20 @@ export const GRUPO_SUBTIPO_NUEVO = "Subtipo nuevo"
  */
 export const GRUPO_CHOQUE = "Reglas en conflicto"
 
+/**
+ * ¿Este movimiento está hoy SIN PARSEAR? (A-FEAT-1358) — su grupo guardado es una de las tres marcas
+ * de «no se desglosó» (sin regla, subtipo nuevo, reglas en conflicto) o está vacío.
+ *
+ * Lo usa el re-parseo para ofrecer **primero sólo lo no parseado**: usuario 2026-10-24, *«si quedan
+ * movimientos sin parsear por datos distintos, debería ofrecer siempre primero reparsear sólo lo no
+ * parseado en vez de todo»*. ⚠️ Un tipo con reglas pero sin grupo elegido también guarda `Otros`, así
+ * que cuenta acá: re-parsearlo no hace daño (sólo se escribe si algo cambia).
+ */
+export function estaSinParsear(grupo: string | null | undefined): boolean {
+  const g = String(grupo ?? "").trim()
+  return g === "" || g === GRUPO_SIN_REGLA || g === GRUPO_SUBTIPO_NUEVO || g === GRUPO_CHOQUE
+}
+
 /** Divide el texto multilínea en líneas limpias, descartando las vacías. */
 export function splitMovimiento(raw: string): string[] {
   return raw

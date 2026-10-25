@@ -21,6 +21,7 @@ import {
   cargarReglasParseo,
   tipoDeMovimiento,
   claveDeTipo,
+  estaSinParsear,
   tieneReglaPropia,
   splitMovimiento,
   firmaDeMovimiento,
@@ -60,6 +61,8 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}))
     const cuenta = String(body.cuenta ?? "")
     const aplicar = body.aplicar === true
+    /** A-FEAT-1358: sólo los movimientos que hoy están sin parsear (ver `estaSinParsear`). */
+    const soloSinParsear = body.soloSinParsear === true
     const tipoFiltro = body.tipo ? claveDeTipo(String(body.tipo)) : null
     /**
      * 🧪 **A-FEAT-1172 — re-parsear sólo lo que el usuario tiene delante.**
@@ -89,7 +92,7 @@ export async function POST(req: Request) {
 
     const consulta = db
       .from(cuenta)
-      .select("id, fecha, concepto, descripcion, grupo_de_conceptos, tipo_de_movimiento, numero_de_comprobante, numero_de_terminal, observaciones_cliente, leyendas_adicionales_1, leyendas_adicionales_2, leyendas_adicionales_3, leyendas_adicionales_4")
+      .select("id, fecha, estado, concepto, descripcion, grupo_de_conceptos, tipo_de_movimiento, numero_de_comprobante, numero_de_terminal, observaciones_cliente, leyendas_adicionales_1, leyendas_adicionales_2, leyendas_adicionales_3, leyendas_adicionales_4")
       .not("concepto", "is", null)
       .neq("concepto", "")
       .order("fecha", { ascending: true })
@@ -123,11 +126,14 @@ export async function POST(req: Request) {
         if (String(valor ?? "") !== String(actual)) update[campo] = valor
       }
 
-      if (Object.keys(update).length > 0) {
+      const sinParsear = estaSinParsear(m.grupo_de_conceptos)
+      if (Object.keys(update).length > 0 && (!soloSinParsear || sinParsear)) {
         cambios.push({
           id: m.id,
           fecha: m.fecha,
           tipo,
+          sinParsear,
+          conciliado: m.estado === "conciliado",
           antes: Object.fromEntries(Object.keys(update).map((k) => [k, m[k] ?? ""])),
           despues: update,
         })
@@ -154,6 +160,8 @@ export async function POST(req: Request) {
         totalMovimientos: movs?.length ?? 0,
         cambios: cambios.slice(0, 50),
         cambiosTotales: cambios.length,
+        cambiosSinParsear: cambios.filter((c) => c.sinParsear).length,
+        cambiosConciliados: cambios.filter((c) => c.conciliado).length,
         tipos,
       })
     }
