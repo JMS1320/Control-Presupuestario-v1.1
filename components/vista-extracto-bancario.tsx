@@ -8,7 +8,8 @@ import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
 import { conciliarOrigenDelMovimiento, schemaDeFactura } from "@/lib/conciliacion/confirmar-origen"
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
-import { usePuedeVer } from "@/components/contexto-permisos"
+import { Permisable } from "@/components/modo-permisos"
+import { usePuedeVer, usePrimeraVisible } from "@/components/contexto-permisos"
 import { ETIQUETA_SENTIDO, type Sentido } from "@/lib/movimientos/sentido"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -233,10 +234,15 @@ function generarPropuestasArca(movimiento: any, facturas: any[], esTarjeta = fal
 
 export function VistaExtractoBancario() {
   // A-FEAT-169: las pestañas que este rol no ve, no se dibujan.
-  const puedeVer = usePuedeVer()
   const [configuradorAbierto, setConfiguradorAbierto] = useState(false)
   const [cuentaConfig, setCuentaConfig] = useState('msa_galicia')
-  const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>("msa_galicia")
+  // 🏦 A-FEAT-1336: sólo las cuentas que este rol tiene. Arranca en la primera de ellas (antes era
+  // siempre MSA Galicia); si no tiene ninguna, la pantalla lo dice en vez de mostrar una cuenta ajena.
+  const puedeVer = usePuedeVer()
+  const primeraVisible = usePrimeraVisible()
+  const cuentaPermitida = (id: string) => puedeVer(`extracto.cuenta.${id}`)
+  const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>(
+    () => CUENTAS_BANCARIAS.find((c) => cuentaPermitida(c.id))?.id ?? "msa_galicia")
   /**
    * 🌙 Nota del usuario 2026-10-24: «abrí configuración reglas y me abre en cta cte MSA… debería abrir
    * las reglas de cta cte PAM… que abra desde donde se está». Al ABRIR el modal toma la cuenta del
@@ -988,18 +994,41 @@ ${texto.trim()}` : texto.trim()
         .map((c: any) => `  ${c.fecha} ${c.tipo}: ${Object.keys(c.despues).join(', ')}`)
         .join('\n')
 
-      const ok = window.confirm(
-        `${seco.cambiosTotales} de ${seco.totalMovimientos} movimiento(s) cambiarían.\n\n`
-        + `Ejemplos:\n${muestra}\n\n`
-        + `Sólo se tocan los campos del desglose. La cuenta contable, el detalle, contable/interno `
-        + `y el estado NO se modifican.${resumenTipos}\n\n¿Aplicar?`
-      )
-      if (!ok) return
+      const conciliados = seco.cambiosConciliados ?? 0
+      const avisoConciliados = conciliados > 0
+        ? `\n\n⚠️ ${conciliados} de ellos ya están CONCILIADOS (su conciliación no cambia; sí su desglose).`
+        : ''
+      const aclaracion = `Sólo se tocan los campos del desglose. La cuenta contable, el detalle, contable/interno `
+        + `y el estado NO se modifican.`
+
+      /**
+       * 🎯 **A-FEAT-1358 — primero se ofrece SÓLO lo que está sin parsear.** Usuario 2026-10-24: re-parsear
+       * todo no va a ser lo común (el parseo ocurre al importar); si quedan movimientos sin desglosar,
+       * lo normal es arreglar ésos sin volver a tocar los que ya estaban bien.
+       */
+      const sinParsear = seco.cambiosSinParsear ?? 0
+      let soloSinParsear = false
+      if (sinParsear > 0 && sinParsear < seco.cambiosTotales) {
+        soloSinParsear = window.confirm(
+          `Hay ${sinParsear} movimiento(s) SIN PARSEAR que las reglas de hoy desglosarían.\n\n`
+          + `¿Re-parsear SÓLO esos ${sinParsear}?\n\n`
+          + `(Aceptar = sólo los ${sinParsear} · Cancelar = ver la opción de re-parsear los ${seco.cambiosTotales}, `
+          + `incluidos ${seco.cambiosTotales - sinParsear} que ya estaban desglosados y cambiarían)`
+        )
+      }
+      if (!soloSinParsear) {
+        const ok = window.confirm(
+          `${seco.cambiosTotales} de ${seco.totalMovimientos} movimiento(s) cambiarían.\n\n`
+          + `Ejemplos:\n${muestra}\n\n`
+          + `${aclaracion}${avisoConciliados}${resumenTipos}\n\n¿Re-parsear los ${seco.cambiosTotales}?`
+        )
+        if (!ok) return
+      }
 
       const r2 = await fetch('/api/reparsear-extracto', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cuenta: cuentaSeleccionada, aplicar: true, ...(ids ? { ids } : {}) }),
+        body: JSON.stringify({ cuenta: cuentaSeleccionada, aplicar: true, ...(soloSinParsear ? { soloSinParsear: true } : {}), ...(ids ? { ids } : {}) }),
       })
       const res = await r2.json()
       alert(res.message ?? 'Listo')
@@ -3482,32 +3511,42 @@ ${marca}` : marca
       )}
 
       {/* Tabs del contenido */}
-      <Tabs defaultValue="movimientos" className="space-y-4">
+      {!CUENTAS_BANCARIAS.some((c) => cuentaPermitida(c.id)) && (
+        <Card>
+          <CardContent className="py-6 text-sm text-muted-foreground">
+            Tu rol no tiene ninguna cuenta habilitada en Extracto. Pedile al administrador que te habilite la que necesitás.
+          </CardContent>
+        </Card>
+      )}
+      <Tabs
+        defaultValue={primeraVisible(["extracto.movimientos", "extracto.importar", "extracto.reportes", "extracto.auditoria"])}
+        className={CUENTAS_BANCARIAS.some((c) => cuentaPermitida(c.id)) ? "space-y-4" : "hidden"}
+      >
         <TabsList className="grid w-full grid-cols-4">
-          {puedeVer("extracto.movimientos") && (
+          <Permisable recurso="extracto.movimientos">
 <TabsTrigger value="movimientos" className="flex items-center gap-2">
             <FileSpreadsheet className="h-4 w-4" />
             Movimientos
           </TabsTrigger>
-)}
-          {puedeVer("extracto.importar") && (
+</Permisable>
+          <Permisable recurso="extracto.importar">
 <TabsTrigger value="importar" className="flex items-center gap-2">
             <Upload className="h-4 w-4" />
             Importar
           </TabsTrigger>
-)}
-          {puedeVer("extracto.reportes") && (
+</Permisable>
+          <Permisable recurso="extracto.reportes">
 <TabsTrigger value="reportes" className="flex items-center gap-2">
             <FileSpreadsheet className="h-4 w-4" />
             Reportes
           </TabsTrigger>
-)}
-          {puedeVer("extracto.auditoria") && (
+</Permisable>
+          <Permisable recurso="extracto.auditoria">
 <TabsTrigger value="auditoria" className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4" />
             Auditoría
           </TabsTrigger>
-)}
+</Permisable>
         </TabsList>
 
         <TabsContent value="movimientos" className="space-y-4">
@@ -5439,8 +5478,8 @@ ${marca}` : marca
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cuentas Bancarias</p>
               <div className="space-y-2">
                 {cuentasDisponibles.filter(c => c.tipo !== 'caja' && c.tipo !== 'tarjeta').map((cuenta) => (
+                  <Permisable key={cuenta.id} recurso={`extracto.cuenta.${cuenta.id}`}>
                   <Button
-                    key={cuenta.id}
                     variant="outline"
                     className={`w-full justify-start ${cuentaSeleccionada === cuenta.id ? 'border-blue-500 bg-blue-50' : ''}`}
                     onClick={() => ejecutarConCuenta(cuenta.id)}
@@ -5453,6 +5492,7 @@ ${marca}` : marca
                       </div>
                     </div>
                   </Button>
+                  </Permisable>
                 ))}
               </div>
             </div>
@@ -5461,8 +5501,8 @@ ${marca}` : marca
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cajas</p>
               <div className="space-y-2">
                 {cuentasDisponibles.filter(c => c.tipo === 'caja').map((cuenta) => (
+                  <Permisable key={cuenta.id} recurso={`extracto.cuenta.${cuenta.id}`}>
                   <Button
-                    key={cuenta.id}
                     variant="outline"
                     className={`w-full justify-start ${cuentaSeleccionada === cuenta.id ? 'border-green-500 bg-green-50' : ''}`}
                     onClick={() => { setCuentaSeleccionada(cuenta.id); setSelectorAbierto(false) }}
@@ -5475,6 +5515,7 @@ ${marca}` : marca
                       </div>
                     </div>
                   </Button>
+                  </Permisable>
                 ))}
               </div>
             </div>
@@ -5483,8 +5524,8 @@ ${marca}` : marca
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Tarjetas de Crédito</p>
               <div className="space-y-2">
                 {cuentasDisponibles.filter(c => c.tipo === 'tarjeta').map((cuenta) => (
+                  <Permisable key={cuenta.id} recurso={`extracto.cuenta.${cuenta.id}`}>
                   <Button
-                    key={cuenta.id}
                     variant="outline"
                     className={`w-full justify-start ${cuentaSeleccionada === cuenta.id ? 'border-purple-500 bg-purple-50' : ''}`}
                     onClick={() => { setCuentaSeleccionada(cuenta.id); setSelectorAbierto(false) }}
@@ -5497,6 +5538,7 @@ ${marca}` : marca
                       </div>
                     </div>
                   </Button>
+                  </Permisable>
                 ))}
               </div>
             </div>

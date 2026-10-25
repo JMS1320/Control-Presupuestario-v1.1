@@ -1070,9 +1070,48 @@ copiando de `pruebas`** y se lo asignás. Un rol por persona.
 Configuración → Roles → **Editar** un rol → **🔒 Rol cerrado** → Guardar. Lo que el rol ve en ese momento
 **no cambia**. Lo que cambia es qué pasa con lo que se agregue a la app después: en un rol cerrado aparece
 **apagado** hasta que lo tildes; en uno abierto aparece solo. Es para los delegados (Ulises, Enrique): que
-una pantalla nueva no les aparezca sin que lo decidas. Al crear un rol copiando de uno cerrado, nace cerrado.
+una pantalla nueva no les aparezca sin que lo decidas. Al crear un rol copiando de uno cerrado, nace cerrado; un rol creado **vacío** nace cerrado siempre.
 
-⚠️ Sin probar todavía, y la casilla aparece recién cuando se corre `scripts/99` → [A-TEST-1237](PENDIENTES.md#a-test-1237)
+⚠️ Sin probar todavía → [A-TEST-1237](PENDIENTES.md#a-test-1237)
+
+### Prender permisos sobre la pantalla
+Para armarle la pantalla a alguien recorriendo la app en vez de tildar una lista. Configuración → Roles →
+en el rol, **🖱️ Editar sobre la pantalla**. Se abre la app con una barra violeta abajo:
+- Ves **todo**. Lo que ese rol no tiene aparece **atenuado con un candado gris**; apretalo y se prende
+  (verde). Vale para las secciones del menú, las solapas y el botón Archivos para ARCA. Ámbar = lo ve sin editar.
+- En un **rol cerrado**, prender una sección no prende lo de adentro: las solapas se prenden de a una.
+  Prender una sub-solapa (ej. Stock) prende también la de arriba (Insumos).
+- **Ver como lo ve él** esconde lo atenuado: es su pantalla tal cual.
+- **Nada se aplica hasta Guardar.** La barra cuenta los cambios; **Descartar** vuelve a lo guardado y
+  **Salir** te lleva a Roles (si quedó algo sin guardar, pregunta).
+
+**Las cuentas del Extracto** también se prenden de a una: abrí el selector de cuenta (arriba en Extracto) y
+cada cuenta, caja y tarjeta tiene su candado. Quien tiene Extracto ve sólo las cuentas que le prendiste, en
+todas las solapas, y la app no lo deja importar en las otras. Ej.: para Ulises, Importar + MSA Galicia CC +
+VISA Business MSA.
+
+Lo de adentro de las ventanas (reglas y asignaciones de Extracto, anticipos de Cash Flow) no tiene candado:
+se elige en la lista de Editar permisos.
+
+⚠️ Las cuentas, sin probar todavía → [A-TEST-1239](PENDIENTES.md#a-test-1239)
+
+⚠️ Sin probar todavía → [A-TEST-1238](PENDIENTES.md#a-test-1238)
+
+### Cierre de sesión por inactividad
+Si nadie toca la app durante un rato, la sesión se cierra sola y hay que volver a entrar. Por default es
+**1 hora**. Un minuto antes aparece arriba un aviso amarillo con la cuenta regresiva: tocando cualquier lado
+se sigue trabajando. Cuenta como actividad tocar, hacer clic, escribir, mover el mouse o desplazarse; que la
+app actualice números sola no cuenta.
+
+Para cambiar el tiempo de un rol: Configuración → Roles → en su tarjeta, el recuadro **cierre por
+inactividad** → ✏️ → los minutos (60 = 1 hora, entre 5 y 1440) → Guardar. Vacío vuelve a 1 hora. Sirve
+también para tu rol (admin). Pensado para el celular: a quien carga desde el campo conviene darle un tiempo
+más corto.
+
+Se cierra sólo en ese aparato: si se le vence a alguien en el celular, en la PC sigue adentro. Y si se
+reabre la app pasado el tiempo, va directo al login sin mostrar nada.
+
+⚠️ Sin probar todavía → [A-TEST-1246](PENDIENTES.md#a-test-1246)
 
 ### Darle un rol a alguien
 Configuración → Usuarios → escribís el mail, elegís el rol, **Crear e invitar**. A quien ya existe

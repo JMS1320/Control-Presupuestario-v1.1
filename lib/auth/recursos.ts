@@ -25,7 +25,13 @@
  *                       sino como `puedeVer("<id>")` en su archivo: verifica que la pantalla de
  *                       verdad pregunte por el permiso (A-FEAT-1322, etapa 1).
  */
-export type TipoRecurso = "pestana" | "funcionalidad" | "accion"
+/**
+ *   · `cuenta`        — una CUENTA del Extracto (banco, caja o tarjeta), A-FEAT-1336. No es un lugar
+ *                       sino sobre QUÉ se trabaja: en todas las solapas de Extracto el rol sólo puede
+ *                       elegir las cuentas que tiene, y los importadores lo verifican en el servidor.
+ *                       El control las compara contra `CUENTAS_BANCARIAS` (hooks/useMotorConciliacion.ts).
+ */
+export type TipoRecurso = "pestana" | "funcionalidad" | "accion" | "cuenta"
 
 export type Recurso = {
   /** `seccion.id` — la clave con la que se guarda el permiso. */
@@ -96,6 +102,24 @@ export const RECURSOS: Recurso[] = [
   { id: "extracto.sueldo",   seccion: "extracto", etiqueta: "Asignar a sueldo",       tipo: "funcionalidad", archivo: EXTRACTO },
   { id: "extracto.grupo",    seccion: "extracto", etiqueta: "Asignar a grupo de pago", tipo: "funcionalidad", archivo: EXTRACTO },
   { id: "extracto.venta",    seccion: "extracto", etiqueta: "Asignar a venta",        tipo: "funcionalidad", archivo: EXTRACTO },
+  // A-FEAT-1336: las cuentas. Pedido del usuario 24/10 para Ulises: «sólo importar» y sólo MSA cuenta
+  // corriente + VISA MSA. Sin esto, prender Importar le daba importar en las 11.
+  // ⚠️ El id después de `extracto.cuenta.` es el `id` de CUENTAS_BANCARIAS: no renombrar uno sin el otro.
+  ...([
+    ["msa_galicia", "MSA Galicia CC Pesos"],
+    ["pam_galicia", "PAM Galicia CA Pesos"],
+    ["pam_galicia_cc", "PAM Galicia CC Pesos"],
+    ["ma_galicia", "MA Galicia CA Pesos"],
+    ["caja_general", "Caja General MSA"],
+    ["caja_ams", "Caja AMS MSA"],
+    ["caja_sigot", "Caja Sigot MSA"],
+    ["echeqs_terceros", "Echeqs de terceros MSA"],
+    ["tarjeta_visa_business_msa", "VISA Business MSA"],
+    ["tarjeta_visa_pam", "VISA PAM"],
+    ["tarjeta_visa_ma", "VISA MA"],
+  ] as const).map(([id, nombre]): Recurso => ({
+    id: `extracto.cuenta.${id}`, seccion: "extracto", etiqueta: `Cuenta → ${nombre}`, tipo: "cuenta", archivo: EXTRACTO,
+  })),
 
   // ── Productivo ───────────────────────────────────────────────────────────────────────────
   { id: "productivo.hacienda",  seccion: "productivo", etiqueta: "Hacienda",            tipo: "pestana", archivo: PRODUCTIVO },

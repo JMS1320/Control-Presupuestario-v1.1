@@ -9,6 +9,7 @@ import {
   type MapaReglas,
 } from "@/lib/extractos/parseo-movimiento"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
+import { exigirCuentaExtracto } from "@/lib/auth/guard-recurso"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -126,6 +127,9 @@ export async function POST(req: Request) {
     const saldoInicialInput = formData.get("saldo_inicial")
     const saldoInicial = saldoInicialInput ? parseNumberCA(saldoInicialInput) : 0
     const cuentaBancariaId = (formData.get("tabla") as string | null)?.trim() || "pam_galicia"
+    // 🏦 A-FEAT-1336: la cuenta tiene que estar habilitada para el rol.
+    const cuentaOk = await exigirCuentaExtracto(cuentaBancariaId)
+    if (!cuentaOk.ok) return NextResponse.json({ error: cuentaOk.motivo }, { status: cuentaOk.status })
     const forzar = (formData.get("forzar") as string | null) === "true"  // importar aunque el control no cuadre
 
     const TABLAS_CA_PERMITIDAS = ["pam_galicia", "ma_galicia"]

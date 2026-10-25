@@ -85,6 +85,7 @@ import { quincenasDelMes } from "@/lib/sicore/quincena"   // A-BUG-193 — el mi
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { usePuedeVer } from "@/components/contexto-permisos"
+import { Permisable } from "@/components/modo-permisos"
 
 interface FacturaArca {
   id: string
@@ -6634,7 +6635,8 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                 )}
 
                 {/* Archivos de texto para IVA Simple — sólo MSA (PAM y MA no están inscriptas en IVA) */}
-                {empresa === 'MSA' && periodoConsulta && facturasPeriodo.length > 0 && puedeVer('egresos.archivos-arca') && (
+                {empresa === 'MSA' && periodoConsulta && facturasPeriodo.length > 0 && (
+                  <Permisable recurso="egresos.archivos-arca">
                   <Button
                     onClick={() => setMostrarArchivosArca(true)}
                     variant="outline"
@@ -6642,6 +6644,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                   >
                     📤 Archivos para ARCA ({facturasPeriodo.length} facturas)
                   </Button>
+                  </Permisable>
                 )}
               </div>
             </div>
@@ -7540,9 +7543,9 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
       }}>
         <TabsList>
           <TabsTrigger value="facturas">Facturas</TabsTrigger>
-          {puedeVer('egresos.subdiarios') && <TabsTrigger value="subdiarios">Subdiarios</TabsTrigger>}
-          {puedeVer('egresos.historico') && <TabsTrigger value="historico">Histórico</TabsTrigger>}
-          {puedeVer('egresos.asignacion') && <TabsTrigger value="asignacion">Asignación Cuentas</TabsTrigger>}
+          <Permisable recurso="egresos.subdiarios"><TabsTrigger value="subdiarios">Subdiarios</TabsTrigger></Permisable>
+          <Permisable recurso="egresos.historico"><TabsTrigger value="historico">Histórico</TabsTrigger></Permisable>
+          <Permisable recurso="egresos.asignacion"><TabsTrigger value="asignacion">Asignación Cuentas</TabsTrigger></Permisable>
         </TabsList>
 
         {/* Tab Content: Facturas */}

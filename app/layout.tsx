@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { CierreInactividad } from '@/components/cierre-inactividad'
 
 export const metadata: Metadata = {
   title: 'v0 App',
@@ -16,6 +17,8 @@ export default function RootLayout({
     <html lang="es-AR">
       <body>
         {children}
+        {/* ⏱️ Cierre de sesión por inactividad (A-FEAT-1351): uno solo para todas las pantallas. */}
+        <CierreInactividad />
         {/*
           ⚠️ **Acá NO va un `<Toaster />`.** Ya hay uno en `dashboard.tsx`, montado a nivel app y
           fuera de las pestañas.

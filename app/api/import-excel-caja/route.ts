@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import * as XLSX from "xlsx"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
+import { exigirCuentaExtracto } from "@/lib/auth/guard-recurso"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -115,6 +116,9 @@ export async function POST(req: Request) {
     const formData = await req.formData()
     const file = formData.get("file") as File | null
     const tabla = (formData.get("tabla") as string | null)?.trim() || ""
+    // 🏦 A-FEAT-1336: la cuenta tiene que estar habilitada para el rol.
+    const cuentaOk = await exigirCuentaExtracto(tabla)
+    if (!cuentaOk.ok) return NextResponse.json({ ok: false, message: cuentaOk.motivo }, { status: cuentaOk.status })
     const saldoInicialInput = formData.get("saldo_inicial") as string | null
     const forzar = (formData.get("forzar") as string | null) === "true"  // importar aunque el control no cuadre
 

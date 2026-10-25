@@ -60,6 +60,9 @@ import { etiquetaPersona } from "@/lib/auth/identidad"
 import { armarRolNuevo, normalizarIdRol } from "@/lib/auth/crear-rol"
 import { nivelesEfectivos, excepcionesParaEditar, permisosAGuardar } from "@/lib/auth/rol-cerrado"
 import { RECURSOS as RECURSOS_PERMISABLES } from "@/lib/auth/recursos"
+import { borradorDe, alternarRecurso, alternarSeccion, nivelEnBorrador, contarCambios, cuerpoGuardar } from "@/lib/auth/modo-permisos"
+import { motivoCuentaBloqueada } from "@/lib/auth/cuentas-extracto"
+import { minutosEfectivos, validarMinutos, textoMinutos, valorCookieActividad, msRestantes, sesionVencida, sesionDelToken } from "@/lib/auth/inactividad"
 import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
 import {
   adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga,
@@ -222,7 +225,7 @@ import {
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
 import { esHistorico, estadoCuotaAlDesvincular, contarEstadisticasExtracto } from "@/lib/conciliacion/estado-historico"
 import { buscarConDobleAudit, type VinculoEnAuditar } from "@/lib/conciliacion/doble-audit"
-import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA, claveDedupMovimiento, claveDeTipo, tipoDeMovimiento, tieneReglaPropia, columnasRepetidas, reglasDeLaPropuesta } from "@/lib/extractos/parseo-movimiento"
+import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA, claveDedupMovimiento, claveDeTipo, tipoDeMovimiento, tieneReglaPropia, columnasRepetidas, reglasDeLaPropuesta, estaSinParsear } from "@/lib/extractos/parseo-movimiento"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
@@ -8348,8 +8351,113 @@ export function correrCasos(): Resultado[] {
     const vcopia = [deCerrado.ok ? String(deCerrado.fila.cerrado) : "error",
       sinColumna.ok ? ("cerrado" in sinColumna.fila ? "manda la columna" : "no la manda") : "error",
       copiaCerrada.ok ? ("cerrado" in copiaCerrada.fila ? "manda la columna" : "no la manda") : "error"].join(" · ")
-    chequear("Accesos", "Crear rol copiando de uno CERRADO lo copia cerrado (si no, le daría todo lo demás); sin la columna todavía, no la manda",
-      "true · no la manda · no la manda", vcopia, vcopia === "true · no la manda · no la manda", "A-FEAT-1333")
+    chequear("Accesos", "Crear rol copiando de uno CERRADO lo copia cerrado; copiando de uno sin la columna, no la manda; VACÍO nace cerrado",
+      "true · no la manda · manda la columna", vcopia, vcopia === "true · no la manda · manda la columna" && copiaCerrada.ok && copiaCerrada.fila.cerrado === true, "A-FEAT-1333")
+
+    // ── Modo permisos: prender sobre la pantalla (A-FEAT-1334) ──
+    const mpVacio = borradorDe({ secciones: [], permisos: {}, cerrado: true })
+    const mpSeguros = alternarRecurso(mpVacio, "egresos.seguros")
+    const vp = [mpSeguros.secciones.join(","), nivelEnBorrador(mpSeguros, "egresos.seguros"),
+      nivelEnBorrador(mpSeguros, "egresos.facturas-msa"), nivelEnBorrador(mpSeguros, "egresos.subdiarios"),
+      String(contarCambios(mpVacio, mpSeguros))].join(" · ")
+    chequear("Accesos", "Modo permisos: en un rol cerrado y vacío, prender Seguros prende Egresos y SÓLO Seguros (2 cambios)",
+      "egresos · escritura · ninguno · ninguno · 2", vp, vp === "egresos · escritura · ninguno · ninguno · 2", "A-FEAT-1334")
+
+    const mpProdC = alternarSeccion(mpVacio, "productivo")
+    const mpProdA = alternarSeccion(borradorDe({ secciones: [], permisos: {} }), "productivo")
+    const vs = [nivelEnBorrador(mpProdC, "productivo.hacienda"), nivelEnBorrador(mpProdA, "productivo.hacienda")].join(" · ")
+    chequear("Accesos", "Modo permisos: prender una sección en un rol CERRADO no prende sus solapas; en uno abierto entra con todo",
+      "ninguno · escritura", vs, vs === "ninguno · escritura", "A-FEAT-1334")
+
+    const mpStock = alternarRecurso(mpProdC, "productivo.stock")
+    const vh = [nivelEnBorrador(mpStock, "productivo.stock"), nivelEnBorrador(mpStock, "productivo.insumos"),
+      nivelEnBorrador(mpStock, "productivo.ordenes")].join(" · ")
+    chequear("Accesos", "Modo permisos: prender una sub-solapa (Stock) prende también la de arriba (Insumos), no sus hermanas",
+      "escritura · escritura · ninguno", vh, vh === "escritura · escritura · ninguno", "A-FEAT-1334")
+
+    const mpUlises = borradorDe({ secciones: ["egresos"], permisos: { "egresos.facturas-msa": "escritura", "egresos.subdiarios": "lectura" }, cerrado: true })
+    const mpIdaVuelta = alternarRecurso(alternarRecurso(mpUlises, "egresos.facturas-msa"), "egresos.facturas-msa")
+    const vi = `${contarCambios(mpUlises, mpIdaVuelta)} · ${nivelEnBorrador(mpUlises, "egresos.subdiarios")}`
+    chequear("Accesos", "Modo permisos: apagar y volver a prender deja 0 cambios, y lo que estaba en sólo lectura se respeta",
+      "0 · lectura", vi, vi === "0 · lectura", "A-FEAT-1334")
+
+    // Lo que se guarda, leído como lo lee la app, da exactamente lo que se vio en pantalla.
+    const mpCuerpo = cuerpoGuardar("ulises", mpStock)
+    const mpGuardado = permisosAGuardar(mpCuerpo.permisos, mpCuerpo.secciones, true)
+    const mpLeido = nivelesEfectivos({ secciones: mpCuerpo.secciones, permisos: mpGuardado, cerrado: true })
+    const mpDifs = RECURSOS_PERMISABLES.filter((r) => (mpCuerpo.secciones.includes(r.seccion) ? (mpLeido[r.id] ?? "escritura") : "ninguno") !== nivelEnBorrador(mpStock, r.id)).length
+    const vg = `${JSON.stringify(mpGuardado)} · ${mpDifs} distintos`
+    const mpEsperado = '{"productivo.insumos":"escritura","productivo.stock":"escritura"} · 0 distintos'
+    chequear("Accesos", "Modo permisos: Guardar deja en la base lo prendido, y la app lo lee igual que se vio en pantalla",
+      mpEsperado, vg, vg === mpEsperado, "A-FEAT-1334")
+
+    const mpSinEgresos = alternarSeccion(mpUlises, "egresos")
+    const vq = `${mpSinEgresos.secciones.length} · ${Object.keys(cuerpoGuardar("ulises", mpSinEgresos).permisos).length}`
+    chequear("Accesos", "Modo permisos: apagar una sección no deja restricciones colgadas de esa sección",
+      "0 · 0", vq, vq === "0 · 0", "A-FEAT-1334")
+
+    // ── Permiso por cuenta del Extracto (A-FEAT-1336) ──
+    // Ulises: rol cerrado con Extracto → Importar y sólo MSA cuenta corriente + VISA MSA.
+    const ctUlises = { secciones: ["extracto"], cerrado: true, permisos: {
+      "extracto.importar": "escritura", "extracto.cuenta.msa_galicia": "escritura", "extracto.cuenta.tarjeta_visa_business_msa": "escritura" } }
+    const ctEf = nivelesEfectivos(ctUlises)
+    const vct = [ctEf["extracto.importar"], ctEf["extracto.movimientos"], ctEf["extracto.cuenta.msa_galicia"],
+      ctEf["extracto.cuenta.tarjeta_visa_business_msa"], ctEf["extracto.cuenta.pam_galicia"], ctEf["extracto.cuenta.caja_general"]].join(" · ")
+    chequear("Accesos", "Cuentas: un rol cerrado con Importar + MSA CC + VISA MSA ve sólo esas dos cuentas, y Movimientos apagado",
+      "escritura · ninguno · escritura · escritura · ninguno · ninguno", vct,
+      vct === "escritura · ninguno · escritura · escritura · ninguno · ninguno", "A-FEAT-1336")
+
+    const vsv = [motivoCuentaBloqueada(ctEf, "msa_galicia") ?? "pasa", motivoCuentaBloqueada(ctEf, "tarjeta_visa_business_msa") ?? "pasa",
+      motivoCuentaBloqueada(ctEf, "pam_galicia_cc") ? "frena" : "pasa",
+      motivoCuentaBloqueada(nivelesEfectivos({ secciones: ["extracto"], permisos: {} }), "pam_galicia_cc") ?? "pasa",
+      motivoCuentaBloqueada(nivelesEfectivos({ secciones: ["importar"], permisos: {}, cerrado: true }), "pam_galicia_cc") ?? "pasa",
+      motivoCuentaBloqueada({ "extracto.cuenta.ma_galicia": "lectura" }, "ma_galicia") ? "frena" : "pasa"].join(" · ")
+    chequear("Accesos", "Cuentas (servidor): importar en una cuenta apagada se frena; un rol abierto o sin Extracto pasa como siempre; sólo lectura frena",
+      "pasa · pasa · frena · pasa · pasa · frena", vsv, vsv === "pasa · pasa · frena · pasa · pasa · frena", "A-FEAT-1336")
+
+    const ctRegistradas = RECURSOS_PERMISABLES.filter((r) => r.tipo === "cuenta").map((r) => r.id.replace("extracto.cuenta.", ""))
+    const vreg = `${ctRegistradas.length} · ${["msa_galicia", "tarjeta_visa_business_msa", "echeqs_terceros"].every((id) => ctRegistradas.includes(id)) ? "están" : "faltan"}`
+    chequear("Accesos", "Cuentas: las 11 cuentas del Extracto están registradas como permisables",
+      "11 · están", vreg, vreg === "11 · están", "A-FEAT-1336")
+
+    // En el modo permisos: prender una cuenta de un rol vacío prende Extracto, pero no Importar ni otras cuentas.
+    const ctModo = alternarRecurso(borradorDe({ secciones: [], permisos: {}, cerrado: true }), "extracto.cuenta.msa_galicia")
+    const vmo = [ctModo.secciones.join(","), nivelEnBorrador(ctModo, "extracto.cuenta.msa_galicia"),
+      nivelEnBorrador(ctModo, "extracto.cuenta.pam_galicia"), nivelEnBorrador(ctModo, "extracto.importar")].join(" · ")
+    chequear("Accesos", "Cuentas en el modo permisos: prender MSA en un rol vacío prende Extracto y sólo esa cuenta",
+      "extracto · escritura · ninguno · ninguno", vmo, vmo === "extracto · escritura · ninguno · ninguno", "A-FEAT-1336")
+
+    // ── Cierre de sesión por inactividad (A-FEAT-1351) ──
+    const inMin = [minutosEfectivos(null), minutosEfectivos(30), minutosEfectivos(3), minutosEfectivos(2000), minutosEfectivos("45")].join(" · ")
+    chequear("Accesos", "Inactividad: un rol sin tiempo propio (o con uno fuera de 5..1440) cierra a los 60 min",
+      "60 · 30 · 60 · 60 · 60", inMin, inMin === "60 · 30 · 60 · 60 · 60", "A-FEAT-1351")
+
+    const inVal = ["", "90", "4", "1,5", "1440", "abc"].map((t) => { const v = validarMinutos(t); return v.ok ? String(v.valor) : "rechaza" }).join(" · ")
+    chequear("Accesos", "Inactividad: lo que se escribe en Roles — vacío vuelve al de siempre, fuera de rango o con coma se rechaza",
+      "null · 90 · rechaza · rechaza · 1440 · rechaza", inVal, inVal === "null · 90 · rechaza · rechaza · 1440 · rechaza", "A-FEAT-1351")
+
+    const inT0 = Date.UTC(2026, 9, 24, 12, 0, 0)
+    const inCookie = valorCookieActividad({ sesion: "ses-1", ultima: inT0, minutos: 60 })
+    const inVen = [
+      sesionVencida(inCookie, "ses-1", inT0 + 59 * 60_000) ? "cierra" : "sigue",
+      sesionVencida(inCookie, "ses-1", inT0 + 61 * 60_000) ? "cierra" : "sigue",
+      // La marca vieja de la sesión anterior no cierra la sesión nueva recién abierta.
+      sesionVencida(inCookie, "ses-2", inT0 + 600 * 60_000) ? "cierra" : "sigue",
+      msRestantes("basura", "ses-1", inT0) === null ? "ignora" : "lee",
+      sesionVencida(valorCookieActividad({ sesion: "ses-1", ultima: inT0, minutos: 15 }), "ses-1", inT0 + 16 * 60_000) ? "cierra" : "sigue",
+    ].join(" · ")
+    chequear("Accesos", "Inactividad: a 1 hora sigue a los 59 min y cierra a los 61; una marca de otra sesión o rota no cierra; con 15 min cierra a los 16",
+      "sigue · cierra · sigue · ignora · cierra", inVen, inVen === "sigue · cierra · sigue · ignora · cierra", "A-FEAT-1351")
+
+    const inB64 = (o: object) => btoa(JSON.stringify(o)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+    const inTok = [sesionDelToken(`${inB64({ alg: "HS256" })}.${inB64({ session_id: "abc-123", sub: "u" })}.firma`) ?? "nada",
+      sesionDelToken("no-es-un-token") ?? "nada", sesionDelToken(null) ?? "nada"].join(" · ")
+    chequear("Accesos", "Inactividad: la sesión sale del token; un token roto no inventa una",
+      "abc-123 · nada · nada", inTok, inTok === "abc-123 · nada · nada", "A-FEAT-1351")
+
+    const inTxt = [60, 120, 90, 30].map(textoMinutos).join(" · ")
+    chequear("Accesos", "Inactividad: la tarjeta del rol lo dice en horas cuando se puede",
+      "1 hora · 2 horas · 1 h 30 min · 30 min", inTxt, inTxt === "1 hora · 2 horas · 1 h 30 min · 30 min", "A-FEAT-1351")
   }
 
   {
@@ -8438,14 +8546,14 @@ export function correrCasos(): Resultado[] {
     chequear("Parseo", "Tilde sin configurar: guarda lo mismo que muestra «Dónde va a quedar cada línea» (caso real de PAM, 5 líneas)",
       esperado, vprop, vprop === esperado, "A-FEAT-1354")
 
-    // ── Auditoría: un modo que busca guarda un pedazo de la línea (A-BUG-1356) ──
+    // ── Auditoría: un modo que busca guarda un pedazo de la línea (A-BUG-1359) ──
     // PAGO TARJETA AMEX de PAM, real: la regla de Nº de operación guarda 2522426 de «OPERACION 2522426».
     const auAmex = auditarSubtipo(["PAGO TARJETA AMEX", "OPERACION 2522426"], [
       { campo_destino: "descripcion", tipo_regla: "linea", numero_linea: 1, grupo_de_conceptos: "Otros", firma_forma: "2:tipo,texto" },
       { campo_destino: "numero_de_comprobante", tipo_regla: "nro_operacion", numero_linea: null, grupo_de_conceptos: "Otros", firma_forma: "2:tipo,texto" }])
     const vau = `${auAmex.hallazgos.length} hallazgos · ${auAmex.resueltas} resueltas`
     chequear("Parseo", "Auditoría del subtipo: el Nº de operación guardado sin la palabra OPERACION no se marca como «hoy no se guarda»",
-      "0 hallazgos · 2 resueltas", vau, vau === "0 hallazgos · 2 resueltas", "A-BUG-1356")
+      "0 hallazgos · 2 resueltas", vau, vau === "0 hallazgos · 2 resueltas", "A-BUG-1359")
 
     // ── Cuotas en $0: no hubo nada que pagar, no se pide fecha (A-FEAT-1357) ──
     // 5 cuotas de IIBB MSA en cero, como llegan de la base (texto), más una con importe y una sin monto.
@@ -8454,6 +8562,11 @@ export function correrCasos(): Resultado[] {
     const v0 = `${sep.sinImporte.map(f => f.id).join("")} · ${sep.conImporte.map(f => f.id).join("")}`
     chequear("Templates", "Pasar a conciliado: las cuotas en $0 van sin fecha de pago; las que tienen importe —y las de monto vacío, ante la duda— la piden",
       "abc · de", v0, v0 === "abc · de", "A-FEAT-1357")
+
+    // ── Re-parsear primero sólo lo no parseado (A-FEAT-1358) ──
+    const vsp = ["Otros", "Subtipo nuevo", "Reglas en conflicto", "", null, "000907 - Transferencias"].map(g => estaSinParsear(g) ? "sí" : "no").join(" ")
+    chequear("Parseo", "Sin parsear = grupo vacío o una de las tres marcas (sin regla, subtipo nuevo, conflicto); un grupo del banco ya está desglosado",
+      "sí sí sí sí sí no", vsp, vsp === "sí sí sí sí sí no", "A-FEAT-1358")
 
     // ── ¿Llegó todo de la base? (A-FEAT-1343) ──
     const lects = [{ nombre: "Extracto BANCO GALICIA", llegaron: 1000, esperadas: 1563 }, { nombre: "Ventas", llegaron: 9, esperadas: 9 }, { nombre: "Sueldos", llegaron: 103, esperadas: null }]
