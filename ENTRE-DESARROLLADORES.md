@@ -40,6 +40,12 @@
 
 ## 📨 PARA JAVIER
 
+### 🔎 `public.reglas_conciliacion`: el check de `columna_busqueda` acepta 2 valores más (2026-10-25) — aviso ANTES
+- **`scripts/102-reglas-columna-nombre-texto.sql`**: amplía `reglas_conciliacion_columna_busqueda_check` de 4 valores a 6 —
+  suma `'nombre'` (Nombre / comercio = `leyendas_adicionales_1`) y `'texto'` (todo el texto del banco). Los 4 de antes no cambian.
+  No toca filas, RLS, GRANTs ni políticas. Se frena si el check no es el esperado; marca `[script 102]`; el deshacer se frena si
+  alguna regla ya usa los valores nuevos. Lo corre T1 con OK de JMS. → A-FEAT-1362.
+
 ### 🔑 Propuesta de diseño de accesos POR TAREA y POR PERSONA (2026-10-23) — sólo papel, no toca nada
 
 Para [A-FEAT-1322](PENDIENTES.md#a-feat-1322). **No hay código ni cambios en la base**: es una propuesta que JMS todavía
