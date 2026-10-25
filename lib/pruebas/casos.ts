@@ -243,6 +243,7 @@ import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
 import { leerFacturaDelTexto, precargaDesdeLectura, cuitValido, parsearImporte } from "@/lib/gas-pdf/leer-factura"
 import { controlDeLaCarga, camposDeLaCarga, huellaDeLaCarga, aNegativoSiNC } from "@/lib/facturas/alta-factura"
 import { faltantesDelSubdiario } from "@/lib/gas-pdf/faltantes"
+import { parsearLineaMovimiento } from "@/lib/tarjetas/parseo-resumen-pdf"
 import {
   auditar, origenDe, destinoDelDetalle, vinculoDobleEsLegitimo, comprobanteIdentifica,
   type MovimientoAuditable as MovAuditable, type EntidadOrigen,
@@ -8668,6 +8669,13 @@ export function correrCasos(): Resultado[] {
       cuotaPendienteDelMes(ablLib, "2026-04-10", 271910.97)?.id ?? "ninguna"].join(" · ")
     chequear("Conciliación", "La regla usa la cuota en «débito» (AYSA feb y mar) y la precargada a ≤15 días (ABL 23/02 → la del 05/03); la conciliada o la que está lejos no",
       "feb · mar · ninguna · mar5 · ninguna", vv, vv === "feb · mar · ninguna · mar5 · ninguna", "A-FEAT-1365")
+    // ── Tarjeta: los punitorios traen «base cargo» en pesos, no pesos y dólares (A-BUG-1368) ──
+    // Resumen VISA PAM dic-25: «PUNIT. PAG.MIN.ANTERIOR $ 18.678,58 338,84» → cargo $338,84 y USD 0.
+    const pun = parsearLineaMovimiento("31-12-25 PUNIT. PAG.MIN.ANTERIOR $ 18.678,58 338,84")
+    const usd = parsearLineaMovimiento("21-12-25 P.SKOOL.COM/VNJZ in1SgsouKUSD 47,00 47,00")
+    const vpun = [pun ? `${pun.pesos}/${pun.dolares}` : "nada", usd ? `${usd.pesos}/${usd.dolares}` : "nada"].join(" · ")
+    chequear("Tarjetas", "Resumen PDF: el punitorio toma el ÚLTIMO número como cargo en pesos (el primero es la base); un consumo con pesos y dólares sigue igual",
+      "338.84/0 · 47/47", vpun, vpun === "338.84/0 · 47/47", "A-BUG-1368")
 
     // ── ¿Llegó todo de la base? (A-FEAT-1343) ──
     const lects = [{ nombre: "Extracto BANCO GALICIA", llegaron: 1000, esperadas: 1563 }, { nombre: "Ventas", llegaron: 9, esperadas: 9 }, { nombre: "Sueldos", llegaron: 103, esperadas: null }]
