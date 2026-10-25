@@ -91,8 +91,15 @@ export function extraerCuit(lineas: string[]): string {
   return ""
 }
 
-/** ¿La línea es un CBU? 22 dígitos. */
-export const esCbu = (l: string) => /^\d{22}$/.test(l.trim())
+/**
+ * ¿La línea es un CBU? 22 dígitos — **o 20**, que es como lo corta el resumen PDF del Galicia.
+ *
+ * Decisión del usuario 2026-10-24 (A-FEAT-1352): un CBU cortado que no se pudo completar *«se toma
+ * como CBU incompleto»*, para que la transferencia se desglose con las reglas de siempre en vez de
+ * quedar «Subtipo nuevo». Medido antes del cambio: **ninguna** línea de 20 dígitos en lo cargado de
+ * MA y PAM, así que no cambia el subtipo de nada que ya esté en la base.
+ */
+export const esCbu = (l: string) => /^\d{22}$|^\d{20}$/.test(l.trim())
 /** ¿La línea es una tarjeta enmascarada? `4517XXXXXXXXXX11`. */
 export const esTarjeta = (l: string) => /X{4,}/i.test(l) && /\d/.test(l)
 /**
@@ -637,7 +644,7 @@ export function proponerMapeo(lineas: string[]): LineaPropuesta[] {
 
     if (esCbu(texto))
       return { ...base, contenido: "cbu" as const, campo: COLUMNA_CBU, modo: "cbu",
-        seguro: true, motivo: "22 dígitos: es un CBU. Va a la columna acordada para CBU, con el modo que lo encuentra en cualquier subtipo" }
+        seguro: true, motivo: texto.trim().length === 20 ? "20 dígitos: es un CBU cortado (así lo trae el resumen PDF). Va a la columna acordada para CBU" : "22 dígitos: es un CBU. Va a la columna acordada para CBU, con el modo que lo encuentra en cualquier subtipo" }
 
     if (esBanco(texto))
       return { ...base, contenido: "banco" as const, campo: "leyendas_adicionales_4", modo: "linea",
