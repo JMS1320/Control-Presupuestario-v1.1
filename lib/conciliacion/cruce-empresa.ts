@@ -56,3 +56,82 @@ export function motivosParaPreguntar(fila: FilaVinculable, empresaCuenta: string
 /** Para el motor: ¿puede vincularla sola? */
 export const puedeVincularseSola = (fila: FilaVinculable, empresaCuenta: string | null | undefined, cuitBanco: string | null | undefined) =>
   motivosParaPreguntar(fila, empresaCuenta, cuitBanco).length === 0
+
+/**
+ * 🔀 **A-FEAT-1370 — la factura de OTRA empresa se PROPONE a auditar, no queda sin conciliar.**
+ *
+ * Pedido del usuario 2026-10-25: *«respecto a fc cross compañía estaría bueno que quede en audit en
+ * vez de sin conciliar… si coincide monto, fecha parecida, o fecha no tan parecida pero hay
+ * coincidencia de CUIT»*. Caso: la tarjeta de MA paga DirecTV, combustible y la VTV facturados a MSA.
+ *
+ * Lo que NO cambia de A-BUG-1256: **nunca se concilia sola** (siempre `auditar`, con el motivo de
+ * que se registraría como retiro) y **otro CUIT frena igual**. Se busca sólo después de que el motor
+ * no encontró nada de la propia empresa.
+ *
+ * Cuándo propone (importe igual, hasta $1 de diferencia, y **un solo candidato**):
+ * - el **CUIT del banco coincide** con el de la factura y la fecha está a ≤ `DIAS_CON_CUIT`; o
+ * - sin CUIT que la respalde, la fecha está dentro de la tolerancia (5 días).
+ * Con dos candidatas no elige ninguna: elegir sería adivinar.
+ */
+export const DIAS_CON_CUIT = 45
+
+export interface CandidatoOtraEmpresa extends FilaVinculable {
+  id: string | number
+  debitos?: number | null
+  creditos?: number | null
+  fecha_estimada?: string | null
+}
+
+export interface MovimientoOtraEmpresa {
+  debitos?: number | null
+  creditos?: number | null
+  fecha?: string | null
+}
+
+const diasEntre = (a?: string | null, b?: string | null): number | null => {
+  if (!a || !b) return null
+  const ms = Math.abs(new Date(a).getTime() - new Date(b).getTime())
+  return Number.isFinite(ms) ? Math.round(ms / 86400000) : null
+}
+
+export function buscarFacturaDeOtraEmpresa<T extends CandidatoOtraEmpresa>(
+  mov: MovimientoOtraEmpresa,
+  pool: readonly T[],
+  empresaCuenta: string | null | undefined,
+  cuitBanco: string | null | undefined,
+  toleranciaDias = 5,
+): { candidato: T; motivo: string } | null {
+  const debito = Number(mov.debitos) || 0
+  const credito = Number(mov.creditos) || 0
+  const importe = debito > 0 ? debito : credito
+  if (!(importe > 0) || !empresaCuenta) return null
+  const ladoDebito = debito > 0
+  const cuitB = digitos(cuitBanco)
+
+  const elegibles = pool
+    .filter(f => (f.origen ?? 'ARCA') === 'ARCA' && esDeOtraEmpresa(f.empresas, empresaCuenta) && !cuitDistinto(cuitBanco, f.cuit_proveedor))
+    .map(f => ({
+      f,
+      dif: Math.abs((Number(ladoDebito ? f.debitos : f.creditos) || 0) - importe),
+      dias: diasEntre(mov.fecha, f.fecha_estimada),
+      cuitIgual: !!cuitB && digitos(f.cuit_proveedor) === cuitB,
+    }))
+    .filter(x => x.dif <= 1.005)
+
+  const cerca = (x: { dias: number | null }) => x.dias !== null && x.dias <= toleranciaDias
+  const conCuit = elegibles.filter(x => x.cuitIgual && (x.dias === null || x.dias <= DIAS_CON_CUIT))
+  let elegido: (typeof elegibles)[number] | null = null
+  if (conCuit.length === 1) elegido = conCuit[0]
+  else if (conCuit.length > 1) { const c = conCuit.filter(cerca); elegido = c.length === 1 ? c[0] : null }
+  else { const c = elegibles.filter(cerca); elegido = c.length === 1 ? c[0] : null }
+  if (!elegido) return null
+
+  const de = (elegido.f.empresas ?? []).join('/')
+  const partes = [
+    `Factura de ${de} y la cuenta es de ${empresaCuenta}: si la confirmás se registra como retiro`,
+    elegido.dif < 0.005 ? 'importe exacto' : `importe a $${elegido.dif.toFixed(2).replace('.', ',')}`,
+    elegido.dias === null ? 'sin fecha' : elegido.dias === 0 ? 'misma fecha' : `fecha a ${elegido.dias} días`,
+  ]
+  if (elegido.cuitIgual) partes.push('el CUIT del banco coincide')
+  return { candidato: elegido.f, motivo: partes.join(' · ') }
+}

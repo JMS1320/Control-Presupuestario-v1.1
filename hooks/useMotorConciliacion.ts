@@ -14,7 +14,7 @@ import {
 import { ReglaConciliacion, MovimientoBancario, ResultadoConciliacion } from "@/types/conciliacion"
 import { schemaDeFila } from "@/lib/empresas"
 import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
-import { puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
+import { puedeVincularseSola, buscarFacturaDeOtraEmpresa } from "@/lib/conciliacion/cruce-empresa"
 import { columnasDelExtracto } from "@/lib/conciliacion/columnas-extracto"
 import { heredarDelOrigen, cuitsDiscrepan, motivoCuitDistinto, type TemplateOrigen } from "@/lib/conciliacion/datos-del-origen"
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
@@ -476,6 +476,12 @@ export function useMotorConciliacion() {
        */
       // A-BUG-1298: las facturas pagadas con tarjeta se comparan por su fecha de emisión, no por la estimada
       const poolTarjeta = cuenta.tipo === 'tarjeta' ? conFechaDeEmision(await cargarPagadoConTarjeta(cuenta.empresa)) : []
+      // 🔀 A-FEAT-1370 — en la tarjeta, también lo pagado con tarjeta de las OTRAS empresas: sólo se
+      // usa para proponer a auditar (la tarjeta de MA paga DirecTV facturado a MSA).
+      const poolTarjetaAjeno = cuenta.tipo === 'tarjeta'
+        ? conFechaDeEmision((await Promise.all((['MSA', 'PAM', 'MA'] as const).filter(e => e !== cuenta.empresa)
+            .map(e => cargarPagadoConTarjeta(e)))).flat())
+        : []
       /**
        * 🔒 **Lo que ya se usó en esta corrida no se ofrece otra vez.** Sin esto, dos movimientos del
        * mismo importe —los dos cargos de Chubb del mismo día— podían conciliarse contra la MISMA
@@ -521,6 +527,13 @@ export function useMotorConciliacion() {
           // PASO 1: Intentar match con Cash Flow
           let matchCF = poolTarjeta.length ? buscar(movimiento, poolTarjeta) : { match: false }
           if (!matchCF.match) matchCF = buscar(movimiento, datosCF)
+          // 🔀 A-FEAT-1370 — nada de la propia empresa: ¿una factura de OTRA? Sólo a auditar, nunca sola.
+          if (!matchCF.match) {
+            const ajena = buscarFacturaDeOtraEmpresa(movimiento as any,
+              sinUsar([...poolTarjetaAjeno, ...datosCF]).filter(f => !enAuditar.has(String(f.id))) as any[],
+              cuenta.empresa, extraerCuitBancario(movimiento))
+            if (ajena) matchCF = { match: true, cashFlowRow: ajena.candidato, requiere_revision: true, motivo_revision: ajena.motivo }
+          }
           if (matchCF.match) {
             usadosEnCorrida.add(String(matchCF.cashFlowRow.id))
             resultado = {

@@ -34,7 +34,7 @@
  */
 
 import { detallePropio as detallePropioCF, detallePropioDeGrupo } from "@/lib/cashflow/detalle-propio"
-import { motivosParaPreguntar, puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
+import { motivosParaPreguntar, puedeVincularseSola, buscarFacturaDeOtraEmpresa } from "@/lib/conciliacion/cruce-empresa"
 import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
 import { archivosParaFactura, periodoDeArchivo, subcarpetasDelMes } from "@/lib/facturas/vincular-archivo"
 import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual, decidirVinculosCarpeta, listasTrasCarpeta, textoLeido, decisionArchivadaEnOtra, fcAlVincularDesdeCarpeta, candidatosDelLog, agruparInforme, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, textoPedidoFacturas, descartadosDelLog, esDescartado, ultimasBusquedas, resumenUltimas } from "@/lib/gas-pdf/lote"
@@ -1007,6 +1007,30 @@ export function correrCasos(): Resultado[] {
       && puedeVincularseSola({ empresas: ["MSA"], cuit_proveedor: "20103619115" }, "MSA", null)
       && puedeVincularseSola({ empresas: ["MSA"], cuit_proveedor: "20-10361911-5" }, "MSA", "20103619115")
       && puedeVincularseSola({ empresas: ["MSA", "PAM"], cuit_proveedor: null }, "MSA", null), "A-BUG-1256")
+
+  // A-FEAT-1370: la factura de OTRA empresa se propone a auditar (nunca sola). Caso real: la tarjeta de MA paga DirecTV facturado a MSA.
+  const dtvMSA = { id: "fc-dtv", origen: "ARCA", empresas: ["MSA"], cuit_proveedor: "30-65325839-0", debitos: 128591.07, creditos: 0, fecha_estimada: "2026-07-23" }
+  const fOtra = buscarFacturaDeOtraEmpresa({ debitos: 128591.07, creditos: 0, fecha: "2026-07-25" }, [dtvMSA], "MA", null)
+  chequear("Conciliación — otra empresa / otro CUIT", "🔴 Tarjeta de MA, DirecTV facturado a MSA (mismo importe, 2 días): se propone a auditar con el aviso de retiro",
+    "fc-dtv · retiro", `${fOtra?.candidato.id ?? "nada"} · ${fOtra?.motivo.includes("retiro") ? "retiro" : "-"}`,
+    fOtra?.candidato.id === "fc-dtv" && fOtra.motivo.includes("retiro") && fOtra.motivo.includes("Factura de MSA"), "A-FEAT-1370")
+  const lejos = { ...dtvMSA, id: "fc-lejos", fecha_estimada: "2026-07-05" }
+  chequear("Conciliación — otra empresa / otro CUIT", "Fecha a 20 días: sólo se propone si el CUIT del banco coincide; con otro CUIT, nunca",
+    "nada · fc-lejos · nada",
+    [buscarFacturaDeOtraEmpresa({ debitos: 128591.07, fecha: "2026-07-25" }, [lejos], "MA", null),
+     buscarFacturaDeOtraEmpresa({ debitos: 128591.07, fecha: "2026-07-25" }, [lejos], "MA", "30653258390"),
+     buscarFacturaDeOtraEmpresa({ debitos: 128591.07, fecha: "2026-07-25" }, [dtvMSA], "MA", "20111111112")].map(r => r?.candidato.id ?? "nada").join(" · "),
+    !buscarFacturaDeOtraEmpresa({ debitos: 128591.07, fecha: "2026-07-25" }, [lejos], "MA", null)
+      && buscarFacturaDeOtraEmpresa({ debitos: 128591.07, fecha: "2026-07-25" }, [lejos], "MA", "30653258390")?.candidato.id === "fc-lejos"
+      && !buscarFacturaDeOtraEmpresa({ debitos: 128591.07, fecha: "2026-07-25" }, [dtvMSA], "MA", "20111111112"), "A-FEAT-1370")
+  chequear("Conciliación — otra empresa / otro CUIT", "Dos candidatas del mismo importe no se elige ninguna; la factura de la propia empresa y los templates no entran por acá",
+    "nada · nada · nada",
+    [buscarFacturaDeOtraEmpresa({ debitos: 128591.07, fecha: "2026-07-25" }, [dtvMSA, { ...dtvMSA, id: "fc-2", fecha_estimada: "2026-07-24" }], "MA", null),
+     buscarFacturaDeOtraEmpresa({ debitos: 128591.07, fecha: "2026-07-25" }, [{ ...dtvMSA, empresas: ["MA"] }], "MA", null),
+     buscarFacturaDeOtraEmpresa({ debitos: 128591.07, fecha: "2026-07-25" }, [{ ...dtvMSA, origen: "TEMPLATE" }], "MA", null)].map(r => r?.candidato.id ?? "nada").join(" · "),
+    !buscarFacturaDeOtraEmpresa({ debitos: 128591.07, fecha: "2026-07-25" }, [dtvMSA, { ...dtvMSA, id: "fc-2", fecha_estimada: "2026-07-24" }], "MA", null)
+      && !buscarFacturaDeOtraEmpresa({ debitos: 128591.07, fecha: "2026-07-25" }, [{ ...dtvMSA, empresas: ["MA"] }], "MA", null)
+      && !buscarFacturaDeOtraEmpresa({ debitos: 128591.07, fecha: "2026-07-25" }, [{ ...dtvMSA, origen: "TEMPLATE" }], "MA", null), "A-FEAT-1370")
 
   // A-FEAT-1277: columnas del Cash Flow en el orden del usuario.
   const COLS = [{ key: "empresas" }, { key: "fecha" }, { key: "detalle" }, { key: "debitos" }]
