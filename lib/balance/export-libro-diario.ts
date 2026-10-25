@@ -18,7 +18,10 @@
  * ese número no se puede entregar todavía. Frenar la generación le sacaría la herramienta justo
  * cuando la necesita para encontrar el problema.
  */
-import * as XLSX from "xlsx"
+// 🎨 `xlsx-js-style` (misma API) para que el Excel guarde negrita y colores — ver `presentarHoja`.
+// Import por DEFAULT: el paquete es CommonJS (ver lib/presupuesto/export.ts).
+import XLSX from "xlsx-js-style"
+import { lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
 import { ETIQUETA_CONCEPTO, type ImpuestoCheque } from "./impuesto-cheque"
 import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
 import { armarEjercicio, nombreSubdiario } from "./ejercicio"
@@ -40,12 +43,12 @@ import {
   TOTALIZADORAS_BANCARIAS,
   type GastosBancarios, type FilaConceptoPorMes, type RetirosYAportes, type FondoComun,
 } from "./papeles-bancarios"
-import type { TemplatesDelEjercicio, CuotaTemplate } from "./templates-libro"
+import { ORDEN_TIPOS, NOMBRE_TIPO, type TemplatesDelEjercicio, type CuotaTemplate, type TipoTemplate } from "./templates-libro"
 import type { ValuacionHacienda, PrecioMag, PrecioMercado, PrecioCabeza } from "./hacienda-stock"
 import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
 import type { CuadreGranos, ValuacionGranos, Sementeras } from "./granos-sementeras"
 import {
-  formatearHoja, conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna,
+  formatearHoja, presentarHoja, conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna,
 } from "./formato-excel"
 
 const money = (n: number) => Math.round(n * 100) / 100
@@ -106,9 +109,29 @@ function hojaDeProvision(este: AsientoLibroDiario[], anterior: AsientoLibroDiari
   ]
   return f
 }
+/**
+ * 🧮 ¿LLEGÓ TODO DE LA BASE? (A-FEAT-1343) — por cada consulta, cuántas filas dijo la base y cuántas
+ * se usaron. Es integridad: si no coinciden, el papel se armó con datos de menos (§ 🚦: frena).
+ */
+export function bloqueDeLecturas(lecturas: Lectura[] | undefined): unknown[][] {
+  if (!lecturas || lecturas.length === 0) return []
+  const mal = lecturas.filter(lecturaIncompleta)
+  const f: unknown[][] = []
+  f.push([mal.length === 0
+    ? `¿LLEGÓ TODO DE LA BASE? — sí: ${lecturas.length} consultas, todas completas`
+    : `¿LLEGÓ TODO DE LA BASE? — NO: ${mal.length} consulta(s) llegaron incompletas`])
+  f.push(["Consulta", "En la base", "Llegaron", ""])
+  for (const l of lecturas) {
+    f.push([l.nombre, l.esperadas ?? "sin dato", l.llegaron,
+      l.esperadas == null ? "sin dato" : lecturaIncompleta(l) ? "NO CUADRA" : "cuadra"])
+  }
+  f.push([])
+  return f
+}
+
 
 /** La solapa que se abre primero: qué se puede entregar y qué no. */
-function hojaDeControl(libro: LibroDiario): unknown[][] {
+function hojaDeControl(libro: LibroDiario, lecturas?: Lectura[]): unknown[][] {
   const { controles: c, ejercicio: ej } = libro
   const f: unknown[][] = []
 
@@ -118,6 +141,7 @@ function hojaDeControl(libro: LibroDiario): unknown[][] {
   f.push([])
   f.push(["El período NO se corta por la fecha de las facturas, sino por el subdiario en el que entraron."])
   f.push([])
+  f.push(...bloqueDeLecturas(lecturas))
 
   f.push([c.sePuedeEntregar ? "CONTROL OK — se puede entregar" : "NO SE PUEDE ENTREGAR TODAVÍA"])
   if (!c.sePuedeEntregar) {
@@ -263,6 +287,7 @@ function hojaDeControl(libro: LibroDiario): unknown[][] {
 const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: Columna[]) => {
   const ws = XLSX.utils.aoa_to_sheet(filas)
   if (columnas) formatearHoja(ws, columnas)
+  presentarHoja(ws)
   // 31 caracteres es el máximo que acepta Excel para el nombre de una solapa.
   XLSX.utils.book_append_sheet(wb, ws, nombre.slice(0, 31))
 }
@@ -1485,20 +1510,39 @@ const COLS_ASIENTOS: Columna[] = [
  * Las cuotas de templates, en el mismo formato de fila que el libro diario — pedido del usuario:
  * *«replicar formato de libro diario con los templates»*.
  */
-function hojaDeTemplates(t: TemplatesDelEjercicio): unknown[][] {
+export function hojaDeTemplates(t: TemplatesDelEjercicio): unknown[][] {
   const f: unknown[][] = [[
     "Fecha", "Concepto", "Proveedor", "Categoría", "Cuenta contable", "Nro cuenta",
     "Centro de costo", "Responsable", "Estado", "Débito", "Crédito",
   ]]
-  for (const c of t.detalle) {
+  // Ordenado por responsable y, dentro de cada uno, por fecha — como «Templates por mes» (usuario 2026-10-24:
+  // «las 2 deben estar ordenadas por responsable»).
+  const ordenadas = [...t.detalle].sort((a, b) =>
+    ORDEN_TIPOS.indexOf(a.tipo ?? "sin clasificar") - ORDEN_TIPOS.indexOf(b.tipo ?? "sin clasificar")   // A-FEAT-1342
+    || Number(!a.responsable) - Number(!b.responsable)          // los sin responsable, al final
+    || (a.responsable || "").localeCompare(b.responsable || "", "es")
+    ||(a.fecha ?? "").localeCompare(b.fecha ?? "")
+    || a.concepto.localeCompare(b.concepto, "es"))
+  // 🗂️ A-FEAT-1342: un bloque por tipo, con su subtotal.
+  let tipoActual: string | null = null
+  const cerrarTipo = () => {
+    if (tipoActual == null) return
+    const g = (t.porTipo ?? []).find(x => x.tipo === tipoActual)
+    f.push([`Total ${NOMBRE_TIPO[tipoActual as TipoTemplate].split(" — ")[0]}`, "", "", "", "", "", "", "", "",
+      money(g?.totalDebitos ?? 0), money(g?.totalCreditos ?? 0)])
+    f.push([])
+  }
+  for (const c of ordenadas) {
+    const tp = c.tipo ?? "sin clasificar"
+    if (tp !== tipoActual) { cerrarTipo(); tipoActual = tp; f.push([NOMBRE_TIPO[tp]]) }
     f.push([
       c.fecha ?? "", c.concepto, c.proveedor, c.categ, c.cuenta_contable, c.nro_cuenta,
       c.centro_costo, c.responsable, c.estado,
       c.monto >= 0 ? money(c.monto) : "", c.monto < 0 ? money(-c.monto) : "",
     ])
   }
-  f.push([])
-  f.push(["TOTAL", "", "", "", "", "", "", "", "", money(t.totalDebitos), money(t.totalCreditos)])
+  cerrarTipo()
+  f.push(["TOTAL (todos los tipos)", "", "", "", "", "", "", "", "", money(t.totalDebitos), money(t.totalCreditos)])
   // 💳 A-BUG-1289: las impagas están en el total (vencieron en el ejercicio) y además son deuda.
   if (t.impagasAlCierre.length > 0) {
     f.push([])
@@ -1563,23 +1607,44 @@ function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
     ])
   }
 
-  const responsables = [...new Set(t.porMes.map(x => x.responsable))]
-  /** Las filas del subtotal de cada responsable, para que el TOTAL general sume subtotales. */
-  const filasSubtotal: number[] = []
-
-  for (const r of responsables) {
-    const dela = t.porMes.filter(x => x.responsable === r)
-    const desde = f.length + 2                  // la primera fila de este responsable
-    dela.forEach(filaDe)
-    const hasta = f.length
-    const n = f.length + 1
-    filasSubtotal.push(n)
+  /**
+   * 🗂️ A-FEAT-1342: primero el TIPO (egresos, ingresos, distribuciones, financiero…), adentro cada
+   * responsable con su subtotal. El total de cada tipo suma sus responsables; el del ejercicio, los tipos.
+   */
+  const filasTotalTipo: number[] = []
+  const totalesTipo: number[][] = []
+  for (const tp of ORDEN_TIPOS) {
+    const delTipo = t.porMes.filter(x => x.tipo === tp)
+    if (delTipo.length === 0) continue
+    f.push([NOMBRE_TIPO[tp]])
+    const filasSubtotal: number[] = []
+    for (const r of [...new Set(delTipo.map(x => x.responsable))]) {
+      const dela = delTipo.filter(x => x.responsable === r)
+      const desde = f.length + 2                  // la primera fila de este responsable
+      dela.forEach(filaDe)
+      const hasta = f.length
+      const n = f.length + 1
+      filasSubtotal.push(n)
+      f.push([
+        `Total ${r}`, "",
+        ...t.columnas.map((_, j) => conFormula(
+          `SUM(${String.fromCharCode(67 + j)}${desde}:${String.fromCharCode(67 + j)}${hasta})`,
+          money(dela.reduce((s, x) => s + x.neto[j], 0)))),
+        conFormula(`SUM(C${n}:${ultima}${n})`, money(dela.reduce((s, x) => s + x.totalNeto, 0))),
+        "",
+      ])
+    }
+    const nT = f.length + 1
+    filasTotalTipo.push(nT)
+    const porCol = t.columnas.map((_, j) => delTipo.reduce((s, x) => s + x.neto[j], 0))
+    totalesTipo.push(porCol)
     f.push([
-      `Total ${r}`, "",
-      ...t.columnas.map((_, j) => conFormula(
-        `SUM(${String.fromCharCode(67 + j)}${desde}:${String.fromCharCode(67 + j)}${hasta})`,
-        money(dela.reduce((s, x) => s + x.neto[j], 0)))),
-      conFormula(`SUM(C${n}:${ultima}${n})`, money(dela.reduce((s, x) => s + x.totalNeto, 0))),
+      `TOTAL ${NOMBRE_TIPO[tp].split(" — ")[0]}`, "",
+      ...t.columnas.map((_, j) => {
+        const col = String.fromCharCode(67 + j)
+        return conFormula(filasSubtotal.map(r => `${col}${r}`).join("+") || "0", money(porCol[j]))
+      }),
+      conFormula(`SUM(C${nT}:${ultima}${nT})`, money(delTipo.reduce((s, x) => s + x.totalNeto, 0))),
       "",
     ])
     f.push([])
@@ -1587,10 +1652,10 @@ function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
 
   const nTot = f.length + 1
   f.push([
-    "TOTAL DEL EJERCICIO", "",
+    "TOTAL DEL EJERCICIO (todos los tipos)", "",
     ...t.columnas.map((_, j) => {
       const col = String.fromCharCode(67 + j)
-      return conFormula(filasSubtotal.map(r => `${col}${r}`).join("+") || "0",
+      return conFormula(filasTotalTipo.map(r => `${col}${r}`).join("+") || "0",
         money(t.porMes.reduce((s, x) => s + x.neto[j], 0)))
     }),
     conFormula(`SUM(C${nTot}:${ultima}${nTot})`, money(t.totalDebitos - t.totalCreditos)),
@@ -1609,6 +1674,11 @@ function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
   f.push(["", "Suma de esta solapa", conFormula(`${String.fromCharCode(67 + t.columnas.length)}${nTot}`, money(t.totalDebitos - t.totalCreditos))])
   f.push(["", "Diferencia (tiene que dar 0)",
     conFormula(`C${nC - 1}-C${nC}`, 0)])
+  // 🧮 Y por tipo: la suma de los grupos tiene que dar el total (ninguna cuota afuera ni dos veces).
+  const sumaTipos = Math.round((t.porTipo ?? []).reduce((x, g) => x + g.totalNeto, 0) * 100) / 100
+  const difTipos = Math.round((t.totalDebitos - t.totalCreditos - sumaTipos) * 100) / 100
+  f.push(["", "Suma de los tipos", money(sumaTipos)])
+  f.push(["", "Diferencia por tipo (tiene que dar 0)", money(difTipos), difTipos === 0 ? "cuadra" : "NO CUADRA"])
 
   if (t.sinCategoria.length > 0 || t.sinFecha.length > 0) {
     f.push([])
@@ -1888,6 +1958,8 @@ export function armarWorkbook(
   saldosAnteriores?: SaldosAnteriores,
   /** 📒 Las facturas de «Asientos Contables» del ejercicio (A-FEAT-1318). */
   asientosContables?: AsientoLibroDiario[],
+  /** 🧮 A-FEAT-1343: cuántas filas dijo la base y cuántas llegaron. */
+  lecturas?: Lectura[],
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new()
 
@@ -1902,6 +1974,7 @@ export function armarWorkbook(
     insumos: insumos ?? null,
     campo: campo ? { granos: campo.granos, sementeras: campo.sementeras } : null,
     bancarios: bancarios ?? null,
+    lecturas,
   })
   hoja(wb, "00 Indice", hojaDeIndice(indice, libro, empresa), COLS_INDICE)
   // 📌 A-FEAT-1258 — los pendientes a revisar van pegados al índice: también contestan «¿qué falta?».
@@ -1909,7 +1982,7 @@ export function armarWorkbook(
     hoja(wb, "00 Pendientes a revisar", hojaDePendientes(pendientes,
       `${empresa} — pendientes a revisar del ejercicio ${libro.ejercicio.etiqueta}`), COLS_PENDIENTES)
   }
-  hoja(wb, "Control", hojaDeControl(libro))
+  hoja(wb, "Control", hojaDeControl(libro, lecturas))
   hoja(wb, "Compras", hojaDeAsientos(libro.compras), COLS_ASIENTOS)
   hoja(wb, "Ventas", hojaDeAsientos(libro.ventas), COLS_ASIENTOS)
   // 📗 La apertura por cuenta contable — el formato que el usuario ya usaba (A-FEAT-1187).
@@ -2054,9 +2127,10 @@ export function descargarLibroDiario(
   pendientes?: PendienteBalance[],
   saldosAnteriores?: SaldosAnteriores,
   asientosContables?: AsientoLibroDiario[],
+  lecturas?: Lectura[],
 ) {
   const wb = armarWorkbook(libro, empresa, templates, hacienda, insumos, campo, cuentas,
-    bancarios, sueldos, cuentasCorrientes, pendientes, saldosAnteriores, asientosContables)
+    bancarios, sueldos, cuentasCorrientes, pendientes, saldosAnteriores, asientosContables, lecturas)
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
   const url = URL.createObjectURL(
     new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),

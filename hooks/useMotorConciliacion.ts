@@ -13,6 +13,7 @@ import {
 } from "@/lib/conciliacion/proveedor-del-movimiento"
 import { ReglaConciliacion, MovimientoBancario, ResultadoConciliacion } from "@/types/conciliacion"
 import { schemaDeFila } from "@/lib/empresas"
+import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
 import { puedeVincularseSola } from "@/lib/conciliacion/cruce-empresa"
 import { columnasDelExtracto } from "@/lib/conciliacion/columnas-extracto"
 import { heredarDelOrigen, cuitsDiscrepan, motivoCuitDistinto, type TemplateOrigen } from "@/lib/conciliacion/datos-del-origen"
@@ -241,46 +242,11 @@ export function useMotorConciliacion() {
     return d.toLowerCase() === (categ ?? '').trim().toLowerCase() ? null : d
   }
 
-  // Función para evaluar si una regla hace match con un movimiento
+  // Función para evaluar si una regla hace match con un movimiento.
+  // 🎯 A-BUG-1344: la lógica vive en lib/conciliacion/evaluar-regla.ts (el CUIT se lee de leyendas_adicionales_2).
   const evaluarRegla = (movimiento: MovimientoBancario, regla: ReglaConciliacion): boolean => {
     try {
-      let valorCampo = ''
-      
-      // Obtener valor del campo a evaluar
-      switch (regla.columna_busqueda) {
-        case 'descripcion':
-          valorCampo = movimiento.descripcion || ''
-          break
-        case 'cuit':
-          // Buscar en diferentes campos que puedan contener CUIT
-          valorCampo = movimiento.numero_de_comprobante || movimiento.observaciones_cliente || ''
-          break
-        case 'monto_debito':
-          valorCampo = String(movimiento.debitos || 0)
-          break
-        case 'monto_credito':
-          valorCampo = String(movimiento.creditos || 0)
-          break
-        default:
-          return false
-      }
-
-      // Evaluar según tipo de match
-      const valorCampoLower = valorCampo.toLowerCase()
-      const textoReglaLower = regla.texto_buscar.toLowerCase()
-
-      switch (regla.tipo_match) {
-        case 'exacto':
-          return valorCampoLower === textoReglaLower
-        case 'contiene':
-          return valorCampoLower.includes(textoReglaLower)
-        case 'inicia_con':
-          return valorCampoLower.startsWith(textoReglaLower)
-        case 'termina_con':
-          return valorCampoLower.endsWith(textoReglaLower)
-        default:
-          return false
-      }
+      return evaluarReglaConciliacion(movimiento as unknown as Record<string, unknown>, regla)
     } catch (error) {
       console.error('Error evaluando regla:', error)
       return false

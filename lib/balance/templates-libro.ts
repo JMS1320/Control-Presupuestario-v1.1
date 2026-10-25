@@ -26,6 +26,43 @@
  *    Créditos» y un total del ejercicio al final).
  */
 import type { Ejercicio } from "./ejercicio"
+import { resolverTipo, type TipoCuenta } from "@/lib/presupuesto/templates"
+
+/**
+ * 🗂️ **QUÉ ES cada cuota: egreso, ingreso, distribución, financiero…** (A-FEAT-1342, 2026-10-24).
+ *
+ * Usuario: *«el reporte de templates habría que separarlo entre egresos, ingresos, financiero, etc.,
+ * así es más fácil procesarlos»*. Hasta acá la solapa sumaba todo junto, y en 25/26 eso metía como
+ * «gasto» $784 M de FCI, $121 M de plazo fijo, la caja y el pago de las tarjetas (que además duplica
+ * los consumos) → A-BUG-1340.
+ *
+ * El tipo sale con **la misma regla que el presupuesto** (`resolverTipo`): manda el `tipo` del template
+ * y, si no lo tiene, el de su categoría en el plan de cuentas. **No se adivina por el signo**: si no hay
+ * ninguno de los dos, la cuota va a «sin clasificar», a la vista, para que alguien le ponga el tipo.
+ *
+ * Por ahora se muestran **todos los responsables** (usuario: *«ayudará a ver tema de aportes y
+ * retiros… más adelante sólo reportaremos el responsable en cuestión»*).
+ */
+export type TipoTemplate = TipoCuenta | "sin clasificar"
+/** El orden en que se presentan los grupos. */
+export const ORDEN_TIPOS: TipoTemplate[] = ["egreso", "ingreso", "distribucion", "financiero", "NO", "sin clasificar"]
+export const NOMBRE_TIPO: Record<TipoTemplate, string> = {
+  egreso: "EGRESOS — gasto del ejercicio",
+  ingreso: "INGRESOS",
+  distribucion: "DISTRIBUCIONES — retiros y aportes de socios",
+  financiero: "FINANCIERO — no es gasto: FCI, plazo fijo, caja, pago de tarjeta, transferencias",
+  NO: "NO — fuera del resultado",
+  "sin clasificar": "SIN CLASIFICAR — el template no tiene tipo y su categoría no está en el plan",
+}
+const tipoDe = (c: { tipo?: TipoTemplate }): TipoTemplate => c.tipo ?? "sin clasificar"
+
+export interface TotalPorTipo {
+  tipo: TipoTemplate
+  cuotas: number
+  totalDebitos: number
+  totalCreditos: number
+  totalNeto: number
+}
 
 /** Una cuota de template, ya normalizada desde `cuotas_egresos_sin_factura` + su egreso. */
 export interface CuotaTemplate {
@@ -44,9 +81,13 @@ export interface CuotaTemplate {
   estado: string
   /** Positivo = egreso. Negativo = devolución o ajuste a favor. */
   monto: number
+  /** Qué es (A-FEAT-1342). Sin dato = «sin clasificar». */
+  tipo?: TipoTemplate
 }
 
 export interface FilaPorMes {
+  /** Qué es: el primer eje de la solapa (A-FEAT-1342). */
+  tipo: TipoTemplate
   /**
    * 🔑 **Quién responde por el gasto** (MSA · PAM · MA · MSA/PAM).
    *
@@ -101,6 +142,11 @@ export interface TemplatesDelEjercicio {
    */
   impagasAlCierre: CuotaTemplate[]
   totalImpagas: number
+  /**
+   * 🧮 Los totales por tipo, en `ORDEN_TIPOS` (sólo los que tienen cuotas). **Control**: la suma de
+   * los grupos tiene que dar el total general — si no, una cuota quedó afuera o contada dos veces.
+   */
+  porTipo: TotalPorTipo[]
 }
 
 /** Estados que dicen «esta cuota no se usa»: no es gasto. */
@@ -116,10 +162,16 @@ const s = (v: unknown): string => (v == null ? "" : String(v))
 
 const MES_CORTO = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 
-/** Fila cruda (cuota + egreso embebido) → cuota normalizada. */
-export function desdeCuota(f: Record<string, unknown>): CuotaTemplate {
+/**
+ * Fila cruda (cuota + egreso embebido) → cuota normalizada.
+ * @param tipoDeCateg el `tipo` del plan de cuentas por categoría (el respaldo si el template no lo tiene).
+ */
+export function desdeCuota(f: Record<string, unknown>, tipoDeCateg?: Record<string, TipoCuenta | null | undefined>): CuotaTemplate {
   const e = (f.egreso ?? {}) as Record<string, unknown>
+  const categ = s(f.categ) || s(e.categ)
+  const r = resolverTipo((e.tipo as TipoCuenta | null) || null, tipoDeCateg?.[categ] ?? null)
   return {
+    tipo: r.origen === "signo" ? "sin clasificar" : r.tipo,
     id: s(f.id),
     // 🔑 El orden importa: lo pagado manda sobre lo estimado. Ver el § del encabezado.
     fecha: f.fecha_pago ? s(f.fecha_pago).slice(0, 10)
@@ -173,10 +225,11 @@ export function armarTemplatesDelEjercicio(
   for (const c of detalle) {
     const categ = c.categ || "(sin categoría)"
     const responsable = c.responsable || "(sin responsable)"
-    const clave = `${responsable}|${categ}`
+    const tipo = tipoDe(c)
+    const clave = `${tipo}|${responsable}|${categ}`
     if (!filas.has(clave)) {
       filas.set(clave, {
-        responsable, categ,
+        tipo, responsable, categ,
         debitos: new Array(12).fill(0), creditos: new Array(12).fill(0),
         neto: new Array(12).fill(0),
         totalDebitos: 0, totalCreditos: 0, totalNeto: 0,
@@ -202,8 +255,19 @@ export function armarTemplatesDelEjercicio(
       totalDebitos: redondear(f.totalDebitos), totalCreditos: redondear(f.totalCreditos),
       totalNeto: redondear(f.totalNeto),
     }))
-    // Ordenado por responsable y, dentro de cada uno, por lo que más pesa.
-    .sort((a, b) => a.responsable.localeCompare(b.responsable, "es") || b.totalNeto - a.totalNeto)
+    // Ordenado por tipo, después por responsable y, dentro de cada uno, por lo que más pesa.
+    .sort((a, b) => ORDEN_TIPOS.indexOf(a.tipo) - ORDEN_TIPOS.indexOf(b.tipo)
+      || a.responsable.localeCompare(b.responsable, "es") || b.totalNeto - a.totalNeto)
+
+  const porTipo: TotalPorTipo[] = ORDEN_TIPOS.map(tipo => {
+    const del = porMes.filter(f => f.tipo === tipo)
+    return {
+      tipo, cuotas: detalle.filter(c => tipoDe(c) === tipo).length,
+      totalDebitos: redondear(del.reduce((x, f) => x + f.totalDebitos, 0)),
+      totalCreditos: redondear(del.reduce((x, f) => x + f.totalCreditos, 0)),
+      totalNeto: redondear(del.reduce((x, f) => x + f.totalNeto, 0)),
+    }
+  }).filter(t => t.cuotas > 0)
 
   return {
     detalle, porMes, columnas,
@@ -212,5 +276,6 @@ export function armarTemplatesDelEjercicio(
     sinCategoria, sinFecha,
     noIncluidas, totalNoIncluidas: redondear(noIncluidas.reduce((x, c) => x + c.monto, 0)),
     impagasAlCierre, totalImpagas: redondear(impagasAlCierre.reduce((x, c) => x + c.monto, 0)),
+    porTipo,
   }
 }

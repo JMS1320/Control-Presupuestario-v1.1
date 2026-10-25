@@ -47,6 +47,8 @@
 - [💳 Extracto → Tarjeta de crédito: conciliar por resumen *(2026-10-03)*](#extracto-tarjeta-de-crédito-conciliar-por-resumen-2026-10-03)
 - [💸 Sueldos → pagar un sueldo REPARTIDO *(2026-09-30)*](#sueldos-pagar-un-sueldo-repartido-2026-09-30)
 - [🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30)*](#egresos-facturas-asignación-de-cuentas-2026-09-30)
+- [🗂️ Papeles de balance → templates por tipo y «¿llegó todo?» *(2026-10-24)*](#papeles-de-balance-templates-por-tipo-y-llegó-todo-2026-10-24)
+- [🗄️ Papeles de balance → lo que cargás queda guardado *(2026-10-24)*](#papeles-de-balance-lo-que-cargás-queda-guardado-2026-10-24)
 - [🧾 Papeles de balance → compras contra lo presentado a ARCA *(2026-10-23)*](#papeles-de-balance-compras-contra-lo-presentado-a-arca-2026-10-23)
 - [🧾 Papeles de balance → CUENTAS CORRIENTES *(2026-10-01)*](#papeles-de-balance-cuentas-corrientes-2026-10-01)
 - [👷 Papeles de balance → la solapa de SUELDOS *(2026-09-30)*](#papeles-de-balance-la-solapa-de-sueldos-2026-09-30)
@@ -3196,6 +3198,27 @@ con el dólar BNA importado a esa fecha.
   **«Actualizar la versión Sistema de la foto»**.
 
 ⚠️ Sin probar todavía → A-TEST-1182
+
+## 🗂️ Papeles de balance → templates por tipo y «¿llegó todo?» *(2026-10-24)*
+
+- Las solapas **Templates** y **Templates por mes** del Excel van separadas por tipo: **EGRESOS** (el gasto), **INGRESOS**, **DISTRIBUCIONES** (retiros y aportes), **FINANCIERO** (FCI, plazo fijo, caja, pago de tarjeta: no es gasto), **NO** y **SIN CLASIFICAR**. Adentro de cada tipo, por responsable (están todos: MSA, PAM, MA…). Al pie de Templates por mes, la «Diferencia por tipo» tiene que dar 0.
+- El tipo sale del template; si el template no lo tiene, de su cuenta en el plan. Lo que cae en **SIN CLASIFICAR** necesita que le pongas el tipo al template.
+- Al armar el libro, arriba dice **«✓ Llegó todo de la base»**. Si en cambio aparece un cartel rojo «Faltan datos», **no entregues ese Excel**: una consulta llegó incompleta y es un error de la app. Lo mismo dice la hoja **Control** y el papel 00 del índice.
+
+⚠️ Sin probar todavía → A-TEST-1242
+
+## 🗄️ Papeles de balance → lo que cargás queda guardado *(2026-10-24)*
+
+En **Reportes → Papeles de trabajo del balance**, lo que escribís a mano se guarda solo, por empresa y ejercicio, y aparece cargado cuando volvés otro día:
+- los **precios a mano** de las categorías de hacienda (tabla de «Traer stock y precios»);
+- las cuatro casillas del **cuadre de granos**: stock al inicio, cosecha, existencia al cierre y precio por tonelada;
+- las **cuotapartes** y el valor de la cuotaparte del fondo común (en «Pasar a la foto del balance propio»).
+
+Al lado de cada bloque dice si está guardado. Lo que trae la app sola (el stock, los precios del mercado) se recalcula cada vez que apretás **Traer stock y precios**: eso no hace falta guardarlo. Para que un precio a mano se use, apretá **Recalcular** después de escribirlo.
+
+Si borrás una casilla, queda vacía; la app guarda igual lo que había antes y quién lo cargó.
+
+⚠️ Sin probar todavía → A-TEST-1240
 
 ## 🧾 Papeles de balance → compras contra lo presentado a ARCA *(2026-10-23)*
 

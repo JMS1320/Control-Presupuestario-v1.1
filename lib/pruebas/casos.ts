@@ -88,7 +88,7 @@ import { deduplicarFilasSicore } from "@/lib/sicore/dedup"
 import { parsePendientes, esDelProceso } from "@/lib/pendientes/parse"
 import { calcularCuenta, etiquetaComprobante, restosComoMedios } from "@/lib/pagos/cuenta-detalle-pago"
 import { agruparPagosPorEmpleado } from "@/lib/sueldos/agrupar-pagos"
-import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
+import { hayQuePreguntarFechaPago, separarSinImporte } from "@/lib/pagos/preguntar-fecha-pago"
 import { etiquetaMonto } from "@/lib/conciliacion/etiqueta-monto"
 import { armarCuentaCorriente, leyendaSaldo } from "@/lib/proveedores/cuenta-corriente"
 import {
@@ -157,7 +157,7 @@ import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
 import { PRESENTADO_ARCA_COMPRAS, compararConPresentado } from "@/lib/balance/presentado-arca"
 import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/balance/facturas-fijas"
-import { armarTemplatesDelEjercicio } from "@/lib/balance/templates-libro"
+import { armarTemplatesDelEjercicio, desdeCuota } from "@/lib/balance/templates-libro"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
 import { pesosAlCierre, pesoParaValuar } from "@/lib/balance/pesos-hacienda"
@@ -166,7 +166,7 @@ import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
 } from "@/lib/balance/granos-sementeras"
 import {
-  armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados, tipoDesdeTexto, desdeArca, cargadaAMano,
+  armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados, tipoDesdeTexto, desdeArca, desdeHistorico, cargadaAMano,
   type AsientoLibroDiario,
 } from "@/lib/balance/libro-diario"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
@@ -222,12 +222,17 @@ import {
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
 import { esHistorico, estadoCuotaAlDesvincular, contarEstadisticasExtracto } from "@/lib/conciliacion/estado-historico"
 import { buscarConDobleAudit, type VinculoEnAuditar } from "@/lib/conciliacion/doble-audit"
-import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA, claveDedupMovimiento } from "@/lib/extractos/parseo-movimiento"
+import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA, claveDedupMovimiento, claveDeTipo, tipoDeMovimiento, tieneReglaPropia, columnasRepetidas, reglasDeLaPropuesta } from "@/lib/extractos/parseo-movimiento"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
-import { hojaDeAsientosContables } from "@/lib/balance/export-libro-diario"
+import { hojaDeAsientosContables, hojaDeTemplates, bloqueDeLecturas } from "@/lib/balance/export-libro-diario"
+import { juntarTandas, lecturaIncompleta } from "@/lib/supabase-paginado"
+import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
+import * as XLSXcasos from "xlsx"
+import { presentarHoja, MONEDA, ENTERO } from "@/lib/balance/formato-excel"
+import { armarFilaDato, leerNumero, textoEstadoGuardado } from "@/lib/balance/datos-usuario-puro"
 import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
 import { leerFacturaDelTexto, precargaDesdeLectura, cuitValido, parsearImporte } from "@/lib/gas-pdf/leer-factura"
 import { controlDeLaCarga, camposDeLaCarga, huellaDeLaCarga, aNegativoSiNC } from "@/lib/facturas/alta-factura"
@@ -8335,6 +8340,164 @@ export function correrCasos(): Resultado[] {
       copiaCerrada.ok ? ("cerrado" in copiaCerrada.fila ? "manda la columna" : "no la manda") : "error"].join(" · ")
     chequear("Accesos", "Crear rol copiando de uno CERRADO lo copia cerrado (si no, le daría todo lo demás); sin la columna todavía, no la manda",
       "true · no la manda · no la manda", vcopia, vcopia === "true · no la manda · no la manda", "A-FEAT-1333")
+  }
+
+  {
+    // ── Histórico: otros_tributos ya incluye las percepciones (A-BUG-1341) ──
+    // Fila real: Sposito 31-5817 del 02/10/2025, tal como está en msa.comprobantes_historico.
+    const sposito = desdeHistorico({ id: "x", anio_contable: 2025, mes_contable: 10, fecha: "2025-10-02", tipo: "1 - Factura A",
+      punto_de_venta: 31, numero_desde: 5817, nro_doc_emisor: "30", denominacion_emisor: "EMPRESA SPOSITO S A",
+      imp_neto_gravado: "1091608.38", imp_neto_no_gravado: "0", imp_op_exentas: "0", otros_tributos: "8732.87",
+      percepcion_iibb: "8732.87", percepcion_iva: "0", iva: "229237.75", imp_total: "1329579.00" })
+    const difSp = Math.round((sposito.total - (sposito.neto_gravado + sposito.no_gravado + sposito.exento + sposito.otros_tributos + sposito.iva)) * 100) / 100
+    chequear("Balance", "Histórico: la percepción ya está dentro de «otros tributos» — no se suma dos veces (antes la apertura no cerraba por $ 2.872,49)",
+      "otros 8732.87 · diferencia 0", `otros ${sposito.otros_tributos} · diferencia ${difSp}`, sposito.otros_tributos === 8732.87 && difSp === 0, "A-BUG-1341")
+
+    // ── La base entrega 1000 filas por consulta: se trae por tandas (A-BUG-1339) ──
+    const universo = Array.from({ length: 2046 }, (_, i) => i)
+    const todo = juntarTandas((d, h) => universo.slice(d, h + 1))
+    const vt = `${todo.filas.length} filas en ${todo.tandas} tandas · ${new Set(todo.filas).size === todo.filas.length ? "sin repetidas" : "con repetidas"}`
+    chequear("Balance", "Traer todo: 2046 cuotas llegan enteras (antes llegaban 1000 y la solapa Templates salía con meses vacíos)",
+      "2046 filas en 3 tandas · sin repetidas", vt, vt === "2046 filas en 3 tandas · sin repetidas", "A-BUG-1339")
+    const exacto = juntarTandas((d, h) => universo.slice(0, 1000).slice(d, h + 1))
+    const ve = `${exacto.filas.length} filas en ${exacto.tandas} tandas`
+    chequear("Balance", "Traer todo: si son justo 1000, pide una tanda más para confirmar que no hay más (el caso del banco jul→mar)",
+      "1000 filas en 2 tandas", ve, ve === "1000 filas en 2 tandas", "A-BUG-1339")
+    // ── Templates separados por tipo y ordenados por responsable (A-FEAT-1342 · A-FEAT-1338) ──
+    const ej1342 = armarEjercicio(2026, 6)
+    const cuotaT = (responsable: string, fecha: string, concepto: string, tipo?: "egreso" | "financiero" | "distribucion", monto = 100) =>
+      ({ id: concepto, fecha, concepto, proveedor: "", categ: "X" + (tipo ?? ""), cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable, estado: "pagado", monto, tipo })
+    const tpl = armarTemplatesDelEjercicio([
+      cuotaT("PAM", "2025-08-01", "b", "egreso"), cuotaT("MSA", "2026-01-01", "c", "egreso"), cuotaT("MSA", "2025-07-01", "a", "egreso"),
+      cuotaT("", "2025-07-01", "z", "egreso"), cuotaT("MSA", "2025-09-01", "fci", "financiero", 5000), cuotaT("MSA", "2025-10-01", "retiro", "distribucion", 300),
+      cuotaT("MSA", "2025-11-01", "nada", undefined, 7),
+    ], ej1342)
+    const filasT = hojaDeTemplates(tpl)
+    const conceptos = filasT.slice(1).filter(r => r.length > 2 && r[1] && !String(r[0]).startsWith("Total")).map(r => `${r[7] || "(sin)"} ${r[1]}`).join(" · ")
+    chequear("Balance", "Solapa Templates: primero los egresos (por responsable y fecha, los sin responsable al final), después distribuciones, financiero y sin clasificar",
+      "MSA a · MSA c · PAM b · (sin) z · MSA retiro · MSA fci · MSA nada", conceptos, conceptos === "MSA a · MSA c · PAM b · (sin) z · MSA retiro · MSA fci · MSA nada", "A-FEAT-1342")
+    const grupos = tpl.porTipo.map(g => `${g.tipo} ${g.totalNeto}`).join(" · ")
+    const sumaG = tpl.porTipo.reduce((x, g) => x + g.totalNeto, 0)
+    chequear("Balance", "Templates por tipo: el FCI queda en financiero (no suma al gasto) y la suma de los grupos da el total general",
+      "egreso 400 · distribucion 300 · financiero 5000 · sin clasificar 7 · suma 5707 = total 5707", `${grupos} · suma ${sumaG} = total ${tpl.totalDebitos - tpl.totalCreditos}`,
+      grupos === "egreso 400 · distribucion 300 · financiero 5000 · sin clasificar 7" && sumaG === tpl.totalDebitos - tpl.totalCreditos, "A-FEAT-1342")
+    const dc = (x: Record<string, unknown>, plan?: Record<string, "egreso" | "financiero" | null>) => desdeCuota(x, plan).tipo
+    const vtipo = [dc({ categ: "FCI", egreso: { tipo: "financiero" } }), dc({ categ: "FCI", egreso: {} }, { FCI: "financiero" }), dc({ categ: "RARO", egreso: {} }, {}),
+      dc({ categ: "FCI", egreso: { tipo: "egreso" } }, { FCI: "financiero" })].join(" · ")
+    chequear("Balance", "Tipo de una cuota: manda el del template, si no el del plan de cuentas; sin ninguno queda «sin clasificar» (no se adivina por el signo)",
+      "financiero · financiero · sin clasificar · egreso", vtipo, vtipo === "financiero · financiero · sin clasificar · egreso", "A-FEAT-1342")
+
+    // ── Reglas por CUIT: el CUIT está en leyendas_adicionales_2 (A-BUG-1344) ──
+    // Movimiento real de PAM cta cte del 17/03/2026 (MSA le transfiere $4.100.000), como viene del banco.
+    const movPam = { descripcion: "Servicio Pago A Proveedores", debitos: 0, creditos: 4100000, numero_de_comprobante: "", observaciones_cliente: "",
+      leyendas_adicionales_1: "MARTINEZ SOBRADO AGRO S.R.L.", leyendas_adicionales_2: "30617786016" }
+    const reglaCuit = (texto: string) => ({ columna_busqueda: "cuit", tipo_match: "exacto", texto_buscar: texto })
+    const vcuit = [evaluarReglaConciliacion(movPam, reglaCuit("30617786016")), evaluarReglaConciliacion(movPam, reglaCuit("30-61778601-6")),
+      evaluarReglaConciliacion(movPam, reglaCuit("20044390222"))].map(String).join(" · ")
+    chequear("Conciliación", "Regla por CUIT: coincide con el CUIT que el banco deja en leyendas 2 (con o sin guiones) y no con otro CUIT — antes no coincidía nunca",
+      "true · true · false", vcuit, vcuit === "true · true · false", "A-BUG-1344")
+    const vdesc = [evaluarReglaConciliacion(movPam, { columna_busqueda: "descripcion", tipo_match: "contiene", texto_buscar: "pago a proveedores" }),
+      evaluarReglaConciliacion(movPam, { columna_busqueda: "monto_credito", tipo_match: "exacto", texto_buscar: "4100000" }),
+      evaluarReglaConciliacion(movPam, { columna_busqueda: "descripcion", tipo_match: "contiene", texto_buscar: "" })].map(String).join(" · ")
+    chequear("Conciliación", "Reglas por descripción y por monto siguen igual; una regla con el texto vacío no coincide con todo",
+      "true · true · false", vdesc, vdesc === "true · true · false", "A-BUG-1344")
+
+    // ── Tipos de parseo: sin puntos y sin número de cheque son el mismo tipo (A-FEAT-1347) ──
+    // Tipos reales de la caja de ahorro de PAM, como los manda el banco.
+    const vk = [claveDeTipo("DEB. AUTOM. DE SERV.") === claveDeTipo("DEB AUTOM DE SERV"), claveDeTipo("ING. BRUTOS S/ CRED") === claveDeTipo("ING BRUTOS S/ CRED"),
+      claveDeTipo("GDE ECHEQ   Q03521175 BOL77388704") === claveDeTipo("GDE ECHEQ   Q96578776 BOL78477425"),
+      claveDeTipo("IMP CRE LEY 25413"), claveDeTipo("COMPRA DEBITO") === claveDeTipo("COMPRA CON DEBITO")].map(String).join(" · ")
+    chequear("Parseo", "Tipo de movimiento: un punto no es diferencia; dos echeq con distinto número son el mismo tipo; «LEY 25413» queda; COMPRA DEBITO ≠ COMPRA CON DEBITO",
+      "true · true · true · IMP CRE LEY 25413 · false", vk, vk === "true · true · true · IMP CRE LEY 25413 · false", "A-FEAT-1347")
+    const mapaPuntos = { "DEB AUTOM DE SERV": [{ campo_destino: "leyendas_adicionales_1", tipo_regla: "linea", numero_linea: 2, grupo_de_conceptos: "000083" }] }
+    const rawPuntos = "DEB. AUTOM. DE SERV.\nEDENOR"
+    const vp = [tipoDeMovimiento(rawPuntos), String(tieneReglaPropia(rawPuntos, mapaPuntos)), parsearMovimiento(rawPuntos, mapaPuntos).grupo_de_conceptos,
+      parsearMovimiento(rawPuntos, mapaPuntos).descripcion].join(" · ")
+    chequear("Parseo", "Un movimiento escrito con puntos usa la regla escrita sin puntos; la descripción guardada sigue siendo la del banco",
+      "DEB AUTOM DE SERV · true · 000083 · DEB. AUTOM. DE SERV.", vp, vp === "DEB AUTOM DE SERV · true · 000083 · DEB. AUTOM. DE SERV.", "A-FEAT-1347")
+
+    // ── Choque en el editor y tilde que acepta la propuesta (A-BUG-1353, A-FEAT-1354) ──
+    // El movimiento real de MA de 7 líneas: L5 (identificador) y L6 (tarjeta) van a la misma columna.
+    const filasMA = [{ campo: "descripcion", numero: 1 }, { campo: "numero_de_terminal", numero: 5 }, { campo: "numero_de_terminal", numero: 6 }, { campo: "", numero: 7 }, { campo: "", numero: 8 }]
+    const vrep = columnasRepetidas(filasMA).map(r => `${r.campo}:${r.lineas.join("+")}`).join(" · ") || "ninguna"
+    chequear("Parseo", "Editor: Terminal y Tarjeta en la misma columna se detectan como choque (antes decía «0 cambios»); las líneas sin asignar no cuentan",
+      "numero_de_terminal:5+6", vrep, vrep === "numero_de_terminal:5+6", "A-BUG-1353")
+    const prop = reglasDeLaPropuesta(["TRANSFERENCIA DE TERCEROS", "SOLEDAD MARTINEZ", "27260467382", "VARIOS", "BANCO DE GALICIA Y BUENOS AIRES SAU"])
+    const vprop = `${prop.repetidas.length} · ` + prop.reglas.map(r => `L${r.linea}>${r.campo}`).join(" ")
+    const esperado = "0 · L1>descripcion L2>leyendas_adicionales_1 L3>leyendas_adicionales_2 L4>leyendas_adicionales_3 L5>leyendas_adicionales_4"
+    chequear("Parseo", "Tilde sin configurar: guarda lo mismo que muestra «Dónde va a quedar cada línea» (caso real de PAM, 5 líneas)",
+      esperado, vprop, vprop === esperado, "A-FEAT-1354")
+
+    // ── Auditoría: un modo que busca guarda un pedazo de la línea (A-BUG-1356) ──
+    // PAGO TARJETA AMEX de PAM, real: la regla de Nº de operación guarda 2522426 de «OPERACION 2522426».
+    const auAmex = auditarSubtipo(["PAGO TARJETA AMEX", "OPERACION 2522426"], [
+      { campo_destino: "descripcion", tipo_regla: "linea", numero_linea: 1, grupo_de_conceptos: "Otros", firma_forma: "2:tipo,texto" },
+      { campo_destino: "numero_de_comprobante", tipo_regla: "nro_operacion", numero_linea: null, grupo_de_conceptos: "Otros", firma_forma: "2:tipo,texto" }])
+    const vau = `${auAmex.hallazgos.length} hallazgos · ${auAmex.resueltas} resueltas`
+    chequear("Parseo", "Auditoría del subtipo: el Nº de operación guardado sin la palabra OPERACION no se marca como «hoy no se guarda»",
+      "0 hallazgos · 2 resueltas", vau, vau === "0 hallazgos · 2 resueltas", "A-BUG-1356")
+
+    // ── Cuotas en $0: no hubo nada que pagar, no se pide fecha (A-FEAT-1357) ──
+    // 5 cuotas de IIBB MSA en cero, como llegan de la base (texto), más una con importe y una sin monto.
+    const lote0 = [{ id: "a", monto: "0.00" }, { id: "b", monto: 0 }, { id: "c", monto: "0" }, { id: "d", monto: 15230.5 }, { id: "e", monto: null }]
+    const sep = separarSinImporte(lote0)
+    const v0 = `${sep.sinImporte.map(f => f.id).join("")} · ${sep.conImporte.map(f => f.id).join("")}`
+    chequear("Templates", "Pasar a conciliado: las cuotas en $0 van sin fecha de pago; las que tienen importe —y las de monto vacío, ante la duda— la piden",
+      "abc · de", v0, v0 === "abc · de", "A-FEAT-1357")
+
+    // ── ¿Llegó todo de la base? (A-FEAT-1343) ──
+    const lects = [{ nombre: "Extracto BANCO GALICIA", llegaron: 1000, esperadas: 1563 }, { nombre: "Ventas", llegaron: 9, esperadas: 9 }, { nombre: "Sueldos", llegaron: 103, esperadas: null }]
+    const vl = lects.map(l => lecturaIncompleta(l) ? "incompleta" : "ok").join(" · ")
+    chequear("Balance", "Control de lecturas: 1000 de 1563 es incompleta; 9 de 9 está bien; sin el dato de la base no se inventa un error",
+      "incompleta · ok · ok", vl, vl === "incompleta · ok · ok", "A-FEAT-1343")
+    const bl = bloqueDeLecturas(lects)
+    const vb = `${String(bl[0][0]).includes("NO: 1 consulta") ? "titular NO" : bl[0][0]} · ${bl[2][3]} · ${bl[3][3]} · ${bl[4][3]}`
+    chequear("Balance", "Hoja Control: dice si llegó todo y marca NO CUADRA la consulta cortada (lo que habría avisado el corte de las 1000 filas)",
+      "titular NO · NO CUADRA · cuadra · sin dato", vb, vb === "titular NO · NO CUADRA · cuadra · sin dato", "A-FEAT-1343")
+
+    // ── Lo que carga el usuario en el balance se guarda (A-FEAT-1337 paso 1) ──
+    const base1337 = { empresa: "MSA", anio_cierre: 2026, papel: "hacienda.precio", clave: "Vaca" }
+    const primera = armarFilaDato(base1337, " 1.250.000,50 ", null, "jms", "2026-10-24T15:00:00Z")
+    const v1 = primera ? `${primera.texto} · ${primera.valor} · historial ${primera.historial.length} · ${primera.actualizado_por}` : "no guarda"
+    chequear("Balance", "Datos del balance: la primera carga guarda lo escrito, el número leído en es-AR y quién lo cargó",
+      "1.250.000,50 · 1250000.5 · historial 0 · jms", v1, v1 === "1.250.000,50 · 1250000.5 · historial 0 · jms", "A-FEAT-1337")
+    const igual = armarFilaDato(base1337, "1.250.000,50", primera, "jms", "2026-10-24T15:01:00Z")
+    chequear("Balance", "Datos del balance: si la casilla no cambió no se escribe de más", "no escribe", igual === null ? "no escribe" : "escribe",
+      igual === null, "A-FEAT-1337")
+    const segunda = armarFilaDato(base1337, "", primera, "ulises", "2026-10-25T10:00:00Z")
+    const v2 = segunda ? `texto ${segunda.texto} · valor ${segunda.valor} · historial ${segunda.historial.map(h => `${h.texto} (${h.por})`).join(", ")}` : "no guarda"
+    chequear("Balance", "Datos del balance: vaciar una casilla NO borra la fila — queda vacía y el historial guarda lo que había y quién",
+      "texto null · valor null · historial 1.250.000,50 (jms)", v2, v2 === "texto null · valor null · historial 1.250.000,50 (jms)", "A-FEAT-1337")
+    const vn = [leerNumero("12,5"), leerNumero("abc"), leerNumero("   ")].map(String).join(" · ")
+    chequear("Balance", "Datos del balance: un texto ilegible o vacío es «no lo sé» (null), nunca cero", "12.5 · null · null", vn, vn === "12.5 · null · null", "A-FEAT-1337")
+    const sinT = textoEstadoGuardado("sin tabla", null)
+    chequear("Balance", "Datos del balance: sin el script 100 la pantalla avisa que NO se guarda (no rompe)", "avisa", sinT.includes("NO se guarda") ? "avisa" : sinT,
+      sinT.includes("NO se guarda"), "A-FEAT-1337")
+
+    // ── Presentación del Excel del balance (A-FEAT-1338) ──
+    const ws = XLSXcasos.utils.aoa_to_sheet([
+      ["COMPRAS vs. LO PRESENTADO A ARCA"],
+      ["Subdiario", "App: comprobantes", "App: total", "Diferencia", ""],
+      ["2025-12", 40, 16394196.92, -580510.57, "NO COINCIDE"],
+      ["2026-01", 42, 12233837.36, 0, "coincide"],
+      ["TOTAL", 82, 28628034.28],
+    ])
+    presentarHoja(ws)
+    const sty = (d: string) => ((ws[d] as { s?: { font?: { bold?: boolean; color?: { rgb?: string } }; fill?: unknown } }).s ?? {})
+    const z = (d: string) => (ws[d] as { z?: string }).z
+    const vfmt = [z("C3") === MONEDA ? "importe Contabilidad" : z("C3"), z("B3") === ENTERO ? "cantidad entera" : z("B3"),
+      z("D4") === MONEDA ? "cero con guion" : z("D4")].join(" · ")
+    chequear("Balance", "Excel: todo número lleva formato (importe en Contabilidad, cantidad entera, el cero con guion) aunque la hoja no tenga columnas",
+      "importe Contabilidad · cantidad entera · cero con guion", vfmt, vfmt === "importe Contabilidad · cantidad entera · cero con guion", "A-FEAT-1338")
+    const neg = MONEDA.split(";")[1]
+    chequear("Balance", "Excel: el negativo va entre paréntesis", "entre paréntesis", neg.includes("(#,##0.00)") ? "entre paréntesis" : neg,
+      neg.includes("(#,##0.00)"), "A-FEAT-1338")
+    const vsty = [sty("A1").font?.bold && sty("A1").fill ? "título" : "-", sty("B2").font?.bold && sty("B2").fill ? "encabezado" : "-",
+      sty("A5").font?.bold ? "total" : "-", sty("E3").font?.color?.rgb === "FFA12B2B" ? "aviso rojo" : "-",
+      sty("E4").font?.color?.rgb === "FF2E7A3C" ? "ok verde" : "-", sty("A3").font?.bold ? "fila común en negrita" : "fila común normal"].join(" · ")
+    chequear("Balance", "Excel: título, encabezado y total en negrita; NO COINCIDE en rojo, coincide en verde; las filas comunes sin tocar",
+      "título · encabezado · total · aviso rojo · ok verde · fila común normal", vsty,
+      vsty === "título · encabezado · total · aviso rojo · ok verde · fila común normal", "A-FEAT-1338")
   }
 
   return r

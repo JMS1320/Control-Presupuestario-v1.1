@@ -237,6 +237,16 @@ export function VistaExtractoBancario() {
   const [configuradorAbierto, setConfiguradorAbierto] = useState(false)
   const [cuentaConfig, setCuentaConfig] = useState('msa_galicia')
   const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>("msa_galicia")
+  /**
+   * 🌙 Nota del usuario 2026-10-24: «abrí configuración reglas y me abre en cta cte MSA… debería abrir
+   * las reglas de cta cte PAM… que abra desde donde se está». Al ABRIR el modal toma la cuenta del
+   * extracto que se está viendo; adentro se puede cambiar igual.
+   */
+  useEffect(() => {
+    if (configuradorAbierto && CUENTAS_BANCARIAS.some(c => c.id === cuentaSeleccionada && c.activa)) {
+      setCuentaConfig(cuentaSeleccionada)
+    }
+  }, [configuradorAbierto]) // eslint-disable-line react-hooks/exhaustive-deps
   const [selectorAbierto, setSelectorAbierto] = useState(false)
   const [filtroEstado, setFiltroEstado] = useState<'Todos' | 'conciliado' | 'pendiente' | 'auditar' | 'historico'>('Todos')
   const [modoEdicion, setModoEdicion] = useState(false)

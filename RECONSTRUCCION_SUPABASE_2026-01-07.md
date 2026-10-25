@@ -3648,6 +3648,10 @@ ALTER TABLE public.reglas_ctas_import_arca
 ```
 `buscarReglaCuit` selecciona `fc`; el import hace `fc: reglaCuit.fc || 'Buscar'` (la imputación manual lo sigue pisando).
 
+### 2026-10-24 · LO QUE CARGA EL USUARIO EN EL BALANCE (script 100) — A-FEAT-1337
+
+Tabla nueva `public.balance_datos_usuario` (empresa, anio_cierre, papel, clave, texto, valor numeric(20,4), historial jsonb, actualizado_por, created_at, updated_at; único empresa+anio_cierre+papel+clave), comentario con la marca `[script 100]`. RLS `ver_segun_permiso`/`escribir_segun_permiso`, `revoke` a `anon`, `authenticated` select/insert/update (sin delete); 1 fila en `recurso_tablas` (recurso `extracto`, `restringe_lectura = true`). Script `scripts/100-balance-datos-usuario.sql` (se frena si la tabla existe; el deshacer exige la marca y la tabla vacía). ✅ **Corrido 2026-10-24** con OK del usuario y aviso previo a Javier.
+
 ### 2026-10-24 · ROL CERRADO (script 99) — A-FEAT-1333
 
 `public.roles.cerrado boolean not null default false` (comentario con la marca `[script 99]`). En un rol cerrado, `permisos` dice lo que se le DA y lo registrado después nace apagado; `false` = como siempre. Script `scripts/99-roles-cerrado.sql` (se frena si la columna ya existe; el deshacer sólo la borra si lleva la marca y no hay roles cerrados). ✅ **Corrido 2026-10-24** con OK del usuario y aviso previo a Javier: 5 roles, los 5 en `false`.
