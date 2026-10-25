@@ -35,7 +35,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, Plus, Trash2, FileWarning, Check, Pencil, Info } from "lucide-react"
 import { toast } from "sonner"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
-import { aplicarRegla, proponerMapeo, esCuit, claveDeTipo, mismoTipo, columnasRepetidas, reglasDeLaPropuesta, tieneGrupoPrevisto, COLUMNA_CBU, auditarSubtipo, resolverFilaExistente, grupoParaGuardar, GRUPOS_GALICIA, grupoSugeridoParaTipo, type LineaPropuesta, type ContenidoLinea, type AuditoriaSubtipo, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES, DESTINO_POR_CONTENIDO } from "@/lib/extractos/parseo-movimiento"
+import { aplicarRegla, proponerMapeo, esCuit, esCbu, claveDeTipo, mismoTipo, columnasRepetidas, reglasDeLaPropuesta, tieneGrupoPrevisto, COLUMNA_CBU, auditarSubtipo, resolverFilaExistente, grupoParaGuardar, GRUPOS_GALICIA, grupoSugeridoParaTipo, type LineaPropuesta, type ContenidoLinea, type AuditoriaSubtipo, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES, DESTINO_POR_CONTENIDO } from "@/lib/extractos/parseo-movimiento"
 
 /**
  * Sólo las cuentas cuyo importador desglosa por reglas (Caja de Ahorro). Los ids son los mismos
@@ -144,7 +144,7 @@ function lineaDeRegla(r: Regla, lineas: string[]): number {
     case "cuit": return idxCuit
     case "pre_cuit": return idxCuit >= 2 ? idxCuit - 1 : -1
     case "post_cuit": return idxCuit >= 0 ? idxCuit + 1 : -1
-    case "cbu": return lineas.findIndex(l => /^\d{22}$/.test(l.trim()))
+    case "cbu": return lineas.findIndex(l => esCbu(l))
     case "tarjeta": return lineas.findIndex(l => /X{4,}/i.test(l) && /\d/.test(l))
     case "nro_operacion": return lineas.findIndex(l => /OPERACION|OP:/i.test(l))
   }

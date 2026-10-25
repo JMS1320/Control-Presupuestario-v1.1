@@ -32,6 +32,20 @@ quién se le pagó sin abrir el texto.
 demás —reglas, subtipos, re-parseo— se rehace cuantas veces haga falta. **Nunca hay que volver a
 importar el Excel.**
 
+### 📄 Cuando entra por el resumen PDF *(2026-10-24, A-FEAT-1352)*
+
+El resumen PDF trae los mismos datos **escritos de otra manera**, y si se guardara tal cual cada
+movimiento caería en un subtipo nuevo. Por eso el importador (`lib/extractos/pdf-caja-ahorro-galicia.ts`)
+lo **reescribe como lo escribe el Excel** antes del parseo: tarjeta enmascarada (`4517XXXXXXXXXX29`),
+`CU  ` con dos espacios, tarjeta al final, y el «origen» como última línea con su letra (`0279` →
+`A279`; la letra sale de cómo vino ese tipo en la cuenta, `C` en las extracciones por sucursal).
+
+En `concepto` queda entonces **ese texto reescrito**, no el del PDF — es la excepción a la regla de
+arriba, y por eso esas filas llevan `origen = 'CA_GALICIA_PDF'`. Dos datos el PDF los **corta** y no
+se pueden reconstruir del todo: nombres a 20 letras y **CBU a 20 dígitos**. Se completan sólo con un
+candidato único de lo ya conocido; el CBU que no se completa **se toma igual como CBU** (`esCbu`
+acepta 20 dígitos, decisión del usuario), así la transferencia conserva su subtipo.
+
 ---
 
 ## 🧬 El TIPO es la unidad. El SUBTIPO aparece sólo cuando hace falta

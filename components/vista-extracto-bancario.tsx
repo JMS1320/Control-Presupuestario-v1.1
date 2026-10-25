@@ -8,7 +8,8 @@ import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
 import { conciliarOrigenDelMovimiento, schemaDeFactura } from "@/lib/conciliacion/confirmar-origen"
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
-import { Permisable } from "@/components/modo-permisos"
+import { Permisable, useSeMuestra } from "@/components/modo-permisos"
+import { REGLAS_EXTRACTO, primeraPermitida, hayAlguna, tabInicialAsignar } from "@/lib/auth/ventanas"
 import { usePuedeVer, usePrimeraVisible } from "@/components/contexto-permisos"
 import { ETIQUETA_SENTIDO, type Sentido } from "@/lib/movimientos/sentido"
 import { Button } from "@/components/ui/button"
@@ -34,6 +35,7 @@ import { WizardTemplatesEgresos } from "@/components/wizard-templates-egresos"
 import { cuotaDelMovimiento } from "@/lib/templates/cuotas-del-template"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { AvisoNcTarjeta } from "@/components/aviso-nc-tarjeta"
+import { ResultadoPdfCajaAhorro } from "@/components/resultado-pdf-caja-ahorro"
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -241,6 +243,8 @@ export function VistaExtractoBancario() {
   const puedeVer = usePuedeVer()
   const primeraVisible = usePrimeraVisible()
   const cuentaPermitida = (id: string) => puedeVer(`extracto.cuenta.${id}`)
+  // 🕳️ A-BUG-1335: las funciones de adentro de las ventanas (reglas, asignar a mano). Respeta el modo permisos.
+  const seMuestra = useSeMuestra()
   const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>(
     () => CUENTAS_BANCARIAS.find((c) => cuentaPermitida(c.id))?.id ?? "msa_galicia")
   /**
@@ -1962,7 +1966,8 @@ Pasan a conciliado junto con su factura o cuota. El motivo queda en la nota.`)) 
      * de compra, así que abrir en «Template» es hacerle cambiar de pestaña todas las veces.
      */
     const esIngreso = Number(movimiento.creditos) > 0
-    setTabAsignar(esIngreso ? 'venta' : 'template')
+    // A-BUG-1335: si la de siempre está apagada para este rol, la primera que tenga.
+    setTabAsignar((tabInicialAsignar(esIngreso, seMuestra) ?? (esIngreso ? 'venta' : 'template')) as any)
 
     if (esIngreso) {
       /**
@@ -3285,6 +3290,10 @@ ${marca}` : marca
               : 'Seleccionar cuenta'}
           </Button>
 
+          {/* A-BUG-1335: sin ninguna regla permitida, no hay nada que configurar. */}
+
+          {hayAlguna(REGLAS_EXTRACTO, seMuestra) && (<>
+
           <Button
             variant="outline"
             onClick={() => setConfiguradorAbierto(true)}
@@ -3293,6 +3302,8 @@ ${marca}` : marca
             <Settings className="h-4 w-4" />
             Configuración
           </Button>
+
+          </>)}
 
           {/* Re-parsear: sólo en Caja de Ahorro, que son las que desglosan por reglas */}
           {CUENTAS_CON_PARSEO.includes(cuentaSeleccionada) && (
@@ -4819,7 +4830,7 @@ ${marca}` : marca
                                 {/* ✅ Un movimiento «para revisar» se da por bueno de un click. */}
                                 {/* 📅 A-FEAT-1302 — falta la campaña: en vez del OK (que lo dejaría conciliado sin
                                     cuota), el botón que la crea — abre Asignar → Template, donde está el asistente. */}
-                                {String(movimiento.estado).toLowerCase() === 'auditar' && faltaCampanaDelMotivo(movimiento.motivo_revision) ? (
+                                {String(movimiento.estado).toLowerCase() === 'auditar' && faltaCampanaDelMotivo(movimiento.motivo_revision) ? (seMuestra("extracto.template") &&
                                   <Button size="sm" variant="outline" className="h-6 px-2 text-[11px] text-amber-800 border-amber-400 bg-amber-50 shrink-0"
                                     title="Crea la campaña que falta (copiando el template) y le asigna la cuota de su mes"
                                     onClick={(e) => { e.stopPropagation(); void abrirModalAsignar(movimiento) }}>
@@ -4903,6 +4914,8 @@ ${marca}` : marca
                           )}
                           <TableCell>
                             {(() => {
+                              // A-BUG-1335: si el rol no puede asignar a nada de esta ventana, no hay botón.
+                              if (tabInicialAsignar(Number(movimiento.creditos) > 0, seMuestra) === null) return null
                               const categInvalida = !!movimiento.categ && !cuentasCategSet.has(movimiento.categ.toUpperCase().trim()) && !templateCategSet.has(movimiento.categ.toUpperCase().trim())
                               const sinVincular = movimiento.estado === 'conciliado' && !movimiento.comprobante_arca_id && !movimiento.template_id
                               const esConciliado = movimiento.estado === 'conciliado'
@@ -4999,12 +5012,19 @@ ${marca}` : marca
 <SoloLectura recurso="extracto.importar">
           {(() => {
             // Configuración por cuenta. `alt` = importador alternativo (ej: tarjetas tienen PDF default + Excel manual).
-            type ImpCfg = { endpoint: string; formato: string; accept: string; modo: 'excel' | 'pdf' }
+            // `boton` = el texto del selector cuando la cuenta tiene dos modos (default: el de las tarjetas)
+            type ImpCfg = { endpoint: string; formato: string; accept: string; modo: 'excel' | 'pdf'; boton?: string }
+            // 📄 A-FEAT-1352 — caja de ahorro: el resumen PDF entra por la MISMA ruta que el Excel (la ruta lo
+            // convierte a las filas del Excel), para cuando los movimientos no se bajaron a tiempo.
+            const PDF_CA = (quien: string): ImpCfg => ({
+              modo: 'pdf', endpoint: '/api/import-excel-ca', boton: '📄 Resumen PDF', accept: '.pdf',
+              formato: `Resumen PDF ${quien} Galicia Caja de Ahorro (.pdf) — se convierte al formato del Excel del banco`,
+            })
             const CONFIG_IMPORTADORES: Record<string, ImpCfg & { alt?: ImpCfg }> = {
               msa_galicia:     { modo: 'excel', endpoint: '/api/import-excel',      formato: 'Excel MSA Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
               pam_galicia_cc:  { modo: 'excel', endpoint: '/api/import-excel',      formato: 'Excel PAM Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
-              pam_galicia:     { modo: 'excel', endpoint: '/api/import-excel-ca',   formato: 'Excel PAM Galicia CA (.xlsx)',  accept: '.xlsx,.xls' },
-              ma_galicia:      { modo: 'excel', endpoint: '/api/import-excel-ca',   formato: 'Excel MA Galicia CA (.xlsx)',   accept: '.xlsx,.xls' },
+              pam_galicia:     { modo: 'excel', endpoint: '/api/import-excel-ca',   formato: 'Excel PAM Galicia CA (.xlsx)',  accept: '.xlsx,.xls', boton: '📊 Excel del banco', alt: PDF_CA('PAM') },
+              ma_galicia:      { modo: 'excel', endpoint: '/api/import-excel-ca',   formato: 'Excel MA Galicia CA (.xlsx)',   accept: '.xlsx,.xls', boton: '📊 Excel del banco', alt: PDF_CA('MA') },
               caja_general:    { modo: 'excel', endpoint: '/api/import-excel-caja', formato: 'Excel Caja General (.xlsx) — columnas: FECHA / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO', accept: '.xlsx,.xls' },
               caja_ams:        { modo: 'excel', endpoint: '/api/import-excel-caja', formato: 'Excel Caja AMS (.xlsx) — columnas: FECHA / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO',     accept: '.xlsx,.xls' },
               caja_sigot:      { modo: 'excel', endpoint: '/api/import-excel-caja', formato: 'Excel Caja Sigot (.xlsx) — columnas: FECHA / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO',   accept: '.xlsx,.xls' },
@@ -5085,7 +5105,10 @@ ${marca}` : marca
             // Multi-PDF solo aplica al importador de tarjeta (PDF) con más de un archivo
             const esMultiPdf = config.endpoint === '/api/import-pdf-tarjeta' && importFiles.length > 1
 
-            const handleImport = async () => {
+            // 👁 «Ver cómo queda» (sólo resumen PDF de caja de ahorro): procesa todo y no guarda nada
+            const puedePrevisualizar = config.modo === 'pdf' && config.endpoint === '/api/import-excel-ca'
+
+            const handleImport = async (previsualizar = false) => {
               if (!config || (!importFile && importFiles.length === 0)) return
               setImportLoading(true)
               setImportResult(null)
@@ -5129,6 +5152,7 @@ ${marca}` : marca
                     fd.append('saldo_inicial', importSaldoInicial)
                   }
                   if (importForzar) fd.append('forzar', 'true')
+                  if (previsualizar) fd.append('previsualizar', 'true')
                   const res = await fetch(config.endpoint, { method: 'POST', body: fd })
                   const data = await res.json()
                   setImportResult({ ...data, ok: res.ok && data.ok !== false && data.success !== false })
@@ -5166,6 +5190,8 @@ ${marca}` : marca
                 </CardHeader>
                 <CardContent className="space-y-4">
 
+                  {puedePrevisualizar && <TestsDelProceso proceso="extracto/importar-pdf" pantalla="extracto" />}
+
                   {/* Selector tipo de archivo (solo si la cuenta soporta 2 modos, ej. tarjetas: PDF + Excel) */}
                   {cfgBase?.alt && (
                     <div className="space-y-2">
@@ -5178,7 +5204,7 @@ ${marca}` : marca
                           onClick={() => { setImportTipoArchivo('base'); setImportFile(null); setImportResult(null) }}
                           disabled={importLoading}
                         >
-                          📄 PDF Galicia (oficial)
+                          {cfgBase.boton ?? '📄 PDF Galicia (oficial)'}
                         </Button>
                         <Button
                           type="button"
@@ -5187,7 +5213,7 @@ ${marca}` : marca
                           onClick={() => { setImportTipoArchivo('alt'); setImportFile(null); setImportResult(null) }}
                           disabled={importLoading}
                         >
-                          📊 Excel manual
+                          {cfgBase.alt.boton ?? '📊 Excel manual'}
                         </Button>
                       </div>
                     </div>
@@ -5200,7 +5226,7 @@ ${marca}` : marca
                       id="import-file-input"
                       type="file"
                       accept={config.accept}
-                      multiple={config.modo === 'pdf'}
+                      multiple={config.endpoint === '/api/import-pdf-tarjeta'}
                       onChange={handleFileChange}
                       disabled={importLoading}
                     />
@@ -5209,8 +5235,11 @@ ${marca}` : marca
                     ) : importFile && (
                       <p className="text-sm text-muted-foreground">✅ {importFile.name}</p>
                     )}
-                    {config.modo === 'pdf' && (
+                    {config.endpoint === '/api/import-pdf-tarjeta' && (
                       <p className="text-xs text-muted-foreground">Podés seleccionar varios PDFs juntos; se ordenan e importan del más viejo al más nuevo.</p>
+                    )}
+                    {config.modo === 'pdf' && config.endpoint === '/api/import-excel-ca' && (
+                      <p className="text-xs text-muted-foreground">Un resumen por vez, del más viejo al más nuevo. Antes de importar podés tocar «Ver cómo queda»: no guarda nada.</p>
                     )}
                   </div>
 
@@ -5247,7 +5276,12 @@ ${marca}` : marca
                   )}
 
                   {/* Botón */}
-                  <Button onClick={handleImport} disabled={!importFile || importLoading} className="w-full">
+                  {puedePrevisualizar && (
+                    <Button variant="outline" onClick={() => handleImport(true)} disabled={!importFile || importLoading} className="w-full">
+                      👁 Ver cómo queda (no guarda nada)
+                    </Button>
+                  )}
+                  <Button onClick={() => handleImport()} disabled={!importFile || importLoading} className="w-full">
                     {importLoading
                       ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Procesando…</>
                       : <><Upload className="mr-2 h-4 w-4" />Importar movimientos</>
@@ -5283,6 +5317,11 @@ ${marca}` : marca
                             </Alert>
                           ))}
                         </div>
+                      )}
+
+                      {/* 📄 Resumen PDF de caja de ahorro: control, adaptación y vista previa (A-FEAT-1352) */}
+                      {importResult.pdf && (
+                        <ResultadoPdfCajaAhorro pdf={importResult.pdf} filas={importResult.previsualizacion ? importResult.filas : undefined} />
                       )}
 
                       {/* Resumen de tarjeta (PDF) */}
@@ -5444,12 +5483,12 @@ ${marca}` : marca
             </Select>
           </div>
 
-          <Tabs defaultValue="conciliacion" className="w-full">
+          <Tabs defaultValue={primeraPermitida(REGLAS_EXTRACTO, seMuestra) ?? "conciliacion"} className="w-full">
             <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="conciliacion">Reglas Conciliación</TabsTrigger>
-              <TabsTrigger value="contable-interno">Contable e Interno</TabsTrigger>
+              <Permisable recurso="extracto.conciliacion"><TabsTrigger value="conciliacion">Reglas Conciliación</TabsTrigger></Permisable>
+              <Permisable recurso="extracto.contable-interno"><TabsTrigger value="contable-interno">Contable e Interno</TabsTrigger></Permisable>
               {/* Las otras dos son de CONCILIACIÓN; ésta es de IMPORT — otra tabla, otro momento */}
-              <TabsTrigger value="parseo">Reglas de Parseo (import)</TabsTrigger>
+              <Permisable recurso="extracto.parseo"><TabsTrigger value="parseo">Reglas de Parseo (import)</TabsTrigger></Permisable>
             </TabsList>
 
             <TabsContent value="conciliacion" className="mt-4">
@@ -5658,13 +5697,13 @@ ${marca}` : marca
 
           <Tabs value={tabAsignar} onValueChange={(v) => setTabAsignar(v as any)}>
             <TabsList className="w-full">
-              <TabsTrigger value="template" className="flex-1">Template</TabsTrigger>
-              <TabsTrigger value="arca" className="flex-1">Factura ARCA</TabsTrigger>
-              <TabsTrigger value="sueldo" className="flex-1">Sueldo</TabsTrigger>
-              <TabsTrigger value="grupo" className="flex-1">Grupo</TabsTrigger>
+              <Permisable recurso="extracto.template"><TabsTrigger value="template" className="flex-1">Template</TabsTrigger></Permisable>
+              <Permisable recurso="extracto.arca"><TabsTrigger value="arca" className="flex-1">Factura ARCA</TabsTrigger></Permisable>
+              <Permisable recurso="extracto.sueldo"><TabsTrigger value="sueldo" className="flex-1">Sueldo</TabsTrigger></Permisable>
+              <Permisable recurso="extracto.grupo"><TabsTrigger value="grupo" className="flex-1">Grupo</TabsTrigger></Permisable>
               {/* 💰 Sólo para ingresos: un débito nunca se concilia contra una venta. */}
               {Number(movimientoAsignando?.creditos) > 0 && (
-                <TabsTrigger value="venta" className="flex-1">Venta</TabsTrigger>
+                <Permisable recurso="extracto.venta"><TabsTrigger value="venta" className="flex-1">Venta</TabsTrigger></Permisable>
               )}
             </TabsList>
 

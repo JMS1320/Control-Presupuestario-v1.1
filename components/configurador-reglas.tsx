@@ -20,6 +20,7 @@ import { WizardTemplatesEgresos } from "@/components/wizard-templates-egresos"
 import { supabase } from "@/lib/supabase"
 import { moverRegla, proximoOrden } from "@/lib/conciliacion/orden-reglas"
 import { unoPorFamilia } from "@/lib/conciliacion/template-de-regla"
+import { COLUMNAS_DE_REGLA, etiquetaColumnaRegla } from "@/lib/conciliacion/evaluar-regla"
 
 export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: string }) {
   const { reglas, loading, error, crearRegla, actualizarRegla, eliminarRegla, toggleRegla, reordenarReglas, cargarReglas } = useReglasConciliacion()
@@ -484,7 +485,7 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
                     <div className="flex-1">
                       <div className="font-medium">{regla.texto_buscar}</div>
                       <div className="text-sm text-gray-500">
-                        {regla.columna_busqueda} • {regla.tipo_match}
+                        {etiquetaColumnaRegla(regla.columna_busqueda)} • {regla.tipo_match}
                       </div>
                     </div>
 
@@ -618,12 +619,15 @@ export function ConfiguradorReglas({ cuentaBancariaId }: { cuentaBancariaId?: st
                   <SelectValue placeholder="Selecciona columna" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="descripcion">Descripción</SelectItem>
-                  <SelectItem value="cuit">CUIT</SelectItem>
-                  <SelectItem value="monto_debito">Monto Débito</SelectItem>
-                  <SelectItem value="monto_credito">Monto Crédito</SelectItem>
+                  {/* 🏪 A-FEAT-1362 — la lista sale de `COLUMNAS_DE_REGLA`, la misma que usa el motor. */}
+                  {COLUMNAS_DE_REGLA.map(c => (
+                    <SelectItem key={c.valor} value={c.valor}>{c.etiqueta}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
+              {COLUMNAS_DE_REGLA.find(c => c.valor === formulario.columna_busqueda)?.ayuda && (
+                <p className="mt-1 text-[11px] text-gray-500">{COLUMNAS_DE_REGLA.find(c => c.valor === formulario.columna_busqueda)?.ayuda}</p>
+              )}
             </div>
 
             <div>

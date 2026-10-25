@@ -41,12 +41,6 @@ export type RolEnModo = {
   cerrado: boolean
 }
 
-/**
- * Lo registrado que la pantalla todavía NO pregunta: no tiene dónde mostrar su candado. Se lista en
- * la barra para que no parezca que no existe (§ 🧮: nada se descarta en silencio).
- */
-const SIN_CANDADO = RECURSOS.filter((r) => r.tipo === "funcionalidad")
-
 export function ProveedorModoPermisos({ rol, children }: { rol: RolEnModo | null; children: React.ReactNode }) {
   const inicial = useMemo(() => (rol ? borradorDe(rol) : null), [rol])
   const [original, setOriginal] = useState<Borrador | null>(inicial)
@@ -172,8 +166,8 @@ function BarraModoPermisos({
         <summary className="cursor-pointer">Qué no se puede prender desde acá</summary>
         <ul className="mt-1 list-disc space-y-0.5 pl-5">
           <li>
-            {SIN_CANDADO.length} funciones de adentro de ventanas todavía no tienen candado en pantalla
-            ({SIN_CANDADO.map((r) => r.etiqueta).join(", ")}): se eligen en la lista de Configuración → Roles.
+            Las funciones de adentro de una ventana (reglas, asignar a mano, anticipos) tienen su candado
+            al abrir esa ventana. Si el rol no tiene ninguna, el botón que la abre desaparece en «Ver como lo ve él».
           </li>
           <li>Las solapas de Ingresos no se pueden elegir una por una: va la sección entera.</li>
           <li>Ves los datos como admin. Facturas en modo restringido (lo de cualquier rol que no es admin) no se simula.</li>
@@ -206,6 +200,26 @@ export function Permisable({ recurso, children }: { recurso: string; children: R
         onClick={() => modo.alternarRecurso(recurso)}
       />
     </span>
+  )
+}
+
+/**
+ * La misma pregunta que `<Permisable>`, para lo que no es un elemento que se pueda envolver: el botón
+ * que abre una ventana (si no tiene nada adentro, no se dibuja) o la solapa en la que abre (A-BUG-1335).
+ *   · Fuera del modo: lo que el usuario puede ver.
+ *   · En el modo: todo (para poder entrar a la ventana y prender sus candados).
+ *   · En «Ver como lo ve él»: lo que el rol tiene en el borrador.
+ */
+export function useSeMuestra() {
+  const modo = useModoPermisos()
+  const puedeVer = usePuedeVer()
+  return useMemo(
+    () => (recurso: string) => {
+      if (!modo) return puedeVer(recurso)
+      if (modo.soloLoQueVe) return nivelEnBorrador(modo.borrador, recurso) !== "ninguno"
+      return true
+    },
+    [modo, puedeVer],
   )
 }
 

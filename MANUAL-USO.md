@@ -67,6 +67,7 @@
 #### 🏦 Banco: importar, parsear y conciliar
 - [📅 Aviso: echeq en fecha de cobro](#aviso-echeq-en-fecha-de-cobro)
 - [🔔 Aviso: extractos bancarios sin cargar 🟡 *(nuevo 2026-08-09, sin testear)*](#aviso-extractos-bancarios-sin-cargar-nuevo-2026-08-09-sin-testear)
+- [📄 Extracto → cargar la Caja de Ahorro desde el resumen PDF](#extracto-cargar-la-caja-de-ahorro-desde-el-resumen-pdf)
 - [🧩 Reglas de parseo — dejar lista una cuenta de Caja de Ahorro](#reglas-de-parseo-dejar-lista-una-cuenta-de-caja-de-ahorro)
 - [🏦 Resultado de la corrida + filtro de contraparte ✅ *(testeado OK 2026-08-19)*](#resultado-de-la-corrida-filtro-de-contraparte-testeado-ok-2026-08-19)
 - [📝 Extracto → filtrar por TUS notas *(2026-09-11)*](#extracto-filtrar-por-tus-notas-2026-09-11)
@@ -1090,8 +1091,11 @@ cada cuenta, caja y tarjeta tiene su candado. Quien tiene Extracto ve sólo las 
 todas las solapas, y la app no lo deja importar en las otras. Ej.: para Ulises, Importar + MSA Galicia CC +
 VISA Business MSA.
 
-Lo de adentro de las ventanas (reglas y asignaciones de Extracto, anticipos de Cash Flow) no tiene candado:
-se elige en la lista de Editar permisos.
+**Lo de adentro de las ventanas** (Configuración de reglas y Asignar en Extracto, Anticipos en Cash Flow): abrí la
+ventana y cada solapa tiene su candado. Si a un rol no le dejás ninguna, el botón que abre esa ventana le
+desaparece (en Extracto: Configuración, o los Asignar / Re-asignar de la tabla; en Cash Flow: Anticipo).
+
+⚠️ Las ventanas, sin probar todavía → [A-TEST-1252](PENDIENTES.md#a-test-1252)
 
 ⚠️ Las cuentas, sin probar todavía → [A-TEST-1239](PENDIENTES.md#a-test-1239)
 
@@ -3748,6 +3752,39 @@ Te va a seguir preguntando si:
 
 ⚠️ Sin probar por vos todavía → `A-TEST-115`.
 
+## 📄 Extracto → cargar la Caja de Ahorro desde el resumen PDF
+
+> **Para qué sirve**: el Galicia no deja bajar movimientos viejos. Si el Excel no se descargó a
+> tiempo, se carga el **resumen mensual en PDF** (el que manda el banco o el que se baja de la web)
+> y la app lo deja **igual que si hubiera entrado por Excel**: las reglas de parseo de siempre lo
+> desglosan y la conciliación lo trata igual.
+>
+> **Para qué cuentas**: MA y PAM Caja de Ahorro. *(Cuenta corriente MSA y PAM, todavía no.)*
+
+### Cómo se carga
+1. **Extracto Bancario** → elegí la cuenta (**MA** o **PAM Caja de Ahorro**) → solapa **Importar**.
+2. Arriba, **«📄 Resumen PDF»** (al lado de «📊 Excel del banco») y elegí el PDF. **Uno por vez, del
+   mes más viejo al más nuevo.**
+3. **«👁 Ver cómo queda»** — no guarda nada. Muestra:
+   - **si el resumen cierra**: lo leído da los totales de créditos, débitos y el saldo final que
+     imprime el propio resumen, y el titular es el de la cuenta elegida;
+   - **qué se completó**: el PDF corta los nombres a 20 letras y el CBU a 20 dígitos. Si en los
+     extractos anteriores (o en la ficha del proveedor) hay **un solo** completo que empieza igual,
+     se completa y se lista; si no, queda como viene. Un CBU cortado igual se toma como CBU;
+   - **cada movimiento con su grupo**: los que las reglas no desglosan salen **en rojo**. Tocá un
+     renglón para ver lo que decía el PDF al lado de cómo queda.
+4. Si está bien, **«Importar movimientos»**.
+
+### Cuándo no importa
+- Si el resumen **no cierra** contra sus propios totales, o es **de otro titular** (por ejemplo, el
+  PDF de MA en la cuenta de PAM), **no importa nada** y dice por qué. «Forzar» lo importa igual.
+- Igual que con el Excel: lo que ya está cargado no se repite, y si el saldo no sigue desde el
+  último cargado, avisa en qué movimiento se corta.
+
+📌 Lo que entró por PDF queda marcado: su origen dice `CA_GALICIA_PDF` en vez de `CA_GALICIA`.
+
+⚠️ Sin probar por vos todavía → `A-TEST-1249`.
+
 ## 🧩 Reglas de parseo — dejar lista una cuenta de Caja de Ahorro
 
 > **Para qué sirve esta pantalla**: que la app entienda el texto que manda el banco y lo reparta en
@@ -3929,7 +3966,7 @@ En los dos casos el texto original está entero: se arregla la regla, se corre R
 | Banco o red | `BANCO DE GALICIA…`, `RIOP`, `PERSONAL PAY`, `LINK` |
 | Nº de operación / autorización | `OP:…`, `A837` |
 | Terminal / identificador | terminal, sucursal o la tarjeta |
-| **CBU** | los 22 dígitos |
+| **CBU** | los 22 dígitos (o 20, si vino cortado del resumen PDF) |
 
 Y hay maneras de extraer que **buscan** el dato en vez de contar renglones: *Busca el CUIT*, *Busca
 el CBU*, *Busca la tarjeta*, *Antes/Después del CUIT*. Ésas siguen funcionando aunque el banco corra

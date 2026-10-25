@@ -8,8 +8,21 @@ import {
   claveDedupMovimiento,
   type MapaReglas,
 } from "@/lib/extractos/parseo-movimiento"
+import {
+  leerResumenCajaAhorro,
+  controlarResumen,
+  armarConocido,
+  resumenComoExcel,
+  type FilaComoExcel,
+  type TipoCambio,
+} from "@/lib/extractos/pdf-caja-ahorro-galicia"
+import { textosUbicadosPorPagina } from "@/lib/polizas/renglones-pdf"
+import { DATOS_FISCALES } from "@/lib/empresas"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 import { exigirCuentaExtracto } from "@/lib/auth/guard-recurso"
+
+// unpdf necesita las APIs de Node (el resumen PDF entra por esta misma ruta)
+export const runtime = "nodejs"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -144,6 +157,71 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 })
     }
 
+    const clientCA = schemaCA !== "public" ? supabase.schema(schemaCA) : supabase
+    const esPdf = /\.pdf$/i.test(file.name) || file.type === "application/pdf"
+    // Mostrar cómo queda sin guardar nada (botón «Ver cómo queda» de la pantalla)
+    const previsualizar = (formData.get("previsualizar") as string | null) === "true"
+
+    let headers: string[]
+    let filas: any[][]
+    /** Sólo PDF: lo leído del resumen, su control y lo que el adaptador cambió en cada fila. */
+    let pdf: Record<string, any> | null = null
+    let comoExcel: FilaComoExcel[] = []
+
+    if (esPdf) {
+      // -----------------------------------------------------------------------
+      // 1-PDF. Resumen PDF → las mismas filas que el Excel del banco (A-FEAT-1352)
+      // -----------------------------------------------------------------------
+      const resumen = leerResumenCajaAhorro(await textosUbicadosPorPagina(new Uint8Array(await file.arrayBuffer())))
+      const control = controlarResumen(resumen)
+
+      // Lo ya conocido, para completar lo que el PDF corta (nombres a 20 letras, CBU a 20 dígitos)
+      // (la API corta en 1000 filas: se piden las más recientes, que son las que se parecen al resumen)
+      const { data: hist } = await clientCA.from(cuentaBancariaId).select("concepto").order("orden", { ascending: false }).limit(1000)
+      const { data: prov } = await supabase.from("proveedores").select("cuit, cbu").not("cbu", "is", null)
+      const conocido = armarConocido((hist ?? []).map((h: any) => h.concepto), prov ?? [])
+      comoExcel = resumenComoExcel(resumen, conocido)
+
+      // El mismo dato por dos caminos: de quién es la cuenta según el PDF y según la cuenta elegida
+      const cuitEsperado = DATOS_FISCALES[cuentaBancariaId === "ma_galicia" ? "MA" : "PAM"].cuit
+      const titularOk = resumen.cuitTitular === cuitEsperado
+
+      const cambiosDe = (t: TipoCambio) => comoExcel.flatMap(f => f.cambios.filter(c => c.tipo === t))
+      pdf = {
+        resumen: {
+          numeroCuenta: resumen.numeroCuenta, cbu: resumen.cbu, cuitTitular: resumen.cuitTitular, cuitEsperado,
+          desde: resumen.desde, hasta: resumen.hasta, saldoInicial: resumen.saldoInicial, saldoFinal: resumen.saldoFinal,
+          totales: resumen.totales, movimientos: resumen.movimientos.length,
+        },
+        control, titularOk, avisos: resumen.avisos,
+        cambios: {
+          nombresCompletados: cambiosDe("nombre_completado"),
+          cbuCompletados: cambiosDe("cbu_completado"),
+          cbuIncompletos: cambiosDe("cbu_incompleto").map(c => c.de),
+          origenSupuesto: cambiosDe("origen_supuesto"),
+          tarjetas: cambiosDe("tarjeta").length,
+        },
+      }
+
+      // 🛑 Integridad: si lo leído no cierra contra el propio resumen, el lector leyó mal → no se importa
+      if ((!control.ok || !titularOk) && !forzar && !previsualizar) {
+        const motivos = [
+          !titularOk ? `el resumen es del CUIT ${resumen.cuitTitular ?? "(no se leyó)"} y la cuenta elegida es del ${cuitEsperado}` : "",
+          !control.ok ? "lo leído no cierra contra los totales que imprime el propio resumen" : "",
+        ].filter(Boolean).join("; y ")
+        return NextResponse.json({
+          success: false,
+          message: `El resumen PDF no pasó el control: ${motivos}. NO se importó nada (tildá "Forzar" para importar igual).`,
+          insertedCount: 0, pdf,
+        })
+      }
+
+      headers = ["Fecha", "Movimiento", "Débito", "Crédito", "Saldo"]
+      // Ya viene de la más vieja a la más nueva: no se invierte
+      filas = comoExcel.map(f => [
+        f.fecha.split("-").reverse().join("/"), f.movimiento, -f.debito, f.credito, f.saldo ?? "",
+      ])
+    } else {
     // -----------------------------------------------------------------------
     // 1. Leer Excel
     // -----------------------------------------------------------------------
@@ -178,16 +256,17 @@ export async function POST(req: Request) {
       )
     }
 
-    const headers: string[] = allRows[headerRowIndex].map((h: any) =>
+    headers = allRows[headerRowIndex].map((h: any) =>
       String(h ?? "").trim()
     )
 
     // Datos: filas posteriores a cabeceras.
     // CA Galicia viene newest→oldest en el archivo, igual que MSA CC.
     // Invertir para procesar oldest→newest (igual que MSA CC).
-    const filas = allRows.slice(headerRowIndex + 1).filter(
+    filas = allRows.slice(headerRowIndex + 1).filter(
       (row) => row.some((cell: any) => cell !== "" && cell !== null)
     ).reverse()
+    }
 
     console.log(`CA Import: archivo=${file.name}, filas=${filas.length}`)
     console.log(`CA Import: cabeceras detectadas:`, headers)
@@ -201,8 +280,6 @@ export async function POST(req: Request) {
     // -----------------------------------------------------------------------
     // 3. Estado actual de la tabla destino
     // -----------------------------------------------------------------------
-    const clientCA = schemaCA !== "public" ? supabase.schema(schemaCA) : supabase
-
     const { data: ultimaFila } = await clientCA
       .from(cuentaBancariaId)
       .select("fecha, saldo, orden, control")
@@ -211,7 +288,9 @@ export async function POST(req: Request) {
       .maybeSingle()
 
     const ultimaFecha = ultimaFila?.fecha ?? null
-    let saldoAnterior = ultimaFila?.saldo ?? saldoInicial
+    // Cuenta vacía: el saldo inicial escrito a mano manda; si no se escribió, el que imprime el resumen PDF
+    let saldoAnterior = ultimaFila?.saldo
+      ?? (saldoInicialInput ? saldoInicial : (pdf?.resumen?.saldoInicial ?? saldoInicial))
     let nextOrden = ultimaFila?.orden ? Number(ultimaFila.orden) + 1 : 1
     let controlAnterior = ultimaFila?.control ?? 0
 
@@ -281,6 +360,8 @@ export async function POST(req: Request) {
     const errores: any[] = []
     const controlErrors: any[] = []
     const rowsParaInsertar: any[] = []
+    /** Sólo PDF, en paralelo a `rowsParaInsertar`: lo que decía el PDF y qué se le cambió. */
+    const adaptadas: { pdf: string[]; cambios: FilaComoExcel["cambios"] }[] = []
 
     /**
      * Filas que el importador NO procesa, con el motivo.
@@ -400,7 +481,8 @@ export async function POST(req: Request) {
         numero_de_terminal: parsed["numero_de_terminal"] ?? "",
         numero_de_comprobante: parsed["numero_de_comprobante"] ?? "",
         observaciones_cliente: observacionesCliente,
-        origen: "CA_GALICIA",
+        // Huella de por dónde entró: lo que vino del resumen PDF se puede encontrar siempre
+        origen: esPdf ? "CA_GALICIA_PDF" : "CA_GALICIA",
         cuenta: cuentaBancariaId,
         categ: categ || null,
         detalle: null,       // se llena en conciliación
@@ -412,6 +494,7 @@ export async function POST(req: Request) {
       }
 
       rowsParaInsertar.push(filaInsert)
+      if (esPdf) adaptadas.push({ pdf: comoExcel[index]?.pdf ?? [], cambios: comoExcel[index]?.cambios ?? [] })
 
       saldoAnterior = saldo
       controlAnterior = control
@@ -427,6 +510,23 @@ export async function POST(req: Request) {
     const textoDescartadas = descartadas.length > 0
       ? ` Además se descartaron ${descartadas.length} fila(s): ${[...new Set(descartadas.map(d => d.motivo))].join(", ")}.`
       : ""
+
+    // 👁 Ver cómo queda: todo lo de arriba, sin guardar nada
+    if (previsualizar) {
+      return NextResponse.json({
+        success: true,
+        previsualizacion: true,
+        message: `Vista previa: ${rowsParaInsertar.length} movimiento(s) entrarían${controlErrors.length ? ` — con ${controlErrors.length} descuadre(s) de saldo contra lo ya cargado` : ""}. No se guardó nada.` + textoDescartadas,
+        insertedCount: 0,
+        filas: rowsParaInsertar.map((r, i) => ({
+          fecha: r.fecha, descripcion: r.descripcion, grupo: r.grupo_de_conceptos,
+          debitos: r.debitos, creditos: r.creditos, saldo: r.saldo, concepto: r.concepto,
+          cuit: r.leyendas_adicionales_2, nombre: r.leyendas_adicionales_1,
+          ...(adaptadas[i] ?? {}),
+        })),
+        controlErrors, erroresPropios, descartadas, errores, pdf,
+      })
+    }
 
     if (controlErrors.length > 0 && !forzar) {
       const dondeEmpieza = erroresPropios.length > 0
@@ -444,6 +544,7 @@ export async function POST(req: Request) {
         erroresPropios,
         descartadas,
         errores,
+        pdf,
         summary: {
           totalFilas: filas.length,
           filasInsertadas: 0,
@@ -479,6 +580,7 @@ export async function POST(req: Request) {
       erroresPropios,
       descartadas,
       errores,
+      pdf,
       summary: {
         totalFilas: filas.length,
         filasInsertadas: rowsParaInsertar.length,
