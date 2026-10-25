@@ -71,7 +71,7 @@ import { coincidePorPalabras } from "@/lib/normalizar-texto"
 import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
 import { camposDePagoManual } from "@/lib/templates/detalle-pago-manual"
 import { esBanco, pasaFiltroMedio, marcaPagadoDesde, OPCIONES_PAGADO_DESDE } from "@/lib/pagos/pagado-desde"
-import { armarPlanilla, impuestoDeTemplate, ordenarFilas, resumenMes, linkTemplates, templatesDelLink, type CuotaPlanilla } from "@/lib/impuestos/planilla"
+import { armarPlanilla, impuestoDeTemplate, ordenarFilas, moverFilaPlanilla, resumenMes, linkTemplates, templatesDelLink, type CuotaPlanilla } from "@/lib/impuestos/planilla"
 import { importeDeVenta, cuotasNoFijadas } from "@/lib/arrendamientos/cash-flow"
 import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPapel, moverPartida, clavePartida } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
@@ -8128,9 +8128,19 @@ export function correrCasos(): Resultado[] {
         && impuestoDeTemplate(tpl("IIBB Mensual MSA", "Impuesto IIBB")) === "IIBB Mensual MSA", "A-FEAT-1320")
     // Se guarda la lista COMPLETA de lo que se veía al soltar (ver `soltar` en la planilla).
     const ord = ordenarFilas(p.filas, ["UATRE|MSA", "ya-no-existe", "Inmobiliario|PAM", "Inmobiliario|MSA", "Red Vial|MSA"]).map(f => f.clave)
-    chequear("Planilla impuestos", "El orden que dejó el usuario arrastrando manda; una clave que ya no existe se ignora",
-      "UATRE|MSA primero, Inmobiliario|PAM segundo, 4 filas", `${ord[0]} · ${ord[1]} · ${ord.length}`,
-      ord[0] === "UATRE|MSA" && ord[1] === "Inmobiliario|PAM" && ord.length === 4, "A-FEAT-1320")
+    // ⚠️ cambió 2026-10-24: las filas van en bloques por empresa — un orden guardado con empresas mezcladas se agrupa.
+    chequear("Planilla impuestos", "El orden que dejó el usuario arrastrando manda, agrupado por empresa; una clave que ya no existe se ignora",
+      "UATRE|MSA · Inmobiliario|MSA · Red Vial|MSA · Inmobiliario|PAM", ord.join(" · "),
+      ord.join(" · ") === "UATRE|MSA · Inmobiliario|MSA · Red Vial|MSA · Inmobiliario|PAM", "A-FEAT-1320")
+    {
+      const fs3 = [{ clave: "A|MA", empresa: "MA" }, { clave: "B|MA", empresa: "MA" }, { clave: "C|MSA", empresa: "MSA" }, { clave: "D|MSA", empresa: "MSA" }, { clave: "E|PAM", empresa: "PAM" }]
+      const arriba = moverFilaPlanilla(fs3, "D|MSA", "B|MA").join(" ")
+      const abajo = moverFilaPlanilla(fs3, "A|MA", "E|PAM").join(" ")
+      const misma = moverFilaPlanilla(fs3, "D|MSA", "C|MSA").join(" ")
+      chequear("Planilla impuestos", "Arrastrar sobre OTRA empresa mueve el bloque entero (arriba: antes; abajo: después); en la misma, sólo la fila",
+        "C|MSA D|MSA A|MA B|MA E|PAM · C|MSA D|MSA E|PAM A|MA B|MA · A|MA B|MA D|MSA C|MSA E|PAM", `${arriba} · ${abajo} · ${misma}`,
+        arriba === "C|MSA D|MSA A|MA B|MA E|PAM" && abajo === "C|MSA D|MSA E|PAM A|MA B|MA" && misma === "A|MA B|MA D|MSA C|MSA E|PAM", "A-FEAT-1320")
+    }
     // Los tres criterios que confirmó el usuario el 23/10.
     const baja = p.desactivadas
     chequear("Planilla impuestos", "Lo sin pagar de un template dado de baja NO suma, pero se muestra aparte (colapsado) para poder chequearlo",
