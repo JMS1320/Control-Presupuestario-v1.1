@@ -39,6 +39,23 @@ function pestanasEnCodigo(archivo: string): string[] {
 
 let problemas = 0
 
+/**
+ * Las cuentas del Extracto, leídas del código (A-FEAT-1336). Se lee el TEXTO del archivo y no se lo
+ * importa: el hook arrastra el cliente de Supabase y React, que este control no necesita.
+ */
+const CUENTAS_EN_CODIGO = (() => {
+  const src = readFileSync("hooks/useMotorConciliacion.ts", "utf8")
+  const desde = src.indexOf("export const CUENTAS_BANCARIAS")
+  const hasta = src.indexOf("\n]", desde)
+  return new Set([...src.slice(desde, hasta).matchAll(/\bid:\s*['"]([^'"]+)['"]/g)].map((m) => m[1]))
+})()
+const cuentasSinRegistrar = [...CUENTAS_EN_CODIGO].filter((id) => !RECURSOS.some((r) => r.id === `extracto.cuenta.${id}`))
+if (cuentasSinRegistrar.length) {
+  console.log(`  🚨 Extracto: ${cuentasSinRegistrar.length} cuenta(s) en CUENTAS_BANCARIAS SIN registrar → ${cuentasSinRegistrar.join(", ")}`)
+  console.log(`       Un rol cerrado no las podría ver nunca. Agregalas en lib/auth/recursos.ts`)
+  problemas++
+}
+
 console.log("── Registro de recursos permisables ──\n")
 
 for (const { id: seccion, etiqueta } of SECCIONES) {
@@ -65,9 +82,16 @@ for (const { id: seccion, etiqueta } of SECCIONES) {
   // `puedeVer("<id>")`: así se verifica además que la pantalla pregunte por el permiso.
   const existe = (r: (typeof declarados)[number]) => {
     const sub = r.id.split(".").slice(1).join(".")
+    // Una `cuenta` (A-FEAT-1336) existe si está en CUENTAS_BANCARIAS y la vista pregunta por cuentas.
+    if (r.tipo === "cuenta") {
+      return CUENTAS_EN_CODIGO.has(r.id.slice("extracto.cuenta.".length))
+        && readFileSync(r.archivo, "utf8").includes("extracto.cuenta.")
+    }
     if (r.archivo === archivo && r.tipo !== "accion") return enCodigo.has(sub)
     const src = readFileSync(r.archivo, "utf8")
-    if (r.tipo === "accion") return src.includes(`puedeVer('${r.id}')`) || src.includes(`puedeVer("${r.id}")`)
+    // Desde A-FEAT-1334 también vale `<Permisable recurso="<id>">`, que pregunta lo mismo y además
+    // pone el candado del modo permisos.
+    if (r.tipo === "accion") return src.includes(`puedeVer('${r.id}')`) || src.includes(`puedeVer("${r.id}")`) || src.includes(`recurso="${r.id}"`)
     return pestanasEnCodigo(r.archivo).includes(sub)
   }
   const fantasmas = declarados.filter((r) => !existe(r)).map((r) => r.id.split(".").slice(1).join("."))

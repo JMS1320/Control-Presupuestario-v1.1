@@ -5,6 +5,7 @@ import { leerRoles, SECCIONES_IDS } from "@/lib/auth/permisos"
 import { RECURSOS } from "@/lib/auth/recursos"
 import { armarRolNuevo } from "@/lib/auth/crear-rol"
 import { excepcionesParaEditar, permisosAGuardar } from "@/lib/auth/rol-cerrado"
+import { leerMinutosPorRol } from "@/lib/auth/inactividad-db"
 
 /** GET — los roles con sus permisos. */
 export async function GET() {
@@ -25,7 +26,9 @@ export async function GET() {
   const recursosAplicados = [...new Set((mapeo ?? []).map((m) => m.recurso as string))]
   // `desdeLaBase: false` avisa a la pantalla que está mostrando el paracaídas y que editar no va
   // a servir de nada hasta correr scripts/60. Es preferible a una pantalla que parece editable.
-  return NextResponse.json({ roles, desdeLaBase, falta, tieneCerrado, recursosAplicados })
+  // ⏱️ El tiempo de inactividad de cada rol (A-FEAT-1351). null = falta scripts/101.
+  const minutosInactividad = await leerMinutosPorRol()
+  return NextResponse.json({ roles, desdeLaBase, falta, tieneCerrado, recursosAplicados, minutosInactividad })
 }
 
 /**

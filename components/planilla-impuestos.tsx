@@ -20,6 +20,7 @@ import { supabase } from "@/lib/supabase"
 import { hoyArgentina } from "@/lib/fechas"
 import { leerPreferencias } from "@/lib/auth/preferencias"
 import { guardarPreferencias } from "@/lib/auth/guardar-preferencias"
+import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { armarPlanilla, ordenarFilas, moverFila, resumenMes, linkTemplates, type EstadoCelda, type CuotaPlanilla, type CeldaCuota, type FilaPlanilla } from "@/lib/impuestos/planilla"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -73,6 +74,8 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
   const [orden, setOrden] = useState<string[]>([])
   const [arrastrando, setArrastrando] = useState<string | null>(null)
   const [abiertas, setAbiertas] = useState<Set<string>>(new Set())
+  // Chips de empresa: null = todas. Click prende/apaga, Ctrl+click deja sólo ésa (el gesto del Cash Flow).
+  const [empresasVer, setEmpresasVer] = useState<Set<string> | null>(null)
   // 🏛️ Punto (5): el detalle de inmobiliario / Red Vial / automotores con el formato de su planilla.
   const [papel, setPapel] = useState<TipoPapel | null>(null)
   const [tcs, setTcs] = useState<TipoCambio[]>([])
@@ -115,6 +118,26 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
 
   const planilla = useMemo(() => cuotas ? armarPlanilla(cuotas, anio, hoy) : null, [cuotas, anio, hoy])
   const filas = useMemo(() => planilla ? ordenarFilas(planilla.filas, orden) : [], [planilla, orden])
+  const empresas = useMemo(() => planilla ? planilla.porEmpresa.map(e => e.empresa) : [], [planilla])
+  const seVe = (empresa: string) => !empresasVer || empresasVer.has(empresa)
+  const filasVisibles = filas.filter(f => seVe(f.empresa))
+  const empresasVisibles = planilla ? planilla.porEmpresa.filter(e => seVe(e.empresa)) : []
+  const filtrado = !!empresasVer && empresasVisibles.length < empresas.length
+  const verEmpresa = (empresa: string, soloEsta: boolean) =>
+    toggleChip<string>(upd => setEmpresasVer(prev => {
+      const n = upd(prev ?? new Set(empresas))
+      return n.size === empresas.length ? null : n
+    }), empresa, soloEsta)
+  // El total de abajo es el de lo que se ve: con todas, el de la planilla; filtrado, la suma de las empresas elegidas.
+  const totalVisible = planilla && filtrado
+    ? {
+        porMes: MESES.map((_, i) => filasVisibles.reduce((s, f) => s + f.meses[i].reduce((t, c) => t + c.monto, 0), 0)),
+        pagado: empresasVisibles.reduce((s, e) => s + e.pagado, 0),
+        adeudado: empresasVisibles.reduce((s, e) => s + e.adeudado, 0),
+        futuro: empresasVisibles.reduce((s, e) => s + e.futuro, 0),
+        total: empresasVisibles.reduce((s, e) => s + e.total, 0),
+      }
+    : planilla ? { porMes: planilla.porMes, ...planilla.totales } : null
 
   const soltar = async (destino: string) => {
     if (!arrastrando || arrastrando === destino) { setArrastrando(null); return }
@@ -189,6 +212,16 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
         {planilla && (
           <>
             <div className="flex flex-wrap items-center gap-3 text-xs">
+              {empresas.length > 1 && (
+                <span className="flex items-center gap-1" title={PISTA_CTRL_CLICK}>
+                  {empresas.map(e => (
+                    <button key={e} title={tituloChip(e)} onClick={ev => verEmpresa(e, esSoloEste(ev))}
+                      className={`rounded-full border px-2 py-0.5 font-medium ${seVe(e) ? "border-blue-600 bg-blue-600 text-white" : "border-gray-300 bg-white text-gray-500"}`}>{e}</button>
+                  ))}
+                  {filtrado && <button className="px-1 text-blue-700 hover:underline" onClick={() => setEmpresasVer(null)}>todas</button>}
+                  <span className="mx-1 text-gray-300">|</span>
+                </span>
+              )}
               <span className="font-medium text-gray-600">Referencias:</span>
               <span className={`border px-1.5 ${CLASE_CELDA.conciliada}`}>conciliada</span>
               <span className={`border px-1.5 ${CLASE_CELDA.pagada}`}>pagada</span>
@@ -231,15 +264,15 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
                     </tr>
                   </thead>
                   <tbody>
-                    {filas.map(f => (
-                      <FilaImpuesto key={f.clave} f={f} abierta={abiertas.has(f.clave)} arrastrada={arrastrando === f.clave}
+                    {filasVisibles.map((f, i) => (
+                      <FilaImpuesto key={f.clave} f={f} separa={i > 0 && filasVisibles[i - 1].empresa !== f.empresa} abierta={abiertas.has(f.clave)} arrastrada={arrastrando === f.clave}
                         abrirPapel={PAPEL_DE_IMPUESTO[f.impuesto] ? () => setPapel(PAPEL_DE_IMPUESTO[f.impuesto]) : undefined}
                         alternar={() => setAbiertas(s => { const n = new Set(s); if (n.has(f.clave)) n.delete(f.clave); else n.add(f.clave); return n })}
                         alEmpezar={() => setArrastrando(f.clave)} alSoltar={() => void soltar(f.clave)} />
                     ))}
                   </tbody>
                   <tfoot className="bg-slate-50 font-semibold">
-                    {planilla.porEmpresa.map(e => (
+                    {empresasVisibles.map(e => (
                       <tr key={e.empresa} className="border-t">
                         <td /><td className="px-2 py-1">Total</td><td className="px-2 py-1">{e.empresa}</td>
                         {MESES.map((_, i) => {
@@ -253,12 +286,12 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
                       </tr>
                     ))}
                     <tr className="border-t-2 border-slate-400 text-sm">
-                      <td /><td className="px-2 py-1" colSpan={2}>TOTAL {anio}</td>
-                      {planilla.porMes.map((n, i) => <td key={i} className="whitespace-nowrap border-l px-1.5 py-1 text-right">{n ? entero(n) : ""}</td>)}
-                      <td className="whitespace-nowrap px-2 py-1 text-right">{entero(planilla.totales.pagado)}</td>
-                      <td className={`whitespace-nowrap px-2 py-1 text-right ${planilla.totales.adeudado > 0 ? "text-red-700" : ""}`}>{entero(planilla.totales.adeudado)}</td>
-                      <td className="whitespace-nowrap px-2 py-1 text-right">{entero(planilla.totales.futuro)}</td>
-                      <td className="whitespace-nowrap px-2 py-1 text-right">{entero(planilla.totales.total)}</td>
+                      <td /><td className="px-2 py-1" colSpan={2}>TOTAL {anio}{filtrado && <span className="font-normal text-gray-500"> · {empresasVisibles.map(e => e.empresa).join(", ")}</span>}</td>
+                      {totalVisible!.porMes.map((n, i) => <td key={i} className="whitespace-nowrap border-l px-1.5 py-1 text-right">{n ? entero(n) : ""}</td>)}
+                      <td className="whitespace-nowrap px-2 py-1 text-right">{entero(totalVisible!.pagado)}</td>
+                      <td className={`whitespace-nowrap px-2 py-1 text-right ${totalVisible!.adeudado > 0 ? "text-red-700" : ""}`}>{entero(totalVisible!.adeudado)}</td>
+                      <td className="whitespace-nowrap px-2 py-1 text-right">{entero(totalVisible!.futuro)}</td>
+                      <td className="whitespace-nowrap px-2 py-1 text-right">{entero(totalVisible!.total)}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -325,14 +358,14 @@ function CeldaMes({ cuotas }: { cuotas: CeldaCuota[] }) {
   )
 }
 
-function FilaImpuesto({ f, abierta, arrastrada, alternar, alEmpezar, alSoltar, abrirPapel }: {
-  f: FilaPlanilla; abierta: boolean; arrastrada: boolean; alternar: () => void; alEmpezar: () => void; alSoltar: () => void; abrirPapel?: () => void
+function FilaImpuesto({ f, separa, abierta, arrastrada, alternar, alEmpezar, alSoltar, abrirPapel }: {
+  f: FilaPlanilla; separa?: boolean; abierta: boolean; arrastrada: boolean; alternar: () => void; alEmpezar: () => void; alSoltar: () => void; abrirPapel?: () => void
 }) {
   // El desglose por template (partida, vehículo…): lo mismo, una fila por cada uno.
   const porTemplate = abierta ? f.templates.map(t => ({ t, meses: f.meses.map(m => m.filter(c => c.template === t)) })) : []
   return (
     <>
-      <tr className={`border-t hover:bg-slate-50 ${arrastrada ? "opacity-40" : ""}`}
+      <tr className={`${separa ? "border-t-2 border-t-slate-500" : "border-t"} hover:bg-slate-50 ${arrastrada ? "opacity-40" : ""}`}
         draggable onDragStart={alEmpezar} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); alSoltar() }}>
         <td className="cursor-grab px-0.5 py-1 text-slate-400" title="Arrastrá para ordenar"><GripVertical className="h-4 w-4" /></td>
         <td className="whitespace-nowrap px-2 py-1 font-medium">

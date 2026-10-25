@@ -2,7 +2,8 @@ import { redirect } from "next/navigation"
 import ControlPresupuestario from "@/dashboard"
 import { createClientServer } from "@/lib/supabase-server"
 import { getRole } from "@/lib/auth/roles"
-import { seccionesDelRol, nivelesDe } from "@/lib/auth/permisos"
+import { seccionesDelRol, nivelesDe, leerRoles } from "@/lib/auth/permisos"
+import type { RolEnModo } from "@/components/modo-permisos"
 import { leerPreferencias } from "@/lib/auth/preferencias"
 
 /**
@@ -15,11 +16,11 @@ import { leerPreferencias } from "@/lib/auth/preferencias"
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ seccion?: string }>
+  searchParams: Promise<{ seccion?: string; permisos?: string }>
 }) {
   // El menú lateral navega acá con `?seccion=` cuando se lo usa desde otra ruta (/usuarios,
   // /perfil). Se lee en el servidor y se pasa como prop para no necesitar Suspense.
-  const { seccion } = await searchParams
+  const { seccion, permisos: rolAEditar } = await searchParams
   const supabase = await createClientServer()
   const {
     data: { user },
@@ -41,6 +42,23 @@ export default async function Page({
   // sección adonde quiere ir **ahora**; la preferencia es sobre cómo arranca, no sobre a dónde va.
   const inicial = seccion ?? preferencias.seccionInicio ?? undefined
 
+  // 🖱️ Modo permisos (A-FEAT-1334): `/?permisos=<rol>` abre la app para PRENDER sobre la pantalla lo
+  // que ve ese rol. Sólo admin, y nunca sobre un rol de sistema (el endpoint igual lo rechazaría).
+  let modoPermisos: RolEnModo | null = null
+  if (rol === "admin" && rolAEditar) {
+    const { roles } = await leerRoles()
+    const r = roles.find((x) => x.id === rolAEditar)
+    if (r && !r.es_sistema) {
+      modoPermisos = {
+        id: r.id,
+        descripcion: r.descripcion,
+        secciones: r.secciones,
+        permisos: (r.permisos ?? {}) as Record<string, string>,
+        cerrado: r.cerrado === true,
+      }
+    }
+  }
+
   return (
     <ControlPresupuestario
       userRole={rol}
@@ -48,6 +66,7 @@ export default async function Page({
       secciones={secciones}
       nivelesPermisos={niveles}
       preferencias={preferencias}
+      modoPermisos={modoPermisos}
     />
   )
 }

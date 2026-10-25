@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
 import type { UserRole } from "@/lib/auth/roles"
-import { usePuedeVer } from "@/components/contexto-permisos"
+import { Permisable } from "@/components/modo-permisos"
+import { usePuedeVer, usePrimeraVisible } from "@/components/contexto-permisos"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Receipt, FileText, Building2, ShieldCheck } from "lucide-react"
@@ -13,13 +14,16 @@ import { VistaSeguros } from "./vista-seguros"
 
 export function VistaEgresos({ userRole = 'admin' }: { userRole?: UserRole }) {
   // A-FEAT-169: las pestañas que este rol no ve, no se dibujan.
+  // Arranca en la primera solapa que este rol ve: si la primera estuviera apagada, abriría en blanco.
   const puedeVer = usePuedeVer()
-  const [tabActiva, setTabActiva] = useState("facturas-msa")
-  // 🔗 Un link puede pedir la solapa (`?tab=templates`, ej. desde la Planilla de impuestos).
+  const primeraVisible = usePrimeraVisible()
+  const [tabActiva, setTabActiva] = useState(() =>
+    primeraVisible(["egresos.facturas-msa", "egresos.facturas-pam", "egresos.facturas-ma", "egresos.templates", "egresos.seguros"]))
+  // 🔗 Un link puede pedir la solapa (`?tab=templates`, ej. desde la Planilla de impuestos) — sólo si el rol la ve.
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab")
-    if (t && ["facturas-msa", "facturas-pam", "facturas-ma", "templates", "seguros"].includes(t)) setTabActiva(t)
-  }, [])
+    if (t && ["facturas-msa", "facturas-pam", "facturas-ma", "templates", "seguros"].includes(t) && puedeVer(`egresos.${t}`)) setTabActiva(t)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-6">
@@ -42,36 +46,36 @@ export function VistaEgresos({ userRole = 'admin' }: { userRole?: UserRole }) {
         <CardContent>
           <Tabs value={tabActiva} onValueChange={setTabActiva}>
             <TabsList className="grid w-full grid-cols-5">
-              {puedeVer("egresos.facturas-msa") && (
+              <Permisable recurso="egresos.facturas-msa">
 <TabsTrigger value="facturas-msa" className="flex items-center gap-2">
                 <Receipt className="h-4 w-4" />
                 Facturas MSA
               </TabsTrigger>
-)}
-              {puedeVer("egresos.facturas-pam") && (
+</Permisable>
+              <Permisable recurso="egresos.facturas-pam">
 <TabsTrigger value="facturas-pam" className="flex items-center gap-2">
                 <Building2 className="h-4 w-4" />
                 Facturas PAM
               </TabsTrigger>
-)}
-              {puedeVer("egresos.facturas-ma") && (
+</Permisable>
+              <Permisable recurso="egresos.facturas-ma">
 <TabsTrigger value="facturas-ma" className="flex items-center gap-2">
                 <Building2 className="h-4 w-4" />
                 Facturas MA
               </TabsTrigger>
-)}
-              {puedeVer("egresos.templates") && (
+</Permisable>
+              <Permisable recurso="egresos.templates">
 <TabsTrigger value="templates" className="flex items-center gap-2">
                 <FileText className="h-4 w-4" />
                 Egresos sin Factura
               </TabsTrigger>
-)}
-              {puedeVer("egresos.seguros") && (
+</Permisable>
+              <Permisable recurso="egresos.seguros">
 <TabsTrigger value="seguros" className="flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4" />
                 Seguros
               </TabsTrigger>
-)}
+</Permisable>
             </TabsList>
 
             <div className="mt-6">

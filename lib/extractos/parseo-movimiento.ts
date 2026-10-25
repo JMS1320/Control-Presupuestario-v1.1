@@ -68,6 +68,33 @@ export const GRUPO_SUBTIPO_NUEVO = "Subtipo nuevo"
  */
 export const GRUPO_CHOQUE = "Reglas en conflicto"
 
+/**
+ * ¿El tipo tiene un GRUPO DE CONCEPTOS elegido? (A-FEAT-1360) — `Otros` es el relleno que se pone
+ * cuando no hay ninguno (`grupoParaGuardar`), no un grupo del banco.
+ *
+ * Usuario 2026-10-25: *«no debería permitir tildar si no tiene grupo previsto… si ponés esa
+ * restricción la app deberá destildarlo; ahí yo veré enseguida cuáles son y los arreglo»*. Pasó con
+ * 4 tipos de PAM dados por buenos con el tilde: las líneas estaban bien, el grupo no se veía.
+ */
+export function tieneGrupoPrevisto(grupo: string | null | undefined): boolean {
+  const g = String(grupo ?? "").trim()
+  return g !== "" && g !== GRUPO_SIN_REGLA
+}
+
+/**
+ * ¿Este movimiento está hoy SIN PARSEAR? (A-FEAT-1358) — su grupo guardado es una de las tres marcas
+ * de «no se desglosó» (sin regla, subtipo nuevo, reglas en conflicto) o está vacío.
+ *
+ * Lo usa el re-parseo para ofrecer **primero sólo lo no parseado**: usuario 2026-10-24, *«si quedan
+ * movimientos sin parsear por datos distintos, debería ofrecer siempre primero reparsear sólo lo no
+ * parseado en vez de todo»*. ⚠️ Un tipo con reglas pero sin grupo elegido también guarda `Otros`, así
+ * que cuenta acá: re-parsearlo no hace daño (sólo se escribe si algo cambia).
+ */
+export function estaSinParsear(grupo: string | null | undefined): boolean {
+  const g = String(grupo ?? "").trim()
+  return g === "" || g === GRUPO_SIN_REGLA || g === GRUPO_SUBTIPO_NUEVO || g === GRUPO_CHOQUE
+}
+
 /** Divide el texto multilínea en líneas limpias, descartando las vacías. */
 export function splitMovimiento(raw: string): string[] {
   return raw
@@ -810,9 +837,15 @@ export function auditarSubtipo(lineas: string[], reglas: ReglaParseo[]): Auditor
 
   propuesta.forEach((p, i) => {
     // La regla que apunta a ESTA línea, según cómo extrae
+    // ⚠️ A-BUG-1359: los modos que BUSCAN (Nº de operación, CUIT…) guardan un PEDAZO de la línea
+    // —`2522426` de `OPERACION 2522426`—, así que comparar contra la línea entera daba «hoy no se
+    // guarda» con el dato bien guardado. Para esos modos alcanza con que la línea lo contenga.
     const suya = reglas.find(r => {
       if (!r.campo_destino) return false
-      return norm(aplicarRegla(lineas, r)) === norm(lineas[i])
+      const v = norm(aplicarRegla(lineas, r))
+      if (v === "") return false
+      const l = norm(lineas[i])
+      return v === l || (r.tipo_regla !== "linea" && l.split(/\s+/).includes(v))
     })
 
     if (suya?.campo_destino) {

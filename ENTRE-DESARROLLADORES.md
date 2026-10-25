@@ -52,6 +52,25 @@ De paso: [A-BUG-1327](PENDIENTES.md#a-bug-1327) — las marcas «para revisar» 
 
 📌 Borrá esta entrada cuando la leas.
 
+### ⏱️ Cierre de sesión por inactividad: toca `middleware.ts` y suma una columna a `public.roles` (2026-10-24) — ✅ APLICADA el 24/10 con OK de JMS (aviso previo)
+
+Para [A-FEAT-1351](PENDIENTES.md#a-feat-1351) (pedido de JMS: 1 hora sin actividad, configurable). Te aviso ANTES porque
+es tu territorio (login y roles):
+- **`middleware.ts`**: un bloque nuevo, antes del chequeo de 2FA. Si la cookie `cp-actividad` (la escribe la pantalla)
+  dice que **esta misma sesión** pasó su tiempo sin actividad, hace `signOut({ scope: "local" })` y redirige a
+  `/login?error=inactividad` (401 en `/api`). Sin la cookie no hace nada. Sólo lee el `session_id` del token con
+  `getSession()` después del `getUser()` de siempre.
+- **Rutas nuevas**: `POST /auth/inactividad` (signOut local, no borra `cp-recordar`), `GET /api/sesion/inactividad`
+  (minutos del propio rol + session_id) y `PATCH /api/admin/roles/inactividad` (`exigirAdmin`). Declaradas en
+  `verificar:service-role` y `verificar:rutas`.
+- **`scripts/101-roles-inactividad.sql`**: `minutos_inactividad integer` **vacía por default** con check 5..1440. No toca
+  RLS, GRANTs ni `roles_proteger_sistema` (que no congela esta columna: el admin puede cambiar su tiempo, a propósito).
+  Se frena si la columna existe; marca `[script 101]`; el deshacer la verifica. **Sin el script anda igual, con 1 hora
+  para todos.** ✅ Corrido el 24/10 por T1 con OK de JMS; verificado: los 5 roles tienen la columna, vacía.
+Si algo de esto choca con lo tuyo (por ejemplo, si vas a cambiar el middleware), avisá acá.
+
+📌 Borrá esta entrada cuando la leas.
+
 ### 🗄️ Una tabla nueva: `public.balance_datos_usuario` (2026-10-24) — ✅ APLICADA el 24/10 con JMS presente (aviso previo): tabla vacía, marcada, RLS activa, 1 fila en recurso_tablas
 
 Para [A-FEAT-1337](PENDIENTES.md#a-feat-1337): lo que JMS carga a mano en los papeles del balance (precios de hacienda, cuadre de granos,
@@ -76,7 +95,7 @@ Para [A-FEAT-1333](PENDIENTES.md#a-feat-1333) (rol cerrado: lo que se registre d
   `exigirEscritura` y la pantalla no cambian. `leerRoles()` lee con o sin la columna (`tieneCerrado`).
 - Si `jms/vistas-seguras` o la RLS por recurso leen `roles.permisos` desde SQL, ojo: en un rol cerrado esa lista
   es lo que se le **da**, no lo que se le saca. Hoy no hay ningún rol cerrado y no va a haber hasta que JMS tilde uno.
-Lo corre T1 con JMS presente. Si querés que espere, avisá acá.
+Lo corrió T1 con JMS el 24/10. Todos los roles quedaron abiertos (`cerrado = false`): nada cambió para nadie. Si tenés algo que lea `roles.permisos` desde SQL, avisá acá.
 
 ### 🔑 Etapa 1 de accesos: código en `lib/auth/` (2026-10-24) — rama `jms/personas-accesos`, SIN mergear
 

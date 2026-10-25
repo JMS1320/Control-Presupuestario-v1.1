@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import * as XLSX from "xlsx"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
+import { exigirCuentaExtracto } from "@/lib/auth/guard-recurso"
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
@@ -88,6 +89,9 @@ export async function POST(req: Request) {
     const saldoInicialInput = formData.get("saldo_inicial")
     const saldoInicial = saldoInicialInput ? parseNumber(saldoInicialInput) : 0
     const tablaDestino = (formData.get("tabla") as string | null)?.trim() || "msa_galicia"
+    // 🏦 A-FEAT-1336: la cuenta tiene que estar habilitada para el rol.
+    const cuentaOk = await exigirCuentaExtracto(tablaDestino)
+    if (!cuentaOk.ok) return NextResponse.json({ error: cuentaOk.motivo }, { status: cuentaOk.status })
     const forzar = (formData.get("forzar") as string | null) === "true"  // importar aunque el control no cuadre
 
     // Tablas CC permitidas (formato Galicia CC)

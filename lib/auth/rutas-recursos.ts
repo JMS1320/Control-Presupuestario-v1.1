@@ -26,12 +26,12 @@ export const RUTAS_RECURSOS: MapeoRuta[] = [
   { ruta: "historico-asignar", sinMapear: "Igual que arca-asignar, sobre los comprobantes históricos." },
   { ruta: "import-pesadas", sinMapear: "Escribe `productivo.pesadas_terneros` y `terneros`: cae entre Cría y Recría y no está claro cuál manda." },
   { ruta: "import-terneros", sinMapear: "Escribe `productivo.terneros`. Probablemente Cría, pero 'probablemente' no alcanza para un permiso." },
-  { ruta: "import-excel", sinMapear: "Importador genérico: el destino lo elige el usuario en la pantalla, no la ruta." },
-  { ruta: "import-excel-ca", sinMapear: "Idem importador genérico." },
-  { ruta: "import-excel-caja", sinMapear: "Idem importador genérico." },
+  { ruta: "import-excel", sinMapear: "Importador genérico: el destino lo elige el usuario en la pantalla, no la ruta. Desde A-FEAT-1336 sí verifica la CUENTA destino (`exigirCuentaExtracto`)." },
+  { ruta: "import-excel-ca", sinMapear: "Idem importador genérico. Desde A-FEAT-1336 sí verifica la CUENTA destino (`exigirCuentaExtracto`)." },
+  { ruta: "import-excel-caja", sinMapear: "Idem importador genérico. Desde A-FEAT-1336 sí verifica la CUENTA destino (`exigirCuentaExtracto`)." },
   { ruta: "import-excel-dinamico", sinMapear: "Idem importador genérico." },
-  { ruta: "import-excel-tarjeta", sinMapear: "Tarjeta no tiene pestaña registrada todavía." },
-  { ruta: "import-pdf-tarjeta", sinMapear: "Idem tarjeta." },
+  { ruta: "import-excel-tarjeta", sinMapear: "Tarjeta no tiene pestaña registrada todavía. Desde A-FEAT-1336 sí verifica la CUENTA destino (`exigirCuentaExtracto`)." },
+  { ruta: "import-pdf-tarjeta", sinMapear: "Idem tarjeta. Desde A-FEAT-1336 sí verifica la CUENTA destino (`exigirCuentaExtracto`)." },
   { ruta: "import-facturas-arca", sinMapear: "Importa para las 3 empresas; mismo problema que arca-asignar." },
   { ruta: "import-historico", sinMapear: "Idem histórico." },
   { ruta: "import-templates", sinMapear: "Toca `egresos.templates`, pero también crea cuentas contables. Falta decidir cuál manda." },
@@ -47,6 +47,7 @@ export const RUTAS_RECURSOS: MapeoRuta[] = [
   { ruta: "pendientes/propuestos", sinMapear: "Idem pendientes." },
   { ruta: "revisiones", sinMapear: "Las marcas de revisión son transversales: se ponen desde cualquier pantalla." },
   { ruta: "admin/roles", sinMapear: "Ya exige admin con 2FA (`exigirAdmin`), que es más estricto que cualquier recurso." },
+  { ruta: "admin/roles/inactividad", sinMapear: "El tiempo de inactividad de un rol (A-FEAT-1351). Ya exige admin con 2FA (`exigirAdmin`)." },
 ]
 
 /** El recurso de una ruta, o `null` si está declarada sin mapear. */

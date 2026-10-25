@@ -35,7 +35,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, Plus, Trash2, FileWarning, Check, Pencil, Info } from "lucide-react"
 import { toast } from "sonner"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
-import { aplicarRegla, proponerMapeo, esCuit, esCbu, claveDeTipo, mismoTipo, columnasRepetidas, reglasDeLaPropuesta, COLUMNA_CBU, auditarSubtipo, resolverFilaExistente, grupoParaGuardar, GRUPOS_GALICIA, grupoSugeridoParaTipo, type LineaPropuesta, type ContenidoLinea, type AuditoriaSubtipo, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES, DESTINO_POR_CONTENIDO } from "@/lib/extractos/parseo-movimiento"
+import { aplicarRegla, proponerMapeo, esCuit, esCbu, claveDeTipo, mismoTipo, columnasRepetidas, reglasDeLaPropuesta, tieneGrupoPrevisto, COLUMNA_CBU, auditarSubtipo, resolverFilaExistente, grupoParaGuardar, GRUPOS_GALICIA, grupoSugeridoParaTipo, type LineaPropuesta, type ContenidoLinea, type AuditoriaSubtipo, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES, DESTINO_POR_CONTENIDO } from "@/lib/extractos/parseo-movimiento"
 
 /**
  * Sólo las cuentas cuyo importador desglosa por reglas (Caja de Ahorro). Los ids son los mismos
@@ -411,6 +411,11 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
         return
       }
       const grupo = grupoParaGuardar(reglasDe(t.tipo)[0]?.grupo_de_conceptos || grupoSugeridoParaTipo(t.tipo))
+      // 🛑 A-FEAT-1360: sin grupo previsto no se da por bueno — el grupo no se ve en la propuesta.
+      if (!tieneGrupoPrevisto(grupo)) {
+        toast.error(`${t.tipo} no tiene grupo de conceptos previsto. Entrá a Configurar y elegilo: con el tilde quedaría en «Otros».`)
+        return
+      }
       const marcaAhora = new Date().toISOString()
       const { data, error } = await supabase.from("config_parseo_extracto").insert(nuevas.map(n => ({
         cuenta_bancaria_id: cuenta,
@@ -427,6 +432,10 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
       if (error) { toast.error("Error: " + error.message); return }
       setReglas(prev => [...prev, ...((data ?? []) as Regla[])])
       toast.success(`${nuevas.length} regla(s) guardadas como las proponía la app, y revisado. Corré «Re-parsear» para aplicarlo.`)
+      return
+    }
+    if (revisado && !tieneGrupoPrevisto(reglasDe(t.tipo)[0]?.grupo_de_conceptos)) {
+      toast.error(`${t.tipo} no tiene grupo de conceptos (está en «Otros»). Elegilo con Editar y después tildalo.`)
       return
     }
     const marca = revisado ? new Date().toISOString() : null
@@ -769,7 +778,10 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
     const mal = audit?.hallazgos ?? []
     // Revisado = TODAS las reglas propias de este subtipo tienen la marca
     const propias = rs.filter(r => r.firma_forma === f.firma)
-    const revisado = propias.length > 0 && propias.every(r => r.revisado_en)
+    // A-FEAT-1360: un tipo sin grupo de conceptos NO cuenta como revisado aunque tenga la marca —
+    // así se ve enseguida cuáles faltan (los que se tildaron antes de esta regla quedan destildados).
+    const sinGrupo = !sinReglas && !tieneGrupoPrevisto(rs[0]?.grupo_de_conceptos)
+    const revisado = propias.length > 0 && propias.every(r => r.revisado_en) && !sinGrupo
     return (
       <div className={`rounded border ${revisado ? "border-emerald-200 bg-emerald-50/30" : sinReglas ? "border-sky-300 bg-sky-50/40" : (audit?.choques.length ?? 0) > 0 ? "border-red-300 bg-red-50/30" : mal.length > 0 ? "border-amber-300 bg-amber-50/30" : ""}`}>
         <div className="flex flex-wrap items-center gap-2 border-b px-2.5 py-1.5">
@@ -792,6 +804,12 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
             {t.subtipos.length > 1 ? `Subtipo de ${f.lineas} líneas` : `${f.lineas} líneas`}
           </span>
           <Badge variant="outline" className="text-[10px]">{f.movimientos} mov.</Badge>
+          {sinGrupo && (
+            <Badge variant="outline" className="border-amber-400 bg-white text-[10px] text-amber-800"
+              title="Queda en «Otros». Elegí el grupo con Editar; después se puede dar por bueno.">
+              falta el grupo de conceptos
+            </Badge>
+          )}
           {sinReglas
             ? <Badge variant="outline" className="border-sky-400 bg-white text-[10px] text-sky-800">sin reglas — no se desglosa</Badge>
             : (audit?.choques.length ?? 0) > 0
