@@ -8472,6 +8472,17 @@ export function correrCasos(): Resultado[] {
     chequear("Accesos", "Ventanas: Configuración abre en la única regla permitida y Anticipos en la única solapa permitida",
       "parseo · existentes · 5", vnP, vnP === "parseo · existentes · 5", "A-BUG-1335")
 
+    // ── Conciliar como casilla propia (A-FEAT-1361) ──
+    // Un rol CERRADO al que se le prenden Movimientos e Importar (Ulises) no recibe Conciliar: nace apagado.
+    // Uno ABIERTO con Extracto lo sigue teniendo, como antes de existir la casilla.
+    let ccUl = borradorDe({ secciones: [], permisos: {}, cerrado: true })
+    ccUl = alternarRecurso(alternarRecurso(ccUl, "extracto.movimientos"), "extracto.importar")
+    const ccAb = borradorDe({ secciones: ["extracto"], permisos: {}, cerrado: false })
+    const vcc = [nivelEnBorrador(ccUl, "extracto.importar"), nivelEnBorrador(ccUl, "extracto.conciliar"), nivelEnBorrador(ccAb, "extracto.conciliar"),
+      RECURSOS_PERMISABLES.find((r) => r.id === "extracto.conciliar")?.tipo ?? "sin casilla"].join(" · ")
+    chequear("Accesos", "Conciliar tiene su casilla: un rol cerrado con Movimientos e Importar no puede conciliar; uno abierto con Extracto sí",
+      "escritura · ninguno · escritura · accion", vcc, vcc === "escritura · ninguno · escritura · accion", "A-FEAT-1361")
+
     const inTxt = [60, 120, 90, 30].map(textoMinutos).join(" · ")
     chequear("Accesos", "Inactividad: la tarjeta del rol lo dice en horas cuando se puede",
       "1 hora · 2 horas · 1 h 30 min · 30 min", inTxt, inTxt === "1 hora · 2 horas · 1 h 30 min · 30 min", "A-FEAT-1351")

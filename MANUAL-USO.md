@@ -1097,6 +1097,12 @@ desaparece (en Extracto: Configuración, o los Asignar / Re-asignar de la tabla;
 
 ⚠️ Las ventanas, sin probar todavía → [A-TEST-1252](PENDIENTES.md#a-test-1252)
 
+**Conciliar** es una casilla aparte en Extracto: saca el botón **Conciliación Bancaria**, el **Conciliar** de cada
+resumen de tarjeta y los **✓ OK** (de a uno y masivo). Sirve para alguien que sólo carga movimientos: con Importar
+y Movimientos prendidos y Conciliar apagado, carga y ve, pero no concilia.
+
+⚠️ Sin probar todavía → [A-TEST-1253](PENDIENTES.md#a-test-1253)
+
 ⚠️ Las cuentas, sin probar todavía → [A-TEST-1239](PENDIENTES.md#a-test-1239)
 
 ⚠️ Sin probar todavía → [A-TEST-1238](PENDIENTES.md#a-test-1238)
