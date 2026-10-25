@@ -8601,6 +8601,17 @@ export function correrCasos(): Resultado[] {
     chequear("Parseo", "Grupo previsto: «Otros» (el relleno) o vacío no cuentan; un grupo del banco sí — sin grupo no se puede dar por bueno",
       "no no no sí", vg, vg === "no no no sí", "A-FEAT-1360")
 
+    // ── Reglas por «Nombre / comercio» y por «Texto del banco» (A-FEAT-1362) ──
+    // Movimientos reales de MA (ene–mar 2026) ya re-parseados: el comercio queda en leyendas 1.
+    const compra = { descripcion: "COMPRA DEBITO", debitos: 23000, creditos: 0, leyendas_adicionales_1: "PESCADERIA NAPOLI", concepto: "COMPRA DEBITO\n PESCADERIA NAPOLI\n 4517XXXXXXXXXX29\n A956" }
+    const abl = { descripcion: "PAGO DE SERVICIOS", debitos: 271910.97, creditos: 0, leyendas_adicionales_1: "AGIP INM/ABL", leyendas_adicionales_4: "007001005392", concepto: "PAGO DE SERVICIOS\n AGIP INM/ABL\n 007001005392" }
+    const rr = (col: string, t: string, m = "contiene") => ({ columna_busqueda: col, tipo_match: m, texto_buscar: t })
+    const vnom = [evaluarReglaConciliacion(compra, rr("nombre", "pescaderia napoli")), evaluarReglaConciliacion(compra, rr("descripcion", "PESCADERIA")),
+      evaluarReglaConciliacion(abl, rr("texto", "1005392")), evaluarReglaConciliacion(abl, rr("texto", "2831491")),
+      evaluarReglaConciliacion(compra, rr("nombre", ""))].map(String).join(" · ")
+    chequear("Conciliación", "Regla por comercio encuentra PESCADERIA NAPOLI (por descripción no: ahí está el tipo); por texto del banco encuentra la partida 1005392 y no otra; texto vacío no coincide",
+      "true · false · true · false · false", vnom, vnom === "true · false · true · false · false", "A-FEAT-1362")
+
     // ── ¿Llegó todo de la base? (A-FEAT-1343) ──
     const lects = [{ nombre: "Extracto BANCO GALICIA", llegaron: 1000, esperadas: 1563 }, { nombre: "Ventas", llegaron: 9, esperadas: 9 }, { nombre: "Sueldos", llegaron: 103, esperadas: null }]
     const vl = lects.map(l => lecturaIncompleta(l) ? "incompleta" : "ok").join(" · ")
