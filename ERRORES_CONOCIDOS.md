@@ -241,3 +241,15 @@ error de tipos nada más: es una regla de negocio muerta desde que se escribió.
 
 No se arregló ahora **a propósito**: hacerla funcionar cambia el comportamiento (empezarían a
 moverse fechas que hoy no se mueven) y eso se decide con el usuario, no de pasada.
+
+---
+
+## 2026-10-25 — Controles de rutas en rojo por rutas nuevas sin declarar (visto por T3)
+
+Capturado al correr los controles para [A-FEAT-1364](PENDIENTES.md#a-feat-1364); **no son de ese cambio** (ya
+estaban el 24/10, al hacer A-FEAT-1351). Sin investigar.
+
+| Control | Qué dice | Rutas |
+|---|---|---|
+| `npm run verificar:rutas` | 🚨 4 rutas que escriben y no están en el mapeo (`lib/auth/rutas-recursos.ts`) | `facturas/cargar-desde-pdf`, `gas/descartar-candidato`, `gas/inventario`, `gas/pedir-factura` |
+| `npx tsx scripts/verificar-service-role.mts` | 🚨 usa service_role y no está en la lista de excepciones | `facturas/cargar-desde-pdf` |

@@ -64,6 +64,7 @@ import { borradorDe, alternarRecurso, alternarSeccion, nivelEnBorrador, contarCa
 import { motivoCuentaBloqueada } from "@/lib/auth/cuentas-extracto"
 import { minutosEfectivos, validarMinutos, textoMinutos, valorCookieActividad, msRestantes, sesionVencida, sesionDelToken } from "@/lib/auth/inactividad"
 import { REGLAS_EXTRACTO, ASIGNAR_EXTRACTO, ANTICIPOS_CASHFLOW, primeraPermitida, hayAlguna, tabInicialAsignar } from "@/lib/auth/ventanas"
+import { clasificarCampanita, contarNuevos, soyYo } from "@/lib/revisiones/campanita"
 import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
 import {
   adjudicarPorPeso, cabezasDeMedias, rindePorGrupo, factorDeCarga,
@@ -8492,6 +8493,32 @@ export function correrCasos(): Resultado[] {
       RECURSOS_PERMISABLES.find((r) => r.id === "extracto.conciliar")?.tipo ?? "sin casilla"].join(" · ")
     chequear("Accesos", "Conciliar tiene su casilla: un rol cerrado con Movimientos e Importar no puede conciliar; uno abierto con Extracto sí",
       "escritura · ninguno · escritura · accion", vcc, vcc === "escritura · ninguno · escritura · accion", "A-FEAT-1361")
+
+    // ── La campanita (A-FEAT-1364) ──
+    const cpJose = { mail: "jose@x.com", etiqueta: "José" }
+    const cpUli = { mail: "ulises@x.com", etiqueta: "Ulises" }
+    const cpMarcas = [
+      // 1 · José le marca una factura a Ulises, sin respuesta todavía.
+      { id: "m1", estado: "abierta", motivo: "mal cargada", creado_por: "José", asignado_a: "ulises@x.com", created_at: "2026-10-25T10:00:00Z", seguimiento: [] },
+      // 2 · José le marcó otra; Ulises contestó.
+      { id: "m2", estado: "abierta", motivo: "falta PDF", creado_por: "José", asignado_a: "ULISES@x.com", created_at: "2026-10-24T10:00:00Z",
+        seguimiento: [{ fecha: "2026-10-24T12:00:00Z", texto: "lo pedí", autor: "Ulises" }] },
+      // 3 · Una marca sin destinatario: no va a la campanita de nadie.
+      { id: "m3", estado: "abierta", motivo: "revisar", creado_por: "José", asignado_a: null, created_at: "2026-10-24T10:00:00Z", seguimiento: [] },
+      // 4 · Una cerrada: tampoco.
+      { id: "m4", estado: "resuelta", motivo: "x", creado_por: "José", asignado_a: "ulises@x.com", created_at: "2026-10-20T10:00:00Z", seguimiento: [] },
+    ]
+    const cpRes = (yo: typeof cpJose, vistos = {}) => clasificarCampanita(cpMarcas, yo, vistos).map((i) => `${i.id}:${i.tipo}${i.nuevo ? "*" : ""}`).join(" ")
+    const vcp = [cpRes(cpUli), cpRes(cpJose)].join(" | ")
+    chequear("Accesos", "Campanita: a Ulises le llegan las dos que le marcaron (la primera sin contestar es nueva); a José, sólo la que le contestaron",
+      "m1:para-mi* m2:para-mi | m1:enviada m2:enviada*", vcp, vcp === "m1:para-mi* m2:para-mi | m1:enviada m2:enviada*", "A-FEAT-1364")
+
+    // Lo visto deja de contar; una respuesta nueva vuelve a contar.
+    const cpVisto = clasificarCampanita(cpMarcas, cpJose, { m2: 2 })
+    const cpNueva = clasificarCampanita([{ ...cpMarcas[1], seguimiento: [...cpMarcas[1].seguimiento, { fecha: "2026-10-25T09:00:00Z", texto: "ya está", autor: "ulises@x.com" }] }], cpJose, { m2: 2 })
+    const vcv = [contarNuevos(cpVisto), contarNuevos(cpNueva), soyYo("  JOSÉ ", cpJose) ? "soy" : "no", soyYo(null, cpJose) ? "soy" : "no"].join(" · ")
+    chequear("Accesos", "Campanita: lo ya visto no suma; una respuesta nueva sí; el autor se compara sin mayúsculas ni espacios",
+      "0 · 1 · soy · no", vcv, vcv === "0 · 1 · soy · no", "A-FEAT-1364")
 
     const inTxt = [60, 120, 90, 30].map(textoMinutos).join(" · ")
     chequear("Accesos", "Inactividad: la tarjeta del rol lo dice en horas cuando se puede",

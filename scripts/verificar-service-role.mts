@@ -17,6 +17,7 @@ const PERMITIDAS: Record<string, string> = {
   "admin/roles": "Lee y escribe `public.roles`, revocada a `authenticated` a propósito (scripts/60) para que nadie edite sus propios permisos.",
   "admin/roles/inactividad": "Escribe `public.roles.minutos_inactividad` (A-FEAT-1351); misma razón que admin/roles.",
   "sesion/inactividad": "Lee el tiempo de inactividad del PROPIO rol en `public.roles`, que está revocada a `authenticated` (scripts/60). El rol sale del JWT, no del pedido.",
+  "sesion/personas": "auth.admin.listUsers — a quién se le puede mandar un mensaje 🚩 (A-FEAT-1364). Devuelve sólo nombre y mail de cuentas con rol; exige sesión con rol.",
   "admin/usuarios": "auth.admin — crear e invitar cuentas. No hay otra forma.",
   "admin/usuarios/[id]": "auth.admin — cambiar rol, revocar. Y lee `public.roles`.",
   "admin/usuarios/[id]/2fa": "auth.admin — borrar factores de otra persona.",

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
 import { BarraSesion } from "@/components/barra-sesion"
+import { Campanita } from "@/components/campanita"
 import { Toaster } from "@/components/ui/sonner"
 import { usePendientesPorPantalla } from "@/hooks/usePendientesPorPantalla"
 import { useModoPermisos } from "@/components/contexto-permisos"
@@ -287,6 +288,8 @@ export function LayoutApp({
             <div className="min-w-0 flex-1">
               <BarraSesion userRole={userRole} confirmarSalida={prefs.confirmarSalida} />
             </div>
+            {/* 🔔 Los mensajes anclados a una cosa (A-FEAT-1364). */}
+            <Campanita />
           </div>
         </div>
         <div className="mx-auto w-full max-w-7xl space-y-6 px-4 pb-10 pt-6">{children}</div>

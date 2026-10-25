@@ -1222,9 +1222,19 @@ que escribas por qué. Así queda el motivo y no vuelve a aparecer la misma duda
 > 📍 **Hoy está en las facturas del subdiario.** Se va a ir poniendo en otras pantallas a medida que
 > haga falta: ponerla en una grilla nueva es un trabajo de minutos.
 
-> 👥 **Por ahora es una lista tuya.** La app todavía no sabe quién sos, así que no se le puede asignar
-> a nadie. Cuando esté el módulo de usuarios vas a poder decir *"esto lo revisa Ulises"* y que le
-> aparezca a él.
+> 👥 ~~**Por ahora es una lista tuya.** La app todavía no sabe quién sos, así que no se le puede asignar
+> a nadie.~~ ⚠️ **Cambió el 25/10**: ya se le puede mandar a alguien — ver *Mandarle un mensaje a alguien*, acá abajo.
+
+### Mandarle un mensaje a alguien (la 🔔)
+Al marcar algo con 🚩, elegí en **Para** a quién va. Le aparece en la **🔔** de arriba a la derecha, con un número
+rojo, pegado a la cosa que marcaste (la factura, el movimiento, la pantalla). Esa persona puede **Contestar** ahí
+mismo, y su respuesta te llega a tu 🔔, en *Lo que mandé*. Cualquiera de los dos lo da por terminado con **Listo,
+cerrar**, escribiendo qué se hizo.
+
+Sin «Para», la marca queda como siempre: sólo en Principal → Para revisar. La campanita se actualiza sola cada
+2 minutos y cada vez que volvés a la pestaña.
+
+⚠️ Sin probar todavía → [A-TEST-1256](PENDIENTES.md#a-test-1256)
 
 ✅ *Probado el 2026-09-04: el banderín de fila, el warning global con `Alt+R`, la captura y el seguimiento.*
 

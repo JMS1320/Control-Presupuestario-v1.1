@@ -106,6 +106,13 @@ function ModalMarca({
   const [motivo, setMotivo] = useState("")
   const [imagen, setImagen] = useState("")
   const [guardando, setGuardando] = useState(false)
+  /**
+   * 🔔 PARA QUIÉN (A-FEAT-1364). Vacío = como siempre: va a Principal → Para revisar. Con una
+   * persona, además le llega a su campanita y puede contestar en el mismo hilo.
+   */
+  const [para, setPara] = useState("")
+  const [personas, setPersonas] = useState<{ mail: string; nombre: string }[]>([])
+  const [yoMail, setYoMail] = useState<string | null>(null)
 
   /**
    * El contexto se congela al ABRIR, y va en ESTADO, no en una referencia.
@@ -117,8 +124,16 @@ function ModalMarca({
   const [ctx, setCtx] = useState(contextoActual)
 
   useEffect(() => {
-    if (abierto) { setCtx(contextoActual()); setMotivo(""); setImagen("") }
+    if (abierto) { setCtx(contextoActual()); setMotivo(""); setImagen(""); setPara("") }
   }, [abierto])
+
+  useEffect(() => {
+    if (!abierto || personas.length) return
+    fetch("/api/sesion/personas")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (j?.personas) { setPersonas(j.personas); setYoMail(j.yo ?? null) } })
+      .catch(() => {})
+  }, [abierto, personas.length])
 
   // La captura se PEGA, no se genera: es la única forma de fotografiar lo que el usuario ve de
   // verdad, incluidos los carteles nativos del navegador, que ninguna librería puede capturar.
@@ -158,9 +173,13 @@ function ModalMarca({
         subpantalla: ctx.subpantalla,
         ruta: ctx.ruta,
         creado_por: await quienMarca(),
+        asignado_a: para || null,
       })
       if (error) throw error
-      toast.success("Marcada. La vas a ver en Principal → Para revisar.")
+      const destinatario = personas.find((p) => p.mail === para)?.nombre
+      toast.success(destinatario
+        ? `Marcada. Le llega a ${destinatario} en su 🔔, y su respuesta te llega a la tuya.`
+        : "Marcada. La vas a ver en Principal → Para revisar.")
       onClose()
       onGuardada?.()
     } catch (e) {
@@ -194,6 +213,23 @@ function ModalMarca({
             placeholder="Ej: la declaración de marzo no cuadra con el subdiario, revisar de dónde sale la diferencia"
             onChange={e => setMotivo(e.target.value)}
           />
+        </div>
+
+        <div>
+          <Label className="text-xs">Para (opcional)</Label>
+          <select
+            className="mt-1 h-9 w-full rounded-md border bg-white px-2 text-sm"
+            value={para}
+            onChange={(e) => setPara(e.target.value)}
+          >
+            <option value="">Nadie en particular — queda en Para revisar</option>
+            {personas.filter((p) => p.mail !== yoMail).map((p) => (
+              <option key={p.mail} value={p.mail}>{p.nombre}</option>
+            ))}
+          </select>
+          {para && (
+            <p className="mt-1 text-[11px] text-gray-500">Le aparece en su 🔔 con este texto y puede contestarte ahí.</p>
+          )}
         </div>
 
         <div>
