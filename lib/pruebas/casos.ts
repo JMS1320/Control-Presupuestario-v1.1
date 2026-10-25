@@ -8428,6 +8428,15 @@ export function correrCasos(): Resultado[] {
     chequear("Parseo", "Tilde sin configurar: guarda lo mismo que muestra «Dónde va a quedar cada línea» (caso real de PAM, 5 líneas)",
       esperado, vprop, vprop === esperado, "A-FEAT-1354")
 
+    // ── Auditoría: un modo que busca guarda un pedazo de la línea (A-BUG-1356) ──
+    // PAGO TARJETA AMEX de PAM, real: la regla de Nº de operación guarda 2522426 de «OPERACION 2522426».
+    const auAmex = auditarSubtipo(["PAGO TARJETA AMEX", "OPERACION 2522426"], [
+      { campo_destino: "descripcion", tipo_regla: "linea", numero_linea: 1, grupo_de_conceptos: "Otros", firma_forma: "2:tipo,texto" },
+      { campo_destino: "numero_de_comprobante", tipo_regla: "nro_operacion", numero_linea: null, grupo_de_conceptos: "Otros", firma_forma: "2:tipo,texto" }])
+    const vau = `${auAmex.hallazgos.length} hallazgos · ${auAmex.resueltas} resueltas`
+    chequear("Parseo", "Auditoría del subtipo: el Nº de operación guardado sin la palabra OPERACION no se marca como «hoy no se guarda»",
+      "0 hallazgos · 2 resueltas", vau, vau === "0 hallazgos · 2 resueltas", "A-BUG-1356")
+
     // ── ¿Llegó todo de la base? (A-FEAT-1343) ──
     const lects = [{ nombre: "Extracto BANCO GALICIA", llegaron: 1000, esperadas: 1563 }, { nombre: "Ventas", llegaron: 9, esperadas: 9 }, { nombre: "Sueldos", llegaron: 103, esperadas: null }]
     const vl = lects.map(l => lecturaIncompleta(l) ? "incompleta" : "ok").join(" · ")
