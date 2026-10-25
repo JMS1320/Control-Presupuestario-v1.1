@@ -225,7 +225,7 @@ import {
 import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
 import { esHistorico, estadoCuotaAlDesvincular, contarEstadisticasExtracto } from "@/lib/conciliacion/estado-historico"
 import { buscarConDobleAudit, type VinculoEnAuditar } from "@/lib/conciliacion/doble-audit"
-import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA, claveDedupMovimiento, claveDeTipo, tipoDeMovimiento, tieneReglaPropia, columnasRepetidas, reglasDeLaPropuesta } from "@/lib/extractos/parseo-movimiento"
+import { parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA, claveDedupMovimiento, claveDeTipo, tipoDeMovimiento, tieneReglaPropia, columnasRepetidas, reglasDeLaPropuesta, estaSinParsear } from "@/lib/extractos/parseo-movimiento"
 import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
@@ -8536,14 +8536,14 @@ export function correrCasos(): Resultado[] {
     chequear("Parseo", "Tilde sin configurar: guarda lo mismo que muestra «Dónde va a quedar cada línea» (caso real de PAM, 5 líneas)",
       esperado, vprop, vprop === esperado, "A-FEAT-1354")
 
-    // ── Auditoría: un modo que busca guarda un pedazo de la línea (A-BUG-1356) ──
+    // ── Auditoría: un modo que busca guarda un pedazo de la línea (A-BUG-1359) ──
     // PAGO TARJETA AMEX de PAM, real: la regla de Nº de operación guarda 2522426 de «OPERACION 2522426».
     const auAmex = auditarSubtipo(["PAGO TARJETA AMEX", "OPERACION 2522426"], [
       { campo_destino: "descripcion", tipo_regla: "linea", numero_linea: 1, grupo_de_conceptos: "Otros", firma_forma: "2:tipo,texto" },
       { campo_destino: "numero_de_comprobante", tipo_regla: "nro_operacion", numero_linea: null, grupo_de_conceptos: "Otros", firma_forma: "2:tipo,texto" }])
     const vau = `${auAmex.hallazgos.length} hallazgos · ${auAmex.resueltas} resueltas`
     chequear("Parseo", "Auditoría del subtipo: el Nº de operación guardado sin la palabra OPERACION no se marca como «hoy no se guarda»",
-      "0 hallazgos · 2 resueltas", vau, vau === "0 hallazgos · 2 resueltas", "A-BUG-1356")
+      "0 hallazgos · 2 resueltas", vau, vau === "0 hallazgos · 2 resueltas", "A-BUG-1359")
 
     // ── Cuotas en $0: no hubo nada que pagar, no se pide fecha (A-FEAT-1357) ──
     // 5 cuotas de IIBB MSA en cero, como llegan de la base (texto), más una con importe y una sin monto.
@@ -8552,6 +8552,11 @@ export function correrCasos(): Resultado[] {
     const v0 = `${sep.sinImporte.map(f => f.id).join("")} · ${sep.conImporte.map(f => f.id).join("")}`
     chequear("Templates", "Pasar a conciliado: las cuotas en $0 van sin fecha de pago; las que tienen importe —y las de monto vacío, ante la duda— la piden",
       "abc · de", v0, v0 === "abc · de", "A-FEAT-1357")
+
+    // ── Re-parsear primero sólo lo no parseado (A-FEAT-1358) ──
+    const vsp = ["Otros", "Subtipo nuevo", "Reglas en conflicto", "", null, "000907 - Transferencias"].map(g => estaSinParsear(g) ? "sí" : "no").join(" ")
+    chequear("Parseo", "Sin parsear = grupo vacío o una de las tres marcas (sin regla, subtipo nuevo, conflicto); un grupo del banco ya está desglosado",
+      "sí sí sí sí sí no", vsp, vsp === "sí sí sí sí sí no", "A-FEAT-1358")
 
     // ── ¿Llegó todo de la base? (A-FEAT-1343) ──
     const lects = [{ nombre: "Extracto BANCO GALICIA", llegaron: 1000, esperadas: 1563 }, { nombre: "Ventas", llegaron: 9, esperadas: 9 }, { nombre: "Sueldos", llegaron: 103, esperadas: null }]
