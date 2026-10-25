@@ -35,7 +35,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, Plus, Trash2, FileWarning, Check, Pencil, Info } from "lucide-react"
 import { toast } from "sonner"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
-import { aplicarRegla, proponerMapeo, esCuit, COLUMNA_CBU, auditarSubtipo, resolverFilaExistente, grupoParaGuardar, GRUPOS_GALICIA, grupoSugeridoParaTipo, type LineaPropuesta, type ContenidoLinea, type AuditoriaSubtipo, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES, DESTINO_POR_CONTENIDO } from "@/lib/extractos/parseo-movimiento"
+import { aplicarRegla, proponerMapeo, esCuit, claveDeTipo, mismoTipo, columnasRepetidas, reglasDeLaPropuesta, COLUMNA_CBU, auditarSubtipo, resolverFilaExistente, grupoParaGuardar, GRUPOS_GALICIA, grupoSugeridoParaTipo, type LineaPropuesta, type ContenidoLinea, type AuditoriaSubtipo, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES, DESTINO_POR_CONTENIDO } from "@/lib/extractos/parseo-movimiento"
 
 /**
  * Sólo las cuentas cuyo importador desglosa por reglas (Caja de Ahorro). Los ids son los mismos
@@ -202,7 +202,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
   useEffect(() => { cargar() }, [cargar])
 
   const reglasDe = useCallback(
-    (tipo: string) => reglas.filter(r => r.tipo_movimiento.toUpperCase() === tipo.toUpperCase()),
+    (tipo: string) => reglas.filter(r => mismoTipo(r.tipo_movimiento, tipo)),
     [reglas]
   )
 
@@ -311,13 +311,13 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
           const igual = reciclable && reciclable.campo_destino === campo && reciclable.tipo_regla === modo
           if (igual) return
           filas.push({ tipo: t.tipo.toUpperCase(), firma: f.firma, linea: i + 1, campo, modo, existente: reciclable })
-          tiposTocados.add(t.tipo.toUpperCase())
+          tiposTocados.add(claveDeTipo(t.tipo))
         })
       }
     }
     // Las reglas viejas SIN subtipo de esos tipos se van: si quedaran, seguirían aplicándose a
     // todos los subtipos, que es exactamente la causa de A-BUG-1200.
-    const genericasABorrar = reglas.filter(r => !r.firma_forma && tiposTocados.has(r.tipo_movimiento.toUpperCase()))
+    const genericasABorrar = reglas.filter(r => !r.firma_forma && tiposTocados.has(claveDeTipo(r.tipo_movimiento)))
     return { filas, paraElUsuario, tipos: tiposTocados.size, genericasABorrar }
   }, [tipos, reglas, reglasDeSubtipo])
 
@@ -395,14 +395,51 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
   const marcarRevisado = async (t: TipoInfo, f: Subtipo, revisado: boolean) => {
     const rs = reglasDeSubtipo(t.tipo, f.firma).filter(r => r.firma_forma === f.firma)
     if (rs.length === 0) {
-      toast.error("Primero hay que configurar este subtipo: sin reglas propias no se puede dar por bueno.")
+      if (!revisado) return
+      /**
+       * ✅ **Sin reglas todavía: el tilde da por buena la PROPUESTA** (A-FEAT-1354). Usuario
+       * 2026-10-24: *«sólo entro a configurar cuando quiero cambiar»*. Se guarda exactamente lo que
+       * muestra «Dónde va a quedar cada línea», ya marcado como revisado.
+       */
+      const { reglas: nuevas, repetidas } = reglasDeLaPropuesta(f.texto)
+      if (repetidas.length > 0) {
+        toast.error(`La propuesta manda ${repetidas.map(r => `las líneas ${r.lineas.join(" y ")}`).join(", ")} a la misma columna. Entrá a Configurar y decidí cuál va.`)
+        return
+      }
+      if (nuevas.length === 0) {
+        toast.error("La app no reconoce ninguna línea de este subtipo: entrá a Configurar.")
+        return
+      }
+      const grupo = grupoParaGuardar(reglasDe(t.tipo)[0]?.grupo_de_conceptos || grupoSugeridoParaTipo(t.tipo))
+      const marcaAhora = new Date().toISOString()
+      const { data, error } = await supabase.from("config_parseo_extracto").insert(nuevas.map(n => ({
+        cuenta_bancaria_id: cuenta,
+        tipo_movimiento: claveDeTipo(t.tipo),
+        campo_destino: n.campo,
+        tipo_regla: n.modo,
+        numero_linea: n.modo === "linea" ? n.linea : null,
+        grupo_de_conceptos: grupo,
+        firma_forma: f.firma,
+        orden: n.linea * 10,
+        activo: true,
+        revisado_en: marcaAhora,
+      }))).select("*")
+      if (error) { toast.error("Error: " + error.message); return }
+      setReglas(prev => [...prev, ...((data ?? []) as Regla[])])
+      toast.success(`${nuevas.length} regla(s) guardadas como las proponía la app, y revisado. Corré «Re-parsear» para aplicarlo.`)
       return
     }
+    const marca = revisado ? new Date().toISOString() : null
+    const ids = new Set(rs.map(r => r.id))
     const { error } = await supabase.from("config_parseo_extracto")
-      .update({ revisado_en: revisado ? new Date().toISOString() : null })
-      .in("id", rs.map(r => r.id))
+      .update({ revisado_en: marca })
+      .in("id", [...ids])
     if (error) { toast.error("Error: " + error.message); return }
-    cargar()
+    // 🌙 Nota del usuario 2026-10-24: «cada vez que tildo como revisado… me refresca la página y me
+    // genera perder el lugar donde estaba». Antes se llamaba a `cargar()`, que vuelve a traer todo y
+    // muestra el «cargando…» — se perdían el scroll y lo desplegado. La marca no cambia nada más que
+    // su propio valor, así que alcanza con actualizarla en la pantalla.
+    setReglas(prev => prev.map(r => ids.has(r.id) ? { ...r, revisado_en: marca } : r))
   }
 
   /**
@@ -440,7 +477,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
    */
   const equivalenciaDe = useCallback((tipo: string, firma: string) => {
     const suyas = reglasOtra.filter(r =>
-      r.tipo_movimiento.toUpperCase() === tipo.toUpperCase() &&
+      mismoTipo(r.tipo_movimiento, tipo) &&
       r.firma_forma === firma)
     if (suyas.length === 0) return null
     // Todas revisadas, o no se ofrece
@@ -461,7 +498,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
       .map(r => `${r.tipo_regla}|${r.numero_linea ?? ""}|${r.campo_destino ?? ""}`)
       .sort().join(" · ")
     const propias = reglas.filter(r =>
-      r.tipo_movimiento.toUpperCase() === tipo.toUpperCase() && r.firma_forma === firma)
+      mismoTipo(r.tipo_movimiento, tipo) && r.firma_forma === firma)
     const igual = propias.length > 0 && huella(propias) === huella(suyas)
 
     return { origen: CUENTAS_CA.find(c => c.id === id) ?? { id, nombre: id }, reglas: suyas, igual }
@@ -568,6 +605,9 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
 
   /** De las de arriba, las que **no tienen subtipo**: ésas se dan de baja al guardar. */
   const huerfanasViejas = useMemo(() => huerfanas.filter(r => !r.firma_forma), [huerfanas])
+
+  /** 🛑 Dos líneas a la misma columna: se dice y no se deja guardar así (A-BUG-1353). */
+  const repetidasEditor = useMemo(() => columnasRepetidas(filas), [filas])
 
   const plan = useMemo(() => {
     const firma = editando?.subtipo.firma ?? ""
@@ -706,8 +746,8 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
   const equivalencias = tipos.flatMap(t => t.subtipos.map(f => equivalenciaDe(t.tipo, f.firma))).filter(Boolean)
   const conEquivalencia = equivalencias.length
   const yaIguales = equivalencias.filter(e => e!.igual).length
-  const tiposPresentes = new Set(tipos.map(t => t.tipo.toUpperCase()))
-  const reglasSinMovimientos = reglas.filter(r => !tiposPresentes.has(r.tipo_movimiento.toUpperCase()))
+  const tiposPresentes = new Set(tipos.map(t => claveDeTipo(t.tipo)))
+  const reglasSinMovimientos = reglas.filter(r => !tiposPresentes.has(claveDeTipo(r.tipo_movimiento)))
 
   /** El bloque de líneas del ejemplo, numerado. */
   const Ejemplo = ({ lineas }: { lineas: string[] }) => (
@@ -740,7 +780,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
               : "Marcalo cuando lo hayas revisado y esté bien, para no volver a mirarlo."}>
             <input type="checkbox" className="h-3.5 w-3.5 accent-emerald-600"
               id={`revisado-${t.tipo}-${f.firma}`}
-              checked={revisado} disabled={sinReglas}
+              checked={revisado}
               onChange={e => marcarRevisado(t, f, e.target.checked)} />
             <span className={`text-[11px] ${revisado ? "font-medium text-emerald-700" : "text-gray-500"}`}>
               {revisado ? "revisado" : "sin revisar"}
@@ -836,7 +876,8 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
                   <tr>
                     <td colSpan={2} className="pt-1 text-[10px] italic leading-4 text-sky-800">
                       Todavía no está guardado: hoy estos movimientos entran sin desglosar. Se
-                      guarda con <strong>Configurar</strong>, o de una vez con el botón de arriba.
+                      guarda tildando <strong>«sin revisar»</strong> si está bien así, con <strong>Configurar</strong> si
+                      querés cambiar algo, o de una vez con el botón de arriba.
                     </td>
                   </tr>
                 </tbody>
@@ -1382,6 +1423,14 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
               ) : null}
             </div>
             <p className="flex-1 text-[11px] leading-4 text-gray-500">
+              {repetidasEditor.length > 0 && (
+                <span className="mb-1 block font-medium text-red-700">
+                  🛑 {repetidasEditor.map(r => `Las líneas ${r.lineas.join(" y ")} van a la misma columna (${etiquetaCampo(r.campo)})`).join(" · ")}.
+                  {" "}Así el movimiento no se parsea: mandá una a otra columna o dejala sin asignar.
+                  {repetidasEditor.some(r => r.campo === "numero_de_terminal") &&
+                    " (Terminal y Tarjeta comparten columna: cambiar una por la otra no alcanza.)"}
+                </span>
+              )}
               {plan.total === 0
                 ? "Nada para guardar todavía."
                 : `Al guardar: ${plan.alta} regla(s) nueva(s), ${plan.cambio} cambiada(s), ${plan.baja} borrada(s)`
@@ -1392,7 +1441,7 @@ export function ConfiguradorReglasParseo({ cuentaBancariaId }: { cuentaBancariaI
 
           <div className="flex justify-end gap-2 pt-1">
             <Button variant="outline" onClick={() => setEditando(null)}>Cancelar</Button>
-            <Button onClick={guardar} disabled={guardando || plan.total === 0 || !fGrupo.trim()}>
+            <Button onClick={guardar} disabled={guardando || plan.total === 0 || !fGrupo.trim() || repetidasEditor.length > 0}>
               {guardando && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
               Guardar {plan.total > 0 ? `(${plan.total})` : ""}
             </Button>

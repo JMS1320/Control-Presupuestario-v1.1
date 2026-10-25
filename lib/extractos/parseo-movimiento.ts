@@ -266,11 +266,12 @@ export function resolverReglas(
   lineas: string[],
   mapaReglas: MapaReglas,
 ): { reglas: ReglaParseo[]; subtipoNuevo: boolean } {
-  const tipoLinea1 = (lineas[0] ?? "").toUpperCase()
-  // El match del tipo es EXACTO (ignorando mayúsculas). Por eso `COMPRA DEBITO` no encuentra
-  // la regla de `COMPRA CON DEBITO`: para el sistema son dos tipos distintos.
-  const claveExacta = Object.keys(mapaReglas).find((k) => k.toUpperCase() === tipoLinea1)
-  const delTipo = claveExacta ? mapaReglas[claveExacta] : mapaReglas["*"] ?? []
+  // El tipo se compara por su CLAVE (`claveDeTipo`): sin puntos y sin números de cheque. Sigue
+  // siendo distinto `COMPRA DEBITO` de `COMPRA CON DEBITO` — eso no es una diferencia de escritura.
+  // Si hay reglas guardadas bajo dos escrituras del mismo tipo, valen las de las dos.
+  const clave = claveDeTipo(lineas[0])
+  const claves = clave ? Object.keys(mapaReglas).filter((k) => k !== "*" && claveDeTipo(k) === clave) : []
+  const delTipo = claves.length > 0 ? claves.flatMap((k) => mapaReglas[k]) : mapaReglas["*"] ?? []
 
   const firma = firmaDeMovimiento(lineas)
   const genericas = delTipo.filter((r) => !r.firma_forma)
@@ -290,16 +291,47 @@ export function esSubtipoNuevo(raw: string | null | undefined, mapaReglas: MapaR
   return resolverReglas(lineas, mapaReglas).subtipoNuevo
 }
 
-/** El tipo de movimiento de un texto crudo: su primera línea, normalizada. */
+/**
+ * 🔑 **LA CLAVE DEL TIPO — dos escrituras del mismo tipo son UN tipo** (A-FEAT-1347).
+ *
+ * El banco cambió el formato y el mismo tipo llega escrito de dos maneras: `DEB AUTOM DE SERV` y
+ * `DEB. AUTOM. DE SERV.`, `ING BRUTOS S/ CRED` y `ING. BRUTOS S/ CRED`. Y los cheques traen su
+ * número adentro del tipo (`GDE ECHEQ   Q03521175 BOL77388704`), así que cada cheque nuevo era
+ * un tipo nuevo sin regla. Criterio del usuario 2026-10-24: *«si la única diferencia es un punto
+ * no es diferencia. Para echeqs comparar sin el nro de echeq también»*.
+ *
+ * - mayúsculas, **sin puntos**, espacios de más colapsados;
+ * - **sin las palabras con 7 o más dígitos** (número de cheque o de boleta: `Q03521175`,
+ *   `BOL77388704`, `96578776`). Con 7 y no con 5, para no comerse `IMP CRE LEY 25413`.
+ *
+ * 📌 Sólo cambia **cómo se agrupa y con qué regla se compara**. La `descripcion` que se guarda
+ * sigue siendo la línea tal cual vino del banco, así que las reglas de conciliación no cambian.
+ */
+export function claveDeTipo(linea: string | null | undefined): string {
+  return String(linea ?? "")
+    .toUpperCase()
+    .replace(/\./g, " ")
+    .split(/\s+/)
+    .filter((w) => w !== "" && (w.match(/\d/g)?.length ?? 0) < 7)
+    .join(" ")
+}
+
+/** El tipo de movimiento de un texto crudo: la CLAVE de su primera línea (ver `claveDeTipo`). */
 export function tipoDeMovimiento(raw: string | null | undefined): string {
-  return splitMovimiento(String(raw ?? ""))[0]?.toUpperCase() ?? ""
+  return claveDeTipo(splitMovimiento(String(raw ?? ""))[0])
+}
+
+/** ¿Dos tipos son el mismo? Compara las claves, no el texto. */
+export function mismoTipo(a: string | null | undefined, b: string | null | undefined): boolean {
+  const ka = claveDeTipo(a)
+  return ka !== "" && ka === claveDeTipo(b)
 }
 
 /** ¿Existe una regla propia para este tipo? (el comodín `*` no cuenta como propia) */
 export function tieneReglaPropia(raw: string | null | undefined, mapaReglas: MapaReglas): boolean {
   const tipo = tipoDeMovimiento(raw)
   if (!tipo) return false
-  return Object.keys(mapaReglas).some((k) => k !== "*" && k.toUpperCase() === tipo)
+  return Object.keys(mapaReglas).some((k) => k !== "*" && claveDeTipo(k) === tipo)
 }
 
 /** Carga las reglas activas de una cuenta, agrupadas por tipo de movimiento. */
@@ -545,6 +577,47 @@ function operacionEnLinea(l: string): { hay: boolean; loAgarra: boolean } {
 }
 
 /**
+ * 🛑 **Qué columnas reclaman dos o más líneas** — el choque, visto ANTES de guardar (A-BUG-1353).
+ *
+ * Si dos líneas van a la misma columna, el movimiento queda «Reglas en conflicto» y no se parsea.
+ * El editor lo usa para decirlo y no dejar guardar así; antes sólo contaba cambios, y cuando el
+ * usuario pasaba una línea de «Terminal» a «Tarjeta» —que van a la MISMA columna— decía
+ * «0 cambios» y no explicaba por qué.
+ */
+export function columnasRepetidas(filas: { campo: string; numero: number }[]): { campo: string; lineas: number[] }[] {
+  const por = new Map<string, number[]>()
+  for (const f of filas) {
+    if (!f.campo) continue
+    por.set(f.campo, [...(por.get(f.campo) ?? []), f.numero])
+  }
+  return [...por.entries()].filter(([, ls]) => ls.length > 1).map(([campo, lineas]) => ({ campo, lineas }))
+}
+
+/**
+ * ✅ **Dar por buena la PROPUESTA sin entrar a configurar** (A-FEAT-1354).
+ *
+ * Pedido del usuario 2026-10-24: *«veo que la app ya propone antes de que yo configure. Si esa
+ * propuesta se pudiera dar por buena dando el tilde sería genial. Sólo entro a configurar cuando
+ * quiero cambiar»*. Devuelve las reglas que se guardarían con lo que la pantalla muestra en
+ * «Dónde va a quedar cada línea» — las líneas sin columna quedan sin asignar, igual que ahí.
+ *
+ * 🛑 Si dos líneas reclaman la misma columna NO se guarda nada (`repetidas` con algo): eso no es
+ * una propuesta aceptable, es un choque, y hay que entrar a decidir.
+ */
+export function reglasDeLaPropuesta(lineas: string[]): {
+  reglas: { linea: number; campo: string; modo: string }[]
+  repetidas: { campo: string; lineas: number[] }[]
+} {
+  const prop = proponerMapeo(lineas)
+  const repetidas = columnasRepetidas(prop)
+  if (repetidas.length > 0) return { reglas: [], repetidas }
+  return {
+    reglas: prop.filter((p) => p.campo).map((p) => ({ linea: p.numero, campo: p.campo, modo: p.modo })),
+    repetidas,
+  }
+}
+
+/**
  * Propone, para cada línea del movimiento, qué es y dónde debería guardarse.
  * Es una **propuesta**: la pantalla la muestra editable y el usuario decide.
  */
@@ -730,9 +803,15 @@ export function auditarSubtipo(lineas: string[], reglas: ReglaParseo[]): Auditor
 
   propuesta.forEach((p, i) => {
     // La regla que apunta a ESTA línea, según cómo extrae
+    // ⚠️ A-BUG-1356: los modos que BUSCAN (Nº de operación, CUIT…) guardan un PEDAZO de la línea
+    // —`2522426` de `OPERACION 2522426`—, así que comparar contra la línea entera daba «hoy no se
+    // guarda» con el dato bien guardado. Para esos modos alcanza con que la línea lo contenga.
     const suya = reglas.find(r => {
       if (!r.campo_destino) return false
-      return norm(aplicarRegla(lineas, r)) === norm(lineas[i])
+      const v = norm(aplicarRegla(lineas, r))
+      if (v === "") return false
+      const l = norm(lineas[i])
+      return v === l || (r.tipo_regla !== "linea" && l.split(/\s+/).includes(v))
     })
 
     if (suya?.campo_destino) {

@@ -22,11 +22,13 @@
  */
 import { useState } from "react"
 import { supabase } from "@/lib/supabase"
+import { traerTodo } from "@/lib/supabase-paginado"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Loader2, AlertTriangle, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 import { primerDiaDelEjercicio, type Ejercicio } from "@/lib/balance/ejercicio"
+import { useDatosDelBalance, textoEstadoGuardado } from "@/lib/balance/datos-usuario"
 import {
   cuadrarHacienda, type CuadreHacienda, type MovimientoDeHacienda,
 } from "@/lib/balance/cuadre-hacienda"
@@ -84,17 +86,23 @@ export interface DatosHacienda {
 }
 
 export function HaciendaAlCierre({
-  ejercicio, onDatos,
-}: { ejercicio: Ejercicio; onDatos: (d: DatosHacienda | null) => void }) {
+  empresa, ejercicio, onDatos,
+}: { empresa: string; ejercicio: Ejercicio; onDatos: (d: DatosHacienda | null) => void }) {
   const [cargando, setCargando] = useState(false)
   const [datos, setDatos] = useState<DatosHacienda | null>(null)
-  const [manuales, setManuales] = useState<Record<string, string>>({})
+  /** 🗄️ A-FEAT-1337: los precios a mano y el cuadre de granos se guardan al escribirlos. */
+  const precios = useDatosDelBalance(empresa, ejercicio.anioCierre, "hacienda.precio")
+  const manuales = precios.valores
+  const cuadre = useDatosDelBalance(empresa, ejercicio.anioCierre, "granos")
   /**
    * Las tres entradas del cuadre de granos que **hoy no están en ninguna tabla**. Van como texto
    * (§ 💰 es-AR) y vacías significan «no lo sé», no «cero» — por eso el cuadre no se declara
    * cerrado mientras falten.
    */
-  const [granos, setGranos] = useState({ inicio: "", cosecha: "", cierre: "", precio: "" })
+  const granos = {
+    inicio: cuadre.valores.inicio ?? "", cosecha: cuadre.valores.cosecha ?? "",
+    cierre: cuadre.valores.cierre ?? "", precio: cuadre.valores.precio ?? "",
+  }
 
   /** El mes del cierre completo: `2026-06-01` … `2026-06-30`. */
   const mesDelCierre = () => {
@@ -155,10 +163,11 @@ export function HaciendaAlCierre({
        * ⚖️ Las pesadas hasta el cierre. Se traen con su categoría porque el peso se proyecta
        * **por categoría**, no por animal (A-FEAT-1187).
        */
-      const { data: pes } = await supabase
+      // 📄 A-BUG-1339: 990 pesadas hoy — por tandas, para que no se corte en 1000 sin avisar.
+      const { data: pes } = await traerTodo((d, h) => supabase
         .schema("productivo").from("pesadas_terneros")
         .select("ternero_id, fecha, peso_kg, ternero:terneros(categoria:categorias_hacienda(nombre))")
-        .lte("fecha", ejercicio.fechaCierre)
+        .lte("fecha", ejercicio.fechaCierre).order("id").range(d, h))
 
       // La ganancia diaria CARGADA, para poder compararla con la medida y avisar si difieren.
       const { data: lotesGan } = await supabase
@@ -358,7 +367,7 @@ export function HaciendaAlCierre({
                       <Input
                         type="text" placeholder="0,00" className="h-6 text-xs w-28"
                         value={manuales[f.categoria] ?? ""}
-                        onChange={e => setManuales(m => ({ ...m, [f.categoria]: e.target.value }))}
+                        onChange={e => precios.cambiar(f.categoria, e.target.value)}
                       />
                     </td>
                   </tr>
@@ -369,7 +378,7 @@ export function HaciendaAlCierre({
 
           <p className="text-xs text-muted-foreground">
             Cargá un precio y apretá <strong>Recalcular</strong>. El que ponés a mano manda sobre el
-            del mercado{v.sinCriterio.length > 0 && (
+            del mercado · <span className={precios.estado === "sin tabla" || precios.estado === "error" ? "text-amber-700" : ""}>{textoEstadoGuardado(precios.estado, precios.error)}</span>{v.sinCriterio.length > 0 && (
               <> · ⚠️ sin criterio definido: <strong>{v.sinCriterio.join(", ")}</strong></>
             )}
           </p>
@@ -440,17 +449,19 @@ export function HaciendaAlCierre({
           {/* 🌾 Granos: el cuadre de kilos. La app sabe las ventas; las otras dos las cargás vos. */}
           {datos && (
             <div className="border-t pt-3 space-y-2" data-test="granos">
-              <div className="text-sm font-medium">🌾 Granos — cuadre de kilos (toneladas)</div>
+              <div className="text-sm font-medium">🌾 Granos — cuadre de kilos (toneladas){" "}
+                <span className={`text-xs font-normal ${cuadre.estado === "sin tabla" || cuadre.estado === "error" ? "text-amber-700" : "text-muted-foreground"}`}>· {textoEstadoGuardado(cuadre.estado, cuadre.error)}</span>
+              </div>
               <div className="flex flex-wrap items-end gap-2 text-xs">
                 <label className="block">
                   <span className="block text-muted-foreground">Stock al inicio</span>
                   <Input type="text" placeholder="0,00" className="h-6 w-24 text-xs"
-                    value={granos.inicio} onChange={e => setGranos(g => ({ ...g, inicio: e.target.value }))} />
+                    value={granos.inicio} onChange={e => cuadre.cambiar("inicio", e.target.value)} />
                 </label>
                 <label className="block">
                   <span className="block text-muted-foreground">Cosecha</span>
                   <Input type="text" placeholder="0,00" className="h-6 w-24 text-xs"
-                    value={granos.cosecha} onChange={e => setGranos(g => ({ ...g, cosecha: e.target.value }))} />
+                    value={granos.cosecha} onChange={e => cuadre.cambiar("cosecha", e.target.value)} />
                 </label>
                 <div>
                   <span className="block text-muted-foreground">Ventas (de la app)</span>
@@ -459,12 +470,12 @@ export function HaciendaAlCierre({
                 <label className="block">
                   <span className="block text-muted-foreground">Existencia al cierre</span>
                   <Input type="text" placeholder="0,00" className="h-6 w-24 text-xs"
-                    value={granos.cierre} onChange={e => setGranos(g => ({ ...g, cierre: e.target.value }))} />
+                    value={granos.cierre} onChange={e => cuadre.cambiar("cierre", e.target.value)} />
                 </label>
                 <label className="block">
                   <span className="block text-muted-foreground">Precio por tonelada</span>
                   <Input type="text" placeholder="0,00" className="h-6 w-28 text-xs"
-                    value={granos.precio} onChange={e => setGranos(g => ({ ...g, precio: e.target.value }))} />
+                    value={granos.precio} onChange={e => cuadre.cambiar("precio", e.target.value)} />
                 </label>
               </div>
               <p className="text-xs text-muted-foreground">

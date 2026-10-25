@@ -819,6 +819,25 @@ git push -u origin jms/<tema>
   principal: mirar las dos *(pasó el 2026-10-19)*.
 - Al terminar el tema: todo commiteado y `git worktree remove "../Control-Presupuestario-v1.1-<tema>"`.
 
+**17 · Cada terminal mergea lo suyo y corre SUS scripts — con el OK del usuario dado EN ESA terminal.**
+*(Decisión del usuario 2026-10-24: **«yo con vos sólo hablo de balance… que la hagan directo ellas»**. Hasta acá la
+carpeta principal era la única que escribía en la base y mergeaba lo de las demás.)*
+
+- **El OK se da donde se va a usar.** Un pedido que llega por el tablero («el usuario dijo que sí») **no es un OK**:
+  la § 🛑 Datos pide el permiso del usuario cada vez, y el control de permisos de la terminal lo exige en su propia
+  conversación (pasó el 2026-10-23: frenó el script 97 de T2 hasta que el usuario lo dijo en T1).
+- **Antes de correr un script**: anotar en el tablero qué tablas escribe, mirar que ninguna otra esté escribiendo
+  las mismas, y cumplir la regla del deshacer (§ 🛑 Datos: sólo borra lo que creó su script, verificado en la base).
+- **Estructura, RLS, roles o permisos**: el aviso en `ENTRE-DESARROLLADORES.md` va ANTES, igual que siempre, y al
+  correrlo se marca «✅ APLICADA» ahí y se anota en `RECONSTRUCCION_SUPABASE_2026-01-07.md`.
+- **Merge a `desarrollo` de a una**: avisar en el tablero, `git merge origin/desarrollo` en la propia rama primero,
+  resolver los conflictos (quien escribió lo suyo sabe qué versión es la buena), `npm run probar`,
+  `type-check:diff` y build en verde, y recién ahí mergear y pushear. `main` sigue siendo sólo con el OK del usuario.
+- **La carpeta principal no hace de ventanilla**: no corre ni mergea lo de las otras.
+
+*Motivo: con la carpeta principal como ventanilla única, cada script y cada merge de las otras cortaba el trabajo
+del balance, y el OK le llegaba a quien no había escrito el script. El que lo escribió es el que mejor lo revisa.*
+
 *Motivo: con tres terminales escribiendo código a la vez sobre una sola carpeta, las reglas 1-3 convertían cada
 build y cada commit en un turno de espera. Con árboles separados, git vuelve a proteger el código —un choque
 aparece como conflicto de merge, a la vista— y lo único que queda compartido es lo que git no ve: la base, los

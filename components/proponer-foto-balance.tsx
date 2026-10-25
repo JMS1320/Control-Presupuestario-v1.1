@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
+import { useDatosDelBalance, textoEstadoGuardado } from "@/lib/balance/datos-usuario"
 import {
   RENGLONES, propuestaDelSistema, cambiosContraLoGuardado, deudaDeTarjeta, parsearMonto,
   type DatosDeLosPapeles, type ValorFoto,
@@ -44,8 +45,10 @@ export function ProponerFotoBalance({ empresa, fechaInicio, fechaCierre, datos, 
    */
   const [extra, setExtra] = useState<Partial<DatosDeLosPapeles>>({})
   const [noLeidas, setNoLeidas] = useState<string[]>([])
-  const [cuotapartes, setCuotapartes] = useState("")
-  const [valorCuota, setValorCuota] = useState("")
+  /** 🗄️ A-FEAT-1337: las cuotapartes del fondo se guardan al escribirlas. */
+  const fci = useDatosDelBalance(empresa, Number(fechaCierre.slice(0, 4)), "fci")
+  const cuotapartes = fci.valores.cuotapartes ?? ""
+  const valorCuota = fci.valores.valor_cuotaparte ?? ""
 
   useEffect(() => {
     let vivo = true
@@ -207,9 +210,10 @@ export function ProponerFotoBalance({ empresa, fechaInicio, fechaCierre, datos, 
           {fciMovimientos && (
             <div className="flex flex-wrap items-center gap-2">
               <span>Fondo común al cierre:</span>
-              <Input type="text" className="h-7 w-36 text-right text-xs" placeholder="cuotapartes" value={cuotapartes} onChange={e => setCuotapartes(e.target.value)} />
+              <Input type="text" className="h-7 w-36 text-right text-xs" placeholder="cuotapartes" value={cuotapartes} onChange={e => fci.cambiar("cuotapartes", e.target.value)} />
               <span>×</span>
-              <Input type="text" className="h-7 w-32 text-right text-xs" placeholder="valor cuotaparte" value={valorCuota} onChange={e => setValorCuota(e.target.value)} />
+              <Input type="text" className="h-7 w-32 text-right text-xs" placeholder="valor cuotaparte" value={valorCuota} onChange={e => fci.cambiar("valor_cuotaparte", e.target.value)} />
+              <span className={`text-xs ${fci.estado === "sin tabla" || fci.estado === "error" ? "text-amber-700" : "text-muted-foreground"}`}>{textoEstadoGuardado(fci.estado, fci.error)}</span>
             </div>
           )}
           {faltan.length > 0 && (

@@ -3657,6 +3657,18 @@ admin puede cambiar su propio tiempo). Script `scripts/101-roles-inactividad.sql
 sólo borra la columna si su comentario dice `[script 101]`). ✅ **Corrido 2026-10-24** (T1, con OK del usuario);
 verificado: los 5 roles (`admin`, `pruebas`, `contable`, `socio`, `productivo`) la tienen, vacía.
 
+### 2026-10-24 · LO QUE CARGA EL USUARIO EN EL BALANCE (script 100) — A-FEAT-1337
+
+Tabla nueva `public.balance_datos_usuario` (empresa, anio_cierre, papel, clave, texto, valor numeric(20,4), historial jsonb, actualizado_por, created_at, updated_at; único empresa+anio_cierre+papel+clave), comentario con la marca `[script 100]`. RLS `ver_segun_permiso`/`escribir_segun_permiso`, `revoke` a `anon`, `authenticated` select/insert/update (sin delete); 1 fila en `recurso_tablas` (recurso `extracto`, `restringe_lectura = true`). Script `scripts/100-balance-datos-usuario.sql` (se frena si la tabla existe; el deshacer exige la marca y la tabla vacía). ✅ **Corrido 2026-10-24** con OK del usuario y aviso previo a Javier.
+
+### 2026-10-24 · ROL CERRADO (script 99) — A-FEAT-1333
+
+`public.roles.cerrado boolean not null default false` (comentario con la marca `[script 99]`). En un rol cerrado, `permisos` dice lo que se le DA y lo registrado después nace apagado; `false` = como siempre. Script `scripts/99-roles-cerrado.sql` (se frena si la columna ya existe; el deshacer sólo la borra si lleva la marca y no hay roles cerrados). ✅ **Corrido 2026-10-24** con OK del usuario y aviso previo a Javier: 5 roles, los 5 en `false`.
+
+### 2026-10-24 · FACTURAS POR MES de un proveedor fijo (script 98) — A-FEAT-1332
+
+`public.proveedores.facturas_por_mes smallint` (null = no es fijo; check 1–31). Script `scripts/98-proveedores-facturas-por-mes.sql`. ✅ **Corrido 2026-10-24** con OK del usuario; 11 proveedores cargados.
+
 ### 2026-10-23 · HUELLA de la carga desde el PDF (script 94) — A-FEAT-1318
 
 Seis columnas en `arca_pdf_archivo_digital`: `comprobante_id`, `comprobante_empresa`, `carga_leido`, `carga_correcciones`, `cargado_at`, `cargado_por`. Aditivo. Script `scripts/94-carga-desde-pdf-archivo-digital.sql` (deshacer: `94-…-deshacer.sql`). ✅ **Corrido 2026-10-23** con OK del usuario (verificado: las 6 columnas existen y el `UPDATE` de la app planea bien).

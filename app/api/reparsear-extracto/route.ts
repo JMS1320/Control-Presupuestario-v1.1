@@ -20,6 +20,7 @@ import {
   parsearMovimiento,
   cargarReglasParseo,
   tipoDeMovimiento,
+  claveDeTipo,
   tieneReglaPropia,
   splitMovimiento,
   firmaDeMovimiento,
@@ -59,7 +60,7 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}))
     const cuenta = String(body.cuenta ?? "")
     const aplicar = body.aplicar === true
-    const tipoFiltro = body.tipo ? String(body.tipo).toUpperCase() : null
+    const tipoFiltro = body.tipo ? claveDeTipo(String(body.tipo)) : null
     /**
      * 🧪 **A-FEAT-1172 — re-parsear sólo lo que el usuario tiene delante.**
      *

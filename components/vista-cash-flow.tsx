@@ -37,6 +37,7 @@ import { baseDesdeRetencion } from "@/lib/sicore/base-desde-retencion"
 import { totalAnticipo } from "@/lib/pagos/total-anticipo"
 import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
+import { ConfiguradorPreciosTC } from "@/components/configurador-precios-tc"
 import { calcularRetencion, baseTrasDescuento, destinoDeNotaDeCredito, retencionDelGrupo } from "@/lib/sicore/minimo"
 import { estadoSugeridoParaLote } from "@/lib/pagos/estado-sugerido-lote"
 import { estadoTildeTodas, seleccionTrasClickTodas } from "@/lib/pagos/tilde-encabezado"
@@ -58,6 +59,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { supabase } from "@/lib/supabase"
 import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
+import { camposDePagoManual } from "@/lib/templates/detalle-pago-manual"
 import { pasaFiltroMedio, marcaPagadoDesde, OPCIONES_PAGADO_DESDE } from "@/lib/pagos/pagado-desde"
 import { coincidePorPalabras } from "@/lib/normalizar-texto"
 import { toast } from "sonner"
@@ -255,6 +257,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   
   // Estado panel ECHEQs
   const [mostrarPanelEcheqs, setMostrarPanelEcheqs] = useState(false)
+  // 💱 A-FEAT-1330 — la tabla de precios y TC (la misma de Presupuesto), sin salir del Cash Flow.
+  const [mostrarPrecios, setMostrarPrecios] = useState(false)
+  const preciosCambiaron = useRef(false)
   const [cheques, setCheques] = useState<any[]>([])
   const [cargandoCheques, setCargandoCheques] = useState(false)
   // 🏦 A-FEAT-1282 — los echeqs tildados para el Excel de emisión del banco.
@@ -1089,7 +1094,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       if (columna.key === 'debitos') {
         campoReal = 'monto'
       } else if (columna.key === 'detalle') {
-        campoReal = 'descripcion'
+        // A-FEAT-1326: lo que el usuario escribe va a `detalle` (A-FEAT-138). `descripcion` es la columna
+        // vieja: la grilla muestra `detalle ?? descripcion`, así que escribir ahí no se veía si había detalle.
+        campoReal = 'detalle'
       }
     } else if (fila.origen === 'ANTICIPO') {
       // Para anticipos, el hook maneja el mapeo internamente
@@ -1436,7 +1443,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         if (celda.columna === 'debitos') {
           campoReal = 'monto'
         } else if (celda.columna === 'detalle') {
-          campoReal = 'descripcion' // En templates, 'detalle' se guarda como 'descripcion'
+          campoReal = 'detalle' // A-FEAT-1326: va a `detalle` (antes `descripcion`, que no se veía si había detalle)
         }
         // Para templates: fecha_estimada, fecha_vencimiento coinciden y se guardan en cuotas_egresos_sin_factura
         // categ y centro_costo se guardan en egresos_sin_factura (tabla padre)
@@ -2487,14 +2494,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
     const template = templatesAbiertos.find(t => t.id === templateSeleccionado)
 
-    // Generar descripción automática para FCI o usar la ingresada
-    let descripcionFinal = nuevaCuota.descripcion
-    if (template?.es_bidireccional && template?.categ === 'FCI') {
-      const tipoLabel = tipoMovimiento === 'egreso' ? 'Suscripción' : 'Rescate'
-      descripcionFinal = `${tipoLabel} ${template.nombre_referencia}`
-    } else if (!descripcionFinal) {
-      descripcionFinal = `${template?.nombre_referencia || 'Pago'} - Manual`
-    }
+    // A-FEAT-1326 — lo escrito va al Detalle (misma función en los dos modales).
+    const { detalle: descripcionFinal } = camposDePagoManual(nuevaCuota.descripcion, template, tipoMovimiento as 'egreso' | 'ingreso')
 
     setGuardandoNuevaCuota(true)
     try {
@@ -2505,7 +2506,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           egreso_id: templateSeleccionado,
           ...fechasDePagoManual(nuevaCuota.fecha),   // A-BUG-1325: es la fecha de PAGO, no el vencimiento
           monto: parseFloat(nuevaCuota.monto.replace(/\./g, '').replace(',', '.')),
-          descripcion: descripcionFinal,
+          // A-FEAT-1326 — lo que el usuario escribe va a `detalle`, como en Egresos sin Factura (A-FEAT-138).
+          detalle: descripcionFinal,
           estado: nuevaCuota.estado || 'pendiente',
           tipo_movimiento: template?.es_bidireccional ? tipoMovimiento : 'egreso',
           medio_pago: nuevaCuota.medio || 'banco',   // A-FEAT-1321 — pagado desde
@@ -4610,6 +4612,31 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               <Button
                 variant="outline"
                 size="sm"
+                onClick={() => { preciosCambiaron.current = false; setMostrarPrecios(true) }}
+                title="Precios de granos, tipo de cambio, IPC y hacienda: la misma tabla que usa el Presupuesto. Al cerrarla, el Cash Flow se recalcula con lo nuevo."
+              >
+                💱 Precios y TC
+              </Button>
+              <Dialog open={mostrarPrecios} onOpenChange={abierto => {
+                setMostrarPrecios(abierto)
+                // Lo estimado (cobros de arrendamiento sin pesos, cuotas no fijadas) depende de esta tabla.
+                if (!abierto && preciosCambiaron.current) { preciosCambiaron.current = false; void cargarDatos() }
+              }}>
+                <DialogContent className="max-w-[96vw] w-[96vw] max-h-[92vh] overflow-y-auto">
+                  <DialogHeader>
+                    <DialogTitle>💱 Precios y tipo de cambio</DialogTitle>
+                    <DialogDescription>
+                      La misma tabla que el Presupuesto. El Cash Flow la usa para estimar lo que todavía no tiene pesos
+                      (cobros de arrendamiento fijados en dólares y cuotas sin fijar). Al cerrar, se recalcula.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <TestsDelProceso proceso="cashflow/precios" pantalla="cashflow" />
+                  <ConfiguradorPreciosTC onCambio={() => { preciosCambiaron.current = true }} />
+                </DialogContent>
+              </Dialog>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={cargarDatos}
               >
                 Actualizar
@@ -5714,11 +5741,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 }
                 return (
                   <div className="space-y-2">
-                    <Label htmlFor="descripcion-pago-cf">Descripción (opcional)</Label>
+                    <Label htmlFor="descripcion-pago-cf">Detalle (opcional)</Label>
                     <Input
                       id="descripcion-pago-cf"
                       type="text"
-                      placeholder="Descripción del pago..."
+                      placeholder="Ej.: Guía municipal 7 vacas + 3 toros"
                       value={nuevaCuota.descripcion}
                       onChange={(e) => setNuevaCuota(prev => ({ ...prev, descripcion: e.target.value }))}
                     />

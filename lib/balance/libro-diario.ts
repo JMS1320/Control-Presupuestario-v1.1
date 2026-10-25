@@ -293,10 +293,16 @@ export function desdeArca(f: Record<string, unknown>): AsientoLibroDiario {
 /**
  * `msa.comprobantes_historico` → asiento.
  *
- * ⚠️ **No tiene las mismas columnas que ARCA**, y la diferencia afecta al control: acá los tributos
- * vienen abiertos en `percepcion_iibb` y `percepcion_iva`, y la identidad de cuadratura espera
- * **un solo** `otros_tributos`. Se suman los tres — si no, el control marcaría descuadre en cada
- * comprobante viejo que tenga percepciones, y el «error» sería del mapeo, no del dato.
+ * ⚠️ cambió 2026-10-24 (A-BUG-1341) — **`otros_tributos` YA INCLUYE las percepciones.**
+ * `percepcion_iibb` y `percepcion_iva` son el **desglose** de esa misma plata, no un importe aparte.
+ * Medido sobre los 273 comprobantes del histórico 25/26: **272 cierran** con
+ * `total = neto + no gravado + exento + IVA + otros_tributos`, y **ninguno** cierra si además se suman
+ * las percepciones (el que queda es de jul-2024, por $1). Ej.: Sposito 31-5817 — neto 1.091.608,38 +
+ * IVA 229.237,75 + otros 8.732,87 = 1.329.579,00, y la percepción de IIBB es esos mismos 8.732,87.
+ *
+ * ❌ Hasta acá decía lo contrario («vienen abiertos… se suman los tres») y por eso se contaban dos
+ * veces: la apertura de compras de la hoja Control daba **$ 2.872,49 de diferencia** que el usuario
+ * vio en la prueba de entrega, y «otros tributos» del libro salía inflado.
  */
 export function desdeHistorico(f: Record<string, unknown>): AsientoLibroDiario {
   return {
@@ -310,7 +316,7 @@ export function desdeHistorico(f: Record<string, unknown>): AsientoLibroDiario {
     cuit: s(f.nro_doc_emisor), denominacion: s(f.denominacion_emisor),
     neto_gravado: n(f.imp_neto_gravado), no_gravado: n(f.imp_neto_no_gravado),
     exento: n(f.imp_op_exentas),
-    otros_tributos: n(f.otros_tributos) + n(f.percepcion_iibb) + n(f.percepcion_iva),
+    otros_tributos: n(f.otros_tributos),
     iva: n(f.iva), total: n(f.imp_total),
     cuenta_contable: s(f.cuenta_contable), nro_cuenta: s(f.nro_cuenta),
     centro_costo: "",

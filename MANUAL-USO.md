@@ -47,6 +47,8 @@
 - [💳 Extracto → Tarjeta de crédito: conciliar por resumen *(2026-10-03)*](#extracto-tarjeta-de-crédito-conciliar-por-resumen-2026-10-03)
 - [💸 Sueldos → pagar un sueldo REPARTIDO *(2026-09-30)*](#sueldos-pagar-un-sueldo-repartido-2026-09-30)
 - [🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30)*](#egresos-facturas-asignación-de-cuentas-2026-09-30)
+- [🗂️ Papeles de balance → templates por tipo y «¿llegó todo?» *(2026-10-24)*](#papeles-de-balance-templates-por-tipo-y-llegó-todo-2026-10-24)
+- [🗄️ Papeles de balance → lo que cargás queda guardado *(2026-10-24)*](#papeles-de-balance-lo-que-cargás-queda-guardado-2026-10-24)
 - [🧾 Papeles de balance → compras contra lo presentado a ARCA *(2026-10-23)*](#papeles-de-balance-compras-contra-lo-presentado-a-arca-2026-10-23)
 - [🧾 Papeles de balance → CUENTAS CORRIENTES *(2026-10-01)*](#papeles-de-balance-cuentas-corrientes-2026-10-01)
 - [👷 Papeles de balance → la solapa de SUELDOS *(2026-09-30)*](#papeles-de-balance-la-solapa-de-sueldos-2026-09-30)
@@ -2786,18 +2788,32 @@ mismo canal que ya usabas desde el panel de Pendientes.
 El botón rojo **🧾 Planilla de impuestos** abre el reporte de todos los impuestos de un **año
 calendario**, a pantalla completa. Es lo que se le da a quien pide *«el reporte de los impuestos»*.
 
-- **Arriba**: el mismo aviso de vencidos y por vencer que en Principal.
+- **Arriba**: el aviso de vencidos y por vencer de Principal, en un renglón (click para desplegarlo). En esta pantalla no aparece el cartel de pruebas pendientes, para dejarle lugar a la grilla.
 - **El año**: abre en el actual; con las flechas pasás al anterior o al siguiente.
-- **Una fila por impuesto y empresa** (Inmobiliario · MSA, Red Vial · PAM, UATRE · MSA…). Cada cuota
-  aparece en el mes en que vence, con su color: **verde lleno** conciliada, **verde claro** pagada,
-  **punteada gris** sin pagar (lo presupuestado), **punteada roja** vencida sin pagar. Pasando el
-  mouse se ve el detalle de la cuota.
-- **Click en el nombre** del impuesto: se abren sus partidas (o vehículos), una por renglón.
-- **A la derecha**: pagado, adeudado (vencido sin pagar), futuro y total; abajo, por empresa y el
-  total del año. Si las cuentas cierran, arriba dice **✓ control**.
+- **Una fila por impuesto y empresa** (Inmobiliario · MSA, Red Vial · PAM, UATRE · MSA…), como una
+  planilla: **un número por mes**, completo y sin decimales, que suma las cuotas que vencen ese mes.
+  Color de la celda: **verde fuerte** conciliada, **verde claro** pagada, **gris en cursiva** sin pagar
+  (lo presupuestado), **rojo** vencida sin pagar. Un **◢ rojo en la esquina** avisa que en ese mes hay
+  cuotas pagadas y sin pagar juntas. Pasando el mouse se ven las cuotas una por una.
+- **Naranja con borde**: el mes tiene una cuota en **programado** o **echeq**. Cuenta como pagada, pero en un
+  impuesto es raro (suele ser un pago que no se terminó de cerrar): arriba aparece un aviso con cuántas hay.
+- El **ABL compartido** (PAM/MA/Duhau) se muestra en **MA**.
+- **Templates dados de baja**: lo que quedó sin pagar va abajo, en un desplegable cerrado. **No suma**
+  en los totales; está para poder revisarlo.
+- **Click en el nombre** del impuesto: se abren sus partidas (o vehículos), una por renglón, también un número por mes. El 🏛️ al lado abre el detalle con el formato de tu planilla.
+- **A la derecha**: pagado, adeudado (vencido sin pagar), futuro y total; abajo, fijo al pie, el total
+  de cada mes por empresa y el del año (al final de la grilla, no fijos). Si las cuentas cierran, arriba dice **✓ control**.
 - **Ordenar**: arrastrá una fila desde la manija ⋮⋮. El orden queda guardado en tu cuenta;
   **Orden de siempre** lo vuelve atrás.
-- **Excel**: el resumen con los 12 meses y una hoja con todas las cuotas.
+- **Excel**: el resumen con los 12 meses y una hoja con todas las cuotas (siempre todas las empresas).
+- **Chips de empresa** (arriba a la izquierda): click prende o apaga una empresa; **Ctrl+click** deja sólo ésa;
+  «todas» vuelve. El total de abajo suma sólo lo que se ve. Entre empresa y empresa hay una línea más gruesa.
+- **↗ al lado del nombre** (en la fila o en cada partida desplegada): abre **Egresos sin Factura en una
+  pestaña nueva**, filtrado por esos templates, para editar las cuotas (por ejemplo, pasar a conciliadas las
+  de $0). La planilla queda abierta en la otra pestaña. Arriba de templates se ve **🔗 Filtrado desde la
+  planilla**; la ✕ quita el filtro.
+- **Actualizar**: vuelve a leer las cuotas. Igual, **al volver a la pestaña** la planilla se recarga sola, y
+  la de templates abierta con ↗ también (salvo que estés editando una celda).
 
 Para que una cuota cambie de color, se marca pagada (o se concilia) como siempre; la planilla sólo lee.
 
@@ -2809,10 +2825,17 @@ de cada empresa. Arriba dice si cierra con la planilla (✓ control). El **Excel
 fila CONTROL que tiene que dar 0. Las hectáreas y el costo por hectárea salen del maestro de partidas
 (cargado desde tu planilla). En la solapa **Red Vial**, la columna de partida muestra el **número de la
 municipalidad** (ej. Tango Parra 1 → 52948), que es con el que te identifica el municipio.
+**Ordenar las partidas**: arrastrá una fila desde la manija ⋮⋮. El orden es **uno solo para Inmobiliario y
+Red Vial** (son las mismas partidas): lo que acomodes en una solapa se ve igual en la otra, y queda guardado
+en tu cuenta. **Orden de siempre** vuelve al alfabético. El complementario queda siempre al final.
 
 → A-TEST-1227 · A-TEST-1229
 
 ## 🌾 Cash Flow → los cobros de arrendamiento todavía sin pesos *(2026-10-23)*
+
+**💱 Precios y TC** (botón al lado de *Actualizar*): abre la misma tabla de precios de granos, tipo de
+cambio, IPC y hacienda que usa el Presupuesto. Lo que cargues ahí cambia las estimaciones de abajo; al
+cerrar, el Cash Flow se recalcula solo. → A-TEST-1231
 
 - **Cuota fijada en dólares, sin TC todavía**: aparece con su importe estimado = toneladas × precio
   fijado × el **TC de la tabla de tipos de cambio** del mes de cobro (si ese mes no está cargado, el
@@ -2865,7 +2888,8 @@ En la grilla, al lado de la empresa, aparece **🏦 desde MA Galicia** (en naran
 otra empresa). Así, cuando mirás el banco de MSA y el pago no está, ya sabés por qué.
 
 Lo mismo se elige en **Pago manual** (Cash Flow y Egresos sin Factura), donde antes decía *Medio de
-pago*. El filtro de medio de pago **Banco** sigue mostrando estos pagos: salieron por banco, sólo
+pago*. En el mismo modal, lo que escribís en **Detalle** queda como detalle de la cuota (antes, desde el
+Cash Flow iba a otra columna y no siempre se veía). El filtro de medio de pago **Banco** sigue mostrando estos pagos: salieron por banco, sólo
 que de otra cuenta.
 
 → A-TEST-1226
@@ -3213,6 +3237,27 @@ con el dólar BNA importado a esa fecha.
   **«Actualizar la versión Sistema de la foto»**.
 
 ⚠️ Sin probar todavía → A-TEST-1182
+
+## 🗂️ Papeles de balance → templates por tipo y «¿llegó todo?» *(2026-10-24)*
+
+- Las solapas **Templates** y **Templates por mes** del Excel van separadas por tipo: **EGRESOS** (el gasto), **INGRESOS**, **DISTRIBUCIONES** (retiros y aportes), **FINANCIERO** (FCI, plazo fijo, caja, pago de tarjeta: no es gasto), **NO** y **SIN CLASIFICAR**. Adentro de cada tipo, por responsable (están todos: MSA, PAM, MA…). Al pie de Templates por mes, la «Diferencia por tipo» tiene que dar 0.
+- El tipo sale del template; si el template no lo tiene, de su cuenta en el plan. Lo que cae en **SIN CLASIFICAR** necesita que le pongas el tipo al template.
+- Al armar el libro, arriba dice **«✓ Llegó todo de la base»**. Si en cambio aparece un cartel rojo «Faltan datos», **no entregues ese Excel**: una consulta llegó incompleta y es un error de la app. Lo mismo dice la hoja **Control** y el papel 00 del índice.
+
+⚠️ Sin probar todavía → A-TEST-1242
+
+## 🗄️ Papeles de balance → lo que cargás queda guardado *(2026-10-24)*
+
+En **Reportes → Papeles de trabajo del balance**, lo que escribís a mano se guarda solo, por empresa y ejercicio, y aparece cargado cuando volvés otro día:
+- los **precios a mano** de las categorías de hacienda (tabla de «Traer stock y precios»);
+- las cuatro casillas del **cuadre de granos**: stock al inicio, cosecha, existencia al cierre y precio por tonelada;
+- las **cuotapartes** y el valor de la cuotaparte del fondo común (en «Pasar a la foto del balance propio»).
+
+Al lado de cada bloque dice si está guardado. Lo que trae la app sola (el stock, los precios del mercado) se recalcula cada vez que apretás **Traer stock y precios**: eso no hace falta guardarlo. Para que un precio a mano se use, apretá **Recalcular** después de escribirlo.
+
+Si borrás una casilla, queda vacía; la app guarda igual lo que había antes y quién lo cargó.
+
+⚠️ Sin probar todavía → A-TEST-1240
 
 ## 🧾 Papeles de balance → compras contra lo presentado a ARCA *(2026-10-23)*
 

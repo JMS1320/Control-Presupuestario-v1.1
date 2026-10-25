@@ -62,3 +62,28 @@ export function hayQuePreguntarFechaPago(filas: FilaConFechaPago[], fechaPropues
   if (!fechaPropuesta) return true             // sin propuesta no hay con qué comparar
   return !filas.every(f => !!f.fecha_pago && f.fecha_pago === fechaPropuesta)
 }
+
+/**
+ * 0️⃣ **A-FEAT-1357 — una cuota en $0 no tiene fecha de pago: no hubo pago.**
+ *
+ * Usuario 2026-10-24, conciliando 5 cuotas en cero de IIBB MSA: *«no sería lógico dar OK porque le
+ * pondría fecha de pago a todas… estos casos son que no hubo monto a pagar»*. Preguntar ahí obliga a
+ * **inventar** una fecha, que es el mismo modo de falla que preguntar en `pendiente`.
+ *
+ * ⚠️ **Sólo cuenta como «sin importe» un monto que ES cero.** Un monto vacío o ilegible no se sabe
+ * cuánto es, así que va con las que tienen importe y se pregunta (el sesgo de arriba: ante la duda,
+ * se pregunta).
+ */
+export function esSinImporte(monto: unknown): boolean {
+  if (monto === null || monto === undefined || String(monto).trim() === "") return false
+  const n = Number(monto)
+  return Number.isFinite(n) && Math.abs(n) < 0.005
+}
+
+/** Separa un lote en las cuotas en $0 (pasan sin fecha) y las que tienen importe (se pregunta). */
+export function separarSinImporte<T extends { monto?: unknown }>(filas: T[]): { sinImporte: T[]; conImporte: T[] } {
+  return {
+    sinImporte: filas.filter(f => esSinImporte(f.monto)),
+    conImporte: filas.filter(f => !esSinImporte(f.monto)),
+  }
+}
