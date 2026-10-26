@@ -135,7 +135,7 @@ def par(nombre, categ, agr, centro, cc, prov, solo_2026=False):
 par("Luz Libertad", "LUZ", FBA, *L, "Edesur")
 par("Internet Libertad", TEL, FBA, *L, "Iplan")
 par("Telefono Fijo 812", TEL, FBA, *L, "Movistar (Telefónica)")
-par("Paquete TV MA", TEL, SUSC, None, None, "Personal Flow (Telecom)")
+par("Paquete TV MA", "Consumos", SUSC, None, None, "Personal Flow (Telecom)")   # usuario 26/10: «en línea con Disney Plus, Spotify»
 for n in ["Club La Nación", "Disney Plus", "Jockey Club", "Netflix", "Spotify"]:
     par(n, "Consumos", SUSC, None, None, n if n != "Club La Nación" else "La Nación")
 par("Eset (antivirus)", "INFORMATICA", SUSC, None, None, "Eset", solo_2026=True)
