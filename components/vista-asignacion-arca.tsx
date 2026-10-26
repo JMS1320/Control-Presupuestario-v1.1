@@ -204,6 +204,13 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
 
   // ── Map normalizado: normalize(categ) → CuentaSistema[] ──────────────────
 
+  /**
+   * 🧾 Para FACTURAS sólo se ofrecen las cuentas del plan CON NÚMERO (usuario 26/10: «ok lo de las cuentas sólo de
+   * facturas para facturas»). Las sin número (IIBB Bancario, Percepción IVA, Consumos…) son de templates y cargos
+   * del banco: ninguna factura de las tres empresas las usó nunca.
+   */
+  const cuentasDeFacturas = useMemo(() => cuentasSistema.filter(c => c.nro_cuenta), [cuentasSistema])
+
   const matchMap = useMemo(() => {
     const m = new Map<string, CuentaSistema[]>()
     for (const c of cuentasSistema) {
@@ -554,11 +561,11 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
   const sugerenciasFiltradas = useMemo(() => {
     if (!busquedaModal) return sugerencias
     // 🐛 A-BUG-1377: hay cuentas del plan SIN número; la búsqueda vive en lib para poder probarla.
-    return cuentasQueCoinciden(cuentasSistema, busquedaModal)
+    return cuentasQueCoinciden(cuentasDeFacturas, busquedaModal)
       .map(c => ({ ...c, score: fuzzyScore(busquedaModal, c.categ), fuente: "nombre_similar" as const }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 30)
-  }, [busquedaModal, sugerencias, cuentasSistema])
+  }, [busquedaModal, sugerencias, cuentasDeFacturas])
 
   // ── Actualizar Archivo Facturas ────────────────────────────────────────────
 
@@ -886,6 +893,7 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
             <div className="flex-1 overflow-y-auto min-h-0">
               <SelectorCuentaContable
                 modo="modal-list"
+                cuentasPrecargadas={cuentasDeFacturas.map(c => ({ categ: c.categ, nro_cuenta: c.nro_cuenta as string, cuenta_contable: c.cuenta_contable ?? c.categ, nombre_totalizadora: c.nombre_totalizadora }))}
                 cuitProveedor={modalCuit}
                 schemaName={schemaName}
                 value={cuentaElegida?.categ ?? null}
