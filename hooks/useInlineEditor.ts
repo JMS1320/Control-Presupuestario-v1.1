@@ -3,7 +3,8 @@
 import { useState, useRef, useCallback } from "react"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
-import { nroDeCuenta } from "@/lib/facturas/nro-de-cuenta"
+import { pedirAsignacionDeCuenta, mensajeDePropagacion } from "@/lib/conciliacion/asignar-cuenta-cliente"
+import type { EmpresaFactura } from "@/lib/conciliacion/asignar-cuenta"
 
 export interface CeldaEnEdicion {
   filaId: string
@@ -13,6 +14,8 @@ export interface CeldaEnEdicion {
   campoReal?: string
   origen?: 'ARCA' | 'TEMPLATE' | 'EXTRACTO' | 'CASH_FLOW' | 'ANTICIPO' | 'PRODUCTIVO'
   egresoId?: string
+  /** Empresa de la factura (origen ARCA). Sin esto se asume MSA. A-DEC-1021. */
+  empresa?: EmpresaFactura
 }
 
 interface UseInlineEditorProps {
@@ -150,14 +153,30 @@ function useInlineEditor({ onSuccess, onLocalUpdate, onError, customValidations 
        * extracto va más abajo, cuando ya se sabe que la factura se guardó.
        */
       const cambiaCuentaDeFactura = tabla === 'comprobantes_arca' && 'cuenta_contable' in updateData
-      if (cambiaCuentaDeFactura) {
-        let nro: string | null = null
-        if (updateData.cuenta_contable) {
-          const { data: plan, error: errorPlan } = await supabase.from('cuentas_contables').select('categ, nro_cuenta')
-          if (errorPlan) throw new Error(`No se pudo leer el plan de cuentas: la cuenta NO se guardó (${errorPlan.message})`)
-          nro = nroDeCuenta(updateData.cuenta_contable, plan ?? [])
-        }
-        updateData.nro_cuenta = nro
+
+      /**
+       * 🧾 **La cuenta de una factura va por el camino único** (A-DEC-1021): `/api/arca-asignar`
+       * guarda número y nombre juntos, sacados del plan (A-BUG-1371), en la empresa de la factura, y
+       * los lleva a los 11 extractos. Antes acá se escribía en MSA aunque la factura fuera de PAM o
+       * MA, y la propagación se pedía aparte.
+       */
+      if (cambiaCuentaDeFactura && celdaEnEdicion.origen === 'ARCA') {
+        const r = await pedirAsignacionDeCuenta({
+          empresa: celdaEnEdicion.empresa ?? 'MSA',
+          ids: [celdaEnEdicion.filaId],
+          cuenta_contable: updateData.cuenta_contable ?? null,
+          nro_cuenta: null,
+        })
+        const par = { cuenta_contable: r.cuenta?.cuenta_contable ?? null, nro_cuenta: r.cuenta?.nro_cuenta ?? null }
+        toast.success(par.cuenta_contable ? `Cuenta guardada: ${par.cuenta_contable}` : 'Cuenta quitada')
+        const m = mensajeDePropagacion(r)
+        if (m.tipo === 'aviso') toast.warning(m.texto)
+        else if (m.tipo === 'ok') toast.success(m.texto)
+        const celdaGuardada = { ...celdaEnEdicion }
+        setCeldaEnEdicion(null)
+        if (onLocalUpdate) onLocalUpdate(celdaGuardada.filaId, celdaGuardada.columna, par.cuenta_contable, par)
+        else onSuccess?.()
+        return true
       }
 
       // Venc de templates: SÍ o SÍ por el RPC (único camino autorizado por el guardián de BD).
@@ -206,33 +225,6 @@ function useInlineEditor({ onSuccess, onLocalUpdate, onError, customValidations 
       }
 
       toast.success('Campo actualizado correctamente')
-      // La factura ya quedó guardada (el conteo de arriba lo confirma): ahora la cuenta viaja a sus
-      // movimientos conciliados, por la misma ruta que usa Asignación. Si esto falla se AVISA — la
-      // factura quedó bien, lo que no se enteró es el extracto.
-      if (cambiaCuentaDeFactura && updateData.cuenta_contable && !updateData.nro_cuenta) {
-        // § 🧮 nada en silencio: quedó el nombre solo.
-        toast.warning(`«${updateData.cuenta_contable}» no tiene número en el plan de cuentas: la factura quedó con el nombre solo`)
-      } else if (cambiaCuentaDeFactura && celdaEnEdicion.origen === 'ARCA') {
-        try {
-          const res = await fetch('/api/arca-asignar', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              ids: [celdaEnEdicion.filaId],
-              nro_cuenta: updateData.nro_cuenta,
-              cuenta_contable: updateData.cuenta_contable,
-            }),
-          })
-          const r = await res.json()
-          if (!r.success) throw new Error(r.message)
-          if (r.propagacion?.aviso) toast.warning(r.propagacion.aviso)
-          else if ((r.propagacion?.propagados ?? 0) > 0) {
-            toast.success(`La cuenta llegó a ${r.propagacion.propagados} movimiento(s) del extracto ya conciliados.`)
-          }
-        } catch (e) {
-          toast.warning(`La cuenta se guardó en la factura, pero no se pudo llevar al extracto: ${e instanceof Error ? e.message : e}`)
-        }
-      }
       const celdaGuardada = { ...celdaEnEdicion }
       setCeldaEnEdicion(null)
       if (onLocalUpdate) {

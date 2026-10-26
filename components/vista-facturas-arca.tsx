@@ -86,6 +86,8 @@ import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { usePuedeVer } from "@/components/contexto-permisos"
 import { Permisable } from "@/components/modo-permisos"
+import { pedirAsignacionDeCuenta, mensajeDePropagacion, type RespuestaAsignacion } from "@/lib/conciliacion/asignar-cuenta-cliente"
+import { contarMovimientosDeFactura, type ClienteParaPropagar } from "@/lib/conciliacion/propagar-cuenta"
 
 interface FacturaArca {
   id: string
@@ -1027,20 +1029,18 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // Retorna lo que está vinculado a la FC para que el usuario decida.
   const chequearDependenciasFC = async (facturaId: string) => {
     try {
-      const [anticiposRes, sicoreRes, conciliacionesMsa, conciliacionesPam, conciliacionesPamCc, conciliacionesMa, fcRes] = await Promise.all([
+      // 🔗 A-BUG-1227 (3): los movimientos se cuentan en los 11 extractos (bancos, tarjetas, cajas,
+      // echeqs). Antes miraba 4 y concluía «sin conciliaciones» teniendo movimientos de tarjeta atados:
+      // dejaba pasar un borrado. Una tabla que no se pudo leer NO cuenta como cero.
+      const [anticiposRes, sicoreRes, movs, fcRes] = await Promise.all([
         supabase.from('anticipos_proveedores').select('id, monto').eq('factura_id', facturaId),
         supabase.schema('msa').from('sicore_retenciones').select('id, ddjj_confirmada').eq('factura_id', facturaId),
-        supabase.from('msa_galicia').select('id').eq('comprobante_arca_id', facturaId),
-        supabase.from('pam_galicia').select('id').eq('comprobante_arca_id', facturaId),
-        supabase.from('pam_galicia_cc').select('id').eq('comprobante_arca_id', facturaId),
-        supabase.schema('ma').from('ma_galicia').select('id').eq('comprobante_arca_id', facturaId),
+        contarMovimientosDeFactura(supabase as unknown as ClienteParaPropagar, facturaId),
         supabase.schema(schemaName).from('comprobantes_arca').select('ddjj_iva, estado').eq('id', facturaId).maybeSingle(),
       ])
-      const conciliaciones =
-        (conciliacionesMsa.data?.length || 0) +
-        (conciliacionesPam.data?.length || 0) +
-        (conciliacionesPamCc.data?.length || 0) +
-        (conciliacionesMa.data?.length || 0)
+      const conciliaciones = movs.total
+      const extractosConMovs = movs.porTabla.map(t => `${t.n} en ${t.que}`)
+      const extractosSinLeer = movs.fallaron
       const sicoreCount = sicoreRes.data?.length || 0
       const sicoreDdjjConfirmada = (sicoreRes.data || []).some((s: any) => s.ddjj_confirmada)
       return {
@@ -1048,12 +1048,15 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         sicore: sicoreCount,
         sicoreDdjjConfirmada,
         conciliaciones,
+        extractosConMovs,
+        extractosSinLeer,
         ddjjIva: fcRes.data?.ddjj_iva || null,
         estado: fcRes.data?.estado || null,
       }
     } catch (err) {
       console.warn('chequearDependenciasFC error:', err)
-      return { anticipos: 0, sicore: 0, sicoreDdjjConfirmada: false, conciliaciones: 0, ddjjIva: null, estado: null }
+      // 🛑 Si el chequeo falla no se dice «sin dependencias»: se avisa que no se pudo verificar.
+      return { anticipos: 0, sicore: 0, sicoreDdjjConfirmada: false, conciliaciones: 0, extractosConMovs: [] as string[], extractosSinLeer: ['(no se pudo verificar)'], ddjjIva: null, estado: null }
     }
   }
 
@@ -1062,7 +1065,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     const items: string[] = []
     if (deps.anticipos > 0) items.push(`• ${deps.anticipos} anticipo(s) vinculado(s)`)
     if (deps.sicore > 0) items.push(`• ${deps.sicore} retención(es) SICORE${deps.sicoreDdjjConfirmada ? ' (¡DDJJ ya confirmada!)' : ''}`)
-    if (deps.conciliaciones > 0) items.push(`• ${deps.conciliaciones} movimiento(s) bancario(s) conciliado(s)`)
+    if (deps.conciliaciones > 0) items.push(`• ${deps.conciliaciones} movimiento(s) conciliado(s): ${deps.extractosConMovs.join(', ')}`)
+    if (deps.extractosSinLeer.length > 0) items.push(`• ⚠️ No se pudo verificar: ${deps.extractosSinLeer.join(', ')}`)
     if (deps.ddjjIva === 'DDJJ OK') items.push('• DDJJ IVA ya cerrada (estado "DDJJ OK")')
     else if (deps.ddjjIva === 'Enviado') items.push('• Su período ya se envió al contador (estado "Enviado")')
     else if (deps.ddjjIva === 'Imputado') items.push('• Imputada en un período de DDJJ IVA')
@@ -1443,10 +1447,39 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     await ejecutarGuardadoReal(celdaEnEdicion)
   }
 
+  /** 🧮 Lo que pasó con los movimientos conciliados, igual que en Asignación de cuentas. */
+  const avisarAsignacion = (r: RespuestaAsignacion) => {
+    const m = mensajeDePropagacion(r)
+    if (m.tipo) alert(m.texto)
+  }
+
   const ejecutarGuardadoReal = async (datosEdicion: {facturaId: string, columna: string, valor: any}) => {
     setGuardandoCambio(true)
     
     try {
+      /**
+       * 🧾 **La cuenta va por el camino único** (A-DEC-1021 / A-BUG-1227 (1)). Antes acá se guardaba el
+       * nombre, se buscaba el número aparte, y se propagaba a 3 de los 11 extractos sin esperar ni
+       * avisar si fallaba. Ahora: par número + nombre del plan, en esta empresa, a los 11 extractos.
+       */
+      if (datosEdicion.columna === 'cuenta_contable') {
+        let r: RespuestaAsignacion
+        try {
+          r = await pedirAsignacionDeCuenta({
+            empresa, ids: [datosEdicion.facturaId], cuenta_contable: String(datosEdicion.valor ?? '').trim() || null, nro_cuenta: null,
+          })
+        } catch (err: any) {
+          alert('La cuenta NO se guardó: ' + err.message)
+          return
+        }
+        const par = { cuenta_contable: r.cuenta?.cuenta_contable ?? null, nro_cuenta: r.cuenta?.nro_cuenta ?? null }
+        setFacturas(prev => prev.map(f => f.id === datosEdicion.facturaId ? { ...f, ...par } : f))
+        setFacturasOriginales(prev => prev.map(f => f.id === datosEdicion.facturaId ? { ...f, ...par } : f))
+        setCeldaEnEdicion(null)
+        avisarAsignacion(r)
+        return
+      }
+
       let valorFinal: any = datosEdicion.valor
       
       // Convertir valores según el tipo de campo
@@ -1474,30 +1507,6 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         console.error('Error actualizando factura:', error)
         alert('Error al guardar cambio: ' + error.message)
         return
-      }
-
-      // Si se actualizó cuenta_contable, propagar categ + nro_cuenta a movimientos bancarios vinculados
-      if (datosEdicion.columna === 'cuenta_contable' && valorFinal) {
-        const nroCta = cuentas.find(c => c.categ === valorFinal)?.nro_cuenta || null
-        const updateExtracto: Record<string, any> = { categ: valorFinal }
-        if (nroCta) updateExtracto.nro_cuenta = nroCta
-        // También actualizar nro_cuenta en la factura misma
-        if (nroCta) {
-          supabase.schema(schemaName).from('comprobantes_arca')
-            .update({ nro_cuenta: nroCta }).eq('id', datosEdicion.facturaId)
-            .then(({ error }) => { if (error) console.error('Error propagando nro_cuenta a factura:', error) })
-          camposUpdate.nro_cuenta = nroCta
-        }
-        for (const tabla of ['msa_galicia', 'pam_galicia', 'pam_galicia_cc']) {
-          supabase
-            .from(tabla)
-            .update(updateExtracto)
-            .eq('comprobante_arca_id', datosEdicion.facturaId)
-            .then(({ error }) => {
-              if (error) console.error(`Error propagando cuenta_contable a ${tabla}:`, error)
-              else console.log(`✅ cuenta_contable+nro_cuenta propagada a ${tabla} para factura ${datosEdicion.facturaId}`)
-            })
-        }
       }
 
       // Actualizar estado local (incluir fecha_estimada si aplica)
@@ -11206,19 +11215,18 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                                           cuitProveedor={f.cuit}
                                           schemaName={schemaName}
                                           onSelect={async (cuenta) => {
-                                            const categ = cuenta?.categ ?? null
-                                            const nroCta = cuenta?.nro_cuenta ?? null
-                                            await supabase.schema(schemaName).from('comprobantes_arca')
-                                              .update({ cuenta_contable: categ, nro_cuenta: nroCta }).eq('id', f.id)
-                                            // Propagar a extractos bancarios vinculados
-                                            if (categ) {
-                                              for (const tabla of ['msa_galicia', 'pam_galicia', 'pam_galicia_cc']) {
-                                                await supabase.from(tabla)
-                                                  .update({ categ, nro_cuenta: nroCta })
-                                                  .eq('comprobante_arca_id', f.id)
-                                              }
+                                            // 🧾 Camino único (A-DEC-1021): par del plan, su empresa, 11 extractos, y
+                                            // también al QUITAR la cuenta (antes no propagaba nada al desasignar).
+                                            try {
+                                              const r = await pedirAsignacionDeCuenta({
+                                                empresa, ids: [f.id], nro_cuenta: cuenta?.nro_cuenta ?? null, cuenta_contable: cuenta?.categ ?? null,
+                                              })
+                                              avisarAsignacion(r)
+                                              const par = { cuenta_contable: r.cuenta?.cuenta_contable ?? null, nro_cuenta: r.cuenta?.nro_cuenta ?? null }
+                                              setFacturasPagos(prev => prev.map(x => x.id === f.id ? { ...x, ...par } : x))
+                                            } catch (err: any) {
+                                              alert('La cuenta NO se guardó: ' + err.message)
                                             }
-                                            setFacturasPagos(prev => prev.map(x => x.id === f.id ? { ...x, cuenta_contable: categ, nro_cuenta: nroCta } : x))
                                             setEditandoCuentaPagosId(null)
                                           }}
                                           onCancel={() => setEditandoCuentaPagosId(null)}

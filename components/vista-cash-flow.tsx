@@ -49,6 +49,8 @@ import { EditorPlanEcheqs, planVacio, planDesdeUI, type PlanEcheqsUI } from "./e
 import { ModalExportarEcheqs } from "./modal-exportar-echeqs"
 import { obtenerMediosPagoFactura } from "@/lib/pagos/medios-pago"
 import { EMPRESAS, COLOR_EMPRESA, schemaDeFila, esFilaMsa, type Empresa } from "@/lib/empresas"
+import { pedirAsignacionDeCuenta, mensajeDePropagacion } from "@/lib/conciliacion/asignar-cuenta-cliente"
+import { empresaDeSchema } from "@/lib/conciliacion/asignar-cuenta"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -876,20 +878,18 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     setGuardandoMarcaCuenta(true)
     try {
       if (fila.origen === 'ARCA') {
-        const res = await fetch('/api/arca-asignar', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids: [fila.id], nro_cuenta: cuenta.nro_cuenta, cuenta_contable: cuenta.categ }),
+        // 🏢 La empresa de la factura (A-DEC-1021): ya no es sólo MSA.
+        const r = await pedirAsignacionDeCuenta({
+          empresa: empresaDeSchema(schemaDeFila(fila)), ids: [fila.id],
+          nro_cuenta: cuenta.nro_cuenta, cuenta_contable: cuenta.categ,
         })
-        const r = await res.json()
-        if (!r.success) throw new Error(r.message || 'No se pudo asignar la cuenta')
-        actualizarLocal(fila.id, 'categ', cuenta.categ)
-        actualizarLocal(fila.id, 'nro_cuenta', cuenta.nro_cuenta)
+        actualizarLocal(fila.id, 'categ', r.cuenta?.cuenta_contable ?? cuenta.categ)
+        actualizarLocal(fila.id, 'nro_cuenta', r.cuenta?.nro_cuenta ?? null)
         // 🧮 Lo que pasó con el extracto se ve (mismo aviso que en Asignación).
-        if (r.propagacion?.aviso) toast.warning(r.propagacion.aviso)
-        else if ((r.propagacion?.propagados ?? 0) > 0) {
-          toast.success(`Cuenta asignada. Llegó a ${r.propagacion.propagados} movimiento(s) del extracto ya conciliados.`)
-        } else toast.success(`Cuenta asignada: ${cuenta.categ}`)
+        const m = mensajeDePropagacion(r)
+        if (m.tipo === 'aviso') toast.warning(m.texto)
+        else if (m.tipo === 'ok') toast.success(`Cuenta asignada. ${m.texto}`)
+        else toast.success(`Cuenta asignada: ${cuenta.categ}`)
       }
       setMarcaCuentaAbierta(null)
     } catch (err: any) {
@@ -904,11 +904,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     const c = cuentaDeFila(fila)
     const color = COLOR_CUENTA[c.estado]
     if (!color) return <span className="inline-block h-2.5 w-2.5 shrink-0" />
-    // La ruta de asignación escribe sólo en MSA: en PAM y MA la marca informa y no asigna.
-    const puedeAca = c.asignable && esFilaMsa(fila)
-    const titulo = c.asignable && !puedeAca
-      ? `${c.titulo.replace(/ — tocá.*$/, '')} — las facturas de PAM y MA todavía no se asignan desde acá`
-      : c.titulo
+    // Desde A-DEC-1021 la ruta de asignación escribe en las tres empresas.
+    const puedeAca = c.asignable
+    const titulo = c.titulo
     const punto = <span className={`inline-block h-2.5 w-2.5 rounded-full ${color}`} />
     if (!puedeAca) {
       return <span className="shrink-0 leading-none cursor-help" title={titulo}>{punto}</span>
@@ -1124,7 +1122,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       valor: valorFormateado,
       tableName,
       origen: origenHook,
-      campoReal: campoReal // ← Mapeo del campo real en BD
+      campoReal: campoReal, // ← Mapeo del campo real en BD
+      // 🏢 La cuenta de una factura se guarda en SU empresa (A-DEC-1021).
+      ...(fila.origen === 'ARCA' ? { empresa: empresaDeSchema(schemaDeFila(fila)) } : {}),
     }
 
     console.log('🎯 Cash Flow celdaHook:', celdaHook)

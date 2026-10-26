@@ -17,6 +17,9 @@ import { toast } from "sonner"
  */
 import { estadoArchivoDigital, PRESENTACION_ARCHIVO } from "@/lib/facturas/archivo-digital"
 import { opcionesFcManual } from "@/lib/gas-pdf/lote"
+import { pedirAsignacionDeCuenta, mensajeDePropagacion, type RespuestaAsignacion } from "@/lib/conciliacion/asignar-cuenta-cliente"
+import { cargarMovimientosVinculados, diagnosticarVinculos, TITULO_PROBLEMA, type Diagnostico } from "@/lib/conciliacion/revisar-vinculos"
+import type { ClienteParaPropagar } from "@/lib/conciliacion/propagar-cuenta"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -26,6 +29,7 @@ interface CuentaSistema {
   cuenta_contable: string
   imputable: boolean
   nombre_totalizadora: string | null
+  tipo?: string | null
 }
 
 interface ComprobanteArca {
@@ -123,6 +127,10 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
   const [cuentasSistema, setCuentasSistema] = useState<CuentaSistema[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // 🩺 A-DEC-1021 (6): el estado de los movimientos ya conciliados, mirado ANTES de actuar.
+  const [diag, setDiag] = useState<Diagnostico | null>(null)
+  const [extractosSinLeer, setExtractosSinLeer] = useState<string[]>([])
+  const [soloConciliadas, setSoloConciliadas] = useState(false)
 
   // Filtros
   const [filtroEstado, setFiltroEstado] = useState<EstadoMatch | "todos">("todos")
@@ -162,19 +170,27 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
           .select("id,fecha_emision,cuit,denominacion_emisor,imp_neto_gravado,iva,imp_total,cuenta_contable,nro_cuenta,año_contable,mes_contable,fc,ddjj_iva,numero_desde,tipo_comprobante,pdf_drive_url")
           .order("fecha_emision", { ascending: false }),
         supabase.from("cuentas_contables")
-          .select("categ,nro_cuenta,cuenta_contable,imputable,nombre_totalizadora")
+          .select("categ,nro_cuenta,cuenta_contable,imputable,nombre_totalizadora,tipo")
           .order("nro_cuenta"),
       ])
       if (e1) throw new Error(e1.message)
       if (e2) throw new Error(e2.message)
       setComprobantes((arca ?? []) as ComprobanteArca[])
       setCuentasSistema((ctas ?? []) as CuentaSistema[])
+      try {
+        const { movs, fallaron } = await cargarMovimientosVinculados(supabase as unknown as ClienteParaPropagar)
+        setDiag(diagnosticarVinculos(movs, (arca ?? []) as unknown as ComprobanteArca[], (ctas ?? []) as CuentaSistema[]))
+        setExtractosSinLeer(fallaron)
+      } catch (e: any) {
+        setDiag(null)
+        setExtractosSinLeer([`(no se pudo revisar: ${e?.message ?? e})`])
+      }
     } catch (err: any) {
       setError(err.message)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [schemaName])
 
   useEffect(() => { cargar() }, [cargar])
 
@@ -233,6 +249,7 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
     const q = busqueda.toLowerCase()
     return conEstado.filter(c => {
       if (filtroEstado !== "todos" && c._estado !== filtroEstado) return false
+      if (soloConciliadas && !(diag?.movimientosPorFactura.get(c.id))) return false
       if (filtroPeriodo !== "todos") {
         const p = `${c.año_contable}-${String(c.mes_contable).padStart(2, "0")}`
         if (p !== filtroPeriodo) return false
@@ -246,7 +263,7 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
                !(c.cuenta_contable ?? "").toLowerCase().includes(q)) return false
       return true
     })
-  }, [conEstado, filtroEstado, filtroPeriodo, filtroCuenta, busqueda])
+  }, [conEstado, filtroEstado, filtroPeriodo, filtroCuenta, busqueda, soloConciliadas, diag])
 
   // ── Selección ─────────────────────────────────────────────────────────────
 
@@ -370,23 +387,14 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
 
   // ── Guardar asignación ────────────────────────────────────────────────────
 
-  /** Qué devuelve la ruta sobre la propagación al extracto. Ver `lib/conciliacion/propagar-cuenta.ts`. */
-  interface Propagacion {
-    propagados?: number
-    salteados?: number
-    aviso?: string | null
-  }
-
   /**
    * 🧮 Muestra qué pasó con los movimientos conciliados. **Nada en silencio**: si propagó, lo dice
    * en verde; si algo quedó sin tocar o falló, en ámbar y con el detalle.
    */
-  function mostrarPropagacion(p: Propagacion | undefined) {
-    if (!p) return
-    if (p.aviso) { toast.warning(p.aviso); return }
-    if ((p.propagados ?? 0) > 0) {
-      toast.success(`La cuenta llegó a ${p.propagados} movimiento(s) del extracto ya conciliados.`)
-    }
+  function mostrarPropagacion(r: RespuestaAsignacion) {
+    const m = mensajeDePropagacion(r)
+    if (m.tipo === "aviso") toast.warning(m.texto)
+    else if (m.tipo === "ok") toast.success(m.texto)
   }
 
 
@@ -394,17 +402,10 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
     if (!cuentaElegida) return
     setGuardando(true)
     try {
-      const res = await fetch("/api/arca-asignar", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ids: modalIds,
-          nro_cuenta: cuentaElegida.nro_cuenta,
-          cuenta_contable: cuentaElegida.categ,
-        }),
+      // 🏢 Una empresa por vez (A-DEC-1021): la de esta pestaña.
+      const data = await pedirAsignacionDeCuenta({
+        empresa, ids: modalIds, nro_cuenta: cuentaElegida.nro_cuenta, cuenta_contable: cuentaElegida.categ,
       })
-      const data = await res.json()
-      if (!data.success) throw new Error(data.message)
       /**
        * 🔗 **Lo que pasó con el extracto SE VE** (A-BUG-1221).
        *
@@ -415,7 +416,7 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
        * Ahora la ruta devuelve cuántos movimientos recibió la cuenta y cuáles **no se tocaron** por
        * estar clasificados en otro sistema (`FCI`, `CAJA`, `Sueldos`…): § 🚦 avisa y deja seguir.
        */
-      mostrarPropagacion(data.propagacion)
+      mostrarPropagacion(data)
       setModalAbierto(false)
       setSeleccionados(new Set())
       await cargar()
@@ -432,11 +433,12 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
    */
   async function quitarAsignacion(ids: string[]) {
     if (!confirm(`¿Quitar la asignación de ${ids.length} comprobante(s)?`)) return
-    await fetch("/api/arca-asignar", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids, nro_cuenta: null, cuenta_contable: null }),
-    }).then(r => r.json()).then(d => mostrarPropagacion(d?.propagacion)).catch(() => {})
+    // Antes un error acá se tragaba (`.catch(() => {})`) y la pantalla recargaba como si nada.
+    try {
+      mostrarPropagacion(await pedirAsignacionDeCuenta({ empresa, ids, nro_cuenta: null, cuenta_contable: null }))
+    } catch (err: any) {
+      toast.error(`No se quitó la cuenta: ${err.message}`)
+    }
     setSeleccionados(new Set())
     await cargar()
   }
@@ -467,15 +469,12 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
     const unicos = conEstado.filter(c => c._estado === "unico")
     if (unicos.length === 0) return
     if (!confirm(`¿Auto-asignar ${unicos.length} comprobantes con match único?`)) return
-    const updates = unicos.map(c => {
+    const resultados = await Promise.allSettled(unicos.map(c => {
       const cta = matchMap.get(normalize(c.cuenta_contable ?? ""))![0]
-      return fetch("/api/arca-asignar", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: [c.id], nro_cuenta: cta.nro_cuenta, cuenta_contable: cta.categ }),
-      })
-    })
-    await Promise.all(updates)
+      return pedirAsignacionDeCuenta({ empresa, ids: [c.id], nro_cuenta: cta.nro_cuenta, cuenta_contable: cta.categ })
+    }))
+    const fallidas = resultados.filter(r => r.status === "rejected").length
+    if (fallidas > 0) toast.error(`${fallidas} de ${unicos.length} no se pudieron asignar`)
     await cargar()
   }
 
@@ -544,6 +543,32 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
   return (
     <div className="space-y-4">
 
+      {/* 🩺 A-DEC-1021 (6) — errores de datos, ANTES de actuar. Sólo errores: lo que falta asignar no va acá. */}
+      {(diag && diag.errores.length > 0 || extractosSinLeer.length > 0) && (
+        <div className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800 space-y-1">
+          {diag && diag.errores.length > 0 && (
+            <>
+              <p className="font-semibold">⛔ {diag.errores.length} movimiento(s) conciliado(s) no coinciden con su factura — revisalos antes de asignar</p>
+              <ul className="text-xs space-y-0.5">
+                {diag.errores.slice(0, 15).map((p, i) => {
+                  const f = comprobantes.find(c => c.id === p.mov.facturaId)
+                  return (
+                    <li key={i}>
+                      <strong>{TITULO_PROBLEMA[p.tipo]}</strong> · {p.mov.que}: el movimiento {p.detalle}
+                      {f && <> — factura de {f.denominacion_emisor ?? "?"} del {f.fecha_emision ?? "?"} por ${fmt(f.imp_total)}</>}
+                    </li>
+                  )
+                })}
+                {diag.errores.length > 15 && <li>… y {diag.errores.length - 15} más</li>}
+              </ul>
+            </>
+          )}
+          {extractosSinLeer.length > 0 && (
+            <p className="text-xs">⚠️ No se pudieron revisar: {extractosSinLeer.join(", ")}. Lo que se vea abajo puede estar incompleto.</p>
+          )}
+        </div>
+      )}
+
       {/* ── Resumen chips ── */}
       <div className="flex flex-wrap gap-3">
         {(["sin_match","ambiguo","unico","asignado"] as EstadoMatch[]).map(est => (
@@ -558,6 +583,17 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
             <span className="rounded-full bg-white/60 px-2 py-0.5 text-xs font-bold">{resumen[est]}</span>
           </button>
         ))}
+        {diag && diag.pendientesConciliadas.size > 0 && (
+          <button
+            onClick={() => setSoloConciliadas(v => !v)}
+            title="Facturas sin cuenta que ya están conciliadas: al asignarles la cuenta, viaja también a sus movimientos"
+            className={`flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium bg-purple-100 text-purple-700 border-purple-300
+              ${soloConciliadas ? "ring-2 ring-offset-1 ring-gray-400" : "opacity-80 hover:opacity-100"}`}
+          >
+            <span>🔗 Conciliadas sin cuenta</span>
+            <span className="rounded-full bg-white/60 px-2 py-0.5 text-xs font-bold">{diag.pendientesConciliadas.size}</span>
+          </button>
+        )}
         <span className="ml-auto self-center text-xs text-gray-400">{comprobantes.length} total</span>
         {resumen.unico > 0 && (
           <Button size="sm" variant="outline" onClick={autoAsignarUnicos} className="text-blue-700 border-blue-300">
@@ -607,8 +643,8 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
           </SelectContent>
         </Select>
 
-        {(busqueda || filtroPeriodo !== "todos" || filtroEstado !== "todos" || filtroCuenta !== "todas") && (
-          <Button size="sm" variant="ghost" onClick={() => { setBusqueda(""); setFiltroPeriodo("todos"); setFiltroEstado("todos"); setFiltroCuenta("todas") }}>
+        {(busqueda || filtroPeriodo !== "todos" || filtroEstado !== "todos" || filtroCuenta !== "todas" || soloConciliadas) && (
+          <Button size="sm" variant="ghost" onClick={() => { setBusqueda(""); setFiltroPeriodo("todos"); setFiltroEstado("todos"); setFiltroCuenta("todas"); setSoloConciliadas(false) }}>
             <X className="h-3.5 w-3.5 mr-1" />Limpiar
           </Button>
         )}
@@ -693,6 +729,11 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
                         {c._estado === "asignado"  && <CheckCircle className="h-3 w-3" />}
                         {ESTADO_CONFIG[c._estado].label}
                       </span>
+                      {(diag?.movimientosPorFactura.get(c.id) ?? 0) > 0 && (
+                        <span className="ml-1 text-[10px] text-purple-700" title={`Conciliada: la cuenta viaja a ${diag!.movimientosPorFactura.get(c.id)} movimiento(s)`}>
+                          🔗{diag!.movimientosPorFactura.get(c.id)}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-1.5 text-right whitespace-nowrap font-medium">
                       ${fmt(c.imp_total)}

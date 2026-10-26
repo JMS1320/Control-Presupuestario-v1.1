@@ -127,6 +127,9 @@ import { hoyArgentina, mesArgentina, diaArgentino, ahoraISO } from "@/lib/fechas
 import {
   decidirPropagacion, esCategProvisoria, avisoDePropagacion,
 } from "@/lib/conciliacion/propagar-cuenta"
+import { resolverCuentaDelPlan, parCoincideConPlan, nombresDeCuentasDeFactura } from "@/lib/facturas/nro-de-cuenta"
+import { planificarAsignacion } from "@/lib/conciliacion/asignar-cuenta"
+import { diagnosticarVinculos } from "@/lib/conciliacion/revisar-vinculos"
 import {
   repartirTotalEnAB, valorFrancoDeTotal, componerA, abrirA, aplicarCuotaManteniendoA,
 } from "@/lib/sueldos/reparto-ab"
@@ -6041,6 +6044,93 @@ export function correrCasos(): Resultado[] {
       ahoraISO().endsWith("Z") && ahoraISO().length > 20, "A-OP-23")
   }
 
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 🧾 ASIGNAR CUENTA A FACTURAS — camino único, por empresa, par del plan (A-DEC-1021 / A-BUG-1371).
+  //    Filas del plan reales (cuentas_contables al 25/10/2026).
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const PLAN = [
+      { categ: "LUZ", cuenta_contable: "LUZ", nro_cuenta: "422118" },
+      { categ: "TELEFONOS E INTERNET BS. AS.", cuenta_contable: "TELEFONOS E INTERNET BS. AS.", nro_cuenta: "422119" },
+      { categ: "Comision Cheques", cuenta_contable: "Comisión Cheques", nro_cuenta: null },
+      { categ: "FCI", cuenta_contable: "Fondos Comunes de Inversión", nro_cuenta: null, tipo: "financiero" },
+      { categ: "INTERESES", cuenta_contable: "INTERESES", nro_cuenta: "422132", tipo: "financiero" },
+    ]
+    const G = "Asignar cuenta a facturas"
+
+    const luz = resolverCuentaDelPlan(PLAN, { cuenta_contable: "luz " })
+    chequear(G, "Sólo con el nombre, el número sale del plan", "LUZ · 422118",
+      luz.ok && luz.cuenta ? `${luz.cuenta.cuenta_contable} · ${luz.cuenta.nro_cuenta}` : JSON.stringify(luz),
+      luz.ok && luz.cuenta?.cuenta_contable === "LUZ" && luz.cuenta?.nro_cuenta === "422118", "A-BUG-1371")
+
+    const cruzado = resolverCuentaDelPlan(PLAN, { cuenta_contable: "LUZ", nro_cuenta: "422119" })
+    chequear(G, "🔒 Número de una cuenta con nombre de otra → se rechaza", "error",
+      cruzado.ok ? "lo aceptó" : cruzado.error, !cruzado.ok, "A-BUG-1371")
+
+    const fuera = resolverCuentaDelPlan(PLAN, { cuenta_contable: "Fijos Libertad" })
+    chequear(G, "🔒 Un nombre que no está en el plan → se rechaza (antes quedaba el nombre sin número)", "error",
+      fuera.ok ? "lo aceptó" : fuera.error, !fuera.ok, "A-BUG-1371")
+
+    const alias = resolverCuentaDelPlan(PLAN, { cuenta_contable: "Comisión Cheques" })
+    chequear(G, "Por el nombre largo del plan también la encuentra, y guarda el corto", "Comision Cheques · null",
+      alias.ok && alias.cuenta ? `${alias.cuenta.cuenta_contable} · ${alias.cuenta.nro_cuenta}` : JSON.stringify(alias),
+      alias.ok && alias.cuenta?.cuenta_contable === "Comision Cheques" && alias.cuenta?.nro_cuenta === null, "A-BUG-1371")
+
+    const nada = resolverCuentaDelPlan(PLAN, { cuenta_contable: null, nro_cuenta: null })
+    chequear(G, "Sin nombre ni número = quitar la cuenta", "null", JSON.stringify(nada.ok ? nada.cuenta : nada),
+      nada.ok && nada.cuenta === null, "A-BUG-1371")
+
+    // 🏢 Una empresa por vez: una factura de PAM se escribe en PAM (antes la ruta escribía sólo en MSA).
+    const pam = planificarAsignacion(PLAN, "PAM", ["f1"], ["f1"], { cuenta_contable: "LUZ" })
+    chequear(G, "🏢 Factura de PAM → se escribe en PAM", "pam · LUZ · 422118",
+      pam.ok ? `${pam.schema} · ${pam.cambios.cuenta_contable} · ${pam.cambios.nro_cuenta}` : pam.error,
+      pam.ok && pam.schema === "pam" && pam.cambios.nro_cuenta === "422118", "A-DEC-1021")
+
+    const mezcla = planificarAsignacion(PLAN, "MA", ["f1", "f2"], ["f1"], { cuenta_contable: "LUZ" })
+    chequear(G, "🏢 Si una de las facturas no es de esa empresa, no se escribe NINGUNA", "error",
+      mezcla.ok ? "escribía" : mezcla.error, !mezcla.ok && mezcla.error.includes("1 de 2"), "A-DEC-1021")
+
+    const quitar = planificarAsignacion(PLAN, "MSA", ["f1"], ["f1"], { cuenta_contable: null, nro_cuenta: null })
+    chequear(G, "🔒 Quitar la cuenta deja VACÍOS el nombre y el número (antes quedaba el nombre)", "null · null",
+      quitar.ok ? `${quitar.cambios.cuenta_contable} · ${quitar.cambios.nro_cuenta}` : quitar.error,
+      quitar.ok && quitar.cambios.cuenta_contable === null && quitar.cambios.nro_cuenta === null, "A-BUG-1371")
+
+    chequear(G, "El par guardado se controla contra el plan", "LUZ/422118 sí · LUZ/422119 no · vacío sí",
+      [parCoincideConPlan(PLAN, "LUZ", "422118"), parCoincideConPlan(PLAN, "LUZ", "422119"), parCoincideConPlan(PLAN, null, null)].join(" · "),
+      parCoincideConPlan(PLAN, "LUZ", "422118") && !parCoincideConPlan(PLAN, "LUZ", "422119") && parCoincideConPlan(PLAN, null, null),
+      "A-BUG-1371")
+
+    // 🩺 El control ANTES de actuar (A-DEC-1021 (6)).
+    const FACT = [
+      { id: "fA", cuenta_contable: "LUZ", nro_cuenta: "422118" },
+      { id: "fB", cuenta_contable: null, nro_cuenta: null },
+    ]
+    const mov = (id: string, facturaId: string, categ: string | null, nro: string | null) =>
+      ({ schema: "public", tabla: "msa_galicia", que: "extracto de MSA", id, categ, nro_cuenta: nro, facturaId })
+    const d = diagnosticarVinculos([
+      mov("ok", "fA", "LUZ", "422118"),          // bien
+      mov("fci", "fA", "FCI", null),              // 🛑 otro sistema: financiera sin número (A-BUG-1225)
+      mov("tel", "fA", "TELEFONOS E INTERNET BS. AS.", "422119"), // 🛑 otra cuenta del plan: desincronizado
+      mov("sueldos", "fA", "Sueldos", null),      // 🛑 otro sistema
+      mov("nollego", "fA", "SIN_CATEG", null),    // 🛑 la cuenta no llegó
+      mov("pend", "fB", "SIN_CATEG", null),       // pendiente: la factura no tiene cuenta (no es error)
+      mov("grupo", "g1", "SIN_CATEG", null),      // grupo de pago: no se mira (A-BUG-1252)
+    ], FACT, PLAN)
+    const tipos = d.errores.map(e => `${e.mov.id}:${e.tipo}`).sort().join(" ")
+    chequear(G, "🩺 Sólo ERRORES en el cartel: otro sistema, desincronizado y no llegó", "fci:otro_sistema nollego:no_llego sueldos:otro_sistema tel:desincronizado",
+      tipos, tipos === "fci:otro_sistema nollego:no_llego sueldos:otro_sistema tel:desincronizado", "A-DEC-1021")
+
+    // 🛡️ La protección de FCI/CAJA no puede depender de cómo se arma la lista (A-BUG-1225).
+    const nombres = nombresDeCuentasDeFactura(PLAN)
+    chequear(G, "🛡️ FCI (financiera sin número) NO cuenta como cuenta de factura; INTERESES (con número) sí", "FCI no · INTERESES sí",
+      `FCI ${nombres.includes("FCI") ? "sí" : "no"} · INTERESES ${nombres.includes("INTERESES") ? "sí" : "no"}`,
+      !nombres.includes("FCI") && !nombres.includes("Fondos Comunes de Inversión") && nombres.includes("INTERESES"), "A-BUG-1225")
+    chequear(G, "🩺 La factura sin cuenta con movimiento es PENDIENTE, no error; el grupo no se mira", "fB:1 · movs fA=5 fB=1",
+      `${[...d.pendientesConciliadas].map(([k, v]) => `${k}:${v}`).join(",")} · movs fA=${d.movimientosPorFactura.get("fA")} fB=${d.movimientosPorFactura.get("fB")}`,
+      d.pendientesConciliadas.get("fB") === 1 && d.pendientesConciliadas.size === 1
+      && d.movimientosPorFactura.get("fA") === 5 && !d.movimientosPorFactura.has("g1"), "A-DEC-1021")
+  }
 
   // ══════════════════════════════════════════════════════════════════════════
   // 🔗 LA PROPAGACIÓN DE LA CUENTA AL EXTRACTO (A-BUG-1221 / A-BUG-1225).

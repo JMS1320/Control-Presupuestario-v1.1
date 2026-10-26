@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
-import {
-  propagarCuentaAMovimientos, avisoDePropagacion, type ClienteParaPropagar,
-} from "@/lib/conciliacion/propagar-cuenta"
+import { avisoDePropagacion, type ClienteParaPropagar } from "@/lib/conciliacion/propagar-cuenta"
+import { asignarCuentaAFacturas, EMPRESAS_FACTURA, type EmpresaFactura } from "@/lib/conciliacion/asignar-cuenta"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,13 +10,12 @@ const supabase = createClient(
 )
 
 /**
- * PATCH /api/arca-asignar
- * Asigna nro_cuenta + cuenta_contable a uno o varios comprobantes ARCA actuales.
- * Body: { ids: string[], nro_cuenta: string | null, cuenta_contable: string | null }
- * Para desasignar: pasar nro_cuenta: null (cuenta_contable se mantiene)
- *
- * Propaga la cuenta a los movimientos conciliados de las DIEZ tablas que llevan el vinculo
- * (ver lib/conciliacion/propagar-cuenta.ts). Antes nombraba tres a mano y no corria al desasignar.
+ * PATCH /api/arca-asignar — el ÚNICO camino para cambiar la cuenta contable de facturas (A-DEC-1021).
+ * Body: { empresa: 'MSA'|'PAM'|'MA', ids: string[], nro_cuenta: string|null, cuenta_contable: string|null }
+ * - Una empresa por llamada; si alguna factura no es de esa empresa no se escribe nada.
+ * - El par número + nombre sale del plan de cuentas (A-BUG-1371). Los dos en null = quitar la cuenta.
+ * - Propaga a los movimientos conciliados de los 11 extractos (lib/conciliacion/propagar-cuenta.ts).
+ * `empresa` ausente = MSA (compatibilidad con llamadas viejas).
  */
 export async function PATCH(request: Request) {
   const sesion = await exigirSesion()
@@ -30,59 +28,31 @@ export async function PATCH(request: Request) {
       nro_cuenta: string | null
       cuenta_contable: string | null
     }
-
+    const empresa = (body.empresa ?? "MSA") as EmpresaFactura
+    if (!EMPRESAS_FACTURA.includes(empresa)) {
+      return NextResponse.json({ success: false, message: `Empresa desconocida: ${body.empresa}` }, { status: 400 })
+    }
     if (!Array.isArray(ids) || ids.length === 0) {
       return NextResponse.json({ success: false, message: "Se requiere al menos un ID" }, { status: 400 })
     }
 
-    const updateData: Record<string, any> = { nro_cuenta }
-    // Solo actualizar cuenta_contable si se está asignando (no al quitar)
-    if (nro_cuenta !== null && cuenta_contable !== null) {
-      updateData.cuenta_contable = cuenta_contable
-    }
-
-    const { error, count } = await supabase
-      .schema("msa")
-      .from("comprobantes_arca")
-      .update(updateData, { count: "exact" })
-      .in("id", ids)
-
-    if (error) throw new Error(error.message)
-    // Un UPDATE que no encuentra la fila no falla: toca 0 y devuelve OK. Esta ruta escribe sólo en
-    // MSA, así que una factura de PAM o MA caería acá — se dice en vez de festejar (A-FEAT-1267).
-    if (count === 0) throw new Error("No se encontró ninguna de esas facturas en MSA: la cuenta NO se guardó")
-
-    /**
-     * 🔗 **Propagar a los movimientos conciliados — por UN solo camino** (A-BUG-1221).
-     *
-     * Antes acá había una lista de **3 tablas escrita a mano**, adentro de un `if (cuenta_contable)`
-     * —así que **al desasignar no propagaba nada** y el movimiento se quedaba con la cuenta vieja—, y
-     * los errores iban a `console.error` mientras el usuario leía «Cuenta asignada».
-     *
-     * Ahora las diez tablas salen de `TABLAS_CON_VINCULO_ARCA`, corre también al desasignar, y
-     * **devuelve qué propagó y qué salteó** para poder decírselo.
-     */
-    const { data: plan } = await supabase.from("cuentas_contables").select("cuenta_contable")
-    const propagacion = await propagarCuentaAMovimientos(
-      supabase as unknown as ClienteParaPropagar,
-      ids,
-      { cuenta_contable: nro_cuenta === null ? null : cuenta_contable, nro_cuenta },
-      (plan ?? []).map(c => String((c as { cuenta_contable: string }).cuenta_contable)),
-    )
+    const r = await asignarCuentaAFacturas(
+      supabase as unknown as ClienteParaPropagar, empresa, ids, { nro_cuenta, cuenta_contable })
 
     return NextResponse.json({
       success: true,
-      actualizados: count ?? ids.length,
-      message: nro_cuenta
-        ? `Cuenta asignada a ${ids.length} comprobante(s)`
-        : `Asignación removida de ${ids.length} comprobante(s)`,
+      actualizados: r.actualizados,
+      cuenta: r.cuenta,
+      message: r.cuenta
+        ? `Cuenta asignada a ${r.actualizados} comprobante(s) de ${empresa}`
+        : `Asignación removida de ${r.actualizados} comprobante(s) de ${empresa}`,
       // 🧮 Nada en silencio: la pantalla muestra esto si hay algo que decir.
       propagacion: {
-        propagados: propagacion.propagados,
-        salteados: propagacion.salteados.length,
-        aviso: avisoDePropagacion(propagacion),
-        detalleSalteados: propagacion.salteados,
-        fallaron: propagacion.fallaron,
+        propagados: r.propagacion.propagados,
+        salteados: r.propagacion.salteados.length,
+        aviso: avisoDePropagacion(r.propagacion),
+        detalleSalteados: r.propagacion.salteados,
+        fallaron: r.propagacion.fallaron,
       },
     })
   } catch (err: any) {

@@ -6205,12 +6205,13 @@ ${marca}` : marca
                             if (quitar) return
                             setMovDeLaConciliada({ cargando: true, encontrados: [] })
                             const hallados: any[] = []
-                            for (const [tabla, esquema] of [['msa_galicia', null], ['pam_galicia', null], ['pam_galicia_cc', null], ['ma_galicia', 'ma']] as [string, string | null][]) {
-                              const cli = esquema ? supabase.schema(esquema as any) : supabase
-                              const { data } = await cli.from(tabla)
+                            // 🔗 Los 11 extractos (bancos, tarjetas, cajas, echeqs), no sólo los 4 bancos (A-DEC-1021).
+                            for (const t of TABLAS_CON_VINCULO_ARCA) {
+                              const cli = t.schema === 'public' ? supabase : supabase.schema(t.schema as any)
+                              const { data } = await cli.from(t.tabla)
                                 .select('fecha, debitos, creditos, detalle')
                                 .eq('comprobante_arca_id', f.id).limit(5)
-                              ;(data ?? []).forEach((m: any) => hallados.push({ ...m, cuenta: tabla }))
+                              ;(data ?? []).forEach((m: any) => hallados.push({ ...m, cuenta: t.que }))
                             }
                             setMovDeLaConciliada({ cargando: false, encontrados: hallados })
                           }}
