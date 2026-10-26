@@ -16,13 +16,32 @@ import * as React from "react"
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 import { actualizarVivas, debeMontarse } from "@/lib/ui/pestanas-vivas"
+import { supabase } from "@/lib/supabase"
+import { leerPreferencias } from "@/lib/auth/preferencias"
+
+/**
+ * ⚙️ Preferencia del usuario «Mantener abiertas las pantallas» (Tu perfil). APAGADA por defecto: así cada
+ * pestaña se comporta como siempre (se desmonta y al volver carga de nuevo, con datos frescos). Se lee una
+ * vez por carga de la página; un cambio en el perfil vale desde la próxima vez que se abre la app.
+ */
+let prefVivas: Promise<boolean> | null = null
+function leerPrefVivas(): Promise<boolean> {
+  if (!prefVivas) prefVivas = supabase.auth.getUser()
+    .then(({ data }) => leerPreferencias(data.user).pantallasVivas)
+    .catch(() => false)
+  return prefVivas
+}
 
 const Contexto = React.createContext<{ activa?: string; vivas: string[] }>({ vivas: [] })
 
 export function TabsVivos({ maxVivas = 4, ...props }: React.ComponentPropsWithoutRef<typeof Tabs> & { maxVivas?: number }) {
   const activa = props.value
-  const [vivas, setVivas] = React.useState<string[]>(() => actualizarVivas([], activa, maxVivas))
-  React.useEffect(() => { setVivas(prev => actualizarVivas(prev, activa, maxVivas)) }, [activa, maxVivas])
+  const [habilitado, setHabilitado] = React.useState(false)
+  React.useEffect(() => { leerPrefVivas().then(setHabilitado) }, [])
+  // Apagada la preferencia: sólo la activa (= el comportamiento de siempre).
+  const tope = habilitado ? maxVivas : 1
+  const [vivas, setVivas] = React.useState<string[]>(() => actualizarVivas([], activa, 1))
+  React.useEffect(() => { setVivas(prev => actualizarVivas(prev, activa, tope)) }, [activa, tope])
   const ctx = React.useMemo(() => ({ activa, vivas }), [activa, vivas])
   return (
     <Contexto.Provider value={ctx}>

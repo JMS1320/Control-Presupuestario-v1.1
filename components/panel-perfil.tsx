@@ -313,6 +313,14 @@ export function PanelPerfil({
             )}
 
             <InterruptorPref
+              id="pantallas-vivas"
+              titulo="Mantener abiertas las pantallas que visitaste (prueba)"
+              detalle="Al volver a una pestaña aparece al instante, como la dejaste. Ojo: una pantalla escondida no se actualiza sola — si cambiaste algo en otra, tocá ⟳ o F5. Vale desde la próxima vez que abras la app."
+              valor={prefs.pantallasVivas}
+              onCambio={(v) => cambiarPref("pantallasVivas", v)}
+            />
+
+            <InterruptorPref
               id="confirmar-salida"
               titulo="Preguntar antes de salir"
               detalle="«Salir» está en el mismo menú que «Tu perfil». Con esto pide confirmación antes de cerrar la sesión."

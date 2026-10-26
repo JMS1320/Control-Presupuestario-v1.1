@@ -21,6 +21,7 @@
  */
 import { TABLAS_CON_VINCULO_ARCA, COLUMNA_VINCULO_ARCA } from "./tablas-con-vinculo-arca"
 import { esCategProvisoria, type ClienteParaPropagar } from "./propagar-cuenta"
+import { traerTodo } from "@/lib/supabase-paginado"
 import { parCoincideConPlan, nombresDeCuentasDeFactura, type FilaDelPlan } from "@/lib/facturas/nro-de-cuenta"
 
 export interface MovimientoVinculado {
@@ -110,11 +111,13 @@ export async function cargarMovimientosVinculados(
   const movs: MovimientoVinculado[] = []
   const fallaron: string[] = []
   await Promise.all(TABLAS_CON_VINCULO_ARCA.map(async t => {
-    const q = t.schema === "public" ? db.from(t.tabla) : db.schema(t.schema).from(t.tabla)
-    const { data, error } = await q
-      .select(`id, categ, nro_cuenta, ${COLUMNA_VINCULO_ARCA}`)
-      .not(COLUMNA_VINCULO_ARCA, "is", null)
-      .range(0, 9999)
+    // 📄 Por tandas (A-BUG-1379): la base corta en 1000 filas aunque se pida más; `.range(0, 9999)` no alcanza.
+    const { data, error } = await traerTodo((d, h) =>
+      (t.schema === "public" ? db.from(t.tabla) : db.schema(t.schema).from(t.tabla))
+        .select(`id, categ, nro_cuenta, ${COLUMNA_VINCULO_ARCA}`)
+        .not(COLUMNA_VINCULO_ARCA, "is", null)
+        .order("id")
+        .range(d, h))
     if (error) { fallaron.push(t.que); return }
     for (const r of (data ?? []) as Array<Record<string, any>>) {
       movs.push({

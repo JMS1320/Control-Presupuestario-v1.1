@@ -72,6 +72,12 @@ export type Preferencias = {
    * las mismas partidas (usuario 2026-10-24). Clave = el campo en minúsculas. `null` = alfabético.
    */
   ordenPartidas: string[] | null
+  /**
+   * 🧠 Mantener abiertas (escondidas) las pantallas ya visitadas al cambiar de pestaña (A-FEAT-1378).
+   * **Apagado por defecto** (usuario 26/10, indeciso: *«no se actualizan solas, es un tema… no sé si será
+   * peligroso»*): una pantalla escondida no se refresca sola. Encendido, volver a una pestaña es instantáneo.
+   */
+  pantallasVivas: boolean
 }
 
 /**
@@ -93,6 +99,7 @@ export const PREFERENCIAS_DEFAULT: Preferencias = {
   columnasCashFlow: null,
   ordenImpuestos: null,
   ordenPartidas: null,
+  pantallasVivas: false,
 }
 
 /**
@@ -138,6 +145,7 @@ export function leerPreferencias(user: User | null | undefined): Preferencias {
     contadoresPendientes: bool("contadoresPendientes", PREFERENCIAS_DEFAULT.contadoresPendientes),
     confirmarSalida: bool("confirmarSalida", PREFERENCIAS_DEFAULT.confirmarSalida),
     explicaciones: bool("explicaciones", PREFERENCIAS_DEFAULT.explicaciones),
+    pantallasVivas: bool("pantallasVivas", PREFERENCIAS_DEFAULT.pantallasVivas),
     // Se aceptan sólo strings: un id que no exista lo descarta después el registro, pero un
     // número o un objeto acá romperían el render.
     widgets: Array.isArray(p.widgets)

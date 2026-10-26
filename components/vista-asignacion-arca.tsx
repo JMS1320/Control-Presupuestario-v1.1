@@ -22,6 +22,8 @@ import { cargarMovimientosVinculados, diagnosticarVinculos, TITULO_PROBLEMA, typ
 import type { ClienteParaPropagar } from "@/lib/conciliacion/propagar-cuenta"
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { cuentasQueCoinciden } from "@/lib/facturas/buscar-cuenta"
+import { traerTodo } from "@/lib/supabase-paginado"
+import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
 import { armarHistorialPorCuit, matchPorHistorial, type EstadoMatch, type ResultadoMatch } from "@/lib/facturas/match-historial"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 
@@ -148,6 +150,10 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
   const [sugerencias, setSugerencias] = useState<Sugerencia[]>([])
   const [loadingSugerencias, setLoadingSugerencias] = useState(false)
   const [busquedaModal, setBusquedaModal] = useState("")
+  // 📚 26/10: poder RECORRER el plan de cuentas entero en el modal (usuario: «no puedo recorrer el plan de cuentas
+  // y creo que eso es fundamental»). Usa el selector común de la app (CLAUDE.md § ♻️: para asignar cuenta va
+  // siempre SelectorCuentaContable), agrupado por rubro.
+  const [verPlan, setVerPlan] = useState(false)
   const [cuentaElegida, setCuentaElegida] = useState<CuentaSistema | null>(null)
   const [guardando, setGuardando] = useState(false)
 
@@ -164,14 +170,15 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
     setError(null)
     try {
       const [{ data: arca, error: e1 }, { data: ctas, error: e2 }, { data: hist }] = await Promise.all([
-        supabase.schema(schemaName).from("comprobantes_arca")
+        // 📄 Por tandas (A-BUG-1379): las facturas de MSA llegan a 1000 hacia 2027; el histórico también crece.
+        traerTodo((d, h) => supabase.schema(schemaName).from("comprobantes_arca")
           .select("id,fecha_emision,cuit,denominacion_emisor,imp_neto_gravado,iva,imp_total,cuenta_contable,nro_cuenta,año_contable,mes_contable,fc,ddjj_iva,numero_desde,tipo_comprobante,pdf_drive_url")
-          .order("fecha_emision", { ascending: false }),
+          .order("fecha_emision", { ascending: false }).order("id").range(d, h)),
         supabase.from("cuentas_contables")
           .select("categ,nro_cuenta,cuenta_contable,imputable,nombre_totalizadora,tipo")
           .order("nro_cuenta"),
-        supabase.schema(schemaName).from("comprobantes_historico")
-          .select("nro_doc_emisor,cuenta_asignada,cuenta_contable,nro_cuenta").range(0, 9999),
+        traerTodo((d, h) => supabase.schema(schemaName).from("comprobantes_historico")
+          .select("nro_doc_emisor,cuenta_asignada,cuenta_contable,nro_cuenta").order("id").range(d, h)),
       ])
       if (e1) throw new Error(e1.message)
       if (e2) throw new Error(e2.message)
@@ -324,6 +331,7 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
     setModalEmisor(emisor ?? null)
     setCuentaElegida(null)
     setBusquedaModal("")
+    setVerPlan(false)
     setModalAbierto(true)
     await cargarSugerencias(cuentaOriginal, cuit, emisor ?? null, ids)
   }
@@ -863,6 +871,33 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
             )}
           </DialogHeader>
 
+          <div className="flex items-center gap-2 text-xs">
+            <button type="button" onClick={() => setVerPlan(false)}
+              className={`rounded px-2 py-1 border ${!verPlan ? "bg-blue-50 border-blue-300 text-blue-700 font-medium" : "border-gray-200 text-gray-500"}`}>
+              Propuestas
+            </button>
+            <button type="button" onClick={() => setVerPlan(true)}
+              className={`rounded px-2 py-1 border ${verPlan ? "bg-blue-50 border-blue-300 text-blue-700 font-medium" : "border-gray-200 text-gray-500"}`}>
+              📚 Plan de cuentas completo
+            </button>
+          </div>
+
+          {verPlan ? (
+            <div className="flex-1 overflow-y-auto min-h-0">
+              <SelectorCuentaContable
+                modo="modal-list"
+                cuitProveedor={modalCuit}
+                schemaName={schemaName}
+                value={cuentaElegida?.categ ?? null}
+                onSelect={c => {
+                  if (!c) { setCuentaElegida(null); return }
+                  const delPlan = cuentasSistema.find(x => x.categ === c.categ)
+                  setCuentaElegida(delPlan ?? { categ: c.categ, nro_cuenta: c.nro_cuenta ?? null, cuenta_contable: c.cuenta_contable ?? null, imputable: true, nombre_totalizadora: c.nombre_totalizadora ?? null })
+                }}
+              />
+            </div>
+          ) : (
+          <>
           {/* Buscador libre */}
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
@@ -914,6 +949,9 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
               })
             )}
           </div>
+
+          </>
+          )}
 
           {/* Footer */}
           <div className="flex items-center gap-3 border-t pt-3">
