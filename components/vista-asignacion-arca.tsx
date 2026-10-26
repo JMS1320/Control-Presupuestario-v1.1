@@ -273,7 +273,8 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
   const filtradosSinEstado = useMemo(() => {
     const q = busqueda.toLowerCase()
     return conEstado.filter(c => {
-      if (soloConciliadas && !(diag?.movimientosPorFactura.get(c.id))) return false
+      // 🐛 26/10: filtraba «tiene movimientos» y mostraba también las que ya tenían cuenta; el chip cuenta las SIN cuenta.
+      if (soloConciliadas && !diag?.pendientesConciliadas.has(c.id)) return false
       if (fechaDesde && (!c.fecha_emision || c.fecha_emision < fechaDesde)) return false
       if (fechaHasta && (!c.fecha_emision || c.fecha_emision > fechaHasta)) return false
       if (filtroPeriodo !== "todos") {
