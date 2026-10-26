@@ -20,6 +20,7 @@ import { opcionesFcManual } from "@/lib/gas-pdf/lote"
 import { pedirAsignacionDeCuenta, mensajeDePropagacion, type RespuestaAsignacion } from "@/lib/conciliacion/asignar-cuenta-cliente"
 import { cargarMovimientosVinculados, diagnosticarVinculos, TITULO_PROBLEMA, type Diagnostico } from "@/lib/conciliacion/revisar-vinculos"
 import type { ClienteParaPropagar } from "@/lib/conciliacion/propagar-cuenta"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -542,6 +543,9 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
 
   return (
     <div className="space-y-4">
+
+      {/* 🧪 La prueba pendiente de esta pantalla aparece acá (A-TEST-1170). */}
+      <TestsDelProceso proceso="egresos/asignar-cuenta" pantalla="egresos" />
 
       {/* 🩺 A-DEC-1021 (6) — errores de datos, ANTES de actuar. Sólo errores: lo que falta asignar no va acá. */}
       {(diag && diag.errores.length > 0 || extractosSinLeer.length > 0) && (
