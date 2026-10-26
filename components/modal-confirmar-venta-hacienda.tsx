@@ -38,6 +38,7 @@ import {
   useNormasComercializacion, SelectorComercializacion,
   type SeleccionComercial,
 } from "@/components/selector-comercializacion"
+import { traerTodo } from "@/lib/supabase-paginado"
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
 
@@ -169,7 +170,7 @@ export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirma
     const [{ data: ts }, { data: ps }, { data: cats }] = await Promise.all([
       p.from("terneros")
         .select("id, caravana_oficial, caravana_interna, sexo, pelo, activo, categoria_id"),
-      p.from("pesadas_terneros").select("ternero_id, fecha, peso_kg"),
+      traerTodo<any>((d, h) => p.from("pesadas_terneros").select("ternero_id, fecha, peso_kg").order("id").range(d, h)),  // ✂️ A-BUG-1379
       p.from("categorias_hacienda").select("id, nombre"),
     ])
     setTerneros((ts || []) as TerneroRef[])

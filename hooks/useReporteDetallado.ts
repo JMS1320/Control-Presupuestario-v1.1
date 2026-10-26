@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
+import { traerTodo } from "@/lib/supabase-paginado"
+import { avisarSiIncompleta } from "@/lib/ui/avisar-lectura"
 
 /* ──────────────────────────────────────────────────────────
  *  Tipos
@@ -63,13 +65,18 @@ export function useReporteDetallado(año: number, semestre?: 1 | 2) {
         }
 
         /* 2. Movimientos ----------------------------------------------------*/
-        const { data: movimientos, error: movErr } = await supabase
+        // ✂️ A-BUG-1379: de a tandas — 2026 ya tiene 1.181 movimientos y la base corta en 1.000.
+        const rMov = await traerTodo<any>((d, h) => supabase
           .from("msa_galicia")
-          .select("id, fecha, detalle, creditos, debitos, categ, interno")
+          .select("id, fecha, detalle, creditos, debitos, categ, interno", { count: "exact" })
           .gte("fecha", fechaInicio)
           .lte("fecha", fechaFin)
           .order("fecha", { ascending: true })
           .order("id", { ascending: true })
+          .range(d, h))
+        const movimientos = rMov.data
+        const movErr = rMov.error
+        avisarSiIncompleta("Reporte detallado · movimientos del banco", rMov)
 
         if (movErr) throw movErr
         if (!movimientos) return

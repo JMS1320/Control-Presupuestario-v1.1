@@ -20,6 +20,7 @@ import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { AnalisisProductivo, type SegConfig, type SegSnapshot, type ModoCarga } from "./analisis-productivo"
 import { Segmentador, type SegPayload } from "./segmentador"
+import { traerTodo } from "@/lib/supabase-paginado"
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -441,12 +442,15 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
           .from('terneros')
           .select('*, pesadas_terneros(id, fecha, peso_kg), categorias_hacienda(nombre)')
           .order('caravana_oficial', { ascending: true }),
-        supabase
+        // ✂️ A-BUG-1379: de a tandas.
+        traerTodo<any>((d, h) => supabase
           .schema('productivo')
           .from('pesadas_terneros')
           .select('id, caravana_idv, fecha, peso_kg')
           .is('ternero_id', null)
-          .order('fecha', { ascending: false }),
+          .order('fecha', { ascending: false })
+          .order('id')
+          .range(d, h)),
       ])
 
       if (resTerneros.error) throw resTerneros.error

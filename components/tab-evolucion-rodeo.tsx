@@ -22,6 +22,7 @@ import {
   ordenDeCampania,
   type CicloStock, type CicloCalculado, type FilaCicloCria, type PropuestaCiclo,
 } from "@/lib/ganaderia/ciclo"
+import { traerTodo } from "@/lib/supabase-paginado"
 
 // Parser único del proyecto. Ver lib/format/numero.ts
 const parseNum = parseNumeroAR
@@ -70,10 +71,11 @@ export function TabEvolucionRodeo() {
       setCria((cc || []) as FilaCicloCria[])
 
       // Hembras marcadas (es_torito en hembra = reposición) por fecha de pesada
-      const { data: pes } = await supabase.schema("productivo")
+      // ✂️ A-BUG-1379: de a tandas.
+      const { data: pes } = await traerTodo<any>((d, h) => supabase.schema("productivo")
         .from("pesadas_terneros")
         // `activo`: una ternera vendida o muerta no sigue siendo reposición marcada.
-        .select("fecha, ternero:terneros!inner(sexo, es_torito, activo)")
+        .select("fecha, ternero:terneros!inner(sexo, es_torito, activo)").order("id").range(d, h))
       const marc: Record<string, number> = {}
       for (const r of (pes || []) as any[]) {
         const t = r.ternero

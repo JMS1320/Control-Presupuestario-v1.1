@@ -14,6 +14,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { AlertTriangle, CheckCircle, Edit, Save, Plus, Keyboard } from "lucide-react"
 import { supabase } from "@/lib/supabase"
 import type { CuentaContable } from "@/lib/supabase"
+import { traerTodo } from "@/lib/supabase-paginado"
+import { avisarSiIncompleta } from "@/lib/ui/avisar-lectura"
 
 interface MovimientoConError {
   id: string
@@ -56,10 +58,14 @@ export function CorrectorCategorias() {
       if (cuentas) setCuentasValidas(cuentas)
 
       // Obtener movimientos con categorías inválidas
-      const { data: movimientos } = await supabase
+      // ✂️ A-BUG-1379: de a tandas (1.600 con categoría; la base corta en 1.000).
+      const rMov = await traerTodo<any>((d, h) => supabase
         .from("msa_galicia")
-        .select("id, fecha, descripcion, categ, debitos, creditos, saldo")
+        .select("id, fecha, descripcion, categ, debitos, creditos, saldo", { count: "exact" })
         .not("categ", "is", null)
+        .order("id").range(d, h))
+      avisarSiIncompleta("Corrector de categorías · movimientos", rMov)
+      const movimientos = rMov.data
 
       if (movimientos && cuentas) {
         const categsValidas = new Set(cuentas.map((c) => c.categ))

@@ -54,6 +54,7 @@ import { InsumoCombobox } from "@/components/insumo-combobox"
 import CiclosCriaPanel from "./ciclos-cria-panel"
 import { ModalRomaneo } from "@/components/modal-romaneo"
 import { ModalFleteCarga } from "@/components/modal-flete-carga"
+import { traerTodo } from "@/lib/supabase-paginado"
 
 // ============================================================
 // TIPOS
@@ -4937,8 +4938,9 @@ function SubTabOrdenesAplicacion() {
 
     // Si es destete, cargar pesadas disponibles
     if (tipo === 'destete') {
-      const { data: pesData } = await supabase.schema('productivo').from('pesadas_terneros')
-        .select('fecha')
+      // ✂️ A-BUG-1379: de a tandas.
+      const { data: pesData } = await traerTodo<any>((d, h) => supabase.schema('productivo').from('pesadas_terneros')
+        .select('fecha').order('id').range(d, h))
       if (pesData) {
         const conteo = new Map<string, number>()
         pesData.forEach(p => conteo.set(p.fecha, (conteo.get(p.fecha) || 0) + 1))

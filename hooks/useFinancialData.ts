@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react"
 import { supabase, type CuentaContable, type MovimientoMSA } from "@/lib/supabase"
 import { resolverTipo, type TipoCuenta } from "@/lib/presupuesto/templates"
+import { traerTodo } from "@/lib/supabase-paginado"
+import { avisarSiIncompleta } from "@/lib/ui/avisar-lectura"
 
 export type ResumenFinanciero = {
   mes: number
@@ -74,12 +76,17 @@ export function useFinancialData(año: number, semestre?: number) {
         }))
 
         // Movimientos del período
-        const { data: movimientosData, error: movimientosError } = await supabase
+        // ✂️ A-BUG-1379: de a tandas — 2026 ya tiene 1.136 movimientos y la base corta en 1.000.
+        const rMov = await traerTodo<any>((d, h) => supabase
           .from("msa_galicia")
-          .select("*")
+          .select("*", { count: "exact" })
           .gte("fecha", fechaInicio)
           .lte("fecha", fechaFin)
           .not("categ", "is", null)
+          .order("id").range(d, h))
+        const movimientosData = rMov.data
+        const movimientosError = rMov.error
+        avisarSiIncompleta("Dashboard · movimientos del banco", rMov)
 
         if (movimientosError) {
           console.error("Error al obtener movimientos:", movimientosError)

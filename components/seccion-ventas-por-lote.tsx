@@ -47,6 +47,7 @@ import {
 import {
   ModalPresupuestarLote, type DisponibleAPresupuestar,
 } from "@/components/modal-presupuestar-lote"
+import { traerTodo } from "@/lib/supabase-paginado"
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
 const kg = (n: number) => `${n.toLocaleString("es-AR", { maximumFractionDigits: 1 })} kg`
@@ -169,10 +170,11 @@ export function SeccionVentasPorLote() {
           .select("categoria, anio, mes, precio_pesos_kg, peso_desde, peso_hasta"),
         p.from("lote_tramos").select("*").order("orden"),
         p.from("actividades").select("*"),
-        p.from("pesadas_terneros")
+        // ✂️ A-BUG-1379: de a tandas (las pesadas llegan a 1.000 con la próxima carga).
+        traerTodo<any>((d, h) => p.from("pesadas_terneros")
           // `activo` es imprescindible: un animal vendido o muerto sigue teniendo pesadas, y sin
           // esto seguía figurando como existencia disponible.
-          .select("ternero_id, fecha, peso_kg, ternero:terneros!inner(sexo, es_torito, activo)"),
+          .select("ternero_id, fecha, peso_kg, ternero:terneros!inner(sexo, es_torito, activo)").order("id").range(d, h)),
         p.from("ciclos_recria").select("id, campania"),
         p.from("categorias_hacienda").select("nombre, centro_costo_id"),
         p.from("stock_ciclos").select("*"),

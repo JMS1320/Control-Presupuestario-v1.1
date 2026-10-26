@@ -53,3 +53,51 @@ export async function traerTodo<T = any>(
     if (!hayOtraTanda(lote, tanda)) return { data: filas, error: null, esperadas }
   }
 }
+
+/**
+ * 🧮 El aviso de una lectura incompleta, en palabras (A-BUG-1379, 2026-10-26). `null` = llegó todo.
+ * Lo usan las pantallas que muestran totales: un número corto sin aviso es el peor resultado posible.
+ */
+export function mensajeLecturaIncompleta(nombre: string, llegaron: number, esperadas: number | null): string | null {
+  if (!lecturaIncompleta({ nombre, llegaron, esperadas })) return null
+  return `⚠️ ${nombre}: llegaron ${llegaron} de ${esperadas} registros — los números de esta pantalla pueden estar incompletos. Recargá; si sigue, avisá.`
+}
+
+/**
+ * 📏 Traer HASTA un límite, de a tandas (A-BUG-1379): el extracto ofrece 200 / 500 / 1.000 / 2.000 / 5.000
+ * movimientos, y con `.limit(5000)` la base igual cortaba en 1.000. Pide tandas de a 1.000 (la última, lo que
+ * falta para el límite) y para cuando llega al límite o cuando una tanda viene corta.
+ */
+export function rangosHasta(limite: number, tanda = TANDA): Array<[number, number]> {
+  const r: Array<[number, number]> = []
+  for (let desde = 0; desde < limite; desde += tanda) r.push([desde, Math.min(desde + tanda, limite) - 1])
+  return r
+}
+
+/** La misma vuelta sobre una fuente sincrónica — para `npm run probar`. */
+export function juntarHasta<T>(pedir: (desde: number, hasta: number) => T[], limite: number, tanda = TANDA): { filas: T[]; pedidos: number } {
+  const filas: T[] = []
+  let pedidos = 0
+  for (const [d, h] of rangosHasta(limite, tanda)) {
+    const lote = pedir(d, h); pedidos++
+    filas.push(...lote)
+    if (lote.length < h - d + 1) break
+  }
+  return { filas, pedidos }
+}
+
+export async function traerHasta<T = any>(
+  hacer: (desde: number, hasta: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+  limite: number,
+  tanda = TANDA,
+): Promise<{ data: T[]; error: { message: string } | null }> {
+  const filas: T[] = []
+  for (const [d, h] of rangosHasta(limite, tanda)) {
+    const { data, error } = await hacer(d, h)
+    if (error) return { data: filas, error }
+    const lote = data ?? []
+    filas.push(...lote)
+    if (lote.length < h - d + 1) break
+  }
+  return { data: filas, error: null }
+}

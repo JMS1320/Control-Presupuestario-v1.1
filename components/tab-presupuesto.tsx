@@ -74,6 +74,8 @@ import {
   tipoEfectivo,
 } from "@/lib/presupuesto/templates"
 import type { PuntoSerie } from "@/lib/precios/serie"
+import { traerTodo } from "@/lib/supabase-paginado"
+import { avisarSiIncompleta } from "@/lib/ui/avisar-lectura"
 
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -643,15 +645,17 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     const fechaHasta = `${finExclusivo.getFullYear()}-${String(finExclusivo.getMonth()+1).padStart(2,"0")}-01`
 
     // Traer cuotas del período
-    const { data: cuotas, error: errorCuotas } = await supabase
+    // ✂️ A-BUG-1379: de a tandas — la base entrega como máximo 1.000 filas y acá hay más (1.462 al 26/10).
+    const rCuotas = await traerTodo<any>((d, h) => supabase
       .from("cuotas_egresos_sin_factura")
-      .select("egreso_id, fecha_estimada, fecha_vencimiento, monto, estado")
+      .select("egreso_id, fecha_estimada, fecha_vencimiento, monto, estado", { count: "exact" })
       .in("egreso_id", templateIds)
       .gte("fecha_estimada", fechaDesde)
       .lt("fecha_estimada", fechaHasta)
       .neq("estado", "desactivado")
-
-    if (errorCuotas) console.error("Error cargando cuotas de templates:", errorCuotas)
+      .order("id").range(d, h))
+    const cuotas = rCuotas.data
+    avisarSiIncompleta("Presupuesto · cuotas de templates", rCuotas)
 
     // Toda la historia de cuotas por template: la pasada sirve para proyectar, la futura
     // es el dato firme que manda donde existe.
@@ -976,8 +980,10 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       supabase.schema("productivo").from("actividades").select("*"),
       // Pesada viva: es la fuente real de cuántas cabezas hay hoy. El lote es un recorte
       // de esto, no el total — por eso lo disponible se calcula por diferencia.
-      supabase.schema("productivo").from("pesadas_terneros")
-        .select("ternero_id, fecha, peso_kg, ternero:terneros!inner(sexo, es_torito, activo)"),
+      // ✂️ A-BUG-1379: de a tandas (las pesadas llegan a 1.000 con la próxima carga).
+      traerTodo<any>((d, h) => supabase.schema("productivo").from("pesadas_terneros")
+        .select("ternero_id, fecha, peso_kg, ternero:terneros!inner(sexo, es_torito, activo)", { count: "exact" })
+        .order("id").range(d, h)),
     ])
 
     const listaLotes = ((lotes || []) as LoteStock[])

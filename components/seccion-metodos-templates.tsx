@@ -23,6 +23,8 @@ import {
   type MetodoResuelto, type CeldaTemplate, type TipoCuenta,
   tipoEfectivo, origenTipo,
 } from "@/lib/presupuesto/templates"
+import { traerTodo } from "@/lib/supabase-paginado"
+import { avisarSiIncompleta } from "@/lib/ui/avisar-lectura"
 
 const METODOS = Object.keys(ETIQUETA_METODO) as MetodoTemplate[]
 const pesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
@@ -65,10 +67,12 @@ export function SeccionMetodosTemplates({ meses, ipc }: {
 
       const ids = ((tpl || []) as any[]).map(t => t.id)
       const [{ data: cuotas }, { data: conf }] = await Promise.all([
+        // ✂️ A-BUG-1379: de a tandas (1.463 cuotas al 26/10; la base corta en 1.000).
         ids.length
-          ? supabase.from("cuotas_egresos_sin_factura")
-              .select("egreso_id, fecha_estimada, fecha_vencimiento, monto")
-              .in("egreso_id", ids).neq("estado", "desactivado")
+          ? traerTodo<any>((d, h) => supabase.from("cuotas_egresos_sin_factura")
+              .select("egreso_id, fecha_estimada, fecha_vencimiento, monto", { count: "exact" })
+              .in("egreso_id", ids).neq("estado", "desactivado").order("id").range(d, h))
+              .then(r => { avisarSiIncompleta("Métodos del presupuesto · cuotas", r); return r })
           : Promise.resolve({ data: [] as any[] }),
         supabase.from("presupuesto_template_config")
           .select("template_id, metodo, monto_manual").eq("empresa", "MSA"),

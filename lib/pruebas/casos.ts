@@ -240,7 +240,7 @@ import {
 } from "@/lib/pagos/lineas-detalle-pago"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
 import { hojaDeAsientosContables, hojaDeTemplates, bloqueDeLecturas } from "@/lib/balance/export-libro-diario"
-import { juntarTandas, lecturaIncompleta } from "@/lib/supabase-paginado"
+import { juntarTandas, lecturaIncompleta, juntarHasta, mensajeLecturaIncompleta } from "@/lib/supabase-paginado"
 import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
 import * as XLSXcasos from "xlsx"
 import { presentarHoja, MONEDA, ENTERO } from "@/lib/balance/formato-excel"
@@ -8759,6 +8759,17 @@ export function correrCasos(): Resultado[] {
     const ve = `${exacto.filas.length} filas en ${exacto.tandas} tandas`
     chequear("Balance", "Traer todo: si son justo 1000, pide una tanda más para confirmar que no hay más (el caso del banco jul→mar)",
       "1000 filas en 2 tandas", ve, ve === "1000 filas en 2 tandas", "A-BUG-1339")
+    // ── A-BUG-1379: el extracto con límite 2.000 / 5.000 traía 1.000 (la base corta). Ahora de a tandas hasta el límite.
+    const banco = Array.from({ length: 1892 }, (_, i) => i)
+    const cap = (d: number, h: number) => banco.slice(d, Math.min(h, d + 999) + 1)   // la base: máximo 1.000 por pedido
+    const l5000 = juntarHasta(cap, 5000), l200 = juntarHasta(cap, 200), l1500 = juntarHasta(cap, 1500)
+    const vLim = `5000→${l5000.filas.length} (${l5000.pedidos} pedidos) · 200→${l200.filas.length} (${l200.pedidos}) · 1500→${l1500.filas.length}`
+    chequear("Balance", "Extracto con límite: 5.000 trae los 1.892 movimientos (antes 1.000), 200 trae 200 en un pedido, 1.500 trae 1.500",
+      "5000→1892 (2 pedidos) · 200→200 (1) · 1500→1500", vLim, vLim === "5000→1892 (2 pedidos) · 200→200 (1) · 1500→1500", "A-BUG-1379")
+    const msgInc = mensajeLecturaIncompleta("Dashboard", 1000, 1136), msgOk = mensajeLecturaIncompleta("Dashboard", 1136, 1136)
+    chequear("Balance", "Lectura incompleta: avisa cuando llegan menos de las que hay (1.000 de 1.136) y calla cuando llegó todo",
+      "avisa · calla", `${msgInc?.includes("1000 de 1136") ? "avisa" : "no avisa"} · ${msgOk === null ? "calla" : "avisa de más"}`,
+      !!msgInc?.includes("1000 de 1136") && msgOk === null, "A-BUG-1379")
     // ── Templates separados por tipo y ordenados por responsable (A-FEAT-1342 · A-FEAT-1338) ──
     const ej1342 = armarEjercicio(2026, 6)
     const cuotaT = (responsable: string, fecha: string, concepto: string, tipo?: "egreso" | "financiero" | "distribucion", monto = 100) =>

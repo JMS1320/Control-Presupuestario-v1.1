@@ -19,6 +19,8 @@ import { supabase } from "@/lib/supabase"
 import { parseEmpresas } from "@/lib/empresas"
 import { toast } from "sonner"
 import { EditorCampanaTemplate } from "@/components/editor-campana-template"
+import { traerTodo } from "@/lib/supabase-paginado"
+import { avisarSiIncompleta } from "@/lib/ui/avisar-lectura"
 
 const MESES_LARGO = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
@@ -124,9 +126,21 @@ export function GeneradorRenovacionCampana({ onClose }: { onClose: () => void })
       .order('nombre_referencia')
     const temps = (todosTemps ?? []).filter((t: any) => t.activo)
     const ids = (todosTemps ?? []).map((t: any) => t.id)
-    const { data: cuotas } = ids.length
-      ? await supabase.from('cuotas_egresos_sin_factura').select('*').in('egreso_id', ids)
-      : { data: [] as any[] }
+    /**
+     * ✂️ A-BUG-1379 — CRÍTICO: esta pantalla GENERA la campaña nueva a partir de estas cuotas. Con la lectura
+     * de una sola vez llegaban 1.000 de 1.903 y 67 templates quedaban sin cuotas. Se lee de a tandas, y si
+     * no llegó todo NO se sigue: generar con cuotas de menos crearía una campaña mal.
+     */
+    const rCuotas = ids.length
+      ? await traerTodo<any>((d, h) => supabase.from('cuotas_egresos_sin_factura')
+          .select('*', { count: 'exact' }).in('egreso_id', ids).order('id').range(d, h))
+      : { data: [] as any[], error: null, esperadas: 0 }
+    if (rCuotas.error || (rCuotas.esperadas != null && rCuotas.data.length !== rCuotas.esperadas)) {
+      avisarSiIncompleta('Renovar campaña · cuotas', rCuotas)
+      toast.error('No se pudieron leer todas las cuotas: no se puede generar la campaña con datos de menos. Recargá.')
+      return
+    }
+    const cuotas = rCuotas.data
 
     const porTemplate: Record<string, any[]> = {}
     for (const c of (cuotas ?? [])) (porTemplate[c.egreso_id] ??= []).push(c)

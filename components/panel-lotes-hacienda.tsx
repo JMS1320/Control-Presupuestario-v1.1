@@ -33,6 +33,7 @@ import {
 import {
   type PrecioHacienda, pctDesbaste, pctCz, brutoDesdeNeto, netoDesdeBruto, categoriaPrecio,
 } from "@/lib/ganaderia/calculo"
+import { traerTodo } from "@/lib/supabase-paginado"
 
 // Parser único del proyecto: entiende "5.700", "5700", "0,5" y "0.5". Ver
 // lib/format/numero.ts — el punto de miles rompía el round-trip con fmtAR.
@@ -116,9 +117,10 @@ export function PanelLotesHacienda({ linea, onCambio }: {
       setPrecios((pr || []) as PrecioHacienda[])
 
       // Foto viva de las pesadas, para detectar lotes desactualizados
-      const { data: pes } = await supabase.schema("productivo")
+      // ✂️ A-BUG-1379: de a tandas (990 pesadas al 26/10; la base corta en 1.000).
+      const { data: pes } = await traerTodo<any>((d, h) => supabase.schema("productivo")
         .from("pesadas_terneros")
-        .select("fecha, peso_kg, ternero:terneros!inner(sexo, es_torito, activo)")
+        .select("fecha, peso_kg, ternero:terneros!inner(sexo, es_torito, activo)").order("id").range(d, h))
       const acc: Record<string, { n: number; kg: number }> = {}
       for (const r of (pes || []) as any[]) {
         const t = r.ternero
@@ -1026,8 +1028,8 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
     ;(async () => {
       setCargando(true)
       try {
-        const { data } = await supabase.schema("productivo")
-          .from("pesadas_terneros").select("fecha")
+        const { data } = await traerTodo<any>((d, h) => supabase.schema("productivo")
+          .from("pesadas_terneros").select("fecha").order("id").range(d, h))
         const conteo = new Map<string, number>()
         for (const r of (data || []) as any[]) {
           conteo.set(r.fecha, (conteo.get(r.fecha) ?? 0) + 1)
@@ -1047,10 +1049,13 @@ function ModalDesdePesada({ abierto, lotes, ventasDe, onCerrar, onListo }: {
     ;(async () => {
       setCargando(true)
       try {
-        const q = supabase.schema("productivo")
+        // ✂️ A-BUG-1379: la consulta se arma de nuevo en cada tanda.
+        const q = () => supabase.schema("productivo")
           .from("pesadas_terneros")
           .select("ternero_id, fecha, peso_kg, ternero:terneros!inner(sexo, es_torito, activo)")
-        const { data, error } = modo === "fecha" ? await q.eq("fecha", fecha) : await q
+        const { data, error } = modo === "fecha"
+          ? await traerTodo<any>((d, h) => q().eq("fecha", fecha).order("id").range(d, h))
+          : await traerTodo<any>((d, h) => q().order("id").range(d, h))
         if (error) { console.error(error); return }
 
         // ── Los que NUNCA se pesaron ──────────────────────────────────────────

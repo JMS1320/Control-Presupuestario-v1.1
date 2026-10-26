@@ -93,6 +93,8 @@ import { cargarDetallesFijos, aplicarDetalleFijo, marcarDetalleFijo } from "@/li
 import { elegirDetalleFijo, type DetalleFijo } from "@/lib/conciliacion/detalle-fijo"
 import { campanaNuevaPrimero, faltaCampanaDelMotivo } from "@/lib/conciliacion/template-de-regla"
 import { TABLAS_CON_VINCULO_ARCA } from "@/lib/conciliacion/tablas-con-vinculo-arca"
+import { traerTodo } from "@/lib/supabase-paginado"
+import { avisarSiIncompleta } from "@/lib/ui/avisar-lectura"
 
 // ─── Helpers para scoring de propuestas ARCA ────────────────────────────────
 
@@ -1787,7 +1789,8 @@ Pasan a conciliado junto con su factura o cuota. El motivo queda en la nota.`)) 
   const cargarCodigosUsados = async () => {
     try {
       // A-BUG-1301: la cuenta abierta primero, después TODOS los extractos y las reglas de contable/interno.
-      const { data } = await dbCuenta().from(tablaActiva).select('contable, interno')
+      // ✂️ A-BUG-1379: de a tandas (MSA tiene 1.892 movimientos). Sólo sugerencias: sin cartel si falta algo.
+      const { data } = await traerTodo<any>((d, h) => dbCuenta().from(tablaActiva).select('contable, interno').order('id').range(d, h))
       const otros = await Promise.all(TABLAS_CON_VINCULO_ARCA.map(async t => {
         const cli = t.schema === 'public' ? supabase : supabase.schema(t.schema)
         const { data: d } = await cli.from(t.tabla).select('contable, interno').or('contable.not.is.null,interno.not.is.null')
@@ -1865,7 +1868,8 @@ Pasan a conciliado junto con su factura o cuota. El motivo queda en la nota.`)) 
         r.data.map((f: any) => ({ ...f, __empresa: r.empresa })))
 
       // Cargar templates egresos NO conciliados (cualquier estado excepto conciliado)
-      const { data: templatesEgresos, error: errorTemplates } = await supabase
+      // ✂️ A-BUG-1379: de a tandas (1.073 cuotas sin conciliar al 26/10; la base corta en 1.000).
+      const rTpl = await traerTodo<any>((d, h) => supabase
         .from('cuotas_egresos_sin_factura')
         .select(`
           id,
@@ -1879,9 +1883,14 @@ Pasan a conciliado junto con su factura o cuota. El motivo queda en la nota.`)) 
             cuit_quien_cobra,
             responsable
           )
-        `)
+        `, { count: 'exact' })
         .neq('estado', 'conciliado')
         .order('fecha_estimada', { ascending: false })
+        .order('id')
+        .range(d, h))
+      const templatesEgresos = rTpl.data
+      const errorTemplates = rTpl.error
+      avisarSiIncompleta('Asignar · cuotas de templates', rTpl)
 
       if (errorTemplates) {
         console.error('Error cargando templates egresos:', errorTemplates)

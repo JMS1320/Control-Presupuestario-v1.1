@@ -17,6 +17,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { supabase } from "@/lib/supabase"
+import { traerTodo } from "@/lib/supabase-paginado"
 
 interface CuentaContable {
   categ: string
@@ -61,7 +62,8 @@ export function CategCombobox({
       // Fuentes secundarias: categ usadas en extractos/templates que no estén en cuentas_contables
       const [templates, movimientos] = await Promise.all([
         supabase.from('egresos_sin_factura').select('categ').not('categ', 'is', null),
-        supabase.from('msa_galicia').select('categ').not('categ', 'is', null),
+        // ✂️ A-BUG-1379: de a tandas (sólo arma la lista de sugerencias).
+        traerTodo<any>((d, h) => supabase.from('msa_galicia').select('categ').not('categ', 'is', null).order('id').range(d, h)),
       ])
 
       const maestras = new Set((contables || []).map(c => c.categ))

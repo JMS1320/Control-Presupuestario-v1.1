@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { supabase } from "@/lib/supabase"
+import { traerTodo } from "@/lib/supabase-paginado"
+import { avisarSiIncompleta } from "@/lib/ui/avisar-lectura"
 
 export type ResumenDistribucionSocios = {
   mes: number
@@ -74,13 +76,18 @@ export function useDistribucionSociosData(año: number, semestre?: number) {
 
         // 2) Traer movimientos MSA con el rango de fechas
         // ✅ FILTRAR: Solo movimientos que SÍ tienen valor en interno (no nulos ni vacíos)
-        const { data: movimientosData, error: movError } = await supabase
+        // ✂️ A-BUG-1379: de a tandas (defensivo: hoy son 112, pero la tabla ya pasó las 1.000).
+        const rMov = await traerTodo<any>((d, h) => supabase
           .from("msa_galicia")
-          .select("fecha, creditos, debitos, interno")
+          .select("fecha, creditos, debitos, interno", { count: "exact" })
           .gte("fecha", fechaInicio)
           .lte("fecha", fechaFin)
           .not("interno", "is", null)
           .neq("interno", "") // ✅ Excluir campos vacíos
+          .order("id").range(d, h))
+        const movimientosData = rMov.data
+        const movError = rMov.error
+        avisarSiIncompleta("Distribución socios · movimientos", rMov)
 
         if (movError) {
           console.error("Error al obtener movimientos distribución:", movError)

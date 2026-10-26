@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 import { filtroDeSentidoYMonto, type Sentido } from "@/lib/movimientos/sentido"
 import { contarEstadisticasExtracto } from "@/lib/conciliacion/estado-historico"
+import { traerHasta, traerTodo } from "@/lib/supabase-paginado"
 
 export interface MovimientoBancario {
   id: string
@@ -105,6 +106,11 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
       setError(null)
       ultimosFiltros.current = filtros
 
+      /**
+       * ✂️ A-BUG-1379 — la consulta se ARMA de nuevo para cada tanda: la base entrega como máximo 1.000 filas,
+       * así que un límite de 2.000 / 5.000 (o «buscar sobre todo») traía 1.000 y nada anterior al 06/02/2026.
+       */
+      const armar = () => {
       let query = (schema && schema !== 'public' ? supabase.schema(schema) : supabase)
         .from(tabla)
         .select('*')
@@ -193,15 +199,14 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
         query = query.ilike('nota_operador', `%${seguro}%`)
       }
 
-      // Ordenar por orden descendente — respeta el orden del extracto bancario original
-      query = query.order('orden', { ascending: false })
-
-      // Aplicar límite
-      if (filtros?.limite) {
-        query = query.limit(filtros.limite)
+      // Ordenar por orden descendente — respeta el orden del extracto bancario original (+ id: sin empates entre tandas)
+      return query.order('orden', { ascending: false }).order('id', { ascending: false })
       }
 
-      const { data, error } = await query
+      // Aplicar límite: de a tandas de 1.000 hasta el límite (o hasta que no haya más). Sin límite: todo.
+      const { data, error } = filtros?.limite
+        ? await traerHasta<any>((d, h) => armar().range(d, h), filtros.limite)
+        : await traerTodo<any>((d, h) => armar().range(d, h))
 
       if (error) {
         throw new Error(`Error cargando movimientos: ${error.message}`)
