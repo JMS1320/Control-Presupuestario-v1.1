@@ -53,7 +53,11 @@ interface ComprobanteArca {
   pdf_drive_url: string | null
 }
 
-type EstadoMatch = "asignado" | "unico" | "ambiguo" | "sin_match"
+/**
+ * «sin_cuenta» = la factura no trae ningún nombre de cuenta: no hay con qué comparar (usuario 26/10:
+ * «¿es lógico que muestre todo sin match?»). «sin_match» queda para un nombre que no está en el plan.
+ */
+type EstadoMatch = "asignado" | "unico" | "ambiguo" | "sin_match" | "sin_cuenta"
 
 interface Sugerencia {
   categ: string
@@ -106,7 +110,7 @@ function calcularEstado(
 ): EstadoMatch {
   if (row.nro_cuenta) return "asignado"
   const key = normalize(row.cuenta_contable ?? "")
-  if (!key) return "sin_match"
+  if (!key) return "sin_cuenta"
   const matches = matchMap.get(key) ?? []
   if (matches.length === 0) return "sin_match"
   if (matches.length === 1) return "unico"
@@ -118,6 +122,7 @@ const ESTADO_CONFIG: Record<EstadoMatch, { label: string; color: string; bg: str
   unico:    { label: "Match",     color: "text-blue-700",   bg: "bg-blue-100 text-blue-700 border-blue-300",      rowBg: "" },
   ambiguo:  { label: "Ambiguo",   color: "text-amber-700",  bg: "bg-amber-100 text-amber-700 border-amber-300",   rowBg: "bg-amber-50" },
   sin_match:{ label: "Sin match", color: "text-orange-700", bg: "bg-orange-100 text-orange-700 border-orange-300", rowBg: "bg-orange-50" },
+  sin_cuenta:{ label: "Sin cuenta", color: "text-gray-600", bg: "bg-gray-100 text-gray-600 border-gray-300", rowBg: "" },
 }
 
 // ─── Componente principal ──────────────────────────────────────────────────────
@@ -220,7 +225,7 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
   // ── Resumen estados ───────────────────────────────────────────────────────
 
   const resumen = useMemo(() => {
-    const r: Record<EstadoMatch, number> = { asignado: 0, unico: 0, ambiguo: 0, sin_match: 0 }
+    const r: Record<EstadoMatch, number> = { asignado: 0, unico: 0, ambiguo: 0, sin_match: 0, sin_cuenta: 0 }
     conEstado.forEach(c => r[c._estado]++)
     return r
   }, [conEstado])
@@ -580,7 +585,7 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
 
       {/* ── Resumen chips ── */}
       <div className="flex flex-wrap gap-3">
-        {(["sin_match","ambiguo","unico","asignado"] as EstadoMatch[]).map(est => (
+        {(["sin_cuenta","sin_match","ambiguo","unico","asignado"] as EstadoMatch[]).filter(est => est !== "sin_match" || resumen.sin_match > 0).map(est => (
           <button
             key={est}
             onClick={() => setFiltroEstado(filtroEstado === est ? "todos" : est)}
