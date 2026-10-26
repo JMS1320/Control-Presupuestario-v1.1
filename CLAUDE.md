@@ -1227,6 +1227,12 @@ ese lugar afecte a todo lo que lo usa.
 - Antes de crear un componente/función, buscar el equivalente y **extenderlo**.
   Caso testigo: para **asignar** cuenta contable va siempre `SelectorCuentaContable`
   (jerarquía completa + buscador); `CategCombobox` sólo para filtros rápidos.
+- 🖱️ **Los chips de filtro funcionan IGUAL en toda la app** *(regla del usuario 2026-10-26: «los chips siempre
+  deben funcionar así… hay que normalizarlo»; el gesto existía desde el 01/10 en `lib/ui/chips.ts` pero sólo en el
+  código, y por eso Asignación de cuentas se hizo el suyo)*: **click prende o apaga ese chip · Ctrl+click deja sólo
+  ése · un «todos» para volver**, con `toggleChip` / `esSoloEste` / `tituloChip` / `PISTA_CTRL_CLICK` de
+  `lib/ui/chips.ts`. El número de cada chip cuenta sobre lo filtrado por lo demás. Una barra de chips nueva **no** se
+  escribe a mano. Las que todavía no lo usan → [A-FEAT-1376](PENDIENTES.md#a-feat-1376).
 - Si la vista tiene **export (Excel/PDF)**, al sumarle un campo se actualiza también el export.
   Motivo: el usuario usa las descargas como registro fuera de la app; si el export queda viejo,
   pierde datos que sí ve en pantalla.

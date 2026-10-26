@@ -20,6 +20,7 @@ import { opcionesFcManual } from "@/lib/gas-pdf/lote"
 import { pedirAsignacionDeCuenta, mensajeDePropagacion, type RespuestaAsignacion } from "@/lib/conciliacion/asignar-cuenta-cliente"
 import { cargarMovimientosVinculados, diagnosticarVinculos, TITULO_PROBLEMA, type Diagnostico } from "@/lib/conciliacion/revisar-vinculos"
 import type { ClienteParaPropagar } from "@/lib/conciliacion/propagar-cuenta"
+import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { armarHistorialPorCuit, matchPorHistorial, type EstadoMatch, type ResultadoMatch } from "@/lib/facturas/match-historial"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 
@@ -124,7 +125,9 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
   const [soloConciliadas, setSoloConciliadas] = useState(false)
 
   // Filtros
-  const [filtroEstado, setFiltroEstado] = useState<EstadoMatch | "todos">("todos")
+  // 🖱️ Chips de estado con el gesto de toda la app (lib/ui/chips.ts): el conjunto es LO QUE SE MUESTRA;
+  // por defecto todos prendidos. Click prende/apaga, Ctrl+click deja sólo ése.
+  const [estadosVisibles, setEstadosVisibles] = useState<Set<EstadoMatch>>(() => new Set<EstadoMatch>(["sin_match", "ambiguo", "unico", "asignado"]))
   const [filtroPeriodo, setFiltroPeriodo] = useState("todos")
   // 📅 A-FEAT-1373: rango de fechas de emisión (ej. el ejercicio 01/07/2025 → 30/06/2026). Vacío = sin límite.
   const [fechaDesde, setFechaDesde] = useState("")
@@ -225,11 +228,7 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
 
   // ── Resumen estados ───────────────────────────────────────────────────────
 
-  const resumen = useMemo(() => {
-    const r: Record<EstadoMatch, number> = { asignado: 0, unico: 0, ambiguo: 0, sin_match: 0 }
-    conEstado.forEach(c => r[c._estado]++)
-    return r
-  }, [conEstado])
+  // (el resumen se calcula más abajo, sobre lo filtrado sin el estado)
 
   // ── Períodos disponibles ──────────────────────────────────────────────────
 
@@ -255,10 +254,10 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
 
   // ── Filtrado ──────────────────────────────────────────────────────────────
 
-  const filtrados = useMemo(() => {
+  /** Todo lo filtrado MENOS el estado: de acá salen los números de los chips (cuánto queda en la tanda). */
+  const filtradosSinEstado = useMemo(() => {
     const q = busqueda.toLowerCase()
     return conEstado.filter(c => {
-      if (filtroEstado !== "todos" && c._estado !== filtroEstado) return false
       if (soloConciliadas && !(diag?.movimientosPorFactura.get(c.id))) return false
       if (fechaDesde && (!c.fecha_emision || c.fecha_emision < fechaDesde)) return false
       if (fechaHasta && (!c.fecha_emision || c.fecha_emision > fechaHasta)) return false
@@ -275,7 +274,17 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
                !(c.cuenta_contable ?? "").toLowerCase().includes(q)) return false
       return true
     })
-  }, [conEstado, filtroEstado, filtroPeriodo, filtroCuenta, busqueda, soloConciliadas, diag, fechaDesde, fechaHasta])
+  }, [conEstado, filtroPeriodo, filtroCuenta, busqueda, soloConciliadas, diag, fechaDesde, fechaHasta])
+
+  const filtrados = useMemo(() => filtradosSinEstado.filter(c => estadosVisibles.has(c._estado)),
+    [filtradosSinEstado, estadosVisibles])
+
+  const resumen = useMemo(() => {
+    const r: Record<EstadoMatch, number> = { asignado: 0, unico: 0, ambiguo: 0, sin_match: 0 }
+    filtradosSinEstado.forEach(c => r[c._estado]++)
+    return r
+  }, [filtradosSinEstado])
+  const todosLosEstados = estadosVisibles.size === 4
 
   // ── Selección ─────────────────────────────────────────────────────────────
 
@@ -606,15 +615,19 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
         {(["sin_match","ambiguo","unico","asignado"] as EstadoMatch[]).map(est => (
           <button
             key={est}
-            onClick={() => setFiltroEstado(filtroEstado === est ? "todos" : est)}
+            onClick={e => toggleChip(setEstadosVisibles, est, esSoloEste(e))}
+            title={tituloChip(ESTADO_CONFIG[est].label)}
             className={`flex items-center gap-2 rounded-full border px-4 py-1.5 text-sm font-medium transition-all
-              ${filtroEstado === est ? "ring-2 ring-offset-1 ring-gray-400" : "opacity-80 hover:opacity-100"}
-              ${ESTADO_CONFIG[est].bg}`}
+              ${estadosVisibles.has(est) ? ESTADO_CONFIG[est].bg : "bg-white text-gray-400 border-gray-200 line-through"}`}
           >
             <span>{ESTADO_CONFIG[est].label}</span>
             <span className="rounded-full bg-white/60 px-2 py-0.5 text-xs font-bold">{resumen[est]}</span>
           </button>
         ))}
+        {!todosLosEstados && (
+          <button className="self-center text-xs text-blue-600 underline" onClick={() => setEstadosVisibles(new Set<EstadoMatch>(["sin_match", "ambiguo", "unico", "asignado"]))}>todos</button>
+        )}
+        <span className="self-center text-[10px] text-gray-400">{PISTA_CTRL_CLICK}</span>
         {diag && diag.pendientesConciliadas.size > 0 && (
           <button
             onClick={() => setSoloConciliadas(v => !v)}
@@ -685,8 +698,8 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
           </SelectContent>
         </Select>
 
-        {(busqueda || filtroPeriodo !== "todos" || filtroEstado !== "todos" || filtroCuenta !== "todas" || soloConciliadas || fechaDesde || fechaHasta) && (
-          <Button size="sm" variant="ghost" onClick={() => { setBusqueda(""); setFiltroPeriodo("todos"); setFiltroEstado("todos"); setFiltroCuenta("todas"); setSoloConciliadas(false); setFechaDesde(""); setFechaHasta("") }}>
+        {(busqueda || filtroPeriodo !== "todos" || !todosLosEstados || filtroCuenta !== "todas" || soloConciliadas || fechaDesde || fechaHasta) && (
+          <Button size="sm" variant="ghost" onClick={() => { setBusqueda(""); setFiltroPeriodo("todos"); setEstadosVisibles(new Set<EstadoMatch>(["sin_match", "ambiguo", "unico", "asignado"])); setFiltroCuenta("todas"); setSoloConciliadas(false); setFechaDesde(""); setFechaHasta("") }}>
             <X className="h-3.5 w-3.5 mr-1" />Limpiar
           </Button>
         )}
@@ -763,7 +776,10 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
                         ?? (c._match.sugerida
                           ? <span className="italic font-normal text-blue-600" title="Sale del historial del proveedor">→ {c._match.sugerida.categ}</span>
                           : c._match.candidatas.length > 1
-                            ? <span className="italic font-normal text-amber-700" title={c._match.candidatas.map(x => `${x.categ} (${x.usos}×)`).join(" · ")}>→ {c._match.candidatas.length} opciones</span>
+                            ? <button type="button" className="italic font-normal text-amber-700 underline decoration-dotted"
+                                title={`${c._match.candidatas.map(x => `${x.categ} (${x.usos}×)`).join(" · ")} — click para elegir`}
+                                onClick={() => abrirModal([c.id], c.cuenta_contable ?? "", c.cuit, c.denominacion_emisor)}>
+                                → {c._match.candidatas.length} opciones</button>
                             : <span className="text-gray-300">—</span>)}
                     </td>
                     <td className="px-3 py-1.5 text-center text-gray-400 font-mono">
