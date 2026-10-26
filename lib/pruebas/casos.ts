@@ -130,6 +130,7 @@ import {
 import { resolverCuentaDelPlan, parCoincideConPlan, nombresDeCuentasDeFactura } from "@/lib/facturas/nro-de-cuenta"
 import { planificarAsignacion } from "@/lib/conciliacion/asignar-cuenta"
 import { diagnosticarVinculos } from "@/lib/conciliacion/revisar-vinculos"
+import { armarHistorialPorCuit, matchPorHistorial } from "@/lib/facturas/match-historial"
 import {
   repartirTotalEnAB, valorFrancoDeTotal, componerA, abrirA, aplicarCuotaManteniendoA,
 } from "@/lib/sueldos/reparto-ab"
@@ -6130,6 +6131,35 @@ export function correrCasos(): Resultado[] {
       `${[...d.pendientesConciliadas].map(([k, v]) => `${k}:${v}`).join(",")} · movs fA=${d.movimientosPorFactura.get("fA")} fB=${d.movimientosPorFactura.get("fB")}`,
       d.pendientesConciliadas.get("fB") === 1 && d.pendientesConciliadas.size === 1
       && d.movimientosPorFactura.get("fA") === 5 && !d.movimientosPorFactura.has("g1"), "A-DEC-1021")
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 🔎 EL MATCH SALE DEL HISTORIAL DEL PROVEEDOR, no del nombre que trae la factura (usuario 2026-10-26).
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const G = "Match por historial"
+    const PLAN = [{ categ: "LUZ", nro_cuenta: "422118" }, { categ: "GAS", nro_cuenta: "422134" }, { categ: "HONORARIOS VARIOS", nro_cuenta: "422110" }]
+    const H = armarHistorialPorCuit([
+      { cuit: "30-54574999-4", cuenta: "LUZ", nro_cuenta: "422118" },        // cooperativa: siempre LUZ (app)
+      { cuit: "30545749994", cuenta: "LUZ", nro_cuenta: "422118" },          // … y en el histórico (otro formato de CUIT)
+      { cuit: "20103619115", cuenta: "HONORARIOS VARIOS", nro_cuenta: null }, // Alcorta: dos cuentas distintas
+      { cuit: "20103619115", cuenta: "GAS", nro_cuenta: "422134" },
+      { cuit: "20999999999", cuenta: "Fijos Libertad", nro_cuenta: null },    // cuenta fuera del plan: no cuenta
+    ], PLAN)
+    const coop = matchPorHistorial({ cuit: "30545749994", cuenta_contable: null, nro_cuenta: null }, H, PLAN)
+    chequear(G, "Factura SIN nombre de cuenta, proveedor con una sola cuenta en el historial → Match (antes: «Sin match»)",
+      "unico · LUZ", `${coop.estado} · ${coop.sugerida?.categ}`, coop.estado === "unico" && coop.sugerida?.categ === "LUZ", "A-FEAT-1373")
+    const nc = matchPorHistorial({ cuit: "30-54574999-4", cuenta_contable: "", nro_cuenta: null }, H, PLAN)
+    chequear(G, "Una nota de crédito del mismo proveedor toma la misma cuenta (A-FEAT-1375 mientras no haya vínculo)",
+      "unico · LUZ · 2 usos", `${nc.estado} · ${nc.sugerida?.categ} · ${nc.candidatas[0]?.usos} usos`,
+      nc.estado === "unico" && nc.candidatas[0]?.usos === 2, "A-FEAT-1375")
+    const alc = matchPorHistorial({ cuit: "20103619115", cuenta_contable: null, nro_cuenta: null }, H, PLAN)
+    chequear(G, "Proveedor con dos cuentas en el historial → Ambiguo, sin sugerida (no se auto-asigna)", "ambiguo · 2",
+      `${alc.estado} · ${alc.candidatas.length}`, alc.estado === "ambiguo" && alc.sugerida === null && alc.candidatas.length === 2, "A-FEAT-1373")
+    const fuera = matchPorHistorial({ cuit: "20999999999", cuenta_contable: null, nro_cuenta: null }, H, PLAN)
+    chequear(G, "Una cuenta del historial que no está en el plan no se sugiere", "sin_match", fuera.estado, fuera.estado === "sin_match", "A-FEAT-1373")
+    const asig = matchPorHistorial({ cuit: "30545749994", cuenta_contable: "GAS", nro_cuenta: "422134" }, H, PLAN)
+    chequear(G, "Una factura con número de cuenta ya está asignada (el historial no la cambia)", "asignado", asig.estado, asig.estado === "asignado", "A-FEAT-1373")
   }
 
   // ══════════════════════════════════════════════════════════════════════════

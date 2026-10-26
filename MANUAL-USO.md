@@ -3459,6 +3459,11 @@ pendiente.
 conciliados: al asignarlas, la cuenta viaja también a esos movimientos. En cada fila, 🔗N dice a
 cuántos movimientos va a llegar.
 
+**El estado de cada factura sale del historial de su proveedor** (no del filtro): **Match** = el proveedor
+siempre usó la misma cuenta (la fila la muestra en azul, «→ LUZ»), **Ambiguo** = usó varias («→ N opciones»),
+**Sin match** = nunca se le asignó una. **«Auto-asignar con match (de lo filtrado)»** pone esa cuenta a las Match
+que tenés en pantalla. Las notas de crédito y débito toman la cuenta de su proveedor igual.
+
 **Cómo se usa:** filtrás por período o por cuenta, tildás las facturas y apretás **Asignar**. El modal
 te **propone** cuentas ordenadas por probabilidad, y te dice de dónde sale cada propuesta:
 

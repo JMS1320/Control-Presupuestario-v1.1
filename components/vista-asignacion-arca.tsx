@@ -20,6 +20,7 @@ import { opcionesFcManual } from "@/lib/gas-pdf/lote"
 import { pedirAsignacionDeCuenta, mensajeDePropagacion, type RespuestaAsignacion } from "@/lib/conciliacion/asignar-cuenta-cliente"
 import { cargarMovimientosVinculados, diagnosticarVinculos, TITULO_PROBLEMA, type Diagnostico } from "@/lib/conciliacion/revisar-vinculos"
 import type { ClienteParaPropagar } from "@/lib/conciliacion/propagar-cuenta"
+import { armarHistorialPorCuit, matchPorHistorial, type EstadoMatch, type ResultadoMatch } from "@/lib/facturas/match-historial"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -53,11 +54,7 @@ interface ComprobanteArca {
   pdf_drive_url: string | null
 }
 
-/**
- * «sin_cuenta» = la factura no trae ningún nombre de cuenta: no hay con qué comparar (usuario 26/10:
- * «¿es lógico que muestre todo sin match?»). «sin_match» queda para un nombre que no está en el plan.
- */
-type EstadoMatch = "asignado" | "unico" | "ambiguo" | "sin_match" | "sin_cuenta"
+// El estado («Match» / «Ambiguo» / «Sin match») sale del HISTORIAL del proveedor: ver lib/facturas/match-historial.ts.
 
 interface Sugerencia {
   categ: string
@@ -104,25 +101,11 @@ function fuzzyScore(query: string, target: string): number {
   return total > 0 ? Math.round((2 * common / total) * 65) : 0
 }
 
-function calcularEstado(
-  row: ComprobanteArca,
-  matchMap: Map<string, CuentaSistema[]>
-): EstadoMatch {
-  if (row.nro_cuenta) return "asignado"
-  const key = normalize(row.cuenta_contable ?? "")
-  if (!key) return "sin_cuenta"
-  const matches = matchMap.get(key) ?? []
-  if (matches.length === 0) return "sin_match"
-  if (matches.length === 1) return "unico"
-  return "ambiguo"
-}
-
 const ESTADO_CONFIG: Record<EstadoMatch, { label: string; color: string; bg: string; rowBg: string }> = {
   asignado: { label: "Asignado",  color: "text-green-700",  bg: "bg-green-100 text-green-700 border-green-300",   rowBg: "" },
   unico:    { label: "Match",     color: "text-blue-700",   bg: "bg-blue-100 text-blue-700 border-blue-300",      rowBg: "" },
   ambiguo:  { label: "Ambiguo",   color: "text-amber-700",  bg: "bg-amber-100 text-amber-700 border-amber-300",   rowBg: "bg-amber-50" },
   sin_match:{ label: "Sin match", color: "text-orange-700", bg: "bg-orange-100 text-orange-700 border-orange-300", rowBg: "bg-orange-50" },
-  sin_cuenta:{ label: "Sin cuenta", color: "text-gray-600", bg: "bg-gray-100 text-gray-600 border-gray-300", rowBg: "" },
 }
 
 // ─── Componente principal ──────────────────────────────────────────────────────
@@ -131,6 +114,8 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
   const schemaName = empresa === 'PAM' ? 'pam' : empresa === 'MA' ? 'ma' : 'msa'
   const [comprobantes, setComprobantes] = useState<ComprobanteArca[]>([])
   const [cuentasSistema, setCuentasSistema] = useState<CuentaSistema[]>([])
+  // 🔎 Lo que cada proveedor ya tiene imputado en el histórico del contador (para el match por historial).
+  const [historico, setHistorico] = useState<Array<{ cuit: string | null; cuenta: string | null; nro_cuenta: string | null }>>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   // 🩺 A-DEC-1021 (6): el estado de los movimientos ya conciliados, mirado ANTES de actuar.
@@ -174,18 +159,21 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
     setLoading(true)
     setError(null)
     try {
-      const [{ data: arca, error: e1 }, { data: ctas, error: e2 }] = await Promise.all([
+      const [{ data: arca, error: e1 }, { data: ctas, error: e2 }, { data: hist }] = await Promise.all([
         supabase.schema(schemaName).from("comprobantes_arca")
           .select("id,fecha_emision,cuit,denominacion_emisor,imp_neto_gravado,iva,imp_total,cuenta_contable,nro_cuenta,año_contable,mes_contable,fc,ddjj_iva,numero_desde,tipo_comprobante,pdf_drive_url")
           .order("fecha_emision", { ascending: false }),
         supabase.from("cuentas_contables")
           .select("categ,nro_cuenta,cuenta_contable,imputable,nombre_totalizadora,tipo")
           .order("nro_cuenta"),
+        supabase.schema(schemaName).from("comprobantes_historico")
+          .select("nro_doc_emisor,cuenta_asignada,cuenta_contable,nro_cuenta").range(0, 9999),
       ])
       if (e1) throw new Error(e1.message)
       if (e2) throw new Error(e2.message)
       setComprobantes((arca ?? []) as ComprobanteArca[])
       setCuentasSistema((ctas ?? []) as CuentaSistema[])
+      setHistorico((hist ?? []).map((h: any) => ({ cuit: h.nro_doc_emisor, cuenta: h.cuenta_asignada ?? h.cuenta_contable, nro_cuenta: h.nro_cuenta })))
       try {
         const { movs, fallaron } = await cargarMovimientosVinculados(supabase as unknown as ClienteParaPropagar)
         setDiag(diagnosticarVinculos(movs, (arca ?? []) as unknown as ComprobanteArca[], (ctas ?? []) as CuentaSistema[]))
@@ -217,15 +205,28 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
 
   // ── Estado de cada comprobante ────────────────────────────────────────────
 
+  /**
+   * 🔎 El match sale de TODO el historial del proveedor (usuario 26/10: «el match es sobre todo el historial,
+   * el filtro es para trabajar tandas»): facturas de esta empresa ya imputadas + el histórico del contador.
+   * Los filtros de la pantalla no lo cambian. Notas de crédito y débito: toman la cuenta de su proveedor.
+   */
+  const historial = useMemo(() => armarHistorialPorCuit([
+    ...comprobantes.filter(c => c.nro_cuenta).map(c => ({ cuit: c.cuit, cuenta: c.cuenta_contable, nro_cuenta: c.nro_cuenta })),
+    ...historico,
+  ], cuentasSistema), [comprobantes, historico, cuentasSistema])
+
   const conEstado = useMemo(() =>
-    comprobantes.map(c => ({ ...c, _estado: calcularEstado(c, matchMap) })),
-    [comprobantes, matchMap]
+    comprobantes.map(c => {
+      const m: ResultadoMatch = matchPorHistorial(c, historial, cuentasSistema)
+      return { ...c, _estado: m.estado, _match: m }
+    }),
+    [comprobantes, historial, cuentasSistema]
   )
 
   // ── Resumen estados ───────────────────────────────────────────────────────
 
   const resumen = useMemo(() => {
-    const r: Record<EstadoMatch, number> = { asignado: 0, unico: 0, ambiguo: 0, sin_match: 0, sin_cuenta: 0 }
+    const r: Record<EstadoMatch, number> = { asignado: 0, unico: 0, ambiguo: 0, sin_match: 0 }
     conEstado.forEach(c => r[c._estado]++)
     return r
   }, [conEstado])
@@ -476,16 +477,33 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
 
   // ── Auto-asignar únicos ───────────────────────────────────────────────────
 
+  /**
+   * Auto-asigna los «Match» de LO FILTRADO (la tanda en pantalla), con la cuenta que dice el historial.
+   * Una llamada por cuenta, con todas sus facturas juntas.
+   */
+  const unicosFiltrados = filtrados.filter(c => c._estado === "unico" && c._match.sugerida)
   async function autoAsignarUnicos() {
-    const unicos = conEstado.filter(c => c._estado === "unico")
-    if (unicos.length === 0) return
-    if (!confirm(`¿Auto-asignar ${unicos.length} comprobantes con match único?`)) return
-    const resultados = await Promise.allSettled(unicos.map(c => {
-      const cta = matchMap.get(normalize(c.cuenta_contable ?? ""))![0]
-      return pedirAsignacionDeCuenta({ empresa, ids: [c.id], nro_cuenta: cta.nro_cuenta, cuenta_contable: cta.categ })
-    }))
-    const fallidas = resultados.filter(r => r.status === "rejected").length
-    if (fallidas > 0) toast.error(`${fallidas} de ${unicos.length} no se pudieron asignar`)
+    if (unicosFiltrados.length === 0) return
+    const porCuenta = new Map<string, { nro: string | null; ids: string[] }>()
+    for (const c of unicosFiltrados) {
+      const s = c._match.sugerida!
+      const g = porCuenta.get(s.categ) ?? { nro: s.nro_cuenta, ids: [] }
+      g.ids.push(c.id); porCuenta.set(s.categ, g)
+    }
+    const detalle = [...porCuenta].map(([cta, g]) => `· ${cta}: ${g.ids.length}`).join("\n")
+    if (!confirm(`¿Asignar la cuenta del historial a ${unicosFiltrados.length} comprobante(s) de lo filtrado?\n\n${detalle}`)) return
+    let ok = 0, propagados = 0
+    const errores: string[] = []
+    for (const [cta, g] of porCuenta) {
+      try {
+        const r = await pedirAsignacionDeCuenta({ empresa, ids: g.ids, nro_cuenta: g.nro, cuenta_contable: cta })
+        ok += g.ids.length; propagados += r.propagacion?.propagados ?? 0
+        if (r.propagacion?.aviso) errores.push(r.propagacion.aviso)
+      } catch (e: any) { errores.push(`${cta}: ${e.message}`) }
+    }
+    toast.success(`${ok} comprobante(s) asignados${propagados ? ` · la cuenta llegó a ${propagados} movimiento(s)` : ""}`)
+    for (const e of errores) toast.warning(e)
+    setSeleccionados(new Set())
     await cargar()
   }
 
@@ -585,7 +603,7 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
 
       {/* ── Resumen chips ── */}
       <div className="flex flex-wrap gap-3">
-        {(["sin_cuenta","sin_match","ambiguo","unico","asignado"] as EstadoMatch[]).filter(est => est !== "sin_match" || resumen.sin_match > 0).map(est => (
+        {(["sin_match","ambiguo","unico","asignado"] as EstadoMatch[]).map(est => (
           <button
             key={est}
             onClick={() => setFiltroEstado(filtroEstado === est ? "todos" : est)}
@@ -609,12 +627,15 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
           </button>
         )}
         <span className="ml-auto self-center text-xs text-gray-400">{comprobantes.length} total</span>
-        {resumen.unico > 0 && (
-          <Button size="sm" variant="outline" onClick={autoAsignarUnicos} className="text-blue-700 border-blue-300">
-            Auto-asignar {resumen.unico} con match único
+        {unicosFiltrados.length > 0 && (
+          <Button size="sm" variant="outline" onClick={autoAsignarUnicos} className="text-blue-700 border-blue-300"
+            title="Asigna la cuenta que dice el historial del proveedor, sólo a lo que está filtrado en pantalla">
+            Auto-asignar {unicosFiltrados.length} con match (de lo filtrado)
           </Button>
         )}
-        <Button size="sm" variant="outline" onClick={() => setModalArchivoAbierto(true)} className="text-gray-700">
+        {/* 🗂️ Desactivado 26/10 a pedido del usuario: quedó atrás de lo desarrollado (📎, estados automáticos) → A-FEAT-1374. */}
+        <Button size="sm" variant="outline" disabled className="text-gray-400"
+          title="En revisión (A-FEAT-1374): quedó desactualizado respecto del 📎 y los estados automáticos. Mientras tanto, usá la columna 📎.">
           <FileCheck className="h-4 w-4 mr-1" />Actualizar Archivo Facturas
         </Button>
         <Button size="sm" variant="ghost" onClick={cargar}><RefreshCw className="h-4 w-4" /></Button>
@@ -738,7 +759,12 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
                     <td className="px-3 py-1.5 text-center">{celdaFactura(c)}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap text-gray-400">{c.cuit ?? "—"}</td>
                     <td className="px-3 py-1.5 max-w-[180px] truncate font-medium" title={c.cuenta_contable ?? ""}>
-                      {c.cuenta_contable ?? <span className="text-gray-300">—</span>}
+                      {c.cuenta_contable
+                        ?? (c._match.sugerida
+                          ? <span className="italic font-normal text-blue-600" title="Sale del historial del proveedor">→ {c._match.sugerida.categ}</span>
+                          : c._match.candidatas.length > 1
+                            ? <span className="italic font-normal text-amber-700" title={c._match.candidatas.map(x => `${x.categ} (${x.usos}×)`).join(" · ")}>→ {c._match.candidatas.length} opciones</span>
+                            : <span className="text-gray-300">—</span>)}
                     </td>
                     <td className="px-3 py-1.5 text-center text-gray-400 font-mono">
                       {c.nro_cuenta ?? "—"}
