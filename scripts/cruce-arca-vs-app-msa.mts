@@ -31,6 +31,9 @@ const arca = lineas.slice(1).map(l => {
     clave: clave(r["Tipo de Comprobante"], r["Punto de Venta"], r["Número Desde"], r["Nro. Doc. Emisor"]),
     fecha: r["Fecha de Emisión"], tipo: r["Tipo de Comprobante"], emisor: r["Denominación Emisor"],
     cuit: r["Nro. Doc. Emisor"], total: num(r["Imp. Total"]), nro: `${r["Punto de Venta"]}-${r["Número Desde"]}`,
+    // ⚠️ El reporte dice «montos en pesos», pero las facturas en dólares vienen EN DÓLARES con su TC.
+    moneda: r["Moneda"], tc: num(r["Tipo Cambio"]) || 1,
+    pesos: num(r["Imp. Total"]) * (r["Moneda"] === "$" ? 1 : (num(r["Tipo Cambio"]) || 1)),
   }
 })
 
@@ -45,10 +48,13 @@ async function todo(q: () => any) {
   return out
 }
 const app = await todo(() => sb.schema("msa").from("comprobantes_arca")
-  .select("tipo_comprobante, punto_venta, numero_desde, cuit, imp_total, fecha_emision, estado, denominacion_emisor"))
+  .select("tipo_comprobante, punto_venta, numero_desde, cuit, imp_total, fecha_emision, estado, denominacion_emisor, moneda, tipo_cambio"))
 const hist = await todo(() => sb.schema("msa").from("comprobantes_historico")
   .select("tipo, punto_de_venta, numero_desde, nro_doc_emisor, imp_total, fecha, denominacion_emisor"))
 
+/** En pesos: la app guarda las facturas en USD en dólares + TC; el histórico, en pesos. */
+const pesosApp = (f: any) => Number(f.imp_total) * (f.moneda && !["$", "PES", "ARS"].includes(f.moneda) ? Number(f.tipo_cambio) || 1 : 1)
+const pesosDe = (f: any) => ("tipo_comprobante" in f ? pesosApp(f) : Number(f.imp_total))
 const enApp = new Map(app.map(f => [clave(f.tipo_comprobante, f.punto_venta, f.numero_desde, f.cuit), f]))
 const enHist = new Map(hist.map(f => [clave(f.tipo, f.punto_de_venta, f.numero_desde, f.nro_doc_emisor), f]))
 
@@ -63,9 +69,9 @@ const usadosApp = new Set<any>()
 const parecida = (a: typeof arca[number]) => {
   const [pv, nro] = a.nro.split("-")
   const k = pvNro(pv, nro)
-  const fa = (otrosApp.get(k) ?? []).find(f => Math.abs(Math.abs(Number(f.imp_total)) - Math.abs(a.total)) <= 1)
+  const fa = (otrosApp.get(k) ?? []).find(f => Math.abs(Math.abs(pesosDe(f)) - Math.abs(a.pesos)) <= 1)
   if (fa) { usadosApp.add(fa); return { donde: "app", f: fa } }
-  const fh = (otrosHist.get(k) ?? []).find(f => Math.abs(Math.abs(Number(f.imp_total)) - Math.abs(a.total)) <= 1)
+  const fh = (otrosHist.get(k) ?? []).find(f => Math.abs(Math.abs(pesosDe(f)) - Math.abs(a.pesos)) <= 1)
   return fh ? { donde: "histórico", f: fh } : null
 }
 const sinClave = arca.filter(a => !enApp.has(a.clave) && !enHist.has(a.clave))
@@ -75,8 +81,14 @@ const enLasDos = arca.filter(a => enApp.has(a.clave) && enHist.has(a.clave))
 const difImporte = arca.flatMap(a => {
   const f = enApp.get(a.clave) ?? enHist.get(a.clave)
   if (!f) return []
-  const t = Number(f.imp_total)
-  return Math.abs(Math.abs(t) - Math.abs(a.total)) > 1 ? [{ ...a, app: t }] : []
+  const t = pesosDe(f)
+  return Math.abs(Math.abs(t) - Math.abs(a.pesos)) > 1 ? [{ ...a, app: t }] : []
+})
+// 💱 Las facturas en dólares: el TC de la app tiene que ser el de ARCA.
+const tcDistinto = arca.filter(a => a.moneda !== "$").flatMap(a => {
+  const f = enApp.get(a.clave)
+  if (!f) return []
+  return Math.abs((Number(f.tipo_cambio) || 1) - a.tc) > 0.005 || (f.moneda ?? "$") === "$" ? [{ ...a, appMoneda: f.moneda, appTc: Number(f.tipo_cambio) }] : []
 })
 const desde = arca.reduce((m, a) => a.fecha < m ? a.fecha : m, "9999"), hasta = arca.reduce((m, a) => a.fecha > m ? a.fecha : m, "")
 const sobran = [...enApp.entries()].filter(([k, f]) => f.fecha_emision >= desde && f.fecha_emision <= hasta && !arca.some(a => a.clave === k) && !usadosApp.has(f))
@@ -88,8 +100,15 @@ console.log(`≈ están, pero cargadas con otro TIPO o CUIT: ${conOtroTipo.lengt
 for (const { a, p } of conOtroTipo) console.log(`   ${a.fecha} · ${a.nro} · ${a.emisor} · ARCA tipo ${a.tipo} cuit ${a.cuit} · ${p!.donde}: tipo ${p!.f.tipo_comprobante ?? p!.f.tipo} cuit ${p!.f.cuit ?? p!.f.nro_doc_emisor}`)
 console.log(`❌ en ARCA y en NINGUNA de las dos: ${faltan.length}`)
 for (const f of faltan) console.log(`   ${f.fecha} · tipo ${f.tipo} · ${f.nro} · ${f.emisor} · $${f.total.toLocaleString("es-AR")}`)
-console.log(`⚠️ importe distinto (> $1): ${difImporte.length}`)
-for (const f of difImporte) console.log(`   ${f.fecha} · ${f.nro} · ${f.emisor} · ARCA $${f.total} vs app $${f.app}`)
+console.log(`💱 facturas en USD: ${arca.filter(a => a.moneda !== "$").length} · con TC o moneda distinta en la app: ${tcDistinto.length}`)
+console.log(`⚠️ importe distinto en pesos (> $1): ${difImporte.length}`)
+for (const f of difImporte) console.log(`   ${f.fecha} · ${f.nro} · ${f.emisor} · ARCA $${f.pesos} vs app $${f.app}`)
 console.log(`❓ en la app (en ese período) y NO en ARCA: ${sobran.length}`)
 for (const f of sobran) console.log(`   ${f.fecha_emision} · tipo ${f.tipo_comprobante} · ${f.punto_venta}-${f.numero_desde} · ${f.denominacion_emisor} · $${f.imp_total} · ${f.estado}`)
-if (salida) fs.writeFileSync(salida, JSON.stringify({ faltan, conOtroTipo, difImporte, sobran, enLasDos }, null, 2))
+const detalle = arca.map(a => {
+  const fa = enApp.get(a.clave), fh = enHist.get(a.clave), otro = conOtroTipo.find(x => x.a === a)
+  const donde = fa && fh ? "app y histórico" : fa ? "app" : fh ? "histórico" : otro ? `${otro.p!.donde} (otro tipo/CUIT)` : "NO ESTÁ"
+  const f = fa ?? fh ?? otro?.p?.f
+  return { ...a, donde, appEstado: fa?.estado ?? null, appPesos: f ? pesosDe(f) : null, appTipo: f ? (f.tipo_comprobante ?? f.tipo) : null }
+})
+if (salida) fs.writeFileSync(salida, JSON.stringify({ detalle, faltan, conOtroTipo: conOtroTipo.map(x => ({ ...x.a, donde: x.p!.donde, appTipo: x.p!.f.tipo_comprobante ?? x.p!.f.tipo, appCuit: x.p!.f.cuit ?? x.p!.f.nro_doc_emisor })), difImporte, tcDistinto, sobran, enLasDos, desde, hasta, totApp: app.length, totHist: hist.length }, null, 2))
