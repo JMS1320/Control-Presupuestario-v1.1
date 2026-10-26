@@ -396,21 +396,76 @@ donde saldo_calculado[i] = saldo_calculado[i-1] + creditos[i] - debitos[i]
 
 ## 10. CUENTAS BANCARIAS Y CAJAS CONFIGURADAS
 
-### Cuentas bancarias
+> ⚠️ **Cambió 2026-10-25**: hasta acá esta sección listaba 3 bancos y 3 cajas. Son **11 extractos**. Y se
+> agrega la § 10.1, el checklist de un extracto nuevo, pedido por el usuario: *«si aparece un extracto nuevo se le
+> debe conectar todo. Ese todo debe estar muy claro en la documentación para no tener que pensar todo nuevamente»*
+> ([A-DEC-1021](PENDIENTES.md#a-dec-1021)).
 
-| Nombre | Empresa | Tabla BD | Schema |
-|--------|---------|---------|--------|
-| MSA Galicia CC Pesos | MSA | `msa_galicia` | public |
-| PAM Galicia CA Pesos | PAM | `pam_galicia` | public |
-| PAM Galicia CC Pesos | PAM | `pam_galicia_cc` | public |
+| Extracto | Empresa | Tabla BD | Schema | Tipo |
+|---|---|---|---|---|
+| Galicia CC Pesos | MSA | `msa_galicia` | public | banco |
+| Galicia CA Pesos | PAM | `pam_galicia` | public | banco |
+| Galicia CC Pesos | PAM | `pam_galicia_cc` | public | banco |
+| Galicia CA | MA | `ma_galicia` | ma | banco |
+| VISA Business | MSA | `tarjeta_visa_business` | msa | tarjeta |
+| VISA | PAM | `tarjeta_visa` | pam | tarjeta |
+| VISA | MA | `tarjeta_visa` | ma | tarjeta |
+| Caja General / AMS / Sigot | MSA | `caja_general` · `caja_ams` · `caja_sigot` | msa | caja |
+| Echeqs de terceros | MSA | `echeqs_terceros` | msa | (endosos; no se importa) |
 
-### Cajas (2026-03-26)
+### 10.1 · 🧩 EXTRACTO NUEVO — todo lo que hay que conectarle (checklist)
 
-| Nombre | Empresa | Tabla BD | Schema |
-|--------|---------|---------|--------|
-| Caja General MSA | MSA | `caja_general` | msa |
-| Caja AMS MSA | MSA | `caja_ams` | msa |
-| Caja Sigot MSA | MSA | `caja_sigot` | msa |
+**Extractos son extractos: todos siguen la misma lógica.** Un extracto nuevo (banco, tarjeta, caja) se da por
+terminado recién cuando está en **todos** estos lugares. Relevado del código el 2026-10-25.
+
+**A · Las tres listas CENTRALES — se editan una vez y el resto las lee.** Si falta en una, una parte de la app no
+lo ve, y nada avisa.
+
+| # | Lista | Dónde | Qué pasa si falta |
+|---|---|---|---|
+| A1 | `CUENTAS_BANCARIAS` (id, nombre, `tabla_bd`, `schema_bd`, empresa, `tipo` banco/caja/tarjeta) | `hooks/useMotorConciliacion.ts` | no aparece en el selector, el motor no lo concilia, no tiene reglas |
+| A2 | `TABLAS_CON_VINCULO_ARCA` (schema + tabla real) | `lib/conciliacion/tablas-con-vinculo-arca.ts` | la cuenta de la factura **no le llega** (propagación), el aviso antes de borrar una factura no lo cuenta, el doble audit no lo ve, el Cash Flow puede ofrecer dos veces lo mismo, el balance no ve sus fechas de pago |
+| A3 | Permiso `extracto.cuenta.<id>` (el mismo id que A1) | `lib/auth/recursos.ts` | nadie que no sea admin lo ve. `scripts/verificar-recursos-permisos.mts` lo controla |
+
+Parciales, a propósito (decidir si el extracto nuevo entra): `EXTRACTOS_DE_EMPRESA` en `lib/ventas/extractos-empresa.ts`
+(sólo bancos que reciben **cobros**; hay un caso que fija que son 4) · `CUENTAS_DEL_EXTRACTO` en
+`lib/balance/papeles-bancarios.ts` (papeles 7–9 del balance; las tarjetas quedan afuera a propósito) ·
+`OPCIONES_PAGADO_DESDE` en `lib/pagos/pagado-desde.ts` (bancos y cajas; hay un caso que fija el orden).
+
+**B · La importación**, según el tipo:
+- **Banco CC** → `app/api/import-excel/route.ts` (lista de tablas permitidas) · **Banco CA** →
+  `app/api/import-excel-ca/route.ts` (lista + schema) y, si se parsea, `app/api/reparsear-extracto/route.ts`,
+  `components/alerta-parseo-pendiente.tsx`, `components/configurador-reglas-parseo.tsx` (`IDS_CA`) ·
+  **Caja** → `app/api/import-excel-caja/route.ts` (`TABLAS_VALIDAS`) · **Tarjeta** →
+  `app/api/import-pdf-tarjeta/route.ts` y `app/api/import-excel-tarjeta/route.ts` (id → schema/tabla).
+- `CONFIG_IMPORTADORES` en `components/vista-extracto-bancario.tsx`.
+- ⚠️ Una tarjeta **tiene que llevar «tarjeta» en el nombre de la tabla** (`hooks/useMovimientosBancarios.ts` lo usa
+  para cargar de a 5.000).
+
+**C · La base de datos** (molde: `scripts/73-extracto-echeqs-terceros.sql`):
+- **Estructura**: clonar una tabla del mismo tipo (`create table … (like <x> including all)`). Columnas base
+  (`ARQUITECTURA-BD.md` § 4.1) + la familia de conciliación: `comprobante_arca_id`, `template_id`,
+  `template_cuota_id`, `sueldo_pago_id`, `anticipo_id`, **`categ` + `nro_cuenta`** (las recibe la propagación),
+  `proveedor_nombre`, `comprobantes_pagados`. Bancos además `nro_resumen`, `comprobante_venta_id`, `concepto`.
+- **`estado`**: `pendiente` / `conciliado` / `auditar` / `total` — el motor sólo toma `pendiente`.
+- **Seguridad**: RLS con las dos políticas (`puede_ver` / `puede_escribir`), fila en `public.recurso_tablas` con el
+  recurso `extracto` (sin ella **nace abierta**, A-SEC-14), y GRANTs explícitos: **una tabla nueva no hereda los del
+  schema**. Si va en un schema nuevo, exponerlo en PostgREST (`pgrst.db_schemas`) y `notify pgrst, 'reload schema'`.
+- Se avisa en `ENTRE-DESARROLLADORES.md` **antes** y se anota en `RECONSTRUCCION_SUPABASE_2026-01-07.md`.
+
+**D · Los datos de arranque**: el set de **reglas de conciliación** de la cuenta (`reglas_conciliacion`,
+`reglas_contable_interno`, y `config_parseo_extracto` si es CA), con la clave = id de A1. Molde: `scripts/103`.
+
+**E · Copias escritas a mano que todavía existen** (al 2026-10-25) — cada una es un lugar donde el extracto nuevo
+**no** va a aparecer hasta que se la pase a la lista central → [A-FEAT-1194](PENDIENTES.md#a-feat-1194):
+`hooks/useVinculacionAnticipo.ts` (anticipos: 4 bancos) · `app/api/proveedores/ficha/route.ts` (ficha del proveedor:
+3) · `lib/pagos/medios-pago.ts` (mail al proveedor: 1) · `hooks/useFinancialData.ts` (reporte: MSA + echeqs) ·
+`components/proponer-foto-balance.tsx` (tarjetas de PAM y MA) · `scripts/verificar-auditoria.mts` (le faltan los
+echeqs) · los selectores de caja de sueldos y Cash Flow. ✅ **Ya pasadas a la lista central el 2026-10-25**: el aviso
+antes de borrar una factura, las dos propagaciones del subdiario y el modal de factura ya conciliada del extracto.
+
+**F · Las pruebas**: `npm run probar` tiene casos que fijan cantidades (4 extractos de cobro, el orden de «pagado
+desde»): si el extracto nuevo entra ahí, se actualizan a propósito.
 
 Las cajas tienen la misma estructura de columnas que las tablas bancarias (excepto campos propios del extracto bancario como `origen`, `grupo_de_conceptos`, `numero_de_terminal`, etc.). Ver sección 17 para detalle completo del sistema caja.
 

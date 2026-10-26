@@ -3440,10 +3440,22 @@ mismo y valen para todas las pólizas donde aparezca (van por patente o DNI). Lo
 
 → A-TEST-1221
 
-## 🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30)*
+## 🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30 · al día 2026-10-25)*
 
 Es la pantalla para **imputar rápido** las facturas que todavía no tienen cuenta contable — las que
-en el libro por cuenta salen como *NO IMPUTADO*.
+en el libro por cuenta salen como *NO IMPUTADO*. **Sin cuentas no hay libro diario.**
+
+🏢 **Se trabaja una empresa por vez**: cada pestaña (Facturas MSA, PAM, MA) tiene su Asignación de
+cuentas y sólo toca las facturas de esa empresa. Desde el 25/10 funciona también en **PAM y MA**.
+
+⛔ **Si arriba aparece un cartel rojo, miralo antes de asignar.** Dice qué movimientos ya conciliados no
+coinciden con su factura: uno clasificado en otro sistema (FCI, Caja, Sueldos), uno con una cuenta
+distinta a la de su factura, o uno al que la cuenta nunca le llegó. Son errores de datos, no trabajo
+pendiente.
+
+🔗 **El chip «Conciliadas sin cuenta»** filtra las facturas sin cuenta que ya tienen movimientos
+conciliados: al asignarlas, la cuenta viaja también a esos movimientos. En cada fila, 🔗N dice a
+cuántos movimientos va a llegar.
 
 **Cómo se usa:** filtrás por período o por cuenta, tildás las facturas y apretás **Asignar**. El modal
 te **propone** cuentas ordenadas por probabilidad, y te dice de dónde sale cada propuesta:
@@ -3468,6 +3480,13 @@ pisa**: pisar `FCI`, que es financiero, con una cuenta de gasto metería en el e
 siendo de la empresa. En cambio `ANTICIPO`, `SIN_CATEG` e `INVALIDA:` **sí se pisan**: son provisorios.
 
 🔑 **Y quitar la cuenta también limpia el movimiento.** Antes se quedaba con la vieja.
+
+🔒 **El número y el nombre de la cuenta van siempre juntos**, y salen del plan de cuentas: si una
+cuenta no está en el plan, no se guarda (te lo dice). Quitar la cuenta deja vacíos los dos.
+
+♻️ **Es el mismo camino en todas las pantallas**: cambiar la cuenta desde el subdiario (la celda o la
+vista de Pagos) o desde el Cash Flow (el punto o Ctrl+Click en CATEG) hace exactamente lo mismo, y
+la cuenta llega a todos los extractos: bancos, las tres tarjetas, las cajas y los echeqs.
 
 ⚠️ Sin probar todavía → A-TEST-1170
 
@@ -3724,8 +3743,7 @@ y te lo avisa. Ponerla con **Ctrl+Click en CATEG** hace exactamente lo mismo.
 
 📌 Pasando el mouse por el punto te dice qué cuenta tiene, o por qué no se puede cambiar desde ahí.
 
-📌 **Límite de hoy:** las facturas de **PAM y MA** muestran el punto pero todavía no se asignan
-desde acá.
+📌 Desde el 25/10 el punto asigna también en facturas de **PAM y MA**, cada una en su empresa.
 
 ⚠️ Sin probar todavía → A-TEST-1191
 
