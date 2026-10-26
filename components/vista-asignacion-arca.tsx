@@ -510,10 +510,11 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
   // ── Auto-asignar únicos ───────────────────────────────────────────────────
 
   /**
-   * Auto-asigna los «Match» de LO FILTRADO (la tanda en pantalla), con la cuenta que dice el historial.
-   * Una llamada por cuenta, con todas sus facturas juntas.
+   * Asigna su «Match» a las facturas SELECCIONADAS (usuario 26/10: «el primer botón debe ser sobre las
+   * seleccionadas y no sobre el total filtrado»), con la cuenta que dice el historial de cada proveedor.
+   * Una llamada por cuenta, en paralelo. Las seleccionadas que no son Match se dejan como están.
    */
-  const unicosFiltrados = filtrados.filter(c => c._estado === "unico" && c._match.sugerida)
+  const unicosFiltrados = filtrados.filter(c => seleccionados.has(c.id) && c._estado === "unico" && c._match.sugerida)
   async function autoAsignarUnicos() {
     if (unicosFiltrados.length === 0) return
     const porCuenta = new Map<string, { nro: string | null; ids: string[] }>()
@@ -523,17 +524,18 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
       g.ids.push(c.id); porCuenta.set(s.categ, g)
     }
     const detalle = [...porCuenta].map(([cta, g]) => `· ${cta}: ${g.ids.length}`).join("\n")
-    if (!confirm(`¿Asignar la cuenta del historial a ${unicosFiltrados.length} comprobante(s) de lo filtrado?\n\n${detalle}`)) return
+    if (!confirm(`¿Asignar la cuenta del historial a ${unicosFiltrados.length} seleccionada(s)?${seleccionados.size > unicosFiltrados.length ? ` (${seleccionados.size - unicosFiltrados.length} sin match quedan como están)` : ""}\n\n${detalle}`)) return
     let ok = 0, propagados = 0
     const errores: string[] = []
-    for (const [cta, g] of porCuenta) {
+    // ⚡ En paralelo, una llamada por cuenta (antes, una detrás de otra).
+    await Promise.all([...porCuenta].map(async ([cta, g]) => {
       try {
         const r = await pedirAsignacionDeCuenta({ empresa, ids: g.ids, nro_cuenta: g.nro, cuenta_contable: cta })
         aplicarLocal(g.ids, parDe(r))
         ok += g.ids.length; propagados += r.propagacion?.propagados ?? 0
         if (r.propagacion?.aviso) errores.push(r.propagacion.aviso)
       } catch (e: any) { errores.push(`${cta}: ${e.message}`) }
-    }
+    }))
     toast.success(`${ok} comprobante(s) asignados${propagados ? ` · la cuenta llegó a ${propagados} movimiento(s)` : ""}`)
     for (const e of errores) toast.warning(e)
     setSeleccionados(new Set())
@@ -662,12 +664,6 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
           </button>
         )}
         <span className="ml-auto self-center text-xs text-gray-400">{comprobantes.length} total</span>
-        {unicosFiltrados.length > 0 && (
-          <Button size="sm" variant="outline" onClick={autoAsignarUnicos} className="text-blue-700 border-blue-300"
-            title="Asigna la cuenta que dice el historial del proveedor, sólo a lo que está filtrado en pantalla">
-            Auto-asignar {unicosFiltrados.length} con match (de lo filtrado)
-          </Button>
-        )}
         {/* 🗂️ Desactivado 26/10 a pedido del usuario: quedó atrás de lo desarrollado (📎, estados automáticos) → A-FEAT-1374. */}
         <Button size="sm" variant="outline" disabled className="text-gray-400"
           title="En revisión (A-FEAT-1374): quedó desactualizado respecto del 📎 y los estados automáticos. Mientras tanto, usá la columna 📎.">
@@ -730,6 +726,12 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
         {seleccionados.size > 0 && (
           <div className="flex items-center gap-2 ml-auto">
             <span className="text-sm text-gray-500">{seleccionados.size} selec.</span>
+            {unicosFiltrados.length > 0 && (
+              <Button size="sm" variant="outline" onClick={autoAsignarUnicos} className="text-blue-700 border-blue-300"
+                title="A cada seleccionada le pone la cuenta que dice el historial de su proveedor (sólo las que son Match)">
+                Asignar su match ({unicosFiltrados.length})
+              </Button>
+            )}
             <Button size="sm" onClick={() => {
               const uniq = [...new Set(seleccionadosArray.map(id => filtrados.find(c=>c.id===id)?.cuenta_contable ?? ""))]
               const cuits = [...new Set(seleccionadosArray.map(id => filtrados.find(c=>c.id===id)?.cuit ?? null).filter(Boolean))]
