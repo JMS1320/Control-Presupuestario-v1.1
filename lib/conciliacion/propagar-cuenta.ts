@@ -173,17 +173,21 @@ export async function propagarCuentaAMovimientos(
 
   const desasignar = cuenta.cuenta_contable == null && cuenta.nro_cuenta == null
 
-  for (const t of TABLAS_CON_VINCULO_ARCA) {
+  /**
+   * ⚡ 26/10: las 11 tablas se procesan EN PARALELO (antes, una detrás de otra: ~22 viajes a la base en fila,
+   * y el usuario esperaba ~5 s por asignación). Cada tabla es independiente; el resultado se junta al final.
+   */
+  const porTabla = await Promise.all(TABLAS_CON_VINCULO_ARCA.map(async t => {
     const q = t.schema === "public" ? db.from(t.tabla) : db.schema(t.schema).from(t.tabla)
 
     // 1 · Primero se MIRA lo que hay. Sin esto no se puede decidir si pisar o no.
     const { data, error } = await q
       .select(`id, categ, nro_cuenta`)
       .in(COLUMNA_VINCULO_ARCA, facturaIds)
-    if (error) { fallaron.push({ schema: t.schema, tabla: t.tabla, error: error.message }); continue }
+    if (error) return { t, falla: error.message, decs: [] as DecisionDePropagacion[], escritos: 0 }
 
     const filas = (data ?? []) as MovimientoAPropagar[]
-    if (filas.length === 0) continue
+    if (filas.length === 0) return { t, falla: null, decs: [] as DecisionDePropagacion[], escritos: 0 }
 
     /**
      * Al **desasignar** no hay nada que decidir: se limpia lo que esta propagación había puesto, y
@@ -192,11 +196,8 @@ export async function propagarCuentaAMovimientos(
      */
     const decs = decidirPropagacion(
       filas.map(f => ({ ...f, schema: t.schema, tabla: t.tabla })), cuentasDelPlan)
-    decisiones.push(...decs)
-
     const aEscribir = decs.filter(d => d.seEscribe).map(d => d.movimientoId)
-    salteados.push(...decs.filter(d => !d.seEscribe))
-    if (aEscribir.length === 0) continue
+    if (aEscribir.length === 0) return { t, falla: null, decs, escritos: 0 }
 
     // 2 · Y recién ahí se escribe, sólo sobre los que se decidió.
     const qEscritura = t.schema === "public" ? db.from(t.tabla) : db.schema(t.schema).from(t.tabla)
@@ -205,8 +206,15 @@ export async function propagarCuentaAMovimientos(
         ? { categ: null, nro_cuenta: null }
         : { categ: cuenta.cuenta_contable, nro_cuenta: cuenta.nro_cuenta })
       .in("id", aEscribir)
-    if (errUp) { fallaron.push({ schema: t.schema, tabla: t.tabla, error: errUp.message }); continue }
-    propagados += aEscribir.length
+    if (errUp) return { t, falla: errUp.message, decs, escritos: 0 }
+    return { t, falla: null, decs, escritos: aEscribir.length }
+  }))
+
+  for (const r of porTabla) {
+    decisiones.push(...r.decs)
+    salteados.push(...r.decs.filter(d => !d.seEscribe))
+    if (r.falla) fallaron.push({ schema: r.t.schema, tabla: r.t.tabla, error: r.falla })
+    propagados += r.escritos
   }
 
   return { propagados, salteados, fallaron, decisiones }
@@ -231,15 +239,15 @@ export async function contarMovimientosDeFactura(
   const fallaron: string[] = []
   let total = 0
 
-  for (const t of TABLAS_CON_VINCULO_ARCA) {
+  // ⚡ En paralelo (26/10): las 11 lecturas son independientes.
+  const lecturas = await Promise.all(TABLAS_CON_VINCULO_ARCA.map(async t => {
     const q = t.schema === "public" ? db.from(t.tabla) : db.schema(t.schema).from(t.tabla)
     const { data, error } = await q.select("id").eq(COLUMNA_VINCULO_ARCA, facturaId)
-    if (error) {
-      // 🛑 Una tabla que no se pudo leer NO se cuenta como cero: eso dejaría pasar un borrado.
-      fallaron.push(t.tabla)
-      continue
-    }
-    const n = (data ?? []).length
+    return { t, error, n: (data ?? []).length }
+  }))
+  for (const { t, error, n } of lecturas) {
+    // 🛑 Una tabla que no se pudo leer NO se cuenta como cero: eso dejaría pasar un borrado.
+    if (error) { fallaron.push(t.tabla); continue }
     if (n > 0) { porTabla.push({ schema: t.schema, tabla: t.tabla, que: t.que, n }); total += n }
   }
   return { total, porTabla, fallaron }

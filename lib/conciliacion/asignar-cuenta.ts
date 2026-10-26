@@ -86,14 +86,15 @@ export async function asignarCuentaAFacturas(
   const unicos = [...new Set(ids)]
   if (unicos.length === 0) throw new Error("Se requiere al menos una factura")
 
-  const { data: plan, error: ePlan } = await db.from("cuentas_contables").select("categ, cuenta_contable, nro_cuenta, tipo")
-  if (ePlan) throw new Error(`No se pudo leer el plan de cuentas: no se guardó nada (${ePlan.message})`)
-  const filasPlan = (plan ?? []) as FilaDelPlan[]
-
-  // 1 · Primero se mira cuáles están en ESA empresa. Un UPDATE que no encuentra la fila no falla.
+  // 1 · El plan y cuáles facturas están en ESA empresa (un UPDATE que no encuentra la fila no falla). En paralelo.
   const schema = schemaDeEmpresaFactura(empresa)
-  const { data: existentes, error: eLee } = await db.schema(schema).from("comprobantes_arca").select("id").in("id", unicos)
+  const [{ data: plan, error: ePlan }, { data: existentes, error: eLee }] = await Promise.all([
+    db.from("cuentas_contables").select("categ, cuenta_contable, nro_cuenta, tipo"),
+    db.schema(schema).from("comprobantes_arca").select("id").in("id", unicos),
+  ])
+  if (ePlan) throw new Error(`No se pudo leer el plan de cuentas: no se guardó nada (${ePlan.message})`)
   if (eLee) throw new Error(eLee.message)
+  const filasPlan = (plan ?? []) as FilaDelPlan[]
 
   const p = planificarAsignacion(filasPlan, empresa, unicos, (existentes ?? []).map((f: { id: string }) => f.id), entrada)
   if (!p.ok) throw new Error(p.error)

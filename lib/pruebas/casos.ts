@@ -131,6 +131,7 @@ import { resolverCuentaDelPlan, parCoincideConPlan, nombresDeCuentasDeFactura } 
 import { planificarAsignacion } from "@/lib/conciliacion/asignar-cuenta"
 import { diagnosticarVinculos } from "@/lib/conciliacion/revisar-vinculos"
 import { armarHistorialPorCuit, matchPorHistorial } from "@/lib/facturas/match-historial"
+import { cuentasQueCoinciden } from "@/lib/facturas/buscar-cuenta"
 import {
   repartirTotalEnAB, valorFrancoDeTotal, componerA, abrirA, aplicarCuotaManteniendoA,
 } from "@/lib/sueldos/reparto-ab"
@@ -6158,6 +6159,13 @@ export function correrCasos(): Resultado[] {
       `${alc.estado} · ${alc.candidatas.length}`, alc.estado === "ambiguo" && alc.sugerida === null && alc.candidatas.length === 2, "A-FEAT-1373")
     const fuera = matchPorHistorial({ cuit: "20999999999", cuenta_contable: null, nro_cuenta: null }, H, PLAN)
     chequear(G, "Una cuenta del historial que no está en el plan no se sugiere", "sin_match", fuera.estado, fuera.estado === "sin_match", "A-FEAT-1373")
+    // 🐛 A-BUG-1377: el buscador del modal no puede romperse con cuentas sin número.
+    const PLAN_CON_SIN_NRO = [{ categ: "Consumos", cuenta_contable: "Consumos", nro_cuenta: null },
+      { categ: "LUZ", cuenta_contable: "LUZ", nro_cuenta: "422118" }, { categ: "FCI", cuenta_contable: null, nro_cuenta: null }]
+    let encontradas = "rompió"
+    try { encontradas = [cuentasQueCoinciden(PLAN_CON_SIN_NRO, "c"), cuentasQueCoinciden(PLAN_CON_SIN_NRO, "4221")].map(r => r.map(c => c.categ).join("+")).join(" | ") } catch { /* rompió */ }
+    chequear(G, "🐛 El buscador del modal no se rompe con cuentas del plan sin número", "Consumos+FCI | LUZ", encontradas,
+      encontradas === "Consumos+FCI | LUZ", "A-BUG-1377")
     const asig = matchPorHistorial({ cuit: "30545749994", cuenta_contable: "GAS", nro_cuenta: "422134" }, H, PLAN)
     chequear(G, "Una factura con número de cuenta ya está asignada (el historial no la cambia)", "asignado", asig.estado, asig.estado === "asignado", "A-FEAT-1373")
   }

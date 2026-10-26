@@ -21,6 +21,7 @@ import { pedirAsignacionDeCuenta, mensajeDePropagacion, type RespuestaAsignacion
 import { cargarMovimientosVinculados, diagnosticarVinculos, TITULO_PROBLEMA, type Diagnostico } from "@/lib/conciliacion/revisar-vinculos"
 import type { ClienteParaPropagar } from "@/lib/conciliacion/propagar-cuenta"
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
+import { cuentasQueCoinciden } from "@/lib/facturas/buscar-cuenta"
 import { armarHistorialPorCuit, matchPorHistorial, type EstadoMatch, type ResultadoMatch } from "@/lib/facturas/match-historial"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 
@@ -28,8 +29,8 @@ import { TestsDelProceso } from "@/components/tests-del-proceso"
 
 interface CuentaSistema {
   categ: string
-  nro_cuenta: string
-  cuenta_contable: string
+  nro_cuenta: string | null        // hay cuentas del plan sin número (Consumos, FCI…)
+  cuenta_contable: string | null
   imputable: boolean
   nombre_totalizadora: string | null
   tipo?: string | null
@@ -59,8 +60,8 @@ interface ComprobanteArca {
 
 interface Sugerencia {
   categ: string
-  nro_cuenta: string
-  cuenta_contable: string
+  nro_cuenta: string | null
+  cuenta_contable: string | null
   nombre_totalizadora: string | null
   score: number
   fuente: "historial_historico" | "historial_arca" | "nombre_similar" | "exacto"
@@ -419,6 +420,27 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
   }
 
 
+  /**
+   * ⚡ 26/10: después de asignar/quitar se actualizan SÓLO esas filas con el par que devolvió la ruta, en vez
+   * de recargar todo (facturas + histórico + 11 extractos). Usuario: «recarga la página cuando termina,
+   * no sé si hará falta». El ⟳ sigue para refrescar todo a mano.
+   */
+  function aplicarLocal(ids: string[], par: { cuenta_contable: string | null; nro_cuenta: string | null }) {
+    const set = new Set(ids)
+    setComprobantes(prev => prev.map(c => set.has(c.id) ? { ...c, cuenta_contable: par.cuenta_contable, nro_cuenta: par.nro_cuenta } : c))
+    setDiag(d => {
+      if (!d) return d
+      const pend = new Map(d.pendientesConciliadas)
+      for (const id of ids) {
+        const n = d.movimientosPorFactura.get(id) ?? 0
+        if (par.cuenta_contable || par.nro_cuenta) pend.delete(id)
+        else if (n > 0) pend.set(id, n)
+      }
+      return { ...d, pendientesConciliadas: pend }
+    })
+  }
+  const parDe = (r: RespuestaAsignacion) => ({ cuenta_contable: r.cuenta?.cuenta_contable ?? null, nro_cuenta: r.cuenta?.nro_cuenta ?? null })
+
   async function guardarAsignacion() {
     if (!cuentaElegida) return
     setGuardando(true)
@@ -438,9 +460,9 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
        * estar clasificados en otro sistema (`FCI`, `CAJA`, `Sueldos`…): § 🚦 avisa y deja seguir.
        */
       mostrarPropagacion(data)
+      aplicarLocal(modalIds, parDe(data))
       setModalAbierto(false)
       setSeleccionados(new Set())
-      await cargar()
     } catch (err: any) {
       alert("Error al guardar: " + err.message)
     } finally {
@@ -456,12 +478,13 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
     if (!confirm(`¿Quitar la asignación de ${ids.length} comprobante(s)?`)) return
     // Antes un error acá se tragaba (`.catch(() => {})`) y la pantalla recargaba como si nada.
     try {
-      mostrarPropagacion(await pedirAsignacionDeCuenta({ empresa, ids, nro_cuenta: null, cuenta_contable: null }))
+      const r = await pedirAsignacionDeCuenta({ empresa, ids, nro_cuenta: null, cuenta_contable: null })
+      mostrarPropagacion(r)
+      aplicarLocal(ids, parDe(r))
     } catch (err: any) {
       toast.error(`No se quitó la cuenta: ${err.message}`)
     }
     setSeleccionados(new Set())
-    await cargar()
   }
 
   /**
@@ -506,6 +529,7 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
     for (const [cta, g] of porCuenta) {
       try {
         const r = await pedirAsignacionDeCuenta({ empresa, ids: g.ids, nro_cuenta: g.nro, cuenta_contable: cta })
+        aplicarLocal(g.ids, parDe(r))
         ok += g.ids.length; propagados += r.propagacion?.propagados ?? 0
         if (r.propagacion?.aviso) errores.push(r.propagacion.aviso)
       } catch (e: any) { errores.push(`${cta}: ${e.message}`) }
@@ -513,16 +537,14 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
     toast.success(`${ok} comprobante(s) asignados${propagados ? ` · la cuenta llegó a ${propagados} movimiento(s)` : ""}`)
     for (const e of errores) toast.warning(e)
     setSeleccionados(new Set())
-    await cargar()
   }
 
   // ── Sugerencias filtradas en modal ────────────────────────────────────────
 
   const sugerenciasFiltradas = useMemo(() => {
     if (!busquedaModal) return sugerencias
-    const q = normalize(busquedaModal)
-    return cuentasSistema
-      .filter(c => normalize(c.categ).includes(q) || normalize(c.cuenta_contable).includes(q) || c.nro_cuenta.includes(busquedaModal))
+    // 🐛 A-BUG-1377: hay cuentas del plan SIN número; la búsqueda vive en lib para poder probarla.
+    return cuentasQueCoinciden(cuentasSistema, busquedaModal)
       .map(c => ({ ...c, score: fuzzyScore(busquedaModal, c.categ), fuente: "nombre_similar" as const }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 30)
@@ -857,7 +879,8 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
               <p className="py-4 text-center text-sm text-gray-400">Sin coincidencias</p>
             ) : (
               sugerenciasFiltradas.map((sug, i) => {
-                const elegida = cuentaElegida?.nro_cuenta === sug.nro_cuenta
+                // Por nombre: varias cuentas sin número compartían «null» y se marcaban todas juntas.
+                const elegida = cuentaElegida?.categ === sug.categ
                 const fuenteLabel: Record<string, string> = {
                   historial_historico: "Historial histórico",
                   historial_arca: "Historial ARCA",
@@ -874,7 +897,7 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
                       )}
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-sm truncate">{sug.categ}</span>
-                        <span className="shrink-0 font-mono text-xs text-gray-400 bg-gray-100 rounded px-1">{sug.nro_cuenta}</span>
+                        <span className="shrink-0 font-mono text-xs text-gray-400 bg-gray-100 rounded px-1">{sug.nro_cuenta ?? "s/n"}</span>
                         <span className={`shrink-0 text-[10px] rounded px-1.5 py-0.5 font-medium
                           ${sug.fuente === "historial_historico" || sug.fuente === "historial_arca" ? "bg-green-100 text-green-700" :
                             sug.fuente === "exacto" ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500"}`}>
@@ -894,7 +917,7 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
           <div className="flex items-center gap-3 border-t pt-3">
             {cuentaElegida && (
               <div className="flex-1 text-xs text-gray-600">
-                Seleccionada: <strong>{cuentaElegida.categ}</strong> · {cuentaElegida.nro_cuenta}
+                Seleccionada: <strong>{cuentaElegida.categ}</strong> · {cuentaElegida.nro_cuenta ?? "sin número"}
               </div>
             )}
             <Button variant="ghost" onClick={() => setModalAbierto(false)}>Cancelar</Button>
