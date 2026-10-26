@@ -3453,6 +3453,8 @@ coinciden con su factura: uno clasificado en otro sistema (FCI, Caja, Sueldos), 
 distinta a la de su factura, o uno al que la cuenta nunca le llegó. Son errores de datos, no trabajo
 pendiente.
 
+📅 **Filtro por fechas de emisión** («Emisión desde → hasta»): para trabajar un ejercicio, poné 01/07/2025 → 30/06/2026.
+
 🔗 **El chip «Conciliadas sin cuenta»** filtra las facturas sin cuenta que ya tienen movimientos
 conciliados: al asignarlas, la cuenta viaja también a esos movimientos. En cada fila, 🔗N dice a
 cuántos movimientos va a llegar.

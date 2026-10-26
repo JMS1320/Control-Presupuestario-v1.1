@@ -136,6 +136,9 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
   // Filtros
   const [filtroEstado, setFiltroEstado] = useState<EstadoMatch | "todos">("todos")
   const [filtroPeriodo, setFiltroPeriodo] = useState("todos")
+  // 📅 A-FEAT-1373: rango de fechas de emisión (ej. el ejercicio 01/07/2025 → 30/06/2026). Vacío = sin límite.
+  const [fechaDesde, setFechaDesde] = useState("")
+  const [fechaHasta, setFechaHasta] = useState("")
   const [filtroCuenta, setFiltroCuenta] = useState("todas")
   const [busqueda, setBusqueda] = useState("")
 
@@ -251,6 +254,8 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
     return conEstado.filter(c => {
       if (filtroEstado !== "todos" && c._estado !== filtroEstado) return false
       if (soloConciliadas && !(diag?.movimientosPorFactura.get(c.id))) return false
+      if (fechaDesde && (!c.fecha_emision || c.fecha_emision < fechaDesde)) return false
+      if (fechaHasta && (!c.fecha_emision || c.fecha_emision > fechaHasta)) return false
       if (filtroPeriodo !== "todos") {
         const p = `${c.año_contable}-${String(c.mes_contable).padStart(2, "0")}`
         if (p !== filtroPeriodo) return false
@@ -264,7 +269,7 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
                !(c.cuenta_contable ?? "").toLowerCase().includes(q)) return false
       return true
     })
-  }, [conEstado, filtroEstado, filtroPeriodo, filtroCuenta, busqueda, soloConciliadas, diag])
+  }, [conEstado, filtroEstado, filtroPeriodo, filtroCuenta, busqueda, soloConciliadas, diag, fechaDesde, fechaHasta])
 
   // ── Selección ─────────────────────────────────────────────────────────────
 
@@ -617,6 +622,13 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
           <Input placeholder="Buscar emisor, CUIT, cuenta..." value={busqueda}
             onChange={e => setBusqueda(e.target.value)} className="pl-8 h-8 text-sm" />
         </div>
+        {/* 📅 Fechas de emisión: desde / hasta (A-FEAT-1373) */}
+        <div className="flex items-center gap-1 text-xs text-gray-500" title="Fecha de emisión de la factura">
+          <span>Emisión</span>
+          <Input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} className="h-8 w-[140px] text-sm" />
+          <span>→</span>
+          <Input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} className="h-8 w-[140px] text-sm" />
+        </div>
         <Select value={filtroPeriodo} onValueChange={setFiltroPeriodo}>
           <SelectTrigger className="w-[130px] h-8 text-sm">
             <SelectValue placeholder="Período" />
@@ -647,8 +659,8 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
           </SelectContent>
         </Select>
 
-        {(busqueda || filtroPeriodo !== "todos" || filtroEstado !== "todos" || filtroCuenta !== "todas" || soloConciliadas) && (
-          <Button size="sm" variant="ghost" onClick={() => { setBusqueda(""); setFiltroPeriodo("todos"); setFiltroEstado("todos"); setFiltroCuenta("todas"); setSoloConciliadas(false) }}>
+        {(busqueda || filtroPeriodo !== "todos" || filtroEstado !== "todos" || filtroCuenta !== "todas" || soloConciliadas || fechaDesde || fechaHasta) && (
+          <Button size="sm" variant="ghost" onClick={() => { setBusqueda(""); setFiltroPeriodo("todos"); setFiltroEstado("todos"); setFiltroCuenta("todas"); setSoloConciliadas(false); setFechaDesde(""); setFechaHasta("") }}>
             <X className="h-3.5 w-3.5 mr-1" />Limpiar
           </Button>
         )}
@@ -921,7 +933,7 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
           {archivoFacturas.length > 0 && (
             <div className="flex items-center gap-3 border-t pt-3">
               <p className="flex-1 text-xs text-gray-500">
-                Las que queden vacías se guardarán como <strong>Sí</strong> por defecto
+                Las que no marques quedan en <strong>Buscar</strong> (no la tengo)
               </p>
               <Button variant="ghost" onClick={() => setModalArchivoAbierto(false)}>Cancelar</Button>
               <Button disabled={archivoGuardando} onClick={guardarArchivoFC}>
