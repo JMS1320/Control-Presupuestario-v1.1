@@ -1076,7 +1076,7 @@ export function useMotorConciliacion() {
        * reglas viejas, que no tienen template elegido.
        */
       if ((regla as any).template_id) {
-        const COLS = 'id, nombre_referencia, responsable, año, periodicidad, activo, solo_conciliacion, nombre_quien_cobra, proveedor, centro_costo, cuit_quien_cobra'
+        const COLS = 'id, nombre_referencia, responsable, año, periodicidad, activo, solo_conciliacion, nombre_quien_cobra, proveedor, centro_costo, cuit_quien_cobra, template_origen_id'
         const { data: elegido } = await supabase.from('egresos_sin_factura').select(COLS)
           .eq('id', (regla as any).template_id).maybeSingle()
         if (!elegido) {
@@ -1084,12 +1084,30 @@ export function useMotorConciliacion() {
           avisar?.(`La regla «${regla.texto_buscar}» apunta a un template que ya no existe: elegí otro en la regla. No se cargó ninguna cuota.`)
           return null
         }
-        const { data: familia } = await supabase.from('egresos_sin_factura').select(COLS)
+        const { data: mismoNombre } = await supabase.from('egresos_sin_factura').select(COLS)
           .eq('nombre_referencia', (elegido as any).nombre_referencia).eq('activo', true)
-        const destino = templateParaFecha(elegido as any, (familia || []) as any[], movimiento.fecha)
+        /**
+         * 🔗 A-FEAT-1372 — más los renglones ENGANCHADOS por `template_origen_id` (los años del mismo
+         * servicio, aunque cambien de empresa o de nombre). Se recorre la cadena para los dos lados.
+         */
+        const familia = new Map<string, any>([[(elegido as any).id, elegido], ...((mismoNombre || []) as any[]).map(t => [t.id, t] as [string, any])])
+        let frontera: string[] = [...familia.keys()]
+        for (let vuelta = 0; vuelta < 10 && frontera.length > 0; vuelta++) {
+          const origenes = frontera.map(id => familia.get(id)?.template_origen_id).filter((x: any) => x && !familia.has(x))
+          const [{ data: hijos }, { data: padres }] = await Promise.all([
+            supabase.from('egresos_sin_factura').select(COLS).in('template_origen_id', frontera),
+            origenes.length ? supabase.from('egresos_sin_factura').select(COLS).in('id', origenes) : Promise.resolve({ data: [] as any[] }),
+          ])
+          frontera = []
+          for (const t of [...((hijos || []) as any[]), ...((padres || []) as any[])]) {
+            if (!familia.has(t.id)) { familia.set(t.id, t); frontera.push(t.id) }
+          }
+        }
+        const candidatos = [...familia.values()]
+        const destino = templateParaFecha(elegido as any, candidatos, movimiento.fecha)
         if (!destino) {
           console.warn(`⚠️ El template de la regla «${regla.texto_buscar}» no tiene campaña para ${movimiento.fecha} — cuota no creada`)
-          avisar?.(motivoFaltaCampana(elegido as any, movimiento.fecha))
+          avisar?.(motivoFaltaCampana(elegido as any, movimiento.fecha, candidatos))
           return null
         }
         return await insertarCuotaDeRegla(destino as any, movimiento)

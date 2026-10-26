@@ -7573,6 +7573,49 @@ export function correrCasos(): Resultado[] {
       "pf", `${pf2025?.id}`, pf2025?.id === "pf", "A-DEC-1016")
   }
 
+  // ══ 🔗 LA FAMILIA SIGUE EL ENGANCHE ENTRE AÑOS AUNQUE CAMBIE LA EMPRESA (A-FEAT-1372) ══════════════════
+  {
+    // Criterio del usuario (A-DAT-92): un template por servicio, una fila por año. Luz Libertad 2025 es de PAM
+    // (con DIST MA) y 2026 de MA, enganchados por template_origen_id. Con el código viejo (familia = nombre +
+    // responsable) la regla que apunta al 2025 de PAM no ve el 2026 de MA → «Falta la campaña».
+    const luz25 = { id: "luz-25", nombre_referencia: "Luz Libertad", responsable: "PAM", año: "2025", periodicidad: "anual", activo: true, template_origen_id: null }
+    const luz26 = { id: "luz-26", nombre_referencia: "Luz Libertad", responsable: "MA", año: "2026", periodicidad: "anual", activo: true, template_origen_id: "luz-25" }
+    const todos = [luz25, luz26]
+    const ida = templateParaFecha(luz25, todos, "2026-03-10")
+    const vuelta = templateParaFecha(luz26, todos, "2025-11-10")
+    chequear("Regla → template", "🔗 Regla al 2025 de PAM + movimiento 2026 → la cuota 2026 de MA; y regla al 2026 de MA + movimiento 2025 → la 2025 de PAM",
+      "luz-26 · luz-25", `${ida?.id ?? "null"} · ${vuelta?.id ?? "null"}`, ida?.id === "luz-26" && vuelta?.id === "luz-25", "A-FEAT-1372")
+
+    // Tres años en cadena, y el del medio con otro nombre: se llega igual por el enganche.
+    const a24 = { id: "a24", nombre_referencia: "Paquete TV", responsable: "PAM", año: "2024", periodicidad: "anual", activo: true, template_origen_id: null }
+    const a25 = { id: "a25", nombre_referencia: "Paquete TV MA", responsable: "PAM", año: "2025", periodicidad: "anual", activo: true, template_origen_id: "a24" }
+    const a26 = { id: "a26", nombre_referencia: "Paquete TV MA", responsable: "MA", año: "2026", periodicidad: "anual", activo: true, template_origen_id: "a25" }
+    const cadena = [a26, a25, a24]
+    chequear("Regla → template", "🔗 Cadena de tres años (2024 PAM → 2025 PAM → 2026 MA): desde la punta 2024 se llega al 2026 y desde el 2026 al 2024",
+      "a26 · a24", `${templateParaFecha(a24, cadena, "2026-05-01")?.id ?? "null"} · ${templateParaFecha(a26, cadena, "2024-05-01")?.id ?? "null"}`,
+      templateParaFecha(a24, cadena, "2026-05-01")?.id === "a26" && templateParaFecha(a26, cadena, "2024-05-01")?.id === "a24", "A-FEAT-1372")
+
+    // Un renglón del MISMO nombre de otra empresa que NO está enganchado no entra (ACA de PAM y de MA, sueltos).
+    const aca25 = { id: "aca-pam-25", nombre_referencia: "ACA", responsable: "PAM", año: "2025", periodicidad: "anual", activo: true, template_origen_id: null }
+    const acaMa26 = { id: "aca-ma-26", nombre_referencia: "ACA", responsable: "MA", año: "2026", periodicidad: "anual", activo: true, template_origen_id: null }
+    chequear("Regla → template", "🔗 Mismo nombre de OTRA empresa sin enganche: no se mezcla (queda «Falta la campaña»)",
+      "null", String(templateParaFecha(aca25, [aca25, acaMa26], "2026-02-01")?.id ?? "null"),
+      templateParaFecha(aca25, [aca25, acaMa26], "2026-02-01") === null, "A-FEAT-1372")
+
+    // Si la campaña está en un enganchado Y en un renglón que sólo comparte nombre, manda el enganche.
+    const aysa25 = { id: "aysa-25", nombre_referencia: "AYSA Libertad", responsable: "PAM", año: "2025", periodicidad: "anual", activo: true, template_origen_id: null }
+    const aysaPam26 = { id: "aysa-pam-26", nombre_referencia: "AYSA Libertad", responsable: "PAM", año: "2026", periodicidad: "anual", activo: true, template_origen_id: null }
+    const aysaMa26 = { id: "aysa-ma-26", nombre_referencia: "AYSA Libertad", responsable: "MA", año: "2026", periodicidad: "anual", activo: true, template_origen_id: "aysa-25" }
+    chequear("Regla → template", "🔗 Con un 2026 enganchado (MA) y otro del mismo nombre suelto (PAM), carga en el enganchado",
+      "aysa-ma-26", String(templateParaFecha(aysa25, [aysaPam26, aysa25, aysaMa26], "2026-04-01")?.id),
+      templateParaFecha(aysa25, [aysaPam26, aysa25, aysaMa26], "2026-04-01")?.id === "aysa-ma-26", "A-FEAT-1372")
+
+    // Si de verdad falta (2027), el motivo nombra al MÁS NUEVO de la cadena: el botón crea la campaña en MA, no en PAM.
+    const m = motivoFaltaCampana(luz25, "2027-02-01", todos)
+    chequear("Regla → template", "🔗 Falta 2027: el motivo apunta al renglón más nuevo (MA), así «Crear campaña» no la crea en PAM",
+      "Falta la campaña 2027 de «Luz Libertad» (MA)…", m, m.startsWith("Falta la campaña 2027 de «Luz Libertad» (MA)"), "A-FEAT-1372")
+  }
+
   // ══ 🏷️ LOS CÓDIGOS CONTABLE/INTERNO DE UN TEMPLATE NUEVO (A-FEAT-1302 punto 2) ═══════════════════════
   {
     const origen = [

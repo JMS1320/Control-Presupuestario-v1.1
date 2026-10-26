@@ -18,6 +18,13 @@
  * para generar las cuotas al futuro»*); se vació en 60. Sin campaña → carga en el elegido, siempre.
  *
  * La campaña de la fecha sale de `campanaDeFecha` (la misma que usa el alta desde la conciliación).
+ *
+ * 🔗 *Y 2026-10-26 (A-FEAT-1372)*: la familia también incluye los renglones **enganchados por
+ * `template_origen_id`** (en las dos direcciones, en cadena), **aunque sean de otra empresa**. Criterio del
+ * usuario (A-DAT-92): *un template por servicio, una fila por año; cambia el responsable, no el servicio*
+ * — «Luz Libertad» 2025 es de PAM y 2026 de MA. Antes, una regla que apuntaba al 2025 de PAM no veía el
+ * 2026 de MA y el movimiento quedaba en auditar con «Falta la campaña». Un renglón del mismo nombre de
+ * OTRA empresa que no está enganchado **no** entra: el enganche es lo que dice que es el mismo servicio.
  */
 import { campanaDeFecha, type Periodicidad } from "@/lib/templates/nuevo-desde-conciliacion"
 
@@ -29,6 +36,8 @@ export interface TemplateDeFamilia {
   periodicidad?: string | null
   activo?: boolean | null
   solo_conciliacion?: boolean | null
+  /** El renglón del año anterior del mismo servicio (puede ser de otra empresa). A-FEAT-1372. */
+  template_origen_id?: string | null
 }
 
 const norm = (s: string | null | undefined) => String(s ?? "").trim().toLowerCase()
@@ -36,6 +45,40 @@ const norm = (s: string | null | undefined) => String(s ?? "").trim().toLowerCas
 /** Los de la misma familia que el elegido: mismo nombre y mismo responsable. */
 export const esDeLaFamilia = (elegido: TemplateDeFamilia, t: TemplateDeFamilia) =>
   norm(t.nombre_referencia) === norm(elegido.nombre_referencia) && norm(t.responsable) === norm(elegido.responsable)
+
+/**
+ * 🔗 A-FEAT-1372 — los ids enganchados al elegido por `template_origen_id`, en las dos direcciones y en
+ * cadena (2024 → 2025 → 2026…), dentro de `candidatos`. Incluye al elegido.
+ */
+export function idsDeLaCadena(elegido: TemplateDeFamilia, candidatos: readonly TemplateDeFamilia[]): Set<string> {
+  const todos = new Map<string, TemplateDeFamilia>()
+  for (const t of [elegido, ...candidatos]) todos.set(t.id, t)
+  const ids = new Set<string>([elegido.id])
+  let crecio = true
+  while (crecio) {
+    crecio = false
+    for (const t of todos.values()) {
+      if (ids.has(t.id)) {
+        const origen = t.template_origen_id
+        if (origen && todos.has(origen) && !ids.has(origen)) { ids.add(origen); crecio = true }
+      } else if (t.template_origen_id && ids.has(t.template_origen_id)) {
+        ids.add(t.id); crecio = true
+      }
+    }
+  }
+  return ids
+}
+
+/** La familia del elegido: mismo nombre y responsable, más lo enganchado (A-FEAT-1372). Sin filtrar activos. */
+export function familiaDe(elegido: TemplateDeFamilia, candidatos: readonly TemplateDeFamilia[]): TemplateDeFamilia[] {
+  const cadena = idsDeLaCadena(elegido, candidatos)
+  const vistos = new Set<string>()
+  return [elegido, ...candidatos].filter(t => {
+    if (vistos.has(t.id)) return false
+    vistos.add(t.id)
+    return cadena.has(t.id) || esDeLaFamilia(elegido, t)
+  })
+}
 
 /** La campaña que le corresponde a `fecha` en la familia del elegido («2025», «25/26»…). */
 export function campanaParaFecha(elegido: TemplateDeFamilia, fecha: string): string {
@@ -55,18 +98,32 @@ export function templateParaFecha(
   candidatos: TemplateDeFamilia[],
   fecha: string,
 ): TemplateDeFamilia | null {
-  const familia = candidatos.filter(t => t.activo !== false && esDeLaFamilia(elegido, t))
+  const cadena = idsDeLaCadena(elegido, candidatos)
+  const familia = familiaDe(elegido, candidatos).filter(t => t.activo !== false)
   const campana = campanaParaFecha(elegido, fecha)
-  const deLaCampana = familia.find(t => norm(t.año) === norm(campana))
-  if (deLaCampana) return deLaCampana
+  const deLaCampana = familia.filter(t => norm(t.año) === norm(campana))
+  // Si la campaña está en un renglón ENGANCHADO y también en uno que sólo comparte nombre, manda el
+  // enganche: es el que dice que es el mismo servicio (ej. AYSA 2026 de PAM antes de pasarlo a MA).
+  const elegidoDeLaCampana = deLaCampana.find(t => cadena.has(t.id)) ?? deLaCampana[0]
+  if (elegidoDeLaCampana) return elegidoDeLaCampana
   const sinCampana = !String(elegido.año ?? "").trim()
   if (elegido.activo !== false && (elegido.solo_conciliacion || sinCampana)) return elegido
   return null
 }
 
-/** El motivo de auditar cuando falta la campaña (A-DEC-1015). */
-export function motivoFaltaCampana(elegido: TemplateDeFamilia, fecha: string): string {
-  return `Falta la campaña ${campanaParaFecha(elegido, fecha)} de «${elegido.nombre_referencia}» (${elegido.responsable ?? "?"}): `
+/**
+ * El motivo de auditar cuando falta la campaña (A-DEC-1015).
+ *
+ * 🔗 A-FEAT-1372 — si hay renglones enganchados, el motivo nombra el **más nuevo** (su nombre y su
+ * responsable): el botón «📅 Crear campaña» copia ése, así la campaña nueva nace en la empresa que
+ * tiene el servicio HOY (PAM 2025 → MA 2026 → la 2027 sale de MA), no en la del renglón que eligió la regla.
+ */
+export function motivoFaltaCampana(elegido: TemplateDeFamilia, fecha: string, candidatos: readonly TemplateDeFamilia[] = []): string {
+  const cadena = idsDeLaCadena(elegido, candidatos)
+  const masNuevo = familiaDe(elegido, candidatos)
+    .filter(t => cadena.has(t.id) && t.activo !== false)
+    .sort((a, b) => String(b.año ?? "").localeCompare(String(a.año ?? "")))[0] ?? elegido
+  return `Falta la campaña ${campanaParaFecha(elegido, fecha)} de «${masNuevo.nombre_referencia}» (${masNuevo.responsable ?? "?"}): `
     + `creala con el botón «📅 Crear campaña» de esta fila. No se cargó ninguna cuota.`
 }
 
