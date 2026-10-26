@@ -39,6 +39,7 @@ import { PanelControlProveedores } from "./components/panel-control-proveedores"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { TabsVivos, TabsContentVivo } from "@/components/ui/tabs-vivos"
 import { Button } from "@/components/ui/button"
 import { LayoutApp, SOLAPAS } from "@/components/layout-app"
 import { PREFERENCIAS_DEFAULT, type Preferencias } from "@/lib/auth/preferencias"
@@ -178,7 +179,8 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
       {/* 🚩 y 🧭 — instrumentos globales: van montados en toda la app. */}
       <MarcaFlotante />
       <BarraRecorrido />
-        <Tabs value={tab} onValueChange={irA} className="w-full">
+        {/* 🧠 A-FEAT-1378: las últimas 4 secciones visitadas quedan vivas (no se recargan al volver). */}
+        <TabsVivos maxVivas={4} value={tab} onValueChange={irA} className="w-full">
           {/* ⚠️ Montado pero INVISIBLE, no borrado: `notas-para-claude.tsx:114` averigua en qué
               pantalla estás con `document.querySelector('[role="tab"][data-state="active"]')`. Si
               se saca, cada nota se guarda con `pantalla: ""` y P-34 deja de agrupar. La navegación
@@ -272,17 +274,17 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
           </TabsList>
 
           {/* VISTA PRINCIPAL — configurable por el usuario (A-FEAT-88) */}
-          <TabsContent value="principal" className="space-y-6">
+          <TabsContentVivo value="principal" className="space-y-6">
             {/* `permitidas` y no la preferencia: es lo que decide QUÉ widgets puede ver, y sale
                 del rol. La preferencia sólo dice cuáles de esos quiere y en qué orden. */}
             <VistaInicio
               preferencias={preferencias ?? PREFERENCIAS_DEFAULT}
               secciones={[...permitidas]}
             />
-          </TabsContent>
+          </TabsContentVivo>
 
           {/* DASHBOARD */}
-          <TabsContent value="dashboard" className="space-y-6">
+          <TabsContentVivo value="dashboard" className="space-y-6">
             <div className="flex items-center justify-between">
               <FiltrosFinancieros
                 año={año}
@@ -312,10 +314,10 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
             )}
 
             {showCategorias && <div className="entrada-suave"><CorrectorCategorias /></div>}
-          </TabsContent>
+          </TabsContentVivo>
 
           {/* DISTRIBUCIÓN */}
-          <TabsContent value="distribucion" className="space-y-6">
+          <TabsContentVivo value="distribucion" className="space-y-6">
             <div className="flex items-center justify-between">
               <FiltrosFinancieros
                 año={año}
@@ -349,10 +351,10 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
             )}
 
             {showInterno && <div className="entrada-suave"><CorrectorInterno /></div>}
-          </TabsContent>
+          </TabsContentVivo>
 
           {/* REPORTE DETALLADO */}
-          <TabsContent value="reporte" className="space-y-6">
+          <TabsContentVivo value="reporte" className="space-y-6">
             <FiltrosFinancieros
               año={año}
               semestre={semestre}
@@ -371,40 +373,40 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
 
             {/* 📸 El balance propio de JMS (A-FEAT-1190): activo − pasivo, fin − inicio, en $ y US$. */}
             <BalancePropio />
-          </TabsContent>
+          </TabsContentVivo>
 
           {/* EGRESOS */}
-          <TabsContent value="egresos" className="space-y-6">
+          <TabsContentVivo value="egresos" className="space-y-6">
             <VistaEgresos userRole={userRole} />
-          </TabsContent>
+          </TabsContentVivo>
 
           {/* INGRESOS */}
-          <TabsContent value="ingresos" className="space-y-6">
+          <TabsContentVivo value="ingresos" className="space-y-6">
             <VistaIngresos userRole={userRole} />
-          </TabsContent>
+          </TabsContentVivo>
 
           {/* CASH FLOW */}
-          <TabsContent value="cashflow" className="space-y-6">
+          <TabsContentVivo value="cashflow" className="space-y-6">
             <VistaCashFlow userRole={userRole} />
-          </TabsContent>
+          </TabsContentVivo>
 
           {/* EXTRACTO BANCARIO */}
-          <TabsContent value="extracto" className="space-y-6">
+          <TabsContentVivo value="extracto" className="space-y-6">
             <VistaExtractoBancario />
-          </TabsContent>
+          </TabsContentVivo>
 
           {/* SECTOR PRODUCTIVO */}
-          <TabsContent value="productivo" className="space-y-6">
+          <TabsContentVivo value="productivo" className="space-y-6">
             <VistaSectorProductivo />
-          </TabsContent>
+          </TabsContentVivo>
 
           {/* SUELDOS */}
-          <TabsContent value="sueldos" className="space-y-6">
+          <TabsContentVivo value="sueldos" className="space-y-6">
             <TabSueldos />
-          </TabsContent>
+          </TabsContentVivo>
 
           {/* PRESUPUESTO */}
-          <TabsContent value="presupuesto" className="space-y-6">
+          <TabsContentVivo value="presupuesto" className="space-y-6">
             <div className="flex justify-end gap-2">
               <Button variant="secondary" className="shrink-0" onClick={() => setShowProveedores(!showProveedores)}>
                 <TrendingUp className="mr-2 h-4 w-4" />
@@ -469,10 +471,10 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
             {showProveedores && <div className="entrada-suave"><PanelControlProveedores /></div>}
 
             <TabPresupuesto recargarToken={tokenPresupuesto} />
-          </TabsContent>
+          </TabsContentVivo>
 
           {/* IMPORTAR */}
-          <TabsContent value="importar" className="space-y-6">
+          <TabsContentVivo value="importar" className="space-y-6">
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
               <ImportadorExcel />
 
@@ -510,8 +512,8 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
               <ImportadorHistorico />
             </div>
-          </TabsContent>
-        </Tabs>
+          </TabsContentVivo>
+        </TabsVivos>
 
           {/* Información general del sistema */}
           <Card>

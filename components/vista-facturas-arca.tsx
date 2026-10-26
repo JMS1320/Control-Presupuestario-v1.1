@@ -23,6 +23,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { TabsVivos, TabsContentVivo } from "@/components/ui/tabs-vivos"
 import { esNotaCredito as esNotaCreditoArca } from "@/lib/pagos/notas-credito"
 import { agruparEnCertificados } from "@/lib/sicore/clave-certificado"
 import { tomarEncargoCancelacionNC, type EncargoCancelacionNC } from "@/lib/pagos/encargo-cancelacion-nc"
@@ -7542,7 +7543,8 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
       </div>
 
       {/* Tabs principales */}
-      <Tabs value={tabActivo} onValueChange={(value) => {
+      {/* 🧠 A-FEAT-1378: ir del listado a Asignación y volver no recarga. */}
+      <TabsVivos maxVivas={3} value={tabActivo} onValueChange={(value) => {
         // Auto-OFF del modo admin al cambiar de tab (decisión A5)
         if (modoEdicionAdmin) {
           setModoEdicionAdmin(false)
@@ -7558,7 +7560,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
         </TabsList>
 
         {/* Tab Content: Facturas */}
-        <TabsContent value="facturas" className="space-y-6">
+        <TabsContentVivo value="facturas" className="space-y-6">
           {modoEdicionAdmin && (
             <div className="bg-red-50 border-2 border-red-400 rounded-lg p-3 flex items-center justify-between sticky top-0 z-30 shadow">
               <div className="flex items-center gap-2 text-sm">
@@ -9085,25 +9087,25 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
           </DialogFooter>
         </DialogContent>
       </Dialog>
-        </TabsContent>
+        </TabsContentVivo>
 
         {/* Tab Content: Subdiarios */}
-        {puedeVer('egresos.subdiarios') && <TabsContent value="subdiarios" className="space-y-6">
+        {puedeVer('egresos.subdiarios') && <TabsContentVivo value="subdiarios" className="space-y-6">
           {/* Se LLAMA, no se monta como <SubdiariosContent />: es una función nueva en cada render, y montada
               React la desarmaba entera cada vez (el buscador perdía el cursor y las listas sus tildes). No usa hooks. */}
           {SubdiariosContent()}
-        </TabsContent>}
+        </TabsContentVivo>}
 
         {/* Tab Content: Histórico */}
-        {puedeVer('egresos.historico') && <TabsContent value="historico" className="space-y-6">
+        {puedeVer('egresos.historico') && <TabsContentVivo value="historico" className="space-y-6">
           <VistaHistoricoFacturas empresa={empresa} />
-        </TabsContent>}
+        </TabsContentVivo>}
 
         {/* Tab Content: Asignación Cuentas */}
-        {puedeVer('egresos.asignacion') && <TabsContent value="asignacion" className="space-y-6">
+        {puedeVer('egresos.asignacion') && <TabsContentVivo value="asignacion" className="space-y-6">
           <VistaAsignacionArca empresa={empresa} esAdmin={userRole === 'admin'} />
-        </TabsContent>}
-      </Tabs>
+        </TabsContentVivo>}
+      </TabsVivos>
 
       {/* Modal Imputación */}
       <Dialog open={mostrarModalImputar} onOpenChange={setMostrarModalImputar}>
@@ -9160,19 +9162,19 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                 <div className="flex gap-4">
                   <div className="flex items-center space-x-2">
                     <Checkbox
-                      id="sin-imputar"
+                      id={`sin-imputar-${empresa}`}
                       checked={mostrarSinImputar}
                       onCheckedChange={setMostrarSinImputar}
                     />
-                    <Label htmlFor="sin-imputar" className="text-sm">Sin imputar</Label>
+                    <Label htmlFor={`sin-imputar-${empresa}`} className="text-sm">Sin imputar</Label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <Checkbox
-                      id="imputadas"
+                      id={`imputadas-${empresa}`}
                       checked={mostrarImputadas}
                       onCheckedChange={setMostrarImputadas}
                     />
-                    <Label htmlFor="imputadas" className="text-sm">Imputadas</Label>
+                    <Label htmlFor={`imputadas-${empresa}`} className="text-sm">Imputadas</Label>
                   </div>
                 </div>
               </div>

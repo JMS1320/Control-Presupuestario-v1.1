@@ -4,6 +4,7 @@ import { useState } from "react"
 import type { UserRole } from "@/lib/auth/roles"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { TabsVivos, TabsContentVivo } from "@/components/ui/tabs-vivos"
 import { TrendingUp, Receipt, FileText, BookOpen, Landmark, Wheat, Beef } from "lucide-react"
 import { VistaVentasMsa } from "./vista-ventas-msa"
 import { VistaLiquidacionesMsa } from "./vista-liquidaciones-msa"
@@ -84,7 +85,7 @@ export function VistaIngresos({ userRole = 'admin' }: { userRole?: UserRole }) {
           </Tabs>
 
           {/* ── Nivel 2: vista dentro de la empresa ─────────────────────── */}
-          <Tabs value={vista} onValueChange={v => setVista(v as Vista)}>
+          <TabsVivos maxVivas={2} value={vista} onValueChange={v => setVista(v as Vista)}>
             <TabsList
               className="grid w-full"
               style={{ gridTemplateColumns: `repeat(${disponibles.length}, minmax(0, 1fr))` }}
@@ -98,36 +99,36 @@ export function VistaIngresos({ userRole = 'admin' }: { userRole?: UserRole }) {
             </TabsList>
 
             <div className="mt-6">
-              <TabsContent value="arrendamientos" className="space-y-4">
+              <TabsContentVivo value="arrendamientos" className="space-y-4">
                 <VistaArrendamientos empresa={empresa} />
-              </TabsContent>
+              </TabsContentVivo>
 
-              <TabsContent value="comprobantes" className="space-y-4">
+              <TabsContentVivo value="comprobantes" className="space-y-4">
                 <VistaLiquidacionesMsa userRole={userRole} empresa={empresa} />
-              </TabsContent>
+              </TabsContentVivo>
 
-              <TabsContent value="subdiarios" className="space-y-4">
+              <TabsContentVivo value="subdiarios" className="space-y-4">
                 <VistaSubdiariosVenta empresa={empresa} userRole={userRole} />
-              </TabsContent>
+              </TabsContentVivo>
 
-              <TabsContent value="cobros" className="space-y-4">
+              <TabsContentVivo value="cobros" className="space-y-4">
                 <VistaCobrosVenta key={empresa} empresa={empresa} />
-              </TabsContent>
+              </TabsContentVivo>
 
               {/* Sólo MSA — ver el comentario del encabezado */}
               {empresa === 'MSA' && (
                 <>
-                  <TabsContent value="ventas" className="space-y-4">
+                  <TabsContentVivo value="ventas" className="space-y-4">
                     <VistaVentasMsa userRole={userRole} />
-                  </TabsContent>
+                  </TabsContentVivo>
 
-                  <TabsContent value="ganaderia" className="space-y-4">
+                  <TabsContentVivo value="ganaderia" className="space-y-4">
                     <VistaGanaderia />
-                  </TabsContent>
+                  </TabsContentVivo>
                 </>
               )}
             </div>
-          </Tabs>
+          </TabsVivos>
         </CardContent>
       </Card>
     </div>

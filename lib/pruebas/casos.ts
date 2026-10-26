@@ -181,6 +181,7 @@ import {
 } from "@/lib/balance/libro-diario"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
+import { actualizarVivas, debeMontarse } from "@/lib/ui/pestanas-vivas"
 import { toggleChip, esSoloEste } from "@/lib/ui/chips"
 import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, retencionSugerida,
   compararConVenta, controlContraPapel, controlPlazos, plazosDesdeVenta, precargaDesdeVenta, cuotasPorCobrar, huellaLiquidacion,
@@ -6132,6 +6133,22 @@ export function correrCasos(): Resultado[] {
       `${[...d.pendientesConciliadas].map(([k, v]) => `${k}:${v}`).join(",")} · movs fA=${d.movimientosPorFactura.get("fA")} fB=${d.movimientosPorFactura.get("fB")}`,
       d.pendientesConciliadas.get("fB") === 1 && d.pendientesConciliadas.size === 1
       && d.movimientosPorFactura.get("fA") === 5 && !d.movimientosPorFactura.has("g1"), "A-DEC-1021")
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 🧠 PESTAÑAS VIVAS: al volver a una pestaña no se recarga (A-FEAT-1378, paso 1).
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const G = "Pestañas vivas"
+    let v: string[] = []
+    for (const p of ["cashflow", "egresos", "extracto", "egresos", "sueldos", "productivo"]) v = actualizarVivas(v, p, 4)
+    chequear(G, "Quedan vivas las últimas 4 visitadas, la más reciente primero, sin repetir", "productivo,sueldos,egresos,extracto",
+      v.join(","), v.join(",") === "productivo,sueldos,egresos,extracto", "A-FEAT-1378")
+    chequear(G, "La que salió por el tope (Cash Flow) ya no se monta; una nunca visitada tampoco; la activa siempre",
+      "cashflow no · presupuesto no · presupuesto activa sí",
+      `cashflow ${debeMontarse("cashflow", "productivo", v) ? "sí" : "no"} · presupuesto ${debeMontarse("presupuesto", "productivo", v) ? "sí" : "no"} · presupuesto activa ${debeMontarse("presupuesto", "presupuesto", v) ? "sí" : "no"}`,
+      !debeMontarse("cashflow", "productivo", v) && !debeMontarse("presupuesto", "productivo", v) && debeMontarse("presupuesto", "presupuesto", v),
+      "A-FEAT-1378")
   }
 
   // ══════════════════════════════════════════════════════════════════════════

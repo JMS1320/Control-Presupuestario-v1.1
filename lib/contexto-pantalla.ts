@@ -51,7 +51,10 @@ export function rutaSinLlave(): string {
  */
 export function contextoActual(): ContextoPantalla {
   if (typeof document === "undefined") return { pantalla: "", subpantalla: "", ruta: "" }
+  // 🧠 A-FEAT-1378: las pantallas visitadas quedan montadas y ESCONDIDAS, con sus propias solapas «activas»
+  // adentro: se ignoran las que están dentro de un panel inactivo, si no la nota diría la pantalla equivocada.
   const activas = Array.from(document.querySelectorAll('[role="tab"][data-state="active"]'))
+    .filter(t => !t.closest('[role="tabpanel"][data-state="inactive"]'))
     .map(t => textoLimpio(t))
     .filter(Boolean)
   return {

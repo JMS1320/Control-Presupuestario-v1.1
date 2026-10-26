@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { TabsVivos, TabsContentVivo } from "@/components/ui/tabs-vivos"
 import { TabEvolucionRodeo } from "./tab-evolucion-rodeo"
 import { PanelCicloRecria } from "./panel-ciclo-recria"
 import { PanelMedicionesInsumo } from "./panel-mediciones-insumo"
@@ -951,7 +952,7 @@ export function VistaSectorProductivo() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Tabs value={tabActiva} onValueChange={setTabActiva}>
+          <TabsVivos maxVivas={2} value={tabActiva} onValueChange={setTabActiva}>
             <TabsList className="grid w-full grid-cols-6">
               <Permisable recurso="productivo.hacienda">
 <TabsTrigger value="hacienda" className="flex items-center gap-2">
@@ -991,23 +992,23 @@ export function VistaSectorProductivo() {
 </Permisable>
             </TabsList>
 
-            <TabsContent value="hacienda">
+            <TabsContentVivo value="hacienda">
 <SoloLectura recurso="productivo.hacienda">
               <TabHacienda />
             </SoloLectura>
-</TabsContent>
-            <TabsContent value="evolucion">
+</TabsContentVivo>
+            <TabsContentVivo value="evolucion">
 <SoloLectura recurso="productivo.evolucion">
               <TabEvolucionRodeo />
             </SoloLectura>
-</TabsContent>
-            <TabsContent value="cria">
+</TabsContentVivo>
+            <TabsContentVivo value="cria">
 <SoloLectura recurso="productivo.cria">
               <TabTerneros modo="cria" />
               <CiclosCriaPanel />
             </SoloLectura>
-</TabsContent>
-            <TabsContent value="recria">
+</TabsContentVivo>
+            <TabsContentVivo value="recria">
 <SoloLectura recurso="productivo.recria">
               {/* El ciclo va ARRIBA de los terneros: primero de dónde viene el rodeo y a qué
                   costo entró, después el detalle animal por animal. */}
@@ -1016,18 +1017,18 @@ export function VistaSectorProductivo() {
               </div>
               <TabTerneros />
             </SoloLectura>
-</TabsContent>
-            <TabsContent value="insumos">
+</TabsContentVivo>
+            <TabsContentVivo value="insumos">
 <SoloLectura recurso="productivo.insumos">
               <TabInsumos />
             </SoloLectura>
-</TabsContent>
-            <TabsContent value="lotes">
+</TabsContentVivo>
+            <TabsContentVivo value="lotes">
 <SoloLectura recurso="productivo.lotes">
               <TabLotesAgricolas />
             </SoloLectura>
-</TabsContent>
-          </Tabs>
+</TabsContentVivo>
+          </TabsVivos>
         </CardContent>
       </Card>
     </div>

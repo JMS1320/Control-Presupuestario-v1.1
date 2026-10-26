@@ -7,6 +7,7 @@ import { Permisable } from "@/components/modo-permisos"
 import { usePuedeVer, usePrimeraVisible } from "@/components/contexto-permisos"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { TabsVivos, TabsContentVivo } from "@/components/ui/tabs-vivos"
 import { Receipt, FileText, Building2, ShieldCheck } from "lucide-react"
 import { VistaFacturasArca } from "./vista-facturas-arca"
 import { VistaTemplatesEgresos } from "./vista-templates-egresos"
@@ -44,7 +45,7 @@ export function VistaEgresos({ userRole = 'admin' }: { userRole?: UserRole }) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Tabs value={tabActiva} onValueChange={setTabActiva}>
+          <TabsVivos maxVivas={2} value={tabActiva} onValueChange={setTabActiva}>
             <TabsList className="grid w-full grid-cols-5">
               <Permisable recurso="egresos.facturas-msa">
 <TabsTrigger value="facturas-msa" className="flex items-center gap-2">
@@ -79,37 +80,37 @@ export function VistaEgresos({ userRole = 'admin' }: { userRole?: UserRole }) {
             </TabsList>
 
             <div className="mt-6">
-              <TabsContent value="facturas-msa" className="space-y-4">
+              <TabsContentVivo value="facturas-msa" className="space-y-4">
 <SoloLectura recurso="egresos.facturas-msa">
                 <VistaFacturasArca empresa="MSA" userRole={userRole} />
               </SoloLectura>
-</TabsContent>
+</TabsContentVivo>
 
-              <TabsContent value="facturas-pam" className="space-y-4">
+              <TabsContentVivo value="facturas-pam" className="space-y-4">
 <SoloLectura recurso="egresos.facturas-pam">
                 <VistaFacturasArca empresa="PAM" userRole={userRole} />
               </SoloLectura>
-</TabsContent>
+</TabsContentVivo>
 
-              <TabsContent value="facturas-ma" className="space-y-4">
+              <TabsContentVivo value="facturas-ma" className="space-y-4">
 <SoloLectura recurso="egresos.facturas-ma">
                 <VistaFacturasArca empresa="MA" userRole={userRole} />
               </SoloLectura>
-</TabsContent>
+</TabsContentVivo>
 
-              <TabsContent value="templates" className="space-y-4">
+              <TabsContentVivo value="templates" className="space-y-4">
 <SoloLectura recurso="egresos.templates">
                 <VistaTemplatesEgresos />
               </SoloLectura>
-</TabsContent>
+</TabsContentVivo>
 
-              <TabsContent value="seguros" className="space-y-4">
+              <TabsContentVivo value="seguros" className="space-y-4">
 <SoloLectura recurso="egresos.seguros">
                 <VistaSeguros />
               </SoloLectura>
-</TabsContent>
+</TabsContentVivo>
             </div>
-          </Tabs>
+          </TabsVivos>
         </CardContent>
       </Card>
     </div>

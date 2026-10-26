@@ -131,7 +131,10 @@ function contextoActual() {
    * notas, y meterle el camino entero la volvería distinta en cada sub-solapa. El resto va aparte,
    * en `subpantalla`.
    */
+  // 🧠 A-FEAT-1378: las pantallas visitadas quedan montadas y ESCONDIDAS, con sus propias solapas «activas»
+  // adentro: se ignoran las que están dentro de un panel inactivo, si no la nota diría la pantalla equivocada.
   const activas = Array.from(document.querySelectorAll('[role="tab"][data-state="active"]'))
+    .filter(t => !t.closest('[role="tabpanel"][data-state="inactive"]'))
     .map(t => textoLimpio(t))
     .filter(Boolean)
   const dialogo = document.querySelector('[role="dialog"] h2, [role="dialog"] [id$="-title"]')
