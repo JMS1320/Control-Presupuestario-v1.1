@@ -76,6 +76,7 @@ const marcaDescuadre = (d: Descuadre) =>
  */
 export function hojaDeAsientos(asientos: AsientoLibroDiario[], descuadres?: Descuadre[]): unknown[][] {
   const malos = new Map((descuadres ?? []).filter(d => d.id).map(d => [d.id!, d]))
+  const conCantidades = asientos.some(a => a.cantidades && (a.cantidades.producto || a.cantidades.toneladas || a.cantidades.cabezas || a.cantidades.kilos))
   const filas: unknown[][] = [[
     "Subdiario", "Fecha", "Tipo", "Pto Vta", "Número", "CUIT", "Denominación",
     "Neto Gravado", "No Gravado", "Exentas", "Otros Tributos", "IVA", "Total",
@@ -83,6 +84,8 @@ export function hojaDeAsientos(asientos: AsientoLibroDiario[], descuadres?: Desc
     // 💵 A-BUG-1316: los importes van en pesos; la moneda y la cotización quedan a la vista al final
     // (al final y no al lado del Total, para no correr las columnas que suman otras solapas).
     "Moneda", "Tipo de cambio", "Total en moneda original",
+    // 🌾 U2: qué se vendió y cuánto — sólo si alguna fila lo trae (ventas).
+    ...(conCantidades ? ["Producto", "Toneladas", "Cabezas", "Kilos"] : []),
     ...(descuadres ? ["Control de partes"] : []),
   ]]
   for (const a of asientos) {
@@ -98,6 +101,10 @@ export function hojaDeAsientos(asientos: AsientoLibroDiario[], descuadres?: Desc
       enOtraMoneda ? a.tipo_cambio ?? "" : "",
       enOtraMoneda ? money(a.total_moneda_original ?? 0) : "",
     ]
+    if (conCantidades) {
+      const q = a.cantidades
+      fila.push(q?.producto ?? "", q?.toneladas ?? "", q?.cabezas ?? "", q?.kilos ?? "")
+    }
     const d = malos.get(a.id)
     if (descuadres) fila.push(d ? marcaDescuadre(d) : "")
     filas.push(d ? conEstilo(fila, ESTILO_ERROR) : fila)
@@ -1758,6 +1765,16 @@ const COLS_ASIENTOS: Columna[] = [
   { ancho: 70 },                    // Control de partes (A-FEAT-1388)
 ]
 
+/** Ventas: lo mismo que los asientos, más qué se vendió y cuánto (U2), antes del Control de partes. */
+const COLS_VENTAS: Columna[] = [
+  ...COLS_ASIENTOS.slice(0, 20),
+  { ancho: 16 },                    // Producto
+  { ancho: 12, z: TONELADAS },      // Toneladas
+  { ancho: 10, z: ENTERO },         // Cabezas
+  { ancho: 12, z: ENTERO },         // Kilos
+  { ancho: 70 },                    // Control de partes
+]
+
 /**
  * Las cuotas de templates, en el mismo formato de fila que el libro diario — pedido del usuario:
  * *«replicar formato de libro diario con los templates»*.
@@ -2260,7 +2277,7 @@ export function armarWorkbook(
   hoja(wb, "Resumen 12 meses", hojaResumenMensual(libro), COLS_RESUMEN_MENSUAL)
   // 🛑 A-FEAT-1388: los comprobantes cuyas partes no suman su total, en rojo y con la marca (los mismos del Control).
   hoja(wb, "Compras", hojaDeAsientos(libro.compras, libro.controles.compras.descuadres), COLS_ASIENTOS)
-  hoja(wb, "Ventas", hojaDeAsientos(libro.ventas, libro.controles.ventas.descuadres), COLS_ASIENTOS)
+  hoja(wb, "Ventas", hojaDeAsientos(libro.ventas, libro.controles.ventas.descuadres), COLS_VENTAS)
   // 📗 La apertura por cuenta contable — el formato que el usuario ya usaba (A-FEAT-1187).
   //    Van pegadas a su listado: primero el detalle, después el resumen que se le manda al contador.
   hoja(wb, "Compras por cuenta", hojaPorCuenta(armarLibroPorCuenta(libro.compras),

@@ -4715,6 +4715,16 @@ export function correrCasos(): Resultado[] {
       const vG = `Sáenz B ${fg.get("saenz-b") ?? "sin fecha"} · Parra ${fg.get("parra") ?? "sin fecha"}`
       chequear("Balance · cuentas a cobrar", "🔗 Cobro agrupado: la venta del grupo sin vínculo directo toma la fecha de su grupo; la que no tiene ni grupo ni cobro, no inventa fecha",
         "Sáenz B 2026-01-28 · Parra sin fecha", vG, vG === "Sáenz B 2026-01-28 · Parra sin fecha", "A-FEAT-1388")
+
+      // 🌾 U2 — la solapa Ventas dice qué se vendió y cuánto (toneladas, cabezas, kilos), antes del Control de partes.
+      const vtaSoja = { ...asi("2025-07", 2555458.36, "VENTA SOJA"), id: "soja", neto_gravado: 2312632, iva: 242826.36,
+        cantidades: { producto: "Soja", toneladas: 7.5, cabezas: null, kilos: null } } as unknown as LibroDiarioT["ventas"][number]
+      const hojaV = hojaDeAsientos([vtaSoja], [])
+      const enc = hojaV[0] as string[], filaV = hojaV[1] as unknown[]
+      const iProd = enc.indexOf("Producto"), iTn = enc.indexOf("Toneladas"), iCtl = enc.indexOf("Control de partes")
+      const vV = `${filaV[iProd]} · ${filaV[iTn]} tn · producto antes del control ${iProd > 0 && iProd < iCtl ? "sí" : "no"}`
+      chequear("Balance · libro diario", "🌾 Ventas: producto y toneladas (y cabezas, kilos) de cada venta, en columnas antes del Control de partes",
+        "Soja · 7.5 tn · producto antes del control sí", vV, vV === "Soja · 7.5 tn · producto antes del control sí", "A-FEAT-1388")
     }
 
     // ✍️ A-FEAT-1207 — los saldos del ejercicio anterior: los 3 que dio el usuario el 2026-10-18 suman
