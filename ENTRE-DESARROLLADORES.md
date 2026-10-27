@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 🔁 Tabla nueva `public.subdiario_cambios` + un TRIGGER en compras y ventas de msa/pam/ma (2026-10-27) — ⏳ AVISO ANTES de aplicarlo (espera OK de JMS)
+### 🔁 Tabla nueva `public.subdiario_cambios` + un TRIGGER en compras y ventas de msa/pam/ma (2026-10-27) — ✅ APLICADA el 27/10 con OK de JMS (aviso previo): tabla, 6 triggers, 2 policies, 1 en recurso_tablas, 2 filas
 - `scripts/119-subdiario-cambios.sql` (+ `-deshacer`). A-FEAT-1394: cuando cambia un dato **fiscal** (tipo, punto de venta, número,
   CUIT, fecha, importes, tipo de cambio, mes del subdiario) de un comprobante de un mes **«Enviado» o «DDJJ OK»** —o entra a ese mes,
   sale o se borra—, el trigger `registrar_cambio_subdiario` (AFTER INSERT/UPDATE/DELETE, `security definer`) anota un renglón en

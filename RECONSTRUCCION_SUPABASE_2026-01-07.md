@@ -3341,6 +3341,16 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 `add column adjuntos jsonb` (comentarios: en la base viva dicen `[script 109] A-AUTO-09…` porque se corrió antes de renumerar; el script ahora escribe `[script 110]` y el deshacer acepta los dos). No toca filas (las 38 existentes quedan `tipo = 'pago'`) ni RLS. El GAS
 `EnviarMailsDetalle.gs` adjunta `adjuntos` [{nombre, mime, base64}] cuando están. Control: 38 pagos · 0 con adjuntos · `explain insert` OK ✅.
 
+### 2026-10-27 · UN MES ENVIADO O PRESENTADO QUE CAMBIA QUEDA «A RECTIFICAR» — tabla `public.subdiario_cambios` + trigger (script 119) — A-FEAT-1394 — ✅ CORRIDO 2026-10-27 con JMS (MCP en write con su OK)
+
+`scripts/119-subdiario-cambios.sql` (+ `-deshacer`): tabla `public.subdiario_cambios` (empresa, lado compras/ventas, año, mes, comprobante, acción
+modificado/salió/entró/borrado, estado del mes, `antes`/`despues` jsonb con los datos fiscales, `modifica_iva`, quién, cuándo, y `rectificado_at`/`_por`/`_nota`),
+índice parcial de los abiertos, marca `[script 119]`, RLS `puede_ver`/`puede_escribir` (recurso `egresos`), `authenticated` select/update, nada a `anon`.
+Función `public.registrar_cambio_subdiario()` (`security definer`) y trigger `trg_registrar_cambio_subdiario` (AFTER INSERT/UPDATE/DELETE, por fila) en
+`msa|pam|ma.comprobantes_arca` y `msa|pam|ma.comprobantes_venta`: anota sólo cambios FISCALES (tipo, pto. vta., número, CUIT, fecha, importes, TC, mes del
+subdiario) de un mes «Enviado» o «DDJJ OK». Trae 2 filas cargadas a mano (las NC de Federación de enero y abril). Control: tabla ✓ · 2 filas · 6 triggers ·
+2 policies · RLS · 1 en recursos ✅.
+
 ### 2026-10-27 · LO QUE DEVUELVE EL CONTADOR — tabla `public.ddjj_presentadas` (script 107) — A-AUTO-09 — ✅ CORRIDO 2026-10-27 con JMS (MCP en write con su OK)
 
 `scripts/107-ddjj-presentadas.sql` (+ `-deshacer`): una fila por DDJJ (empresa + impuesto IVA/IIBB + período `AAAAMM` + secuencia) con `totales`,
