@@ -63,8 +63,46 @@ export interface DatosEntrega {
   papeles?: PapelDelComprobante[]
   /** Lo declarado tal cual lo exporta ARCA (las columnas del CSV), para la solapa «original». */
   arcaOriginal?: { compras: TablaOriginal; ventas: TablaOriginal }
+  /**
+   * ✍️ La RECTIFICACIÓN de lo declarado, aplicada encima de los zips (que no se tocan): ARCA antes → cambio → ARCA ahora
+   * (JMS 27/10: *«poné las modificaciones a los archivos de ARCA, sin modificar los originales: ARCA antes, cambio, ARCA ahora;
+   * match con el diario que sale de la app»*).
+   */
+  ajustesArca?: AjusteArca[]
   /** Fecha y hora para el encabezado. */
   generado?: string
+}
+
+/** Un cambio a lo declarado: sacar un comprobante o reemplazar sus importes. */
+export interface AjusteArca {
+  /** `2026-02` */
+  periodo: string
+  lado: Lado
+  comprobante: { tipo: number; puntoVenta: number; numero: number; cuit: string }
+  accion: "sacar" | "reemplazar"
+  nuevo?: Partial<Pick<ComprobantePresentado, "netoGravado" | "noGravado" | "exento" | "iva" | "otrosTributos" | "total" | "creditoFiscal">>
+  motivo: string
+}
+
+export interface AjusteAplicado { ajuste: AjusteArca; antes: ComprobantePresentado | null; despues: ComprobantePresentado | null }
+
+/** Aplica los cambios a una copia de lo declarado. Lo que no se encuentra se devuelve con `antes: null` (se muestra, no se calla). */
+export function aplicarAjustes(presentado: Record<string, LoPresentado> | undefined, ajustes: AjusteArca[]) {
+  if (!presentado || !ajustes.length) return { ahora: presentado, aplicados: [] as AjusteAplicado[] }
+  const ahora: Record<string, LoPresentado> = Object.fromEntries(Object.entries(presentado).map(([k, v]) => [k, { compras: [...v.compras], ventas: [...v.ventas] }]))
+  const aplicados: AjusteAplicado[] = []
+  for (const aj of ajustes) {
+    const lista = ahora[aj.periodo]?.[aj.lado]
+    const c = aj.comprobante
+    const i = lista ? lista.findIndex(p => p.tipo === c.tipo && p.puntoVenta === c.puntoVenta && p.numero === c.numero && p.cuit === c.cuit) : -1
+    if (!lista || i < 0) { aplicados.push({ ajuste: aj, antes: null, despues: null }); continue }
+    const antes = lista[i]
+    if (aj.accion === "sacar") { lista.splice(i, 1); aplicados.push({ ajuste: aj, antes, despues: null }); continue }
+    const despues = { ...antes, ...aj.nuevo }
+    lista[i] = despues
+    aplicados.push({ ajuste: aj, antes, despues })
+  }
+  return { ahora, aplicados }
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100
@@ -148,7 +186,9 @@ export interface PapelDistinto {
 }
 
 /** Un comprobante cuyo tipo dice una cosa y el signo otra (NC en positivo, factura en negativo). */
-export interface TipoSignoCruzado { asiento: AsientoLibroDiario; lado: Lado; motivo: string }
+export interface TipoSignoCruzado { asiento: AsientoLibroDiario; lado: Lado; motivo: string
+  /** El papel (PDF de la póliza) confirma el importe con su signo: se acepta (JMS 27/10, «es una póliza… está bien así»). */
+  aceptado?: boolean }
 
 export interface AnalisisEntrega {
   compras: SubdiarioDelLado[]
@@ -209,7 +249,13 @@ export function analizarEntrega(d: DatosEntrega): AnalisisEntrega {
       if (a.tipo == null || a.total === 0) continue
       const esNC = TIPOS_NC.includes(Number(a.tipo))
       if (esNC && a.total > 0) tipoSigno.push({ asiento: a, lado: l, motivo: "es NOTA DE CRÉDITO y está en positivo: suma en vez de restar" })
-      if (!esNC && a.total < 0) tipoSigno.push({ asiento: a, lado: l, motivo: "es FACTURA (o débito) y está en negativo: resta en vez de sumar" })
+      if (!esNC && a.total < 0) {
+        const papel = (d.papeles ?? []).find(p => p.comprobanteId === a.id)
+        const aceptado = !!papel && Math.abs(papel.total - a.total) <= TOL
+        tipoSigno.push({ asiento: a, lado: l, aceptado, motivo: aceptado
+          ? `factura en negativo: el papel (${papel!.origen}) dice ${fmt(papel!.total)} — aceptada (póliza; decisión de JMS 27/10)`
+          : "es FACTURA (o débito) y está en negativo: resta en vez de sumar" })
+      }
     }
   }
 
@@ -256,7 +302,7 @@ export function analizarEntrega(d: DatosEntrega): AnalisisEntrega {
     .map(([clave, m]) => ({ clave, nombre: nombres.get(clave) ?? clave, motivos: m }))
 
   const descuadres = { compras: libro.controles.compras.descuadres, ventas: libro.controles.ventas.descuadres }
-  const sePuedeInformar = !aRectificar.length && !tipoSigno.length && !descuadres.compras.length && !descuadres.ventas.length
+  const sePuedeInformar = !aRectificar.length && !tipoSigno.some(t => !t.aceptado) && !descuadres.compras.length && !descuadres.ventas.length
 
   return {
     compras, ventas,
@@ -418,7 +464,7 @@ function marcasDeFilas(a: AnalisisEntrega): MarcasDeFila {
     poner(p.asiento.id, `PAPEL ≠ CARGADO: ${p.papel.origen} dice ${fmt(p.papel.total)}${p.papel.esNotaCredito ? " (NOTA DE CRÉDITO)" : ""}; cargado ${fmt(p.asiento.total)}` +
       (p.declarado ? ` y declarado igual (${fmt(p.declarado.total)}): el error viajó a la DDJJ` : ""))
   }
-  for (const t of a.tipoSigno) poner(t.asiento.id, `TIPO/SIGNO: ${t.motivo}`)
+  for (const t of a.tipoSigno) if (!t.aceptado) poner(t.asiento.id, `TIPO/SIGNO: ${t.motivo}`)
   for (const s of [...a.compras, ...a.ventas]) {
     if (!s.contra) continue
     for (const f of s.contra.soloApp) poner(f.id, "NO DECLARADO: está en la app y no en el libro IVA presentado")
@@ -751,6 +797,60 @@ function hojaArcaNuestra(hoja: string, titulo: string, lado: Lado, a: AnalisisEn
   return { filas: f, total: { hoja, fila: n } }
 }
 
+/**
+ * ✍️ «ARCA rectificación»: cada cambio a lo declarado en tres renglones — ANTES (lo presentado), AHORA (rectificado) y el
+ * CAMBIO (con fórmula) —, y por lado el total como se presentó, los cambios, el rectificado y la app.
+ */
+function hojaRectificacionArca(aplicados: AjusteAplicado[], original: Record<string, LoPresentado> | undefined, d: DatosEntrega, a: AnalisisEntrega): unknown[][] {
+  const f: unknown[][] = [["ARCA RECTIFICACIÓN — lo declarado antes, el cambio y lo declarado ahora"],
+    ["Los zips de ARCA no se modifican: los cambios se aplican encima. «Ahora» es lo que tiene que quedar después de rectificar, y tiene que coincidir con la app."], []]
+  f.push(ENCABEZADO)
+  for (const x of aplicados) {
+    const c = x.ajuste.comprobante
+    const comp = `${c.tipo} ${c.puntoVenta}-${c.numero}`
+    if (!x.antes) {
+      f.push(conEstilo(fila({ sub: x.ajuste.periodo, razon: `${comp} · CUIT ${c.cuit}`, control: `NO SE ENCONTRÓ en lo declarado de ${x.ajuste.periodo} (${x.ajuste.lado}): ${x.ajuste.motivo}` }), ESTILO_ERROR))
+      continue
+    }
+    const vA = valoresDeclarados([x.antes], x.ajuste.lado)
+    const vD = x.despues ? valoresDeclarados([x.despues], x.ajuste.lado) : null
+    const nA = f.length + 1
+    f.push(filaDeclarada(x.antes, x.ajuste.lado, x.ajuste.periodo, nA, `ANTES (como se presentó, ${x.ajuste.lado}) — ${x.ajuste.motivo}`, false))
+    const nD = f.length + 1
+    f.push(x.despues
+      ? filaDeclarada(x.despues, x.ajuste.lado, x.ajuste.periodo, nD, "AHORA (rectificado)", false)
+      : fila({ sub: x.ajuste.periodo, razon: `${comp} — se saca del libro`, ...importes({}), comprobantes: 0, origen: "rectificado", control: "AHORA: no va" }))
+    const cambio: Fila = {}
+    for (const k of [...COLUMNAS, "comprobantes"] as Campo[]) {
+      const va = (vA as unknown as Record<string, number>)[k] ?? 0, vd = vD ? (vD as unknown as Record<string, number>)[k] ?? 0 : 0
+      cambio[k] = conFormula(`${L(k)}${nD}-${L(k)}${nA}`, r2(vd - va), formatoDe(k))
+    }
+    f.push(conEstilo(fila({ sub: x.ajuste.periodo, razon: "CAMBIO", ...cambio,
+      control: (vD ? r2(vD.iva - vA.iva) : -vA.iva) === 0 ? "no modifica IVA" : "MODIFICA IVA" }), ESTILO_SUBTOTAL))
+    f.push([])
+  }
+  f.push(["POR LADO — como se presentó, los cambios, rectificado y la app"])
+  f.push(ENCABEZADO)
+  for (const lado of ["compras", "ventas"] as const) {
+    const subs = (lado === "compras" ? a.compras : a.ventas).filter(s => s.contra)
+    const antes = valoresDeclarados(subs.flatMap(s => original?.[s.clave]?.[lado] ?? []), lado)
+    const ahora = valoresDeclarados(subs.flatMap(s => d.presentado?.[s.clave]?.[lado] ?? []), lado)
+    const app = valoresDe(subs.flatMap(s => s.asientos), lado)
+    const n0 = f.length + 1
+    f.push(fila({ sub: lado, razon: "Declarado — como se presentó", ...importes(antes), comprobantes: antes.comprobantes }))
+    f.push(fila({ sub: lado, razon: "Declarado — rectificado", ...importes(ahora), comprobantes: ahora.comprobantes }))
+    f.push(fila({ sub: lado, razon: "App", ...importes(app), comprobantes: app.comprobantes }))
+    const dif: Fila = {}
+    for (const k of [...COLUMNAS, "comprobantes"] as Campo[]) {
+      dif[k] = conFormula(`${L(k)}${n0 + 2}-${L(k)}${n0 + 1}`, r2(((app as unknown as Record<string, number>)[k] ?? 0) - ((ahora as unknown as Record<string, number>)[k] ?? 0)), formatoDe(k))
+    }
+    const ok = Math.abs(app.total - ahora.total) <= TOL && Math.abs(app.iva - ahora.iva) <= TOL
+    f.push(conEstilo(fila({ sub: lado, razon: "App − rectificado", ...dif, control: ok ? "coincide" : "NO COINCIDE" }), ok ? ESTILO_TOTAL : ESTILO_ERROR))
+    f.push([])
+  }
+  return f
+}
+
 /** La cadena de la hoja Control: un camino por renglón, con la fila única de columnas leída de cada hoja. */
 interface Paso { camino: string; donde: DondeTotal[] | null; valores: Totales | null; nota?: string }
 
@@ -762,7 +862,12 @@ function hojaControl(d: DatosEntrega, a: AnalisisEntrega, cadena: Record<Lado, P
   f.push([`Los 12 subdiarios: ${a.compras[0]?.nombre ?? ""} a ${a.compras[a.compras.length - 1]?.nombre ?? ""} · cierre ${libro.ejercicio.fechaCierre}${d.generado ? ` · generado ${d.generado}` : ""}`])
   f.push(["El período se corta por el subdiario en que entró cada comprobante, no por su fecha. Todas las hojas tienen las mismas columnas, en el mismo lugar."])
   f.push([])
-  f.push([a.sePuedeInformar ? "CONTROL OK — se puede informar" : "NO INFORMAR TODAVÍA — hay que rectificar antes (abajo, qué y dónde)"])
+  const porQue = [
+    a.aRectificar.length ? `${a.aRectificar.length} mes(es) a rectificar` : "",
+    a.tipoSigno.filter(t => !t.aceptado).length ? `${a.tipoSigno.filter(t => !t.aceptado).length} con tipo y signo cruzados` : "",
+    a.descuadres.compras.length + a.descuadres.ventas.length ? `${a.descuadres.compras.length + a.descuadres.ventas.length} comprobante(s) cuyas partes no suman su total` : "",
+  ].filter(Boolean)
+  f.push([a.sePuedeInformar ? "CONTROL OK — se puede informar" : `NO INFORMAR TODAVÍA — ${porQue.join(" · ")} (abajo, qué y dónde)`])
   f.push([])
 
   // 1 · La cadena
@@ -818,10 +923,15 @@ function hojaControl(d: DatosEntrega, a: AnalisisEntrega, cadena: Record<Lado, P
     f.push(fila({ razon: "Efecto en el resultado (papel − cargado)", total: efecto, control: efecto < 0 ? `el gasto está inflado en ${fmt(-efecto)}` : `el gasto está corto en ${fmt(efecto)}` }))
   }
   f.push([])
-  f.push([a.tipoSigno.length
-    ? `TIPO vs. SIGNO — ${a.tipoSigno.length} comprobante(s) con el tipo y el signo cruzados`
+  const cruzados = a.tipoSigno.filter(t => !t.aceptado).length
+  f.push([cruzados
+    ? `TIPO vs. SIGNO — ${cruzados} comprobante(s) con el tipo y el signo cruzados`
+    : a.tipoSigno.length ? `TIPO vs. SIGNO — coincide (${a.tipoSigno.length} factura(s) en negativo aceptadas: el papel de la póliza lo confirma)`
     : `TIPO vs. SIGNO — coincide en los ${libro.compras.length + libro.ventas.length} comprobantes (ninguna nota de crédito en positivo ni factura en negativo)`])
-  for (const t of a.tipoSigno) f.push(conEstilo(filaAsiento(t.asiento, t.lado, f.length + 1, undefined, t.motivo), ESTILO_ERROR))
+  for (const t of a.tipoSigno) {
+    const r = filaAsiento(t.asiento, t.lado, f.length + 1, undefined, t.motivo)
+    f.push(t.aceptado ? r : conEstilo(r, ESTILO_ERROR))
+  }
   f.push([])
   f.push([a.otroNumero.length
     ? `AVISO — ${a.otroNumero.length} comprobante(s) declarados con OTRO TIPO O NÚMERO que en la app, por el mismo importe: no cambia montos, hay que corregir la carga`
@@ -881,7 +991,9 @@ export function ventasComoLaApp(presentado: Record<string, LoPresentado> | undef
 
 /** Arma el libro entero. El orden de las hojas es el de su pedido, con el Control primero. */
 export function armarEntregaLibroDiario(datos: DatosEntrega): { wb: XLSX.WorkBook; analisis: AnalisisEntrega } {
-  const d: DatosEntrega = { ...datos, presentado: ventasComoLaApp(datos.presentado) }
+  const original = ventasComoLaApp(datos.presentado)
+  const rect = aplicarAjustes(original, datos.ajustesArca ?? [])
+  const d: DatosEntrega = { ...datos, presentado: rect.ahora }
   const a = analizarEntrega(d)
   const marcas = marcasDeFilas(a)
   const { libro } = d
@@ -934,6 +1046,7 @@ export function armarEntregaLibroDiario(datos: DatosEntrega): { wb: XLSX.WorkBoo
 
   // 5 · Contra ARCA, y lo declarado: con nuestras columnas y tal cual lo exporta ARCA.
   hojas.push({ nombre: "Contra ARCA", filas: hojaContraArca(a, d, porId) })
+  if (rect.aplicados.length) hojas.push({ nombre: "ARCA rectificación", filas: hojaRectificacionArca(rect.aplicados, original, d, a) })
   const declarado: Record<Lado, DondeTotal | null> = { compras: null, ventas: null }
   for (const lado of ["compras", "ventas"] as const) {
     if (!(lado === "compras" ? a.compras : a.ventas).some(s => s.contra)) continue
@@ -961,7 +1074,13 @@ export function armarEntregaLibroDiario(datos: DatosEntrega): { wb: XLSX.WorkBoo
       { camino: `Todas las ${lado} por fecha`, donde: planilla[lado] ? [planilla[lado]!] : null, valores: sumar(lado === "compras" ? libro.compras : libro.ventas, lado) },
       { camino: "Por mes y cuenta", donde: [porMes[lado]], valores: sumaSubs },
       { camino: "Por campaña y cuenta", donde: porCampana[lado] ? [porCampana[lado]!] : null, valores: sumaSubs },
-      { camino: "Declarado a ARCA (libros IVA)", donde: declarado[lado] ? [declarado[lado]!] : null, valores: pres,
+      ...(rect.aplicados.some(x => x.ajuste.lado === lado) ? [{
+        camino: "Declarado a ARCA — como se presentó", donde: null,
+        valores: conDato.length ? valoresDeclarados(conDato.flatMap(s => original?.[s.clave]?.[lado] ?? []), lado) : null,
+        nota: "antes de rectificar (los zips tal cual) — ver «ARCA rectificación»",
+      }] : []),
+      { camino: rect.aplicados.some(x => x.ajuste.lado === lado) ? "Declarado a ARCA — RECTIFICADO" : "Declarado a ARCA (libros IVA)",
+        donde: declarado[lado] ? [declarado[lado]!] : null, valores: pres,
         nota: !pres ? "sin dato de lo presentado" : sinDato ? `${sinDato} mes(es) sin dato`
           : Math.abs(pres.total - sumaSubs.total) <= TOL ? "coincide" : `NO COINCIDE (${fmt(r2(sumaSubs.total - pres.total))}) — ver «Contra ARCA»` },
     ]

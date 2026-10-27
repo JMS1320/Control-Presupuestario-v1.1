@@ -27,7 +27,7 @@ import { leerZipLibroIva } from "../lib/subdiarios/libro-presentado"
 const hoyArgentina = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date())
 import JSZip from "jszip"
 import {
-  armarEntregaLibroDiario, nombreArchivoEntrega, type LoPresentado, type PapelDelComprobante, type TablaOriginal,
+  armarEntregaLibroDiario, nombreArchivoEntrega, type LoPresentado, type PapelDelComprobante, type TablaOriginal, type AjusteArca,
 } from "../lib/balance/libro-diario-entrega"
 
 const env = Object.fromEntries(
@@ -111,8 +111,23 @@ const papeles: PapelDelComprobante[] = (endosos.data ?? [])
     total: Number(e.total), esNotaCredito: !!e.es_nota_credito,
   }))
 
+/**
+ * ✍️ La RECTIFICACIÓN de lo declarado (A-DAT-95, decisiones de JMS 27/10) — se aplica encima de los zips, que no se tocan.
+ * La app ya está así: lo declarado rectificado tiene que coincidir con ella.
+ */
+const AJUSTES: AjusteArca[] = empresaId !== "MSA" ? [] : [
+  { periodo: "2026-02", lado: "ventas", accion: "sacar", comprobante: { tipo: 180, puntoVenta: 11, numero: 77393, cuit: "30526554562" },
+    motivo: "Genta 11-77393 duplicada: se declaró como venta negativa de febrero y como compra de abril; queda sólo la compra (no modifica IVA)" },
+  { periodo: "2026-01", lado: "compras", accion: "reemplazar", comprobante: { tipo: 1, puntoVenta: 1, numero: 670822, cuit: "33707366589" },
+    nuevo: { exento: -47198.41, otrosTributos: -283.19, total: -47481.60 },
+    motivo: "Federación 1-670822: es crédito (póliza 670821 endoso 1, −47.481,60) y se declaró en positivo (no modifica IVA)" },
+  { periodo: "2026-04", lado: "compras", accion: "reemplazar", comprobante: { tipo: 1, puntoVenta: 4, numero: 670821, cuit: "33707366589" },
+    nuevo: { exento: -81676.64, otrosTributos: -490.06, total: -82166.70 },
+    motivo: "Federación 4-670821: es crédito (póliza 670821 endoso 4, −82.166,70) y se declaró en positivo (no modifica IVA)" },
+]
+
 const hoy = hoyArgentina()
-const datos = { libro, empresa: empresaId, presentado, papeles, generado: hoy, arcaOriginal: original }
+const datos = { libro, empresa: empresaId, presentado, papeles, generado: hoy, arcaOriginal: original, ajustesArca: AJUSTES }
 const { wb, analisis: a } = armarEntregaLibroDiario(datos)
 // SUFIJO=… agrega una marca al nombre (p. ej. «ANTES de cta cte AFA»), para no pisar uno abierto ni una foto.
 const ruta = join(SALIDA, nombreArchivoEntrega(datos, hoy).replace(".xlsx", process.env.SUFIJO ? ` - ${process.env.SUFIJO}.xlsx` : ".xlsx"))
@@ -125,7 +140,7 @@ console.log(`   ${a.sePuedeInformar ? "✅ se puede informar" : "🛑 NO informa
 if (sinZip.length) console.log(`   ⚠️ sin libro IVA presentado: ${sinZip.join(", ")}`)
 for (const x of a.aRectificar) console.log(`   🛑 ${x.nombre}: ${x.motivos.join(" | ")}`)
 for (const p of a.papelDistinto) console.log(`   📄 ${p.asiento.subdiario} ${p.asiento.denominacion} ${p.asiento.punto_venta}-${p.asiento.numero}: papel ${pesos(p.papel.total)} · cargado ${pesos(p.asiento.total)} · declarado ${p.declarado ? pesos(p.declarado.total) : p.declarado === null ? "no figura" : "sin dato"}`)
-console.log(`   tipo/signo cruzados: ${a.tipoSigno.length} · partes que no suman: ${a.descuadres.compras.length + a.descuadres.ventas.length}`)
+console.log(`   tipo/signo cruzados: ${a.tipoSigno.filter(t => !t.aceptado).length} (aceptados por el papel: ${a.tipoSigno.filter(t => t.aceptado).length}) · partes que no suman: ${a.descuadres.compras.length + a.descuadres.ventas.length}`)
 for (const lado of ["compras", "ventas"] as const) {
   const subs = lado === "compras" ? a.compras : a.ventas
   const app = subs.reduce((t, s) => t + s.totales.total, 0)
