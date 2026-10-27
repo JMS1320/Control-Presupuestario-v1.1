@@ -40,6 +40,21 @@
 
 ## 📨 PARA JAVIER
 
+### 💉 5 tablas nuevas en `productivo` + 9 labores (2026-10-27) — ⏳ SIN APLICAR (espera OK de JMS)
+
+Para [A-FEAT-1380](PENDIENTES.md#a-feat-1380) (plan sanitario, rama `jms/plan-sanitario`): `scripts/106-plan-sanitario.sql` crea
+`productivo.plan_sanitario_tareas`, `plan_sanitario_registro`, `plan_sanitario_propuestas`, `iatf` e `iatf_toros` (todas nuevas, marcadas
+`[script 106]`), carga el calendario base (38 tareas) y agrega 9 filas a `productivo.labores` (find-or-create por nombre). **No modifica filas
+existentes.** 5 filas en `recurso_tablas` (recurso `productivo`).
+- RLS `ver_segun_permiso` / `escribir_segun_permiso` como el resto de productivo; `revoke` a `anon`; `authenticated` select/insert/update
+  (+ delete sólo en `plan_sanitario_tareas` e `iatf_toros`).
+- Dos recursos nuevos en `lib/auth/recursos.ts`: la pestaña `productivo.plan-sanitario` y la acción `productivo.plan-sanitario.aprobar` (quien
+  no la tiene propone cambios al plan y espera el OK). Pensado para el rol de Enrique.
+- Deshacer: `106-…-deshacer.sql` comprueba la marca y se frena si el usuario ya cargó registros, propuestas o IATF.
+
+📌 Borrá esta entrada cuando la leas.
+
+
 ### 🔎 `public.reglas_conciliacion`: el check de `columna_busqueda` acepta 2 valores más (2026-10-25) — ✅ APLICADA el 25/10 con OK de JMS (aviso previo)
 - **`scripts/102-reglas-columna-nombre-texto.sql`**: amplía `reglas_conciliacion_columna_busqueda_check` de 4 valores a 6 —
   suma `'nombre'` (Nombre / comercio = `leyendas_adicionales_1`) y `'texto'` (todo el texto del banco). Los 4 de antes no cambian.

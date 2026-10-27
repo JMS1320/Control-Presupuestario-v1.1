@@ -108,6 +108,7 @@
 - [🌽 PUESTA A PUNTO de un ciclo de recría — el orden de carga 🟡 (sin testear)](#puesta-a-punto-de-un-ciclo-de-recría-el-orden-de-carga-sin-testear)
 - [📥 Productivo → Insumos → **Cargar una compra con su respaldo** 🟡 (sin testear)](#productivo-insumos-cargar-una-compra-con-su-respaldo-sin-testear)
 - [🧾 Productivo → Insumos → **Facturas** — el respaldo parcial y sus controles 🟡 (sin testear)](#productivo-insumos-facturas-el-respaldo-parcial-y-sus-controles-sin-testear)
+- [💉 Productivo → **Plan sanitario** y la carga de IATF *(nuevo 2026-10-27)*](#productivo-plan-sanitario-y-la-carga-de-iatf-nuevo-2026-10-27)
 
 #### 📊 Presupuesto
 - [📈 Presupuesto → Subas de proveedores 🟡 *(nuevo 2026-07-30, sin testear)*](#presupuesto-subas-de-proveedores-nuevo-2026-07-30-sin-testear)
@@ -620,6 +621,45 @@ rinde pasado a vivo. Las filas incompletas **nunca ganan**.
 - **Km del matarife** sin cargar (no cobra flete, pero queda para el registro).
 - **No hay precio de gasoil** en el sistema: sin él, la proyección del flete a futuro no corre.
 - **Plazos de pago**: se ponen al vender, no son estándar por destino.
+
+## 💉 Productivo → Plan sanitario y la carga de IATF *(nuevo 2026-10-27)*
+
+**Dónde:** Sector Productivo → **💉 Plan sanitario** (entre Cría y Recría).
+
+El plan dice **qué** se le hace a cada hacienda y **cuándo**; lo que se hizo de verdad sigue siendo la **orden de aplicación**. La
+solapa junta las dos cosas y avisa.
+
+**Lo que se ve, de arriba a abajo:**
+1. **Para atender** — 🔴 lo que pasó sin registro, ⚠️ lo hecho fuera de fecha sin explicar y 🟡 lo que falta menos de 1 mes. Tocá
+   una para ver de dónde sale la fecha y qué hacer.
+2. **💡 Se pueden juntar** — tareas que caen cerca para la misma hacienda (ej.: neumo y aftosa de los terneros). **Juntar** las
+   pasa a la misma fecha; si alguna sale de su margen, pide explicación.
+3. **✍️ Propuestas para aceptar** — lo que propuso quien no aprueba (ej.: Enrique). **Aceptar** lo aplica; **Rechazar** deja el
+   plan como estaba.
+4. **El calendario de la campaña** (julio a junio), hacienda × mes. Con **◀ ▶** se pasa de campaña. ⚡ = la cadena la corrió lejos
+   de su fecha óptima.
+
+**Al tocar una tarea:**
+- **✅ Se hizo** — fecha y, si ya está cargada, la orden de aplicación. Si la fecha sale del margen, pide la explicación.
+- **📝 No se hizo** — pide el motivo. Con el motivo anotado deja de reclamar.
+- **Mover** / **Proponer otra fecha** — la programa para otro día.
+- **Anotar por qué** — cuando se hizo fuera de fecha.
+- **Editar la tarea** / **Proponer cambio** — fecha óptima, margen, a qué hacienda, de qué tarea cuelga.
+
+La app reconoce sola la orden que cumple cada tarea por sus labores e insumos (ej.: *Fasiolisida* → sanidad general). Si reconoce
+la equivocada, se corrige con **Se hizo**.
+
+**Cargar la IATF** (botón arriba): se pone **la fecha de la inseminación** y la app calcula los **dispositivos (IA − 10)** y el
+**retiro (IA − 2)**. El **entore** lleva su propia fecha (~2 días después). Se tildan los rodeos con sus cabezas y **qué toros se
+echaron**. Al guardar crea las 4 órdenes de aplicación y el ciclo de cría del año. Para correrla, **Ver / mover IATF**: las tres
+fechas se mueven juntas. Hasta 2 días antes de la fecha óptima, sin explicación; 3 antes o 1 después, con explicación.
+
+**El plan entero:** botón **El plan** → todas las tareas por columna; tocá una para cambiarla, o **Tarea nueva**.
+
+**Quién aprueba:** el permiso *Plan sanitario → Aprobar cambios* (Configuración → Roles). Quien lo tiene cambia el plan directo;
+quien no, propone.
+
+⚠️ Sin probar todavía → [A-TEST-1258](PENDIENTES.md#a-test-1258)
 
 ## 🐄 Vender desde Productivo → Movimientos *(nuevo 2026-09-04)*
 

@@ -244,6 +244,8 @@ import { hojaDeAsientosContables, hojaDeTemplates, bloqueDeLecturas } from "@/li
 import { juntarTandas, lecturaIncompleta, juntarHasta, mensajeLecturaIncompleta } from "@/lib/supabase-paginado"
 import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
 import * as XLSXcasos from "xlsx"
+import { ocurrenciasDeCampania, sugerirAgrupar, fechasIatf, chequearIatf, chequearEntore, fechaEnCampania, campaniaDe, fechaCorta,
+  type TareaPlan as TareaPlanCaso, type Hecho as HechoCaso, type Ocurrencia as OcurrenciaCaso } from "@/lib/productivo/plan-sanitario"
 import { presentarHoja, MONEDA, ENTERO } from "@/lib/balance/formato-excel"
 import { armarFilaDato, leerNumero, textoEstadoGuardado } from "@/lib/balance/datos-usuario-puro"
 import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
@@ -9103,6 +9105,87 @@ export function correrCasos(): Resultado[] {
     const firmaExcel = firmaDeMovimiento(splitMovimiento("TRANSFERENCIA A TERCEROS\r\n CU  20208914880\r\n 0170017620000000448154\r\n FNCS\r\n VARIOS\r\n 4517XXXXXXXXXX29"))
     chequear("Resumen PDF", "Un CBU de 20 dígitos cuenta como CBU: la transferencia cae en el mismo subtipo que la del Excel (y se desglosa)",
       firmaExcel, firmaPdf, firmaPdf === firmaExcel, "A-FEAT-1352")
+  }
+
+  // ══ 💉 PLAN SANITARIO (A-FEAT-1380) ══════════════════════════════════════════════════════════
+  // Las órdenes REALES de 2026 (leídas el 27/10, fijas acá) y un plan reducido igual al del script 106.
+  {
+    const T = (id: string, p: Partial<TareaPlanCaso>): TareaPlanCaso => ({
+      id, nombre: id, columna: "veterinario", grupos: ["Vacas"], optimo_mmdd: "01-01", hasta_mmdd: null, es_fija: false,
+      tol_antes: 15, tol_despues: 15, ancla_id: null, ancla_dias: null, obligatoria: true, claves: [], codigo: null,
+      detalle: null, orden: 0, activa: true, ...p })
+    const PLAN = [
+      T("tacto", { optimo_mmdd: "02-25", tol_antes: 10, tol_despues: 10, claves: ["Tacto"] }),
+      T("san-otono", { optimo_mmdd: "03-21", claves: ["Fasiolisida", "Hemoglobinuria"] }),
+      T("san-jun", { optimo_mmdd: "06-05", tol_antes: 5, tol_despues: 10, claves: ["Rotatek", "Fasiolisida"], ancla_id: "san-otono", ancla_dias: 76 }),
+      T("san-sep", { optimo_mmdd: "09-15", tol_antes: 10, tol_despues: 10, claves: ["Fasiolisida", "Hemoglobinuria", "Reproductiva"], ancla_id: "san-jun", ancla_dias: 102 }),
+      T("iatf", { optimo_mmdd: "10-01", es_fija: true, tol_antes: 2, tol_despues: 0, codigo: "iatf" }),
+      T("entore", { optimo_mmdd: "10-03", hasta_mmdd: "12-31", es_fija: true, tol_antes: 1, tol_despues: 1, codigo: "entore", ancla_id: "iatf", ancla_dias: 2 }),
+      T("neumo1", { grupos: ["Terneros al pie"], optimo_mmdd: "12-05", tol_antes: 10, tol_despues: 10, claves: ["Neumo"] }),
+      T("aftosa-t", { grupos: ["Terneros al pie"], optimo_mmdd: "12-10", claves: ["Aftosa"] }),
+      T("pesada", { grupos: ["Terneros al pie"], optimo_mmdd: "11-15", tol_antes: 10, tol_despues: 10, claves: ["Pesada"] }),
+    ]
+    const HECHOS: HechoCaso[] = [
+      { orden_id: "o-0218", fecha: "2026-02-18", textos: ["Tacto", "Aftosa", "Cobre (Suplenut)", "Reproductiva"] },
+      { orden_id: "o-0223", fecha: "2026-02-23", textos: ["Caravana Oficial", "Destete Fin", "Pesada", "Señal", "Brucelosis", "Fasiolisida", "Hemoglobinuria", "Ricobendazol"] },
+      { orden_id: "o-0504", fecha: "2026-05-04", textos: ["Pesada", "Recuento", "Cobre (Suplenut)", "Ivermectina 1%"] },
+      { orden_id: "o-0602", fecha: "2026-06-02", textos: ["Recuento", "Cobre (Suplenut)", "Fasiolisida", "Hemoglobinuria", "Ivermectina 1%", "Rotatek"] },
+      { orden_id: "o-0604", fecha: "2026-06-04", textos: ["Fasiolisida", "Hemoglobinuria", "Ivermectina 1%", "Rotatek"] },
+    ]
+    const HOY = "2026-10-27"
+    const c25 = ocurrenciasDeCampania(PLAN, 2025, HECHOS, [], HOY)
+    const c26 = ocurrenciasDeCampania(PLAN, 2026, HECHOS, [], HOY)
+    const de = (ocs: OcurrenciaCaso[], id: string) => ocs.find(o => o.tarea.id === id)!
+
+    const iatf = fechasIatf("2026-10-01")
+    const vI = `${fechaCorta(iatf.dispositivos, true)} · ${fechaCorta(iatf.retiro, true)} · ${fechaCorta(iatf.ia, true)} · entore ${fechaCorta(iatf.entore, true)}`
+    chequear("Plan sanitario", "IATF 1/10/2026: se carga la IA y calcula hacia atrás (dispositivos lunes 21/9, retiro martes 29/9)",
+      "lun 21/09 · mar 29/09 · jue 01/10 · entore sáb 03/10", vI, vI === "lun 21/09 · mar 29/09 · jue 01/10 · entore sáb 03/10", "A-FEAT-1380")
+
+    const vC = ["2026-09-29", "2026-09-28", "2026-10-02", "2026-09-27"].map(f => { const c = chequearIatf(f); return `${c.dias}:${c.pideExplicacion ? "explica" : "ok"}${c.fueraDeRango ? "!" : ""}` }).join(" ")
+    chequear("Plan sanitario", "IATF: 2 antes sin explicación; 3 antes o 1 después, con explicación; 4 antes fuera de rango",
+      "-2:ok -3:explica 1:explica -4:explica!", vC, vC === "-2:ok -3:explica 1:explica -4:explica!", "A-FEAT-1380")
+
+    const vE = [chequearEntore("2026-10-01", "2026-10-03").pideExplicacion, chequearEntore("2026-10-01", "2026-10-06").pideExplicacion].join(" ")
+    chequear("Plan sanitario", "Entore: ~2 días después de la IA sin explicación; 5 días, con explicación", "false true", vE, vE === "false true", "A-FEAT-1380")
+
+    const vCamp = [fechaEnCampania("02-25", 2025), fechaEnCampania("09-15", 2026), campaniaDe("2026-03-01"), campaniaDe("2026-07-01")].join(" ")
+    chequear("Plan sanitario", "La campaña va de julio a junio", "2026-02-25 2026-09-15 2025 2026", vCamp, vCamp === "2026-02-25 2026-09-15 2025 2026", "A-FEAT-1380")
+
+    const tacto = de(c25, "tacto")
+    chequear("Plan sanitario", "Tacto 18/2/26: se reconoce la orden y está dentro del margen del 25/2",
+      "hecha 2026-02-18 (-7)", `${tacto.estado} ${tacto.fechaReal} (${tacto.desvio})`, tacto.estado === "hecha" && tacto.fechaReal === "2026-02-18" && tacto.desvio === -7, "A-FEAT-1380")
+
+    const oto = de(c25, "san-otono")
+    chequear("Plan sanitario", "Sanidad de otoño hecha el 23/2 (con el destete): fuera de margen → pide explicación",
+      "hecha_sin_explicar 2026-02-23 (-26)", `${oto.estado} ${oto.fechaReal} (${oto.desvio})`, oto.estado === "hecha_sin_explicar" && oto.desvio === -26, "A-FEAT-1380")
+
+    const otoExp = de(ocurrenciasDeCampania(PLAN, 2025, HECHOS, [{ tarea_id: "san-otono", campania: 2025, estado: "hecha", fecha: "2026-02-23", orden_id: "o-0223", explicacion: "se juntó con el destete" }], HOY), "san-otono")
+    chequear("Plan sanitario", "…y con la explicación anotada queda ✅", "hecha", otoExp.estado, otoExp.estado === "hecha", "A-FEAT-1380")
+
+    const jun = de(c25, "san-jun")
+    chequear("Plan sanitario", "Sanidad de junio: la cadena (23/2 + 76 = 10/5) choca con su óptimo 5/6 → conflicto a la vista; hecha el 4/6 (la orden más cerca del óptimo; el 2/6 fueron las vaquillonas) está bien",
+      "esperada 2026-05-10 · conflicto -26 · hecha 2026-06-04", `esperada ${jun.esperada} · conflicto ${jun.conflicto} · ${jun.estado} ${jun.fechaReal}`,
+      jun.esperada === "2026-05-10" && jun.conflicto === -26 && jun.estado === "hecha" && jun.fechaReal === "2026-06-04", "A-FEAT-1380")
+
+    const sep = de(c26, "san-sep")
+    chequear("Plan sanitario", "Sanidad de septiembre 2026 cuelga de la de junio ANTERIOR (4/6 + 102 = 14/9), no de la del año que viene; sin cargar → vencida",
+      "esperada 2026-09-14 · vencida", `esperada ${sep.esperada} · ${sep.estado}`, sep.esperada === "2026-09-14" && sep.estado === "vencida", "A-FEAT-1380")
+
+    const sinIatf = de(c26, "iatf"), conIatf = ocurrenciasDeCampania(PLAN, 2026, HECHOS, [], HOY,
+      { 2026: { fecha_ia: "2026-10-01", fecha_entore: "2026-10-03", orden_ia_id: "ia", orden_entore_id: "en" } })
+    const vIa = `${sinIatf.estado} → ${de(conIatf, "iatf").estado} · entore ${de(conIatf, "entore").estado}`
+    chequear("Plan sanitario", "IATF 2026 sin cargar está vencida; cargada el 1/10 (entore 3/10), las dos quedan hechas",
+      "vencida → hecha · entore hecha", vIa, vIa === "vencida → hecha · entore hecha", "A-FEAT-1380")
+
+    const noSe = de(ocurrenciasDeCampania(PLAN, 2026, HECHOS, [{ tarea_id: "san-sep", campania: 2026, estado: "no_se_hizo", fecha: null, orden_id: null, explicacion: "llovió" }], HOY), "san-sep")
+    chequear("Plan sanitario", "Lo que no se hizo, con su motivo anotado, deja de reclamar", "explicada", noSe.estado, noSe.estado === "explicada", "A-FEAT-1380")
+
+    const sug = sugerirAgrupar(ocurrenciasDeCampania(PLAN, 2026, HECHOS, [], "2026-11-20"), "2026-11-20")
+    const sT = sug.find(s => s.grupo === "Terneros al pie")
+    const vS = sT ? `${sT.ocurrencias.map(o => o.tarea.id).join("+")} el ${sT.fecha}` : "ninguna"
+    chequear("Plan sanitario", "Neumo (5/12) y aftosa (10/12) de los terneros caen cerca: se sugiere juntarlas en una fecha que entra en el margen de las dos",
+      "neumo1+aftosa-t el 2026-12-05", vS, vS === "neumo1+aftosa-t el 2026-12-05", "A-FEAT-1380")
   }
 
   return r
