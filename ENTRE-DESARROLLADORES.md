@@ -40,6 +40,17 @@
 
 ## 📨 PARA JAVIER
 
+### 🔁 Tabla nueva `public.subdiario_cambios` + un TRIGGER en compras y ventas de msa/pam/ma (2026-10-27) — ⏳ AVISO ANTES de aplicarlo (espera OK de JMS)
+- `scripts/119-subdiario-cambios.sql` (+ `-deshacer`). A-FEAT-1394: cuando cambia un dato **fiscal** (tipo, punto de venta, número,
+  CUIT, fecha, importes, tipo de cambio, mes del subdiario) de un comprobante de un mes **«Enviado» o «DDJJ OK»** —o entra a ese mes,
+  sale o se borra—, el trigger `registrar_cambio_subdiario` (AFTER INSERT/UPDATE/DELETE, `security definer`) anota un renglón en
+  `subdiario_cambios` con el antes y el después y si cambia el IVA. La pantalla de Subdiarios muestra el mes «🔁 a rectificar».
+- **Qué te puede tocar**: el trigger corre en cada escritura de `msa|pam|ma.comprobantes_arca` y `…comprobantes_venta`. Sólo inserta si
+  cambió un dato fiscal de un mes protegido; un cambio de estado de pago, cuenta o marca DDJJ no hace nada. No cambia ninguna fila de
+  esas tablas ni bloquea escrituras.
+- **Permisos**: RLS con `puede_ver` / `puede_escribir('public','subdiario_cambios')`, recurso `egresos` en `recurso_tablas`;
+  `authenticated` puede leer y actualizar (para marcar «rectificado»); el insert lo hace sólo el trigger.
+
 ### 💵 Una columna nueva: `public.cuotas_arrendamiento.en_dolares` (2026-10-27) — ✅ APLICADA el 27/10 con OK de JMS (aviso previo, 1770fc7)
 - `scripts/117-cuota-en-dolares.sql` (+ `-deshacer`): `boolean not null default false`. Marca las cuotas de arrendamiento que se cobran en dólares y no se pesifican (A-FEAT-1393): el Cash Flow no las espera en pesos en el banco. Datos: 2 cuotas de Sanpa (26/27 y 27/28, las de 2 qq/ha). Sin cambios de RLS ni de permisos.
 

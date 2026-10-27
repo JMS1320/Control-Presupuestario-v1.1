@@ -29,6 +29,8 @@ import {
   evaluarCambioDDJJ, confirmarDecision, consultarEstadoPeriodo, consultarEstadoDeLosMeses, type EstadoMes,
 } from "@/lib/subdiarios/estado-ddjj"
 import { EstadoMesesDDJJ } from "@/components/estado-meses-ddjj"
+import { RectificacionDelMes, consultarMesesARectificar } from "@/components/rectificacion-del-mes"
+import type { MesARectificar } from "@/lib/subdiarios/rectificacion"
 
 type RetencionesDelSubdiario = Awaited<ReturnType<typeof cargarRetencionesSubdiario>>
 
@@ -86,8 +88,11 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
 
   // 📨 A-FEAT-1295: el estado de cada mes del subdiario (Imputado / Enviado / DDJJ OK).
   const [estadoMeses, setEstadoMeses] = useState<EstadoMes[] | null>([])
+  // 🔁 A-FEAT-1394: los meses que cambiaron después de enviarlos o presentarlos.
+  const [mesesARectificar, setMesesARectificar] = useState<Map<string, MesARectificar> | null>(null)
   const recargarMesesEnviados = () => {
     consultarEstadoDeLosMeses(supabase, schemaName, 'comprobantes_venta').then(setEstadoMeses)
+    consultarMesesARectificar(empresa, 'ventas').then(setMesesARectificar)
   }
   useEffect(() => { recargarMesesEnviados() }, [schemaName]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -673,9 +678,15 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
           <div className="mb-3">
             <EstadoMesesDDJJ
               meses={estadoMeses}
+              aRectificar={mesesARectificar}
               onElegir={setPeriodoConsulta}
               ayuda="Tocá un mes y «Consultar período». Cuando el contador te avise que presentó uno enviado, apretá «Confirmar DDJJ»."
             />
+            {periodoConsulta && (
+              <div className="mt-2">
+                <RectificacionDelMes empresa={empresa} lado="ventas" periodo={periodoConsulta} esAdmin={esAdmin} onCambio={recargarMesesEnviados} />
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">

@@ -92,7 +92,8 @@ export function evaluarCambioDDJJ(c: CambioDDJJ): Decision {
     accion: "advertir",
     mensaje:
       `⚠️ Atención: ${motivos.join(" y ")}.\n\n` +
-      `Si lo cambiás, lo que tiene el contador (o lo presentado en ARCA) deja de coincidir con la app: avisale.\n\n` +
+      `Si lo cambiás, lo que tiene el contador (o lo presentado en ARCA) deja de coincidir con la app: ` +
+      `el mes queda 🔁 A RECTIFICAR en Subdiarios (A-FEAT-1394) y hay que mandarle el subdiario rectificado.\n\n` +
       `¿Seguro querés seguir?`,
   }
 }

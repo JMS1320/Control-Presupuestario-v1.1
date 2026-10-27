@@ -218,6 +218,7 @@ import { aseguradoraAlCierre } from "@/lib/balance/seguros-al-cierre"
 import { planDeLaPoliza } from "@/lib/polizas/sincronizar"
 import { historicoAFactura, filasDelSubdiario } from "@/lib/facturas/historico-como-factura"
 import { parsearComprasCsv, parsearTotalesXml, compararSubdiarioConLibro } from "@/lib/subdiarios/libro-presentado"
+import { mesesARectificar, queCambio, efectoEnElMes, leyendaRectificacion, esColumnaFiscal, type CambioSubdiario } from "@/lib/subdiarios/rectificacion"
 import { CONTADOR, asuntoSubdiario, periodoDelAsunto, cuerpoSubdiario } from "@/lib/subdiarios/contador"
 import { calcularSubtotalesSubdiario } from "@/lib/subdiarios/subtotales"
 import { TABLAS_CON_VINCULO_VENTA, completarConGrupoDeCobro } from "@/lib/balance/fechas-de-pago"
@@ -1288,6 +1289,30 @@ export function correrCasos(): Resultado[] {
     const vNro = `${mismoOtroNro.otroNumero.length}/${mismoOtroNro.soloApp.length}/${mismoOtroNro.ok} · ${otroImporte.otroNumero[0]?.diferencia}/${otroImporte.ok}`
     chequear("Subdiarios — lo presentado", "Mismo comprobante con otro número: se empareja por CUIT e importe (aviso, coincide); con otro importe además, no coincide",
       "1/0/true · -399.12/false", vNro, vNro === "1/0/true · -399.12/false", "A-FEAT-1388")
+
+    // 🔁 A-FEAT-1394 — el mes que cambió después de enviarlo o presentarlo queda «a rectificar». Caso real: la NC de
+    // Federación de abril que JMS pasó a negativo el 27/10 (no toca el IVA) y una factura con IVA que sale del mes.
+    const base = { empresa: "MSA", lado: "compras" as const, quien: "jms", creado_at: "2026-10-27T13:00:00Z", rectificado_at: null, rectificado_por: null, rectificado_nota: null }
+    const nc: CambioSubdiario = { ...base, id: "1", anio: 2026, mes: 4, comprobante_id: "e397", accion: "modificado", estado_mes: "DDJJ OK", modifica_iva: false,
+      antes: { tipo_comprobante: 1, punto_venta: 4, numero_desde: 670821, imp_op_exentas: 81676.64, otros_tributos: 490.06, iva: 0, imp_total: 82166.70 },
+      despues: { tipo_comprobante: 1, punto_venta: 4, numero_desde: 670821, imp_op_exentas: -81676.64, otros_tributos: -490.06, iva: 0, imp_total: -82166.70 } }
+    const sale: CambioSubdiario = { ...base, id: "2", anio: 2025, mes: 12, comprobante_id: "eb68", accion: "salio", estado_mes: "DDJJ OK", modifica_iva: true,
+      antes: { tipo_comprobante: 1, imp_neto_gravado: 361531.38, imp_op_exentas: 59656.30, iva: 97613.47, imp_total: 518801.15, "año_contable": 2025, mes_contable: 12 },
+      despues: { tipo_comprobante: 1, imp_neto_gravado: 361531.38, imp_op_exentas: 59656.30, iva: 97613.47, imp_total: 518801.15, "año_contable": 2026, mes_contable: 10 } }
+    const viejo: CambioSubdiario = { ...sale, id: "3", rectificado_at: "2026-10-27T14:00:00Z" }
+    const m = mesesARectificar([nc, sale, viejo])
+    const abr = m.get("04/2026"), dic = m.get("12/2025")
+    const e = efectoEnElMes(nc)
+    const vR = [
+      m.size, abr?.modificaIva, dic?.modificaIva, dic?.cambios.length,
+      e.imp_op_exentas, e.otros_tributos, e.iva, e.imp_total, efectoEnElMes(sale).iva,
+      abr ? leyendaRectificacion(abr).includes("no modifica IVA: se rectifica sólo el subdiario") : false,
+      dic ? leyendaRectificacion(dic).includes("MODIFICA IVA") : false,
+      queCambio(nc).includes("Exento 81.676,64 → -81.676,64"), queCambio(sale), esColumnaFiscal("imp_total"), esColumnaFiscal("estado"),
+    ].join(" | ")
+    const esperado = "2 | false | true | 1 | -163353.28 | -980.12 | 0 | -164333.4 | -97613.47 | true | true | true | salió del mes: pasó a 10/2026 | true | false"
+    chequear("Subdiarios — a rectificar", "🔁 El mes que cambió después de presentarlo: abril (NC a negativo) «no modifica IVA → sólo el subdiario»; diciembre (sale una factura con IVA) «MODIFICA IVA»; lo ya rectificado no cuenta; el estado de pago no es dato fiscal",
+      esperado, vR, vR === esperado, "A-FEAT-1394")
   }
 
   // 📨 A-AUTO-09 — el mail del subdiario al contador: asunto «Subdiario Mes Año» (pedido de JMS 27/10), la respuesta

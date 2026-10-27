@@ -1370,6 +1370,25 @@ mes, imputar una que llegó tarde, editarla o borrarla—: la app te avisa con u
 seguís. Si seguís, acordate de avisarle al contador. El rol contable (Ulises) no puede: le aparece un
 candado.
 
+### 🔁 Un mes «a rectificar» *(Compras y Ventas, 2026-10-27)*
+
+Si cambia un dato de una factura de un mes **enviado o presentado** —el tipo, el número, un importe, la fecha, o la sacás
+del mes, la pasás a otro, entra una nueva o se borra—, **la app lo anota sola** y el mes queda **🔁 a rectificar**:
+
+- En el tablero **🗓️ Estado de los meses**, el mes lleva un **🔁** (ámbar si no toca el IVA, rojo si lo toca). Pasá el mouse
+  por encima: dice cuántos cambios tiene.
+- Abriendo el mes, un cartel dice **qué hay que rectificar**:
+  - **«no modifica IVA: se rectifica sólo el subdiario»** → le mandás al contador el subdiario rectificado (Generar PDF + Excel:
+    lo que sale hoy ya es el rectificado). No hace falta rectificar la DDJJ de IVA.
+  - **«MODIFICA IVA»** → además del subdiario, hay que rectificar la DDJJ de IVA.
+  Debajo, cada comprobante con **qué cambió** (antes → después) y **cómo se mueve el subdiario** del mes, columna por columna.
+- Cuando lo mandaste, apretá **✓ Ya mandé el subdiario rectificado** (sólo admin) y escribí una nota. El 🔁 desaparece y el mes
+  dice «✓ Rectificado» con la fecha.
+- Al editar a mano un importe o el tipo de una factura de un mes enviado o presentado, la app te avisa que el mes va a quedar a
+  rectificar y te pregunta si seguís. Ulises no puede (candado).
+
+⚠️ Sin probar todavía → [A-TEST-1269](PENDIENTES.md#a-test-1269)
+
 Una factura que imputás tarde a un mes ya enviado queda en «Imputado» (no «Enviado»): así se ve cuál
 le falta mandar. Volvé a apretar **📨 Marcar enviado** cuando se la mandes.
 

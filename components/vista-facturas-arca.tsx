@@ -78,6 +78,8 @@ import {
   estaProtegido, evaluarCambioDDJJ, confirmarDecision, consultarEstadoPeriodo, consultarEstadoDeLosMeses, type EstadoMes,
 } from "@/lib/subdiarios/estado-ddjj"
 import { EstadoMesesDDJJ } from "@/components/estado-meses-ddjj"
+import { RectificacionDelMes, consultarMesesARectificar } from "@/components/rectificacion-del-mes"
+import { esColumnaFiscal, type MesARectificar } from "@/lib/subdiarios/rectificacion"
 import { BotonRevision, useRevisionesDe } from "@/components/boton-revision"
 import { Paperclip, Banknote } from "lucide-react"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
@@ -428,8 +430,11 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [mostrarGestionMasiva, setMostrarGestionMasiva] = useState(false)
   // 📨 A-FEAT-1295: el estado de cada mes del subdiario (Imputado / Enviado / DDJJ OK).
   const [estadoMeses, setEstadoMeses] = useState<EstadoMes[] | null>([])
+  // 🔁 A-FEAT-1394: los meses que cambiaron después de enviarlos o presentarlos (los anota la base, script 119).
+  const [mesesARectificar, setMesesARectificar] = useState<Map<string, MesARectificar> | null>(null)
   const recargarMesesEnviados = () => {
     consultarEstadoDeLosMeses(supabase, schemaName, 'comprobantes_arca').then(setEstadoMeses)
+    consultarMesesARectificar(empresa, 'compras').then(setMesesARectificar)
   }
   useEffect(() => { recargarMesesEnviados() }, [schemaName]) // eslint-disable-line react-hooks/exhaustive-deps
   const [facturasSeleccionadasGestion, setFacturasSeleccionadasGestion] = useState<Set<string>>(new Set())
@@ -1425,6 +1430,15 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   }
 
   const ejecutarGuardadoReal = async (datosEdicion: {facturaId: string, columna: string, valor: any}) => {
+    /**
+     * 🔁 A-FEAT-1394: un dato fiscal (tipo, número, importes, fecha…) de una factura de un mes ENVIADO o PRESENTADO
+     * sólo lo cambia el admin, con aviso — y el mes queda «a rectificar» (lo anota la base).
+     */
+    const facturaEditada = facturas.find(f => f.id === datosEdicion.facturaId)
+    const fiscalProtegido = esColumnaFiscal(datosEdicion.columna) && estaProtegido(facturaEditada?.ddjj_iva)
+    if (fiscalProtegido && !confirmarDecision(evaluarCambioDDJJ({ estadosAfectados: [facturaEditada?.ddjj_iva ?? null], esAdmin: userRole === 'admin' }))) {
+      return
+    }
     setGuardandoCambio(true)
     
     try {
@@ -1497,6 +1511,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       
       setCeldaEnEdicion(null)
       
+      // 🔁 El mes quedó «a rectificar»: el tablero lo tiene que mostrar ya.
+      if (fiscalProtegido) recargarMesesEnviados()
+
       // HOOK SICORE - Interceptar cambio estado HACIA "pagar" ANTES del guardado
       console.log('🔍 SICORE DEBUG Hook:', { columna: datosEdicion.columna, valorFinal, esEstado: datosEdicion.columna === 'estado' })
       if (datosEdicion.columna === 'estado' && valorFinal === 'pagar') {
@@ -6563,6 +6580,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
           {/* 📨 A-FEAT-1295: el estado de cada mes */}
           <EstadoMesesDDJJ
             meses={estadoMeses}
+            aRectificar={mesesARectificar}
             onElegir={m => { setPeriodoConsulta(m); cargarFacturasPeriodo(m) }}
             ayuda="Tocá un mes para abrirlo. Cuando el contador te avise que presentó uno enviado, apretá «Confirmar DDJJ»."
           />
@@ -6784,6 +6802,11 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
             {/* 📥 A-AUTO-09: lo que devolvió el contador (zip del libro IVA de ARCA) contra este subdiario */}
             {periodoConsulta && facturasPeriodo.length > 0 && (
               <ControlContraPresentado facturas={facturasPeriodo as any} periodo={periodoConsulta} schemaName={schemaName} />
+            )}
+            {/* 🔁 A-FEAT-1394: si el mes cambió después de enviarlo o presentarlo, queda «a rectificar» */}
+            {periodoConsulta && (
+              <RectificacionDelMes empresa={empresa} lado="compras" periodo={periodoConsulta}
+                esAdmin={userRole === 'admin'} onCambio={recargarMesesEnviados} />
             )}
             {empresa === 'MSA' && (
               <ModalArchivosArca
