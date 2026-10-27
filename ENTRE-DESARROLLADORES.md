@@ -40,6 +40,9 @@
 
 ## 📨 PARA JAVIER
 
+### 💵 Una columna nueva: `public.cuotas_arrendamiento.en_dolares` (2026-10-27) — aviso ANTES de aplicarla
+- `scripts/117-cuota-en-dolares.sql` (+ `-deshacer`): `boolean not null default false`. Marca las cuotas de arrendamiento que se cobran en dólares y no se pesifican (A-FEAT-1393): el Cash Flow no las espera en pesos en el banco. Datos: 2 cuotas de Sanpa (26/27 y 27/28, las de 2 qq/ha). Sin cambios de RLS ni de permisos.
+
 ### 🧾 Cobro agrupado: tabla nueva `grupos_cobro` en msa/pam/ma + columna `grupo_cobro_id` en `comprobantes_venta` (2026-10-27) — ✅ APLICADA el 27/10 con OK de JMS (aviso previo): 3 tablas con RLS, 3 columnas; y el 115 armó el grupo de Sáenz (datos)
 - `scripts/114-grupos-cobro.sql` (+ `-deshacer`): espejo de `grupos_pago` (id, cuit, cliente, monto_total, estado, observaciones, created_at) en los 3 schemas, y en `{msa,pam,ma}.comprobantes_venta` una columna `grupo_cobro_id` (FK a su schema, `on delete set null`). Verificado antes: ninguna de las dos existe. **No cambia ninguna columna existente.**
 - RLS igual que `grupos_pago`: `puede_ver`/`puede_escribir` con (schema, `'grupos_cobro'`), nada a `anon`, `authenticated` y `service_role` con select/insert/update/delete. Sin fila en `recurso_tablas` (como `grupos_pago` y `comprobantes_venta`, que tampoco la tienen).
