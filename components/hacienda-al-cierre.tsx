@@ -315,6 +315,15 @@ export function HaciendaAlCierre({
           </span>
         )}
       </div>
+      {/* A-FEAT-1388 — usuario 27/10: «dice sin el sector productivo, y no apreté traer precios pero sí
+          los cargó de la vez pasada». Los precios a mano se guardan y vuelven solos; el STOCK no. */}
+      {!datos && !cargando && Object.values(manuales).some(x => String(x ?? "").trim()) && (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded px-2 py-1.5">
+          Tus precios a mano ({Object.values(manuales).filter(x => String(x ?? "").trim()).length}) ya están guardados,
+          pero <strong>el stock de hacienda e insumos todavía no se trajo</strong>: hasta que aprietes
+          «Traer stock y precios», el Excel sale sin el sector productivo.
+        </p>
+      )}
 
       {v && (
         <>

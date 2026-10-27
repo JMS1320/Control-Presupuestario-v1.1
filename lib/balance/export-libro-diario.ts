@@ -23,10 +23,12 @@
 import XLSX from "xlsx-js-style"
 import { lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
 import { ETIQUETA_CONCEPTO, type ImpuestoCheque } from "./impuesto-cheque"
+import { controlarCheque, chequeEnPapel08, chequeEnTemplates, type ControlCheque } from "./control-cheque"
 import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
 import { armarEjercicio, nombreSubdiario } from "./ejercicio"
 import { explicarFila } from "./facturas-fijas"
-import { armarLibroPorCuenta, TIPOS_SIN_CREDITO_VENTAS, type LibroPorCuenta } from "./libro-por-cuenta"
+import { armarLibroPorCuenta, TIPOS_SIN_CREDITO_VENTAS, SIN_IMPUTAR, type LibroPorCuenta } from "./libro-por-cuenta"
+import type { Descuadre } from "@/lib/subdiarios/cuadratura"
 import type { CuentasAlCierre, FilaCuenta } from "./cuentas-al-cierre"
 import type { CadenaDeSaldos } from "./saldos-al-inicio"
 import type { SueldosDelEjercicio, FilaSueldo } from "./sueldos-balance"
@@ -43,7 +45,7 @@ import {
   TOTALIZADORAS_BANCARIAS,
   type GastosBancarios, type FilaConceptoPorMes, type RetirosYAportes, type FondoComun,
 } from "./papeles-bancarios"
-import { ORDEN_TIPOS, NOMBRE_TIPO, type TemplatesDelEjercicio, type CuotaTemplate, type TipoTemplate } from "./templates-libro"
+import { ORDEN_TIPOS, NOMBRE_TIPO, SIN_AGRUPADORA, type TemplatesDelEjercicio, type CuotaTemplate, type TipoTemplate } from "./templates-libro"
 import type { ValuacionHacienda, PrecioMag, PrecioMercado, PrecioCabeza } from "./hacienda-stock"
 import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
 import type { CuadreGranos, ValuacionGranos, Sementeras } from "./granos-sementeras"
@@ -53,8 +55,27 @@ import {
 
 const money = (n: number) => Math.round(n * 100) / 100
 
-/** Cabecera + filas de un listado de asientos. Misma forma para compras, ventas y provisiones. */
-function hojaDeAsientos(asientos: AsientoLibroDiario[]): unknown[][] {
+/**
+ * 🛑 Un renglón con ERROR (las partes del comprobante no suman su propio total): fondo rojo suave y letra roja.
+ * Usuario 27/10: *«que quede marcado el error en subplanilla y detalle… dejalo a la vista con la marca de los
+ * renglones que dan error»*. No se corrige ningún dato: se marca, para que se vea dónde está.
+ */
+const ESTILO_ERROR = {
+  font: { color: { rgb: "FFA12B2B" } },
+  fill: { patternType: "solid", fgColor: { rgb: "FFFBE4E4" } },
+}
+const fmtAr = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+/** El texto de la marca: cuánto suman las partes y cuánto falta (o sobra) para el total. */
+const marcaDescuadre = (d: Descuadre) =>
+  `NO CUADRA: las partes suman ${fmtAr(d.suma_partes)} y el total es ${fmtAr(d.imp_total)} — ${d.diferencia > 0 ? "faltan" : "sobran"} ${fmtAr(Math.abs(d.diferencia))}`
+
+/**
+ * Cabecera + filas de un listado de asientos. Misma forma para compras, ventas y provisiones.
+ * @param descuadres  los del Control (el MISMO criterio, `verificarCuadratura`): si vienen, se agrega la columna
+ *                    «Control de partes» y los renglones con error van en rojo con su marca.
+ */
+export function hojaDeAsientos(asientos: AsientoLibroDiario[], descuadres?: Descuadre[]): unknown[][] {
+  const malos = new Map((descuadres ?? []).filter(d => d.id).map(d => [d.id!, d]))
   const filas: unknown[][] = [[
     "Subdiario", "Fecha", "Tipo", "Pto Vta", "Número", "CUIT", "Denominación",
     "Neto Gravado", "No Gravado", "Exentas", "Otros Tributos", "IVA", "Total",
@@ -62,10 +83,11 @@ function hojaDeAsientos(asientos: AsientoLibroDiario[]): unknown[][] {
     // 💵 A-BUG-1316: los importes van en pesos; la moneda y la cotización quedan a la vista al final
     // (al final y no al lado del Total, para no correr las columnas que suman otras solapas).
     "Moneda", "Tipo de cambio", "Total en moneda original",
+    ...(descuadres ? ["Control de partes"] : []),
   ]]
   for (const a of asientos) {
     const enOtraMoneda = !!a.moneda && a.moneda !== "PES"
-    filas.push([
+    const fila: unknown[] = [
       a.subdiario, a.fecha ?? "", a.tipo ?? "", a.punto_venta ?? "", a.numero ?? "",
       a.cuit, a.denominacion,
       money(a.neto_gravado), money(a.no_gravado), money(a.exento),
@@ -75,7 +97,10 @@ function hojaDeAsientos(asientos: AsientoLibroDiario[]): unknown[][] {
       enOtraMoneda ? (a.moneda === "DOL" ? "USD" : a.moneda) : "$",
       enOtraMoneda ? a.tipo_cambio ?? "" : "",
       enOtraMoneda ? money(a.total_moneda_original ?? 0) : "",
-    ])
+    ]
+    const d = malos.get(a.id)
+    if (descuadres) fila.push(d ? marcaDescuadre(d) : "")
+    filas.push(d ? conEstilo(fila, ESTILO_ERROR) : fila)
   }
   return filas
 }
@@ -254,6 +279,8 @@ function hojaDeControl(libro: LibroDiario, lecturas?: Lectura[]): unknown[][] {
 
   if (c.compras.descuadres.length > 0 || c.ventas.descuadres.length > 0) {
     f.push(["COMPROBANTES CUYAS PARTES NO SUMAN SU PROPIO TOTAL"])
+    // 🛑 A-FEAT-1388: no se corrigen acá — se marcan donde están, para encontrarlos.
+    f.push(["Están en ROJO, con la marca, en las solapas Compras / Ventas y en el renglón de su cuenta y mes de Compras / Ventas por cuenta."])
     f.push(["Fecha", "Nombre", "Comprobante", "Total", "Suma de las partes", "Diferencia"])
     ;[...c.compras.descuadres, ...c.ventas.descuadres].forEach(d => f.push([
       d.fecha, d.nombre, d.comprobante, money(d.imp_total), money(d.suma_partes), money(d.diferencia),
@@ -284,10 +311,34 @@ function hojaDeControl(libro: LibroDiario, lecturas?: Lectura[]): unknown[][] {
  * lo va a leer: *«que sea lo más amigable para el contador»*. Sin `columnas` la hoja entra sin
  * formato, que es lo correcto para las hojas de texto (Control).
  */
+/**
+ * 📑 El nivel de esquema de cada fila de una hoja (0 = sin agrupar, 1 = detalle de un grupo), para que se pueda
+ * plegar como el «Subtotal» de Excel. La hoja que lo necesita lo anota acá, sin cambiar su firma.
+ */
+const NIVELES = new WeakMap<unknown[][], number[]>()
+
+/** Un renglón de SUBTOTAL: negrita, fondo suave y línea arriba — se distingue de las cuentas. */
+const ESTILO_SUBTOTAL = {
+  font: { bold: true },
+  fill: { patternType: "solid", fgColor: { rgb: "FFE6EEF6" } },
+  border: { top: { style: "thin", color: { rgb: "FFB9C4C0" } } },
+}
+/** El total del ejercicio: lo mismo, un tono más fuerte. */
+const ESTILO_TOTAL = { ...ESTILO_SUBTOTAL, fill: { patternType: "solid", fgColor: { rgb: "FFCFDDEB" } } }
+
+/** Le pone estilo a cada celda de un renglón (respetando las fórmulas). */
+const conEstilo = (fila: unknown[], s: Record<string, unknown>): unknown[] => fila.map(v => {
+  if (v && typeof v === "object" && "t" in (v as object)) return { ...(v as XLSX.CellObject), s }
+  if (typeof v === "number") return { t: "n", v, s }
+  return { t: "s", v: v == null ? "" : String(v), s }
+})
+
 const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: Columna[]) => {
   const ws = XLSX.utils.aoa_to_sheet(filas)
   if (columnas) formatearHoja(ws, columnas)
   presentarHoja(ws)
+  const niveles = NIVELES.get(filas)
+  if (niveles) ws["!rows"] = niveles.map(l => (l ? { level: l } : {}))
   // 31 caracteres es el máximo que acepta Excel para el nombre de una solapa.
   XLSX.utils.book_append_sheet(wb, ws, nombre.slice(0, 31))
 }
@@ -300,6 +351,7 @@ const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: 
 /** Templates, fila por cuota. */
 const COLS_TEMPLATES_POR_MES = (meses: number): Columna[] => [
   { ancho: 14 },                                   // Responsable
+  { ancho: 30 },                                   // Agrupadora (A-FEAT-1388)
   { ancho: 34 },                                   // Categoría
   ...Array.from({ length: meses }, () => ({ ancho: 15, z: MONEDA })),
   { ancho: 17, z: MONEDA },                        // TOTAL
@@ -387,8 +439,31 @@ const COLS_SEMENTERAS: Columna[] = [
  *   la declaración y la app le resta el del libro. Avisa, no frena — y las celdas van **vacías**
  *   porque ese número sale de la DDJJ, que la app no tiene.
  */
-function hojaPorCuenta(libro: LibroPorCuenta, titulo: string): unknown[][] {
+export function hojaPorCuenta(
+  libro: LibroPorCuenta, titulo: string,
+  /**
+   * 🛑 Los comprobantes cuyas partes no suman su total (los del Control): el renglón de su cuenta y mes va en rojo,
+   * con la marca, y el subtotal del mes avisa. Sin esto la hoja sale como antes.
+   */
+  marcas?: { asientos: AsientoLibroDiario[]; descuadres: Descuadre[] },
+): unknown[][] {
   const f: unknown[][] = []
+  /** Por renglón (año-mes|cuenta): cuántos comprobantes no cuadran y cuánto suman sus diferencias. */
+  const conError = new Map<string, { n: number; dif: number }>()
+  if (marcas) {
+    const malos = new Map(marcas.descuadres.filter(d => d.id).map(d => [d.id!, d]))
+    for (const a of marcas.asientos) {
+      const d = malos.get(a.id)
+      if (!d) continue
+      const [anio, mes] = a.subdiario.split("-").map(Number)
+      const k = `${anio}-${mes}|${a.cuenta_contable?.trim() || SIN_IMPUTAR}`
+      const acc = conError.get(k) ?? { n: 0, dif: 0 }
+      acc.n += 1; acc.dif = money(acc.dif + d.diferencia)
+      conError.set(k, acc)
+    }
+  }
+  const marcaFila = (e: { n: number; dif: number }) =>
+    `NO CUADRA: ${e.n} comprobante(s) cuyas partes no suman su total (${e.dif > 0 ? "faltan" : "sobran"} ${fmtAr(Math.abs(e.dif))}) — están en rojo en el detalle`
 
   f.push([titulo])
   f.push(['Otros tributos va AL GASTO: adentro hay impuestos que no son percepciones (nota del usuario).'])
@@ -402,15 +477,21 @@ function hojaPorCuenta(libro: LibroPorCuenta, titulo: string): unknown[][] {
     "Sin crédito fiscal (Fac B y C)", "Diferencia Entre Total y suma de columnas", "",
     "Neto Gravado DDJJ", "Diferencia", "Exento + No gravado + Monotributo", "Diferencia",
     "Nro cuenta", "Comprobantes",
+    ...(marcas ? ["Control de partes"] : []),
   ])
 
   /** Las filas (1-based, como las ve Excel) de cada «Total general» de mes, para el Control final. */
   const filasTotalMes: number[] = []
+  /** Las filas de detalle (0-based), para agruparlas: cada mes se pliega a su subtotal. */
+  const detalle = new Set<number>()
+  const primeraDetalle = f.length + 1
 
   for (const m of libro.meses) {
     for (const fila of m.filas) {
       const n = f.length + 1
-      f.push([
+      detalle.add(f.length)
+      const e = conError.get(`${fila.anio}-${fila.mes}|${fila.cuenta}`)
+      const renglon: unknown[] = [
         fila.anio, fila.mes, fila.cuenta,
         money(fila.netoGravado), money(fila.noGravado), money(fila.exento),
         money(fila.otrosTributos), money(fila.iva), money(fila.total),
@@ -418,18 +499,27 @@ function hojaPorCuenta(libro: LibroPorCuenta, titulo: string): unknown[][] {
         conFormula(`I${n}-(D${n}+E${n}+F${n}+G${n}+H${n}+J${n})`, fila.diferencia), "",
         "", "", "", "",
         fila.nroCuenta, fila.comprobantes,
-      ])
+      ]
+      if (marcas) renglon.push(e ? marcaFila(e) : "")
+      f.push(e ? conEstilo(renglon, ESTILO_ERROR) : renglon)
     }
+    // El subtotal del mes también avisa si adentro hay algo que no cuadra.
+    const errMes = [...conError.entries()].filter(([k]) => k.startsWith(`${m.anio}-${m.mes}|`))
+      .reduce((acc, [, v]) => ({ n: acc.n + v.n, dif: money(acc.dif + v.dif) }), { n: 0, dif: 0 })
 
-    // «Total general» del mes: suma de las filas de arriba, como fórmula.
+    /**
+     * 📑 El SUBTOTAL del mes (usuario 27/10: *«poner con un formato tipo subtotal, pero poner las sumatorias»*):
+     * negrita y fondo, y la suma con `SUBTOTAL(9, …)` — la del «Subtotal» de Excel: **respeta los filtros**
+     * (suma sólo lo visible) y el total del ejercicio no la cuenta dos veces. El mes se pliega a este renglón.
+     */
     const desde = f.length + 1 - m.filas.length
     const hasta = f.length
     const n = f.length + 1
     filasTotalMes.push(n)
-    f.push([
-      m.anio, m.mes, "Total general",
+    f.push(conEstilo([
+      m.anio, m.mes, `Total ${String(m.mes).padStart(2, "0")}/${m.anio}`,
       ...(["D", "E", "F", "G", "H", "I", "J"] as const).map((col, i) =>
-        conFormula(`SUM(${col}${desde}:${col}${hasta})`, [
+        conFormula(`SUBTOTAL(9,${col}${desde}:${col}${hasta})`, [
           m.total.netoGravado, m.total.noGravado, m.total.exento,
           m.total.otrosTributos, m.total.iva, m.total.total, m.total.sinCredito,
         ][i]),
@@ -440,17 +530,20 @@ function hojaPorCuenta(libro: LibroPorCuenta, titulo: string): unknown[][] {
       "", { t: "n", f: `IF(M${n}="","",M${n}-D${n})`, z: MONEDA },
       "", { t: "n", f: `IF(O${n}="","",O${n}-(E${n}+F${n}))`, z: MONEDA },
       "", m.total.comprobantes,
-    ])
+      ...(marcas ? [errMes.n ? marcaFila(errMes) : ""] : []),
+    ], ESTILO_SUBTOTAL))
     f.push([])
   }
+  const ultimaDetalle = f.length
 
   // El total del ejercicio y el Control, que es el camino inverso: si la suma de los totales
   // mensuales no da el total del ejercicio, la apertura perdió algo por el camino.
+  // 📑 SUBTOTAL(9) sobre todo el bloque: suma el detalle y salta los subtotales de mes (no los cuenta dos veces).
   const nTotal = f.length + 1
-  f.push([
+  f.push(conEstilo([
     "", "", "TOTAL DEL EJERCICIO",
     ...(["D", "E", "F", "G", "H", "I", "J"] as const).map((col, i) =>
-      conFormula(filasTotalMes.map(r => `${col}${r}`).join("+") || "0", [
+      conFormula(`SUBTOTAL(9,${col}${primeraDetalle}:${col}${ultimaDetalle})`, [
         libro.totalGeneral.netoGravado, libro.totalGeneral.noGravado, libro.totalGeneral.exento,
         libro.totalGeneral.otrosTributos, libro.totalGeneral.iva, libro.totalGeneral.total,
         libro.totalGeneral.sinCredito,
@@ -458,7 +551,7 @@ function hojaPorCuenta(libro: LibroPorCuenta, titulo: string): unknown[][] {
     ),
     conFormula(`I${nTotal}-(D${nTotal}+E${nTotal}+F${nTotal}+G${nTotal}+H${nTotal}+J${nTotal})`, libro.totalGeneral.diferencia),
     "", "", "", "", "", "", libro.totalGeneral.comprobantes,
-  ])
+  ], ESTILO_TOTAL))
 
   const nCtrl = f.length + 1
   f.push([
@@ -478,8 +571,73 @@ function hojaPorCuenta(libro: LibroPorCuenta, titulo: string): unknown[][] {
     f.push(["TODO IMPUTADO — no hay comprobantes sin cuenta contable."])
   }
 
+  // 📑 Cada mes se pliega a su subtotal (los botones + / − de Excel, a la izquierda).
+  NIVELES.set(f, f.map((_, i) => (detalle.has(i) ? 1 : 0)))
   return f
 }
+
+/**
+ * 📅 La solapa **Resumen 12 meses** — usuario 27/10: *«una planilla simplemente con los 12 meses, total compras,
+ * total ventas»*, y *«ayuda a controles también»*.
+ *
+ * Un renglón por subdiario del ejercicio (los 12, aunque alguno esté vacío: un mes sin nada se ve como 0, no
+ * desaparece), con compras y ventas. Y al lado, el **control**: las compras de cada mes contra lo presentado a ARCA
+ * (el mismo dato del Control), con la diferencia; y abajo, que la suma de los 12 dé el total del ejercicio.
+ */
+export function hojaResumenMensual(libro: LibroDiario): unknown[][] {
+  const f: unknown[][] = []
+  f.push([`RESUMEN DE LOS 12 MESES — ejercicio ${libro.ejercicio.etiqueta}`])
+  f.push(["Por subdiario (el mes en que entró cada comprobante), como el resto del libro diario."])
+  f.push([])
+  f.push(["Subdiario", "Compras: comprobantes", "Compras: total", "Ventas: comprobantes", "Ventas: total",
+    "Compras presentadas a ARCA", "Diferencia con ARCA", "Control"])
+  const clave = (s: { anio: number; mes: number }) => `${s.anio}-${String(s.mes).padStart(2, "0")}`
+  const porSub = (xs: AsientoLibroDiario[], k: string) => xs.filter(a => a.subdiario === k)
+  const presentado = new Map((libro.controles.contraPresentado ?? []).map(p => [p.subdiario, p]))
+  const n0 = f.length + 1
+  const suma = { cc: 0, tc: 0, cv: 0, tv: 0 }
+  for (const s of libro.ejercicio.subdiarios) {
+    const k = clave(s)
+    const c = porSub(libro.compras, k), v = porSub(libro.ventas, k)
+    const tc = money(c.reduce((t, a) => t + (Number(a.total) || 0), 0))
+    const tv = money(v.reduce((t, a) => t + (Number(a.total) || 0), 0))
+    suma.cc += c.length; suma.tc += tc; suma.cv += v.length; suma.tv += tv
+    const p = presentado.get(k)
+    const n = f.length + 1
+    f.push([
+      nombreSubdiario(s), c.length, tc, v.length, tv,
+      p?.presentado ? money(p.presentado.total) : "sin dato",
+      p?.presentado ? conFormula(`C${n}-F${n}`, money(tc - p.presentado.total)) : "",
+      !p?.presentado ? "sin dato de ARCA" : p.ok ? "coincide" : "NO COINCIDE",
+    ])
+  }
+  const nU = f.length
+  const nT = f.length + 1
+  f.push(["TOTAL", ...(["B", "C", "D", "E"] as const).map((col, i) => conFormula(`SUM(${col}${n0}:${col}${nU})`,
+    [suma.cc, money(suma.tc), suma.cv, money(suma.tv)][i], i % 2 === 0 ? ENTERO : MONEDA))])
+  // 🧮 El camino inverso: la suma de los 12 renglones tiene que ser el total del ejercicio de la solapa Control.
+  //    Si un comprobante tiene un subdiario fuera de los 12, no está en ningún renglón y esto no da 0.
+  f.push([])
+  f.push(["CONTROL", "", "Compras", "", "Ventas"])
+  f.push(["Total del ejercicio (solapa Control)", "", money(libro.controles.compras.totalGeneral), "", money(libro.controles.ventas.totalGeneral)])
+  const dC = money(suma.tc - libro.controles.compras.totalGeneral)
+  const dV = money(suma.tv - libro.controles.ventas.totalGeneral)
+  const nD = f.length + 1
+  f.push(["Suma de los 12 meses − total (tiene que dar 0)", "", conFormula(`C${nT}-C${nD - 1}`, dC), "", conFormula(`E${nT}-E${nD - 1}`, dV),
+    "", "", Math.abs(dC) < 0.01 && Math.abs(dV) < 0.01 ? "cuadra" : "NO CUADRA"])
+  return f
+}
+
+const COLS_RESUMEN_MENSUAL: Columna[] = [
+  { ancho: 16 },                     // Subdiario
+  { ancho: 12, z: ENTERO },          // Compras: comprobantes
+  { ancho: 18, z: MONEDA },          // Compras: total
+  { ancho: 12, z: ENTERO },          // Ventas: comprobantes
+  { ancho: 18, z: MONEDA },          // Ventas: total
+  { ancho: 20, z: MONEDA },          // Presentado a ARCA
+  { ancho: 16, z: MONEDA },          // Diferencia
+  { ancho: 18 },                     // Control
+]
 
 const COLS_POR_CUENTA: Columna[] = [
   { ancho: 7, z: ENTERO },          // A Año
@@ -500,6 +658,7 @@ const COLS_POR_CUENTA: Columna[] = [
   { ancho: 14, z: MONEDA },         // P Diferencia
   { ancho: 12 },                    // Q Nro cuenta
   { ancho: 13, z: ENTERO },         // R Comprobantes
+  { ancho: 70 },                    // S Control de partes (A-FEAT-1388)
 ]
 
 /**
@@ -999,37 +1158,44 @@ const COLS_SUELDOS: Columna[] = [
  * relacionado a RET, RET 3, AP; debemos ir tratando cada cosa a la vez»*. No se reparte ni se
  * esconde — se muestra con su total, que es cuánta plata falta encuadrar.
  */
-function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierre: string): unknown[][] {
+export function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierre: string): unknown[][] {
   const f: unknown[][] = []
   f.push([`CUENTAS CORRIENTES — saldo al ${fechaCierre}`])
   f.push(["Saldo positivo = le debemos. Negativo = tenemos a cobrar."])
+  // ✍️ A-FEAT-1388 — usuario 27/10: «poner saldo de inicio cero y que dé lo que dé, pero luego podremos modificar».
+  f.push(["Saldo de INICIO: el cargado en la pantalla del balance; si no hay, 0 marcado «sin dato». El SALDO AL CIERRE es formula: se puede cambiar el inicio aca."])
   f.push([])
   f.push(["Contraparte", "CUIT", "Saldo al INICIO", "Facturado", "Vendido (compensa)",
     "Pagado/cobrado", "Movimiento del ejercicio", "SALDO AL CIERRE", "Cómo se lee"])
 
   const desde = f.length + 1
   for (const c of cc.cuentas) {
+    const n = f.length + 1
     f.push([
       c.contraparte.nombre,
       c.contraparte.cuit,
-      // 🎚️ Sin saldo de inicio NO se pone cero: se dice que no se conoce.
-      c.saldoInicio ?? "NO SE CONOCE",
+      money(c.saldoInicio),
       money(c.resumen.totalComprado),
       money(c.resumen.totalVendido),
       money(c.resumen.totalPagado),
       money(c.resumen.saldo),
-      c.saldoAlCierre ?? "falta el saldo al inicio",
-      c.saldoAlCierre == null ? "" : leyendaSaldo(c.saldoAlCierre),
+      conFormula(`C${n}+G${n}`, money(c.saldoAlCierre)),
+      // 🎚️ El 0 de un inicio sin cargar es un default, no un dato: se dice (y sale en ámbar).
+      c.inicioSinDato
+        ? `sin dato de inicio (0 por default) · ${leyendaSaldo(c.saldoAlCierre)}`
+        : leyendaSaldo(c.saldoAlCierre),
     ])
   }
   const hasta = f.length
-  f.push(["TOTAL", "", "", ...(["D", "E", "F", "G"] as const).map((col, i) =>
-    conFormula(`SUM(${col}${desde}:${col}${hasta})`, [
+  f.push(["TOTAL", "", ...(["C", "D", "E", "F", "G", "H"] as const).map((col, i) =>
+    conFormula(`SUM(${col}${desde}:${col}${hasta})`, money([
+      cc.cuentas.reduce((s, c) => s + c.saldoInicio, 0),
       cc.cuentas.reduce((s, c) => s + c.resumen.totalComprado, 0),
       cc.cuentas.reduce((s, c) => s + c.resumen.totalVendido, 0),
       cc.cuentas.reduce((s, c) => s + c.resumen.totalPagado, 0),
       cc.cuentas.reduce((s, c) => s + c.resumen.saldo, 0),
-    ][i]))])
+      cc.cuentas.reduce((s, c) => s + c.saldoAlCierre, 0),
+    ][i])))])
 
   // ── 🛑 Lo que falta encuadrar ────────────────────────────────────────────────────────
   if (cc.sinTratar.length > 0) {
@@ -1040,6 +1206,30 @@ function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierre: stri
     f.push(["Marca en la columna Contable", "Movimientos", "Total"])
     cc.sinTratar.forEach(x => f.push([x.etiqueta, x.movimientos, money(x.total)]))
     f.push(["TOTAL SIN TRATAR", "", money(cc.totalSinTratar)])
+  }
+
+  // ── 💳 «Desglosar» abierto con los consumos de la tarjeta (A-FEAT-1388) ─────────────────
+  const dt = cc.desgloseTarjeta
+  if (dt && dt.pagos.length > 0) {
+    f.push([])
+    f.push([])
+    f.push(["DESGLOSAR — los pagos de la tarjeta Visa Business de MSA, abiertos con los consumos de su resumen"])
+    f.push(["Cada consumo va con SU marca de la tarjeta. Lo marcado para otra persona sigue sin tratar bajo esa marca; lo sin marca es gasto de MSA."])
+    f.push(["Destino", "Póliza", "Consumos", "Importe", "Qué es"])
+    const n0 = f.length + 1
+    dt.porDestino.forEach(d => f.push([d.destino, d.poliza ? "SÍ — póliza" : "", d.consumos, money(d.importe), d.ejemplos.join(" · ")]))
+    const nT = f.length + 1
+    // 🧮 Dos caminos: la suma de los destinos (consumo por consumo) contra los débitos del banco.
+    const abierto = money(dt.porDestino.reduce((s, d) => s + d.importe, 0))
+    f.push(["TOTAL ABIERTO", "", "", conFormula(`SUM(D${n0}:D${nT - 1})`, abierto)])
+    if (dt.sinAbrir !== 0) f.push(["⚠️ Sin resumen que lo abra (queda como Desglosar)", "", "", money(dt.sinAbrir)])
+    f.push(["Pagos del banco marcados Desglosar", "", "", money(dt.total)])
+    const dif = money(dt.total - abierto - dt.sinAbrir)
+    f.push(["CONTROL: pagos del banco − (lo abierto + lo sin abrir) (tiene que dar 0)", "", "", money(dif), Math.abs(dif) < 0.01 ? "cuadra" : "NO CUADRA"])
+    f.push([])
+    f.push(["Pago del banco", "Débitos", "Importe del pago", "Consumos del resumen", "Diferencia", "Control"])
+    dt.pagos.forEach(p => f.push([p.fecha, p.debitos, money(p.importe), money(p.importe - p.diferencia), money(p.diferencia),
+      p.cierra ? "cuadra" : p.partes.length === 0 ? "NO CUADRA: no hay resumen que venza ese día" : "NO CUADRA: los consumos no dan el pago"]))
   }
   if (cc.historicoSinAtribuir > 0) {
     f.push([])
@@ -1054,6 +1244,7 @@ function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierre: stri
     f.push([`ASEGURADORA — ${a.nombre} — saldo de documentación al ${a.fechaCierre}`])
     f.push(["Sale de las pólizas (cuotas y notas de crédito de sus PDF) contra los débitos y reintegros del banco, estén o no conciliados."])
     f.push(["Saldo positivo = nos debitaron o acreditaron algo que ningún comprobante cierra (FALTAN COMPROBANTES). Negativo = la aseguradora nos debe."])
+    const nSaldo = f.length + 1
     f.push(["SALDO AL CIERRE", "", money(a.saldo), a.saldo === 0 ? "✓ papeles y plata coinciden" : "⚠️ FALTAN COMPROBANTES: reclamar lo de abajo"])
     if (a.aReclamar.length) {
       f.push(["A reclamar", "Póliza", "Importe", "Qué es", "Desde"])
@@ -1074,6 +1265,17 @@ function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierre: stri
     f.push([`DETALLE — cuenta corriente con ${a.nombre}`])
     f.push(["Fecha", "Póliza", "Concepto", "Cargo", "Crédito", "Saldo"])
     a.lineas.forEach(l => f.push([l.fecha, l.poliza ?? "", l.concepto, l.cargo ? money(l.cargo) : "", l.credito ? money(l.credito) : "", money(l.saldo)]))
+    /**
+     * 🧮 A-FEAT-1388 — usuario 27/10: *«¿esto no debería dar mismo resultado de lo de arriba?»*. Da lo
+     * mismo, pero el papel no lo mostraba: el saldo final del detalle tiene que ser el SALDO AL CIERRE.
+     */
+    if (a.lineas.length > 0) {
+      const nUltima = f.length
+      const final = a.lineas[a.lineas.length - 1].saldo
+      const dif = money(final - a.saldo)
+      f.push(["CONTROL: saldo final del detalle − SALDO AL CIERRE de arriba (tiene que dar 0)", "", "", "", "",
+        conFormula(`F${nUltima}-C${nSaldo}`, dif), Math.abs(dif) < 0.01 ? "cuadra" : "NO CUADRA"])
+    }
   }
 
   // ── El detalle de cada cuenta ────────────────────────────────────────────────────────
@@ -1387,6 +1589,8 @@ function hojaDeGastosBancarios(g: GastosBancarios, etiqueta: string): unknown[][
   const f: unknown[][] = []
   f.push([`GASTOS BANCARIOS E IMPUESTOS DEL EXTRACTO — ejercicio ${etiqueta}`])
   f.push(["Los conceptos salen del plan de cuentas: totalizadoras IMPUESTOS BANCARIOS y GASTOS BANCARIOS."])
+  // ⚠️ cambió 2026-10-27 (A-FEAT-1388): mostraba sólo lo debitado y las devoluciones quedaban afuera.
+  f.push(["Cada mes es el NETO: lo que debito el banco menos lo que devolvio. La columna Devoluciones dice cuanto se resto."])
 
   const conDatos = g.meses.filter((_, i) => g.total.debitos[i] !== 0 || g.total.creditos[i] !== 0)
   if (conDatos.length < g.meses.length) {
@@ -1396,19 +1600,18 @@ function hojaDeGastosBancarios(g: GastosBancarios, etiqueta: string): unknown[][
     f.push(["El total de abajo NO es el del ejercicio completo."])
   }
   f.push([])
-  f.push(["Totalizadora", "Concepto", ...g.meses, "TOTAL", "Movimientos"])
+  f.push(["Totalizadora", "Concepto", ...g.meses, "TOTAL (neto)", "Devoluciones", "Movimientos"])
 
   const fila = (x: FilaConceptoPorMes, esTotal = false) => {
     const n = f.length + 1
-    const primera = 3                                    // columna C: el primer mes
-    const ultima = String.fromCharCode(66 + g.meses.length)   // la del ultimo mes
+    const ultima = String.fromCharCode(66 + g.meses.length)   // la del ultimo mes (C es el primero)
     f.push([
       esTotal ? "" : x.totalizadora, x.concepto,
-      ...x.debitos.map(v => money(v)),
-      conFormula(`SUM(C${n}:${ultima}${n})`, money(x.totalDebitos)),
+      ...x.debitos.map((v, i) => money(v - x.creditos[i])),
+      conFormula(`SUM(C${n}:${ultima}${n})`, money(x.totalDebitos - x.totalCreditos)),
+      x.totalCreditos ? money(x.totalCreditos) : "",
       x.movimientos,
     ])
-    void primera
   }
 
   for (const t of TOTALIZADORAS_BANCARIAS) {
@@ -1444,7 +1647,7 @@ function hojaDeGastosBancarios(g: GastosBancarios, etiqueta: string): unknown[][
  * computable como pago a cuenta de Ganancias se calcula con FÓRMULA sobre los porcentajes de la
  * solapa, así si el contador usa otro porcentaje lo cambia en una celda.
  */
-function hojaDeImpuestoCheque(c: ImpuestoCheque, etiqueta: string): unknown[][] {
+function hojaDeImpuestoCheque(c: ImpuestoCheque, etiqueta: string, control?: ControlCheque): unknown[][] {
   const f: unknown[][] = []
   f.push([`IMPUESTO A LOS DEBITOS Y CREDITOS BANCARIOS (Ley 25.413) — ejercicio ${etiqueta}`])
   f.push(["Sale del extracto: cada debito del impuesto es un movimiento propio del banco."])
@@ -1477,6 +1680,21 @@ function hojaDeImpuestoCheque(c: ImpuestoCheque, etiqueta: string): unknown[][] 
   f.push(["MSA computa el 100% por su categoria de empresa; el resto, 33% / 20% (Decreto 409/2018). Se cambia en la celda."])
   if (c.mesesSinExtracto.length > 0) {
     f.push([`ATENCION: ${c.mesesSinExtracto.length} mes(es) sin extracto en la app (${c.mesesSinExtracto.join(", ")}): el impuesto de esos meses NO esta en este total.`])
+  }
+  // 🧮 A-FEAT-1388 — el mismo impuesto llega por tres caminos independientes: tienen que dar igual.
+  if (control) {
+    f.push([])
+    f.push(["CONTROL — EL MISMO IMPUESTO POR TRES CAMINOS (tienen que dar igual)"])
+    f.push(["Camino", "Importe", "Diferencia con este papel"])
+    const n0 = f.length + 1
+    control.caminos.forEach((x, i) => f.push([
+      x.camino,
+      x.importe ?? "sin dato: ese papel no esta en este Excel",
+      i === 0 || x.importe == null ? "" : conFormula(`B${n0 + i}-B${n0}`, x.diferencia ?? 0),
+    ]))
+    f.push([control.cuadra
+      ? "cuadra: los caminos que hay dan lo mismo"
+      : "NO CUADRA: alguno de los caminos tiene un movimiento que los otros no — mirar la diferencia"])
   }
   return f
 }
@@ -1533,6 +1751,7 @@ const COLS_ASIENTOS: Columna[] = [
   { ancho: 8 },                     // Moneda
   { ancho: 10, z: COEFICIENTE },    // Tipo de cambio
   { ancho: 16, z: MONEDA },         // Total en moneda original
+  { ancho: 70 },                    // Control de partes (A-FEAT-1388)
 ]
 
 /**
@@ -1544,14 +1763,16 @@ export function hojaDeTemplates(t: TemplatesDelEjercicio): unknown[][] {
     "Fecha", "Concepto", "Proveedor", "Categoría", "Cuenta contable", "Nro cuenta",
     "Centro de costo", "Responsable", "Estado", "Débito", "Crédito",
   ]]
-  // Ordenado por responsable y, dentro de cada uno, por fecha — como «Templates por mes» (usuario 2026-10-24:
-  // «las 2 deben estar ordenadas por responsable»).
-  const ordenadas = [...t.detalle].sort((a, b) =>
-    ORDEN_TIPOS.indexOf(a.tipo ?? "sin clasificar") - ORDEN_TIPOS.indexOf(b.tipo ?? "sin clasificar")   // A-FEAT-1342
-    || Number(!a.responsable) - Number(!b.responsable)          // los sin responsable, al final
-    || (a.responsable || "").localeCompare(b.responsable || "", "es")
-    ||(a.fecha ?? "").localeCompare(b.fecha ?? "")
-    || a.concepto.localeCompare(b.concepto, "es"))
+  // Ordenado por tipo, responsable (la empresa del balance primero) y fecha: el orden lo pone
+  // `armarTemplatesDelEjercicio`, el mismo de «Templates por mes» (usuario 2026-10-24: «las 2 deben
+  // estar ordenadas por responsable»; 2026-10-27: «si es MSA primero MSA, luego MA, luego PAM»).
+  const ordenadas = t.detalle
+  /** Una cuota en el formato del libro diario: lo que salió en Débito, lo que entró en Crédito. */
+  const filaCuota = (c: CuotaTemplate) => [
+    c.fecha ?? "", c.concepto, c.proveedor, c.categ, c.cuenta_contable, c.nro_cuenta,
+    c.centro_costo, c.responsable, c.estado,
+    c.monto >= 0 ? money(c.monto) : "", c.monto < 0 ? money(-c.monto) : "",
+  ]
   // 🗂️ A-FEAT-1342: un bloque por tipo, con su subtotal.
   let tipoActual: string | null = null
   const cerrarTipo = () => {
@@ -1559,35 +1780,43 @@ export function hojaDeTemplates(t: TemplatesDelEjercicio): unknown[][] {
     const g = (t.porTipo ?? []).find(x => x.tipo === tipoActual)
     f.push([`Total ${NOMBRE_TIPO[tipoActual as TipoTemplate].split(" — ")[0]}`, "", "", "", "", "", "", "", "",
       money(g?.totalDebitos ?? 0), money(g?.totalCreditos ?? 0)])
-    f.push([])
+    // 💳 A-FEAT-1388 — *«¿muestran lo pagado o lo pendiente también?»*: las dos cosas, y se dice cuánto.
+    const pendiente = g?.totalPendiente ?? 0
+    f.push(["  de lo cual PAGADO", "", "", "", "", "", "", "", "", money((g?.totalNeto ?? 0) - pendiente)])
+    f.push(["  de lo cual PENDIENTE al cierre", "", "", "", "", "", "", "", "", money(pendiente)])
+    // 🔎 Con un punto en vez de una fila vacía, el filtro de Excel toma la tabla entera (usuario 27/10:
+    //    «puse puntos entre los subtotales para que anden los filtros»).
+    f.push(["."])
   }
   for (const c of ordenadas) {
     const tp = c.tipo ?? "sin clasificar"
     if (tp !== tipoActual) { cerrarTipo(); tipoActual = tp; f.push([NOMBRE_TIPO[tp]]) }
-    f.push([
-      c.fecha ?? "", c.concepto, c.proveedor, c.categ, c.cuenta_contable, c.nro_cuenta,
-      c.centro_costo, c.responsable, c.estado,
-      c.monto >= 0 ? money(c.monto) : "", c.monto < 0 ? money(-c.monto) : "",
-    ])
+    f.push(filaCuota(c))
   }
   cerrarTipo()
   f.push(["TOTAL (todos los tipos)", "", "", "", "", "", "", "", "", money(t.totalDebitos), money(t.totalCreditos)])
+  f.push(["Los saldos «PAGADO» y «PENDIENTE» van como DEBITO menos CREDITO. El estado de cada cuota esta en la columna Estado."])
   // 💳 A-BUG-1289: las impagas están en el total (vencieron en el ejercicio) y además son deuda.
   if (t.impagasAlCierre.length > 0) {
-    f.push([])
+    f.push(["."])
     f.push([`IMPAGAS AL CIERRE: ${t.impagasAlCierre.length} cuota(s) por ${money(t.totalImpagas)}. Estan en el total`])
     f.push(["de arriba (son gasto del ejercicio) y ademas figuran como deuda en «04 Cuentas a pagar»."])
   }
+  // 🛡️ A-FEAT-1388: los seguros con póliza ya son gasto por su factura. Se listan, no se suman.
+  if ((t.enFacturas ?? []).length > 0) {
+    f.push(["."])
+    f.push([`NO INCLUIDAS — ${t.enFacturas.length} cuota(s) de SEGUROS CON POLIZA por ${money(t.totalEnFacturas)}`])
+    f.push(["Ya estan en las facturas de la aseguradora (Compras) y en su cuenta corriente (papel 14):"])
+    f.push(["la cuota del template sirve para conciliar el debito del banco. Sumarla aca la contaria dos veces."])
+    for (const c of t.enFacturas) f.push(filaCuota(c))
+  }
   // 🛑 A-BUG-1289: las desactivadas NO son gasto, pero se listan — nada se descarta en silencio.
   if (t.noIncluidas.length > 0) {
-    f.push([])
+    f.push(["."])
     f.push([`NO INCLUIDAS — ${t.noIncluidas.length} cuota(s) DESACTIVADAS por ${money(t.totalNoIncluidas)}`])
     f.push(["No son gasto: se eligio la otra forma de pago (ej. en cuotas en vez de anual) y su importe"])
     f.push(["suele ser una estimacion. No estan en el total de arriba."])
-    for (const c of t.noIncluidas) {
-      f.push([c.fecha ?? "", c.concepto, c.proveedor, c.categ, c.cuenta_contable, c.nro_cuenta,
-        c.centro_costo, c.responsable, c.estado, money(c.monto), ""])
-    }
+    for (const c of t.noIncluidas) f.push(filaCuota(c))
   }
   return f
 }
@@ -1612,84 +1841,88 @@ export function hojaDeTemplates(t: TemplatesDelEjercicio): unknown[][] {
  * responsable con su subtotal. Los débitos y créditos abiertos siguen estando en la solapa
  * **Templates**, que es la del detalle.
  */
-function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
+export function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
   const f: unknown[][] = []
   f.push(["TEMPLATES POR MES — lo que no entra por subdiario y se informa aparte"])
   f.push(["Cada mes es UNA columna, con el SALDO del mes: debito menos credito."])
-  f.push(["Un importe negativo es una devolucion o un ajuste a favor."])
+  f.push(["Un importe negativo es plata que ENTRO: un ingreso, un rescate o una devolucion del banco."])
+  f.push(["Incluye lo PAGADO y lo PENDIENTE al cierre: abajo, en el CONTROL, cuanto es cada uno."])
   f.push(["Las cuotas se cortan por FECHA DE PAGO (o estimada si no hay), no por subdiario:"])
   f.push(["un template no tiene factura de ARCA, asi que no tiene subdiario."])
-  f.push([])
-
-  f.push(["Responsable", "Categoría", ...t.columnas, "TOTAL", "Meses con movimiento"])
-
-  /** La última columna de meses, para las fórmulas de total por fila. */
-  const ultima = String.fromCharCode(67 + t.columnas.length - 1)   // C es el primer mes
-
-  const filaDe = (x: { responsable: string; categ: string; neto: number[]; totalNeto: number }) => {
-    const n = f.length + 1
-    f.push([
-      x.responsable, x.categ,
-      ...x.neto.map(v => money(v)),
-      conFormula(`SUM(C${n}:${ultima}${n})`, money(x.totalNeto)),
-      x.neto.filter(v => v !== 0).length,
-    ])
+  if ((t.enFacturas ?? []).length > 0) {
+    f.push([`No estan los SEGUROS CON POLIZA (${t.enFacturas.length} cuotas, ${money(t.totalEnFacturas)}): ya son gasto por la factura`])
+    f.push(["de la aseguradora y estan en su cuenta corriente (papel 14). Su detalle, al final de la solapa Templates."])
   }
+  f.push(["."])
 
   /**
-   * 🗂️ A-FEAT-1342: primero el TIPO (egresos, ingresos, distribuciones, financiero…), adentro cada
-   * responsable con su subtotal. El total de cada tipo suma sus responsables; el del ejercicio, los tipos.
+   * 🗂️ A-FEAT-1388: la columna **Agrupadora** (la totalizadora del plan de cuentas) para poder filtrar
+   * por ella — usuario 27/10: *«mejorar orden, agrupadoras»*. Por eso los meses arrancan en la D.
+   */
+  f.push(["Responsable", "Agrupadora", "Categoría", ...t.columnas, "TOTAL", "Meses con movimiento"])
+
+  /** La letra de la columna del mes `j` (0 = el primero, en la D). */
+  const colMes = (j: number) => String.fromCharCode(68 + j)
+  /** La última columna de meses, para las fórmulas de total por fila. */
+  const ultima = colMes(t.columnas.length - 1)
+  const colTotal = colMes(t.columnas.length)
+  const sumaFilas = (filas: number[], j: number) => filas.map(r => `${colMes(j)}${r}`).join("+") || "0"
+
+  const filaDe = (x: { responsable: string; agrupadora: string; categ: string; neto: number[]; totalNeto: number }) => {
+    const n = f.length + 1
+    f.push([
+      x.responsable, x.agrupadora, x.categ,
+      ...x.neto.map(v => money(v)),
+      conFormula(`SUM(D${n}:${ultima}${n})`, money(x.totalNeto)),
+      x.neto.filter(v => v !== 0).length,
+    ])
+    return n
+  }
+  /** Un renglón de subtotal que suma OTROS renglones (no un rango: adentro hay subtotales). */
+  const filaSuma = (etiqueta: [string, string], filas: number[], neto: number[], totalNeto: number) => {
+    const n = f.length + 1
+    f.push([
+      etiqueta[0], etiqueta[1], "",
+      ...t.columnas.map((_, j) => conFormula(sumaFilas(filas, j), money(neto[j]))),
+      conFormula(`SUM(D${n}:${ultima}${n})`, money(totalNeto)),
+      "",
+    ])
+    return n
+  }
+  const sumarNeto = (xs: { neto: number[] }[]) => t.columnas.map((_, j) => xs.reduce((s, x) => s + x.neto[j], 0))
+  const sumarTotal = (xs: { totalNeto: number }[]) => xs.reduce((s, x) => s + x.totalNeto, 0)
+
+  /**
+   * 🗂️ A-FEAT-1342 + A-FEAT-1388: primero el TIPO (egresos, ingresos, distribuciones, financiero…),
+   * adentro cada RESPONSABLE (la empresa del balance primero) y, adentro, cada AGRUPADORA del plan con
+   * su subtotal (sólo si tiene más de una cuenta). El total de cada responsable suma sus agrupadoras;
+   * el del tipo, sus responsables; el del ejercicio, los tipos. El orden ya viene de `armarTemplatesDelEjercicio`.
    */
   const filasTotalTipo: number[] = []
-  const totalesTipo: number[][] = []
   for (const tp of ORDEN_TIPOS) {
     const delTipo = t.porMes.filter(x => x.tipo === tp)
     if (delTipo.length === 0) continue
     f.push([NOMBRE_TIPO[tp]])
-    const filasSubtotal: number[] = []
+    const filasResponsable: number[] = []
     for (const r of [...new Set(delTipo.map(x => x.responsable))]) {
       const dela = delTipo.filter(x => x.responsable === r)
-      const desde = f.length + 2                  // la primera fila de este responsable
-      dela.forEach(filaDe)
-      const hasta = f.length
-      const n = f.length + 1
-      filasSubtotal.push(n)
-      f.push([
-        `Total ${r}`, "",
-        ...t.columnas.map((_, j) => conFormula(
-          `SUM(${String.fromCharCode(67 + j)}${desde}:${String.fromCharCode(67 + j)}${hasta})`,
-          money(dela.reduce((s, x) => s + x.neto[j], 0)))),
-        conFormula(`SUM(C${n}:${ultima}${n})`, money(dela.reduce((s, x) => s + x.totalNeto, 0))),
-        "",
-      ])
+      const filasDelResponsable: number[] = []
+      for (const a of [...new Set(dela.map(x => x.agrupadora ?? SIN_AGRUPADORA))]) {
+        const delGrupo = dela.filter(x => (x.agrupadora ?? SIN_AGRUPADORA) === a)
+        const filas = delGrupo.map(x => filaDe({ ...x, agrupadora: x.agrupadora ?? SIN_AGRUPADORA }))
+        filasDelResponsable.push(filas.length === 1
+          ? filas[0]
+          : filaSuma([`Subtotal ${a}`, ""], filas, sumarNeto(delGrupo), sumarTotal(delGrupo)))
+      }
+      filasResponsable.push(filaSuma([`Total ${r}`, ""], filasDelResponsable, sumarNeto(dela), sumarTotal(dela)))
     }
-    const nT = f.length + 1
-    filasTotalTipo.push(nT)
-    const porCol = t.columnas.map((_, j) => delTipo.reduce((s, x) => s + x.neto[j], 0))
-    totalesTipo.push(porCol)
-    f.push([
-      `TOTAL ${NOMBRE_TIPO[tp].split(" — ")[0]}`, "",
-      ...t.columnas.map((_, j) => {
-        const col = String.fromCharCode(67 + j)
-        return conFormula(filasSubtotal.map(r => `${col}${r}`).join("+") || "0", money(porCol[j]))
-      }),
-      conFormula(`SUM(C${nT}:${ultima}${nT})`, money(delTipo.reduce((s, x) => s + x.totalNeto, 0))),
-      "",
-    ])
-    f.push([])
+    filasTotalTipo.push(filaSuma([`TOTAL ${NOMBRE_TIPO[tp].split(" — ")[0]}`, ""], filasResponsable,
+      sumarNeto(delTipo), sumarTotal(delTipo)))
+    f.push(["."])
   }
 
-  const nTot = f.length + 1
-  f.push([
-    "TOTAL DEL EJERCICIO (todos los tipos)", "",
-    ...t.columnas.map((_, j) => {
-      const col = String.fromCharCode(67 + j)
-      return conFormula(filasTotalTipo.map(r => `${col}${r}`).join("+") || "0",
-        money(t.porMes.reduce((s, x) => s + x.neto[j], 0)))
-    }),
-    conFormula(`SUM(C${nTot}:${ultima}${nTot})`, money(t.totalDebitos - t.totalCreditos)),
-    "",
-  ])
+  const nTot = filaSuma(["TOTAL DEL EJERCICIO (todos los tipos)", ""], filasTotalTipo,
+    sumarNeto(t.porMes), t.totalDebitos - t.totalCreditos)
 
   /**
    * 🧮 El control: el saldo total tiene que ser **débitos − créditos** de la solapa del detalle. Es el
@@ -1700,7 +1933,7 @@ function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
   f.push(["", "Total creditos", money(t.totalCreditos)])
   f.push(["", "= Saldo", money(t.totalDebitos - t.totalCreditos)])
   const nC = f.length + 1
-  f.push(["", "Suma de esta solapa", conFormula(`${String.fromCharCode(67 + t.columnas.length)}${nTot}`, money(t.totalDebitos - t.totalCreditos))])
+  f.push(["", "Suma de esta solapa", conFormula(`${colTotal}${nTot}`, money(t.totalDebitos - t.totalCreditos))])
   f.push(["", "Diferencia (tiene que dar 0)",
     conFormula(`C${nC - 1}-C${nC}`, 0)])
   // 🧮 Y por tipo: la suma de los grupos tiene que dar el total (ninguna cuota afuera ni dos veces).
@@ -1708,6 +1941,13 @@ function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
   const difTipos = Math.round((t.totalDebitos - t.totalCreditos - sumaTipos) * 100) / 100
   f.push(["", "Suma de los tipos", money(sumaTipos)])
   f.push(["", "Diferencia por tipo (tiene que dar 0)", money(difTipos), difTipos === 0 ? "cuadra" : "NO CUADRA"])
+
+  // 💳 A-FEAT-1388 — *«¿muestran lo pagado o lo pendiente también?»*: las dos cosas, por tipo.
+  f.push([])
+  f.push(["PAGADO Y PENDIENTE", "Tipo", "Saldo del ejercicio", "Pagado", "Pendiente al cierre"])
+  for (const g of t.porTipo ?? []) {
+    f.push(["", NOMBRE_TIPO[g.tipo].split(" — ")[0], money(g.totalNeto), money(g.totalNeto - g.totalPendiente), money(g.totalPendiente)])
+  }
 
   if (t.sinCategoria.length > 0 || t.sinFecha.length > 0) {
     f.push([])
@@ -2012,14 +2252,19 @@ export function armarWorkbook(
       `${empresa} — pendientes a revisar del ejercicio ${libro.ejercicio.etiqueta}`), COLS_PENDIENTES)
   }
   hoja(wb, "Control", hojaDeControl(libro, lecturas))
-  hoja(wb, "Compras", hojaDeAsientos(libro.compras), COLS_ASIENTOS)
-  hoja(wb, "Ventas", hojaDeAsientos(libro.ventas), COLS_ASIENTOS)
+  // 📅 Los 12 meses en una línea cada uno, pegado al Control: es otro control (contra lo presentado a ARCA).
+  hoja(wb, "Resumen 12 meses", hojaResumenMensual(libro), COLS_RESUMEN_MENSUAL)
+  // 🛑 A-FEAT-1388: los comprobantes cuyas partes no suman su total, en rojo y con la marca (los mismos del Control).
+  hoja(wb, "Compras", hojaDeAsientos(libro.compras, libro.controles.compras.descuadres), COLS_ASIENTOS)
+  hoja(wb, "Ventas", hojaDeAsientos(libro.ventas, libro.controles.ventas.descuadres), COLS_ASIENTOS)
   // 📗 La apertura por cuenta contable — el formato que el usuario ya usaba (A-FEAT-1187).
   //    Van pegadas a su listado: primero el detalle, después el resumen que se le manda al contador.
   hoja(wb, "Compras por cuenta", hojaPorCuenta(armarLibroPorCuenta(libro.compras),
-    `LIBRO DIARIO MENSUAL (Compras) — ejercicio ${libro.ejercicio.etiqueta}`), COLS_POR_CUENTA)
+    `LIBRO DIARIO MENSUAL (Compras) — ejercicio ${libro.ejercicio.etiqueta}`,
+    { asientos: libro.compras, descuadres: libro.controles.compras.descuadres }), COLS_POR_CUENTA)
   hoja(wb, "Ventas por cuenta", hojaPorCuenta(armarLibroPorCuenta(libro.ventas, TIPOS_SIN_CREDITO_VENTAS),
-    `LIBRO DIARIO MENSUAL (Ventas) — ejercicio ${libro.ejercicio.etiqueta}`), COLS_POR_CUENTA)
+    `LIBRO DIARIO MENSUAL (Ventas) — ejercicio ${libro.ejercicio.etiqueta}`,
+    { asientos: libro.ventas, descuadres: libro.controles.ventas.descuadres }), COLS_POR_CUENTA)
   /**
    * 🧾 **El papel 05 es la provisión de FACTURAS (compras); la de COBROS (ventas) es del papel 03.**
    *
@@ -2087,10 +2332,15 @@ export function armarWorkbook(
   if (saldosAnteriores && (saldosAnteriores.vigentes.length > 0 || saldosAnteriores.anulados.length > 0)) {
     const filas = hojaDeSaldosAnteriores(saldosAnteriores, libro.ejercicio.etiqueta)
     if (templates) {
+      /**
+       * ⚠️ cambió 2026-10-27 (A-FEAT-1388): sumaba TODOS los tipos — FCI, plazo fijo, retiros — y lo
+       * llamaba gasto. El gasto son sólo los EGRESOS.
+       */
+      const gastoTemplates = (templates.porTipo ?? []).find(g => g.tipo === "egreso")?.totalNeto ?? 0
       filas.push([])
-      filas.push(["GASTO DE TEMPLATES DEL EJERCICIO", "cuotas (solapa Templates, neto)", money(templates.totalDebitos - templates.totalCreditos)])
+      filas.push(["GASTO DE TEMPLATES DEL EJERCICIO", "cuotas de EGRESOS (solapa Templates, neto)", money(gastoTemplates)])
       filas.push(["", "+ saldos del ejercicio anterior", saldosAnteriores.total])
-      filas.push(["", "= total", money(templates.totalDebitos - templates.totalCreditos + saldosAnteriores.total)])
+      filas.push(["", "= total", money(gastoTemplates + saldosAnteriores.total)])
     }
     hoja(wb, "Saldos ej. anterior", filas)
   }
@@ -2117,7 +2367,9 @@ export function armarWorkbook(
       hojaDeGastosBancarios(bancarios.gastos, libro.ejercicio.etiqueta))
     if (bancarios.impuestoCheque) {
       hoja(wb, "08.1 Impuesto al cheque",
-        hojaDeImpuestoCheque(bancarios.impuestoCheque, libro.ejercicio.etiqueta))
+        hojaDeImpuestoCheque(bancarios.impuestoCheque, libro.ejercicio.etiqueta,
+          controlarCheque(bancarios.impuestoCheque.total.total, chequeEnPapel08(bancarios.gastos),
+            chequeEnTemplates(templates, empresa), empresa)))
     }
     hoja(wb, "09 Retiros y aportes",
       hojaDeRetiros(bancarios.retiros, libro.ejercicio.etiqueta))

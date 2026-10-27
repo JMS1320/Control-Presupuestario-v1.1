@@ -498,10 +498,10 @@ export function armarIndice(d: DatosDelIndice): IndiceDelBalance {
   const cc = d.cuentasCorrientes
   const faltaCC: string[] = []
   if (cc) {
-    const sinInicio = cc.cuentas.filter(c => c.saldoInicio == null)
+    const sinInicio = cc.cuentas.filter(c => c.inicioSinDato)
     if (sinInicio.length > 0) {
       faltaCC.push(`el SALDO AL INICIO de ${sinInicio.map(c => c.contraparte.clave).join(", ")} `
-        + "(no está en el sistema: lo declara el usuario)")
+        + "(va en 0 por default: se carga en la pantalla del balance antes de bajar el Excel)")
     }
     if (cc.sinTratar.length > 0) {
       faltaCC.push(`${cc.sinTratar.length} marca(s) del extracto sin encuadrar por ${pesos(cc.totalSinTratar)} `

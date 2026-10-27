@@ -17,8 +17,11 @@
  * nuevo. **Diciembre está en las dos** y no coincide, porque *«sin querer entró 2 veces»* → `A-DAT-61`.
  * El control lo detecta y lo muestra; **no se elige una fuente en silencio**.
  *
- * ## ⚠️ Sólo LEE
- * Esta pantalla no escribe una sola fila. Genera un archivo y nada más.
+ * ## ⚠️ Sólo LEE el sistema
+ * No escribe en ninguna tabla del sistema: genera un archivo. Lo único que guarda es lo que el usuario
+ * escribe en sus casillas —precios de hacienda, cuadre de granos, cuotapartes, saldos de inicio de las
+ * cuentas corrientes— en `balance_datos_usuario` (A-FEAT-1337, A-FEAT-1388).
+ * ⚠️ cambió 2026-10-27: hasta acá decía «no escribe una sola fila», y ya no era cierto desde el 24/10.
  */
 import { PendientesBalance } from "./pendientes-balance"
 import { SaldosEjercicioAnterior } from "./saldos-ejercicio-anterior"
@@ -64,9 +67,12 @@ import {
   armarSueldosDelEjercicio, type SueldosDelEjercicio, type PeriodoDeSueldo,
 } from "@/lib/balance/sueldos-balance"
 import {
-  armarCuentasCorrientes, type PapelDeCuentasCorrientes,
+  armarCuentasCorrientes, aplicarSaldosInicio, abrirDesglosar, CONTRAPARTES_DEL_BALANCE,
+  type PapelDeCuentasCorrientes, type ConsumoTarjeta,
   type CompraParaCC, type VentaParaCC, type MovimientoParaCC,
 } from "@/lib/balance/cuentas-corrientes"
+import { useDatosDelBalance, textoEstadoGuardado, leerNumero } from "@/lib/balance/datos-usuario"
+import { controlarCheque, chequeEnPapel08, chequeEnTemplates } from "@/lib/balance/control-cheque"
 import { aseguradoraAlCierre } from "@/lib/balance/seguros-al-cierre"
 import { esDeLaAseguradora } from "@/lib/polizas/control-debitos"
 // 🕐 La fecha de hoy en hora argentina. Vive en el módulo de cotizaciones porque ahí nació el bug
@@ -117,6 +123,16 @@ export function PapelesDeBalance() {
   const [sueldos, setSueldos] = useState<SueldosDelEjercicio | null>(null)
   /** 🧾 Las cuentas corrientes con su saldo al cierre (A-FEAT-1218). */
   const [cuentasCorrientes, setCuentasCorrientes] = useState<PapelDeCuentasCorrientes | null>(null)
+  /**
+   * ✍️ A-FEAT-1388 — el saldo de inicio de cada cuenta corriente, escrito por el usuario y guardado al
+   * escribirlo (como los precios de hacienda). Vacío = 0 marcado «sin dato». Se aplica sin volver a
+   * armar el libro: el papel 14 y el Excel lo toman al instante.
+   */
+  const saldosCC = useDatosDelBalance(empresa.id, anioCierre, "cc.saldo-inicio")
+  const cuentasCorrientesConInicio = useMemo(() => cuentasCorrientes
+    ? aplicarSaldosInicio(cuentasCorrientes, Object.fromEntries(
+        CONTRAPARTES_DEL_BALANCE.map(c => [c.clave, leerNumero(saldosCC.valores[c.clave])])))
+    : null, [cuentasCorrientes, saldosCC.valores])
   /**
    * 📒 «Asientos Contables» (A-FEAT-1318): las facturas no informadas en ARCA que no van al subdiario.
    * `null` = no se pudo leer (la solapa no sale, y se avisa); `[]` = se leyó y no hay.
@@ -522,7 +538,7 @@ export function PapelesDeBalance() {
           const movsCC = leidoCC.data
           anotar("Movimientos de cuentas corrientes", leidoCC)
 
-          const armadoCC = armarCuentasCorrientes(
+          let armadoCC = armarCuentasCorrientes(
             comprasCC, ventasCC, (movsCC ?? []) as unknown as MovimientoParaCC[])
 
           // 🛡️ A-FEAT-1385 — la cuenta corriente con la aseguradora al cierre (las pólizas son de MSA).
@@ -552,6 +568,36 @@ export function PapelesDeBalance() {
               }
             } catch { /* la cuenta corriente de seguros no frena el libro */ }
           }
+          /**
+           * 💳 A-FEAT-1388 — «Desglosar»: los pagos de la Visa Business de MSA abiertos con los consumos
+           * del resumen que vence ese día, cada uno con su marca. Sólo lee. Si falla, «Desglosar» queda
+           * entero en «sin tratar», como antes, y se avisa.
+           */
+          try {
+            const [leidoTj, polTj] = await Promise.all([
+              traerTodo((d, h) => supabase.schema("msa").from("tarjeta_visa_business")
+                .select("fecha_vencimiento, descripcion, categ, contable, debitos, creditos, debitos_usd, template_id", { count: "exact" })
+                .eq("tipo_fila", "movimiento").gte("fecha_vencimiento", `${meses[0]}-01`).lte("fecha_vencimiento", finEj)
+                .order("id").range(d, h)),
+              supabase.from("polizas_seguro").select("template_id").not("template_id", "is", null),
+            ])
+            if (leidoTj.error) throw new Error(leidoTj.error.message)
+            anotar("Consumos de la tarjeta (para abrir «Desglosar»)", leidoTj)
+            const tplConPoliza = new Set(((polTj.data ?? []) as Array<{ template_id: string | null }>).map(p => p.template_id))
+            const consumos: ConsumoTarjeta[] = ((leidoTj.data ?? []) as Array<Record<string, unknown>>).map(x => ({
+              vencimiento: (x.fecha_vencimiento as string | null) ?? null,
+              descripcion: x.descripcion as string | null, categ: x.categ as string | null, contable: x.contable as string | null,
+              debitos: Number(x.debitos ?? 0), creditos: Number(x.creditos ?? 0), debitosUsd: Number(x.debitos_usd ?? 0),
+              conPoliza: !!x.template_id && tplConPoliza.has(x.template_id as string),
+            }))
+            armadoCC = abrirDesglosar(armadoCC, (movsCC ?? []) as unknown as MovimientoParaCC[], consumos)
+            const sinAbrir = armadoCC.desgloseTarjeta?.sinAbrir ?? 0
+            if (sinAbrir !== 0) {
+              toast.warning(`«Desglosar»: ${fmt(sinAbrir)} de pagos de la tarjeta no se pudieron abrir con su resumen. Está en la solapa 14.`)
+            }
+          } catch {
+            toast.warning("No se pudo abrir «Desglosar» con los consumos de la tarjeta: queda entero en «sin tratar».")
+          }
           setCuentasCorrientes(armadoCC)
 
           // 🛑 Lo que falta encuadrar se ve: es plata marcada que todavía no es de nadie.
@@ -566,10 +612,23 @@ export function PapelesDeBalance() {
       }
 
       // 🗂️ A-FEAT-1342: el tipo de cada cuota (egreso, ingreso, financiero…). Respaldo: el del plan.
-      const { data: planTipos } = await supabase.from("cuentas_contables").select("categ, tipo")
-      const tipoDeCateg = Object.fromEntries(((planTipos ?? []) as Array<{ categ: string; tipo: string | null }>)
-        .map(x => [x.categ, x.tipo])) as Record<string, TipoCuenta | null>
-      setTemplates(armarTemplatesDelEjercicio((cuotas.data ?? []).map(f => desdeCuota(f, tipoDeCateg)), ej))
+      // A-FEAT-1388: y la agrupadora (totalizadora) y el número, para ordenar Templates por mes como el plan.
+      const { data: planTipos } = await supabase.from("cuentas_contables")
+        .select("categ, tipo, nro_cuenta, nombre_totalizadora")
+      const plan = (planTipos ?? []) as Array<{ categ: string; tipo: string | null; nro_cuenta: string | null; nombre_totalizadora: string | null }>
+      const tipoDeCateg = Object.fromEntries(plan.map(x => [x.categ, x.tipo])) as Record<string, TipoCuenta | null>
+      /**
+       * 🛡️ A-FEAT-1388: los templates vinculados a una póliza — sus cuotas ya son gasto por la factura
+       * de la aseguradora. Si la lectura falla, salen como antes (dentro del gasto) y se avisa.
+       */
+      const { data: conPoliza, error: errPoliza } = await supabase.from("polizas_seguro")
+        .select("template_id").not("template_id", "is", null)
+      if (errPoliza) toast.warning("No se pudieron leer las pólizas: los seguros quedan dentro de Templates (pueden estar contados dos veces).")
+      setTemplates(armarTemplatesDelEjercicio((cuotas.data ?? []).map(f => desdeCuota(f, tipoDeCateg)), ej, {
+        empresa: empresa.id,
+        plan,
+        templatesConPoliza: ((conPoliza ?? []) as Array<{ template_id: string | null }>).map(p => p.template_id!).filter(Boolean),
+      }))
 
       if (armado.compras.length === 0 && armado.ventas.length === 0) {
         toast.warning(`No hay comprobantes en los 12 subdiarios del ejercicio ${ej.etiqueta}.`)
@@ -658,14 +717,16 @@ export function PapelesDeBalance() {
                 { ...(cuentas ?? {}), ...(valores ?? {}) },
                 bancarios ?? undefined,
                 sueldos ?? undefined,
-                cuentasCorrientes ?? undefined,
+                cuentasCorrientesConInicio ?? undefined,
                 pendientes,
                 saldosDelEjercicioAnterior(ajustes, empresa.id, anioCierre),
                 asientosContables ?? undefined,
                 lecturas ?? undefined,
               )}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Bajar el Excel{hacienda ? " completo" : " — sin el sector productivo"}
+              {/* A-FEAT-1388: decía «sin el sector productivo» y confundía cuando los precios ya se
+                  veían cargados — lo que falta es traer el stock, y eso es lo que se dice. */}
+              Bajar el Excel{hacienda ? " completo" : " — sin hacienda ni insumos (falta «Traer stock y precios»)"}
             </Button>
           )}
         </div>
@@ -693,7 +754,8 @@ export function PapelesDeBalance() {
         <p className="text-xs text-muted-foreground flex items-start gap-1">
           <Info className="h-3 w-3 mt-0.5 shrink-0" />
           El período se corta por <strong className="mx-1">el subdiario en el que entró</strong> cada
-          comprobante, no por la fecha de la factura. Esta pantalla sólo lee: no modifica nada.
+          comprobante, no por la fecha de la factura. Esta pantalla no modifica nada del sistema: sólo
+          guarda lo que escribís en sus casillas (precios, saldos de inicio) para este balance.
         </p>
 
         {/* 🧮 A-FEAT-1343: ¿llegó todo de la base? Si no, nada de lo de abajo es confiable. */}
@@ -861,6 +923,10 @@ export function PapelesDeBalance() {
                     {templates.noIncluidas.length > 0 && (
                       <span> · {templates.noIncluidas.length} desactivada(s) NO incluidas (${fmt(templates.totalNoIncluidas)})</span>
                     )}
+                    {/* 🛡️ A-FEAT-1388: los seguros con póliza ya son gasto por la factura de la aseguradora. */}
+                    {templates.enFacturas.length > 0 && (
+                      <span> · {templates.enFacturas.length} de seguros con póliza fuera (${fmt(templates.totalEnFacturas)}): ya están en sus facturas y en la cuenta corriente</span>
+                    )}
                     {saldosDelEjercicioAnterior(ajustes, empresa.id, anioCierre).total > 0 && (
                       <span> · más <strong>${fmt(saldosDelEjercicioAnterior(ajustes, empresa.id, anioCierre).total)}</strong> de saldos del ejercicio anterior</span>
                     )}
@@ -887,6 +953,60 @@ export function PapelesDeBalance() {
               )}
             </div>
 
+            {/* ✍️ A-FEAT-1388 — papel 14: el saldo de INICIO de cada cuenta corriente, editable antes de
+                bajar el Excel. Usuario 27/10: «poner saldo de inicio cero y que dé lo que dé, pero luego
+                podremos modificar desde antes de exportar». */}
+            {cuentasCorrientesConInicio && (
+              <div className="rounded border p-3 text-xs space-y-2">
+                <div className="font-semibold text-sm">🧾 Papel 14 — saldo de INICIO de cada cuenta corriente</div>
+                <p className="text-muted-foreground">
+                  Vacío = 0, marcado «sin dato»: el saldo al cierre sale igual. Positivo = le debíamos;
+                  negativo = teníamos a cobrar. <span className="italic">{textoEstadoGuardado(saldosCC.estado, saldosCC.error)}</span>
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead><tr className="border-b text-gray-600">
+                      <th className="text-left">Contraparte</th>
+                      <th className="text-right">Saldo al inicio</th>
+                      <th className="text-right">Movimiento del ejercicio</th>
+                      <th className="text-right">Saldo al cierre</th>
+                    </tr></thead>
+                    <tbody>
+                      {cuentasCorrientesConInicio.cuentas.map(c => (
+                        <tr key={c.contraparte.clave}>
+                          <td>{c.contraparte.nombre}</td>
+                          <td className="text-right">
+                            {/* § 💰 texto, no `number`: se lee con coma decimal y punto de miles. */}
+                            <input type="text" placeholder="0,00 (sin dato)"
+                              className="border rounded px-1 py-0.5 w-32 text-right"
+                              value={saldosCC.valores[c.contraparte.clave] ?? ""}
+                              onChange={e => saldosCC.cambiar(c.contraparte.clave, e.target.value)} />
+                          </td>
+                          <td className="text-right font-mono">{fmt(c.resumen.saldo)}</td>
+                          <td className={`text-right font-mono ${c.inicioSinDato ? "text-amber-700" : ""}`}>
+                            {fmt(c.saldoAlCierre)}{c.inicioSinDato && " · sin dato de inicio"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {/* 💳 A-FEAT-1388 — «Desglosar» abierto con los consumos de la tarjeta, con su control. */}
+                {cuentasCorrientesConInicio.desgloseTarjeta && (() => {
+                  const dt = cuentasCorrientesConInicio.desgloseTarjeta
+                  const abierto = dt.porDestino.reduce((s, d) => s + d.importe, 0)
+                  const cuadra = Math.abs(dt.total - abierto - dt.sinAbrir) < 0.01 && dt.sinAbrir === 0
+                  return (
+                    <div className={cuadra ? "text-emerald-700" : "text-amber-800"}>
+                      {cuadra ? "✓ " : "⚠️ "}«Desglosar» (pagos de la tarjeta, ${fmt(dt.total)}) abierto con sus consumos:{" "}
+                      {dt.porDestino.map(d => `${d.poliza ? "🛡️ pólizas " : ""}${d.destino} $${fmt(d.importe)}`).join(" · ")}
+                      {dt.sinAbrir !== 0 && ` · sin abrir $${fmt(dt.sinAbrir)}`}
+                    </div>
+                  )
+                })()}
+              </div>
+            )}
+
             {/**
               * ⚠️ **Lo que falta si no se trae el sector productivo.** El Excel arma sus solapas con
               * lo que haya en memoria: sin apretar «Traer stock y precios», salen 6 y no 12 —
@@ -895,9 +1015,10 @@ export function PapelesDeBalance() {
               */}
             {!hacienda && (
               <p className="text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded px-2 py-1.5">
-                El Excel te va a salir <strong>sólo con el libro diario</strong> (compras, ventas,
-                provisión y templates). Para que traiga también <strong>hacienda, insumos, granos y
-                sementeras</strong>, apretá primero «Traer stock y precios» acá abajo.
+                El Excel te va a salir <strong>sin hacienda, insumos, granos ni sementeras</strong>.
+                Para que los traiga, apretá primero «Traer stock y precios» acá abajo —{" "}
+                <strong>aunque veas tus precios cargados</strong>: esos se guardan solos, pero el stock
+                hay que traerlo cada vez.
               </p>
             )}
 
@@ -907,6 +1028,9 @@ export function PapelesDeBalance() {
 
             {bancarios?.impuestoCheque && (() => {
               const ic = bancarios.impuestoCheque
+              // 🧮 A-FEAT-1388: el mismo impuesto por tres caminos (08.1, 08 y Templates) — a la vista.
+              const ctl = controlarCheque(ic.total.total, chequeEnPapel08(bancarios.gastos),
+                chequeEnTemplates(templates, empresa.id), empresa.id)
               return (
                 <div className="rounded border p-3 text-xs space-y-2">
                   <div className="font-semibold text-sm">🧾 Impuesto al cheque (Ley 25.413) — total y desglosado</div>
@@ -941,6 +1065,11 @@ export function PapelesDeBalance() {
                   {ic.mesesSinExtracto.length > 0 && (
                     <div className="text-amber-800">⚠️ {ic.mesesSinExtracto.length} mes(es) sin extracto en la app ({ic.mesesSinExtracto.join(", ")}): su impuesto no está en el total.</div>
                   )}
+                  <div className={ctl.cuadra ? "text-emerald-700" : "text-red-700 font-semibold"}>
+                    {ctl.cuadra ? "✓ " : "⚠️ "}El mismo impuesto por tres caminos:{" "}
+                    {ctl.caminos.map(x => `${x.camino.split(" · ")[0]} ${x.importe == null ? "sin dato" : "$" + fmt(x.importe)}`).join(" · ")}
+                    {!ctl.cuadra && " — no dan igual: la diferencia está en la solapa 08.1."}
+                  </div>
                 </div>
               )
             })()}

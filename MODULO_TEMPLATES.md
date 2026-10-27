@@ -173,6 +173,13 @@ categ                VARCHAR(100)         -- override por cuota (multi-cuenta)
 tipo_movimiento      VARCHAR(20) DEFAULT 'egreso'  -- 'egreso' | 'ingreso' (bidireccional)
 ```
 
+> 🔑 **`tipo_movimiento` es el SENTIDO de la plata, y quien lea cuotas tiene que usarlo.** El `monto` va
+> siempre en positivo; si la cuota es `'ingreso'` (la conciliación lo pone cuando el movimiento del banco
+> es un crédito), ese importe **entró**. ⚠️ El export del balance lo ignoraba hasta el 2026-10-27: en
+> 25/26, 195 cuotas por $659,5 M (rescates de FCI, Promoción Galicia, devoluciones del banco) salían
+> como débito y 10 devoluciones de egresos sumaban como gasto → [A-FEAT-1388](PENDIENTES.md#a-feat-1388).
+> Desde ahí `lib/balance/templates-libro.ts` (`desdeCuota`) les pone signo negativo.
+
 ---
 
 ## 9. Migración BD requerida

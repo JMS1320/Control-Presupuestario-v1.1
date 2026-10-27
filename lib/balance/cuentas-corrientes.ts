@@ -28,6 +28,9 @@
  * > cosas en común, **debemos ir tratando cada cosa a la vez para no trabajar mal sobre otras que
  * > pueden tener otros detalles**. Pero iremos viendo cómo tratar esas otras.»*
  *
+ * ⚠️ cambió 2026-10-27 (A-FEAT-1388): `Desglosar` SÍ se abre, con los consumos de la tarjeta — ver
+ * `abrirDesglosar`. El resto de las etiquetas sigue igual.
+ *
  * 📌 Entonces `RET*`, `AP*`, `LIB`, `Desglosar` y cualquier otra etiqueta **no se reparten ni se
  * ignoran**: se devuelven en `sinTratar`, con su total, para que el papel las muestre. Es § 🧮 de
  * `CLAUDE.md` — *nada se descarta en silencio* — y además deja ver **cuánta plata falta encuadrar**.
@@ -154,11 +157,19 @@ export interface MovimientoParaCC {
 
 export interface CuentaCorrienteDelBalance {
   contraparte: ContraparteDelBalance
-  /** `null` = no se conoce. **No se asume cero** (§ 🎚️): se dice. */
-  saldoInicio: number | null
+  /**
+   * El saldo al inicio del ejercicio: el que cargó el usuario y, si no hay, **0 marcado «sin dato»**.
+   * ⚠️ cambió 2026-10-27 (A-FEAT-1388): hasta acá era `null` y el saldo al cierre quedaba vacío. Usuario,
+   * en el papel 14: *«poner saldo de inicio cero y que dé lo que dé, pero luego podremos modificar desde
+   * antes de exportar. Para todo este grupo»*. Sigue diciéndose que no se conoce — en `inicioSinDato` —,
+   * pero el papel ya da un número (§ 🎚️ default del dato real, siempre editable).
+   */
+  saldoInicio: number
+  /** `true` = nadie cargó el saldo de inicio: el 0 es un default, no un dato. */
+  inicioSinDato: boolean
   resumen: ResumenCC
-  /** `saldo inicio + lo del ejercicio`. `null` si no se conoce el inicio. */
-  saldoAlCierre: number | null
+  /** `saldo inicio + lo del ejercicio`. */
+  saldoAlCierre: number
   /** Cuántos comprobantes salieron del histórico, que es el tramo sin CUIT. */
   desdeHistorico: number
 }
@@ -180,9 +191,184 @@ export interface PapelDeCuentasCorrientes {
    * Lo agrega la pantalla del balance después de armar el papel; si no está, el papel sale igual.
    */
   aseguradoras?: import("./seguros-al-cierre").AseguradoraAlCierre[]
+  /**
+   * 💳 Los pagos marcados «Desglosar» abiertos con los consumos de la tarjeta (A-FEAT-1388). Lo agrega
+   * `abrirDesglosar`; si no está, «Desglosar» queda entero en `sinTratar`, como antes.
+   */
+  desgloseTarjeta?: DesgloseTarjeta
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// 💳 «DESGLOSAR» — el pago de la tarjeta abierto con su resumen (A-FEAT-1388, 2026-10-27)
+// ══════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Usuario 27/10, sobre el renglón «Desglosar» del papel 14 ($8.735.419,59): *«¿se puede ya tomar por
+ * lo menos lo de pólizas?»*. «Desglosar» es su marca para *«esto hay que repartirlo»*: en 25/26 son los
+ * 6 débitos del banco que pagan la **Visa Business de MSA** (feb–jun 2026). Y el reparto **ya está en
+ * los datos**: cada resumen trae sus consumos, y cada consumo su marca (`contable`). Medido el 27/10:
+ *
+ * | Destino | Importe |
+ * |---|---|
+ * | 🛡️ Pólizas — Seguro Chalet de MA (Chubb), marca RET 3 MA | $729.818,58 |
+ * | Otros por cuenta de MA (Orbith), marca RET 3 MA | $431.600,00 |
+ * | Gasto propio de MSA (sin marca de otra persona) | $7.574.001,01 |
+ * | **= los 6 pagos** | **$8.735.419,59** |
+ *
+ * 🔑 **Se abre con la marca de cada consumo, no con un criterio nuevo**: lo que él marcó para otra
+ * persona sigue «sin tratar» bajo ESA marca (RET 3 MA se trata aparte, por pedido suyo); lo que no
+ * tiene marca es gasto de MSA y sale de «sin tratar». Las pólizas se separan adentro de cada destino.
+ * 🧮 Control: los consumos (más lo pagado en dólares) tienen que dar el pago del banco. Si un pago no
+ * encuentra su resumen, queda entero como «Desglosar», a la vista.
+ */
+export const ETIQUETA_DESGLOSAR = "Desglosar"
+/** El destino de lo que no tiene marca de otra persona. */
+export const DESTINO_PROPIO = "Gasto propio de MSA (sin marca de otra persona)"
+
+/** Un consumo del resumen de la tarjeta (fila `movimiento`). */
+export interface ConsumoTarjeta {
+  /** El vencimiento del resumen: el día en que el banco lo paga. */
+  vencimiento: string | null
+  descripcion?: string | null
+  categ?: string | null
+  /** La marca del usuario en la tarjeta (`RET 3 MA`, `CTA JMS`…). Vacía = de MSA. */
+  contable?: string | null
+  debitos?: number | null
+  creditos?: number | null
+  /** Consumo en dólares: los pesos van en el pago del banco, no en la fila. */
+  debitosUsd?: number | null
+  /** Su template está vinculado a una póliza (`polizas_seguro.template_id`). */
+  conPoliza?: boolean
+}
+
+export interface ParteDesglose {
+  destino: string
+  /** 🛡️ Es un seguro (póliza): lo que el usuario pidió tomar primero. */
+  poliza: boolean
+  importe: number
+  consumos: number
+  /** Qué consumos son, para leerlo sin abrir la tarjeta. */
+  ejemplos: string[]
+}
+
+export interface PagoDesglosado {
+  fecha: string
+  importe: number
+  /** Cuántos débitos del banco son (el de febrero vino en dos: pesos y dólares). */
+  debitos: number
+  partes: ParteDesglose[]
+  /** `false` = no se encontró el resumen, o sus consumos no dan el pago. */
+  cierra: boolean
+  /** Pago − consumos. 0 si cierra. */
+  diferencia: number
+}
+
+export interface DesgloseTarjeta {
+  pagos: PagoDesglosado[]
+  /** Lo mismo, sumado por destino (y póliza / no póliza). */
+  porDestino: ParteDesglose[]
+  total: number
+  /** Lo de los pagos que no se pudieron abrir: sigue como «Desglosar». */
+  sinAbrir: number
+}
+
+/** ¿Es un seguro? Por el vínculo con la póliza o por el nombre (una comisión de caja de seguridad, no). */
+export function esPoliza(c: Pick<ConsumoTarjeta, "categ" | "descripcion" | "conPoliza">): boolean {
+  if (c.conPoliza) return true
+  const t = `${c.categ ?? ""} ${c.descripcion ?? ""}`
+  return /segur|chubb|federaci|patronal|sancor|allianz|zurich|mapfre|alondra/i.test(t) && !/caja de seguridad/i.test(t)
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100
+
+/**
+ * 💳 Abre los pagos «Desglosar» con los consumos de su resumen (el que vence ese día) y corrige
+ * `sinTratar`: sale el «Desglosar» abierto, entra cada marca de otra persona con lo suyo.
+ */
+export function abrirDesglosar(
+  papel: PapelDeCuentasCorrientes,
+  movimientos: MovimientoParaCC[],
+  consumos: ConsumoTarjeta[],
+): PapelDeCuentasCorrientes {
+  const esDesglosar = (m: MovimientoParaCC) => normalizar(m.contable) === normalizar(ETIQUETA_DESGLOSAR)
+  const porFecha = new Map<string, MovimientoParaCC[]>()
+  for (const m of movimientos.filter(esDesglosar)) {
+    const f = String(m.fecha ?? "").slice(0, 10)
+    porFecha.set(f, [...(porFecha.get(f) ?? []), m])
+  }
+  if (porFecha.size === 0) return papel
+
+  const pagos: PagoDesglosado[] = []
+  for (const [fecha, del] of [...porFecha.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    const importe = r2(del.reduce((s, m) => s + Number(m.debitos ?? 0) - Number(m.creditos ?? 0), 0))
+    const delResumen = consumos.filter(c => String(c.vencimiento ?? "").slice(0, 10) === fecha)
+    const pesos = delResumen.map(c => Number(c.debitos ?? 0) - Number(c.creditos ?? 0))
+    const usd = delResumen.map(c => Number(c.debitosUsd ?? 0))
+    const totalUsd = usd.reduce((s, x) => s + x, 0)
+    // Lo pagado en dólares es lo que el banco debitó de más sobre los pesos del resumen: se reparte
+    // entre los consumos en dólares en proporción a su importe en dólares.
+    const enDolares = totalUsd > 0 ? r2(importe - pesos.reduce((s, x) => s + x, 0)) : 0
+    const partes = new Map<string, ParteDesglose>()
+    delResumen.forEach((c, i) => {
+      const valor = r2(pesos[i] + (totalUsd > 0 && enDolares > 0 ? enDolares * usd[i] / totalUsd : 0))
+      const marca = (c.contable ?? "").trim()
+      const destino = marca || DESTINO_PROPIO
+      const poliza = esPoliza(c)
+      const k = `${destino}|${poliza}`
+      const p = partes.get(k) ?? { destino, poliza, importe: 0, consumos: 0, ejemplos: [] }
+      p.importe = r2(p.importe + valor)
+      p.consumos += 1
+      const ej = String(c.categ || c.descripcion || "").trim()
+      if (ej && !p.ejemplos.includes(ej) && p.ejemplos.length < 4) p.ejemplos.push(ej)
+      partes.set(k, p)
+    })
+    const lista = [...partes.values()].sort((a, b) => Number(b.poliza) - Number(a.poliza) || b.importe - a.importe)
+    const suma = r2(lista.reduce((s, p) => s + p.importe, 0))
+    const diferencia = r2(importe - suma)
+    pagos.push({ fecha, importe, debitos: del.length, partes: lista, cierra: delResumen.length > 0 && Math.abs(diferencia) < 0.01, diferencia })
+  }
+
+  const porDestino = new Map<string, ParteDesglose>()
+  for (const p of pagos.filter(x => x.cierra)) {
+    for (const x of p.partes) {
+      const k = `${x.destino}|${x.poliza}`
+      const acc = porDestino.get(k) ?? { destino: x.destino, poliza: x.poliza, importe: 0, consumos: 0, ejemplos: [] }
+      acc.importe = r2(acc.importe + x.importe)
+      acc.consumos += x.consumos
+      for (const e of x.ejemplos) if (!acc.ejemplos.includes(e) && acc.ejemplos.length < 4) acc.ejemplos.push(e)
+      porDestino.set(k, acc)
+    }
+  }
+  const destinos = [...porDestino.values()].sort((a, b) => Number(b.poliza) - Number(a.poliza)
+    || Number(a.destino === DESTINO_PROPIO) - Number(b.destino === DESTINO_PROPIO) || b.importe - a.importe)
+  const sinAbrir = r2(pagos.filter(p => !p.cierra).reduce((s, p) => s + p.importe, 0))
+  const desglose: DesgloseTarjeta = { pagos, porDestino: destinos, total: r2(pagos.reduce((s, p) => s + p.importe, 0)), sinAbrir }
+
+  /**
+   * 🛑 «Sin tratar» corregido: el «Desglosar» abierto sale; cada marca de otra persona entra con lo
+   * suyo (sigue sin tratar: se trata de a una); lo propio de MSA no entra (no es cuenta corriente).
+   * Lo que no se pudo abrir queda como «Desglosar».
+   */
+  const resto = papel.sinTratar.filter(x => normalizar(x.etiqueta) !== normalizar(ETIQUETA_DESGLOSAR))
+  const nuevas: PapelDeCuentasCorrientes["sinTratar"] = []
+  const porMarca = new Map<string, { total: number; consumos: number }>()
+  for (const d of destinos.filter(x => x.destino !== DESTINO_PROPIO)) {
+    const acc = porMarca.get(d.destino) ?? { total: 0, consumos: 0 }
+    acc.total = r2(acc.total + d.importe); acc.consumos += d.consumos
+    porMarca.set(d.destino, acc)
+  }
+  for (const [marca, v] of porMarca) nuevas.push({ etiqueta: `${marca} · por la tarjeta (era Desglosar)`, movimientos: v.consumos, total: v.total })
+  if (sinAbrir !== 0) {
+    nuevas.push({ etiqueta: `${ETIQUETA_DESGLOSAR} · sin resumen que lo abra`, movimientos: pagos.filter(p => !p.cierra).reduce((s, p) => s + p.debitos, 0), total: sinAbrir })
+  }
+  const sinTratar = [...resto, ...nuevas].sort((a, b) => Math.abs(b.total) - Math.abs(a.total))
+  return {
+    ...papel,
+    sinTratar,
+    totalSinTratar: r2(sinTratar.reduce((s, x) => s + x.total, 0)),
+    desgloseTarjeta: desglose,
+  }
+}
 
 /**
  * 🧾 Arma el papel.
@@ -190,7 +376,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100
  * @param compras      de `comprobantes_arca` **y** de `comprobantes_historico`, ya del ejercicio
  * @param ventas       de `comprobantes_venta`, ya del ejercicio
  * @param movimientos  los del extracto con `contable` cargado, ya del ejercicio
- * @param saldosInicio por clave de contraparte. Lo que falte queda en `null`
+ * @param saldosInicio por clave de contraparte. Lo que falte va en 0, marcado `inicioSinDato`
  */
 export function armarCuentasCorrientes(
   compras: CompraParaCC[],
@@ -243,12 +429,14 @@ export function armarCuentasCorrientes(
       }))
 
     const resumen = armarCuentaCorriente(facturas, pagos)
-    const inicio = c.clave in saldosInicio ? saldosInicio[c.clave] : null
+    const cargado = saldosInicio[c.clave]
+    const inicio = Number.isFinite(cargado) ? r2(cargado) : 0
     cuentas.push({
       contraparte: c,
       saldoInicio: inicio,
+      inicioSinDato: !Number.isFinite(cargado),
       resumen,
-      saldoAlCierre: inicio == null ? null : r2(inicio + resumen.saldo),
+      saldoAlCierre: r2(inicio + resumen.saldo),
       desdeHistorico,
     })
   }
@@ -273,5 +461,25 @@ export function armarCuentasCorrientes(
     sinTratar,
     totalSinTratar: r2(sinTratar.reduce((s, x) => s + x.total, 0)),
     historicoSinAtribuir: compras.filter(c => !c.cuit && !usadasEnHistorico.has(c.id)).length,
+  }
+}
+
+/**
+ * ✍️ **Pone los saldos de inicio que cargó el usuario** sobre un papel ya armado, sin volver a leer la
+ * base (A-FEAT-1388): la pantalla los recalcula al escribirlos, antes de bajar el Excel.
+ * Lo que no está cargado (o está vacío) queda en 0 con `inicioSinDato`.
+ */
+export function aplicarSaldosInicio(
+  papel: PapelDeCuentasCorrientes,
+  saldos: Record<string, number | null | undefined>,
+): PapelDeCuentasCorrientes {
+  return {
+    ...papel,
+    cuentas: papel.cuentas.map(c => {
+      const v = saldos[c.contraparte.clave]
+      const hay = typeof v === "number" && Number.isFinite(v)
+      const inicio = hay ? r2(v) : 0
+      return { ...c, saldoInicio: inicio, inicioSinDato: !hay, saldoAlCierre: r2(inicio + c.resumen.saldo) }
+    }),
   }
 }

@@ -2805,3 +2805,37 @@ endoso** (el endoso 0 va como 1). Las que entran desde ARCA traen en cambio el n
 **7 · Trampa de JavaScript que pasó acá**: una función usada como `lista.filter(f)` recibe el **número de
 fila** como segundo argumento. `esDeLaAseguradora(m, patron = /…/)` se rompía porque `patron` pasaba a ser
 el índice. Las funciones pensadas para `filter`/`map` llevan **un solo parámetro**.
+
+## El SENTIDO de una cuota de template está en `tipo_movimiento` — el monto va siempre positivo `#templates #cuotas #signo #balance #presupuesto #2026-10-27`
+
+**Regla para todo lo que lea `cuotas_egresos_sin_factura`**: `monto` es siempre positivo; si la cuota es
+`tipo_movimiento = 'ingreso'`, esa plata **entró**. La conciliación lo carga igual que el banco (un crédito
+del extracto deja la cuota en `'ingreso'`): al 27/10, las 127 cuotas de MSA atadas a un crédito dicen «ingreso».
+
+**El caso que la dejó a la vista** ([A-FEAT-1388](PENDIENTES.md#a-feat-1388)): el export del balance tomaba el
+monto siempre como salida. En 25/26: **195 cuotas por $659,5 M** del lado equivocado (rescates de FCI, plazo
+fijo, Promoción Galicia en la columna Débito) y **10 devoluciones de egresos sumando como gasto** ($3,53 M de
+más). Lo delató un control de dos caminos: el impuesto al cheque daba **tres números** (Templates, papel 08,
+papel 08.1) y la diferencia entre cada par era la misma, **$14.872,34 = 3 devoluciones del banco**.
+
+- ✅ Lo usan bien: el Cash Flow (`useMultiCashFlowData`) y, desde el 27/10, el balance (`desdeCuota` en
+  `lib/balance/templates-libro.ts`: ingreso = negativo).
+- ❌ **No lo usa el Presupuesto** (`tab-presupuesto.tsx` lee `monto` solo) → [A-BUG-1389](PENDIENTES.md#a-bug-1389).
+- 📌 Lo ideal es **una sola función** «importe con signo de una cuota» que usen todos: dos caminos que leen
+  la misma cuota distinto terminan dando números distintos en dos pantallas.
+
+## «Desglosar» — la marca de reparto, y cómo se abre `#conciliacion #tarjeta #balance #2026-10-27`
+
+`Desglosar` (en `contable` o `interno` del extracto) es la marca del usuario para **«esto hay que
+repartirlo»**: un solo débito que paga cosas de varios dueños. Casos: el **pago de la tarjeta** (la Visa de
+MSA paga consumos de MSA y de otros), el **Seguro Flota** (la póliza se reparte entre MA, MSA y JMS).
+
+- 🔑 **El reparto ya está en los datos cuando el pago es de una tarjeta cargada**: cada resumen trae sus
+  consumos con su propia marca. El balance lo abre así desde el 27/10 (`abrirDesglosar` en
+  `lib/balance/cuentas-corrientes.ts`): el débito del banco se ata al **resumen que vence ese día**; lo
+  marcado para otra persona sigue bajo esa marca, lo sin marca es gasto de la empresa. **Control**: los
+  consumos (más lo pagado en dólares) tienen que dar el débito; si el resumen no está cargado, queda como
+  «Desglosar» a la vista.
+- 25/26 de MSA: 6 débitos por $8.735.419,59 = pólizas del Chalet de MA $729.818,58 + Orbith $431.600 (las dos
+  RET 3 MA) + gasto de MSA $7.574.001,01. Los 5 resúmenes cierran.
+- ⚠️ Lo que **no** es tarjeta (el Seguro Flota y otros) todavía no tiene regla de reparto en la app.
