@@ -40,7 +40,10 @@
 
 ## 📨 PARA JAVIER
 
-### 🗄️ Una tabla nueva: `public.ddjj_presentadas` (2026-10-27) — ⏳ SIN APLICAR (OK de JMS dado; espera pasar el MCP a escritura)
+### 🗃️ Una columna nueva: `public.polizas_seguro.template_id` (2026-10-27) — ✅ APLICADA el 27/10 con OK de JMS
+- FK a `public.egresos_sin_factura(id)`: el template de cada póliza (A-FEAT-1385, script 108). Con ella se crearon 8 templates de seguros (uno por póliza) y se desactivaron los 3 genéricos. Sin cambios de RLS.
+
+### 🗄️ Una tabla nueva: `public.ddjj_presentadas` (2026-10-27) — ✅ APLICADA el 27/10 con OK de JMS (aviso previo)
 - `scripts/107-ddjj-presentadas.sql` (+ `-deshacer`): una fila por DDJJ que devuelve el contador (empresa + impuesto + período + secuencia) con totales, comprobantes declarados y el resultado de compararlos con el subdiario. **No toca ninguna tabla existente** salvo 1 fila en `recurso_tablas` (recurso `egresos`).
 - RLS `puede_ver`/`puede_escribir`, nada a `anon`, `authenticated` select/insert/update (sin delete). Marca `[script 107]`; el deshacer verifica la marca antes de borrar.
 

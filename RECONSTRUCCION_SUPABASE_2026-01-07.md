@@ -3323,6 +3323,21 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-10-27 · LO QUE DEVUELVE EL CONTADOR — tabla `public.ddjj_presentadas` (script 107) — A-AUTO-09 — ✅ CORRIDO 2026-10-27 con JMS (MCP en write con su OK)
+
+`scripts/107-ddjj-presentadas.sql` (+ `-deshacer`): una fila por DDJJ (empresa + impuesto IVA/IIBB + período `AAAAMM` + secuencia) con `totales`,
+`comprobantes` y `resultado` (jsonb) y `coincide`. Marca `[script 107]`, RLS `puede_ver`/`puede_escribir` sobre `public.ddjj_presentadas` (recurso
+`egresos` en `recurso_tablas`), nada a `anon`, `authenticated` select/insert/update (sin delete). Control: 0 filas · marcada · RLS · 1 en recursos ✅.
+
+### 2026-10-27 · UN TEMPLATE POR PÓLIZA — columna `public.polizas_seguro.template_id` + datos (script 108) — A-FEAT-1385 — ✅ CORRIDO 2026-10-27 con JMS
+
+Estructura: `alter table public.polizas_seguro add column template_id uuid references public.egresos_sin_factura(id)` (comentario `[script 108]`).
+Datos (generados por `scripts/108-generar-polizas-templates.mts --aplicar`, 159 operaciones; foto previa en
+`- Comunicacion JMS Claude - Archivos/Balance/respaldos/foto-polizas-conciliacion-2026-10-27.json`; deshacer `scripts/108-polizas-templates-deshacer.sql`):
+8 templates «Seguro <ramo> — póliza N» con 60 cuotas (lo que espera el banco por vencimiento; compensadas con NC en 0 «desactivado»), 22 movimientos de
+`msa_galicia` re-apuntados (sólo `template_id`/`template_cuota_id`), 39 cuotas de los 3 templates genéricos de seguros «desactivado» y esos 3 templates
+`activo = false`. Control: 8 · 60 · 8 pólizas con template · 0 movimientos colgados de cuotas desactivadas (en las 12 tablas con `template_cuota_id`) ✅.
+
 ### 2026-10-27 · PLAN SANITARIO + IATF — 5 tablas nuevas en `productivo` y 9 labores (script 106) — A-FEAT-1380 — ✅ CORRIDO 2026-10-27 con JMS (MCP pasado a write con su OK y vuelto a read-only)
 
 `scripts/106-plan-sanitario.sql` (+ `-deshacer`): crea `productivo.plan_sanitario_tareas` (el plan: fecha óptima `MM-DD`, ventana, margen,
