@@ -250,6 +250,7 @@ import { hojaDeAsientosContables, hojaDeTemplates, bloqueDeLecturas } from "@/li
 import { juntarTandas, lecturaIncompleta, juntarHasta, mensajeLecturaIncompleta } from "@/lib/supabase-paginado"
 import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
 import * as XLSXcasos from "xlsx"
+import { botonesOrden, alMarcarHecha, alRechazar, PENDIENTE_DE_CONSUMO } from "@/lib/productivo/confirmacion-ordenes"
 import { ocurrenciasDeCampania, sugerirAgrupar, fechasIatf, chequearIatf, chequearEntore, fechaEnCampania, campaniaDe, fechaCorta,
   agruparEnSesiones, avisos, encierresPorRodeo, controlarEncierres, proponerCalendario, expandirIatf,
   type TareaPlan as TareaPlanCaso, type Hecho as HechoCaso, type Ocurrencia as OcurrenciaCaso } from "@/lib/productivo/plan-sanitario"
@@ -9349,6 +9350,28 @@ export function correrCasos(): Resultado[] {
     chequear("Plan sanitario", "Por sesión: tacto de la IA + caravana mosca (+ pesada) el 15/11 son UNA sesión; la aftosa de diciembre aparece UNA vez aunque toque 4 haciendas",
       "15/11: mosca+pesada+tacto-ia · 10/12: 1 sesión con 2 tareas y 4 haciendas", vSes,
       vSes === "15/11: mosca+pesada+tacto-ia · 10/12: 1 sesión con 2 tareas y 4 haciendas", "A-FEAT-1380")
+  }
+
+
+  // ══ ✍️ «SE HIZO» Y «CONFIRMAR» EN LAS ÓRDENES (A-FEAT-1223, JMS 27/10) ═══════════════════════════
+  {
+    const ENRIQUE = { nueva: true, editar: true, seHizo: true, confirmar: false, borrar: true, descargar: true }
+    const JMS = { ...ENRIQUE, confirmar: true }
+    const eP = botonesOrden("planificada", ENRIQUE), jP = botonesOrden("planificada", JMS)
+    const eA = botonesOrden("a_confirmar", ENRIQUE), jA = botonesOrden("a_confirmar", JMS)
+    const v1 = `Enrique ✓ → ${alMarcarHecha(ENRIQUE).estado} (stock ${alMarcarHecha(ENRIQUE).impactaStock}) · JMS ✓ → ${alMarcarHecha(JMS).estado} (stock ${alMarcarHecha(JMS).impactaStock})`
+    chequear("Órdenes a confirmar", "El ✓ de Enrique deja la orden a confirmar y NO descuenta stock; el de JMS ejecuta como siempre",
+      "Enrique ✓ → a_confirmar (stock false) · JMS ✓ → ejecutada (stock true)", v1,
+      v1 === "Enrique ✓ → a_confirmar (stock false) · JMS ✓ → ejecutada (stock true)", "A-FEAT-1223")
+    const v2 = `planificada: Enrique «${eP.marcar?.texto}» · JMS «${jP.marcar?.texto}» | a confirmar: Enrique confirma ${eA.confirmar}/rechaza ${eA.rechazar}/edita ${eA.editar} · JMS confirma ${jA.confirmar}/rechaza ${jA.rechazar}`
+    chequear("Órdenes a confirmar", "Dos botones distintos: Enrique ve «Se hizo», JMS «Confirmar»; una orden a confirmar sólo la confirma o rechaza JMS, y nadie la edita",
+      "planificada: Enrique «Se hizo (queda a confirmar)» · JMS «Confirmar como ejecutada» | a confirmar: Enrique confirma false/rechaza false/edita false · JMS confirma true/rechaza true", v2,
+      v2 === "planificada: Enrique «Se hizo (queda a confirmar)» · JMS «Confirmar como ejecutada» | a confirmar: Enrique confirma false/rechaza false/edita false · JMS confirma true/rechaza true", "A-FEAT-1223")
+    const sinNada = botonesOrden("planificada", { nueva: false, editar: false, seHizo: false, confirmar: false, borrar: false, descargar: false })
+    const v3 = `rechazo → ${alRechazar().estado} (recuento ${alRechazar().conservaRecuento ? "queda" : "se borra"}) · necesidad de compra cuenta ${PENDIENTE_DE_CONSUMO.join("+")} · sin permisos: ${[sinNada.editar, !!sinNada.marcar, sinNada.borrar, sinNada.descargar].filter(Boolean).length} botones`
+    chequear("Órdenes a confirmar", "Rechazar vuelve a planificada con el recuento; Necesidad de compra cuenta lo a confirmar; sin casillas no hay botones",
+      "rechazo → planificada (recuento queda) · necesidad de compra cuenta planificada+a_confirmar · sin permisos: 0 botones", v3,
+      v3 === "rechazo → planificada (recuento queda) · necesidad de compra cuenta planificada+a_confirmar · sin permisos: 0 botones", "A-FEAT-1223")
   }
 
   return r

@@ -156,6 +156,15 @@ export const RECURSOS: Recurso[] = [
   //    destildado) era invisible desde donde estaban dibujadas.
   { id: "productivo.stock",     seccion: "productivo", etiqueta: "Stock y Movimientos", tipo: "pestana", padre: "productivo.insumos", archivo: PRODUCTIVO },
   { id: "productivo.ordenes",   seccion: "productivo", etiqueta: "Órdenes de Aplicación", tipo: "pestana", padre: "productivo.insumos", archivo: PRODUCTIVO },
+  // A-FEAT-1223 (JMS 27/10): cada botón de las órdenes con su casilla. «Se hizo» y «Confirmar» son DOS: quien tiene sólo
+  //   «Se hizo» deja la orden a confirmar y no impacta nada (stock) hasta que confirma quien tiene «Confirmar».
+  ...([
+    ["nueva", "Nueva orden"], ["editar", "Editar orden"], ["se-hizo", "Marcar «se hizo» (queda a confirmar)"],
+    ["confirmar", "Confirmar (descuenta stock) / rechazar"], ["borrar", "Eliminar orden"], ["descargar", "Descargar imagen"],
+    ["ganadero", "Ver órdenes ganaderas"], ["agricola", "Ver órdenes agrícolas"],
+  ] as const).map(([k, e]): Recurso => ({
+    id: `productivo.ordenes.${k}`, seccion: "productivo", etiqueta: `Órdenes → ${e}`, tipo: "accion", padre: "productivo.ordenes", archivo: PRODUCTIVO,
+  })),
   { id: "productivo.compras",   seccion: "productivo", etiqueta: "Necesidad de Compra", tipo: "pestana", padre: "productivo.insumos", archivo: PRODUCTIVO },
   { id: "productivo.lotes",     seccion: "productivo", etiqueta: "Lotes Agrícolas",     tipo: "pestana", archivo: PRODUCTIVO },
 

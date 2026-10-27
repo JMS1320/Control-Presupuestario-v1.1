@@ -10,7 +10,9 @@ import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useCallback, Fragment } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
 import { Permisable } from "@/components/modo-permisos"
-import { usePrimeraVisible } from "@/components/contexto-permisos"
+import { usePrimeraVisible, usePuedeVer } from "@/components/contexto-permisos"
+import { botonesOrden, alMarcarHecha, alRechazar, PENDIENTE_DE_CONSUMO, ETIQUETA_ESTADO, type PermisosOrden } from "@/lib/productivo/confirmacion-ordenes"
+import { etiquetaPersona } from "@/lib/auth/identidad"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -152,6 +154,11 @@ interface OrdenAplicacion {
   estado: string
   observaciones: string | null
   created_at: string
+  /** A-FEAT-1223 (script 109): quién dijo «se hizo», quién confirmó, y el motivo si se rechazó */
+  marcada_por?: string | null
+  marcada_at?: string | null
+  confirmada_por?: string | null
+  motivo_rechazo?: string | null
   categorias_hacienda?: { nombre: string }
   lineas?: LineaOrdenAplicacion[]
   rodeos?: OrdenAplicacionRodeo[]
@@ -209,6 +216,11 @@ interface OrdenAgricola {
   estado: string
   observaciones: string | null
   created_at: string
+  /** A-FEAT-1223 (script 109): quién dijo «se hizo», quién confirmó, y el motivo si se rechazó */
+  marcada_por?: string | null
+  marcada_at?: string | null
+  confirmada_por?: string | null
+  motivo_rechazo?: string | null
   lote?: { nombre_lote: string; hectareas: number }
   lineas?: LineaOrdenAgricola[]
   labores?: string[]
@@ -4693,8 +4705,69 @@ function SubTabStockInsumos() {
 // SUB-TAB: ORDENES DE APLICACION VETERINARIA
 // ============================================================
 
+/**
+ * A-FEAT-1223: los botones de las órdenes, cada uno con su permiso (Configuración → Roles), y quién aprieta.
+ * «Se hizo» y «Confirmar» son DOS permisos: quien sólo tiene «Se hizo» deja la orden a confirmar y no impacta nada.
+ */
+function usePermisosOrden(): { p: PermisosOrden; yo: string | null } {
+  const puedeVer = usePuedeVer()
+  const [yo, setYo] = useState<string | null>(null)
+  useEffect(() => { supabase.auth.getUser().then(({ data }) => setYo(etiquetaPersona(data.user))) }, [])
+  const p: PermisosOrden = {
+    nueva: puedeVer("productivo.ordenes.nueva"), editar: puedeVer("productivo.ordenes.editar"),
+    seHizo: puedeVer("productivo.ordenes.se-hizo"), confirmar: puedeVer("productivo.ordenes.confirmar"),
+    borrar: puedeVer("productivo.ordenes.borrar"), descargar: puedeVer("productivo.ordenes.descargar"),
+  }
+  return { p, yo }
+}
+
+/** Rechazar una orden a confirmar: pide el motivo; vuelve a planificada con el recuento guardado. */
+function DialogoRechazoOrden({ abierta, descripcion, onCerrar, onRechazar }: {
+  abierta: boolean; descripcion: string; onCerrar: () => void; onRechazar: (motivo: string) => void
+}) {
+  const [motivo, setMotivo] = useState("")
+  useEffect(() => { if (abierta) setMotivo("") }, [abierta])
+  return (
+    <Dialog open={abierta} onOpenChange={(o) => { if (!o) onCerrar() }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Rechazar la orden</DialogTitle>
+          <DialogDescription>{descripcion}. Vuelve a planificada con el recuento que cargó, para que lo corrija y la vuelva a marcar. No se había aplicado nada.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1">
+          <Label className="text-xs">Motivo</Label>
+          <Textarea rows={3} value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="ej.: el recuento de Ivermectina no coincide" />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCerrar}>Cancelar</Button>
+          <Button disabled={!motivo.trim()} onClick={() => onRechazar(motivo.trim())} className="bg-orange-600 hover:bg-orange-700">Rechazar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** El estado de una orden, con quién la marcó o por qué se rechazó. */
+function EstadoOrdenBadge({ o, clase }: { o: { estado: string; marcada_por?: string | null; motivo_rechazo?: string | null }; clase?: string }) {
+  return (
+    <div className="space-y-0.5">
+      <Badge variant={o.estado === 'ejecutada' ? 'default' : o.estado === 'eliminada' ? 'destructive' : 'outline'}
+        className={o.estado === 'a_confirmar' ? 'bg-amber-100 text-amber-900 border-amber-300' : clase}>
+        {ETIQUETA_ESTADO[o.estado] ?? o.estado}
+      </Badge>
+      {o.estado === 'a_confirmar' && o.marcada_por && <div className="text-[10px] text-amber-800">marcó {o.marcada_por}</div>}
+      {o.estado === 'planificada' && o.motivo_rechazo && <div className="text-[10px] text-orange-700" title={o.motivo_rechazo}>↩ rechazada: {o.motivo_rechazo}</div>}
+    </div>
+  )
+}
+
 function SubTabOrdenesAplicacion() {
-  const [tipoOrden, setTipoOrden] = useState<'ganadero' | 'agricola'>('ganadero')
+  const { p: permOrden, yo } = usePermisosOrden()
+  const puedeVer = usePuedeVer()
+  const verGanadero = puedeVer("productivo.ordenes.ganadero")
+  const verAgricola = puedeVer("productivo.ordenes.agricola")
+  const [tipoOrden, setTipoOrden] = useState<'ganadero' | 'agricola'>(() => !verGanadero && verAgricola ? 'agricola' : 'ganadero')
+  const [rechazando, setRechazando] = useState<OrdenAplicacion | null>(null)
 
   const [ordenes, setOrdenes] = useState<OrdenAplicacion[]>([])
   const [categoriasHacienda, setCategoriasHacienda] = useState<CategoriaHacienda[]>([])
@@ -5385,6 +5458,18 @@ function SubTabOrdenesAplicacion() {
     }
   }
 
+  // A-FEAT-1223: rechazar una orden a confirmar — vuelve a planificada, el recuento queda
+  const rechazarOrden = async (o: OrdenAplicacion, motivo: string) => {
+    const r = alRechazar()
+    const { error } = await supabase.schema('productivo').from('ordenes_aplicacion')
+      .update({ estado: r.estado, motivo_rechazo: yo ? `${motivo} (${yo})` : motivo })
+      .eq('id', o.id)
+    if (error) { toast.error(`No se pudo rechazar: ${error.message}`); return }
+    toast.success('Rechazada: vuelve a planificada con su recuento')
+    setRechazando(null)
+    cargarDatos()
+  }
+
   // Ejecutar/confirmar orden
   const ejecutarOrden = async () => {
     if (!ordenConfirmando) return
@@ -5399,10 +5484,26 @@ function SubTabOrdenesAplicacion() {
           })
           .eq('id', lineaId)
       }
-      // Cambiar estado a ejecutada
-      await supabase.schema('productivo').from('ordenes_aplicacion')
-        .update({ estado: 'ejecutada' })
+      // A-FEAT-1223: quien no tiene «Confirmar» deja la orden A CONFIRMAR — no impacta nada hasta el OK del dueño
+      const paso = alMarcarHecha(permOrden)
+      const ahora = new Date().toISOString()
+      if (!paso.impactaStock) {
+        const { error: eA } = await supabase.schema('productivo').from('ordenes_aplicacion')
+          .update({ estado: paso.estado, marcada_por: yo, marcada_at: ahora, motivo_rechazo: null })
+          .eq('id', ordenConfirmando.id)
+        if (eA) throw new Error(eA.message)
+        toast.success('Anotada como hecha: queda a confirmar (todavía no descuenta stock)')
+        setMostrarModalConfirmar(false)
+        setOrdenConfirmando(null)
+        cargarDatos()
+        return
+      }
+      // Cambiar estado a ejecutada (confirmada: recién acá impacta)
+      const { error: eE } = await supabase.schema('productivo').from('ordenes_aplicacion')
+        .update({ estado: 'ejecutada', confirmada_por: yo, confirmada_at: ahora, motivo_rechazo: null,
+          ...(ordenConfirmando.marcada_por ? {} : { marcada_por: yo, marcada_at: ahora }) })
         .eq('id', ordenConfirmando.id)
+      if (eE) throw new Error(eE.message)
 
       // Descontar stock por uso: el movimiento 'uso' se crea AL EJECUTAR (no al crear) y el
       // stock se recalcula desde los movimientos (fuente única). Una orden planificada no descuenta.
@@ -6072,14 +6173,14 @@ function SubTabOrdenesAplicacion() {
     <div className="space-y-4 pt-4">
       {/* Selector tipo */}
       <div className="flex gap-2 border-b pb-3">
-        <Button variant={tipoOrden === 'ganadero' ? 'default' : 'outline'} size="sm"
+        {verGanadero && <Button variant={tipoOrden === 'ganadero' ? 'default' : 'outline'} size="sm"
           onClick={() => setTipoOrden('ganadero')}>
           Ganadero
-        </Button>
-        <Button variant={tipoOrden === 'agricola' ? 'default' : 'outline'} size="sm"
+        </Button>}
+        {verAgricola && <Button variant={tipoOrden === 'agricola' ? 'default' : 'outline'} size="sm"
           onClick={() => setTipoOrden('agricola')}>
           Agrícola
-        </Button>
+        </Button>}
       </div>
 
       {tipoOrden === 'agricola' && (
@@ -6089,12 +6190,15 @@ function SubTabOrdenesAplicacion() {
       {tipoOrden === 'ganadero' && (
       <>
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Ordenes de Aplicacion Veterinaria</h3>
+        <h3 className="text-lg font-semibold">Ordenes de Aplicacion Veterinaria
+          {permOrden.confirmar && ordenes.some(o => o.estado === 'a_confirmar') && (
+            <Badge className="ml-2 align-middle bg-amber-100 text-amber-900 border-amber-300">{ordenes.filter(o => o.estado === 'a_confirmar').length} a confirmar</Badge>)}
+        </h3>
         <div className="flex gap-2">
-          <Button size="sm" onClick={() => { setOrdenEditandoId(null); setMostrarModal(true); if (lineas.length === 0) agregarLinea() }}>
+          {permOrden.nueva && <Button size="sm" onClick={() => { setOrdenEditandoId(null); setMostrarModal(true); if (lineas.length === 0) agregarLinea() }}>
             <Plus className="mr-1 h-4 w-4" />
             Nueva Orden
-          </Button>
+          </Button>}
           <Button variant="outline" size="sm" onClick={cargarDatos}>
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -6148,29 +6252,39 @@ function SubTabOrdenesAplicacion() {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge variant={o.estado === 'ejecutada' ? 'default' : o.estado === 'eliminada' ? 'destructive' : 'outline'}>
-                    {o.estado}
-                  </Badge>
+                  <EstadoOrdenBadge o={o} />
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground max-w-[300px] whitespace-pre-wrap">
                   {o.observaciones || '-'}
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-1">
-                    {o.estado === 'planificada' && (
-                      <>
+                    {(() => { const b = botonesOrden(o.estado, permOrden); return (<>
+                      {b.editar && (
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
                           title="Editar orden"
                           onClick={() => abrirEdicion(o)}>
                           <Pencil className="h-3.5 w-3.5" />
-                        </Button>
+                        </Button>)}
+                      {b.marcar && (
                         <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600"
-                          title="Confirmar como ejecutada"
+                          title={b.marcar.texto}
                           onClick={() => abrirConfirmacion(o)}>
                           <CheckCircle2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </>
-                    )}
+                        </Button>)}
+                      {b.confirmar && (
+                        <Button variant="ghost" size="sm" className="h-7 p-0 px-1 text-green-700 gap-1"
+                          title="Confirmar: recién acá descuenta stock"
+                          onClick={() => abrirConfirmacion(o)}>
+                          <CheckCircle2 className="h-3.5 w-3.5" /><span className="text-[10px]">Confirmar</span>
+                        </Button>)}
+                      {b.rechazar && (
+                        <Button variant="ghost" size="sm" className="h-7 p-0 px-1 text-orange-600"
+                          title="Rechazar: vuelve a planificada"
+                          onClick={() => setRechazando(o)}>
+                          <span className="text-[10px]">Rechazar</span>
+                        </Button>)}
+                    </>) })()}
                     {esDesteteFin(o) && !ordenesYaVinculadas.has(o.id) && (
                       <Button variant="ghost" size="sm" className="h-7 p-0 px-1 text-orange-600 gap-1"
                         title="Vincular Ciclo de Cría"
@@ -6200,16 +6314,16 @@ function SubTabOrdenesAplicacion() {
                       </Button>
                     ) : (
                       <>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+                        {permOrden.descargar && <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
                           title="Exportar imagen para WhatsApp"
                           onClick={() => exportarOrdenImagen(o)}>
                           <Download className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500"
+                        </Button>}
+                        {permOrden.borrar && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500"
                           title="Eliminar orden"
                           onClick={() => abrirEliminacion(o)}>
                           <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        </Button>}
                       </>
                     )}
                   </div>
@@ -6595,8 +6709,9 @@ function SubTabOrdenesAplicacion() {
       <Dialog open={mostrarModalConfirmar} onOpenChange={(open) => { if (!open) { setMostrarModalConfirmar(false); setOrdenConfirmando(null) } }}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Confirmar Orden como Ejecutada</DialogTitle>
+            <DialogTitle>{!permOrden.confirmar ? 'Marcar la orden como hecha' : ordenConfirmando?.estado === 'a_confirmar' ? `Confirmar la orden (la marcó ${ordenConfirmando.marcada_por ?? 'otro usuario'})` : 'Confirmar Orden como Ejecutada'}</DialogTitle>
             <DialogDescription>
+              {!permOrden.confirmar && 'Queda a confirmar: no descuenta stock hasta que la confirme quien aprueba. '}
               Marque los insumos aplicados y ajuste cantidades si difieren de lo planificado.
             </DialogDescription>
           </DialogHeader>
@@ -6666,11 +6781,14 @@ function SubTabOrdenesAplicacion() {
             <Button onClick={ejecutarOrden} disabled={guardando} className="bg-green-600 hover:bg-green-700">
               {guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               <CheckCircle2 className="mr-2 h-4 w-4" />
-              Confirmar Ejecutada
+              {permOrden.confirmar ? 'Confirmar: descuenta stock' : 'Se hizo (queda a confirmar)'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DialogoRechazoOrden abierta={!!rechazando} descripcion={rechazando ? `Orden del ${rechazando.fecha} (${rechazando.cantidad_cabezas} cab), marcada por ${rechazando.marcada_por ?? 'otro usuario'}` : ''}
+        onCerrar={() => setRechazando(null)} onRechazar={(m) => rechazando && rechazarOrden(rechazando, m)} />
 
       {/* Modal Eliminar Orden */}
       <Dialog open={mostrarModalEliminar} onOpenChange={(open) => { if (!open) { setMostrarModalEliminar(false); setOrdenEliminando(null) } }}>
@@ -7136,10 +7254,10 @@ function SubTabNecesidadCompra() {
       const [lineasVetRes, lineasAgroRes, stockRes] = await Promise.all([
         supabase.schema('productivo').from('lineas_orden_aplicacion')
           .select('insumo_nombre, insumo_stock_id, cantidad_total_ml, unidad_medida, ordenes_aplicacion!inner(estado)')
-          .eq('ordenes_aplicacion.estado', 'planificada'),
+          .in('ordenes_aplicacion.estado', PENDIENTE_DE_CONSUMO),
         supabase.schema('productivo').from('lineas_orden_agricola')
           .select('insumo_nombre, insumo_stock_id, cantidad_total_l, ordenes_agricolas!inner(estado)')
-          .eq('ordenes_agricolas.estado', 'planificada'),
+          .in('ordenes_agricolas.estado', PENDIENTE_DE_CONSUMO),
         supabase.schema('productivo').from('stock_insumos')
           .select('id, producto, cantidad, unidad_medida')
       ])
@@ -7225,6 +7343,8 @@ function SubTabNecesidadCompra() {
 // ============================================================
 
 function SubTabOrdenesAgricolas() {
+  const { p: permOrden, yo } = usePermisosOrden()
+  const [rechazando, setRechazando] = useState<OrdenAgricola | null>(null)
   const [lotesDisponibles, setLotesDisponibles] = useState<LoteAgricola[]>([])
   const [ordenes, setOrdenes] = useState<OrdenAgricola[]>([])
   const [insumosAgro, setInsumosAgro] = useState<StockInsumo[]>([])
@@ -7513,11 +7633,25 @@ function SubTabOrdenesAgricolas() {
     }
   }
 
+  // A-FEAT-1223: rechazar una orden a confirmar — vuelve a planificada, el recuento queda
+  const rechazarOrden = async (o: OrdenAgricola, motivo: string) => {
+    const r = alRechazar()
+    const { error } = await supabase.schema('productivo').from('ordenes_agricolas')
+      .update({ estado: r.estado, motivo_rechazo: yo ? `${motivo} (${yo})` : motivo })
+      .eq('id', o.id)
+    if (error) { toast.error(`No se pudo rechazar: ${error.message}`); return }
+    toast.success('Rechazada: vuelve a planificada con su recuento')
+    setRechazando(null)
+    cargarDatos()
+  }
+
   const abrirModalEjecutar = (orden: OrdenAgricola) => {
     setOrdenEjecutando(orden)
     const init: Record<string, { checked: boolean, cantidad: string }> = {}
     for (const l of (orden.lineas || [])) {
-      init[l.id] = { checked: false, cantidad: String(l.cantidad_total_l) }
+      // Si ya la marcó alguien (a confirmar, o rechazada y vuelta a planificada), se ve SU recuento
+      const ll = l as LineaOrdenAgricola & { recuento?: boolean | null; cantidad_recuento_l?: number | null }
+      init[l.id] = { checked: !!ll.recuento, cantidad: String(ll.cantidad_recuento_l ?? l.cantidad_total_l) }
     }
     setRecuentoLineas(init)
     setMostrarModalEjecutar(true)
@@ -7532,8 +7666,23 @@ function SubTabOrdenesAgricolas() {
           .update({ recuento: rec.checked, cantidad_recuento_l: rec.checked ? (parseFloat(rec.cantidad) || 0) : null })
           .eq('id', lineaId)
       }
-      await supabase.schema('productivo').from('ordenes_agricolas')
-        .update({ estado: 'ejecutada' }).eq('id', ordenEjecutando.id)
+      // A-FEAT-1223: quien no tiene «Confirmar» deja la orden A CONFIRMAR — no impacta nada hasta el OK del dueño
+      const paso = alMarcarHecha(permOrden)
+      const ahora = new Date().toISOString()
+      if (!paso.impactaStock) {
+        const { error: eA } = await supabase.schema('productivo').from('ordenes_agricolas')
+          .update({ estado: paso.estado, marcada_por: yo, marcada_at: ahora, motivo_rechazo: null }).eq('id', ordenEjecutando.id)
+        if (eA) throw new Error(eA.message)
+        toast.success('Anotada como hecha: queda a confirmar (todavía no descuenta stock)')
+        setMostrarModalEjecutar(false)
+        setOrdenEjecutando(null)
+        cargarDatos()
+        return
+      }
+      const { error: eE } = await supabase.schema('productivo').from('ordenes_agricolas')
+        .update({ estado: 'ejecutada', confirmada_por: yo, confirmada_at: ahora, motivo_rechazo: null,
+          ...(ordenEjecutando.marcada_por ? {} : { marcada_por: yo, marcada_at: ahora }) }).eq('id', ordenEjecutando.id)
+      if (eE) throw new Error(eE.message)
 
       // Descontar stock por uso: se crea el movimiento 'uso' AL EJECUTAR (trazabilidad) y se
       // recalcula el stock desde los movimientos (fuente única). Mismo modelo que el ganadero.
@@ -7588,12 +7737,15 @@ function SubTabOrdenesAgricolas() {
   return (
     <div className="space-y-4 pt-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Órdenes Agrícolas</h3>
+        <h3 className="text-lg font-semibold">Órdenes Agrícolas
+          {permOrden.confirmar && ordenes.some(o => o.estado === 'a_confirmar') && (
+            <Badge className="ml-2 align-middle bg-amber-100 text-amber-900 border-amber-300">{ordenes.filter(o => o.estado === 'a_confirmar').length} a confirmar</Badge>)}
+        </h3>
         <div className="flex gap-2">
-          <Button size="sm" onClick={() => setMostrarModal(true)}>
+          {permOrden.nueva && <Button size="sm" onClick={() => setMostrarModal(true)}>
             <Plus className="mr-1 h-4 w-4" />
             Nueva Orden
-          </Button>
+          </Button>}
           <Button variant="outline" size="sm" onClick={cargarDatos}>
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -7639,11 +7791,11 @@ function SubTabOrdenesAgricolas() {
                   ) : <span className="text-muted-foreground text-xs">—</span>}
                 </TableCell>
                 <TableCell>
-                  <Badge className={
+                  <EstadoOrdenBadge o={o} clase={
                     o.estado === 'ejecutada' ? 'bg-green-100 text-green-800' :
                     o.estado === 'eliminada' ? 'bg-red-100 text-red-800' :
                     'bg-blue-100 text-blue-800'
-                  }>{o.estado}</Badge>
+                  } />
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
@@ -7654,26 +7806,38 @@ function SubTabOrdenesAgricolas() {
                       </Button>
                     ) : (
                       <>
-                        {o.estado === 'planificada' && (
-                          <>
+                        {(() => { const b = botonesOrden(o.estado, permOrden); return (<>
+                          {b.editar && (
                             <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
                               title="Editar orden" onClick={() => abrirEdicion(o)}>
                               <Pencil className="h-3.5 w-3.5" />
-                            </Button>
+                            </Button>)}
+                          {b.marcar && (
                             <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-700"
-                              title="Ejecutar orden" onClick={() => abrirModalEjecutar(o)}>
+                              title={b.marcar.texto} onClick={() => abrirModalEjecutar(o)}>
                               <CheckCircle2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </>
-                        )}
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Exportar PNG"
-                          onClick={() => exportarOrdenAgricolaImagen(o)}>
-                          <Download className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500"
-                          title="Eliminar orden" onClick={() => abrirEliminacion(o)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                            </Button>)}
+                          {b.confirmar && (
+                            <Button variant="ghost" size="sm" className="h-7 p-0 px-1 text-green-700 gap-1"
+                              title="Confirmar: recién acá descuenta stock" onClick={() => abrirModalEjecutar(o)}>
+                              <CheckCircle2 className="h-3.5 w-3.5" /><span className="text-[10px]">Confirmar</span>
+                            </Button>)}
+                          {b.rechazar && (
+                            <Button variant="ghost" size="sm" className="h-7 p-0 px-1 text-orange-600"
+                              title="Rechazar: vuelve a planificada" onClick={() => setRechazando(o)}>
+                              <span className="text-[10px]">Rechazar</span>
+                            </Button>)}
+                          {b.descargar && (
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Exportar PNG"
+                              onClick={() => exportarOrdenAgricolaImagen(o)}>
+                              <Download className="h-3.5 w-3.5" />
+                            </Button>)}
+                          {b.borrar && (
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500"
+                              title="Eliminar orden" onClick={() => abrirEliminacion(o)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>)}
+                        </>) })()}
                       </>
                     )}
                   </div>
@@ -7899,11 +8063,14 @@ function SubTabOrdenesAgricolas() {
       </Dialog>
 
       {/* Modal Ejecutar Orden */}
+      <DialogoRechazoOrden abierta={!!rechazando} descripcion={rechazando ? `Orden del ${rechazando.fecha} (${rechazando.lote_nombre ?? rechazando.lote?.nombre_lote ?? 'lote'}), marcada por ${rechazando.marcada_por ?? 'otro usuario'}` : ''}
+        onCerrar={() => setRechazando(null)} onRechazar={(m) => rechazando && rechazarOrden(rechazando, m)} />
+
       <Dialog open={mostrarModalEjecutar} onOpenChange={(open) => { if (!open) { setMostrarModalEjecutar(false); setOrdenEjecutando(null) } }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Confirmar Orden como Ejecutada</DialogTitle>
-            <DialogDescription>Marque las líneas con recuento real y ajuste cantidades si difieren del plan.</DialogDescription>
+            <DialogTitle>{!permOrden.confirmar ? 'Marcar la orden como hecha' : ordenEjecutando?.estado === 'a_confirmar' ? `Confirmar la orden (la marcó ${ordenEjecutando.marcada_por ?? 'otro usuario'})` : 'Confirmar Orden como Ejecutada'}</DialogTitle>
+            <DialogDescription>{!permOrden.confirmar && 'Queda a confirmar: no descuenta stock hasta que la confirme quien aprueba. '}Marque las líneas con recuento real y ajuste cantidades si difieren del plan.</DialogDescription>
           </DialogHeader>
           {ordenEjecutando && (
             <div className="space-y-4">
@@ -7968,7 +8135,7 @@ function SubTabOrdenesAgricolas() {
             <Button onClick={ejecutarOrden} disabled={guardando} className="bg-green-600 hover:bg-green-700">
               {guardando && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               <CheckCircle2 className="mr-2 h-4 w-4" />
-              Confirmar Ejecutada
+              {permOrden.confirmar ? 'Confirmar: descuenta stock' : 'Se hizo (queda a confirmar)'}
             </Button>
           </DialogFooter>
         </DialogContent>

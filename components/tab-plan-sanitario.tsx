@@ -126,7 +126,7 @@ export function TabPlanSanitario() {
         ps().from("iatf").select("*, iatf_toros(*)").order("fecha_ia"),
         traerTodo((d, h) => ps().from("ordenes_aplicacion")
           .select("id, fecha, estado, lineas_orden_aplicacion(insumo_nombre), lineas_orden_labores(labores(nombre)), categorias_hacienda(nombre), ordenes_aplicacion_rodeos(categorias_hacienda(nombre))")
-          .eq("estado", "ejecutada").order("fecha").range(d, h)),
+          .in("estado", ["ejecutada", "a_confirmar"]).order("fecha").range(d, h)),
         ps().from("categorias_hacienda").select("id, nombre").eq("activo", true).order("nombre"),
       ])
       if (t.error) {
