@@ -353,3 +353,148 @@ export function agruparEnSesiones(ocs: Ocurrencia[]) {
     }
   })
 }
+
+// ── Encierres por rodeo (JMS 27/10) ───────────────────────────────────────────────────────────
+/**
+ * «Ideal sería que nunca un rodeo se encierre más de una vez por mes y 2 veces idealmente en 4 meses;
+ * nunca más de 2 veces en 3 meses. Idealmente si se encierra un rodeo se encierra otro el mismo día,
+ * pero puede que se haga en 2 días si es toda la hacienda o el 70%.»
+ *
+ * Un ENCIERRE es una sesión que toca a un rodeo con una tarea obligatoria de sanidad o manejo. No cuentan
+ * la parición y el entore (suceden en el campo) ni lo que no es hacienda (Caballos, Campo).
+ * La IATF cuenta como UN encierre aunque el protocolo pida tres pasos: es un protocolo, no se elige.
+ */
+export const RODEOS = ["Vacas", "Vaquillonas", "Toros", "Terneros al pie", "Recría", "CUT"]
+export const ENCIERRE = { minDias: 30, ventanaDura: 90, maxDura: 2, ventanaIdeal: 120, maxIdeal: 2, juntarDias: 1, porcentajeDosDias: 0.7 }
+
+export function esEncierre(o: Ocurrencia): boolean {
+  return o.tarea.obligatoria && (o.tarea.columna === "veterinario" || o.tarea.columna === "manejo" || o.tarea.codigo === "iatf")
+    && o.tarea.codigo !== "paricion" && o.tarea.codigo !== "entore"
+    && o.tarea.grupos.some(g => RODEOS.includes(g))
+}
+
+/** Días en que se encierra cada rodeo. Dos días seguidos cuentan como UN encierre (la hacienda en 2 días). */
+export function encierresPorRodeo(items: { fecha: string; grupos: string[] }[]): Record<string, string[]> {
+  const m: Record<string, string[]> = {}
+  for (const r of RODEOS) {
+    const fechas = [...new Set(items.filter(i => i.grupos.includes(r)).map(i => i.fecha))].sort()
+    const unidas: string[] = []
+    for (const f of fechas) if (!unidas.length || difDias(f, unidas.at(-1)!) > ENCIERRE.juntarDias) unidas.push(f)
+    if (unidas.length) m[r] = unidas
+  }
+  return m
+}
+
+export type ProblemaEncierre = { rodeo: string; fechas: string[]; grave: boolean; texto: string }
+
+/** El control: dónde se rompe la regla. `grave` = límite duro; el resto, lo ideal. */
+export function controlarEncierres(porRodeo: Record<string, string[]>): ProblemaEncierre[] {
+  const out: ProblemaEncierre[] = []
+  for (const [rodeo, f] of Object.entries(porRodeo)) {
+    for (let i = 1; i < f.length; i++) {
+      const d = difDias(f[i], f[i - 1])
+      if (d < ENCIERRE.minDias) out.push({ rodeo, fechas: [f[i - 1], f[i]], grave: true, texto: `${rodeo}: dos encierres en ${d} días (${fechaCorta(f[i - 1]).slice(0, 5)} y ${fechaCorta(f[i]).slice(0, 5)}) — máximo 1 por mes` })
+    }
+    for (let i = 0; i + ENCIERRE.maxDura < f.length; i++) {
+      const d = difDias(f[i + ENCIERRE.maxDura], f[i])
+      if (d < ENCIERRE.ventanaDura) out.push({ rodeo, fechas: f.slice(i, i + ENCIERRE.maxDura + 1), grave: true, texto: `${rodeo}: ${ENCIERRE.maxDura + 1} encierres en ${d} días — nunca más de 2 en 3 meses` })
+      else if (d < ENCIERRE.ventanaIdeal) out.push({ rodeo, fechas: f.slice(i, i + ENCIERRE.maxDura + 1), grave: false, texto: `${rodeo}: ${ENCIERRE.maxDura + 1} encierres en ${d} días — lo ideal es 2 en 4 meses` })
+    }
+  }
+  return out.sort((a, b) => Number(b.grave) - Number(a.grave) || a.fechas[0].localeCompare(b.fechas[0]))
+}
+
+export type SesionPropuesta = {
+  fecha: string
+  ocurrencias: Ocurrencia[]
+  rodeos: string[]
+  /** tiene una tarea fija (IATF): la fecha no se mueve */
+  fija: boolean
+  /** tareas que quedan fuera de su margen: piden explicación */
+  fuera: Ocurrencia[]
+  /** entra ≥70% de la hacienda: se puede hacer en 2 días seguidos */
+  dosDias: boolean
+}
+
+type Grupo = { ocs: Ocurrencia[]; desde: string; hasta: string; fija: string | null }
+const ventana = (o: Ocurrencia, hoy: string, holgura = 0): [string, string] => {
+  const d = sumarDias(o.esperada, -o.tarea.tol_antes - holgura)
+  return [d < hoy ? hoy : d, sumarDias(o.esperada, o.tarea.tol_despues + holgura)]
+}
+const fechaDe = (g: Grupo): string => {
+  if (g.fija) return g.fija
+  const media = g.ocs.map(o => o.esperada).sort()[Math.floor(g.ocs.length / 2)]
+  return media < g.desde ? g.desde : media > g.hasta ? g.hasta : media
+}
+
+/**
+ * La propuesta base de calendario: junta las tareas FUTURAS que se pueden hacer el mismo día (sus márgenes
+ * se tocan) y, si aun así un rodeo queda encerrado dos veces en el mes o tres en 3 meses, intenta juntar esas
+ * sesiones estirando hasta 30 días — lo que sale del margen de una tarea queda marcado (pide explicación).
+ * Es una BASE: el usuario la acepta, la cambia o la descarta.
+ */
+export function proponerCalendario(ocs: Ocurrencia[], hoy: string): { sesiones: SesionPropuesta[]; problemas: ProblemaEncierre[]; antes: ProblemaEncierre[] } {
+  const pend = ocs.filter(o => esEncierre(o) && !o.fechaReal && o.estado !== "explicada" && o.esperada >= hoy)
+    .sort((a, b) => a.esperada.localeCompare(b.esperada))
+  const antes = controlarEncierres(encierresPorRodeo(pend.map(o => ({ fecha: o.esperada, grupos: o.tarea.grupos }))))
+
+  // 1 · Juntar lo que entra en el margen de todos
+  let grupos: Grupo[] = []
+  for (const o of pend) {
+    const [d, h] = o.tarea.es_fija ? [o.esperada, o.esperada] : ventana(o, hoy)
+    const cand = grupos
+      .filter(g => (g.fija ? g.fija >= d && g.fija <= h : (d <= g.hasta && h >= g.desde)) && !(o.tarea.es_fija && g.fija))
+      .sort((a, b) => Math.abs(difDias(fechaDe(a), o.esperada)) - Math.abs(difDias(fechaDe(b), o.esperada)))[0]
+    if (cand) {
+      cand.ocs.push(o)
+      if (o.tarea.es_fija) cand.fija = o.esperada
+      if (!cand.fija) { cand.desde = d > cand.desde ? d : cand.desde; cand.hasta = h < cand.hasta ? h : cand.hasta }
+    } else grupos.push({ ocs: [o], desde: d, hasta: h, fija: o.tarea.es_fija ? o.esperada : null })
+  }
+
+  // 2 · Lo que todavía rompe la regla: juntar estirando (hasta 30 días de holgura)
+  const ESTIRAR = 30
+  for (let vuelta = 0; vuelta < 20; vuelta++) {
+    const items = grupos.map(g => ({ fecha: fechaDe(g), grupos: g.ocs.flatMap(o => o.tarea.grupos) }))
+    const graves = controlarEncierres(encierresPorRodeo(items)).filter(p => p.grave)
+    let unido = false
+    for (const p of graves) {
+      const involucrados = grupos.filter(g => p.fechas.some(f => Math.abs(difDias(fechaDe(g), f)) <= ENCIERRE.juntarDias)
+        && g.ocs.some(o => o.tarea.grupos.includes(p.rodeo)))
+      for (let i = 0; i + 1 < involucrados.length && !unido; i++) {
+        const a = involucrados[i], b = involucrados[i + 1]
+        if (a.fija && b.fija) continue
+        const todos = [...a.ocs, ...b.ocs]
+        const ws = todos.map(o => o.tarea.es_fija ? [o.esperada, o.esperada] : ventana(o, hoy, ESTIRAR))
+        const d = ws.map(w => w[0]).sort().at(-1)!, h = ws.map(w => w[1]).sort()[0]
+        const fija = a.fija ?? b.fija
+        if (fija ? (fija >= d && fija <= h) : d <= h) {
+          // la fecha: la que deja menos tareas fuera de su margen
+          const nuevo: Grupo = { ocs: todos, desde: d, hasta: h, fija }
+          if (!fija) {
+            const opciones = todos.map(o => o.esperada).filter(f => f >= d && f <= h).concat([d, h])
+            const fueraCon = (f: string) => todos.filter(o => moverPideExplicacion(o, f)).length
+            const mejor = opciones.sort((x, y) => fueraCon(x) - fueraCon(y) || x.localeCompare(y))[0]
+            nuevo.desde = mejor; nuevo.hasta = mejor
+          }
+          grupos = grupos.filter(g => g !== a && g !== b).concat([nuevo])
+          unido = true
+        }
+      }
+      if (unido) break
+    }
+    if (!unido) break
+  }
+
+  const sesiones: SesionPropuesta[] = grupos.map(g => {
+    const fecha = fechaDe(g)
+    const rodeos = RODEOS.filter(r => g.ocs.some(o => o.tarea.grupos.includes(r)))
+    return {
+      fecha, ocurrencias: g.ocs.sort((a, b) => a.tarea.orden - b.tarea.orden), rodeos, fija: !!g.fija,
+      fuera: g.ocs.filter(o => !o.tarea.es_fija && moverPideExplicacion(o, fecha)),
+      dosDias: rodeos.length >= Math.ceil(RODEOS.length * ENCIERRE.porcentajeDosDias),
+    }
+  }).sort((a, b) => a.fecha.localeCompare(b.fecha))
+  const problemas = controlarEncierres(encierresPorRodeo(sesiones.map(s => ({ fecha: s.fecha, grupos: s.rodeos }))))
+  return { sesiones, problemas, antes }
+}
