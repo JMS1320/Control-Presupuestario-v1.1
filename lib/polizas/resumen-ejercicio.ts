@@ -52,6 +52,8 @@ export interface RenglonResumen {
   motivo: MotivoDiferencia | null
   /** Cuotas o movimientos que explican la diferencia (para el detalle). */
   casos: { fecha: string; esperado: number; debitado: number | null }[]
+  /** Si el renglón viene ARRASTRADO de un ejercicio anterior (sigue sin resolverse), de cuál. */
+  ejercicioOrigen?: string
 }
 
 export interface ResumenEjercicio {
@@ -170,8 +172,12 @@ export function resumenPorEjercicio(
     .filter(e => !desdeEjercicio || e >= desdeEjercicio)
     .sort()
 
+  // 📌 Lo que quedó sin resolver en un ejercicio SE ARRASTRA al siguiente (JMS 27/10, mirando 26/27: «acá falta la
+  // diferencia de los reintegros recibidos sin factura»). Así el ejercicio en curso dice lo que falta reclamar HOY,
+  // y su total es el saldo de la cuenta corriente. Cuando llega el papel, el renglón desaparece solo (de los dos).
+  const arrastre: RenglonResumen[] = []
   return ejercicios.map(ej => {
-    const renglones = [...(porEj.get(ej)?.values() ?? [])].map(r => ({
+    const renglones: RenglonResumen[] = [...(porEj.get(ej)?.values() ?? [])].map(r => ({
       ...r,
       cuotas: r2(r.cuotas), notasCredito: r2(r.notasCredito), esperadoVencido: r2(r.esperadoVencido), pagado: r2(r.pagado), aVencer: r2(r.aVencer),
       diferencia: r2(r.esperadoVencido - r.pagado),
@@ -198,6 +204,12 @@ export function resumenPorEjercicio(
       poliza: x.poliza, seccion: seccion.get(x.poliza) ?? null, cuotas: 0, notasCredito: 0, esperadoVencido: 0, pagado: 0, aVencer: 0,
       diferencia: x.saldo, motivo: "nc-sin-aplicar", casos: [],
     })
+    // Lo de este ejercicio que queda abierto pasa al siguiente (con su origen); lo arrastrado sigue arrastrándose.
+    const arrastrados = arrastre.map(r => ({ ...r }))
+    const abiertos = renglones.filter(r => Math.abs(r.diferencia) > TOL)
+      .map(r => ({ ...r, cuotas: 0, notasCredito: 0, esperadoVencido: 0, pagado: 0, aVencer: 0, ejercicioOrigen: ej }))
+    renglones.push(...arrastrados)
+    arrastre.push(...abiertos)
     const suma = (k: keyof RenglonResumen) => r2(renglones.reduce((t, r) => t + (r[k] as number), 0))
     return {
       ejercicio: ej,

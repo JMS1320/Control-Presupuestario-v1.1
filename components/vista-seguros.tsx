@@ -259,7 +259,8 @@ function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, desde, polizas,
   // 🧮 El control: la cuenta corriente (camino inverso) tiene que dar la suma de «a reclamar».
   const cc = useMemo(() => cuentaCorriente(emitidas, control.cuotas, control.movimientos, polizas, desde, hasta),
     [emitidas, control, polizas, desde, hasta])
-  const sumaReclamar = Math.round(resumen.reduce((t, x) => t + x.total.diferencia, 0) * 100) / 100
+  // El último ejercicio arrastra lo abierto de los anteriores: su total es lo que falta reclamar HOY.
+  const sumaReclamar = resumen[resumen.length - 1].total.diferencia
   const cierra = Math.abs(sumaReclamar - cc.saldo) < 0.01
 
   return (
@@ -314,13 +315,14 @@ function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, desde, polizas,
                 const etiqueta = x.motivo === "reintegro-sin-facturar" ? "Reintegros sin facturar"
                   : x.motivo === "debito-sin-poliza" ? "Débitos sin póliza" : null
                 return (
-                  <TableRow key={(x.poliza ?? "") + (x.motivo ?? "") + i} className={mal ? "bg-red-50/60" : ""}>
+                  <TableRow key={(x.poliza ?? "") + (x.motivo ?? "") + (x.ejercicioOrigen ?? "") + i} className={x.ejercicioOrigen ? "bg-amber-50/50" : mal ? "bg-red-50/60" : ""}>
                     <TableCell>
                       {x.poliza && !etiqueta
                         ? <Boton className="text-left hover:underline" onClick={() => onVerPoliza(x.poliza!)} title="Ver la póliza, con sus PDF">
                             <span className="font-mono">{x.poliza}</span> <span className="text-xs text-muted-foreground">{x.seccion}</span>
                           </Boton>
                         : <span className="font-medium">{etiqueta}</span>}
+                      {x.ejercicioOrigen && <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] text-amber-800" title="Quedó sin resolver en ese ejercicio y sigue pendiente">viene de {x.ejercicioOrigen}</span>}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{x.cuotas ? $(x.cuotas) : ""}</TableCell>
                     <TableCell className="text-right tabular-nums">{x.notasCredito ? $(x.notasCredito) : ""}</TableCell>
@@ -369,7 +371,7 @@ function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, desde, polizas,
           Positivo = falta un papel; negativo (azul) = la aseguradora nos debe.
         </p>
         <p className={`text-xs ${cierra ? "text-green-700" : "font-semibold text-red-700"}`}>
-          {cierra ? "✓" : "🛑"} Control: la cuenta corriente al {fecha(hasta)} da {$(cc.saldo)} y la suma de «a reclamar» de todos los ejercicios da {$(sumaReclamar)}{cierra ? "." : " — no coinciden: avisar."}
+          {cierra ? "✓" : "🛑"} Control: la cuenta corriente al {fecha(hasta)} da {$(cc.saldo)} y «a reclamar» del ejercicio {resumen[resumen.length - 1].ejercicio} (con lo que arrastra) da {$(sumaReclamar)}{cierra ? "." : " — no coinciden: avisar."}
         </p>
 
         {otroImporte.length > 0 && (
