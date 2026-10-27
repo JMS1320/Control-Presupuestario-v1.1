@@ -251,7 +251,7 @@ import { juntarTandas, lecturaIncompleta, juntarHasta, mensajeLecturaIncompleta 
 import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
 import * as XLSXcasos from "xlsx"
 import { ocurrenciasDeCampania, sugerirAgrupar, fechasIatf, chequearIatf, chequearEntore, fechaEnCampania, campaniaDe, fechaCorta,
-  agruparEnSesiones, avisos, encierresPorRodeo, controlarEncierres, proponerCalendario,
+  agruparEnSesiones, avisos, encierresPorRodeo, controlarEncierres, proponerCalendario, expandirIatf,
   type TareaPlan as TareaPlanCaso, type Hecho as HechoCaso, type Ocurrencia as OcurrenciaCaso } from "@/lib/productivo/plan-sanitario"
 import { presentarHoja, MONEDA, ENTERO } from "@/lib/balance/formato-excel"
 import { armarFilaDato, leerNumero, textoEstadoGuardado } from "@/lib/balance/datos-usuario-puro"
@@ -9311,6 +9311,19 @@ export function correrCasos(): Resultado[] {
     const vCtrl = ctrl.map(x => `${x.grave ? "DURO" : "ideal"}:${x.fechas.map(f => f.slice(5)).join(",")}`).join(" ")
     chequear("Plan sanitario", "Encierres: 15 y 16/11 cuentan como uno; 1/12 a 16 días rompe «1 por mes»; tres en 66 días rompen «2 en 3 meses»",
       "DURO:11-15,12-01 DURO:11-15,12-01,01-20", vCtrl, vCtrl === "DURO:11-15,12-01 DURO:11-15,12-01,01-20", "A-FEAT-1380")
+
+    // La IATF son 3 encierres (dispositivos, retiro, IA): la excepción a propósito. Entre ellos no avisa; cerca, sí.
+    const ivacas = ocurrenciasDeCampania(PLAN, 2026, HECHOS, [], "2026-09-01")
+    const pasos = expandirIatf(ivacas.filter(o => o.tarea.id === "iatf"))
+    const vPasos = pasos.map(o => `${o.paso}:${o.esperada.slice(5)}`).join(" ")
+    chequear("Plan sanitario", "La IATF se abre en sus 3 encierres: dispositivos 21/9, retiro 29/9, inseminación 1/10",
+      "colocación de dispositivos:09-21 retiro de dispositivos:09-29 inseminación:10-01", vPasos,
+      vPasos === "colocación de dispositivos:09-21 retiro de dispositivos:09-29 inseminación:10-01", "A-FEAT-1380")
+    const soloIatf = controlarEncierres(encierresPorRodeo(pasos.map(o => ({ fecha: o.esperada, grupos: ["Vacas"], protocolo: "iatf-2026" }))))
+    const conSanidad = controlarEncierres(encierresPorRodeo([...pasos.map(o => ({ fecha: o.esperada, grupos: ["Vacas"], protocolo: "iatf-2026" })), { fecha: "2026-09-10", grupos: ["Vacas"] }]))
+    const vIp = `sólo IATF: ${soloIatf.length} problemas · + sanidad 10/9: ${conSanidad.filter(x => x.grave).length} duro`
+    chequear("Plan sanitario", "Los 3 encierres de la IATF entre sí no avisan; una sanidad 11 días antes de los dispositivos sí",
+      "sólo IATF: 0 problemas · + sanidad 10/9: 1 duro", vIp, vIp === "sólo IATF: 0 problemas · + sanidad 10/9: 1 duro", "A-FEAT-1380")
 
     const PLAN4 = [
       T("mosca", { columna: "manejo", grupos: ["Vacas", "Toros"], optimo_mmdd: "11-15", claves: ["Caravana mosca"] }),
