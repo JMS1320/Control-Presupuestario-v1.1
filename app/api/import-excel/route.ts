@@ -4,6 +4,8 @@ import { createClient } from "@supabase/supabase-js"
 import * as XLSX from "xlsx"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 import { exigirCuentaExtracto } from "@/lib/auth/guard-recurso"
+import { sincronizarPolizas } from "@/lib/polizas/sincronizar"
+import { esDeLaAseguradora } from "@/lib/polizas/control-debitos"
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
@@ -289,13 +291,27 @@ export async function POST(req: Request) {
       }
     }
 
+    // 🛡️ A-FEAT-1385 — si entró algún movimiento de la aseguradora, las cuotas de las pólizas se ponen al día ANTES
+    // de conciliar (así la conciliación encuentra la cuota de cada póliza) y se avisa lo que no casa.
+    let seguros: { avisos: string[]; cambios: number } | null = null
+    if (tablaDestino === "msa_galicia" && rowsParaInsertar.some((r: any) => esDeLaAseguradora(r))) {
+      try {
+        const s = await sincronizarPolizas(supabase)
+        seguros = { avisos: s.avisos, cambios: s.cuotasCreadas + s.cuotasActualizadas + s.cuotasDesactivadas + s.templatesCreados.length }
+      } catch (e) {
+        seguros = { avisos: [`No se pudieron poner al día las cuotas de las pólizas: ${(e as Error).message}`], cambios: 0 }
+      }
+    }
+
     // Respuesta exitosa con detalles
     return NextResponse.json({
       success: true,
+      seguros,
       message:
-        rowsParaInsertar.length > 0
+        (rowsParaInsertar.length > 0
           ? `Importación completada exitosamente. ${rowsParaInsertar.length} registros insertados.`
-          : "No se encontraron registros válidos para importar.",
+          : "No se encontraron registros válidos para importar.")
+        + (seguros ? ` · Seguros: ${seguros.cambios} cuota(s) de pólizas puestas al día${seguros.avisos.length ? `; ${seguros.avisos.length} aviso(s) — ver Egresos → Seguros` : ""}.` : ""),
       insertedCount: rowsParaInsertar.length,
       controlErrors,
       errores,

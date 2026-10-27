@@ -58,4 +58,12 @@ for (const [clave, { p, archivo }] of [...mejores.entries()].sort()) {
   const r = await guardarPoliza(sb as any, p, extras)
   console.log(`  ${r.estado === "guardado" ? "✓" : r.estado === "ya-estaba" ? "=" : "✗"} ${txt} → ${r.estado}${"motivo" in r ? ": " + r.motivo : ""}`)
 }
+// 3 · 🛡️ A-FEAT-1385 — con las pólizas guardadas, su template y sus cuotas se ponen al día solos.
+if (aplicar) {
+  const { sincronizarPolizas } = await import(`file:///${B}/lib/polizas/sincronizar.ts`)
+  const s = await sincronizarPolizas(sb as any)
+  console.log(`
+Cuotas de las pólizas: ${s.templatesCreados.length} template(s) nuevo(s) · ${s.cuotasCreadas} creadas · ${s.cuotasActualizadas} corregidas · ${s.cuotasDesactivadas} desactivadas`)
+  s.avisos.forEach((a: string) => console.log("  ⚠️ " + a))
+}
 console.log(aplicar ? "\nListo." : "\nEn seco: no se escribió nada. Agregá --aplicar para guardar.")

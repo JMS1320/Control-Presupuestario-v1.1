@@ -3502,6 +3502,11 @@ PDF de cada endoso. Con cuotas y débitos el saldo queda en cero; lo que lo saca
 Su saldo final tiene que dar lo mismo que la suma de «a reclamar» de todos los ejercicios: la línea de control
 debajo de la tabla lo muestra en verde si coincide.
 
+**🔄 Actualizar desde las pólizas** (botón arriba): rehace las cuotas del template de cada póliza con lo que espera el
+banco (cuotas de los endosos menos las notas de crédito). **Corre solo** al importar el extracto de MSA cuando entra un
+movimiento de Federación, y al cargar pólizas: el botón es para forzarlo. Nunca toca una cuota ya conciliada (si no casa,
+avisa) ni borra nada: lo que sobra queda «desactivado». Si un endoso trae PDF y su factura no lo tenía, se lo vincula.
+
 Tocando el número de póliza se abre su detalle más abajo, con los PDF. En cada diferencia, la 🚩
 sirve para **pasársela a alguien** (por ejemplo, Ulises) con un mensaje: le llega a su campanita. Los débitos de
 pólizas anteriores al ejercicio (del balance anterior) no se cuentan; se informan en una línea gris.
