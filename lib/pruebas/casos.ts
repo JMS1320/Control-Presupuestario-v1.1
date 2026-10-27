@@ -219,6 +219,7 @@ import { planDeLaPoliza } from "@/lib/polizas/sincronizar"
 import { historicoAFactura, filasDelSubdiario } from "@/lib/facturas/historico-como-factura"
 import { parsearComprasCsv, parsearTotalesXml, compararSubdiarioConLibro } from "@/lib/subdiarios/libro-presentado"
 import { mesesARectificar, queCambio, efectoEnElMes, leyendaRectificacion, esColumnaFiscal, type CambioSubdiario } from "@/lib/subdiarios/rectificacion"
+import { ivaDelLibroVenta } from "@/lib/ventas/libro-iva"
 import { CONTADOR, asuntoSubdiario, periodoDelAsunto, cuerpoSubdiario } from "@/lib/subdiarios/contador"
 import { calcularSubtotalesSubdiario } from "@/lib/subdiarios/subtotales"
 import { TABLAS_CON_VINCULO_VENTA, completarConGrupoDeCobro } from "@/lib/balance/fechas-de-pago"
@@ -1311,6 +1312,12 @@ export function correrCasos(): Resultado[] {
       queCambio(nc).includes("Exento 81.676,64 → -81.676,64"), queCambio(sale), esColumnaFiscal("imp_total"), esColumnaFiscal("estado"),
     ].join(" | ")
     const esperado = "2 | false | true | 1 | -163353.28 | -980.12 | 0 | -164333.4 | -97613.47 | true | true | true | salió del mes: pasó a 10/2026 | true | false"
+    // 🧾 Regla de JMS 27/10: el IVA del libro de una liquidación = IVA de la venta − IVA de la comisión − IVA del almacenaje.
+    // Las 3 de AFA de mayo: lo que declaró ARCA.
+    const vIva = [ivaDelLibroVenta({ iva: 116858.70, comision_iva: 2404.50 }), ivaDelLibroVenta({ iva: 589902.72, comision_iva: 12137.92 }),
+      ivaDelLibroVenta({ iva: 4520.46, comision_iva: 90.41, almacenaje_iva: 276.82 }), ivaDelLibroVenta({ iva: 1271497.77 })].join(" | ")
+    chequear("Ventas — libro IVA", "🧾 El IVA del libro de una liquidación es el de la venta menos el de los gastos (AFA mayo = lo declarado); sin gastos, igual",
+      "114454.2 | 577764.8 | 4153.23 | 1271497.77", vIva, vIva === "114454.2 | 577764.8 | 4153.23 | 1271497.77", "A-DAT-95")
     chequear("Subdiarios — a rectificar", "🔁 El mes que cambió después de presentarlo: abril (NC a negativo) «no modifica IVA → sólo el subdiario»; diciembre (sale una factura con IVA) «MODIFICA IVA»; lo ya rectificado no cuenta; el estado de pago no es dato fiscal",
       esperado, vR, vR === esperado, "A-FEAT-1394")
   }

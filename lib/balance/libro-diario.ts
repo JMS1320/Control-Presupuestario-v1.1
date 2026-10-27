@@ -36,6 +36,7 @@ import {
 } from "@/lib/subdiarios/cuadratura"
 import { monedaArca } from "@/lib/subdiarios/libro-iva-arca"
 import { compararConPresentado, type FilaContraPresentado, type Presentado } from "./presentado-arca"
+import { ivaDelLibroVenta } from "@/lib/ventas/libro-iva"
 import { controlarFacturasFijas, mesesTerminados, type FilaFacturasFijas, type ProveedorFijo } from "./facturas-fijas"
 import {
   armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios,
@@ -340,7 +341,8 @@ export function desdeVenta(f: Record<string, unknown>): AsientoLibroDiario {
     cuit: s(f.cuit_cliente), denominacion: s(f.denominacion_cliente),
     neto_gravado: n(f.imp_neto_gravado), no_gravado: n(f.imp_neto_no_gravado),
     exento: n(f.imp_op_exentas), otros_tributos: 0,
-    iva: n(f.iva), total: n(f.imp_total),
+    // 🧾 El IVA del LIBRO: el de la venta menos el de la comisión y el almacenaje (regla de JMS 27/10, `lib/ventas/libro-iva.ts`).
+    iva: ivaDelLibroVenta(f), total: n(f.imp_total),
     cuenta_contable: s(f.cuenta_contable), nro_cuenta: s(f.nro_cuenta),
     centro_costo: s(f.centro_costo),
     cantidades: {

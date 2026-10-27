@@ -31,6 +31,7 @@ import {
 import { EstadoMesesDDJJ } from "@/components/estado-meses-ddjj"
 import { RectificacionDelMes, consultarMesesARectificar } from "@/components/rectificacion-del-mes"
 import type { MesARectificar } from "@/lib/subdiarios/rectificacion"
+import { ivaDelLibroVenta } from "@/lib/ventas/libro-iva"
 
 type RetencionesDelSubdiario = Awaited<ReturnType<typeof cargarRetencionesSubdiario>>
 
@@ -129,7 +130,8 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
         .eq('mes_contable', parseInt(mes))
         .order('fecha_liquidacion', { ascending: false })
       if (error) throw error
-      setComprobantes(data || [])
+      // 🧾 El subdiario muestra y exporta el IVA del LIBRO: el de la venta menos el de los gastos (regla de JMS 27/10).
+      setComprobantes((data || []).map((c: any) => ({ ...c, iva: ivaDelLibroVenta(c) })))
       setSeleccionados(new Set())
       // 🧾 A-FEAT-1278: vista previa de las retenciones (el aviso de «sin fecha» se ve antes de exportar).
       setRetPreview(null)
