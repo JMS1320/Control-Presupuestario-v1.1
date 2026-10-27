@@ -721,7 +721,8 @@ function hojaArcaOriginal(t: TablaOriginal, titulo: string): unknown[][] {
  * fiscal»), con la cuenta contable del comprobante de la app que le corresponde y qué pasó con él.
  */
 function hojaArcaNuestra(hoja: string, titulo: string, lado: Lado, a: AnalisisEntrega, d: DatosEntrega, porId: Map<string, AsientoLibroDiario>): { filas: unknown[][]; total: DondeTotal } {
-  const f: unknown[][] = [[titulo], ["Cada comprobante declarado con las mismas columnas que la app. La columna Control dice si está igual en la app."], []]
+  const f: unknown[][] = [[titulo], ["Cada comprobante declarado con las mismas columnas que la app. La columna Control dice si está igual en la app." +
+    (lado === "ventas" ? " En ventas el total va BRUTO: se le suma la retención o pago a cuenta que ARCA descuenta (como lo guarda la app)." : "")], []]
   f.push(ENCABEZADO)
   const renglones: { clave: string; p: ComprobantePresentado; app?: AsientoLibroDiario; control: string; mal: boolean }[] = []
   for (const s of (lado === "compras" ? a.compras : a.ventas).filter(x => x.contra)) {
@@ -864,8 +865,23 @@ function hojaControl(d: DatosEntrega, a: AnalisisEntrega, cadena: Record<Lado, P
   return f
 }
 
+/**
+ * 🧾 Las VENTAS declaradas, como las guarda la app: el total BRUTO. En las liquidaciones (tipos 60 / 180) ARCA declara el
+ * total ya descontada la retención o el pago a cuenta (va como «otros» en negativo); la app guarda el bruto y la retención
+ * aparte. Error mío del 27/10, visto por JMS: comparaba bruto contra neto y marcaba diferencias que no existían (Sáenz
+ * Valiente −330.665,50 y −270.618; Genta −970.830 — neto e IVA iguales al centavo). Se suma de vuelta para comparar.
+ */
+export function ventasComoLaApp(presentado: Record<string, LoPresentado> | undefined): Record<string, LoPresentado> | undefined {
+  if (!presentado) return presentado
+  return Object.fromEntries(Object.entries(presentado).map(([k, v]) => [k, {
+    compras: v.compras,
+    ventas: v.ventas.map(p => ((p.otrosTributos ?? 0) < 0 ? { ...p, total: r2(p.total - (p.otrosTributos ?? 0)), otrosTributos: 0 } : p)),
+  }]))
+}
+
 /** Arma el libro entero. El orden de las hojas es el de su pedido, con el Control primero. */
-export function armarEntregaLibroDiario(d: DatosEntrega): { wb: XLSX.WorkBook; analisis: AnalisisEntrega } {
+export function armarEntregaLibroDiario(datos: DatosEntrega): { wb: XLSX.WorkBook; analisis: AnalisisEntrega } {
+  const d: DatosEntrega = { ...datos, presentado: ventasComoLaApp(datos.presentado) }
   const a = analizarEntrega(d)
   const marcas = marcasDeFilas(a)
   const { libro } = d
