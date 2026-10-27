@@ -219,7 +219,7 @@ import { historicoAFactura, filasDelSubdiario } from "@/lib/facturas/historico-c
 import { parsearComprasCsv, parsearTotalesXml, compararSubdiarioConLibro } from "@/lib/subdiarios/libro-presentado"
 import { CONTADOR, asuntoSubdiario, periodoDelAsunto, cuerpoSubdiario } from "@/lib/subdiarios/contador"
 import { calcularSubtotalesSubdiario } from "@/lib/subdiarios/subtotales"
-import { TIPOS_SIN_CREDITO_COMPRAS } from "@/lib/subdiarios/cuadratura"
+import { TIPOS_SIN_CREDITO_COMPRAS, verificarCuadratura } from "@/lib/subdiarios/cuadratura"
 import { controlarPoliza, cotejarConComprobante, repartoDeLaPoliza, repartoDeLasCuotas, repartirImporte, responsableDe } from "@/lib/polizas/controlar-poliza"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
 import { motivoFechaNoExacta, ajusteTarjetaPorEmision, elegirPorImporteCercano } from "@/lib/conciliacion/motivo-fecha"
@@ -248,7 +248,7 @@ import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
-import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas, bloqueDeVersion, hojaPorCuenta, hojaResumenMensual } from "@/lib/balance/export-libro-diario"
+import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas, bloqueDeVersion, hojaPorCuenta, hojaResumenMensual, hojaDeAsientos } from "@/lib/balance/export-libro-diario"
 import {
   itemsDeLosPapeles, compararItems, proximoNumero, ultimaVigente, ultimaEntregada,
   type ItemPapel, type VersionBalance,
@@ -4589,6 +4589,30 @@ export function correrCasos(): Resultado[] {
       const vRM = `${filasMes.length} meses · dic ${dic?.[7]} (${(dic?.[6] as { v?: number } | undefined)?.v}) · control ${(ctlRM?.[2] as { v?: number })?.v}/${(ctlRM?.[4] as { v?: number })?.v} ${ctlRM?.[7]}`
       chequear("Balance · libro diario", "📅 Resumen 12 meses: los 12 subdiarios (vacíos en 0), diciembre NO COINCIDE con ARCA por 580,50, y la suma de los 12 da el total",
         "12 meses · dic NO COINCIDE (580.5) · control 0/0 cuadra", vRM, vRM === "12 meses · dic NO COINCIDE (580.5) · control 0/0 cuadra", "A-FEAT-1388")
+
+      // 🛑 Los comprobantes que no cuadran, MARCADOS en el detalle y en la subplanilla (usuario 27/10: «que quede
+      //    marcado el error en subplanilla y detalle»). Caso real: el tique de Pan American del 12/02, sin el
+      //    impuesto a los combustibles — neto 77.914,38 + IVA 16.362,02 = 94.276,40 contra un total de 113.338,52.
+      const pan = { ...asi("2026-02", 0, "Combustible y lubricantes"), id: "pan", tipo: 81, neto_gravado: 77914.38, iva: 16362.02, total: 113338.52 }
+      const bien = asi("2026-02", 1000, "Luz")
+      const comprasErr = [pan, bien] as unknown as LibroDiarioT["compras"]
+      const desc = verificarCuadratura(comprasErr.map(a => ({ id: a.id, tipo_comprobante: a.tipo, tipo_cambio: 1,
+        imp_neto_gravado: a.neto_gravado, imp_neto_no_gravado: a.no_gravado, imp_op_exentas: a.exento, otros_tributos: a.otros_tributos,
+        iva: a.iva, imp_total: a.total, fecha_emision: a.fecha, denominacion_emisor: a.denominacion, punto_venta: a.punto_venta, numero_desde: a.numero })),
+        TIPOS_SIN_CREDITO_COMPRAS, false).descuadres
+      const det = hojaDeAsientos(comprasErr, desc)
+      const ultimaCelda = (x: unknown[] | undefined) => { const c = x?.[x.length - 1] as { v?: string; s?: { fill?: unknown } } | string | undefined; return typeof c === "string" ? { v: c } : c }
+      const filaPan = ultimaCelda(det.find(x => ((x[6] as { v?: string } | undefined)?.v ?? x[6]) === "COOPSER" && ((x[12] as { v?: number } | undefined)?.v ?? x[12]) === 113338.52))
+      const filaBien = ultimaCelda(det.find(x => (x[12] as unknown) === 1000))
+      const vDet = `${filaPan?.v} · rojo ${filaPan?.s?.fill ? "sí" : "no"} · la que cuadra: «${filaBien?.v ?? "?"}»`
+      chequear("Balance · libro diario", "🛑 Detalle: el comprobante que no cuadra va en rojo con la marca (cuánto suman las partes y cuánto falta); el que cuadra, sin marca",
+        "NO CUADRA: las partes suman 94.276,40 y el total es 113.338,52 — faltan 19.062,12 · rojo sí · la que cuadra: «»", vDet,
+        vDet === "NO CUADRA: las partes suman 94.276,40 y el total es 113.338,52 — faltan 19.062,12 · rojo sí · la que cuadra: «»", "A-FEAT-1388")
+      const sub = hojaPorCuenta(armarLibroPorCuenta(comprasErr), "LIBRO", { asientos: comprasErr, descuadres: desc })
+      const filaCta = (cuenta: string) => ultimaCelda(sub.find(x => ((x[2] as { v?: string } | undefined)?.v ?? x[2]) === cuenta))
+      const vSub = `${filaCta("Combustible y lubricantes")?.v?.startsWith("NO CUADRA: 1 comprobante") ? "marcada" : "sin marca"} · Luz ${filaCta("Luz")?.v ? "marcada" : "sin marca"} · mes ${filaCta("Total 02/2026")?.v?.startsWith("NO CUADRA") ? "avisa" : "no avisa"}`
+      chequear("Balance · libro diario", "🛑 Subplanilla: el renglón de esa cuenta y mes va en rojo con la marca, y el subtotal del mes avisa; la cuenta sin error, no",
+        "marcada · Luz sin marca · mes avisa", vSub, vSub === "marcada · Luz sin marca · mes avisa", "A-FEAT-1388")
     }
 
     // ✍️ A-FEAT-1207 — los saldos del ejercicio anterior: los 3 que dio el usuario el 2026-10-18 suman

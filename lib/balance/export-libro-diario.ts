@@ -27,7 +27,8 @@ import { controlarCheque, chequeEnPapel08, chequeEnTemplates, type ControlCheque
 import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
 import { armarEjercicio, nombreSubdiario } from "./ejercicio"
 import { explicarFila } from "./facturas-fijas"
-import { armarLibroPorCuenta, TIPOS_SIN_CREDITO_VENTAS, type LibroPorCuenta } from "./libro-por-cuenta"
+import { armarLibroPorCuenta, TIPOS_SIN_CREDITO_VENTAS, SIN_IMPUTAR, type LibroPorCuenta } from "./libro-por-cuenta"
+import type { Descuadre } from "@/lib/subdiarios/cuadratura"
 import type { CuentasAlCierre, FilaCuenta } from "./cuentas-al-cierre"
 import type { CadenaDeSaldos } from "./saldos-al-inicio"
 import type { SueldosDelEjercicio, FilaSueldo } from "./sueldos-balance"
@@ -55,8 +56,27 @@ import {
 
 const money = (n: number) => Math.round(n * 100) / 100
 
-/** Cabecera + filas de un listado de asientos. Misma forma para compras, ventas y provisiones. */
-function hojaDeAsientos(asientos: AsientoLibroDiario[]): unknown[][] {
+/**
+ * 🛑 Un renglón con ERROR (las partes del comprobante no suman su propio total): fondo rojo suave y letra roja.
+ * Usuario 27/10: *«que quede marcado el error en subplanilla y detalle… dejalo a la vista con la marca de los
+ * renglones que dan error»*. No se corrige ningún dato: se marca, para que se vea dónde está.
+ */
+const ESTILO_ERROR = {
+  font: { color: { rgb: "FFA12B2B" } },
+  fill: { patternType: "solid", fgColor: { rgb: "FFFBE4E4" } },
+}
+const fmtAr = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+/** El texto de la marca: cuánto suman las partes y cuánto falta (o sobra) para el total. */
+const marcaDescuadre = (d: Descuadre) =>
+  `NO CUADRA: las partes suman ${fmtAr(d.suma_partes)} y el total es ${fmtAr(d.imp_total)} — ${d.diferencia > 0 ? "faltan" : "sobran"} ${fmtAr(Math.abs(d.diferencia))}`
+
+/**
+ * Cabecera + filas de un listado de asientos. Misma forma para compras, ventas y provisiones.
+ * @param descuadres  los del Control (el MISMO criterio, `verificarCuadratura`): si vienen, se agrega la columna
+ *                    «Control de partes» y los renglones con error van en rojo con su marca.
+ */
+export function hojaDeAsientos(asientos: AsientoLibroDiario[], descuadres?: Descuadre[]): unknown[][] {
+  const malos = new Map((descuadres ?? []).filter(d => d.id).map(d => [d.id!, d]))
   const filas: unknown[][] = [[
     "Subdiario", "Fecha", "Tipo", "Pto Vta", "Número", "CUIT", "Denominación",
     "Neto Gravado", "No Gravado", "Exentas", "Otros Tributos", "IVA", "Total",
@@ -64,10 +84,11 @@ function hojaDeAsientos(asientos: AsientoLibroDiario[]): unknown[][] {
     // 💵 A-BUG-1316: los importes van en pesos; la moneda y la cotización quedan a la vista al final
     // (al final y no al lado del Total, para no correr las columnas que suman otras solapas).
     "Moneda", "Tipo de cambio", "Total en moneda original",
+    ...(descuadres ? ["Control de partes"] : []),
   ]]
   for (const a of asientos) {
     const enOtraMoneda = !!a.moneda && a.moneda !== "PES"
-    filas.push([
+    const fila: unknown[] = [
       a.subdiario, a.fecha ?? "", a.tipo ?? "", a.punto_venta ?? "", a.numero ?? "",
       a.cuit, a.denominacion,
       money(a.neto_gravado), money(a.no_gravado), money(a.exento),
@@ -77,7 +98,10 @@ function hojaDeAsientos(asientos: AsientoLibroDiario[]): unknown[][] {
       enOtraMoneda ? (a.moneda === "DOL" ? "USD" : a.moneda) : "$",
       enOtraMoneda ? a.tipo_cambio ?? "" : "",
       enOtraMoneda ? money(a.total_moneda_original ?? 0) : "",
-    ])
+    ]
+    const d = malos.get(a.id)
+    if (descuadres) fila.push(d ? marcaDescuadre(d) : "")
+    filas.push(d ? conEstilo(fila, ESTILO_ERROR) : fila)
   }
   return filas
 }
@@ -284,6 +308,8 @@ function hojaDeControl(libro: LibroDiario, lecturas?: Lectura[]): unknown[][] {
 
   if (c.compras.descuadres.length > 0 || c.ventas.descuadres.length > 0) {
     f.push(["COMPROBANTES CUYAS PARTES NO SUMAN SU PROPIO TOTAL"])
+    // 🛑 A-FEAT-1388: no se corrigen acá — se marcan donde están, para encontrarlos.
+    f.push(["Están en ROJO, con la marca, en las solapas Compras / Ventas y en el renglón de su cuenta y mes de Compras / Ventas por cuenta."])
     f.push(["Fecha", "Nombre", "Comprobante", "Total", "Suma de las partes", "Diferencia"])
     ;[...c.compras.descuadres, ...c.ventas.descuadres].forEach(d => f.push([
       d.fecha, d.nombre, d.comprobante, money(d.imp_total), money(d.suma_partes), money(d.diferencia),
@@ -442,8 +468,31 @@ const COLS_SEMENTERAS: Columna[] = [
  *   la declaración y la app le resta el del libro. Avisa, no frena — y las celdas van **vacías**
  *   porque ese número sale de la DDJJ, que la app no tiene.
  */
-export function hojaPorCuenta(libro: LibroPorCuenta, titulo: string): unknown[][] {
+export function hojaPorCuenta(
+  libro: LibroPorCuenta, titulo: string,
+  /**
+   * 🛑 Los comprobantes cuyas partes no suman su total (los del Control): el renglón de su cuenta y mes va en rojo,
+   * con la marca, y el subtotal del mes avisa. Sin esto la hoja sale como antes.
+   */
+  marcas?: { asientos: AsientoLibroDiario[]; descuadres: Descuadre[] },
+): unknown[][] {
   const f: unknown[][] = []
+  /** Por renglón (año-mes|cuenta): cuántos comprobantes no cuadran y cuánto suman sus diferencias. */
+  const conError = new Map<string, { n: number; dif: number }>()
+  if (marcas) {
+    const malos = new Map(marcas.descuadres.filter(d => d.id).map(d => [d.id!, d]))
+    for (const a of marcas.asientos) {
+      const d = malos.get(a.id)
+      if (!d) continue
+      const [anio, mes] = a.subdiario.split("-").map(Number)
+      const k = `${anio}-${mes}|${a.cuenta_contable?.trim() || SIN_IMPUTAR}`
+      const acc = conError.get(k) ?? { n: 0, dif: 0 }
+      acc.n += 1; acc.dif = money(acc.dif + d.diferencia)
+      conError.set(k, acc)
+    }
+  }
+  const marcaFila = (e: { n: number; dif: number }) =>
+    `NO CUADRA: ${e.n} comprobante(s) cuyas partes no suman su total (${e.dif > 0 ? "faltan" : "sobran"} ${fmtAr(Math.abs(e.dif))}) — están en rojo en el detalle`
 
   f.push([titulo])
   f.push(['Otros tributos va AL GASTO: adentro hay impuestos que no son percepciones (nota del usuario).'])
@@ -457,6 +506,7 @@ export function hojaPorCuenta(libro: LibroPorCuenta, titulo: string): unknown[][
     "Sin crédito fiscal (Fac B y C)", "Diferencia Entre Total y suma de columnas", "",
     "Neto Gravado DDJJ", "Diferencia", "Exento + No gravado + Monotributo", "Diferencia",
     "Nro cuenta", "Comprobantes",
+    ...(marcas ? ["Control de partes"] : []),
   ])
 
   /** Las filas (1-based, como las ve Excel) de cada «Total general» de mes, para el Control final. */
@@ -469,7 +519,8 @@ export function hojaPorCuenta(libro: LibroPorCuenta, titulo: string): unknown[][
     for (const fila of m.filas) {
       const n = f.length + 1
       detalle.add(f.length)
-      f.push([
+      const e = conError.get(`${fila.anio}-${fila.mes}|${fila.cuenta}`)
+      const renglon: unknown[] = [
         fila.anio, fila.mes, fila.cuenta,
         money(fila.netoGravado), money(fila.noGravado), money(fila.exento),
         money(fila.otrosTributos), money(fila.iva), money(fila.total),
@@ -477,8 +528,13 @@ export function hojaPorCuenta(libro: LibroPorCuenta, titulo: string): unknown[][
         conFormula(`I${n}-(D${n}+E${n}+F${n}+G${n}+H${n}+J${n})`, fila.diferencia), "",
         "", "", "", "",
         fila.nroCuenta, fila.comprobantes,
-      ])
+      ]
+      if (marcas) renglon.push(e ? marcaFila(e) : "")
+      f.push(e ? conEstilo(renglon, ESTILO_ERROR) : renglon)
     }
+    // El subtotal del mes también avisa si adentro hay algo que no cuadra.
+    const errMes = [...conError.entries()].filter(([k]) => k.startsWith(`${m.anio}-${m.mes}|`))
+      .reduce((acc, [, v]) => ({ n: acc.n + v.n, dif: money(acc.dif + v.dif) }), { n: 0, dif: 0 })
 
     /**
      * 📑 El SUBTOTAL del mes (usuario 27/10: *«poner con un formato tipo subtotal, pero poner las sumatorias»*):
@@ -503,6 +559,7 @@ export function hojaPorCuenta(libro: LibroPorCuenta, titulo: string): unknown[][
       "", { t: "n", f: `IF(M${n}="","",M${n}-D${n})`, z: MONEDA },
       "", { t: "n", f: `IF(O${n}="","",O${n}-(E${n}+F${n}))`, z: MONEDA },
       "", m.total.comprobantes,
+      ...(marcas ? [errMes.n ? marcaFila(errMes) : ""] : []),
     ], ESTILO_SUBTOTAL))
     f.push([])
   }
@@ -630,6 +687,7 @@ const COLS_POR_CUENTA: Columna[] = [
   { ancho: 14, z: MONEDA },         // P Diferencia
   { ancho: 12 },                    // Q Nro cuenta
   { ancho: 13, z: ENTERO },         // R Comprobantes
+  { ancho: 70 },                    // S Control de partes (A-FEAT-1388)
 ]
 
 /**
@@ -1722,6 +1780,7 @@ const COLS_ASIENTOS: Columna[] = [
   { ancho: 8 },                     // Moneda
   { ancho: 10, z: COEFICIENTE },    // Tipo de cambio
   { ancho: 16, z: MONEDA },         // Total en moneda original
+  { ancho: 70 },                    // Control de partes (A-FEAT-1388)
 ]
 
 /**
@@ -2226,14 +2285,17 @@ export function armarWorkbook(
   hoja(wb, "Control", [...hojaDeControl(libro, lecturas), ...(version ? bloqueDeVersion(version) : [])])
   // 📅 Los 12 meses en una línea cada uno, pegado al Control: es otro control (contra lo presentado a ARCA).
   hoja(wb, "Resumen 12 meses", hojaResumenMensual(libro), COLS_RESUMEN_MENSUAL)
-  hoja(wb, "Compras", hojaDeAsientos(libro.compras), COLS_ASIENTOS)
-  hoja(wb, "Ventas", hojaDeAsientos(libro.ventas), COLS_ASIENTOS)
+  // 🛑 A-FEAT-1388: los comprobantes cuyas partes no suman su total, en rojo y con la marca (los mismos del Control).
+  hoja(wb, "Compras", hojaDeAsientos(libro.compras, libro.controles.compras.descuadres), COLS_ASIENTOS)
+  hoja(wb, "Ventas", hojaDeAsientos(libro.ventas, libro.controles.ventas.descuadres), COLS_ASIENTOS)
   // 📗 La apertura por cuenta contable — el formato que el usuario ya usaba (A-FEAT-1187).
   //    Van pegadas a su listado: primero el detalle, después el resumen que se le manda al contador.
   hoja(wb, "Compras por cuenta", hojaPorCuenta(armarLibroPorCuenta(libro.compras),
-    `LIBRO DIARIO MENSUAL (Compras) — ejercicio ${libro.ejercicio.etiqueta}`), COLS_POR_CUENTA)
+    `LIBRO DIARIO MENSUAL (Compras) — ejercicio ${libro.ejercicio.etiqueta}`,
+    { asientos: libro.compras, descuadres: libro.controles.compras.descuadres }), COLS_POR_CUENTA)
   hoja(wb, "Ventas por cuenta", hojaPorCuenta(armarLibroPorCuenta(libro.ventas, TIPOS_SIN_CREDITO_VENTAS),
-    `LIBRO DIARIO MENSUAL (Ventas) — ejercicio ${libro.ejercicio.etiqueta}`), COLS_POR_CUENTA)
+    `LIBRO DIARIO MENSUAL (Ventas) — ejercicio ${libro.ejercicio.etiqueta}`,
+    { asientos: libro.ventas, descuadres: libro.controles.ventas.descuadres }), COLS_POR_CUENTA)
   /**
    * 🧾 **El papel 05 es la provisión de FACTURAS (compras); la de COBROS (ventas) es del papel 03.**
    *
