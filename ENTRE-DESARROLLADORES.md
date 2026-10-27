@@ -40,6 +40,11 @@
 
 ## 📨 PARA JAVIER
 
+### 🧾 Cobro agrupado: tabla nueva `grupos_cobro` en msa/pam/ma + columna `grupo_cobro_id` en `comprobantes_venta` (2026-10-27) — ✅ APLICADA el 27/10 con OK de JMS (aviso previo): 3 tablas con RLS, 3 columnas; y el 115 armó el grupo de Sáenz (datos)
+- `scripts/114-grupos-cobro.sql` (+ `-deshacer`): espejo de `grupos_pago` (id, cuit, cliente, monto_total, estado, observaciones, created_at) en los 3 schemas, y en `{msa,pam,ma}.comprobantes_venta` una columna `grupo_cobro_id` (FK a su schema, `on delete set null`). Verificado antes: ninguna de las dos existe. **No cambia ninguna columna existente.**
+- RLS igual que `grupos_pago`: `puede_ver`/`puede_escribir` con (schema, `'grupos_cobro'`), nada a `anon`, `authenticated` y `service_role` con select/insert/update/delete. Sin fila en `recurso_tablas` (como `grupos_pago` y `comprobantes_venta`, que tampoco la tienen).
+- Para qué: varias ventas de un cliente cobradas en varios movimientos (A-FEAT-167; primer caso Sáenz Valiente, script 115).
+
 ### ✍️ Órdenes: estado `a_confirmar` + 5 columnas en `ordenes_aplicacion` y `ordenes_agricolas` (2026-10-27) — ✅ APLICADA el 27/10 con JMS presente (aviso previo): 10 columnas, 2 checks, `explain update` OK
 
 Para [A-FEAT-1223](PENDIENTES.md#a-feat-1223) (la doble firma, decidida por JMS el 27/10: **dos botones**). `scripts/109-ordenes-a-confirmar.sql`:

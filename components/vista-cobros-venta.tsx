@@ -12,6 +12,7 @@ import { toast } from "sonner"
 import { TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
 import { marcarCuota, repartirEnCuotas, controlCuotas, type PlazoCobro } from "@/lib/ventas/hacienda"
 import { armarDetalleCobro, imputacionesDeCobro, ETIQUETA_MEDIO, type FuentesCobro } from "@/lib/ventas/detalle-cobro"
+import { ventasDelMismoGrupo, detalleDelGrupo, repartirSaldoDelGrupo } from "@/lib/ventas/grupo-cobro"
 import { cargarFuentesCobro, cerrarVentaSiSaldada, pagosACuentaSinVincular, vincularPagoACuenta, facturasDelClienteParaCompensar, compensarConFactura } from "@/lib/ventas/detalle-cobro-db"
 import { sincronizarExtractoEcheqs } from "@/lib/ventas/cheques-terceros-db"
 import { parseNumeroAR } from "@/lib/format/numero"
@@ -47,6 +48,8 @@ interface Factura {
   ret_iva: number | null
   ret_iibb: number | null
   plazos: PlazoCobro[] | null
+  /** 🧾 A-FEAT-167 — se cobra junto con otras ventas del mismo cliente (script 114). */
+  grupo_cobro_id?: string | null
 }
 interface Cobro { id: string; fecha: string | null; creditos: number; concepto: string | null; detalle: string | null }
 interface Ret { id: string; tipo: string; monto: number; cuenta_contable: string | null; fecha: string | null }
@@ -84,7 +87,7 @@ export function VistaCobrosVenta({ empresa = 'MSA' }: { empresa?: string } = {})
     setLoading(true)
     try {
       const { data: facs, error: eFacs } = await supabase.schema(schema).from('comprobantes_venta')
-        .select('id, nro_comprobante, cuit_cliente, denominacion_cliente, imp_total, estado, fecha_liquidacion, fecha_cobro_estimada, tipo_comprobante, ret_iva, ret_iibb' + (esMsa ? ', plazos' : ''))
+        .select('id, nro_comprobante, cuit_cliente, denominacion_cliente, imp_total, estado, fecha_liquidacion, fecha_cobro_estimada, tipo_comprobante, ret_iva, ret_iibb, grupo_cobro_id' + (esMsa ? ', plazos' : ''))
         .neq('estado', 'anterior')
         .order('fecha_liquidacion', { ascending: false, nullsFirst: false })
       if (eFacs) throw eFacs
@@ -143,6 +146,22 @@ export function VistaCobrosVenta({ empresa = 'MSA' }: { empresa?: string } = {})
     const total = Number(f.imp_total) || 0
     // Lo que el papel dice que se cobra: el total menos la retención impresa (hacienda).
     const esperado = total - impresas(f)
+    /**
+     * 🧾 A-FEAT-167 — COBRO AGRUPADO. Si la venta se cobra junto con otras, el detalle es el del GRUPO
+     * (lo que entró a cualquiera de sus ventas cuenta para todas) y a cada venta le toca la parte del saldo
+     * del grupo que le corresponde. Sin esto, Sáenz 32006 salía cobrada de más y 32007 de menos.
+     */
+    const grupo = f.grupo_cobro_id
+      ? ventasDelMismoGrupo(f, facturas).map(g => ({ id: g.id, esperado: (Number(g.imp_total) || 0) - impresas(g), grupo_cobro_id: g.grupo_cobro_id, nro: g.nro_comprobante }))
+      : null
+    if (grupo) {
+      const detalle = detalleDelGrupo(grupo, fuentes)
+      const propias = fuentes.get(f.id)?.retenciones || []
+      const retenido = propias.reduce((s, r) => s + (Number(r.monto) || 0), 0) + impresas(f)
+      const saldo = repartirSaldoDelGrupo(grupo, detalle.saldo).get(f.id) || 0
+      const cuotas = (f.plazos || []).length ? repartirEnCuotas(f.plazos, 0, [], '') : []
+      return { total, cobrado: total - retenido - saldo, retenido, saldo, cuotas, control: null, detalle, grupo }
+    }
     const detalle = armarDetalleCobro(fuentes.get(f.id) || { movimientos: [], anticipos: [], compensaciones: [], retenciones: [] }, esperado)
     const retAparte = detalle.porMedio.retencion || 0
     const retenido = retAparte + impresas(f)
@@ -161,7 +180,7 @@ export function VistaCobrosVenta({ empresa = 'MSA' }: { empresa?: string } = {})
     const control = cuotas.length
       ? controlCuotas(cuotas, esperado, imputaciones.reduce((s, i) => s + i.monto, 0))
       : null
-    return { total, cobrado, retenido, saldo, cuotas, control, detalle }
+    return { total, cobrado, retenido, saldo, cuotas, control, detalle, grupo: null }
   }
 
   /** Al abrir un comprobante, se buscan los pagos a cuenta de ese cliente todavía sin vincular. */
@@ -353,7 +372,7 @@ export function VistaCobrosVenta({ empresa = 'MSA' }: { empresa?: string } = {})
                 <Fragment key={f.id}>
                   <TableRow className="cursor-pointer hover:bg-gray-50" onClick={() => void abrir(abierta ? null : f)}>
                     <TableCell>{abierta ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</TableCell>
-                    <TableCell className="text-sm font-mono">{f.nro_comprobante || '—'}</TableCell>
+                    <TableCell className="text-sm font-mono">{f.nro_comprobante || '—'}{d.grupo && <span className="ml-1 rounded bg-indigo-100 px-1 font-sans text-[10px] text-indigo-800" title="Se cobra junto con otras ventas del mismo cliente">agrupado</span>}</TableCell>
                     <TableCell className="text-sm max-w-[220px] truncate" title={f.denominacion_cliente || ''}>{f.denominacion_cliente || '—'}</TableCell>
                     <TableCell className="text-sm text-right">{fmt(d.total)}</TableCell>
                     <TableCell className="text-sm text-right text-green-700">{fmt(d.cobrado)}</TableCell>
@@ -366,6 +385,13 @@ export function VistaCobrosVenta({ empresa = 'MSA' }: { empresa?: string } = {})
                   {abierta && (
                     <TableRow>
                       <TableCell colSpan={8} className="bg-gray-50/60 p-3">
+                        {/* 🧾 A-FEAT-167 — cobro agrupado: el detalle de abajo es el del GRUPO entero. */}
+                        {d.grupo && (
+                          <div className="mb-2 rounded border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] text-indigo-900">
+                            🧾 <b>Cobro agrupado</b> con {d.grupo.filter(g => g.id !== f.id).map(g => g.nro || '—').join(', ') || '—'}: los cobros y el control
+                            son los del grupo ({d.grupo.length} ventas, {fmt(d.detalle.esperado)} esperados). El saldo de cada venta es su parte del saldo del grupo.
+                          </div>
+                        )}
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             {/* 💰 Cómo se fue cobrando (A-FEAT-1228): todo menos las retenciones, que van a la derecha. */}

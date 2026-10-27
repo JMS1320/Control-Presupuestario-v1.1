@@ -16,8 +16,18 @@
  * a un comprobante.
  *
  * Lo que la ficha NO ve, y por eso se avisa en pantalla: pagos por caja, cheque
- * o tarjeta (no están en estos extractos) y los cobros de una venta (el extracto
- * no tiene columna que vincule un movimiento a `comprobantes_venta`).
+ * o tarjeta (no están en estos extractos).
+ * ⚠️ Cambió 2026-10-27 (A-FEAT-167): acá decía que tampoco veía «los cobros de una
+ * venta (el extracto no tiene columna que vincule un movimiento a
+ * `comprobantes_venta`)». La columna existe (`msa_galicia.comprobante_venta_id`):
+ * ahora los cobros atados a sus ventas entran, y también las retenciones (las
+ * impresas en una liquidación de hacienda y los certificados).
+ *
+ * 🧾 La CUENTA CORRIENTE se arma acá, con TODO (`cuentaCorriente`), y no en la
+ * pantalla con las listas recortadas a 40: con un cliente de mucho movimiento el
+ * saldo daba mal. Y lleva su control (`controlCobros`): el saldo de las ventas por
+ * cuenta corriente tiene que dar lo mismo que comprobante por comprobante
+ * (JMS 27/10: «pueden ser las dos juntas, deben dar lo mismo»).
  *
  * La ESCRITURA no vive acá: va por PATCH /api/gas/config-proveedor, que ya era
  * la vía de escritura del maestro. Una sola, para que no haya dos verdades.
@@ -26,6 +36,10 @@
 import { NextResponse } from 'next/server'
 import { clienteUsuario } from "@/lib/supabase-usuario"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
+import { armarCuentaCorriente } from "@/lib/proveedores/cuenta-corriente"
+import { cargarFuentesCobro } from "@/lib/ventas/detalle-cobro-db"
+import { controlDosCaminos } from "@/lib/ventas/grupo-cobro"
+import { TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
 
 export const runtime = 'nodejs'
 
@@ -59,7 +73,7 @@ export interface PagoFicha {
   detalle: string | null
   monto: number
   /** Cómo se supo que este movimiento es de este proveedor */
-  via: 'factura' | 'template' | 'anticipo' | 'nombre'
+  via: 'factura' | 'template' | 'anticipo' | 'nombre' | 'venta' | 'retencion'
   comprobantes_pagados: string | null
 }
 
@@ -123,7 +137,7 @@ export async function GET(request: Request) {
 
     // ── Facturas de venta (sólo MSA tiene el módulo de ventas) ──────────────
     const { data: ventas } = await supabase.schema('msa').from('comprobantes_venta')
-      .select('id, fecha_liquidacion, nro_comprobante, punto_venta, numero_desde, imp_total, estado, cuenta_contable, fecha_cobro_estimada, grano, tipo_operacion')
+      .select('id, fecha_liquidacion, nro_comprobante, punto_venta, numero_desde, imp_total, estado, cuenta_contable, fecha_cobro_estimada, grano, tipo_operacion, tipo_comprobante, ret_iva, ret_iibb, grupo_cobro_id, cuit_cliente')
       .eq('cuit_cliente', cuit)
       .order('fecha_liquidacion', { ascending: false })
     for (const r of (ventas || []) as any[]) {
@@ -167,10 +181,14 @@ export async function GET(request: Request) {
     const pagos: PagoFicha[] = []
     const yaVisto = new Set<string>()
 
+    const ventasMsa = ((ventas || []) as any[])
+    const idsVentas = ventasMsa.map(v => v.id)
     const vinculos: Array<[string, string[], PagoFicha['via']]> = [
       ['comprobante_arca_id', idsFacturas, 'factura'],
       ['template_cuota_id', idsCuotas, 'template'],
       ['anticipo_id', idsAnticipos, 'anticipo'],
+      // 🧾 A-FEAT-167 — los cobros atados a sus ventas (también los de un cobro agrupado).
+      ['comprobante_venta_id', idsVentas, 'venta'],
     ]
 
     const COLS = 'id, fecha, descripcion, debitos, creditos, detalle, comprobantes_pagados, proveedor_nombre'
@@ -209,7 +227,57 @@ export async function GET(request: Request) {
       }
     }
 
+    // ── Las retenciones de las ventas: bajan lo que el cliente debe, igual que un cobro ──
+    // Las impresas en una liquidación de hacienda (la misma cuenta que la pantalla de Cobros) y los
+    // certificados cargados aparte. Van con signo de cobro (monto negativo = entró a favor nuestro).
+    const nroVenta = new Map(ventasMsa.map(v => [v.id, v.nro_comprobante || numeroComprobante(v.punto_venta, v.numero_desde)]))
+    const impresas = (v: any) => (TIPOS_LIQ_HACIENDA.has(Number(v.tipo_comprobante)) ? (Number(v.ret_iibb) || 0) + (Number(v.ret_iva) || 0) : 0)
+    for (const v of ventasMsa) {
+      const imp = impresas(v)
+      if (imp > 0) pagos.push({
+        id: `ret-impresa-${v.id}`, origen: 'RETENCIÓN', fecha: v.fecha_liquidacion,
+        descripcion: 'Retención impresa en la liquidación', detalle: null, monto: -imp, via: 'retencion',
+        comprobantes_pagados: nroVenta.get(v.id) || null,
+      })
+    }
+    if (idsVentas.length) {
+      const { data: certs, error: eCerts } = await supabase.schema('msa').from('retenciones_recibidas')
+        .select('id, tipo, monto, fecha, nro_certificado, comprobante_venta_id').in('comprobante_venta_id', idsVentas)
+      if (eCerts) throw eCerts
+      for (const r of (certs || []) as any[]) pagos.push({
+        id: `ret-${r.id}`, origen: 'RETENCIÓN', fecha: r.fecha,
+        descripcion: `Retención ${String(r.tipo || '').toUpperCase()}${r.nro_certificado ? ` · cert. ${r.nro_certificado}` : ''}`,
+        detalle: null, monto: -(Number(r.monto) || 0), via: 'retencion',
+        comprobantes_pagados: nroVenta.get(r.comprobante_venta_id) || null,
+      })
+    }
+
     pagos.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
+
+    // ── La cuenta corriente, con TODO (la pantalla recibe las listas recortadas) ──
+    const cuentaCorriente = armarCuentaCorriente(facturas as any, pagos as any)
+
+    // ── 🔁 El control: el saldo de las ventas por dos caminos (A-FEAT-167) ──────
+    // Camino 1, cuenta corriente: lo vendido − lo que entró del cliente − sus retenciones. «Lo que
+    // entró» es todo crédito suyo menos los reintegros de una compra (los atados a una factura de
+    // compra o a un template, que no son cobros de una venta).
+    // Camino 2, comprobante por comprobante: el saldo del detalle del cobro de cada venta (o de su
+    // grupo), la misma cuenta que la pantalla de Cobros.
+    let controlCobros: (ReturnType<typeof controlDosCaminos> & { ventas: number }) | null = null
+    if (ventasMsa.length) {
+      const fuentes = await cargarFuentesCobro(supabase as any, ventasMsa.map(v => ({ id: v.id, cuit_cliente: v.cuit_cliente })), 'msa')
+      const cobros = pagos.filter(p => p.monto < 0 && (p.via === 'venta' || p.via === 'anticipo' || p.via === 'nombre'))
+        .reduce((s, p) => s - p.monto, 0)
+      const retenciones = pagos.filter(p => p.via === 'retencion').reduce((s, p) => s - p.monto, 0)
+      controlCobros = {
+        ...controlDosCaminos(
+          ventasMsa.map(v => ({ id: v.id, esperado: (Number(v.imp_total) || 0) - impresas(v), grupo_cobro_id: v.grupo_cobro_id })),
+          fuentes,
+          { ventas: ventasMsa.reduce((s, v) => s + (Number(v.imp_total) || 0), 0), cobros, retenciones },
+        ),
+        ventas: ventasMsa.length,
+      }
+    }
 
     // ── Resumen ─────────────────────────────────────────────────────────────
     const compras = facturas.filter(f => f.tipo === 'compra')
@@ -217,7 +285,8 @@ export async function GET(request: Request) {
     const resumen = {
       compras: { cantidad: compras.length, total: compras.reduce((s, f) => s + f.total, 0) },
       ventas: { cantidad: ventasF.length, total: ventasF.reduce((s, f) => s + f.total, 0) },
-      pagos: { cantidad: pagos.length, total: pagos.reduce((s, p) => s + p.monto, 0) },
+      // Los movimientos del banco: las retenciones van a la cuenta corriente, no son un movimiento.
+      pagos: { cantidad: pagos.filter(p => p.via !== 'retencion').length, total: pagos.filter(p => p.via !== 'retencion').reduce((s, p) => s + p.monto, 0) },
       anticipos: {
         cantidad: (anticipos || []).length,
         pendiente: ((anticipos || []) as any[]).reduce((s, a) => s + (Number(a.monto_restante) || 0), 0),
@@ -235,6 +304,8 @@ export async function GET(request: Request) {
       pagosTotales: pagos.length,
       anticipos: anticipos || [],
       resumen,
+      cuentaCorriente,
+      controlCobros,
     })
 
   } catch (err) {

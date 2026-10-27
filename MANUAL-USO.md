@@ -2388,6 +2388,19 @@ Cash Flow.
 echeq del cliente que endosaste** (fecha, monto, número, a quién). Queda en el detalle y no se espera
 en el Cash Flow.
 
+### Cobro agrupado: varias ventas cobradas juntas
+Cuando un cliente te paga **varias ventas juntas** —o en varias transferencias que pagan un poco de cada
+una—, las ventas se **agrupan**. En **Ingresos → Cobros** llevan la etiqueta **agrupado** y, al abrir
+cualquiera, un cartel dice con qué otras se cobra. El **Detalle del cobro** es el del **grupo entero**
+(todas las transferencias y retenciones de todas sus ventas) y el control compara contra lo que dicen
+**todos** los papeles juntos. El saldo de cada venta es su parte del saldo del grupo.
+
+Por ahora los grupos se arman desde la base (el primero: Sáenz Valiente 209-32006 + 209-32007, cobradas
+en 3 transferencias). El botón para agruparlas vos y conciliar un crédito contra el grupo desde el
+Extracto viene después → [A-FEAT-167](PENDIENTES.md#a-feat-167).
+
+> ⚠️ Sin probar todavía → [A-TEST-1267](PENDIENTES.md#a-test-1267)
+
 ### Cobros en varias partes, desde el Extracto
 Si un cliente te paga una venta en varios pagos (adelantos y saldo), cada crédito se concilia desde el
 **Extracto** → **Asignar** (o **Vincular**, si ya estaba conciliado sin vínculo) → pestaña **Venta**. La
@@ -4540,6 +4553,15 @@ guarda igual pero **te avisa que la contraparte quedó sin dar de alta** — ah�
 El botón *"Cargar nuevo proveedor"* de los formularios escribía el nombre en el formulario **y nada
 más**. Por eso puede haber proveedores viejos con anticipos y sin ficha — si te encontrás uno sin CBU
 ni mail, es esto.
+
+### La cuenta corriente, y su control
+Arriba de las listas está la **cuenta corriente**: todo lo que se le compró y se le vendió, lo que se le
+pagó, lo que pagó él y sus retenciones, con el saldo. Si es cliente, abajo del saldo hay un control:
+**la cuenta corriente y los comprobantes tienen que dar el mismo saldo a cobrar**. ✓ si coinciden; si
+no, ⚠️ con la diferencia — casi siempre un cobro que todavía no se asignó a ninguna venta, un echeq
+endosado o una factura del cliente descontada. Avisa, no te frena.
+
+> ⚠️ Sin probar todavía → [A-TEST-1267](PENDIENTES.md#a-test-1267)
 
 ### Los dos accesos
 1. **Principal → botón "Proveedores"**, al lado del de IPC. Abre el buscador con los 154. Es el

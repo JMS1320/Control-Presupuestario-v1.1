@@ -49,6 +49,10 @@ interface Ficha {
   pagosTotales: number
   anticipos: any[]
   resumen: any
+  /** La cuenta corriente armada en el servidor con TODO (las listas vienen recortadas a 40). */
+  cuentaCorriente?: ReturnType<typeof armarCuentaCorriente>
+  /** 🔁 A-FEAT-167 — el saldo de las ventas por dos caminos: cuenta corriente vs comprobante por comprobante. */
+  controlCobros?: { porComprobante: number; porCuentaCorriente: number; diferencia: number; cierra: boolean; ventas: number } | null
 }
 
 interface Props {
@@ -474,7 +478,10 @@ export function ModalFichaProveedor({ open, onClose, cuitInicial }: Props) {
                     las listas de abajo son el detalle que la sostiene. Al revés obliga a sumar a
                     ojo para llegar a lo que uno vino a saber. */}
                 {(() => {
-                  const cc = armarCuentaCorriente(ficha.facturas as any, ficha.pagos as any)
+                  // ⚠️ Cambió 27/10: se armaba acá con las listas recortadas a 40 y el saldo de un cliente de
+                  // mucho movimiento daba mal. Ahora viene armada del servidor con todo.
+                  const cc = ficha.cuentaCorriente ?? armarCuentaCorriente(ficha.facturas as any, ficha.pagos as any)
+                  const ctl = ficha.controlCobros
                   if (cc.asientos.length === 0) return null
                   const aFavor = cc.saldo < -0.005
                   return (
@@ -487,6 +494,15 @@ export function ModalFichaProveedor({ open, onClose, cuitInicial }: Props) {
                         </span>
                         {/* 🔴 El pago que no dice contra qué fue es el que genera saldo sin que nadie
                             lo note. Se nombra acá arriba, no escondido en una fila de la tabla. */}
+                        {/* 🔁 A-FEAT-167 — las dos miradas tienen que dar lo mismo (JMS: «deben dar lo mismo»).
+                            Avisa, no frena: la diferencia suele ser un cobro sin imputar a una venta. */}
+                        {ctl && (
+                          <p className={`mt-1 text-xs ${ctl.cierra ? 'text-green-700' : 'text-amber-700'}`}>
+                            {ctl.cierra
+                              ? <>✓ Control de ventas: la cuenta corriente y los comprobantes dan el mismo saldo a cobrar ({pesos(ctl.porCuentaCorriente)}, {ctl.ventas} venta{ctl.ventas === 1 ? '' : 's'})</>
+                              : <>⚠️ Control de ventas: por cuenta corriente falta cobrar {pesos(ctl.porCuentaCorriente)} y comprobante por comprobante {pesos(ctl.porComprobante)} — difieren en <b>{pesos(ctl.diferencia)}</b>. Suele ser un cobro que todavía no se asignó a una venta, un echeq endosado o una factura del cliente descontada.</>}
+                          </p>
+                        )}
                         {cc.pagosSinReferencia > 0 && (
                           <p className="mt-1 text-xs text-amber-700">
                             ⚠️ {cc.pagosSinReferencia} pago(s) no dicen contra qué comprobante fueron —

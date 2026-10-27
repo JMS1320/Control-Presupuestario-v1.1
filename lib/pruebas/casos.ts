@@ -189,6 +189,7 @@ import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, rete
   kgQueSeCobran, ventaParaComparar, importeDeLinea, precioPieDerivado, precioGanchoDerivado, formatoPrecio, montoTipeadoOVacio, montoCalculado, marcarCuota, armarVentaHistorica, repartirEnCuotas, controlCuotas, conciliarCuota } from "@/lib/ventas/hacienda"
 import { parseNumeroAR } from "@/lib/format/numero"
 import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
+import { detalleDelGrupo, repartirSaldoDelGrupo, unidadesDeCobro, controlDosCaminos } from "@/lib/ventas/grupo-cobro"
 import { armarRetencionesSubdiario, fechaDelCertificado, hojaRetenciones, tablaRetencionesPdf } from "@/lib/ventas/retenciones-export"
 import { extractosDelSchema, extractoEsDe, TODOS_LOS_EXTRACTOS } from "@/lib/ventas/extractos-empresa"
 import { calcularEcheqs, problemasDelPlan, avisosDelPlan, ultimaFechaCobro, filasEmision, motivoPorDefecto, ENCABEZADO_EMISION, clasificarLoteEcheq, fechaMasDias } from "@/lib/pagos/echeqs-multiples"
@@ -3162,6 +3163,53 @@ export function correrCasos(): Resultado[] {
     imp_total: 2625480, subtotal_neto: 2376000 }, 0)
   chequear("Liquidación de hacienda", "🐄 Venta directa (190): Ballester 10-12 se cobra 2.625.480 con el IVA",
     "2625480", String(cobroBallester.pagoCondiciones), Math.abs(cobroBallester.pagoCondiciones - 2625480) < 0.005, "A-DAT-88")
+
+  // 🧾 COBRO AGRUPADO (A-FEAT-167) — Sáenz Valiente 209-32006 + 209-32007, cobradas en 3 transferencias
+  // que pagan cada una una cuota de LAS DOS. Los 3 movimientos quedan atados a la primera venta del grupo.
+  {
+    const saenz = [
+      { id: "32006", esperado: 13286147.77, grupo_cobro_id: "g-saenz" },   // 13.381.000,27 − IIBB impresa 94.852,50
+      { id: "32007", esperado: 10728088.95, grupo_cobro_id: "g-saenz" },   // 10.804.678,95 − IIBB impresa 76.590
+    ]
+    const fuentesSaenz = new Map([
+      ["32006", { movimientos: [
+          { id: "m-2801", fecha: "2026-01-28", creditos: 10522466.79, anticipo_id: null },
+          { id: "m-2901", fecha: "2026-01-29", creditos: 1271497.77, anticipo_id: null },
+          { id: "m-0903", fecha: "2026-03-09", creditos: 11790431.16, anticipo_id: null }],
+        anticipos: [], compensaciones: [],
+        retenciones: [{ id: "r-06", tipo: "ganancias", monto: 235813, fecha: "2026-01-27" }] }],
+      ["32007", { movimientos: [], anticipos: [], compensaciones: [],
+        retenciones: [{ id: "r-07", tipo: "ganancias", monto: 194028, fecha: "2026-01-27" }] }],
+    ])
+    // 🧨 Sin el grupo, cada venta se mira sola: una sale cobrada de más y la otra de menos por lo mismo.
+    const sola06 = armarDetalleCobro(fuentesSaenz.get("32006")!, 13286147.77)
+    const sola07 = armarDetalleCobro(fuentesSaenz.get("32007")!, 10728088.95)
+    chequear("Cobro agrupado", "🧨 Sin grupo, Sáenz 32006 sale cobrada de MÁS y 32007 de MENOS (10.534.060,95 cada una)",
+      "-10534060.95 · 10534060.95", `${sola06.saldo} · ${sola07.saldo}`, sola06.saldo === -10534060.95 && sola07.saldo === 10534060.95, "A-FEAT-167")
+    const grupoSaenz = detalleDelGrupo(saenz, fuentesSaenz)
+    chequear("Cobro agrupado", "✓ Con el grupo, Sáenz cierra: 3 transferencias + 2 certificados = 24.014.236,72 esperados",
+      "24014236.72 · cierra", `${grupoSaenz.total} · ${grupoSaenz.cierra ? "cierra" : "saldo " + grupoSaenz.saldo}`,
+      grupoSaenz.total === 24014236.72 && grupoSaenz.esperado === 24014236.72 && grupoSaenz.cierra, "A-FEAT-167")
+    const dosVeces = detalleDelGrupo(saenz, new Map([["32006", fuentesSaenz.get("32006")!], ["32007", fuentesSaenz.get("32006")!]]))
+    chequear("Cobro agrupado", "🔑 Un movimiento leído desde dos ventas del grupo cuenta UNA vez",
+      "23820208.72", String(dosVeces.total), dosVeces.total === 23820208.72, "A-FEAT-167")
+    const partes = repartirSaldoDelGrupo(saenz, 1000)
+    chequear("Cobro agrupado", "El saldo del grupo se reparte a prorrata y las partes suman exacto (553,26 + 446,74 = 1.000)",
+      "553.26 · 446.74", `${partes.get("32006")} · ${partes.get("32007")}`, partes.get("32006") === 553.26 && partes.get("32007") === 446.74, "A-FEAT-167")
+    const unidades = unidadesDeCobro([...saenz, { id: "otra", esperado: 5, grupo_cobro_id: null }])
+    chequear("Cobro agrupado", "El grupo cuenta como UNA unidad de cobro; la venta sin grupo, como otra",
+      "2 · 2+1", `${unidades.length} · ${unidades.map(u => u.length).join("+")}`, unidades.length === 2 && unidades[0].length === 2, "A-FEAT-167")
+    // 🔁 Las dos miradas tienen que dar lo mismo (JMS: «pueden ser las dos juntas, deben dar lo mismo»).
+    const ccSaenz = { ventas: 24185679.22, cobros: 23584395.72, retenciones: 171442.50 + 429841 }
+    const dosCaminos = controlDosCaminos(saenz, fuentesSaenz, ccSaenz)
+    chequear("Cobro agrupado", "🔁 Sáenz: la cuenta corriente y los comprobantes dan el mismo saldo (0)",
+      "0 · 0 · cierra", `${dosCaminos.porCuentaCorriente} · ${dosCaminos.porComprobante} · ${dosCaminos.cierra ? "cierra" : "no"}`,
+      dosCaminos.porCuentaCorriente === 0 && dosCaminos.porComprobante === 0 && dosCaminos.cierra, "A-FEAT-167")
+    const conSinImputar = controlDosCaminos(saenz, fuentesSaenz, { ...ccSaenz, cobros: ccSaenz.cobros + 1000000 })
+    chequear("Cobro agrupado", "⚠️ Un cobro de $1.000.000 que ninguna venta tiene asignado: los caminos difieren en eso",
+      "-1000000 · no cierra", `${conSinImputar.diferencia} · ${conSinImputar.cierra ? "cierra" : "no cierra"}`,
+      conSinImputar.diferencia === -1000000 && !conSinImputar.cierra, "A-FEAT-167")
+  }
 
   // 🧨 Sin el caso aparte, la cuenta de GRANOS le restaba todo el IVA como si fuera RG 2300.
   const cobroComoGranos = cobroEsperado({ imp_neto_gravado: 126441000, iva: 13276305, imp_total: 139717305,
