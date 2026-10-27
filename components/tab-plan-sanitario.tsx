@@ -112,9 +112,9 @@ export function TabPlanSanitario() {
   const [verPropuestaCal, setVerPropuestaCal] = useState(false)
   // Por sesión (default, pedido de JMS 27/10): lo que se hace el mismo día es UN evento.
   const [vista, setVista] = useState<"sesion" | "hacienda">(() => {
-    try { return localStorage.getItem("plan-sanitario.vista") === "hacienda" ? "hacienda" : "sesion" } catch { return "sesion" }
+    try { return localStorage.getItem("plan-sanitario.vista2") === "sesion" ? "sesion" : "hacienda" } catch { return "hacienda" }
   })
-  const cambiarVista = (v: "sesion" | "hacienda") => { setVista(v); try { localStorage.setItem("plan-sanitario.vista", v) } catch { /* sin storage */ } }
+  const cambiarVista = (v: "sesion" | "hacienda") => { setVista(v); try { localStorage.setItem("plan-sanitario.vista2", v) } catch { /* sin storage */ } }
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -352,7 +352,7 @@ export function TabPlanSanitario() {
           <div className="flex flex-wrap items-center gap-2">
             <CardTitle className="text-base">Calendario {nombreCampania(campania)}</CardTitle>
             <div className="ml-auto inline-flex rounded-md border p-0.5 text-xs">
-              {([["sesion", "Por sesión"], ["hacienda", "Por hacienda"]] as const).map(([v, t]) => (
+              {([["hacienda", "Calendario"], ["sesion", "Lista por sesión"]] as const).map(([v, t]) => (
                 <button key={v} onClick={() => cambiarVista(v)}
                   className={`rounded px-2 py-1 ${vista === v ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>{t}</button>))}
             </div>
@@ -412,15 +412,29 @@ export function TabPlanSanitario() {
                   {MESES.map((_, i) => {
                     const delMes = ocs.filter(o => o.tarea.grupos.includes(g) && ((parseInt((o.fechaReal ?? o.esperada).slice(5, 7)) + 5) % 12) === i
                       && campaniaDe(o.fechaReal ?? o.esperada) === campania)
+                    // Una tarjeta por SESIÓN (lo del mismo día va junto). ⚠️ si el rodeo se encierra 2+ veces en el mes
+                    // (opción A de JMS 27/10: cada tarjeta es un encierre; dos días seguidos cuentan como uno).
+                    const tarjetas = agruparEnSesiones(delMes)
+                    const encierresMes = RODEOS.includes(g)
+                      ? (encierresPorRodeo(tarjetas.filter(t => t.ocurrencias.some(esEncierre)).map(t => ({ fecha: t.fecha, grupos: [g] })))[g] ?? []).length : 0
+                    const aviso = encierresMes >= 2
                     return (
-                      <td key={i} className="p-0.5 w-[8%]">
+                      <td key={i} className={`p-0.5 w-[8%] ${aviso ? "bg-red-50 outline outline-2 outline-red-400 -outline-offset-2 rounded" : ""}`}>
+                        {aviso && <div className="text-[10px] font-semibold text-red-700 px-0.5" title="Este rodeo se encierra más de una vez en el mes">⚠️ {encierresMes} encierres</div>}
                         <div className="flex flex-col gap-0.5">
-                          {delMes.map(o => (
-                            <button key={o.tarea.id} onClick={() => setDetalle(o)} title={`${o.tarea.nombre} — ${ESTILO[o.estado].texto}`}
-                              className={`text-left rounded border px-1 py-0.5 leading-tight ${ESTILO[o.estado].clase}`}>
-                              {ESTILO[o.estado].icono}{o.conflicto != null ? "⚡" : ""} {o.tarea.nombre}
-                              <span className="block opacity-70">{fechaCorta(o.fechaReal ?? o.esperada).slice(0, 5)}</span>
-                            </button>
+                          {tarjetas.map(t => (
+                            <div key={t.fecha} className={`rounded border px-1 py-0.5 leading-tight ${ESTILO[t.estado].clase}`}>
+                              <div className="flex items-baseline gap-1 font-semibold">
+                                <span>{ESTILO[t.estado].icono} {fechaCorta(t.fecha).slice(0, 5)}</span>
+                                {t.ocurrencias.length > 1 && <span className="ml-auto text-[10px] font-normal opacity-70">{t.ocurrencias.length} tareas</span>}
+                              </div>
+                              {t.ocurrencias.map(o => (
+                                <button key={o.tarea.id} onClick={() => setDetalle(o)} title={`${o.tarea.nombre} — ${ESTILO[o.estado].texto}`}
+                                  className={`block w-full text-left hover:underline ${o.tarea.obligatoria ? "" : "opacity-60"}`}>
+                                  {t.ocurrencias.length > 1 ? `${ESTILO[o.estado].icono} ` : ""}{o.conflicto != null ? "⚡" : ""}{o.tarea.nombre}
+                                </button>
+                              ))}
+                            </div>
                           ))}
                         </div>
                       </td>

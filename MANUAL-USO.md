@@ -638,8 +638,9 @@ solapa junta las dos cosas y avisa.
    cambia (↔) y lo que sale de su margen (⚠️, pide explicación). **Aplicar** lo programa (o **Proponer**, si no aprobás).
 3. **✍️ Propuestas para aceptar** — lo que propuso quien no aprueba (ej.: Enrique). **Aceptar** lo aplica; **Rechazar** deja el
    plan como estaba.
-4. **El calendario de la campaña** (julio a junio). Abre **Por sesión**: lo que se hace el mismo día es una sola tarjeta, con las
-   haciendas que entran. **Por hacienda** lo muestra hacienda × mes. Con **◀ ▶** se pasa de campaña. ⚡ = la cadena la corrió lejos
+4. **El calendario de la campaña** (julio a junio): hacienda × mes, con **una tarjeta por sesión** (lo que se hace el mismo día
+   va en la misma tarjeta, con sus tareas adentro). Si un rodeo tiene **2 encierres o más en el mes**, la casilla se marca en rojo
+   con ⚠️. **Lista por sesión** muestra lo mismo como lista, fecha por fecha. Con **◀ ▶** se pasa de campaña. ⚡ = la cadena la corrió lejos
    de su fecha óptima.
 
 **Desde cuándo reclama:** desde lo último registrado (la última orden de aplicación ejecutada). Lo anterior sin registro queda en
