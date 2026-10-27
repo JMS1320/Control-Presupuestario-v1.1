@@ -285,10 +285,34 @@ function hojaDeControl(libro: LibroDiario, lecturas?: Lectura[]): unknown[][] {
  * lo va a leer: *«que sea lo más amigable para el contador»*. Sin `columnas` la hoja entra sin
  * formato, que es lo correcto para las hojas de texto (Control).
  */
+/**
+ * 📑 El nivel de esquema de cada fila de una hoja (0 = sin agrupar, 1 = detalle de un grupo), para que se pueda
+ * plegar como el «Subtotal» de Excel. La hoja que lo necesita lo anota acá, sin cambiar su firma.
+ */
+const NIVELES = new WeakMap<unknown[][], number[]>()
+
+/** Un renglón de SUBTOTAL: negrita, fondo suave y línea arriba — se distingue de las cuentas. */
+const ESTILO_SUBTOTAL = {
+  font: { bold: true },
+  fill: { patternType: "solid", fgColor: { rgb: "FFE6EEF6" } },
+  border: { top: { style: "thin", color: { rgb: "FFB9C4C0" } } },
+}
+/** El total del ejercicio: lo mismo, un tono más fuerte. */
+const ESTILO_TOTAL = { ...ESTILO_SUBTOTAL, fill: { patternType: "solid", fgColor: { rgb: "FFCFDDEB" } } }
+
+/** Le pone estilo a cada celda de un renglón (respetando las fórmulas). */
+const conEstilo = (fila: unknown[], s: Record<string, unknown>): unknown[] => fila.map(v => {
+  if (v && typeof v === "object" && "t" in (v as object)) return { ...(v as XLSX.CellObject), s }
+  if (typeof v === "number") return { t: "n", v, s }
+  return { t: "s", v: v == null ? "" : String(v), s }
+})
+
 const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: Columna[]) => {
   const ws = XLSX.utils.aoa_to_sheet(filas)
   if (columnas) formatearHoja(ws, columnas)
   presentarHoja(ws)
+  const niveles = NIVELES.get(filas)
+  if (niveles) ws["!rows"] = niveles.map(l => (l ? { level: l } : {}))
   // 31 caracteres es el máximo que acepta Excel para el nombre de una solapa.
   XLSX.utils.book_append_sheet(wb, ws, nombre.slice(0, 31))
 }
@@ -389,7 +413,7 @@ const COLS_SEMENTERAS: Columna[] = [
  *   la declaración y la app le resta el del libro. Avisa, no frena — y las celdas van **vacías**
  *   porque ese número sale de la DDJJ, que la app no tiene.
  */
-function hojaPorCuenta(libro: LibroPorCuenta, titulo: string): unknown[][] {
+export function hojaPorCuenta(libro: LibroPorCuenta, titulo: string): unknown[][] {
   const f: unknown[][] = []
 
   f.push([titulo])
@@ -408,10 +432,14 @@ function hojaPorCuenta(libro: LibroPorCuenta, titulo: string): unknown[][] {
 
   /** Las filas (1-based, como las ve Excel) de cada «Total general» de mes, para el Control final. */
   const filasTotalMes: number[] = []
+  /** Las filas de detalle (0-based), para agruparlas: cada mes se pliega a su subtotal. */
+  const detalle = new Set<number>()
+  const primeraDetalle = f.length + 1
 
   for (const m of libro.meses) {
     for (const fila of m.filas) {
       const n = f.length + 1
+      detalle.add(f.length)
       f.push([
         fila.anio, fila.mes, fila.cuenta,
         money(fila.netoGravado), money(fila.noGravado), money(fila.exento),
@@ -423,15 +451,19 @@ function hojaPorCuenta(libro: LibroPorCuenta, titulo: string): unknown[][] {
       ])
     }
 
-    // «Total general» del mes: suma de las filas de arriba, como fórmula.
+    /**
+     * 📑 El SUBTOTAL del mes (usuario 27/10: *«poner con un formato tipo subtotal, pero poner las sumatorias»*):
+     * negrita y fondo, y la suma con `SUBTOTAL(9, …)` — la del «Subtotal» de Excel: **respeta los filtros**
+     * (suma sólo lo visible) y el total del ejercicio no la cuenta dos veces. El mes se pliega a este renglón.
+     */
     const desde = f.length + 1 - m.filas.length
     const hasta = f.length
     const n = f.length + 1
     filasTotalMes.push(n)
-    f.push([
-      m.anio, m.mes, "Total general",
+    f.push(conEstilo([
+      m.anio, m.mes, `Total ${String(m.mes).padStart(2, "0")}/${m.anio}`,
       ...(["D", "E", "F", "G", "H", "I", "J"] as const).map((col, i) =>
-        conFormula(`SUM(${col}${desde}:${col}${hasta})`, [
+        conFormula(`SUBTOTAL(9,${col}${desde}:${col}${hasta})`, [
           m.total.netoGravado, m.total.noGravado, m.total.exento,
           m.total.otrosTributos, m.total.iva, m.total.total, m.total.sinCredito,
         ][i]),
@@ -442,17 +474,19 @@ function hojaPorCuenta(libro: LibroPorCuenta, titulo: string): unknown[][] {
       "", { t: "n", f: `IF(M${n}="","",M${n}-D${n})`, z: MONEDA },
       "", { t: "n", f: `IF(O${n}="","",O${n}-(E${n}+F${n}))`, z: MONEDA },
       "", m.total.comprobantes,
-    ])
+    ], ESTILO_SUBTOTAL))
     f.push([])
   }
+  const ultimaDetalle = f.length
 
   // El total del ejercicio y el Control, que es el camino inverso: si la suma de los totales
   // mensuales no da el total del ejercicio, la apertura perdió algo por el camino.
+  // 📑 SUBTOTAL(9) sobre todo el bloque: suma el detalle y salta los subtotales de mes (no los cuenta dos veces).
   const nTotal = f.length + 1
-  f.push([
+  f.push(conEstilo([
     "", "", "TOTAL DEL EJERCICIO",
     ...(["D", "E", "F", "G", "H", "I", "J"] as const).map((col, i) =>
-      conFormula(filasTotalMes.map(r => `${col}${r}`).join("+") || "0", [
+      conFormula(`SUBTOTAL(9,${col}${primeraDetalle}:${col}${ultimaDetalle})`, [
         libro.totalGeneral.netoGravado, libro.totalGeneral.noGravado, libro.totalGeneral.exento,
         libro.totalGeneral.otrosTributos, libro.totalGeneral.iva, libro.totalGeneral.total,
         libro.totalGeneral.sinCredito,
@@ -460,7 +494,7 @@ function hojaPorCuenta(libro: LibroPorCuenta, titulo: string): unknown[][] {
     ),
     conFormula(`I${nTotal}-(D${nTotal}+E${nTotal}+F${nTotal}+G${nTotal}+H${nTotal}+J${nTotal})`, libro.totalGeneral.diferencia),
     "", "", "", "", "", "", libro.totalGeneral.comprobantes,
-  ])
+  ], ESTILO_TOTAL))
 
   const nCtrl = f.length + 1
   f.push([
@@ -480,8 +514,73 @@ function hojaPorCuenta(libro: LibroPorCuenta, titulo: string): unknown[][] {
     f.push(["TODO IMPUTADO — no hay comprobantes sin cuenta contable."])
   }
 
+  // 📑 Cada mes se pliega a su subtotal (los botones + / − de Excel, a la izquierda).
+  NIVELES.set(f, f.map((_, i) => (detalle.has(i) ? 1 : 0)))
   return f
 }
+
+/**
+ * 📅 La solapa **Resumen 12 meses** — usuario 27/10: *«una planilla simplemente con los 12 meses, total compras,
+ * total ventas»*, y *«ayuda a controles también»*.
+ *
+ * Un renglón por subdiario del ejercicio (los 12, aunque alguno esté vacío: un mes sin nada se ve como 0, no
+ * desaparece), con compras y ventas. Y al lado, el **control**: las compras de cada mes contra lo presentado a ARCA
+ * (el mismo dato del Control), con la diferencia; y abajo, que la suma de los 12 dé el total del ejercicio.
+ */
+export function hojaResumenMensual(libro: LibroDiario): unknown[][] {
+  const f: unknown[][] = []
+  f.push([`RESUMEN DE LOS 12 MESES — ejercicio ${libro.ejercicio.etiqueta}`])
+  f.push(["Por subdiario (el mes en que entró cada comprobante), como el resto del libro diario."])
+  f.push([])
+  f.push(["Subdiario", "Compras: comprobantes", "Compras: total", "Ventas: comprobantes", "Ventas: total",
+    "Compras presentadas a ARCA", "Diferencia con ARCA", "Control"])
+  const clave = (s: { anio: number; mes: number }) => `${s.anio}-${String(s.mes).padStart(2, "0")}`
+  const porSub = (xs: AsientoLibroDiario[], k: string) => xs.filter(a => a.subdiario === k)
+  const presentado = new Map((libro.controles.contraPresentado ?? []).map(p => [p.subdiario, p]))
+  const n0 = f.length + 1
+  const suma = { cc: 0, tc: 0, cv: 0, tv: 0 }
+  for (const s of libro.ejercicio.subdiarios) {
+    const k = clave(s)
+    const c = porSub(libro.compras, k), v = porSub(libro.ventas, k)
+    const tc = money(c.reduce((t, a) => t + (Number(a.total) || 0), 0))
+    const tv = money(v.reduce((t, a) => t + (Number(a.total) || 0), 0))
+    suma.cc += c.length; suma.tc += tc; suma.cv += v.length; suma.tv += tv
+    const p = presentado.get(k)
+    const n = f.length + 1
+    f.push([
+      nombreSubdiario(s), c.length, tc, v.length, tv,
+      p?.presentado ? money(p.presentado.total) : "sin dato",
+      p?.presentado ? conFormula(`C${n}-F${n}`, money(tc - p.presentado.total)) : "",
+      !p?.presentado ? "sin dato de ARCA" : p.ok ? "coincide" : "NO COINCIDE",
+    ])
+  }
+  const nU = f.length
+  const nT = f.length + 1
+  f.push(["TOTAL", ...(["B", "C", "D", "E"] as const).map((col, i) => conFormula(`SUM(${col}${n0}:${col}${nU})`,
+    [suma.cc, money(suma.tc), suma.cv, money(suma.tv)][i], i % 2 === 0 ? ENTERO : MONEDA))])
+  // 🧮 El camino inverso: la suma de los 12 renglones tiene que ser el total del ejercicio de la solapa Control.
+  //    Si un comprobante tiene un subdiario fuera de los 12, no está en ningún renglón y esto no da 0.
+  f.push([])
+  f.push(["CONTROL", "", "Compras", "", "Ventas"])
+  f.push(["Total del ejercicio (solapa Control)", "", money(libro.controles.compras.totalGeneral), "", money(libro.controles.ventas.totalGeneral)])
+  const dC = money(suma.tc - libro.controles.compras.totalGeneral)
+  const dV = money(suma.tv - libro.controles.ventas.totalGeneral)
+  const nD = f.length + 1
+  f.push(["Suma de los 12 meses − total (tiene que dar 0)", "", conFormula(`C${nT}-C${nD - 1}`, dC), "", conFormula(`E${nT}-E${nD - 1}`, dV),
+    "", "", Math.abs(dC) < 0.01 && Math.abs(dV) < 0.01 ? "cuadra" : "NO CUADRA"])
+  return f
+}
+
+const COLS_RESUMEN_MENSUAL: Columna[] = [
+  { ancho: 16 },                     // Subdiario
+  { ancho: 12, z: ENTERO },          // Compras: comprobantes
+  { ancho: 18, z: MONEDA },          // Compras: total
+  { ancho: 12, z: ENTERO },          // Ventas: comprobantes
+  { ancho: 18, z: MONEDA },          // Ventas: total
+  { ancho: 20, z: MONEDA },          // Presentado a ARCA
+  { ancho: 16, z: MONEDA },          // Diferencia
+  { ancho: 18 },                     // Control
+]
 
 const COLS_POR_CUENTA: Columna[] = [
   { ancho: 7, z: ENTERO },          // A Año
@@ -2094,6 +2193,8 @@ export function armarWorkbook(
       `${empresa} — pendientes a revisar del ejercicio ${libro.ejercicio.etiqueta}`), COLS_PENDIENTES)
   }
   hoja(wb, "Control", hojaDeControl(libro, lecturas))
+  // 📅 Los 12 meses en una línea cada uno, pegado al Control: es otro control (contra lo presentado a ARCA).
+  hoja(wb, "Resumen 12 meses", hojaResumenMensual(libro), COLS_RESUMEN_MENSUAL)
   hoja(wb, "Compras", hojaDeAsientos(libro.compras), COLS_ASIENTOS)
   hoja(wb, "Ventas", hojaDeAsientos(libro.ventas), COLS_ASIENTOS)
   // 📗 La apertura por cuenta contable — el formato que el usuario ya usaba (A-FEAT-1187).

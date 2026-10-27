@@ -248,7 +248,8 @@ import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
-import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas } from "@/lib/balance/export-libro-diario"
+import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas, hojaPorCuenta, hojaResumenMensual } from "@/lib/balance/export-libro-diario"
+import type { LibroDiario as LibroDiarioT } from "@/lib/balance/libro-diario"
 import { juntarTandas, lecturaIncompleta, juntarHasta, mensajeLecturaIncompleta } from "@/lib/supabase-paginado"
 import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
 import * as XLSXcasos from "xlsx"
@@ -4551,6 +4552,38 @@ export function correrCasos(): Resultado[] {
       chequear("Balance · templates", "💳 Egresos: pagado 1.000 + pendiente 800; un ingreso pendiente no va a la deuda del papel 04",
         "saldo 1800 · pendiente 800 · deuda 800 (1 cuota)", `saldo ${gE?.totalNeto} · pendiente ${gE?.totalPendiente} · deuda ${tPend.totalImpagas} (${tPend.impagasAlCierre.length} cuota)`,
         gE?.totalNeto === 1800 && gE?.totalPendiente === 800 && tPend.totalImpagas === 800 && tPend.impagasAlCierre.length === 1, "A-FEAT-1388")
+
+      // 📑 El libro diario por cuenta: el total de cada mes es un SUBTOTAL de Excel (respeta los filtros), con
+      //    formato de subtotal, y el total del ejercicio es SUBTOTAL sobre todo el bloque (no cuenta dos veces).
+      const asi = (subdiario: string, total: number, cuenta = "Luz") => ({ id: subdiario + total + cuenta, fuente: "arca", subdiario, fecha: `${subdiario}-10`,
+        tipo: 1, punto_venta: 1, numero: 1, cuit: "30545749994", denominacion: "COOPSER", neto_gravado: total, no_gravado: 0, exento: 0,
+        otros_tributos: 0, iva: 0, total, cuenta_contable: cuenta, nro_cuenta: "", centro_costo: "" }) as unknown as LibroDiarioT["compras"][number]
+      const comprasPC = [asi("2025-07", 100), asi("2025-07", 50, "Agua"), asi("2025-12", 580.5)]
+      const hojaPC = hojaPorCuenta(armarLibroPorCuenta(comprasPC), "LIBRO")
+      const subJul = hojaPC.find(x => (x[2] as { v?: string } | undefined)?.v === "Total 07/2025") as Array<{ f?: string; v?: unknown; s?: { font?: { bold?: boolean } } }> | undefined
+      const totEjPC = hojaPC.find(x => (x[2] as { v?: string } | undefined)?.v === "TOTAL DEL EJERCICIO") as Array<{ f?: string; v?: unknown }> | undefined
+      const vPC = `${subJul?.[8]?.f ?? "?"} = ${subJul?.[8]?.v} · negrita ${subJul?.[8]?.s?.font?.bold ? "sí" : "no"} · total ${totEjPC?.[8]?.f?.startsWith("SUBTOTAL(9,") ? "SUBTOTAL" : totEjPC?.[8]?.f} = ${totEjPC?.[8]?.v}`
+      chequear("Balance · libro diario", "📑 Por cuenta: el total de cada mes es SUBTOTAL(9) con formato de subtotal; el del ejercicio también (no suma dos veces)",
+        "SUBTOTAL(9,I7:I8) = 150 · negrita sí · total SUBTOTAL = 730.5", vPC, vPC === "SUBTOTAL(9,I7:I8) = 150 · negrita sí · total SUBTOTAL = 730.5", "A-FEAT-1388")
+
+      // 📅 Resumen 12 meses: los 12 aunque estén vacíos; diciembre contra ARCA NO COINCIDE; la suma da el total.
+      const libroRM = {
+        ejercicio: ej, compras: comprasPC, ventas: [asi("2026-01", 9000, "Venta")],
+        controles: {
+          compras: { totalGeneral: 730.5, cantidad: 3 }, ventas: { totalGeneral: 9000, cantidad: 1 },
+          contraPresentado: [
+            { subdiario: "2025-07", app: { comprobantes: 2, total: 150 }, presentado: { comprobantes: 2, total: 150 }, diferenciaTotal: 0, diferenciaComprobantes: 0, ok: true },
+            { subdiario: "2025-12", app: { comprobantes: 1, total: 580.5 }, presentado: { comprobantes: 0, total: 0 }, diferenciaTotal: 580.5, diferenciaComprobantes: 1, ok: false },
+          ],
+        },
+      } as unknown as LibroDiarioT
+      const hojaRM = hojaResumenMensual(libroRM)
+      const filasMes = hojaRM.filter(x => typeof x[1] === "number")
+      const dic = hojaRM.find(x => String(x[0]).toLowerCase().includes("diciembre"))
+      const ctlRM = hojaRM.find(x => String(x[0]).startsWith("Suma de los 12 meses"))
+      const vRM = `${filasMes.length} meses · dic ${dic?.[7]} (${(dic?.[6] as { v?: number } | undefined)?.v}) · control ${(ctlRM?.[2] as { v?: number })?.v}/${(ctlRM?.[4] as { v?: number })?.v} ${ctlRM?.[7]}`
+      chequear("Balance · libro diario", "📅 Resumen 12 meses: los 12 subdiarios (vacíos en 0), diciembre NO COINCIDE con ARCA por 580,50, y la suma de los 12 da el total",
+        "12 meses · dic NO COINCIDE (580.5) · control 0/0 cuadra", vRM, vRM === "12 meses · dic NO COINCIDE (580.5) · control 0/0 cuadra", "A-FEAT-1388")
     }
 
     // ✍️ A-FEAT-1207 — los saldos del ejercicio anterior: los 3 que dio el usuario el 2026-10-18 suman
