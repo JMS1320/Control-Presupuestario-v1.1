@@ -12,6 +12,12 @@
 
 ## 🧪 <a id="guia-pruebas-2026-10-05"></a>GUÍA DE PRUEBAS — vigente al 23 de octubre (todo en `desarrollo`, tarjeta incluida)
 
+> 🆕 **27/10 — T-plan-sanitario: PLAN SANITARIO, ÓRDENES «SE HIZO / CONFIRMAR» Y BOTONES CON CASILLA (todo en `desarrollo`; scripts 106 y 109 corridos)**. F5 antes. Con tu usuario y con **San Manuel** (rol `pruebas`, cerrado) en otra ventana:
+> 1. 💉 **Productivo → Plan sanitario** — [A-TEST-1258](#a-test-1258): grilla hacienda × mes con **una tarjeta por sesión**; la **IATF en 3 tarjetas** (dispositivos, retiro, IA) sin aviso entre ellas; ⚠️ en rojo si un rodeo tiene 2 encierres en el mes; cartel **🐄 Encierres por rodeo** + **Proponer calendario**; **Cargar IATF 01/10/2026** (tiene que proponer dispositivos lun 21/09 y retiro mar 29/09, entore 03/10, rodeos con sus toros) y anotar con **✅ Se hizo** la sanidad de septiembre.
+> 2. ✍️ **Órdenes de aplicación: «Se hizo» (San Manuel) y «Confirmar» (vos)** — [A-TEST-1263](#a-test-1263): con San Manuel el ✓ deja la orden **a confirmar** y el stock NO baja; con vos **Confirmar** (baja el stock) o **Rechazar** (vuelve a planificada con el motivo).
+> 3. 🔘 **Botones con casilla** — Productivo (53) y Egresos (42) → [A-FEAT-1223](#a-feat-1223): Configuración → Roles → «🖱️ Editar sobre la pantalla» sobre `pruebas`: cada botón que hace algo tiene su candado. A `pruebas` le **nacen apagados** (es cerrado): prendé los que quieras darle. **Confirmar órdenes** y **aprobar el plan** no tienen casilla: sólo admin.
+> 🔔 Pendiente de charlar: la sanidad de otoño ¿pasa a **marzo** o queda en febrero con el tacto? · la orden del **23/06** (Rotatek vaquillonas) sigue **planificada**: si se hizo, ejecutarla (mueve el corte de «lo último registrado») · Enrique no tiene usuario: la sanidad de septiembre por WhatsApp y la cargás vos.
+>
 > 🆕 **26-27/10 — T1, BALANCE: SEGUROS, SUBDIARIOS, CONTADOR Y PERMISOS (todo en `desarrollo`; scripts 107 y 108 corridos)**. F5 antes. En este orden:
 > 1. 🔗 **Correr la conciliación del Extracto MSA** — [A-TEST-1262](#a-test-1262) paso 1: los 6 débitos pendientes de Federación encuentran la cuota de **su póliza**; la flota de jul-26 queda a auditar (falta un endoso de 1.794,54). Columnas del Extracto en orden **Categ · Proveedor · Comprobante · Detalle**.
 > 2. 🛡️ **Egresos → Seguros** — [A-TEST-1259](#a-test-1259): resumen por ejercicio (26/27: 7 cosas · 199.376,45 con lo arrastrado; 25/26: 113.098,91), botones de ejercicio, 📒 cuenta corriente (control en verde), 🔄 «Actualizar desde las pólizas» (tiene que decir «ya estaban al día»).
