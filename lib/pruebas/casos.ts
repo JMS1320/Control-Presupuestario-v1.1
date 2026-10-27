@@ -249,6 +249,7 @@ import { juntarTandas, lecturaIncompleta, juntarHasta, mensajeLecturaIncompleta 
 import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
 import * as XLSXcasos from "xlsx"
 import { ocurrenciasDeCampania, sugerirAgrupar, fechasIatf, chequearIatf, chequearEntore, fechaEnCampania, campaniaDe, fechaCorta,
+  agruparEnSesiones, avisos,
   type TareaPlan as TareaPlanCaso, type Hecho as HechoCaso, type Ocurrencia as OcurrenciaCaso } from "@/lib/productivo/plan-sanitario"
 import { presentarHoja, MONEDA, ENTERO } from "@/lib/balance/formato-excel"
 import { armarFilaDato, leerNumero, textoEstadoGuardado } from "@/lib/balance/datos-usuario-puro"
@@ -9260,6 +9261,28 @@ export function correrCasos(): Resultado[] {
     const vS = sT ? `${sT.ocurrencias.map(o => o.tarea.id).join("+")} el ${sT.fecha}` : "ninguna"
     chequear("Plan sanitario", "Neumo (5/12) y aftosa (10/12) de los terneros caen cerca: se sugiere juntarlas en una fecha que entra en el margen de las dos",
       "neumo1+aftosa-t el 2026-12-05", vS, vS === "neumo1+aftosa-t el 2026-12-05", "A-FEAT-1380")
+
+    // Desde lo último registrado (JMS 27/10): lo anterior sin registro no reclama; parición y entore suceden solos
+    const PLAN3 = [...PLAN, T("revis", { grupos: ["Toros"], optimo_mmdd: "04-15", claves: ["Revisación de toros"] }),
+      T("paric", { optimo_mmdd: "07-01", hasta_mmdd: "09-30", es_fija: true, tol_antes: 1, tol_despues: 1, codigo: "paricion" })]
+    const c25d = ocurrenciasDeCampania(PLAN3, 2025, HECHOS, [], HOY, {}, "2026-06-23")
+    const c26d = ocurrenciasDeCampania(PLAN3, 2026, HECHOS, [], HOY, {}, "2026-06-23")
+    const vD = `revisación abr-26: ${de(c25d, "revis").estado} · sanidad sep-26: ${de(c26d, "san-sep").estado} · parición 26: ${de(c26d, "paric").estado} · entore 26: ${de(c26d, "entore").estado} · otoño en avisos: ${avisos(c25d, "2026-06-23").some(o => o.tarea.id === "san-otono")}`
+    chequear("Plan sanitario", "Se controla desde lo último registrado (23/6): lo de antes sin orden no reclama; la sanidad de septiembre sí; parición y entore suceden solos",
+      "revisación abr-26: previa · sanidad sep-26: vencida · parición 26: sucede · entore 26: sucede · otoño en avisos: false", vD,
+      vD === "revisación abr-26: previa · sanidad sep-26: vencida · parición 26: sucede · entore 26: sucede · otoño en avisos: false", "A-FEAT-1380")
+
+    // Por sesión (JMS 27/10): lo del mismo día es UN evento, aunque toque a varias haciendas
+    const PLAN2 = [...PLAN,
+      T("tacto-ia", { grupos: ["Vacas", "Vaquillonas"], optimo_mmdd: "11-15", tol_antes: 7, tol_despues: 7, claves: ["Tacto"] }),
+      T("mosca", { grupos: ["Vacas", "Vaquillonas", "Toros"], optimo_mmdd: "11-15", claves: ["Caravana mosca"] }),
+      T("aftosa-dic", { grupos: ["Terneros al pie", "Recría", "Vacas", "Toros"], optimo_mmdd: "12-10", claves: ["Carbunclo"] })]
+    const ses = agruparEnSesiones(ocurrenciasDeCampania(PLAN2, 2026, HECHOS, [], HOY))
+    const s15 = ses.find(x => x.fecha === "2026-11-15"), s10 = ses.filter(x => x.fecha === "2026-12-10")
+    const vSes = `15/11: ${s15?.ocurrencias.map(o => o.tarea.id).sort().join("+")} · 10/12: ${s10.length} sesión con ${s10[0]?.ocurrencias.length} tareas y ${s10[0]?.grupos.length} haciendas`
+    chequear("Plan sanitario", "Por sesión: tacto de la IA + caravana mosca (+ pesada) el 15/11 son UNA sesión; la aftosa de diciembre aparece UNA vez aunque toque 4 haciendas",
+      "15/11: mosca+pesada+tacto-ia · 10/12: 1 sesión con 2 tareas y 4 haciendas", vSes,
+      vSes === "15/11: mosca+pesada+tacto-ia · 10/12: 1 sesión con 2 tareas y 4 haciendas", "A-FEAT-1380")
   }
 
   return r
