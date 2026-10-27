@@ -28,6 +28,7 @@ import { TestsDelProceso } from "@/components/tests-del-proceso"
 import {
   ocurrenciasDeCampania, avisos, sugerirAgrupar, campaniaDe, nombreCampania, fechaCorta, difDias, sumarDias,
   fechasIatf, chequearIatf, chequearEntore, moverPideExplicacion, fechaEnCampania,
+  agruparEnSesiones, GRUPOS,
   type TareaPlan, type RegistroPlan, type Hecho, type Ocurrencia, type EstadoOcurrencia, type IatfCargada, type Sugerencia,
 } from "@/lib/productivo/plan-sanitario"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -44,7 +45,6 @@ import { ChevronLeft, ChevronRight, Loader2, Plus, RefreshCw, Syringe, Pencil } 
 const RECURSO = "productivo.plan-sanitario"
 const ps = () => supabase.schema("productivo")
 
-export const GRUPOS = ["Vacas", "Vaquillonas", "Toros", "Terneros al pie", "Recría", "CUT", "Caballos", "Campo"]
 const COLUMNAS: Record<string, string> = {
   servicio: "Servicio y parición", veterinario: "Sanidad", manejo: "Manejo", ventas: "Ventas y selección",
   caballos: "Caballos", pasto: "Pasto y campo",
@@ -59,6 +59,8 @@ const ESTILO: Record<EstadoOcurrencia, { icono: string; clase: string; texto: st
   proxima: { icono: "🟡", clase: "bg-yellow-50 border-yellow-400 text-yellow-900", texto: "falta menos de 1 mes" },
   proyectada: { icono: "⚪", clase: "bg-white border-slate-300 text-slate-700", texto: "prevista" },
   deseable: { icono: "▫️", clase: "bg-white border-dashed border-slate-300 text-slate-500", texto: "deseable (no reclama)" },
+  previa: { icono: "·", clase: "bg-slate-50 border-dashed border-slate-200 text-slate-400", texto: "antes de lo último registrado (no reclama)" },
+  sucede: { icono: "✔", clase: "bg-green-50/50 border-green-200 text-green-800", texto: "sucede sola (no se registra)" },
 }
 
 type FilaIatf = {
@@ -107,6 +109,11 @@ export function TabPlanSanitario() {
   const [verPlan, setVerPlan] = useState(false)
   const [iatfAbierta, setIatfAbierta] = useState<{ campania: number } | null>(null)
   const [juntar, setJuntar] = useState<Sugerencia | null>(null)
+  // Por sesión (default, pedido de JMS 27/10): lo que se hace el mismo día es UN evento.
+  const [vista, setVista] = useState<"sesion" | "hacienda">(() => {
+    try { return localStorage.getItem("plan-sanitario.vista") === "hacienda" ? "hacienda" : "sesion" } catch { return "sesion" }
+  })
+  const cambiarVista = (v: "sesion" | "hacienda") => { setVista(v); try { localStorage.setItem("plan-sanitario.vista", v) } catch { /* sin storage */ } }
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -157,17 +164,23 @@ export function TabPlanSanitario() {
     for (const f of iatfRows) m[campaniaDe(f.fecha_ia)] = f
     return m
   }, [iatfRows])
-  const ocs = useMemo(() => ocurrenciasDeCampania(tareas, campania, hechos, registros, hoy, iatfs), [tareas, campania, hechos, registros, hoy, iatfs])
+  // Desde cuándo se controla: lo último registrado (la última orden ejecutada, o la última huella del plan)
+  const desde = useMemo(() => {
+    const fechas = [...ordenes.map(o => o.fecha), ...registros.map(r => r.fecha).filter((f): f is string => !!f && f <= hoy)]
+    return fechas.length ? fechas.sort().at(-1)! : null
+  }, [ordenes, registros, hoy])
+  const ocs = useMemo(() => ocurrenciasDeCampania(tareas, campania, hechos, registros, hoy, iatfs, desde), [tareas, campania, hechos, registros, hoy, iatfs, desde])
   // Los avisos miran la campaña actual Y la anterior (lo vencido de junio no desaparece el 1/7)
   const pendientes = useMemo(() => {
     const actual = campaniaDe(hoy)
-    const todas = [...ocurrenciasDeCampania(tareas, actual - 1, hechos, registros, hoy, iatfs), ...ocurrenciasDeCampania(tareas, actual, hechos, registros, hoy, iatfs)]
-    return avisos(todas).filter(o => o.faltan >= -365)
-  }, [tareas, hechos, registros, hoy, iatfs])
+    const todas = [...ocurrenciasDeCampania(tareas, actual - 1, hechos, registros, hoy, iatfs, desde), ...ocurrenciasDeCampania(tareas, actual, hechos, registros, hoy, iatfs, desde)]
+    return avisos(todas, desde).filter(o => o.faltan >= -365)
+  }, [tareas, hechos, registros, hoy, iatfs, desde])
+  const sesiones = useMemo(() => agruparEnSesiones(ocs), [ocs])
   const sugerencias = useMemo(() => {
     const actual = campaniaDe(hoy)
-    return sugerirAgrupar([...ocurrenciasDeCampania(tareas, actual, hechos, registros, hoy, iatfs), ...ocurrenciasDeCampania(tareas, actual + 1, hechos, registros, hoy, iatfs)], hoy)
-  }, [tareas, hechos, registros, hoy, iatfs])
+    return sugerirAgrupar([...ocurrenciasDeCampania(tareas, actual, hechos, registros, hoy, iatfs, desde), ...ocurrenciasDeCampania(tareas, actual + 1, hechos, registros, hoy, iatfs, desde)], hoy)
+  }, [tareas, hechos, registros, hoy, iatfs, desde])
 
   // ── Escrituras ──────────────────────────────────────────────────────────────────────────────
   const guardarRegistro = async (o: Ocurrencia, cambios: Partial<RegistroPlan>) => {
@@ -266,6 +279,7 @@ export function TabPlanSanitario() {
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">Para atender {pendientes.length > 0 && <Badge variant="secondary" className="ml-1">{pendientes.length}</Badge>}</CardTitle></CardHeader>
         <CardContent className="space-y-1.5">
+          {desde && <p className="text-xs text-muted-foreground">Se controla desde lo último registrado: {fechaCorta(desde)}. Lo anterior sin registro no reclama.</p>}
           {pendientes.length === 0 && <p className="text-sm text-muted-foreground">✓ Nada vencido ni sin explicar, y nada en el próximo mes.</p>}
           {pendientes.map(o => (
             <button key={`${o.tarea.id}|${o.campania}`} onClick={() => setDetalle(o)}
@@ -326,13 +340,51 @@ export function TabPlanSanitario() {
       {/* 4 · Calendario */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Calendario {nombreCampania(campania)}</CardTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle className="text-base">Calendario {nombreCampania(campania)}</CardTitle>
+            <div className="ml-auto inline-flex rounded-md border p-0.5 text-xs">
+              {([["sesion", "Por sesión"], ["hacienda", "Por hacienda"]] as const).map(([v, t]) => (
+                <button key={v} onClick={() => cambiarVista(v)}
+                  className={`rounded px-2 py-1 ${vista === v ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>{t}</button>))}
+            </div>
+          </div>
           <div className="flex flex-wrap gap-2 text-xs text-muted-foreground pt-1">
-            {(["hecha", "hecha_sin_explicar", "vencida", "proxima", "proyectada", "explicada", "deseable"] as EstadoOcurrencia[]).map(e =>
+            {(["hecha", "hecha_sin_explicar", "vencida", "proxima", "proyectada", "explicada", "sucede", "previa", "deseable"] as EstadoOcurrencia[]).map(e =>
               <span key={e}>{ESTILO[e].icono} {ESTILO[e].texto.split(" —")[0]}</span>)}
             <span>⚡ la cadena la aleja de su fecha óptima</span>
           </div>
         </CardHeader>
+        {vista === "sesion" ? (
+        <CardContent className="space-y-1">
+          {sesiones.length === 0 && <p className="text-sm text-muted-foreground">No hay tareas en esta campaña.</p>}
+          {sesiones.map((ses, k) => {
+            const mes = ses.fecha.slice(0, 7)
+            const nuevoMes = k === 0 || sesiones[k - 1].fecha.slice(0, 7) !== mes
+            const esHoyOAntes = ses.fecha <= hoy
+            return (
+              <div key={ses.fecha}>
+                {nuevoMes && <div className="pt-3 pb-1 text-xs font-semibold uppercase text-muted-foreground">{MESES[(parseInt(mes.slice(5, 7)) + 5) % 12]} {mes.slice(0, 4)}</div>}
+                <div className={`rounded-md border px-3 py-2 ${ESTILO[ses.estado].clase}`}>
+                  <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
+                    <span className="font-semibold">{ESTILO[ses.estado].icono} {fechaCorta(ses.fecha, true)}</span>
+                    <span className="text-xs opacity-80">{esHoyOAntes && ses.estado !== "proxima" ? "" : cuando(difDias(ses.fecha, hoy))}</span>
+                    {ses.ocurrencias.length > 1 && <Badge variant="outline" className="text-[10px]">{ses.ocurrencias.length} tareas juntas</Badge>}
+                    <span className="ml-auto text-xs opacity-80">{ses.grupos.join(" · ")}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {ses.ocurrencias.map(o => (
+                      <button key={o.tarea.id} onClick={() => setDetalle(o)} title={ESTILO[o.estado].texto}
+                        className={`rounded border bg-white/70 px-1.5 py-0.5 text-xs text-left ${o.tarea.obligatoria ? "" : "border-dashed opacity-70"}`}>
+                        {ESTILO[o.estado].icono}{o.conflicto != null ? "⚡" : ""} {o.tarea.nombre}
+                        {o.hasta && !o.fechaReal && <span className="opacity-70"> (hasta {fechaCorta(o.hasta).slice(0, 5)})</span>}
+                      </button>))}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </CardContent>
+        ) : (
         <CardContent className="overflow-x-auto">
           <table className="text-xs border-collapse min-w-[1100px] w-full">
             <thead>
@@ -370,6 +422,7 @@ export function TabPlanSanitario() {
             </tbody>
           </table>
         </CardContent>
+        )}
       </Card>
 
       {detalle && (

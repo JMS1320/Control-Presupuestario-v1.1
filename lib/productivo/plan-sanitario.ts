@@ -62,6 +62,8 @@ export type EstadoOcurrencia =
   | "proxima"          // 🟡 falta menos de 1 mes (o está en curso)
   | "proyectada"       // ⚪ más adelante
   | "deseable"         // ▫️ no obligatoria y no registrada (no reclama)
+  | "previa"           // · anterior a lo último registrado en la app: no se sabe y no reclama (JMS 27/10)
+  | "sucede"           // ✔ parición y entore: pasan solos, no hace falta registrarlos (JMS 27/10)
 
 export type Ocurrencia = {
   tarea: TareaPlan
@@ -139,6 +141,9 @@ export type IatfCargada = { fecha_ia: string; fecha_entore: string; orden_ia_id:
 export function ocurrenciasDeCampania(
   tareas: TareaPlan[], campania: number, hechos: Hecho[], registros: RegistroPlan[],
   hoy: string, iatfs: Record<number, IatfCargada> = {},
+  /** Desde cuándo se controla: la fecha de lo ÚLTIMO registrado. Lo anterior sin registro no reclama
+   *  (JMS 27/10: «se cuenta desde lo último registrado hasta ahora lo pendiente, no previo»). */
+  desde: string | null = null,
 ): Ocurrencia[] {
   const activas = tareas.filter(t => t.activa)
   const porId = new Map(activas.map(t => [t.id, t]))
@@ -207,7 +212,9 @@ export function ocurrenciasDeCampania(
       estado = "explicada"
     } else {
       const fin = sumarDias(hasta ?? esperada, t.tol_despues)
-      if (!t.obligatoria) estado = "deseable"
+      if ((t.codigo === "paricion" || t.codigo === "entore") && hoy >= esperada) estado = "sucede"
+      else if (!t.obligatoria) estado = "deseable"
+      else if (desde && fin < desde) estado = "previa"
       else if (hoy > fin) estado = "vencida"
       else if (faltan <= AVISO_DIAS) estado = "proxima"
       else estado = "proyectada"
@@ -223,10 +230,11 @@ export function ocurrenciasDeCampania(
     .sort((a, b) => a.esperada.localeCompare(b.esperada) || a.tarea.orden - b.tarea.orden)
 }
 
-/** Lo que pide atención: vencidas, hechas sin explicar y próximas (≤ 30 días). */
-export function avisos(ocs: Ocurrencia[]): Ocurrencia[] {
+/** Lo que pide atención: vencidas, hechas sin explicar y próximas (≤ 30 días). Lo hecho fuera de fecha ANTES
+ *  de `desde` (lo último registrado) se ve en el calendario pero no reclama acá. */
+export function avisos(ocs: Ocurrencia[], desde: string | null = null): Ocurrencia[] {
   const peso: Partial<Record<EstadoOcurrencia, number>> = { vencida: 0, hecha_sin_explicar: 1, proxima: 2 }
-  return ocs.filter(o => o.estado in peso)
+  return ocs.filter(o => o.estado in peso && !(o.estado === "hecha_sin_explicar" && desde && (o.fechaReal ?? o.esperada) < desde))
     .sort((a, b) => (peso[a.estado]! - peso[b.estado]!) || a.esperada.localeCompare(b.esperada))
 }
 
@@ -320,4 +328,28 @@ export function chequearEntore(fechaIa: string, fechaEntore: string): ChequeoIat
   const dias = difDias(fechaEntore, fechaIa)
   if (dias >= 1 && dias <= 3) return { dias, pideExplicacion: false, fueraDeRango: false, texto: `${dias} día(s) después de la IA` }
   return { dias, pideExplicacion: true, fueraDeRango: dias < 0, texto: `${dias} día(s) después de la IA (lo normal son ~2): hay que anotar por qué` }
+}
+
+// ── Sesiones ──────────────────────────────────────────────────────────────────────────────────
+export const GRUPOS = ["Vacas", "Vaquillonas", "Toros", "Terneros al pie", "Recría", "CUT", "Caballos", "Campo"]
+
+/**
+ * SESIONES — lo que se hace el mismo día es UN evento (JMS 27/10: «la aftosa se hace todo en un día… tacto a IA y mosca se
+ * hace junto. Es un evento»). Se agrupa por la fecha que se muestra: la real si se hizo, si no la esperada (que ya incluye
+ * lo juntado a mano). El estado de la sesión es el más urgente de sus tareas.
+ */
+const URGENCIA: EstadoOcurrencia[] = ["vencida", "hecha_sin_explicar", "proxima", "proyectada", "explicada", "hecha", "sucede", "previa", "deseable"]
+export function agruparEnSesiones(ocs: Ocurrencia[]) {
+  const m = new Map<string, Ocurrencia[]>()
+  for (const o of ocs) { const f = o.fechaReal ?? o.esperada; m.set(f, [...(m.get(f) ?? []), o]) }
+  return [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([fecha, lista]) => {
+    const oblig = lista.filter(o => o.tarea.obligatoria)
+    const base = oblig.length ? oblig : lista
+    const estado = URGENCIA.find(e => base.some(o => o.estado === e)) ?? "proyectada"
+    return {
+      fecha, estado,
+      ocurrencias: [...lista].sort((a, b) => Number(b.tarea.obligatoria) - Number(a.tarea.obligatoria) || a.tarea.orden - b.tarea.orden),
+      grupos: GRUPOS.filter(g => lista.some(o => o.tarea.grupos.includes(g))),
+    }
+  })
 }

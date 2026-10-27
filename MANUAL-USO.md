@@ -636,8 +636,12 @@ solapa junta las dos cosas y avisa.
    pasa a la misma fecha; si alguna sale de su margen, pide explicación.
 3. **✍️ Propuestas para aceptar** — lo que propuso quien no aprueba (ej.: Enrique). **Aceptar** lo aplica; **Rechazar** deja el
    plan como estaba.
-4. **El calendario de la campaña** (julio a junio), hacienda × mes. Con **◀ ▶** se pasa de campaña. ⚡ = la cadena la corrió lejos
+4. **El calendario de la campaña** (julio a junio). Abre **Por sesión**: lo que se hace el mismo día es una sola tarjeta, con las
+   haciendas que entran. **Por hacienda** lo muestra hacienda × mes. Con **◀ ▶** se pasa de campaña. ⚡ = la cadena la corrió lejos
    de su fecha óptima.
+
+**Desde cuándo reclama:** desde lo último registrado (la última orden de aplicación ejecutada). Lo anterior sin registro queda en
+gris y no reclama. La parición y el entore suceden solos: no piden registro.
 
 **Al tocar una tarea:**
 - **✅ Se hizo** — fecha y, si ya está cargada, la orden de aplicación. Si la fecha sale del margen, pide la explicación.
