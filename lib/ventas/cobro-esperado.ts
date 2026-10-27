@@ -58,7 +58,9 @@ export interface ComprobanteVentaParaCobro {
  * usuario contra un papel real (A-FEAT-167), y tocarla para que sirva a las dos es arriesgar la
  * que ya anda por la que no estaba.
  */
-export const TIPOS_LIQ_HACIENDA = new Set([60, 61])
+export const TIPOS_LIQ_HACIENDA = new Set([60, 61, 190])
+// 190 = liquidación de VENTA DIRECTA de hacienda (la emite MSA, sin consignatario). Mismo cobro: el IVA
+// se cobra entero. Sin esto caía en la cuenta de granos y Ballester 10-12 (2.625.480) daba 2.376.000.
 
 /**
  * 🧾 **Factura común (A, B, C, M, FCE y sus notas)** — A-BUG-1231. En una factura el cliente paga el

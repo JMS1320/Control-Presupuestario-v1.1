@@ -3155,6 +3155,12 @@ export function correrCasos(): Resultado[] {
   chequear("Liquidación de hacienda", "🔑 Papel 2: se cobra 97.745.477,95",
     "97745477.95", cobro2.pagoCondiciones.toFixed(2), Math.abs(cobro2.pagoCondiciones - 97745477.95) < 0.005, "A-FEAT-1225")
 
+  // 🐄 Venta directa (cód. 190, A-DAT-88): Ballester 10-12, 4 vacas — se cobra entero, con IVA.
+  const cobroBallester = cobroEsperado({ tipo_comprobante: 190, imp_neto_gravado: 2376000, iva: 249480,
+    imp_total: 2625480, subtotal_neto: 2376000 }, 0)
+  chequear("Liquidación de hacienda", "🐄 Venta directa (190): Ballester 10-12 se cobra 2.625.480 con el IVA",
+    "2625480", String(cobroBallester.pagoCondiciones), Math.abs(cobroBallester.pagoCondiciones - 2625480) < 0.005, "A-DAT-88")
+
   // 🧨 Sin el caso aparte, la cuenta de GRANOS le restaba todo el IVA como si fuera RG 2300.
   const cobroComoGranos = cobroEsperado({ imp_neto_gravado: 126441000, iva: 13276305, imp_total: 139717305,
     comision_neto: 3001806.36, ret_iibb: 970830, subtotal_neto: 129444000 }, 0)
