@@ -3323,6 +3323,17 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-10-27 · PLAN SANITARIO + IATF — 5 tablas nuevas en `productivo` y 9 labores (script 106) — A-FEAT-1380 — ✅ CORRIDO 2026-10-27 con JMS (MCP pasado a write con su OK y vuelto a read-only)
+
+`scripts/106-plan-sanitario.sql` (+ `-deshacer`): crea `productivo.plan_sanitario_tareas` (el plan: fecha óptima `MM-DD`, ventana, margen,
+cadena `ancla_id`+`ancla_dias`, claves para reconocer la orden), `plan_sanitario_registro` (huella por tarea y campaña, `unique (tarea_id,
+campania)`), `plan_sanitario_propuestas` (cambios de quien no aprueba), `iatf` (4 órdenes atadas; check IA−10 / IA−2) e `iatf_toros`. Todas
+con comentario `[script 106]`, RLS `puede_ver`/`puede_escribir` sobre recurso `productivo`, sin `anon`, `authenticated` select/insert/update
+(+ delete en tareas e iatf_toros); 5 filas en `recurso_tablas`. Datos: 38 tareas del calendario base (6 en cadena) y 9 labores nuevas
+(`Colocación dispositivos IATF`, `Retiro dispositivos IATF`, `IATF`, `Revisación de toros`, `Corte de parición`, `Corte de cola`, `Corte de
+oreja`, `Abichados`, `Caravana mosca`). Control al pie: 38 · 6 · 3 · 5 ✅. **Mismo día, con OK de JMS**: rol `pruebas` (el de San Manuel)
++ sección `productivo` con sólo `productivo.plan-sanitario` y `productivo.plan-sanitario.aprobar = ninguno` (sumado con `||`, sin pisar lo de Egresos).
+
 ### 2026-10-20 · `cuotas_egresos_sin_factura.monto_usd` + `tipo_cambio` — consumos USD de la tarjeta (A-FEAT-1312) — ✅ CORRIDO 2026-10-20 con JMS (verificado con `explain update`)
 
 `scripts/91-cuotas-usd-tc.sql` (+ `-deshacer`): `add column monto_usd numeric(15,2)`, `add column tipo_cambio numeric(15,4)`, las dos nullable, con comentario. Aditivo: no toca filas, RLS ni GRANTs; ninguna vista lista la tabla por columnas.

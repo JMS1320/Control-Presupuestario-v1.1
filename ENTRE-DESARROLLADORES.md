@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 💉 5 tablas nuevas en `productivo` + 9 labores (2026-10-27) — ⏳ SIN APLICAR (espera OK de JMS)
+### 💉 5 tablas nuevas en `productivo` + 9 labores (2026-10-27) — ✅ APLICADA el 27/10 con JMS presente (aviso previo): 38 tareas, 6 en cadena, 3 labores IATF, 5 en recurso_tablas · y el rol `pruebas` sumó Productivo → sólo Plan sanitario, sin «Aprobar»
 
 Para [A-FEAT-1380](PENDIENTES.md#a-feat-1380) (plan sanitario, rama `jms/plan-sanitario`): `scripts/106-plan-sanitario.sql` crea
 `productivo.plan_sanitario_tareas`, `plan_sanitario_registro`, `plan_sanitario_propuestas`, `iatf` e `iatf_toros` (todas nuevas, marcadas
