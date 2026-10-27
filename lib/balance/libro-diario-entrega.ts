@@ -34,8 +34,7 @@ import {
   compararSubdiarioConLibro, type ComprobantePresentado, type ResultadoContraPresentado, type FacturaParaComparar,
 } from "@/lib/subdiarios/libro-presentado"
 import {
-  agregarHoja, hojaPorCuenta, conEstilo, ESTILO_ERROR, ESTILO_SUBTOTAL, ESTILO_TOTAL, marcaDescuadre,
-  COLS_POR_CUENTA, COLS_POR_CUENTA_VENTAS,
+  agregarHoja, plegar, conEstilo, ESTILO_ERROR, ESTILO_SUBTOTAL, ESTILO_TOTAL, marcaDescuadre,
 } from "./export-libro-diario"
 import { conFormula, MONEDA, ENTERO, TONELADAS, FECHA, type Columna } from "./formato-excel"
 
@@ -53,12 +52,17 @@ export interface PapelDelComprobante {
   esNotaCredito: boolean
 }
 
+/** Una tabla del libro IVA tal cual el CSV de ARCA: su encabezado y cada renglón con el mes del zip. */
+export interface TablaOriginal { encabezado: string[]; filas: { periodo: string; valores: string[] }[] }
+
 export interface DatosEntrega {
   libro: LibroDiario
   empresa: string
   /** Por subdiario (`2025-07`). Un mes sin zip = sin dato de lo presentado (se dice, no se asume). */
   presentado?: Record<string, LoPresentado>
   papeles?: PapelDelComprobante[]
+  /** Lo declarado tal cual lo exporta ARCA (las columnas del CSV), para la solapa «original». */
+  arcaOriginal?: { compras: TablaOriginal; ventas: TablaOriginal }
   /** Fecha y hora para el encabezado. */
   generado?: string
 }
@@ -302,35 +306,108 @@ export function explicarDiferencia(diferencia: number, p: ComprobantePresentado)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
-// 📗 EL EXCEL
+// 📗 EL EXCEL — UNA sola fila de columnas para TODAS las hojas
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * 🔑 **LAS MISMAS COLUMNAS, EN EL MISMO LUGAR, EN TODAS LAS HOJAS.** Usuario 27/10, sobre «Contra ARCA»: *«¿no
+ * podría ser con todas las columnas del resto, así comparamos columna por columna?»*; y: *«la idea es las mismas
+ * columnas en todas las planillas que integran el libro diario»*.
+ *
+ * Un comprobante, un subtotal por cuenta, un mes contra ARCA, un camino de la cadena: todos usan esta fila, y lo
+ * que no aplica queda vacío. Así el Neto gravado está siempre en K y el Total siempre en Q, y una columna se compara
+ * contra la misma de otra hoja sin buscarla (y los filtros andan igual en todas).
+ */
+const CAMPOS = [
+  ["sub", "Subdiario", { ancho: 12 }],
+  ["fecha", "Fecha", { ancho: 11, z: FECHA }],
+  ["tipo", "Tipo", { ancho: 6, z: ENTERO }],
+  ["pv", "Pto Vta", { ancho: 7, z: ENTERO }],
+  ["nro", "Número", { ancho: 11, z: ENTERO }],
+  ["cuit", "CUIT", { ancho: 13 }],
+  ["razon", "Razón social / Detalle", { ancho: 36 }],
+  ["cuenta", "Cuenta contable", { ancho: 28 }],
+  ["nroCuenta", "Nro cuenta", { ancho: 10 }],
+  ["cc", "Centro de costo", { ancho: 13 }],
+  ["netoGravado", "Neto gravado", { ancho: 16, z: MONEDA }],
+  ["noGravado", "No gravado", { ancho: 14, z: MONEDA }],
+  ["exento", "Exento", { ancho: 15, z: MONEDA }],
+  ["otrosTributos", "Otros tributos", { ancho: 14, z: MONEDA }],
+  ["iva", "IVA", { ancho: 15, z: MONEDA }],
+  ["sinCredito", "Sin crédito fiscal (B y C)", { ancho: 16, z: MONEDA }],
+  ["total", "Total", { ancho: 17, z: MONEDA }],
+  ["dif", "Total − columnas", { ancho: 14, z: MONEDA }],
+  ["comprobantes", "Comprobantes", { ancho: 12, z: ENTERO }],
+  ["producto", "Producto", { ancho: 14 }],
+  ["toneladas", "Toneladas", { ancho: 11, z: TONELADAS }],
+  ["cabezas", "Cabezas", { ancho: 9, z: ENTERO }],
+  ["kilos", "Kilos", { ancho: 10, z: ENTERO }],
+  ["origen", "Origen", { ancho: 18 }],
+  ["control", "Control", { ancho: 80 }],
+] as const
+type Campo = typeof CAMPOS[number][0]
+const POS = Object.fromEntries(CAMPOS.map(([k], i) => [k, i])) as Record<Campo, number>
+const L = (k: Campo) => XLSX.utils.encode_col(POS[k])
+const ENCABEZADO = CAMPOS.map(c => c[1])
+const COLS: Columna[] = CAMPOS.map(c => ({ ...c[2] }) as Columna)
+const CANTIDADES = ["toneladas", "cabezas", "kilos"] as const
+const SUMABLES: Campo[] = [...COLUMNAS, "comprobantes", ...CANTIDADES]
+const formatoDe = (k: Campo) => (k === "toneladas" ? TONELADAS : k === "comprobantes" || k === "cabezas" || k === "kilos" ? ENTERO : MONEDA)
+
+type Fila = Partial<Record<Campo, unknown>>
+/** Un renglón con la fila única de columnas: lo que no se nombra queda vacío. */
+function fila(v: Fila): unknown[] {
+  const r: unknown[] = Array(CAMPOS.length).fill("")
+  for (const [k, x] of Object.entries(v)) if (x !== undefined && x !== null) r[POS[k as Campo]] = x
+  return r
+}
+/** «Total − columnas» del renglón n: la integridad del comprobante (0 si sus partes suman su total). */
+const difDe = (v: Partial<Record<keyof Partes, number>>) =>
+  r2((v.total ?? 0) - COLUMNAS.filter(c => c !== "total").reduce((s, c) => s + (v[c] ?? 0), 0))
+const difFormula = (n: number, v: Partial<Record<keyof Partes, number>>) =>
+  conFormula(`${L("total")}${n}-(${COLUMNAS.filter(c => c !== "total").map(c => `${L(c)}${n}`).join("+")})`, difDe(v))
+
 /** La fecha como fecha de Excel (número de serie), para que ordene y filtre como fecha. */
-function fechaExcel(iso: string | null): XLSX.CellObject | string {
+function fechaExcel(iso: string | null | undefined): XLSX.CellObject | string {
   if (!iso) return ""
   const [y, m, d] = iso.slice(0, 10).split("-").map(Number)
   if (!y || !m || !d) return iso
   return { t: "n", v: (Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 86400000, z: FECHA }
 }
-/** La fecha como texto dd/mm/aaaa — para los bloques fuera del listado, donde la columna tiene otro formato. */
-const fechaTexto = (iso: string | null | undefined) => (iso ? iso.slice(0, 10).split("-").reverse().join("/") : "")
-const col = (i: number) => XLSX.utils.encode_col(i)
 const ref = (hoja: string, celda: string) => `'${hoja.replace(/'/g, "''")}'!${celda}`
 const nombreHoja = (lado: Lado, clave: string) => `${lado === "compras" ? "C" : "V"} ${clave}`
 
-const ENCABEZADO_ASIENTO = [
-  "Fecha", "Tipo", "Pto Vta", "Número", "CUIT", "Razón social",
-  "Neto gravado", "No gravado", "Exento", "Otros tributos", "IVA", "Sin crédito fiscal (B y C)", "Total",
-  "Cuenta contable", "Nro cuenta", "Centro de costo", "Origen",
-]
-/** Columnas de importes del listado (G a M), en el orden de `COLUMNAS`. */
-const PRIMERA_IMPORTE = 6
-const COLS_ASIENTO: Columna[] = [
-  { ancho: 11, z: FECHA }, { ancho: 5, z: ENTERO }, { ancho: 7, z: ENTERO }, { ancho: 10, z: ENTERO }, { ancho: 13 }, { ancho: 34 },
-  ...COLUMNAS.map(() => ({ ancho: 15, z: MONEDA })),
-  { ancho: 28 }, { ancho: 10 }, { ancho: 14 }, { ancho: 14 },
-]
-const COLS_CANTIDADES: Columna[] = [{ ancho: 18 }, { ancho: 12, z: TONELADAS }, { ancho: 9, z: ENTERO }, { ancho: 11, z: ENTERO }]
+/** Los valores sumables de un conjunto de comprobantes (importes partidos como en el libro + cantidades). */
+type Valores = Totales & { toneladas: number; cabezas: number; kilos: number }
+function valoresDe(asientos: AsientoLibroDiario[], lado: Lado): Valores {
+  const t = sumar(asientos, lado)
+  const q = (k: typeof CANTIDADES[number]) => r3(asientos.reduce((s, a) => s + (a.cantidades?.[k] ?? 0), 0))
+  return { ...t, toneladas: q("toneladas"), cabezas: q("cabezas"), kilos: q("kilos") }
+}
+/** Lo declarado, partido igual que la app: una B o C va entera a «sin crédito fiscal». */
+function valoresDeclarados(ps: ComprobantePresentado[], lado: Lado): Valores {
+  const v: Valores = { comprobantes: ps.length, netoGravado: 0, noGravado: 0, exento: 0, otrosTributos: 0, iva: 0, sinCredito: 0, total: 0, toneladas: 0, cabezas: 0, kilos: 0 }
+  for (const p of ps) {
+    v.total += p.total
+    if (tiposSinCredito(lado).includes(p.tipo)) { v.sinCredito += p.total; continue }
+    v.netoGravado += p.netoGravado ?? 0; v.noGravado += p.noGravado ?? 0; v.exento += p.exento ?? 0
+    v.otrosTributos += p.otrosTributos ?? 0; v.iva += p.iva ?? 0
+  }
+  for (const c of COLUMNAS) v[c] = r2(v[c])
+  return v
+}
+const importes = (v: Partial<Record<keyof Partes, number>>): Fila => Object.fromEntries(COLUMNAS.map(c => [c, v[c] ?? 0]))
+
+/** El renglón de un SUMA (o SUBTOTAL, que respeta filtros y se pliega) sobre filas desde..hasta. */
+function filaSuma(base: Fila, n: number, desde: number, hasta: number, v: Valores, fn: "SUM" | "SUBTOTAL" = "SUM"): unknown[] {
+  const celdas: Fila = {}
+  for (const k of SUMABLES) {
+    const valor = (v as unknown as Record<string, number>)[k] ?? 0
+    celdas[k] = hasta < desde ? valor
+      : conFormula(fn === "SUM" ? `SUM(${L(k)}${desde}:${L(k)}${hasta})` : `SUBTOTAL(9,${L(k)}${desde}:${L(k)}${hasta})`, valor, formatoDe(k))
+  }
+  return fila({ ...base, ...celdas, dif: difFormula(n, v) })
+}
 
 interface MarcasDeFila { textos: Map<string, string[]> }
 function marcasDeFilas(a: AnalisisEntrega): MarcasDeFila {
@@ -359,233 +436,330 @@ function marcasDeFilas(a: AnalisisEntrega): MarcasDeFila {
   return { textos }
 }
 
-/** El renglón de un comprobante (con o sin la columna Subdiario adelante). */
-function filaAsiento(a: AsientoLibroDiario, lado: Lado, marcas: MarcasDeFila, conSubdiario: boolean, conCant: boolean): unknown[] {
+const origenDe = (a: AsientoLibroDiario) => (a.fuente === "historico" ? "sistema anterior" : a.fuente === "arca" ? "app (ARCA)" : "app (ventas)")
+
+/** El renglón de un comprobante de la app (en la fila n). */
+function filaAsiento(a: AsientoLibroDiario, lado: Lado, n: number, marcas?: MarcasDeFila, control?: string): unknown[] {
   const p = partesDe(a, lado)
-  const fila: unknown[] = [
-    ...(conSubdiario ? [a.subdiario] : []),
-    fechaExcel(a.fecha), a.tipo ?? "", a.punto_venta ?? "", a.numero ?? "", a.cuit, a.denominacion,
-    ...COLUMNAS.map(c => r2(p[c])),
-    a.cuenta_contable || SIN_IMPUTAR, a.nro_cuenta, a.centro_costo,
-    a.fuente === "historico" ? "sistema anterior" : a.fuente === "arca" ? "app (ARCA)" : "app (ventas)",
-  ]
-  if (conCant) {
-    const q = a.cantidades
-    fila.push(q?.producto ?? "", q?.toneladas ?? "", q?.cabezas ?? "", q?.kilos ?? "")
-  }
-  const m = marcas.textos.get(a.id)
-  fila.push(m ? m.join(" · ") : "")
-  return m ? conEstilo(fila, ESTILO_ERROR) : fila
+  const q = a.cantidades
+  const m = [...(marcas?.textos.get(a.id) ?? []), ...(control ? [control] : [])]
+  const r = fila({
+    sub: a.subdiario, fecha: fechaExcel(a.fecha), tipo: a.tipo ?? "", pv: a.punto_venta ?? "", nro: a.numero ?? "",
+    cuit: a.cuit, razon: a.denominacion, cuenta: a.cuenta_contable || SIN_IMPUTAR, nroCuenta: a.nro_cuenta, cc: a.centro_costo,
+    ...importes(Object.fromEntries(COLUMNAS.map(c => [c, r2(p[c])]))), dif: difFormula(n, p), comprobantes: 1,
+    producto: q?.producto || "", toneladas: q?.toneladas ?? "", cabezas: q?.cabezas ?? "", kilos: q?.kilos ?? "",
+    origen: origenDe(a), control: m.join(" · "),
+  })
+  return m.length ? conEstilo(r, ESTILO_ERROR) : r
 }
 
-/** Dónde quedó el renglón de totales de una hoja (1-based) y la letra de cada columna de importes. */
-interface DondeTotal { hoja: string; fila: number; letras: Record<keyof Partes, string>; comprobantes: string }
+/** El renglón de un comprobante DECLARADO (del libro IVA presentado), partido igual que la app. */
+function filaDeclarada(p: ComprobantePresentado, lado: Lado, clave: string, n: number, control: string, rojo = true, cuenta?: AsientoLibroDiario): unknown[] {
+  const v = valoresDeclarados([p], lado)
+  const r = fila({
+    sub: clave, fecha: fechaExcel(p.fecha), tipo: p.tipo, pv: p.puntoVenta, nro: p.numero, cuit: p.cuit, razon: p.denominacion,
+    cuenta: cuenta?.cuenta_contable || "", nroCuenta: cuenta?.nro_cuenta || "",
+    ...importes(v), dif: difFormula(n, v), comprobantes: 1, origen: "declarado (libro IVA)", control,
+  })
+  return rojo ? conEstilo(r, ESTILO_ERROR) : r
+}
 
-/** Un listado de comprobantes con su fila TOTAL (SUMA por columna). Devuelve las filas y dónde quedó el total. */
-function listado(
-  hoja: string, titulo: string[], asientos: AsientoLibroDiario[], lado: Lado, marcas: MarcasDeFila, conSubdiario: boolean,
-): { filas: unknown[][]; total: DondeTotal } {
-  const conCant = lado === "ventas"
-  const f: unknown[][] = titulo.map(t => [t])
+/** Dónde quedó el renglón de totales de una hoja (1-based). Las columnas son las mismas en todas. */
+interface DondeTotal { hoja: string; fila: number }
+
+/** Título + encabezado + un renglón por comprobante + TOTAL (SUMA por columna). */
+function listado(hoja: string, titulos: string[], asientos: AsientoLibroDiario[], lado: Lado, marcas: MarcasDeFila): { filas: unknown[][]; total: DondeTotal } {
+  const f: unknown[][] = titulos.map(t => [t])
   f.push([])
-  f.push([...(conSubdiario ? ["Subdiario"] : []), ...ENCABEZADO_ASIENTO,
-    ...(conCant ? ["Producto", "Toneladas", "Cabezas", "Kilos"] : []), "Control"])
+  f.push(ENCABEZADO)
   const desde = f.length + 1
-  for (const a of asientos) f.push(filaAsiento(a, lado, marcas, conSubdiario, conCant))
+  for (const a of asientos) f.push(filaAsiento(a, lado, f.length + 1, marcas))
   const hasta = f.length
-  const off = conSubdiario ? 1 : 0
-  const letras = Object.fromEntries(COLUMNAS.map((c, i) => [c, col(PRIMERA_IMPORTE + off + i)])) as Record<keyof Partes, string>
-  const t = sumar(asientos, lado)
   const n = f.length + 1
-  const fila: unknown[] = Array(PRIMERA_IMPORTE + off).fill("")
-  fila[0] = "TOTAL"
-  fila[PRIMERA_IMPORTE + off - 1] = `${asientos.length} comprobante(s)`
-  for (const c of COLUMNAS) fila.push(conFormula(asientos.length ? `SUM(${letras[c]}${desde}:${letras[c]}${hasta})` : "0", t[c]))
-  if (conCant) {
-    const q = (k: "toneladas" | "cabezas" | "kilos") => r3(asientos.reduce((s, a) => s + (a.cantidades?.[k] ?? 0), 0))
-    const base = PRIMERA_IMPORTE + off + COLUMNAS.length + 4
-    fila.push("", "", "", "", "")
-    ;(["toneladas", "cabezas", "kilos"] as const).forEach((k, i) => {
-      fila[base + 1 + i] = conFormula(asientos.length ? `SUM(${col(base + 1 + i)}${desde}:${col(base + 1 + i)}${hasta})` : "0", q(k), i === 0 ? TONELADAS : ENTERO)
-    })
-  }
-  f.push(conEstilo(fila, ESTILO_TOTAL))
-  return { filas: f, total: { hoja, fila: n, letras, comprobantes: `${asientos.length}` } }
+  f.push(conEstilo(filaSuma({ sub: "TOTAL", razon: `${asientos.length} comprobante(s)` }, n, desde, hasta, valoresDe(asientos, lado)), ESTILO_TOTAL))
+  return { filas: f, total: { hoja, fila: n } }
 }
 
-/** El bloque del subdiario como se le manda al contador: FC, NC y neto; y lo que no da crédito fiscal. */
-function resumenSubdiario(asientos: AsientoLibroDiario[], lado: Lado): unknown[][] {
+/** El pie del subdiario como se le manda al contador (FC, NC y neto; lo que no da crédito) y contra lo declarado. */
+function pieSubdiario(s: SubdiarioDelLado, lado: Lado, d: DatosEntrega, porId: Map<string, AsientoLibroDiario>, inicio: number): unknown[][] {
+  const f: unknown[][] = []
+  const n = () => inicio + f.length
   const sinCred = tiposSinCredito(lado)
-  const con = asientos.filter(a => !(a.tipo != null && sinCred.includes(Number(a.tipo))))
-  const sin = asientos.filter(a => a.tipo != null && sinCred.includes(Number(a.tipo)))
-  // Los importes van en las MISMAS columnas que el listado (G a M), así toman su formato y se leen en fila.
-  const fila = (etiqueta: string, xs: AsientoLibroDiario[]) => {
-    const t = sumar(xs, lado)
-    return [etiqueta, "", "", "", xs.length, "", ...COLUMNAS.map(c => t[c])]
+  const esSin = (a: AsientoLibroDiario) => a.tipo != null && sinCred.includes(Number(a.tipo))
+  const con = s.asientos.filter(a => !esSin(a)), sin = s.asientos.filter(esSin)
+  const renglon = (detalle: string, xs: AsientoLibroDiario[], estilo?: Record<string, unknown>) => {
+    const v = valoresDe(xs, lado)
+    const r = fila({ razon: detalle, ...importes(v), dif: difFormula(n(), v), comprobantes: v.comprobantes })
+    f.push(estilo ? conEstilo(r, estilo) : r)
   }
-  const fc = con.filter(a => a.total >= 0), nc = con.filter(a => a.total < 0)
-  const f: unknown[][] = []
-  f.push([lado === "compras" ? "LIBRO IVA COMPRAS — generan crédito fiscal" : "LIBRO IVA VENTAS — generan débito fiscal"])
-  f.push(["", "", "", "", "Comprobantes", "", ...ENCABEZADO_ASIENTO.slice(PRIMERA_IMPORTE, PRIMERA_IMPORTE + COLUMNAS.length)])
-  f.push(fila("Facturas y débitos", fc))
-  f.push(fila("Notas de crédito (restan)", nc))
-  f.push(conEstilo(fila("Neto (FC − NC)", con), ESTILO_SUBTOTAL))
+  f.push([lado === "compras" ? "LIBRO IVA COMPRAS — como el subdiario que se le manda al contador" : "LIBRO IVA VENTAS — como el subdiario que se le manda al contador"])
+  renglon("Facturas y débitos (con crédito / débito fiscal)", con.filter(a => a.total >= 0))
+  renglon("Notas de crédito (restan)", con.filter(a => a.total < 0))
   if (sin.length) {
-    f.push([])
-    f.push([lado === "compras" ? "NO GENERAN CRÉDITO FISCAL (Fac B y C)" : "SIN DÉBITO DISCRIMINADO"])
-    f.push(fila("Comprobantes", sin.filter(a => a.total >= 0)))
-    f.push(fila("Notas de crédito (restan)", sin.filter(a => a.total < 0)))
-    f.push(conEstilo(fila("Neto", sin), ESTILO_SUBTOTAL))
+    renglon("Comprobantes B y C (sin crédito fiscal)", sin.filter(a => a.total >= 0))
+    renglon("Notas de crédito B y C (restan)", sin.filter(a => a.total < 0))
   }
-  return f
-}
-
-/** La comparación de un mes contra lo presentado, para el pie de su subdiario. */
-function bloqueContra(s: SubdiarioDelLado, lado: Lado): unknown[][] {
-  const f: unknown[][] = []
-  void lado
+  renglon("Neto del subdiario", s.asientos, ESTILO_SUBTOTAL)
+  f.push([])
   if (!s.contra) {
     f.push(["CONTRA LO DECLARADO A ARCA — sin dato: no está el libro IVA presentado de este mes, no se controló."])
     return f
   }
-  const c = s.contra
-  f.push([s.ok ? "CONTRA LO DECLARADO A ARCA — coincide" : "CONTRA LO DECLARADO A ARCA — NO COINCIDE"])
-  const fila = (etiqueta: string, comprobantes: number, iva: number, total: number) =>
-    [etiqueta, "", "", "", comprobantes, "", "", "", "", "", iva, "", total]
-  const ivaDecl = s.iva.declarado ?? 0
-  f.push(["", "", "", "", "Comprobantes", "", "", "", "", "", "IVA", "", "Total"])
-  f.push(fila("En la app (este subdiario)", c.totales.app.comprobantes, s.iva.app, c.totales.app.total))
-  f.push(fila("Declarado (libro IVA)", c.totales.presentado.comprobantes, ivaDecl, c.totales.presentado.total))
-  const dif = fila("Diferencia", c.totales.diferencia.comprobantes, r2(s.iva.app - ivaDecl), c.totales.diferencia.total)
-  f.push(s.ok ? dif : conEstilo(dif, ESTILO_ERROR))
-  return [...f, ...detalleContra(c)]
-}
-
-function detalleContra(c: ResultadoContraPresentado): unknown[][] {
-  const f: unknown[][] = []
-  if (c.soloApp.length) {
-    f.push(["En la app y NO declarados", "Fecha", "Comprobante", "Razón social", "Total", "Qué hacer"])
-    for (const x of c.soloApp) f.push(["", fechaTexto(x.fecha_emision), `${x.tipo_comprobante ?? ""} ${x.punto_venta ?? ""}-${x.numero_desde ?? ""}`, x.denominacion_emisor ?? "", Number(x.imp_total),
-      "rectificar el mes con el contador, o reimputarlo a un mes abierto (entra a provisión)"])
-  }
-  if (c.soloPresentado.length) {
-    f.push(["Declarados y NO en la app", "Fecha", "Comprobante", "Razón social", "Total", "Qué hacer"])
-    for (const x of c.soloPresentado) f.push(["", fechaTexto(x.fecha), `${x.tipo} ${x.puntoVenta}-${x.numero}`, x.denominacion, x.total,
-      "cargarlo en la app (y provisionarlo si es de este ejercicio)"])
-  }
-  if (c.importeDistinto.length) {
-    f.push(["Con otro importe", "Fecha", "Comprobante", "Razón social", "App", "Declarado", "Diferencia", "Por qué"])
-    for (const x of c.importeDistinto) f.push(["", fechaTexto(x.app.fecha_emision), `${x.app.tipo_comprobante ?? ""} ${x.app.punto_venta ?? ""}-${x.app.numero_desde ?? ""}`,
-      x.app.denominacion_emisor ?? "", Number(x.app.imp_total), x.presentado.total, x.diferencia, explicarDiferencia(x.diferencia, x.presentado)])
-  }
-  if (c.otroNumero.length) {
-    f.push(["Mismo comprobante con otro número", "Fecha", "En la app", "Razón social", "App", "Declarado", "Diferencia", "Declarado como"])
-    for (const x of c.otroNumero) f.push(["", fechaTexto(x.app.fecha_emision), `${x.app.tipo_comprobante ?? "sin tipo"} ${x.app.punto_venta ?? "sin pto"}-${x.app.numero_desde ?? "sin número"}`,
-      x.app.denominacion_emisor ?? "", Number(x.app.imp_total), x.presentado.total, x.diferencia, `${x.presentado.tipo} ${x.presentado.puntoVenta}-${x.presentado.numero}`])
-  }
+  f.push([s.ok ? "CONTRA LO DECLARADO A ARCA — coincide, columna por columna" : "CONTRA LO DECLARADO A ARCA — NO COINCIDE"])
+  f.push(...bloqueMes(s, lado, d, n() , true))
+  f.push(...detalleMes(s, lado, porId, n()))
   return f
 }
 
-/** La hoja por campaña y cuenta, con su TOTAL y el control contra «por mes y cuenta». */
-function hojaPorCampana(
-  hoja: string, titulo: string, filas: FilaCampana[], lado: Lado, asientos: AsientoLibroDiario[],
-  porMes: { hoja: string; fila: number },
-): { filas: unknown[][]; total: DondeTotal } {
-  const conCant = lado === "ventas"
-  const f: unknown[][] = [[titulo], ["El ejercicio entero, una fila por cuenta. Tiene que dar lo mismo que «por mes y cuenta», columna por columna."], []]
-  f.push(["Cuenta contable", "Nro cuenta", "Comprobantes", "Neto gravado", "No gravado", "Exento", "Otros tributos", "IVA", "Sin crédito fiscal (B y C)", "Total",
-    "Diferencia entre total y columnas", ...(conCant ? ["Producto", "Toneladas", "Cabezas", "Kilos"] : [])])
-  const cant = new Map<string, { productos: Set<string>; t: number; c: number; k: number }>()
-  if (conCant) {
-    for (const a of asientos) {
-      const k = a.cuenta_contable?.trim() ? (a.nro_cuenta?.trim() ? `nro:${a.nro_cuenta.trim()}` : `nombre:${a.cuenta_contable.trim()}`) : `nombre:${SIN_IMPUTAR}`
-      const acc = cant.get(k) ?? { productos: new Set<string>(), t: 0, c: 0, k: 0 }
-      const q = a.cantidades
-      if (q?.producto) acc.productos.add(q.producto)
-      acc.t += q?.toneladas ?? 0; acc.c += q?.cabezas ?? 0; acc.k += q?.kilos ?? 0
-      cant.set(k, acc)
-    }
+/**
+ * Un mes contra lo declarado, en TRES renglones con todas las columnas: la app, lo declarado y la diferencia
+ * (con fórmula, columna por columna). Lo usan el pie de cada subdiario y la hoja «Contra ARCA».
+ */
+function bloqueMes(s: SubdiarioDelLado, lado: Lado, d: DatosEntrega, inicio: number, sinNombre = false): unknown[][] {
+  const app = valoresDe(s.asientos, lado)
+  const dec = valoresDeclarados(d.presentado?.[s.clave]?.[lado] ?? [], lado)
+  const nApp = inicio, nDec = inicio + 1, nDif = inicio + 2
+  const etiqueta = sinNombre ? "" : s.nombre
+  const dif: Fila = {}
+  for (const k of [...COLUMNAS, "comprobantes"] as Campo[]) {
+    const va = (app as unknown as Record<string, number>)[k] ?? 0, vd = (dec as unknown as Record<string, number>)[k] ?? 0
+    dif[k] = conFormula(`${L(k)}${nApp}-${L(k)}${nDec}`, r2(va - vd), formatoDe(k))
   }
-  const desde = f.length + 1
-  for (const x of filas) {
+  const c = s.contra!
+  const queHacer = s.ok ? "" : [
+    c.soloApp.length ? `${c.soloApp.length} en la app y no declarado(s): rectificar el mes o reimputarlo a un mes abierto (entra a provisión)` : "",
+    c.soloPresentado.length ? `${c.soloPresentado.length} declarado(s) y no en la app: cargarlo(s) y provisionar` : "",
+    c.importeDistinto.length || c.otroNumero.some(x => Math.abs(x.diferencia) > TOL) ? "importes distintos: corregir la carga o rectificar" : "",
+  ].filter(Boolean).join(" · ") || "revisar el IVA de los comprobantes del mes"
+  const difFila = fila({ sub: etiqueta, razon: "Diferencia (app − declarado)", ...dif, control: s.ok ? "coincide" : `NO COINCIDE — ${queHacer}` })
+  return [
+    fila({ sub: etiqueta, razon: "En la app (este subdiario)", ...importes(app), dif: difFormula(nApp, app), comprobantes: app.comprobantes, origen: "app" }),
+    fila({ sub: etiqueta, razon: "Declarado (libro IVA)", ...importes(dec), dif: difFormula(nDec, dec), comprobantes: dec.comprobantes, origen: "declarado (libro IVA)" }),
+    s.ok ? difFila : conEstilo(difFila, ESTILO_ERROR),
+  ]
+}
+
+/** Los comprobantes que explican la diferencia de un mes, cada uno con la fila única de columnas. */
+function detalleMes(s: SubdiarioDelLado, lado: Lado, porId: Map<string, AsientoLibroDiario>, inicio: number): unknown[][] {
+  const c = s.contra
+  if (!c) return []
+  const f: unknown[][] = []
+  const n = () => inicio + f.length
+  const app = (id: string, control: string) => {
+    const a = porId.get(id)
+    if (a) f.push(conEstilo(filaAsiento(a, lado, n(), undefined, control), ESTILO_ERROR))
+  }
+  for (const x of c.soloApp) app(x.id, "NO DECLARADO: está en la app y no en el libro IVA")
+  for (const p of c.soloPresentado) f.push(filaDeclarada(p, lado, s.clave, n(), "DECLARADO Y NO ESTÁ EN LA APP"))
+  for (const x of c.importeDistinto) {
+    const por = explicarDiferencia(x.diferencia, x.presentado)
+    app(x.app.id, `OTRO IMPORTE: así está en la app${por ? ` — ${por}` : ""}`)
+    f.push(filaDeclarada(x.presentado, lado, s.clave, n(), `OTRO IMPORTE: así se declaró (diferencia ${fmt(x.diferencia)})`))
+  }
+  for (const x of c.otroNumero) {
+    const igual = Math.abs(x.diferencia) <= TOL
+    app(x.app.id, igual ? "OTRO NÚMERO: así está en la app (mismo importe)" : "OTRO NÚMERO Y OTRO IMPORTE: así está en la app")
+    f.push(filaDeclarada(x.presentado, lado, s.clave, n(), igual ? "OTRO NÚMERO: así se declaró — corregir la carga en la app" : `así se declaró (diferencia ${fmt(x.diferencia)})`))
+  }
+  if (f.length) f.unshift(["Los comprobantes que no coinciden — cada uno como está en la app y como se declaró:"])
+  return f
+}
+
+/** Agrupa comprobantes por cuenta: por NÚMERO cuando lo hay (la regla del usuario), si no por nombre. */
+const claveCuenta = (a: AsientoLibroDiario) =>
+  a.cuenta_contable?.trim() ? (a.nro_cuenta?.trim() ? `nro:${a.nro_cuenta.trim()}` : `nombre:${a.cuenta_contable.trim()}`) : `nombre:${SIN_IMPUTAR}`
+function porCuenta(asientos: AsientoLibroDiario[]): { cuenta: string; nroCuenta: string; asientos: AsientoLibroDiario[] }[] {
+  const m = new Map<string, { cuenta: string; nroCuenta: string; asientos: AsientoLibroDiario[] }>()
+  for (const a of asientos) {
+    const k = claveCuenta(a)
+    const nombre = a.cuenta_contable?.trim() || SIN_IMPUTAR
+    const g = m.get(k) ?? { cuenta: nombre, nroCuenta: a.nro_cuenta?.trim() ?? "", asientos: [] }
+    // Una cuenta con dos nombres («TELEFONOS E INTERNET» / «Telefonos e internet», las dos 422123) se muestra con los dos.
+    if (!g.cuenta.split(" / ").includes(nombre)) g.cuenta = `${g.cuenta} / ${nombre}`
+    g.asientos.push(a)
+    m.set(k, g)
+  }
+  return [...m.values()].sort((a, b) => (a.cuenta === SIN_IMPUTAR ? 1 : b.cuenta === SIN_IMPUTAR ? -1 : a.cuenta.localeCompare(b.cuenta, "es")))
+}
+const productosDe = (xs: AsientoLibroDiario[]) => [...new Set(xs.map(a => a.cantidades?.producto).filter(Boolean))].join(" · ")
+const marcadosEn = (xs: AsientoLibroDiario[], marcas: MarcasDeFila) => {
+  const k = xs.filter(a => marcas.textos.has(a.id)).length
+  return k ? `${k} comprobante(s) con marca — ver el detalle en su subdiario` : ""
+}
+
+/** Por mes y cuenta: un renglón por cuenta de cada subdiario, el subtotal del mes (se pliega) y el total. */
+function hojaPorMes(hoja: string, titulo: string, subs: SubdiarioDelLado[], lado: Lado, marcas: MarcasDeFila): { filas: unknown[][]; total: DondeTotal } {
+  const f: unknown[][] = [[titulo], ["Un renglón por cuenta contable de cada subdiario; cada mes se pliega a su subtotal (+ / − a la izquierda)."], []]
+  f.push(ENCABEZADO)
+  const niveles: number[] = f.map(() => 0)
+  const primera = f.length + 1
+  const todos: AsientoLibroDiario[] = []
+  for (const s of subs) {
+    if (!s.asientos.length) continue
+    const desde = f.length + 1
+    for (const g of porCuenta(s.asientos)) {
+      const n = f.length + 1
+      const v = valoresDe(g.asientos, lado)
+      const m = marcadosEn(g.asientos, marcas)
+      const r = fila({ sub: s.clave, cuenta: g.cuenta, nroCuenta: g.nroCuenta, ...importes(v), dif: difFormula(n, v), comprobantes: v.comprobantes,
+        producto: productosDe(g.asientos), toneladas: v.toneladas || "", cabezas: v.cabezas || "", kilos: v.kilos || "", control: m })
+      f.push(m ? conEstilo(r, ESTILO_ERROR) : r)
+      niveles.push(1)
+    }
+    const hasta = f.length
     const n = f.length + 1
-    const q = cant.get(x.nroCuenta ? `nro:${x.nroCuenta}` : `nombre:${x.cuenta}`)
-    f.push([x.cuenta, x.nroCuenta, x.comprobantes, ...COLUMNAS.map(c => x[c]),
-      conFormula(`J${n}-(D${n}+E${n}+F${n}+G${n}+H${n}+I${n})`, r2(x.total - (x.netoGravado + x.noGravado + x.exento + x.otrosTributos + x.iva + x.sinCredito))),
-      ...(conCant ? [q ? [...q.productos].join(" · ") : "", q?.t ? r3(q.t) : "", q?.c || "", q?.k || ""] : [])])
+    const m = marcadosEn(s.asientos, marcas)
+    f.push(conEstilo(filaSuma({ sub: s.clave, razon: `Total ${s.nombre}`, control: m }, n, desde, hasta, valoresDe(s.asientos, lado), "SUBTOTAL"), ESTILO_SUBTOTAL))
+    niveles.push(0)
+    todos.push(...s.asientos)
+  }
+  const n = f.length + 1
+  f.push(conEstilo(filaSuma({ sub: "TOTAL", razon: "TOTAL DEL EJERCICIO" }, n, primera, f.length, valoresDe(todos, lado), "SUBTOTAL"), ESTILO_TOTAL))
+  niveles.push(0)
+  plegar(f, niveles)
+  return { filas: f, total: { hoja, fila: n } }
+}
+
+/** Por campaña y cuenta: el ejercicio entero, un renglón por cuenta; y el control contra «por mes y cuenta». */
+function hojaPorCampana(hoja: string, titulo: string, etiqueta: string, asientos: AsientoLibroDiario[], lado: Lado, marcas: MarcasDeFila, porMes: DondeTotal): { filas: unknown[][]; total: DondeTotal } {
+  const f: unknown[][] = [[titulo], ["El ejercicio entero, un renglón por cuenta. Tiene que dar lo mismo que «por mes y cuenta», columna por columna (abajo)."], []]
+  f.push(ENCABEZADO)
+  const desde = f.length + 1
+  for (const g of porCuenta(asientos)) {
+    const n = f.length + 1
+    const v = valoresDe(g.asientos, lado)
+    const m = marcadosEn(g.asientos, marcas)
+    const r = fila({ sub: etiqueta, cuenta: g.cuenta, nroCuenta: g.nroCuenta, ...importes(v), dif: difFormula(n, v), comprobantes: v.comprobantes,
+      producto: productosDe(g.asientos), toneladas: v.toneladas || "", cabezas: v.cabezas || "", kilos: v.kilos || "", control: m })
+    f.push(m ? conEstilo(r, ESTILO_ERROR) : r)
   }
   const hasta = f.length
   const n = f.length + 1
-  const letras = Object.fromEntries(COLUMNAS.map((c, i) => [c, col(3 + i)])) as Record<keyof Partes, string>
-  const tot = (c: keyof Partes) => r2(filas.reduce((s, x) => s + x[c], 0))
-  f.push(conEstilo(["TOTAL DEL EJERCICIO", "", conFormula(`SUM(C${desde}:C${hasta})`, filas.reduce((s, x) => s + x.comprobantes, 0), ENTERO),
-    ...COLUMNAS.map(c => conFormula(`SUM(${letras[c]}${desde}:${letras[c]}${hasta})`, tot(c))),
-    conFormula(`J${n}-(D${n}+E${n}+F${n}+G${n}+H${n}+I${n})`, 0)], ESTILO_TOTAL))
-  // 🧮 El camino inverso: el mismo total que la hoja por mes y cuenta (TOTAL DEL EJERCICIO, columnas D a J).
-  const ordenMes: Record<keyof Partes, string> = { netoGravado: "D", noGravado: "E", exento: "F", otrosTributos: "G", iva: "H", sinCredito: "J", total: "I" }
+  const v = valoresDe(asientos, lado)
+  f.push(conEstilo(filaSuma({ sub: "TOTAL", razon: "TOTAL DEL EJERCICIO" }, n, desde, hasta, v), ESTILO_TOTAL))
   f.push([])
-  f.push(["CONTROL — «por mes y cuenta» (su TOTAL DEL EJERCICIO)", "", "", ...COLUMNAS.map(c => conFormula(ref(porMes.hoja, `${ordenMes[c]}${porMes.fila}`), tot(c)))])
-  const nc = f.length
-  f.push(["Diferencia (tiene que dar 0)", "", "", ...COLUMNAS.map(c => conFormula(`${letras[c]}${n}-${letras[c]}${nc}`, 0))])
-  return { filas: f, total: { hoja, fila: n, letras, comprobantes: `C${n}` } }
+  // 🧮 El camino inverso: el mismo total que «por mes y cuenta» — mismas columnas, misma letra.
+  const nOtro = f.length + 1
+  const otro: Fila = {}
+  for (const k of SUMABLES) otro[k] = conFormula(ref(porMes.hoja, `${L(k)}${porMes.fila}`), (v as unknown as Record<string, number>)[k] ?? 0, formatoDe(k))
+  f.push(fila({ razon: `CONTROL — el total de «${porMes.hoja}»`, ...otro }))
+  const dif: Fila = {}
+  for (const k of SUMABLES) dif[k] = conFormula(`${L(k)}${n}-${L(k)}${nOtro}`, 0, formatoDe(k))
+  f.push(fila({ razon: "Diferencia (tiene que dar 0)", ...dif, control: "coincide" }))
+  return { filas: f, total: { hoja, fila: n } }
 }
 
-/** «Contra ARCA»: dos cuadros (compras y ventas), un renglón por mes, y el detalle de lo que no coincide. */
-function hojaContraArca(a: AnalisisEntrega): unknown[][] {
-  const f: unknown[][] = [["CONTRA LO DECLARADO A ARCA — mes por mes"],
-    ["Cada subdiario de la app contra el libro IVA presentado de ese mes (el zip que exporta ARCA). Compras y ventas en cuadros separados."], []]
+/** «Contra ARCA»: compras y ventas en cuadros separados; cada mes en tres renglones con TODAS las columnas. */
+function hojaContraArca(a: AnalisisEntrega, d: DatosEntrega, porId: Map<string, AsientoLibroDiario>): unknown[][] {
+  const f: unknown[][] = [["CONTRA LO DECLARADO A ARCA — mes por mes, columna por columna"],
+    ["Cada subdiario de la app contra el libro IVA presentado de ese mes (el zip que exporta ARCA). Las B y C van enteras a «sin crédito fiscal» de los dos lados."], []]
   for (const lado of ["compras", "ventas"] as const) {
     const subs = lado === "compras" ? a.compras : a.ventas
     f.push([lado === "compras" ? "COMPRAS" : "VENTAS"])
-    f.push(["Subdiario", "App: comprobantes", "App: total", "App: IVA", "Declarado: comprobantes", "Declarado: total", "Declarado: IVA",
-      "Diferencia total", "Diferencia IVA", "Control", "Qué hacer"])
-    const desde = f.length + 1
+    f.push(ENCABEZADO)
+    const filasApp: number[] = [], filasDec: number[] = []
     for (const s of subs) {
-      const n = f.length + 1
-      const c = s.contra
-      const queHacer = !c || s.ok ? "" : [
-        c.soloApp.length ? "rectificar el mes o reimputar lo no declarado (entra a provisión)" : "",
-        c.soloPresentado.length ? "cargar y provisionar lo declarado que falta" : "",
-        c.importeDistinto.length || c.otroNumero.some(x => Math.abs(x.diferencia) > TOL) ? "corregir el importe o rectificar" : "",
-      ].filter(Boolean).join(" · ") || "revisar el IVA de los comprobantes del mes"
-      const ivaDecl = s.iva.declarado ?? 0
-      const fila: unknown[] = [s.nombre, s.totales.comprobantes, s.totales.total, s.iva.app,
-        c ? c.totales.presentado.comprobantes : "sin dato", c ? c.totales.presentado.total : "sin dato", c ? ivaDecl : "sin dato",
-        c ? conFormula(`C${n}-F${n}`, c.totales.diferencia.total) : "", c ? conFormula(`D${n}-G${n}`, r2(s.iva.app - ivaDecl)) : "",
-        !c ? "sin dato" : s.ok ? "coincide" : "NO COINCIDE", queHacer]
-      f.push(c && !s.ok ? conEstilo(fila, ESTILO_ERROR) : fila)
+      if (!s.contra) { f.push(fila({ sub: s.nombre, razon: "sin dato de lo declarado — no se controló" })); continue }
+      if (!s.asientos.length && !(d.presentado?.[s.clave]?.[lado] ?? []).length) {
+        f.push(fila({ sub: s.nombre, razon: "sin comprobantes en la app ni en lo declarado", control: "coincide" }))
+        continue
+      }
+      filasApp.push(f.length + 1); filasDec.push(f.length + 2)
+      f.push(...bloqueMes(s, lado, d, f.length + 1))
     }
-    const hasta = f.length
-    const sum = (g: (s: SubdiarioDelLado) => number) => r2(subs.reduce((t, s) => t + g(s), 0))
-    const valores = [
-      sum(s => s.totales.comprobantes), sum(s => s.totales.total), sum(s => s.iva.app),
-      sum(s => s.contra?.totales.presentado.comprobantes ?? 0), sum(s => s.contra?.totales.presentado.total ?? 0),
-      sum(s => s.iva.declarado ?? 0), sum(s => s.contra?.totales.diferencia.total ?? 0),
-      sum(s => (s.contra ? r2(s.iva.app - (s.iva.declarado ?? 0)) : 0)),
-    ]
-    f.push(conEstilo(["TOTAL", ...["B", "C", "D", "E", "F", "G", "H", "I"].map((l, i) =>
-      conFormula(`SUM(${l}${desde}:${l}${hasta})`, valores[i], i === 0 || i === 3 ? ENTERO : MONEDA))], ESTILO_TOTAL))
+    // Los totales del ejercicio, también en tres renglones: suma de los renglones de la app y de lo declarado.
+    const tot = (filas: number[], valores: Valores, detalle: string, n: number) => {
+      const c: Fila = {}
+      for (const k of [...COLUMNAS, "comprobantes"] as Campo[]) {
+        const valor = (valores as unknown as Record<string, number>)[k] ?? 0
+        c[k] = filas.length ? conFormula(filas.map(r => `${L(k)}${r}`).join("+"), valor, formatoDe(k)) : valor
+      }
+      return conEstilo(fila({ sub: "TOTAL", razon: detalle, ...c, dif: difFormula(n, valores) }), ESTILO_TOTAL)
+    }
+    const conDato = subs.filter(s => s.contra)
+    const vApp = valoresDe(conDato.flatMap(s => s.asientos), lado)
+    const vDec = valoresDeclarados(conDato.flatMap(s => d.presentado?.[s.clave]?.[lado] ?? []), lado)
+    const nA = f.length + 1
+    f.push(tot(filasApp, vApp, "Total en la app", nA))
+    f.push(tot(filasDec, vDec, "Total declarado", nA + 1))
+    const dif: Fila = {}
+    for (const k of [...COLUMNAS, "comprobantes"] as Campo[]) {
+      dif[k] = conFormula(`${L(k)}${nA}-${L(k)}${nA + 1}`, r2(((vApp as unknown as Record<string, number>)[k] ?? 0) - ((vDec as unknown as Record<string, number>)[k] ?? 0)), formatoDe(k))
+    }
+    const okLado = conDato.every(s => s.ok)
+    const r = fila({ sub: "TOTAL", razon: "Diferencia (app − declarado)", ...dif, control: okLado ? "coincide" : "NO COINCIDE — el detalle, abajo y en el pie de cada subdiario" })
+    f.push(okLado ? conEstilo(r, ESTILO_TOTAL) : conEstilo(r, ESTILO_ERROR))
     f.push([])
   }
-  const conDetalle = [...a.compras.map(s => ["compras", s] as const), ...a.ventas.map(s => ["ventas", s] as const)].filter(([, s]) => s.contra && (!s.ok || s.contra.otroNumero.length))
+  const conDetalle = [...a.compras.map(s => ["compras", s] as const), ...a.ventas.map(s => ["ventas", s] as const)]
+    .filter(([, s]) => s.contra && (!s.ok || s.contra.otroNumero.length))
   if (conDetalle.length) {
     f.push(["DETALLE DE LO QUE NO COINCIDE"])
-    for (const [lado, s] of conDetalle) {
-      f.push([`${s.nombre} — ${lado}`])
-      f.push(...detalleContra(s.contra!))
-      f.push([])
-    }
+    f.push(ENCABEZADO)
+    for (const [lado, s] of conDetalle) f.push(...detalleMes(s, lado, porId, f.length + 1).slice(1))
   }
   return f
 }
 
+/**
+ * 🧾 Lo declarado TAL CUAL lo exporta ARCA (usuario 27/10: *«dejame una solapa con la original tal cual export
+ * ARCA»*): las columnas del CSV del libro IVA, en su orden, un renglón por comprobante de los 12 meses. Sólo se
+ * agrega al final de qué mes es (el CSV no lo trae: sale del nombre del zip). Los importes pasan a número para que se
+ * puedan sumar; lo demás queda como texto, como viene.
+ */
+function hojaArcaOriginal(t: TablaOriginal, titulo: string): unknown[][] {
+  const f: unknown[][] = [[titulo], ["Tal cual el CSV del zip del libro IVA. La última columna dice de qué mes es."], []]
+  f.push([...t.encabezado, "Período (del zip)"])
+  const esImporte = (x: string) => /^-?\d+,\d+$/.test(x)
+  for (const r of t.filas) f.push([...r.valores.map(x => (esImporte(x) ? Number(x.replace(",", ".")) : x)), r.periodo])
+  return f
+}
+
+/**
+ * 🧾 Lo declarado con NUESTRAS columnas (usuario 27/10: *«y las que equivalen de ARCA las ponemos como las
+ * nuestras»*): cada comprobante del libro IVA en la fila única, partido igual que la app (B y C enteras a «sin crédito
+ * fiscal»), con la cuenta contable del comprobante de la app que le corresponde y qué pasó con él.
+ */
+function hojaArcaNuestra(hoja: string, titulo: string, lado: Lado, a: AnalisisEntrega, d: DatosEntrega, porId: Map<string, AsientoLibroDiario>): { filas: unknown[][]; total: DondeTotal } {
+  const f: unknown[][] = [[titulo], ["Cada comprobante declarado con las mismas columnas que la app. La columna Control dice si está igual en la app."], []]
+  f.push(ENCABEZADO)
+  const renglones: { clave: string; p: ComprobantePresentado; app?: AsientoLibroDiario; control: string; mal: boolean }[] = []
+  for (const s of (lado === "compras" ? a.compras : a.ventas).filter(x => x.contra)) {
+    const c = s.contra!
+    const deApp = new Map<ComprobantePresentado, string>([...c.pares.entries()].map(([id, p]) => [p, id]))
+    const distinto = new Set(c.importeDistinto.map(x => x.presentado))
+    const otro = new Map(c.otroNumero.map(x => [x.presentado, x]))
+    for (const p of d.presentado?.[s.clave]?.[lado] ?? []) {
+      const id = deApp.get(p)
+      const app = id ? porId.get(id) : undefined
+      const o = otro.get(p)
+      const control = !id ? "NO ESTÁ EN LA APP"
+        : distinto.has(p) ? "en la app con OTRO IMPORTE"
+        : o ? (Math.abs(o.diferencia) <= TOL ? `en la app con otro número (${app?.tipo ?? "sin tipo"} ${app?.punto_venta ?? "sin pto"}-${app?.numero ?? "sin número"})` : "en la app con otro número y OTRO IMPORTE")
+        : "igual en la app"
+      renglones.push({ clave: s.clave, p, app, control, mal: !id || distinto.has(p) || (!!o && Math.abs(o.diferencia) > TOL) })
+    }
+  }
+  renglones.sort((x, y) => x.p.fecha.localeCompare(y.p.fecha) || x.p.puntoVenta - y.p.puntoVenta || x.p.numero - y.p.numero)
+  const desde = f.length + 1
+  for (const r of renglones) f.push(filaDeclarada(r.p, lado, r.clave, f.length + 1, r.control, r.mal, r.app))
+  const hasta = f.length
+  const n = f.length + 1
+  f.push(conEstilo(filaSuma({ sub: "TOTAL", razon: `${renglones.length} comprobante(s) declarados` }, n, desde, hasta,
+    valoresDeclarados(renglones.map(r => r.p), lado)), ESTILO_TOTAL))
+  return { filas: f, total: { hoja, fila: n } }
+}
+
+/** La cadena de la hoja Control: un camino por renglón, con la fila única de columnas leída de cada hoja. */
+interface Paso { camino: string; donde: DondeTotal[] | null; valores: Totales | null; nota?: string }
+
 /** La primera hoja: qué se puede informar, la cadena, y lo que hay que rectificar antes. */
-function hojaControl(d: DatosEntrega, a: AnalisisEntrega, cadena: Record<Lado, { camino: string; donde: DondeTotal | DondeTotal[] | null; valores: Totales | null; nota?: string }[]>): unknown[][] {
+function hojaControl(d: DatosEntrega, a: AnalisisEntrega, cadena: Record<Lado, Paso[]>, porId: Map<string, AsientoLibroDiario>): unknown[][] {
   const { libro } = d
   const f: unknown[][] = []
   f.push([`LIBRO DIARIO — ${d.empresa} — ejercicio ${libro.ejercicio.etiqueta}`])
   f.push([`Los 12 subdiarios: ${a.compras[0]?.nombre ?? ""} a ${a.compras[a.compras.length - 1]?.nombre ?? ""} · cierre ${libro.ejercicio.fechaCierre}${d.generado ? ` · generado ${d.generado}` : ""}`])
-  f.push(["El período se corta por el subdiario en que entró cada comprobante, no por su fecha."])
+  f.push(["El período se corta por el subdiario en que entró cada comprobante, no por su fecha. Todas las hojas tienen las mismas columnas, en el mismo lugar."])
   f.push([])
   f.push([a.sePuedeInformar ? "CONTROL OK — se puede informar" : "NO INFORMAR TODAVÍA — hay que rectificar antes (abajo, qué y dónde)"])
   f.push([])
@@ -593,79 +767,81 @@ function hojaControl(d: DatosEntrega, a: AnalisisEntrega, cadena: Record<Lado, {
   // 1 · La cadena
   f.push(["1 · EL MISMO NÚMERO POR TODOS LOS CAMINOS — columna por columna"])
   for (const lado of ["compras", "ventas"] as const) {
-    f.push([lado === "compras" ? "COMPRAS" : "VENTAS", "Comprobantes", "Neto gravado", "No gravado", "Exento", "Otros tributos", "IVA", "Sin crédito fiscal (B y C)", "Total", "Diferencia de total con los subdiarios", "Control"])
-    const n0 = f.length + 1
+    f.push([lado === "compras" ? "COMPRAS" : "VENTAS"])
+    f.push(ENCABEZADO)
+    const base = cadena[lado][0].valores
     for (const paso of cadena[lado]) {
       const n = f.length + 1
       const v = paso.valores
-      const celda = (c: keyof Partes) => {
-        if (!v) return ""
-        const w = paso.donde
-        if (!w) return v[c]
-        const lista = Array.isArray(w) ? w : [w]
-        if (!lista.length) return v[c]
-        return conFormula(lista.map(x => ref(x.hoja, `${x.letras[c]}${x.fila}`)).join("+"), v[c])
+      if (!v) { f.push(fila({ razon: paso.camino, control: paso.nota ?? "sin dato" })); continue }
+      const celdas: Fila = {}
+      for (const k of [...COLUMNAS, "comprobantes"] as Campo[]) {
+        const valor = (v as unknown as Record<string, number>)[k] ?? 0
+        celdas[k] = paso.donde?.length ? conFormula(paso.donde.map(x => ref(x.hoja, `${L(k)}${x.fila}`)).join("+"), valor, formatoDe(k)) : valor
       }
-      const fila: unknown[] = [paso.camino, v ? v.comprobantes : "",
-        ...COLUMNAS.map(c => celda(c)),
-        n === n0 || !v ? "" : conFormula(`I${n}-I${n0}`, r2(v.total - (cadena[lado][0].valores?.total ?? 0))),
-        paso.nota ?? (n === n0 || !v ? "" : Math.abs(v.total - (cadena[lado][0].valores?.total ?? 0)) <= TOL ? "coincide" : "NO COINCIDE")]
-      f.push(fila)
+      const dt = base ? r2(v.total - base.total) : 0
+      f.push(fila({ razon: paso.camino, ...celdas, dif: difFormula(n, v),
+        control: paso.nota ?? (paso === cadena[lado][0] ? "" : Math.abs(dt) <= TOL ? "coincide" : `NO COINCIDE (${fmt(dt)})`) }))
     }
     f.push([])
   }
 
   // 2 · Lo que hay que rectificar
   f.push(["2 · ANTES DE INFORMAR — RECTIFICAR"])
-  if (!a.aRectificar.length && !a.descuadres.compras.length && !a.descuadres.ventas.length && !a.tipoSigno.length) {
-    f.push(["coincide — no hay nada que rectificar"])
-  }
+  if (!a.aRectificar.length && !a.descuadres.compras.length && !a.descuadres.ventas.length && !a.tipoSigno.length) f.push(["coincide — no hay nada que rectificar"])
   if (a.aRectificar.length) {
     f.push([`Meses a rectificar con el contador o a reimputar: ${a.aRectificar.length} — ${a.aRectificar.map(x => x.nombre).join(" · ")}`])
-    f.push(["Subdiario", "Qué pasa"])
-    for (const x of a.aRectificar) for (const [i, m] of x.motivos.entries()) f.push(conEstilo([i === 0 ? x.nombre : "", m], ESTILO_ERROR))
+    for (const x of a.aRectificar) for (const [i, m] of x.motivos.entries()) f.push(conEstilo(fila({ sub: i === 0 ? x.nombre : "", razon: m }), ESTILO_ERROR))
     f.push(["Qué hacer, según el caso: cargar y provisionar lo declarado que falta · reimputar a un mes abierto lo no declarado (entra a provisión) · o rectificar el mes con el contador."])
     f.push([])
   }
-  // Papel / cargado / declarado
+  // Papel / cargado / declarado: el mismo comprobante tres veces, con las mismas columnas.
   f.push([a.papelDistinto.length
     ? `PAPEL ≠ CARGADO — ${a.papelDistinto.length} comprobante(s): lo cargado no es lo que dice el papel`
     : `PAPEL vs. CARGADO — coincide en los ${(d.papeles ?? []).length} comprobantes que tienen el papel leído (endosos de Pólizas)`])
   if (a.papelDistinto.length) {
-    f.push(["Subdiario", "Fecha", "Comprobante", "Proveedor", "Papel (de dónde)", "Papel", "Cargado (app)", "Declarado (ARCA)", "Papel − cargado", "Cargado − declarado", "Qué pasa"])
+    f.push(ENCABEZADO)
     for (const p of a.papelDistinto) {
-      const n = f.length + 1
-      const dec = p.declarado
-      f.push(conEstilo([p.asiento.subdiario, fechaTexto(p.asiento.fecha), `${p.asiento.tipo ?? ""} ${p.asiento.punto_venta ?? ""}-${p.asiento.numero ?? ""}`, p.asiento.denominacion,
-        p.papel.origen, p.papel.total, p.asiento.total, dec ? dec.total : dec === null ? "no figura" : "sin dato",
-        conFormula(`F${n}-G${n}`, p.diferencia), dec ? conFormula(`G${n}-H${n}`, r2(p.asiento.total - dec.total)) : "",
-        (p.papel.esNotaCredito && p.asiento.total > 0 ? "El papel es NOTA DE CRÉDITO y se cargó como factura: suma al gasto en vez de restar. " : "") +
-        (dec && Math.abs(p.asiento.total - dec.total) <= TOL ? "Cargado y declarado coinciden: el error viajó a la DDJJ → rectificar con el contador." : "")], ESTILO_ERROR))
+      const x = p.asiento
+      f.push(conEstilo(fila({ sub: x.subdiario, fecha: fechaExcel(x.fecha), tipo: p.papel.esNotaCredito ? "NC" : "", pv: x.punto_venta ?? "", nro: x.numero ?? "", cuit: x.cuit,
+        razon: x.denominacion, total: p.papel.total, origen: `papel: ${p.papel.origen}`,
+        control: p.papel.esNotaCredito ? "el PDF es NOTA DE CRÉDITO (en negativo)" : "lo que dice el PDF" }), ESTILO_ERROR))
+      f.push(filaAsiento(x, "compras", f.length + 1, undefined,
+        p.papel.esNotaCredito && x.total > 0 ? "cargado como FACTURA: suma al gasto en vez de restar" : "así está cargado"))
+      if (p.declarado) {
+        f.push(filaDeclarada(p.declarado, "compras", x.subdiario, f.length + 1,
+          Math.abs(p.declarado.total - x.total) <= TOL ? "declarado IGUAL que lo cargado: el error viajó a la DDJJ → rectificar con el contador" : "así se declaró"))
+      }
     }
     const efecto = r2(a.papelDistinto.reduce((s, p) => s + p.diferencia, 0))
-    f.push(["", "", "", "", "Efecto en el resultado", "", "", "", efecto, "", efecto < 0 ? `el gasto está inflado en ${fmt(-efecto)}` : `el gasto está corto en ${fmt(efecto)}`])
+    f.push(fila({ razon: "Efecto en el resultado (papel − cargado)", total: efecto, control: efecto < 0 ? `el gasto está inflado en ${fmt(-efecto)}` : `el gasto está corto en ${fmt(efecto)}` }))
   }
   f.push([])
   f.push([a.tipoSigno.length
     ? `TIPO vs. SIGNO — ${a.tipoSigno.length} comprobante(s) con el tipo y el signo cruzados`
     : `TIPO vs. SIGNO — coincide en los ${libro.compras.length + libro.ventas.length} comprobantes (ninguna nota de crédito en positivo ni factura en negativo)`])
-  for (const t of a.tipoSigno) f.push(conEstilo(["", t.lado, t.asiento.subdiario, `${t.asiento.tipo} ${t.asiento.punto_venta ?? ""}-${t.asiento.numero ?? ""}`, t.asiento.denominacion, t.asiento.total, t.motivo], ESTILO_ERROR))
+  for (const t of a.tipoSigno) f.push(conEstilo(filaAsiento(t.asiento, t.lado, f.length + 1, undefined, t.motivo), ESTILO_ERROR))
   f.push([])
   f.push([a.otroNumero.length
     ? `AVISO — ${a.otroNumero.length} comprobante(s) declarados con OTRO TIPO O NÚMERO que en la app, por el mismo importe: no cambia montos, hay que corregir la carga`
     : "NÚMEROS — coinciden con lo declarado en todos los comprobantes emparejados"])
   if (a.otroNumero.length) {
-    f.push(["", "Subdiario", "Lado", "Razón social", "En la app", "Declarado como", "Importe"])
-    for (const x of a.otroNumero) f.push(["", x.nombre, x.lado, x.app.denominacion_emisor ?? "",
-      `${x.app.tipo_comprobante ?? "sin tipo"} ${x.app.punto_venta ?? "sin pto"}-${x.app.numero_desde ?? "sin número"}`,
-      `${x.presentado.tipo} ${x.presentado.puntoVenta}-${x.presentado.numero}`, x.presentado.total])
+    f.push(ENCABEZADO)
+    for (const x of a.otroNumero) {
+      const as = porId.get(x.app.id)
+      if (as) f.push(filaAsiento(as, x.lado, f.length + 1, undefined, `declarado como ${x.presentado.tipo} ${x.presentado.puntoVenta}-${x.presentado.numero}`))
+    }
   }
   f.push([])
   const desc = [...a.descuadres.compras, ...a.descuadres.ventas]
-  f.push([desc.length ? `COMPROBANTES CUYAS PARTES NO SUMAN SU TOTAL — ${desc.length}` : "PARTES vs. TOTAL — cuadra en todos los comprobantes"])
+  f.push([desc.length ? `COMPROBANTES CUYAS PARTES NO SUMAN SU TOTAL — ${desc.length} (la columna «Total − columnas» dice cuánto)` : "PARTES vs. TOTAL — cuadra en todos los comprobantes"])
   if (desc.length) {
-    f.push(["", "Fecha", "Nombre", "Comprobante", "Total", "Suma de las partes", "Diferencia"])
-    for (const x of desc) f.push(conEstilo(["", fechaTexto(x.fecha), x.nombre, x.comprobante, r2(x.imp_total), r2(x.suma_partes), r2(x.diferencia)], ESTILO_ERROR))
+    f.push(ENCABEZADO)
+    const lados = new Map<string, Lado>([...libro.ventas.map(x => [x.id, "ventas"] as const), ...libro.compras.map(x => [x.id, "compras"] as const)])
+    for (const x of desc) {
+      const as = x.id ? porId.get(x.id) : undefined
+      if (as) f.push(conEstilo(filaAsiento(as, lados.get(as.id) ?? "compras", f.length + 1, undefined, marcaDescuadre(x)), ESTILO_ERROR))
+    }
   }
   f.push([])
 
@@ -677,15 +853,14 @@ function hojaControl(d: DatosEntrega, a: AnalisisEntrega, cadena: Record<Lado, {
       : `${lado}: todo imputado`])
   }
   f.push([])
-
-  // 4 · Qué hay en cada hoja
-  f.push(["4 · QUÉ HAY EN CADA HOJA"])
-  f.push(["", "C AAAA-MM / V AAAA-MM", "los subdiarios de compras y de ventas, uno por hoja (los meses sin comprobantes no van)"])
-  f.push(["", "Compras · Ventas", "todos los comprobantes del ejercicio, ordenados por fecha, con totales por columna"])
-  f.push(["", "… por mes y cuenta", "el subtotal de cada mes por cuenta contable (se pliega con + / −)"])
-  f.push(["", "… por campaña y cuenta", "el ejercicio entero por cuenta contable"])
-  f.push(["", "Contra ARCA", "cada mes contra el libro IVA presentado, compras y ventas por separado"])
-  f.push(["", "Las marcas en rojo", "están en el renglón del comprobante, en su subdiario y en la planilla (columna Control)"])
+  f.push(["4 · QUÉ HAY EN CADA HOJA — todas con las mismas columnas"])
+  f.push(["C AAAA-MM / V AAAA-MM: los subdiarios de compras y de ventas, uno por hoja (los meses sin comprobantes no van), con su pie contra lo declarado"])
+  f.push(["Compras · Ventas: todos los comprobantes del ejercicio, ordenados por fecha"])
+  f.push(["… por mes y cuenta: un renglón por cuenta de cada mes, con el subtotal del mes (se pliega con + / −)"])
+  f.push(["… por campaña y cuenta: el ejercicio entero por cuenta contable (agrupado por número de cuenta)"])
+  f.push(["Contra ARCA: cada mes en tres renglones — la app, lo declarado y la diferencia —, compras y ventas por separado"])
+  f.push(["ARCA … formato nuestro: cada comprobante declarado con las columnas de la app, y si está igual en la app"])
+  f.push(["ARCA … original: el libro IVA declarado tal cual lo exporta ARCA (sus columnas)"])
   return f
 }
 
@@ -695,8 +870,9 @@ export function armarEntregaLibroDiario(d: DatosEntrega): { wb: XLSX.WorkBook; a
   const marcas = marcasDeFilas(a)
   const { libro } = d
   const etiqueta = libro.ejercicio.etiqueta
+  const porId = new Map([...libro.compras, ...libro.ventas].map(x => [x.id, x]))
 
-  const hojas: { nombre: string; filas: unknown[][]; cols?: Columna[] }[] = []
+  const hojas: { nombre: string; filas: unknown[][] }[] = []
   const totalesSub: Record<Lado, DondeTotal[]> = { compras: [], ventas: [] }
 
   // 1 · Los 24 subdiarios (los vacíos no van).
@@ -705,10 +881,10 @@ export function armarEntregaLibroDiario(d: DatosEntrega): { wb: XLSX.WorkBook; a
       if (!s.asientos.length) continue
       const nombre = nombreHoja(lado, s.clave)
       const origen = s.asientos.some(x => x.fuente === "historico") ? "sistema anterior (lo que se presentó)" : "la app"
-      const l = listado(nombre, [`SUBDIARIO DE ${lado === "compras" ? "COMPRAS" : "VENTAS"} — ${s.nombre} — ${d.empresa}`, `Origen: ${origen}`], s.asientos, lado, marcas, false)
+      const l = listado(nombre, [`SUBDIARIO DE ${lado === "compras" ? "COMPRAS" : "VENTAS"} — ${s.nombre} — ${d.empresa}`, `Origen: ${origen}`], s.asientos, lado, marcas)
       totalesSub[lado].push(l.total)
-      hojas.push({ nombre, filas: [...l.filas, [], ...resumenSubdiario(s.asientos, lado), [], ...bloqueContra(s, lado)],
-        cols: [...COLS_ASIENTO, ...(lado === "ventas" ? COLS_CANTIDADES : []), { ancho: 70 }] })
+      const inicioPie = l.filas.length + 2
+      hojas.push({ nombre, filas: [...l.filas, [], ...pieSubdiario(s, lado, d, porId, inicioPie)] })
     }
   }
 
@@ -718,72 +894,69 @@ export function armarEntregaLibroDiario(d: DatosEntrega): { wb: XLSX.WorkBook; a
     const nombre = lado === "compras" ? "Compras" : "Ventas"
     const lista = [...(lado === "compras" ? libro.compras : libro.ventas)].sort(porFecha)
     const l = listado(nombre, [`${lado === "compras" ? "TODAS LAS COMPRAS" : "TODAS LAS VENTAS"} DEL EJERCICIO ${etiqueta} — por fecha`,
-      "Los totales tienen que dar lo mismo que la suma de los subdiarios (hoja Control, punto 1)."], lista, lado, marcas, true)
+      "Los totales tienen que dar lo mismo que la suma de los subdiarios (hoja Control, punto 1)."], lista, lado, marcas)
     planilla[lado] = l.total
-    hojas.push({ nombre, filas: l.filas, cols: [{ ancho: 9 }, ...COLS_ASIENTO, ...(lado === "ventas" ? COLS_CANTIDADES : []), { ancho: 70 }] })
+    hojas.push({ nombre, filas: l.filas })
   }
 
-  // 3 · Por mes y cuenta (la misma hoja de los papeles de trabajo).
-  const porMes: Record<Lado, { hoja: string; fila: number }> = { compras: { hoja: "", fila: 0 }, ventas: { hoja: "", fila: 0 } }
-  for (const lado of ["compras", "ventas"] as const) {
-    const nombre = lado === "compras" ? "Compras por mes y cuenta" : "Ventas por mes y cuenta"
-    const filas = hojaPorCuenta(a.porCuenta[lado], `LIBRO DIARIO MENSUAL (${lado === "compras" ? "Compras" : "Ventas"}) — ejercicio ${etiqueta}`,
-      { asientos: lado === "compras" ? libro.compras : libro.ventas, descuadres: a.descuadres[lado] }, lado === "ventas")
-    const i = filas.findIndex(r => { const c = (r as unknown[])[2]; return (c && typeof c === "object" ? (c as { v?: unknown }).v : c) === "TOTAL DEL EJERCICIO" })
-    porMes[lado] = { hoja: nombre, fila: i + 1 }
-    hojas.push({ nombre, filas, cols: lado === "ventas" ? COLS_POR_CUENTA_VENTAS : COLS_POR_CUENTA })
-  }
-
-  // 4 · Por campaña y cuenta.
+  // 3 · Por mes y cuenta.  4 · Por campaña y cuenta.
+  const porMes: Record<Lado, DondeTotal> = { compras: { hoja: "", fila: 0 }, ventas: { hoja: "", fila: 0 } }
   const porCampana: Record<Lado, DondeTotal | null> = { compras: null, ventas: null }
   for (const lado of ["compras", "ventas"] as const) {
+    const nombre = lado === "compras" ? "Compras por mes y cuenta" : "Ventas por mes y cuenta"
+    const h = hojaPorMes(nombre, `${lado === "compras" ? "COMPRAS" : "VENTAS"} POR MES Y CUENTA — ejercicio ${etiqueta}`, lado === "compras" ? a.compras : a.ventas, lado, marcas)
+    porMes[lado] = h.total
+    hojas.push({ nombre, filas: h.filas })
+  }
+  for (const lado of ["compras", "ventas"] as const) {
     const nombre = lado === "compras" ? "Compras por campaña y cuenta" : "Ventas por campaña y cuenta"
-    const h = hojaPorCampana(nombre, `${lado === "compras" ? "COMPRAS" : "VENTAS"} POR CUENTA — campaña ${etiqueta}`, porCampanaYCuenta(a.porCuenta[lado]), lado,
-      lado === "compras" ? libro.compras : libro.ventas, porMes[lado])
+    const h = hojaPorCampana(nombre, `${lado === "compras" ? "COMPRAS" : "VENTAS"} POR CUENTA — campaña ${etiqueta}`, etiqueta,
+      lado === "compras" ? libro.compras : libro.ventas, lado, marcas, porMes[lado])
     porCampana[lado] = h.total
-    hojas.push({ nombre, filas: h.filas, cols: [{ ancho: 34 }, { ancho: 10 }, { ancho: 12, z: ENTERO }, ...COLUMNAS.map(() => ({ ancho: 16, z: MONEDA })), { ancho: 16, z: MONEDA },
-      ...(lado === "ventas" ? COLS_CANTIDADES : [])] })
+    hojas.push({ nombre, filas: h.filas })
   }
 
-  // 5 · Contra ARCA.
-  hojas.push({ nombre: "Contra ARCA", filas: hojaContraArca(a), cols: [{ ancho: 26 }, { ancho: 14 }, { ancho: 17 }, { ancho: 30 }, { ancho: 17 }, { ancho: 17 }, { ancho: 16 }, { ancho: 15 }, { ancho: 15 }, { ancho: 14 }, { ancho: 60 }] })
+  // 5 · Contra ARCA, y lo declarado: con nuestras columnas y tal cual lo exporta ARCA.
+  hojas.push({ nombre: "Contra ARCA", filas: hojaContraArca(a, d, porId) })
+  const declarado: Record<Lado, DondeTotal | null> = { compras: null, ventas: null }
+  for (const lado of ["compras", "ventas"] as const) {
+    if (!(lado === "compras" ? a.compras : a.ventas).some(s => s.contra)) continue
+    const nombre = lado === "compras" ? "ARCA compras - formato nuestro" : "ARCA ventas - formato nuestro"
+    const h = hojaArcaNuestra(nombre, `${lado === "compras" ? "COMPRAS" : "VENTAS"} DECLARADAS (libro IVA) — con las columnas de la app`, lado, a, d, porId)
+    declarado[lado] = h.total
+    hojas.push({ nombre, filas: h.filas })
+  }
+  const originales: { nombre: string; filas: unknown[][] }[] = []
+  for (const lado of ["compras", "ventas"] as const) {
+    const t = d.arcaOriginal?.[lado]
+    if (t && t.filas.length) originales.push({ nombre: lado === "compras" ? "ARCA compras - original" : "ARCA ventas - original",
+      filas: hojaArcaOriginal(t, `${lado === "compras" ? "COMPRAS" : "VENTAS"} — libro IVA declarado, tal cual lo exporta ARCA`) })
+  }
 
-  // La cadena de la hoja Control: los mismos totales, leídos de cada hoja con fórmula.
-  const presentadoTotales = (lado: Lado): Totales | null => {
-    const subs = lado === "compras" ? a.compras : a.ventas
-    if (!subs.some(s => s.contra)) return null
-    const ps = subs.flatMap(s => (s.contra ? (d.presentado?.[s.clave]?.[lado] ?? []) : []))
-    return {
-      comprobantes: ps.length, netoGravado: r2(ps.reduce((t, p) => t + (p.netoGravado ?? 0), 0)), noGravado: r2(ps.reduce((t, p) => t + (p.noGravado ?? 0), 0)),
-      exento: r2(ps.reduce((t, p) => t + (p.exento ?? 0), 0)), otrosTributos: r2(ps.reduce((t, p) => t + (p.otrosTributos ?? 0), 0)),
-      iva: r2(ps.reduce((t, p) => t + (p.iva ?? 0), 0)), sinCredito: 0, total: r2(ps.reduce((t, p) => t + p.total, 0)),
-    }
-  }
-  const sinDato = (lado: Lado) => (lado === "compras" ? a.compras : a.ventas).filter(s => !s.contra).length
-  const porCuentaTotales = (lado: Lado): Totales => {
-    const g = a.porCuenta[lado].totalGeneral
-    return { comprobantes: g.comprobantes, netoGravado: g.netoGravado, noGravado: g.noGravado, exento: g.exento, otrosTributos: g.otrosTributos, iva: g.iva, sinCredito: g.sinCredito, total: g.total }
-  }
-  const porMesDonde = (lado: Lado): DondeTotal => ({ hoja: porMes[lado].hoja, fila: porMes[lado].fila, comprobantes: "",
-    letras: { netoGravado: "D", noGravado: "E", exento: "F", otrosTributos: "G", iva: "H", sinCredito: "J", total: "I" } })
+  // La cadena de la hoja Control: los mismos totales, leídos de cada hoja con fórmula (misma columna en todas).
   const cadena = Object.fromEntries((["compras", "ventas"] as const).map(lado => {
-    const pres = presentadoTotales(lado)
     const subs = lado === "compras" ? a.compras : a.ventas
+    const conDato = subs.filter(s => s.contra)
+    const pres = conDato.length ? valoresDeclarados(conDato.flatMap(s => d.presentado?.[s.clave]?.[lado] ?? []), lado) : null
     const sumaSubs = sumar(subs.flatMap(s => s.asientos), lado)
-    return [lado, [
+    const sinDato = subs.length - conDato.length
+    const pasos: Paso[] = [
       { camino: `Los subdiarios (${totalesSub[lado].length} hojas)`, donde: totalesSub[lado], valores: sumaSubs },
-      { camino: `Todas las ${lado} por fecha`, donde: planilla[lado], valores: sumar(lado === "compras" ? libro.compras : libro.ventas, lado) },
-      { camino: "Por mes y cuenta", donde: porMesDonde(lado), valores: porCuentaTotales(lado) },
-      { camino: "Por campaña y cuenta", donde: porCampana[lado], valores: porCuentaTotales(lado) },
-      { camino: "Declarado a ARCA (libros IVA)", donde: null, valores: pres,
-        nota: !pres ? "sin dato de lo presentado" : sinDato(lado) ? `${sinDato(lado)} mes(es) sin dato` :
-          Math.abs(pres.total - sumaSubs.total) <= TOL ? "coincide" : "NO COINCIDE — ver «Contra ARCA»" },
-    ]]
-  })) as Record<Lado, { camino: string; donde: DondeTotal | DondeTotal[] | null; valores: Totales | null; nota?: string }[]>
+      { camino: `Todas las ${lado} por fecha`, donde: planilla[lado] ? [planilla[lado]!] : null, valores: sumar(lado === "compras" ? libro.compras : libro.ventas, lado) },
+      { camino: "Por mes y cuenta", donde: [porMes[lado]], valores: sumaSubs },
+      { camino: "Por campaña y cuenta", donde: porCampana[lado] ? [porCampana[lado]!] : null, valores: sumaSubs },
+      { camino: "Declarado a ARCA (libros IVA)", donde: declarado[lado] ? [declarado[lado]!] : null, valores: pres,
+        nota: !pres ? "sin dato de lo presentado" : sinDato ? `${sinDato} mes(es) sin dato`
+          : Math.abs(pres.total - sumaSubs.total) <= TOL ? "coincide" : `NO COINCIDE (${fmt(r2(sumaSubs.total - pres.total))}) — ver «Contra ARCA»` },
+    ]
+    return [lado, pasos]
+  })) as Record<Lado, Paso[]>
 
   const wb = XLSX.utils.book_new()
-  agregarHoja(wb, "Control", hojaControl(d, a, cadena), [{ ancho: 34 }, { ancho: 13, z: ENTERO }, ...COLUMNAS.map(() => ({ ancho: 16, z: MONEDA })), { ancho: 18, z: MONEDA }, { ancho: 60 }])
-  for (const h of hojas) agregarHoja(wb, h.nombre, h.filas, h.cols)
+  agregarHoja(wb, "Control", hojaControl(d, a, cadena, porId), COLS)
+  for (const h of hojas) agregarHoja(wb, h.nombre, h.filas, COLS)
+  // Lo original de ARCA va con SUS columnas (no la fila única): es la referencia tal cual.
+  for (const h of originales) agregarHoja(wb, h.nombre, h.filas)
   return { wb, analisis: a }
 }
 

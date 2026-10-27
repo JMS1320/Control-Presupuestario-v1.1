@@ -25,8 +25,9 @@ import { traerTodo } from "../lib/supabase-paginado"
 import { leerZipLibroIva } from "../lib/subdiarios/libro-presentado"
 // Día en hora argentina (§ 🕐 de CLAUDE.md). lib/fechas no se deja importar desde un .mts con tsx.
 const hoyArgentina = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date())
+import JSZip from "jszip"
 import {
-  armarEntregaLibroDiario, nombreArchivoEntrega, type LoPresentado, type PapelDelComprobante,
+  armarEntregaLibroDiario, nombreArchivoEntrega, type LoPresentado, type PapelDelComprobante, type TablaOriginal,
 } from "../lib/balance/libro-diario-entrega"
 
 const env = Object.fromEntries(
@@ -68,13 +69,25 @@ const libro = armarLibroDiario(compras, ventas.data.map(desdeVenta), ej, PRESENT
 
 // 🧾 Lo presentado, mes por mes, de los zips (sólo MSA tiene la carpeta hoy).
 const presentado: Record<string, LoPresentado> = {}
+const original: { compras: TablaOriginal; ventas: TablaOriginal } = { compras: { encabezado: [], filas: [] }, ventas: { encabezado: [], filas: [] } }
 const sinZip: string[] = []
 for (const s of ej.subdiarios) {
   const clave = claveSubdiario(s.anio, s.mes)
   const archivo = join(ZIPS, `libro_iva_periodo_${s.anio}${String(s.mes).padStart(2, "0")}_original.zip`)
   if (empresaId !== "MSA" || !existsSync(archivo)) { sinZip.push(clave); continue }
-  const z = await leerZipLibroIva(readFileSync(archivo))
+  const datosZip = readFileSync(archivo)
+  const z = await leerZipLibroIva(datosZip)
   presentado[clave] = { compras: z.compras, ventas: z.ventas }
+  // El CSV tal cual (para la solapa «original»): encabezado + renglones, sin tocar.
+  const zip = await JSZip.loadAsync(datosZip)
+  for (const lado of ["compras", "ventas"] as const) {
+    const f = Object.values(zip.files).find(x => x.name.toLowerCase().endsWith(`comprobantes_${lado}.csv`))
+    if (!f) continue
+    const lineas = new TextDecoder("latin1").decode(await f.async("uint8array")).split(/\r?\n/).filter(l => l.trim())
+    const celdas = (l: string) => l.split(";").map(c => c.replace(/^"|"$/g, "").trim())
+    if (!original[lado].encabezado.length && lineas.length) original[lado].encabezado = celdas(lineas[0])
+    for (const l of lineas.slice(1)) original[lado].filas.push({ periodo: clave, valores: celdas(l) })
+  }
 }
 
 // 📄 El papel: los endosos de Pólizas leídos del PDF, con el comprobante al que están atados.
@@ -91,7 +104,7 @@ const papeles: PapelDelComprobante[] = (endosos.data ?? [])
   }))
 
 const hoy = hoyArgentina()
-const datos = { libro, empresa: empresaId, presentado, papeles, generado: hoy }
+const datos = { libro, empresa: empresaId, presentado, papeles, generado: hoy, arcaOriginal: original }
 const { wb, analisis: a } = armarEntregaLibroDiario(datos)
 const ruta = join(SALIDA, nombreArchivoEntrega(datos, hoy))
 writeFileSync(ruta, XLSX.write(wb, { bookType: "xlsx", type: "buffer" }))

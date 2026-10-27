@@ -351,6 +351,8 @@ const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: 
 }
 /** La misma forma de agregar una hoja (formato, presentación y plegado), para el libro diario aparte. */
 export const agregarHoja = hoja
+/** Anota qué filas se pliegan (1 = detalle de un grupo) en una hoja que se va a agregar con `agregarHoja`. */
+export const plegar = (filas: unknown[][], niveles: number[]) => { NIVELES.set(filas, niveles) }
 
 /**
  * Las columnas de un listado de asientos (Compras, Ventas, Provisión, Sin subdiario).
