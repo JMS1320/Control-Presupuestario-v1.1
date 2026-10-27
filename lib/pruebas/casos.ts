@@ -211,6 +211,7 @@ import { parsearPoliza } from "@/lib/polizas/parsear-poliza"
 import { armarRenglones, type TextoUbicado } from "@/lib/polizas/renglones-pdf"
 import { leerResumenCajaAhorro, controlarResumen, armarConocido, resumenComoExcel, adaptarMovimiento } from "@/lib/extractos/pdf-caja-ahorro-galicia"
 import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
+import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe } from "@/lib/polizas/resumen-ejercicio"
 import { controlarPoliza, cotejarConComprobante, repartoDeLaPoliza, repartoDeLasCuotas, repartirImporte, responsableDe } from "@/lib/polizas/controlar-poliza"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
 import { motivoFechaNoExacta, ajusteTarjetaPorEmision, elegirPorImporteCercano } from "@/lib/conciliacion/motivo-fecha"
@@ -8220,6 +8221,37 @@ export function correrCasos(): Resultado[] {
       esDeLaAseguradora({ leyendas_adicionales_1: "FEDERACION PATRO" }) && !esDeLaAseguradora({ leyendas_adicionales_1: "COOPSER" })
         // usada dentro de .filter() (que le pasa el número de fila como 2º argumento) tiene que andar igual
         && [{ leyendas_adicionales_1: "FEDERACION PATRO" }, { leyendas_adicionales_1: "COOPSER" }].filter(esDeLaAseguradora).length === 1, "A-FEAT-1309")
+
+    // 🧾 A-FEAT-1383 — el resumen por ejercicio y por póliza (lo primero de Egresos → Seguros).
+    // Con los mismos datos de arriba: la Vida 670821 compensada NO es diferencia; la AP que dejó de
+    // debitarse sí (baja sin NC); el reintegro sin NC es un renglón propio; lo que vence después del
+    // último extracto no cuenta.
+    const polRes = [
+      { poliza: "670821", seccion: "VIDA COLECTIVO", poliza_anterior: "644709", vigencia_desde: "2025-09-10" },
+      { poliza: "10200836", seccion: "ACCIDENTES PERSONALES", poliza_anterior: null, vigencia_desde: "2026-02-13" },
+      { poliza: "10413411", seccion: "ACCIDENTES PERSONALES", poliza_anterior: "9536537", vigencia_desde: "2026-05-13" },
+    ]
+    const res25 = resumenPorEjercicio(ctl.cuotas, ctl.movimientos, polRes, "2026-09-23", "25/26", vida)
+    const e25 = res25.find(x => x.ejercicio === "25/26")
+    const ren = (pol: string | null) => e25?.renglones.find(x => x.poliza === pol)
+    chequear("Pólizas", "Resumen por ejercicio: la Vida compensada da 0; la AP sin débito es «baja sin NC»; el reintegro va como «reintegros sin facturar»",
+      "670821 0 · 10200836 11179 baja-sin-nc · reintegros 30000 reintegro-sin-facturar",
+      `670821 ${ren("670821")?.diferencia} · 10200836 ${ren("10200836")?.diferencia} ${ren("10200836")?.motivo} · reintegros ${ren(null)?.diferencia} ${ren(null)?.motivo}`,
+      ren("670821")?.diferencia === 0 && ren("10200836")?.diferencia === 11179 && ren("10200836")?.motivo === "baja-sin-nc"
+        && ren(null)?.diferencia === 30000 && ren(null)?.motivo === "reintegro-sin-facturar", "A-FEAT-1383")
+    // Las columnas salen de lo EMITIDO, no del neto que arma el control al juntar una NC con la cuota de la
+    // misma semana: en abril la NC es −82.166,70 (el PDF), no −47.278,62.
+    chequear("Pólizas", "Resumen: la columna de notas de crédito muestra las NC de los PDF, no el neto con la cuota del mismo día",
+      "NC −129648.3 · cuotas 350345.75", `NC ${ren("670821")?.notasCredito} · cuotas ${ren("670821")?.cuotas}`,
+      ren("670821")?.notasCredito === -129648.3 && ren("670821")?.cuotas === 350345.75, "A-FEAT-1383")
+    // El débito de 12.902 cae antes de que empiece la 10413411, cuya anterior (9536537) no está cargada:
+    // es de la póliza anterior, del balance anterior → no se cuenta. Uno después de esa fecha sí sería «falta cargar».
+    chequear("Pólizas", "Resumen: un débito sin póliza anterior al inicio de una póliza cuya anterior no está cargada es del balance anterior; después, falta cargar una póliza",
+      "anteriores 1 (9536537) · sin póliza 0 · 2026-06-01 → null", `anteriores ${e25?.anteriores.cantidad} (${e25?.anteriores.polizas.join(",")}) · sin póliza ${e25?.sinPoliza.cantidad} · 2026-06-01 → ${polizaAnteriorDe("2026-06-01", polRes)}`,
+      e25?.anteriores.cantidad === 1 && e25.anteriores.polizas[0] === "9536537" && e25.sinPoliza.cantidad === 0 && polizaAnteriorDe("2026-06-01", polRes) === null, "A-FEAT-1383")
+    chequear("Pólizas", "El ejercicio va de julio a junio", "25/26 · 26/27 · 25/26",
+      `${ejercicioDe("2026-06-30")} · ${ejercicioDe("2026-07-01")} · ${ejercicioDe("2025-07-01")}`,
+      ejercicioDe("2026-06-30") === "25/26" && ejercicioDe("2026-07-01") === "26/27" && ejercicioDe("2025-07-01") === "25/26", "A-FEAT-1383")
 
     // Los renglones del PDF: se agrupan por altura, de izquierda a derecha.
     const renglones = armarRenglones([

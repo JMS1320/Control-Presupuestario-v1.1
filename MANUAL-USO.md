@@ -3459,6 +3459,18 @@ solo, y al pie dice cuántos pagos se exportaron para que lo cruces con la panta
 
 Es el lugar para ver **las pólizas de seguro** y controlar que **estén todas cargadas**.
 
+**Lo primero — «¿Falta reclamar algo?», por ejercicio** *(2026-10-27)*. Arriba de todo, un cuadro dice en una
+línea si **falta reclamar algún papel a la aseguradora** y por cuánto. Con los botones **Ejercicio 25/26**,
+**26/27**… se elige el ejercicio (arranca en el actual). Debajo, **una fila por póliza**:
+- **Cuotas emitidas** y **notas de crédito**: como dicen los PDF, no como se cargó la factura.
+- **Se esperaba en el banco**: lo vencido hasta el último extracto, ya descontadas las NC (Federación no las devuelve, las descuenta de las cuotas siguientes).
+- **Pagado**: lo que debitó el banco por esas cuotas, **esté o no conciliado**.
+- **Diferencia** y **qué es**: *dejó de debitarse* (baja sin su nota de crédito), *otro importe* (falta un endoso), o el renglón **Reintegros sin facturar** (plata que devolvió Federación y ningún papel explica).
+
+Tocando el número de póliza se abre su cuenta corriente más abajo, con los PDF. En cada diferencia, la 🚩
+sirve para **pasársela a alguien** (por ejemplo, Ulises) con un mensaje: le llega a su campanita. Los débitos de
+pólizas anteriores al ejercicio (del balance anterior) no se cuentan; se informan en una línea gris.
+
 **El cuadro de arriba — «¿Tenemos todas las pólizas?»** cruza las cuotas de las pólizas procesadas con los
 movimientos de Federación Patronal del extracto. Los movimientos se buscan por las **leyendas adicionales**
 («FEDERACION PATRO»), así que aparecen **aunque no estén conciliados**. Lo que te marca:
@@ -3478,7 +3490,7 @@ mismo y valen para todas las pólizas donde aparezca (van por patente o DNI). Lo
 📌 Cómo entra una póliza: hoy se cargaron las del subdiario 25/26 y 26/27. Lo próximo es que la app la lea sola
 **al vincular el PDF a su factura** (espera el buscador de PDFs).
 
-→ A-TEST-1221
+→ A-TEST-1221 · el cuadro por ejercicio → A-TEST-1259
 
 ## 🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30 · al día 2026-10-25)*
 
