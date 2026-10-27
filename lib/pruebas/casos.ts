@@ -213,6 +213,7 @@ import { leerResumenCajaAhorro, controlarResumen, armarConocido, resumenComoExce
 import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
 import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe, cuentaCorriente } from "@/lib/polizas/resumen-ejercicio"
 import { historicoAFactura, filasDelSubdiario } from "@/lib/facturas/historico-como-factura"
+import { parsearComprasCsv, parsearTotalesXml, compararSubdiarioConLibro } from "@/lib/subdiarios/libro-presentado"
 import { calcularSubtotalesSubdiario } from "@/lib/subdiarios/subtotales"
 import { TIPOS_SIN_CREDITO_COMPRAS } from "@/lib/subdiarios/cuadratura"
 import { controlarPoliza, cotejarConComprobante, repartoDeLaPoliza, repartoDeLasCuotas, repartirImporte, responsableDe } from "@/lib/polizas/controlar-poliza"
@@ -1245,6 +1246,32 @@ export function correrCasos(): Resultado[] {
     "true,true,true,true,false,true,false", vistaBuscar, vistaBuscar === "true,true,true,true,false,true,false", "A-FEAT-1287")
   const vistaVer = [veredictoResuelve(null), veredictoResuelve("pendiente"), veredictoResuelve("no_informada")].join(",")
   chequear("Subdiarios — veredicto", "«Pendiente» y sin veredicto siguen abiertos; los demás lo resuelven", "false,false,true", vistaVer, vistaVer === "false,false,true", "A-FEAT-1287")
+
+  // 📥 A-AUTO-09 — lo que devuelve el contador (zip del libro IVA de ARCA) contra el subdiario de la app.
+  // Renglones reales del libro de diciembre 2025 de MSA y el total de su libro_iva.xml (= crédito fiscal de la DDJJ).
+  {
+    const csvDic = '"Fecha de Emisión";"Tipo de Comprobante";"Punto de Venta";"Número de Comprobante";"Tipo Doc. Vendedor";"Nro. Doc. Vendedor";"Denominación Vendedor";"Importe Total";"Moneda Original";"Tipo de Cambio";"Importe No Gravado";"Importe Exento";"Crédito Fiscal Computable"\n'
+      + '2025-12-01;1;10;10346;80;30708482478;"I.C.T. NET S.A.";20399,12;"PES";1,00;0,00;0,00;4336,82\n'
+      + '2025-12-01;1;2;450;80;20233952746;"MASSAGLIA ALDO ENRIQUE";1633795,24;"PES";1,00;0,00;0,00;283551,24\n'
+      + '2025-12-05;1;5;77;80;30111111111;"PROVEEDOR USD";100,00;"DOL";1450,00;0,00;0,00;21,00\n'
+    const pres = parsearComprasCsv(csvDic)
+    const xmlTot = parsearTotalesXml('<libro_iva><info_presentacion><codigo>68228669</codigo><periodo>202512</periodo><secuencia>1</secuencia></info_presentacion><iva_compras><informacion_consolidada><total_compras_no_fiscal>1013346.00</total_compras_no_fiscal><totales_compras><total_neto_gravado>11185034.57</total_neto_gravado><total_liquidado>2348520.27</total_liquidado></totales_compras></informacion_consolidada></iva_compras></libro_iva>')
+    const appDic = [
+      { id: "a", tipo_comprobante: 1, punto_venta: 10, numero_desde: 10346, cuit: "30708482478", denominacion_emisor: "I.C.T. NET S.A.", fecha_emision: "2025-12-01", imp_total: 20399.12, iva: 4336.82 },
+      { id: "b", tipo_comprobante: 1, punto_venta: 2, numero_desde: 450, cuit: "20233952746", denominacion_emisor: "MASSAGLIA", fecha_emision: "2025-12-01", imp_total: 1633795.24, iva: 283551.24 },
+      { id: "c", tipo_comprobante: 1, punto_venta: 5, numero_desde: 77, cuit: "30111111111", denominacion_emisor: "PROVEEDOR USD", fecha_emision: "2025-12-05", imp_total: 100, iva: 21, tipo_cambio: 1450 },
+      // La cooperativa de luz: está en la app y no se presentó (el error de diciembre).
+      { id: "d", tipo_comprobante: 1, punto_venta: 23, numero_desde: 188912, cuit: "30545749994", denominacion_emisor: "COOPSER", fecha_emision: "2025-12-09", imp_total: 518801.15, iva: 97613.47 },
+    ]
+    const cmp = compararSubdiarioConLibro(appDic, pres, TIPOS_SIN_CREDITO_COMPRAS)
+    const v = `dolar ${pres[2].total} · DDJJ ${xmlTot.creditoFiscal} ${xmlTot.periodo} · solo app ${cmp.soloApp.map(f => f.numero_desde).join(",")} · cf ${cmp.totales.diferencia.creditoFiscal} · ok ${cmp.ok}`
+    chequear("Subdiarios — lo presentado", "El zip de ARCA: los dólares van a pesos con su TC, el total de la DDJJ sale del XML, y la factura que está en la app y no se presentó salta con su crédito fiscal",
+      "dolar 145000 · DDJJ 2348520.27 202512 · solo app 188912 · cf 97613.47 · ok false", v,
+      v === "dolar 145000 · DDJJ 2348520.27 202512 · solo app 188912 · cf 97613.47 · ok false", "A-AUTO-09")
+    const cmpOk = compararSubdiarioConLibro(appDic.slice(0, 3), pres, TIPOS_SIN_CREDITO_COMPRAS)
+    chequear("Subdiarios — lo presentado", "Si la app y lo presentado tienen lo mismo, coincide",
+      "true", String(cmpOk.ok), cmpOk.ok, "A-AUTO-09")
+  }
 
   // 📜 A-FEAT-1382 — Subdiarios muestra el histórico del contador en los meses que la app no tiene.
   // Filas reales del histórico de MSA (dic-25: la NC de la flota; jul-25: una Fac A y un ticket sin número).
