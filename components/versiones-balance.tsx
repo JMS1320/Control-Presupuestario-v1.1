@@ -6,7 +6,7 @@
  * Decisiones del usuario (27/10): **se guarda sólo cuando aprieta «Guardar»**, la pantalla dice siempre **si lo que
  * se ve está guardado o no**, y el Excel queda guardado pero **siempre se puede bajar**.
  *
- * - `useVersionesBalance`: lee y escribe `balance_versiones` / `balance_version_items` (script 112). Si las tablas
+ * - `useVersionesBalance`: lee y escribe `balance_versiones` / `balance_version_items` (script 116). Si las tablas
  *   todavía no existen, la pantalla anda como antes y lo dice: nunca rompe.
  * - `<VersionesBalance>`: el cuadro — estado de lo actual, lo cambiado desde lo entregado, Guardar, y por versión
  *   ⬇️ Bajar · 📤 Marcar entregada · Anular.
@@ -225,7 +225,7 @@ export function VersionesBalance({ v, actuales, onGuardar, guardando }: {
   if (v.estado === "sin tabla") {
     return (
       <div className="text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded px-2 py-1.5">
-        💾 Las versiones todavía <strong>no se pueden guardar</strong>: falta correr el script 112 en la base. El Excel se baja igual.
+        💾 Las versiones todavía <strong>no se pueden guardar</strong>: falta correr el script 116 en la base. El Excel se baja igual.
       </div>
     )
   }

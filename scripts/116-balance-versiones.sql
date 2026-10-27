@@ -1,4 +1,5 @@
--- 112 · LAS VERSIONES DE LOS PAPELES DEL BALANCE — A-FEAT-1337 paso 2 (2026-10-27)
+-- 116 · LAS VERSIONES DE LOS PAPELES DEL BALANCE — A-FEAT-1337 paso 2 (2026-10-27)
+-- ⚠️ Renumerado de 112 → 116 el 27/10: el 112 lo usó T1 (pólizas anteriores, ya corrido).
 --
 -- Usuario 2026-10-24: «cada balance tendrá su dato de cada ítem; si se hace query de los datos debería dar lo mismo
 -- que el dato fijado, pero el dato fijado debe existir porque es una variable en sí… el export es para el envío pero
@@ -18,18 +19,18 @@
 --   · Mismos permisos que balance_datos_usuario (script 100): recurso «extracto», lectura restringida.
 --
 -- VERIFICADO EN LA BASE, por el propio script: si alguna de las dos tablas ya existe se frena sin tocar nada. Así, si
--- termina, las tablas las creó él, y el comentario '[script 112]' lo deja marcado para el deshacer.
+-- termina, las tablas las creó él, y el comentario '[script 116]' lo deja marcado para el deshacer.
 --
 -- 🛑 Antes de correr: aviso a Javier en ENTRE-DESARROLLADORES.md (estructura + RLS) y OK del usuario.
--- Deshacer: 112-balance-versiones-deshacer.sql
+-- Deshacer: 116-balance-versiones-deshacer.sql
 begin;
 do $$
 begin
   if to_regclass('public.balance_versiones') is not null or to_regclass('public.balance_version_items') is not null then
-    raise exception 'balance_versiones o balance_version_items YA EXISTE: no se corre el 112. Avisar antes de seguir.';
+    raise exception 'balance_versiones o balance_version_items YA EXISTE: no se corre el 116. Avisar antes de seguir.';
   end if;
   if exists (select 1 from pg_proc where proname = 'balance_versiones_transicion') then
-    raise exception 'La función balance_versiones_transicion YA EXISTE: no se corre el 112.';
+    raise exception 'La función balance_versiones_transicion YA EXISTE: no se corre el 116.';
   end if;
 end $$;
 
@@ -60,7 +61,7 @@ create table public.balance_versiones (
   unique (empresa, anio_cierre, numero)
 );
 comment on table public.balance_versiones is
-  '[script 112] A-FEAT-1337 paso 2 — versiones guardadas de los papeles del balance (Excel + lo traído del sector productivo), por empresa + ejercicio. guardada → entregada → (anulada con motivo). Lo entregado queda fijo.';
+  '[script 116] A-FEAT-1337 paso 2 — versiones guardadas de los papeles del balance (Excel + lo traído del sector productivo), por empresa + ejercicio. guardada → entregada → (anulada con motivo). Lo entregado queda fijo.';
 
 create table public.balance_version_items (
   version_id uuid not null references public.balance_versiones(id) on delete restrict,
@@ -76,7 +77,7 @@ create table public.balance_version_items (
   primary key (version_id, papel, clave)
 );
 comment on table public.balance_version_items is
-  '[script 112] A-FEAT-1337 paso 2 — el valor de cada ítem de cada papel en una versión guardada. Sólo insert: no se cambia ni se borra.';
+  '[script 116] A-FEAT-1337 paso 2 — el valor de cada ítem de cada papel en una versión guardada. Sólo insert: no se cambia ni se borra.';
 
 -- 🔒 Lo entregado queda fijo: las transiciones permitidas.
 create function public.balance_versiones_transicion() returns trigger
@@ -100,7 +101,7 @@ begin
   end if;
   return new;
 end $$;
-comment on function public.balance_versiones_transicion() is '[script 112] A-FEAT-1337 — lo entregado queda fijo.';
+comment on function public.balance_versiones_transicion() is '[script 116] A-FEAT-1337 — lo entregado queda fijo.';
 create trigger balance_versiones_transicion before update on public.balance_versiones
   for each row execute function public.balance_versiones_transicion();
 
@@ -127,8 +128,8 @@ grant all on public.balance_versiones to service_role;
 grant all on public.balance_version_items to service_role;
 
 insert into public.recurso_tablas (schema_nombre, tabla, recurso, motivo, restringe_lectura) values
-  ('public', 'balance_versiones', 'extracto', '[script 112] Papeles del balance (A-FEAT-1337 paso 2): versiones guardadas y entregadas.', true),
-  ('public', 'balance_version_items', 'extracto', '[script 112] Papeles del balance (A-FEAT-1337 paso 2): ítems de cada versión.', true)
+  ('public', 'balance_versiones', 'extracto', '[script 116] Papeles del balance (A-FEAT-1337 paso 2): versiones guardadas y entregadas.', true),
+  ('public', 'balance_version_items', 'extracto', '[script 116] Papeles del balance (A-FEAT-1337 paso 2): ítems de cada versión.', true)
 on conflict do nothing;
 commit;
 notify pgrst, 'reload schema';
@@ -136,8 +137,8 @@ notify pgrst, 'reload schema';
 -- ── Control (sólo lee): las dos tablas existen, vacías, marcadas, con RLS y en recurso_tablas ─────────────────────
 select (select count(*) from public.balance_versiones) as versiones,
        (select count(*) from public.balance_version_items) as items,
-       obj_description('public.balance_versiones'::regclass) like '[script 112]%'
-         and obj_description('public.balance_version_items'::regclass) like '[script 112]%' as marcadas,
+       obj_description('public.balance_versiones'::regclass) like '[script 116]%'
+         and obj_description('public.balance_version_items'::regclass) like '[script 116]%' as marcadas,
        (select bool_and(relrowsecurity) from pg_class
           where oid in ('public.balance_versiones'::regclass, 'public.balance_version_items'::regclass)) as rls,
        (select count(*) from public.recurso_tablas where tabla in ('balance_versiones', 'balance_version_items')) as en_recursos;

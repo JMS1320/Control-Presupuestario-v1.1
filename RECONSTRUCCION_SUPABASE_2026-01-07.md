@@ -3323,6 +3323,10 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-10-27 · COBRO AGRUPADO — tabla `grupos_cobro` en msa/pam/ma + `comprobantes_venta.grupo_cobro_id` (script 114) y el grupo de Sáenz Valiente (script 115) — A-FEAT-167 — ✅ CORRIDOS 2026-10-27 con JMS (MCP en write con su OK)
+
+`scripts/114-grupos-cobro.sql` (+ `-deshacer`): en cada schema, `grupos_cobro (id uuid pk default gen_random_uuid(), cuit varchar not null, cliente varchar, monto_total numeric, estado varchar default 'cobrar', observaciones text, created_at timestamptz default now())`, RLS con `ver_segun_permiso` / `escribir_segun_permiso` (`puede_ver` / `puede_escribir` con (schema, 'grupos_cobro')), `revoke all from anon`, grants a `authenticated` y `service_role`; y `comprobantes_venta.grupo_cobro_id uuid references <schema>.grupos_cobro(id) on delete set null`. Marca `[script 114]` en los comentarios (el deshacer la exige). `scripts/115-grupo-cobro-saenz.sql` (+ `-deshacer`): datos — 1 grupo (id `d68a5a14-…`), las 2 ventas de Sáenz con su grupo y sus 3 movimientos con `comprobante_venta_id` = 209-32006.
+
 ### 2026-10-27 · ÓRDENES «SE HIZO» / «CONFIRMAR» — `a_confirmar` + 5 columnas en `ordenes_aplicacion` y `ordenes_agricolas` (script 109) — A-FEAT-1223 — ✅ CORRIDO 2026-10-27 con JMS (verificado con `explain update`)
 
 `scripts/109-ordenes-a-confirmar.sql` (+ `-deshacer`): el check `*_estado_check` pasa a `('planificada','a_confirmar','ejecutada','eliminada')` y se agregan `marcada_por text`, `marcada_at timestamptz`, `confirmada_por text`, `confirmada_at timestamptz`, `motivo_rechazo text` (nullable, comentario `[script 109]` en `marcada_por`). No toca filas. Control: 10 columnas · 2 checks ✅. **Mismo día, con OK de JMS**: rol `pruebas` sumó `productivo.ordenes.{nueva,editar,se-hizo,borrar,descargar,ganadero,agricola}` (sin `confirmar`).

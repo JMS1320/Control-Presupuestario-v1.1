@@ -40,10 +40,15 @@
 
 ## 📨 PARA JAVIER
 
+### 🧾 Cobro agrupado: tabla nueva `grupos_cobro` en msa/pam/ma + columna `grupo_cobro_id` en `comprobantes_venta` (2026-10-27) — ✅ APLICADA el 27/10 con OK de JMS (aviso previo): 3 tablas con RLS, 3 columnas; y el 115 armó el grupo de Sáenz (datos)
+- `scripts/114-grupos-cobro.sql` (+ `-deshacer`): espejo de `grupos_pago` (id, cuit, cliente, monto_total, estado, observaciones, created_at) en los 3 schemas, y en `{msa,pam,ma}.comprobantes_venta` una columna `grupo_cobro_id` (FK a su schema, `on delete set null`). Verificado antes: ninguna de las dos existe. **No cambia ninguna columna existente.**
+- RLS igual que `grupos_pago`: `puede_ver`/`puede_escribir` con (schema, `'grupos_cobro'`), nada a `anon`, `authenticated` y `service_role` con select/insert/update/delete. Sin fila en `recurso_tablas` (como `grupos_pago` y `comprobantes_venta`, que tampoco la tienen).
+- Para qué: varias ventas de un cliente cobradas en varios movimientos (A-FEAT-167; primer caso Sáenz Valiente, script 115).
+
 ### 🗄️ Dos tablas nuevas: `public.balance_versiones` y `public.balance_version_items` (2026-10-27) — ⏳ SIN CORRER: aviso ANTES, espera OK de JMS
-- `scripts/112-balance-versiones.sql` (+ `-deshacer`), para [A-FEAT-1337](PENDIENTES.md#a-feat-1337) paso 2: las **versiones guardadas** de los papeles del balance (el Excel en base64 + lo traído del sector productivo en jsonb) y **el valor de cada ítem** de cada versión. **No toca ninguna tabla existente** salvo 2 filas en `recurso_tablas` (recurso `extracto`, lectura restringida, como `balance_datos_usuario`).
+- `scripts/116-balance-versiones.sql (⚠️ renumerado de 112: ese número lo usó T1)` (+ `-deshacer`), para [A-FEAT-1337](PENDIENTES.md#a-feat-1337) paso 2: las **versiones guardadas** de los papeles del balance (el Excel en base64 + lo traído del sector productivo en jsonb) y **el valor de cada ítem** de cada versión. **No toca ninguna tabla existente** salvo 2 filas en `recurso_tablas` (recurso `extracto`, lectura restringida, como `balance_datos_usuario`).
 - RLS `puede_ver`/`puede_escribir`, nada a `anon`. **Lo entregado queda fijo desde la base**: `authenticated` tiene `select, insert` y `update` **sólo de las columnas de estado** (estado, destinatario, nota, entregada_*, anulada_*); los ítems, sólo `select, insert`. Un trigger nuevo (`balance_versiones_transicion`, `security invoker`, `search_path = public`) no deja volver de «entregada» a «guardada», ni tocar una «anulada», ni anular sin motivo. Sin DELETE: una versión se anula.
-- Marca `[script 112]` en las dos tablas y en la función; el deshacer verifica la marca y se frena si hay versiones guardadas.
+- Marca `[script 116]` en las dos tablas y en la función; el deshacer verifica la marca y se frena si hay versiones guardadas.
 - Botones nuevos en Papeles del balance (Guardar versión, Entregada, Anular): **todavía sin casilla** en `lib/auth/recursos.ts` — quedan para cuando la terminal de permisos llegue a Reportes.
 
 📌 Borrá esta entrada cuando la leas.
