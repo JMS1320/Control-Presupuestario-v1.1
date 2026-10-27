@@ -839,6 +839,11 @@ carpeta principal era la única que escribía en la base y mergeaba lo de las de
   trajo (si es código, volver a correr las pruebas) y reintentar. **Nunca `--force`.** *(Pasó el 2026-10-25: entre
   las pruebas y el push entró un commit de PENDIENTES de otra terminal; el rechazo lo atajó.)*
 - **La carpeta principal no hace de ventanilla**: no corre ni mergea lo de las otras.
+- 🔑 **El rol `pruebas` es COMPARTIDO: cada terminal le SUMA sus permisos, nunca lo reescribe.** *(Usuario 27/10:
+  «yo pensaba que cada cual le agregara lo suyo y yo la estaría viendo».)* Se lee la fila, se agregan sólo las
+  claves propias (sección + permisos de lo que esa terminal construyó) y se anota en el tablero ANTES. *Motivo: el
+  27/10 T1 reescribió la fila entera para el ensayo de Ulises y borró el «Plan sanitario» que la otra terminal le
+  había sumado tres minutos antes. Nadie lo vio hasta revisar el merge.*
 
 *Motivo: con la carpeta principal como ventanilla única, cada script y cada merge de las otras cortaba el trabajo
 del balance, y el OK le llegaba a quien no había escrito el script. El que lo escribió es el que mejor lo revisa.*

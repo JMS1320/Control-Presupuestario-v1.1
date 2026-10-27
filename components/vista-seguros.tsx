@@ -26,9 +26,10 @@ import type { PolizaLeida } from "@/lib/polizas/parsear-poliza"
 import { repartoDeLasCuotas, type ReglaResponsable } from "@/lib/polizas/controlar-poliza"
 import {
   controlarDebitos, cuotasEsperadas, esDeLaAseguradora,
-  type CuotaControlada, type MovimientoControlado,
+  type CuotaControlada, type CuotaEsperada, type MovimientoControlado,
 } from "@/lib/polizas/control-debitos"
-import { resumenPorEjercicio, ejercicioDe, TEXTO_MOTIVO, type ResumenEjercicio } from "@/lib/polizas/resumen-ejercicio"
+import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe, cuentaCorriente, TEXTO_MOTIVO, type ResumenEjercicio, type CuentaCorriente } from "@/lib/polizas/resumen-ejercicio"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { BotonRevision } from "@/components/boton-revision"
 
 const EMPRESAS = ["MSA", "MA", "PAM", "JMS"]
@@ -150,70 +151,19 @@ export function VistaSeguros() {
 
   if (cargando) return <div className="p-6 text-muted-foreground">Cargando seguros…</div>
 
-  const sinPoliza = control?.movimientos.filter(m => m.resultado === "sin-poliza") ?? []
-  const reintegros = control?.movimientos.filter(m => m.resultado === "reintegro-sin-nc") ?? []
-  const sinDebito = control?.cuotas.filter(c => c.resultado === "falta-debito") ?? []
-  const distinto = control?.cuotas.filter(c => c.resultado === "importe-distinto") ?? []
-  const ok = control?.cuotas.filter(c => c.resultado === "ok").length ?? 0
-  const problemas = sinPoliza.length + sinDebito.length + distinto.length + reintegros.length
-
   return (
     <div className="space-y-4">
       <TestsDelProceso proceso="egresos/seguros" pantalla="egresos" />
       {error && <div className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
 
       {/* ── 0 · EL RESUMEN POR EJERCICIO (A-FEAT-1383) ─────────────────────────────── */}
-      {resumen.length > 0 && ventana && (
+      {resumen.length > 0 && ventana && control && (
         <ResumenPorEjercicio resumen={resumen} actual={ejercicioActual} onElegir={setEjercicioVisto}
-          hasta={ventana.hasta} polizas={polizas}
+          hasta={ventana.hasta} desde={ventana.desde} polizas={polizas} control={control} emitidas={emitidas}
           onVerPoliza={(nro) => { const p = polizas.find(x => x.poliza === nro); if (p) { setAbierta(p.id); setTimeout(() => document.getElementById(`poliza-${p.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50) } }} />
       )}
 
-      {/* ── 1 · EL CONTROL ──────────────────────────────────────────────────────────── */}
-      <Card className={problemas ? "border-red-300" : "border-green-300"}>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center justify-between gap-2 text-lg">
-            <span className="flex items-center gap-2">
-              {problemas ? <AlertTriangle className="h-5 w-5 text-red-600" /> : <ShieldCheck className="h-5 w-5 text-green-600" />}
-              ¿Tenemos todas las pólizas? — Federación Patronal contra el extracto
-            </span>
-            <Button variant="ghost" size="sm" onClick={() => void cargar()}><RefreshCw className="h-4 w-4" /></Button>
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Los movimientos se buscan por las <b>leyendas adicionales</b> del extracto, estén o no conciliados.
-            Un débito que no es cuota de ninguna póliza procesada es una <b>póliza a cargar</b>.
-            {ventana && <> Extracto del {fecha(ventana.desde)} al {fecha(ventana.hasta)}.</>}
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {errorExtracto && <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">{errorExtracto}</div>}
-          {control && (
-            <div className="flex flex-wrap gap-2 text-sm">
-              <Badge variant="outline" className="border-green-400 text-green-700">✓ {ok} cuotas debitadas bien</Badge>
-              <Badge variant="outline" className={sinPoliza.length ? "border-red-400 text-red-700" : ""}>{sinPoliza.length} débitos sin póliza</Badge>
-              <Badge variant="outline" className={sinDebito.length ? "border-red-400 text-red-700" : ""}>{sinDebito.length} cuotas vencidas sin débito</Badge>
-              <Badge variant="outline" className={distinto.length ? "border-amber-400 text-amber-700" : ""}>{distinto.length} con importe distinto</Badge>
-              <Badge variant="outline" className={reintegros.length ? "border-amber-400 text-amber-700" : ""}>{reintegros.length} reintegros sin nota de crédito</Badge>
-              <Badge variant="outline">{control.cuotas.filter(c => c.resultado === "compensada" || c.resultado === "nc").length} NC compensadas</Badge>
-              <Badge variant="outline">{control.cuotas.filter(c => c.resultado === "a-vencer").length} a vencer</Badge>
-            </div>
-          )}
-          {control && !problemas && <p className="flex items-center gap-2 text-sm text-green-700"><CheckCircle2 className="h-4 w-4" /> Cada débito de Federación es cuota de una póliza procesada y cada cuota vencida se debitó.</p>}
-
-          {sinPoliza.length > 0 && (
-            <BloqueMovs titulo="🛑 Débitos de Federación que no son cuota de ninguna póliza — falta cargar la póliza" movs={sinPoliza} />
-          )}
-          {sinDebito.length > 0 && (
-            <BloqueCuotas titulo="🛑 Cuotas vencidas sin débito — ¿no se debitó, o la póliza se dio de baja sin su nota de crédito?" cuotas={sinDebito} ramoDe={ramoDe} />
-          )}
-          {distinto.length > 0 && (
-            <BloqueCuotas titulo="⚠️ Se debitó otro importe — ¿un endoso sin cargar?" cuotas={distinto} ramoDe={ramoDe} />
-          )}
-          {reintegros.length > 0 && (
-            <BloqueMovs titulo="⚠️ Reintegros de Federación que ninguna nota de crédito explica" movs={reintegros} />
-          )}
-        </CardContent>
-      </Card>
+      {errorExtracto && <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">{errorExtracto}</div>}
 
       {/* ── 2 · LAS PÓLIZAS ─────────────────────────────────────────────────────────── */}
       <Card>
@@ -277,14 +227,41 @@ export function VistaSeguros() {
   )
 }
 
-function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, polizas, onVerPoliza }: {
-  resumen: ResumenEjercicio[]; actual: string | null; onElegir: (e: string) => void; hasta: string
-  polizas: Poliza[]; onVerPoliza: (poliza: string) => void
+/**
+ * Un botón que sigue andando en SÓLO LECTURA. `<SoloLectura>` apaga todo `<button>` de la pestaña con un
+ * `<fieldset disabled>` — y con él los botones de ejercicio, que sólo cambian lo que se MIRA. (JMS 27/10:
+ * «no puedo cambiar la campaña», viendo con el rol de pruebas, que tiene Seguros en lectura.)
+ */
+function Boton({ onClick, className, title, children }: { onClick: () => void; className?: string; title?: string; children: React.ReactNode }) {
+  return (
+    <span role="button" tabIndex={0} title={title} className={`cursor-pointer select-none ${className ?? ""}`}
+      onClick={onClick} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick() } }}>
+      {children}
+    </span>
+  )
+}
+
+function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, desde, polizas, control, emitidas, onVerPoliza }: {
+  resumen: ResumenEjercicio[]; actual: string | null; onElegir: (e: string) => void; hasta: string; desde: string
+  polizas: Poliza[]; control: { cuotas: CuotaControlada[]; movimientos: MovimientoControlado[] }; emitidas: CuotaEsperada[]
+  onVerPoliza: (poliza: string) => void
 }) {
+  const [verCtaCte, setVerCtaCte] = useState(false)
   const r = resumen.find(x => x.ejercicio === actual) ?? resumen[resumen.length - 1]
   const reclamar = r.aReclamar
-  const montoReclamar = reclamar.reduce((t, x) => t + x.diferencia, 0)
   const idDe = (nro: string | null) => polizas.find(p => p.poliza === nro)?.id ?? null
+  const ramoDe = new Map(polizas.map(p => [p.poliza, p.seccion ?? ""]))
+  const delEjercicio = (f: string) => ejercicioDe(f) === r.ejercicio
+  // El detalle de abajo, del ejercicio elegido.
+  const reintegros = control.movimientos.filter(m => m.resultado === "reintegro-sin-nc" && delEjercicio(m.fecha))
+  const otroImporte = control.cuotas.filter(c => c.resultado === "importe-distinto" && delEjercicio(c.vencimiento))
+  const sinPoliza = control.movimientos.filter(m => m.resultado === "sin-poliza" && delEjercicio(m.fecha) && !polizaAnteriorDe(m.fecha, polizas))
+  // 🧮 El control: la cuenta corriente (camino inverso) tiene que dar la suma de «a reclamar».
+  const cc = useMemo(() => cuentaCorriente(emitidas, control.cuotas, control.movimientos, polizas, desde, hasta),
+    [emitidas, control, polizas, desde, hasta])
+  const sumaReclamar = Math.round(resumen.reduce((t, x) => t + x.total.diferencia, 0) * 100) / 100
+  const cierra = Math.abs(sumaReclamar - cc.saldo) < 0.01
+
   return (
     <Card className={reclamar.length ? "border-red-300" : "border-green-300"}>
       <CardHeader className="pb-2">
@@ -292,25 +269,29 @@ function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, polizas, onVerP
           <span className="flex items-center gap-2">
             {reclamar.length ? <AlertTriangle className="h-5 w-5 text-red-600" /> : <ShieldCheck className="h-5 w-5 text-green-600" />}
             {reclamar.length
-              ? <>Falta reclamar {reclamar.length} {reclamar.length === 1 ? "papel" : "papeles"} · {$(montoReclamar)}</>
+              ? <>Falta reclamar {reclamar.length} {reclamar.length === 1 ? "cosa" : "cosas"} · saldo {$(r.total.diferencia)}</>
               : <>No falta reclamar nada</>}
           </span>
-          <span className="flex gap-1">
+          <span className="flex flex-wrap items-center gap-1">
             {resumen.map(x => (
-              <button key={x.ejercicio} type="button" onClick={() => onElegir(x.ejercicio)}
+              <Boton key={x.ejercicio} onClick={() => onElegir(x.ejercicio)}
                 className={`rounded-full border px-3 py-0.5 text-sm ${x.ejercicio === r.ejercicio ? "border-blue-400 bg-blue-50 font-medium text-blue-700" : "text-muted-foreground"}`}>
                 Ejercicio {x.ejercicio}{x.aReclamar.length ? " 🔴" : " ✓"}
-              </button>
+              </Boton>
             ))}
+            <Boton onClick={() => setVerCtaCte(true)} title="Todo lo que entró, en orden: cuotas, notas de crédito, débitos y reintegros, con su saldo"
+              className="ml-1 rounded-md border border-slate-300 px-3 py-0.5 text-sm hover:bg-slate-50">
+              📒 Cuenta corriente
+            </Boton>
           </span>
         </CardTitle>
         <p className="text-sm text-muted-foreground">
           Cada póliza como fue <b>emitida</b> (sus PDF, no cómo se cargó la factura) contra lo que el banco debitó y acreditó,
-          <b> esté o no conciliado</b>. Las notas de crédito no se reintegran: Federación las descuenta de las cuotas
+          <b> esté o no conciliado</b>. Las notas de crédito no se reintegran: la aseguradora las descuenta de las cuotas
           siguientes, por eso «se esperaba en el banco» ya las tiene en cuenta. Vencido hasta el {fecha(hasta)} (último extracto).
         </p>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="space-y-4">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -320,35 +301,39 @@ function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, polizas, onVerP
                 <TableHead className="text-right" title="Las NC que ya tenemos (están en los PDF). Ya están descontadas en «se esperaba en el banco».">NC recibidas</TableHead>
                 <TableHead className="text-right">Se esperaba en el banco</TableHead>
                 <TableHead className="text-right">Pagado</TableHead>
-                <TableHead className="text-right" title="Lo único que hay que reclamar. Las notas de crédito ya están descontadas en «se esperaba en el banco»: no se suman aparte.">A reclamar</TableHead>
+                <TableHead className="text-right" title="Lo único que hay que reclamar. Positivo: falta un papel. Negativo: la aseguradora nos debe.">A reclamar</TableHead>
                 <TableHead>Qué es</TableHead>
                 <TableHead className="text-right">A vencer</TableHead>
                 <TableHead className="w-8" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {r.renglones.map(x => {
+              {r.renglones.map((x, i) => {
                 const mal = Math.abs(x.diferencia) > 0.01
                 const id = idDe(x.poliza)
+                const etiqueta = x.motivo === "reintegro-sin-facturar" ? "Reintegros sin facturar"
+                  : x.motivo === "debito-sin-poliza" ? "Débitos sin póliza" : null
                 return (
-                  <TableRow key={x.poliza ?? "reintegros"} className={mal ? "bg-red-50/60" : ""}>
+                  <TableRow key={(x.poliza ?? "") + (x.motivo ?? "") + i} className={mal ? "bg-red-50/60" : ""}>
                     <TableCell>
-                      {x.poliza
-                        ? <button type="button" className="text-left hover:underline" onClick={() => onVerPoliza(x.poliza!)} title="Ver la cuenta corriente de la póliza, con sus PDF">
+                      {x.poliza && !etiqueta
+                        ? <Boton className="text-left hover:underline" onClick={() => onVerPoliza(x.poliza!)} title="Ver la póliza, con sus PDF">
                             <span className="font-mono">{x.poliza}</span> <span className="text-xs text-muted-foreground">{x.seccion}</span>
-                          </button>
-                        : <span className="font-medium">Reintegros sin facturar</span>}
+                          </Boton>
+                        : <span className="font-medium">{etiqueta}</span>}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{x.poliza ? $(x.cuotas) : ""}</TableCell>
+                    <TableCell className="text-right tabular-nums">{x.cuotas ? $(x.cuotas) : ""}</TableCell>
                     <TableCell className="text-right tabular-nums">{x.notasCredito ? $(x.notasCredito) : ""}</TableCell>
-                    <TableCell className="text-right tabular-nums">{x.poliza ? $(x.esperadoVencido) : ""}</TableCell>
-                    <TableCell className="text-right tabular-nums">{$(x.pagado)}</TableCell>
-                    <TableCell className={`text-right font-medium tabular-nums ${mal ? "text-red-700" : "text-green-700"}`}>{mal ? $(x.diferencia) : "✓ 0"}</TableCell>
+                    <TableCell className="text-right tabular-nums">{x.esperadoVencido ? $(x.esperadoVencido) : ""}</TableCell>
+                    <TableCell className="text-right tabular-nums">{x.pagado ? $(x.pagado) : ""}</TableCell>
+                    <TableCell className={`text-right font-medium tabular-nums ${!mal ? "text-green-700" : x.diferencia > 0 ? "text-red-700" : "text-blue-700"}`}>
+                      {!mal ? "✓ 0" : $(x.diferencia)}
+                    </TableCell>
                     <TableCell className="text-xs">
                       {x.motivo ? TEXTO_MOTIVO[x.motivo] : ""}
-                      {mal && x.casos.length > 0 && (
+                      {mal && x.casos.length > 0 && x.motivo !== "reintegro-sin-facturar" && x.motivo !== "debito-sin-poliza" && (
                         <span className="block text-muted-foreground">
-                          {x.casos.map(c => `${fecha(c.fecha)}: ${x.poliza ? `se esperaba ${$(c.esperado)}, ` : ""}${c.debitado == null ? "sin débito" : x.poliza ? `se debitó ${$(c.debitado)}` : `acreditó ${$(-c.debitado)}`}`).join(" · ")}
+                          {x.casos.map(c => `${fecha(c.fecha)}: se esperaba ${$(c.esperado)}, ${c.debitado == null ? "sin débito" : `se debitó ${$(c.debitado)}`}`).join(" · ")}
                         </span>
                       )}
                     </TableCell>
@@ -356,10 +341,8 @@ function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, polizas, onVerP
                     <TableCell>
                       {mal && (
                         <BotonRevision
-                          schema="public" tabla={x.poliza ? "polizas_seguro" : "msa_galicia"} registroId={id ?? `reintegros-${r.ejercicio}`}
-                          descripcion={x.poliza
-                            ? `Póliza ${x.poliza} (${x.seccion ?? ""}) · ejercicio ${r.ejercicio} · diferencia ${$(x.diferencia)} · ${x.motivo ? TEXTO_MOTIVO[x.motivo] : ""}`
-                            : `Federación Patronal · ejercicio ${r.ejercicio} · reintegros sin facturar ${$(x.diferencia)}`}
+                          schema="public" tabla={id ? "polizas_seguro" : "msa_galicia"} registroId={id ?? `${x.motivo}-${r.ejercicio}`}
+                          descripcion={`${x.poliza ? `Póliza ${x.poliza} (${x.seccion ?? ""})` : etiqueta ?? "Seguros"} · ejercicio ${r.ejercicio} · a reclamar ${$(x.diferencia)} · ${x.motivo ? TEXTO_MOTIVO[x.motivo] : ""}`}
                         />
                       )}
                     </TableCell>
@@ -380,8 +363,23 @@ function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, polizas, onVerP
             </TableBody>
           </Table>
         </div>
-        {r.sinPoliza.cantidad > 0 && (
-          <p className="text-sm text-red-700">🛑 {r.sinPoliza.cantidad} débito(s) de Federación por {$(r.sinPoliza.total)} que no son cuota de ninguna póliza cargada: <b>falta cargar una póliza</b> (el detalle, abajo).</p>
+        <p className="text-xs text-muted-foreground">
+          <b>Cómo se lee:</b> se esperaba en el banco = cuotas − NC recibidas (las que se descuentan en ese ejercicio).
+          <b> A reclamar</b> = se esperaba − pagado. Es <b>lo único que hay que pedir, una sola vez</b>: las NC recibidas no se reclaman ni se suman.
+          Positivo = falta un papel; negativo (azul) = la aseguradora nos debe.
+        </p>
+        <p className={`text-xs ${cierra ? "text-green-700" : "font-semibold text-red-700"}`}>
+          {cierra ? "✓" : "🛑"} Control: la cuenta corriente al {fecha(hasta)} da {$(cc.saldo)} y la suma de «a reclamar» de todos los ejercicios da {$(sumaReclamar)}{cierra ? "." : " — no coinciden: avisar."}
+        </p>
+
+        {otroImporte.length > 0 && (
+          <BloqueCuotas titulo="⚠️ Se debitó otro importe — ¿un endoso sin cargar?" cuotas={otroImporte} ramoDe={ramoDe} />
+        )}
+        {reintegros.length > 0 && (
+          <BloqueMovs titulo="⚠️ Reintegros de la aseguradora que ninguna nota de crédito explica" movs={reintegros} />
+        )}
+        {sinPoliza.length > 0 && (
+          <BloqueMovs titulo="🛑 Débitos que no son cuota de ninguna póliza cargada — falta cargar la póliza" movs={sinPoliza} />
         )}
         {r.anteriores.cantidad > 0 && (
           <p className="text-xs text-muted-foreground">
@@ -389,13 +387,81 @@ function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, polizas, onVerP
             ({r.anteriores.polizas.join(", ")}): son del balance anterior.
           </p>
         )}
-        <p className="text-xs text-muted-foreground">
-          <b>Cómo se lee:</b> se esperaba en el banco = cuotas − NC recibidas (las que se descuentan en ese ejercicio).
-          <b> A reclamar</b> = se esperaba − pagado. Es <b>lo único que hay que pedir, una sola vez</b>: las NC recibidas no se reclaman ni se suman.
-        </p>
         <p className="text-xs text-muted-foreground">🚩 en cada diferencia: pasársela a alguien (por ejemplo, Ulises) con un mensaje. Le llega a su campanita.</p>
       </CardContent>
+
+      <Dialog open={verCtaCte} onOpenChange={setVerCtaCte}>
+        <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>📒 Cuenta corriente con la aseguradora — al {fecha(hasta)}</DialogTitle>
+          </DialogHeader>
+          <CuentaCorrienteTabla cc={cc} polizas={polizas} ramoDe={ramoDe} />
+        </DialogContent>
+      </Dialog>
     </Card>
+  )
+}
+
+function CuentaCorrienteTabla({ cc, polizas, ramoDe }: { cc: CuentaCorriente; polizas: Poliza[]; ramoDe: Map<string, string> }) {
+  const [poliza, setPoliza] = useState<string | null>(null)
+  const pdfDe = (pol: string | null, endoso?: number) =>
+    pol == null || endoso == null ? null : polizas.find(p => p.poliza === pol)?.polizas_endosos.find(e => e.endoso === endoso)?.pdf_drive_url ?? null
+  // Filtrando una póliza, el saldo se recalcula sólo con sus renglones.
+  let saldo = 0
+  const lineas = cc.lineas.filter(l => !poliza || l.poliza === poliza).map(l => { saldo = Math.round((saldo + l.cargo - l.credito) * 100) / 100; return { ...l, saldo } })
+  const final = lineas.length ? lineas[lineas.length - 1].saldo : 0
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        <b>Cargo</b>: una cuota emitida o un reintegro que nos hizo la aseguradora. <b>Crédito</b>: un débito del banco o una nota de crédito.
+        Con cuotas y débitos el saldo queda en cero; lo que lo saca de cero es lo que falta documentar. Saldo positivo = falta un papel a favor
+        nuestro; negativo = la aseguradora nos debe. Los movimientos del banco entran estén o no conciliados.
+      </p>
+      <div className="flex flex-wrap items-center gap-1 text-sm">
+        <Boton onClick={() => setPoliza(null)} className={`rounded-full border px-3 py-0.5 ${!poliza ? "border-blue-400 bg-blue-50 text-blue-700" : "text-muted-foreground"}`}>Todas</Boton>
+        {[...cc.porPoliza.keys()].sort().map(p => (
+          <Boton key={p} onClick={() => setPoliza(p)} className={`rounded-full border px-3 py-0.5 ${poliza === p ? "border-blue-400 bg-blue-50 text-blue-700" : "text-muted-foreground"}`}>
+            {p} <span className={Math.abs(cc.porPoliza.get(p)!) > 0.01 ? "text-red-700" : "text-green-700"}>{Math.abs(cc.porPoliza.get(p)!) > 0.01 ? $(cc.porPoliza.get(p)!) : "✓"}</span>
+          </Boton>
+        ))}
+      </div>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Fecha</TableHead>
+              <TableHead>Póliza</TableHead>
+              <TableHead>Concepto</TableHead>
+              <TableHead className="text-right">Cargo</TableHead>
+              <TableHead className="text-right">Crédito</TableHead>
+              <TableHead className="text-right">Saldo</TableHead>
+              <TableHead>PDF</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {lineas.map((l, i) => {
+              const pdf = pdfDe(l.poliza, l.endoso)
+              return (
+                <TableRow key={i} className={l.tipo === "saldo-inicial" ? "bg-muted/40" : ""}>
+                  <TableCell className="whitespace-nowrap">{fecha(l.fecha)}</TableCell>
+                  <TableCell className="font-mono text-xs">{l.poliza ?? "—"} <span className="font-sans text-muted-foreground">{l.poliza ? ramoDe.get(l.poliza) : ""}</span></TableCell>
+                  <TableCell className="text-sm">{l.concepto}{l.estado ? <span className="text-xs text-muted-foreground"> · {l.estado}</span> : null}</TableCell>
+                  <TableCell className="text-right tabular-nums">{l.cargo ? $(l.cargo) : ""}</TableCell>
+                  <TableCell className="text-right tabular-nums">{l.credito ? $(l.credito) : ""}</TableCell>
+                  <TableCell className={`text-right font-medium tabular-nums ${Math.abs(l.saldo) < 0.01 ? "text-green-700" : l.saldo > 0 ? "text-red-700" : "text-blue-700"}`}>{$(l.saldo)}</TableCell>
+                  <TableCell>{pdf ? <a className="text-blue-600 underline" href={pdf} target="_blank" rel="noreferrer">ver</a> : ""}</TableCell>
+                </TableRow>
+              )
+            })}
+            <TableRow className="font-semibold">
+              <TableCell colSpan={5}>Saldo{poliza ? ` de la póliza ${poliza}` : ""}</TableCell>
+              <TableCell className={`text-right tabular-nums ${Math.abs(final) < 0.01 ? "text-green-700" : final > 0 ? "text-red-700" : "text-blue-700"}`}>{$(final)}</TableCell>
+              <TableCell />
+            </TableRow>
+          </TableBody>
+        </Table>
+      </div>
+    </div>
   )
 }
 

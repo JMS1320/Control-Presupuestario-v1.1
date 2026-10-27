@@ -26,6 +26,8 @@ export interface CuotaEsperada {
   saldo?: number | null
   /** …y la fecha de ese consolidado. */
   saldoAl?: string | null
+  /** De qué endoso sale (para ir a su PDF desde la cuenta corriente). Si vino del consolidado, el endoso que lo trae. */
+  endoso?: number
 }
 
 export interface MovimientoAseguradora {
@@ -168,17 +170,18 @@ export function cuotasEsperadas(endosos: EndosoParaControl[]): CuotaEsperada[] {
   for (const [poliza, lista] of porPoliza) {
     const nros = new Set(lista.map(e => e.endoso))
     const completa = [...Array(Math.max(...nros) + 1).keys()].every(n => nros.has(n))
-    const ultimo = lista.filter(e => e.consolidado?.cuotas.length).sort((a, b) => b.endoso - a.endoso)[0]?.consolidado ?? null
+    const conConsolidado = lista.filter(e => e.consolidado?.cuotas.length).sort((a, b) => b.endoso - a.endoso)[0]
+    const ultimo = conConsolidado?.consolidado ?? null
     const saldoDe = (venc: string) => {
       const c = ultimo?.cuotas.find(x => Math.abs(dias(x.vencimiento, venc)) <= 7)
       return c ? { saldo: c.saldo ?? null, saldoAl: ultimo?.fecha ?? null } : {}
     }
     if (completa || !ultimo) {
-      for (const e of lista) for (const c of e.cuotas) out.push({ poliza, vencimiento: c.vencimiento, importe: c.importe })
+      for (const e of lista) for (const c of e.cuotas) out.push({ poliza, vencimiento: c.vencimiento, importe: c.importe, endoso: e.endoso })
       // el saldo se adjunta después de juntar los endosos del mismo vencimiento
       for (const c of out.filter(x => x.poliza === poliza)) Object.assign(c, saldoDe(c.vencimiento))
     } else {
-      for (const c of ultimo.cuotas) out.push({ poliza, vencimiento: c.vencimiento, importe: c.importe, saldo: c.saldo ?? null, saldoAl: ultimo.fecha })
+      for (const c of ultimo.cuotas) out.push({ poliza, vencimiento: c.vencimiento, importe: c.importe, saldo: c.saldo ?? null, saldoAl: ultimo.fecha, endoso: conConsolidado!.endoso })
     }
   }
   return out

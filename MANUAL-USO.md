@@ -3474,7 +3474,17 @@ línea si **falta reclamar algún papel a la aseguradora** y por cuánto. Con lo
 - **Pagado**: lo que debitó el banco por esas cuotas, **esté o no conciliado**.
 - **Diferencia** y **qué es**: *dejó de debitarse* (baja sin su nota de crédito), *otro importe* (falta un endoso), o el renglón **Reintegros sin facturar** (plata que devolvió Federación y ningún papel explica).
 
-Tocando el número de póliza se abre su cuenta corriente más abajo, con los PDF. En cada diferencia, la 🚩
+Debajo de la tabla, en el mismo cuadro, el **detalle** del ejercicio elegido: lo que se debitó con otro importe,
+los reintegros que ninguna nota de crédito explica y, si hubiera, los débitos sin póliza.
+
+**📒 Cuenta corriente** (botón arriba): todo lo que entró con la aseguradora, en orden — **cargos** (cuotas emitidas y
+reintegros que nos hizo) y **créditos** (débitos del banco y notas de crédito) — con el saldo renglón por renglón y el
+PDF de cada endoso. Con cuotas y débitos el saldo queda en cero; lo que lo saca de cero es lo que falta documentar:
+**positivo** = falta un papel a favor nuestro, **negativo** = la aseguradora nos debe. Se puede filtrar por póliza.
+Su saldo final tiene que dar lo mismo que la suma de «a reclamar» de todos los ejercicios: la línea de control
+debajo de la tabla lo muestra en verde si coincide.
+
+Tocando el número de póliza se abre su detalle más abajo, con los PDF. En cada diferencia, la 🚩
 sirve para **pasársela a alguien** (por ejemplo, Ulises) con un mensaje: le llega a su campanita. Los débitos de
 pólizas anteriores al ejercicio (del balance anterior) no se cuentan; se informan en una línea gris.
 

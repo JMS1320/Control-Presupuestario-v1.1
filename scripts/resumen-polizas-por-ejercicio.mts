@@ -5,7 +5,7 @@
 import fs from "fs"
 import { createClient } from "@supabase/supabase-js"
 import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora } from "../lib/polizas/control-debitos"
-import { resumenPorEjercicio, ejercicioDe, TEXTO_MOTIVO } from "../lib/polizas/resumen-ejercicio"
+import { resumenPorEjercicio, ejercicioDe, TEXTO_MOTIVO, cuentaCorriente } from "../lib/polizas/resumen-ejercicio"
 const env = Object.fromEntries(fs.readFileSync(".env.local", "utf8").split(/\r?\n/).filter(l => l.includes("=") && !l.trim().startsWith("#")).map(l => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^"|"$/g, "")] }))
 const sb = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
 const p = await sb.from("polizas_seguro").select("poliza,seccion,poliza_anterior,vigencia_desde,polizas_endosos(endoso,consolidado,polizas_cuotas(vencimiento,importe))")
@@ -26,3 +26,6 @@ for (const r of resumenPorEjercicio(ctl.cuotas, ctl.movimientos, pol, ventana.ha
   console.log(`  TOTAL cuotas ${fmt(r.total.cuotas)} NC ${fmt(r.total.notasCredito)} esperado ${fmt(r.total.esperadoVencido)} pagado ${fmt(r.total.pagado)} dif ${fmt(r.total.diferencia)} · a vencer ${fmt(r.total.aVencer)}`)
   console.log(`  anteriores: ${r.anteriores.cantidad} por ${fmt(r.anteriores.total)} (${r.anteriores.polizas.join(", ")}) · sin póliza: ${r.sinPoliza.cantidad} por ${fmt(r.sinPoliza.total)}`)
 }
+
+const cc = cuentaCorriente(emitidas, ctl.cuotas, ctl.movimientos, pol, ventana.desde, ventana.hasta)
+console.log("\nCuenta corriente al " + ventana.hasta + ": saldo " + fmt(cc.saldo), Object.fromEntries([...cc.porPoliza].map(([k, v]) => [k, fmt(v)])))

@@ -32,7 +32,7 @@ export interface PolizaParaResumen {
   vigencia_desde: string | null
 }
 
-export type MotivoDiferencia = "baja-sin-nc" | "falta-endoso" | "reintegro-sin-facturar"
+export type MotivoDiferencia = "baja-sin-nc" | "falta-endoso" | "reintegro-sin-facturar" | "nc-sin-aplicar" | "debito-sin-poliza"
 
 export interface RenglonResumen {
   /** null en el renglón de reintegros. */
@@ -147,7 +147,26 @@ export function resumenPorEjercicio(
     else s.sinPoliza.push(m)
   }
 
-  const ejercicios = [...new Set([...porEj.keys(), ...sueltos.keys()])]
+  // 🧾 NC sin aplicar: una póliza que ya terminó (no le quedan cuotas por vencer) y cuya cuenta corriente quedó
+  // a nuestro favor. Caso: Vida 670821 — sus NC (−129.648,30) superaron las cuotas que quedaban: la aseguradora
+  // nos debe 24.341,09. Lo destapó la cuenta corriente (JMS 27/10); el control por cuota sólo veía «compensada».
+  const ncSinAplicar: { poliza: string; ejercicio: string; saldo: number }[] = []
+  if (emitidas) {
+    const desdeFecha = desdeEjercicio ? "20" + desdeEjercicio.slice(0, 2) + "-07-01" : "1900-01-01"
+    const cc = cuentaCorriente(emitidas, cuotas, movimientos, polizas, desdeFecha, hasta)
+    for (const [pol, saldo] of cc.porPoliza) {
+      const suyas = emitidas.filter(c => c.poliza === pol)
+      if (saldo >= -TOL || suyas.some(c => c.vencimiento > hasta)) continue
+      const ultima = suyas.map(c => c.vencimiento).sort().at(-1)!
+      // Lo que ya explican los renglones de esa póliza (bajas, endosos) no se cuenta dos veces.
+      const yaExplicado = [...porEj.values()].flatMap(m => [...m.values()]).filter(r => r.poliza === pol)
+        .reduce((t, r) => t + (r.esperadoVencido - r.pagado), 0)
+      const resto = r2(saldo - yaExplicado)
+      if (resto < -TOL) ncSinAplicar.push({ poliza: pol, ejercicio: ejercicioDe(ultima), saldo: resto })
+    }
+  }
+
+  const ejercicios = [...new Set([...porEj.keys(), ...sueltos.keys(), ...ncSinAplicar.map(x => x.ejercicio)])]
     .filter(e => !desdeEjercicio || e >= desdeEjercicio)
     .sort()
 
@@ -167,6 +186,18 @@ export function resumenPorEjercicio(
         casos: s.reint.map(m => ({ fecha: m.fecha, esperado: 0, debitado: -m.creditos })),
       })
     }
+    if (s?.sinPoliza.length) {
+      const total = r2(s.sinPoliza.reduce((t, m) => t + m.debitos, 0))
+      renglones.push({
+        poliza: null, seccion: null, cuotas: 0, notasCredito: 0, esperadoVencido: 0, pagado: total, aVencer: 0,
+        diferencia: -total, motivo: "debito-sin-poliza",
+        casos: s.sinPoliza.map(m => ({ fecha: m.fecha, esperado: 0, debitado: m.debitos })),
+      })
+    }
+    for (const x of ncSinAplicar.filter(x => x.ejercicio === ej)) renglones.push({
+      poliza: x.poliza, seccion: seccion.get(x.poliza) ?? null, cuotas: 0, notasCredito: 0, esperadoVencido: 0, pagado: 0, aVencer: 0,
+      diferencia: x.saldo, motivo: "nc-sin-aplicar", casos: [],
+    })
     const suma = (k: keyof RenglonResumen) => r2(renglones.reduce((t, r) => t + (r[k] as number), 0))
     return {
       ejercicio: ej,
@@ -187,4 +218,110 @@ export const TEXTO_MOTIVO: Record<MotivoDiferencia, string> = {
   "baja-sin-nc": "Dejó de debitarse: ¿baja sin su nota de crédito? — reclamar la NC",
   "falta-endoso": "Se debitó otro importe: falta un endoso — reclamarlo",
   "reintegro-sin-facturar": "Reintegros sin facturar: ninguna nota de crédito los explica — pedir el papel",
+  "nc-sin-aplicar": "NC sin aplicar: la póliza terminó y sus notas de crédito superaron las cuotas — la aseguradora nos debe este saldo: pedir el reintegro o que lo aplique",
+  "debito-sin-poliza": "Débito sin póliza: se pagó algo que ninguna póliza cargada explica — falta cargar una póliza",
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// 📒 LA CUENTA CORRIENTE con la aseguradora — todo lo que entra, en orden (A-FEAT-1383, JMS 27/10).
+//
+// *«Sería lógico poder con un botón abrir una cuenta corriente donde entre todo. Si tenemos una acreditación
+// sin contra documento, lleva la cta cte fuera de cero; con las cuotas de las pólizas y los débitos se mantiene
+// en cero; con las notas de crédito se va ajustando contra distintos débitos. Eso nos daría el neto a favor o
+// en contra en cuanto a documentación.»*
+//
+//   · CARGO   = una cuota emitida (el PDF) o un reintegro que nos hizo la aseguradora.
+//   · CRÉDITO = un débito del banco (le pagamos) o una nota de crédito emitida.
+//   · SALDO   = cargos − créditos. En cero, papeles y plata coinciden.
+//       > 0 → nos cobraron o acreditaron algo que ningún papel cierra: falta una NC (baja sin NC, reintegro sin
+//             facturar) o un endoso.
+//       < 0 → pagamos de más o hay una NC sin aplicar: la aseguradora nos debe.
+//
+// Es el CAMINO INVERSO del resumen por ejercicio: la suma de la columna «a reclamar» de todos los ejercicios
+// tiene que dar el saldo final. Si no da, uno de los dos está mal (§ 🧮 Todo desarrollo termina con su control).
+//
+// Saldo inicial: una póliza que viene de antes del primer extracto (Vida 644709) trae NC que se descontaron de
+// cuotas de este ejercicio; ese saldo a favor sale de lo que dice el consolidado de la aseguradora (cuotas en
+// saldo 0) y entra como primer renglón, para que la cuenta no arranque falsamente en contra.
+// Los débitos de pólizas anteriores al ejercicio (balance anterior) no entran.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+
+export type TipoLinea = "saldo-inicial" | "cuota" | "nc" | "debito" | "reintegro"
+
+export interface LineaCtaCte {
+  fecha: string
+  poliza: string | null
+  tipo: TipoLinea
+  concepto: string
+  cargo: number
+  credito: number
+  saldo: number
+  endoso?: number
+  /** El movimiento del banco, si la línea es un débito o un reintegro. */
+  movimientoId?: string
+  estado?: string | null
+}
+
+export interface CuentaCorriente {
+  lineas: LineaCtaCte[]
+  saldo: number
+  porPoliza: Map<string, number>
+}
+
+export function cuentaCorriente(
+  emitidas: CuotaEsperada[],
+  cuotas: CuotaControlada[],
+  movimientos: MovimientoControlado[],
+  polizas: PolizaParaResumen[],
+  desde: string,
+  hasta: string,
+): CuentaCorriente {
+  const enVentana = (f: string) => f >= desde && f <= hasta
+  const lineas: Omit<LineaCtaCte, "saldo">[] = []
+
+  // Saldo inicial de las pólizas con historia anterior al extracto (lo que el consolidado ya compensó).
+  const conHistoria = new Set(emitidas.filter(c => c.vencimiento < desde).map(c => c.poliza))
+  for (const pol of conHistoria) {
+    const bruto = emitidas.filter(c => c.poliza === pol && enVentana(c.vencimiento)).reduce((t, c) => t + c.importe, 0)
+    const esperado = cuotas.filter(c => c.poliza === pol && c.importe > 0 && enVentana(c.vencimiento) && c.resultado !== "a-vencer" && c.resultado !== "compensada")
+      .reduce((t, c) => t + c.esperadoEnBanco, 0)
+    const inicial = r2(esperado - bruto)
+    if (Math.abs(inicial) > TOL) lineas.push({
+      fecha: desde, poliza: pol, tipo: "saldo-inicial",
+      concepto: inicial < 0
+        ? "Saldo a favor que trae de antes (NC anteriores, según el consolidado de la aseguradora)"
+        : "Saldo que trae de antes (según el consolidado de la aseguradora)",
+      cargo: inicial > 0 ? inicial : 0, credito: inicial < 0 ? -inicial : 0,
+    })
+  }
+  for (const c of emitidas) {
+    if (!enVentana(c.vencimiento)) continue
+    const de = c.endoso != null ? " (endoso " + c.endoso + ")" : ""
+    if (c.importe >= 0) lineas.push({ fecha: c.vencimiento, poliza: c.poliza, tipo: "cuota", concepto: "Cuota" + de, cargo: c.importe, credito: 0, endoso: c.endoso })
+    else lineas.push({ fecha: c.vencimiento, poliza: c.poliza, tipo: "nc", concepto: "Nota de crédito" + de, cargo: 0, credito: -c.importe, endoso: c.endoso })
+  }
+  for (const m of movimientos) {
+    if (!enVentana(m.fecha)) continue
+    if (m.resultado === "sin-poliza" && polizaAnteriorDe(m.fecha, polizas)) continue // balance anterior
+    if (m.debitos > 0) lineas.push({
+      fecha: m.fecha, poliza: m.poliza, tipo: "debito", movimientoId: m.id, estado: m.estado ?? null,
+      concepto: m.poliza ? "Débito del banco" : "Débito del banco SIN póliza cargada",
+      cargo: 0, credito: m.debitos,
+    })
+    if (m.creditos > 0) lineas.push({
+      fecha: m.fecha, poliza: m.poliza, tipo: "reintegro", movimientoId: m.id, estado: m.estado ?? null,
+      concepto: m.poliza ? "Reintegro del banco" : "Reintegro del banco SIN nota de crédito",
+      cargo: m.creditos, credito: 0,
+    })
+  }
+  const orden: Record<TipoLinea, number> = { "saldo-inicial": 0, cuota: 1, reintegro: 2, nc: 3, debito: 4 }
+  lineas.sort((a, b) => a.fecha.localeCompare(b.fecha) || orden[a.tipo] - orden[b.tipo] || (a.poliza ?? "").localeCompare(b.poliza ?? ""))
+  let saldo = 0
+  const porPoliza = new Map<string, number>()
+  const conSaldo = lineas.map(l => {
+    saldo = r2(saldo + l.cargo - l.credito)
+    if (l.poliza) porPoliza.set(l.poliza, r2((porPoliza.get(l.poliza) ?? 0) + l.cargo - l.credito))
+    return { ...l, saldo }
+  })
+  return { lineas: conSaldo, saldo, porPoliza }
 }
