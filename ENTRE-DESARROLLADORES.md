@@ -52,8 +52,8 @@ el check de `estado` suma `'a_confirmar'` y se agregan `marcada_por`, `marcada_a
 
 📌 Borrá esta entrada cuando la leas.
 
-### 📨 Mail del subdiario al contador: 2 columnas en `public.mails_pago` y una ruta con token (2026-10-27) — ✅ 109 APLICADO el 27/10 con OK de JMS (aviso previo)
-- `scripts/109-mails-adjuntos.sql` (+ `-deshacer`): `mails_pago.tipo` (text, default 'pago') y `mails_pago.adjuntos` (jsonb). No toca filas ni RLS.
+### 📨 Mail del subdiario al contador: 2 columnas en `public.mails_pago` y una ruta con token (2026-10-27) — ✅ 110 (ex 109) APLICADO el 27/10 con OK de JMS (aviso previo)
+- `scripts/110-mails-adjuntos.sql` (+ `-deshacer`; **renumerado de 109**, que es de plan sanitario): `mails_pago.tipo` (text, default 'pago') y `mails_pago.adjuntos` (jsonb). No toca filas ni RLS.
 - **Ruta nueva `POST /api/contador/ddjj`**: con sesión (escritura en `egresos.subdiarios`) **o** con el header `x-token-contador` = env **`CONTADOR_TOKEN`** (lo usa el GAS que lee la respuesta del contador; sin sesión). Usa service role para guardar en `ddjj_presentadas`, marcar «DDJJ OK» y crear revisiones (avisos) a los usuarios admin y contable. Si preferís otro mecanismo para que el GAS se autentique, avisá.
 
 ### 🗃️ Una columna nueva: `public.polizas_seguro.template_id` (2026-10-27) — ✅ APLICADA el 27/10 con OK de JMS
