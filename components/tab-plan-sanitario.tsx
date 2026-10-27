@@ -26,10 +26,11 @@ import { etiquetaPersona } from "@/lib/auth/identidad"
 import { usePuedeEditar, usePuedeVer } from "@/components/contexto-permisos"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import {
-  ocurrenciasDeCampania, avisos, sugerirAgrupar, campaniaDe, nombreCampania, fechaCorta, difDias, sumarDias,
+  ocurrenciasDeCampania, avisos, campaniaDe, nombreCampania, fechaCorta, difDias, sumarDias,
   fechasIatf, chequearIatf, chequearEntore, moverPideExplicacion, fechaEnCampania,
   agruparEnSesiones, GRUPOS,
-  type TareaPlan, type RegistroPlan, type Hecho, type Ocurrencia, type EstadoOcurrencia, type IatfCargada, type Sugerencia,
+  type TareaPlan, type RegistroPlan, type Hecho, type Ocurrencia, type EstadoOcurrencia, type IatfCargada,
+  encierresPorRodeo, controlarEncierres, proponerCalendario, esEncierre, RODEOS, type SesionPropuesta, type ProblemaEncierre,
 } from "@/lib/productivo/plan-sanitario"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -108,7 +109,7 @@ export function TabPlanSanitario() {
   const [editarTarea, setEditarTarea] = useState<TareaPlan | "nueva" | null>(null)
   const [verPlan, setVerPlan] = useState(false)
   const [iatfAbierta, setIatfAbierta] = useState<{ campania: number } | null>(null)
-  const [juntar, setJuntar] = useState<Sugerencia | null>(null)
+  const [verPropuestaCal, setVerPropuestaCal] = useState(false)
   // Por sesión (default, pedido de JMS 27/10): lo que se hace el mismo día es UN evento.
   const [vista, setVista] = useState<"sesion" | "hacienda">(() => {
     try { return localStorage.getItem("plan-sanitario.vista") === "hacienda" ? "hacienda" : "sesion" } catch { return "sesion" }
@@ -177,9 +178,17 @@ export function TabPlanSanitario() {
     return avisos(todas, desde).filter(o => o.faltan >= -365)
   }, [tareas, hechos, registros, hoy, iatfs, desde])
   const sesiones = useMemo(() => agruparEnSesiones(ocs), [ocs])
-  const sugerencias = useMemo(() => {
+  // 🐄 Encierres por rodeo (JMS 27/10): lo hecho en los últimos 4 meses + lo previsto en los próximos 12
+  const encierres = useMemo(() => {
     const actual = campaniaDe(hoy)
-    return sugerirAgrupar([...ocurrenciasDeCampania(tareas, actual, hechos, registros, hoy, iatfs, desde), ...ocurrenciasDeCampania(tareas, actual + 1, hechos, registros, hoy, iatfs, desde)], hoy)
+    const todas = [actual - 1, actual, actual + 1].flatMap(c => ocurrenciasDeCampania(tareas, c, hechos, registros, hoy, iatfs, desde))
+    const hasta = sumarDias(hoy, 365), atras = sumarDias(hoy, -120)
+    const futuras = todas.filter(o => esEncierre(o) && !o.fechaReal && o.estado !== "explicada" && o.esperada >= hoy && o.esperada <= hasta)
+    const hechas = todas.filter(o => esEncierre(o) && o.fechaReal && o.fechaReal >= atras && o.fechaReal <= hoy)
+    const items = [...hechas.map(o => ({ fecha: o.fechaReal!, grupos: o.tarea.grupos })), ...futuras.map(o => ({ fecha: o.esperada, grupos: o.tarea.grupos }))]
+    const porRodeo = encierresPorRodeo(items)
+    const proximos = encierresPorRodeo(futuras.map(o => ({ fecha: o.esperada, grupos: o.tarea.grupos })))
+    return { problemas: controlarEncierres(porRodeo), proximos, propuesta: proponerCalendario(futuras, hoy) }
   }, [tareas, hechos, registros, hoy, iatfs, desde])
 
   // ── Escrituras ──────────────────────────────────────────────────────────────────────────────
@@ -294,23 +303,23 @@ export function TabPlanSanitario() {
         </CardContent>
       </Card>
 
-      {/* 2 · Juntar */}
-      {sugerencias.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">💡 Se pueden juntar</CardTitle></CardHeader>
-          <CardContent className="space-y-1.5">
-            {sugerencias.map((s, k) => (
-              <div key={k} className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm flex flex-wrap items-center gap-2">
-                <span className="flex-1 min-w-[200px]">
-                  <b>{s.grupo}</b>: {s.ocurrencias.map(o => `${o.tarea.nombre} (${fechaCorta(o.esperada)})`).join(" + ")}
-                  <span className="block text-xs text-sky-900">→ las dos el {fechaCorta(s.fecha, true)}{s.pideExplicacion ? " · alguna queda fuera de su margen: pide explicación" : " · entra en el margen de todas"}</span>
-                </span>
-                {editable && <Button size="sm" variant="outline" onClick={() => setJuntar(s)}>{aprueba ? "Juntar" : "Proponer juntar"}</Button>}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
+      {/* 2 · Encierres por rodeo */}
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle className="text-base">🐄 Encierres por rodeo</CardTitle>
+            {editable && encierres.propuesta.sesiones.length > 0 && (
+              <Button size="sm" variant="outline" className="ml-auto" onClick={() => setVerPropuestaCal(true)}>Proponer calendario</Button>)}
+          </div>
+          <p className="text-xs text-muted-foreground">Máximo 1 por mes y 2 en 3 meses (lo ideal: 2 en 4 meses). Próximos 12 meses: {RODEOS.filter(r => encierres.proximos[r]).map(r => `${r} ${encierres.proximos[r].length}`).join(" · ") || "nada previsto"}</p>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          {encierres.problemas.length === 0 && <p className="text-sm text-green-800">✓ Ningún rodeo se encierra más de lo previsto.</p>}
+          {encierres.problemas.slice(0, 8).map((p, k) => (
+            <div key={k} className={`rounded border px-2 py-1 text-xs ${p.grave ? "border-red-300 bg-red-50 text-red-900" : "border-amber-300 bg-amber-50 text-amber-900"}`}>{p.grave ? "🔴" : "🟠"} {p.texto}</div>))}
+          {encierres.problemas.length > 8 && <p className="text-xs text-muted-foreground">… y {encierres.problemas.length - 8} más.</p>}
+        </CardContent>
+      </Card>
 
       {/* 3 · Propuestas */}
       {aprueba && propuestas.length > 0 && (
@@ -439,12 +448,21 @@ export function TabPlanSanitario() {
         />
       )}
 
-      {juntar && (
-        <DialogoJuntar s={juntar} aprueba={aprueba} onCerrar={() => setJuntar(null)}
-          onConfirmar={async (fecha, explicacion) => {
-            const cambios = { tareas: juntar.ocurrencias.map(o => ({ tarea_id: o.tarea.id, campania: o.campania })), fecha, explicacion }
-            if (aprueba) { try { await aplicar({ tarea_id: null, tipo: "programar", cambios }); toast.success("Juntadas"); setJuntar(null); cargar() } catch (e: any) { toast.error(e.message) } }
-            else if (await proponer({ tarea_id: null, tipo: "programar", cambios, nota: explicacion })) { setJuntar(null); cargar() }
+      {verPropuestaCal && (
+        <DialogoPropuestaCalendario prop={encierres.propuesta} aprueba={aprueba} onCerrar={() => setVerPropuestaCal(false)}
+          onAplicar={async (explicacion) => {
+            const cambiadas = encierres.propuesta.sesiones
+              .map(ses => ({ ses, tareas: ses.ocurrencias.filter(o => !o.tarea.es_fija && o.esperada !== ses.fecha) }))
+              .filter(x => x.tareas.length > 0)
+            try {
+              for (const { ses, tareas: ts } of cambiadas) {
+                const cambios = { tareas: ts.map(o => ({ tarea_id: o.tarea.id, campania: o.campania })), fecha: ses.fecha, explicacion }
+                if (aprueba) await aplicar({ tarea_id: null, tipo: "programar", cambios })
+                else if (!(await proponer({ tarea_id: null, tipo: "programar", cambios, nota: explicacion }))) throw new Error("no se guardó una propuesta")
+              }
+              toast.success(aprueba ? `Calendario aplicado: ${cambiadas.length} sesión(es) movidas` : `${cambiadas.length} propuesta(s) enviadas`)
+              setVerPropuestaCal(false); cargar()
+            } catch (e: any) { toast.error(`No se terminó: ${e.message ?? e}`) }
           }} />
       )}
 
@@ -585,24 +603,50 @@ const Linea = ({ t, children }: { t: string; children: React.ReactNode }) => (
   <div className="grid grid-cols-[110px_1fr] gap-2"><span className="text-muted-foreground">{t}</span><span>{children}</span></div>
 )
 
-// ── Juntar ────────────────────────────────────────────────────────────────────────────────────
-function DialogoJuntar({ s, aprueba, onCerrar, onConfirmar }: { s: Sugerencia; aprueba: boolean; onCerrar: () => void; onConfirmar: (fecha: string, explicacion: string | null) => void }) {
-  const [fecha, setFecha] = useState(s.fecha)
-  const [texto, setTexto] = useState(`Juntadas: ${s.ocurrencias.map(o => o.tarea.nombre).join(" + ")}`)
-  const fuera = s.ocurrencias.filter(o => moverPideExplicacion(o, fecha))
+// ── La propuesta de calendario (encierres) ────────────────────────────────────────────────────
+function DialogoPropuestaCalendario({ prop, aprueba, onCerrar, onAplicar }: {
+  prop: { sesiones: SesionPropuesta[]; problemas: ProblemaEncierre[]; antes: ProblemaEncierre[] }
+  aprueba: boolean; onCerrar: () => void; onAplicar: (explicacion: string) => void
+}) {
+  const [texto, setTexto] = useState("Calendario propuesto por la app: se juntan tareas para no encerrar un rodeo dos veces en el mes")
+  const [enviando, setEnviando] = useState(false)
+  const mueve = prop.sesiones.some(s => s.ocurrencias.some(o => !o.tarea.es_fija && o.esperada !== s.fecha))
+  const hayFuera = prop.sesiones.some(s => s.fuera.length > 0)
+  const durosAntes = prop.antes.filter(p => p.grave).length, durosDespues = prop.problemas.filter(p => p.grave).length
   return (
     <Dialog open onOpenChange={v => !v && onCerrar()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Juntar en {s.grupo}</DialogTitle>
-          <DialogDescription>{s.ocurrencias.map(o => `${o.tarea.nombre} (${fechaCorta(o.esperada)})`).join(" + ")}</DialogDescription></DialogHeader>
-        <div className="space-y-2">
-          <div><Label className="text-xs">Fecha para todas</Label><Input type="date" value={fecha} onChange={e => setFecha(e.target.value)} /></div>
-          {fuera.length > 0 && <p className="text-xs text-amber-700">Queda fuera del margen de: {fuera.map(o => o.tarea.nombre).join(", ")}. La explicación es obligatoria.</p>}
-          <div><Label className="text-xs">Explicación</Label><Textarea rows={2} value={texto} onChange={e => setTexto(e.target.value)} /></div>
+      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>Calendario propuesto — próximos 12 meses</DialogTitle>
+          <DialogDescription>Junta las tareas para que cada rodeo se encierre lo menos posible. Problemas de encierre: {durosAntes} → {durosDespues}.</DialogDescription></DialogHeader>
+        <div className="space-y-1.5 text-sm">
+          {prop.sesiones.map(s => (
+            <div key={s.fecha} className="rounded border px-2 py-1.5">
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <b>{fechaCorta(s.fecha, true)}/{s.fecha.slice(2, 4)}</b>
+                <span className="text-xs text-muted-foreground">{s.rodeos.join(" · ")}</span>
+                {s.fija && <Badge variant="outline" className="text-[10px]">fecha fija</Badge>}
+                {s.dosDias && <Badge variant="outline" className="text-[10px]">se puede hacer en 2 días</Badge>}
+              </div>
+              <ul className="text-xs pt-0.5">
+                {s.ocurrencias.map(o => (
+                  <li key={o.tarea.id + o.campania}>
+                    {s.fuera.includes(o) ? "⚠️" : o.esperada !== s.fecha ? "↔" : "·"} {o.tarea.nombre}
+                    {o.esperada !== s.fecha && <span className="text-muted-foreground"> (era {fechaCorta(o.esperada).slice(0, 5)}{s.fuera.includes(o) ? ", sale de su margen" : ""})</span>}
+                  </li>))}
+              </ul>
+            </div>))}
+          {prop.problemas.length > 0 && (
+            <div className="space-y-1 pt-1">
+              <div className="text-xs font-medium">Lo que no se pudo resolver juntando:</div>
+              {prop.problemas.map((p, k) => <div key={k} className="text-xs">{p.grave ? "🔴" : "🟠"} {p.texto}</div>)}
+            </div>)}
+          {mueve && <div><Label className="text-xs">Explicación{hayFuera && <span className="text-amber-700"> — algunas tareas salen de su margen</span>}</Label>
+            <Textarea rows={2} value={texto} onChange={e => setTexto(e.target.value)} /></div>}
         </div>
         <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={onCerrar}>Cancelar</Button>
-          <Button disabled={!fecha || (fuera.length > 0 && !texto.trim())} onClick={() => onConfirmar(fecha, texto.trim() || null)}>{aprueba ? "Juntar" : "Proponer"}</Button>
+          <Button variant="outline" onClick={onCerrar}>Cerrar</Button>
+          {mueve && <Button disabled={enviando || (hayFuera && !texto.trim())} onClick={async () => { setEnviando(true); await onAplicar(texto.trim()); setEnviando(false) }}>
+            {aprueba ? "Aplicar" : "Proponer"}</Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>

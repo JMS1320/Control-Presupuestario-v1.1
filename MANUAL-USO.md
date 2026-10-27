@@ -632,8 +632,10 @@ solapa junta las dos cosas y avisa.
 **Lo que se ve, de arriba a abajo:**
 1. **Para atender** — 🔴 lo que pasó sin registro, ⚠️ lo hecho fuera de fecha sin explicar y 🟡 lo que falta menos de 1 mes. Tocá
    una para ver de dónde sale la fecha y qué hacer.
-2. **💡 Se pueden juntar** — tareas que caen cerca para la misma hacienda (ej.: neumo y aftosa de los terneros). **Juntar** las
-   pasa a la misma fecha; si alguna sale de su margen, pide explicación.
+2. **🐄 Encierres por rodeo** — cuántas veces se va a encerrar cada rodeo en los próximos 12 meses y dónde se rompe la regla:
+   nunca más de **1 por mes** ni **2 en 3 meses** (🔴); lo ideal es **2 en 4 meses** (🟠). Dos días seguidos cuentan como uno.
+   **Proponer calendario** junta las tareas para que cada rodeo se encierre lo menos posible, todos el mismo día; muestra lo que
+   cambia (↔) y lo que sale de su margen (⚠️, pide explicación). **Aplicar** lo programa (o **Proponer**, si no aprobás).
 3. **✍️ Propuestas para aceptar** — lo que propuso quien no aprueba (ej.: Enrique). **Aceptar** lo aplica; **Rechazar** deja el
    plan como estaba.
 4. **El calendario de la campaña** (julio a junio). Abre **Por sesión**: lo que se hace el mismo día es una sola tarjeta, con las

@@ -249,7 +249,7 @@ import { juntarTandas, lecturaIncompleta, juntarHasta, mensajeLecturaIncompleta 
 import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
 import * as XLSXcasos from "xlsx"
 import { ocurrenciasDeCampania, sugerirAgrupar, fechasIatf, chequearIatf, chequearEntore, fechaEnCampania, campaniaDe, fechaCorta,
-  agruparEnSesiones, avisos,
+  agruparEnSesiones, avisos, encierresPorRodeo, controlarEncierres, proponerCalendario,
   type TareaPlan as TareaPlanCaso, type Hecho as HechoCaso, type Ocurrencia as OcurrenciaCaso } from "@/lib/productivo/plan-sanitario"
 import { presentarHoja, MONEDA, ENTERO } from "@/lib/balance/formato-excel"
 import { armarFilaDato, leerNumero, textoEstadoGuardado } from "@/lib/balance/datos-usuario-puro"
@@ -9273,6 +9273,27 @@ export function correrCasos(): Resultado[] {
     chequear("Plan sanitario", "Se controla desde lo último registrado (23/6): lo de antes sin orden no reclama; la sanidad de septiembre sí; parición y entore suceden solos",
       "revisación abr-26: previa · sanidad sep-26: vencida · parición 26: sucede · entore 26: sucede · otoño en avisos: false", vD,
       vD === "revisación abr-26: previa · sanidad sep-26: vencida · parición 26: sucede · entore 26: sucede · otoño en avisos: false", "A-FEAT-1380")
+
+    // Encierres por rodeo (JMS 27/10): ≤1 por mes, ≤2 en 3 meses (duro), 2 en 4 meses (ideal); 2 días seguidos = 1
+    const ctrl = controlarEncierres(encierresPorRodeo([
+      { fecha: "2026-11-15", grupos: ["Vacas"] }, { fecha: "2026-11-16", grupos: ["Vacas"] },
+      { fecha: "2026-12-01", grupos: ["Vacas"] }, { fecha: "2027-01-20", grupos: ["Vacas"] }, { fecha: "2027-04-10", grupos: ["Toros"] }]))
+    const vCtrl = ctrl.map(x => `${x.grave ? "DURO" : "ideal"}:${x.fechas.map(f => f.slice(5)).join(",")}`).join(" ")
+    chequear("Plan sanitario", "Encierres: 15 y 16/11 cuentan como uno; 1/12 a 16 días rompe «1 por mes»; tres en 66 días rompen «2 en 3 meses»",
+      "DURO:11-15,12-01 DURO:11-15,12-01,01-20", vCtrl, vCtrl === "DURO:11-15,12-01 DURO:11-15,12-01,01-20", "A-FEAT-1380")
+
+    const PLAN4 = [
+      T("mosca", { columna: "manejo", grupos: ["Vacas", "Toros"], optimo_mmdd: "11-15", claves: ["Caravana mosca"] }),
+      T("tactoia", { grupos: ["Vacas"], optimo_mmdd: "11-15", tol_antes: 7, tol_despues: 7, claves: ["Tacto"] }),
+      T("carbunclo", { grupos: ["Vacas", "Toros"], optimo_mmdd: "12-10", claves: ["Carbunclo"] }),
+      T("neumo", { grupos: ["Terneros al pie"], optimo_mmdd: "12-05", tol_antes: 10, tol_despues: 10, claves: ["Neumo"] }),
+      T("aftosa", { grupos: ["Terneros al pie"], optimo_mmdd: "12-10", claves: ["Aftosa"] }),
+    ]
+    const prop = proponerCalendario(ocurrenciasDeCampania(PLAN4, 2026, [], [], HOY), HOY)
+    const vProp = `antes ${prop.antes.filter(x => x.grave).length} duro(s) → ${prop.sesiones.length} sesión ${prop.sesiones.map(x => x.fecha).join(",")} · ${prop.problemas.filter(x => x.grave).length} duro · fuera: ${prop.sesiones.flatMap(x => x.fuera.map(o => o.tarea.id)).sort().join("+")}`
+    chequear("Plan sanitario", "Proponer calendario: vacas y toros encerrados 15/11 y 10/12, terneros 5 y 10/12 → una sola sesión; lo que sale de su margen queda marcado para explicar",
+      "antes 3 duro(s) → 1 sesión 2026-12-05 · 0 duro · fuera: mosca+tactoia", vProp,
+      vProp === "antes 3 duro(s) → 1 sesión 2026-12-05 · 0 duro · fuera: mosca+tactoia", "A-FEAT-1380")
 
     // Por sesión (JMS 27/10): lo del mismo día es UN evento, aunque toque a varias haciendas
     const PLAN2 = [...PLAN,
