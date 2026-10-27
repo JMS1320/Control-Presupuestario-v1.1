@@ -99,6 +99,7 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | `caja_general` / `caja_ams` / `caja_sigot` | ❌ | 79 | Cajas efectivo (tablas de movimiento). |
 | `cheques` | ❌ | 10 | Cheques/ECHEQs **que emitimos** (el beneficiario es el proveedor). 🚨 **No hay tabla de cheques RECIBIDOS** de clientes → [A-DAT-74](PENDIENTES.md#a-dat-74). 🧨 **`estado` no se mantiene**: los 10 dicen `vigente`, 8 con la fecha de débito ya pasada, y `fecha_estado` está vacía en los 10 — para saber si un cheque debitó se usa **`fecha_cobro`**, nunca `estado` → [A-BUG-1223](PENDIENTES.md#a-bug-1223). (visto 2026-09-30) |
 | `grupos_pago` | ❌ | — | Grupos de pago (agrupan facturas en una OP). |
+| `grupos_cobro` | ✅ | 1 | **Cobro agrupado** (A-FEAT-167, script 114, 2026-10-27): varias ventas del mismo cliente cobradas juntas, en uno o VARIOS movimientos. Existe en msa/pam/ma, RLS `puede_ver`/`puede_escribir`. Las ventas apuntan con `comprobantes_venta.grupo_cobro_id`; cada movimiento queda atado a UNA venta del grupo (`comprobante_venta_id`) y el detalle del cobro suma el grupo (`lib/ventas/grupo-cobro.ts`). |
 | `sicore_retenciones` | ✅ | 40 | Retenciones SICORE (certificados, quincenas, anulación). `grupo_pago_id` define qué comparte certificado → `MODULO_SICORE.md` § 32.3. |
 | `tarjeta_visa_business` | ❌ | 320 | Tarjeta VISA Business MSA (resúmenes). |
 
@@ -419,6 +420,7 @@ public.anticipos_facturas.anticipo_id            → public.anticipos_proveedore
 public.anticipos_proveedores.factura_id          → msa.comprobantes_arca
 public.cuotas_egresos_sin_factura.grupo_pago_id  → msa.grupos_pago
 msa.comprobantes_arca.grupo_pago_id              → msa.grupos_pago
+{msa,pam,ma}.comprobantes_venta.grupo_cobro_id   → su schema.grupos_cobro   (on delete set null · A-FEAT-167)
 msa.sicore_retenciones.factura_id                → msa.comprobantes_arca
 msa.sicore_retenciones.grupo_pago_id             → public.grupos_pago   (NULL = pago directo)
 msa.sicore_retenciones.anticipo_id               → public.anticipos_proveedores
