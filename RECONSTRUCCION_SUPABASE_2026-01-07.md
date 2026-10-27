@@ -3323,10 +3323,10 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
-### 2026-10-27 · EL MAIL DEL SUBDIARIO AL CONTADOR — 2 columnas en `public.mails_pago` (script 109) — A-AUTO-09 — ✅ CORRIDO 2026-10-27 con JMS
+### 2026-10-27 · EL MAIL DEL SUBDIARIO AL CONTADOR — 2 columnas en `public.mails_pago` (script 110, ex 109) — A-AUTO-09 — ✅ CORRIDO 2026-10-27 con JMS
 
-`scripts/109-mails-adjuntos.sql` (+ `-deshacer`): `alter table public.mails_pago add column tipo text not null default 'pago'` y
-`add column adjuntos jsonb` (comentarios `[script 109]`). No toca filas (las 38 existentes quedan `tipo = 'pago'`) ni RLS. El GAS
+`scripts/110-mails-adjuntos.sql` (+ `-deshacer`; renumerado de 109 el 27/10 por choque con el 109 de plan sanitario): `alter table public.mails_pago add column tipo text not null default 'pago'` y
+`add column adjuntos jsonb` (comentarios: en la base viva dicen `[script 109] A-AUTO-09…` porque se corrió antes de renumerar; el script ahora escribe `[script 110]` y el deshacer acepta los dos). No toca filas (las 38 existentes quedan `tipo = 'pago'`) ni RLS. El GAS
 `EnviarMailsDetalle.gs` adjunta `adjuntos` [{nombre, mime, base64}] cuando están. Control: 38 pagos · 0 con adjuntos · `explain insert` OK ✅.
 
 ### 2026-10-27 · LO QUE DEVUELVE EL CONTADOR — tabla `public.ddjj_presentadas` (script 107) — A-AUTO-09 — ✅ CORRIDO 2026-10-27 con JMS (MCP en write con su OK)
