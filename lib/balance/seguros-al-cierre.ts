@@ -14,7 +14,7 @@
  */
 import { controlarDebitos, cuotasEsperadas, type EndosoParaControl, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
 import {
-  resumenPorEjercicio, cuentaCorriente, ejercicioDe, TEXTO_MOTIVO,
+  resumenPorEjercicio, cuentaCorriente, ejercicioDe, TEXTO_MOTIVO, CATEGORIA_MOTIVO,
   type PolizaParaResumen, type RenglonResumen, type LineaCtaCte,
 } from "@/lib/polizas/resumen-ejercicio"
 
@@ -24,7 +24,7 @@ export interface AseguradoraAlCierre {
   /** Cargos − créditos al cierre. 0 = papeles y plata coinciden. */
   saldo: number
   /** Lo que explica el saldo: lo que falta reclamar (con lo arrastrado de ejercicios anteriores). */
-  aReclamar: { que: string; poliza: string | null; importe: number; desde: string | null }[]
+  aReclamar: { categoria: string; que: string; poliza: string | null; importe: number; desde: string | null; explicacion?: RenglonResumen["explicacion"] }[]
   lineas: LineaCtaCte[]
   /** El control: el saldo de la cuenta corriente = la suma de «a reclamar». */
   cierra: boolean
@@ -45,10 +45,12 @@ export function aseguradoraAlCierre(
   const delCierre = resumen.find(r => r.ejercicio === ejercicioDe(fechaCierre)) ?? resumen[resumen.length - 1]
   const cc = cuentaCorriente(emitidas, ctl.cuotas, ctl.movimientos, polizas, desdeExtracto, fechaCierre)
   const aReclamar = (delCierre?.aReclamar ?? []).map((r: RenglonResumen) => ({
+    categoria: r.motivo ? CATEGORIA_MOTIVO[r.motivo] : "Diferencia",
     que: r.motivo ? TEXTO_MOTIVO[r.motivo] : "diferencia",
     poliza: r.poliza,
     importe: r.diferencia,
     desde: r.ejercicioOrigen ?? null,
+    explicacion: r.explicacion,
   }))
   const suma = Math.round(aReclamar.reduce((t, x) => t + x.importe, 0) * 100) / 100
   return { nombre, fechaCierre, saldo: cc.saldo, aReclamar, lineas: cc.lineas, cierra: Math.abs(suma - cc.saldo) < 0.01 }

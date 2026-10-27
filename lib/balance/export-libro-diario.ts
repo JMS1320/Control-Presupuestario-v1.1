@@ -1056,8 +1056,18 @@ function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierre: stri
     f.push(["Saldo positivo = nos debitaron o acreditaron algo que ningún comprobante cierra (FALTAN COMPROBANTES). Negativo = la aseguradora nos debe."])
     f.push(["SALDO AL CIERRE", "", money(a.saldo), a.saldo === 0 ? "✓ papeles y plata coinciden" : "⚠️ FALTAN COMPROBANTES: reclamar lo de abajo"])
     if (a.aReclamar.length) {
-      f.push(["A reclamar", "Póliza", "Importe", "Desde"])
-      a.aReclamar.forEach(x => f.push([x.que, x.poliza ?? "", money(x.importe), x.desde ? `viene de ${x.desde}` : ""]))
+      f.push(["A reclamar", "Póliza", "Importe", "Qué es", "Desde"])
+      // Agrupado: «Notas de crédito pendientes» (falta el papel) aparte de «Saldo a favor pendiente» (falta la plata).
+      const cats = [...new Set(a.aReclamar.map(x => x.categoria))]
+      for (const cat of cats) {
+        const del = a.aReclamar.filter(x => x.categoria === cat)
+        del.forEach(x => {
+          f.push([cat, x.poliza ?? "", money(x.importe), x.que, x.desde ? `viene de ${x.desde}` : ""])
+          // Desde el monto de la póliza, para poder controlarlo: facturado − NC = neto; pagado; diferencia.
+          if (x.explicacion) f.push(["", "", "", `Facturado ${money(x.explicacion.facturado)} − NC ${money(-x.explicacion.notasCredito)} = neto ${money(x.explicacion.neto)} · pagado ${money(x.explicacion.pagado)}`])
+        })
+        if (del.length > 1) f.push([`Subtotal ${cat}`, "", money(Math.round(del.reduce((t, x) => t + x.importe, 0) * 100) / 100)])
+      }
     }
     if (!a.cierra) f.push(["🛑 CONTROL: la suma de «a reclamar» no da el saldo de la cuenta corriente. Avisar."])
     f.push([])

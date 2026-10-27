@@ -28,7 +28,7 @@ import {
   controlarDebitos, cuotasEsperadas, esDeLaAseguradora,
   type CuotaControlada, type CuotaEsperada, type MovimientoControlado,
 } from "@/lib/polizas/control-debitos"
-import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe, cuentaCorriente, TEXTO_MOTIVO, type ResumenEjercicio, type CuentaCorriente } from "@/lib/polizas/resumen-ejercicio"
+import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe, cuentaCorriente, TEXTO_MOTIVO, CATEGORIA_MOTIVO, type ResumenEjercicio, type CuentaCorriente } from "@/lib/polizas/resumen-ejercicio"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { BotonRevision } from "@/components/boton-revision"
 
@@ -332,7 +332,12 @@ function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, desde, polizas,
                       {!mal ? "✓ 0" : $(x.diferencia)}
                     </TableCell>
                     <TableCell className="text-xs">
-                      {x.motivo ? TEXTO_MOTIVO[x.motivo] : ""}
+                      {x.motivo && <span className="font-medium">{CATEGORIA_MOTIVO[x.motivo]}: </span>}{x.motivo ? TEXTO_MOTIVO[x.motivo].replace(/^[^:]+: /, "") : ""}
+                      {x.explicacion && (
+                        <span className="block text-muted-foreground tabular-nums">
+                          Facturado {$(x.explicacion.facturado)} − NC {$(-x.explicacion.notasCredito)} = neto {$(x.explicacion.neto)} · pagado {$(x.explicacion.pagado)} · a nuestro favor {$(x.explicacion.pagado - x.explicacion.neto)}
+                        </span>
+                      )}
                       {mal && x.casos.length > 0 && x.motivo !== "reintegro-sin-facturar" && x.motivo !== "debito-sin-poliza" && (
                         <span className="block text-muted-foreground">
                           {x.casos.map(c => `${fecha(c.fecha)}: se esperaba ${$(c.esperado)}, ${c.debitado == null ? "sin débito" : `se debitó ${$(c.debitado)}`}`).join(" · ")}
