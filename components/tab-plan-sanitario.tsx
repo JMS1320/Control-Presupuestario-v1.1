@@ -30,7 +30,7 @@ import {
   fechasIatf, chequearIatf, chequearEntore, moverPideExplicacion, fechaEnCampania,
   agruparEnSesiones, GRUPOS,
   type TareaPlan, type RegistroPlan, type Hecho, type Ocurrencia, type EstadoOcurrencia, type IatfCargada,
-  encierresPorRodeo, controlarEncierres, proponerCalendario, esEncierre, RODEOS, type SesionPropuesta, type ProblemaEncierre,
+  encierresPorRodeo, controlarEncierres, proponerCalendario, esEncierre, RODEOS, expandirIatf, nombreDe, type SesionPropuesta, type ProblemaEncierre,
 } from "@/lib/productivo/plan-sanitario"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -177,17 +177,20 @@ export function TabPlanSanitario() {
     const todas = [...ocurrenciasDeCampania(tareas, actual - 1, hechos, registros, hoy, iatfs, desde), ...ocurrenciasDeCampania(tareas, actual, hechos, registros, hoy, iatfs, desde)]
     return avisos(todas, desde).filter(o => o.faltan >= -365)
   }, [tareas, hechos, registros, hoy, iatfs, desde])
-  const sesiones = useMemo(() => agruparEnSesiones(ocs), [ocs])
+  // La IATF se ve en sus 3 pasos (3 encierres)
+  const ocsVista = useMemo(() => expandirIatf(ocs, iatfs), [ocs, iatfs])
+  const sesiones = useMemo(() => agruparEnSesiones(ocsVista), [ocsVista])
   // 🐄 Encierres por rodeo (JMS 27/10): lo hecho en los últimos 4 meses + lo previsto en los próximos 12
   const encierres = useMemo(() => {
     const actual = campaniaDe(hoy)
-    const todas = [actual - 1, actual, actual + 1].flatMap(c => ocurrenciasDeCampania(tareas, c, hechos, registros, hoy, iatfs, desde))
+    const todas = expandirIatf([actual - 1, actual, actual + 1].flatMap(c => ocurrenciasDeCampania(tareas, c, hechos, registros, hoy, iatfs, desde)), iatfs)
     const hasta = sumarDias(hoy, 365), atras = sumarDias(hoy, -120)
     const futuras = todas.filter(o => esEncierre(o) && !o.fechaReal && o.estado !== "explicada" && o.esperada >= hoy && o.esperada <= hasta)
     const hechas = todas.filter(o => esEncierre(o) && o.fechaReal && o.fechaReal >= atras && o.fechaReal <= hoy)
-    const items = [...hechas.map(o => ({ fecha: o.fechaReal!, grupos: o.tarea.grupos })), ...futuras.map(o => ({ fecha: o.esperada, grupos: o.tarea.grupos }))]
+    const proto = (o: Ocurrencia) => o.tarea.codigo === "iatf" ? `iatf-${o.campania}` : undefined
+    const items = [...hechas.map(o => ({ fecha: o.fechaReal!, grupos: o.tarea.grupos, protocolo: proto(o) })), ...futuras.map(o => ({ fecha: o.esperada, grupos: o.tarea.grupos, protocolo: proto(o) }))]
     const porRodeo = encierresPorRodeo(items)
-    const proximos = encierresPorRodeo(futuras.map(o => ({ fecha: o.esperada, grupos: o.tarea.grupos })))
+    const proximos = encierresPorRodeo(futuras.map(o => ({ fecha: o.esperada, grupos: o.tarea.grupos })))  // acá la IATF cuenta 3
     return { problemas: controlarEncierres(porRodeo), proximos, propuesta: proponerCalendario(futuras, hoy) }
   }, [tareas, hechos, registros, hoy, iatfs, desde])
 
@@ -311,7 +314,7 @@ export function TabPlanSanitario() {
             {editable && encierres.propuesta.sesiones.length > 0 && (
               <Button size="sm" variant="outline" className="ml-auto" onClick={() => setVerPropuestaCal(true)}>Proponer calendario</Button>)}
           </div>
-          <p className="text-xs text-muted-foreground">Máximo 1 por mes y 2 en 3 meses (lo ideal: 2 en 4 meses). Próximos 12 meses: {RODEOS.filter(r => encierres.proximos[r]).map(r => `${r} ${encierres.proximos[r].length}`).join(" · ") || "nada previsto"}</p>
+          <p className="text-xs text-muted-foreground">Máximo 1 por mes y 2 en 3 meses (lo ideal: 2 en 4 meses). Los 3 encierres de la IATF son la excepción a propósito. Próximos 12 meses: {RODEOS.filter(r => encierres.proximos[r]).map(r => `${r} ${encierres.proximos[r].length}`).join(" · ") || "nada previsto"}</p>
         </CardHeader>
         <CardContent className="space-y-1">
           {encierres.problemas.length === 0 && <p className="text-sm text-green-800">✓ Ningún rodeo se encierra más de lo previsto.</p>}
@@ -384,7 +387,7 @@ export function TabPlanSanitario() {
                     {ses.ocurrencias.map(o => (
                       <button key={o.tarea.id} onClick={() => setDetalle(o)} title={ESTILO[o.estado].texto}
                         className={`rounded border bg-white/70 px-1.5 py-0.5 text-xs text-left ${o.tarea.obligatoria ? "" : "border-dashed opacity-70"}`}>
-                        {ESTILO[o.estado].icono}{o.conflicto != null ? "⚡" : ""} {o.tarea.nombre}
+                        {ESTILO[o.estado].icono}{o.conflicto != null ? "⚡" : ""} {nombreDe(o)}
                         {o.hasta && !o.fechaReal && <span className="opacity-70"> (hasta {fechaCorta(o.hasta).slice(0, 5)})</span>}
                       </button>))}
                   </div>
@@ -410,13 +413,13 @@ export function TabPlanSanitario() {
                 <tr key={g} className="border-t align-top">
                   <td className="sticky left-0 bg-background z-10 p-1 font-medium">{g}</td>
                   {MESES.map((_, i) => {
-                    const delMes = ocs.filter(o => o.tarea.grupos.includes(g) && ((parseInt((o.fechaReal ?? o.esperada).slice(5, 7)) + 5) % 12) === i
+                    const delMes = ocsVista.filter(o => o.tarea.grupos.includes(g) && ((parseInt((o.fechaReal ?? o.esperada).slice(5, 7)) + 5) % 12) === i
                       && campaniaDe(o.fechaReal ?? o.esperada) === campania)
                     // Una tarjeta por SESIÓN (lo del mismo día va junto). ⚠️ si el rodeo se encierra 2+ veces en el mes
                     // (opción A de JMS 27/10: cada tarjeta es un encierre; dos días seguidos cuentan como uno).
                     const tarjetas = agruparEnSesiones(delMes)
                     const encierresMes = RODEOS.includes(g)
-                      ? (encierresPorRodeo(tarjetas.filter(t => t.ocurrencias.some(esEncierre)).map(t => ({ fecha: t.fecha, grupos: [g] })))[g] ?? []).length : 0
+                      ? (encierresPorRodeo(tarjetas.filter(t => t.ocurrencias.some(esEncierre)).map(t => ({ fecha: t.fecha, grupos: [g], protocolo: t.ocurrencias.some(o => o.tarea.codigo === "iatf") ? "iatf" : undefined })))[g] ?? []).length : 0
                     const aviso = encierresMes >= 2
                     return (
                       <td key={i} className={`p-0.5 w-[8%] ${aviso ? "bg-red-50 outline outline-2 outline-red-400 -outline-offset-2 rounded" : ""}`}>
@@ -429,9 +432,9 @@ export function TabPlanSanitario() {
                                 {t.ocurrencias.length > 1 && <span className="ml-auto text-[10px] font-normal opacity-70">{t.ocurrencias.length} tareas</span>}
                               </div>
                               {t.ocurrencias.map(o => (
-                                <button key={o.tarea.id} onClick={() => setDetalle(o)} title={`${o.tarea.nombre} — ${ESTILO[o.estado].texto}`}
+                                <button key={o.tarea.id + (o.paso ?? "")} onClick={() => setDetalle(o)} title={`${nombreDe(o)} — ${ESTILO[o.estado].texto}`}
                                   className={`block w-full text-left hover:underline ${o.tarea.obligatoria ? "" : "opacity-60"}`}>
-                                  {t.ocurrencias.length > 1 ? `${ESTILO[o.estado].icono} ` : ""}{o.conflicto != null ? "⚡" : ""}{o.tarea.nombre}
+                                  {t.ocurrencias.length > 1 ? `${ESTILO[o.estado].icono} ` : ""}{o.conflicto != null ? "⚡" : ""}{nombreDe(o)}
                                 </button>
                               ))}
                             </div>
@@ -542,7 +545,7 @@ function DialogoOcurrencia({ o, ordenes, editable, aprueba, onCerrar, onGuardarR
     <Dialog open onOpenChange={v => !v && onCerrar()}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">{ESTILO[o.estado].icono} {o.tarea.nombre}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">{ESTILO[o.estado].icono} {nombreDe(o)}</DialogTitle>
           <DialogDescription>{o.tarea.grupos.join(", ")} · campaña {nombreCampania(o.campania)} · {ESTILO[o.estado].texto}</DialogDescription>
         </DialogHeader>
         <div className="space-y-2 text-sm">
@@ -643,8 +646,8 @@ function DialogoPropuestaCalendario({ prop, aprueba, onCerrar, onAplicar }: {
               </div>
               <ul className="text-xs pt-0.5">
                 {s.ocurrencias.map(o => (
-                  <li key={o.tarea.id + o.campania}>
-                    {s.fuera.includes(o) ? "⚠️" : o.esperada !== s.fecha ? "↔" : "·"} {o.tarea.nombre}
+                  <li key={o.tarea.id + o.campania + (o.paso ?? "")}>
+                    {s.fuera.includes(o) ? "⚠️" : o.esperada !== s.fecha ? "↔" : "·"} {nombreDe(o)}
                     {o.esperada !== s.fecha && <span className="text-muted-foreground"> (era {fechaCorta(o.esperada).slice(0, 5)}{s.fuera.includes(o) ? ", sale de su margen" : ""})</span>}
                   </li>))}
               </ul>

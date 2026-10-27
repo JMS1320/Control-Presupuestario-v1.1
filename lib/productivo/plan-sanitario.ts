@@ -89,7 +89,12 @@ export type Ocurrencia = {
   registro: RegistroPlan | null
   /** días hasta la esperada (negativo = ya pasó) */
   faltan: number
+  /** paso de un protocolo (la IATF son 3 encierres): «colocación de dispositivos», «retiro», «inseminación» */
+  paso?: string
 }
+
+/** El nombre a mostrar: la tarea y, si es un paso de la IATF, cuál. */
+export const nombreDe = (o: Ocurrencia) => o.paso ? `${o.tarea.nombre} · ${o.paso}` : o.tarea.nombre
 
 export const AVISO_DIAS = 30
 /** cuánto se aleja una orden del óptimo y todavía se la reconoce como «la de esta tarea» */
@@ -136,7 +141,25 @@ export function cumpleClaves(h: Hecho, claves: string[]): boolean {
  * por claves: tiene su propia carga). Se recorren las tareas en orden de cadena, así una tarea que
  * cuelga de otra ve la fecha REAL de ésa.
  */
-export type IatfCargada = { fecha_ia: string; fecha_entore: string; orden_ia_id: string | null; orden_entore_id: string | null }
+export type IatfCargada = { fecha_ia: string; fecha_entore: string; orden_ia_id: string | null; orden_entore_id: string | null; fecha_dispositivos?: string; fecha_retiro?: string }
+
+/**
+ * LA IATF SON 3 ENCIERRES (JMS 27/10: «iatf… eran 3 encierres… ése es el único ejemplo de excepción que se hace a
+ * propósito por temas de productividad»). La tarea del plan es una (la IA, con su fecha óptima y su margen), pero en
+ * el calendario y en la cuenta de encierres se abre en sus 3 pasos: dispositivos (IA−10), retiro (IA−2) e IA.
+ */
+export function expandirIatf(ocs: Ocurrencia[], iatfs: Record<number, IatfCargada> = {}): Ocurrencia[] {
+  return ocs.flatMap(o => {
+    if (o.tarea.codigo !== "iatf") return [o]
+    const real = iatfs[o.campania]
+    const ia = o.fechaReal ?? o.esperada
+    const f = fechasIatf(ia)
+    const copia = (paso: string, fecha: string): Ocurrencia => ({
+      ...o, paso, esperada: fecha, fechaReal: o.fechaReal ? fecha : null, faltan: o.faltan + difDias(fecha, o.esperada), desvio: null,
+    })
+    return [copia("colocación de dispositivos", real?.fecha_dispositivos ?? f.dispositivos), copia("retiro de dispositivos", real?.fecha_retiro ?? f.retiro), { ...o, paso: "inseminación" }]
+  })
+}
 
 export function ocurrenciasDeCampania(
   tareas: TareaPlan[], campania: number, hechos: Hecho[], registros: RegistroPlan[],
@@ -373,32 +396,56 @@ export function esEncierre(o: Ocurrencia): boolean {
     && o.tarea.grupos.some(g => RODEOS.includes(g))
 }
 
-/** Días en que se encierra cada rodeo. Dos días seguidos cuentan como UN encierre (la hacienda en 2 días). */
-export function encierresPorRodeo(items: { fecha: string; grupos: string[] }[]): Record<string, string[]> {
-  const m: Record<string, string[]> = {}
+/** Un encierre (o un protocolo de varios días, como la IATF): de `inicio` a `fin`. */
+export type Encierre = { inicio: string; fin: string; protocolo: boolean }
+type ItemEncierre = { fecha: string; grupos: string[]; protocolo?: string }
+
+/**
+ * Los encierres de cada rodeo. Dos días seguidos cuentan como UNO (la hacienda en 2 días). Los pasos de un mismo
+ * protocolo (la IATF: dispositivos, retiro, IA) son UN bloque para la regla: es la excepción hecha a propósito, así
+ * que entre ellos no avisa — pero lo que caiga cerca del bloque, sí.
+ */
+export function encierresPorRodeo(items: ItemEncierre[]): Record<string, Encierre[]> {
+  const m: Record<string, Encierre[]> = {}
   for (const r of RODEOS) {
-    const fechas = [...new Set(items.filter(i => i.grupos.includes(r)).map(i => i.fecha))].sort()
-    const unidas: string[] = []
-    for (const f of fechas) if (!unidas.length || difDias(f, unidas.at(-1)!) > ENCIERRE.juntarDias) unidas.push(f)
-    if (unidas.length) m[r] = unidas
+    const del = items.filter(i => i.grupos.includes(r))
+    const bloques: Encierre[] = []
+    const protos = new Map<string, string[]>()
+    for (const i of del) {
+      if (i.protocolo) protos.set(i.protocolo, [...(protos.get(i.protocolo) ?? []), i.fecha])
+      else bloques.push({ inicio: i.fecha, fin: i.fecha, protocolo: false })
+    }
+    for (const fs of protos.values()) { const o = [...fs].sort(); bloques.push({ inicio: o[0], fin: o.at(-1)!, protocolo: true }) }
+    bloques.sort((x, y) => x.inicio.localeCompare(y.inicio))
+    const unidos: Encierre[] = []
+    for (const e of bloques) {
+      const u = unidos.at(-1)
+      if (u && difDias(e.inicio, u.fin) <= ENCIERRE.juntarDias) { if (e.fin > u.fin) u.fin = e.fin; u.protocolo = u.protocolo || e.protocolo }
+      else unidos.push({ ...e })
+    }
+    if (unidos.length) m[r] = unidos
   }
   return m
 }
 
 export type ProblemaEncierre = { rodeo: string; fechas: string[]; grave: boolean; texto: string }
 
-/** El control: dónde se rompe la regla. `grave` = límite duro; el resto, lo ideal. */
-export function controlarEncierres(porRodeo: Record<string, string[]>): ProblemaEncierre[] {
+/** El control: dónde se rompe la regla. `grave` = límite duro; el resto, lo ideal. Las distancias se miden
+ *  desde el FIN del encierre anterior (para un protocolo, desde su último paso). */
+export function controlarEncierres(porRodeo: Record<string, Encierre[]>): ProblemaEncierre[] {
   const out: ProblemaEncierre[] = []
+  const cf = (f: string) => fechaCorta(f).slice(0, 5)
   for (const [rodeo, f] of Object.entries(porRodeo)) {
     for (let i = 1; i < f.length; i++) {
-      const d = difDias(f[i], f[i - 1])
-      if (d < ENCIERRE.minDias) out.push({ rodeo, fechas: [f[i - 1], f[i]], grave: true, texto: `${rodeo}: dos encierres en ${d} días (${fechaCorta(f[i - 1]).slice(0, 5)} y ${fechaCorta(f[i]).slice(0, 5)}) — máximo 1 por mes` })
+      const d = difDias(f[i].inicio, f[i - 1].fin)
+      if (d < ENCIERRE.minDias) out.push({ rodeo, fechas: [f[i - 1].inicio, f[i].inicio], grave: true,
+        texto: `${rodeo}: dos encierres en ${d} días (${cf(f[i - 1].protocolo ? f[i - 1].fin : f[i - 1].inicio)}${f[i - 1].protocolo ? " fin de la IATF" : ""} y ${cf(f[i].inicio)}${f[i].protocolo ? " inicio de la IATF" : ""}) — máximo 1 por mes` })
     }
     for (let i = 0; i + ENCIERRE.maxDura < f.length; i++) {
-      const d = difDias(f[i + ENCIERRE.maxDura], f[i])
-      if (d < ENCIERRE.ventanaDura) out.push({ rodeo, fechas: f.slice(i, i + ENCIERRE.maxDura + 1), grave: true, texto: `${rodeo}: ${ENCIERRE.maxDura + 1} encierres en ${d} días — nunca más de 2 en 3 meses` })
-      else if (d < ENCIERRE.ventanaIdeal) out.push({ rodeo, fechas: f.slice(i, i + ENCIERRE.maxDura + 1), grave: false, texto: `${rodeo}: ${ENCIERRE.maxDura + 1} encierres en ${d} días — lo ideal es 2 en 4 meses` })
+      const d = difDias(f[i + ENCIERRE.maxDura].inicio, f[i].fin)
+      const fechas = f.slice(i, i + ENCIERRE.maxDura + 1).map(e => e.inicio)
+      if (d < ENCIERRE.ventanaDura) out.push({ rodeo, fechas, grave: true, texto: `${rodeo}: ${ENCIERRE.maxDura + 1} encierres en ${d} días — nunca más de 2 en 3 meses` })
+      else if (d < ENCIERRE.ventanaIdeal) out.push({ rodeo, fechas, grave: false, texto: `${rodeo}: ${ENCIERRE.maxDura + 1} encierres en ${d} días — lo ideal es 2 en 4 meses` })
     }
   }
   return out.sort((a, b) => Number(b.grave) - Number(a.grave) || a.fechas[0].localeCompare(b.fechas[0]))
@@ -414,6 +461,8 @@ export type SesionPropuesta = {
   fuera: Ocurrencia[]
   /** entra ≥70% de la hacienda: se puede hacer en 2 días seguidos */
   dosDias: boolean
+  /** es un paso de la IATF (protocolo: la excepción a propósito) */
+  protocolo?: string
 }
 
 type Grupo = { ocs: Ocurrencia[]; desde: string; hasta: string; fija: string | null }
@@ -433,10 +482,12 @@ const fechaDe = (g: Grupo): string => {
  * sesiones estirando hasta 30 días — lo que sale del margen de una tarea queda marcado (pide explicación).
  * Es una BASE: el usuario la acepta, la cambia o la descarta.
  */
+const protocoloDe = (o: Ocurrencia) => o.tarea.codigo === "iatf" ? `iatf-${o.campania}` : undefined
+
 export function proponerCalendario(ocs: Ocurrencia[], hoy: string): { sesiones: SesionPropuesta[]; problemas: ProblemaEncierre[]; antes: ProblemaEncierre[] } {
   const pend = ocs.filter(o => esEncierre(o) && !o.fechaReal && o.estado !== "explicada" && o.esperada >= hoy)
     .sort((a, b) => a.esperada.localeCompare(b.esperada))
-  const antes = controlarEncierres(encierresPorRodeo(pend.map(o => ({ fecha: o.esperada, grupos: o.tarea.grupos }))))
+  const antes = controlarEncierres(encierresPorRodeo(pend.map(o => ({ fecha: o.esperada, grupos: o.tarea.grupos, protocolo: protocoloDe(o) }))))
 
   // 1 · Juntar lo que entra en el margen de todos
   let grupos: Grupo[] = []
@@ -455,7 +506,7 @@ export function proponerCalendario(ocs: Ocurrencia[], hoy: string): { sesiones: 
   // 2 · Lo que todavía rompe la regla: juntar estirando (hasta 30 días de holgura)
   const ESTIRAR = 30
   for (let vuelta = 0; vuelta < 20; vuelta++) {
-    const items = grupos.map(g => ({ fecha: fechaDe(g), grupos: g.ocs.flatMap(o => o.tarea.grupos) }))
+    const items = grupos.map(g => ({ fecha: fechaDe(g), grupos: g.ocs.flatMap(o => o.tarea.grupos), protocolo: g.ocs.map(protocoloDe).find(Boolean) }))
     const graves = controlarEncierres(encierresPorRodeo(items)).filter(p => p.grave)
     let unido = false
     for (const p of graves) {
@@ -493,8 +544,9 @@ export function proponerCalendario(ocs: Ocurrencia[], hoy: string): { sesiones: 
       fecha, ocurrencias: g.ocs.sort((a, b) => a.tarea.orden - b.tarea.orden), rodeos, fija: !!g.fija,
       fuera: g.ocs.filter(o => !o.tarea.es_fija && moverPideExplicacion(o, fecha)),
       dosDias: rodeos.length >= Math.ceil(RODEOS.length * ENCIERRE.porcentajeDosDias),
+      protocolo: g.ocs.map(protocoloDe).find(Boolean),
     }
   }).sort((a, b) => a.fecha.localeCompare(b.fecha))
-  const problemas = controlarEncierres(encierresPorRodeo(sesiones.map(s => ({ fecha: s.fecha, grupos: s.rodeos }))))
+  const problemas = controlarEncierres(encierresPorRodeo(sesiones.map(s => ({ fecha: s.fecha, grupos: s.rodeos, protocolo: s.protocolo }))))
   return { sesiones, problemas, antes }
 }

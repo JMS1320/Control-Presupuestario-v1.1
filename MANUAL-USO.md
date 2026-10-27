@@ -634,6 +634,8 @@ solapa junta las dos cosas y avisa.
    una para ver de dónde sale la fecha y qué hacer.
 2. **🐄 Encierres por rodeo** — cuántas veces se va a encerrar cada rodeo en los próximos 12 meses y dónde se rompe la regla:
    nunca más de **1 por mes** ni **2 en 3 meses** (🔴); lo ideal es **2 en 4 meses** (🟠). Dos días seguidos cuentan como uno.
+   La **IATF son 3 encierres** (dispositivos, retiro, IA) y en el calendario se ven como 3 tarjetas: es la única excepción a
+   propósito, así que entre ellos no avisa; cualquier otro encierre cerca, sí.
    **Proponer calendario** junta las tareas para que cada rodeo se encierre lo menos posible, todos el mismo día; muestra lo que
    cambia (↔) y lo que sale de su margen (⚠️, pide explicación). **Aplicar** lo programa (o **Proponer**, si no aprobás).
 3. **✍️ Propuestas para aceptar** — lo que propuso quien no aprueba (ej.: Enrique). **Aceptar** lo aplica; **Rechazar** deja el
