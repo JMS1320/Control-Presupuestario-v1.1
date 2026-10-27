@@ -4669,12 +4669,13 @@ export function correrCasos(): Resultado[] {
         },
       } as unknown as LibroDiarioT
       const hojaRM = hojaResumenMensual(libroRM)
-      const filasMes = hojaRM.filter(x => typeof x[1] === "number")
-      const dic = hojaRM.find(x => String(x[0]).toLowerCase().includes("diciembre"))
+      const valRM = (x: unknown) => (x && typeof x === "object" && "v" in (x as object) ? (x as { v: unknown }).v : x)
+      const filasMes = hojaRM.filter(x => typeof valRM(x[1]) === "number" && valRM(x[0]) !== "TOTAL")
+      const dic = hojaRM.find(x => String(valRM(x[0])).toLowerCase().includes("diciembre"))
       const ctlRM = hojaRM.find(x => String(x[0]).startsWith("Suma de los 12 meses"))
-      const vRM = `${filasMes.length} meses · dic ${dic?.[7]} (${(dic?.[6] as { v?: number } | undefined)?.v}) · control ${(ctlRM?.[2] as { v?: number })?.v}/${(ctlRM?.[4] as { v?: number })?.v} ${ctlRM?.[7]}`
+      const vRM = `${filasMes.length} meses · dic ${valRM(dic?.[8])} (${valRM(dic?.[7])}) · ARCA ${valRM(dic?.[5])} comprob. · rojo ${(dic?.[0] as { s?: unknown } | undefined)?.s ? "sí" : "no"} · control ${(ctlRM?.[2] as { v?: number })?.v}/${(ctlRM?.[4] as { v?: number })?.v} ${ctlRM?.[8]}`
       chequear("Balance · libro diario", "📅 Resumen 12 meses: los 12 subdiarios (vacíos en 0), diciembre NO COINCIDE con ARCA por 580,50, y la suma de los 12 da el total",
-        "12 meses · dic NO COINCIDE (580.5) · control 0/0 cuadra", vRM, vRM === "12 meses · dic NO COINCIDE (580.5) · control 0/0 cuadra", "A-FEAT-1388")
+        "12 meses · dic NO COINCIDE (580.5) · ARCA 0 comprob. · rojo sí · control 0/0 cuadra", vRM, vRM === "12 meses · dic NO COINCIDE (580.5) · ARCA 0 comprob. · rojo sí · control 0/0 cuadra", "A-FEAT-1388")
 
       // 🛑 Los comprobantes que no cuadran, MARCADOS en el detalle y en la subplanilla (usuario 27/10: «que quede
       //    marcado el error en subplanilla y detalle»). Caso real: el tique de Pan American del 12/02, sin el

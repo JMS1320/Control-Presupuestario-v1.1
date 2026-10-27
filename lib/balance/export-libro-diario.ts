@@ -590,7 +590,7 @@ export function hojaResumenMensual(libro: LibroDiario): unknown[][] {
   f.push(["Por subdiario (el mes en que entró cada comprobante), como el resto del libro diario."])
   f.push([])
   f.push(["Subdiario", "Compras: comprobantes", "Compras: total", "Ventas: comprobantes", "Ventas: total",
-    "Compras presentadas a ARCA", "Diferencia con ARCA", "Control"])
+    "ARCA: comprobantes", "ARCA: total presentado", "Diferencia compras − ARCA", "Control"])
   const clave = (s: { anio: number; mes: number }) => `${s.anio}-${String(s.mes).padStart(2, "0")}`
   const porSub = (xs: AsientoLibroDiario[], k: string) => xs.filter(a => a.subdiario === k)
   const presentado = new Map((libro.controles.contraPresentado ?? []).map(p => [p.subdiario, p]))
@@ -604,12 +604,15 @@ export function hojaResumenMensual(libro: LibroDiario): unknown[][] {
     suma.cc += c.length; suma.tc += tc; suma.cv += v.length; suma.tv += tv
     const p = presentado.get(k)
     const n = f.length + 1
-    f.push([
+    const fila: unknown[] = [
       nombreSubdiario(s), c.length, tc, v.length, tv,
+      p?.presentado ? p.presentado.comprobantes : "sin dato",
       p?.presentado ? money(p.presentado.total) : "sin dato",
-      p?.presentado ? conFormula(`C${n}-F${n}`, money(tc - p.presentado.total)) : "",
+      p?.presentado ? conFormula(`C${n}-G${n}`, money(tc - p.presentado.total)) : "",
       !p?.presentado ? "sin dato de ARCA" : p.ok ? "coincide" : "NO COINCIDE",
-    ])
+    ]
+    // 🛑 El mes que no coincide con ARCA, en rojo (como diciembre): se ve sin leer la columna Control.
+    f.push(p?.presentado && !p.ok ? conEstilo(fila, ESTILO_ERROR) : fila)
   }
   const nU = f.length
   const nT = f.length + 1
@@ -624,7 +627,7 @@ export function hojaResumenMensual(libro: LibroDiario): unknown[][] {
   const dV = money(suma.tv - libro.controles.ventas.totalGeneral)
   const nD = f.length + 1
   f.push(["Suma de los 12 meses − total (tiene que dar 0)", "", conFormula(`C${nT}-C${nD - 1}`, dC), "", conFormula(`E${nT}-E${nD - 1}`, dV),
-    "", "", Math.abs(dC) < 0.01 && Math.abs(dV) < 0.01 ? "cuadra" : "NO CUADRA"])
+    "", "", "", Math.abs(dC) < 0.01 && Math.abs(dV) < 0.01 ? "cuadra" : "NO CUADRA"])
   return f
 }
 
@@ -634,8 +637,9 @@ const COLS_RESUMEN_MENSUAL: Columna[] = [
   { ancho: 18, z: MONEDA },          // Compras: total
   { ancho: 12, z: ENTERO },          // Ventas: comprobantes
   { ancho: 18, z: MONEDA },          // Ventas: total
-  { ancho: 20, z: MONEDA },          // Presentado a ARCA
-  { ancho: 16, z: MONEDA },          // Diferencia
+  { ancho: 12, z: ENTERO },          // ARCA: comprobantes
+  { ancho: 20, z: MONEDA },          // ARCA: total presentado
+  { ancho: 18, z: MONEDA },          // Diferencia compras − ARCA
   { ancho: 18 },                     // Control
 ]
 
