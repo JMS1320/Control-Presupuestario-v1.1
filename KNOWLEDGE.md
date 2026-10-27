@@ -2666,6 +2666,16 @@ mail trae varias boletas, numerarlas por su posición hacía que el nombre **dep
 la tabla**. Las dos cosas juntas: la boleta de la cuota siguiente se salteaba como *«ya estaba»*, y
 un reordenamiento de ARBA bastaba para re-bajar todo con otro nombre. → `A-BUG-120`.
 
+## `CONTADOR_TOKEN` — cómo se autentica el GAS que trae la respuesta del contador `#gas #mail #env #contador #2026-10-27`
+
+El GAS `LeerRespuestasContador.gs` (mismo proyecto que el de los borradores) no tiene sesión de la app: manda el zip del
+libro IVA a `POST /api/contador/ddjj` con el header **`x-token-contador`**. La app lo acepta sólo si es igual a la env
+**`CONTADOR_TOKEN`**. El mismo valor va en **dos lugares**: la variable en Vercel (y `.env.local` para local) y la
+propiedad del script `CONTADOR_TOKEN` en Apps Script, junto con `APP_URL` (la app sin barra final). Si no coinciden, la
+ruta contesta 401 y el GAS **no** etiqueta el hilo (lo reintenta en la próxima hora). Cambiar la variable en Vercel pide
+redesplegar. ⚠️ `APP_URL` tiene que apuntar a una app que tenga la ruta: mientras no se publique a `main`, la vista
+previa de `desarrollo`.
+
 ## `GAS_MAILS_PAGO_URL` — la variable del disparo de borradores, y su escalera de diagnóstico `#gas #mail #env #vercel #2026-09-28`
 
 **Qué es:** la URL del Apps Script de *mails de pago* desplegado como Web App (`…/exec`). La lee

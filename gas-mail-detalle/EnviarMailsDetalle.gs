@@ -48,6 +48,13 @@ function prepararBorradores(soloId) {
         var adjuntos = [];
         if (m.detalle_pdf && m.adjuntar_detalle !== false) adjuntos.push(base64ToPdfBlob_(m.detalle_pdf, 'DetallePago.pdf'));
         if (m.retencion_pdf && m.adjuntar_retencion) adjuntos.push(base64ToPdfBlob_(m.retencion_pdf, 'CertificadoRetencion.pdf'));
+        // 📨 2026-10-27 (A-AUTO-09): adjuntos genéricos [{nombre, mime, base64}] — el mail del subdiario al contador
+        // lleva el PDF y el Excel del mes con su nombre real. Los detalles de pago no lo usan (siguen como antes).
+        if (m.adjuntos && m.adjuntos.length) {
+          m.adjuntos.forEach(function (a) {
+            adjuntos.push(Utilities.newBlob(Utilities.base64Decode(a.base64), a.mime || 'application/octet-stream', a.nombre));
+          });
+        }
 
         var draft = GmailApp.createDraft(m.email_destino, m.asunto, m.cuerpo, { attachments: adjuntos });
         // Cuando esté validado, reemplazar la línea de arriba por envío directo:
