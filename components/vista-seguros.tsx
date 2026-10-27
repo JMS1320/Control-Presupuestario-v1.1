@@ -332,7 +332,8 @@ function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, desde, polizas,
                 const mal = Math.abs(x.diferencia) > 0.01
                 const id = idDe(x.poliza)
                 const etiqueta = x.motivo === "reintegro-sin-facturar" ? "Reintegros sin facturar"
-                  : x.motivo === "debito-sin-poliza" ? "Débitos sin póliza" : null
+                  : x.motivo === "debito-sin-poliza" ? "Débitos sin póliza"
+                  : x.motivo === "poliza-anterior-sin-cargar" ? `Póliza anterior ${x.poliza} (sin cargar)` : null
                 return (
                   <TableRow key={(x.poliza ?? "") + (x.motivo ?? "") + (x.ejercicioOrigen ?? "") + i} className={x.ejercicioOrigen ? "bg-amber-50/50" : mal ? "bg-red-50/60" : ""}>
                     <TableCell>
@@ -357,7 +358,7 @@ function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, desde, polizas,
                           Facturado {$(x.explicacion.facturado)} − NC {$(-x.explicacion.notasCredito)} = neto {$(x.explicacion.neto)} · pagado {$(x.explicacion.pagado)} · a nuestro favor {$(x.explicacion.pagado - x.explicacion.neto)}
                         </span>
                       )}
-                      {mal && x.casos.length > 0 && x.motivo !== "reintegro-sin-facturar" && x.motivo !== "debito-sin-poliza" && (
+                      {mal && x.casos.length > 0 && x.motivo !== "reintegro-sin-facturar" && x.motivo !== "debito-sin-poliza" && x.motivo !== "poliza-anterior-sin-cargar" && (
                         <span className="block text-muted-foreground">
                           {x.casos.map(c => `${fecha(c.fecha)}: se esperaba ${$(c.esperado)}, ${c.debitado == null ? "sin débito" : `se debitó ${$(c.debitado)}`}`).join(" · ")}
                         </span>
@@ -409,8 +410,8 @@ function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, desde, polizas,
         )}
         {r.anteriores.cantidad > 0 && (
           <p className="text-xs text-muted-foreground">
-            No se cuentan {r.anteriores.cantidad} débito(s) por {$(r.anteriores.total)} de pólizas anteriores al ejercicio
-            ({r.anteriores.polizas.join(", ")}): son del balance anterior.
+            Incluye {r.anteriores.cantidad} débito(s) por {$(r.anteriores.total)} de pólizas anteriores que no están cargadas
+            ({r.anteriores.polizas.join(", ")}): van arriba como «póliza anterior sin cargar», con saldo de inicio 0.
           </p>
         )}
         <p className="text-xs text-muted-foreground">🚩 en cada diferencia: pasársela a alguien (por ejemplo, Ulises) con un mensaje. Le llega a su campanita.</p>

@@ -18,10 +18,14 @@
  *   Por eso cuotas + NC de un ejercicio no tienen que dar lo esperado: el saldo a favor pasa al siguiente.
  * - La diferencia es sólo de lo VENCIDO a la fecha del último extracto.
  * - Los reintegros del banco que ninguna NC explica van como un renglón más: «reintegros sin facturar».
- * - Los débitos de pólizas ANTERIORES al ejercicio (la flota anterior, la AP anterior) no se cuentan: son del
- *   balance anterior (JMS 27/10: «anterior a julio 25 no hace falta poner nada»). Se reconocen porque caen
- *   antes de que empiece una póliza cargada cuya anterior NO está cargada. Se informan en una línea, no se
- *   esconden.
+ * - Los débitos de una póliza ANTERIOR que no está cargada (la flota 32436252, la AP 9536537) SÍ se cuentan:
+ *   van a la cuenta corriente y a «a reclamar» como «póliza anterior sin cargar», con saldo de inicio 0.
+ *   Se reconocen porque caen antes de que empiece una póliza cargada cuya anterior NO está cargada.
+ *   ⚠️ Cambió 2026-10-27: hasta acá se descartaban como «del balance anterior», y el papel 14 perdía
+ *   $720.690,98 pagados DENTRO del ejercicio. JMS: «esto va a seguros, sólo que no fueron procesadas… hay que
+ *   incluirlas en el cálculo para que se modifique sólo el resultado». Su frase anterior («anterior a julio 25
+ *   no hace falta poner nada») habla de lo anterior al 1/7/2025, que ya no está en el extracto. Si esa deuda
+ *   venía del balance anterior, se compensa cargando la deuda al 30/06 (A-FEAT-1386) o el PDF de la póliza.
  */
 import type { CuotaControlada, CuotaEsperada, MovimientoControlado } from "./control-debitos"
 
@@ -32,7 +36,7 @@ export interface PolizaParaResumen {
   vigencia_desde: string | null
 }
 
-export type MotivoDiferencia = "baja-sin-nc" | "falta-endoso" | "reintegro-sin-facturar" | "nc-sin-aplicar" | "debito-sin-poliza"
+export type MotivoDiferencia = "baja-sin-nc" | "falta-endoso" | "reintegro-sin-facturar" | "nc-sin-aplicar" | "debito-sin-poliza" | "poliza-anterior-sin-cargar"
 
 export interface RenglonResumen {
   /** null en el renglón de reintegros. */
@@ -163,7 +167,8 @@ export function resumenPorEjercicio(
     const cc = cuentaCorriente(emitidas, cuotas, movimientos, polizas, desdeFecha, hasta)
     for (const [pol, saldo] of cc.porPoliza) {
       const suyas = emitidas.filter(c => c.poliza === pol)
-      if (saldo >= -TOL || suyas.some(c => c.vencimiento > hasta)) continue
+      // Una póliza anterior sin cargar no tiene cuotas emitidas: no es «NC sin aplicar», ya tiene su renglón.
+      if (!suyas.length || saldo >= -TOL || suyas.some(c => c.vencimiento > hasta)) continue
       const ultima = suyas.map(c => c.vencimiento).sort().at(-1)!
       // Lo que ya explican los renglones de esa póliza (bajas, endosos) no se cuenta dos veces.
       const yaExplicado = [...porEj.values()].flatMap(m => [...m.values()]).filter(r => r.poliza === pol)
@@ -209,6 +214,16 @@ export function resumenPorEjercicio(
         casos: s.sinPoliza.map(m => ({ fecha: m.fecha, esperado: 0, debitado: m.debitos })),
       })
     }
+    // Los débitos de una póliza anterior sin cargar: un renglón por póliza (se pagó sin el papel en la app).
+    for (const pol of [...new Set((s?.anteriores ?? []).map(x => x.poliza))].sort()) {
+      const suyos = s!.anteriores.filter(x => x.poliza === pol).map(x => x.m)
+      const total = r2(suyos.reduce((t, m) => t + m.debitos - m.creditos, 0))
+      renglones.push({
+        poliza: pol, seccion: null, cuotas: 0, notasCredito: 0, esperadoVencido: 0, pagado: total, aVencer: 0,
+        diferencia: -total, motivo: "poliza-anterior-sin-cargar",
+        casos: suyos.map(m => ({ fecha: m.fecha, esperado: 0, debitado: m.debitos })),
+      })
+    }
     for (const x of ncSinAplicar.filter(x => x.ejercicio === ej)) renglones.push({
       poliza: x.poliza, seccion: seccion.get(x.poliza) ?? null, cuotas: 0, notasCredito: 0, esperadoVencido: 0, pagado: 0, aVencer: 0,
       diferencia: x.saldo, motivo: "nc-sin-aplicar", casos: [], explicacion: x.explicacion,
@@ -246,6 +261,7 @@ export const CATEGORIA_MOTIVO: Record<MotivoDiferencia, string> = {
   "falta-endoso": "Endosos pendientes",
   "nc-sin-aplicar": "Saldo a favor pendiente",
   "debito-sin-poliza": "Pólizas sin cargar",
+  "poliza-anterior-sin-cargar": "Pólizas sin cargar",
 }
 
 export const TEXTO_MOTIVO: Record<MotivoDiferencia, string> = {
@@ -254,6 +270,7 @@ export const TEXTO_MOTIVO: Record<MotivoDiferencia, string> = {
   "reintegro-sin-facturar": "NC pendiente: la aseguradora nos reintegró plata sin nota de crédito — pedirla",
   "nc-sin-aplicar": "Saldo a favor pendiente: tenemos las NC, pero superaron las cuotas y el sobrante no se devolvió ni se aplicó — pedir el reintegro o que lo descuenten de la póliza nueva",
   "debito-sin-poliza": "Póliza sin cargar: se pagó algo que ninguna póliza cargada explica — cargarla",
+  "poliza-anterior-sin-cargar": "Póliza anterior sin cargar: se pagaron cuotas de una póliza cuyo PDF no está en la app — cargarla (o la deuda al 30/06 si venía del balance anterior)",
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -277,7 +294,7 @@ export const TEXTO_MOTIVO: Record<MotivoDiferencia, string> = {
 // Saldo inicial: una póliza que viene de antes del primer extracto (Vida 644709) trae NC que se descontaron de
 // cuotas de este ejercicio; ese saldo a favor sale de lo que dice el consolidado de la aseguradora (cuotas en
 // saldo 0) y entra como primer renglón, para que la cuenta no arranque falsamente en contra.
-// Los débitos de pólizas anteriores al ejercicio (balance anterior) no entran.
+// Los débitos de una póliza anterior sin cargar SÍ entran, con saldo de inicio 0 (⚠️ cambió 2026-10-27: antes no).
 // ════════════════════════════════════════════════════════════════════════════════════════════════
 
 export type TipoLinea = "saldo-inicial" | "cuota" | "nc" | "debito" | "reintegro"
@@ -336,10 +353,10 @@ export function cuentaCorriente(
   }
   for (const m of movimientos) {
     if (!enVentana(m.fecha)) continue
-    if (m.resultado === "sin-poliza" && polizaAnteriorDe(m.fecha, polizas)) continue // balance anterior
+    const anterior = m.resultado === "sin-poliza" ? polizaAnteriorDe(m.fecha, polizas) : null
     if (m.debitos > 0) lineas.push({
-      fecha: m.fecha, poliza: m.poliza, tipo: "debito", movimientoId: m.id, estado: m.estado ?? null,
-      concepto: m.poliza ? "Débito del banco" : "Débito del banco SIN póliza cargada",
+      fecha: m.fecha, poliza: m.poliza ?? anterior, tipo: "debito", movimientoId: m.id, estado: m.estado ?? null,
+      concepto: m.poliza ? "Débito del banco" : anterior ? "Débito del banco — póliza anterior SIN cargar (falta su PDF)" : "Débito del banco SIN póliza cargada",
       cargo: 0, credito: m.debitos,
     })
     if (m.creditos > 0) lineas.push({

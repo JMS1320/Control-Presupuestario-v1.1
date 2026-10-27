@@ -8369,9 +8369,15 @@ export function correrCasos(): Resultado[] {
     chequear("Pólizas", "Sincronizar: crea la cuota que falta, corrige la pendiente que cambió (endoso), deja en 0 la compensada, desactiva la que sobra y NO toca la conciliada (avisa si no casa)",
       "crear 2026-09-13 · actualizar q3:20000,q4:0 · desactivar q5 · avisos 1", vS,
       vS === "crear 2026-09-13 · actualizar q3:20000,q4:0 · desactivar q5 · avisos 1", "A-FEAT-1385")
-    chequear("Pólizas", "Cuenta corriente: el débito de una póliza anterior al ejercicio no entra",
-      "sin el débito de 12.902", cc.lineas.some(l => l.credito === 12902) ? "entró el de 12.902" : "sin el débito de 12.902",
-      !cc.lineas.some(l => l.credito === 12902), "A-FEAT-1383")
+    // ⚠️ Cambió 2026-10-27 (JMS: «esto va a seguros, sólo que no fueron procesadas… incluirlas en el cálculo para que se
+    // modifique sólo el resultado»): el débito de una póliza anterior SIN cargar ENTRA, con saldo de inicio 0, y va a
+    // «a reclamar» como «póliza anterior sin cargar». Hasta acá este caso afirmaba lo contrario.
+    const lAnt = cc.lineas.find(l => l.credito === 12902)
+    const rAnt = e25?.renglones.find(x => x.motivo === "poliza-anterior-sin-cargar")
+    chequear("Pólizas", "Cuenta corriente: el débito de una póliza anterior SIN cargar entra (saldo de inicio 0) y va a «a reclamar»",
+      "entra 9536537 · a reclamar 9536537 −12902",
+      `${lAnt ? "entra " + lAnt.poliza : "no entra"} · a reclamar ${rAnt ? rAnt.poliza + " " + rAnt.diferencia : "—"}`,
+      lAnt?.poliza === "9536537" && rAnt?.poliza === "9536537" && rAnt.diferencia === -12902, "A-FEAT-1385")
 
     // Los renglones del PDF: se agrupan por altura, de izquierda a derecha.
     const renglones = armarRenglones([
