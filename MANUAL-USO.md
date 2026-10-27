@@ -3513,16 +3513,15 @@ Tocando el número de póliza se abre su detalle más abajo, con los PDF. En cad
 sirve para **pasársela a alguien** (por ejemplo, Ulises) con un mensaje: le llega a su campanita. Los débitos de
 pólizas anteriores al ejercicio (del balance anterior) no se cuentan; se informan en una línea gris.
 
-**El cuadro de arriba — «¿Tenemos todas las pólizas?»** cruza las cuotas de las pólizas procesadas con los
-movimientos de Federación Patronal del extracto. Los movimientos se buscan por las **leyendas adicionales**
-(«FEDERACION PATRO»), así que aparecen **aunque no estén conciliados**. Lo que te marca:
-- **Débitos sin póliza** → Federación debitó algo que no es cuota de ninguna póliza cargada: **falta cargar una póliza**.
-- **Cuotas vencidas sin débito** → la cuota venció y no se debitó: o hubo un problema con el débito, o la póliza se dio de baja y falta la nota de crédito.
-- **Otro importe** → se debitó distinto de lo que dice la póliza: suele ser un endoso que no se cargó.
-- **Reintegros sin nota de crédito** → Federación devolvió plata que ninguna NC explica.
-
-Las **notas de crédito no se devuelven**: Federación las descuenta de las cuotas siguientes. Por eso una cuota
-sin débito puede estar bien («compensada con una NC»).
+⚠️ *Cambió 2026-10-27: el cuadro «¿Tenemos todas las pólizas?» se sacó (JMS: «no se entiende»). Lo que mostraba
+—débitos sin póliza, cuotas sin débito, otro importe, reintegros sin NC— está ahora en el cuadro de arriba, por
+ejercicio y por póliza, con su detalle debajo.* Los movimientos se buscan por las **leyendas adicionales**
+(«FEDERACION PATRO»), así que aparecen **aunque no estén conciliados**. Las **notas de crédito no se devuelven**:
+Federación las descuenta de las cuotas siguientes, por eso una cuota sin débito puede estar bien. Lo que falta
+reclamar se agrupa en dos familias: **notas de crédito pendientes** (falta el papel: bajas sin su NC, reintegros sin
+facturar) y **saldo a favor pendiente** (falta la plata: NC que superaron las cuotas, explicado desde el monto de la
+póliza: facturado − NC = neto contra lo pagado). Lo que no se resuelve en un ejercicio **se arrastra** al siguiente
+(«viene de 25/26»).
 
 **Abajo, las pólizas procesadas.** Tocando una se ven sus endosos (cada uno es un comprobante), lo asegurado
 (vehículos con su prima, personas con su alta o baja) y las cuotas con el **reparto** de cada una entre
