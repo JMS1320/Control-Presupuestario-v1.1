@@ -59,6 +59,9 @@ export interface ComprobantePresentado {
   exento?: number
   iva?: number
   otrosTributos?: number
+  /** 💵 La moneda original (`PES`, `DOL`) y su cotización, tal cual el libro. Sólo para mostrar: los importes ya son pesos. */
+  moneda?: string
+  tipoCambio?: number
 }
 
 const num = (s: string | undefined) => {
@@ -115,7 +118,7 @@ function parsearCsvLibro(csv: string, lado: "compras" | "ventas"): ComprobantePr
   const iNum = col("número de comprobante", "numero de comprobante", "nmero de comprobante")
   const iCuit = col(lado === "compras" ? "nro. doc. vendedor" : "nro. doc. comprador")
   const iDen = col("denominaci"), iTotal = col("importe total")
-  const iTc = col("tipo de cambio"), iCred = col("crédito fiscal computable", "credito fiscal computable", "crdito fiscal computable")
+  const iTc = col("tipo de cambio"), iMon = col("moneda original", "moneda"), iCred = col("crédito fiscal computable", "credito fiscal computable", "crdito fiscal computable")
   const iNoGrav = col("importe no gravado"), iExento = col("importe exento")
   const iNeto = col("total neto gravado"), iIva = col("total iva")
   // El «Total IVA» del libro viene REDONDEADO (4.464,57 de IVA 21 % figura 4.464,60): el exacto es la suma de las
@@ -125,7 +128,6 @@ function parsearCsvLibro(csv: string, lado: "compras" | "ventas"): ComprobantePr
   const iOtros = cab.map((c, i) => (/^(importe de per|importe de percepciones|importe de impuestos|importe otros tributos|percepci)/.test(c) ? i : -1))
     .filter(i => i >= 0)
   const val = (v: string[], i: number) => (i >= 0 ? num(v[i]) : 0)
-  void iTc // el tipo de cambio se lee pero NO se aplica: los importes del libro ya están en pesos (ver `total`).
   const vacio = (v: string[], i: number) => i < 0 || !String(v[i] ?? "").replace(/"/g, "").trim()
   return lineas.slice(1).map(l => {
     const v = l.split(";")
@@ -146,6 +148,9 @@ function parsearCsvLibro(csv: string, lado: "compras" | "ventas"): ComprobantePr
       exento: r2(val(v, iExento) * tc),
       iva,
       otrosTributos: r2(iOtros.reduce((s, i) => s + val(v, i), 0) * tc),
+      // El tipo de cambio se informa pero NO se aplica: los importes del libro ya están en pesos (ver `total`).
+      moneda: iMon >= 0 ? String(v[iMon] ?? "").replace(/"/g, "").trim() || undefined : undefined,
+      tipoCambio: iTc >= 0 ? num(v[iTc]) || undefined : undefined,
     }
   })
 }

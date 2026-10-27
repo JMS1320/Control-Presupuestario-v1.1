@@ -23,6 +23,7 @@ import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta } from "../lib/
 import { PRESENTADO_ARCA_COMPRAS } from "../lib/balance/presentado-arca"
 import { traerTodo } from "../lib/supabase-paginado"
 import { leerZipLibroIva } from "../lib/subdiarios/libro-presentado"
+import { armarBbddVsArca } from "../lib/balance/bbdd-vs-arca"
 // Día en hora argentina (§ 🕐 de CLAUDE.md). lib/fechas no se deja importar desde un .mts con tsx.
 const hoyArgentina = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).format(new Date())
 import JSZip from "jszip"
@@ -132,6 +133,11 @@ const { wb, analisis: a } = armarEntregaLibroDiario(datos)
 // SUFIJO=… agrega una marca al nombre (p. ej. «ANTES de cta cte AFA»), para no pisar uno abierto ni una foto.
 const ruta = join(SALIDA, nombreArchivoEntrega(datos, hoy).replace(".xlsx", process.env.SUFIJO ? ` - ${process.env.SUFIJO}.xlsx` : ".xlsx"))
 writeFileSync(ruta, XLSX.write(wb, { bookType: "xlsx", type: "buffer" }))
+
+// 📋 Al lado, «Compras y ventas BBDD y ARCA ahora» (planilla objetivo de JMS 27/10): la base y los zips TAL CUAL.
+const rutaBA = join(SALIDA, `Compras y ventas BBDD y ARCA ${empresaId} ${ej.etiqueta.replace("/", "-")} (${hoy})${process.env.SUFIJO ? ` - ${process.env.SUFIJO}` : ""}.xlsx`)
+writeFileSync(rutaBA, XLSX.write(armarBbddVsArca(libro, presentado), { bookType: "xlsx", type: "buffer" }))
+console.log(`📋 ${rutaBA}`)
 
 const pesos = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2 })
 console.log(`📒 ${ruta}`)

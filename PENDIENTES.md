@@ -2070,6 +2070,13 @@ $83.503,96 (`a6d62fda-149b-4201-a662-917c2d494ac6`) — faltan 15.028,97. Es el 
 `2487a482-a8c0-4e0f-a1e6-fde0a378daf3` · fecha estimada **10/11/2026** → **05/11/2026** (el vencimiento de AFA; después cobra intereses). Es la
 deuda justa hoy ([A-BUG-1391](#a-bug-1391)).
 
+### I · AUTOPISTAS DEL SOL — en ARCA el mismo importe declarado DOS VECES *(visto 27/10 con la planilla «BBDD y ARCA ahora»; la app está bien)*
+En las **15** facturas de Autopistas del Sol (pv 711) del ejercicio, el libro IVA presentado trae el mismo importe como **«Importe Exento»** y
+también como **«Percepciones o Pagos a Cuenta de IVA»**. Ej. 711-7298853 (jul-25): total 4.155,34 = neto 3.351,08 + IVA 703,73 + exento
+**100,53**, y además percepción de IVA **100,53**. El total cierra con el exento, así que la percepción está de más: en las 15 suma
+**≈ $2.000**. Si esa percepción se computó como pago a cuenta de IVA, se tomó un crédito que no existe. **A ver con el contador** (monto
+chico). Se ve en la hoja «Compras ARCA ahora», en rojo.
+
 ### ✅ Cómo se ve que quedó bien
 Con todo lo anterior corregido, la hoja **Control** del libro diario tiene que dar: diciembre **coincide**; «Papel ≠ cargado» **coincide**; las
 diferencias de ventas de enero y la de Genta de febrero **según lo que se defina con el contador**; los números de la § F **coinciden**; y en
