@@ -1978,6 +1978,8 @@ Mezclar las dos cosas infla el problema y esconde el bug real.
 (su cuadro «Total mis comprobantes / Portal IVA»), y exportar. **Paso 2** — pasar las **8 no declaradas** (las 4 de este cuadro + las 4 del paso 1) a
 **10/2026**, que entran solas a provisión, y reexportar. **Paso 3** — las NC mal imputadas (§ B).
 
+✅ **PASO 1 HECHO 27/10** (OK de JMS: *«sí, imputá esas 4 a 12/25 y veo cómo queda»*) con `scripts/118-diciembre-historico-a-la-app.mts` (marca en `archivo_origen`; deshacer: `118-…-deshacer.mts`, borra sólo esas 4). **Verificado en la base**: el subdiario 12/2025 da 44 comprobantes · neto 11.645.269,58 · exento 1.280.562,24 · otros 72.081,41 · IVA 2.469.549,82 · total 16.480.809,04 = **el cuadro de JMS**. El libro diario lo marca ahora «diciembre: 8 en la app y no declarados (667.122,69)» — lo que resuelve el paso 2.
+
 **Paso 1 — los 4 renglones a cargar en `msa.comprobantes_arca`, subdiario 12/2025** (copiados del histórico, `msa.comprobantes_historico`):
 
 | # | Comprobante | Fecha | Neto gravado | Exento | Otros trib. | IVA (21 %) | Total | Cuenta | id en el histórico |
@@ -2014,7 +2016,7 @@ El papel (endosos de Pólizas, leídos del PDF) dice crédito; la app y lo decla
 | «1 1-670822» · 05/01/26 | `ff8674bb-03ea-4455-89b0-8488002ea7c0` | Factura A · exento 47.198,41 + otros 283,19 = **+47.481,60** · estado «cuotas» · 01/2026 «Imputado» · SEGUROS ESTRUCTURA | Póliza 670821 **endoso 1**: −47.198,41 / −283,19 = **−47.481,60** | **NC A (tipo 3)** con los importes en negativo · estado de crédito (no «cuotas») · número según el PDF |
 | «1 4-670821» · 05/04/26 | `e397575b-8290-4384-950b-f318a0dd3e75` | Factura A · exento 81.676,64 + otros 490,06 = **+82.166,70** · «cuotas» · 04/2026 «DDJJ OK» | Póliza 670821 **endoso 4**: **−82.166,70** | **NC A (tipo 3)** en negativo |
 
-**Efecto**: el gasto 25/26 baja **$259.296,60** (hoy suman lo que deberían restar). Enero y abril se declararon así → rectificar con el contador o
+⚠️ **Cambió 27/10 ~13:00 — JMS ya pasó los importes de las dos a NEGATIVO** (exento −47.198,41 / otros −283,19 = −47.481,60 y −81.676,64 / −490,06 = −82.166,70), pero **siguen tipo 1 (Factura A) y estado «cuotas»**: el libro diario marca «tipo vs. signo: 2» y, contra lo declarado, enero −94.963,20 y abril −164.333,40 (lo declarado sigue en positivo: es la rectificación). **Falta**: tipo **3 (NC A)** y un estado que no sea «cuotas». **Efecto**: el gasto 25/26 baja **$259.296,60** (ya aplicado con los importes). Enero y abril se declararon así → rectificar con el contador o
 ajustar en un período siguiente; **la decisión es suya** ([A-DAT-87](#a-dat-87)). El Cash Flow hoy las proyecta como pagos («cuotas»).
 
 ### C · GENTA 11-77393 (26/02/26) — declarada DOS VECES *(ver con el contador)*
