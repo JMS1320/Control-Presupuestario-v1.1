@@ -3225,7 +3225,7 @@ función que la pantalla**.*
 
 | | Expectativa | Audit | Quién tenía razón |
 |---|---|---|---|
-| Control 1 | 8 | **9** | 🧪 el audit. Medí sobre **4 columnas de vínculo**: `comprobante_venta_id` **sólo existe en `msa_galicia`** y no lo incluí. El 9º caso (anticipo + venta, 31/07, **importe 0**) era invisible para esa consulta |
+| Control 1 | 8 | **9** | 🧪 el audit. Medí sobre **4 columnas de vínculo**: `comprobante_venta_id` **sólo existe en `msa_galicia`** y no lo incluí *(⚠️ cambió: al 27/10 está en los 4 extractos —`msa_galicia`, `pam_galicia`, `pam_galicia_cc`, `ma_galicia`— y en `msa.echeqs_terceros`, además de retenciones y anticipos; ver KNOWLEDGE «El COBRO de una venta»)*. El 9º caso (anticipo + venta, 31/07, **importe 0**) era invisible para esa consulta |
 | Control 4 | 16 | **25** | 🧪 el audit. Conté los comprobantes **vacíos**; el estándar pide más: que **identifique cuál**. Los 9 que faltaban tienen texto que no identifica nada — 6 **repiten el nombre del proveedor** (`AUTOPISTAS URBANAS S. A.`) y 3 son partidas de ARBA **sin período** |
 
 🔑 **Esto es exactamente lo que el usuario venía señalando** con los sueldos: *«hay uno que incluso

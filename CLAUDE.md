@@ -839,6 +839,9 @@ carpeta principal era la única que escribía en la base y mergeaba lo de las de
   terminal empujó en el medio, el push **se rechaza**: `git fetch`, `git merge origin/desarrollo` otra vez, mirar qué
   trajo (si es código, volver a correr las pruebas) y reintentar. **Nunca `--force`.** *(Pasó el 2026-10-25: entre
   las pruebas y el push entró un commit de PENDIENTES de otra terminal; el rechazo lo atajó.)*
+- **Antes de pedirle al usuario que pruebe en la vista previa, mirar que Vercel la PUBLICÓ.** *(27/10: `desarrollo` estuvo
+  ~4 h sin publicarse —probable tope diario de despliegues: cada push de cada terminal cuenta— y el usuario bajó el Excel
+  viejo creyendo que era el nuevo.)* Si no salió, la app local del árbol (`npm run dev`) usa la misma base → KNOWLEDGE.
 - **La carpeta principal no hace de ventanilla**: no corre ni mergea lo de las otras.
 - 🔑 **El rol `pruebas` es COMPARTIDO: cada terminal le SUMA sus permisos, nunca lo reescribe.** *(Usuario 27/10:
   «yo pensaba que cada cual le agregara lo suyo y yo la estaría viendo».)* Se lee la fila, se agregan sólo las

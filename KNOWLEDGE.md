@@ -2839,3 +2839,49 @@ MSA paga consumos de MSA y de otros), el **Seguro Flota** (la póliza se reparte
 - 25/26 de MSA: 6 débitos por $8.735.419,59 = pólizas del Chalet de MA $729.818,58 + Orbith $431.600 (las dos
   RET 3 MA) + gasto de MSA $7.574.001,01. Los 5 resúmenes cierran.
 - ⚠️ Lo que **no** es tarjeta (el Seguro Flota y otros) todavía no tiene regla de reparto en la app.
+
+## El COBRO de una venta va por `comprobante_venta_id` — no por el vínculo de las compras `#ventas #cobros #conciliacion #balance #2026-10-27`
+
+Un movimiento que **paga** una factura de compra la guarda en `comprobante_arca_id`; uno que **cobra** una venta,
+en **`comprobante_venta_id`**. Son columnas distintas: buscar el cobro de una venta con la de compras no encuentra
+nada **y no falla** — la venta queda «conciliada sin fecha».
+
+- **Dónde está el vínculo** (leído de la base el 27/10, `information_schema`): los extractos `public.msa_galicia`,
+  `public.pam_galicia`, `public.pam_galicia_cc`, `ma.ma_galicia` y los echeqs `msa.echeqs_terceros` → son los que dan
+  una **fecha de cobro**. También lo llevan `{msa,pam,ma}.retenciones_recibidas` (parte del cobro, sin fecha propia) y
+  `public.anticipos_proveedores` (el anticipo del cliente, que va por su papel 04.2).
+- **La fecha del cobro, en orden**: la del movimiento o echeq atado → si no hay, `comprobantes_venta.fecha_acreditacion`
+  → si la venta está en un **cobro agrupado** (`grupo_cobro_id`, A-FEAT-167) y no tiene vínculo propio, la más temprana
+  de las ventas de su grupo que sí la tienen (`buscarFechasDeCobroBancarias` y `completarConGrupoDeCobro` en
+  `lib/balance/fechas-de-pago.ts`).
+- **El caso** ([A-FEAT-1388](PENDIENTES.md#a-feat-1388) U6): el export del balance buscaba el cobro con la lista de
+  las compras, y 10 ventas de MSA 25/26 por **$459.630.934,98** salían «conciliadas sin fecha» en Cuentas a cobrar. Con
+  el vínculo correcto queda **una**: Parra, $25.000.000,11, cobrada en efectivo.
+- 📌 La lista de tablas está escrita a mano (`TABLAS_CON_VINCULO_VENTA`): una cuenta bancaria nueva que cobre ventas
+  hay que sumarla ahí. Es el mismo riesgo de [A-BUG-1221](PENDIENTES.md#a-bug-1221), y el control que lo atajaría es
+  [A-FEAT-1194](PENDIENTES.md#a-feat-1194).
+
+## Excel con subtotales que no se cuentan dos veces — y la referencia circular `#excel #export #balance #2026-10-27`
+
+- El total de cada mes es `SUBTOTAL(9, rango del mes)` y el del ejercicio `SUBTOTAL(9, rango entero)`: `SUBTOTAL`
+  **ignora los otros SUBTOTAL** del rango (el total del ejercicio no suma los meses dos veces) y con un filtro **suma
+  sólo lo visible** (`SUM` suma también lo oculto). El formato de subtotal (negrita, fondo) va aparte, como estilo.
+- **Plegar cada mes**: `ws["!rows"][i] = { level: 1 }` en las filas de detalle → Excel muestra los +/− a la izquierda.
+- 🧨 **La referencia circular del Excel del 27/10**: «Templates por mes» sumaba un responsable con un rango (`SUM(C79:C80)`)
+  que, cuando el responsable tenía una sola cuenta, incluía la fila del propio total. Desde la tanda 1 los totales son
+  **sumas explícitas** de las filas de detalle (`C77+C78`): un rango que puede crecer hasta tocar el total es el riesgo.
+- **Una fila con error se MARCA, no se arregla**: rojo en la fila entera + una columna que dice qué no cuadra y cuánto
+  falta (decisión de JMS 27/10, [A-FEAT-1388](PENDIENTES.md#a-feat-1388)). El dato se corrige en su origen; el export
+  sólo lo muestra, con el mismo criterio que la hoja Control (`verificarCuadratura`, tolerancia $0,05 por comprobante).
+
+## Vercel deja de publicar sin avisar — probable tope diario de despliegues `#deploy #vercel #paralelo #2026-10-27`
+
+El 27/10 `desarrollo` estuvo **~4 h sin publicarse**: el usuario bajaba el Excel de la vista previa y le salía **el
+viejo** (sin subtotales ni «Resumen 12 meses»), con el código ya en `desarrollo`. **Causa probable, no confirmada**: el
+plan Hobby de Vercel tiene un tope de despliegues por día, y **cada push a cualquier rama** es un despliegue — con 3-4
+terminales empujando sus `jms/*` y `desarrollo` se agota.
+
+- **Síntoma**: la pantalla o el Excel no tienen lo nuevo aunque `git log origin/desarrollo` lo tenga.
+- **Cómo verificar**: Vercel → Deployments — el último despliegue de `desarrollo` tiene que ser el del commit subido.
+- **Salida inmediata**: la app local (`npm run dev` en un árbol con ese código y su `.env.local`), que usa la misma base.
+- 📌 Antes de pedirle al usuario que pruebe «en la vista previa», mirar que el despliegue salió.

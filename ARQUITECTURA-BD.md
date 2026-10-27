@@ -431,6 +431,7 @@ productivo.* → fuertemente normalizado (ciclos→ordenes, lineas→ordenes/sto
 
 ### 6.2 Links lógicos (SIN FK — los llena el motor/UI)
 - Tablas de movimiento → `comprobante_arca_id` (factura, cross-schema), `template_id`+`template_cuota_id` (template), `sueldo_pago_id`, `anticipo_id`.
+- El **cobro de una venta** → `comprobante_venta_id` (a `{schema}.comprobantes_venta`), en `public.msa_galicia`, `public.pam_galicia`, `public.pam_galicia_cc`, `ma.ma_galicia` y `msa.echeqs_terceros`; también en `{msa,pam,ma}.retenciones_recibidas` y `public.anticipos_proveedores` (medido 2026-10-27). ⚠️ **No es** `comprobante_arca_id`, que es el pago de una compra: buscar un cobro por ésa no falla, no encuentra nada → KNOWLEDGE «El COBRO de una venta».
 
   ⚠️ **El motivo escrito acá era «porque cruzan schemas», y para `template_cuota_id` NO es cierto**
   (medido 2026-09-12 → [A-BUG-156](PENDIENTES.md#a-bug-156)). `public.msa_galicia.template_cuota_id`
