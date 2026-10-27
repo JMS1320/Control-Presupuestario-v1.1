@@ -28,6 +28,8 @@ import {
   controlarDebitos, cuotasEsperadas, esDeLaAseguradora,
   type CuotaControlada, type MovimientoControlado,
 } from "@/lib/polizas/control-debitos"
+import { resumenPorEjercicio, ejercicioDe, TEXTO_MOTIVO, type ResumenEjercicio } from "@/lib/polizas/resumen-ejercicio"
+import { BotonRevision } from "@/components/boton-revision"
 
 const EMPRESAS = ["MSA", "MA", "PAM", "JMS"]
 const $ = (n: number | null | undefined) =>
@@ -71,6 +73,7 @@ export function VistaSeguros() {
   const [errorExtracto, setErrorExtracto] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
   const [abierta, setAbierta] = useState<string | null>(null)
+  const [ejercicioVisto, setEjercicioVisto] = useState<string | null>(null)
 
   const cargar = useCallback(async () => {
     setCargando(true); setError(null); setErrorExtracto(null)
@@ -106,15 +109,27 @@ export function VistaSeguros() {
     contable: r.responsable_contable, interno: r.responsable_interno, motivo: r.motivo ?? "",
   })), [responsables])
 
-  const control = useMemo(() => {
-    if (!movs || !ventana) return null
+  // Las cuotas como vienen de los endosos (los PDF): las usa el control y las columnas del resumen.
+  const emitidas = useMemo(() => {
     const endosos = polizas.flatMap(p => p.polizas_endosos.map(e => ({
       poliza: p.poliza, endoso: e.endoso,
       cuotas: e.polizas_cuotas.map(c => ({ vencimiento: c.vencimiento, importe: Number(c.importe) })),
       consolidado: e.consolidado ? { fecha: e.consolidado.fecha, cuotas: e.consolidado.cuotas.map(c => ({ vencimiento: c.vencimiento, importe: c.importe, saldo: c.saldo ?? null })) } : null,
     })))
-    return controlarDebitos(cuotasEsperadas(endosos), movs, ventana)
-  }, [polizas, movs, ventana])
+    return cuotasEsperadas(endosos)
+  }, [polizas])
+  const control = useMemo(() => {
+    if (!movs || !ventana) return null
+    return controlarDebitos(emitidas, movs, ventana)
+  }, [emitidas, movs, ventana])
+
+  // 🧾 A-FEAT-1383: lo PRIMERO de la pantalla — por ejercicio y por póliza, lo emitido contra lo pagado.
+  // Se calcula al abrir (no se guarda nada): cambia solo cuando entra un extracto o una póliza nueva.
+  const resumen: ResumenEjercicio[] = useMemo(() => {
+    if (!control || !ventana) return []
+    return resumenPorEjercicio(control.cuotas, control.movimientos, polizas, ventana.hasta, ejercicioDe(ventana.desde), emitidas)
+  }, [control, ventana, polizas, emitidas])
+  const ejercicioActual = ejercicioVisto ?? resumen[resumen.length - 1]?.ejercicio ?? null
 
   const ramoDe = useMemo(() => new Map(polizas.map(p => [p.poliza, p.seccion ?? ""])), [polizas])
 
@@ -146,6 +161,13 @@ export function VistaSeguros() {
     <div className="space-y-4">
       <TestsDelProceso proceso="egresos/seguros" pantalla="egresos" />
       {error && <div className="rounded border border-red-300 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
+
+      {/* ── 0 · EL RESUMEN POR EJERCICIO (A-FEAT-1383) ─────────────────────────────── */}
+      {resumen.length > 0 && ventana && (
+        <ResumenPorEjercicio resumen={resumen} actual={ejercicioActual} onElegir={setEjercicioVisto}
+          hasta={ventana.hasta} polizas={polizas}
+          onVerPoliza={(nro) => { const p = polizas.find(x => x.poliza === nro); if (p) { setAbierta(p.id); setTimeout(() => document.getElementById(`poliza-${p.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50) } }} />
+      )}
 
       {/* ── 1 · EL CONTROL ──────────────────────────────────────────────────────────── */}
       <Card className={problemas ? "border-red-300" : "border-green-300"}>
@@ -224,7 +246,7 @@ export function VistaSeguros() {
                 const abiertaEsta = abierta === p.id
                 return (
                   <Fragment key={p.id}>
-                    <TableRow className="cursor-pointer" onClick={() => setAbierta(abiertaEsta ? null : p.id)}>
+                    <TableRow id={`poliza-${p.id}`} className="cursor-pointer" onClick={() => setAbierta(abiertaEsta ? null : p.id)}>
                       <TableCell>{abiertaEsta ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</TableCell>
                       <TableCell>{p.seccion}</TableCell>
                       <TableCell className="font-mono">{p.poliza}</TableCell>
@@ -252,6 +274,124 @@ export function VistaSeguros() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, polizas, onVerPoliza }: {
+  resumen: ResumenEjercicio[]; actual: string | null; onElegir: (e: string) => void; hasta: string
+  polizas: Poliza[]; onVerPoliza: (poliza: string) => void
+}) {
+  const r = resumen.find(x => x.ejercicio === actual) ?? resumen[resumen.length - 1]
+  const reclamar = r.aReclamar
+  const montoReclamar = reclamar.reduce((t, x) => t + x.diferencia, 0)
+  const idDe = (nro: string | null) => polizas.find(p => p.poliza === nro)?.id ?? null
+  return (
+    <Card className={reclamar.length ? "border-red-300" : "border-green-300"}>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-lg">
+          <span className="flex items-center gap-2">
+            {reclamar.length ? <AlertTriangle className="h-5 w-5 text-red-600" /> : <ShieldCheck className="h-5 w-5 text-green-600" />}
+            {reclamar.length
+              ? <>Falta reclamar {reclamar.length} {reclamar.length === 1 ? "papel" : "papeles"} · {$(montoReclamar)}</>
+              : <>No falta reclamar nada</>}
+          </span>
+          <span className="flex gap-1">
+            {resumen.map(x => (
+              <button key={x.ejercicio} type="button" onClick={() => onElegir(x.ejercicio)}
+                className={`rounded-full border px-3 py-0.5 text-sm ${x.ejercicio === r.ejercicio ? "border-blue-400 bg-blue-50 font-medium text-blue-700" : "text-muted-foreground"}`}>
+                Ejercicio {x.ejercicio}{x.aReclamar.length ? " 🔴" : " ✓"}
+              </button>
+            ))}
+          </span>
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Cada póliza como fue <b>emitida</b> (sus PDF, no cómo se cargó la factura) contra lo que el banco debitó y acreditó,
+          <b> esté o no conciliado</b>. Las notas de crédito no se reintegran: Federación las descuenta de las cuotas
+          siguientes, por eso «se esperaba en el banco» ya las tiene en cuenta. Vencido hasta el {fecha(hasta)} (último extracto).
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Póliza</TableHead>
+                <TableHead className="text-right">Cuotas emitidas</TableHead>
+                <TableHead className="text-right">Notas de crédito</TableHead>
+                <TableHead className="text-right">Se esperaba en el banco</TableHead>
+                <TableHead className="text-right">Pagado</TableHead>
+                <TableHead className="text-right">Diferencia</TableHead>
+                <TableHead>Qué es</TableHead>
+                <TableHead className="text-right">A vencer</TableHead>
+                <TableHead className="w-8" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {r.renglones.map(x => {
+                const mal = Math.abs(x.diferencia) > 0.01
+                const id = idDe(x.poliza)
+                return (
+                  <TableRow key={x.poliza ?? "reintegros"} className={mal ? "bg-red-50/60" : ""}>
+                    <TableCell>
+                      {x.poliza
+                        ? <button type="button" className="text-left hover:underline" onClick={() => onVerPoliza(x.poliza!)} title="Ver la cuenta corriente de la póliza, con sus PDF">
+                            <span className="font-mono">{x.poliza}</span> <span className="text-xs text-muted-foreground">{x.seccion}</span>
+                          </button>
+                        : <span className="font-medium">Reintegros sin facturar</span>}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{x.poliza ? $(x.cuotas) : ""}</TableCell>
+                    <TableCell className="text-right tabular-nums">{x.notasCredito ? $(x.notasCredito) : ""}</TableCell>
+                    <TableCell className="text-right tabular-nums">{x.poliza ? $(x.esperadoVencido) : ""}</TableCell>
+                    <TableCell className="text-right tabular-nums">{$(x.pagado)}</TableCell>
+                    <TableCell className={`text-right font-medium tabular-nums ${mal ? "text-red-700" : "text-green-700"}`}>{mal ? $(x.diferencia) : "✓ 0"}</TableCell>
+                    <TableCell className="text-xs">
+                      {x.motivo ? TEXTO_MOTIVO[x.motivo] : ""}
+                      {mal && x.casos.length > 0 && (
+                        <span className="block text-muted-foreground">
+                          {x.casos.map(c => `${fecha(c.fecha)}: ${x.poliza ? `se esperaba ${$(c.esperado)}, ` : ""}${c.debitado == null ? "sin débito" : x.poliza ? `se debitó ${$(c.debitado)}` : `acreditó ${$(-c.debitado)}`}`).join(" · ")}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right text-xs tabular-nums text-muted-foreground">{x.aVencer ? $(x.aVencer) : ""}</TableCell>
+                    <TableCell>
+                      {mal && (
+                        <BotonRevision
+                          schema="public" tabla={x.poliza ? "polizas_seguro" : "msa_galicia"} registroId={id ?? `reintegros-${r.ejercicio}`}
+                          descripcion={x.poliza
+                            ? `Póliza ${x.poliza} (${x.seccion ?? ""}) · ejercicio ${r.ejercicio} · diferencia ${$(x.diferencia)} · ${x.motivo ? TEXTO_MOTIVO[x.motivo] : ""}`
+                            : `Federación Patronal · ejercicio ${r.ejercicio} · reintegros sin facturar ${$(x.diferencia)}`}
+                        />
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+              <TableRow className="font-semibold">
+                <TableCell>Total ejercicio {r.ejercicio}</TableCell>
+                <TableCell className="text-right tabular-nums">{$(r.total.cuotas)}</TableCell>
+                <TableCell className="text-right tabular-nums">{$(r.total.notasCredito)}</TableCell>
+                <TableCell className="text-right tabular-nums">{$(r.total.esperadoVencido)}</TableCell>
+                <TableCell className="text-right tabular-nums">{$(r.total.pagado)}</TableCell>
+                <TableCell className={`text-right tabular-nums ${Math.abs(r.total.diferencia) > 0.01 ? "text-red-700" : "text-green-700"}`}>{$(r.total.diferencia)}</TableCell>
+                <TableCell />
+                <TableCell className="text-right text-xs tabular-nums">{r.total.aVencer ? $(r.total.aVencer) : ""}</TableCell>
+                <TableCell />
+              </TableRow>
+            </TableBody>
+          </Table>
+        </div>
+        {r.sinPoliza.cantidad > 0 && (
+          <p className="text-sm text-red-700">🛑 {r.sinPoliza.cantidad} débito(s) de Federación por {$(r.sinPoliza.total)} que no son cuota de ninguna póliza cargada: <b>falta cargar una póliza</b> (el detalle, abajo).</p>
+        )}
+        {r.anteriores.cantidad > 0 && (
+          <p className="text-xs text-muted-foreground">
+            No se cuentan {r.anteriores.cantidad} débito(s) por {$(r.anteriores.total)} de pólizas anteriores al ejercicio
+            ({r.anteriores.polizas.join(", ")}): son del balance anterior.
+          </p>
+        )}
+        <p className="text-xs text-muted-foreground">🚩 en cada diferencia: pasársela a alguien (por ejemplo, Ulises) con un mensaje. Le llega a su campanita.</p>
+      </CardContent>
+    </Card>
   )
 }
 
