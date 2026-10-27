@@ -13,6 +13,7 @@
  * 📌 Procesar una póliza nueva se va a disparar al vincular su PDF (cuando la app tenga el archivo, que
  * hoy sólo existe como link de Drive) — eso espera el merge del buscador de PDFs (A-FEAT-1287).
  */
+import { toast } from "sonner"
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { usePuedeEditar } from "@/components/contexto-permisos"
@@ -160,6 +161,7 @@ export function VistaSeguros() {
       {resumen.length > 0 && ventana && control && (
         <ResumenPorEjercicio resumen={resumen} actual={ejercicioActual} onElegir={setEjercicioVisto}
           hasta={ventana.hasta} desde={ventana.desde} polizas={polizas} control={control} emitidas={emitidas}
+          onRecargar={() => void cargar()}
           onVerPoliza={(nro) => { const p = polizas.find(x => x.poliza === nro); if (p) { setAbierta(p.id); setTimeout(() => document.getElementById(`poliza-${p.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50) } }} />
       )}
 
@@ -241,10 +243,11 @@ function Boton({ onClick, className, title, children }: { onClick: () => void; c
   )
 }
 
-function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, desde, polizas, control, emitidas, onVerPoliza }: {
+function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, desde, polizas, control, emitidas, onVerPoliza, onRecargar }: {
   resumen: ResumenEjercicio[]; actual: string | null; onElegir: (e: string) => void; hasta: string; desde: string
   polizas: Poliza[]; control: { cuotas: CuotaControlada[]; movimientos: MovimientoControlado[] }; emitidas: CuotaEsperada[]
   onVerPoliza: (poliza: string) => void
+  onRecargar: () => void
 }) {
   const [verCtaCte, setVerCtaCte] = useState(false)
   const r = resumen.find(x => x.ejercicio === actual) ?? resumen[resumen.length - 1]
@@ -283,6 +286,22 @@ function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, desde, polizas,
             <Boton onClick={() => setVerCtaCte(true)} title="Todo lo que entró, en orden: cuotas, notas de crédito, débitos y reintegros, con su saldo"
               className="ml-1 rounded-md border border-slate-300 px-3 py-0.5 text-sm hover:bg-slate-50">
               📒 Cuenta corriente
+            </Boton>
+            {/* 🔄 A-FEAT-1385 etapa 4: lo mismo que corre solo al importar el extracto o cargar una póliza. */}
+            <Boton onClick={async () => {
+                const t = toast.loading("Poniendo al día las cuotas de las pólizas…")
+                try {
+                  const r = await fetch("/api/polizas/sincronizar", { method: "POST" })
+                  const d = await r.json()
+                  if (!r.ok) { toast.error(d.error ?? "No se pudo", { id: t }); return }
+                  const cambios = d.cuotasCreadas + d.cuotasActualizadas + d.cuotasDesactivadas + d.templatesCreados.length
+                  toast.success(cambios ? `Listo: ${d.templatesCreados.length} template(s) nuevo(s), ${d.cuotasCreadas} cuota(s) creada(s), ${d.cuotasActualizadas} corregida(s), ${d.cuotasDesactivadas} desactivada(s).` : "Las cuotas ya estaban al día con las pólizas.", { id: t })
+                  onRecargar()
+                } catch (e) { toast.error((e as Error).message, { id: t }) }
+              }}
+              title="Rehace las cuotas del template de cada póliza con lo que espera el banco (corre solo al importar el extracto o cargar una póliza)"
+              className="rounded-md border border-slate-300 px-3 py-0.5 text-sm hover:bg-slate-50">
+              🔄 Actualizar desde las pólizas
             </Boton>
           </span>
         </CardTitle>

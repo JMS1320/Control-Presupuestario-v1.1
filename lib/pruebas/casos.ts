@@ -213,6 +213,7 @@ import { leerResumenCajaAhorro, controlarResumen, armarConocido, resumenComoExce
 import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
 import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe, cuentaCorriente } from "@/lib/polizas/resumen-ejercicio"
 import { aseguradoraAlCierre } from "@/lib/balance/seguros-al-cierre"
+import { planDeLaPoliza } from "@/lib/polizas/sincronizar"
 import { historicoAFactura, filasDelSubdiario } from "@/lib/facturas/historico-como-factura"
 import { parsearComprasCsv, parsearTotalesXml, compararSubdiarioConLibro } from "@/lib/subdiarios/libro-presentado"
 import { calcularSubtotalesSubdiario } from "@/lib/subdiarios/subtotales"
@@ -8332,6 +8333,21 @@ export function correrCasos(): Resultado[] {
     const vCierre = `saldo ${alCierre.saldo} · cierra ${alCierre.cierra} · reclamos ${alCierre.aReclamar.length} · sin el posterior ${!alCierre.lineas.some(l => l.fecha > "2026-06-30")}`
     chequear("Pólizas", "Al cierre (papel 14 del balance): el saldo es la suma de lo que falta reclamar y lo posterior al cierre no entra",
       "cierra true · sin el posterior true", vCierre, alCierre.cierra && !alCierre.lineas.some(l => l.fecha > "2026-06-30") && alCierre.aReclamar.length > 0, "A-FEAT-1385")
+    // 🔄 A-FEAT-1385 etapa 4 — la póliza manda: el template se pone al día solo (al importar el extracto o cargar una póliza).
+    const cq = (venc: string, importe: number, esperado: number, resultado: any) => ({ poliza: "X", vencimiento: venc, importe, esperadoEnBanco: esperado, resultado, movimientoId: null, debitado: null }) as any
+    const planS = planDeLaPoliza("X",
+      [cq("2026-05-13", 16982, 16982, "ok"), cq("2026-06-13", 16982, 16982, "falta-debito"), cq("2026-07-13", 20000, 20000, "a-vencer"), cq("2026-08-13", 16982, 0, "compensada"), cq("2026-09-13", 16982, 16982, "a-vencer")],
+      [
+        { id: "q1", fecha_estimada: "2026-05-15", monto: 16982, estado: "conciliado" },   // conciliada y bien → nada
+        { id: "q2", fecha_estimada: "2026-06-13", monto: 15000, estado: "conciliado" },   // conciliada con OTRO importe → aviso, no se toca
+        { id: "q3", fecha_estimada: "2026-07-13", monto: 16982, estado: "pendiente" },    // llegó un endoso: 20.000 → se corrige
+        { id: "q4", fecha_estimada: "2026-08-13", monto: 16982, estado: "pendiente" },    // la cubrió una NC → 0 desactivado
+        { id: "q5", fecha_estimada: "2026-12-13", monto: 16982, estado: "pendiente" },    // ya no corresponde → desactivar (no borrar)
+      ])
+    const vS = `crear ${planS.crear.map(c => c.vencimiento).join(",")} · actualizar ${planS.actualizar.map(c => `${c.id}:${c.monto}`).join(",")} · desactivar ${planS.desactivar.map(c => c.id).join(",")} · avisos ${planS.avisos.length}`
+    chequear("Pólizas", "Sincronizar: crea la cuota que falta, corrige la pendiente que cambió (endoso), deja en 0 la compensada, desactiva la que sobra y NO toca la conciliada (avisa si no casa)",
+      "crear 2026-09-13 · actualizar q3:20000,q4:0 · desactivar q5 · avisos 1", vS,
+      vS === "crear 2026-09-13 · actualizar q3:20000,q4:0 · desactivar q5 · avisos 1", "A-FEAT-1385")
     chequear("Pólizas", "Cuenta corriente: el débito de una póliza anterior al ejercicio no entra",
       "sin el débito de 12.902", cc.lineas.some(l => l.credito === 12902) ? "entró el de 12.902" : "sin el débito de 12.902",
       !cc.lineas.some(l => l.credito === 12902), "A-FEAT-1383")
