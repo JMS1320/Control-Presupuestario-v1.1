@@ -2028,7 +2028,7 @@ ajustar en un período siguiente; **la decisión es suya** ([A-DAT-87](#a-dat-87
 | En la app como **COMPRA** | `cefc22d8-7362-41a2-b559-40600cea2f27` | tipo 180 · neto 252.646,58 + IVA 26.527,89 = **+279.174,47** · subdiario **04/2026 «DDJJ OK»** · COMISIONES · conciliado |
 | En lo declarado | — | como **VENTA de febrero** (tipo 180, **−279.174,47**) **y** como **compra de abril** (las compras de abril coinciden con la app) |
 
-Una liquidación tipo 180 del consignatario con importe negativo es un cargo a MSA: el contador la informó de los dos lados. **Definir con él cuál
+✅ **DECIDIDO POR JMS 27/10**: verificado en los libros presentados — ventas feb **−279.174,47 sin neto ni IVA** (el duplicado) y compras abr **+279.174,47, neto 252.646,58 al 10,5 %, crédito fiscal 26.527,90** (= la app). El IVA se tomó una sola vez; el resultado declarado quedó $279.174,47 más bajo (se restó como gasto y como menor venta). **Se rectifica el libro de VENTAS de febrero sacando la venta negativa (no modifica IVA); compras de abril y la app quedan como están.** Junto con enero y abril (compras), son las 3 rectificaciones de subdiario, ninguna de IVA. Una liquidación tipo 180 del consignatario con importe negativo es un cargo a MSA: el contador la informó de los dos lados. **Definir con él cuál
 vale**; si es la venta de febrero, se carga en ventas 02/2026 en negativo y se saca de compras de abril (y al revés).
 
 ### D · VENTAS DE ENERO — otro importe que lo declarado
