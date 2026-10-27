@@ -59,6 +59,11 @@ export interface CuotaArrendamiento {
   /** Precio ARS/ton (pizarra disponible). Gana sobre el USD y NO aplica TC. */
   precio_pesos_override: number | null
   notas: string | null
+  /**
+   * 💵 A-FEAT-1393 — la cuota se cobra EN DÓLARES y no se pesifica (la 2B de Sanpa: «opción quedar en
+   * dólares»). El presupuesto la sigue contando como ingreso; el Cash Flow no la espera en pesos en el banco.
+   */
+  en_dolares?: boolean
 }
 
 /**

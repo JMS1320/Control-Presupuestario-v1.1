@@ -11,7 +11,7 @@ import { cuotasPorCobrar, marcarCuota, type Imputacion } from "@/lib/ventas/haci
 import { EMPRESAS, parseEmpresas, schemaDeEmpresa, schemaDeFila, coincideEmpresa, type Empresa } from "@/lib/empresas"
 import { pasaFiltroMedio } from "@/lib/pagos/pagado-desde"
 import { hoyArgentina } from "@/lib/fechas"
-import { importeDeVenta, cuotasNoFijadas, type CuotaNoFijada } from "@/lib/arrendamientos/cash-flow"
+import { importeDeVenta, cuotasNoFijadas, leyendaEnDolares, type CuotaNoFijada } from "@/lib/arrendamientos/cash-flow"
 import type { TipoCambio, PrecioGrano, ContratoArrendamiento, CuotaArrendamiento } from "@/lib/arrendamientos/calculo"
 import { comprobanteDeSueldo, especificacionDeSueldo } from "@/lib/conciliacion/columnas-extracto"
 import { detallePropio, detallePropioDeGrupo, type DetalleDeFactura } from "@/lib/cashflow/detalle-propio"
@@ -726,8 +726,35 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
    * vincula, la venta deja de contar acá y pasa a verse como comprobante — si es
    * factura PARCIAL, sigue el remanente (monto − facturado).
    */
-  const mapearVentasSinFactura = (ventas: any[], tcs: TipoCambio[] = []): CashFlowRow[] => {
+  const mapearVentasSinFactura = (ventas: any[], tcs: TipoCambio[] = [], cuotasEnDolares: Set<string> = new Set()): CashFlowRow[] => {
     return ventas.flatMap(v => {
+      /**
+       * 💵 A-FEAT-1393 — la venta (fijación) de una cuota que QUEDA EN DÓLARES no entra al banco en pesos:
+       * la fila queda, con $0 y la leyenda, para que se vea que existe y por qué no suma (Sanpa 2B).
+       */
+      if (v.cuota_id && cuotasEnDolares.has(String(v.cuota_id))) {
+        const usd = v.unidad === 'tn' && v.precio_usd != null ? Math.round(Number(v.cantidad) * Number(v.precio_usd) * 100) / 100 : null
+        return [{
+          id: v.venta_id,
+          origen: 'VENTA' as const,
+          origen_tabla: 'public.ventas_unificadas',
+          empresas: empresasOMsa(v.empresa),
+          fecha_estimada: v.fecha_cobro,
+          fecha_vencimiento: null,
+          categ: 'VENTAS',
+          centro_costo: v.centro_costo || '',
+          cuit_proveedor: v.cliente_cuit || '',
+          nombre_proveedor: v.cliente_nombre || '',
+          detalle: `Venta ${v.venta_tipo} ${v.centro_costo || ''} — ${Number(v.cantidad).toLocaleString('es-AR', { maximumFractionDigits: 2 })} ${v.unidad} · ${leyendaEnDolares(usd)}`,
+          debitos: 0,
+          creditos: 0,
+          saldo_cta_cte: 0,
+          estado: 'presupuestado',
+          imp_total: 0,
+          comprobante_display: null,
+          estimada: true,
+        }]
+      }
       // 🌾 A-FEAT-1328 — una venta fijada en dólares sin TC no tiene pesos todavía: se estima con el
       // TC de la base (mismo cálculo que el Presupuesto) en vez de quedar en 0 y desaparecer.
       const imp = importeDeVenta(v, tcs)
@@ -1141,7 +1168,9 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
       // 7. Combinar y ordenar por fecha_estimada
       const filasVentas = mapearVentas(ventasACobrar || [], imputadoPorComp, imputacionesPorComp)
-      const filasVentasSinFC = [...mapearVentasSinFactura(ventasSinFactura || [], tcsArr), ...mapearCuotasNoFijadas(noFijadas)]
+      // 💵 A-FEAT-1393 — las cuotas que quedan en dólares (si la columna todavía no existe, ninguna).
+      const cuotasEnDolares = new Set(((rCuotasArr.data ?? []) as Array<{ id: string; en_dolares?: boolean }>).filter(q => q.en_dolares).map(q => q.id))
+      const filasVentasSinFC = [...mapearVentasSinFactura(ventasSinFactura || [], tcsArr, cuotasEnDolares), ...mapearCuotasNoFijadas(noFijadas)]
       // 📝 A-FEAT-1282 — un pago en VARIOS echeqs se proyecta echeq por echeq, cada uno en su fecha.
       // Echeqs sólo hay en MSA; se buscan los de las facturas y anticipos que están en 'echeq'.
       const idsEnEcheq = [...filasArca, ...filasAnticipos]

@@ -75,6 +75,18 @@ export interface CuotaNoFijada {
   precio_usd: number | null
   tc: number | null
   detalle: string
+  /** 💵 A-FEAT-1393 — queda en dólares: `monto` va en 0 (no entra al banco en pesos) y `usd` dice cuánto es. */
+  en_dolares?: boolean
+  usd?: number | null
+}
+
+/**
+ * 💵 A-FEAT-1393 — el texto de una cuota (o venta) que queda en dólares. No se descarta en silencio: la fila
+ * sigue en el Cash Flow, con $0 en pesos y esta leyenda, así se ve que existe y por qué no suma.
+ */
+export function leyendaEnDolares(usd: number | null | undefined): string {
+  const n = Number(usd)
+  return `💵 Queda en dólares${Number.isFinite(n) && n > 0 ? ` (U$S ${plata(n)})` : ""} — no entra al banco en pesos`
 }
 
 /**
@@ -103,6 +115,14 @@ export function cuotasNoFijadas(
     const tons = tonsDisponibles(Number(contrato.has), Number(q.qq_ha_cuota), ventas.filter(v => v.cuota_id === q.id))
     if (tons <= 0.0005) continue
     const p = resolverPrecioCuota(contrato, q, precios, tcs)
+    if (q.en_dolares) {
+      const usd = p.precio_usd != null ? Math.round(tons * p.precio_usd * 100) / 100 : null
+      salida.push({
+        id: q.id, contrato, cuota: q, tons, monto: 0, precio_usd: p.precio_usd, tc: null, en_dolares: true, usd,
+        detalle: `Arrendamiento ${contrato.centro_costo || ""} ${contrato.campania} — cuota ${q.numero_cuota}: ${tn(tons)} tn · ${leyendaEnDolares(usd)}`,
+      })
+      continue
+    }
     const monto = Math.round(tons * p.pesos_por_ton * 100) / 100
     const grano = contrato.grano || "soja"
     const precio = p.modo === "pizarra"

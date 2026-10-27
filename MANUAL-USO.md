@@ -2196,6 +2196,10 @@ ahí se define el contrato entero: los datos de arriba y, abajo, la sección **C
   toneladas que las vendidas: el botón **Guardar** se desactiva y dice por qué.
 - Las cuotas **ya cobradas** se cargan igual y después se registran con **Fijar**, con su fecha
   y precio reales.
+- **u$s** — tildala en la cuota que **se cobra en dólares y no se pesifica** (la 2B de Sanpa). Sigue
+  siendo ingreso del presupuesto, pero el Cash Flow no la espera en pesos en el banco: la muestra con
+  $0 y «💵 Queda en dólares». En la lista de cuotas lleva la etiqueta **💵 en dólares**. Se copia con
+  el esquema a la campaña siguiente. → A-TEST-1268
 - Si un contrato no tiene cuotas, su tarjeta lo dice y ofrece **Cargar cuotas**.
 - Si el cliente no tiene CUIT, el modal lo avisa: elegilo de la lista, porque sin CUIT no se
   encuentra después su factura.
@@ -2981,6 +2985,8 @@ cerrar, el Cash Flow se recalcula solo. → A-TEST-1231
   aparece sólo lo que falta. Sólo se muestran las que se cobran de hoy en adelante.
 - Estas filas son estimaciones: **no se concilian** y no se marcan desde el Cash Flow (se manejan en
   Ingresos → Arrendamientos). Cargando TC y precios de soja en la base, se recalculan solas.
+- **Cuota «en dólares»** (marcada **u$s** en el contrato): aparece igual, pero con **$0** y la leyenda
+  *«💵 Queda en dólares (U$S X) — no entra al banco en pesos»*. → A-TEST-1268
 
 → A-TEST-1228
 

@@ -77,7 +77,7 @@ import { fechasDePagoManual } from "@/lib/templates/fechas-pago-manual"
 import { camposDePagoManual } from "@/lib/templates/detalle-pago-manual"
 import { esBanco, pasaFiltroMedio, marcaPagadoDesde, OPCIONES_PAGADO_DESDE } from "@/lib/pagos/pagado-desde"
 import { armarPlanilla, impuestoDeTemplate, ordenarFilas, moverFilaPlanilla, resumenMes, linkTemplates, templatesDelLink, type CuotaPlanilla } from "@/lib/impuestos/planilla"
-import { importeDeVenta, cuotasNoFijadas } from "@/lib/arrendamientos/cash-flow"
+import { importeDeVenta, cuotasNoFijadas, leyendaEnDolares } from "@/lib/arrendamientos/cash-flow"
 import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPapel, moverPartida, clavePartida } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
@@ -2539,6 +2539,15 @@ export function correrCasos(): Resultado[] {
       { id: "q3", numero_cuota: 3, qq_ha_cuota: 7.5, fecha_cobro_estimada: "2027-04-20", posicion_anio: 2027, posicion_mes: 5 },
     ]
     const pam = copiarEsquemaCuotas(NAZ, "26/27", "25/26")
+    // 💵 A-FEAT-1393 — la marca «en dólares» se copia a la campaña siguiente y se guarda sólo si cambió.
+    const conDolar: CuotaGuardada[] = [NAZ[0], { ...NAZ[1], en_dolares: true }]
+    const copiada = copiarEsquemaCuotas(conDolar, "26/27", "27/28")
+    chequear("Cuotas de arrendamiento", "💵 Al copiar el esquema a la campaña siguiente, la cuota en dólares sigue en dólares",
+      "false · true", copiada.map(f => String(!!f.en_dolares)).join(" · "), !copiada[0].en_dolares && copiada[1].en_dolares === true, "A-FEAT-1393")
+    const marcar = planificarCuotas(NAZ.slice(0, 2), [filaDesdeGuardada(NAZ[0]), { ...filaDesdeGuardada(NAZ[1]), en_dolares: true }])
+    chequear("Cuotas de arrendamiento", "💵 Tildar «u$s» en una cuota guarda SÓLO esa marca (nada de fechas ni qq)",
+      "1 cambio: q2 en_dolares=true", `${marcar.actualizar.length} cambio: ${marcar.actualizar.map(u => `${u.id} ${Object.entries(u.cambios).map(([k, v]) => `${k}=${v}`).join(",")}`).join(" ")}`,
+      marcar.actualizar.length === 1 && marcar.actualizar[0].id === "q2" && JSON.stringify(marcar.actualizar[0].cambios) === '{"en_dolares":true}', "A-FEAT-1393")
     const txt = (fs: FilaCuota[]) => fs.map(f => `${f.qq_ha_cuota}@${f.fecha_cobro}·${f.posicion_mes}/${f.posicion_anio}`).join(" ")
 
     chequear("Cuotas arrendamiento", "🔑 Copiar Nazarenas 26/27 a PAM 25/26 corre fechas y posición un año atrás",
@@ -8909,6 +8918,18 @@ export function correrCasos(): Resultado[] {
     chequear("Arrendamiento en Cash Flow", "No fijadas: va lo que falta fijar de cada cuota (la 2 está toda fijada; la 6, sólo el saldo de 28,4 tn), con soja de la posición × TC de la base; la de fecha pasada no se proyecta",
       "q5 112.96 tn $60998405 · q6 28.40 tn $15336000", nf.map(x => `${x.id} ${x.tons.toFixed(2)} tn $${Math.round(x.monto)}`).join(" · "),
       nf.map(x => `${x.id} ${x.tons.toFixed(2)} tn $${Math.round(x.monto)}`).join(" · ") === "q5 112.96 tn $60998405 · q6 28.40 tn $15336000", "A-FEAT-1328")
+
+    // 💵 A-FEAT-1393 — la cuota que QUEDA EN DÓLARES (la 2B de Sanpa, 2 qq/ha) sigue en el Cash Flow pero con $0 en
+    // pesos y la leyenda: no entra al banco. Sin la marca, la misma cuota sumaba $26,1 M (48,4 tn × U$S 360 × 1.500).
+    const sinMarca = cuotasNoFijadas([contrato], [cuota("q7", 3, 2, "2027-05-10", 2027, 5)], [], precios, tcs, "2026-10-23")
+    const conMarca = cuotasNoFijadas([contrato], [{ ...cuota("q7", 3, 2, "2027-05-10", 2027, 5), en_dolares: true }], [], precios, tcs, "2026-10-23")
+    chequear("Arrendamiento en Cash Flow", "🧨 Sin la marca, la 2B (48,4 tn) se esperaba en pesos en el banco: $26.136.000",
+      "26136000", String(Math.round(sinMarca[0]?.monto ?? -1)), Math.round(sinMarca[0]?.monto ?? -1) === 26136000, "A-FEAT-1393")
+    chequear("Arrendamiento en Cash Flow", "💵 Con la marca «en dólares»: la fila sigue, con $0 en pesos y «Queda en dólares (U$S 17.424)»",
+      "$0 · Queda en dólares (U$S 17.424)", `$${conMarca[0]?.monto} · ${conMarca[0]?.detalle.includes("Queda en dólares (U$S 17.424)") ? "Queda en dólares (U$S 17.424)" : conMarca[0]?.detalle}`,
+      conMarca.length === 1 && conMarca[0].monto === 0 && !!conMarca[0].en_dolares && conMarca[0].usd === 17424 && conMarca[0].detalle.includes("Queda en dólares (U$S 17.424)"), "A-FEAT-1393")
+    chequear("Arrendamiento en Cash Flow", "La leyenda sin precio no inventa un monto",
+      "💵 Queda en dólares — no entra al banco en pesos", leyendaEnDolares(null), leyendaEnDolares(null) === "💵 Queda en dólares — no entra al banco en pesos", "A-FEAT-1393")
   }
 
   // ══ 🏛️ DETALLE DE INMOBILIARIO / RED VIAL / AUTOMOTORES (A-FEAT-1320 punto 5) ════════════════

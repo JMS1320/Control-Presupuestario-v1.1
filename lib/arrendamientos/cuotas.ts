@@ -45,6 +45,11 @@ export interface CuotaGuardada {
   fecha_cobro_original?: string | null
   posicion_orig_anio?: number | null
   posicion_orig_mes?: number | null
+  /**
+   * 💵 A-FEAT-1393 — la cuota se cobra EN DÓLARES y no se pesifica (la 2B de Sanpa: «opción quedar en
+   * dólares»). El presupuesto la sigue contando como ingreso; el Cash Flow no la espera en pesos en el banco.
+   */
+  en_dolares?: boolean
 }
 
 /** Una fila del editor. Sin `id` = cuota nueva. */
@@ -54,6 +59,8 @@ export interface FilaCuota {
   fecha_cobro: string          // yyyy-mm-dd
   posicion_anio: number
   posicion_mes: number         // 1..12
+  /** 💵 A-FEAT-1393 — se cobra en dólares (no se pesifica). */
+  en_dolares?: boolean
 }
 
 /** "25/26" → 2025 · "2025/26" → 2025 · "2025/2026" → 2025. `null` si no se entiende. */
@@ -93,6 +100,8 @@ export function copiarEsquemaCuotas(
       fecha_cobro: correrAnios(c.fecha_cobro_original || c.fecha_cobro_estimada, delta),
       posicion_anio: Number(c.posicion_orig_anio ?? c.posicion_anio) + delta,
       posicion_mes: Number(c.posicion_orig_mes ?? c.posicion_mes),
+      // 💵 A-FEAT-1393 — la cuota que queda en dólares se repite en la campaña siguiente (la 2B de Sanpa).
+      en_dolares: !!c.en_dolares,
     }))
 }
 
@@ -183,6 +192,7 @@ export function planificarCuotas(originales: CuotaGuardada[], filas: FilaCuota[]
         fecha_cobro_original: f.fecha_cobro,
         posicion_orig_anio: f.posicion_anio,
         posicion_orig_mes: f.posicion_mes,
+        en_dolares: !!f.en_dolares,
       })
       return
     }
@@ -197,6 +207,7 @@ export function planificarCuotas(originales: CuotaGuardada[], filas: FilaCuota[]
     const cambios: Partial<CuotaGuardada> = {}
     if (o.numero_cuota !== numero) cambios.numero_cuota = numero
     if (Number(o.qq_ha_cuota) !== Number(f.qq_ha_cuota)) cambios.qq_ha_cuota = Number(f.qq_ha_cuota)
+    if (!!o.en_dolares !== !!f.en_dolares) cambios.en_dolares = !!f.en_dolares
     const terminosCambiaron = origFecha !== f.fecha_cobro
       || Number(origAnio) !== f.posicion_anio || Number(origMes) !== f.posicion_mes
     if (terminosCambiaron) {
@@ -225,6 +236,7 @@ export function filaDesdeGuardada(c: CuotaGuardada): FilaCuota {
     fecha_cobro: c.fecha_cobro_original || c.fecha_cobro_estimada,
     posicion_anio: Number(c.posicion_orig_anio ?? c.posicion_anio),
     posicion_mes: Number(c.posicion_orig_mes ?? c.posicion_mes),
+    en_dolares: !!c.en_dolares,
   }
 }
 

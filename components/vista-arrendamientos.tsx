@@ -51,6 +51,8 @@ interface Cuota {
   id: string; contrato_id: string; numero_cuota: number; qq_ha_cuota: number
   fecha_cobro_estimada: string; posicion_anio: number; posicion_mes: number
   estado: string; cuota_padre_id: string | null
+  /** 💵 A-FEAT-1393 — se cobra en dólares (no se pesifica): el Cash Flow no la espera en pesos. */
+  en_dolares?: boolean
 }
 interface Venta {
   id: string; cuota_id: string; tons: number; modo: "matba" | "pizarra"
@@ -292,6 +294,10 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
                               {q.cuota_padre_id && (
                                 <span className="ml-1 text-[10px] text-gray-400">(saldo)</span>
                               )}
+                              {q.en_dolares && (
+                                <span className="ml-1 rounded bg-emerald-50 px-1 text-[10px] text-emerald-800"
+                                  title="Se cobra en dólares y no se pesifica: el Cash Flow no la espera en pesos en el banco">💵 en dólares</span>
+                              )}
                             </td>
                             <td className="px-3 py-2 text-right">{fmtAR(Number(q.qq_ha_cuota))}</td>
                             <td className="px-3 py-2 text-right">{fmtAR(tons, 3)}</td>
@@ -409,6 +415,8 @@ interface FilaEdit {
   posAnio: string
   /** La posición la puso el usuario: deja de seguir a la fecha de cobro. */
   posManual: boolean
+  /** 💵 A-FEAT-1393 — queda en dólares. */
+  enDolares: boolean
 }
 
 interface FuenteCopia {
@@ -429,6 +437,7 @@ function aFilaEdit(c: FilaCuota): FilaEdit {
     posMes: c.posicion_mes,
     posAnio: String(c.posicion_anio),
     posManual: mesDe(c.fecha_cobro) !== c.posicion_mes || anioDe(c.fecha_cobro) !== String(c.posicion_anio),
+    enDolares: !!c.en_dolares,
   }
 }
 
@@ -439,6 +448,7 @@ function aFilaCuota(e: FilaEdit): FilaCuota {
     fecha_cobro: e.fecha,
     posicion_anio: Number(e.posAnio) || 0,
     posicion_mes: e.posMes,
+    en_dolares: e.enDolares,
   }
 }
 
@@ -485,7 +495,7 @@ function ModalContrato({ datos, cuotas, vendidoPorCuota, onCerrar, onGuardar }: 
       const otros = (cs || []).filter((c: any) => c.id !== datos.id)
       if (!otros.length) { setFuentes([]); return }
       const { data: qs } = await supabase.from("cuotas_arrendamiento")
-        .select("id, contrato_id, numero_cuota, qq_ha_cuota, fecha_cobro_estimada, posicion_anio, posicion_mes, fecha_cobro_original, posicion_orig_anio, posicion_orig_mes")
+        .select("id, contrato_id, numero_cuota, qq_ha_cuota, fecha_cobro_estimada, posicion_anio, posicion_mes, fecha_cobro_original, posicion_orig_anio, posicion_orig_mes, en_dolares")
         .in("contrato_id", otros.map((c: any) => c.id))
       setFuentes(otros
         .map((c: any) => ({ ...c, cuotas: (qs || []).filter((q: any) => q.contrato_id === c.id) }))
@@ -517,6 +527,7 @@ function ModalContrato({ datos, cuotas, vendidoPorCuota, onCerrar, onGuardar }: 
     return [...prev, {
       qq: "", fecha: ult?.fecha ?? "", posMes: ult?.posMes ?? 1,
       posAnio: ult?.posAnio ?? String(new Date().getFullYear()), posManual: ult?.posManual ?? false,
+      enDolares: false,
     }]
   })
 
@@ -649,6 +660,7 @@ function ModalContrato({ datos, cuotas, vendidoPorCuota, onCerrar, onGuardar }: 
                     <th className="px-1 py-1 text-right">%</th>
                     <th className="px-1 py-1 text-left">Fecha de cobro</th>
                     <th className="px-1 py-1 text-left">Posición</th>
+                    <th className="px-1 py-1 text-center" title="La cuota se cobra en dólares y no se pesifica: el Cash Flow no la espera en pesos en el banco">u$s</th>
                     <th className="px-1 py-1"></th>
                   </tr>
                 </thead>
@@ -687,6 +699,12 @@ function ModalContrato({ datos, cuotas, vendidoPorCuota, onCerrar, onGuardar }: 
                               {r.posManual ? "a mano" : "= cobro"}
                             </span>
                           </div>
+                        </td>
+                        <td className="px-1 py-1 text-center">
+                          {/* 💵 A-FEAT-1393 — queda en dólares (la 2B de Sanpa). */}
+                          <input type="checkbox" className="h-3.5 w-3.5" checked={r.enDolares}
+                            title="Se cobra en dólares y no se pesifica: sigue siendo ingreso del presupuesto, pero el Cash Flow no la espera en pesos en el banco"
+                            onChange={e => cambiarFila(i, { enDolares: e.target.checked })} />
                         </td>
                         <td className="px-1 py-1 text-right">
                           {vendido > 0 ? (
@@ -874,6 +892,8 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
           posicion_orig_mes: cuota.posicion_mes,
           estado: "presupuestado",
           cuota_padre_id: cuota.id,
+          // 💵 A-FEAT-1393 — el saldo de una cuota en dólares también queda en dólares.
+          en_dolares: !!cuota.en_dolares,
           notas: `Saldo de la cuota #${cuota.numero_cuota} al fijar ${fmtAR(tonsAFijar, 3)} tn`,
         })
         if (e1) throw new Error(e1.message)

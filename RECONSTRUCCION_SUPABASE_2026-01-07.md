@@ -3323,6 +3323,10 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-10-27 · LA CUOTA QUE QUEDA EN DÓLARES — columna `public.cuotas_arrendamiento.en_dolares` (script 117) — A-FEAT-1393 — ✅ CORRIDO 2026-10-27 con JMS (verificado con `explain update`)
+
+`scripts/117-cuota-en-dolares.sql` (+ `-deshacer`): `alter table public.cuotas_arrendamiento add column if not exists en_dolares boolean not null default false` con comentario `[script 117]` (el deshacer lo exige), y la marca en 2 cuotas de Sanpa (26/27 `a7e6c9fd-…` y 27/28 `7923c7f4-…`, las de 2 qq/ha). Sin cambios de RLS.
+
 ### 2026-10-27 · COBRO AGRUPADO — tabla `grupos_cobro` en msa/pam/ma + `comprobantes_venta.grupo_cobro_id` (script 114) y el grupo de Sáenz Valiente (script 115) — A-FEAT-167 — ✅ CORRIDOS 2026-10-27 con JMS (MCP en write con su OK)
 
 `scripts/114-grupos-cobro.sql` (+ `-deshacer`): en cada schema, `grupos_cobro (id uuid pk default gen_random_uuid(), cuit varchar not null, cliente varchar, monto_total numeric, estado varchar default 'cobrar', observaciones text, created_at timestamptz default now())`, RLS con `ver_segun_permiso` / `escribir_segun_permiso` (`puede_ver` / `puede_escribir` con (schema, 'grupos_cobro')), `revoke all from anon`, grants a `authenticated` y `service_role`; y `comprobantes_venta.grupo_cobro_id uuid references <schema>.grupos_cobro(id) on delete set null`. Marca `[script 114]` en los comentarios (el deshacer la exige). `scripts/115-grupo-cobro-saenz.sql` (+ `-deshacer`): datos — 1 grupo (id `d68a5a14-…`), las 2 ventas de Sáenz con su grupo y sus 3 movimientos con `comprobante_venta_id` = 209-32006.
