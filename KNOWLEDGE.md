@@ -2901,9 +2901,21 @@ cuatro inventaban diferencias que no existían:
 | **El crédito fiscal puede ser GLOBAL** | en jul y nov 2025 la columna «Crédito Fiscal Computable» vino en 0 en todos los renglones: el crédito está sólo en el XML (`total_computable_global`) | para comparar contra la app se compara **IVA contra IVA**, no contra el crédito computable (en mayo 2026 también difiere del IVA, por decisión del contador) |
 | **El mismo comprobante con otro número** | las liquidaciones de granos están en la app sin número y con tipo 332 (ARCA: tipo 33 con número); la póliza de Federación con punto de venta 0 (ARCA: 1) | emparejar por tipo + punto de venta + número + CUIT y, si no aparece, **por CUIT + importe** (o por CUIT cuando queda uno de cada lado). Es aviso para corregir la carga, no un mes a rectificar |
 
-**Y dos diferencias que son de verdad, pero de convención** (a definir con el contador → [A-DAT-95](PENDIENTES.md#a-dat-95) § D):
-en las liquidaciones de hacienda (tipos 60 / 180) **ARCA declara el total neto de lo que retiene el consignatario** (Genta enero:
-970.830 de IIBB) o con los «pagos a cuenta» restados (Sáenz Valiente: 330.665,50 y 270.618), y la app guarda el bruto.
+⚠️ **Cambió 27/10 — NO es una diferencia: es cómo declara ARCA, y la app está bien** (hasta acá decía «a definir con el contador»;
+fue un error de Claude, visto por JMS). En las liquidaciones de hacienda (tipos 60 / 180) **ARCA declara el total neto de lo que retiene
+el consignatario** (la retención va como «otros» en negativo: Genta enero 970.830 de IIBB; Sáenz Valiente 330.665,50 y 270.618 de pagos a
+cuenta), y **la app guarda el bruto con la retención adentro, aparte** — regla de JMS: *«las retenciones se cargan dentro de la liquidación,
+pero afectan sólo al pago, no a la carga»*. Para comparar, **se le suma de vuelta la retención a lo declarado** (`ventasComoLaApp` en
+`lib/balance/libro-diario-entrega.ts`). Neto e IVA dan igual al centavo → [A-DAT-95](PENDIENTES.md#a-dat-95) § D.
+
+**El IVA de una liquidación de granos en el libro** = el IVA de la venta **menos** el de la comisión y el almacenaje (regla de JMS 27/10:
+*«neto gravado venta menos neto gravado gastos = neto que se carga; ídem IVA, ídem total»*). La columna `iva` de `comprobantes_venta` guarda
+el de la venta (lo usa el cobro esperado); el libro lo toma neto con `ivaDelLibroVenta` (`lib/ventas/libro-iva.ts`). Sin esto, AFA mayo
+daba $14.909,65 más que lo declarado → [A-BUG-1391](PENDIENTES.md#a-bug-1391).
+
+**ARCA también puede traer un renglón que no cierra**: en las 15 facturas de Autopistas del Sol el mismo importe está como exento **y**
+como percepción de IVA (el total cierra con uno solo). Lo delata el control «total − partes = 0» aplicado a lo declarado, no a la app →
+[A-DAT-95](PENDIENTES.md#a-dat-95) § I.
 
 ## La FOTO antes y después de tocar datos — `scripts/foto-balance.mts` `#datos #respaldo #balance #2026-10-27`
 
@@ -2930,3 +2942,14 @@ por mes y cuenta, por campaña y cuenta, «Contra ARCA» (cada mes en tres rengl
 compara contra la misma de otra hoja sin buscarla. La única hoja con otras columnas es «ARCA … original»: el CSV tal cual.
 ⚠️ Un nombre de hoja de más de 31 letras **se corta** y la fórmula que lo nombra queda apuntando a una hoja que no existe: verificar
 las referencias entre hojas después de generar.
+
+**Lo declarado se compara RECTIFICADO, sin tocar los zips**: los cambios acordados con el contador van en una lista (`AJUSTES` del
+script: sacar o reemplazar un comprobante de un mes) que se aplica **encima** de lo leído; la hoja «ARCA rectificación» los muestra en tres
+renglones (antes · cambio · ahora). Los zips quedan como prueba de lo presentado. El «Resumen 12 meses» del libro diario aparte compara
+contra eso — el de los papeles de la app compara contra el total fijo de `presentado-arca.ts` (lo presentado sin rectificar).
+
+**La planilla «Compras y ventas BBDD y ARCA ahora»** (`lib/balance/bbdd-vs-arca.ts`, sale con el mismo script): la base y los zips **tal
+cual**, las mismas 21 columnas en las 4 hojas (las del objetivo de JMS), + «Sin crédito (B/C)» y «Control de partes» (total − partes).
+Una **factura B o C no discrimina el IVA**: su total no tiene partes, y sin esa columna el control marcaba en rojo todas las C. Y en la
+base hay facturas C guardadas de dos maneras (con el total en «no gravado», o con todo en 0): el total no cambia, pero la columna «No
+gravado» da muy distinto que ARCA. Tolerancia: 0,05 por comprobante (`TOLERANCIA_POR_COMPROBANTE`, redondeo del emisor).
