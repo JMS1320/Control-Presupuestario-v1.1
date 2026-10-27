@@ -60,13 +60,13 @@ const money = (n: number) => Math.round(n * 100) / 100
  * Usuario 27/10: *«que quede marcado el error en subplanilla y detalle… dejalo a la vista con la marca de los
  * renglones que dan error»*. No se corrige ningún dato: se marca, para que se vea dónde está.
  */
-const ESTILO_ERROR = {
+export const ESTILO_ERROR = {
   font: { color: { rgb: "FFA12B2B" } },
   fill: { patternType: "solid", fgColor: { rgb: "FFFBE4E4" } },
 }
 const fmtAr = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 /** El texto de la marca: cuánto suman las partes y cuánto falta (o sobra) para el total. */
-const marcaDescuadre = (d: Descuadre) =>
+export const marcaDescuadre = (d: Descuadre) =>
   `NO CUADRA: las partes suman ${fmtAr(d.suma_partes)} y el total es ${fmtAr(d.imp_total)} — ${d.diferencia > 0 ? "faltan" : "sobran"} ${fmtAr(Math.abs(d.diferencia))}`
 
 /**
@@ -325,16 +325,16 @@ function hojaDeControl(libro: LibroDiario, lecturas?: Lectura[]): unknown[][] {
 const NIVELES = new WeakMap<unknown[][], number[]>()
 
 /** Un renglón de SUBTOTAL: negrita, fondo suave y línea arriba — se distingue de las cuentas. */
-const ESTILO_SUBTOTAL = {
+export const ESTILO_SUBTOTAL = {
   font: { bold: true },
   fill: { patternType: "solid", fgColor: { rgb: "FFE6EEF6" } },
   border: { top: { style: "thin", color: { rgb: "FFB9C4C0" } } },
 }
 /** El total del ejercicio: lo mismo, un tono más fuerte. */
-const ESTILO_TOTAL = { ...ESTILO_SUBTOTAL, fill: { patternType: "solid", fgColor: { rgb: "FFCFDDEB" } } }
+export const ESTILO_TOTAL = { ...ESTILO_SUBTOTAL, fill: { patternType: "solid", fgColor: { rgb: "FFCFDDEB" } } }
 
 /** Le pone estilo a cada celda de un renglón (respetando las fórmulas). */
-const conEstilo = (fila: unknown[], s: Record<string, unknown>): unknown[] => fila.map(v => {
+export const conEstilo = (fila: unknown[], s: Record<string, unknown>): unknown[] => fila.map(v => {
   if (v && typeof v === "object" && "t" in (v as object)) return { ...(v as XLSX.CellObject), s }
   if (typeof v === "number") return { t: "n", v, s }
   return { t: "s", v: v == null ? "" : String(v), s }
@@ -349,6 +349,8 @@ const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: 
   // 31 caracteres es el máximo que acepta Excel para el nombre de una solapa.
   XLSX.utils.book_append_sheet(wb, ws, nombre.slice(0, 31))
 }
+/** La misma forma de agregar una hoja (formato, presentación y plegado), para el libro diario aparte. */
+export const agregarHoja = hoja
 
 /**
  * Las columnas de un listado de asientos (Compras, Ventas, Provisión, Sin subdiario).
@@ -453,6 +455,11 @@ export function hojaPorCuenta(
    * con la marca, y el subtotal del mes avisa. Sin esto la hoja sale como antes.
    */
   marcas?: { asientos: AsientoLibroDiario[]; descuadres: Descuadre[] },
+  /**
+   * 🌾 VENTAS: qué se vendió y cuánto, por cuenta y mes — producto, toneladas, cabezas, kilos (usuario 27/10, ronda 3:
+   * *«poner grano, categoría, cantidad»*). Van a la derecha de «Control de partes»; salen de `marcas.asientos`.
+   */
+  conCantidades = false,
 ): unknown[][] {
   const f: unknown[][] = []
   /** Por renglón (año-mes|cuenta): cuántos comprobantes no cuadran y cuánto suman sus diferencias. */
@@ -469,6 +476,21 @@ export function hojaPorCuenta(
       conError.set(k, acc)
     }
   }
+  const conCant = conCantidades && !!marcas
+  const cant = new Map<string, { productos: Set<string>; t: number; c: number; k: number }>()
+  if (conCant) {
+    for (const a of marcas!.asientos) {
+      const q = a.cantidades
+      if (!q) continue
+      const [anio, mes] = a.subdiario.split("-").map(Number)
+      const k = `${anio}-${mes}|${a.cuenta_contable?.trim() || SIN_IMPUTAR}`
+      const acc = cant.get(k) ?? { productos: new Set<string>(), t: 0, c: 0, k: 0 }
+      if (q.producto) acc.productos.add(q.producto)
+      acc.t += q.toneladas ?? 0; acc.c += q.cabezas ?? 0; acc.k += q.kilos ?? 0
+      cant.set(k, acc)
+    }
+  }
+  const r3 = (x: number) => Math.round(x * 1000) / 1000
   const marcaFila = (e: { n: number; dif: number }) =>
     `NO CUADRA: ${e.n} comprobante(s) cuyas partes no suman su total (${e.dif > 0 ? "faltan" : "sobran"} ${fmtAr(Math.abs(e.dif))}) — están en rojo en el detalle`
 
@@ -485,6 +507,7 @@ export function hojaPorCuenta(
     "Neto Gravado DDJJ", "Diferencia", "Exento + No gravado + Monotributo", "Diferencia",
     "Nro cuenta", "Comprobantes",
     ...(marcas ? ["Control de partes"] : []),
+    ...(conCant ? ["Producto", "Toneladas", "Cabezas", "Kilos"] : []),
   ])
 
   /** Las filas (1-based, como las ve Excel) de cada «Total general» de mes, para el Control final. */
@@ -508,6 +531,10 @@ export function hojaPorCuenta(
         fila.nroCuenta, fila.comprobantes,
       ]
       if (marcas) renglon.push(e ? marcaFila(e) : "")
+      if (conCant) {
+        const q = cant.get(`${fila.anio}-${fila.mes}|${fila.cuenta}`)
+        renglon.push(q ? [...q.productos].join(" · ") : "", q?.t ? r3(q.t) : "", q?.c || "", q?.k || "")
+      }
       f.push(e ? conEstilo(renglon, ESTILO_ERROR) : renglon)
     }
     // El subtotal del mes también avisa si adentro hay algo que no cuadra.
@@ -538,6 +565,11 @@ export function hojaPorCuenta(
       "", { t: "n", f: `IF(O${n}="","",O${n}-(E${n}+F${n}))`, z: MONEDA },
       "", m.total.comprobantes,
       ...(marcas ? [errMes.n ? marcaFila(errMes) : ""] : []),
+      ...(conCant ? ["",
+        ...(["U", "V", "W"] as const).map((col, i) => {
+          const del = [...cant.entries()].filter(([k]) => k.startsWith(`${m.anio}-${m.mes}|`)).map(([, v]) => [v.t, v.c, v.k][i])
+          return conFormula(`SUBTOTAL(9,${col}${desde}:${col}${hasta})`, r3(del.reduce((s, x) => s + x, 0)), i === 0 ? TONELADAS : ENTERO)
+        })] : []),
     ], ESTILO_SUBTOTAL))
     f.push([])
   }
@@ -558,6 +590,10 @@ export function hojaPorCuenta(
     ),
     conFormula(`I${nTotal}-(D${nTotal}+E${nTotal}+F${nTotal}+G${nTotal}+H${nTotal}+J${nTotal})`, libro.totalGeneral.diferencia),
     "", "", "", "", "", "", libro.totalGeneral.comprobantes,
+    ...(conCant ? ["", "",
+      ...(["U", "V", "W"] as const).map((col, i) =>
+        conFormula(`SUBTOTAL(9,${col}${primeraDetalle}:${col}${ultimaDetalle})`,
+          r3([...cant.values()].reduce((s, v) => s + [v.t, v.c, v.k][i], 0)), i === 0 ? TONELADAS : ENTERO))] : []),
   ], ESTILO_TOTAL))
 
   const nCtrl = f.length + 1
@@ -650,7 +686,7 @@ const COLS_RESUMEN_MENSUAL: Columna[] = [
   { ancho: 18 },                     // Control
 ]
 
-const COLS_POR_CUENTA: Columna[] = [
+export const COLS_POR_CUENTA: Columna[] = [
   { ancho: 7, z: ENTERO },          // A Año
   { ancho: 5, z: ENTERO },          // B Mes
   { ancho: 34 },                    // C Cuenta Contable
@@ -670,6 +706,14 @@ const COLS_POR_CUENTA: Columna[] = [
   { ancho: 12 },                    // Q Nro cuenta
   { ancho: 13, z: ENTERO },         // R Comprobantes
   { ancho: 70 },                    // S Control de partes (A-FEAT-1388)
+]
+/** Ventas por cuenta: lo mismo + producto, toneladas, cabezas y kilos (T a W). */
+export const COLS_POR_CUENTA_VENTAS: Columna[] = [
+  ...COLS_POR_CUENTA,
+  { ancho: 22 },                    // T Producto
+  { ancho: 13, z: TONELADAS },      // U Toneladas
+  { ancho: 10, z: ENTERO },         // V Cabezas
+  { ancho: 12, z: ENTERO },         // W Kilos
 ]
 
 /**
@@ -2285,7 +2329,7 @@ export function armarWorkbook(
     { asientos: libro.compras, descuadres: libro.controles.compras.descuadres }), COLS_POR_CUENTA)
   hoja(wb, "Ventas por cuenta", hojaPorCuenta(armarLibroPorCuenta(libro.ventas, TIPOS_SIN_CREDITO_VENTAS),
     `LIBRO DIARIO MENSUAL (Ventas) — ejercicio ${libro.ejercicio.etiqueta}`,
-    { asientos: libro.ventas, descuadres: libro.controles.ventas.descuadres }), COLS_POR_CUENTA)
+    { asientos: libro.ventas, descuadres: libro.controles.ventas.descuadres }, true), COLS_POR_CUENTA_VENTAS)
   /**
    * 🧾 **El papel 05 es la provisión de FACTURAS (compras); la de COBROS (ventas) es del papel 03.**
    *

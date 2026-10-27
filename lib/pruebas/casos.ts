@@ -1261,24 +1261,33 @@ export function correrCasos(): Resultado[] {
     const csvDic = '"Fecha de Emisión";"Tipo de Comprobante";"Punto de Venta";"Número de Comprobante";"Tipo Doc. Vendedor";"Nro. Doc. Vendedor";"Denominación Vendedor";"Importe Total";"Moneda Original";"Tipo de Cambio";"Importe No Gravado";"Importe Exento";"Crédito Fiscal Computable"\n'
       + '2025-12-01;1;10;10346;80;30708482478;"I.C.T. NET S.A.";20399,12;"PES";1,00;0,00;0,00;4336,82\n'
       + '2025-12-01;1;2;450;80;20233952746;"MASSAGLIA ALDO ENRIQUE";1633795,24;"PES";1,00;0,00;0,00;283551,24\n'
-      + '2025-12-05;1;5;77;80;30111111111;"PROVEEDOR USD";100,00;"DOL";1450,00;0,00;0,00;21,00\n'
+      // ⚠️ cambió 2026-10-27: este renglón era INVENTADO (USD 100 × 1.450) y suponía que ARCA informa en moneda original.
+      // El libro presentado trae los importes YA EN PESOS: renglón real de feb-26 (Almacén Veterinario, DOL, TC 1.390).
+      + '2026-02-23;1;3;2014;80;30714441082;"ALMACEN VETERINARIO S.R.L.";4466876,20;"DOL";1390,00;0,00;0,00;612406,20\n'
     const pres = parsearComprasCsv(csvDic)
     const xmlTot = parsearTotalesXml('<libro_iva><info_presentacion><codigo>68228669</codigo><periodo>202512</periodo><secuencia>1</secuencia></info_presentacion><iva_compras><informacion_consolidada><total_compras_no_fiscal>1013346.00</total_compras_no_fiscal><totales_compras><total_neto_gravado>11185034.57</total_neto_gravado><total_liquidado>2348520.27</total_liquidado></totales_compras></informacion_consolidada></iva_compras></libro_iva>')
     const appDic = [
       { id: "a", tipo_comprobante: 1, punto_venta: 10, numero_desde: 10346, cuit: "30708482478", denominacion_emisor: "I.C.T. NET S.A.", fecha_emision: "2025-12-01", imp_total: 20399.12, iva: 4336.82 },
       { id: "b", tipo_comprobante: 1, punto_venta: 2, numero_desde: 450, cuit: "20233952746", denominacion_emisor: "MASSAGLIA", fecha_emision: "2025-12-01", imp_total: 1633795.24, iva: 283551.24 },
-      { id: "c", tipo_comprobante: 1, punto_venta: 5, numero_desde: 77, cuit: "30111111111", denominacion_emisor: "PROVEEDOR USD", fecha_emision: "2025-12-05", imp_total: 100, iva: 21, tipo_cambio: 1450 },
+      { id: "c", tipo_comprobante: 1, punto_venta: 3, numero_desde: 2014, cuit: "30714441082", denominacion_emisor: "ALMACEN VETERINARIO", fecha_emision: "2026-02-23", imp_total: 3213.58, iva: 440.58, tipo_cambio: 1390 },
       // La cooperativa de luz: está en la app y no se presentó (el error de diciembre).
       { id: "d", tipo_comprobante: 1, punto_venta: 23, numero_desde: 188912, cuit: "30545749994", denominacion_emisor: "COOPSER", fecha_emision: "2025-12-09", imp_total: 518801.15, iva: 97613.47 },
     ]
     const cmp = compararSubdiarioConLibro(appDic, pres, TIPOS_SIN_CREDITO_COMPRAS)
     const v = `dolar ${pres[2].total} · DDJJ ${xmlTot.creditoFiscal} ${xmlTot.periodo} · solo app ${cmp.soloApp.map(f => f.numero_desde).join(",")} · cf ${cmp.totales.diferencia.creditoFiscal} · ok ${cmp.ok}`
-    chequear("Subdiarios — lo presentado", "El zip de ARCA: los dólares van a pesos con su TC, el total de la DDJJ sale del XML, y la factura que está en la app y no se presentó salta con su crédito fiscal",
-      "dolar 145000 · DDJJ 2348520.27 202512 · solo app 188912 · cf 97613.47 · ok false", v,
-      v === "dolar 145000 · DDJJ 2348520.27 202512 · solo app 188912 · cf 97613.47 · ok false", "A-AUTO-09")
+    chequear("Subdiarios — lo presentado", "El zip de ARCA: la factura en dólares ya viene EN PESOS (no se vuelve a multiplicar), el total de la DDJJ sale del XML, y la factura que está en la app y no se presentó salta con su crédito fiscal",
+      "dolar 4466876.2 · DDJJ 2348520.27 202512 · solo app 188912 · cf 97613.47 · ok false", v,
+      v === "dolar 4466876.2 · DDJJ 2348520.27 202512 · solo app 188912 · cf 97613.47 · ok false", "A-AUTO-09")
     const cmpOk = compararSubdiarioConLibro(appDic.slice(0, 3), pres, TIPOS_SIN_CREDITO_COMPRAS)
     chequear("Subdiarios — lo presentado", "Si la app y lo presentado tienen lo mismo, coincide",
       "true", String(cmpOk.ok), cmpOk.ok, "A-AUTO-09")
+    // 🔢 A-FEAT-1388 ronda 3: el mismo comprobante con OTRO número (Federación 0- vs 1-) se empareja por CUIT + importe
+    // y no cuenta como «no declarado»; con otro importe además (Genta enero), sí es un error.
+    const mismoOtroNro = compararSubdiarioConLibro([{ ...appDic[0], punto_venta: 0 }], [pres[0]], TIPOS_SIN_CREDITO_COMPRAS)
+    const otroImporte = compararSubdiarioConLibro([{ ...appDic[0], punto_venta: 0, imp_total: 20000 }], [pres[0]], TIPOS_SIN_CREDITO_COMPRAS)
+    const vNro = `${mismoOtroNro.otroNumero.length}/${mismoOtroNro.soloApp.length}/${mismoOtroNro.ok} · ${otroImporte.otroNumero[0]?.diferencia}/${otroImporte.ok}`
+    chequear("Subdiarios — lo presentado", "Mismo comprobante con otro número: se empareja por CUIT e importe (aviso, coincide); con otro importe además, no coincide",
+      "1/0/true · -399.12/false", vNro, vNro === "1/0/true · -399.12/false", "A-FEAT-1388")
   }
 
   // 📨 A-AUTO-09 — el mail del subdiario al contador: asunto «Subdiario Mes Año» (pedido de JMS 27/10), la respuesta

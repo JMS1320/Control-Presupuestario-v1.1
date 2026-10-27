@@ -40,10 +40,25 @@ export interface ComprobantePresentado {
   numero: number
   cuit: string
   denominacion: string
-  /** En pesos (importe original × tipo de cambio). */
+  /**
+   * En pesos, TAL CUAL viene en el libro. ⚠️ cambió 2026-10-27: decía «importe original × tipo de cambio» y se
+   * multiplicaba — **el libro IVA de ARCA ya informa los importes en PESOS** aunque la factura sea en dólares
+   * (Agro Centros 3-5282: «Importe Total» 5.023.287,17 con DOL y TC 1.403 = neto 4.151.477 + IVA 871.810,17).
+   * Multiplicar daba 7.047 millones y cada factura en dólares salía «con otro importe».
+   */
   total: number
-  /** Crédito fiscal computable, en pesos. */
+  /** Crédito fiscal computable, en pesos. En VENTAS es el débito fiscal (el «Total IVA» del libro). */
   creditoFiscal: number
+  /**
+   * 📒 Las columnas, en pesos — para que el libro diario compare columna por columna (A-FEAT-1388 ronda 3).
+   * `otrosTributos` junta percepciones, impuestos municipales e internos y otros tributos: es lo mismo que la app
+   * guarda en `otros_tributos` (ver `desdeHistorico`). Opcionales: los casos viejos no los traen.
+   */
+  netoGravado?: number
+  noGravado?: number
+  exento?: number
+  iva?: number
+  otrosTributos?: number
 }
 
 const num = (s: string | undefined) => {
@@ -78,17 +93,44 @@ export function parsearTotalesXml(xml: string): TotalesPresentados {
 
 /** `comprobantes_compras.csv`: separado por «;», decimales con coma, la primera fila es el encabezado. */
 export function parsearComprasCsv(csv: string): ComprobantePresentado[] {
+  return parsearCsvLibro(csv, "compras")
+}
+
+/**
+ * 🧾 Las VENTAS del mismo zip (`comprobantes_ventas.csv`) — hasta el 27/10 nadie las leía (A-FEAT-1388 ronda 3:
+ * el libro diario compara ventas contra lo presentado igual que compras). Mismo formato, con «Comprador» en vez
+ * de «Vendedor» y sin crédito fiscal: `creditoFiscal` lleva el débito (el «Total IVA»).
+ */
+export function parsearVentasCsv(csv: string): ComprobantePresentado[] {
+  return parsearCsvLibro(csv, "ventas")
+}
+
+function parsearCsvLibro(csv: string, lado: "compras" | "ventas"): ComprobantePresentado[] {
   const lineas = csv.replace(/^﻿/, "").split(/\r?\n/).filter(l => l.trim())
   if (lineas.length < 2) return []
   const cab = lineas[0].split(";").map(c => c.replace(/"/g, "").trim().toLowerCase())
   const col = (...nombres: string[]) => cab.findIndex(c => nombres.some(n => c.startsWith(n)))
   const iFecha = col("fecha de emisi"), iTipo = col("tipo de comprobante"), iPv = col("punto de venta")
+  // ⚠️ «número de comprobante hasta» (ventas) también empieza así: se toma la PRIMERA, que es la «desde».
   const iNum = col("número de comprobante", "numero de comprobante", "nmero de comprobante")
-  const iCuit = col("nro. doc. vendedor"), iDen = col("denominaci"), iTotal = col("importe total")
+  const iCuit = col(lado === "compras" ? "nro. doc. vendedor" : "nro. doc. comprador")
+  const iDen = col("denominaci"), iTotal = col("importe total")
   const iTc = col("tipo de cambio"), iCred = col("crédito fiscal computable", "credito fiscal computable", "crdito fiscal computable")
+  const iNoGrav = col("importe no gravado"), iExento = col("importe exento")
+  const iNeto = col("total neto gravado"), iIva = col("total iva")
+  // El «Total IVA» del libro viene REDONDEADO (4.464,57 de IVA 21 % figura 4.464,60): el exacto es la suma de las
+  // columnas por alícuota. Si no hay ninguna (un formato viejo), se usa el total.
+  const iIvaAlicuotas = cab.map((c, i) => (c.startsWith("importe iva ") ? i : -1)).filter(i => i >= 0)
+  // Todo lo que la app junta en «otros tributos»: percepciones, municipales, internos y otros.
+  const iOtros = cab.map((c, i) => (/^(importe de per|importe de percepciones|importe de impuestos|importe otros tributos|percepci)/.test(c) ? i : -1))
+    .filter(i => i >= 0)
+  const val = (v: string[], i: number) => (i >= 0 ? num(v[i]) : 0)
+  void iTc // el tipo de cambio se lee pero NO se aplica: los importes del libro ya están en pesos (ver `total`).
+  const vacio = (v: string[], i: number) => i < 0 || !String(v[i] ?? "").replace(/"/g, "").trim()
   return lineas.slice(1).map(l => {
     const v = l.split(";")
-    const tc = num(v[iTc]) || 1
+    const tc = 1
+    const iva = r2((iIvaAlicuotas.length ? iIvaAlicuotas.reduce((t, i) => t + val(v, i), 0) : val(v, iIva)) * tc)
     return {
       fecha: String(v[iFecha] ?? "").replace(/"/g, "").trim(),
       tipo: parseInt(dig(v[iTipo])) || 0,
@@ -97,7 +139,13 @@ export function parsearComprasCsv(csv: string): ComprobantePresentado[] {
       cuit: dig(v[iCuit]),
       denominacion: String(v[iDen] ?? "").replace(/"/g, "").trim(),
       total: r2(num(v[iTotal]) * tc),
-      creditoFiscal: r2(num(v[iCred]) * tc),
+      // En algunos meses (jul y nov 2025) el libro trae «Crédito Fiscal Computable» VACÍO: ahí el crédito es el IVA.
+      creditoFiscal: lado === "compras" ? (vacio(v, iCred) ? iva : r2(val(v, iCred) * tc)) : iva,
+      netoGravado: r2(val(v, iNeto) * tc),
+      noGravado: r2(val(v, iNoGrav) * tc),
+      exento: r2(val(v, iExento) * tc),
+      iva,
+      otrosTributos: r2(iOtros.reduce((s, i) => s + val(v, i), 0) * tc),
     }
   })
 }
@@ -128,6 +176,14 @@ export interface ResultadoContraPresentado {
   soloPresentado: ComprobantePresentado[]
   /** En los dos lados con otro importe total. */
   importeDistinto: { app: FacturaParaComparar; presentado: ComprobantePresentado; diferencia: number }[]
+  /**
+   * 🔢 El MISMO comprobante con otro tipo o número: emparejados por CUIT + importe, o por CUIT cuando queda uno de
+   * cada lado (A-FEAT-1388 ronda 3: Federación 0-34160783 vs 1-34160783, las liquidaciones de granos sin número en
+   * la app). Con `diferencia` 0 es un dato de identificación a corregir en la app, no un mes a rectificar.
+   */
+  otroNumero: { app: FacturaParaComparar; presentado: ComprobantePresentado; diferencia: number }[]
+  /** Cada comprobante de la app con el presentado que le tocó (por id de la app). Para poner lo declarado al lado. */
+  pares: Map<string, ComprobantePresentado>
   ok: boolean
 }
 
@@ -163,12 +219,34 @@ export function compararSubdiarioConLibro(
   }
   const soloApp: FacturaParaComparar[] = []
   const importeDistinto: ResultadoContraPresentado["importeDistinto"] = []
+  const pares = new Map<string, ComprobantePresentado>()
   for (const f of app) {
     const cuit = dig(f.cuit), pv = n(f.punto_venta), nro = n(f.numero_desde)
     const p = tomar(libres.get(clave(n(f.tipo_comprobante), pv, nro, cuit))) ?? tomar(libresSinTipo.get(sinTipo(pv, nro, cuit)))
     if (!p) { soloApp.push(f); continue }
+    pares.set(f.id, p)
     const dif = r2(n(f.imp_total) * tc(f) - p.total)
     if (Math.abs(dif) > TOL) importeDistinto.push({ app: f, presentado: p, diferencia: dif })
+  }
+  // 2º y 3º paso: lo que no se encontró por tipo + punto de venta + número, por CUIT.
+  const otroNumero: ResultadoContraPresentado["otroNumero"] = []
+  const pesosApp = (f: FacturaParaComparar) => r2(n(f.imp_total) * tc(f))
+  const libresDe = (cuit: string) => presentado.filter(p => !usados.has(p) && p.cuit === cuit)
+  for (const f of [...soloApp]) {
+    const p = libresDe(dig(f.cuit)).find(x => Math.abs(x.total - pesosApp(f)) <= TOL)
+    if (!p) continue
+    usados.add(p); pares.set(f.id, p)
+    otroNumero.push({ app: f, presentado: p, diferencia: 0 })
+    soloApp.splice(soloApp.indexOf(f), 1)
+  }
+  for (const f of [...soloApp]) {
+    const cuit = dig(f.cuit)
+    const libresCuit = libresDe(cuit)
+    if (libresCuit.length !== 1 || soloApp.filter(x => dig(x.cuit) === cuit).length !== 1) continue
+    const p = libresCuit[0]
+    usados.add(p); pares.set(f.id, p)
+    otroNumero.push({ app: f, presentado: p, diferencia: r2(pesosApp(f) - p.total) })
+    soloApp.splice(soloApp.indexOf(f), 1)
   }
   const soloPresentado = presentado.filter(p => !usados.has(p))
   const appTotal = r2(app.reduce((t, f) => t + n(f.imp_total) * tc(f), 0))
@@ -181,21 +259,27 @@ export function compararSubdiarioConLibro(
     diferencia: { comprobantes: app.length - presentado.length, total: r2(appTotal - prTotal), creditoFiscal: r2(appCred - prCred) },
   }
   const ok = !soloApp.length && !soloPresentado.length && !importeDistinto.length
+    && !otroNumero.some(x => Math.abs(x.diferencia) > TOL)
     && Math.abs(totales.diferencia.total) <= TOL && Math.abs(totales.diferencia.creditoFiscal) <= TOL
-  return { totales, soloApp, soloPresentado, importeDistinto, ok }
+  return { totales, soloApp, soloPresentado, importeDistinto, otroNumero, pares, ok }
 }
 
 /** Lee el zip que exporta ARCA (en el navegador o en el servidor). */
-export async function leerZipLibroIva(datos: ArrayBuffer | Uint8Array): Promise<{ totales: TotalesPresentados | null; compras: ComprobantePresentado[] }> {
+export async function leerZipLibroIva(datos: ArrayBuffer | Uint8Array): Promise<{
+  totales: TotalesPresentados | null; compras: ComprobantePresentado[]; ventas: ComprobantePresentado[]
+}> {
   const JSZip = (await import("jszip")).default
   const zip = await JSZip.loadAsync(datos)
   const archivo = (fin: string) => Object.values(zip.files).find(f => f.name.toLowerCase().endsWith(fin))
   const xml = archivo("libro_iva.xml")
-  const csv = archivo("comprobantes_compras.csv")
   // El CSV viene en latin-1 (las tildes de los encabezados): se decodifica así para poder reconocer las columnas.
-  const csvTexto = csv ? new TextDecoder("latin1").decode(await csv.async("uint8array")) : ""
+  const texto = async (fin: string) => {
+    const f = archivo(fin)
+    return f ? new TextDecoder("latin1").decode(await f.async("uint8array")) : ""
+  }
   return {
     totales: xml ? parsearTotalesXml(await xml.async("string")) : null,
-    compras: parsearComprasCsv(csvTexto),
+    compras: parsearComprasCsv(await texto("comprobantes_compras.csv")),
+    ventas: parsearVentasCsv(await texto("comprobantes_ventas.csv")),
   }
 }
