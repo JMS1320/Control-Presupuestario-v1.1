@@ -1288,6 +1288,13 @@ Sin «Para», la marca queda como siempre: sólo en Principal → Para revisar. 
 1. **📒 Libro IVA Compras** = comprobantes que **SÍ generan crédito fiscal** (Fac **A** y **M**). Filas Facturas / Notas de Crédito / Total Neto, con Neto Gravado, Exento/No Gravado, IVA, Otros Tributos, Total.
 2. **📋 Comprobantes que no generan crédito fiscal (Fac C y B)** = Fac **B** (6/7/8) + Fac **C** (11/12/13). Filas Comprobantes / Notas de crédito / Total Neto (por importe total).
 
+**📜 Julio a noviembre 2025 (el histórico del contador)** *(2026-10-27)*: esos meses la app no los tiene como
+facturas propias — los cargó el contador. Al elegir uno, Subdiarios muestra **las del histórico**, con un cartel
+amarillo que lo dice, su resumen en 2 bloques y su control de cuadratura. Son **de consulta**: no se imputan ni se
+editan, y no aparecen los botones de vincular PDF ni de archivos para ARCA. La 🚩 de cada fila sirve para pasarle
+una corrección a alguien. Si un mes está en los dos lados (diciembre), **manda la app**. La lista de períodos
+arranca en julio 2025 para que se vea el ejercicio 25/26 entero. → A-TEST-1260
+
 **Ojo (cambio ARCA):** antes el bloque 2 era solo Fac C; ahora incluye **B y C**, y esas salen del bloque 1 (no se cuentan dos veces).
 
 **Export Excel/PDF** (botón que baja LIBRO IVA COMPRAS): traen los **mismos 2 bloques** que la pantalla + el **Detalle por Alícuotas** (IVA discriminado 0/10,5/21/27%). El detalle por factura no cambió.

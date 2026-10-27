@@ -65,6 +65,7 @@ import { colorFc, ayudaFc } from "@/lib/gas-pdf/estados-fc"
 import { LeyendaEstadosFc } from "@/components/gas-pdf/leyenda-estados-fc"
 import { ModalElegirCandidato } from "@/components/gas-pdf/modal-elegir-candidato"
 import { InformeLote } from "@/components/gas-pdf/informe-lote"
+import { historicoAFactura, filasDelSubdiario } from "@/lib/facturas/historico-como-factura"
 import { verificarCuadratura, TIPOS_SIN_CREDITO_COMPRAS } from "@/lib/subdiarios/cuadratura"
 import { calcularSubtotalesSubdiario as calcularSubtotalesSubdiarioLib } from "@/lib/subdiarios/subtotales"
 import { elegirCarpetaDestino, generarNombreUnico as generarNombreUnicoLib, guardarEnCarpeta, LS_CARPETA_POR_DEFECTO } from "@/lib/subdiarios/carpeta-destino"
@@ -412,6 +413,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [mostrarImputadas, setMostrarImputadas] = useState(false)
   const [facturasSeleccionadas, setFacturasSeleccionadas] = useState<Set<string>>(new Set())
   const [facturasPeriodo, setFacturasPeriodo] = useState<FacturaArca[]>([])
+  /** El período abierto viene del histórico del contador: sólo consulta (A-FEAT-1382). */
+  const periodoHistorico = facturasPeriodo.length > 0 && facturasPeriodo.every(f => f.estado === 'historico')
   const [facturasImputacion, setFacturasImputacion] = useState<FacturaArca[]>([])
   // 📒 «Asientos Contables» (A-FEAT-1318): la lista abierta (null = cerrada)
   const [asientosContables, setAsientosContables] = useState<FacturaArca[] | null>(null)
@@ -479,6 +482,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
    * para pintar 40 banderitas que casi siempre están apagadas.
    */
   const { porRegistro: revisionesFactura, recargar: recargarRevisiones } = useRevisionesDe(schemaName, 'comprobantes_arca')
+  // 📜 Las 🚩 de las filas del histórico (Subdiarios jul–nov, A-FEAT-1382) quedan ancladas a SU tabla.
+  const { porRegistro: revisionesHistorico, recargar: recargarRevisionesHistorico } = useRevisionesDe(schemaName, 'comprobantes_historico')
   // PDFs de la carpeta que NO matchearon ninguna factura (huérfanos) — resultado de la última supervisión.
   const [huerfanosSupervision, setHuerfanosSupervision] = useState<{ archivo: string; url: string; chars?: number }[]>([])
   /**
@@ -824,7 +829,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     const periodos = []
     const hoy = new Date()
     
-    for (let i = 0; i < 12; i++) {
+    // Hasta jul-2025 como mínimo, para que se vea el ejercicio 25/26 entero (con el histórico, A-FEAT-1382).
+    const meses = Math.max(12, (hoy.getFullYear() - 2025) * 12 + hoy.getMonth() - 6 + 1)
+    for (let i = 0; i < meses; i++) {
       const fecha = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1)
       const mes = String(fecha.getMonth() + 1).padStart(2, '0')
       const año = fecha.getFullYear()
@@ -1130,48 +1137,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       }
 
       // Mapear registros históricos al formato FacturaArca
-      const historicas: FacturaArca[] = (historicoResult.data || []).map(h => ({
-        id: h.id,
-        fecha_emision: h.fecha,
-        tipo_comprobante: 0,
-        punto_venta: h.punto_de_venta ?? null,
-        numero_desde: h.numero_desde ?? null,
-        numero_hasta: null,
-        codigo_autorizacion: null,
-        tipo_doc_emisor: null,
-        cuit: h.nro_doc_emisor ?? '',
-        denominacion_emisor: h.denominacion_emisor ?? '',
-        tipo_cambio: 1,
-        moneda: 'PES',
-        imp_neto_gravado: h.imp_neto_gravado ?? 0,
-        imp_neto_no_gravado: h.imp_neto_no_gravado ?? 0,
-        imp_op_exentas: h.imp_op_exentas ?? 0,
-        otros_tributos: h.otros_tributos ?? 0,
-        iva: h.iva ?? 0,
-        imp_total: h.imp_total ?? 0,
-        campana: null,
-        año_contable: h.anio_contable ?? null,
-        mes_contable: h.mes_contable ?? null,
-        fc: h.fc ?? null,
-        cuenta_contable: h.cuenta_contable ?? null,
-        centro_costo: null,
-        estado: 'historico',
-        observaciones_pago: null,
-        detalle: null,
-        archivo_origen: null,
-        fecha_importacion: null,
-        fecha_modificacion: null,
-        fecha_estimada: null,
-        fecha_vencimiento: null,
-        monto_a_abonar: null,
-        ddjj_iva: 'No',
-        created_at: h.created_at ?? '',
-        iva_2_5: null, iva_5: null, iva_10_5: null, iva_21: null, iva_27: null,
-        neto_grav_iva_0: null, neto_grav_iva_2_5: null, neto_grav_iva_5: null,
-        neto_grav_iva_10_5: null, neto_grav_iva_21: null, neto_grav_iva_27: null,
-        sicore: null, monto_sicore: null, tipo_sicore: null, descuento_aplicado: null,
-        grupo_pago_id: null,
-      }))
+      // En la lista general el tipo del histórico queda en 0, como estaba (no cambia filtros ni chips).
+      const historicas: FacturaArca[] = (historicoResult.data || []).map(h => ({ ...historicoAFactura(h), tipo_comprobante: 0 }) as unknown as FacturaArca)
 
       const facturasCargadas = [...(arcaResult.data || []), ...historicas]
         .sort((a, b) => (b.fecha_emision ?? '').localeCompare(a.fecha_emision ?? ''))
@@ -2694,7 +2661,17 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
       if (error) throw error
 
-      const facturas = data || []
+      let facturas: FacturaArca[] = data || []
+      // 📜 A-FEAT-1382 (JMS 27/10: «si Subdiarios permitiera ver los históricos —ya tiene los datos— deberíamos
+      // poder vincular todas las facturas y ver cuántas faltan»). Si la app no tiene el mes, se muestra el del
+      // histórico del contador. Si la app SÍ lo tiene, manda la app (diciembre: A-DAT-61) y no se mezcla.
+      if (!facturas.length) {
+        const h = await supabase.schema(schemaName).from('comprobantes_historico').select('*')
+          .eq('anio_contable', parseInt(año)).eq('mes_contable', parseInt(mes))
+          .order('fecha', { ascending: false }).order('id')
+        if (h.error) throw h.error
+        facturas = filasDelSubdiario([], h.data || []) as unknown as FacturaArca[]
+      }
       setFacturasPeriodo(facturas)
       
       // Subtotales en 2 bloques (misma función que usa el Excel/PDF → siempre coinciden).
@@ -6616,7 +6593,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
 
                 {/* Botón Gestionar Facturas - solo si hay facturas en el período */}
                 {console.log('🔍 DEBUG Botón Gestionar:', { periodoConsulta, facturasPeriodoLength: facturasPeriodo.length })}
-                {periodoConsulta && facturasPeriodo.length > 0 && (
+                {periodoConsulta && facturasPeriodo.length > 0 && !periodoHistorico && (
                   <Button 
                     onClick={() => {
                       console.log('🔧 DEBUG: Activar modo gestión masiva')
@@ -6645,7 +6622,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                 )}
 
                 {/* Archivos de texto para IVA Simple — sólo MSA (PAM y MA no están inscriptas en IVA) */}
-                {empresa === 'MSA' && periodoConsulta && facturasPeriodo.length > 0 && (
+                {empresa === 'MSA' && periodoConsulta && facturasPeriodo.length > 0 && !periodoHistorico && (
                   <Permisable recurso="egresos.archivos-arca">
                   <Button
                     onClick={() => setMostrarArchivosArca(true)}
@@ -6788,8 +6765,16 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                 <p className="text-sm text-muted-foreground">
                   {facturasPeriodo.length} facturas encontradas
                 </p>
+                {periodoHistorico && (
+                  <p className="mt-1 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
+                    📜 <b>Histórico del contador</b>: la app no tiene facturas de este mes, así que se muestran las que cargó el
+                    contador. Son <b>de consulta</b>: no se imputan ni se editan acá. La 🚩 de cada fila sirve para pasarle una
+                    corrección a alguien. Vincular sus PDF es el paso siguiente (A-FEAT-1382).
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-2">
+                {!periodoHistorico && <>
                 <Button
                   variant="outline"
                   size="sm"
@@ -6836,6 +6821,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                 >
                   📧 Enviar estado actualizado
                 </Button>
+                </>}
                 <Button
                   variant="outline"
                   size="sm"
@@ -7100,11 +7086,11 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                       <TableCell className={`sticky right-0 z-10 text-center shadow-[-6px_0_6px_-6px_rgba(0,0,0,0.15)] ${esUSD ? 'bg-amber-50' : 'bg-white'}`}>
                         <BotonRevision
                           schema={schemaName}
-                          tabla="comprobantes_arca"
+                          tabla={factura.estado === 'historico' ? 'comprobantes_historico' : 'comprobantes_arca'}
                           registroId={factura.id}
                           descripcion={`${factura.denominacion_emisor || 's/proveedor'} · ${factura.punto_venta}-${factura.numero_desde} · ${formatearFecha(factura.fecha_emision)} · $${(Number(factura.imp_total) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`}
-                          abierta={revisionesFactura[String(factura.id)]}
-                          onCambio={recargarRevisiones}
+                          abierta={(factura.estado === 'historico' ? revisionesHistorico : revisionesFactura)[String(factura.id)]}
+                          onCambio={() => { recargarRevisiones(); recargarRevisionesHistorico() }}
                         />
                       </TableCell>
                     </TableRow>
@@ -7213,7 +7199,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
       })()}
 
       {/* ❌ Facturas sin PDF del período: pedirlas y buscarlas en el mail desde acá (2026-10-23) */}
-      {facturasPeriodo.length > 0 && !esContable && (() => {
+      {facturasPeriodo.length > 0 && !esContable && !periodoHistorico && (() => {
         const { filas, pedidas } = faltantesDelSubdiario(facturasPeriodo, ultimasSinPdf, hoyArgentina())
         if (filas.length === 0) return null
         const visibles = filas.filter(f => coincideBusqueda(buscarSubdiario, [f.proveedor, f.cuit, f.comprobante, f.imp_total,

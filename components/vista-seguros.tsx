@@ -317,10 +317,10 @@ function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, polizas, onVerP
               <TableRow>
                 <TableHead>Póliza</TableHead>
                 <TableHead className="text-right">Cuotas emitidas</TableHead>
-                <TableHead className="text-right">Notas de crédito</TableHead>
+                <TableHead className="text-right" title="Las NC que ya tenemos (están en los PDF). Ya están descontadas en «se esperaba en el banco».">NC recibidas</TableHead>
                 <TableHead className="text-right">Se esperaba en el banco</TableHead>
                 <TableHead className="text-right">Pagado</TableHead>
-                <TableHead className="text-right">Diferencia</TableHead>
+                <TableHead className="text-right" title="Lo único que hay que reclamar. Las notas de crédito ya están descontadas en «se esperaba en el banco»: no se suman aparte.">A reclamar</TableHead>
                 <TableHead>Qué es</TableHead>
                 <TableHead className="text-right">A vencer</TableHead>
                 <TableHead className="w-8" />
@@ -389,6 +389,10 @@ function ResumenPorEjercicio({ resumen, actual, onElegir, hasta, polizas, onVerP
             ({r.anteriores.polizas.join(", ")}): son del balance anterior.
           </p>
         )}
+        <p className="text-xs text-muted-foreground">
+          <b>Cómo se lee:</b> se esperaba en el banco = cuotas − NC recibidas (las que se descuentan en ese ejercicio).
+          <b> A reclamar</b> = se esperaba − pagado. Es <b>lo único que hay que pedir, una sola vez</b>: las NC recibidas no se reclaman ni se suman.
+        </p>
         <p className="text-xs text-muted-foreground">🚩 en cada diferencia: pasársela a alguien (por ejemplo, Ulises) con un mensaje. Le llega a su campanita.</p>
       </CardContent>
     </Card>
