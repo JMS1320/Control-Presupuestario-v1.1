@@ -2885,3 +2885,48 @@ terminales empujando sus `jms/*` y `desarrollo` se agota.
 - **Cómo verificar**: Vercel → Deployments — el último despliegue de `desarrollo` tiene que ser el del commit subido.
 - **Salida inmediata**: la app local (`npm run dev` en un árbol con ese código y su `.env.local`), que usa la misma base.
 - 📌 Antes de pedirle al usuario que pruebe «en la vista previa», mirar que el despliegue salió.
+
+
+## El libro IVA que exporta ARCA (el zip) — cómo leerlo sin inventar diferencias `#arca #iva #libro-diario #contador #2026-10-27`
+
+El zip `libro_iva_periodo_AAAAMM_original.zip` (el que devuelve el contador, [A-AUTO-09](PENDIENTES.md#a-auto-09)) trae
+`libro_iva.xml` (totales), `comprobantes_compras.csv` y `comprobantes_ventas.csv`. Lo lee `lib/subdiarios/libro-presentado.ts`.
+Comparado contra el libro diario de la app ([A-FEAT-1388](PENDIENTES.md#a-feat-1388) ronda 3), salieron **cuatro trampas**; las
+cuatro inventaban diferencias que no existían:
+
+| Trampa | Qué pasa | Cómo se lee |
+|---|---|---|
+| **Los importes ya están en PESOS** | una factura en dólares trae «Importe Total» en pesos **y** la moneda DOL con su tipo de cambio (Agro Centros 3-5282: 5.023.287,17 con TC 1.403 = neto 4.151.477 + IVA 871.810,17) | **no** multiplicar por el TC. Hacerlo daba 7.047 millones y toda factura en dólares salía «con otro importe» |
+| **El «Total IVA» viene redondeado** | IVA 21 % 4.464,57 figura «Total IVA» 4.464,60 | el IVA exacto es la suma de las columnas «Importe IVA x %» |
+| **El crédito fiscal puede ser GLOBAL** | en jul y nov 2025 la columna «Crédito Fiscal Computable» vino en 0 en todos los renglones: el crédito está sólo en el XML (`total_computable_global`) | para comparar contra la app se compara **IVA contra IVA**, no contra el crédito computable (en mayo 2026 también difiere del IVA, por decisión del contador) |
+| **El mismo comprobante con otro número** | las liquidaciones de granos están en la app sin número y con tipo 332 (ARCA: tipo 33 con número); la póliza de Federación con punto de venta 0 (ARCA: 1) | emparejar por tipo + punto de venta + número + CUIT y, si no aparece, **por CUIT + importe** (o por CUIT cuando queda uno de cada lado). Es aviso para corregir la carga, no un mes a rectificar |
+
+**Y dos diferencias que son de verdad, pero de convención** (a definir con el contador → [A-DAT-95](PENDIENTES.md#a-dat-95) § D):
+en las liquidaciones de hacienda (tipos 60 / 180) **ARCA declara el total neto de lo que retiene el consignatario** (Genta enero:
+970.830 de IIBB) o con los «pagos a cuenta» restados (Sáenz Valiente: 330.665,50 y 270.618), y la app guarda el bruto.
+
+## La FOTO antes y después de tocar datos — `scripts/foto-balance.mts` `#datos #respaldo #balance #2026-10-27`
+
+Antes de corregir imputaciones a mano se saca una foto: filas enteras de los comprobantes (compra, venta, histórico) y de **todas
+las tablas que guardan un vínculo** a una factura, una venta o un grupo. La lista de tablas **sale de la base**, no de la memoria:
+
+```sql
+select table_schema, table_name from information_schema.columns
+where column_name in ('comprobante_arca_id','comprobante_venta_id','grupo_pago_id','grupo_cobro_id');
+```
+
+`npx tsx scripts/foto-balance.mts <nombre>` la guarda en `Balance/respaldos/` (sólo lee); con `--comparar "<foto anterior>"` dice
+qué filas aparecieron, desaparecieron o cambiaron, **campo por campo**. Es la forma de ver después qué se movió (de qué mes a qué
+mes, de qué estado a cuál) y de volver atrás a mano si hiciera falta. La primera: 27/10 12:26, antes de rectificar subdiarios y de
+pasar AFA a cuenta corriente.
+
+## El libro diario para entregar: LAS MISMAS COLUMNAS en todas las hojas `#excel #libro-diario #balance #2026-10-27`
+
+`lib/balance/libro-diario-entrega.ts` (prototipo por script: `npx tsx scripts/libro-diario-entrega.mts MSA 2026`; `SUFIJO=…` para no
+pisar un archivo abierto). Pedido del usuario: *«la idea es las mismas columnas en todas las planillas que integran el libro diario»*.
+Una sola fila de columnas — el Neto gravado siempre en K, el IVA en O, el Total en Q — para los subdiarios, las planillas por fecha,
+por mes y cuenta, por campaña y cuenta, «Contra ARCA» (cada mes en tres renglones: app, declarado, diferencia) y lo declarado
+«formato nuestro». Así el control de la hoja Control es **la misma celda leída de cada hoja** (fórmulas entre hojas), y una columna se
+compara contra la misma de otra hoja sin buscarla. La única hoja con otras columnas es «ARCA … original»: el CSV tal cual.
+⚠️ Un nombre de hoja de más de 31 letras **se corta** y la fórmula que lo nombra queda apuntando a una hoja que no existe: verificar
+las referencias entre hojas después de generar.
