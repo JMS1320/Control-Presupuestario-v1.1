@@ -128,6 +128,10 @@ export const RECURSOS: Recurso[] = [
   { id: "productivo.hacienda",  seccion: "productivo", etiqueta: "Hacienda",            tipo: "pestana", archivo: PRODUCTIVO },
   { id: "productivo.evolucion", seccion: "productivo", etiqueta: "Evolución Rodeo",     tipo: "pestana", archivo: PRODUCTIVO },
   { id: "productivo.cria",      seccion: "productivo", etiqueta: "Cría",                tipo: "pestana", archivo: PRODUCTIVO },
+  // A-FEAT-1380: el plan sanitario. «Aprobar» = aceptar las propuestas y cambiar el plan directo; quien no
+  //   la tiene (Enrique) propone y espera el OK. Es un botón dentro de la solapa, no un lugar.
+  { id: "productivo.plan-sanitario", seccion: "productivo", etiqueta: "Plan sanitario", tipo: "pestana", archivo: PRODUCTIVO },
+  { id: "productivo.plan-sanitario.aprobar", seccion: "productivo", etiqueta: "Plan sanitario → Aprobar cambios", tipo: "accion", padre: "productivo.plan-sanitario", archivo: "components/tab-plan-sanitario.tsx" },
   { id: "productivo.recria",    seccion: "productivo", etiqueta: "Recría / Engorde",    tipo: "pestana", archivo: PRODUCTIVO },
   { id: "productivo.insumos",   seccion: "productivo", etiqueta: "Insumos",             tipo: "pestana", archivo: PRODUCTIVO },
   // ⚠️ Estas tres van INMEDIATAMENTE después de Insumos, que es su padre. Antes quedaban

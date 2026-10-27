@@ -52,6 +52,7 @@ import useInlineEditor from "@/hooks/useInlineEditor"
 import { TabTerneros } from "@/components/tab-terneros"
 import { InsumoCombobox } from "@/components/insumo-combobox"
 import CiclosCriaPanel from "./ciclos-cria-panel"
+import { TabPlanSanitario } from "@/components/tab-plan-sanitario"
 import { ModalRomaneo } from "@/components/modal-romaneo"
 import { ModalFleteCarga } from "@/components/modal-flete-carga"
 import { traerTodo } from "@/lib/supabase-paginado"
@@ -942,7 +943,7 @@ export function VistaSectorProductivo() {
   // Arranca en la primera solapa que este rol ve: si la primera estuviera apagada, abriría en blanco.
   const primeraVisible = usePrimeraVisible()
   const [tabActiva, setTabActiva] = useState(() => primeraVisible([
-    "productivo.hacienda", "productivo.evolucion", "productivo.cria", "productivo.recria", "productivo.insumos", "productivo.lotes"]))
+    "productivo.hacienda", "productivo.evolucion", "productivo.cria", "productivo.plan-sanitario", "productivo.recria", "productivo.insumos", "productivo.lotes"]))
 
   return (
     <div className="space-y-4">
@@ -954,7 +955,7 @@ export function VistaSectorProductivo() {
         </CardHeader>
         <CardContent>
           <TabsVivos maxVivas={2} value={tabActiva} onValueChange={setTabActiva}>
-            <TabsList className="grid w-full grid-cols-6">
+            <TabsList className="grid w-full grid-cols-7">
               <Permisable recurso="productivo.hacienda">
 <TabsTrigger value="hacienda" className="flex items-center gap-2">
                 <Beef className="h-4 w-4" />
@@ -971,6 +972,12 @@ export function VistaSectorProductivo() {
 <TabsTrigger value="cria" className="flex items-center gap-2">
                 🐮
                 Cría
+              </TabsTrigger>
+</Permisable>
+              <Permisable recurso="productivo.plan-sanitario">
+<TabsTrigger value="plan-sanitario" className="flex items-center gap-2">
+                💉
+                Plan sanitario
               </TabsTrigger>
 </Permisable>
               <Permisable recurso="productivo.recria">
@@ -1007,6 +1014,11 @@ export function VistaSectorProductivo() {
 <SoloLectura recurso="productivo.cria">
               <TabTerneros modo="cria" />
               <CiclosCriaPanel />
+            </SoloLectura>
+</TabsContentVivo>
+            <TabsContentVivo value="plan-sanitario">
+<SoloLectura recurso="productivo.plan-sanitario">
+              <TabPlanSanitario />
             </SoloLectura>
 </TabsContentVivo>
             <TabsContentVivo value="recria">
