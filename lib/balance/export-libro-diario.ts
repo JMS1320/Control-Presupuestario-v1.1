@@ -76,6 +76,7 @@ const marcaDescuadre = (d: Descuadre) =>
  */
 export function hojaDeAsientos(asientos: AsientoLibroDiario[], descuadres?: Descuadre[]): unknown[][] {
   const malos = new Map((descuadres ?? []).filter(d => d.id).map(d => [d.id!, d]))
+  const conCantidades = asientos.some(a => a.cantidades && (a.cantidades.producto || a.cantidades.toneladas || a.cantidades.cabezas || a.cantidades.kilos))
   const filas: unknown[][] = [[
     "Subdiario", "Fecha", "Tipo", "Pto Vta", "Número", "CUIT", "Denominación",
     "Neto Gravado", "No Gravado", "Exentas", "Otros Tributos", "IVA", "Total",
@@ -83,6 +84,8 @@ export function hojaDeAsientos(asientos: AsientoLibroDiario[], descuadres?: Desc
     // 💵 A-BUG-1316: los importes van en pesos; la moneda y la cotización quedan a la vista al final
     // (al final y no al lado del Total, para no correr las columnas que suman otras solapas).
     "Moneda", "Tipo de cambio", "Total en moneda original",
+    // 🌾 U2: qué se vendió y cuánto — sólo si alguna fila lo trae (ventas).
+    ...(conCantidades ? ["Producto", "Toneladas", "Cabezas", "Kilos"] : []),
     ...(descuadres ? ["Control de partes"] : []),
   ]]
   for (const a of asientos) {
@@ -98,6 +101,10 @@ export function hojaDeAsientos(asientos: AsientoLibroDiario[], descuadres?: Desc
       enOtraMoneda ? a.tipo_cambio ?? "" : "",
       enOtraMoneda ? money(a.total_moneda_original ?? 0) : "",
     ]
+    if (conCantidades) {
+      const q = a.cantidades
+      fila.push(q?.producto ?? "", q?.toneladas ?? "", q?.cabezas ?? "", q?.kilos ?? "")
+    }
     const d = malos.get(a.id)
     if (descuadres) fila.push(d ? marcaDescuadre(d) : "")
     filas.push(d ? conEstilo(fila, ESTILO_ERROR) : fila)
@@ -590,7 +597,7 @@ export function hojaResumenMensual(libro: LibroDiario): unknown[][] {
   f.push(["Por subdiario (el mes en que entró cada comprobante), como el resto del libro diario."])
   f.push([])
   f.push(["Subdiario", "Compras: comprobantes", "Compras: total", "Ventas: comprobantes", "Ventas: total",
-    "Compras presentadas a ARCA", "Diferencia con ARCA", "Control"])
+    "ARCA: comprobantes", "ARCA: total presentado", "Diferencia compras − ARCA", "Control"])
   const clave = (s: { anio: number; mes: number }) => `${s.anio}-${String(s.mes).padStart(2, "0")}`
   const porSub = (xs: AsientoLibroDiario[], k: string) => xs.filter(a => a.subdiario === k)
   const presentado = new Map((libro.controles.contraPresentado ?? []).map(p => [p.subdiario, p]))
@@ -604,12 +611,15 @@ export function hojaResumenMensual(libro: LibroDiario): unknown[][] {
     suma.cc += c.length; suma.tc += tc; suma.cv += v.length; suma.tv += tv
     const p = presentado.get(k)
     const n = f.length + 1
-    f.push([
+    const fila: unknown[] = [
       nombreSubdiario(s), c.length, tc, v.length, tv,
+      p?.presentado ? p.presentado.comprobantes : "sin dato",
       p?.presentado ? money(p.presentado.total) : "sin dato",
-      p?.presentado ? conFormula(`C${n}-F${n}`, money(tc - p.presentado.total)) : "",
+      p?.presentado ? conFormula(`C${n}-G${n}`, money(tc - p.presentado.total)) : "",
       !p?.presentado ? "sin dato de ARCA" : p.ok ? "coincide" : "NO COINCIDE",
-    ])
+    ]
+    // 🛑 El mes que no coincide con ARCA, en rojo (como diciembre): se ve sin leer la columna Control.
+    f.push(p?.presentado && !p.ok ? conEstilo(fila, ESTILO_ERROR) : fila)
   }
   const nU = f.length
   const nT = f.length + 1
@@ -624,7 +634,7 @@ export function hojaResumenMensual(libro: LibroDiario): unknown[][] {
   const dV = money(suma.tv - libro.controles.ventas.totalGeneral)
   const nD = f.length + 1
   f.push(["Suma de los 12 meses − total (tiene que dar 0)", "", conFormula(`C${nT}-C${nD - 1}`, dC), "", conFormula(`E${nT}-E${nD - 1}`, dV),
-    "", "", Math.abs(dC) < 0.01 && Math.abs(dV) < 0.01 ? "cuadra" : "NO CUADRA"])
+    "", "", "", Math.abs(dC) < 0.01 && Math.abs(dV) < 0.01 ? "cuadra" : "NO CUADRA"])
   return f
 }
 
@@ -634,8 +644,9 @@ const COLS_RESUMEN_MENSUAL: Columna[] = [
   { ancho: 18, z: MONEDA },          // Compras: total
   { ancho: 12, z: ENTERO },          // Ventas: comprobantes
   { ancho: 18, z: MONEDA },          // Ventas: total
-  { ancho: 20, z: MONEDA },          // Presentado a ARCA
-  { ancho: 16, z: MONEDA },          // Diferencia
+  { ancho: 12, z: ENTERO },          // ARCA: comprobantes
+  { ancho: 20, z: MONEDA },          // ARCA: total presentado
+  { ancho: 18, z: MONEDA },          // Diferencia compras − ARCA
   { ancho: 18 },                     // Control
 ]
 
@@ -1754,6 +1765,16 @@ const COLS_ASIENTOS: Columna[] = [
   { ancho: 70 },                    // Control de partes (A-FEAT-1388)
 ]
 
+/** Ventas: lo mismo que los asientos, más qué se vendió y cuánto (U2), antes del Control de partes. */
+const COLS_VENTAS: Columna[] = [
+  ...COLS_ASIENTOS.slice(0, 20),
+  { ancho: 16 },                    // Producto
+  { ancho: 12, z: TONELADAS },      // Toneladas
+  { ancho: 10, z: ENTERO },         // Cabezas
+  { ancho: 12, z: ENTERO },         // Kilos
+  { ancho: 70 },                    // Control de partes
+]
+
 /**
  * Las cuotas de templates, en el mismo formato de fila que el libro diario — pedido del usuario:
  * *«replicar formato de libro diario con los templates»*.
@@ -2256,7 +2277,7 @@ export function armarWorkbook(
   hoja(wb, "Resumen 12 meses", hojaResumenMensual(libro), COLS_RESUMEN_MENSUAL)
   // 🛑 A-FEAT-1388: los comprobantes cuyas partes no suman su total, en rojo y con la marca (los mismos del Control).
   hoja(wb, "Compras", hojaDeAsientos(libro.compras, libro.controles.compras.descuadres), COLS_ASIENTOS)
-  hoja(wb, "Ventas", hojaDeAsientos(libro.ventas, libro.controles.ventas.descuadres), COLS_ASIENTOS)
+  hoja(wb, "Ventas", hojaDeAsientos(libro.ventas, libro.controles.ventas.descuadres), COLS_VENTAS)
   // 📗 La apertura por cuenta contable — el formato que el usuario ya usaba (A-FEAT-1187).
   //    Van pegadas a su listado: primero el detalle, después el resumen que se le manda al contador.
   hoja(wb, "Compras por cuenta", hojaPorCuenta(armarLibroPorCuenta(libro.compras),

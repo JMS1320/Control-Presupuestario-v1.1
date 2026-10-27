@@ -3403,6 +3403,7 @@ Si borrás una casilla, queda vacía; la app guarda igual lo que había antes y 
 - **Templates por mes**: primero la empresa del balance (para MSA: MSA, MA, PAM) y, adentro, las cuentas agrupadas como en el plan de cuentas (columna **Agrupadora**, con su subtotal). Al final, el cuadro **Pagado y pendiente** por tipo.
 - **Compras por cuenta / Ventas por cuenta**: cada mes cierra con su **subtotal** («Total 07/2025», en negrita). Con los botones **+ / −** de la izquierda se pliega cada mes a su total; si filtrás, los totales suman sólo lo que se ve.
 - **Los comprobantes que no cuadran** (sus partes no suman su total) **no se corrigen solos: se marcan**. Van en rojo en Compras / Ventas, con la columna «Control de partes» que dice cuánto suman las partes y cuánto falta; en Compras / Ventas por cuenta, su renglón de cuenta y mes en rojo, y el total del mes avisa.
+- **Ventas**: además de los importes, **qué se vendió y cuánto** — Producto, Toneladas, Cabezas y Kilos.
 - **Resumen 12 meses** (al lado del Control): un renglón por mes con las compras y las ventas, las compras **presentadas a ARCA** y la diferencia, y abajo el control de que los 12 sumen el total del ejercicio.
 - **08 Gastos bancarios**: cada mes es lo que debitó el banco **menos lo que devolvió**; la columna **Devoluciones** dice cuánto se restó.
 - **08.1 Impuesto al cheque**: al final, el **control de tres caminos** — el extracto, el papel 08 y los templates tienen que dar el mismo impuesto. En la pantalla, debajo del cuadro del impuesto, la misma línea con ✓ o ⚠️.

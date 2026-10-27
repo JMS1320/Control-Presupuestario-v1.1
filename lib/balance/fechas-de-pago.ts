@@ -55,6 +55,43 @@ export async function buscarFechasDePagoBancarias(
   cliente: ClienteMinimo,
   ids: string[],
 ): Promise<FechasDePago> {
+  return buscarFechas(cliente, ids, TABLAS_CON_VINCULO_ARCA, "comprobante_arca_id")
+}
+
+/**
+ * 💰 **CUÁNDO se cobró cada VENTA** — lo mismo que `buscarFechasDePagoBancarias`, por el vínculo de las ventas.
+ *
+ * 🧨 A-FEAT-1388 (U6, 27/10): el papel 03 buscaba el cobro de las ventas por `comprobante_arca_id`, que es el
+ * vínculo de las COMPRAS. Las ventas se atan al banco por **`comprobante_venta_id`**: por eso 10 ventas
+ * conciliadas ($459.630.934,98) salían «conciliadas pero sin ninguna fecha» — estaban cobradas, el papel no lo
+ * encontraba. JMS: *«¿o sea que no están conciliadas?»*.
+ */
+export async function buscarFechasDeCobroBancarias(
+  cliente: ClienteMinimo,
+  ids: string[],
+): Promise<FechasDePago> {
+  return buscarFechas(cliente, ids, TABLAS_CON_VINCULO_VENTA, "comprobante_venta_id")
+}
+
+/**
+ * Las tablas donde un cobro queda atado a su venta (`comprobante_venta_id`), leídas de la base el 27/10
+ * (`information_schema`): los cuatro extractos y los echeqs recibidos. Las retenciones también llevan el
+ * vínculo pero no son un cobro con fecha propia, y los anticipos van por su papel (04.2).
+ */
+export const TABLAS_CON_VINCULO_VENTA: Array<{ schema: string; tabla: string }> = [
+  { schema: "public", tabla: "msa_galicia" },
+  { schema: "public", tabla: "pam_galicia" },
+  { schema: "public", tabla: "pam_galicia_cc" },
+  { schema: "ma", tabla: "ma_galicia" },
+  { schema: "msa", tabla: "echeqs_terceros" },
+]
+
+async function buscarFechas(
+  cliente: ClienteMinimo,
+  ids: string[],
+  tablas: Array<{ schema: string; tabla: string }>,
+  columna: "comprobante_arca_id" | "comprobante_venta_id",
+): Promise<FechasDePago> {
   const porComprobante = new Map<string, string>()
   const tablasQueFallaron: string[] = []
   if (ids.length === 0) return { porComprobante, tablasQueFallaron }
@@ -64,22 +101,22 @@ export async function buscarFechasDePagoBancarias(
   const tandas: string[][] = []
   for (let i = 0; i < ids.length; i += TANDA) tandas.push(ids.slice(i, i + TANDA))
 
-  for (const t of TABLAS_CON_VINCULO_ARCA) {
+  for (const t of tablas) {
     const nombre = `${t.schema}.${t.tabla}`
     for (const tanda of tandas) {
       // `public` se consulta sin `.schema()`: es el default del cliente y pedirlo explícito
       // funciona, pero el resto del repo lo escribe así y conviene no abrir una segunda forma.
       const q = t.schema === "public" ? cliente.from(t.tabla) : cliente.schema(t.schema).from(t.tabla)
       const { data, error } = await q
-        .select("comprobante_arca_id, fecha")
-        .in("comprobante_arca_id", tanda)
+        .select(`${columna}, fecha`)
+        .in(columna, tanda)
 
       if (error) {
         if (!tablasQueFallaron.includes(nombre)) tablasQueFallaron.push(nombre)
         continue
       }
-      for (const fila of (data ?? []) as Array<{ comprobante_arca_id?: string; fecha?: string }>) {
-        const id = fila.comprobante_arca_id
+      for (const fila of (data ?? []) as Array<Record<string, string | undefined>>) {
+        const id = fila[columna]
         const fecha = fila.fecha ? String(fecha10(fila.fecha)) : null
         if (!id || !fecha) continue
         const actual = porComprobante.get(id)
@@ -94,3 +131,31 @@ export async function buscarFechasDePagoBancarias(
 
 /** `2026-06-30T00:00:00` → `2026-06-30`. Comparar fechas ISO como texto sólo funciona recortadas. */
 const fecha10 = (v: string) => String(v).slice(0, 10)
+
+/**
+ * 🔗 **El cobro AGRUPADO**: varias ventas de un cliente cobradas con varios movimientos (A-FEAT-167, `grupo_cobro_id`).
+ * El banco puede estar atado a una sola de las ventas del grupo; las otras se cobraron en el mismo acto. Toman la
+ * fecha más temprana de las ventas de su grupo que sí la tienen. Caso real (27/10): Sáenz Valiente, 2 ventas del
+ * 27/01, una atada al cobro del 28/01 y la otra sin vínculo directo.
+ *
+ * Pura: recibe las ventas con su grupo y las fechas ya encontradas; devuelve las fechas completadas.
+ */
+export function completarConGrupoDeCobro(
+  ventas: Array<{ id: string; grupo_cobro_id?: string | null }>,
+  fechas: Map<string, string>,
+): Map<string, string> {
+  const out = new Map(fechas)
+  const porGrupo = new Map<string, string>()
+  for (const v of ventas) {
+    const f = fechas.get(v.id)
+    if (!v.grupo_cobro_id || !f) continue
+    const ya = porGrupo.get(v.grupo_cobro_id)
+    if (!ya || f < ya) porGrupo.set(v.grupo_cobro_id, f)
+  }
+  for (const v of ventas) {
+    if (out.has(v.id) || !v.grupo_cobro_id) continue
+    const f = porGrupo.get(v.grupo_cobro_id)
+    if (f) out.set(v.id, f)
+  }
+  return out
+}

@@ -84,6 +84,11 @@ export interface AsientoLibroDiario {
   provision_motivo?: string
   /** Sólo ARCA: true si se cargó a mano («No Informada»). Para el control de cantidad (A-FEAT-1332). */
   no_informada?: boolean
+  /**
+   * 🌾 Las cantidades de una VENTA (A-FEAT-1388 U2, usuario 27/10: *«acá dijimos poner toneladas etc.»*): qué se
+   * vendió y cuánto. Sólo ventas; en compras no viene.
+   */
+  cantidades?: { producto: string; toneladas: number | null; cabezas: number | null; kilos: number | null }
 }
 
 /** Un comprobante que aparece en las dos fuentes, o dos veces en la misma. */
@@ -338,6 +343,13 @@ export function desdeVenta(f: Record<string, unknown>): AsientoLibroDiario {
     iva: n(f.iva), total: n(f.imp_total),
     cuenta_contable: s(f.cuenta_contable), nro_cuenta: s(f.nro_cuenta),
     centro_costo: s(f.centro_costo),
+    cantidades: {
+      // Las de hacienda no traen grano: con cabezas, el producto es «Hacienda» (se lee solo en el Excel).
+      producto: s(f.grano) || (f.cabezas != null ? "Hacienda" : ""),
+      toneladas: f.toneladas == null ? null : n(f.toneladas),
+      cabezas: f.cabezas == null ? null : n(f.cabezas),
+      kilos: f.peso_kg == null ? null : n(f.peso_kg),
+    },
   }
 }
 

@@ -220,6 +220,7 @@ import { historicoAFactura, filasDelSubdiario } from "@/lib/facturas/historico-c
 import { parsearComprasCsv, parsearTotalesXml, compararSubdiarioConLibro } from "@/lib/subdiarios/libro-presentado"
 import { CONTADOR, asuntoSubdiario, periodoDelAsunto, cuerpoSubdiario } from "@/lib/subdiarios/contador"
 import { calcularSubtotalesSubdiario } from "@/lib/subdiarios/subtotales"
+import { TABLAS_CON_VINCULO_VENTA, completarConGrupoDeCobro } from "@/lib/balance/fechas-de-pago"
 import { TIPOS_SIN_CREDITO_COMPRAS, verificarCuadratura } from "@/lib/subdiarios/cuadratura"
 import { controlarPoliza, cotejarConComprobante, repartoDeLaPoliza, repartoDeLasCuotas, repartirImporte, responsableDe } from "@/lib/polizas/controlar-poliza"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
@@ -4669,12 +4670,13 @@ export function correrCasos(): Resultado[] {
         },
       } as unknown as LibroDiarioT
       const hojaRM = hojaResumenMensual(libroRM)
-      const filasMes = hojaRM.filter(x => typeof x[1] === "number")
-      const dic = hojaRM.find(x => String(x[0]).toLowerCase().includes("diciembre"))
+      const valRM = (x: unknown) => (x && typeof x === "object" && "v" in (x as object) ? (x as { v: unknown }).v : x)
+      const filasMes = hojaRM.filter(x => typeof valRM(x[1]) === "number" && valRM(x[0]) !== "TOTAL")
+      const dic = hojaRM.find(x => String(valRM(x[0])).toLowerCase().includes("diciembre"))
       const ctlRM = hojaRM.find(x => String(x[0]).startsWith("Suma de los 12 meses"))
-      const vRM = `${filasMes.length} meses · dic ${dic?.[7]} (${(dic?.[6] as { v?: number } | undefined)?.v}) · control ${(ctlRM?.[2] as { v?: number })?.v}/${(ctlRM?.[4] as { v?: number })?.v} ${ctlRM?.[7]}`
+      const vRM = `${filasMes.length} meses · dic ${valRM(dic?.[8])} (${valRM(dic?.[7])}) · ARCA ${valRM(dic?.[5])} comprob. · rojo ${(dic?.[0] as { s?: unknown } | undefined)?.s ? "sí" : "no"} · control ${(ctlRM?.[2] as { v?: number })?.v}/${(ctlRM?.[4] as { v?: number })?.v} ${ctlRM?.[8]}`
       chequear("Balance · libro diario", "📅 Resumen 12 meses: los 12 subdiarios (vacíos en 0), diciembre NO COINCIDE con ARCA por 580,50, y la suma de los 12 da el total",
-        "12 meses · dic NO COINCIDE (580.5) · control 0/0 cuadra", vRM, vRM === "12 meses · dic NO COINCIDE (580.5) · control 0/0 cuadra", "A-FEAT-1388")
+        "12 meses · dic NO COINCIDE (580.5) · ARCA 0 comprob. · rojo sí · control 0/0 cuadra", vRM, vRM === "12 meses · dic NO COINCIDE (580.5) · ARCA 0 comprob. · rojo sí · control 0/0 cuadra", "A-FEAT-1388")
 
       // 🛑 Los comprobantes que no cuadran, MARCADOS en el detalle y en la subplanilla (usuario 27/10: «que quede
       //    marcado el error en subplanilla y detalle»). Caso real: el tique de Pan American del 12/02, sin el
@@ -4699,6 +4701,30 @@ export function correrCasos(): Resultado[] {
       const vSub = `${filaCta("Combustible y lubricantes")?.v?.startsWith("NO CUADRA: 1 comprobante") ? "marcada" : "sin marca"} · Luz ${filaCta("Luz")?.v ? "marcada" : "sin marca"} · mes ${filaCta("Total 02/2026")?.v?.startsWith("NO CUADRA") ? "avisa" : "no avisa"}`
       chequear("Balance · libro diario", "🛑 Subplanilla: el renglón de esa cuenta y mes va en rojo con la marca, y el subtotal del mes avisa; la cuenta sin error, no",
         "marcada · Luz sin marca · mes avisa", vSub, vSub === "marcada · Luz sin marca · mes avisa", "A-FEAT-1388")
+
+      // 💰 U6 — las ventas se buscan en el banco por SU vínculo (`comprobante_venta_id`), en los 4 extractos y los echeqs.
+      const tablasVenta = TABLAS_CON_VINCULO_VENTA.map(t => `${t.schema}.${t.tabla}`).join(" · ")
+      chequear("Balance · cuentas a cobrar", "💰 El cobro de una venta se busca por comprobante_venta_id en los 4 extractos y los echeqs recibidos (antes, por el vínculo de compras: no encontraba nada)",
+        "public.msa_galicia · public.pam_galicia · public.pam_galicia_cc · ma.ma_galicia · msa.echeqs_terceros", tablasVenta,
+        tablasVenta === "public.msa_galicia · public.pam_galicia · public.pam_galicia_cc · ma.ma_galicia · msa.echeqs_terceros", "A-FEAT-1388")
+      // 🔗 Cobro agrupado — caso real: Sáenz Valiente, 2 ventas del 27/01 en el mismo grupo; el banco del 28/01 está
+      //    atado a una sola. La otra toma la fecha del grupo; una venta sin grupo y sin cobro sigue sin fecha.
+      const fg = completarConGrupoDeCobro(
+        [{ id: "saenz-a", grupo_cobro_id: "g1" }, { id: "saenz-b", grupo_cobro_id: "g1" }, { id: "parra", grupo_cobro_id: null }],
+        new Map([["saenz-a", "2026-01-28"]]))
+      const vG = `Sáenz B ${fg.get("saenz-b") ?? "sin fecha"} · Parra ${fg.get("parra") ?? "sin fecha"}`
+      chequear("Balance · cuentas a cobrar", "🔗 Cobro agrupado: la venta del grupo sin vínculo directo toma la fecha de su grupo; la que no tiene ni grupo ni cobro, no inventa fecha",
+        "Sáenz B 2026-01-28 · Parra sin fecha", vG, vG === "Sáenz B 2026-01-28 · Parra sin fecha", "A-FEAT-1388")
+
+      // 🌾 U2 — la solapa Ventas dice qué se vendió y cuánto (toneladas, cabezas, kilos), antes del Control de partes.
+      const vtaSoja = { ...asi("2025-07", 2555458.36, "VENTA SOJA"), id: "soja", neto_gravado: 2312632, iva: 242826.36,
+        cantidades: { producto: "Soja", toneladas: 7.5, cabezas: null, kilos: null } } as unknown as LibroDiarioT["ventas"][number]
+      const hojaV = hojaDeAsientos([vtaSoja], [])
+      const enc = hojaV[0] as string[], filaV = hojaV[1] as unknown[]
+      const iProd = enc.indexOf("Producto"), iTn = enc.indexOf("Toneladas"), iCtl = enc.indexOf("Control de partes")
+      const vV = `${filaV[iProd]} · ${filaV[iTn]} tn · producto antes del control ${iProd > 0 && iProd < iCtl ? "sí" : "no"}`
+      chequear("Balance · libro diario", "🌾 Ventas: producto y toneladas (y cabezas, kilos) de cada venta, en columnas antes del Control de partes",
+        "Soja · 7.5 tn · producto antes del control sí", vV, vV === "Soja · 7.5 tn · producto antes del control sí", "A-FEAT-1388")
     }
 
     // ✍️ A-FEAT-1207 — los saldos del ejercicio anterior: los 3 que dio el usuario el 2026-10-18 suman
