@@ -376,9 +376,10 @@ export function VistaExtractoBancario() {
   const COLUMNAS_OPCIONALES: { key: string; label: string; defaultVisible: boolean }[] = [
     { key: 'saldo',               label: 'Saldo',            defaultVisible: true  },
     { key: 'categ',               label: 'CATEG',            defaultVisible: true  },
-    { key: 'detalle',             label: 'Detalle',          defaultVisible: true  },
+    // Orden pedido por JMS 27/10: categ · proveedor · comprobante · detalle — «así detalle es realmente detalle».
     { key: 'proveedor_nombre',    label: 'Proveedor',        defaultVisible: true  },
     { key: 'comprobantes_pagados', label: 'Comprobantes',    defaultVisible: true  },
+    { key: 'detalle',             label: 'Detalle',          defaultVisible: true  },
     { key: 'motivo_revision',     label: 'Motivo Revisión',  defaultVisible: true  },
     { key: 'centro_de_costo',     label: 'Centro de Costo',  defaultVisible: false },
     { key: 'contable',            label: 'Contable',         defaultVisible: false },
@@ -4692,9 +4693,9 @@ ${marca}` : marca
                         {col('saldo') && <TableHead className="text-right">Saldo</TableHead>}
                         {col('categ') && <TableHead>CATEG</TableHead>}
                         <TableHead>Estado</TableHead>
-                        {col('detalle') && <TableHead>Detalle</TableHead>}
                         {col('proveedor_nombre') && <TableHead>Proveedor</TableHead>}
                         {col('comprobantes_pagados') && <TableHead>Comprobantes</TableHead>}
+                        {col('detalle') && <TableHead>Detalle</TableHead>}
                         {col('motivo_revision') && <TableHead>Motivo Revisión</TableHead>}
                         {col('centro_de_costo') && <TableHead>Centro Costo</TableHead>}
                         {col('contable') && <TableHead>Contable</TableHead>}
@@ -4766,6 +4767,16 @@ ${marca}` : marca
                               {esHistorico(movimiento.estado) ? 'histórico' : movimiento.estado}
                             </Badge>
                           </TableCell>
+                          {col('proveedor_nombre') && (
+                            <TableCell className="text-sm truncate max-w-[180px]" title={movimiento.proveedor_nombre || ''}>
+                              {movimiento.proveedor_nombre || <span className="text-gray-300">—</span>}
+                            </TableCell>
+                          )}
+                          {col('comprobantes_pagados') && (
+                            <TableCell className="text-sm truncate max-w-[200px]" title={movimiento.comprobantes_pagados || ''}>
+                              {movimiento.comprobantes_pagados || <span className="text-gray-300">—</span>}
+                            </TableCell>
+                          )}
                           {col('detalle') && (
                             <TableCell className="max-w-xs text-sm text-gray-600">
                               {editandoDetalleId === movimiento.id ? (
@@ -4825,16 +4836,6 @@ ${marca}` : marca
                                   Usar siempre para {movimiento.proveedor_nombre || 'este proveedor'}
                                 </label>
                               )}
-                            </TableCell>
-                          )}
-                          {col('proveedor_nombre') && (
-                            <TableCell className="text-sm truncate max-w-[180px]" title={movimiento.proveedor_nombre || ''}>
-                              {movimiento.proveedor_nombre || <span className="text-gray-300">—</span>}
-                            </TableCell>
-                          )}
-                          {col('comprobantes_pagados') && (
-                            <TableCell className="text-sm truncate max-w-[200px]" title={movimiento.comprobantes_pagados || ''}>
-                              {movimiento.comprobantes_pagados || <span className="text-gray-300">—</span>}
                             </TableCell>
                           )}
                           {col('motivo_revision') && (

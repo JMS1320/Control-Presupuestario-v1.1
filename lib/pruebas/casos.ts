@@ -212,6 +212,7 @@ import { armarRenglones, type TextoUbicado } from "@/lib/polizas/renglones-pdf"
 import { leerResumenCajaAhorro, controlarResumen, armarConocido, resumenComoExcel, adaptarMovimiento } from "@/lib/extractos/pdf-caja-ahorro-galicia"
 import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
 import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe, cuentaCorriente } from "@/lib/polizas/resumen-ejercicio"
+import { aseguradoraAlCierre } from "@/lib/balance/seguros-al-cierre"
 import { historicoAFactura, filasDelSubdiario } from "@/lib/facturas/historico-como-factura"
 import { parsearComprasCsv, parsearTotalesXml, compararSubdiarioConLibro } from "@/lib/subdiarios/libro-presentado"
 import { calcularSubtotalesSubdiario } from "@/lib/subdiarios/subtotales"
@@ -8318,6 +8319,14 @@ export function correrCasos(): Resultado[] {
       "saldo = resumen (el último ejercicio, con lo que arrastra) · 670821 −24341.09 · NC sin aplicar 670821 −24341.09 · el reintegro de 25/26 se arrastra a 26/27", vcc,
       Math.abs(cc.saldo - sumaRes) < 0.01 && cc.porPoliza.get("670821") === -24341.09 && ncSin?.poliza === "670821" && ncSin.diferencia === -24341.09 && arrastraReint, "A-FEAT-1383")
     // El débito de la póliza anterior (balance anterior) no entra a la cuenta corriente.
+    // 🛡️ El saldo con la aseguradora AL CIERRE, para el papel 14 del balance: lo posterior al cierre no entra, y el
+    // saldo tiene que ser la suma de lo que falta reclamar (warning de comprobantes faltantes).
+    const endososFixture = ["670821", "10200836"].map(p => ({ poliza: p, endoso: 0, cuotas: vida.filter(c => c.poliza === p).map(c => ({ vencimiento: c.vencimiento, importe: c.importe })) }))
+    const alCierre = aseguradoraAlCierre("Federación Patronal", polRes, endososFixture,
+      [...banco, { id: "post", fecha: "2026-07-20", debitos: 0, creditos: 5000 }], "2025-07-01", "2026-06-30")
+    const vCierre = `saldo ${alCierre.saldo} · cierra ${alCierre.cierra} · reclamos ${alCierre.aReclamar.length} · sin el posterior ${!alCierre.lineas.some(l => l.fecha > "2026-06-30")}`
+    chequear("Pólizas", "Al cierre (papel 14 del balance): el saldo es la suma de lo que falta reclamar y lo posterior al cierre no entra",
+      "cierra true · sin el posterior true", vCierre, alCierre.cierra && !alCierre.lineas.some(l => l.fecha > "2026-06-30") && alCierre.aReclamar.length > 0, "A-FEAT-1385")
     chequear("Pólizas", "Cuenta corriente: el débito de una póliza anterior al ejercicio no entra",
       "sin el débito de 12.902", cc.lineas.some(l => l.credito === 12902) ? "entró el de 12.902" : "sin el débito de 12.902",
       !cc.lineas.some(l => l.credito === 12902), "A-FEAT-1383")

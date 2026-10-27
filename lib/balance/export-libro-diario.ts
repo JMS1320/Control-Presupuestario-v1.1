@@ -1047,6 +1047,25 @@ function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierre: stri
       + "a ninguna de estas cuentas (el historico no guarda CUIT, se une por nombre)."])
   }
 
+  // ── 🛡️ Las aseguradoras: saldo de DOCUMENTACIÓN al cierre (A-FEAT-1385) ─────────────────
+  for (const a of cc.aseguradoras ?? []) {
+    f.push([])
+    f.push([])
+    f.push([`ASEGURADORA — ${a.nombre} — saldo de documentación al ${a.fechaCierre}`])
+    f.push(["Sale de las pólizas (cuotas y notas de crédito de sus PDF) contra los débitos y reintegros del banco, estén o no conciliados."])
+    f.push(["Saldo positivo = nos debitaron o acreditaron algo que ningún comprobante cierra (FALTAN COMPROBANTES). Negativo = la aseguradora nos debe."])
+    f.push(["SALDO AL CIERRE", "", money(a.saldo), a.saldo === 0 ? "✓ papeles y plata coinciden" : "⚠️ FALTAN COMPROBANTES: reclamar lo de abajo"])
+    if (a.aReclamar.length) {
+      f.push(["A reclamar", "Póliza", "Importe", "Desde"])
+      a.aReclamar.forEach(x => f.push([x.que, x.poliza ?? "", money(x.importe), x.desde ? `viene de ${x.desde}` : ""]))
+    }
+    if (!a.cierra) f.push(["🛑 CONTROL: la suma de «a reclamar» no da el saldo de la cuenta corriente. Avisar."])
+    f.push([])
+    f.push([`DETALLE — cuenta corriente con ${a.nombre}`])
+    f.push(["Fecha", "Póliza", "Concepto", "Cargo", "Crédito", "Saldo"])
+    a.lineas.forEach(l => f.push([l.fecha, l.poliza ?? "", l.concepto, l.cargo ? money(l.cargo) : "", l.credito ? money(l.credito) : "", money(l.saldo)]))
+  }
+
   // ── El detalle de cada cuenta ────────────────────────────────────────────────────────
   for (const c of cc.cuentas) {
     if (c.resumen.asientos.length === 0) continue
