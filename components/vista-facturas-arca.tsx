@@ -1831,7 +1831,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
             </a>
           )}
           {v === 'VER' && (
-            <button
+            <Permisable recurso="egresos.vincular-pdf"><button
               type="button"
               title="Ver los candidatos y elegir cuál es esta factura → queda Confirmada"
               onClick={(e) => { e.stopPropagation(); confirmarVer(factura) }}
@@ -1839,10 +1839,10 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               className="text-green-600 hover:text-green-800 disabled:opacity-40 text-xs font-bold leading-none"
             >
               {confirmandoId === factura.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : '✓'}
-            </button>
+            </button></Permisable>
           )}
           {sePuedeConfirmarApp(factura) && (
-            <button
+            <Permisable recurso="egresos.vincular-pdf"><button
               type="button"
               title="Revisé el archivo y es ésta → queda Confirmada"
               onClick={(e) => {
@@ -1852,7 +1852,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
               className="text-emerald-600 hover:text-emerald-800 text-xs font-bold leading-none"
             >
               ✓
-            </button>
+            </button></Permisable>
           )}
         </div>
       )
@@ -6653,13 +6653,13 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
 
                 {/* Botón Generar Reportes - independiente de estado DDJJ */}
                 {periodoConsulta && facturasPeriodo.length > 0 && (
-                  <Button 
+                  <Permisable recurso="egresos.subdiario-reporte"><Button 
                     onClick={generarReportesPeriodo}
                     variant="outline"
                     className="w-full border-green-500 text-green-600 hover:bg-green-50"
                   >
                     📊 Generar PDF + Excel ({facturasPeriodo.length} facturas)
-                  </Button>
+                  </Button></Permisable>
                 )}
 
                 {/* Archivos de texto para IVA Simple — sólo MSA (PAM y MA no están inscriptas en IVA) */}
@@ -6847,7 +6847,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                   {supervisandoArchivo ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
                   📊 Contar
                 </Button>
-                <Button
+                <Permisable recurso="egresos.archivo-digital-mas"><Button
                   variant="outline"
                   size="sm"
                   onClick={() => supervisarArchivoPeriodo(false)}
@@ -6857,10 +6857,10 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                 >
                   <RefreshCw className="h-4 w-4" />
                   🔁 Re-vincular todo
-                </Button>
+                </Button></Permisable>
                 {/* El mail automático sale al terminar la corrida y queda viejo apenas se vincula
                     algo a mano. Esto lo manda con el estado de AHORA. */}
-                <Button
+                <Permisable recurso="egresos.archivo-digital-mas"><Button
                   variant="outline"
                   size="sm"
                   onClick={enviarEstadoActualizado}
@@ -6869,7 +6869,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                   className="flex items-center gap-2"
                 >
                   📧 Mandar el estado
-                </Button>
+                </Button></Permisable>
                 </span></Permisable>
                 <QueBotonUso />
                 </>}
@@ -7073,10 +7073,10 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                             <span title={ayudaFc(factura.fc)} className={`px-1 rounded text-[9px] ${colorFc(factura.fc)}`}>{factura.fc}</span>
                           )}
                           {categoriaArchivo(factura) === 'con' && (
-                            <button type="button" onClick={() => desvincularPdf(factura)}
+                            <Permisable recurso="egresos.vincular-pdf"><button type="button" onClick={() => desvincularPdf(factura)}
                               title="Desvincular PDF (para re-asignar)" className="text-gray-300 hover:text-red-600">
                               <X className="h-3 w-3" />
-                            </button>
+                            </button></Permisable>
                           )}
                         </div>
                       </TableCell>
@@ -7344,10 +7344,10 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                     ) : (
                       <>
                         <a href={h.url} target="_blank" rel="noreferrer" className="text-blue-600 underline truncate max-w-[280px]">{h.archivo}</a>
-                        <button type="button" title="Renombrar archivo (si está mal nombrado)" className="text-gray-400 hover:text-gray-600"
+                        <Permisable recurso="egresos.vincular-pdf"><button type="button" title="Renombrar archivo (si está mal nombrado)" className="text-gray-400 hover:text-gray-600"
                           onClick={() => { setEditNombreUrl(h.url); setEditNombreVal(h.archivo) }}>
                           <Edit3 className="h-3.5 w-3.5" />
-                        </button>
+                        </button></Permisable>
                         <button
                           type="button"
                           title="Ver el archivo acá mismo, sin cambiar de pestaña"
@@ -7378,11 +7378,11 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                             </option>
                           ))}
                         </select>
-                        <Button size="sm" variant="outline" className="h-6 text-xs px-2"
+                        <Permisable recurso="egresos.vincular-pdf"><Button size="sm" variant="outline" className="h-6 text-xs px-2"
                           disabled={!sel}
                           onClick={() => sel && vincularHuerfano(sel, h)}>
                           Vincular
-                        </Button>
+                        </Button></Permisable>
                       </>
                     )}
                     {/* 🗂️ Veredicto a mano (A-FEAT-1287): queda en el registro del archivo digital */}
@@ -7405,12 +7405,12 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                       </span>
                     )}
                     {/* 📄➡️🧾 Cargarlo como factura No Informada (A-FEAT-1318): para los que no están en ARCA */}
-                    <Button size="sm" variant="outline"
+                    <Permisable recurso="egresos.cargar-desde-pdf"><Button size="sm" variant="outline"
                       className={`h-6 text-xs px-2 ${reg?.veredicto === 'no_informada' ? 'border-amber-400 bg-amber-50' : ''}`}
                       title="Cargarlo como factura No Informada con los datos que la app leyó del PDF (sin armar un Excel)"
                       onClick={() => setCargarPdf({ nombre: h.archivo, url: h.url, file_id: fileIdDeUrl(h.url), texto: reg?.texto ?? null })}>
                       📄 Cargar como factura
-                    </Button>
+                    </Button></Permisable>
                     {reg?.veredicto && (
                       <p className="w-full text-[11px] text-amber-800">{VEREDICTOS.find(v => v.valor === reg.veredicto)?.ayuda}</p>
                     )}
@@ -7694,22 +7694,22 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                   <FileText className="mr-2 h-4 w-4" />
                   Historial PDFs
                 </Button>
-                <Button
+                <Permisable recurso="egresos.config-pdf-proveedores"><Button
                   variant="outline"
                   onClick={() => setModalConfigProveedorPdf({ open: true })}
                   title="Configurar proveedores para descarga automática"
                 >
                   <Settings2 className="mr-2 h-4 w-4" />
                   Config PDFs
-                </Button>
-                <Button
+                </Button></Permisable>
+                <Permisable recurso="egresos.auditar-archivo"><Button
                   variant="outline"
                   onClick={() => setAuditarPeriodoOpen(true)}
                   title="Auditar el registro digital de un período contable (agrega links + marca incongruencias)"
                 >
                   <FileText className="mr-2 h-4 w-4" />
                   Auditar período
-                </Button>
+                </Button></Permisable>
               </>
             )}
             <LeyendaEstadosFc flotante />
@@ -8139,7 +8139,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                     <span>Mostrar solo FC pendientes</span>
                   </label>
                 </div>
-                <Button
+                <Permisable recurso="egresos.marcar-fc"><Button
                   size="sm"
                   variant="outline"
                   className="border-amber-400 text-amber-700 hover:bg-amber-100"
@@ -8147,7 +8147,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                 >
                   <Check className="mr-1 h-3 w-3" />
                   Ver detalle
-                </Button>
+                </Button></Permisable>
               </div>
             </AlertDescription>
           </Alert>
@@ -8262,18 +8262,18 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                               <DropdownMenuContent align="end">
                                 {/* 🧾 A-BUG-1244 — vincular la factura con las compras de insumos (precio, descuento, moneda) */}
                                 {schemaName === 'msa' && (
-                                  <DropdownMenuItem onClick={() => setFacturaVincularCompras(factura.id)}>
+                                  <Permisable recurso="egresos.vincular-compras"><DropdownMenuItem onClick={() => setFacturaVincularCompras(factura.id)}>
                                     🧾 Vincular con compras de insumos
-                                  </DropdownMenuItem>
+                                  </DropdownMenuItem></Permisable>
                                 )}
                                 {(factura.sicore || factura.tc_pago || factura.descuento_aplicado || factura.estado === 'pagar' || factura.estado === 'preparado' || factura.estado === 'echeq') && (
-                                  <DropdownMenuItem
+                                  <Permisable recurso="egresos.resetear"><DropdownMenuItem
                                     className="text-orange-600"
                                     onClick={() => resetearFactura(factura)}
                                   >
                                     <RotateCcw className="h-4 w-4 mr-2" />
                                     Resetear a estado importado
-                                  </DropdownMenuItem>
+                                  </DropdownMenuItem></Permisable>
                                 )}
                                 {(factura.estado === 'pagado' || factura.estado === 'conciliado') && (
                                   <DropdownMenuItem
@@ -11008,15 +11008,15 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                     <div className="flex items-center gap-2">
                       {accionBoton && facturasSeleccionadasPagos.size > 0 && facturas.some(f => facturasSeleccionadasPagos.has(f.id)) && (
                         <>
-                          <Button
+                          <Permisable recurso="egresos.pagos-estado"><Button
                             size="sm"
                             onClick={() => cambiarEstadoSeleccionadas(accionBoton.estado)}
                             className="bg-blue-600 hover:bg-blue-700"
                           >
                             {accionBoton.label} ({seleccionadasEnEsteBloque})
-                          </Button>
+                          </Button></Permisable>
                           {accionBoton.estado !== 'pagado' && (
-                          <Button
+                          <Permisable recurso="egresos.pagos-estado"><Button
                             size="sm"
                             variant="outline"
                             onClick={() => {
@@ -11029,19 +11029,19 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                             title="Pagar con ECHEQ"
                           >
                             📝 ECHEQ ({seleccionadasEnEsteBloque})
-                          </Button>
+                          </Button></Permisable>
                           )}
                         </>
                       )}
                       {accionSecundaria && facturasSeleccionadasPagos.size > 0 && facturas.some(f => facturasSeleccionadasPagos.has(f.id)) && (
-                        <Button
+                        <Permisable recurso="egresos.pagos-estado"><Button
                           size="sm"
                           variant="outline"
                           onClick={() => cambiarEstadoSeleccionadas(accionSecundaria.estado)}
                           className="border-green-500 text-green-700 hover:bg-green-50"
                         >
                           {accionSecundaria.label} ({seleccionadasEnEsteBloque})
-                        </Button>
+                        </Button></Permisable>
                       )}
                       {!esContable && facturasSeleccionadasPagos.size > 0 && facturas.some(f => facturasSeleccionadasPagos.has(f.id)) && (() => {
                         const sel = facturas.filter(f => facturasSeleccionadasPagos.has(f.id))
@@ -11059,7 +11059,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                         )
                       })()}
                       {puedeAgrupar && (
-                        <Button
+                        <Permisable recurso="egresos.pagos-agrupar"><Button
                           size="sm"
                           variant="outline"
                           onClick={agruparPagos}
@@ -11067,10 +11067,10 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                           title="Agrupar en un solo pago"
                         >
                           🔗 Agrupar ({seleccionadasEnPagar.length})
-                        </Button>
+                        </Button></Permisable>
                       )}
                       {puedeDesagrupar && (
-                        <Button
+                        <Permisable recurso="egresos.pagos-agrupar"><Button
                           size="sm"
                           variant="outline"
                           onClick={desagruparPago}
@@ -11078,7 +11078,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                           title="Desagrupar pagos"
                         >
                           🔓 Desagrupar
-                        </Button>
+                        </Button></Permisable>
                       )}
                       <Badge variant="outline" className="text-lg px-3 py-1">
                         Subtotal: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
@@ -11176,12 +11176,12 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                                   </TableCell>
                                   <TableCell>
                                     <div className="flex items-center gap-1">
-                                      <Button size="sm" variant="ghost" title="Generar PDF detalle de pago"
+                                      <Permisable recurso="egresos.pagos-detalle"><Button size="sm" variant="ghost" title="Generar PDF detalle de pago"
                                         onClick={() => generarPDFDetallePago('arca', row.proveedor, row.cuit, mapFacsAItems(facsGrupo))}
-                                      >📄</Button>
-                                      <Button size="sm" variant="ghost" title="Encolar mail de detalle al proveedor"
+                                      >📄</Button></Permisable>
+                                      <Permisable recurso="egresos.pagos-detalle"><Button size="sm" variant="ghost" title="Encolar mail de detalle al proveedor"
                                         onClick={() => encolarMailDetalle('arca', row.proveedor, row.cuit, mapFacsAItems(facsGrupo), undefined, facsGrupo.map((f) => (f as { id: string }).id))}
-                                      >✉</Button>
+                                      >✉</Button></Permisable>
                                     </div>
                                   </TableCell>
                                 </TableRow>
@@ -11356,7 +11356,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                                   {estadoActual !== 'pendiente' && (
                                     <TableCell>
                                       <div className="flex items-center gap-1">
-                                        <Button
+                                        <Permisable recurso="egresos.pagos-detalle"><Button
                                           size="sm" variant="ghost"
                                           title="Generar PDF detalle de pago"
                                           onClick={() => {
@@ -11376,8 +11376,8 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                                               }]
                                             )
                                           }}
-                                        >📄</Button>
-                                        <Button size="sm" variant="ghost" title="Encolar mail de detalle al proveedor"
+                                        >📄</Button></Permisable>
+                                        <Permisable recurso="egresos.pagos-detalle"><Button size="sm" variant="ghost" title="Encolar mail de detalle al proveedor"
                                           onClick={() => {
                                             const tc = f.tc_pago ?? f.tipo_cambio ?? 1
                                             encolarMailDetalle('arca', f.denominacion_emisor, f.cuit, [{
@@ -11392,14 +11392,14 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                                                 : (f.monto_a_abonar ?? f.imp_total ?? 0) * tc,
                                             }], undefined, [f.id])
                                           }}
-                                        >✉</Button>
+                                        >✉</Button></Permisable>
                                         {onRevertir && (
-                                          <Button
+                                          <Permisable recurso="egresos.pagos-revertir"><Button
                                             size="sm" variant="ghost"
                                             title="Volver a Pendiente"
                                             className="text-orange-500 hover:text-orange-700 hover:bg-orange-50"
                                             onClick={() => onRevertir(f)}
-                                          >↩</Button>
+                                          >↩</Button></Permisable>
                                         )}
                                       </div>
                                     </TableCell>
@@ -11542,14 +11542,14 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                     </h3>
                     <div className="flex items-center gap-2">
                       {accionBoton && templatesSeleccionadosPagos.size > 0 && templates.some(t => templatesSeleccionadosPagos.has(t.id)) && (
-                        <Button size="sm" onClick={() => cambiarEstadoTemplatesSeleccionados(accionBoton.estado)} className="bg-blue-600 hover:bg-blue-700">
+                        <Permisable recurso="egresos.pagos-estado"><Button size="sm" onClick={() => cambiarEstadoTemplatesSeleccionados(accionBoton.estado)} className="bg-blue-600 hover:bg-blue-700">
                           {accionBoton.label} ({seleccionadasEnEsteBloque})
-                        </Button>
+                        </Button></Permisable>
                       )}
                       {accionSecundaria && templatesSeleccionadosPagos.size > 0 && templates.some(t => templatesSeleccionadosPagos.has(t.id)) && (
-                        <Button size="sm" variant="outline" onClick={() => cambiarEstadoTemplatesSeleccionados(accionSecundaria.estado)} className="border-green-500 text-green-700 hover:bg-green-50">
+                        <Permisable recurso="egresos.pagos-estado"><Button size="sm" variant="outline" onClick={() => cambiarEstadoTemplatesSeleccionados(accionSecundaria.estado)} className="border-green-500 text-green-700 hover:bg-green-50">
                           {accionSecundaria.label} ({seleccionadasEnEsteBloque})
-                        </Button>
+                        </Button></Permisable>
                       )}
                       {!esContable && templatesSeleccionadosPagos.size > 0 && templates.some(t => templatesSeleccionadosPagos.has(t.id)) && (() => {
                         const sel = templates.filter(t => templatesSeleccionadosPagos.has(t.id))
@@ -11563,14 +11563,14 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                         )
                       })()}
                       {puedeAgruparTemplates && (
-                        <Button size="sm" variant="outline" onClick={agruparTemplates} className="border-purple-500 text-purple-700 hover:bg-purple-50" title="Agrupar en un solo pago">
+                        <Permisable recurso="egresos.pagos-agrupar"><Button size="sm" variant="outline" onClick={agruparTemplates} className="border-purple-500 text-purple-700 hover:bg-purple-50" title="Agrupar en un solo pago">
                           🔗 Agrupar ({seleccionadasTemplatesActivas.length})
-                        </Button>
+                        </Button></Permisable>
                       )}
                       {puedeDesagruparTemplates && (
-                        <Button size="sm" variant="outline" onClick={desagruparTemplates} className="border-orange-500 text-orange-700 hover:bg-orange-50" title="Desagrupar">
+                        <Permisable recurso="egresos.pagos-agrupar"><Button size="sm" variant="outline" onClick={desagruparTemplates} className="border-orange-500 text-orange-700 hover:bg-orange-50" title="Desagrupar">
                           🔓 Desagrupar
-                        </Button>
+                        </Button></Permisable>
                       )}
                       <Badge variant="outline" className="text-lg px-3 py-1">
                         Subtotal: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}
@@ -11659,12 +11659,12 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                                   </TableCell>
                                   <TableCell>
                                     <div className="flex items-center gap-1">
-                                      <Button size="sm" variant="ghost" title="Generar PDF detalle de pago"
+                                      <Permisable recurso="egresos.pagos-detalle"><Button size="sm" variant="ghost" title="Generar PDF detalle de pago"
                                         onClick={() => generarPDFDetallePago('template', row.proveedor, tsGrupo[0]?.egreso?.cuit_quien_cobra || '', mapTemplatesAItems(tsGrupo))}
-                                      >📄</Button>
-                                      <Button size="sm" variant="ghost" title="Encolar mail de detalle al proveedor"
+                                      >📄</Button></Permisable>
+                                      <Permisable recurso="egresos.pagos-detalle"><Button size="sm" variant="ghost" title="Encolar mail de detalle al proveedor"
                                         onClick={() => encolarMailDetalle('template', row.proveedor, tsGrupo[0]?.egreso?.cuit_quien_cobra || '', mapTemplatesAItems(tsGrupo))}
-                                      >✉</Button>
+                                      >✉</Button></Permisable>
                                     </div>
                                   </TableCell>
                                 </TableRow>
@@ -11738,19 +11738,19 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                                   {estadoActual !== 'pendiente' && (
                                     <TableCell>
                                       <div className="flex items-center gap-1">
-                                        <Button size="sm" variant="ghost" title="Generar PDF detalle de pago"
+                                        <Permisable recurso="egresos.pagos-detalle"><Button size="sm" variant="ghost" title="Generar PDF detalle de pago"
                                           onClick={() => generarPDFDetallePago('template', t.egreso?.nombre_quien_cobra || '-', t.egreso?.cuit_quien_cobra || '', mapTemplatesAItems([t as unknown as Record<string, unknown>]))}
-                                        >📄</Button>
-                                        <Button size="sm" variant="ghost" title="Encolar mail de detalle al proveedor"
+                                        >📄</Button></Permisable>
+                                        <Permisable recurso="egresos.pagos-detalle"><Button size="sm" variant="ghost" title="Encolar mail de detalle al proveedor"
                                           onClick={() => encolarMailDetalle('template', t.egreso?.nombre_quien_cobra || '-', t.egreso?.cuit_quien_cobra || '', mapTemplatesAItems([t as unknown as Record<string, unknown>]))}
-                                        >✉</Button>
+                                        >✉</Button></Permisable>
                                         {onRevertir && (
-                                          <Button
+                                          <Permisable recurso="egresos.pagos-revertir"><Button
                                             size="sm" variant="ghost"
                                             title="Volver a Pendiente"
                                             className="text-orange-500 hover:text-orange-700 hover:bg-orange-50"
                                             onClick={() => onRevertir(t)}
-                                          >↩</Button>
+                                          >↩</Button></Permisable>
                                         )}
                                       </div>
                                     </TableCell>
@@ -11835,15 +11835,15 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                   <div className="flex items-center gap-2">
                     {accionBoton && anticiposSeleccionadosPagos.size > 0 && lista.some(a => anticiposSeleccionadosPagos.has(a.id)) && (
                       <>
-                        <Button
+                        <Permisable recurso="egresos.pagos-estado"><Button
                           size="sm"
                           onClick={() => cambiarEstadoAnticiposSeleccionados(accionBoton.estado)}
                           className="bg-blue-600 hover:bg-blue-700"
                         >
                           {accionBoton.label} ({Array.from(anticiposSeleccionadosPagos).filter(id => lista.some(a => a.id === id)).length})
-                        </Button>
+                        </Button></Permisable>
                         {accionBoton.estado !== 'pagado' && (
-                          <Button
+                          <Permisable recurso="egresos.pagos-estado"><Button
                             size="sm"
                             variant="outline"
                             onClick={() => {
@@ -11856,19 +11856,19 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                             title="Pagar con ECHEQ"
                           >
                             📝 ECHEQ ({Array.from(anticiposSeleccionadosPagos).filter(id => lista.some(a => a.id === id)).length})
-                          </Button>
+                          </Button></Permisable>
                         )}
                       </>
                     )}
                     {accionSecundaria && anticiposSeleccionadosPagos.size > 0 && lista.some(a => anticiposSeleccionadosPagos.has(a.id)) && (
-                      <Button
+                      <Permisable recurso="egresos.pagos-estado"><Button
                         size="sm"
                         variant="outline"
                         onClick={() => cambiarEstadoAnticiposSeleccionados(accionSecundaria.estado)}
                         className="border-green-500 text-green-700 hover:bg-green-50"
                       >
                         {accionSecundaria.label} ({Array.from(anticiposSeleccionadosPagos).filter(id => lista.some(a => a.id === id)).length})
-                      </Button>
+                      </Button></Permisable>
                     )}
                     {!esContable && anticiposSeleccionadosPagos.size > 0 && lista.some(a => anticiposSeleccionadosPagos.has(a.id)) && (() => {
                       const sel = lista.filter(a => anticiposSeleccionadosPagos.has(a.id))
@@ -11935,20 +11935,20 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                             <TableCell>{a.sicore ? <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs">{a.sicore}</span> : <span className="text-gray-400">—</span>}</TableCell>
                             <TableCell>
                               <div className="flex items-center gap-1">
-                                <button
+                                <Permisable recurso="egresos.anticipo-eliminar"><button
                                   onClick={() => eliminarAnticipo(a)}
                                   className="text-gray-300 hover:text-red-500 transition-colors"
                                   title="Eliminar anticipo"
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
-                                </button>
+                                </button></Permisable>
                                 {onRevertir && (
-                                  <Button
+                                  <Permisable recurso="egresos.pagos-revertir"><Button
                                     size="sm" variant="ghost"
                                     title="Volver a Pendiente"
                                     className="text-orange-500 hover:text-orange-700 hover:bg-orange-50 h-6 w-6 p-0"
                                     onClick={() => onRevertir(a)}
-                                  >↩</Button>
+                                  >↩</Button></Permisable>
                                 )}
                               </div>
                             </TableCell>
@@ -11975,7 +11975,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                   </h3>
                   <div className="flex items-center gap-2">
                     {accionBoton && sueldosSeleccionadosPagos.size > 0 && lista.some(s => sueldosSeleccionadosPagos.has(s.id)) && (
-                      <Button
+                      <Permisable recurso="egresos.pagos-estado"><Button
                         size="sm"
                         onClick={async () => {
                           const ids = Array.from(sueldosSeleccionadosPagos).filter(id => lista.some(s => s.id === id))
@@ -11986,10 +11986,10 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                         className="bg-blue-600 hover:bg-blue-700"
                       >
                         {accionBoton.label} ({Array.from(sueldosSeleccionadosPagos).filter(id => lista.some(s => s.id === id)).length})
-                      </Button>
+                      </Button></Permisable>
                     )}
                     {accionSecundaria && sueldosSeleccionadosPagos.size > 0 && lista.some(s => sueldosSeleccionadosPagos.has(s.id)) && (
-                      <Button
+                      <Permisable recurso="egresos.pagos-estado"><Button
                         size="sm"
                         variant="outline"
                         onClick={async () => {
@@ -12001,7 +12001,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                         className="border-green-500 text-green-700 hover:bg-green-50"
                       >
                         {accionSecundaria.label} ({Array.from(sueldosSeleccionadosPagos).filter(id => lista.some(s => s.id === id)).length})
-                      </Button>
+                      </Button></Permisable>
                     )}
                     {!esContable && sueldosSeleccionadosPagos.size > 0 && lista.some(s => sueldosSeleccionadosPagos.has(s.id)) && (() => {
                       const sel = lista.filter(s => sueldosSeleccionadosPagos.has(s.id))
@@ -12015,14 +12015,14 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                       )
                     })()}
                     {puedeAgruparSueldos && lista.some(s => sueldosSeleccionadosPagos.has(s.id)) && (
-                      <Button size="sm" variant="outline" onClick={agruparSueldos} className="border-blue-500 text-blue-700 hover:bg-blue-50" title="Agrupar en un solo pago">
+                      <Permisable recurso="egresos.pagos-agrupar"><Button size="sm" variant="outline" onClick={agruparSueldos} className="border-blue-500 text-blue-700 hover:bg-blue-50" title="Agrupar en un solo pago">
                         🔗 Agrupar ({seleccionadasSueldosActivas.length})
-                      </Button>
+                      </Button></Permisable>
                     )}
                     {puedeDesagruparSueldos && (
-                      <Button size="sm" variant="outline" onClick={desagruparSueldos} className="border-orange-500 text-orange-700 hover:bg-orange-50" title="Desagrupar">
+                      <Permisable recurso="egresos.pagos-agrupar"><Button size="sm" variant="outline" onClick={desagruparSueldos} className="border-orange-500 text-orange-700 hover:bg-orange-50" title="Desagrupar">
                         ✂️ Desagrupar
-                      </Button>
+                      </Button></Permisable>
                     )}
                     <Badge variant="outline" className="text-lg px-3 py-1">
                       Subtotal: ${subtotal.toLocaleString('es-AR', { minimumFractionDigits: 2 })}

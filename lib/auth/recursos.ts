@@ -102,6 +102,33 @@ export const RECURSOS: Recurso[] = [
   { id: "egresos.vincular-pdf",    seccion: "egresos", etiqueta: "Subdiarios → Vincular con la carpeta", tipo: "accion", padre: "egresos.subdiarios", archivo: FACTURAS },
   { id: "egresos.archivo-digital-mas", seccion: "egresos", etiqueta: "Subdiarios → Contar, re-vincular todo y mandar el estado por mail", tipo: "accion", padre: "egresos.subdiarios", archivo: FACTURAS },
   { id: "egresos.faltantes-pdf",   seccion: "egresos", etiqueta: "Subdiarios → Facturas sin PDF (pedirlas, copiar el pedido)", tipo: "accion", padre: "egresos.subdiarios", archivo: FACTURAS },
+  // ── BOTONES DE EGRESOS (JMS 27/10: «todos los botones deben ser posibles de seleccionar»). Lo que el código ya
+  //    reserva al admin (modo admin, DDJJ, «visible para Ulises»…) sigue reservado y NO tiene casilla.
+  ...([
+    ["subdiario-reporte", "Subdiarios → Generar PDF + Excel del período", "egresos.subdiarios", FACTURAS],
+    ["cargar-desde-pdf", "Subdiarios → Cargar un PDF suelto como factura No Informada", "egresos.subdiarios", FACTURAS],
+    ["config-pdf-proveedores", "Facturas → Configurar la descarga de PDFs por proveedor", undefined, FACTURAS],
+    ["auditar-archivo", "Facturas → Auditar el registro digital de un período", undefined, FACTURAS],
+    ["marcar-fc", "Facturas → Marcar FC (comprobante)", undefined, FACTURAS],
+    ["vincular-compras", "Facturas → Vincular con compras de insumos", undefined, FACTURAS],
+    ["resetear", "Facturas → Resetear a estado importado", undefined, FACTURAS],
+    ["pagos-estado", "Pagos → Cambiar estado (pagar, pagado, echeq…)", "egresos.pagos", FACTURAS],
+    ["pagos-agrupar", "Pagos → Agrupar / desagrupar", "egresos.pagos", FACTURAS],
+    ["pagos-detalle", "Pagos → PDF y mail de detalle al proveedor", "egresos.pagos", FACTURAS],
+    ["pagos-revertir", "Pagos → Volver a pendiente", "egresos.pagos", FACTURAS],
+    ["anticipo-eliminar", "Pagos → Eliminar anticipo", "egresos.pagos", FACTURAS],
+    ["templates-activar", "Egresos sin factura → Activar / desactivar cuota", "egresos.templates", "components/vista-templates-egresos.tsx"],
+    ["templates-campana", "Egresos sin factura → Editar la campaña", "egresos.templates", "components/vista-templates-egresos.tsx"],
+    ["templates-edicion", "Egresos sin factura → Modo edición", "egresos.templates", "components/vista-templates-egresos.tsx"],
+    ["templates-edicion-masiva", "Egresos sin factura → Edición masiva", "egresos.templates", "components/vista-templates-egresos.tsx"],
+    ["templates-nuevo", "Egresos sin factura → Nuevo template", "egresos.templates", "components/vista-templates-egresos.tsx"],
+    ["templates-generador", "Egresos sin factura → Renovar campaña", "egresos.templates", "components/vista-templates-egresos.tsx"],
+    ["templates-planilla-impuestos", "Egresos sin factura → Planilla de impuestos", "egresos.templates", "components/vista-templates-egresos.tsx"],
+    ["templates-pago-manual", "Egresos sin factura → Pago manual", "egresos.templates", "components/vista-templates-egresos.tsx"],
+    ["asignar-cuenta", "Asignación de cuentas → Asignar / quitar cuenta", "egresos.asignacion", "components/vista-asignacion-arca.tsx"],
+  ] as const).map(([k, e, padre, archivo]): Recurso => ({
+    id: `egresos.${k}`, seccion: "egresos", etiqueta: e, tipo: "accion", ...(padre ? { padre } : {}), archivo,
+  })),
 
   // ── Extracto Bancario ────────────────────────────────────────────────────────────────────
   { id: "extracto.movimientos", seccion: "extracto", etiqueta: "Movimientos", tipo: "pestana", archivo: EXTRACTO },

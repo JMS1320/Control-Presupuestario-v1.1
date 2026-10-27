@@ -1,6 +1,7 @@
 "use client"
 
 
+import { Permisable } from "@/components/modo-permisos"
 import { templatesDelLink } from "@/lib/impuestos/planilla"
 import { traerTodo } from "@/lib/supabase-paginado"
 import { ModalPropagarMontoCuota } from "@/components/modal-propagar-monto-cuota"
@@ -1356,7 +1357,7 @@ export function VistaTemplatesEgresos() {
             )
           }
           return (
-            <button
+            <Permisable recurso="egresos.templates-activar"><button
               type="button"
               title={`Clic para ${valor ? 'desactivar' : 'activar'} el template completo`}
               onClick={() => alternarActivo(cuota)}
@@ -1367,7 +1368,7 @@ export function VistaTemplatesEgresos() {
                 {valor ? 'Sí' : 'No'}
                 <Edit3 className="ml-1 h-3 w-3 opacity-50" />
               </Badge>
-            </button>
+            </button></Permisable>
           )
         
         case 'configuracion_reglas':
@@ -1386,13 +1387,13 @@ export function VistaTemplatesEgresos() {
             <div className="max-w-xs truncate flex items-center gap-1" title={valor as string}>
               <span className="truncate">{valor as string}</span>
               {cuota.egreso_id && (
-                <button
+                <Permisable recurso="egresos.templates-campana"><button
                   onClick={e => { e.stopPropagation(); setEditandoCampana(cuota.egreso_id!) }}
                   className="shrink-0 text-blue-600 hover:text-blue-800 text-xs"
                   title="Editar la campaña: el template, sus cuotas y sus datos (los vínculos conciliados se conservan)"
                 >
                   ✏️
-                </button>
+                </button></Permisable>
               )}
             </div>
           )
@@ -1484,7 +1485,7 @@ export function VistaTemplatesEgresos() {
             />
           </div>
           {/* Botón de modo edición */}
-          <Button
+          <Permisable recurso="egresos.templates-edicion"><Button
             variant={modoEdicion ? "default" : "outline"}
             onClick={() => {
               setModoEdicion(!modoEdicion)
@@ -1494,7 +1495,7 @@ export function VistaTemplatesEgresos() {
           >
             <Edit3 className="mr-2 h-4 w-4" />
             {modoEdicion ? "Salir Edición" : "Modo Edición"}
-          </Button>
+          </Button></Permisable>
 
           {templatesLink.length > 0 && (
             <span className="inline-flex items-center gap-1 rounded border border-blue-300 bg-blue-50 px-2 py-1 text-xs text-blue-800">
@@ -1515,7 +1516,7 @@ export function VistaTemplatesEgresos() {
           </Button>
 
           {/* Botón edición masiva */}
-          <Button
+          <Permisable recurso="egresos.templates-edicion-masiva"><Button
             variant={modoEdicionMasiva ? "default" : "outline"}
             onClick={() => {
               setModoEdicionMasiva(!modoEdicionMasiva)
@@ -1528,43 +1529,43 @@ export function VistaTemplatesEgresos() {
           >
             <Check className="mr-2 h-4 w-4" />
             {modoEdicionMasiva ? 'Cancelar Masiva' : 'Edición Masiva'}
-          </Button>
+          </Button></Permisable>
 
-          <Button
+          <Permisable recurso="egresos.templates-nuevo"><Button
             onClick={() => setMostrarWizard(true)}
             className="bg-green-600 hover:bg-green-700"
           >
             <Plus className="mr-2 h-4 w-4" />
             Crear Template
-          </Button>
+          </Button></Permisable>
 
-          <Button
+          <Permisable recurso="egresos.templates-generador"><Button
             onClick={() => setMostrarGenerador(true)}
             variant="outline"
             className="border-green-600 text-green-700 hover:bg-green-50"
           >
             <Plus className="mr-2 h-4 w-4" />
             Renovar campaña
-          </Button>
+          </Button></Permisable>
 
           {/* 🧾 A-FEAT-1320 — Planilla de impuestos: el año entero, pagado / adeudado / futuro */}
-          <Button
+          <Permisable recurso="egresos.templates-planilla-impuestos"><Button
             onClick={() => setMostrarPlanillaImpuestos(true)}
             variant="outline"
             className="border-red-500 text-red-700 hover:bg-red-50"
           >
             🧾 Planilla de impuestos
-          </Button>
+          </Button></Permisable>
 
           {/* Botón Pago Manual - Templates Abiertos */}
-          <Button
+          <Permisable recurso="egresos.templates-pago-manual"><Button
             onClick={abrirModalPagoManual}
             variant="outline"
             className="border-purple-500 text-purple-600 hover:bg-purple-50"
           >
             <Plus className="mr-2 h-4 w-4" />
             Pago Manual
-          </Button>
+          </Button></Permisable>
           
           {/* Botón de filtros */}
           <Button 

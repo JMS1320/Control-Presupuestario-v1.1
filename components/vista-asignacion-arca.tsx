@@ -1,5 +1,6 @@
 "use client"
 
+import { Permisable } from "@/components/modo-permisos"
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { supabase } from "@/lib/supabase"
 import { Card, CardContent } from "@/components/ui/card"
@@ -743,22 +744,22 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
           <div className="flex items-center gap-2 ml-auto">
             <span className="text-sm text-gray-500">{seleccionados.size} selec.</span>
             {unicosFiltrados.length > 0 && (
-              <Button size="sm" variant="outline" onClick={autoAsignarUnicos} className="text-blue-700 border-blue-300"
+              <Permisable recurso="egresos.asignar-cuenta"><Button size="sm" variant="outline" onClick={autoAsignarUnicos} className="text-blue-700 border-blue-300"
                 title="A cada seleccionada le pone la cuenta que dice el historial de su proveedor (sólo las que son Match)">
                 Asignar su match ({unicosFiltrados.length})
-              </Button>
+              </Button></Permisable>
             )}
-            <Button size="sm" onClick={() => {
+            <Permisable recurso="egresos.asignar-cuenta"><Button size="sm" onClick={() => {
               const uniq = [...new Set(seleccionadosArray.map(id => filtrados.find(c=>c.id===id)?.cuenta_contable ?? ""))]
               const cuits = [...new Set(seleccionadosArray.map(id => filtrados.find(c=>c.id===id)?.cuit ?? null).filter(Boolean))]
               const emisores = [...new Set(seleccionadosArray.map(id => filtrados.find(c=>c.id===id)?.denominacion_emisor ?? null).filter(Boolean))]
               abrirModal(seleccionadosArray, uniq.length === 1 ? uniq[0] : "(múltiples cuentas)", cuits.length === 1 ? cuits[0] : null, emisores.length === 1 ? emisores[0] : null)
             }}>
               Asignar cuenta a seleccionadas
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => quitarAsignacion(seleccionadosArray)}>
+            </Button></Permisable>
+            <Permisable recurso="egresos.asignar-cuenta"><Button size="sm" variant="outline" onClick={() => quitarAsignacion(seleccionadosArray)}>
               Quitar asignación
-            </Button>
+            </Button></Permisable>
             <Button size="sm" variant="ghost" onClick={() => setSeleccionados(new Set())}>
               <X className="h-3.5 w-3.5" />
             </Button>
@@ -816,10 +817,10 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
                         ?? (c._match.sugerida
                           ? <span className="italic font-normal text-blue-600" title="Sale del historial del proveedor">→ {c._match.sugerida.categ}</span>
                           : c._match.candidatas.length > 1
-                            ? <button type="button" className="italic font-normal text-amber-700 underline decoration-dotted"
+                            ? <Permisable recurso="egresos.asignar-cuenta"><button type="button" className="italic font-normal text-amber-700 underline decoration-dotted"
                                 title={`${c._match.candidatas.map(x => `${x.categ} (${x.usos}×)`).join(" · ")} — click para elegir`}
                                 onClick={() => abrirModal([c.id], c.cuenta_contable ?? "", c.cuit, c.denominacion_emisor)}>
-                                → {c._match.candidatas.length} opciones</button>
+                                → {c._match.candidatas.length} opciones</button></Permisable>
                             : <span className="text-gray-300">—</span>)}
                     </td>
                     <td className="px-3 py-1.5 text-center text-gray-400 font-mono">
@@ -845,10 +846,10 @@ export function VistaAsignacionArca({ empresa = 'MSA', esAdmin = false }: { empr
                       {c.mes_contable && c.año_contable ? `${MESES[c.mes_contable-1]} ${c.año_contable}` : "—"}
                     </td>
                     <td className="px-3 py-1.5">
-                      <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]"
+                      <Permisable recurso="egresos.asignar-cuenta"><Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]"
                         onClick={() => abrirModal([c.id], c.cuenta_contable ?? "", c.cuit, c.denominacion_emisor)}>
                         {c._estado === "asignado" ? "Cambiar" : "Asignar"}
-                      </Button>
+                      </Button></Permisable>
                     </td>
                   </tr>
                 ))}
