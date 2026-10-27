@@ -464,6 +464,30 @@ contrato_arrendamiento          (Ventas — BBDD fuente)
 reescribe el pasado — sólo cambian las cuotas todavía no fijadas. Mismo criterio que Cash Flow con
 facturas en USD.
 
+### 💵 La cuota que QUEDA EN DÓLARES — ingreso sí, banco en pesos no (2026-10-27, [A-FEAT-1393](PENDIENTES.md#a-feat-1393))
+
+**El caso**: la cuota **2B de Sanpa** (contrato Rojas, MSA, 2 qq/ha). El contrato da la *«opción quedar en dólares
+sin cobrar»*, y en 25/26 se cobró **en dólares, en efectivo** (48,4 tn × u$s 294,30 = u$s 14.244,12; JMS 27/10), sin
+factura y sin pasar por el banco.
+
+**La decisión** (JMS: *«sí, marcarlas»*): una marca **por cuota** —`cuotas_arrendamiento.en_dolares`, script 117—
+y no por contrato, porque las otras cuotas del mismo contrato sí se pesifican.
+
+| Dónde | Qué hace con la cuota marcada | Por qué |
+|---|---|---|
+| **Presupuesto** | la sigue contando como **ingreso** | la renta del campo existe igual; cambian la moneda y el medio, no el resultado |
+| **Cash Flow** | la muestra con **$0** y «💵 Queda en dólares (U$S X) — no entra al banco en pesos» | el Cash Flow es el banco en pesos: esperarla ahí era proyectar plata que no entra. La fila queda para que se vea que existe y por qué no suma |
+
+- Vale **fijada** (la venta, por `ventas_unificadas.cuota_id`) y **sin fijar** (`cuotasNoFijadas` en
+  `lib/arrendamientos/cash-flow.ts`).
+- **Viaja**: al copiar el esquema de cuotas a la campaña siguiente, y al partir la cuota en una fijación parcial (el
+  saldo hereda la marca). Se edita en Arrendamientos, casilla **u$s** de cada cuota.
+- **El número que cambió**: la 2B de 26/27, fijada en 48,4 tn × u$s 365 = **u$s 17.666**, se esperaba como
+  **$26.499.000 en el banco el 10/11/2026** (TC estimado 1.500). Ahora, $0 con la leyenda.
+- ⏳ **Hueco**: el cobro en efectivo en dólares no se puede registrar — no hay **caja en dólares** y los contratos
+  MSA 25/26 no están cargados. Recomendación entregada: primero los contratos 25/26, la caja después de hablarlo con
+  el contador (A-FEAT-1393, parte b).
+
 ### Schemas — decisión: TODO en `public`
 Se evaluó un schema `presupuesto` para agrupar. **Descartado**:
 - Cada schema nuevo hay que exponerlo en `pgrst.db_schemas` aparte de GRANTs/RLS (mordió con `ma`,

@@ -736,6 +736,16 @@ mismo ID sin tocar la misma línea, así que ninguna de las 11 reglas anteriores
 propagó. Pasó **dos veces en un día, en los dos sentidos**, y la segunda con las dos terminales
 haciendo bien la consulta — por eso la regla no puede terminar en "fijate antes".*
 
+📜 **Los números de `scripts/NNN-…` son el MISMO recurso, con una trampa más** *(agregado 2026-10-27, después de
+que dos terminales tomaran el `scripts/112` con una línea de diferencia en el tablero)*. Se reclaman igual —una
+línea en el tablero antes de escribir el archivo—, pero el «próximo libre» se toma de **la ÚLTIMA línea del
+tablero**, no de un «próximo libre» leído antes: T1 tomó el 112 con un dato de media hora atrás, y la línea de
+arriba de la suya ya lo reclamaba.
+⚠️ **Si el choque es con un script YA CORRIDO, se renumera el que NO corrió, aunque haya llegado primero.** El
+corrido dejó su marca `[script N]` en la base y su deshacer la busca por ese número: renombrarlo haría que la base y
+el repo se contradigan. El que no corrió no dejó nada y se renumera gratis (la otra terminal pasó su 112 a 116 sin
+costo). Es la única excepción a «renumera el que llegó último».
+
 **13 · `memory/` también es compartido — y ahí NO hay red.** Las reglas 1-12 protegen el repo. Pero
 `memory/` (y `.claude/`) están **fuera de git**: si dos terminales escriben el mismo archivo, la
 segunda pisa a la primera **sin conflicto, sin aviso y sin historial para recuperarlo**. Es el único

@@ -3,7 +3,8 @@
 > Cómo está pensado `public.proveedores`: qué guarda, **quién lo escribe**, **quién lo lee** y
 > qué se rompe aguas abajo cuando le falta un dato.
 >
-> **Última actualización**: 2026-08-07 (creación del archivo + ficha de proveedor, commit `6cc357f`)
+> **Última actualización**: 2026-10-27 (§ 6.1: la cuenta corriente del cliente y su control por dos caminos) ·
+> 2026-08-07 (creación del archivo + ficha de proveedor, commit `6cc357f`)
 >
 > Fronteras con las otras dimensiones: la **estructura** de la tabla está en
 > `ESTRUCTURA_BD_COLUMNAS.md`; **cómo se opera** la ficha está en `MANUAL-USO.md` § Ficha de
@@ -137,9 +138,30 @@ pagamos?"**. El ícono responde eso sin salir del análisis. El clic en el ícon
 serie mes a mes de la fila (`stopPropagation`), son dos acciones distintas sobre la misma fila.
 
 ### Qué arma
-Datos del maestro en 4 bloques · últimas facturas (compras de MSA/PAM/MA + ventas de MSA) · últimos
-pagos · anticipos · cuatro totales arriba. Lee de `GET /api/proveedores/ficha?cuit=`, escribe por
-el PATCH de la § 4.4.
+Datos del maestro en 4 bloques · últimas facturas (compras y ventas de MSA/PAM/MA — ⚠️ *cambió 27/10*:
+hasta acá las ventas eran sólo de MSA) · últimos pagos · anticipos · cuatro totales arriba · la **cuenta
+corriente** con su control (§ 6.1). Lee de `GET /api/proveedores/ficha?cuit=`, escribe por el PATCH de la § 4.4.
+
+### 6.1 — 📒 La cuenta corriente del cliente y su control (⚠️ cambió 2026-10-27, A-FEAT-167)
+
+Hasta el 27/10 la ficha armaba la cuenta corriente **en la pantalla, con las listas recortadas a 40 filas**
+(`TOPE`): en una contraparte de mucho movimiento (AFA) el saldo daba mal sin que nada lo señalara. **Ahora se arma
+en el servidor con todo** (`armarCuentaCorriente` dentro de `/api/proveedores/ficha`) y la pantalla sólo la
+muestra. Las listas de abajo siguen recortadas: son para mirar.
+
+- **Qué suma** — signo: positivo = le debemos, negativo = nos debe. Una compra suma y su pago resta; una **venta**
+  resta y la cancelan su **cobro** (los créditos atados a la venta por `comprobante_venta_id`) y las **retenciones**
+  que nos hizo el cliente (las impresas en la liquidación de hacienda y los certificados de
+  `retenciones_recibidas`), que van como renglón propio.
+- **Las 3 empresas**: ventas, certificados y los **4 extractos** (`msa_galicia`, `pam_galicia`, `pam_galicia_cc`,
+  `ma.ma_galicia`). Faltaba el de MA: sus pagos y cobros no aparecían en ninguna ficha.
+- **El control por dos caminos** (pieza 4 del norte administrativo): abajo de la cuenta corriente, «✓ Control de
+  ventas: la cuenta corriente y los comprobantes dan el mismo saldo», o ⚠️ con la diferencia. Compara **por
+  comprobante** (lo que le falta cobrar a cada venta, con los cobros agrupados sumados enteros) contra **por cuenta
+  corriente** (ventas − cobros − retenciones). Avisa, no frena: la ficha es para mirar. Diseño del grupo →
+  `MODULO_CONCILIACION.md` § 34.
+- Los **cuatro totales de arriba** no cuentan las retenciones como pagos.
+- Caso real (27/10): Sáenz Valiente da **0 por los dos caminos** (24.185.679,22 − 23.584.395,72 − 601.283,50).
 
 ---
 
@@ -177,8 +199,8 @@ queda así hasta que se haga la **Fase ARCA** del refactor de fechas (`A-TEST-06
 | # | Hueco | Dónde está anotado |
 |---|---|---|
 | 1 | **Las ventas no dan de alta el cliente** — 4 puntos sin upsert | `B-BUG-CLIENTE-NO-SE-CREA` |
-| 2 | **Los cobros de una venta no se pueden rastrear** — el extracto no tiene columna hacia `msa.comprobantes_venta`, así que de una venta se sabe su `estado`, no cuándo entró la plata | `A-TEST-24` |
-| 3 | **Pagos por caja, cheque y tarjeta no se ven** en la ficha (sólo los 3 extractos Galicia) | `A-TEST-24` |
+| 2 | ~~**Los cobros de una venta no se pueden rastrear**~~ ⚠️ *cambió*: los 4 extractos tienen `comprobante_venta_id` y desde el 27/10 la ficha suma los cobros atados a cada venta (§ 6.1). Queda el **match automático** del motor contra ventas | `A-FEAT-167` |
+| 3 | **Pagos por caja, cheque y tarjeta no se ven** en la ficha (sólo los extractos Galicia — 4 desde el 27/10, con el de MA) | `A-TEST-24` |
 | 4 | **Carga orgánica** — completar el padrón a medida que se opera, en vez de cargarlo de antemano | `B-FEAT-07` |
 | 5 | **Dos columnas de mail** sin criterio claro | `B-FEAT-UNIFICAR-PORTAL` |
 | 6 | **`razon_social` truncadas a 30 caracteres** en varios proveedores — se truncó en el origen; el nombre completo está en `denominacion_emisor` de ARCA | `PENDIENTES.md` |
