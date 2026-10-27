@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### ✍️ Órdenes: estado `a_confirmar` + 5 columnas en `ordenes_aplicacion` y `ordenes_agricolas` (2026-10-27) — ⏳ SIN APLICAR (espera OK de JMS)
+### ✍️ Órdenes: estado `a_confirmar` + 5 columnas en `ordenes_aplicacion` y `ordenes_agricolas` (2026-10-27) — ✅ APLICADA el 27/10 con JMS presente (aviso previo): 10 columnas, 2 checks, `explain update` OK
 
 Para [A-FEAT-1223](PENDIENTES.md#a-feat-1223) (la doble firma, decidida por JMS el 27/10: **dos botones**). `scripts/109-ordenes-a-confirmar.sql`:
 el check de `estado` suma `'a_confirmar'` y se agregan `marcada_por`, `marcada_at`, `confirmada_por`, `confirmada_at`, `motivo_rechazo`

@@ -3323,6 +3323,10 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-10-27 · ÓRDENES «SE HIZO» / «CONFIRMAR» — `a_confirmar` + 5 columnas en `ordenes_aplicacion` y `ordenes_agricolas` (script 109) — A-FEAT-1223 — ✅ CORRIDO 2026-10-27 con JMS (verificado con `explain update`)
+
+`scripts/109-ordenes-a-confirmar.sql` (+ `-deshacer`): el check `*_estado_check` pasa a `('planificada','a_confirmar','ejecutada','eliminada')` y se agregan `marcada_por text`, `marcada_at timestamptz`, `confirmada_por text`, `confirmada_at timestamptz`, `motivo_rechazo text` (nullable, comentario `[script 109]` en `marcada_por`). No toca filas. Control: 10 columnas · 2 checks ✅. **Mismo día, con OK de JMS**: rol `pruebas` sumó `productivo.ordenes.{nueva,editar,se-hizo,borrar,descargar,ganadero,agricola}` (sin `confirmar`).
+
 ### 2026-10-27 · LO QUE DEVUELVE EL CONTADOR — tabla `public.ddjj_presentadas` (script 107) — A-AUTO-09 — ✅ CORRIDO 2026-10-27 con JMS (MCP en write con su OK)
 
 `scripts/107-ddjj-presentadas.sql` (+ `-deshacer`): una fila por DDJJ (empresa + impuesto IVA/IIBB + período `AAAAMM` + secuencia) con `totales`,
