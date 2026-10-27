@@ -21,7 +21,7 @@
  * administrativo. Si no coinciden **avisa y no frena** (§ 🚦 de CLAUDE.md): la diferencia casi siempre
  * tiene explicación — un cobro que todavía no se imputó a una venta, un echeq endosado, una compensación.
  */
-import { armarDetalleCobro, type DetalleCobro, type FuentesCobro } from './detalle-cobro'
+import { armarDetalleCobro, lineasDeCobro, type DetalleCobro, type FuentesCobro } from './detalle-cobro'
 
 const r2 = (x: number) => Math.round(x * 100) / 100
 const VACIAS: FuentesCobro = { movimientos: [], anticipos: [], compensaciones: [], retenciones: [] }
@@ -128,4 +128,81 @@ export function controlDosCaminos(
   const porCuentaCorriente = r2(cuentaCorriente.ventas - cuentaCorriente.cobros - cuentaCorriente.retenciones)
   const diferencia = r2(porCuentaCorriente - porComprobante)
   return { porComprobante, porCuentaCorriente, diferencia, cierra: Math.abs(diferencia) < 0.01 }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// Etapa 2 (27/10): armar el grupo desde Cobros y conciliar un crédito contra el grupo desde el Extracto.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Una venta candidata a agrupar, con lo que hace falta para decidir si se puede. */
+export interface VentaAgrupable {
+  id: string
+  nro_comprobante?: string | null
+  cuit_cliente?: string | null
+  grupo_cobro_id?: string | null
+  estado?: string | null
+}
+
+const soloDigitos = (s: string | null | undefined) => String(s ?? '').replace(/\D/g, '')
+
+/**
+ * ¿Se pueden agrupar? `null` = sí; si no, el motivo en palabras del usuario.
+ * - Al menos 2 ventas: un grupo de una es una venta sola.
+ * - **El mismo cliente** (CUIT): un cobro agrupado es un cliente que paga varias juntas. Mezclar
+ *   clientes haría que la plata de uno cancele la deuda del otro.
+ * - Ninguna en otro grupo: una venta pertenece a un solo grupo.
+ * - Ninguna anulada.
+ */
+export function validarAgrupacion(ventas: VentaAgrupable[]): string | null {
+  if (ventas.length < 2) return 'Elegí al menos 2 ventas para agrupar'
+  const cuits = new Set(ventas.map(v => soloDigitos(v.cuit_cliente)))
+  if (cuits.has('')) return 'Hay una venta sin CUIT del cliente: cargalo antes de agrupar'
+  if (cuits.size > 1) return 'Las ventas son de clientes distintos: un cobro agrupado es de un solo cliente'
+  const enGrupo = ventas.filter(v => v.grupo_cobro_id)
+  if (enGrupo.length) return `${enGrupo.map(v => v.nro_comprobante || v.id).join(', ')} ya está en otro grupo: desagrupalo primero`
+  const anuladas = ventas.filter(v => String(v.estado || '').toLowerCase() === 'anulado')
+  if (anuladas.length) return `${anuladas.map(v => v.nro_comprobante || v.id).join(', ')} está anulada`
+  return null
+}
+
+/**
+ * 🏦 **Cuánto le falta cobrar al grupo EN EL BANCO** — lo que el Extracto compara contra el crédito.
+ *
+ * `pagoCondiciones` de cada venta es lo que el banco tiene que acreditar (`cobroEsperado`, ya sin las
+ * retenciones). Lo cobrado es todo lo que no es retención, de cualquiera de sus ventas, sin repetir.
+ * `excluir` saca referencias que no se cuentan contra sí mismas (el movimiento que se está asignando).
+ */
+export function faltaCobrarDelGrupo(
+  ventas: { id: string; pagoCondiciones: number }[],
+  fuentes: Map<string, FuentesCobro>,
+  excluir: (string | null | undefined)[] = [],
+): { esperado: number; cobrado: number; falta: number } {
+  const fuera = new Set(excluir.filter(Boolean) as string[])
+  const esperado = r2(ventas.reduce((s, v) => s + (Number(v.pagoCondiciones) || 0), 0))
+  const cobrado = r2(lineasDeCobro(juntarFuentes(ventas.map(v => fuentes.get(v.id) ?? VACIAS)))
+    .filter(l => l.medio !== 'retencion' && !fuera.has(l.ref))
+    .reduce((s, l) => s + l.monto, 0))
+  return { esperado, cobrado, falta: r2(esperado - cobrado) }
+}
+
+/** Cómo se nombra el grupo en una lista: «Grupo 209-32006 + 209-32007». */
+export function nombreDelGrupo(nros: (string | null | undefined)[]): string {
+  return `Grupo ${nros.map(n => n || '—').join(' + ')}`
+}
+
+/** Una cuota, con lo que importa para cerrarla o reabrirla desde el grupo. */
+export interface CuotaDelGrupo { estado?: 'a cobrar' | 'cobrado'; movimiento_id?: string | null; por_grupo?: string | null }
+
+/** Al completarse el grupo: las cuotas abiertas (sin movimiento propio) pasan a cobradas, con la marca del grupo. */
+export function cuotasAlCerrarGrupo<T extends CuotaDelGrupo>(plazos: T[], grupoId: string): T[] {
+  return plazos.map(q => (q.estado !== 'cobrado' && !q.movimiento_id ? { ...q, estado: 'cobrado' as const, por_grupo: grupoId } : q))
+}
+
+/** Si al grupo le quitan un cobro: se reabren SÓLO las cuotas que cerró él. Lo marcado a mano no se toca. */
+export function cuotasAlReabrirGrupo<T extends CuotaDelGrupo>(plazos: T[], grupoId: string): T[] {
+  return plazos.map(q => {
+    if (q.por_grupo !== grupoId) return q
+    const { por_grupo: _fuera, ...resto } = q
+    return { ...resto, estado: 'a cobrar' as const } as T
+  })
 }

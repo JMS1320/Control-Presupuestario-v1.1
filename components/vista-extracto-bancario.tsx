@@ -26,6 +26,8 @@ import { repartirEnCuotas, conciliarCuota, type PlazoCobro } from "@/lib/ventas/
 import { cargarFuentesCobro, vincularPagoACuenta, imputacionParaElBanco, detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { TODOS_LOS_EXTRACTOS, extractoEsDe } from "@/lib/ventas/extractos-empresa"
 import { lineasDeCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
+import { faltaCobrarDelGrupo, nombreDelGrupo } from "@/lib/ventas/grupo-cobro"
+import { actualizarEstadoDelGrupo } from "@/lib/ventas/grupo-cobro-db"
 import { sincronizarExtractoEcheqs } from "@/lib/ventas/cheques-terceros-db"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
@@ -1989,7 +1991,7 @@ Pasan a conciliado junto con su factura o cuota. El motivo queda en la nota.`)) 
         const sch = schemaDeEmpresa(empresa)
         // `plazos` existe sólo en MSA (la liquidación de hacienda): pedirlo en PAM/MA haría fallar todo.
         const { data: comps } = await supabase.schema(sch).from('comprobantes_venta')
-          .select('id, nro_comprobante, denominacion_cliente, cuit_cliente, imp_total, iva, subtotal_neto, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, comision_neto, comision_iva, almacenaje_neto, almacenaje_iva, ret_iva, ret_iibb, fecha_liquidacion, estado, tipo_comprobante, cuenta_contable, nro_cuenta, centro_costo' + (sch === 'msa' ? ', plazos' : ''))
+          .select('id, nro_comprobante, denominacion_cliente, cuit_cliente, imp_total, iva, subtotal_neto, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, comision_neto, comision_iva, almacenaje_neto, almacenaje_iva, ret_iva, ret_iibb, fecha_liquidacion, estado, tipo_comprobante, cuenta_contable, nro_cuenta, centro_costo, grupo_cobro_id' + (sch === 'msa' ? ', plazos' : ''))
           .order('fecha_liquidacion', { ascending: false })
           .limit(500)
         const ids = (comps ?? []).map((c: any) => c.id)
@@ -2021,7 +2023,29 @@ Pasan a conciliado junto con su factura o cuota. El motivo queda en la nota.`)) 
         const yaCobrado = (id: string) => lineasDeCobro((fuentesComp.get(id) as any) ?? { movimientos: [], anticipos: [], compensaciones: [], retenciones: [] })
           .filter(l => l.medio !== 'retencion' && l.ref !== movimiento.id && l.ref !== (movimiento as any).anticipo_id)
           .reduce((acc, l) => acc + l.monto, 0)
-        return (comps ?? []).flatMap((c: any) => {
+        /**
+         * 🧾 A-FEAT-167 — las ventas de un COBRO AGRUPADO no se ofrecen sueltas: se ofrece el GRUPO, una
+         * vez, contra lo que le falta cobrar entre todas (Sáenz: 3 transferencias que pagan un poco de
+         * cada una). El crédito queda atado a la primera venta del grupo y el grupo se cierra solo.
+         */
+        const grupos = new Map<string, any[]>()
+        for (const c of (comps ?? []) as any[]) if (c.grupo_cobro_id) grupos.set(c.grupo_cobro_id, [...(grupos.get(c.grupo_cobro_id) ?? []), c])
+        const candidatosGrupo = [...grupos.entries()].flatMap(([gid, vs]) => {
+          const orden = [...vs].sort((a, b) => String(a.nro_comprobante ?? '').localeCompare(String(b.nro_comprobante ?? '')))
+          const cobros = orden.map(c => cobroEsperado(c, retPorComp.get(String(c.id)) ?? 0))
+          const g = faltaCobrarDelGrupo(orden.map((c, i) => ({ id: String(c.id), pagoCondiciones: cobros[i].pagoCondiciones })),
+            fuentesComp, [movimiento.id, (movimiento as any).anticipo_id])
+          if (g.falta <= 0.99) return []
+          const suma = (k: 'totalOperacion' | 'retenciones' | 'deducciones') => cobros.reduce((acc, x) => acc + (Number(x[k]) || 0), 0)
+          return [{
+            ...orden[0], __empresa: empresa, __schema: sch, __key: `grupo#${gid}`,
+            nro_comprobante: nombreDelGrupo(orden.map(c => c.nro_comprobante)),
+            __cobro: { ...cobros[0], totalOperacion: suma('totalOperacion'), retenciones: suma('retenciones'), deducciones: suma('deducciones'), pagoCondiciones: g.falta },
+            __yaCobrado: g.cobrado,
+            __grupo: { id: gid, ventas: orden.map(c => ({ id: String(c.id), nro: c.nro_comprobante })) },
+          }]
+        })
+        const individuales = ((comps ?? []) as any[]).filter(c => !c.grupo_cobro_id).flatMap((c: any) => {
           const cobroTotal = cobroEsperado(c, retPorComp.get(String(c.id)) ?? 0)
           const cobrado = yaCobrado(String(c.id))
           // `__cobro.pagoCondiciones` pasa a ser LO QUE FALTA: es contra lo que se compara el crédito.
@@ -2058,6 +2082,7 @@ Pasan a conciliado junto con su factura o cuota. El motivo queda en la nota.`)) 
               __cobro: { ...cobro, pagoCondiciones: q.aCobrar },
             }))
         })
+        return [...individuales, ...candidatosGrupo]
       }))
       setVentasParaAsignar(res.flat())
     }
@@ -2316,6 +2341,19 @@ Pasan a conciliado junto con su factura o cuota. El motivo queda en la nota.`)) 
     if (antId) {
       await supabase.from('anticipos_proveedores').update({ comprobante_venta_id: null, estado: 'pendiente_vincular' })
         .eq('id', antId).eq('comprobante_venta_id', compId)
+    }
+    // 🧾 A-FEAT-167 — si la venta es de un COBRO AGRUPADO, el grupo se recalcula SIN este movimiento: si
+    // estaba cobrado y ya no, reabre las cuotas que había cerrado y sus ventas vuelven a «a cobrar».
+    {
+      const { data: vg } = await supabase.schema(schemaVentaCuenta).from('comprobantes_venta')
+        .select('grupo_cobro_id').eq('id', compId).maybeSingle()
+      const gid = (vg as any)?.grupo_cobro_id
+      if (gid) {
+        const r = await actualizarEstadoDelGrupo(supabase, schemaVentaCuenta, gid, [movimientoAsignando!.id])
+        return r.antes === 'cobrado' && r.estado !== 'cobrado'
+          ? `ℹ️ El cobro agrupado volvió a esperar ${formatCurrency(r.falta)}: sus ventas pasaron a «a cobrar».`
+          : null
+      }
     }
     // Las cuotas (`plazos`) son de la liquidación de hacienda: sólo MSA.
     if (schemaVentaCuenta !== 'msa') return null
@@ -2734,12 +2772,65 @@ ${marca}` : marca
         // Actualizar localmente — preserva filtros y contexto de trabajo
         actualizarLocal(movimientoAsignando.id, updateSueldo)
 
+      } else if (tabAsignar === 'venta' && ventaElegida?.__grupo) {
+        /**
+         * 🧾 **A-FEAT-167 etapa 2 — un crédito contra un COBRO AGRUPADO.** El movimiento queda atado a la
+         * primera venta del grupo (como el pago agrupado al primer ítem) y dice en «comprobantes» que es
+         * del grupo. Se compara contra lo que le falta cobrar AL GRUPO: menos es un cobro parcial (se
+         * concilia y el grupo sigue esperando), más queda en auditar, y el que lo completa cierra TODAS
+         * las ventas con sus cuotas (`actualizarEstadoDelGrupo`).
+         */
+        if (!extractoConVenta) throw new Error('Esta cuenta no tiene el vínculo con ventas: el cobro se asigna desde el extracto Galicia de la empresa')
+        if (tablaActiva !== 'msa_galicia' && !extractoEsDe(tablaActiva, ventaElegida.__schema)) {
+          throw new Error(`Un cobro de la cuenta de ${cuentaActivaObj?.empresa} no se puede atar a una venta de ${ventaElegida.__empresa}`)
+        }
+        // Un crédito con su pago a cuenta ya cargado se vincula desde Cobros (Vincular), venta por venta:
+        // atarlo acá dejaría el pago a cuenta suelto y la misma plata contada dos veces.
+        if ((movimientoAsignando as any).anticipo_id) {
+          throw new Error('Este crédito tiene un pago a cuenta cargado: vinculalo desde Ingresos → Cobros a una venta del grupo')
+        }
+        const acreditado = Number(movimientoAsignando.creditos) || 0
+        const dif = diferenciaContraElBanco(acreditado, ventaElegida.__cobro)
+        const redondeo = !dif.exacto && Math.abs(dif.diferencia) < 1
+        const parcial = !dif.exacto && !redondeo && dif.diferencia < 0
+        const updateGrupo: Record<string, any> = {
+          ...vinculosLimpios(),
+          estado: 'conciliado',
+          categ: categManualAsignar.trim() || movimientoAsignando.categ || null,
+          proveedor_nombre: ventaElegida.denominacion_cliente || null,
+          comprobantes_pagados: ventaElegida.nro_comprobante,
+          detalle: detalleSinAnticipo(movimientoAsignando.detalle),
+          comprobante_venta_id: ventaElegida.id,
+        }
+        const impVenta = await imputacionParaElBanco(supabase, ventaElegida)
+        if (impVenta) {
+          Object.assign(updateGrupo, impVenta)
+          if (categManualAsignar.trim()) updateGrupo.categ = categManualAsignar.trim()
+        }
+        if (redondeo) {
+          const previa = String((movimientoAsignando as any).nota_operador || '').trim()
+          updateGrupo.nota_operador = [previa, `Cierra el ${ventaElegida.nro_comprobante} con ${formatCurrency(Math.abs(dif.diferencia))} de redondeo`].filter(Boolean).join(' · ')
+        } else if (!dif.exacto && !parcial) {
+          updateGrupo.estado = 'auditar'
+          updateGrupo.motivo_revision = `Difiere ${formatCurrency(Math.abs(dif.diferencia))} (${dif.porcentaje.toFixed(1)}%) contra lo que le falta cobrar al grupo`
+        }
+        const { error: errExtG } = await dbCuenta()
+          .from(tablaActiva).update(updateGrupo).eq('id', movimientoAsignando.id)
+        if (errExtG) throw errExtG
+        const rGrupo = await actualizarEstadoDelGrupo(supabase, ventaElegida.__schema, ventaElegida.__grupo.id)
+        actualizarLocal(movimientoAsignando.id, updateGrupo)
+        toast.success(rGrupo.estado === 'cobrado'
+          ? `Cobro asignado al ${ventaElegida.nro_comprobante} — el grupo quedó cobrado y sus ${ventaElegida.__grupo.ventas.length} ventas conciliadas`
+          : updateGrupo.estado === 'auditar'
+            ? `Asignado al ${ventaElegida.nro_comprobante} — queda en auditar: difiere ${formatCurrency(Math.abs(dif.diferencia))}`
+            : `Cobro parcial del ${ventaElegida.nro_comprobante} — al grupo le falta cobrar ${formatCurrency(rGrupo.falta)}`)
+
       } else if (tabAsignar === 'venta' && ventaElegida) {
         /**
          * 💰 **A-FEAT-167 — el cobro queda atado a su comprobante de venta.**
          *
-         * ⚠️ **UNO a UNO.** Un crédito que cubre varios comprobantes queda afuera hasta que se
-         * defina el modelo (decisión del usuario 2026-09-22).
+         * ⚠️ **UNO a UNO.** ⚠️ cambió 27/10: un crédito que cubre varios comprobantes ya no queda afuera —
+         * va contra su COBRO AGRUPADO (la rama de arriba). Acá llega sólo la venta que se cobra sola.
          *
          * 🔑 **Se marca `cobrado` el comprobante y `conciliado` el movimiento en la misma acción.**
          * Dejar sólo uno de los dos es lo que produjo *«la misma plata en dos estados»* en sueldos

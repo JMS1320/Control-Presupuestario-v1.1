@@ -305,7 +305,14 @@ export async function compensarConFactura(
  */
 export async function cerrarVentaSiSaldada(supabase: Cliente, compId: string, schema = 'msa'): Promise<'cobrado' | 'conciliado' | null> {
   const { data: v } = await supabase.schema(schema).from('comprobantes_venta')
-    .select('id, cuit_cliente, estado, plazos, imp_total, tipo_comprobante, ret_iva, ret_iibb').eq('id', compId).maybeSingle()
+    .select('id, cuit_cliente, estado, plazos, imp_total, tipo_comprobante, ret_iva, ret_iibb, grupo_cobro_id').eq('id', compId).maybeSingle()
+  // 🧾 A-FEAT-167 — una venta de un COBRO AGRUPADO no se cierra sola: la cierra (o no) su grupo. Mirada
+  // suelta, la primera venta del grupo parece cobrada de más y las otras de menos.
+  if (v?.grupo_cobro_id) {
+    const { actualizarEstadoDelGrupo } = await import('./grupo-cobro-db')
+    const r = await actualizarEstadoDelGrupo(supabase, schema, v.grupo_cobro_id)
+    return r.estado === 'cobrado' && r.antes !== 'cobrado' ? 'conciliado' : null
+  }
   if (!v || (Array.isArray(v.plazos) && v.plazos.length) || !['a cobrar', 'cobrado'].includes(v.estado)) return null
   const fuentes = (await cargarFuentesCobro(supabase as any, [{ id: v.id, cuit_cliente: v.cuit_cliente }], schema)).get(v.id)
     || { movimientos: [], anticipos: [], compensaciones: [], retenciones: [] }

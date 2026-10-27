@@ -12,7 +12,8 @@ import { toast } from "sonner"
 import { TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
 import { marcarCuota, repartirEnCuotas, controlCuotas, type PlazoCobro } from "@/lib/ventas/hacienda"
 import { armarDetalleCobro, imputacionesDeCobro, ETIQUETA_MEDIO, type FuentesCobro } from "@/lib/ventas/detalle-cobro"
-import { ventasDelMismoGrupo, detalleDelGrupo, repartirSaldoDelGrupo } from "@/lib/ventas/grupo-cobro"
+import { ventasDelMismoGrupo, detalleDelGrupo, repartirSaldoDelGrupo, validarAgrupacion } from "@/lib/ventas/grupo-cobro"
+import { agruparCobro, desagruparCobro } from "@/lib/ventas/grupo-cobro-db"
 import { cargarFuentesCobro, cerrarVentaSiSaldada, pagosACuentaSinVincular, vincularPagoACuenta, facturasDelClienteParaCompensar, compensarConFactura } from "@/lib/ventas/detalle-cobro-db"
 import { sincronizarExtractoEcheqs } from "@/lib/ventas/cheques-terceros-db"
 import { parseNumeroAR } from "@/lib/format/numero"
@@ -75,6 +76,9 @@ export function VistaCobrosVenta({ empresa = 'MSA' }: { empresa?: string } = {})
 
   const [loading, setLoading] = useState(true)
   const [busqueda, setBusqueda] = useState('')
+  /** 🧾 A-FEAT-167 etapa 2 — las ventas elegidas para cobrarse juntas. */
+  const [seleccion, setSeleccion] = useState<Set<string>>(new Set())
+  const [agrupando, setAgrupando] = useState(false)
   const [expandida, setExpandida] = useState<string | null>(null)
   /**
    * 🧾 A-FEAT-1256 — cargar las retenciones recibidas desde Cobros, con el MISMO modal que Comprobantes.
@@ -281,6 +285,38 @@ export function VistaCobrosVenta({ empresa = 'MSA' }: { empresa?: string } = {})
    * «Son 2 lugares donde se puede marcar como cobrado, pero el cambio en BBDD debe ser el mismo.»
    */
   const [marcando, setMarcando] = useState<string | null>(null)
+
+  /**
+   * 🧾 A-FEAT-167 etapa 2 — AGRUPAR: las ventas elegidas (del mismo cliente) pasan a cobrarse juntas.
+   * Desde ahí, en el Extracto se ofrecen como UN candidato y cada crédito baja lo que le falta al grupo.
+   */
+  const elegidas = facturas.filter(f => seleccion.has(f.id))
+  const motivoNoAgrupar = elegidas.length ? validarAgrupacion(elegidas) : null
+  const agrupar = async () => {
+    setAgrupando(true)
+    try {
+      await agruparCobro(supabase, schema, elegidas.map(f => ({ ...f, esperado: (Number(f.imp_total) || 0) - impresas(f) })))
+      toast.success(`Agrupadas ${elegidas.length} ventas de ${elegidas[0]?.denominacion_cliente || 'el cliente'}: en el Extracto se cobran como un solo grupo.`)
+      setSeleccion(new Set())
+      await cargar()
+    } catch (err) {
+      toast.error((err as Error).message)
+    } finally {
+      setAgrupando(false)
+    }
+  }
+  /** El camino de vuelta. Se frena si el grupo ya tiene cobros (lo dice `desagruparCobro`). */
+  const desagrupar = async (f: Factura) => {
+    if (!f.grupo_cobro_id) return
+    if (!confirm(`¿Desagrupar ${f.nro_comprobante} y las ventas que se cobran con ella? Cada una vuelve a cobrarse sola.`)) return
+    try {
+      await desagruparCobro(supabase, schema, f.grupo_cobro_id)
+      toast.success('Grupo desarmado: cada venta vuelve a cobrarse sola.')
+      await cargar()
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
   const cambiarCuota = async (f: Factura, i: number, estado: 'cobrado' | 'a cobrar') => {
     setMarcando(f.id + '#' + i)
     try {
@@ -336,6 +372,17 @@ export function VistaCobrosVenta({ empresa = 'MSA' }: { empresa?: string } = {})
         <Button variant="outline" onClick={cargar}><RefreshCw className="mr-2 h-4 w-4" />Actualizar</Button>
       </div>
 
+      {/* 🧾 A-FEAT-167 — agrupar las ventas elegidas (del mismo cliente) en un cobro agrupado. */}
+      {seleccion.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm">
+          <span>🧾 <b>{elegidas.length}</b> venta{elegidas.length === 1 ? '' : 's'} elegida{elegidas.length === 1 ? '' : 's'} · {fmt(elegidas.reduce((s, f) => s + (Number(f.imp_total) || 0) - impresas(f), 0))}</span>
+          {motivoNoAgrupar
+            ? <span className="text-xs text-amber-800">{motivoNoAgrupar}</span>
+            : <Button size="sm" className="h-7" disabled={agrupando} onClick={() => void agrupar()}>Agrupar cobro</Button>}
+          <Button size="sm" variant="ghost" className="h-7" onClick={() => setSeleccion(new Set())}>Limpiar</Button>
+        </div>
+      )}
+
       {/* Totales */}
       <div className="grid grid-cols-4 gap-2 text-sm">
         <div className="rounded border bg-gray-50 p-2">Facturado<br /><b>{fmt(tot.total)}</b></div>
@@ -348,7 +395,7 @@ export function VistaCobrosVenta({ empresa = 'MSA' }: { empresa?: string } = {})
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[30px]"></TableHead>
+              <TableHead className="w-[52px]"></TableHead>
               <TableHead className="text-xs">Comprobante</TableHead>
               <TableHead className="text-xs">Cliente</TableHead>
               <TableHead className="text-xs text-right">Total</TableHead>
@@ -371,7 +418,17 @@ export function VistaCobrosVenta({ empresa = 'MSA' }: { empresa?: string } = {})
               return (
                 <Fragment key={f.id}>
                   <TableRow className="cursor-pointer hover:bg-gray-50" onClick={() => void abrir(abierta ? null : f)}>
-                    <TableCell>{abierta ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        {/* 🧾 Elegir para agrupar: sólo las que todavía no están en un grupo. */}
+                        {!f.grupo_cobro_id && (
+                          <input type="checkbox" className="h-3.5 w-3.5" title="Elegir para cobrar junto con otras ventas del mismo cliente"
+                            checked={seleccion.has(f.id)} onClick={e => e.stopPropagation()}
+                            onChange={() => setSeleccion(prev => { const n = new Set(prev); if (n.has(f.id)) n.delete(f.id); else n.add(f.id); return n })} />
+                        )}
+                        {abierta ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-sm font-mono">{f.nro_comprobante || '—'}{d.grupo && <span className="ml-1 rounded bg-indigo-100 px-1 font-sans text-[10px] text-indigo-800" title="Se cobra junto con otras ventas del mismo cliente">agrupado</span>}</TableCell>
                     <TableCell className="text-sm max-w-[220px] truncate" title={f.denominacion_cliente || ''}>{f.denominacion_cliente || '—'}</TableCell>
                     <TableCell className="text-sm text-right">{fmt(d.total)}</TableCell>
@@ -390,6 +447,7 @@ export function VistaCobrosVenta({ empresa = 'MSA' }: { empresa?: string } = {})
                           <div className="mb-2 rounded border border-indigo-200 bg-indigo-50 px-2 py-1 text-[11px] text-indigo-900">
                             🧾 <b>Cobro agrupado</b> con {d.grupo.filter(g => g.id !== f.id).map(g => g.nro || '—').join(', ') || '—'}: los cobros y el control
                             son los del grupo ({d.grupo.length} ventas, {fmt(d.detalle.esperado)} esperados). El saldo de cada venta es su parte del saldo del grupo.
+                            <button type="button" className="ml-2 underline hover:text-indigo-700" onClick={() => void desagrupar(f)}>Desagrupar</button>
                           </div>
                         )}
                         <div className="grid grid-cols-2 gap-4">

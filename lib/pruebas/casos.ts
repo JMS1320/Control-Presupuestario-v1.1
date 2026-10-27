@@ -188,7 +188,7 @@ import { kgNetosDeVenta, promedioKg, categoriaDeVenta, calcularLiqHacienda, rete
   kgQueSeCobran, ventaParaComparar, importeDeLinea, precioPieDerivado, precioGanchoDerivado, formatoPrecio, montoTipeadoOVacio, montoCalculado, marcarCuota, armarVentaHistorica, repartirEnCuotas, controlCuotas, conciliarCuota } from "@/lib/ventas/hacienda"
 import { parseNumeroAR } from "@/lib/format/numero"
 import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
-import { detalleDelGrupo, repartirSaldoDelGrupo, unidadesDeCobro, controlDosCaminos } from "@/lib/ventas/grupo-cobro"
+import { detalleDelGrupo, repartirSaldoDelGrupo, unidadesDeCobro, controlDosCaminos, validarAgrupacion, faltaCobrarDelGrupo, nombreDelGrupo, cuotasAlCerrarGrupo, cuotasAlReabrirGrupo } from "@/lib/ventas/grupo-cobro"
 import { armarRetencionesSubdiario, fechaDelCertificado, hojaRetenciones, tablaRetencionesPdf } from "@/lib/ventas/retenciones-export"
 import { extractosDelSchema, extractoEsDe, TODOS_LOS_EXTRACTOS } from "@/lib/ventas/extractos-empresa"
 import { calcularEcheqs, problemasDelPlan, avisosDelPlan, ultimaFechaCobro, filasEmision, motivoPorDefecto, ENCABEZADO_EMISION, clasificarLoteEcheq, fechaMasDias } from "@/lib/pagos/echeqs-multiples"
@@ -3207,6 +3207,49 @@ export function correrCasos(): Resultado[] {
     chequear("Cobro agrupado", "⚠️ Un cobro de $1.000.000 que ninguna venta tiene asignado: los caminos difieren en eso",
       "-1000000 · no cierra", `${conSinImputar.diferencia} · ${conSinImputar.cierra ? "cierra" : "no cierra"}`,
       conSinImputar.diferencia === -1000000 && !conSinImputar.cierra, "A-FEAT-167")
+
+    // ── Etapa 2: agrupar desde Cobros y conciliar contra el grupo desde el Extracto ──
+    const v06 = { id: "32006", nro_comprobante: "209-32006", cuit_cliente: "30-57670311-9", grupo_cobro_id: null, estado: "a cobrar" }
+    const v07 = { id: "32007", nro_comprobante: "209-32007", cuit_cliente: "30576703119", grupo_cobro_id: null, estado: "a cobrar" }
+    chequear("Cobro agrupado", "✓ Dos ventas del mismo cliente se pueden agrupar (el CUIT con o sin guiones es el mismo)",
+      "null", String(validarAgrupacion([v06, v07])), validarAgrupacion([v06, v07]) === null, "A-FEAT-167")
+    const deOtro = validarAgrupacion([v06, { ...v07, cuit_cliente: "30500049460" }])
+    chequear("Cobro agrupado", "🛑 Ventas de clientes distintos NO se agrupan (la plata de uno cancelaría la deuda del otro)",
+      "clientes distintos", deOtro ?? "null", !!deOtro && deOtro.includes("clientes distintos"), "A-FEAT-167")
+    const yaEnGrupo = validarAgrupacion([v06, { ...v07, grupo_cobro_id: "g-otro" }])
+    chequear("Cobro agrupado", "🛑 Una venta que ya está en otro grupo no entra en uno nuevo",
+      "209-32007 ya está en otro grupo", yaEnGrupo ?? "null", !!yaEnGrupo && yaEnGrupo.startsWith("209-32007 ya está en otro grupo"), "A-FEAT-167")
+    chequear("Cobro agrupado", "🛑 Con una sola venta no hay grupo",
+      "al menos 2", validarAgrupacion([v06]) ?? "null", (validarAgrupacion([v06]) ?? "").includes("al menos 2"), "A-FEAT-167")
+    // Lo que el Extracto compara contra el crédito: lo que le falta al GRUPO en el banco.
+    const enBanco = [{ id: "32006", pagoCondiciones: 13050334.77 }, { id: "32007", pagoCondiciones: 10534060.95 }]
+    const sinCobros = new Map([["32006", { movimientos: [], anticipos: [], compensaciones: [], retenciones: [{ id: "r-06", tipo: "ganancias", monto: 235813, fecha: "2026-01-27" }] }],
+      ["32007", { movimientos: [], anticipos: [], compensaciones: [], retenciones: [] }]])
+    const antes = faltaCobrarDelGrupo(enBanco, sinCobros)
+    chequear("Cobro agrupado", "🏦 Antes de cobrar, al grupo de Sáenz le falta entrar al banco 23.584.395,72 (las retenciones no cuentan como cobro)",
+      "23584395.72", String(antes.falta), antes.falta === 23584395.72, "A-FEAT-167")
+    const trasDos = faltaCobrarDelGrupo(enBanco, fuentesSaenz, ["m-0903"])
+    chequear("Cobro agrupado", "🏦 Con las 2 transferencias de enero, falta la cuota 2 de las dos: 11.790.431,16 (= el crédito del 09/03)",
+      "11790431.16", String(trasDos.falta), trasDos.falta === 11790431.16, "A-FEAT-167")
+    const completo = faltaCobrarDelGrupo(enBanco, fuentesSaenz)
+    chequear("Cobro agrupado", "✓ Con las 3, al grupo no le falta nada (se cierra solo y concilia sus 2 ventas)",
+      "0", String(completo.falta), completo.falta === 0, "A-FEAT-167")
+    chequear("Cobro agrupado", "El candidato del Extracto se llama por sus ventas",
+      "Grupo 209-32006 + 209-32007", nombreDelGrupo(["209-32006", "209-32007"]), nombreDelGrupo(["209-32006", "209-32007"]) === "Grupo 209-32006 + 209-32007", "A-FEAT-167")
+    // Cerrar y reabrir: el grupo sólo deshace lo que hizo él.
+    const plazosMix = [
+      { estado: "a cobrar" as const },                          // abierta → la cierra el grupo
+      { estado: "cobrado" as const },                           // marcada a mano antes → no se toca
+      { estado: "cobrado" as const, movimiento_id: "m-propio" }, // conciliada con su movimiento → no se toca
+    ]
+    const cerradas = cuotasAlCerrarGrupo(plazosMix, "g1")
+    chequear("Cobro agrupado", "Al completarse, el grupo cierra sólo la cuota abierta y le deja su marca",
+      "cobrado/g1 · sin marca · sin marca", cerradas.map(q => `${q.estado}${(q as any).por_grupo ? "/" + (q as any).por_grupo : ""}`).join(" · "),
+      (cerradas[0] as any).por_grupo === "g1" && cerradas[0].estado === "cobrado" && !(cerradas[1] as any).por_grupo && !(cerradas[2] as any).por_grupo, "A-FEAT-167")
+    const reabiertas = cuotasAlReabrirGrupo(cerradas, "g1")
+    chequear("Cobro agrupado", "🔑 Si le quitan un cobro, reabre SÓLO la que cerró él: lo marcado a mano y lo conciliado quedan",
+      "a cobrar · cobrado · cobrado", reabiertas.map(q => q.estado).join(" · "),
+      reabiertas[0].estado === "a cobrar" && !(reabiertas[0] as any).por_grupo && reabiertas[1].estado === "cobrado" && reabiertas[2].estado === "cobrado", "A-FEAT-167")
   }
 
   // 🧨 Sin el caso aparte, la cuenta de GRANOS le restaba todo el IVA como si fuera RG 2300.

@@ -651,6 +651,11 @@ export interface PlazoCobro {
    * no se desmarca a mano — se suelta desconciliando el movimiento.
    */
   movimiento_id?: string | null
+  /**
+   * 🧾 A-FEAT-167 — la cuota la dio por cobrada su COBRO AGRUPADO (id del grupo) al completarse. Si al grupo
+   * después le quitan un cobro, se reabren SÓLO las cuotas con esta marca: lo marcado a mano no se toca.
+   */
+  por_grupo?: string | null
 }
 
 export function controlPlazos(plazos: PlazoCobro[], importeNeto: number): AvisoLiq | null {

@@ -2394,9 +2394,17 @@ cualquiera, un cartel dice con qué otras se cobra. El **Detalle del cobro** es 
 (todas las transferencias y retenciones de todas sus ventas) y el control compara contra lo que dicen
 **todos** los papeles juntos. El saldo de cada venta es su parte del saldo del grupo.
 
-Por ahora los grupos se arman desde la base (el primero: Sáenz Valiente 209-32006 + 209-32007, cobradas
-en 3 transferencias). El botón para agruparlas vos y conciliar un crédito contra el grupo desde el
-Extracto viene después → [A-FEAT-167](PENDIENTES.md#a-feat-167).
+**Para agrupar**: en Cobros tildá las ventas (del mismo cliente) y apretá **Agrupar cobro** en la barra
+que aparece arriba. Si son de clientes distintos, o alguna ya está en otro grupo, la barra te lo dice y
+no deja.
+
+**Para cobrar el grupo**: en el **Extracto**, **Asignar** el crédito → pestaña **Venta**. Las ventas
+agrupadas no aparecen sueltas: aparece **«Grupo 1 + 2»** con lo que le falta cobrar entre todas. Si el
+crédito es menor, queda como cobro parcial; el que completa el grupo concilia todas sus ventas.
+
+**Para desarmarlo**: link **Desagrupar** en el cartel del grupo. Si ya tiene cobros asignados no te
+deja (una venta quedaría cobrada de más y las otras de menos): primero se desasignan desde el Extracto.
+Y si a un grupo ya cobrado le reasignás un cobro a otra cosa, sus ventas vuelven a «a cobrar».
 
 > ⚠️ Sin probar todavía → [A-TEST-1267](PENDIENTES.md#a-test-1267)
 
@@ -4536,7 +4544,8 @@ ni mail, es esto.
 
 ### La cuenta corriente, y su control
 Arriba de las listas está la **cuenta corriente**: todo lo que se le compró y se le vendió, lo que se le
-pagó, lo que pagó él y sus retenciones, con el saldo. Si es cliente, abajo del saldo hay un control:
+pagó, lo que pagó él y sus retenciones, con el saldo — de las **tres empresas** (MSA, PAM y MA). Si es
+cliente, abajo del saldo hay un control:
 **la cuenta corriente y los comprobantes tienen que dar el mismo saldo a cobrar**. ✓ si coinciden; si
 no, ⚠️ con la diferencia — casi siempre un cobro que todavía no se asignó a ninguna venta, un echeq
 endosado o una factura del cliente descontada. Avisa, no te frena.

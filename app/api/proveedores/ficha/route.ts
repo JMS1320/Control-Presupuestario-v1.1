@@ -9,7 +9,7 @@
  * `cuotas_egresos_sin_factura.fecha_pago` están casi vacíos (12 de 384 facturas,
  * 8 de 935 cuotas al 2026-08-07): el pago real queda registrado cuando el
  * movimiento del extracto se concilia. Por eso los pagos se leen del extracto
- * (`msa_galicia`, `pam_galicia`, `pam_galicia_cc`) siguiendo los tres vínculos
+ * (`msa_galicia`, `pam_galicia`, `pam_galicia_cc` y, desde 27/10, `ma.ma_galicia`) siguiendo los vínculos
  * que el motor de conciliación escribe — `comprobante_arca_id`,
  * `template_cuota_id`, `anticipo_id` — más un repaso por `proveedor_nombre`
  * para los movimientos que quedaron con el proveedor cargado pero sin vincular
@@ -44,7 +44,13 @@ import { TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
 export const runtime = 'nodejs'
 
 const EMPRESAS = ['msa', 'pam', 'ma'] as const
-const EXTRACTOS = ['msa_galicia', 'pam_galicia', 'pam_galicia_cc'] as const
+/**
+ * Los extractos que se leen. ⚠️ Cambió 27/10 (A-FEAT-167): faltaba **`ma.ma_galicia`** (vive en el schema
+ * `ma`, no en `public`), así que los pagos y cobros de MA no aparecían en ninguna ficha.
+ */
+const EXTRACTOS: { tabla: string; schema?: string }[] = [
+  { tabla: 'msa_galicia' }, { tabla: 'pam_galicia' }, { tabla: 'pam_galicia_cc' }, { tabla: 'ma_galicia', schema: 'ma' },
+]
 
 /** Tope por lista: la ficha es para mirar, no para auditar el histórico entero. */
 const TOPE = 40
@@ -135,15 +141,23 @@ export async function GET(request: Request) {
       }
     }
 
-    // ── Facturas de venta (sólo MSA tiene el módulo de ventas) ──────────────
-    const { data: ventas } = await supabase.schema('msa').from('comprobantes_venta')
-      .select('id, fecha_liquidacion, nro_comprobante, punto_venta, numero_desde, imp_total, estado, cuenta_contable, fecha_cobro_estimada, grano, tipo_operacion, tipo_comprobante, ret_iva, ret_iibb, grupo_cobro_id, cuit_cliente')
-      .eq('cuit_cliente', cuit)
-      .order('fecha_liquidacion', { ascending: false })
-    for (const r of (ventas || []) as any[]) {
+    // ── Facturas de venta, de las 3 empresas ────────────────────────────────
+    // ⚠️ Cambió 27/10 (A-FEAT-167): decía «sólo MSA tiene el módulo de ventas»; PAM y MA lo tienen desde
+    // el 14/10 (A-FEAT-24) y sus ventas no entraban en la ficha ni en la cuenta corriente.
+    const ventasTodas: any[] = []
+    for (const empresa of EMPRESAS) {
+      const { data, error } = await supabase.schema(empresa).from('comprobantes_venta')
+        .select('id, fecha_liquidacion, nro_comprobante, punto_venta, numero_desde, imp_total, estado, cuenta_contable, fecha_cobro_estimada, grano, tipo_operacion, tipo_comprobante, ret_iva, ret_iibb, grupo_cobro_id, cuit_cliente')
+        .eq('cuit_cliente', cuit)
+        .order('fecha_liquidacion', { ascending: false })
+      // Una venta que no se pudo leer haría que la cuenta corriente diga «al día» sin serlo.
+      if (error) throw error
+      for (const r of (data || []) as any[]) ventasTodas.push({ ...r, __schema: empresa })
+    }
+    for (const r of ventasTodas) {
       facturas.push({
         id: r.id,
-        empresa: 'MSA',
+        empresa: String(r.__schema).toUpperCase(),
         tipo: 'venta',
         fecha: r.fecha_liquidacion,
         numero: r.nro_comprobante || numeroComprobante(r.punto_venta, r.numero_desde),
@@ -181,8 +195,7 @@ export async function GET(request: Request) {
     const pagos: PagoFicha[] = []
     const yaVisto = new Set<string>()
 
-    const ventasMsa = ((ventas || []) as any[])
-    const idsVentas = ventasMsa.map(v => v.id)
+    const idsVentas = ventasTodas.map(v => v.id)
     const vinculos: Array<[string, string[], PagoFicha['via']]> = [
       ['comprobante_arca_id', idsFacturas, 'factura'],
       ['template_cuota_id', idsCuotas, 'template'],
@@ -193,16 +206,17 @@ export async function GET(request: Request) {
 
     const COLS = 'id, fecha, descripcion, debitos, creditos, detalle, comprobantes_pagados, proveedor_nombre'
 
-    for (const tabla of EXTRACTOS) {
+    for (const { tabla, schema: sch } of EXTRACTOS) {
+      const desde = () => (sch ? supabase.schema(sch) : supabase).from(tabla)
       for (const [columna, ids, via] of vinculos) {
         if (ids.length === 0) continue
-        const { data } = await supabase.from(tabla).select(COLS).in(columna, ids)
+        const { data } = await desde().select(COLS).in(columna, ids)
         agregar(data, tabla, via)
       }
       // Repaso por nombre: movimientos con el proveedor cargado pero sin vínculo.
       // Van al final para que el vínculo real gane cuando el movimiento ya entró.
       if (proveedor.razon_social) {
-        const { data } = await supabase.from(tabla).select(COLS)
+        const { data } = await desde().select(COLS)
           .eq('proveedor_nombre', proveedor.razon_social)
         agregar(data, tabla, 'nombre')
       }
@@ -230,9 +244,9 @@ export async function GET(request: Request) {
     // ── Las retenciones de las ventas: bajan lo que el cliente debe, igual que un cobro ──
     // Las impresas en una liquidación de hacienda (la misma cuenta que la pantalla de Cobros) y los
     // certificados cargados aparte. Van con signo de cobro (monto negativo = entró a favor nuestro).
-    const nroVenta = new Map(ventasMsa.map(v => [v.id, v.nro_comprobante || numeroComprobante(v.punto_venta, v.numero_desde)]))
+    const nroVenta = new Map(ventasTodas.map(v => [v.id, v.nro_comprobante || numeroComprobante(v.punto_venta, v.numero_desde)]))
     const impresas = (v: any) => (TIPOS_LIQ_HACIENDA.has(Number(v.tipo_comprobante)) ? (Number(v.ret_iibb) || 0) + (Number(v.ret_iva) || 0) : 0)
-    for (const v of ventasMsa) {
+    for (const v of ventasTodas) {
       const imp = impresas(v)
       if (imp > 0) pagos.push({
         id: `ret-impresa-${v.id}`, origen: 'RETENCIÓN', fecha: v.fecha_liquidacion,
@@ -240,9 +254,11 @@ export async function GET(request: Request) {
         comprobantes_pagados: nroVenta.get(v.id) || null,
       })
     }
-    if (idsVentas.length) {
-      const { data: certs, error: eCerts } = await supabase.schema('msa').from('retenciones_recibidas')
-        .select('id, tipo, monto, fecha, nro_certificado, comprobante_venta_id').in('comprobante_venta_id', idsVentas)
+    for (const empresa of EMPRESAS) {
+      const ids = ventasTodas.filter(v => v.__schema === empresa).map(v => v.id)
+      if (!ids.length) continue
+      const { data: certs, error: eCerts } = await supabase.schema(empresa).from('retenciones_recibidas')
+        .select('id, tipo, monto, fecha, nro_certificado, comprobante_venta_id').in('comprobante_venta_id', ids)
       if (eCerts) throw eCerts
       for (const r of (certs || []) as any[]) pagos.push({
         id: `ret-${r.id}`, origen: 'RETENCIÓN', fecha: r.fecha,
@@ -264,18 +280,25 @@ export async function GET(request: Request) {
     // Camino 2, comprobante por comprobante: el saldo del detalle del cobro de cada venta (o de su
     // grupo), la misma cuenta que la pantalla de Cobros.
     let controlCobros: (ReturnType<typeof controlDosCaminos> & { ventas: number }) | null = null
-    if (ventasMsa.length) {
-      const fuentes = await cargarFuentesCobro(supabase as any, ventasMsa.map(v => ({ id: v.id, cuit_cliente: v.cuit_cliente })), 'msa')
+    if (ventasTodas.length) {
+      // Las fuentes de cada venta, leídas en SU empresa (sus extractos y sus certificados).
+      const fuentes = new Map()
+      for (const empresa of EMPRESAS) {
+        const deEsta = ventasTodas.filter(v => v.__schema === empresa)
+        if (!deEsta.length) continue
+        const m = await cargarFuentesCobro(supabase as any, deEsta.map(v => ({ id: v.id, cuit_cliente: v.cuit_cliente })), empresa)
+        m.forEach((f, id) => fuentes.set(id, f))
+      }
       const cobros = pagos.filter(p => p.monto < 0 && (p.via === 'venta' || p.via === 'anticipo' || p.via === 'nombre'))
         .reduce((s, p) => s - p.monto, 0)
       const retenciones = pagos.filter(p => p.via === 'retencion').reduce((s, p) => s - p.monto, 0)
       controlCobros = {
         ...controlDosCaminos(
-          ventasMsa.map(v => ({ id: v.id, esperado: (Number(v.imp_total) || 0) - impresas(v), grupo_cobro_id: v.grupo_cobro_id })),
+          ventasTodas.map(v => ({ id: v.id, esperado: (Number(v.imp_total) || 0) - impresas(v), grupo_cobro_id: v.grupo_cobro_id })),
           fuentes,
-          { ventas: ventasMsa.reduce((s, v) => s + (Number(v.imp_total) || 0), 0), cobros, retenciones },
+          { ventas: ventasTodas.reduce((s, v) => s + (Number(v.imp_total) || 0), 0), cobros, retenciones },
         ),
-        ventas: ventasMsa.length,
+        ventas: ventasTodas.length,
       }
     }
 
