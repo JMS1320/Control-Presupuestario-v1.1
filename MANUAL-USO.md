@@ -3450,7 +3450,7 @@ mismo y valen para todas las pólizas donde aparezca (van por patente o DNI). Lo
 📌 Cómo entra una póliza: hoy se cargaron las del subdiario 25/26 y 26/27. Lo próximo es que la app la lea sola
 **al vincular el PDF a su factura** (espera el buscador de PDFs).
 
-→ A-TEST-1221 · el cuadro por ejercicio → A-TEST-1258
+→ A-TEST-1221 · el cuadro por ejercicio → A-TEST-1259
 
 ## 🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30 · al día 2026-10-25)*
 
