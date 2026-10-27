@@ -1,6 +1,6 @@
 # CONCILIACIÓN + CONTABILIDAD — Documentación Técnica Completa
 
-> **Fecha creación**: 2026-03-22 | **Renombrado**: 2026-03-23 | **Última actualización**: 2026-05-21
+> **Fecha creación**: 2026-03-22 | **Renombrado**: 2026-03-23 | **Última actualización**: 2026-10-27 (§ 34 cobro agrupado; antes 2026-05-21)
 > **Archivo principal**: `components/vista-extracto-bancario.tsx`
 > **Hook motor**: `hooks/useMotorConciliacion.ts`
 > **Hook movimientos**: `hooks/useMovimientosBancarios.ts`
@@ -3225,7 +3225,7 @@ función que la pantalla**.*
 
 | | Expectativa | Audit | Quién tenía razón |
 |---|---|---|---|
-| Control 1 | 8 | **9** | 🧪 el audit. Medí sobre **4 columnas de vínculo**: `comprobante_venta_id` **sólo existe en `msa_galicia`** y no lo incluí *(⚠️ cambió: al 27/10 está en los 4 extractos —`msa_galicia`, `pam_galicia`, `pam_galicia_cc`, `ma_galicia`— y en `msa.echeqs_terceros`, además de retenciones y anticipos; ver KNOWLEDGE «El COBRO de una venta»)*. El 9º caso (anticipo + venta, 31/07, **importe 0**) era invisible para esa consulta |
+| Control 1 | 8 | **9** | 🧪 el audit. Medí sobre **4 columnas de vínculo**: `comprobante_venta_id` **sólo existe en `msa_galicia`** *(⚠️ cambió: al 27/10 está en los 4 extractos — § 34.4 — y en `msa.echeqs_terceros`, además de retenciones y anticipos; ver también KNOWLEDGE «El COBRO de una venta»)* y no lo incluí. El 9º caso (anticipo + venta, 31/07, **importe 0**) era invisible para esa consulta |
 | Control 4 | 16 | **25** | 🧪 el audit. Conté los comprobantes **vacíos**; el estándar pide más: que **identifique cuál**. Los 9 que faltaban tienen texto que no identifica nada — 6 **repiten el nombre del proveedor** (`AUTOPISTAS URBANAS S. A.`) y 3 son partidas de ARBA **sin período** |
 
 🔑 **Esto es exactamente lo que el usuario venía señalando** con los sueldos: *«hay uno que incluso
@@ -3508,3 +3508,98 @@ De los 118 movimientos sin conciliar, las reglas toman **85** (simulado antes de
 ×3 (esperan factura), Shell (contra factura), Provinvest (cobro de arrendamiento), Andrés (manual), 10
 «analizar», 4 «ver» y 13 CUITs sin identificar (los investiga el usuario). AYSA de **enero** está conciliada en
 $0 y el débito del 12/01 crearía cuota nueva → [A-DAT-91](PENDIENTES.md#a-dat-91).
+
+---
+
+## 34 — 🧾 Cobro agrupado: varias ventas, varios movimientos (2026-10-27) — [A-FEAT-167](PENDIENTES.md#a-feat-167)
+
+> **El caso que lo destrabó**: Sáenz Valiente — dos liquidaciones (209-32006 y 209-32007, 27/01/2026) cobradas en
+> **tres transferencias** (28/01, 29/01 y 09/03), y cada transferencia paga una parte de LAS DOS. Uno a uno no hay
+> forma de asignarlas sin inventar un reparto.
+> ⚠️ **Cambió 27/10**: hasta acá la pestaña Venta del Extracto asignaba **uno a uno** (la «mitad simple» del 22/09)
+> y el caso N:M estaba frenado por el usuario hasta decidir el modelo. Ya está decidido: es esta sección.
+
+### 34.1 — La decisión: las DOS cosas juntas, y tienen que dar lo mismo
+
+Entre un **grupo de cobro** (como el pago agrupado: se concilia comprobante por comprobante) y una **cuenta
+corriente** del cliente (*«se expresa siempre saldo de la misma, no qué factura se debe… por el lado de ellos
+tenemos una cta cte también, es la realidad»*), el usuario eligió: **«pueden ser las dos juntas, deben dar lo
+mismo»**.
+- El **grupo** sirve para conciliar: cada venta queda cobrada, sus cuotas se cierran y el Cash Flow deja de esperarla.
+- La **cuenta corriente** es como lo lleva el cliente: un saldo, no una lista de facturas.
+- Que las dos den el mismo saldo es un **control por dos caminos** gratis (pieza 4 del norte administrativo).
+
+### 34.2 — Cómo se ata: el movimiento va a UNA venta del grupo
+
+| Pieza | Dónde vive |
+|---|---|
+| El grupo | `{msa,pam,ma}.grupos_cobro` (script 114): cuit, cliente, monto_total, estado `cobrar` / `parcial` / `cobrado` |
+| Qué ventas lo forman | `comprobantes_venta.grupo_cobro_id` |
+| El movimiento del banco | `comprobante_venta_id` = la **primera** venta del grupo · `comprobantes_pagados` = «Grupo A + B» |
+| Las cuotas que cerró el grupo | `comprobantes_venta.plazos[].por_grupo` = id del grupo (sólo MSA tiene `plazos`) |
+
+**Por qué a la primera venta y no una columna nueva en el extracto**: es lo que ya hace el pago agrupado, y así toda
+pantalla que lee `comprobante_venta_id` sigue funcionando sin saber de grupos — ve el cobro en la primera venta: el
+total del cliente le da bien, sólo lo reparte mal. Una columna nueva había que sumarla a los 4 extractos y a cada
+lector.
+
+**A diferencia del pago agrupado, un grupo de cobro admite VARIOS movimientos**: un cliente paga en partes.
+
+### 34.3 — Qué se espera cobrar y cuándo cierra
+
+- **Esperado** de cada venta = el **pago según condiciones** (`cobroEsperado` en `lib/ventas/cobro-esperado.ts`):
+  lo que tiene que llegar al banco, ya sin retenciones ni IVA retenido. Es el mismo número de la pantalla de Cobros.
+  El del grupo es la suma.
+- **Cobrado** = lo que juntan las fuentes de TODAS sus ventas: movimientos de los extractos de la empresa, pagos a
+  cuenta y compensaciones — **sin las retenciones**, que el esperado ya descontó — y **sin contar dos veces** lo que
+  aparece por dos ventas (`juntarFuentes`).
+- **Cierra** cuando falta ≤ **$1**: el grupo pasa a `cobrado`, sus ventas a `conciliado` y las cuotas todavía
+  abiertas (sin movimiento propio) a cobradas con `por_grupo`.
+- **Se reabre** si se suelta un movimiento y deja de cerrar: las ventas vuelven a `a cobrar` y se reabren **SÓLO las
+  cuotas que cerró el grupo** (`por_grupo` = su id). Lo que el usuario cerró a mano no se toca.
+- En **Cobros**, el saldo del grupo se reparte entre sus ventas **a prorrata** del esperado, y cada venta muestra sus
+  retenciones propias.
+
+Lógica pura en `lib/ventas/grupo-cobro.ts` (con casos en `npm run probar`, bloque «Cobro agrupado»); escrituras en
+`lib/ventas/grupo-cobro-db.ts`.
+
+### 34.4 — Por dónde se escribe (las 3 preguntas de la propagación)
+
+1. **¿A dónde va?** `comprobante_venta_id` vive en los **4 extractos** (`msa_galicia`, `pam_galicia`,
+   `pam_galicia_cc`, `ma.ma_galicia`), en `anticipos_proveedores`, en `msa.echeqs_terceros` y en
+   `{msa,pam,ma}.retenciones_recibidas` (medido en la base el 27/10). El grupo lee los extractos de su empresa, los
+   pagos a cuenta y las retenciones.
+2. **¿Por cuántos caminos se escribe?** (a) **Cobros** → «Agrupar cobro» / «Desagrupar»; (b) **Extracto → pestaña
+   Venta**: un candidato «Grupo …» por grupo, con lo que le falta, al lado de las ventas sueltas; (c)
+   `cerrarVentaSiSaldada` (`lib/ventas/detalle-cobro-db.ts`): si la venta tiene grupo, recalcula el grupo — así
+   vale también lo que se hace desde Cobros.
+3. **¿Y al deshacer?** «OK a mano» y reasignar en el Extracto (`soltarCuotaDeVenta`) recalculan el grupo sin ese
+   movimiento y lo reabren si corresponde. **Desagrupar se frena si el grupo ya tiene cobros**: primero se sueltan.
+
+### 34.5 — Los frenos
+
+- **Agrupar**: al menos 2 ventas, **del mismo CUIT** (mezclar clientes haría que la plata de uno cancele la deuda del
+  otro), ninguna en otro grupo, ninguna anulada. El update va con `grupo_cobro_id is null` y cuenta filas: si otra
+  pantalla agrupó una en el medio, deshace el grupo y avisa.
+- **Extracto**: un crédito que ya tiene un **pago a cuenta** cargado no se asigna a un grupo; se vincula desde
+  Cobros, venta por venta (queda como pendiente en A-FEAT-167).
+- Contra lo que falta: igual = exacto · dentro de $1 = redondeo · menor = **cobro parcial** (grupo `parcial`) ·
+  mayor = **a auditar**.
+
+### 34.6 — El control por dos caminos (en la ficha del cliente)
+
+- **Por comprobante**: Σ (esperado − cobrado) de las ventas, con cada grupo sumado entero.
+- **Por cuenta corriente**: ventas − cobros − retenciones.
+
+Si dan distinto, la ficha muestra la diferencia; **avisa, no frena**. Real, Sáenz Valiente 27/10: por comprobante,
+esperado 24.014.236,72 = cobrado → **0**; por cuenta corriente, 24.185.679,22 − 23.584.395,72 − 601.283,50 = **0**.
+Cómo se arma la cuenta corriente → `MODULO_PROVEEDORES.md` § 6.1.
+
+### 34.7 — Lo que queda afuera
+
+- El **match automático** del motor contra ventas: hoy la asignación es a mano (A-FEAT-167).
+- **AFA del 20/05**: neto transferido + compensación con 8 facturas suyas. Necesita el cobro agrupado **y** una
+  compensación, que todavía no existe como operación → [A-FEAT-1388](PENDIENTES.md#a-feat-1388) (U4/U5),
+  [A-BUG-1391](PENDIENTES.md#a-bug-1391).
+- El **papel 03 del balance** no lee la fecha de cobro de las ventas (busca sólo `comprobante_arca_id`) →
+  [A-BUG-1392](PENDIENTES.md#a-bug-1392).
