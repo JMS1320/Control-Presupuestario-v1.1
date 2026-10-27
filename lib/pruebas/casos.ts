@@ -212,6 +212,9 @@ import { armarRenglones, type TextoUbicado } from "@/lib/polizas/renglones-pdf"
 import { leerResumenCajaAhorro, controlarResumen, armarConocido, resumenComoExcel, adaptarMovimiento } from "@/lib/extractos/pdf-caja-ahorro-galicia"
 import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
 import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe } from "@/lib/polizas/resumen-ejercicio"
+import { historicoAFactura, filasDelSubdiario } from "@/lib/facturas/historico-como-factura"
+import { calcularSubtotalesSubdiario } from "@/lib/subdiarios/subtotales"
+import { TIPOS_SIN_CREDITO_COMPRAS } from "@/lib/subdiarios/cuadratura"
 import { controlarPoliza, cotejarConComprobante, repartoDeLaPoliza, repartoDeLasCuotas, repartirImporte, responsableDe } from "@/lib/polizas/controlar-poliza"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
 import { motivoFechaNoExacta, ajusteTarjetaPorEmision, elegirPorImporteCercano } from "@/lib/conciliacion/motivo-fecha"
@@ -1241,6 +1244,27 @@ export function correrCasos(): Resultado[] {
     "true,true,true,true,false,true,false", vistaBuscar, vistaBuscar === "true,true,true,true,false,true,false", "A-FEAT-1287")
   const vistaVer = [veredictoResuelve(null), veredictoResuelve("pendiente"), veredictoResuelve("no_informada")].join(",")
   chequear("Subdiarios — veredicto", "«Pendiente» y sin veredicto siguen abiertos; los demás lo resuelven", "false,false,true", vistaVer, vistaVer === "false,false,true", "A-FEAT-1287")
+
+  // 📜 A-FEAT-1382 — Subdiarios muestra el histórico del contador en los meses que la app no tiene.
+  // Filas reales del histórico de MSA (dic-25: la NC de la flota; jul-25: una Fac A y un ticket sin número).
+  {
+    const histDic = [
+      { id: "h1", fecha: "2025-12-29", tipo: "3 - Nota de Crédito A", punto_de_venta: 1, numero_desde: 34160783, nro_doc_emisor: "33707366589", denominacion_emisor: "FEDERACION PATRONAL SEGUROS S.A.U", imp_neto_gravado: -109443.66, imp_neto_no_gravado: 0, imp_op_exentas: -5691.07, iva: -22983.17, otros_tributos: 0, imp_total: -138117.9, anio_contable: 2025, mes_contable: 12 },
+      { id: "h2", fecha: "2025-07-10", tipo: "Ticket factura A", punto_de_venta: 5306, numero_desde: 1, denominacion_emisor: "PAN AMERICAN", imp_neto_gravado: 100, iva: 21, otros_tributos: 0, imp_total: 121, anio_contable: 2025, mes_contable: 7 },
+      { id: "h3", fecha: "2025-07-11", tipo: "11 - Factura C", punto_de_venta: 2, numero_desde: 9, denominacion_emisor: "MONOTRIBUTISTA", imp_neto_gravado: 0, iva: 0, imp_total: 50, anio_contable: 2025, mes_contable: 7 },
+    ]
+    const app = [{ id: "a1", estado: "pendiente" }]
+    const conApp = filasDelSubdiario(app, histDic)
+    const sinApp = filasDelSubdiario([], histDic)
+    const tipos = sinApp.map(f => (f as any).tipo_comprobante).join(",")
+    chequear("Subdiarios — histórico", "Si la app tiene el mes manda la app (no se mezcla); si no, van las del histórico, marcadas y con el tipo de ARCA sacado del texto",
+      "app: a1 · histórico: 3 filas historico · tipos 3,0,11", `app: ${conApp.map(f => (f as any).id).join(",")} · histórico: ${sinApp.length} filas ${[...new Set(sinApp.map(f => (f as any).estado))].join("")} · tipos ${tipos}`,
+      conApp.length === 1 && (conApp[0] as any).id === "a1" && sinApp.length === 3 && sinApp.every(f => (f as any).estado === "historico") && tipos === "3,0,11", "A-FEAT-1382")
+    const sub = calcularSubtotalesSubdiario(sinApp as any, TIPOS_SIN_CREDITO_COMPRAS)
+    chequear("Subdiarios — histórico", "El subtotal del histórico separa bien: la NC resta en el libro, el ticket A va al libro y la Fac C a «sin crédito»",
+      "NC 1 (138117.9) · FC libro 1 (121) · sin crédito 1 (50)", `NC ${sub.libro.nc.cantidad} (${Math.round(sub.libro.nc.imp_total * 100) / 100}) · FC libro ${sub.libro.fc.cantidad} (${sub.libro.fc.imp_total}) · sin crédito ${sub.sinCredito.fc.cantidad} (${sub.sinCredito.fc.total})`,
+      sub.libro.nc.cantidad === 1 && Math.abs(sub.libro.nc.imp_total - 138117.9) < 0.01 && sub.libro.fc.cantidad === 1 && sub.sinCredito.fc.cantidad === 1, "A-FEAT-1382")
+  }
 
   // 📒 Asientos Contables: del ejercicio por fecha de emisión, sólo las marcadas, sin subdiario
   {
