@@ -57,10 +57,15 @@ export interface ImpuestoCheque {
 const num = (v: unknown) => { const n = typeof v === "string" ? parseFloat(v) : Number(v); return Number.isFinite(n) ? n : 0 }
 const r2 = (n: number) => Math.round(n * 100) / 100
 
+/** ¿Esta categoría es la del impuesto al cheque? (`Debitos / Creditos`, con o sin tildes.) */
+export function esCategImpuestoCheque(categ: string | null | undefined): boolean {
+  return /^d[eé]bitos\s*\/\s*cr[eé]ditos$/i.test(String(categ ?? "").trim())
+}
+
 /** ¿Es un movimiento del impuesto al cheque? Por la descripción del banco o por su categoría. */
 export function esImpuestoCheque(m: MovimientoParaCheque): boolean {
   const d = String(m.descripcion ?? "")
-  return /25\.?413/.test(d) || /^d[eé]bitos\s*\/\s*cr[eé]ditos$/i.test(String(m.categ ?? "").trim())
+  return /25\.?413/.test(d) || esCategImpuestoCheque(m.categ)
 }
 
 export function conceptoCheque(m: MovimientoParaCheque): ConceptoCheque {

@@ -147,8 +147,9 @@ import {
   armarSueldosDelEjercicio, brutoDesdePartes, type PeriodoDeSueldo,
 } from "@/lib/balance/sueldos-balance"
 import {
-  armarCuentasCorrientes, normalizar, CONTRAPARTES_DEL_BALANCE,
+  armarCuentasCorrientes, aplicarSaldosInicio, normalizar, CONTRAPARTES_DEL_BALANCE,
 } from "@/lib/balance/cuentas-corrientes"
+import { controlarCheque, chequeEnPapel08, chequeEnTemplates } from "@/lib/balance/control-cheque"
 import { cuadrarHacienda, type MovimientoDeHacienda } from "@/lib/balance/cuadre-hacienda"
 import {
   leerBnaDivisas, leerPizarraBcr, numeroConComa, numeroConPunto, fechaArgentina,
@@ -167,7 +168,7 @@ import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
 import { PRESENTADO_ARCA_COMPRAS, compararConPresentado } from "@/lib/balance/presentado-arca"
 import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/balance/facturas-fijas"
-import { armarTemplatesDelEjercicio, desdeCuota } from "@/lib/balance/templates-libro"
+import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA } from "@/lib/balance/templates-libro"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
 import { pesosAlCierre, pesoParaValuar } from "@/lib/balance/pesos-hacienda"
@@ -247,7 +248,7 @@ import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
-import { hojaDeAsientosContables, hojaDeTemplates, bloqueDeLecturas } from "@/lib/balance/export-libro-diario"
+import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas } from "@/lib/balance/export-libro-diario"
 import { juntarTandas, lecturaIncompleta, juntarHasta, mensajeLecturaIncompleta } from "@/lib/supabase-paginado"
 import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
 import * as XLSXcasos from "xlsx"
@@ -4461,6 +4462,97 @@ export function correrCasos(): Resultado[] {
       `gasto ${impaga.totalDebitos} · deuda ${impaga.totalImpagas ?? "?"} (${impaga.impagasAlCierre?.length ?? "?"} cuota)`,
       impaga.totalDebitos === 46843.7 && impaga.totalImpagas === 45843.7 && impaga.impagasAlCierre?.length === 1, "A-BUG-1289")
 
+    // ══ 📝 A-FEAT-1388 — la ronda de revisión del export del 27/10 ══════════════════════════════
+    {
+      // 🔑 La cuota dice si la plata ENTRÓ (`tipo_movimiento`). Caso real: Promoción Galicia salía en Débito.
+      const promo = desdeCuota({ id: "pg", egreso_id: "tpl-pg", monto: "22514.21", tipo_movimiento: "ingreso", estado: "conciliado",
+        fecha_pago: "2026-03-05", categ: "Promocion Galicia", egreso: { tipo: "ingreso", responsable: "PAM", nombre_referencia: "Promocion Galicia" } })
+      const filaPromo = hojaDeTemplates(armarTemplatesDelEjercicio([promo], ej)).find(x => x[1] === "Promocion Galicia")
+      chequear("Balance · templates", "🔑 Un INGRESO (la cuota dice que la plata entró) va en la columna CRÉDITO, no en Débito",
+        "débito vacío · crédito 22514.21", `débito ${filaPromo?.[9] === "" ? "vacío" : filaPromo?.[9]} · crédito ${filaPromo?.[10] || "vacío"}`,
+        filaPromo?.[9] === "" && filaPromo?.[10] === 22514.21, "A-FEAT-1388")
+
+      // 🧮 El impuesto al cheque por tres caminos. Caso real de MSA 25/26: 3 devoluciones del banco
+      //    (31/07, 01/09 y 10/11) por $14.872,34 hacían que Templates diera $5.584.198,49 y el 08 $5.569.326,15.
+      const cuotaCheque = (id: string, fecha: string, monto: number, mov: "egreso" | "ingreso") => desdeCuota({
+        id, monto, tipo_movimiento: mov, estado: "conciliado", fecha_pago: fecha, categ: "Debitos / Creditos",
+        egreso: { tipo: "egreso", responsable: "MSA", nombre_referencia: "Debitos / Creditos" } })
+      const tCheque = armarTemplatesDelEjercicio([
+        cuotaCheque("d1", "2025-08-31", 3000000, "egreso"), cuotaCheque("d2", "2026-02-28", 2569326.15, "egreso"),
+        cuotaCheque("v1", "2025-07-31", 2157.28, "ingreso"), cuotaCheque("v2", "2025-09-01", 2228.24, "ingreso"),
+        cuotaCheque("v3", "2025-11-10", 10486.82, "ingreso"),
+      ], ej, { empresa: "MSA" })
+      const g08 = armarGastosBancarios([
+        { fecha: "2025-08-31", categ: "Debitos / Creditos", debitos: 3000000 },
+        { fecha: "2026-02-28", categ: "Debitos / Creditos", debitos: 2569326.15 },
+        { fecha: "2025-07-31", categ: "Debitos / Creditos", creditos: 2157.28 },
+        { fecha: "2025-09-01", categ: "Debitos / Creditos", creditos: 2228.24 },
+        { fecha: "2025-11-10", categ: "Debitos / Creditos", creditos: 10486.82 },
+      ], [{ cuenta_contable: "Débitos / Créditos Ley 25413", nombre_totalizadora: "IMPUESTOS BANCARIOS" }], mesesDelEjercicio(2026, 6))
+      const enTpl = chequeEnTemplates(tCheque, "MSA"), en08 = chequeEnPapel08(g08)
+      const ctl = controlarCheque(5554453.81, en08, enTpl, "MSA")
+      chequear("Balance · impuesto al cheque", "🧮 Tres caminos, un número: con las 3 devoluciones restando, Templates y el 08 dan lo del 08.1",
+        "08 5.554.453,81 · Templates 5.554.453,81 · cuadra",
+        `08 ${en08 == null ? "—" : n2(en08)} · Templates ${enTpl == null ? "—" : n2(enTpl)} · ${ctl.cuadra ? "cuadra" : "NO cuadra"}`,
+        ctl.cuadra && en08 === 5554453.81 && enTpl === 5554453.81, "A-FEAT-1388")
+      const mal = controlarCheque(100, 100, 130, "MSA"), sinDato = controlarCheque(100, null, 100, "MSA")
+      chequear("Balance · impuesto al cheque", "🧮 Si un camino no da, NO cuadra y dice cuánto; un camino que no está en el Excel no rompe el control",
+        "no cuadra (Templates +30) · sin el 08 cuadra", `${mal.cuadra ? "cuadra" : "no cuadra"} (Templates +${mal.caminos[2].diferencia}) · sin el 08 ${sinDato.cuadra ? "cuadra" : "no cuadra"}`,
+        !mal.cuadra && mal.caminos[2].diferencia === 30 && sinDato.cuadra, "A-FEAT-1388")
+
+      // 🏢 Primero la empresa del balance: «si es MSA primero MSA, luego MA, luego PAM».
+      const c3 = (id: string, responsable: string) => ({ ...base, id, concepto: id, responsable, fecha: "2025-08-01", monto: 100, tipo: "egreso" as const })
+      const ordenR = (emp?: string) => [...new Set(armarTemplatesDelEjercicio(
+        [c3("p", "PAM"), c3("a", "MA"), c3("m", "MSA"), c3("s", "")], ej, { empresa: emp }).porMes.map(x => x.responsable))].join(" · ")
+      chequear("Balance · templates", "🏢 Primero la empresa del balance (MSA → MA → PAM; para MA: MA → MSA → PAM), los sin responsable al final",
+        "MSA · MA · PAM · (sin responsable) | MA · MSA · PAM · (sin responsable)", `${ordenR("MSA")} | ${ordenR("MA")}`,
+        ordenR("MSA") === "MSA · MA · PAM · (sin responsable)" && ordenR("MA") === "MA · MSA · PAM · (sin responsable)", "A-FEAT-1388")
+
+      // 🗂️ Agrupadoras del plan, en el orden del plan, y la MISMA cuenta escrita distinto va a una fila.
+      const planAg = [
+        { categ: "SEGUROS ESTRUCTURA", nro_cuenta: "422113", nombre_totalizadora: "ADMINISTRACION Y ESTRUCTURA" },
+        { categ: "HONORARIOS VARIOS", nro_cuenta: "422110", nombre_totalizadora: "ADMINISTRACION Y ESTRUCTURA" },
+        { categ: "Debitos / Creditos", nro_cuenta: "421502", nombre_totalizadora: "IMPUESTOS BANCARIOS" },
+      ]
+      const cA = (id: string, categ: string, monto: number) => ({ ...base, id, concepto: id, categ, responsable: "MSA", fecha: "2025-09-01", monto, tipo: "egreso" as const })
+      const tAg = armarTemplatesDelEjercicio([cA("s1", "SEGUROS ESTRUCTURA", 100), cA("s2", "Seguros Estructura", 50),
+        cA("h", "HONORARIOS VARIOS", 10), cA("d", "Debitos / Creditos", 7), cA("x", "Algo fuera del plan", 999)], ej, { empresa: "MSA", plan: planAg })
+      const vAg = tAg.porMes.map(x => `${x.agrupadora === SIN_AGRUPADORA ? "(sin)" : x.agrupadora.split(" ")[0]}/${x.categ} ${x.totalNeto}`).join(" · ")
+      chequear("Balance · templates", "🗂️ Por agrupadora del plan y en su orden; «SEGUROS ESTRUCTURA» y «Seguros Estructura» son UNA fila; lo que no está en el plan, al final",
+        "IMPUESTOS/Debitos / Creditos 7 · ADMINISTRACION/HONORARIOS VARIOS 10 · ADMINISTRACION/SEGUROS ESTRUCTURA 150 · (sin)/Algo fuera del plan 999", vAg,
+        vAg === "IMPUESTOS/Debitos / Creditos 7 · ADMINISTRACION/HONORARIOS VARIOS 10 · ADMINISTRACION/SEGUROS ESTRUCTURA 150 · (sin)/Algo fuera del plan 999", "A-FEAT-1388")
+
+      // 🧮 Las fórmulas de «Templates por mes»: el total del responsable suma el SUBTOTAL de la agrupadora
+      //    (no un rango, que lo contaría dos veces) y el del ejercicio da débitos − créditos.
+      const hojaAg = hojaTemplatesPorMes(tAg)
+      const nSub = hojaAg.findIndex(x => x[0] === "Subtotal ADMINISTRACION Y ESTRUCTURA") + 1
+      const totMSA = hojaAg.find(x => x[0] === "Total MSA") as Array<{ f?: string; v?: number }> | undefined
+      const totEj = hojaAg.find(x => x[0] === "TOTAL DEL EJERCICIO (todos los tipos)") as Array<{ v?: number }> | undefined
+      const fMSA = totMSA?.[3]?.f ?? ""
+      chequear("Balance · templates", "🧮 Templates por mes: «Total MSA» suma las filas de cada agrupadora (con su subtotal) y el total del ejercicio da 1.166",
+        `fórmula con D${nSub}, sin rango · total 1166`, `fórmula ${fMSA} · total ${totEj?.[15]?.v}`,
+        nSub > 0 && fMSA.split("+").includes(`D${nSub}`) && !fMSA.includes(":") && totEj?.[15]?.v === 1166, "A-FEAT-1388")
+
+      // 🛡️ Los seguros con póliza ya son gasto por su factura: fuera del total, pero listados.
+      //    Por el VÍNCULO, no por el nombre: el Chalet (sin póliza cargada) sigue contando.
+      const seg = (id: string, egresoId: string, monto: number) => ({ ...base, id, concepto: id, egresoId, responsable: "MSA", fecha: "2025-10-01", monto, tipo: "egreso" as const })
+      const tSeg = armarTemplatesDelEjercicio([seg("flota", "tpl-flota", 6184577.22), seg("chalet", "tpl-chalet", 973091.44)], ej, { templatesConPoliza: ["tpl-flota"] })
+      chequear("Balance · templates", "🛡️ Un seguro con póliza cargada sale del gasto de Templates (ya está en su factura) y se lista aparte",
+        "gasto 973091.44 · 1 fuera por 6184577.22", `gasto ${tSeg.totalDebitos} · ${tSeg.enFacturas?.length ?? "?"} fuera por ${tSeg.totalEnFacturas ?? "?"}`,
+        tSeg.totalDebitos === 973091.44 && tSeg.enFacturas?.length === 1 && tSeg.totalEnFacturas === 6184577.22, "A-FEAT-1388")
+
+      // 💳 Pagado y pendiente por tipo; y un INGRESO pendiente no es deuda del papel 04.
+      const tPend = armarTemplatesDelEjercicio([
+        { ...base, id: "pg", fecha: "2026-04-01", estado: "conciliado", monto: 1000, tipo: "egreso" as const },
+        { ...base, id: "pe", fecha: "2026-05-01", estado: "pendiente", monto: 800, tipo: "egreso" as const },
+        { ...base, id: "pi", fecha: "2026-05-01", estado: "pendiente", monto: -5000, tipo: "ingreso" as const },
+      ], ej)
+      const gE = tPend.porTipo.find(x => x.tipo === "egreso")
+      chequear("Balance · templates", "💳 Egresos: pagado 1.000 + pendiente 800; un ingreso pendiente no va a la deuda del papel 04",
+        "saldo 1800 · pendiente 800 · deuda 800 (1 cuota)", `saldo ${gE?.totalNeto} · pendiente ${gE?.totalPendiente} · deuda ${tPend.totalImpagas} (${tPend.impagasAlCierre.length} cuota)`,
+        gE?.totalNeto === 1800 && gE?.totalPendiente === 800 && tPend.totalImpagas === 800 && tPend.impagasAlCierre.length === 1, "A-FEAT-1388")
+    }
+
     // ✍️ A-FEAT-1207 — los saldos del ejercicio anterior: los 3 que dio el usuario el 2026-10-18 suman
     //    $7.115.206,05; uno anulado no suma, y los de otra empresa u otro ejercicio no se mezclan.
     const aj = (id: string, concepto: string, monto: number, extra: Record<string, unknown> = {}) => ({
@@ -6865,10 +6957,35 @@ export function correrCasos(): Resultado[] {
       `${n2(de("AMS").saldoInicio ?? 0)} + ${n2(de("AMS").resumen.saldo)} = ${n2(de("AMS").saldoAlCierre ?? 0)}`,
       de("AMS").saldoAlCierre === 16776910.27, "A-FEAT-1218")
 
-    // 🎚️ Y sin saldo de inicio NO se asume cero: se dice que no se conoce.
-    chequear("Cuentas corrientes", "🎚️ Sin saldo de inicio declarado, el cierre queda en null",
-      "null", String(de("JMS").saldoAlCierre),
-      de("JMS").saldoInicio === null && de("JMS").saldoAlCierre === null, "A-FEAT-1218")
+    // 🎚️ Sin saldo de inicio: 0 marcado «sin dato», y el cierre sale igual (A-FEAT-1388).
+    //    ⚠️ cambió 2026-10-27: antes quedaba en null — usuario: «poner saldo de inicio cero y que dé lo que dé».
+    chequear("Cuentas corrientes", "🎚️ Sin saldo de inicio: va en 0 marcado «sin dato» y el cierre es el movimiento del ejercicio",
+      `inicio 0 · sin dato · cierre ${n2(de("JMS").resumen.saldo)}`,
+      `inicio ${de("JMS").saldoInicio} · ${de("JMS").inicioSinDato ? "sin dato" : "con dato"} · cierre ${n2(de("JMS").saldoAlCierre ?? NaN)}`,
+      de("JMS").saldoInicio === 0 && de("JMS").inicioSinDato === true && de("JMS").saldoAlCierre === de("JMS").resumen.saldo, "A-FEAT-1388")
+    // ✍️ Y el que se escribe en la pantalla se aplica sin volver a armar el papel.
+    const conInicio = aplicarSaldosInicio(r, { JMS: 1500000 })
+    const jms = conInicio.cuentas.find(c => c.contraparte.clave === "JMS")!
+    chequear("Cuentas corrientes", "✍️ El saldo de inicio escrito en la pantalla suma al cierre y deja de ser «sin dato»",
+      `1.500.000,00 + ${n2(de("JMS").resumen.saldo)} = ${n2(r2(1500000 + de("JMS").resumen.saldo))}`,
+      `${n2(jms.saldoInicio)} + ${n2(jms.resumen.saldo)} = ${n2(jms.saldoAlCierre)}${jms.inicioSinDato ? " (sin dato)" : ""}`,
+      jms.saldoAlCierre === r2(1500000 + de("JMS").resumen.saldo) && !jms.inicioSinDato, "A-FEAT-1388")
+
+    // 🧮 La aseguradora: el saldo final del detalle es el SALDO AL CIERRE de arriba, y el papel lo muestra.
+    const conSeguro = { ...r, aseguradoras: [{
+      nombre: "Federación Patronal Seguros", fechaCierre: "2026-06-30", saldo: 113098.91, cierra: true,
+      aReclamar: [{ categoria: "Diferencia", que: "diferencia", poliza: null, importe: 113098.91, desde: null }],
+      lineas: [
+        { fecha: "2026-01-10", poliza: "34160783", tipo: "cuota", concepto: "cuota 1", cargo: 200000, credito: 0, saldo: 200000 },
+        { fecha: "2026-02-10", poliza: "34160783", tipo: "debito", concepto: "débito", cargo: 0, credito: 86901.09, saldo: 113098.91 },
+      ],
+    }] } as unknown as Parameters<typeof hojaDeCuentasCorrientes>[0]
+    const hoja14 = hojaDeCuentasCorrientes(conSeguro, "2026-06-30")
+    const filaCtl = hoja14.find(x => String(x[0]).startsWith("CONTROL: saldo final del detalle")) as Array<{ f?: string; v?: number } | string> | undefined
+    const celdaCtl = filaCtl?.[5] as { f?: string; v?: number } | undefined
+    chequear("Cuentas corrientes", "🧮 Papel 14: debajo del detalle de la aseguradora, el control «saldo final − saldo al cierre = 0», con fórmula",
+      "0 · cuadra · con fórmula", `${celdaCtl?.v} · ${filaCtl?.[6]} · ${celdaCtl?.f ? "con fórmula" : "sin fórmula"}`,
+      celdaCtl?.v === 0 && filaCtl?.[6] === "cuadra" && !!celdaCtl?.f, "A-FEAT-1388")
 
     // 🔑 AFA es la única con las dos puntas: la venta compensa.
     chequear("Cuentas corrientes", "🔑 En AFA la venta COMPENSA y baja el saldo",

@@ -27,6 +27,7 @@
  */
 import type { Ejercicio } from "./ejercicio"
 import { resolverTipo, type TipoCuenta } from "@/lib/presupuesto/templates"
+import { normalizar } from "./cuentas-corrientes"
 
 /**
  * 🗂️ **QUÉ ES cada cuota: egreso, ingreso, distribución, financiero…** (A-FEAT-1342, 2026-10-24).
@@ -62,6 +63,47 @@ export interface TotalPorTipo {
   totalDebitos: number
   totalCreditos: number
   totalNeto: number
+  /**
+   * 💳 De ese neto, lo que todavía NO se pagó al cierre (A-FEAT-1388). Usuario 27/10, en la solapa:
+   * *«¿muestran lo pagado o lo pendiente también?»* — las dos cosas, y ahora se dice cuánto es cada una.
+   */
+  totalPendiente: number
+}
+
+/**
+ * 🏢 **El orden de los responsables: primero la empresa del balance** (A-FEAT-1388). Usuario 27/10:
+ * *«si es MSA primero MSA, luego MA, luego PAM»*. Después las combinadas (MSA/PAM…) y al final las
+ * que no tienen responsable.
+ */
+export function ordenDeResponsables(empresa?: string): (r: string) => number {
+  const base = ["MSA", "MA", "PAM"]
+  const lista = empresa && base.includes(empresa) ? [empresa, ...base.filter(x => x !== empresa)] : base
+  return (r: string) => {
+    const i = lista.indexOf(r)
+    if (i >= 0) return i
+    return !r || r.startsWith("(sin") ? 99 : 50
+  }
+}
+
+/** Lo que el armado necesita saber de afuera. Todo opcional: sin esto, sale como antes. */
+export interface OpcionesTemplates {
+  /** La empresa del balance: sus cuotas van primero. */
+  empresa?: string
+  /**
+   * 🗂️ El plan de cuentas, para **agrupar por totalizadora** (usuario 27/10: *«mejorar orden,
+   * agrupadoras»*) y para **unir la misma cuenta escrita distinto** (`SEGUROS ESTRUCTURA` y
+   * `Seguros Estructura` salían en dos filas).
+   */
+  plan?: Array<{ categ: string; nro_cuenta?: string | null; nombre_totalizadora?: string | null }>
+  /**
+   * 🛡️ Los templates vinculados a una PÓLIZA (`polizas_seguro.template_id`). Usuario 27/10, sobre
+   * SEGUROS ESTRUCTURA: *«esto lo tenemos en facturas y cta cte así que acá no entraría, porque es a
+   * fines de conciliar esta cuenta por tema cuotas… MA deberá ser igual que MSA con las pólizas de
+   * Chubb»*. Sus cuotas no son gasto acá: ya lo son por la factura de la aseguradora.
+   * 🔑 Se decide por el VÍNCULO con la póliza, no por el nombre de la categoría: un seguro cuyas
+   * facturas todavía no están cargadas (el Chalet de MA, Chubb) sigue contando hasta que se cargue.
+   */
+  templatesConPoliza?: Iterable<string>
 }
 
 /** Una cuota de template, ya normalizada desde `cuotas_egresos_sin_factura` + su egreso. */
@@ -79,10 +121,17 @@ export interface CuotaTemplate {
   centro_costo: string
   responsable: string
   estado: string
-  /** Positivo = egreso. Negativo = devolución o ajuste a favor. */
+  /**
+   * Positivo = plata que SALIÓ (débito). Negativo = plata que ENTRÓ (crédito): un ingreso, un rescate,
+   * una devolución del banco.
+   * ⚠️ cambió 2026-10-27 (A-FEAT-1388): hasta acá el importe se tomaba siempre como salida, aunque la
+   * cuota dijera que fue un ingreso — ver `desdeCuota`.
+   */
   monto: number
   /** Qué es (A-FEAT-1342). Sin dato = «sin clasificar». */
   tipo?: TipoTemplate
+  /** El template del que sale la cuota (`egreso_id`). Hace falta para saber si es de una póliza. */
+  egresoId?: string
 }
 
 export interface FilaPorMes {
@@ -97,6 +146,13 @@ export interface FilaPorMes {
    */
   responsable: string
   categ: string
+  /**
+   * 🗂️ La totalizadora del plan de cuentas (A-FEAT-1388). Las que no están en el plan van juntas en
+   * `SIN_AGRUPADORA`, al final y a la vista.
+   */
+  agrupadora: string
+  /** El número del plan (`nro_cuenta`), para ordenar como el plan. Vacío si no está en el plan. */
+  nroCuenta: string
   /** 12 posiciones, en el orden de los subdiarios del ejercicio. */
   debitos: number[]
   creditos: number[]
@@ -147,6 +203,26 @@ export interface TemplatesDelEjercicio {
    * los grupos tiene que dar el total general — si no, una cuota quedó afuera o contada dos veces.
    */
   porTipo: TotalPorTipo[]
+  /**
+   * 🛡️ Las cuotas de templates vinculados a una póliza (A-FEAT-1388): **fuera del gasto** porque ya
+   * están en las facturas de la aseguradora y en su cuenta corriente (papel 14). Se listan.
+   */
+  enFacturas: CuotaTemplate[]
+  totalEnFacturas: number
+}
+
+/** Donde van las categorías que no están en el plan de cuentas. */
+export const SIN_AGRUPADORA = "(sin agrupadora en el plan de cuentas)"
+
+/**
+ * Compara dos números del plan (`422113`, `4221`) como texto, que respeta la jerarquía: `4221` va
+ * antes que `422113` y los dos antes que `5…`. `"~"` = sin número: va al final.
+ */
+function compararNro(a: string, b: string): number {
+  if (a === b) return 0
+  if (a === "~") return 1
+  if (b === "~") return -1
+  return a < b ? -1 : 1
 }
 
 /** Estados que dicen «esta cuota no se usa»: no es gasto. */
@@ -170,8 +246,18 @@ export function desdeCuota(f: Record<string, unknown>, tipoDeCateg?: Record<stri
   const e = (f.egreso ?? {}) as Record<string, unknown>
   const categ = s(f.categ) || s(e.categ)
   const r = resolverTipo((e.tipo as TipoCuenta | null) || null, tipoDeCateg?.[categ] ?? null)
+  /**
+   * 🔑 **¿La plata entró o salió?** Lo dice la cuota (`tipo_movimiento`), y la conciliación lo carga
+   * igual que el banco: las 127 cuotas de MSA atadas a un crédito del extracto dicen «ingreso».
+   * 🧨 Hasta el 2026-10-27 el importe se tomaba siempre como salida: en 25/26 eran **195 cuotas por
+   * $659,5 M** del lado equivocado (rescates de FCI, Promoción Galicia en la columna Débito) y **10
+   * devoluciones de egresos sumando como gasto** — las 3 del impuesto al cheque ($14.872,34) eran la
+   * diferencia entre Templates, el papel 08 y el 08.1 (A-FEAT-1388).
+   */
+  const entro = s(f.tipo_movimiento).trim().toLowerCase() === "ingreso"
   return {
     tipo: r.origen === "signo" ? "sin clasificar" : r.tipo,
+    egresoId: s(f.egreso_id) || undefined,
     id: s(f.id),
     // 🔑 El orden importa: lo pagado manda sobre lo estimado. Ver el § del encabezado.
     fecha: f.fecha_pago ? s(f.fecha_pago).slice(0, 10)
@@ -184,7 +270,7 @@ export function desdeCuota(f: Record<string, unknown>, tipoDeCateg?: Record<stri
     centro_costo: s(f.centro_costo) || s(e.centro_costo),
     responsable: s(e.responsable),
     estado: s(f.estado),
-    monto: n(f.monto),
+    monto: entro ? -n(f.monto) : n(f.monto),
   }
 }
 
@@ -197,39 +283,63 @@ export function desdeCuota(f: Record<string, unknown>, tipoDeCateg?: Record<stri
 export function armarTemplatesDelEjercicio(
   cuotas: CuotaTemplate[],
   ej: Ejercicio,
+  opciones: OpcionesTemplates = {},
 ): TemplatesDelEjercicio {
   const columnas = ej.subdiarios.map(x => `${MES_CORTO[x.mes - 1]}-${String(x.anio).slice(-2)}`)
   // `2025-07` → 0, `2026-06` → 11. Así la columna se ubica sin pensar en el cruce de año.
   const posicion = new Map(
     ej.subdiarios.map((x, i) => [`${x.anio}-${String(x.mes).padStart(2, "0")}`, i]),
   )
+  const conPoliza = new Set(opciones.templatesConPoliza ?? [])
+  const ordenResp = ordenDeResponsables(opciones.empresa)
+  /** La cuenta del plan por categoría NORMALIZADA: `Seguros Estructura` = `SEGUROS ESTRUCTURA`. */
+  const delPlan = new Map((opciones.plan ?? []).map(p => [normalizar(p.categ), p]))
 
   const detalle: CuotaTemplate[] = []
   const sinFecha: CuotaTemplate[] = []
   const noIncluidas: CuotaTemplate[] = []
+  const enFacturas: CuotaTemplate[] = []
   const excluida = (c: CuotaTemplate) => ESTADOS_TEMPLATE_EXCLUIDOS.includes((c.estado || "").toLowerCase())
+  const impaga = (c: CuotaTemplate) => ESTADOS_TEMPLATE_IMPAGOS.includes((c.estado || "").toLowerCase())
   for (const c of cuotas) {
     // Una desactivada sin fecha no es un hueco: no se iba a usar igual.
     if (!c.fecha) { if (!excluida(c)) sinFecha.push(c); continue }
     if (!posicion.has(c.fecha.slice(0, 7))) continue
     // Lo que cae fuera del ejercicio es de otro período: no se reporta, no es un hueco.
     if (excluida(c)) { noIncluidas.push(c); continue }      // A-BUG-1289: no es gasto, pero se ve
+    // 🛡️ A-FEAT-1388: ya es gasto por la factura de la aseguradora. Fuera del total, pero se lista.
+    if (c.egresoId && conPoliza.has(c.egresoId)) { enFacturas.push(c); continue }
     detalle.push(c)
   }
-  const impagasAlCierre = detalle.filter(c => ESTADOS_TEMPLATE_IMPAGOS.includes((c.estado || "").toLowerCase()))
+  // Mismo orden en las dos solapas: tipo → responsable (la empresa del balance primero) → fecha.
+  detalle.sort((a, b) =>
+    ORDEN_TIPOS.indexOf(tipoDe(a)) - ORDEN_TIPOS.indexOf(tipoDe(b))
+    || ordenResp(a.responsable) - ordenResp(b.responsable)
+    || (a.responsable || "").localeCompare(b.responsable || "", "es")
+    || (a.fecha ?? "").localeCompare(b.fecha ?? "")
+    || a.concepto.localeCompare(b.concepto, "es"))
+  /**
+   * 💳 La deuda al cierre: lo que salía y no salió. 🔑 Un ingreso pendiente (monto negativo) NO es
+   * deuda — es plata a cobrar — y por eso no va al papel 04 (en 25/26 no hay ninguno).
+   */
+  const impagasAlCierre = detalle.filter(c => impaga(c) && c.monto > 0)
 
   const sinCategoria = detalle.filter(c => !c.categ)
 
   /** La clave es **responsable + categoría**: el mismo concepto lo puede pagar más de una empresa. */
   const filas = new Map<string, FilaPorMes>()
   for (const c of detalle) {
-    const categ = c.categ || "(sin categoría)"
+    const cuenta = c.categ ? delPlan.get(normalizar(c.categ)) : undefined
+    // 🔑 Con la categoría escrita como en el plan, las dos grafías de la misma cuenta van a una fila.
+    const categ = cuenta?.categ || c.categ || "(sin categoría)"
     const responsable = c.responsable || "(sin responsable)"
     const tipo = tipoDe(c)
-    const clave = `${tipo}|${responsable}|${categ}`
+    const clave = `${tipo}|${responsable}|${normalizar(categ)}`
     if (!filas.has(clave)) {
       filas.set(clave, {
         tipo, responsable, categ,
+        agrupadora: cuenta?.nombre_totalizadora?.trim() || SIN_AGRUPADORA,
+        nroCuenta: cuenta?.nro_cuenta?.trim() || "",
         debitos: new Array(12).fill(0), creditos: new Array(12).fill(0),
         neto: new Array(12).fill(0),
         totalDebitos: 0, totalCreditos: 0, totalNeto: 0,
@@ -237,8 +347,8 @@ export function armarTemplatesDelEjercicio(
     }
     const fila = filas.get(clave)!
     const i = posicion.get(c.fecha!.slice(0, 7))!
-    // Positivo = egreso = débito. Negativo = devolución = crédito, y se guarda en positivo para
-    // que la columna de créditos se lea como en su planilla.
+    // Positivo = salió = débito. Negativo = entró (ingreso, rescate, devolución) = crédito, y se
+    // guarda en positivo para que la columna de créditos se lea como en su planilla.
     if (c.monto >= 0) { fila.debitos[i] += c.monto; fila.totalDebitos += c.monto }
     else { fila.creditos[i] += -c.monto; fila.totalCreditos += -c.monto }
     // El saldado: lo que el concepto costó ese mes, de una sola pasada.
@@ -255,9 +365,26 @@ export function armarTemplatesDelEjercicio(
       totalDebitos: redondear(f.totalDebitos), totalCreditos: redondear(f.totalCreditos),
       totalNeto: redondear(f.totalNeto),
     }))
-    // Ordenado por tipo, después por responsable y, dentro de cada uno, por lo que más pesa.
-    .sort((a, b) => ORDEN_TIPOS.indexOf(a.tipo) - ORDEN_TIPOS.indexOf(b.tipo)
-      || a.responsable.localeCompare(b.responsable, "es") || b.totalNeto - a.totalNeto)
+  /**
+   * 🗂️ El orden de las agrupadoras: el del plan (por el número más chico de sus cuentas). Las que no
+   * están en el plan, al final.
+   */
+  const ordenAgrupadora = new Map<string, string>()
+  for (const f of porMes) {
+    if (f.agrupadora === SIN_AGRUPADORA || !f.nroCuenta) continue
+    const ya = ordenAgrupadora.get(f.agrupadora)
+    if (!ya || compararNro(f.nroCuenta, ya) < 0) ordenAgrupadora.set(f.agrupadora, f.nroCuenta)
+  }
+  const claveAgrupadora = (a: string) => a === SIN_AGRUPADORA ? "~" : (ordenAgrupadora.get(a) ?? "~")
+  // Tipo → responsable (la empresa del balance primero) → agrupadora (orden del plan) → cuenta.
+  porMes.sort((a, b) => ORDEN_TIPOS.indexOf(a.tipo) - ORDEN_TIPOS.indexOf(b.tipo)
+    || ordenResp(a.responsable) - ordenResp(b.responsable)
+    || a.responsable.localeCompare(b.responsable, "es")
+    || compararNro(claveAgrupadora(a.agrupadora), claveAgrupadora(b.agrupadora))
+    || a.agrupadora.localeCompare(b.agrupadora, "es")
+    // Adentro de la agrupadora: el orden del plan; sin número (fuera del plan), lo que más pesa.
+    || compararNro(a.nroCuenta || "~", b.nroCuenta || "~")
+    || b.totalNeto - a.totalNeto)
 
   const porTipo: TotalPorTipo[] = ORDEN_TIPOS.map(tipo => {
     const del = porMes.filter(f => f.tipo === tipo)
@@ -266,6 +393,7 @@ export function armarTemplatesDelEjercicio(
       totalDebitos: redondear(del.reduce((x, f) => x + f.totalDebitos, 0)),
       totalCreditos: redondear(del.reduce((x, f) => x + f.totalCreditos, 0)),
       totalNeto: redondear(del.reduce((x, f) => x + f.totalNeto, 0)),
+      totalPendiente: redondear(detalle.filter(c => tipoDe(c) === tipo && impaga(c)).reduce((x, c) => x + c.monto, 0)),
     }
   }).filter(t => t.cuotas > 0)
 
@@ -277,5 +405,6 @@ export function armarTemplatesDelEjercicio(
     noIncluidas, totalNoIncluidas: redondear(noIncluidas.reduce((x, c) => x + c.monto, 0)),
     impagasAlCierre, totalImpagas: redondear(impagasAlCierre.reduce((x, c) => x + c.monto, 0)),
     porTipo,
+    enFacturas, totalEnFacturas: redondear(enFacturas.reduce((x, c) => x + c.monto, 0)),
   }
 }

@@ -154,11 +154,19 @@ export interface MovimientoParaCC {
 
 export interface CuentaCorrienteDelBalance {
   contraparte: ContraparteDelBalance
-  /** `null` = no se conoce. **No se asume cero** (§ 🎚️): se dice. */
-  saldoInicio: number | null
+  /**
+   * El saldo al inicio del ejercicio: el que cargó el usuario y, si no hay, **0 marcado «sin dato»**.
+   * ⚠️ cambió 2026-10-27 (A-FEAT-1388): hasta acá era `null` y el saldo al cierre quedaba vacío. Usuario,
+   * en el papel 14: *«poner saldo de inicio cero y que dé lo que dé, pero luego podremos modificar desde
+   * antes de exportar. Para todo este grupo»*. Sigue diciéndose que no se conoce — en `inicioSinDato` —,
+   * pero el papel ya da un número (§ 🎚️ default del dato real, siempre editable).
+   */
+  saldoInicio: number
+  /** `true` = nadie cargó el saldo de inicio: el 0 es un default, no un dato. */
+  inicioSinDato: boolean
   resumen: ResumenCC
-  /** `saldo inicio + lo del ejercicio`. `null` si no se conoce el inicio. */
-  saldoAlCierre: number | null
+  /** `saldo inicio + lo del ejercicio`. */
+  saldoAlCierre: number
   /** Cuántos comprobantes salieron del histórico, que es el tramo sin CUIT. */
   desdeHistorico: number
 }
@@ -190,7 +198,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100
  * @param compras      de `comprobantes_arca` **y** de `comprobantes_historico`, ya del ejercicio
  * @param ventas       de `comprobantes_venta`, ya del ejercicio
  * @param movimientos  los del extracto con `contable` cargado, ya del ejercicio
- * @param saldosInicio por clave de contraparte. Lo que falte queda en `null`
+ * @param saldosInicio por clave de contraparte. Lo que falte va en 0, marcado `inicioSinDato`
  */
 export function armarCuentasCorrientes(
   compras: CompraParaCC[],
@@ -243,12 +251,14 @@ export function armarCuentasCorrientes(
       }))
 
     const resumen = armarCuentaCorriente(facturas, pagos)
-    const inicio = c.clave in saldosInicio ? saldosInicio[c.clave] : null
+    const cargado = saldosInicio[c.clave]
+    const inicio = Number.isFinite(cargado) ? r2(cargado) : 0
     cuentas.push({
       contraparte: c,
       saldoInicio: inicio,
+      inicioSinDato: !Number.isFinite(cargado),
       resumen,
-      saldoAlCierre: inicio == null ? null : r2(inicio + resumen.saldo),
+      saldoAlCierre: r2(inicio + resumen.saldo),
       desdeHistorico,
     })
   }
@@ -273,5 +283,25 @@ export function armarCuentasCorrientes(
     sinTratar,
     totalSinTratar: r2(sinTratar.reduce((s, x) => s + x.total, 0)),
     historicoSinAtribuir: compras.filter(c => !c.cuit && !usadasEnHistorico.has(c.id)).length,
+  }
+}
+
+/**
+ * ✍️ **Pone los saldos de inicio que cargó el usuario** sobre un papel ya armado, sin volver a leer la
+ * base (A-FEAT-1388): la pantalla los recalcula al escribirlos, antes de bajar el Excel.
+ * Lo que no está cargado (o está vacío) queda en 0 con `inicioSinDato`.
+ */
+export function aplicarSaldosInicio(
+  papel: PapelDeCuentasCorrientes,
+  saldos: Record<string, number | null | undefined>,
+): PapelDeCuentasCorrientes {
+  return {
+    ...papel,
+    cuentas: papel.cuentas.map(c => {
+      const v = saldos[c.contraparte.clave]
+      const hay = typeof v === "number" && Number.isFinite(v)
+      const inicio = hay ? r2(v) : 0
+      return { ...c, saldoInicio: inicio, inicioSinDato: !hay, saldoAlCierre: r2(inicio + c.resumen.saldo) }
+    }),
   }
 }

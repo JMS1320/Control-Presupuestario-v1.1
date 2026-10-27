@@ -49,6 +49,7 @@
 - [🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30)*](#egresos-facturas-asignación-de-cuentas-2026-09-30)
 - [🗂️ Papeles de balance → templates por tipo y «¿llegó todo?» *(2026-10-24)*](#papeles-de-balance-templates-por-tipo-y-llegó-todo-2026-10-24)
 - [🗄️ Papeles de balance → lo que cargás queda guardado *(2026-10-24)*](#papeles-de-balance-lo-que-cargás-queda-guardado-2026-10-24)
+- [📒 Papeles de balance → cómo leer Templates y el impuesto al cheque *(2026-10-27)*](#papeles-de-balance-cómo-leer-templates-y-el-impuesto-al-cheque-2026-10-27)
 - [🧾 Papeles de balance → compras contra lo presentado a ARCA *(2026-10-23)*](#papeles-de-balance-compras-contra-lo-presentado-a-arca-2026-10-23)
 - [🧾 Papeles de balance → CUENTAS CORRIENTES *(2026-10-01)*](#papeles-de-balance-cuentas-corrientes-2026-10-01)
 - [👷 Papeles de balance → la solapa de SUELDOS *(2026-09-30)*](#papeles-de-balance-la-solapa-de-sueldos-2026-09-30)
@@ -3365,13 +3366,26 @@ con el dólar BNA importado a esa fecha.
 En **Reportes → Papeles de trabajo del balance**, lo que escribís a mano se guarda solo, por empresa y ejercicio, y aparece cargado cuando volvés otro día:
 - los **precios a mano** de las categorías de hacienda (tabla de «Traer stock y precios»);
 - las cuatro casillas del **cuadre de granos**: stock al inicio, cosecha, existencia al cierre y precio por tonelada;
-- las **cuotapartes** y el valor de la cuotaparte del fondo común (en «Pasar a la foto del balance propio»).
+- las **cuotapartes** y el valor de la cuotaparte del fondo común (en «Pasar a la foto del balance propio»);
+- el **saldo de inicio de cada cuenta corriente** del papel 14 (cuadro «🧾 Papel 14 — saldo de INICIO», después de armar el libro de MSA). Vacío = 0, marcado «sin dato»: el saldo al cierre sale igual. Al escribirlo, el saldo al cierre se recalcula en el momento, sin volver a armar el libro. En el Excel el saldo al cierre es fórmula: también se puede cambiar el inicio ahí.
 
 Al lado de cada bloque dice si está guardado. Lo que trae la app sola (el stock, los precios del mercado) se recalcula cada vez que apretás **Traer stock y precios**: eso no hace falta guardarlo. Para que un precio a mano se use, apretá **Recalcular** después de escribirlo.
 
 Si borrás una casilla, queda vacía; la app guarda igual lo que había antes y quién lo cargó.
 
-⚠️ Sin probar todavía → A-TEST-1240
+⚠️ Sin probar todavía → A-TEST-1240 (los saldos de inicio: A-TEST-1265)
+
+## 📒 Papeles de balance → cómo leer Templates y el impuesto al cheque *(2026-10-27)*
+
+- **Templates** (fila por cuota): lo que **salió** de la cuenta va en **Débito** y lo que **entró** (un ingreso como Promoción Galicia, un rescate de FCI, una devolución del banco) en **Crédito**. Debajo de cada total dice **cuánto está pagado y cuánto pendiente** al cierre. Los renglones con un punto entre bloques están para que el filtro de Excel tome la tabla entera.
+- Los **seguros con póliza cargada** no suman en Templates: ya están en las facturas de la aseguradora y en su cuenta corriente (papel 14). Se listan al final, como «NO INCLUIDAS». Un seguro sin póliza cargada (por ejemplo, el Chalet de MA) sigue sumando hasta que se cargue.
+- **Templates por mes**: primero la empresa del balance (para MSA: MSA, MA, PAM) y, adentro, las cuentas agrupadas como en el plan de cuentas (columna **Agrupadora**, con su subtotal). Al final, el cuadro **Pagado y pendiente** por tipo.
+- **08 Gastos bancarios**: cada mes es lo que debitó el banco **menos lo que devolvió**; la columna **Devoluciones** dice cuánto se restó.
+- **08.1 Impuesto al cheque**: al final, el **control de tres caminos** — el extracto, el papel 08 y los templates tienen que dar el mismo impuesto. En la pantalla, debajo del cuadro del impuesto, la misma línea con ✓ o ⚠️.
+- **14 Cuentas corrientes**: debajo del detalle de la aseguradora, el renglón de control (saldo final del detalle = saldo al cierre).
+- El botón **«Bajar el Excel»** dice si va a salir sin hacienda ni insumos. Tus precios a mano vuelven solos, pero el stock hay que traerlo cada vez con **«Traer stock y precios»**.
+
+⚠️ Sin probar todavía → A-TEST-1265
 
 ## 🧾 Papeles de balance → compras contra lo presentado a ARCA *(2026-10-23)*
 
@@ -3635,8 +3649,10 @@ son los que generan saldo sin que nadie lo note.
 son ninguna de estas cuentas — `RET`, `RET 3`, `AP`, `LIB`, `Desglosar` — con su total. **No se
 reparten a propósito**: cada una se trata por separado.
 
-⚠️ **El saldo al cierre dice «falta el saldo al inicio»** hasta que se carguen los saldos al
-01/07/2025. El movimiento del ejercicio ya está; lo que falta es **de dónde arranca**.
+⚠️ **El saldo de inicio va en 0, marcado «sin dato de inicio»**, hasta que lo escribas en el cuadro
+**«🧾 Papel 14 — saldo de INICIO»** de la pantalla (o en la celda del Excel: el saldo al cierre es
+fórmula). El movimiento del ejercicio ya está; lo que falta es **de dónde arranca**.
+*(⚠️ cambió 2026-10-27: antes el saldo al cierre decía «falta el saldo al inicio» y quedaba vacío.)*
 
 📌 Sólo se arma para **MSA**: la columna *Contable* y el sistema anterior son suyos.
 
