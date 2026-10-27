@@ -66,6 +66,14 @@ for (const [nombre, r] of [["compras", arca], ["histórico", historico], ["venta
 
 const compras = [...arca.data.map(desdeArca), ...historico.data.map(desdeHistorico)]
 const libro = armarLibroDiario(compras, ventas.data.map(desdeVenta), ej, PRESENTADO_ARCA_COMPRAS[empresaId])
+// 🧾 La provisión de facturas (papel 05): fecha del ejercicio y subdiario posterior al cierre — no va al libro diario.
+{
+  const prov = libro.provisiones.filter(x => x.fuente !== "venta")
+  const f = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2 })
+  console.log(`🧾 provisión ${ej.etiqueta}: ${prov.length} comprobante(s) · ${f(prov.reduce((s, x) => s + x.total, 0))}`)
+  if (process.env.DETALLE) for (const x of [...prov].sort((m, n) => String(m.fecha).localeCompare(String(n.fecha))))
+    console.log(`   ${x.fecha} · subdiario ${x.subdiario} · ${x.tipo} ${x.punto_venta}-${x.numero} · ${x.denominacion.slice(0, 40)} · ${f(x.total)}`)
+}
 
 // 🧾 Lo presentado, mes por mes, de los zips (sólo MSA tiene la carpeta hoy).
 const presentado: Record<string, LoPresentado> = {}
