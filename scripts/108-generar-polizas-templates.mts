@@ -70,7 +70,10 @@ for (const pp of pol) {
   const mol = molde(pp.seccion)
   const r = responsablesDe(pp)
   const id = crypto.randomUUID()
-  const nombre = `Seguro ${RAMO[pp.seccion] ?? pp.seccion} — póliza ${pp.poliza}${r.personas.length === 1 ? ` (${r.personas[0]})` : ""}`
+  // El nombre va SIN la persona: el comprobante («Seguro … — póliza N MA - Mayo 2026») ya dice qué se pagó; la persona
+  // asegurada va al DETALLE de la cuota (JMS 27/10: «categ · proveedor · comprobante · detalle, así detalle es realmente detalle»).
+  const nombre = `Seguro ${RAMO[pp.seccion] ?? pp.seccion} — póliza ${pp.poliza}`
+  const detalleCuota = r.personas.length === 1 ? r.personas[0] : ""
   sql.push(`insert into public.egresos_sin_factura (id, template_master_id, nombre_referencia, proveedor, cuit_quien_cobra, nombre_quien_cobra, categ, centro_costo, responsable, responsable_interno, cuotas, tipo_fecha, codigo_contable, codigo_interno, activo, "año", cuenta_agrupadora, tipo_template, tipo, periodicidad, aplica_generacion, solo_conciliacion, observaciones_template)
 values (${q(id)}, ${q(mol.template_master_id)}, ${q(nombre)}, ${q(mol.proveedor)}, ${q(mol.cuit_quien_cobra)}, ${q(mol.nombre_quien_cobra)}, ${q(mol.categ)}, ${q(mol.centro_costo)}, ${q(r.contable)}, ${q(pp.seccion === "AUTOMOTORES" ? mol.responsable_interno : r.interno)}, ${cs.length}, ${q(mol.tipo_fecha)}, ${q(mol.codigo_contable)}, ${q(pp.seccion === "AUTOMOTORES" ? mol.codigo_interno : r.interno ? (r.interno === r.contable ? "No Lleva" : `DIST ${r.interno}`) : "Desglosar")}, true, ${q(ejercicioDe(pp.vigencia_desde))}, ${q(mol.cuenta_agrupadora)}, ${q(mol.tipo_template)}, ${q(mol.tipo)}, ${q(mol.periodicidad)}, false, false,
   ${q(`${MARCA} A-FEAT-1385 — generado desde la póliza ${pp.poliza}: cada cuota es lo que espera el banco en ese vencimiento (endosos sumados, notas de crédito compensadas).`)});`)
@@ -95,7 +98,9 @@ values (${q(cid)}, ${q(id)}, ${i + 1}, ${q(c.vencimiento)}, ${q(c.vencimiento)},
       id: cid, egreso_id: id, numero_cuota: i + 1, fecha_vencimiento: c.vencimiento, fecha_estimada: c.vencimiento, monto,
       estado: compensada ? "desactivado" : "pendiente",
       descripcion: `${MARCA} póliza ${pp.poliza} · vence ${c.vencimiento}${compensada ? " · compensada con NC: no se debita" : c.importe !== c.esperadoEnBanco ? ` · cuota ${c.importe} menos NC` : ""}`,
-      tipo_movimiento: "egreso", medio_pago: "banco", visible_contable: false,
+      // ⚠️ `detalle` se llena SIEMPRE (aunque sea vacío): si queda null, el Cash Flow usa la `descripcion` —con la marca
+      // del script— como detalle, y la conciliación la copiaría al movimiento.
+      detalle: detalleCuota, tipo_movimiento: "egreso", medio_pago: "banco", visible_contable: false,
     } })
     return { id: cid, venc: c.vencimiento, monto, compensada }
   })
