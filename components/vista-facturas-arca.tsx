@@ -66,6 +66,7 @@ import { LeyendaEstadosFc } from "@/components/gas-pdf/leyenda-estados-fc"
 import { ModalElegirCandidato } from "@/components/gas-pdf/modal-elegir-candidato"
 import { InformeLote } from "@/components/gas-pdf/informe-lote"
 import { historicoAFactura, filasDelSubdiario } from "@/lib/facturas/historico-como-factura"
+import { CONTADOR, asuntoSubdiario, cuerpoSubdiario, carpetaEnMemoria, aBase64, MIME } from "@/lib/subdiarios/contador"
 import { ControlContraPresentado } from "@/components/control-contra-presentado"
 import { verificarCuadratura, TIPOS_SIN_CREDITO_COMPRAS } from "@/lib/subdiarios/cuadratura"
 import { calcularSubtotalesSubdiario as calcularSubtotalesSubdiarioLib } from "@/lib/subdiarios/subtotales"
@@ -2906,6 +2907,40 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
     }
     await cargarFacturasPeriodo(periodoConsulta)
     toast.success(`📨 ${periodoConsulta} marcado como enviado al contador (${imputadas.length} facturas)`)
+    // 📨 A-AUTO-09: el mail al contador, con el PDF y el Excel del mes (los MISMOS que «Generar PDF + Excel»).
+    if (empresa === 'MSA') await encolarMailAlContador(imputadas)
+  }
+
+  /**
+   * 📨 A-AUTO-09 — IDA: encola el mail «Subdiario Mes Año» a Blas en `mails_pago` y le pide al GAS el BORRADOR en
+   * Gmail (lo manda JMS, como los detalles de pago). El contador contesta ese mail con la DDJJ y el zip del libro IVA,
+   * y la vuelta la levanta el GAS (`LeerRespuestasContador.gs`) hacia `/api/contador/ddjj`.
+   */
+  const encolarMailAlContador = async (facturasDelMes: FacturaArca[]) => {
+    const [mesStr, anioStr] = periodoConsulta.split('/')
+    const mes = parseInt(mesStr), anio = parseInt(anioStr)
+    const tId = toast.loading(`Armando el mail «${asuntoSubdiario(mes, anio)}» para ${CONTADOR.nombre}…`)
+    try {
+      const { dir, archivos } = carpetaEnMemoria()
+      await generarExcelConCarpeta(facturasDelMes, periodoConsulta, dir)
+      await generarPDFConCarpeta(facturasDelMes, periodoConsulta, dir)
+      if (!archivos.size) { toast.error('No se pudieron generar el PDF y el Excel del subdiario: el mail no se armó.', { id: tId }); return }
+      const adjuntos = [...archivos.entries()].map(([nombre, bytes]) => ({
+        nombre, mime: MIME[nombre.split('.').pop() || ''] ?? 'application/octet-stream', base64: aBase64(bytes),
+      }))
+      const { data, error } = await supabase.from('mails_pago').insert({
+        tipo: 'subdiario', proveedor: CONTADOR.nombre, email_destino: CONTADOR.email,
+        asunto: asuntoSubdiario(mes, anio), cuerpo: cuerpoSubdiario('Martinez Sobrado Agro S.R.L.', mes, anio, facturasDelMes.length),
+        detalle_pdf: '', adjuntar_detalle: false, adjuntar_retencion: false, adjuntos, estado: 'pendiente',
+      }).select('id').single()
+      if (error) { toast.error('No se encoló el mail al contador: ' + error.message, { id: tId }); return }
+      const r = await fetch('/api/gas/mails-pago', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: data.id }) })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) { toast.warning(`El mail quedó encolado, pero el borrador no se pudo crear todavía: ${d.error ?? r.status}. Probá desde el panel de mails.`, { id: tId }); return }
+      toast.success(`📨 Borrador «${asuntoSubdiario(mes, anio)}» listo en Gmail para ${CONTADOR.email}, con el PDF y el Excel. Revisalo y mandalo.`, { id: tId })
+    } catch (e) {
+      toast.error('No se armó el mail al contador: ' + (e as Error).message, { id: tId })
+    }
   }
 
   const confirmarDDJJ = async () => {

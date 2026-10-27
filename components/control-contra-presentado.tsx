@@ -21,10 +21,12 @@ export function ControlContraPresentado({ facturas, periodo, schemaName }: {
 }) {
   const [res, setRes] = useState<{ r: ResultadoContraPresentado; totales: TotalesPresentados | null; archivo: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /** Lo que respondió el servidor al guardarlo (A-AUTO-09 paso 1). */
+  const [guardado, setGuardado] = useState<string | null>(null)
   const [mm, aaaa] = periodo.split("/")
 
   const leer = async (f: File | undefined) => {
-    setError(null); setRes(null)
+    setError(null); setRes(null); setGuardado(null)
     if (!f) return
     try {
       const z = await leerZipLibroIva(await f.arrayBuffer())
@@ -33,6 +35,16 @@ export function ControlContraPresentado({ facturas, periodo, schemaName }: {
         setError(`El zip es del período ${z.totales.periodo.slice(4)}/${z.totales.periodo.slice(0, 4)} y estás en ${periodo}. Abrí ese mes o subí el zip de este.`); return
       }
       setRes({ r: compararSubdiarioConLibro(facturas, z.compras, TIPOS_SIN_CREDITO_COMPRAS), totales: z.totales, archivo: f.name })
+      // 💾 Se guarda y se controla en el servidor: si coincide, el mes pasa a «DDJJ OK»; si no, aviso a JMS y a Ulises.
+      try {
+        const fd = new FormData(); fd.append("archivo", f)
+        const r = await fetch("/api/contador/ddjj", { method: "POST", body: fd })
+        const d = await r.json()
+        if (!r.ok) setGuardado(`⚠️ No se guardó: ${d.error ?? r.status}`)
+        else setGuardado(d.coincide
+          ? `💾 Guardada (secuencia ${d.secuencia}). ✅ El mes pasó a «DDJJ OK» (${d.marcadosDdjjOk} comprobante(s)). Actualizá la pantalla para verlo.`
+          : `💾 Guardada (secuencia ${d.secuencia}). 🔔 ${d.avisados.length ? `Aviso dejado a ${d.avisados.join(" y ")} en la campanita.` : d.yaEstaba ? "Ya estaba guardada y avisada." : "No se encontró a quién avisar."}`)
+      } catch (e) { setGuardado("⚠️ No se guardó: " + (e as Error).message) }
     } catch (e) {
       setError("No se pudo leer el zip: " + (e as Error).message)
     }
@@ -54,9 +66,11 @@ export function ControlContraPresentado({ facturas, periodo, schemaName }: {
       </div>
       <p className="text-xs text-muted-foreground">
         El que exporta ARCA al presentar: <code>libro_iva_periodo_{aaaa}{mm}_original.zip</code>. Trae los totales de la DDJJ y cada
-        comprobante declarado. Se compara al subirlo; todavía no queda guardado.
+        comprobante declarado. Al subirlo se compara y <b>se guarda</b>: si coincide, el mes pasa solo a «DDJJ OK»; si no, les
+        llega un aviso a JMS y a Ulises. Cuando el contador contesta el mail del subdiario, esto pasa solo.
       </p>
       {error && <p className="text-xs text-red-700">{error}</p>}
+      {guardado && <p className="text-xs">{guardado}</p>}
       {res && (
         <div className="space-y-2">
           <p className={`flex items-center gap-1 font-medium ${res.r.ok ? "text-green-700" : "text-red-700"}`}>

@@ -3327,6 +3327,12 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 `scripts/109-ordenes-a-confirmar.sql` (+ `-deshacer`): el check `*_estado_check` pasa a `('planificada','a_confirmar','ejecutada','eliminada')` y se agregan `marcada_por text`, `marcada_at timestamptz`, `confirmada_por text`, `confirmada_at timestamptz`, `motivo_rechazo text` (nullable, comentario `[script 109]` en `marcada_por`). No toca filas. Control: 10 columnas · 2 checks ✅. **Mismo día, con OK de JMS**: rol `pruebas` sumó `productivo.ordenes.{nueva,editar,se-hizo,borrar,descargar,ganadero,agricola}` (sin `confirmar`).
 
+### 2026-10-27 · EL MAIL DEL SUBDIARIO AL CONTADOR — 2 columnas en `public.mails_pago` (script 109) — A-AUTO-09 — ✅ CORRIDO 2026-10-27 con JMS
+
+`scripts/109-mails-adjuntos.sql` (+ `-deshacer`): `alter table public.mails_pago add column tipo text not null default 'pago'` y
+`add column adjuntos jsonb` (comentarios `[script 109]`). No toca filas (las 38 existentes quedan `tipo = 'pago'`) ni RLS. El GAS
+`EnviarMailsDetalle.gs` adjunta `adjuntos` [{nombre, mime, base64}] cuando están. Control: 38 pagos · 0 con adjuntos · `explain insert` OK ✅.
+
 ### 2026-10-27 · LO QUE DEVUELVE EL CONTADOR — tabla `public.ddjj_presentadas` (script 107) — A-AUTO-09 — ✅ CORRIDO 2026-10-27 con JMS (MCP en write con su OK)
 
 `scripts/107-ddjj-presentadas.sql` (+ `-deshacer`): una fila por DDJJ (empresa + impuesto IVA/IIBB + período `AAAAMM` + secuencia) con `totales`,

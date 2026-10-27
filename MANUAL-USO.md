@@ -1323,12 +1323,18 @@ editan, y no aparecen los botones de vincular PDF ni de archivos para ARCA. La �
 una corrección a alguien. Si un mes está en los dos lados (diciembre), **manda la app**. La lista de períodos
 arranca en julio 2025 para que se vea el ejercicio 25/26 entero. → A-TEST-1260
 
+**📨 Enviado al contador → el mail a Blas** *(2026-10-27)*: en MSA, el botón además de marcar el mes arma el mail
+**«Subdiario Mes Año»** a bnoltfuentes@gmail.com con el **PDF y el Excel** del mes y lo deja como **borrador en Gmail**
+para que lo revises y lo mandes. El texto le pide a Blas que, al presentar, conteste ese mismo mail con la DDJJ en PDF
+y el zip del libro IVA de ARCA. Cuando contesta, la app lo levanta sola (cada hora) y hace lo de abajo. → A-TEST-1263
+
 **📥 Lo que devolvió el contador** *(2026-10-27)*: con un mes abierto, debajo del control de cuadratura. Cuando el contador
 presenta la DDJJ, nos manda el **zip del libro IVA** que exporta ARCA (`libro_iva_periodo_AAAAMM_original.zip`). Tocás
 **Subir el zip del libro IVA** y la app lo compara con el subdiario de ese mes: si **coincide** lo dice en verde; si no,
 muestra la diferencia de totales (comprobantes, importe y crédito fiscal — el de la DDJJ) y cuáles están en la app y no
 se presentaron, cuáles se presentaron y no están en la app, y cuáles tienen otro importe. Con la 🚩 se lo pasás a alguien.
-Por ahora no queda guardado: se compara al subirlo. → A-TEST-1261
+Al subirlo **se guarda**: si coincide, el mes pasa solo a «DDJJ OK»; si no, les llega un aviso a vos y a Ulises en la
+campanita. Lo mismo pasa solo cuando Blas contesta el mail del subdiario. → A-TEST-1261 · A-TEST-1263
 
 **Ojo (cambio ARCA):** antes el bloque 2 era solo Fac C; ahora incluye **B y C**, y esas salen del bloque 1 (no se cuentan dos veces).
 

@@ -216,6 +216,7 @@ import { aseguradoraAlCierre } from "@/lib/balance/seguros-al-cierre"
 import { planDeLaPoliza } from "@/lib/polizas/sincronizar"
 import { historicoAFactura, filasDelSubdiario } from "@/lib/facturas/historico-como-factura"
 import { parsearComprasCsv, parsearTotalesXml, compararSubdiarioConLibro } from "@/lib/subdiarios/libro-presentado"
+import { CONTADOR, asuntoSubdiario, periodoDelAsunto, cuerpoSubdiario } from "@/lib/subdiarios/contador"
 import { calcularSubtotalesSubdiario } from "@/lib/subdiarios/subtotales"
 import { TIPOS_SIN_CREDITO_COMPRAS } from "@/lib/subdiarios/cuadratura"
 import { controlarPoliza, cotejarConComprobante, repartoDeLaPoliza, repartoDeLasCuotas, repartirImporte, responsableDe } from "@/lib/polizas/controlar-poliza"
@@ -1274,6 +1275,19 @@ export function correrCasos(): Resultado[] {
     const cmpOk = compararSubdiarioConLibro(appDic.slice(0, 3), pres, TIPOS_SIN_CREDITO_COMPRAS)
     chequear("Subdiarios — lo presentado", "Si la app y lo presentado tienen lo mismo, coincide",
       "true", String(cmpOk.ok), cmpOk.ok, "A-AUTO-09")
+  }
+
+  // 📨 A-AUTO-09 — el mail del subdiario al contador: asunto «Subdiario Mes Año» (pedido de JMS 27/10), la respuesta
+  // («RE: …») se reconoce por el asunto, y el mail le pide la DDJJ y el zip del libro IVA.
+  {
+    const asunto = asuntoSubdiario(1, 2026)
+    const per = periodoDelAsunto("RE: Subdiario Enero 2026")
+    const ajeno = periodoDelAsunto("Factura enero")
+    const cuerpo = cuerpoSubdiario("MSA", 1, 2026, 42)
+    const v = `${asunto} · ${per?.mes}/${per?.anio} · ajeno ${ajeno} · pide zip ${cuerpo.includes("zip del libro IVA")} · a ${CONTADOR.email}`
+    chequear("Subdiarios — mail al contador", "Asunto «Subdiario Mes Año», la respuesta se reconoce por el asunto y el mail le pide la DDJJ y el zip",
+      "Subdiario Enero 2026 · 1/2026 · ajeno null · pide zip true · a bnoltfuentes@gmail.com", v,
+      v === "Subdiario Enero 2026 · 1/2026 · ajeno null · pide zip true · a bnoltfuentes@gmail.com", "A-AUTO-09")
   }
 
   // 📜 A-FEAT-1382 — Subdiarios muestra el histórico del contador en los meses que la app no tiene.
