@@ -106,7 +106,8 @@ const papeles: PapelDelComprobante[] = (endosos.data ?? [])
 const hoy = hoyArgentina()
 const datos = { libro, empresa: empresaId, presentado, papeles, generado: hoy, arcaOriginal: original }
 const { wb, analisis: a } = armarEntregaLibroDiario(datos)
-const ruta = join(SALIDA, nombreArchivoEntrega(datos, hoy))
+// SUFIJO=… agrega una marca al nombre (p. ej. «ANTES de cta cte AFA»), para no pisar uno abierto ni una foto.
+const ruta = join(SALIDA, nombreArchivoEntrega(datos, hoy).replace(".xlsx", process.env.SUFIJO ? ` - ${process.env.SUFIJO}.xlsx` : ".xlsx"))
 writeFileSync(ruta, XLSX.write(wb, { bookType: "xlsx", type: "buffer" }))
 
 const pesos = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2 })
