@@ -67,7 +67,8 @@ import {
   armarSueldosDelEjercicio, type SueldosDelEjercicio, type PeriodoDeSueldo,
 } from "@/lib/balance/sueldos-balance"
 import {
-  armarCuentasCorrientes, aplicarSaldosInicio, CONTRAPARTES_DEL_BALANCE, type PapelDeCuentasCorrientes,
+  armarCuentasCorrientes, aplicarSaldosInicio, abrirDesglosar, CONTRAPARTES_DEL_BALANCE,
+  type PapelDeCuentasCorrientes, type ConsumoTarjeta,
   type CompraParaCC, type VentaParaCC, type MovimientoParaCC,
 } from "@/lib/balance/cuentas-corrientes"
 import { useDatosDelBalance, textoEstadoGuardado, leerNumero } from "@/lib/balance/datos-usuario"
@@ -537,7 +538,7 @@ export function PapelesDeBalance() {
           const movsCC = leidoCC.data
           anotar("Movimientos de cuentas corrientes", leidoCC)
 
-          const armadoCC = armarCuentasCorrientes(
+          let armadoCC = armarCuentasCorrientes(
             comprasCC, ventasCC, (movsCC ?? []) as unknown as MovimientoParaCC[])
 
           // 🛡️ A-FEAT-1385 — la cuenta corriente con la aseguradora al cierre (las pólizas son de MSA).
@@ -566,6 +567,36 @@ export function PapelesDeBalance() {
                 }
               }
             } catch { /* la cuenta corriente de seguros no frena el libro */ }
+          }
+          /**
+           * 💳 A-FEAT-1388 — «Desglosar»: los pagos de la Visa Business de MSA abiertos con los consumos
+           * del resumen que vence ese día, cada uno con su marca. Sólo lee. Si falla, «Desglosar» queda
+           * entero en «sin tratar», como antes, y se avisa.
+           */
+          try {
+            const [leidoTj, polTj] = await Promise.all([
+              traerTodo((d, h) => supabase.schema("msa").from("tarjeta_visa_business")
+                .select("fecha_vencimiento, descripcion, categ, contable, debitos, creditos, debitos_usd, template_id", { count: "exact" })
+                .eq("tipo_fila", "movimiento").gte("fecha_vencimiento", `${meses[0]}-01`).lte("fecha_vencimiento", finEj)
+                .order("id").range(d, h)),
+              supabase.from("polizas_seguro").select("template_id").not("template_id", "is", null),
+            ])
+            if (leidoTj.error) throw new Error(leidoTj.error.message)
+            anotar("Consumos de la tarjeta (para abrir «Desglosar»)", leidoTj)
+            const tplConPoliza = new Set(((polTj.data ?? []) as Array<{ template_id: string | null }>).map(p => p.template_id))
+            const consumos: ConsumoTarjeta[] = ((leidoTj.data ?? []) as Array<Record<string, unknown>>).map(x => ({
+              vencimiento: (x.fecha_vencimiento as string | null) ?? null,
+              descripcion: x.descripcion as string | null, categ: x.categ as string | null, contable: x.contable as string | null,
+              debitos: Number(x.debitos ?? 0), creditos: Number(x.creditos ?? 0), debitosUsd: Number(x.debitos_usd ?? 0),
+              conPoliza: !!x.template_id && tplConPoliza.has(x.template_id as string),
+            }))
+            armadoCC = abrirDesglosar(armadoCC, (movsCC ?? []) as unknown as MovimientoParaCC[], consumos)
+            const sinAbrir = armadoCC.desgloseTarjeta?.sinAbrir ?? 0
+            if (sinAbrir !== 0) {
+              toast.warning(`«Desglosar»: ${fmt(sinAbrir)} de pagos de la tarjeta no se pudieron abrir con su resumen. Está en la solapa 14.`)
+            }
+          } catch {
+            toast.warning("No se pudo abrir «Desglosar» con los consumos de la tarjeta: queda entero en «sin tratar».")
           }
           setCuentasCorrientes(armadoCC)
 
@@ -960,6 +991,19 @@ export function PapelesDeBalance() {
                     </tbody>
                   </table>
                 </div>
+                {/* 💳 A-FEAT-1388 — «Desglosar» abierto con los consumos de la tarjeta, con su control. */}
+                {cuentasCorrientesConInicio.desgloseTarjeta && (() => {
+                  const dt = cuentasCorrientesConInicio.desgloseTarjeta
+                  const abierto = dt.porDestino.reduce((s, d) => s + d.importe, 0)
+                  const cuadra = Math.abs(dt.total - abierto - dt.sinAbrir) < 0.01 && dt.sinAbrir === 0
+                  return (
+                    <div className={cuadra ? "text-emerald-700" : "text-amber-800"}>
+                      {cuadra ? "✓ " : "⚠️ "}«Desglosar» (pagos de la tarjeta, ${fmt(dt.total)}) abierto con sus consumos:{" "}
+                      {dt.porDestino.map(d => `${d.poliza ? "🛡️ pólizas " : ""}${d.destino} $${fmt(d.importe)}`).join(" · ")}
+                      {dt.sinAbrir !== 0 && ` · sin abrir $${fmt(dt.sinAbrir)}`}
+                    </div>
+                  )
+                })()}
               </div>
             )}
 

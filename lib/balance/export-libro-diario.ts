@@ -1050,6 +1050,30 @@ export function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierr
     cc.sinTratar.forEach(x => f.push([x.etiqueta, x.movimientos, money(x.total)]))
     f.push(["TOTAL SIN TRATAR", "", money(cc.totalSinTratar)])
   }
+
+  // ── 💳 «Desglosar» abierto con los consumos de la tarjeta (A-FEAT-1388) ─────────────────
+  const dt = cc.desgloseTarjeta
+  if (dt && dt.pagos.length > 0) {
+    f.push([])
+    f.push([])
+    f.push(["DESGLOSAR — los pagos de la tarjeta Visa Business de MSA, abiertos con los consumos de su resumen"])
+    f.push(["Cada consumo va con SU marca de la tarjeta. Lo marcado para otra persona sigue sin tratar bajo esa marca; lo sin marca es gasto de MSA."])
+    f.push(["Destino", "Póliza", "Consumos", "Importe", "Qué es"])
+    const n0 = f.length + 1
+    dt.porDestino.forEach(d => f.push([d.destino, d.poliza ? "SÍ — póliza" : "", d.consumos, money(d.importe), d.ejemplos.join(" · ")]))
+    const nT = f.length + 1
+    // 🧮 Dos caminos: la suma de los destinos (consumo por consumo) contra los débitos del banco.
+    const abierto = money(dt.porDestino.reduce((s, d) => s + d.importe, 0))
+    f.push(["TOTAL ABIERTO", "", "", conFormula(`SUM(D${n0}:D${nT - 1})`, abierto)])
+    if (dt.sinAbrir !== 0) f.push(["⚠️ Sin resumen que lo abra (queda como Desglosar)", "", "", money(dt.sinAbrir)])
+    f.push(["Pagos del banco marcados Desglosar", "", "", money(dt.total)])
+    const dif = money(dt.total - abierto - dt.sinAbrir)
+    f.push(["CONTROL: pagos del banco − (lo abierto + lo sin abrir) (tiene que dar 0)", "", "", money(dif), Math.abs(dif) < 0.01 ? "cuadra" : "NO CUADRA"])
+    f.push([])
+    f.push(["Pago del banco", "Débitos", "Importe del pago", "Consumos del resumen", "Diferencia", "Control"])
+    dt.pagos.forEach(p => f.push([p.fecha, p.debitos, money(p.importe), money(p.importe - p.diferencia), money(p.diferencia),
+      p.cierra ? "cuadra" : p.partes.length === 0 ? "NO CUADRA: no hay resumen que venza ese día" : "NO CUADRA: los consumos no dan el pago"]))
+  }
   if (cc.historicoSinAtribuir > 0) {
     f.push([])
     f.push([`${cc.historicoSinAtribuir} comprobante(s) del sistema anterior no se pudieron atribuir `

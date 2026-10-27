@@ -147,7 +147,7 @@ import {
   armarSueldosDelEjercicio, brutoDesdePartes, type PeriodoDeSueldo,
 } from "@/lib/balance/sueldos-balance"
 import {
-  armarCuentasCorrientes, aplicarSaldosInicio, normalizar, CONTRAPARTES_DEL_BALANCE,
+  armarCuentasCorrientes, aplicarSaldosInicio, abrirDesglosar, DESTINO_PROPIO, normalizar, CONTRAPARTES_DEL_BALANCE,
 } from "@/lib/balance/cuentas-corrientes"
 import { controlarCheque, chequeEnPapel08, chequeEnTemplates } from "@/lib/balance/control-cheque"
 import { cuadrarHacienda, type MovimientoDeHacienda } from "@/lib/balance/cuadre-hacienda"
@@ -6986,6 +6986,42 @@ export function correrCasos(): Resultado[] {
     chequear("Cuentas corrientes", "🧮 Papel 14: debajo del detalle de la aseguradora, el control «saldo final − saldo al cierre = 0», con fórmula",
       "0 · cuadra · con fórmula", `${celdaCtl?.v} · ${filaCtl?.[6]} · ${celdaCtl?.f ? "con fórmula" : "sin fórmula"}`,
       celdaCtl?.v === 0 && filaCtl?.[6] === "cuadra" && !!celdaCtl?.f, "A-FEAT-1388")
+
+    // 💳 «Desglosar» abierto con la tarjeta — datos reales de la Visa MSA (feb y abr 2026) + un pago sin resumen.
+    //    Usuario 27/10: «¿se puede ya tomar por lo menos lo de pólizas?».
+    const PAGOS_D = [
+      { id: "d1", fecha: "2026-02-09", debitos: 43128, contable: "Desglosar" },
+      { id: "d2", fecha: "2026-02-09", debitos: 889758.62, contable: "Desglosar" },
+      { id: "d3", fecha: "2026-04-06", debitos: 2055966.65, contable: "Desglosar" },
+      { id: "d4", fecha: "2026-05-11", debitos: 2030886.25, contable: "Desglosar" },   // sin resumen cargado
+    ]
+    const CONSUMOS_D = [
+      { vencimiento: "2026-02-09", descripcion: "COOPSER", categ: "LUZ", debitos: 597972.06 },
+      { vencimiento: "2026-02-09", descripcion: "MERPAGO*ORBITH", categ: "Internet NZ", contable: "RET 3 MA", debitos: 83000 },
+      { vencimiento: "2026-02-09", descripcion: "vthebestpdf", categ: "INFORMATICA", debitos: 0, debitosUsd: 29.95 },
+      { vencimiento: "2026-02-09", descripcion: "varios", categ: "PEAJES", debitos: 208786.56 },
+      { vencimiento: "2026-04-06", descripcion: "CHUBB SEGUROS 0000002962727-", categ: "Seguro Chalet", contable: "RET 3 MA", debitos: 121636.43 },
+      { vencimiento: "2026-04-06", descripcion: "CHUBB SEGUROS 0000002962767-", categ: "Seguro Chalet", contable: "RET 3 MA", debitos: 121636.43 },
+      { vencimiento: "2026-04-06", descripcion: "MERPAGO*ORBITH", categ: "Internet NZ", contable: "RET 3 MA", debitos: 83000 },
+      { vencimiento: "2026-04-06", descripcion: "MEDICUS SA", categ: "GASTOS MEDICOS", debitos: 787267.97 },
+      { vencimiento: "2026-04-06", descripcion: "COMISION CAJA", categ: "Comision Caja de Seguridad", debitos: 5289 },
+      { vencimiento: "2026-04-06", descripcion: "luz y otros", categ: "LUZ", debitos: 937136.82 },
+    ]
+    const conD = abrirDesglosar(armarCuentasCorrientes(COMPRAS, VENTAS, [...MOVS, ...PAGOS_D]), [...MOVS, ...PAGOS_D], CONSUMOS_D)
+    const dd = conD.desgloseTarjeta
+    const vD = (dd?.porDestino ?? []).map(d => `${d.poliza ? "póliza " : ""}${d.destino === DESTINO_PROPIO ? "propio" : d.destino} ${n2(d.importe)}`).join(" · ")
+    chequear("Cuentas corrientes", "💳 «Desglosar» se abre con los consumos de su resumen: la póliza (Chubb de MA) aparte; los USD del pago van al consumo en dólares; la caja de seguridad NO es póliza",
+      "póliza RET 3 MA 243.272,86 · RET 3 MA 166.000,00 · propio 2.579.580,41", vD,
+      vD === "póliza RET 3 MA 243.272,86 · RET 3 MA 166.000,00 · propio 2.579.580,41", "A-FEAT-1388")
+    const etiquetasD = conD.sinTratar.map(x => x.etiqueta)
+    const vST = `${etiquetasD.includes("Desglosar") ? "sigue Desglosar" : "sin Desglosar"} · RET 3 MA tarjeta ${n2(conD.sinTratar.find(x => x.etiqueta.startsWith("RET 3 MA · por la tarjeta"))?.total ?? NaN)} · sin abrir ${n2(dd?.sinAbrir ?? NaN)} · pagos que cuadran ${dd?.pagos.filter(p => p.cierra).length}/${dd?.pagos.length}`
+    chequear("Cuentas corrientes", "🛑 «Sin tratar» corregido: sale «Desglosar», entra lo de MA con su marca; el pago sin resumen queda a la vista y no cuadra",
+      "sin Desglosar · RET 3 MA tarjeta 409.272,86 · sin abrir 2.030.886,25 · pagos que cuadran 2/3", vST,
+      vST === "sin Desglosar · RET 3 MA tarjeta 409.272,86 · sin abrir 2.030.886,25 · pagos que cuadran 2/3", "A-FEAT-1388")
+    const totD = r2(conD.sinTratar.reduce((s, x) => s + x.total, 0))
+    chequear("Cuentas corrientes", "🧮 El total sin tratar baja exactamente lo propio de MSA (2.579.580,41): nada se pierde en el camino",
+      `${n2(r2(r.totalSinTratar + 5019739.52 - 2579580.41))}`, n2(conD.totalSinTratar),
+      conD.totalSinTratar === totD && conD.totalSinTratar === r2(r.totalSinTratar + 5019739.52 - 2579580.41), "A-FEAT-1388")
 
     // 🔑 AFA es la única con las dos puntas: la venta compensa.
     chequear("Cuentas corrientes", "🔑 En AFA la venta COMPENSA y baja el saldo",

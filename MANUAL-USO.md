@@ -3383,6 +3383,7 @@ Si borrás una casilla, queda vacía; la app guarda igual lo que había antes y 
 - **08 Gastos bancarios**: cada mes es lo que debitó el banco **menos lo que devolvió**; la columna **Devoluciones** dice cuánto se restó.
 - **08.1 Impuesto al cheque**: al final, el **control de tres caminos** — el extracto, el papel 08 y los templates tienen que dar el mismo impuesto. En la pantalla, debajo del cuadro del impuesto, la misma línea con ✓ o ⚠️.
 - **14 Cuentas corrientes**: debajo del detalle de la aseguradora, el renglón de control (saldo final del detalle = saldo al cierre).
+- **14 Cuentas corrientes → «Desglosar»**: los pagos de la tarjeta Visa de MSA que marcaste «Desglosar» se abren solos con los consumos de su resumen, cada uno con la marca que le pusiste en la tarjeta. Lo marcado para otra persona (por ejemplo RET 3 MA: el Seguro Chalet y Orbith) sigue en «sin tratar» bajo esa marca; lo que no tiene marca es gasto de MSA y sale de ahí. Los seguros se ven aparte, como «póliza». El bloque **DESGLOSAR** trae el control (los consumos tienen que dar el pago del banco); un pago cuyo resumen no está cargado queda como «Desglosar», a la vista. En la pantalla, la misma línea debajo del cuadro del papel 14.
 - El botón **«Bajar el Excel»** dice si va a salir sin hacienda ni insumos. Tus precios a mano vuelven solos, pero el stock hay que traerlo cada vez con **«Traer stock y precios»**.
 
 ⚠️ Sin probar todavía → A-TEST-1265
@@ -3646,7 +3647,7 @@ lo que va al balance; el detalle es lo que deja revisar un número que no cierra
 son los que generan saldo sin que nadie lo note.
 
 🛑 **Y al final, «TODAVÍA SIN TRATAR»**: las marcas de la columna *Contable* del extracto que no
-son ninguna de estas cuentas — `RET`, `RET 3`, `AP`, `LIB`, `Desglosar` — con su total. **No se
+son ninguna de estas cuentas — `RET`, `RET 3`, `AP`, `LIB` — con su total *(⚠️ cambió 27/10: `Desglosar` ya se abre con los consumos de la tarjeta, ver «cómo leer Templates…»)*. **No se
 reparten a propósito**: cada una se trata por separado.
 
 ⚠️ **El saldo de inicio va en 0, marcado «sin dato de inicio»**, hasta que lo escribas en el cuadro
