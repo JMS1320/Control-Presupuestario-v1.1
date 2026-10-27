@@ -144,10 +144,9 @@ export const RECURSOS: Recurso[] = [
   { id: "productivo.hacienda",  seccion: "productivo", etiqueta: "Hacienda",            tipo: "pestana", archivo: PRODUCTIVO },
   { id: "productivo.evolucion", seccion: "productivo", etiqueta: "Evolución Rodeo",     tipo: "pestana", archivo: PRODUCTIVO },
   { id: "productivo.cria",      seccion: "productivo", etiqueta: "Cría",                tipo: "pestana", archivo: PRODUCTIVO },
-  // A-FEAT-1380: el plan sanitario. «Aprobar» = aceptar las propuestas y cambiar el plan directo; quien no
-  //   la tiene (Enrique) propone y espera el OK. Es un botón dentro de la solapa, no un lugar.
+  // A-FEAT-1380: el plan sanitario. «Aprobar» (aceptar propuestas, cambiar el plan directo) es SÓLO del admin:
+  //   no tiene casilla (JMS 27/10). Quien no es admin propone y espera el OK.
   { id: "productivo.plan-sanitario", seccion: "productivo", etiqueta: "Plan sanitario", tipo: "pestana", archivo: PRODUCTIVO },
-  { id: "productivo.plan-sanitario.aprobar", seccion: "productivo", etiqueta: "Plan sanitario → Aprobar cambios", tipo: "accion", padre: "productivo.plan-sanitario", archivo: "components/tab-plan-sanitario.tsx" },
   { id: "productivo.recria",    seccion: "productivo", etiqueta: "Recría / Engorde",    tipo: "pestana", archivo: PRODUCTIVO },
   { id: "productivo.insumos",   seccion: "productivo", etiqueta: "Insumos",             tipo: "pestana", archivo: PRODUCTIVO },
   // ⚠️ Estas tres van INMEDIATAMENTE después de Insumos, que es su padre. Antes quedaban
@@ -156,15 +155,29 @@ export const RECURSOS: Recurso[] = [
   //    destildado) era invisible desde donde estaban dibujadas.
   { id: "productivo.stock",     seccion: "productivo", etiqueta: "Stock y Movimientos", tipo: "pestana", padre: "productivo.insumos", archivo: PRODUCTIVO },
   { id: "productivo.ordenes",   seccion: "productivo", etiqueta: "Órdenes de Aplicación", tipo: "pestana", padre: "productivo.insumos", archivo: PRODUCTIVO },
-  // A-FEAT-1223 (JMS 27/10): cada botón de las órdenes con su casilla. «Se hizo» y «Confirmar» son DOS: quien tiene sólo
-  //   «Se hizo» deja la orden a confirmar y no impacta nada (stock) hasta que confirma quien tiene «Confirmar».
+  // ── BOTONES DE PRODUCTIVO (JMS 27/10: «todos los botones deben ser posibles de seleccionar»). Cada botón que HACE
+  //    algo tiene su casilla y su candado en el modo permisos; filtros, chips y navegación no (vienen con la pantalla).
+  //    Lo que es SÓLO del admin (confirmar órdenes, aprobar el plan) no tiene casilla: no se delega.
   ...([
-    ["nueva", "Nueva orden"], ["editar", "Editar orden"], ["se-hizo", "Marcar «se hizo» (queda a confirmar)"],
-    ["confirmar", "Confirmar (descuenta stock) / rechazar"], ["borrar", "Eliminar orden"], ["descargar", "Descargar imagen"],
-    ["ganadero", "Ver órdenes ganaderas"], ["agricola", "Ver órdenes agrícolas"],
-  ] as const).map(([k, e]): Recurso => ({
-    id: `productivo.ordenes.${k}`, seccion: "productivo", etiqueta: `Órdenes → ${e}`, tipo: "accion", padre: "productivo.ordenes", archivo: PRODUCTIVO,
-  })),
+    ["hacienda", "productivo.hacienda", PRODUCTIVO, [["romaneo", "Romaneo"], ["flete", "Flete"], ["planilla", "Planilla (exportar)"],
+      ["movimiento", "Nuevo movimiento"], ["venta", "Completar / editar venta"], ["identificar", "Identificar animales"]]],
+    ["stock", "productivo.stock", PRODUCTIVO, [["compra", "Compra"], ["ajuste", "Ajuste"], ["nuevo-insumo", "Nuevo insumo"],
+      ["mediciones", "Mediciones"], ["facturas", "Facturas del insumo"], ["vincular-compra", "Vincular compra con factura"]]],
+    ["ordenes", "productivo.ordenes", PRODUCTIVO, [["nueva", "Nueva orden"], ["editar", "Editar orden"], ["se-hizo", "Marcar «se hizo» (queda a confirmar)"],
+      ["borrar", "Eliminar orden"], ["descargar", "Descargar imagen"], ["labores", "Crear / borrar labores"], ["ciclo", "Vincular ciclo de cría / asignar categorías"],
+      ["ganadero", "Ver órdenes ganaderas"], ["agricola", "Ver órdenes agrícolas"]]],
+    ["lotes", "productivo.lotes", PRODUCTIVO, [["nuevo", "Nuevo lote"]]],
+    ["terneros", undefined, "components/tab-terneros.tsx", [["editar", "Editar"], ["reposicion", "Marcar reposición"], ["descargar", "Descargar caravanas/pesadas"],
+      ["importar-pesadas", "Importar pesadas"], ["importar-terneros", "Importar terneros"], ["identificar", "Identificar"]]],
+    ["evolucion", "productivo.evolucion", "components/tab-evolucion-rodeo.tsx", [["proponer", "Proponer desde Productivo"], ["agregar", "Agregar período"],
+      ["editar", "Editar período"], ["borrar", "Borrar período"]]],
+    ["plan-sanitario", "productivo.plan-sanitario", "components/tab-plan-sanitario.tsx", [["iatf", "Cargar / mover IATF"], ["calendario", "Proponer calendario"],
+      ["registrar", "Se hizo / no se hizo / mover"], ["plan", "Cambiar el plan (o proponer)"]]],
+  ] as const).flatMap(([grupo, padre, archivo, botones]) => botones.map(([k, e]): Recurso => ({
+    id: `productivo.${grupo}.${k}`, seccion: "productivo",
+    etiqueta: `${grupo === "terneros" ? "Terneros (Cría y Recría)" : grupo === "plan-sanitario" ? "Plan sanitario" : grupo.charAt(0).toUpperCase() + grupo.slice(1)} → ${e}`,
+    tipo: "accion", ...(padre ? { padre } : {}), archivo,
+  }))),
   { id: "productivo.compras",   seccion: "productivo", etiqueta: "Necesidad de Compra", tipo: "pestana", padre: "productivo.insumos", archivo: PRODUCTIVO },
   { id: "productivo.lotes",     seccion: "productivo", etiqueta: "Lotes Agrícolas",     tipo: "pestana", archivo: PRODUCTIVO },
 

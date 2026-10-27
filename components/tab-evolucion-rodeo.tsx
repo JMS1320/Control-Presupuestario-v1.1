@@ -23,6 +23,7 @@ import {
   type CicloStock, type CicloCalculado, type FilaCicloCria, type PropuestaCiclo,
 } from "@/lib/ganaderia/ciclo"
 import { traerTodo } from "@/lib/supabase-paginado"
+import { Permisable } from "@/components/modo-permisos"
 
 // Parser único del proyecto. Ver lib/format/numero.ts
 const parseNum = parseNumeroAR
@@ -334,11 +335,11 @@ ${serv}`
         </div>
         <div className="flex gap-2">
           {propuestas.length > 0 && (
-            <Button size="sm" variant="outline" onClick={() => setModalPropuesta(true)}>
+            <Permisable recurso="productivo.evolucion.proponer"><Button size="sm" variant="outline" onClick={() => setModalPropuesta(true)}>
               <Wand2 className="mr-1 h-4 w-4" /> Proponer desde Productivo
-            </Button>
+            </Button></Permisable>
           )}
-          <Button size="sm" onClick={nuevo}><Plus className="mr-1 h-4 w-4" /> Agregar período</Button>
+          <Permisable recurso="productivo.evolucion.agregar"><Button size="sm" onClick={nuevo}><Plus className="mr-1 h-4 w-4" /> Agregar período</Button></Permisable>
         </div>
       </div>
 
@@ -426,13 +427,13 @@ ${serv}`
                   {linea.map((c, i) => (
                     <td key={c.ciclo.id} className="px-3 py-2 text-right">
                       <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="sm" className="h-6 text-xs"
+                        <Permisable recurso="productivo.evolucion.editar"><Button variant="ghost" size="sm" className="h-6 text-xs"
                           onClick={() => editar(c.ciclo, linea[i - 1]?.rodeo,
-                            linea[i - 1] ? { vacas: linea[i - 1]!.vacas_cierre, vaquillonas: linea[i - 1]!.vaquillonas_cierre } : undefined)}>Editar</Button>
-                        <Button variant="ghost" size="sm" className="h-6 px-1"
+                            linea[i - 1] ? { vacas: linea[i - 1]!.vacas_cierre, vaquillonas: linea[i - 1]!.vaquillonas_cierre } : undefined)}>Editar</Button></Permisable>
+                        <Permisable recurso="productivo.evolucion.borrar"><Button variant="ghost" size="sm" className="h-6 px-1"
                           onClick={() => borrar(c.ciclo.id)}>
                           <Trash2 className="h-3 w-3 text-gray-400" />
-                        </Button>
+                        </Button></Permisable>
                       </div>
                     </td>
                   ))}

@@ -636,8 +636,8 @@ Hay **dos botones distintos**, porque significan cosas distintas:
 Si quien aprieta ✓ tiene los dos permisos, la orden se confirma directo, como siempre. Arriba de la lista se ve **«N a confirmar»**.
 Mientras está a confirmar, **Necesidad de compra** la sigue contando.
 
-**Quién puede qué:** Configuración → Roles → Productivo → Órdenes de Aplicación: nueva, editar, *se hizo*, *confirmar*, eliminar,
-descargar, y ver ganaderas / agrícolas. Para delegar: todo menos **Confirmar**.
+**Quién puede qué:** cada botón de Productivo tiene su casilla (Configuración → Roles, o el candado del modo permisos sobre la
+misma pantalla). **Confirmar** es sólo del admin: no tiene casilla y no se delega. Los filtros y chips vienen con la pantalla.
 
 ⚠️ Sin probar todavía → [A-TEST-1263](PENDIENTES.md#a-test-1263)
 

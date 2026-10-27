@@ -14,7 +14,7 @@
  * porque es UNA carga que arma cuatro órdenes (dispositivos, retiro, IA, entore).
  *
  * Permisos: ver/editar = la pestaña `productivo.plan-sanitario`. Aprobar = la acción
- * `productivo.plan-sanitario.aprobar`: quien no la tiene, propone y espera el OK.
+ * Aprobar es SÓLO del admin (sin casilla): quien no lo es, propone y espera el OK.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react"
@@ -25,6 +25,8 @@ import { hoyArgentina } from "@/lib/fechas"
 import { etiquetaPersona } from "@/lib/auth/identidad"
 import { usePuedeEditar, usePuedeVer } from "@/components/contexto-permisos"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
+import { Permisable } from "@/components/modo-permisos"
+import { useEsAdmin } from "@/components/use-es-admin"
 import {
   ocurrenciasDeCampania, avisos, campaniaDe, nombreCampania, fechaCorta, difDias, sumarDias,
   fechasIatf, chequearIatf, chequearEntore, moverPideExplicacion, fechaEnCampania,
@@ -92,7 +94,9 @@ export function TabPlanSanitario() {
   const puedeVer = usePuedeVer()
   const puedeEditar = usePuedeEditar()
   const editable = puedeEditar(RECURSO)
-  const aprueba = puedeVer("productivo.plan-sanitario.aprobar") && editable
+  // Aprobar cambios del plan es SÓLO del admin (JMS 27/10): quien no lo es, propone
+  const esAdmin = useEsAdmin()
+  const aprueba = esAdmin && editable
 
   const [cargando, setCargando] = useState(true)
   const [faltaBase, setFaltaBase] = useState(false)
@@ -278,9 +282,9 @@ export function TabPlanSanitario() {
         </div>
         <div className="flex flex-wrap gap-2 ml-auto">
           {editable && (
-            <Button size="sm" onClick={() => setIatfAbierta({ campania: campaniaDe(hoy) < campania ? campania : campaniaDe(hoy) })}>
+            <Permisable recurso="productivo.plan-sanitario.iatf"><Button size="sm" onClick={() => setIatfAbierta({ campania: campaniaDe(hoy) < campania ? campania : campaniaDe(hoy) })}>
               <Syringe className="h-4 w-4 mr-1" /> {iatfs[campaniaDe(hoy)] ? "Ver / mover IATF" : "Cargar IATF"}
-            </Button>
+            </Button></Permisable>
           )}
           <Button size="sm" variant="outline" onClick={() => setVerPlan(true)}><Pencil className="h-4 w-4 mr-1" /> El plan</Button>
           <Button size="sm" variant="ghost" onClick={cargar} aria-label="Actualizar"><RefreshCw className={`h-4 w-4 ${cargando ? "animate-spin" : ""}`} /></Button>
@@ -312,7 +316,7 @@ export function TabPlanSanitario() {
           <div className="flex flex-wrap items-center gap-2">
             <CardTitle className="text-base">🐄 Encierres por rodeo</CardTitle>
             {editable && encierres.propuesta.sesiones.length > 0 && (
-              <Button size="sm" variant="outline" className="ml-auto" onClick={() => setVerPropuestaCal(true)}>Proponer calendario</Button>)}
+              <Permisable recurso="productivo.plan-sanitario.calendario"><Button size="sm" variant="outline" className="ml-auto" onClick={() => setVerPropuestaCal(true)}>Proponer calendario</Button></Permisable>)}
           </div>
           <p className="text-xs text-muted-foreground">Máximo 1 por mes y 2 en 3 meses (lo ideal: 2 en 4 meses). Los 3 encierres de la IATF son la excepción a propósito. Próximos 12 meses: {RODEOS.filter(r => encierres.proximos[r]).map(r => `${r} ${encierres.proximos[r].length}`).join(" · ") || "nada previsto"}</p>
         </CardHeader>
@@ -567,13 +571,13 @@ function DialogoOcurrencia({ o, ordenes, editable, aprueba, onCerrar, onGuardarR
 
         {editable && !modo && (
           <div className="flex flex-wrap gap-2 pt-2">
-            {esIatf ? <Button size="sm" onClick={onIatf}>{o.fechaReal ? "Ver / mover la IATF" : "Cargar IATF"}</Button> : <>
-              <Button size="sm" onClick={() => setModo("hecha")}>✅ Se hizo</Button>
-              <Button size="sm" variant="outline" onClick={() => setModo("no")}>📝 No se hizo</Button>
-              {!o.fechaReal && <Button size="sm" variant="outline" onClick={() => { setFecha(o.esperada); setModo("mover") }}>{aprueba ? "Mover" : "Proponer otra fecha"}</Button>}
-              {o.estado === "hecha_sin_explicar" && <Button size="sm" variant="outline" onClick={() => setModo("explicar")}>Anotar por qué</Button>}
+            {esIatf ? <Permisable recurso="productivo.plan-sanitario.iatf"><Button size="sm" onClick={onIatf}>{o.fechaReal ? "Ver / mover la IATF" : "Cargar IATF"}</Button></Permisable> : <>
+              <Permisable recurso="productivo.plan-sanitario.registrar"><Button size="sm" onClick={() => setModo("hecha")}>✅ Se hizo</Button></Permisable>
+              <Permisable recurso="productivo.plan-sanitario.registrar"><Button size="sm" variant="outline" onClick={() => setModo("no")}>📝 No se hizo</Button></Permisable>
+              {!o.fechaReal && <Permisable recurso="productivo.plan-sanitario.registrar"><Button size="sm" variant="outline" onClick={() => { setFecha(o.esperada); setModo("mover") }}>{aprueba ? "Mover" : "Proponer otra fecha"}</Button></Permisable>}
+              {o.estado === "hecha_sin_explicar" && <Permisable recurso="productivo.plan-sanitario.registrar"><Button size="sm" variant="outline" onClick={() => setModo("explicar")}>Anotar por qué</Button></Permisable>}
             </>}
-            <Button size="sm" variant="ghost" onClick={onEditarTarea}><Pencil className="h-3.5 w-3.5 mr-1" />{aprueba ? "Editar la tarea" : "Proponer cambio"}</Button>
+            <Permisable recurso="productivo.plan-sanitario.plan"><Button size="sm" variant="ghost" onClick={onEditarTarea}><Pencil className="h-3.5 w-3.5 mr-1" />{aprueba ? "Editar la tarea" : "Proponer cambio"}</Button></Permisable>
           </div>
         )}
 
@@ -697,7 +701,7 @@ function DialogoPlan({ tareas, editable, onCerrar, onEditar }: { tareas: TareaPl
             </div>
           )
         })}
-        {editable && <DialogFooter><Button size="sm" onClick={() => onEditar("nueva")}><Plus className="h-4 w-4 mr-1" />Tarea nueva</Button></DialogFooter>}
+        {editable && <DialogFooter><Permisable recurso="productivo.plan-sanitario.plan"><Button size="sm" onClick={() => onEditar("nueva")}><Plus className="h-4 w-4 mr-1" />Tarea nueva</Button></Permisable></DialogFooter>}
       </DialogContent>
     </Dialog>
   )

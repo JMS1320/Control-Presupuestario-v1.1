@@ -13,6 +13,7 @@ import { Permisable } from "@/components/modo-permisos"
 import { usePrimeraVisible, usePuedeVer } from "@/components/contexto-permisos"
 import { botonesOrden, alMarcarHecha, alRechazar, PENDIENTE_DE_CONSUMO, ETIQUETA_ESTADO, type PermisosOrden } from "@/lib/productivo/confirmacion-ordenes"
 import { etiquetaPersona } from "@/lib/auth/identidad"
+import { useEsAdmin } from "@/components/use-es-admin"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -2587,22 +2588,22 @@ function TabHacienda() {
           <Button variant="outline" size="sm" onClick={() => setVerMovimientos(!verMovimientos)}>
             {verMovimientos ? 'Ver Stock' : 'Ver Movimientos'}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setMostrarModalRomaneo(true)}
+          <Permisable recurso="productivo.hacienda.romaneo"><Button variant="outline" size="sm" onClick={() => setMostrarModalRomaneo(true)}
             title="Subir el PDF del romaneo del frigorífico y completar las ventas de esa carga">
             📄 Romaneo
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setMostrarModalFlete(true)}
+          </Button></Permisable>
+          <Permisable recurso="productivo.hacienda.flete"><Button variant="outline" size="sm" onClick={() => setMostrarModalFlete(true)}
             title="Cargar el flete de una carga y comprometer el pago en el Cash Flow">
             🚚 Flete
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setMostrarModalPlanilla(true)}>
+          </Button></Permisable>
+          <Permisable recurso="productivo.hacienda.planilla"><Button variant="outline" size="sm" onClick={() => setMostrarModalPlanilla(true)}>
             <Download className="mr-1 h-4 w-4" />
             Planilla
-          </Button>
-          <Button size="sm" onClick={() => setMostrarModalMov(true)}>
+          </Button></Permisable>
+          <Permisable recurso="productivo.hacienda.movimiento"><Button size="sm" onClick={() => setMostrarModalMov(true)}>
             <Plus className="mr-1 h-4 w-4" />
             Nuevo Movimiento
-          </Button>
+          </Button></Permisable>
           <Button variant="outline" size="sm" onClick={cargarDatos}>
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -2811,7 +2812,7 @@ function TabHacienda() {
                   */}
                   <TableCell className="text-right">
                     {m.tipo === 'venta' && (
-                      <button
+                      <Permisable recurso="productivo.hacienda.venta"><button
                         type="button"
                         onClick={() => setVentaAEditar({
                           id: m.id, fecha: m.fecha, cantidad: m.cantidad,
@@ -2835,7 +2836,7 @@ function TabHacienda() {
                           : 'Este movimiento NO tiene venta: no entra a facturación ni al presupuesto'}
                       >
                         {(m as any).stock_venta_id ? '💰 venta' : '⚠ sin venta'}
-                      </button>
+                      </button></Permisable>
                     )}
                     {/*
                       🐄 Identificar los animales de un cambio de categoría YA guardado.
@@ -2847,7 +2848,7 @@ function TabHacienda() {
                         + (individuosPorMov.porCatFecha[`${(m as any).categoria_id}|${m.fecha}`] ?? 0)
                       const faltan = m.cantidad - ya
                       return (
-                        <button
+                        <Permisable recurso="productivo.hacienda.identificar"><button
                           type="button"
                           onClick={() => setMovAIdentificar({
                             id: m.id, fecha: m.fecha, cantidad: m.cantidad,
@@ -2865,7 +2866,7 @@ function TabHacienda() {
                             : `Los ${ya} animales de este movimiento ya están identificados`}
                         >
                           {faltan > 0 ? `⚠ falta identificar ${faltan}` : `🐄 ${ya} identificad${ya === 1 ? 'o' : 'os'}`}
-                        </button>
+                        </button></Permisable>
                       )
                     })()}
                   </TableCell>
@@ -4102,18 +4103,18 @@ function SubTabStockInsumos() {
           <Button variant="outline" size="sm" onClick={() => setVerMovimientos(!verMovimientos)}>
             {verMovimientos ? 'Ver Stock' : 'Ver Movimientos'}
           </Button>
-          <Button size="sm" onClick={() => abrirModalMov('compra')}>
+          <Permisable recurso="productivo.stock.compra"><Button size="sm" onClick={() => abrirModalMov('compra')}>
             <Plus className="mr-1 h-4 w-4" />
             Compra
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => abrirModalMov('ajuste')}>
+          </Button></Permisable>
+          <Permisable recurso="productivo.stock.ajuste"><Button variant="outline" size="sm" onClick={() => abrirModalMov('ajuste')}>
             <Plus className="mr-1 h-4 w-4" />
             Ajuste
-          </Button>
-          <Button variant="secondary" size="sm" onClick={() => setMostrarModalInsumo(true)}>
+          </Button></Permisable>
+          <Permisable recurso="productivo.stock.nuevo-insumo"><Button variant="secondary" size="sm" onClick={() => setMostrarModalInsumo(true)}>
             <Plus className="mr-1 h-4 w-4" />
             Nuevo Insumo
-          </Button>
+          </Button></Permisable>
           <Button variant="outline" size="sm" onClick={cargarDatos}>
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -4170,20 +4171,20 @@ function SubTabStockInsumos() {
                   <TableCell className="text-sm text-muted-foreground">{s.observaciones || '-'}</TableCell>
                   <TableCell className="text-right">
                     {/* Medir el saldo es lo que convierte el consumo de estimado en real. */}
-                    <Button variant="ghost" size="sm" className="h-6 text-[11px]"
+                    <Permisable recurso="productivo.stock.mediciones"><Button variant="ghost" size="sm" className="h-6 text-[11px]"
                       onClick={() => setInsumoMedir({
                         id: s.id, producto: s.producto, unidad_medida: s.unidad_medida ?? null,
                       })}>
                       <Ruler className="mr-1 h-3 w-3" /> Mediciones
-                    </Button>
+                    </Button></Permisable>
                     {/* El precio del consumo sale de acá: la entrega mueve el stock, la
                         factura trae el precio. */}
-                    <Button variant="ghost" size="sm" className="h-6 text-[11px]"
+                    <Permisable recurso="productivo.stock.facturas"><Button variant="ghost" size="sm" className="h-6 text-[11px]"
                       onClick={() => setInsumoFacturas({
                         id: s.id, producto: s.producto, unidad_medida: s.unidad_medida ?? null,
                       })}>
                       <Link2 className="mr-1 h-3 w-3" /> Facturas
-                    </Button>
+                    </Button></Permisable>
                   </TableCell>
                 </TableRow>
               ))
@@ -4234,9 +4235,9 @@ function SubTabStockInsumos() {
             </div>
             {selCompras.size > 0 && (
               <span className="flex items-center gap-2 ml-2">
-                <Button size="sm" className="h-7 text-xs" onClick={() => setVincularCompraIds([...selCompras])}>
+                <Permisable recurso="productivo.stock.vincular-compra"><Button size="sm" className="h-7 text-xs" onClick={() => setVincularCompraIds([...selCompras])}>
                   🧾 Vincular {selCompras.size} seleccionada{selCompras.size === 1 ? '' : 's'} con su factura
-                </Button>
+                </Button></Permisable>
                 <button type="button" className="text-xs text-muted-foreground hover:underline" onClick={() => setSelCompras(new Set())}>limpiar</button>
               </span>
             )}
@@ -4330,16 +4331,16 @@ function SubTabStockInsumos() {
                       <span className="flex items-center gap-1 whitespace-nowrap">
                         <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800"
                           title="Ya vinculada a esta(s) factura(s)">✓ {facturasDeMov[m.id].join(', ')}</span>
-                        <button type="button" title="Abrir la vinculación (revisar o corregir)"
-                          className="text-xs text-blue-700 hover:underline" onClick={() => setVincularCompraIds([m.id])}>🧾</button>
+                        <Permisable recurso="productivo.stock.vincular-compra"><button type="button" title="Abrir la vinculación (revisar o corregir)"
+                          className="text-xs text-blue-700 hover:underline" onClick={() => setVincularCompraIds([m.id])}>🧾</button></Permisable>
                       </span>
                     ) : (
                       <span className="flex items-center gap-1">
                         <input type="checkbox" title="Seleccionar para vincular junto con otras"
                           checked={selCompras.has(m.id)}
                           onChange={e => setSelCompras(prev => { const n = new Set(prev); e.target.checked ? n.add(m.id) : n.delete(m.id); return n })} />
-                        <button type="button" title="Vincular sólo ésta con su factura (precio, descuento y moneda)"
-                          className="text-xs text-blue-700 hover:underline" onClick={() => setVincularCompraIds([m.id])}>🧾</button>
+                        <Permisable recurso="productivo.stock.vincular-compra"><button type="button" title="Vincular sólo ésta con su factura (precio, descuento y moneda)"
+                          className="text-xs text-blue-700 hover:underline" onClick={() => setVincularCompraIds([m.id])}>🧾</button></Permisable>
                       </span>
                     ))}
                   </TableCell>
@@ -4707,15 +4708,17 @@ function SubTabStockInsumos() {
 
 /**
  * A-FEAT-1223: los botones de las órdenes, cada uno con su permiso (Configuración → Roles), y quién aprieta.
- * «Se hizo» y «Confirmar» son DOS permisos: quien sólo tiene «Se hizo» deja la orden a confirmar y no impacta nada.
+ * «Se hizo» tiene casilla; «Confirmar» es SÓLO del admin: quien no es admin deja la orden a confirmar y no impacta nada.
  */
 function usePermisosOrden(): { p: PermisosOrden; yo: string | null } {
   const puedeVer = usePuedeVer()
+  // «Confirmar» es SÓLO del admin (JMS 27/10): no tiene casilla, no se delega
+  const esAdmin = useEsAdmin()
   const [yo, setYo] = useState<string | null>(null)
   useEffect(() => { supabase.auth.getUser().then(({ data }) => setYo(etiquetaPersona(data.user))) }, [])
   const p: PermisosOrden = {
     nueva: puedeVer("productivo.ordenes.nueva"), editar: puedeVer("productivo.ordenes.editar"),
-    seHizo: puedeVer("productivo.ordenes.se-hizo"), confirmar: puedeVer("productivo.ordenes.confirmar"),
+    seHizo: puedeVer("productivo.ordenes.se-hizo"), confirmar: esAdmin,
     borrar: puedeVer("productivo.ordenes.borrar"), descargar: puedeVer("productivo.ordenes.descargar"),
   }
   return { p, yo }
@@ -6195,10 +6198,10 @@ function SubTabOrdenesAplicacion() {
             <Badge className="ml-2 align-middle bg-amber-100 text-amber-900 border-amber-300">{ordenes.filter(o => o.estado === 'a_confirmar').length} a confirmar</Badge>)}
         </h3>
         <div className="flex gap-2">
-          {permOrden.nueva && <Button size="sm" onClick={() => { setOrdenEditandoId(null); setMostrarModal(true); if (lineas.length === 0) agregarLinea() }}>
+          {permOrden.nueva && <Permisable recurso="productivo.ordenes.nueva"><Button size="sm" onClick={() => { setOrdenEditandoId(null); setMostrarModal(true); if (lineas.length === 0) agregarLinea() }}>
             <Plus className="mr-1 h-4 w-4" />
             Nueva Orden
-          </Button>}
+          </Button></Permisable>}
           <Button variant="outline" size="sm" onClick={cargarDatos}>
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -6261,17 +6264,17 @@ function SubTabOrdenesAplicacion() {
                   <div className="flex gap-1">
                     {(() => { const b = botonesOrden(o.estado, permOrden); return (<>
                       {b.editar && (
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+                        <Permisable recurso="productivo.ordenes.editar"><Button variant="ghost" size="sm" className="h-7 w-7 p-0"
                           title="Editar orden"
                           onClick={() => abrirEdicion(o)}>
                           <Pencil className="h-3.5 w-3.5" />
-                        </Button>)}
+                        </Button></Permisable>)}
                       {b.marcar && (
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600"
+                        <Permisable recurso="productivo.ordenes.se-hizo"><Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-600"
                           title={b.marcar.texto}
                           onClick={() => abrirConfirmacion(o)}>
                           <CheckCircle2 className="h-3.5 w-3.5" />
-                        </Button>)}
+                        </Button></Permisable>)}
                       {b.confirmar && (
                         <Button variant="ghost" size="sm" className="h-7 p-0 px-1 text-green-700 gap-1"
                           title="Confirmar: recién acá descuenta stock"
@@ -6286,12 +6289,12 @@ function SubTabOrdenesAplicacion() {
                         </Button>)}
                     </>) })()}
                     {esDesteteFin(o) && !ordenesYaVinculadas.has(o.id) && (
-                      <Button variant="ghost" size="sm" className="h-7 p-0 px-1 text-orange-600 gap-1"
+                      <Permisable recurso="productivo.ordenes.ciclo"><Button variant="ghost" size="sm" className="h-7 p-0 px-1 text-orange-600 gap-1"
                         title="Vincular Ciclo de Cría"
                         onClick={() => abrirVincularCiclo(o)}>
                         <Link2 className="h-3.5 w-3.5" />
                         <span className="text-[10px]">Ciclo</span>
-                      </Button>
+                      </Button></Permisable>
                     )}
                     {esDesteteFin(o) && ordenesYaVinculadas.has(o.id) && (
                       <Badge variant="outline" className="text-[10px] text-green-600 border-green-300 px-1.5">
@@ -6299,12 +6302,12 @@ function SubTabOrdenesAplicacion() {
                       </Badge>
                     )}
                     {esDesteteFin(o) && (
-                      <Button variant="ghost" size="sm" className="h-7 p-0 px-1 text-blue-600 gap-1"
+                      <Permisable recurso="productivo.ordenes.ciclo"><Button variant="ghost" size="sm" className="h-7 p-0 px-1 text-blue-600 gap-1"
                         title="Asignar categorías (Destete → Recría)"
                         onClick={() => abrirModalAsignacion(o)}>
                         <ChevronsUpDown className="h-3.5 w-3.5" />
                         <span className="text-[10px]">Categ.</span>
-                      </Button>
+                      </Button></Permisable>
                     )}
                     {o.estado === 'eliminada' ? (
                       <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground"
@@ -6314,16 +6317,16 @@ function SubTabOrdenesAplicacion() {
                       </Button>
                     ) : (
                       <>
-                        {permOrden.descargar && <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+                        {permOrden.descargar && <Permisable recurso="productivo.ordenes.descargar"><Button variant="ghost" size="sm" className="h-7 w-7 p-0"
                           title="Exportar imagen para WhatsApp"
                           onClick={() => exportarOrdenImagen(o)}>
                           <Download className="h-3.5 w-3.5" />
-                        </Button>}
-                        {permOrden.borrar && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500"
+                        </Button></Permisable>}
+                        {permOrden.borrar && <Permisable recurso="productivo.ordenes.borrar"><Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500"
                           title="Eliminar orden"
                           onClick={() => abrirEliminacion(o)}>
                           <Trash2 className="h-3.5 w-3.5" />
-                        </Button>}
+                        </Button></Permisable>}
                       </>
                     )}
                   </div>
@@ -6421,11 +6424,11 @@ function SubTabOrdenesAplicacion() {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label className="text-base font-semibold">Labores</Label>
-              <Button variant="ghost" size="sm" className="h-7 text-xs"
+              <Permisable recurso="productivo.ordenes.labores"><Button variant="ghost" size="sm" className="h-7 text-xs"
                 onClick={() => setMostrarInputLabor(!mostrarInputLabor)}>
                 <Plus className="mr-1 h-3 w-3" />
                 {mostrarInputLabor ? 'Cancelar' : 'Nueva Labor'}
-              </Button>
+              </Button></Permisable>
             </div>
             {mostrarInputLabor && (
               <div className="flex gap-2 items-center">
@@ -6448,11 +6451,11 @@ function SubTabOrdenesAplicacion() {
                     {labor.nombre}
                     {labor.tipo && <span className="text-[10px] opacity-60">(ciclo)</span>}
                     {!labor.tipo && (
-                      <button type="button" className="ml-1 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity"
+                      <Permisable recurso="productivo.ordenes.labores"><button type="button" className="ml-1 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity"
                         title="Eliminar labor"
                         onClick={e => { e.preventDefault(); e.stopPropagation(); eliminarLabor(labor.id) }}>
                         <Trash2 className="h-3 w-3" />
-                      </button>
+                      </button></Permisable>
                     )}
                   </label>
                 )
@@ -7742,10 +7745,10 @@ function SubTabOrdenesAgricolas() {
             <Badge className="ml-2 align-middle bg-amber-100 text-amber-900 border-amber-300">{ordenes.filter(o => o.estado === 'a_confirmar').length} a confirmar</Badge>)}
         </h3>
         <div className="flex gap-2">
-          {permOrden.nueva && <Button size="sm" onClick={() => setMostrarModal(true)}>
+          {permOrden.nueva && <Permisable recurso="productivo.ordenes.nueva"><Button size="sm" onClick={() => setMostrarModal(true)}>
             <Plus className="mr-1 h-4 w-4" />
             Nueva Orden
-          </Button>}
+          </Button></Permisable>}
           <Button variant="outline" size="sm" onClick={cargarDatos}>
             <RefreshCw className="h-4 w-4" />
           </Button>
@@ -7808,15 +7811,15 @@ function SubTabOrdenesAgricolas() {
                       <>
                         {(() => { const b = botonesOrden(o.estado, permOrden); return (<>
                           {b.editar && (
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+                            <Permisable recurso="productivo.ordenes.editar"><Button variant="ghost" size="sm" className="h-7 w-7 p-0"
                               title="Editar orden" onClick={() => abrirEdicion(o)}>
                               <Pencil className="h-3.5 w-3.5" />
-                            </Button>)}
+                            </Button></Permisable>)}
                           {b.marcar && (
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-700"
+                            <Permisable recurso="productivo.ordenes.se-hizo"><Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-green-700"
                               title={b.marcar.texto} onClick={() => abrirModalEjecutar(o)}>
                               <CheckCircle2 className="h-3.5 w-3.5" />
-                            </Button>)}
+                            </Button></Permisable>)}
                           {b.confirmar && (
                             <Button variant="ghost" size="sm" className="h-7 p-0 px-1 text-green-700 gap-1"
                               title="Confirmar: recién acá descuenta stock" onClick={() => abrirModalEjecutar(o)}>
@@ -7828,15 +7831,15 @@ function SubTabOrdenesAgricolas() {
                               <span className="text-[10px]">Rechazar</span>
                             </Button>)}
                           {b.descargar && (
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Exportar PNG"
+                            <Permisable recurso="productivo.ordenes.descargar"><Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Exportar PNG"
                               onClick={() => exportarOrdenAgricolaImagen(o)}>
                               <Download className="h-3.5 w-3.5" />
-                            </Button>)}
+                            </Button></Permisable>)}
                           {b.borrar && (
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500"
+                            <Permisable recurso="productivo.ordenes.borrar"><Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500"
                               title="Eliminar orden" onClick={() => abrirEliminacion(o)}>
                               <Trash2 className="h-3.5 w-3.5" />
-                            </Button>)}
+                            </Button></Permisable>)}
                         </>) })()}
                       </>
                     )}
@@ -7947,9 +7950,9 @@ function SubTabOrdenesAgricolas() {
                     <Button size="sm" variant="ghost" className="h-8" onClick={() => { setMostrarInputLabor(false); setNuevaLabor('') }}>✕</Button>
                   </div>
                 ) : (
-                  <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setMostrarInputLabor(true)}>
+                  <Permisable recurso="productivo.ordenes.labores"><Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setMostrarInputLabor(true)}>
                     <Plus className="mr-1 h-3 w-3" /> Agregar labor
-                  </Button>
+                  </Button></Permisable>
                 )}
               </div>
             </div>
@@ -8267,10 +8270,10 @@ function TabLotesAgricolas() {
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold">Lotes Agricolas</h3>
         <div className="flex gap-2">
-          <Button size="sm" onClick={() => setMostrarModalLote(true)}>
+          <Permisable recurso="productivo.lotes.nuevo"><Button size="sm" onClick={() => setMostrarModalLote(true)}>
             <Plus className="mr-1 h-4 w-4" />
             Nuevo Lote
-          </Button>
+          </Button></Permisable>
           <Button variant="outline" size="sm" onClick={cargarDatos}>
             <RefreshCw className="h-4 w-4" />
           </Button>

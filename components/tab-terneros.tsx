@@ -21,6 +21,7 @@ import { toast } from "sonner"
 import { AnalisisProductivo, type SegConfig, type SegSnapshot, type ModoCarga } from "./analisis-productivo"
 import { Segmentador, type SegPayload } from "./segmentador"
 import { traerTodo } from "@/lib/supabase-paginado"
+import { Permisable } from "@/components/modo-permisos"
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -970,27 +971,27 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
 
         <div className="flex items-center gap-2">
           {/* Botón modo edición */}
-          <Button
+          <Permisable recurso="productivo.terneros.editar"><Button
             variant={modoEdicion ? "default" : "outline"}
             size="sm"
             onClick={() => { setModoEdicion(p => !p); setModoReposicion(false) }}
             className={modoEdicion ? "bg-blue-600 hover:bg-blue-700 text-white" : "border-blue-300 text-blue-700"}
           >
             ✏️ {modoEdicion ? 'Editando...' : 'Editar'}
-          </Button>
+          </Button></Permisable>
 
           {/* Botón modo reposición */}
-          <Button
+          <Permisable recurso="productivo.terneros.reposicion"><Button
             variant={modoReposicion ? "default" : "outline"}
             size="sm"
             onClick={() => { setModoReposicion(p => !p); setModoEdicion(false); setSelReposicion(new Set()) }}
             className={modoReposicion ? "bg-amber-600 hover:bg-amber-700 text-white" : "border-amber-400 text-amber-700"}
           >
             🐂 {modoReposicion ? 'Marcando rep...' : 'Reposición'}
-          </Button>
+          </Button></Permisable>
 
           {/* Botón descargar Excel */}
-          <Button
+          <Permisable recurso="productivo.terneros.descargar"><Button
             variant="outline"
             size="sm"
             onClick={() => {
@@ -1001,7 +1002,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
           >
             <Download className="h-4 w-4" />
             Descargar Excel
-          </Button>
+          </Button></Permisable>
 
           {/* Botón historial global (solo si hay fechas de pesada) */}
           {todasFechas.length > 0 && (
@@ -1018,7 +1019,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
 
           {/* Import pesadas */}
           <input ref={inputPesadasRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleArchivoPesadas} />
-          <Button
+          <Permisable recurso="productivo.terneros.importar-pesadas"><Button
             variant="outline"
             onClick={() => inputPesadasRef.current?.click()}
             disabled={importandoPesadas}
@@ -1026,7 +1027,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
           >
             <Scale className="h-4 w-4" />
             {importandoPesadas ? 'Analizando...' : 'Importar Pesadas'}
-          </Button>
+          </Button></Permisable>
 
           {/* Ayuda: formato del Excel de pesadas */}
           <Popover>
@@ -1066,14 +1067,14 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
 
           {/* Import terneros */}
           <input ref={inputTernerosRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleArchivoTerneros} />
-          <Button
+          <Permisable recurso="productivo.terneros.importar-terneros"><Button
             onClick={() => inputTernerosRef.current?.click()}
             disabled={importandoTerneros}
             className="bg-green-700 hover:bg-green-800 flex items-center gap-1"
           >
             <Upload className="h-4 w-4" />
             {importandoTerneros ? 'Importando...' : 'Importar Terneros'}
-          </Button>
+          </Button></Permisable>
         </div>
       </div>
 
@@ -1431,11 +1432,11 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                             <span className="text-[10px]">{f.categoriaNombre}</span>
                           </TableCell>
                           <TableCell className="text-xs" colSpan={2}>
-                            <Button variant="outline" size="sm" className="h-6 text-xs text-blue-600 border-blue-300 hover:bg-blue-50"
+                            <Permisable recurso="productivo.terneros.identificar"><Button variant="outline" size="sm" className="h-6 text-xs text-blue-600 border-blue-300 hover:bg-blue-50"
                               disabled={creandoFantasma}
                               onClick={(e) => { e.stopPropagation(); identificarFantasma(f.categoriaId, f.categoriaNombre) }}>
                               + Identificar
-                            </Button>
+                            </Button></Permisable>
                           </TableCell>
                         </TableRow>
                       )
