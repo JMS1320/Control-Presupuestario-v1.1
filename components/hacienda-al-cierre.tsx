@@ -20,7 +20,7 @@
  *
  * ⚠️ Sólo lee de la base. Los precios a mano viven en la pantalla, no se guardan todavía.
  */
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { traerTodo } from "@/lib/supabase-paginado"
 import { Button } from "@/components/ui/button"
@@ -86,10 +86,28 @@ export interface DatosHacienda {
 }
 
 export function HaciendaAlCierre({
-  empresa, ejercicio, onDatos,
-}: { empresa: string; ejercicio: Ejercicio; onDatos: (d: DatosHacienda | null) => void }) {
+  empresa, ejercicio, onDatos, guardado,
+}: {
+  empresa: string; ejercicio: Ejercicio; onDatos: (d: DatosHacienda | null) => void
+  /**
+   * 💾 A-FEAT-1337 paso 2 — lo traído en la última versión guardada. Usuario 27/10: *«creo que dijimos que
+   * guardaría y no haría falta generar todo cada vez»*. Si está, se muestra solo, sin volver a traer; «Recalcular»
+   * trae de nuevo y la pantalla de versiones dice qué cambió.
+   */
+  guardado?: { datos: DatosHacienda; etiqueta: string } | null
+}) {
   const [cargando, setCargando] = useState(false)
   const [datos, setDatos] = useState<DatosHacienda | null>(null)
+  /** De dónde salen los datos que se ven: de la versión guardada o traídos ahora. */
+  const [origen, setOrigen] = useState<string | null>(null)
+  useEffect(() => {
+    if (datos || !guardado) return
+    // Una versión guardada con otra forma de datos (de antes de un cambio de la app) no se usa: se trae de nuevo.
+    const g = guardado.datos as Partial<DatosHacienda>
+    if (!g?.valuacion || !g.insumos || !g.campo || !g.mag || !g.mercado || !g.porCabeza) return
+    setDatos(guardado.datos); setOrigen(guardado.etiqueta); onDatos(guardado.datos)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guardado])
   /** 🗄️ A-FEAT-1337: los precios a mano y el cuadre de granos se guardan al escribirlos. */
   const precios = useDatosDelBalance(empresa, ejercicio.anioCierre, "hacienda.precio")
   const manuales = precios.valores
@@ -284,6 +302,7 @@ export function HaciendaAlCierre({
         },
       }
       setDatos(d)
+      setOrigen(null)   // traído ahora, no de una versión guardada
       onDatos(d)
     } catch (e) {
       toast.error("No se pudo armar la hacienda: " + (e as Error).message)
@@ -311,6 +330,7 @@ export function HaciendaAlCierre({
         </Button>
         {datos && (
           <span className="text-xs text-muted-foreground">
+            {origen && <span className="text-sky-800">💾 Stock y precios de la <strong>{origen}</strong> — «Recalcular» trae de nuevo · </span>}
             Precios de <strong>{datos.mesPrecios}</strong> (el mes entero) · Cañuelas {datos.mag.length} · terneras {datos.mercado.hembra.length} · terneros {datos.mercado.macho.length} · vientres {datos.porCabeza.vientres.length} · toros {datos.porCabeza.toros.length}
           </span>
         )}

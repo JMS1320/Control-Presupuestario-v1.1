@@ -39,6 +39,7 @@ import type {
 import type { CuadreHacienda } from "./cuadre-hacienda"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
+import type { InfoVersionExcel } from "./versiones"
 import { hojaDeSaldosAnteriores, type SaldosAnteriores } from "./ajustes-balance"
 import {
   TOTALIZADORAS_BANCARIAS,
@@ -114,6 +115,34 @@ function hojaDeProvision(este: AsientoLibroDiario[], anterior: AsientoLibroDiari
  * 🧮 ¿LLEGÓ TODO DE LA BASE? (A-FEAT-1343) — por cada consulta, cuántas filas dijo la base y cuántas
  * se usaron. Es integridad: si no coinciden, el papel se armó con datos de menos (§ 🚦: frena).
  */
+/**
+ * 💾 A-FEAT-1337 paso 2 — el bloque de la VERSIÓN, al final de la solapa Control: qué versión es este Excel, si lo
+ * que sale está guardado, y qué ítems cambiaron desde lo último ENTREGADO (avisa, no frena). Es lo que le dice al
+ * contador *«esto es lo que cambió desde lo que te mandé»* sin que nadie tenga que comparar dos archivos a ojo.
+ */
+export function bloqueDeVersion(v: InfoVersionExcel): unknown[][] {
+  const f: unknown[][] = [[], ["VERSION DE ESTOS PAPELES"]]
+  if (v.numero != null) f.push(["Este Excel es la versión", `v${v.numero}`, "guardada en la app"])
+  else if (v.ultima) {
+    f.push(["Este Excel", "NO está guardado como versión",
+      v.cambiosContraUltima === 0 ? `coincide con la v${v.ultima.numero} (${v.ultima.fecha})`
+        : `difiere de la v${v.ultima.numero} (${v.ultima.fecha}) en ${v.cambiosContraUltima ?? "?"} ítem(s)`])
+  } else f.push(["Este Excel", "NO está guardado como versión", "todavía no hay ninguna versión guardada"])
+  if (v.entregada) {
+    const c = v.entregada.cambios
+    f.push(["Lo último ENTREGADO", `v${v.entregada.numero}`, `a ${v.entregada.destinatario}, el ${v.entregada.fecha}`])
+    if (c.length === 0) f.push(["", "coincide: no cambió ningún ítem desde lo entregado"])
+    else {
+      f.push(["", `⚠️ ${c.length} ítem(s) cambiaron desde lo entregado`])
+      f.push(["Papel", "Ítem", "Entregado", "Ahora", "Diferencia"])
+      c.forEach(x => f.push([x.papel, x.concepto,
+        x.antes ?? (x.tipo === "nuevo" ? "(no estaba)" : ""), x.ahora ?? (x.tipo === "ya no está" ? "(ya no está)" : ""),
+        x.diferencia ?? ""]))
+    }
+  }
+  return f
+}
+
 export function bloqueDeLecturas(lecturas: Lectura[] | undefined): unknown[][] {
   if (!lecturas || lecturas.length === 0) return []
   const mal = lecturas.filter(lecturaIncompleta)
@@ -2071,6 +2100,8 @@ export function armarWorkbook(
   asientosContables?: AsientoLibroDiario[],
   /** 🧮 A-FEAT-1343: cuántas filas dijo la base y cuántas llegaron. */
   lecturas?: Lectura[],
+  /** 💾 A-FEAT-1337 paso 2: qué versión es este Excel, si está guardado y qué cambió desde lo entregado. */
+  version?: InfoVersionExcel,
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new()
 
@@ -2093,7 +2124,7 @@ export function armarWorkbook(
     hoja(wb, "00 Pendientes a revisar", hojaDePendientes(pendientes,
       `${empresa} — pendientes a revisar del ejercicio ${libro.ejercicio.etiqueta}`), COLS_PENDIENTES)
   }
-  hoja(wb, "Control", hojaDeControl(libro, lecturas))
+  hoja(wb, "Control", [...hojaDeControl(libro, lecturas), ...(version ? bloqueDeVersion(version) : [])])
   hoja(wb, "Compras", hojaDeAsientos(libro.compras), COLS_ASIENTOS)
   hoja(wb, "Ventas", hojaDeAsientos(libro.ventas), COLS_ASIENTOS)
   // 📗 La apertura por cuenta contable — el formato que el usuario ya usaba (A-FEAT-1187).
@@ -2246,17 +2277,38 @@ export function descargarLibroDiario(
   saldosAnteriores?: SaldosAnteriores,
   asientosContables?: AsientoLibroDiario[],
   lecturas?: Lectura[],
+  version?: InfoVersionExcel,
 ) {
   const wb = armarWorkbook(libro, empresa, templates, hacienda, insumos, campo, cuentas,
-    bancarios, sueldos, cuentasCorrientes, pendientes, saldosAnteriores, asientosContables, lecturas)
+    bancarios, sueldos, cuentasCorrientes, pendientes, saldosAnteriores, asientosContables, lecturas, version)
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
-  const url = URL.createObjectURL(
-    new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-  )
+  bajarBytes(out as ArrayBuffer, nombreArchivo(libro, empresa))
+}
+
+const TIPO_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+function bajarBytes(out: ArrayBuffer | Uint8Array, nombre: string) {
+  const url = URL.createObjectURL(new Blob([out as BlobPart], { type: TIPO_XLSX }))
   const a = document.createElement("a")
   a.href = url
-  a.download = nombreArchivo(libro, empresa)
+  a.download = nombre
   document.body.appendChild(a)
   a.click()
   setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, 0)
+}
+
+/**
+ * 💾 A-FEAT-1337 paso 2 — el MISMO Excel que se baja, en base64, para guardarlo en la versión. Mismos argumentos
+ * que `descargarLibroDiario`: así lo guardado y lo bajado no pueden ser distintos.
+ */
+export function excelEnBase64(...args: Parameters<typeof armarWorkbook>): string {
+  return XLSX.write(armarWorkbook(...args), { bookType: "xlsx", type: "base64" }) as string
+}
+
+/** ⬇️ Baja el Excel guardado en una versión, tal cual se guardó (decisión del usuario: «siempre ofrezca descarga»). */
+export function bajarExcelGuardado(base64: string, nombre: string) {
+  const bin = atob(base64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  bajarBytes(bytes, nombre)
 }

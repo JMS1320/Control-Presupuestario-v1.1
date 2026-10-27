@@ -43,7 +43,9 @@ import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { ProponerFotoBalance } from "./proponer-foto-balance"
 import { ivaConSigno, type DatosDeLosPapeles } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
-import { descargarLibroDiario } from "@/lib/balance/export-libro-diario"
+import { descargarLibroDiario, excelEnBase64, nombreArchivo, type armarWorkbook } from "@/lib/balance/export-libro-diario"
+import { itemsDeLosPapeles, type InfoVersionExcel } from "@/lib/balance/versiones"
+import { useVersionesBalance, VersionesBalance, infoDeVersion, fechaHora } from "./versiones-balance"
 import { traerTodo, lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
 import type { TipoCuenta } from "@/lib/presupuesto/templates"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
@@ -129,6 +131,8 @@ export function PapelesDeBalance() {
    * armar el libro: el papel 14 y el Excel lo toman al instante.
    */
   const saldosCC = useDatosDelBalance(empresa.id, anioCierre, "cc.saldo-inicio")
+  /** 💾 A-FEAT-1337 paso 2 — las versiones guardadas de esta empresa y ejercicio. */
+  const versiones = useVersionesBalance(empresa.id, anioCierre)
   const cuentasCorrientesConInicio = useMemo(() => cuentasCorrientes
     ? aplicarSaldosInicio(cuentasCorrientes, Object.fromEntries(
         CONTRAPARTES_DEL_BALANCE.map(c => [c.clave, leerNumero(saldosCC.valores[c.clave])])))
@@ -669,6 +673,59 @@ export function PapelesDeBalance() {
     ? { suscripciones: bancarios.fci.total.suscripciones, rescates: bancarios.fci.total.rescates }
     : null, [bancarios])
 
+  /**
+   * 💾 A-FEAT-1337 paso 2 — lo mismo que sale en el Excel, ítem por ítem, para decir si está guardado y para
+   * guardarlo. Sale de los MISMOS estados que el Excel: no se recalcula nada.
+   */
+  const saldosAnt = useMemo(() => saldosDelEjercicioAnterior(ajustes, empresa.id, anioCierre), [ajustes, empresa.id, anioCierre])
+  const itemsActuales = useMemo(() => libro ? itemsDeLosPapeles({
+    libro, templates, hacienda: hacienda ? { valuacion: hacienda.valuacion } : null,
+    insumos: hacienda?.insumos ?? null, campo: hacienda?.campo ?? null,
+    cuentas: { ...(cuentas ?? {}), ...(valores ?? {}) }, bancarios, sueldos,
+    cuentasCorrientes: cuentasCorrientesConInicio, saldosAnteriores: saldosAnt, asientosContables,
+  }) : null, [libro, templates, hacienda, cuentas, valores, bancarios, sueldos, cuentasCorrientesConInicio, saldosAnt, asientosContables])
+
+  /** Los argumentos del Excel — los mismos para bajarlo y para guardarlo, así no pueden diferir. */
+  const argsDelExcel = (version: InfoVersionExcel): Parameters<typeof armarWorkbook> | null => libro ? [
+    libro, empresa.id, templates ?? undefined, hacienda ?? undefined,
+    hacienda?.insumos, hacienda?.campo,
+    // Los cuatro bloques de los papeles 03 y 04 viajan juntos: el listado de
+    // comprobantes, los cheques y los anticipos son partes del mismo papel.
+    { ...(cuentas ?? {}), ...(valores ?? {}) },
+    bancarios ?? undefined,
+    sueldos ?? undefined,
+    cuentasCorrientesConInicio ?? undefined,
+    pendientes,
+    saldosAnt,
+    asientosContables ?? undefined,
+    lecturas ?? undefined,
+    version,
+  ] : null
+
+  const [guardandoVersion, setGuardandoVersion] = useState(false)
+  /** 💾 Guarda la versión — sólo cuando el usuario lo pide (decisión 27/10) — y ofrece bajarla. */
+  const guardarVersion = async (nota: string) => {
+    if (!libro || !itemsActuales) return
+    if (!hacienda && !window.confirm("No trajiste stock y precios: la versión se guarda SIN hacienda ni insumos. ¿Guardar igual?")) return
+    setGuardandoVersion(true)
+    try {
+      let args: Parameters<typeof armarWorkbook> | null = null
+      const n = await versiones.guardar({
+        items: itemsActuales, productivo: hacienda, nota,
+        archivo: numero => {
+          args = argsDelExcel(infoDeVersion(versiones, itemsActuales, numero))
+          return { base64: args ? excelEnBase64(...args) : "", nombre: nombreArchivo(libro, empresa.id) }
+        },
+      })
+      if (n != null) {
+        const a = args as Parameters<typeof armarWorkbook> | null
+        toast.success(`Guardada la v${n}.`, a ? { action: { label: "⬇️ Bajar", onClick: () => descargarLibroDiario(...a) } } : undefined)
+      }
+    } finally {
+      setGuardandoVersion(false)
+    }
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -709,20 +766,10 @@ export function PapelesDeBalance() {
             Armar el libro
           </Button>
           {libro && (
-            <Button variant="outline" onClick={() => descargarLibroDiario(
-                libro, empresa.id, templates ?? undefined, hacienda ?? undefined,
-                hacienda?.insumos, hacienda?.campo,
-                // Los cuatro bloques de los papeles 03 y 04 viajan juntos: el listado de
-                // comprobantes, los cheques y los anticipos son partes del mismo papel.
-                { ...(cuentas ?? {}), ...(valores ?? {}) },
-                bancarios ?? undefined,
-                sueldos ?? undefined,
-                cuentasCorrientesConInicio ?? undefined,
-                pendientes,
-                saldosDelEjercicioAnterior(ajustes, empresa.id, anioCierre),
-                asientosContables ?? undefined,
-                lecturas ?? undefined,
-              )}>
+            <Button variant="outline" onClick={() => {
+              const a = argsDelExcel(infoDeVersion(versiones, itemsActuales))
+              if (a) descargarLibroDiario(...a)
+            }}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               {/* A-FEAT-1388: decía «sin el sector productivo» y confundía cuando los precios ya se
                   veían cargados — lo que falta es traer el stock, y eso es lo que se dice. */}
@@ -730,6 +777,11 @@ export function PapelesDeBalance() {
             </Button>
           )}
         </div>
+
+        {/* 💾 A-FEAT-1337 paso 2 — las versiones: si lo que se ve está guardado, Guardar, Bajar, Entregar. */}
+        {libro && (
+          <VersionesBalance v={versiones} actuales={itemsActuales} onGuardar={guardarVersion} guardando={guardandoVersion} />
+        )}
 
         {/* 📌 A-FEAT-1258 — a la vista mientras se trabaja; salen en el export. */}
         <PendientesBalance empresa={empresa.id} anioCierre={anioCierre} onCambio={setPendientes} />
@@ -1024,7 +1076,10 @@ export function PapelesDeBalance() {
 
             {/* 🐄 Aparte del libro diario: trae precios de dos mercados y puede fallar sola sin
                 impedir que se bajen las compras. */}
-            <HaciendaAlCierre empresa={empresa.id} ejercicio={libro.ejercicio} onDatos={setHacienda} />
+            <HaciendaAlCierre empresa={empresa.id} ejercicio={libro.ejercicio} onDatos={setHacienda}
+              guardado={versiones.productivoUltima && versiones.ultima
+                ? { datos: versiones.productivoUltima as DatosHacienda, etiqueta: `v${versiones.ultima.numero} (guardada el ${fechaHora(versiones.ultima.creada_at)})` }
+                : null} />
 
             {bancarios?.impuestoCheque && (() => {
               const ic = bancarios.impuestoCheque

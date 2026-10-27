@@ -248,7 +248,12 @@ import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
-import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas } from "@/lib/balance/export-libro-diario"
+import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas, bloqueDeVersion } from "@/lib/balance/export-libro-diario"
+import {
+  itemsDeLosPapeles, compararItems, proximoNumero, ultimaVigente, ultimaEntregada,
+  type ItemPapel, type VersionBalance,
+} from "@/lib/balance/versiones"
+import type { LibroDiario } from "@/lib/balance/libro-diario"
 import { juntarTandas, lecturaIncompleta, juntarHasta, mensajeLecturaIncompleta } from "@/lib/supabase-paginado"
 import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
 import * as XLSXcasos from "xlsx"
@@ -7022,6 +7027,57 @@ export function correrCasos(): Resultado[] {
     chequear("Cuentas corrientes", "🧮 El total sin tratar baja exactamente lo propio de MSA (2.579.580,41): nada se pierde en el camino",
       `${n2(r2(r.totalSinTratar + 5019739.52 - 2579580.41))}`, n2(conD.totalSinTratar),
       conD.totalSinTratar === totD && conD.totalSinTratar === r2(r.totalSinTratar + 5019739.52 - 2579580.41), "A-FEAT-1388")
+
+    // ══ 💾 A-FEAT-1337 paso 2 — las VERSIONES: el valor de cada ítem, y qué cambió ══════════════════════════════
+    {
+      const asiento = (subdiario: string, total: number, cuit = "30500000001", denominacion = "PROVEEDOR") =>
+        ({ id: subdiario + total, fuente: "arca", subdiario, fecha: "2026-01-10", tipo: 1, punto_venta: 1, numero: 1, cuit, denominacion,
+          neto_gravado: total, no_gravado: 0, exento: 0, otros_tributos: 0, iva: 0, total, cuenta_contable: "", nro_cuenta: "", centro_costo: "" })
+      const libroV = {
+        ejercicio: { etiqueta: "25/26" }, historicoSuperado: [],
+        compras: [asiento("01/2026", 1000), asiento("01/2026", 500), asiento("02/2026", 250)],
+        ventas: [asiento("01/2026", 9000)], provisiones: [], provisionesEjercicioAnterior: [], sinSubdiario: [],
+        controles: { compras: { totalGeneral: 1750, cantidad: 3 }, ventas: { totalGeneral: 9000, cantidad: 1 } },
+      } as unknown as LibroDiario
+      const valuacion = (vaca: number) => ({
+        filas: [{ categoria: "Vaca", cabezas: 10, criterio: "", precioReferencia: null, origenPrecio: "", factor: 1, pesoKg: null, origenPeso: "", valorPorCabeza: null, valorTotal: vaca, esHueco: false }],
+        cabezas: 10, valuado: vaca, huecos: [], cabezasSinValuar: 0, sinCriterio: [],
+      })
+      const itemsA = itemsDeLosPapeles({ libro: libroV, hacienda: { valuacion: valuacion(1000000) }, cuentasCorrientes: r,
+        bancarios: { saldos: [{ nombre: "Banco Galicia (cta cte)", saldo: 123456.78 }] } })
+      const val = (xs: ItemPapel[], papel: string, clave: string) => xs.find(x => x.papel === papel && x.clave === clave)?.valor
+      const vI = `compras ene ${val(itemsA, "Compras", "subdiario 01/2026")} · Vaca ${val(itemsA, "02 Hacienda", "Vaca · valuado")} · Galicia ${val(itemsA, "07 Bancos", "Banco Galicia (cta cte)")} · JMS cierre ${val(itemsA, "14 Cuentas corrientes", "JMS · cierre")}`
+      chequear("Balance · versiones", "💾 Cada papel da sus ítems con clave estable; dos comprobantes del mismo subdiario se suman, no se pisan",
+        `compras ene 1500 · Vaca 1000000 · Galicia 123456.78 · JMS cierre ${r.cuentas.find(c => c.contraparte.clave === "JMS")!.saldoAlCierre}`, vI,
+        vI === `compras ene 1500 · Vaca 1000000 · Galicia 123456.78 · JMS cierre ${r.cuentas.find(c => c.contraparte.clave === "JMS")!.saldoAlCierre}`, "A-FEAT-1337")
+
+      // 🔍 Qué cambió: la vaca subió, el banco ya no está (no se armaron los papeles bancarios), un centavo NO es cambio.
+      const itemsB = itemsDeLosPapeles({ libro: libroV, hacienda: { valuacion: valuacion(1200000.004) }, cuentasCorrientes: r })
+      const cambios = compararItems(itemsA, itemsB)
+      const vC = cambios.map(c => `${c.tipo} ${c.clave}${c.diferencia != null ? ` ${c.diferencia}` : ""}`).join(" · ")
+      chequear("Balance · versiones", "🔍 compararItems: lo que cambió (con la diferencia), lo que ya no está; el redondeo no cuenta",
+        "cambió Vaca · valuado 200000 · cambió valuado 200000 · ya no está Banco Galicia (cta cte)", vC,
+        vC === "cambió Vaca · valuado 200000 · cambió valuado 200000 · ya no está Banco Galicia (cta cte)", "A-FEAT-1337")
+      chequear("Balance · versiones", "✓ Lo mismo contra sí mismo: cero cambios (es lo que hace decir «lo que ves está guardado»)",
+        "0", String(compararItems(itemsA, itemsDeLosPapeles({ libro: libroV, hacienda: { valuacion: valuacion(1000000) }, cuentasCorrientes: r,
+          bancarios: { saldos: [{ nombre: "Banco Galicia (cta cte)", saldo: 123456.78 }] } })).length),
+        compararItems(itemsA, itemsA).length === 0, "A-FEAT-1337")
+
+      // 🔢 Qué versión vale contra cuál: un número no se reusa (las anuladas cuentan); la última vigente y la entregada.
+      const ver = (numero: number, estado: VersionBalance["estado"]) => ({ id: `v${numero}`, numero, estado, destinatario: estado === "entregada" ? "contador" : null,
+        nota: null, creada_at: "2026-10-27T18:00:00Z", creada_por: null, entregada_at: null, entregada_por: null, anulada_at: null, anulada_motivo: null, items_cantidad: 0, archivo_nombre: null })
+      const lista = [ver(1, "guardada"), ver(2, "entregada"), ver(3, "guardada"), ver(4, "anulada")]
+      const vV = `próxima v${proximoNumero(lista)} · vigente v${ultimaVigente(lista)?.numero} · entregada v${ultimaEntregada(lista)?.numero}`
+      chequear("Balance · versiones", "🔢 La próxima es la v5 aunque la v4 esté anulada; contra la v3 se dice si está guardado; contra la v2 entregada, qué cambió",
+        "próxima v5 · vigente v3 · entregada v2", vV, vV === "próxima v5 · vigente v3 · entregada v2", "A-FEAT-1337")
+
+      // 📗 El bloque del Excel: dice que no está guardado y lista lo cambiado desde lo entregado.
+      const bloque = bloqueDeVersion({ numero: null, ultima: { numero: 3, fecha: "27/10 15:00" }, cambiosContraUltima: 2,
+        entregada: { numero: 2, destinatario: "contador", fecha: "01/10 10:00", cambios } }).map(f => (f as unknown[]).join("|")).join("\n")
+      const vB = `${bloque.includes("NO está guardado como versión|difiere de la v3") ? "no guardado" : "?"} · ${bloque.includes(`⚠️ ${cambios.length} ítem(s) cambiaron desde lo entregado`) ? "avisa lo entregado" : "?"} · ${bloque.includes("02 Hacienda|Vaca — valuado|1000000|1200000|200000") ? "con el detalle" : "?"}`
+      chequear("Balance · versiones", "📗 Solapa Control: «NO está guardado», y lo que cambió desde la v2 entregada al contador, ítem por ítem",
+        "no guardado · avisa lo entregado · con el detalle", vB, vB === "no guardado · avisa lo entregado · con el detalle", "A-FEAT-1337")
+    }
 
     // 🔑 AFA es la única con las dos puntas: la venta compensa.
     chequear("Cuentas corrientes", "🔑 En AFA la venta COMPENSA y baja el saldo",

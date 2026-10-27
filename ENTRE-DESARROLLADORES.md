@@ -40,6 +40,14 @@
 
 ## 📨 PARA JAVIER
 
+### 🗄️ Dos tablas nuevas: `public.balance_versiones` y `public.balance_version_items` (2026-10-27) — ⏳ SIN CORRER: aviso ANTES, espera OK de JMS
+- `scripts/112-balance-versiones.sql` (+ `-deshacer`), para [A-FEAT-1337](PENDIENTES.md#a-feat-1337) paso 2: las **versiones guardadas** de los papeles del balance (el Excel en base64 + lo traído del sector productivo en jsonb) y **el valor de cada ítem** de cada versión. **No toca ninguna tabla existente** salvo 2 filas en `recurso_tablas` (recurso `extracto`, lectura restringida, como `balance_datos_usuario`).
+- RLS `puede_ver`/`puede_escribir`, nada a `anon`. **Lo entregado queda fijo desde la base**: `authenticated` tiene `select, insert` y `update` **sólo de las columnas de estado** (estado, destinatario, nota, entregada_*, anulada_*); los ítems, sólo `select, insert`. Un trigger nuevo (`balance_versiones_transicion`, `security invoker`, `search_path = public`) no deja volver de «entregada» a «guardada», ni tocar una «anulada», ni anular sin motivo. Sin DELETE: una versión se anula.
+- Marca `[script 112]` en las dos tablas y en la función; el deshacer verifica la marca y se frena si hay versiones guardadas.
+- Botones nuevos en Papeles del balance (Guardar versión, Entregada, Anular): **todavía sin casilla** en `lib/auth/recursos.ts` — quedan para cuando la terminal de permisos llegue a Reportes.
+
+📌 Borrá esta entrada cuando la leas.
+
 ### ✍️ Órdenes: estado `a_confirmar` + 5 columnas en `ordenes_aplicacion` y `ordenes_agricolas` (2026-10-27) — ✅ APLICADA el 27/10 con JMS presente (aviso previo): 10 columnas, 2 checks, `explain update` OK
 
 Para [A-FEAT-1223](PENDIENTES.md#a-feat-1223) (la doble firma, decidida por JMS el 27/10: **dos botones**). `scripts/109-ordenes-a-confirmar.sql`:
