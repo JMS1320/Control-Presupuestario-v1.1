@@ -8309,12 +8309,14 @@ export function correrCasos(): Resultado[] {
     // Con los datos reales de la Vida 670821: sus NC (−129.648,30) superan las cuotas que quedaban → la
     // aseguradora nos debe 24.341,09, y el resumen lo tiene que mostrar como «NC sin aplicar».
     const cc = cuentaCorriente(vida, ctl.cuotas, ctl.movimientos, polRes, "2025-07-01", "2026-09-23")
-    const sumaRes = Math.round(res25.reduce((t, x) => t + x.total.diferencia, 0) * 100) / 100
+    // El último ejercicio arrastra lo abierto de los anteriores: su total = saldo de la cuenta corriente.
+    const sumaRes = res25[res25.length - 1].total.diferencia
+    const arrastraReint = res25.length > 1 && res25[res25.length - 1].renglones.some(x => x.motivo === "reintegro-sin-facturar" && x.ejercicioOrigen === "25/26")
     const ncSin = e25?.renglones.find(x => x.motivo === "nc-sin-aplicar")
-    const vcc = `saldo ${cc.saldo} = resumen ${sumaRes} · 670821 ${cc.porPoliza.get("670821")} · NC sin aplicar ${ncSin?.poliza} ${ncSin?.diferencia}`
+    const vcc = `saldo ${cc.saldo} = resumen ${sumaRes} · 670821 ${cc.porPoliza.get("670821")} · NC sin aplicar ${ncSin?.poliza} ${ncSin?.diferencia} · arrastra ${arrastraReint}`
     chequear("Pólizas", "Cuenta corriente: su saldo da la suma de «a reclamar» del resumen (dos caminos); la NC de la Vida que sobró aparece como «NC sin aplicar»",
-      "saldo = resumen · 670821 −24341.09 · NC sin aplicar 670821 −24341.09", vcc,
-      Math.abs(cc.saldo - sumaRes) < 0.01 && cc.porPoliza.get("670821") === -24341.09 && ncSin?.poliza === "670821" && ncSin.diferencia === -24341.09, "A-FEAT-1383")
+      "saldo = resumen (el último ejercicio, con lo que arrastra) · 670821 −24341.09 · NC sin aplicar 670821 −24341.09 · el reintegro de 25/26 se arrastra a 26/27", vcc,
+      Math.abs(cc.saldo - sumaRes) < 0.01 && cc.porPoliza.get("670821") === -24341.09 && ncSin?.poliza === "670821" && ncSin.diferencia === -24341.09 && arrastraReint, "A-FEAT-1383")
     // El débito de la póliza anterior (balance anterior) no entra a la cuenta corriente.
     chequear("Pólizas", "Cuenta corriente: el débito de una póliza anterior al ejercicio no entra",
       "sin el débito de 12.902", cc.lineas.some(l => l.credito === 12902) ? "entró el de 12.902" : "sin el débito de 12.902",
