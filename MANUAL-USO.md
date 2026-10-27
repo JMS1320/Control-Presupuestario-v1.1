@@ -1295,6 +1295,13 @@ editan, y no aparecen los botones de vincular PDF ni de archivos para ARCA. La �
 una corrección a alguien. Si un mes está en los dos lados (diciembre), **manda la app**. La lista de períodos
 arranca en julio 2025 para que se vea el ejercicio 25/26 entero. → A-TEST-1260
 
+**📥 Lo que devolvió el contador** *(2026-10-27)*: con un mes abierto, debajo del control de cuadratura. Cuando el contador
+presenta la DDJJ, nos manda el **zip del libro IVA** que exporta ARCA (`libro_iva_periodo_AAAAMM_original.zip`). Tocás
+**Subir el zip del libro IVA** y la app lo compara con el subdiario de ese mes: si **coincide** lo dice en verde; si no,
+muestra la diferencia de totales (comprobantes, importe y crédito fiscal — el de la DDJJ) y cuáles están en la app y no
+se presentaron, cuáles se presentaron y no están en la app, y cuáles tienen otro importe. Con la 🚩 se lo pasás a alguien.
+Por ahora no queda guardado: se compara al subirlo. → A-TEST-1261
+
 **Ojo (cambio ARCA):** antes el bloque 2 era solo Fac C; ahora incluye **B y C**, y esas salen del bloque 1 (no se cuentan dos veces).
 
 **Export Excel/PDF** (botón que baja LIBRO IVA COMPRAS): traen los **mismos 2 bloques** que la pantalla + el **Detalle por Alícuotas** (IVA discriminado 0/10,5/21/27%). El detalle por factura no cambió.

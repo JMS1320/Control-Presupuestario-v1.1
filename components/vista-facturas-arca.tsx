@@ -66,6 +66,7 @@ import { LeyendaEstadosFc } from "@/components/gas-pdf/leyenda-estados-fc"
 import { ModalElegirCandidato } from "@/components/gas-pdf/modal-elegir-candidato"
 import { InformeLote } from "@/components/gas-pdf/informe-lote"
 import { historicoAFactura, filasDelSubdiario } from "@/lib/facturas/historico-como-factura"
+import { ControlContraPresentado } from "@/components/control-contra-presentado"
 import { verificarCuadratura, TIPOS_SIN_CREDITO_COMPRAS } from "@/lib/subdiarios/cuadratura"
 import { calcularSubtotalesSubdiario as calcularSubtotalesSubdiarioLib } from "@/lib/subdiarios/subtotales"
 import { elegirCarpetaDestino, generarNombreUnico as generarNombreUnicoLib, guardarEnCarpeta, LS_CARPETA_POR_DEFECTO } from "@/lib/subdiarios/carpeta-destino"
@@ -6745,6 +6746,10 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
               resultado={verificarCuadratura(facturasPeriodo, TIPOS_SIN_CREDITO_COMPRAS)}
               etiquetaSinCredito="Fac B y C (sin crédito fiscal)"
             />
+            {/* 📥 A-AUTO-09: lo que devolvió el contador (zip del libro IVA de ARCA) contra este subdiario */}
+            {periodoConsulta && facturasPeriodo.length > 0 && (
+              <ControlContraPresentado facturas={facturasPeriodo as any} periodo={periodoConsulta} schemaName={schemaName} />
+            )}
             {empresa === 'MSA' && (
               <ModalArchivosArca
                 abierto={mostrarArchivosArca}
