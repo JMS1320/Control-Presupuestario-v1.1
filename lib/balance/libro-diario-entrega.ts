@@ -989,6 +989,67 @@ export function ventasComoLaApp(presentado: Record<string, LoPresentado> | undef
   }]))
 }
 
+/**
+ * 📅 **Resumen 12 meses** — el formato de la hoja de los papeles de la app (JMS 27/10: *«me ayudaba a ver bien… el
+ * formato es lo que quiero»*), pero contra lo DECLARADO de los zips **ya rectificado** (hoja «ARCA rectificación»), no
+ * contra el total fijo de `presentado-arca.ts`: con ése, enero y abril seguían en NO COINCIDE por las NC de Federación.
+ * Y suma ventas contra ARCA, que este libro también controla.
+ */
+function hojaResumen12Meses(d: DatosEntrega, a: AnalisisEntrega): unknown[][] {
+  const { libro } = d
+  const f: unknown[][] = []
+  f.push([`RESUMEN DE LOS 12 MESES — ejercicio ${libro.ejercicio.etiqueta}`])
+  f.push(["Por subdiario (el mes en que entró cada comprobante). ARCA = lo declarado en los zips, ya rectificado (ver «ARCA rectificación»); ventas en bruto."])
+  f.push([])
+  f.push(["Subdiario", "Compras: comprobantes", "Compras: total", "Ventas: comprobantes", "Ventas: total",
+    "ARCA compras: comprobantes", "ARCA compras: total declarado", "Diferencia compras − ARCA",
+    "ARCA ventas: comprobantes", "ARCA ventas: total declarado", "Diferencia ventas − ARCA", "Control"])
+  const n0 = f.length + 1
+  const suma = { cc: 0, tc: 0, cv: 0, tv: 0 }
+  a.compras.forEach((c, i) => {
+    const v = a.ventas[i]
+    const tc = r2(c.totales.total), tv = r2(v.totales.total)
+    suma.cc += c.totales.comprobantes; suma.tc += tc; suma.cv += v.totales.comprobantes; suma.tv += tv
+    const n = f.length + 1
+    const pc = c.contra?.totales.presentado, pv = v.contra?.totales.presentado
+    const control = c.ok === null && v.ok === null ? "sin dato de ARCA"
+      : [c.ok === false ? "compras NO COINCIDE" : "", v.ok === false ? "ventas NO COINCIDE" : ""].filter(Boolean).join(" · ") || "coincide"
+    const fila: unknown[] = [
+      c.nombre, c.totales.comprobantes, tc, v.totales.comprobantes, tv,
+      pc ? pc.comprobantes : "sin dato", pc ? r2(pc.total) : "sin dato", pc ? conFormula(`C${n}-G${n}`, r2(tc - pc.total)) : "",
+      pv ? pv.comprobantes : "sin dato", pv ? r2(pv.total) : "sin dato", pv ? conFormula(`E${n}-J${n}`, r2(tv - pv.total)) : "",
+      control,
+    ]
+    // 🛑 El mes que no coincide con ARCA, en rojo: se ve sin leer la columna Control.
+    f.push(c.ok === false || v.ok === false ? conEstilo(fila, ESTILO_ERROR) : fila)
+  })
+  const nU = f.length
+  const nT = f.length + 1
+  const sumaCol = (col: string) => `SUM(${col}${n0}:${col}${nU})`
+  const decl = (l: SubdiarioDelLado[]) => l.reduce((t, s) => ({ c: t.c + (s.contra?.totales.presentado.comprobantes ?? 0), t: t.t + (s.contra?.totales.presentado.total ?? 0) }), { c: 0, t: 0 })
+  const dc = decl(a.compras), dv = decl(a.ventas)
+  f.push(conEstilo(["TOTAL",
+    conFormula(sumaCol("B"), suma.cc, ENTERO), conFormula(sumaCol("C"), r2(suma.tc), MONEDA),
+    conFormula(sumaCol("D"), suma.cv, ENTERO), conFormula(sumaCol("E"), r2(suma.tv), MONEDA),
+    conFormula(sumaCol("F"), dc.c, ENTERO), conFormula(sumaCol("G"), r2(dc.t), MONEDA), conFormula(`C${nT}-G${nT}`, r2(suma.tc - dc.t), MONEDA),
+    conFormula(sumaCol("I"), dv.c, ENTERO), conFormula(sumaCol("J"), r2(dv.t), MONEDA), conFormula(`E${nT}-J${nT}`, r2(suma.tv - dv.t), MONEDA),
+  ], ESTILO_TOTAL))
+  // 🧮 El camino inverso: la suma de los 12 renglones tiene que ser el total del ejercicio del libro diario.
+  f.push([])
+  f.push(["CONTROL", "", "Compras", "", "Ventas"])
+  f.push(["Total del ejercicio (libro diario)", "", r2(libro.controles.compras.totalGeneral), "", r2(libro.controles.ventas.totalGeneral)])
+  const dC = r2(suma.tc - libro.controles.compras.totalGeneral), dV = r2(suma.tv - libro.controles.ventas.totalGeneral)
+  const nD = f.length + 1
+  f.push(["Suma de los 12 meses − total (tiene que dar 0)", "", conFormula(`C${nT}-C${nD - 1}`, dC, MONEDA), "", conFormula(`E${nT}-E${nD - 1}`, dV, MONEDA),
+    "", "", "", "", "", "", Math.abs(dC) < 0.01 && Math.abs(dV) < 0.01 ? "cuadra" : "NO CUADRA"])
+  return f
+}
+const COLS_RESUMEN_12: Columna[] = [
+  { ancho: 16 }, { ancho: 12, z: ENTERO }, { ancho: 18, z: MONEDA }, { ancho: 12, z: ENTERO }, { ancho: 18, z: MONEDA },
+  { ancho: 12, z: ENTERO }, { ancho: 20, z: MONEDA }, { ancho: 18, z: MONEDA },
+  { ancho: 12, z: ENTERO }, { ancho: 20, z: MONEDA }, { ancho: 18, z: MONEDA }, { ancho: 24 },
+]
+
 /** Arma el libro entero. El orden de las hojas es el de su pedido, con el Control primero. */
 export function armarEntregaLibroDiario(datos: DatosEntrega): { wb: XLSX.WorkBook; analisis: AnalisisEntrega } {
   const original = ventasComoLaApp(datos.presentado)
@@ -1089,6 +1150,7 @@ export function armarEntregaLibroDiario(datos: DatosEntrega): { wb: XLSX.WorkBoo
 
   const wb = XLSX.utils.book_new()
   agregarHoja(wb, "Control", hojaControl(d, a, cadena, porId), COLS)
+  agregarHoja(wb, "Resumen 12 meses", hojaResumen12Meses(d, a), COLS_RESUMEN_12)
   for (const h of hojas) agregarHoja(wb, h.nombre, h.filas, COLS)
   // Lo original de ARCA va con SUS columnas (no la fila única): es la referencia tal cual.
   for (const h of originales) agregarHoja(wb, h.nombre, h.filas)
