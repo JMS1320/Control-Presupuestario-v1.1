@@ -1383,13 +1383,17 @@ derecha del título **📋 Facturas del Período**, están los tres botones.
 más en el mail. Los archivos viven en Drive, ordenados por empresa, campaña y mes; la app guarda el
 link en la factura.
 
-#### Los tres botones — y cuál usar
+#### Los botones — y cuál usar *(⚠️ cambió 2026-10-27: uno solo para todos los días)*
 
 | Botón | Qué hace | Cuándo lo usás |
 |---|---|---|
-| **📊 Contar (no vincula)** | Cuenta nomás. Lista los archivos de la carpeta y los cruza contra los links que ya existen. **No abre ningún archivo y no vincula nada.** Es instantáneo | Para ver rápido cómo viene el mes |
-| **🔗 Vincular PDFs (lee el contenido)** | **El que hace el trabajo.** Abre cada archivo, le lee adentro el CUIT, el número y el monto, y lo vincula a su factura cuando los tres coinciden | Cuando querés que se vinculen. Es el normal |
-| **🔗 Vincular sólo los que faltan** | Lo mismo, pero saltea los que ya están vinculados | Para re-correr sin repetir trabajo |
+| **🔗 Vincular con la carpeta** | **El de siempre.** Abre cada PDF de la carpeta del mes, le lee el CUIT, el número y el monto, y lo pega a su factura cuando los tres coinciden. Las que ya tienen PDF no se tocan | Cada vez que se suman PDF a la carpeta |
+| **📊 Contar** | Sólo cuenta cuántos PDF hay y cuántos están pegados. No cambia nada | Para ver rápido cómo viene el mes |
+| **🔁 Re-vincular todo** | Como Vincular, pero revisa también los ya pegados | Si sospechás que alguno quedó mal |
+| **📧 Mandar el estado** | Manda por mail cómo quedó el mes, con lo que vinculaste a mano | Cuando terminaste |
+
+Al lado, **«¿Qué botón uso?»** muestra esto mismo en cuatro líneas. Cada botón tiene su candado en el modo permisos:
+«Vincular con la carpeta» por un lado y los otros tres juntos por otro, para darlos de a poco.
 
 #### 🖱️ Los chips de colores: click y **Ctrl+click**
 
@@ -1412,7 +1416,7 @@ Debajo de los botones hay un **buscador**: escribí un proveedor, un CUIT, un n�
 
 Cada PDF sin vincular tiene un **veredicto** para cuando ya sabés qué es y no se va a vincular: **🚫 No informada en ARCA** · **📂 Va en otra carpeta** · **📄 No es factura** · **♊ Duplicado** · **⏳ Pendiente**, con una nota (ej. *va en 02/2026*). Queda guardado con quién y cuándo, y el título del panel dice cuántos siguen **sin resolver**. Se puede cambiar o sacar cuando quieras.
 
-Lo que **🔗 Vincular PDFs** lee queda guardado en el **registro del archivo digital** (el mismo que usa el buscador de PDFs): la próxima vez se sabe qué dice cada archivo sin volver a abrirlo.
+Lo que **🔗 Vincular con la carpeta** lee queda guardado en el **registro del archivo digital** (el mismo que usa el buscador de PDFs): la próxima vez se sabe qué dice cada archivo sin volver a abrirlo.
 
 #### 📒 Asientos Contables *(2026-10-22)*
 
@@ -1435,7 +1439,7 @@ Vienen tildadas las que se pueden buscar (las **FC No** u **OK** se ven en gris 
 - **📋 Copiar pedido** — copia la lista (fecha, proveedor, comprobante, importe) para pegarla en un mail o un mensaje a quien las tenga.
 - **📮 Pedir al proveedor** — un mail por proveedor con sus facturas; elegís **borrador** o **enviar**. Los proveedores sin mail cargado se avisan aparte.
 - **📨 ¿Llegaron?** (o **📨 ¿llegó?** en la fila) — el proveedor dice que la mandó: la busca en el mail desde el día del pedido.
-- **📧 Buscar en el mail** — busca el PDF en el mail del proveedor y en los reenvíos. La carpeta no se mira: eso lo hace **🔗 Vincular PDFs**.
+- **📧 Buscar en el mail** — busca el PDF en el mail del proveedor y en los reenvíos. La carpeta no se mira: eso lo hace **🔗 Vincular con la carpeta**.
 
 Las búsquedas corren en segundo plano: el avance y el informe (con lo encontrado para confirmar) quedan en el cartel de arriba a la derecha. En cada fila también está el **mail del proveedor** (verlo, cargarlo, o **usar** el de pagos que sugiere) y **→ Portal** para los proveedores que facturan por portal. ⚠️ Sin probar todavía → A-TEST-1222
 
@@ -1509,7 +1513,7 @@ pista, no una certeza.
 
 ⚠️ **Fijate de dónde salió la lista**, porque el mismo panel significa dos cosas opuestas:
 - si venís de **«Contar»** → esos archivos **todavía no se intentaron vincular** (te lo avisa en ámbar);
-- si venís de **«Vincular PDFs»** → se leyeron y **no matchearon**: falló el CUIT, el número o el monto.
+- si venís de **«Vincular con la carpeta»** → se leyeron y **no matchearon**: falló el CUIT, el número o el monto.
 
 #### Cuando una factura no tiene PDF
 
@@ -1528,16 +1532,16 @@ buscar**. O sea que las que realmente faltaban por mail eran **8**, no 17.*
 
 #### El mail de supervisión
 
-**Lo manda «Vincular PDFs» al terminar. «Contar» no manda nada** — es un vistazo en pantalla, y un
+**Lo manda «Vincular con la carpeta» al terminar. «Contar» no manda nada** — es un vistazo en pantalla, y un
 mail por cada conteo sería ruido. Si contaste y no te llegó mail, está bien.
 
 Trae tres cosas: **✅ vinculadas** (con proveedor, número, monto y link), **⚠️ sin PDF agrupadas por
 motivo** — así ves cuáles son trabajo de verdad — y **❓ huérfanos con su candidata ⭐**.
 
-#### 📧 Enviar estado actualizado
+#### 📧 Mandar el estado *(antes «Enviar estado actualizado»)*
 
 **El mail automático queda viejo apenas vinculás algo a mano.** Por eso hay un cuarto botón:
-**📧 Enviar estado actualizado**. Vuelve a leer la carpeta y manda el reporte con el estado de
+**📧 Mandar el estado**. Vuelve a leer la carpeta y manda el reporte con el estado de
 **ahora**, incluido lo que vinculaste vos.
 
 Tocalo **cuando terminaste** de acomodar el mes. Puede ser al toque, mañana, o después de cerrar y
@@ -1615,7 +1619,7 @@ Desde el informe también podés:
   *«Facturas faltantes»* con una fila por factura — fecha · proveedor · comprobante · importe — para pegar en un mail o WhatsApp.
 - En el pedido, **Todas** / **Ninguna** tilda o destilda todas las que se pueden reclamar.
 
-**Dónde busca** *(⚠️ cambió 2026-10-23: ya no se elige)*: desde **Subdiarios**, **sólo el mail** (la carpeta del mes la mira **🔗 Vincular PDFs**); desde **Facturas sin comprobante**, **carpeta y mail**. En cada fila, la columna **Último mail** dice cuándo se buscó por última vez.
+**Dónde busca** *(⚠️ cambió 2026-10-23: ya no se elige)*: desde **Subdiarios**, **sólo el mail** (la carpeta del mes la mira **🔗 Vincular con la carpeta**); desde **Facturas sin comprobante**, **carpeta y mail**. En cada fila, la columna **Último mail** dice cuándo se buscó por última vez.
 
 **«No es ésta»**: en una factura en **VER**, el **✓** muestra la factura de ARCA (fecha, importe) y, en cada candidato, el importe que leyó la app. Si el archivo no es, **No es ésta** → motivo (opcional) → **Descartar**. Queda en el historial de búsquedas, ese archivo no se vuelve a ofrecer, y si no queda ningún candidato la factura pasa a **NO Mail** para volver a buscarla. Ningún archivo se borra.
 
@@ -3791,7 +3795,7 @@ y ahí suele haber más que en MSA.
   **flecha abajo** para recorrer, **Enter** para elegir y **Tab** para seguir. → A-TEST-1196
 - **Hacienda → Nuevo Movimiento**: debajo de cada categoría dice **«Hoy: N cabezas»**. Si cargás más
   de las que hay te avisa en rojo, pero te deja guardar. → A-TEST-1197
-- **Subdiarios → Vincular PDFs**: mientras trabaja **podés seguir en otra pantalla de la app**; el
+- **Subdiarios → Vincular con la carpeta**: mientras trabaja **podés seguir en otra pantalla de la app**; el
   avance te sigue arriba a la derecha y al final llega el mail. **No cierres ni recargues la pestaña
   del navegador** (te pregunta antes). Si te fuiste, la lista de «PDFs sin vincular» vuelve con
   «📊 Contar»; **«👁 ver»** muestra el PDF ahí mismo. → A-TEST-1193

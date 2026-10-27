@@ -97,7 +97,11 @@ export const RECURSOS: Recurso[] = [
   { id: "egresos.pagos",           seccion: "egresos", etiqueta: "Facturas → Pagos",                 tipo: "accion", archivo: FACTURAS },
   { id: "egresos.imputar",         seccion: "egresos", etiqueta: "Subdiarios → Imputar Facturas",    tipo: "accion", padre: "egresos.subdiarios", archivo: FACTURAS },
   { id: "egresos.gestionar-subdiario", seccion: "egresos", etiqueta: "Subdiarios → Gestionar Facturas", tipo: "accion", padre: "egresos.subdiarios", archivo: FACTURAS },
-  { id: "egresos.vincular-pdf",    seccion: "egresos", etiqueta: "Subdiarios → Contar y vincular PDFs", tipo: "accion", padre: "egresos.subdiarios", archivo: FACTURAS },
+  // Archivo digital, de a poco (JMS 27/10: «cada botón hace una cosa y debe ser muy claro qué usar… vincular con
+  // la carpeta sería una»): el botón de todos los días, aparte de los de afinar.
+  { id: "egresos.vincular-pdf",    seccion: "egresos", etiqueta: "Subdiarios → Vincular con la carpeta", tipo: "accion", padre: "egresos.subdiarios", archivo: FACTURAS },
+  { id: "egresos.archivo-digital-mas", seccion: "egresos", etiqueta: "Subdiarios → Contar, re-vincular todo y mandar el estado por mail", tipo: "accion", padre: "egresos.subdiarios", archivo: FACTURAS },
+  { id: "egresos.faltantes-pdf",   seccion: "egresos", etiqueta: "Subdiarios → Facturas sin PDF (pedirlas, copiar el pedido)", tipo: "accion", padre: "egresos.subdiarios", archivo: FACTURAS },
 
   // ── Extracto Bancario ────────────────────────────────────────────────────────────────────
   { id: "extracto.movimientos", seccion: "extracto", etiqueta: "Movimientos", tipo: "pestana", archivo: EXTRACTO },

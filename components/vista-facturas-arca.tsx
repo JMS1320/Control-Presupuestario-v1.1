@@ -86,7 +86,7 @@ import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
 import { quincenasDelMes } from "@/lib/sicore/quincena"   // A-BUG-193 — el minimo es MENSUAL
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { usePuedeVer } from "@/components/contexto-permisos"
+import { usePuedeVer, useNivelDeclarado } from "@/components/contexto-permisos"
 import { Permisable } from "@/components/modo-permisos"
 import { pedirAsignacionDeCuenta, mensajeDePropagacion, type RespuestaAsignacion } from "@/lib/conciliacion/asignar-cuenta-cliente"
 import { contarMovimientosDeFactura, type ClienteParaPropagar } from "@/lib/conciliacion/propagar-cuenta"
@@ -371,6 +371,7 @@ const calcularSubtotalesSubdiario = (facturas: any[]) =>
 export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { empresa?: 'MSA' | 'PAM' | 'MA'; userRole?: UserRole } = {}) {
   // Modo restringido (lo que ve Ulises). Sólo admin tiene el modo completo — ver `facturasRestringidas`.
   const esContable = facturasRestringidas(userRole)
+  const nivelDeclarado = useNivelDeclarado()
   // Las solapas y botones de Facturas que se pueden apagar desde Configuración → Roles (A-FEAT-1322,
   // etapa 1). Sin excepción cargada se ven, igual que antes: registrarlas no le cambia nada a nadie.
   const puedeVer = usePuedeVer()
@@ -6778,54 +6779,60 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                 )}
               </div>
               <div className="flex items-center gap-2">
-                {!periodoHistorico && <Permisable recurso="egresos.vincular-pdf"><span className="flex items-center gap-2">
+                {!periodoHistorico && <>
+                {/* 🔗 El botón de todos los días (JMS 27/10: «vincular con la carpeta sería una»). Lee cada PDF de la
+                    carpeta del mes y lo pega a su factura; saltea las que ya tienen PDF. */}
+                <Permisable recurso="egresos.vincular-pdf">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => supervisarArchivoPeriodo(true)}
+                  disabled={supervisandoArchivo}
+                  title="Lee los PDF de la carpeta del mes y pega cada uno a su factura (por CUIT, número e importe). Las que ya tienen PDF no se tocan."
+                  className="flex items-center gap-2 border-blue-400 text-blue-700"
+                >
+                  {supervisandoArchivo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  {supervisandoArchivo ? 'Vinculando…' : '🔗 Vincular con la carpeta'}
+                </Button>
+                </Permisable>
+                <Permisable recurso="egresos.archivo-digital-mas"><span className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={conciliarSaldos}
                   disabled={supervisandoArchivo}
-                  title="SOLO CUENTA, no vincula nada: lista los archivos de la carpeta y los cruza contra los PDF ya vinculados. No abre ningún archivo, así que es instantáneo. Para vincular usá «Vincular PDFs»."
+                  title="Cuenta los PDF de la carpeta contra los ya vinculados. No vincula nada."
                   className="flex items-center gap-2"
                 >
                   {supervisandoArchivo ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
-                  📊 Contar (no vincula)
+                  📊 Contar
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => supervisarArchivoPeriodo(false)}
                   disabled={supervisandoArchivo}
-                  title="ABRE cada PDF de la carpeta, le lee CUIT, número y monto, y lo VINCULA a su factura cuando los tres coinciden. Es el que hace el trabajo. Va de a 4 archivos por vuelta y corre en 2do plano; al terminar manda un mail con lo vinculado y lo que faltó."
-                  className="flex items-center gap-2"
-                >
-                  {supervisandoArchivo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                  {supervisandoArchivo ? 'Vinculando…' : '🔗 Vincular PDFs (lee el contenido)'}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => supervisarArchivoPeriodo(true)}
-                  disabled={supervisandoArchivo}
-                  title="Lo mismo que «Vincular PDFs», pero saltea los que ya están vinculados. Sirve para re-correr sin repetir trabajo; con 0 vinculados hace exactamente lo mismo."
+                  title="Como «Vincular con la carpeta», pero vuelve a leer también las que ya tienen PDF."
                   className="flex items-center gap-2"
                 >
                   <RefreshCw className="h-4 w-4" />
-                  🔗 Vincular sólo los que faltan
+                  🔁 Re-vincular todo
                 </Button>
                 {/* El mail automático sale al terminar la corrida y queda viejo apenas se vincula
-                    algo a mano. Esto lo manda con el estado de AHORA, cuando el usuario dice que
-                    terminó — sin tener que adivinar cuándo es eso. */}
+                    algo a mano. Esto lo manda con el estado de AHORA. */}
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={enviarEstadoActualizado}
                   disabled={supervisandoArchivo}
-                  title="Vuelve a leer la carpeta y manda el reporte por mail con el estado de ahora, incluido lo que vinculaste a mano. Tocalo cuando terminaste."
+                  title="Manda por mail el estado de ahora del archivo digital del mes."
                   className="flex items-center gap-2"
                 >
-                  📧 Enviar estado actualizado
+                  📧 Mandar el estado
                 </Button>
-                </span></Permisable>}
+                </span></Permisable>
+                <QueBotonUso />
+                </>}
                 <Button
                   variant="outline"
                   size="sm"
@@ -7203,7 +7210,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
       })()}
 
       {/* ❌ Facturas sin PDF del período: pedirlas y buscarlas en el mail desde acá (2026-10-23) */}
-      {facturasPeriodo.length > 0 && !esContable && !periodoHistorico && (() => {
+      {facturasPeriodo.length > 0 && (!esContable || nivelDeclarado('egresos.faltantes-pdf') === 'escritura') && !periodoHistorico && <Permisable recurso="egresos.faltantes-pdf">{(() => {
         const { filas, pedidas } = faltantesDelSubdiario(facturasPeriodo, ultimasSinPdf, hoyArgentina())
         if (filas.length === 0) return null
         const visibles = filas.filter(f => coincideBusqueda(buscarSubdiario, [f.proveedor, f.cuit, f.comprobante, f.imp_total,
@@ -7232,7 +7239,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
             </CardContent>
           </Card>
         )
-      })()}
+      })()}</Permisable>}
 
       {/* PDFs en la carpeta que no matchearon ninguna factura (huérfanos) — última supervisión */}
       {huerfanosSupervision.length > 0 && (
@@ -12979,5 +12986,30 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
       <ModalVincularCompras abierto={!!facturaVincularCompras} facturaId={facturaVincularCompras}
         onCerrar={() => setFacturaVincularCompras(null)} />
     </div>
+  )
+}
+
+/**
+ * ❓ «¿Qué botón uso?» — el glosario corto del archivo digital (JMS 27/10: «debe ser conciso el pop up… cada botón
+ * hace una cosa y debe ser muy claro qué usar»). Una línea por botón, nada más. Es un <span> y no un <button>
+ * para que se pueda abrir también en sólo lectura.
+ */
+function QueBotonUso() {
+  const [ver, setVer] = useState(false)
+  return (
+    <span className="relative inline-block self-center text-[11px]">
+      <span role="button" tabIndex={0} className="cursor-pointer text-blue-600 underline whitespace-nowrap"
+        onClick={() => setVer(v => !v)} onKeyDown={e => { if (e.key === 'Enter') setVer(v => !v) }}>
+        ¿Qué botón uso?
+      </span>
+      {ver && (
+        <span className="absolute right-0 z-40 mt-1 block w-[380px] rounded border bg-white p-2 text-xs shadow-lg">
+          <span className="block"><b>🔗 Vincular con la carpeta</b> — el de siempre: pega los PDF de la carpeta del mes a sus facturas.</span>
+          <span className="block"><b>📊 Contar</b> — sólo cuenta cuántos PDF hay y cuántos están pegados. No cambia nada.</span>
+          <span className="block"><b>🔁 Re-vincular todo</b> — como Vincular, pero revisa también los ya pegados.</span>
+          <span className="block"><b>📧 Mandar el estado</b> — manda por mail cómo quedó el mes.</span>
+        </span>
+      )}
+    </span>
   )
 }

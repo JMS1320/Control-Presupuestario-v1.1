@@ -66,6 +66,19 @@ export function useNivel() {
   }, [niveles, modo])
 }
 
+/**
+ * Lo que el rol tiene DECLARADO para un recurso (sin el «hereda escritura» de `useNivel`): `undefined` si no figura.
+ * Sirve para lo que antes se escondía por ROL y ahora se puede dar por PERMISO: en un rol cerrado figura todo lo
+ * registrado de su sección (lo dado o «ninguno»); en uno abierto, sólo las excepciones. (27/10: las «Facturas sin
+ * PDF» se escondían a todo rol restringido; ahora se le muestran si el rol la tiene dada explícitamente.)
+ */
+export function useNivelDeclarado() {
+  const niveles = useContext(ContextoPermisos)
+  const modo = useModoPermisos()
+  return useMemo(() => (recurso: string): Nivel | undefined =>
+    modo ? nivelEnBorrador(modo.borrador, recurso) : niveles[recurso], [niveles, modo])
+}
+
 /** `puedeVer("productivo.insumos")` — falso sólo si está explícitamente en `"ninguno"`. */
 export function usePuedeVer() {
   const nivel = useNivel()
