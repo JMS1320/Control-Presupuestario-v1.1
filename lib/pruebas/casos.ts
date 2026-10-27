@@ -8606,6 +8606,14 @@ export function correrCasos(): Resultado[] {
     chequear("Accesos", "Rol cerrado: ve sólo lo que tiene tildado; lo que no figura en su lista (como una solapa registrada después) nace APAGADO",
       "escritura · lectura · ninguno · sólo egresos", vc, vc === "escritura · lectura · ninguno · sólo egresos", "A-FEAT-1333")
 
+    // 🔒 27/10 — los BOTONES de Facturas y Subdiarios tienen candado: en el rol cerrado de Ulises nacen apagados
+    // (JMS: «yo deshabilitaría SICORE, pagos, edición masiva… de menos a más»); en un rol abierto no cambia nada.
+    const ulisesPrueba = nivelesEfectivos({ secciones: ["egresos"], permisos: { "egresos.facturas-msa": "escritura", "egresos.subdiarios": "escritura" }, cerrado: true })
+    const abiertoHoy = nivelesEfectivos({ secciones: ["egresos"], permisos: { "egresos.templates": "ninguno" } })
+    const vb = ["egresos.sicore", "egresos.pagos", "egresos.edicion-masiva", "egresos.imputar"].map(k => ulisesPrueba[k]).join(",") + " · abierto " + (abiertoHoy["egresos.sicore"] ?? "ve y edita")
+    chequear("Accesos", "Botones con candado: en un rol cerrado SICORE, Pagos, Edición masiva e Imputar nacen apagados; en un rol abierto (el contable de hoy) siguen como estaban",
+      "ninguno,ninguno,ninguno,ninguno · abierto ve y edita", vb, vb === "ninguno,ninguno,ninguno,ninguno · abierto ve y edita", "A-FEAT-1334")
+
     // Pasar de abierto a cerrado y volver no cambia lo que ve en ese momento.
     const secc = ["egresos", "productivo"]
     const orig = { secciones: secc, permisos: { "egresos.templates": "ninguno", "egresos.seguros": "lectura" } as Record<string, string> }

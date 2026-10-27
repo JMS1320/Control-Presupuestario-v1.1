@@ -6552,6 +6552,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
             <div className="space-y-2">
               <Label className="text-sm font-medium">⚡ Acciones</Label>
               <div className="space-y-2">
+                <Permisable recurso="egresos.imputar">
                 <Button 
                   onClick={() => {
                     setMostrarModalImputar(true)
@@ -6563,6 +6564,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                 >
                   Imputar Facturas
                 </Button>
+                </Permisable>
                 {/* 📒 A-FEAT-1318 */}
                 <Button variant="outline" className="w-full" onClick={verAsientosContables}
                   title="Las facturas no informadas en ARCA que no van al subdiario: se exportan en los Papeles del balance para registrarlas con asientos">
@@ -6594,6 +6596,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                 {/* Botón Gestionar Facturas - solo si hay facturas en el período */}
                 {console.log('🔍 DEBUG Botón Gestionar:', { periodoConsulta, facturasPeriodoLength: facturasPeriodo.length })}
                 {periodoConsulta && facturasPeriodo.length > 0 && !periodoHistorico && (
+                  <Permisable recurso="egresos.gestionar-subdiario">
                   <Button 
                     onClick={() => {
                       console.log('🔧 DEBUG: Activar modo gestión masiva')
@@ -6608,6 +6611,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                   >
                     {mostrarGestionMasiva ? "❌ Cancelar Gestión" : "🔧 Gestionar Facturas"} ({facturasPeriodo.length})
                   </Button>
+                  </Permisable>
                 )}
 
                 {/* Botón Generar Reportes - independiente de estado DDJJ */}
@@ -6774,7 +6778,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                 )}
               </div>
               <div className="flex items-center gap-2">
-                {!periodoHistorico && <>
+                {!periodoHistorico && <Permisable recurso="egresos.vincular-pdf"><span className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
@@ -6821,7 +6825,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                 >
                   📧 Enviar estado actualizado
                 </Button>
-                </>}
+                </span></Permisable>}
                 <Button
                   variant="outline"
                   size="sm"
@@ -7596,6 +7600,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
           {/* ───────────── Fila 1: Datos (importar / reglas / actualizar / filtros) ───────────── */}
           <div className="flex flex-wrap gap-2">
             {/* Importar FC (dropdown: ARCA solo admin, Excel para todos) */}
+            <Permisable recurso="egresos.importar-fc">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline">
@@ -7629,6 +7634,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            </Permisable>
 
             {/* Búsqueda de PDFs vía GAS (solo admin) */}
             {!esContable && (
@@ -7661,11 +7667,13 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
             )}
             <LeyendaEstadosFc flotante />
 
+            <Permisable recurso="egresos.reglas-import">
             <Button variant="outline" onClick={() => setMostrarReglasImport(true)}
               title="Reglas que asignan cuenta contable y estado por CUIT al importar">
               <Settings2 className="mr-2 h-4 w-4" />
               Reglas Import
             </Button>
+            </Permisable>
 
             <Button variant="outline" onClick={() => cargarFacturas()} title="Recargar datos desde BD">
               <RefreshCw className="mr-2 h-4 w-4" />
@@ -7681,11 +7689,14 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
           {/* ───────────── Fila 2: Acciones (edición + SICORE + Pagos) ───────────── */}
           <div className="flex flex-wrap gap-2 items-center">
             {/* Grupo edición */}
+            <Permisable recurso="egresos.modo-edicion">
             <Button variant={modoEdicion ? "default" : "outline"} onClick={() => setModoEdicion(!modoEdicion)}>
               <Edit3 className="mr-2 h-4 w-4" />
               {modoEdicion ? 'Salir Edición' : 'Modo Edición'}
             </Button>
+            </Permisable>
 
+            <Permisable recurso="egresos.edicion-masiva">
             <Button
               variant={modoEdicionMasiva ? "default" : "outline"}
               onClick={() => {
@@ -7700,6 +7711,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
               <Check className="mr-2 h-4 w-4" />
               {modoEdicionMasiva ? 'Cancelar Masiva' : 'Edición Masiva'}
             </Button>
+            </Permisable>
 
             {!esContable && (
               <Button
@@ -7733,6 +7745,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
             <div className="w-px h-6 bg-gray-300 mx-1"></div>
 
           {/* Botón Panel SICORE */}
+          <Permisable recurso="egresos.sicore">
           <Button
             variant="outline"
             className="bg-orange-50 hover:bg-orange-100 border-orange-300"
@@ -7747,8 +7760,10 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
             <Calendar className="mr-2 h-4 w-4" />
             SICORE
           </Button>
+          </Permisable>
 
           {/* Botón Vista de Pagos */}
+          <Permisable recurso="egresos.pagos">
           <Button
             variant="outline"
             className="bg-green-50 hover:bg-green-100 border-green-300"
@@ -7756,6 +7771,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
           >
             💰 Pagos
           </Button>
+          </Permisable>
 
           {/* Selector de columnas */}
           <Popover>

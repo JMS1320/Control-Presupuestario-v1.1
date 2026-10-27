@@ -86,6 +86,18 @@ export const RECURSOS: Recurso[] = [
   { id: "egresos.historico",      seccion: "egresos", etiqueta: "Facturas → Histórico",          tipo: "pestana", archivo: FACTURAS },
   { id: "egresos.asignacion",     seccion: "egresos", etiqueta: "Facturas → Asignación Cuentas", tipo: "pestana", archivo: FACTURAS },
   { id: "egresos.archivos-arca",  seccion: "egresos", etiqueta: "Subdiarios → Archivos para ARCA", tipo: "accion", archivo: FACTURAS },
+  // 🔒 27/10 (JMS, armando el rol de Ulises «de menos a más»: «yo deshabilitaría SICORE, pagos, muchísimas
+  // cosas, edición masiva… metiste pantallas enteras y eso dijimos que no»): los BOTONES de Facturas y
+  // Subdiarios, para prenderlos uno por uno con el candado del modo permisos. Valen para MSA, PAM y MA.
+  { id: "egresos.importar-fc",     seccion: "egresos", etiqueta: "Facturas → Importar FC",           tipo: "accion", archivo: FACTURAS },
+  { id: "egresos.reglas-import",   seccion: "egresos", etiqueta: "Facturas → Reglas Import",         tipo: "accion", archivo: FACTURAS },
+  { id: "egresos.modo-edicion",    seccion: "egresos", etiqueta: "Facturas → Modo Edición",          tipo: "accion", archivo: FACTURAS },
+  { id: "egresos.edicion-masiva",  seccion: "egresos", etiqueta: "Facturas → Edición Masiva",        tipo: "accion", archivo: FACTURAS },
+  { id: "egresos.sicore",          seccion: "egresos", etiqueta: "Facturas → SICORE",                tipo: "accion", archivo: FACTURAS },
+  { id: "egresos.pagos",           seccion: "egresos", etiqueta: "Facturas → Pagos",                 tipo: "accion", archivo: FACTURAS },
+  { id: "egresos.imputar",         seccion: "egresos", etiqueta: "Subdiarios → Imputar Facturas",    tipo: "accion", padre: "egresos.subdiarios", archivo: FACTURAS },
+  { id: "egresos.gestionar-subdiario", seccion: "egresos", etiqueta: "Subdiarios → Gestionar Facturas", tipo: "accion", padre: "egresos.subdiarios", archivo: FACTURAS },
+  { id: "egresos.vincular-pdf",    seccion: "egresos", etiqueta: "Subdiarios → Contar y vincular PDFs", tipo: "accion", padre: "egresos.subdiarios", archivo: FACTURAS },
 
   // ── Extracto Bancario ────────────────────────────────────────────────────────────────────
   { id: "extracto.movimientos", seccion: "extracto", etiqueta: "Movimientos", tipo: "pestana", archivo: EXTRACTO },
