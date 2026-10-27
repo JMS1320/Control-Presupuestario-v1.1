@@ -67,6 +67,8 @@ import {
   armarCuentasCorrientes, type PapelDeCuentasCorrientes,
   type CompraParaCC, type VentaParaCC, type MovimientoParaCC,
 } from "@/lib/balance/cuentas-corrientes"
+import { aseguradoraAlCierre } from "@/lib/balance/seguros-al-cierre"
+import { esDeLaAseguradora } from "@/lib/polizas/control-debitos"
 // 🕐 La fecha de hoy en hora argentina. Vive en el módulo de cotizaciones porque ahí nació el bug
 //    (A-OP-23); es genérica y conviene moverla, pero duplicarla sería peor.
 import { hoyArgentina } from "@/lib/cotizaciones/parsers"
@@ -522,6 +524,34 @@ export function PapelesDeBalance() {
 
           const armadoCC = armarCuentasCorrientes(
             comprasCC, ventasCC, (movsCC ?? []) as unknown as MovimientoParaCC[])
+
+          // 🛡️ A-FEAT-1385 — la cuenta corriente con la aseguradora al cierre (las pólizas son de MSA).
+          if (empresa.id === "MSA") {
+            try {
+              const [pol, mov, primero] = await Promise.all([
+                supabase.from("polizas_seguro").select("poliza,seccion,poliza_anterior,vigencia_desde,polizas_endosos(endoso,consolidado,polizas_cuotas(vencimiento,importe))"),
+                supabase.from("msa_galicia").select("id,fecha,debitos,creditos,estado,leyendas_adicionales_1,leyendas_adicionales_2")
+                  .or("leyendas_adicionales_1.ilike.*federac*,leyendas_adicionales_2.ilike.*federac*,leyendas_adicionales_1.ilike.*patronal*,leyendas_adicionales_2.ilike.*patronal*")
+                  .lte("fecha", finEj).order("fecha"),
+                supabase.from("msa_galicia").select("fecha").order("fecha", { ascending: true }).limit(1),
+              ])
+              if (!pol.error && !mov.error && (pol.data ?? []).length) {
+                const polizas = (pol.data ?? []) as any[]
+                const endosos = polizas.flatMap(p => (p.polizas_endosos ?? []).map((e: any) => ({
+                  poliza: p.poliza, endoso: e.endoso,
+                  cuotas: (e.polizas_cuotas ?? []).map((c: any) => ({ vencimiento: c.vencimiento, importe: Number(c.importe) })),
+                  consolidado: e.consolidado ? { fecha: e.consolidado.fecha, cuotas: e.consolidado.cuotas.map((c: any) => ({ vencimiento: c.vencimiento, importe: c.importe, saldo: c.saldo ?? null })) } : null,
+                })))
+                const movs = (mov.data ?? []).filter(esDeLaAseguradora).map(x => ({ id: x.id, fecha: x.fecha, debitos: Number(x.debitos) || 0, creditos: Number(x.creditos) || 0, estado: x.estado }))
+                const seg = aseguradoraAlCierre("Federación Patronal Seguros", polizas, endosos, movs, primero.data?.[0]?.fecha ?? `${meses[0]}-01`, finEj)
+                armadoCC.aseguradoras = [seg]
+                if (seg.saldo !== 0) {
+                  toast.warning(`Seguros: faltan comprobantes de Federación Patronal al cierre — saldo ${fmt(seg.saldo)} `
+                    + `(${seg.aReclamar.length} cosa(s) a reclamar). Está en la solapa 14 del Excel.`)
+                }
+              }
+            } catch { /* la cuenta corriente de seguros no frena el libro */ }
+          }
           setCuentasCorrientes(armadoCC)
 
           // 🛑 Lo que falta encuadrar se ve: es plata marcada que todavía no es de nadie.

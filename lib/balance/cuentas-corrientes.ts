@@ -175,6 +175,11 @@ export interface PapelDeCuentasCorrientes {
   totalSinTratar: number
   /** Los comprobantes del histórico cuyo nombre no matcheó ninguna contraparte. Informativo. */
   historicoSinAtribuir: number
+  /**
+   * 🛡️ Las aseguradoras (A-FEAT-1385): su saldo sale de las PÓLIZAS contra el banco, no de marcas `CTA *`.
+   * Lo agrega la pantalla del balance después de armar el papel; si no está, el papel sale igual.
+   */
+  aseguradoras?: import("./seguros-al-cierre").AseguradoraAlCierre[]
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100
