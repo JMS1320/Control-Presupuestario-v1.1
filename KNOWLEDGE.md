@@ -2891,14 +2891,15 @@ terminales empujando sus `jms/*` y `desarrollo` se agota.
 
 El zip `libro_iva_periodo_AAAAMM_original.zip` (el que devuelve el contador, [A-AUTO-09](PENDIENTES.md#a-auto-09)) trae
 `libro_iva.xml` (totales), `comprobantes_compras.csv` y `comprobantes_ventas.csv`. Lo lee `lib/subdiarios/libro-presentado.ts`.
-Comparado contra el libro diario de la app ([A-FEAT-1388](PENDIENTES.md#a-feat-1388) ronda 3), salieron **cuatro trampas**; las
-cuatro inventaban diferencias que no existían:
+Comparado contra el libro diario de la app ([A-FEAT-1388](PENDIENTES.md#a-feat-1388) ronda 3), salieron **cuatro trampas** (y una
+quinta el mismo día, al cargar los 12 zips a mano: las NC aparte); todas inventaban diferencias que no existían:
 
 | Trampa | Qué pasa | Cómo se lee |
 |---|---|---|
 | **Los importes ya están en PESOS** | una factura en dólares trae «Importe Total» en pesos **y** la moneda DOL con su tipo de cambio (Agro Centros 3-5282: 5.023.287,17 con TC 1.403 = neto 4.151.477 + IVA 871.810,17) | **no** multiplicar por el TC. Hacerlo daba 7.047 millones y toda factura en dólares salía «con otro importe» |
 | **El «Total IVA» viene redondeado** | IVA 21 % 4.464,57 figura «Total IVA» 4.464,60 | el IVA exacto es la suma de las columnas «Importe IVA x %» |
 | **El crédito fiscal puede ser GLOBAL** | en jul y nov 2025 la columna «Crédito Fiscal Computable» vino en 0 en todos los renglones: el crédito está sólo en el XML (`total_computable_global`) | para comparar contra la app se compara **IVA contra IVA**, no contra el crédito computable (en mayo 2026 también difiere del IVA, por decisión del contador) |
+| **Las notas de crédito van APARTE en el XML** *(27/10)* | `totales_compras` del XML suma sólo las facturas; las NC recibidas están en `totales_compras_mlcf_restituir` (y su IVA es el `total_debito_fiscal`). Los CSV traen las NC en negativo | la suma de los renglones = `totales_compras` − `totales_compras_mlcf_restituir`, neto y liquidado. Así cierran los 12 meses de 25/26 al centavo. Sin restarlo, 10 de 12 «no coinciden» → [A-BUG-1396](PENDIENTES.md#a-bug-1396) |
 | **El mismo comprobante con otro número** | las liquidaciones de granos están en la app sin número y con tipo 332 (ARCA: tipo 33 con número); la póliza de Federación con punto de venta 0 (ARCA: 1) | emparejar por tipo + punto de venta + número + CUIT y, si no aparece, **por CUIT + importe** (o por CUIT cuando queda uno de cada lado). Es aviso para corregir la carga, no un mes a rectificar |
 
 ⚠️ **Cambió 27/10 — NO es una diferencia: es cómo declara ARCA, y la app está bien** (hasta acá decía «a definir con el contador»;
