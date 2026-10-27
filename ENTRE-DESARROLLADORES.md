@@ -40,6 +40,10 @@
 
 ## 📨 PARA JAVIER
 
+### 🗄️ Una tabla nueva: `public.ddjj_presentadas` (2026-10-27) — ⏳ SIN APLICAR (OK de JMS dado; espera pasar el MCP a escritura)
+- `scripts/107-ddjj-presentadas.sql` (+ `-deshacer`): una fila por DDJJ que devuelve el contador (empresa + impuesto + período + secuencia) con totales, comprobantes declarados y el resultado de compararlos con el subdiario. **No toca ninguna tabla existente** salvo 1 fila en `recurso_tablas` (recurso `egresos`).
+- RLS `puede_ver`/`puede_escribir`, nada a `anon`, `authenticated` select/insert/update (sin delete). Marca `[script 107]`; el deshacer verifica la marca antes de borrar.
+
 ### 🔒 9 permisos nuevos (botones de Facturas y Subdiarios) y el rol `pruebas` cerrado (2026-10-27) — sin cambios de estructura
 - **Código**: `lib/auth/recursos.ts` suma 9 recursos tipo `accion` en `egresos` (Importar FC, Reglas Import, Modo Edición, Edición Masiva, SICORE, Pagos; y en Subdiarios: Imputar, Gestionar, Contar/vincular PDFs), envueltos en `<Permisable>` en `vista-facturas-arca.tsx`. En roles **abiertos** no cambia nada (lo que no figura = ve y edita); en roles **cerrados** nacen apagados. Es **sólo la primera barrera** (la pantalla): ninguna ruta del servidor los chequea todavía.
 - **Dato** (con OK de JMS, en su sesión): `public.roles` fila `pruebas` → `cerrado = true`, `secciones = {egresos}`, `permisos` = Facturas MSA/PAM/MA y Subdiarios con escritura, Seguros lectura. ⚠️ Esa escritura **pisó sin querer** lo que la terminal de plan sanitario le había sumado minutos antes (Productivo → Plan sanitario); se repone con OK de JMS. Antes: abierto, `permisos = {}`. Es el ensayo de lo que se le va a dar a Ulises; `contable` no se tocó.
