@@ -799,14 +799,15 @@ Una carpeta propia **cambia qué recaudos hacen falta, no los saca a todos**:
 | tomar archivo por archivo en el tablero (reglas 1 y 10) | **la BD es una sola**: anotar en el tablero ANTES qué tablas se van a escribir, y datos siempre con OK del usuario |
 | la prohibición de `checkout`/`stash`/`reset` y el `git add` de a uno (regla 2) — **dentro del propio árbol** | **los IDs, con MÁS riesgo**: cada rama tiene su copia de `PENDIENTES.md` y no ve las otras hasta el merge → buscar el máximo en **TODAS las ramas** (A-FEAT y A-BUG comparten numeración) y reclamar con fila + commit + push |
 | builds de a uno (regla 3) — cada árbol tiene su `.next/` y `node_modules` | **`memory/` y el tablero son uno solo** para todas (regla 13) |
-| el commit en la rama equivocada (reglas 14 y 15) | **merges a `jms/dia-a-dia` de a uno** y avisando en el tablero; si dos ramas tocan el mismo archivo, el que mergea segundo resuelve |
+| el commit en la rama equivocada (reglas 14 y 15) | **merges a `desarrollo` de a uno** y avisando en el tablero; si dos ramas tocan el mismo archivo, el que mergea segundo resuelve |
 | | **la carpeta principal es una terminal más**: las otras no le cambian la rama ni le escriben |
 
-Cómo se arma, al lado de la carpeta del proyecto:
+Cómo se arma, al lado de la carpeta del proyecto *(⚠️ corregido 2026-10-27: hasta acá salía de
+`origin/jms/dia-a-dia`; desde el 23/10 las ramas de tema salen de `desarrollo` — § Git)*:
 ```bash
 git fetch origin
-git worktree add -b jms/<tema> "../Control-Presupuestario-v1.1-<tema>" origin/jms/dia-a-dia
-git -C "../Control-Presupuestario-v1.1-<tema>" branch --unset-upstream   # que un push no vaya a dia-a-dia
+git worktree add -b jms/<tema> "../Control-Presupuestario-v1.1-<tema>" origin/desarrollo
+git -C "../Control-Presupuestario-v1.1-<tema>" branch --unset-upstream   # que un push no vaya a desarrollo
 cd "../Control-Presupuestario-v1.1-<tema>" && npm ci --legacy-peer-deps   # sin el flag falla
 git push -u origin jms/<tema>
 ```
