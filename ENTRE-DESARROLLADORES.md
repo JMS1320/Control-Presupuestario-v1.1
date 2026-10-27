@@ -42,9 +42,9 @@
 
 ### 🔒 9 permisos nuevos (botones de Facturas y Subdiarios) y el rol `pruebas` cerrado (2026-10-27) — sin cambios de estructura
 - **Código**: `lib/auth/recursos.ts` suma 9 recursos tipo `accion` en `egresos` (Importar FC, Reglas Import, Modo Edición, Edición Masiva, SICORE, Pagos; y en Subdiarios: Imputar, Gestionar, Contar/vincular PDFs), envueltos en `<Permisable>` en `vista-facturas-arca.tsx`. En roles **abiertos** no cambia nada (lo que no figura = ve y edita); en roles **cerrados** nacen apagados. Es **sólo la primera barrera** (la pantalla): ninguna ruta del servidor los chequea todavía.
-- **Dato** (con OK de JMS, en su sesión): `public.roles` fila `pruebas` → `cerrado = true`, `secciones = {egresos}`, `permisos` = Facturas MSA/PAM/MA y Subdiarios con escritura, Seguros lectura. Antes: abierto, `permisos = {}`. Es el ensayo de lo que se le va a dar a Ulises; `contable` no se tocó.
+- **Dato** (con OK de JMS, en su sesión): `public.roles` fila `pruebas` → `cerrado = true`, `secciones = {egresos}`, `permisos` = Facturas MSA/PAM/MA y Subdiarios con escritura, Seguros lectura. ⚠️ Esa escritura **pisó sin querer** lo que la terminal de plan sanitario le había sumado minutos antes (Productivo → Plan sanitario); se repone con OK de JMS. Antes: abierto, `permisos = {}`. Es el ensayo de lo que se le va a dar a Ulises; `contable` no se tocó.
 
-### 💉 5 tablas nuevas en `productivo` + 9 labores (2026-10-27) — ⏳ SIN APLICAR (espera OK de JMS)
+### 💉 5 tablas nuevas en `productivo` + 9 labores (2026-10-27) — ✅ APLICADA el 27/10 con JMS presente (aviso previo): 38 tareas, 6 en cadena, 3 labores IATF, 5 en recurso_tablas · y el rol `pruebas` sumó Productivo → sólo Plan sanitario, sin «Aprobar»
 
 Para [A-FEAT-1380](PENDIENTES.md#a-feat-1380) (plan sanitario, rama `jms/plan-sanitario`): `scripts/106-plan-sanitario.sql` crea
 `productivo.plan_sanitario_tareas`, `plan_sanitario_registro`, `plan_sanitario_propuestas`, `iatf` e `iatf_toros` (todas nuevas, marcadas
