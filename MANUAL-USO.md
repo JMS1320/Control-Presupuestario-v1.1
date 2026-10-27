@@ -109,6 +109,7 @@
 - [📥 Productivo → Insumos → **Cargar una compra con su respaldo** 🟡 (sin testear)](#productivo-insumos-cargar-una-compra-con-su-respaldo-sin-testear)
 - [🧾 Productivo → Insumos → **Facturas** — el respaldo parcial y sus controles 🟡 (sin testear)](#productivo-insumos-facturas-el-respaldo-parcial-y-sus-controles-sin-testear)
 - [💉 Productivo → **Plan sanitario** y la carga de IATF *(nuevo 2026-10-27)*](#productivo-plan-sanitario-y-la-carga-de-iatf-nuevo-2026-10-27)
+- [✍️ Órdenes de aplicación: **«Se hizo» y «Confirmar»** *(nuevo 2026-10-27)*](#órdenes-de-aplicación-se-hizo-y-confirmar-nuevo-2026-10-27)
 
 #### 📊 Presupuesto
 - [📈 Presupuesto → Subas de proveedores 🟡 *(nuevo 2026-07-30, sin testear)*](#presupuesto-subas-de-proveedores-nuevo-2026-07-30-sin-testear)
@@ -621,6 +622,24 @@ rinde pasado a vivo. Las filas incompletas **nunca ganan**.
 - **Km del matarife** sin cargar (no cobra flete, pero queda para el registro).
 - **No hay precio de gasoil** en el sistema: sin él, la proyección del flete a futuro no corre.
 - **Plazos de pago**: se ponen al vender, no son estándar por destino.
+
+## ✍️ Órdenes de aplicación: «Se hizo» y «Confirmar» *(nuevo 2026-10-27)*
+
+**Dónde:** Productivo → Insumos → Órdenes de Aplicación (Ganadero y Agrícola).
+
+Hay **dos botones distintos**, porque significan cosas distintas:
+- **✓ Se hizo** — quien hizo el trabajo en el campo marca la orden y carga el recuento. Queda **«a confirmar»** y **no impacta
+  nada**: no descuenta stock ni cuenta como gasto.
+- **✓ Confirmar** — quien aprueba la confirma y **recién ahí** se descuenta el stock. **Rechazar** pide el motivo y la devuelve a
+  planificada con el recuento que se cargó, para corregirlo y volver a marcarla.
+
+Si quien aprieta ✓ tiene los dos permisos, la orden se confirma directo, como siempre. Arriba de la lista se ve **«N a confirmar»**.
+Mientras está a confirmar, **Necesidad de compra** la sigue contando.
+
+**Quién puede qué:** Configuración → Roles → Productivo → Órdenes de Aplicación: nueva, editar, *se hizo*, *confirmar*, eliminar,
+descargar, y ver ganaderas / agrícolas. Para delegar: todo menos **Confirmar**.
+
+⚠️ Sin probar todavía → [A-TEST-1263](PENDIENTES.md#a-test-1263)
 
 ## 💉 Productivo → Plan sanitario y la carga de IATF *(nuevo 2026-10-27)*
 

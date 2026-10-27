@@ -40,6 +40,19 @@
 
 ## 📨 PARA JAVIER
 
+### ✍️ Órdenes: estado `a_confirmar` + 5 columnas en `ordenes_aplicacion` y `ordenes_agricolas` (2026-10-27) — ⏳ SIN APLICAR (espera OK de JMS)
+
+Para [A-FEAT-1223](PENDIENTES.md#a-feat-1223) (la doble firma, decidida por JMS el 27/10: **dos botones**). `scripts/109-ordenes-a-confirmar.sql`:
+el check de `estado` suma `'a_confirmar'` y se agregan `marcada_por`, `marcada_at`, `confirmada_por`, `confirmada_at`, `motivo_rechazo`
+(nullable, sin tocar filas). Quien tiene «Se hizo» y no «Confirmar» deja la orden `a_confirmar` (no descuenta stock); quien tiene
+«Confirmar» la ejecuta. Lo que mira `'ejecutada'` (balance, sementeras) no cambia.
+- **8 recursos nuevos** en `lib/auth/recursos.ts` (acciones bajo `productivo.ordenes`: nueva, editar, se-hizo, confirmar, borrar,
+  descargar, ganadero, agrícola). Para un rol **no cerrado** el default sigue siendo «todo habilitado» → nada cambia para admin.
+- Deshacer: `109-…-deshacer.sql` se frena si hay órdenes `a_confirmar` o con la huella cargada.
+
+📌 Borrá esta entrada cuando la leas.
+
+
 ### 🗃️ Una columna nueva: `public.polizas_seguro.template_id` (2026-10-27) — ✅ APLICADA el 27/10 con OK de JMS
 - FK a `public.egresos_sin_factura(id)`: el template de cada póliza (A-FEAT-1385, script 108). Con ella se crearon 8 templates de seguros (uno por póliza) y se desactivaron los 3 genéricos. Sin cambios de RLS.
 
