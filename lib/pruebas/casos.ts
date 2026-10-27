@@ -8318,6 +8318,11 @@ export function correrCasos(): Resultado[] {
     chequear("Pólizas", "Cuenta corriente: su saldo da la suma de «a reclamar» del resumen (dos caminos); la NC de la Vida que sobró aparece como «NC sin aplicar»",
       "saldo = resumen (el último ejercicio, con lo que arrastra) · 670821 −24341.09 · NC sin aplicar 670821 −24341.09 · el reintegro de 25/26 se arrastra a 26/27", vcc,
       Math.abs(cc.saldo - sumaRes) < 0.01 && cc.porPoliza.get("670821") === -24341.09 && ncSin?.poliza === "670821" && ncSin.diferencia === -24341.09 && arrastraReint, "A-FEAT-1383")
+    // Y se explica desde el monto de la póliza (JMS 27/10): facturado − NC = neto; pagado; la diferencia.
+    const ex = ncSin?.explicacion
+    chequear("Pólizas", "La NC sin aplicar se explica desde la póliza: facturado − NC = neto, contra lo pagado",
+      "350345.75 − 129648.3 = 220697.45 · pagado 245038.54", ex ? `${ex.facturado} − ${-ex.notasCredito} = ${ex.neto} · pagado ${ex.pagado}` : "sin explicación",
+      !!ex && ex.facturado === 350345.75 && ex.notasCredito === -129648.3 && ex.neto === 220697.45 && ex.pagado === 245038.54, "A-FEAT-1385")
     // El débito de la póliza anterior (balance anterior) no entra a la cuenta corriente.
     // 🛡️ El saldo con la aseguradora AL CIERRE, para el papel 14 del balance: lo posterior al cierre no entra, y el
     // saldo tiene que ser la suma de lo que falta reclamar (warning de comprobantes faltantes).

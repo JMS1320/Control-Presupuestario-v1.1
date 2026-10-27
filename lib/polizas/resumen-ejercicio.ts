@@ -54,6 +54,11 @@ export interface RenglonResumen {
   casos: { fecha: string; esperado: number; debitado: number | null }[]
   /** Si el renglón viene ARRASTRADO de un ejercicio anterior (sigue sin resolverse), de cuál. */
   ejercicioOrigen?: string
+  /**
+   * La cuenta desde el monto de la PÓLIZA, para poder controlarlo (JMS 27/10: «falta partir del monto de la póliza para
+   * poder uno entender y controlar»): facturado − NC = neto; pagado; diferencia.
+   */
+  explicacion?: { facturado: number; notasCredito: number; neto: number; pagado: number }
 }
 
 export interface ResumenEjercicio {
@@ -152,7 +157,7 @@ export function resumenPorEjercicio(
   // 🧾 NC sin aplicar: una póliza que ya terminó (no le quedan cuotas por vencer) y cuya cuenta corriente quedó
   // a nuestro favor. Caso: Vida 670821 — sus NC (−129.648,30) superaron las cuotas que quedaban: la aseguradora
   // nos debe 24.341,09. Lo destapó la cuenta corriente (JMS 27/10); el control por cuota sólo veía «compensada».
-  const ncSinAplicar: { poliza: string; ejercicio: string; saldo: number }[] = []
+  const ncSinAplicar: { poliza: string; ejercicio: string; saldo: number; explicacion: NonNullable<RenglonResumen["explicacion"]> }[] = []
   if (emitidas) {
     const desdeFecha = desdeEjercicio ? "20" + desdeEjercicio.slice(0, 2) + "-07-01" : "1900-01-01"
     const cc = cuentaCorriente(emitidas, cuotas, movimientos, polizas, desdeFecha, hasta)
@@ -164,7 +169,11 @@ export function resumenPorEjercicio(
       const yaExplicado = [...porEj.values()].flatMap(m => [...m.values()]).filter(r => r.poliza === pol)
         .reduce((t, r) => t + (r.esperadoVencido - r.pagado), 0)
       const resto = r2(saldo - yaExplicado)
-      if (resto < -TOL) ncSinAplicar.push({ poliza: pol, ejercicio: ejercicioDe(ultima), saldo: resto })
+      const facturado = r2(suyas.filter(c => c.importe > 0).reduce((t, c) => t + c.importe, 0))
+      const notasCredito = r2(suyas.filter(c => c.importe < 0).reduce((t, c) => t + c.importe, 0))
+      const pagado = r2(movimientos.filter(m => m.poliza === pol).reduce((t, m) => t + m.debitos - m.creditos, 0))
+      if (resto < -TOL) ncSinAplicar.push({ poliza: pol, ejercicio: ejercicioDe(ultima), saldo: resto,
+        explicacion: { facturado, notasCredito, neto: r2(facturado + notasCredito), pagado } })
     }
   }
 
@@ -202,7 +211,7 @@ export function resumenPorEjercicio(
     }
     for (const x of ncSinAplicar.filter(x => x.ejercicio === ej)) renglones.push({
       poliza: x.poliza, seccion: seccion.get(x.poliza) ?? null, cuotas: 0, notasCredito: 0, esperadoVencido: 0, pagado: 0, aVencer: 0,
-      diferencia: x.saldo, motivo: "nc-sin-aplicar", casos: [],
+      diferencia: x.saldo, motivo: "nc-sin-aplicar", casos: [], explicacion: x.explicacion,
     })
     // Lo de este ejercicio que queda abierto pasa al siguiente (con su origen); lo arrastrado sigue arrastrándose.
     const arrastrados = arrastre.map(r => ({ ...r }))
@@ -226,12 +235,25 @@ export function resumenPorEjercicio(
   })
 }
 
+/**
+ * 📂 Las dos familias de reclamo (JMS 27/10): o falta el PAPEL (la plata ya se movió) o falta la PLATA (el papel ya está).
+ *   · «Notas de crédito pendientes»: bajas sin su NC y reintegros sin facturar — se pide el comprobante.
+ *   · «Saldo a favor pendiente»: una NC que ya tenemos y que nadie devolvió ni aplicó — se pide la plata.
+ */
+export const CATEGORIA_MOTIVO: Record<MotivoDiferencia, string> = {
+  "baja-sin-nc": "Notas de crédito pendientes",
+  "reintegro-sin-facturar": "Notas de crédito pendientes",
+  "falta-endoso": "Endosos pendientes",
+  "nc-sin-aplicar": "Saldo a favor pendiente",
+  "debito-sin-poliza": "Pólizas sin cargar",
+}
+
 export const TEXTO_MOTIVO: Record<MotivoDiferencia, string> = {
-  "baja-sin-nc": "Dejó de debitarse: ¿baja sin su nota de crédito? — reclamar la NC",
-  "falta-endoso": "Se debitó otro importe: falta un endoso — reclamarlo",
-  "reintegro-sin-facturar": "Reintegros sin facturar: ninguna nota de crédito los explica — pedir el papel",
-  "nc-sin-aplicar": "NC sin aplicar: la póliza terminó y sus notas de crédito superaron las cuotas — la aseguradora nos debe este saldo: pedir el reintegro o que lo aplique",
-  "debito-sin-poliza": "Débito sin póliza: se pagó algo que ninguna póliza cargada explica — falta cargar una póliza",
+  "baja-sin-nc": "NC pendiente: dejó de debitarse (baja) y falta su nota de crédito — pedirla",
+  "falta-endoso": "Endoso pendiente: se debitó otro importe — pedir el endoso",
+  "reintegro-sin-facturar": "NC pendiente: la aseguradora nos reintegró plata sin nota de crédito — pedirla",
+  "nc-sin-aplicar": "Saldo a favor pendiente: tenemos las NC, pero superaron las cuotas y el sobrante no se devolvió ni se aplicó — pedir el reintegro o que lo descuenten de la póliza nueva",
+  "debito-sin-poliza": "Póliza sin cargar: se pagó algo que ninguna póliza cargada explica — cargarla",
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════
