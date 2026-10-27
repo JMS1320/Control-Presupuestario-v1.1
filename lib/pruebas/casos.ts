@@ -220,6 +220,7 @@ import { historicoAFactura, filasDelSubdiario } from "@/lib/facturas/historico-c
 import { parsearComprasCsv, parsearTotalesXml, compararSubdiarioConLibro } from "@/lib/subdiarios/libro-presentado"
 import { CONTADOR, asuntoSubdiario, periodoDelAsunto, cuerpoSubdiario } from "@/lib/subdiarios/contador"
 import { calcularSubtotalesSubdiario } from "@/lib/subdiarios/subtotales"
+import { TABLAS_CON_VINCULO_VENTA, completarConGrupoDeCobro } from "@/lib/balance/fechas-de-pago"
 import { TIPOS_SIN_CREDITO_COMPRAS, verificarCuadratura } from "@/lib/subdiarios/cuadratura"
 import { controlarPoliza, cotejarConComprobante, repartoDeLaPoliza, repartoDeLasCuotas, repartirImporte, responsableDe } from "@/lib/polizas/controlar-poliza"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
@@ -4700,6 +4701,20 @@ export function correrCasos(): Resultado[] {
       const vSub = `${filaCta("Combustible y lubricantes")?.v?.startsWith("NO CUADRA: 1 comprobante") ? "marcada" : "sin marca"} · Luz ${filaCta("Luz")?.v ? "marcada" : "sin marca"} · mes ${filaCta("Total 02/2026")?.v?.startsWith("NO CUADRA") ? "avisa" : "no avisa"}`
       chequear("Balance · libro diario", "🛑 Subplanilla: el renglón de esa cuenta y mes va en rojo con la marca, y el subtotal del mes avisa; la cuenta sin error, no",
         "marcada · Luz sin marca · mes avisa", vSub, vSub === "marcada · Luz sin marca · mes avisa", "A-FEAT-1388")
+
+      // 💰 U6 — las ventas se buscan en el banco por SU vínculo (`comprobante_venta_id`), en los 4 extractos y los echeqs.
+      const tablasVenta = TABLAS_CON_VINCULO_VENTA.map(t => `${t.schema}.${t.tabla}`).join(" · ")
+      chequear("Balance · cuentas a cobrar", "💰 El cobro de una venta se busca por comprobante_venta_id en los 4 extractos y los echeqs recibidos (antes, por el vínculo de compras: no encontraba nada)",
+        "public.msa_galicia · public.pam_galicia · public.pam_galicia_cc · ma.ma_galicia · msa.echeqs_terceros", tablasVenta,
+        tablasVenta === "public.msa_galicia · public.pam_galicia · public.pam_galicia_cc · ma.ma_galicia · msa.echeqs_terceros", "A-FEAT-1388")
+      // 🔗 Cobro agrupado — caso real: Sáenz Valiente, 2 ventas del 27/01 en el mismo grupo; el banco del 28/01 está
+      //    atado a una sola. La otra toma la fecha del grupo; una venta sin grupo y sin cobro sigue sin fecha.
+      const fg = completarConGrupoDeCobro(
+        [{ id: "saenz-a", grupo_cobro_id: "g1" }, { id: "saenz-b", grupo_cobro_id: "g1" }, { id: "parra", grupo_cobro_id: null }],
+        new Map([["saenz-a", "2026-01-28"]]))
+      const vG = `Sáenz B ${fg.get("saenz-b") ?? "sin fecha"} · Parra ${fg.get("parra") ?? "sin fecha"}`
+      chequear("Balance · cuentas a cobrar", "🔗 Cobro agrupado: la venta del grupo sin vínculo directo toma la fecha de su grupo; la que no tiene ni grupo ni cobro, no inventa fecha",
+        "Sáenz B 2026-01-28 · Parra sin fecha", vG, vG === "Sáenz B 2026-01-28 · Parra sin fecha", "A-FEAT-1388")
     }
 
     // ✍️ A-FEAT-1207 — los saldos del ejercicio anterior: los 3 que dio el usuario el 2026-10-18 suman

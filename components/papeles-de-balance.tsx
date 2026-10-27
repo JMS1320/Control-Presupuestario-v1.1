@@ -54,7 +54,7 @@ import {
   type ChequesDados, type AnticiposAlCierre, type ChequeCrudo,
   type AnticipoCrudo, type AplicacionDeAnticipo,
 } from "@/lib/balance/valores-al-cierre"
-import { buscarFechasDePagoBancarias, type ClienteMinimo } from "@/lib/balance/fechas-de-pago"
+import { buscarFechasDePagoBancarias, buscarFechasDeCobroBancarias, completarConGrupoDeCobro, type ClienteMinimo } from "@/lib/balance/fechas-de-pago"
 import {
   mesesDelEjercicio, armarGastosBancarios, armarFondosComunes, armarRetirosYAportes,
   esFCI, CUENTAS_DEL_EXTRACTO,
@@ -273,20 +273,34 @@ export function PapelesDeBalance() {
         for (const f of [...(arca.data ?? []), ...(ventas.data ?? [])]) {
           const r = f as Record<string, unknown>
           if (!r.id) continue
+          // Las ventas no tienen `fecha_pago`: su fecha propia de cobro es `fecha_acreditacion` (A-FEAT-1388 U6).
+          const propia = r.fecha_pago ?? r.fecha_acreditacion
           porId.set(String(r.id), {
             estado: String(r.estado ?? "pendiente"),
-            fechaPago: r.fecha_pago ? String(r.fecha_pago).slice(0, 10) : null,
+            fechaPago: propia ? String(propia).slice(0, 10) : null,
           })
         }
 
-        const { porComprobante, tablasQueFallaron } = await buscarFechasDePagoBancarias(
-          supabase as unknown as ClienteMinimo,
-          [...armado.compras, ...armado.ventas].map(a => a.id),
-        )
+        const cliente = supabase as unknown as ClienteMinimo
+        const [pagos, cobros] = await Promise.all([
+          buscarFechasDePagoBancarias(cliente, armado.compras.map(a => a.id)),
+          // 💰 A-FEAT-1388 U6: las ventas se atan al banco por `comprobante_venta_id`, no por el vínculo de compras.
+          buscarFechasDeCobroBancarias(cliente, armado.ventas.map(a => a.id)),
+        ])
+        const tablasQueFallaron = [...new Set([...pagos.tablasQueFallaron, ...cobros.tablasQueFallaron])]
         if (tablasQueFallaron.length > 0) {
           // Nada en silencio: una tabla que no se pudo leer puede hacer parecer impago algo pagado.
           toast.warning(`No se pudieron leer ${tablasQueFallaron.join(", ")}: puede faltar alguna fecha de pago.`)
         }
+        // 🔗 Cobro agrupado: la venta del grupo sin vínculo directo toma la fecha de su grupo.
+        const conPropia = new Map(cobros.porComprobante)
+        for (const v of armado.ventas) {
+          const p = porId.get(v.id)?.fechaPago
+          if (p && !conPropia.has(v.id)) conPropia.set(v.id, p)
+        }
+        const fechasCobro = completarConGrupoDeCobro(
+          (ventas.data ?? []).map(x => x as { id: string; grupo_cobro_id?: string | null }), conPropia)
+        const porComprobante = new Map([...pagos.porComprobante, ...fechasCobro])
 
         const conPago = (asientos: typeof armado.compras): ComprobanteConPago[] =>
           asientos.map(a => {
