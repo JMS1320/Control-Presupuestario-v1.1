@@ -1020,6 +1020,12 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // Funciones para edición inline - MIGRADA A HOOK UNIFICADO
   const iniciarEdicion = (fila: CashFlowRow, columna: typeof columnasDefinicion[number], event: React.MouseEvent) => {
+    // 🔘 A-BUG-1401 (JMS 28/10: «todos los botones configurables»): cambiar el estado y editar una celda tienen su casilla
+    const esEstado = (columna.key as string) === 'estado'
+    if (esEstado ? !seMuestra('cashflow.estado') : !seMuestra('cashflow.editar')) {
+      toast.info(esEstado ? 'Tu rol no puede cambiar el estado desde el Cash Flow.' : 'Tu rol no puede editar el Cash Flow.')
+      return
+    }
     console.log('🔍 Cash Flow iniciarEdicion called:', columna.key, 'ctrlKey:', event.ctrlKey, 'editable:', columna.editable)
     // Shift+Click en débitos/créditos = cambiar estado
     if (event.shiftKey && (columna.key === 'debitos' || columna.key === 'creditos')) {
@@ -4348,7 +4354,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                     >
                       Deseleccionar
                     </Button>
-                    <Button
+                    <Permisable recurso="cashflow.pdf-pagos"><Button
                       variant="outline"
                       size="sm"
                       onClick={generarPDFPagosSeleccionados}
@@ -4356,8 +4362,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                       disabled={filasSeleccionadas.size === 0}
                     >
                       📄 Detalle PDF
-                    </Button>
-                    <Button
+                    </Button></Permisable>
+                    <Permisable recurso="cashflow.mails-detalle"><Button
                       variant="outline"
                       size="sm"
                       onClick={encolarMailsSeleccionados}
@@ -4365,17 +4371,17 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                       disabled={filasSeleccionadas.size === 0}
                     >
                       ✉ Encolar mail detalle
-                    </Button>
+                    </Button></Permisable>
                     <PanelMailsPago />
-                    <Button
+                    <Permisable recurso="cashflow.lote-galicia"><Button
                       size="sm"
                       onClick={exportarLoteSeleccionados}
                       className="text-xs bg-blue-600 hover:bg-blue-700"
                       disabled={filasSeleccionadas.size === 0}
                     >
                       🏦 Exportar lote Galicia
-                    </Button>
-                    <Button
+                    </Button></Permisable>
+                    <Permisable recurso="cashflow.excel-echeqs"><Button
                       size="sm"
                       onClick={exportarExcelEcheqs}
                       className="text-xs bg-amber-600 hover:bg-amber-700"
@@ -4383,10 +4389,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                       title="Excel de emisión de echeqs para el banco, con lo tildado"
                     >
                       📝 Excel echeqs ({cantEcheqsTildados})
-                    </Button>
+                    </Button></Permisable>
                     {/* Un solo grupo seleccionado → el mismo botón deshace. Ver filaGrupoSeleccionada. */}
                     {filaGrupoSeleccionada ? (
-                      <Button
+                      <Permisable recurso="cashflow.agrupar"><Button
                         variant="outline"
                         size="sm"
                         onClick={() => desagruparFilaGrupo(filaGrupoSeleccionada)}
@@ -4394,9 +4400,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                         title={`Deshacer el grupo de ${filaGrupoSeleccionada.facturas_agrupadas} comprobantes`}
                       >
                         ✕ Desagrupar ({filaGrupoSeleccionada.facturas_agrupadas})
-                      </Button>
+                      </Button></Permisable>
                     ) : (
-                      <Button
+                      <Permisable recurso="cashflow.agrupar"><Button
                         variant="outline"
                         size="sm"
                         onClick={agruparSeleccionados}
@@ -4405,7 +4411,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                         title="Seleccioná 2 o más filas del mismo proveedor"
                       >
                         🔗 Agrupar
-                      </Button>
+                      </Button></Permisable>
                     )}
                   </div>
                 </div>
@@ -4484,7 +4490,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                     </div>
                   )}
 
-                  <Button
+                  <Permisable recurso="cashflow.cambio-lote"><Button
                     onClick={aplicarCambiosLote}
                     disabled={filasSeleccionadas.size === 0 || procesandoLote || (!cambiarFechaVenc && !cambiarEstadoLote)}
                     className="bg-blue-600 hover:bg-blue-700"
@@ -4497,7 +4503,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                     ) : (
                       `Aplicar a ${filasSeleccionadas.size} filas`
                     )}
-                  </Button>
+                  </Button></Permisable>
                 </div>
               </div>
   )
@@ -4603,7 +4609,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 <Filter className="h-4 w-4 mr-2" />
                 Filtros
               </Button>
-              <Button
+              <Permisable recurso="cashflow.modo-pagos"><Button
                 ref={botonPagosRef}
                 variant={modoPagos ? "default" : "outline"}
                 size="sm"
@@ -4613,7 +4619,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 <Receipt className="h-4 w-4 mr-2" />
                 {modoPagos ? 'Cancelar PAGOS' : 'PAGOS'}
                 <span className={`ml-1.5 rounded border px-1 text-[10px] font-normal ${modoPagos ? 'border-white/40 text-white/80' : 'text-gray-400'}`}>Alt+P</span>
-              </Button>
+              </Button></Permisable>
               {/* 🏛️ Boletas de ARBA (A-FEAT-95). Vive en el Cash Flow porque lo que actualiza es una
                   CUOTA de esta pantalla.
                   🐞 Estaba adentro del bloque `modoPagos` y el usuario no lo encontró: entrar a
@@ -4622,7 +4628,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                   selección; importar boletas no depende de ninguna selección. */}
               <PanelBoletasArba />
               {/* Botón Pago Manual - Templates Abiertos */}
-              <Button
+              <Permisable recurso="cashflow.pago-manual"><Button
                 variant="outline"
                 size="sm"
                 onClick={abrirModalPagoManual}
@@ -4630,19 +4636,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               >
                 <Plus className="h-4 w-4 mr-2" />
                 Pago Manual
-              </Button>
+              </Button></Permisable>
               {/* Botón ECHEQs */}
-              <Button
+              <Permisable recurso="cashflow.echeqs"><Button
                 variant={mostrarPanelEcheqs ? "default" : "outline"}
                 size="sm"
                 onClick={() => { setMostrarPanelEcheqs(!mostrarPanelEcheqs); if (!mostrarPanelEcheqs) cargarCheques() }}
                 className={mostrarPanelEcheqs ? "bg-amber-600 hover:bg-amber-700" : "border-amber-500 text-amber-700 hover:bg-amber-50"}
               >
                 📝 ECHEQs
-              </Button>
+              </Button></Permisable>
               {/* Botón Nuevo Anticipo — A-BUG-1335: sin ninguna de sus dos solapas, no se dibuja */}
               {hayAlguna(ANTICIPOS_CASHFLOW, seMuestra) && (
-              <Button
+              <Permisable recurso="cashflow.anticipo"><Button
                 variant="outline"
                 size="sm"
                 onClick={abrirModalAnticipo}
@@ -4650,16 +4656,16 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               >
                 <Plus className="h-4 w-4 mr-2" />
                 Anticipo
-              </Button>
+              </Button></Permisable>
               )}
-              <Button
+              <Permisable recurso="cashflow.precios"><Button
                 variant="outline"
                 size="sm"
                 onClick={() => { preciosCambiaron.current = false; setMostrarPrecios(true) }}
                 title="Precios de granos, tipo de cambio, IPC y hacienda: la misma tabla que usa el Presupuesto. Al cerrarla, el Cash Flow se recalcula con lo nuevo."
               >
                 💱 Precios y TC
-              </Button>
+              </Button></Permisable>
               <Dialog open={mostrarPrecios} onOpenChange={abierto => {
                 setMostrarPrecios(abierto)
                 // Lo estimado (cobros de arrendamiento sin pesos, cuotas no fijadas) depende de esta tabla.
@@ -6174,17 +6180,17 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                                     Antes la condición era `a.tipo === 'pago'` y los anticipos de
                                     cobro no tenían botón, así que no había forma de imputarlos. */}
                                 {a.estado !== 'vinculado' && a.estado !== 'externo' && (
-                                  <Button
+                                  <Permisable recurso="cashflow.anticipo-vincular"><Button
                                     size="sm"
                                     variant="outline"
                                     className="h-6 text-xs px-2 text-blue-600 border-blue-200 hover:bg-blue-50"
                                     onClick={() => vincularDesdeExistente(a)}
                                   >
                                     <Link2 className="h-3 w-3 mr-0.5" />Vincular
-                                  </Button>
+                                  </Button></Permisable>
                                 )}
                                 {a.estado === 'externo' && (
-                                  <Button
+                                  <Permisable recurso="cashflow.anticipo-vincular"><Button
                                     size="sm"
                                     variant="outline"
                                     className="h-6 text-xs px-2 text-gray-600 border-gray-200 hover:bg-gray-50"
@@ -6192,7 +6198,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                                     title="Volver a pendiente de vincular"
                                   >
                                     ↩ Revertir
-                                  </Button>
+                                  </Button></Permisable>
                                 )}
                               </div>
                             </td>

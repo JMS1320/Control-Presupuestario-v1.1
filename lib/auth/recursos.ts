@@ -214,6 +214,24 @@ export const RECURSOS: Recurso[] = [
   // ── Cash Flow ────────────────────────────────────────────────────────────────────────────
   { id: "cashflow.nuevo",      seccion: "cashflow", etiqueta: "Cargar anticipo",     tipo: "funcionalidad", archivo: CASHFLOW },
   { id: "cashflow.existentes", seccion: "cashflow", etiqueta: "Anticipos existentes", tipo: "funcionalidad", archivo: CASHFLOW },
+  // 🔘 A-BUG-1401 (JMS 28/10: «todos los botones configurables por defecto»): los botones de acción del Cash Flow.
+  //    En los roles abiertos vienen prendidos (no cambia nada); en los cerrados (pruebas) nacen apagados.
+  ...([
+    ["editar", "Editar una celda (fechas, importes, detalle…)"],
+    ["estado", "Cambiar el estado de una fila (pagar, pagado…)"],
+    ["cambio-lote", "Cambiar estado o fecha en lote"],
+    ["modo-pagos", "Modo pagos (seleccionar para pagar)"],
+    ["pdf-pagos", "Pagos → PDF de detalle de los seleccionados"],
+    ["mails-detalle", "Pagos → Mail de detalle a los proveedores"],
+    ["lote-galicia", "Pagos → Lote de transferencias Galicia"],
+    ["agrupar", "Agrupar / desagrupar filas"],
+    ["pago-manual", "Pago manual"],
+    ["anticipo", "Anticipo (nuevo)"],
+    ["anticipo-vincular", "Vincular / revertir un anticipo externo"],
+    ["echeqs", "Panel de ECHEQs"],
+    ["excel-echeqs", "Excel de ECHEQs"],
+    ["precios", "Precios y TC"],
+  ] as const).map(([k, e]): Recurso => ({ id: `cashflow.${k}`, seccion: "cashflow", etiqueta: e, tipo: "accion", archivo: CASHFLOW })),
 ]
 
 /**
