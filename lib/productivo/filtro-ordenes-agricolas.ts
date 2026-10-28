@@ -27,6 +27,7 @@ export interface OrdenFiltrable {
   lotes_orden?: LoteDeOrden[] | null
   labores?: string[]
   lineas?: { insumo_nombre: string; cantidad_total_l?: number | string | null; recuento?: boolean | null; cantidad_recuento_l?: number | string | null }[]
+  observaciones?: string | null
 }
 
 export interface FiltroOrdenesAgricolas {
@@ -36,10 +37,22 @@ export interface FiltroOrdenesAgricolas {
   estados: Set<string>
   desde: string // 'YYYY-MM-DD' o ''
   hasta: string
+  /** Buscador de texto (insumo, lote, labor, observaciones), sin tildes. JMS 28/10: los insumos son
+   *  demasiados para chips — «para esto es buscador de texto». */
+  texto?: string
 }
 
 export const FILTRO_ORDENES_VACIO: FiltroOrdenesAgricolas = {
-  lotes: new Set(), insumos: new Set(), labores: new Set(), estados: new Set(), desde: "", hasta: "",
+  lotes: new Set(), insumos: new Set(), labores: new Set(), estados: new Set(), desde: "", hasta: "", texto: "",
+}
+
+/** ¿El insumo coincide con el buscador? (vacío = todos) */
+export const insumoCoincide = (insumo: string, texto?: string) => !norm(texto || "") || norm(insumo).includes(norm(texto || ""))
+
+const pasaTexto = (o: OrdenFiltrable, texto?: string) => {
+  const q = norm(texto || "")
+  if (!q) return true
+  return norm([...insumosDeOrden(o), ...lotesDeOrden(o), ...laboresDeOrden(o), o.observaciones || ""].join(" | ")).includes(q)
 }
 
 type Dimension = "lotes" | "insumos" | "labores" | "estados"
@@ -101,6 +114,7 @@ export function filtrarOrdenesAgricolas<T extends OrdenFiltrable>(
   return ordenes.filter(o => {
     if (f.desde && o.fecha < f.desde) return false
     if (f.hasta && o.fecha > f.hasta) return false
+    if (!pasaTexto(o, f.texto)) return false
     if (ignorar !== "lotes" && !pasaLote(o, f.lotes, padreDe)) return false
     if (ignorar !== "insumos" && !pasa(f.insumos, insumosDeOrden(o))) return false
     if (ignorar !== "labores" && !pasa(f.labores, laboresDeOrden(o))) return false
@@ -166,6 +180,8 @@ export function resumenOrdenes<T extends OrdenFiltrable>(ordenes: T[], f: Filtro
     ha += haO
     for (const l of o.lineas || []) {
       if (f.insumos.size > 0 && !f.insumos.has(l.insumo_nombre)) continue
+      // con buscador: si la orden tiene insumos que coinciden, se suman sólo ésos
+      if (f.texto && (o.lineas || []).some(x => insumoCoincide(x.insumo_nombre, f.texto)) && !insumoCoincide(l.insumo_nombre, f.texto)) continue
       const lt = l.recuento && l.cantidad_recuento_l != null ? Number(l.cantidad_recuento_l) : Number(l.cantidad_total_l) || 0
       litros.set(l.insumo_nombre, (litros.get(l.insumo_nombre) || 0) + lt * factor)
     }
@@ -179,7 +195,7 @@ export function resumenOrdenes<T extends OrdenFiltrable>(ordenes: T[], f: Filtro
 }
 
 export const hayFiltro = (f: FiltroOrdenesAgricolas) =>
-  f.lotes.size + f.insumos.size + f.labores.size + f.estados.size > 0 || !!f.desde || !!f.hasta
+  f.lotes.size + f.insumos.size + f.labores.size + f.estados.size > 0 || !!f.desde || !!f.hasta || !!norm(f.texto || "")
 
 // ── Lotes madre y sub-lotes ──────────────────────────────────────────────────────────────────────
 

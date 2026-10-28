@@ -692,7 +692,7 @@ quien no, propone.
 
 ## 🌾 Productivo → Insumos → Órdenes Aplicación → Agrícola: **filtrar las órdenes** *(nuevo 2026-10-28)*
 
-Arriba de la lista hay una barra con chips de **Lote**, **Insumo**, **Labor** y **Estado**, y un rango de **Fecha**.
+Arriba de la lista hay un **Buscar** (insumo, lote, labor u observación — ej. «glifo»), chips de **Lote**, **Labor** y **Estado**, y un rango de **Fecha**.
 - Click en un chip lo prende o lo apaga; **Ctrl+click deja sólo ése**; «todos» vuelve a mostrar todo en esa fila.
 - El número de cada chip dice cuántas órdenes quedarían con los demás filtros puestos.
 - Con algún filtro puesto, abajo aparece el resumen: cuántas órdenes, cuántas hectáreas y **cuántos litros de cada insumo** (si la orden tiene recuento, el recuento).
@@ -703,6 +703,7 @@ Arriba de la lista hay una barra con chips de **Lote**, **Insumo**, **Labor** y 
 elegí el grande en **Dentro de (lote madre)**. En la lista queda debajo del madre, y el madre muestra cuánto lleva medido
 («medido 4,2 de 12,8 · faltan 8,6»; ✓ cuando se completa).
 - En la orden podés aplicar al madre entero o a un sub-lote; cada lote queda con sus hectáreas.
+- **Total de hectáreas**: arriba a la derecha de «Lotes a aplicar». Vacío = la suma de los lotes. Si lo escribís y dejás **un** lote sin hectáreas (ej. «Alberdones General», que nunca va a ser un lote), ese lote se completa **por diferencia**. Si los números no cierran, la orden no se guarda y dice por qué.
 - Si el lote todavía no existe, **+ Nuevo lote** dentro de la orden abre el mismo formulario de Lotes Agrícolas; al guardarlo queda elegido en la orden.
 - Al filtrar un sub-lote aparecen también las órdenes del madre entero (se cuentan enteras, con aviso); al filtrar el madre, todo lo
   de sus sub-lotes. Con varios lotes en una orden, el resumen suma sólo las hectáreas y los litros del lote filtrado.

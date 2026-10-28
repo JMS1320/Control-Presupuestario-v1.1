@@ -61,6 +61,7 @@ import { TabPlanSanitario } from "@/components/tab-plan-sanitario"
 import { ModalRomaneo } from "@/components/modal-romaneo"
 import { ModalFleteCarga } from "@/components/modal-flete-carga"
 import { ModalNuevoLoteAgricola } from "@/components/modal-nuevo-lote-agricola"
+import { resolverHaOrden } from "@/lib/productivo/hectareas-orden"
 import { traerTodo } from "@/lib/supabase-paginado"
 
 // ============================================================
@@ -7391,7 +7392,11 @@ function SubTabOrdenesAgricolas() {
   // Multi-lote
   interface LoteOrdenRow { key: number; lote_id: string; lote_nombre: string; hectareas: string }
   const [lotesOrden, setLotesOrden] = useState<LoteOrdenRow[]>([{ key: Date.now(), lote_id: '', lote_nombre: '', hectareas: '' }])
-  const totalHectareas = lotesOrden.reduce((sum, l) => sum + (parseFloat(l.hectareas) || 0), 0)
+  // A-FEAT-1397: total de ha que se puede escribir, y UN lote sin ha va por diferencia (ej. «Alberdones»)
+  const [totalHaEscrito, setTotalHaEscrito] = useState('')
+  const filasConDato = lotesOrden.filter(l => l.lote_id || l.lote_nombre.trim() || l.hectareas.trim())
+  const haOrden = resolverHaOrden(filasConDato, totalHaEscrito)
+  const totalHectareas = haOrden.total
 
   const agregarLoteRow = () => setLotesOrden(prev => [...prev, { key: Date.now(), lote_id: '', lote_nombre: '', hectareas: '' }])
   const eliminarLoteRow = (key: number) => setLotesOrden(prev => prev.filter(l => l.key !== key))
@@ -7453,6 +7458,7 @@ function SubTabOrdenesAgricolas() {
     setModoVer(false)
     setNuevaOrden({ fecha: hoyArgentina(), observaciones: '' })
     setLotesOrden([{ key: Date.now(), lote_id: '', lote_nombre: '', hectareas: '' }])
+    setTotalHaEscrito('')
     setLaboresSeleccionadas({})
     setLineas([])
     setNuevaLabor('')
@@ -7504,6 +7510,7 @@ function SubTabOrdenesAgricolas() {
   useEffect(() => { cargarDatos() }, [cargarDatos])
 
   const guardarOrden = async () => {
+    if (haOrden.error) { toast.error(haOrden.error); return }
     if (totalHectareas <= 0) {
       toast.error('Ingrese al menos un lote con hectáreas'); return
     }
@@ -7563,13 +7570,12 @@ function SubTabOrdenesAgricolas() {
         const { error: eBorrar } = await supabase.schema('productivo').from('ordenes_agricolas_lotes').delete().eq('orden_id', ordenId)
         if (eBorrar) throw new Error(eBorrar.message)
       }
-      const filasLotes = lotesOrden
-        .filter(l => l.lote_nombre.trim() || (parseFloat(l.hectareas) || 0) > 0)
+      const filasLotes = filasConDato
         .map((l, i) => ({
           orden_id: ordenId,
           lote_id: l.lote_id || null,
           lote_nombre: l.lote_nombre.trim() || '(sin nombre)',
-          hectareas: parseFloat(l.hectareas) || 0,
+          hectareas: haOrden.haDe.get(l.key) ?? 0,
           orden: i + 1,
         }))
       if (filasLotes.length > 0) {
@@ -7617,6 +7623,7 @@ function SubTabOrdenesAgricolas() {
     setOrdenEditandoId(orden.id)
     setNuevaOrden({ fecha: orden.fecha, observaciones: orden.observaciones || '' })
     // A-FEAT-1397: cada lote en su fila (antes la orden de 2 lotes se abría como una sola fila «A / B»)
+    setTotalHaEscrito('')
     const lotesGuardados = [...(orden.lotes_orden || [])].sort((a, b) => a.orden - b.orden)
     setLotesOrden(lotesGuardados.length > 0
       ? lotesGuardados.map((l, i) => ({ key: Date.now() + i, lote_id: l.lote_id || '', lote_nombre: l.lote_nombre, hectareas: String(l.hectareas) }))
@@ -7797,7 +7804,12 @@ function SubTabOrdenesAgricolas() {
       {/* A-FEAT-1397: filtros */}
       {ordenes.length > 0 && (
         <div className="rounded-md border bg-muted/30 p-3 space-y-2 text-xs">
-          {([['lotes', 'Lote'], ['insumos', 'Insumo'], ['labores', 'Labor'], ['estados', 'Estado']] as const).map(([dim, etiqueta]) => (
+          <div className="flex items-center gap-1">
+            <span className="w-14 shrink-0 font-medium text-muted-foreground">Buscar</span>
+            <Input className="h-7 max-w-sm text-xs" placeholder="Insumo, lote, labor u observación (ej. glifo)"
+              value={filtroOrd.texto || ''} onChange={e => setFiltroOrd(p => ({ ...p, texto: e.target.value }))} />
+          </div>
+          {([['lotes', 'Lote'], ['labores', 'Labor'], ['estados', 'Estado']] as const).map(([dim, etiqueta]) => (
             <div key={dim} className="flex flex-wrap items-center gap-1">
               <span className="w-14 shrink-0 font-medium text-muted-foreground">{etiqueta}</span>
               {chipsDe(ordenes, filtroOrd, dim, padreDe).map(({ valor, n }) => {
@@ -7977,9 +7989,14 @@ function SubTabOrdenesAgricolas() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label className="text-base font-semibold">Lotes a aplicar</Label>
-                <span className="text-sm font-medium text-green-700">
-                  Total: {formatoNumero(totalHectareas)} ha
-                </span>
+                <div className="flex items-center gap-1 text-sm font-medium text-green-700"
+                  title="Vacío = la suma de los lotes. Si lo escribís, el lote que dejes sin hectáreas se completa por diferencia.">
+                  Total:
+                  <Input type="text" inputMode="decimal" className="h-7 w-24 text-right text-sm"
+                    placeholder={formatoNumero(totalHectareas)}
+                    value={totalHaEscrito} onChange={e => setTotalHaEscrito(e.target.value)} />
+                  ha
+                </div>
               </div>
               <div className="space-y-2">
                 {lotesOrden.map((row) => (
@@ -8007,9 +8024,10 @@ function SubTabOrdenesAgricolas() {
                       onChange={e => actualizarLoteRow(row.key, 'lote_nombre', e.target.value)}
                     />
                     <Input
-                      type="number" step="0.01"
-                      className="w-24 h-8 text-xs text-right"
-                      placeholder="Ha"
+                      type="text" inputMode="decimal"
+                      className={`w-24 h-8 text-xs text-right ${haOrden.porDiferencia === row.key ? 'placeholder:text-green-700 placeholder:italic' : ''}`}
+                      placeholder={haOrden.porDiferencia === row.key && !haOrden.error ? `${formatoNumero(haOrden.haDe.get(row.key) ?? 0)} dif.` : 'Ha'}
+                      title={haOrden.porDiferencia === row.key ? 'Por diferencia: el total menos los demás lotes' : undefined}
                       value={row.hectareas}
                       onChange={e => actualizarLoteRow(row.key, 'hectareas', e.target.value)}
                     />
@@ -8023,6 +8041,11 @@ function SubTabOrdenesAgricolas() {
                   </div>
                 ))}
               </div>
+              {haOrden.error && <p className="text-xs text-red-600">⚠️ {haOrden.error}</p>}
+              {!haOrden.error && haOrden.porDiferencia !== null && (
+                <p className="text-xs text-green-700">
+                  «{filasConDato.find(f => f.key === haOrden.porDiferencia)?.lote_nombre || 'Sin nombre'}» lleva {formatoNumero(haOrden.haDe.get(haOrden.porDiferencia) ?? 0)} ha por diferencia ({formatoNumero(totalHectareas)} de total menos los demás lotes).
+                </p>)}
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" className="h-7 text-xs" onClick={agregarLoteRow}>
                   <Plus className="mr-1 h-3 w-3" /> Agregar lote

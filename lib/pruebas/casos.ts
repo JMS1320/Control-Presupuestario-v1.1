@@ -81,6 +81,7 @@ import { importeDeVenta, cuotasNoFijadas, leyendaEnDolares } from "@/lib/arrenda
 import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPapel, moverPartida, clavePartida } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
+import { resolverHaOrden } from "@/lib/productivo/hectareas-orden"
 import { filtrarOrdenesAgricolas, chipsDe, resumenOrdenes, FILTRO_ORDENES_VACIO, padreDePorNombre, arbolLotes } from "@/lib/productivo/filtro-ordenes-agricolas"
 import { armarLibroComprasArca, controlarArchivo, leerCbte, texto as textoArca, type FilaCompraArca } from "@/lib/subdiarios/libro-iva-arca"
 import { evaluarCambioDDJJ, estadoDelPeriodo, mesesEnviadosSinPresentar, estadoDeLosMeses } from "@/lib/subdiarios/estado-ddjj"
@@ -9819,6 +9820,13 @@ export function correrCasos(): Resultado[] {
       "labores con glifosato: Pulverización 1,Siembra 1 · Atrazina sigue ofrecida: 1 · 2 órdenes 32.3 ha · Glifosato 74", v2,
       v2 === "labores con glifosato: Pulverización 1,Siembra 1 · Atrazina sigue ofrecida: 1 · 2 órdenes 32.3 ha · Glifosato 74", "A-FEAT-1397")
     const fLote = F({ lotes: new Set(["Ribera Abajo"]) })
+    const fTx = F({ texto: "GLIFO" })
+    const enTx = filtrarOrdenesAgricolas(ords, fTx)
+    const rTx = resumenOrdenes(enTx, fTx)
+    const fTx2 = F({ texto: "casas" })
+    const vTx = `glifo: ${enTx.length} órdenes, litros ${rTx.litros.map(([i, l]) => `${i} ${l}`).join(",")} · casas: ${filtrarOrdenesAgricolas(ords, fTx2).length}`
+    chequear("Órdenes agrícolas — filtros", "El buscador encuentra por insumo sin importar mayúsculas (y suma sólo los litros de ese insumo) y también por lote",
+      "glifo: 2 órdenes, litros Glifosato 74 · casas: 1", vTx, vTx === "glifo: 2 órdenes, litros Glifosato 74 · casas: 1", "A-FEAT-1397")
     const v3 = resumenOrdenes(filtrarOrdenesAgricolas(ords, fLote), fLote).enteras
     chequear("Órdenes agrícolas — filtros", "Filtrando por lote, las órdenes viejas de varios lotes (sin ha por lote) se avisan y se cuentan enteras, no en silencio",
       "2", String(v3), v3 === 2, "A-FEAT-1397")
@@ -9850,6 +9858,21 @@ export function correrCasos(): Resultado[] {
     chequear("Órdenes agrícolas — sub-lotes", "Filtrar ER1 trae lo aplicado al madre (entero, avisado) y su parte de una orden de varios lotes (4,2 ha y sus litros); filtrar el madre trae todo lo de sus sub-lotes",
       "ER1: 2026-06-24,2026-11-02 · 17 ha · glifo 34 · enteras 1 | madre: 3 órdenes · 21.1 ha · enteras 0", v4,
       v4 === "ER1: 2026-06-24,2026-11-02 · 17 ha · glifo 34 · enteras 1 | madre: 3 órdenes · 21.1 ha · enteras 0", "A-FEAT-1397")
+  }
+
+  // ══ 🌾 Orden agrícola: total escrito + un lote POR DIFERENCIA (A-FEAT-1397, nota JMS 28/10 «Alberdones») ══
+  {
+    const F = [{ key: "er1", hectareas: "4,1" }, { key: "alb", hectareas: "" }]
+    const a = resolverHaOrden(F, "30")
+    const b = resolverHaOrden(F, "")
+    const c = resolverHaOrden([{ key: "x", hectareas: "14" }, { key: "y", hectareas: "5.5" }], "20")
+    const d = resolverHaOrden([{ key: "x", hectareas: "14" }, { key: "y", hectareas: "" }, { key: "z", hectareas: "" }], "30")
+    const e = resolverHaOrden([{ key: "x", hectareas: "14" }, { key: "y", hectareas: "" }], "10")
+    const f = resolverHaOrden([{ key: "x", hectareas: "14" }, { key: "y", hectareas: "5.5" }], "19,5")
+    const v = `con total: ${a.total} = er1 ${a.haDe.get("er1")} + alb ${a.haDe.get("alb")} (dif ${a.porDiferencia}) · sin total: ${b.total}, ${b.error ?? "sin error"} · no cierra: ${c.error ? "FRENA" : "pasa"} · 2 vacíos: ${d.error ? "FRENA" : "pasa"} · dif negativa: ${e.error ? "FRENA" : "pasa"} · cierra: ${f.error ?? "ok"} ${f.total}`
+    chequear("Órdenes agrícolas — ha por diferencia", "El lote sin ha lleva total − los demás; sin total es la suma; frena si los números se contradicen (no cierra, 2 vacíos, diferencia ≤ 0)",
+      "con total: 30 = er1 4.1 + alb 25.9 (dif alb) · sin total: 4.1, sin error · no cierra: FRENA · 2 vacíos: FRENA · dif negativa: FRENA · cierra: ok 19.5", v,
+      v === "con total: 30 = er1 4.1 + alb 25.9 (dif alb) · sin total: 4.1, sin error · no cierra: FRENA · 2 vacíos: FRENA · dif negativa: FRENA · cierra: ok 19.5", "A-FEAT-1397")
   }
 
   return r
