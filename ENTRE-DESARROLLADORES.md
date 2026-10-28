@@ -40,6 +40,10 @@
 
 ## 📨 PARA JAVIER
 
+### 🔒 Lotes «a confirmar»: 4 columnas en `productivo.lotes_agricolas` + 2 claves del rol `pruebas` (2026-10-28) — aviso ANTES de aplicarla, con OK de JMS («avanzá con todos esos»)
+- `scripts/122-lotes-a-confirmar.sql` (+ `-deshacer`). A-FEAT-1408 / A-DEC-1024 (regla de JMS: todo lo que carga alguien que no es él queda pendiente de su OK): `a_confirmar` (default false), `creado_por`, `confirmado_por`, `confirmado_at`. Confirma sólo el admin (como las órdenes).
+- **Permisos**: en el rol `pruebas` se saca `productivo.lotes.nuevo` y se agrega `productivo.ordenes.nuevo-lote` (recurso nuevo: crear lote desde la orden). No se toca nada más del rol.
+
 ### 🌾 Sub-lotes y los lotes de cada orden agrícola: 1 columna en `productivo.lotes_agricolas` + tabla nueva `productivo.ordenes_agricolas_lotes` (2026-10-28) — ✅ APLICADA el 28/10 con OK de JMS (aviso previo): 1 columna, 1 tabla con RLS, 1 en recurso_tablas, 31 filas (17 órdenes, todas cierran)
 - `scripts/121-sublotes-y-lotes-de-orden.sql` (+ `-deshacer`). A-FEAT-1397: `lotes_agricolas.lote_padre_id` (un lote dentro de otro: ER1
   dentro de «Entre Rios 1, 2, 3») y `ordenes_agricolas_lotes` (cada lote de la orden con sus hectáreas; antes la orden guardaba sólo el
