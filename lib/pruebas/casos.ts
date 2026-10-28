@@ -81,6 +81,7 @@ import { importeDeVenta, cuotasNoFijadas, leyendaEnDolares } from "@/lib/arrenda
 import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPapel, moverPartida, clavePartida } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
+import { condicionesVenta } from "@/lib/productivo/venta-condiciones"
 import { dosisYTotal } from "@/lib/productivo/dosis-orden"
 import { pideFechaPagoAlCambiarEstado } from "@/lib/pagos/fecha-pago-fila"
 import { filtrosEnMemoria, hayQueTraerTodo, limiteParaCargar } from "@/lib/extracto/alcance-filtros"
@@ -9946,6 +9947,20 @@ export function correrCasos(): Resultado[] {
     chequear("Órdenes agrícolas — dosis y total", "Si se escribe el total queda tal cual (50, no 49,998) y la dosis se deriva; si se escribe la dosis, se deriva el total; si cambian las ha, se mueve el que no se escribió",
       "total 50 en 19,5 ha → total 50, dosis 2.5641 (total) · dosis 2,5641 → total 50 · 5 L en cc → 256.4103 cc/ha · total 50 con 25 ha → dosis 2", v,
       v === "total 50 en 19,5 ha → total 50, dosis 2.5641 (total) · dosis 2,5641 → total 50 · 5 L en cc → 256.4103 cc/ha · total 50 con 25 ha → dosis 2", "A-FEAT-1397")
+  }
+
+  // ══ 💵 Venta de hacienda: monto a mano, IVA y plazo (A-FEAT-1403, toros del 27/10 sin monto) ══
+  {
+    const base = { netoCalculado: null, netoEscrito: "", alicuotaIva: "", fechaVenta: "2026-10-27", plazoDias: "", fechaCobroEscrita: "" }
+    const a = condicionesVenta({ ...base, netoEscrito: "2.400.000", plazoDias: "30" })
+    const b = condicionesVenta({ ...base, netoCalculado: 1000000, alicuotaIva: "21" })
+    const c = condicionesVenta({ ...base, netoCalculado: 1000000, netoEscrito: "900.000", plazoDias: "30", fechaCobroEscrita: "2026-12-15" })
+    const d = condicionesVenta({ ...base, alicuotaIva: "10.5", netoEscrito: "100" })
+    const e = condicionesVenta(base)
+    const v = `por total: ${a.neto} (${a.netoDeDonde}) + IVA ${a.iva} = ${a.total}, cobro ${a.fechaCobro} (${a.plazoTexto}) · calculado 21%: ${b.total} · escrito pisa: ${c.neto}, fecha escrita ${c.fechaCobro} · «10.5»: ${d.alicuota} · vacía: ${e.neto ?? "sin monto"}, cobro ${e.fechaCobro ?? "—"}`
+    chequear("Venta de hacienda — condiciones", "El monto escrito manda (venta por cabeza), IVA 10,5 por defecto, el plazo da la fecha de cobro y la fecha escrita la pisa; «10.5» no se lee como 105",
+      "por total: 2400000 (escrito) + IVA 252000 = 2652000, cobro 2026-11-26 (30 días) · calculado 21%: 1210000 · escrito pisa: 900000, fecha escrita 2026-12-15 · «10.5»: 10.5 · vacía: sin monto, cobro —", v,
+      v === "por total: 2400000 (escrito) + IVA 252000 = 2652000, cobro 2026-11-26 (30 días) · calculado 21%: 1210000 · escrito pisa: 900000, fecha escrita 2026-12-15 · «10.5»: 10.5 · vacía: sin monto, cobro —", "A-FEAT-1403")
   }
 
   return r

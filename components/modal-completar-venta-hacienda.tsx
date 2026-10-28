@@ -42,6 +42,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
+import { condicionesVenta, IVA_HACIENDA } from "@/lib/productivo/venta-condiciones"
 
 /** es-AR: coma decimal y punto de miles. Nunca `type="number"` para montos (§ CLAUDE.md). */
 const num = (v: string): number | null => {
@@ -103,6 +104,11 @@ export function ModalCompletarVentaHacienda({
   const [precio, setPrecio] = useState("")
   const [kgCarne, setKgCarne] = useState("")
   const [notas, setNotas] = useState("")
+  // 💵 A-FEAT-1403 — condiciones comerciales: monto a mano, IVA, plazo / fecha de cobro
+  const [montoEscrito, setMontoEscrito] = useState("")
+  const [alicuota, setAlicuota] = useState("")
+  const [plazoDias, setPlazoDias] = useState("")
+  const [fechaCobro, setFechaCobro] = useState("")
   const [guardando, setGuardando] = useState(false)
 
   /**
@@ -154,6 +160,7 @@ export function ModalCompletarVentaHacienda({
     setKgCarga(movimiento.peso_total_kg != null ? String(movimiento.peso_total_kg).replace(".", ",") : "")
     setPrecio(movimiento.precio_por_kg != null ? String(movimiento.precio_por_kg).replace(".", ",") : "")
     setDesbaste(""); setCz(""); setKgCarne(""); setDestinoId(""); setNotas("")
+    setMontoEscrito(""); setAlicuota(""); setPlazoDias(""); setFechaCobro("")
     setElegidos({}); setSueltos([]); setBrutoCamion(""); setTaraCamion("")
     setCargaId(""); setKgOtrasVentas(0)
     kgTocado.current = false
@@ -223,7 +230,7 @@ export function ModalCompletarVentaHacienda({
     // Si la venta ya existe, se traen SUS valores: la ventana edita la venta, no la duplica.
     if (movimiento.stock_venta_id) {
       supabase.schema("productivo").from("stock_ventas")
-        .select("destino_id, pct_desbaste, pct_cz, kg_totales, precio_kg, kg_carne, cliente_cuit, cliente_nombre, notas, carga_id, animales_sueltos")
+        .select("destino_id, pct_desbaste, pct_cz, kg_totales, precio_kg, kg_carne, cliente_cuit, cliente_nombre, notas, carga_id, animales_sueltos, monto_neto, alicuota_iva, plazo_cobro, fecha_cobro")
         .eq("id", movimiento.stock_venta_id).single()
         .then(({ data: v }) => {
           if (!v) return
@@ -238,6 +245,11 @@ export function ModalCompletarVentaHacienda({
           }
           setNotas(v.notas ?? "")
           if (v.carga_id) setCargaId(v.carga_id)
+          // A-FEAT-1403: el monto sin precio por kilo fue escrito a mano → vuelve como escrito
+          if (v.monto_neto != null && v.precio_kg == null) setMontoEscrito(String(v.monto_neto).replace(".", ","))
+          if (v.alicuota_iva != null) setAlicuota(String(v.alicuota_iva).replace(".", ","))
+          if (v.plazo_cobro) { const d = String(v.plazo_cobro).match(/\d+/); if (d) setPlazoDias(d[0]) }
+          if (v.fecha_cobro) setFechaCobro(v.fecha_cobro)
           setSueltos((v.animales_sueltos ?? []).map((x: any) => ({
             descripcion: x.descripcion ?? "", kg: x.kg != null ? String(x.kg).replace(".", ",") : "",
           })))
@@ -319,7 +331,14 @@ export function ModalCompletarVentaHacienda({
   const czMonto = bruto != null && num(cz) != null ? bruto * (num(cz)! / 100) : null
   const netoFinal = bruto != null ? bruto - (czMonto ?? 0) : null
 
-  const porQueNoHayImporte = p == null ? "falta el precio"
+  const cond = condicionesVenta({
+    netoCalculado: netoFinal, netoEscrito: montoEscrito, alicuotaIva: alicuota,
+    fechaVenta: movimiento?.fecha ?? "", plazoDias, fechaCobroEscrita: fechaCobro,
+  })
+  // ⚠️ si la fecha de cobro sale del plazo, se muestra pero NO se pisa la escrita
+  const fechaCobroDelPlazo = !fechaCobro && cond.fechaCobro ? cond.fechaCobro : null
+
+  const porQueNoHayImporte = cond.netoDeDonde === "escrito" ? null : p == null ? "falta el precio (o escribí el monto neto)"
     : alaRes && carne == null ? `${destino?.nombre} compra a la res: falta el kilaje de carne del romaneo`
     : kg == null ? "faltan los kilos de carga"
     : null
@@ -389,7 +408,10 @@ export function ModalCompletarVentaHacienda({
         pct_cz: num(cz),
         precio_kg: p,
         kg_carne: carne,
-        monto_neto: netoFinal,
+        monto_neto: cond.neto,
+        alicuota_iva: cond.alicuota,
+        plazo_cobro: cond.plazoTexto,
+        fecha_cobro: cond.fechaCobro,
         destino_id: destinoId || null,
         cliente_nombre: cliente.nombre || null,
         cliente_cuit: cliente.cuit || null,
@@ -416,7 +438,7 @@ export function ModalCompletarVentaHacienda({
         stock_venta_id: ventaId,
         peso_total_kg: kg,
         precio_por_kg: p,
-        monto_total: netoFinal,
+        monto_total: cond.neto,
         proveedor_cliente: cliente.nombre || null,
         cuit: cliente.cuit || null,
       }).eq("id", movimiento.id)
@@ -776,6 +798,47 @@ export function ModalCompletarVentaHacienda({
               se completa a medida que llegan los datos.
             </p>
           )}
+        </div>
+
+        {/* 💵 A-FEAT-1403 — condiciones comerciales: lo que llega al Cash Flow y al Presupuesto */}
+        <div className="rounded border px-3 py-2 text-xs space-y-2">
+          <div className="font-medium text-gray-700">Condiciones comerciales</div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div>
+              <Label className="text-xs">Monto neto <span className="text-gray-400">(a mano)</span></Label>
+              <Input className="mt-1" type="text" placeholder={netoFinal != null ? fmt(netoFinal) : "0,00"}
+                value={montoEscrito} onChange={e => setMontoEscrito(e.target.value)}
+                title="Vacío = el que sale de kilos × precio − CZ. Escrito = manda (venta por cabeza o por un total)." />
+            </div>
+            <div>
+              <Label className="text-xs">IVA %</Label>
+              <Input className="mt-1" type="text" placeholder={String(IVA_HACIENDA).replace(".", ",")}
+                value={alicuota} onChange={e => setAlicuota(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs">Plazo <span className="text-gray-400">(días)</span></Label>
+              <Input className="mt-1" type="text" inputMode="numeric" placeholder="0"
+                value={plazoDias} onChange={e => setPlazoDias(e.target.value)} />
+            </div>
+            <div>
+              <Label className="text-xs">Fecha de cobro</Label>
+              <Input className="mt-1" type="date" value={fechaCobro || fechaCobroDelPlazo || ""}
+                onChange={e => setFechaCobro(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1 rounded bg-gray-50 px-2 py-1.5">
+            <span className="text-gray-600">Neto {cond.netoDeDonde === "escrito" ? <span className="text-blue-700">(escrito a mano)</span> : cond.netoDeDonde === "calculado" ? <span className="text-gray-400">(calculado)</span> : null}</span>
+            <span className="text-right font-medium tabular-nums">{cond.neto == null ? "—" : "$" + fmt(cond.neto)}</span>
+            <span className="text-gray-600">IVA {fmt(cond.alicuota).replace(/,00$/, "")} %</span>
+            <span className="text-right tabular-nums">{cond.iva == null ? "—" : "$" + fmt(cond.iva)}</span>
+            <span className="font-semibold text-gray-800">Total con IVA</span>
+            <span className="text-right font-semibold tabular-nums">{cond.total == null ? "—" : "$" + fmt(cond.total)}</span>
+          </div>
+          <p className="text-[11px] text-gray-500">
+            Al Cash Flow entra como «a cobrar» el <b>{(cond.fechaCobro || movimiento.fecha).split("-").reverse().join("/")}</b>
+            {cond.fechaCobro ? "" : " (sin plazo: la fecha de la venta)"} por el <b>neto</b>
+            {cond.neto != null ? <> (${fmt(cond.neto)})</> : null}. El Presupuesto la toma como venta confirmada.
+          </p>
         </div>
 
         <div>
