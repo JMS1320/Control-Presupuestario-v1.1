@@ -81,7 +81,7 @@ import { importeDeVenta, cuotasNoFijadas, leyendaEnDolares } from "@/lib/arrenda
 import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPapel, moverPartida, clavePartida } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
-import { filtrarOrdenesAgricolas, chipsDe, resumenOrdenes, FILTRO_ORDENES_VACIO } from "@/lib/productivo/filtro-ordenes-agricolas"
+import { filtrarOrdenesAgricolas, chipsDe, resumenOrdenes, FILTRO_ORDENES_VACIO, padreDePorNombre, arbolLotes } from "@/lib/productivo/filtro-ordenes-agricolas"
 import { armarLibroComprasArca, controlarArchivo, leerCbte, texto as textoArca, type FilaCompraArca } from "@/lib/subdiarios/libro-iva-arca"
 import { evaluarCambioDDJJ, estadoDelPeriodo, mesesEnviadosSinPresentar, estadoDeLosMeses } from "@/lib/subdiarios/estado-ddjj"
 import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
@@ -9819,9 +9819,37 @@ export function correrCasos(): Resultado[] {
       "labores con glifosato: Pulverización 1,Siembra 1 · Atrazina sigue ofrecida: 1 · 2 órdenes 32.3 ha · Glifosato 74", v2,
       v2 === "labores con glifosato: Pulverización 1,Siembra 1 · Atrazina sigue ofrecida: 1 · 2 órdenes 32.3 ha · Glifosato 74", "A-FEAT-1397")
     const fLote = F({ lotes: new Set(["Ribera Abajo"]) })
-    const v3 = resumenOrdenes(filtrarOrdenesAgricolas(ords, fLote), fLote).compartidas
-    chequear("Órdenes agrícolas — filtros", "Filtrando por lote, las órdenes de varios lotes se avisan (sus ha son de la orden entera), no se suman en silencio",
+    const v3 = resumenOrdenes(filtrarOrdenesAgricolas(ords, fLote), fLote).enteras
+    chequear("Órdenes agrícolas — filtros", "Filtrando por lote, las órdenes viejas de varios lotes (sin ha por lote) se avisan y se cuentan enteras, no en silencio",
       "2", String(v3), v3 === 2, "A-FEAT-1397")
+
+    // Etapa 2: sub-lotes (ER1 dentro de «Entre Rios 1, 2, 3») y órdenes con las ha de cada lote
+    const lotes = [
+      { id: "M", nombre_lote: "Entre Rios 1, 2, 3", hectareas: 12.8, lote_padre_id: null },
+      { id: "E2", nombre_lote: "ER2", hectareas: 4.1, lote_padre_id: "M" },
+      { id: "E1", nombre_lote: "ER1", hectareas: 4.2, lote_padre_id: "M" },
+      { id: "C", nombre_lote: "Casas", hectareas: 15, lote_padre_id: null },
+    ]
+    const arbol = arbolLotes(lotes).map(x => `${"·".repeat(x.nivel)}${x.lote.nombre_lote}${x.medido !== null ? ` (medido ${x.medido} de ${x.lote.hectareas})` : ""}`).join(" | ")
+    chequear("Órdenes agrícolas — sub-lotes", "El lote madre va seguido de sus sub-lotes, y muestra cuánto lleva medido contra sus hectáreas",
+      "Casas | Entre Rios 1, 2, 3 (medido 8.3 de 12.8) | ·ER1 | ·ER2", arbol,
+      arbol === "Casas | Entre Rios 1, 2, 3 (medido 8.3 de 12.8) | ·ER1 | ·ER2", "A-FEAT-1397")
+    const padreDe = padreDePorNombre(lotes)
+    const o2 = [
+      { fecha: "2026-06-24", estado: "ejecutada", hectareas: 12.8, lote_nombre: "Entre Rios 1, 2, 3",
+        lotes_orden: [{ lote_nombre: "Entre Rios 1, 2, 3", hectareas: 12.8, orden: 1 }], lineas: [{ insumo_nombre: "Glifosato", cantidad_total_l: 25.6 }] },
+      { fecha: "2026-11-02", estado: "planificada", hectareas: 19.2, lote_nombre: "ER1 / Casas",
+        lotes_orden: [{ lote_nombre: "ER1", hectareas: 4.2, orden: 1 }, { lote_nombre: "Casas", hectareas: 15, orden: 2 }], lineas: [{ insumo_nombre: "Glifosato", cantidad_total_l: 38.4 }] },
+      { fecha: "2026-11-03", estado: "planificada", hectareas: 4.1, lote_nombre: "ER2",
+        lotes_orden: [{ lote_nombre: "ER2", hectareas: 4.1, orden: 1 }], lineas: [] },
+    ]
+    const fE1 = F({ lotes: new Set(["ER1"]) }), fM = F({ lotes: new Set(["Entre Rios 1, 2, 3"]) })
+    const enE1 = filtrarOrdenesAgricolas(o2, fE1, { padreDe }), enM = filtrarOrdenesAgricolas(o2, fM, { padreDe })
+    const rE1 = resumenOrdenes(enE1, fE1, padreDe), rM = resumenOrdenes(enM, fM, padreDe)
+    const v4 = `ER1: ${enE1.map(o => o.fecha).join(",")} · ${rE1.ha} ha · glifo ${rE1.litros[0]?.[1]} · enteras ${rE1.enteras} | madre: ${enM.length} órdenes · ${rM.ha} ha · enteras ${rM.enteras}`
+    chequear("Órdenes agrícolas — sub-lotes", "Filtrar ER1 trae lo aplicado al madre (entero, avisado) y su parte de una orden de varios lotes (4,2 ha y sus litros); filtrar el madre trae todo lo de sus sub-lotes",
+      "ER1: 2026-06-24,2026-11-02 · 17 ha · glifo 34 · enteras 1 | madre: 3 órdenes · 21.1 ha · enteras 0", v4,
+      v4 === "ER1: 2026-06-24,2026-11-02 · 17 ha · glifo 34 · enteras 1 | madre: 3 órdenes · 21.1 ha · enteras 0", "A-FEAT-1397")
   }
 
   return r

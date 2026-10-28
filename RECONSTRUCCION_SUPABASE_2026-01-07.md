@@ -3323,7 +3323,7 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
-### 2026-10-28 · SUB-LOTES y LOS LOTES DE CADA ORDEN AGRÍCOLA — `productivo.lotes_agricolas.lote_padre_id` + tabla `productivo.ordenes_agricolas_lotes` (script 121) — A-FEAT-1397 — ⏳ SIN CORRER (espera OK de JMS)
+### 2026-10-28 · SUB-LOTES y LOS LOTES DE CADA ORDEN AGRÍCOLA — `productivo.lotes_agricolas.lote_padre_id` + tabla `productivo.ordenes_agricolas_lotes` (script 121) — A-FEAT-1397 — ✅ CORRIDO 2026-10-28 con JMS (MCP en write con su OK): 31 filas, 17 órdenes, todas cierran; `explain update` OK
 `scripts/121-sublotes-y-lotes-de-orden.sql` (+ `-deshacer`): la columna (FK a sí misma, `on delete set null`, check ≠ id), la tabla
 (`orden_id` FK cascade, `lote_id` FK set null, `lote_nombre`, `hectareas`, `orden`), RLS por `puede_ver`/`puede_escribir`, 1 fila en
 `recurso_tablas` y la carga de las órdenes existentes (texto partido por « / », ha del lote o proporcionales al total; control: cada

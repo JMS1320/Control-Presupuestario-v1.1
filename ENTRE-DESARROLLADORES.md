@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 🌾 Sub-lotes y los lotes de cada orden agrícola: 1 columna en `productivo.lotes_agricolas` + tabla nueva `productivo.ordenes_agricolas_lotes` (2026-10-28) — aviso ANTES de aplicarla, espera OK de JMS
+### 🌾 Sub-lotes y los lotes de cada orden agrícola: 1 columna en `productivo.lotes_agricolas` + tabla nueva `productivo.ordenes_agricolas_lotes` (2026-10-28) — ✅ APLICADA el 28/10 con OK de JMS (aviso previo): 1 columna, 1 tabla con RLS, 1 en recurso_tablas, 31 filas (17 órdenes, todas cierran)
 - `scripts/121-sublotes-y-lotes-de-orden.sql` (+ `-deshacer`). A-FEAT-1397: `lotes_agricolas.lote_padre_id` (un lote dentro de otro: ER1
   dentro de «Entre Rios 1, 2, 3») y `ordenes_agricolas_lotes` (cada lote de la orden con sus hectáreas; antes la orden guardaba sólo el
   texto «A / B» y el total). Carga las 16 órdenes existentes partiendo el texto; no modifica ninguna orden ni lote.

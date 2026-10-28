@@ -699,7 +699,14 @@ Arriba de la lista hay una barra con chips de **Lote**, **Insumo**, **Labor** y 
 - Filtrar por un lote trae también las órdenes que lo comparten con otros lotes; en ese caso el resumen avisa que sus hectáreas y litros son de la orden entera.
 - **Limpiar filtros** vuelve a la lista completa.
 
-⚠️ Sin probar todavía → A-TEST-1270
+**Sub-lotes** (Lotes Agrícolas → Nuevo Lote): si un lote se midió aparte dentro de otro más grande —ER1 dentro de «Entre Rios 1, 2, 3»—,
+elegí el grande en **Dentro de (lote madre)**. En la lista queda debajo del madre, y el madre muestra cuánto lleva medido
+(«medido 4,2 de 12,8 · faltan 8,6»; ✓ cuando se completa).
+- En la orden podés aplicar al madre entero o a un sub-lote; cada lote queda con sus hectáreas.
+- Al filtrar un sub-lote aparecen también las órdenes del madre entero (se cuentan enteras, con aviso); al filtrar el madre, todo lo
+  de sus sub-lotes. Con varios lotes en una orden, el resumen suma sólo las hectáreas y los litros del lote filtrado.
+
+⚠️ Sin probar todavía → [A-TEST-1270](PENDIENTES.md#a-test-1270)
 
 ## 🐄 Vender desde Productivo → Movimientos *(nuevo 2026-09-04)*
 

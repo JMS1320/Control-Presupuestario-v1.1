@@ -6,7 +6,7 @@ import { cabezasHoy } from "@/lib/productivo/cabezas-hoy"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { toggleChip, esSoloEste, tituloChip } from "@/lib/ui/chips"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
-import { filtrarOrdenesAgricolas, chipsDe, resumenOrdenes, hayFiltro, FILTRO_ORDENES_VACIO, type FiltroOrdenesAgricolas } from "@/lib/productivo/filtro-ordenes-agricolas"
+import { filtrarOrdenesAgricolas, chipsDe, resumenOrdenes, hayFiltro, FILTRO_ORDENES_VACIO, padreDePorNombre, arbolLotes, type FiltroOrdenesAgricolas } from "@/lib/productivo/filtro-ordenes-agricolas"
 import { PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useCallback, Fragment } from "react"
@@ -208,6 +208,8 @@ interface LoteAgricola {
   estado: string
   observaciones: string | null
   created_at: string
+  /** A-FEAT-1397 (script 121): el lote madre que lo contiene (ER1 dentro de «Entre Rios 1, 2, 3») */
+  lote_padre_id?: string | null
 }
 
 interface OrdenAgricola {
@@ -225,6 +227,8 @@ interface OrdenAgricola {
   confirmada_por?: string | null
   motivo_rechazo?: string | null
   lote?: { nombre_lote: string; hectareas: number }
+  /** A-FEAT-1397 (script 121): cada lote de la orden con sus hectáreas */
+  lotes_orden?: { lote_id: string | null; lote_nombre: string; hectareas: number; orden: number }[]
   lineas?: LineaOrdenAgricola[]
   labores?: string[]
 }
@@ -7354,8 +7358,6 @@ function SubTabOrdenesAgricolas() {
   const [ordenes, setOrdenes] = useState<OrdenAgricola[]>([])
   // A-FEAT-1397: filtros de la lista (lote, insumo, labor, estado, fechas)
   const [filtroOrd, setFiltroOrd] = useState<FiltroOrdenesAgricolas>(FILTRO_ORDENES_VACIO)
-  const ordenesFiltradas = filtrarOrdenesAgricolas(ordenes, filtroOrd)
-  const resumenFiltro = resumenOrdenes(ordenesFiltradas, filtroOrd)
   const [insumosAgro, setInsumosAgro] = useState<StockInsumo[]>([])
   const [laboresAgricolas, setLaboresAgricolas] = useState<{ id: number, nombre: string }[]>([])
   const [loading, setLoading] = useState(true)
@@ -7363,6 +7365,11 @@ function SubTabOrdenesAgricolas() {
   const [guardando, setGuardando] = useState(false)
   const [ordenEditandoId, setOrdenEditandoId] = useState<string | null>(null)
   const [modoVer, setModoVer] = useState(false)
+  // A-FEAT-1397: lote madre / sub-lotes → filtrar el madre trae lo de sus sub-lotes y viceversa
+  const padreDe = padreDePorNombre(lotesDisponibles)
+  const ordenesFiltradas = filtrarOrdenesAgricolas(ordenes, filtroOrd, { padreDe })
+  const resumenFiltro = resumenOrdenes(ordenesFiltradas, filtroOrd, padreDe)
+  const arbolDisponibles = arbolLotes(lotesDisponibles)
 
   // Eliminar orden agrícola
   const [mostrarModalEliminar, setMostrarModalEliminar] = useState(false)
@@ -7455,7 +7462,7 @@ function SubTabOrdenesAgricolas() {
     try {
       const { data: ordenesData, error } = await supabase.schema('productivo')
         .from('ordenes_agricolas')
-        .select('*, lote:lotes_agricolas(nombre_lote, hectareas), lineas:lineas_orden_agricola(*), lineas_labores:lineas_orden_agricola_labores(labor_id, labores(nombre))')
+        .select('*, lote:lotes_agricolas(nombre_lote, hectareas), lotes_orden:ordenes_agricolas_lotes(lote_id, lote_nombre, hectareas, orden), lineas:lineas_orden_agricola(*), lineas_labores:lineas_orden_agricola_labores(labor_id, labores(nombre))')
         .order('fecha', { ascending: false })
         .order('created_at', { ascending: false })
       if (error) throw error
@@ -7480,7 +7487,7 @@ function SubTabOrdenesAgricolas() {
       setLaboresAgricolas(laboresData || [])
 
       const { data: lotesData } = await supabase.schema('productivo').from('lotes_agricolas')
-        .select('id, nombre_lote, hectareas, cultivo, campo, campana, fecha_siembra, fecha_cosecha_estimada, estado, observaciones, created_at')
+        .select('id, nombre_lote, hectareas, cultivo, campo, campana, fecha_siembra, fecha_cosecha_estimada, estado, observaciones, created_at, lote_padre_id')
         .order('nombre_lote')
       setLotesDisponibles(lotesData || [])
     } catch (err) {
@@ -7548,6 +7555,25 @@ function SubTabOrdenesAgricolas() {
         ordenId = ordenData.id
       }
 
+      // A-FEAT-1397: cada lote con sus hectáreas (la suma es el total de la orden)
+      if (ordenEditandoId) {
+        const { error: eBorrar } = await supabase.schema('productivo').from('ordenes_agricolas_lotes').delete().eq('orden_id', ordenId)
+        if (eBorrar) throw new Error(eBorrar.message)
+      }
+      const filasLotes = lotesOrden
+        .filter(l => l.lote_nombre.trim() || (parseFloat(l.hectareas) || 0) > 0)
+        .map((l, i) => ({
+          orden_id: ordenId,
+          lote_id: l.lote_id || null,
+          lote_nombre: l.lote_nombre.trim() || '(sin nombre)',
+          hectareas: parseFloat(l.hectareas) || 0,
+          orden: i + 1,
+        }))
+      if (filasLotes.length > 0) {
+        const { error: eLotes } = await supabase.schema('productivo').from('ordenes_agricolas_lotes').insert(filasLotes)
+        if (eLotes) throw new Error(`No se guardaron los lotes de la orden: ${eLotes.message}`)
+      }
+
       if (lineasValidas.length > 0) {
         const lineasInsert = lineasValidas.map(l => {
           const dosis = parseFloat(l.dosis)
@@ -7587,12 +7613,16 @@ function SubTabOrdenesAgricolas() {
   const abrirEdicion = (orden: OrdenAgricola) => {
     setOrdenEditandoId(orden.id)
     setNuevaOrden({ fecha: orden.fecha, observaciones: orden.observaciones || '' })
-    setLotesOrden([{
-      key: Date.now(),
-      lote_id: orden.lote_id || '',
-      lote_nombre: orden.lote?.nombre_lote || orden.lote_nombre || '',
-      hectareas: String(orden.hectareas)
-    }])
+    // A-FEAT-1397: cada lote en su fila (antes la orden de 2 lotes se abría como una sola fila «A / B»)
+    const lotesGuardados = [...(orden.lotes_orden || [])].sort((a, b) => a.orden - b.orden)
+    setLotesOrden(lotesGuardados.length > 0
+      ? lotesGuardados.map((l, i) => ({ key: Date.now() + i, lote_id: l.lote_id || '', lote_nombre: l.lote_nombre, hectareas: String(l.hectareas) }))
+      : [{
+          key: Date.now(),
+          lote_id: orden.lote_id || '',
+          lote_nombre: orden.lote?.nombre_lote || orden.lote_nombre || '',
+          hectareas: String(orden.hectareas)
+        }])
     const laboresMap: Record<number, boolean> = {}
     for (const labor of laboresAgricolas) {
       if (orden.labores?.includes(labor.nombre)) laboresMap[labor.id] = true
@@ -7767,7 +7797,7 @@ function SubTabOrdenesAgricolas() {
           {([['lotes', 'Lote'], ['insumos', 'Insumo'], ['labores', 'Labor'], ['estados', 'Estado']] as const).map(([dim, etiqueta]) => (
             <div key={dim} className="flex flex-wrap items-center gap-1">
               <span className="w-14 shrink-0 font-medium text-muted-foreground">{etiqueta}</span>
-              {chipsDe(ordenes, filtroOrd, dim).map(({ valor, n }) => {
+              {chipsDe(ordenes, filtroOrd, dim, padreDe).map(({ valor, n }) => {
                 const on = filtroOrd[dim].has(valor)
                 const texto = dim === 'estados' ? (ETIQUETA_ESTADO[valor] || valor) : valor
                 return (
@@ -7800,9 +7830,9 @@ function SubTabOrdenesAgricolas() {
               <span className="font-medium">{resumenFiltro.ordenes} de {ordenes.length} órdenes · {formatoNumero(resumenFiltro.ha)} ha</span>
               {resumenFiltro.litros.length > 0 && (
                 <span className="text-muted-foreground"> · {resumenFiltro.litros.map(([ins, lt]) => `${ins}: ${formatoCantidad(lt, 'L')}`).join(' · ')}</span>)}
-              {resumenFiltro.compartidas > 0 && (
+              {resumenFiltro.enteras > 0 && (
                 <div className="text-xs text-amber-700 mt-1">
-                  ⚠️ {resumenFiltro.compartidas} {resumenFiltro.compartidas === 1 ? 'orden abarca' : 'órdenes abarcan'} varios lotes: sus hectáreas y litros son de la orden entera (hoy la orden no guarda cuánto fue a cada lote).
+                  ⚠️ {resumenFiltro.enteras} {resumenFiltro.enteras === 1 ? 'orden se cuenta entera' : 'órdenes se cuentan enteras'}: abarcan más que lo filtrado (el lote madre completo, o varios lotes sin las hectáreas de cada uno), así que sus hectáreas y litros no se pueden separar.
                 </div>)}
             </div>)}
         </div>
@@ -7947,8 +7977,10 @@ function SubTabOrdenesAgricolas() {
                       </SelectTrigger>
                       <SelectContent position="popper" className="z-[9999]">
                         <SelectItem value="__manual__">Sin lote / manual</SelectItem>
-                        {lotesDisponibles.map(l => (
-                          <SelectItem key={l.id} value={l.id}>{l.nombre_lote} ({l.hectareas} ha)</SelectItem>
+                        {arbolDisponibles.map(({ lote: l, nivel, medido }) => (
+                          <SelectItem key={l.id} value={l.id}>
+                            {nivel > 0 ? `${'  '.repeat(nivel)}↳ ` : ''}{l.nombre_lote} ({l.hectareas} ha{medido !== null ? ` · medido ${medido}` : ''})
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -8250,8 +8282,10 @@ function TabLotesAgricolas() {
     nombre_lote: '',
     campo: '',
     hectareas: '',
-    observaciones: ''
+    observaciones: '',
+    lote_padre_id: '' // A-FEAT-1397: vacío = lote suelto
   })
+  const arbol = arbolLotes(lotes)
 
   const cargarDatos = useCallback(async () => {
     setLoading(true)
@@ -8284,6 +8318,7 @@ function TabLotesAgricolas() {
     }
     if (nuevoLote.campo) datos.campo = nuevoLote.campo
     if (nuevoLote.observaciones) datos.observaciones = nuevoLote.observaciones
+    if (nuevoLote.lote_padre_id) datos.lote_padre_id = nuevoLote.lote_padre_id
 
     const { error } = await supabase.schema('productivo').from('lotes_agricolas').insert(datos)
     if (error) {
@@ -8295,7 +8330,7 @@ function TabLotesAgricolas() {
     toast.success('Lote agricola registrado')
     setMostrarModalLote(false)
     setNuevoLote({
-      nombre_lote: '', campo: '', hectareas: '', observaciones: ''
+      nombre_lote: '', campo: '', hectareas: '', observaciones: '', lote_padre_id: ''
     })
     cargarDatos()
   }
@@ -8350,11 +8385,24 @@ function TabLotesAgricolas() {
               </TableCell>
             </TableRow>
           ) : (
-            lotes.map(l => (
+            arbol.map(({ lote: l, nivel, medido, hijos }) => (
               <TableRow key={l.id}>
-                <TableCell className="font-medium">{l.nombre_lote}</TableCell>
+                <TableCell className={nivel > 0 ? 'text-sm' : 'font-medium'} style={{ paddingLeft: `${0.5 + nivel * 1.5}rem` }}>
+                  {nivel > 0 && <span className="text-muted-foreground mr-1">↳</span>}{l.nombre_lote}
+                </TableCell>
                 <TableCell>{l.campo || '-'}</TableCell>
-                <TableCell className="text-right">{formatoNumero(l.hectareas)} ha</TableCell>
+                <TableCell className="text-right">
+                  {formatoNumero(l.hectareas)} ha
+                  {medido !== null && (() => {
+                    const falta = Math.round((Number(l.hectareas) - medido) * 100) / 100
+                    return (
+                      <div className={`text-xs ${falta < 0 ? 'text-red-600' : falta === 0 ? 'text-green-700' : 'text-amber-700'}`}
+                        title={`Suma de sus ${hijos} sub-lotes contra las hectáreas cargadas del lote`}>
+                        medido {formatoNumero(medido)} de {formatoNumero(l.hectareas)}
+                        {falta > 0 ? ` · faltan ${formatoNumero(falta)}` : falta < 0 ? ` · ${formatoNumero(-falta)} de más` : ' ✓'}
+                      </div>)
+                  })()}
+                </TableCell>
                 <TableCell className="text-sm text-muted-foreground">{l.observaciones || '-'}</TableCell>
               </TableRow>
             ))
@@ -8374,6 +8422,23 @@ function TabLotesAgricolas() {
               <Label>Nombre Lote *</Label>
               <Input value={nuevoLote.nombre_lote} placeholder="Ej: Lote 1, Potrero Norte..."
                 onChange={e => setNuevoLote(p => ({ ...p, nombre_lote: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Dentro de (lote madre)</Label>
+              <Select value={nuevoLote.lote_padre_id || '__ninguno__'}
+                onValueChange={v => {
+                  const madre = lotes.find(l => l.id === v)
+                  setNuevoLote(p => ({ ...p, lote_padre_id: v === '__ninguno__' ? '' : v, campo: madre?.campo && !p.campo ? madre.campo : p.campo }))
+                }}>
+                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                <SelectContent position="popper" className="z-[9999]">
+                  <SelectItem value="__ninguno__">Ninguno — lote suelto</SelectItem>
+                  {arbol.map(({ lote: l, nivel }) => (
+                    <SelectItem key={l.id} value={l.id}>{nivel > 0 ? `${'  '.repeat(nivel)}↳ ` : ''}{l.nombre_lote} ({l.hectareas} ha)</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">Para un sub-lote que se midió aparte (ej. ER1 dentro de «Entre Rios 1, 2, 3»). El lote madre muestra cuánto lleva medido.</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
