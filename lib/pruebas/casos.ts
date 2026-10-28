@@ -81,6 +81,7 @@ import { importeDeVenta, cuotasNoFijadas, leyendaEnDolares } from "@/lib/arrenda
 import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPapel, moverPartida, clavePartida } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
+import { paraVos } from "@/lib/revisiones/para-vos"
 import { esHabilitable, diferencias, estadoVisible } from "@/lib/propuestas/factura"
 import { calcularTabla, mostrarValor } from "@/lib/cuaderno/formulas"
 import { pedirCampo, verPedidoCampo, tomarPedidoCampo } from "@/lib/productivo/pedido-campo"
@@ -10105,6 +10106,24 @@ export function correrCasos(): Resultado[] {
     chequear("Propuestas de cambio — factura", "Sólo se habilitan las cargadas por Excel; la propuesta guarda únicamente lo que cambió (montos es-AR comparados como número); una habilitación vencida se ve vencida, una propuesta no vence",
       'habilitables (Excel, Mis Comprobantes, arca-, sin origen): sí,no,no,no · cambia sólo el total: {"imp_total":121000} antes {"imp_total":120000} · cuenta: {"cuenta_contable":"COMBUSTIBLE"} · estados: vencida,habilitada,propuesta', v,
       v === 'habilitables (Excel, Mis Comprobantes, arca-, sin origen): sí,no,no,no · cambia sólo el total: {"imp_total":121000} antes {"imp_total":120000} · cuenta: {"cuenta_contable":"COMBUSTIBLE"} · estados: vencida,habilitada,propuesta', "A-FEAT-1400")
+  }
+
+  // ══ 🏠 «Para vos» en el Principal: lo mío primero, las tareas vencidas arriba (A-FEAT-1411, JMS 28/10) ══
+  {
+    const m = (id: string, x: Partial<{ asignado_a: string | null; creado_por: string | null; created_at: string; es_tarea: boolean; tarea_hasta: string | null; estado: string }>) =>
+      ({ id, estado: "abierta", asignado_a: null, creado_por: null, created_at: "2026-10-20T10:00:00Z", es_tarea: false, tarea_hasta: null, ...x })
+    const lista = [
+      m("sinFecha", { asignado_a: "ulises@x.com", creado_por: "José", created_at: "2026-10-28T09:00:00Z" }),
+      m("vence30", { asignado_a: "ULISES@x.com", creado_por: "José", es_tarea: true, tarea_hasta: "2026-10-30" }),
+      m("vencida", { asignado_a: "ulises@x.com", creado_por: "José", es_tarea: true, tarea_hasta: "2026-10-27" }),
+      m("deOtro", { asignado_a: "enrique@x.com", creado_por: "José" }),
+      m("mande", { asignado_a: "jose@x.com", creado_por: "Ulises" }),
+      m("cerrada", { asignado_a: "ulises@x.com", estado: "resuelta" }),
+    ]
+    const r = paraVos(lista, { mail: "ulises@x.com", etiqueta: "Ulises" }, "2026-10-28")
+    const v = `para mí: ${r.paraMi.map(x => x.id).join(",")} · mandadas: ${r.mandadas.map(x => x.id).join(",")} · vencidas: ${r.vencidas}`
+    chequear("Principal — Para vos", "Sólo lo asignado a quien mira (sin importar mayúsculas del mail), la tarea vencida primero, después por fecha; abajo lo que mandó; nunca lo de otro ni lo cerrado",
+      "para mí: vencida,vence30,sinFecha · mandadas: mande · vencidas: 1", v, v === "para mí: vencida,vence30,sinFecha · mandadas: mande · vencidas: 1", "A-FEAT-1411")
   }
 
   return r

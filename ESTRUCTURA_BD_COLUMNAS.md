@@ -232,3 +232,4 @@ ORDER BY table_schema, table_name;
 - **cuotas_arrendamiento** · **+ `en_dolares boolean not null default false`** (2026-10-27, script 117, A-FEAT-1393)
 - **cuadernos** *(public, script 124 — A-FEAT-1410)*: `id uuid, usuario_id uuid (default auth.uid(); RLS: cada uno los suyos), titulo text, bloques jsonb ([{tipo:"texto",texto} | {tipo:"tabla",celdas:string[][]}]), created_at tstz, updated_at tstz`
 - **propuestas_cambio** *(public, script 123 — A-FEAT-1400)*: `id uuid, empresa text, tabla text, registro_id uuid, persona text (mail), habilitada_por, nota, vence_at tstz (null = hasta aceptar), estado, antes jsonb, cambios jsonb, revision_id uuid, created_at, propuesta_at, resuelta_at, resuelta_por, resolucion` — RLS: admin todo; la persona ve y propone las suyas
+- **revisiones** *(public)* — ➕ script 125 (A-FEAT-1411): `es_tarea bool default false, tarea_hasta date` (la 🚩 como tarea para quien está asignada)

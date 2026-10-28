@@ -9,6 +9,7 @@ import { Ayuda } from "@/components/ayuda"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { WIDGETS, WIDGETS_POR_DEFECTO, widgetsVisibles, type Widget } from "@/lib/widgets/registro"
+import { PanelParaVos } from "@/components/panel-para-vos"
 import type { Preferencias } from "@/lib/auth/preferencias"
 
 type Tamano = { ancho: 1 | 2; alto: number }
@@ -163,6 +164,9 @@ export function VistaInicio({
           {configurando ? "Listo" : "Configurar mi inicio"}
         </Button>
       </div>
+
+      {/* 🚩 A-FEAT-1411: lo de cada uno, arriba de todo y para todos (no es un widget que se pueda sacar) */}
+      <PanelParaVos />
 
       {configurando && (
         <Card className="border-dashed">

@@ -698,6 +698,17 @@ Los botones (copiar pedido, pedir, buscar) trabajan sobre lo que queda a la vist
 
 ⚠️ Sin probar todavía → [A-TEST-1272](PENDIENTES.md#a-test-1272)
 
+## 🏠 «Para vos»: el Principal de cada uno, y las tareas *(nuevo 2026-10-28)*
+
+Cada usuario tiene su **Principal**. Arriba de todo, **🚩 Para vos** muestra lo que te asignaron (lo urgente), con las
+**tareas vencidas en rojo y primero**, y abajo lo que mandaste esperando respuesta. Ahí mismo se **responde** o se
+**cierra** (al cerrar pide qué se hizo). Nadie ve lo de los demás.
+- **Mandar una tarea**: la 🚩 de cualquier pantalla (o Alt+R) → **Para** la persona → tildá **«Es una tarea para esa
+  persona»** y poné **para cuándo**.
+- Al habilitar una factura para que alguien la corrija, la tarea se crea sola.
+
+⚠️ Sin probar todavía → [A-TEST-1283](PENDIENTES.md#a-test-1283)
+
 ## 🔓 Habilitar a alguien para que corrija una factura *(nuevo 2026-10-28)*
 
 Para que Ulises (u otra persona) corrija una factura **cargada por Excel** sin darle permiso sobre todas:

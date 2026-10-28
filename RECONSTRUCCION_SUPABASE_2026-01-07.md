@@ -3323,6 +3323,9 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-10-28 · UNA 🚩 PUEDE SER UNA TAREA — `public.revisiones.es_tarea` + `tarea_hasta` (script 125) — A-FEAT-1411 — ✅ CORRIDO 2026-10-28 con JMS
+`es_tarea boolean not null default false`, `tarea_hasta date`. Deshacer: `scripts/125-revisiones-tarea-deshacer.sql`.
+
 ### 2026-10-28 · PROPUESTAS DE CAMBIO (Ulises propone, JMS acepta) — tabla `public.propuestas_cambio` (script 123) — A-FEAT-1400 — ✅ CORRIDO 2026-10-28 con JMS
 Columnas: `empresa, tabla, registro_id, persona, habilitada_por, nota, vence_at, estado (habilitada/propuesta/aceptada/revertida/vencida/cancelada), antes, cambios, revision_id, propuesta_at, resuelta_at, resuelta_por, resolucion`. Índice único parcial (una abierta por registro). RLS: `admin_todo`, `persona_ve_las_suyas`, `persona_propone`. Deshacer: `scripts/123-propuestas-cambio-deshacer.sql`.
 
