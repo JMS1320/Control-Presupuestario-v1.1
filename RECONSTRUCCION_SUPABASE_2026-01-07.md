@@ -3323,6 +3323,9 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-10-28 · EL CUADERNO DE TRABAJO — tabla `public.cuadernos` (script 124) — A-FEAT-1410 — ✅ CORRIDO 2026-10-28 con JMS
+`id, usuario_id uuid default auth.uid(), titulo, bloques jsonb, created_at, updated_at`; RLS `cuadernos_propios` (`usuario_id = auth.uid()`), `authenticated` CRUD, `anon` nada. Deshacer: `scripts/124-cuadernos-deshacer.sql`.
+
 ### 2026-10-28 · LOTES «A CONFIRMAR» — 4 columnas en `productivo.lotes_agricolas` + 2 claves del rol `pruebas` (script 122) — A-FEAT-1408 / A-DEC-1024 — ✅ CORRIDO 2026-10-28 con JMS (verificado con `explain update`)
 `a_confirmar boolean not null default false`, `creado_por`, `confirmado_por`, `confirmado_at`. En `public.roles` (`pruebas`): `- productivo.lotes.nuevo`, `+ productivo.ordenes.nuevo-lote`. Deshacer: `scripts/122-lotes-a-confirmar-deshacer.sql`.
 

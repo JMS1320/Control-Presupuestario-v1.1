@@ -24,7 +24,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { LogOut, Settings, User } from "lucide-react"
+import { LogOut, Settings, User, NotebookText } from "lucide-react"
 
 /**
  * Iniciales para el avatar cuando no hay foto.
@@ -124,6 +124,13 @@ export function BarraSesion({
             <Link href="/perfil" className="cursor-pointer">
               <User className="mr-2 h-4 w-4" />
               Tu perfil
+            </Link>
+          </DropdownMenuItem>
+          {/* 📓 A-FEAT-1410 — el cuaderno de trabajo (personal) */}
+          <DropdownMenuItem asChild>
+            <Link href="/cuaderno" className="cursor-pointer">
+              <NotebookText className="mr-2 h-4 w-4" />
+              Cuaderno
             </Link>
           </DropdownMenuItem>
 

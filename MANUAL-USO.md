@@ -698,6 +698,16 @@ Los botones (copiar pedido, pedir, buscar) trabajan sobre lo que queda a la vist
 
 ⚠️ Sin probar todavía → [A-TEST-1272](PENDIENTES.md#a-test-1272)
 
+## 📓 El cuaderno de trabajo *(nuevo 2026-10-28, piloto)*
+
+Menú de tu usuario (arriba a la derecha) → **Cuaderno**. Cada cuaderno es tuyo: nadie más lo ve.
+- **Nuevo cuaderno**, ponele título, y agregá **bloques**: **Texto** o **Tabla**, en el orden que quieras (cada bloque tiene «+ texto» y «+ tabla» para agregar debajo, flechas para moverlo y la papelera).
+- **Texto**: tocá para escribir. `# Título`, `## Subtítulo`, `**negrita**`, `- ítem de lista`. Al tocar afuera se ve con formato.
+- **Tabla**: como una planilla. Números con coma decimal. Fórmulas que empiezan con `=`: `=B2*C2`, `=SUMA(B2:B5)`, `PROMEDIO`, `MIN`, `MAX`, `CONTAR`. «+ fila» / «+ columna».
+- Se **guarda solo** (arriba dice «guardado»). **Excel** baja el cuaderno entero en una hoja, en orden.
+
+⚠️ Sin probar todavía → [A-TEST-1279](PENDIENTES.md#a-test-1279)
+
 ## 📱 El acceso de campo en el celular *(nuevo 2026-10-28)*
 
 Para cargar órdenes desde el campo: en el celular abrí el link de la app con **`?seccion=productivo&campo=1`** al final y,

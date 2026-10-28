@@ -81,6 +81,7 @@ import { importeDeVenta, cuotasNoFijadas, leyendaEnDolares } from "@/lib/arrenda
 import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPapel, moverPartida, clavePartida } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
+import { calcularTabla, mostrarValor } from "@/lib/cuaderno/formulas"
 import { pedirCampo, verPedidoCampo, tomarPedidoCampo } from "@/lib/productivo/pedido-campo"
 import { condicionesVenta, cobroVentaSinLiquidacion } from "@/lib/productivo/venta-condiciones"
 import { dosisYTotal } from "@/lib/productivo/dosis-orden"
@@ -9986,6 +9987,21 @@ export function correrCasos(): Resultado[] {
     chequear("Cash Flow — venta de hacienda", "Sin liquidación entra neto pendiente + IVA (10,5 si la venta no dice otro); el IVA va sobre lo que falta facturar, que se descuenta en neto",
       "sin alícuota: 2652000 (IVA 10.5) · 21%: 1210000 · pendiente 400.000: 442000", v,
       v === "sin alícuota: 2652000 (IVA 10.5) · 21%: 1210000 · pendiente 400.000: 442000", "A-FEAT-1403")
+  }
+
+  // ══ 📓 Cuaderno: fórmulas de las tablas (A-FEAT-1410, piloto) ══════════════════════════════════
+  {
+    const t = calcularTabla([
+      ["Insumo", "Litros", "Precio", "Total"],
+      ["Glifosato", "50", "1.234,50", "=B2*C2"],
+      ["2,4 DB", "23,4", "2000", "=B3*C3"],
+      ["Totales", "=SUMA(B2:B3)", "=PROMEDIO(C2:C3)", "=SUM(D2:D3)"],
+      ["ciclo", "=B5", "=1/0", "=MAX(B2:B3)-MIN(B2:B3)"],
+    ])
+    const v = `D2 ${mostrarValor(t[1][3])} · D3 ${mostrarValor(t[2][3])} · B4 ${mostrarValor(t[3][1])} · C4 ${mostrarValor(t[3][2])} · D4 ${mostrarValor(t[3][3])} · B5 ${t[4][1]} · C5 ${t[4][2]} · D5 ${mostrarValor(t[4][3])} · A2 ${t[1][0]}`
+    chequear("Cuaderno — fórmulas", "Números es-AR (1.234,50), referencias, SUMA/SUM/PROMEDIO/MAX/MIN; un ciclo o una división por 0 marcan la celda sin romper la tabla",
+      "D2 61.725 · D3 46.800 · B4 73,4 · C4 1.617,25 · D4 108.525 · B5 #CICLO · C5 #ERROR · D5 26,6 · A2 Glifosato", v,
+      v === "D2 61.725 · D3 46.800 · B4 73,4 · C4 1.617,25 · D4 108.525 · B5 #CICLO · C5 #ERROR · D5 26,6 · A2 Glifosato", "A-FEAT-1410")
   }
 
   return r

@@ -230,3 +230,4 @@ ORDER BY table_schema, table_name;
 - **campo_campana_actividad**: `id, campo_id→campos, campana text, centro_costo_id→centros_costo, has_totales, has_netas, provisorio, notas` · UNIQUE (campo_id, campana, centro_costo_id). **La campaña es parte de la clave**: las has se reasignan de un año al otro.
 - **vista `control_has_por_campana`**: control pedido por el usuario — por campo y campaña, compara lo asignado contra las has productivas y devuelve `ok` / `quedan has sin asignar` / `SOBREASIGNADO` / `campo sin has cargadas`.
 - **cuotas_arrendamiento** · **+ `en_dolares boolean not null default false`** (2026-10-27, script 117, A-FEAT-1393)
+- **cuadernos** *(public, script 124 — A-FEAT-1410)*: `id uuid, usuario_id uuid (default auth.uid(); RLS: cada uno los suyos), titulo text, bloques jsonb ([{tipo:"texto",texto} | {tipo:"tabla",celdas:string[][]}]), created_at tstz, updated_at tstz`

@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 📓 Tabla nueva `public.cuadernos` + página `/cuaderno` (2026-10-28) — aviso ANTES de aplicarla, con OK de JMS
+### 📓 Tabla nueva `public.cuadernos` + página `/cuaderno` (2026-10-28) — ✅ APLICADA el 28/10 con OK de JMS (aviso previo): tabla con RLS por usuario, `anon` sin acceso
 - `scripts/124-cuadernos.sql` (+ `-deshacer`). A-FEAT-1410: cuaderno de trabajo PERSONAL (texto + tablas). RLS propia: cada usuario ve y escribe sólo los suyos (`usuario_id = auth.uid()`, default `auth.uid()`); `anon` nada. No pasa por `recurso_tablas` (no es un dato de la empresa).
 - **Ruta nueva** `/cuaderno` (protegida por el middleware como las demás) y un ítem «Cuaderno» en el menú de usuario (`barra-sesion.tsx`).
 
