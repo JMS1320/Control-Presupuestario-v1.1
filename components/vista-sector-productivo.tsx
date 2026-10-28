@@ -6398,7 +6398,7 @@ function SubTabOrdenesAplicacion() {
           <fieldset disabled={modoVer} className="contents">
           {/* Cabecera */}
           <div className="grid gap-3 border-b pb-4">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <Label>Fecha *</Label>
                 <Input type="date" value={nuevaOrden.fecha}
@@ -6435,7 +6435,7 @@ function SubTabOrdenesAplicacion() {
                   Modo manual: se listan todas las categorías. Tildá la/s que correspondan e ingresá la cantidad (útil para sanidad retroactiva).
                 </p>
               )}
-              <div className="grid grid-cols-3 gap-2 max-h-[200px] overflow-y-auto border rounded p-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 max-h-[200px] overflow-y-auto border rounded p-2">
                 {(cargaManualRodeos ? categoriasHacienda : categoriasHacienda.filter(c => (stockHaciendaMap[c.id] || 0) > 0)).map(c => {
                   const stock = stockHaciendaMap[c.id] || 0
                   const seleccionado = rodeosSeleccionados[c.id] || false
@@ -6652,6 +6652,85 @@ function SubTabOrdenesAplicacion() {
                 Agregue al menos un insumo para la orden.
               </p>
             ) : (
+              <>
+              {/* 📱 A-FEAT-1409 etapa 2: en el celular cada insumo es una tarjeta (mismos campos, mismas cuentas) */}
+              <div className="space-y-2 sm:hidden">
+                {lineas.map(l => {
+                  const dosis = parseFloat(l.dosis_ml) || 0
+                  const dosisCadaKg = parseFloat(l.dosis_cada_kg) || 0
+                  const pesoHeaderKg = parseFloat(nuevaOrden.peso_promedio_kg) || 0
+                  const pesoParaCalc = l.tipo_dosis === 'por_kilo' ? pesoHeaderKg : 0
+                  const cabezasLinea = l.cabezas ? parseInt(l.cabezas) : totalCabezas
+                  const { total, unidad } = calcularTotal(l.tipo_dosis, dosis, cabezasLinea, dosisCadaKg, pesoParaCalc)
+                  const dpc = dosisPorCabeza(l.tipo_dosis, dosis, dosisCadaKg, pesoParaCalc)
+                  return (
+                    <div key={l.key} className="rounded-md border p-2 space-y-2">
+                      <div className="flex items-start gap-2">
+                        <div className="min-w-0 flex-1">
+                          <InsumoCombobox
+                            value={l.insumo_stock_id || null}
+                            insumos={insumosGanaderos}
+                            onChange={(id) => actualizarLinea(l.key, 'insumo_stock_id', id)}
+                            onCreated={cargarDatos}
+                            ambito="ganadero"
+                            disabled={modoVer}
+                            className="w-full"
+                          />
+                        </div>
+                        <Button variant="ghost" size="sm" className="h-9 w-9 p-0 shrink-0" onClick={() => eliminarLinea(l.key)} title="Quitar insumo">
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="col-span-2">
+                          <Label className="text-[11px] text-muted-foreground">Tipo de dosis</Label>
+                          <Select value={l.tipo_dosis} onValueChange={v => actualizarLinea(l.key, 'tipo_dosis', v)}>
+                            <SelectTrigger className="h-10 text-sm"><SelectValue /></SelectTrigger>
+                            <SelectContent position="popper" className="z-[9999]">
+                              <SelectItem value="por_cabeza">Por cabeza (ml)</SelectItem>
+                              <SelectItem value="por_kilo">Por kilo (ml)</SelectItem>
+                              <SelectItem value="por_dosis">Por dosis</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label className="text-[11px] text-muted-foreground">Dosis</Label>
+                          <Input type="number" inputMode="decimal" step="0.01" className="h-10 text-sm text-right"
+                            placeholder={l.tipo_dosis === 'por_dosis' ? 'dosis/cab' : 'ml'}
+                            value={l.dosis_ml} onChange={e => actualizarLinea(l.key, 'dosis_ml', e.target.value)} />
+                        </div>
+                        {l.tipo_dosis === 'por_kilo' ? (
+                          <div>
+                            <Label className="text-[11px] text-muted-foreground">Cada X kg</Label>
+                            <Input type="number" inputMode="decimal" step="0.01" className="h-10 text-sm text-right"
+                              value={l.dosis_cada_kg} onChange={e => actualizarLinea(l.key, 'dosis_cada_kg', e.target.value)} />
+                          </div>
+                        ) : (
+                          <div>
+                            <Label className="text-[11px] text-muted-foreground">Cabezas</Label>
+                            <Input type="number" inputMode="numeric" step="1" className="h-10 text-sm text-right"
+                              placeholder={String(totalCabezas)}
+                              value={l.cabezas} onChange={e => actualizarLinea(l.key, 'cabezas', e.target.value)} />
+                          </div>
+                        )}
+                        {l.tipo_dosis === 'por_kilo' && (
+                          <div>
+                            <Label className="text-[11px] text-muted-foreground">Cabezas</Label>
+                            <Input type="number" inputMode="numeric" step="1" className="h-10 text-sm text-right"
+                              placeholder={String(totalCabezas)}
+                              value={l.cabezas} onChange={e => actualizarLinea(l.key, 'cabezas', e.target.value)} />
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Por cabeza: <b className="text-foreground">{dpc.texto}</b></span>
+                        <span>Total: <b className="text-foreground">{total > 0 ? formatoCantidad(total, unidad) : '-'}</b></span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="hidden sm:block">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -6736,6 +6815,8 @@ function SubTabOrdenesAplicacion() {
                   })}
                 </TableBody>
               </Table>
+              </div>
+              </>
             )}
           </div>
 
