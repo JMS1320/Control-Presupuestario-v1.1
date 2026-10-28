@@ -81,6 +81,7 @@ import { importeDeVenta, cuotasNoFijadas, leyendaEnDolares } from "@/lib/arrenda
 import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPapel, moverPartida, clavePartida } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
+import { dosisYTotal } from "@/lib/productivo/dosis-orden"
 import { pideFechaPagoAlCambiarEstado } from "@/lib/pagos/fecha-pago-fila"
 import { filtrosEnMemoria, hayQueTraerTodo, limiteParaCargar } from "@/lib/extracto/alcance-filtros"
 import { ordenarYFiltrarFaltantes } from "@/lib/gas-pdf/orden-faltantes"
@@ -9929,6 +9930,18 @@ export function correrCasos(): Resultado[] {
     chequear("Cash Flow — fecha de pago de una fila", "Pide la fecha al pasar a un estado de pago si falta; no en $0, ni a programado, ni PAM/MA a pagar (sin SICORE), ni anticipos",
       "Zavala a pagado: PIDE · con fecha: no · cuota template: PIDE · cuota $0: no · a programado: no · PAM a pagar: no · PAM a pagado: PIDE · anticipo: no", v,
       v === "Zavala a pagado: PIDE · con fecha: no · cuota template: PIDE · cuota $0: no · a programado: no · PAM a pagar: no · PAM a pagado: PIDE · anticipo: no", "A-BUG-1407")
+  }
+
+  // ══ 🧪 Orden agrícola: dosis y total, el último que se escribe manda (A-FEAT-1397, nota JMS 28/10) ══
+  {
+    const t = dosisYTotal({ dosis: "", unidad_dosis: "L", total: "50" }, 19.5)
+    const d = dosisYTotal({ dosis: "2.5641", unidad_dosis: "L" }, 19.5)
+    const cc = dosisYTotal({ dosis: "", unidad_dosis: "cc", total: "5" }, 19.5)
+    const masHa = dosisYTotal({ dosis: "", unidad_dosis: "L", total: "50" }, 25)
+    const v = `total 50 en 19,5 ha → total ${t.total}, dosis ${t.dosis} (${t.fuente}) · dosis 2,5641 → total ${d.total} · 5 L en cc → ${cc.dosis} cc/ha · total 50 con 25 ha → dosis ${masHa.dosis}`
+    chequear("Órdenes agrícolas — dosis y total", "Si se escribe el total queda tal cual (50, no 49,998) y la dosis se deriva; si se escribe la dosis, se deriva el total; si cambian las ha, se mueve el que no se escribió",
+      "total 50 en 19,5 ha → total 50, dosis 2.5641 (total) · dosis 2,5641 → total 50 · 5 L en cc → 256.4103 cc/ha · total 50 con 25 ha → dosis 2", v,
+      v === "total 50 en 19,5 ha → total 50, dosis 2.5641 (total) · dosis 2,5641 → total 50 · 5 L en cc → 256.4103 cc/ha · total 50 con 25 ha → dosis 2", "A-FEAT-1397")
   }
 
   return r

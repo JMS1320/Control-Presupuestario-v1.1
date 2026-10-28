@@ -712,6 +712,8 @@ elegí el grande en **Dentro de (lote madre)**. En la lista queda debajo del mad
 («medido 4,2 de 12,8 · faltan 8,6»; ✓ cuando se completa).
 - En la orden podés aplicar al madre entero o a un sub-lote; cada lote queda con sus hectáreas.
 - **Total de hectáreas**: arriba a la derecha de «Lotes a aplicar». Vacío = la suma de los lotes. Si lo escribís y dejás **un** lote sin hectáreas (ej. «Alberdones General», que nunca va a ser un lote), ese lote se completa **por diferencia**. Si los números no cierran, la orden no se guarda y dice por qué.
+- **Dosis o total**: en cada insumo podés escribir la dosis por hectárea **o** el total en litros; el último que escribís manda y el otro se calcula (el total escrito queda exacto, sin redondeos).
+- **Copiar la imagen**: en la lista, al lado de ⬇ (descargar) está el ícono de copiar: la imagen queda en el portapapeles para pegarla en WhatsApp.
 - Si el lote todavía no existe, **+ Nuevo lote** dentro de la orden abre el mismo formulario de Lotes Agrícolas; al guardarlo queda elegido en la orden.
 - Al filtrar un sub-lote aparecen también las órdenes del madre entero (se cuentan enteras, con aviso); al filtrar el madre, todo lo
   de sus sub-lotes. Con varios lotes en una orden, el resumen suma sólo las hectáreas y los litros del lote filtrado.

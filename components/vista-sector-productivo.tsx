@@ -42,7 +42,7 @@ import { traerRespaldos, buscarRespaldos, respaldosPorId, estaAplicadaEntera, us
   type Vinculo } from "@/lib/productivo/entregas-facturas"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info, ChevronsUpDown, Check, Eye, Link2, Ruler } from "lucide-react"
+import { Loader2, Plus, RefreshCw, Beef, Wheat, Package, Edit3, Syringe, ShoppingCart, Trash2, Download, CheckCircle2, Pencil, Info, ChevronsUpDown, Check, Eye, Link2, Ruler, Copy } from "lucide-react"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -62,6 +62,7 @@ import { ModalRomaneo } from "@/components/modal-romaneo"
 import { ModalFleteCarga } from "@/components/modal-flete-carga"
 import { ModalNuevoLoteAgricola } from "@/components/modal-nuevo-lote-agricola"
 import { resolverHaOrden } from "@/lib/productivo/hectareas-orden"
+import { dosisYTotal } from "@/lib/productivo/dosis-orden"
 import { traerTodo } from "@/lib/supabase-paginado"
 
 // ============================================================
@@ -254,6 +255,8 @@ interface LineaFormularioAgricola {
   insumo_stock_id: string
   dosis: string
   unidad_dosis: 'L' | 'cc'
+  /** A-FEAT-1397: total en litros escrito a mano — si está, MANDA y la dosis se deriva (ver lib/productivo/dosis-orden.ts) */
+  total?: string
 }
 
 // ============================================================
@@ -410,7 +413,7 @@ const dibujarMarcaNZ = (ctx: CanvasRenderingContext2D, x: number, y: number, esc
   ctx.restore()
 }
 
-const exportarOrdenImagen = async (orden: OrdenAplicacion) => {
+const exportarOrdenImagen = async (orden: OrdenAplicacion, modo: 'descargar' | 'copiar' = 'descargar') => {
   const lineas = orden.lineas || []
   const padding = 30
   const tableHeaderH = 32
@@ -772,14 +775,32 @@ const exportarOrdenImagen = async (orden: OrdenAplicacion) => {
   }
   const nombreArchivo = partes.join('_') + '.png'
 
-  // Descargar
+  await entregarImagenOrden(canvas, nombreArchivo, modo)
+}
+
+/**
+ * 📋 Descargar la imagen de la orden, o COPIARLA para pegarla en WhatsApp (nota 🌙 de JMS 2026-10-28:
+ * «además de descargar, sólo copiar la foto para pegarla en WhatsApp»). La usan las dos órdenes.
+ */
+const entregarImagenOrden = async (canvas: HTMLCanvasElement, nombreArchivo: string, modo: 'descargar' | 'copiar') => {
+  if (modo === 'copiar') {
+    try {
+      const blob: Blob | null = await new Promise(r => canvas.toBlob(b => r(b), 'image/png'))
+      if (!blob || typeof ClipboardItem === 'undefined') throw new Error('el navegador no permite copiar imágenes')
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+      toast.success('Imagen copiada: pegala en WhatsApp con Ctrl+V')
+    } catch (e) {
+      toast.error(`No se pudo copiar la imagen (${(e as Error).message}). Usá Descargar.`)
+    }
+    return
+  }
   const link = document.createElement('a')
   link.download = nombreArchivo
   link.href = canvas.toDataURL('image/png')
   link.click()
 }
 
-const exportarOrdenAgricolaImagen = async (orden: OrdenAgricola) => {
+const exportarOrdenAgricolaImagen = async (orden: OrdenAgricola, modo: 'descargar' | 'copiar' = 'descargar') => {
   const lineas = orden.lineas || []
   const padding = 30
   const tableHeaderH = 32
@@ -949,10 +970,7 @@ const exportarOrdenAgricolaImagen = async (orden: OrdenAgricola) => {
   if (laboresOrden.length > 0) partes.push(laboresOrden.join('_').replace(/\s+/g, ''))
   partes.push('Agricola')
   const nombreArchivo = partes.join('_') + '.png'
-  const link = document.createElement('a')
-  link.download = nombreArchivo
-  link.href = canvas.toDataURL('image/png')
-  link.click()
+  await entregarImagenOrden(canvas, nombreArchivo, modo)
 }
 
 // ============================================================
@@ -6326,9 +6344,14 @@ function SubTabOrdenesAplicacion() {
                     ) : (
                       <>
                         {permOrden.descargar && <Permisable recurso="productivo.ordenes.descargar"><Button variant="ghost" size="sm" className="h-7 w-7 p-0"
-                          title="Exportar imagen para WhatsApp"
+                          title="Descargar la imagen"
                           onClick={() => exportarOrdenImagen(o)}>
                           <Download className="h-3.5 w-3.5" />
+                        </Button></Permisable>}
+                        {permOrden.descargar && <Permisable recurso="productivo.ordenes.descargar"><Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+                          title="Copiar la imagen (para pegar en WhatsApp)"
+                          onClick={() => exportarOrdenImagen(o, 'copiar')}>
+                          <Copy className="h-3.5 w-3.5" />
                         </Button></Permisable>}
                         {permOrden.borrar && <Permisable recurso="productivo.ordenes.borrar"><Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500"
                           title="Eliminar orden"
@@ -7520,7 +7543,7 @@ function SubTabOrdenesAgricolas() {
       toast.error('Agregue al menos un insumo o una labor'); return
     }
     for (const l of lineasValidas) {
-      if (!l.dosis || parseFloat(l.dosis) <= 0) { toast.error('Cada insumo debe tener dosis'); return }
+      if (!(dosisYTotal(l, totalHectareas).dosis > 0)) { toast.error('Cada insumo debe tener dosis (o total)'); return }
     }
     setGuardando(true)
     try {
@@ -7585,7 +7608,9 @@ function SubTabOrdenesAgricolas() {
 
       if (lineasValidas.length > 0) {
         const lineasInsert = lineasValidas.map(l => {
-          const dosis = parseFloat(l.dosis)
+          // A-FEAT-1397: si se escribió el total, queda tal cual y la dosis se deriva
+          const dt = dosisYTotal(l, hectareas)
+          const dosis = dt.dosis
           const insumo = insumosAgro.find(i => i.id === l.insumo_stock_id)
           return {
             orden_id: ordenId,
@@ -7593,7 +7618,7 @@ function SubTabOrdenesAgricolas() {
             insumo_stock_id: l.insumo_stock_id || null,
             dosis,
             unidad_dosis: l.unidad_dosis,
-            cantidad_total_l: calcularTotalL(dosis, l.unidad_dosis, hectareas)
+            cantidad_total_l: dt.total
           }
         })
         const { error: lineasError } = await supabase.schema('productivo')
@@ -7643,7 +7668,9 @@ function SubTabOrdenesAgricolas() {
       insumo_nombre: l.insumo_nombre,
       insumo_stock_id: l.insumo_stock_id || '',
       dosis: String(l.dosis),
-      unidad_dosis: l.unidad_dosis
+      unidad_dosis: l.unidad_dosis,
+      // el total guardado manda: así no se re-redondea al abrir (A-FEAT-1397)
+      total: l.cantidad_total_l != null ? String(l.cantidad_total_l) : undefined,
     })))
     setMostrarModal(true)
   }
@@ -7933,6 +7960,11 @@ function SubTabOrdenesAgricolas() {
                               onClick={() => exportarOrdenAgricolaImagen(o)}>
                               <Download className="h-3.5 w-3.5" />
                             </Button></Permisable>)}
+                          {b.descargar && (
+                            <Permisable recurso="productivo.ordenes.descargar"><Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Copiar la imagen (para pegar en WhatsApp)"
+                              onClick={() => exportarOrdenAgricolaImagen(o, 'copiar')}>
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button></Permisable>)}
                           {b.borrar && (
                             <Permisable recurso="productivo.ordenes.borrar"><Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500"
                               title="Eliminar orden" onClick={() => abrirEliminacion(o)}>
@@ -8115,8 +8147,7 @@ function SubTabOrdenesAgricolas() {
                   </TableHeader>
                   <TableBody>
                     {lineas.map(l => {
-                      const dosis = parseFloat(l.dosis) || 0
-                      const totalL = calcularTotalL(dosis, l.unidad_dosis, totalHectareas)
+                      const dt = dosisYTotal(l, totalHectareas)
                       return (
                         <TableRow key={l.key}>
                           <TableCell>
@@ -8135,8 +8166,9 @@ function SubTabOrdenesAgricolas() {
                           </TableCell>
                           <TableCell>
                             <Input type="number" step="0.0001" className="h-8 text-xs text-right"
-                              placeholder="0" value={l.dosis}
-                              onChange={e => actualizarLinea(l.key, 'dosis', e.target.value)} />
+                              placeholder="0" value={dt.fuente === 'total' ? (dt.dosis > 0 ? String(dt.dosis) : '') : l.dosis}
+                              title={dt.fuente === 'total' ? 'Sale del total que escribiste. Si escribís la dosis, pasa a mandar la dosis.' : undefined}
+                              onChange={e => { actualizarLinea(l.key, 'dosis', e.target.value); actualizarLinea(l.key, 'total', '') }} />
                           </TableCell>
                           <TableCell>
                             <Select value={l.unidad_dosis} onValueChange={v => actualizarLinea(l.key, 'unidad_dosis', v)}>
@@ -8153,17 +8185,13 @@ function SubTabOrdenesAgricolas() {
                               step="0.001"
                               className="h-8 text-xs text-right"
                               placeholder="0"
-                              value={totalL > 0 ? Number(totalL.toFixed(3)) : ''}
+                              value={dt.fuente === 'total' ? (l.total ?? '') : (dt.total > 0 ? String(dt.total) : '')}
+                              title={dt.fuente === 'dosis' ? 'Sale de la dosis × hectáreas. Si escribís el total, pasa a mandar el total.' : undefined}
                               onChange={e => {
-                                const nuevoTotal = parseFloat(e.target.value) || 0
-                                if (totalHectareas > 0 && nuevoTotal > 0) {
-                                  // Recalcular dosis hacia atrás según unidad
-                                  const dosisL = nuevoTotal / totalHectareas
-                                  const nuevaDosis = l.unidad_dosis === 'cc' ? dosisL * 1000 : dosisL
-                                  // Redondear con precisión razonable (2 decimales en cc/ha, 3 en L/ha)
-                                  const precision = l.unidad_dosis === 'cc' ? 2 : 3
-                                  actualizarLinea(l.key, 'dosis', nuevaDosis.toFixed(precision))
-                                }
+                                // A-FEAT-1397: lo que se escribe queda tal cual (ya no se re-redondea al tipear)
+                                actualizarLinea(l.key, 'total', e.target.value)
+                                const d = dosisYTotal({ ...l, total: e.target.value }, totalHectareas).dosis
+                                actualizarLinea(l.key, 'dosis', d > 0 ? String(d) : '')
                               }}
                             />
                           </TableCell>
