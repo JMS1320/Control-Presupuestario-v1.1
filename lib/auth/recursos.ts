@@ -140,6 +140,15 @@ export const RECURSOS: Recurso[] = [
   // A-FEAT-1361: todo lo que CONCILIA sin pasar por Asignar — el motor (botón de arriba y el de cada resumen de
   // tarjeta) y el «✓ OK» de los para revisar (uno y masivo). Para Ulises: cargar sin conciliar.
   { id: "extracto.conciliar",   seccion: "extracto", etiqueta: "Conciliar (automático y ✓ OK)", tipo: "accion", archivo: EXTRACTO },
+  // 🔘 A-BUG-1401 (JMS 28/10): los botones de acción del Extracto. Abiertos: prendidos; cerrados: apagados.
+  ...([
+    ["reparsear", "Re-parsear el extracto (aplicar las reglas de nuevo)"],
+    ["editar", "Modo edición (editar movimientos, edición masiva)"],
+    ["notas-lote", "Notas en lote (poner / borrar las de conciliados)"],
+    ["revisado", "Marcar los visibles como revisados"],
+    ["echeqs", "Traer echeqs (cuenta de echeqs de terceros)"],
+    ["excel-auditoria", "Descargar el Excel de auditoría"],
+  ] as const).map(([k, e]): Recurso => ({ id: `extracto.${k}`, seccion: "extracto", etiqueta: e, tipo: "accion", archivo: EXTRACTO })),
   // Las reglas — viven en un modal de configuración, no en la navegación.
   { id: "extracto.conciliacion",     seccion: "extracto", etiqueta: "Reglas de conciliación",   tipo: "funcionalidad", archivo: EXTRACTO },
   { id: "extracto.contable-interno", seccion: "extracto", etiqueta: "Reglas contable e interno", tipo: "funcionalidad", archivo: EXTRACTO },

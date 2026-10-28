@@ -3407,7 +3407,7 @@ ${marca}` : marca
 
           {/* Re-parsear: sólo en Caja de Ahorro, que son las que desglosan por reglas */}
           {CUENTAS_CON_PARSEO.includes(cuentaSeleccionada) && (
-            <Button
+            <Permisable recurso="extracto.reparsear"><Button
               variant="outline"
               onClick={reparsearExtracto}
               disabled={reparseando}
@@ -3430,7 +3430,7 @@ ${marca}` : marca
                 : hayFiltros
                   ? `Re-parsear ${movimientosVisibles.length} filtrado${movimientosVisibles.length === 1 ? '' : 's'}`
                   : 'Re-parsear la cuenta'}
-            </Button>
+            </Button></Permisable>
           )}
 
           {/* El botón anticipa el alcance: sobre cuántos va a correr y si está acotado. Antes eso
@@ -3830,7 +3830,7 @@ ${marca}` : marca
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Actualizar
                 </Button>
-                <Button
+                <Permisable recurso="extracto.editar"><Button
                   onClick={() => { setModoEdicion(!modoEdicion); setModoOkAuditar(false) }}
                   variant={modoEdicion ? "destructive" : "outline"}
                   className="flex items-center gap-2"
@@ -3846,7 +3846,7 @@ ${marca}` : marca
                       Editar
                     </>
                   )}
-                </Button>
+                </Button></Permisable>
               </div>
 
               {/* Fila 2: Filtros rápidos (chips) */}
@@ -4008,7 +4008,7 @@ ${marca}` : marca
                 />
 
                 {/* 📝 A-FEAT-133 — anotar de una vez a TODAS las filtradas. */}
-                <Button
+                <Permisable recurso="extracto.notas-lote"><Button
                   variant="outline"
                   size="sm"
                   className="h-7 text-xs px-2 text-amber-700 border-amber-300"
@@ -4016,7 +4016,7 @@ ${marca}` : marca
                   title="Dejar la misma nota en todos los movimientos que estas viendo (A-FEAT-133)"
                 >
                   📝 Anotar los {movimientos.length}
-                </Button>
+                </Button></Permisable>
                 {(filtroEstado !== 'Todos' || filtroCategEspecial || filtroRevisado !== 'todas' || filtroNota !== 'todas' || busquedaNota.trim() || filtroSentido !== 'todos') && (
                   <Button
                     variant="ghost"
@@ -4058,7 +4058,7 @@ ${marca}` : marca
                 )}
                 <div className="flex items-center gap-2 ml-auto">
                   {movimientos.some(m => !m.revisado) && (
-                    <Button
+                    <Permisable recurso="extracto.revisado"><Button
                       size="sm"
                       variant="outline"
                       className="h-7 text-xs px-2 border-green-400 text-green-700 hover:bg-green-50"
@@ -4067,7 +4067,7 @@ ${marca}` : marca
                       ✓ {seleccionados.size > 0
                         ? `Revisar visibles excepto ${seleccionados.size} seleccionados`
                         : `Marcar ${movimientosVisibles.filter(m => !m.revisado).length} como revisados`}
-                    </Button>
+                    </Button></Permisable>
                   )}
                   <span className="text-xs text-gray-400">
                     {movimientosVisibles.length}{categsFiltro ? `/${movimientos.length}` : ''} mov.
@@ -5161,13 +5161,13 @@ ${marca}` : marca
                   <CardHeader><CardTitle>Echeqs de terceros</CardTitle></CardHeader>
                   <CardContent className="space-y-3 text-sm">
                     <p className="text-gray-600">Esta cuenta se arma sola desde los cheques de clientes: cada uno <b>entra</b> con la cuenta de la venta que cobró y, cuando se endosa, <b>sale</b> con la cuenta de la factura que pagó. El saldo es lo que hay en cartera.</p>
-                    <Button onClick={async () => {
+                    <Permisable recurso="extracto.echeqs"><Button onClick={async () => {
                       try {
                         const r = await sincronizarExtractoEcheqs(supabase)
                         toast.success(`Echeqs traídos: ${r.creadas} nuevos, ${r.actualizadas} actualizados`)
                         recargar()
                       } catch (err) { toast.error('No se pudieron traer los echeqs: ' + (err as Error).message) }
-                    }}>↻ Traer echeqs</Button>
+                    }}>↻ Traer echeqs</Button></Permisable>
                   </CardContent>
                 </Card>
               )
@@ -5466,10 +5466,10 @@ ${marca}` : marca
 
                       {/* Botón descargar Excel de auditoría */}
                       {importResult.excel_base64 && (
-                        <Button type="button" variant="outline" onClick={descargarExcelAuditoria} className="w-full">
+                        <Permisable recurso="extracto.excel-auditoria"><Button type="button" variant="outline" onClick={descargarExcelAuditoria} className="w-full">
                           <FileSpreadsheet className="mr-2 h-4 w-4" />
                           Descargar Excel de auditoría
-                        </Button>
+                        </Button></Permisable>
                       )}
 
                       {importResult.summary && (
@@ -5721,9 +5721,9 @@ ${marca}` : marca
             <Button variant="outline" onClick={() => setModalNotasConciliadas({ isOpen: false, ids: [] })}>
               Que queden
             </Button>
-            <Button className="bg-red-600 hover:bg-red-700" onClick={borrarNotasDeConciliados}>
+            <Permisable recurso="extracto.notas-lote"><Button className="bg-red-600 hover:bg-red-700" onClick={borrarNotasDeConciliados}>
               Borrar las {modalNotasConciliadas.ids.length}
-            </Button>
+            </Button></Permisable>
           </DialogFooter>
         </DialogContent>
       </Dialog>
