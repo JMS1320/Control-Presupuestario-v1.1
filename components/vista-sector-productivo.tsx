@@ -60,6 +60,7 @@ import CiclosCriaPanel from "./ciclos-cria-panel"
 import { TabPlanSanitario } from "@/components/tab-plan-sanitario"
 import { ModalRomaneo } from "@/components/modal-romaneo"
 import { ModalFleteCarga } from "@/components/modal-flete-carga"
+import { ModalNuevoLoteAgricola } from "@/components/modal-nuevo-lote-agricola"
 import { traerTodo } from "@/lib/supabase-paginado"
 
 // ============================================================
@@ -7370,6 +7371,8 @@ function SubTabOrdenesAgricolas() {
   const ordenesFiltradas = filtrarOrdenesAgricolas(ordenes, filtroOrd, { padreDe })
   const resumenFiltro = resumenOrdenes(ordenesFiltradas, filtroOrd, padreDe)
   const arbolDisponibles = arbolLotes(lotesDisponibles)
+  // A-FEAT-1397: «+ Nuevo lote» desde la orden abre el MISMO modal que Lotes Agrícolas
+  const [nuevoLoteDesdeOrden, setNuevoLoteDesdeOrden] = useState(false)
 
   // Eliminar orden agrícola
   const [mostrarModalEliminar, setMostrarModalEliminar] = useState(false)
@@ -7942,6 +7945,19 @@ function SubTabOrdenesAgricolas() {
             <DialogDescription>{modoVer ? 'Vista de solo lectura.' : 'Registrar aplicación de insumos en lotes / hectáreas.'}</DialogDescription>
           </DialogHeader>
           <TestsDelProceso proceso="productivo/orden-agricola" pantalla="productivo" />
+          {/* dentro del contenido de la orden: así un click en el lote no cierra la orden */}
+          <ModalNuevoLoteAgricola open={nuevoLoteDesdeOrden} onOpenChange={setNuevoLoteDesdeOrden}
+            lotes={lotesDisponibles}
+            padreSugerido={lotesOrden.find(r => r.lote_id)?.lote_id || null}
+            onCreado={lote => {
+              setLotesDisponibles(prev => [...prev, { ...lote, cultivo: '', campana: null, fecha_siembra: null, fecha_cosecha_estimada: null, estado: '', observaciones: null, created_at: new Date().toISOString() } as LoteAgricola])
+              // queda elegido: en la primera fila vacía, o en una fila nueva
+              setLotesOrden(prev => {
+                const fila = { lote_id: lote.id, lote_nombre: lote.nombre_lote, hectareas: String(lote.hectareas) }
+                const vacia = prev.find(r => !r.lote_id && !r.lote_nombre.trim())
+                return vacia ? prev.map(r => r.key === vacia.key ? { ...r, ...fila } : r) : [...prev, { key: Date.now(), ...fila }]
+              })
+            }} />
           <fieldset disabled={modoVer} className="contents">
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
@@ -8007,9 +8023,17 @@ function SubTabOrdenesAgricolas() {
                   </div>
                 ))}
               </div>
-              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={agregarLoteRow}>
-                <Plus className="mr-1 h-3 w-3" /> Agregar lote
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={agregarLoteRow}>
+                  <Plus className="mr-1 h-3 w-3" /> Agregar lote
+                </Button>
+                {!modoVer && (
+                  <Permisable recurso="productivo.lotes.nuevo"><Button variant="outline" size="sm" className="h-7 text-xs"
+                    title="Crear un lote nuevo (ej. un sub-lote medido) y usarlo en esta orden"
+                    onClick={() => setNuevoLoteDesdeOrden(true)}>
+                    <Plus className="mr-1 h-3 w-3" /> Nuevo lote
+                  </Button></Permisable>)}
+              </div>
             </div>
 
             {/* Labores */}
@@ -8278,13 +8302,6 @@ function TabLotesAgricolas() {
   const [loading, setLoading] = useState(true)
   const [mostrarModalLote, setMostrarModalLote] = useState(false)
 
-  const [nuevoLote, setNuevoLote] = useState({
-    nombre_lote: '',
-    campo: '',
-    hectareas: '',
-    observaciones: '',
-    lote_padre_id: '' // A-FEAT-1397: vacío = lote suelto
-  })
   const arbol = arbolLotes(lotes)
 
   const cargarDatos = useCallback(async () => {
@@ -8305,35 +8322,6 @@ function TabLotesAgricolas() {
   }, [])
 
   useEffect(() => { cargarDatos() }, [cargarDatos])
-
-  const guardarLote = async () => {
-    if (!nuevoLote.nombre_lote || !nuevoLote.hectareas) {
-      toast.error('Nombre y hectáreas son obligatorios')
-      return
-    }
-
-    const datos: any = {
-      nombre_lote: nuevoLote.nombre_lote,
-      hectareas: parseFloat(nuevoLote.hectareas),
-    }
-    if (nuevoLote.campo) datos.campo = nuevoLote.campo
-    if (nuevoLote.observaciones) datos.observaciones = nuevoLote.observaciones
-    if (nuevoLote.lote_padre_id) datos.lote_padre_id = nuevoLote.lote_padre_id
-
-    const { error } = await supabase.schema('productivo').from('lotes_agricolas').insert(datos)
-    if (error) {
-      console.error('Error guardando lote:', error)
-      toast.error('Error al guardar lote')
-      return
-    }
-
-    toast.success('Lote agricola registrado')
-    setMostrarModalLote(false)
-    setNuevoLote({
-      nombre_lote: '', campo: '', hectareas: '', observaciones: '', lote_padre_id: ''
-    })
-    cargarDatos()
-  }
 
   const colorEstado = (estado: string) => {
     switch (estado) {
@@ -8410,60 +8398,9 @@ function TabLotesAgricolas() {
         </TableBody>
       </Table>
 
-      {/* Modal Nuevo Lote */}
-      <Dialog open={mostrarModalLote} onOpenChange={setMostrarModalLote}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Nuevo Lote Agrícola</DialogTitle>
-            <DialogDescription>El lote es una entidad física permanente. Los cultivos y campañas se registran en cada orden de aplicación.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <div>
-              <Label>Nombre Lote *</Label>
-              <Input value={nuevoLote.nombre_lote} placeholder="Ej: Lote 1, Potrero Norte..."
-                onChange={e => setNuevoLote(p => ({ ...p, nombre_lote: e.target.value }))} />
-            </div>
-            <div>
-              <Label>Dentro de (lote madre)</Label>
-              <Select value={nuevoLote.lote_padre_id || '__ninguno__'}
-                onValueChange={v => {
-                  const madre = lotes.find(l => l.id === v)
-                  setNuevoLote(p => ({ ...p, lote_padre_id: v === '__ninguno__' ? '' : v, campo: madre?.campo && !p.campo ? madre.campo : p.campo }))
-                }}>
-                <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                <SelectContent position="popper" className="z-[9999]">
-                  <SelectItem value="__ninguno__">Ninguno — lote suelto</SelectItem>
-                  {arbol.map(({ lote: l, nivel }) => (
-                    <SelectItem key={l.id} value={l.id}>{nivel > 0 ? `${'  '.repeat(nivel)}↳ ` : ''}{l.nombre_lote} ({l.hectareas} ha)</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground mt-1">Para un sub-lote que se midió aparte (ej. ER1 dentro de «Entre Rios 1, 2, 3»). El lote madre muestra cuánto lleva medido.</p>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Campo</Label>
-                <Input value={nuevoLote.campo} placeholder="Ej: La Esperanza"
-                  onChange={e => setNuevoLote(p => ({ ...p, campo: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Hectáreas *</Label>
-                <Input type="number" step="0.01" value={nuevoLote.hectareas} placeholder="Ej: 150"
-                  onChange={e => setNuevoLote(p => ({ ...p, hectareas: e.target.value }))} />
-              </div>
-            </div>
-            <div>
-              <Label>Observaciones</Label>
-              <Input value={nuevoLote.observaciones} placeholder="Descripción, ubicación, etc."
-                onChange={e => setNuevoLote(p => ({ ...p, observaciones: e.target.value }))} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setMostrarModalLote(false)}>Cancelar</Button>
-            <Button onClick={guardarLote}>Guardar Lote</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Modal Nuevo Lote — el mismo que usa la orden agrícola (A-FEAT-1397) */}
+      <ModalNuevoLoteAgricola open={mostrarModalLote} onOpenChange={setMostrarModalLote}
+        lotes={lotes} onCreado={() => cargarDatos()} />
     </div>
   )
 }

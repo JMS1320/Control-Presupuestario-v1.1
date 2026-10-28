@@ -703,6 +703,7 @@ Arriba de la lista hay una barra con chips de **Lote**, **Insumo**, **Labor** y 
 elegí el grande en **Dentro de (lote madre)**. En la lista queda debajo del madre, y el madre muestra cuánto lleva medido
 («medido 4,2 de 12,8 · faltan 8,6»; ✓ cuando se completa).
 - En la orden podés aplicar al madre entero o a un sub-lote; cada lote queda con sus hectáreas.
+- Si el lote todavía no existe, **+ Nuevo lote** dentro de la orden abre el mismo formulario de Lotes Agrícolas; al guardarlo queda elegido en la orden.
 - Al filtrar un sub-lote aparecen también las órdenes del madre entero (se cuentan enteras, con aviso); al filtrar el madre, todo lo
   de sus sub-lotes. Con varios lotes en una orden, el resumen suma sólo las hectáreas y los litros del lote filtrado.
 
