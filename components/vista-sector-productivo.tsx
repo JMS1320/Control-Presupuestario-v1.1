@@ -62,6 +62,8 @@ import { ModalRomaneo } from "@/components/modal-romaneo"
 import { ModalFleteCarga } from "@/components/modal-flete-carga"
 import { ModalNuevoLoteAgricola } from "@/components/modal-nuevo-lote-agricola"
 import { resolverHaOrden } from "@/lib/productivo/hectareas-orden"
+import { usePedidoCampo, tomarPedidoCampo, esModoCampo } from "@/lib/productivo/pedido-campo"
+import { PanelCampo } from "@/components/panel-campo"
 import { dosisYTotal } from "@/lib/productivo/dosis-orden"
 import { traerTodo } from "@/lib/supabase-paginado"
 
@@ -982,9 +984,13 @@ export function VistaSectorProductivo() {
   const primeraVisible = usePrimeraVisible()
   const [tabActiva, setTabActiva] = useState(() => primeraVisible([
     "productivo.hacienda", "productivo.evolucion", "productivo.cria", "productivo.plan-sanitario", "productivo.recria", "productivo.insumos", "productivo.lotes"]))
+  // 📱 A-FEAT-1409 etapa 3: abierta con el link de campo (`?campo=1`) muestra el panel de campo arriba
+  const [modoCampo, setModoCampo] = useState(false)
+  useEffect(() => { if (esModoCampo()) setModoCampo(true) }, []) // después de montar: el servidor no ve el link
 
   return (
     <div className="space-y-4">
+      {modoCampo && <PanelCampo onPedido={() => setTabActiva('insumos')} />}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-xl">
@@ -3607,6 +3613,7 @@ function TabInsumos() {
   // Arranca en la primera solapa que este rol ve: si la primera estuviera apagada, abriría en blanco.
   const primeraVisible = usePrimeraVisible()
   const [subTab, setSubTab] = useState(() => primeraVisible(["productivo.stock", "productivo.ordenes", "productivo.compras"]))
+  usePedidoCampo(() => setSubTab('ordenes')) // A-FEAT-1409: un pedido de campo trae a Órdenes
   // A-FEAT-169. Va acá y no en el componente de arriba: Stock, Órdenes y Compras son SUB-pestañas
   // de Insumos, no hermanas de Hacienda — viven en otro componente del mismo archivo.
 
@@ -6180,6 +6187,17 @@ function SubTabOrdenesAplicacion() {
     }
   }
 
+  // 📱 A-FEAT-1409: un pedido de campo pone el tipo y, si es ganadero, abre la orden (nueva o la elegida)
+  usePedidoCampo(p => setTipoOrden(p.tipo))
+  usePedidoCampo(() => {
+    const p = tomarPedidoCampo('ganadero')
+    if (!p) return
+    if (p.ordenId) {
+      const o = ordenes.find(x => x.id === p.ordenId)
+      if (o) abrirEdicion(o); else toast.error('No encontré esa orden: puede que ya la hayan confirmado.')
+    } else { setOrdenEditandoId(null); setMostrarModal(true); if (lineas.length === 0) agregarLinea() }
+  }, !loading)
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -7802,6 +7820,16 @@ function SubTabOrdenesAgricolas() {
       setGuardando(false)
     }
   }
+
+  // 📱 A-FEAT-1409: un pedido de campo abre la orden agrícola (nueva o la elegida)
+  usePedidoCampo(() => {
+    const p = tomarPedidoCampo('agricola')
+    if (!p) return
+    if (p.ordenId) {
+      const o = ordenes.find(x => x.id === p.ordenId)
+      if (o) abrirEdicion(o); else toast.error('No encontré esa orden: puede que ya la hayan confirmado.')
+    } else setMostrarModal(true)
+  }, !loading)
 
   if (loading) {
     return (

@@ -698,6 +698,17 @@ Los botones (copiar pedido, pedir, buscar) trabajan sobre lo que queda a la vist
 
 ⚠️ Sin probar todavía → [A-TEST-1272](PENDIENTES.md#a-test-1272)
 
+## 📱 El acceso de campo en el celular *(nuevo 2026-10-28)*
+
+Para cargar órdenes desde el campo: en el celular abrí el link de la app con **`?seccion=productivo&campo=1`** al final y,
+en Chrome, **⋮ → Agregar a la pantalla principal**. El ícono abre Productivo con el panel **📱 Campo** arriba:
+- **Nueva orden agrícola** / **Nueva orden ganadera**: abre directo el formulario.
+- **Editar una orden no confirmada**: la lista de las planificadas (las más nuevas primero); tocá una y se abre para editar.
+  Las «a confirmar» se ven pero no se editan: las confirma o rechaza el dueño.
+Cada persona ve sólo lo que su rol le permite.
+
+⚠️ Sin probar todavía → [A-TEST-1276](PENDIENTES.md#a-test-1276)
+
 ## 🌾 Productivo → Insumos → Órdenes Aplicación → Agrícola: **filtrar las órdenes** *(nuevo 2026-10-28)*
 
 Arriba de la lista hay un **Buscar** (insumo, lote, labor u observación — ej. «glifo»), el **Lote** escrito a mano (ej. «ER 1»: trae también lo aplicado a su lote madre), chips de **Labor** y **Estado**, y un rango de **Fecha**.

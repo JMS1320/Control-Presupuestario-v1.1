@@ -81,6 +81,7 @@ import { importeDeVenta, cuotasNoFijadas, leyendaEnDolares } from "@/lib/arrenda
 import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPapel, moverPartida, clavePartida } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
+import { pedirCampo, verPedidoCampo, tomarPedidoCampo } from "@/lib/productivo/pedido-campo"
 import { condicionesVenta } from "@/lib/productivo/venta-condiciones"
 import { dosisYTotal } from "@/lib/productivo/dosis-orden"
 import { pideFechaPagoAlCambiarEstado } from "@/lib/pagos/fecha-pago-fila"
@@ -9961,6 +9962,19 @@ export function correrCasos(): Resultado[] {
     chequear("Venta de hacienda — condiciones", "El monto escrito manda (venta por cabeza), IVA 10,5 por defecto, el plazo da la fecha de cobro y la fecha escrita la pisa; «10.5» no se lee como 105",
       "por total: 2400000 (escrito) + IVA 252000 = 2652000, cobro 2026-11-26 (30 días) · calculado 21%: 1210000 · escrito pisa: 900000, fecha escrita 2026-12-15 · «10.5»: 10.5 · vacía: sin monto, cobro —", v,
       v === "por total: 2400000 (escrito) + IVA 252000 = 2652000, cobro 2026-11-26 (30 días) · calculado 21%: 1210000 · escrito pisa: 900000, fecha escrita 2026-12-15 · «10.5»: 10.5 · vacía: sin monto, cobro —", "A-FEAT-1403")
+  }
+
+  // ══ 📱 Acceso de campo: el pedido lo miran las solapas y lo consume sólo su orden (A-FEAT-1409) ══
+  {
+    pedirCampo({ tipo: "agricola", ordenId: "x1" })
+    const visto = verPedidoCampo()?.tipo
+    const ganaderoNoLoToma = tomarPedidoCampo("ganadero") === null
+    const tomado = tomarPedidoCampo("agricola")?.ordenId
+    const quedo = verPedidoCampo()
+    const v = `las solapas ven: ${visto} · la ganadera no lo toma: ${ganaderoNoLoToma} · la agrícola toma: ${tomado} · queda: ${quedo ? "algo" : "nada"}`
+    chequear("Acceso de campo", "Un pedido de campo lo pueden mirar todas las solapas, lo consume sólo la orden de su tipo y después no queda nada (no se abre dos veces)",
+      "las solapas ven: agricola · la ganadera no lo toma: true · la agrícola toma: x1 · queda: nada", v,
+      v === "las solapas ven: agricola · la ganadera no lo toma: true · la agrícola toma: x1 · queda: nada", "A-FEAT-1409")
   }
 
   return r
