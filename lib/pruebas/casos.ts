@@ -81,6 +81,7 @@ import { importeDeVenta, cuotasNoFijadas, leyendaEnDolares } from "@/lib/arrenda
 import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPapel, moverPartida, clavePartida } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
+import { filtrosEnMemoria, hayQueTraerTodo, limiteParaCargar } from "@/lib/extracto/alcance-filtros"
 import { ordenarYFiltrarFaltantes } from "@/lib/gas-pdf/orden-faltantes"
 import { resolverHaOrden } from "@/lib/productivo/hectareas-orden"
 import { filtrarOrdenesAgricolas, chipsDe, resumenOrdenes, FILTRO_ORDENES_VACIO, padreDePorNombre, arbolLotes } from "@/lib/productivo/filtro-ordenes-agricolas"
@@ -9891,6 +9892,24 @@ export function correrCasos(): Resultado[] {
     const v = `viejas primero ${viejas} · nuevas primero ${nuevas} · «almacen» ${porNombre} · cuit ${porCuit}`
     chequear("Facturas sin comprobante — orden y filtro", "Ordena por fecha (sin fecha al final en los dos sentidos) y filtra por proveedor sin tildes o por CUIT sin guiones",
       "viejas primero bdac · nuevas primero adbc · «almacen» b · cuit a", v, v === "viejas primero bdac · nuevas primero adbc · «almacen» b · cuit a", "A-FEAT-1399")
+  }
+
+  // ══ 🔎 Extracto: filtrar en memoria SIEMPRE sobre la cuenta entera (A-BUG-1404, recaída de 162 y 189) ══
+  {
+    const nada = { busqueda: "", proveedor: { cuit: "", nombre: "" }, categs: null, okAuditar: false }
+    const texto = { ...nada, busqueda: "seguros" }
+    const categ = { ...nada, categs: new Set(["SEGUROS"]) }
+    const v = [
+      `sin filtros: ${filtrosEnMemoria(nada) ? "TRAE TODO" : "respeta 200"}`,
+      `categ: ${filtrosEnMemoria(categ) ? "trae todo" : "NO"}`,
+      `chip con búsqueda pide ${limiteParaCargar(200, texto)}`,
+      `tras chip (200 cargados con límite 200): ${hayQueTraerTodo(texto, 200, 200) ? "recarga" : "NO"}`,
+      `ya entera (límite 5000, 1892): ${hayQueTraerTodo(texto, 5000, 1892) ? "RECARGA" : "nada"}`,
+      `cuenta chica (límite 200, 57): ${hayQueTraerTodo(texto, 200, 57) ? "RECARGA" : "nada"}`,
+    ].join(" · ")
+    chequear("Extracto — filtros sobre la cuenta entera", "La contraparte vacía no cuenta como filtro; categ sí; con un filtro en memoria todo chip pide la cuenta entera y, si quedó recortada, se vuelve a traer",
+      "sin filtros: respeta 200 · categ: trae todo · chip con búsqueda pide 5000 · tras chip (200 cargados con límite 200): recarga · ya entera (límite 5000, 1892): nada · cuenta chica (límite 200, 57): nada", v,
+      v === "sin filtros: respeta 200 · categ: trae todo · chip con búsqueda pide 5000 · tras chip (200 cargados con límite 200): recarga · ya entera (límite 5000, 1892): nada · cuenta chica (límite 200, 57): nada", "A-BUG-1404")
   }
 
   return r

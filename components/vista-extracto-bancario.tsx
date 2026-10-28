@@ -77,6 +77,7 @@ import { ConfiguradorReglasContable } from "./configurador-reglas-contable"
 import { ConfiguradorReglasParseo } from "./configurador-reglas-parseo"
 import { useMotorConciliacion, CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 import { useMovimientosBancarios } from "@/hooks/useMovimientosBancarios"
+import { filtrosEnMemoria, hayQueTraerTodo, limiteParaCargar } from "@/lib/extracto/alcance-filtros"
 import { supabase } from "@/lib/supabase"
 import { propagarDetalleACuota } from "@/lib/conciliacion/propagar-detalle"
 import { proveedorDelMovimiento, extraerCuitBancario } from "@/lib/conciliacion/proveedor-del-movimiento"
@@ -532,7 +533,7 @@ export function VistaExtractoBancario() {
   const extractoConVenta = TODOS_LOS_EXTRACTOS.some(e => e.tabla === tablaActiva)
   const schemaVentaCuenta = (cuentaActivaObj?.empresa || 'MSA').toLowerCase()
   const extractoActivo = { tabla: tablaActiva, schema: schemaActivo !== 'public' ? schemaActivo : undefined }
-  const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, actualizarLocal, recargar, inyectarFilas } = useMovimientosBancarios(tablaActiva, schemaActivo)
+  const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, actualizarLocal, recargar, inyectarFilas, ultimoLimite } = useMovimientosBancarios(tablaActiva, schemaActivo)
 
   /**
    * 💳 A-DEC-1002 — la tarjeta por RESUMEN: el lote que se mira (filtra la tabla de abajo, que es la
@@ -1287,8 +1288,8 @@ ${texto.trim()}` : texto.trim()
    * 📌 **El límite inicial NO se toca** (decisión del usuario): entrar y ver lo reciente está bien.
    * Lo que estaba mal era que **buscar heredara ese recorte en silencio**.
    */
-  const yaSeCargoTodo = useRef(false)
-  useEffect(() => { yaSeCargoTodo.current = false }, [tablaActiva, schemaActivo])
+  // ⚠️ A-BUG-1404: acá había un `yaSeCargoTodo` de UNA sola vez — después de cualquier chip o «Filtrar»
+  // la lista volvía a 200 y el buscador seguía creyendo que tenía todo. Ahora se mira la última carga.
 
   /**
    * 🏦 A-FEAT-1230 — la cuenta de echeqs de terceros se pone al día SOLA al abrirla. Sus filas se
@@ -1318,21 +1319,18 @@ ${texto.trim()}` : texto.trim()
    * cuatro días. **Cualquier filtro client-side nuevo tiene que entrar en esta lista**, o repite el
    * problema: devuelve cero sobre un subconjunto sin decir que era un subconjunto.
    */
-  const hayQueBuscarSobreTodo = !!busqueda.trim() || !!filtroProveedor
+  // 🔎 A-BUG-1404: TODOS los filtros que trabajan sobre lo cargado, en un solo lugar (lib/extracto/alcance-filtros).
+  const enMemoria = { busqueda, proveedor: filtroProveedor, categs: categsFiltro, okAuditar: modoOkAuditar }
+  const hayQueBuscarSobreTodo = filtrosEnMemoria(enMemoria)
 
   useEffect(() => {
-    if (!hayQueBuscarSobreTodo || yaSeCargoTodo.current) return
-    // Si lo cargado ya es toda la cuenta, no hay nada que traer.
-    if (estadisticas.total > 0 && movimientos.length >= estadisticas.total) {
-      yaSeCargoTodo.current = true
-      return
-    }
+    if (loading || !hayQueTraerTodo(enMemoria, ultimoLimite(), movimientos.length)) return
     const t = setTimeout(() => {
-      yaSeCargoTodo.current = true
-      cargarMovimientos({ ...construirFiltros(), limite: 5000 })
+      cargarMovimientos(construirFiltros())   // construirFiltros ya pide la cuenta entera (limiteParaCargar)
     }, 350)   // el debounce evita una recarga por tecla
     return () => clearTimeout(t)
-  }, [hayQueBuscarSobreTodo, estadisticas.total, movimientos.length])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hayQueBuscarSobreTodo, movimientos, loading])
 
   const aplicarFiltros = () => cargarMovimientos(construirFiltros())
 
@@ -3296,7 +3294,8 @@ ${marca}` : marca
     const filtros: any = {
       estado: filtroEstado,
       busqueda: busqueda.trim() || undefined,
-      limite: limiteRegistros,
+      // A-BUG-1404: con un filtro en memoria puesto, TODA carga trae la cuenta entera (chips, Filtrar, Enter…)
+      limite: limiteParaCargar(limiteRegistros, { busqueda, proveedor: filtroProveedor, categs: categsFiltro, okAuditar: modoOkAuditar }),
     }
     if (usarFechas && fechaMovDesde) filtros.fechaDesde = fechaMovDesde
     if (usarFechas && fechaMovHasta) filtros.fechaHasta = fechaMovHasta

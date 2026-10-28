@@ -321,6 +321,12 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
    * Recarga **respetando los últimos filtros aplicados** (A-BUG-34). Si nunca se filtró, usa el
    * límite por defecto de siempre.
    */
+  /**
+   * 🔎 A-BUG-1404 — con qué límite se hizo la última carga. La pantalla lo usa para saber si lo que
+   * tiene es la cuenta entera o un recorte, antes de filtrar en memoria.
+   */
+  const ultimoLimite = () => ultimosFiltros.current?.limite as number | undefined
+
   const recargar = () => {
     const esTarjeta = tabla.includes('tarjeta')
     const limitePorDefecto = esTarjeta ? 5000 : 100
@@ -357,6 +363,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
     actualizarMasivo,
     actualizarLocal,
     recargar,
+    ultimoLimite,
     inyectarFilas
   }
 }
