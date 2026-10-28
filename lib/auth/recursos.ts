@@ -223,6 +223,18 @@ export const RECURSOS: Recurso[] = [
   // ── Cash Flow ────────────────────────────────────────────────────────────────────────────
   { id: "cashflow.nuevo",      seccion: "cashflow", etiqueta: "Cargar anticipo",     tipo: "funcionalidad", archivo: CASHFLOW },
   { id: "cashflow.existentes", seccion: "cashflow", etiqueta: "Anticipos existentes", tipo: "funcionalidad", archivo: CASHFLOW },
+  // 🔘 A-BUG-1401 (JMS 28/10): los botones de acción de Sueldos (no tenía ninguno) y el que faltaba en Templates.
+  ...([
+    ["campanas", "Campañas (crear / revisar)"],
+    ["nomina", "Gestión de nómina (alta y baja de empleados)"],
+    ["planilla", "Planilla de asistencia"],
+    ["pago", "Registrar un pago o anticipo"],
+    ["editar", "Editar un sueldo (o repartirlo)"],
+    ["mes", "Trabajar en un mes cerrado (abrir el candado)"],
+    ["archivo-banco", "Archivo para el banco"],
+    ["exportar", "Exportar pagos a Excel"],
+  ] as const).map(([k, e]): Recurso => ({ id: `sueldos.${k}`, seccion: "sueldos", etiqueta: e, tipo: "accion", archivo: "components/tab-sueldos.tsx" })),
+  { id: "egresos.templates-convertir", seccion: "egresos", etiqueta: "Egresos sin factura → Convertir a cuotas (masivo)", tipo: "accion", padre: "egresos.templates", archivo: "components/vista-templates-egresos.tsx" },
   // 🔘 A-BUG-1401: los botones de acción de Ingresos (Arrendamientos y Ventas MSA). Abiertos: prendidos; cerrados: apagados.
   ...([
     ["contrato-nuevo", "Arrendamientos → Nuevo contrato", "components/vista-arrendamientos.tsx"],

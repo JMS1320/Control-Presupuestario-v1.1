@@ -10,6 +10,7 @@ import { brutoSegunTipo } from "@/lib/sueldos/bruto"
 import { PlanillaAsistencia } from "@/components/planilla-asistencia"
 import { descargarPagosDeSueldos, type PagoParaExportar } from "@/lib/sueldos/export-pagos"
 import { hoyArgentina } from "@/lib/fechas"
+import { Permisable } from "@/components/modo-permisos"
 import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
 import type { ItemSeleccionado } from "@/lib/lotes-galicia/types"
@@ -1286,26 +1287,26 @@ export function TabSueldos() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => { setNuevaCampanaEtiqueta(''); setModalCampana(true) }}>
+          <Permisable recurso="sueldos.campanas"><Button variant="outline" onClick={() => { setNuevaCampanaEtiqueta(''); setModalCampana(true) }}>
             <Settings className="h-4 w-4 mr-2" />
             Campañas
-          </Button>
+          </Button></Permisable>
           <Button variant="outline" onClick={abrirHistorial}>
             <History className="h-4 w-4 mr-2" />
             Historial
           </Button>
-          <Button variant="outline" onClick={abrirNomina}>
+          <Permisable recurso="sueldos.nomina"><Button variant="outline" onClick={abrirNomina}>
             <Users className="h-4 w-4 mr-2" />
             Gestión de Nómina
-          </Button>
-          <Button variant="outline" onClick={() => setPlanillaAbierta(true)} title="Marcar francos y presentes del mes; calcula los francos trabajados">
+          </Button></Permisable>
+          <Permisable recurso="sueldos.planilla"><Button variant="outline" onClick={() => setPlanillaAbierta(true)} title="Marcar francos y presentes del mes; calcula los francos trabajados">
             <CalendarDays className="h-4 w-4 mr-2" />
             Planilla de Asistencia
-          </Button>
-          <Button onClick={() => abrirAnticipo()} disabled={!esMesLockeado} title={!esMesLockeado ? 'Mové el mes de trabajo a este mes para registrar' : undefined}>
+          </Button></Permisable>
+          <Permisable recurso="sueldos.pago"><Button onClick={() => abrirAnticipo()} disabled={!esMesLockeado} title={!esMesLockeado ? 'Mové el mes de trabajo a este mes para registrar' : undefined}>
             <Plus className="h-4 w-4 mr-2" />
             Registrar Anticipo
-          </Button>
+          </Button></Permisable>
         </div>
       </div>
 
@@ -1329,10 +1330,10 @@ export function TabSueldos() {
         ) : (
           <div className="flex items-center gap-2">
             <span className="text-xs bg-gray-100 text-gray-500 px-3 py-1.5 rounded-full">Solo lectura</span>
-            <Button variant="outline" size="sm" onClick={moverLock} disabled={guardandoLock}>
+            <Permisable recurso="sueldos.mes"><Button variant="outline" size="sm" onClick={moverLock} disabled={guardandoLock}>
               {guardandoLock ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Lock className="h-3.5 w-3.5 mr-1" />}
               Trabajar en este mes
-            </Button>
+            </Button></Permisable>
           </div>
         )}
         {mesTrabajo && !esMesLockeado && (
@@ -1476,7 +1477,7 @@ export function TabSueldos() {
                     <TableCell>{estadoBadge(p.estado)}</TableCell>
                     <TableCell>
                       <div className="flex gap-1">
-                        <Button
+                        <Permisable recurso="sueldos.editar"><Button
                           variant="ghost"
                           size="sm"
                           className="text-xs h-7 px-2"
@@ -1485,17 +1486,17 @@ export function TabSueldos() {
                           title={esMesLockeado ? 'Editar parámetros del mes' : 'Solo lectura — mové el mes de trabajo a este mes para editar'}
                         >
                           <Pencil className="h-3 w-3" />
-                        </Button>
-                        <Button
+                        </Button></Permisable>
+                        <Permisable recurso="sueldos.pago"><Button
                           variant="ghost"
                           size="sm"
                           className="text-xs h-7 px-2"
                           onClick={() => abrirAnticipo(p.empleado_id, 'anticipo')}
                         >
                           + Anticipo
-                        </Button>
+                        </Button></Permisable>
                         {(p.saldo_pendiente ?? 0) > 0 && (
-                          <Button
+                          <Permisable recurso="sueldos.pago"><Button
                             variant="ghost"
                             size="sm"
                             className="text-xs h-7 px-2 text-green-700"
@@ -1503,11 +1504,11 @@ export function TabSueldos() {
                             title="Registrar pago del saldo restante"
                           >
                             + Saldo
-                          </Button>
+                          </Button></Permisable>
                         )}
                         {/* 💸 Repartir el sueldo entre varias cuentas y medios, de una vez. */}
                         {(p.saldo_pendiente ?? 0) > 0 && (
-                          <Button
+                          <Permisable recurso="sueldos.editar"><Button
                             variant="ghost"
                             size="sm"
                             className="text-xs h-7 px-2 text-blue-700"
@@ -1515,7 +1516,7 @@ export function TabSueldos() {
                             title="Pagar repartido: cuánto a cada cuenta, banco o caja, en una sola carga"
                           >
                             ⇄ Repartir
-                          </Button>
+                          </Button></Permisable>
                         )}
                       </div>
                     </TableCell>
@@ -1537,7 +1538,7 @@ export function TabSueldos() {
               </CardTitle>
               <div className="flex items-center gap-2">
               {/* 🏦 El archivo para el banco, sólo con los pagos tildados (A-FEAT-1273). */}
-              <Button
+              <Permisable recurso="sueldos.archivo-banco"><Button
                 variant="outline"
                 size="sm"
                 className="h-7 text-xs"
@@ -1550,9 +1551,9 @@ export function TabSueldos() {
                 {elegidosVisibles > 0
                   ? `🏦 Archivo para el banco (${elegidosVisibles})`
                   : '🏦 Archivo para el banco'}
-              </Button>
+              </Button></Permisable>
               {/* 📗 El listado a Excel, con el formato canónico del sistema (A-FEAT-1217). */}
-              <Button
+              <Permisable recurso="sueldos.exportar"><Button
                 variant="outline"
                 size="sm"
                 className="h-7 text-xs"
@@ -1564,7 +1565,7 @@ export function TabSueldos() {
                 {elegidosVisibles > 0
                   ? `📗 Exportar ${elegidosVisibles} ${elegidosVisibles === 1 ? 'pago tildado' : 'pagos tildados'}`
                   : '📗 Exportar todo a Excel'}
-              </Button>
+              </Button></Permisable>
               </div>
             </div>
           </CardHeader>
@@ -2566,7 +2567,7 @@ export function TabSueldos() {
                             value={bajaFechas[emp.id] ?? ''}
                             onChange={e => setBajaFechas(prev => ({ ...prev, [emp.id]: e.target.value }))}
                           />
-                          <Button
+                          <Permisable recurso="sueldos.nomina"><Button
                             variant="destructive"
                             size="sm"
                             className="h-8 text-xs"
@@ -2577,7 +2578,7 @@ export function TabSueldos() {
                               ? <Loader2 className="h-3 w-3 animate-spin" />
                               : 'Dar de baja'
                             }
-                          </Button>
+                          </Button></Permisable>
                         </div>
                       )}
                     </div>
@@ -2709,9 +2710,9 @@ export function TabSueldos() {
                       </TableCell>
                       <TableCell className="text-right">{formatoMoneda(p.bruto_calculado ?? 0)}</TableCell>
                       <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => abrirEdicion(p, true)} title="Editar sueldo fijo (aplica a toda la campaña)">
+                        <Permisable recurso="sueldos.editar"><Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => abrirEdicion(p, true)} title="Editar sueldo fijo (aplica a toda la campaña)">
                           <Pencil className="h-3 w-3" />
-                        </Button>
+                        </Button></Permisable>
                       </TableCell>
                     </TableRow>
                   ))}
