@@ -700,7 +700,7 @@ Los botones (copiar pedido, pedir, buscar) trabajan sobre lo que queda a la vist
 
 ## 🌾 Productivo → Insumos → Órdenes Aplicación → Agrícola: **filtrar las órdenes** *(nuevo 2026-10-28)*
 
-Arriba de la lista hay un **Buscar** (insumo, lote, labor u observación — ej. «glifo»), chips de **Lote**, **Labor** y **Estado**, y un rango de **Fecha**.
+Arriba de la lista hay un **Buscar** (insumo, lote, labor u observación — ej. «glifo»), el **Lote** escrito a mano (ej. «ER 1»: trae también lo aplicado a su lote madre), chips de **Labor** y **Estado**, y un rango de **Fecha**.
 - Click en un chip lo prende o lo apaga; **Ctrl+click deja sólo ése**; «todos» vuelve a mostrar todo en esa fila.
 - El número de cada chip dice cuántas órdenes quedarían con los demás filtros puestos.
 - Con algún filtro puesto, abajo aparece el resumen: cuántas órdenes, cuántas hectáreas y **cuántos litros de cada insumo** (si la orden tiene recuento, el recuento).

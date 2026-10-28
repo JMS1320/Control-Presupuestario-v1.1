@@ -6,7 +6,7 @@ import { cabezasHoy } from "@/lib/productivo/cabezas-hoy"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { toggleChip, esSoloEste, tituloChip } from "@/lib/ui/chips"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
-import { filtrarOrdenesAgricolas, chipsDe, resumenOrdenes, hayFiltro, FILTRO_ORDENES_VACIO, padreDePorNombre, arbolLotes, type FiltroOrdenesAgricolas } from "@/lib/productivo/filtro-ordenes-agricolas"
+import { filtrarOrdenesAgricolas, chipsDe, resumenOrdenes, hayFiltro, FILTRO_ORDENES_VACIO, padreDePorNombre, arbolLotes, lotesQueCoinciden, type FiltroOrdenesAgricolas } from "@/lib/productivo/filtro-ordenes-agricolas"
 import { PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useCallback, Fragment } from "react"
@@ -7381,7 +7381,9 @@ function SubTabOrdenesAgricolas() {
   const [lotesDisponibles, setLotesDisponibles] = useState<LoteAgricola[]>([])
   const [ordenes, setOrdenes] = useState<OrdenAgricola[]>([])
   // A-FEAT-1397: filtros de la lista (lote, insumo, labor, estado, fechas)
-  const [filtroOrd, setFiltroOrd] = useState<FiltroOrdenesAgricolas>(FILTRO_ORDENES_VACIO)
+  const [filtroOrdBase, setFiltroOrd] = useState<FiltroOrdenesAgricolas>(FILTRO_ORDENES_VACIO)
+  // JMS 28/10: sin chips de lote — el lote se escribe a mano (y sigue entendiendo madre / sub-lote)
+  const [loteTexto, setLoteTexto] = useState('')
   const [insumosAgro, setInsumosAgro] = useState<StockInsumo[]>([])
   const [laboresAgricolas, setLaboresAgricolas] = useState<{ id: number, nombre: string }[]>([])
   const [loading, setLoading] = useState(true)
@@ -7391,6 +7393,7 @@ function SubTabOrdenesAgricolas() {
   const [modoVer, setModoVer] = useState(false)
   // A-FEAT-1397: lote madre / sub-lotes → filtrar el madre trae lo de sus sub-lotes y viceversa
   const padreDe = padreDePorNombre(lotesDisponibles)
+  const filtroOrd: FiltroOrdenesAgricolas = { ...filtroOrdBase, lotes: lotesQueCoinciden(ordenes, loteTexto, padreDe) }
   const ordenesFiltradas = filtrarOrdenesAgricolas(ordenes, filtroOrd, { padreDe })
   const resumenFiltro = resumenOrdenes(ordenesFiltradas, filtroOrd, padreDe)
   const arbolDisponibles = arbolLotes(lotesDisponibles)
@@ -7835,7 +7838,13 @@ function SubTabOrdenesAgricolas() {
             <Input className="h-7 max-w-sm text-xs" placeholder="Insumo, lote, labor u observación (ej. glifo)"
               value={filtroOrd.texto || ''} onChange={e => setFiltroOrd(p => ({ ...p, texto: e.target.value }))} />
           </div>
-          {([['lotes', 'Lote'], ['labores', 'Labor'], ['estados', 'Estado']] as const).map(([dim, etiqueta]) => (
+          <div className="flex items-center gap-1">
+            <span className="w-14 shrink-0 font-medium text-muted-foreground">Lote</span>
+            <Input className="h-7 max-w-xs text-xs" placeholder="Escribí el lote (ej. ER 1, Casas)"
+              value={loteTexto} onChange={e => setLoteTexto(e.target.value)} />
+            {loteTexto && <button type="button" className="ml-1 underline text-muted-foreground" onClick={() => setLoteTexto('')}>todos</button>}
+          </div>
+          {([['labores', 'Labor'], ['estados', 'Estado']] as const).map(([dim, etiqueta]) => (
             <div key={dim} className="flex flex-wrap items-center gap-1">
               <span className="w-14 shrink-0 font-medium text-muted-foreground">{etiqueta}</span>
               {chipsDe(ordenes, filtroOrd, dim, padreDe).map(({ valor, n }) => {
@@ -7862,7 +7871,7 @@ function SubTabOrdenesAgricolas() {
               onChange={e => setFiltroOrd(p => ({ ...p, hasta: e.target.value }))} />
             <span className="text-muted-foreground">{PISTA_CTRL_CLICK}</span>
             {hayFiltro(filtroOrd) && (
-              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setFiltroOrd(FILTRO_ORDENES_VACIO)}>
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setFiltroOrd(FILTRO_ORDENES_VACIO); setLoteTexto('') }}>
                 Limpiar filtros
               </Button>)}
           </div>

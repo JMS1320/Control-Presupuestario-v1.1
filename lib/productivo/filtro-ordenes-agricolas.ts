@@ -194,6 +194,27 @@ export function resumenOrdenes<T extends OrdenFiltrable>(ordenes: T[], f: Filtro
   }
 }
 
+/**
+ * ✍️ El lote ESCRITO A MANO (JMS 28/10: «sacar los chips de lote… dejá para completar a mano»). Devuelve
+ * los nombres de lote —de las órdenes y sus madres— que contienen el texto (sin tildes ni mayúsculas).
+ * Vacío = sin filtro. Si el texto no coincide con ninguno, devuelve un conjunto que no deja pasar
+ * nada (para que la lista diga «ninguna orden» en vez de mostrar todas).
+ */
+export const SIN_COINCIDENCIA = "\u0000ningun-lote"
+export function lotesQueCoinciden<T extends OrdenFiltrable>(ordenes: T[], texto: string, padreDe?: PadreDe): Set<string> {
+  const q = norm(texto)
+  if (!q) return new Set()
+  const nombres = new Set<string>()
+  for (const o of ordenes) for (const L of lotesDeOrden(o)) {
+    nombres.add(L)
+    for (const a of ancestros(L, padreDe)) nombres.add(a)
+  }
+  // sin espacios: el lote se llama «ER 1» y se escribe «ER1»
+  const sinEsp = (x: string) => norm(x).replace(/\s+/g, "")
+  const r = new Set([...nombres].filter(n => sinEsp(n).includes(sinEsp(q))))
+  return r.size > 0 ? r : new Set([SIN_COINCIDENCIA])
+}
+
 export const hayFiltro = (f: FiltroOrdenesAgricolas) =>
   f.lotes.size + f.insumos.size + f.labores.size + f.estados.size > 0 || !!f.desde || !!f.hasta || !!norm(f.texto || "")
 

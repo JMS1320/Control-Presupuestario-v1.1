@@ -86,7 +86,7 @@ import { pideFechaPagoAlCambiarEstado } from "@/lib/pagos/fecha-pago-fila"
 import { filtrosEnMemoria, hayQueTraerTodo, limiteParaCargar } from "@/lib/extracto/alcance-filtros"
 import { ordenarYFiltrarFaltantes } from "@/lib/gas-pdf/orden-faltantes"
 import { resolverHaOrden } from "@/lib/productivo/hectareas-orden"
-import { filtrarOrdenesAgricolas, chipsDe, resumenOrdenes, FILTRO_ORDENES_VACIO, padreDePorNombre, arbolLotes } from "@/lib/productivo/filtro-ordenes-agricolas"
+import { filtrarOrdenesAgricolas, chipsDe, resumenOrdenes, FILTRO_ORDENES_VACIO, padreDePorNombre, arbolLotes, lotesQueCoinciden } from "@/lib/productivo/filtro-ordenes-agricolas"
 import { armarLibroComprasArca, controlarArchivo, leerCbte, texto as textoArca, type FilaCompraArca } from "@/lib/subdiarios/libro-iva-arca"
 import { evaluarCambioDDJJ, estadoDelPeriodo, mesesEnviadosSinPresentar, estadoDeLosMeses } from "@/lib/subdiarios/estado-ddjj"
 import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
@@ -9859,6 +9859,10 @@ export function correrCasos(): Resultado[] {
     const enE1 = filtrarOrdenesAgricolas(o2, fE1, { padreDe }), enM = filtrarOrdenesAgricolas(o2, fM, { padreDe })
     const rE1 = resumenOrdenes(enE1, fE1, padreDe), rM = resumenOrdenes(enM, fM, padreDe)
     const v4 = `ER1: ${enE1.map(o => o.fecha).join(",")} · ${rE1.ha} ha · glifo ${rE1.litros[0]?.[1]} · enteras ${rE1.enteras} | madre: ${enM.length} órdenes · ${rM.ha} ha · enteras ${rM.enteras}`
+    const fTxt = F({ lotes: lotesQueCoinciden(o2, "er1", padreDe) })
+    const vTxt = `«er1» escrito: ${filtrarOrdenesAgricolas(o2, fTxt, { padreDe }).length} órdenes · «zzz»: ${filtrarOrdenesAgricolas(o2, F({ lotes: lotesQueCoinciden(o2, "zzz", padreDe) }), { padreDe }).length} · vacío: ${lotesQueCoinciden(o2, "", padreDe).size} filtros`
+    chequear("Órdenes agrícolas — sub-lotes", "El lote escrito a mano filtra igual que el chip (con su madre), un texto que no coincide no muestra nada y vacío no filtra",
+      "«er1» escrito: 2 órdenes · «zzz»: 0 · vacío: 0 filtros", vTxt, vTxt === "«er1» escrito: 2 órdenes · «zzz»: 0 · vacío: 0 filtros", "A-FEAT-1397")
     chequear("Órdenes agrícolas — sub-lotes", "Filtrar ER1 trae lo aplicado al madre (entero, avisado) y su parte de una orden de varios lotes (4,2 ha y sus litros); filtrar el madre trae todo lo de sus sub-lotes",
       "ER1: 2026-06-24,2026-11-02 · 17 ha · glifo 34 · enteras 1 | madre: 3 órdenes · 21.1 ha · enteras 0", v4,
       v4 === "ER1: 2026-06-24,2026-11-02 · 17 ha · glifo 34 · enteras 1 | madre: 3 órdenes · 21.1 ha · enteras 0", "A-FEAT-1397")
