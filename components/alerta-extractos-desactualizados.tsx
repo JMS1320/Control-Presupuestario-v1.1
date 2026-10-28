@@ -44,7 +44,8 @@ export function AlertaExtractosDesactualizados() {
 
     const revisar = async () => {
       // Sólo bancos: las cajas de efectivo y las tarjetas no son extractos periódicos
-      const cuentas = CUENTAS_BANCARIAS.filter(c => c.activa && c.tipo === 'banco')
+      // A-FEAT-1398: las que se cargan a mano (dólares, Cotitulares) no tienen extracto que importar: no se avisan
+      const cuentas = CUENTAS_BANCARIAS.filter(c => c.activa && c.tipo === 'banco' && !c.cargaManual)
       const hoy = hoyArgentina()
 
       const estados = await Promise.all(cuentas.map(async (c): Promise<EstadoCuenta> => {

@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 💵 7 tablas nuevas: cuentas en dólares y de Cotitulares (2026-10-28) — aviso ANTES de aplicarla, con OK de JMS
+### 💵 7 tablas nuevas: cuentas en dólares y de Cotitulares (2026-10-28) — ✅ APLICADA el 28/10 con OK de JMS (aviso previo): 7 tablas vacías, RLS y 7 filas en recurso_tablas
 - `scripts/126-cuentas-dolares-cotitulares.sql` (+ `-deshacer`). A-FEAT-1398: `msa.cc_usd`, `msa.caja_usd`, `ma.ca_usd`, `ma.caja_usd`, `public.cotitulares_ca_usd`, `public.cotitulares_ca_pesos`, `public.cotitulares_caja_usd`. Misma forma que `msa.caja_general` + `moneda`, `tipo_cambio`, `importe_pesos`, `par_schema/par_tabla/par_id`, `por_cuenta_de`.
 - **RLS igual que las cajas**: `ver_segun_permiso` / `escribir_segun_permiso` con `puede_ver/puede_escribir`, 7 filas nuevas en `recurso_tablas` (recurso `extracto`, marca `[script 126]`). `anon` sin acceso. No toca ninguna tabla existente.
 - **«Cotitulares»** es un titular nuevo en el código (además de MSA/PAM/MA) — si tenés algo que recorra las empresas con una lista fija, puede aparecerte.

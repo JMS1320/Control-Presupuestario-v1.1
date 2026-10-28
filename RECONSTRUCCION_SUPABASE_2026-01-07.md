@@ -3323,6 +3323,9 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-10-28 · CUENTAS EN DÓLARES Y DE COTITULARES — 7 tablas (script 126) — A-FEAT-1398 — ✅ CORRIDO 2026-10-28 con JMS
+`msa.cc_usd`, `msa.caja_usd`, `ma.ca_usd`, `ma.caja_usd`, `public.cotitulares_ca_usd`, `public.cotitulares_ca_pesos`, `public.cotitulares_caja_usd`: columnas de `msa.caja_general` + `moneda` (USD/ARS), `tipo_cambio`, `importe_pesos`, `par_schema/par_tabla/par_id`, `por_cuenta_de` (MSA/PAM/MA), `created_at`. RLS `ver_segun_permiso`/`escribir_segun_permiso`, recurso `extracto` en `recurso_tablas`. Deshacer: `scripts/126-cuentas-dolares-cotitulares-deshacer.sql` (frena si alguna tiene movimientos).
+
 ### 2026-10-28 · UNA 🚩 PUEDE SER UNA TAREA — `public.revisiones.es_tarea` + `tarea_hasta` (script 125) — A-FEAT-1411 — ✅ CORRIDO 2026-10-28 con JMS
 `es_tarea boolean not null default false`, `tarea_hasta date`. Deshacer: `scripts/125-revisiones-tarea-deshacer.sql`.
 

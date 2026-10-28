@@ -60,6 +60,14 @@ export const TABLAS_CON_VINCULO_ARCA: TablaConVinculoArca[] = [
   { schema: "msa", tabla: "caja_sigot", que: "caja de Sigot" },
   // A-FEAT-1230: la salida de un echeq endosado lleva la factura que pagó.
   { schema: "msa", tabla: "echeqs_terceros", que: "extracto de echeqs de terceros (endosos)" },
+  // 💵 A-FEAT-1398 (scripts/126): las cuentas en dólares y de Cotitulares también pueden pagar una factura.
+  { schema: "msa", tabla: "cc_usd", que: "cuenta corriente en dólares de MSA" },
+  { schema: "msa", tabla: "caja_usd", que: "caja en dólares de MSA" },
+  { schema: "ma", tabla: "ca_usd", que: "caja de ahorro en dólares de MA" },
+  { schema: "ma", tabla: "caja_usd", que: "caja en dólares de MA" },
+  { schema: "public", tabla: "cotitulares_ca_usd", que: "caja de ahorro en dólares de Cotitulares" },
+  { schema: "public", tabla: "cotitulares_ca_pesos", que: "caja de ahorro en pesos de Cotitulares (pagó la factura de MSA del 28/10)" },
+  { schema: "public", tabla: "cotitulares_caja_usd", que: "caja en dólares de Cotitulares" },
 ]
 
 /** La columna del vínculo. Se nombra una vez para que un `grep` por ella encuentre todo. */

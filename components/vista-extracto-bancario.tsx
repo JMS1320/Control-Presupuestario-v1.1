@@ -38,6 +38,7 @@ import { cuotaDelMovimiento } from "@/lib/templates/cuotas-del-template"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { AvisoNcTarjeta } from "@/components/aviso-nc-tarjeta"
 import { ResultadoPdfCajaAhorro } from "@/components/resultado-pdf-caja-ahorro"
+import { PanelDolares, ModalMovimientoManual } from "@/components/panel-dolares"
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -534,6 +535,9 @@ export function VistaExtractoBancario() {
   const schemaVentaCuenta = (cuentaActivaObj?.empresa || 'MSA').toLowerCase()
   const extractoActivo = { tabla: tablaActiva, schema: schemaActivo !== 'public' ? schemaActivo : undefined }
   const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, actualizarLocal, recargar, inyectarFilas, ultimoLimite } = useMovimientosBancarios(tablaActiva, schemaActivo)
+  // 💵 A-FEAT-1398: el panel de dólares y la carga a mano de las cuentas que no tienen extracto
+  const [dolaresAbierto, setDolaresAbierto] = useState(false)
+  const [cargaManualAbierta, setCargaManualAbierta] = useState(false)
 
   /**
    * 💳 A-DEC-1002 — la tarjeta por RESUMEN: el lote que se mira (filtra la tabla de abajo, que es la
@@ -3388,7 +3392,22 @@ ${marca}` : marca
             {cuentaSeleccionada
               ? cuentasDisponibles.find(c => c.id === cuentaSeleccionada)?.nombre
               : 'Seleccionar cuenta'}
+            {cuentaActivaObj?.moneda === 'USD' && <span className="rounded bg-emerald-100 px-1.5 text-xs text-emerald-800">US$</span>}
           </Button>
+
+          {/* 💵 A-FEAT-1398: dólares y Cotitulares */}
+          <Permisable recurso="extracto.dolares">
+            <Button variant="outline" onClick={() => setDolaresAbierto(true)} className="flex items-center gap-2 border-emerald-500 text-emerald-700 hover:bg-emerald-50">
+              💵 Dólares
+            </Button>
+          </Permisable>
+          {cuentaActivaObj?.cargaManual && (
+            <Permisable recurso="extracto.dolares-cargar">
+              <Button variant="outline" onClick={() => setCargaManualAbierta(true)} className="flex items-center gap-2">
+                + Movimiento a mano
+              </Button>
+            </Permisable>
+          )}
 
           {/* A-BUG-1335: sin ninguna regla permitida, no hay nada que configurar. */}
 
@@ -5621,7 +5640,7 @@ ${marca}` : marca
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cuentas Bancarias</p>
               <div className="space-y-2">
-                {cuentasDisponibles.filter(c => c.tipo !== 'caja' && c.tipo !== 'tarjeta').map((cuenta) => (
+                {cuentasDisponibles.filter(c => c.tipo !== 'caja' && c.tipo !== 'tarjeta' && !c.cargaManual).map((cuenta) => (
                   <Permisable key={cuenta.id} recurso={`extracto.cuenta.${cuenta.id}`}>
                   <Button
                     variant="outline"
@@ -5644,7 +5663,7 @@ ${marca}` : marca
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cajas</p>
               <div className="space-y-2">
-                {cuentasDisponibles.filter(c => c.tipo === 'caja').map((cuenta) => (
+                {cuentasDisponibles.filter(c => c.tipo === 'caja' && !c.cargaManual).map((cuenta) => (
                   <Permisable key={cuenta.id} recurso={`extracto.cuenta.${cuenta.id}`}>
                   <Button
                     variant="outline"
@@ -5656,6 +5675,29 @@ ${marca}` : marca
                       <div className="text-left">
                         <div className="font-medium">{cuenta.nombre}</div>
                         <div className="text-sm text-gray-500">{cuenta.empresa}</div>
+                      </div>
+                    </div>
+                  </Button>
+                  </Permisable>
+                ))}
+              </div>
+            </div>
+            {/* 💵 A-FEAT-1398: dólares y Cotitulares (se cargan a mano) */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Dólares y Cotitulares</p>
+              <div className="space-y-2">
+                {cuentasDisponibles.filter(c => c.cargaManual).map((cuenta) => (
+                  <Permisable key={cuenta.id} recurso={`extracto.cuenta.${cuenta.id}`}>
+                  <Button
+                    variant="outline"
+                    className={`w-full justify-start ${cuentaSeleccionada === cuenta.id ? 'border-emerald-500 bg-emerald-50' : ''}`}
+                    onClick={() => { setCuentaSeleccionada(cuenta.id); setSelectorAbierto(false) }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Banknote className="h-4 w-4 text-emerald-600" />
+                      <div className="text-left">
+                        <div className="font-medium">{cuenta.nombre}</div>
+                        <div className="text-sm text-gray-500">{cuenta.empresa} · {cuenta.moneda === 'USD' ? 'dólares' : 'pesos'}</div>
                       </div>
                     </div>
                   </Button>
@@ -5689,6 +5731,19 @@ ${marca}` : marca
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* 💵 A-FEAT-1398 — el panel de dólares y la carga a mano */}
+      <Dialog open={dolaresAbierto} onOpenChange={setDolaresAbierto}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>💵 Dólares y Cotitulares</DialogTitle>
+          </DialogHeader>
+          <TestsDelProceso proceso="extracto/dolares" pantalla="extracto" />
+          <PanelDolares />
+        </DialogContent>
+      </Dialog>
+      <ModalMovimientoManual abierto={cargaManualAbierta} cuentaId={cuentaActivaObj?.cargaManual ? cuentaActivaObj.id : null}
+        onClose={() => setCargaManualAbierta(false)} onGuardado={() => recargar()} />
 
       {/* Modal Asignar Manualmente */}
       {/* 🧹 A-FEAT-135 — se concilió algo que tenía notas: ¿se van o se quedan? */}
