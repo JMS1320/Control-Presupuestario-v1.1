@@ -40,6 +40,14 @@
 
 ## 📨 PARA JAVIER
 
+### 🌾 Sub-lotes y los lotes de cada orden agrícola: 1 columna en `productivo.lotes_agricolas` + tabla nueva `productivo.ordenes_agricolas_lotes` (2026-10-28) — aviso ANTES de aplicarla, espera OK de JMS
+- `scripts/121-sublotes-y-lotes-de-orden.sql` (+ `-deshacer`). A-FEAT-1397: `lotes_agricolas.lote_padre_id` (un lote dentro de otro: ER1
+  dentro de «Entre Rios 1, 2, 3») y `ordenes_agricolas_lotes` (cada lote de la orden con sus hectáreas; antes la orden guardaba sólo el
+  texto «A / B» y el total). Carga las 16 órdenes existentes partiendo el texto; no modifica ninguna orden ni lote.
+- **Permisos**: RLS con `puede_ver` / `puede_escribir('productivo','ordenes_agricolas_lotes')`, recurso `productivo` en `recurso_tablas`
+  (igual que `ordenes_agricolas`); `authenticated` select/insert/update/delete, `anon` nada.
+- **Qué te puede tocar**: nada fuera de Productivo → Órdenes Agrícolas y Lotes Agrícolas.
+
 ### 🔁 Tabla nueva `public.subdiario_cambios` + un TRIGGER en compras y ventas de msa/pam/ma (2026-10-27) — ✅ APLICADA el 27/10 con OK de JMS (aviso previo): tabla, 6 triggers, 2 policies, 1 en recurso_tablas, 2 filas
 - `scripts/119-subdiario-cambios.sql` (+ `-deshacer`). A-FEAT-1394: cuando cambia un dato **fiscal** (tipo, punto de venta, número,
   CUIT, fecha, importes, tipo de cambio, mes del subdiario) de un comprobante de un mes **«Enviado» o «DDJJ OK»** —o entra a ese mes,

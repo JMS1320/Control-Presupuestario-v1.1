@@ -185,8 +185,9 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 - **lineas_orden_labores**: `id uuid, orden_id uuid→ordenes_aplicacion, labor_id int→labores, observaciones text, created_at ts`
 
 ### Agrícola
-- **lotes_agricolas**: `id uuid, nombre_lote varchar, campo varchar, hectareas numeric, cultivo varchar, campana varchar, fecha_siembra date, fecha_cosecha_estimada date, estado varchar, observaciones text, created_at ts`
-- **ordenes_agricolas**: `id uuid, fecha date, lote_id uuid→lotes_agricolas, lote_nombre varchar, hectareas numeric, estado varchar, observaciones text, created_at tstz`
+- **lotes_agricolas**: `id uuid, nombre_lote varchar, campo varchar, hectareas numeric, cultivo varchar, campana varchar, fecha_siembra date, fecha_cosecha_estimada date, estado varchar, observaciones text, created_at ts, lote_padre_id uuid→lotes_agricolas` *(lote madre que lo contiene, script 121)*
+- **ordenes_agricolas**: `id uuid, fecha date, lote_id uuid→lotes_agricolas, lote_nombre varchar, hectareas numeric, estado varchar, observaciones text, created_at tstz` *(⚠️ `lote_id` siempre vacío: los lotes de la orden van en `ordenes_agricolas_lotes`; `lote_nombre` queda como texto «A / B»)*
+- **ordenes_agricolas_lotes** *(script 121)*: `id uuid, orden_id uuid→ordenes_agricolas (cascade), lote_id uuid→lotes_agricolas (null = lote a mano), lote_nombre text, hectareas numeric, orden int, created_at tstz` — la suma de `hectareas` = `ordenes_agricolas.hectareas`
 - **lineas_orden_agricola**: `id uuid, orden_id uuid→ordenes_agricolas, insumo_nombre varchar, insumo_stock_id uuid→stock_insumos, dosis numeric, unidad_dosis varchar, cantidad_total_l numeric, recuento boolean, cantidad_recuento_l numeric, observaciones text, created_at tstz`
 - **lineas_orden_agricola_labores**: `id uuid, orden_id uuid→ordenes_agricolas, labor_id int→labores`
 

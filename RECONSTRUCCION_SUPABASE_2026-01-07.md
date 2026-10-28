@@ -3323,6 +3323,12 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-10-28 · SUB-LOTES y LOS LOTES DE CADA ORDEN AGRÍCOLA — `productivo.lotes_agricolas.lote_padre_id` + tabla `productivo.ordenes_agricolas_lotes` (script 121) — A-FEAT-1397 — ⏳ SIN CORRER (espera OK de JMS)
+`scripts/121-sublotes-y-lotes-de-orden.sql` (+ `-deshacer`): la columna (FK a sí misma, `on delete set null`, check ≠ id), la tabla
+(`orden_id` FK cascade, `lote_id` FK set null, `lote_nombre`, `hectareas`, `orden`), RLS por `puede_ver`/`puede_escribir`, 1 fila en
+`recurso_tablas` y la carga de las órdenes existentes (texto partido por « / », ha del lote o proporcionales al total; control: cada
+orden cierra sus hectáreas).
+
 ### 2026-10-27 · LA CUOTA QUE QUEDA EN DÓLARES — columna `public.cuotas_arrendamiento.en_dolares` (script 117) — A-FEAT-1393 — ✅ CORRIDO 2026-10-27 con JMS (verificado con `explain update`)
 
 `scripts/117-cuota-en-dolares.sql` (+ `-deshacer`): `alter table public.cuotas_arrendamiento add column if not exists en_dolares boolean not null default false` con comentario `[script 117]` (el deshacer lo exige), y la marca en 2 cuotas de Sanpa (26/27 `a7e6c9fd-…` y 27/28 `7923c7f4-…`, las de 2 qq/ha). Sin cambios de RLS.

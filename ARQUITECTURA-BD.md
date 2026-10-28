@@ -127,7 +127,7 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | **Cría / ciclos** | `ciclos_cria`, `detalle_descarte`, `terneros` (209), `pesadas_terneros` (371) |
 | **Sanidad/aplicaciones** | `ordenes_aplicacion`, `ordenes_aplicacion_rodeos`, `lineas_orden_aplicacion`, `lineas_orden_labores` |
 | **Plan sanitario** (A-FEAT-1380) | `plan_sanitario_tareas` (el plan), `plan_sanitario_registro` (se hizo / no y por qué / programada, por campaña jul→jun), `plan_sanitario_propuestas` (cambios a aceptar), `iatf` + `iatf_toros` (una IATF = 4 órdenes de aplicación + toros por rodeo). Lo hecho sigue siendo la orden de aplicación. |
-| **Agrícola** | `lotes_agricolas`, `ordenes_agricolas`, `lineas_orden_agricola`, `lineas_orden_agricola_labores` |
+| **Agrícola** | `lotes_agricolas` (con `lote_padre_id`: sub-lotes), `ordenes_agricolas`, `ordenes_agricolas_lotes` (cada lote de la orden con sus ha — script 121), `lineas_orden_agricola`, `lineas_orden_agricola_labores` |
 | **Insumos / maestros** | `categorias_insumo` (ambito agrícola/ganadero), `stock_insumos`, `movimientos_insumos`, `labores` |
 | **Evolución del rodeo** (2026-07-29) | `stock_ciclos`, `stock_lotes`, `stock_ventas` |
 | **Actividades y costos** (2026-07-30) | `actividades`, `actividad_insumos`, `lote_tramos` |
