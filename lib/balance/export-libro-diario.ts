@@ -47,6 +47,7 @@ import {
 } from "./papeles-bancarios"
 import { ORDEN_TIPOS, NOMBRE_TIPO, SIN_AGRUPADORA, type TemplatesDelEjercicio, type CuotaTemplate, type TipoTemplate } from "./templates-libro"
 import type { ValuacionHacienda, PrecioMag, PrecioMercado, PrecioCabeza } from "./hacienda-stock"
+import { resumenControlCuotas, conProblema, type ControlCuotasTemplates } from "./control-cuotas-templates"
 import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
 import type { CuadreGranos, ValuacionGranos, Sementeras } from "./granos-sementeras"
 import {
@@ -2255,6 +2256,35 @@ function hojaDeSementeras(s: Sementeras, fechaCierre: string): unknown[][] {
 }
 
 /** Arma el workbook. Separado de la descarga para poder probarlo sin navegador. */
+/**
+ * 🔢 **Control cuotas templates** — ¿cada template tiene las cuotas esperadas en la campaña? Mismo
+ * resultado que la pantalla (`lib/balance/control-cuotas-templates.ts`): preview importante primero,
+ * lo que falta o sobra en rojo. Es un aviso: no cambia ningún número del libro.
+ */
+export function hojaControlCuotas(c: ControlCuotasTemplates): unknown[][] {
+  const f: unknown[][] = []
+  const mal = c.filas.filter(conProblema)
+  f.push([`CONTROL DE CUOTAS DE TEMPLATES — ${c.empresa}, ${c.campania}`])
+  f.push(["¿Cada template controlado tiene las cuotas que tiene que tener? Lista y cantidades: decisión de JMS del 28/10/2026."])
+  f.push(["Anual o en cuotas: vale cualquiera de las dos, no las dos el mismo año. IIBB: un pago el mes siguiente a cada subdiario con ventas. SICORE: un pago por presentación."])
+  f.push(["Un template compartido («PAM/MA/Duhau») se controla en la primera empresa nombrada. ★ = preview importante. Es un AVISO: no frena el libro."])
+  f.push([mal.length === 0
+    ? `Resultado: están todas (${c.filas.length} templates controlados).`
+    : `Resultado: ${mal.length} de ${c.filas.length} no tienen las cuotas esperadas — ${resumenControlCuotas(c.filas).map(r => `${r.cantidad} ${r.estado}`).join(" · ")}`])
+  f.push([])
+  f.push(["Preview", "Estado", "Agrupadora", "Template", "Regla", "Esperado", "Encontrado", "Detalle", "Nota"])
+  for (const x of c.filas) {
+    const fila = [x.preview ? "★" : "", x.estado, x.agrupadora, x.nombre, x.regla,
+      x.esperado ?? "", x.encontrado, x.detalle, x.nota ?? ""]
+    f.push(x.estado === "falta" || x.estado === "mixto" ? conEstilo(fila, ESTILO_ERROR) : fila)
+  }
+  return f
+}
+const COLS_CONTROL_CUOTAS: Columna[] = [
+  { ancho: 8 }, { ancho: 13 }, { ancho: 26 }, { ancho: 36 }, { ancho: 40 },
+  { ancho: 10, z: ENTERO }, { ancho: 11, z: ENTERO }, { ancho: 80 }, { ancho: 50 },
+]
+
 export function armarWorkbook(
   libro: LibroDiario,
   /** Para el encabezado del índice. */
@@ -2296,6 +2326,8 @@ export function armarWorkbook(
   asientosContables?: AsientoLibroDiario[],
   /** 🧮 A-FEAT-1343: cuántas filas dijo la base y cuántas llegaron. */
   lecturas?: Lectura[],
+  /** 🔢 ¿Cada template tiene sus cuotas en la campaña? (JMS 28/10/2026). */
+  controlCuotas?: ControlCuotasTemplates,
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new()
 
@@ -2395,6 +2427,8 @@ export function armarWorkbook(
     hoja(wb, "Templates por mes", hojaTemplatesPorMes(templates),
       COLS_TEMPLATES_POR_MES(templates.columnas.length))
   }
+  // 🔢 Pegado a los templates: es su control de cantidad (el de las facturas fijas va en «Control»).
+  if (controlCuotas) hoja(wb, "Control cuotas templates", hojaControlCuotas(controlCuotas), COLS_CONTROL_CUOTAS)
   // ✍️ A-FEAT-1207 — va pegada a los templates: es gasto del ejercicio que no viene de una cuota.
   if (saldosAnteriores && (saldosAnteriores.vigentes.length > 0 || saldosAnteriores.anulados.length > 0)) {
     const filas = hojaDeSaldosAnteriores(saldosAnteriores, libro.ejercicio.etiqueta)
@@ -2476,9 +2510,10 @@ export function descargarLibroDiario(
   saldosAnteriores?: SaldosAnteriores,
   asientosContables?: AsientoLibroDiario[],
   lecturas?: Lectura[],
+  controlCuotas?: ControlCuotasTemplates,
 ) {
   const wb = armarWorkbook(libro, empresa, templates, hacienda, insumos, campo, cuentas,
-    bancarios, sueldos, cuentasCorrientes, pendientes, saldosAnteriores, asientosContables, lecturas)
+    bancarios, sueldos, cuentasCorrientes, pendientes, saldosAnteriores, asientosContables, lecturas, controlCuotas)
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
   const url = URL.createObjectURL(
     new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),

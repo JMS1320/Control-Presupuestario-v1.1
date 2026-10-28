@@ -39,6 +39,10 @@ import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta, ULTIMO_SUBDIAR
 import { PRESENTADO_ARCA_COMPRAS } from "@/lib/balance/presentado-arca"
 import { explicarFila, type ProveedorFijo } from "@/lib/balance/facturas-fijas"
 import { armarTemplatesDelEjercicio, desdeCuota, type TemplatesDelEjercicio } from "@/lib/balance/templates-libro"
+import {
+  armarControlCuotas, resumenControlCuotas, conProblema, cuotaParaControlDesde, subdiariosConVentasDesde,
+  presentacionesSicoreDesde, type ControlCuotasTemplates, type PresentacionSicore,
+} from "@/lib/balance/control-cuotas-templates"
 import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { ProponerFotoBalance } from "./proponer-foto-balance"
 import { ivaConSigno, type DatosDeLosPapeles } from "@/lib/balance/balance-propio"
@@ -117,6 +121,8 @@ export function PapelesDeBalance() {
    */
   const [bancarios, setBancarios] = useState<Parameters<typeof descargarLibroDiario>[7] | null>(null)
   const [templates, setTemplates] = useState<TemplatesDelEjercicio | null>(null)
+  /** 🔢 ¿Cada template tiene sus cuotas en la campaña? (decisión de JMS del 28/10/2026). */
+  const [controlCuotas, setControlCuotas] = useState<ControlCuotasTemplates | null>(null)
   const [hacienda, setHacienda] = useState<DatosHacienda | null>(null)
   /**
    * 👷 El papel de sueldos (A-FEAT-1216). Va en su propio estado: si falla, el resto del libro sale
@@ -147,6 +153,7 @@ export function PapelesDeBalance() {
     setCargando(true)
     setLibro(null)
     setTemplates(null)
+    setControlCuotas(null)
     setHacienda(null)
     setCuentas(null)
     setValores(null)
@@ -646,6 +653,25 @@ export function PapelesDeBalance() {
         templatesConPoliza: ((conPoliza ?? []) as Array<{ template_id: string | null }>).map(p => p.template_id!).filter(Boolean),
       }))
 
+      /**
+       * 🔢 Control de cuotas de templates — usa las MISMAS cuotas y ventas ya leídas. Lo único que agrega
+       * es leer las presentaciones de SICORE (sólo MSA tiene SICORE). Si esa lectura falla, SICORE sale
+       * «a revisar» y el resto del control igual.
+       */
+      let sicore: PresentacionSicore[] | null = []
+      if (empresa.id === "MSA") {
+        const { data: ret, error: errRet } = await supabase.schema("msa").from("sicore_retenciones")
+          .select("quincena, retencion, estado_quincena")
+        sicore = errRet ? null : presentacionesSicoreDesde((ret ?? []) as Record<string, unknown>[])
+        if (errRet) toast.warning("No se pudieron leer las presentaciones de SICORE: su control de cuotas sale «a revisar».")
+      }
+      setControlCuotas(armarControlCuotas(empresa.id, anioCierre, {
+        cuotas: (cuotas.data ?? []).map(f => cuotaParaControlDesde(f as Record<string, unknown>)),
+        subdiariosConVentas: subdiariosConVentasDesde((ventas.data ?? []) as Record<string, unknown>[]),
+        presentacionesSicore: sicore,
+        hoy: hoyArgentina(),
+      }))
+
       if (armado.compras.length === 0 && armado.ventas.length === 0) {
         toast.warning(`No hay comprobantes en los 12 subdiarios del ejercicio ${ej.etiqueta}.`)
       }
@@ -738,6 +764,7 @@ export function PapelesDeBalance() {
                 saldosDelEjercicioAnterior(ajustes, empresa.id, anioCierre),
                 asientosContables ?? undefined,
                 lecturas ?? undefined,
+                controlCuotas ?? undefined,
               )}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               {/* A-FEAT-1388: decía «sin el sector productivo» y confundía cuando los precios ya se
@@ -921,6 +948,41 @@ export function PapelesDeBalance() {
                           <td className="pr-2">{f.ok ? "✓" : "⚠️"} {f.nombre}{f.aMano ? " · a mano" : ""}</td>
                           <td className="pr-2 font-mono">{f.facturasPorMes}/mes</td>
                           <td>{explicarFila(f)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </details>
+              )
+            })()}
+            {/* 🔢 Cuotas de templates: ¿están todas las de la campaña? Avisa, no frena (JMS 28/10/2026). */}
+            {controlCuotas && controlCuotas.filas.length > 0 && (() => {
+              const filas = controlCuotas.filas
+              const mal = filas.filter(conProblema)
+              const malPreview = mal.filter(f => f.preview)
+              const resumen = resumenControlCuotas(filas).map(r => `${r.cantidad} ${r.estado}`).join(" · ")
+              const color = (e: string) => e === "ok" ? "" : e === "falta" || e === "mixto" ? "text-red-700"
+                : e === "sobra" ? "text-amber-800" : "text-muted-foreground"
+              return (
+                <details className="text-xs border rounded p-2" open={malPreview.length > 0}>
+                  <summary className="cursor-pointer text-sm">
+                    {mal.length === 0
+                      ? <span className="text-emerald-700">✓ Cuotas de templates: están todas ({filas.length} templates controlados · {controlCuotas.campania})</span>
+                      : <span className="text-amber-800 font-semibold">⚠️ Cuotas de templates: {mal.length} de {filas.length} no tienen las cuotas esperadas{malPreview.length > 0 ? ` (${malPreview.length} de preview importante)` : ""} · {controlCuotas.campania}</span>}
+                  </summary>
+                  <p className="mt-1 text-muted-foreground">
+                    {empresa.id} se controla en su {controlCuotas.campania}. Un template compartido («PAM/MA/Duhau») va en la primera empresa nombrada.
+                    Anual o en cuotas: vale cualquiera de las dos, no las dos el mismo año. IIBB: un pago el mes siguiente a cada subdiario con ventas.
+                    SICORE: un pago por presentación. ★ = preview importante. Es un aviso: no frena el libro. {resumen}.
+                  </p>
+                  <table className="mt-1 w-full">
+                    <tbody>
+                      {filas.map(f => (
+                        <tr key={`${f.agrupadora}|${f.nombre}`} className={`${color(f.estado)} ${f.preview && conProblema(f) ? "font-semibold" : ""}`}>
+                          <td className="pr-2 whitespace-nowrap">{f.estado === "ok" ? "✓" : conProblema(f) ? "⚠️" : "·"} {f.preview ? "★ " : ""}{f.nombre}</td>
+                          <td className="pr-2 whitespace-nowrap">{f.estado}</td>
+                          <td className="pr-2 text-muted-foreground">{f.regla}</td>
+                          <td>{f.detalle}</td>
                         </tr>
                       ))}
                     </tbody>

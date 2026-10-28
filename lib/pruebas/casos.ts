@@ -179,6 +179,7 @@ import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
 import { PRESENTADO_ARCA_COMPRAS, compararConPresentado } from "@/lib/balance/presentado-arca"
 import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/balance/facturas-fijas"
+import { controlarCuotasTemplates, campaniaDelControl, claveDeNombre, CONTROL_CUOTAS_TEMPLATES, type CuotaParaControl, type TemplateControlado, type EntradaControlCuotas } from "@/lib/balance/control-cuotas-templates"
 import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA } from "@/lib/balance/templates-libro"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
@@ -10216,6 +10217,113 @@ export function correrCasos(): Resultado[] {
     const v = `para mí: ${r.paraMi.map(x => x.id).join(",")} · mandadas: ${r.mandadas.map(x => x.id).join(",")} · vencidas: ${r.vencidas}`
     chequear("Principal — Para vos", "Sólo lo asignado a quien mira (sin importar mayúsculas del mail), la tarea vencida primero, después por fecha; abajo lo que mandó; nunca lo de otro ni lo cerrado",
       "para mí: vencida,vence30,sinFecha · mandadas: mande · vencidas: 1", v, v === "para mí: vencida,vence30,sinFecha · mandadas: mande · vencidas: 1", "A-FEAT-1411")
+  }
+
+  // ══ 🔢 Control de cuotas de templates (decisión de JMS del 28/10/2026) ══
+  {
+    const CUBRE = "Control cuotas templates (JMS 28/10)"
+    const G = "Balance · cuotas de templates"
+    const cu = (nombre: string, fecha: string, monto = 100, x: Partial<CuotaParaControl> = {}): CuotaParaControl =>
+      ({ egresoId: nombre, nombre, responsable: "MSA", estado: "pendiente", monto, fecha_vencimiento: fecha, fecha_estimada: fecha, fecha_pago: null, ...x })
+    const msa = campaniaDelControl("MSA", 2026).meses
+    const pam = campaniaDelControl("PAM", 2026)
+    chequear(G, "📅 La campaña de MSA es jul→jun; la de PAM/MA el año calendario",
+      "2025-07…2026-06 · 2026-01…2026-12 · año calendario 2026", `${msa[0]}…${msa[11]} · ${pam.meses[0]}…${pam.meses[11]} · ${pam.etiqueta.slice(0, 19)}`,
+      msa[0] === "2025-07" && msa[11] === "2026-06" && pam.meses[0] === "2026-01" && pam.meses[11] === "2026-12" && pam.etiqueta.startsWith("año calendario 2026"), CUBRE)
+    const cfg = (nombre: string, regla: TemplateControlado["regla"], x: Partial<TemplateControlado> = {}): TemplateControlado =>
+      ({ empresa: "MSA", agrupadora: "X", nombre, regla, preview: false, ...x })
+    const correr = (config: TemplateControlado[], cuotas: CuotaParaControl[], extra: Partial<EntradaControlCuotas> = {}) =>
+      controlarCuotasTemplates({ empresa: "MSA", meses: msa, cuotas, config, hoy: "2026-10-28", ...extra })
+    const mensual = (nombre: string, meses: string[], x: Partial<CuotaParaControl> = {}) => meses.map(m => cu(nombre, `${m}-10`, 100, x))
+
+    // 1) Cantidad fija
+    const [f11] = correr([cfg("Cargas Sociales", { tipo: "fijo", esperado: 12 })], mensual("Cargas Sociales", msa.filter(m => m !== "2026-02")))
+    const [f13] = correr([cfg("Cargas Sociales", { tipo: "fijo", esperado: 12 })], [...mensual("Cargas Sociales", msa), cu("Cargas Sociales", "2025-11-20")])
+    const [fFuera] = correr([cfg("UATRE", { tipo: "fijo", esperado: 12 })], [...mensual("UATRE", msa), cu("UATRE", "2026-07-10"), cu("UATRE", "2026-03-10", 100, { estado: "desactivado" })])
+    chequear(G, "🔢 Fijo 12: 11 → falta (dice qué mes); 13 → sobra (mes repetido); fuera de campaña y desactivadas no cuentan",
+      "falta: 11 de 12 · sin cuota: feb-26 | sobra | ok",
+      `${f11.estado}: ${f11.detalle} | ${f13.estado} | ${fFuera.estado}`,
+      f11.estado === "falta" && f11.detalle === "11 de 12 · sin cuota: feb-26" && f13.estado === "sobra" && f13.detalle.includes("nov-25 (2)") && fFuera.estado === "ok", CUBRE)
+    // Mismo nombre escrito distinto, otro template (recreado otro año); compartido → primera empresa
+    const [fNom] = correr([cfg("Imp .Ganancias MSA", { tipo: "fijo", esperado: 1 })], [cu("IMP. GANANCIAS MSA", "2025-11-10", 100, { egresoId: "tpl-2025" })])
+    const [fComp] = controlarCuotasTemplates({ empresa: "PAM", meses: pam.meses, hoy: "2026-10-28",
+      config: [cfg("ABL Cochera Libertad", { tipo: "fijo", esperado: 12 }, { empresa: "PAM" })],
+      cuotas: [cu("ABL Cochera Libertad Anual", "2026-05-10", 5000, { responsable: "PAM/MA/Duhau" })] })
+    chequear(G, "La clave es el NOMBRE normalizado (no el id); un compartido «PAM/MA/Duhau» se controla en PAM",
+      "ok · ok (pagado anual)", `${fNom.estado} · ${fComp.estado} (${fComp.detalle.includes("pagado anual") ? "pagado anual" : fComp.detalle})`,
+      fNom.estado === "ok" && fComp.estado === "ok" && fComp.detalle.includes("pagado anual") && claveDeNombre("Inmobiliario Anual Rojas") === claveDeNombre("Inmobiliario Cuota Rojas"), CUBRE)
+
+    // 2) ABL siempre 12; inmobiliarios rurales 4 (la configuración real)
+    const abls = CONTROL_CUOTAS_TEMPLATES.filter(t => /^abl/i.test(t.nombre))
+    chequear(G, "🏙️ Todo ABL espera 12 (JMS: «lo confundí con 4»)", "3 ABL · todos 12",
+      `${abls.length} ABL · ${abls.map(t => t.regla.tipo === "fijo" ? t.regla.esperado : t.regla.tipo).join(",")}`,
+      abls.length === 3 && abls.every(t => t.regla.tipo === "fijo" && t.regla.esperado === 12), CUBRE)
+    const rurales = CONTROL_CUOTAS_TEMPLATES.filter(t => /^Inmobiliario/.test(t.nombre) && t.agrupadora === "Impuestos Rurales")
+    chequear(G, "🌾 Los inmobiliarios rurales esperan 4", "todos 4", rurales.every(t => t.regla.tipo === "fijo" && t.regla.esperado === 4) ? "todos 4" : "no",
+      rurales.length > 10 && rurales.every(t => t.regla.tipo === "fijo" && t.regla.esperado === 4), CUBRE)
+
+    // 3) Anual o cuotas
+    const inm = [cfg("Inmobiliario Cuota Casco", { tipo: "fijo", esperado: 4 }, { empresa: "PAM" })]
+    const corrPam = (cuotas: CuotaParaControl[]) => controlarCuotasTemplates({ empresa: "PAM", meses: pam.meses, cuotas: cuotas.map(c => ({ ...c, responsable: "PAM" })), config: inm, hoy: "2026-10-28" })[0]
+    const cuatro = ["2026-03", "2026-06", "2026-09", "2026-11"].map(m => cu("Inmobiliario Cuota Casco", `${m}-08`))
+    const anual = cu("Inmobiliario Anual Casco", "2026-03-08", 400)
+    const anualEnCero = cu("Inmobiliario Anual Casco", "2026-03-08", 0)
+    const rC = corrPam(cuatro), rA = corrPam([anual, ...cuatro.map(c => ({ ...c, monto: 0 }))]), rM = corrPam([anual, ...cuatro]), rA0 = corrPam([anualEnCero, ...cuatro])
+    chequear(G, "🧾 Anual o cuotas: 4 cuotas ok · 1 anual (cuotas en $0) ok · anual en $0 + 4 cuotas ok · anual + cuotas con importe → mixto",
+      "ok · ok · ok · mixto", `${rC.estado} · ${rA.estado} · ${rA0.estado} · ${rM.estado}`,
+      rC.estado === "ok" && rA.estado === "ok" && rA0.estado === "ok" && rM.estado === "mixto", CUBRE)
+    // En MSA la campaña toca dos años: 2025 en cuotas y 2026 anual es legítimo (Voyage)
+    const voy = [cfg("Imp Automotores Voyage", { tipo: "fijo", esperado: 12 })]
+    const rV = correr(voy, [...mensual("Imp Automotores Voyage Cuota", msa.slice(0, 6)), cu("Imp Automotores Voyage Anual", "2026-01-30", 4000)])[0]
+    const gol = correr([cfg("Imp Automotores Gol 2012", { tipo: "a-revisar", motivo: "no se sabe" })], [cu("Imp Automotores Gol 2012 Cuota", "2026-01-05")])[0]
+    chequear(G, "Por AÑO: 2025 en cuotas + 2026 anual no es mixto (lo esperado de 2025 es proporcional: 6); Gol sin número → «a revisar», no error",
+      "ok · 6 de 6 (proporcional) | a revisar", `${rV.estado} · ${rV.detalle.includes("6 de 6 (proporcional)") ? "6 de 6 (proporcional)" : rV.detalle} | ${gol.estado}`,
+      rV.estado === "ok" && rV.detalle.includes("6 de 6 (proporcional)") && gol.estado === "a revisar", CUBRE)
+
+    // 4) IIBB: un pago con importe el mes siguiente a cada subdiario con ventas
+    const iibb = [cfg("IIBB Mensual MSA", { tipo: "ventas" })]
+    const enCero = [...msa, "2026-07"].filter(m => m !== "2025-12" && m !== "2026-06").map(m => cu("IIBB Mensual MSA", `${m}-15`, 0))
+    const pagos = [cu("IIBB Mensual MSA", "2025-12-15", 5000), cu("IIBB Mensual MSA", "2026-06-18", 3000)]
+    const rI = correr(iibb, [...enCero, ...pagos], { subdiariosConVentas: ["2025-07", "2025-11", "2026-05"] })[0]
+    const rIok = correr(iibb, pagos, { subdiariosConVentas: ["2025-11", "2026-05"] })[0]
+    const rIsin = correr(iibb, pagos, { subdiariosConVentas: null })[0]
+    const rIjun = correr(iibb, [], { subdiariosConVentas: ["2026-06"], hoy: "2026-07-05" })[0]
+    chequear(G, "🧾 IIBB: ventas de jul-25 sin pago en ago-25 (la cuota en $0 no cuenta) → falta; nov y may pagados; sin ventas leídas → a revisar; lo de junio que vence en julio todavía no falta",
+      "falta (2 de 3, jul-25) · ok · a revisar · ok",
+      `${rI.estado} (${rI.encontrado} de ${rI.esperado}, ${rI.detalle.includes("ventas sin pago al mes siguiente: jul-25") ? "jul-25" : rI.detalle}) · ${rIok.estado} · ${rIsin.estado} · ${rIjun.estado}`,
+      rI.estado === "falta" && rI.encontrado === 2 && rI.esperado === 3 && rI.detalle.includes("jul-25") && rIok.estado === "ok" && rIsin.estado === "a revisar" && rIjun.estado === "ok", CUBRE)
+    const rIextra = correr(iibb, [...pagos, cu("IIBB Mensual MSA", "2026-03-15", 700)], { subdiariosConVentas: ["2025-11", "2026-05"] })[0]
+    chequear(G, "IIBB: un pago con importe sin ventas el mes anterior se señala (sobra)", "sobra · mar-26",
+      `${rIextra.estado} · ${rIextra.detalle.includes("mar-26") ? "mar-26" : rIextra.detalle}`, rIextra.estado === "sobra" && rIextra.detalle.includes("mar-26"), CUBRE)
+
+    // 5) Seguro Flota: todas las pólizas juntas, 12
+    const flota = [cfg("Seguro Flota", { tipo: "fijo", esperado: 12 }, { prefijo: true })]
+    const rF = correr(flota, [...mensual("Seguro Flota — póliza 34160783", msa.slice(0, 7)), ...mensual("Seguro Flota — póliza 35881289", msa.slice(7))])[0]
+    chequear(G, "🚗 Seguro Flota: dos pólizas en el año cuentan como una flota → 12 de 12", "ok · 12 de 12 · 2 templates",
+      `${rF.estado} · ${rF.detalle} · ${rF.templates} templates`, rF.estado === "ok" && rF.detalle === "12 de 12" && rF.templates === 2, CUBRE)
+
+    // 6) Pendientes: comisiones y seguros → «a desarrollar», no se juzgan
+    const pend = CONTROL_CUOTAS_TEMPLATES.filter(t => t.regla.tipo === "a-desarrollar").map(t => t.nombre)
+    const pendOk = pend.some(x => x.startsWith("Comision")) && pend.some(x => x.startsWith("Seguro Vida")) && !pend.includes("Seguro Flota")
+    const rP = correr([cfg("Comision Cuenta Bancaria", { tipo: "a-desarrollar", motivo: "x" })], [cu("Comision Cuenta Bancaria", "2025-08-01")])[0]
+    chequear(G, "⏳ Comisiones bancarias y seguros (salvo Flota) son «regla a desarrollar»: se cuentan, no se juzgan",
+      "a desarrollar · comisiones y seguros en la lista", `${rP.estado} · ${pendOk ? "comisiones y seguros en la lista" : pend.join(",")}`,
+      rP.estado === "a desarrollar" && pendOk, CUBRE)
+
+    // 7) SICORE: un pago por presentación (1ª → mismo mes; 2ª → mes siguiente)
+    const sic = [cfg("SICORE 1er Quincena", { tipo: "sicore", quincena: "1ra" }), cfg("SICORE 2da Quincena", { tipo: "sicore", quincena: "2da" })]
+    const pres = [{ quincena: "26-03 - 1ra", total: 100 }, { quincena: "26-03 - 2da", total: 50 }, { quincena: "26-04 - 1ra", total: 80 }]
+    const rS = correr(sic, [cu("SICORE 1er Quincena", "2026-03-25", 100), cu("SICORE 2da Quincena", "2026-04-10", 50),
+      cu("SICORE 1er Quincena", "2026-04-21", 0), cu("SICORE 2da Quincena", "2026-02-13", 64)], { presentacionesSicore: pres })
+    const s1 = rS.find(x => x.nombre === "SICORE 1er Quincena")!, s2 = rS.find(x => x.nombre === "SICORE 2da Quincena")!
+    chequear(G, "🧾 SICORE: la 1ª de abr-26 presentada con la cuota en $0 → falta; la 2ª de mar-26 pagada en abril → ok; lo anterior a las presentaciones de la app no se juzga",
+      "falta (abr-26) · ok", `${s1.estado} (${s1.detalle.includes("presentación sin pago: abr-26") ? "abr-26" : s1.detalle}) · ${s2.estado}`,
+      s1.estado === "falta" && s1.detalle.includes("abr-26") && s2.estado === "ok" && s2.detalle.includes("no se controlan"), CUBRE)
+
+    // 8) Preview importante primero
+    const orden = correr([cfg("B ok", { tipo: "fijo", esperado: 1 }), cfg("A falta", { tipo: "fijo", esperado: 1 }), cfg("C prev ok", { tipo: "fijo", esperado: 1 }, { preview: true })],
+      [cu("B ok", "2025-08-01"), cu("C prev ok", "2025-08-01")]).map(x => x.nombre).join(" > ")
+    chequear(G, "★ Preview importante primero; después lo que está mal", "C prev ok > A falta > B ok", orden, orden === "C prev ok > A falta > B ok", CUBRE)
   }
 
   return r
