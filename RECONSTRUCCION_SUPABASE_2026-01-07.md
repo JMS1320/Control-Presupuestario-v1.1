@@ -3323,6 +3323,9 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-10-28 · PROPUESTAS DE CAMBIO (Ulises propone, JMS acepta) — tabla `public.propuestas_cambio` (script 123) — A-FEAT-1400 — ✅ CORRIDO 2026-10-28 con JMS
+Columnas: `empresa, tabla, registro_id, persona, habilitada_por, nota, vence_at, estado (habilitada/propuesta/aceptada/revertida/vencida/cancelada), antes, cambios, revision_id, propuesta_at, resuelta_at, resuelta_por, resolucion`. Índice único parcial (una abierta por registro). RLS: `admin_todo`, `persona_ve_las_suyas`, `persona_propone`. Deshacer: `scripts/123-propuestas-cambio-deshacer.sql`.
+
 ### 2026-10-28 · EL CUADERNO DE TRABAJO — tabla `public.cuadernos` (script 124) — A-FEAT-1410 — ✅ CORRIDO 2026-10-28 con JMS
 `id, usuario_id uuid default auth.uid(), titulo, bloques jsonb, created_at, updated_at`; RLS `cuadernos_propios` (`usuario_id = auth.uid()`), `authenticated` CRUD, `anon` nada. Deshacer: `scripts/124-cuadernos-deshacer.sql`.
 

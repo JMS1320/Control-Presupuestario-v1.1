@@ -81,6 +81,7 @@ import { EstadoMesesDDJJ } from "@/components/estado-meses-ddjj"
 import { RectificacionDelMes, consultarMesesARectificar } from "@/components/rectificacion-del-mes"
 import { esColumnaFiscal, type MesARectificar } from "@/lib/subdiarios/rectificacion"
 import { BotonRevision, useRevisionesDe } from "@/components/boton-revision"
+import { BotonPropuestaFactura, usePropuestasFactura } from "@/components/propuesta-factura"
 import { Paperclip, Banknote } from "lucide-react"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
 import { coincidenciasDeNombre, fechaDelNombreCoincide, datosDelVinculo, subcarpetasDelMes } from "@/lib/facturas/vincular-archivo"
@@ -490,6 +491,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
    * para pintar 40 banderitas que casi siempre están apagadas.
    */
   const { porRegistro: revisionesFactura, recargar: recargarRevisiones } = useRevisionesDe(schemaName, 'comprobantes_arca')
+  // 🔓 A-FEAT-1400: habilitaciones abiertas (Ulises propone, JMS acepta)
+  const { porFactura: propuestasFactura, yo: yoPropuestas, recargar: recargarPropuestas } = usePropuestasFactura(empresa)
   // 📜 Las 🚩 de las filas del histórico (Subdiarios jul–nov, A-FEAT-1382) quedan ancladas a SU tabla.
   const { porRegistro: revisionesHistorico, recargar: recargarRevisionesHistorico } = useRevisionesDe(schemaName, 'comprobantes_historico')
   // PDFs de la carpeta que NO matchearon ninguna factura (huérfanos) — resultado de la última supervisión.
@@ -7166,6 +7169,11 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                           abierta={(factura.estado === 'historico' ? revisionesHistorico : revisionesFactura)[String(factura.id)]}
                           onCambio={() => { recargarRevisiones(); recargarRevisionesHistorico() }}
                         />
+                        {factura.estado !== 'historico' && (
+                          <BotonPropuestaFactura factura={factura as any} empresa={empresa} schema={schemaName}
+                            esAdmin={userRole === 'admin'} propuesta={propuestasFactura[String(factura.id)]} yo={yoPropuestas}
+                            onCambio={() => { recargarPropuestas(); recargarRevisiones(); cargarFacturas() }} />
+                        )}
                       </TableCell>
                     </TableRow>
                   )
