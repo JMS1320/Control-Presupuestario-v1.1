@@ -66,7 +66,7 @@ export function BotonPropuestaFactura({ factura, empresa, schema, esAdmin, propu
   const esMia = !!propuesta && !!yo && propuesta.persona.toLowerCase() === yo
 
   let boton: React.ReactNode = null
-  if (esAdmin && !propuesta && esHabilitable(factura.archivo_origen)) {
+  if (esAdmin && !propuesta && esHabilitable(factura.archivo_origen, factura.origen_factura)) {
     boton = <button type="button" title="Habilitar a alguien para que proponga cambios en esta factura" onClick={() => setModal("habilitar")}
       className="inline-flex h-6 w-6 items-center justify-center rounded text-gray-300 hover:bg-blue-50 hover:text-blue-600"><Unlock className="h-3.5 w-3.5" /></button>
   } else if (esAdmin && propuesta) {
@@ -122,7 +122,7 @@ function ModalHabilitar({ factura, empresa, onClose, onListo }: { factura: Recor
         nota: nota.trim() || null, vence_at: plazo === "1dia" ? new Date(Date.now() + 86400000).toISOString() : null, revision_id: revisionId,
       })
       if (error) throw error
-      toast.success(`Habilitada. Le llega a su 🔔; lo que proponga queda pendiente de tu OK.`)
+      toast.success(`Habilitada. Le aparece en su Principal (🚩); lo que proponga queda pendiente de tu OK.`)
       onClose(); onListo()
     } catch (e) { toast.error("No se pudo habilitar: " + (e as Error).message) } finally { setGuardando(false) }
   }
@@ -207,8 +207,17 @@ function ModalProponer({ factura, propuesta, onClose, onListo }: { factura: Reco
 function ModalRevisar({ factura, propuesta, empresa, schema, onClose, onListo }: { factura: Record<string, any>; propuesta: PropuestaCambio; empresa: string; schema: string; onClose: () => void; onListo: () => void }) {
   const [trabajando, setTrabajando] = useState(false)
   const [motivo, setMotivo] = useState("")
-  const cambios = propuesta.cambios ?? {}
   const estado = estadoVisible(propuesta)
+  // JMS 28/10: «también lo puedo editar antes de confirmar yo» → los valores propuestos se editan acá
+  const [valores, setValores] = useState<Record<string, string>>(() => {
+    const v: Record<string, string> = {}
+    for (const { campo, tipo } of CAMPOS_PROPONIBLES) {
+      const base = propuesta.cambios && campo in propuesta.cambios ? propuesta.cambios[campo] : factura[campo]
+      v[campo] = base === null || base === undefined ? "" : tipo === "monto" ? Number(base).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(base).slice(0, tipo === "fecha" ? 10 : undefined)
+    }
+    return v
+  })
+  const cambios = diferencias(factura, valores).cambios
   const cerrar = async (nuevo: "aceptada" | "revertida" | "cancelada", resolucion: string) => {
     const { data: u } = await supabase.auth.getUser()
     const { error } = await supabase.from("propuestas_cambio").update({
@@ -235,6 +244,8 @@ function ModalRevisar({ factura, propuesta, empresa, schema, onClose, onListo }:
         const { error } = await supabase.schema(schema).from("comprobantes_arca").update(resto).eq("id", factura.id)
         if (error) throw error
       }
+      // si JMS retocó la propuesta, queda registrado lo que se aplicó de verdad
+      await supabase.from("propuestas_cambio").update({ cambios }).eq("id", propuesta.id)
       await cerrar("aceptada", "Aceptada" + (motivo.trim() ? `: ${motivo.trim()}` : ""))
       toast.success("Aceptada: los cambios ya están en la factura.")
       onClose(); onListo()
@@ -255,25 +266,30 @@ function ModalRevisar({ factura, propuesta, empresa, schema, onClose, onListo }:
         <p className="text-xs text-muted-foreground">{tituloFactura(factura)}<br />
           Habilitada a <b>{propuesta.persona}</b>{propuesta.vence_at ? ` hasta ${new Date(propuesta.vence_at).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })}` : " hasta que aceptes"}{estado === "vencida" ? " — venció" : ""}{propuesta.nota ? ` · «${propuesta.nota}»` : ""}</p>
         {estado === "propuesta" ? (
-          <table className="w-full text-sm">
-            <thead><tr className="border-b text-xs text-muted-foreground"><th className="py-1 text-left">Campo</th><th className="text-right">Antes</th><th className="text-right">Propuesto</th></tr></thead>
-            <tbody>
-              {CAMPOS_PROPONIBLES.filter(c => c.campo in cambios).map(({ campo, etiqueta, tipo }) => (
-                <tr key={campo} className="border-b">
-                  <td className="py-1">{etiqueta}</td>
-                  <td className="text-right text-muted-foreground line-through">{fmtValor(tipo, normalizar(tipo, factura[campo]))}</td>
-                  <td className="text-right font-medium text-blue-800">{fmtValor(tipo, cambios[campo])}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            <p className="text-[11px] text-muted-foreground">En azul lo que cambia (debajo, lo que tiene hoy la factura). Podés corregir cualquier valor antes de aceptar.</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {CAMPOS_PROPONIBLES.map(({ campo, etiqueta, tipo }) => {
+                const cambiado = campo in cambios
+                return (
+                  <div key={campo}>
+                    <Label className={`text-xs ${cambiado ? "font-semibold text-blue-700" : ""}`}>{etiqueta}</Label>
+                    <Input className={`mt-0.5 h-8 text-sm ${tipo === "monto" ? "text-right" : ""} ${cambiado ? "border-blue-400 bg-blue-50" : ""}`}
+                      type={tipo === "fecha" ? "date" : "text"} value={valores[campo]}
+                      onChange={e => setValores(v => ({ ...v, [campo]: e.target.value }))} />
+                    {cambiado && <div className="mt-0.5 text-[10px] text-muted-foreground line-through">{fmtValor(tipo, normalizar(tipo, factura[campo]))}</div>}
+                  </div>
+                )
+              })}
+            </div>
+          </>
         ) : <p className="text-sm text-muted-foreground">Todavía no propuso cambios.</p>}
         <Input value={motivo} onChange={e => setMotivo(e.target.value)} placeholder="Comentario (opcional)" />
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="outline" onClick={onClose}>Cerrar</Button>
           {estado !== "propuesta" && <Button variant="outline" onClick={() => rechazar("cancelada")} disabled={trabajando}>Cancelar la habilitación</Button>}
           {estado === "propuesta" && <Button variant="outline" className="text-red-700" onClick={() => rechazar("revertida")} disabled={trabajando}>Rechazar</Button>}
-          {estado === "propuesta" && <Button onClick={aceptar} disabled={trabajando}>{trabajando && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}Aceptar y aplicar</Button>}
+          {estado === "propuesta" && <Button onClick={aceptar} disabled={trabajando || Object.keys(cambios).length === 0}>{trabajando && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}Aceptar y aplicar</Button>}
         </div>
       </DialogContent>
     </Dialog>

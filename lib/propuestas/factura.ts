@@ -26,10 +26,12 @@ export const CAMPOS_PROPONIBLES: { campo: string; etiqueta: string; tipo: TipoCa
 
 /**
  * ¿Se puede habilitar? Sólo las que NO vienen de ARCA (JMS: «las efectivamente cargadas por API no le doy nunca
- * la habilitación rápida, sólo las que entraron por Excel»). ARCA = «Mis Comprobantes…» o «arca-…». Sin origen
- * registrado (hay 46): NO, hasta que JMS diga.
+ * la habilitación rápida, sólo las que entraron por Excel»; 28/10: «las que importo directo de ARCA es clarísimo
+ * para la app; el resto son las editables»). ARCA = `origen_factura = 'ARCA'` o archivo «Mis Comprobantes…» / «arca-…».
+ * (Sin ningún dato de origen, por las dudas, no — hoy no hay ninguna así.)
  */
-export function esHabilitable(archivoOrigen: string | null | undefined): boolean {
+export function esHabilitable(archivoOrigen: string | null | undefined, origenFactura?: string | null): boolean {
+  if (String(origenFactura ?? "").trim().toUpperCase() === "ARCA") return false
   const o = String(archivoOrigen ?? "").trim()
   if (!o) return false
   return !/^mis comprobantes/i.test(o) && !/^arca-/i.test(o)

@@ -701,9 +701,9 @@ Los botones (copiar pedido, pedir, buscar) trabajan sobre lo que queda a la vist
 ## 🔓 Habilitar a alguien para que corrija una factura *(nuevo 2026-10-28)*
 
 Para que Ulises (u otra persona) corrija una factura **cargada por Excel** sin darle permiso sobre todas:
-1. **Vos**: Egresos → Facturas, en la factura, el **🔓** al lado de la 🚩 → a quién, por cuánto tiempo (1 día o hasta que aceptes) y qué hay que corregir. Le llega a su 🔔.
+1. **Vos**: Egresos → Facturas, en la factura, el **🔓** al lado de la 🚩 → a quién, por cuánto tiempo (1 día o hasta que aceptes) y qué hay que corregir. Le aparece en su Principal (🚩).
 2. **Él**: en esa factura aparece **«proponer»** → corrige los campos (importes incluidos) → Proponer. **La factura no cambia todavía.**
-3. **Vos**: aparece **📝** en la factura → ves antes y propuesto → **Aceptar y aplicar** o **Rechazar**.
+3. **Vos**: aparece **📝** en la factura → ves antes y propuesto, podés corregir lo que quieras → **Aceptar y aplicar** o **Rechazar**.
 Las facturas que vinieron de ARCA no se pueden habilitar.
 
 ⚠️ Sin probar todavía → [A-TEST-1280](PENDIENTES.md#a-test-1280)
