@@ -40,6 +40,10 @@
 
 ## 📨 PARA JAVIER
 
+### 📓 Tabla nueva `public.cuadernos` + página `/cuaderno` (2026-10-28) — aviso ANTES de aplicarla, con OK de JMS
+- `scripts/124-cuadernos.sql` (+ `-deshacer`). A-FEAT-1410: cuaderno de trabajo PERSONAL (texto + tablas). RLS propia: cada usuario ve y escribe sólo los suyos (`usuario_id = auth.uid()`, default `auth.uid()`); `anon` nada. No pasa por `recurso_tablas` (no es un dato de la empresa).
+- **Ruta nueva** `/cuaderno` (protegida por el middleware como las demás) y un ítem «Cuaderno» en el menú de usuario (`barra-sesion.tsx`).
+
 ### 🔒 Lotes «a confirmar»: 4 columnas en `productivo.lotes_agricolas` + 2 claves del rol `pruebas` (2026-10-28) — ✅ APLICADA el 28/10 con OK de JMS (aviso previo): 4 columnas, los 15 lotes quedaron confirmados, rol `pruebas` con las 2 claves cambiadas
 - `scripts/122-lotes-a-confirmar.sql` (+ `-deshacer`). A-FEAT-1408 / A-DEC-1024 (regla de JMS: todo lo que carga alguien que no es él queda pendiente de su OK): `a_confirmar` (default false), `creado_por`, `confirmado_por`, `confirmado_at`. Confirma sólo el admin (como las órdenes).
 - **Permisos**: en el rol `pruebas` se saca `productivo.lotes.nuevo` y se agrega `productivo.ordenes.nuevo-lote` (recurso nuevo: crear lote desde la orden). No se toca nada más del rol.
