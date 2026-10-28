@@ -108,6 +108,8 @@ export const RECURSOS: Recurso[] = [
     ["subdiario-reporte", "Subdiarios → Generar PDF + Excel del período", "egresos.subdiarios", FACTURAS],
     ["cargar-desde-pdf", "Subdiarios → Cargar un PDF suelto como factura No Informada", "egresos.subdiarios", FACTURAS],
     ["config-pdf-proveedores", "Facturas → Configurar la descarga de PDFs por proveedor", undefined, FACTURAS],
+    // A-BUG-1401 (nota 🌙 JMS 27/10: «todos los botones deberían estar configurables por defecto»)
+    ["historial-pdf", "Facturas → Historial de búsquedas de PDFs", undefined, FACTURAS],
     ["auditar-archivo", "Facturas → Auditar el registro digital de un período", undefined, FACTURAS],
     ["marcar-fc", "Facturas → Marcar FC (comprobante)", undefined, FACTURAS],
     ["vincular-compras", "Facturas → Vincular con compras de insumos", undefined, FACTURAS],

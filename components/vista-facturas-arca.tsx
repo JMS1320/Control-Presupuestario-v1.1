@@ -7709,14 +7709,14 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
             {/* Búsqueda de PDFs vía GAS (solo admin) */}
             {!esContable && (
               <>
-                <Button
+                <Permisable recurso="egresos.historial-pdf"><Button
                   variant="outline"
                   onClick={() => setModalHistorialPdf({ open: true })}
                   title="Historial de búsquedas de PDFs"
                 >
                   <FileText className="mr-2 h-4 w-4" />
                   Historial PDFs
-                </Button>
+                </Button></Permisable>
                 <Permisable recurso="egresos.config-pdf-proveedores"><Button
                   variant="outline"
                   onClick={() => setModalConfigProveedorPdf({ open: true })}
