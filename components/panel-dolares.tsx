@@ -204,9 +204,9 @@ export function ModalCambioMoneda({ abierto, onClose, onGuardado }: { abierto: b
     if (errs.length) { toast.error(errs.join(" · ")); return }
     const cu = cuentaManual(cuentaUsd) as CuentaManual
     const cp = destino!
-    // Categoría financiera que ya existe en el plan: el cambio de moneda no es gasto ni ingreso (no va al presupuesto).
-    // Una cuenta propia «Compra-venta de moneda extranjera» queda para que la cree JMS (A-FEAT-1398).
-    const { filaUsd, filaPesos } = armarCambio({ fecha, sentido, usd: usdN, tc: tcN, descripcion: descripcion.trim(), categ: "Transferencias Interbancarias" })
+    // «Compra-venta de moneda extranjera» (scripts/127, financiera): el cambio de moneda no es gasto ni ingreso,
+    // así que no va al presupuesto.
+    const { filaUsd, filaPesos } = armarCambio({ fecha, sentido, usd: usdN, tc: tcN, descripcion: descripcion.trim(), categ: "MONEDA EXTRANJERA" })
     const idUsd = crypto.randomUUID()
     const idPesos = crypto.randomUUID()
     const schemaPesos = cp.schema_bd || "public"
@@ -445,7 +445,7 @@ export function PanelDolares() {
               </tr>)
           })}</tbody>
         </table>
-        <p className="mt-1 text-[11px] text-muted-foreground">Las de Cotitulares no entran: no son de una empresa. Todavía no va al Excel del balance (A-FEAT-1398).</p>
+        <p className="mt-1 text-[11px] text-muted-foreground">Las de Cotitulares no entran: no son de una empresa. En el balance (papel 07 Bancos) va el saldo en pesos al dólar BNA del cierre.</p>
       </div>
 
       {/* Últimos movimientos */}

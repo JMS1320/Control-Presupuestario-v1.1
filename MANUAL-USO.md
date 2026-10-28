@@ -711,6 +711,8 @@ Siete cuentas que se cargan a mano: **MSA** cuenta corriente y caja en dólares 
   Si la plata de Cotitulares pagó algo de una empresa, marcá **«Por cuenta de MSA»**: arma la cuenta corriente.
 - Todo lo cargado a mano queda **Pendiente**: cuando llega el extracto se concilia contra eso.
 - Las cuentas en dólares no se concilian solas (el Cash Flow está en pesos).
+- La compra/venta va a la cuenta contable **«Compra-venta de moneda extranjera»** (financiera: no va al presupuesto).
+- **En el balance**: el papel **07 Bancos** trae cada cuenta en dólares de la empresa valuada al dólar BNA del cierre.
 
 ⚠️ Sin probar todavía → [A-TEST-1284](PENDIENTES.md#a-test-1284)
 

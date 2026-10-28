@@ -46,6 +46,7 @@ import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/bal
 import { descargarLibroDiario } from "@/lib/balance/export-libro-diario"
 import { descargarLibroDiarioConsensuado } from "@/lib/balance/libro-diario-consensuado"
 import { descargarDiferenciasVsArca } from "@/lib/balance/diferencias-vs-arca"
+import { saldosEnDolaresParaBalance } from "@/lib/dolares/posicion-cierre"
 import { traerTodo, lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
 import type { TipoCuenta } from "@/lib/presupuesto/templates"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
@@ -444,6 +445,10 @@ export function PapelesDeBalance() {
           cadenas.push(cadena)
           saldos.push({ nombre: t.nombre, saldo: cadena.saldoAlCierre, fecha: cadena.hasta })
         }
+        // 💵 A-FEAT-1398: las cuentas en dólares de la empresa, en pesos al TC de cierre (sólo si tienen movimientos)
+        const dolares = await saldosEnDolaresParaBalance(supabase, empresa.id, finDelEjercicio)
+        saldos.push(...dolares.saldos)
+        if (dolares.avisos.length) toast.warning(`Dólares: ${dolares.avisos.join(" · ")}`)
         /**
          * 🧮 El control se VE, no vive sólo en la solapa (§ 🧮). Si los importes del extracto no
          * explican sus propios saldos, el saldo que va al papel no se puede entregar.
