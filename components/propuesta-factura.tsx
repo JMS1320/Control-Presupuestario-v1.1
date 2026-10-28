@@ -24,6 +24,8 @@ import { CAMPOS_PROPONIBLES, diferencias, esHabilitable, estadoVisible, normaliz
 import { pedirAsignacionDeCuenta, mensajeDePropagacion } from "@/lib/conciliacion/asignar-cuenta-cliente"
 import { esColumnaFiscal } from "@/lib/subdiarios/rectificacion"
 import { estaProtegido } from "@/lib/subdiarios/estado-ddjj"
+import { hoyArgentina } from "@/lib/fechas"
+import { sumarDias } from "@/lib/productivo/venta-condiciones"
 
 export interface PropuestaCambio {
   id: string; empresa: string; tabla: string; registro_id: string; persona: string; habilitada_por: string | null
@@ -115,6 +117,8 @@ function ModalHabilitar({ factura, empresa, onClose, onListo }: { factura: Recor
         descripcion_ref: tituloFactura(factura).slice(0, 300),
         motivo: `🔓 Habilitada para que propongas el cambio${nota.trim() ? `: ${nota.trim()}` : ""}. Abrí la factura y tocá «proponer».`,
         pantalla: "Egresos", subpantalla: `Facturas ${empresa}`, creado_por: u.user?.email ?? null, asignado_a: persona,
+        // A-FEAT-1411: es una tarea para esa persona, con la fecha del plazo si lo hay
+        es_tarea: true, tarea_hasta: plazo === "1dia" ? sumarDias(hoyArgentina(), 1) : null,
       })
       if (eR) throw eR
       const { error } = await supabase.from("propuestas_cambio").insert({

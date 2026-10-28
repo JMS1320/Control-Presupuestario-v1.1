@@ -32,6 +32,7 @@ import {
 } from "@/lib/arrendamientos/cuotas"
 import { altaContraparte } from "@/lib/proveedores/alta"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
+import { Permisable } from "@/components/modo-permisos"
 
 const MESES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
 
@@ -199,9 +200,9 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
           </p>
         </div>
         {/* Un contrato nuevo nace en la empresa que estás mirando */}
-        <Button size="sm" onClick={() => setModalContrato({ empresa: empresa || "MSA", grano: "soja" })}>
+        <Permisable recurso="ingresos.contrato-nuevo"><Button size="sm" onClick={() => setModalContrato({ empresa: empresa || "MSA", grano: "soja" })}>
           <Plus className="mr-1 h-4 w-4" /> Nuevo contrato
-        </Button>
+        </Button></Permisable>
       </div>
 
       {cargando ? (
@@ -233,14 +234,14 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
                   </span>
                 </button>
                 <div className="flex gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => setModalContrato(c)}>Editar</Button>
-                  <Button variant="ghost" size="sm" title="Nuevo contrato igual a éste, en la campaña siguiente"
+                  <Permisable recurso="ingresos.contrato-editar"><Button variant="ghost" size="sm" onClick={() => setModalContrato(c)}>Editar</Button></Permisable>
+                  <Permisable recurso="ingresos.contrato-editar"><Button variant="ghost" size="sm" title="Nuevo contrato igual a éste, en la campaña siguiente"
                     onClick={() => duplicarContrato(c)}>
                     Duplicar
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => bajaContrato(c.id)}>
+                  </Button></Permisable>
+                  <Permisable recurso="ingresos.contrato-baja"><Button variant="ghost" size="sm" onClick={() => bajaContrato(c.id)}>
                     <Trash2 className="h-3.5 w-3.5 text-gray-400" />
-                  </Button>
+                  </Button></Permisable>
                 </div>
               </CardTitle>
 
@@ -321,10 +322,10 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
                             </td>
                             <td className="px-3 py-2 text-right">
                               {disp > 0.001 && (
-                                <Button size="sm" variant="outline"
+                                <Permisable recurso="ingresos.fijar"><Button size="sm" variant="outline"
                                   onClick={() => setModalFijar({ cuota: q, contrato: c })}>
                                   <Handshake className="mr-1 h-3.5 w-3.5" /> Fijar
-                                </Button>
+                                </Button></Permisable>
                               )}
                             </td>
                           </tr>
@@ -353,17 +354,17 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
                                 </td>
                                 <td className="px-3 py-1.5 text-right whitespace-nowrap">
                                   {ev === "sin_tc" && (
-                                    <Button size="sm" variant="ghost" className="h-6 text-xs"
+                                    <Permisable recurso="ingresos.fijar-tc"><Button size="sm" variant="ghost" className="h-6 text-xs"
                                       onClick={() => setModalTC(v)}>
                                       Fijar TC
-                                    </Button>
+                                    </Button></Permisable>
                                   )}
                                   {/* Siempre, abierta o cerrada (A-BUG-100): una venta cerrada con un
                                       TC puesto por error no tenía forma de corregirse. */}
-                                  <Button size="sm" variant="ghost" className="h-6 text-xs"
+                                  <Permisable recurso="ingresos.fijar"><Button size="sm" variant="ghost" className="h-6 text-xs"
                                     onClick={() => setModalFijar({ cuota: q, contrato: c, venta: v })}>
                                     Editar
-                                  </Button>
+                                  </Button></Permisable>
                                 </td>
                               </tr>
                             )

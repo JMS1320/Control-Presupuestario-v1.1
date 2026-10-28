@@ -40,6 +40,10 @@
 
 ## 📨 PARA JAVIER
 
+### 🏠 Principal para TODOS los roles + 2 columnas en `public.revisiones` (2026-10-28) — ✅ APLICADA el 28/10 con OK de JMS (aviso previo): 2 columnas, las 13 marcas que había quedaron como estaban
+- `scripts/125-revisiones-tarea.sql` (+ `-deshacer`): `es_tarea boolean default false`, `tarea_hasta date`. A-FEAT-1411: una 🚩 puede ser una tarea para la persona asignada.
+- **Toca acceso (código, no BD)**: en `dashboard.tsx` la solapa **Principal se ve siempre**, aunque el rol no tenga la sección (`accesibles = permitidas + principal`). Lo de adentro sigue saliendo de los permisos reales: los widgets por `permitidas` (a quien no tiene la sección no le aparecen los de Principal, p. ej. «todas las 🚩») y el panel nuevo «Para vos» por la SESIÓN (`/api/revisiones?mias=1`, que filtra en el servidor). Si cambiás cómo se calculan las secciones, ojo con esto.
+
 ### 🔓 Tabla nueva `public.propuestas_cambio` con RLS propia (2026-10-28) — ✅ APLICADA el 28/10 con OK de JMS (aviso previo): tabla, 3 políticas, índice único parcial, `anon` sin acceso
 - `scripts/123-propuestas-cambio.sql` (+ `-deshacer`). A-FEAT-1400 / A-DEC-1023-1024: JMS habilita a una persona (Ulises) sobre UNA factura; ella propone, JMS acepta. Nada se aplica a la factura antes del OK.
 - **RLS**: `admin_todo` (app_metadata.role = admin) · `persona_ve_las_suyas` (select, `persona = jwt email`) · `persona_propone` (update sólo si es suya, abierta y no vencida; no puede pasarla a aceptada). `anon` nada. Una sola abierta por registro (índice único parcial).

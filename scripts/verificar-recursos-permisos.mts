@@ -21,6 +21,7 @@ const VISTAS: Record<string, string> = {
   productivo: "components/vista-sector-productivo.tsx",
   cashflow:   "components/vista-cash-flow.tsx",
   ingresos:   "components/vista-ingresos.tsx",
+  sueldos:    "components/tab-sueldos.tsx",   // A-BUG-1401: desde el 28/10 tiene botones con casilla
 }
 
 /**

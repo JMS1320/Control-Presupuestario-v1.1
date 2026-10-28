@@ -111,6 +111,9 @@ function ModalMarca({
    * persona, además le llega a su campanita y puede contestar en el mismo hilo.
    */
   const [para, setPara] = useState("")
+  // A-FEAT-1411: la 🚩 puede ser una TAREA para esa persona, con fecha
+  const [esTarea, setEsTarea] = useState(false)
+  const [tareaHasta, setTareaHasta] = useState("")
   const [personas, setPersonas] = useState<{ mail: string; nombre: string }[]>([])
   const [yoMail, setYoMail] = useState<string | null>(null)
 
@@ -124,7 +127,7 @@ function ModalMarca({
   const [ctx, setCtx] = useState(contextoActual)
 
   useEffect(() => {
-    if (abierto) { setCtx(contextoActual()); setMotivo(""); setImagen(""); setPara("") }
+    if (abierto) { setCtx(contextoActual()); setMotivo(""); setImagen(""); setPara(""); setEsTarea(false); setTareaHasta("") }
   }, [abierto])
 
   useEffect(() => {
@@ -174,6 +177,8 @@ function ModalMarca({
         ruta: ctx.ruta,
         creado_por: await quienMarca(),
         asignado_a: para || null,
+        es_tarea: !!para && esTarea,
+        tarea_hasta: para && esTarea && tareaHasta ? tareaHasta : null,
       })
       if (error) throw error
       const destinatario = personas.find((p) => p.mail === para)?.nombre
@@ -228,7 +233,19 @@ function ModalMarca({
             ))}
           </select>
           {para && (
-            <p className="mt-1 text-[11px] text-gray-500">Le aparece en su 🔔 con este texto y puede contestarte ahí.</p>
+            <>
+              <p className="mt-1 text-[11px] text-gray-500">Le aparece arriba de su <b>Principal</b> («Para vos») y en su 🔔; puede contestarte ahí.</p>
+              <label className="mt-2 flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={esTarea} onChange={(e) => setEsTarea(e.target.checked)} />
+                Es una tarea para esa persona
+              </label>
+              {esTarea && (
+                <div className="mt-1 flex items-center gap-2 text-xs">
+                  <span>Para cuándo</span>
+                  <input type="date" className="h-8 rounded border px-2" value={tareaHasta} onChange={(e) => setTareaHasta(e.target.value)} />
+                </div>
+              )}
+            </>
           )}
         </div>
 

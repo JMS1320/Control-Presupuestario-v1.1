@@ -132,7 +132,13 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
   const permitidas = new Set<string>(
     secciones ?? SOLAPAS.filter((s) => userRole === 'admin' || s.id === 'egresos').map((s) => s.id)
   )
-  const shouldShowTab = (tabName: string): boolean => permitidas.has(tabName)
+  /**
+   * 🏠 A-FEAT-1411 (JMS 28/10: «cada usuario debe tener su Principal»): la solapa Principal se ve SIEMPRE, aunque
+   * el rol no tenga la sección. Lo que muestra adentro sigue saliendo de `permitidas` (los widgets) y de la sesión
+   * («Para vos»): a quien no tiene la sección no le aparecen los widgets de Principal (pendientes, todas las 🚩…).
+   */
+  const accesibles = new Set<string>([...permitidas, 'principal'])
+  const shouldShowTab = (tabName: string): boolean => accesibles.has(tabName)
 
   /** La primera sección que ve este usuario. Si no ve ninguna, no hay a dónde ir. */
   const getDefaultTab = (): string =>
@@ -143,11 +149,11 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
   const [tab, setTab] = useState<string>(
     // ⚠️ Se valida contra las secciones PERMITIDAS, no sólo contra las que existen: si no,
     // un `contable` entraba a `/?seccion=sueldos` escribiéndolo a mano y veía Sueldos.
-    seccionInicial && permitidas.has(seccionInicial) ? seccionInicial : getDefaultTab()
+    seccionInicial && accesibles.has(seccionInicial) ? seccionInicial : getDefaultTab()
   )
 
   /** Cambiar de sección tampoco puede saltarse el permiso. */
-  const irA = (id: string) => { if (permitidas.has(id)) setTab(id) }
+  const irA = (id: string) => { if (accesibles.has(id)) setTab(id) }
 
   /**
    * 🧭 La solapa activa, **CONTROLADA** — antes era `defaultValue` y no había forma de cambiarla
@@ -170,7 +176,7 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
   return (
     <ProveedorPermisos niveles={nivelesPermisos}>
     <ProveedorModoPermisos rol={modoPermisos}>
-    <LayoutApp userRole={userRole} secciones={[...permitidas]} seccionActiva={tab} preferencias={preferencias} onElegirSeccion={irA}>
+    <LayoutApp userRole={userRole} secciones={[...accesibles]} seccionActiva={tab} preferencias={preferencias} onElegirSeccion={irA}>
       <Toaster richColors closeButton duration={8000} position="top-right" />
       {/* 📝 Notas para Claude (P-34). A nivel app, fuera de las pestañas: la idea o el bug
           aparecen donde aparecen, y la nota tiene que poder empezar ahí mismo — incluso siguiendo

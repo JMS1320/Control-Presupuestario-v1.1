@@ -17,6 +17,7 @@ import { cargarVentasHacienda, liquidacionDeVenta, type VentaHaciendaDatos } fro
 import { ModalLiquidacionHacienda } from "./modal-liquidacion-hacienda"
 import { ModalVentaHistoricaHacienda } from "./modal-venta-historica-hacienda"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Permisable } from "@/components/modo-permisos"
 
 interface Props {
   userRole?: UserRole
@@ -224,7 +225,7 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
           {esAdmin && (
             /* Un solo botón para toda venta (2026-10-02, «estamos perdiendo consistencia»): adentro se
                elige granos o hacienda, y en hacienda, si es histórica. */
-            <DropdownMenu>
+<Permisable recurso="ingresos.venta-nueva"><DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button className="bg-green-600 hover:bg-green-700">
                   <Plus className="mr-2 h-4 w-4" />Nueva venta
@@ -234,7 +235,7 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
                 <DropdownMenuItem onClick={abrirAlta}>🌾 Agrícola (granos)</DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setHistoricaAbierta(true)}>🐂 Ganadera (hacienda)</DropdownMenuItem>
               </DropdownMenuContent>
-            </DropdownMenu>
+            </DropdownMenu></Permisable>
           )}
         </div>
       </div>
@@ -310,12 +311,12 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
                         <div className="flex justify-end gap-1">
                           {esAdmin && (
                             <>
-                              <Button size="sm" variant="ghost" onClick={() => abrirEdicion(v)} title="Editar">
+                              <Permisable recurso="ingresos.venta-editar"><Button size="sm" variant="ghost" onClick={() => abrirEdicion(v)} title="Editar">
                                 <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button size="sm" variant="ghost" onClick={() => eliminar(v)} title="Eliminar" className="text-red-600 hover:bg-red-50">
+                              </Button></Permisable>
+                              <Permisable recurso="ingresos.venta-eliminar"><Button size="sm" variant="ghost" onClick={() => eliminar(v)} title="Eliminar" className="text-red-600 hover:bg-red-50">
                                 <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
+                              </Button></Permisable>
                             </>
                           )}
                         </div>
@@ -337,11 +338,11 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
           {esAdmin && (
             <div className="ml-auto flex gap-2">
               {tildadas.size > 0 && (
-                <Button size="sm" className="bg-green-600 hover:bg-green-700"
+                <Permisable recurso="ingresos.liquidacion"><Button size="sm" className="bg-green-600 hover:bg-green-700"
                   onClick={() => abrirLiquidacion(ventasHacienda.filter(v => tildadas.has(v.id)))}
                   title="Un solo papel para varias ventas: una línea por cada una">
                   <FileText className="mr-1 h-3.5 w-3.5" />Liquidar las {tildadas.size} juntas
-                </Button>
+                </Button></Permisable>
               )}
             </div>
           )}
@@ -412,10 +413,10 @@ export function VistaVentasMsa({ userRole = 'admin' }: Props) {
                         </TableCell>
                         <TableCell className="text-right">
                           {esAdmin && (
-                            <Button size="sm" variant="ghost" onClick={() => liquidarOEditar(h)}
+                            <Permisable recurso="ingresos.liquidacion"><Button size="sm" variant="ghost" onClick={() => liquidarOEditar(h)}
                               title={h.liquidado > 0 ? 'Abrir la liquidación de esta venta para verla o corregirla' : 'Cargar la liquidación de esta venta — viene precargada con sus datos'}>
                               <FileText className="h-3.5 w-3.5 mr-1" />{h.liquidado > 0 ? 'Ver / editar' : 'Liquidar'}
-                            </Button>
+                            </Button></Permisable>
                           )}
                         </TableCell>
                       </TableRow>

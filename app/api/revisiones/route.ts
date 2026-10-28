@@ -36,7 +36,7 @@ export async function GET(request: Request) {
       const yo = { mail: s.user.email ?? null, etiqueta: etiquetaPersona(s.user) }
       const { data, error } = await supabaseAdmin
         .from('revisiones')
-        .select('id, schema_ref, tabla_ref, registro_id, descripcion_ref, motivo, pantalla, subpantalla, estado, creado_por, asignado_a, seguimiento, created_at')
+        .select('id, schema_ref, tabla_ref, registro_id, descripcion_ref, motivo, pantalla, subpantalla, estado, creado_por, asignado_a, seguimiento, created_at, es_tarea, tarea_hasta')
         .eq('estado', 'abierta')
         .not('asignado_a', 'is', null)
         .order('created_at', { ascending: false })

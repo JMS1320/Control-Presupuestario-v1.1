@@ -698,6 +698,17 @@ Los botones (copiar pedido, pedir, buscar) trabajan sobre lo que queda a la vist
 
 ⚠️ Sin probar todavía → [A-TEST-1272](PENDIENTES.md#a-test-1272)
 
+## 🏠 «Para vos»: el Principal de cada uno, y las tareas *(nuevo 2026-10-28)*
+
+Cada usuario tiene su **Principal**. Arriba de todo, **🚩 Para vos** muestra lo que te asignaron (lo urgente), con las
+**tareas vencidas en rojo y primero**, y abajo lo que mandaste esperando respuesta. Ahí mismo se **responde** o se
+**cierra** (al cerrar pide qué se hizo). Nadie ve lo de los demás.
+- **Mandar una tarea**: la 🚩 de cualquier pantalla (o Alt+R) → **Para** la persona → tildá **«Es una tarea para esa
+  persona»** y poné **para cuándo**.
+- Al habilitar una factura para que alguien la corrija, la tarea se crea sola.
+
+⚠️ Sin probar todavía → [A-TEST-1283](PENDIENTES.md#a-test-1283)
+
 ## 🔓 Habilitar a alguien para que corrija una factura *(nuevo 2026-10-28)*
 
 Para que Ulises (u otra persona) corrija una factura **cargada por Excel** sin darle permiso sobre todas:
@@ -3217,6 +3228,10 @@ abajo de todo.
 2. Poné el **año de cierre**. Para el balance 25/26 de MSA es **2026**.
 3. **Armar el libro.** Abajo te dice el ejercicio, los totales y si cierra o no.
 4. **Bajar el Excel.**
+
+📒 **Bajar Libro Diario** *(2026-10-28)*: al lado de «Bajar el Excel». Baja **sólo el libro diario**, con el formato
+consensuado para el contador, en 5 solapas: **Compras**, **Compras por cuenta**, **Ventas**, **Ventas por cuenta** y
+**Retenciones sufridas**. «Bajar el Excel» sigue bajando los papeles de trabajo completos. → [A-TEST-1282](PENDIENTES.md#a-test-1282)
 
 📒 **Asientos Contables** *(2026-10-22)*: las facturas que mandaste a *Asientos Contables* desde Subdiarios no están en ningún subdiario; van en su propia solapa, con las del ejercicio **por fecha de emisión** y su total. Abajo del botón te dice cuántas son. → A-TEST-1222
 

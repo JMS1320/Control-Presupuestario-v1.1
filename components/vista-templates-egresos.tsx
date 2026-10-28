@@ -2071,13 +2071,13 @@ export function VistaTemplatesEgresos() {
                           {new Set(cuotasSeleccionadasArray.map(c => c.egreso?.grupo_impuesto_id).filter(Boolean)).size} templates seleccionados
                         </p>
                       </div>
-                      <Button
+                      <Permisable recurso="egresos.templates-convertir"><Button
                         onClick={() => { setResultadosConversion([]); setModalConversionMasiva(true) }}
                         className="bg-orange-500 hover:bg-orange-600 text-white"
                         size="sm"
                       >
                         🔄 Convertir a Cuotas
-                      </Button>
+                      </Button></Permisable>
                     </div>
                   </div>
                 )}
