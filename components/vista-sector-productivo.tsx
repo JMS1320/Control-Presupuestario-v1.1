@@ -383,27 +383,26 @@ const dibujarMarcaNZ = (ctx: CanvasRenderingContext2D, x: number, y: number, esc
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
 
-  // Parte izquierda: curva tipo "señal" (gancho/J invertida)
+  // ⚠️ Redibujada 2026-10-28 desde la foto de la marca que mandó JMS (nota 🌙 «lo corregís?»): una «C» al
+  // revés con un trazo arriba y otro abajo, cada uno con su remate vertical a la izquierda, y el asterisco
+  // de seis puntas arriba a la derecha. La anterior era una «U» con un palito y no se parecía.
   ctx.beginPath()
-  ctx.moveTo(0, 0)
-  ctx.lineTo(0, 28)
-  ctx.quadraticCurveTo(0, 42, 14, 42)
-  ctx.quadraticCurveTo(28, 42, 28, 28)
-  ctx.lineTo(28, 18)
+  // remate y trazo de arriba
+  ctx.moveTo(2, 2); ctx.lineTo(2, 14)
+  ctx.moveTo(2, 8); ctx.lineTo(20, 8)
+  // la curva que se abre hacia la derecha y vuelve
+  ctx.bezierCurveTo(28, 10, 32, 20, 31, 29)
+  ctx.bezierCurveTo(30, 38, 26, 45, 21, 49)
+  // trazo de abajo y su remate
+  ctx.lineTo(2, 49)
+  ctx.moveTo(2, 43); ctx.lineTo(2, 55)
   ctx.stroke()
 
-  // Parte inferior: L angular
-  ctx.beginPath()
-  ctx.moveTo(0, 56)
-  ctx.lineTo(0, 48)
-  ctx.lineTo(14, 48)
-  ctx.stroke()
-
-  // Asterisco/estrella (marca *)
-  const cx = 38, cy = 10
+  // Asterisco de seis puntas
+  const cx = 42, cy = 16
   const r = 7
   for (let i = 0; i < 3; i++) {
-    const angle = (i * 60) * Math.PI / 180
+    const angle = (90 + i * 60) * Math.PI / 180
     ctx.beginPath()
     ctx.moveTo(cx - Math.cos(angle) * r, cy - Math.sin(angle) * r)
     ctx.lineTo(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r)
