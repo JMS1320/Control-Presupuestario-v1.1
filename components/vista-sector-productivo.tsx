@@ -6740,7 +6740,7 @@ function SubTabOrdenesAplicacion() {
 
       {/* Modal Confirmar/Ejecutar Orden */}
       <Dialog open={mostrarModalConfirmar} onOpenChange={(open) => { if (!open) { setMostrarModalConfirmar(false); setOrdenConfirmando(null) } }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-screen max-w-none h-[100dvh] max-h-[100dvh] rounded-none sm:w-[calc(100vw-1rem)] sm:max-w-3xl sm:h-auto sm:max-h-[90vh] sm:rounded-lg overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{!permOrden.confirmar ? 'Marcar la orden como hecha' : ordenConfirmando?.estado === 'a_confirmar' ? `Confirmar la orden (la marcó ${ordenConfirmando.marcada_por ?? 'otro usuario'})` : 'Confirmar Orden como Ejecutada'}</DialogTitle>
             <DialogDescription>
@@ -7991,7 +7991,7 @@ function SubTabOrdenesAgricolas() {
 
       {/* Modal Nueva Orden */}
       <Dialog open={mostrarModal} onOpenChange={(open) => { if (!open) cerrarModal() }}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-screen max-w-none h-[100dvh] max-h-[100dvh] rounded-none sm:w-[calc(100vw-1rem)] sm:max-w-3xl sm:h-auto sm:max-h-[90vh] sm:rounded-lg overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{modoVer ? 'Ver Orden Agrícola' : ordenEditandoId ? 'Editar Orden Agrícola' : 'Nueva Orden Agrícola'}</DialogTitle>
             <DialogDescription>{modoVer ? 'Vista de solo lectura.' : 'Registrar aplicación de insumos en lotes / hectáreas.'}</DialogDescription>
@@ -8143,7 +8143,66 @@ function SubTabOrdenesAgricolas() {
                   Sin insumos. Agregue al menos uno o seleccione una labor.
                 </p>
               ) : (
-                <div className="overflow-x-auto -mx-1 px-1">
+                <>
+                {/* 📱 A-FEAT-1409 etapa 2: en el celular cada insumo es una tarjeta (mismos campos, mismas reglas) */}
+                <div className="space-y-2 sm:hidden">
+                  {lineas.map(l => {
+                    const dt = dosisYTotal(l, totalHectareas)
+                    return (
+                      <div key={l.key} className="rounded-md border p-2 space-y-2">
+                        <div className="flex items-start gap-2">
+                          <div className="min-w-0 flex-1">
+                            <InsumoCombobox
+                              value={l.insumo_stock_id || null}
+                              insumos={insumosAgro.map(i => ({ id: i.id, producto: i.producto, unidad_medida: i.unidad_medida }))}
+                              onChange={(id) => {
+                                actualizarLinea(l.key, 'insumo_stock_id', id)
+                                const ins = insumosAgro.find(s => s.id === id)
+                                if (ins) actualizarLinea(l.key, 'insumo_nombre', ins.producto)
+                              }}
+                              onCreated={cargarDatos}
+                              ambito="agricola"
+                              className="w-full"
+                            />
+                          </div>
+                          <Button variant="ghost" size="sm" className="h-9 w-9 p-0 shrink-0" onClick={() => eliminarLinea(l.key)} title="Quitar insumo">
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <Label className="text-[11px] text-muted-foreground">Dosis</Label>
+                            <Input type="number" inputMode="decimal" step="0.0001" className="h-10 text-sm text-right"
+                              placeholder="0" value={dt.fuente === 'total' ? (dt.dosis > 0 ? String(dt.dosis) : '') : l.dosis}
+                              onChange={e => { actualizarLinea(l.key, 'dosis', e.target.value); actualizarLinea(l.key, 'total', '') }} />
+                          </div>
+                          <div>
+                            <Label className="text-[11px] text-muted-foreground">Unidad</Label>
+                            <Select value={l.unidad_dosis} onValueChange={v => actualizarLinea(l.key, 'unidad_dosis', v)}>
+                              <SelectTrigger className="h-10 text-sm"><SelectValue /></SelectTrigger>
+                              <SelectContent position="popper" className="z-[9999]">
+                                <SelectItem value="L">L/ha</SelectItem>
+                                <SelectItem value="cc">cc/ha</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label className="text-[11px] text-muted-foreground">Total (L)</Label>
+                            <Input type="number" inputMode="decimal" step="0.001" className="h-10 text-sm text-right"
+                              placeholder="0"
+                              value={dt.fuente === 'total' ? (l.total ?? '') : (dt.total > 0 ? String(dt.total) : '')}
+                              onChange={e => {
+                                actualizarLinea(l.key, 'total', e.target.value)
+                                const d = dosisYTotal({ ...l, total: e.target.value }, totalHectareas).dosis
+                                actualizarLinea(l.key, 'dosis', d > 0 ? String(d) : '')
+                              }} />
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="hidden sm:block overflow-x-auto -mx-1 px-1">
                 <Table className="min-w-[560px]">
                   <TableHeader>
                     <TableRow>
@@ -8215,6 +8274,7 @@ function SubTabOrdenesAgricolas() {
                   </TableBody>
                 </Table>
                 </div>
+                </>
               )}
             </div>
           </div>
