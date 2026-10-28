@@ -18,6 +18,7 @@ import { Loader2, Save, Search } from 'lucide-react'
 import { toast } from 'sonner'
 import { textoPedidoFacturas } from '@/lib/gas-pdf/lote'
 import type { FilaFaltante } from '@/lib/gas-pdf/faltantes'
+import { ordenarYFiltrarFaltantes } from '@/lib/gas-pdf/orden-faltantes'
 
 export interface ProveedorMail {
   id: string
@@ -48,7 +49,12 @@ interface Props {
 const fechaAR = (iso?: string | null) => iso ? iso.slice(0, 10).split('-').reverse().join('/') : '—'
 const pesos = (n?: number | null) => (Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-export function PanelFacturasSinPdf({ filas, rotuloDe, dondeBusca, buscando, proveedores, onGuardarMail, onPortal, onPedir, onLlegaron, onBuscar, accionFila }: Props) {
+export function PanelFacturasSinPdf({ filas: filasTodas, rotuloDe, dondeBusca, buscando, proveedores, onGuardarMail, onPortal, onPedir, onLlegaron, onBuscar, accionFila }: Props) {
+  // A-FEAT-1399 (notas 🌙 de JMS 27/10): ordenada por FECHA y con filtro de PROVEEDOR.
+  // «Siempre que haya datos se debe pensar el orden lógico en que lo quiere ver el usuario.»
+  const [filtroProv, setFiltroProv] = useState('')
+  const [masNuevasPrimero, setMasNuevasPrimero] = useState(false)
+  const filas = ordenarYFiltrarFaltantes(filasTodas, filtroProv, masNuevasPrimero)
   // null = las que se buscan (el default); se vuelve al default cuando cambian las filas
   const [sel, setSel] = useState<Set<string> | null>(null)
   const [editMail, setEditMail] = useState<Record<string, string>>({})
@@ -123,6 +129,14 @@ export function PanelFacturasSinPdf({ filas, rotuloDe, dondeBusca, buscando, pro
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
+        <input type="text" value={filtroProv} onChange={e => setFiltroProv(e.target.value)}
+          placeholder="Filtrar proveedor (nombre o CUIT)"
+          className="h-8 w-56 rounded border border-gray-300 px-2 text-xs" />
+        {filtroProv && (
+          <span className="text-xs text-gray-500">
+            {filas.length} de {filasTodas.length}{' '}
+            <button type="button" className="underline" onClick={() => setFiltroProv('')}>limpiar</button>
+          </span>)}
         <Button variant="outline" size="sm" disabled={elegidas.length === 0} onClick={copiarPedido}
           title="Copia la lista de facturas que faltan (fecha, proveedor, comprobante, importe) para pegarla en un mail o un mensaje">
           📋 Copiar pedido ({elegidas.length})
@@ -149,7 +163,12 @@ export function PanelFacturasSinPdf({ filas, rotuloDe, dondeBusca, buscando, pro
           <thead className="sticky top-0 bg-white border-b text-xs text-muted-foreground">
             <tr>
               <th className="p-1 w-8"><input type="checkbox" checked={todas} onChange={alternarTodas} title="Tildar / destildar todas las que se ven" /></th>
-              <th className="p-1 text-left">Fecha</th>
+              <th className="p-1 text-left">
+                <button type="button" className="hover:underline" onClick={() => setMasNuevasPrimero(v => !v)}
+                  title={masNuevasPrimero ? 'Ahora: las más nuevas primero. Tocá para ver las más viejas primero' : 'Ahora: las más viejas primero. Tocá para ver las más nuevas primero'}>
+                  Fecha {masNuevasPrimero ? '▼' : '▲'}
+                </button>
+              </th>
               <th className="p-1 text-left">Proveedor</th>
               <th className="p-1 text-left">Comprobante</th>
               <th className="p-1 text-right">Total</th>

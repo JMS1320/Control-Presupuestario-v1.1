@@ -81,6 +81,7 @@ import { importeDeVenta, cuotasNoFijadas, leyendaEnDolares } from "@/lib/arrenda
 import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPapel, moverPartida, clavePartida } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
+import { ordenarYFiltrarFaltantes } from "@/lib/gas-pdf/orden-faltantes"
 import { resolverHaOrden } from "@/lib/productivo/hectareas-orden"
 import { filtrarOrdenesAgricolas, chipsDe, resumenOrdenes, FILTRO_ORDENES_VACIO, padreDePorNombre, arbolLotes } from "@/lib/productivo/filtro-ordenes-agricolas"
 import { armarLibroComprasArca, controlarArchivo, leerCbte, texto as textoArca, type FilaCompraArca } from "@/lib/subdiarios/libro-iva-arca"
@@ -9873,6 +9874,23 @@ export function correrCasos(): Resultado[] {
     chequear("Órdenes agrícolas — ha por diferencia", "El lote sin ha lleva total − los demás; sin total es la suma; frena si los números se contradicen (no cierra, 2 vacíos, diferencia ≤ 0)",
       "con total: 30 = er1 4.1 + alb 25.9 (dif alb) · sin total: 4.1, sin error · no cierra: FRENA · 2 vacíos: FRENA · dif negativa: FRENA · cierra: ok 19.5", v,
       v === "con total: 30 = er1 4.1 + alb 25.9 (dif alb) · sin total: 4.1, sin error · no cierra: FRENA · 2 vacíos: FRENA · dif negativa: FRENA · cierra: ok 19.5", "A-FEAT-1397")
+  }
+
+  // ══ 📅 Facturas sin comprobante: por fecha y con filtro de proveedor (A-FEAT-1399, notas JMS 27/10) ══
+  {
+    const fs = [
+      { id: "a", fecha_emision: "2026-10-26", proveedor: "ZAVALA ORTIZ MARIANA", cuit: "27-12345678-1", comprobante: "C 2-15" },
+      { id: "b", fecha_emision: "2026-02-23", proveedor: "Almacén Veterinario S.R.L.", cuit: "30711111110", comprobante: "A 3-9" },
+      { id: "c", fecha_emision: null, proveedor: "Sin fecha SA", cuit: "30700000001", comprobante: "B 1-1" },
+      { id: "d", fecha_emision: "2026-06-10", proveedor: "Agro Centros", cuit: "30722222220", comprobante: "A 3-6447" },
+    ]
+    const viejas = ordenarYFiltrarFaltantes(fs, "").map(f => f.id).join("")
+    const nuevas = ordenarYFiltrarFaltantes(fs, "", true).map(f => f.id).join("")
+    const porNombre = ordenarYFiltrarFaltantes(fs, "almacen").map(f => f.id).join("")
+    const porCuit = ordenarYFiltrarFaltantes(fs, "12345678").map(f => f.id).join("")
+    const v = `viejas primero ${viejas} · nuevas primero ${nuevas} · «almacen» ${porNombre} · cuit ${porCuit}`
+    chequear("Facturas sin comprobante — orden y filtro", "Ordena por fecha (sin fecha al final en los dos sentidos) y filtra por proveedor sin tildes o por CUIT sin guiones",
+      "viejas primero bdac · nuevas primero adbc · «almacen» b · cuit a", v, v === "viejas primero bdac · nuevas primero adbc · «almacen» b · cuit a", "A-FEAT-1399")
   }
 
   return r

@@ -690,6 +690,14 @@ quien no, propone.
 
 ⚠️ Sin probar todavía → [A-TEST-1258](PENDIENTES.md#a-test-1258)
 
+## 📅 Facturas sin comprobante (y Subdiarios): **orden por fecha y filtro de proveedor** *(nuevo 2026-10-28)*
+
+La lista de facturas sin PDF viene ordenada **de la más vieja a la más nueva**; tocando **Fecha ▲** se da vuelta.
+Arriba, **Filtrar proveedor** busca por nombre (sin importar tildes) o por CUIT; muestra «N de M» y **limpiar** vuelve a todas.
+Los botones (copiar pedido, pedir, buscar) trabajan sobre lo que queda a la vista.
+
+⚠️ Sin probar todavía → [A-TEST-1272](PENDIENTES.md#a-test-1272)
+
 ## 🌾 Productivo → Insumos → Órdenes Aplicación → Agrícola: **filtrar las órdenes** *(nuevo 2026-10-28)*
 
 Arriba de la lista hay un **Buscar** (insumo, lote, labor u observación — ej. «glifo»), chips de **Lote**, **Labor** y **Estado**, y un rango de **Fecha**.
