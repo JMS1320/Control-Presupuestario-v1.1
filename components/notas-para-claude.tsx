@@ -259,20 +259,37 @@ export function NotasParaClaude() {
     return () => document.removeEventListener("keydown", atajo)
   }, [modalCaptura, modalFinalizar])
 
+  const capturaDelModal = (): Captura => ({
+    orden: capturas.length + 1, texto: texto.trim(), imagen, ...ctxRef.current,
+    diagnostico: diagRef.current,
+  })
+
   const agregarCaptura = () => {
     if (!texto.trim() && !imagen) { toast.error("Escribí algo o pegá una captura"); return }
-    setCapturas(cs => [...cs, {
-      orden: cs.length + 1, texto: texto.trim(), imagen, ...ctxRef.current,
-      diagnostico: diagRef.current,
-    }])
+    setCapturas(cs => [...cs, { ...capturaDelModal(), orden: cs.length + 1 }])
     confirmarCorte(diagRef.current.length) // ya viajan en esta captura: la próxima arranca después
     setModalCaptura(false)
     if (!grabando) setGrabando(true)
     toast.success(`Captura ${capturas.length + 1} agregada`)
   }
 
-  const finalizar = async () => {
-    if (capturas.length === 0) { toast.error("No hay ninguna captura"); return }
+  /**
+   * «Guardar y terminar» desde el cuadro de captura — nota 🌙 de JMS 2026-10-28: *«poder empezar y
+   * terminar acá; o sea, dar la opción de título y de check para Claude trabajar sola»*. Una nota de
+   * UNA captura ya no necesita pasar por Finalizar.
+   */
+  const guardarYTerminar = async () => {
+    if (!texto.trim() && !imagen) { toast.error("Escribí algo o pegá una captura"); return }
+    const todas = [...capturas, capturaDelModal()]
+    confirmarCorte(diagRef.current.length)
+    sueltosRef.current = []
+    const ok = await finalizar(todas)
+    if (ok) setModalCaptura(false)
+  }
+
+  const finalizar = async (lista: Captura[] = capturas): Promise<boolean> => {
+    const capturas = lista
+    if (capturas.length === 0) { toast.error("No hay ninguna captura"); return false }
 
     // Aviso, no bloqueo: de las primeras 15 capturas, **11 quedaron sin imagen** — y no porque
     // sacarla cueste (el usuario pega sin problema), sino porque nada se lo recordaba en el
@@ -284,7 +301,7 @@ export function NotasParaClaude() {
       sinFoto === capturas.length
         ? `Ninguna de las ${capturas.length} captura(s) tiene imagen.\n\n¿Guardar igual?`
         : `${sinFoto} de ${capturas.length} capturas no tienen imagen.\n\n¿Guardar igual?`
-    )) return
+    )) return false
 
     setGuardando(true)
     try {
@@ -332,12 +349,35 @@ export function NotasParaClaude() {
       reiniciarCorte() // lo de esta nota ya viajó: la próxima arranca limpia
       sueltosRef.current = []
       setCapturas([]); setGrabando(false); setModalFinalizar(false); setTitulo(""); setSinSupervision(false)
+      return true
     } catch (e) {
       toast.error("No se pudo guardar: " + (e as Error).message)
+      return false
     } finally {
       setGuardando(false)
     }
   }
+
+  /** Título y 🌙: los mismos campos en el cuadro de captura y en Finalizar (un solo estado). */
+  const camposTituloYLuna = (placeholder: string) => (
+    <>
+      <div>
+        <Label className="text-xs">Título (opcional)</Label>
+        <Input className="mt-1" value={titulo} onChange={e => setTitulo(e.target.value)} placeholder={placeholder} />
+      </div>
+      <label className="flex cursor-pointer items-start gap-2 rounded border border-indigo-200 bg-indigo-50 px-2.5 py-2 text-xs text-indigo-900">
+        <input type="checkbox" className="mt-0.5" checked={sinSupervision}
+          onChange={e => setSinSupervision(e.target.checked)} />
+        <span>
+          <strong>🌙 Claude puede arrancar con esto sin esperarme</strong>
+          <br />
+          <span className="text-[11px] text-indigo-700">
+            Lo desarrolla y lo deja para que lo pruebes. Nunca toca datos, la base ni permisos sin preguntarte.
+          </span>
+        </span>
+      </label>
+    </>
+  )
 
   /**
    * La lista sale por `/api/notas`, no de Supabase directo — A-SEC-04.
@@ -488,18 +528,22 @@ export function NotasParaClaude() {
             </details>
           )}
 
-          <div className="flex justify-end gap-2">
+          {camposTituloYLuna(texto.slice(0, 60) || capturas[0]?.texto.slice(0, 60) || "Ej: el lote de pagos deja todo en pagar")}
+
+          <div className="flex flex-wrap justify-end gap-2">
             <Button variant="outline" onClick={() => setModalCaptura(false)}>Cancelar</Button>
-            <Button onClick={agregarCaptura}>
-              {grabando ? "Agregar captura" : "Empezar nota"}
+            <Button variant="outline" onClick={agregarCaptura} title="Seguís usando la app y agregás más capturas; se guarda con Finalizar">
+              {grabando ? "Agregar y seguir" : "Empezar y seguir capturando"}
+            </Button>
+            <Button onClick={guardarYTerminar} disabled={guardando}>
+              {guardando && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+              {grabando ? `Agregar y terminar (${capturas.length + 1})` : "Guardar y terminar"}
             </Button>
           </div>
-          {!grabando && (
-            <p className="text-[11px] leading-4 text-gray-500">
-              Después podés seguir usando la app y agregar más capturas. La nota se guarda cuando
-              tocás <strong>Finalizar</strong>.
-            </p>
-          )}
+          <p className="text-[11px] leading-4 text-gray-500">
+            <strong>Guardar y terminar</strong> deja la nota lista ya. <strong>Seguir capturando</strong> te deja
+            usar la app y sumar más capturas; se guarda con <strong>Finalizar</strong>.
+          </p>
         </DialogContent>
       </Dialog>
 
@@ -515,25 +559,10 @@ export function NotasParaClaude() {
               a la última captura — se guardan junto con ella.
             </p>
           )}
-          <div>
-            <Label className="text-xs">Título (opcional)</Label>
-            <Input className="mt-1" value={titulo} onChange={e => setTitulo(e.target.value)}
-              placeholder={capturas[0]?.texto.slice(0, 60) || "Ej: el lote de pagos deja todo en pagar"} />
-          </div>
-          <label className="flex cursor-pointer items-start gap-2 rounded border border-indigo-200 bg-indigo-50 px-2.5 py-2 text-xs text-indigo-900">
-            <input type="checkbox" className="mt-0.5" checked={sinSupervision}
-              onChange={e => setSinSupervision(e.target.checked)} />
-            <span>
-              <strong>🌙 Claude puede arrancar con esto sin esperarme</strong>
-              <br />
-              <span className="text-[11px] text-indigo-700">
-                Lo desarrolla y lo deja para que lo pruebes. Nunca toca datos, la base ni permisos sin preguntarte.
-              </span>
-            </span>
-          </label>
+          {camposTituloYLuna(capturas[0]?.texto.slice(0, 60) || "Ej: el lote de pagos deja todo en pagar")}
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setModalFinalizar(false)}>Volver</Button>
-            <Button onClick={finalizar} disabled={guardando}>
+            <Button onClick={() => finalizar()} disabled={guardando}>
               {guardando && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />} Guardar nota
             </Button>
           </div>

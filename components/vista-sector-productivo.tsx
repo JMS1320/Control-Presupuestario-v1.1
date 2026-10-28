@@ -8326,6 +8326,14 @@ function TabLotesAgricolas() {
   const [mostrarModalLote, setMostrarModalLote] = useState(false)
 
   const arbol = arbolLotes(lotes)
+  // nota 🌙 28/10 «colapsable»: los sub-lotes se pliegan bajo su madre (arrancan plegados)
+  const [abiertos, setAbiertos] = useState<Set<string>>(new Set())
+  const porId = new Map(lotes.map(l => [l.id, l]))
+  const visible = (l: LoteAgricola) => {
+    let p = l.lote_padre_id ? porId.get(l.lote_padre_id) : undefined
+    while (p) { if (!abiertos.has(p.id)) return false; p = p.lote_padre_id ? porId.get(p.lote_padre_id) : undefined }
+    return true
+  }
 
   const cargarDatos = useCallback(async () => {
     setLoading(true)
@@ -8396,10 +8404,17 @@ function TabLotesAgricolas() {
               </TableCell>
             </TableRow>
           ) : (
-            arbol.map(({ lote: l, nivel, medido, hijos }) => (
+            arbol.filter(({ lote }) => visible(lote)).map(({ lote: l, nivel, medido, hijos }) => (
               <TableRow key={l.id}>
                 <TableCell className={nivel > 0 ? 'text-sm' : 'font-medium'} style={{ paddingLeft: `${0.5 + nivel * 1.5}rem` }}>
+                  {hijos > 0 && (
+                    <button type="button" className="mr-1 text-muted-foreground hover:text-foreground"
+                      title={abiertos.has(l.id) ? 'Plegar sub-lotes' : `Ver sus ${hijos} sub-lotes`}
+                      onClick={() => setAbiertos(prev => { const n = new Set(prev); n.has(l.id) ? n.delete(l.id) : n.add(l.id); return n })}>
+                      {abiertos.has(l.id) ? '▾' : '▸'}
+                    </button>)}
                   {nivel > 0 && <span className="text-muted-foreground mr-1">↳</span>}{l.nombre_lote}
+                  {hijos > 0 && !abiertos.has(l.id) && <span className="ml-1 text-xs text-muted-foreground">({hijos} sub-lotes)</span>}
                 </TableCell>
                 <TableCell>{l.campo || '-'}</TableCell>
                 <TableCell className="text-right">
