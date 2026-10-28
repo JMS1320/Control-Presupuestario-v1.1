@@ -186,8 +186,12 @@ import {
 } from "@/lib/balance/granos-sementeras"
 import {
   armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados, tipoDesdeTexto, desdeArca, desdeHistorico, cargadaAMano,
-  type AsientoLibroDiario,
+  desdeVenta, type AsientoLibroDiario,
 } from "@/lib/balance/libro-diario"
+import {
+  filasComprasConsensuado, filasVentasConsensuado, retencionesSufridas, agruparPorCuenta, nombresDeCuentaCompras,
+  marcasSignoDistinto, armarLibroDiarioConsensuado, nombreArchivoConsensuado, LIBRO_DIARIO_CONSENSUADO,
+} from "@/lib/balance/libro-diario-consensuado"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import { actualizarVivas, debeMontarse } from "@/lib/ui/pestanas-vivas"
@@ -9986,6 +9990,85 @@ export function correrCasos(): Resultado[] {
     chequear("Cash Flow — venta de hacienda", "Sin liquidación entra neto pendiente + IVA (10,5 si la venta no dice otro); el IVA va sobre lo que falta facturar, que se descuenta en neto",
       "sin alícuota: 2652000 (IVA 10.5) · 21%: 1210000 · pendiente 400.000: 442000", v,
       v === "sin alícuota: 2652000 (IVA 10.5) · 21%: 1210000 · pendiente 400.000: 442000", "A-FEAT-1403")
+  }
+
+  // ══ 📗 Libro Diario consensuado (compras + ventas + por cuenta + retenciones, el armado a mano del 27/10/2026) ══
+  {
+    // Filas armadas como vienen de la base (comprobantes_arca / comprobantes_historico / comprobantes_venta).
+    const arcaRow = (o: Record<string, unknown>) => desdeArca({
+      id: String(o.numero_desde), año_contable: 2026, mes_contable: 1, fecha_emision: "2026-01-05", moneda: "PES",
+      cuit: "30000000001", denominacion_emisor: "PROVEEDOR", imp_neto_gravado: 0, imp_neto_no_gravado: 0, imp_op_exentas: 0,
+      otros_tributos: 0, iva: 0, cuenta_contable: "GASTOS", nro_cuenta: "422120", ...o,
+    })
+    const facC = arcaRow({ tipo_comprobante: 11, punto_venta: 2, numero_desde: 424, imp_neto_no_gravado: 380000, imp_total: 380000 })
+    const facB = arcaRow({ tipo_comprobante: 6, punto_venta: 468, numero_desde: 660266, imp_total: 6300 })
+    const facA = arcaRow({ tipo_comprobante: 1, punto_venta: 10, numero_desde: 5, imp_neto_gravado: 1000, iva: 210, imp_total: 1210 })
+    const nc = arcaRow({ tipo_comprobante: 3, punto_venta: 3, numero_desde: 9, imp_neto_gravado: -100, iva: -21, imp_total: -121 })
+    const nd = arcaRow({ tipo_comprobante: 2, punto_venta: 1, numero_desde: 1, imp_neto_gravado: 100, iva: 21, imp_total: 121 })
+    const fed1 = arcaRow({ tipo_comprobante: 1, punto_venta: 1, numero_desde: 670822, cuit: "33707366589", imp_op_exentas: -47198.41,
+      otros_tributos: -283.19, imp_total: -47481.60, nro_cuenta: "422113", cuenta_contable: "SEGUROS ESTRUCTURA" })
+    // El mismo número en OTRO punto de venta no es la factura marcada (Federación repite el número en varios).
+    const fedOtroPv = arcaRow({ tipo_comprobante: 1, punto_venta: 2, numero_desde: 670822, cuit: "33707366589", imp_op_exentas: 10, imp_total: 10,
+      nro_cuenta: "422113", cuenta_contable: "Seguros estructura" })
+    const marcadas = LIBRO_DIARIO_CONSENSUADO.MSA[2026].compras!.signoDistinto.facturas
+    const filas = filasComprasConsensuado([facA, nc, facB, facC, nd, fed1, fedOtroPv], marcadas)
+    const de = (num: number) => filas.find(f => f.numero === num)!
+
+    const c = de(424), b = de(660266)
+    const v1 = `Fac C: no grav ${c.noGravado} · monotributo ${c.monotributo} · dif ${c.dif} | Fac B: monotributo ${b.monotributo} · dif ${b.dif}`
+    chequear("Libro Diario consensuado", "Factura C (tipo 11): no gravado y exento en 0 y el total a Monotributo; la Factura B NO es monotributo, queda en «Dif. de algo más»",
+      "Fac C: no grav 0 · monotributo 380000 · dif 0 | Fac B: monotributo 0 · dif 6300", v1,
+      v1 === "Fac C: no grav 0 · monotributo 380000 · dif 0 | Fac B: monotributo 0 · dif 6300")
+
+    const orden = filas.map(f => `${f.tipo}-${f.puntoVenta}`).join(" ")
+    chequear("Libro Diario consensuado", "Orden: subdiario, fecha, tipo COMO TEXTO (11 antes que 2, como la consulta del armado a mano), punto de venta y número como número",
+      "1-1 1-2 1-10 11-2 2-1 3-3 6-468", orden, orden === "1-1 1-2 1-10 11-2 2-1 3-3 6-468")
+
+    const m = marcasSignoDistinto(filas)
+    const v2 = `marcadas: ${m.filas.map(f => `${f.puntoVenta}-${f.numero}`).join(",")} · meses ${[...m.meses].join(",")} · cuentas ${[...m.cuentas].join(",")}`
+    chequear("Libro Diario consensuado", "Federación Patronal: se marca por punto de venta + número + CUIT (el mismo número en otro punto de venta no), y marca su mes y su cuenta",
+      "marcadas: 1-670822 · meses 2026-01 · cuentas 422113", v2, v2 === "marcadas: 1-670822 · meses 2026-01 · cuentas 422113")
+
+    // Por cuenta: agrupa por NÚMERO aunque el nombre difiera; el nombre del histórico sólo si la cuenta no está en la app.
+    const hist = desdeHistorico({ id: "h", anio_contable: 2025, mes_contable: 11, fecha: "2025-11-01", tipo: "Poliza Seguro",
+      punto_de_venta: null, numero_desde: null, nro_doc_emisor: "30-70736658-9", denominacion_emisor: "ASEGURADORA",
+      imp_neto_gravado: 0, imp_neto_no_gravado: 0, imp_op_exentas: 50, otros_tributos: 0, iva: 0, imp_total: 50,
+      cuenta_contable: "Seguros (sistema anterior)", nro_cuenta: "4219" })
+    const conHist = filasComprasConsensuado([fed1, fedOtroPv, hist])
+    const g = agruparPorCuenta(conHist)
+    const nombres = nombresDeCuentaCompras(conHist)
+    const h4219 = conHist.find(f => f.nroCuenta === "4219")
+    const v3 = `${g.anio.map(x => `${x.nroCuenta}×${x.filas.length}`).join(" ")} · ${nombres.get("422113")} · ${nombres.get("4219")} · tipo ${h4219?.tipo} · cuit ${h4219?.cuit}`
+    chequear("Libro Diario consensuado", "Por cuenta agrupa por número (dos nombres = una fila, se ven los dos); la cuenta que sólo está en el histórico lleva su nombre; el tipo sin código queda como texto",
+      "4219×1 422113×2 · SEGUROS ESTRUCTURA / Seguros estructura · Seguros (sistema anterior) · tipo Poliza Seguro · cuit 30707366589", v3,
+      v3 === "4219×1 422113×2 · SEGUROS ESTRUCTURA / Seguros estructura · Seguros (sistema anterior) · tipo Poliza Seguro · cuit 30707366589")
+
+    // Ventas: CEG de AFA reales (05/2026) — el IVA vendido descuenta comisión y almacenaje; las retenciones van aparte.
+    const ventaRow = (o: Record<string, unknown>) => desdeVenta({ id: String(o.nro_comprobante), año_contable: 2026, mes_contable: 5,
+      fecha_liquidacion: "2026-05-13", cuit_cliente: "30525718626", denominacion_cliente: "AFA", imp_neto_no_gravado: 0, imp_op_exentas: 0,
+      cuenta_contable: "VENTA SOJA", nro_cuenta: "410101", ddjj_iva: "No", estado: "a cobrar", ...o })
+    const afa = ventaRow({ tipo_comprobante: 332, nro_comprobante: "31270209", imp_neto_gravado: 39554.60, iva: 4520.46, imp_total: 43707.83,
+      ret_iva: 1977.73, ret_iibb: 322.89, comision_iva: 90.41, almacenaje_iva: 276.82 })
+    const sinRet = ventaRow({ tipo_comprobante: 332, nro_comprobante: "31273878", imp_neto_gravado: 1090040, iva: 116858.70, imp_total: 1204494.20, comision_iva: 2404.50 })
+    const sinCuenta = ventaRow({ tipo_comprobante: 1, nro_comprobante: "00010-00000020", imp_neto_gravado: 0, imp_op_exentas: 100, iva: 0, imp_total: 100, nro_cuenta: null, cuenta_contable: null })
+    const vs = filasVentasConsensuado([sinCuenta, sinRet, afa])
+    const a = vs.find(f => f.nroComprobante === "31270209")!
+    const ret = retencionesSufridas(vs)
+    const v4 = `IVA vendido ${a.iva} · cargado ${a.ivaCargado} · comisión+almacenaje ${a.ivaGastos} · dif ${a.dif} | retenciones: ${ret.map(x => `${x.nroComprobante} ${x.retIva}+${x.retIibb}`).join(", ")} | sin cuenta: ${vs.find(f => f.nroComprobante.startsWith("00010"))?.nroCuenta}`
+    chequear("Libro Diario consensuado", "Ventas: IVA vendido = IVA de la app − comisión − almacenaje (cierra contra el total); retenciones sólo de las que tienen; la venta sin cuenta va a «(sin cuenta)»",
+      "IVA vendido 4153.23 · cargado 4520.46 · comisión+almacenaje 367.23 · dif 0 | retenciones: 31270209 1977.73+322.89 | sin cuenta: (sin cuenta)", v4,
+      v4 === "IVA vendido 4153.23 · cargado 4520.46 · comisión+almacenaje 367.23 · dif 0 | retenciones: 31270209 1977.73+322.89 | sin cuenta: (sin cuenta)")
+
+    // El libro entero: 5 solapas, fórmulas vivas; las constantes de 25/26 sólo para MSA 2026.
+    const ejC = armarEjercicio(2026, 6)
+    const libroC = armarLibroDiario([facA, facC, fed1], [afa, sinRet], ejC)
+    const msa = armarLibroDiarioConsensuado(libroC, "MSA")
+    const pam = armarLibroDiarioConsensuado(libroC, "PAM")
+    const tieneSistema = (wb: typeof msa.wb) => Object.values(wb.Sheets.Compras).some(x => (x as { v?: unknown }).v === "Sistema")
+    const v5 = `${msa.wb.SheetNames.join("|")} · V2 =${(msa.wb.Sheets.Compras.V2 as { f?: string }).f} · Sistema MSA ${tieneSistema(msa.wb)} / PAM ${tieneSistema(pam.wb)} · ${nombreArchivoConsensuado(libroC, "MSA", "2026-10-28")}`
+    chequear("Libro Diario consensuado", "Un solo libro con 5 solapas y la dif. como fórmula; el cuadro consensuado sale sólo en el ejercicio que lo tiene (MSA 25/26)",
+      "Compras|Compras por cuenta|Ventas|Ventas por cuenta|Retenciones sufridas · V2 =U2-(O2+P2+Q2+S2+T2+R2) · Sistema MSA true / PAM false · Libro_Diario_MSA_25-26_2026-10-28.xlsx", v5,
+      v5 === "Compras|Compras por cuenta|Ventas|Ventas por cuenta|Retenciones sufridas · V2 =U2-(O2+P2+Q2+S2+T2+R2) · Sistema MSA true / PAM false · Libro_Diario_MSA_25-26_2026-10-28.xlsx")
   }
 
   return r

@@ -90,6 +90,26 @@ export interface AsientoLibroDiario {
    * vendió y cuánto. Sólo ventas; en compras no viene.
    */
   cantidades?: { producto: string; toneladas: number | null; cabezas: number | null; kilos: number | null }
+  /**
+   * 🔤 Sólo histórico: el tipo TAL COMO ESTÁ escrito cuando no es un código de ARCA (`Poliza Seguro`). `tipo` queda
+   * en `null` a propósito (ver `tipoDesdeTexto`); el Libro Diario consensuado lo muestra igual, como lo mostraba el
+   * Excel armado a mano.
+   */
+  tipo_original?: string
+  /**
+   * 🧾 Sólo ventas: lo que el Libro Diario consensuado (`libro-diario-consensuado.ts`) muestra al lado del IVA vendido
+   * y en «Retenciones sufridas». `iva` de arriba ya es el IVA vendido; acá va el cargado en la app, sin restar.
+   */
+  detalleVenta?: {
+    nro_comprobante: string
+    ddjj_iva: string
+    estado: string
+    iva_cargado: number
+    comision_iva: number
+    almacenaje_iva: number
+    ret_iva: number
+    ret_iibb: number
+  }
 }
 
 /** Un comprobante que aparece en las dos fuentes, o dos veces en la misma. */
@@ -317,6 +337,8 @@ export function desdeHistorico(f: Record<string, unknown>): AsientoLibroDiario {
     fecha: f.fecha ? s(f.fecha).slice(0, 10) : null,
     // ⚠️ Texto libre, no el código de ARCA. Ver `tipoDesdeTexto` — sin esto el control clasifica mal.
     tipo: tipoDesdeTexto(f.tipo),
+    ...(tipoDesdeTexto(f.tipo) == null && f.tipo != null && String(f.tipo).trim() !== ""
+      ? { tipo_original: String(f.tipo).trim() } : {}),
     punto_venta: f.punto_de_venta == null ? null : Number(f.punto_de_venta),
     numero: f.numero_desde == null ? null : Number(f.numero_desde),
     cuit: s(f.nro_doc_emisor), denominacion: s(f.denominacion_emisor),
@@ -351,6 +373,11 @@ export function desdeVenta(f: Record<string, unknown>): AsientoLibroDiario {
       toneladas: f.toneladas == null ? null : n(f.toneladas),
       cabezas: f.cabezas == null ? null : n(f.cabezas),
       kilos: f.peso_kg == null ? null : n(f.peso_kg),
+    },
+    detalleVenta: {
+      nro_comprobante: s(f.nro_comprobante), ddjj_iva: s(f.ddjj_iva), estado: s(f.estado),
+      iva_cargado: n(f.iva), comision_iva: n(f.comision_iva), almacenaje_iva: n(f.almacenaje_iva),
+      ret_iva: n(f.ret_iva), ret_iibb: n(f.ret_iibb),
     },
   }
 }

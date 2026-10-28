@@ -44,6 +44,7 @@ import { ProponerFotoBalance } from "./proponer-foto-balance"
 import { ivaConSigno, type DatosDeLosPapeles } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { descargarLibroDiario } from "@/lib/balance/export-libro-diario"
+import { descargarLibroDiarioConsensuado } from "@/lib/balance/libro-diario-consensuado"
 import { traerTodo, lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
 import type { TipoCuenta } from "@/lib/presupuesto/templates"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
@@ -741,6 +742,14 @@ export function PapelesDeBalance() {
               {/* A-FEAT-1388: decía «sin el sector productivo» y confundía cuando los precios ya se
                   veían cargados — lo que falta es traer el stock, y eso es lo que se dice. */}
               Bajar el Excel{hacienda ? " completo" : " — sin hacienda ni insumos (falta «Traer stock y precios»)"}
+            </Button>
+          )}
+          {/* 📗 El Libro Diario consensuado con el contador (compras, ventas, por cuenta y retenciones), solo. */}
+          {libro && (
+            <Button variant="outline" onClick={() => descargarLibroDiarioConsensuado(libro, empresa.id)
+              .catch(e => toast.error("No se pudo armar el Libro Diario: " + (e as Error).message))}>
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Bajar Libro Diario
             </Button>
           )}
         </div>
