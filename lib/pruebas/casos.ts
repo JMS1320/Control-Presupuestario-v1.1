@@ -81,6 +81,7 @@ import { importeDeVenta, cuotasNoFijadas, leyendaEnDolares } from "@/lib/arrenda
 import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPapel, moverPartida, clavePartida } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
+import { filtrarOrdenesAgricolas, chipsDe, resumenOrdenes, FILTRO_ORDENES_VACIO } from "@/lib/productivo/filtro-ordenes-agricolas"
 import { armarLibroComprasArca, controlarArchivo, leerCbte, texto as textoArca, type FilaCompraArca } from "@/lib/subdiarios/libro-iva-arca"
 import { evaluarCambioDDJJ, estadoDelPeriodo, mesesEnviadosSinPresentar, estadoDeLosMeses } from "@/lib/subdiarios/estado-ddjj"
 import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
@@ -9787,6 +9788,40 @@ export function correrCasos(): Resultado[] {
     chequear("Órdenes a confirmar", "Rechazar vuelve a planificada con el recuento; Necesidad de compra cuenta lo a confirmar; sin casillas no hay botones",
       "rechazo → planificada (recuento queda) · necesidad de compra cuenta planificada+a_confirmar · sin permisos: 0 botones", v3,
       v3 === "rechazo → planificada (recuento queda) · necesidad de compra cuenta planificada+a_confirmar · sin permisos: 0 botones", "A-FEAT-1223")
+  }
+
+  // ══ 🌾 Órdenes agrícolas: filtros por lote, insumo, labor, estado y fecha (A-FEAT-1397, JMS 28/10) ══
+  {
+    const ords = [
+      { fecha: "2026-10-25", estado: "planificada", hectareas: 19.5, lote_nombre: "Tropilla Parque / Ribera Abajo", labores: ["Pulverización"],
+        lineas: [{ insumo_nombre: "Glifosato", cantidad_total_l: 50 }, { insumo_nombre: "Coadyuvante MSO", cantidad_total_l: 5 }] },
+      { fecha: "2026-10-20", estado: "planificada", hectareas: 15, lote_nombre: "Casas", labores: ["Pulverización"],
+        lineas: [{ insumo_nombre: "Atrazina 90%", cantidad_total_l: 30 }] },
+      { fecha: "2026-06-24", estado: "ejecutada", hectareas: 12.8, lote_nombre: "Entre Rios 1, 2, 3", labores: ["Siembra"],
+        lineas: [{ insumo_nombre: "Glifosato", cantidad_total_l: 26, recuento: true, cantidad_recuento_l: 24 }] },
+      { fecha: "2026-11-15", estado: "planificada", hectareas: 19.5, lote_nombre: "Tropilla Parque / Ribera Abajo", labores: ["Siembra"], lineas: [] },
+    ]
+    const F = (x: Partial<typeof FILTRO_ORDENES_VACIO>) => ({ ...FILTRO_ORDENES_VACIO, ...x })
+    const a = filtrarOrdenesAgricolas(ords, F({ lotes: new Set(["Ribera Abajo"]) })).map(o => o.fecha).join(",")
+    const b = filtrarOrdenesAgricolas(ords, F({ insumos: new Set(["Glifosato"]) })).length
+    const c = filtrarOrdenesAgricolas(ords, F({ labores: new Set(["Siembra"]), estados: new Set(["planificada"]) })).length
+    const d = filtrarOrdenesAgricolas(ords, F({ desde: "2026-10-01", hasta: "2026-10-31" })).length
+    const v1 = `Ribera Abajo: ${a} · Glifosato: ${b} · siembra planificada: ${c} · octubre: ${d}`
+    chequear("Órdenes agrícolas — filtros", "Un lote encuentra las órdenes que lo comparten con otro; insumo, labor+estado y fechas filtran juntos",
+      "Ribera Abajo: 2026-10-25,2026-11-15 · Glifosato: 2 · siembra planificada: 1 · octubre: 2", v1,
+      v1 === "Ribera Abajo: 2026-10-25,2026-11-15 · Glifosato: 2 · siembra planificada: 1 · octubre: 2", "A-FEAT-1397")
+    const fIns = F({ insumos: new Set(["Glifosato"]) })
+    const chLab = chipsDe(ords, fIns, "labores").map(x => `${x.valor} ${x.n}`).join(",")
+    const chIns = chipsDe(ords, fIns, "insumos").find(x => x.valor === "Atrazina 90%")?.n
+    const res = resumenOrdenes(filtrarOrdenesAgricolas(ords, fIns), fIns)
+    const v2 = `labores con glifosato: ${chLab} · Atrazina sigue ofrecida: ${chIns} · ${res.ordenes} órdenes ${res.ha} ha · ${res.litros.map(([i, l]) => `${i} ${l}`).join(",")}`
+    chequear("Órdenes agrícolas — filtros", "El número de cada chip cuenta sobre lo que dejan los OTROS filtros; los litros usan el recuento si lo hay y sólo del insumo filtrado",
+      "labores con glifosato: Pulverización 1,Siembra 1 · Atrazina sigue ofrecida: 1 · 2 órdenes 32.3 ha · Glifosato 74", v2,
+      v2 === "labores con glifosato: Pulverización 1,Siembra 1 · Atrazina sigue ofrecida: 1 · 2 órdenes 32.3 ha · Glifosato 74", "A-FEAT-1397")
+    const fLote = F({ lotes: new Set(["Ribera Abajo"]) })
+    const v3 = resumenOrdenes(filtrarOrdenesAgricolas(ords, fLote), fLote).compartidas
+    chequear("Órdenes agrícolas — filtros", "Filtrando por lote, las órdenes de varios lotes se avisan (sus ha son de la orden entera), no se suman en silencio",
+      "2", String(v3), v3 === 2, "A-FEAT-1397")
   }
 
   return r

@@ -690,6 +690,17 @@ quien no, propone.
 
 ⚠️ Sin probar todavía → [A-TEST-1258](PENDIENTES.md#a-test-1258)
 
+## 🌾 Productivo → Insumos → Órdenes Aplicación → Agrícola: **filtrar las órdenes** *(nuevo 2026-10-28)*
+
+Arriba de la lista hay una barra con chips de **Lote**, **Insumo**, **Labor** y **Estado**, y un rango de **Fecha**.
+- Click en un chip lo prende o lo apaga; **Ctrl+click deja sólo ése**; «todos» vuelve a mostrar todo en esa fila.
+- El número de cada chip dice cuántas órdenes quedarían con los demás filtros puestos.
+- Con algún filtro puesto, abajo aparece el resumen: cuántas órdenes, cuántas hectáreas y **cuántos litros de cada insumo** (si la orden tiene recuento, el recuento).
+- Filtrar por un lote trae también las órdenes que lo comparten con otros lotes; en ese caso el resumen avisa que sus hectáreas y litros son de la orden entera.
+- **Limpiar filtros** vuelve a la lista completa.
+
+⚠️ Sin probar todavía → A-TEST-1270
+
 ## 🐄 Vender desde Productivo → Movimientos *(nuevo 2026-09-04)*
 
 **Para qué sirve.** Registrar una venta desde donde es más natural pensarla: *"vendí estas 7 vacas

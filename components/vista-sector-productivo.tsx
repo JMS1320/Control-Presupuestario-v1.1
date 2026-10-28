@@ -6,6 +6,8 @@ import { cabezasHoy } from "@/lib/productivo/cabezas-hoy"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { toggleChip, esSoloEste, tituloChip } from "@/lib/ui/chips"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
+import { filtrarOrdenesAgricolas, chipsDe, resumenOrdenes, hayFiltro, FILTRO_ORDENES_VACIO, type FiltroOrdenesAgricolas } from "@/lib/productivo/filtro-ordenes-agricolas"
+import { PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useCallback, Fragment } from "react"
 import { SoloLectura } from "@/components/solo-lectura"
@@ -7350,6 +7352,10 @@ function SubTabOrdenesAgricolas() {
   const [rechazando, setRechazando] = useState<OrdenAgricola | null>(null)
   const [lotesDisponibles, setLotesDisponibles] = useState<LoteAgricola[]>([])
   const [ordenes, setOrdenes] = useState<OrdenAgricola[]>([])
+  // A-FEAT-1397: filtros de la lista (lote, insumo, labor, estado, fechas)
+  const [filtroOrd, setFiltroOrd] = useState<FiltroOrdenesAgricolas>(FILTRO_ORDENES_VACIO)
+  const ordenesFiltradas = filtrarOrdenesAgricolas(ordenes, filtroOrd)
+  const resumenFiltro = resumenOrdenes(ordenesFiltradas, filtroOrd)
   const [insumosAgro, setInsumosAgro] = useState<StockInsumo[]>([])
   const [laboresAgricolas, setLaboresAgricolas] = useState<{ id: number, nombre: string }[]>([])
   const [loading, setLoading] = useState(true)
@@ -7755,6 +7761,53 @@ function SubTabOrdenesAgricolas() {
         </div>
       </div>
 
+      {/* A-FEAT-1397: filtros */}
+      {ordenes.length > 0 && (
+        <div className="rounded-md border bg-muted/30 p-3 space-y-2 text-xs">
+          {([['lotes', 'Lote'], ['insumos', 'Insumo'], ['labores', 'Labor'], ['estados', 'Estado']] as const).map(([dim, etiqueta]) => (
+            <div key={dim} className="flex flex-wrap items-center gap-1">
+              <span className="w-14 shrink-0 font-medium text-muted-foreground">{etiqueta}</span>
+              {chipsDe(ordenes, filtroOrd, dim).map(({ valor, n }) => {
+                const on = filtroOrd[dim].has(valor)
+                const texto = dim === 'estados' ? (ETIQUETA_ESTADO[valor] || valor) : valor
+                return (
+                  <button key={valor} type="button" title={tituloChip(texto)}
+                    className={`rounded-full border px-2 py-0.5 ${on ? 'bg-primary text-primary-foreground border-primary' : n === 0 ? 'bg-white text-muted-foreground/60' : 'bg-white hover:border-gray-400'}`}
+                    onClick={ev => toggleChip<string>(fn => setFiltroOrd(p => ({ ...p, [dim]: fn(p[dim]) })), valor, esSoloEste(ev))}>
+                    {texto} <span className="opacity-70">{n}</span>
+                  </button>)
+              })}
+              {filtroOrd[dim].size > 0 && (
+                <button type="button" className="ml-1 underline text-muted-foreground"
+                  onClick={() => setFiltroOrd(p => ({ ...p, [dim]: new Set<string>() }))}>todos</button>)}
+            </div>
+          ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="w-14 shrink-0 font-medium text-muted-foreground">Fecha</span>
+            <Input type="date" className="h-7 w-36 text-xs" value={filtroOrd.desde}
+              onChange={e => setFiltroOrd(p => ({ ...p, desde: e.target.value }))} />
+            <span>a</span>
+            <Input type="date" className="h-7 w-36 text-xs" value={filtroOrd.hasta}
+              onChange={e => setFiltroOrd(p => ({ ...p, hasta: e.target.value }))} />
+            <span className="text-muted-foreground">{PISTA_CTRL_CLICK}</span>
+            {hayFiltro(filtroOrd) && (
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setFiltroOrd(FILTRO_ORDENES_VACIO)}>
+                Limpiar filtros
+              </Button>)}
+          </div>
+          {hayFiltro(filtroOrd) && (
+            <div className="border-t pt-2 text-sm">
+              <span className="font-medium">{resumenFiltro.ordenes} de {ordenes.length} órdenes · {formatoNumero(resumenFiltro.ha)} ha</span>
+              {resumenFiltro.litros.length > 0 && (
+                <span className="text-muted-foreground"> · {resumenFiltro.litros.map(([ins, lt]) => `${ins}: ${formatoCantidad(lt, 'L')}`).join(' · ')}</span>)}
+              {resumenFiltro.compartidas > 0 && (
+                <div className="text-xs text-amber-700 mt-1">
+                  ⚠️ {resumenFiltro.compartidas} {resumenFiltro.compartidas === 1 ? 'orden abarca' : 'órdenes abarcan'} varios lotes: sus hectáreas y litros son de la orden entera (hoy la orden no guarda cuánto fue a cada lote).
+                </div>)}
+            </div>)}
+        </div>
+      )}
+
       <Table>
         <TableHeader>
           <TableRow>
@@ -7768,14 +7821,14 @@ function SubTabOrdenesAgricolas() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {ordenes.length === 0 ? (
+          {ordenesFiltradas.length === 0 ? (
             <TableRow>
               <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                Sin órdenes agrícolas registradas.
+                {ordenes.length === 0 ? 'Sin órdenes agrícolas registradas.' : 'Ninguna orden con estos filtros.'}
               </TableCell>
             </TableRow>
           ) : (
-            ordenes.map(o => (
+            ordenesFiltradas.map(o => (
               <TableRow key={o.id}>
                 <TableCell>{formatoFecha(o.fecha)}</TableCell>
                 <TableCell>{o.lote?.nombre_lote || o.lote_nombre || '-'}</TableCell>
