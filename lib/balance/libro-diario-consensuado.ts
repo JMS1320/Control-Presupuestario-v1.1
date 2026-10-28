@@ -81,6 +81,26 @@ export interface ConsensuadoDelEjercicio {
   }
   /** Notas al pie de «Retenciones sufridas» (en naranja). */
   notasRetenciones?: string[]
+  /**
+   * 🔍 Lo fijo del libro «Diferencias vs ARCA» (`diferencias-vs-arca.ts`): textos y links de casos puntuales. Las
+   * diferencias y sus grupos se calculan de los datos; esto sólo agrega lo que no se puede deducir.
+   */
+  diferencias?: {
+    compras?: {
+      /** Cómo se nombra el grupo «Se le cambió el signo» (va entre paréntesis). */
+      nombreGrupoSigno?: string
+      /** La nota de arriba (fila 3, en naranja). */
+      notaArriba?: string
+      /** El PDF de cada factura, en la columna Q («Factura (PDF)»). */
+      links?: Array<FacturaMarcada & { url: string }>
+      /** La fila ARCA del cuadro consensuado: se controla contra lo leído de los zips. */
+      arcaConsensuado?: { neto: number; noGravado: number; exento: number; otros: number; iva: number; total: number }
+    }
+    ventas?: {
+      /** «Por qué» de un comprobante de «No entra en el cuadro», en lugar del texto que arma la app. */
+      porQue?: Array<FacturaMarcada & { texto: string }>
+    }
+  }
 }
 
 /**
@@ -130,6 +150,23 @@ export const LIBRO_DIARIO_CONSENSUADO: Record<string, Record<number, Consensuado
       notasRetenciones: [
         "Ojo: en Sáenz Valiente lo de ARCA (330.665,50 y 270.618,00) no coincide con la retención de IIBB de la app (94.852,50 y 76.590,00); en Pedro Genta sí coincide (970.830,00).",
       ],
+      // «Diferencias Compras / Ventas MSA 25-26 - app vs ARCA.xlsx» (27/10/2026). Los links: columna Q del de compras.
+      diferencias: {
+        compras: {
+          nombreGrupoSigno: "Federación Patronal",
+          notaArriba: "A las 2 facturas de Federación Patronal (grupo 1) se les cambió el signo: en la app están en negativo y en lo presentado a ARCA en positivo. Las facturas (PDF) están en la columna Q, con link a Google Drive.",
+          links: [
+            { puntoVenta: 1, numero: 670822, cuit: "33707366589", url: "https://drive.google.com/file/d/1cS33WYifiVa6FczvaE4ebfFEE82x8j1W/view?usp=drivesdk" },
+            { puntoVenta: 4, numero: 670821, cuit: "33707366589", url: "https://drive.google.com/file/d/1JHLHmqATGmmd1JEAkG9K2mVTtxciWbGx/view?usp=drivesdk" },
+          ],
+          arcaConsensuado: { neto: 172305543.46, noGravado: 217144.86, exento: 17680561.68, otros: 2739187.69, iva: 32125487.55, total: 294439660.59 },
+        },
+        ventas: {
+          porQue: [
+            { puntoVenta: 11, numero: 77393, cuit: "30526554562", texto: "Nota de débito con sólo total (sin neto ni IVA): se obvia. En la app está en compras (2026-04, Comisiones, en positivo)." },
+          ],
+        },
+      },
     },
   },
 }
@@ -342,16 +379,16 @@ const sumar = <F>(filas: F[], campo: (f: F) => number) => r2(filas.reduce((s, f)
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 /** El formato de número: el de toda la app (`MONEDA`), con los negativos entre paréntesis — JMS 28/10. */
-const IMPORTE = MONEDA
-const CANT = "0"
+export const IMPORTE = MONEDA
+export const CANT = "0"
 const FECHA = "dd/mm/yyyy"
-const COLOR = {
+export const COLOR = {
   encabezadoCompras: "C6D9EF", azulOscuro: "1F4E79", azulSubtotal: "DDEBF7", azulTotal: "B4C6E7",
   naranjaClaro: "FCE4D6", naranjaSubtotal: "F4B57D", amarillo: "FFFF99", gris: "F2F2F2",
   textoGris: "595959", textoInfo: "7F7F7F", blanco: "FFFFFF",
 }
 
-type Estilo = Record<string, unknown>
+export type Estilo = Record<string, unknown>
 type Celda = XLSX.CellObject & { s?: Estilo }
 
 const col = (c: string) => XLSX.utils.decode_col(c)
@@ -366,14 +403,14 @@ const serialFecha = (iso: string) => {
   return (Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 86400000
 }
 /** Texto que es sólo dígitos → número (CUIT, cuenta, tipo), como lo dejaba el armado a mano. */
-const numOTexto = (v: string | number | null | undefined): string | number | null => {
+export const numOTexto = (v: string | number | null | undefined): string | number | null => {
   if (v == null || v === "") return null
   if (typeof v === "number") return v
   return /^-?\d+$/.test(v) && v.length < 16 ? Number(v) : v
 }
 
 /** Una hoja que se llena celda por celda, con estilos que se suman. */
-class Hoja {
+export class Hoja {
   ws: XLSX.WorkSheet = {}
   private maxF = 0
   private maxC = 0
@@ -445,22 +482,22 @@ class Hoja {
   }
 }
 
-const NEGRITA: Estilo = { font: { bold: true } }
-const ITALICA: Estilo = { font: { italic: true } }
-const GRIS: Estilo = { font: { italic: true, color: { rgb: COLOR.textoGris } } }
-const fondo = (rgb: string): Estilo => ({ fill: { patternType: "solid", fgColor: { rgb } } })
-const ENCABEZADO_OSCURO: Estilo = {
+export const NEGRITA: Estilo = { font: { bold: true } }
+export const ITALICA: Estilo = { font: { italic: true } }
+export const GRIS: Estilo = { font: { italic: true, color: { rgb: COLOR.textoGris } } }
+export const fondo = (rgb: string): Estilo => ({ fill: { patternType: "solid", fgColor: { rgb } } })
+export const ENCABEZADO_OSCURO: Estilo = {
   font: { bold: true, color: { rgb: COLOR.blanco } }, ...fondo(COLOR.azulOscuro),
   alignment: { wrapText: true, vertical: "center" },
 }
-const subtotal = (rgb: string, arriba = "thin"): Estilo => ({
+export const subtotal = (rgb: string, arriba = "thin"): Estilo => ({
   font: { bold: true }, ...fondo(rgb),
   border: { top: { style: arriba, color: { rgb: "000000" } }, bottom: { style: "double", color: { rgb: "000000" } } },
 })
 const CENTRO: Estilo = { alignment: { horizontal: "center" } }
 
 /** Una celda de cantidad (centrada, entera). */
-const cant = (h: Hoja, ref: string, f: string, v: number, s?: Estilo) => {
+export const cant = (h: Hoja, ref: string, f: string, v: number, s?: Estilo) => {
   h.formula(ref, f, v, CANT)
   h.estilo(Number(ref.replace(/\D/g, "")), ref.replace(/\d/g, ""), ref.replace(/\d/g, ""), { ...CENTRO, ...(s ?? {}) })
 }
@@ -851,7 +888,7 @@ export interface ResumenConsensuado {
 }
 
 /** Vista de cada solapa que `xlsx-js-style` no sabe escribir: encabezado inmovilizado y cuadrícula. */
-interface Vista { congelarFilas?: number; sinCuadricula?: boolean }
+export interface Vista { congelarFilas?: number; sinCuadricula?: boolean }
 
 export interface LibroConsensuado { wb: XLSX.WorkBook; vistas: Vista[]; resumen: ResumenConsensuado }
 
@@ -915,7 +952,7 @@ export function armarLibroDiarioConsensuado(libro: LibroDiario, empresa: string)
  * 🪟 Encabezado inmovilizado y cuadrícula apagada. `xlsx-js-style` (SheetJS 0.18 libre) no escribe `<pane>` ni
  * `showGridLines` — `!freeze` lo ignora —, así que se agregan al XML de cada solapa después de escribir el archivo.
  */
-async function aplicarVistas(datos: Uint8Array | ArrayBuffer, vistas: Vista[]): Promise<Uint8Array> {
+export async function aplicarVistas(datos: Uint8Array | ArrayBuffer, vistas: Vista[]): Promise<Uint8Array> {
   const zip = await JSZip.loadAsync(datos)
   for (let i = 0; i < vistas.length; i++) {
     const v = vistas[i]
