@@ -299,6 +299,18 @@ lo que dejó el usuario).
 cuando el usuario lo ve y avisa. Con la huella, el importador **mejora con el uso**: se puede
 preguntar qué campo se corrige más, en qué emisor, y si un cambio al parser mejoró o empeoró.
 
+**5 · El documento queda en el ARCHIVO DIGITAL, vinculado a lo que generó** *(pedido del usuario
+2026-10-27, nota 🌙: **«dejá la regla de siempre proponer generar ese mecanismo para los documentos»**)*.
+Procesar un papel y no guardarlo es leerlo una sola vez: el día que el contador o ARCA lo piden, hay
+que volver a buscarlo. Por eso, **cada vez que entra un tipo de documento nuevo** (un Excel o PDF del
+contador, un resumen, una boleta), Claude **propone el mecanismo para archivarlo** —dónde va en el
+Drive, cómo se vincula al registro que generó y, si llega solo, cómo lo guarda el GAS del mail—,
+aunque esa vez se haya procesado a mano.
+📍 **Acá:** el modelo es el de las facturas (`public.arca_pdf_archivo_digital`, el 📎 de cada factura) y
+el de las DDJJ (`public.ddjj_presentadas.archivo`).
+*Motivo, el caso: los 12 zips del libro IVA y el Excel con PDF del contador se procesaron el 27/10 pero
+quedaron sin vínculo como el de las tarjetas* → [A-FEAT-1382](PENDIENTES.md#a-feat-1382).
+
 ---
 
 ### 🌐 PROTOCOLARES — comunes a TODOS los proyectos
