@@ -5,6 +5,12 @@
  *
  * Cuadro a la vista en *Reportes → Papeles de trabajo*: se agregan, se resuelven con una nota (no se
  * borran) y salen en el export. La solapa del Excel la arma `lib/balance/pendientes-balance.ts`.
+ *
+ * 🚩 A-AUTO-06 (nota 🌙 de JMS 2026-10-27: *«esto debería ser agregar mensajes en vez de resolver. Pueden
+ * usar las banderas rojas… así le podría dejar algo relacionado a contable aunque él no tenga esta vista:
+ * que queda una tarea que yo la tengo vinculada a esto»*): cada pendiente tiene su BANDERA. Se le asigna a
+ * una persona (Ulises), le llega a su 🔔 aunque no vea esta pantalla, y se conversa en el hilo de la marca.
+ * «Resolver» sigue: es el cierre, con su nota, cuando ya se sabe.
  */
 
 import { useCallback, useEffect, useState } from "react"
@@ -14,6 +20,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ahoraISO } from "@/lib/fechas"
 import type { PendienteBalance } from "@/lib/balance/pendientes-balance"
+import { BotonRevision, useRevisionesDe } from "@/components/boton-revision"
 
 const dmy = (iso: string | null) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : '')
 
@@ -29,6 +36,7 @@ export function PendientesBalance({ empresa, anioCierre, onCambio }: {
   const [nota, setNota] = useState('')
   const [verResueltos, setVerResueltos] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { porRegistro: marcas, recargar: recargarMarcas } = useRevisionesDe('public', 'balance_pendientes')
 
   const cargar = useCallback(async () => {
     const { data, error } = await supabase.from('balance_pendientes').select('*')
@@ -75,7 +83,12 @@ export function PendientesBalance({ empresa, anioCierre, onCambio }: {
       {abiertos.length === 0 && !error && <p className="text-xs text-emerald-700">✓ Sin pendientes abiertos.</p>}
       {abiertos.map(p => (
         <div key={p.id} className="flex flex-wrap items-start gap-2 border-b border-amber-100 py-1">
-          <span className="flex-1">{p.texto} <span className="text-[10px] text-gray-500">· {dmy(p.created_at)}</span></span>
+          <span className="flex-1">{p.texto} <span className="text-[10px] text-gray-500">· {dmy(p.created_at)}</span>
+            {marcas[p.id] && <span className="ml-1 text-[10px] text-amber-700">🚩 en conversación{marcas[p.id].seguimiento?.length ? ` · ${marcas[p.id].seguimiento!.length} mensaje(s)` : ''}</span>}
+          </span>
+          <BotonRevision schema="public" tabla="balance_pendientes" registroId={p.id}
+            descripcion={`Pendiente del balance ${empresa} ${anioCierre}: ${p.texto.slice(0, 90)}${p.texto.length > 90 ? '…' : ''}`}
+            abierta={marcas[p.id]} onCambio={recargarMarcas} />
           {resolviendo === p.id ? (
             <span className="flex items-center gap-1">
               <Input value={nota} onChange={e => setNota(e.target.value)} placeholder="cómo se resolvió" className="h-7 w-64 text-xs" />
