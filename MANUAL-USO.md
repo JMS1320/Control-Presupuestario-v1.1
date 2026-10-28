@@ -698,6 +698,26 @@ Los botones (copiar pedido, pedir, buscar) trabajan sobre lo que queda a la vist
 
 ⚠️ Sin probar todavía → [A-TEST-1272](PENDIENTES.md#a-test-1272)
 
+## 🔓 Habilitar a alguien para que corrija una factura *(nuevo 2026-10-28)*
+
+Para que Ulises (u otra persona) corrija una factura **cargada por Excel** sin darle permiso sobre todas:
+1. **Vos**: Egresos → Facturas, en la factura, el **🔓** al lado de la 🚩 → a quién, por cuánto tiempo (1 día o hasta que aceptes) y qué hay que corregir. Le aparece en su Principal (🚩).
+2. **Él**: en esa factura aparece **«proponer»** → corrige los campos (importes incluidos) → Proponer. **La factura no cambia todavía.**
+3. **Vos**: aparece **📝** en la factura → ves antes y propuesto, podés corregir lo que quieras → **Aceptar y aplicar** o **Rechazar**.
+Las facturas que vinieron de ARCA no se pueden habilitar.
+
+⚠️ Sin probar todavía → [A-TEST-1280](PENDIENTES.md#a-test-1280)
+
+## 📓 El cuaderno de trabajo *(nuevo 2026-10-28, piloto)*
+
+Menú de tu usuario (arriba a la derecha) → **Cuaderno**. Cada cuaderno es tuyo: nadie más lo ve.
+- **Nuevo cuaderno**, ponele título, y agregá **bloques**: **Texto** o **Tabla**, en el orden que quieras (cada bloque tiene «+ texto» y «+ tabla» para agregar debajo, flechas para moverlo y la papelera).
+- **Texto**: tocá para escribir. `# Título`, `## Subtítulo`, `**negrita**`, `- ítem de lista`. Al tocar afuera se ve con formato.
+- **Tabla**: como una planilla. Números con coma decimal. Fórmulas que empiezan con `=`: `=B2*C2`, `=SUMA(B2:B5)`, `PROMEDIO`, `MIN`, `MAX`, `CONTAR`. «+ fila» / «+ columna».
+- Se **guarda solo** (arriba dice «guardado»). **Excel** baja el cuaderno entero en una hoja, en orden.
+
+⚠️ Sin probar todavía → [A-TEST-1279](PENDIENTES.md#a-test-1279)
+
 ## 📱 El acceso de campo en el celular *(nuevo 2026-10-28)*
 
 Para cargar órdenes desde el campo: en el celular abrí el link de la app con **`?seccion=productivo&campo=1`** al final y,

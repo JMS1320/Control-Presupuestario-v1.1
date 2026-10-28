@@ -81,6 +81,8 @@ import { importeDeVenta, cuotasNoFijadas, leyendaEnDolares } from "@/lib/arrenda
 import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPapel, moverPartida, clavePartida } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
+import { esHabilitable, diferencias, estadoVisible } from "@/lib/propuestas/factura"
+import { calcularTabla, mostrarValor } from "@/lib/cuaderno/formulas"
 import { pedirCampo, verPedidoCampo, tomarPedidoCampo } from "@/lib/productivo/pedido-campo"
 import { condicionesVenta, cobroVentaSinLiquidacion } from "@/lib/productivo/venta-condiciones"
 import { dosisYTotal } from "@/lib/productivo/dosis-orden"
@@ -10069,6 +10071,40 @@ export function correrCasos(): Resultado[] {
     chequear("Libro Diario consensuado", "Un solo libro con 5 solapas y la dif. como fórmula; el cuadro consensuado sale sólo en el ejercicio que lo tiene (MSA 25/26)",
       "Compras|Compras por cuenta|Ventas|Ventas por cuenta|Retenciones sufridas · V2 =U2-(O2+P2+Q2+S2+T2+R2) · Sistema MSA true / PAM false · Libro_Diario_MSA_25-26_2026-10-28.xlsx", v5,
       v5 === "Compras|Compras por cuenta|Ventas|Ventas por cuenta|Retenciones sufridas · V2 =U2-(O2+P2+Q2+S2+T2+R2) · Sistema MSA true / PAM false · Libro_Diario_MSA_25-26_2026-10-28.xlsx")
+  }
+
+  // ══ 📓 Cuaderno: fórmulas de las tablas (A-FEAT-1410, piloto) ══════════════════════════════════
+  {
+    const t = calcularTabla([
+      ["Insumo", "Litros", "Precio", "Total"],
+      ["Glifosato", "50", "1.234,50", "=B2*C2"],
+      ["2,4 DB", "23,4", "2000", "=B3*C3"],
+      ["Totales", "=SUMA(B2:B3)", "=PROMEDIO(C2:C3)", "=SUM(D2:D3)"],
+      ["ciclo", "=B5", "=1/0", "=MAX(B2:B3)-MIN(B2:B3)"],
+    ])
+    const v = `D2 ${mostrarValor(t[1][3])} · D3 ${mostrarValor(t[2][3])} · B4 ${mostrarValor(t[3][1])} · C4 ${mostrarValor(t[3][2])} · D4 ${mostrarValor(t[3][3])} · B5 ${t[4][1]} · C5 ${t[4][2]} · D5 ${mostrarValor(t[4][3])} · A2 ${t[1][0]}`
+    chequear("Cuaderno — fórmulas", "Números es-AR (1.234,50), referencias, SUMA/SUM/PROMEDIO/MAX/MIN; un ciclo o una división por 0 marcan la celda sin romper la tabla",
+      "D2 61.725 · D3 46.800 · B4 73,4 · C4 1.617,25 · D4 108.525 · B5 #CICLO · C5 #ERROR · D5 26,6 · A2 Glifosato", v,
+      v === "D2 61.725 · D3 46.800 · B4 73,4 · C4 1.617,25 · D4 108.525 · B5 #CICLO · C5 #ERROR · D5 26,6 · A2 Glifosato", "A-FEAT-1410")
+  }
+
+  // ══ 🔓 Propuestas de cambio de Ulises: qué se habilita y qué cambió (A-FEAT-1400, JMS 28/10) ══
+  {
+    const hab = [
+      esHabilitable("- otros comprobantes No AFIP - CUIT 30617786016.xlsx"),
+      esHabilitable("Mis Comprobantes Recibidos - CUIT 30617786016 - 25-12.xlsx"),
+      esHabilitable("arca-MSA-2026-09-27-a-2026-10-27.csv"),
+      esHabilitable(null),
+    ].map(x => (x ? "sí" : "no")).join(",")
+    const fac = { fecha_emision: "2026-10-01", imp_total: 120000, imp_neto_gravado: 99173.55, cuenta_contable: "FLETES", detalle: null }
+    const d = diferencias(fac, { fecha_emision: "2026-10-01", imp_total: "121.000,00", imp_neto_gravado: "99.173,55", cuenta_contable: "FLETES", detalle: "" })
+    const d2 = diferencias(fac, { imp_total: "120.000", cuenta_contable: "COMBUSTIBLE" })
+    const ahora = new Date("2026-10-29T12:00:00Z")
+    const vis = [estadoVisible({ estado: "habilitada", vence_at: "2026-10-29T10:00:00Z" }, ahora), estadoVisible({ estado: "habilitada", vence_at: null }, ahora), estadoVisible({ estado: "propuesta", vence_at: "2026-10-29T10:00:00Z" }, ahora)].join(",")
+    const v = `habilitables (Excel, Mis Comprobantes, arca-, sin origen): ${hab} · cambia sólo el total: ${JSON.stringify(d.cambios)} antes ${JSON.stringify(d.antes)} · cuenta: ${JSON.stringify(d2.cambios)} · estados: ${vis}`
+    chequear("Propuestas de cambio — factura", "Sólo se habilitan las cargadas por Excel; la propuesta guarda únicamente lo que cambió (montos es-AR comparados como número); una habilitación vencida se ve vencida, una propuesta no vence",
+      'habilitables (Excel, Mis Comprobantes, arca-, sin origen): sí,no,no,no · cambia sólo el total: {"imp_total":121000} antes {"imp_total":120000} · cuenta: {"cuenta_contable":"COMBUSTIBLE"} · estados: vencida,habilitada,propuesta', v,
+      v === 'habilitables (Excel, Mis Comprobantes, arca-, sin origen): sí,no,no,no · cambia sólo el total: {"imp_total":121000} antes {"imp_total":120000} · cuenta: {"cuenta_contable":"COMBUSTIBLE"} · estados: vencida,habilitada,propuesta', "A-FEAT-1400")
   }
 
   return r

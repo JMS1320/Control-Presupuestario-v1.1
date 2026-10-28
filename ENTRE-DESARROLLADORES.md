@@ -40,6 +40,19 @@
 
 ## 📨 PARA JAVIER
 
+### 🔓 Tabla nueva `public.propuestas_cambio` con RLS propia (2026-10-28) — ✅ APLICADA el 28/10 con OK de JMS (aviso previo): tabla, 3 políticas, índice único parcial, `anon` sin acceso
+- `scripts/123-propuestas-cambio.sql` (+ `-deshacer`). A-FEAT-1400 / A-DEC-1023-1024: JMS habilita a una persona (Ulises) sobre UNA factura; ella propone, JMS acepta. Nada se aplica a la factura antes del OK.
+- **RLS**: `admin_todo` (app_metadata.role = admin) · `persona_ve_las_suyas` (select, `persona = jwt email`) · `persona_propone` (update sólo si es suya, abierta y no vencida; no puede pasarla a aceptada). `anon` nada. Una sola abierta por registro (índice único parcial).
+- **Qué te puede tocar**: lee `auth.jwt() ->> 'email'` y `app_metadata.role`; si cambiás cómo viaja el rol o el mail en el JWT, avisá.
+
+### 📓 Tabla nueva `public.cuadernos` + página `/cuaderno` (2026-10-28) — ✅ APLICADA el 28/10 con OK de JMS (aviso previo): tabla con RLS por usuario, `anon` sin acceso
+- `scripts/124-cuadernos.sql` (+ `-deshacer`). A-FEAT-1410: cuaderno de trabajo PERSONAL (texto + tablas). RLS propia: cada usuario ve y escribe sólo los suyos (`usuario_id = auth.uid()`, default `auth.uid()`); `anon` nada. No pasa por `recurso_tablas` (no es un dato de la empresa).
+- **Ruta nueva** `/cuaderno` (protegida por el middleware como las demás) y un ítem «Cuaderno» en el menú de usuario (`barra-sesion.tsx`).
+
+### 🔒 Lotes «a confirmar»: 4 columnas en `productivo.lotes_agricolas` + 2 claves del rol `pruebas` (2026-10-28) — ✅ APLICADA el 28/10 con OK de JMS (aviso previo): 4 columnas, los 15 lotes quedaron confirmados, rol `pruebas` con las 2 claves cambiadas
+- `scripts/122-lotes-a-confirmar.sql` (+ `-deshacer`). A-FEAT-1408 / A-DEC-1024 (regla de JMS: todo lo que carga alguien que no es él queda pendiente de su OK): `a_confirmar` (default false), `creado_por`, `confirmado_por`, `confirmado_at`. Confirma sólo el admin (como las órdenes).
+- **Permisos**: en el rol `pruebas` se saca `productivo.lotes.nuevo` y se agrega `productivo.ordenes.nuevo-lote` (recurso nuevo: crear lote desde la orden). No se toca nada más del rol.
+
 ### 🌾 Sub-lotes y los lotes de cada orden agrícola: 1 columna en `productivo.lotes_agricolas` + tabla nueva `productivo.ordenes_agricolas_lotes` (2026-10-28) — ✅ APLICADA el 28/10 con OK de JMS (aviso previo): 1 columna, 1 tabla con RLS, 1 en recurso_tablas, 31 filas (17 órdenes, todas cierran)
 - `scripts/121-sublotes-y-lotes-de-orden.sql` (+ `-deshacer`). A-FEAT-1397: `lotes_agricolas.lote_padre_id` (un lote dentro de otro: ER1
   dentro de «Entre Rios 1, 2, 3») y `ordenes_agricolas_lotes` (cada lote de la orden con sus hectáreas; antes la orden guardaba sólo el

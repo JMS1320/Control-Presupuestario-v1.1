@@ -89,13 +89,13 @@ for (const { id: seccion, etiqueta } of SECCIONES) {
     }
     // Una `funcionalidad` (solapa dentro de una ventana) además tiene que PREGUNTAR su permiso: hasta
     // A-BUG-1335 las 10 existían como solapas y ninguna pantalla las consultaba — destildarlas no sacaba nada.
-    const pregunta = (src: string) => src.includes(`puedeVer('${r.id}')`) || src.includes(`puedeVer("${r.id}")`) || src.includes(`recurso="${r.id}"`)
+    const pregunta = (src: string) => src.includes(`puedeVer('${r.id}')`) || src.includes(`puedeVer("${r.id}")`) || src.includes(`recurso="${r.id}"`) || src.includes(`seMuestra('${r.id}')`) || src.includes(`seMuestra("${r.id}")`)
     if (r.tipo === "funcionalidad") return pestanasEnCodigo(r.archivo).includes(sub) && pregunta(readFileSync(r.archivo, "utf8"))
     if (r.archivo === archivo && r.tipo !== "accion") return enCodigo.has(sub)
     const src = readFileSync(r.archivo, "utf8")
     // Desde A-FEAT-1334 también vale `<Permisable recurso="<id>">`, que pregunta lo mismo y además
     // pone el candado del modo permisos.
-    if (r.tipo === "accion") return src.includes(`puedeVer('${r.id}')`) || src.includes(`puedeVer("${r.id}")`) || src.includes(`recurso="${r.id}"`)
+    if (r.tipo === "accion") return src.includes(`puedeVer('${r.id}')`) || src.includes(`puedeVer("${r.id}")`) || src.includes(`recurso="${r.id}"`) || src.includes(`seMuestra('${r.id}')`) || src.includes(`seMuestra("${r.id}")`)
     return pestanasEnCodigo(r.archivo).includes(sub)
   }
   const fantasmas = declarados.filter((r) => !existe(r)).map((r) => r.id.split(".").slice(1).join("."))
