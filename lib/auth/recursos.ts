@@ -214,6 +214,18 @@ export const RECURSOS: Recurso[] = [
   // ── Cash Flow ────────────────────────────────────────────────────────────────────────────
   { id: "cashflow.nuevo",      seccion: "cashflow", etiqueta: "Cargar anticipo",     tipo: "funcionalidad", archivo: CASHFLOW },
   { id: "cashflow.existentes", seccion: "cashflow", etiqueta: "Anticipos existentes", tipo: "funcionalidad", archivo: CASHFLOW },
+  // 🔘 A-BUG-1401: los botones de acción de Ingresos (Arrendamientos y Ventas MSA). Abiertos: prendidos; cerrados: apagados.
+  ...([
+    ["contrato-nuevo", "Arrendamientos → Nuevo contrato", "components/vista-arrendamientos.tsx"],
+    ["contrato-editar", "Arrendamientos → Editar / duplicar contrato", "components/vista-arrendamientos.tsx"],
+    ["contrato-baja", "Arrendamientos → Dar de baja un contrato", "components/vista-arrendamientos.tsx"],
+    ["fijar", "Arrendamientos → Fijar precio de una cuota (o editar la fijación)", "components/vista-arrendamientos.tsx"],
+    ["fijar-tc", "Arrendamientos → Fijar el TC", "components/vista-arrendamientos.tsx"],
+    ["venta-nueva", "Ventas MSA → Nueva venta", "components/vista-ventas-msa.tsx"],
+    ["venta-editar", "Ventas MSA → Editar venta", "components/vista-ventas-msa.tsx"],
+    ["venta-eliminar", "Ventas MSA → Eliminar venta", "components/vista-ventas-msa.tsx"],
+    ["liquidacion", "Ventas MSA → Liquidación de hacienda (armar / editar)", "components/vista-ventas-msa.tsx"],
+  ] as const).map(([k, e, archivo]): Recurso => ({ id: `ingresos.${k}`, seccion: "ingresos", etiqueta: e, tipo: "accion", archivo })),
   // 🔘 A-BUG-1401 (JMS 28/10: «todos los botones configurables por defecto»): los botones de acción del Cash Flow.
   //    En los roles abiertos vienen prendidos (no cambia nada); en los cerrados (pruebas) nacen apagados.
   ...([
