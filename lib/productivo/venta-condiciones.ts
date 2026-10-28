@@ -54,3 +54,21 @@ export function condicionesVenta(e: EntradaCondiciones) {
   const plazoTexto = dias != null ? `${Math.round(dias)} días` : null
   return { neto, netoDeDonde, alicuota, iva, total, fechaCobro, plazoTexto }
 }
+
+/**
+ * 💵 **Lo que ENTRA al banco por una venta de hacienda todavía sin liquidación** — A-FEAT-1403.
+ *
+ * Regla de JMS 2026-10-28: *«una venta de hacienda se cobra como el total del neto (gravado, no gravado o
+ * exento: lo que suma menos lo que resta, comisiones, etc.) más el IVA, menos las retenciones de la
+ * liquidación propia o hechas fuera»*.
+ * - Con la liquidación cargada, eso ya lo hace `cobroEsperado()` (total − retenciones − lo imputado aparte).
+ * - SIN liquidación, el Cash Flow cobraba sólo el neto. Ahora: neto pendiente × (1 + IVA). Las retenciones
+ *   todavía no se conocen (llegan con la liquidación): se dice, no se inventan.
+ * ⚠️ Lo ya facturado se descuenta EN NETO (el vínculo con la liquidación asigna el neto de la venta), por
+ *   eso el IVA se aplica después de restar, sobre el neto pendiente.
+ */
+export function cobroVentaSinLiquidacion(netoPendiente: number, alicuota: number | null | undefined) {
+  const a = alicuota != null && Number.isFinite(Number(alicuota)) ? Number(alicuota) : IVA_HACIENDA
+  const iva = Math.round(netoPendiente * a) / 100
+  return { neto: netoPendiente, alicuota: a, iva, cobro: Math.round((netoPendiente + iva) * 100) / 100 }
+}

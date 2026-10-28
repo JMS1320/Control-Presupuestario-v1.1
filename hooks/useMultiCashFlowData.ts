@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { cobroVentaSinLiquidacion } from "@/lib/productivo/venta-condiciones"
 import { cargarFuentesCobro } from "@/lib/ventas/detalle-cobro-db"
 import { lineasDeCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cobro"
 import { detalleCompleto, identificadorDeCuota } from "@/lib/templates/identificador-cuota"
@@ -726,7 +727,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
    * vincula, la venta deja de contar acá y pasa a verse como comprobante — si es
    * factura PARCIAL, sigue el remanente (monto − facturado).
    */
-  const mapearVentasSinFactura = (ventas: any[], tcs: TipoCambio[] = [], cuotasEnDolares: Set<string> = new Set()): CashFlowRow[] => {
+  const mapearVentasSinFactura = (ventas: any[], tcs: TipoCambio[] = [], cuotasEnDolares: Set<string> = new Set(), ivaPorVentaHacienda: Map<string, number | null> = new Map()): CashFlowRow[] => {
     return ventas.flatMap(v => {
       /**
        * 💵 A-FEAT-1393 — la venta (fijación) de una cuota que QUEDA EN DÓLARES no entra al banco en pesos:
@@ -764,6 +765,10 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       if (remanente <= 0.01) return []   // ya está toda facturada: la muestra la FC
 
       const parcial = facturado > 0
+      // 🐂 A-FEAT-1403 (regla de JMS 28/10): la venta de hacienda sin liquidación entra con su IVA
+      const hacienda = v.venta_tipo === 'ganaderia'
+      const cv = hacienda ? cobroVentaSinLiquidacion(remanente, ivaPorVentaHacienda.get(v.venta_id)) : null
+      const aCobrar = cv ? cv.cobro : remanente
       return [{
         id: v.venta_id,
         origen: 'VENTA' as const,
@@ -778,12 +783,13 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         nombre_proveedor: v.cliente_nombre || '',
         detalle: `Venta ${v.venta_tipo} ${v.centro_costo || ''} — ${Number(v.cantidad).toLocaleString('es-AR', { maximumFractionDigits: 2 })} ${v.unidad}`
           + (parcial ? ` (remanente sin facturar)` : ' (sin factura)')
-          + (imp.aviso ? ` — ${imp.aviso}` : (v.falta_tc ? ' ⚠ falta fijar TC' : '')),
+          + (imp.aviso ? ` — ${imp.aviso}` : (v.falta_tc ? ' ⚠ falta fijar TC' : ''))
+          + (cv ? ` · neto ${cv.neto.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} + IVA ${String(cv.alicuota).replace('.', ',')} % (retenciones: cuando llegue la liquidación)` : ''),
         debitos: 0,
-        creditos: remanente,       // Cobro = crédito
+        creditos: aCobrar,       // Cobro = crédito
         saldo_cta_cte: 0,
         estado: 'a cobrar',
-        imp_total: remanente,
+        imp_total: aCobrar,
         comprobante_display: null,
         estimada: imp.estimado,
       }]
@@ -1035,6 +1041,14 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         .select('*')
         .order('fecha_cobro', { ascending: true, nullsFirst: false })
       if (errorVSF) console.error('Error cargando ventas sin factura:', errorVSF)
+      // 🐂 A-FEAT-1403: el IVA de cada venta de hacienda (la vista no lo trae; se lee de la venta)
+      const idsHacienda = ((ventasSinFactura || []) as any[]).filter(v => v.venta_tipo === 'ganaderia').map(v => v.venta_id)
+      const ivaPorVentaHacienda = new Map<string, number | null>()
+      if (idsHacienda.length > 0) {
+        const { data: ivas, error: eIva } = await supabase.schema('productivo').from('stock_ventas').select('id, alicuota_iva').in('id', idsHacienda)
+        if (eIva) console.error('No se pudo leer el IVA de las ventas de hacienda (se usa 10,5 %):', eIva)
+        for (const r of (ivas || []) as any[]) ivaPorVentaHacienda.set(r.id, r.alicuota_iva != null ? Number(r.alicuota_iva) : null)
+      }
 
       // 5d. 🌾 A-FEAT-1328 — lo que hace falta para estimar los cobros de arrendamiento sin pesos:
       //     TC y precios de la base, y las cuotas sin fijar. Si algo no se puede leer, se sigue sin
@@ -1170,7 +1184,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const filasVentas = mapearVentas(ventasACobrar || [], imputadoPorComp, imputacionesPorComp)
       // 💵 A-FEAT-1393 — las cuotas que quedan en dólares (si la columna todavía no existe, ninguna).
       const cuotasEnDolares = new Set(((rCuotasArr.data ?? []) as Array<{ id: string; en_dolares?: boolean }>).filter(q => q.en_dolares).map(q => q.id))
-      const filasVentasSinFC = [...mapearVentasSinFactura(ventasSinFactura || [], tcsArr, cuotasEnDolares), ...mapearCuotasNoFijadas(noFijadas)]
+      const filasVentasSinFC = [...mapearVentasSinFactura(ventasSinFactura || [], tcsArr, cuotasEnDolares, ivaPorVentaHacienda), ...mapearCuotasNoFijadas(noFijadas)]
       // 📝 A-FEAT-1282 — un pago en VARIOS echeqs se proyecta echeq por echeq, cada uno en su fecha.
       // Echeqs sólo hay en MSA; se buscan los de las facturas y anticipos que están en 'echeq'.
       const idsEnEcheq = [...filasArca, ...filasAnticipos]

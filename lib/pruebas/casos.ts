@@ -82,7 +82,7 @@ import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPape
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
 import { pedirCampo, verPedidoCampo, tomarPedidoCampo } from "@/lib/productivo/pedido-campo"
-import { condicionesVenta } from "@/lib/productivo/venta-condiciones"
+import { condicionesVenta, cobroVentaSinLiquidacion } from "@/lib/productivo/venta-condiciones"
 import { dosisYTotal } from "@/lib/productivo/dosis-orden"
 import { pideFechaPagoAlCambiarEstado } from "@/lib/pagos/fecha-pago-fila"
 import { filtrosEnMemoria, hayQueTraerTodo, limiteParaCargar } from "@/lib/extracto/alcance-filtros"
@@ -9975,6 +9975,17 @@ export function correrCasos(): Resultado[] {
     chequear("Acceso de campo", "Un pedido de campo lo pueden mirar todas las solapas, lo consume sólo la orden de su tipo y después no queda nada (no se abre dos veces)",
       "las solapas ven: agricola · la ganadera no lo toma: true · la agrícola toma: x1 · queda: nada", v,
       v === "las solapas ven: agricola · la ganadera no lo toma: true · la agrícola toma: x1 · queda: nada", "A-FEAT-1409")
+  }
+
+  // ══ 💵 Cash Flow: la venta de hacienda sin liquidación entra con IVA (A-FEAT-1403, regla de JMS 28/10) ══
+  {
+    const a = cobroVentaSinLiquidacion(2400000, null)
+    const b = cobroVentaSinLiquidacion(1000000, 21)
+    const c = cobroVentaSinLiquidacion(400000, 10.5)   // neto pendiente después de una liquidación parcial (en neto)
+    const v = `sin alícuota: ${a.cobro} (IVA ${a.alicuota}) · 21%: ${b.cobro} · pendiente 400.000: ${c.cobro}`
+    chequear("Cash Flow — venta de hacienda", "Sin liquidación entra neto pendiente + IVA (10,5 si la venta no dice otro); el IVA va sobre lo que falta facturar, que se descuenta en neto",
+      "sin alícuota: 2652000 (IVA 10.5) · 21%: 1210000 · pendiente 400.000: 442000", v,
+      v === "sin alícuota: 2652000 (IVA 10.5) · 21%: 1210000 · pendiente 400.000: 442000", "A-FEAT-1403")
   }
 
   return r
