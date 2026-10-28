@@ -94,6 +94,39 @@ export function parsearTotalesXml(xml: string): TotalesPresentados {
   }
 }
 
+/**
+ * 🧾 Los totales de VENTAS del `libro_iva.xml` (A-FEAT-1388, «Diferencias vs ARCA»): el neto gravado y el débito
+ * liquidado a responsables inscriptos, y los exentos / no gravados (menos los de notas de crédito). Es el control
+ * «CSV de ventas vs XML de cada DDJJ». `otrosBloques`: cualquier OTRO bloque `totales_ventas_*` con importe — el
+ * armado a mano frenaba si aparecía uno (consumidor final, otros conceptos…); acá se devuelve para avisarlo.
+ */
+export interface TotalesVentasPresentados {
+  netoGravadoRI: number
+  debitoRI: number
+  exentoNoGravado: number
+  exentoNoGravadoNC: number
+  otrosBloques: string[]
+}
+
+export function parsearTotalesVentasXml(xml: string): TotalesVentasPresentados | null {
+  const v = xml.match(/<iva_ventas>[\s\S]*?<\/iva_ventas>/)?.[0]
+  if (!v) return null
+  const n = (s: string | null) => Number(s ?? 0) || 0
+  const ri = v.match(/<totales_ventas_ri>[\s\S]*?<\/totales_ventas_ri>/)?.[0] ?? ""
+  const otrosBloques: string[] = []
+  for (const m of v.matchAll(/<(totales_ventas_[a-z_]+)>([\s\S]*?)<\/\1>/g)) {
+    if (m[1] === "totales_ventas_ri") continue
+    if (n(etiqueta(m[2], "total_neto_gravado")) || n(etiqueta(m[2], "total_liquidado"))) otrosBloques.push(m[1])
+  }
+  return {
+    netoGravadoRI: n(etiqueta(ri, "total_neto_gravado")),
+    debitoRI: n(etiqueta(ri, "total_liquidado")),
+    exentoNoGravado: n(etiqueta(v, "total_ventas_importes_exentos_no_gravados_excepto_exportaciones")),
+    exentoNoGravadoNC: n(etiqueta(v, "total_ventas_importes_exentos_no_gravados_nc_excepto_exportaciones")),
+    otrosBloques,
+  }
+}
+
 /** `comprobantes_compras.csv`: separado por «;», decimales con coma, la primera fila es el encabezado. */
 export function parsearComprasCsv(csv: string): ComprobantePresentado[] {
   return parsearCsvLibro(csv, "compras")
@@ -272,6 +305,8 @@ export function compararSubdiarioConLibro(
 /** Lee el zip que exporta ARCA (en el navegador o en el servidor). */
 export async function leerZipLibroIva(datos: ArrayBuffer | Uint8Array): Promise<{
   totales: TotalesPresentados | null; compras: ComprobantePresentado[]; ventas: ComprobantePresentado[]
+  /** Los totales de ventas del XML (sólo los usa «Diferencias vs ARCA»). */
+  totalesVentas: TotalesVentasPresentados | null
 }> {
   const JSZip = (await import("jszip")).default
   const zip = await JSZip.loadAsync(datos)
@@ -282,9 +317,11 @@ export async function leerZipLibroIva(datos: ArrayBuffer | Uint8Array): Promise<
     const f = archivo(fin)
     return f ? new TextDecoder("latin1").decode(await f.async("uint8array")) : ""
   }
+  const xmlTexto = xml ? await xml.async("string") : null
   return {
-    totales: xml ? parsearTotalesXml(await xml.async("string")) : null,
+    totales: xmlTexto ? parsearTotalesXml(xmlTexto) : null,
     compras: parsearComprasCsv(await texto("comprobantes_compras.csv")),
     ventas: parsearVentasCsv(await texto("comprobantes_ventas.csv")),
+    totalesVentas: xmlTexto ? parsearTotalesVentasXml(xmlTexto) : null,
   }
 }

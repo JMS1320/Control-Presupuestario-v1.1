@@ -195,6 +195,11 @@ import {
   filasComprasConsensuado, filasVentasConsensuado, retencionesSufridas, agruparPorCuenta, nombresDeCuentaCompras,
   marcasSignoDistinto, armarLibroDiarioConsensuado, nombreArchivoConsensuado, LIBRO_DIARIO_CONSENSUADO,
 } from "@/lib/balance/libro-diario-consensuado"
+import {
+  clasificarCompra, validarZips, ventaArca, cruzarVentas, cruzarCompras, armarDiferenciasVsArca, emparejar as emparejarDif,
+  type ZipLibroIva, type Imp6,
+} from "@/lib/balance/diferencias-vs-arca"
+import { parsearTotalesVentasXml, type ComprobantePresentado } from "@/lib/subdiarios/libro-presentado"
 import { mesCompleto, mesActual, mesAnterior } from "@/lib/format/rango-fechas"
 import { cobroEsperado, diferenciaContraElBanco } from "@/lib/ventas/cobro-esperado"
 import { actualizarVivas, debeMontarse } from "@/lib/ui/pestanas-vivas"
@@ -10072,6 +10077,93 @@ export function correrCasos(): Resultado[] {
     chequear("Libro Diario consensuado", "Un solo libro con 5 solapas y la dif. como fórmula; el cuadro consensuado sale sólo en el ejercicio que lo tiene (MSA 25/26)",
       "Compras|Compras por cuenta|Ventas|Ventas por cuenta|Retenciones sufridas · V2 =U2-(O2+P2+Q2+S2+T2+R2) · Sistema MSA true / PAM false · Libro_Diario_MSA_25-26_2026-10-28.xlsx", v5,
       v5 === "Compras|Compras por cuenta|Ventas|Ventas por cuenta|Retenciones sufridas · V2 =U2-(O2+P2+Q2+S2+T2+R2) · Sistema MSA true / PAM false · Libro_Diario_MSA_25-26_2026-10-28.xlsx")
+  }
+
+  // ══ 🔍 Diferencias vs ARCA (los dos reportes armados a mano el 27/10/2026, desde los zips del libro IVA) ══
+  {
+    // Compras: los grupos salen de los importes, no de la denominación. Importes reales de 25/26.
+    const g = (arca: Imp6, app: Imp6, misma = true) => clasificarCompra(arca, app, misma, "Federación Patronal")?.grupo.slice(0, 2) ?? "-"
+    const signo = g([0, 0, 47198.41, 283.19, 0, 47481.60], [0, 0, -47198.41, -283.19, 0, -47481.60])
+    // Autopistas del Sol: ARCA repite el exento en otros (las partes superan el total en eso mismo).
+    const repetido = g([0, 0, 100.53, 100.53, 0, 100.53], [0, 0, 100.53, 0, 0, 100.53])
+    // Pan American: a la app le falta el impuesto en otros (neto + IVA no llegan al total).
+    const otros = g([90000, 0, 0, 19062.14, 18900, 127962.14], [90000, 0, 0, 0, 18900, 127962.14])
+    const centavos = g([1000, 0, 0, 10.01, 210, 1220.01], [1000, 0, 0, 10, 210, 1220.01], false)
+    const ident = g([1, 0, 0, 0, 0.21, 1.21], [1, 0, 0, 0, 0.21, 1.21], false)
+    const igual = g([1, 0, 0, 0, 0.21, 1.21], [1, 0, 0, 0, 0.21, 1.21], true)
+    const otroImporte = g([5000, 0, 0, 0, 1050, 6050], [4000, 0, 0, 0, 840, 4840])
+    const cent = clasificarCompra([1000, 0, 0, 10.01, 210, 1220.01], [1000, 0, 0, 10, 210, 1220.01], false)!
+    const v1 = `signo ${signo} · exento repetido ${repetido} · otros ${otros} · centavos ${centavos} · ident ${ident} · igual ${igual} · otro importe ${otroImporte} · ${clasificarCompra([0, 0, 1, 0, 0, 1], [0, 0, -1, 0, 0, -1], true, "Federación Patronal")!.grupo} · «${cent.quePasa}»`
+    const e1 = "signo 1. · exento repetido 3. · otros 2. · centavos 4. · ident 5. · igual - · otro importe 6. · 1. Se le cambió el signo (Federación Patronal) · «Redondeo de centavos entre ARCA y la app. Además cambia la identificación.»"
+    chequear("Diferencias vs ARCA", "Compras: signo (ARCA = −app), exento repetido en otros, otros que faltan, centavos, identificación y otro importe salen de los importes; el nombre del grupo de signo es constante del ejercicio",
+      e1, v1, v1 === e1, "A-FEAT-1388")
+
+    // Los zips: rectificativa (secuencia más alta), fuera del ejercicio y meses que faltan — nada en silencio.
+    const zip = (archivo: string, periodo: string | null, secuencia: number | null, compras: ComprobantePresentado[] = [], ventas: ComprobantePresentado[] = []): ZipLibroIva =>
+      ({ archivo, periodo, secuencia, compras, ventas, totalesVentas: null })
+    const ejD = armarEjercicio(2026, 6)
+    const vz = validarZips([zip("libro_iva_periodo_202507_original.zip", "202507", 1), zip("rect.zip", "202507", 2),
+      zip("libro_iva_periodo_202407_original.zip", "202407", 1), zip("sin.zip", null, null), zip("libro_iva_periodo_202508_original.zip", "202508", 1)], ejD)
+    const v2 = `usa 2025-07 de ${vz.porSubdiario.get("2025-07")?.archivo} · usados ${vz.porSubdiario.size} · faltan ${vz.faltan.length} (${vz.faltan[0]}…) · descartados ${vz.revisados.filter(r => !r.usado).length} · avisos ${vz.avisos.length} · ${vz.revisados.find(r => r.zip.archivo.startsWith("libro_iva_periodo_202507"))?.motivo}`
+    const e2 = "usa 2025-07 de rect.zip · usados 2 · faltan 10 (2025-09…) · descartados 3 · avisos 4 · Secuencia 1, reemplazada por la 2 (rect.zip): no se usa"
+    chequear("Diferencias vs ARCA", "Zips: mes repetido → la secuencia más alta (rectificativa); otro ejercicio y sin período → descartados; los meses sin zip se listan; cada cosa con su aviso",
+      e2, v2, v2 === e2, "A-FEAT-1388")
+
+    // Ventas: retenciones afuera del total de ARCA; la nota de débito con sólo total (Genta 180-11-77393) no entra en el cuadro.
+    const pres = (o: Partial<ComprobantePresentado>): ComprobantePresentado => ({ fecha: "2026-01-28", tipo: 180, puntoVenta: 11, numero: 75880,
+      cuit: "30526554562", denominacion: "PEDRO GENTA", total: 0, creditoFiscal: 0, netoGravado: 0, noGravado: 0, exento: 0, iva: 0, otrosTributos: 0, ...o })
+    const genta = pres({ netoGravado: 126441000, iva: 13276305, otrosTributos: -970830, total: 138746475 })
+    const nd = pres({ fecha: "2026-02-26", numero: 77393, total: -279174.47 })
+    const va = ventaArca(genta, "2026-01"), vnd = ventaArca(nd, "2026-02")
+    const ventaGenta = desdeVenta({ id: "g", año_contable: 2026, mes_contable: 1, fecha_liquidacion: "2026-01-28", tipo_comprobante: 60,
+      punto_venta: null, numero_desde: null, nro_comprobante: "11-75880", cuit_cliente: "30526554562", denominacion_cliente: "PEDRO GENTA",
+      imp_neto_gravado: 126441000, imp_neto_no_gravado: 0, imp_op_exentas: 0, iva: 13276305, imp_total: 139717305, ret_iibb: 970830, ddjj_iva: "No" })
+    const porSub = new Map<string, ZipLibroIva>([["2026-01", zip("a", "202601", 1, [], [genta])], ["2026-02", zip("b", "202602", 1, [], [nd])]])
+    const cv = cruzarVentas(filasVentasConsensuado([ventaGenta]), porSub, [], LIBRO_DIARIO_CONSENSUADO.MSA[2026])
+    const v3 = `total ARCA sin retenciones ${va.v[4]} (restado ${va.pagosACuenta}) · ND sólo total ${vnd.soloTotal} · ARCA en el cuadro ${cv.arca[4]} · grupos ${cv.filas.map(f => f.grupo.slice(0, 2)).join("")} · no entra: ${cv.noEntra.map(x => `${x.concepto} ${x.importe}`).join(" | ")} · ddjj ${cv.ddjjDistinta.length}`
+    const e3 = "total ARCA sin retenciones 139717305 (restado -970830) · ND sólo total true · ARCA en el cuadro 139717305 · grupos 3. · no entra: Nota de débito (sólo total) -279174.47 | Retenciones / pagos a cuenta -970830 · ddjj 1"
+    chequear("Diferencias vs ARCA", "Ventas: el total de ARCA va sin retenciones / pagos a cuenta; la nota de débito con sólo total no entra en el cuadro (se lista con las retenciones); la liquidación sin PV/número sale como identificación distinta",
+      e3, v3, v3 === e3, "A-FEAT-1388")
+    const porQue = cv.noEntra[0]?.porQue ?? ""
+    const porQueSinConstante = cruzarVentas([], porSub, [], undefined).noEntra[0]?.porQue
+    chequear("Diferencias vs ARCA", "Ventas: el «por qué» de Genta 77393 es constante del ejercicio MSA 25/26; sin constante, la app arma el suyo",
+      "…En la app está en compras (2026-04, Comisiones, en positivo). / Comprobante con sólo total (sin neto ni IVA): se obvia. No está en la app.", `${porQue} / ${porQueSinConstante}`,
+      porQue.endsWith("En la app está en compras (2026-04, Comisiones, en positivo).")
+      && porQueSinConstante === "Comprobante con sólo total (sin neto ni IVA): se obvia. No está en la app.", "A-FEAT-1388")
+
+    // El emparejamiento: por número + CUIT, por CUIT + total (la CEG de AFA con otro número) y lo que queda suelto.
+    type X = { tipo: string; pv: number; nro: number | null; cuit: string; total: number }
+    const id = (x: X) => x
+    const em = emparejarDif<X, X>(
+      [{ tipo: "81", pv: 12, nro: 44541, cuit: "1", total: 10 }, { tipo: "332", pv: 0, nro: 42191, cuit: "2", total: 99 }, { tipo: "1", pv: 1, nro: 5, cuit: "3", total: 7 }],
+      [{ tipo: "1", pv: 12, nro: 44541, cuit: "1", total: 10 }, { tipo: "332", pv: 0, nro: 22543744, cuit: "2", total: 99 }, { tipo: "1", pv: 9, nro: 9, cuit: "4", total: 1 }], id, id)
+    const v4 = `pares ${em.pares.map(p => `${p.a.nro}→${p.p.nro}`).join(",")} · sólo app ${em.soloApp.map(x => x.nro).join(",")} · sólo ARCA ${em.soloArca.map(x => x.nro).join(",")}`
+    chequear("Diferencias vs ARCA", "Emparejar: tipo distinto con mismo número + CUIT; otro número con mismo CUIT y total; lo que no aparece queda de un solo lado",
+      "pares 44541→44541,42191→22543744 · sólo app 5 · sólo ARCA 9", v4, v4 === "pares 44541→44541,42191→22543744 · sólo app 5 · sólo ARCA 9", "A-FEAT-1388")
+
+    // El libro entero: el total explicado cierra contra ARCA − app; el control contra el cuadro consensuado sólo si están los 12 meses.
+    const fac = desdeArca({ id: "f", año_contable: 2026, mes_contable: 1, fecha_emision: "2026-01-05", moneda: "PES", tipo_comprobante: 1, punto_venta: 1,
+      numero_desde: 670822, cuit: "33707366589", denominacion_emisor: "FEDERACION", imp_neto_gravado: 0, imp_neto_no_gravado: 0, imp_op_exentas: -47198.41,
+      otros_tributos: -283.19, iva: 0, imp_total: -47481.60, cuenta_contable: "SEGUROS", nro_cuenta: "422113" })
+    const pFac = pres({ fecha: "2026-01-05", tipo: 1, puntoVenta: 1, numero: 670822, cuit: "33707366589", exento: 47198.41, otrosTributos: 283.19, total: 47481.60 })
+    const libroD = armarLibroDiario([fac], [], ejD)
+    const p2 = (n: number) => String(n).padStart(2, "0")
+    const meses12 = ejD.subdiarios.map(s => zip(`libro_iva_periodo_${s.anio}${p2(s.mes)}_original.zip`, `${s.anio}${p2(s.mes)}`, 1,
+      s.anio === 2026 && s.mes === 1 ? [pFac] : []))
+    const d12 = armarDiferenciasVsArca(libroD, "MSA", meses12)
+    const d1 = armarDiferenciasVsArca(libroD, "MSA", meses12.slice(6, 7))
+    const cc = cruzarCompras(filasComprasConsensuado(libroD.compras), new Map([["2026-01", meses12[6]]]), LIBRO_DIARIO_CONSENSUADO.MSA[2026])
+    const v5 = `${d12.wb.SheetNames.join("|")} · explicado total ${d12.resumen.compras.explicado[5]} · control ${d12.resumen.compras.control.join(",")} · vs consensuado: 12 meses ${d12.resumen.compras.controlConsensuado ? "sí" : "no"} / 1 mes ${d1.resumen.compras.controlConsensuado ? "sí" : "no"} · aviso ${d12.resumen.avisos.some(a => a.includes("cuadro consensuado"))} · link ${cc.filas[0]?.link ? "sí" : "no"}`
+    const e5 = "Compras - Diferencias|Ventas - Diferencias|Zips de ARCA · explicado total 94963.2 · control 0,0,0,0,0,0 · vs consensuado: 12 meses sí / 1 mes no · aviso true · link sí"
+    chequear("Diferencias vs ARCA", "Un libro con 3 solapas; total explicado − (ARCA − app) da 0; con los 12 zips se controla lo leído contra la fila ARCA del cuadro consensuado (acá no da, y se avisa); el PDF de Federación va linkeado",
+      e5, v5, v5 === e5, "A-FEAT-1388")
+
+    // El XML de ventas: RI, exentos menos los de NC, y otro bloque con importe se avisa.
+    const xv = parsearTotalesVentasXml("<iva_ventas><total_ventas_importes_exentos_no_gravados_excepto_exportaciones>100.00</total_ventas_importes_exentos_no_gravados_excepto_exportaciones><total_ventas_importes_exentos_no_gravados_nc_excepto_exportaciones>10.00</total_ventas_importes_exentos_no_gravados_nc_excepto_exportaciones><totales_ventas_ri><total_neto_gravado>148328492.50</total_neto_gravado><total_liquidado>15574491.72</total_liquidado></totales_ventas_ri><totales_ventas_cons_fin_exento_no_alcanzado><total_neto_gravado>5.00</total_neto_gravado><total_liquidado>0.00</total_liquidado></totales_ventas_cons_fin_exento_no_alcanzado></iva_ventas>")
+    const v6 = `${xv?.netoGravadoRI} · ${xv?.debitoRI} · ${xv?.exentoNoGravado}-${xv?.exentoNoGravadoNC} · otros: ${xv?.otrosBloques.join(",")}`
+    chequear("Diferencias vs ARCA", "XML de ventas: neto y débito RI, exentos y los de NC; un bloque distinto de RI con importe se devuelve para avisar",
+      "148328492.5 · 15574491.72 · 100-10 · otros: totales_ventas_cons_fin_exento_no_alcanzado", v6,
+      v6 === "148328492.5 · 15574491.72 · 100-10 · otros: totales_ventas_cons_fin_exento_no_alcanzado", "A-FEAT-1388")
   }
 
   // ══ 📓 Cuaderno: fórmulas de las tablas (A-FEAT-1410, piloto) ══════════════════════════════════

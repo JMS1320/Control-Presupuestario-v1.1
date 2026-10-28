@@ -45,6 +45,7 @@ import { ivaConSigno, type DatosDeLosPapeles } from "@/lib/balance/balance-propi
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { descargarLibroDiario } from "@/lib/balance/export-libro-diario"
 import { descargarLibroDiarioConsensuado } from "@/lib/balance/libro-diario-consensuado"
+import { descargarDiferenciasVsArca } from "@/lib/balance/diferencias-vs-arca"
 import { traerTodo, lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
 import type { TipoCuenta } from "@/lib/presupuesto/templates"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
@@ -751,6 +752,24 @@ export function PapelesDeBalance() {
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               Bajar Libro Diario
             </Button>
+          )}
+          {/* 🔍 Diferencias vs ARCA: se eligen los zips del libro IVA (uno por mes) y se cruzan contra este libro. Sólo LEE. */}
+          {libro && (
+            <label className="inline-flex cursor-pointer items-center rounded-md border px-3 py-2 text-sm font-medium hover:bg-accent">
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Bajar Diferencias vs ARCA
+              <input type="file" accept=".zip" multiple className="hidden" onChange={e => {
+                const archivos = Array.from(e.target.files ?? [])
+                e.target.value = ""
+                if (!archivos.length) return
+                descargarDiferenciasVsArca(libro, empresa.id, archivos)
+                  .then(r => {
+                    for (const a of r.avisos) toast.warning(a, { duration: 15000 })
+                    toast.success(`Diferencias vs ARCA: ${r.zips.usados} zip(s) usados · compras ${r.compras.filas} diferencia(s) · ventas ${r.ventas.filas} fila(s). Detalle de los zips en la solapa «Zips de ARCA».`)
+                  })
+                  .catch(err => toast.error("No se pudo armar «Diferencias vs ARCA»: " + (err as Error).message))
+              }} />
+            </label>
           )}
         </div>
 
