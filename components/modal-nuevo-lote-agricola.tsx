@@ -24,11 +24,13 @@ export interface LoteAgricolaBasico {
   campo: string | null
   hectareas: number
   lote_padre_id?: string | null
+  /** A-FEAT-1408 (script 122): creado por alguien que no es admin, pendiente del OK */
+  a_confirmar?: boolean | null
 }
 
 const VACIO = { nombre_lote: "", campo: "", hectareas: "", observaciones: "", lote_padre_id: "" }
 
-export function ModalNuevoLoteAgricola({ open, onOpenChange, lotes, onCreado, padreSugerido }: {
+export function ModalNuevoLoteAgricola({ open, onOpenChange, lotes, onCreado, padreSugerido, aConfirmar, yo }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   /** los lotes existentes, para elegir el madre */
@@ -37,6 +39,10 @@ export function ModalNuevoLoteAgricola({ open, onOpenChange, lotes, onCreado, pa
   onCreado: (lote: LoteAgricolaBasico) => void
   /** madre preelegido (ej. el lote que estaba elegido en la fila de la orden) */
   padreSugerido?: string | null
+  /** A-DEC-1024: si quien crea no es admin, el lote nace «a confirmar» */
+  aConfirmar?: boolean
+  /** quién lo crea (queda escrito en el lote) */
+  yo?: string | null
 }) {
   const [nuevo, setNuevo] = useState(VACIO)
   const [guardando, setGuardando] = useState(false)
@@ -58,16 +64,18 @@ export function ModalNuevoLoteAgricola({ open, onOpenChange, lotes, onCreado, pa
     if (nuevo.campo) datos.campo = nuevo.campo
     if (nuevo.observaciones) datos.observaciones = nuevo.observaciones
     if (nuevo.lote_padre_id) datos.lote_padre_id = nuevo.lote_padre_id
+    datos.a_confirmar = !!aConfirmar
+    if (yo) datos.creado_por = yo
     setGuardando(true)
     const { data, error } = await supabase.schema("productivo").from("lotes_agricolas")
-      .insert(datos).select("id, nombre_lote, campo, hectareas, lote_padre_id").single()
+      .insert(datos).select("id, nombre_lote, campo, hectareas, lote_padre_id, a_confirmar").single()
     setGuardando(false)
     if (error || !data) {
       console.error("Error guardando lote:", error)
       toast.error(`Error al guardar lote${error ? `: ${error.message}` : ""}`)
       return
     }
-    toast.success(`Lote «${data.nombre_lote}» registrado`)
+    toast.success(aConfirmar ? `Lote «${data.nombre_lote}» creado: queda a confirmar por JMS (ya lo podés usar en la orden)` : `Lote «${data.nombre_lote}» registrado`)
     onCreado(data as LoteAgricolaBasico)
     onOpenChange(false)
   }
@@ -78,6 +86,7 @@ export function ModalNuevoLoteAgricola({ open, onOpenChange, lotes, onCreado, pa
         <DialogHeader>
           <DialogTitle>Nuevo Lote Agrícola</DialogTitle>
           <DialogDescription>El lote es una entidad física permanente. Los cultivos y campañas se registran en cada orden de aplicación.</DialogDescription>
+          {aConfirmar && <p className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-800">🔒 Queda <b>a confirmar</b>: lo podés usar en tu orden, y JMS lo confirma o lo rechaza.</p>}
         </DialogHeader>
         <div className="grid gap-3">
           <div>

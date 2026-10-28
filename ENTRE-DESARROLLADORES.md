@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 🔒 Lotes «a confirmar»: 4 columnas en `productivo.lotes_agricolas` + 2 claves del rol `pruebas` (2026-10-28) — aviso ANTES de aplicarla, con OK de JMS («avanzá con todos esos»)
+### 🔒 Lotes «a confirmar»: 4 columnas en `productivo.lotes_agricolas` + 2 claves del rol `pruebas` (2026-10-28) — ✅ APLICADA el 28/10 con OK de JMS (aviso previo): 4 columnas, los 15 lotes quedaron confirmados, rol `pruebas` con las 2 claves cambiadas
 - `scripts/122-lotes-a-confirmar.sql` (+ `-deshacer`). A-FEAT-1408 / A-DEC-1024 (regla de JMS: todo lo que carga alguien que no es él queda pendiente de su OK): `a_confirmar` (default false), `creado_por`, `confirmado_por`, `confirmado_at`. Confirma sólo el admin (como las órdenes).
 - **Permisos**: en el rol `pruebas` se saca `productivo.lotes.nuevo` y se agrega `productivo.ordenes.nuevo-lote` (recurso nuevo: crear lote desde la orden). No se toca nada más del rol.
 

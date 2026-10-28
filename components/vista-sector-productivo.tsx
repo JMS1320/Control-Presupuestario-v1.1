@@ -215,6 +215,9 @@ interface LoteAgricola {
   created_at: string
   /** A-FEAT-1397 (script 121): el lote madre que lo contiene (ER1 dentro de «Entre Rios 1, 2, 3») */
   lote_padre_id?: string | null
+  /** A-FEAT-1408 (script 122): creado por alguien que no es admin, pendiente del OK de JMS */
+  a_confirmar?: boolean | null
+  creado_por?: string | null
 }
 
 interface OrdenAgricola {
@@ -7620,7 +7623,7 @@ function SubTabOrdenesAgricolas() {
       setLaboresAgricolas(laboresData || [])
 
       const { data: lotesData } = await supabase.schema('productivo').from('lotes_agricolas')
-        .select('id, nombre_lote, hectareas, cultivo, campo, campana, fecha_siembra, fecha_cosecha_estimada, estado, observaciones, created_at, lote_padre_id')
+        .select('id, nombre_lote, hectareas, cultivo, campo, campana, fecha_siembra, fecha_cosecha_estimada, estado, observaciones, created_at, lote_padre_id, a_confirmar')
         .order('nombre_lote')
       setLotesDisponibles(lotesData || [])
     } catch (err) {
@@ -8108,7 +8111,7 @@ function SubTabOrdenesAgricolas() {
           <TestsDelProceso proceso="productivo/orden-agricola" pantalla="productivo" />
           {/* dentro del contenido de la orden: así un click en el lote no cierra la orden */}
           <ModalNuevoLoteAgricola open={nuevoLoteDesdeOrden} onOpenChange={setNuevoLoteDesdeOrden}
-            lotes={lotesDisponibles}
+            lotes={lotesDisponibles} aConfirmar={!permOrden.confirmar} yo={yo}
             padreSugerido={lotesOrden.find(r => r.lote_id)?.lote_id || null}
             onCreado={lote => {
               setLotesDisponibles(prev => [...prev, { ...lote, cultivo: '', campana: null, fecha_siembra: null, fecha_cosecha_estimada: null, estado: '', observaciones: null, created_at: new Date().toISOString() } as LoteAgricola])
@@ -8161,7 +8164,7 @@ function SubTabOrdenesAgricolas() {
                         <SelectItem value="__manual__">Sin lote / manual</SelectItem>
                         {arbolDisponibles.map(({ lote: l, nivel, medido }) => (
                           <SelectItem key={l.id} value={l.id}>
-                            {nivel > 0 ? `${'  '.repeat(nivel)}↳ ` : ''}{l.nombre_lote} ({l.hectareas} ha{medido !== null ? ` · medido ${medido}` : ''})
+                            {nivel > 0 ? `${'  '.repeat(nivel)}↳ ` : ''}{l.nombre_lote} ({l.hectareas} ha{medido !== null ? ` · medido ${medido}` : ''}){l.a_confirmar ? ' · a confirmar' : ''}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -8200,7 +8203,7 @@ function SubTabOrdenesAgricolas() {
                   <Plus className="mr-1 h-3 w-3" /> Agregar lote
                 </Button>
                 {!modoVer && (
-                  <Permisable recurso="productivo.lotes.nuevo"><Button variant="outline" size="sm" className="h-7 text-xs"
+                  <Permisable recurso="productivo.ordenes.nuevo-lote"><Button variant="outline" size="sm" className="h-7 text-xs"
                     title="Crear un lote nuevo (ej. un sub-lote medido) y usarlo en esta orden"
                     onClick={() => setNuevoLoteDesdeOrden(true)}>
                     <Plus className="mr-1 h-3 w-3" /> Nuevo lote
@@ -8531,6 +8534,28 @@ function TabLotesAgricolas() {
   const [lotes, setLotes] = useState<LoteAgricola[]>([])
   const [loading, setLoading] = useState(true)
   const [mostrarModalLote, setMostrarModalLote] = useState(false)
+  // 🔒 A-FEAT-1408: confirmar / rechazar los lotes creados en el campo (sólo admin, como las órdenes)
+  const esAdminLotes = useEsAdmin()
+  const [yoLotes, setYoLotes] = useState<string | null>(null)
+  useEffect(() => { supabase.auth.getUser().then(({ data }) => setYoLotes(etiquetaPersona(data.user))) }, [])
+  const confirmarLote = async (l: LoteAgricola) => {
+    const { error } = await supabase.schema('productivo').from('lotes_agricolas')
+      .update({ a_confirmar: false, confirmado_por: yoLotes, confirmado_at: new Date().toISOString() }).eq('id', l.id)
+    if (error) { toast.error(`No se pudo confirmar: ${error.message}`); return }
+    toast.success(`Lote «${l.nombre_lote}» confirmado`)
+    cargarDatos()
+  }
+  const rechazarLote = async (l: LoteAgricola) => {
+    // si ya lo usa una orden no se borra: se dice cuántas, para corregirlas primero
+    const { data: usos } = await supabase.schema('productivo').from('ordenes_agricolas_lotes').select('orden_id').eq('lote_id', l.id)
+    const n = new Set((usos || []).map((u: any) => u.orden_id)).size
+    if (n > 0) { toast.error(`«${l.nombre_lote}» lo usan ${n} orden(es): cambiá el lote en esas órdenes y después rechazalo.`); return }
+    if (!window.confirm(`¿Rechazar y borrar el lote «${l.nombre_lote}»?`)) return
+    const { error } = await supabase.schema('productivo').from('lotes_agricolas').delete().eq('id', l.id).eq('a_confirmar', true)
+    if (error) { toast.error(`No se pudo rechazar: ${error.message}`); return }
+    toast.success(`Lote «${l.nombre_lote}» rechazado`)
+    cargarDatos()
+  }
 
   const arbol = arbolLotes(lotes)
   // nota 🌙 28/10 «colapsable»: los sub-lotes se pliegan bajo su madre (arrancan plegados)
@@ -8622,6 +8647,14 @@ function TabLotesAgricolas() {
                     </button>)}
                   {nivel > 0 && <span className="text-muted-foreground mr-1">↳</span>}{l.nombre_lote}
                   {hijos > 0 && !abiertos.has(l.id) && <span className="ml-1 text-xs text-muted-foreground">({hijos} sub-lotes)</span>}
+                  {l.a_confirmar && (
+                    <span className="ml-2 inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-900">
+                      🔒 a confirmar{l.creado_por ? ` · creó ${l.creado_por}` : ''}
+                      {esAdminLotes && (<>
+                        <button type="button" className="ml-1 underline text-green-800" onClick={() => confirmarLote(l)}>Confirmar</button>
+                        <button type="button" className="underline text-red-700" onClick={() => rechazarLote(l)}>Rechazar</button>
+                      </>)}
+                    </span>)}
                 </TableCell>
                 <TableCell>{l.campo || '-'}</TableCell>
                 <TableCell className="text-right">
@@ -8645,7 +8678,7 @@ function TabLotesAgricolas() {
 
       {/* Modal Nuevo Lote — el mismo que usa la orden agrícola (A-FEAT-1397) */}
       <ModalNuevoLoteAgricola open={mostrarModalLote} onOpenChange={setMostrarModalLote}
-        lotes={lotes} onCreado={() => cargarDatos()} />
+        lotes={lotes} onCreado={() => cargarDatos()} aConfirmar={!esAdminLotes} yo={yoLotes} />
     </div>
   )
 }

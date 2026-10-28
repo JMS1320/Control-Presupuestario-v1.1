@@ -3323,6 +3323,9 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-10-28 · LOTES «A CONFIRMAR» — 4 columnas en `productivo.lotes_agricolas` + 2 claves del rol `pruebas` (script 122) — A-FEAT-1408 / A-DEC-1024 — ✅ CORRIDO 2026-10-28 con JMS (verificado con `explain update`)
+`a_confirmar boolean not null default false`, `creado_por`, `confirmado_por`, `confirmado_at`. En `public.roles` (`pruebas`): `- productivo.lotes.nuevo`, `+ productivo.ordenes.nuevo-lote`. Deshacer: `scripts/122-lotes-a-confirmar-deshacer.sql`.
+
 ### 2026-10-28 · SUB-LOTES y LOS LOTES DE CADA ORDEN AGRÍCOLA — `productivo.lotes_agricolas.lote_padre_id` + tabla `productivo.ordenes_agricolas_lotes` (script 121) — A-FEAT-1397 — ✅ CORRIDO 2026-10-28 con JMS (MCP en write con su OK): 31 filas, 17 órdenes, todas cierran; `explain update` OK
 `scripts/121-sublotes-y-lotes-de-orden.sql` (+ `-deshacer`): la columna (FK a sí misma, `on delete set null`, check ≠ id), la tabla
 (`orden_id` FK cascade, `lote_id` FK set null, `lote_nombre`, `hectareas`, `orden`), RLS por `puede_ver`/`puede_escribir`, 1 fila en
