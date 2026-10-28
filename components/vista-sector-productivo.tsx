@@ -993,7 +993,7 @@ export function VistaSectorProductivo() {
         </CardHeader>
         <CardContent>
           <TabsVivos maxVivas={2} value={tabActiva} onValueChange={setTabActiva}>
-            <TabsList className="grid w-full grid-cols-7">
+            <TabsList className="flex w-full justify-start overflow-x-auto sm:grid sm:grid-cols-7 [&>*]:shrink-0">
               <Permisable recurso="productivo.hacienda">
 <TabsTrigger value="hacienda" className="flex items-center gap-2">
                 <Beef className="h-4 w-4" />
@@ -3613,7 +3613,7 @@ function TabInsumos() {
   return (
     <div className="space-y-4 pt-4">
       <Tabs value={subTab} onValueChange={setSubTab}>
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="flex w-full justify-start overflow-x-auto sm:grid sm:grid-cols-3 [&>*]:shrink-0">
           <Permisable recurso="productivo.stock">
 <TabsTrigger value="stock" className="flex items-center gap-1 text-xs">
             <Package className="h-3.5 w-3.5" />
@@ -8012,7 +8012,7 @@ function SubTabOrdenesAgricolas() {
             }} />
           <fieldset disabled={modoVer} className="contents">
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label>Fecha *</Label>
                 <Input type="date" value={nuevaOrden.fecha}
@@ -8040,12 +8040,12 @@ function SubTabOrdenesAgricolas() {
               </div>
               <div className="space-y-2">
                 {lotesOrden.map((row) => (
-                  <div key={row.key} className="flex gap-2 items-center">
+                  <div key={row.key} className="flex flex-wrap sm:flex-nowrap gap-2 items-center">
                     <Select
                       value={row.lote_id || '__manual__'}
                       onValueChange={v => onLoteRowChange(row.key, v)}
                     >
-                      <SelectTrigger className="w-48 h-8 text-xs">
+                      <SelectTrigger className="w-full sm:w-48 h-9 sm:h-8 text-xs">
                         <SelectValue placeholder="Lote del sistema" />
                       </SelectTrigger>
                       <SelectContent position="popper" className="z-[9999]">
@@ -8143,7 +8143,8 @@ function SubTabOrdenesAgricolas() {
                   Sin insumos. Agregue al menos uno o seleccione una labor.
                 </p>
               ) : (
-                <Table>
+                <div className="overflow-x-auto -mx-1 px-1">
+                <Table className="min-w-[560px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[200px]">Insumo</TableHead>
@@ -8213,6 +8214,7 @@ function SubTabOrdenesAgricolas() {
                     })}
                   </TableBody>
                 </Table>
+                </div>
               )}
             </div>
           </div>
