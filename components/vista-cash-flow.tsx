@@ -38,6 +38,7 @@ import { registrarEnSicoreRetenciones } from "@/lib/sicore/registrar-retencion"
 import { baseDesdeRetencion } from "@/lib/sicore/base-desde-retencion"
 import { totalAnticipo } from "@/lib/pagos/total-anticipo"
 import { hayQuePreguntarFechaPago } from "@/lib/pagos/preguntar-fecha-pago"
+import { pideFechaPagoAlCambiarEstado } from "@/lib/pagos/fecha-pago-fila"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { ConfiguradorPreciosTC } from "@/components/configurador-precios-tc"
 import { calcularRetencion, baseTrasDescuento, destinoDeNotaDeCredito, retencionDelGrupo } from "@/lib/sicore/minimo"
@@ -305,6 +306,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [filasSeleccionadas, setFilasSeleccionadas] = useState<Set<string>>(new Set())
   // Paso 1 del lote: confirmar la FECHA DE PAGO. Va antes de SICORE porque la quincena sale de ahí.
   const [modalFechaPago, setModalFechaPago] = useState<{ open: boolean; fecha: string }>({ open: false, fecha: '' })
+  // 📅 A-BUG-1407 — pasar UNA fila a un estado de pago sin fecha de pago: se pide la fecha primero
+  const [fechaPagoFila, setFechaPagoFila] = useState<{ fila: CashFlowRow; nuevoEstado: string; fecha: string } | null>(null)
+  const estadoTrasFechaRef = useRef<string | null>(null)
   // Paso 2: qué hacer con las que califican para SICORE. Tres salidas, no dos (A-BUG-20).
   const [modalSicoreLote, setModalSicoreLote] = useState<{
     facturas: CashFlowRow[]
@@ -1141,12 +1145,45 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     setFilaParaCambioEstado(fila)
   }
 
+  // A-BUG-1407: con la fecha ya guardada, se retoma el cambio de estado por el camino normal
+  useEffect(() => {
+    if (!filaParaCambioEstado || !estadoTrasFechaRef.current) return
+    const e = estadoTrasFechaRef.current
+    estadoTrasFechaRef.current = null
+    void cambiarEstado(e)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filaParaCambioEstado])
+
+  const confirmarFechaPagoFila = async () => {
+    if (!fechaPagoFila?.fecha) return
+    const { fila, nuevoEstado, fecha } = fechaPagoFila
+    const ok = await actualizarRegistro(fila.id, 'fecha_pago', fecha, fila.origen)
+    if (!ok) { toast.error('No se pudo guardar la fecha de pago: el estado no se cambió.'); return }
+    setFechaPagoFila(null)
+    estadoTrasFechaRef.current = nuevoEstado
+    setFilaParaCambioEstado({ ...fila, fecha_pago: fecha })
+  }
+
   const cambiarEstado = async (nuevoEstado: string) => {
     if (!filaParaCambioEstado) return
     // 📝 A-FEAT-1282 — la fila de UN echeq de un pago en varios: el estado es el del pago, no del echeq.
     if (filaParaCambioEstado.origen_tabla === 'msa.cheques') {
       setFilaParaCambioEstado(null)
       toast.info('Es un echeq de un pago en varios: el estado se maneja desde la factura/anticipo (panel ECHEQs). Acá sólo cambia su fecha de cobro.')
+      return
+    }
+
+    /**
+     * 📅 **A-BUG-1407 — una fila que pasa a un estado de pago SIN fecha de pago: se pide primero.**
+     * Nota 🌙 de JMS 2026-10-28: *«la pasé a pagado y no me pidió fecha de pago; quedó sin fecha»*
+     * (Zavala Ortiz, $720.000). El cartel existía para el LOTE (A-FEAT-22) y en Templates (A-BUG-157),
+     * pero no para el cambio de UNA fila del Cash Flow. La decisión vive en `lib/pagos/fecha-pago-fila.ts`.
+     * Se guarda la fecha y recién después sigue el cambio de estado por el camino de siempre (SICORE
+     * incluido, que así ya calcula la quincena con la fecha real).
+     */
+    if (pideFechaPagoAlCambiarEstado(filaParaCambioEstado, nuevoEstado, esFilaMsa(filaParaCambioEstado))) {
+      setFechaPagoFila({ fila: filaParaCambioEstado, nuevoEstado, fecha: hoyArgentina() })
+      setFilaParaCambioEstado(null)
       return
     }
     
@@ -6669,6 +6706,32 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         items={modalExportarLote.items}
         userRole={userRole}
       />
+
+      {/* ── A-BUG-1407 · la fecha de pago de UNA fila que pasa a un estado de pago ── */}
+      <Dialog open={!!fechaPagoFila} onOpenChange={v => !v && setFechaPagoFila(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>¿Con qué fecha se pagó?</DialogTitle>
+          </DialogHeader>
+          {fechaPagoFila && (
+            <p className="text-sm text-gray-600">
+              <strong>{fechaPagoFila.fila.nombre_proveedor || fechaPagoFila.fila.detalle || 'Este registro'}</strong> pasa a{' '}
+              <strong>{ESTADOS_DISPONIBLES.find(e => e.value === fechaPagoFila.nuevoEstado)?.label ?? fechaPagoFila.nuevoEstado}</strong> y no tiene fecha de pago.
+            </p>)}
+          <div>
+            <Label className="text-xs">Fecha de pago</Label>
+            <Input type="date" className="mt-1" value={fechaPagoFila?.fecha ?? ''}
+              onChange={e => setFechaPagoFila(m => m ? { ...m, fecha: e.target.value } : m)} />
+            <p className="mt-1.5 text-[11px] leading-4 text-gray-500">
+              Viene propuesta la de <strong>hoy</strong>. La <strong>quincena de SICORE sale de esta fecha</strong>, así que conviene que sea la real.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 pt-1">
+            <Button disabled={!fechaPagoFila?.fecha} onClick={confirmarFechaPagoFila}>Guardar la fecha y cambiar el estado</Button>
+            <Button variant="ghost" className="text-gray-500" onClick={() => setFechaPagoFila(null)}>Cancelar — no tocar nada</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ── A-FEAT-22 · Paso 1 del lote: la fecha de pago ────────────────────
           Va ANTES de SICORE porque la quincena se calcula desde esta fecha. */}

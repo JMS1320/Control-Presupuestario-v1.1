@@ -81,6 +81,7 @@ import { importeDeVenta, cuotasNoFijadas, leyendaEnDolares } from "@/lib/arrenda
 import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPapel, moverPartida, clavePartida } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
+import { pideFechaPagoAlCambiarEstado } from "@/lib/pagos/fecha-pago-fila"
 import { filtrosEnMemoria, hayQueTraerTodo, limiteParaCargar } from "@/lib/extracto/alcance-filtros"
 import { ordenarYFiltrarFaltantes } from "@/lib/gas-pdf/orden-faltantes"
 import { resolverHaOrden } from "@/lib/productivo/hectareas-orden"
@@ -9910,6 +9911,24 @@ export function correrCasos(): Resultado[] {
     chequear("Extracto — filtros sobre la cuenta entera", "La contraparte vacía no cuenta como filtro; categ sí; con un filtro en memoria todo chip pide la cuenta entera y, si quedó recortada, se vuelve a traer",
       "sin filtros: respeta 200 · categ: trae todo · chip con búsqueda pide 5000 · tras chip (200 cargados con límite 200): recarga · ya entera (límite 5000, 1892): nada · cuenta chica (límite 200, 57): nada", v,
       v === "sin filtros: respeta 200 · categ: trae todo · chip con búsqueda pide 5000 · tras chip (200 cargados con límite 200): recarga · ya entera (límite 5000, 1892): nada · cuenta chica (límite 200, 57): nada", "A-BUG-1404")
+  }
+
+  // ══ 📅 Cash Flow: pasar UNA fila a pagado sin fecha de pago la pide (A-BUG-1407, Zavala Ortiz 28/10) ══
+  {
+    const zavala = { origen: "ARCA", estado: "pendiente", fecha_pago: null, debitos: 720000 }
+    const v = [
+      `Zavala a pagado: ${pideFechaPagoAlCambiarEstado(zavala, "pagado", true) ? "PIDE" : "no"}`,
+      `con fecha: ${pideFechaPagoAlCambiarEstado({ ...zavala, fecha_pago: "2026-10-28" }, "pagado", true) ? "PIDE" : "no"}`,
+      `cuota template: ${pideFechaPagoAlCambiarEstado({ ...zavala, origen: "TEMPLATE" }, "pagado", true) ? "PIDE" : "no"}`,
+      `cuota $0: ${pideFechaPagoAlCambiarEstado({ ...zavala, origen: "TEMPLATE", debitos: 0 }, "pagado", true) ? "PIDE" : "no"}`,
+      `a programado: ${pideFechaPagoAlCambiarEstado(zavala, "programado", true) ? "PIDE" : "no"}`,
+      `PAM a pagar: ${pideFechaPagoAlCambiarEstado(zavala, "pagar", false) ? "PIDE" : "no"}`,
+      `PAM a pagado: ${pideFechaPagoAlCambiarEstado(zavala, "pagado", false) ? "PIDE" : "no"}`,
+      `anticipo: ${pideFechaPagoAlCambiarEstado({ ...zavala, origen: "ANTICIPO" }, "pagado", true) ? "PIDE" : "no"}`,
+    ].join(" · ")
+    chequear("Cash Flow — fecha de pago de una fila", "Pide la fecha al pasar a un estado de pago si falta; no en $0, ni a programado, ni PAM/MA a pagar (sin SICORE), ni anticipos",
+      "Zavala a pagado: PIDE · con fecha: no · cuota template: PIDE · cuota $0: no · a programado: no · PAM a pagar: no · PAM a pagado: PIDE · anticipo: no", v,
+      v === "Zavala a pagado: PIDE · con fecha: no · cuota template: PIDE · cuota $0: no · a programado: no · PAM a pagar: no · PAM a pagado: PIDE · anticipo: no", "A-BUG-1407")
   }
 
   return r
