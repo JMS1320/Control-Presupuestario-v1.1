@@ -49,7 +49,7 @@ import {
   TOTALIZADORAS_BANCARIAS,
   type GastosBancarios, type FilaConceptoPorMes, type RetirosYAportes, type FondoComun,
 } from "./papeles-bancarios"
-import { ORDEN_TIPOS, NOMBRE_TIPO, SIN_AGRUPADORA, type TemplatesDelEjercicio, type CuotaTemplate, type TipoTemplate } from "./templates-libro"
+import { ORDEN_TIPOS, NOMBRE_TIPO, SIN_AGRUPADORA, partirEnImpuestosYOtros, type TemplatesDelEjercicio, type CuotaTemplate, type TipoTemplate } from "./templates-libro"
 import type { ValuacionHacienda, PrecioMag, PrecioMercado, PrecioCabeza } from "./hacienda-stock"
 import { resumenControlCuotas, conProblema, type ControlCuotasTemplates } from "./control-cuotas-templates"
 import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
@@ -117,6 +117,31 @@ export function hojaDeAsientos(asientos: AsientoLibroDiario[], descuadres?: Desc
     filas.push(d ? conEstilo(fila, ESTILO_ERROR) : fila)
   }
   return filas
+}
+
+/**
+ * ➕ JMS 29/10 (A-FEAT-1422 notas 1-2): «agregar totales para controles» en Compras y Ventas. Un renglón
+ * TOTAL al pie, separado por uno vacío (así el filtro no lo agarra), con **SUBTOTAL(9, …)**: suma sólo lo que
+ * queda a la vista cuando se filtra — filtrás un proveedor o un mes y el total es el de ese filtro.
+ */
+export function conTotalAlPie(filas: unknown[][]): unknown[][] {
+  if (filas.length < 2) return filas
+  const titulos = (filas[0] as unknown[]).map(String)
+  const SUMAN = ["Neto Gravado", "No Gravado", "Exentas", "Otros Tributos", "IVA", "Total", "Toneladas", "Cabezas", "Kilos"]
+  const n = filas.length          // la última fila de datos, en la numeración de Excel (encabezado = 1)
+  const total: unknown[] = titulos.map(() => "")
+  total[0] = "TOTAL"
+  titulos.forEach((t, c) => {
+    if (!SUMAN.includes(t)) return
+    const col = XLSX.utils.encode_col(c)
+    const suma = filas.slice(1).reduce((s: number, f) => {
+      const v = (f as unknown[])[c]
+      const x = v && typeof v === "object" && "v" in (v as object) ? (v as { v: unknown }).v : v
+      return s + (typeof x === "number" ? x : 0)
+    }, 0)
+    total[c] = conFormula(`SUBTOTAL(9,${col}2:${col}${n})`, money(suma), t === "Toneladas" || t === "Kilos" || t === "Cabezas" ? "#,##0.00" : MONEDA)
+  })
+  return [...filas, [], total]
 }
 
 /**
@@ -1375,6 +1400,26 @@ export function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierr
       f.push(["CONTROL: saldo final del detalle − SALDO AL CIERRE de arriba (tiene que dar 0)", "", "", "", "",
         conFormula(`F${nUltima}-C${nSaldo}`, dif), Math.abs(dif) < 0.01 ? "cuadra" : "NO CUADRA"])
     }
+
+    // 🚗 A-FEAT-1422 nota 9 (JMS 29/10): el desglose de la FLOTA, tabla aparte.
+    const rf = a.repartoFlota
+    if (rf && rf.filas.length) {
+      f.push([])
+      f.push([`DESGLOSE DE LA FLOTA — cada débito del ejercicio repartido por vehículo (prima de cada uno)`])
+      f.push(["Lo que no es de MSA lo pagó MSA por otro: va a su cuenta corriente / Distribuciones. El responsable de cada vehículo se edita en Egresos → Seguros."])
+      f.push(["Fecha débito", "Póliza", "Vencimiento", "Debitado", ...rf.responsables, "Control"])
+      const n0 = f.length + 1
+      rf.filas.forEach((x, i) => {
+        const fila = n0 + i
+        const ultimaParte = XLSX.utils.encode_col(3 + rf.responsables.length)
+        f.push([x.fecha, x.poliza, x.vencimiento, money(x.debitado), ...rf.responsables.map(r => money(x.partes[r] ?? 0)),
+          conFormula(`D${fila}-SUM(E${fila}:${ultimaParte}${fila})`, 0)])
+      })
+      const nf = n0 + rf.filas.length - 1
+      f.push(["TOTAL", "", "", conFormula(`SUM(D${n0}:D${nf})`, rf.total),
+        ...rf.responsables.map((r, i) => { const col = XLSX.utils.encode_col(4 + i); return conFormula(`SUM(${col}${n0}:${col}${nf})`, rf.totales[r] ?? 0) })])
+      if (rf.sinReparto) f.push([`⚠️ ${money(rf.sinReparto)} de débitos sin vehículos leídos en su póliza: van enteros a MSA.`])
+    }
   }
 
   // ── El detalle de cada cuenta ────────────────────────────────────────────────────────
@@ -1960,7 +2005,7 @@ export function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
   f.push(["un template no tiene factura de ARCA, asi que no tiene subdiario."])
   if ((t.enFacturas ?? []).length > 0) {
     f.push([`No estan los SEGUROS CON POLIZA (${t.enFacturas.length} cuotas, ${money(t.totalEnFacturas)}): ya son gasto por la factura`])
-    f.push(["de la aseguradora y estan en su cuenta corriente (papel 14). Su detalle, al final de la solapa Templates."])
+    f.push(["de la aseguradora y estan en su cuenta corriente (papel 14). Su detalle, al final de la solapa de detalle (Impuestos u Otros)."])
   }
   f.push(["."])
 
@@ -2038,7 +2083,7 @@ export function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
    * camino inverso — si el saldado perdió una cuota por el camino, esto no da.
    */
   f.push([])
-  f.push(["CONTROL", "Total debitos (solapa Templates)", money(t.totalDebitos)])
+  f.push(["CONTROL", "Total debitos (solapa de detalle: Impuestos u Otros)", money(t.totalDebitos)])
   f.push(["", "Total creditos", money(t.totalCreditos)])
   f.push(["", "= Saldo", money(t.totalDebitos - t.totalCreditos)])
   const nC = f.length + 1
@@ -2410,8 +2455,8 @@ export function armarWorkbook(
   // 📅 Los 12 meses en una línea cada uno, pegado al Control: es otro control (contra lo presentado a ARCA).
   hoja(wb, "Resumen 12 meses", hojaResumenMensual(libro), COLS_RESUMEN_MENSUAL)
   // 🛑 A-FEAT-1388: los comprobantes cuyas partes no suman su total, en rojo y con la marca (los mismos del Control).
-  hoja(wb, "Compras", hojaDeAsientos(libro.compras, libro.controles.compras.descuadres), COLS_ASIENTOS)
-  hoja(wb, "Ventas", hojaDeAsientos(libro.ventas, libro.controles.ventas.descuadres), COLS_VENTAS)
+  hoja(wb, "Compras", conTotalAlPie(hojaDeAsientos(libro.compras, libro.controles.compras.descuadres)), COLS_ASIENTOS)
+  hoja(wb, "Ventas", conTotalAlPie(hojaDeAsientos(libro.ventas, libro.controles.ventas.descuadres)), COLS_VENTAS)
   // 📗 La apertura por cuenta contable — el formato que el usuario ya usaba (A-FEAT-1187).
   //    Van pegadas a su listado: primero el detalle, después el resumen que se le manda al contador.
   hoja(wb, "Compras por cuenta", hojaPorCuenta(armarLibroPorCuenta(libro.compras),
@@ -2479,9 +2524,18 @@ export function armarWorkbook(
       COLS_CUENTAS_CORRIENTES)
   }
   if (templates) {
-    hoja(wb, "Templates", hojaDeTemplates(templates), COLS_TEMPLATES)
-    hoja(wb, "Templates por mes", hojaTemplatesPorMes(templates),
-      COLS_TEMPLATES_POR_MES(templates.columnas.length))
+    // 🧾 JMS 29/10 (A-FEAT-1422 nota 10): en dos solapas, «Impuestos» y «Otros», cada una con su «por mes».
+    const partes = partirEnImpuestosYOtros(templates)
+    if (partes) {
+      for (const [nombre, t] of [["Impuestos", partes.impuestos], ["Otros", partes.otros]] as const) {
+        hoja(wb, nombre, hojaDeTemplates(t), COLS_TEMPLATES)
+        hoja(wb, `${nombre} por mes`, hojaTemplatesPorMes(t), COLS_TEMPLATES_POR_MES(t.columnas.length))
+      }
+    } else {
+      hoja(wb, "Templates", hojaDeTemplates(templates), COLS_TEMPLATES)
+      hoja(wb, "Templates por mes", hojaTemplatesPorMes(templates),
+        COLS_TEMPLATES_POR_MES(templates.columnas.length))
+    }
   }
   // 🔢 Pegado a los templates: es su control de cantidad (el de las facturas fijas va en «Control»).
   if (controlCuotas) hoja(wb, "Control cuotas templates", hojaControlCuotas(controlCuotas), COLS_CONTROL_CUOTAS)

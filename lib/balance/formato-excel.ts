@@ -245,7 +245,23 @@ export function presentarHoja(ws: XLSX.WorkSheet): Vista {
           alignment: { wrapText: true, vertical: "center", horizontal: "center" },
         })
       }
-      if (vista.congelarFilas === undefined && f - r.s.r < 15) vista.congelarFilas = f - r.s.r + 1
+      if (vista.congelarFilas === undefined && f - r.s.r < 15) {
+        vista.congelarFilas = f - r.s.r + 1
+        // 🔎 JMS 29/10 (A-FEAT-1422 notas 3-4): «todas las planillas largas de datos deben venir con los filtros y
+        // todo preparado para auditar fácil». Filtro desde el encabezado hasta el primer renglón vacío.
+        // Cruza un renglón vacío si abajo sigue la misma tabla (los meses de «por cuenta» van separados así), pero
+        // frena en el TOTAL del pie: el total no se filtra.
+        const esPie = (g: number) => { const t = llenas(g).find(x => x.t === "s"); return !!t && /^(=\s*)?total\b/i.test(String(t.v).trim()) && !String(llenas(g)[0]?.v ?? "").match(/^\d{4}$/) }
+        let fin = f
+        while (fin + 1 <= r.e.r) {
+          if (llenas(fin + 1).length > 0) { fin++; continue }
+          if (fin + 2 <= r.e.r && llenas(fin + 2).length >= 3 && !esPie(fin + 2)) { fin += 2; continue }
+          break
+        }
+        if (fin - f >= 10) {
+          ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: f, c: r.s.c }, e: { r: fin, c: ultimaCol(f) } }) }
+        }
+      }
       continue
     }
 
@@ -322,13 +338,18 @@ export function colorDeSolapa(nombre: string): string {
 export async function aplicarVistas(datos: Uint8Array | ArrayBuffer, vistas: Vista[]): Promise<Uint8Array> {
   const { default: JSZip } = await import("jszip")
   const zip = await JSZip.loadAsync(datos)
-  for (let i = 0; i < vistas.length; i++) {
-    const v = vistas[i]
-    if (!v || (!v.congelarFilas && !v.sinCuadricula && !v.colorSolapa)) continue
-    const ruta = `xl/worksheets/sheet${i + 1}.xml`
+  const hojas = Object.keys(zip.files).filter(r => /^xl\/worksheets\/sheet\d+\.xml$/.test(r))
+  for (const ruta of hojas) {
+    const i = Number(ruta.match(/sheet(\d+)\.xml$/)![1]) - 1
+    const v = vistas[i] ?? {}
     const f = zip.file(ruta)
     if (!f) continue
-    let xml = await f.async("string")
+    /**
+     * 🔤 JMS 29/10 (A-FEAT-1422 nota 6-7): «no se llega a leer el título». Las franjas de color se hacen con
+     * celdas en "" — y Excel NO deja que un texto largo desborde sobre una celda que tiene un texto, aunque sea
+     * vacío. Se escriben como celdas SIN valor (conservan el color, dejan desbordar).
+     */
+    let xml = (await f.async("string")).replace(/<c r="([A-Z]+\d+)"( s="\d+")? t="str"><v><\/v><\/c>/g, '<c r="$1"$2/>')
     if (v.congelarFilas || v.sinCuadricula) {
       const atrib = v.sinCuadricula ? ' showGridLines="0"' : ""
       const pane = v.congelarFilas

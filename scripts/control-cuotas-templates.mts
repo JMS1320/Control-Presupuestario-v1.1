@@ -54,7 +54,7 @@ async function todas<T>(q: (d: number, h: number) => PromiseLike<{ data: unknown
 }
 
 const crudas = await todas<Record<string, any>>((d, h) => sb.from("cuotas_egresos_sin_factura")
-  .select("id, egreso_id, estado, monto, fecha_vencimiento, fecha_estimada, fecha_pago, detalle, egreso:egresos_sin_factura(nombre_referencia, responsable)")
+  .select("id, egreso_id, estado, monto, fecha_vencimiento, fecha_estimada, fecha_pago, detalle, grupo_pago_id, egreso:egresos_sin_factura(nombre_referencia, responsable)")
   .order("id").range(d, h))
 const cuotas: CuotaParaControl[] = crudas.map(cuotaParaControlDesde)
 

@@ -132,6 +132,8 @@ export interface CuotaTemplate {
   tipo?: TipoTemplate
   /** El template del que sale la cuota (`egreso_id`). Hace falta para saber si es de una póliza. */
   egresoId?: string
+  /** La agrupadora del TEMPLATE («Impuestos General», «Gastos Bancarios»…), no la del plan. Ver `esImpuesto`. */
+  agrupadoraTemplate?: string
 }
 
 export interface FilaPorMes {
@@ -209,6 +211,8 @@ export interface TemplatesDelEjercicio {
    */
   enFacturas: CuotaTemplate[]
   totalEnFacturas: number
+  /** Con qué se armó (para partirlo en Impuestos / Otros sin volver a leer). */
+  entrada?: { cuotas: CuotaTemplate[]; ej: Ejercicio; opciones: OpcionesTemplates }
 }
 
 /** Donde van las categorías que no están en el plan de cuentas. */
@@ -271,6 +275,7 @@ export function desdeCuota(f: Record<string, unknown>, tipoDeCateg?: Record<stri
     responsable: s(e.responsable),
     estado: s(f.estado),
     monto: entro ? -n(f.monto) : n(f.monto),
+    agrupadoraTemplate: s(e.cuenta_agrupadora) || undefined,
   }
 }
 
@@ -406,5 +411,31 @@ export function armarTemplatesDelEjercicio(
     impagasAlCierre, totalImpagas: redondear(impagasAlCierre.reduce((x, c) => x + c.monto, 0)),
     porTipo,
     enFacturas, totalEnFacturas: redondear(enFacturas.reduce((x, c) => x + c.monto, 0)),
+    entrada: { cuotas, ej, opciones },
+  }
+}
+
+/**
+ * 🧾 ¿Es un IMPUESTO? JMS 29/10 (A-FEAT-1422 nota 10): *«las pestañas que se llamen impuestos y otros»*.
+ * Manda la agrupadora del template: todas las «Impuestos …» (General, Rurales, Urbanos, Automotores, Buenos Aires,
+ * Bancarios); sin agrupadora, la categoría («Impuesto IIBB», «Impuestos Laborales ARCA»). Todo lo demás —gastos
+ * bancarios, inversiones, retiros, fijos, seguros, tarjetas— va a «Otros».
+ */
+export function esImpuesto(c: CuotaTemplate): boolean {
+  const ag = (c.agrupadoraTemplate ?? "").trim().toLowerCase()
+  if (ag) return ag.startsWith("impuesto")
+  return /^impuesto/i.test(c.categ.trim())
+}
+
+/**
+ * Parte el ejercicio en IMPUESTOS y OTROS: las mismas cuotas, el mismo armado, en dos. **Control**: los dos totales
+ * suman el del ejercicio entero. `null` si el armado no guardó su entrada.
+ */
+export function partirEnImpuestosYOtros(t: TemplatesDelEjercicio): { impuestos: TemplatesDelEjercicio; otros: TemplatesDelEjercicio } | null {
+  if (!t.entrada) return null
+  const { cuotas, ej, opciones } = t.entrada
+  return {
+    impuestos: armarTemplatesDelEjercicio(cuotas.filter(esImpuesto), ej, opciones),
+    otros: armarTemplatesDelEjercicio(cuotas.filter(c => !esImpuesto(c)), ej, opciones),
   }
 }

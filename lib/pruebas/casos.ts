@@ -184,7 +184,8 @@ import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiarios
 import { PRESENTADO_ARCA_COMPRAS, compararConPresentado } from "@/lib/balance/presentado-arca"
 import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/balance/facturas-fijas"
 import { controlarCuotasTemplates, campaniaDelControl, claveDeNombre, CONTROL_CUOTAS_TEMPLATES, type CuotaParaControl, type TemplateControlado, type EntradaControlCuotas } from "@/lib/balance/control-cuotas-templates"
-import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA } from "@/lib/balance/templates-libro"
+import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuestosYOtros } from "@/lib/balance/templates-libro"
+import { repartoDeLaFlota } from "@/lib/balance/reparto-flota"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
 import { pesosAlCierre, pesoParaValuar } from "@/lib/balance/pesos-hacienda"
@@ -278,7 +279,7 @@ import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
-import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas, hojaPorCuenta, hojaResumenMensual, hojaDeAsientos } from "@/lib/balance/export-libro-diario"
+import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas, hojaPorCuenta, hojaResumenMensual, hojaDeAsientos, conTotalAlPie } from "@/lib/balance/export-libro-diario"
 import type { LibroDiario as LibroDiarioT } from "@/lib/balance/libro-diario"
 import { juntarTandas, lecturaIncompleta, juntarHasta, mensajeLecturaIncompleta } from "@/lib/supabase-paginado"
 import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
@@ -9590,6 +9591,41 @@ export function correrCasos(): Resultado[] {
     const esperado2938 = "inmoviliza 4 · sección a lo ancho · nota en itálica · ítem con sangría = nota · TOTAL en B, banda desde A · total y subtotal en dos tonos"
     chequear("Balance", "Excel: secciones en banda, notas en itálica, totales en cualquier columna (dos tonos) y el encabezado queda inmovilizado",
       esperado2938, v2938, v2938 === esperado2938, "A-FEAT-1417")
+    // 🔎 A-FEAT-1422 (notas 1-4 de JMS): filtro en las tablas largas (cruzando el renglón vacío entre meses, sin el
+    // TOTAL del pie) y TOTAL al pie de Compras/Ventas con SUBTOTAL (suma lo filtrado).
+    const largas: unknown[][] = [["Año", "Mes", "Cuenta", "Total"],
+      ...Array.from({ length: 6 }, (_, i) => [2025, 7, `c${i}`, 10]), [],
+      ...Array.from({ length: 6 }, (_, i) => [2025, 8, `c${i}`, 10]), [], ["", "", "TOTAL DEL EJERCICIO", 120]]
+    const ws3 = XLSXcasos.utils.aoa_to_sheet(largas)
+    presentarHoja(ws3)
+    const pie = conTotalAlPie([["Subdiario", "Total"], ["2025-07", 100], ["2025-08", 50]])
+    const tot = pie[4] as unknown[]
+    const v1422 = `filtro ${(ws3["!autofilter"] as { ref?: string } | undefined)?.ref} · pie ${tot[0]} ${(tot[1] as { f?: string }).f} = ${(tot[1] as { v?: number }).v}`
+    chequear("Balance", "Excel: filtro en las tablas largas (cruza el renglón vacío entre meses, no agarra el TOTAL del pie) y TOTAL al pie con SUBTOTAL",
+      "filtro A1:D14 · pie TOTAL SUBTOTAL(9,B2:B3) = 150", v1422, v1422 === "filtro A1:D14 · pie TOTAL SUBTOTAL(9,B2:B3) = 150", "A-FEAT-1422")
+    // 🧾 Nota 10: Templates en dos — Impuestos y Otros — y entre los dos dan el total del ejercicio.
+    const ejT = armarEjercicio(2026, 6)
+    const cq = (id: string, ag: string, categ: string, monto: number) =>
+      ({ id, fecha: "2025-08-10", concepto: id, proveedor: "", categ, cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable: "MSA", estado: "pagado", monto, agrupadoraTemplate: ag })
+    const todoT = armarTemplatesDelEjercicio([cq("abl", "Impuestos Urbanos", "ABL", 100), cq("deb", "Impuestos Bancarios", "Debitos / Creditos", 30),
+      cq("com", "Gastos Bancarios", "Comision Cuenta Bancaria", 50), cq("iibb", "", "Impuesto IIBB", 20)], ejT)
+    const pt = partirEnImpuestosYOtros(todoT)!
+    const v10 = `imp ${pt.impuestos.detalle.map(c => c.id).join(",")} = ${pt.impuestos.totalDebitos} · otros ${pt.otros.detalle.map(c => c.id).join(",")} = ${pt.otros.totalDebitos} · todo ${todoT.totalDebitos}`
+    chequear("Balance", "Templates en dos solapas (nota 10): Impuestos por la agrupadora del template (o la categoría si no tiene) y Otros; suman el total",
+      "imp abl,deb,iibb = 150 · otros com = 50 · todo 200", v10, v10 === "imp abl,deb,iibb = 150 · otros com = 50 · todo 200", "A-FEAT-1422")
+    // 🚗 Nota 9: el desglose de la flota — cada débito repartido por la prima de cada vehículo y su responsable.
+    const lect = { poliza: "F", endoso: 0, personas: [], cuotasEndoso: [{ vencimiento: "2025-08-01", importe: 400 }],
+      vehiculos: [{ patente: "AAA111", prima: 300, certificado: 1 }, { patente: "BBB222", prima: 100, certificado: 2 }] }
+    const rfT = repartoDeLaFlota(
+      [{ poliza: "F", vencimiento: "2025-08-01", importe: 400, esperadoEnBanco: 400, resultado: "ok", movimientoId: "m1", debitado: 400 },
+        { poliza: "F", vencimiento: "2026-08-01", importe: 400, esperadoEnBanco: 400, resultado: "ok", movimientoId: "m2", debitado: 400 }],
+      [{ id: "m1", fecha: "2025-08-04" }, { id: "m2", fecha: "2026-08-04" }],
+      // La NC (endoso con cuota negativa) no entra a la proporción: el débito ya viene neto y se reparte 3 a 1 igual.
+      new Map([["F", [lect as never, { poliza: "F", endoso: 1, personas: [], vehiculos: [], cuotasEndoso: [{ vencimiento: "2025-08-01", importe: -40 }] } as never]]]),
+      [{ patente: "BBB222", contable: "MSA", interno: "MA", motivo: "" }], "2025-07-01", "2026-06-30")
+    const v9 = `${rfT.filas.length} débito · ${rfT.responsables.map(r => `${r} ${rfT.totales[r]}`).join(" · ")} · total ${rfT.total}`
+    chequear("Balance", "🚗 Desglose de la flota (nota 9): cada débito del ejercicio repartido por la prima de cada vehículo; el de fuera del ejercicio no entra",
+      "1 débito · MSA 300 · MA 100 · total 400", v9, v9 === "1 débito · MSA 300 · MA 100 · total 400", "A-FEAT-1422")
   }
 
   // ══ 📄 RESUMEN PDF DE CAJA DE AHORRO → FORMATO DEL EXCEL (A-FEAT-1352) ═══════════════════════
@@ -10337,6 +10373,19 @@ export function correrCasos(): Resultado[] {
     chequear(G, "🛡️ Desde que existe: 12 por año desde feb-26 → 5 en la campaña; 🏦 las comisiones de la tarjeta no cuentan como de la cuenta",
       "ok: 5 de 5 · existe desde feb-26 | ok: 12 de 12 · 2 de «tarjeta» no cuentan", v1415,
       v1415 === "ok: 5 de 5 · existe desde feb-26 | ok: 12 de 12 · 2 de «tarjeta» no cuentan", "A-FEAT-1415")
+    // 👀 Nota 11 (A-FEAT-1422): el anual CONCILIADO en $0 cuenta como pago anual (Tiguan 2026); se muestra el par; y las
+    // cuotas pagadas juntas (mismo grupo de pago) se señalan.
+    const [fPar] = correr([cfg("Imp Automotores Tiguan 2012", { tipo: "fijo", esperado: 12 })], [
+      ...mensual("Imp Automotores Tiguan 2012 Cuota", msa.slice(0, 6)),
+      cu("Imp Automotores Tiguan 2012 Anual", "2026-01-05", 0, { estado: "conciliado" }),
+      cu("Imp Automotores Tiguan 2012 Cuota", "2026-01-05", 0, { estado: "conciliado" }),
+    ])
+    const [fJuntas] = correr([cfg("UATRE", { tipo: "fijo", esperado: 12 })],
+      msa.map((m, i) => cu("UATRE", `${m}-10`, 100, i < 3 ? { grupoPago: "g1" } : {})))
+    const v11 = `${fPar.estado}: ${fPar.detalle} | ${fJuntas.detalle}`
+    const e11 = "ok: 2026 pagado anual · 2025 en cuotas: 6 de 6 (proporcional) · par: anual 1 usado(s) de 1 · cuotas 6 con importe de 7 | 12 de 12 · pagadas juntas en un solo pago: 3 (jul-25, ago-25, sep-25)"
+    chequear(G, "👀 Nota 11: el anual conciliado (aunque esté en $0) es pago anual; siempre se ve el par; las cuotas pagadas juntas se señalan",
+      e11, v11, v11 === e11, "A-FEAT-1422")
     // Mismo nombre escrito distinto, otro template (recreado otro año); compartido → primera empresa
     const [fNom] = correr([cfg("Imp .Ganancias MSA", { tipo: "fijo", esperado: 1 })], [cu("IMP. GANANCIAS MSA", "2025-11-10", 100, { egresoId: "tpl-2025" })])
     const [fComp] = controlarCuotasTemplates({ empresa: "PAM", meses: pam.meses, hoy: "2026-10-28",
