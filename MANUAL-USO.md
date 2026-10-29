@@ -3561,6 +3561,7 @@ En **Reportes → Papeles de trabajo del balance**, lo que escribís a mano se g
 - los **precios a mano** de las categorías de hacienda (tabla de «Traer stock y precios»);
 - las cuatro casillas del **cuadre de granos**: stock al inicio, cosecha, existencia al cierre y precio por tonelada;
 - las **cuotapartes** y el valor de la cuotaparte del fondo común (en «Pasar a la foto del balance propio»);
+- el **sueldo pendiente de un socio** (hoy MA) entra a su cuenta corriente del papel 14 como deuda de MSA, mes por mes («Sueldo MM/AAAA (a pagar)»). Si se paga por Sueldos, deja de estar pendiente y sale de ahí solo. ⚠️ Sin probar todavía → [A-TEST-1287](PENDIENTES.md#a-test-1287)
 - el **saldo de inicio de cada cuenta corriente** del papel 14 (cuadro «🧾 Papel 14 — saldo de INICIO», después de armar el libro de MSA). Vacío = 0, marcado «sin dato»: el saldo al cierre sale igual. Al escribirlo, el saldo al cierre se recalcula en el momento, sin volver a armar el libro. En el Excel el saldo al cierre es fórmula: también se puede cambiar el inicio ahí.
 
 Al lado de cada bloque dice si está guardado. Lo que trae la app sola (el stock, los precios del mercado) se recalcula cada vez que apretás **Traer stock y precios**: eso no hace falta guardarlo. Para que un precio a mano se use, apretá **Recalcular** después de escribirlo.

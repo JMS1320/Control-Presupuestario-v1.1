@@ -3326,6 +3326,9 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 ### 2026-10-29 · STOCK DECLARADO AL INICIO + PASTURAS — 2 tablas (script 131) — A-FEAT-1420 — ✅ CORRIDO 2026-10-29 con JMS
 `productivo.stock_inicio` (empresa, fecha, version jms/contador, insumo_stock_id → stock_insumos, rubro insumo/forraje/combustible, producto_planilla, categoria_planilla, cantidad, unidad, precio_unitario, moneda, tipo_cambio, valor_pesos, emparejado mismo/a confirmar/nuevo, fuente, nota) y `productivo.pasturas` (empresa, lotes, anio_siembra, hectareas, usd_por_ha, vida_util_anios, baja_fecha, baja_motivo, fuente, nota). RLS `ver/escribir_segun_permiso`, recurso `productivo` (marca `[script 131]`). Deshacer: `scripts/131-stock-inicio-y-pasturas-deshacer.sql`.
 
+### 2026-10-29 · MA como empleada de MSA en Sueldos (script 133, DATOS) — A-FEAT-1422 (8) — ✅ CORRIDO con OK de JMS
+Alta de `MA` (CUIL 27-06682461-1, `plano_ipc`, MSA, ingreso 01/06/2025, id fijo `81ef3d7c-37d3-461a-8c46-400935a81b26`) en `sueldos.empleados` y sus 24 meses jul-25 → jun-27 en `sueldos.periodos` (A $ 1.500.000, aguinaldo A $ 750.000 en dic y jun, **todo pendiente**: va a su cuenta corriente; marca `[script 133]` en observaciones). 25/26 = $ 19.500.000. Deshacer: `scripts/133-sueldo-ma-msa-deshacer.sql`.
+
 ### 2026-10-29 · Stock declarado al 30/06/2025 de MSA (script 132, DATOS) — A-FEAT-1420 — ✅ CORRIDO con OK de JMS
 Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantidad 0, marca `[script 132]` en observaciones), 94 renglones en `stock_inicio` ($ 31.730.444,08 = la planilla) y 3 `pasturas`. Se corre con `scripts/132-stock-inicio-msa-30-06-2025.mts` (desde su `.json`; el `.sql` es el registro legible). Deshacer: `scripts/132-stock-inicio-msa-30-06-2025-deshacer.sql` (por ids; frena si un producto ya tiene movimientos).
 

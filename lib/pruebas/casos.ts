@@ -162,6 +162,7 @@ import {
 } from "@/lib/balance/sueldos-balance"
 import {
   armarCuentasCorrientes, aplicarSaldosInicio, abrirDesglosar, DESTINO_PROPIO, normalizar, CONTRAPARTES_DEL_BALANCE,
+  sueldosPendientesComoCompras,
 } from "@/lib/balance/cuentas-corrientes"
 import { controlarCheque, chequeEnPapel08, chequeEnTemplates } from "@/lib/balance/control-cheque"
 import { cuadrarHacienda, type MovimientoDeHacienda } from "@/lib/balance/cuadre-hacienda"
@@ -10649,6 +10650,23 @@ export function correrCasos(): Resultado[] {
     const v = `${dias} · ${ley} · ${urlPizarraDelDia("soja", "2026-06-30").includes("product=13&type=pizarra&period=day&date_start=2026-06-30&date_end=2026-06-30")}`
     const e = "2026-07-02,2026-07-01,2026-06-30,2026-06-29 · último publicado al 30/06/2026 — Cañuelas 26/06/2026 · toros sin dato · true"
     chequear("Balance — precio al cierre", "Se busca hacia atrás desde el cierre el primer día publicado (no el promedio del mes); si no hay en el plazo, queda sin precio (hueco), y el link a la pizarra es del día", e, v, v === e, "A-FEAT-1422")
+  }
+
+  // ══ 👷 El sueldo PENDIENTE de un socio entra a su cuenta corriente (A-FEAT-1422 nota 8) ══
+  {
+    const meses = ["2025-07","2025-08","2025-09","2025-10","2025-11","2025-12","2026-01","2026-02","2026-03","2026-04","2026-05","2026-06"]
+    const ma = { nombre: "MA", cuit_empleado: "27-06682461-1" }
+    const comp = sueldosPendientesComoCompras([
+      { id: "a", anio: 2025, mes: 12, fecha_fin_periodo: "2025-12-31", saldo_pendiente: "2250000", empleado: ma },
+      { id: "b", anio: 2026, mes: 7, fecha_fin_periodo: "2026-07-31", saldo_pendiente: 1500000, empleado: ma },
+      { id: "c", anio: 2026, mes: 2, saldo_pendiente: 0.1, empleado: { nombre: "JMS", cuit_empleado: "23-34214773-9" } },
+      { id: "d", anio: 2026, mes: 3, saldo_pendiente: 500000, empleado: { nombre: "Sigot", cuit_empleado: "20-17985912-3" } },
+    ], meses)
+    const r = armarCuentasCorrientes(comp, [], [{ id: "m", fecha: "2026-02-04", debitos: 1000000, contable: "CTA MA" }])
+    const deMA = r.cuentas.find(c => c.contraparte.clave === "MA")!
+    const v = `${comp.map(c => `${c.numero}=${c.total}`).join(",")} · saldo MA ${deMA.resumen.saldo}`
+    const e = "Sueldo 12/2025 (a pagar)=2250000 · saldo MA 1250000"
+    chequear("Cuentas corrientes", "👷 El sueldo pendiente de MA entra a su cuenta corriente como deuda de MSA; no entra lo de fuera del ejercicio, lo ya pagado (centavos) ni un empleado que no es contraparte", e, v, v === e, "A-FEAT-1422")
   }
 
   return r
