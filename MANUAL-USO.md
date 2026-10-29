@@ -701,12 +701,14 @@ Los botones (copiar pedido, pedir, buscar) trabajan sobre lo que queda a la vist
 ## 🐄 Los tres saldos de la hacienda *(nuevo 2026-10-29)*
 
 En **Papeles de balance → Traer stock y precios**, arriba de la valuación de hacienda. Para cada categoría muestra
-tres saldos: **Sistema** (lo que suman los movimientos de hacienda de la app), **SENASA** y **Balance** (estos dos
-los escribís vos). Con los botones **Al inicio** / **Al cierre** elegís el momento. Las columnas de diferencias comparan
+saldos: **Sistema** (lo que suman los movimientos de hacienda de la app), **SENASA**, **Campo** y **Balance** (estos
+tres los escribís vos). Con los botones **Al inicio** / **Al cierre** elegís el momento. Las columnas de diferencias comparan
 contra el balance: lo normal es que la diferencia sea una mortandad sin registrar.
 
-Debajo está la misma tabla para **insumos agrícolas, insumos ganaderos, gas oil y sementeras**, en pesos: Sistema
-(el stock valuado de la app, sólo al cierre) y Balance (lo escribís vos).
+Siempre hay **dos datos declarados**: **Campo** (el tuyo, para el balance interno) y **Balance** (el del contador). En la
+hacienda se escriben ahí mismo; debajo, la tabla de **insumos agrícolas, insumos ganaderos, gas oil y sementeras** (en
+pesos) los toma de la foto del **Balance propio** (versiones JMS y Contador), donde se cargan. Sistema = el stock valuado
+de la app, sólo al cierre.
 
 ⚠️ Sin probar todavía → [A-TEST-1287](PENDIENTES.md#a-test-1287)
 

@@ -58,9 +58,11 @@ export function TresSaldosHacienda({ empresa, anioCierre, sistema }: {
               <th className="text-left p-1.5">Categoría</th>
               <th className="text-right p-1.5">Sistema</th>
               <th className="text-right p-1.5">SENASA</th>
-              <th className="text-right p-1.5">Balance</th>
-              <th className="text-right p-1.5" title="Sistema − Balance">Sist. − Bal.</th>
-              <th className="text-right p-1.5" title="SENASA − Balance">SENASA − Bal.</th>
+              <th className="text-right p-1.5" title="Tu dato (planilla de campo)">Campo</th>
+              <th className="text-right p-1.5" title="El dato del contador (forma contable)">Balance</th>
+              <th className="text-right p-1.5">Sist. − Campo</th>
+              <th className="text-right p-1.5">SENASA − Campo</th>
+              <th className="text-right p-1.5">Campo − Bal.</th>
             </tr>
           </thead>
           <tbody>
@@ -69,18 +71,22 @@ export function TresSaldosHacienda({ empresa, anioCierre, sistema }: {
                 <td className="p-1.5">{f.nombre}</td>
                 <td className="p-1.5 text-right font-mono">{ent(f.sistema)}</td>
                 <td className="p-1.5 text-right">{celda("senasa", f.clave)}</td>
+                <td className="p-1.5 text-right">{celda("campo", f.clave)}</td>
                 <td className="p-1.5 text-right">{celda("balance", f.clave)}</td>
                 <td className={`p-1.5 text-right font-mono ${f.difSistema ? "text-amber-700" : ""}`}>{dif(f.difSistema)}</td>
                 <td className={`p-1.5 text-right font-mono ${f.difSenasa ? "text-amber-700" : ""}`}>{dif(f.difSenasa)}</td>
+                <td className={`p-1.5 text-right font-mono ${f.difBalance ? "text-amber-700" : ""}`}>{dif(f.difBalance)}</td>
               </tr>
             ))}
             <tr className="border-t font-semibold">
               <td className="p-1.5">TOTAL</td>
               <td className="p-1.5 text-right font-mono">{ent(t.total.sistema)}</td>
               <td className="p-1.5 text-right font-mono">{ent(t.total.senasa)}</td>
+              <td className="p-1.5 text-right font-mono">{ent(t.total.campo)}</td>
               <td className="p-1.5 text-right font-mono">{ent(t.total.balance)}</td>
               <td className={`p-1.5 text-right font-mono ${t.total.difSistema ? "text-amber-700" : ""}`}>{dif(t.total.difSistema)}</td>
               <td className={`p-1.5 text-right font-mono ${t.total.difSenasa ? "text-amber-700" : ""}`}>{dif(t.total.difSenasa)}</td>
+              <td className={`p-1.5 text-right font-mono ${t.total.difBalance ? "text-amber-700" : ""}`}>{dif(t.total.difBalance)}</td>
             </tr>
           </tbody>
         </table>
@@ -91,7 +97,7 @@ export function TresSaldosHacienda({ empresa, anioCierre, sistema }: {
         </p>
       )}
       <p className="text-[11px] text-muted-foreground">
-        Sistema = los movimientos de hacienda de la app. SENASA y Balance se escriben a mano. Las diferencias suelen ser mortandades sin registrar: se avisan, no frenan.
+        Sistema = los movimientos de hacienda de la app. SENASA, Campo (tu dato) y Balance (el del contador) se escriben a mano. Sistema y SENASA contra Campo suelen ser mortandades sin registrar; Campo contra Balance, tratamiento contable. Se avisan, no frenan.
       </p>
     </div>
   )

@@ -8,7 +8,11 @@
  * |---|---|
  * | **Sistema** | la suma de los movimientos de hacienda de la app hasta la fecha (inicio = antes del 1er día) |
  * | **SENASA** | lo que dice SENASA; se escribe a mano (o lo pone Claude de un papel, TENTATIVO) |
- * | **Balance** | lo declarado en el balance; se escribe a mano (o lo pone Claude, TENTATIVO) |
+ * | **Campo** | tu dato (planilla de campo, balance interno); a mano (o Claude, TENTATIVO) |
+ * | **Balance** | lo declarado en el balance del contador (forma contable); a mano (o Claude, TENTATIVO) |
+ *
+ * ⚠️ cambió el mismo 29/10 — JMS: *«tenemos un dato del campo y un dato del balance… son dos datos que hay que
+ * registrar los dos»*. Se agregó **Campo**; las diferencias se miden contra él (Campo − Balance = tratamiento contable).
  *
  * Se guardan en `balance_datos_usuario`, papel `hacienda.saldos`, clave `<momento>.<fuente>.<categoría>`
  * (ej. `inicio.senasa.vacas`). Las categorías son las de la planilla del usuario; las de la app se agrupan en ellas.
@@ -17,7 +21,7 @@
  */
 
 export type MomentoSaldo = "inicio" | "cierre"
-export type FuenteManual = "senasa" | "balance"
+export type FuenteManual = "senasa" | "campo" | "balance"
 
 export interface CategoriaPlanilla { clave: string; nombre: string; app: string[] }
 
@@ -41,11 +45,14 @@ export interface FilaTresSaldos {
   nombre: string
   sistema: number
   senasa: number | null
+  campo: number | null
   balance: number | null
-  /** sistema − balance (null si no hay balance) */
+  /** sistema − campo */
   difSistema: number | null
-  /** SENASA − balance (null si falta alguno) */
+  /** SENASA − campo */
   difSenasa: number | null
+  /** campo − balance (tratamiento contable) */
+  difBalance: number | null
 }
 
 export interface TresSaldos {
@@ -54,6 +61,10 @@ export interface TresSaldos {
   /** categorías de la app que no caen en ninguna de la planilla (no se pierden: se avisan) */
   sinUbicar: { categoria: string; cabezas: number }[]
 }
+
+const resta = (a: number | null, b: number | null) => a != null && b != null ? a - b : null
+const difs = (sistema: number, senasa: number | null, campo: number | null, balance: number | null) =>
+  ({ difSistema: resta(sistema, campo), difSenasa: resta(senasa, campo), difBalance: resta(campo, balance) })
 
 const leer = (t: string | null | undefined): number | null => {
   if (t == null || String(t).trim() === "") return null
@@ -76,29 +87,22 @@ export function armarTresSaldos(
     let sistema = 0
     for (const a of c.app) if (!usadas.has(a) && sistemaPorCategoria[a] != null) { sistema += sistemaPorCategoria[a]; usadas.add(a) }
     const senasa = leer(valores[claveSaldo(momento, "senasa", c.clave)])
+    const campo = leer(valores[claveSaldo(momento, "campo", c.clave)])
     const balance = leer(valores[claveSaldo(momento, "balance", c.clave)])
-    return {
-      clave: c.clave, nombre: c.nombre, sistema, senasa, balance,
-      difSistema: balance == null ? null : sistema - balance,
-      difSenasa: balance == null || senasa == null ? null : senasa - balance,
-    }
+    return { clave: c.clave, nombre: c.nombre, sistema, senasa, campo, balance, ...difs(sistema, senasa, campo, balance) }
   })
   const sinUbicar = Object.entries(sistemaPorCategoria)
     .filter(([cat, n]) => !usadas.has(cat) && n !== 0)
     .map(([categoria, cabezas]) => ({ categoria, cabezas }))
-  const suma = (k: "sistema" | "senasa" | "balance") => {
+  const suma = (k: "sistema" | "senasa" | "campo" | "balance") => {
     const v = filas.map(f => f[k])
     return v.every(x => x == null) ? null : v.reduce<number>((s, x) => s + (x ?? 0), 0)
   }
   const sistema = (suma("sistema") ?? 0) + sinUbicar.reduce((s, x) => s + x.cabezas, 0)
-  const senasa = suma("senasa"), balance = suma("balance")
+  const senasa = suma("senasa"), campo = suma("campo"), balance = suma("balance")
   return {
     filas, sinUbicar,
-    total: {
-      clave: "total", nombre: "TOTAL", sistema, senasa, balance,
-      difSistema: balance == null ? null : sistema - balance,
-      difSenasa: balance == null || senasa == null ? null : senasa - balance,
-    },
+    total: { clave: "total", nombre: "TOTAL", sistema, senasa, campo, balance, ...difs(sistema, senasa, campo, balance) },
   }
 }
 
