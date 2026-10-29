@@ -34,6 +34,10 @@
  * de cierre (como `PRESENTADO_ARCA_COMPRAS`): otro ejercicio simplemente no muestra esos bloques. Todo lo demás se
  * calcula de los datos.
  *
+ * 💵 **Retenciones sufridas** lleva Ganancias, IIBB e IVA (de `<empresa>.retenciones_recibidas`), y **Control cobros**
+ * comprueba venta por venta que *total declarado − retenciones = cobrado* (JMS 29/10/2026): si no da, falta cargar
+ * alguna retención (o el cobro). Ver `cobros-de-ventas.ts`.
+ *
  * ⚠️ **Lo que NO está** (y por qué): la columna «Pagos a cuenta en ARCA (info)» de Retenciones sufridas sale de los zips
  * del libro IVA de ARCA, que el navegador no tiene. Queda afuera hasta que la app guarde lo presentado.
  */
@@ -42,6 +46,7 @@ import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
 import { claveSubdiario, type Ejercicio } from "./ejercicio"
 import { hoyArgentina } from "@/lib/fechas"
 import { MONEDA, aplicarVistas } from "./formato-excel"
+import type { CobrosYRetenciones, RetencionRecibida, CobroDeVenta } from "./cobros-de-ventas"
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════
 // Constantes por empresa y ejercicio
@@ -147,7 +152,7 @@ export const LIBRO_DIARIO_CONSENSUADO: Record<string, Record<number, Consensuado
         notaIvaFila: "IVA vendido = IVA cargado en la app (col. T) - IVA de comisión/almacenaje (col. U). Coincide con lo presentado a ARCA (10,5% del neto). A corregir en la app.",
       },
       notasRetenciones: [
-        "Ojo: en Sáenz Valiente lo de ARCA (330.665,50 y 270.618,00) no coincide con la retención de IIBB de la app (94.852,50 y 76.590,00); en Pedro Genta sí coincide (970.830,00).",
+        "Sáenz Valiente: lo que ARCA muestra como pagos a cuenta (330.665,50 y 270.618,00) es IIBB + Ganancias (94.852,50 + 235.813,00 y 76.590,00 + 194.028,00). Cierra.",
       ],
       // «Diferencias Compras / Ventas MSA 25-26 - app vs ARCA.xlsx» (27/10/2026). Los links: columna Q del de compras.
       diferencias: {
@@ -318,8 +323,56 @@ export function filasVentasConsensuado(ventas: AsientoLibroDiario[]): FilaVentaC
     || cmpTexto(x.nroComprobante, y.nroComprobante))
 }
 
-/** Las ventas con alguna retención (IVA o IIBB): la solapa «Retenciones sufridas». */
-export const retencionesSufridas = (ventas: FilaVentaConsensuada[]) => ventas.filter(v => v.retIva !== 0 || v.retIibb !== 0)
+/** Las retenciones de una venta, ya juntas: las de la tabla mandan; las de la venta valen si la tabla no tiene ese impuesto. */
+export interface RetencionesDeVenta { iva: number; iibb: number; gan: number; certificados: string[] }
+
+export function retencionesDeVenta(f: FilaVentaConsensuada, tabla: RetencionRecibida[] = []): RetencionesDeVenta {
+  const suyas = tabla.filter(r => r.ventaId === f.asiento.id)
+  const de = (t: string) => suyas.filter(r => r.tipo === t)
+  const suma = (t: string, enLaVenta: number) => (de(t).length ? sumar(de(t), r => r.monto) : r2(enLaVenta))
+  return {
+    iva: suma("iva", f.retIva), iibb: suma("iibb", f.retIibb), gan: suma("ganancias", 0),
+    certificados: [...new Set(suyas.map(r => r.certificado).filter((c): c is string => !!c))],
+  }
+}
+
+/** Las ventas con alguna retención (Ganancias, IIBB o IVA): la solapa «Retenciones sufridas». */
+export const retencionesSufridas = (ventas: FilaVentaConsensuada[], tabla: RetencionRecibida[] = []) =>
+  ventas.map(f => ({ f, r: retencionesDeVenta(f, tabla) })).filter(x => x.r.iva !== 0 || x.r.iibb !== 0 || x.r.gan !== 0)
+
+/** Un renglón del control de cobros: una venta, o las de un mismo grupo de cobro. */
+export interface ControlDeCobro {
+  ventas: FilaVentaConsensuada[]
+  total: number
+  gan: number
+  iibb: number
+  iva: number
+  cobrado: number
+  /** Total − retenciones − cobrado. */
+  diferencia: number
+  estado: "ok" | "no cierra" | "a cobrar" | "sin cobro vinculado"
+}
+
+/** Total declarado − retenciones = cobrado, por venta o por grupo de cobro. */
+export function controlarCobros(ventas: FilaVentaConsensuada[], tabla: RetencionRecibida[], cobros: CobroDeVenta[]): ControlDeCobro[] {
+  const grupos = new Map<string, FilaVentaConsensuada[]>()
+  for (const f of ventas) {
+    const g = f.asiento.detalleVenta?.grupo_cobro_id || f.asiento.id
+    grupos.set(g, [...(grupos.get(g) ?? []), f])
+  }
+  return [...grupos.values()].map(vs => {
+    const rs = vs.map(f => retencionesDeVenta(f, tabla))
+    const ids = new Set(vs.map(f => f.asiento.id))
+    const total = sumar(vs, f => f.total)
+    const gan = sumar(rs, r => r.gan), iibb = sumar(rs, r => r.iibb), iva = sumar(rs, r => r.iva)
+    const cobrado = sumar(cobros.filter(c => ids.has(c.ventaId)), c => c.importe)
+    const diferencia = r2(total - gan - iibb - iva - cobrado)
+    const aCobrar = vs.every(f => /cobrar/i.test(f.estado))
+    const estado: ControlDeCobro["estado"] = Math.abs(diferencia) < 1 ? "ok"
+      : cobrado === 0 ? (aCobrar ? "a cobrar" : "sin cobro vinculado") : "no cierra"
+    return { ventas: vs, total, gan, iibb, iva, cobrado, diferencia, estado }
+  })
+}
 
 /** Orden de las cuentas: por número; las que no son número («(sin cuenta)») al final. */
 const ordenCuenta = (k: string) => (/^\d+$/.test(k) ? Number(k) : Number.MAX_SAFE_INTEGER)
@@ -842,37 +895,96 @@ function hojaVentas(filas: FilaVentaConsensuada[], ej: Ejercicio, k: Consensuado
   return { ws, ubic: { hoja: "Ventas", ultima: last, filaTotal: tr, filaTotalAnio: ta, colCant: "H" } as UbicacionComprobantes, tot, comentarios: h.comentarios }
 }
 
-function hojaRetenciones(ret: FilaVentaConsensuada[], empresa: string, ej: Ejercicio, notas: string[] = []) {
+function hojaRetenciones(ret: Array<{ f: FilaVentaConsensuada; r: RetencionesDeVenta }>, empresa: string, ej: Ejercicio,
+  notas: string[] = [], conTabla = true) {
   const h = new Hoja()
   // «2025-26» (el ejercicio partido con el primer año entero), o «2025» si es calendario.
   const primero = ej.subdiarios[0].anio
   const periodo = primero === ej.anioCierre ? String(primero) : `${primero}-${String(ej.anioCierre).slice(-2)}`
   h.texto("A1", `RETENCIONES SUFRIDAS EN VENTAS - ${empresa} ${periodo} (no van en la DDJJ de IVA ventas)`, { font: { bold: true, sz: 13 } })
-  ;["Subdiario", "Fecha", "Cliente", "CUIT", "Comprobante (app)", "Ret. IVA", "Ret. IIBB", "Total retenido"].forEach((t, i) => h.texto(`${L(i)}3`, t))
-  h.estilo(3, "A", "H", ENCABEZADO_OSCURO)
+  ;["Subdiario", "Fecha", "Cliente", "CUIT", "Comprobante (app)", "Ret. IVA", "Ret. IIBB", "Ret. Ganancias", "Total retenido", "Certificado(s)"]
+    .forEach((t, i) => h.texto(`${L(i)}3`, t))
+  h.estilo(3, "A", "J", ENCABEZADO_OSCURO)
   let r = 4
-  for (const f of ret) {
+  for (const { f, r: x } of ret) {
     h.textoFijo(`A${r}`, f.subdiario)
     h.fecha(`B${r}`, f.fecha)
     h.texto(`C${r}`, f.cliente)
     h.textoFijo(`D${r}`, f.cuit)
     h.texto(`E${r}`, `tipo ${f.tipo ?? "?"} / ${f.nroComprobante || `${f.puntoVenta ?? ""}-${f.numero ?? ""}`}`)
-    h.valor(`F${r}`, f.retIva, IMPORTE); h.valor(`G${r}`, f.retIibb, IMPORTE)
-    h.formula(`H${r}`, `F${r}+G${r}`, r2(f.retIva + f.retIibb))
+    h.valor(`F${r}`, x.iva, IMPORTE); h.valor(`G${r}`, x.iibb, IMPORTE); h.valor(`H${r}`, x.gan, IMPORTE)
+    h.formula(`I${r}`, `F${r}+G${r}+H${r}`, r2(x.iva + x.iibb + x.gan))
+    h.texto(`J${r}`, x.certificados.join(" · ") || "falta el certificado", x.certificados.length ? undefined : GRIS)
     r++
   }
-  const tot = { iva: sumar(ret, f => f.retIva), iibb: sumar(ret, f => f.retIibb) }
+  const tot = { iva: sumar(ret, x => x.r.iva), iibb: sumar(ret, x => x.r.iibb), gan: sumar(ret, x => x.r.gan) }
   h.texto(`A${r}`, "TOTAL")
   if (ret.length) {
     h.formula(`F${r}`, `SUM(F4:F${r - 1})`, tot.iva)
     h.formula(`G${r}`, `SUM(G4:G${r - 1})`, tot.iibb)
-    h.formula(`H${r}`, `SUM(H4:H${r - 1})`, r2(tot.iva + tot.iibb))
+    h.formula(`H${r}`, `SUM(H4:H${r - 1})`, tot.gan)
+    h.formula(`I${r}`, `SUM(I4:I${r - 1})`, r2(tot.iva + tot.iibb + tot.gan))
   }
-  h.estilo(r, "A", "H", subtotal(COLOR.azulTotal))
-  h.texto(`A${r + 2}`, "Datos de la app (ret_iva / ret_iibb de cada liquidación).", GRIS)
+  h.estilo(r, "A", "J", subtotal(COLOR.azulTotal))
+  h.texto(`A${r + 2}`, conTabla
+    ? "Retenciones cargadas en la app («Retenciones recibidas» de cada venta; si una venta no tiene un impuesto ahí, vale el de la liquidación). El control contra lo cobrado está en «Control cobros»."
+    : "⚠️ No se pudieron leer las retenciones recibidas: sólo están las de la liquidación (ret_iva / ret_iibb), sin Ganancias.", GRIS)
   notas.forEach((t, q) => h.texto(`A${r + 3 + q}`, t, fondo(COLOR.naranjaClaro)))
-  const ws = h.cerrar({ A: 10.71, B: 11.71, C: 44.71, D: 13.71, E: 18.71, F: 15.71, G: 15.71, H: 15.71 }, { 1: 17.25, 3: 32.1 })
+  const ws = h.cerrar({ A: 10.71, B: 11.71, C: 44.71, D: 13.71, E: 18.71, F: 15.71, G: 15.71, H: 15.71, I: 15.71, J: 34.71 }, { 1: 17.25, 3: 32.1 })
   return { ws, tot }
+}
+
+const ESTADO_COBRO: Record<ControlDeCobro["estado"], string> = {
+  "ok": "OK",
+  "no cierra": "NO CIERRA: falta cargar alguna retención (o hay otra diferencia)",
+  "a cobrar": "a cobrar",
+  "sin cobro vinculado": "sin cobro vinculado en el banco",
+}
+
+/**
+ * 💵 **Control cobros**: total declarado − retenciones = cobrado (banco + echeqs), por venta o grupo de cobro.
+ * Todo con fórmulas: el contador cambia una retención y la diferencia se recalcula.
+ */
+function hojaControlCobros(filas: ControlDeCobro[] | null, empresa: string, avisos: string[]) {
+  const h = new Hoja()
+  h.texto("A1", `CONTROL DE COBROS - ${empresa}: total declarado − retenciones = cobrado`, { font: { bold: true, sz: 13 } })
+  h.texto("A2", "Si no da cero, falta cargar alguna retención o el cobro. Dos liquidaciones cobradas juntas van en un mismo renglón.", GRIS)
+  if (!filas) {
+    h.texto("A4", "⚠️ No se pudo hacer el control: " + (avisos.join(" · ") || "no se leyeron los cobros ni las retenciones."), fondo(COLOR.naranjaClaro))
+    return { ws: h.cerrar({ A: 100 }), resumen: null }
+  }
+  ;["Fecha", "Cliente", "Comprobante(s)", "Total declarado", "Ret. Ganancias", "Ret. IIBB", "Ret. IVA", "A cobrar", "Cobrado (banco y echeqs)", "Diferencia", "Control"]
+    .forEach((t, i) => h.texto(`${L(i)}4`, t))
+  h.estilo(4, "A", "K", ENCABEZADO_OSCURO)
+  let r = 5
+  const orden = [...filas].sort((a, b) => (a.ventas[0].fecha ?? "").localeCompare(b.ventas[0].fecha ?? ""))
+  for (const x of orden) {
+    const v0 = x.ventas[0]
+    h.fecha(`A${r}`, v0.fecha)
+    h.texto(`B${r}`, [...new Set(x.ventas.map(v => v.cliente))].join(" · "))
+    h.texto(`C${r}`, x.ventas.map(v => `${v.tipo ?? "?"}/${v.nroComprobante || `${v.puntoVenta ?? ""}-${v.numero ?? ""}`}`).join(" + "))
+    h.valor(`D${r}`, x.total, IMPORTE); h.valor(`E${r}`, x.gan, IMPORTE); h.valor(`F${r}`, x.iibb, IMPORTE); h.valor(`G${r}`, x.iva, IMPORTE)
+    h.formula(`H${r}`, `D${r}-E${r}-F${r}-G${r}`, r2(x.total - x.gan - x.iibb - x.iva))
+    h.valor(`I${r}`, x.cobrado, IMPORTE)
+    h.formula(`J${r}`, `H${r}-I${r}`, x.diferencia)
+    h.texto(`K${r}`, ESTADO_COBRO[x.estado])
+    if (x.estado === "no cierra") h.estilo(r, "A", "K", fondo(COLOR.naranjaClaro))
+    else if (x.estado !== "ok") h.estiloLlenas(r, "K", "K", GRIS)
+    r++
+  }
+  h.texto(`A${r}`, "TOTAL")
+  const totales: Record<string, number> = {
+    D: sumar(orden, x => x.total), E: sumar(orden, x => x.gan), F: sumar(orden, x => x.iibb), G: sumar(orden, x => x.iva),
+    H: sumar(orden, x => x.total - x.gan - x.iibb - x.iva), I: sumar(orden, x => x.cobrado), J: sumar(orden, x => x.diferencia),
+  }
+  if (orden.length) for (const [c, v] of Object.entries(totales)) h.formula(`${c}${r}`, `SUM(${c}5:${c}${r - 1})`, v)
+  h.estilo(r, "A", "K", subtotal(COLOR.azulTotal))
+  const cuenta = (e: ControlDeCobro["estado"]) => filas.filter(x => x.estado === e).length
+  const resumen = { renglones: filas.length, ok: cuenta("ok"), noCierra: cuenta("no cierra"), aCobrar: cuenta("a cobrar"), sinCobro: cuenta("sin cobro vinculado") }
+  h.texto(`A${r + 2}`, `${resumen.ok} cierran · ${resumen.noCierra} NO cierran · ${resumen.aCobrar} a cobrar · ${resumen.sinCobro} sin cobro vinculado en el banco`, { font: { bold: true } })
+  avisos.forEach((t, q) => h.texto(`A${r + 3 + q}`, "⚠️ " + t, fondo(COLOR.naranjaClaro)))
+  const ws = h.cerrar({ A: 11.71, B: 40.71, C: 26.71, D: 16.71, E: 15.71, F: 15.71, G: 13.71, H: 16.71, I: 18.71, J: 15.71, K: 44.71 }, { 1: 17.25, 4: 32.1 })
+  return { ws, resumen }
 }
 
 // ─────────────────────────────── El libro ───────────────────────────────
@@ -881,7 +993,9 @@ function hojaRetenciones(ret: FilaVentaConsensuada[], empresa: string, ej: Ejerc
 export interface ResumenConsensuado {
   compras: { comprobantes: number; totales: Record<string, number> }
   ventas: { comprobantes: number; totales: Record<string, number> }
-  retenciones: { comprobantes: number; iva: number; iibb: number }
+  retenciones: { comprobantes: number; iva: number; iibb: number; gan: number }
+  /** El control total − retenciones = cobrado. `null` = no se pudieron leer los cobros o las retenciones. */
+  cobros: { renglones: number; ok: number; noCierra: number; aCobrar: number; sinCobro: number } | null
   /** true si había constantes del ejercicio (cuadro consensuado, marcas, notas). */
   conConsensuado: boolean
 }
@@ -896,12 +1010,12 @@ export interface LibroConsensuado { wb: XLSX.WorkBook; vistas: Vista[]; resumen:
  * Arma el libro de cinco solapas. Recibe el `LibroDiario` ya armado (los 12 subdiarios, histórico superado afuera,
  * dólares en pesos, IVA de ventas ya vendido) y no vuelve a filtrar nada.
  */
-export function armarLibroDiarioConsensuado(libro: LibroDiario, empresa: string): LibroConsensuado {
+export function armarLibroDiarioConsensuado(libro: LibroDiario, empresa: string, cyr?: CobrosYRetenciones): LibroConsensuado {
   const ej = libro.ejercicio
   const k = LIBRO_DIARIO_CONSENSUADO[empresa]?.[ej.anioCierre]
   const compras = filasComprasConsensuado(libro.compras, k?.compras?.signoDistinto.facturas ?? [])
   const ventas = filasVentasConsensuado(libro.ventas)
-  const ret = retencionesSufridas(ventas)
+  const ret = retencionesSufridas(ventas, cyr?.retenciones ?? [])
   const wb = XLSX.utils.book_new()
 
   const c = hojaCompras(compras, ej, k?.compras)
@@ -929,20 +1043,24 @@ export function armarLibroDiarioConsensuado(libro: LibroDiario, empresa: string)
     sinVentas.length ? `Meses sin ventas en la app: ${sinVentas.join(", ")}.` : undefined)
   XLSX.utils.book_append_sheet(wb, pv.h.cerrar({ A: 18.71, B: 13.71, C: 40.71, D: 7.71, E: 15.71, F: 15.71, G: 15.71, H: 15.71, I: 15.71, J: 15.71 }, { 1: 32.1 }), "Ventas por cuenta")
 
-  const rt = hojaRetenciones(ret, empresa, ej, k?.notasRetenciones)
+  const rt = hojaRetenciones(ret, empresa, ej, k?.notasRetenciones, !!cyr?.retenciones)
   XLSX.utils.book_append_sheet(wb, rt.ws, "Retenciones sufridas")
+  const control = cyr?.retenciones && cyr.cobros ? controlarCobros(ventas, cyr.retenciones, cyr.cobros) : null
+  const cc = hojaControlCobros(control, empresa, cyr?.avisos ?? ["no se leyeron los cobros ni las retenciones"])
+  XLSX.utils.book_append_sheet(wb, cc.ws, "Control cobros")
 
   return {
     wb,
     vistas: [
       { congelarFilas: 1 }, { congelarFilas: 1, sinCuadricula: true },
       { congelarFilas: 1 }, { congelarFilas: 1, sinCuadricula: true },
-      { sinCuadricula: true },
+      { sinCuadricula: true }, { congelarFilas: 4, sinCuadricula: true },
     ],
     resumen: {
       compras: { comprobantes: compras.length, totales: c.tot },
       ventas: { comprobantes: ventas.length, totales: v.tot },
       retenciones: { comprobantes: ret.length, ...rt.tot },
+      cobros: cc.resumen,
       conConsensuado: !!k,
     },
   }
@@ -962,8 +1080,8 @@ export function nombreArchivoConsensuado(libro: LibroDiario, empresa: string, ho
 }
 
 /** Baja el Libro Diario consensuado en el navegador. */
-export async function descargarLibroDiarioConsensuado(libro: LibroDiario, empresa: string): Promise<ResumenConsensuado> {
-  const l = armarLibroDiarioConsensuado(libro, empresa)
+export async function descargarLibroDiarioConsensuado(libro: LibroDiario, empresa: string, cyr?: CobrosYRetenciones): Promise<ResumenConsensuado> {
+  const l = armarLibroDiarioConsensuado(libro, empresa, cyr)
   const bytes = await bytesLibroDiarioConsensuado(l)
   const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }))
   const a = document.createElement("a")

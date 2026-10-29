@@ -49,6 +49,7 @@ import { ivaConSigno, type DatosDeLosPapeles } from "@/lib/balance/balance-propi
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { descargarLibroDiario } from "@/lib/balance/export-libro-diario"
 import { descargarLibroDiarioConsensuado } from "@/lib/balance/libro-diario-consensuado"
+import { leerCobrosYRetenciones } from "@/lib/balance/cobros-de-ventas"
 import { descargarDiferenciasVsArca } from "@/lib/balance/diferencias-vs-arca"
 import { saldosEnDolaresParaBalance } from "@/lib/dolares/posicion-cierre"
 import { MarcaTentativo } from "@/components/marca-tentativo"
@@ -806,8 +807,15 @@ export function PapelesDeBalance() {
           )}
           {/* 📗 El Libro Diario consensuado con el contador (compras, ventas, por cuenta y retenciones), solo. */}
           {libro && (
-            <Button variant="outline" onClick={() => descargarLibroDiarioConsensuado(libro, empresa.id)
-              .catch(e => toast.error("No se pudo armar el Libro Diario: " + (e as Error).message))}>
+            <Button variant="outline" onClick={() =>
+              // 💵 Las retenciones recibidas y los cobros de cada venta, para «Retenciones sufridas» y «Control cobros».
+              leerCobrosYRetenciones(supabase, empresa.id, empresa.schema)
+                .then(cyr => {
+                  for (const a of cyr.avisos) toast.warning(a)
+                  return descargarLibroDiarioConsensuado(libro, empresa.id, cyr)
+                })
+                .then(r => { if (r.cobros?.noCierra) toast.warning(`Control cobros: ${r.cobros.noCierra} venta(s) no cierran (total − retenciones ≠ cobrado).`) })
+                .catch(e => toast.error("No se pudo armar el Libro Diario: " + (e as Error).message))}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               Bajar Libro Diario
             </Button>
