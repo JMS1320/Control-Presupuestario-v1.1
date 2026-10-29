@@ -47,6 +47,8 @@ import { descargarLibroDiario } from "@/lib/balance/export-libro-diario"
 import { descargarLibroDiarioConsensuado } from "@/lib/balance/libro-diario-consensuado"
 import { descargarDiferenciasVsArca } from "@/lib/balance/diferencias-vs-arca"
 import { saldosEnDolaresParaBalance } from "@/lib/dolares/posicion-cierre"
+import { MarcaTentativo } from "@/components/marca-tentativo"
+import { leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { traerTodo, lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
 import type { TipoCuenta } from "@/lib/presupuesto/templates"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
@@ -134,8 +136,10 @@ export function PapelesDeBalance() {
   const saldosCC = useDatosDelBalance(empresa.id, anioCierre, "cc.saldo-inicio")
   const cuentasCorrientesConInicio = useMemo(() => cuentasCorrientes
     ? aplicarSaldosInicio(cuentasCorrientes, Object.fromEntries(
-        CONTRAPARTES_DEL_BALANCE.map(c => [c.clave, leerNumero(saldosCC.valores[c.clave])])))
-    : null, [cuentasCorrientes, saldosCC.valores])
+        CONTRAPARTES_DEL_BALANCE.map(c => [c.clave, leerNumero(saldosCC.valores[c.clave])])),
+        // 🤖 A-FEAT-1386: el inicio que puso Claude sale TENTATIVO en el Excel hasta el OK
+        Object.fromEntries(Object.entries(saldosCC.tentativos).map(([k, f]) => [k, leyendaTentativo(f)])))
+    : null, [cuentasCorrientes, saldosCC.valores, saldosCC.tentativos])
   /**
    * 📒 «Asientos Contables» (A-FEAT-1318): las facturas no informadas en ARCA que no van al subdiario.
    * `null` = no se pudo leer (la solapa no sale, y se avisa); `[]` = se leyó y no hay.
@@ -1028,6 +1032,7 @@ export function PapelesDeBalance() {
                               className="border rounded px-1 py-0.5 w-32 text-right"
                               value={saldosCC.valores[c.contraparte.clave] ?? ""}
                               onChange={e => saldosCC.cambiar(c.contraparte.clave, e.target.value)} />
+                            <div><MarcaTentativo fuente={saldosCC.tentativos[c.contraparte.clave]} onOk={() => saldosCC.confirmar(c.contraparte.clave)} /></div>
                           </td>
                           <td className="text-right font-mono">{fmt(c.resumen.saldo)}</td>
                           <td className={`text-right font-mono ${c.inicioSinDato ? "text-amber-700" : ""}`}>

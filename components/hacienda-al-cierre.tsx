@@ -44,6 +44,8 @@ import {
   cuadrarGranos, valuarGranos, armarSementeras,
   type CuadreGranos, type ValuacionGranos, type Sementeras,
 } from "@/lib/balance/granos-sementeras"
+import { MarcaTentativo } from "@/components/marca-tentativo"
+import { leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { pesosAlCierre, type PesoCategoria } from "@/lib/balance/pesos-hacienda"
 
 /**
@@ -275,10 +277,14 @@ export function HaciendaAlCierre({
         insumos: armarStockInsumos((ins ?? []).map(desdeStockInsumo), numericos),
         ventasGranosTn, sementeras,
         campo: {
-          granos: cuadrarGranos({
-            stockInicioTn: tn(granos.inicio), cosechaTn: tn(granos.cosecha),
-            ventasTn: ventasGranosTn, stockEmpresaTn: tn(granos.cierre),
-          }),
+          granos: {
+            ...cuadrarGranos({
+              stockInicioTn: tn(granos.inicio), cosechaTn: tn(granos.cosecha),
+              ventasTn: ventasGranosTn, stockEmpresaTn: tn(granos.cierre),
+            }),
+            // 🤖 A-FEAT-1386: el stock al inicio que puso Claude sale TENTATIVO en el Excel hasta el OK
+            notaInicio: leyendaTentativo(cuadre.tentativos.inicio) || undefined,
+          },
           valuacionGranos: valuarGranos(tn(granos.cierre) ?? 0, tn(granos.precio)),
           sementeras,
         },
@@ -466,6 +472,7 @@ export function HaciendaAlCierre({
                   <span className="block text-muted-foreground">Stock al inicio</span>
                   <Input type="text" placeholder="0,00" className="h-6 w-24 text-xs"
                     value={granos.inicio} onChange={e => cuadre.cambiar("inicio", e.target.value)} />
+                  <MarcaTentativo fuente={cuadre.tentativos.inicio} onOk={() => cuadre.confirmar("inicio")} />
                 </label>
                 <label className="block">
                   <span className="block text-muted-foreground">Cosecha</span>

@@ -698,6 +698,15 @@ Los botones (copiar pedido, pedir, buscar) trabajan sobre lo que queda a la vist
 
 ⚠️ Sin probar todavía → [A-TEST-1272](PENDIENTES.md#a-test-1272)
 
+## 🤖 Datos «TENTATIVOS» en los papeles del balance *(nuevo 2026-10-28)*
+
+Algunos datos de inicio los carga Claude desde los papeles del balance anterior. Aparecen con un chip ámbar
+**TENTATIVO** y la fuente (archivo, hoja, celda). Tocá **✓ OK** si está bien: queda a tu nombre. Si escribís otro
+valor, también deja de ser tentativo, y lo de Claude queda en el historial. Mientras no tenga tu OK, el Excel dice
+«TENTATIVO» al lado del dato.
+
+⚠️ Sin probar todavía → [A-TEST-1287](PENDIENTES.md#a-test-1287)
+
 ## 💵 Dólares y Cotitulares *(nuevo 2026-10-28)*
 
 Siete cuentas que se cargan a mano: **MSA** cuenta corriente y caja en dólares · **MA** caja de ahorro y caja en dólares ·

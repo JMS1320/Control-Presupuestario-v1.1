@@ -1240,7 +1240,8 @@ export function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierr
       // 🎚️ El 0 de un inicio sin cargar es un default, no un dato: se dice (y sale en ámbar).
       c.inicioSinDato
         ? `sin dato de inicio (0 por default) · ${leyendaSaldo(c.saldoAlCierre)}`
-        : leyendaSaldo(c.saldoAlCierre),
+        // 🤖 A-FEAT-1386: el inicio que puso Claude y espera el OK de JMS se dice en el Excel
+        : c.inicioTentativo ? `${c.inicioTentativo} · ${leyendaSaldo(c.saldoAlCierre)}` : leyendaSaldo(c.saldoAlCierre),
     ])
   }
   const hasta = f.length
@@ -2203,7 +2204,7 @@ function hojaDeGranos(c: CuadreGranos, v: ValuacionGranos, fechaCierre: string):
   f.push([`1 - GRANOS al ${fechaCierre}`])
   f.push([])
   f.push(["CUADRE DE KILOS (toneladas)"])
-  f.push(["Stock al inicio del ejercicio", c.stockInicioTn ?? "FALTA"])
+  f.push(["Stock al inicio del ejercicio", c.stockInicioTn ?? "FALTA", c.notaInicio ?? ""])
   f.push(["+ Cosecha del ejercicio", c.cosechaTn ?? "FALTA"])
   f.push(["− Ventas del ejercicio", c.ventasTn, "← esto lo sabe la app, de los comprobantes de venta"])
   f.push(["= Saldo", c.saldoTn ?? "no se puede calcular"])

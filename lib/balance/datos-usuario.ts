@@ -26,7 +26,7 @@ import { etiquetaPersona } from "@/lib/auth/identidad"
 import { ahoraISO } from "@/lib/fechas"
 
 import {
-  TABLA_DATOS_USUARIO, armarFilaDato, type FilaDatoUsuario, type PapelConDatos, type EstadoGuardado,
+  TABLA_DATOS_USUARIO, armarFilaDato, confirmarFila, fuenteTentativo, type FilaDatoUsuario, type PapelConDatos, type EstadoGuardado,
 } from "./datos-usuario-puro"
 export * from "./datos-usuario-puro"
 
@@ -36,6 +36,8 @@ export * from "./datos-usuario-puro"
  */
 export function useDatosDelBalance(empresa: string, anioCierre: number, papel: PapelConDatos) {
   const [valores, setValores] = useState<Record<string, string>>({})
+  /** 🤖 A-FEAT-1386: clave → fuente, para los datos que puso Claude y esperan el OK. */
+  const [tentativos, setTentativos] = useState<Record<string, string>>({})
   const [estado, setEstado] = useState<EstadoGuardado>("leyendo")
   const [error, setError] = useState<string | null>(null)
   const filas = useRef<Record<string, FilaDatoUsuario>>({})
@@ -46,7 +48,7 @@ export function useDatosDelBalance(empresa: string, anioCierre: number, papel: P
 
   useEffect(() => {
     let vivo = true
-    setEstado("leyendo"); setValores({}); filas.current = {}
+    setEstado("leyendo"); setValores({}); setTentativos({}); filas.current = {}
     ;(async () => {
       const { data: u } = await supabase.auth.getUser()
       persona.current = etiquetaPersona(u?.user ?? null)
@@ -61,11 +63,14 @@ export function useDatosDelBalance(empresa: string, anioCierre: number, papel: P
         return
       }
       const v: Record<string, string> = {}
+      const t: Record<string, string> = {}
       for (const f of (data || []) as FilaDatoUsuario[]) {
         filas.current[f.clave] = { ...f, valor: f.valor == null ? null : Number(f.valor), historial: f.historial ?? [] }
         if (f.texto) v[f.clave] = f.texto
+        const fu = fuenteTentativo(f.actualizado_por)
+        if (fu) t[f.clave] = fu
       }
-      setValores(v); setEstado("guardado")
+      setValores(v); setTentativos(t); setEstado("guardado")
     })()
     return () => { vivo = false }
   }, [empresa, anioCierre, papel])
@@ -81,6 +86,8 @@ export function useDatosDelBalance(empresa: string, anioCierre: number, papel: P
       .upsert(fila, { onConflict: "empresa,anio_cierre,papel,clave" })
     if (error) { setEstado("error"); setError(error.message); return }
     filas.current[clave] = fila
+    // escribir otro valor ES revisarlo: deja de ser tentativo
+    setTentativos(tt => { if (!(clave in tt)) return tt; const n = { ...tt }; delete n[clave]; return n })
     setEstado(Object.keys(pendientes.current).length ? "guardando" : "guardado"); setError(null)
   }, [empresa, anioCierre, papel])
 
@@ -101,6 +108,20 @@ export function useDatosDelBalance(empresa: string, anioCierre: number, papel: P
     pendientes.current = {}
   }, [escribir])
 
-  return { valores, cambiar, estado, error }
+  /** ✓ OK de JMS a un dato tentativo: mismo valor, queda a su nombre; lo de Claude va al historial. */
+  const confirmar = useCallback(async (clave: string) => {
+    const f = filas.current[clave]
+    const fila = f ? confirmarFila(f, persona.current, ahoraISO()) : null
+    if (!fila) return
+    setEstado("guardando")
+    const { error } = await supabase.from(TABLA_DATOS_USUARIO)
+      .upsert(fila, { onConflict: "empresa,anio_cierre,papel,clave" })
+    if (error) { setEstado("error"); setError(error.message); return }
+    filas.current[clave] = fila
+    setTentativos(tt => { const n = { ...tt }; delete n[clave]; return n })
+    setEstado("guardado"); setError(null)
+  }, [])
+
+  return { valores, cambiar, estado, error, tentativos, confirmar }
 }
 

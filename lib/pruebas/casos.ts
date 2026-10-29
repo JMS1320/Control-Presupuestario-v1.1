@@ -284,7 +284,7 @@ import { ocurrenciasDeCampania, sugerirAgrupar, fechasIatf, chequearIatf, cheque
   agruparEnSesiones, avisos, encierresPorRodeo, controlarEncierres, proponerCalendario, expandirIatf,
   type TareaPlan as TareaPlanCaso, type Hecho as HechoCaso, type Ocurrencia as OcurrenciaCaso } from "@/lib/productivo/plan-sanitario"
 import { presentarHoja, MONEDA, ENTERO } from "@/lib/balance/formato-excel"
-import { armarFilaDato, leerNumero, textoEstadoGuardado } from "@/lib/balance/datos-usuario-puro"
+import { armarFilaDato, leerNumero, textoEstadoGuardado, MARCA_TENTATIVO, esTentativo, fuenteTentativo, confirmarFila, leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
 import { leerFacturaDelTexto, precargaDesdeLectura, cuitValido, parsearImporte } from "@/lib/gas-pdf/leer-factura"
 import { controlDeLaCarga, camposDeLaCarga, huellaDeLaCarga, aNegativoSiNC } from "@/lib/facturas/alta-factura"
@@ -7216,6 +7216,14 @@ export function correrCasos(): Resultado[] {
       `1.500.000,00 + ${n2(de("JMS").resumen.saldo)} = ${n2(r2(1500000 + de("JMS").resumen.saldo))}`,
       `${n2(jms.saldoInicio)} + ${n2(jms.resumen.saldo)} = ${n2(jms.saldoAlCierre)}${jms.inicioSinDato ? " (sin dato)" : ""}`,
       jms.saldoAlCierre === r2(1500000 + de("JMS").resumen.saldo) && !jms.inicioSinDato, "A-FEAT-1388")
+    // 🤖 A-FEAT-1386: el saldo de inicio que puso Claude suma igual, pero lleva la leyenda TENTATIVO para el Excel
+    const conTent = aplicarSaldosInicio(r, { JMS: 15000000, AMS: null }, { JMS: "TENTATIVO · fuente X", AMS: "TENTATIVO · fuente Y" })
+    const jt = conTent.cuentas.find(c => c.contraparte.clave === "JMS")!
+    const at = conTent.cuentas.find(c => c.contraparte.clave === "AMS")!
+    const vt = `${jt.inicioTentativo ?? "-"} | AMS: ${at.inicioTentativo ?? "sin leyenda"} ${at.inicioSinDato ? "(sin dato)" : ""}`
+    chequear("Cuentas corrientes", "🤖 El inicio tentativo suma al cierre y lleva su leyenda; uno vacío no lleva leyenda (es «sin dato», no tentativo)",
+      "TENTATIVO · fuente X | AMS: sin leyenda (sin dato)", vt,
+      vt === "TENTATIVO · fuente X | AMS: sin leyenda (sin dato)" && jt.saldoAlCierre === r2(15000000 + de("JMS").resumen.saldo), "A-FEAT-1386")
 
     // 🧮 La aseguradora: el saldo final del detalle es el SALDO AL CIERRE de arriba, y el papel lo muestra.
     const conSeguro = { ...r, aseguradoras: [{
@@ -10267,6 +10275,18 @@ export function correrCasos(): Resultado[] {
     const pc2 = posicionAlCierre(usd, "2026-10-31", 1500)
     const v5 = `costó ${pc2.pesosHistoricos} · dif ${pc2.diferenciaDeCambio} · sin TC ${pc2.sinTC} · movs ${pc2.movimientos}`
     chequear("Dólares — posición con un movimiento sin TC", "Si falta un TC hasta el cierre, la diferencia de cambio no se calcula: se dice cuántos faltan; lo posterior al cierre no entra", "costó null · dif null · sin TC 1 · movs 3", v5, v5 === "costó null · dif null · sin TC 1 · movs 3", "A-FEAT-1398")
+  }
+
+  // ══ 🤖 Datos TENTATIVOS de Claude en el balance (A-FEAT-1386, JMS 27-28/10): marca, fuente, OK ══
+  {
+    const fila = { empresa: "MSA", anio_cierre: 2026, papel: "granos", clave: "inicio", texto: "6,926", valor: 6.926,
+      historial: [], actualizado_por: MARCA_TENTATIVO + "STOCKS - GRANOS… · 1 - GRANOS · B13", updated_at: "2026-10-28T22:00:00Z" }
+    const ok = confirmarFila(fila, "José", "2026-10-29T10:00:00Z")
+    const v = `${esTentativo(fila.actualizado_por)} · ${fuenteTentativo(fila.actualizado_por)} · OK→ ${ok?.actualizado_por} · valor ${ok?.valor} · historial ${ok?.historial.length} (${ok?.historial[0]?.por?.slice(0, 18)}) · reconfirmar ${confirmarFila(ok!, "José", "x") === null}`
+    const e = "true · STOCKS - GRANOS… · 1 - GRANOS · B13 · OK→ José · valor 6.926 · historial 1 (Claude · TENTATIVO) · reconfirmar true"
+    chequear("Balance — dato tentativo", "El dato de Claude se reconoce y dice su fuente; el ✓ OK lo pasa a nombre de JMS sin cambiar el valor y guarda lo de Claude en el historial; un dato ya confirmado no se reconfirma", e, v, v === e, "A-FEAT-1386")
+    const l = leyendaTentativo("archivo · hoja · celda") + " / " + (leyendaTentativo(null) || "vacío")
+    chequear("Balance — dato tentativo en el Excel", "La leyenda del Excel dice TENTATIVO y la fuente; sin fuente, nada", "TENTATIVO (lo puso Claude, falta tu OK) · archivo · hoja · celda / vacío", l, l === "TENTATIVO (lo puso Claude, falta tu OK) · archivo · hoja · celda / vacío", "A-FEAT-1386")
   }
 
   return r

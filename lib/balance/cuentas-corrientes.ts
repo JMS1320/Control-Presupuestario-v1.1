@@ -167,6 +167,8 @@ export interface CuentaCorrienteDelBalance {
   saldoInicio: number
   /** `true` = nadie cargó el saldo de inicio: el 0 es un default, no un dato. */
   inicioSinDato: boolean
+  /** 🤖 A-FEAT-1386: «TENTATIVO (lo puso Claude…) · fuente» mientras el saldo de inicio no tenga el OK. */
+  inicioTentativo?: string
   resumen: ResumenCC
   /** `saldo inicio + lo del ejercicio`. */
   saldoAlCierre: number
@@ -472,6 +474,8 @@ export function armarCuentasCorrientes(
 export function aplicarSaldosInicio(
   papel: PapelDeCuentasCorrientes,
   saldos: Record<string, number | null | undefined>,
+  /** 🤖 A-FEAT-1386: por clave, la leyenda del saldo que puso Claude y espera el OK. */
+  tentativos: Record<string, string> = {},
 ): PapelDeCuentasCorrientes {
   return {
     ...papel,
@@ -479,7 +483,8 @@ export function aplicarSaldosInicio(
       const v = saldos[c.contraparte.clave]
       const hay = typeof v === "number" && Number.isFinite(v)
       const inicio = hay ? r2(v) : 0
-      return { ...c, saldoInicio: inicio, inicioSinDato: !hay, saldoAlCierre: r2(inicio + c.resumen.saldo) }
+      return { ...c, saldoInicio: inicio, inicioSinDato: !hay, saldoAlCierre: r2(inicio + c.resumen.saldo),
+        inicioTentativo: hay ? tentativos[c.contraparte.clave] : undefined }
     }),
   }
 }
