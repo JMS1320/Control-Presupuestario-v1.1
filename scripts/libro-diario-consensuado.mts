@@ -17,6 +17,7 @@ import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta } from "../lib/
 import { PRESENTADO_ARCA_COMPRAS } from "../lib/balance/presentado-arca"
 import { traerTodo } from "../lib/supabase-paginado"
 import { armarLibroDiarioConsensuado, bytesLibroDiarioConsensuado } from "../lib/balance/libro-diario-consensuado"
+import { leerCobrosYRetenciones } from "../lib/balance/cobros-de-ventas"
 
 const env = Object.fromEntries(
   readFileSync(".env.local", "utf8").split(/\r?\n/)
@@ -55,7 +56,10 @@ const libro = armarLibroDiario(
   [...arca.data.map(desdeArca), ...historico.data.map(desdeHistorico)],
   ventas.data.map(desdeVenta), ej, PRESENTADO_ARCA_COMPRAS[empresaId],
 )
-const l = armarLibroDiarioConsensuado(libro, empresaId)
+const cyr = await leerCobrosYRetenciones(sb, empresaId, empresa.schema)
+for (const a of cyr.avisos) console.warn("⚠️ " + a)
+const l = armarLibroDiarioConsensuado(libro, empresaId, cyr)
+console.log("Control cobros:", JSON.stringify(l.resumen.cobros), "· retenciones:", JSON.stringify(l.resumen.retenciones))
 writeFileSync(SALIDA, await bytesLibroDiarioConsensuado(l))
 
 const p = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })

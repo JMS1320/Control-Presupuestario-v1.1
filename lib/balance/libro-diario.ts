@@ -109,6 +109,8 @@ export interface AsientoLibroDiario {
     almacenaje_iva: number
     ret_iva: number
     ret_iibb: number
+    /** Dos liquidaciones cobradas juntas comparten grupo (ver `lib/balance/cobros-de-ventas.ts`). */
+    grupo_cobro_id?: string | null
   }
 }
 
@@ -378,6 +380,7 @@ export function desdeVenta(f: Record<string, unknown>): AsientoLibroDiario {
       nro_comprobante: s(f.nro_comprobante), ddjj_iva: s(f.ddjj_iva), estado: s(f.estado),
       iva_cargado: n(f.iva), comision_iva: n(f.comision_iva), almacenaje_iva: n(f.almacenaje_iva),
       ret_iva: n(f.ret_iva), ret_iibb: n(f.ret_iibb),
+      grupo_cobro_id: f.grupo_cobro_id ? s(f.grupo_cobro_id) : null,
     },
   }
 }

@@ -197,6 +197,7 @@ import {
 import {
   filasComprasConsensuado, filasVentasConsensuado, retencionesSufridas, agruparPorCuenta, nombresDeCuentaCompras,
   marcasSignoDistinto, armarLibroDiarioConsensuado, nombreArchivoConsensuado, LIBRO_DIARIO_CONSENSUADO,
+  controlarCobros, retencionesDeVenta,
 } from "@/lib/balance/libro-diario-consensuado"
 import {
   clasificarCompra, validarZips, ventaArca, cruzarVentas, cruzarCompras, armarDiferenciasVsArca, emparejar as emparejarDif,
@@ -10106,10 +10107,42 @@ export function correrCasos(): Resultado[] {
     const vs = filasVentasConsensuado([sinCuenta, sinRet, afa])
     const a = vs.find(f => f.nroComprobante === "31270209")!
     const ret = retencionesSufridas(vs)
-    const v4 = `IVA vendido ${a.iva} · cargado ${a.ivaCargado} · comisión+almacenaje ${a.ivaGastos} · dif ${a.dif} | retenciones: ${ret.map(x => `${x.nroComprobante} ${x.retIva}+${x.retIibb}`).join(", ")} | sin cuenta: ${vs.find(f => f.nroComprobante.startsWith("00010"))?.nroCuenta}`
+    const v4 = `IVA vendido ${a.iva} · cargado ${a.ivaCargado} · comisión+almacenaje ${a.ivaGastos} · dif ${a.dif} | retenciones: ${ret.map(x => `${x.f.nroComprobante} ${x.r.iva}+${x.r.iibb}`).join(", ")} | sin cuenta: ${vs.find(f => f.nroComprobante.startsWith("00010"))?.nroCuenta}`
     chequear("Libro Diario consensuado", "Ventas: IVA vendido = IVA de la app − comisión − almacenaje (cierra contra el total); retenciones sólo de las que tienen; la venta sin cuenta va a «(sin cuenta)»",
       "IVA vendido 4153.23 · cargado 4520.46 · comisión+almacenaje 367.23 · dif 0 | retenciones: 31270209 1977.73+322.89 | sin cuenta: (sin cuenta)", v4,
       v4 === "IVA vendido 4153.23 · cargado 4520.46 · comisión+almacenaje 367.23 · dif 0 | retenciones: 31270209 1977.73+322.89 | sin cuenta: (sin cuenta)")
+
+    // 💵 Control cobros (JMS 29/10): total − retenciones = cobrado. Casos reales: Sanpa jul-25 (Ganancias e IIBB en la
+    // tabla, cierra al centavo), Sáenz Valiente (2 liquidaciones en un grupo; IIBB de la venta + Ganancias de la tabla),
+    // y una con el cobro corto (falta una retención).
+    const sanpa = ventaRow({ id: "sanpa", tipo_comprobante: 1, nro_comprobante: "00010-00000017", imp_neto_gravado: 0, imp_op_exentas: 57027626.70,
+      iva: 0, imp_total: 57027626.70, estado: "conciliado" })
+    const sv1 = ventaRow({ id: "sv1", tipo_comprobante: 60, nro_comprobante: "209-32006", imp_neto_gravado: 0, imp_op_exentas: 13381000, iva: 0,
+      imp_total: 13381000, ret_iibb: 94852.50, grupo_cobro_id: "g-sv", estado: "conciliado" })
+    const sv2 = ventaRow({ id: "sv2", tipo_comprobante: 60, nro_comprobante: "209-32007", imp_neto_gravado: 0, imp_op_exentas: 10804679, iva: 0,
+      imp_total: 10804679, ret_iibb: 76590, grupo_cobro_id: "g-sv", estado: "conciliado" })
+    const corta = ventaRow({ id: "corta", tipo_comprobante: 1, nro_comprobante: "00010-00000099", imp_neto_gravado: 0, imp_op_exentas: 1000,
+      iva: 0, imp_total: 1000, estado: "cobrado" })
+    const fc = filasVentasConsensuado([sanpa, sv1, sv2, corta, afa])
+    const tabla = [
+      { ventaId: "sanpa", tipo: "ganancias", monto: 3420985.60, fecha: null, certificado: null },
+      { ventaId: "sanpa", tipo: "iibb", monto: 570276.27, fecha: null, certificado: null },
+      { ventaId: "sv1", tipo: "ganancias", monto: 235813, fecha: null, certificado: "C-1" },
+      { ventaId: "sv2", tipo: "ganancias", monto: 194028, fecha: null, certificado: null },
+    ]
+    const cobros = [
+      { ventaId: "sanpa", fecha: "2025-07-10", importe: 53036364.83, origen: "Galicia" },
+      { ventaId: "sv1", fecha: "2026-01-28", importe: 20000000, origen: "Galicia" },
+      { ventaId: "sv2", fecha: "2026-01-28", importe: 3584395.50, origen: "Galicia" },
+      { ventaId: "corta", fecha: "2026-01-01", importe: 940, origen: "Galicia" },
+    ]
+    const cc = controlarCobros(fc, tabla, cobros)
+    const rSv1 = retencionesDeVenta(fc.find(f => f.asiento.id === "sv1")!, tabla)
+    const vCob = cc.map(x => `${x.ventas.map(v => v.asiento.id).join("+")}:${x.estado}${x.estado === "ok" ? "" : ` ${x.diferencia}`}`).join(" · ")
+      + ` | sv1 iibb ${rSv1.iibb} gan ${rSv1.gan} cert ${rSv1.certificados.join(",")}`
+    const esperadoCob = "sanpa:ok · corta:no cierra 60 · sv1+sv2:ok · 31270209:a cobrar 41407.21 | sv1 iibb 94852.5 gan 235813 cert C-1"
+    chequear("Libro Diario consensuado", "💵 Control cobros: total − retenciones (tabla + liquidación, sin contar dos veces) = cobrado; el grupo de cobro va junto; marca la que no cierra y la que está a cobrar",
+      esperadoCob, vCob, vCob === esperadoCob, "A-FEAT-1418")
 
     // El libro entero: 5 solapas, fórmulas vivas; las constantes de 25/26 sólo para MSA 2026.
     const ejC = armarEjercicio(2026, 6)
@@ -10118,9 +10151,9 @@ export function correrCasos(): Resultado[] {
     const pam = armarLibroDiarioConsensuado(libroC, "PAM")
     const tieneSistema = (wb: typeof msa.wb) => Object.values(wb.Sheets.Compras).some(x => (x as { v?: unknown }).v === "Sistema")
     const v5 = `${msa.wb.SheetNames.join("|")} · V2 =${(msa.wb.Sheets.Compras.V2 as { f?: string }).f} · Sistema MSA ${tieneSistema(msa.wb)} / PAM ${tieneSistema(pam.wb)} · ${nombreArchivoConsensuado(libroC, "MSA", "2026-10-28")}`
-    chequear("Libro Diario consensuado", "Un solo libro con 5 solapas y la dif. como fórmula; el cuadro consensuado sale sólo en el ejercicio que lo tiene (MSA 25/26)",
-      "Compras|Compras por cuenta|Ventas|Ventas por cuenta|Retenciones sufridas · V2 =U2-(O2+P2+Q2+S2+T2+R2) · Sistema MSA true / PAM false · Libro_Diario_MSA_25-26_2026-10-28.xlsx", v5,
-      v5 === "Compras|Compras por cuenta|Ventas|Ventas por cuenta|Retenciones sufridas · V2 =U2-(O2+P2+Q2+S2+T2+R2) · Sistema MSA true / PAM false · Libro_Diario_MSA_25-26_2026-10-28.xlsx")
+    chequear("Libro Diario consensuado", "Un solo libro con 6 solapas (la última, Control cobros) y la dif. como fórmula; el cuadro consensuado sale sólo en el ejercicio que lo tiene (MSA 25/26)",
+      "Compras|Compras por cuenta|Ventas|Ventas por cuenta|Retenciones sufridas|Control cobros · V2 =U2-(O2+P2+Q2+S2+T2+R2) · Sistema MSA true / PAM false · Libro_Diario_MSA_25-26_2026-10-28.xlsx", v5,
+      v5 === "Compras|Compras por cuenta|Ventas|Ventas por cuenta|Retenciones sufridas|Control cobros · V2 =U2-(O2+P2+Q2+S2+T2+R2) · Sistema MSA true / PAM false · Libro_Diario_MSA_25-26_2026-10-28.xlsx")
   }
 
   // ══ 🔍 Diferencias vs ARCA (los dos reportes armados a mano el 27/10/2026, desde los zips del libro IVA) ══
