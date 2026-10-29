@@ -10386,6 +10386,15 @@ export function correrCasos(): Resultado[] {
     const e11 = "ok: 2026 pagado anual · 2025 en cuotas: 6 de 6 (proporcional) · par: anual 1 usado(s) de 1 · cuotas 6 con importe de 7 | 12 de 12 · pagadas juntas en un solo pago: 3 (jul-25, ago-25, sep-25)"
     chequear(G, "👀 Nota 11: el anual conciliado (aunque esté en $0) es pago anual; siempre se ve el par; las cuotas pagadas juntas se señalan",
       e11, v11, v11 === e11, "A-FEAT-1422")
+    // …pero si ese año SÍ se pagó en cuotas, el anual en $0 conciliado es la forma que no se usó (Red Vial Rojas 2026).
+    const [fRojas] = correr([cfg("Red Vial Cuota Rojas", { tipo: "fijo", esperado: 2 })], [
+      cu("Red Vial Anual Rojas", "2026-01-08", 0, { estado: "conciliado" }),
+      cu("Red Vial Cuota Rojas", "2026-02-23", 1242220.70, { estado: "conciliado" }),
+      cu("Red Vial Cuota Rojas", "2026-05-26", 1367493.77, { estado: "conciliado" }),
+    ])
+    chequear(G, "👀 Nota 11: el anual en $0 conciliado NO es pago anual si ese año hay cuotas con importe (no da «mixto»)",
+      "ok · sin «mixto» · par: anual 0 usado(s)", `${fRojas.estado} · ${fRojas.detalle}`,
+      fRojas.estado === "ok" && !/mixto|dos veces/.test(fRojas.detalle) && fRojas.detalle.includes("anual 0 usado(s) de 1"), "A-FEAT-1422")
     // Mismo nombre escrito distinto, otro template (recreado otro año); compartido → primera empresa
     const [fNom] = correr([cfg("Imp .Ganancias MSA", { tipo: "fijo", esperado: 1 })], [cu("IMP. GANANCIAS MSA", "2025-11-10", 100, { egresoId: "tpl-2025" })])
     const [fComp] = controlarCuotasTemplates({ empresa: "PAM", meses: pam.meses, hoy: "2026-10-28",

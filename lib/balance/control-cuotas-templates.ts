@@ -306,10 +306,16 @@ const ESTADO_EXCLUIDO = "desactivado"
 const conImporte = (c: CuotaParaControl) => Math.abs(c.monto) > 1
 /**
  * 🔑 ¿Se usó el pago ANUAL? JMS 29/10 (A-FEAT-1422 nota 11): *«si es anual buscar sólo una»*. Con importe, o
- * CONCILIADO / PAGADO aunque esté en $0 (Tiguan 2026: el anual está conciliado con el importe sin cargar). Una
- * cuota en $0 conciliada no cuenta así: es la forma que no se usó.
+ * CONCILIADO / PAGADO en $0 **si ese año no hay cuotas con importe** (Tiguan 2026: el anual está conciliado con el
+ * importe sin cargar y las cuotas en $0). Si el año SÍ se pagó en cuotas, el anual en $0 conciliado es la forma que
+ * no se usó (Red Vial Rojas, ABL Libertad y Red Vial Lima 2026: daban «mixto» de más).
  */
-const anualUsado = (c: CuotaParaControl) => conImporte(c) || /^(pagad|concilia)/i.test((c.estado || "").trim())
+function anualUsado(c: CuotaParaControl, todas: CuotaParaControl[]): boolean {
+  if (conImporte(c)) return true
+  if (!/^(pagad|concilia)/i.test((c.estado || "").trim())) return false
+  const anio = mesDeCuota(c).slice(0, 4)
+  return !todas.some(x => !esAnual(x.nombre) && conImporte(x) && mesDeCuota(x).startsWith(anio))
+}
 
 function textoRegla(t: TemplateControlado): string {
   const r = t.regla
@@ -400,14 +406,14 @@ function porCantidad(delPeriodo: CuotaParaControl[], mesesCampania: string[], es
   const anios = [...new Set(mesesCampania.map(m => m.slice(0, 4)))]
   const delAnio = (y: string) => delPeriodo.filter(c => mesDeCuota(c).startsWith(y))
   const formas = anios.map(y => {
-    const anualCon = delAnio(y).filter(c => esAnual(c.nombre) && anualUsado(c))
+    const anualCon = delAnio(y).filter(c => esAnual(c.nombre) && anualUsado(c, delPeriodo))
     const cuotasCon = delAnio(y).filter(c => !esAnual(c.nombre) && conImporte(c))
     const forma = anualCon.length && cuotasCon.length ? "mixto" : anualCon.length ? "anual" : "cuotas"
     return { y, forma, anuales: anualCon.length, cuotasCon: cuotasCon.length, meses: mesesCampania.filter(m => m.startsWith(y)) }
   })
   // En los años en cuotas, el pago anual en $0 (la forma que no se usó) no es una cuota.
   const cuotas = delPeriodo.filter(c => !esAnual(c.nombre) && formas.find(f => mesDeCuota(c).startsWith(f.y))?.forma === "cuotas")
-  const meses = [...new Set(delPeriodo.filter(c => anualUsado(c) || !esAnual(c.nombre)).map(mesDeCuota))].sort()
+  const meses = [...new Set(delPeriodo.filter(c => anualUsado(c, delPeriodo) || !esAnual(c.nombre)).map(mesDeCuota))].sort()
 
   const avisos: string[] = []
   const sinImporte = cuotas.filter(c => !conImporte(c)).length
@@ -422,7 +428,7 @@ function porCantidad(delPeriodo: CuotaParaControl[], mesesCampania: string[], es
   const anualesDelPar = delPeriodo.filter(c => esAnual(c.nombre))
   const cuotasDelPar = delPeriodo.filter(c => !esAnual(c.nombre))
   if (anualesDelPar.length && cuotasDelPar.length) {
-    avisos.push(`par: anual ${anualesDelPar.filter(anualUsado).length} usado(s) de ${anualesDelPar.length} · cuotas ${cuotasDelPar.filter(conImporte).length} con importe de ${cuotasDelPar.length}`)
+    avisos.push(`par: anual ${anualesDelPar.filter(c => anualUsado(c, delPeriodo)).length} usado(s) de ${anualesDelPar.length} · cuotas ${cuotasDelPar.filter(conImporte).length} con importe de ${cuotasDelPar.length}`)
   }
   // 📦 «Cuotas agrupadas en un solo pago» (nota 11): las del mismo grupo de pago, y la que vale varias cuotas juntas.
   const grupos = new Map<string, CuotaParaControl[]>()
