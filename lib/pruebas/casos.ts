@@ -10533,6 +10533,18 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · 04 seguros en cuotas", "Sin las cuotas de las pólizas (no se pudieron leer, o ventas), «cuotas» va entera como siempre",
       "3000 · no se pagó nunca", `${sinMapa.total} · ${sinMapa.filas[0]?.motivo}`,
       sinMapa.total === 3000 && sinMapa.filas[0]?.motivo === "no se pagó nunca", "A-FEAT-1385")
+    // 🛡️ JMS 29/10: la póliza dejó de debitarse → falta la NC, NO es deuda. AP de MA real: feb–abr debitadas, may y
+    // jun vencidas y nunca debitadas; julio vence después del cierre (eso sí queda como saldo de la factura).
+    const baja = {
+      poliza: "10200836",
+      lineas: ["2026-02-13", "2026-03-13", "2026-04-13", "2026-05-13", "2026-06-13", "2026-07-13"].map(v => ({ comprobanteId: "baja", vencimiento: v, importe: 100 })),
+      cuotasTemplate: [tpl("2026-02-13", 100, "2026-02-19"), tpl("2026-03-13", 100, "2026-03-17"), tpl("2026-04-13", 100, "2026-04-17"),
+        tpl("2026-05-13", 100, null), tpl("2026-06-13", 100, null), tpl("2026-07-13", 100, null)],
+    }
+    const cb = armarCuentasAlCierre([seguro("baja", 600)], CIERRE, canceladoPorCuotasAlCierre([baja], CIERRE))
+    const vBaja = `deuda ${cb.total} · falta NC ${cb.totalFaltaNc} (${cb.faltaNc.length})`
+    chequear("Balance · 04 seguros en cuotas", "🛡️ Cuota vencida al cierre que nunca se debitó: falta la NC — sale de la deuda y se marca aparte (la que vence después sigue siendo deuda)",
+      "deuda 100 · falta NC 200 (1)", vBaja, vBaja === "deuda 100 · falta NC 200 (1)", "A-FEAT-1416")
   }
 
   // ══ 🐄 Los tres saldos de la hacienda: sistema · SENASA · balance (A-FEAT-1386 (d), JMS 29/10) ══

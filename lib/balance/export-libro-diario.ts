@@ -837,6 +837,12 @@ function hojaDeCuentas(
     "No se pudieron atar a una póliza con template: no se sabe qué cuotas se pagaron.",
   ], c.sinVinculoPoliza, c.totalSinVinculoPoliza)
 
+  // 🛡️ JMS 29/10: una cuota que dejó de debitarse no es deuda — falta la NC. Fuera del total, marcada.
+  bloque([
+    "SEGUROS: CUOTAS VENCIDAS QUE NUNCA SE DEBITARON — falta la NC a recibir, NO son deuda",
+    "La póliza dejó de cobrarse (¿baja?): por ahora la conclusión es que falta su nota de crédito. Ver papel 14 (Federación).",
+  ], c.faltaNc ?? [], c.totalFaltaNc ?? 0)
+
   // 🔁 JMS 29/10: quien tiene cuenta corriente en el 14 no va comprobante por comprobante acá.
   const enCC = (c as Partial<CuentasSinCuentaCorriente>).enCuentaCorriente
   if (enCC?.length) {
