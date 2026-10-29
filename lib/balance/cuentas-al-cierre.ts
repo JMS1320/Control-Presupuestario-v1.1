@@ -119,6 +119,7 @@ export type MotivoCuenta =
   | "seguro en cuotas: queda el saldo de su póliza al cierre"
   | "seguro en cuotas: su póliza tenía todo pago al cierre"
   | "seguro en cuotas: sin vínculo con la póliza (va entera)"
+  | "seguro en cuotas: dejó de debitarse — falta la NC a recibir"
 
 export interface FilaCuenta {
   asiento: AsientoLibroDiario
@@ -176,6 +177,13 @@ export interface CuentasAlCierre {
    */
   sinVinculoPoliza: FilaCuenta[]
   totalSinVinculoPoliza: number
+  /**
+   * 🛡️ Cuotas de póliza vencidas al cierre que **nunca se debitaron** (JMS 29/10/2026: *«una cuota mensual que no
+   * se debitó más implica por ahora la conclusión de que faltan NC a recibir»*). NO son deuda: salen del total y se
+   * marcan aparte. El papel 14 (cuenta corriente con la aseguradora) las muestra como «NC pendiente».
+   */
+  faltaNc: FilaCuenta[]
+  totalFaltaNc: number
   /** Cuántos se pagaron después del cierre — el caso que el criterio ingenuo perdía. */
   pagadosDespues: number
   /** Total de comprobantes mirados, para poder cerrar contra el libro. */
@@ -248,6 +256,9 @@ export interface CanceladoPorCuotas {
   /** Mismo signo que la factura: positivo en una factura, negativo en una NC (lo ya consumido). */
   cancelado: number
   detalle: string
+  /** Lo vencido al cierre cuya cuota NUNCA se debitó: falta la NC a recibir, no es deuda. */
+  faltaNc?: number
+  detalleFaltaNc?: string
 }
 
 /** Margen para juntar vencimientos: el de `cuotasDeLaPoliza` (plan del endoso vs. consolidado). */
@@ -276,6 +287,7 @@ export function canceladoPorCuotasAlCierre(
 
   for (const p of polizas) {
     const cancelado = new Map<string, number>()
+    const faltaNc = new Map<string, { importe: number; cuotas: string[] }>()
     const venc = new Map<string, { cuotas: number; de: number }>()
     const anotar = (id: string | null, importe: number, cuenta: boolean) => {
       if (!id) return
@@ -331,6 +343,17 @@ export function canceladoPorCuotasAlCierre(
       const pagadaAlCierre = !!t && t.monto > 0.005 && !!t.fechaPago && t.fechaPago <= fechaCierre
       // Compensada: la NC la cubrió. La cuota quedó en 0, o no se generó porque el saldo alcanzaba.
       const compensada = vencio && (t ? t.monto <= 0.005 : disponible() >= bruto - 0.005)
+      // 🛡️ Vencida al cierre y su cuota NUNCA se debitó (ni después): la póliza dejó de cobrarse → falta la NC.
+      if (vencio && !compensada && t && t.monto > 0.005 && !t.fechaPago && !/^(pagad|concilia)/i.test(t.estado)) {
+        for (const l of positivas) {
+          if (!l.comprobanteId) continue
+          const x = faltaNc.get(l.comprobanteId) ?? { importe: 0, cuotas: [] }
+          x.importe = r2(x.importe + l.importe)
+          if (!x.cuotas.includes(g.vencimiento)) x.cuotas.push(g.vencimiento)
+          faltaNc.set(l.comprobanteId, x)
+        }
+        continue
+      }
       if (!pagadaAlCierre && !compensada) continue
 
       // Lo que no puso el banco lo puso la NC: se le descuenta, la más vieja primero.
@@ -350,8 +373,17 @@ export function canceladoPorCuotasAlCierre(
       const detalle = monto < 0
         ? `NC de la póliza ${p.poliza}: ${fmt(-monto)} ya compensado en cuotas al ${fechaCierre}`
         : `póliza ${p.poliza}: ${v.cuotas} de ${v.de} cuota(s) del plan pagas al ${fechaCierre} (${fmt(monto)})`
-      out.set(id, { poliza: p.poliza, cancelado: monto, detalle })
+      const f = faltaNc.get(id)
+      out.set(id, {
+        poliza: p.poliza, cancelado: monto, detalle,
+        ...(f ? { faltaNc: f.importe, detalleFaltaNc: `póliza ${p.poliza}: ${f.cuotas.length} cuota(s) vencida(s) sin débito (${f.cuotas.join(", ")}) — falta la NC a recibir (ver papel 14)` } : {}),
+      })
     }
+    // Una factura cuyas cuotas vencidas nunca se debitaron y no tiene nada cancelado: también va.
+    for (const [id, f] of faltaNc) if (!out.has(id)) out.set(id, {
+      poliza: p.poliza, cancelado: 0, detalle: `póliza ${p.poliza}: ninguna cuota paga al ${fechaCierre}`,
+      faltaNc: f.importe, detalleFaltaNc: `póliza ${p.poliza}: ${f.cuotas.length} cuota(s) vencida(s) sin débito (${f.cuotas.join(", ")}) — falta la NC a recibir (ver papel 14)`,
+    })
   }
   return out
 }
@@ -420,6 +452,7 @@ export function armarCuentasAlCierre(
   const estadoDesconocido: FilaCuenta[] = []
   const canceladasPorCuotas: FilaCuenta[] = []
   const sinVinculoPoliza: FilaCuenta[] = []
+  const faltaNc: FilaCuenta[] = []
   const estadosSinClasificar = new Set<string>()
   let pagadosDespues = 0
 
@@ -463,9 +496,13 @@ export function armarCuentasAlCierre(
         sinVinculoPoliza.push(fila)
         continue
       }
-      const saldo = r2(c.asiento.total - p.cancelado)
+      // 🛡️ Lo que nunca se debitó no es deuda: falta la NC (JMS 29/10). Se marca aparte, fuera del total.
+      if (p.faltaNc && Math.abs(p.faltaNc) >= 0.01) {
+        faltaNc.push({ ...base, importe: p.faltaNc, motivo: "seguro en cuotas: dejó de debitarse — falta la NC a recibir", detalle: p.detalleFaltaNc })
+      }
+      const saldo = r2(c.asiento.total - p.cancelado - (p.faltaNc ?? 0))
       if (Math.abs(saldo) < 0.01) {
-        canceladasPorCuotas.push({ ...base, motivo: "seguro en cuotas: su póliza tenía todo pago al cierre", detalle: p.detalle })
+        if (!p.faltaNc) canceladasPorCuotas.push({ ...base, motivo: "seguro en cuotas: su póliza tenía todo pago al cierre", detalle: p.detalle })
         continue
       }
       filas.push({
@@ -511,6 +548,8 @@ export function armarCuentasAlCierre(
     totalCanceladasPorCuotas: sumar(canceladasPorCuotas),
     sinVinculoPoliza: porPeso(sinVinculoPoliza),
     totalSinVinculoPoliza: sumar(sinVinculoPoliza),
+    faltaNc: porPeso(faltaNc),
+    totalFaltaNc: sumar(faltaNc),
     pagadosDespues,
     mirados: comprobantes.length,
   }
