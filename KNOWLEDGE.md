@@ -75,6 +75,10 @@ contador y su balance interno, de punta a punta).
   planilla va a la versión que corresponde, **no** a una copia aparte.
 - En los papeles se muestran lado a lado: **Sistema · (SENASA) · Campo · Balance**, con las diferencias Sistema − Campo
   (suele ser mortandad o algo sin registrar) y Campo − Balance (suele ser tratamiento contable). Avisan, no frenan.
+- 📍 **Cada dato dice de dónde salió** (JMS 29/10: *«andá dejando registrado de dónde tomaste cada dato; luego yo
+  corrijo»*): archivo, hoja y celda, en el `detalle` del renglón de la foto o en la fuente del dato tentativo. Los
+  papeles de `Balance/- Enviados/` son **los que se mandaron al contador**; el `BAPU JMS USS` es **el registro interno**
+  de JMS. Un mismo número puede estar en los dos; si difieren, van los dos, cada uno en su versión.
 - ⚠️ Un dato que se usa para UN papel (ej. el saldo de inicio de la caja en el papel 07 sale del campo: $ 457.212,92)
   no borra el otro: el contador ($ 9.903.617,62) sigue en su versión de la foto.
 
