@@ -119,6 +119,7 @@ export type MotivoCuenta =
   | "seguro en cuotas: queda el saldo de su póliza al cierre"
   | "seguro en cuotas: su póliza tenía todo pago al cierre"
   | "seguro en cuotas: sin vínculo con la póliza (va entera)"
+  | "seguro en cuotas: dejó de debitarse — falta la NC a recibir"
 
 export interface FilaCuenta {
   asiento: AsientoLibroDiario
