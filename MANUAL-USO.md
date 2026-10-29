@@ -698,6 +698,17 @@ Los botones (copiar pedido, pedir, buscar) trabajan sobre lo que queda a la vist
 
 ⚠️ Sin probar todavía → [A-TEST-1272](PENDIENTES.md#a-test-1272)
 
+## 📒 Mandar una factura a «Asientos Contables»
+
+Para las facturas **no informadas en ARCA** que no van al subdiario de IVA (facturas B y otros casos): el contador las
+registra con un asiento. Tres caminos:
+- **Egresos → Facturas ARCA → Imputar Facturas**: tildá las facturas y apretá **«📒 A Asientos Contables»**.
+- **Editando la factura**: en **Estado DDJJ** elegí **«📒 Asientos Contables (sale del subdiario)»**.
+- **Al cargarla desde el PDF**: elegí el destino **«📒 Asientos Contables»**.
+
+Salen en la solapa «Asientos Contables» de los Papeles del balance del ejercicio de su fecha. El botón
+**📒 Asientos Contables** de Facturas ARCA muestra la lista y deja sacar una.
+
 ## 📅 Precios de la hacienda y los granos al cierre *(cambió 2026-10-29)*
 
 Al «Traer stock y precios», cada mercado toma **el precio del día de cierre o el último publicado antes** (ya no el
