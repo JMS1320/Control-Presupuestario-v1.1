@@ -708,7 +708,7 @@ contra el balance: lo normal es que la diferencia sea una mortandad sin registra
 Siempre hay **dos datos declarados**: **Campo** (el tuyo, para el balance interno) y **Balance** (el del contador). En la
 hacienda se escriben ahí mismo; debajo, la tabla de **insumos agrícolas, insumos ganaderos, gas oil y sementeras** (en
 pesos) los toma de la foto del **Balance propio** (versiones JMS y Contador), donde se cargan. Sistema = el stock valuado
-de la app, sólo al cierre.
+de la app, sólo al cierre. Las dos tablas salen también en el Excel: en «02 Hacienda» y al pie de «Stock insumos».
 
 ⚠️ Sin probar todavía → [A-TEST-1287](PENDIENTES.md#a-test-1287)
 

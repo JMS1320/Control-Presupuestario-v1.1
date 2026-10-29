@@ -286,6 +286,7 @@ import { ocurrenciasDeCampania, sugerirAgrupar, fechasIatf, chequearIatf, cheque
   type TareaPlan as TareaPlanCaso, type Hecho as HechoCaso, type Ocurrencia as OcurrenciaCaso } from "@/lib/productivo/plan-sanitario"
 import { presentarHoja, MONEDA, ENTERO } from "@/lib/balance/formato-excel"
 import { armarTresSaldos, sistemaAlMomento } from "@/lib/balance/tres-saldos-hacienda"
+import { agregarSaldosHacienda, agregarSaldosProductivos } from "@/lib/balance/saldos-excel"
 import { armarSaldosProductivos, sistemaProductivoAlCierre, diaAnterior } from "@/lib/balance/saldos-productivos"
 import { armarFilaDato, leerNumero, textoEstadoGuardado, MARCA_TENTATIVO, esTentativo, fuenteTentativo, confirmarFila, leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
@@ -10518,6 +10519,22 @@ export function correrCasos(): Resultado[] {
     const v = `ini agric ${f(ini.filas[0])} · ini sem ${f(ini.filas[3])} · cie agric ${f(cie.filas[0])} · cie sem ${f(cie.filas[3])} · cie total ${f(cie.total)} · ${diaAnterior("2025-07-01")}`
     const e = "ini agric —/5299830/—/—/— · ini sem —/9490702.93/4738332.1/—/4752370.83 · cie agric 150.5/150.5/—/0/— · cie sem 2000/1900/1800/100/100 · cie total 2160.5/2050.5/1800/110/250.5 · 2025-06-30"
     chequear("Balance — saldos productivos", "Campo (jms) y Balance (contador) salen de la foto; al inicio el sistema no tiene saldo (—, nunca cero); al cierre suma los grupos por ámbito y la sementera; difs Sistema−Campo y Campo−Balance", e, v, v === e, "A-FEAT-1386")
+  }
+
+  // ══ 📗 Las tablas de saldos en el Excel: diferencias como FÓRMULA, vacías si falta un dato (A-FEAT-1386) ══
+  {
+    const ts = armarTresSaldos("inicio", { Vaca: 5 }, { "inicio.campo.vacas": "150", "inicio.balance.vacas": "148" })
+    const f: unknown[][] = [["título"]]
+    agregarSaldosHacienda(f, { inicio: ts, cierre: ts }, "2025-06-30", "2026-06-30")
+    const iV = f.findIndex(r => r[0] === "Vacas")
+    const fila = f[iV] as unknown[]
+    const cel = (c: unknown) => (c && typeof c === "object" && "f" in (c as object)) ? `=${(c as { f: string }).f}→${(c as { v: number }).v}` : String(c === "" ? "·" : c)
+    const p: unknown[][] = []
+    agregarSaldosProductivos(p, { inicio: armarSaldosProductivos(null, { insumos_agricolas: { jms: 100 } }), cierre: armarSaldosProductivos({ "insumos-agricolas": 90 }, { insumos_agricolas: { jms: 100, contador: 0 } }), fechaInicio: "2025-06-30", fechaCierre: "2026-06-30" })
+    const iP = p.findIndex((r, i) => i > 3 && r[0] === "Insumos agrícolas" && (p[i - 1][0] as string).startsWith("Al CIERRE"))
+    const v = `fila ${iV + 1}: ${fila.map(cel).join(" | ")} · senasa vacío sin fórmula · cierre agric fila ${iP + 1}: ${(p[iP] as unknown[]).map(cel).join(" | ")}`
+    const e = `fila ${iV + 1}: Vacas | 5 | · | 150 | 148 | =B${iV + 1}-D${iV + 1}→-145 | · | =D${iV + 1}-E${iV + 1}→2 · senasa vacío sin fórmula · cierre agric fila ${iP + 1}: Insumos agrícolas | 90 | 100 | 0 | =B${iP + 1}-C${iP + 1}→-10 | =C${iP + 1}-D${iP + 1}→100`
+    chequear("Balance — saldos en el Excel", "Las diferencias van como fórmula sobre su propia fila; si falta un dato la celda queda vacía (no un 0 que se lea «cierra»)", e, v, v === e, "A-FEAT-1386")
   }
 
   return r

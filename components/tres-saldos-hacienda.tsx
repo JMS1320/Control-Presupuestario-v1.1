@@ -6,7 +6,7 @@
  */
 import { useState } from "react"
 import { Input } from "@/components/ui/input"
-import { useDatosDelBalance, textoEstadoGuardado } from "@/lib/balance/datos-usuario"
+import { textoEstadoGuardado, type useDatosDelBalance } from "@/lib/balance/datos-usuario"
 import {
   armarTresSaldos, claveSaldo, type MomentoSaldo, type FuenteManual,
 } from "@/lib/balance/tres-saldos-hacienda"
@@ -14,12 +14,12 @@ import {
 const ent = (n: number | null) => n == null ? "—" : Math.round(n).toLocaleString("es-AR")
 const dif = (n: number | null) => n == null ? "—" : n === 0 ? "✓" : (n > 0 ? "+" : "") + ent(n)
 
-export function TresSaldosHacienda({ empresa, anioCierre, sistema }: {
-  empresa: string; anioCierre: number
+/** `datos` = el hook del papel `hacienda.saldos`, que vive en `hacienda-al-cierre` (así lo mismo va al Excel). */
+export function TresSaldosHacienda({ datos, sistema }: {
+  datos: ReturnType<typeof useDatosDelBalance>
   sistema: { inicio: Record<string, number>; cierre: Record<string, number> }
 }) {
   const [momento, setMomento] = useState<MomentoSaldo>("inicio")
-  const datos = useDatosDelBalance(empresa, anioCierre, "hacienda.saldos")
   const t = armarTresSaldos(momento, sistema[momento], datos.valores)
   const tentativas = Object.keys(datos.tentativos).filter(k => k.startsWith(momento + "."))
   const fuente = tentativas.length ? datos.tentativos[tentativas[0]] : null

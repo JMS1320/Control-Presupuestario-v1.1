@@ -2,58 +2,25 @@
 
 /**
  * 🌾 Saldos de insumos, gas oil y sementeras — sistema · campo · balance (A-FEAT-1386 (e), JMS 29/10).
- * Campo y Balance se LEEN de la foto del Balance propio (versiones jms y contador); se cargan allá.
- * La lógica vive en `lib/balance/saldos-productivos.ts`.
+ * Sólo muestra: las tablas las arma `hacienda-al-cierre` (que también las manda al Excel), con Campo y Balance
+ * leídos de la foto del Balance propio (versiones jms y contador; se cargan allá).
  */
-import { useEffect, useState } from "react"
-import { supabase } from "@/lib/supabase"
-import {
-  armarSaldosProductivos, RENGLONES_PRODUCTIVOS, type MomentoSaldo, type ValoresFoto,
-} from "@/lib/balance/saldos-productivos"
+import { useState } from "react"
+import type { FilaSaldoProductivo, MomentoSaldo } from "@/lib/balance/saldos-productivos"
 
+type Tabla = { filas: FilaSaldoProductivo[]; total: FilaSaldoProductivo }
 const pesos = (n: number | null) => n == null ? "—" : n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const dif = (n: number | null) => n == null ? "—" : n === 0 ? "✓" : pesos(n)
 
-export function SaldosProductivos({ empresa, fechaInicio, fechaCierre, sistemaAlCierre }: {
-  empresa: string
-  /** la fecha de la foto del inicio (= cierre anterior) */
-  fechaInicio: string
-  fechaCierre: string
-  sistemaAlCierre: Record<string, number>
+export function SaldosProductivos({ tablas, fechas, hayFoto, error }: {
+  tablas: { inicio: Tabla; cierre: Tabla }
+  fechas: { inicio: string; cierre: string }
+  hayFoto: { inicio: boolean; cierre: boolean }
+  error: string | null
 }) {
   const [momento, setMomento] = useState<MomentoSaldo>("inicio")
-  const [fotos, setFotos] = useState<Record<string, ValoresFoto | null>>({})
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let vivo = true
-    ;(async () => {
-      const { data: fs, error: e1 } = await supabase.from("balance_fotos").select("id, fecha_cierre")
-        .eq("empresa", empresa).in("fecha_cierre", [fechaInicio, fechaCierre])
-      if (e1) { if (vivo) setError(e1.message); return }
-      const res: Record<string, ValoresFoto | null> = { [fechaInicio]: null, [fechaCierre]: null }
-      if (fs?.length) {
-        const { data: vs, error: e2 } = await supabase.from("balance_foto_valores").select("foto_id, renglon, version, importe")
-          .in("foto_id", fs.map(f => f.id)).in("renglon", RENGLONES_PRODUCTIVOS)
-        if (e2) { if (vivo) setError(e2.message); return }
-        for (const f of fs) {
-          const v: ValoresFoto = {}
-          for (const x of (vs ?? []).filter(x => x.foto_id === f.id)) {
-            if (x.version !== "jms" && x.version !== "contador") continue
-            v[x.renglon] = { ...(v[x.renglon] ?? {}), [x.version]: x.importe == null ? null : Number(x.importe) }
-          }
-          res[String(f.fecha_cierre).slice(0, 10)] = v
-        }
-      }
-      if (vivo) { setFotos(res); setError(null) }
-    })()
-    return () => { vivo = false }
-  }, [empresa, fechaInicio, fechaCierre])
-
-  const fecha = momento === "inicio" ? fechaInicio : fechaCierre
-  const foto = fotos[fecha] ?? null
-  // La app guarda el stock de HOY, no su historia: al inicio no hay saldo del sistema («—»).
-  const t = armarSaldosProductivos(momento === "cierre" ? sistemaAlCierre : null, foto)
+  const t = tablas[momento]
+  const fecha = fechas[momento]
 
   return (
     <div className="space-y-1.5">
@@ -66,7 +33,7 @@ export function SaldosProductivos({ empresa, fechaInicio, fechaCierre, sistemaAl
           </button>
         ))}
         <span className="text-xs font-normal text-muted-foreground">
-          · foto del {fecha.split("-").reverse().join("/")} {foto ? "" : "— todavía no existe"}
+          · foto del {fecha.split("-").reverse().join("/")} {hayFoto[momento] ? "" : "— todavía no existe"}
         </span>
       </div>
       {error && <p className="text-xs text-red-700">No se pudo leer la foto del balance: {error}</p>}

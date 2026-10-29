@@ -20,7 +20,7 @@
  *
  * ⚠️ Sólo lee de la base. Los precios a mano viven en la pantalla, no se guardan todavía.
  */
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { traerTodo } from "@/lib/supabase-paginado"
 import { Button } from "@/components/ui/button"
@@ -47,7 +47,11 @@ import {
 import { MarcaTentativo } from "@/components/marca-tentativo"
 import { TresSaldosHacienda } from "@/components/tres-saldos-hacienda"
 import { SaldosProductivos } from "@/components/saldos-productivos"
-import { sistemaProductivoAlCierre, diaAnterior } from "@/lib/balance/saldos-productivos"
+import {
+  sistemaProductivoAlCierre, diaAnterior, leerFotosProductivas, armarSaldosProductivos, type ValoresFoto,
+} from "@/lib/balance/saldos-productivos"
+import { armarTresSaldos } from "@/lib/balance/tres-saldos-hacienda"
+import type { SaldosParaExcel } from "@/lib/balance/saldos-excel"
 import { sistemaAlMomento } from "@/lib/balance/tres-saldos-hacienda"
 import { leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { pesosAlCierre, type PesoCategoria } from "@/lib/balance/pesos-hacienda"
@@ -82,6 +86,8 @@ export interface DatosHacienda {
   cuadre: CuadreHacienda
   /** 🐄 A-FEAT-1386 (d): cabezas por categoría de la app al inicio y al cierre, para los tres saldos. */
   sistema: { inicio: Record<string, number>; cierre: Record<string, number> }
+  /** 🐄🌾 A-FEAT-1386: las tablas de saldos (Sistema · SENASA · Campo · Balance), tal cual se ven, para el Excel. */
+  saldos?: SaldosParaExcel
   /** Los insumos viajan acá porque se traen en la misma pasada del sector productivo. */
   insumos: StockInsumos
   /** Los kilos por categoría, de las pesadas de la app. */
@@ -102,6 +108,18 @@ export function HaciendaAlCierre({
   const precios = useDatosDelBalance(empresa, ejercicio.anioCierre, "hacienda.precio")
   const manuales = precios.valores
   const cuadre = useDatosDelBalance(empresa, ejercicio.anioCierre, "granos")
+  /**
+   * 🐄🌾 A-FEAT-1386: los saldos Sistema · SENASA · Campo · Balance. Viven ACÁ (no en cada tabla) para que lo que se
+   * ve y lo que va al Excel salga del mismo lugar. Campo y Balance de insumos: la foto del Balance propio.
+   */
+  const saldosH = useDatosDelBalance(empresa, ejercicio.anioCierre, "hacienda.saldos")
+  const fechaFotoInicio = diaAnterior(primerDiaDelEjercicio(ejercicio))
+  const [fotos, setFotos] = useState<{ fotos: Record<string, ValoresFoto | null>; error: string | null }>({ fotos: {}, error: null })
+  useEffect(() => {
+    let vivo = true
+    leerFotosProductivas(supabase, empresa, [fechaFotoInicio, ejercicio.fechaCierre]).then(r => { if (vivo) setFotos(r) })
+    return () => { vivo = false }
+  }, [empresa, fechaFotoInicio, ejercicio.fechaCierre])
   /**
    * Las tres entradas del cuadre de granos que **hoy no están en ninguna tabla**. Van como texto
    * (§ 💰 es-AR) y vacías significan «no lo sé», no «cero» — por eso el cuadre no se declara
@@ -310,6 +328,30 @@ export function HaciendaAlCierre({
 
   const v = datos?.valuacion
 
+  const saldos = useMemo<SaldosParaExcel | null>(() => {
+    if (!datos) return null
+    const sisProd = sistemaProductivoAlCierre(datos.insumos.grupos, datos.sementeras.costo)
+    const tent = Object.values(saldosH.tentativos)
+    return {
+      hacienda: {
+        inicio: armarTresSaldos("inicio", datos.sistema.inicio, saldosH.valores),
+        cierre: armarTresSaldos("cierre", datos.sistema.cierre, saldosH.valores),
+        leyenda: tent.length ? leyendaTentativo(tent[0]) : undefined,
+      },
+      productivos: {
+        inicio: armarSaldosProductivos(null, fotos.fotos[fechaFotoInicio] ?? null),
+        cierre: armarSaldosProductivos(sisProd, fotos.fotos[ejercicio.fechaCierre] ?? null),
+        fechaInicio: fechaFotoInicio, fechaCierre: ejercicio.fechaCierre,
+      },
+    }
+  }, [datos, saldosH.valores, saldosH.tentativos, fotos, fechaFotoInicio, ejercicio.fechaCierre])
+
+  // Lo que se ve es lo que va al Excel: cada cambio en los saldos viaja al papel.
+  useEffect(() => {
+    if (datos && saldos) onDatos({ ...datos, saldos })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saldos])
+
   const cuadreGranos: CuadreGranos = cuadrarGranos({
     stockInicioTn: tn(granos.inicio),
     cosechaTn: tn(granos.cosecha),
@@ -341,12 +383,12 @@ export function HaciendaAlCierre({
         </p>
       )}
 
-      {datos && (
-        <TresSaldosHacienda empresa={empresa} anioCierre={ejercicio.anioCierre} sistema={datos.sistema} />
-      )}
-      {datos && (
-        <SaldosProductivos empresa={empresa} fechaInicio={diaAnterior(primerDiaDelEjercicio(ejercicio))} fechaCierre={ejercicio.fechaCierre}
-          sistemaAlCierre={sistemaProductivoAlCierre(datos.insumos.grupos, datos.sementeras.costo)} />
+      {datos && <TresSaldosHacienda datos={saldosH} sistema={datos.sistema} />}
+      {saldos?.productivos && (
+        <SaldosProductivos tablas={saldos.productivos}
+          fechas={{ inicio: fechaFotoInicio, cierre: ejercicio.fechaCierre }}
+          hayFoto={{ inicio: !!fotos.fotos[fechaFotoInicio], cierre: !!fotos.fotos[ejercicio.fechaCierre] }}
+          error={fotos.error} />
       )}
 
       {v && (

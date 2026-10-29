@@ -38,6 +38,7 @@ import type {
   ChequesDados, ChequeAlCierre, AnticiposAlCierre, AnticipoAlCierre,
 } from "./valores-al-cierre"
 import type { CuadreHacienda } from "./cuadre-hacienda"
+import { agregarSaldosHacienda, agregarSaldosProductivos, type SaldosParaExcel } from "./saldos-excel"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
 import { hojaDeSaldosAnteriores, type SaldosAnteriores } from "./ajustes-balance"
@@ -2056,6 +2057,7 @@ export function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
  */
 function hojaDeHacienda(
   h: ValuacionHacienda, fechaCierre: string, mesPrecios: string, cuadre?: CuadreHacienda,
+  saldos?: SaldosParaExcel["hacienda"], fechaInicio?: string,
 ): unknown[][] {
   const f: unknown[][] = []
   f.push([`02 - HACIENDA — existencia al ${fechaCierre}`])
@@ -2097,6 +2099,8 @@ function hojaDeHacienda(
     f.push([])
     f.push([])
   }
+  // 🐄 A-FEAT-1386: los saldos Sistema · SENASA · Campo · Balance, al inicio y al cierre (JMS 29/10).
+  if (saldos) agregarSaldosHacienda(f, saldos, fechaInicio ?? "", fechaCierre)
 
   f.push(["Categoría", "Cabezas", "Criterio de valuación", "Precio de referencia", "Origen del precio",
     "Factor", "Kg/cab", "$ por cabeza", "Valor total", "De dónde salen los kilos"])
@@ -2317,6 +2321,8 @@ export function armarWorkbook(
     mesPrecios: string
     /** El cuadre de la existencia. Va arriba de la valuación — ver `hojaDeHacienda`. */
     cuadre?: CuadreHacienda
+    /** 🐄🌾 A-FEAT-1386: las tablas de saldos Sistema · SENASA · Campo · Balance. */
+    saldos?: SaldosParaExcel
   },
   insumos?: StockInsumos,
   campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras },
@@ -2467,11 +2473,17 @@ export function armarWorkbook(
   }
   if (hacienda) {
     hoja(wb, "02 Hacienda",
-      hojaDeHacienda(hacienda.valuacion, libro.ejercicio.fechaCierre, hacienda.mesPrecios, hacienda.cuadre),
+      hojaDeHacienda(hacienda.valuacion, libro.ejercicio.fechaCierre, hacienda.mesPrecios, hacienda.cuadre,
+        hacienda.saldos?.hacienda, hacienda.saldos?.productivos?.fechaInicio),
       COLS_HACIENDA)
     hoja(wb, "Precios", hojaDePrecios(hacienda.mag, hacienda.mercado, hacienda.porCabeza, hacienda.mesPrecios), COLS_PRECIOS)
   }
-  if (insumos) hoja(wb, "Stock insumos", hojaDeInsumos(insumos, libro.ejercicio.fechaCierre), COLS_INSUMOS)
+  if (insumos) {
+    const filasIns = hojaDeInsumos(insumos, libro.ejercicio.fechaCierre)
+    // 🌾 A-FEAT-1386: Sistema · Campo · Balance de insumos, gas oil y sementeras (JMS 29/10), al pie del stock.
+    if (hacienda?.saldos?.productivos) { filasIns.push([]); agregarSaldosProductivos(filasIns, hacienda.saldos.productivos) }
+    hoja(wb, "Stock insumos", filasIns, COLS_INSUMOS)
+  }
   // 🏦 Los papeles bancarios (07, 08, 09). Van al final: son anexos del resultado, no el resultado.
   if (bancarios) {
     if (bancarios.fci) {
@@ -2519,6 +2531,8 @@ export async function descargarLibroDiario(
     mesPrecios: string
     /** El cuadre de la existencia. Va arriba de la valuación — ver `hojaDeHacienda`. */
     cuadre?: CuadreHacienda
+    /** 🐄🌾 A-FEAT-1386: las tablas de saldos Sistema · SENASA · Campo · Balance. */
+    saldos?: SaldosParaExcel
   },
   insumos?: StockInsumos,
   campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras },

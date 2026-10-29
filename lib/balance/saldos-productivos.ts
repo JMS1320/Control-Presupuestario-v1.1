@@ -84,3 +84,30 @@ export function diaAnterior(fecha: string): string {
 }
 
 export type { MomentoSaldo }
+
+/**
+ * Lee de la foto del Balance propio los renglones de estos rubros (versiones jms y contador) para las fechas dadas.
+ * Devuelve fecha → valores (null = esa foto todavía no existe).
+ */
+export async function leerFotosProductivas(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any, empresa: string, fechas: string[],
+): Promise<{ fotos: Record<string, ValoresFoto | null>; error: string | null }> {
+  const fotos: Record<string, ValoresFoto | null> = Object.fromEntries(fechas.map(f => [f, null]))
+  const { data: fs, error: e1 } = await supabase.from("balance_fotos").select("id, fecha_cierre")
+    .eq("empresa", empresa).in("fecha_cierre", fechas)
+  if (e1) return { fotos, error: e1.message }
+  if (!fs?.length) return { fotos, error: null }
+  const { data: vs, error: e2 } = await supabase.from("balance_foto_valores").select("foto_id, renglon, version, importe")
+    .in("foto_id", fs.map((f: { id: string }) => f.id)).in("renglon", RENGLONES_PRODUCTIVOS)
+  if (e2) return { fotos, error: e2.message }
+  for (const f of fs as { id: string; fecha_cierre: string }[]) {
+    const val: ValoresFoto = {}
+    for (const x of (vs ?? []) as { foto_id: string; renglon: string; version: string; importe: number | null }[]) {
+      if (x.foto_id !== f.id || (x.version !== "jms" && x.version !== "contador")) continue
+      val[x.renglon] = { ...(val[x.renglon] ?? {}), [x.version]: x.importe == null ? null : Number(x.importe) }
+    }
+    fotos[String(f.fecha_cierre).slice(0, 10)] = val
+  }
+  return { fotos, error: null }
+}
