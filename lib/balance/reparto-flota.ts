@@ -48,7 +48,13 @@ export function repartoDeLaFlota(
   hasta: string,
 ): RepartoFlota {
   const fechaDe = new Map(movimientos.map(m => [m.id, m.fecha]))
-  const repartos = new Map([...lecturasPorPoliza].map(([p, l]) => [p, repartoDeLasCuotas(l, reglas, "interno")]))
+  /**
+   * 🔑 JMS 29/10: *«si hay una NC en la flota debe ser para cada uno en su proporción, pero si se calculó de los pagos
+   * la NC ya está tomada»*. Se reparte lo DEBITADO (que ya viene neto de la NC) con la proporción de las FACTURAS:
+   * el endoso de la NC no entra al cálculo de la proporción (si entrara, la NC iría entera a quien paga).
+   */
+  const sinNc = (l: PolizaLeida[]) => l.filter(e => !(e.cuotasEndoso ?? []).some(c => c.importe < 0))
+  const repartos = new Map([...lecturasPorPoliza].map(([p, l]) => [p, repartoDeLasCuotas(sinNc(l), reglas, "interno")]))
   const filas: FilaRepartoFlota[] = []
   let sinReparto = 0
   for (const c of cuotas) {

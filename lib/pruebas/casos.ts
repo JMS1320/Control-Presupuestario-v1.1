@@ -9619,7 +9619,9 @@ export function correrCasos(): Resultado[] {
       [{ poliza: "F", vencimiento: "2025-08-01", importe: 400, esperadoEnBanco: 400, resultado: "ok", movimientoId: "m1", debitado: 400 },
         { poliza: "F", vencimiento: "2026-08-01", importe: 400, esperadoEnBanco: 400, resultado: "ok", movimientoId: "m2", debitado: 400 }],
       [{ id: "m1", fecha: "2025-08-04" }, { id: "m2", fecha: "2026-08-04" }],
-      new Map([["F", [lect as never]]]), [{ patente: "BBB222", contable: "MSA", interno: "MA", motivo: "" }], "2025-07-01", "2026-06-30")
+      // La NC (endoso con cuota negativa) no entra a la proporción: el débito ya viene neto y se reparte 3 a 1 igual.
+      new Map([["F", [lect as never, { poliza: "F", endoso: 1, personas: [], vehiculos: [], cuotasEndoso: [{ vencimiento: "2025-08-01", importe: -40 }] } as never]]]),
+      [{ patente: "BBB222", contable: "MSA", interno: "MA", motivo: "" }], "2025-07-01", "2026-06-30")
     const v9 = `${rfT.filas.length} débito · ${rfT.responsables.map(r => `${r} ${rfT.totales[r]}`).join(" · ")} · total ${rfT.total}`
     chequear("Balance", "🚗 Desglose de la flota (nota 9): cada débito del ejercicio repartido por la prima de cada vehículo; el de fuera del ejercicio no entra",
       "1 débito · MSA 300 · MA 100 · total 400", v9, v9 === "1 débito · MSA 300 · MA 100 · total 400", "A-FEAT-1422")
