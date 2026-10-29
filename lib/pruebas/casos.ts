@@ -82,6 +82,8 @@ import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPape
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
 import { paraVos } from "@/lib/revisiones/para-vos"
+import { armarCambio, saldoCuenta, cuentaCorriente as cuentaCorrienteDolares, flujoPorMes, erroresCambio, pesosDe } from "@/lib/dolares/cuentas"
+import { posicionAlCierre } from "@/lib/dolares/posicion-cierre"
 import { esHabilitable, diferencias, estadoVisible } from "@/lib/propuestas/factura"
 import { calcularTabla, mostrarValor } from "@/lib/cuaderno/formulas"
 import { pedirCampo, verPedidoCampo, tomarPedidoCampo } from "@/lib/productivo/pedido-campo"
@@ -8857,8 +8859,8 @@ export function correrCasos(): Resultado[] {
       `${otra?.texto} (${otra?.deOtraEmpresa ? "otra" : "propia"}) · ${propia?.texto} (${propia?.deOtraEmpresa ? "otra" : "propia"}) · ${marcaPagadoDesde("banco", ["MSA"])} · ${marcaPagadoDesde("caja_ams", ["MSA"])}`,
       otra?.deOtraEmpresa === true && propia?.deOtraEmpresa === false && marcaPagadoDesde("banco", ["MSA"]) === null && marcaPagadoDesde("caja_ams", ["MSA"]) === null, "A-FEAT-1321")
     chequear("Pagado desde", "Las opciones: primero el banco propio, después las 4 cuentas Galicia y las 3 cajas (las mismas ids que el motor de conciliación)",
-      "banco · msa_galicia · pam_galicia · pam_galicia_cc · ma_galicia · caja_general · caja_ams · caja_sigot", OPCIONES_PAGADO_DESDE.map(o => o.id).join(" · "),
-      OPCIONES_PAGADO_DESDE.map(o => o.id).join(" · ") === "banco · msa_galicia · pam_galicia · pam_galicia_cc · ma_galicia · caja_general · caja_ams · caja_sigot", "A-FEAT-1321")
+      "banco · msa_galicia · pam_galicia · pam_galicia_cc · ma_galicia · cotitulares_ca_pesos · caja_general · caja_ams · caja_sigot", OPCIONES_PAGADO_DESDE.map(o => o.id).join(" · "),
+      OPCIONES_PAGADO_DESDE.map(o => o.id).join(" · ") === "banco · msa_galicia · pam_galicia · pam_galicia_cc · ma_galicia · cotitulares_ca_pesos · caja_general · caja_ams · caja_sigot", "A-FEAT-1321")
   }
 
   // ══ 🧾 PLANILLA DE IMPUESTOS (A-FEAT-1320) ══════════════════════════════════════════════════
@@ -9211,8 +9213,8 @@ export function correrCasos(): Resultado[] {
 
     const ctRegistradas = RECURSOS_PERMISABLES.filter((r) => r.tipo === "cuenta").map((r) => r.id.replace("extracto.cuenta.", ""))
     const vreg = `${ctRegistradas.length} · ${["msa_galicia", "tarjeta_visa_business_msa", "echeqs_terceros"].every((id) => ctRegistradas.includes(id)) ? "están" : "faltan"}`
-    chequear("Accesos", "Cuentas: las 11 cuentas del Extracto están registradas como permisables",
-      "11 · están", vreg, vreg === "11 · están", "A-FEAT-1336")
+    chequear("Accesos", "Cuentas: las 18 cuentas del Extracto (11 + las 7 de dólares y Cotitulares, A-FEAT-1398) están registradas como permisables",
+      "18 · están", vreg, vreg === "18 · están", "A-FEAT-1336")
 
     // En el modo permisos: prender una cuenta de un rol vacío prende Extracto, pero no Importar ni otras cuentas.
     const ctModo = alternarRecurso(borradorDe({ secciones: [], permisos: {}, cerrado: true }), "extracto.cuenta.msa_galicia")
@@ -10324,6 +10326,55 @@ export function correrCasos(): Resultado[] {
     const orden = correr([cfg("B ok", { tipo: "fijo", esperado: 1 }), cfg("A falta", { tipo: "fijo", esperado: 1 }), cfg("C prev ok", { tipo: "fijo", esperado: 1 }, { preview: true })],
       [cu("B ok", "2025-08-01"), cu("C prev ok", "2025-08-01")]).map(x => x.nombre).join(" > ")
     chequear(G, "★ Preview importante primero; después lo que está mal", "C prev ok > A falta > B ok", orden, orden === "C prev ok > A falta > B ok", CUBRE)
+  }
+
+  // ══ 💵 Dólares y Cotitulares (A-FEAT-1398, JMS 28/10): el cambio atado, saldos, cuenta corriente, posición al cierre ══
+  {
+    // la venta de USD 500 a 1.450: salen 500 de la CA en USD, entran 725.000 a la CA en pesos, con el mismo TC
+    const c = armarCambio({ fecha: "2026-10-28", sentido: "venta", usd: 500, tc: 1450, descripcion: "", categ: "Transferencias Interbancarias" })
+    const v1 = `pesos ${c.pesos} · USD deb ${c.filaUsd.debitos} cred ${c.filaUsd.creditos} · ARS deb ${c.filaPesos.debitos} cred ${c.filaPesos.creditos} · TC ${c.filaUsd.tipo_cambio}/${c.filaPesos.tipo_cambio}`
+    const e1 = "pesos 725000 · USD deb 500 cred 0 · ARS deb 0 cred 725000 · TC 1450/1450"
+    chequear("Dólares — venta de USD", "Vender USD 500 a 1.450 = sale 500 de la cuenta en dólares y entran 725.000 a la de pesos, los dos con el mismo TC", e1, v1, v1 === e1, "A-FEAT-1398")
+
+    const k = armarCambio({ fecha: "2026-10-28", sentido: "compra", usd: 100.5, tc: 1333.4, descripcion: "x", categ: "c" })
+    const v2 = `pesos ${k.pesos} · USD cred ${k.filaUsd.creditos} · ARS deb ${k.filaPesos.debitos}`
+    chequear("Dólares — compra de USD", "Comprar = entran dólares, salen pesos; los pesos redondeados al centavo", "pesos 134006.7 · USD cred 100.5 · ARS deb 134006.7", v2, v2 === "pesos 134006.7 · USD cred 100.5 · ARS deb 134006.7", "A-FEAT-1398")
+
+    const errs = erroresCambio({ fecha: "2026-10-28", usd: 500 }, "cotitulares_ca_usd", null).join(" · ")
+    chequear("Dólares — cambio incompleto", "Sin tipo de cambio ni cuenta en pesos no se guarda", "Falta el tipo de cambio · Falta la cuenta en pesos", errs, errs === "Falta el tipo de cambio · Falta la cuenta en pesos", "A-FEAT-1398")
+
+    const usd = [
+      { fecha: "2026-09-10", debitos: 0, creditos: 1000, moneda: "USD" as const, tipo_cambio: 1400, importe_pesos: null, estado: "Conciliado" },
+      { fecha: "2026-10-28", debitos: 500, creditos: 0, moneda: "USD" as const, tipo_cambio: 1450, importe_pesos: null },
+      { fecha: "2026-10-29", debitos: 0, creditos: 50, moneda: "USD" as const, tipo_cambio: null, importe_pesos: null },
+    ]
+    const sc = saldoCuenta(usd)
+    const v3 = `US$ ${sc.moneda} · $ ${sc.pesos} · sin TC ${sc.sinTC} · pendientes ${sc.pendientes}`
+    chequear("Dólares — saldo de la cuenta", "Saldo en US$ con todo; en pesos sólo lo que tiene TC, y se cuenta lo que no (no se inventa un cero)", "US$ 550 · $ 675000 · sin TC 1 · pendientes 2", v3, v3 === "US$ 550 · $ 675000 · sin TC 1 · pendientes 2", "A-FEAT-1398")
+
+    const pesoEscrito = pesosDe({ fecha: "x", debitos: 500, creditos: 0, moneda: "USD", tipo_cambio: 1450, importe_pesos: 726000 })
+    chequear("Dólares — pesos escritos a mano mandan", "Si se escribieron los pesos, ésos valen (con el signo del movimiento), no importe × TC", "-726000", String(pesoEscrito), pesoEscrito === -726000, "A-FEAT-1398")
+
+    const fl = flujoPorMes(usd).map(f => `${f.mes}:${f.neto}/${f.saldo}`).join(" ")
+    chequear("Dólares — flujo por mes", "Neto y saldo acumulado por mes, en la moneda de la cuenta", "2026-09:1000/1000 2026-10:-450/550", fl, fl === "2026-09:1000/1000 2026-10:-450/550", "A-FEAT-1398")
+
+    // el caso del 28/10: la CA en pesos de Cotitulares pagó una factura de MSA → MSA les debe
+    const cot = [
+      { fecha: "2026-10-28", debitos: 725000, creditos: 0, moneda: "ARS" as const, tipo_cambio: null, importe_pesos: null, por_cuenta_de: "MSA" },
+      { fecha: "2026-11-05", debitos: 0, creditos: 25000, moneda: "ARS" as const, tipo_cambio: null, importe_pesos: null, por_cuenta_de: "MSA" },
+      { fecha: "2026-11-06", debitos: 100, creditos: 0, moneda: "USD" as const, tipo_cambio: null, importe_pesos: null, por_cuenta_de: "MSA" },
+      { fecha: "2026-10-28", debitos: 0, creditos: 725000, moneda: "ARS" as const, tipo_cambio: null, importe_pesos: null },
+    ]
+    const cc = cuentaCorrienteDolares(cot).map(x => `${x.empresa} ${x.pesos} (${x.movimientos} movs, ${x.sinTC} sin TC)`).join(" ")
+    chequear("Dólares — cuenta corriente Cotitulares", "Lo pagado por cuenta de MSA suma (MSA les debe), lo devuelto resta; lo que no es por cuenta de nadie no entra; el USD sin TC se cuenta aparte", "MSA 700000 (3 movs, 1 sin TC)", cc, cc === "MSA 700000 (3 movs, 1 sin TC)", "A-FEAT-1398")
+
+    // posición al cierre: 1000 a 1400 (costó 1.400.000), 500 vendidos a 1450 → quedan 500; al TC de cierre 1500
+    const pc = posicionAlCierre(usd.slice(0, 2), "2026-10-31", 1500)
+    const v4 = `US$ ${pc.usd} · al cierre ${pc.pesosAlCierre} · costó ${pc.pesosHistoricos} · dif ${pc.diferenciaDeCambio}`
+    chequear("Dólares — posición al cierre", "Saldo en US$ a la fecha, valuado al TC de cierre, y la diferencia de cambio contra lo que costó", "US$ 500 · al cierre 750000 · costó 675000 · dif 75000", v4, v4 === "US$ 500 · al cierre 750000 · costó 675000 · dif 75000", "A-FEAT-1398")
+    const pc2 = posicionAlCierre(usd, "2026-10-31", 1500)
+    const v5 = `costó ${pc2.pesosHistoricos} · dif ${pc2.diferenciaDeCambio} · sin TC ${pc2.sinTC} · movs ${pc2.movimientos}`
+    chequear("Dólares — posición con un movimiento sin TC", "Si falta un TC hasta el cierre, la diferencia de cambio no se calcula: se dice cuántos faltan; lo posterior al cierre no entra", "costó null · dif null · sin TC 1 · movs 3", v5, v5 === "costó null · dif null · sin TC 1 · movs 3", "A-FEAT-1398")
   }
 
   return r

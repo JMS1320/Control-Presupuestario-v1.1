@@ -159,6 +159,9 @@ export const RECURSOS: Recurso[] = [
   { id: "extracto.sueldo",   seccion: "extracto", etiqueta: "Asignar a sueldo",       tipo: "funcionalidad", archivo: EXTRACTO },
   { id: "extracto.grupo",    seccion: "extracto", etiqueta: "Asignar a grupo de pago", tipo: "funcionalidad", archivo: EXTRACTO },
   { id: "extracto.venta",    seccion: "extracto", etiqueta: "Asignar a venta",        tipo: "funcionalidad", archivo: EXTRACTO },
+  // 💵 A-FEAT-1398: la sección de dólares (panel, cargar a mano, compra/venta de USD)
+  { id: "extracto.dolares",  seccion: "extracto", etiqueta: "Dólares y Cotitulares (ver)", tipo: "accion", archivo: EXTRACTO },
+  { id: "extracto.dolares-cargar", seccion: "extracto", etiqueta: "Dólares: cargar movimiento / compra-venta de USD", tipo: "accion", archivo: EXTRACTO },
   // A-FEAT-1336: las cuentas. Pedido del usuario 24/10 para Ulises: «sólo importar» y sólo MSA cuenta
   // corriente + VISA MSA. Sin esto, prender Importar le daba importar en las 11.
   // ⚠️ El id después de `extracto.cuenta.` es el `id` de CUENTAS_BANCARIAS: no renombrar uno sin el otro.
@@ -174,6 +177,14 @@ export const RECURSOS: Recurso[] = [
     ["tarjeta_visa_business_msa", "VISA Business MSA"],
     ["tarjeta_visa_pam", "VISA PAM"],
     ["tarjeta_visa_ma", "VISA MA"],
+    // 💵 A-FEAT-1398: las 7 en dólares y de Cotitulares (los ids son los de lib/dolares/cuentas.ts)
+    ["msa_cc_usd", "MSA Cuenta Corriente USD"],
+    ["msa_caja_usd", "MSA Caja USD"],
+    ["ma_ca_usd", "MA Caja de Ahorro USD"],
+    ["ma_caja_usd", "MA Caja USD"],
+    ["cotitulares_ca_usd", "Cotitulares Caja de Ahorro USD"],
+    ["cotitulares_ca_pesos", "Cotitulares Caja de Ahorro Pesos"],
+    ["cotitulares_caja_usd", "Cotitulares Caja USD"],
   ] as const).map(([id, nombre]): Recurso => ({
     id: `extracto.cuenta.${id}`, seccion: "extracto", etiqueta: `Cuenta → ${nombre}`, tipo: "cuenta", archivo: EXTRACTO,
   })),

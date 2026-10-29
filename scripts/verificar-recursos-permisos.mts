@@ -48,7 +48,12 @@ const CUENTAS_EN_CODIGO = (() => {
   const src = readFileSync("hooks/useMotorConciliacion.ts", "utf8")
   const desde = src.indexOf("export const CUENTAS_BANCARIAS")
   const hasta = src.indexOf("\n]", desde)
-  return new Set([...src.slice(desde, hasta).matchAll(/\bid:\s*['"]([^'"]+)['"]/g)].map((m) => m[1]))
+  const ids = [...src.slice(desde, hasta).matchAll(/\bid:\s*['"]([^'"]+)['"]/g)].map((m) => m[1])
+  // A-FEAT-1398: las 7 de dólares y Cotitulares viven en lib/dolares/cuentas.ts y CUENTAS_BANCARIAS las suma
+  const dol = readFileSync("lib/dolares/cuentas.ts", "utf8")
+  const d0 = dol.indexOf("export const CUENTAS_DOLARES_Y_COTITULARES")
+  ids.push(...[...dol.slice(d0, dol.indexOf("\n]", d0)).matchAll(/\bid:\s*['"]([^'"]+)['"]/g)].map((m) => m[1]))
+  return new Set(ids)
 })()
 const cuentasSinRegistrar = [...CUENTAS_EN_CODIGO].filter((id) => !RECURSOS.some((r) => r.id === `extracto.cuenta.${id}`))
 if (cuentasSinRegistrar.length) {

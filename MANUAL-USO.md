@@ -698,6 +698,24 @@ Los botones (copiar pedido, pedir, buscar) trabajan sobre lo que queda a la vist
 
 ⚠️ Sin probar todavía → [A-TEST-1272](PENDIENTES.md#a-test-1272)
 
+## 💵 Dólares y Cotitulares *(nuevo 2026-10-28)*
+
+Siete cuentas que se cargan a mano: **MSA** cuenta corriente y caja en dólares · **MA** caja de ahorro y caja en dólares ·
+**Cotitulares** (MA, Manuel, Soledad, Mechi, Andrés y JMS) caja de ahorro en dólares, caja de ahorro en pesos y caja en dólares.
+- **Ver todo**: Extracto → **💵 Dólares**. Saldo de cada cuenta (en su moneda y en pesos), el flujo por mes, la cuenta
+  corriente de Cotitulares con las empresas, la posición al cierre y los últimos movimientos.
+- **Vendí o compré dólares**: en el panel, **Compra / venta de USD** → las dos cuentas, los dólares y el tipo de cambio.
+  Se cargan los dos lados juntos. Si la cuenta en pesos es una del banco, se carga sólo el lado en dólares y los pesos
+  se concilian cuando llega el extracto.
+- **Cualquier otro movimiento**: elegí la cuenta en el Extracto (grupo «Dólares y Cotitulares») → **+ Movimiento a mano**.
+  Si la plata de Cotitulares pagó algo de una empresa, marcá **«Por cuenta de MSA»**: arma la cuenta corriente.
+- Todo lo cargado a mano queda **Pendiente**: cuando llega el extracto se concilia contra eso.
+- Las cuentas en dólares no se concilian solas (el Cash Flow está en pesos).
+- La compra/venta va a la cuenta contable **«Compra-venta de moneda extranjera»** (financiera: no va al presupuesto).
+- **En el balance**: el papel **07 Bancos** trae cada cuenta en dólares de la empresa valuada al dólar BNA del cierre.
+
+⚠️ Sin probar todavía → [A-TEST-1284](PENDIENTES.md#a-test-1284)
+
 ## 🏠 «Para vos»: el Principal de cada uno, y las tareas *(nuevo 2026-10-28)*
 
 Cada usuario tiene su **Principal**. Arriba de todo, **🚩 Para vos** muestra lo que te asignaron (lo urgente), con las

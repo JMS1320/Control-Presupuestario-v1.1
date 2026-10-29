@@ -33,8 +33,12 @@ const ROTULO_BANCO: Record<string, string> = {
   ma_galicia: 'MA Galicia',
 }
 
-export const CUENTAS_BANCO: CuentaDePago[] = Object.entries(EXTRACTOS_DE_EMPRESA).flatMap(([empresa, ext]) =>
-  ext.map(e => ({ id: e.tabla, rotulo: ROTULO_BANCO[e.tabla] ?? e.tabla, empresa, tipo: 'banco' as const })))
+export const CUENTAS_BANCO: CuentaDePago[] = [
+  ...Object.entries(EXTRACTOS_DE_EMPRESA).flatMap(([empresa, ext]) =>
+    ext.map(e => ({ id: e.tabla, rotulo: ROTULO_BANCO[e.tabla] ?? e.tabla, empresa, tipo: 'banco' as const }))),
+  // 💵 A-FEAT-1398: la CA en pesos de Cotitulares pagó una factura de MSA (28/10). Es «de otra empresa»: se marca.
+  { id: 'cotitulares_ca_pesos', rotulo: 'Cotitulares CA Pesos', empresa: 'Cotitulares', tipo: 'banco' as const },
+]
 
 export const CAJAS: CuentaDePago[] = [
   { id: 'caja_general', rotulo: 'Caja General', empresa: null, tipo: 'caja' },

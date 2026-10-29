@@ -26,6 +26,7 @@ import { conFechaDeEmision, comprobanteDeCargoDeTarjeta } from "@/lib/conciliaci
 import { motivoFechaNoExacta, elegirPorImporteCercano } from "@/lib/conciliacion/motivo-fecha"
 import { cargarDetallesFijos, aplicarDetalleFijo } from "@/lib/conciliacion/detalle-fijo-db"
 import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
+import { CUENTAS_DOLARES_Y_COTITULARES, type Titular } from "@/lib/dolares/cuentas"
 
 // Configuración de cuentas bancarias y cajas
 export interface CuentaBancaria {
@@ -33,9 +34,14 @@ export interface CuentaBancaria {
   nombre: string
   tabla_bd: string
   schema_bd?: string   // 'public' (default) | 'msa' | 'pam' | 'ma'
-  empresa: 'MSA' | 'PAM' | 'MA'
+  /** A-FEAT-1398: además de las 3 empresas, «Cotitulares» (MA y los 5 hijos), titular propio. */
+  empresa: Titular
   activa: boolean
   tipo?: 'banco' | 'caja' | 'tarjeta'
+  /** A-FEAT-1398: la moneda de la cuenta. Sin dato = pesos. Las cuentas en USD NO se concilian contra el Cash Flow (que está en pesos). */
+  moneda?: 'ARS' | 'USD'
+  /** A-FEAT-1398: se carga a mano (no hay extracto que importar todavía). */
+  cargaManual?: boolean
 }
 
 export const CUENTAS_BANCARIAS: CuentaBancaria[] = [
@@ -136,7 +142,12 @@ export const CUENTAS_BANCARIAS: CuentaBancaria[] = [
     empresa: 'MA',
     activa: true,
     tipo: 'tarjeta'
-  }
+  },
+  // 💵 A-FEAT-1398 (scripts/126): las 7 cuentas en dólares y de Cotitulares. La lista vive en lib/dolares/cuentas.ts.
+  ...CUENTAS_DOLARES_Y_COTITULARES.map((c): CuentaBancaria => ({
+    id: c.id, nombre: c.nombre, tabla_bd: c.tabla_bd, schema_bd: c.schema_bd, empresa: c.empresa,
+    activa: true, tipo: c.tipo, moneda: c.moneda, cargaManual: true,
+  })),
 ]
 
 export function useMotorConciliacion() {
@@ -455,6 +466,12 @@ export function useMotorConciliacion() {
 
       console.log(`🚀 Iniciando conciliación para ${cuenta.nombre}...`)
 
+      // 💵 A-FEAT-1398: el Cash Flow está en PESOS. Una cuenta en dólares no se concilia sola contra él: compararía
+      // US$ 500 con una factura de $500. Hasta que haya conciliación en dólares, se concilia a mano.
+      if (cuenta.moneda === 'USD') {
+        throw new Error(`${cuenta.nombre} está en dólares: la conciliación automática compara contra el Cash Flow en pesos y no sirve. Conciliá a mano (categoría o factura) desde la tabla.`)
+      }
+
       // 1. Cargar datos — usar la lista acotada si vino, sino todos los pendientes de la cuenta
       // A-BUG-1297: el pago y el total del resumen de la tarjeta nunca pasan por el motor, venga de donde venga la lista
       const movimientos = (movimientosOverride ?? await obtenerMovimientosBancarios(cuenta)).filter(m => esFilaConciliable(m as any))
@@ -475,7 +492,7 @@ export function useMotorConciliacion() {
        * (A-DEC-1002). Antes la tarjeta tenía su propio buscador de facturas antes de llegar acá.
        */
       // A-BUG-1298: las facturas pagadas con tarjeta se comparan por su fecha de emisión, no por la estimada
-      const poolTarjeta = cuenta.tipo === 'tarjeta' ? conFechaDeEmision(await cargarPagadoConTarjeta(cuenta.empresa)) : []
+      const poolTarjeta = cuenta.tipo === 'tarjeta' ? conFechaDeEmision(await cargarPagadoConTarjeta(cuenta.empresa as 'MSA' | 'PAM' | 'MA') /* las tarjetas son de una empresa, nunca de Cotitulares */) : []
       // 🔀 A-FEAT-1370 — en la tarjeta, también lo pagado con tarjeta de las OTRAS empresas: sólo se
       // usa para proponer a auditar (la tarjeta de MA paga DirecTV facturado a MSA).
       const poolTarjetaAjeno = cuenta.tipo === 'tarjeta'
