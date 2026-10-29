@@ -7,6 +7,7 @@ import type {
   ItemSeleccionado, PreviewLoteInput, PreviewLoteOutput,
   GenerarLoteInput, GenerarLoteOutput,
 } from './types'
+import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 
 export async function llamarPreview(input: PreviewLoteInput): Promise<PreviewLoteOutput> {
   const r = await fetch('/api/lotes/preview', {
@@ -70,7 +71,7 @@ export async function descargarArchivoBase64(opts: {
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  setTimeout(() => URL.revokeObjectURL(url), ESPERA_ANTES_DE_LIBERAR_MS)
 }
 
 /** Helper conveniente: descarga todos los archivos de un GenerarLoteOutput en secuencia */

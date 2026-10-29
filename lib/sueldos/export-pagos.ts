@@ -26,6 +26,7 @@
  */
 import * as XLSX from "xlsx"
 import { formatearHoja, conFormula, MONEDA, type Columna } from "@/lib/balance/formato-excel"
+import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 
 /** Un pago de sueldo, con lo que hace falta para el listado. */
 export interface PagoParaExportar {
@@ -129,5 +130,5 @@ export function descargarPagosDeSueldos(pagos: PagoParaExportar[], etiqueta: str
   a.download = nombreArchivoPagos(etiqueta)
   document.body.appendChild(a)
   a.click()
-  setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, 0)
+  setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, ESPERA_ANTES_DE_LIBERAR_MS)
 }

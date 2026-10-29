@@ -99,6 +99,7 @@ import { campanaNuevaPrimero, faltaCampanaDelMotivo } from "@/lib/conciliacion/t
 import { TABLAS_CON_VINCULO_ARCA } from "@/lib/conciliacion/tablas-con-vinculo-arca"
 import { traerTodo } from "@/lib/supabase-paginado"
 import { avisarSiIncompleta } from "@/lib/ui/avisar-lectura"
+import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 
 // ─── Helpers para scoring de propuestas ARCA ────────────────────────────────
 
@@ -5301,7 +5302,7 @@ ${marca}` : marca
               document.body.appendChild(a)
               a.click()
               document.body.removeChild(a)
-              URL.revokeObjectURL(url)
+              setTimeout(() => URL.revokeObjectURL(url), ESPERA_ANTES_DE_LIBERAR_MS)
             }
 
             return (

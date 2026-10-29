@@ -47,6 +47,7 @@ import { claveSubdiario, type Ejercicio } from "./ejercicio"
 import { hoyArgentina } from "@/lib/fechas"
 import { MONEDA, aplicarVistas } from "./formato-excel"
 import type { CobrosYRetenciones, RetencionRecibida, CobroDeVenta } from "./cobros-de-ventas"
+import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════
 // Constantes por empresa y ejercicio
@@ -1089,6 +1090,6 @@ export async function descargarLibroDiarioConsensuado(libro: LibroDiario, empres
   a.download = nombreArchivoConsensuado(libro, empresa, hoyArgentina())
   document.body.appendChild(a)
   a.click()
-  setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, 0)
+  setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, ESPERA_ANTES_DE_LIBERAR_MS)
   return l.resumen
 }

@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx"
+import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 
 // Descarga el workbook en el navegador evitando llamadas a APIs de Node/Deno.
 function saveWorkbook(workbook: XLSX.WorkBook, fileName: string) {
@@ -21,7 +22,7 @@ function saveWorkbook(workbook: XLSX.WorkBook, fileName: string) {
   setTimeout(() => {
     URL.revokeObjectURL(url)
     document.body.removeChild(link)
-  }, 0)
+  }, ESPERA_ANTES_DE_LIBERAR_MS)
 }
 
 export async function exportarReporteDetallado(

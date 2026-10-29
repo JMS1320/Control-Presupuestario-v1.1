@@ -56,6 +56,7 @@ import {
   formatearHoja, presentarHoja, anchosAutomaticos, colorDeSolapa, aplicarVistas,
   conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna, type Vista,
 } from "./formato-excel"
+import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 
 const money = (n: number) => Math.round(n * 100) / 100
 
@@ -2568,5 +2569,5 @@ export async function descargarLibroDiario(
   a.download = nombreArchivo(libro, empresa)
   document.body.appendChild(a)
   a.click()
-  setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, 0)
+  setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, ESPERA_ANTES_DE_LIBERAR_MS)
 }

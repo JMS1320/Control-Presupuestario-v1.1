@@ -289,6 +289,7 @@ import { ocurrenciasDeCampania, sugerirAgrupar, fechasIatf, chequearIatf, cheque
 import { presentarHoja, MONEDA, ENTERO } from "@/lib/balance/formato-excel"
 import { armarTresSaldos, sistemaAlMomento } from "@/lib/balance/tres-saldos-hacienda"
 import { agregarSaldosHacienda, agregarSaldosProductivos } from "@/lib/balance/saldos-excel"
+import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 import { armarSaldosProductivos, sistemaProductivoAlCierre, diaAnterior } from "@/lib/balance/saldos-productivos"
 import { armarFilaDato, leerNumero, textoEstadoGuardado, MARCA_TENTATIVO, esTentativo, fuenteTentativo, confirmarFila, leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
@@ -10599,6 +10600,12 @@ export function correrCasos(): Resultado[] {
     const v = `antes ${c.filas.length}/${c.total} · MSA quedan ${msa.filas.map(x => x.asiento.denominacion).join(",")} total ${msa.total} · a cta cte ${msa.enCuentaCorriente.map(x => x.cuentaCorriente).sort().join(" + ")} = ${msa.totalEnCuentaCorriente} · PAM quedan ${pam.filas.length}`
     const e = "antes 3/14976658.91 · MSA quedan Proveedor total 1000 · a cta cte Federación Patronal Seguros + José María Martínez = 14975658.91 · PAM quedan 2"
     chequear("Balance — 03/04 sin los de cuenta corriente", "Los comprobantes de quien tiene cuenta corriente en el 14 salen del total del 03/04 y quedan listados aparte con su total; la aseguradora sólo cuenta en MSA", e, v, v === e, "A-FEAT-1386")
+  }
+
+  // ══ ⬇️ A-BUG-1421: el archivo de una descarga no se libera al instante (Chrome «Guardar como» tarda) ══
+  {
+    const v = `${ESPERA_ANTES_DE_LIBERAR_MS >= 60000 ? "espera ≥ 1 minuto" : "espera corta: " + ESPERA_ANTES_DE_LIBERAR_MS + " ms"}`
+    chequear("Descargas", "El archivo se libera recién después de dar tiempo al diálogo «Guardar como» de Chrome", "espera ≥ 1 minuto", v, v === "espera ≥ 1 minuto", "A-BUG-1421")
   }
 
   return r
