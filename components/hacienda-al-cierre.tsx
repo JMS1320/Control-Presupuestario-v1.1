@@ -45,6 +45,8 @@ import {
   type CuadreGranos, type ValuacionGranos, type Sementeras,
 } from "@/lib/balance/granos-sementeras"
 import { MarcaTentativo } from "@/components/marca-tentativo"
+import { TresSaldosHacienda } from "@/components/tres-saldos-hacienda"
+import { sistemaAlMomento } from "@/lib/balance/tres-saldos-hacienda"
 import { leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { pesosAlCierre, type PesoCategoria } from "@/lib/balance/pesos-hacienda"
 
@@ -76,6 +78,8 @@ export interface DatosHacienda {
    * Pedido del usuario 2026-09-29. Va **arriba** de la valuación en el papel.
    */
   cuadre: CuadreHacienda
+  /** 🐄 A-FEAT-1386 (d): cabezas por categoría de la app al inicio y al cierre, para los tres saldos. */
+  sistema: { inicio: Record<string, number>; cierre: Record<string, number> }
   /** Los insumos viajan acá porque se traen en la misma pasada del sector productivo. */
   insumos: StockInsumos
   /** Los kilos por categoría, de las pesadas de la app. */
@@ -272,6 +276,10 @@ export function HaciendaAlCierre({
           ejercicio.fechaCierre,
           existencias.reduce((s, e) => s + e.cabezas, 0),
         ),
+        sistema: {
+          inicio: sistemaAlMomento(movimientos, "inicio", primerDiaDelEjercicio(ejercicio), ejercicio.fechaCierre),
+          cierre: sistemaAlMomento(movimientos, "cierre", primerDiaDelEjercicio(ejercicio), ejercicio.fechaCierre),
+        },
         pesos,
         mesPrecios: etiqueta,
         insumos: armarStockInsumos((ins ?? []).map(desdeStockInsumo), numericos),
@@ -329,6 +337,10 @@ export function HaciendaAlCierre({
           pero <strong>el stock de hacienda e insumos todavía no se trajo</strong>: hasta que aprietes
           «Traer stock y precios», el Excel sale sin el sector productivo.
         </p>
+      )}
+
+      {datos && (
+        <TresSaldosHacienda empresa={empresa} anioCierre={ejercicio.anioCierre} sistema={datos.sistema} />
       )}
 
       {v && (

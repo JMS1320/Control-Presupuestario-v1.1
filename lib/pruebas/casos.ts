@@ -285,6 +285,7 @@ import { ocurrenciasDeCampania, sugerirAgrupar, fechasIatf, chequearIatf, cheque
   agruparEnSesiones, avisos, encierresPorRodeo, controlarEncierres, proponerCalendario, expandirIatf,
   type TareaPlan as TareaPlanCaso, type Hecho as HechoCaso, type Ocurrencia as OcurrenciaCaso } from "@/lib/productivo/plan-sanitario"
 import { presentarHoja, MONEDA, ENTERO } from "@/lib/balance/formato-excel"
+import { armarTresSaldos, sistemaAlMomento } from "@/lib/balance/tres-saldos-hacienda"
 import { armarFilaDato, leerNumero, textoEstadoGuardado, MARCA_TENTATIVO, esTentativo, fuenteTentativo, confirmarFila, leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
 import { leerFacturaDelTexto, precargaDesdeLectura, cuitValido, parsearImporte } from "@/lib/gas-pdf/leer-factura"
@@ -10458,6 +10459,25 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · 04 seguros en cuotas", "Sin las cuotas de las pólizas (no se pudieron leer, o ventas), «cuotas» va entera como siempre",
       "3000 · no se pagó nunca", `${sinMapa.total} · ${sinMapa.filas[0]?.motivo}`,
       sinMapa.total === 3000 && sinMapa.filas[0]?.motivo === "no se pagó nunca", "A-FEAT-1385")
+  }
+
+  // ══ 🐄 Los tres saldos de la hacienda: sistema · SENASA · balance (A-FEAT-1386 (d), JMS 29/10) ══
+  {
+    const movs = [
+      { fecha: "2026-02-15", cantidad: 188, categoria: "Vaca" },
+      { fecha: "2026-02-15", cantidad: 102, categoria: "Ternero al Pie" },
+      { fecha: "2025-06-01", cantidad: 5, categoria: "Vaca" },
+      { fecha: "2025-06-01", cantidad: 3, categoria: "Bufalo" },
+      { fecha: "2026-07-05", cantidad: -10, categoria: "Vaca" },
+    ]
+    const ini = sistemaAlMomento(movs, "inicio", "2025-07-01", "2026-06-30")
+    const cie = sistemaAlMomento(movs, "cierre", "2025-07-01", "2026-06-30")
+    const vals = { "inicio.balance.vacas": "150", "inicio.senasa.vacas": "152", "inicio.balance.terneros": "0", "inicio.senasa.terneros": "80" }
+    const t = armarTresSaldos("inicio", ini, vals)
+    const vac = t.filas.find(f => f.clave === "vacas")!
+    const v = `ini vacas ${ini.Vaca} · cierre vacas ${cie.Vaca} · fila vacas ${vac.sistema}/${vac.senasa}/${vac.balance} dif ${vac.difSistema}/${vac.difSenasa} · total ${t.total.sistema}/${t.total.senasa}/${t.total.balance} · sin ubicar ${t.sinUbicar.map(x => x.categoria + " " + x.cabezas).join(",")}`
+    const e = "ini vacas 5 · cierre vacas 193 · fila vacas 5/152/150 dif -145/2 · total 8/232/150 · sin ubicar Bufalo 3"
+    chequear("Balance — hacienda: tres saldos", "Sistema al inicio = movimientos anteriores al 1er día (al cierre, hasta el cierre); diferencias contra el balance; lo que no cae en la planilla se avisa y suma al total del sistema", e, v, v === e, "A-FEAT-1386")
   }
 
   return r
