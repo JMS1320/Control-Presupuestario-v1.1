@@ -76,6 +76,11 @@ export const SALDOS_AL_INICIO: SaldoAlInicio[] = [
     saldo: 457212.92,
     fuente: 'planilla del usuario de saldos al 30/06/2025, renglón «Caja» (el contador daba $ 9.903.617,62; JMS eligió la suya)',
   },
+  // A-FEAT-1386 (c): JMS 29/10 «las cuentas Santander y pcia creadas… son de msa… pesos» (scripts/129)
+  { empresa: "MSA", ejercicio: "25/26", cuenta: "BANCO SANTANDER", saldo: 7204.86,
+    fuente: 'planilla del usuario de saldos al 30/06/2025, renglón «Santander»' },
+  { empresa: "MSA", ejercicio: "25/26", cuenta: "BANCO PROVINCIA", saldo: 15298.25,
+    fuente: 'planilla del usuario de saldos al 30/06/2025, renglón «Provincia»' },
 ]
 
 /** El saldo al inicio declarado para una cuenta, o `null` si no hay ninguno. */

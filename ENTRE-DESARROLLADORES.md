@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 🏦 2 tablas nuevas: Banco Santander y Banco Provincia de MSA, en pesos (2026-10-29) — aviso previo, se corre con OK de JMS
+### 🏦 2 tablas nuevas: Banco Santander y Banco Provincia de MSA, en pesos (2026-10-29) — ✅ APLICADA el 29/10 con OK de JMS (aviso previo): 2 tablas vacías, RLS y 2 filas en recurso_tablas
 - `scripts/129-cuentas-santander-provincia-msa.sql` (+ `-deshacer`). A-FEAT-1386: `msa.santander`, `msa.provincia`. Misma forma que las del script 126 (moneda default `ARS`).
 - **RLS igual que las cajas**: `ver_segun_permiso` / `escribir_segun_permiso`, 2 filas nuevas en `recurso_tablas` (recurso `extracto`, marca `[script 129]`). `anon` sin acceso. No toca ninguna tabla existente.
 

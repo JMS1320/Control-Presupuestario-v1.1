@@ -6418,6 +6418,8 @@ export function correrCasos(): Resultado[] {
       saldoAlInicioDe("MSA", "25/26", "BANCO GALICIA (cta cte)")?.saldo === 832605.05
       && saldoAlInicioDe("MSA", "25/26", "CAJA GENERAL")?.saldo === 457212.92
       && saldoAlInicioDe("MSA", "25/26", "CAJA SIGOT") === null
+      && saldoAlInicioDe("MSA", "25/26", "BANCO SANTANDER")?.saldo === 7204.86
+      && saldoAlInicioDe("MSA", "25/26", "BANCO PROVINCIA")?.saldo === 15298.25
       && saldoAlInicioDe("PAM", "25/26", "BANCO GALICIA (cta cte)") === null, "A-FEAT-1206")
   }
 
@@ -8868,8 +8870,8 @@ export function correrCasos(): Resultado[] {
       `${otra?.texto} (${otra?.deOtraEmpresa ? "otra" : "propia"}) · ${propia?.texto} (${propia?.deOtraEmpresa ? "otra" : "propia"}) · ${marcaPagadoDesde("banco", ["MSA"])} · ${marcaPagadoDesde("caja_ams", ["MSA"])}`,
       otra?.deOtraEmpresa === true && propia?.deOtraEmpresa === false && marcaPagadoDesde("banco", ["MSA"]) === null && marcaPagadoDesde("caja_ams", ["MSA"]) === null, "A-FEAT-1321")
     chequear("Pagado desde", "Las opciones: primero el banco propio, después las 4 cuentas Galicia y las 3 cajas (las mismas ids que el motor de conciliación)",
-      "banco · msa_galicia · pam_galicia · pam_galicia_cc · ma_galicia · cotitulares_ca_pesos · caja_general · caja_ams · caja_sigot", OPCIONES_PAGADO_DESDE.map(o => o.id).join(" · "),
-      OPCIONES_PAGADO_DESDE.map(o => o.id).join(" · ") === "banco · msa_galicia · pam_galicia · pam_galicia_cc · ma_galicia · cotitulares_ca_pesos · caja_general · caja_ams · caja_sigot", "A-FEAT-1321")
+      "banco · msa_galicia · pam_galicia · pam_galicia_cc · ma_galicia · cotitulares_ca_pesos · msa_santander · msa_provincia · caja_general · caja_ams · caja_sigot", OPCIONES_PAGADO_DESDE.map(o => o.id).join(" · "),
+      OPCIONES_PAGADO_DESDE.map(o => o.id).join(" · ") === "banco · msa_galicia · pam_galicia · pam_galicia_cc · ma_galicia · cotitulares_ca_pesos · msa_santander · msa_provincia · caja_general · caja_ams · caja_sigot", "A-FEAT-1321")
   }
 
   // ══ 🧾 PLANILLA DE IMPUESTOS (A-FEAT-1320) ══════════════════════════════════════════════════
@@ -9222,8 +9224,8 @@ export function correrCasos(): Resultado[] {
 
     const ctRegistradas = RECURSOS_PERMISABLES.filter((r) => r.tipo === "cuenta").map((r) => r.id.replace("extracto.cuenta.", ""))
     const vreg = `${ctRegistradas.length} · ${["msa_galicia", "tarjeta_visa_business_msa", "echeqs_terceros"].every((id) => ctRegistradas.includes(id)) ? "están" : "faltan"}`
-    chequear("Accesos", "Cuentas: las 18 cuentas del Extracto (11 + las 7 de dólares y Cotitulares, A-FEAT-1398) están registradas como permisables",
-      "18 · están", vreg, vreg === "18 · están", "A-FEAT-1336")
+    chequear("Accesos", "Cuentas: las 20 cuentas del Extracto (11 + las 7 de dólares y Cotitulares, A-FEAT-1398 + Santander y Provincia de MSA, A-FEAT-1386) están registradas como permisables",
+      "20 · están", vreg, vreg === "20 · están", "A-FEAT-1336")
 
     // En el modo permisos: prender una cuenta de un rol vacío prende Extracto, pero no Importar ni otras cuentas.
     const ctModo = alternarRecurso(borradorDe({ secciones: [], permisos: {}, cerrado: true }), "extracto.cuenta.msa_galicia")

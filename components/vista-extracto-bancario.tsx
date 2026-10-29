@@ -5684,7 +5684,7 @@ ${marca}` : marca
             </div>
             {/* 💵 A-FEAT-1398: dólares y Cotitulares (se cargan a mano) */}
             <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Dólares y Cotitulares</p>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cargadas a mano (dólares, Cotitulares, Santander, Provincia)</p>
               <div className="space-y-2">
                 {cuentasDisponibles.filter(c => c.cargaManual).map((cuenta) => (
                   <Permisable key={cuenta.id} recurso={`extracto.cuenta.${cuenta.id}`}>

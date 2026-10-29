@@ -38,6 +38,9 @@ export const CUENTAS_BANCO: CuentaDePago[] = [
     ext.map(e => ({ id: e.tabla, rotulo: ROTULO_BANCO[e.tabla] ?? e.tabla, empresa, tipo: 'banco' as const }))),
   // 💵 A-FEAT-1398: la CA en pesos de Cotitulares pagó una factura de MSA (28/10). Es «de otra empresa»: se marca.
   { id: 'cotitulares_ca_pesos', rotulo: 'Cotitulares CA Pesos', empresa: 'Cotitulares', tipo: 'banco' as const },
+  // 🏦 A-FEAT-1386 (scripts/129): Santander y Provincia de MSA, en pesos
+  { id: 'msa_santander', rotulo: 'MSA Santander', empresa: 'MSA', tipo: 'banco' as const },
+  { id: 'msa_provincia', rotulo: 'MSA Provincia', empresa: 'MSA', tipo: 'banco' as const },
 ]
 
 export const CAJAS: CuentaDePago[] = [
