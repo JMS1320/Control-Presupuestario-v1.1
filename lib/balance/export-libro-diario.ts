@@ -39,6 +39,7 @@ import type {
 } from "./valores-al-cierre"
 import type { CuadreHacienda } from "./cuadre-hacienda"
 import { agregarSaldosHacienda, agregarSaldosProductivos, type SaldosParaExcel } from "./saldos-excel"
+import type { CuentasSinCuentaCorriente } from "./fuera-por-cuenta-corriente"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
 import { hojaDeSaldosAnteriores, type SaldosAnteriores } from "./ajustes-balance"
@@ -835,6 +836,16 @@ function hojaDeCuentas(
     "SEGUROS EN CUOTAS SIN VÍNCULO CON LA PÓLIZA — ya están ENTEROS en el TOTAL de arriba",
     "No se pudieron atar a una póliza con template: no se sabe qué cuotas se pagaron.",
   ], c.sinVinculoPoliza, c.totalSinVinculoPoliza)
+
+  // 🔁 JMS 29/10: quien tiene cuenta corriente en el 14 no va comprobante por comprobante acá.
+  const enCC = (c as Partial<CuentasSinCuentaCorriente>).enCuentaCorriente
+  if (enCC?.length) {
+    const porCuenta = [...new Set(enCC.map(x => x.cuentaCorriente))].join(", ")
+    bloque([
+      `VAN POR SU CUENTA CORRIENTE (papel 14) — NO están en el TOTAL de arriba: ${porCuenta}`,
+      "Regla del usuario (29/10/2026): si el balance muestra el saldo en cuenta corriente, no se muestran aparte sus comprobantes.",
+    ], enCC, (c as CuentasSinCuentaCorriente).totalEnCuentaCorriente)
+  }
 
   f.push([])
   f.push([`Se miraron ${c.mirados} comprobantes del ejercicio.`])

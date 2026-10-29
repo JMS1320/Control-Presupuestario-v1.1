@@ -129,6 +129,7 @@ import {
   armarLibroPorCuenta, SIN_IMPUTAR, TIPOS_SIN_CREDITO_VENTAS,
 } from "@/lib/balance/libro-por-cuenta"
 import { armarCuentasAlCierre, canceladoPorCuotasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
+import { sacarLosDeCuentaCorriente, cuitsConCuentaCorriente } from "@/lib/balance/fuera-por-cuenta-corriente"
 import {
   armarChequesDados, armarAnticiposAlCierre,
   type ChequeCrudo, type AnticipoCrudo, type AplicacionDeAnticipo,
@@ -10546,6 +10547,25 @@ export function correrCasos(): Resultado[] {
     const v = `fila ${iV + 1}: ${fila.map(cel).join(" | ")} · senasa vacío sin fórmula · cierre agric fila ${iP + 1}: ${(p[iP] as unknown[]).map(cel).join(" | ")}`
     const e = `fila ${iV + 1}: Vacas | 5 | · | 150 | 148 | =B${iV + 1}-D${iV + 1}→-145 | · | =D${iV + 1}-E${iV + 1}→2 · senasa vacío sin fórmula · cierre agric fila ${iP + 1}: Insumos agrícolas | 90 | 100 | 0 | =B${iP + 1}-C${iP + 1}→-10 | =C${iP + 1}-D${iP + 1}→100`
     chequear("Balance — saldos en el Excel", "Las diferencias van como fórmula sobre su propia fila; si falta un dato la celda queda vacía (no un 0 que se lea «cierra»)", e, v, v === e, "A-FEAT-1386")
+  }
+
+  // ══ 🔁 Quien tiene cuenta corriente (papel 14) sale del 03/04 — JMS 29/10, caso NC 670821 de Federación Patronal ══
+  {
+    const asi = (cuit: string, quien: string, total: number) => ({
+      id: `${quien}-${total}`, fuente: "arca" as const, subdiario: "2026-05", fecha: "2026-05-10", tipo: 1, punto_venta: 1, numero: 1,
+      cuit, denominacion: quien, neto_gravado: 0, no_gravado: 0, exento: 0, otros_tributos: 0, iva: 0, total,
+      cuenta_contable: "", nro_cuenta: "", centro_costo: "",
+    })
+    const c = armarCuentasAlCierre([
+      { estado: "pendiente", fechaPago: null, origenFecha: "sin dato", asiento: asi("30000000007", "Proveedor", 1000) },
+      { estado: "pendiente", fechaPago: null, origenFecha: "sin dato", asiento: asi("33707366589", "FEDERACION PATRONAL", -24341.09) },
+      { estado: "pendiente", fechaPago: null, origenFecha: "sin dato", asiento: asi("23342147739", "MARTINEZ JOSE MARIA", 15000000) },
+    ] as ComprobanteConPago[], "2026-06-30")
+    const msa = sacarLosDeCuentaCorriente(c, cuitsConCuentaCorriente("MSA"))
+    const pam = sacarLosDeCuentaCorriente(c, cuitsConCuentaCorriente("PAM"))
+    const v = `antes ${c.filas.length}/${c.total} · MSA quedan ${msa.filas.map(x => x.asiento.denominacion).join(",")} total ${msa.total} · a cta cte ${msa.enCuentaCorriente.map(x => x.cuentaCorriente).sort().join(" + ")} = ${msa.totalEnCuentaCorriente} · PAM quedan ${pam.filas.length}`
+    const e = "antes 3/14976658.91 · MSA quedan Proveedor total 1000 · a cta cte Federación Patronal Seguros + José María Martínez = 14975658.91 · PAM quedan 2"
+    chequear("Balance — 03/04 sin los de cuenta corriente", "Los comprobantes de quien tiene cuenta corriente en el 14 salen del total del 03/04 y quedan listados aparte con su total; la aseguradora sólo cuenta en MSA", e, v, v === e, "A-FEAT-1386")
   }
 
   return r

@@ -86,6 +86,7 @@ import {
 import { useDatosDelBalance, textoEstadoGuardado, leerNumero } from "@/lib/balance/datos-usuario"
 import { controlarCheque, chequeEnPapel08, chequeEnTemplates } from "@/lib/balance/control-cheque"
 import { aseguradoraAlCierre } from "@/lib/balance/seguros-al-cierre"
+import { sacarLosDeCuentaCorriente, cuitsConCuentaCorriente } from "@/lib/balance/fuera-por-cuenta-corriente"
 import { esDeLaAseguradora } from "@/lib/polizas/control-debitos"
 // 🕐 La fecha de hoy en hora argentina. Vive en el módulo de cotizaciones porque ahí nació el bug
 //    (A-OP-23); es genérica y conviene moverla, pero duplicarla sería peor.
@@ -345,9 +346,14 @@ export function PapelesDeBalance() {
         } catch (e) {
           toast.warning("No se pudieron leer las cuotas de las pólizas: los seguros en cuotas van enteros al papel 04. " + (e as Error).message)
         }
+        /**
+         * 🔁 JMS 29/10: «si muestra saldo en cta cte no debe mostrar aparte comprobantes individuales ni a cobrar
+         * ni a pagar». Los de quien tiene cuenta corriente en el 14 salen del 03/04 (listados aparte, con su total).
+         */
+        const conCC = cuitsConCuentaCorriente(empresa.id)
         setCuentas({
-          pagar: armarCuentasAlCierre(conPago(armado.compras), ej.fechaCierre, cuotasPoliza),
-          cobrar: armarCuentasAlCierre(conPago(armado.ventas), ej.fechaCierre),
+          pagar: sacarLosDeCuentaCorriente(armarCuentasAlCierre(conPago(armado.compras), ej.fechaCierre, cuotasPoliza), conCC),
+          cobrar: sacarLosDeCuentaCorriente(armarCuentasAlCierre(conPago(armado.ventas), ej.fechaCierre), conCC),
         })
       } catch (e) {
         toast.warning("No se pudieron armar las cuentas a pagar y a cobrar; el resto del libro salió igual.")

@@ -52,6 +52,17 @@
 - **Templates funcionalidades avanzadas** - Replicación anual, ajuste inflación `#templates #avanzado #pendiente`
 - **Expansión PAM** - Replicar infraestructura MSA `#pam #expansion #pendiente`
 
+## 🔁 Con cuenta corriente, no van los comprobantes sueltos `#balance #papel14 #criterio #2026-10-29`
+
+JMS (29/10), a raíz de la NC de la póliza 670821 de Federación Patronal ($ 24.341,09 a favor) que salía en el 04 **y**
+en el 14: *«el balance, si muestra saldo en cta cte, no debe mostrar aparte comprobantes individuales ni a cobrar ni a
+pagar»*.
+
+- Los comprobantes de una contraparte con cuenta corriente en el **papel 14** (las de `CONTRAPARTES_DEL_BALANCE` y, en
+  MSA, Federación Patronal) **salen del total del 03 y del 04**. Lógica: `lib/balance/fuera-por-cuenta-corriente.ts`.
+- No se descartan en silencio: en el Excel quedan en un bloque «VAN POR SU CUENTA CORRIENTE (papel 14)», con su total.
+- Una contraparte nueva en el 14 tiene que entrar en esa lista; si no, se cuenta dos veces.
+
 ## 🧾 Dos datos, siempre: el del CAMPO y el del CONTADOR `#balance #inicio #criterio #2026-10-29`
 
 JMS (29/10): *«tenemos un dato del campo y un dato del balance. En el balance el contador se rige por la forma contable
