@@ -9554,6 +9554,33 @@ export function correrCasos(): Resultado[] {
     chequear("Balance", "Excel: título, encabezado y total en negrita; NO COINCIDE en rojo, coincide en verde; las filas comunes sin tocar",
       "título · encabezado · total · aviso rojo · ok verde · fila común normal", vsty,
       vsty === "título · encabezado · total · aviso rojo · ok verde · fila común normal", "A-FEAT-1338")
+  
+    // 🎨 Estética de los papeles (JMS 29/10/2026): sección, nota, total en otra columna, encabezado inmovilizado.
+    const ws2 = XLSXcasos.utils.aoa_to_sheet([
+      ["CUENTAS A PAGAR — ejercicio 25/26"],
+      ["Entra lo que NO estaba pagado al cierre."],
+      [],
+      ["Fecha", "Proveedor", "Importe"],
+      ["2026-06-28", "AFA", 1000],
+      ["", "TOTAL", 1000],
+      [],
+      ["CUOTAS DE TEMPLATES IMPAGAS — son deuda igual"],
+      ["   2025-07 AMS: guardado 1500000"],
+      ["", "Total MSA", 500],
+    ])
+    const vista2 = presentarHoja(ws2)
+    const s2 = (d: string) => ((ws2[d] as { s?: { font?: { bold?: boolean; italic?: boolean }; fill?: { fgColor?: { rgb?: string } } } } | undefined)?.s ?? {})
+    const v2938 = [
+      `inmoviliza ${vista2.congelarFilas}`,
+      s2("A8").font?.bold && s2("C8").fill ? "sección a lo ancho" : "-",
+      s2("A2").font?.italic ? "nota en itálica" : "-",
+      s2("A9").font?.italic ? "ítem con sangría = nota" : "-",
+      s2("B6").font?.bold && s2("A6").fill ? "TOTAL en B, banda desde A" : "-",
+      s2("A6").fill?.fgColor?.rgb !== s2("A10").fill?.fgColor?.rgb ? "total y subtotal en dos tonos" : "-",
+    ].join(" · ")
+    const esperado2938 = "inmoviliza 4 · sección a lo ancho · nota en itálica · ítem con sangría = nota · TOTAL en B, banda desde A · total y subtotal en dos tonos"
+    chequear("Balance", "Excel: secciones en banda, notas en itálica, totales en cualquier columna (dos tonos) y el encabezado queda inmovilizado",
+      esperado2938, v2938, v2938 === esperado2938, "A-FEAT-1417")
   }
 
   // ══ 📄 RESUMEN PDF DE CAJA DE AHORRO → FORMATO DEL EXCEL (A-FEAT-1352) ═══════════════════════

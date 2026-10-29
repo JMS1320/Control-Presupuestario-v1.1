@@ -38,11 +38,10 @@
  * del libro IVA de ARCA, que el navegador no tiene. Queda afuera hasta que la app guarde lo presentado.
  */
 import XLSX from "xlsx-js-style"
-import JSZip from "jszip"
 import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
 import { claveSubdiario, type Ejercicio } from "./ejercicio"
 import { hoyArgentina } from "@/lib/fechas"
-import { MONEDA } from "./formato-excel"
+import { MONEDA, aplicarVistas } from "./formato-excel"
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════
 // Constantes por empresa y ejercicio
@@ -887,8 +886,9 @@ export interface ResumenConsensuado {
   conConsensuado: boolean
 }
 
-/** Vista de cada solapa que `xlsx-js-style` no sabe escribir: encabezado inmovilizado y cuadrícula. */
-export interface Vista { congelarFilas?: number; sinCuadricula?: boolean }
+/** Vista de cada solapa que `xlsx-js-style` no sabe escribir: ver `formato-excel.ts`. */
+export type { Vista } from "./formato-excel"
+import type { Vista } from "./formato-excel"
 
 export interface LibroConsensuado { wb: XLSX.WorkBook; vistas: Vista[]; resumen: ResumenConsensuado }
 
@@ -948,28 +948,7 @@ export function armarLibroDiarioConsensuado(libro: LibroDiario, empresa: string)
   }
 }
 
-/**
- * 🪟 Encabezado inmovilizado y cuadrícula apagada. `xlsx-js-style` (SheetJS 0.18 libre) no escribe `<pane>` ni
- * `showGridLines` — `!freeze` lo ignora —, así que se agregan al XML de cada solapa después de escribir el archivo.
- */
-export async function aplicarVistas(datos: Uint8Array | ArrayBuffer, vistas: Vista[]): Promise<Uint8Array> {
-  const zip = await JSZip.loadAsync(datos)
-  for (let i = 0; i < vistas.length; i++) {
-    const v = vistas[i]
-    if (!v.congelarFilas && !v.sinCuadricula) continue
-    const ruta = `xl/worksheets/sheet${i + 1}.xml`
-    const f = zip.file(ruta)
-    if (!f) continue
-    const xml = await f.async("string")
-    const atrib = v.sinCuadricula ? ' showGridLines="0"' : ""
-    const pane = v.congelarFilas
-      ? `<pane ySplit="${v.congelarFilas}" topLeftCell="A${v.congelarFilas + 1}" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A${v.congelarFilas + 1}" sqref="A${v.congelarFilas + 1}"/>`
-      : ""
-    const nuevo = xml.replace(/<sheetView ([^>]*?)\/>/, (_m, a: string) => `<sheetView ${a}${atrib}>${pane}</sheetView>`)
-    zip.file(ruta, nuevo)
-  }
-  return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" })
-}
+export { aplicarVistas }
 
 /** Los bytes del .xlsx, listos para bajar o guardar. */
 export async function bytesLibroDiarioConsensuado(l: LibroConsensuado): Promise<Uint8Array> {

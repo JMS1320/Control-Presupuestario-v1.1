@@ -51,7 +51,8 @@ import { resumenControlCuotas, conProblema, type ControlCuotasTemplates } from "
 import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
 import type { CuadreGranos, ValuacionGranos, Sementeras } from "./granos-sementeras"
 import {
-  formatearHoja, presentarHoja, conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna,
+  formatearHoja, presentarHoja, anchosAutomaticos, colorDeSolapa, aplicarVistas,
+  conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna, type Vista,
 } from "./formato-excel"
 
 const money = (n: number) => Math.round(n * 100) / 100
@@ -341,10 +342,17 @@ export const conEstilo = (fila: unknown[], s: Record<string, unknown>): unknown[
   return { t: "s", v: v == null ? "" : String(v), s }
 })
 
+/** 🪟 La vista de cada solapa (encabezado inmovilizado, color), en el orden en que se agregaron. */
+const VISTAS = new WeakMap<XLSX.WorkBook, Vista[]>()
+/** Las vistas de un libro armado con `agregarHoja`, para `aplicarVistas` al escribirlo. */
+export const vistasDe = (wb: XLSX.WorkBook): Vista[] => VISTAS.get(wb) ?? []
+
 const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: Columna[]) => {
   const ws = XLSX.utils.aoa_to_sheet(filas)
   if (columnas) formatearHoja(ws, columnas)
-  presentarHoja(ws)
+  else anchosAutomaticos(ws)
+  const vista = { ...presentarHoja(ws), colorSolapa: colorDeSolapa(nombre) }
+  VISTAS.set(wb, [...vistasDe(wb), vista])
   const niveles = NIVELES.get(filas)
   if (niveles) ws["!rows"] = niveles.map(l => (l ? { level: l } : {}))
   // 31 caracteres es el máximo que acepta Excel para el nombre de una solapa.
@@ -2501,7 +2509,7 @@ export function nombreArchivo(libro: LibroDiario, empresa: string): string {
 }
 
 /** Descarga el archivo en el navegador. */
-export function descargarLibroDiario(
+export async function descargarLibroDiario(
   libro: LibroDiario, empresa: string,
   templates?: TemplatesDelEjercicio,
   hacienda?: {
@@ -2526,9 +2534,9 @@ export function descargarLibroDiario(
 ) {
   const wb = armarWorkbook(libro, empresa, templates, hacienda, insumos, campo, cuentas,
     bancarios, sueldos, cuentasCorrientes, pendientes, saldosAnteriores, asientosContables, lecturas, controlCuotas)
-  const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
+  const out = await aplicarVistas(XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(wb))
   const url = URL.createObjectURL(
-    new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+    new Blob([out as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
   )
   const a = document.createElement("a")
   a.href = url
