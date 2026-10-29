@@ -698,6 +698,25 @@ Los botones (copiar pedido, pedir, buscar) trabajan sobre lo que queda a la vist
 
 ⚠️ Sin probar todavía → [A-TEST-1272](PENDIENTES.md#a-test-1272)
 
+## 📒 Mandar una factura a «Asientos Contables»
+
+Para las facturas **no informadas en ARCA** que no van al subdiario de IVA (facturas B y otros casos): el contador las
+registra con un asiento. Tres caminos:
+- **Egresos → Facturas ARCA → Imputar Facturas**: tildá las facturas y apretá **«📒 A Asientos Contables»**.
+- **Editando la factura**: en **Estado DDJJ** elegí **«📒 Asientos Contables (sale del subdiario)»**.
+- **Al cargarla desde el PDF**: elegí el destino **«📒 Asientos Contables»**.
+
+Salen en la solapa «Asientos Contables» de los Papeles del balance del ejercicio de su fecha. El botón
+**📒 Asientos Contables** de Facturas ARCA muestra la lista y deja sacar una.
+
+## 📅 Precios de la hacienda y los granos al cierre *(cambió 2026-10-29)*
+
+Al «Traer stock y precios», cada mercado toma **el precio del día de cierre o el último publicado antes** (ya no el
+promedio del mes); arriba dice qué fecha usó cada uno. Los granos toman la **pizarra de Rosario** de la soja al cierre
+si dejás el precio vacío; si escribís uno, manda el tuyo. En el Excel, cada fuente lleva su link para el contador.
+
+⚠️ Sin probar todavía → [A-TEST-1287](PENDIENTES.md#a-test-1287)
+
 ## 📦 Stock declarado al inicio y pasturas *(nuevo 2026-10-29)*
 
 En **Papeles de balance → Traer stock y precios**, «📦 Stock declarado al …»: el stock al inicio del ejercicio
@@ -3347,7 +3366,8 @@ valúa con **tus criterios** — los mismos que venías escribiendo en la planil
 máximo × 80 % × 450 kg»*, *«MEJ especial × 1,5 × 300 kg»*…).
 
 **De dónde salen los precios:** del **Mercado Agroganadero de Cañuelas** y de **Entresurcos y
-Corrales**, tomando **el mes entero** del cierre para que sea representativo. Quedan en la solapa
+Corrales**, ⚠️ *(cambió 29/10)* tomando **el precio del día de cierre o el último publicado antes** —antes era el
+promedio del mes entero—, con la fecha usada y el link de cada fuente. Quedan en la solapa
 **Precios** del Excel, para que la valuación se pueda revisar en vez de creerle.
 
 🕳️ **Lo que no tiene precio queda como hueco, no en cero.** La vaca y la vaquillona preñada se

@@ -364,7 +364,7 @@ export function armarFondosComunes(
  * lo que hay. → `A-DAT-66`.
  */
 export const CONCEPTOS_RETIRO_APORTE: Array<{ categ: string; etiqueta: string; clase: "retiro" | "aporte" }> = [
-  { categ: "Distribucion Mama", etiqueta: "Distribución a la madre", clase: "retiro" },
+  { categ: "Distribucion Mama", etiqueta: "Distribución a MA", clase: "retiro" },  // JMS 29/10 (nota 15): «poner MA, no madre»
   { categ: "Retiro PAM", etiqueta: "Retiro de PAM", clase: "retiro" },
   { categ: "Retiro AMS", etiqueta: "Retiro de AMS", clase: "retiro" },
   { categ: "Retiro JMS", etiqueta: "Retiro de JMS", clase: "retiro" },

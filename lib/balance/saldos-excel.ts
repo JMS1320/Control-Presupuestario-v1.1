@@ -88,3 +88,6 @@ export function hojaStockInicio(renglones: RenglonStockInicio[], pasturas: Pastu
   }
   return f
 }
+
+/** Una celda de texto con hipervínculo (A-FEAT-1422 nota 14: «poner los links a las cotizaciones para el contador»). */
+export const conLink = (texto: string, url: string) => ({ t: "s" as const, v: texto, l: { Target: url, Tooltip: url } })

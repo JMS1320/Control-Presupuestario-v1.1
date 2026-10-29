@@ -53,6 +53,7 @@ import {
 import { armarTresSaldos } from "@/lib/balance/tres-saldos-hacienda"
 import type { SaldosParaExcel } from "@/lib/balance/saldos-excel"
 import { leerStockInicio, type RenglonStockInicio, type Pastura } from "@/lib/balance/stock-inicio"
+import { ultimoPublicado, leyendaPrecios, pizarraAlCierre, URL_FUENTES, type FuentePrecio } from "@/lib/balance/precio-al-cierre"
 import { StockInicioDetalle } from "@/components/stock-inicio-detalle"
 import { sistemaAlMomento } from "@/lib/balance/tres-saldos-hacienda"
 import { leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
@@ -94,13 +95,17 @@ export interface DatosHacienda {
   stockInicio?: { renglones: RenglonStockInicio[]; pasturas: Pastura[]; fecha: string }
   /** Los insumos viajan acá porque se traen en la misma pasada del sector productivo. */
   insumos: StockInsumos
+  /** 📅 A-FEAT-1422 (14/16): de dónde salió cada precio, con su fecha y su link (para el contador). */
+  fuentesPrecios?: FuentePrecio[]
+  /** La pizarra de Rosario de la soja al cierre (default del precio de granos; el escrito a mano manda). */
+  pizarraSoja?: { valor: number; fecha: string; url: string } | null
   /** Los kilos por categoría, de las pesadas de la app. */
   pesos: PesoCategoria[]
   /** Toneladas vendidas en el ejercicio: la única entrada del cuadre de granos que la app sabe. */
   ventasGranosTn: number
   sementeras: Sementeras
   /** Lo que el Excel necesita de granos y sementeras, ya armado con lo que el usuario escribió. */
-  campo: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras }
+  campo: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras; origenPrecioGranos?: { texto: string; url: string | null } | null }
 }
 
 export function HaciendaAlCierre({
@@ -134,17 +139,10 @@ export function HaciendaAlCierre({
     cierre: cuadre.valores.cierre ?? "", precio: cuadre.valores.precio ?? "",
   }
 
-  /** El mes del cierre completo: `2026-06-01` … `2026-06-30`. */
-  const mesDelCierre = () => {
-    const fin = ejercicio.fechaCierre
-    return { desde: `${fin.slice(0, 8)}01`, hasta: fin, etiqueta: fin.slice(0, 7) }
-  }
 
   const traer = async () => {
     setCargando(true)
     try {
-      const { desde, hasta, etiqueta } = mesDelCierre()
-
       // La existencia: suma de movimientos hasta el cierre, por categoría.
       const { data: movs, error } = await supabase
         .schema("productivo")
@@ -234,13 +232,34 @@ export function HaciendaAlCierre({
        * precios no están los de los machos»*. El endpoint ya existía con `sexo=macho` y **nunca se
        * había llamado**: el ternero se valuaba derivando de la hembra.
        */
-      const [mag, hembras, machos, vientres, toros] = await Promise.all([
-        pedir<PrecioMag>(`/api/precios-mag?desde=${desde}&hasta=${hasta}`),
-        pedir<PrecioMercado>(`/api/precios-mercado?desde=${desde}&hasta=${hasta}&sexo=hembra`),
-        pedir<PrecioMercado>(`/api/precios-mercado?desde=${desde}&hasta=${hasta}&sexo=macho`),
-        pedir<PrecioCabeza>(`/api/precios-por-cabeza?tipo=vientres&desde=${desde}&hasta=${hasta}`),
-        pedir<PrecioCabeza>(`/api/precios-por-cabeza?tipo=toros&desde=${desde}&hasta=${hasta}`),
+      /**
+       * 📅 ⚠️ cambió 29/10 (A-FEAT-1422 nota 16) — hasta acá era el PROMEDIO DEL MES de cierre. JMS: «que sea al 30/6
+       * y no como promedio del mes; al 30/6 o último precio publicado». Cada fuente se busca hacia atrás desde el cierre
+       * hasta el primer día que publicó con precio; la fecha usada y el link quedan en el papel.
+       */
+      const fc = ejercicio.fechaCierre
+      const conPrecioMag = (xs: PrecioMag[]) => xs.some(x => x.promedio > 0 || x.maximo > 0)
+      const conPrecioKg = (xs: PrecioMercado[]) => xs.some(x => (x.kiloMax || x.promKilo) > 0)
+      const conPrecioCab = (xs: PrecioCabeza[]) => xs.some(x => x.cantidad > 0 && x.promedio > 0)
+      const [rMag, rHem, rMac, rVie, rTor, pizSoja] = await Promise.all([
+        ultimoPublicado(fc, d => pedir<PrecioMag>(`/api/precios-mag?desde=${d}&hasta=${d}`), conPrecioMag),
+        ultimoPublicado(fc, d => pedir<PrecioMercado>(`/api/precios-mercado?desde=${d}&hasta=${d}&sexo=hembra`), conPrecioKg),
+        ultimoPublicado(fc, d => pedir<PrecioMercado>(`/api/precios-mercado?desde=${d}&hasta=${d}&sexo=macho`), conPrecioKg),
+        ultimoPublicado(fc, d => pedir<PrecioCabeza>(`/api/precios-por-cabeza?tipo=vientres&desde=${d}&hasta=${d}`), conPrecioCab),
+        ultimoPublicado(fc, d => pedir<PrecioCabeza>(`/api/precios-por-cabeza?tipo=toros&desde=${d}&hasta=${d}`), conPrecioCab),
+        pizarraAlCierre(supabase, "soja", fc),
       ])
+      const [mag, hembras, machos, vientres, toros] = [rMag.filas, rHem.filas, rMac.filas, rVie.filas, rTor.filas]
+      const fuentesPrecios: FuentePrecio[] = [
+        { nombre: "Cañuelas (MAG)", fecha: rMag.fecha, url: URL_FUENTES.canuelas },
+        { nombre: "Entresurcos terneras", fecha: rHem.fecha, url: URL_FUENTES.terneras },
+        { nombre: "Entresurcos terneros", fecha: rMac.fecha, url: URL_FUENTES.terneros },
+        { nombre: "Entresurcos vientres", fecha: rVie.fecha, url: URL_FUENTES.vientres },
+        { nombre: "Entresurcos toros", fecha: rTor.fecha, url: URL_FUENTES.toros },
+      ]
+      const etiqueta = leyendaPrecios(fc, fuentesPrecios)
+      // 🎚️ Granos: la pizarra de Rosario al cierre es el default; el precio escrito a mano manda.
+      const precioGranos = tn(granos.precio) ?? pizSoja?.valor ?? null
       const mercado = { macho: machos, hembra: hembras }
       const porCabeza = { vientres, toros }
 
@@ -310,6 +329,7 @@ export function HaciendaAlCierre({
         },
         pesos,
         mesPrecios: etiqueta,
+        fuentesPrecios, pizarraSoja: pizSoja,
         insumos: armarStockInsumos((ins ?? []).map(desdeStockInsumo), numericos),
         ventasGranosTn, sementeras,
         campo: {
@@ -321,7 +341,10 @@ export function HaciendaAlCierre({
             // 🤖 A-FEAT-1386: el stock al inicio que puso Claude sale TENTATIVO en el Excel hasta el OK
             notaInicio: leyendaTentativo(cuadre.tentativos.inicio) || undefined,
           },
-          valuacionGranos: valuarGranos(tn(granos.cierre) ?? 0, tn(granos.precio)),
+          valuacionGranos: valuarGranos(tn(granos.cierre) ?? 0, precioGranos),
+          origenPrecioGranos: tn(granos.precio) != null
+            ? { texto: "precio escrito a mano en la pantalla del balance", url: null }
+            : pizSoja ? { texto: `pizarra Rosario soja del ${pizSoja.fecha.split("-").reverse().join("/")}`, url: pizSoja.url } : null,
           sementeras,
         },
       }
@@ -377,7 +400,7 @@ export function HaciendaAlCierre({
         </Button>
         {datos && (
           <span className="text-xs text-muted-foreground">
-            Precios de <strong>{datos.mesPrecios}</strong> (el mes entero) · Cañuelas {datos.mag.length} · terneras {datos.mercado.hembra.length} · terneros {datos.mercado.macho.length} · vientres {datos.porCabeza.vientres.length} · toros {datos.porCabeza.toros.length}
+            Precios: <strong>{datos.mesPrecios}</strong> · Cañuelas {datos.mag.length} · terneras {datos.mercado.hembra.length} · terneros {datos.mercado.macho.length} · vientres {datos.porCabeza.vientres.length} · toros {datos.porCabeza.toros.length}
           </span>
         )}
       </div>
@@ -559,8 +582,15 @@ export function HaciendaAlCierre({
                 </label>
                 <label className="block">
                   <span className="block text-muted-foreground">Precio por tonelada</span>
-                  <Input type="text" placeholder="0,00" className="h-6 w-28 text-xs"
-                    value={granos.precio} onChange={e => cuadre.cambiar("precio", e.target.value)} />
+                  <Input type="text" className="h-6 w-28 text-xs"
+                    value={granos.precio} onChange={e => cuadre.cambiar("precio", e.target.value)}
+                    placeholder={datos?.pizarraSoja ? datos.pizarraSoja.valor.toLocaleString("es-AR") : "0,00"} />
+                  {/* 🎚️ vacío = la pizarra de Rosario al cierre; escrito = manda el tuyo (A-FEAT-1422 nota 16) */}
+                  {datos?.pizarraSoja && !String(granos.precio ?? "").trim() && (
+                    <span className="block text-[11px] text-muted-foreground">
+                      usa la <a className="underline" href={datos.pizarraSoja.url} target="_blank" rel="noreferrer">pizarra Rosario soja del {datos.pizarraSoja.fecha.split("-").reverse().join("/")}</a>
+                    </span>
+                  )}
                 </label>
               </div>
               <p className="text-xs text-muted-foreground">
@@ -612,7 +642,7 @@ export function HaciendaAlCierre({
 
       {!datos && !cargando && (
         <p className="text-xs text-muted-foreground">
-          Trae la existencia al cierre y los precios del mes, y aplica tus {CRITERIOS.length} criterios
+          Trae la existencia al cierre y los precios al cierre (o el último publicado), y aplica tus {CRITERIOS.length} criterios
           de valuación. No modifica nada.
         </p>
       )}
