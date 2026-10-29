@@ -10,7 +10,8 @@
  * una empresa va por la cuenta corriente, no como disponibilidad).
  *
  * ✅ Va al Excel del balance (JMS 28/10: «que entre a balance»): `saldosEnDolaresParaBalance` suma una línea por
- * cuenta al papel 07 Bancos. Para el ejercicio 25/26 no cambia nada: no hay movimientos antes del 30/06/2026.
+ * cuenta al papel 07 Bancos. ⚠️ cambió 29/10: la cta USD de MSA tiene su saldo de inicio 25/26 (script 128), así que
+ * desde ahí sale en el 07 de 25/26; sin los movimientos del año, el saldo al cierre es el de inicio.
  */
 import { CUENTAS_DOLARES_Y_COTITULARES, importeConSigno, pesosDe, type MovimientoMoneda } from "@/lib/dolares/cuentas"
 
