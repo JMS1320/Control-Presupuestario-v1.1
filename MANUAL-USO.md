@@ -698,6 +698,20 @@ Los botones (copiar pedido, pedir, buscar) trabajan sobre lo que queda a la vist
 
 ⚠️ Sin probar todavía → [A-TEST-1272](PENDIENTES.md#a-test-1272)
 
+## 🐄 Los tres saldos de la hacienda *(nuevo 2026-10-29)*
+
+En **Papeles de balance → Traer stock y precios**, arriba de la valuación de hacienda. Para cada categoría muestra
+saldos: **Sistema** (lo que suman los movimientos de hacienda de la app), **SENASA**, **Campo** y **Balance** (estos
+tres los escribís vos). Con los botones **Al inicio** / **Al cierre** elegís el momento. Las columnas de diferencias comparan
+contra el balance: lo normal es que la diferencia sea una mortandad sin registrar.
+
+Siempre hay **dos datos declarados**: **Campo** (el tuyo, para el balance interno) y **Balance** (el del contador). En la
+hacienda se escriben ahí mismo; debajo, la tabla de **insumos agrícolas, insumos ganaderos, gas oil y sementeras** (en
+pesos) los toma de la foto del **Balance propio** (versiones JMS y Contador), donde se cargan. Sistema = el stock valuado
+de la app, sólo al cierre.
+
+⚠️ Sin probar todavía → [A-TEST-1287](PENDIENTES.md#a-test-1287)
+
 ## 🤖 Datos «TENTATIVOS» en los papeles del balance *(nuevo 2026-10-28)*
 
 Algunos datos de inicio los carga Claude desde los papeles del balance anterior. Aparecen con un chip ámbar

@@ -52,6 +52,21 @@
 - **Templates funcionalidades avanzadas** - Replicación anual, ajuste inflación `#templates #avanzado #pendiente`
 - **Expansión PAM** - Replicar infraestructura MSA `#pam #expansion #pendiente`
 
+## 🧾 Dos datos, siempre: el del CAMPO y el del CONTADOR `#balance #inicio #criterio #2026-10-29`
+
+JMS (29/10): *«tenemos un dato del campo y un dato del balance. En el balance el contador se rige por la forma contable
+siempre, y eventualmente hay un tratamiento diferente de la información. El dato que yo tengo en la planilla es el dato;
+el del contador es otro dato. Son dos datos que hay que registrar los dos… van a servir para los dos balances»* (el del
+contador y su balance interno, de punta a punta).
+
+- **No se elige uno: se guardan los dos.** El lugar ya existía: la **foto del Balance propio** (`balance_foto_valores`,
+  versiones `jms` = campo y `contador`, más `sistema` y `senasa`; A-FEAT-1190). Lo que se carga de un papel o una
+  planilla va a la versión que corresponde, **no** a una copia aparte.
+- En los papeles se muestran lado a lado: **Sistema · (SENASA) · Campo · Balance**, con las diferencias Sistema − Campo
+  (suele ser mortandad o algo sin registrar) y Campo − Balance (suele ser tratamiento contable). Avisan, no frenan.
+- ⚠️ Un dato que se usa para UN papel (ej. el saldo de inicio de la caja en el papel 07 sale del campo: $ 457.212,92)
+  no borra el otro: el contador ($ 9.903.617,62) sigue en su versión de la foto.
+
 ## 🗺️ Dónde vive cada cosa en la app — lo que el nombre no dice `#navegacion #2026-08-19`
 
 Salió al ubicar los 260 pendientes por pantalla. Tres cosas que **no se deducen del nombre de la

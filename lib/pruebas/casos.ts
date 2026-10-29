@@ -285,6 +285,8 @@ import { ocurrenciasDeCampania, sugerirAgrupar, fechasIatf, chequearIatf, cheque
   agruparEnSesiones, avisos, encierresPorRodeo, controlarEncierres, proponerCalendario, expandirIatf,
   type TareaPlan as TareaPlanCaso, type Hecho as HechoCaso, type Ocurrencia as OcurrenciaCaso } from "@/lib/productivo/plan-sanitario"
 import { presentarHoja, MONEDA, ENTERO } from "@/lib/balance/formato-excel"
+import { armarTresSaldos, sistemaAlMomento } from "@/lib/balance/tres-saldos-hacienda"
+import { armarSaldosProductivos, sistemaProductivoAlCierre, diaAnterior } from "@/lib/balance/saldos-productivos"
 import { armarFilaDato, leerNumero, textoEstadoGuardado, MARCA_TENTATIVO, esTentativo, fuenteTentativo, confirmarFila, leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
 import { leerFacturaDelTexto, precargaDesdeLectura, cuitValido, parsearImporte } from "@/lib/gas-pdf/leer-factura"
@@ -10496,6 +10498,37 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · 04 seguros en cuotas", "Sin las cuotas de las pólizas (no se pudieron leer, o ventas), «cuotas» va entera como siempre",
       "3000 · no se pagó nunca", `${sinMapa.total} · ${sinMapa.filas[0]?.motivo}`,
       sinMapa.total === 3000 && sinMapa.filas[0]?.motivo === "no se pagó nunca", "A-FEAT-1385")
+  }
+
+  // ══ 🐄 Los tres saldos de la hacienda: sistema · SENASA · balance (A-FEAT-1386 (d), JMS 29/10) ══
+  {
+    const movs = [
+      { fecha: "2026-02-15", cantidad: 188, categoria: "Vaca" },
+      { fecha: "2026-02-15", cantidad: 102, categoria: "Ternero al Pie" },
+      { fecha: "2025-06-01", cantidad: 5, categoria: "Vaca" },
+      { fecha: "2025-06-01", cantidad: 3, categoria: "Bufalo" },
+      { fecha: "2026-07-05", cantidad: -10, categoria: "Vaca" },
+    ]
+    const ini = sistemaAlMomento(movs, "inicio", "2025-07-01", "2026-06-30")
+    const cie = sistemaAlMomento(movs, "cierre", "2025-07-01", "2026-06-30")
+    const vals = { "inicio.balance.vacas": "148", "inicio.campo.vacas": "150", "inicio.senasa.vacas": "152", "inicio.campo.terneros": "0", "inicio.senasa.terneros": "80" }
+    const t = armarTresSaldos("inicio", ini, vals)
+    const vac = t.filas.find(f => f.clave === "vacas")!
+    const v = `ini vacas ${ini.Vaca} · cierre vacas ${cie.Vaca} · fila vacas ${vac.sistema}/${vac.senasa}/${vac.campo}/${vac.balance} dif ${vac.difSistema}/${vac.difSenasa}/${vac.difBalance} · total ${t.total.sistema}/${t.total.senasa}/${t.total.campo}/${t.total.balance} · sin ubicar ${t.sinUbicar.map(x => x.categoria + " " + x.cabezas).join(",")}`
+    const e = "ini vacas 5 · cierre vacas 193 · fila vacas 5/152/150/148 dif -145/2/2 · total 8/232/150/148 · sin ubicar Bufalo 3"
+    chequear("Balance — hacienda: tres saldos", "Sistema al inicio = movimientos anteriores al 1er día (al cierre, hasta el cierre); diferencias contra CAMPO (y Campo − Balance); lo que no cae en la planilla se avisa y suma al total del sistema", e, v, v === e, "A-FEAT-1386")
+  }
+
+  // ══ 🌾 Saldos de insumos, gas oil y sementeras: sistema · balance (A-FEAT-1386 (e), JMS 29/10) ══
+  {
+    const sis = sistemaProductivoAlCierre([{ ambito: "agricola", valuado: 100 }, { ambito: "agricola", valuado: 50.5 }, { ambito: "ganadero", valuado: 10 }], 2000)
+    const foto = { insumos_agricolas: { jms: 5299830, contador: null }, sementeras_agricolas: { jms: 5660415.43, contador: 4738332.1 }, sementeras_ganaderas: { jms: 3830287.5 } }
+    const ini = armarSaldosProductivos(null, foto)
+    const cie = armarSaldosProductivos(sis, { insumos_agricolas: { jms: 150.5 }, sementeras_agricolas: { jms: 1900, contador: 1800 } })
+    const f = (x: { sistema: number | null; campo: number | null; balance: number | null; difSistema: number | null; difBalance: number | null }) => `${x.sistema ?? "—"}/${x.campo ?? "—"}/${x.balance ?? "—"}/${x.difSistema ?? "—"}/${x.difBalance ?? "—"}`
+    const v = `ini agric ${f(ini.filas[0])} · ini sem ${f(ini.filas[3])} · cie agric ${f(cie.filas[0])} · cie sem ${f(cie.filas[3])} · cie total ${f(cie.total)} · ${diaAnterior("2025-07-01")}`
+    const e = "ini agric —/5299830/—/—/— · ini sem —/9490702.93/4738332.1/—/4752370.83 · cie agric 150.5/150.5/—/0/— · cie sem 2000/1900/1800/100/100 · cie total 2160.5/2050.5/1800/110/250.5 · 2025-06-30"
+    chequear("Balance — saldos productivos", "Campo (jms) y Balance (contador) salen de la foto; al inicio el sistema no tiene saldo (—, nunca cero); al cierre suma los grupos por ámbito y la sementera; difs Sistema−Campo y Campo−Balance", e, v, v === e, "A-FEAT-1386")
   }
 
   return r
