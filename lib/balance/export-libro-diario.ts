@@ -49,7 +49,7 @@ import {
   TOTALIZADORAS_BANCARIAS,
   type GastosBancarios, type FilaConceptoPorMes, type RetirosYAportes, type FondoComun,
 } from "./papeles-bancarios"
-import { ORDEN_TIPOS, NOMBRE_TIPO, SIN_AGRUPADORA, type TemplatesDelEjercicio, type CuotaTemplate, type TipoTemplate } from "./templates-libro"
+import { ORDEN_TIPOS, NOMBRE_TIPO, SIN_AGRUPADORA, partirEnImpuestosYOtros, type TemplatesDelEjercicio, type CuotaTemplate, type TipoTemplate } from "./templates-libro"
 import type { ValuacionHacienda, PrecioMag, PrecioMercado, PrecioCabeza } from "./hacienda-stock"
 import { resumenControlCuotas, conProblema, type ControlCuotasTemplates } from "./control-cuotas-templates"
 import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
@@ -1985,7 +1985,7 @@ export function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
   f.push(["un template no tiene factura de ARCA, asi que no tiene subdiario."])
   if ((t.enFacturas ?? []).length > 0) {
     f.push([`No estan los SEGUROS CON POLIZA (${t.enFacturas.length} cuotas, ${money(t.totalEnFacturas)}): ya son gasto por la factura`])
-    f.push(["de la aseguradora y estan en su cuenta corriente (papel 14). Su detalle, al final de la solapa Templates."])
+    f.push(["de la aseguradora y estan en su cuenta corriente (papel 14). Su detalle, al final de la solapa de detalle (Impuestos u Otros)."])
   }
   f.push(["."])
 
@@ -2063,7 +2063,7 @@ export function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
    * camino inverso — si el saldado perdió una cuota por el camino, esto no da.
    */
   f.push([])
-  f.push(["CONTROL", "Total debitos (solapa Templates)", money(t.totalDebitos)])
+  f.push(["CONTROL", "Total debitos (solapa de detalle: Impuestos u Otros)", money(t.totalDebitos)])
   f.push(["", "Total creditos", money(t.totalCreditos)])
   f.push(["", "= Saldo", money(t.totalDebitos - t.totalCreditos)])
   const nC = f.length + 1
@@ -2504,9 +2504,18 @@ export function armarWorkbook(
       COLS_CUENTAS_CORRIENTES)
   }
   if (templates) {
-    hoja(wb, "Templates", hojaDeTemplates(templates), COLS_TEMPLATES)
-    hoja(wb, "Templates por mes", hojaTemplatesPorMes(templates),
-      COLS_TEMPLATES_POR_MES(templates.columnas.length))
+    // 🧾 JMS 29/10 (A-FEAT-1422 nota 10): en dos solapas, «Impuestos» y «Otros», cada una con su «por mes».
+    const partes = partirEnImpuestosYOtros(templates)
+    if (partes) {
+      for (const [nombre, t] of [["Impuestos", partes.impuestos], ["Otros", partes.otros]] as const) {
+        hoja(wb, nombre, hojaDeTemplates(t), COLS_TEMPLATES)
+        hoja(wb, `${nombre} por mes`, hojaTemplatesPorMes(t), COLS_TEMPLATES_POR_MES(t.columnas.length))
+      }
+    } else {
+      hoja(wb, "Templates", hojaDeTemplates(templates), COLS_TEMPLATES)
+      hoja(wb, "Templates por mes", hojaTemplatesPorMes(templates),
+        COLS_TEMPLATES_POR_MES(templates.columnas.length))
+    }
   }
   // 🔢 Pegado a los templates: es su control de cantidad (el de las facturas fijas va en «Control»).
   if (controlCuotas) hoja(wb, "Control cuotas templates", hojaControlCuotas(controlCuotas), COLS_CONTROL_CUOTAS)

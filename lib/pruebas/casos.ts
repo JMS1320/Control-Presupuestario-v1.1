@@ -183,7 +183,7 @@ import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiarios
 import { PRESENTADO_ARCA_COMPRAS, compararConPresentado } from "@/lib/balance/presentado-arca"
 import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/balance/facturas-fijas"
 import { controlarCuotasTemplates, campaniaDelControl, claveDeNombre, CONTROL_CUOTAS_TEMPLATES, type CuotaParaControl, type TemplateControlado, type EntradaControlCuotas } from "@/lib/balance/control-cuotas-templates"
-import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA } from "@/lib/balance/templates-libro"
+import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuestosYOtros } from "@/lib/balance/templates-libro"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
 import { pesosAlCierre, pesoParaValuar } from "@/lib/balance/pesos-hacienda"
@@ -9601,6 +9601,16 @@ export function correrCasos(): Resultado[] {
     const v1422 = `filtro ${(ws3["!autofilter"] as { ref?: string } | undefined)?.ref} · pie ${tot[0]} ${(tot[1] as { f?: string }).f} = ${(tot[1] as { v?: number }).v}`
     chequear("Balance", "Excel: filtro en las tablas largas (cruza el renglón vacío entre meses, no agarra el TOTAL del pie) y TOTAL al pie con SUBTOTAL",
       "filtro A1:D14 · pie TOTAL SUBTOTAL(9,B2:B3) = 150", v1422, v1422 === "filtro A1:D14 · pie TOTAL SUBTOTAL(9,B2:B3) = 150", "A-FEAT-1422")
+    // 🧾 Nota 10: Templates en dos — Impuestos y Otros — y entre los dos dan el total del ejercicio.
+    const ejT = armarEjercicio(2026, 6)
+    const cq = (id: string, ag: string, categ: string, monto: number) =>
+      ({ id, fecha: "2025-08-10", concepto: id, proveedor: "", categ, cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable: "MSA", estado: "pagado", monto, agrupadoraTemplate: ag })
+    const todoT = armarTemplatesDelEjercicio([cq("abl", "Impuestos Urbanos", "ABL", 100), cq("deb", "Impuestos Bancarios", "Debitos / Creditos", 30),
+      cq("com", "Gastos Bancarios", "Comision Cuenta Bancaria", 50), cq("iibb", "", "Impuesto IIBB", 20)], ejT)
+    const pt = partirEnImpuestosYOtros(todoT)!
+    const v10 = `imp ${pt.impuestos.detalle.map(c => c.id).join(",")} = ${pt.impuestos.totalDebitos} · otros ${pt.otros.detalle.map(c => c.id).join(",")} = ${pt.otros.totalDebitos} · todo ${todoT.totalDebitos}`
+    chequear("Balance", "Templates en dos solapas (nota 10): Impuestos por la agrupadora del template (o la categoría si no tiene) y Otros; suman el total",
+      "imp abl,deb,iibb = 150 · otros com = 50 · todo 200", v10, v10 === "imp abl,deb,iibb = 150 · otros com = 50 · todo 200", "A-FEAT-1422")
   }
 
   // ══ 📄 RESUMEN PDF DE CAJA DE AHORRO → FORMATO DEL EXCEL (A-FEAT-1352) ═══════════════════════

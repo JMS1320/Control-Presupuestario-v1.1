@@ -430,7 +430,7 @@ export function armarIndice(d: DatosDelIndice): IndiceDelBalance {
     queTiene: "el total del ejercicio, por el template de cada impuesto (es lo que va al balance)",
     queFalta: "el detalle por partida y cuota NO hace falta para el balance — decidido 2026-09-29. "
       + "Sirve como control de cumplimiento, y sale del importador de boletas de ARBA, que hoy está vacío",
-    solapa: "Templates · Templates por mes",
+    solapa: "Impuestos · Otros (y sus «por mes»)",
     bloqueante: false,
   })
   partes.push({
@@ -457,7 +457,7 @@ export function armarIndice(d: DatosDelIndice): IndiceDelBalance {
       (d.templates.porTipo ?? []).some(g => g.tipo === "sin clasificar")
         ? `${d.templates.porTipo.find(g => g.tipo === "sin clasificar")!.cuotas} cuota(s) SIN CLASIFICAR: el template no tiene tipo y su categoría no está en el plan` : null,
     ].filter(Boolean).join(" · "),
-    solapa: "Templates · Templates por mes",
+    solapa: "Impuestos · Otros (y sus «por mes»)",
     bloqueante: false,
   })
 

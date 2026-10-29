@@ -198,7 +198,7 @@ export function PapelesDeBalance() {
          */
         // 🧨 2046 cuotas: sin tandas llegaban 1000 y la solapa Templates salía con meses vacíos.
         traerTodo((d, h) => supabase.from("cuotas_egresos_sin_factura")
-          .select("*, egreso:egresos_sin_factura(nombre_referencia, proveedor, nombre_quien_cobra, categ, centro_costo, responsable, codigo_contable, tipo)", { count: "exact" })
+          .select("*, egreso:egresos_sin_factura(nombre_referencia, proveedor, nombre_quien_cobra, categ, centro_costo, responsable, codigo_contable, tipo, cuenta_agrupadora)", { count: "exact" })
           .gte("fecha_estimada", `${anioCierre - 2}-01-01`).order("id").range(d, h)),
       ])
 
