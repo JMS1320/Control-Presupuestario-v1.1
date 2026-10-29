@@ -120,6 +120,31 @@ export function hojaDeAsientos(asientos: AsientoLibroDiario[], descuadres?: Desc
 }
 
 /**
+ * ➕ JMS 29/10 (A-FEAT-1422 notas 1-2): «agregar totales para controles» en Compras y Ventas. Un renglón
+ * TOTAL al pie, separado por uno vacío (así el filtro no lo agarra), con **SUBTOTAL(9, …)**: suma sólo lo que
+ * queda a la vista cuando se filtra — filtrás un proveedor o un mes y el total es el de ese filtro.
+ */
+export function conTotalAlPie(filas: unknown[][]): unknown[][] {
+  if (filas.length < 2) return filas
+  const titulos = (filas[0] as unknown[]).map(String)
+  const SUMAN = ["Neto Gravado", "No Gravado", "Exentas", "Otros Tributos", "IVA", "Total", "Toneladas", "Cabezas", "Kilos"]
+  const n = filas.length          // la última fila de datos, en la numeración de Excel (encabezado = 1)
+  const total: unknown[] = titulos.map(() => "")
+  total[0] = "TOTAL"
+  titulos.forEach((t, c) => {
+    if (!SUMAN.includes(t)) return
+    const col = XLSX.utils.encode_col(c)
+    const suma = filas.slice(1).reduce((s: number, f) => {
+      const v = (f as unknown[])[c]
+      const x = v && typeof v === "object" && "v" in (v as object) ? (v as { v: unknown }).v : v
+      return s + (typeof x === "number" ? x : 0)
+    }, 0)
+    total[c] = conFormula(`SUBTOTAL(9,${col}2:${col}${n})`, money(suma), t === "Toneladas" || t === "Kilos" || t === "Cabezas" ? "#,##0.00" : MONEDA)
+  })
+  return [...filas, [], total]
+}
+
+/**
  * 🧾 Papel 05 — PROVISIÓN DE FACTURAS (A-FEAT-1331). Arriba la de ESTE ejercicio (la que suma a su
  * gasto), con cómo entró cada una: por la regla (fecha del ejercicio, subdiario posterior) o puesta a
  * mano con su motivo. Abajo la del ejercicio ANTERIOR, **sólo informativa** — no se resta: *«el
@@ -2410,8 +2435,8 @@ export function armarWorkbook(
   // 📅 Los 12 meses en una línea cada uno, pegado al Control: es otro control (contra lo presentado a ARCA).
   hoja(wb, "Resumen 12 meses", hojaResumenMensual(libro), COLS_RESUMEN_MENSUAL)
   // 🛑 A-FEAT-1388: los comprobantes cuyas partes no suman su total, en rojo y con la marca (los mismos del Control).
-  hoja(wb, "Compras", hojaDeAsientos(libro.compras, libro.controles.compras.descuadres), COLS_ASIENTOS)
-  hoja(wb, "Ventas", hojaDeAsientos(libro.ventas, libro.controles.ventas.descuadres), COLS_VENTAS)
+  hoja(wb, "Compras", conTotalAlPie(hojaDeAsientos(libro.compras, libro.controles.compras.descuadres)), COLS_ASIENTOS)
+  hoja(wb, "Ventas", conTotalAlPie(hojaDeAsientos(libro.ventas, libro.controles.ventas.descuadres)), COLS_VENTAS)
   // 📗 La apertura por cuenta contable — el formato que el usuario ya usaba (A-FEAT-1187).
   //    Van pegadas a su listado: primero el detalle, después el resumen que se le manda al contador.
   hoja(wb, "Compras por cuenta", hojaPorCuenta(armarLibroPorCuenta(libro.compras),

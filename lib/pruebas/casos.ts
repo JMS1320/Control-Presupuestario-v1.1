@@ -277,7 +277,7 @@ import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
-import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas, hojaPorCuenta, hojaResumenMensual, hojaDeAsientos } from "@/lib/balance/export-libro-diario"
+import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas, hojaPorCuenta, hojaResumenMensual, hojaDeAsientos, conTotalAlPie } from "@/lib/balance/export-libro-diario"
 import type { LibroDiario as LibroDiarioT } from "@/lib/balance/libro-diario"
 import { juntarTandas, lecturaIncompleta, juntarHasta, mensajeLecturaIncompleta } from "@/lib/supabase-paginado"
 import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
@@ -9589,6 +9589,18 @@ export function correrCasos(): Resultado[] {
     const esperado2938 = "inmoviliza 4 · sección a lo ancho · nota en itálica · ítem con sangría = nota · TOTAL en B, banda desde A · total y subtotal en dos tonos"
     chequear("Balance", "Excel: secciones en banda, notas en itálica, totales en cualquier columna (dos tonos) y el encabezado queda inmovilizado",
       esperado2938, v2938, v2938 === esperado2938, "A-FEAT-1417")
+    // 🔎 A-FEAT-1422 (notas 1-4 de JMS): filtro en las tablas largas (cruzando el renglón vacío entre meses, sin el
+    // TOTAL del pie) y TOTAL al pie de Compras/Ventas con SUBTOTAL (suma lo filtrado).
+    const largas: unknown[][] = [["Año", "Mes", "Cuenta", "Total"],
+      ...Array.from({ length: 6 }, (_, i) => [2025, 7, `c${i}`, 10]), [],
+      ...Array.from({ length: 6 }, (_, i) => [2025, 8, `c${i}`, 10]), [], ["", "", "TOTAL DEL EJERCICIO", 120]]
+    const ws3 = XLSXcasos.utils.aoa_to_sheet(largas)
+    presentarHoja(ws3)
+    const pie = conTotalAlPie([["Subdiario", "Total"], ["2025-07", 100], ["2025-08", 50]])
+    const tot = pie[4] as unknown[]
+    const v1422 = `filtro ${(ws3["!autofilter"] as { ref?: string } | undefined)?.ref} · pie ${tot[0]} ${(tot[1] as { f?: string }).f} = ${(tot[1] as { v?: number }).v}`
+    chequear("Balance", "Excel: filtro en las tablas largas (cruza el renglón vacío entre meses, no agarra el TOTAL del pie) y TOTAL al pie con SUBTOTAL",
+      "filtro A1:D14 · pie TOTAL SUBTOTAL(9,B2:B3) = 150", v1422, v1422 === "filtro A1:D14 · pie TOTAL SUBTOTAL(9,B2:B3) = 150", "A-FEAT-1422")
   }
 
   // ══ 📄 RESUMEN PDF DE CAJA DE AHORRO → FORMATO DEL EXCEL (A-FEAT-1352) ═══════════════════════
