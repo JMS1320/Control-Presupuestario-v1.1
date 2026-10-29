@@ -124,6 +124,8 @@ export interface CuotaParaControl {
   fecha_pago: string | null
   /** El `detalle` de la cuota («Comision Renovacion Tarjeta»…). */
   detalle?: string | null
+  /** `grupo_pago_id`: las cuotas que se pagaron JUNTAS en un solo movimiento comparten grupo. */
+  grupoPago?: string | null
 }
 
 /** Una quincena de SICORE con retenciones (es una presentación). */
@@ -302,6 +304,12 @@ const ESTADO_EXCLUIDO = "desactivado"
  * IIBB de MA están en $1,00), no un pago.
  */
 const conImporte = (c: CuotaParaControl) => Math.abs(c.monto) > 1
+/**
+ * 🔑 ¿Se usó el pago ANUAL? JMS 29/10 (A-FEAT-1422 nota 11): *«si es anual buscar sólo una»*. Con importe, o
+ * CONCILIADO / PAGADO aunque esté en $0 (Tiguan 2026: el anual está conciliado con el importe sin cargar). Una
+ * cuota en $0 conciliada no cuenta así: es la forma que no se usó.
+ */
+const anualUsado = (c: CuotaParaControl) => conImporte(c) || /^(pagad|concilia)/i.test((c.estado || "").trim())
 
 function textoRegla(t: TemplateControlado): string {
   const r = t.regla
@@ -392,14 +400,14 @@ function porCantidad(delPeriodo: CuotaParaControl[], mesesCampania: string[], es
   const anios = [...new Set(mesesCampania.map(m => m.slice(0, 4)))]
   const delAnio = (y: string) => delPeriodo.filter(c => mesDeCuota(c).startsWith(y))
   const formas = anios.map(y => {
-    const anualCon = delAnio(y).filter(c => esAnual(c.nombre) && conImporte(c))
+    const anualCon = delAnio(y).filter(c => esAnual(c.nombre) && anualUsado(c))
     const cuotasCon = delAnio(y).filter(c => !esAnual(c.nombre) && conImporte(c))
     const forma = anualCon.length && cuotasCon.length ? "mixto" : anualCon.length ? "anual" : "cuotas"
     return { y, forma, anuales: anualCon.length, cuotasCon: cuotasCon.length, meses: mesesCampania.filter(m => m.startsWith(y)) }
   })
   // En los años en cuotas, el pago anual en $0 (la forma que no se usó) no es una cuota.
   const cuotas = delPeriodo.filter(c => !esAnual(c.nombre) && formas.find(f => mesDeCuota(c).startsWith(f.y))?.forma === "cuotas")
-  const meses = [...new Set(delPeriodo.filter(c => conImporte(c) || !esAnual(c.nombre)).map(mesDeCuota))].sort()
+  const meses = [...new Set(delPeriodo.filter(c => anualUsado(c) || !esAnual(c.nombre)).map(mesDeCuota))].sort()
 
   const avisos: string[] = []
   const sinImporte = cuotas.filter(c => !conImporte(c)).length
@@ -410,6 +418,21 @@ function porCantidad(delPeriodo: CuotaParaControl[], mesesCampania: string[], es
   const porMesNormal = esperado != null && mesesCampania.length ? Math.max(1, Math.round(esperado / mesesCampania.length)) : 1
   const repetidos = [...porMes].filter(([, n]) => n > porMesNormal).map(([m, n]) => `${nombreMesCorto(m)} (${n})`)
   if (repetidos.length) avisos.push(`mes con más de una: ${repetidos.join(", ")}`)
+  // 👀 «Siempre ver el par» (nota 11): si el template tiene anual Y cuotas, se dice qué se usó de cada uno.
+  const anualesDelPar = delPeriodo.filter(c => esAnual(c.nombre))
+  const cuotasDelPar = delPeriodo.filter(c => !esAnual(c.nombre))
+  if (anualesDelPar.length && cuotasDelPar.length) {
+    avisos.push(`par: anual ${anualesDelPar.filter(anualUsado).length} usado(s) de ${anualesDelPar.length} · cuotas ${cuotasDelPar.filter(conImporte).length} con importe de ${cuotasDelPar.length}`)
+  }
+  // 📦 «Cuotas agrupadas en un solo pago» (nota 11): las del mismo grupo de pago, y la que vale varias cuotas juntas.
+  const grupos = new Map<string, CuotaParaControl[]>()
+  for (const c of delPeriodo) if (c.grupoPago) grupos.set(c.grupoPago, [...(grupos.get(c.grupoPago) ?? []), c])
+  const juntas = [...grupos.values()].filter(g => g.length > 1)
+  if (juntas.length) avisos.push(`pagadas juntas en un solo pago: ${juntas.map(g => `${g.length} (${lista([...new Set(g.map(mesDeCuota))].sort())})`).join(", ")}`)
+  const importes = cuotas.filter(conImporte).map(c => Math.abs(c.monto)).sort((a, b) => a - b)
+  const tipica = importes.length >= 3 ? importes[Math.floor(importes.length / 2)] : 0
+  const multiples = tipica ? cuotas.filter(c => Math.abs(c.monto) >= 1.8 * tipica) : []
+  if (multiples.length) avisos.push(`importe de varias cuotas (¿pago agrupado o un mes más caro, p. ej. aguinaldo?): ${multiples.map(c => `${nombreMesCorto(mesDeCuota(c))} ×${Math.round(Math.abs(c.monto) / tipica)}`).join(", ")}`)
   const sufijo = () => (avisos.length ? ` · ${avisos.join(" · ")}` : "")
 
   const mixtos = formas.filter(f => f.forma === "mixto")
@@ -590,6 +613,7 @@ export function cuotaParaControlDesde(f: Record<string, unknown>): CuotaParaCont
     fecha_estimada: fecha(f.fecha_estimada),
     fecha_pago: fecha(f.fecha_pago),
     detalle: f.detalle == null ? null : String(f.detalle),
+    grupoPago: f.grupo_pago_id ? String(f.grupo_pago_id) : null,
   }
 }
 

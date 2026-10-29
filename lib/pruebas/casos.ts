@@ -10358,6 +10358,19 @@ export function correrCasos(): Resultado[] {
     chequear(G, "🛡️ Desde que existe: 12 por año desde feb-26 → 5 en la campaña; 🏦 las comisiones de la tarjeta no cuentan como de la cuenta",
       "ok: 5 de 5 · existe desde feb-26 | ok: 12 de 12 · 2 de «tarjeta» no cuentan", v1415,
       v1415 === "ok: 5 de 5 · existe desde feb-26 | ok: 12 de 12 · 2 de «tarjeta» no cuentan", "A-FEAT-1415")
+    // 👀 Nota 11 (A-FEAT-1422): el anual CONCILIADO en $0 cuenta como pago anual (Tiguan 2026); se muestra el par; y las
+    // cuotas pagadas juntas (mismo grupo de pago) se señalan.
+    const [fPar] = correr([cfg("Imp Automotores Tiguan 2012", { tipo: "fijo", esperado: 12 })], [
+      ...mensual("Imp Automotores Tiguan 2012 Cuota", msa.slice(0, 6)),
+      cu("Imp Automotores Tiguan 2012 Anual", "2026-01-05", 0, { estado: "conciliado" }),
+      cu("Imp Automotores Tiguan 2012 Cuota", "2026-01-05", 0, { estado: "conciliado" }),
+    ])
+    const [fJuntas] = correr([cfg("UATRE", { tipo: "fijo", esperado: 12 })],
+      msa.map((m, i) => cu("UATRE", `${m}-10`, 100, i < 3 ? { grupoPago: "g1" } : {})))
+    const v11 = `${fPar.estado}: ${fPar.detalle} | ${fJuntas.detalle}`
+    const e11 = "ok: 2026 pagado anual · 2025 en cuotas: 6 de 6 (proporcional) · par: anual 1 usado(s) de 1 · cuotas 6 con importe de 7 | 12 de 12 · pagadas juntas en un solo pago: 3 (jul-25, ago-25, sep-25)"
+    chequear(G, "👀 Nota 11: el anual conciliado (aunque esté en $0) es pago anual; siempre se ve el par; las cuotas pagadas juntas se señalan",
+      e11, v11, v11 === e11, "A-FEAT-1422")
     // Mismo nombre escrito distinto, otro template (recreado otro año); compartido → primera empresa
     const [fNom] = correr([cfg("Imp .Ganancias MSA", { tipo: "fijo", esperado: 1 })], [cu("IMP. GANANCIAS MSA", "2025-11-10", 100, { egresoId: "tpl-2025" })])
     const [fComp] = controlarCuotasTemplates({ empresa: "PAM", meses: pam.meses, hoy: "2026-10-28",
