@@ -68,6 +68,14 @@ export const SALDOS_AL_INICIO: SaldoAlInicio[] = [
     fuente: 'planilla del usuario «extracto desde julio del 2025 hasta enero 26 parcial», '
       + 'fila «saldo de inicio de ej 2025/26 banco galicia cta cte»',
   },
+  {
+    // A-FEAT-1386 (a): JMS 29/10 «dejá la caja mía» — va su planilla, no el contador ($ 9.903.617,62)
+    empresa: "MSA",
+    ejercicio: "25/26",
+    cuenta: "CAJA GENERAL",
+    saldo: 457212.92,
+    fuente: 'planilla del usuario de saldos al 30/06/2025, renglón «Caja» (el contador daba $ 9.903.617,62; JMS eligió la suya)',
+  },
 ]
 
 /** El saldo al inicio declarado para una cuenta, o `null` si no hay ninguno. */

@@ -6416,7 +6416,8 @@ export function correrCasos(): Resultado[] {
       "832.605,05",
       n2(saldoAlInicioDe("MSA", "25/26", "BANCO GALICIA (cta cte)")?.saldo ?? 0),
       saldoAlInicioDe("MSA", "25/26", "BANCO GALICIA (cta cte)")?.saldo === 832605.05
-      && saldoAlInicioDe("MSA", "25/26", "CAJA GENERAL") === null
+      && saldoAlInicioDe("MSA", "25/26", "CAJA GENERAL")?.saldo === 457212.92
+      && saldoAlInicioDe("MSA", "25/26", "CAJA SIGOT") === null
       && saldoAlInicioDe("PAM", "25/26", "BANCO GALICIA (cta cte)") === null, "A-FEAT-1206")
   }
 
