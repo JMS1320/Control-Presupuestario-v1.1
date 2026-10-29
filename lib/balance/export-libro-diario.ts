@@ -1400,6 +1400,26 @@ export function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierr
       f.push(["CONTROL: saldo final del detalle − SALDO AL CIERRE de arriba (tiene que dar 0)", "", "", "", "",
         conFormula(`F${nUltima}-C${nSaldo}`, dif), Math.abs(dif) < 0.01 ? "cuadra" : "NO CUADRA"])
     }
+
+    // 🚗 A-FEAT-1422 nota 9 (JMS 29/10): el desglose de la FLOTA, tabla aparte.
+    const rf = a.repartoFlota
+    if (rf && rf.filas.length) {
+      f.push([])
+      f.push([`DESGLOSE DE LA FLOTA — cada débito del ejercicio repartido por vehículo (prima de cada uno)`])
+      f.push(["Lo que no es de MSA lo pagó MSA por otro: va a su cuenta corriente / Distribuciones. El responsable de cada vehículo se edita en Egresos → Seguros."])
+      f.push(["Fecha débito", "Póliza", "Vencimiento", "Debitado", ...rf.responsables, "Control"])
+      const n0 = f.length + 1
+      rf.filas.forEach((x, i) => {
+        const fila = n0 + i
+        const ultimaParte = XLSX.utils.encode_col(3 + rf.responsables.length)
+        f.push([x.fecha, x.poliza, x.vencimiento, money(x.debitado), ...rf.responsables.map(r => money(x.partes[r] ?? 0)),
+          conFormula(`D${fila}-SUM(E${fila}:${ultimaParte}${fila})`, 0)])
+      })
+      const nf = n0 + rf.filas.length - 1
+      f.push(["TOTAL", "", "", conFormula(`SUM(D${n0}:D${nf})`, rf.total),
+        ...rf.responsables.map((r, i) => { const col = XLSX.utils.encode_col(4 + i); return conFormula(`SUM(${col}${n0}:${col}${nf})`, rf.totales[r] ?? 0) })])
+      if (rf.sinReparto) f.push([`⚠️ ${money(rf.sinReparto)} de débitos sin vehículos leídos en su póliza: van enteros a MSA.`])
+    }
   }
 
   // ── El detalle de cada cuenta ────────────────────────────────────────────────────────

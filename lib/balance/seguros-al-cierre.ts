@@ -28,6 +28,10 @@ export interface AseguradoraAlCierre {
   lineas: LineaCtaCte[]
   /** El control: el saldo de la cuenta corriente = la suma de «a reclamar». */
   cierra: boolean
+  /** Las cuotas ya controladas contra el banco (para el desglose de la flota, `reparto-flota.ts`). */
+  cuotas?: import("@/lib/polizas/control-debitos").CuotaControlada[]
+  /** 🚗 El desglose de la flota por responsable (A-FEAT-1422 nota 9). Lo agrega la pantalla si pudo leer las pólizas. */
+  repartoFlota?: import("./reparto-flota").RepartoFlota
 }
 
 export function aseguradoraAlCierre(
@@ -53,5 +57,5 @@ export function aseguradoraAlCierre(
     explicacion: r.explicacion,
   }))
   const suma = Math.round(aReclamar.reduce((t, x) => t + x.importe, 0) * 100) / 100
-  return { nombre, fechaCierre, saldo: cc.saldo, aReclamar, lineas: cc.lineas, cierra: Math.abs(suma - cc.saldo) < 0.01 }
+  return { nombre, fechaCierre, saldo: cc.saldo, aReclamar, lineas: cc.lineas, cierra: Math.abs(suma - cc.saldo) < 0.01, cuotas: ctl.cuotas }
 }

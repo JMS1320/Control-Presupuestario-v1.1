@@ -184,6 +184,7 @@ import { PRESENTADO_ARCA_COMPRAS, compararConPresentado } from "@/lib/balance/pr
 import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/balance/facturas-fijas"
 import { controlarCuotasTemplates, campaniaDelControl, claveDeNombre, CONTROL_CUOTAS_TEMPLATES, type CuotaParaControl, type TemplateControlado, type EntradaControlCuotas } from "@/lib/balance/control-cuotas-templates"
 import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuestosYOtros } from "@/lib/balance/templates-libro"
+import { repartoDeLaFlota } from "@/lib/balance/reparto-flota"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
 import { pesosAlCierre, pesoParaValuar } from "@/lib/balance/pesos-hacienda"
@@ -9611,6 +9612,17 @@ export function correrCasos(): Resultado[] {
     const v10 = `imp ${pt.impuestos.detalle.map(c => c.id).join(",")} = ${pt.impuestos.totalDebitos} · otros ${pt.otros.detalle.map(c => c.id).join(",")} = ${pt.otros.totalDebitos} · todo ${todoT.totalDebitos}`
     chequear("Balance", "Templates en dos solapas (nota 10): Impuestos por la agrupadora del template (o la categoría si no tiene) y Otros; suman el total",
       "imp abl,deb,iibb = 150 · otros com = 50 · todo 200", v10, v10 === "imp abl,deb,iibb = 150 · otros com = 50 · todo 200", "A-FEAT-1422")
+    // 🚗 Nota 9: el desglose de la flota — cada débito repartido por la prima de cada vehículo y su responsable.
+    const lect = { poliza: "F", endoso: 0, personas: [], cuotasEndoso: [{ vencimiento: "2025-08-01", importe: 400 }],
+      vehiculos: [{ patente: "AAA111", prima: 300, certificado: 1 }, { patente: "BBB222", prima: 100, certificado: 2 }] }
+    const rfT = repartoDeLaFlota(
+      [{ poliza: "F", vencimiento: "2025-08-01", importe: 400, esperadoEnBanco: 400, resultado: "ok", movimientoId: "m1", debitado: 400 },
+        { poliza: "F", vencimiento: "2026-08-01", importe: 400, esperadoEnBanco: 400, resultado: "ok", movimientoId: "m2", debitado: 400 }],
+      [{ id: "m1", fecha: "2025-08-04" }, { id: "m2", fecha: "2026-08-04" }],
+      new Map([["F", [lect as never]]]), [{ patente: "BBB222", contable: "MSA", interno: "MA", motivo: "" }], "2025-07-01", "2026-06-30")
+    const v9 = `${rfT.filas.length} débito · ${rfT.responsables.map(r => `${r} ${rfT.totales[r]}`).join(" · ")} · total ${rfT.total}`
+    chequear("Balance", "🚗 Desglose de la flota (nota 9): cada débito del ejercicio repartido por la prima de cada vehículo; el de fuera del ejercicio no entra",
+      "1 débito · MSA 300 · MA 100 · total 400", v9, v9 === "1 débito · MSA 300 · MA 100 · total 400", "A-FEAT-1422")
   }
 
   // ══ 📄 RESUMEN PDF DE CAJA DE AHORRO → FORMATO DEL EXCEL (A-FEAT-1352) ═══════════════════════

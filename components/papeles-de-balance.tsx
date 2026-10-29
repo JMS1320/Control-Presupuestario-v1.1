@@ -87,6 +87,7 @@ import {
 import { useDatosDelBalance, textoEstadoGuardado, leerNumero } from "@/lib/balance/datos-usuario"
 import { controlarCheque, chequeEnPapel08, chequeEnTemplates } from "@/lib/balance/control-cheque"
 import { aseguradoraAlCierre } from "@/lib/balance/seguros-al-cierre"
+import { repartoDeLaFlota } from "@/lib/balance/reparto-flota"
 import { sacarLosDeCuentaCorriente, cuitsConCuentaCorriente } from "@/lib/balance/fuera-por-cuenta-corriente"
 import { esDeLaAseguradora } from "@/lib/polizas/control-debitos"
 // 🕐 La fecha de hoy en hora argentina. Vive en el módulo de cotizaciones porque ahí nació el bug
@@ -616,6 +617,22 @@ export function PapelesDeBalance() {
                 })))
                 const movs = (mov.data ?? []).filter(esDeLaAseguradora).map(x => ({ id: x.id, fecha: x.fecha, debitos: Number(x.debitos) || 0, creditos: Number(x.creditos) || 0, estado: x.estado }))
                 const seg = aseguradoraAlCierre("Federación Patronal Seguros", polizas, endosos, movs, primero.data?.[0]?.fecha ?? `${meses[0]}-01`, finEj)
+                // 🚗 A-FEAT-1422 nota 9: el desglose de la flota por vehículo (lecturas de sus pólizas + responsables).
+                try {
+                  const [flota, resp] = await Promise.all([
+                    supabase.from("polizas_seguro").select("poliza,polizas_endosos(lectura)").eq("seccion", "AUTOMOTORES"),
+                    supabase.from("polizas_responsables").select("clave,tipo,responsable_contable,responsable_interno,motivo"),
+                  ])
+                  if (!flota.error && !resp.error && seg.cuotas) {
+                    const lecturas = new Map(((flota.data ?? []) as any[]).map(p => [String(p.poliza),
+                      (p.polizas_endosos ?? []).map((e: any) => e.lectura).filter(Boolean)]))
+                    const reglas = ((resp.data ?? []) as any[]).map(r => ({
+                      ...(r.tipo === "vehiculo" ? { patente: r.clave } : { dni: r.clave }),
+                      contable: r.responsable_contable, interno: r.responsable_interno, motivo: r.motivo ?? "",
+                    }))
+                    seg.repartoFlota = repartoDeLaFlota(seg.cuotas, movs, lecturas, reglas, `${meses[0]}-01`, finEj)
+                  }
+                } catch { /* sin desglose de la flota: el 14 sale igual */ }
                 armadoCC.aseguradoras = [seg]
                 if (seg.saldo !== 0) {
                   toast.warning(`Seguros: faltan comprobantes de Federación Patronal al cierre — saldo ${fmt(seg.saldo)} `
