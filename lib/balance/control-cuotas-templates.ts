@@ -79,6 +79,13 @@ export interface TemplateControlado {
   prefijo?: boolean
   /** Lo que el usuario dijo, o por qué la regla es ésa. */
   nota?: string
+  /**
+   * `AAAA-MM`: el primer mes en que existe (la póliza o la cuenta empezó ahí). Antes no se espera nada, y
+   * lo esperado es la parte proporcional (12 por año desde febrero → 11).
+   */
+  desde?: string
+  /** Las cuotas cuyo `detalle` contiene esto (sin mayúsculas ni tildes) NO cuentan: son otra cosa cargada ahí. */
+  excluirDetalle?: string
 }
 
 export type EstadoCuotas = "ok" | "falta" | "sobra" | "mixto" | "a revisar" | "a desarrollar"
@@ -115,6 +122,8 @@ export interface CuotaParaControl {
   fecha_vencimiento: string | null
   fecha_estimada: string | null
   fecha_pago: string | null
+  /** El `detalle` de la cuota («Comision Renovacion Tarjeta»…). */
+  detalle?: string | null
 }
 
 /** Una quincena de SICORE con retenciones (es una presentación). */
@@ -128,9 +137,24 @@ export interface PresentacionSicore {
 // ── La decisión del 28/10/2026 ───────────────────────────────────────────────────────────────
 
 const fijo = (esperado: number): ReglaCuotas => ({ tipo: "fijo", esperado })
-const pendiente = (motivo: string): ReglaCuotas => ({ tipo: "a-desarrollar", motivo })
-const COMISIONES = "una comisión por mes por cada cuenta / caja de seguridad, con su importe — falta la lista de cuentas"
-const SEGUROS = "buscar en los extractos bancarios los pagos de la póliza"
+/**
+ * 🏦 A-FEAT-1415 (29/10/2026), sacado de los extractos de 2025-2026:
+ * - «COMISION SERVICIO DE CUENTA»: una por mes, el primer día hábil (MSA cta cte; PAM cta cte desde abr-26).
+ * - «COM. CAJA DE SEGURIDAD»: TRIMESTRAL, en enero, abril, julio y octubre (MSA y PAM caja de ahorro).
+ * - MA: su extracto no tiene ninguna comisión de cuenta en 2025-2026.
+ * En el template de MSA también están cargadas comisiones de la TARJETA (renovación, mantenimiento mensual):
+ * no son de la cuenta y no cuentan acá.
+ */
+const NOTA_SERVICIO = "1 por mes, el primer día hábil («COMISION SERVICIO DE CUENTA» del extracto)"
+const NOTA_CAJA = "trimestral: enero, abril, julio y octubre («COM. CAJA DE SEGURIDAD» del extracto)"
+/**
+ * 🛡️ A-FEAT-1416 (29/10/2026), sacado de los débitos automáticos de Federación Patronal en el extracto:
+ * - Accidentes personales: mensual. Cuando la póliza se renueva cambia el número — todas cuentan juntas, como
+ *   la flota. MSA y MA arrancaron en feb-26; PAM viene de antes (9536537 → 10413411 en may-26).
+ * - Vida colectivo (MSA): UN pago al año, en septiembre, cuando se renueva (670821 sep-25 · 698548 sep-26).
+ * - Chalet: el usuario dijo «12 para cada póliza, que son 2» → 24 por año. MA tiene cuotas desde mar-26.
+ */
+const NOTA_AP = "mensual; todas las pólizas de AP juntas (al renovar cambia el número)"
 const RURAL = (empresa: EmpresaControl, agrupadora: string, campos: string[], esperadoRedVial: Record<string, number> = {}) =>
   campos.flatMap(c => [
     { empresa, agrupadora, nombre: `Inmobiliario Cuota ${c}`, regla: fijo(4), preview: true },
@@ -172,11 +196,14 @@ export const CONTROL_CUOTAS_TEMPLATES: TemplateControlado[] = [
   // Una sola flota aunque cambie la póliza (32436252 → 34160783 → 35881289).
   { empresa: "MSA", agrupadora: "Seguros", nombre: "Seguro Flota", prefijo: true, regla: fijo(12), preview: true,
     nota: "«solo un seguro por flota y 12 cuotas» — todas las pólizas de flota cuentan juntas" },
-  { empresa: "MSA", agrupadora: "Seguros", nombre: "Seguro Vida Colectivo", prefijo: true, regla: pendiente(SEGUROS), preview: true },
-  { empresa: "MSA", agrupadora: "Seguros", nombre: "Seguro Accidentes Personales", prefijo: true, regla: pendiente(SEGUROS), preview: true },
+  { empresa: "MSA", agrupadora: "Seguros", nombre: "Seguro Vida Colectivo", prefijo: true, regla: fijo(1), preview: true,
+    nota: "un pago al año, en septiembre, al renovar la póliza (670821 sep-25 · 698548 sep-26)" },
+  { empresa: "MSA", agrupadora: "Seguros", nombre: "Seguro Accidentes Personales", prefijo: true, regla: fijo(12), preview: true,
+    desde: "2026-02", nota: `${NOTA_AP} — la de MSA empezó en feb-26 (póliza 10183421)` },
   { empresa: "MSA", agrupadora: "Tarjetas", nombre: "Tarjeta Visa Business MSA", regla: fijo(12), preview: true },
-  { empresa: "MSA", agrupadora: "Gastos Bancarios", nombre: "Comision Cuenta Bancaria", regla: pendiente(COMISIONES), preview: true },
-  { empresa: "MSA", agrupadora: "Gastos Bancarios", nombre: "Comision Caja de Seguridad", regla: pendiente(COMISIONES), preview: true },
+  { empresa: "MSA", agrupadora: "Gastos Bancarios", nombre: "Comision Cuenta Bancaria", regla: fijo(12), preview: true,
+    excluirDetalle: "tarjeta", nota: `${NOTA_SERVICIO} — no cuentan las de la tarjeta cargadas en este template` },
+  { empresa: "MSA", agrupadora: "Gastos Bancarios", nombre: "Comision Caja de Seguridad", regla: fijo(4), preview: true, nota: NOTA_CAJA },
 
   // ═══ PAM — año calendario ═══
   { empresa: "PAM", agrupadora: "Impuestos General", nombre: "IIBB Mensual PAM", regla: { tipo: "ventas" }, preview: true },
@@ -193,12 +220,14 @@ export const CONTROL_CUOTAS_TEMPLATES: TemplateControlado[] = [
   ...RURAL("PAM", "Impuestos Rurales", ["Casco", "Entre Rios", "Ombu", "Tapera 1", "Tapera 2", "Tapera 3"]),
   { empresa: "PAM", agrupadora: "Impuestos Rurales", nombre: "Inmobiliario Complementario Cuota PAM", regla: fijo(4), preview: true },
   ...RURAL("PAM", "Impuestos Urbanos", ["Quinta Rosello 1", "Quinta Rosello 2"]),
-  { empresa: "PAM", agrupadora: "Seguros", nombre: "Seguro Accidentes Personales", prefijo: true, regla: pendiente(SEGUROS), preview: true },
-  { empresa: "PAM", agrupadora: "Seguros", nombre: "Seguro Chalet", prefijo: true, regla: pendiente(SEGUROS), preview: true,
-    nota: "el usuario dijo «12 para cada póliza, que son 2»" },
+  { empresa: "PAM", agrupadora: "Seguros", nombre: "Seguro Accidentes Personales", prefijo: true, regla: fijo(12), preview: true,
+    nota: `${NOTA_AP} (9536537 → 10413411 en may-26)` },
+  { empresa: "PAM", agrupadora: "Seguros", nombre: "Seguro Chalet", prefijo: true, regla: fijo(24), preview: true,
+    nota: "el usuario dijo «12 para cada póliza, que son 2» — el template de PAM no tiene ninguna cuota cargada" },
   { empresa: "PAM", agrupadora: "Tarjetas", nombre: "Tarjeta VISA PAM", regla: fijo(12), preview: true },
-  { empresa: "PAM", agrupadora: "Gastos Bancarios", nombre: "Comision Cuenta Bancaria", regla: pendiente(COMISIONES), preview: false },
-  { empresa: "PAM", agrupadora: "Gastos Bancarios", nombre: "Comision Caja de Seguridad", regla: pendiente(COMISIONES), preview: false },
+  { empresa: "PAM", agrupadora: "Gastos Bancarios", nombre: "Comision Cuenta Bancaria", regla: fijo(12), preview: false,
+    desde: "2026-04", nota: `${NOTA_SERVICIO} — la cta cte de PAM la cobra desde abr-26` },
+  { empresa: "PAM", agrupadora: "Gastos Bancarios", nombre: "Comision Caja de Seguridad", regla: fijo(4), preview: false, nota: NOTA_CAJA },
 
   // ═══ MA — año calendario ═══
   { empresa: "MA", agrupadora: "Impuestos General", nombre: "IIBB Mensual MA", regla: { tipo: "ventas" }, preview: true,
@@ -212,11 +241,13 @@ export const CONTROL_CUOTAS_TEMPLATES: TemplateControlado[] = [
   { empresa: "MA", agrupadora: "Impuestos Buenos Aires MA", nombre: "ABL Libertad", regla: fijo(12), preview: true },
   { empresa: "MA", agrupadora: "Impuestos Rurales", nombre: "Inmobiliario Cuota Lima", regla: fijo(4), preview: true },
   { empresa: "MA", agrupadora: "Impuestos Rurales", nombre: "Red Vial Lima Cuota", regla: fijo(12), preview: true },
-  { empresa: "MA", agrupadora: "Seguros", nombre: "Seguro Accidentes Personales", prefijo: true, regla: pendiente(SEGUROS), preview: true },
-  { empresa: "MA", agrupadora: "Seguros", nombre: "Seguro Chalet", prefijo: true, regla: pendiente(SEGUROS), preview: true,
-    nota: "el usuario puso 24 (dos pólizas)" },
+  { empresa: "MA", agrupadora: "Seguros", nombre: "Seguro Accidentes Personales", prefijo: true, regla: fijo(12), preview: true,
+    desde: "2026-02", nota: `${NOTA_AP} — la de MA empezó en feb-26 (póliza 10200836)` },
+  { empresa: "MA", agrupadora: "Seguros", nombre: "Seguro Chalet", prefijo: true, regla: fijo(24), preview: true,
+    desde: "2026-03", nota: "el usuario puso 24 (dos pólizas): 2 cuotas por mes; las cuotas cargadas empiezan en mar-26" },
   { empresa: "MA", agrupadora: "Tarjetas", nombre: "Tarjeta VISA MA", regla: fijo(12), preview: true },
-  { empresa: "MA", agrupadora: "Gastos Bancarios", nombre: "Comision Cuenta Bancaria", regla: pendiente(COMISIONES), preview: false },
+  { empresa: "MA", agrupadora: "Gastos Bancarios", nombre: "Comision Cuenta Bancaria", preview: false,
+    regla: { tipo: "a-revisar", motivo: "el extracto de MA no tiene comisión de cuenta en 2025-2026: ¿no la cobra?" } },
 ]
 
 // ── Utilidades ──────────────────────────────────────────────────────────────────────────────
@@ -322,15 +353,26 @@ export function controlarCuotasTemplates(e: EntradaControlCuotas): FilaControlCu
       case "sicore": return { ...base, ...porSicore(suyas, e.meses, t.regla.quincena, e.presentacionesSicore ?? null, mesHoy) }
       default: break
     }
-    // Cantidad (fija, a revisar o a desarrollar): las cuotas de la campaña.
-    const delPeriodo = suyas.filter(c => enCampania.has(mesDeCuota(c)))
+    // Cantidad (fija, a revisar o a desarrollar): las cuotas de la campaña, desde que existe.
+    const mesesQueCuentan = t.desde ? e.meses.filter(m => m >= t.desde!) : e.meses
+    const excluir = t.excluirDetalle ? claveDeNombre(t.excluirDetalle) : null
+    const excluidas = excluir
+      ? suyas.filter(c => enCampania.has(mesDeCuota(c)) && claveDeNombre(c.detalle ?? "").includes(excluir)) : []
+    const delPeriodo = suyas.filter(c => enCampania.has(mesDeCuota(c)) && !excluidas.includes(c))
     const templates = new Set(delPeriodo.map(c => c.egresoId)).size
     if (t.regla.tipo === "a-desarrollar") {
       return { ...base, esperado: null, encontrado: delPeriodo.length, meses: [...new Set(delPeriodo.map(mesDeCuota))].sort(),
         templates, estado: "a desarrollar", detalle: `${delPeriodo.length} cuota(s) en la campaña — no se controla todavía` }
     }
-    const esperado = t.regla.tipo === "fijo" ? t.regla.esperado : null
-    return { ...base, ...porCantidad(delPeriodo, e.meses, esperado), templates }
+    // Desde que existe: lo esperado es la parte proporcional (24 por año desde marzo → 20).
+    const esperado = t.regla.tipo === "fijo"
+      ? Math.round(t.regla.esperado * mesesQueCuentan.length / e.meses.length) : null
+    const fila = porCantidad(delPeriodo, mesesQueCuentan, esperado)
+    const extras = [
+      t.desde && mesesQueCuentan.length < e.meses.length ? `existe desde ${nombreMesCorto(t.desde)}` : "",
+      excluidas.length ? `${excluidas.length} de «${t.excluirDetalle}» no cuentan` : "",
+    ].filter(Boolean)
+    return { ...base, ...fila, detalle: [fila.detalle, ...extras].join(" · "), templates }
   })
 
   return ordenar(filas)
@@ -364,7 +406,9 @@ function porCantidad(delPeriodo: CuotaParaControl[], mesesCampania: string[], es
   if (sinImporte) avisos.push(`${sinImporte} sin importe ($0)`)
   const porMes = new Map<string, number>()
   for (const c of cuotas) porMes.set(mesDeCuota(c), (porMes.get(mesDeCuota(c)) ?? 0) + 1)
-  const repetidos = [...porMes].filter(([, n]) => n > 1).map(([m, n]) => `${nombreMesCorto(m)} (${n})`)
+  // Más de una por mes es raro… salvo que la regla lleve varias (Chalet: 2 pólizas → 2 por mes).
+  const porMesNormal = esperado != null && mesesCampania.length ? Math.max(1, Math.round(esperado / mesesCampania.length)) : 1
+  const repetidos = [...porMes].filter(([, n]) => n > porMesNormal).map(([m, n]) => `${nombreMesCorto(m)} (${n})`)
   if (repetidos.length) avisos.push(`mes con más de una: ${repetidos.join(", ")}`)
   const sufijo = () => (avisos.length ? ` · ${avisos.join(" · ")}` : "")
 
@@ -545,6 +589,7 @@ export function cuotaParaControlDesde(f: Record<string, unknown>): CuotaParaCont
     fecha_vencimiento: fecha(f.fecha_vencimiento),
     fecha_estimada: fecha(f.fecha_estimada),
     fecha_pago: fecha(f.fecha_pago),
+    detalle: f.detalle == null ? null : String(f.detalle),
   }
 }
 
