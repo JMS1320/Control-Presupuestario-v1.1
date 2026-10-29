@@ -292,6 +292,7 @@ import { agregarSaldosHacienda, agregarSaldosProductivos } from "@/lib/balance/s
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 import { agruparStockInicio, valuarPastura, type RenglonStockInicio } from "@/lib/balance/stock-inicio"
 import { hojaStockInicio } from "@/lib/balance/saldos-excel"
+import { diasHaciaAtras, leyendaPrecios, urlPizarraDelDia } from "@/lib/balance/precio-al-cierre"
 import { armarSaldosProductivos, sistemaProductivoAlCierre, diaAnterior } from "@/lib/balance/saldos-productivos"
 import { armarFilaDato, leerNumero, textoEstadoGuardado, MARCA_TENTATIVO, esTentativo, fuenteTentativo, confirmarFila, leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
@@ -5867,8 +5868,8 @@ export function correrCasos(): Resultado[] {
 
     chequear("Balance · bancos", "🔑 Un retiro va NEGATIVO y un aporte POSITIVO",
       "-500000 · 6900100",
-      `${retiros.filas.find(f => f.etiqueta.includes("madre"))?.total} · ${retiros.filas.find(f => f.clase === "aporte")?.total}`,
-      retiros.filas.find(f => f.etiqueta.includes("madre"))?.total === -500_000 &&
+      `${retiros.filas.find(f => f.etiqueta === "Distribución a MA")?.total} · ${retiros.filas.find(f => f.clase === "aporte")?.total}`,
+      retiros.filas.find(f => f.etiqueta === "Distribución a MA")?.total === -500_000 &&
       retiros.filas.find(f => f.clase === "aporte")?.total === 6_900_100, "A-FEAT-1199")
 
     chequear("Balance · bancos", "🧮 El neto es aportes menos retiros",
@@ -10627,6 +10628,15 @@ export function correrCasos(): Resultado[] {
     const v = `grupos ${g.grupos.map(x => `${x.grupo}=${x.valor}`).join(", ")} · total ${g.total} · a confirmar ${g.aConfirmar} · sin valor ${g.sinValor} · 2023→${past(2023, null).valorActualUsd} (${past(2023, null).amortizado}) · 2019→${past(2019, null).valorActualUsd} · 2022 con baja 2024→${past(2022, "2024-06-30").valorActualUsd} · fórmula ${cel.f}=${cel.v}`
     const e = "grupos Agroquímicos=130140, Forrajes=7181800 · total 7311940 · a confirmar 1 · sin valor 1 · 2023→3152.5 (0.5) · 2019→0 · 2022 con baja 2024→0 · fórmula SUM(H6:H8)=130140"
     chequear("Balance — stock al inicio", "El stock declarado se agrupa con su total (fórmula en el Excel); lo sin valor se cuenta aparte; la pastura de 2023 al 30/06/2025 vale el 50 % (US$ 3.152,50, igual que el BAPU); con baja vale 0", e, v, v === e, "A-FEAT-1420")
+  }
+
+  // ══ 📅 Precio al cierre = el del día o el ÚLTIMO PUBLICADO antes (A-FEAT-1422 nota 16) ══
+  {
+    const dias = diasHaciaAtras("2026-07-02", 4).join(",")
+    const ley = leyendaPrecios("2026-06-30", [{ nombre: "Cañuelas", fecha: "2026-06-26", url: "u" }, { nombre: "toros", fecha: null, url: "u" }])
+    const v = `${dias} · ${ley} · ${urlPizarraDelDia("soja", "2026-06-30").includes("product=13&type=pizarra&period=day&date_start=2026-06-30&date_end=2026-06-30")}`
+    const e = "2026-07-02,2026-07-01,2026-06-30,2026-06-29 · último publicado al 30/06/2026 — Cañuelas 26/06/2026 · toros sin dato · true"
+    chequear("Balance — precio al cierre", "Se busca hacia atrás desde el cierre el primer día publicado (no el promedio del mes); si no hay en el plazo, queda sin precio (hueco), y el link a la pizarra es del día", e, v, v === e, "A-FEAT-1422")
   }
 
   return r

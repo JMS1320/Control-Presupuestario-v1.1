@@ -698,6 +698,14 @@ Los botones (copiar pedido, pedir, buscar) trabajan sobre lo que queda a la vist
 
 ⚠️ Sin probar todavía → [A-TEST-1272](PENDIENTES.md#a-test-1272)
 
+## 📅 Precios de la hacienda y los granos al cierre *(cambió 2026-10-29)*
+
+Al «Traer stock y precios», cada mercado toma **el precio del día de cierre o el último publicado antes** (ya no el
+promedio del mes); arriba dice qué fecha usó cada uno. Los granos toman la **pizarra de Rosario** de la soja al cierre
+si dejás el precio vacío; si escribís uno, manda el tuyo. En el Excel, cada fuente lleva su link para el contador.
+
+⚠️ Sin probar todavía → [A-TEST-1287](PENDIENTES.md#a-test-1287)
+
 ## 📦 Stock declarado al inicio y pasturas *(nuevo 2026-10-29)*
 
 En **Papeles de balance → Traer stock y precios**, «📦 Stock declarado al …»: el stock al inicio del ejercicio

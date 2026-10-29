@@ -38,8 +38,9 @@ import type {
   ChequesDados, ChequeAlCierre, AnticiposAlCierre, AnticipoAlCierre,
 } from "./valores-al-cierre"
 import type { CuadreHacienda } from "./cuadre-hacienda"
-import { agregarSaldosHacienda, agregarSaldosProductivos, hojaStockInicio, type SaldosParaExcel } from "./saldos-excel"
+import { agregarSaldosHacienda, agregarSaldosProductivos, hojaStockInicio, conLink, type SaldosParaExcel } from "./saldos-excel"
 import type { RenglonStockInicio, Pastura } from "./stock-inicio"
+import type { FuentePrecio } from "./precio-al-cierre"
 import type { CuentasSinCuentaCorriente } from "./fuera-por-cuenta-corriente"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
@@ -2070,11 +2071,14 @@ export function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
  */
 function hojaDeHacienda(
   h: ValuacionHacienda, fechaCierre: string, mesPrecios: string, cuadre?: CuadreHacienda,
-  saldos?: SaldosParaExcel["hacienda"], fechaInicio?: string,
+  saldos?: SaldosParaExcel["hacienda"], fechaInicio?: string, fuentes?: FuentePrecio[],
 ): unknown[][] {
   const f: unknown[][] = []
   f.push([`02 - HACIENDA — existencia al ${fechaCierre}`])
-  f.push([`Precios de referencia: mes completo de ${mesPrecios} (Cañuelas y Entresurcos)`])
+  // 📅 A-FEAT-1422 (16): ya no es el promedio del mes; es el último publicado al cierre, fuente por fuente.
+  f.push([`Precios de referencia: ${mesPrecios}`])
+  // 🔗 (14): el link de cada fuente, para que el contador la revise.
+  for (const x of fuentes ?? []) f.push([conLink(`${x.nombre} — ${x.fecha ? x.fecha.split("-").reverse().join("/") : "sin dato al cierre"}`, x.url), x.url])
   f.push([])
 
   /**
@@ -2085,29 +2089,30 @@ function hojaDeHacienda(
    * se estaría poniendo precio a un rodeo equivocado.
    */
   if (cuadre) {
+    // ⚠️ cambió 29/10 (A-FEAT-1422 nota 12: «no se ve el texto»): los rótulos van en la columna A (la ancha), no en la B.
     f.push(["CUADRE DE LA EXISTENCIA — de donde salen las cabezas que se valuan"])
     f.push([])
-    f.push(["", "Existencia al INICIO del ejercicio", cuadre.existenciaInicio, "cabezas"])
-    cuadre.porTipo.forEach(t => f.push(["", `  ${t.tipo}`, t.cabezas, `cabezas · ${t.movimientos} movimiento(s)`]))
+    f.push(["Existencia al INICIO del ejercicio", cuadre.existenciaInicio, "cabezas"])
+    cuadre.porTipo.forEach(t => f.push([`  ${t.tipo}`, t.cabezas, `cabezas · ${t.movimientos} movimiento(s)`]))
     const nMov = f.length + 1
     const desdeMov = nMov - cuadre.porTipo.length
-    f.push(["", "Movimientos del ejercicio",
+    f.push(["Movimientos del ejercicio",
       cuadre.porTipo.length > 0
-        ? conFormula(`SUM(C${desdeMov}:C${nMov - 1})`, cuadre.movimientosDelEjercicio, ENTERO)
+        ? conFormula(`SUM(B${desdeMov}:B${nMov - 1})`, cuadre.movimientosDelEjercicio, ENTERO)
         : 0,
       "cabezas"])
     const nCalc = f.length + 1
-    f.push(["", "= Existencia al CIERRE (calculada)",
-      conFormula(`C${nCalc - cuadre.porTipo.length - 2}+C${nCalc - 1}`, cuadre.existenciaCierreCalculada, ENTERO),
+    f.push(["= Existencia al CIERRE (calculada)",
+      conFormula(`B${nCalc - cuadre.porTipo.length - 2}+B${nCalc - 1}`, cuadre.existenciaCierreCalculada, ENTERO),
       "cabezas"])
-    f.push(["", "Existencia que se valua abajo", cuadre.existenciaCierreDeclarada, "cabezas"])
+    f.push(["Existencia que se valua abajo", cuadre.existenciaCierreDeclarada, "cabezas"])
     const nDif = f.length + 1
-    f.push(["", "Diferencia", conFormula(`C${nDif - 2}-C${nDif - 1}`, cuadre.diferencia, ENTERO),
+    f.push(["Diferencia", conFormula(`B${nDif - 2}-B${nDif - 1}`, cuadre.diferencia, ENTERO),
       cuadre.diferencia === 0 ? "CIERRA" : "NO CIERRA"])
     if (cuadre.avisos.length > 0) {
       f.push([])
       f.push(["ATENCION"])
-      cuadre.avisos.forEach(a => f.push(["", a]))
+      cuadre.avisos.forEach(a => f.push([a]))
     }
     f.push([])
     f.push([])
@@ -2178,7 +2183,7 @@ function hojaDePrecios(
   mesPrecios: string,
 ): unknown[][] {
   const f: unknown[][] = []
-  f.push([`PRECIOS DE REFERENCIA — mes completo de ${mesPrecios}`])
+  f.push([`PRECIOS DE REFERENCIA — ${mesPrecios}`])
   f.push(["Se toma el mes entero, no un día, para que sea representativo."])
   f.push([])
   f.push(["MERCADO AGROGANADERO DE CAÑUELAS — categorías comerciales"])
@@ -2236,7 +2241,7 @@ function hojaDeInsumos(st: StockInsumos, fechaCierre: string): unknown[][] {
 }
 
 /** `1 - GRANOS`: el cuadre de kilos y la valuación, con la diferencia a la vista. */
-function hojaDeGranos(c: CuadreGranos, v: ValuacionGranos, fechaCierre: string): unknown[][] {
+function hojaDeGranos(c: CuadreGranos, v: ValuacionGranos, fechaCierre: string, origen?: { texto: string; url: string | null } | null): unknown[][] {
   const f: unknown[][] = []
   f.push([`1 - GRANOS al ${fechaCierre}`])
   f.push([])
@@ -2257,6 +2262,8 @@ function hojaDeGranos(c: CuadreGranos, v: ValuacionGranos, fechaCierre: string):
   f.push(["VALUACIÓN"])
   f.push(["Toneladas", v.toneladas])
   f.push(["Precio por tonelada", v.precioPorTn ?? "FALTA EL PRECIO"])
+  // 📅 A-FEAT-1422 (16): de dónde sale el precio (la pizarra de Rosario al cierre, o el escrito a mano), con su link.
+  if (origen) f.push(["Origen del precio", origen.url ? conLink(origen.texto, origen.url) : origen.texto, origen.url ?? ""])
   f.push(["Monto bruto", v.montoBruto ?? ""])
   f.push(["% calidad", v.pctCalidad])
   f.push(["Monto neto", v.montoNeto ?? ""])
@@ -2338,9 +2345,11 @@ export function armarWorkbook(
     saldos?: SaldosParaExcel
     /** 📦 A-FEAT-1420: el stock declarado al inicio por producto y las pasturas. */
     stockInicio?: { renglones: RenglonStockInicio[]; pasturas: Pastura[]; fecha: string }
+    /** 📅 A-FEAT-1422: de dónde salió cada precio (fecha y link para el contador). */
+    fuentesPrecios?: FuentePrecio[]
   },
   insumos?: StockInsumos,
-  campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras },
+  campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras; origenPrecioGranos?: { texto: string; url: string | null } | null },
   /**
    * Papeles 03 y 04. `pagar`/`cobrar` van sólo si la pantalla pudo averiguar **cuándo** se pagó cada
    * comprobante; `cheques` y `anticipos` son los bloques 04.1, 04.2 y 03.1 (A-FEAT-1195).
@@ -2489,7 +2498,7 @@ export function armarWorkbook(
   if (hacienda) {
     hoja(wb, "02 Hacienda",
       hojaDeHacienda(hacienda.valuacion, libro.ejercicio.fechaCierre, hacienda.mesPrecios, hacienda.cuadre,
-        hacienda.saldos?.hacienda, hacienda.saldos?.productivos?.fechaInicio),
+        hacienda.saldos?.hacienda, hacienda.saldos?.productivos?.fechaInicio, hacienda.fuentesPrecios),
       COLS_HACIENDA)
     hoja(wb, "Precios", hojaDePrecios(hacienda.mag, hacienda.mercado, hacienda.porCabeza, hacienda.mesPrecios), COLS_PRECIOS)
   }
@@ -2527,7 +2536,7 @@ export function armarWorkbook(
       hojaDeRetiros(bancarios.retiros, libro.ejercicio.etiqueta))
   }
   if (campo) {
-    hoja(wb, "1 Granos", hojaDeGranos(campo.granos, campo.valuacionGranos, libro.ejercicio.fechaCierre), COLS_GRANOS)
+    hoja(wb, "1 Granos", hojaDeGranos(campo.granos, campo.valuacionGranos, libro.ejercicio.fechaCierre, campo.origenPrecioGranos), COLS_GRANOS)
     hoja(wb, "3 Sementeras", hojaDeSementeras(campo.sementeras, libro.ejercicio.fechaCierre), COLS_SEMENTERAS)
   }
   return wb
@@ -2554,9 +2563,11 @@ export async function descargarLibroDiario(
     saldos?: SaldosParaExcel
     /** 📦 A-FEAT-1420: el stock declarado al inicio por producto y las pasturas. */
     stockInicio?: { renglones: RenglonStockInicio[]; pasturas: Pastura[]; fecha: string }
+    /** 📅 A-FEAT-1422: de dónde salió cada precio (fecha y link para el contador). */
+    fuentesPrecios?: FuentePrecio[]
   },
   insumos?: StockInsumos,
-  campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras },
+  campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras; origenPrecioGranos?: { texto: string; url: string | null } | null },
   cuentas?: Parameters<typeof armarWorkbook>[6],
   bancarios?: Parameters<typeof armarWorkbook>[7],
   sueldos?: Parameters<typeof armarWorkbook>[8],
