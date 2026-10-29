@@ -3355,7 +3355,8 @@ valúa con **tus criterios** — los mismos que venías escribiendo en la planil
 máximo × 80 % × 450 kg»*, *«MEJ especial × 1,5 × 300 kg»*…).
 
 **De dónde salen los precios:** del **Mercado Agroganadero de Cañuelas** y de **Entresurcos y
-Corrales**, tomando **el mes entero** del cierre para que sea representativo. Quedan en la solapa
+Corrales**, ⚠️ *(cambió 29/10)* tomando **el precio del día de cierre o el último publicado antes** —antes era el
+promedio del mes entero—, con la fecha usada y el link de cada fuente. Quedan en la solapa
 **Precios** del Excel, para que la valuación se pueda revisar en vez de creerle.
 
 🕳️ **Lo que no tiene precio queda como hueco, no en cero.** La vaca y la vaquillona preñada se

@@ -642,7 +642,7 @@ export function HaciendaAlCierre({
 
       {!datos && !cargando && (
         <p className="text-xs text-muted-foreground">
-          Trae la existencia al cierre y los precios del mes, y aplica tus {CRITERIOS.length} criterios
+          Trae la existencia al cierre y los precios al cierre (o el último publicado), y aplica tus {CRITERIOS.length} criterios
           de valuación. No modifica nada.
         </p>
       )}
