@@ -68,6 +68,9 @@ export const TABLAS_CON_VINCULO_ARCA: TablaConVinculoArca[] = [
   { schema: "public", tabla: "cotitulares_ca_usd", que: "caja de ahorro en dólares de Cotitulares" },
   { schema: "public", tabla: "cotitulares_ca_pesos", que: "caja de ahorro en pesos de Cotitulares (pagó la factura de MSA del 28/10)" },
   { schema: "public", tabla: "cotitulares_caja_usd", que: "caja en dólares de Cotitulares" },
+  // 🏦 A-FEAT-1386 (scripts/129): Santander y Provincia de MSA, en pesos
+  { schema: "msa", tabla: "santander", que: "Banco Santander de MSA" },
+  { schema: "msa", tabla: "provincia", que: "Banco Provincia de MSA" },
 ]
 
 /** La columna del vínculo. Se nombra una vez para que un `grep` por ella encuentre todo. */

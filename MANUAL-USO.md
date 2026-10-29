@@ -716,7 +716,8 @@ Siete cuentas que se cargan a mano: **MSA** cuenta corriente y caja en dólares 
 - **Vendí o compré dólares**: en el panel, **Compra / venta de USD** → las dos cuentas, los dólares y el tipo de cambio.
   Se cargan los dos lados juntos. Si la cuenta en pesos es una del banco, se carga sólo el lado en dólares y los pesos
   se concilian cuando llega el extracto.
-- **Cualquier otro movimiento**: elegí la cuenta en el Extracto (grupo «Dólares y Cotitulares») → **+ Movimiento a mano**.
+- **Cualquier otro movimiento**: elegí la cuenta en el Extracto (grupo «Cargadas a mano») → **+ Movimiento a mano**.
+  Ahí están también **Banco Santander** y **Banco Provincia** de MSA (en pesos, desde el 29/10).
   Si la plata de Cotitulares pagó algo de una empresa, marcá **«Por cuenta de MSA»**: arma la cuenta corriente.
 - Todo lo cargado a mano queda **Pendiente**: cuando llega el extracto se concilia contra eso.
 - Las cuentas en dólares no se concilian solas (el Cash Flow está en pesos).

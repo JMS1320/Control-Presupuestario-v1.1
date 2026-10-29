@@ -185,6 +185,9 @@ export const RECURSOS: Recurso[] = [
     ["cotitulares_ca_usd", "Cotitulares Caja de Ahorro USD"],
     ["cotitulares_ca_pesos", "Cotitulares Caja de Ahorro Pesos"],
     ["cotitulares_caja_usd", "Cotitulares Caja USD"],
+    // 🏦 A-FEAT-1386 (scripts/129): Santander y Provincia de MSA, en pesos
+    ["msa_santander", "MSA Banco Santander"],
+    ["msa_provincia", "MSA Banco Provincia"],
   ] as const).map(([id, nombre]): Recurso => ({
     id: `extracto.cuenta.${id}`, seccion: "extracto", etiqueta: `Cuenta → ${nombre}`, tipo: "cuenta", archivo: EXTRACTO,
   })),

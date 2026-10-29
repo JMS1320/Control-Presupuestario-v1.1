@@ -36,6 +36,9 @@ export const CUENTAS_DOLARES_Y_COTITULARES: CuentaManual[] = [
   { id: "cotitulares_ca_usd", nombre: "Cotitulares Caja de Ahorro USD", tabla_bd: "cotitulares_ca_usd", schema_bd: "public", empresa: "Cotitulares", moneda: "USD", tipo: "banco" },
   { id: "cotitulares_ca_pesos", nombre: "Cotitulares Caja de Ahorro Pesos", tabla_bd: "cotitulares_ca_pesos", schema_bd: "public", empresa: "Cotitulares", moneda: "ARS", tipo: "banco" },
   { id: "cotitulares_caja_usd", nombre: "Cotitulares Caja USD", tabla_bd: "cotitulares_caja_usd", schema_bd: "public", empresa: "Cotitulares", moneda: "USD", tipo: "caja" },
+  // 🏦 A-FEAT-1386 (scripts/129, JMS 29/10): los otros bancos de MSA, en pesos y cargados a mano
+  { id: "msa_santander", nombre: "MSA Banco Santander", tabla_bd: "santander", schema_bd: "msa", empresa: "MSA", moneda: "ARS", tipo: "banco" },
+  { id: "msa_provincia", nombre: "MSA Banco Provincia", tabla_bd: "provincia", schema_bd: "msa", empresa: "MSA", moneda: "ARS", tipo: "banco" },
 ]
 
 /** ¿Es una de estas cuentas (que se cargan a mano y pueden estar en dólares)? */

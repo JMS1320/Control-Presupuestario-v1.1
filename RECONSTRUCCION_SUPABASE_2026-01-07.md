@@ -3323,6 +3323,12 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-10-29 · BANCO SANTANDER y BANCO PROVINCIA de MSA — 2 tablas (script 129) — A-FEAT-1386 — ✅ CORRIDO 2026-10-29 con JMS
+`msa.santander`, `msa.provincia`: misma forma que las del script 126, `moneda` default `ARS`. RLS `ver_segun_permiso`/`escribir_segun_permiso`, recurso `extracto` en `recurso_tablas` (marca `[script 129]`). Deshacer: `scripts/129-cuentas-santander-provincia-msa-deshacer.sql` (frena si alguna tiene movimientos).
+
+### 2026-10-29 · Saldo de inicio 25/26 de la cta USD de MSA (script 128, DATO) — A-FEAT-1386 — ✅ CORRIDO con OK de JMS
+1 fila en `msa.cc_usd` (30/06/2025, US$ 35.001,63, TC 1.165), marca `[script 128] A-FEAT-1386` en `detalle`. Deshacer: `scripts/128-saldo-inicio-usd-msa-deshacer.sql`.
+
 ### 2026-10-28 · Cuenta contable «Compra-venta de moneda extranjera» (script 127, DATO) — A-FEAT-1398 — ✅ CORRIDO con OK de JMS
 1 fila en `public.cuentas_contables`: `categ='MONEDA EXTRANJERA'`, financiero, `MOVIMIENTOS ENTRE CANALES`, marca `[script 127]` en `cambio_nombre_cta`. Deshacer: `scripts/127-cuenta-moneda-extranjera-deshacer.sql`.
 

@@ -481,6 +481,9 @@ export const CUENTAS_DEL_EXTRACTO: Record<string, Array<{ schema: string; tabla:
     { schema: "msa", tabla: "caja_general", nombre: "CAJA GENERAL" },
     { schema: "msa", tabla: "caja_ams", nombre: "CAJA AMS" },
     { schema: "msa", tabla: "caja_sigot", nombre: "CAJA SIGOT" },
+    // 🏦 A-FEAT-1386 (scripts/129, JMS 29/10): con su saldo de inicio en SALDOS_AL_INICIO
+    { schema: "msa", tabla: "santander", nombre: "BANCO SANTANDER" },
+    { schema: "msa", tabla: "provincia", nombre: "BANCO PROVINCIA" },
   ],
   PAM: [
     { schema: "public", tabla: "pam_galicia", nombre: "BANCO GALICIA (caja de ahorro)" },
