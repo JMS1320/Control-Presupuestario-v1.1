@@ -52,6 +52,8 @@ import {
 } from "@/lib/balance/saldos-productivos"
 import { armarTresSaldos } from "@/lib/balance/tres-saldos-hacienda"
 import type { SaldosParaExcel } from "@/lib/balance/saldos-excel"
+import { leerStockInicio, type RenglonStockInicio, type Pastura } from "@/lib/balance/stock-inicio"
+import { StockInicioDetalle } from "@/components/stock-inicio-detalle"
 import { sistemaAlMomento } from "@/lib/balance/tres-saldos-hacienda"
 import { leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { pesosAlCierre, type PesoCategoria } from "@/lib/balance/pesos-hacienda"
@@ -88,6 +90,8 @@ export interface DatosHacienda {
   sistema: { inicio: Record<string, number>; cierre: Record<string, number> }
   /** 🐄🌾 A-FEAT-1386: las tablas de saldos (Sistema · SENASA · Campo · Balance), tal cual se ven, para el Excel. */
   saldos?: SaldosParaExcel
+  /** 📦 A-FEAT-1420: el stock declarado al inicio por producto y las pasturas (para pantalla y Excel). */
+  stockInicio?: { renglones: RenglonStockInicio[]; pasturas: Pastura[]; fecha: string }
   /** Los insumos viajan acá porque se traen en la misma pasada del sector productivo. */
   insumos: StockInsumos
   /** Los kilos por categoría, de las pesadas de la app. */
@@ -217,6 +221,9 @@ export function HaciendaAlCierre({
         .from("stock_insumos")
         .select("*, categoria:categorias_insumo(nombre, ambito, unidad_medida)")
       if (errIns) throw new Error(errIns.message)
+      // 📦 A-FEAT-1420: el stock DECLARADO al inicio (no es la existencia de la app) y las pasturas.
+      const si = await leerStockInicio(supabase, empresa, diaAnterior(primerDiaDelEjercicio(ejercicio)))
+      si.avisos.forEach(a => toast.warning(a))
 
 /**
        * 🐄 **Las CUATRO fuentes de precio.** Se piden juntas y **ninguna corta a las otras**: si un
@@ -296,6 +303,7 @@ export function HaciendaAlCierre({
           ejercicio.fechaCierre,
           existencias.reduce((s, e) => s + e.cabezas, 0),
         ),
+        stockInicio: { renglones: si.renglones, pasturas: si.pasturas, fecha: diaAnterior(primerDiaDelEjercicio(ejercicio)) },
         sistema: {
           inicio: sistemaAlMomento(movimientos, "inicio", primerDiaDelEjercicio(ejercicio), ejercicio.fechaCierre),
           cierre: sistemaAlMomento(movimientos, "cierre", primerDiaDelEjercicio(ejercicio), ejercicio.fechaCierre),
@@ -384,6 +392,7 @@ export function HaciendaAlCierre({
       )}
 
       {datos && <TresSaldosHacienda datos={saldosH} sistema={datos.sistema} />}
+      {datos?.stockInicio && <StockInicioDetalle {...datos.stockInicio} />}
       {saldos?.productivos && (
         <SaldosProductivos tablas={saldos.productivos}
           fechas={{ inicio: fechaFotoInicio, cierre: ejercicio.fechaCierre }}

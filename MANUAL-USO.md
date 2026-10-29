@@ -698,6 +698,16 @@ Los botones (copiar pedido, pedir, buscar) trabajan sobre lo que queda a la vist
 
 ⚠️ Sin probar todavía → [A-TEST-1272](PENDIENTES.md#a-test-1272)
 
+## 📦 Stock declarado al inicio y pasturas *(nuevo 2026-10-29)*
+
+En **Papeles de balance → Traer stock y precios**, «📦 Stock declarado al …»: el stock al inicio del ejercicio
+**producto por producto**, tal cual tu planilla (insumos, forrajes, gas oil), con lo que vale y de qué archivo salió
+(pasá el mouse por el renglón). En amarillo, los que se ataron a un producto de la app pero conviene que confirmes.
+Debajo, las **pasturas** por año de siembra, amortizadas 25 % por año. No cambia el stock de la app. En el Excel, la
+solapa «Stock al inicio».
+
+⚠️ Sin probar todavía → [A-TEST-1287](PENDIENTES.md#a-test-1287)
+
 ## 🐄 Los tres saldos de la hacienda *(nuevo 2026-10-29)*
 
 En **Papeles de balance → Traer stock y precios**, arriba de la valuación de hacienda. Para cada categoría muestra

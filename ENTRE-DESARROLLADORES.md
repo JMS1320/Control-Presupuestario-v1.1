@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 🌾 2 tablas nuevas en productivo: stock declarado al inicio + pasturas (2026-10-29) — aviso previo, se corre con OK de JMS
+### 🌾 2 tablas nuevas en productivo: stock declarado al inicio + pasturas (2026-10-29) — ✅ APLICADA el 29/10 con OK de JMS (aviso previo): 2 tablas, RLS y 2 filas en recurso_tablas
 - `scripts/131-stock-inicio-y-pasturas.sql` (+ `-deshacer`). A-FEAT-1420: `productivo.stock_inicio` (stock declarado a una fecha, por producto, versión jms/contador, con fuente) y `productivo.pasturas` (por año de siembra, vida útil, baja).
 - **RLS igual que el resto de productivo** (`puede_ver/puede_escribir`), 2 filas en `recurso_tablas` (recurso `productivo`, marca `[script 131]`). `anon` sin acceso. No toca ninguna tabla existente.
 
