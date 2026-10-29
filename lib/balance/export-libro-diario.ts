@@ -38,7 +38,8 @@ import type {
   ChequesDados, ChequeAlCierre, AnticiposAlCierre, AnticipoAlCierre,
 } from "./valores-al-cierre"
 import type { CuadreHacienda } from "./cuadre-hacienda"
-import { agregarSaldosHacienda, agregarSaldosProductivos, type SaldosParaExcel } from "./saldos-excel"
+import { agregarSaldosHacienda, agregarSaldosProductivos, hojaStockInicio, type SaldosParaExcel } from "./saldos-excel"
+import type { RenglonStockInicio, Pastura } from "./stock-inicio"
 import type { CuentasSinCuentaCorriente } from "./fuera-por-cuenta-corriente"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
@@ -56,6 +57,7 @@ import {
   formatearHoja, presentarHoja, anchosAutomaticos, colorDeSolapa, aplicarVistas,
   conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna, type Vista,
 } from "./formato-excel"
+import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 
 const money = (n: number) => Math.round(n * 100) / 100
 
@@ -2340,6 +2342,8 @@ export function armarWorkbook(
     cuadre?: CuadreHacienda
     /** 🐄🌾 A-FEAT-1386: las tablas de saldos Sistema · SENASA · Campo · Balance. */
     saldos?: SaldosParaExcel
+    /** 📦 A-FEAT-1420: el stock declarado al inicio por producto y las pasturas. */
+    stockInicio?: { renglones: RenglonStockInicio[]; pasturas: Pastura[]; fecha: string }
   },
   insumos?: StockInsumos,
   campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras },
@@ -2501,6 +2505,10 @@ export function armarWorkbook(
     if (hacienda?.saldos?.productivos) { filasIns.push([]); agregarSaldosProductivos(filasIns, hacienda.saldos.productivos) }
     hoja(wb, "Stock insumos", filasIns, COLS_INSUMOS)
   }
+  // 📦 A-FEAT-1420: el stock DECLARADO al inicio, producto por producto, y las pasturas.
+  if (hacienda?.stockInicio && (hacienda.stockInicio.renglones.length || hacienda.stockInicio.pasturas.length)) {
+    hoja(wb, "Stock al inicio", hojaStockInicio(hacienda.stockInicio.renglones, hacienda.stockInicio.pasturas, hacienda.stockInicio.fecha))
+  }
   // 🏦 Los papeles bancarios (07, 08, 09). Van al final: son anexos del resultado, no el resultado.
   if (bancarios) {
     if (bancarios.fci) {
@@ -2550,6 +2558,8 @@ export async function descargarLibroDiario(
     cuadre?: CuadreHacienda
     /** 🐄🌾 A-FEAT-1386: las tablas de saldos Sistema · SENASA · Campo · Balance. */
     saldos?: SaldosParaExcel
+    /** 📦 A-FEAT-1420: el stock declarado al inicio por producto y las pasturas. */
+    stockInicio?: { renglones: RenglonStockInicio[]; pasturas: Pastura[]; fecha: string }
   },
   insumos?: StockInsumos,
   campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras },
@@ -2574,5 +2584,5 @@ export async function descargarLibroDiario(
   a.download = nombreArchivo(libro, empresa)
   document.body.appendChild(a)
   a.click()
-  setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, 0)
+  setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, ESPERA_ANTES_DE_LIBERAR_MS)
 }

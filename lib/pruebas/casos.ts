@@ -289,6 +289,9 @@ import { ocurrenciasDeCampania, sugerirAgrupar, fechasIatf, chequearIatf, cheque
 import { presentarHoja, MONEDA, ENTERO } from "@/lib/balance/formato-excel"
 import { armarTresSaldos, sistemaAlMomento } from "@/lib/balance/tres-saldos-hacienda"
 import { agregarSaldosHacienda, agregarSaldosProductivos } from "@/lib/balance/saldos-excel"
+import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
+import { agruparStockInicio, valuarPastura, type RenglonStockInicio } from "@/lib/balance/stock-inicio"
+import { hojaStockInicio } from "@/lib/balance/saldos-excel"
 import { armarSaldosProductivos, sistemaProductivoAlCierre, diaAnterior } from "@/lib/balance/saldos-productivos"
 import { armarFilaDato, leerNumero, textoEstadoGuardado, MARCA_TENTATIVO, esTentativo, fuenteTentativo, confirmarFila, leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
@@ -10611,6 +10614,31 @@ export function correrCasos(): Resultado[] {
     const v = `antes ${c.filas.length}/${c.total} · MSA quedan ${msa.filas.map(x => x.asiento.denominacion).join(",")} total ${msa.total} · a cta cte ${msa.enCuentaCorriente.map(x => x.cuentaCorriente).sort().join(" + ")} = ${msa.totalEnCuentaCorriente} · PAM quedan ${pam.filas.length}`
     const e = "antes 3/14976658.91 · MSA quedan Proveedor total 1000 · a cta cte Federación Patronal Seguros + José María Martínez = 14975658.91 · PAM quedan 2"
     chequear("Balance — 03/04 sin los de cuenta corriente", "Los comprobantes de quien tiene cuenta corriente en el 14 salen del total del 03/04 y quedan listados aparte con su total; la aseguradora sólo cuenta en MSA", e, v, v === e, "A-FEAT-1386")
+  }
+
+  // ══ ⬇️ A-BUG-1421: el archivo de una descarga no se libera al instante (Chrome «Guardar como» tarda) ══
+  {
+    const v = `${ESPERA_ANTES_DE_LIBERAR_MS >= 60000 ? "espera ≥ 1 minuto" : "espera corta: " + ESPERA_ANTES_DE_LIBERAR_MS + " ms"}`
+    chequear("Descargas", "El archivo se libera recién después de dar tiempo al diálogo «Guardar como» de Chrome", "espera ≥ 1 minuto", v, v === "espera ≥ 1 minuto", "A-BUG-1421")
+  }
+
+  // ══ 📦 Stock declarado al inicio + pasturas (A-FEAT-1420): grupos con total, pastura amortizada por antigüedad ══
+  {
+    const base = { categoria_planilla: "Agroquímicos", cantidad: 1, unidad: "L", precio_unitario: 1, moneda: "USD" as const, version: "jms" as const, fuente: "f", nota: null, producto_app: null }
+    const rs: RenglonStockInicio[] = [
+      { ...base, rubro: "insumo", producto_planilla: "Glifosato", valor_pesos: 96400, emparejado: "mismo" },
+      { ...base, rubro: "insumo", producto_planilla: "Cletodim", valor_pesos: null, emparejado: "nuevo" },
+      { ...base, rubro: "forraje", producto_planilla: "Rollos de alfalfa", categoria_planilla: "Forraje", valor_pesos: 7181800, emparejado: "nuevo" },
+      { ...base, rubro: "insumo", producto_planilla: "Atrazina", valor_pesos: 33740, emparejado: "a confirmar" },
+    ]
+    const g = agruparStockInicio(rs)
+    const past = (anio: number, baja: string | null) => valuarPastura({ lotes: "x", anio_siembra: anio, hectareas: 13, usd_por_ha: 485, vida_util_anios: 4, baja_fecha: baja, baja_motivo: null, fuente: "f", nota: null }, "2025-06-30")
+    const h = hojaStockInicio(rs, [], "2025-06-30")
+    const tot = h.find(r => r[0] === "Total Agroquímicos") as unknown[]
+    const cel = tot[7] as { f: string; v: number }
+    const v = `grupos ${g.grupos.map(x => `${x.grupo}=${x.valor}`).join(", ")} · total ${g.total} · a confirmar ${g.aConfirmar} · sin valor ${g.sinValor} · 2023→${past(2023, null).valorActualUsd} (${past(2023, null).amortizado}) · 2019→${past(2019, null).valorActualUsd} · 2022 con baja 2024→${past(2022, "2024-06-30").valorActualUsd} · fórmula ${cel.f}=${cel.v}`
+    const e = "grupos Agroquímicos=130140, Forrajes=7181800 · total 7311940 · a confirmar 1 · sin valor 1 · 2023→3152.5 (0.5) · 2019→0 · 2022 con baja 2024→0 · fórmula SUM(H6:H8)=130140"
+    chequear("Balance — stock al inicio", "El stock declarado se agrupa con su total (fórmula en el Excel); lo sin valor se cuenta aparte; la pastura de 2023 al 30/06/2025 vale el 50 % (US$ 3.152,50, igual que el BAPU); con baja vale 0", e, v, v === e, "A-FEAT-1420")
   }
 
   return r

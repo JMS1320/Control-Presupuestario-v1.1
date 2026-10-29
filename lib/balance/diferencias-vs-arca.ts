@@ -47,6 +47,7 @@ import {
   leerZipLibroIva, type ComprobantePresentado, type TotalesVentasPresentados,
 } from "@/lib/subdiarios/libro-presentado"
 import { hoyArgentina } from "@/lib/fechas"
+import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 
 const r2 = (x: number) => Math.round((Number(x) || 0) * 100) / 100
 const dig = (s: unknown) => String(s ?? "").replace(/\D/g, "")
@@ -858,6 +859,6 @@ export async function descargarDiferenciasVsArca(libro: LibroDiario, empresa: st
   a.download = nombreArchivoDiferencias(libro, empresa, hoyArgentina())
   document.body.appendChild(a)
   a.click()
-  setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, 0)
+  setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, ESPERA_ANTES_DE_LIBERAR_MS)
   return l.resumen
 }

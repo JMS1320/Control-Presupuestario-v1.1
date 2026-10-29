@@ -33,6 +33,7 @@ import { proveedorDelTemplate } from "@/lib/conciliacion/datos-del-origen"
 import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 import { repartoDelGrupo } from "@/lib/pagos/reparto-grupo"
 import { RangoDeFechas } from "@/components/rango-de-fechas"
+import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 
 const money = (n: number) =>
   `$${(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -374,7 +375,7 @@ export function PanelAuditoriaConciliacion() {
       a.href = url
       a.download = `respaldo-audit-${g.control}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`
       document.body.appendChild(a); a.click()
-      setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, 0)
+      setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, ESPERA_ANTES_DE_LIBERAR_MS)
 
       let ok = 0
       for (const c of g.correcciones) {

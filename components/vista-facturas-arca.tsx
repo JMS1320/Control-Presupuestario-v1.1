@@ -95,6 +95,7 @@ import { usePuedeVer, useNivelDeclarado } from "@/components/contexto-permisos"
 import { Permisable } from "@/components/modo-permisos"
 import { pedirAsignacionDeCuenta, mensajeDePropagacion, type RespuestaAsignacion } from "@/lib/conciliacion/asignar-cuenta-cliente"
 import { contarMovimientosDeFactura, type ClienteParaPropagar } from "@/lib/conciliacion/propagar-cuenta"
+import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 
 interface FacturaArca {
   id: string
@@ -5716,7 +5717,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url; a.download = nombreArchivo; a.click()
-      URL.revokeObjectURL(url)
+      setTimeout(() => URL.revokeObjectURL(url), ESPERA_ANTES_DE_LIBERAR_MS)
     }
 
     if (directorio) {

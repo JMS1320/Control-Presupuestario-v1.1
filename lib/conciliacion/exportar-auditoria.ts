@@ -20,6 +20,7 @@
 
 import * as XLSX from "xlsx"
 import type { ResultadoAuditoria, Hallazgo } from "./auditoria"
+import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 
 /** Nombre de hoja seguro para Excel: máximo 31 caracteres y sin `: \ / ? * [ ]`. */
 function hoja(nombre: string): string {
@@ -105,5 +106,5 @@ export function exportarAuditoria(
   a.download = `${nombreDelArchivo(rango, fecha)}.xlsx`
   document.body.appendChild(a)
   a.click()
-  setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, 0)
+  setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a) }, ESPERA_ANTES_DE_LIBERAR_MS)
 }

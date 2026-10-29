@@ -194,6 +194,8 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 ### Insumos / maestros
 - **categorias_insumo**: `id uuid, nombre varchar, unidad_medida varchar, activo boolean, created_at ts, ambito text`  *(ambito: agricola/ganadero/ambos)*
 - **stock_insumos**: `id uuid, categoria_id uuid→categorias_insumo, producto varchar, cantidad numeric, costo_unitario numeric, observaciones text, updated_at ts, unidad_medida varchar`
+- **stock_inicio** — ➕ script 131 (A-FEAT-1420): `id uuid, empresa text, fecha date, version text (jms|contador), insumo_stock_id uuid→stock_insumos, rubro text (insumo|forraje|combustible), producto_planilla text, categoria_planilla text, cantidad numeric, unidad text, precio_unitario numeric, moneda text (ARS|USD), tipo_cambio numeric, valor_pesos numeric, emparejado text (mismo|a confirmar|nuevo), fuente text, nota text, created_at` — el stock DECLARADO a una fecha; **no es un movimiento**
+- **pasturas** — ➕ script 131 (A-FEAT-1420): `id uuid, empresa text, lotes text, anio_siembra int, hectareas numeric, usd_por_ha numeric, vida_util_anios int (4), baja_fecha date, baja_motivo text, fuente text, nota text, created_at`
 - **movimientos_insumos**: `id uuid, fecha date, insumo_stock_id uuid→stock_insumos, tipo varchar, cantidad numeric, costo_unitario numeric, monto_total numeric, destino_campo varchar, proveedor varchar, cuit varchar, observaciones text, created_at ts, moneda text (ARS|USD, default ARS), costo_unitario_moneda numeric, tipo_cambio numeric` — 💵 `costo_unitario` siempre en **pesos**; el original y el TC al lado (A-BUG-1244, 2026-10-05)
 - **labores**: `id int, nombre varchar, activo boolean, orden_display int, created_at ts, tipo varchar`
 

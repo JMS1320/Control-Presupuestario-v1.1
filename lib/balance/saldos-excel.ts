@@ -8,6 +8,7 @@
 import { conFormula, ENTERO, MONEDA } from "@/lib/balance/formato-excel"
 import type { TresSaldos } from "@/lib/balance/tres-saldos-hacienda"
 import type { FilaSaldoProductivo } from "@/lib/balance/saldos-productivos"
+import { agruparStockInicio, valuarPastura, type RenglonStockInicio, type Pastura } from "@/lib/balance/stock-inicio"
 
 export interface SaldosParaExcel {
   hacienda?: { inicio: TresSaldos; cierre: TresSaldos; leyenda?: string }
@@ -53,4 +54,37 @@ export function agregarSaldosProductivos(f: unknown[][], s: NonNullable<SaldosPa
     }
   }
   f.push([])
+}
+
+/**
+ * 📦 La hoja «Stock al inicio» (A-FEAT-1420): el stock DECLARADO al inicio producto por producto, en sus unidades, con
+ * su fuente y cómo se emparejó con la app; y las pasturas valuadas por antigüedad. El total de cada grupo es fórmula.
+ */
+export function hojaStockInicio(renglones: RenglonStockInicio[], pasturas: Pastura[], fecha: string): unknown[][] {
+  const f: unknown[][] = []
+  const g = agruparStockInicio(renglones)
+  f.push([`STOCK DECLARADO AL ${fecha.split("-").reverse().join("/")} — producto por producto (no es la existencia de la app)`])
+  f.push([`${renglones.length} renglones · total $ ${g.total.toLocaleString("es-AR", { minimumFractionDigits: 2 })} · ${g.aConfirmar} a confirmar con la app · ${g.sinValor} sin valor en la planilla`])
+  for (const gr of g.grupos) {
+    f.push([])
+    f.push([gr.grupo.toUpperCase()])
+    f.push(["Producto (planilla)", "Producto en la app", "Emparejado", "Cantidad", "Unidad", "Precio unitario", "Moneda", "Valor $", "Fuente", "Nota"])
+    const desde = f.length + 1
+    for (const r of gr.renglones) {
+      f.push([r.producto_planilla, r.producto_app ?? "", r.emparejado ?? "", r.cantidad ?? "", r.unidad ?? "", r.precio_unitario ?? "", r.moneda,
+        r.valor_pesos ?? "", r.fuente, r.nota ?? ""])
+    }
+    const hasta = f.length
+    f.push(["Total " + gr.grupo, "", "", "", "", "", "", conFormula(`SUM(H${desde}:H${hasta})`, gr.valor, MONEDA)])
+  }
+  if (pasturas.length) {
+    f.push([])
+    f.push([`PASTURAS PERMANENTES al ${fecha.split("-").reverse().join("/")} — amortización por antigüedad (vida útil en años)`])
+    f.push(["Lotes", "Año de siembra", "Hectáreas", "US$/ha", "Valor inicial US$", "Años", "% amortizado", "Valor actual US$", "Baja", "Fuente"])
+    for (const p of pasturas.map(x => valuarPastura(x, fecha))) {
+      f.push([p.lotes, p.anio_siembra, p.hectareas, p.usd_por_ha ?? "", p.valorInicialUsd ?? "", p.anios, Math.round(p.amortizado * 100) / 100,
+        p.valorActualUsd ?? "", p.dadaDeBaja ? `${p.baja_fecha} ${p.baja_motivo ?? ""}` : "", p.fuente])
+    }
+  }
+  return f
 }

@@ -3323,6 +3323,12 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-10-29 · STOCK DECLARADO AL INICIO + PASTURAS — 2 tablas (script 131) — A-FEAT-1420 — ✅ CORRIDO 2026-10-29 con JMS
+`productivo.stock_inicio` (empresa, fecha, version jms/contador, insumo_stock_id → stock_insumos, rubro insumo/forraje/combustible, producto_planilla, categoria_planilla, cantidad, unidad, precio_unitario, moneda, tipo_cambio, valor_pesos, emparejado mismo/a confirmar/nuevo, fuente, nota) y `productivo.pasturas` (empresa, lotes, anio_siembra, hectareas, usd_por_ha, vida_util_anios, baja_fecha, baja_motivo, fuente, nota). RLS `ver/escribir_segun_permiso`, recurso `productivo` (marca `[script 131]`). Deshacer: `scripts/131-stock-inicio-y-pasturas-deshacer.sql`.
+
+### 2026-10-29 · Stock declarado al 30/06/2025 de MSA (script 132, DATOS) — A-FEAT-1420 — ✅ CORRIDO con OK de JMS
+Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantidad 0, marca `[script 132]` en observaciones), 94 renglones en `stock_inicio` ($ 31.730.444,08 = la planilla) y 3 `pasturas`. Se corre con `scripts/132-stock-inicio-msa-30-06-2025.mts` (desde su `.json`; el `.sql` es el registro legible). Deshacer: `scripts/132-stock-inicio-msa-30-06-2025-deshacer.sql` (por ids; frena si un producto ya tiene movimientos).
+
 ### 2026-10-29 · BANCO SANTANDER y BANCO PROVINCIA de MSA — 2 tablas (script 129) — A-FEAT-1386 — ✅ CORRIDO 2026-10-29 con JMS
 `msa.santander`, `msa.provincia`: misma forma que las del script 126, `moneda` default `ARS`. RLS `ver_segun_permiso`/`escribir_segun_permiso`, recurso `extracto` en `recurso_tablas` (marca `[script 129]`). Deshacer: `scripts/129-cuentas-santander-provincia-msa-deshacer.sql` (frena si alguna tiene movimientos).
 

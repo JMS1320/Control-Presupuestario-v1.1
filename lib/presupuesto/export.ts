@@ -19,6 +19,7 @@
 import XLSX from 'xlsx-js-style'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
+import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 
 export interface MesExport { anio: number; mes: number; label: string }
 
@@ -605,5 +606,5 @@ function descargar(blob: Blob, nombre: string) {
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  setTimeout(() => URL.revokeObjectURL(url), ESPERA_ANTES_DE_LIBERAR_MS)
 }

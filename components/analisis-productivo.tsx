@@ -23,6 +23,7 @@ import { calcular, type CalcInputs } from "@/lib/productivo/racion"
 // Qué se vende y a quién: completa el desbaste y la CZ desde las normas de comercialización.
 import { SelectorComercializacion, useNormasComercializacion, parametrosDe } from "./selector-comercializacion"
 import type { SexoLote } from "@/lib/ganaderia/comercializacion"
+import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 
 
 const LS_ESTUDIOS = "analisis_engorde_estudios"
@@ -1238,7 +1239,7 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
     } else {
       const blob = new Blob([json], { type: "application/json" })
       const url = URL.createObjectURL(blob); const a = document.createElement("a")
-      a.href = url; a.download = nombreArch; a.click(); URL.revokeObjectURL(url)
+      a.href = url; a.download = nombreArch; a.click(); setTimeout(() => URL.revokeObjectURL(url), ESPERA_ANTES_DE_LIBERAR_MS)
     }
   }
 

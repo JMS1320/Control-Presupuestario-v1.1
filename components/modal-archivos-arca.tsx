@@ -24,6 +24,7 @@ import {
   type ArchivoArca, type ControlArchivo, type FilaCompraArca, type VersionArchivo,
 } from "@/lib/subdiarios/libro-iva-arca"
 import { elegirCarpetaDestino, generarNombreUnico, guardarEnCarpeta } from "@/lib/subdiarios/carpeta-destino"
+import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 
 interface Props {
   abierto: boolean
@@ -108,7 +109,7 @@ export function ModalArchivosArca({ abierto, onCerrar, periodo, schemaName, carp
           document.body.appendChild(link)
           link.click()
           link.remove()
-          URL.revokeObjectURL(url)
+          setTimeout(() => URL.revokeObjectURL(url), ESPERA_ANTES_DE_LIBERAR_MS)
         }
       }
       setResultado(`4 archivos guardados en ${destino.ubicacion || "la carpeta Descargas"}.`)

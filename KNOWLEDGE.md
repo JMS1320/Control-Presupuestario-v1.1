@@ -75,8 +75,19 @@ contador y su balance interno, de punta a punta).
   planilla va a la versión que corresponde, **no** a una copia aparte.
 - En los papeles se muestran lado a lado: **Sistema · (SENASA) · Campo · Balance**, con las diferencias Sistema − Campo
   (suele ser mortandad o algo sin registrar) y Campo − Balance (suele ser tratamiento contable). Avisan, no frenan.
+- 📍 **Cada dato dice de dónde salió** (JMS 29/10: *«andá dejando registrado de dónde tomaste cada dato; luego yo
+  corrijo»*): archivo, hoja y celda, en el `detalle` del renglón de la foto o en la fuente del dato tentativo. Los
+  papeles de `Balance/- Enviados/` son **los que se mandaron al contador**; el `BAPU JMS USS` es **el registro interno**
+  de JMS. Un mismo número puede estar en los dos; si difieren, van los dos, cada uno en su versión.
 - ⚠️ Un dato que se usa para UN papel (ej. el saldo de inicio de la caja en el papel 07 sale del campo: $ 457.212,92)
   no borra el otro: el contador ($ 9.903.617,62) sigue en su versión de la foto.
+
+## ⬇️ Chrome «Se ha producido un problema» al bajar un Excel = ruta de Windows de más de 260 caracteres `#descargas #windows #2026-10-29`
+
+Si baja con el nombre que trae y falla al ponerle uno largo, **no es la app**: Windows no guarda rutas de más de 260
+caracteres, y Chrome además le suma «.crdownload» mientras baja. Las carpetas del proyecto ya son largas
+(`…\- Comunicacion JMS Claude - Archivos\Balance\` = 123). Bajarlo con el nombre original y renombrar, o un nombre
+corto. (Caso JMS 29/10: nombre de 130 caracteres → ≈ 264.) → A-BUG-1421.
 
 ## 🗺️ Dónde vive cada cosa en la app — lo que el nombre no dice `#navegacion #2026-08-19`
 
