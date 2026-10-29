@@ -510,6 +510,23 @@ Manda al proveedor el Detalle de pago (PDF) + certificado de retención (si hay 
 
 ---
 
+## 💾 Backup TOTAL de la base — pg_dump portable, sin Docker `#backup #postgresql #2026-10-29`
+
+**El vigente** ([A-OP-27](PENDIENTES.md#a-op-27)). Primer backup completo: 29/10/2026, 17:22 — base de 37 MB → `.dump` de 5,5 MB
+con **213 tablas con datos** (public 83, productivo 48, auth 27, msa 19, ma 9, sueldos 8, storage 8, pam 7), 184 funciones y
+335 políticas. No hay archivos en Storage que respaldar (los PDF viven en el Drive).
+
+- **Herramienta**: los binarios oficiales de PostgreSQL **17** (la versión del servidor) en `C:\Users\josem\AppData\Local\pgsql17\pgsql\bin`,
+  sin instalar. Docker queda descartado en esta PC: ocupa ~2 GB y suele haber menos de 1 GB libre.
+- **Conexión**: `SUPABASE_DB_URL` en `.env.local` (session pooler `aws-1-sa-east-1`, usuario `postgres.lyojiaglcictmboqwxfm`). La
+  contraseña de la base **no es la del login** de supabase.com y la app no la usa: se resetea sin romper nada.
+- **Qué se genera** en `- Backups base/` (gitignoreada: tiene todos los datos): `base_completa_<fecha>.dump` (`pg_dump -Fc --no-owner`,
+  se restaura con `pg_restore`), `estructura_<fecha>.sql` (`--schema-only`, legible) y `roles_<fecha>.sql` (`pg_dumpall --roles-only
+  --no-role-passwords`).
+- ⚠️ **Trampas vistas**: Supabase muestra `[YOUR-PASSWORD]` en «Connect» — es un hueco, no la clave; si se pega sólo la contraseña,
+  la línea se arma con el resto. Un error de conexión **puede imprimir la contraseña**: filtrar la salida.
+- La sección de abajo (Docker, 2025) apunta a la **base vieja**: es historia.
+
 ## Backup Supabase Docker - FUNCIONANDO `#backup #docker #postgresql #2025-08-17`
 **Contexto**: Protocolo backup/restore estructura BD antes modificaciones importantes
 **Resultado**: ✅ FUNCIONANDO - Comandos Docker operativos
