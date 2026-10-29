@@ -74,3 +74,6 @@ CREDENCIALES_SUPABASE_NUEVO.md
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# Backups completos de la base (A-OP-27): tienen TODOS los datos, nunca a git
+- Backups base/
