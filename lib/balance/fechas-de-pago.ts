@@ -59,6 +59,20 @@ export async function buscarFechasDePagoBancarias(
 }
 
 /**
+ * 🛡️ **CUÁNDO se pagó cada CUOTA DE TEMPLATE** — lo mismo, por el vínculo de las cuotas (`template_cuota_id`).
+ *
+ * Lo usa el papel 04 para los seguros en `cuotas` (A-FEAT-1385): la factura de la póliza no se concilia, se
+ * concilian las cuotas de su template. Las mismas tablas que `TABLAS_CON_VINCULO_ARCA`: todas llevan también
+ * `template_cuota_id` (leído de `information_schema` el 28/10/2026).
+ */
+export async function buscarFechasDePagoDeCuotas(
+  cliente: ClienteMinimo,
+  ids: string[],
+): Promise<FechasDePago> {
+  return buscarFechas(cliente, ids, TABLAS_CON_VINCULO_ARCA, "template_cuota_id")
+}
+
+/**
  * 💰 **CUÁNDO se cobró cada VENTA** — lo mismo que `buscarFechasDePagoBancarias`, por el vínculo de las ventas.
  *
  * 🧨 A-FEAT-1388 (U6, 27/10): el papel 03 buscaba el cobro de las ventas por `comprobante_arca_id`, que es el
@@ -90,7 +104,7 @@ async function buscarFechas(
   cliente: ClienteMinimo,
   ids: string[],
   tablas: Array<{ schema: string; tabla: string }>,
-  columna: "comprobante_arca_id" | "comprobante_venta_id",
+  columna: "comprobante_arca_id" | "comprobante_venta_id" | "template_cuota_id",
 ): Promise<FechasDePago> {
   const porComprobante = new Map<string, string>()
   const tablasQueFallaron: string[] = []

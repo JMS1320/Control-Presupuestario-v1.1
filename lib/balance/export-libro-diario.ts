@@ -753,8 +753,9 @@ function hojaDeCuentas(
       a.subdiario, a.fecha ?? "", a.tipo ?? "", a.punto_venta ?? "", a.numero ?? "",
       a.cuit, a.denominacion,
       money(a.neto_gravado), money(a.no_gravado), money(a.exento),
-      money(a.otros_tributos), money(a.iva), money(a.total),
-      a.cuenta_contable, x.estado, x.fechaPago ?? "", x.motivo,
+      // 🛡️ A-FEAT-1385: en un seguro en cuotas, «Total» es el saldo al cierre; la cuenta va en el motivo.
+      money(a.otros_tributos), money(a.iva), money(x.importe ?? a.total),
+      a.cuenta_contable, x.estado, x.fechaPago ?? "", x.detalle ? `${x.motivo} — ${x.detalle}` : x.motivo,
     ]
   }
 
@@ -815,6 +816,16 @@ function hojaDeCuentas(
     `ESTADO NO RECONOCIDO — ${c.estadosSinClasificar.join(", ")}`,
     "No se descartan: hay que decidir de qué lado van.",
   ], c.estadoDesconocido, c.totalDesconocido)
+
+  bloque([
+    "SEGUROS EN CUOTAS CON LA PÓLIZA PAGA AL CIERRE — no son deuda",
+    "Las cuotas de su póliza se pagaron (o las compensó una NC) antes del cierre. A-FEAT-1385.",
+  ], c.canceladasPorCuotas, c.totalCanceladasPorCuotas)
+
+  bloque([
+    "SEGUROS EN CUOTAS SIN VÍNCULO CON LA PÓLIZA — ya están ENTEROS en el TOTAL de arriba",
+    "No se pudieron atar a una póliza con template: no se sabe qué cuotas se pagaron.",
+  ], c.sinVinculoPoliza, c.totalSinVinculoPoliza)
 
   f.push([])
   f.push([`Se miraron ${c.mirados} comprobantes del ejercicio.`])

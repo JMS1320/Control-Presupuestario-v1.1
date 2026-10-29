@@ -128,7 +128,7 @@ import {
 import {
   armarLibroPorCuenta, SIN_IMPUTAR, TIPOS_SIN_CREDITO_VENTAS,
 } from "@/lib/balance/libro-por-cuenta"
-import { armarCuentasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
+import { armarCuentasAlCierre, canceladoPorCuotasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
 import {
   armarChequesDados, armarAnticiposAlCierre,
   type ChequeCrudo, type AnticipoCrudo, type AplicacionDeAnticipo,
@@ -10395,6 +10395,66 @@ export function correrCasos(): Resultado[] {
     chequear("Balance — dato tentativo", "El dato de Claude se reconoce y dice su fuente; el ✓ OK lo pasa a nombre de JMS sin cambiar el valor y guarda lo de Claude en el historial; un dato ya confirmado no se reconfirma", e, v, v === e, "A-FEAT-1386")
     const l = leyendaTentativo("archivo · hoja · celda") + " / " + (leyendaTentativo(null) || "vacío")
     chequear("Balance — dato tentativo en el Excel", "La leyenda del Excel dice TENTATIVO y la fuente; sin fuente, nada", "TENTATIVO (lo puso Claude, falta tu OK) · archivo · hoja · celda / vacío", l, l === "TENTATIVO (lo puso Claude, falta tu OK) · archivo · hoja · celda / vacío", "A-FEAT-1386")
+  }
+
+  // ══ 🛡️ Papel 04 — seguros en «cuotas»: deben sólo lo que su póliza no pagó al cierre (A-FEAT-1385) ══
+  {
+    const CIERRE = "2026-06-30"
+    const seguro = (id: string, total: number): ComprobanteConPago => ({
+      estado: "cuotas", fechaPago: null, origenFecha: "sin dato",
+      asiento: {
+        id, fuente: "arca", subdiario: "2026-02", fecha: "2026-02-01", tipo: 1, punto_venta: 1, numero: 1,
+        cuit: "30500005625", denominacion: "FEDERACIÓN PATRONAL", neto_gravado: 0, no_gravado: 0, exento: 0,
+        otros_tributos: 0, iva: 0, total, cuenta_contable: "Seguros", nro_cuenta: "", centro_costo: "",
+      },
+    })
+    const tpl = (vencimiento: string, monto: number, fechaPago: string | null, estado = fechaPago ? "conciliado" : "pendiente") =>
+      ({ vencimiento, monto, estado, fechaPago })
+    // La flota: endoso 0 sin factura en el papel + endoso 2 en «cuotas», UN template para los dos.
+    const flota = {
+      poliza: "34160783",
+      lineas: [
+        { comprobanteId: null, vencimiento: "2025-12-01", importe: 500 },
+        { comprobanteId: "flota", vencimiento: "2026-01-29", importe: 1000 },
+        { comprobanteId: "flota", vencimiento: "2026-03-01", importe: 1000 },
+        { comprobanteId: "flota", vencimiento: "2026-07-01", importe: 1000 },
+      ],
+      cuotasTemplate: [tpl("2025-12-01", 500, "2025-12-02"), tpl("2026-01-29", 1000, "2026-02-03"),
+        tpl("2026-03-01", 1000, "2026-03-03"), tpl("2026-07-01", 1000, "2026-07-02")],
+    }
+    // Toda paga antes del cierre (el débito de febrero cae a 4 días del vencimiento del plan).
+    const ap = {
+      poliza: "10200836",
+      lineas: [{ comprobanteId: "ap", vencimiento: "2026-02-13", importe: 300 }, { comprobanteId: "ap", vencimiento: "2026-03-13", importe: 300 }],
+      cuotasTemplate: [tpl("2026-02-09", 300, "2026-02-17"), tpl("2026-03-13", 300, "2026-03-17")],
+    }
+    // Vida: NC de 500 que compensa la cuota de 300 de abril (cuota en 0) y deja 200 a favor al cierre.
+    const vida = {
+      poliza: "670821",
+      lineas: [{ comprobanteId: "nc", vencimiento: "2026-01-05", importe: -500 }, { comprobanteId: null, vencimiento: "2026-04-10", importe: 300 }],
+      cuotasTemplate: [tpl("2026-04-10", 0, null, "desactivado")],
+    }
+    const mapa = canceladoPorCuotasAlCierre([flota, ap, vida], CIERRE)
+    const c = armarCuentasAlCierre(
+      [seguro("flota", 3000), seguro("ap", 600), seguro("nc", -500), seguro("suelta", 777)], CIERRE, mapa)
+    const en = (id: string) => c.filas.find(f => f.asiento.id === id)
+
+    chequear("Balance · 04 seguros en cuotas", "🔑 Pagada en parte al cierre: queda el saldo (la cuota pagada DESPUÉS del cierre sigue siendo deuda)",
+      "1000", String(en("flota")?.importe), en("flota")?.importe === 1000, "A-FEAT-1385")
+    chequear("Balance · 04 seguros en cuotas", "Toda paga al cierre: sale del papel y se lista aparte con su total",
+      "fuera · listada 600", `${en("ap") ? "en el papel" : "fuera"} · listada ${c.canceladasPorCuotas.find(f => f.asiento.id === "ap")?.importe}`,
+      !en("ap") && c.canceladasPorCuotas.some(f => f.asiento.id === "ap" && f.importe === 600), "A-FEAT-1385")
+    chequear("Balance · 04 seguros en cuotas", "Una NC queda sólo por lo que no consumió compensando cuotas antes del cierre",
+      "-200", String(en("nc")?.importe), en("nc")?.importe === -200, "A-FEAT-1385")
+    chequear("Balance · 04 seguros en cuotas", "🛑 Sin vínculo con la póliza: va ENTERA, como antes, y se lista",
+      "777 · listada 1 por 777", `${en("suelta")?.importe} · listada ${c.sinVinculoPoliza.length} por ${c.totalSinVinculoPoliza}`,
+      en("suelta")?.importe === 777 && c.sinVinculoPoliza.length === 1 && c.totalSinVinculoPoliza === 777, "A-FEAT-1385")
+    chequear("Balance · 04 seguros en cuotas", "El TOTAL del papel suma los saldos, no los totales de las facturas",
+      "1577", String(c.total), c.total === 1577, "A-FEAT-1385")
+    const sinMapa = armarCuentasAlCierre([seguro("flota", 3000)], CIERRE)
+    chequear("Balance · 04 seguros en cuotas", "Sin las cuotas de las pólizas (no se pudieron leer, o ventas), «cuotas» va entera como siempre",
+      "3000 · no se pagó nunca", `${sinMapa.total} · ${sinMapa.filas[0]?.motivo}`,
+      sinMapa.total === 3000 && sinMapa.filas[0]?.motivo === "no se pagó nunca", "A-FEAT-1385")
   }
 
   return r

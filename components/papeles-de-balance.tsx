@@ -57,13 +57,16 @@ import { traerTodo, lecturaIncompleta, type Lectura } from "@/lib/supabase-pagin
 import type { TipoCuenta } from "@/lib/presupuesto/templates"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
 import type { AsientoLibroDiario } from "@/lib/balance/libro-diario"
-import { armarCuentasAlCierre, type CuentasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
+import {
+  armarCuentasAlCierre, canceladoPorCuotasAlCierre, polizasParaCierreDesde,
+  type CuentasAlCierre, type ComprobanteConPago, type CanceladoPorCuotas,
+} from "@/lib/balance/cuentas-al-cierre"
 import {
   armarChequesDados, armarAnticiposAlCierre,
   type ChequesDados, type AnticiposAlCierre, type ChequeCrudo,
   type AnticipoCrudo, type AplicacionDeAnticipo,
 } from "@/lib/balance/valores-al-cierre"
-import { buscarFechasDePagoBancarias, buscarFechasDeCobroBancarias, completarConGrupoDeCobro, type ClienteMinimo } from "@/lib/balance/fechas-de-pago"
+import { buscarFechasDePagoBancarias, buscarFechasDeCobroBancarias, buscarFechasDePagoDeCuotas, completarConGrupoDeCobro, type ClienteMinimo } from "@/lib/balance/fechas-de-pago"
 import {
   mesesDelEjercicio, armarGastosBancarios, armarFondosComunes, armarRetirosYAportes,
   esFCI, CUENTAS_DEL_EXTRACTO,
@@ -328,8 +331,22 @@ export function PapelesDeBalance() {
             }
           })
 
+        // 🛡️ A-FEAT-1385: los seguros en «cuotas» deben sólo lo que su póliza no pagó al cierre. Si falla, van enteros y se avisa.
+        let cuotasPoliza: Map<string, CanceladoPorCuotas> | undefined
+        try {
+          const pol = await supabase.from("polizas_seguro").select("poliza,template_id,polizas_endosos(comprobante_arca_id,polizas_cuotas(vencimiento,importe))")
+          if (pol.error) throw new Error(pol.error.message)
+          const filasPol = (pol.data ?? []) as Record<string, unknown>[]
+          const tpls = new Set(filasPol.map(p => p.template_id).filter(Boolean))
+          const deTpl = ((cuotas.data ?? []) as Record<string, unknown>[]).filter(q => tpls.has(q.egreso_id))
+          const fc = await buscarFechasDePagoDeCuotas(cliente, deTpl.map(q => String(q.id)))
+          if (fc.tablasQueFallaron.length > 0) throw new Error(`no se pudo leer ${fc.tablasQueFallaron.join(", ")}`)
+          cuotasPoliza = canceladoPorCuotasAlCierre(polizasParaCierreDesde(filasPol, deTpl, fc.porComprobante), ej.fechaCierre)
+        } catch (e) {
+          toast.warning("No se pudieron leer las cuotas de las pólizas: los seguros en cuotas van enteros al papel 04. " + (e as Error).message)
+        }
         setCuentas({
-          pagar: armarCuentasAlCierre(conPago(armado.compras), ej.fechaCierre),
+          pagar: armarCuentasAlCierre(conPago(armado.compras), ej.fechaCierre, cuotasPoliza),
           cobrar: armarCuentasAlCierre(conPago(armado.ventas), ej.fechaCierre),
         })
       } catch (e) {
