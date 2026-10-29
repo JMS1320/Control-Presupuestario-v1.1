@@ -286,6 +286,7 @@ import { ocurrenciasDeCampania, sugerirAgrupar, fechasIatf, chequearIatf, cheque
   type TareaPlan as TareaPlanCaso, type Hecho as HechoCaso, type Ocurrencia as OcurrenciaCaso } from "@/lib/productivo/plan-sanitario"
 import { presentarHoja, MONEDA, ENTERO } from "@/lib/balance/formato-excel"
 import { armarTresSaldos, sistemaAlMomento } from "@/lib/balance/tres-saldos-hacienda"
+import { armarSaldosProductivos, sistemaProductivoAlCierre } from "@/lib/balance/saldos-productivos"
 import { armarFilaDato, leerNumero, textoEstadoGuardado, MARCA_TENTATIVO, esTentativo, fuenteTentativo, confirmarFila, leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
 import { leerFacturaDelTexto, precargaDesdeLectura, cuitValido, parsearImporte } from "@/lib/gas-pdf/leer-factura"
@@ -10505,6 +10506,18 @@ export function correrCasos(): Resultado[] {
     const v = `ini vacas ${ini.Vaca} · cierre vacas ${cie.Vaca} · fila vacas ${vac.sistema}/${vac.senasa}/${vac.balance} dif ${vac.difSistema}/${vac.difSenasa} · total ${t.total.sistema}/${t.total.senasa}/${t.total.balance} · sin ubicar ${t.sinUbicar.map(x => x.categoria + " " + x.cabezas).join(",")}`
     const e = "ini vacas 5 · cierre vacas 193 · fila vacas 5/152/150 dif -145/2 · total 8/232/150 · sin ubicar Bufalo 3"
     chequear("Balance — hacienda: tres saldos", "Sistema al inicio = movimientos anteriores al 1er día (al cierre, hasta el cierre); diferencias contra el balance; lo que no cae en la planilla se avisa y suma al total del sistema", e, v, v === e, "A-FEAT-1386")
+  }
+
+  // ══ 🌾 Saldos de insumos, gas oil y sementeras: sistema · balance (A-FEAT-1386 (e), JMS 29/10) ══
+  {
+    const sis = sistemaProductivoAlCierre([{ ambito: "agricola", valuado: 100 }, { ambito: "agricola", valuado: 50.5 }, { ambito: "ganadero", valuado: 10 }], 2000)
+    const vals = { "inicio.balance.insumos-agricolas": "5.256.210", "inicio.balance.gasoil": "3.253.500", "cierre.balance.insumos-agricolas": "150,5", "cierre.balance.sementeras": "1.900" }
+    const ini = armarSaldosProductivos("inicio", null, vals)
+    const cie = armarSaldosProductivos("cierre", sis, vals)
+    const f = (x: { sistema: number | null; balance: number | null; dif: number | null }) => `${x.sistema ?? "—"}/${x.balance ?? "—"}/${x.dif ?? "—"}`
+    const v = `ini agric ${f(ini.filas[0])} · ini total ${f(ini.total)} · cie agric ${f(cie.filas[0])} · cie gasoil ${f(cie.filas[2])} · cie sem ${f(cie.filas[3])} · cie total ${f(cie.total)}`
+    const e = "ini agric —/5256210/— · ini total —/8509710/— · cie agric 150.5/150.5/0 · cie gasoil 0/—/— · cie sem 2000/1900/100 · cie total 2160.5/2050.5/110"
+    chequear("Balance — saldos productivos", "Al inicio el sistema no tiene saldo (—, nunca cero); al cierre suma los grupos de insumos por ámbito y la sementera; diferencia contra el balance", e, v, v === e, "A-FEAT-1386")
   }
 
   return r

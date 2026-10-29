@@ -46,6 +46,8 @@ import {
 } from "@/lib/balance/granos-sementeras"
 import { MarcaTentativo } from "@/components/marca-tentativo"
 import { TresSaldosHacienda } from "@/components/tres-saldos-hacienda"
+import { SaldosProductivos } from "@/components/saldos-productivos"
+import { sistemaProductivoAlCierre } from "@/lib/balance/saldos-productivos"
 import { sistemaAlMomento } from "@/lib/balance/tres-saldos-hacienda"
 import { leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { pesosAlCierre, type PesoCategoria } from "@/lib/balance/pesos-hacienda"
@@ -341,6 +343,10 @@ export function HaciendaAlCierre({
 
       {datos && (
         <TresSaldosHacienda empresa={empresa} anioCierre={ejercicio.anioCierre} sistema={datos.sistema} />
+      )}
+      {datos && (
+        <SaldosProductivos empresa={empresa} anioCierre={ejercicio.anioCierre}
+          sistemaAlCierre={sistemaProductivoAlCierre(datos.insumos.grupos, datos.sementeras.costo)} />
       )}
 
       {v && (

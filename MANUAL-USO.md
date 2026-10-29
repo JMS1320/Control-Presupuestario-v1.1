@@ -705,6 +705,9 @@ tres saldos: **Sistema** (lo que suman los movimientos de hacienda de la app), *
 los escribís vos). Con los botones **Al inicio** / **Al cierre** elegís el momento. Las columnas de diferencias comparan
 contra el balance: lo normal es que la diferencia sea una mortandad sin registrar.
 
+Debajo está la misma tabla para **insumos agrícolas, insumos ganaderos, gas oil y sementeras**, en pesos: Sistema
+(el stock valuado de la app, sólo al cierre) y Balance (lo escribís vos).
+
 ⚠️ Sin probar todavía → [A-TEST-1287](PENDIENTES.md#a-test-1287)
 
 ## 🤖 Datos «TENTATIVOS» en los papeles del balance *(nuevo 2026-10-28)*

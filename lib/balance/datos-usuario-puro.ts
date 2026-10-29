@@ -9,7 +9,7 @@ export const TABLA_DATOS_USUARIO = "balance_datos_usuario"
  * `cc.saldo-inicio` (A-FEAT-1388): el saldo de inicio de cada cuenta corriente del papel 14, por clave
  * de contraparte (JMS, AMS, MA…).
  */
-export type PapelConDatos = "hacienda.precio" | "granos" | "fci" | "cc.saldo-inicio" | "hacienda.saldos"
+export type PapelConDatos = "hacienda.precio" | "granos" | "fci" | "cc.saldo-inicio" | "hacienda.saldos" | "productivo.saldos"
 
 export interface CambioHistorial { texto: string | null; valor: number | null; at: string | null; por: string | null }
 
