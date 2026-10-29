@@ -10287,6 +10287,17 @@ export function correrCasos(): Resultado[] {
       "falta: 11 de 12 · sin cuota: feb-26 | sobra | ok",
       `${f11.estado}: ${f11.detalle} | ${f13.estado} | ${fFuera.estado}`,
       f11.estado === "falta" && f11.detalle === "11 de 12 · sin cuota: feb-26" && f13.estado === "sobra" && f13.detalle.includes("nov-25 (2)") && fFuera.estado === "ok", CUBRE)
+    // A-FEAT-1415/1416: «desde» (la póliza o la cuenta empezó a mitad de campaña) y «excluirDetalle»
+    // (comisiones de la tarjeta cargadas en el template de la cuenta).
+    const [fDesde] = correr([cfg("Seguro AP", { tipo: "fijo", esperado: 12 }, { desde: "2026-02", prefijo: true })],
+      mensual("Seguro AP — póliza 10183421", ["2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]))
+    const [fTarj] = correr([cfg("Comision Cuenta Bancaria", { tipo: "fijo", esperado: 12 }, { excluirDetalle: "tarjeta" })],
+      [...mensual("Comision Cuenta Bancaria", msa), cu("Comision Cuenta Bancaria", "2025-07-31", 14214, { detalle: "Comision Renovacion Tarjeta" }),
+        cu("Comision Cuenta Bancaria", "2025-08-28", 4958.67, { detalle: "Comision Tarjeta de Credito (Mant Mensual)" })])
+    const v1415 = `${fDesde.estado}: ${fDesde.detalle} | ${fTarj.estado}: ${fTarj.detalle}`
+    chequear(G, "🛡️ Desde que existe: 12 por año desde feb-26 → 5 en la campaña; 🏦 las comisiones de la tarjeta no cuentan como de la cuenta",
+      "ok: 5 de 5 · existe desde feb-26 | ok: 12 de 12 · 2 de «tarjeta» no cuentan", v1415,
+      v1415 === "ok: 5 de 5 · existe desde feb-26 | ok: 12 de 12 · 2 de «tarjeta» no cuentan", "A-FEAT-1415")
     // Mismo nombre escrito distinto, otro template (recreado otro año); compartido → primera empresa
     const [fNom] = correr([cfg("Imp .Ganancias MSA", { tipo: "fijo", esperado: 1 })], [cu("IMP. GANANCIAS MSA", "2025-11-10", 100, { egresoId: "tpl-2025" })])
     const [fComp] = controlarCuotasTemplates({ empresa: "PAM", meses: pam.meses, hoy: "2026-10-28",
@@ -10345,13 +10356,13 @@ export function correrCasos(): Resultado[] {
     chequear(G, "🚗 Seguro Flota: dos pólizas en el año cuentan como una flota → 12 de 12", "ok · 12 de 12 · 2 templates",
       `${rF.estado} · ${rF.detalle} · ${rF.templates} templates`, rF.estado === "ok" && rF.detalle === "12 de 12" && rF.templates === 2, CUBRE)
 
-    // 6) Pendientes: comisiones y seguros → «a desarrollar», no se juzgan
+    // 6) «A desarrollar» se cuenta y no se juzga. Desde A-FEAT-1415/1416 (29/10) comisiones y seguros ya tienen
+    //    regla: en la lista no queda ninguno «a desarrollar».
     const pend = CONTROL_CUOTAS_TEMPLATES.filter(t => t.regla.tipo === "a-desarrollar").map(t => t.nombre)
-    const pendOk = pend.some(x => x.startsWith("Comision")) && pend.some(x => x.startsWith("Seguro Vida")) && !pend.includes("Seguro Flota")
     const rP = correr([cfg("Comision Cuenta Bancaria", { tipo: "a-desarrollar", motivo: "x" })], [cu("Comision Cuenta Bancaria", "2025-08-01")])[0]
-    chequear(G, "⏳ Comisiones bancarias y seguros (salvo Flota) son «regla a desarrollar»: se cuentan, no se juzgan",
-      "a desarrollar · comisiones y seguros en la lista", `${rP.estado} · ${pendOk ? "comisiones y seguros en la lista" : pend.join(",")}`,
-      rP.estado === "a desarrollar" && pendOk, CUBRE)
+    chequear(G, "⏳ Una regla «a desarrollar» se cuenta y no se juzga; comisiones y seguros ya tienen regla (ninguno queda a desarrollar)",
+      "a desarrollar · ninguno pendiente", `${rP.estado} · ${pend.length ? pend.join(",") : "ninguno pendiente"}`,
+      rP.estado === "a desarrollar" && pend.length === 0, "A-FEAT-1416")
 
     // 7) SICORE: un pago por presentación (1ª → mismo mes; 2ª → mes siguiente)
     const sic = [cfg("SICORE 1er Quincena", { tipo: "sicore", quincena: "1ra" }), cfg("SICORE 2da Quincena", { tipo: "sicore", quincena: "2da" })]
