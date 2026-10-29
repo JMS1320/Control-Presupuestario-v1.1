@@ -1,4 +1,4 @@
--- Deshace 131: deja todo como estaba el 29/10/2026 antes del script.
+-- Deshace 134: deja todo como estaba el 29/10/2026 antes del script.
 begin;
 update msa_galicia set template_cuota_id = 'e9786d0b-f3b7-4351-adad-8d4f357b78ba' where id = 'e23b41c8-e9d2-49fc-98cb-e683f23f31a0';
 update msa_galicia set template_cuota_id = '8a86d0f4-ae19-48c5-b797-64a7ed80f45a' where id = '1564fd39-f07b-4da3-a337-9953dd4d632f';
