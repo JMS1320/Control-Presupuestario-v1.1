@@ -6,6 +6,9 @@
  * dónde guardar, el usuario tarda en elegir carpeta y nombre — y para entonces el archivo ya no existe.
  * Con 2 minutos alcanza para el diálogo de «Guardar como» y no deja memoria colgada por mucho tiempo.
  *
+ * ⚠️ cambió el mismo 29/10: el caso de JMS resultó ser OTRO — la ruta de Windows pasaba los 260 caracteres (nombre largo
+ * en una carpeta profunda + «.crdownload»). Esta espera queda igual: no hace daño y cubre navegadores que leen tarde.
+ *
  * Todas las descargas de la app usan esta espera; una descarga nueva NO libera el archivo enseguida.
  */
 export const ESPERA_ANTES_DE_LIBERAR_MS = 120_000

@@ -82,6 +82,13 @@ contador y su balance interno, de punta a punta).
 - ⚠️ Un dato que se usa para UN papel (ej. el saldo de inicio de la caja en el papel 07 sale del campo: $ 457.212,92)
   no borra el otro: el contador ($ 9.903.617,62) sigue en su versión de la foto.
 
+## ⬇️ Chrome «Se ha producido un problema» al bajar un Excel = ruta de Windows de más de 260 caracteres `#descargas #windows #2026-10-29`
+
+Si baja con el nombre que trae y falla al ponerle uno largo, **no es la app**: Windows no guarda rutas de más de 260
+caracteres, y Chrome además le suma «.crdownload» mientras baja. Las carpetas del proyecto ya son largas
+(`…\- Comunicacion JMS Claude - Archivos\Balance\` = 123). Bajarlo con el nombre original y renombrar, o un nombre
+corto. (Caso JMS 29/10: nombre de 130 caracteres → ≈ 264.) → A-BUG-1421.
+
 ## 🗺️ Dónde vive cada cosa en la app — lo que el nombre no dice `#navegacion #2026-08-19`
 
 Salió al ubicar los 260 pendientes por pantalla. Tres cosas que **no se deducen del nombre de la
