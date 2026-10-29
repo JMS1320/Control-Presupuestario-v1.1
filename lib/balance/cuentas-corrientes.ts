@@ -488,3 +488,49 @@ export function aplicarSaldosInicio(
     }),
   }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// 👷 EL SUELDO PENDIENTE va a la cuenta corriente del socio (A-FEAT-1422 nota 8, 2026-10-29)
+// ══════════════════════════════════════════════════════════════════════════════════════════
+
+/** Un mes de sueldo, con lo mínimo para llevarlo a la cuenta corriente. */
+export interface SueldoParaCC {
+  id: string
+  anio: number
+  mes: number
+  fecha_fin_periodo?: string | null
+  saldo_pendiente?: number | string | null
+  empleado?: { nombre?: string | null; cuit_empleado?: string | null } | null
+}
+
+/**
+ * JMS 29/10, sobre el sueldo de MA: *«ella cobra pero no por recibo: es una cuenta corriente y esto entra
+ * dentro de su cuenta corriente. Marcá el recibo como entero a pagar por MSA»*.
+ *
+ * Cada mes del ejercicio con **saldo pendiente** de un empleado cuyo CUIT es el de una contraparte del papel
+ * entra a su cuenta como **deuda de MSA** (igual que una factura de compra). Sólo lo pendiente: lo ya pagado
+ * por la vía de sueldos no se repite. Lo une el CUIT, nunca el nombre.
+ */
+export function sueldosPendientesComoCompras(
+  periodos: SueldoParaCC[],
+  meses: string[],
+  contrapartes: ContraparteDelBalance[] = CONTRAPARTES_DEL_BALANCE,
+): CompraParaCC[] {
+  const delEjercicio = new Set(meses)
+  const cuits = new Set(contrapartes.map(c => c.cuit))
+  const out: CompraParaCC[] = []
+  for (const p of periodos) {
+    const cuit = String(p.empleado?.cuit_empleado ?? "").replace(/\D/g, "")
+    const mm = `${p.anio}-${String(p.mes).padStart(2, "0")}`
+    const pendiente = r2(Number(p.saldo_pendiente) || 0)
+    if (!cuits.has(cuit) || !delEjercicio.has(mm) || Math.abs(pendiente) < 1) continue
+    const fin = p.fecha_fin_periodo
+      ? String(p.fecha_fin_periodo).slice(0, 10)
+      : new Date(Date.UTC(p.anio, p.mes, 0)).toISOString().slice(0, 10)
+    out.push({
+      id: `sueldo-${p.id}`, fecha: fin, cuit, total: pendiente,
+      numero: `Sueldo ${String(p.mes).padStart(2, "0")}/${p.anio} (a pagar)`,
+    })
+  }
+  return out
+}

@@ -81,6 +81,7 @@ import {
 } from "@/lib/balance/sueldos-balance"
 import {
   armarCuentasCorrientes, aplicarSaldosInicio, abrirDesglosar, CONTRAPARTES_DEL_BALANCE,
+  sueldosPendientesComoCompras, type SueldoParaCC,
   type PapelDeCuentasCorrientes, type ConsumoTarjeta,
   type CompraParaCC, type VentaParaCC, type MovimientoParaCC,
 } from "@/lib/balance/cuentas-corrientes"
@@ -530,17 +531,20 @@ export function PapelesDeBalance() {
        *
        * ⚠️ En su propio `try`: el resto del libro ya está en pantalla.
        */
+      /** 👷 A-FEAT-1422 (8): los meses de sueldo, también para la cuenta corriente del socio (abajo). */
+      let periodosParaCC: SueldoParaCC[] = []
       try {
         const meses = mesesDelEjercicio(anioCierre, empresa.mesCierre)
         const [aa0] = meses[0].split("-").map(Number)
         const [aaN] = meses[11].split("-").map(Number)
         const leidoSueldos = await traerTodo((d, h) => supabase
           .from("sueldos_periodos")
-          .select("*, empleado:sueldos_empleados(nombre, empresa, tipo_empleado)", { count: "exact" })
+          .select("*, empleado:sueldos_empleados(nombre, empresa, tipo_empleado, cuit_empleado)", { count: "exact" })
           .in("anio", aa0 === aaN ? [aa0] : [aa0, aaN]).order("id").range(d, h))
         const { data: periodosSueldo, error: errSueldos } = leidoSueldos
         if (errSueldos) throw new Error(errSueldos.message)
         anotar("Sueldos", leidoSueldos)
+        periodosParaCC = (periodosSueldo ?? []) as unknown as SueldoParaCC[]
 
         const armadoSueldos = armarSueldosDelEjercicio(
           (periodosSueldo ?? []) as unknown as PeriodoDeSueldo[], meses)
@@ -594,6 +598,12 @@ export function PapelesDeBalance() {
             .not("contable", "is", null).order("id").range(d, h))
           const movsCC = leidoCC.data
           anotar("Movimientos de cuentas corrientes", leidoCC)
+
+          /**
+           * 👷 A-FEAT-1422 (8) — el sueldo pendiente de un socio (MA) entra a SU cuenta corriente como deuda
+           * de MSA. JMS 29/10: «ella cobra pero no por recibo… entra dentro de su cuenta corriente».
+           */
+          comprasCC.push(...sueldosPendientesComoCompras(periodosParaCC, meses))
 
           let armadoCC = armarCuentasCorrientes(
             comprasCC, ventasCC, (movsCC ?? []) as unknown as MovimientoParaCC[])
