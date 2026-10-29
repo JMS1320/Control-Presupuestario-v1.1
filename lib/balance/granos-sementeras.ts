@@ -53,6 +53,8 @@ export interface EntradasGranos {
 
 export interface CuadreGranos {
   stockInicioTn: number | null
+  /** 🤖 A-FEAT-1386: «TENTATIVO (lo puso Claude…) · fuente» mientras el stock al inicio no tenga el OK de JMS. */
+  notaInicio?: string
   cosechaTn: number | null
   ventasTn: number
   /** `inicio + cosecha − ventas`. `null` si falta alguna entrada. */
