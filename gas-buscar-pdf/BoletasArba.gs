@@ -182,7 +182,8 @@ function linksDeBoleta_(html) {
   var ma
   while ((ma = reA.exec(html)) !== null) {
     var texto = String(ma[2]).replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').trim()
-    if (!/^(ingresar|descargar( boleta)?|ver boleta|descarga)$/i.test(texto)) continue
+    // 30/10 (A-FEAT-1425): el «Aviso de Débito» trae la boleta en un link que dice «AQUÍ», no «Ingresar».
+    if (!/^(ingresar|descargar( boleta)?|ver boleta|descarga|aqu[ií])$/i.test(texto)) continue
     var ua = limpiar(ma[1])
     if (/^https?:/i.test(ua)) anclados.push(ua)
   }
