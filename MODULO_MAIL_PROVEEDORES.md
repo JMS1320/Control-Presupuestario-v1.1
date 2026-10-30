@@ -417,3 +417,59 @@ JMS: *«el buscador de facturas, luego de importarlas, muchas veces ya tendrá l
 
 ### 9.2 · 🔎 A mirar con el registro funcionando
 - El GAS se manda a la propia casilla **«Resumen FC»** y **«Supervisión facturas archivo digital»** a veces **3 a 6 iguales el mismo día** (catálogo del 30/10). No hay un bug evidente: cada corrida de un lote o de «Contar, re-vincular todo y mandar el estado por mail» manda el suyo. Con el registro se ve exactamente a qué hora salió cada uno y se decide si conviene uno solo por día.
+
+## 10. 📋 PROPUESTAS DE PROCESAMIENTO POR TIPO DE MAIL *(30/10, sólo propuestas — nada se construye sin el OK de JMS)*
+
+JMS 30/10: *«dejá propuestas: en cada sección qué se guarda, qué no, qué datos se toman, cómo propagar en caso de OK mío; fijate contra los templates que se cargan a mano y se pagan»*.
+
+**La regla que vale para todas** (la misma del panel de ARBA desde A-FEAT-95): **el mail nunca pisa un template solo.** El procesador lee, **propone** el número al lado del que hoy tiene la cuota, y JMS aplica (fila por fila o todas). Lo aplicado deja **huella**: qué leyó y qué se aplicó (§ «Importar un documento» de `CLAUDE.md`). Y cada uno tiene su **control por dos caminos** cuando el mismo número llega por otro lado.
+
+| # | Mail (remitente) | Qué dato trae | A dónde iría (template / cuota que hoy se carga a mano) | Cómo se propaga con OK | Control por dos caminos | Hoy |
+|---|---|---|---|---|---|---|
+| 1 | **ARBA boletas** (`boletaelectronica@`) — Inmobiliario rural y complementario | por partida: importe y vencimiento de la cuota | las **23 cuotas de Inmobiliario 2026** (`partida_arba`; el complementario por CUIT) | panel 🏛️ Boletas ARBA: monto y vencimiento de la cuota, con OK | la **tabla del mail** contra el **PDF** (ya existe) | ✅ existe (A-FEAT-95/104/107), falta disparo desde el registro |
+| 1b | **ARBA aviso de débito** | qué cuota se debita sola y cuándo | la misma cuota: **medio de pago = débito automático** + fecha | marcar la cuota «se debita el …» → el Cash Flow la muestra como débito, no como pago a hacer | el **débito real** del extracto contra el aviso | ❌ se ignora (el GAS lo saltea: no trae link) |
+| 1c | **ARBA mora** (`novedades@`) | qué cuota quedó impaga | la cuota **pendiente** con vencimiento pasado | **alerta**, nada que escribir: link a la cuota | la cuota pendiente en la app contra el aviso de ARBA | ❌ sólo el reporte |
+| 2 | **AGIP ABL** (`no-responder@agip.gob.ar`) | boleta mensual: importe y vencimiento | **ABL Libertad Cuota** (MA, 12 cuotas) · ABL cocheras (anuales) | igual que ARBA: proponer monto/venc. de la cuota del mes | boleta contra el débito del extracto | ❌ |
+| 3 | **Red Vial** (`avisos@rojas.gov.ar`, `@sanpedro.gob.ar`) | liquidación por partida: importe y vencimiento | **Red Vial Cuota Rojas** (MSA) · las **16 de San Pedro** (MSA y PAM) · Red Vial Lima (Zárate) | por partida, como ARBA | liquidación contra el pago | ❌ |
+| 4 | **Expensas** (`libertad1366caba@`, `consorcioposadas1265@`, cochera Zapiola) | importe del mes | **Expensas Libertad** (MA) · **Expensas Posadas** (PAM) · ⚠️ **cochera Zapiola: no hay template** | monto de la cuota del mes | el pago del extracto | ❌ (Zapiola = hueco) |
+| 5 | **Servicios** (Movistar, Personal, Coopser) | factura del mes: importe y vencimiento | **Teléfono Fijo 812** y **Paquete TV MA** (abiertos, sin cuotas) · ⚠️ **Coopser (luz): no hay template** | crear la cuota del mes con el importe | factura del mail contra el débito | ❌ (Coopser = hueco; ¿va por ARCA?) |
+| 6 | **Contador de sueldos** (Pittaluga: «Sueldos / Impuestos del mes») | sueldo y aportes de domésticas | **Aportes Domésticas** (MA) + Sueldos | proponer el monto del mes | mail contra el pago | ❌ |
+| 7 | **Contadores** (Noltfuentes: «DJ IIBB MA», subdiarios; AB Consultores: honorarios, DDJJ) | importe a pagar de la DJ · factura de honorarios | **IIBB Mensual MA** · honorarios = factura ARCA (buscador) · DDJJ → `ddjj_presentadas` (A-AUTO-09) | monto de la cuota de IIBB del mes | la DJ contra el VEP / débito | 🟡 DDJJ existe; IIBB ❌ |
+| 8 | **Galicia resumen de tarjeta** (`e-resumen@`, «Visa Business ya está listo») | total del resumen y vencimiento | **Tarjeta Visa Business MSA** (12 cuotas) + importar el resumen | monto de la cuota del mes = total del resumen | **total del mail contra total del PDF** (el caso modelo, A-AUTO-01) | 🟡 diseñado (A-AUTO-01) |
+| 9 | **Santander / Provincia / PPI / Galicia Securities / Dracma** (resúmenes) | «resumen disponible» · saldos | cargar el resumen (lectores Santander/Galicia ya hechos) · saldos de inversiones para el balance | recordatorio de carga; el saldo del mail como control | saldo del mail contra el último saldo cargado | ❌ |
+| 10 | **Federación Patronal** (emisión de póliza) | póliza nueva | módulo Seguros (pólizas, A-FEAT-1309) | proponer cargar la póliza | cuotas de la póliza contra los débitos (ya existe) | 🟡 |
+| 11 | **Productivo** (Bunge, San Pa, Ceibos: fijaciones; Arrebeef: romaneos) | fijación: tn, precio, fecha · romaneo | ventas / cuotas de **arrendamiento** (Ceibos = fijaciones de arrendamiento MSA/PAM) · importador de romaneos | proponer la cuota de ingreso con el precio fijado | fijación contra la factura de venta | ❌ |
+| 12 | **Avisos con fecha** (VTV, Calendar, MiPyme, Banco Provincia cierre, Santander saldo negativo) | un vencimiento o un riesgo | nada que escribir | **alerta** en el reporte (ya clasifican como «avisar») y después WhatsApp a José | — | ✅ (reporte) |
+| — | **Propaganda, notificaciones** | nada | nada | archivar, contado en el reporte | — | ✅ |
+
+**Huecos que salen de cruzar con los templates** (mails que llegan todos los meses y no tienen template): **cochera Zapiola** (expensas), **Coopser** (luz del campo), **Zoom** y **Google One** (suscripciones pagas). Se registran; si deben ir al presupuesto, se crean con su categoría en el plan de cuentas (§ Templates de `CLAUDE.md`).
+
+**Orden propuesto**: ARBA primero (ya existe casi todo y llegaron los de la cuota 4) → aviso de débito y mora de ARBA → AGIP/Red Vial (mismo molde que ARBA) → tarjeta Galicia (A-AUTO-01) → servicios/expensas → productivo.
+
+### 10.1 · 🏛️ Chequeo previo de ARBA cuota 4 *(30/10, sólo lectura: mails reales contra las cuotas de la app)*
+
+**Llegaron 6 mails de boletas** (28-30/10): Rural cuota 4 en **4 mails** (MSA, PAM, «San Manuel» con el CUIT de MSA, MA), Complementario cuota 4 de **PAM** (boleta) y de **MSA** (**aviso de débito**). **Todas vencen el 12/11**; las cuotas de la app dicen **05/11**.
+
+**Los importes suben ~11 % contra lo proyectado** (la cuota 4 de la app repite el monto de la 2):
+
+| Cuota 4 | App hoy | Mail ARBA |
+|---|---|---|
+| Rojas (MSA) | 2.214.038,50 | **2.460.212,60** |
+| Casco (PAM) | 1.265.318,00 | **1.406.006,00** |
+| Lima (MA) | 764.419,00 | **836.860,30** |
+| Ombú (PAM) | 489.594,40 | **544.031,40** |
+| las otras 15 partidas chicas | — | todas +11 % (ej. Anexo 70.757,50 → 78.624,90) |
+| Complementario MSA (débito automático 12/11) | 915.647,30 | **1.002.419,80** |
+| Complementario PAM | 1.373.639,50 | **1.105.502,50** ⚠️ *baja ~20 %: revisar* |
+
+**Lo que el panel va a mostrar, y está bien que lo muestre:**
+- **Partidas repetidas entre mails** (3 de MSA vuelven en el de PAM; Tango Parra 1 y 2 vuelven en el de PAM y en el de «San Manuel»): es el patrón conocido (KNOWLEDGE § ARBA); la carpeta replica «MSA - viene PAM».
+- **2 partidas sin template**: 099-001274-1 ($ 526.767) y 099-025089-8 El Relincho ($ 180.573,20), las dos en el mail de PAM → [A-DAT-26](PENDIENTES.md#a-dat-26).
+- **2 templates sin boleta**: Quinta Roselló 1 (099-001854-5) y Tapera 3 (099-015886-0), de PAM, **no vinieron en ningún mail**: ¿se pagan de otra forma, o falta un mail?
+
+**¿Andaría hoy?** Sí, con dos arreglos chicos y un pendiente grande:
+- ✅ el GAS busca los últimos 60 días de `boletaelectronica@`: entran los 6.
+- 🔧 **arreglado hoy** (`jms/tanda-gas-2026-10-30`, sin mergear): el aviso de débito trae la boleta en un link «AQUÍ»; antes se caía al modo viejo y bajaba también el pie del mail.
+- ⚠️ **lo grande: las CUOTAS 3 están todas «pendientes» en la app** (vencieron el 08/09). En el extracto de MSA del **08/09** hay **8 pagos sin conciliar** («Pago De Servicios» / «Deb. Autom. De Serv.», **$ 6.674.523,20** en total). Son las cuotas 3 pagadas y nunca atadas a su cuota. Conviene conciliarlas **antes** de aplicar la cuota 4, si no el Cash Flow muestra las cuotas 3 como deuda vencida.
+- 🔴 **El Complementario de PAM cuota 3 está IMPAGO**: ARBA avisa mora al 09/10 (mail del 21/10, sin leer) y lo repite en el Domicilio Fiscal Electrónico (26/10). En los pagos del 08/09 no hay nada de ese monto. El de MSA sí se pagó (débito de $ 971.114,20).
+- 🔴 **Otro aviso en el Domicilio Fiscal de MSA (05/10): «Mora temprana Ingresos Brutos, anticipo 5-2026»**. No hay template de IIBB de MSA en la app (sí de MA y PAM).
