@@ -8,10 +8,11 @@ import { usePuedeVer, usePrimeraVisible } from "@/components/contexto-permisos"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TabsVivos, TabsContentVivo } from "@/components/ui/tabs-vivos"
-import { Receipt, FileText, Building2, ShieldCheck } from "lucide-react"
+import { Receipt, FileText, Building2, ShieldCheck, Mail } from "lucide-react"
 import { VistaFacturasArca } from "./vista-facturas-arca"
 import { VistaTemplatesEgresos } from "./vista-templates-egresos"
 import { VistaSeguros } from "./vista-seguros"
+import { VistaMails } from "./vista-mails"
 
 export function VistaEgresos({ userRole = 'admin' }: { userRole?: UserRole }) {
   // A-FEAT-169: las pestañas que este rol no ve, no se dibujan.
@@ -24,6 +25,7 @@ export function VistaEgresos({ userRole = 'admin' }: { userRole?: UserRole }) {
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab")
     if (t && ["facturas-msa", "facturas-pam", "facturas-ma", "templates", "seguros"].includes(t) && puedeVer(`egresos.${t}`)) setTabActiva(t)
+    if (t === "mails" && userRole === "admin") setTabActiva(t)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -77,6 +79,14 @@ export function VistaEgresos({ userRole = 'admin' }: { userRole?: UserRole }) {
                 Seguros
               </TabsTrigger>
 </Permisable>
+              {/* 📬 A-FEAT-1425: SÓLO admin y sin casilla de permisos (como lo demás reservado al admin): el registro tiene
+                  mails de la familia y de la sucesión. */}
+              {userRole === "admin" && (
+                <TabsTrigger value="mails" className="flex items-center gap-2">
+                  <Mail className="h-4 w-4" />
+                  Mails
+                </TabsTrigger>
+              )}
             </TabsList>
 
             <div className="mt-6">
@@ -109,6 +119,12 @@ export function VistaEgresos({ userRole = 'admin' }: { userRole?: UserRole }) {
                 <VistaSeguros />
               </SoloLectura>
 </TabsContentVivo>
+
+              {userRole === "admin" && (
+                <TabsContentVivo value="mails" className="space-y-4">
+                  <VistaMails />
+                </TabsContentVivo>
+              )}
             </div>
           </TabsVivos>
         </CardContent>

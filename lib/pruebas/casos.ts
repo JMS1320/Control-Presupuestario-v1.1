@@ -245,6 +245,7 @@ import { parsearPoliza } from "@/lib/polizas/parsear-poliza"
 import { armarRenglones, type TextoUbicado } from "@/lib/polizas/renglones-pdf"
 import { leerResumenCajaAhorro, controlarResumen, armarConocido, resumenComoExcel, adaptarMovimiento } from "@/lib/extractos/pdf-caja-ahorro-galicia"
 import { leerResumenSantander, controlarResumenSantander } from "@/lib/extractos/pdf-santander"
+import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla, linkGmail, type MailRegistrado } from "@/lib/mails/registro"
 import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
 import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe, cuentaCorriente } from "@/lib/polizas/resumen-ejercicio"
 import { aseguradoraAlCierre } from "@/lib/balance/seguros-al-cierre"
@@ -9824,6 +9825,40 @@ export function correrCasos(): Resultado[] {
     const vUsd = `${usd.saldoInicial} → ${usd.saldoFinal} · total ${usd.totales?.creditos}/${usd.totales?.debitos}/${usd.totales?.saldo} · ${ctlUsd.ok ? "cierra" : "no cierra"}`
     chequear("Resumen PDF", "💵 Caja de ahorro en DÓLARES: lee los saldos y el «Total» con prefijo USD, y el control cierra",
       "0 → 1000 · total 141000/140000/1000 · cierra", vUsd, vUsd === "0 → 1000 · total 141000/140000/1000 · cierra", "A-FEAT-1424")
+
+    // 📬 A-FEAT-1425: la pantalla «Mails» — grupos, filtro, control que suma y validación de reglas
+    {
+      const M = (o: Partial<MailRegistrado>): MailRegistrado => ({ id: String(Math.random()), casilla: "sanmanuel.sp@gmail.com", mensaje_id: "x", sentido: "recibido",
+        fecha: "2026-10-30T10:00:00Z", remitente: "a@b.com", remitente_nombre: null, destinatarios: null, asunto: "a", extracto: null, adjuntos: null,
+        tipo: "banco", tipo_manual: null, accion: "guardar", estado: "registrado", procesado_por: null, vinculos: null, ...o })
+      const ms = [
+        M({ accion: "avisar", tipo: "impuestos", asunto: "Mora ARBA" }), M({ tipo: null, accion: null, asunto: "¿qué es?" }),
+        M({ accion: "archivar", tipo: "propaganda" }), M({ tipo: "otro", tipo_manual: "legal", asunto: "Contrato ITGB" }),
+        M({ sentido: "enviado", accion: "guardar", tipo: "factura", destinatarios: "proveedor@ejemplo.com", asunto: "Detalle de pago" }),
+        M({ tipo: null, accion: null, tipo_manual: "contador", asunto: "Subdiarios" }),
+      ]
+      const vGrupos = ms.map(m => grupoDeMail(m)).join(" ")
+      chequear("Mails", "📬 Cada mail cae en su grupo: avisar → para mirar · sin tipo → sin regla · el tipo a mano lo saca de «sin regla» · enviado aparte",
+        "mirar sin_regla archivado guardado enviado guardado", vGrupos, vGrupos === "mirar sin_regla archivado guardado enviado guardado", "A-FEAT-1425")
+      const c = contarMails(ms)
+      const vC = `${c.porGrupo.mirar}+${c.porGrupo.sin_regla}+${c.porGrupo.guardado}+${c.porGrupo.archivado}+${c.porGrupo.enviado}=${c.total} ${c.cierra ? "cierra" : "no"}`
+      chequear("Mails", "📬 El control: los grupos suman el total", "1+1+2+1+1=6 cierra", vC, vC === "1+1+2+1+1=6 cierra", "A-FEAT-1425")
+      const vF = [filtrarMails(ms, { grupos: new Set(["mirar"]), tipos: new Set(), texto: "" }).length,
+        filtrarMails(ms, { grupos: new Set(), tipos: new Set(["legal"]), texto: "" }).length,
+        filtrarMails(ms, { grupos: new Set(), tipos: new Set(), texto: "proveedor@" }).length,
+        filtrarMails(ms, { grupos: new Set(), tipos: new Set(["sin_tipo"]), texto: "" }).length,
+        contarPorTipo(ms)["contador"]].join(" ")
+      chequear("Mails", "📬 Filtros: por grupo, por tipo (el puesto a mano manda), por texto en destinatarios, «sin tipo», y conteo por tipo",
+        "1 1 1 1 1", vF, vF === "1 1 1 1 1", "A-FEAT-1425")
+      const vR = [problemaDeRegla({ remitente_patron: "@arba.gov.ar", tipo: "impuestos", accion: "avisar" }) ?? "ok",
+        problemaDeRegla({ remitente_patron: "arba", tipo: "impuestos", accion: "avisar" }) ? "frena" : "pasa",
+        problemaDeRegla({ remitente_patron: "x@y.com", tipo: "inventado", accion: "avisar" }) ? "frena" : "pasa"].join(" ")
+      chequear("Mails", "📬 Una regla nueva: dominio o mail válido, tipo y acción conocidos", "ok frena frena", vR, vR === "ok frena frena", "A-FEAT-1425")
+      const vL = linkGmail("sanmanuel.sp@gmail.com", "1a16045a7b9ffafb")
+      chequear("Mails", "📬 El link a Gmail es IGUAL al que arma el GAS (si cambia uno, cambiar el otro)",
+        "https://mail.google.com/mail/u/?authuser=sanmanuel.sp%40gmail.com#all/1a16045a7b9ffafb", vL,
+        vL === "https://mail.google.com/mail/u/?authuser=sanmanuel.sp%40gmail.com#all/1a16045a7b9ffafb", "A-FEAT-1425")
+    }
 
     // 🏦 A-FEAT-1424: resumen PDF de cuenta corriente SANTANDER (disposición real de MSA agosto 2025, recortada).
     // El crédito grande arranca a la IZQUIERDA del medio Débito/Crédito: la columna diría débito, el saldo dice crédito.
