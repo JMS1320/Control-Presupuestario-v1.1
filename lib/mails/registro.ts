@@ -124,3 +124,43 @@ export function problemaDeRegla(r: { remitente_patron: string; tipo: string; acc
   if (!["guardar", "avisar", "archivar"].includes(r.accion)) return "Elegí qué se hace."
   return null
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Qué hizo el sistema con cada mail — desde lo que YA guardan los procesadores (A-FEAT-1425, § pieza 2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Un renglón del historial del buscador de facturas (`arca_pdf_busqueda_log`) que trae el mail de origen. */
+export interface BusquedaConMail { gmail_message_id: string; resultado: string; numero_comprobante: string | null; factura_schema: string | null; drive_url: string | null }
+/** Un adjunto leído del inventario de reenvíos (`arca_pdf_inventario`). */
+export interface InventarioConMail { gmail_message_id: string; estado: string; nombre_archivo: string | null }
+
+const RESULTADO_BUSQUEDA: Record<string, string> = {
+  descargado: "factura archivada", revisar: "factura a revisar", descartado: "candidato descartado",
+  no_encontrado: "no encontrada", error: "error al buscar", pendiente: "pendiente",
+}
+
+/**
+ * Pura: lo que el sistema hizo con un mail, armado con lo que ya guardaron los procesadores. Lo registrado en el
+ * propio mail (`procesado_por`) va primero; después el buscador de facturas (por factura); después el inventario de
+ * reenvíos. Devuelve null si nadie lo procesó. `ok` = terminó bien (archivada / leído).
+ */
+export function procesadoDeMail(
+  m: Pick<MailRegistrado, "mensaje_id" | "procesado_por">,
+  busquedas: BusquedaConMail[], inventario: InventarioConMail[],
+): { texto: string; ok: boolean; link: string | null } | null {
+  if (m.procesado_por) return { texto: m.procesado_por, ok: true, link: null }
+  const bs = busquedas.filter(b => b.gmail_message_id === m.mensaje_id)
+  if (bs.length) {
+    // Si alguna búsqueda archivó, eso manda; si no, el último estado que se vea
+    const archivada = bs.find(b => b.resultado === "descargado")
+    const b = archivada ?? bs[bs.length - 1]
+    const fc = b.numero_comprobante ? ` ${b.factura_schema ? b.factura_schema.toUpperCase() + " " : ""}${b.numero_comprobante}` : ""
+    return { texto: `${RESULTADO_BUSQUEDA[b.resultado] ?? b.resultado}${fc}${bs.length > 1 ? ` (+${bs.length - 1})` : ""}`, ok: !!archivada, link: b.drive_url }
+  }
+  const inv = inventario.filter(i => i.gmail_message_id === m.mensaje_id)
+  if (inv.length) {
+    const ilegibles = inv.filter(i => i.estado === "ilegible").length
+    return { texto: `reenvío leído: ${inv.length} adjunto${inv.length > 1 ? "s" : ""}${ilegibles ? `, ${ilegibles} ilegible${ilegibles > 1 ? "s" : ""}` : ""}`, ok: ilegibles === 0, link: null }
+  }
+  return null
+}

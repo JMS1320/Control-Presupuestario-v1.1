@@ -23,7 +23,7 @@ import { AlertTriangle, CheckCircle2, ExternalLink, Paperclip, RefreshCw } from 
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import {
   TIPOS_MAIL, NOMBRE_TIPO_MAIL, NOMBRE_GRUPO_MAIL, linkGmail, tipoDeMail, grupoDeMail, filtrarMails, contarMails,
-  contarPorTipo, problemaDeRegla, type MailRegistrado, type ReglaMail, type GrupoMail, type TipoMail, type AccionMail,
+  contarPorTipo, problemaDeRegla, procesadoDeMail, type BusquedaConMail, type InventarioConMail, type MailRegistrado, type ReglaMail, type GrupoMail, type TipoMail, type AccionMail,
 } from "@/lib/mails/registro"
 
 const COLUMNAS = "id, casilla, mensaje_id, sentido, fecha, remitente, remitente_nombre, destinatarios, asunto, extracto, adjuntos, tipo, tipo_manual, accion, estado, procesado_por, vinculos"
@@ -58,6 +58,9 @@ function RegistroMails() {
   const [grupos, setGrupos] = useState<Set<GrupoMail>>(new Set())
   const [tipos, setTipos] = useState<Set<string>>(new Set())
   const [texto, setTexto] = useState("")
+  // Lo que ya guardaron los procesadores, por mail de origen (sólo se lee)
+  const [busquedas, setBusquedas] = useState<BusquedaConMail[]>([])
+  const [inventario, setInventario] = useState<InventarioConMail[]>([])
 
   const cargar = useCallback(async () => {
     setCargando(true); setError(null)
@@ -72,6 +75,18 @@ function RegistroMails() {
       if (!data || data.length < 1000) break
     }
     setMails(todos); setCargando(false)
+    // Qué hizo el sistema con cada mail: el historial del buscador de facturas y el inventario de reenvíos, por id
+    const ids = todos.map(m => m.mensaje_id)
+    const bs: BusquedaConMail[] = [], inv: InventarioConMail[] = []
+    for (let i = 0; i < ids.length; i += 200) {
+      const tramo = ids.slice(i, i + 200)
+      const [{ data: b }, { data: v }] = await Promise.all([
+        supabase.from("arca_pdf_busqueda_log").select("gmail_message_id, resultado, numero_comprobante, factura_schema, drive_url").in("gmail_message_id", tramo).order("fecha_hora"),
+        supabase.from("arca_pdf_inventario").select("gmail_message_id, estado, nombre_archivo").in("gmail_message_id", tramo),
+      ])
+      bs.push(...((b ?? []) as BusquedaConMail[])); inv.push(...((v ?? []) as InventarioConMail[]))
+    }
+    setBusquedas(bs); setInventario(inv)
   }, [dias])
   useEffect(() => { cargar() }, [cargar])
 
@@ -182,8 +197,12 @@ function RegistroMails() {
                       </select>
                     </TableCell>
                     <TableCell className="text-xs">
-                      {m.procesado_por ? <span className="text-green-700 dark:text-green-400">✔ {m.procesado_por}</span>
-                        : <span className="text-muted-foreground">{NOMBRE_GRUPO_MAIL[grupo]}</span>}
+                      {(() => {
+                        const p = procesadoDeMail(m, busquedas, inventario)
+                        if (!p) return <span className="text-muted-foreground">{NOMBRE_GRUPO_MAIL[grupo]}</span>
+                        const t = <span className={p.ok ? "text-green-700 dark:text-green-400" : "text-amber-700 dark:text-amber-400"}>{p.ok ? "✔" : "•"} {p.texto}</span>
+                        return p.link ? <a href={p.link} target="_blank" rel="noopener noreferrer" className="hover:underline">{t}</a> : t
+                      })()}
                     </TableCell>
                   </TableRow>
                 )

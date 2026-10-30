@@ -247,7 +247,7 @@ import { parsearPoliza } from "@/lib/polizas/parsear-poliza"
 import { armarRenglones, type TextoUbicado } from "@/lib/polizas/renglones-pdf"
 import { leerResumenCajaAhorro, controlarResumen, armarConocido, resumenComoExcel, adaptarMovimiento } from "@/lib/extractos/pdf-caja-ahorro-galicia"
 import { leerResumenSantander, controlarResumenSantander } from "@/lib/extractos/pdf-santander"
-import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla, linkGmail, type MailRegistrado } from "@/lib/mails/registro"
+import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla, linkGmail, procesadoDeMail, type MailRegistrado } from "@/lib/mails/registro"
 import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
 import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe, cuentaCorriente } from "@/lib/polizas/resumen-ejercicio"
 import { aseguradoraAlCierre } from "@/lib/balance/seguros-al-cierre"
@@ -9901,6 +9901,18 @@ export function correrCasos(): Resultado[] {
         problemaDeRegla({ remitente_patron: "arba", tipo: "impuestos", accion: "avisar" }) ? "frena" : "pasa",
         problemaDeRegla({ remitente_patron: "x@y.com", tipo: "inventado", accion: "avisar" }) ? "frena" : "pasa"].join(" ")
       chequear("Mails", "📬 Una regla nueva: dominio o mail válido, tipo y acción conocidos", "ok frena frena", vR, vR === "ok frena frena", "A-FEAT-1425")
+      // Qué hizo el sistema con cada mail, desde lo que ya guardaron los procesadores (sin tocar la base)
+      const busq = [
+        { gmail_message_id: "m-fc", resultado: "revisar", numero_comprobante: "3-1520", factura_schema: "msa", drive_url: null },
+        { gmail_message_id: "m-fc", resultado: "descargado", numero_comprobante: "3-1520", factura_schema: "msa", drive_url: "https://drive/x" },
+        { gmail_message_id: "m-dudosa", resultado: "revisar", numero_comprobante: "2-484", factura_schema: "pam", drive_url: null },
+      ]
+      const inv = [{ gmail_message_id: "m-reenv", estado: "leido", nombre_archivo: "a.pdf" }, { gmail_message_id: "m-reenv", estado: "ilegible", nombre_archivo: "b.jpg" }]
+      const pr = (id: string, por: string | null = null) => { const p = procesadoDeMail({ mensaje_id: id, procesado_por: por }, busq, inv); return p ? `${p.ok ? "ok" : "no"}:${p.texto}${p.link ? "@link" : ""}` : "-" }
+      const vP = [pr("m-fc"), pr("m-dudosa"), pr("m-reenv"), pr("m-nada"), pr("m-nada", "boletas_arba")].join(" | ")
+      chequear("Mails", "📬 Qué se procesó: la archivada manda sobre el «a revisar» anterior, la dudosa queda pendiente, el reenvío cuenta ilegibles, lo marcado en el mail va primero",
+        "ok:factura archivada MSA 3-1520 (+1)@link | no:factura a revisar PAM 2-484 | no:reenvío leído: 2 adjuntos, 1 ilegible | - | ok:boletas_arba", vP,
+        vP === "ok:factura archivada MSA 3-1520 (+1)@link | no:factura a revisar PAM 2-484 | no:reenvío leído: 2 adjuntos, 1 ilegible | - | ok:boletas_arba", "A-FEAT-1425")
       const vL = linkGmail("sanmanuel.sp@gmail.com", "1a16045a7b9ffafb")
       chequear("Mails", "📬 El link a Gmail es IGUAL al que arma el GAS (si cambia uno, cambiar el otro)",
         "https://mail.google.com/mail/u/?authuser=sanmanuel.sp%40gmail.com#all/1a16045a7b9ffafb", vL,
