@@ -778,3 +778,11 @@ Discutido pero no implementado. Con RLS activo, cualquier URL que no sea admin a
 > ⚠️ **Cambió 2026-10-24 (A-FEAT-1322, etapa 1):** lo de abajo decía que se leía la URL; después pasó a `userRole === 'contable'` (el NOMBRE del rol, así que un rol nuevo veía el Modo Admin). Ahora sale de **`facturasRestringidas(rol)`** en `lib/auth/roles.ts`: el modo completo es sólo para una **lista cerrada** (`ROLES_CON_FACTURAS_COMPLETA`: admin, socio, productivo — los que ya lo veían) y cualquier rol nuevo entra restringido. Además las solapas Subdiarios, Histórico y Asignación Cuentas y el botón Archivos para ARCA están en `lib/auth/recursos.ts` y se apagan desde Configuración → Roles.
 
 Las restricciones actuales (Vista de Pagos sin sección Pendiente, sin botón Revertir, etc.) están implementadas en `vista-facturas-arca.tsx` leyendo la URL directamente. Son restricciones de UX/visibilidad, independientes de RLS. Se mantienen igual después de implementar RLS.
+
+## 7. ⏸️ PAUSA POR PERSONA — «estamos actualizando» (2026-10-30, A-OP-28)
+
+- **Qué hace**: una persona con `app_metadata.pausa = true` ve sólo `/actualizando` («Estamos actualizando el sistema, probá más tarde», con botón para cerrar sesión) y la API le contesta 503. Lo decide el middleware (`lib/auth/pausa.ts`).
+- **Por qué por persona y no por rol**: el rol queda intacto, así se revisa con otra cuenta del mismo rol exactamente lo que esa persona va a ver antes de devolverle el acceso. Nació para publicar `desarrollo` → `main` con Ulises (`contable` no es cerrado: todo lo nuevo le aparecía de golpe).
+- **Un admin nunca queda en pausa**: si se le marcara por error, quedaría afuera de la única pantalla desde la que se saca.
+- **Cómo se pone / se saca** (no hay pantalla todavía): API de administración de Supabase (`PUT /auth/v1/admin/users/<id>` con la clave de servicio), mandando el `app_metadata` **completo** con o sin `pausa: true`. Antes, foto del `app_metadata` actual. Es un dato del usuario: con OK de JMS.
+- `app_metadata` y no `user_metadata`: el segundo lo edita la propia persona y se sacaría la pausa sola.
