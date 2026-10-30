@@ -1,9 +1,9 @@
 /**
- * 🏦 Script 138 — A-FEAT-1424: CARGA de los resúmenes PDF de la cuenta corriente SANTANDER de MSA → msa.santander.
+ * 🏦 Script 139 — A-FEAT-1424: CARGA de los resúmenes PDF de la cuenta corriente SANTANDER de MSA → msa.santander.
  * JMS 30/10: «dale, armá el lector de santander» (los 15 PDF jul-25 → sep-26 en `Extractos/Varias/`).
  *
- *     npx tsx scripts/138-cargar-santander-msa.mts              ← SIMULA
- *     npx tsx scripts/138-cargar-santander-msa.mts --escribir   ← escribe (🛑 sólo con OK de JMS en esta terminal)
+ *     npx tsx scripts/139-cargar-santander-msa.mts              ← SIMULA
+ *     npx tsx scripts/139-cargar-santander-msa.mts --escribir   ← escribe (🛑 sólo con OK de JMS en esta terminal)
  *
  * Lee con `leerResumenSantander` (lib/extractos/pdf-santander.ts). 🛑 FRENA si: un mes no cierra contra su propio
  * resumen · no es la cuenta 297-000736/0 de MSA · un mes no empalma con el anterior · julio no abre en el saldo de
@@ -11,7 +11,7 @@
  * Las filas son las de una cuenta cargada a mano (como Cotitulares): fecha, descripción (con el comprobante),
  * débito, crédito, saldo, orden, estado «Pendiente», moneda ARS. El motor de conciliación no cambia.
  *
- * Deshacer: `138-cargar-santander-msa-deshacer.mts` — borra SÓLO los ids de `138-cargar-santander-msa-ids.json`.
+ * Deshacer: `139-cargar-santander-msa-deshacer.mts` — borra SÓLO los ids de `139-cargar-santander-msa-ids.json`.
  */
 import { createClient } from "@supabase/supabase-js"
 import { readFileSync, readdirSync, writeFileSync } from "node:fs"
@@ -21,7 +21,7 @@ import { textosUbicadosPorPagina } from "../lib/polizas/renglones-pdf"
 
 const ESCRIBIR = process.argv.includes("--escribir")
 const VARIAS = join("../Control-Presupuestario-v1.1", "- Comunicacion JMS Claude - Archivos", "Extractos", "Varias")
-const IDS = "scripts/138-cargar-santander-msa-ids.json"
+const IDS = "scripts/139-cargar-santander-msa-ids.json"
 const CUENTA = "297-000736/0", CUIT_MSA = "30617786016", SALDO_30_06_2025 = 7204.86
 
 const env = Object.fromEntries(
