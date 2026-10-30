@@ -247,7 +247,7 @@ import { parsearPoliza } from "@/lib/polizas/parsear-poliza"
 import { armarRenglones, type TextoUbicado } from "@/lib/polizas/renglones-pdf"
 import { leerResumenCajaAhorro, controlarResumen, armarConocido, resumenComoExcel, adaptarMovimiento } from "@/lib/extractos/pdf-caja-ahorro-galicia"
 import { leerResumenSantander, controlarResumenSantander } from "@/lib/extractos/pdf-santander"
-import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla, linkGmail, procesadoDeMail, type MailRegistrado } from "@/lib/mails/registro"
+import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla, linkGmail, procesadoDeMail, cambiosAlReaplicar, type MailRegistrado } from "@/lib/mails/registro"
 import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
 import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe, cuentaCorriente } from "@/lib/polizas/resumen-ejercicio"
 import { aseguradoraAlCierre } from "@/lib/balance/seguros-al-cierre"
@@ -9913,6 +9913,21 @@ export function correrCasos(): Resultado[] {
       chequear("Mails", "📬 Qué se procesó: la archivada manda sobre el «a revisar» anterior, la dudosa queda pendiente, el reenvío cuenta ilegibles, lo marcado en el mail va primero",
         "ok:factura archivada MSA 3-1520 (+1)@link | no:factura a revisar PAM 2-484 | no:reenvío leído: 2 adjuntos, 1 ilegible | - | ok:boletas_arba", vP,
         vP === "ok:factura archivada MSA 3-1520 (+1)@link | no:factura a revisar PAM 2-484 | no:reenvío leído: 2 adjuntos, 1 ilegible | - | ok:boletas_arba", "A-FEAT-1425")
+      // Reaplicar reglas: cambia lo que quedó viejo, NO toca lo puesto a mano ni el propio reporte; un enviado se mira por destinatario
+      const reglasR = [
+        { id: "r1", orden: 10, activa: true, remitente_patron: "@arba.gov.ar", asunto_patron: "mora", tipo: "impuestos", accion: "avisar", nota: null },
+        { id: "r2", orden: 50, activa: true, remitente_patron: "contador@ejemplo.com", asunto_patron: null, tipo: "contador", accion: "guardar", nota: null },
+      ] as any[]
+      const reg = [
+        { id: "a", sentido: "recibido", remitente: "novedades@arba.gov.ar", destinatarios: null, asunto: "Mora en el pago", tipo: null, accion: null, tipo_manual: null },
+        { id: "b", sentido: "recibido", remitente: "novedades@arba.gov.ar", destinatarios: null, asunto: "Mora en el pago", tipo: null, accion: null, tipo_manual: "legal" },
+        { id: "c", sentido: "enviado", remitente: "sanmanuelsp@gmail.com", destinatarios: "contador@ejemplo.com, otro@x.com", asunto: "Subdiarios", tipo: null, accion: null, tipo_manual: null },
+        { id: "d", sentido: "recibido", remitente: "sanmanuelsp@gmail.com", destinatarios: null, asunto: "[Registro de mails] 30/10", tipo: "notificacion", accion: "archivar", tipo_manual: null },
+        { id: "e", sentido: "recibido", remitente: "contador@ejemplo.com", destinatarios: null, asunto: "Hola", tipo: "contador", accion: "guardar", tipo_manual: null },
+      ] as any[]
+      const vRe = cambiosAlReaplicar(reg, reglasR).map(c => `${c.id}:${c.antes}→${c.tipo}/${c.accion}`).join(" ")
+      chequear("Mails", "📬 Reaplicar reglas: cambia lo viejo, no toca lo puesto a mano ni el reporte, el enviado se clasifica por destinatario, lo que ya coincide no se toca",
+        "a:sin tipo/-→impuestos/avisar c:sin tipo/-→contador/guardar", vRe, vRe === "a:sin tipo/-→impuestos/avisar c:sin tipo/-→contador/guardar", "A-FEAT-1425")
       const vL = linkGmail("sanmanuel.sp@gmail.com", "1a16045a7b9ffafb")
       chequear("Mails", "📬 El link a Gmail es IGUAL al que arma el GAS (si cambia uno, cambiar el otro)",
         "https://mail.google.com/mail/u/?authuser=sanmanuel.sp%40gmail.com#all/1a16045a7b9ffafb", vL,

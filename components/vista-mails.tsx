@@ -23,7 +23,7 @@ import { AlertTriangle, CheckCircle2, ExternalLink, Paperclip, RefreshCw } from 
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import {
   TIPOS_MAIL, NOMBRE_TIPO_MAIL, NOMBRE_GRUPO_MAIL, linkGmail, tipoDeMail, grupoDeMail, filtrarMails, contarMails,
-  contarPorTipo, problemaDeRegla, procesadoDeMail, type BusquedaConMail, type InventarioConMail, type MailRegistrado, type ReglaMail, type GrupoMail, type TipoMail, type AccionMail,
+  contarPorTipo, problemaDeRegla, procesadoDeMail, cambiosAlReaplicar, type BusquedaConMail, type InventarioConMail, type MailRegistrado, type ReglaMail, type GrupoMail, type TipoMail, type AccionMail,
 } from "@/lib/mails/registro"
 
 const COLUMNAS = "id, casilla, mensaje_id, sentido, fecha, remitente, remitente_nombre, destinatarios, asunto, extracto, adjuntos, tipo, tipo_manual, accion, estado, procesado_por, vinculos"
@@ -220,6 +220,71 @@ function RegistroMails() {
 // Reglas
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Reaplicar las reglas a lo ya registrado: primero muestra qué cambiaría, después aplica, y al final vuelve a calcular
+ * (camino inverso: tiene que dar 0 cambios). Nunca toca un mail con el tipo puesto a mano.
+ */
+function ReaplicarReglas({ reglas }: { reglas: ReglaMail[] }) {
+  type Cambio = ReturnType<typeof cambiosAlReaplicar>[number]
+  const [cambios, setCambios] = useState<Cambio[] | null>(null)
+  const [asuntos, setAsuntos] = useState<Record<string, string>>({})
+  const [trabajando, setTrabajando] = useState(false)
+
+  const leerTodo = async () => {
+    const todos: any[] = []
+    for (let i = 0; ; i += 1000) {
+      const { data, error } = await supabase.from("mails_registro").select("id, sentido, remitente, destinatarios, asunto, tipo, accion, tipo_manual, regla_id").range(i, i + 999)
+      if (error) throw error
+      todos.push(...(data ?? []))
+      if (!data || data.length < 1000) break
+    }
+    return todos
+  }
+  const calcular = async () => {
+    setTrabajando(true)
+    try {
+      const todos = await leerTodo()
+      setAsuntos(Object.fromEntries(todos.map(m => [m.id, m.asunto ?? "(sin asunto)"])))
+      setCambios(cambiosAlReaplicar(todos, reglas))
+    } catch (e) { toast.error("No se pudo leer el registro: " + (e as Error).message) } finally { setTrabajando(false) }
+  }
+  const aplicar = async () => {
+    if (!cambios?.length) return
+    setTrabajando(true)
+    let fallas = 0
+    for (let i = 0; i < cambios.length; i += 20) {
+      const r = await Promise.all(cambios.slice(i, i + 20).map(c =>
+        supabase.from("mails_registro").update({ regla_id: c.regla_id, tipo: c.tipo, accion: c.accion, updated_at: ahoraISO() }).eq("id", c.id).is("tipo_manual", null)))
+      fallas += r.filter(x => x.error).length
+    }
+    // Control por el camino inverso: recalculado sobre la base, no tiene que quedar nada por cambiar
+    const despues = cambiosAlReaplicar(await leerTodo(), reglas)
+    setTrabajando(false); setCambios(despues)
+    if (fallas || despues.length) toast.error(`Quedaron ${despues.length} sin aplicar${fallas ? ` (${fallas} con error)` : ""}`)
+    else toast.success("Reglas reaplicadas: el registro coincide con las reglas")
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium">Reaplicar a lo ya registrado</span>
+        <Button size="sm" variant="outline" onClick={calcular} disabled={trabajando}>Ver qué cambiaría</Button>
+        {cambios && cambios.length > 0 && <Button size="sm" onClick={aplicar} disabled={trabajando}>Aplicar {cambios.length} cambio{cambios.length > 1 ? "s" : ""}</Button>}
+        {cambios && cambios.length === 0 && <span className="flex items-center gap-1 text-xs text-muted-foreground"><CheckCircle2 className="h-3.5 w-3.5" />El registro coincide con las reglas</span>}
+      </div>
+      <p className="text-xs text-muted-foreground">No toca los mails con el tipo puesto a mano.</p>
+      {cambios && cambios.length > 0 && (
+        <ul className="max-h-60 space-y-0.5 overflow-y-auto text-xs">
+          {cambios.slice(0, 100).map(c => (
+            <li key={c.id}><span className="text-muted-foreground">{c.antes}</span> → <b>{c.tipo ? NOMBRE_TIPO_MAIL[c.tipo] : "sin tipo"}/{c.accion ?? "-"}</b> · {asuntos[c.id]}</li>
+          ))}
+          {cambios.length > 100 && <li className="text-muted-foreground">… y {cambios.length - 100} más</li>}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function ReglasMails() {
   const [reglas, setReglas] = useState<ReglaMail[]>([])
   const [nueva, setNueva] = useState({ remitente_patron: "", asunto_patron: "", tipo: "otro" as TipoMail, accion: "guardar" as AccionMail, orden: "50" })
@@ -245,7 +310,7 @@ function ReglasMails() {
       tipo: nueva.tipo, accion: nueva.accion, orden: parseInt(nueva.orden, 10) || 50, nota: "agregada desde la app",
     })
     if (error) { toast.error("No se pudo guardar: " + error.message); return }
-    toast.success("Regla agregada: vale para los mails que lleguen desde ahora")
+    toast.success("Regla agregada: vale para lo que llegue desde ahora (para lo ya registrado: Reaplicar)")
     setNueva({ remitente_patron: "", asunto_patron: "", tipo: "otro", accion: "guardar", orden: "50" })
     cargar()
   }
@@ -254,7 +319,7 @@ function ReglasMails() {
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
         Gana la primera regla que coincide, por orden (menor primero). Una regla con «asunto contiene» va antes que la general del mismo
-        remitente. Valen para los mails que llegan desde que se guardan; a uno ya registrado se le cambia el tipo a mano en el Registro.
+        remitente. Valen para los mails que llegan desde que se guardan; para pasarlas a lo ya registrado, «Reaplicar» (abajo). A un mail suelto se le cambia el tipo a mano en el Registro.
       </p>
       <div className="flex flex-wrap items-end gap-2 rounded-md border p-3">
         <Input placeholder="De quién viene: x@y.com o @y.com" value={nueva.remitente_patron} onChange={e => setNueva({ ...nueva, remitente_patron: e.target.value })} className="h-8 w-64" />
@@ -268,6 +333,7 @@ function ReglasMails() {
         <Input title="Orden: menor se evalúa primero" value={nueva.orden} onChange={e => setNueva({ ...nueva, orden: e.target.value })} className="h-8 w-16" />
         <Button size="sm" onClick={agregar}>Agregar regla</Button>
       </div>
+      <ReaplicarReglas reglas={reglas} />
       <div className="overflow-x-auto rounded-md border">
         <Table>
           <TableHeader>

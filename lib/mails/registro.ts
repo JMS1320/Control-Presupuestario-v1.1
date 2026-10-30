@@ -164,3 +164,50 @@ export function procesadoDeMail(
   }
   return null
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reaplicar las reglas a lo ya registrado — la MISMA regla que `clasificarMail_` del GAS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const sinTildes = (s: string | null | undefined) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+
+/** Igual que `reglaCoincide_` del GAS: mail exacto o `@dominio` (con subdominios) + opcional «asunto contiene». */
+export function reglaCoincide(regla: Pick<ReglaMail, "remitente_patron" | "asunto_patron" | "activa">, remitente: string | null, asunto: string | null): boolean {
+  if (regla.activa === false) return false
+  const p = regla.remitente_patron.trim().toLowerCase()
+  const r = String(remitente ?? "").trim().toLowerCase().replace(/^.*<([^>]+)>.*$/, "$1")
+  if (!p || !r) return false
+  let ok: boolean
+  if (p.startsWith("@")) {
+    const dom = p.slice(1), domR = r.slice(r.indexOf("@") + 1)
+    ok = domR === dom || domR.endsWith("." + dom)
+  } else ok = r === p
+  if (!ok) return false
+  return regla.asunto_patron ? sinTildes(asunto).includes(sinTildes(regla.asunto_patron)) : true
+}
+
+/** Igual que `clasificarMail_` del GAS (sin el caso del propio reporte, que se registra ya clasificado). */
+export function clasificarConReglas(reglas: ReglaMail[], remitente: string | null, asunto: string | null): { regla_id: string | null; tipo: TipoMail | null; accion: AccionMail | null } {
+  const ord = [...reglas].sort((a, b) => (a.orden - b.orden) || ((b.asunto_patron ? 1 : 0) - (a.asunto_patron ? 1 : 0)))
+  const r = ord.find(x => reglaCoincide(x, remitente, asunto))
+  return r ? { regla_id: r.id, tipo: r.tipo, accion: r.accion } : { regla_id: null, tipo: null, accion: null }
+}
+
+/**
+ * Pura: qué cambiaría si se reaplican las reglas a lo ya registrado. NO toca los corregidos a mano (`tipo_manual`)
+ * ni el propio reporte. Para un enviado se mira el primer destinatario, como en el GAS.
+ */
+export function cambiosAlReaplicar(
+  mails: (Pick<MailRegistrado, "id" | "sentido" | "remitente" | "destinatarios" | "asunto" | "tipo" | "accion" | "tipo_manual"> & { regla_id?: string | null })[],
+  reglas: ReglaMail[],
+): { id: string; regla_id: string | null; tipo: TipoMail | null; accion: AccionMail | null; antes: string }[] {
+  const out: { id: string; regla_id: string | null; tipo: TipoMail | null; accion: AccionMail | null; antes: string }[] = []
+  for (const m of mails) {
+    if (m.tipo_manual) continue
+    if (String(m.asunto ?? "").startsWith("[Registro de mails]")) continue
+    const quien = m.sentido === "enviado" ? String(m.destinatarios ?? "").split(",")[0] : m.remitente
+    const c = clasificarConReglas(reglas, quien, m.asunto)
+    if (c.tipo !== m.tipo || c.accion !== m.accion) out.push({ id: m.id, ...c, antes: `${m.tipo ?? "sin tipo"}/${m.accion ?? "-"}` })
+  }
+  return out
+}
