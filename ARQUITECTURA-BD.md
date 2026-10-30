@@ -332,11 +332,17 @@ son las vaquillonas del año siguiente.
 - **Cajas** son las más simples (no tienen la familia completa: solo `comprobante_arca_id, template_id, template_cuota_id, nro_cuenta`).
 - **`estado`**: `conciliado` · `pendiente` (lo único que toma el motor) · `auditar`. **`msa_galicia` admite además `historico`** (scripts/85, ✅ corrido 2026-10-15): el extracto jul-25 → ene-26 cargado **sin clasificar** — sin `categ`, así que no entra en ningún número; se clasifica de a lotes y pasa a `conciliado`. Lógica en `lib/conciliacion/estado-historico.ts` → [A-DEC-1009](PENDIENTES.md#a-dec-1009).
 
+- ⚠️ **cambió 2026-10-30 (script 143)**: el **default** de `estado` en las 18 tablas de movimiento era `'Pendiente'` (mayúscula) y nada del sistema lo toma; ahora es **`'pendiente'`**. Un movimiento con el estado en mayúscula queda fuera del extracto y de la conciliación sin avisar: el importador o el script que inserte tiene que escribir `pendiente` en minúscula.
+- ✍️ **Trigger `trg_echeq_cobrado_al_conciliar`** en `public.msa_galicia` (script 144, 2026-10-30): al pasar un débito de cheque a `conciliado`, marca su `msa.cheques` `cobrado` con la fecha del débito y completa el número (función `msa.marcar_echeq_cobrado_al_conciliar()`, `security definer`). Cubre todos los caminos que concilian.
+
 ### 4.2 Familia de conciliación (columnas de linkeo)
 En las tablas de movimiento, al conciliar se llenan (según contra qué se concilie):
 `comprobante_arca_id` (factura ARCA) · `template_id` + `template_cuota_id` (template) · `sueldo_pago_id` (sueldo) · `anticipo_id` (anticipo) · `nro_cuenta` (cuenta contable) · `categ`, `detalle`, `contable`, `interno`, `proveedor_nombre`, `comprobantes_pagados`, `estado`.
 - ⚠️ Estas columnas **no son FKs** (son UUIDs sueltos, muchos cross-schema). El motor las llena lógicamente.
 - ⚠️ Las tablas de **tarjeta** recibieron estas columnas recién en 2026-06 (no estaban; ver `RECONSTRUCCION_SUPABASE`). Las **cajas** aún no tienen `sueldo_pago_id/anticipo_id/proveedor_nombre/etc.`
+
+### 4.2b `public.cuadernos.vinculo` — el papel de trabajo atado a un tema (script 141, 2026-10-30)
+`text`, vacío = cuaderno suelto. El recorrido del balance guarda ahí `balance:<EMPRESA>:<año de cierre>:<clave del tema>` (p. ej. `…:cob:…`, `…:conc:<cuenta>:<movimiento>`) para reabrir el mismo papel. Índice parcial `(usuario_id, vinculo) where vinculo is not null`. RLS sin cambios (personal por usuario).
 
 ### 4.3 Estados típicos
 - Facturas ARCA `estado`: `pendiente`, `pagar`, `credito` (pagada con tarjeta), `conciliado`, `anterior`, `cuotas`, `debito`, `externo`.
