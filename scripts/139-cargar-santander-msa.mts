@@ -9,7 +9,7 @@
  * resumen · no es la cuenta 297-000736/0 de MSA · un mes no empalma con el anterior · julio no abre en el saldo de
  * la planilla al 30/06/2025 ($ 7.204,86) · la tabla ya tiene filas.
  * Las filas son las de una cuenta cargada a mano (como Cotitulares): fecha, descripción (con el comprobante),
- * débito, crédito, saldo, orden, estado «Pendiente», moneda ARS. El motor de conciliación no cambia.
+ * débito, crédito, saldo, orden, estado «pendiente» (en minúscula: es lo que busca el motor; ver script 143), moneda ARS. El motor de conciliación no cambia.
  *
  * Deshacer: `139-cargar-santander-msa-deshacer.mts` — borra SÓLO los ids de `139-cargar-santander-msa-ids.json`.
  */
@@ -55,7 +55,7 @@ for (const f of readdirSync(VARIAS).filter(x => x.startsWith("MSA - Santander - 
     filas.push({
       fecha: m.fecha, descripcion: m.lineas.join(" · ") + (m.comprobante ? ` · Comp. ${m.comprobante}` : ""),
       debitos: m.debito, creditos: m.credito, saldo: m.saldo, control: 0, orden: orden++,
-      estado: "Pendiente", moneda: "ARS", cuenta: "santander",
+      estado: "pendiente", moneda: "ARS", cuenta: "santander",
     })
   }
   console.log(`✓ ${f}: ${r.movimientos.length} movs · ${fmt(r.saldoInicial)} → ${fmt(r.saldoFinal)}`)

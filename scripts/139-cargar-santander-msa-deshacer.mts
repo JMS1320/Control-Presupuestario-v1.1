@@ -25,7 +25,7 @@ for (let i = 0; i < ids.length; i += 200) {
   const { data, error } = await tabla().select("*").in("id", ids.slice(i, i + 200))
   if (error) throw error
   n += data?.length ?? 0
-  for (const f of data ?? []) if (VINCULOS.some(k => f[k] !== null && f[k] !== "") || f.estado !== "Pendiente") trabajadas.push(`${f.fecha} «${String(f.descripcion).slice(0, 40)}» (${f.estado})`)
+  for (const f of data ?? []) if (VINCULOS.some(k => f[k] !== null && f[k] !== "") || !["pendiente", "Pendiente"].includes(f.estado)) trabajadas.push(`${f.fecha} «${String(f.descripcion).slice(0, 40)}» (${f.estado})`)
 }
 console.log(`msa.santander: ${n} de ${ids.length} siguen en la base`)
 if (trabajadas.length) { console.log(`🛑 NO SE BORRA NADA — ${trabajadas.length} ya trabajadas:`); trabajadas.slice(0, 20).forEach(t => console.log("   " + t)); process.exit(1) }
