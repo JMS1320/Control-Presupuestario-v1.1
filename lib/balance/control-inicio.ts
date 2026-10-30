@@ -16,6 +16,7 @@
  * diferencia** (uno, o dos que sumados la dan). Avisa, no frena (§ 🚦): decidir es de JMS.
  */
 import type { AsientoLibroDiario } from "./libro-diario"
+import type { InicioYCierre } from "./inicio-y-cierre"
 
 /** Un renglón de la foto con sus versiones. `null` = la versión no está cargada. */
 export type RenglonFoto = { contador?: number | null; jms?: number | null }
@@ -50,6 +51,8 @@ export type EstadoControlInicio = "cierra" | "no cierra" | "sin foto"
 /** Los controles de inicio que viajan al export y a la vista previa. Cada papel suma el suyo. */
 export interface ControlesInicio {
   provision?: ControlProvisionAnterior
+  /** 📋 Cada renglón del balance con su inicio (foto anterior) y su cierre (la app). */
+  inicioYCierre?: InicioYCierre
 }
 
 export interface ControlProvisionAnterior {

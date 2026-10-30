@@ -28,7 +28,7 @@ import { SaldosEjercicioAnterior } from "./saldos-ejercicio-anterior"
 import { ProvisionManual, tablaFacturas } from "./provision-manual"
 import { saldosDelEjercicioAnterior, type AjusteBalance } from "@/lib/balance/ajustes-balance"
 import type { PendienteBalance } from "@/lib/balance/pendientes-balance"
-import { useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -45,7 +45,7 @@ import {
 } from "@/lib/balance/control-cuotas-templates"
 import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { ProponerFotoBalance } from "./proponer-foto-balance"
-import { ivaConSigno, type DatosDeLosPapeles } from "@/lib/balance/balance-propio"
+import { ivaConSigno, RENGLONES, type DatosDeLosPapeles, type ValorPropuesto } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { armarWorkbook, descargarLibroDiario } from "@/lib/balance/export-libro-diario"
 import { VistaPreviaBalance } from "./vista-previa-balance"
@@ -59,7 +59,8 @@ import { traerTodo, lecturaIncompleta, type Lectura } from "@/lib/supabase-pagin
 import type { TipoCuenta } from "@/lib/presupuesto/templates"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
 import type { AsientoLibroDiario } from "@/lib/balance/libro-diario"
-import { leerFotoInicio, controlarProvisionAnterior, type ControlesInicio } from "@/lib/balance/control-inicio"
+import { leerFotoInicio, controlarProvisionAnterior, type ControlesInicio, type FotoInicio } from "@/lib/balance/control-inicio"
+import { armarInicioYCierre } from "@/lib/balance/inicio-y-cierre"
 import {
   armarCuentasAlCierre, canceladoPorCuotasAlCierre, polizasParaCierreDesde,
   type CuentasAlCierre, type ComprobanteConPago, type CanceladoPorCuotas,
@@ -164,6 +165,10 @@ export function PapelesDeBalance() {
   const [lecturas, setLecturas] = useState<Lectura[] | null>(null)
   /** 🔁 A-FEAT-1427: el inicio según el balance anterior contra lo que reconoce la app. */
   const [controlesInicio, setControlesInicio] = useState<ControlesInicio | null>(null)
+  /** 📋 A-FEAT-1427: la foto del cierre anterior (todos los renglones) y el cálculo de cierre de la app. */
+  const [fotoInicio, setFotoInicio] = useState<FotoInicio | null>(null)
+  const [propuestaCierre, setPropuestaCierre] = useState<{ valores: ValorPropuesto[]; faltan: string[] } | null>(null)
+  const recibirPropuesta = useCallback((p: { valores: ValorPropuesto[]; faltan: string[] }) => setPropuestaCierre(p), [])
   /** 👁️ A-FEAT-1427: el libro armado para mirarlo antes de bajarlo. `null` = cerrada. */
   const [previa, setPrevia] = useState<ReturnType<typeof armarWorkbook> | null>(null)
 
@@ -185,7 +190,11 @@ export function PapelesDeBalance() {
     asientosContables ?? undefined,
     lecturas ?? undefined,
     controlCuotas ?? undefined,
-    controlesInicio ?? undefined,
+    {
+      ...(controlesInicio ?? {}),
+      // 📋 Sólo si el cálculo de cierre ya corrió (aparece al armar el libro, en «Pasar a la foto»).
+      ...(propuestaCierre ? { inicioYCierre: armarInicioYCierre(fotoInicio, propuestaCierre.valores, propuestaCierre.faltan) } : {}),
+    },
   ]
 
   const generar = async () => {
@@ -202,6 +211,7 @@ export function PapelesDeBalance() {
     setAsientosContables(null)
     setLecturas(null)
     setControlesInicio(null)
+    setFotoInicio(null)
     const lect: Lectura[] = []
     const anotar = (nombre: string, r: { data: unknown[]; esperadas: number | null }) =>
       lect.push({ nombre, llegaron: r.data.length, esperadas: r.esperadas })
@@ -307,8 +317,9 @@ export function PapelesDeBalance() {
       // 🔁 A-FEAT-1427: lo que el balance anterior dejó provisionado contra lo que la app reconoce (avisa, no frena).
       try {
         const fechaFoto = armarEjercicio(anioCierre - 1, empresa.mesCierre).fechaCierre
-        const { foto, error: eFoto } = await leerFotoInicio(supabase, empresa.id, fechaFoto, ["provision_gastos"])
+        const { foto, error: eFoto } = await leerFotoInicio(supabase, empresa.id, fechaFoto, RENGLONES.map(r => r.id))
         if (eFoto) throw new Error(eFoto)
+        setFotoInicio(foto)
         const provision = controlarProvisionAnterior(foto, armado.provisionesEjercicioAnterior, armado.compras)
         setControlesInicio({ provision })
         if (provision.estado === "no cierra") toast.warning(
@@ -1311,7 +1322,7 @@ export function PapelesDeBalance() {
 
             <ProponerFotoBalance empresa={empresa.id} fechaInicio={primerDiaDelEjercicio(libro.ejercicio)}
               fechaCierre={libro.ejercicio.fechaCierre} datos={datosParaLaFoto}
-              iva={ivaDelLibro} fciMovimientos={fciMovimientos} />
+              iva={ivaDelLibro} fciMovimientos={fciMovimientos} onPropuesta={recibirPropuesta} />
           </div>
         )}
       </CardContent>
