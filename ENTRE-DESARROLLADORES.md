@@ -40,6 +40,11 @@
 
 ## 📨 PARA JAVIER
 
+### ⏸️ Pausa por persona en el middleware + publicación a main (2026-10-30)
+- `middleware.ts` suma un chequeo: si el usuario tiene `app_metadata.pausa = true` (y no es admin), ve sólo `/actualizando` («estamos actualizando, probá más tarde») y la API le da 503. Lógica en `lib/auth/pausa.ts`, con su caso.
+- **Puesta a Ulises** (`usanchezdavid`) con OK de JMS, para publicar `desarrollo` → `main` (857 commits, todos de JMS; tus ramas no viajan) y revisar cómo ve la app con el rol `contable` antes de devolverle el acceso. Tu cuenta `javiergc89+contable` sirve para ver ese rol.
+- Al terminar se le saca la marca; el chequeo queda como herramienta.
+
 ### 🔤 Default de `estado` en 18 tablas de cuentas: «Pendiente» → «pendiente» (2026-10-30) — ⏳ AVISO PREVIO, todavía sin correr
 - `scripts/143-estado-pendiente-minuscula.sql` (+ `-deshacer`), rama `jms/balance`. Las tablas de extracto/caja/USD/Cotitulares tenían `default 'Pendiente'` (mayúscula) y todo el sistema busca `pendiente`: 270 movimientos quedaban fuera del extracto y de la conciliación. Cambia el default y esos 270 valores. **No toca RLS, grants ni columnas.**
 

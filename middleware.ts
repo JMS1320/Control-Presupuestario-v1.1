@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr"
 import { NextResponse, type NextRequest } from "next/server"
 import { COOKIE_RECORDAR, ajustarPersistencia } from "@/lib/auth/cookies-sesion"
 import { COOKIE_ACTIVIDAD, sesionDelToken, sesionVencida } from "@/lib/auth/inactividad"
+import { RUTA_PAUSA, desvioPorPausa } from "@/lib/auth/pausa"
 
 /**
  * MIDDLEWARE DE SESIÓN Y ACCESO
@@ -150,6 +151,23 @@ export async function middleware(request: NextRequest) {
         salida.cookies.delete(COOKIE_ACTIVIDAD)
         return cabecerasDeSeguridad(salida, urlSupabase)
       }
+    }
+  }
+
+  // ⏸️ Persona en pausa mientras se actualiza el sistema (lib/auth/pausa.ts): ve sólo el aviso.
+  if (user) {
+    const desvio = desvioPorPausa(user.app_metadata, pathname)
+    if (desvio === "api-503") {
+      return cabecerasDeSeguridad(
+        NextResponse.json({ error: "Estamos actualizando el sistema. Probá más tarde." }, { status: 503 }),
+        urlSupabase
+      )
+    }
+    if (desvio === "aviso") {
+      const url = request.nextUrl.clone()
+      url.pathname = RUTA_PAUSA
+      url.search = ""
+      return cabecerasDeSeguridad(NextResponse.redirect(url), urlSupabase)
     }
   }
 
