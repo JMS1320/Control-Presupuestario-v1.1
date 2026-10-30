@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Loader2, Plus, Info } from "lucide-react"
 import { toast } from "sonner"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
+import { tcDolarAl } from "@/lib/dolares/tc-cierre"
 import {
   RUBROS, RENGLONES, VERSIONES, resultadosDeVersion, enDolares, gananciaDelEjercicio,
   totalDelRubro, parsearMonto, type Version, type ValorFoto,
@@ -108,15 +109,15 @@ export function BalancePropio() {
   const crearFoto = async () => {
     if (!nuevaFecha) { toast.info("Elegí la fecha de cierre"); return }
     try {
-      const { data: cot } = await supabase.from("cotizaciones").select("valor, fecha")
-        .eq("serie", "dolar_bna_divisas").lte("fecha", nuevaFecha).order("fecha", { ascending: false }).limit(1).maybeSingle()
+      // 💵 A-FEAT-1427: el dólar BNA guarda compra/venta, no `valor` (antes la foto nacía sin TC).
+      const cot = await tcDolarAl(supabase, nuevaFecha)
       const { error } = await supabase.from("balance_fotos").insert({
         empresa, fecha_cierre: nuevaFecha,
-        tc: cot?.valor ?? null,
-        tc_fuente: cot ? `dolar_bna_divisas del ${fmtFecha(cot.fecha)}` : null,
+        tc: cot?.tc ?? null,
+        tc_fuente: cot?.fuente ?? null,
       })
       if (error) throw error
-      toast.success(cot ? `Foto creada. TC ${fmt(Number(cot.valor))} (BNA divisas del ${fmtFecha(cot.fecha)})` : "Foto creada, sin TC: cargalo a mano")
+      toast.success(cot ? `Foto creada. TC ${fmt(cot.tc)} (${cot.fuente})` : "Foto creada, sin TC: cargalo a mano")
       setNuevaFecha("")
       setFotoId(null)
       await cargar()

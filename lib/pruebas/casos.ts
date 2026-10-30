@@ -190,6 +190,7 @@ import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
 import { pesosAlCierre, pesoParaValuar } from "@/lib/balance/pesos-hacienda"
 import { armarStockInsumos, existenciaAlCierre, PAPELES_SIN_ORIGEN, type LineaInsumo } from "@/lib/balance/stock-insumos"
+import { elegirTcAl } from "@/lib/dolares/tc-cierre"
 import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
 } from "@/lib/balance/granos-sementeras"
@@ -5090,6 +5091,29 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · insumos", "🧮 Existencia de hoy distinta de la suma de movimientos → alerta, no se adivina",
       "Brucelosis: hoy 0, movimientos 87", ex.descuadres.map(d => `${d.producto}: hoy ${d.hoy}, movimientos ${d.sumaMovimientos}`).join(" · "),
       ex.descuadres.length === 1 && ex.descuadres[0].producto === "Brucelosis" && ex.descuadres[0].sumaMovimientos === 87, "A-FEAT-1427")
+  }
+
+  /**
+   * 💵 **EL DÓLAR AL CIERRE — A-FEAT-1427.** La serie BNA guarda compra/venta y nunca `valor`: leerla por `valor`
+   * dejaba sin TC el papel 07 y las fotos del balance. Datos reales del 30/06/2026: compra 1.473, venta 1.482.
+   */
+  {
+    const filas = [
+      { fecha: "2026-07-01", valor: null, compra: 1490, venta: 1499 },   // después del cierre: no va
+      { fecha: "2026-06-30", valor: null, compra: 1473, venta: 1482 },
+      { fecha: "2026-06-29", valor: null, compra: 1470, venta: 1479 },
+    ]
+    const t = elegirTcAl(filas, "2026-06-30")
+    chequear("Balance · dólares", "💵 Sin `valor`, el TC al cierre es el COMPRADOR del día del cierre (no el del día siguiente)",
+      "1473 · dólar BNA divisas comprador del 30/06/2026", `${t?.tc} · ${t?.fuente}`,
+      t?.tc === 1473 && t.fuente === "dólar BNA divisas comprador del 30/06/2026", "A-FEAT-1427")
+    const finde = elegirTcAl([filas[2]], "2026-06-30")
+    chequear("Balance · dólares", "💵 Si el cierre no publicó, se toma el anterior más cercano; si hay `valor`, manda `valor`",
+      "1470 · 1500", `${finde?.tc} · ${elegirTcAl([{ fecha: "2026-06-30", valor: 1500, compra: 1473 }], "2026-06-30")?.tc}`,
+      finde?.tc === 1470 && elegirTcAl([{ fecha: "2026-06-30", valor: 1500, compra: 1473 }], "2026-06-30")?.tc === 1500, "A-FEAT-1427")
+    chequear("Balance · dólares", "💵 Sin ninguna cotización con número: null (el saldo queda vacío y avisa, nunca un cero)",
+      "null", String(elegirTcAl([{ fecha: "2026-06-30", valor: null, compra: null }], "2026-06-30")),
+      elegirTcAl([{ fecha: "2026-06-30", valor: null, compra: null }], "2026-06-30") === null, "A-FEAT-1427")
   }
 
   /**

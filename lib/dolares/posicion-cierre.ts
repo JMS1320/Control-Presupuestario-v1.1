@@ -14,6 +14,7 @@
  * desde ahí sale en el 07 de 25/26; sin los movimientos del año, el saldo al cierre es el de inicio.
  */
 import { CUENTAS_DOLARES_Y_COTITULARES, importeConSigno, pesosDe, type MovimientoMoneda } from "@/lib/dolares/cuentas"
+import { tcDolarAl } from "@/lib/dolares/tc-cierre"
 
 const r2 = (n: number) => Math.round(n * 100) / 100
 
@@ -55,8 +56,8 @@ export function posicionAlCierre(movs: MovimientoMoneda[], fechaCierre: string, 
 /**
  * 📒 Lo que va al papel **07 Bancos** del balance: una línea por cuenta en dólares de la empresa, con su saldo en
  * PESOS al TC de cierre (dólar BNA divisas del día del cierre o el anterior más cercano, el mismo que usa la foto
- * del balance). **Una cuenta sin movimientos hasta el cierre no aparece**: así el ejercicio 25/26 sale igual que
- * antes. Lo que no se puede valuar (sin TC de cierre) va con saldo vacío y un aviso — nunca un cero inventado.
+ * del balance). ⚠️ cambió 30/10: **una cuenta sin movimientos hasta el cierre sale igual, vacía y marcada** (antes
+ * no aparecía). Lo que no se puede valuar (sin TC de cierre) va con saldo vacío y un aviso — nunca un cero inventado.
  */
 export async function saldosEnDolaresParaBalance(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -66,20 +67,26 @@ export async function saldosEnDolaresParaBalance(
   const saldos: { nombre: string; saldo: number | null; fecha: string | null }[] = []
   const avisos: string[] = []
   if (cuentas.length === 0) return { saldos, avisos }
-  const { data: cot } = await supabase.from("cotizaciones").select("valor, fecha")
-    .eq("serie", "dolar_bna_divisas").lte("fecha", finDelEjercicio).order("fecha", { ascending: false }).limit(1).maybeSingle()
-  const tc = cot?.valor != null ? Number(cot.valor) : null
+  // 💵 A-FEAT-1427: la serie guarda compra/venta, no `valor` — leerla por `valor` daba siempre vacío.
+  const cot = await tcDolarAl(supabase, finDelEjercicio)
+  const tc = cot?.tc ?? null
   for (const c of cuentas) {
     const q = c.schema_bd === "public" ? supabase.from(c.tabla_bd) : supabase.schema(c.schema_bd).from(c.tabla_bd)
     const { data, error } = await q.select("fecha, debitos, creditos, moneda, tipo_cambio, importe_pesos")
       .lte("fecha", finDelEjercicio).limit(10000)
     if (error) { avisos.push(`No se pudo leer ${c.nombre}`); saldos.push({ nombre: c.nombre, saldo: null, fecha: null }); continue }
     const movs = (data ?? []) as MovimientoMoneda[]
-    if (movs.length === 0) continue
+    // ⚠️ cambió 30/10 (A-FEAT-1427, JMS: «de lo que no hay, salta la alerta de que falta»): hasta acá una cuenta sin
+    // movimientos NO aparecía, y el papel parecía completo. Ahora sale con el saldo vacío y el aviso.
+    if (movs.length === 0) {
+      saldos.push({ nombre: `${c.nombre} — ⚠️ SIN MOVIMIENTOS CARGADOS (falta el dato)`, saldo: null, fecha: null })
+      avisos.push(`${c.nombre}: no tiene ningún movimiento cargado hasta el cierre`)
+      continue
+    }
     const p = posicionAlCierre(movs, finDelEjercicio, tc)
     const dif = p.diferenciaDeCambio != null ? ` · dif. de cambio $ ${p.diferenciaDeCambio.toLocaleString("es-AR", { minimumFractionDigits: 2 })}` : ""
     saldos.push({
-      nombre: `${c.nombre} — US$ ${p.usd.toLocaleString("es-AR", { minimumFractionDigits: 2 })}${tc ? ` × TC ${tc.toLocaleString("es-AR")} (BNA ${cot.fecha})` : ""}${dif}`,
+      nombre: `${c.nombre} — US$ ${p.usd.toLocaleString("es-AR", { minimumFractionDigits: 2 })}${tc && cot ? ` × TC ${tc.toLocaleString("es-AR")} (${cot.fuente})` : ""}${dif}`,
       saldo: p.pesosAlCierre, fecha: finDelEjercicio,
     })
     if (tc == null) avisos.push(`${c.nombre}: no hay dólar BNA a la fecha de cierre, el saldo en pesos va vacío`)
