@@ -9907,6 +9907,22 @@ export function correrCasos(): Resultado[] {
         vL === "https://mail.google.com/mail/u/?authuser=sanmanuel.sp%40gmail.com#all/1a16045a7b9ffafb", "A-FEAT-1425")
     }
 
+    // 🏦 A-FEAT-1424: CUENTA CORRIENTE Galicia (PAM, enero 2025, disposición real): el saldo deudor viene «43.019,88-».
+    // Con el lector viejo esos saldos no se leían y la cadena se rompía en 3 movimientos.
+    const cc = leerResumenCajaAhorro([[
+      T("CUIT del Responsable Impositivo : 20-04439022-2", 275, 700), T("$0,00", 550, 640), T("N° 0000862-2 360-7", 60, 620),
+      T("27/12/2024", 237, 600), T("31/01/2025", 336, 600), T("$417,00", 550, 600),
+      T("Fecha", 38, 500), T("Descripción", 82, 500), T("Origen", 224, 500), T("Crédito", 308, 500), T("Débito", 425, 500), T("Saldo", 542, 500),
+      T("07/01/25", 38, 480), T("COMPRA DEBITO", 82, 480), T("0721", 224, 480), T("-43.019,88", 423, 480), T("43.019,88-", 534, 480),
+      T("07/01/25", 38, 460), T("IMP. DEB. LEY 25413 GRAL.", 82, 460), T("-363,12", 436, 460), T("43.383,00-", 533, 460),
+      T("14/01/25", 38, 440), T("TRANSF. CTAS PROPIAS", 82, 440), T("43.800,00", 314, 440), T("417,00", 551, 440),
+      T("Total", 57, 420), T("$ 43.800,00", 303, 420), T("-$ 43.383,00", 413, 420), T("$ 417,00", 545, 420),
+    ]])
+    const ctlCc = controlarResumen(cc)
+    const vCc = `${cc.movimientos.map(m => m.saldo).join(" / ")} · ${ctlCc.ok ? "cierra" : "no cierra"}`
+    chequear("Resumen PDF", "🏦 Cuenta corriente: el saldo en descubierto «43.019,88-» se lee negativo y el control cierra",
+      "-43019.88 / -43383 / 417 · cierra", vCc, vCc === "-43019.88 / -43383 / 417 · cierra", "A-FEAT-1424")
+
     // 🏦 A-FEAT-1424: resumen PDF de cuenta corriente SANTANDER (disposición real de MSA agosto 2025, recortada).
     // El crédito grande arranca a la IZQUIERDA del medio Débito/Crédito: la columna diría débito, el saldo dice crédito.
     const santa = (importePago = "$ 389.920,00") => leerResumenSantander([[

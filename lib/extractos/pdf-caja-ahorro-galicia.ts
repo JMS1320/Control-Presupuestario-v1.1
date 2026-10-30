@@ -58,11 +58,12 @@ export interface ResumenPdfCA {
 }
 
 // 💵 A-FEAT-1424: la caja de ahorro en DÓLARES imprime «USD 1.000,00» / «-USD 140.000,00» donde la de pesos pone «$».
-const RE_IMPORTE = /^-?\s*(?:\$|USD)?\s*-?\d{1,3}(?:\.\d{3})*,\d{2}$/
+// 🏦 A-FEAT-1424: en la CUENTA CORRIENTE un saldo deudor (descubierto) viene con el menos AL FINAL: «43.019,88-».
+const RE_IMPORTE = /^-?\s*(?:\$|USD)?\s*-?\d{1,3}(?:\.\d{3})*,\d{2}-?$/
 const RE_FECHA_CORTA = /^(\d{2})\/(\d{2})\/(\d{2})$/
 const RE_FECHA_LARGA = /^(\d{2})\/(\d{2})\/(\d{4})$/
 
-/** `-$ 5.366.252,36` → -5366252.36 · `-USD 140.000,00` → -140000 */
+/** `-$ 5.366.252,36` → -5366252.36 · `-USD 140.000,00` → -140000 · `43.019,88-` → -43019.88 */
 export function importeDelPdf(s: string): number {
   const t = s.replace(/\s/g, "").replace(/USD/gi, "")
   const negativo = t.includes("-")
