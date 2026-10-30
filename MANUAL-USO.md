@@ -47,6 +47,7 @@
 - [💳 Extracto → Tarjeta de crédito: conciliar por resumen *(2026-10-03)*](#extracto-tarjeta-de-crédito-conciliar-por-resumen-2026-10-03)
 - [💸 Sueldos → pagar un sueldo REPARTIDO *(2026-09-30)*](#sueldos-pagar-un-sueldo-repartido-2026-09-30)
 - [🔧 Egresos → Facturas → Asignación de cuentas *(2026-09-30)*](#egresos-facturas-asignación-de-cuentas-2026-09-30)
+- [👁️ Papeles de balance → vista previa antes de bajar el Excel *(2026-10-30)*](#papeles-de-balance-vista-previa-antes-de-bajar-el-excel-2026-10-30)
 - [🗂️ Papeles de balance → templates por tipo y «¿llegó todo?» *(2026-10-24)*](#papeles-de-balance-templates-por-tipo-y-llegó-todo-2026-10-24)
 - [🗄️ Papeles de balance → lo que cargás queda guardado *(2026-10-24)*](#papeles-de-balance-lo-que-cargás-queda-guardado-2026-10-24)
 - [📒 Papeles de balance → cómo leer Templates y el impuesto al cheque *(2026-10-27)*](#papeles-de-balance-cómo-leer-templates-y-el-impuesto-al-cheque-2026-10-27)
@@ -3546,6 +3547,28 @@ con el dólar BNA importado a esa fecha.
   **«Actualizar la versión Sistema de la foto»**.
 
 ⚠️ Sin probar todavía → A-TEST-1182
+
+## 👁️ Papeles de balance → vista previa antes de bajar el Excel *(2026-10-30)*
+
+En **Reportes → Papeles de balance**, después de «Armar el libro» (y de «Traer stock y precios» si querés hacienda e
+insumos), el botón **«👁️ Vista previa»** muestra en la pantalla **el mismo Excel que bajarías**, una pestaña por solapa.
+
+- **Arriba, en rojo**, las solapas que marcan algo para revisar (un ⚠️, un «NO CIERRA», un precio que falta, una
+  pregunta abierta), con cuántas filas. Tocá una y se abre mostrando sólo esas filas; destildá «sólo las filas con
+  alerta» para verla entera.
+- Las **preguntas** siguen en «Pendientes a revisar», debajo: ahí se contestan con una nota.
+- Lo que muestra la vista previa y lo que baja el Excel salen del mismo cálculo: si algo se ve mal acá, está mal allá.
+
+**Controles que se ven solos** (no hace falta abrir el Excel):
+- **Provisión del ejercicio anterior**: compara lo que el balance anterior dejó provisionado (la foto del Balance
+  propio al cierre anterior) con lo que la app reconoce; si no cierra, propone qué comprobantes de este ejercicio
+  lo explican — si son ésos, su gasto se estaría contando dos veces.
+- **Stock de insumos al cierre**: la existencia de cada producto es la de sus compras, usos y ajustes **hasta el
+  cierre**, no la de hoy. Si la existencia de hoy no es la suma de sus movimientos, el producto sale en rojo.
+- **Cuentas en dólares**: entran al papel 07 en pesos al dólar BNA comprador del cierre; una cuenta en dólares sin
+  movimientos aparece igual, marcada «sin movimientos cargados».
+
+⚠️ Sin probar todavía → A-TEST-1288
 
 ## 🗂️ Papeles de balance → templates por tipo y «¿llegó todo?» *(2026-10-24)*
 

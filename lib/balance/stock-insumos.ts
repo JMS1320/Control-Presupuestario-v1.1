@@ -33,6 +33,76 @@ export interface LineaInsumo {
   /** `null` o 0 = falta el precio. */
   costoUnitario: number | null
   observaciones: string
+  /**
+   * La existencia de HOY (la de `stock_insumos`) cuando `cantidad` es la reconstruida a una fecha
+   * con `existenciaAlCierre`. Ausente = `cantidad` es la de hoy.
+   */
+  cantidadHoy?: number
+}
+
+/** Un movimiento de `productivo.movimientos_insumos`, lo mínimo para reconstruir la existencia. */
+export interface MovimientoInsumo {
+  insumoId: string
+  fecha: string
+  tipo: string
+  cantidad: number
+}
+
+/** Cómo mueve la existencia cada tipo: la compra suma, el uso resta, el ajuste va con su signo. */
+export function efectoMovimiento(m: Pick<MovimientoInsumo, "tipo" | "cantidad">): number {
+  const c = Number(m.cantidad) || 0
+  const t = String(m.tipo ?? "").toLowerCase()
+  if (t === "compra") return Math.abs(c)
+  if (t === "uso") return -Math.abs(c)
+  return c
+}
+
+/** Un producto cuya existencia de hoy no es la suma de sus movimientos: el dato está roto, no se adivina. */
+export interface DescuadreInsumo {
+  producto: string
+  unidad: string
+  hoy: number
+  sumaMovimientos: number
+}
+
+export interface ExistenciaAlCierre {
+  lineas: LineaInsumo[]
+  /** Movimientos posteriores al cierre que se descontaron para llegar a la existencia al cierre. */
+  posteriores: number
+  descuadres: DescuadreInsumo[]
+}
+
+/**
+ * 📅 **LA EXISTENCIA AL CIERRE, no la de hoy** — A-FEAT-1427 (JMS 30/10: «tenés siempre el stock previo y
+ * el actual de cada cosa, y de lo que no hay salta la alerta»).
+ *
+ * Hasta acá el papel valuaba `stock_insumos.cantidad`, que es la existencia **del día en que se baja el
+ * Excel**: con compras y usos de julio a octubre de 2026 cargados, el stock «al 30/06/2026» cambiaba cada
+ * semana. La existencia es la suma de sus movimientos (medido 30/10: 114 de 115 productos cuadran), así que
+ * la del cierre es **la suma de los movimientos hasta esa fecha**.
+ *
+ * 🧮 **El control, por el camino inverso**: existencia de hoy − suma de TODOS sus movimientos = 0. El
+ * producto que no cumple sale en `descuadres` —su existencia se cargó o se tocó por fuera de los
+ * movimientos— y para él se usa igual la reconstruida, avisando: la de hoy no es «al cierre» en ningún caso.
+ */
+export function existenciaAlCierre(lineas: LineaInsumo[], movimientos: MovimientoInsumo[], fechaCierre: string): ExistenciaAlCierre {
+  const r = (x: number) => Math.round(x * 1e6) / 1e6
+  const total = new Map<string, number>()
+  const alCierre = new Map<string, number>()
+  let posteriores = 0
+  for (const m of movimientos) {
+    const e = efectoMovimiento(m)
+    total.set(m.insumoId, (total.get(m.insumoId) ?? 0) + e)
+    if (String(m.fecha).slice(0, 10) <= fechaCierre) alCierre.set(m.insumoId, (alCierre.get(m.insumoId) ?? 0) + e)
+    else posteriores++
+  }
+  const descuadres: DescuadreInsumo[] = []
+  const nuevas = lineas.map(l => {
+    const suma = r(total.get(l.id) ?? 0)
+    if (Math.abs(suma - l.cantidad) > 0.0005) descuadres.push({ producto: l.producto, unidad: l.unidad, hoy: l.cantidad, sumaMovimientos: suma })
+    return { ...l, cantidadHoy: l.cantidad, cantidad: r(alCierre.get(l.id) ?? 0) }
+  })
+  return { lineas: nuevas, posteriores, descuadres }
 }
 
 export interface FilaInsumoValuada extends LineaInsumo {
@@ -55,6 +125,8 @@ export interface StockInsumos {
   valuado: number
   /** Productos con stock y sin precio: el trabajo que falta. */
   huecos: FilaInsumoValuada[]
+  /** 📅 Si la existencia es la reconstruida al cierre: a qué fecha, y su control. Ausente = es la de hoy. */
+  alCierre?: { fecha: string; posteriores: number; descuadres: DescuadreInsumo[] }
 }
 
 /** Cómo llama el usuario a cada ámbito en sus papeles. */
@@ -173,6 +245,7 @@ export const PAPELES_SIN_ORIGEN = [
   },
   {
     papel: "6 - Gas oil",
-    falta: "La categoría de insumo «Combustible» existe pero no tiene ningún producto con stock cargado.",
+    falta: "El producto «Gas oil» existe (29/10) pero no tiene compras ni usos cargados: su existencia al cierre sale 0. " +
+      "El stock declarado al inicio (2.700 L) está en «Stock al inicio».",
   },
 ]

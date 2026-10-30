@@ -38,7 +38,7 @@ import {
   type ExistenciaHacienda,
 } from "@/lib/balance/hacienda-stock"
 import {
-  armarStockInsumos, desdeStockInsumo, PAPELES_SIN_ORIGEN, type StockInsumos,
+  armarStockInsumos, desdeStockInsumo, existenciaAlCierre, PAPELES_SIN_ORIGEN, type StockInsumos,
 } from "@/lib/balance/stock-insumos"
 import {
   cuadrarGranos, valuarGranos, armarSementeras,
@@ -219,6 +219,14 @@ export function HaciendaAlCierre({
         .from("stock_insumos")
         .select("*, categoria:categorias_insumo(nombre, ambito, unidad_medida)")
       if (errIns) throw new Error(errIns.message)
+      // 📅 A-FEAT-1427: los movimientos, para valuar la existencia AL CIERRE y no la de hoy.
+      const { data: movIns, error: errMovIns } = await traerTodo((d, h) => supabase
+        .schema("productivo").from("movimientos_insumos")
+        .select("id, insumo_stock_id, fecha, tipo, cantidad").order("id").range(d, h))
+      if (errMovIns) throw new Error(errMovIns.message)
+      const existencia = existenciaAlCierre((ins ?? []).map(desdeStockInsumo),
+        (movIns ?? []).map((m: any) => ({ insumoId: String(m.insumo_stock_id), fecha: String(m.fecha), tipo: String(m.tipo), cantidad: Number(m.cantidad) })),
+        ejercicio.fechaCierre)
       // 📦 A-FEAT-1420: el stock DECLARADO al inicio (no es la existencia de la app) y las pasturas.
       const si = await leerStockInicio(supabase, empresa, diaAnterior(primerDiaDelEjercicio(ejercicio)))
       si.avisos.forEach(a => toast.warning(a))
@@ -330,7 +338,10 @@ export function HaciendaAlCierre({
         pesos,
         mesPrecios: etiqueta,
         fuentesPrecios, pizarraSoja: pizSoja,
-        insumos: armarStockInsumos((ins ?? []).map(desdeStockInsumo), numericos),
+        insumos: {
+          ...armarStockInsumos(existencia.lineas, numericos),
+          alCierre: { fecha: ejercicio.fechaCierre, posteriores: existencia.posteriores, descuadres: existencia.descuadres },
+        },
         ventasGranosTn, sementeras,
         campo: {
           granos: {
@@ -524,6 +535,26 @@ export function HaciendaAlCierre({
                   <span className="text-amber-700"> · <strong>{datos.insumos.huecos.length}</strong> sin precio</span>
                 )}
               </div>
+
+              {datos.insumos.alCierre && (
+                <div className="text-xs text-muted-foreground" data-test="insumos-al-cierre">
+                  📅 Existencia al <strong>{datos.insumos.alCierre.fecha.split("-").reverse().join("/")}</strong>, armada con los
+                  movimientos hasta esa fecha{datos.insumos.alCierre.posteriores > 0
+                    ? ` (se descontaron ${datos.insumos.alCierre.posteriores} movimiento(s) posteriores)` : ""}.
+                  {datos.insumos.alCierre.descuadres.length === 0 && <span className="text-green-700"> ✓ Cada producto: existencia de hoy = suma de sus movimientos.</span>}
+                </div>
+              )}
+              {datos.insumos.alCierre && datos.insumos.alCierre.descuadres.length > 0 && (
+                <div className="text-xs text-red-900 bg-red-50 border border-red-300 rounded px-2 py-1.5" data-test="insumos-descuadres">
+                  <strong>⚠️ {datos.insumos.alCierre.descuadres.length} producto(s) con una existencia de hoy que no es la suma de sus movimientos</strong>
+                  {" "}— se cargó o se tocó por fuera de compras y usos. Al cierre se toma la de los movimientos:
+                  <ul className="list-disc pl-5">
+                    {datos.insumos.alCierre.descuadres.map(d => (
+                      <li key={d.producto}>{d.producto}: hoy {fmt(d.hoy)} {d.unidad} · movimientos {fmt(d.sumaMovimientos)} {d.unidad}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {datos.insumos.grupos.map(g => (
                 <div key={g.ambito} className="text-xs">

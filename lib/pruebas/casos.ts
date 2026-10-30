@@ -189,7 +189,10 @@ import { repartoDeLaFlota } from "@/lib/balance/reparto-flota"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
 import { pesosAlCierre, pesoParaValuar } from "@/lib/balance/pesos-hacienda"
-import { armarStockInsumos, PAPELES_SIN_ORIGEN, type LineaInsumo } from "@/lib/balance/stock-insumos"
+import { armarStockInsumos, existenciaAlCierre, PAPELES_SIN_ORIGEN, type LineaInsumo } from "@/lib/balance/stock-insumos"
+import { elegirTcAl } from "@/lib/dolares/tc-cierre"
+import { controlarProvisionAnterior } from "@/lib/balance/control-inicio"
+import { esFilaDeAlerta, solapasDelLibro } from "@/lib/balance/vista-previa"
 import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
 } from "@/lib/balance/granos-sementeras"
@@ -5070,6 +5073,101 @@ export function correrCasos(): Resultado[] {
       "500", String(varios.grupos.reduce((s, g) => s + g.valuado, 0)),
       varios.grupos.reduce((s, g) => s + g.valuado, 0) === varios.valuado && varios.valuado === 500,
       "A-FEAT-1184")
+
+    // 📅 A-FEAT-1427: la existencia es la del CIERRE (movimientos hasta esa fecha), no la de hoy.
+    // Glifosato: compra 100 el 01/03, uso 30 el 10/05, compra 50 el 15/08 (después del cierre) → hoy 120, al cierre 70.
+    const movs = [
+      { insumoId: "h", fecha: "2026-03-01", tipo: "compra", cantidad: 100 },
+      { insumoId: "h", fecha: "2026-05-10", tipo: "uso", cantidad: 30 },
+      { insumoId: "h", fecha: "2026-08-15", tipo: "compra", cantidad: 50 },
+      // Brucelosis (caso real 30/10): hoy 0 pero sus movimientos suman 87 → descuadre
+      { insumoId: "i", fecha: "2026-02-17", tipo: "ajuste", cantidad: 87 },
+    ]
+    const ex = existenciaAlCierre([
+      linea({ id: "h", cantidad: 120 }),
+      linea({ id: "i", producto: "Brucelosis", cantidad: 0 }),
+    ], movs, "2026-06-30")
+    const glifo = ex.lineas.find(l => l.id === "h")!
+    chequear("Balance · insumos", "📅 Existencia al cierre = movimientos hasta el 30/06 (no la de hoy)",
+      "70 al cierre, 120 hoy, 1 posterior", `${glifo.cantidad} al cierre, ${glifo.cantidadHoy} hoy, ${ex.posteriores} posterior`,
+      glifo.cantidad === 70 && glifo.cantidadHoy === 120 && ex.posteriores === 1, "A-FEAT-1427")
+    chequear("Balance · insumos", "🧮 Existencia de hoy distinta de la suma de movimientos → alerta, no se adivina",
+      "Brucelosis: hoy 0, movimientos 87", ex.descuadres.map(d => `${d.producto}: hoy ${d.hoy}, movimientos ${d.sumaMovimientos}`).join(" · "),
+      ex.descuadres.length === 1 && ex.descuadres[0].producto === "Brucelosis" && ex.descuadres[0].sumaMovimientos === 87, "A-FEAT-1427")
+  }
+
+  /**
+   * 💵 **EL DÓLAR AL CIERRE — A-FEAT-1427.** La serie BNA guarda compra/venta y nunca `valor`: leerla por `valor`
+   * dejaba sin TC el papel 07 y las fotos del balance. Datos reales del 30/06/2026: compra 1.473, venta 1.482.
+   */
+  {
+    const filas = [
+      { fecha: "2026-07-01", valor: null, compra: 1490, venta: 1499 },   // después del cierre: no va
+      { fecha: "2026-06-30", valor: null, compra: 1473, venta: 1482 },
+      { fecha: "2026-06-29", valor: null, compra: 1470, venta: 1479 },
+    ]
+    const t = elegirTcAl(filas, "2026-06-30")
+    chequear("Balance · dólares", "💵 Sin `valor`, el TC al cierre es el COMPRADOR del día del cierre (no el del día siguiente)",
+      "1473 · dólar BNA divisas comprador del 30/06/2026", `${t?.tc} · ${t?.fuente}`,
+      t?.tc === 1473 && t.fuente === "dólar BNA divisas comprador del 30/06/2026", "A-FEAT-1427")
+    const finde = elegirTcAl([filas[2]], "2026-06-30")
+    chequear("Balance · dólares", "💵 Si el cierre no publicó, se toma el anterior más cercano; si hay `valor`, manda `valor`",
+      "1470 · 1500", `${finde?.tc} · ${elegirTcAl([{ fecha: "2026-06-30", valor: 1500, compra: 1473 }], "2026-06-30")?.tc}`,
+      finde?.tc === 1470 && elegirTcAl([{ fecha: "2026-06-30", valor: 1500, compra: 1473 }], "2026-06-30")?.tc === 1500, "A-FEAT-1427")
+    chequear("Balance · dólares", "💵 Sin ninguna cotización con número: null (el saldo queda vacío y avisa, nunca un cero)",
+      "null", String(elegirTcAl([{ fecha: "2026-06-30", valor: null, compra: null }], "2026-06-30")),
+      elegirTcAl([{ fecha: "2026-06-30", valor: null, compra: null }], "2026-06-30") === null, "A-FEAT-1427")
+  }
+
+  /**
+   * 🔁 **LA PROVISIÓN DEL BALANCE ANTERIOR CONTRA LA APP — A-FEAT-1427.** Caso real: el contador provisionó
+   * $ 12.456.000,14 al 30/06/2025 (PAM 2-31 y Magdalena 10-269, $ 6.228.000,07 cada una), que llegaron en ago y oct
+   * 2025 y la regla de fecha no ve → la app reconoce $ 0 y esas dos facturas quedan en el gasto 25/26.
+   */
+  {
+    const comp = (over: Partial<AsientoLibroDiario>): AsientoLibroDiario => ({
+      id: Math.random().toString(36).slice(2), fuente: "historico", subdiario: "2025-08",
+      fecha: "2025-08-19", tipo: 11, punto_venta: 2, numero: 31, cuit: "20044390222",
+      denominacion: "SUCESION DE MARTINEZ PLACIDO ALBERTO", neto_gravado: 0, no_gravado: 0, exento: 0,
+      otros_tributos: 0, iva: 0, total: 6228000.07, cuenta_contable: "", nro_cuenta: "", centro_costo: "", ...over,
+    })
+    const pam = comp({})
+    const magda = comp({ subdiario: "2025-10", fecha: "2025-10-17", tipo: 1, punto_venta: 10, numero: 269, denominacion: "MARTINEZ MARIA MAGDALENA" })
+    const otras = [comp({ numero: 99, denominacion: "OTRO", total: 6228000.07 * 3 }), comp({ numero: 98, denominacion: "CHICA", total: 1000 })]
+    const foto = { provision_gastos: { contador: 12456000.14 } }
+    const noCierra = controlarProvisionAnterior(foto, [], [...otras, pam, magda])
+    chequear("Balance · provisión anterior", "🔁 La provisión del balance anterior no reconocida → alerta y propone las 2 facturas que la explican",
+      "no cierra · diferencia 12456000.14 · PAM 2-31 + MAGDALENA 10-269",
+      `${noCierra.estado} · diferencia ${noCierra.diferencia} · ${noCierra.candidatos.map(a => `${a.denominacion.split(" ").pop()} ${a.punto_venta}-${a.numero}`).join(" + ")}`,
+      noCierra.estado === "no cierra" && noCierra.diferencia === 12456000.14 && noCierra.candidatos.length === 2
+        && noCierra.candidatos.some(a => a.numero === 31) && noCierra.candidatos.some(a => a.numero === 269), "A-FEAT-1427")
+    const cierra = controlarProvisionAnterior(foto, [pam, magda], otras)
+    const sinFoto = controlarProvisionAnterior(null, [], [pam])
+    chequear("Balance · provisión anterior", "🔁 Con las dos marcadas como provisión anterior cierra; sin foto del balance anterior lo dice (no inventa un cero)",
+      "cierra · sin foto", `${cierra.estado} · ${sinFoto.estado}`,
+      cierra.estado === "cierra" && cierra.candidatos.length === 0 && sinFoto.estado === "sin foto" && sinFoto.declarado === null, "A-FEAT-1427")
+  }
+
+  /**
+   * 👁️ **VISTA PREVIA — A-FEAT-1427.** Muestra el mismo WorkBook que se baja; lo único propio es reconocer las filas
+   * que los papeles ya marcaron como problema. Un control que cerró (✓) no es alerta; un «⚠️ NO CIERRA» sí.
+   */
+  {
+    const wb = XLSXcasos.utils.book_new()
+    XLSXcasos.utils.book_append_sheet(wb, XLSXcasos.utils.aoa_to_sheet([
+      ["STOCK DE INSUMOS al 2026-06-30"],
+      ["CONTROL ✓ cada producto: existencia de hoy = suma de sus movimientos"],
+      ["Agroquímico", "Glifosato", 70, "L", 4, 280],
+      ["Agroquímico", "Atrazina", 10, "L", "FALTA EL PRECIO", "FALTA EL PRECIO"],
+    ]), "Stock insumos")
+    XLSXcasos.utils.book_append_sheet(wb, XLSXcasos.utils.aoa_to_sheet([
+      ["Diferencia", "12.456.000,14", "⚠️ NO CIERRA: lo provisionado el año pasado no está reconocido"],
+      ["Diferencia", "0,00", "✓ cierra"],
+    ]), "05 Provision")
+    const sol = solapasDelLibro(wb)
+    chequear("Balance · vista previa", "👁️ Cada solapa con sus alertas: «FALTA EL PRECIO» y «⚠️ NO CIERRA» cuentan; un control ✓ no",
+      "Stock insumos 1 · 05 Provision 1", sol.map(x => `${x.nombre} ${x.alertas}`).join(" · "),
+      sol.length === 2 && sol[0].alertas === 1 && sol[1].alertas === 1 && !esFilaDeAlerta(["CONTROL ✓ cada producto"]), "A-FEAT-1427")
   }
 
   /**

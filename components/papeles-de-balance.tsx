@@ -47,7 +47,8 @@ import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { ProponerFotoBalance } from "./proponer-foto-balance"
 import { ivaConSigno, type DatosDeLosPapeles } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
-import { descargarLibroDiario } from "@/lib/balance/export-libro-diario"
+import { armarWorkbook, descargarLibroDiario } from "@/lib/balance/export-libro-diario"
+import { VistaPreviaBalance } from "./vista-previa-balance"
 import { descargarLibroDiarioConsensuado } from "@/lib/balance/libro-diario-consensuado"
 import { leerCobrosYRetenciones } from "@/lib/balance/cobros-de-ventas"
 import { descargarDiferenciasVsArca } from "@/lib/balance/diferencias-vs-arca"
@@ -58,6 +59,7 @@ import { traerTodo, lecturaIncompleta, type Lectura } from "@/lib/supabase-pagin
 import type { TipoCuenta } from "@/lib/presupuesto/templates"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
 import type { AsientoLibroDiario } from "@/lib/balance/libro-diario"
+import { leerFotoInicio, controlarProvisionAnterior, type ControlesInicio } from "@/lib/balance/control-inicio"
 import {
   armarCuentasAlCierre, canceladoPorCuotasAlCierre, polizasParaCierreDesde,
   type CuentasAlCierre, type ComprobanteConPago, type CanceladoPorCuotas,
@@ -160,6 +162,31 @@ export function PapelesDeBalance() {
   const [asientosContables, setAsientosContables] = useState<AsientoLibroDiario[] | null>(null)
   /** 🧮 A-FEAT-1343: cuántas filas dijo la base y cuántas llegaron, por consulta. */
   const [lecturas, setLecturas] = useState<Lectura[] | null>(null)
+  /** 🔁 A-FEAT-1427: el inicio según el balance anterior contra lo que reconoce la app. */
+  const [controlesInicio, setControlesInicio] = useState<ControlesInicio | null>(null)
+  /** 👁️ A-FEAT-1427: el libro armado para mirarlo antes de bajarlo. `null` = cerrada. */
+  const [previa, setPrevia] = useState<ReturnType<typeof armarWorkbook> | null>(null)
+
+  /**
+   * 🧾 Los datos del Excel del balance, en el orden de `armarWorkbook`. Los usan la descarga Y la vista previa
+   * (A-FEAT-1427): una sola lista, para que lo que se ve y lo que se baja no puedan diferir.
+   */
+  const argsDelExcel = (lib: LibroDiario): Parameters<typeof armarWorkbook> => [
+    lib, empresa.id, templates ?? undefined, hacienda ?? undefined,
+    hacienda?.insumos, hacienda?.campo,
+    // Los cuatro bloques de los papeles 03 y 04 viajan juntos: el listado de
+    // comprobantes, los cheques y los anticipos son partes del mismo papel.
+    { ...(cuentas ?? {}), ...(valores ?? {}) },
+    bancarios ?? undefined,
+    sueldos ?? undefined,
+    cuentasCorrientesConInicio ?? undefined,
+    pendientes,
+    saldosDelEjercicioAnterior(ajustes, empresa.id, anioCierre),
+    asientosContables ?? undefined,
+    lecturas ?? undefined,
+    controlCuotas ?? undefined,
+    controlesInicio ?? undefined,
+  ]
 
   const generar = async () => {
     setCargando(true)
@@ -174,6 +201,7 @@ export function PapelesDeBalance() {
     setCuentasCorrientes(null)
     setAsientosContables(null)
     setLecturas(null)
+    setControlesInicio(null)
     const lect: Lectura[] = []
     const anotar = (nombre: string, r: { data: unknown[]; esperadas: number | null }) =>
       lect.push({ nombre, llegaron: r.data.length, esperadas: r.esperadas })
@@ -223,20 +251,32 @@ export function PapelesDeBalance() {
        */
       const manuales = { esteEjercicio: [] as AsientoLibroDiario[], anterior: [] as AsientoLibroDiario[] }
       try {
+        // 🔁 A-FEAT-1427: también las del HISTÓRICO (la provisión 24/25 de MSA son dos facturas de ago/oct-25 que viven ahí).
+        const TABLA_HISTORICO = "msa.comprobantes_historico"
         const { data: incl, error: eIncl } = await supabase.from("ajustes_balance").select("*")
-          .eq("empresa", empresa.id).eq("accion", "incluir").eq("tabla", tablaFacturas(empresa.schema))
+          .eq("empresa", empresa.id).eq("accion", "incluir").in("tabla", [tablaFacturas(empresa.schema), TABLA_HISTORICO])
           .in("anio_cierre", [anioCierre, anioCierre - 1]).is("anulado_at", null)
         if (eIncl) throw new Error(eIncl.message)
         const ajustesIncl = (incl ?? []) as AjusteBalance[]
-        const ids = ajustesIncl.map(a => a.registro_id).filter((x): x is string => !!x)
-        if (ids.length > 0) {
-          const { data: fs, error: eFs } = await supabase.schema(empresa.schema).from("comprobantes_arca").select("*").in("id", ids)
-          if (eFs) throw new Error(eFs.message)
-          const porId = new Map((fs ?? []).map(f => [String((f as Record<string, unknown>).id), f as Record<string, unknown>]))
+        const idsDe = (tabla: string) => ajustesIncl.filter(a => a.tabla === tabla).map(a => a.registro_id).filter((x): x is string => !!x)
+        if (ajustesIncl.length > 0) {
+          const porId = new Map<string, AsientoLibroDiario>()
+          const idsArca = idsDe(tablaFacturas(empresa.schema))
+          if (idsArca.length) {
+            const { data: fs, error: eFs } = await supabase.schema(empresa.schema).from("comprobantes_arca").select("*").in("id", idsArca)
+            if (eFs) throw new Error(eFs.message)
+            for (const f of fs ?? []) porId.set(String((f as Record<string, unknown>).id), desdeArca(f as Record<string, unknown>))
+          }
+          const idsHist = idsDe(TABLA_HISTORICO)
+          if (idsHist.length) {
+            const { data: hs, error: eHs } = await supabase.schema("msa").from("comprobantes_historico").select("*").in("id", idsHist)
+            if (eHs) throw new Error(eHs.message)
+            for (const f of hs ?? []) porId.set(String((f as Record<string, unknown>).id), desdeHistorico(f as Record<string, unknown>))
+          }
           for (const a of ajustesIncl) {
             const f = a.registro_id ? porId.get(a.registro_id) : undefined
             if (!f) { toast.warning(`Una provisión a mano apunta a una factura que no se encontró: ${a.concepto}`); continue }
-            const asiento = { ...desdeArca(f), provision_motivo: a.motivo }
+            const asiento = { ...f, provision_motivo: a.motivo }
             ;(a.anio_cierre === anioCierre ? manuales.esteEjercicio : manuales.anterior).push(asiento)
           }
         }
@@ -263,6 +303,19 @@ export function PapelesDeBalance() {
       }
       const armado = armarLibroDiario(compras, (ventas.data ?? []).map(desdeVenta), ej, PRESENTADO_ARCA_COMPRAS[empresa.id], manuales, fijos)
       setLibro(armado)
+
+      // 🔁 A-FEAT-1427: lo que el balance anterior dejó provisionado contra lo que la app reconoce (avisa, no frena).
+      try {
+        const fechaFoto = armarEjercicio(anioCierre - 1, empresa.mesCierre).fechaCierre
+        const { foto, error: eFoto } = await leerFotoInicio(supabase, empresa.id, fechaFoto, ["provision_gastos"])
+        if (eFoto) throw new Error(eFoto)
+        const provision = controlarProvisionAnterior(foto, armado.provisionesEjercicioAnterior, armado.compras)
+        setControlesInicio({ provision })
+        if (provision.estado === "no cierra") toast.warning(
+          `Provisión del ejercicio anterior: el balance anterior provisionó $ ${fmt(provision.declarado ?? 0)} y la app reconoce $ ${fmt(provision.reconocido)}. Ver «05 Provisión».`)
+      } catch (e) {
+        toast.warning("No se pudo controlar la provisión contra el balance anterior: " + (e as Error).message)
+      }
 
       /**
        * 📒 **Asientos Contables** (A-FEAT-1318). No tienen subdiario —por eso la consulta de arriba,
@@ -811,21 +864,16 @@ export function PapelesDeBalance() {
             Armar el libro
           </Button>
           {libro && (
-            <Button variant="outline" onClick={() => descargarLibroDiario(
-                libro, empresa.id, templates ?? undefined, hacienda ?? undefined,
-                hacienda?.insumos, hacienda?.campo,
-                // Los cuatro bloques de los papeles 03 y 04 viajan juntos: el listado de
-                // comprobantes, los cheques y los anticipos son partes del mismo papel.
-                { ...(cuentas ?? {}), ...(valores ?? {}) },
-                bancarios ?? undefined,
-                sueldos ?? undefined,
-                cuentasCorrientesConInicio ?? undefined,
-                pendientes,
-                saldosDelEjercicioAnterior(ajustes, empresa.id, anioCierre),
-                asientosContables ?? undefined,
-                lecturas ?? undefined,
-                controlCuotas ?? undefined,
-              )}>
+            /* 👁️ A-FEAT-1427: el mismo libro que se baja, mostrado acá con sus alertas arriba. */
+            <Button variant="outline" onClick={() => {
+              try { setPrevia(armarWorkbook(...argsDelExcel(libro))) }
+              catch (e) { toast.error("No se pudo armar la vista previa: " + (e as Error).message) }
+            }}>
+              👁️ Vista previa
+            </Button>
+          )}
+          {libro && (
+            <Button variant="outline" onClick={() => descargarLibroDiario(...argsDelExcel(libro))}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               {/* A-FEAT-1388: decía «sin el sector productivo» y confundía cuando los precios ya se
                   veían cargados — lo que falta es traer el stock, y eso es lo que se dice. */}
@@ -867,6 +915,8 @@ export function PapelesDeBalance() {
           )}
         </div>
 
+        {/* 👁️ A-FEAT-1427 — el Excel antes de bajarlo; las preguntas siguen acá abajo, donde se contestan. */}
+        {previa && <VistaPreviaBalance wb={previa} onCerrar={() => setPrevia(null)} />}
         {/* 📌 A-FEAT-1258 — a la vista mientras se trabaja; salen en el export. */}
         <PendientesBalance empresa={empresa.id} anioCierre={anioCierre} onCambio={setPendientes} />
         {/* ✍️ A-FEAT-1207 — lo que el balance anterior dejó para tomar en éste. */}
@@ -1111,6 +1161,19 @@ export function PapelesDeBalance() {
 
             <div className="text-xs text-muted-foreground space-y-0.5">
               <div>Provisión (del ejercicio, entraron después): <strong>{libro.provisiones.length}</strong></div>
+              {controlesInicio?.provision && (() => {
+                const p = controlesInicio.provision
+                if (p.estado === "cierra") return <div className="text-green-700">✓ Provisión del ejercicio anterior: cierra con el balance anterior (${fmt(p.reconocido)})</div>
+                if (p.estado === "sin foto") return <div className="text-amber-700">Provisión del ejercicio anterior: no se puede controlar — {p.fuenteDeclarado}</div>
+                return (
+                  <div className="text-red-800 bg-red-50 border border-red-300 rounded px-2 py-1" data-test="control-provision-anterior">
+                    ⚠️ <strong>Provisión del ejercicio anterior no cierra:</strong> el balance anterior provisionó ${fmt(p.declarado ?? 0)} y la app reconoce ${fmt(p.reconocido)} (diferencia ${fmt(p.diferencia ?? 0)}).
+                    {p.candidatos.length > 0
+                      ? <> ¿Son éstas? {p.candidatos.map(a => `${a.denominacion} ${a.punto_venta ?? ""}-${a.numero ?? ""} (${a.fecha ? a.fecha.split("-").reverse().join("/") : ""}) $${fmt(a.total)}`).join(" · ")} — están en las compras de este ejercicio: si son las provisionadas, su gasto se cuenta dos veces.</>
+                      : <> No se encontró en las compras de este ejercicio un comprobante (ni dos) que lo explique.</>}
+                  </div>
+                )
+              })()}
               <div>
                 Sin subdiario: <strong>{libro.sinSubdiario.length}</strong>
                 {libro.sinSubdiario.length > 0 && (c.sinSubdiarioQueAfectan.length === 0

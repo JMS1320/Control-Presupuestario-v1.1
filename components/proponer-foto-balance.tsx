@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
+import { tcDolarAl } from "@/lib/dolares/tc-cierre"
 import { useDatosDelBalance, textoEstadoGuardado } from "@/lib/balance/datos-usuario"
 import {
   RENGLONES, propuestaDelSistema, cambiosContraLoGuardado, deudaDeTarjeta, parsearMonto,
@@ -148,12 +149,11 @@ export function ProponerFotoBalance({ empresa, fechaInicio, fechaCierre, datos, 
       let id = fotoId
       if (!id) {
         // El TC se propone del dólar BNA importado a la fecha (o el anterior más cercano).
-        const { data: cot } = await supabase.from("cotizaciones").select("valor, fecha")
-          .eq("serie", "dolar_bna_divisas").lte("fecha", fechaCierre)
-          .order("fecha", { ascending: false }).limit(1).maybeSingle()
+        // 💵 A-FEAT-1427: el dólar BNA guarda compra/venta, no `valor` (antes la foto nacía sin TC).
+        const cot = await tcDolarAl(supabase, fechaCierre)
         const { data: nueva, error } = await supabase.from("balance_fotos").insert({
-          empresa, fecha_cierre: fechaCierre, tc: cot?.valor ?? null,
-          tc_fuente: cot ? `dolar_bna_divisas del ${fmtFecha(cot.fecha)}` : null,
+          empresa, fecha_cierre: fechaCierre, tc: cot?.tc ?? null,
+          tc_fuente: cot?.fuente ?? null,
           notas: "Armada desde los papeles de trabajo (versión Sistema).",
         }).select("id").single()
         if (error) throw error
