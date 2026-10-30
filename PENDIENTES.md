@@ -277,8 +277,13 @@ es un error de la guía y hay que corregirla, no ignorarla.
 
 *(Lo escribió la sesión que armó el Libro Diario consensuado, «Estanco», el 30/10. La historia completa está en `D:\Users\josem\Documents\Jose\- Desarrollo de Software\Sesion Claude Estanco\ESTADO - cierre sesion 2026-10-28.md` §1-12 y en `TRASPASO-T1-2026-10-30.md`, parte A. Es solo archivo: ya no se trabaja ahí.)*
 
+> 📍 **ESTADO AL CIERRE DEL 30/10 (T-balance) — leer primero.** Todo en `desarrollo`; el árbol `jms/balance` se cerró (la rama queda en el remoto).
+> - **Hecho hoy**: vista previa del balance + «⚡ Armar todo» + solapas «00 Cobertura» (los 44 datos de los papeles 24/25 con su estado) y «00 Inicio y cierre» ([A-FEAT-1427](#a-feat-1427)); **el recorrido del balance** a pantalla completa con temas de Cobertura, preguntas, **conciliación** (movimientos y deudas, con propuesta, la cuenta y links filtrados), **echeqs** y papel de trabajo en el Cuaderno ([A-FEAT-1430](#a-feat-1430)); el echeq se marca cobrado solo al conciliar su débito ([A-AUTO-10](#a-auto-10), script 144); estado «Pendiente» → «pendiente» en 270 movimientos y 18 defaults (script 143). Scripts corridos: 138, 141, 143, 144.
+> - **Lo primero al retomar**: preguntarle a JMS qué salió de probar [A-TEST-1288](#a-test-1288) y [A-TEST-1291](#a-test-1291) (guía de pruebas arriba de todo) y corregir el recorrido con eso; **el recorrido es la herramienta para conciliar** (JMS: *«eso será lo que haga que todo el resto funcione»*).
+> - **Esperan decisión de JMS** (también están en el recorrido): signo del inicio JMS/AMS en el 14 (anticipo = a favor de MSA) · dólar de cierre comprador · 9 cheques físicos 31841742…50 debitados y no cargados · las 14 preguntas del cruce de papeles.
+
 **Dónde se trabaja:**
-- Worktree propio **`jms/balance`**, que sale de `desarrollo`, según la regla 16 de CLAUDE.md. JMS: *«no dejar trees abiertos; que los abran las nuevas terminales»*.
+- Worktree propio **`jms/<tema>`** (o `jms/balance` de nuevo), que sale de `desarrollo`, según la regla 16 de CLAUDE.md. JMS: *«no dejar trees abiertos; que los abran las nuevas terminales»*.
 - En vez de `npm ci` se puede usar un *junction*: `cmd /c mklink /J node_modules ..\Control-Presupuestario-v1.1\node_modules`.
   - ⚠️ Antes de borrar el worktree, sacar el junction con `[System.IO.Directory]::Delete("<wt>\node_modules",$false)`. Si no, se borra el `node_modules` de la carpeta principal.
   - ⚠️ *(30/10)* Con el junction, **`npm run build` falla** («Symlink node_modules is invalid, it points out of the filesystem root»: Turbopack no lo acepta). Compilar con webpack y las claves de la carpeta principal **cargadas sólo para el proceso** (sin copiar `.env.local`): `env $(grep -v '^\s*#' ../Control-Presupuestario-v1.1/.env.local | tr -d '\r' | grep '=' | xargs) npx next build --webpack`. Tarda ~6 min.
@@ -317,7 +322,7 @@ es un error de la guía y hay que corregirla, no ignorarla.
 - El Camino 2 carga primero los resúmenes que faltan (A-FEAT-1424). Coordinar por el tablero.
 - **No son prioridad:** las descargas de ARCA (Mis Retenciones) ni la estética.
 
-**Lo que avanza SOLO, sin JMS, en este orden.** Queda en `jms/balance`. Lo que hay que revisar va en páginas de Chrome (artifacts con base de datos); Claude lee las respuestas.
+**Lo que avanza SOLO, sin JMS, en este orden.** ⚠️ cambió 30/10: los puntos 1-3 están hechos y viven en el recorrido del balance (el mapa y las propuestas de conciliación se calculan ahí, con datos del momento; las preguntas se contestan ahí, no en páginas de Chrome). Sigue el 4 (stocks) y el 5.
 1. **Mapa de conciliación 25/26 de MSA, PAM y MA** (solo lectura). Por empresa, cuenta y mes: cuántos movimientos sin conciliar y por cuánto. Marcar lo que parece pagado por cuenta y orden de otra empresa. Es la base de todo.
 2. **Revisión previa de cada módulo** antes de que JMS lo mande: una lista corta de lo que tiene que decidir.
 3. **Proponer conciliaciones** por reglas y patrones, como los scripts 102/103 y 130. Se escriben en la base solo con su OK, con `scripts/NNN-….mts` + `-deshacer.sql`.
@@ -340,7 +345,8 @@ es un error de la guía y hay que corregirla, no ignorarla.
 | Federación Patronal | script 130; `lib/polizas/control-debitos.ts` | faltan 2 NC: reintegros de +30.000 (20/4) y +68.100 (13/5). AP MA 10200836 y AP PAM 10413411 sin débitos: ¿baja? |
 | NC Vida 670821 (−24.341,09) | cuenta corriente de Seguros | ¿va solo en el 14? Decide JMS. Ojo A-DAT-87 |
 | Sueldos de MA en el 14 | script 133; `lib/balance/cuentas-corrientes.ts` | $ 19.500.000 pendiente; falta el PDF de sueldos |
-| Vista previa del balance ([A-FEAT-1427](#a-feat-1427)) | `components/vista-previa-balance.tsx`, `lib/balance/control-inicio.ts`, `inicio-y-cierre.ts`, `lib/dolares/tc-cierre.ts` | en `desarrollo` (salvo el botón «⚡ Armar todo», en `jms/balance`); A-TEST-1288 |
+| Vista previa del balance ([A-FEAT-1427](#a-feat-1427)) | `components/vista-previa-balance.tsx`, `lib/balance/control-inicio.ts`, `inicio-y-cierre.ts`, `lib/dolares/tc-cierre.ts` | en `desarrollo` (con «⚡ Armar todo», «00 Cobertura» e «00 Inicio y cierre»); A-TEST-1288 |
+| Recorrido del balance ([A-FEAT-1430](#a-feat-1430)) | `components/recorrido-balance.tsx`, `lib/balance/recorrido*.ts`, `lib/cuaderno/papel-de-trabajo.ts`, links `lib/extracto/link.ts` y `lib/egresos/link-facturas.ts` | en `desarrollo`; A-TEST-1291 |
 | Cruce de los papeles 24/25 por pestaña ([A-FEAT-1420](#a-feat-1420)) | Balance/Excels trabajando con claude → «Cruce papeles 24-25 vs export 25-26 - PLATA / - STOCK (2026-10-30).md» | 14 preguntas en «Pendientes a revisar» (script 138) |
 | Propuestas de conciliación 25/26 | `lib/conciliacion/propuestas-ejercicio.ts` (la usan el recorrido y el script) | ⚠️ cambió 30/10: viven **dentro del recorrido del balance** ([A-FEAT-1430](#a-feat-1430) paso 4); la página artifact del mismo día quedó superada |
 | Echeqs vencidos en Principal ([A-AUTO-10](#a-auto-10)) | `lib/conciliacion/cheques-vencidos.ts`, trigger del script 144 | en el recorrido con «⚡ Aplicar»; desde el 30/10 se marcan solos al conciliar el débito |
