@@ -259,9 +259,85 @@ es un error de la guía y hay que corregirla, no ignorarla.
 >   `.claude/SESION-PARALELA.md` y **todas** las ramas.
 > - Nunca dos tareas pesadas a la vez (PC de 8 GB, CLAUDE global). Nada a `main` sin OK de JMS.
 
-### 🛤️ Camino 1 — BALANCE
+### 🛤️ Camino 1 — BALANCE: papeles de trabajo del balance MSA 25/26 al contador, por módulos terminados
 
-*(lo escribe la terminal de balance)*
+*(Lo escribió la sesión que armó el Libro Diario consensuado, «Estanco», el 30/10. La historia completa está en `D:\Users\josem\Documents\Jose\- Desarrollo de Software\Sesion Claude Estanco\ESTADO - cierre sesion 2026-10-28.md` §1-12 y en `TRASPASO-T1-2026-10-30.md`, parte A. Es solo archivo: ya no se trabaja ahí.)*
+
+**Dónde se trabaja:**
+- Worktree propio **`jms/balance`**, que sale de `desarrollo`, según la regla 16 de CLAUDE.md. JMS: *«no dejar trees abiertos; que los abran las nuevas terminales»*.
+- En vez de `npm ci` se puede usar un *junction*: `cmd /c mklink /J node_modules ..\Control-Presupuestario-v1.1\node_modules`.
+  - ⚠️ Antes de borrar el worktree, sacar el junction con `[System.IO.Directory]::Delete("<wt>\node_modules",$false)`. Si no, se borra el `node_modules` de la carpeta principal.
+- A `desarrollo` solo con OK de JMS (regla 17).
+
+**🎯 Objetivo (JMS 30/10):** *«ir por partes, pero ir terminando módulos para ir ganando tiempo. Mientras yo le voy mandando al contador, vamos teniendo más tiempo para seguir trabajando.»*
+
+**1. 🔴 HOY, jue 30/10: Libro Diario de VENTAS** (Reportes → Balance → «Bajar Libro Diario»). JMS cree que está terminado. Antes de que lo mande, plantearle:
+- **Correcciones de ventas: el SQL está SIN correr.** Es `...\Sesion Claude Estanco\Libro Diario\generador_ventas\correcciones_app_segun_arca.sql`.
+  - Cambia los tipos 33/180, el punto de venta y el número de Pedro Genta, el centavo de Parra y el estado DDJJ.
+  - **El IVA de AFA NO se toca**: la app ya resta la comisión y el almacenaje (A-BUG-1391).
+  - Antes de correrlo, ver el Paso 2 de `...\Sesion Claude Estanco\INSTRUCCIONES - terminar ventas MSA 25-26.md`.
+  - **¿Se corre antes de mandar, o se manda como está?** Decide JMS.
+- **Genta 180-11-77393:** la nota de débito está en ventas 02/2026 y también en compras. Es una pregunta para el contador.
+- **Control cobros:** 6 cierran.
+  - Genta queda en 279.174,49 por esa nota de débito.
+  - 3 de AFA siguen a cobrar.
+  - Sancor y Parra no tienen el cobro vinculado.
+
+**2. 🟠 DOMINGO 2/11: lo más posible, y mejor terminado.** Primero lo grande:
+- **Stock de hacienda:** los precios al cierre (`lib/balance/precio-al-cierre.ts`) y los datos de inicio TENTATIVOS, que esperan el ✓ de JMS (A-TEST-1287 / A-FEAT-1386).
+- Otros stocks: granos, insumos y pasturas (`productivo.stock_inicio`, `productivo.pasturas`, scripts 131-132).
+- Los movimientos en dólares.
+- Lo que ya esté conciliado.
+
+**3. Lo que necesita TODO CONCILIADO** (no sale nada pagado o cobrado sin conciliar):
+- las cuentas a pagar y a cobrar;
+- los **gastos de templates** (gastos, impuestos y demás, que informa JMS; no son los subdiarios);
+- los retiros y aportes;
+- las facturas cruzadas.
+
+**Clave: conciliar el período 25/26 en las TRES empresas: MSA, PAM y MA.**
+- Hay retiros, aportes y facturas cruzadas. Algo que PAM o MA pagó **por cuenta y orden de MSA** es un **aporte**.
+- Hallazgo: `ma.ma_galicia` está casi todo sin conciliar desde abr-26.
+- Las cajas de ahorro de MA y PAM ya tienen reglas y templates (scripts 102/103).
+- El Camino 2 carga primero los resúmenes que faltan (A-FEAT-1424). Coordinar por el tablero.
+- **No son prioridad:** las descargas de ARCA (Mis Retenciones) ni la estética.
+
+**Lo que avanza SOLO, sin JMS, en este orden.** Queda en `jms/balance`. Lo que hay que revisar va en páginas de Chrome (artifacts con base de datos); Claude lee las respuestas.
+1. **Mapa de conciliación 25/26 de MSA, PAM y MA** (solo lectura). Por empresa, cuenta y mes: cuántos movimientos sin conciliar y por cuánto. Marcar lo que parece pagado por cuenta y orden de otra empresa. Es la base de todo.
+2. **Revisión previa de cada módulo** antes de que JMS lo mande: una lista corta de lo que tiene que decidir.
+3. **Proponer conciliaciones** por reglas y patrones, como los scripts 102/103 y 130. Se escriben en la base solo con su OK, con `scripts/NNN-….mts` + `-deshacer.sql`.
+4. **Stocks:** dejar el papel listo para que JMS solo dé el ✓.
+5. Si sobra tiempo:
+   - [A-FEAT-1423](#a-feat-1423): ver las cuentas de cada caso del control de cuotas.
+   - [A-BUG-1412](#a-bug-1412): encabezado congelado; reusar el JSZip del Libro Diario.
+   - `MODULO_ARCA.md`: describe Selenium, pero el código es `lib/arca`.
+
+**Mapa de lo hecho (todo en `desarrollo`):**
+| Tema | Dónde | Estado |
+|---|---|---|
+| Libro Diario consensuado: Compras, Ventas, por cuenta, Retenciones, Control cobros | `lib/balance/libro-diario-consensuado.ts`, `scripts/libro-diario-consensuado.mts` | verificado celda por celda contra lo que fue al contador |
+| Diferencias vs ARCA (12 zip) | `lib/balance/diferencias-vs-arca.ts` | A-TEST-1286 |
+| Retenciones `msa.retenciones_recibidas` | `retencionesDeVenta`: la tabla manda sobre la calculada; **no duplica** | 17 de MSA vinculadas; A-FEAT-1419 en pausa |
+| Control de cuotas de templates | `lib/balance/control-cuotas-templates.ts`, `scripts/control-cuotas-templates.mts [EMP AÑO] [--todo]` | reglas en código; A-TEST-1285 |
+| Casos raros de cuotas (6) | página https://claude.ai/artifact/97ybf68yVo3kx1ucJTgn8N (`respuestas/actual`) | **esperando a JMS**; después, scripts |
+| Grupos de pago | `msa.grupos_pago` + `grupo_pago_id`; el movimiento apunta al grupo con `template_cuota_id` | Cargas Sociales: script 134. Falta el F931 para separar nov y dic (4.342.432,11) |
+| Pólizas en el 04, flota en el 14 | `cuentas-al-cierre.ts`, `seguros-al-cierre.ts`, `reparto-flota.ts` | hecho |
+| Federación Patronal | script 130; `lib/polizas/control-debitos.ts` | faltan 2 NC: reintegros de +30.000 (20/4) y +68.100 (13/5). AP MA 10200836 y AP PAM 10413411 sin débitos: ¿baja? |
+| NC Vida 670821 (−24.341,09) | cuenta corriente de Seguros | ¿va solo en el 14? Decide JMS. Ojo A-DAT-87 |
+| Sueldos de MA en el 14 | script 133; `lib/balance/cuentas-corrientes.ts` | $ 19.500.000 pendiente; falta el PDF de sueldos |
+| Retiros y aportes ([A-FEAT-1420](#a-feat-1420) p.7) | sin código | Esperan de JMS: los $45,9 M por socio, la planilla de PAM jul–dic 2024 y Mauricio. Se abre por socio: MA, Manuel, Soledad, Mechi, Andrés, José y PAM. PAM pasa a MA el 01/01/2026. Los US$ 337.000 son la devolución de un aporte de PAM |
+
+**Espera de JMS:**
+- **Hoy:** las correcciones de ventas.
+- Los casos raros, el F931 y la NC Vida.
+- A-TEST-1285/1286/1287.
+- A-DEC-1022, antes de **conciliar** tarjetas (recomendado: avisar sin frenar).
+- Pasar las reglas del control de cuotas a la base.
+- Sacar la contraseña vieja de `KNOWLEDGE.md` (el repo es público).
+
+Lo que no hay que recordarle: las 7 preguntas del control de cuotas. Lo que hay que recordarle siempre: A-FEAT-150, el export contable de campaña.
+
+**Comparte con el Camino 2:** `arca_pdf_archivo_digital`, `comprobantes_arca` de cada schema, `*.tarjeta_visa` y las cajas de ahorro de Cotitulares.
 
 ### 🛤️ Camino 2 — GAS: todo lo que pasa por el mail, y antes los resúmenes que faltan para conciliar
 
