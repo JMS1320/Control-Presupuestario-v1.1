@@ -28,9 +28,11 @@ const COLOR: Record<GrupoTema, string> = {
   "falta inicio": "border-violet-300 bg-violet-50 text-violet-900",
   "sin informacion": "border-slate-300 bg-slate-50 text-slate-800",
   "pendiente desarrollo": "border-teal-300 bg-teal-50 text-teal-900",
+  "conciliacion": "border-blue-300 bg-blue-50 text-blue-900",
+  "deuda": "border-orange-300 bg-orange-50 text-orange-900",
 }
 
-export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerrar, onPendientes }: {
+export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerrar, onPendientes, conciliacion }: {
   empresa: string
   anioCierre: number
   /** «25/26», para el título. */
@@ -39,9 +41,13 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   onCerrar: () => void
   /** Después de responder: la lista al día, para que el export y el cuadro de pendientes la lleven. */
   onPendientes: (lista: PendienteBalance[]) => void
+  /** 🏦 El estado de las propuestas de conciliación (se calculan aparte, tardan unos segundos). */
+  conciliacion?: { cargando: string | null; historicos: number; avisos: string[]; calculado: string | null; recalcular: () => void }
 }) {
   const [filtro, setFiltro] = useState<Set<GrupoTema>>(new Set())
   const [ocultarRespondidos, setOcultarRespondidos] = useState(false)
+  /** 🏦 Filtro por tipo (sólo los temas que traen etiqueta: la conciliación). */
+  const [etiquetas, setEtiquetas] = useState<Set<string>>(new Set())
   const [claveActual, setClaveActual] = useState<string | null>(null)
   const [nota, setNota] = useState("")
   const [guardando, setGuardando] = useState(false)
@@ -49,7 +55,14 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   const [papelId, setPapelId] = useState<string | null | undefined>(undefined)
 
   const visibles = useMemo(() => temas.filter(t =>
-    (!filtro.size || filtro.has(t.grupo)) && (!ocultarRespondidos || !t.respondido)), [temas, filtro, ocultarRespondidos])
+    (!filtro.size || filtro.has(t.grupo)) && (!ocultarRespondidos || !t.respondido)
+    && (!etiquetas.size || (t.etiqueta != null && etiquetas.has(t.etiqueta)))), [temas, filtro, ocultarRespondidos, etiquetas])
+  /** Los tipos que hay entre los temas filtrados por grupo (para los chips de tipo). */
+  const tiposPresentes = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const t of temas) if (t.etiqueta && (!filtro.size || filtro.has(t.grupo))) m.set(t.etiqueta, (m.get(t.etiqueta) ?? 0) + 1)
+    return [...m.entries()]
+  }, [temas, filtro])
   const idx = Math.max(0, visibles.findIndex(t => t.clave === claveActual))
   const actual = visibles[idx] ?? null
   const prog = progreso(temas)
@@ -173,6 +186,24 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
             <input type="checkbox" checked={ocultarRespondidos} onChange={e => setOcultarRespondidos(e.target.checked)} /> ocultar los respondidos
           </label>
         </div>
+        {/* 🏦 La conciliación: si se está calculando, cuándo se calculó, y los tipos para filtrar */}
+        {conciliacion && (
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            {conciliacion.cargando
+              ? <span className="text-amber-800">⏳ Calculando las propuestas de conciliación: {conciliacion.cargando}</span>
+              : <span className="text-muted-foreground">🏦 Conciliación calculada {conciliacion.calculado ? `a las ${conciliacion.calculado}` : ""}{conciliacion.historicos ? ` · ${conciliacion.historicos} del histórico jul–nov no entran (no se concilian)` : ""}{conciliacion.avisos.length ? ` · ⚠️ ${conciliacion.avisos.length} lectura(s) fallaron` : ""}</span>}
+            {!conciliacion.cargando && (
+              <button type="button" className="rounded border px-2 py-0.5 hover:bg-muted" onClick={conciliacion.recalcular}
+                title="Después de conciliar en el extracto, para que los temas resueltos desaparezcan">↻ Recalcular</button>
+            )}
+            {tiposPresentes.length > 0 && <span className="ml-2 text-muted-foreground">Tipo:</span>}
+            {tiposPresentes.map(([e, c]) => (
+              <button key={e} type="button" aria-pressed={etiquetas.has(e)}
+                onClick={() => setEtiquetas(s => { const n = new Set(s); if (n.has(e)) n.delete(e); else n.add(e); return n })}
+                className={`rounded-full border px-2 py-0.5 ${etiquetas.has(e) ? "bg-muted font-medium" : "hover:bg-muted"}`}>{e} <span className="text-muted-foreground tabular-nums">{c}</span></button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[340px_1fr]">
@@ -185,7 +216,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
               <span aria-hidden>{t.respondido ? "✅" : ICONO[t.grupo]}</span>
               <span className="min-w-0">
                 <span className={`block truncate ${t.respondido ? "text-muted-foreground line-through" : ""}`}>{t.titulo}</span>
-                <span className="block truncate text-xs text-muted-foreground">{t.papel}</span>
+                <span className="block truncate text-xs text-muted-foreground">{t.etiqueta ? `${t.etiqueta} · ` : ""}{t.papel.replace(/ · .*$/, "")}</span>
               </span>
             </button>
           ))}

@@ -200,6 +200,8 @@ import { linkExtracto, extractoDelLink, rangoQueContiene } from "@/lib/extracto/
 import { linkHistorico, subFacturasDelLink, historicoDelLink } from "@/lib/egresos/link-facturas"
 import { armarPapelDeTrabajo, vinculoDe } from "@/lib/cuaderno/papel-de-trabajo"
 import { calcularTabla as calcularTablaCuaderno } from "@/lib/cuaderno/formulas"
+import { proponerConciliaciones, CUENTAS_CONCILIABLES, type DatosConciliacion, type MovimientoSinConciliar, type Obligacion } from "@/lib/conciliacion/propuestas-ejercicio"
+import { temasDeMovimientos } from "@/lib/balance/recorrido-conciliacion"
 import { RENGLONES as RENGLONES_BALANCE } from "@/lib/balance/balance-propio"
 import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
@@ -5288,6 +5290,58 @@ export function correrCasos(): Resultado[] {
       Math.abs(Number(valores[3][1]) - 12456000.14) < 0.01 && Math.round(Number(valores[4][1])) === 100 && Math.abs(Number(ultima[1])) < 0.01
         && papel.bloques.some(b => b.tipo === "tabla") && tema.links.some(l => /historico=h2%2Ch10|historico=h2,h10/.test(l.href))
         && vinculoDe("MSA", 2026, tema.clave).startsWith("balance:MSA:2026:cob:"), "A-FEAT-1430")
+  }
+
+  /**
+   * 🏦 **PROPUESTAS DE CONCILIACIÓN — A-FEAT-1430 paso 4.** Un caso por tipo, con datos fijos: la pareja exacta, el pago
+   * agrupado (2 facturas que suman), la diferencia ≤ 3 %, la de otra empresa (por cuenta y orden), la ya usada por otro
+   * movimiento, y la que no tiene pareja (con su pista). Y al revés: la deuda sin pago con su movimiento candidato.
+   */
+  {
+    const cta = CUENTAS_CONCILIABLES[0]
+    const mov = (id: string, imp: number, desc: string, cuit?: string): MovimientoSinConciliar =>
+      ({ cuenta: cta, id, fecha: "2026-03-10", importe: imp, lado: "D", estado: "pendiente", descripcion: desc, cuitBanco: cuit, quienBanco: cuit ? `Prov ${cuit.slice(-1)}` : undefined })
+    const fac = (id: string, imp: number, cuit: string, empresa = "MSA", estado = "pendiente"): Obligacion =>
+      ({ empresa, origen: "factura", id, fecha: "2026-03-01", importe: imp, estado, quien: `Prov ${cuit.slice(-1)}`, cuit, signo: "D", ref: `1-1-${id}` })
+    const datos: DatosConciliacion = {
+      movimientos: [mov("m1", 1111, "TRF", "20000000001"), mov("m2", 3000, "TRF", "20000000002"), mov("m3", 970, "TRF", "20000000003"),
+        mov("m4", 555, "TRF"), mov("m5", 777, "TRF"), mov("m6", 123.45, "COMISION SERVICIO DE CUENTA"), mov("m7", 4444, "TRF")],
+      obligaciones: [fac("f1", 1111, "20000000001"), fac("f2a", 1200, "20000000002"), fac("f2b", 1800, "20000000002"), fac("f3", 1000, "20000000003"),
+        fac("f4", 555, "20000000004", "PAM"), fac("f5", 777, "20000000005"), fac("f7", 4444, "20000000007")],
+      usadoPor: new Map([["f5", ["msa_galicia:99"]]]), conciliados: [], avisos: [],
+    }
+    const r = proponerConciliaciones(datos, "MSA", "2025-07-01", "2026-06-30")
+    const tipo = (id: string) => r.movimientos.find(p => p.mov.id === id)?.tipo
+    const deuda7 = r.deudas.find(d => d.obligacion.id === "f7")
+    chequear("Conciliación · propuestas", "🏦 Un tipo por caso: exacta, agrupada (2 suman), con diferencia (3 %), otra empresa, ya usada y sin pareja (con pista); la deuda trae su movimiento candidato",
+      "EXACTO AGRUPADO CON_DIF OTRA_EMPRESA YA_USADA SIN_PAREJA EXACTO · deuda f7 con m7 · pista banco",
+      `${["m1", "m2", "m3", "m4", "m5", "m6", "m7"].map(tipo).join(" ")} · deuda f7 con ${deuda7?.candidatos.map(m => m.id).join(",")} · pista ${/banco/.test(r.movimientos.find(p => p.mov.id === "m6")?.pista ?? "") ? "banco" : "?"}`,
+      ["EXACTO", "AGRUPADO", "CON_DIF", "OTRA_EMPRESA", "YA_USADA", "SIN_PAREJA", "EXACTO"].join() === ["m1", "m2", "m3", "m4", "m5", "m6", "m7"].map(tipo).join()
+        && deuda7?.candidatos[0]?.id === "m7" && !r.deudas.some(d => d.obligacion.id === "f5") && !r.deudas.some(d => d.obligacion.id === "f4"), "A-FEAT-1430")
+
+    // …y como temas del recorrido: dos links (el movimiento en el extracto y la factura donde vive) y la cuenta que cierra.
+    const { temas: tc } = temasDeMovimientos(r.movimientos)
+    const t1 = tc.find(t => t.clave === "conc:msa_galicia:m1")!
+    const t2 = tc.find(t => t.clave === "conc:msa_galicia:m2")!
+    const dif = (t: typeof t1) => { const v = calcularTablaCuaderno(t.comparacion!.celdas); return Number(v[v.length - 2][2]) }
+    const tu = tc.find(t => t.clave === "conc:msa_galicia:m5")!
+    chequear("Conciliación · en el recorrido", "🏦 Cada propuesta es un tema: el link al movimiento (extracto, sólo ése), el de la pareja (Facturas), la cuenta en 0; si la pareja está usada, el link al OTRO movimiento",
+      "primero las exactas · m1: extracto movs=m1 + factura f1 · diferencia 0 · agrupada diferencia 0 · ya usada → movs=99",
+      `primero ${tc[0].etiqueta} · m1: ${t1.links.some(l => /seccion=extracto/.test(l.href) && /movs=m1/.test(l.href)) ? "extracto movs=m1" : "?"} + ${t1.links.some(l => /facturas=f1/.test(l.href)) ? "factura f1" : "?"} · diferencia ${dif(t1)} · agrupada diferencia ${dif(t2)} · ya usada → ${tu.links.some(l => /movs=99/.test(l.href)) ? "movs=99" : "?"}`,
+      tc[0].etiqueta === "Pareja exacta" && t1.links.some(l => /movs=m1/.test(l.href)) && t1.links.some(l => /facturas=f1/.test(l.href))
+        && dif(t1) === 0 && dif(t2) === 0 && tu.links.some(l => /movs=99/.test(l.href)), "A-FEAT-1430")
+
+    // 🛡️ Casos reales que eran ruido: un importe redondo sin CUIT contra una cuota de OTRA empresa ya usada no es pareja;
+    // y si el banco dice un CUIT, la factura de otro CUIT por el mismo importe tampoco.
+    const r2 = proponerConciliaciones({
+      movimientos: [mov("e1", 300000, "Pago Elvio jornales"), mov("e2", 2222, "TRF", "20000000009")],
+      obligaciones: [{ ...fac("c1", 300000, "", "PAM"), origen: "cuota", quien: "Interbancarias PAM", fecha: "2026-03-05" }, fac("f9", 2222, "20000000008")],
+      usadoPor: new Map([["c1", ["pam_galicia_cc:7"]]]), conciliados: [], avisos: [],
+    }, "MSA", "2025-07-01", "2026-06-30")
+    const e1 = r2.movimientos.find(p => p.mov.id === "e1")!, e2 = r2.movimientos.find(p => p.mov.id === "e2")!
+    chequear("Conciliación · propuestas", "🛡️ Ruido real descartado: $ 300.000 redondo sin CUIT contra una cuota de PAM ya usada → sin pareja («probable coincidencia»); CUIT del banco distinto → no es pareja",
+      "e1 SIN_PAREJA coincidencia · e2 SIN_PAREJA", `e1 ${e1.tipo} ${/probable coincidencia/.test(e1.propuesta) ? "coincidencia" : "?"} · e2 ${e2.tipo}`,
+      e1.tipo === "SIN_PAREJA" && /probable coincidencia/.test(e1.propuesta) && e2.tipo === "SIN_PAREJA", "A-FEAT-1430")
   }
 
   /**

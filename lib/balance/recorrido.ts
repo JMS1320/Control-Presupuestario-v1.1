@@ -16,12 +16,15 @@ import type { CoberturaPapeles, EstadoCobertura, ItemCobertura, LinkDato } from 
 import type { PendienteBalance } from "./pendientes-balance"
 import type { Comparacion } from "@/lib/cuaderno/papel-de-trabajo"
 
-export type GrupoTema = "error" | "decision" | "falta inicio" | "sin informacion" | "pendiente desarrollo" | "pregunta"
+export type GrupoTema = "error" | "decision" | "falta inicio" | "sin informacion" | "pendiente desarrollo" | "pregunta" | "conciliacion" | "deuda"
 
 export const GRUPOS: { id: GrupoTema; icono: string; titulo: string }[] = [
   { id: "error", icono: "⛔", titulo: "Errores" },
   { id: "decision", icono: "❓", titulo: "A decidir" },
   { id: "pregunta", icono: "💬", titulo: "Preguntas" },
+  // 🏦 A-FEAT-1430 paso 4: la conciliación, movimiento por movimiento y deuda por deuda.
+  { id: "conciliacion", icono: "🏦", titulo: "Conciliar movimientos" },
+  { id: "deuda", icono: "🧾", titulo: "Deudas sin pago" },
   { id: "falta inicio", icono: "⏳", titulo: "Falta el saldo de inicio" },
   { id: "sin informacion", icono: "📭", titulo: "Falta información" },
   { id: "pendiente desarrollo", icono: "🛠️", titulo: "Pendiente de desarrollo" },
@@ -47,6 +50,10 @@ export interface Tema {
   respondido: boolean
   /** 📓 La tabla A contra B para el papel de trabajo, si el tema se explica con números. */
   comparacion?: Comparacion
+  /** Una etiqueta corta del tipo (en la conciliación: «Pareja exacta», «Con diferencia»…), para filtrar y ver de un vistazo. */
+  etiqueta?: string
+  /** Importe del tema (la conciliación lo muestra en la lista). */
+  importe?: number
 }
 
 const slug = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
@@ -59,6 +66,8 @@ export const claveCobertura = (i: Pick<ItemCobertura, "papel" | "dato">) => `cob
 export const textoPendienteDe = (t: Pick<Tema, "clave" | "titulo" | "que">) => `[${t.clave}] ${t.titulo} — ${t.que}`.slice(0, 900)
 
 const ORDEN: GrupoTema[] = GRUPOS.map(g => g.id)
+/** La clave de un tema dentro del texto de su respuesta: `[cob:…]`, `[conc:…]` o `[deu:…]`. */
+const CLAVE_EN_TEXTO = /^\[((?:cob|conc|deu):[^\]]+)\]/
 const GRUPO_DE: Partial<Record<EstadoCobertura, GrupoTema>> = {
   "error": "error", "decision": "decision", "falta inicio": "falta inicio",
   "sin informacion": "sin informacion", "pendiente desarrollo": "pendiente desarrollo",
@@ -68,10 +77,10 @@ const GRUPO_DE: Partial<Record<EstadoCobertura, GrupoTema>> = {
  * La cola: primero lo que más importa (errores, decisiones, preguntas), y dentro de cada grupo en el orden del
  * catálogo. Un dato de cobertura que ya sale no entra; uno que no sale entra aunque esté respondido (queda tildado).
  */
-export function armarTemas(cobertura: CoberturaPapeles | null, pendientes: PendienteBalance[]): Tema[] {
+export function armarTemas(cobertura: CoberturaPapeles | null, pendientes: PendienteBalance[], otros: Tema[] = []): Tema[] {
   const porClave = new Map<string, PendienteBalance>()
   for (const p of pendientes) {
-    const m = /^\[(cob:[a-z0-9-]+)\]/.exec(p.texto)
+    const m = CLAVE_EN_TEXTO.exec(p.texto)
     if (m) porClave.set(m[1], p)
   }
   const temas: Tema[] = []
@@ -86,8 +95,10 @@ export function armarTemas(cobertura: CoberturaPapeles | null, pendientes: Pendi
       pendiente: p, respondido: p?.estado === "resuelto",
     })
   }
+  // 🏦 Los temas que arma otra fuente (la conciliación): se les engancha su respuesta por la clave.
+  for (const t of otros) { const p = porClave.get(t.clave); temas.push({ ...t, pendiente: p, respondido: p?.estado === "resuelto" }) }
   for (const p of pendientes) {
-    if (/^\[cob:/.test(p.texto)) continue
+    if (CLAVE_EN_TEXTO.test(p.texto)) continue
     temas.push({
       clave: `pend:${p.id}`, grupo: "pregunta", titulo: p.texto.replace(/^❓\s*/, "").slice(0, 140), papel: "Pendientes a revisar",
       que: p.texto, links: [], pendiente: p, respondido: p.estado === "resuelto",

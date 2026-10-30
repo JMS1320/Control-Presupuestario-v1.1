@@ -28,3 +28,20 @@ export function historicoDelLink(search: string): string[] {
   const v = new URLSearchParams(search).get("historico")
   return v ? [...new Set(v.split(",").map(x => x.trim()).filter(Boolean))] : []
 }
+
+/**
+ * 🔗 Link a Egresos → Facturas de la empresa mostrando sólo esas facturas (por id; las del Histórico también entran,
+ * porque la lista las carga juntas). Lo usa el recorrido del balance para abrir la pareja de un movimiento.
+ */
+export function linkFacturas(ids: readonly string[], empresa: string = "MSA"): string {
+  const limpios = [...new Set(ids.filter(Boolean))]
+  const p = new URLSearchParams({ seccion: "egresos", tab: `facturas-${empresa.toLowerCase()}`, sub: "facturas" })
+  if (limpios.length) p.set("facturas", limpios.join(","))
+  return `/?${p.toString()}`
+}
+
+/** Las facturas que pide el link. Vacío = sin filtro. */
+export function facturasDelLink(search: string): string[] {
+  const v = new URLSearchParams(search).get("facturas")
+  return v ? [...new Set(v.split(",").map(x => x.trim()).filter(Boolean))] : []
+}
