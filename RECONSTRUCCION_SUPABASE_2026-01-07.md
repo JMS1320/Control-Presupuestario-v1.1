@@ -3335,6 +3335,10 @@ Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantid
 ### 2026-10-30 · Tablas de mails SÓLO ADMIN (script 142) — A-FEAT-1425 — ✅ CORRIDO 2026-10-30 con OK de JMS
 `recurso_tablas`: `mails_registro` y `mails_reglas` pasan de `egresos` a `importar.mails` con `restringe_lectura = true` (marca `[script 142]` en `motivo`). Verificado simulando el JWT de cada rol: admin lee y escribe; los demás, nada. Deshacer: `scripts/142-mails-lectura-solo-admin-deshacer.sql`.
 
+### 2026-10-30 · PAPEL DE TRABAJO VINCULADO — columna `vinculo` en `public.cuadernos` (script 141) — A-FEAT-1430 — ✅ CORRIDO 2026-10-30 con OK de JMS
+`vinculo text` (vacío = cuaderno suelto) + índice parcial `cuadernos_vinculo (usuario_id, vinculo) where vinculo is not null`. Ata un cuaderno —el papel de trabajo que arma el recorrido del balance— a su tema (`balance:<EMPRESA>:<año>:<clave del tema>`). No toca RLS (personal por usuario). Deshacer: `scripts/141-cuadernos-vinculo-deshacer.sql` (seguro: el 141 se niega a correr si la columna ya existía).
+
+
 ### 2026-10-30 · REGISTRO DE MAILS + REGLAS — 2 tablas (script 140) — A-FEAT-1425 — ✅ CORRIDO 2026-10-30 con OK de JMS
 `public.mails_registro` (una fila por mensaje, única por canal + casilla + mensaje_id; la escribe el GAS `RegistroMails.gs` con la `service_role`) y `public.mails_reglas` (remitente/asunto → tipo y acción). RLS `ver_segun_permiso`/`escribir_segun_permiso`, recurso `egresos` (marca `[script 140]`). ⚠️ Las 70 reglas iniciales NO están en el repo (tienen mails de personas): `- Comunicacion JMS Claude - Archivos/Mails/140 reglas iniciales - FUERA DE GIT.sql` — para reconstruir, correr el 140 y después ese archivo. Deshacer: `scripts/140-mails-registro-y-reglas-deshacer.sql` (frena si ya hay mails registrados o reglas agregadas a mano).
 

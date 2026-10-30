@@ -196,6 +196,10 @@ import { esFilaDeAlerta, solapasDelLibro } from "@/lib/balance/vista-previa"
 import { armarInicioYCierre, textoEstado } from "@/lib/balance/inicio-y-cierre"
 import { armarCobertura, CANTIDAD_DE_DATOS } from "@/lib/balance/cobertura-papeles"
 import { armarTemas, progreso, textoPendienteDe } from "@/lib/balance/recorrido"
+import { linkExtracto, extractoDelLink, rangoQueContiene } from "@/lib/extracto/link"
+import { linkHistorico, subFacturasDelLink, historicoDelLink } from "@/lib/egresos/link-facturas"
+import { armarPapelDeTrabajo, vinculoDe } from "@/lib/cuaderno/papel-de-trabajo"
+import { calcularTabla as calcularTablaCuaderno } from "@/lib/cuaderno/formulas"
 import { RENGLONES as RENGLONES_BALANCE } from "@/lib/balance/balance-propio"
 import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
@@ -5239,6 +5243,51 @@ export function correrCasos(): Resultado[] {
       temas[0].grupo === "error" && temas.find(t => t.clave === provision.clave)?.respondido === true
         && temas.filter(t => t.grupo === "pregunta").length === 1 && p.total === temasVacios.length + 1 && p.respondidos === 1
         && !temas.some(t => /^Equinos/.test(t.titulo)) && /buscar qué comprobantes/.test(provision.propuesta ?? ""), "A-FEAT-1430")
+  }
+
+  /**
+   * 🔗 **LINK AL EXTRACTO FILTRADO — A-FEAT-1430 paso 2.** Ida y vuelta: lo que arma el recorrido lo lee el extracto
+   * (cuenta, movimientos por id, fechas). Un link de otra sección o sin nada no filtra.
+   */
+  {
+    const r = rangoQueContiene(["2025-08-19", "2025-10-17"])
+    const url = linkExtracto({ cuenta: "msa_galicia", movs: ["12", "15", "12"], desde: r.desde, hasta: r.hasta })
+    const vuelta = extractoDelLink(url.slice(url.indexOf("?")))
+    chequear("Extracto · link", "🔗 El link del balance abre el extracto en esa cuenta, esos movimientos y las fechas que los contienen",
+      "msa_galicia · 12,15 · 2025-08-16 → 2025-10-20 · otra sección null",
+      `${vuelta?.cuenta} · ${vuelta?.movs.join(",")} · ${vuelta?.desde} → ${vuelta?.hasta} · otra sección ${extractoDelLink("?seccion=egresos&movs=1")}`,
+      vuelta?.cuenta === "msa_galicia" && vuelta.movs.join(",") === "12,15" && vuelta.desde === "2025-08-16" && vuelta.hasta === "2025-10-20"
+        && extractoDelLink("?seccion=egresos&movs=1") === null && extractoDelLink("?seccion=extracto") === null, "A-FEAT-1430")
+  }
+  {
+    const url = linkHistorico(["h1", "h2", "h1"])
+    const q = url.slice(url.indexOf("?"))
+    chequear("Facturas · link", "🔗 El link abre Facturas MSA → Histórico mostrando sólo esos comprobantes",
+      "facturas-msa · historico · h1,h2", `${new URLSearchParams(q).get("tab")} · ${subFacturasDelLink(q)} · ${historicoDelLink(q).join(",")}`,
+      new URLSearchParams(q).get("tab") === "facturas-msa" && subFacturasDelLink(q) === "historico" && historicoDelLink(q).join(",") === "h1,h2"
+        && subFacturasDelLink("?sub=otra") === null && historicoDelLink("?sub=historico").length === 0, "A-FEAT-1430")
+  }
+
+  /**
+   * 📓 **EL PAPEL DE TRABAJO — A-FEAT-1430 paso 3.** La provisión del balance anterior, con números reales: la tabla
+   * del cuaderno calcula la diferencia (100 %) y lo que «daría» marcando las dos candidatas (0), con SUS fórmulas.
+   */
+  {
+    const cand = (n: number, nombre: string, total: number) => ({ id: `h${n}`, fuente: "historico", denominacion: nombre, punto_venta: n, numero: n, fecha: "2025-08-19", total, subdiario: "2025-08" })
+    const libroMin = { compras: [], ventas: [], controles: { sePuedeEntregar: true, motivos: [] }, ejercicio: { fechaCierre: "2026-06-30" } } as unknown as Parameters<typeof armarCobertura>[0]["libro"]
+    const cob = armarCobertura({ libro: libroMin, fechaInicio: "2025-07-01",
+      controlesInicio: { provision: { declarado: 12456000.14, fuenteDeclarado: "foto", reconocido: 0, diferencia: 12456000.14, estado: "no cierra",
+        candidatos: [cand(2, "PAM", 6228000.07), cand(10, "MAGDALENA", 6228000.07)] as never } } })
+    const tema = armarTemas(cob, []).find(t => /^Provisión del ejercicio anterior/.test(t.titulo))!
+    const valores = calcularTablaCuaderno(tema.comparacion!.celdas)
+    const papel = armarPapelDeTrabajo(tema, "MSA", "25/26", tema.comparacion)
+    const ultima = valores[valores.length - 1]
+    chequear("Balance · papel de trabajo", "📓 El papel de trabajo de la provisión: diferencia 100 % y, marcando las 2 candidatas, queda en 0 (fórmulas del cuaderno); links a Histórico",
+      "diferencia 12456000.14 · 100 % · queda 0 · 3 tablas/textos + link histórico · vínculo balance:MSA:2026:cob:…",
+      `diferencia ${valores[3][1]} · ${valores[4][1]} % · queda ${ultima[1]} · ${papel.bloques.length > 3 ? "3 tablas/textos" : "?"} + ${tema.links.some(l => /historico=h2(%2C|,)h10/.test(l.href)) ? "link histórico" : "sin link"} · vínculo ${vinculoDe("MSA", 2026, tema.clave).slice(0, 21)}…`,
+      Math.abs(Number(valores[3][1]) - 12456000.14) < 0.01 && Math.round(Number(valores[4][1])) === 100 && Math.abs(Number(ultima[1])) < 0.01
+        && papel.bloques.some(b => b.tipo === "tabla") && tema.links.some(l => /historico=h2%2Ch10|historico=h2,h10/.test(l.href))
+        && vinculoDe("MSA", 2026, tema.clave).startsWith("balance:MSA:2026:cob:"), "A-FEAT-1430")
   }
 
   /**

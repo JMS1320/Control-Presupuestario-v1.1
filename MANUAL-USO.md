@@ -3566,6 +3566,12 @@ el export con él — ✅ sale (y en qué solapa), ⛔ error, ⏳ falta el saldo
 un comprobante), 🛠️ pendiente de desarrollo (con su número) o ❓ a decidir. El estado se recalcula cada vez: cuando
 se carga lo que faltaba, cambia solo.
 
+**«🧭 Recorrer temas»**: los temas a resolver, uno por uno, a pantalla completa (↑ ↓ para moverse). Cada tema dice qué
+pasa, la propuesta y, si se explica con números, la cuenta. **↗ links** abren en otra pestaña donde vive el dato, filtrado
+(el extracto de esa cuenta, las facturas del Histórico). **📓 Papel de trabajo** arma un documento en tu Cuaderno, atado
+al tema, con el problema y la cuenta (con fórmulas) para pensar y anotar sin tocar datos. Tu respuesta (✓ Resuelto,
+👍 Está bien así, 📝 nota) queda en «Pendientes a revisar» y sale en el Excel.
+
 **Controles que se ven solos** (no hace falta abrir el Excel):
 - **Provisión del ejercicio anterior**: compara lo que el balance anterior dejó provisionado (la foto del Balance
   propio al cierre anterior) con lo que la app reconoce; si no cierra, propone qué comprobantes de este ejercicio

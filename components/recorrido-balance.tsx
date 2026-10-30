@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button"
 import { ahoraISO } from "@/lib/fechas"
 import type { PendienteBalance } from "@/lib/balance/pendientes-balance"
 import { GRUPOS, progreso, textoPendienteDe, type GrupoTema, type Tema } from "@/lib/balance/recorrido"
+import { armarPapelDeTrabajo, vinculoDe } from "@/lib/cuaderno/papel-de-trabajo"
+import { calcularTabla, mostrarValor } from "@/lib/cuaderno/formulas"
 
 const ICONO = Object.fromEntries(GRUPOS.map(g => [g.id, g.icono])) as Record<GrupoTema, string>
 const TITULO = Object.fromEntries(GRUPOS.map(g => [g.id, g.titulo])) as Record<GrupoTema, string>
@@ -43,6 +45,8 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   const [claveActual, setClaveActual] = useState<string | null>(null)
   const [nota, setNota] = useState("")
   const [guardando, setGuardando] = useState(false)
+  /** 📓 El papel de trabajo del tema abierto: su id si ya existe (`null` = no hay; `undefined` = buscando). */
+  const [papelId, setPapelId] = useState<string | null | undefined>(undefined)
 
   const visibles = useMemo(() => temas.filter(t =>
     (!filtro.size || filtro.has(t.grupo)) && (!ocultarRespondidos || !t.respondido)), [temas, filtro, ocultarRespondidos])
@@ -52,6 +56,39 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
 
   // Al cambiar de tema, la nota arranca con lo que ya se había escrito (si lo hay).
   useEffect(() => { setNota(actual?.pendiente?.resolucion ?? "") }, [actual?.clave]) // eslint-disable-line react-hooks/exhaustive-deps
+  // 📓 ¿Ya hay un papel de trabajo atado a este tema? (los cuadernos son personales: se busca entre los propios)
+  useEffect(() => {
+    if (!actual) return
+    let vivo = true
+    setPapelId(undefined)
+    supabase.from("cuadernos").select("id").eq("vinculo", vinculoDe(empresa, anioCierre, actual.clave)).limit(1)
+      .then(({ data, error }) => { if (vivo) setPapelId(error ? null : (data?.[0]?.id as string | undefined) ?? null) })
+    return () => { vivo = false }
+  }, [actual?.clave, empresa, anioCierre]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Abre el papel de trabajo del tema en otra pestaña; si no existe, lo arma con el texto y la comparación. */
+  const abrirPapel = async () => {
+    if (!actual) return
+    // La pestaña se abre YA (en el click): abrirla después de esperar a la base la bloquea el navegador.
+    const pestana = window.open("about:blank", "_blank")
+    try {
+      let idPapel = papelId ?? null
+      if (!idPapel) {
+        const { titulo, bloques } = armarPapelDeTrabajo(actual, empresa, etiqueta, actual.comparacion)
+        const { data, error } = await supabase.from("cuadernos")
+          .insert({ titulo, bloques, vinculo: vinculoDe(empresa, anioCierre, actual.clave) }).select("id").single()
+        if (error) throw error
+        idPapel = String(data.id)
+        setPapelId(idPapel)
+        toast.success("Papel de trabajo armado en tu Cuaderno")
+      }
+      const url = `/cuaderno?id=${encodeURIComponent(idPapel)}`
+      if (pestana) pestana.location.href = url; else window.open(url, "_blank")
+    } catch (e) {
+      pestana?.close()
+      toast.error("No se pudo armar el papel de trabajo: " + (e as Error).message)
+    }
+  }
   useEffect(() => { if (!claveActual && visibles[0]) setClaveActual(visibles[0].clave) }, [claveActual, visibles])
 
   const ir = useCallback((delta: number) => {
@@ -178,12 +215,34 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
                 </div>
               )}
 
-              {actual.links.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {actual.links.map(l => (
-                    <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer"
-                      className="rounded border px-3 py-1.5 text-sm hover:bg-muted">↗ {l.texto}</a>
-                  ))}
+              <div className="flex flex-wrap gap-2">
+                {actual.links.map(l => (
+                  <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer"
+                    className="rounded border px-3 py-1.5 text-sm hover:bg-muted">↗ {l.texto}</a>
+                ))}
+                <button type="button" onClick={abrirPapel} disabled={papelId === undefined}
+                  className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-sm text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
+                  title="Un documento del Cuaderno atado a este tema: el problema, la propuesta y la cuenta, para pensar y anotar sin tocar datos">
+                  📓 {papelId ? "Abrir el papel de trabajo" : actual.comparacion ? "Armar papel de trabajo (con la cuenta)" : "Armar papel de trabajo"}
+                </button>
+              </div>
+
+              {actual.comparacion && (
+                <div className="space-y-1">
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{actual.comparacion.titulo}</div>
+                  <div className="overflow-x-auto">
+                    <table className="border-collapse text-sm">
+                      <tbody>
+                        {calcularTabla(actual.comparacion.celdas).map((fila, f) => (
+                          <tr key={f} className={f === 0 ? "bg-muted/50 font-medium" : ""}>
+                            {fila.map((v, c) => (
+                              <td key={c} className={`border px-2 py-1 ${typeof v === "number" ? "text-right tabular-nums" : ""}`}>{mostrarValor(v)}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
 
