@@ -194,6 +194,7 @@ import { elegirTcAl } from "@/lib/dolares/tc-cierre"
 import { controlarProvisionAnterior } from "@/lib/balance/control-inicio"
 import { esFilaDeAlerta, solapasDelLibro } from "@/lib/balance/vista-previa"
 import { armarInicioYCierre, textoEstado } from "@/lib/balance/inicio-y-cierre"
+import { armarCobertura, CANTIDAD_DE_DATOS } from "@/lib/balance/cobertura-papeles"
 import { RENGLONES as RENGLONES_BALANCE } from "@/lib/balance/balance-propio"
 import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
@@ -5191,6 +5192,32 @@ export function correrCasos(): Resultado[] {
         && de("tarjetas").estado === "falta el cierre" && esFilaDeAlerta([textoEstado(de("tarjetas"))])
         && de("banco_galicia").estado === "falta el inicio" && de("equinos").estado === "sin datos"
         && ic.filas.length === RENGLONES_BALANCE.length && ic.faltan.length === 1, "A-FEAT-1427")
+  }
+
+  /**
+   * 🗂️ **COBERTURA DE LOS PAPELES — A-FEAT-1427.** Cada dato de los papeles del año pasado sale con un estado, y el
+   * estado sale de los DATOS: la misma regla da «falta información» sin extracto, «error» si la cadena no cierra, y
+   * «sale» con movimientos. Con datos vacíos ninguna regla se cae ni desaparece.
+   */
+  {
+    const libroMin = { compras: [], ventas: [], controles: { sePuedeEntregar: true, motivos: [] } } as unknown as Parameters<typeof armarCobertura>[0]["libro"]
+    const cadena = (cuenta: string, movimientos: number, diferencia: number | null) =>
+      ({ cuenta, saldoInicio: 1000, saldoAlCierre: 2000, movimientos, diferencia }) as unknown as NonNullable<NonNullable<Parameters<typeof armarCobertura>[0]["bancarios"]>["cadenas"]>[number]
+    const vacio = armarCobertura({ libro: libroMin, fechaInicio: "2025-07-01" })
+    const con = armarCobertura({
+      libro: libroMin, fechaInicio: "2025-07-01",
+      bancarios: { gastos: { meses: [], filas: [], subtotales: [], total: {} as never, sinClasificar: [] }, retiros: { meses: [], filas: [], neto: {} as never, sinReconocer: [] },
+        saldos: [], cadenas: [cadena("BANCO GALICIA (cta cte)", 120, 2.58), cadena("BANCO SANTANDER", 0, 0)] },
+      controlesInicio: { provision: { declarado: 12456000.14, fuenteDeclarado: "foto", reconocido: 0, diferencia: 12456000.14, estado: "no cierra", candidatos: [] } },
+    })
+    const est = (c: ReturnType<typeof armarCobertura>, dato: RegExp) => c.items.find(i => dato.test(i.dato))?.estado
+    chequear("Balance · cobertura", "🗂️ Cada dato de los papeles del año pasado sale con su estado, calculado de los datos (no escrito a mano)",
+      `${CANTIDAD_DE_DATOS} datos · vacío: Galicia sin informacion · con datos: Galicia error, Santander sin informacion, provisión error · equinos no corresponde`,
+      `${vacio.items.length} datos · vacío: Galicia ${est(vacio, /^Banco Galicia/)} · con datos: Galicia ${est(con, /^Banco Galicia/)}, Santander ${est(con, /^Banco Santander/)}, provisión ${est(con, /^Provisión del ejercicio anterior/)} · equinos ${est(con, /^Equinos/)}`,
+      vacio.items.length === CANTIDAD_DE_DATOS && !vacio.items.some(i => /no se pudo evaluar/.test(i.detalle))
+        && est(vacio, /^Banco Galicia/) === "sin informacion" && est(con, /^Banco Galicia/) === "error"
+        && est(con, /^Banco Santander/) === "sin informacion" && est(con, /^Provisión del ejercicio anterior/) === "error"
+        && est(con, /^Equinos/) === "no corresponde", "A-FEAT-1427")
   }
 
   /**

@@ -5,12 +5,12 @@
 import * as XLSX from "xlsx"
 
 /** Los textos con los que los papeles marcan un problema. Una fila con cualquiera de éstos es una alerta. */
-const MARCAS_DE_ALERTA = [/⚠️/, /\bNO CIERRA\b/i, /\bNO CUADRA\b/i, /\bNO COINCIDE\b/i, /FALTA EL PRECIO/i, /\bFALTA\b/, /sin dato/i, /SIN MOVIMIENTOS CARGADOS/i, /ABIERTO/]
+const MARCAS_DE_ALERTA = [/ERROR \/ INCONSISTENCIA/, /PENDIENTE de desarrollo/, /A DECIDIR/, /⚠️/, /\bNO CIERRA\b/i, /\bNO CUADRA\b/i, /\bNO COINCIDE\b/i, /FALTA EL PRECIO/i, /\bFALTA\b/, /sin dato/i, /SIN MOVIMIENTOS CARGADOS/i, /ABIERTO/]
 /** Una fila con alguna marca de problema. Las que arrancan con ✓ (un control que cerró) no cuentan. */
 export function esFilaDeAlerta(fila: unknown[]): boolean {
   const texto = fila.map(c => (c == null ? "" : String(c))).join(" · ").trim()
   if (!texto) return false
-  if (/^(CONTROL )?✓/.test(texto) && !/⚠️|NO CIERRA|NO CUADRA/i.test(texto)) return false
+  if (/^(CONTROL )?✓|^✅|^— /.test(texto) && !/⚠️|NO CIERRA|NO CUADRA/i.test(texto)) return false
   return MARCAS_DE_ALERTA.some(r => r.test(texto))
 }
 

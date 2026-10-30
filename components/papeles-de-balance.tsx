@@ -61,6 +61,7 @@ import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE } from "@/lib/ba
 import type { AsientoLibroDiario } from "@/lib/balance/libro-diario"
 import { leerFotoInicio, controlarProvisionAnterior, type ControlesInicio, type FotoInicio } from "@/lib/balance/control-inicio"
 import { armarInicioYCierre } from "@/lib/balance/inicio-y-cierre"
+import type { HechosCobertura } from "@/lib/balance/cobertura-papeles"
 import {
   armarCuentasAlCierre, canceladoPorCuotasAlCierre, polizasParaCierreDesde,
   type CuentasAlCierre, type ComprobanteConPago, type CanceladoPorCuotas,
@@ -354,7 +355,24 @@ export function PapelesDeBalance() {
         if (eFoto) throw new Error(eFoto)
         setFotoInicio(foto)
         const provision = controlarProvisionAnterior(foto, armado.provisionesEjercicioAnterior, armado.compras)
-        setControlesInicio({ provision })
+        // 🗂️ Hechos chicos para «00 Cobertura»: lo que el export no trae. Cada uno por separado: si falla, queda «no se pudo».
+        const inicio = primerDiaDelEjercicio(ej)
+        const hechos: HechosCobertura = {}
+        try {
+          const r = await supabase.schema(empresa.schema).from("cheques").select("id", { count: "exact", head: true }).lt("fecha_emision", inicio)
+          if (!r.error) hechos.chequesAntesDelInicio = r.count ?? 0
+        } catch { /* queda sin saber */ }
+        try {
+          const r = await supabase.from("anticipos_proveedores").select("id", { count: "exact", head: true }).eq("empresa", empresa.id).lt("fecha_pago", inicio)
+          if (!r.error) hechos.anticiposAntesDelInicio = r.count ?? 0
+        } catch { /* queda sin saber */ }
+        for (const [tabla, campo] of [["movimientos_hacienda", "primerMovimientoHacienda"], ["movimientos_insumos", "primerMovimientoInsumos"]] as const) {
+          try {
+            const r = await supabase.schema("productivo").from(tabla).select("fecha").order("fecha", { ascending: true }).limit(1)
+            if (!r.error) hechos[campo] = r.data?.[0]?.fecha ? String(r.data[0].fecha).slice(0, 10) : null
+          } catch { /* queda sin saber */ }
+        }
+        setControlesInicio({ provision, hechos })
         if (provision.estado === "no cierra") toast.warning(
           `Provisión del ejercicio anterior: el balance anterior provisionó $ ${fmt(provision.declarado ?? 0)} y la app reconoce $ ${fmt(provision.reconocido)}. Ver «05 Provisión».`)
       } catch (e) {

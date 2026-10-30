@@ -3561,6 +3561,11 @@ todavía («⏳ trayendo stock y precios…») y se completa sola; cuando dice �
 - Las **preguntas** siguen en «Pendientes a revisar», debajo: ahí se contestan con una nota.
 - Lo que muestra la vista previa y lo que baja el Excel salen del mismo cálculo: si algo se ve mal acá, está mal allá.
 
+**«00 Cobertura», la primera solapa**: cada dato de los papeles que se presentaron el año pasado, con lo que hace hoy
+el export con él — ✅ sale (y en qué solapa), ⛔ error, ⏳ falta el saldo de inicio, 📭 falta información (un extracto,
+un comprobante), 🛠️ pendiente de desarrollo (con su número) o ❓ a decidir. El estado se recalcula cada vez: cuando
+se carga lo que faltaba, cambia solo.
+
 **Controles que se ven solos** (no hace falta abrir el Excel):
 - **Provisión del ejercicio anterior**: compara lo que el balance anterior dejó provisionado (la foto del Balance
   propio al cierre anterior) con lo que la app reconoce; si no cierra, propone qué comprobantes de este ejercicio

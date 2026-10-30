@@ -17,6 +17,7 @@
  */
 import type { AsientoLibroDiario } from "./libro-diario"
 import type { InicioYCierre } from "./inicio-y-cierre"
+import type { HechosCobertura } from "./cobertura-papeles"
 
 /** Un renglón de la foto con sus versiones. `null` = la versión no está cargada. */
 export type RenglonFoto = { contador?: number | null; jms?: number | null }
@@ -53,6 +54,8 @@ export interface ControlesInicio {
   provision?: ControlProvisionAnterior
   /** 📋 Cada renglón del balance con su inicio (foto anterior) y su cierre (la app). */
   inicioYCierre?: InicioYCierre
+  /** 🗂️ Hechos chicos que lee la pantalla para la solapa «00 Cobertura». */
+  hechos?: HechosCobertura
 }
 
 export interface ControlProvisionAnterior {

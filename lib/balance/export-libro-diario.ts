@@ -25,7 +25,7 @@ import { lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
 import { ETIQUETA_CONCEPTO, type ImpuestoCheque } from "./impuesto-cheque"
 import { controlarCheque, chequeEnPapel08, chequeEnTemplates, type ControlCheque } from "./control-cheque"
 import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
-import { armarEjercicio, nombreSubdiario } from "./ejercicio"
+import { armarEjercicio, nombreSubdiario, primerDiaDelEjercicio } from "./ejercicio"
 import { explicarFila } from "./facturas-fijas"
 import { armarLibroPorCuenta, TIPOS_SIN_CREDITO_VENTAS, SIN_IMPUTAR, type LibroPorCuenta } from "./libro-por-cuenta"
 import type { Descuadre } from "@/lib/subdiarios/cuadratura"
@@ -61,6 +61,7 @@ import {
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 import type { ControlesInicio, ControlProvisionAnterior } from "./control-inicio"
 import { textoEstado, type InicioYCierre } from "./inicio-y-cierre"
+import { armarCobertura, ICONO, TEXTO_ESTADO, type CoberturaPapeles, type EstadoCobertura } from "./cobertura-papeles"
 
 const money = (n: number) => Math.round(n * 100) / 100
 
@@ -214,6 +215,27 @@ export function bloqueDeLecturas(lecturas: Lectura[] | undefined): unknown[][] {
   return f
 }
 
+
+/**
+ * 🗂️ A-FEAT-1427: cada dato de los papeles del año pasado y qué hace hoy el export con él. Los que necesitan algo van
+ * arriba, agrupados por qué les falta; lo que sale, abajo.
+ */
+function hojaDeCobertura(c: CoberturaPapeles, etiqueta: string): unknown[][] {
+  const ORDEN: EstadoCobertura[] = ["error", "falta inicio", "sin informacion", "pendiente desarrollo", "decision", "sale", "no corresponde"]
+  const f: unknown[][] = []
+  f.push([`COBERTURA — ¿el export ${etiqueta} responde cada dato de los papeles del año pasado?`])
+  f.push([ORDEN.filter(e => c.cuenta[e]).map(e => `${ICONO[e]} ${TEXTO_ESTADO[e]}: ${c.cuenta[e]}`).join(" · ")])
+  f.push(["El estado se recalcula cada vez con los datos de la app: cuando se cargue lo que falta o se desarrolle la pieza, cambia solo."])
+  f.push([])
+  f.push(["Estado", "Papel del año pasado", "Dato", "Valor 24/25", "Qué pasa hoy", "Dónde sale", "Pendiente"])
+  for (const e of ORDEN) {
+    for (const i of c.items.filter(x => x.estado === e)) {
+      const fila = [`${ICONO[e]} ${TEXTO_ESTADO[e]}`, i.papel, i.dato, i.valor2425, i.detalle, i.solapa, i.pendiente ?? ""]
+      f.push(e === "error" ? conEstilo(fila, ESTILO_ERROR) : fila)
+    }
+  }
+  return f
+}
 
 /** 📋 A-FEAT-1427: cada renglón del balance, inicio (foto del balance anterior) contra cierre (la app). */
 function hojaInicioYCierre(ic: InicioYCierre, etiqueta: string): unknown[][] {
@@ -2507,6 +2529,14 @@ export function armarWorkbook(
     bancarios: bancarios ?? null,
     lecturas,
   })
+  // 🗂️ A-FEAT-1427: PRIMERO, ¿el export responde cada dato que se presentó el año pasado? (y si no, por qué)
+  const cobertura = armarCobertura({
+    libro, fechaInicio: primerDiaDelEjercicio(libro.ejercicio), templates,
+    hacienda: hacienda ? { valuacion: hacienda.valuacion, cuadre: hacienda.cuadre, stockInicio: hacienda.stockInicio } : null,
+    insumos, campo: campo ? { granos: campo.granos, sementeras: campo.sementeras } : null,
+    cuentas, bancarios, saldosAnteriores, controlesInicio, hechos: controlesInicio?.hechos,
+  })
+  hoja(wb, "00 Cobertura", hojaDeCobertura(cobertura, libro.ejercicio.etiqueta))
   hoja(wb, "00 Indice", hojaDeIndice(indice, libro, empresa), COLS_INDICE)
   // 📋 A-FEAT-1427: cada renglón del balance con su saldo del año pasado y el de este año.
   if (controlesInicio?.inicioYCierre) hoja(wb, "00 Inicio y cierre", hojaInicioYCierre(controlesInicio.inicioYCierre, libro.ejercicio.etiqueta))
