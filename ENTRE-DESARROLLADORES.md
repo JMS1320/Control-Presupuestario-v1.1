@@ -40,6 +40,11 @@
 
 ## 📨 PARA JAVIER
 
+### ⏸️ Pausa por persona en el middleware + publicación a main (2026-10-30)
+- `middleware.ts` suma un chequeo: si el usuario tiene `app_metadata.pausa = true` (y no es admin), ve sólo `/actualizando` («estamos actualizando, probá más tarde») y la API le da 503. Lógica en `lib/auth/pausa.ts`, con su caso.
+- **Puesta a Ulises** (`usanchezdavid`) con OK de JMS, para publicar `desarrollo` → `main` (857 commits, todos de JMS; tus ramas no viajan) y revisar cómo ve la app con el rol `contable` antes de devolverle el acceso. Tu cuenta `javiergc89+contable` sirve para ver ese rol.
+- Al terminar se le saca la marca; el chequeo queda como herramienta.
+
 ### 🔒 Lectura de las tablas de mails cerrada al admin (2026-10-30) — ✅ APLICADA el 30/10 con OK de JMS (aviso previo): verificado simulando cada rol — admin lee y escribe; contable, socio, productivo y pruebas, nada
 - `scripts/142-mails-lectura-solo-admin.sql` (+ `-deshacer`). `public.mails_registro` y `public.mails_reglas` (las del script 140) pasan en `recurso_tablas` de `egresos` a **`importar.mails`** con **`restringe_lectura = true`**: con la regla de `puede_ver` (scripts 63/65), sin esto cualquier rol logueado las leía; y con `egresos`, `contable` las leía y escribía. `importar` es la única sección que hoy tiene sólo `admin`. Motivo: tienen mails de la familia y de la sucesión. No toca funciones ni otras tablas. El GAS escribe con `service_role` (no lo afecta).
 - ⚠️ Si algún día un rol recibe la sección `importar`, también vería los mails: avisar acá antes.

@@ -63,6 +63,7 @@ import { RECURSOS as RECURSOS_PERMISABLES } from "@/lib/auth/recursos"
 import { borradorDe, alternarRecurso, alternarSeccion, nivelEnBorrador, contarCambios, cuerpoGuardar } from "@/lib/auth/modo-permisos"
 import { motivoCuentaBloqueada } from "@/lib/auth/cuentas-extracto"
 import { minutosEfectivos, validarMinutos, textoMinutos, valorCookieActividad, msRestantes, sesionVencida, sesionDelToken } from "@/lib/auth/inactividad"
+import { desvioPorPausa } from "@/lib/auth/pausa"
 import { REGLAS_EXTRACTO, ASIGNAR_EXTRACTO, ANTICIPOS_CASHFLOW, primeraPermitida, hayAlguna, tabInicialAsignar } from "@/lib/auth/ventanas"
 import { clasificarCampanita, contarNuevos, soyYo } from "@/lib/revisiones/campanita"
 import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
@@ -9491,6 +9492,15 @@ export function correrCasos(): Resultado[] {
       sesionDelToken("no-es-un-token") ?? "nada", sesionDelToken(null) ?? "nada"].join(" · ")
     chequear("Accesos", "Inactividad: la sesión sale del token; un token roto no inventa una",
       "abc-123 · nada · nada", inTok, inTok === "abc-123 · nada · nada", "A-FEAT-1351")
+    // ── Pausa por persona mientras se actualiza (publicación a main 30/10) ──
+    const pzU = { role: "contable", pausa: true }
+    const pz = [
+      desvioPorPausa(pzU, "/"), desvioPorPausa(pzU, "/api/revisiones"), desvioPorPausa(pzU, "/actualizando"),
+      desvioPorPausa(pzU, "/auth/signout"), desvioPorPausa({ role: "contable" }, "/"),
+      desvioPorPausa({ role: "admin", pausa: true }, "/"), desvioPorPausa({ role: "contable", pausa: "true" }, "/"),
+    ].join(" · ")
+    chequear("Accesos", "Pausa: la persona en pausa ve sólo el aviso (la API da 503) y puede cerrar sesión; sin marca, o si es admin, pasa",
+      "aviso · api-503 · pasa · pasa · pasa · pasa · pasa", pz, pz === "aviso · api-503 · pasa · pasa · pasa · pasa · pasa", "pausa-main")
     // ── Funciones de adentro de las ventanas (A-BUG-1335) ──
     // Ulises: sólo carga en Extracto (sin reglas ni asignar) y nada de anticipos.
     const vnUlises = (id: string) => ["extracto.importar", "extracto.movimientos"].includes(id)
