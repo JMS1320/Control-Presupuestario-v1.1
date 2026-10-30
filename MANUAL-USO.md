@@ -3748,6 +3748,19 @@ solo, y al pie dice cuántos pagos se exportaron para que lo cruces con la panta
 ⚠️ Sin probar todavía → A-TEST-1174
 
 
+## 📬 Egresos → Mails *(2026-10-30, sólo admin)*
+
+Todo lo que entra y sale de la casilla **sanmanuel.sp**, registrado y con link a cada mail.
+
+- **Registro**: elegí el período (último día, 7, 30 o 90 días). Los chips de arriba agrupan: **Para mirar** (en rojo: mora, vencimientos, saldo negativo, firmas), **Sin regla** (nadie dijo todavía qué son), **Guardados**, **Archivados** (propaganda y avisos sin importancia) y **Enviados**. Los de abajo filtran por tipo (Impuestos, Contadores, Facturas…). Click prende o apaga un chip; Ctrl+click deja sólo ése.
+- El **asunto** abre el mail en Gmail (con la sesión de sanmanuel.sp abierta). El 📎 dice cuántos adjuntos tiene.
+- Si un mail está mal clasificado, cambiale el **tipo** en su renglón: queda puesto a mano (✎) y manda sobre la regla. Para volver al de la regla, elegí el mismo que decía la regla.
+- Abajo de los chips, una línea suma los grupos: tiene que dar el total. Si no da, aparece en rojo.
+- **Reglas**: de quién viene (un mail o un dominio como `@arba.gov.ar`), si el asunto tiene que decir algo, qué tipo es y qué se hace (**Avisar** / **Guardar** / **Archivar**). Gana la primera por orden. Una regla nueva vale para lo que llega desde ese momento.
+- **El reporte diario** llega a la propia casilla a las 7: «[Registro de mails] …», con lo mismo que esta pantalla.
+
+→ A-TEST-1290
+
 ## 🛡️ Egresos → Seguros *(2026-10-20)*
 
 Es el lugar para ver **las pólizas de seguro** y controlar que **estén todas cargadas**.
