@@ -1,10 +1,10 @@
 /**
- * Deshace 138 · la carga de Santander MSA (A-FEAT-1424).
+ * Deshace 139 · la carga de Santander MSA (A-FEAT-1424).
  *
- *     npx tsx scripts/138-cargar-santander-msa-deshacer.mts              ← dice qué borraría
- *     npx tsx scripts/138-cargar-santander-msa-deshacer.mts --escribir   ← borra (🛑 con OK de JMS)
+ *     npx tsx scripts/139-cargar-santander-msa-deshacer.mts              ← dice qué borraría
+ *     npx tsx scripts/139-cargar-santander-msa-deshacer.mts --escribir   ← borra (🛑 con OK de JMS)
  *
- * Borra SÓLO los ids de `138-cargar-santander-msa-ids.json`, y FRENA si alguno ya se trabajó (conciliado, con
+ * Borra SÓLO los ids de `139-cargar-santander-msa-ids.json`, y FRENA si alguno ya se trabajó (conciliado, con
  * cuenta contable, template, cuota, factura o par vinculado).
  */
 import { createClient } from "@supabase/supabase-js"
@@ -16,7 +16,7 @@ const env = Object.fromEntries(
     .map(l => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, "")] }),
 )
 const tabla = () => createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY).schema("msa").from("santander")
-const ids: string[] = JSON.parse(readFileSync("scripts/138-cargar-santander-msa-ids.json", "utf8"))
+const ids: string[] = JSON.parse(readFileSync("scripts/139-cargar-santander-msa-ids.json", "utf8"))
 const VINCULOS = ["categ", "nro_cuenta", "template_id", "template_cuota_id", "comprobante_arca_id", "par_id"]
 
 const trabajadas: string[] = []
