@@ -22,6 +22,7 @@ import { linkTemplates } from "@/lib/impuestos/planilla"
 import { celdaNumero, type Comparacion } from "@/lib/cuaderno/papel-de-trabajo"
 import type { LinkDato } from "./cobertura-papeles"
 import type { Tema } from "./recorrido"
+import type { CruceCheque } from "@/lib/conciliacion/cheques-vencidos"
 
 const dmy = (f?: string | null) => (f ? f.slice(0, 10).split("-").reverse().join("/") : "")
 const plata = (x: number) => `$ ${x.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -133,4 +134,33 @@ export function temasDeDeudas(deudas: PropuestaDeuda[], empresa: string): Tema[]
         respondido: false,
       }
     })
+}
+
+/**
+ * ✍️ Los echeqs vencidos sin marcar «cobrado» (A-AUTO-10): cada uno con su débito y, si el caso es claro, la acción de un clic.
+ */
+export function temasDeCheques(cruces: CruceCheque[], extractoHasta: string | null): Tema[] {
+  return cruces.map((c): Tema => {
+    const ch = c.cheque, d = c.debito
+    const nombre = `${ch.numero ? `Nº ${ch.numero}` : "sin número"} · ${ch.beneficiario_nombre ?? "?"}`
+    const links: LinkDato[] = []
+    if (d) links.push({ texto: `El débito en el extracto (${dmy(d.fecha)})`, href: linkExtracto({ cuenta: d.cuentaId, movs: [d.id], ...rangoQueContiene([d.fecha]) }) })
+    let propuesta: string, accion: Tema["accion"]
+    if (!d) {
+      propuesta = extractoHasta && ch.fecha_cobro && ch.fecha_cobro > extractoHasta
+        ? `Todavía no se puede ver: el extracto cargado llega hasta el ${dmy(extractoHasta)} y el cobro es del ${dmy(ch.fecha_cobro)}. Cargar el extracto.`
+        : "No se encontró su débito en el banco (ni por número ni por importe): ¿se cobró? ¿desde otra cuenta?"
+    } else {
+      const completar = !ch.numero && c.numeroBanco ? ` y completar el número ${c.numeroBanco} (el cheque está cargado sin número)` : ""
+      const fechaDistinta = ch.fecha_cobro && dmy(ch.fecha_cobro) !== dmy(d.fecha) ? ` (estaba cargado para el ${dmy(ch.fecha_cobro)})` : ""
+      propuesta = `El banco lo debitó el ${dmy(d.fecha)}${c.por === "numero" ? " con su número" : " por el mismo importe"} («${d.descripcion}»), y el débito está ${d.estado === "conciliado" ? "conciliado" : `en «${d.estado}»: conciliarlo`}. Marcar el cheque «cobrado» con esa fecha${fechaDistinta}${completar}.`
+      accion = { tipo: "cheque-cobrado", texto: `Marcar cobrado el ${dmy(d.fecha)}${!ch.numero && c.numeroBanco ? ` y poner el Nº ${c.numeroBanco}` : ""}`, chequeId: ch.id, fecha: d.fecha, numero: !ch.numero ? c.numeroBanco : null }
+    }
+    return {
+      clave: `chq:${ch.id}`, grupo: "cheque", titulo: `Echeq ${nombre} · ${plata(ch.monto)}`.slice(0, 160),
+      papel: "Echeqs emitidos (cartel de Principal)", etiqueta: d ? (d.estado === "conciliado" ? "Débito conciliado" : "Débito sin cerrar") : "Sin débito", importe: ch.monto,
+      que: `Cheque ${nombre} por ${plata(ch.monto)}, cobro ${ch.fecha_cobro ? dmy(ch.fecha_cobro) : "?"}: sigue «vigente» aunque ya pasó su fecha.`,
+      propuesta, links, accion, respondido: false,
+    }
+  })
 }

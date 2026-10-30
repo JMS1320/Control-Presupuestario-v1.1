@@ -50,7 +50,8 @@ import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/bal
 import { armarWorkbook, coberturaDeArgs, descargarLibroDiario } from "@/lib/balance/export-libro-diario"
 import { armarTemas, type Tema } from "@/lib/balance/recorrido"
 import { leerDatosConciliacion, proponerConciliaciones } from "@/lib/conciliacion/propuestas-ejercicio"
-import { temasDeMovimientos, temasDeDeudas } from "@/lib/balance/recorrido-conciliacion"
+import { temasDeMovimientos, temasDeDeudas, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
+import { leerChequesVencidos } from "@/lib/conciliacion/cheques-vencidos"
 import { RecorridoBalance } from "./recorrido-balance"
 import { VistaPreviaBalance } from "./vista-previa-balance"
 import { descargarLibroDiarioConsensuado } from "@/lib/balance/libro-diario-consensuado"
@@ -179,7 +180,7 @@ export function PapelesDeBalance() {
   /** 🧭 A-FEAT-1430: el recorrido del balance (pantalla completa) y la versión de los pendientes que respondió. */
   const [verRecorrido, setVerRecorrido] = useState(false)
   /** 🏦 A-FEAT-1430 paso 4: las propuestas de conciliación del ejercicio (se calculan al abrir el recorrido). */
-  const [conciliacion, setConciliacion] = useState<{ movimientos: Tema[]; deudas: Tema[]; historicos: number; avisos: string[]; calculado: string } | null>(null)
+  const [conciliacion, setConciliacion] = useState<{ movimientos: Tema[]; deudas: Tema[]; cheques: Tema[]; historicos: number; avisos: string[]; calculado: string } | null>(null)
   const [cargandoConciliacion, setCargandoConciliacion] = useState<string | null>(null)
   const calcularConciliacion = useCallback(async () => {
     if (!libro) return
@@ -189,7 +190,12 @@ export function PapelesDeBalance() {
       const datos = await leerDatosConciliacion(supabase, empresa.id, desde, hasta, t => setCargandoConciliacion(t))
       const r = proponerConciliaciones(datos, empresa.id, desde, hasta)
       const mov = temasDeMovimientos(r.movimientos)
-      setConciliacion({ movimientos: mov.temas, deudas: temasDeDeudas(r.deudas, empresa.id), historicos: mov.historicos, avisos: datos.avisos,
+      // ✍️ A-AUTO-10: los echeqs vencidos sin marcar (sólo MSA emite cheques)
+      setCargandoConciliacion("cruzando los echeqs vencidos con sus débitos…")
+      const ch = empresa.id === "MSA" ? await leerChequesVencidos(supabase, hoyArgentina()) : { cruces: [], extractoHasta: null, error: null }
+      if (ch.error) datos.avisos.push(`echeqs: ${ch.error}`)
+      setConciliacion({ movimientos: mov.temas, deudas: temasDeDeudas(r.deudas, empresa.id), cheques: temasDeCheques(ch.cruces, ch.extractoHasta),
+        historicos: mov.historicos, avisos: datos.avisos,
         calculado: new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) })
       if (datos.avisos.length) toast.warning(`Conciliación: no se pudo leer ${datos.avisos.length} cosa(s) — ${datos.avisos.slice(0, 2).join(" · ")}`)
     } catch (e) {
@@ -242,7 +248,7 @@ export function PapelesDeBalance() {
   /** 🧭 Los temas del recorrido: la cobertura (mismos datos del Excel) + las preguntas de «Pendientes a revisar». */
   const temasRecorrido = useMemo(() => {
     if (!libro) return []
-    const otros = conciliacion ? [...conciliacion.movimientos, ...conciliacion.deudas] : []
+    const otros = conciliacion ? [...conciliacion.movimientos, ...conciliacion.deudas, ...conciliacion.cheques] : []
     try { return armarTemas(coberturaDeArgs(...argsDelExcel(libro)), pendientes, otros) } catch { return armarTemas(null, pendientes, otros) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [libro, empresa.id, templates, hacienda, cuentas, valores, bancarios, sueldos, cuentasCorrientesConInicio,

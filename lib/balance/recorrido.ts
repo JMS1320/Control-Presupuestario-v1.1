@@ -16,7 +16,7 @@ import type { CoberturaPapeles, EstadoCobertura, ItemCobertura, LinkDato } from 
 import type { PendienteBalance } from "./pendientes-balance"
 import type { Comparacion } from "@/lib/cuaderno/papel-de-trabajo"
 
-export type GrupoTema = "error" | "decision" | "falta inicio" | "sin informacion" | "pendiente desarrollo" | "pregunta" | "conciliacion" | "deuda"
+export type GrupoTema = "error" | "decision" | "falta inicio" | "sin informacion" | "pendiente desarrollo" | "pregunta" | "conciliacion" | "deuda" | "cheque"
 
 export const GRUPOS: { id: GrupoTema; icono: string; titulo: string }[] = [
   { id: "error", icono: "⛔", titulo: "Errores" },
@@ -25,6 +25,7 @@ export const GRUPOS: { id: GrupoTema; icono: string; titulo: string }[] = [
   // 🏦 A-FEAT-1430 paso 4: la conciliación, movimiento por movimiento y deuda por deuda.
   { id: "conciliacion", icono: "🏦", titulo: "Conciliar movimientos" },
   { id: "deuda", icono: "🧾", titulo: "Deudas sin pago" },
+  { id: "cheque", icono: "✍️", titulo: "Echeqs sin marcar cobrados" },
   { id: "falta inicio", icono: "⏳", titulo: "Falta el saldo de inicio" },
   { id: "sin informacion", icono: "📭", titulo: "Falta información" },
   { id: "pendiente desarrollo", icono: "🛠️", titulo: "Pendiente de desarrollo" },
@@ -54,7 +55,14 @@ export interface Tema {
   etiqueta?: string
   /** Importe del tema (la conciliación lo muestra en la lista). */
   importe?: number
+  /**
+   * ⚡ Una acción de un clic, cuando el caso es claro y la propone el sistema (p. ej. marcar un echeq «cobrado» con la
+   * fecha de su débito). La ejecuta el usuario con el botón; el recorrido nunca escribe solo.
+   */
+  accion?: AccionTema
 }
+
+export type AccionTema = { tipo: "cheque-cobrado"; texto: string; chequeId: string; fecha: string; numero?: string | null }
 
 const slug = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
   .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80)
@@ -67,7 +75,7 @@ export const textoPendienteDe = (t: Pick<Tema, "clave" | "titulo" | "que">) => `
 
 const ORDEN: GrupoTema[] = GRUPOS.map(g => g.id)
 /** La clave de un tema dentro del texto de su respuesta: `[cob:…]`, `[conc:…]` o `[deu:…]`. */
-const CLAVE_EN_TEXTO = /^\[((?:cob|conc|deu):[^\]]+)\]/
+const CLAVE_EN_TEXTO = /^\[((?:cob|conc|deu|chq):[^\]]+)\]/
 const GRUPO_DE: Partial<Record<EstadoCobertura, GrupoTema>> = {
   "error": "error", "decision": "decision", "falta inicio": "falta inicio",
   "sin informacion": "sin informacion", "pendiente desarrollo": "pendiente desarrollo",
