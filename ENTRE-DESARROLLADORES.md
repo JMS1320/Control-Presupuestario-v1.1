@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 🏦 1 tabla nueva: caja de ahorro ANSES de MA, en pesos (2026-10-30) — ⏳ AVISO PREVIO: todavía NO aplicada, espera OK de JMS
+### 🏦 1 tabla nueva: caja de ahorro ANSES de MA, en pesos (2026-10-30) — ✅ APLICADA el 30/10 con OK de JMS (aviso previo): 1 tabla, RLS y 1 fila en recurso_tablas; cargada con 22 movimientos (script 136)
 - `scripts/135-caja-ahorro-anses-ma.sql` (+ `-deshacer`), en la rama `jms/gas`. A-FEAT-1424: `ma.anses_ca_pesos`. Misma forma que las de los scripts 126/129 (moneda default `ARS`).
 - **RLS igual que las cajas**: `ver_segun_permiso` / `escribir_segun_permiso`, 1 fila nueva en `recurso_tablas` (recurso `extracto`, marca `[script 135]`). `anon` sin acceso. No toca ninguna tabla existente.
 
