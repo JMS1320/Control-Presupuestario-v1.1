@@ -59,6 +59,7 @@ import {
   conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna, type Vista,
 } from "./formato-excel"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
+import type { ControlesInicio, ControlProvisionAnterior } from "./control-inicio"
 
 const money = (n: number) => Math.round(n * 100) / 100
 
@@ -150,7 +151,7 @@ export function conTotalAlPie(filas: unknown[][]): unknown[][] {
  * mano con su motivo. Abajo la del ejercicio ANTERIOR, **sólo informativa** — no se resta: *«el
  * contador lo maneja»* (usuario 2026-10-23).
  */
-function hojaDeProvision(este: AsientoLibroDiario[], anterior: AsientoLibroDiario[], etiqueta: string, etiquetaAnterior: string): unknown[][] {
+function hojaDeProvision(este: AsientoLibroDiario[], anterior: AsientoLibroDiario[], etiqueta: string, etiquetaAnterior: string, control?: ControlProvisionAnterior): unknown[][] {
   const conMotivo = (lista: AsientoLibroDiario[]) => {
     const t = hojaDeAsientos(lista)
     t[0] = [...t[0], "Cómo entró a provisión", "Motivo"]
@@ -171,6 +172,25 @@ function hojaDeProvision(este: AsientoLibroDiario[], anterior: AsientoLibroDiari
     [`${anterior.length} comprobante(s) · total ${total(anterior).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`],
     ...conMotivo(anterior),
   ]
+  // 🔁 A-FEAT-1427: lo que el balance anterior dejó provisionado contra lo que la app reconoce.
+  if (control) {
+    f.push([])
+    f.push([`CONTROL CONTRA EL BALANCE ANTERIOR — provisión al cierre de ${etiquetaAnterior}`])
+    f.push(["Según el balance anterior", control.declarado != null ? money(control.declarado) : "sin dato", control.fuenteDeclarado])
+    f.push(["Reconocido por la app (la lista de arriba)", money(control.reconocido)])
+    if (control.estado === "cierra") f.push(["Diferencia", money(control.diferencia ?? 0), "✓ cierra"])
+    else if (control.estado === "sin foto") f.push(conEstilo(["⚠️ No se puede controlar: " + control.fuenteDeclarado], ESTILO_ERROR))
+    else {
+      f.push(conEstilo(["Diferencia", money(control.diferencia ?? 0),
+        "⚠️ NO CIERRA: lo provisionado el año pasado no está reconocido. Si esos comprobantes están en las compras de este ejercicio, su gasto se cuenta dos veces."], ESTILO_ERROR))
+      if (control.candidatos.length) {
+        f.push(["Comprobantes de ESTE ejercicio que explican la diferencia (¿son los provisionados?):"])
+        f.push(["Fecha", "Comprobante", "Proveedor", "Total", "Subdiario"])
+        for (const a of control.candidatos) f.push([a.fecha ?? "", `${a.tipo ?? ""}-${a.punto_venta ?? ""}-${a.numero ?? ""}`, a.denominacion, money(a.total), a.subdiario])
+        f.push(["Qué hacer: si son los provisionados, marcarlos como provisión del ejercicio anterior (y avisar al contador que salen del gasto de este)."])
+      } else f.push(["No se encontró un comprobante (ni dos) de este ejercicio que explique la diferencia."])
+    }
+  }
   return f
 }
 /**
@@ -2442,6 +2462,8 @@ export function armarWorkbook(
   lecturas?: Lectura[],
   /** 🔢 ¿Cada template tiene sus cuotas en la campaña? (JMS 28/10/2026). */
   controlCuotas?: ControlCuotasTemplates,
+  /** 🔁 A-FEAT-1427: el inicio según el balance anterior contra lo que reconoce la app. */
+  controlesInicio?: ControlesInicio,
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new()
 
@@ -2489,7 +2511,8 @@ export function armarWorkbook(
   const provisionCompras = libro.provisiones.filter(a => a.fuente !== "venta")
   const provisionVentas = libro.provisiones.filter(a => a.fuente === "venta")
   hoja(wb, "05 Provision", hojaDeProvision(provisionCompras, libro.provisionesEjercicioAnterior,
-    libro.ejercicio.etiqueta, armarEjercicio(libro.ejercicio.anioCierre - 1, libro.ejercicio.mesCierre).etiqueta),
+    libro.ejercicio.etiqueta, armarEjercicio(libro.ejercicio.anioCierre - 1, libro.ejercicio.mesCierre).etiqueta,
+    controlesInicio?.provision),
     [...COLS_ASIENTOS, { ancho: 30 }, { ancho: 50 }])
   // 💳 Cuentas a pagar y a cobrar al cierre — papeles 03 y 04 (A-FEAT-1187), con sus bloques de
   //    cheques, anticipos y provisión de cobros (A-FEAT-1195).
@@ -2650,9 +2673,10 @@ export async function descargarLibroDiario(
   asientosContables?: AsientoLibroDiario[],
   lecturas?: Lectura[],
   controlCuotas?: ControlCuotasTemplates,
+  controlesInicio?: ControlesInicio,
 ) {
   const wb = armarWorkbook(libro, empresa, templates, hacienda, insumos, campo, cuentas,
-    bancarios, sueldos, cuentasCorrientes, pendientes, saldosAnteriores, asientosContables, lecturas, controlCuotas)
+    bancarios, sueldos, cuentasCorrientes, pendientes, saldosAnteriores, asientosContables, lecturas, controlCuotas, controlesInicio)
   const out = await aplicarVistas(XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(wb))
   const url = URL.createObjectURL(
     new Blob([out as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),

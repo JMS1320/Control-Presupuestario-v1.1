@@ -191,6 +191,7 @@ import { valuarHacienda } from "@/lib/balance/hacienda-stock"
 import { pesosAlCierre, pesoParaValuar } from "@/lib/balance/pesos-hacienda"
 import { armarStockInsumos, existenciaAlCierre, PAPELES_SIN_ORIGEN, type LineaInsumo } from "@/lib/balance/stock-insumos"
 import { elegirTcAl } from "@/lib/dolares/tc-cierre"
+import { controlarProvisionAnterior } from "@/lib/balance/control-inicio"
 import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
 } from "@/lib/balance/granos-sementeras"
@@ -5114,6 +5115,35 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · dólares", "💵 Sin ninguna cotización con número: null (el saldo queda vacío y avisa, nunca un cero)",
       "null", String(elegirTcAl([{ fecha: "2026-06-30", valor: null, compra: null }], "2026-06-30")),
       elegirTcAl([{ fecha: "2026-06-30", valor: null, compra: null }], "2026-06-30") === null, "A-FEAT-1427")
+  }
+
+  /**
+   * 🔁 **LA PROVISIÓN DEL BALANCE ANTERIOR CONTRA LA APP — A-FEAT-1427.** Caso real: el contador provisionó
+   * $ 12.456.000,14 al 30/06/2025 (PAM 2-31 y Magdalena 10-269, $ 6.228.000,07 cada una), que llegaron en ago y oct
+   * 2025 y la regla de fecha no ve → la app reconoce $ 0 y esas dos facturas quedan en el gasto 25/26.
+   */
+  {
+    const comp = (over: Partial<AsientoLibroDiario>): AsientoLibroDiario => ({
+      id: Math.random().toString(36).slice(2), fuente: "historico", subdiario: "2025-08",
+      fecha: "2025-08-19", tipo: 11, punto_venta: 2, numero: 31, cuit: "20044390222",
+      denominacion: "SUCESION DE MARTINEZ PLACIDO ALBERTO", neto_gravado: 0, no_gravado: 0, exento: 0,
+      otros_tributos: 0, iva: 0, total: 6228000.07, cuenta_contable: "", nro_cuenta: "", centro_costo: "", ...over,
+    })
+    const pam = comp({})
+    const magda = comp({ subdiario: "2025-10", fecha: "2025-10-17", tipo: 1, punto_venta: 10, numero: 269, denominacion: "MARTINEZ MARIA MAGDALENA" })
+    const otras = [comp({ numero: 99, denominacion: "OTRO", total: 6228000.07 * 3 }), comp({ numero: 98, denominacion: "CHICA", total: 1000 })]
+    const foto = { provision_gastos: { contador: 12456000.14 } }
+    const noCierra = controlarProvisionAnterior(foto, [], [...otras, pam, magda])
+    chequear("Balance · provisión anterior", "🔁 La provisión del balance anterior no reconocida → alerta y propone las 2 facturas que la explican",
+      "no cierra · diferencia 12456000.14 · PAM 2-31 + MAGDALENA 10-269",
+      `${noCierra.estado} · diferencia ${noCierra.diferencia} · ${noCierra.candidatos.map(a => `${a.denominacion.split(" ").pop()} ${a.punto_venta}-${a.numero}`).join(" + ")}`,
+      noCierra.estado === "no cierra" && noCierra.diferencia === 12456000.14 && noCierra.candidatos.length === 2
+        && noCierra.candidatos.some(a => a.numero === 31) && noCierra.candidatos.some(a => a.numero === 269), "A-FEAT-1427")
+    const cierra = controlarProvisionAnterior(foto, [pam, magda], otras)
+    const sinFoto = controlarProvisionAnterior(null, [], [pam])
+    chequear("Balance · provisión anterior", "🔁 Con las dos marcadas como provisión anterior cierra; sin foto del balance anterior lo dice (no inventa un cero)",
+      "cierra · sin foto", `${cierra.estado} · ${sinFoto.estado}`,
+      cierra.estado === "cierra" && cierra.candidatos.length === 0 && sinFoto.estado === "sin foto" && sinFoto.declarado === null, "A-FEAT-1427")
   }
 
   /**
