@@ -18,7 +18,11 @@ import { esFilaDeAlerta, solapasDelLibro } from "@/lib/balance/vista-previa"
 
 const MAX_FILAS = 400
 
-export function VistaPreviaBalance({ wb, onCerrar }: { wb: XLSX.WorkBook; onCerrar: () => void }) {
+export function VistaPreviaBalance({ wb, onCerrar, faltan = [] }: {
+  wb: XLSX.WorkBook; onCerrar: () => void
+  /** Lo que todavía no llegó (stock y precios, el cálculo de cierre): se dice arriba, para que no parezca completa. */
+  faltan?: string[]
+}) {
   const solapas = useMemo(() => solapasDelLibro(wb), [wb])
   const [actual, setActual] = useState(0)
   const [soloAlertas, setSoloAlertas] = useState(false)
@@ -33,6 +37,13 @@ export function VistaPreviaBalance({ wb, onCerrar }: { wb: XLSX.WorkBook; onCerr
         <div className="font-medium">👁️ Vista previa — el mismo Excel que se baja, solapa por solapa</div>
         <button className="text-xs underline text-muted-foreground" onClick={onCerrar}>cerrar</button>
       </div>
+
+      {faltan.length > 0 && (
+        <div className="text-xs text-amber-900 bg-amber-50 border border-amber-300 rounded px-2 py-1">
+          <strong>Todavía no está todo:</strong> {faltan.join(" · ")}. La vista previa se completa sola cuando llega.
+        </div>
+      )}
+      {faltan.length === 0 && <div className="text-xs text-green-700">✓ Están todas las partes: es lo que bajarías ahora.</div>}
 
       {/* 🚦 Dónde mirar: las solapas con alertas, arriba. */}
       <div className="text-xs">

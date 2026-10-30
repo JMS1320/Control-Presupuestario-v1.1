@@ -109,8 +109,16 @@ export interface DatosHacienda {
 }
 
 export function HaciendaAlCierre({
-  empresa, ejercicio, onDatos,
-}: { empresa: string; ejercicio: Ejercicio; onDatos: (d: DatosHacienda | null) => void }) {
+  empresa, ejercicio, onDatos, pedido,
+}: {
+  empresa: string; ejercicio: Ejercicio; onDatos: (d: DatosHacienda | null) => void
+  /**
+   * ⚡ A-FEAT-1427 (nota 🌙 de JMS: «botón para armar libro y stock y todo el export entero completo»): cada vez que
+   * este número cambia (y es > 0), se «trae stock y precios» solo — esperando a que terminen de leerse los precios
+   * a mano y el cuadre de granos, para no valuar sin ellos.
+   */
+  pedido?: number
+}) {
   const [cargando, setCargando] = useState(false)
   const [datos, setDatos] = useState<DatosHacienda | null>(null)
   /** 🗄️ A-FEAT-1337: los precios a mano y el cuadre de granos se guardan al escribirlos. */
@@ -367,6 +375,16 @@ export function HaciendaAlCierre({
       setCargando(false)
     }
   }
+
+  // ⚡ A-FEAT-1427: «Armar todo» pide traer stock y precios. Se espera a que estén leídos los datos a mano.
+  const [pedidoAtendido, setPedidoAtendido] = useState(0)
+  const datosAManoLeidos = [precios.estado, cuadre.estado, saldosH.estado].every(e => e !== "leyendo")
+  useEffect(() => {
+    if (!pedido || pedido === pedidoAtendido || !datosAManoLeidos || cargando) return
+    setPedidoAtendido(pedido)
+    void traer()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pedido, datosAManoLeidos, cargando])
 
   const v = datos?.valuacion
 

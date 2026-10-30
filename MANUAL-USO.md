@@ -3550,8 +3550,10 @@ con el dólar BNA importado a esa fecha.
 
 ## 👁️ Papeles de balance → vista previa antes de bajar el Excel *(2026-10-30)*
 
-En **Reportes → Papeles de balance**, después de «Armar el libro» (y de «Traer stock y precios» si querés hacienda e
-insumos), el botón **«👁️ Vista previa»** muestra en la pantalla **el mismo Excel que bajarías**, una pestaña por solapa.
+En **Reportes → Papeles de balance**, el botón **«⚡ Armar todo»** hace los tres pasos de una: arma el libro, trae stock
+y precios, y abre la **vista previa** — **el mismo Excel que bajarías**, una pestaña por solapa. Arriba dice qué falta
+todavía («⏳ trayendo stock y precios…») y se completa sola; cuando dice «✓ Están todas las partes», bajás el Excel.
+(«Armar sólo el libro» sigue estando, y «👁️ Vista previa» abre la vista con lo que haya armado.)
 
 - **Arriba, en rojo**, las solapas que marcan algo para revisar (un ⚠️, un «NO CIERRA», un precio que falta, una
   pregunta abierta), con cuántas filas. Tocá una y se abre mostrando sólo esas filas; destildá «sólo las filas con
