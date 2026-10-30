@@ -385,3 +385,20 @@ dos líneas del export de facturas. Mismo defecto, otro papel, sin tocar.
 Vale la § 🚦 de `CLAUDE.md`: pagar de más o de menos es una **discrepancia** —tiene explicación de
 negocio— así que el papel **avisa y se emite igual**. Lo que frenaría es que las líneas no sumen el
 total que el propio comprobante imprime, porque eso sí es el sistema contradiciéndose.
+
+## 9. 📬 REGISTRO DE TODO LO QUE PASA POR EL MAIL *(A-FEAT-1425, 2026-10-30)*
+
+**Para qué** (JMS): *«cada mail se registra quedando indexado para posterior referencia y consulta, con link para ir a verlo»* — y un reporte que reemplaza leer la casilla: *«va a ser más fácil leer un reporte que ver la casilla»*.
+
+**Cómo está armado**
+- **El GAS escribe, la app lee.** `gas-buscar-pdf/RegistroMails.gs` corre en la casilla (cada 15 min), recorre día por día desde un cursor y escribe cada mensaje en `public.mails_registro` (único por canal + casilla + id de Gmail: volver a pasar no duplica). Sólo lee la casilla.
+- **Clasificación por reglas editables** (`public.mails_reglas`): remitente (mail o `@dominio`, con subdominios) + opcional «el asunto contiene» → tipo y acción. Gana la primera por `orden`; a igual orden, la que pide asunto. Sin regla → queda «sin regla» y el reporte lo muestra para agregarla.
+- **Tres acciones**: *avisar* (va arriba, en rojo) · *guardar* (se registra y se agrupa por tipo) · *archivar* (se registra y sólo se cuenta). **Nada se descarta**: la propaganda también queda registrada.
+- **El tipo a mano manda** (`tipo_manual`, § Default del dato real): corrige sin tocar la regla.
+- **Agnóstico del canal desde el día 1** (`canal` = mail / whatsapp): WhatsApp entra después como otro alimentador (la «cola agnóstica» de A-FEAT-123). JMS 30/10: *«habrá un reporte total por mail y parciales por WhatsApp»* (a José: impuestos, legales, informes productivos, facturas, avance del procesamiento).
+- **Lo que generó cada mail** (`procesado_por`, `vinculos`): lo van a escribir los procesadores (buscador de facturas, boletas ARBA). JMS: el buscador de facturas consulta PRIMERO el registro y sólo busca en Gmail si no hay registro.
+- **El control**: cada recibido cae en exactamente un grupo (para mirar / sin regla / guardado / archivado); el reporte y la pantalla muestran la suma contra el total.
+- **El link** se arma de casilla + id (`#all/<id>`), igual en el GAS (`linkGmail_`) y en la app (`lib/mails/registro.ts`); un caso de `npm run probar` vigila que coincidan.
+- 🔒 **Privacidad**: la pantalla es sólo admin (mails de familia y sucesión). Las reglas iniciales tienen mails de personas y **no están en el repo** (público): viven en la carpeta de comunicación (`Mails/140 reglas iniciales - FUERA DE GIT.sql`). ⚠️ Hueco abierto: las tablas cuelgan del recurso `egresos` en la base, así que un rol con Egresos podría leerlas por la API aunque no vea la pantalla → endurecer con Javier (§ pendiente en A-FEAT-1425).
+
+**De dónde salió**: el catálogo del 30/10 (90 días): ≈1.180 hilos recibidos, ≈70 % propaganda, ≈4 útiles por día; lo único que dejaba rastro en la app eran las facturas, las boletas de ARBA y los detalles de pago.
