@@ -57,13 +57,14 @@ export interface ResumenPdfCA {
   avisos: string[]
 }
 
-const RE_IMPORTE = /^-?\s*\$?\s*-?\d{1,3}(?:\.\d{3})*,\d{2}$/
+// 💵 A-FEAT-1424: la caja de ahorro en DÓLARES imprime «USD 1.000,00» / «-USD 140.000,00» donde la de pesos pone «$».
+const RE_IMPORTE = /^-?\s*(?:\$|USD)?\s*-?\d{1,3}(?:\.\d{3})*,\d{2}$/
 const RE_FECHA_CORTA = /^(\d{2})\/(\d{2})\/(\d{2})$/
 const RE_FECHA_LARGA = /^(\d{2})\/(\d{2})\/(\d{4})$/
 
-/** `-$ 5.366.252,36` → -5366252.36 */
+/** `-$ 5.366.252,36` → -5366252.36 · `-USD 140.000,00` → -140000 */
 export function importeDelPdf(s: string): number {
-  const t = s.replace(/\s/g, "")
+  const t = s.replace(/\s/g, "").replace(/USD/gi, "")
   const negativo = t.includes("-")
   const n = parseFloat(t.replace(/[-$]/g, "").replace(/\./g, "").replace(",", "."))
   if (isNaN(n)) return 0
@@ -132,7 +133,7 @@ export function leerResumenCajaAhorro(paginas: TextoUbicado[][]): ResumenPdfCA {
               if (!res.desde) res.desde = fechaIso(t)
               else if (!res.hasta) res.hasta = fechaIso(t)
             }
-            if (/^\$\s*-?\d/.test(t) && RE_IMPORTE.test(t)) {
+            if (/^(?:\$|USD)\s*-?\d/.test(t) && RE_IMPORTE.test(t)) {
               if (res.saldoInicial === null) res.saldoInicial = importeDelPdf(t)
               else if (res.saldoFinal === null) res.saldoFinal = importeDelPdf(t)
             }

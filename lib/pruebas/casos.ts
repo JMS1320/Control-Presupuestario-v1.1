@@ -9687,6 +9687,22 @@ export function correrCasos(): Resultado[] {
     chequear("Resumen PDF", "🛑 Un importe que no da el saldo impreso rompe el control y marca el movimiento",
       "no cierra · COMPRA DEBITO · débitos no", vRoto, vRoto === "no cierra · COMPRA DEBITO · débitos no", "A-FEAT-1352")
 
+    // 💵 A-FEAT-1424: la caja de ahorro en DÓLARES (Cotitulares, julio 2026, disposición real) imprime «USD» en vez de «$».
+    // Con el lector viejo no leía los saldos de la cabecera ni el renglón «Total», y el control no podía cerrar.
+    const usd = leerResumenCajaAhorro([[
+      T("CUIT del Responsable Impositivo : 27-06682461-1", 275, 700), T("USD0,00", 548, 640), T("N° 4003655-2 360-2", 60, 620),
+      T("26/06/2026", 237, 600), T("31/07/2026", 336, 600), T("USD1.000,00", 527, 600),
+      T("Fecha", 38, 500), T("Descripción", 82, 500), T("Origen", 224, 500), T("Crédito", 308, 500), T("Débito", 425, 500), T("Saldo", 542, 500),
+      T("02/07/26", 38, 480), T("RESCATE FIMA", 82, 480), T("140.000,00", 309, 480), T("140.000,00", 532, 480),
+      T("02/07/26", 38, 460), T("TRANSF. CTAS PROPIAS", 82, 460), T("-140.000,00", 418, 460), T("0,00", 560, 460),
+      T("31/07/26", 38, 440), T("DEP.EFVO.AUTOSERVICIO TICKET:", 82, 440), T("0379", 224, 440), T("1.000,00", 319, 440), T("1.000,00", 542, 440),
+      T("Total", 57, 420), T("USD 141.000,00", 287, 420), T("-USD 140.000,00", 396, 420), T("USD 1.000,00", 524, 420),
+    ]])
+    const ctlUsd = controlarResumen(usd)
+    const vUsd = `${usd.saldoInicial} → ${usd.saldoFinal} · total ${usd.totales?.creditos}/${usd.totales?.debitos}/${usd.totales?.saldo} · ${ctlUsd.ok ? "cierra" : "no cierra"}`
+    chequear("Resumen PDF", "💵 Caja de ahorro en DÓLARES: lee los saldos y el «Total» con prefijo USD, y el control cierra",
+      "0 → 1000 · total 141000/140000/1000 · cierra", vUsd, vUsd === "0 → 1000 · total 141000/140000/1000 · cierra", "A-FEAT-1424")
+
     // El adaptador: tiene que dar EXACTAMENTE el texto que trae el Excel (los dos de abajo están cargados en MA)
     const conocido = armarConocido([
       "COMPRA DEBITO\r\n MERPAGO*LAEXPOSICION\r\n 4517XXXXXXXXXX29\r\n A279",
