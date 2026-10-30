@@ -40,6 +40,10 @@
 
 ## 📨 PARA JAVIER
 
+### 📬 2 tablas nuevas: registro de mails + reglas de clasificación (2026-10-30) — ⏳ AVISO PREVIO, se aplica hoy con OK de JMS
+- `scripts/140-mails-registro-y-reglas.sql` (+ `-deshacer`), rama `jms/gas`. A-FEAT-1425: `public.mails_registro` (una fila por mail recibido o enviado de sanmanuel.sp, la escribe el GAS con la `service_role`) y `public.mails_reglas` (remitente/asunto → tipo y acción, ~70 reglas iniciales).
+- **RLS igual que el resto**: `ver_segun_permiso` / `escribir_segun_permiso`, 2 filas en `recurso_tablas` (recurso `egresos`, marca `[script 140]`). `anon` sin acceso. No toca ninguna tabla existente.
+
 ### 🏦 1 tabla nueva: caja de ahorro ANSES de MA, en pesos (2026-10-30) — ✅ APLICADA el 30/10 con OK de JMS (aviso previo): 1 tabla, RLS y 1 fila en recurso_tablas; cargada con 22 movimientos (script 136)
 - `scripts/135-caja-ahorro-anses-ma.sql` (+ `-deshacer`), en la rama `jms/gas`. A-FEAT-1424: `ma.anses_ca_pesos`. Misma forma que las de los scripts 126/129 (moneda default `ARS`).
 - **RLS igual que las cajas**: `ver_segun_permiso` / `escribir_segun_permiso`, 1 fila nueva en `recurso_tablas` (recurso `extracto`, marca `[script 135]`). `anon` sin acceso. No toca ninguna tabla existente.
