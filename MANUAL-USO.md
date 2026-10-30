@@ -3567,6 +3567,9 @@ insumos), el botón **«👁️ Vista previa»** muestra en la pantalla **el mis
   cierre**, no la de hoy. Si la existencia de hoy no es la suma de sus movimientos, el producto sale en rojo.
 - **Cuentas en dólares**: entran al papel 07 en pesos al dólar BNA comprador del cierre; una cuenta en dólares sin
   movimientos aparece igual, marcada «sin movimientos cargados».
+- **«00 Inicio y cierre»**: cada renglón del balance con su saldo del año pasado (la foto del Balance propio:
+  contador y JMS) y el de este año (lo que calcula la app). En rojo, lo que tuvo saldo el año pasado y la app
+  hoy no calcula. Aparece después de abrir «Pasar a la foto del balance propio», que es donde se hace ese cálculo.
 
 ⚠️ Sin probar todavía → A-TEST-1288
 
