@@ -3571,6 +3571,11 @@ pasa, la propuesta y, si se explica con números, la cuenta. **↗ links** abren
 (el extracto de esa cuenta, las facturas del Histórico). **📓 Papel de trabajo** arma un documento en tu Cuaderno, atado
 al tema, con el problema y la cuenta (con fórmulas) para pensar y anotar sin tocar datos. Tu respuesta (✓ Resuelto,
 👍 Está bien así, 📝 nota) queda en «Pendientes a revisar» y sale en el Excel.
+**La conciliación** entra al recorrido en dos grupos: **🏦 Conciliar movimientos** (cada movimiento sin conciliar con su
+pareja propuesta: exacta, varios comprobantes, con diferencia, ya usada por otro movimiento, de otra empresa, o sin
+pareja con una pista) y **🧾 Deudas sin pago** (facturas y cuotas «pendientes» del ejercicio sin movimiento, con el que
+probablemente las pagó). Los links abren el movimiento en el extracto y la factura o el template; se concilia ahí, como
+siempre, y **↻ Recalcular** actualiza el recorrido.
 
 **Controles que se ven solos** (no hace falta abrir el Excel):
 - **Provisión del ejercicio anterior**: compara lo que el balance anterior dejó provisionado (la foto del Balance

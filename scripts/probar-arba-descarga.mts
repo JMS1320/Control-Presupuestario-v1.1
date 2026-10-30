@@ -75,6 +75,12 @@ chequear("Dos boletas en el mismo mail son dos links",
 chequear("Ignora links que no son de boletas",
   "0", String(linksDeBoleta_(`<a href="https://www.arba.gov.ar/contacto">Contacto</a>`).length))
 
+// ── 30/10 (A-FEAT-1425) · El «Aviso de Débito» trae la boleta en un link «AQUÍ» ────────────────
+// Visto en el aviso del Complementario cuota 4 de MSA: sin «Ingresar», se caía al modo viejo y bajaba
+// también los links del pie. Con «AQUÍ» reconocido, baja SÓLO la boleta.
+chequear("Aviso de débito: toma el link «AQUÍ» y deja afuera los del pie (también rastreados)",
+  "1", String(linksDeBoleta_(`<a href="${RASTREADOR}">AQUÍ</a> <a href="http://arbalist07.arba.gov.ar/lt.php?tid=PIE1">Inicio</a> <a href="http://arbalist07.arba.gov.ar/lt.php?tid=PIE2">Darse de baja</a>`).length))
+
 // ── 🐞 A-BUG-126 · El pie del mail también viaja en el rastreador ──────────────────────────────
 // ARBA envuelve TODOS los links en `lt.php`, también los del pie. Quedarse con «todo lo que sea
 // lt.php» traía 4 de más por mail, y cada uno costaba una descarga entera para descubrir que no

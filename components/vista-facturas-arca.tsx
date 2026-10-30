@@ -96,7 +96,7 @@ import { Permisable } from "@/components/modo-permisos"
 import { pedirAsignacionDeCuenta, mensajeDePropagacion, type RespuestaAsignacion } from "@/lib/conciliacion/asignar-cuenta-cliente"
 import { contarMovimientosDeFactura, type ClienteParaPropagar } from "@/lib/conciliacion/propagar-cuenta"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
-import { subFacturasDelLink } from "@/lib/egresos/link-facturas"
+import { subFacturasDelLink, facturasDelLink } from "@/lib/egresos/link-facturas"
 
 interface FacturaArca {
   id: string
@@ -414,6 +414,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [tabActivo, setTabActivo] = useState<'facturas' | 'subdiarios' | 'historico' | 'asignacion'>('facturas')
   // 🔗 A-FEAT-1430: un link puede pedir la sub-solapa (`?sub=historico`, ej. desde el recorrido del balance).
   useEffect(() => { const s = subFacturasDelLink(window.location.search); if (s) setTabActivo(s) }, [])
+  // 🔗 A-FEAT-1430: …y las facturas puntuales (`?facturas=id,id`): la pareja que propone el recorrido. `null` = sin filtro.
+  const [facturasLink, setFacturasLink] = useState<Set<string> | null>(null)
+  useEffect(() => { const ids = facturasDelLink(window.location.search); if (ids.length) setFacturasLink(new Set(ids)) }, [])
   
   // Estados para Subdiarios
   const [periodoConsulta, setPeriodoConsulta] = useState('')
@@ -7668,6 +7671,13 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
               </div>
             </div>
           )}
+          {/* 🔗 A-FEAT-1430 — abierto desde un link del recorrido del balance: qué se muestra y cómo salir. */}
+          {facturasLink && (
+            <div className="flex flex-wrap items-center gap-2 rounded border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-900" data-test="facturas-filtro-link">
+              <span>🔗 <strong>Filtrado desde el balance:</strong> {facturas.filter(f => facturasLink.has(String(f.id))).length} de {facturasLink.size} factura(s) pedida(s){loading ? " (cargando…)" : ""}.</span>
+              <button type="button" className="ml-auto underline" onClick={() => { setFacturasLink(null); window.history.replaceState(null, "", window.location.pathname + window.location.search.replace(/[?&]facturas=[^&]*/, "")) }}>Quitar este filtro</button>
+            </div>
+          )}
           {/* ───────────── Fila 0: Búsqueda (ancho completo) ───────────── */}
           <div className="relative w-full">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />
@@ -8235,13 +8245,14 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                   <TableBody>
                     {(() => {
                       const q = normalizarBusqueda(busquedaRapida.trim())
+                      const base = facturasLink ? facturas.filter(f => facturasLink.has(String(f.id))) : facturas
                       const facturasDisplay = q
-                        ? facturas.filter(f =>
+                        ? base.filter(f =>
                             normalizarBusqueda(f.denominacion_emisor).includes(q) ||
                             f.cuit?.includes(q) ||
                             normalizarBusqueda(f.cuenta_contable ?? '').includes(q)
                           )
-                        : facturas
+                        : base
                       return facturasDisplay.length === 0 ? (
                       <TableRow>
                         <TableCell
