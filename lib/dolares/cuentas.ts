@@ -39,6 +39,8 @@ export const CUENTAS_DOLARES_Y_COTITULARES: CuentaManual[] = [
   // 🏦 A-FEAT-1386 (scripts/129, JMS 29/10): los otros bancos de MSA, en pesos y cargados a mano
   { id: "msa_santander", nombre: "MSA Banco Santander", tabla_bd: "santander", schema_bd: "msa", empresa: "MSA", moneda: "ARS", tipo: "banco" },
   { id: "msa_provincia", nombre: "MSA Banco Provincia", tabla_bd: "provincia", schema_bd: "msa", empresa: "MSA", moneda: "ARS", tipo: "banco" },
+  // 🏦 A-FEAT-1424 (scripts/135, JMS 30/10): la caja de ahorro ANSES de MA, en pesos
+  { id: "ma_anses_ca_pesos", nombre: "MA Caja de Ahorro ANSES", tabla_bd: "anses_ca_pesos", schema_bd: "ma", empresa: "MA", moneda: "ARS", tipo: "banco" },
 ]
 
 /** ¿Es una de estas cuentas (que se cargan a mano y pueden estar en dólares)? */

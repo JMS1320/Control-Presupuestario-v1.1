@@ -242,6 +242,7 @@ import { conFechaDeEmision, etiquetaResumenTarjeta, comprobanteDeCargoDeTarjeta,
 import { parsearPoliza } from "@/lib/polizas/parsear-poliza"
 import { armarRenglones, type TextoUbicado } from "@/lib/polizas/renglones-pdf"
 import { leerResumenCajaAhorro, controlarResumen, armarConocido, resumenComoExcel, adaptarMovimiento } from "@/lib/extractos/pdf-caja-ahorro-galicia"
+import { leerResumenSantander, controlarResumenSantander } from "@/lib/extractos/pdf-santander"
 import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
 import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe, cuentaCorriente } from "@/lib/polizas/resumen-ejercicio"
 import { aseguradoraAlCierre } from "@/lib/balance/seguros-al-cierre"
@@ -9332,9 +9333,9 @@ export function correrCasos(): Resultado[] {
       "pasa · pasa · frena · pasa · pasa · frena", vsv, vsv === "pasa · pasa · frena · pasa · pasa · frena", "A-FEAT-1336")
 
     const ctRegistradas = RECURSOS_PERMISABLES.filter((r) => r.tipo === "cuenta").map((r) => r.id.replace("extracto.cuenta.", ""))
-    const vreg = `${ctRegistradas.length} · ${["msa_galicia", "tarjeta_visa_business_msa", "echeqs_terceros"].every((id) => ctRegistradas.includes(id)) ? "están" : "faltan"}`
-    chequear("Accesos", "Cuentas: las 20 cuentas del Extracto (11 + las 7 de dólares y Cotitulares, A-FEAT-1398 + Santander y Provincia de MSA, A-FEAT-1386) están registradas como permisables",
-      "20 · están", vreg, vreg === "20 · están", "A-FEAT-1336")
+    const vreg = `${ctRegistradas.length} · ${["msa_galicia", "tarjeta_visa_business_msa", "echeqs_terceros", "ma_anses_ca_pesos"].every((id) => ctRegistradas.includes(id)) ? "están" : "faltan"}`
+    chequear("Accesos", "Cuentas: las 21 cuentas del Extracto (11 + las 7 de dólares y Cotitulares, A-FEAT-1398 + Santander y Provincia de MSA, A-FEAT-1386 + ANSES de MA, A-FEAT-1424) están registradas como permisables",
+      "21 · están", vreg, vreg === "21 · están", "A-FEAT-1336")
 
     // En el modo permisos: prender una cuenta de un rol vacío prende Extracto, pero no Importar ni otras cuentas.
     const ctModo = alternarRecurso(borradorDe({ secciones: [], permisos: {}, cerrado: true }), "extracto.cuenta.msa_galicia")
@@ -9784,6 +9785,50 @@ export function correrCasos(): Resultado[] {
     const vRoto = `${roto.ok ? "cierra" : "no cierra"} · ${roto.cadenaRota[0]?.tipo ?? "-"} · ${roto.renglones.find(x => x.que === "Total de débitos")?.ok ? "débitos ok" : "débitos no"}`
     chequear("Resumen PDF", "🛑 Un importe que no da el saldo impreso rompe el control y marca el movimiento",
       "no cierra · COMPRA DEBITO · débitos no", vRoto, vRoto === "no cierra · COMPRA DEBITO · débitos no", "A-FEAT-1352")
+
+    // 💵 A-FEAT-1424: la caja de ahorro en DÓLARES (Cotitulares, julio 2026, disposición real) imprime «USD» en vez de «$».
+    // Con el lector viejo no leía los saldos de la cabecera ni el renglón «Total», y el control no podía cerrar.
+    const usd = leerResumenCajaAhorro([[
+      T("CUIT del Responsable Impositivo : 27-06682461-1", 275, 700), T("USD0,00", 548, 640), T("N° 4003655-2 360-2", 60, 620),
+      T("26/06/2026", 237, 600), T("31/07/2026", 336, 600), T("USD1.000,00", 527, 600),
+      T("Fecha", 38, 500), T("Descripción", 82, 500), T("Origen", 224, 500), T("Crédito", 308, 500), T("Débito", 425, 500), T("Saldo", 542, 500),
+      T("02/07/26", 38, 480), T("RESCATE FIMA", 82, 480), T("140.000,00", 309, 480), T("140.000,00", 532, 480),
+      T("02/07/26", 38, 460), T("TRANSF. CTAS PROPIAS", 82, 460), T("-140.000,00", 418, 460), T("0,00", 560, 460),
+      T("31/07/26", 38, 440), T("DEP.EFVO.AUTOSERVICIO TICKET:", 82, 440), T("0379", 224, 440), T("1.000,00", 319, 440), T("1.000,00", 542, 440),
+      T("Total", 57, 420), T("USD 141.000,00", 287, 420), T("-USD 140.000,00", 396, 420), T("USD 1.000,00", 524, 420),
+    ]])
+    const ctlUsd = controlarResumen(usd)
+    const vUsd = `${usd.saldoInicial} → ${usd.saldoFinal} · total ${usd.totales?.creditos}/${usd.totales?.debitos}/${usd.totales?.saldo} · ${ctlUsd.ok ? "cierra" : "no cierra"}`
+    chequear("Resumen PDF", "💵 Caja de ahorro en DÓLARES: lee los saldos y el «Total» con prefijo USD, y el control cierra",
+      "0 → 1000 · total 141000/140000/1000 · cierra", vUsd, vUsd === "0 → 1000 · total 141000/140000/1000 · cierra", "A-FEAT-1424")
+
+    // 🏦 A-FEAT-1424: resumen PDF de cuenta corriente SANTANDER (disposición real de MSA agosto 2025, recortada).
+    // El crédito grande arranca a la IZQUIERDA del medio Débito/Crédito: la columna diría débito, el saldo dice crédito.
+    const santa = (importePago = "$ 389.920,00") => leerResumenSantander([[
+      T("Desde: 01/08/25", 482, 760), T("Hasta: 29/08/25", 481, 750), T("CUIT: 30-61778601-6", 30, 740),
+      T("Cuenta Corriente Nº 297-000736/0", 23, 700), T("CBU:", 207, 700),
+      T("Fecha", 28, 680), T("Comprobante", 70, 680), T("Movimiento", 120, 680), T("Débito", 386, 680), T("Crédito", 470, 680), T("Saldo en cuenta", 530, 680),
+      T("01/08/25", 23, 660), T("Saldo Inicial", 115, 660), T("$ 68.577,37", 532, 660),
+      T("01/08/25", 23, 650), T("Comision tarjeta debito adicional", 115, 650), T("$ 640,00", 374, 650), T("$ 67.937,37", 532, 650),
+      T("01/08/25", 23, 640), T("3240597", 65, 640), T("Pagos ctas propias interbanking in", 115, 640), T("$ 12.510.000,00", 420, 640), T("$ 12.577.937,37", 520, 640),
+      T("Martinez sobrado agro s r l 30617786016 01 3240597", 115, 632),
+      T("01/08/25", 23, 620), T("28667808", 65, 620), T("Pago de honorarios", 115, 620), T(importePago, 358, 620), T("$ 12.188.017,37", 520, 620),
+      T("2508015072", 115, 612),
+      T("Saldo total", 387, 600), T("$ 12.188.017,37", 502, 600),
+      T("2 - 5", 542, 590),
+    ]])
+    const rs = santa(), cs = controlarResumenSantander(rs)
+    const [, sTransf, sHonor] = rs.movimientos
+    const vSanta = `${rs.cuitTitular} · ${rs.numeroCuenta} · ${rs.desde}→${rs.hasta} · ${rs.saldoInicial} → ${rs.saldoFinal} · ${rs.movimientos.length} movs · ` +
+      `transf cré ${sTransf?.credito} comp ${sTransf?.comprobante} «${sTransf?.lineas.join(" | ")}» · honor déb ${sHonor?.debito} · ${cs.ok ? "cierra" : "no cierra"}`
+    const espSanta = "30617786016 · 297-000736/0 · 2025-08-01→2025-08-29 · 68577.37 → 12188017.37 · 3 movs · " +
+      "transf cré 12510000 comp 3240597 «Pagos ctas propias interbanking in | Martinez sobrado agro s r l 30617786016 01 3240597» · honor déb 389920 · cierra"
+    chequear("Resumen PDF", "🏦 Santander: cabecera, saldo inicial y total, descripción en dos renglones, y el sentido sale del saldo (el crédito grande no se confunde con débito)",
+      espSanta, vSanta, vSanta === espSanta, "A-FEAT-1424")
+    const csRoto = controlarResumenSantander(santa("$ 389.290,00"))
+    const vSantaRoto = `${csRoto.ok ? "cierra" : "no cierra"} · ${csRoto.cadenaRota[0]?.que ?? "-"}`
+    chequear("Resumen PDF", "🛑 Santander: un importe mal leído (dígitos cambiados) rompe la cadena de saldos y marca el movimiento",
+      "no cierra · Pago de honorarios", vSantaRoto, vSantaRoto === "no cierra · Pago de honorarios", "A-FEAT-1424")
 
     // El adaptador: tiene que dar EXACTAMENTE el texto que trae el Excel (los dos de abajo están cargados en MA)
     const conocido = armarConocido([
