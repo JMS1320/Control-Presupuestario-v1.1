@@ -98,7 +98,7 @@ async function caja(schema: string, tabla: string, prefijo: string, cuentaEspera
     for (const m of r.movimientos) {
       plan.filas.push({
         fecha: m.fecha, descripcion: m.lineas.join(" · "), debitos: m.debito, creditos: m.credito,
-        saldo: m.saldo, control: 0, orden: orden++, estado: "Pendiente", moneda, cuenta: tabla,
+        saldo: m.saldo, control: 0, orden: orden++, estado: "pendiente", moneda, cuenta: tabla,
       })
     }
     plan.nota.push(`${f}: ${r.movimientos.length} movs · ${fmt(r.saldoInicial ?? 0)} → ${fmt(r.saldoFinal ?? 0)} ✓${salto}`)
