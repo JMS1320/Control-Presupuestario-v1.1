@@ -117,6 +117,10 @@ circuito queda más prolijo **y la carga la sigue haciendo JMS**.
 Por eso el permiso se revisa **al diseñar**, no al final: es la pieza que decide si la automatización
 descarga a alguien o sólo se ve mejor.
 
+> 🛤️ **«Camino 1» / «camino 2»** *(JMS 2026-10-30)*: si al abrir una terminal JMS dice sólo **«camino 1»** (BALANCE) o
+> **«camino 2»** (GAS), leer **`PENDIENTES.md` § 🎯 FOCO ACTUAL** → la subsección de ese camino: ahí está el objetivo, el orden y
+> dónde se trabaja. Es la única instrucción que va a recibir.
+
 > 🚧 **En construcción**: el usuario lo va completando. Última ampliación 2026-08-31 (norte
 > administrativo) · 2026-08-02 (resultado final + cómo se avanza) → [A-DOC-07](PENDIENTES.md#a-doc-07).
 > El **foco en curso** (el gran objetivo del momento, que rota) NO va acá: va a `PENDIENTES.md`.
