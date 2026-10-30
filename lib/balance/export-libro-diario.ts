@@ -2260,6 +2260,19 @@ function hojaDePrecios(
 function hojaDeInsumos(st: StockInsumos, fechaCierre: string): unknown[][] {
   const f: unknown[][] = []
   f.push([`STOCK DE INSUMOS al ${fechaCierre}`])
+  // 📅 A-FEAT-1427: de dónde sale la existencia, y su control (hoy = suma de movimientos).
+  if (st.alCierre) {
+    f.push([`Existencia al ${st.alCierre.fecha}: suma de compras, usos y ajustes hasta esa fecha` +
+      (st.alCierre.posteriores > 0 ? ` (se descontaron ${st.alCierre.posteriores} movimiento(s) posteriores).` : ".")])
+    if (st.alCierre.descuadres.length === 0) f.push(["CONTROL ✓ cada producto: existencia de hoy = suma de sus movimientos"])
+    else {
+      f.push(conEstilo([`⚠️ CONTROL: ${st.alCierre.descuadres.length} producto(s) con existencia de hoy distinta de la suma de sus movimientos — al cierre se toma la de los movimientos`], ESTILO_ERROR))
+      f.push(["", "Producto", "Hoy", "Suma de movimientos", "Unidad"])
+      st.alCierre.descuadres.forEach(d => f.push(["", d.producto, d.hoy, d.sumaMovimientos, d.unidad]))
+    }
+  } else {
+    f.push(conEstilo(["⚠️ La existencia es la de HOY, no la del cierre: no se pudieron leer los movimientos."], ESTILO_ERROR))
+  }
   f.push([])
   for (const g of st.grupos) {
     f.push([g.papel])

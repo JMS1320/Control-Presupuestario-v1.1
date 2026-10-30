@@ -189,7 +189,7 @@ import { repartoDeLaFlota } from "@/lib/balance/reparto-flota"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
 import { pesosAlCierre, pesoParaValuar } from "@/lib/balance/pesos-hacienda"
-import { armarStockInsumos, PAPELES_SIN_ORIGEN, type LineaInsumo } from "@/lib/balance/stock-insumos"
+import { armarStockInsumos, existenciaAlCierre, PAPELES_SIN_ORIGEN, type LineaInsumo } from "@/lib/balance/stock-insumos"
 import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
 } from "@/lib/balance/granos-sementeras"
@@ -5069,6 +5069,27 @@ export function correrCasos(): Resultado[] {
       "500", String(varios.grupos.reduce((s, g) => s + g.valuado, 0)),
       varios.grupos.reduce((s, g) => s + g.valuado, 0) === varios.valuado && varios.valuado === 500,
       "A-FEAT-1184")
+
+    // 📅 A-FEAT-1427: la existencia es la del CIERRE (movimientos hasta esa fecha), no la de hoy.
+    // Glifosato: compra 100 el 01/03, uso 30 el 10/05, compra 50 el 15/08 (después del cierre) → hoy 120, al cierre 70.
+    const movs = [
+      { insumoId: "h", fecha: "2026-03-01", tipo: "compra", cantidad: 100 },
+      { insumoId: "h", fecha: "2026-05-10", tipo: "uso", cantidad: 30 },
+      { insumoId: "h", fecha: "2026-08-15", tipo: "compra", cantidad: 50 },
+      // Brucelosis (caso real 30/10): hoy 0 pero sus movimientos suman 87 → descuadre
+      { insumoId: "i", fecha: "2026-02-17", tipo: "ajuste", cantidad: 87 },
+    ]
+    const ex = existenciaAlCierre([
+      linea({ id: "h", cantidad: 120 }),
+      linea({ id: "i", producto: "Brucelosis", cantidad: 0 }),
+    ], movs, "2026-06-30")
+    const glifo = ex.lineas.find(l => l.id === "h")!
+    chequear("Balance · insumos", "📅 Existencia al cierre = movimientos hasta el 30/06 (no la de hoy)",
+      "70 al cierre, 120 hoy, 1 posterior", `${glifo.cantidad} al cierre, ${glifo.cantidadHoy} hoy, ${ex.posteriores} posterior`,
+      glifo.cantidad === 70 && glifo.cantidadHoy === 120 && ex.posteriores === 1, "A-FEAT-1427")
+    chequear("Balance · insumos", "🧮 Existencia de hoy distinta de la suma de movimientos → alerta, no se adivina",
+      "Brucelosis: hoy 0, movimientos 87", ex.descuadres.map(d => `${d.producto}: hoy ${d.hoy}, movimientos ${d.sumaMovimientos}`).join(" · "),
+      ex.descuadres.length === 1 && ex.descuadres[0].producto === "Brucelosis" && ex.descuadres[0].sumaMovimientos === 87, "A-FEAT-1427")
   }
 
   /**
