@@ -40,9 +40,14 @@
 
 ## 📨 PARA JAVIER
 
+### 🔒 Lectura de las tablas de mails cerrada al admin (2026-10-30) — ✅ APLICADA el 30/10 con OK de JMS (aviso previo): verificado simulando cada rol — admin lee y escribe; contable, socio, productivo y pruebas, nada
+- `scripts/142-mails-lectura-solo-admin.sql` (+ `-deshacer`). `public.mails_registro` y `public.mails_reglas` (las del script 140) pasan en `recurso_tablas` de `egresos` a **`importar.mails`** con **`restringe_lectura = true`**: con la regla de `puede_ver` (scripts 63/65), sin esto cualquier rol logueado las leía; y con `egresos`, `contable` las leía y escribía. `importar` es la única sección que hoy tiene sólo `admin`. Motivo: tienen mails de la familia y de la sucesión. No toca funciones ni otras tablas. El GAS escribe con `service_role` (no lo afecta).
+- ⚠️ Si algún día un rol recibe la sección `importar`, también vería los mails: avisar acá antes.
+
 ### 📓 1 columna nueva en `public.cuadernos`: `vinculo` (2026-10-30) — ✅ APLICADA el 30/10 con OK de JMS (aviso previo): columna vacía + índice, sin tocar RLS ni datos
 - `scripts/141-cuadernos-vinculo.sql` (+ `-deshacer`), rama `jms/balance`. A-FEAT-1430: ata un cuaderno (papel de trabajo) a un tema del balance. Columna `text` vacía + un índice parcial.
 - **No toca RLS** (sigue personal por usuario: `usuario_id = auth.uid()`), ni grants, ni datos. Si la columna ya existiera, el script no corre.
+
 
 ### 📬 2 tablas nuevas: registro de mails + reglas de clasificación (2026-10-30) — ✅ APLICADA el 30/10 con OK de JMS (aviso previo): 2 tablas vacías, RLS, 2 filas en recurso_tablas y 70 reglas iniciales
 - `scripts/140-mails-registro-y-reglas.sql` (+ `-deshacer`), rama `jms/gas`. A-FEAT-1425: `public.mails_registro` (una fila por mail recibido o enviado de sanmanuel.sp, la escribe el GAS con la `service_role`) y `public.mails_reglas` (remitente/asunto → tipo y acción, ~70 reglas iniciales).
