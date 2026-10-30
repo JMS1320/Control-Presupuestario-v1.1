@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js"
 import * as XLSX from "xlsx"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 import { exigirCuentaExtracto } from "@/lib/auth/guard-recurso"
-import { parsearResumen, calcularControl, normalizarTextoResumen, type ResumenParsed, type ControlSaldo } from "@/lib/tarjetas/parseo-resumen-pdf"
+import { parsearResumen, calcularControl, normalizarTextoResumen, filasDeResumen, type ResumenParsed, type ControlSaldo } from "@/lib/tarjetas/parseo-resumen-pdf"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -195,41 +195,10 @@ export async function POST(req: Request) {
       .order("orden", { ascending: false })
       .limit(1)
       .maybeSingle()
-    let nextOrden = (maxOrden?.orden ?? 0) + 1
-
-    const paraInsertar: any[] = []
-    for (const m of resumen.movimientos) {
-      const debitos = m.pesos > 0 ? m.pesos : 0
-      const creditos = m.pesos < 0 ? Math.abs(m.pesos) : 0
-      const debitos_usd = m.dolares > 0 ? m.dolares : 0
-      const creditos_usd = m.dolares < 0 ? Math.abs(m.dolares) : 0
-      paraInsertar.push({
-        fecha: m.fecha,
-        descripcion: m.descripcion,
-        debitos,
-        creditos,
-        debitos_usd,
-        creditos_usd,
-        referencia: m.referencia,
-        cuota: m.cuota,
-        comprobante: m.comprobante,
-        nro_resumen: resumen.nro_resumen,
-        fecha_cierre: resumen.fecha_cierre,
-        fecha_vencimiento: resumen.fecha_vencimiento,
-        tarjeta_adicional: m.tarjeta.tarjeta_nro,
-        titular_adicional: m.tarjeta.titular,
-        categ: null,
-        detalle: null,
-        contable: null,
-        interno: null,
-        centro_de_costo: null,
-        cuenta: config.tabla,
-        orden: nextOrden++,
-        estado: "pendiente",
-        // 'pago' (SU PAGO → concilia contra cta cte) | 'movimiento' (concilia contra template/factura)
-        tipo_fila: /SU\s+PAGO/i.test(m.descripcion) ? "pago" : "movimiento",
-      })
-    }
+    // Las filas salen de UNA definición (lib/tarjetas/parseo-resumen-pdf.ts), la misma que usan los scripts de carga
+    const todas = filasDeResumen(resumen, config.tabla, (maxOrden?.orden ?? 0) + 1)
+    const paraInsertar = todas.filter(f => f.tipo_fila !== "resumen")
+    const filaResumen = todas.find(f => f.tipo_fila === "resumen")
 
     if (paraInsertar.length === 0) {
       return NextResponse.json({
@@ -251,25 +220,11 @@ export async function POST(req: Request) {
     // Fila "resumen": guarda el total a pagar + saldo anterior del PDF (para el audit y el desplegable).
     // tipo_fila='resumen', estado='total' → excluida del motor y de las sumas de movimientos.
     // Convención: debitos = total a pagar, creditos = saldo anterior (ídem USD).
-    if (resumen.nro_resumen) {
+    if (filaResumen) {
       const { data: resExist } = await client.from(config.tabla)
         .select("id").eq("nro_resumen", resumen.nro_resumen).eq("tipo_fila", "resumen").maybeSingle()
       if (!resExist) {
-        await client.from(config.tabla).insert({
-          fecha: resumen.fecha_cierre,
-          descripcion: `RESUMEN ${resumen.nro_resumen}`,
-          debitos: resumen.total_a_pagar_pesos,
-          creditos: resumen.saldo_anterior_pesos,
-          debitos_usd: resumen.total_a_pagar_usd,
-          creditos_usd: resumen.saldo_anterior_usd,
-          nro_resumen: resumen.nro_resumen,
-          fecha_cierre: resumen.fecha_cierre,
-          fecha_vencimiento: resumen.fecha_vencimiento,
-          cuenta: config.tabla,
-          orden: nextOrden++,
-          estado: "total",
-          tipo_fila: "resumen",
-        })
+        await client.from(config.tabla).insert(filaResumen)
       }
     }
 
