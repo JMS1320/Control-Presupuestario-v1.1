@@ -38,6 +38,7 @@ import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
 import { CategCombobox } from "@/components/ui/categ-combobox"
 import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable"
+import { ModalUltimoLote } from "@/components/modal-ultimo-lote"
 import { CentroCostoCombobox } from "@/components/ui/centro-costo-combobox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCuentasContables } from "@/hooks/useCuentasContables"
@@ -869,7 +870,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [origenFactura, setOrigenFactura] = useState<string>('')  // 'ARCA' | 'No Informada'
   const [pasoImportacion, setPasoImportacion] = useState<'origen' | 'archivo' | 'imputacion'>('origen')
   // buscar_pdf (A-FEAT-1287): al terminar la importación se busca el PDF de las tildadas — todas por default
-  const [imputacionData, setImputacionData] = useState<Array<{ fila: number, fc: string, cuenta_contable: string | null, buscar_pdf: boolean }>>([])
+  const [imputacionData, setImputacionData] = useState<Array<{ fila: number, fc: string, cuenta_contable: string | null, buscar_pdf: boolean, detalle?: string }>>([])
   const [cuentasContablesImport, setCuentasContablesImport] = useState<any[]>([])
   
   // Estados para edición inline
@@ -963,6 +964,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
   // Modal de descarga automática desde ARCA (solo admin)
   const [mostrarImportadorArca, setMostrarImportadorArca] = useState(false)
+  // 🔁 A-FEAT-1434 — retomar el último lote importado (cuenta y detalle)
+  const [mostrarUltimoLote, setMostrarUltimoLote] = useState(false)
   const [arcaEmpresa, setArcaEmpresa] = useState<'MSA' | 'PAM' | 'MA'>('MSA')
   const [arcaPassword, setArcaPassword] = useState('')         // se ingresa cada vez, no se guarda
   const [arcaFechaDesde, setArcaFechaDesde] = useState('')
@@ -2240,6 +2243,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       fc: '',   // Sin valor por defecto
       cuenta_contable: f.cuenta_contable_sugerida || null,
       buscar_pdf: true,  // A-FEAT-1287: por default se buscan todas (usuario 2026-10-16)
+      detalle: '',       // A-FEAT-1434: el detalle se pone acá mismo, al importar
     })))
     // El mail de cada proveedor, para ofrecer cargar el que falta en la misma pantalla
     if (!esContable) await cargarMailesProveedores(nuevas.map((f: any) => cuitLimpio(f.cuit)))
@@ -7724,6 +7728,11 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                 <DropdownMenuItem onClick={() => setMostrarImportador(true)}>
                   📂 Importar Excel manual
                 </DropdownMenuItem>
+                {(empresa === 'MSA' || empresa === 'PAM' || empresa === 'MA') && (
+                  <DropdownMenuItem onClick={() => setMostrarUltimoLote(true)}>
+                    🔁 Retomar el último lote (cuenta y detalle)
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
             </Permisable>
@@ -8565,6 +8574,11 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
         </DialogContent>
       </Dialog>
 
+      {mostrarUltimoLote && (empresa === 'MSA' || empresa === 'PAM' || empresa === 'MA') && (
+        <ModalUltimoLote empresa={empresa} onCerrar={() => setMostrarUltimoLote(false)}
+          onGuardado={() => { setMostrarUltimoLote(false); cargarFacturas() }} />
+      )}
+
       {/* Modal Importar desde ARCA (descarga automática) — solo admin */}
       <Dialog open={mostrarImportadorArca} onOpenChange={(v) => {
         if (arcaCargando) return  // no cerrar mientras descarga
@@ -8723,7 +8737,10 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
           setOrigenFactura(''); setPasoImportacion('origen'); setImputacionData([])
         }
       }}>
-        <DialogContent className={`${pasoImportacion === 'imputacion' ? 'max-w-5xl' : 'max-w-3xl'} max-h-[85vh] flex flex-col`}>
+        {/* A-FEAT-1434: Escape o un click afuera (p. ej. al dejar una nota con captura) NO cierran el asistente:
+            se perdía la imputación. Se cierra con Cancelar o la ✕. */}
+        <DialogContent className={`${pasoImportacion === 'imputacion' ? 'max-w-5xl' : 'max-w-3xl'} max-h-[85vh] flex flex-col`}
+          onEscapeKeyDown={(e) => e.preventDefault()} onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileSpreadsheet className="h-5 w-5" />
@@ -8737,6 +8754,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
           </DialogHeader>
 
           <div className="space-y-4 overflow-y-auto flex-1">
+            <TestsDelProceso proceso="egresos/importar-fc" pantalla="egresos" />
             {/* ── PASO 1: Selector de origen ──────────────────── */}
             {pasoImportacion === 'origen' && (
               <div className="space-y-4 py-4">
@@ -8939,6 +8957,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                         <th className="text-right p-2 font-medium text-gray-600 w-[100px]">Monto</th>
                         <th className="text-center p-2 font-medium text-gray-600 w-[90px]">FC</th>
                         <th className="text-left p-2 font-medium text-gray-600 w-[250px]">Cuenta Contable</th>
+                        <th className="text-left p-2 font-medium text-gray-600 w-[180px]">Detalle</th>
                         {!esContable && (
                           <th className="text-left p-2 font-medium text-gray-600 w-[230px]" title="Tildada = al importar se busca su PDF (carpeta del mes y después el mail). Sin mail del proveedor sólo se busca en la carpeta y en los reenvíos">
                             Buscar PDF · mail del proveedor
@@ -8975,34 +8994,26 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                                 </select>
                               </td>
                               <td className="p-2">
-                                <select
+                                {/* A-FEAT-1434: la cuenta se busca escribiendo, como en el resto de la app */}
+                                <SelectorCuentaContable
+                                  value={imp?.cuenta_contable || null}
+                                  onSelect={(cta) => setImputacionData(prev => prev.map(d =>
+                                    d.fila === f.fila ? { ...d, cuenta_contable: cta?.categ || null } : d
+                                  ))}
+                                  cuitProveedor={cuitLimpio(f.cuit) || null}
+                                  schemaName={empresa.toLowerCase()}
+                                  autoFocus={false}
+                                  mostrarSinAsignar={true}
+                                  placeholder="Sin cuenta — clic para buscar"
+                                  className="text-xs"
+                                />
+                              </td>
+                              <td className="p-2">
+                                <input type="text" placeholder="detalle (opcional)"
                                   className="border rounded px-1 py-0.5 text-xs w-full"
-                                  value={imp?.cuenta_contable || ''}
-                                  onChange={(e) => {
-                                    setImputacionData(prev => prev.map(d =>
-                                      d.fila === f.fila ? { ...d, cuenta_contable: e.target.value || null } : d
-                                    ))
-                                  }}
-                                >
-                                  <option value="">— Sin asignar —</option>
-                                  {(() => {
-                                    const grupos = new Map<string, typeof cuentasContablesImport>()
-                                    cuentasContablesImport.forEach(c => {
-                                      const g = c.nombre_totalizadora || 'Sin grupo'
-                                      if (!grupos.has(g)) grupos.set(g, [])
-                                      grupos.get(g)!.push(c)
-                                    })
-                                    return Array.from(grupos.entries()).map(([grupo, cuentas]) => (
-                                      <optgroup key={grupo} label={grupo}>
-                                        {cuentas.map((c: any) => (
-                                          <option key={c.nro_cuenta} value={c.categ}>
-                                            {c.categ}
-                                          </option>
-                                        ))}
-                                      </optgroup>
-                                    ))
-                                  })()}
-                                </select>
+                                  value={imp?.detalle ?? ''}
+                                  onChange={(e) => { const v = e.target.value; setImputacionData(prev => prev.map(d =>
+                                    d.fila === f.fila ? { ...d, detalle: v } : d)) }} />
                               </td>
                               {!esContable && (() => {
                                 const cuit = cuitLimpio(f.cuit)

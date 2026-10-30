@@ -699,6 +699,20 @@ Los botones (copiar pedido, pedir, buscar) trabajan sobre lo que queda a la vist
 
 ⚠️ Sin probar todavía → [A-TEST-1272](PENDIENTES.md#a-test-1272)
 
+## 💸 Cambiar el monto de un GRUPO en el Cash Flow *(nuevo 2026-10-30)*
+Escribí el monto nuevo en **Débitos** de la fila agrupada (la que tiene ⛓). Se abre **«¿Cómo repartimos?»**: te propone repartirlo según lo que tiene hoy cada cuota (o «En partes iguales»), y podés cambiar cualquier renglón. Guarda sólo cuando la suma da el total. Las facturas en dólares de un grupo se cambian una por una.
+→ A-TEST-1294
+
+## 📥 Importar facturas de compra: detalle, cuenta escribiendo y retomar el último lote *(nuevo 2026-10-30)*
+- En el paso 3 (Imputación) cada factura tiene **Cuenta contable** (se busca escribiendo; arriba sugiere las que usó ese proveedor) y **Detalle**.
+- El asistente **no se cierra con Escape ni con un click afuera**: sólo con Cancelar o la ✕.
+- **Importar FC → 🔁 Retomar el último lote**: abre las facturas de la última importación (las que quedaron sin cuenta, arriba en ámbar) para ponerles cuenta y detalle.
+→ A-TEST-1295
+
+## 🧾 Importar facturas de venta *(cambió 2026-10-30)*
+Ingresos → (empresa) → Comprobantes → importar. Mismo formato que compras: empresa fija, atajos de fecha (Mes anterior / Últimos 30 días / Este mes hasta ayer) y la clave fiscal, o subir el archivo. Antes de importar ves **cada venta**: ✅ Nueva · ⚠️ Ya existe (no se importa) · 🔗 **Ya cargada?** — el mismo cliente y total que una que cargaste a mano con otro tipo o número; no se importa salvo que tildes «importar igual». La **fecha de cobro** es por venta: vacía = la de emisión; «Misma para todas» la pone en todas.
+→ A-TEST-1296
+
 ## 📒 Mandar una factura a «Asientos Contables»
 
 Para las facturas **no informadas en ARCA** que no van al subdiario de IVA (facturas B y otros casos): el contador las

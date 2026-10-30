@@ -297,11 +297,12 @@ export async function POST(req: Request) {
 
     const origenFactura = formData.get("origen_factura") as string | null  // 'ARCA' | 'No Informada'
     const imputacionRaw = formData.get("imputacion") as string | null
-    const imputacionMap = new Map<number, { fc: string | null, cuenta_contable: string | null }>()
+    const imputacionMap = new Map<number, { fc: string | null, cuenta_contable: string | null, detalle?: string | null }>()
     if (imputacionRaw) {
       try {
-        const arr = JSON.parse(imputacionRaw) as Array<{ fila: number, fc: string, cuenta_contable: string | null }>
-        arr.forEach(item => imputacionMap.set(item.fila, { fc: item.fc || null, cuenta_contable: item.cuenta_contable }))
+        const arr = JSON.parse(imputacionRaw) as Array<{ fila: number, fc: string, cuenta_contable: string | null, detalle?: string | null }>
+        // A-FEAT-1434: el detalle se puede poner en la imputación, al importar
+        arr.forEach(item => imputacionMap.set(item.fila, { fc: item.fc || null, cuenta_contable: item.cuenta_contable, detalle: item.detalle?.trim() || null }))
       } catch { /* ignore parse errors */ }
     }
 
@@ -531,6 +532,7 @@ export async function POST(req: Request) {
         if (imputacion) {
           if (imputacion.fc) filaParaBBDD.fc = imputacion.fc
           if (imputacion.cuenta_contable) filaParaBBDD.cuenta_contable = imputacion.cuenta_contable
+          if (imputacion.detalle) (filaParaBBDD as any).detalle = imputacion.detalle
         }
         if (origenFactura) {
           (filaParaBBDD as any).origen_factura = origenFactura

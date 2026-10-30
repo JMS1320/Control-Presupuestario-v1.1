@@ -11,6 +11,7 @@ import { pasaSentido, type Columna } from "@/lib/movimientos/sentido"
 import { CarteraChequesTerceros } from "@/components/cartera-cheques-terceros"
 import { ModalCancelacionNC } from "@/components/modal-cancelacion-nc"
 import { ModalPropagarMontoCuota } from "@/components/modal-propagar-monto-cuota"
+import { ModalRepartoGrupo, type FilaGrupoReparto } from "@/components/modal-reparto-grupo"
 import { armarCancelacionPorCuit, facturasConDescuentoParaNC, type DatosCancelacionNC, type ComprobanteNC } from "@/lib/pagos/cancelacion-nc"
 import { useState, useRef, useEffect, useMemo } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
@@ -223,6 +224,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [busquedaRapida, setBusquedaRapida] = useState('')
   /** 💰 A-FEAT-1238 — el modal de propagación del monto de una cuota de template (compartido con Templates). */
   const [propagacionCF, setPropagacionCF] = useState<{ cuotaId: string; nuevoMonto: number } | null>(null)
+  // 💸 A-BUG-1431 — reparto del nuevo monto de una fila agrupada
+  const [repartoGrupo, setRepartoGrupo] = useState<{ fila: FilaGrupoReparto; nuevoTotal: number } | null>(null)
   
   // Estados para filtros específicos
   const [fechaDesde, setFechaDesde] = useState('')
@@ -806,6 +809,20 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     customValidations: async (celda) => {
       // Filas de grupo: redirigir a actualizarRegistro (propaga a todos los miembros)
       const filaActual = data.find(f => f.id === celda.filaId)
+      /**
+       * 💸 A-BUG-1431 — el MONTO de un grupo no se copia a cada miembro: se reparte. Antes caía en
+       * `actualizarRegistro`, que escribía el total en todos (2 cuotas → el doble). Ahora pregunta y
+       * propone el reparto (`ModalRepartoGrupo`).
+       */
+      if (filaActual?.ids_grupo && filaActual.ids_grupo.length > 1 && celda.columna === 'debitos') {
+        const nuevo = parseFloat(String(celda.valor).replace(/\./g, '').replace(',', '.')) || 0
+        if (Math.round(nuevo * 100) !== Math.round((Number(filaActual.debitos) || 0) * 100)) {
+          setRepartoGrupo({ fila: filaActual, nuevoTotal: nuevo })
+        } else {
+          hookEditorRef.current?.setCeldaEnEdicion(null)
+        }
+        return false
+      }
       if (filaActual?.ids_grupo && filaActual.ids_grupo.length > 0) {
         let valorFinal: any = celda.valor
         // Procesar fechas: convertir DD/MM/AAAA → YYYY-MM-DD si corresponde
@@ -4703,6 +4720,14 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           <AvisoNotasCredito filas={data}
             onCancelar={(cuit, prov, emp) => void abrirCancelacionNC(cuit, prov, emp)}
             onDescuentos={(ncId, cuit, prov, emp) => void abrirDescuentosNC(ncId, cuit, prov, emp)} />
+          {repartoGrupo && (
+            <ModalRepartoGrupo
+              fila={repartoGrupo.fila}
+              nuevoTotal={repartoGrupo.nuevoTotal}
+              onCancelar={() => { setRepartoGrupo(null); hookEditorRef.current?.setCeldaEnEdicion(null) }}
+              onGuardado={async () => { setRepartoGrupo(null); hookEditorRef.current?.setCeldaEnEdicion(null); await cargarDatos() }}
+            />
+          )}
           {propagacionCF && (
             <ModalPropagarMontoCuota
               abierto={true}

@@ -33,6 +33,9 @@
  * empieza a mentir.
  */
 
+import { idsDelUltimoLote } from "@/lib/facturas/ultimo-lote"
+import { cruzarVentasImportadas } from "@/lib/ventas/import-cruce"
+import { proponerReparto, controlReparto } from "@/lib/pagos/repartir-grupo"
 import { detallePropio as detallePropioCF, detallePropioDeGrupo } from "@/lib/cashflow/detalle-propio"
 import { motivosParaPreguntar, puedeVincularseSola, buscarFacturaDeOtraEmpresa } from "@/lib/conciliacion/cruce-empresa"
 import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
@@ -11155,6 +11158,51 @@ export function correrCasos(): Resultado[] {
     const v = `${comp.map(c => `${c.numero}=${c.total}`).join(",")} · saldo MA ${deMA.resumen.saldo}`
     const e = "Sueldo 12/2025 (a pagar)=2250000 · saldo MA 1250000"
     chequear("Cuentas corrientes", "👷 El sueldo pendiente de MA entra a su cuenta corriente como deuda de MSA; no entra lo de fuera del ejercicio, lo ya pagado (centavos) ni un empleado que no es contraparte", e, v, v === e, "A-FEAT-1422")
+  }
+
+  // ══ 💸 Cambiar el monto de un GRUPO reparte el total, no lo copia (A-BUG-1431) ══
+  {
+    // Red Vial Rojas: 2 cuotas iguales. Antes, poner 3.011.672,50 al grupo dejaba cada cuota en ese
+    // monto (el grupo pasaba a 6.023.345). Ahora se reparte y la suma da exacto el total.
+    const igual = proponerReparto([{ id: "a", actual: 1505836.25 }, { id: "b", actual: 1505836.25 }], 3011672.5)
+    const desparejo = proponerReparto([{ id: "a", actual: 100 }, { id: "b", actual: 200 }, { id: "c", actual: 0 }], 1000)
+    const ceros = proponerReparto([{ id: "a", actual: 0 }, { id: "b", actual: 0 }, { id: "c", actual: 0 }], 100)
+    const ctl = controlReparto({ a: 400, b: 500 }, 1000)
+    const v = `${igual.a}+${igual.b} · ${desparejo.a}+${desparejo.b}+${desparejo.c} · ${ceros.a}+${ceros.b}+${ceros.c} · ${ctl.cierra} ${ctl.diferencia}`
+    const e = "1505836.25+1505836.25 · 333.33+666.67+0 · 33.34+33.33+33.33 · false 100"
+    chequear("Cash Flow — reparto de grupo", "El total nuevo de un grupo se reparte proporcional a lo de hoy (en partes iguales si todo está en cero), con los centavos al mayor para que sume exacto; si los renglones no suman el total, el control no cierra", e, v, v === e, "A-BUG-1431")
+  }
+
+  // ══ 🔁 El ÚLTIMO LOTE importado = las del archivo más reciente, de la misma tanda (A-FEAT-1434) ══
+  {
+    const lote = idsDelUltimoLote([
+      { id: "a", archivo_origen: "arca-oct.csv", fecha_importacion: "2026-10-30T16:56:16" },
+      { id: "b", archivo_origen: "arca-oct.csv", fecha_importacion: "2026-10-30T16:56:44" },
+      { id: "c", archivo_origen: "arca-oct.csv", fecha_importacion: "2026-10-01T10:00:00" },
+      { id: "d", archivo_origen: "arca-sep.csv", fecha_importacion: "2026-10-30T16:40:00" },
+      { id: "e", archivo_origen: null, fecha_importacion: "2026-10-31T09:00:00" },
+    ])
+    const v = `${lote.archivo} · ${lote.filas.map(f => f.id).join(",")}`
+    const e = "arca-oct.csv · a,b"
+    chequear("Importar FC — último lote", "El lote a retomar es el archivo de la importación más reciente, sólo las de esa tanda: no mezcla el mismo archivo importado otro día, otro archivo, ni filas sin registro de lote", e, v, v === e, "A-FEAT-1434")
+  }
+
+  // ══ 🔗 Importar ventas: reconoce las YA CARGADAS a mano con otro tipo o sin número (A-BUG-1432) ══
+  {
+    // Pedro Genta 11-75880: en la app tipo 60 sin punto de venta ni número; en ARCA tipo 180, 11-75880.
+    const existentes = [
+      { id: "g", nro_comprobante: "11-75880", tipo_comprobante: 60, punto_venta: null, numero_desde: null, cuit_cliente: "30500000001", imp_total: 139717305, fecha_liquidacion: "2026-01-20" },
+      { id: "p", nro_comprobante: "00010-00000019", tipo_comprobante: 1, punto_venta: 10, numero_desde: 19, cuit_cliente: "20111111112", imp_total: 25000000.11, fecha_liquidacion: "2025-11-10" },
+    ]
+    const r = cruzarVentasImportadas([
+      { tipo_comprobante: 180, punto_venta: 11, numero_desde: 75880, cuit_cliente: "30500000001", imp_total: 139717305, fecha_liquidacion: "2026-01-22" },
+      { tipo_comprobante: 1, punto_venta: 10, numero_desde: 19, cuit_cliente: "20111111112", imp_total: 25000000.11, fecha_liquidacion: "2025-11-10" },
+      { tipo_comprobante: 1, punto_venta: 10, numero_desde: 21, cuit_cliente: "20111111112", imp_total: 25000000.11, fecha_liquidacion: "2025-11-12" },
+      { tipo_comprobante: 180, punto_venta: 11, numero_desde: 99999, cuit_cliente: "30500000001", imp_total: 139717305, fecha_liquidacion: "2026-06-30" },
+    ], existentes)
+    const v = r.map(x => x.estado === "posible" ? `posible→${x.existente.id}` : x.estado).join(",")
+    const e = "posible→g,duplicada,nueva,nueva"
+    chequear("Importar ventas — ya cargadas", "Una venta cargada a mano con otro tipo o sin número se reconoce por cliente + total + fecha cercana (posible, no se duplica); la exacta es duplicada; una existente no se usa dos veces, y con fecha lejana es nueva", e, v, v === e, "A-BUG-1432")
   }
 
   return r

@@ -11,6 +11,8 @@
  * DEBUG: loguea headers detectados, columna de cliente usada, cada fila mapeada, inserts y errores.
  *
  * FormData: file (xlsx/xls/csv), fecha_cobro (YYYY-MM-DD, opcional), preview ('true' para no insertar).
+ *   A-BUG-1432: fechas_cobro (JSON {clave: 'YYYY-MM-DD'}) pisa la fecha venta por venta;
+ *   incluir_posibles (JSON [clave]) importa igual las que parecían ya cargadas.
  */
 
 import { NextResponse } from 'next/server'
@@ -19,6 +21,7 @@ import { createClient } from '@supabase/supabase-js'
 import * as Papa from 'papaparse'
 import * as XLSX from 'xlsx'
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
+import { cruzarVentasImportadas, claveVenta, type VentaExistente } from "@/lib/ventas/import-cruce"
 
 export const runtime = 'nodejs'
 
@@ -174,25 +177,52 @@ export async function POST(req: Request) {
       }
     })
 
-    // ── Dedup contra lo existente (tipo+punto+numero+cuit) ──
+    // ── Cruce contra lo existente ──
+    // Exacto: tipo+punto+numero+cuit. Y A-BUG-1432: «posible ya cargada» por cliente + total + fecha
+    // cercana, para las ventas cargadas a mano con otro tipo o sin número (ver lib/ventas/import-cruce).
     const { data: existentes, error: errExist } = await supabase
       .schema(schemaName).from('comprobantes_venta')
-      .select('tipo_comprobante, punto_venta, numero_desde, cuit_cliente')
+      .select('id, nro_comprobante, tipo_comprobante, punto_venta, numero_desde, cuit_cliente, imp_total, fecha_liquidacion')
     if (errExist) {
       console.error('🧾 [import-ventas] error leyendo existentes:', errExist)
       return NextResponse.json({ ok: false, error: `No se pudo leer comprobantes_venta: ${errExist.message}` }, { status: 500 })
     }
-    const claveExist = new Set((existentes || []).map(e => `${e.tipo_comprobante}|${e.punto_venta}|${e.numero_desde}|${e.cuit_cliente}`))
-    const nuevas = mapeadas.filter(m => !claveExist.has(`${m.tipo_comprobante}|${m.punto_venta}|${m.numero_desde}|${m.cuit_cliente}`))
-    const duplicadas = mapeadas.length - nuevas.length
-    console.log(`🧾 [import-ventas] nuevas=${nuevas.length} duplicadas=${duplicadas}`)
+    const cruce = cruzarVentasImportadas(mapeadas, (existentes || []) as VentaExistente[])
+    let incluirPosibles = new Set<string>()
+    let fechasPorVenta: Record<string, string> = {}
+    try { incluirPosibles = new Set(JSON.parse((formData.get('incluir_posibles') as string) || '[]')) } catch { /* vacío */ }
+    try { fechasPorVenta = JSON.parse((formData.get('fechas_cobro') as string) || '{}') } catch { /* vacío */ }
+    const nuevas = mapeadas
+      .map((m, i) => ({ m, c: cruce[i] }))
+      .filter(({ m, c }) => c.estado === 'nueva' || (c.estado === 'posible' && incluirPosibles.has(claveVenta(m))))
+      .map(({ m }) => {
+        const f = fechasPorVenta[claveVenta(m)]
+        return f && /^\d{4}-\d{2}-\d{2}$/.test(f) ? { ...m, fecha_cobro_estimada: f } : m
+      })
+    const duplicadas = cruce.filter(c => c.estado === 'duplicada').length
+    const posibles = cruce.filter(c => c.estado === 'posible').length
+    console.log(`🧾 [import-ventas] nuevas=${nuevas.length} duplicadas=${duplicadas} posibles=${posibles}`)
 
     if (modoPreview) {
-      return NextResponse.json({ ok: true, preview: true, total: mapeadas.length, nuevas: nuevas.length, duplicadas, muestra: nuevas.slice(0, 5) })
+      return NextResponse.json({
+        ok: true, preview: true, total: mapeadas.length,
+        nuevas: cruce.filter(c => c.estado === 'nueva').length, duplicadas, posibles,
+        filas: mapeadas.map((m, i) => {
+          const c = cruce[i]
+          return {
+            clave: claveVenta(m), estado: c.estado,
+            fecha: m.fecha_liquidacion, tipo: m.tipo_comprobante, numero: m.nro_comprobante,
+            cliente: m.denominacion_cliente, cuit: m.cuit_cliente, total: m.imp_total,
+            ya_cargada: c.estado === 'posible'
+              ? { id: c.existente.id, numero: c.existente.nro_comprobante ?? null, tipo: c.existente.tipo_comprobante, fecha: c.existente.fecha_liquidacion, total: c.existente.imp_total }
+              : null,
+          }
+        }),
+      })
     }
 
     if (nuevas.length === 0) {
-      return NextResponse.json({ ok: true, insertadas: 0, duplicadas, mensaje: 'No hay comprobantes nuevos para importar' })
+      return NextResponse.json({ ok: true, insertadas: 0, duplicadas, posibles, mensaje: 'No hay comprobantes nuevos para importar' })
     }
 
     // ── Insertar ──
@@ -255,6 +285,8 @@ export async function POST(req: Request) {
       ok: true,
       insertadas: inserted?.length || 0,
       duplicadas,
+      // A-BUG-1432: las que parecían ya cargadas y no se eligieron, quedan afuera — y se dice
+      posibles_salteadas: mapeadas.filter((m, i) => cruce[i].estado === 'posible' && !incluirPosibles.has(claveVenta(m))).length,
       retenciones_vinculadas: retVinculadas,
       // Se dice cuántos clientes se crearon: sin esto el alta sería invisible, y un registro que
       // nadie ve es medio hermano del hueco que este arreglo vino a tapar.
