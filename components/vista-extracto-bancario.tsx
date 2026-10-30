@@ -100,6 +100,7 @@ import { TABLAS_CON_VINCULO_ARCA } from "@/lib/conciliacion/tablas-con-vinculo-a
 import { traerTodo } from "@/lib/supabase-paginado"
 import { avisarSiIncompleta } from "@/lib/ui/avisar-lectura"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
+import { extractoDelLink } from "@/lib/extracto/link"
 
 // ─── Helpers para scoring de propuestas ARCA ────────────────────────────────
 
@@ -255,6 +256,11 @@ export function VistaExtractoBancario() {
   const [cuentaSeleccionada, setCuentaSeleccionada] = useState<string>(
     () => CUENTAS_BANCARIAS.find((c) => cuentaPermitida(c.id))?.id ?? "msa_galicia")
   /**
+   * 🔗 A-FEAT-1430 — movimientos pedidos por un link (desde el recorrido del balance, en pestaña nueva): sólo esos.
+   * `null` = sin filtro. Entra en los filtros en memoria (A-BUG-1404): con él puesto, la carga trae la cuenta entera.
+   */
+  const [idsLink, setIdsLink] = useState<Set<string> | null>(null)
+  /**
    * 🌙 Nota del usuario 2026-10-24: «abrí configuración reglas y me abre en cta cte MSA… debería abrir
    * las reglas de cta cte PAM… que abra desde donde se está». Al ABRIR el modal toma la cuenta del
    * extracto que se está viendo; adentro se puede cambiar igual.
@@ -357,6 +363,14 @@ export function VistaExtractoBancario() {
   const [filtroNota, setFiltroNota] = useState<'todas' | 'con_nota' | 'sin_nota'>('todas')
   /** ↕️ A-FEAT-1224 — sólo débitos / sólo créditos. Decide también sobre qué columna mira el rango de montos. */
   const [filtroSentido, setFiltroSentido] = useState<Sentido>('todos')
+  // 🔗 A-FEAT-1430: al abrir desde un link, la cuenta, las fechas que contienen los movimientos y los movimientos.
+  useEffect(() => {
+    const f = extractoDelLink(window.location.search)
+    if (!f) return
+    if (f.cuenta && CUENTAS_BANCARIAS.some(c => c.id === f.cuenta) && cuentaPermitida(f.cuenta)) setCuentaSeleccionada(f.cuenta)
+    if (f.desde || f.hasta) { setUsarFechas(true); if (f.desde) setFechaMovDesde(f.desde); if (f.hasta) setFechaMovHasta(f.hasta) }
+    if (f.movs.length) setIdsLink(new Set(f.movs))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const [busquedaNota, setBusquedaNota] = useState('')               // 🔍 A-FEAT-134
   /**
    * 🧹 **A-FEAT-135** — qué hacer con las notas de lo que se acaba de conciliar.
@@ -905,8 +919,11 @@ ${texto.trim()}` : texto.trim()
     // ✓ A-FEAT-1300 — segundo filtro del OK masivo: sobre lo ya filtrado, sólo lo que está en auditar.
     if (modoOkAuditar) lista = lista.filter(m => String(m.estado).toLowerCase() === 'auditar')
 
+    // 🔗 A-FEAT-1430 — los movimientos que pidió el link (por id).
+    if (idsLink && idsLink.size) lista = lista.filter(m => idsLink.has(String(m.id)))
+
     return lista
-  }, [movimientos, categsFiltro, busqueda, filtroProveedor, idsCorrida, resumenFiltro, resumenesElegidos, modoOkAuditar])
+  }, [movimientos, categsFiltro, busqueda, filtroProveedor, idsCorrida, resumenFiltro, resumenesElegidos, modoOkAuditar, idsLink])
 
   /** Cuántos pendientes hay en lo filtrado — es el número que el botón anticipa. */
   const pendientesFiltrados = useMemo(
@@ -1325,7 +1342,7 @@ ${texto.trim()}` : texto.trim()
    * problema: devuelve cero sobre un subconjunto sin decir que era un subconjunto.
    */
   // 🔎 A-BUG-1404: TODOS los filtros que trabajan sobre lo cargado, en un solo lugar (lib/extracto/alcance-filtros).
-  const enMemoria = { busqueda, proveedor: filtroProveedor, categs: categsFiltro, okAuditar: modoOkAuditar }
+  const enMemoria = { busqueda, proveedor: filtroProveedor, categs: categsFiltro, okAuditar: modoOkAuditar, ids: idsLink }
   const hayQueBuscarSobreTodo = filtrosEnMemoria(enMemoria)
 
   useEffect(() => {
@@ -3300,7 +3317,7 @@ ${marca}` : marca
       estado: filtroEstado,
       busqueda: busqueda.trim() || undefined,
       // A-BUG-1404: con un filtro en memoria puesto, TODA carga trae la cuenta entera (chips, Filtrar, Enter…)
-      limite: limiteParaCargar(limiteRegistros, { busqueda, proveedor: filtroProveedor, categs: categsFiltro, okAuditar: modoOkAuditar }),
+      limite: limiteParaCargar(limiteRegistros, { busqueda, proveedor: filtroProveedor, categs: categsFiltro, okAuditar: modoOkAuditar, ids: idsLink }),
     }
     if (usarFechas && fechaMovDesde) filtros.fechaDesde = fechaMovDesde
     if (usarFechas && fechaMovHasta) filtros.fechaHasta = fechaMovHasta
@@ -3373,6 +3390,16 @@ ${marca}` : marca
 
   return (
     <div className="space-y-6">
+      {/* 🔗 A-FEAT-1430 — abierto desde un link: se dice qué se está mostrando y cómo salir. */}
+      {idsLink && idsLink.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-900" data-test="extracto-filtro-link">
+          <span>🔗 <strong>Filtrado desde el balance:</strong> {movimientosVisibles.length} de {idsLink.size} movimiento(s) pedido(s){loading ? " (cargando…)" : ""}.</span>
+          {!loading && movimientosVisibles.length < idsLink.size && (
+            <span className="text-amber-800">Faltan {idsLink.size - movimientosVisibles.length}: pueden estar fuera de las fechas o de los otros filtros.</span>
+          )}
+          <button type="button" className="ml-auto underline" onClick={() => { setIdsLink(null); window.history.replaceState(null, "", "/?seccion=extracto") }}>Quitar este filtro</button>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

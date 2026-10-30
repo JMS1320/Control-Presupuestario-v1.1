@@ -196,6 +196,7 @@ import { esFilaDeAlerta, solapasDelLibro } from "@/lib/balance/vista-previa"
 import { armarInicioYCierre, textoEstado } from "@/lib/balance/inicio-y-cierre"
 import { armarCobertura, CANTIDAD_DE_DATOS } from "@/lib/balance/cobertura-papeles"
 import { armarTemas, progreso, textoPendienteDe } from "@/lib/balance/recorrido"
+import { linkExtracto, extractoDelLink, rangoQueContiene } from "@/lib/extracto/link"
 import { RENGLONES as RENGLONES_BALANCE } from "@/lib/balance/balance-propio"
 import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
@@ -5239,6 +5240,21 @@ export function correrCasos(): Resultado[] {
       temas[0].grupo === "error" && temas.find(t => t.clave === provision.clave)?.respondido === true
         && temas.filter(t => t.grupo === "pregunta").length === 1 && p.total === temasVacios.length + 1 && p.respondidos === 1
         && !temas.some(t => /^Equinos/.test(t.titulo)) && /buscar qué comprobantes/.test(provision.propuesta ?? ""), "A-FEAT-1430")
+  }
+
+  /**
+   * 🔗 **LINK AL EXTRACTO FILTRADO — A-FEAT-1430 paso 2.** Ida y vuelta: lo que arma el recorrido lo lee el extracto
+   * (cuenta, movimientos por id, fechas). Un link de otra sección o sin nada no filtra.
+   */
+  {
+    const r = rangoQueContiene(["2025-08-19", "2025-10-17"])
+    const url = linkExtracto({ cuenta: "msa_galicia", movs: ["12", "15", "12"], desde: r.desde, hasta: r.hasta })
+    const vuelta = extractoDelLink(url.slice(url.indexOf("?")))
+    chequear("Extracto · link", "🔗 El link del balance abre el extracto en esa cuenta, esos movimientos y las fechas que los contienen",
+      "msa_galicia · 12,15 · 2025-08-16 → 2025-10-20 · otra sección null",
+      `${vuelta?.cuenta} · ${vuelta?.movs.join(",")} · ${vuelta?.desde} → ${vuelta?.hasta} · otra sección ${extractoDelLink("?seccion=egresos&movs=1")}`,
+      vuelta?.cuenta === "msa_galicia" && vuelta.movs.join(",") === "12,15" && vuelta.desde === "2025-08-16" && vuelta.hasta === "2025-10-20"
+        && extractoDelLink("?seccion=egresos&movs=1") === null && extractoDelLink("?seccion=extracto") === null, "A-FEAT-1430")
   }
 
   /**

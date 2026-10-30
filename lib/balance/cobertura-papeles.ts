@@ -25,6 +25,7 @@ import type { TemplatesDelEjercicio } from "./templates-libro"
 import type { SaldosAnteriores } from "./ajustes-balance"
 import type { LibroDiario } from "./libro-diario"
 import { linkTemplates } from "@/lib/impuestos/planilla"
+import { linkExtracto } from "@/lib/extracto/link"
 
 export type EstadoCobertura =
   | "sale"                 // ✅ el export lo responde
@@ -109,8 +110,17 @@ const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCa
 type Regla = Omit<ItemCobertura, "estado" | "detalle" | "propuesta" | "links"> & { evaluar: (d: DatosCobertura) => Resultado }
 
 /** Una cuenta del papel 07: sale si tiene movimientos y su cadena cierra; si no tiene movimientos, falta el extracto. */
-function cuentaBanco(nombre: RegExp, etiqueta: string): Regla["evaluar"] {
-  return d => {
+function cuentaBanco(nombre: RegExp, etiqueta: string, cuentaId: string): Regla["evaluar"] {
+  return d => conLink(d, cuentaId, etiqueta, evaluarCuentaBanco(d, nombre, etiqueta))
+}
+/** 🔗 Agrega el link al extracto de la cuenta (todo el ejercicio) a lo que no sale. */
+function conLink(d: DatosCobertura, cuentaId: string, etiqueta: string, r: Resultado): Resultado {
+  if (r.estado === "sale") return r
+  const href = linkExtracto({ cuenta: cuentaId, desde: d.fechaInicio, hasta: d.libro.ejercicio?.fechaCierre ?? null })
+  return { ...r, links: [...(r.links ?? []), { texto: `Abrir ${etiqueta} en el extracto (el ejercicio)`, href }] }
+}
+function evaluarCuentaBanco(d: DatosCobertura, nombre: RegExp, etiqueta: string): Resultado {
+  {
     if (!d.bancarios) return { estado: "sin informacion", detalle: "no se pudo leer el extracto (papel 07 vacío)" }
     const c = d.bancarios.cadenas?.find(x => nombre.test(x.cuenta))
     if (!c) return { estado: "sin informacion", detalle: `${etiqueta} no está entre las cuentas del 07` }
@@ -125,8 +135,11 @@ function cuentaBanco(nombre: RegExp, etiqueta: string): Regla["evaluar"] {
 }
 
 /** Una línea en dólares del 07 (la arma `saldosEnDolaresParaBalance`). */
-function cuentaDolares(nombre: RegExp): Regla["evaluar"] {
-  return d => {
+function cuentaDolares(nombre: RegExp, cuentaId: string, etiqueta: string): Regla["evaluar"] {
+  return d => conLink(d, cuentaId, etiqueta, evaluarCuentaDolares(d, nombre))
+}
+function evaluarCuentaDolares(d: DatosCobertura, nombre: RegExp): Resultado {
+  {
     const s = d.bancarios?.saldos.find(x => nombre.test(x.nombre))
     if (!s) return { estado: "sin informacion", detalle: "no aparece en el 07" }
     if (/SIN MOVIMIENTOS/i.test(s.nombre)) return { estado: "sin informacion", detalle: "no tiene ningún movimiento cargado: falta el extracto / la rendición" }
@@ -144,12 +157,12 @@ const templateCon = (d: DatosCobertura, re: RegExp) => d.templates?.detalle.filt
 
 const REGLAS: Regla[] = [
   // ── BANCOS - saldos + FCI + compra venta USS ─────────────────────────────────────────────
-  { papel: "BANCOS · Saldos", dato: "Banco Galicia (pesos)", valor2425: "$ 832.605,05", solapa: "07 Bancos / 07.1", evaluar: cuentaBanco(/galicia/i, "Banco Galicia") },
-  { papel: "BANCOS · Saldos", dato: "Banco Santander", valor2425: "$ 7.204,86", solapa: "07 Bancos / 07.1", evaluar: cuentaBanco(/santander/i, "Banco Santander") },
-  { papel: "BANCOS · Saldos", dato: "Banco Provincia", valor2425: "$ 15.298,25", solapa: "07 Bancos / 07.1", evaluar: cuentaBanco(/provincia/i, "Banco Provincia") },
-  { papel: "BANCOS · Saldos", dato: "Caja", valor2425: "$ 457.212,92", solapa: "07 Bancos / 07.1", evaluar: cuentaBanco(/caja general/i, "Caja general") },
-  { papel: "BANCOS · Saldos", dato: "Galicia cuenta USD", valor2425: "US$ 35.001,63", solapa: "07 Bancos", evaluar: cuentaDolares(/cuenta corriente usd/i) },
-  { papel: "BANCOS · Saldos", dato: "Caja USD", valor2425: "0 (contador: $ 932.000)", solapa: "07 Bancos", evaluar: cuentaDolares(/msa caja usd/i) },
+  { papel: "BANCOS · Saldos", dato: "Banco Galicia (pesos)", valor2425: "$ 832.605,05", solapa: "07 Bancos / 07.1", evaluar: cuentaBanco(/galicia/i, "Banco Galicia", "msa_galicia") },
+  { papel: "BANCOS · Saldos", dato: "Banco Santander", valor2425: "$ 7.204,86", solapa: "07 Bancos / 07.1", evaluar: cuentaBanco(/santander/i, "Banco Santander", "msa_santander") },
+  { papel: "BANCOS · Saldos", dato: "Banco Provincia", valor2425: "$ 15.298,25", solapa: "07 Bancos / 07.1", evaluar: cuentaBanco(/provincia/i, "Banco Provincia", "msa_provincia") },
+  { papel: "BANCOS · Saldos", dato: "Caja", valor2425: "$ 457.212,92", solapa: "07 Bancos / 07.1", evaluar: cuentaBanco(/caja general/i, "Caja general", "caja_general") },
+  { papel: "BANCOS · Saldos", dato: "Galicia cuenta USD", valor2425: "US$ 35.001,63", solapa: "07 Bancos", evaluar: cuentaDolares(/cuenta corriente usd/i, "msa_cc_usd", "la cuenta USD") },
+  { papel: "BANCOS · Saldos", dato: "Caja USD", valor2425: "0 (contador: $ 932.000)", solapa: "07 Bancos", evaluar: cuentaDolares(/msa caja usd/i, "msa_caja_usd", "la caja USD") },
   { papel: "BANCOS · Saldos", dato: "Broker GSEC", valor2425: "US$ 0,38", solapa: "—", evaluar: () => ({ estado: "decision", detalle: "la cuenta no existe en la app (US$ 0,38): ¿se ignora?" }) },
   { papel: "BANCOS · Fondos comunes", dato: "FCI Galicia: saldo y resultado financiero", valor2425: "$ 23.244.019,93 · resultado $ 4.364.112,79", solapa: "07 Bancos (bloque FCI)",
     evaluar: d => {

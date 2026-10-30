@@ -25,6 +25,8 @@ export interface FiltrosEnMemoria {
   proveedor?: { cuit?: string; nombre?: string } | null
   categs?: Set<string> | null
   okAuditar?: boolean
+  /** 🔗 A-FEAT-1430: sólo estos movimientos (los pidió un link desde el balance). */
+  ids?: Set<string> | null
 }
 
 export function filtrosEnMemoria(f: FiltrosEnMemoria): boolean {
@@ -32,6 +34,7 @@ export function filtrosEnMemoria(f: FiltrosEnMemoria): boolean {
     || !!((f.proveedor?.cuit || "").trim() || (f.proveedor?.nombre || "").trim())
     || !!f.categs // null = sin filtro; un conjunto (aunque sea vacío) filtra lo cargado
     || !!f.okAuditar
+    || !!(f.ids && f.ids.size)
 }
 
 /** El límite con que se pide una carga: si hay filtros en memoria, la cuenta entera. */
