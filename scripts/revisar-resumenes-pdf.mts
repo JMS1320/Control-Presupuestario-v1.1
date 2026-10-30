@@ -15,6 +15,7 @@ import { join } from "node:path"
 import { parsearResumen, calcularControl, normalizarTextoResumen } from "../lib/tarjetas/parseo-resumen-pdf"
 import { leerResumenCajaAhorro, controlarResumen } from "../lib/extractos/pdf-caja-ahorro-galicia"
 import { textosUbicadosPorPagina } from "../lib/polizas/renglones-pdf"
+import { leerResumenSantander, controlarResumenSantander } from "../lib/extractos/pdf-santander"
 
 const principal = process.argv[2] ?? "../Control-Presupuestario-v1.1"
 const BASE = join(principal, "- Comunicacion JMS Claude - Archivos", "Extractos")
@@ -65,8 +66,27 @@ async function cajas(titulo: string, prefijo: string) {
   }
 }
 
+async function santander() {
+  console.log(`
+══ MSA Santander cta cte ══`)
+  let finAnterior: number | null = null
+  for (const f of pdfs(VARIAS, "MSA - Santander")) {
+    const r = leerResumenSantander(await textosUbicadosPorPagina(new Uint8Array(readFileSync(join(VARIAS, f)))))
+    const c = controlarResumenSantander(r)
+    const enlaza = finAnterior === null || r.saldoInicial === null ? "" : Math.abs(finAnterior - r.saldoInicial) <= 0.01 ? " · enlaza ✓" : ` · ⚠️ NO enlaza (venía $ ${fmt(finAnterior)})`
+    const deb = r.movimientos.reduce((a, m) => a + m.debito, 0), cred = r.movimientos.reduce((a, m) => a + m.credito, 0)
+    console.log(`${c.ok ? "✓" : "✗"} ${f.padEnd(42)} cta ${r.numeroCuenta} cuit ${r.cuitTitular} ${r.desde}→${r.hasta} · ${String(r.movimientos.length).padStart(3)} movs · $ ${fmt(r.saldoInicial)} → $ ${fmt(r.saldoFinal)} · déb ${fmt(deb)} · cré ${fmt(cred)}${enlaza}`)
+    for (const x of c.cadenaRota.slice(0, 3)) console.log(`     ✗ ${x.fecha} ${x.que}: esperado ${fmt(x.esperado)} · impreso ${fmt(x.impreso)}`)
+    if (!c.saldoFinal.ok) console.log(`     ✗ saldo final: resumen ${fmt(c.saldoFinal.segunResumen)} · leído ${fmt(c.saldoFinal.leido)}`)
+    if (r.avisos.length) console.log(`     avisos: ${r.avisos.slice(0, 3).join(" | ")}${r.avisos.length > 3 ? ` (+${r.avisos.length - 3})` : ""}`)
+    finAnterior = r.saldoFinal
+  }
+}
+
+if (process.argv.includes("--santander")) { await santander(); process.exit(0) }
 await tarjetas("VISA MA", VARIAS, "MA - VISA")
 await tarjetas("VISA PAM", VISA_PAM, "VISA PAM")
 await cajas("Cotitulares CA pesos", "Cotit - CA - Pesos")
 await cajas("Cotitulares CA dólares", "Cotit - CA - Dolar")
 await cajas("MA ANSES CA pesos", "MA ANSES")
+await santander()
