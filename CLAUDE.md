@@ -1059,6 +1059,12 @@ controle que no quedó nada desparramado).
   antes de borrar. En GAS/Drive están **prohibidos** `setTrashed`, `removeFolder`, `emptyTrash`
   y todo patrón "replace/overwrite" de carpeta. Motivo: un "sobrescribir carpeta" ya le borró un
   backup entero al usuario (2026-06-26).
+- 🔤 **Excepción — los bugs de FORMA de un dato se corrigen por default, sin preguntar** *(JMS 2026-10-30, al aparecer 270
+  movimientos con estado «Pendiente» en mayúscula que ningún circuito tomaba: «ese tipo de bugs siempre resolvelos por default.
+  Y pensalo: si está sin conciliar, ¿qué pasa si son gastos que el sistema debe tomar?»)*. Vale para un valor mal ESCRITO que
+  rompe un circuito (mayúsculas, espacios, un formato), **no** para decidir qué es un dato. Igual: script numerado con su
+  deshacer exacto (por id), buscar la CAUSA (un default, un importador) y arreglarla también, y si es estructura, el aviso a
+  Javier antes. Caso: script 143.
 - **Un script de DESHACER sólo puede borrar lo que creó SU script — y se verifica en la base antes de correr el
   script principal.** *(Usuario 2026-10-23: «si es una regla que agrega seguridad, sí».)* Si el script hace
   `add column if not exists` / `insert … where not exists`, el deshacer **no** puede ser `drop column` / `delete` a

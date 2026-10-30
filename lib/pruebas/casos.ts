@@ -202,7 +202,8 @@ import { linkHistorico, subFacturasDelLink, historicoDelLink } from "@/lib/egres
 import { armarPapelDeTrabajo, vinculoDe } from "@/lib/cuaderno/papel-de-trabajo"
 import { calcularTabla as calcularTablaCuaderno } from "@/lib/cuaderno/formulas"
 import { proponerConciliaciones, CUENTAS_CONCILIABLES, type DatosConciliacion, type MovimientoSinConciliar, type Obligacion } from "@/lib/conciliacion/propuestas-ejercicio"
-import { temasDeMovimientos } from "@/lib/balance/recorrido-conciliacion"
+import { temasDeMovimientos, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
+import { cruzarChequesConDebitos, numeroEnDescripcion } from "@/lib/conciliacion/cheques-vencidos"
 import { RENGLONES as RENGLONES_BALANCE } from "@/lib/balance/balance-propio"
 import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
@@ -5343,6 +5344,31 @@ export function correrCasos(): Resultado[] {
     chequear("Conciliación · propuestas", "🛡️ Ruido real descartado: $ 300.000 redondo sin CUIT contra una cuota de PAM ya usada → sin pareja («probable coincidencia»); CUIT del banco distinto → no es pareja",
       "e1 SIN_PAREJA coincidencia · e2 SIN_PAREJA", `e1 ${e1.tipo} ${/probable coincidencia/.test(e1.propuesta) ? "coincidencia" : "?"} · e2 ${e2.tipo}`,
       e1.tipo === "SIN_PAREJA" && /probable coincidencia/.test(e1.propuesta) && e2.tipo === "SIN_PAREJA", "A-FEAT-1430")
+  }
+
+  /**
+   * ✍️ **ECHEQS VENCIDOS CONTRA SU DÉBITO — A-AUTO-10.** Datos reales del 30/10: el 101 se cruza por número (conciliado);
+   * Longo, cargado sin número, por importe con «Echeq Galicia Nro: 107» del 07/09 → la acción marca cobrado el 07/09 y pone
+   * el Nº 107; Briki (cobro 29/10) no tiene débito porque el extracto llega al 23/09.
+   */
+  {
+    const cheques = [
+      { id: "c101", numero: "101", monto: 1146880, fecha_cobro: "2026-04-17", beneficiario_nombre: "Grupo Campo" },
+      { id: "cLongo", numero: null, monto: 1456737.5, fecha_cobro: "2026-08-10", beneficiario_nombre: "LONGO NESTOR" },
+      { id: "cBriki", numero: null, monto: 4591025.01, fecha_cobro: "2026-10-29", beneficiario_nombre: "BRIKI MATERIALES" },
+    ]
+    const debitos = [
+      { tabla: "msa_galicia", cuentaId: "msa_galicia", id: "d1", fecha: "2026-04-20", debitos: 1146880, descripcion: "Echeq 48 Hs. Nro.      101", estado: "conciliado" },
+      { tabla: "msa_galicia", cuentaId: "msa_galicia", id: "d2", fecha: "2026-09-07", debitos: 1456737.5, descripcion: "Echeq Galicia Nro:     107", estado: "auditar" },
+    ]
+    const cruces = cruzarChequesConDebitos(cheques, debitos)
+    const temasCh = temasDeCheques(cruces, "2026-09-23")
+    const longo = temasCh.find(t => t.clave === "chq:cLongo")!
+    chequear("Echeqs · recorrido", "✍️ El 101 por número (débito conciliado); Longo por importe → «marcar cobrado el 07/09 y poner el Nº 107»; Briki sin débito (el extracto llega al 23/09)",
+      "c101 numero · cLongo importe 107 → 2026-09-07 · cBriki sin débito, «Cargar el extracto»",
+      `c101 ${cruces[0].por} · cLongo ${cruces[1].por} ${longo.accion?.numero} → ${longo.accion?.fecha} · cBriki ${cruces[2].debito ? "con débito" : "sin débito"}, ${/Cargar el extracto/.test(temasCh[2].propuesta ?? "") ? "«Cargar el extracto»" : "?"}`,
+      cruces[0].por === "numero" && cruces[1].por === "importe" && longo.accion?.numero === "107" && longo.accion?.fecha === "2026-09-07"
+        && !cruces[2].debito && /Cargar el extracto/.test(temasCh[2].propuesta ?? "") && !temasCh[2].accion && numeroEnDescripcion("Echeq 48 Hs. Nro.      101") === "101", "A-AUTO-10")
   }
 
   /**

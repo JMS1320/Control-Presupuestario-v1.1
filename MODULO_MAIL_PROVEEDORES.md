@@ -473,3 +473,29 @@ JMS 30/10: *«dejá propuestas: en cada sección qué se guarda, qué no, qué d
 - ⚠️ **lo grande: las CUOTAS 3 están todas «pendientes» en la app** (vencieron el 08/09). En el extracto de MSA del **08/09** hay **8 pagos sin conciliar** («Pago De Servicios» / «Deb. Autom. De Serv.», **$ 6.674.523,20** en total). Son las cuotas 3 pagadas y nunca atadas a su cuota. Conviene conciliarlas **antes** de aplicar la cuota 4, si no el Cash Flow muestra las cuotas 3 como deuda vencida.
 - 🔴 **El Complementario de PAM cuota 3 está IMPAGO**: ARBA avisa mora al 09/10 (mail del 21/10, sin leer) y lo repite en el Domicilio Fiscal Electrónico (26/10). En los pagos del 08/09 no hay nada de ese monto. El de MSA sí se pagó (débito de $ 971.114,20).
 - 🔴 **Otro aviso en el Domicilio Fiscal de MSA (05/10): «Mora temprana Ingresos Brutos, anticipo 5-2026»**. No hay template de IIBB de MSA en la app (sí de MA y PAM).
+
+### 10.2 · 🗄️ Todo lo procesado deja su DOCUMENTO en el archivo digital — cada cosa en lo suyo *(JMS 30/10)*
+
+JMS: *«siempre lo que se elige procesar deberá guardarse el documento en un archivo digital tipo subdiarios, pero cada cosa lo suyo»*. Es la condición 5 de «Importar un documento» (`CLAUDE.md`) aplicada a todo el mail.
+
+**El modelo ya existe dos veces y se repite:** las facturas (`arca_pdf_archivo_digital`: carpeta del Drive por ejercicio y mes, cada PDF vinculado a su factura) y las boletas de ARBA (`boletas_arba`: archivo + cuota vinculada + lo leído del mail + correcciones — la tabla está lista y **todavía vacía**).
+
+**Propuesta de carpetas** (una raíz «Archivo digital» en el Drive de la casilla; el GAS hace *find-or-create*, nunca borra ni reemplaza carpetas):
+
+| Tipo | Carpeta | Nombre del archivo | Se vincula a |
+|---|---|---|---|
+| Facturas | `Facturas/<empresa>/<ejercicio>/<AA-MM>` (la de hoy) | la de hoy | la factura |
+| ARBA Inmobiliario | `Impuestos/ARBA Inmobiliario/<año>/Cuota <n>/<empresa>` | `2026 - Inmob - Cuota 4 - Rojas.pdf` (la de hoy) | la cuota del template (`boletas_arba`) |
+| ABL · Red Vial | `Impuestos/<ABL · Red Vial <municipio>>/<año>` | `2026 - ABL - Cuota 10 - Libertad.pdf` | la cuota del template |
+| Resúmenes bancarios | `Bancos/<empresa> <banco> <cuenta>/<año>` | `MSA - Santander - CC - Pesos - 26-09.pdf` (la que usamos hoy) | los movimientos que cargó |
+| Tarjetas | `Tarjetas/<tarjeta>/<año>` | `MA - VISA - 26-09.pdf` | el resumen cargado |
+| Contador | `Contador/<empresa>/<impuesto>/<año>` | `MA - IIBB - 2026-09.pdf` | la cuota de IIBB / `ddjj_presentadas` |
+| Sueldos domésticas | `Sueldos/Domésticas/<año>` | `2026-10 - Sueldos.pdf` | el período de sueldos |
+| Servicios y expensas | `Servicios/<servicio>/<año>` | `2026-10 - Expensas Libertad.pdf` | la cuota del template |
+| Productivo | `Productivo/<Fijaciones · Romaneos>/<campaña>` | `2026-10 - Bunge - Fij 1000579367.pdf` | la venta / cuota de arrendamiento |
+
+**Y un solo lugar que diga qué documento se archivó, de qué mail salió y qué generó**: el registro de mails ya tiene `vinculos`; falta guardar ahí también el archivo (id y link del Drive). Para lo que no llega por mail (un PDF subido a mano), lo mismo con canal «manual». Cambio de estructura → con aviso y OK.
+
+**El diseño se hace con VISTA PREVIA** (JMS: *«el preview se debe poder hacer en el proceso de diseñar esto: deberé poder ver ejemplos para responderte»*): una página con un mail real de cada tipo → qué se lee → qué cuota se propone cambiar → dónde se archiva y con qué nombre. JMS responde sobre cada ejemplo y recién ahí se construye.
+
+**Vista previa publicada (30/10):** https://claude.ai/artifact/3uD8ZPgEDFk9PDRXb39VsH — 12 ejemplos reales (ARBA rural / aviso de débito / mora, Red Vial Rojas, ABL, tarjeta Galicia, expensas, IIBB MA, sueldos domésticas, Coopser, honorarios, Santander) con «Así sí / Cambiar / No» y nota; las respuestas quedan en la base de la página (colección `respuestas`) y Claude las lee desde la terminal. **Hallazgo al juntar los ejemplos:** sólo las tarjetas Galicia y la Red Vial de Rojas traen el importe en el texto del mail; el resto lo trae en el PDF adjunto o en la boleta del link → el procesador tiene que **leer el documento**, no el mail.

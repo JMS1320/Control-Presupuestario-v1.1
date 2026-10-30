@@ -87,7 +87,8 @@ export function saldoCuenta(movs: MovimientoMoneda[]): { moneda: number; pesos: 
     const p = pesosDe(m)
     if (p == null) sinTC++
     else pesos += p
-    if ((m.estado ?? "Pendiente") === "Pendiente") pendientes++
+    // 🔤 script 143: el estado es «pendiente» (minúscula), como en todo el sistema; se cuenta sin importar mayúsculas
+    if (String(m.estado ?? "pendiente").toLowerCase() === "pendiente") pendientes++
   }
   return { moneda: r2(moneda), pesos: r2(pesos), sinTC, pendientes }
 }
@@ -154,7 +155,7 @@ export interface CambioMoneda {
  */
 export function armarCambio(c: CambioMoneda) {
   const pesos = r2(c.usd * c.tc)
-  const base = { fecha: c.fecha, categ: c.categ, estado: "Pendiente", tipo_cambio: c.tc, importe_pesos: pesos }
+  const base = { fecha: c.fecha, categ: c.categ, estado: "pendiente", tipo_cambio: c.tc, importe_pesos: pesos }
   const desc = c.descripcion || (c.sentido === "venta" ? `Venta de USD ${c.usd} a ${c.tc}` : `Compra de USD ${c.usd} a ${c.tc}`)
   const filaUsd = { ...base, descripcion: desc, moneda: "USD" as const,
     debitos: c.sentido === "venta" ? c.usd : 0, creditos: c.sentido === "compra" ? c.usd : 0 }

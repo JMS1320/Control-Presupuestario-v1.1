@@ -30,6 +30,7 @@ const COLOR: Record<GrupoTema, string> = {
   "pendiente desarrollo": "border-teal-300 bg-teal-50 text-teal-900",
   "conciliacion": "border-blue-300 bg-blue-50 text-blue-900",
   "deuda": "border-orange-300 bg-orange-50 text-orange-900",
+  "cheque": "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-900",
 }
 
 export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerrar, onPendientes, conciliacion }: {
@@ -151,6 +152,36 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
       toast.error("No se pudo guardar: " + (e as Error).message)
     } finally { setGuardando(false) }
   }
+  /**
+   * ⚡ La acción de un clic que propone el tema (p. ej. marcar un echeq cobrado con la fecha de su débito). La dispara el
+   * usuario; queda escrita como respuesta del tema y se recalcula, así el tema resuelto desaparece.
+   */
+  const aplicar = async () => {
+    const a = actual?.accion
+    if (!actual || !a) return
+    setGuardando(true)
+    try {
+      if (a.tipo === "cheque-cobrado") {
+        const cambios: Record<string, unknown> = { estado: "cobrado", fecha_estado: a.fecha }
+        if (a.numero) cambios.numero = a.numero
+        const { error } = await supabase.schema("msa").from("cheques").update(cambios).eq("id", a.chequeId).eq("estado", "vigente")
+        if (error) throw error
+      }
+      const resolucion = `⚡ Aplicado desde el recorrido: ${a.texto}${nota.trim() ? ` — ${nota.trim()}` : ""}`
+      const cambiosP = { estado: "resuelto", resolucion, resuelto_at: ahoraISO() }
+      const r = actual.pendiente
+        ? await supabase.from("balance_pendientes").update(cambiosP).eq("id", actual.pendiente.id)
+        : await supabase.from("balance_pendientes").insert({ empresa, anio_cierre: anioCierre, texto: textoPendienteDe(actual), creado_por: "recorrido del balance", ...cambiosP })
+      if (r.error) throw r.error
+      toast.success(`Hecho: ${a.texto}`)
+      await recargar()
+      ir(1)
+      conciliacion?.recalcular()
+    } catch (e) {
+      toast.error("No se pudo aplicar: " + (e as Error).message)
+    } finally { setGuardando(false) }
+  }
+
   const reabrir = async () => {
     if (!actual?.pendiente) return
     const { error } = await supabase.from("balance_pendientes").update({ estado: "abierto", resuelto_at: null }).eq("id", actual.pendiente.id)
@@ -240,9 +271,12 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
               </div>
 
               {actual.propuesta && (
-                <div className="rounded border border-emerald-300 bg-emerald-50 p-3 space-y-1">
+                <div className="rounded border border-emerald-300 bg-emerald-50 p-3 space-y-2">
                   <div className="text-xs font-medium uppercase tracking-wide text-emerald-800">Propuesta</div>
                   <p className="text-sm text-emerald-950">{actual.propuesta}</p>
+                  {actual.accion && !actual.respondido && (
+                    <Button size="sm" onClick={aplicar} disabled={guardando} data-test="recorrido-aplicar">⚡ Aplicar: {actual.accion.texto}</Button>
+                  )}
                 </div>
               )}
 
