@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### ✍️ Trigger nuevo en `public.msa_galicia`: el echeq se marca cobrado al conciliar su débito (2026-10-30) — ⏳ AVISO PREVIO, todavía sin correr
+### ✍️ Trigger nuevo en `public.msa_galicia`: el echeq se marca cobrado al conciliar su débito (2026-10-30) — ✅ APLICADA el 30/10 a pedido de JMS (aviso previo): función + trigger, simulado sin escribir
 - `scripts/144-echeq-cobrado-al-conciliar.sql` (+ `-deshacer`), rama `jms/balance`. A-AUTO-10: `after insert or update of estado` sobre `public.msa_galicia` → función `msa.marcar_echeq_cobrado_al_conciliar()` (`security definer`, `search_path` fijo) que, si un débito de cheque pasa a `conciliado`, pone su `msa.cheques` en `cobrado` con la fecha del débito. **Escribe en `msa.cheques` desde un trigger**: si tocás RLS de cheques o de `msa_galicia`, tenelo en cuenta.
 
 ### ⏸️ Pausa por persona en el middleware + publicación a main (2026-10-30)

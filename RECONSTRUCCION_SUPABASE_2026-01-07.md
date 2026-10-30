@@ -3335,6 +3335,9 @@ Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantid
 ### 2026-10-30 · Tablas de mails SÓLO ADMIN (script 142) — A-FEAT-1425 — ✅ CORRIDO 2026-10-30 con OK de JMS
 `recurso_tablas`: `mails_registro` y `mails_reglas` pasan de `egresos` a `importar.mails` con `restringe_lectura = true` (marca `[script 142]` en `motivo`). Verificado simulando el JWT de cada rol: admin lee y escribe; los demás, nada. Deshacer: `scripts/142-mails-lectura-solo-admin-deshacer.sql`.
 
+### 2026-10-30 · ECHEQ COBRADO AL CONCILIAR — trigger en `public.msa_galicia` (script 144) — A-AUTO-10 — ✅ CORRIDO 2026-10-30
+Función `msa.marcar_echeq_cobrado_al_conciliar()` (`security definer`, `search_path = msa, public`) + trigger `trg_echeq_cobrado_al_conciliar` (`after insert or update of estado on public.msa_galicia for each row`): al pasar un débito de cheque a `conciliado`, marca su `msa.cheques` `cobrado` con la fecha del débito (por número + importe; si no, por importe con un único candidato sin número ±45 días) y completa el número. Al reconstruir: correr `scripts/144-echeq-cobrado-al-conciliar.sql`. Deshacer: `-deshacer.sql` (saca trigger y función).
+
 ### 2026-10-30 · ESTADO «Pendiente» → «pendiente» — default de 18 tablas + 270 movimientos (script 143) — ✅ CORRIDO 2026-10-30
 Las tablas de extracto/caja/USD/Cotitulares (`msa_galicia`, `pam_galicia`, `pam_galicia_cc`, `ma.ma_galicia`, cajas, `santander`, `provincia`, `echeqs_terceros`, las 7 de dólares/Cotitulares y `ma.anses_ca_pesos`) tenían `estado default 'Pendiente'`: **al reconstruir, crear esas columnas con `default 'pendiente'`** (minúscula, como lo busca todo el sistema). Deshacer: `scripts/143-estado-pendiente-minuscula-deshacer.sql` (vuelve los 270 ids exactos y los defaults).
 
