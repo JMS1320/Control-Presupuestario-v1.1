@@ -192,6 +192,7 @@ import { pesosAlCierre, pesoParaValuar } from "@/lib/balance/pesos-hacienda"
 import { armarStockInsumos, existenciaAlCierre, PAPELES_SIN_ORIGEN, type LineaInsumo } from "@/lib/balance/stock-insumos"
 import { elegirTcAl } from "@/lib/dolares/tc-cierre"
 import { controlarProvisionAnterior } from "@/lib/balance/control-inicio"
+import { esFilaDeAlerta, solapasDelLibro } from "@/lib/balance/vista-previa"
 import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
 } from "@/lib/balance/granos-sementeras"
@@ -5144,6 +5145,28 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · provisión anterior", "🔁 Con las dos marcadas como provisión anterior cierra; sin foto del balance anterior lo dice (no inventa un cero)",
       "cierra · sin foto", `${cierra.estado} · ${sinFoto.estado}`,
       cierra.estado === "cierra" && cierra.candidatos.length === 0 && sinFoto.estado === "sin foto" && sinFoto.declarado === null, "A-FEAT-1427")
+  }
+
+  /**
+   * 👁️ **VISTA PREVIA — A-FEAT-1427.** Muestra el mismo WorkBook que se baja; lo único propio es reconocer las filas
+   * que los papeles ya marcaron como problema. Un control que cerró (✓) no es alerta; un «⚠️ NO CIERRA» sí.
+   */
+  {
+    const wb = XLSXcasos.utils.book_new()
+    XLSXcasos.utils.book_append_sheet(wb, XLSXcasos.utils.aoa_to_sheet([
+      ["STOCK DE INSUMOS al 2026-06-30"],
+      ["CONTROL ✓ cada producto: existencia de hoy = suma de sus movimientos"],
+      ["Agroquímico", "Glifosato", 70, "L", 4, 280],
+      ["Agroquímico", "Atrazina", 10, "L", "FALTA EL PRECIO", "FALTA EL PRECIO"],
+    ]), "Stock insumos")
+    XLSXcasos.utils.book_append_sheet(wb, XLSXcasos.utils.aoa_to_sheet([
+      ["Diferencia", "12.456.000,14", "⚠️ NO CIERRA: lo provisionado el año pasado no está reconocido"],
+      ["Diferencia", "0,00", "✓ cierra"],
+    ]), "05 Provision")
+    const sol = solapasDelLibro(wb)
+    chequear("Balance · vista previa", "👁️ Cada solapa con sus alertas: «FALTA EL PRECIO» y «⚠️ NO CIERRA» cuentan; un control ✓ no",
+      "Stock insumos 1 · 05 Provision 1", sol.map(x => `${x.nombre} ${x.alertas}`).join(" · "),
+      sol.length === 2 && sol[0].alertas === 1 && sol[1].alertas === 1 && !esFilaDeAlerta(["CONTROL ✓ cada producto"]), "A-FEAT-1427")
   }
 
   /**

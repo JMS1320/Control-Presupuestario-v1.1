@@ -47,7 +47,8 @@ import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { ProponerFotoBalance } from "./proponer-foto-balance"
 import { ivaConSigno, type DatosDeLosPapeles } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
-import { descargarLibroDiario } from "@/lib/balance/export-libro-diario"
+import { armarWorkbook, descargarLibroDiario } from "@/lib/balance/export-libro-diario"
+import { VistaPreviaBalance } from "./vista-previa-balance"
 import { descargarLibroDiarioConsensuado } from "@/lib/balance/libro-diario-consensuado"
 import { leerCobrosYRetenciones } from "@/lib/balance/cobros-de-ventas"
 import { descargarDiferenciasVsArca } from "@/lib/balance/diferencias-vs-arca"
@@ -163,6 +164,29 @@ export function PapelesDeBalance() {
   const [lecturas, setLecturas] = useState<Lectura[] | null>(null)
   /** 🔁 A-FEAT-1427: el inicio según el balance anterior contra lo que reconoce la app. */
   const [controlesInicio, setControlesInicio] = useState<ControlesInicio | null>(null)
+  /** 👁️ A-FEAT-1427: el libro armado para mirarlo antes de bajarlo. `null` = cerrada. */
+  const [previa, setPrevia] = useState<ReturnType<typeof armarWorkbook> | null>(null)
+
+  /**
+   * 🧾 Los datos del Excel del balance, en el orden de `armarWorkbook`. Los usan la descarga Y la vista previa
+   * (A-FEAT-1427): una sola lista, para que lo que se ve y lo que se baja no puedan diferir.
+   */
+  const argsDelExcel = (lib: LibroDiario): Parameters<typeof armarWorkbook> => [
+    lib, empresa.id, templates ?? undefined, hacienda ?? undefined,
+    hacienda?.insumos, hacienda?.campo,
+    // Los cuatro bloques de los papeles 03 y 04 viajan juntos: el listado de
+    // comprobantes, los cheques y los anticipos son partes del mismo papel.
+    { ...(cuentas ?? {}), ...(valores ?? {}) },
+    bancarios ?? undefined,
+    sueldos ?? undefined,
+    cuentasCorrientesConInicio ?? undefined,
+    pendientes,
+    saldosDelEjercicioAnterior(ajustes, empresa.id, anioCierre),
+    asientosContables ?? undefined,
+    lecturas ?? undefined,
+    controlCuotas ?? undefined,
+    controlesInicio ?? undefined,
+  ]
 
   const generar = async () => {
     setCargando(true)
@@ -840,22 +864,16 @@ export function PapelesDeBalance() {
             Armar el libro
           </Button>
           {libro && (
-            <Button variant="outline" onClick={() => descargarLibroDiario(
-                libro, empresa.id, templates ?? undefined, hacienda ?? undefined,
-                hacienda?.insumos, hacienda?.campo,
-                // Los cuatro bloques de los papeles 03 y 04 viajan juntos: el listado de
-                // comprobantes, los cheques y los anticipos son partes del mismo papel.
-                { ...(cuentas ?? {}), ...(valores ?? {}) },
-                bancarios ?? undefined,
-                sueldos ?? undefined,
-                cuentasCorrientesConInicio ?? undefined,
-                pendientes,
-                saldosDelEjercicioAnterior(ajustes, empresa.id, anioCierre),
-                asientosContables ?? undefined,
-                lecturas ?? undefined,
-                controlCuotas ?? undefined,
-                controlesInicio ?? undefined,
-              )}>
+            /* 👁️ A-FEAT-1427: el mismo libro que se baja, mostrado acá con sus alertas arriba. */
+            <Button variant="outline" onClick={() => {
+              try { setPrevia(armarWorkbook(...argsDelExcel(libro))) }
+              catch (e) { toast.error("No se pudo armar la vista previa: " + (e as Error).message) }
+            }}>
+              👁️ Vista previa
+            </Button>
+          )}
+          {libro && (
+            <Button variant="outline" onClick={() => descargarLibroDiario(...argsDelExcel(libro))}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               {/* A-FEAT-1388: decía «sin el sector productivo» y confundía cuando los precios ya se
                   veían cargados — lo que falta es traer el stock, y eso es lo que se dice. */}
@@ -897,6 +915,8 @@ export function PapelesDeBalance() {
           )}
         </div>
 
+        {/* 👁️ A-FEAT-1427 — el Excel antes de bajarlo; las preguntas siguen acá abajo, donde se contestan. */}
+        {previa && <VistaPreviaBalance wb={previa} onCerrar={() => setPrevia(null)} />}
         {/* 📌 A-FEAT-1258 — a la vista mientras se trabaja; salen en el export. */}
         <PendientesBalance empresa={empresa.id} anioCierre={anioCierre} onCambio={setPendientes} />
         {/* ✍️ A-FEAT-1207 — lo que el balance anterior dejó para tomar en éste. */}
