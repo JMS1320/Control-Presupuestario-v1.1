@@ -28,7 +28,7 @@ import { SaldosEjercicioAnterior } from "./saldos-ejercicio-anterior"
 import { ProvisionManual, tablaFacturas } from "./provision-manual"
 import { saldosDelEjercicioAnterior, type AjusteBalance } from "@/lib/balance/ajustes-balance"
 import type { PendienteBalance } from "@/lib/balance/pendientes-balance"
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -48,7 +48,9 @@ import { ProponerFotoBalance } from "./proponer-foto-balance"
 import { ivaConSigno, RENGLONES, type DatosDeLosPapeles, type ValorPropuesto } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { armarWorkbook, coberturaDeArgs, descargarLibroDiario } from "@/lib/balance/export-libro-diario"
-import { armarTemas } from "@/lib/balance/recorrido"
+import { armarTemas, type Tema } from "@/lib/balance/recorrido"
+import { leerDatosConciliacion, proponerConciliaciones } from "@/lib/conciliacion/propuestas-ejercicio"
+import { temasDeMovimientos, temasDeDeudas } from "@/lib/balance/recorrido-conciliacion"
 import { RecorridoBalance } from "./recorrido-balance"
 import { VistaPreviaBalance } from "./vista-previa-balance"
 import { descargarLibroDiarioConsensuado } from "@/lib/balance/libro-diario-consensuado"
@@ -176,6 +178,27 @@ export function PapelesDeBalance() {
   const [verPrevia, setVerPrevia] = useState(false)
   /** 🧭 A-FEAT-1430: el recorrido del balance (pantalla completa) y la versión de los pendientes que respondió. */
   const [verRecorrido, setVerRecorrido] = useState(false)
+  /** 🏦 A-FEAT-1430 paso 4: las propuestas de conciliación del ejercicio (se calculan al abrir el recorrido). */
+  const [conciliacion, setConciliacion] = useState<{ movimientos: Tema[]; deudas: Tema[]; historicos: number; avisos: string[]; calculado: string } | null>(null)
+  const [cargandoConciliacion, setCargandoConciliacion] = useState<string | null>(null)
+  const calcularConciliacion = useCallback(async () => {
+    if (!libro) return
+    const desde = primerDiaDelEjercicio(libro.ejercicio), hasta = libro.ejercicio.fechaCierre
+    setCargandoConciliacion("empezando…")
+    try {
+      const datos = await leerDatosConciliacion(supabase, empresa.id, desde, hasta, t => setCargandoConciliacion(t))
+      const r = proponerConciliaciones(datos, empresa.id, desde, hasta)
+      const mov = temasDeMovimientos(r.movimientos)
+      setConciliacion({ movimientos: mov.temas, deudas: temasDeDeudas(r.deudas, empresa.id), historicos: mov.historicos, avisos: datos.avisos,
+        calculado: new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) })
+      if (datos.avisos.length) toast.warning(`Conciliación: no se pudo leer ${datos.avisos.length} cosa(s) — ${datos.avisos.slice(0, 2).join(" · ")}`)
+    } catch (e) {
+      toast.error("No se pudieron calcular las propuestas de conciliación: " + (e as Error).message)
+    } finally { setCargandoConciliacion(null) }
+  }, [libro, empresa.id])
+  // Se calculan la primera vez que se abre el recorrido (después, con «↻ Recalcular»).
+  useEffect(() => { if (verRecorrido && libro && !conciliacion && !cargandoConciliacion) void calcularConciliacion() }, [verRecorrido, libro]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setConciliacion(null) }, [libro])
   const [versionPendientes, setVersionPendientes] = useState(0)
   /** ⚡ A-FEAT-1427: «Armar todo» le pide a Hacienda/insumos que traiga stock y precios (cada pedido, un número nuevo). */
   const [pedidoStock, setPedidoStock] = useState(0)
@@ -219,10 +242,11 @@ export function PapelesDeBalance() {
   /** 🧭 Los temas del recorrido: la cobertura (mismos datos del Excel) + las preguntas de «Pendientes a revisar». */
   const temasRecorrido = useMemo(() => {
     if (!libro) return []
-    try { return armarTemas(coberturaDeArgs(...argsDelExcel(libro)), pendientes) } catch { return armarTemas(null, pendientes) }
+    const otros = conciliacion ? [...conciliacion.movimientos, ...conciliacion.deudas] : []
+    try { return armarTemas(coberturaDeArgs(...argsDelExcel(libro)), pendientes, otros) } catch { return armarTemas(null, pendientes, otros) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [libro, empresa.id, templates, hacienda, cuentas, valores, bancarios, sueldos, cuentasCorrientesConInicio,
-    pendientes, ajustes, anioCierre, asientosContables, lecturas, controlCuotas, controlesInicio, propuestaCierre, fotoInicio])
+    pendientes, ajustes, anioCierre, asientosContables, lecturas, controlCuotas, controlesInicio, propuestaCierre, fotoInicio, conciliacion])
   const sinResponder = temasRecorrido.filter(t => !t.respondido).length
   /** Lo que todavía no llegó, para que la vista previa lo diga en vez de parecer completa. */
   const faltanEnPrevia = [
@@ -1003,6 +1027,8 @@ export function PapelesDeBalance() {
         {verRecorrido && libro && (
           <RecorridoBalance empresa={empresa.id} anioCierre={anioCierre} etiqueta={libro.ejercicio.etiqueta}
             temas={temasRecorrido} onCerrar={() => setVerRecorrido(false)}
+            conciliacion={{ cargando: cargandoConciliacion, historicos: conciliacion?.historicos ?? 0, avisos: conciliacion?.avisos ?? [],
+              calculado: conciliacion?.calculado ?? null, recalcular: () => void calcularConciliacion() }}
             onPendientes={l => { setPendientes(l); setVersionPendientes(v => v + 1) }} />
         )}
         {/* ✍️ A-FEAT-1207 — lo que el balance anterior dejó para tomar en éste. */}
