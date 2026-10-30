@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 📓 1 columna nueva en `public.cuadernos`: `vinculo` (2026-10-30) — ⏳ AVISO PREVIO, todavía sin correr
+### 📓 1 columna nueva en `public.cuadernos`: `vinculo` (2026-10-30) — ✅ APLICADA el 30/10 con OK de JMS (aviso previo): columna vacía + índice, sin tocar RLS ni datos
 - `scripts/141-cuadernos-vinculo.sql` (+ `-deshacer`), rama `jms/balance`. A-FEAT-1430: ata un cuaderno (papel de trabajo) a un tema del balance. Columna `text` vacía + un índice parcial.
 - **No toca RLS** (sigue personal por usuario: `usuario_id = auth.uid()`), ni grants, ni datos. Si la columna ya existiera, el script no corre.
 
