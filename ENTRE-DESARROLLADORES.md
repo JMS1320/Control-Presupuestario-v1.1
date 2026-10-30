@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 🔒 Lectura de las tablas de mails cerrada al admin (2026-10-30) — ⏳ AVISO PREVIO, se aplica hoy con OK de JMS
+### 🔒 Lectura de las tablas de mails cerrada al admin (2026-10-30) — ✅ APLICADA el 30/10 con OK de JMS (aviso previo): verificado simulando cada rol — admin lee y escribe; contable, socio, productivo y pruebas, nada
 - `scripts/142-mails-lectura-solo-admin.sql` (+ `-deshacer`). `public.mails_registro` y `public.mails_reglas` (las del script 140) pasan en `recurso_tablas` de `egresos` a **`importar.mails`** con **`restringe_lectura = true`**: con la regla de `puede_ver` (scripts 63/65), sin esto cualquier rol logueado las leía; y con `egresos`, `contable` las leía y escribía. `importar` es la única sección que hoy tiene sólo `admin`. Motivo: tienen mails de la familia y de la sucesión. No toca funciones ni otras tablas. El GAS escribe con `service_role` (no lo afecta).
 - ⚠️ Si algún día un rol recibe la sección `importar`, también vería los mails: avisar acá antes.
 
