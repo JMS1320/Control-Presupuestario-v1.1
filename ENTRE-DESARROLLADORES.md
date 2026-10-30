@@ -40,6 +40,10 @@
 
 ## 📨 PARA JAVIER
 
+### 🔒 Lectura de las tablas de mails cerrada al admin (2026-10-30) — ⏳ AVISO PREVIO, se aplica hoy con OK de JMS
+- `scripts/141-mails-lectura-solo-admin.sql` (+ `-deshacer`). `public.mails_registro` y `public.mails_reglas` (las del script 140) pasan en `recurso_tablas` de `egresos` a **`importar.mails`** con **`restringe_lectura = true`**: con la regla de `puede_ver` (scripts 63/65), sin esto cualquier rol logueado las leía; y con `egresos`, `contable` las leía y escribía. `importar` es la única sección que hoy tiene sólo `admin`. Motivo: tienen mails de la familia y de la sucesión. No toca funciones ni otras tablas. El GAS escribe con `service_role` (no lo afecta).
+- ⚠️ Si algún día un rol recibe la sección `importar`, también vería los mails: avisar acá antes.
+
 ### 📬 2 tablas nuevas: registro de mails + reglas de clasificación (2026-10-30) — ✅ APLICADA el 30/10 con OK de JMS (aviso previo): 2 tablas vacías, RLS, 2 filas en recurso_tablas y 70 reglas iniciales
 - `scripts/140-mails-registro-y-reglas.sql` (+ `-deshacer`), rama `jms/gas`. A-FEAT-1425: `public.mails_registro` (una fila por mail recibido o enviado de sanmanuel.sp, la escribe el GAS con la `service_role`) y `public.mails_reglas` (remitente/asunto → tipo y acción, ~70 reglas iniciales).
 - **RLS igual que el resto**: `ver_segun_permiso` / `escribir_segun_permiso`, 2 filas en `recurso_tablas` (recurso `egresos`, marca `[script 140]`). `anon` sin acceso. No toca ninguna tabla existente.
