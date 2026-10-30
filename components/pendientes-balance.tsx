@@ -24,9 +24,11 @@ import { BotonRevision, useRevisionesDe } from "@/components/boton-revision"
 
 const dmy = (iso: string | null) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : '')
 
-export function PendientesBalance({ empresa, anioCierre, onCambio }: {
+export function PendientesBalance({ empresa, anioCierre, onCambio, version = 0 }: {
   empresa: string
   anioCierre: number
+  /** 🧭 A-FEAT-1430: cambia cuando el recorrido del balance responde algo → se vuelve a leer. */
+  version?: number
   /** Para que el export lleve la lista al día. */
   onCambio?: (lista: PendienteBalance[]) => void
 }) {
@@ -47,7 +49,7 @@ export function PendientesBalance({ empresa, anioCierre, onCambio }: {
     setLista(l)
     onCambio?.(l)
   }, [empresa, anioCierre, onCambio])
-  useEffect(() => { cargar() }, [cargar])
+  useEffect(() => { cargar() }, [cargar, version])
 
   const agregar = async () => {
     const texto = nuevo.trim()

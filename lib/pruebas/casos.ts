@@ -195,6 +195,7 @@ import { controlarProvisionAnterior } from "@/lib/balance/control-inicio"
 import { esFilaDeAlerta, solapasDelLibro } from "@/lib/balance/vista-previa"
 import { armarInicioYCierre, textoEstado } from "@/lib/balance/inicio-y-cierre"
 import { armarCobertura, CANTIDAD_DE_DATOS } from "@/lib/balance/cobertura-papeles"
+import { armarTemas, progreso, textoPendienteDe } from "@/lib/balance/recorrido"
 import { RENGLONES as RENGLONES_BALANCE } from "@/lib/balance/balance-propio"
 import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
@@ -5218,6 +5219,25 @@ export function correrCasos(): Resultado[] {
         && est(vacio, /^Banco Galicia/) === "sin informacion" && est(con, /^Banco Galicia/) === "error"
         && est(con, /^Banco Santander/) === "sin informacion" && est(con, /^Provisión del ejercicio anterior/) === "error"
         && est(con, /^Equinos/) === "no corresponde", "A-FEAT-1427")
+
+    /**
+     * 🧭 **EL RECORRIDO — A-FEAT-1430.** La cola: los datos que no salen (no los que salen ni los que no corresponden),
+     * más las preguntas; los errores primero. Una respuesta guardada con la clave del tema lo marca respondido y
+     * NO aparece además como pregunta suelta.
+     */
+    const temasVacios = armarTemas(con, [])
+    const provision = temasVacios.find(t => /^Provisión del ejercicio anterior/.test(t.titulo))!
+    const respuesta = { id: "p1", empresa: "MSA", anio_cierre: 2026, texto: textoPendienteDe(provision), estado: "resuelto" as const,
+      resolucion: "✓ Resuelto: son las dos de PAM y Magdalena", created_at: "2026-10-30", resuelto_at: "2026-10-30" }
+    const pregunta = { ...respuesta, id: "p2", texto: "❓ ¿Qué es la caja USD del contador?", estado: "abierto" as const, resolucion: null, resuelto_at: null }
+    const temas = armarTemas(con, [respuesta, pregunta])
+    const p = progreso(temas)
+    chequear("Balance · recorrido", "🧭 Cola de temas: errores primero, sin los que salen; la respuesta con la clave del tema lo marca respondido (no queda como pregunta suelta)",
+      `primero error · provisión respondida · 1 pregunta · ${temasVacios.length + 1} temas, 1 respondido`,
+      `primero ${temas[0].grupo} · provisión ${temas.find(t => t.clave === provision.clave)?.respondido ? "respondida" : "sin responder"} · ${temas.filter(t => t.grupo === "pregunta").length} pregunta · ${p.total} temas, ${p.respondidos} respondido`,
+      temas[0].grupo === "error" && temas.find(t => t.clave === provision.clave)?.respondido === true
+        && temas.filter(t => t.grupo === "pregunta").length === 1 && p.total === temasVacios.length + 1 && p.respondidos === 1
+        && !temas.some(t => /^Equinos/.test(t.titulo)) && /buscar qué comprobantes/.test(provision.propuesta ?? ""), "A-FEAT-1430")
   }
 
   /**

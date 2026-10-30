@@ -217,6 +217,20 @@ export function bloqueDeLecturas(lecturas: Lectura[] | undefined): unknown[][] {
 
 
 /**
+ * 🗂️ La cobertura con los MISMOS datos del Excel (los argumentos de `armarWorkbook`). La usan el Excel y el recorrido
+ * del balance (A-FEAT-1430): una sola cuenta, para que lo que se recorre y lo que se baja no puedan diferir.
+ */
+export function coberturaDeArgs(...a: Parameters<typeof armarWorkbook>): CoberturaPapeles {
+  const [libro, , templates, hacienda, insumos, campo, cuentas, bancarios, , , , saldosAnteriores, , , , controlesInicio] = a
+  return armarCobertura({
+    libro, fechaInicio: primerDiaDelEjercicio(libro.ejercicio), templates,
+    hacienda: hacienda ? { valuacion: hacienda.valuacion, cuadre: hacienda.cuadre, stockInicio: hacienda.stockInicio } : null,
+    insumos, campo: campo ? { granos: campo.granos, sementeras: campo.sementeras } : null,
+    cuentas, bancarios, saldosAnteriores, controlesInicio, hechos: controlesInicio?.hechos,
+  })
+}
+
+/**
  * 🗂️ A-FEAT-1427: cada dato de los papeles del año pasado y qué hace hoy el export con él. Los que necesitan algo van
  * arriba, agrupados por qué les falta; lo que sale, abajo.
  */
@@ -2530,12 +2544,8 @@ export function armarWorkbook(
     lecturas,
   })
   // 🗂️ A-FEAT-1427: PRIMERO, ¿el export responde cada dato que se presentó el año pasado? (y si no, por qué)
-  const cobertura = armarCobertura({
-    libro, fechaInicio: primerDiaDelEjercicio(libro.ejercicio), templates,
-    hacienda: hacienda ? { valuacion: hacienda.valuacion, cuadre: hacienda.cuadre, stockInicio: hacienda.stockInicio } : null,
-    insumos, campo: campo ? { granos: campo.granos, sementeras: campo.sementeras } : null,
-    cuentas, bancarios, saldosAnteriores, controlesInicio, hechos: controlesInicio?.hechos,
-  })
+  const cobertura = coberturaDeArgs(libro, empresa, templates, hacienda, insumos, campo, cuentas, bancarios, sueldos,
+    cuentasCorrientes, pendientes, saldosAnteriores, asientosContables, lecturas, controlCuotas, controlesInicio)
   hoja(wb, "00 Cobertura", hojaDeCobertura(cobertura, libro.ejercicio.etiqueta))
   hoja(wb, "00 Indice", hojaDeIndice(indice, libro, empresa), COLS_INDICE)
   // 📋 A-FEAT-1427: cada renglón del balance con su saldo del año pasado y el de este año.

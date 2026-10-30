@@ -47,7 +47,9 @@ import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { ProponerFotoBalance } from "./proponer-foto-balance"
 import { ivaConSigno, RENGLONES, type DatosDeLosPapeles, type ValorPropuesto } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
-import { armarWorkbook, descargarLibroDiario } from "@/lib/balance/export-libro-diario"
+import { armarWorkbook, coberturaDeArgs, descargarLibroDiario } from "@/lib/balance/export-libro-diario"
+import { armarTemas } from "@/lib/balance/recorrido"
+import { RecorridoBalance } from "./recorrido-balance"
 import { VistaPreviaBalance } from "./vista-previa-balance"
 import { descargarLibroDiarioConsensuado } from "@/lib/balance/libro-diario-consensuado"
 import { leerCobrosYRetenciones } from "@/lib/balance/cobros-de-ventas"
@@ -172,6 +174,9 @@ export function PapelesDeBalance() {
   const recibirPropuesta = useCallback((p: { valores: ValorPropuesto[]; faltan: string[] }) => setPropuestaCierre(p), [])
   /** 👁️ A-FEAT-1427: el libro armado para mirarlo antes de bajarlo. `null` = cerrada. */
   const [verPrevia, setVerPrevia] = useState(false)
+  /** 🧭 A-FEAT-1430: el recorrido del balance (pantalla completa) y la versión de los pendientes que respondió. */
+  const [verRecorrido, setVerRecorrido] = useState(false)
+  const [versionPendientes, setVersionPendientes] = useState(0)
   /** ⚡ A-FEAT-1427: «Armar todo» le pide a Hacienda/insumos que traiga stock y precios (cada pedido, un número nuevo). */
   const [pedidoStock, setPedidoStock] = useState(0)
 
@@ -211,6 +216,14 @@ export function PapelesDeBalance() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [verPrevia, libro, empresa.id, templates, hacienda, cuentas, valores, bancarios, sueldos, cuentasCorrientesConInicio,
     pendientes, ajustes, anioCierre, asientosContables, lecturas, controlCuotas, controlesInicio, propuestaCierre, fotoInicio])
+  /** 🧭 Los temas del recorrido: la cobertura (mismos datos del Excel) + las preguntas de «Pendientes a revisar». */
+  const temasRecorrido = useMemo(() => {
+    if (!libro) return []
+    try { return armarTemas(coberturaDeArgs(...argsDelExcel(libro)), pendientes) } catch { return armarTemas(null, pendientes) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [libro, empresa.id, templates, hacienda, cuentas, valores, bancarios, sueldos, cuentasCorrientesConInicio,
+    pendientes, ajustes, anioCierre, asientosContables, lecturas, controlCuotas, controlesInicio, propuestaCierre, fotoInicio])
+  const sinResponder = temasRecorrido.filter(t => !t.respondido).length
   /** Lo que todavía no llegó, para que la vista previa lo diga en vez de parecer completa. */
   const faltanEnPrevia = [
     ...(!hacienda ? [pedidoStock > 0 ? "⏳ trayendo stock y precios…" : "stock y precios (hacienda, insumos, granos): falta «Traer stock y precios»"] : []),
@@ -935,6 +948,11 @@ export function PapelesDeBalance() {
             </Button>
           )}
           {libro && (
+            <Button variant="outline" onClick={() => setVerRecorrido(true)} title="Los temas a resolver del balance, uno por uno">
+              🧭 Recorrer temas{sinResponder ? ` (${sinResponder})` : ""}
+            </Button>
+          )}
+          {libro && (
             <Button variant="outline" onClick={() => descargarLibroDiario(...argsDelExcel(libro))}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               {/* A-FEAT-1388: decía «sin el sector productivo» y confundía cuando los precios ya se
@@ -981,7 +999,12 @@ export function PapelesDeBalance() {
         {previa?.error && <div className="text-sm text-red-700">No se pudo armar la vista previa: {previa.error}</div>}
         {previa?.wb && <VistaPreviaBalance wb={previa.wb} faltan={faltanEnPrevia} onCerrar={() => setVerPrevia(false)} />}
         {/* 📌 A-FEAT-1258 — a la vista mientras se trabaja; salen en el export. */}
-        <PendientesBalance empresa={empresa.id} anioCierre={anioCierre} onCambio={setPendientes} />
+        <PendientesBalance empresa={empresa.id} anioCierre={anioCierre} onCambio={setPendientes} version={versionPendientes} />
+        {verRecorrido && libro && (
+          <RecorridoBalance empresa={empresa.id} anioCierre={anioCierre} etiqueta={libro.ejercicio.etiqueta}
+            temas={temasRecorrido} onCerrar={() => setVerRecorrido(false)}
+            onPendientes={l => { setPendientes(l); setVersionPendientes(v => v + 1) }} />
+        )}
         {/* ✍️ A-FEAT-1207 — lo que el balance anterior dejó para tomar en éste. */}
         <SaldosEjercicioAnterior empresa={empresa.id} anioCierre={anioCierre} onCambio={setAjustes} />
         {/* ✍️ A-FEAT-1331 — facturas de fecha posterior al cierre que son de este ejercicio. */}

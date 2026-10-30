@@ -24,6 +24,7 @@ import type { GastosBancarios, RetirosYAportes } from "./papeles-bancarios"
 import type { TemplatesDelEjercicio } from "./templates-libro"
 import type { SaldosAnteriores } from "./ajustes-balance"
 import type { LibroDiario } from "./libro-diario"
+import { linkTemplates } from "@/lib/impuestos/planilla"
 
 export type EstadoCobertura =
   | "sale"                 // ✅ el export lo responde
@@ -85,7 +86,17 @@ export interface ItemCobertura {
   solapa: string
   /** El pendiente que lo resuelve, si hay uno. */
   pendiente?: string
+  /** 🧭 A-FEAT-1430: qué se propone hacer, con números («diferencia $ X (Y %) → conciliar esto contra esto»). */
+  propuesta?: string
+  /** 🔗 Dónde vive el dato, para abrirlo filtrado en otra pestaña. */
+  links?: LinkDato[]
 }
+
+/** Un link a la pantalla donde vive el dato, ya filtrada. */
+export interface LinkDato { texto: string; href: string }
+
+/** Lo que devuelve cada regla. */
+type Resultado = { estado: EstadoCobertura; detalle: string; propuesta?: string; links?: LinkDato[] }
 
 export interface CoberturaPapeles {
   items: ItemCobertura[]
@@ -95,7 +106,7 @@ export interface CoberturaPapeles {
 const pesos = (n: number) => `$ ${n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
 
-type Regla = Omit<ItemCobertura, "estado" | "detalle"> & { evaluar: (d: DatosCobertura) => { estado: EstadoCobertura; detalle: string } }
+type Regla = Omit<ItemCobertura, "estado" | "detalle" | "propuesta" | "links"> & { evaluar: (d: DatosCobertura) => Resultado }
 
 /** Una cuenta del papel 07: sale si tiene movimientos y su cadena cierra; si no tiene movimientos, falta el extracto. */
 function cuentaBanco(nombre: RegExp, etiqueta: string): Regla["evaluar"] {
@@ -104,9 +115,11 @@ function cuentaBanco(nombre: RegExp, etiqueta: string): Regla["evaluar"] {
     const c = d.bancarios.cadenas?.find(x => nombre.test(x.cuenta))
     if (!c) return { estado: "sin informacion", detalle: `${etiqueta} no está entre las cuentas del 07` }
     if (c.diferencia != null && Math.abs(c.diferencia) > 0.01)
-      return { estado: "error", detalle: `los movimientos no explican el saldo al cierre: diferencia ${pesos(c.diferencia)} (07.1 Cadena de saldos)` }
+      return { estado: "error", detalle: `los movimientos no explican el saldo al cierre: diferencia ${pesos(c.diferencia)} (07.1 Cadena de saldos)`,
+        propuesta: `buscar en el extracto un movimiento faltante o duplicado por ${pesos(Math.abs(c.diferencia))}${c.saltos ? ` (hay ${c.saltos} salto(s) en la cadena: ${pesos(c.sumaDeSaltos)})` : ""}` }
     if (c.saldoInicio == null) return { estado: "falta inicio", detalle: "sin saldo al inicio declarado" }
-    if (c.movimientos === 0) return { estado: "sin informacion", detalle: `inicio ${pesos(c.saldoInicio)}, pero la cuenta no tiene movimientos 25/26: falta cargar el extracto` }
+    if (c.movimientos === 0) return { estado: "sin informacion", detalle: `inicio ${pesos(c.saldoInicio)}, pero la cuenta no tiene movimientos 25/26: falta cargar el extracto`,
+      propuesta: "cargar el extracto del ejercicio (jul-25 a jun-26) de esta cuenta" }
     return { estado: "sale", detalle: `inicio ${pesos(c.saldoInicio)} → cierre ${pesos(c.saldoAlCierre ?? 0)} · ${c.movimientos} movimientos` }
   }
 }
@@ -122,6 +135,11 @@ function cuentaDolares(nombre: RegExp): Regla["evaluar"] {
   }
 }
 
+/** 🔗 Los templates de esas cuotas, en Egresos → Templates, filtrados (el mecanismo de la Planilla de impuestos). */
+const linksTemplates = (c: Array<{ egresoId?: string }>, que: string): LinkDato[] => {
+  const ids = [...new Set(c.map(x => x.egresoId).filter((x): x is string => !!x))]
+  return ids.length ? [{ texto: `Ver los ${ids.length} template(s) de ${que}`, href: linkTemplates(ids) }] : []
+}
 const templateCon = (d: DatosCobertura, re: RegExp) => d.templates?.detalle.filter(c => re.test(norm(`${c.concepto} ${c.proveedor}`))) ?? []
 
 const REGLAS: Regla[] = [
@@ -167,7 +185,8 @@ const REGLAS: Regla[] = [
       return { estado: "sale", detalle: `inicio ${f.inicioContador != null ? pesos(f.inicioContador) : "—"} → cierre ${f.cierre != null ? pesos(f.cierre) : "—"}` }
     } },
   { papel: "CUENTAS PAGAR · 04", dato: "Facturas JMS ($ 15 M) y AMS ($ 10,5 M) del 30/06/2025", valor2425: "$ 25.500.000", solapa: "14 Cuentas corrientes",
-    evaluar: () => ({ estado: "decision", detalle: "JMS 30/10: el contador las toma como anticipo (ya pagadas) → la cuenta corriente arranca con saldo a favor de MSA; el inicio cargado hoy (tentativo) las tiene como deuda: hay que dar vuelta el signo" }) },
+    evaluar: () => ({ estado: "decision", detalle: "JMS 30/10: el contador las toma como anticipo (ya pagadas) → la cuenta corriente arranca con saldo a favor de MSA; el inicio cargado hoy (tentativo) las tiene como deuda",
+      propuesta: "en el papel 14, saldo de inicio JMS −$ 15.000.000 y AMS −$ 10.500.000 (a favor de MSA): cuando llegan sus facturas de octubre, ya están canceladas" }) },
   { papel: "CUENTAS PAGAR · 4.1 Cheques dados", dato: "Cheques pendientes de débito al inicio (5 cheques)", valor2425: "$ 6.064.989,95", solapa: "04.1 Cheques dados",
     evaluar: d => {
       const n = d.hechos?.chequesAntesDelInicio
@@ -181,7 +200,11 @@ const REGLAS: Regla[] = [
       if (!p) return { estado: "sin informacion", detalle: "no se pudo controlar" }
       if (p.estado === "cierra") return { estado: "sale", detalle: `reconocida ${pesos(p.reconocido)}` }
       if (p.estado === "sin foto") return { estado: "falta inicio", detalle: p.fuenteDeclarado }
-      return { estado: "error", detalle: `el balance anterior provisionó ${pesos(p.declarado ?? 0)} y la app reconoce ${pesos(p.reconocido)}${p.candidatos.length ? `; ${p.candidatos.map(a => `${a.denominacion} ${a.punto_venta ?? ""}-${a.numero ?? ""}`).join(" + ")} están en el gasto de este ejercicio (doble)` : ""}` }
+      const pct = p.declarado ? Math.abs((p.diferencia ?? 0) / p.declarado) * 100 : 0
+      return { estado: "error", detalle: `el balance anterior provisionó ${pesos(p.declarado ?? 0)} y la app reconoce ${pesos(p.reconocido)}: diferencia ${pesos(p.diferencia ?? 0)} (${pct.toFixed(0)} %)${p.candidatos.length ? `; ${p.candidatos.map(a => `${a.denominacion} ${a.punto_venta ?? ""}-${a.numero ?? ""}`).join(" + ")} están en el gasto de este ejercicio (doble)` : ""}`,
+        propuesta: p.candidatos.length
+          ? `marcar ${p.candidatos.map(a => `${a.denominacion} ${a.punto_venta ?? ""}-${a.numero ?? ""} (${pesos(a.total)})`).join(" y ")} como «provisión del ejercicio anterior» → la provisión cierra (diferencia $ 0) y el gasto 25/26 baja ${pesos(p.candidatos.reduce((s, a) => s + a.total, 0))}; avisar al contador`
+          : "buscar qué comprobantes provisionó el balance anterior" }
     } },
   { papel: "CUENTAS PAGAR · 05 Provisión", dato: "«Pendiente de emitir por arrendamiento ganadero — Plácido Alberto Martínez»", valor2425: "sin importe", solapa: "05 Provision",
     evaluar: () => ({ estado: "decision", detalle: "no hay rastro en la app: pregunta abierta en «Pendientes a revisar»" }) },
@@ -195,16 +218,17 @@ const REGLAS: Regla[] = [
 
   // ── INMOBILIARIO - RED VIAL - AUTOMOTOR ──────────────────────────────────────────────────
   { papel: "INMOB-RED VIAL-AUTOMOTOR", dato: "Inmobiliario (por partida)", valor2425: "$ 13.093.257,85", solapa: "Impuestos / Impuestos por mes",
-    evaluar: d => { const c = templateCon(d, /inmobiliari/); return c.length ? { estado: "sale", detalle: `${c.length} cuota(s), ${pesos(c.reduce((a, x) => a + x.monto, 0))}` } : { estado: "sin informacion", detalle: "sin cuotas de inmobiliario en el ejercicio" } } },
+    evaluar: d => { const c = templateCon(d, /inmobiliari/); return c.length ? { estado: "sale", detalle: `${c.length} cuota(s), ${pesos(c.reduce((a, x) => a + x.monto, 0))}`, links: linksTemplates(c, "inmobiliario") } : { estado: "sin informacion", detalle: "sin cuotas de inmobiliario en el ejercicio" } } },
   { papel: "INMOB-RED VIAL-AUTOMOTOR", dato: "Red Vial (por partida)", valor2425: "$ 3.994.430,64", solapa: "Impuestos / Impuestos por mes",
-    evaluar: d => { const c = templateCon(d, /red vial/); return c.length ? { estado: "sale", detalle: `${c.length} cuota(s), ${pesos(c.reduce((a, x) => a + x.monto, 0))}` } : { estado: "sin informacion", detalle: "sin cuotas de Red Vial en el ejercicio" } } },
+    evaluar: d => { const c = templateCon(d, /red vial/); return c.length ? { estado: "sale", detalle: `${c.length} cuota(s), ${pesos(c.reduce((a, x) => a + x.monto, 0))}`, links: linksTemplates(c, "Red Vial") } : { estado: "sin informacion", detalle: "sin cuotas de Red Vial en el ejercicio" } } },
   { papel: "INMOB-RED VIAL-AUTOMOTOR", dato: "Adelantos para el próximo balance (cuota 2/4, Red Vial Rojas)", valor2425: "−$ 4.673.114,55 · −$ 2.442.091,50", solapa: "Saldos ej. anterior",
     evaluar: d => (d.saldosAnteriores?.total ?? 0) > 0 ? { estado: "sale", detalle: `${pesos(d.saldosAnteriores!.total)} tomados como gasto de este ejercicio` } : { estado: "falta inicio", detalle: "no hay saldos del ejercicio anterior cargados" } },
   { papel: "INMOB-RED VIAL-AUTOMOTOR", dato: "Automotor por vehículo", valor2425: "$ 1.171.742,92 (5 vehículos)", solapa: "Impuestos",
     evaluar: d => {
       const faltan = ["tiguan", "gol", "hilux"].filter(v => !templateCon(d, new RegExp(`\\b${v}\\b`)).length)
       return faltan.length
-        ? { estado: "sin informacion", detalle: `sin cuotas 25/26 de ${faltan.join(", ")} (JMS: se cargan pagos y templates después de conciliar)` }
+        ? { estado: "sin informacion", detalle: `sin cuotas 25/26 de ${faltan.join(", ")} (JMS: se cargan pagos y templates después de conciliar)`,
+          propuesta: "después de conciliar: si se pagaron, crear su template con las cuotas pagadas" }
         : { estado: "sale", detalle: "los 5 vehículos tienen cuotas" }
     } },
 
@@ -230,7 +254,8 @@ const REGLAS: Regla[] = [
     evaluar: d => {
       const sin = d.bancarios?.gastos.sinClasificar ?? []
       return sin.length
-        ? { estado: "error", detalle: `${sin.length} CATEG del extracto sin cuenta en el plan bancario (${sin.map(s => s.categ).join(", ")}): no salen en el 08` }
+        ? { estado: "error", detalle: `${sin.length} CATEG del extracto sin cuenta en el plan bancario (${sin.map(s => s.categ).join(", ")}): no salen en el 08`,
+          propuesta: `asignarles cuenta en el plan (gasto financiero): ${sin.map(s => `${s.categ} ${pesos(s.debitos - s.creditos)} en ${s.movimientos} mov.`).join(" · ")}` }
         : { estado: "sale", detalle: "todo lo del extracto tiene su concepto" }
     } },
   { papel: "GASTOS BANCARIOS", dato: "Santander y Provincia por mes", valor2425: "$ 700.033,54 · $ 323.062,68", solapa: "08 Gastos bancarios",
@@ -294,7 +319,8 @@ const REGLAS: Regla[] = [
     evaluar: d => {
       const st = d.insumos
       if (!st) return { estado: "sin informacion", detalle: "falta «Traer stock y precios»" }
-      if (st.alCierre?.descuadres.length) return { estado: "error", detalle: `${st.alCierre.descuadres.map(x => `${x.producto}: hoy ${x.hoy}, movimientos ${x.sumaMovimientos}`).join(" · ")}` }
+      if (st.alCierre?.descuadres.length) return { estado: "error", detalle: `${st.alCierre.descuadres.map(x => `${x.producto}: hoy ${x.hoy}, movimientos ${x.sumaMovimientos}`).join(" · ")}`,
+        propuesta: "decidir cuál vale: si los movimientos, corregir la existencia de hoy con un ajuste; si la de hoy, falta cargar el uso que la explica" }
       if (st.huecos.length) return { estado: "sin informacion", detalle: `${st.huecos.length} producto(s) con existencia y sin precio` }
       return { estado: "sale", detalle: `${st.productos} productos · ${pesos(st.valuado)}` }
     } },
