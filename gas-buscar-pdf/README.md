@@ -46,6 +46,21 @@ Capacidades acumuladas (más allá del "buscar y archivar" original):
 ⚠️ **Regla dura**: el GAS **NUNCA** borra/mueve/reemplaza CARPETAS (solo find-or-create + mover/borrar
 archivos puntuales por id). Único delete: el Google Doc temporal de extracción de texto.
 
+## 📬 Registro de mails (`RegistroMails.gs`, A-FEAT-1425, 2026-10-30)
+
+Archivo NUEVO, independiente del buscador: registra cada mail de la casilla en `public.mails_registro`, lo clasifica con
+`public.mails_reglas` (script 140) y manda un reporte diario **a la propia casilla**. **Sólo lee** la casilla.
+
+Instalación (una vez, en el proyecto de Apps Script de esta casilla):
+1. Pegar `RegistroMails.gs` como archivo nuevo del proyecto (o `clasp push`).
+2. ⚙ Propiedades del script → agregar `SUPABASE_KEY` = la **service_role** (la misma del GAS de detalles de pago).
+3. Correr `iniciarRegistroDesdeAgosto` (o `iniciarRegistro('AAAA-MM-DD')` con otra fecha): fija desde qué día se registra.
+4. Correr `instalarTriggersRegistro` → crea «registrar cada 15 min» y «reporte a las 7». Google pide permisos (leer Gmail,
+   enviar mail, conectarse a la base).
+5. Probar a mano: correr `registrarMailsNuevos` (mirar el registro de ejecución) y después `enviarReporteDiario`.
+
+La lógica que decide se prueba sin Google: `npm run probar:registro-mails`.
+
 ## Arquitectura
 
 ```
