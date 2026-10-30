@@ -40,6 +40,10 @@
 
 ## 📨 PARA JAVIER
 
+### 📓 1 columna nueva en `public.cuadernos`: `vinculo` (2026-10-30) — ⏳ AVISO PREVIO, todavía sin correr
+- `scripts/141-cuadernos-vinculo.sql` (+ `-deshacer`), rama `jms/balance`. A-FEAT-1430: ata un cuaderno (papel de trabajo) a un tema del balance. Columna `text` vacía + un índice parcial.
+- **No toca RLS** (sigue personal por usuario: `usuario_id = auth.uid()`), ni grants, ni datos. Si la columna ya existiera, el script no corre.
+
 ### 📬 2 tablas nuevas: registro de mails + reglas de clasificación (2026-10-30) — ✅ APLICADA el 30/10 con OK de JMS (aviso previo): 2 tablas vacías, RLS, 2 filas en recurso_tablas y 70 reglas iniciales
 - `scripts/140-mails-registro-y-reglas.sql` (+ `-deshacer`), rama `jms/gas`. A-FEAT-1425: `public.mails_registro` (una fila por mail recibido o enviado de sanmanuel.sp, la escribe el GAS con la `service_role`) y `public.mails_reglas` (remitente/asunto → tipo y acción, ~70 reglas iniciales).
 - **RLS igual que el resto**: `ver_segun_permiso` / `escribir_segun_permiso`, 2 filas en `recurso_tablas` (recurso `egresos`, marca `[script 140]`). `anon` sin acceso. No toca ninguna tabla existente.
