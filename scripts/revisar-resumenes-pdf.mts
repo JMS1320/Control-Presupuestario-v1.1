@@ -46,11 +46,11 @@ async function tarjetas(titulo: string, dir: string, prefijo: string) {
   }
 }
 
-async function cajas(titulo: string, prefijo: string) {
+async function cajas(titulo: string, prefijo: string, dir: string = VARIAS) {
   console.log(`\n══ ${titulo} ══`)
   let finAnterior: number | null = null
-  for (const f of pdfs(VARIAS, prefijo)) {
-    const r = leerResumenCajaAhorro(await textosUbicadosPorPagina(new Uint8Array(readFileSync(join(VARIAS, f)))))
+  for (const f of pdfs(dir, prefijo)) {
+    const r = leerResumenCajaAhorro(await textosUbicadosPorPagina(new Uint8Array(readFileSync(join(dir, f)))))
     const c = controlarResumen(r)
     const enlaza = finAnterior === null || r.saldoInicial === null ? "" : Math.abs(finAnterior - r.saldoInicial) <= 0.01 ? " · enlaza ✓" : ` · ⚠️ NO enlaza (venía $ ${fmt(finAnterior)})`
     console.log(
@@ -84,6 +84,7 @@ async function santander() {
 }
 
 if (process.argv.includes("--santander")) { await santander(); process.exit(0) }
+if (process.argv.includes("--pam-cc")) { await cajas("PAM cuenta corriente pesos", "20", join(BASE, "Galicia Eminent PAM", "Resumen CC Pesos")); process.exit(0) }
 await tarjetas("VISA MA", VARIAS, "MA - VISA")
 await tarjetas("VISA PAM", VISA_PAM, "VISA PAM")
 await cajas("Cotitulares CA pesos", "Cotit - CA - Pesos")

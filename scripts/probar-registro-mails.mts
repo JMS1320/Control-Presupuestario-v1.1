@@ -82,6 +82,18 @@ chequear("reporte: lo que mirar arriba, sin regla aparte, el tipo a mano manda, 
   "cierra · [Registro de mails] 30/10 07:00 — 1 para mirar · 7 recibidos · mirar1 · sinregla1 · manual-manda · archivados-contados · escapado · enviado-con-link · procesado",
   resumen)
 
+// Paridad GAS ↔ app: la clasificación de la app (para «reaplicar reglas») tiene que dar lo mismo que la del GAS
+const app = await import("../lib/mails/registro.ts")
+const casos: [string, string][] = [
+  ["Santander <mensajesyavisos@mails.santander.com.ar>", "Saldo negativo excedido SAN MANUEL SRL"], ["mensajesyavisos@mails.santander.com.ar", "Consulta de saldo"],
+  ["novedades@arba.gov.ar", "Mora en el pago del impuesto"], ["boletaelectronica@arba.gov.ar", "Boleta por Mail"], ["bancogalicia@mail.galicia.ar", "Se venció tu certificado MiPyme"],
+  ["nyp@mail.galicia.ar", "Elegí Galicia"], ["x@personal.com.ar", "Ya podés acceder a tu factura"], ["x@personal.com.ar", "Contanos"], ["dfe@arba.gov.ar", "Comunicado"],
+  ["alguien@desconocido.com", "Hola"], ["contador@ejemplo.com", "Subdiarios"],
+]
+const reglasApp = REGLAS.map(x => ({ activa: true, nota: null, ...x })) as any[]
+const difieren = casos.filter(([de, as]) => { const a = g.clasificarMail_(REGLAS, de, as), b = app.clasificarConReglas(reglasApp, de, as); return a.regla_id !== b.regla_id || a.tipo !== b.tipo || a.accion !== b.accion })
+chequear("la app clasifica IGUAL que el GAS (" + casos.length + " casos)", "0 distintos", `${difieren.length} distintos${difieren.length ? ": " + difieren.map(d => d[1]).join(" · ") : ""}`)
+
 for (const x of r) console.log(`${x.ok ? "✓" : "✗"} ${x.caso}${x.ok ? "" : `\n    esperado: ${x.esperado}\n    obtenido: ${x.obtenido}`}`)
 const malos = r.filter(x => !x.ok).length
 console.log(`\n${r.length - malos} de ${r.length} pasaron`)

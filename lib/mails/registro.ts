@@ -124,3 +124,90 @@ export function problemaDeRegla(r: { remitente_patron: string; tipo: string; acc
   if (!["guardar", "avisar", "archivar"].includes(r.accion)) return "Elegí qué se hace."
   return null
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Qué hizo el sistema con cada mail — desde lo que YA guardan los procesadores (A-FEAT-1425, § pieza 2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Un renglón del historial del buscador de facturas (`arca_pdf_busqueda_log`) que trae el mail de origen. */
+export interface BusquedaConMail { gmail_message_id: string; resultado: string; numero_comprobante: string | null; factura_schema: string | null; drive_url: string | null }
+/** Un adjunto leído del inventario de reenvíos (`arca_pdf_inventario`). */
+export interface InventarioConMail { gmail_message_id: string; estado: string; nombre_archivo: string | null }
+
+const RESULTADO_BUSQUEDA: Record<string, string> = {
+  descargado: "factura archivada", revisar: "factura a revisar", descartado: "candidato descartado",
+  no_encontrado: "no encontrada", error: "error al buscar", pendiente: "pendiente",
+}
+
+/**
+ * Pura: lo que el sistema hizo con un mail, armado con lo que ya guardaron los procesadores. Lo registrado en el
+ * propio mail (`procesado_por`) va primero; después el buscador de facturas (por factura); después el inventario de
+ * reenvíos. Devuelve null si nadie lo procesó. `ok` = terminó bien (archivada / leído).
+ */
+export function procesadoDeMail(
+  m: Pick<MailRegistrado, "mensaje_id" | "procesado_por">,
+  busquedas: BusquedaConMail[], inventario: InventarioConMail[],
+): { texto: string; ok: boolean; link: string | null } | null {
+  if (m.procesado_por) return { texto: m.procesado_por, ok: true, link: null }
+  const bs = busquedas.filter(b => b.gmail_message_id === m.mensaje_id)
+  if (bs.length) {
+    // Si alguna búsqueda archivó, eso manda; si no, el último estado que se vea
+    const archivada = bs.find(b => b.resultado === "descargado")
+    const b = archivada ?? bs[bs.length - 1]
+    const fc = b.numero_comprobante ? ` ${b.factura_schema ? b.factura_schema.toUpperCase() + " " : ""}${b.numero_comprobante}` : ""
+    return { texto: `${RESULTADO_BUSQUEDA[b.resultado] ?? b.resultado}${fc}${bs.length > 1 ? ` (+${bs.length - 1})` : ""}`, ok: !!archivada, link: b.drive_url }
+  }
+  const inv = inventario.filter(i => i.gmail_message_id === m.mensaje_id)
+  if (inv.length) {
+    const ilegibles = inv.filter(i => i.estado === "ilegible").length
+    return { texto: `reenvío leído: ${inv.length} adjunto${inv.length > 1 ? "s" : ""}${ilegibles ? `, ${ilegibles} ilegible${ilegibles > 1 ? "s" : ""}` : ""}`, ok: ilegibles === 0, link: null }
+  }
+  return null
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reaplicar las reglas a lo ya registrado — la MISMA regla que `clasificarMail_` del GAS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const sinTildes = (s: string | null | undefined) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+
+/** Igual que `reglaCoincide_` del GAS: mail exacto o `@dominio` (con subdominios) + opcional «asunto contiene». */
+export function reglaCoincide(regla: Pick<ReglaMail, "remitente_patron" | "asunto_patron" | "activa">, remitente: string | null, asunto: string | null): boolean {
+  if (regla.activa === false) return false
+  const p = regla.remitente_patron.trim().toLowerCase()
+  const r = String(remitente ?? "").trim().toLowerCase().replace(/^.*<([^>]+)>.*$/, "$1")
+  if (!p || !r) return false
+  let ok: boolean
+  if (p.startsWith("@")) {
+    const dom = p.slice(1), domR = r.slice(r.indexOf("@") + 1)
+    ok = domR === dom || domR.endsWith("." + dom)
+  } else ok = r === p
+  if (!ok) return false
+  return regla.asunto_patron ? sinTildes(asunto).includes(sinTildes(regla.asunto_patron)) : true
+}
+
+/** Igual que `clasificarMail_` del GAS (sin el caso del propio reporte, que se registra ya clasificado). */
+export function clasificarConReglas(reglas: ReglaMail[], remitente: string | null, asunto: string | null): { regla_id: string | null; tipo: TipoMail | null; accion: AccionMail | null } {
+  const ord = [...reglas].sort((a, b) => (a.orden - b.orden) || ((b.asunto_patron ? 1 : 0) - (a.asunto_patron ? 1 : 0)))
+  const r = ord.find(x => reglaCoincide(x, remitente, asunto))
+  return r ? { regla_id: r.id, tipo: r.tipo, accion: r.accion } : { regla_id: null, tipo: null, accion: null }
+}
+
+/**
+ * Pura: qué cambiaría si se reaplican las reglas a lo ya registrado. NO toca los corregidos a mano (`tipo_manual`)
+ * ni el propio reporte. Para un enviado se mira el primer destinatario, como en el GAS.
+ */
+export function cambiosAlReaplicar(
+  mails: (Pick<MailRegistrado, "id" | "sentido" | "remitente" | "destinatarios" | "asunto" | "tipo" | "accion" | "tipo_manual"> & { regla_id?: string | null })[],
+  reglas: ReglaMail[],
+): { id: string; regla_id: string | null; tipo: TipoMail | null; accion: AccionMail | null; antes: string }[] {
+  const out: { id: string; regla_id: string | null; tipo: TipoMail | null; accion: AccionMail | null; antes: string }[] = []
+  for (const m of mails) {
+    if (m.tipo_manual) continue
+    if (String(m.asunto ?? "").startsWith("[Registro de mails]")) continue
+    const quien = m.sentido === "enviado" ? String(m.destinatarios ?? "").split(",")[0] : m.remitente
+    const c = clasificarConReglas(reglas, quien, m.asunto)
+    if (c.tipo !== m.tipo || c.accion !== m.accion) out.push({ id: m.id, ...c, antes: `${m.tipo ?? "sin tipo"}/${m.accion ?? "-"}` })
+  }
+  return out
+}

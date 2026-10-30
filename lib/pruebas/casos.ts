@@ -253,7 +253,7 @@ import { parsearPoliza } from "@/lib/polizas/parsear-poliza"
 import { armarRenglones, type TextoUbicado } from "@/lib/polizas/renglones-pdf"
 import { leerResumenCajaAhorro, controlarResumen, armarConocido, resumenComoExcel, adaptarMovimiento } from "@/lib/extractos/pdf-caja-ahorro-galicia"
 import { leerResumenSantander, controlarResumenSantander } from "@/lib/extractos/pdf-santander"
-import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla, linkGmail, type MailRegistrado } from "@/lib/mails/registro"
+import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla, linkGmail, procesadoDeMail, cambiosAlReaplicar, type MailRegistrado } from "@/lib/mails/registro"
 import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
 import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe, cuentaCorriente } from "@/lib/polizas/resumen-ejercicio"
 import { aseguradoraAlCierre } from "@/lib/balance/seguros-al-cierre"
@@ -10004,11 +10004,54 @@ export function correrCasos(): Resultado[] {
         problemaDeRegla({ remitente_patron: "arba", tipo: "impuestos", accion: "avisar" }) ? "frena" : "pasa",
         problemaDeRegla({ remitente_patron: "x@y.com", tipo: "inventado", accion: "avisar" }) ? "frena" : "pasa"].join(" ")
       chequear("Mails", "📬 Una regla nueva: dominio o mail válido, tipo y acción conocidos", "ok frena frena", vR, vR === "ok frena frena", "A-FEAT-1425")
+      // Qué hizo el sistema con cada mail, desde lo que ya guardaron los procesadores (sin tocar la base)
+      const busq = [
+        { gmail_message_id: "m-fc", resultado: "revisar", numero_comprobante: "3-1520", factura_schema: "msa", drive_url: null },
+        { gmail_message_id: "m-fc", resultado: "descargado", numero_comprobante: "3-1520", factura_schema: "msa", drive_url: "https://drive/x" },
+        { gmail_message_id: "m-dudosa", resultado: "revisar", numero_comprobante: "2-484", factura_schema: "pam", drive_url: null },
+      ]
+      const inv = [{ gmail_message_id: "m-reenv", estado: "leido", nombre_archivo: "a.pdf" }, { gmail_message_id: "m-reenv", estado: "ilegible", nombre_archivo: "b.jpg" }]
+      const pr = (id: string, por: string | null = null) => { const p = procesadoDeMail({ mensaje_id: id, procesado_por: por }, busq, inv); return p ? `${p.ok ? "ok" : "no"}:${p.texto}${p.link ? "@link" : ""}` : "-" }
+      const vP = [pr("m-fc"), pr("m-dudosa"), pr("m-reenv"), pr("m-nada"), pr("m-nada", "boletas_arba")].join(" | ")
+      chequear("Mails", "📬 Qué se procesó: la archivada manda sobre el «a revisar» anterior, la dudosa queda pendiente, el reenvío cuenta ilegibles, lo marcado en el mail va primero",
+        "ok:factura archivada MSA 3-1520 (+1)@link | no:factura a revisar PAM 2-484 | no:reenvío leído: 2 adjuntos, 1 ilegible | - | ok:boletas_arba", vP,
+        vP === "ok:factura archivada MSA 3-1520 (+1)@link | no:factura a revisar PAM 2-484 | no:reenvío leído: 2 adjuntos, 1 ilegible | - | ok:boletas_arba", "A-FEAT-1425")
+      // Reaplicar reglas: cambia lo que quedó viejo, NO toca lo puesto a mano ni el propio reporte; un enviado se mira por destinatario
+      const reglasR = [
+        { id: "r1", orden: 10, activa: true, remitente_patron: "@arba.gov.ar", asunto_patron: "mora", tipo: "impuestos", accion: "avisar", nota: null },
+        { id: "r2", orden: 50, activa: true, remitente_patron: "contador@ejemplo.com", asunto_patron: null, tipo: "contador", accion: "guardar", nota: null },
+      ] as any[]
+      const reg = [
+        { id: "a", sentido: "recibido", remitente: "novedades@arba.gov.ar", destinatarios: null, asunto: "Mora en el pago", tipo: null, accion: null, tipo_manual: null },
+        { id: "b", sentido: "recibido", remitente: "novedades@arba.gov.ar", destinatarios: null, asunto: "Mora en el pago", tipo: null, accion: null, tipo_manual: "legal" },
+        { id: "c", sentido: "enviado", remitente: "sanmanuelsp@gmail.com", destinatarios: "contador@ejemplo.com, otro@x.com", asunto: "Subdiarios", tipo: null, accion: null, tipo_manual: null },
+        { id: "d", sentido: "recibido", remitente: "sanmanuelsp@gmail.com", destinatarios: null, asunto: "[Registro de mails] 30/10", tipo: "notificacion", accion: "archivar", tipo_manual: null },
+        { id: "e", sentido: "recibido", remitente: "contador@ejemplo.com", destinatarios: null, asunto: "Hola", tipo: "contador", accion: "guardar", tipo_manual: null },
+      ] as any[]
+      const vRe = cambiosAlReaplicar(reg, reglasR).map(c => `${c.id}:${c.antes}→${c.tipo}/${c.accion}`).join(" ")
+      chequear("Mails", "📬 Reaplicar reglas: cambia lo viejo, no toca lo puesto a mano ni el reporte, el enviado se clasifica por destinatario, lo que ya coincide no se toca",
+        "a:sin tipo/-→impuestos/avisar c:sin tipo/-→contador/guardar", vRe, vRe === "a:sin tipo/-→impuestos/avisar c:sin tipo/-→contador/guardar", "A-FEAT-1425")
       const vL = linkGmail("sanmanuel.sp@gmail.com", "1a16045a7b9ffafb")
       chequear("Mails", "📬 El link a Gmail es IGUAL al que arma el GAS (si cambia uno, cambiar el otro)",
         "https://mail.google.com/mail/u/?authuser=sanmanuel.sp%40gmail.com#all/1a16045a7b9ffafb", vL,
         vL === "https://mail.google.com/mail/u/?authuser=sanmanuel.sp%40gmail.com#all/1a16045a7b9ffafb", "A-FEAT-1425")
     }
+
+    // 🏦 A-FEAT-1424: CUENTA CORRIENTE Galicia (PAM, enero 2025, disposición real): el saldo deudor viene «43.019,88-».
+    // Con el lector viejo esos saldos no se leían y la cadena se rompía en 3 movimientos.
+    const cc = leerResumenCajaAhorro([[
+      T("CUIT del Responsable Impositivo : 20-04439022-2", 275, 700), T("$0,00", 550, 640), T("N° 0000862-2 360-7", 60, 620),
+      T("27/12/2024", 237, 600), T("31/01/2025", 336, 600), T("$417,00", 550, 600),
+      T("Fecha", 38, 500), T("Descripción", 82, 500), T("Origen", 224, 500), T("Crédito", 308, 500), T("Débito", 425, 500), T("Saldo", 542, 500),
+      T("07/01/25", 38, 480), T("COMPRA DEBITO", 82, 480), T("0721", 224, 480), T("-43.019,88", 423, 480), T("43.019,88-", 534, 480),
+      T("07/01/25", 38, 460), T("IMP. DEB. LEY 25413 GRAL.", 82, 460), T("-363,12", 436, 460), T("43.383,00-", 533, 460),
+      T("14/01/25", 38, 440), T("TRANSF. CTAS PROPIAS", 82, 440), T("43.800,00", 314, 440), T("417,00", 551, 440),
+      T("Total", 57, 420), T("$ 43.800,00", 303, 420), T("-$ 43.383,00", 413, 420), T("$ 417,00", 545, 420),
+    ]])
+    const ctlCc = controlarResumen(cc)
+    const vCc = `${cc.movimientos.map(m => m.saldo).join(" / ")} · ${ctlCc.ok ? "cierra" : "no cierra"}`
+    chequear("Resumen PDF", "🏦 Cuenta corriente: el saldo en descubierto «43.019,88-» se lee negativo y el control cierra",
+      "-43019.88 / -43383 / 417 · cierra", vCc, vCc === "-43019.88 / -43383 / 417 · cierra", "A-FEAT-1424")
 
     // 🏦 A-FEAT-1424: resumen PDF de cuenta corriente SANTANDER (disposición real de MSA agosto 2025, recortada).
     // El crédito grande arranca a la IZQUIERDA del medio Débito/Crédito: la columna diría débito, el saldo dice crédito.
