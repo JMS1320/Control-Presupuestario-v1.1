@@ -21,7 +21,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Plus, Trash2, ArrowUp, ArrowDown, Download, Type, Table2, Loader2, Check } from "lucide-react"
 
 type Bloque = { id: string; tipo: "texto"; texto: string } | { id: string; tipo: "tabla"; celdas: string[][] }
-interface Cuaderno { id: string; titulo: string; bloques: Bloque[]; updated_at: string }
+interface Cuaderno { id: string; titulo: string; bloques: Bloque[]; updated_at: string; vinculo?: string | null }
 
 const nuevoId = () => Math.random().toString(36).slice(2, 10)
 const tablaVacia = (): string[][] => Array.from({ length: 3 }, () => ["", "", ""])
@@ -119,9 +119,13 @@ export function PanelCuaderno() {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const cargar = useCallback(async () => {
-    const { data, error } = await supabase.from("cuadernos").select("id, titulo, bloques, updated_at").order("updated_at", { ascending: false })
+    const { data, error } = await supabase.from("cuadernos").select("id, titulo, bloques, updated_at, vinculo").order("updated_at", { ascending: false })
     if (error) { toast.error("No se pudieron leer los cuadernos: " + error.message); setLista([]); return }
-    setLista((data ?? []) as Cuaderno[])
+    const l = (data ?? []) as Cuaderno[]
+    setLista(l)
+    // 📓 A-FEAT-1430: `/cuaderno?id=…` (desde el recorrido del balance) abre ese cuaderno directo.
+    const pedido = new URLSearchParams(window.location.search).get("id")
+    if (pedido) { const c = l.find(x => x.id === pedido); if (c) setActual(c) }
   }, [])
   useEffect(() => { cargar() }, [cargar])
 
@@ -198,7 +202,7 @@ export function PanelCuaderno() {
               <li key={c.id} className="flex items-center gap-2 px-3 py-2">
                 <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setActual(c)}>
                   <span className="block truncate font-medium">{c.titulo}</span>
-                  <span className="text-xs text-muted-foreground">{new Date(c.updated_at).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })} · {c.bloques.length} bloque(s)</span>
+                  <span className="text-xs text-muted-foreground">{new Date(c.updated_at).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })} · {c.bloques.length} bloque(s){c.vinculo ? " · 📎 papel de trabajo del balance" : ""}</span>
                 </button>
                 <Button variant="ghost" size="sm" onClick={() => bajarExcel(c)} title="Bajar a Excel"><Download className="h-4 w-4" /></Button>
                 <Button variant="ghost" size="sm" onClick={() => borrar(c)} title="Borrar"><Trash2 className="h-4 w-4 text-red-500" /></Button>

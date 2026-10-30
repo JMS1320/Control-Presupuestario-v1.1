@@ -14,6 +14,7 @@
  */
 import type { CoberturaPapeles, EstadoCobertura, ItemCobertura, LinkDato } from "./cobertura-papeles"
 import type { PendienteBalance } from "./pendientes-balance"
+import type { Comparacion } from "@/lib/cuaderno/papel-de-trabajo"
 
 export type GrupoTema = "error" | "decision" | "falta inicio" | "sin informacion" | "pendiente desarrollo" | "pregunta"
 
@@ -44,6 +45,8 @@ export interface Tema {
   pendiente?: PendienteBalance
   /** `true` = ya tiene respuesta (resuelto). */
   respondido: boolean
+  /** 📓 La tabla A contra B para el papel de trabajo, si el tema se explica con números. */
+  comparacion?: Comparacion
 }
 
 const slug = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
@@ -79,7 +82,7 @@ export function armarTemas(cobertura: CoberturaPapeles | null, pendientes: Pendi
     const p = porClave.get(clave)
     temas.push({
       clave, grupo, titulo: i.dato, papel: i.papel, valor2425: i.valor2425, que: i.detalle,
-      propuesta: i.propuesta, links: i.links ?? [], solapa: i.solapa, idPendiente: i.pendiente,
+      propuesta: i.propuesta, links: i.links ?? [], solapa: i.solapa, idPendiente: i.pendiente, comparacion: i.comparacion,
       pendiente: p, respondido: p?.estado === "resuelto",
     })
   }

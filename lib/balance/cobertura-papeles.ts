@@ -27,6 +27,7 @@ import type { LibroDiario } from "./libro-diario"
 import { linkTemplates } from "@/lib/impuestos/planilla"
 import { linkExtracto } from "@/lib/extracto/link"
 import { linkHistorico } from "@/lib/egresos/link-facturas"
+import { celdaNumero, type Comparacion } from "@/lib/cuaderno/papel-de-trabajo"
 
 export type EstadoCobertura =
   | "sale"                 // ✅ el export lo responde
@@ -92,13 +93,15 @@ export interface ItemCobertura {
   propuesta?: string
   /** 🔗 Dónde vive el dato, para abrirlo filtrado en otra pestaña. */
   links?: LinkDato[]
+  /** 📓 La tabla A contra B del papel de trabajo (celdas del Cuaderno, con la diferencia como fórmula). */
+  comparacion?: Comparacion
 }
 
 /** Un link a la pantalla donde vive el dato, ya filtrada. */
 export interface LinkDato { texto: string; href: string }
 
 /** Lo que devuelve cada regla. */
-type Resultado = { estado: EstadoCobertura; detalle: string; propuesta?: string; links?: LinkDato[] }
+type Resultado = { estado: EstadoCobertura; detalle: string; propuesta?: string; links?: LinkDato[]; comparacion?: Comparacion }
 
 export interface CoberturaPapeles {
   items: ItemCobertura[]
@@ -108,7 +111,7 @@ export interface CoberturaPapeles {
 const pesos = (n: number) => `$ ${n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
 
-type Regla = Omit<ItemCobertura, "estado" | "detalle" | "propuesta" | "links"> & { evaluar: (d: DatosCobertura) => Resultado }
+type Regla = Omit<ItemCobertura, "estado" | "detalle" | "propuesta" | "links" | "comparacion"> & { evaluar: (d: DatosCobertura) => Resultado }
 
 /** Una cuenta del papel 07: sale si tiene movimientos y su cadena cierra; si no tiene movimientos, falta el extracto. */
 function cuentaBanco(nombre: RegExp, etiqueta: string, cuentaId: string): Regla["evaluar"] {
@@ -127,6 +130,15 @@ function evaluarCuentaBanco(d: DatosCobertura, nombre: RegExp, etiqueta: string)
     if (!c) return { estado: "sin informacion", detalle: `${etiqueta} no está entre las cuentas del 07` }
     if (c.diferencia != null && Math.abs(c.diferencia) > 0.01)
       return { estado: "error", detalle: `los movimientos no explican el saldo al cierre: diferencia ${pesos(c.diferencia)} (07.1 Cadena de saldos)`,
+        comparacion: { titulo: `${etiqueta}: inicio + movimientos contra el saldo del extracto`, celdas: [
+          ["Concepto", "Importe"],
+          ["Saldo al inicio", celdaNumero(c.saldoInicio)],
+          ["Movimientos cargados del ejercicio (neto)", celdaNumero(c.netoCargado)],
+          ["Movimientos sin cargar antes del primero (neto)", celdaNumero(c.netoNoCargado ?? 0)],
+          ["Saldo al cierre calculado", "=B2+B3+B4"],
+          ["Saldo al cierre según el extracto", celdaNumero(c.saldoAlCierre)],
+          ["Diferencia (lo que falta explicar)", "=B6-B5"],
+        ] },
         propuesta: `buscar en el extracto un movimiento faltante o duplicado por ${pesos(Math.abs(c.diferencia))}${c.saltos ? ` (hay ${c.saltos} salto(s) en la cadena: ${pesos(c.sumaDeSaltos)})` : ""}` }
     if (c.saldoInicio == null) return { estado: "falta inicio", detalle: "sin saldo al inicio declarado" }
     if (c.movimientos === 0) return { estado: "sin informacion", detalle: `inicio ${pesos(c.saldoInicio)}, pero la cuenta no tiene movimientos 25/26: falta cargar el extracto`,
@@ -216,6 +228,15 @@ const REGLAS: Regla[] = [
       if (p.estado === "sin foto") return { estado: "falta inicio", detalle: p.fuenteDeclarado }
       const pct = p.declarado ? Math.abs((p.diferencia ?? 0) / p.declarado) * 100 : 0
       return { estado: "error", detalle: `el balance anterior provisionó ${pesos(p.declarado ?? 0)} y la app reconoce ${pesos(p.reconocido)}: diferencia ${pesos(p.diferencia ?? 0)} (${pct.toFixed(0)} %)${p.candidatos.length ? `; ${p.candidatos.map(a => `${a.denominacion} ${a.punto_venta ?? ""}-${a.numero ?? ""}`).join(" + ")} están en el gasto de este ejercicio (doble)` : ""}`,
+        comparacion: { titulo: "Provisión del ejercicio anterior: lo declarado contra lo que reconoce la app", celdas: [
+          ["Concepto", "Importe"],
+          ["Provisionado en el balance anterior", celdaNumero(p.declarado)],
+          ["Reconocido por la app como provisión anterior", celdaNumero(p.reconocido)],
+          ["Diferencia", "=B2-B3"],
+          ["Diferencia en %", "=B4/B2*100"],
+          ...p.candidatos.map(a => [`Candidata: ${a.denominacion} ${a.punto_venta ?? ""}-${a.numero ?? ""} (${a.fecha ? a.fecha.split("-").reverse().join("/") : ""})`, celdaNumero(a.total)]),
+          ...(p.candidatos.length ? [["Si se marcan las candidatas, la diferencia queda en", `=B4-SUMA(B6:B${5 + p.candidatos.length})`]] : []),
+        ] },
         links: (() => {
           const hist = p.candidatos.filter(a => a.fuente === "historico").map(a => a.id)
           return hist.length ? [{ texto: `Ver las ${hist.length} factura(s) en Facturas → Histórico`, href: linkHistorico(hist) }] : []
@@ -273,7 +294,12 @@ const REGLAS: Regla[] = [
       const sin = d.bancarios?.gastos.sinClasificar ?? []
       return sin.length
         ? { estado: "error", detalle: `${sin.length} CATEG del extracto sin cuenta en el plan bancario (${sin.map(s => s.categ).join(", ")}): no salen en el 08`,
-          propuesta: `asignarles cuenta en el plan (gasto financiero): ${sin.map(s => `${s.categ} ${pesos(s.debitos - s.creditos)} en ${s.movimientos} mov.`).join(" · ")}` }
+          propuesta: `asignarles cuenta en el plan (gasto financiero): ${sin.map(s => `${s.categ} ${pesos(s.debitos - s.creditos)} en ${s.movimientos} mov.`).join(" · ")}`,
+          comparacion: { titulo: "CATEG del extracto que no tienen cuenta en el plan bancario", celdas: [
+            ["CATEG", "Movimientos", "Débitos", "Créditos", "Neto"],
+            ...sin.map((s, i) => [s.categ, String(s.movimientos), celdaNumero(s.debitos), celdaNumero(s.creditos), `=C${i + 2}-D${i + 2}`]),
+            ["Total", "", `=SUMA(C2:C${sin.length + 1})`, `=SUMA(D2:D${sin.length + 1})`, `=SUMA(E2:E${sin.length + 1})`],
+          ] } }
         : { estado: "sale", detalle: "todo lo del extracto tiene su concepto" }
     } },
   { papel: "GASTOS BANCARIOS", dato: "Santander y Provincia por mes", valor2425: "$ 700.033,54 · $ 323.062,68", solapa: "08 Gastos bancarios",
@@ -338,7 +364,11 @@ const REGLAS: Regla[] = [
       const st = d.insumos
       if (!st) return { estado: "sin informacion", detalle: "falta «Traer stock y precios»" }
       if (st.alCierre?.descuadres.length) return { estado: "error", detalle: `${st.alCierre.descuadres.map(x => `${x.producto}: hoy ${x.hoy}, movimientos ${x.sumaMovimientos}`).join(" · ")}`,
-        propuesta: "decidir cuál vale: si los movimientos, corregir la existencia de hoy con un ajuste; si la de hoy, falta cargar el uso que la explica" }
+        propuesta: "decidir cuál vale: si los movimientos, corregir la existencia de hoy con un ajuste; si la de hoy, falta cargar el uso que la explica",
+        comparacion: { titulo: "Existencia de hoy contra la suma de sus movimientos", celdas: [
+          ["Producto", "Hoy", "Suma de movimientos", "Diferencia", "Unidad"],
+          ...st.alCierre.descuadres.map((x, i) => [x.producto, celdaNumero(x.hoy), celdaNumero(x.sumaMovimientos), `=B${i + 2}-C${i + 2}`, x.unidad]),
+        ] } }
       if (st.huecos.length) return { estado: "sin informacion", detalle: `${st.huecos.length} producto(s) con existencia y sin precio` }
       return { estado: "sale", detalle: `${st.productos} productos · ${pesos(st.valuado)}` }
     } },
