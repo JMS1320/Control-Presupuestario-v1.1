@@ -3008,3 +3008,13 @@ cual**, las mismas 21 columnas en las 4 hojas (las del objetivo de JMS), + «Sin
 Una **factura B o C no discrimina el IVA**: su total no tiene partes, y sin esa columna el control marcaba en rojo todas las C. Y en la
 base hay facturas C guardadas de dos maneras (con el total en «no gravado», o con todo en 0): el total no cambia, pero la columna «No
 gravado» da muy distinto que ARCA. Tolerancia: 0,05 por comprobante (`TOLERANCIA_POR_COMPROBANTE`, redondeo del emisor).
+
+## Cargar resúmenes PDF y el registro de mails — lo que se aprendió el 30/10 `#pdf #extractos #mails #repo-publico #2026-10-30`
+
+- 🔒 **El repo es PÚBLICO: nada con datos reales ni direcciones de personas va a `scripts/`.** El clasificador frenó dos subidas: la «foto antes» de un resumen de tarjeta (consumos reales) y las reglas de mails con los Gmail de contadores, familia y abogados. Van a la carpeta de comunicación (fuera de git) y el script del repo apunta ahí.
+- **Los lectores de resúmenes Galicia** (`lib/extractos/pdf-caja-ahorro-galicia.ts`) leen también la **caja de ahorro en dólares** (prefijo «USD» en vez de «$») y la **cuenta corriente** (el saldo deudor viene con el menos AL FINAL: «43.019,88-»). **Santander** tiene su lector (`lib/extractos/pdf-santander.ts`): no trae totales, así que el control es que cada importe sea lo que cambió el saldo y que el último dé el «Saldo total».
+- **Estado de un movimiento cargado: «pendiente» en MINÚSCULA.** El Extracto y el motor de conciliación buscan esa forma; con «Pendiente» los movimientos existen pero no aparecen para conciliar (pasó con las cargas del 30/10; lo corrigió el script 143).
+- **supabase-js: `select(…, {count:"exact", head:true})` sobre una tabla que NO existe devuelve count null y SIN error.** Para comprobar que una tabla existe y está vacía, `select("id").limit(1)` y mirar `error`.
+- **Build en un árbol aparte con node_modules por junction**: Turbopack lo rechaza («Symlink node_modules is invalid»). Correr el build en la carpeta principal (o con webpack).
+- **El conector de Gmail de Claude va a UNA casilla por vez** (hoy sanmanuel.sp). Cambiarla: claude.ai → Conectores → Gmail → desconectar/conectar con la otra cuenta, y en la terminal `/mcp` → reconectar.
+- **Un mismo mail de ARBA no trae texto plano**: el contenido está en el HTML (lo lee el GAS). La mayoría de los mails de servicios e impuestos traen el importe **en el PDF adjunto** o en la boleta del link, no en el texto: el procesamiento tiene que leer el documento.

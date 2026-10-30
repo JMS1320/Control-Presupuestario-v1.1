@@ -52,6 +52,8 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | `pam_galicia_cc` | ❌ | 20 | Extracto cta cte PAM. |
 | `egresos_sin_factura` | ✅ | 156 | **Templates** de egresos (cabecera). 3 tipos: fijo/abierto/bidireccional. |
 | `cuotas_egresos_sin_factura` | ✅ | 890 | Cuotas de cada template (detalle). |
+| `mails_registro` | ✅ sólo admin | ~0 (lo llena el GAS) | **Registro de todo lo que pasa por el mail** (A-FEAT-1425, script 140): una fila por mensaje recibido o enviado de sanmanuel.sp, único por canal + casilla + id de Gmail; tipo/acción de la regla (`tipo_manual` manda), `procesado_por` y `vinculos` (lo que generó). Agnóstico del canal (`canal` = mail/whatsapp). Recurso `importar.mails` + `restringe_lectura` (script 142): lo lee y escribe sólo admin. |
+| `mails_reglas` | ✅ sólo admin | 70 | Reglas de clasificación de mails: remitente (mail o `@dominio`) + opcional «asunto contiene» → tipo y acción (avisar / guardar / archivar). Las 70 iniciales NO están en el repo (tienen mails de personas): `- Comunicacion…/Mails/140 reglas iniciales - FUERA DE GIT.sql`. |
 | `templates_master` | ✅ | 1 | Agrupador de templates por año. |
 | `cuentas_contables` | ✅ | 122 | Plan de cuentas (categ, totalizadora, jerarquía, imputable). |
 | `proveedores` | ✅ | 138 | Maestro de proveedores/clientes (CBU, email, mensaje transferencia, flags GAS). |
@@ -118,7 +120,8 @@ App de control presupuestario/contable + sector productivo agropecuario. Multi-e
 | `comprobantes_arca` | ✅ | 75 | Facturas ARCA MA. |
 | `comprobantes_venta` | ✅ | — | Liquidaciones de venta MA. |
 | `ma_galicia` | ✅ | 0 | Extracto Caja de Ahorro MA. |
-| `tarjeta_visa` | ❌ | 53 | Tarjeta VISA MA. |
+| `tarjeta_visa` | ❌ | 530 | Tarjeta VISA MA — ⚠️ cambió 30/10: cargada desde los PDF sep-25 → sep-26 (script 136). |
+| `anses_ca_pesos` | ✅ | 22 | **Caja de ahorro ANSES de MA** (Galicia 4046077-1 018-6), forma de cuenta cargada a mano (como Cotitulares/Santander). Script 135; cargada nov-25 → mar-26 (136), cierra en $ 0. |
 
 ### `productivo` — agropecuario
 | Grupo | Tablas |

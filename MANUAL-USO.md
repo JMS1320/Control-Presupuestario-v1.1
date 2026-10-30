@@ -3775,6 +3775,8 @@ Todo lo que entra y sale de la casilla **sanmanuel.sp**, registrado y con link a
 - Si un mail está mal clasificado, cambiale el **tipo** en su renglón: queda puesto a mano (✎) y manda sobre la regla. Para volver al de la regla, elegí el mismo que decía la regla.
 - Abajo de los chips, una línea suma los grupos: tiene que dar el total. Si no da, aparece en rojo.
 - **Reglas**: de quién viene (un mail o un dominio como `@arba.gov.ar`), si el asunto tiene que decir algo, qué tipo es y qué se hace (**Avisar** / **Guardar** / **Archivar**). Gana la primera por orden. Una regla nueva vale para lo que llega desde ese momento.
+- La columna **«Qué se hizo»** dice qué hizo el sistema con cada mail: «✔ factura archivada MSA 3-…» (con link al PDF), «reenvío leído: N adjuntos», o el grupo si nadie lo procesó.
+- **Reglas → «Ver qué cambiaría»** muestra qué pasaría si se reaplican las reglas a lo ya registrado (nunca toca los que corregiste a mano); **«Aplicar»** lo hace y al final tiene que decir «El registro coincide con las reglas».
 - **El reporte diario** llega a la propia casilla a las 7: «[Registro de mails] …», con lo mismo que esta pantalla.
 
 → A-TEST-1290
