@@ -326,6 +326,10 @@ es un error de la guía y hay que corregirla, no ignorarla.
 | Federación Patronal | script 130; `lib/polizas/control-debitos.ts` | faltan 2 NC: reintegros de +30.000 (20/4) y +68.100 (13/5). AP MA 10200836 y AP PAM 10413411 sin débitos: ¿baja? |
 | NC Vida 670821 (−24.341,09) | cuenta corriente de Seguros | ¿va solo en el 14? Decide JMS. Ojo A-DAT-87 |
 | Sueldos de MA en el 14 | script 133; `lib/balance/cuentas-corrientes.ts` | $ 19.500.000 pendiente; falta el PDF de sueldos |
+| Vista previa del balance ([A-FEAT-1427](#a-feat-1427)) | `components/vista-previa-balance.tsx`, `lib/balance/control-inicio.ts`, `inicio-y-cierre.ts`, `lib/dolares/tc-cierre.ts` | en `desarrollo` (salvo el botón «⚡ Armar todo», en `jms/balance`); A-TEST-1288 |
+| Cruce de los papeles 24/25 por pestaña ([A-FEAT-1420](#a-feat-1420)) | Balance/Excels trabajando con claude → «Cruce papeles 24-25 vs export 25-26 - PLATA / - STOCK (2026-10-30).md» | 14 preguntas en «Pendientes a revisar» (script 138) |
+| Propuestas de conciliación 25/26 | `scripts/propuestas-conciliacion-2526.mts` (sólo lee) → página https://claude.ai/artifact/QGjLFy24p7GLyRirJYig24 (decisiones en su base: colección `decisiones`, doc `m_<id>` / `d_<id>`) | **para el final** (JMS 30/10); 759 movimientos y 179 deudas; nada se escribe sin su OK |
+| Echeqs vencidos en Principal ([A-AUTO-10](#a-auto-10)) | `msa.cheques` | 4 conciliados sin marcar «cobrado», Longo = Nº 107; espera OK de JMS para marcar |
 | Retiros y aportes ([A-FEAT-1420](#a-feat-1420) p.7) | sin código | Esperan de JMS: los $45,9 M por socio, la planilla de PAM jul–dic 2024 y Mauricio. Se abre por socio: MA, Manuel, Soledad, Mechi, Andrés, José y PAM. PAM pasa a MA el 01/01/2026. Los US$ 337.000 son la devolución de un aporte de PAM |
 
 **Espera de JMS:**
