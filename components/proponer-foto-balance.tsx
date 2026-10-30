@@ -21,14 +21,14 @@ import { tcDolarAl } from "@/lib/dolares/tc-cierre"
 import { useDatosDelBalance, textoEstadoGuardado } from "@/lib/balance/datos-usuario"
 import {
   RENGLONES, propuestaDelSistema, cambiosContraLoGuardado, deudaDeTarjeta, parsearMonto,
-  type DatosDeLosPapeles, type ValorFoto,
+  type DatosDeLosPapeles, type ValorFoto, type ValorPropuesto,
 } from "@/lib/balance/balance-propio"
 
 const fmt = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const etiqueta = (id: string) => RENGLONES.find(r => r.id === id)?.etiqueta ?? id
 const fmtFecha = (f: string) => f.split("-").reverse().join("/")
 
-export function ProponerFotoBalance({ empresa, fechaInicio, fechaCierre, datos, iva, fciMovimientos }: {
+export function ProponerFotoBalance({ empresa, fechaInicio, fechaCierre, datos, iva, fciMovimientos, onPropuesta }: {
   empresa: string
   /** Primer día del ejercicio: las retenciones se cuentan desde acá. */
   fechaInicio: string
@@ -38,6 +38,8 @@ export function ProponerFotoBalance({ empresa, fechaInicio, fechaCierre, datos, 
   iva: { creditoFiscal: number; debitoFiscal: number } | null
   /** Suscripciones y rescates del fondo común en el ejercicio (papel 07). */
   fciMovimientos: { suscripciones: number; rescates: number } | null
+  /** 📋 A-FEAT-1427: avisa el cálculo de cierre de cada renglón (para la solapa «00 Inicio y cierre»). */
+  onPropuesta?: (p: { valores: ValorPropuesto[]; faltan: string[] }) => void
 }) {
   /**
    * Lo que no sale de los papeles y se lee acá: retenciones que nos hicieron, echeqs en cartera, la
@@ -125,6 +127,8 @@ export function ProponerFotoBalance({ empresa, fechaInicio, fechaCierre, datos, 
     fci: fciMovimientos ? { ...fciMovimientos, cuotapartes: parsearMonto(cuotapartes), valorCuotaparte: parsearMonto(valorCuota) } : undefined,
   }), [datos, extra, fciMovimientos, cuotapartes, valorCuota])
   const { valores: propuesta, faltan } = useMemo(() => propuestaDelSistema(datosCompletos), [datosCompletos])
+  // 📋 A-FEAT-1427: el mismo cálculo alimenta la solapa «00 Inicio y cierre» del export y la vista previa.
+  useEffect(() => { onPropuesta?.({ valores: propuesta, faltan }) }, [propuesta, faltan, onPropuesta])
   const [guardado, setGuardado] = useState<ValorFoto[] | null>(null)
   const [fotoId, setFotoId] = useState<string | null>(null)
   const [guardando, setGuardando] = useState(false)

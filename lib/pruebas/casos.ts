@@ -193,6 +193,8 @@ import { armarStockInsumos, existenciaAlCierre, PAPELES_SIN_ORIGEN, type LineaIn
 import { elegirTcAl } from "@/lib/dolares/tc-cierre"
 import { controlarProvisionAnterior } from "@/lib/balance/control-inicio"
 import { esFilaDeAlerta, solapasDelLibro } from "@/lib/balance/vista-previa"
+import { armarInicioYCierre, textoEstado } from "@/lib/balance/inicio-y-cierre"
+import { RENGLONES as RENGLONES_BALANCE } from "@/lib/balance/balance-propio"
 import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
 } from "@/lib/balance/granos-sementeras"
@@ -5168,6 +5170,27 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · vista previa", "👁️ Cada solapa con sus alertas: «FALTA EL PRECIO» y «⚠️ NO CIERRA» cuentan; un control ✓ no",
       "Stock insumos 1 · 05 Provision 1", sol.map(x => `${x.nombre} ${x.alertas}`).join(" · "),
       sol.length === 2 && sol[0].alertas === 1 && sol[1].alertas === 1 && !esFilaDeAlerta(["CONTROL ✓ cada producto"]), "A-FEAT-1427")
+  }
+
+  /**
+   * 📋 **INICIO Y CIERRE DE CADA RENGLÓN — A-FEAT-1427.** Números reales de la foto 30/06/2025 de MSA: la tarjeta
+   * tenía $ 887.674,27 (contador) y la provisión $ 12.456.000,14; si la app no calcula su cierre, sale «falta el
+   * cierre». Un renglón sin nada en ningún año también sale (no se omite).
+   */
+  {
+    const foto = { tarjetas: { contador: 887674.27 }, provision_gastos: { contador: 12456000.14 }, proveedores: { contador: 3543793.46, jms: 4431467.73 } }
+    const ic = armarInicioYCierre(foto, [
+      { renglon: "proveedores", importe: 2100000, detalle: "facturas impagas al cierre (papel 03)" },
+      { renglon: "banco_galicia", importe: 2557881.63, detalle: "saldo al cierre del extracto (papel 07)" },
+    ], ["Tarjeta: falta el resumen de junio"])
+    const de = (id: string) => ic.filas.find(f => f.renglon === id)!
+    chequear("Balance · inicio y cierre", "📋 Cada renglón con inicio (foto) y cierre (app); el que tuvo saldo y hoy no se calcula, marcado",
+      "proveedores los dos · tarjetas falta el cierre · galicia falta el inicio · equinos sin datos",
+      `proveedores ${de("proveedores").estado} · tarjetas ${de("tarjetas").estado} · galicia ${de("banco_galicia").estado} · equinos ${de("equinos").estado}`,
+      de("proveedores").estado === "los dos" && de("proveedores").inicioJms === 4431467.73
+        && de("tarjetas").estado === "falta el cierre" && esFilaDeAlerta([textoEstado(de("tarjetas"))])
+        && de("banco_galicia").estado === "falta el inicio" && de("equinos").estado === "sin datos"
+        && ic.filas.length === RENGLONES_BALANCE.length && ic.faltan.length === 1, "A-FEAT-1427")
   }
 
   /**

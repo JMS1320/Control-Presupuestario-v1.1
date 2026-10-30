@@ -60,6 +60,7 @@ import {
 } from "./formato-excel"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 import type { ControlesInicio, ControlProvisionAnterior } from "./control-inicio"
+import { textoEstado, type InicioYCierre } from "./inicio-y-cierre"
 
 const money = (n: number) => Math.round(n * 100) / 100
 
@@ -213,6 +214,32 @@ export function bloqueDeLecturas(lecturas: Lectura[] | undefined): unknown[][] {
   return f
 }
 
+
+/** 📋 A-FEAT-1427: cada renglón del balance, inicio (foto del balance anterior) contra cierre (la app). */
+function hojaInicioYCierre(ic: InicioYCierre, etiqueta: string): unknown[][] {
+  const f: unknown[][] = []
+  f.push([`INICIO Y CIERRE DE CADA RENGLÓN — ejercicio ${etiqueta}`])
+  f.push([ic.hayFotoInicio
+    ? "Inicio = foto del Balance propio al cierre anterior (contador = lo presentado · JMS = tu registro). Cierre = lo que calcula la app desde los papeles."
+    : "⚠️ No hay foto del balance anterior: ningún saldo de inicio se puede mostrar."])
+  f.push([`Con los dos: ${ic.cuenta["los dos"]} · falta el cierre: ${ic.cuenta["falta el cierre"]} · falta el inicio: ${ic.cuenta["falta el inicio"]} · sin datos: ${ic.cuenta["sin datos"]}`])
+  f.push([])
+  f.push(["Rubro", "Renglón", "Inicio (contador)", "Inicio (JMS)", "Cierre (app)", "Estado", "De dónde sale el cierre"])
+  let rubro = ""
+  for (const x of ic.filas) {
+    const fila = [x.rubro === rubro ? "" : x.rubro, x.etiqueta,
+      x.inicioContador == null ? "" : money(x.inicioContador), x.inicioJms == null ? "" : money(x.inicioJms),
+      x.cierre == null ? "" : money(x.cierre), textoEstado(x), x.detalleCierre]
+    rubro = x.rubro
+    f.push(x.estado === "falta el cierre" ? conEstilo(fila, ESTILO_ERROR) : fila)
+  }
+  if (ic.faltan.length) {
+    f.push([])
+    f.push(["⚠️ LO QUE EL CÁLCULO DE CIERRE NO PUDO SABER"])
+    ic.faltan.forEach(x => f.push(["", x]))
+  }
+  return f
+}
 
 /** La solapa que se abre primero: qué se puede entregar y qué no. */
 function hojaDeControl(libro: LibroDiario, lecturas?: Lectura[]): unknown[][] {
@@ -2481,6 +2508,8 @@ export function armarWorkbook(
     lecturas,
   })
   hoja(wb, "00 Indice", hojaDeIndice(indice, libro, empresa), COLS_INDICE)
+  // 📋 A-FEAT-1427: cada renglón del balance con su saldo del año pasado y el de este año.
+  if (controlesInicio?.inicioYCierre) hoja(wb, "00 Inicio y cierre", hojaInicioYCierre(controlesInicio.inicioYCierre, libro.ejercicio.etiqueta))
   // 📌 A-FEAT-1258 — los pendientes a revisar van pegados al índice: también contestan «¿qué falta?».
   if (pendientes && pendientes.length) {
     hoja(wb, "00 Pendientes a revisar", hojaDePendientes(pendientes,
