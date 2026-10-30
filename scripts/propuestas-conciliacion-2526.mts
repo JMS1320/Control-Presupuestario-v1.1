@@ -59,6 +59,28 @@ const dias = (a?: string | null, b?: string | null) => (!a || !b) ? 9999 : Math.
 const cuitDe = (x: any) => String(x ?? "").replace(/\D/g, "")
 const plata = (x: number) => x.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+/** Los CUIT de las tres empresas: una transferencia entre ellas es retiro o aporte, no un pago a un tercero. */
+const CUIT_PROPIOS: Record<string, string> = { "30617786016": "MSA", "20044390222": "PAM", "27066824611": "MA" }
+
+/**
+ * 🧭 Qué es PROBABLEMENTE un movimiento sin pareja, por lo que dice el banco. No decide nada: orienta qué
+ * corrección buscar (cargar un template, buscar el sueldo, ir contra el resumen de la tarjeta…).
+ */
+function pistaDe(desc: string, quien: string | undefined, cuit: string | undefined, lado: "D" | "C"): string {
+  const d = `${desc ?? ""} ${quien ?? ""}`
+  if (cuit && CUIT_PROPIOS[cuit]) return `Transferencia con ${CUIT_PROPIOS[cuit]}: retiro / aporte entre empresas (cuenta corriente del socio)`
+  if (/haber/i.test(d)) return "Sueldos: buscar el pago en Sueldos (puede ser un pago repartido en varios)"
+  if (/echeq|cheque/i.test(d)) return "Echeq / cheque: va contra el cheque emitido (Egresos → cheques) y su factura"
+  if (/pago visa|tarjeta|visa empresa/i.test(d)) return "Pago de la tarjeta: va contra el resumen (template de la tarjeta)"
+  if (/extracci|cajero|autoservicio/i.test(d)) return "Extracción de efectivo: pasa a caja (template Caja / fondo fijo)"
+  if (/afip|arca|vep|arba|agip|munic|rentas|imp\.? ?ley|iibb|ingresos brutos|ganancias/i.test(d)) return "Impuesto: cuota de un template de impuestos (o VEP de un plan)"
+  if (/comisi|mantenim|servicio|imp\.? ?deb|imp\.? ?cre|percep|sellos|iva |interes|gasto/i.test(d)) return "Gasto o impuesto del banco: template bancario del mes"
+  if (/deb\.? ?autom|debito automatico/i.test(d)) return "Débito automático: template del servicio (luz, gas, seguro…)"
+  if (lado === "C") return "Crédito: buscar el cobro de una venta, un reintegro o un aporte"
+  if (/trf|transf/i.test(d)) return quien ? `Transferencia a ${quien}: falta su factura, su template o su sueldo` : "Transferencia: falta su factura, su template o su sueldo"
+  return "Sin pista: mirar el detalle de la planilla"
+}
+
 // ── Cuentas ──────────────────────────────────────────────────────────────────────────────
 const CUENTAS = [
   { emp: "MSA", schema: "public", tabla: "msa_galicia", nombre: "MSA Galicia", leyendas: true },
@@ -135,12 +157,18 @@ async function main() {
   for (const p of pagos) { const e = empleados.get(p.empleado_id) ?? {}
     obl.push({ emp: e.empresa ?? "MSA", org: "sueldo", id: p.id, fecha: p.fecha, imp: Math.abs(n(p.monto)), estado: p.estado, quien: e.nombre ?? "?", cuit: cuitDe(e.cuit_empleado), signo: "D", extra: `sueldo ${p.tipo ?? ""}` }) }
 
+  // 🧾 Echeqs y cheques emitidos (msa.cheques): el débito del banco va contra el cheque, que apunta a su factura/anticipo.
+  const cheques = await todo("msa", "cheques", "id,numero,monto,fecha_cobro,fecha_emision,beneficiario_nombre,beneficiario_cuit,estado,factura_id,anticipo_id")
+  for (const ch of cheques) obl.push({ emp: "MSA", org: "echeq", id: String(ch.factura_id ?? ch.anticipo_id ?? ch.id), fecha: ch.fecha_cobro ?? ch.fecha_emision,
+    imp: Math.abs(n(ch.monto)), estado: ch.estado, quien: ch.beneficiario_nombre ?? "?", cuit: cuitDe(ch.beneficiario_cuit), signo: "D",
+    extra: `cheque Nº ${ch.numero ?? "(sin número)"} · cobro ${ch.fecha_cobro ?? "?"} · estado ${ch.estado}` })
+
   // Una obligación está libre si nadie la usa (ni ella ni su grupo de pago)
   const usada = (o: Obl) => usadoPor.get(o.id) ?? (o.grupo ? usadoPor.get(o.grupo) : undefined)
   const libre = (o: Obl) => !usada(o)
 
   // 3 · Movimientos sin conciliar
-  type Prop = { cuenta: string; emp: string; id: string; fecha: string; importe: number; lado: "D" | "C"; estado: string; descripcion: string; banco_quien?: string; banco_cuit?: string; detalle_jms?: string; categ?: string; tipo: string; propuesta: string; parejas: any[] }
+  type Prop = { cuenta: string; emp: string; id: string; fecha: string; importe: number; lado: "D" | "C"; estado: string; descripcion: string; banco_quien?: string; banco_cuit?: string; detalle_jms?: string; categ?: string; tipo: string; propuesta: string; parejas: any[]; pista?: string }
   const props: Prop[] = []
   const vista = (o: Obl, extra: Record<string, any> = {}) => ({ org: o.org, emp: o.emp, id: o.id, quien: o.quien, importe: o.imp, fecha: o.fecha, estado: o.estado, ref: o.extra, ...extra })
 
@@ -160,7 +188,8 @@ async function main() {
       const exLibreOtra = exactas.filter(o => libre(o) && o.emp !== c.emp)
       const exUsadas = exactas.filter(o => !libre(o))
       const delCuit = p.banco_cuit ? obl.filter(o => o.cuit === p.banco_cuit && o.signo === lado && libre(o) && o.org !== "factura-neta-sicore" && dias(o.fecha, m.fecha) <= 150) : []
-      const histFactura = m.estado === "historico" && m.fecha < CORTE_HIST_FACTURAS
+      // A-FEAT-1315 es del histórico de MSA (jul–nov 2025): ahí los pagos de facturas no se concilian.
+      const histFactura = c.emp === "MSA" && m.estado === "historico" && m.fecha < CORTE_HIST_FACTURAS
 
       const unicos = (l: Obl[]) => [...new Map(l.map(o => [o.id, o])).values()]
       if (unicos(exLibreMia).length === 1) {
@@ -202,6 +231,7 @@ async function main() {
         p.propuesta = histFactura ? "Histórico jul–nov 2025: si es pago de factura, por decisión NO se concilia (A-FEAT-1315)." : "Sin pareja en lo registrado: falta la factura, el template o el sueldo."
       }
       if (histFactura && p.tipo !== "EXACTO" && p.tipo !== "AGRUPADO" && !p.parejas.some(x => x.org === "cuota")) p.tipo = p.tipo === "SIN_PAREJA" ? "HISTORICO_FACTURA" : p.tipo
+      p.pista = pistaDe(m.descripcion, p.banco_quien, p.banco_cuit, lado)
       props.push(p)
     }
   }
