@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 🔤 Default de `estado` en 18 tablas de cuentas: «Pendiente» → «pendiente» (2026-10-30) — ⏳ AVISO PREVIO, todavía sin correr
+### 🔤 Default de `estado` en 18 tablas de cuentas: «Pendiente» → «pendiente» (2026-10-30) — ✅ APLICADA el 30/10 (JMS: «ese tipo de bugs resolvelos por default»; aviso previo): 270 movimientos y 18 defaults, verificado 0 restantes
 - `scripts/143-estado-pendiente-minuscula.sql` (+ `-deshacer`), rama `jms/balance`. Las tablas de extracto/caja/USD/Cotitulares tenían `default 'Pendiente'` (mayúscula) y todo el sistema busca `pendiente`: 270 movimientos quedaban fuera del extracto y de la conciliación. Cambia el default y esos 270 valores. **No toca RLS, grants ni columnas.**
 
 ### 🔒 Lectura de las tablas de mails cerrada al admin (2026-10-30) — ✅ APLICADA el 30/10 con OK de JMS (aviso previo): verificado simulando cada rol — admin lee y escribe; contable, socio, productivo y pruebas, nada

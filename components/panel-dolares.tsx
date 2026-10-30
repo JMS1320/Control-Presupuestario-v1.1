@@ -79,7 +79,7 @@ export function ModalMovimientoManual({ abierto, cuentaId, onClose, onGuardado }
         debitos: sentido === "sale" ? imp : 0, creditos: sentido === "entra" ? imp : 0,
         moneda: c.moneda, tipo_cambio: c.moneda === "USD" ? tcN : null,
         importe_pesos: pesosEscritos ?? (c.moneda === "USD" ? pesosCalculados : null),
-        categ, nro_cuenta: nroCuenta, por_cuenta_de: porCuentaDe || null, estado: "Pendiente",
+        categ, nro_cuenta: nroCuenta, por_cuenta_de: porCuentaDe || null, estado: "pendiente",
       }
       const { error } = await db(c.schema_bd).from(c.tabla_bd).insert(fila)
       if (error) throw error

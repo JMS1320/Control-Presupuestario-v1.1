@@ -3335,6 +3335,9 @@ Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantid
 ### 2026-10-30 · Tablas de mails SÓLO ADMIN (script 142) — A-FEAT-1425 — ✅ CORRIDO 2026-10-30 con OK de JMS
 `recurso_tablas`: `mails_registro` y `mails_reglas` pasan de `egresos` a `importar.mails` con `restringe_lectura = true` (marca `[script 142]` en `motivo`). Verificado simulando el JWT de cada rol: admin lee y escribe; los demás, nada. Deshacer: `scripts/142-mails-lectura-solo-admin-deshacer.sql`.
 
+### 2026-10-30 · ESTADO «Pendiente» → «pendiente» — default de 18 tablas + 270 movimientos (script 143) — ✅ CORRIDO 2026-10-30
+Las tablas de extracto/caja/USD/Cotitulares (`msa_galicia`, `pam_galicia`, `pam_galicia_cc`, `ma.ma_galicia`, cajas, `santander`, `provincia`, `echeqs_terceros`, las 7 de dólares/Cotitulares y `ma.anses_ca_pesos`) tenían `estado default 'Pendiente'`: **al reconstruir, crear esas columnas con `default 'pendiente'`** (minúscula, como lo busca todo el sistema). Deshacer: `scripts/143-estado-pendiente-minuscula-deshacer.sql` (vuelve los 270 ids exactos y los defaults).
+
 ### 2026-10-30 · PAPEL DE TRABAJO VINCULADO — columna `vinculo` en `public.cuadernos` (script 141) — A-FEAT-1430 — ✅ CORRIDO 2026-10-30 con OK de JMS
 `vinculo text` (vacío = cuaderno suelto) + índice parcial `cuadernos_vinculo (usuario_id, vinculo) where vinculo is not null`. Ata un cuaderno —el papel de trabajo que arma el recorrido del balance— a su tema (`balance:<EMPRESA>:<año>:<clave del tema>`). No toca RLS (personal por usuario). Deshacer: `scripts/141-cuadernos-vinculo-deshacer.sql` (seguro: el 141 se niega a correr si la columna ya existía).
 
