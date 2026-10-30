@@ -61,6 +61,7 @@ import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE } from "@/lib/ba
 import type { AsientoLibroDiario } from "@/lib/balance/libro-diario"
 import { leerFotoInicio, controlarProvisionAnterior, type ControlesInicio, type FotoInicio } from "@/lib/balance/control-inicio"
 import { armarInicioYCierre } from "@/lib/balance/inicio-y-cierre"
+import type { HechosCobertura } from "@/lib/balance/cobertura-papeles"
 import {
   armarCuentasAlCierre, canceladoPorCuotasAlCierre, polizasParaCierreDesde,
   type CuentasAlCierre, type ComprobanteConPago, type CanceladoPorCuotas,
@@ -170,7 +171,9 @@ export function PapelesDeBalance() {
   const [propuestaCierre, setPropuestaCierre] = useState<{ valores: ValorPropuesto[]; faltan: string[] } | null>(null)
   const recibirPropuesta = useCallback((p: { valores: ValorPropuesto[]; faltan: string[] }) => setPropuestaCierre(p), [])
   /** 👁️ A-FEAT-1427: el libro armado para mirarlo antes de bajarlo. `null` = cerrada. */
-  const [previa, setPrevia] = useState<ReturnType<typeof armarWorkbook> | null>(null)
+  const [verPrevia, setVerPrevia] = useState(false)
+  /** ⚡ A-FEAT-1427: «Armar todo» le pide a Hacienda/insumos que traiga stock y precios (cada pedido, un número nuevo). */
+  const [pedidoStock, setPedidoStock] = useState(0)
 
   /**
    * 🧾 Los datos del Excel del balance, en el orden de `armarWorkbook`. Los usan la descarga Y la vista previa
@@ -197,6 +200,36 @@ export function PapelesDeBalance() {
     },
   ]
 
+  /**
+   * 👁️ La vista previa se RECALCULA cuando llega cada dato (stock y precios, el cálculo de cierre…): con «Armar todo»
+   * se abre enseguida y se va completando sola, en vez de mostrar una foto de cuando se apretó el botón.
+   */
+  const previa = useMemo(() => {
+    if (!verPrevia || !libro) return null
+    try { return { wb: armarWorkbook(...argsDelExcel(libro)), error: null as string | null } }
+    catch (e) { return { wb: null, error: (e as Error).message } }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [verPrevia, libro, empresa.id, templates, hacienda, cuentas, valores, bancarios, sueldos, cuentasCorrientesConInicio,
+    pendientes, ajustes, anioCierre, asientosContables, lecturas, controlCuotas, controlesInicio, propuestaCierre, fotoInicio])
+  /** Lo que todavía no llegó, para que la vista previa lo diga en vez de parecer completa. */
+  const faltanEnPrevia = [
+    ...(!hacienda ? [pedidoStock > 0 ? "⏳ trayendo stock y precios…" : "stock y precios (hacienda, insumos, granos): falta «Traer stock y precios»"] : []),
+    ...(!propuestaCierre ? ["⏳ el cálculo de cierre de cada renglón (solapa «00 Inicio y cierre»)"] : []),
+  ]
+
+  /**
+   * ⚡ **ARMAR TODO** — nota 🌙 de JMS 29/10: *«botón para armar libro y stock y todo el export entero completo»*.
+   * Arma el libro, pide stock y precios y abre la vista previa, que se completa sola a medida que llega cada parte.
+   * Bajar el Excel queda a un clic, después de mirarlo (*«en vez de exportarlo para ir a revisar las solapas,
+   * empezaría a ver en las preview»*).
+   */
+  const armarTodo = async () => {
+    setVerPrevia(false)
+    await generar()
+    setPedidoStock(n => n + 1)
+    setVerPrevia(true)
+  }
+
   const generar = async () => {
     setCargando(true)
     setLibro(null)
@@ -212,6 +245,7 @@ export function PapelesDeBalance() {
     setLecturas(null)
     setControlesInicio(null)
     setFotoInicio(null)
+    setPropuestaCierre(null)
     const lect: Lectura[] = []
     const anotar = (nombre: string, r: { data: unknown[]; esperadas: number | null }) =>
       lect.push({ nombre, llegaron: r.data.length, esperadas: r.esperadas })
@@ -321,7 +355,24 @@ export function PapelesDeBalance() {
         if (eFoto) throw new Error(eFoto)
         setFotoInicio(foto)
         const provision = controlarProvisionAnterior(foto, armado.provisionesEjercicioAnterior, armado.compras)
-        setControlesInicio({ provision })
+        // 🗂️ Hechos chicos para «00 Cobertura»: lo que el export no trae. Cada uno por separado: si falla, queda «no se pudo».
+        const inicio = primerDiaDelEjercicio(ej)
+        const hechos: HechosCobertura = {}
+        try {
+          const r = await supabase.schema(empresa.schema).from("cheques").select("id", { count: "exact", head: true }).lt("fecha_emision", inicio)
+          if (!r.error) hechos.chequesAntesDelInicio = r.count ?? 0
+        } catch { /* queda sin saber */ }
+        try {
+          const r = await supabase.from("anticipos_proveedores").select("id", { count: "exact", head: true }).eq("empresa", empresa.id).lt("fecha_pago", inicio)
+          if (!r.error) hechos.anticiposAntesDelInicio = r.count ?? 0
+        } catch { /* queda sin saber */ }
+        for (const [tabla, campo] of [["movimientos_hacienda", "primerMovimientoHacienda"], ["movimientos_insumos", "primerMovimientoInsumos"]] as const) {
+          try {
+            const r = await supabase.schema("productivo").from(tabla).select("fecha").order("fecha", { ascending: true }).limit(1)
+            if (!r.error) hechos[campo] = r.data?.[0]?.fecha ? String(r.data[0].fecha).slice(0, 10) : null
+          } catch { /* queda sin saber */ }
+        }
+        setControlesInicio({ provision, hechos })
         if (provision.estado === "no cierra") toast.warning(
           `Provisión del ejercicio anterior: el balance anterior provisionó $ ${fmt(provision.declarado ?? 0)} y la app reconoce $ ${fmt(provision.reconocido)}. Ver «05 Provisión».`)
       } catch (e) {
@@ -870,16 +921,16 @@ export function PapelesDeBalance() {
               onChange={e => setAnioCierre(parseInt(e.target.value.replace(/\D/g, "")) || 0)}
             />
           </div>
-          <Button onClick={generar} disabled={cargando}>
+          <Button onClick={armarTodo} disabled={cargando} title="Arma el libro, trae stock y precios y abre la vista previa">
             {cargando ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-            Armar el libro
+            ⚡ Armar todo
+          </Button>
+          <Button variant="outline" onClick={generar} disabled={cargando}>
+            Armar sólo el libro
           </Button>
           {libro && (
             /* 👁️ A-FEAT-1427: el mismo libro que se baja, mostrado acá con sus alertas arriba. */
-            <Button variant="outline" onClick={() => {
-              try { setPrevia(armarWorkbook(...argsDelExcel(libro))) }
-              catch (e) { toast.error("No se pudo armar la vista previa: " + (e as Error).message) }
-            }}>
+            <Button variant="outline" onClick={() => setVerPrevia(true)}>
               👁️ Vista previa
             </Button>
           )}
@@ -927,7 +978,8 @@ export function PapelesDeBalance() {
         </div>
 
         {/* 👁️ A-FEAT-1427 — el Excel antes de bajarlo; las preguntas siguen acá abajo, donde se contestan. */}
-        {previa && <VistaPreviaBalance wb={previa} onCerrar={() => setPrevia(null)} />}
+        {previa?.error && <div className="text-sm text-red-700">No se pudo armar la vista previa: {previa.error}</div>}
+        {previa?.wb && <VistaPreviaBalance wb={previa.wb} faltan={faltanEnPrevia} onCerrar={() => setVerPrevia(false)} />}
         {/* 📌 A-FEAT-1258 — a la vista mientras se trabaja; salen en el export. */}
         <PendientesBalance empresa={empresa.id} anioCierre={anioCierre} onCambio={setPendientes} />
         {/* ✍️ A-FEAT-1207 — lo que el balance anterior dejó para tomar en éste. */}
@@ -1270,7 +1322,7 @@ export function PapelesDeBalance() {
 
             {/* 🐄 Aparte del libro diario: trae precios de dos mercados y puede fallar sola sin
                 impedir que se bajen las compras. */}
-            <HaciendaAlCierre empresa={empresa.id} ejercicio={libro.ejercicio} onDatos={setHacienda} />
+            <HaciendaAlCierre empresa={empresa.id} ejercicio={libro.ejercicio} onDatos={setHacienda} pedido={pedidoStock} />
 
             {bancarios?.impuestoCheque && (() => {
               const ic = bancarios.impuestoCheque
