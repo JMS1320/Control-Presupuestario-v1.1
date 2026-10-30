@@ -402,3 +402,18 @@ total que el propio comprobante imprime, porque eso sí es el sistema contradici
 - 🔒 **Privacidad**: la pantalla es sólo admin (mails de familia y sucesión). Las reglas iniciales tienen mails de personas y **no están en el repo** (público): viven en la carpeta de comunicación (`Mails/140 reglas iniciales - FUERA DE GIT.sql`). ✅ **La base también es sólo admin** (script 142, 30/10): las 2 tablas cuelgan del recurso `importar.mails` con `restringe_lectura`. ⚠️ cambió 30/10: hasta el 142 estaban bajo `egresos` sin restringir y las leía cualquier rol logueado (medido: los 5 roles leían; contable, socio y pruebas escribían). Si un rol recibe la sección `importar`, vería los mails.
 
 **De dónde salió**: el catálogo del 30/10 (90 días): ≈1.180 hilos recibidos, ≈70 % propaganda, ≈4 útiles por día; lo único que dejaba rastro en la app eran las facturas, las boletas de ARBA y los detalles de pago.
+
+### 9.1 · 🔜 El buscador de facturas consulta PRIMERO el registro *(diseño, 30/10 — no construido)*
+
+JMS: *«el buscador de facturas, luego de importarlas, muchas veces ya tendrá la info en los registros y sólo deberá ir ahí; el procesamiento no se hará ahí salvo que no haya registros del procesador automático»*.
+
+**Cómo quedaría, en tres pasos:**
+1. **Antes de llamar al GAS**, la ruta `app/api/gas/buscar-pdf` mira el registro: mails **recibidos** del proveedor (remitente = algún mail del proveedor en `public.proveedores`, o el CUIT en el asunto), **con PDF o imagen adjunta**, desde la fecha de emisión de la factura. Si ya hay uno **procesado** para esa factura (historial del buscador con ese `gmail_message_id` y resultado `descargado`), no se busca de nuevo.
+2. **Si hay candidatos en el registro**, se le pasan al GAS sus ids (`mensaje_ids`) y el GAS lee **sólo esos** mensajes (`GmailApp.getMessageById`) en vez de buscar en toda la casilla. Es más rápido y no depende de que el asunto del proveedor no haya cambiado.
+3. **Si el registro no tiene nada** (el GAS del registro todavía no pasó por ese día, o el mail llegó por otro lado), el buscador busca en Gmail como hoy. Nunca se pierde una factura por confiar en el registro.
+
+**Lo que ya está para esto (30/10):** el registro con remitente y adjuntos; la pantalla cruza cada mail con el historial del buscador y el inventario de reenvíos; y el GAS 0.19.2 devuelve el mail de origen también en el match único (antes la app lo guardaba vacío en 476 de 479 búsquedas).
+**Lo que falta:** el paso 1 en la ruta, el parámetro `mensaje_ids` en el GAS, y probarlo contra la casilla real con JMS presente (toca el camino central del buscador).
+
+### 9.2 · 🔎 A mirar con el registro funcionando
+- El GAS se manda a la propia casilla **«Resumen FC»** y **«Supervisión facturas archivo digital»** a veces **3 a 6 iguales el mismo día** (catálogo del 30/10). No hay un bug evidente: cada corrida de un lote o de «Contar, re-vincular todo y mandar el estado por mail» manda el suyo. Con el registro se ve exactamente a qué hora salió cada uno y se decide si conviene uno solo por día.
