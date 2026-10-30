@@ -3332,6 +3332,9 @@ Alta de `MA` (CUIL 27-06682461-1, `plano_ipc`, MSA, ingreso 01/06/2025, id fijo 
 ### 2026-10-29 · Stock declarado al 30/06/2025 de MSA (script 132, DATOS) — A-FEAT-1420 — ✅ CORRIDO con OK de JMS
 Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantidad 0, marca `[script 132]` en observaciones), 94 renglones en `stock_inicio` ($ 31.730.444,08 = la planilla) y 3 `pasturas`. Se corre con `scripts/132-stock-inicio-msa-30-06-2025.mts` (desde su `.json`; el `.sql` es el registro legible). Deshacer: `scripts/132-stock-inicio-msa-30-06-2025-deshacer.sql` (por ids; frena si un producto ya tiene movimientos).
 
+### 2026-10-30 · REGISTRO DE MAILS + REGLAS — 2 tablas (script 140) — A-FEAT-1425 — ✅ CORRIDO 2026-10-30 con OK de JMS
+`public.mails_registro` (una fila por mensaje, única por canal + casilla + mensaje_id; la escribe el GAS `RegistroMails.gs` con la `service_role`) y `public.mails_reglas` (remitente/asunto → tipo y acción). RLS `ver_segun_permiso`/`escribir_segun_permiso`, recurso `egresos` (marca `[script 140]`). ⚠️ Las 70 reglas iniciales NO están en el repo (tienen mails de personas): `- Comunicacion JMS Claude - Archivos/Mails/140 reglas iniciales - FUERA DE GIT.sql` — para reconstruir, correr el 140 y después ese archivo. Deshacer: `scripts/140-mails-registro-y-reglas-deshacer.sql` (frena si ya hay mails registrados o reglas agregadas a mano).
+
 ### 2026-10-30 · CAJA DE AHORRO ANSES de MA — 1 tabla (script 135) — A-FEAT-1424 — ✅ CORRIDO 2026-10-30 con OK de JMS
 `ma.anses_ca_pesos`: misma forma que las de los scripts 126/129, `moneda` default `ARS`. RLS `ver_segun_permiso`/`escribir_segun_permiso`, recurso `extracto` en `recurso_tablas` (marca `[script 135]`). Deshacer: `scripts/135-caja-ahorro-anses-ma-deshacer.sql` (frena si tiene movimientos). Datos cargados después por el script 136 (A-FEAT-1424): 22 movimientos nov-25 → mar-26.
 

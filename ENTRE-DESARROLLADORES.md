@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 📬 2 tablas nuevas: registro de mails + reglas de clasificación (2026-10-30) — ⏳ AVISO PREVIO, se aplica hoy con OK de JMS
+### 📬 2 tablas nuevas: registro de mails + reglas de clasificación (2026-10-30) — ✅ APLICADA el 30/10 con OK de JMS (aviso previo): 2 tablas vacías, RLS, 2 filas en recurso_tablas y 70 reglas iniciales
 - `scripts/140-mails-registro-y-reglas.sql` (+ `-deshacer`), rama `jms/gas`. A-FEAT-1425: `public.mails_registro` (una fila por mail recibido o enviado de sanmanuel.sp, la escribe el GAS con la `service_role`) y `public.mails_reglas` (remitente/asunto → tipo y acción, ~70 reglas iniciales).
 - **RLS igual que el resto**: `ver_segun_permiso` / `escribir_segun_permiso`, 2 filas en `recurso_tablas` (recurso `egresos`, marca `[script 140]`). `anon` sin acceso. No toca ninguna tabla existente.
 
