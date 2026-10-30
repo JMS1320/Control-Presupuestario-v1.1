@@ -26,6 +26,7 @@ import type { SaldosAnteriores } from "./ajustes-balance"
 import type { LibroDiario } from "./libro-diario"
 import { linkTemplates } from "@/lib/impuestos/planilla"
 import { linkExtracto } from "@/lib/extracto/link"
+import { linkHistorico } from "@/lib/egresos/link-facturas"
 
 export type EstadoCobertura =
   | "sale"                 // ✅ el export lo responde
@@ -215,6 +216,10 @@ const REGLAS: Regla[] = [
       if (p.estado === "sin foto") return { estado: "falta inicio", detalle: p.fuenteDeclarado }
       const pct = p.declarado ? Math.abs((p.diferencia ?? 0) / p.declarado) * 100 : 0
       return { estado: "error", detalle: `el balance anterior provisionó ${pesos(p.declarado ?? 0)} y la app reconoce ${pesos(p.reconocido)}: diferencia ${pesos(p.diferencia ?? 0)} (${pct.toFixed(0)} %)${p.candidatos.length ? `; ${p.candidatos.map(a => `${a.denominacion} ${a.punto_venta ?? ""}-${a.numero ?? ""}`).join(" + ")} están en el gasto de este ejercicio (doble)` : ""}`,
+        links: (() => {
+          const hist = p.candidatos.filter(a => a.fuente === "historico").map(a => a.id)
+          return hist.length ? [{ texto: `Ver las ${hist.length} factura(s) en Facturas → Histórico`, href: linkHistorico(hist) }] : []
+        })(),
         propuesta: p.candidatos.length
           ? `marcar ${p.candidatos.map(a => `${a.denominacion} ${a.punto_venta ?? ""}-${a.numero ?? ""} (${pesos(a.total)})`).join(" y ")} como «provisión del ejercicio anterior» → la provisión cierra (diferencia $ 0) y el gasto 25/26 baja ${pesos(p.candidatos.reduce((s, a) => s + a.total, 0))}; avisar al contador`
           : "buscar qué comprobantes provisionó el balance anterior" }

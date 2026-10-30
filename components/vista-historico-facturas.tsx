@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Loader2, AlertTriangle, CheckCircle, Search, AlertCircle, X, RefreshCw } from "lucide-react"
+import { historicoDelLink } from "@/lib/egresos/link-facturas"
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -116,6 +117,9 @@ export function VistaHistoricoFacturas({ empresa = 'MSA' }: { empresa?: 'MSA' | 
   const [filtroPeriodo, setFiltroPeriodo] = useState("todos")
   const [filtroCuenta, setFiltroCuenta] = useState("todas")
   const [busqueda, setBusqueda] = useState("")
+  /** 🔗 A-FEAT-1430: comprobantes pedidos por un link (desde el recorrido del balance). `null` = sin filtro. */
+  const [idsLink, setIdsLink] = useState<Set<string> | null>(null)
+  useEffect(() => { const ids = historicoDelLink(window.location.search); if (ids.length) setIdsLink(new Set(ids)) }, [])
 
   // Selección para edición masiva
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
@@ -213,6 +217,7 @@ export function VistaHistoricoFacturas({ empresa = 'MSA' }: { empresa?: 'MSA' | 
   const filtrados = useMemo(() => {
     const q = busqueda.toLowerCase()
     return conEstado.filter(c => {
+      if (idsLink && !idsLink.has(String(c.id))) return false
       if (filtroEstado !== "todos" && c._estado !== filtroEstado) return false
       if (filtroPeriodo !== "todos") {
         const p = `${c.anio_contable}-${String(c.mes_contable).padStart(2, "0")}`
@@ -228,7 +233,7 @@ export function VistaHistoricoFacturas({ empresa = 'MSA' }: { empresa?: 'MSA' | 
                !(c.cuenta_asignada ?? "").toLowerCase().includes(q)) return false
       return true
     })
-  }, [conEstado, filtroEstado, filtroPeriodo, filtroCuenta, busqueda])
+  }, [conEstado, filtroEstado, filtroPeriodo, filtroCuenta, busqueda, idsLink])
 
   // ── Selección ─────────────────────────────────────────────────────────────
 
@@ -428,6 +433,13 @@ export function VistaHistoricoFacturas({ empresa = 'MSA' }: { empresa?: 'MSA' | 
 
   return (
     <div className="space-y-4">
+      {/* 🔗 A-FEAT-1430 — abierto desde un link: qué se muestra y cómo salir. */}
+      {idsLink && (
+        <div className="flex flex-wrap items-center gap-2 rounded border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-900" data-test="historico-filtro-link">
+          <span>🔗 <strong>Filtrado desde el balance:</strong> {filtrados.length} de {idsLink.size} comprobante(s) pedido(s){loading ? " (cargando…)" : ""}.</span>
+          <button type="button" className="ml-auto underline" onClick={() => { setIdsLink(null); window.history.replaceState(null, "", window.location.pathname + window.location.search.replace(/[?&]historico=[^&]*/, "")) }}>Quitar este filtro</button>
+        </div>
+      )}
 
       {/* ── Resumen chips ── */}
       <div className="flex flex-wrap gap-3">

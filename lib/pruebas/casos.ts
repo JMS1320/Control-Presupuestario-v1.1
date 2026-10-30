@@ -197,6 +197,7 @@ import { armarInicioYCierre, textoEstado } from "@/lib/balance/inicio-y-cierre"
 import { armarCobertura, CANTIDAD_DE_DATOS } from "@/lib/balance/cobertura-papeles"
 import { armarTemas, progreso, textoPendienteDe } from "@/lib/balance/recorrido"
 import { linkExtracto, extractoDelLink, rangoQueContiene } from "@/lib/extracto/link"
+import { linkHistorico, subFacturasDelLink, historicoDelLink } from "@/lib/egresos/link-facturas"
 import { RENGLONES as RENGLONES_BALANCE } from "@/lib/balance/balance-propio"
 import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
@@ -5255,6 +5256,14 @@ export function correrCasos(): Resultado[] {
       `${vuelta?.cuenta} · ${vuelta?.movs.join(",")} · ${vuelta?.desde} → ${vuelta?.hasta} · otra sección ${extractoDelLink("?seccion=egresos&movs=1")}`,
       vuelta?.cuenta === "msa_galicia" && vuelta.movs.join(",") === "12,15" && vuelta.desde === "2025-08-16" && vuelta.hasta === "2025-10-20"
         && extractoDelLink("?seccion=egresos&movs=1") === null && extractoDelLink("?seccion=extracto") === null, "A-FEAT-1430")
+  }
+  {
+    const url = linkHistorico(["h1", "h2", "h1"])
+    const q = url.slice(url.indexOf("?"))
+    chequear("Facturas · link", "🔗 El link abre Facturas MSA → Histórico mostrando sólo esos comprobantes",
+      "facturas-msa · historico · h1,h2", `${new URLSearchParams(q).get("tab")} · ${subFacturasDelLink(q)} · ${historicoDelLink(q).join(",")}`,
+      new URLSearchParams(q).get("tab") === "facturas-msa" && subFacturasDelLink(q) === "historico" && historicoDelLink(q).join(",") === "h1,h2"
+        && subFacturasDelLink("?sub=otra") === null && historicoDelLink("?sub=historico").length === 0, "A-FEAT-1430")
   }
 
   /**

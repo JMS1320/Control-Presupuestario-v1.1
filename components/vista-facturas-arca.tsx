@@ -96,6 +96,7 @@ import { Permisable } from "@/components/modo-permisos"
 import { pedirAsignacionDeCuenta, mensajeDePropagacion, type RespuestaAsignacion } from "@/lib/conciliacion/asignar-cuenta-cliente"
 import { contarMovimientosDeFactura, type ClienteParaPropagar } from "@/lib/conciliacion/propagar-cuenta"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
+import { subFacturasDelLink } from "@/lib/egresos/link-facturas"
 
 interface FacturaArca {
   id: string
@@ -411,6 +412,8 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
 
   // Estados para tabs de navegación
   const [tabActivo, setTabActivo] = useState<'facturas' | 'subdiarios' | 'historico' | 'asignacion'>('facturas')
+  // 🔗 A-FEAT-1430: un link puede pedir la sub-solapa (`?sub=historico`, ej. desde el recorrido del balance).
+  useEffect(() => { const s = subFacturasDelLink(window.location.search); if (s) setTabActivo(s) }, [])
   
   // Estados para Subdiarios
   const [periodoConsulta, setPeriodoConsulta] = useState('')
