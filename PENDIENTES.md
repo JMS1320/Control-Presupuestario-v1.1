@@ -247,6 +247,86 @@ es un error de la guía y hay que corregirla, no ignorarla.
 
 ## 🎯 FOCO ACTUAL (rota — el norte permanente está en `CLAUDE.md`)
 
+> ⚠️ **cambió 2026-10-30 — el foco son DOS CAMINOS, uno por terminal.** JMS abre cada terminal nueva en la carpeta
+> principal y le dice sólo **«camino 1»** (BALANCE) o **«camino 2»** (GAS). Cada camino es autosuficiente: objetivo,
+> orden, estado, qué espera de JMS y qué se comparte con el otro. **Lo que está debajo de los dos caminos (cría desde
+> el margen, 2026-08-03; fechas del balance) es historia**: el foco de ahora es éste.
+>
+> **Común a los dos:**
+> - La BD es una sola. Un cambio de forma en una tabla compartida se avisa antes en el tablero; si es estructura,
+>   RLS o permisos, también en `ENTRE-DESARROLLADORES.md`.
+> - Los números se reclaman escribiéndolos: script y FEAT/BUG, mirando la última línea del tablero
+>   `.claude/SESION-PARALELA.md` y **todas** las ramas.
+> - Nunca dos tareas pesadas a la vez (PC de 8 GB, CLAUDE global). Nada a `main` sin OK de JMS.
+
+### 🛤️ Camino 1 — BALANCE
+
+*(lo escribe la terminal de balance)*
+
+### 🛤️ Camino 2 — GAS: todo lo que pasa por el mail, y antes los resúmenes que faltan para conciliar
+
+**Dónde se trabaja:**
+- Worktree propio **`jms/gas`**, que sale de `desarrollo`. JMS: *«no dejar trees abiertos; que los abran las nuevas terminales»*.
+- Se arma con CLAUDE.md § Trabajo en paralelo, regla 16. `.env.local` se copia sólo con OK de JMS.
+- Vuelve a `desarrollo` según la regla 17. Al terminar el tema, se borra el worktree.
+
+**Orden (JMS 30/10):**
+
+**1. 🔴 Lo más urgente: [A-FEAT-1424](#a-feat-1424), cargar los resúmenes PDF desde 01/01/2025, todo menos ANSES.**
+- *Por qué es urgente:* el balance se manda al contador **por módulos** (hoy Ventas, el domingo lo más posible). Para eso hay que **conciliar 25/26 en MSA, PAM y MA**, y estos resúmenes son insumo directo.
+- PDF en `- Comunicacion JMS Claude - Archivos/Extractos/Varias/` y `…/Galicia Eminent PAM/`.
+- Qué se carga:
+  - **VISA MA** → `ma.tarjeta_visa` (vacía): 13 PDF, 25-09 → 26-09.
+  - **VISA PAM** → `pam.tarjeta_visa`. Ya tiene 1 resumen (feb-24 → 30/01/2025, `VI00000000038474573`), y el importador rechaza solo el resumen repetido.
+  - **Cotitulares en pesos** → `public.cotitulares_ca_pesos`.
+  - **Cotitulares en dólares** → `public.cotitulares_ca_usd`. El lector no lee el saldo en dólares: hay que ajustarlo.
+- *Quién carga:* JMS 30/10: *«las VISA MA y VISA PAM te las di para que las cargues; Cotit caja de ahorro también»* → **carga Claude**, con script de número reclamado, marca y deshacer. **El OK se reconfirma en la terminal que lo corra** (regla 17).
+- *Herramientas:*
+  - tarjetas: `parsearResumen` / `calcularControl` del importador `app/api/import-pdf-tarjeta/route.ts`;
+  - cajas de ahorro: `lib/extractos/pdf-caja-ahorro-galicia.ts`. El importador sólo acepta `pam_galicia` y `ma_galicia`, y las tablas de Cotitulares tienen otras columnas (`moneda`, `tipo_cambio`, `importe_pesos`, `par_*`, `por_cuenta_de`).
+- *Marzo de Cotitulares en pesos:* el PDF `Cotit - CA - Pesos - 26-03.pdf` **es el de MA** (mismos saldos 5.619.945,32 → 3.687.570,35). JMS: *«lo debo»*.
+  - Se carga 25-09 → 26-02 y 26-04 → 26-08. El salto de abril queda visible a propósito.
+  - Cuando llegue marzo, un script lo intercala: corre el `orden` de abril en adelante y recalcula el control. Con su deshacer.
+  - Por qué: el importador de caja de ahorro descarta lo que tenga fecha anterior al último cargado.
+- *Qué no se carga:*
+  - PAM CA pesos: ya está; los PDF son control.
+  - MA ANSES: no va.
+  - **PAM en dólares e inversiones:** JMS, *«veremos con T balance»*.
+- *Falta además:* PAM cuenta corriente ene–sep 2025 (unos 14 movimientos). No hay lector de PDF de cuenta corriente.
+- *Para conciliar las tarjetas*, [A-DEC-1022](#a-dec-1022), JMS 30/10: no frena, queda en **audit multiempresa**, y algunos templates son la excepción (listarlos con él).
+
+**2. El objetivo del camino: [A-FEAT-1425](#a-feat-1425), catálogo, indexación e informe de los mails que entran y salen.**
+- Casilla: **sanmanuel.sp@gmail.com**.
+- Primero, **enmarcar el objetivo total y dónde estamos**. Después, el paso a paso desde una óptica global.
+- Los pendientes sueltos de GAS se ordenan **dentro** de ese plan:
+  - [A-FEAT-1287](#a-feat-1287) / [A-TEST-1217](#a-test-1217): buscador de PDF de facturas;
+  - [A-BUG-182](#a-bug-182), [A-BUG-153](#a-bug-153), [A-DAT-33](#a-dat-33): mails de detalle de pago;
+  - [A-TEST-1167](#a-test-1167): boletas ARBA;
+  - [A-FEAT-1214](#a-feat-1214): portales;
+  - [A-FEAT-1382](#a-feat-1382): archivo digital;
+  - [A-AUTO-01](#a-auto-01): circuito de la tarjeta;
+  - [A-OP-26](#a-op-26): clasp.
+- Antes de empezar, confirmar el acceso a esa casilla: el conector de Gmail de Claude puede estar en otra cuenta.
+
+**Dónde vive el módulo:**
+- Apps Script: `gas-buscar-pdf/` y `gas-mail-detalle/`. Hoy se sube a mano.
+- App: `lib/gas-pdf/`, `components/gas-pdf/`, `app/api/gas/*`.
+- Diseño: `MODULO_MAIL_PROVEEDORES.md` y `MODULO_ARCA.md`. [A-DOC-09](#a-doc-09): el lado de la app está a medias.
+
+**Compartido con el camino 1 (avisar antes de cambiarle la forma):**
+- `public.arca_pdf_archivo_digital`: GAS escribe, el balance lee.
+- `comprobantes_arca` de cada schema.
+- Las tablas de tarjeta: `ma.tarjeta_visa`, `pam.tarjeta_visa`, `msa.tarjeta_visa_business`.
+- Las cajas de ahorro que se concilian.
+
+**Backup ([A-OP-27](#a-op-27)):**
+- Queda en `- Backups base/` de la carpeta principal, sin copia al Drive (JMS 30/10).
+- Método en KNOWLEDGE § Backup TOTAL.
+- La frecuencia no está decidida.
+
+---
+
+
 > **2026-08-03 — TESTEAR LA CRÍA DESDE EL MARGEN.** El Presupuesto quedó cerrado e implementado y
 > el **margen por actividad** pasó de ser un reporte a ser **la pantalla donde se trabajan los
 > costos de producción**. 45 commits desde `punto-seguro-2026-08-02`.
