@@ -15,7 +15,7 @@ import { hoyArgentina } from "@/lib/fechas"
  *
  * | | Qué significa | Quién lo pone |
  * |---|---|---|
- * | `cobrado` | **lo vi debitado en el banco** | él, en dos segundos |
+ * | `cobrado` | **lo vi debitado en el banco** | él, en dos segundos — ⚠️ cambió 30/10: también el sistema, al conciliar su débito (trigger del script 144, A-AUTO-10) |
  * | conciliado | el movimiento quedó vinculado al comprobante | el proceso formal, después |
  *
  * Por eso este cartel mira **el estado del cheque** y no el de conciliación: así un echeq que él ya

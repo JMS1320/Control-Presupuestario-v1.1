@@ -438,7 +438,7 @@ conciliados».*
 
 | | Qué afirma | Quién lo pone | Cuándo |
 |---|---|---|---|
-| `cobrado` (estado del cheque) | **lo vi debitado en el banco** | el usuario | en dos segundos, al verlo |
+| `cobrado` (estado del cheque) | **lo vi debitado en el banco** | el usuario — ⚠️ cambió 30/10: **o el sistema solo**, al conciliar su débito (trigger del script 144, [A-AUTO-10](PENDIENTES.md#a-auto-10)), o el «⚡ Aplicar» del recorrido del balance | en dos segundos, al verlo · o al conciliar el débito |
 | conciliado (del movimiento) | el movimiento quedó **vinculado al comprobante** | el proceso de conciliación | después, con el extracto |
 
 🔑 **La cadena del cheque TERMINA en `cobrado`** (o `rechazado`). **No existe un estado «conciliado»
