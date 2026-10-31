@@ -21,6 +21,7 @@ import { linkExtracto } from "@/lib/extracto/link"
 import type { ConteoCuenta } from "@/lib/conciliacion/propuestas-ejercicio"
 import { PISTA_CTRL_CLICK, esSoloEste, tituloChip, toggleChip } from "@/lib/ui/chips"
 import { COLOR, DetalleTema, ICONO } from "@/components/recorrido-tema-detalle"
+import { PasarTarea, useRevisionesDe } from "@/components/boton-revision"
 
 /** Preferencias de este navegador (si el navegador no deja guardar, se usa el default). */
 const leerPref = (k: string, def: boolean) => { try { const v = localStorage.getItem(k); return v == null ? def : v === "1" } catch { return def } }
@@ -48,6 +49,13 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   const [ocultarRespondidos, setOcultarRespondidos] = useState(false)
   /** 🏦 Filtro por tipo (sólo los temas que traen etiqueta: la conciliación). */
   const [etiquetas, setEtiquetas] = useState<Set<string>>(new Set())
+  /**
+   * 👤 A-FEAT-1454 — las tareas atadas a temas del recorrido («Pasarle a…»: a JMS, a otro usuario o a Claude, con foto).
+   * Viven en las tareas de siempre (`public.revisiones`, A-FEAT-1449), ancladas a «recorrido_balance» por empresa, año y
+   * clave del tema: le llegan a la persona en su 🔔 y se cierran desde ahí.
+   */
+  const { porRegistro: tareas, recargar: recargarTareas } = useRevisionesDe("public", "recorrido_balance")
+  const registroDe = (t: Tema) => `${empresa}:${anioCierre}:${t.clave}`
   /** 🏦 Filtro por cuenta (los chips de «Sin conciliar, por cuenta»: JMS 31/10 «son links pero no filtran el panel izquierdo»). */
   const [cuentas, setCuentas] = useState<Set<string>>(new Set())
   const [claveActual, setClaveActual] = useState<string | null>(null)
@@ -180,7 +188,9 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   useEffect(() => {
     const tecla = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement
-      if (t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT")) return
+      if (t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.tagName === "SELECT")) return
+      // Con un modal abierto encima (p. ej. «Pasarle a…»), las teclas son del modal: Esc no cierra el recorrido.
+      if (document.querySelector('[role="dialog"][data-state="open"]')) return
       if (e.key === "ArrowDown" || e.key === "j") { e.preventDefault(); ir(1) }
       else if (e.key === "ArrowUp" || e.key === "k") { e.preventDefault(); ir(-1) }
       else if (e.key === "Escape") cerrar()
@@ -407,7 +417,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
           {visibles.map((t, i) => (
             <button key={t.clave} id={`tema-${t.clave}`} type="button" onClick={() => { setClaveActual(t.clave); setListaFlotante(false) }}
               className={`w-full text-left px-3 py-2 border-b text-sm flex gap-2 items-start ${i === idx ? "bg-muted" : "hover:bg-muted/50"}`}>
-              <span aria-hidden>{t.respondido ? "✅" : ICONO[t.grupo]}</span>
+              <span aria-hidden>{t.respondido ? "✅" : ICONO[t.grupo]}{!t.respondido && tareas[registroDe(t)] ? "👤" : ""}</span>
               <span className="min-w-0">
                 <span className={`block truncate ${t.respondido ? "text-muted-foreground line-through" : ""}`}>{t.titulo}</span>
                 <span className="block truncate text-xs text-muted-foreground">{t.etiqueta ? `${t.etiqueta} · ` : ""}{t.papel.replace(/ · .*$/, "")}{!t.respondido && !fuenteDe(t) ? " · sin fuente" : ""}</span>
@@ -436,6 +446,21 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
                 resolucionExtra={actual.respondido
                   ? <button type="button" className="ml-2 text-xs underline text-muted-foreground" onClick={reabrir}>reabrir</button> : null} />
 
+              {/* 👤 Si el tema está pasado a alguien, se dice a quién y qué se le pidió (con la foto, si tiene). */}
+              {(() => {
+                const tarea = tareas[registroDe(actual)] as (typeof tareas)[string] & { asignado_a?: string | null } | undefined
+                if (!tarea) return null
+                return (
+                  <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm space-y-1" data-test="recorrido-tarea">
+                    <div className="text-xs font-medium uppercase tracking-wide text-amber-800">👤 Pasado a {tarea.asignado_a ?? "alguien"} · desde el {new Date(tarea.created_at).toLocaleDateString("es-AR")}{tarea.creado_por ? ` · por ${tarea.creado_por}` : ""}</div>
+                    <p className="whitespace-pre-wrap">{tarea.motivo}</p>
+                    {tarea.imagen && <img src={tarea.imagen} alt="foto adjunta" className="max-h-64 rounded border bg-white object-contain" />}
+                    {!!tarea.seguimiento?.length && <p className="text-xs text-muted-foreground">Última respuesta: {tarea.seguimiento[tarea.seguimiento.length - 1].texto}</p>}
+                    <p className="text-xs text-muted-foreground">Se contesta y se cierra desde la 🔔 de quien la recibe (o Principal → Para revisar).</p>
+                  </div>
+                )
+              })()}
+
               <div className="space-y-2 border-t pt-4">
                 <label htmlFor="recorrido-nota" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tu respuesta</label>
                 <textarea id="recorrido-nota" value={nota} onChange={e => setNota(e.target.value)} rows={3}
@@ -445,6 +470,12 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
                   <Button size="sm" onClick={() => responder("resuelto")} disabled={guardando}>✓ Resuelto</Button>
                   <Button size="sm" variant="outline" onClick={() => responder("bien")} disabled={guardando}>👍 Está bien así</Button>
                   <Button size="sm" variant="outline" onClick={() => responder("nota")} disabled={guardando}>📝 Guardar nota (sigue abierto)</Button>
+                  <PasarTarea key={actual.clave} etiqueta="👤 Pasarle a…"
+                    className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-amber-50 px-3 text-sm text-amber-900 hover:bg-amber-100"
+                    ancla={{ schema: "public", tabla: "recorrido_balance", registroId: registroDe(actual), descripcion: `Balance ${empresa} ${etiqueta} · ${actual.titulo}`.slice(0, 300) }}
+                    inicial={{ esTarea: true, motivo: nota.trim() || `${actual.titulo}
+${actual.propuesta ? `Propuesta: ${actual.propuesta}` : actual.que}` }}
+                    onGuardada={() => void recargarTareas()} />
                   <span className="ml-auto flex gap-2">
                     <Button size="sm" variant="ghost" onClick={() => ir(-1)} disabled={idx === 0}>← Anterior</Button>
                     <Button size="sm" variant="ghost" onClick={() => ir(1)} disabled={idx >= visibles.length - 1}>Siguiente →</Button>
