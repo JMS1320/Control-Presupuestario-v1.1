@@ -315,7 +315,9 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
                 <div className="text-xs font-medium uppercase tracking-wide text-slate-700">📄 Fuente — lo objetivo{fuente ? `: ${fuente.origen}` : ""}</div>
                 {fuente
                   ? <p className="text-sm">{fuente.detalle}</p>
-                  : <p className="text-sm text-amber-900">⚠️ Este tema no tiene fuente externa todavía: lo que ves es sólo lo que dice la app (y mi propuesta).</p>}
+                  : <p className="text-sm text-amber-900">⚠️ {actual.fuenteEsperada
+                    ? <>No está cargada en la app. <strong>La fuente es {actual.fuenteEsperada}</strong>: hasta tenerla, lo que ves es sólo lo que dice la app (y mi propuesta).</>
+                    : "Este tema no tiene fuente externa todavía: lo que ves es sólo lo que dice la app (y mi propuesta)."}</p>}
                 {!!fuente?.links?.length && (
                   <div className="flex flex-wrap gap-2 pt-1">
                     {fuente.links.map(l => (

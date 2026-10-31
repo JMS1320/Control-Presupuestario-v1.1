@@ -59,6 +59,8 @@ export interface Tema {
    * el papel del contador. Si un tema no la trae, `fuenteDe` la deduce cuando puede; si no puede, el recorrido lo dice.
    */
   fuente?: FuenteTema
+  /** 📄 Si no hay fuente cargada: el documento que la debería respaldar («el resumen del banco al 30/06»). */
+  fuenteEsperada?: string
   /** Una etiqueta corta del tipo (en la conciliación: «Pareja exacta», «Con diferencia»…), para filtrar y ver de un vistazo. */
   etiqueta?: string
   /** Importe del tema (la conciliación lo muestra en la lista). */
@@ -116,7 +118,7 @@ export function armarTemas(cobertura: CoberturaPapeles | null, pendientes: Pendi
     const p = porClave.get(clave)
     temas.push({
       clave, grupo, titulo: i.dato, papel: i.papel, valor2425: i.valor2425, que: i.detalle,
-      propuesta: i.propuesta, links: i.links ?? [], solapa: i.solapa, idPendiente: i.pendiente, comparacion: i.comparacion, fuente: i.fuente,
+      propuesta: i.propuesta, links: i.links ?? [], solapa: i.solapa, idPendiente: i.pendiente, comparacion: i.comparacion, fuente: i.fuente, fuenteEsperada: i.fuenteEsperada,
       pendiente: p, respondido: p?.estado === "resuelto",
     })
   }

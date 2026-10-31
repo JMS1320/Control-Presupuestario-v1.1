@@ -3598,7 +3598,12 @@ cuántos temas abiertos todavía no tienen fuente o link.
 diferencia (identificación distinta, centavos, IVA de comisión, otro importe, de un solo lado) y las ventas presentadas
 que en la app figuran sin declarar. La tabla muestra lo presentado al lado de la app; el link abre **Ingresos →
 Comprobantes** con sólo esos comprobantes (**Quitar este filtro** vuelve a la lista entera). Lo presentado se carga
-subiendo el zip del libro IVA en Egresos → Subdiarios → «📥 Lo que devolvió el contador».
+subiendo el zip del libro IVA en Egresos → Subdiarios → «📥 Lo que devolvió el contador». Las **compras** van en el
+mismo grupo, más un tema aparte para el **crédito computable declarado distinto del IVA**.
+**La fuente de cada dato**: un saldo de banco, el que informó el banco en su último movimiento (si el extracto no llega
+al 30/06, lo dice); un saldo de inicio, el balance 24/25 presentado; lo demás dice **qué documento es su fuente** y, si
+todavía no está en la app, lo avisa en ámbar. **Tu respuesta se guarda sola** como nota si pasás a otro tema o cerrás
+sin apretar un botón.
 → A-TEST-1297
 
 **Controles que se ven solos** (no hace falta abrir el Excel):

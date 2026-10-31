@@ -198,7 +198,7 @@ import { elegirTcAl } from "@/lib/dolares/tc-cierre"
 import { controlarProvisionAnterior } from "@/lib/balance/control-inicio"
 import { esFilaDeAlerta, solapasDelLibro } from "@/lib/balance/vista-previa"
 import { armarInicioYCierre, textoEstado } from "@/lib/balance/inicio-y-cierre"
-import { armarCobertura, CANTIDAD_DE_DATOS } from "@/lib/balance/cobertura-papeles"
+import { armarCobertura, CANTIDAD_DE_DATOS, datosSinAncla } from "@/lib/balance/cobertura-papeles"
 import { armarTemas, progreso, textoPendienteDe, fuenteDe, linksDeLaApp, sinTresVistas, type Tema as TemaRecorrido } from "@/lib/balance/recorrido"
 import { temasVentasVsArca, temasComprasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
 import { linkComprobantesVenta, ventasDelLink } from "@/lib/ventas/link"
@@ -5354,6 +5354,14 @@ export function correrCasos(): Resultado[] {
     chequear("Recorrido · fuente del banco", "🏦 El saldo de una cuenta tiene como fuente lo que informó el banco (fecha y saldo del último movimiento, link a ese tramo); si el extracto no llega al cierre, lo dice",
       "Extracto del banco — Banco Galicia · saldo del banco · avisa que no llega al cierre · link al tramo", vB,
       vB === "Extracto del banco — Banco Galicia · saldo del banco · avisa que no llega al cierre · link al tramo", "A-FEAT-1439")
+    // 📄 Punto 3: cada dato del catálogo tiene su fuente prevista y su link. Un saldo de INICIO tiene como fuente el balance
+    // 24/25 presentado; uno del cierre sin documento cargado dice cuál es su fuente (no se calla) y lleva el link a la app.
+    const prov = cobB.items.find(i => i.dato.startsWith("Provisión del ejercicio anterior"))
+    const exis = cobB.items.find(i => i.dato === "Existencia valuada al cierre")
+    const v3 = `sin ancla ${datosSinAncla().length} · provisión → ${prov?.fuente?.origen} · existencia → fuente ${exis?.fuente ?? "—"}, esperada «${exis?.fuenteEsperada}» · link ${exis?.links?.[0]?.texto}`
+    const e3 = "sin ancla 0 · provisión → Balance 24/25 presentado (papeles del contador) · existencia → fuente —, esperada «el conteo físico de insumos al 30/06/2026» · link Productivo"
+    chequear("Recorrido · fuente de cada dato", "📄 Ningún dato del catálogo queda sin fuente prevista ni link; el inicio se respalda en el balance 24/25 presentado y lo del cierre dice qué documento falta",
+      e3, v3, v3 === e3, "A-FEAT-1439")
     const vacio = temasVentasVsArca(libro, "MSA", [])
     chequear("Recorrido · ventas vs ARCA", "🧾 Sin nada presentado guardado no se saltea: es un tema «falta información» que dice cómo cargarlo",
       "1 · sin informacion · Lo presentado a ARCA no está cargado en la app", `${vacio.length} · ${vacio[0]?.grupo} · ${vacio[0]?.titulo}`,
