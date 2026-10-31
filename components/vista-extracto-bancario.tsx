@@ -106,11 +106,24 @@ import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
 
 /** 🔽 A-FEAT-1456 — columnas con filtro tipo Excel: el título y el valor de cada fila (el que se ve en la celda). */
 const TITULO_COL: Record<string, string> = {
+  // ⚠️ ampliado 31/10 (JMS: «no todas las columnas tienen filtro y sería bueno que lo tengan»): todas menos Saldo, Control y Orden.
+  fecha: "Fecha", descripcion: "Descripción", debitos: "Débitos", creditos: "Créditos", categ: "CATEG",
+  comprobantes_pagados: "Comprobantes", detalle: "Detalle", motivo_revision: "Motivo Revisión",
+  leyenda2: "CUIT contraparte", leyenda3: "Concepto", leyenda4: "Banco o red", cbu: "CBU destino",
+  nro_comprobante: "Nº operación / autoriz.", nro_terminal: "Terminal / tarjeta", origen: "Origen",
   estado: "Estado", proveedor_nombre: "Proveedor", centro_de_costo: "Centro Costo", contable: "Contable", interno: "Interno",
   nro_cuenta: "Nro Cuenta", template_id: "Template", template_cuota_id: "Cuota", comprobante_arca_id: "Factura ARCA", leyenda1: "Nombre / comercio",
 }
 const vinculo = (x: unknown) => (x ? "vinculado" : null)
+const importeCol = (x: unknown) => (Number(x) ? Number(x).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : null)
 const VALOR_COL: Record<string, (m: any) => string | null | undefined> = {
+  // la fecha se agrupa por MES (por día serían cientos de valores)
+  fecha: m => (m.fecha ? String(m.fecha).slice(0, 7).split("-").reverse().join("/") : null),
+  descripcion: m => m.descripcion, debitos: m => importeCol(m.debitos), creditos: m => importeCol(m.creditos),
+  categ: m => m.categ, comprobantes_pagados: m => m.comprobantes_pagados, detalle: m => m.detalle,
+  motivo_revision: m => m.motivo_revision, leyenda2: m => m.leyendas_adicionales_2, leyenda3: m => m.leyendas_adicionales_3,
+  leyenda4: m => m.leyendas_adicionales_4, cbu: m => m.tipo_de_movimiento, nro_comprobante: m => m.numero_de_comprobante,
+  nro_terminal: m => m.numero_de_terminal, origen: m => m.origen,
   estado: m => (esHistorico(m.estado) ? "histórico" : m.estado),
   proveedor_nombre: m => m.proveedor_nombre, centro_de_costo: m => m.centro_de_costo, contable: m => m.contable,
   interno: m => m.interno, nro_cuenta: m => m.nro_cuenta,
@@ -965,7 +978,11 @@ ${texto.trim()}` : texto.trim()
   const movimientosVisibles = useMemo(() => filtrarPorColumnas(movimientosSinColumnas, filtrosCol, VALOR_COL),
     [movimientosSinColumnas, filtrosCol])
   /** Las opciones de cada columna: los valores de lo filtrado por TODO LO DEMÁS (como en Excel). */
-  const opcionesCol = (col: string) => opcionesDeColumna(filtrarPorColumnas(movimientosSinColumnas, { ...filtrosCol, [col]: null }, VALOR_COL), VALOR_COL[col])
+  // Se calculan UNA vez por cambio de datos o de filtros (no en cada tecla): son ~25 columnas sobre hasta 5.000 filas.
+  const opcionesPorCol = useMemo(() => Object.fromEntries(Object.keys(VALOR_COL).map(col =>
+    [col, opcionesDeColumna(filtrarPorColumnas(movimientosSinColumnas, { ...filtrosCol, [col]: null }, VALOR_COL), VALOR_COL[col])])),
+  [movimientosSinColumnas, filtrosCol])
+  const opcionesCol = (col: string) => opcionesPorCol[col] ?? []
   const encabezado = (col: string) => (
     <FiltroColumna titulo={TITULO_COL[col]} opciones={opcionesCol(col)} seleccion={filtrosCol[col] ?? null}
       onChange={s => setFiltrosCol(f => ({ ...f, [col]: s }))} />
@@ -4870,17 +4887,17 @@ ${marca}` : marca
                           derecha y se pierde de qué fila se está leyendo.
                           ⚠️ Lleva fondo propio: sin él se ve pasar el contenido por debajo.
                         */}
-                        <TableHead className="sticky left-0 z-20 bg-gray-50">Fecha</TableHead>
-                        <TableHead>Descripción</TableHead>
-                        <TableHead className="text-right">Débitos</TableHead>
-                        <TableHead className="text-right">Créditos</TableHead>
+                        <TableHead className="sticky left-0 z-20 bg-gray-50">{encabezado('fecha')}</TableHead>
+                        <TableHead>{encabezado('descripcion')}</TableHead>
+                        <TableHead className="text-right">{encabezado('debitos')}</TableHead>
+                        <TableHead className="text-right">{encabezado('creditos')}</TableHead>
                         {col('saldo') && <TableHead className="text-right">Saldo</TableHead>}
-                        {col('categ') && <TableHead>CATEG</TableHead>}
+                        {col('categ') && <TableHead>{encabezado('categ')}</TableHead>}
                         <TableHead>{encabezado('estado')}</TableHead>
                         {col('proveedor_nombre') && <TableHead>{encabezado('proveedor_nombre')}</TableHead>}
-                        {col('comprobantes_pagados') && <TableHead>Comprobantes</TableHead>}
-                        {col('detalle') && <TableHead>Detalle</TableHead>}
-                        {col('motivo_revision') && <TableHead>Motivo Revisión</TableHead>}
+                        {col('comprobantes_pagados') && <TableHead>{encabezado('comprobantes_pagados')}</TableHead>}
+                        {col('detalle') && <TableHead>{encabezado('detalle')}</TableHead>}
+                        {col('motivo_revision') && <TableHead>{encabezado('motivo_revision')}</TableHead>}
                         {col('centro_de_costo') && <TableHead>{encabezado('centro_de_costo')}</TableHead>}
                         {col('contable') && <TableHead>{encabezado('contable')}</TableHead>}
                         {col('interno') && <TableHead>{encabezado('interno')}</TableHead>}
@@ -4889,13 +4906,13 @@ ${marca}` : marca
                         {col('template_cuota_id') && <TableHead>{encabezado('template_cuota_id')}</TableHead>}
                         {col('comprobante_arca_id') && <TableHead>{encabezado('comprobante_arca_id')}</TableHead>}
                         {col('leyenda1') && <TableHead>{encabezado('leyenda1')}</TableHead>}
-                        {col('leyenda2') && <TableHead>CUIT contraparte</TableHead>}
-                        {col('leyenda3') && <TableHead>Concepto</TableHead>}
-                        {col('leyenda4') && <TableHead>Banco o red</TableHead>}
-                        {col('cbu') && <TableHead>CBU destino</TableHead>}
-                        {col('nro_comprobante') && <TableHead>Nº operación / autoriz.</TableHead>}
-                        {col('nro_terminal') && <TableHead>Terminal / tarjeta</TableHead>}
-                        {col('origen') && <TableHead>Origen</TableHead>}
+                        {col('leyenda2') && <TableHead>{encabezado('leyenda2')}</TableHead>}
+                        {col('leyenda3') && <TableHead>{encabezado('leyenda3')}</TableHead>}
+                        {col('leyenda4') && <TableHead>{encabezado('leyenda4')}</TableHead>}
+                        {col('cbu') && <TableHead>{encabezado('cbu')}</TableHead>}
+                        {col('nro_comprobante') && <TableHead>{encabezado('nro_comprobante')}</TableHead>}
+                        {col('nro_terminal') && <TableHead>{encabezado('nro_terminal')}</TableHead>}
+                        {col('origen') && <TableHead>{encabezado('origen')}</TableHead>}
                         {col('control') && <TableHead className="text-right">Control</TableHead>}
                         {col('orden') && <TableHead className="text-right">Orden</TableHead>}
                         <TableHead className="w-8 text-center">📝</TableHead>
