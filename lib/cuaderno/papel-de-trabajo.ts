@@ -43,7 +43,7 @@ export function armarPapelDeTrabajo(t: Tema, empresa: string, etiqueta: string, 
   const f = fuenteDe(t)
   bloques.push({ id: id(6), tipo: "texto", texto: f
     ? ["## 📄 Fuente — " + f.origen, f.detalle, ...(f.links ?? []).map(l => `- ${l.texto}: ${l.href}`)].join("\n")
-    : "## 📄 Fuente\n⚠️ Este tema no tiene fuente externa: lo de arriba es sólo lo que dice la app." })
+    : `## 📄 Fuente\n⚠️ ${t.fuenteEsperada ? `No está cargada en la app. La fuente es ${t.fuenteEsperada}.` : "Este tema no tiene fuente externa"}: lo de arriba es sólo lo que dice la app.` })
   if (comparacion && comparacion.celdas.length) {
     bloques.push({ id: id(2), tipo: "texto", texto: `## ${comparacion.titulo}` })
     bloques.push({ id: id(3), tipo: "tabla", celdas: comparacion.celdas })

@@ -16,7 +16,9 @@
 import type { LibroDiario } from "./libro-diario"
 import { claveSubdiario } from "./ejercicio"
 import { filasComprasConsensuado, filasVentasConsensuado, LIBRO_DIARIO_CONSENSUADO } from "./libro-diario-consensuado"
-import { cruzarVentas, validarZips, GRUPOS_VENTAS, type FilaDiferencia, type ZipLibroIva } from "./diferencias-vs-arca"
+import { cruzarVentas, cruzarCompras, validarZips, GRUPOS_VENTAS, type FilaDiferencia, type ZipLibroIva } from "./diferencias-vs-arca"
+import { TIPOS_SIN_CREDITO_COMPRAS } from "@/lib/subdiarios/cuadratura"
+import { linkFacturas } from "@/lib/egresos/link-facturas"
 import type { ComprobantePresentado, TotalesVentasPresentados } from "@/lib/subdiarios/libro-presentado"
 import { celdaNumero, type Comparacion } from "@/lib/cuaderno/papel-de-trabajo"
 import { linkComprobantesVenta } from "@/lib/ventas/link"
@@ -31,6 +33,8 @@ export interface DdjjGuardada {
   /** `null` = se guardó antes de que la tabla guardara las ventas (script 145): ese mes no se puede cruzar. */
   ventas: ComprobantePresentado[] | null
   totales_ventas: TotalesVentasPresentados | null
+  /** Las compras declaradas (`comprobantes`, script 107). Opcional: los temas de ventas no las usan. */
+  compras?: ComprobantePresentado[] | null
 }
 
 const mesDe = (sub: string) => `${sub.slice(5, 7)}/${sub.slice(0, 4)}`
@@ -48,14 +52,18 @@ const QUE_ES: Record<string, string> = {
   [GRUPOS_VENTAS.soloApp]: "Están en la app y no se encontraron en lo presentado a ARCA.",
 }
 
+/** Dónde está cada importe en `FilaDiferencia.arca/app`: ventas (5) y compras (6, con otros tributos). */
+const IDX_VENTAS = { neto: 0, iva: 3, total: 4 }
+const IDX_COMPRAS = { neto: 0, iva: 4, total: 5 }
+
 /** La «foto» de lo presentado, comprobante por comprobante, contra la app — con la diferencia como fórmula. */
-function tablaDe(filas: FilaDiferencia[]): Comparacion {
-  const cab = ["Mes", "Cliente", "Comprobante en la app", "Comprobante presentado", "Neto app", "Neto ARCA", "IVA app", "IVA ARCA", "Total app", "Total ARCA", "Dif. total (ARCA − app)"]
+function tablaDe(filas: FilaDiferencia[], quien = "Cliente", ix = IDX_VENTAS): Comparacion {
+  const cab = ["Mes", quien, "Comprobante en la app", "Comprobante presentado", "Neto app", "Neto ARCA", "IVA app", "IVA ARCA", "Total app", "Total ARCA", "Dif. total (ARCA − app)"]
   const cuerpo = filas.map((f, i) => {
     const r = i + 2
     return [mesDe(f.subdiario), f.denominacion, f.compApp || "— (no está)", f.compArca || "— (no está)",
-      celdaNumero(f.app?.[0] ?? 0), celdaNumero(f.arca?.[0] ?? 0), celdaNumero(f.app?.[3] ?? 0), celdaNumero(f.arca?.[3] ?? 0),
-      celdaNumero(f.app?.[4] ?? 0), celdaNumero(f.arca?.[4] ?? 0), `=J${r}-I${r}`]
+      celdaNumero(f.app?.[ix.neto] ?? 0), celdaNumero(f.arca?.[ix.neto] ?? 0), celdaNumero(f.app?.[ix.iva] ?? 0), celdaNumero(f.arca?.[ix.iva] ?? 0),
+      celdaNumero(f.app?.[ix.total] ?? 0), celdaNumero(f.arca?.[ix.total] ?? 0), `=J${r}-I${r}`]
   })
   return { titulo: "Lo presentado a ARCA contra la app, comprobante por comprobante", celdas: [cab, ...cuerpo] }
 }
@@ -131,7 +139,7 @@ export function temasVentasVsArca(libro: LibroDiario, empresa: string, guardadas
       propuesta: hacer.join(" "),
       fuente: fuenteDeMeses(filas.map(f => f.subdiario), v.porSubdiario, conVentas),
       links: linkVer(ids),
-      comparacion: tablaDe(filas),
+      comparacion: tablaDe(filas, "Cliente", IDX_VENTAS),
       importe: difTotal,
     })
   }
@@ -180,5 +188,85 @@ export function temasVentasVsArca(libro: LibroDiario, empresa: string, guardadas
     fuente: fuenteDeMeses(csvMal.map(c => c.subdiario), v.porSubdiario, conVentas),
   })
 
+  return temas
+}
+
+/**
+ * 🧾 **COMPRAS contra lo presentado** (A-FEAT-1439 punto 1, JMS 31/10: «adelante con 1, 2 y 3»). Mismo criterio que
+ * las ventas: el cruce es el de «Diferencias vs ARCA» (`cruzarCompras`, con el cuadro consensuado del ejercicio), un
+ * tema por tipo de diferencia, la tabla de los dos lados y el link a las facturas. Y uno más que ese cruce NO ve,
+ * porque compara importes: el **crédito computable declarado distinto del IVA** (la NC 3-10183421 de Federación,
+ * may-26, declarada con crédito 0 — A-DAT-87 punto 12).
+ */
+export function temasComprasVsArca(libro: LibroDiario, empresa: string, guardadas: DdjjGuardada[]): Tema[] {
+  const ej = libro.ejercicio
+  const meses = ej.subdiarios.map(s => claveSubdiario(s.anio, s.mes))
+  const papel = "Compras contra lo presentado a ARCA"
+  const conCompras = guardadas.filter(g => Array.isArray(g.compras))
+  if (!conCompras.length) return []   // el aviso de «no está cargado» ya lo da el tema de ventas
+  const zips: ZipLibroIva[] = conCompras.map(g => ({
+    archivo: g.archivo ?? `DDJJ ${g.periodo}`, periodo: g.periodo, secuencia: g.secuencia,
+    compras: g.compras ?? [], ventas: [], totalesVentas: null,
+  }))
+  const v = validarZips(zips, ej)
+  const k = LIBRO_DIARIO_CONSENSUADO[empresa]?.[ej.anioCierre]
+  const compras = filasComprasConsensuado(libro.compras).filter(f => meses.includes(f.subdiario))
+  const cc = cruzarCompras(compras, v.porSubdiario, k)
+  const temas: Tema[] = []
+  const pesos = (n: number) => `$ ${n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const linkVer = (ids: string[]) => ids.length
+    ? [{ texto: `${ids.length === 1 ? "La factura" : `Las ${ids.length} facturas`} en Egresos → Facturas`, href: linkFacturas(ids, empresa) }]
+    : []
+  const fuenteCompras = (subs: string[], links: { texto: string; href: string }[] = []): FuenteTema => {
+    const f = fuenteDeMeses(subs, v.porSubdiario, conCompras)
+    return { ...f, detalle: f.detalle.replace("Las ventas del libro IVA", "Las compras del libro IVA"), links }
+  }
+
+  const porGrupo = new Map<string, FilaDiferencia[]>()
+  for (const f of cc.filas) porGrupo.set(f.grupo, [...(porGrupo.get(f.grupo) ?? []), f])
+  for (const [grupo, filas] of [...porGrupo.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const ids = [...new Set(filas.map(f => f.appId).filter((x): x is string => !!x))]
+    const difTotal = Math.round(filas.reduce((s, f) => s + (f.dif[5] ?? 0), 0) * 100) / 100
+    const difIva = Math.round(filas.reduce((s, f) => s + (f.dif[4] ?? 0), 0) * 100) / 100
+    const pdfs = [...new Set(filas.map(f => f.link).filter((x): x is string => !!x))]
+    temas.push({
+      clave: `arca:compras:${slug(grupo)}`, grupo: "arca", papel, respondido: false,
+      titulo: `Compras · ${sinNumero(grupo)} (${filas.length})`,
+      etiqueta: sinNumero(grupo).slice(0, 40),
+      que: `${filas[0].quePasa} ${filas.length} comprobante(s); lo presentado difiere de la app en ${pesos(difTotal)} de total y ${pesos(difIva)} de IVA.`,
+      propuesta: [...new Set(filas.map(f => f.queHacer))].join(" "),
+      fuente: fuenteCompras(filas.map(f => f.subdiario), pdfs.map((href, i) => ({ texto: pdfs.length === 1 ? "El PDF del comprobante" : `PDF ${i + 1}`, href }))),
+      links: linkVer(ids),
+      comparacion: tablaDe(filas, "Proveedor", IDX_COMPRAS),
+      importe: difTotal,
+    })
+  }
+
+  // El crédito computable declarado distinto del IVA del mismo comprobante (lo que el cruce por importes no ve).
+  const credito: Array<{ sub: string; p: ComprobantePresentado; dif: number }> = []
+  for (const [sub, z] of v.porSubdiario) for (const p of z.compras) {
+    if (TIPOS_SIN_CREDITO_COMPRAS.includes(p.tipo)) continue
+    const dif = Math.round(((p.creditoFiscal ?? 0) - (p.iva ?? 0)) * 100) / 100
+    if (Math.abs(dif) > 0.05) credito.push({ sub, p, dif })
+  }
+  if (credito.length) {
+    const total = Math.round(credito.reduce((s, c) => s + c.dif, 0) * 100) / 100
+    const app = new Map(compras.map(f => [`${f.puntoVenta ?? 0}-${f.numero}-${f.cuit.replace(/\D/g, "")}`, f.asiento.id]))
+    const ids = credito.map(c => app.get(`${c.p.puntoVenta}-${c.p.numero}-${c.p.cuit}`)).filter((x): x is string => !!x)
+    temas.push({
+      clave: "arca:compras:credito-computable", grupo: "arca", papel, respondido: false,
+      titulo: `Compras · crédito computable declarado distinto del IVA (${credito.length})`,
+      etiqueta: "Crédito computable",
+      que: `En lo presentado, el crédito fiscal computable de ${credito.length === 1 ? "este comprobante" : "estos comprobantes"} no es su IVA: ${credito.map(c => `${c.p.denominacion} ${c.p.tipo}-${c.p.puntoVenta}-${c.p.numero} (${mesDe(c.sub)}: IVA ${pesos(c.p.iva ?? 0)}, computado ${pesos(c.p.creditoFiscal)})`).join(" · ")}. Efecto en el crédito declarado: ${pesos(Math.abs(total))} ${total > 0 ? "de más" : "de menos"} que el IVA de los comprobantes.`,
+      propuesta: "Llevarlo al contador: si es un error de la presentación, se rectifica el mes; si es a propósito (IVA no computable), «👍 Está bien así» con el motivo.",
+      fuente: fuenteCompras(credito.map(c => c.sub)),
+      links: linkVer(ids),
+      comparacion: { titulo: "IVA del comprobante contra el crédito computado en lo presentado", celdas: [
+        ["Mes", "Proveedor", "Comprobante", "IVA", "Crédito computado", "Diferencia (computado − IVA)"],
+        ...credito.map((c, i) => [mesDe(c.sub), c.p.denominacion, `${c.p.tipo}-${c.p.puntoVenta}-${c.p.numero}`, celdaNumero(c.p.iva), celdaNumero(c.p.creditoFiscal), `=E${i + 2}-D${i + 2}`]),
+      ] },
+      importe: total,
+    })
+  }
   return temas
 }

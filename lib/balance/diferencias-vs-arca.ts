@@ -209,7 +209,10 @@ export interface FilaDiferencia {
   orden: string
   /** 🔗 El id del comprobante en la app (ventas), para el link del recorrido (A-FEAT-1439). Vacío = sólo en ARCA. */
   appId?: string
-  /** Ventas: los importes de cada lado (neto, no gravado, exento, IVA, total) — la «foto» de lo presentado en el recorrido. */
+  /**
+   * Los importes de cada lado — la «foto» de lo presentado en el recorrido (A-FEAT-1439). Ventas: neto, no gravado,
+   * exento, IVA, total. Compras: neto, no gravado, exento, otros tributos, IVA, total.
+   */
   arca?: number[]
   app?: number[]
 }
@@ -311,6 +314,7 @@ export function cruzarCompras(compras: FilaCompraConsensuada[], porSub: Map<stri
       grupo: c.grupo, subdiario: a.subdiario, fecha: a.fecha, denominacion: a.denominacion, cuit: a.cuit,
       compApp: identApp(tipoApp(a), a.puntoVenta, a.numero), compArca: identArca(p),
       dif: c.dif, modificaIva: c.modificaIva, quePasa, queHacer: c.queHacer, link,
+      appId: a.asiento.id, arca: [...importesArcaCompra(p)], app: [...importesAppCompra(a)],
       orden: `${a.fecha ?? ""}|${String(a.puntoVenta ?? 0).padStart(6, "0")}|${String(a.numero ?? 0).padStart(10, "0")}`,
     })
   }
@@ -318,7 +322,7 @@ export function cruzarCompras(compras: FilaCompraConsensuada[], porSub: Map<stri
     const v = importesArcaCompra(p)
     filas.push({
       grupo: GRUPOS_COMPRAS.soloArca, subdiario: p.sub, fecha: isoFecha(p.fecha), denominacion: p.denominacion, cuit: p.cuit,
-      compApp: "", compArca: identArca(p), dif: v, modificaIva: modificaIva(v[4]),
+      compApp: "", compArca: identArca(p), dif: v, modificaIva: modificaIva(v[4]), arca: [...v],
       quePasa: "Está presentado en ARCA y no se encontró en la app.", queHacer: "Cargarlo en la app, o rectificar la DDJJ si no corresponde.",
       orden: `${isoFecha(p.fecha) ?? ""}|${p.numero}`,
     })
@@ -328,6 +332,7 @@ export function cruzarCompras(compras: FilaCompraConsensuada[], porSub: Map<stri
     filas.push({
       grupo: GRUPOS_COMPRAS.soloApp, subdiario: a.subdiario, fecha: a.fecha, denominacion: a.denominacion, cuit: a.cuit,
       compApp: identApp(tipoApp(a), a.puntoVenta, a.numero), compArca: "", dif: v, modificaIva: modificaIva(v[4]),
+      appId: a.asiento.id, app: [...importesAppCompra(a)],
       quePasa: "Está en la app y no se encontró en lo presentado a ARCA.", queHacer: "Revisar: presentarlo (rectificativa) o sacarlo / reimputarlo en la app.",
       orden: `${a.fecha ?? ""}|${a.numero ?? 0}`,
     })

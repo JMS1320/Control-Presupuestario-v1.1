@@ -25,7 +25,8 @@ import type { TemplatesDelEjercicio } from "./templates-libro"
 import type { SaldosAnteriores } from "./ajustes-balance"
 import type { LibroDiario } from "./libro-diario"
 import { linkTemplates } from "@/lib/impuestos/planilla"
-import { linkExtracto } from "@/lib/extracto/link"
+import { linkExtracto, rangoQueContiene } from "@/lib/extracto/link"
+import type { FuenteTema } from "./recorrido"
 import { linkHistorico } from "@/lib/egresos/link-facturas"
 import { celdaNumero, type Comparacion } from "@/lib/cuaderno/papel-de-trabajo"
 
@@ -91,6 +92,10 @@ export interface ItemCobertura {
   pendiente?: string
   /** 🧭 A-FEAT-1430: qué se propone hacer, con números («diferencia $ X (Y %) → conciliar esto contra esto»). */
   propuesta?: string
+  /** 📄 A-FEAT-1439: lo objetivo de ESTE año (el banco, lo presentado…), no el valor 24/25. */
+  fuente?: FuenteTema
+  /** 📄 A-FEAT-1439 punto 3: el documento que DEBERÍA respaldar el dato, cuando todavía no está cargado en la app. */
+  fuenteEsperada?: string
   /** 🔗 Dónde vive el dato, para abrirlo filtrado en otra pestaña. */
   links?: LinkDato[]
   /** 📓 La tabla A contra B del papel de trabajo (celdas del Cuaderno, con la diferencia como fórmula). */
@@ -101,7 +106,7 @@ export interface ItemCobertura {
 export interface LinkDato { texto: string; href: string }
 
 /** Lo que devuelve cada regla. */
-type Resultado = { estado: EstadoCobertura; detalle: string; propuesta?: string; links?: LinkDato[]; comparacion?: Comparacion }
+type Resultado = { estado: EstadoCobertura; detalle: string; propuesta?: string; links?: LinkDato[]; comparacion?: Comparacion; fuente?: FuenteTema }
 
 export interface CoberturaPapeles {
   items: ItemCobertura[]
@@ -111,11 +116,30 @@ export interface CoberturaPapeles {
 const pesos = (n: number) => `$ ${n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
 
-type Regla = Omit<ItemCobertura, "estado" | "detalle" | "propuesta" | "links" | "comparacion"> & { evaluar: (d: DatosCobertura) => Resultado }
+type Regla = Omit<ItemCobertura, "estado" | "detalle" | "propuesta" | "links" | "comparacion" | "fuente" | "fuenteEsperada"> & { evaluar: (d: DatosCobertura) => Resultado }
 
 /** Una cuenta del papel 07: sale si tiene movimientos y su cadena cierra; si no tiene movimientos, falta el extracto. */
 function cuentaBanco(nombre: RegExp, etiqueta: string, cuentaId: string): Regla["evaluar"] {
-  return d => conLink(d, cuentaId, etiqueta, evaluarCuentaBanco(d, nombre, etiqueta))
+  return d => ({ ...conLink(d, cuentaId, etiqueta, evaluarCuentaBanco(d, nombre, etiqueta)), fuente: fuenteBanco(d, nombre, etiqueta, cuentaId) ?? undefined })
+}
+/**
+ * 📄 A-FEAT-1439 punto 2: la FUENTE de un saldo de banco es lo que informó el banco — el saldo de su último movimiento
+ * cargado, con la fecha y el link a ese tramo del extracto. Si el extracto termina antes del cierre, se dice: ese
+ * saldo no es todavía el del 30/06.
+ */
+function fuenteBanco(d: DatosCobertura, nombre: RegExp, etiqueta: string, cuentaId: string): FuenteTema | null {
+  const c = d.bancarios?.cadenas?.find(x => nombre.test(x.cuenta))
+  if (!c || !c.hasta || c.saldoAlCierre == null) return null
+  const cierre = d.libro.ejercicio?.fechaCierre ?? null
+  const dmy = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`
+  const llega = !cierre || c.hasta >= cierre
+  return {
+    origen: `Extracto del banco — ${etiqueta}`,
+    detalle: `Saldo que informó el banco en su último movimiento cargado (${dmy(c.hasta)}): ${pesos(c.saldoAlCierre)}.`
+      + (llega ? "" : ` ⚠️ El extracto llega hasta el ${dmy(c.hasta)}: falta cargar hasta el cierre (${dmy(cierre!)}) para tener el saldo al 30/06.`)
+      + (c.saltos ? ` La cadena de saldos tiene ${c.saltos} salto(s).` : ""),
+    links: [{ texto: `Los últimos movimientos de ${etiqueta} en el extracto`, href: linkExtracto({ cuenta: cuentaId, ...rangoQueContiene([c.hasta], 15) }) }],
+  }
 }
 /** 🔗 Agrega el link al extracto de la cuenta (todo el ejercicio) a lo que no sale. */
 function conLink(d: DatosCobertura, cuentaId: string, etiqueta: string, r: Resultado): Resultado {
@@ -391,15 +415,92 @@ const REGLAS: Regla[] = [
     } },
 ]
 
+/**
+ * 📄🗂️ **LA FUENTE Y EL LINK DE CADA DATO** — A-FEAT-1439 punto 3 (JMS 31/10: «siempre con la posibilidad de ver lo
+ * objetivo, no sólo tu propuesta… y el link a ver» el dato en la app).
+ *
+ * - `inicio`: el dato es un saldo AL INICIO → su fuente objetiva ES el balance 24/25 presentado (los papeles del
+ *   contador): ahí el valor 24/25 sí es la fuente, no una referencia.
+ * - `esperada`: para lo del ejercicio o del cierre, qué documento lo respalda. Si no está cargado en la app, el
+ *   recorrido lo dice («la fuente es…») en vez de callarse.
+ * - `app`: la pantalla donde vive el dato (filtrada cuando la pantalla lo permite), si la regla no trajo un link propio.
+ */
+const SECCION = {
+  facturas: { texto: "Egresos → Facturas MSA", href: "/?seccion=egresos&tab=facturas-msa" },
+  templates: { texto: "Egresos → Templates", href: "/?seccion=egresos&tab=templates" },
+  cobros: { texto: "Ingresos → Cobros", href: "/?seccion=ingresos&empresa=MSA&vista=cobros" },
+  comprobantesVenta: { texto: "Ingresos → Comprobantes", href: "/?seccion=ingresos&empresa=MSA&vista=comprobantes" },
+  productivo: { texto: "Productivo", href: "/?seccion=productivo" },
+  extracto: (cuenta: string, texto: string) => ({ texto: `Extracto → ${texto}`, href: linkExtracto({ cuenta }) }),
+}
+const ANCLAS: Record<string, { inicio?: true; esperada?: string; app?: LinkDato[] }> = {
+  "Banco Galicia (pesos)": { esperada: "el resumen del Banco Galicia al 30/06/2026" },
+  "Banco Santander": { esperada: "el resumen del Banco Santander al 30/06/2026" },
+  "Banco Provincia": { esperada: "el resumen del Banco Provincia al 30/06/2026" },
+  "Caja": { esperada: "el arqueo (o la rendición) de la caja al 30/06/2026" },
+  "Galicia cuenta USD": { esperada: "el resumen de la cuenta en dólares al 30/06/2026" },
+  "Caja USD": { esperada: "el arqueo de la caja en dólares al 30/06/2026" },
+  "Broker GSEC": { esperada: "el resumen del broker GSEC al 30/06/2026" },
+  "FCI Galicia: saldo y resultado financiero": { esperada: "el resumen del fondo al 30/06/2025 y al 30/06/2026 (cuotapartes y valor de la cuotaparte)", app: [SECCION.extracto("msa_galicia", "Galicia (suscripciones y rescates)")] },
+  "Movimientos de la cuenta USD y compra-venta con su TC": { esperada: "los boletos de compra-venta de moneda del banco" },
+  "Deudores por ventas y cheques en cartera": { esperada: "lo presentado a ARCA (ventas) y el extracto (cobros)", app: [SECCION.cobros] },
+  "Proveedores a pagar": { esperada: "la cuenta corriente o el saldo informado por cada proveedor al 30/06/2026", app: [SECCION.facturas] },
+  "Tarjeta Visa a pagar": { esperada: "el resumen de la tarjeta con cierre más cercano al 30/06/2026", app: [SECCION.extracto("tarjeta_visa_business_msa", "VISA Business MSA")] },
+  "Facturas JMS ($ 15 M) y AMS ($ 10,5 M) del 30/06/2025": { inicio: true, app: [SECCION.facturas] },
+  "Cheques pendientes de débito al inicio (5 cheques)": { inicio: true, app: [{ texto: "Extracto Galicia, jul-ago 2025 (sus débitos)", href: linkExtracto({ cuenta: "msa_galicia", desde: "2025-07-01", hasta: "2025-08-31" }) }] },
+  "Provisión del ejercicio anterior (PAM 2-31 + Magdalena 10-269)": { inicio: true },
+  "«Pendiente de emitir por arrendamiento ganadero — Plácido Alberto Martínez»": { inicio: true },
+  "Anticipo a Magdalena Martínez": { inicio: true, app: [SECCION.facturas] },
+  "Inmobiliario (por partida)": { esperada: "las boletas de ARBA del ejercicio", app: [SECCION.templates] },
+  "Red Vial (por partida)": { esperada: "las boletas de Red Vial del ejercicio", app: [SECCION.templates] },
+  "Adelantos para el próximo balance (cuota 2/4, Red Vial Rojas)": { inicio: true, app: [SECCION.templates] },
+  "Automotor por vehículo": { esperada: "las boletas de patente de cada vehículo", app: [SECCION.templates] },
+  "Retiros directos y aportes de PAM": { esperada: "el extracto: las transferencias a los socios y desde PAM", app: [SECCION.extracto("msa_galicia", "Galicia")] },
+  "Retiros indirectos: pagos a terceros, impuestos de PAM, Libertad 50/50, tarjetas": { esperada: "los comprobantes pagados por cuenta de cada socio", app: [SECCION.extracto("msa_galicia", "Galicia")] },
+  "Cuenta socios por socio (MA, Manuel, Soledad, Mechi, Andrés, José, PAM)": { inicio: true },
+  "Extracciones USD (devolución de aporte de PAM)": { inicio: true },
+  "Cruce MSA ↔ PAM (el mismo movimiento visto de los dos lados)": { esperada: "los extractos de MSA y de PAM", app: [SECCION.extracto("msa_galicia", "Galicia MSA"), SECCION.extracto("pam_galicia", "Galicia PAM")] },
+  "Galicia: gastos e impuestos bancarios por mes": { esperada: "el resumen del Banco Galicia (gastos e impuestos de cada mes)", app: [SECCION.extracto("msa_galicia", "Galicia")] },
+  "Créditos pagados e intereses (descuento de cheques, saldo deudor)": { esperada: "el resumen del banco (intereses y descuentos)", app: [SECCION.extracto("msa_galicia", "Galicia")] },
+  "Santander y Provincia por mes": { esperada: "los resúmenes de Santander y Provincia", app: [SECCION.extracto("msa_santander", "Santander")] },
+  "Fondo fijo (caja)": { esperada: "las rendiciones de caja del ejercicio", app: [SECCION.extracto("caja_general", "Caja general")] },
+  "Subdiarios de compras y ventas por mes y cuenta": { esperada: "lo presentado a ARCA (libro IVA de cada mes): ver el grupo «🧾 Contra lo presentado a ARCA»", app: [SECCION.facturas, SECCION.comprobantesVenta] },
+  "Cabezas por categoría al inicio (balance · campo · SENASA)": { inicio: true, app: [SECCION.productivo] },
+  "Kg, $/kg y $/cabeza por categoría al inicio": { inicio: true, app: [SECCION.productivo] },
+  "Valuación al cierre por categoría": { esperada: "los precios de mercado al cierre (Cañuelas / MAG) y el conteo de campo", app: [SECCION.productivo] },
+  "Cuadre: inicio ± movimientos = cierre": { esperada: "las existencias de SENASA y las actas de campo", app: [SECCION.productivo] },
+  "Ganancia por tenencia de la hacienda": { esperada: "la valuación al inicio y al cierre de cada categoría", app: [SECCION.productivo] },
+  "Soja al inicio y al cierre (cuadre de toneladas)": { inicio: true, app: [SECCION.productivo] },
+  "Stock declarado al inicio, producto por producto": { inicio: true, app: [SECCION.productivo] },
+  "Existencia valuada al cierre": { esperada: "el conteo físico de insumos al 30/06/2026", app: [SECCION.productivo] },
+  "Compras y consumos de insumos del ejercicio": { esperada: "las facturas de compra y las órdenes de uso", app: [SECCION.productivo] },
+  "Pasturas por año de siembra": { inicio: true, app: [SECCION.productivo] },
+  "Sementera de soja: el detalle (2 FC ACREN + 2 Moragues)": { inicio: true, app: [SECCION.facturas] },
+  "Sementeras al cierre": { esperada: "las órdenes agrícolas ejecutadas y sus facturas", app: [SECCION.productivo] },
+}
+
+/** Le pone a cada dato su fuente (o la que se espera) y su link a la app, sin pisar lo que trajo la regla. */
+function anclar(i: ItemCobertura): ItemCobertura {
+  const a = ANCLAS[i.dato]
+  if (!a) return i
+  const fuente = i.fuente ?? (a.inicio ? { origen: "Balance 24/25 presentado (papeles del contador)", detalle: `Lo declarado al 30/06/2025: ${i.valor2425}.` } : undefined)
+  return { ...i, fuente, fuenteEsperada: fuente ? undefined : a.esperada, links: i.links?.length ? i.links : (a.app ?? i.links) }
+}
+
 /** Evalúa todo el catálogo. Una regla que tira error no tumba el resto: queda como «error» con el motivo. */
 export function armarCobertura(d: DatosCobertura): CoberturaPapeles {
   const items: ItemCobertura[] = REGLAS.map(({ evaluar, ...r }) => {
-    try { return { ...r, ...evaluar(d) } }
-    catch (e) { return { ...r, estado: "error" as EstadoCobertura, detalle: `no se pudo evaluar: ${(e as Error).message}` } }
+    try { return anclar({ ...r, ...evaluar(d) }) }
+    catch (e) { return anclar({ ...r, estado: "error" as EstadoCobertura, detalle: `no se pudo evaluar: ${(e as Error).message}` }) }
   })
   const cuenta = Object.fromEntries((Object.keys(ICONO) as EstadoCobertura[]).map(k => [k, 0])) as Record<EstadoCobertura, number>
   items.forEach(i => { cuenta[i.estado]++ })
   return { items, cuenta }
+}
+
+/** 🧮 El control del punto 3: los datos del catálogo que no tienen fuente ni link previstos (tiene que ser ninguno). */
+export function datosSinAncla(): string[] {
+  return REGLAS.map(r => r.dato).filter(d => !ANCLAS[d] && d !== "Equinos")
 }
 
 /** Cuántos renglones del catálogo hay (para el caso de prueba: que no se pierda ninguno en silencio). */

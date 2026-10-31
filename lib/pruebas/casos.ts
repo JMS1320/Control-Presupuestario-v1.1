@@ -198,9 +198,9 @@ import { elegirTcAl } from "@/lib/dolares/tc-cierre"
 import { controlarProvisionAnterior } from "@/lib/balance/control-inicio"
 import { esFilaDeAlerta, solapasDelLibro } from "@/lib/balance/vista-previa"
 import { armarInicioYCierre, textoEstado } from "@/lib/balance/inicio-y-cierre"
-import { armarCobertura, CANTIDAD_DE_DATOS } from "@/lib/balance/cobertura-papeles"
+import { armarCobertura, CANTIDAD_DE_DATOS, datosSinAncla } from "@/lib/balance/cobertura-papeles"
 import { armarTemas, progreso, textoPendienteDe, fuenteDe, linksDeLaApp, sinTresVistas, type Tema as TemaRecorrido } from "@/lib/balance/recorrido"
-import { temasVentasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
+import { temasVentasVsArca, temasComprasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
 import { linkComprobantesVenta, ventasDelLink } from "@/lib/ventas/link"
 import { linkExtracto, extractoDelLink, rangoQueContiene } from "@/lib/extracto/link"
 import { linkHistorico, subFacturasDelLink, historicoDelLink } from "@/lib/egresos/link-facturas"
@@ -5335,6 +5335,35 @@ export function correrCasos(): Resultado[] {
     const e2 = "Ventas · Identificación distinta (1) · fuente «Libro IVA presentado a ARCA» con código · link g1 · fila tipo 60 / PV (vacío) / N° (vacío) (11-75880) | tipo 180 / PV 11 / N° 75880 | =J2-I2 · ddjj No · Faltan 11 mes(es) de lo presentado a ARCA (feb incluido)"
     chequear("Recorrido · ventas vs ARCA", "🧾 La liquidación cargada como tipo 60 sin número sale como «identificación distinta» con la fuente (libro presentado, con su código), el link a ese comprobante y la tabla de los dos lados; la «DDJJ No» es otro tema; un mes guardado sin ventas cuenta como faltante",
       e2, v2, v2 === e2, "A-FEAT-1439")
+    // 🧾 Compras (punto 1): lo presentado que no está en la app es un tema con su grupo, y el crédito computable distinto
+    // del IVA (la NC de Federación de may-26 declarada con crédito 0) es un tema aparte que el cruce por importes no ve.
+    const nc = pres({ fecha: "2026-05-04", tipo: 3, puntoVenta: 2, numero: 10183421, cuit: "30500036911", denominacion: "FEDERACION PATRONAL",
+      total: -130899.6, netoGravado: -109067.2, iva: -21832.4, creditoFiscal: 0 })
+    const tc = temasComprasVsArca(libro, "MSA", [{ ...ddjj("202605", []), compras: [nc] }])
+    const solo = tc.find(t => /En ARCA y no en la app/.test(t.titulo)), cred = tc.find(t => t.clave === "arca:compras:credito-computable")
+    const vC = `${solo?.titulo} · ${cred?.titulo} · ${/21\.832,40 de más/.test(cred?.que ?? "") ? "21.832,40 de más" : cred?.que} · fórmula ${cred?.comparacion?.celdas[1]?.[5]}`
+    const eC = "Compras · En ARCA y no en la app (1) · Compras · crédito computable declarado distinto del IVA (1) · 21.832,40 de más · fórmula =E2-D2"
+    chequear("Recorrido · compras vs ARCA", "🧾 Compras contra lo presentado: lo que falta en la app es un tema; el crédito computable declarado distinto del IVA (NC de Federación de may-26) es otro, con su efecto y la fórmula",
+      eC, vC, vC === eC, "A-FEAT-1439")
+    // 🏦 Punto 2: la fuente de un saldo de banco es el saldo que informó el banco en su último movimiento; si el extracto
+    // termina antes del cierre, la fuente lo dice (ese saldo no es el del 30/06).
+    const libroCob = { compras: [], ventas: [], controles: { sePuedeEntregar: true, motivos: [] }, ejercicio: { fechaCierre: "2026-06-30" } } as unknown as Parameters<typeof armarCobertura>[0]["libro"]
+    const cadena = { cuenta: "Banco Galicia", saldoInicio: 832605.05, fuenteInicio: "foto", saldoAntesDeLoCargado: 832605.05, desde: "2025-07-01",
+      netoNoCargado: 0, netoCargado: 100, hasta: "2026-05-29", saldoAlCierre: 832705.05, cierreCalculado: 832705.05, diferencia: 0, movimientos: 3, saltos: 0, sumaDeSaltos: 0 }
+    const cobB = armarCobertura({ libro: libroCob, fechaInicio: "2025-07-01", bancarios: { cadenas: [cadena], saldos: [] } as never })
+    const gal = cobB.items.find(i => i.dato === "Banco Galicia (pesos)")
+    const vB = `${gal?.fuente?.origen} · ${/29\/05\/2026\): \$ 832\.705,05/.test(gal?.fuente?.detalle ?? "") ? "saldo del banco" : gal?.fuente?.detalle} · ${/falta cargar hasta el cierre/.test(gal?.fuente?.detalle ?? "") ? "avisa que no llega al cierre" : "NO avisa"} · link ${/movs=|desde=2026-05-14/.test(gal?.fuente?.links?.[0]?.href ?? "") ? "al tramo" : gal?.fuente?.links?.[0]?.href}`
+    chequear("Recorrido · fuente del banco", "🏦 El saldo de una cuenta tiene como fuente lo que informó el banco (fecha y saldo del último movimiento, link a ese tramo); si el extracto no llega al cierre, lo dice",
+      "Extracto del banco — Banco Galicia · saldo del banco · avisa que no llega al cierre · link al tramo", vB,
+      vB === "Extracto del banco — Banco Galicia · saldo del banco · avisa que no llega al cierre · link al tramo", "A-FEAT-1439")
+    // 📄 Punto 3: cada dato del catálogo tiene su fuente prevista y su link. Un saldo de INICIO tiene como fuente el balance
+    // 24/25 presentado; uno del cierre sin documento cargado dice cuál es su fuente (no se calla) y lleva el link a la app.
+    const prov = cobB.items.find(i => i.dato.startsWith("Provisión del ejercicio anterior"))
+    const exis = cobB.items.find(i => i.dato === "Existencia valuada al cierre")
+    const v3 = `sin ancla ${datosSinAncla().length} · provisión → ${prov?.fuente?.origen} · existencia → fuente ${exis?.fuente ?? "—"}, esperada «${exis?.fuenteEsperada}» · link ${exis?.links?.[0]?.texto}`
+    const e3 = "sin ancla 0 · provisión → Balance 24/25 presentado (papeles del contador) · existencia → fuente —, esperada «el conteo físico de insumos al 30/06/2026» · link Productivo"
+    chequear("Recorrido · fuente de cada dato", "📄 Ningún dato del catálogo queda sin fuente prevista ni link; el inicio se respalda en el balance 24/25 presentado y lo del cierre dice qué documento falta",
+      e3, v3, v3 === e3, "A-FEAT-1439")
     const vacio = temasVentasVsArca(libro, "MSA", [])
     chequear("Recorrido · ventas vs ARCA", "🧾 Sin nada presentado guardado no se saltea: es un tema «falta información» que dice cómo cargarlo",
       "1 · sin informacion · Lo presentado a ARCA no está cargado en la app", `${vacio.length} · ${vacio[0]?.grupo} · ${vacio[0]?.titulo}`,
