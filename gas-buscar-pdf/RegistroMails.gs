@@ -130,6 +130,45 @@ var REG_NOMBRE_TIPO = {
 }
 var REG_ORDEN_TIPO = ['impuestos', 'contador', 'legal', 'productivo', 'factura', 'banco', 'seguros', 'servicios', 'interno', 'otro', 'notificacion', 'propaganda']
 
+// 🚨 Mails GRAVES (A-FEAT-1438). MISMA lista y regla que `gravedadDeMail` de `lib/mails/registro.ts`: si cambia una,
+// cambiar la otra (`npm run probar:registro-mails` compara las dos).
+var REG_PALABRAS_GRAVES = ['mora', 'deuda', 'deudas', 'adeuda', 'adeudado', 'intimacion', 'intimamos', 'embargo', 'apremio', 'ejecucion fiscal',
+  'juicio', 'carta documento', 'rechazado', 'rechazada', 'rechazo', 'saldo negativo', 'descubierto', 'multa', 'sancion',
+  'suspension', 'inhabilitacion', 'incumplimiento', 'vencido', 'vencida', 'vencio']
+var REG_TIPOS_DOBLE = ['impuestos', 'legal']
+var REG_DOMINIOS_DOBLE = ['arba.gov.ar', 'afip.gob.ar', 'arca.gob.ar', 'agip.gob.ar']
+
+/** Pura: 0 nada · 1 grave · 2 doblemente grave. No cuenta lo enviado, lo archivado ni la propaganda. */
+function gravedadMail_(f) {
+  var tipo = f.tipo_manual || f.tipo
+  if (f.sentido !== 'recibido' || f.accion === 'archivar' || tipo === 'propaganda') return { nivel: 0, palabras: [] }
+  var texto = ' ' + normalizarReg_((f.asunto || '') + ' ' + (f.extracto || '')).replace(/[^a-z0-9ñ]+/g, ' ') + ' '
+  var palabras = REG_PALABRAS_GRAVES.filter(function (p) { return texto.indexOf(' ' + p + ' ') >= 0 })
+  if (!palabras.length) return { nivel: 0, palabras: palabras }
+  var dom = String(f.remitente || '').toLowerCase().split('@')[1] || ''
+  var doble = (tipo && REG_TIPOS_DOBLE.indexOf(tipo) >= 0) || REG_DOMINIOS_DOBLE.some(function (d) { return dom === d || dom.slice(-(d.length + 1)) === '.' + d })
+  return { nivel: doble ? 2 : 1, palabras: palabras }
+}
+
+/** Pura: los graves NO terminados, agrupados por remitente + asunto; doblemente graves primero, después el más reciente. */
+function agruparGraves_(filas) {
+  var g = {}, orden = []
+  filas.forEach(function (f) {
+    if (f.seguimiento === 'terminado') return
+    var gr = gravedadMail_(f)
+    if (!gr.nivel) return
+    var asunto = String(f.asunto || '').replace(/^\s*((re|rv|fw|fwd|tr)\s*:\s*)+/i, '').trim()
+    var clave = String(f.remitente || '').toLowerCase() + '|' + normalizarReg_(asunto)
+    if (!g[clave]) { g[clave] = { asunto: asunto || '(sin asunto)', remitente: f.remitente_nombre || f.remitente || '', nivel: gr.nivel, palabras: gr.palabras.slice(), n: 0, ultimo: f }; orden.push(clave) }
+    var x = g[clave]
+    x.n++
+    if (gr.nivel > x.nivel) x.nivel = gr.nivel
+    gr.palabras.forEach(function (p) { if (x.palabras.indexOf(p) < 0) x.palabras.push(p) })
+    if (f.fecha > x.ultimo.fecha) x.ultimo = f
+  })
+  return orden.map(function (k) { return g[k] }).sort(function (a, b) { return (b.nivel - a.nivel) || (a.ultimo.fecha < b.ultimo.fecha ? 1 : -1) })
+}
+
 function escHtml_(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
@@ -140,7 +179,7 @@ function escHtml_(s) {
  * regla · lo que llegó, por tipo · lo archivado, contado · lo que salió. Los conteos del período tienen que sumar el
  * total: si no, se dice. `pendientes` (A-FEAT-1437) y `hoyTxt` ('AAAA-MM-DD') son optativos.
  */
-function armarReporte_(filas, casilla, desdeTxt, hastaTxt, pendientes, hoyTxt) {
+function armarReporte_(filas, casilla, desdeTxt, hastaTxt, pendientes, hoyTxt, graves) {
   var tipoDe = function (f) { return f.tipo_manual || f.tipo }
   var recibidos = filas.filter(function (f) { return f.sentido === 'recibido' })
   var enviados = filas.filter(function (f) { return f.sentido === 'enviado' })
@@ -166,6 +205,13 @@ function armarReporte_(filas, casilla, desdeTxt, hastaTxt, pendientes, hoyTxt) {
   var h = []
   h.push('<p>Casilla ' + escHtml_(casilla) + ' · del ' + escHtml_(desdeTxt) + ' al ' + escHtml_(hastaTxt) + ' · ' +
     recibidos.length + ' recibidos · ' + enviados.length + ' enviados.</p>')
+  var grav = graves || []
+  if (grav.length) {
+    h.push('<h3>🚨 Graves sin terminar (' + grav.length + ')</h3><ul>' + grav.map(function (x) {
+      return '<li>' + (x.nivel === 2 ? '🔴 ' : '🟠 ') + link(x.ultimo).replace(escHtml_(x.ultimo.asunto || '(sin asunto)'), escHtml_(x.asunto)) +
+        (x.n > 1 ? ' <b>×' + x.n + '</b>' : '') + ' — ' + escHtml_(x.remitente) + ' · «' + escHtml_(x.palabras.join('», «')) + '»</li>'
+    }).join('') + '</ul>')
+  }
   var pend = (pendientes || []).slice().sort(function (a, b) {
     var fa = a.seguimiento_fecha || '9999', fb = b.seguimiento_fecha || '9999'
     return fa < fb ? -1 : fa > fb ? 1 : (a.fecha < b.fecha ? -1 : 1)
@@ -197,7 +243,7 @@ function armarReporte_(filas, casilla, desdeTxt, hastaTxt, pendientes, hoyTxt) {
   h.push('<p style="color:#666">' + (cierra ? '✓ ' : '⚠️ NO CIERRA: ') + 'para mirar ' + avisar.length + ' + sin regla ' + sinRegla.length +
     ' + guardados ' + guardar.length + ' + archivados ' + archivar.length + ' = ' + suma + ' de ' + recibidos.length + ' recibidos.</p>')
 
-  var asunto = REG_PREFIJO_REPORTE + ' ' + hastaTxt + ' — ' + (pend.length ? pend.length + ' pendientes' + (vencidos ? ' (' + vencidos + ' vencidos)' : '') + ' · ' : '') +
+  var asunto = REG_PREFIJO_REPORTE + ' ' + hastaTxt + ' — ' + (grav.length ? '🚨 ' + grav.length + ' graves · ' : '') + (pend.length ? pend.length + ' pendientes' + (vencidos ? ' (' + vencidos + ' vencidos)' : '') + ' · ' : '') +
     (avisar.length ? avisar.length + ' para mirar · ' : '') + recibidos.length + ' recibidos'
   return { asunto: asunto, html: h.join('\n'), cierra: cierra }
 }
@@ -306,8 +352,17 @@ function enviarReporteDiario() {
   // Los pendientes, de cualquier fecha: quedan en el reporte hasta que se dan por terminados (A-FEAT-1437)
   var pendientes = regSupa_('get', 'mails_registro?casilla=eq.' + encodeURIComponent(casilla) + '&seguimiento=eq.pendiente' +
     '&select=mensaje_id,fecha,remitente,remitente_nombre,asunto,seguimiento_fecha,seguimiento_nota&order=fecha.asc')
+  // Los graves sin terminar, de cualquier fecha (A-FEAT-1438): se leen los recibidos no terminados y se agrupan acá
+  var abiertos = []
+  for (var i = 0; ; i += 1000) {
+    var tramo = regSupa_('get', 'mails_registro?casilla=eq.' + encodeURIComponent(casilla) + '&sentido=eq.recibido' +
+      '&or=(seguimiento.is.null,seguimiento.eq.pendiente)&select=mensaje_id,sentido,fecha,remitente,remitente_nombre,asunto,extracto,tipo,tipo_manual,accion,seguimiento' +
+      '&order=fecha.desc&offset=' + i + '&limit=1000') || []
+    abiertos = abiertos.concat(tramo)
+    if (tramo.length < 1000) break
+  }
   var fmt = function (d) { return Utilities.formatDate(d, 'America/Argentina/Buenos_Aires', 'dd/MM HH:mm') }
-  var r = armarReporte_(filas || [], casilla, fmt(desde), fmt(hasta), pendientes || [], regFechaTxt_(hasta))
+  var r = armarReporte_(filas || [], casilla, fmt(desde), fmt(hasta), pendientes || [], regFechaTxt_(hasta), agruparGraves_(abiertos))
   GmailApp.sendEmail(casilla, r.asunto, 'Abrí este mail en HTML para ver el reporte con links.', { htmlBody: r.html })
   Logger.log('Reporte enviado: ' + r.asunto + (r.cierra ? '' : ' (⚠️ el control no cierra)'))
 }

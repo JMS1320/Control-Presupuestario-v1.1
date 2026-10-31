@@ -13,6 +13,7 @@ import { AlertaExtractosDesactualizados } from "./alerta-extractos-desactualizad
 import { AlertaParseoPendiente } from "./alerta-parseo-pendiente"
 import { AlertaEcheqsEnFecha } from "./alerta-echeqs-en-fecha"
 import { AlertaImpuestos } from "./alerta-impuestos"
+import { AlertaMailsGraves } from "./alerta-mails-graves"
 import { AlertasFcVenta } from "./alertas-fc-venta"
 import { PanelRevisiones } from "./panel-revisiones"
 import { PanelPruebas } from "./panel-pruebas"
@@ -180,6 +181,8 @@ export function VistaPrincipal() {
       {/* 🧾 Impuestos vencidos sin pagar o por vencer (A-FEAT-1319). Primero y arriba de todo, a pedido
           del usuario: «el primer warning, más a la vista». */}
       <AlertaImpuestos />
+      {/* 🚨 Mails graves sin terminar (A-FEAT-1438) — sólo se dibuja si la sesión ve los mails (admin) */}
+      <AlertaMailsGraves />
 
       {/* Barra superior con IPC */}
       <div className="flex items-center gap-4 mb-8">

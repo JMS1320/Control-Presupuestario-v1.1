@@ -10,7 +10,7 @@ import fs from "node:fs"
 
 const GS = `${process.cwd().split("\\").join("/")}/gas-buscar-pdf/RegistroMails.gs`
 const fuente = fs.readFileSync(GS, "utf8")
-const g = new Function(fuente + `\nreturn { emailDe_, nombreDe_, mismaCasilla_, reglaCoincide_, clasificarMail_, linkGmail_, armarReporte_ }`)()
+const g = new Function(fuente + `\nreturn { emailDe_, nombreDe_, mismaCasilla_, reglaCoincide_, clasificarMail_, linkGmail_, armarReporte_, gravedadMail_, agruparGraves_ }`)()
 
 const r: { ok: boolean; caso: string; esperado: string; obtenido: string }[] = []
 const chequear = (caso: string, esperado: string, obtenido: string) => r.push({ ok: esperado === obtenido, caso, esperado, obtenido })
@@ -110,6 +110,34 @@ const casos: [string, string][] = [
 const reglasApp = REGLAS.map(x => ({ activa: true, nota: null, ...x })) as any[]
 const difieren = casos.filter(([de, as]) => { const a = g.clasificarMail_(REGLAS, de, as), b = app.clasificarConReglas(reglasApp, de, as); return a.regla_id !== b.regla_id || a.tipo !== b.tipo || a.accion !== b.accion })
 chequear("la app clasifica IGUAL que el GAS (" + casos.length + " casos)", "0 distintos", `${difieren.length} distintos${difieren.length ? ": " + difieren.map(d => d[1]).join(" · ") : ""}`)
+
+// 🚨 Graves (A-FEAT-1438): la regla del GAS da lo mismo que la de la app, y el reporte los pone arriba de todo, agrupados
+const GR = (o: object) => ({ sentido: "recibido", accion: "guardar", tipo: "banco", tipo_manual: null, asunto: "", extracto: "", remitente: "x@y.com", ...o })
+const casosGraves = [
+  GR({ asunto: "Mora en el pago del impuesto Inmobiliario complementario", remitente: "novedades@arba.gov.ar", tipo: "impuestos", accion: "avisar" }),
+  GR({ asunto: "Saldo negativo excedido SAN MANUEL SRL", remitente: "mensajesyavisos@mails.santander.com.ar", accion: "avisar" }),
+  GR({ asunto: "Daily Mercados", extracto: "la deuda soberana", tipo: "propaganda", accion: "archivar" }),
+  GR({ asunto: "Se RECHAZO fij. Pendiente 1000579367", remitente: "envios@bunge.com", tipo: "productivo" }),
+  GR({ asunto: "Intimación de pago", remitente: "estudio@abogados.com", tipo: "legal" }),
+  GR({ asunto: "Moratoria 2026", extracto: "demora en la entrega" }),
+  GR({ sentido: "enviado", asunto: "Deuda con proveedor" }),
+  GR({ asunto: "Aviso", remitente: "dfe@notificaciones.arba.gov.ar", tipo: null, extracto: "Se registra deuda vencida" }),
+]
+const vGas = casosGraves.map(c => { const x = g.gravedadMail_(c); return `${x.nivel}:${x.palabras.join("+")}` }).join(" ")
+const vApp = casosGraves.map(c => { const x = app.gravedadDeMail(c as any); return `${x.nivel}:${x.palabras.join("+")}` }).join(" ")
+chequear("graves: mora de ARBA y legal pesan doble; saldo negativo y rechazo cuentan; propaganda, enviados, «moratoria» y «demora» no",
+  "2:mora 1:saldo negativo 0: 1:rechazo 2:intimacion 0: 0: 2:deuda+vencida", vGas)
+chequear("graves: el GAS y la app dan lo mismo (" + casosGraves.length + " casos)", vGas, vApp)
+const agr = g.agruparGraves_([
+  { ...casosGraves[1], mensaje_id: "s1", fecha: "2026-10-01T10:00:00Z" }, { ...casosGraves[1], mensaje_id: "s2", fecha: "2026-10-30T10:00:00Z" },
+  { ...casosGraves[0], mensaje_id: "a1", fecha: "2026-10-21T10:00:00Z", asunto: "RE: Mora en el pago del impuesto Inmobiliario complementario" },
+  { ...casosGraves[3], mensaje_id: "b1", fecha: "2026-10-29T10:00:00Z", seguimiento: "terminado" },
+])
+const repG = g.armarReporte_(filas, "sanmanuel.sp@gmail.com", "30/10 07:00", "31/10 07:00", [], "2026-10-31", agr)
+const vG = [agr.map((x: any) => `${x.nivel}:${x.n}:${x.ultimo.mensaje_id}`).join(" "), repG.asunto.includes("🚨 2 graves") ? "asunto" : "-",
+  repG.html.indexOf("🚨 Graves") < repG.html.indexOf("Para mirar") ? "arriba" : "-", repG.html.includes("<b>×2</b>") ? "x2" : "-"].join(" · ")
+chequear("graves en el reporte: agrupados por remitente + asunto (el RE: no separa), el terminado no va, doble primero, arriba de todo",
+  "2:1:a1 1:2:s2 · asunto · arriba · x2", vG)
 
 for (const x of r) console.log(`${x.ok ? "✓" : "✗"} ${x.caso}${x.ok ? "" : `\n    esperado: ${x.esperado}\n    obtenido: ${x.obtenido}`}`)
 const malos = r.filter(x => !x.ok).length

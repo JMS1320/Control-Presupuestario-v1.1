@@ -262,7 +262,7 @@ import { leerResumenCajaAhorro, controlarResumen, armarConocido, resumenComoExce
 import { leerResumenSantander, controlarResumenSantander } from "@/lib/extractos/pdf-santander"
 import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla, linkGmail, procesadoDeMail, cambiosAlReaplicar, type MailRegistrado,
   claveDeTipoMail, problemaDeTipoNuevo, contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarPendientesArriba,
-  juntarConPendientes, claseDeProcesado } from "@/lib/mails/registro"
+  juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves } from "@/lib/mails/registro"
 import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
 import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
 import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe, cuentaCorriente } from "@/lib/polizas/resumen-ejercicio"
@@ -10183,6 +10183,19 @@ export function correrCasos(): Resultado[] {
       chequear("Filtro por columna", "🔽 Lista sin repetir con su cantidad (ordenada, el vacío como «(vacío)»); sin filtro = todas, «ninguna» = 0, se puede elegir el vacío",
         "(vacío)=1 a@x.com=1 b@x.com=2 | 2 4 0 1", vX, vX === "(vacío)=1 a@x.com=1 b@x.com=2 | 2 4 0 1", "A-FEAT-1441")
       const vCl = [claseDeProcesado("factura archivada MSA 3-1520 (+1)"), claseDeProcesado("reenvío leído: 2 adjuntos, 1 ilegible"), claseDeProcesado("boletas_arba")].join(" | ")
+      // 🚨 A-FEAT-1438: mails graves agrupados para el aviso de Principal
+      const G = (o: Partial<MailRegistrado>): MailRegistrado => M({ accion: "avisar", ...o })
+      const gr = agruparGraves([
+        G({ id: "s1", fecha: "2026-10-01T10:00:00Z", remitente: "avisos@santander.com.ar", asunto: "Saldo negativo excedido" }),
+        G({ id: "s2", fecha: "2026-10-30T10:00:00Z", remitente: "avisos@santander.com.ar", asunto: "Saldo negativo excedido" }),
+        G({ id: "a1", fecha: "2026-10-21T10:00:00Z", remitente: "novedades@arba.gov.ar", tipo: "impuestos", asunto: "Mora en el pago" }),
+        G({ id: "t1", fecha: "2026-10-29T10:00:00Z", remitente: "x@y.com", asunto: "Intimación", seguimiento: "terminado" }),
+        G({ id: "p1", fecha: "2026-10-29T10:00:00Z", remitente: "x@y.com", asunto: "Deuda", tipo: "propaganda", accion: "archivar" }),
+        G({ id: "n1", fecha: "2026-10-29T10:00:00Z", remitente: "x@y.com", asunto: "Hola" }),
+      ])
+      const vGr = gr.map(x => `${x.nivel}:${x.ids.join("+")}:${x.ultimo.id}`).join(" ") + " | " + gravedadDeMail(M({ asunto: "Moratoria", extracto: "demora" })).nivel
+      chequear("Mails", "🚨 Graves: los de impuestos primero, el mismo aviso repetido es UNO (×2, con el último), sin terminados ni propaganda; «moratoria»/«demora» no cuentan",
+        "2:a1:a1 1:s1+s2:s2 | 0", vGr, vGr === "2:a1:a1 1:s1+s2:s2 | 0", "A-FEAT-1438")
       chequear("Mails", "🔽 «Qué se hizo» se filtra por clase, no por factura", "factura archivada | reenvío leído | boletas_arba", vCl, vCl === "factura archivada | reenvío leído | boletas_arba", "A-FEAT-1441")
     }
 

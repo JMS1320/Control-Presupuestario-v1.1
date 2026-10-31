@@ -35,7 +35,7 @@ import {
   TIPOS_MAIL, NOMBRE_GRUPO_MAIL, NOMBRE_SEGUIMIENTO, linkGmail, tipoDeMail, grupoDeMail, filtrarMails, contarMails,
   contarPorTipo, problemaDeRegla, procesadoDeMail, cambiosAlReaplicar, nombresDeTipos, claveDeTipoMail, problemaDeTipoNuevo,
   contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarPendientesArriba,
-  juntarConPendientes, problemaDeSeguimiento, claseDeProcesado,
+  juntarConPendientes, problemaDeSeguimiento, claseDeProcesado, gravedadDeMail,
   type BusquedaConMail, type InventarioConMail, type MailRegistrado, type ReglaMail, type GrupoMail, type AccionMail,
   type TipoMailFila, type AlcanceTipo, type EstadoSeguimiento, type SeguimientoMail,
 } from "@/lib/mails/registro"
@@ -305,6 +305,7 @@ function RegistroMails() {
   const [tiposChip, setTiposChip] = useState<Set<string>>(new Set())
   const [columnas, setColumnas] = useState<Record<Columna, Set<string> | null>>({ dePara: null, tipo: null, hizo: null })
   const [texto, setTexto] = useState("")
+  const [soloGraves, setSoloGraves] = useState(false)  // 🚨 A-FEAT-1438
   const [busquedas, setBusquedas] = useState<BusquedaConMail[]>([])
   const [inventario, setInventario] = useState<InventarioConMail[]>([])
   // Reasignar: el mail y el tipo elegido abren el diálogo de alcance; «nuevo» abre antes el de crear tipo
@@ -352,14 +353,15 @@ function RegistroMails() {
   }), [procesado])
 
   // Todos los filtros juntos; cada barra de chips y cada lista de columna cuenta sobre lo filtrado por lo DEMÁS
-  const aplicar = useCallback((excepto: "grupo" | "seguimiento" | "tipoChip" | Columna | null) => {
+  const aplicar = useCallback((excepto: "grupo" | "seguimiento" | "tipoChip" | "graves" | Columna | null) => {
     const cols = { ...columnas }
     if (excepto === "dePara" || excepto === "tipo" || excepto === "hizo") cols[excepto] = null
     let r = filtrarPorColumnas(mails, cols, valores)
     r = filtrarMails(r, { grupos: excepto === "grupo" ? new Set() : grupos, tipos: excepto === "tipoChip" ? new Set() : tiposChip, texto })
     if (excepto !== "seguimiento" && seguimientos.size) r = r.filter(m => seguimientos.has(estadoSeguimiento(m, hoy)))
+    if (excepto !== "graves" && soloGraves) r = r.filter(m => gravedadDeMail(m).nivel > 0)
     return r
-  }, [mails, columnas, valores, grupos, tiposChip, texto, seguimientos, hoy])
+  }, [mails, columnas, valores, grupos, tiposChip, texto, seguimientos, soloGraves, hoy])
 
   const visibles = useMemo(() => ordenarPendientesArriba(aplicar(null), hoy), [aplicar, hoy])
   const conteo = useMemo(() => contarMails(aplicar("grupo")), [aplicar])
@@ -369,6 +371,7 @@ function RegistroMails() {
     for (const m of aplicar("seguimiento")) r[estadoSeguimiento(m, hoy)]++
     return r
   }, [aplicar, hoy])
+  const cuantosGraves = useMemo(() => aplicar("graves").filter(m => gravedadDeMail(m).nivel > 0 && m.seguimiento !== "terminado").length, [aplicar])
   const opciones = useMemo(() => ({
     dePara: opcionesDeColumna(aplicar("dePara"), valores.dePara, (v, m) => m.sentido === "enviado" ? `→ ${v}` : (m.remitente_nombre ? `${m.remitente_nombre} <${v}>` : v)),
     tipo: opcionesDeColumna(aplicar("tipo"), valores.tipo, v => nombres[v] ?? v),
@@ -390,7 +393,7 @@ function RegistroMails() {
     if (v === tipoDeMail(m)) return
     setReasignar({ mail: m, tipo: v })
   }
-  const filtrosActivos = grupos.size + seguimientos.size + tiposChip.size + Object.values(columnas).filter(Boolean).length + (texto ? 1 : 0)
+  const filtrosActivos = (soloGraves ? 1 : 0) + grupos.size + seguimientos.size + tiposChip.size + Object.values(columnas).filter(Boolean).length + (texto ? 1 : 0)
 
   return (
     <div className="space-y-4">
@@ -403,12 +406,14 @@ function RegistroMails() {
         <Button size="sm" variant="ghost" onClick={cargar} title="Volver a leer"><RefreshCw className="h-4 w-4" /></Button>
         {filtrosActivos > 0 && (
           <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => {
-            setGrupos(new Set()); setSeguimientos(new Set()); setTiposChip(new Set()); setColumnas({ dePara: null, tipo: null, hizo: null }); setTexto("")
+            setSoloGraves(false); setGrupos(new Set()); setSeguimientos(new Set()); setTiposChip(new Set()); setColumnas({ dePara: null, tipo: null, hizo: null }); setTexto("")
           }}>Sacar todos los filtros</Button>
         )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        <Chip activo={soloGraves} tono="rojo" titulo="Sólo los mails graves: mora, deuda, intimación, saldo negativo, rechazo… (los de impuestos o legales pesan doble)"
+          onClick={() => setSoloGraves(v => !v)}>🚨 Graves sin terminar {cuantosGraves}</Chip>
         {SEGUIMIENTOS.map(s => (
           <Chip key={s} activo={seguimientos.has(s)} tono={s === "vencido" || s === "pendiente" ? "rojo" : undefined} titulo={tituloChip(NOMBRE_SEGUIMIENTO[s])}
             onClick={e => toggleChip(setSeguimientos, s, esSoloEste(e))}>
@@ -475,6 +480,7 @@ function RegistroMails() {
                 const grupo = grupoDeMail(m)
                 const p = procesado(m)
                 const est = estadoSeguimiento(m, hoy)
+                const grave = gravedadDeMail(m)
                 return (
                   <TableRow key={m.id} className={est === "vencido" ? "bg-red-50 dark:bg-red-950/30" : est === "pendiente" ? "bg-amber-50/60 dark:bg-amber-950/20" : undefined}>
                     <TableCell className="whitespace-nowrap text-xs tabular-nums">{fmtFecha(m.fecha)}</TableCell>
@@ -486,6 +492,7 @@ function RegistroMails() {
                     <TableCell className="max-w-[420px]">
                       <a href={linkGmail(m.casilla, m.mensaje_id)} target="_blank" rel="noopener noreferrer"
                         className="inline-flex items-start gap-1 text-sm hover:underline" title={m.extracto ?? "Abrir en Gmail"}>
+                        {grave.nivel > 0 && <span title={`${grave.nivel === 2 ? "Doblemente grave (impuestos / legal)" : "Grave"}: «${grave.palabras.join("», «")}»`}>{grave.nivel === 2 ? "🔴" : "🟠"}</span>}
                         <span className="line-clamp-2">{m.asunto || "(sin asunto)"}</span>
                         <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 opacity-60" />
                       </a>

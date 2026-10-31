@@ -3817,7 +3817,12 @@ Todo lo que entra y sale de la casilla **sanmanuel.sp**, registrado y con link a
 - En los títulos **De / Para**, **Tipo** y **Qué se hizo** hay un embudo: abre la lista de valores sin repetir, con cuántos mails tiene cada uno, un buscador y casillas. Sirve para ver de un vistazo si llegó algo de alguien.
 - El **📎** abre el archivo ya archivado (en verde) si el sistema lo guardó; si no, abre el mail, donde están los adjuntos.
 
-→ A-TEST-1290 · ⚠️ Sin probar todavía → A-TEST-1298
+**Mails graves** *(2026-10-31)*
+- Los mails que dicen **mora, deuda, intimación, embargo, saldo negativo, rechazo, multa, vencido…** se marcan 🟠, y 🔴 si además son de **impuestos o legales** (o vienen de ARBA, AFIP o AGIP). La propaganda no cuenta.
+- En **Principal**, debajo del aviso de impuestos, aparece **«🚨 N avisos graves en el mail sin terminar»**. El mismo aviso repetido va una sola vez con «×N». **«✔ Terminado»** lo saca de ahí (queda terminado en Mails).
+- En **Mails**, el chip **«🚨 Graves sin terminar»** deja sólo esos. El reporte de las 7 los trae arriba de todo.
+
+→ A-TEST-1290 · ⚠️ Sin probar todavía → A-TEST-1298 · A-TEST-1299
 
 ## 🛡️ Egresos → Seguros *(2026-10-20)*
 
