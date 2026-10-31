@@ -116,7 +116,7 @@ export function armarTemas(cobertura: CoberturaPapeles | null, pendientes: Pendi
     const p = porClave.get(clave)
     temas.push({
       clave, grupo, titulo: i.dato, papel: i.papel, valor2425: i.valor2425, que: i.detalle,
-      propuesta: i.propuesta, links: i.links ?? [], solapa: i.solapa, idPendiente: i.pendiente, comparacion: i.comparacion,
+      propuesta: i.propuesta, links: i.links ?? [], solapa: i.solapa, idPendiente: i.pendiente, comparacion: i.comparacion, fuente: i.fuente,
       pendiente: p, respondido: p?.estado === "resuelto",
     })
   }

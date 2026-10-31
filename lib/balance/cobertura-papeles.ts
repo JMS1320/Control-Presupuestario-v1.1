@@ -25,7 +25,8 @@ import type { TemplatesDelEjercicio } from "./templates-libro"
 import type { SaldosAnteriores } from "./ajustes-balance"
 import type { LibroDiario } from "./libro-diario"
 import { linkTemplates } from "@/lib/impuestos/planilla"
-import { linkExtracto } from "@/lib/extracto/link"
+import { linkExtracto, rangoQueContiene } from "@/lib/extracto/link"
+import type { FuenteTema } from "./recorrido"
 import { linkHistorico } from "@/lib/egresos/link-facturas"
 import { celdaNumero, type Comparacion } from "@/lib/cuaderno/papel-de-trabajo"
 
@@ -91,6 +92,8 @@ export interface ItemCobertura {
   pendiente?: string
   /** 🧭 A-FEAT-1430: qué se propone hacer, con números («diferencia $ X (Y %) → conciliar esto contra esto»). */
   propuesta?: string
+  /** 📄 A-FEAT-1439: lo objetivo de ESTE año (el banco, lo presentado…), no el valor 24/25. */
+  fuente?: FuenteTema
   /** 🔗 Dónde vive el dato, para abrirlo filtrado en otra pestaña. */
   links?: LinkDato[]
   /** 📓 La tabla A contra B del papel de trabajo (celdas del Cuaderno, con la diferencia como fórmula). */
@@ -101,7 +104,7 @@ export interface ItemCobertura {
 export interface LinkDato { texto: string; href: string }
 
 /** Lo que devuelve cada regla. */
-type Resultado = { estado: EstadoCobertura; detalle: string; propuesta?: string; links?: LinkDato[]; comparacion?: Comparacion }
+type Resultado = { estado: EstadoCobertura; detalle: string; propuesta?: string; links?: LinkDato[]; comparacion?: Comparacion; fuente?: FuenteTema }
 
 export interface CoberturaPapeles {
   items: ItemCobertura[]
@@ -111,11 +114,30 @@ export interface CoberturaPapeles {
 const pesos = (n: number) => `$ ${n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
 
-type Regla = Omit<ItemCobertura, "estado" | "detalle" | "propuesta" | "links" | "comparacion"> & { evaluar: (d: DatosCobertura) => Resultado }
+type Regla = Omit<ItemCobertura, "estado" | "detalle" | "propuesta" | "links" | "comparacion" | "fuente"> & { evaluar: (d: DatosCobertura) => Resultado }
 
 /** Una cuenta del papel 07: sale si tiene movimientos y su cadena cierra; si no tiene movimientos, falta el extracto. */
 function cuentaBanco(nombre: RegExp, etiqueta: string, cuentaId: string): Regla["evaluar"] {
-  return d => conLink(d, cuentaId, etiqueta, evaluarCuentaBanco(d, nombre, etiqueta))
+  return d => ({ ...conLink(d, cuentaId, etiqueta, evaluarCuentaBanco(d, nombre, etiqueta)), fuente: fuenteBanco(d, nombre, etiqueta, cuentaId) ?? undefined })
+}
+/**
+ * 📄 A-FEAT-1439 punto 2: la FUENTE de un saldo de banco es lo que informó el banco — el saldo de su último movimiento
+ * cargado, con la fecha y el link a ese tramo del extracto. Si el extracto termina antes del cierre, se dice: ese
+ * saldo no es todavía el del 30/06.
+ */
+function fuenteBanco(d: DatosCobertura, nombre: RegExp, etiqueta: string, cuentaId: string): FuenteTema | null {
+  const c = d.bancarios?.cadenas?.find(x => nombre.test(x.cuenta))
+  if (!c || !c.hasta || c.saldoAlCierre == null) return null
+  const cierre = d.libro.ejercicio?.fechaCierre ?? null
+  const dmy = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`
+  const llega = !cierre || c.hasta >= cierre
+  return {
+    origen: `Extracto del banco — ${etiqueta}`,
+    detalle: `Saldo que informó el banco en su último movimiento cargado (${dmy(c.hasta)}): ${pesos(c.saldoAlCierre)}.`
+      + (llega ? "" : ` ⚠️ El extracto llega hasta el ${dmy(c.hasta)}: falta cargar hasta el cierre (${dmy(cierre!)}) para tener el saldo al 30/06.`)
+      + (c.saltos ? ` La cadena de saldos tiene ${c.saltos} salto(s).` : ""),
+    links: [{ texto: `Los últimos movimientos de ${etiqueta} en el extracto`, href: linkExtracto({ cuenta: cuentaId, ...rangoQueContiene([c.hasta], 15) }) }],
+  }
 }
 /** 🔗 Agrega el link al extracto de la cuenta (todo el ejercicio) a lo que no sale. */
 function conLink(d: DatosCobertura, cuentaId: string, etiqueta: string, r: Resultado): Resultado {

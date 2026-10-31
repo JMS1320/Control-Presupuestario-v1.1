@@ -9,7 +9,7 @@
  *
  * Teclado: ↓ / j siguiente · ↑ / k anterior · Esc cierra (fuera de un campo de texto).
  */
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -73,8 +73,35 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   const fuente = actual ? fuenteDe(actual) : null
   const enApp = actual ? linksDeLaApp(actual) : []
 
-  // Al cambiar de tema, la nota arranca con lo que ya se había escrito (si lo hay).
-  useEffect(() => { setNota(actual?.pendiente?.resolucion ?? "") }, [actual?.clave]) // eslint-disable-line react-hooks/exhaustive-deps
+  /**
+   * 💾 Lo escrito y no confirmado se guarda solo como nota al pasar a otro tema o al cerrar (JMS 31/10: «prefiero
+   * guardar cada dato o cada modal por tema, que tener que hacer guardados totales»). No cierra el tema: queda abierto
+   * con la nota, igual que «📝 Guardar nota».
+   */
+  const borrador = useRef<{ tema: Tema | null; texto: string }>({ tema: null, texto: "" })
+  useEffect(() => { borrador.current.texto = nota }, [nota])
+  const guardarBorrador = async (t: Tema | null, texto: string) => {
+    const limpio = texto.trim()
+    if (!t || !limpio || limpio === (t.pendiente?.resolucion ?? "").trim()) return
+    const cambios = { estado: "abierto", resolucion: limpio, resuelto_at: null }
+    const r = t.pendiente
+      ? await supabase.from("balance_pendientes").update(cambios).eq("id", t.pendiente.id)
+      : await supabase.from("balance_pendientes").insert({ empresa, anio_cierre: anioCierre, texto: textoPendienteDe(t), creado_por: "recorrido del balance", ...cambios })
+    if (r.error) { toast.error(`No se pudo guardar la nota de «${t.titulo}»: ${r.error.message}`); return }
+    toast.success(`📝 Nota guardada: ${t.titulo}`)
+    await recargar()
+  }
+  // Al cambiar de tema: lo escrito en el anterior se guarda, y la nota arranca con lo que ya se había escrito (si lo hay).
+  useEffect(() => {
+    const { tema, texto } = borrador.current
+    if (tema && tema.clave !== actual?.clave) void guardarBorrador(tema, texto)
+    borrador.current = { tema: actual ?? null, texto: actual?.pendiente?.resolucion ?? "" }
+    setNota(actual?.pendiente?.resolucion ?? "")
+  }, [actual?.clave]) // eslint-disable-line react-hooks/exhaustive-deps
+  const cerrar = useCallback(() => {
+    const { tema, texto } = borrador.current
+    void guardarBorrador(tema, texto).finally(onCerrar)
+  }, [onCerrar]) // eslint-disable-line react-hooks/exhaustive-deps
   // 📓 ¿Ya hay un papel de trabajo atado a este tema? (los cuadernos son personales: se busca entre los propios)
   useEffect(() => {
     if (!actual) return
@@ -123,11 +150,11 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
       if (t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT")) return
       if (e.key === "ArrowDown" || e.key === "j") { e.preventDefault(); ir(1) }
       else if (e.key === "ArrowUp" || e.key === "k") { e.preventDefault(); ir(-1) }
-      else if (e.key === "Escape") onCerrar()
+      else if (e.key === "Escape") cerrar()
     }
     window.addEventListener("keydown", tecla)
     return () => window.removeEventListener("keydown", tecla)
-  }, [ir, onCerrar])
+  }, [ir, cerrar])
 
   const recargar = async () => {
     const { data, error } = await supabase.from("balance_pendientes").select("*")
@@ -150,6 +177,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
         ? await supabase.from("balance_pendientes").update(cambios).eq("id", actual.pendiente.id)
         : await supabase.from("balance_pendientes").insert({ empresa, anio_cierre: anioCierre, texto: textoPendienteDe(actual), creado_por: "recorrido del balance", ...cambios })
       if (r.error) throw r.error
+      borrador.current.texto = ""   // ya quedó guardado: al pasar de tema no se vuelve a guardar como nota
       toast.success(tipo === "nota" ? "Nota guardada" : "Respondido")
       await recargar()
       if (tipo !== "nota") ir(1)
@@ -178,6 +206,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
         ? await supabase.from("balance_pendientes").update(cambiosP).eq("id", actual.pendiente.id)
         : await supabase.from("balance_pendientes").insert({ empresa, anio_cierre: anioCierre, texto: textoPendienteDe(actual), creado_por: "recorrido del balance", ...cambiosP })
       if (r.error) throw r.error
+      borrador.current.texto = ""
       toast.success(`Hecho: ${a.texto}`)
       await recargar()
       ir(1)
@@ -214,7 +243,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
           )}
           <div className="ml-auto flex items-center gap-2">
             <span className="hidden md:inline text-xs text-muted-foreground">↑ ↓ para moverse · Esc cierra</span>
-            <Button variant="outline" size="sm" onClick={onCerrar}>Cerrar</Button>
+            <Button variant="outline" size="sm" onClick={cerrar}>Cerrar</Button>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -351,7 +380,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
               <div className="space-y-2 border-t pt-4">
                 <label htmlFor="recorrido-nota" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tu respuesta</label>
                 <textarea id="recorrido-nota" value={nota} onChange={e => setNota(e.target.value)} rows={3}
-                  placeholder="Qué es, qué hacer, o a quién preguntarle…"
+                  placeholder="Qué es, qué hacer, o a quién preguntarle… (si pasás a otro tema sin apretar un botón, se guarda solo como nota)"
                   className="w-full rounded border bg-background p-2 text-sm" />
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" onClick={() => responder("resuelto")} disabled={guardando}>✓ Resuelto</Button>

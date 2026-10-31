@@ -49,7 +49,7 @@ import { ivaConSigno, RENGLONES, type DatosDeLosPapeles, type ValorPropuesto } f
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { armarWorkbook, coberturaDeArgs, descargarLibroDiario } from "@/lib/balance/export-libro-diario"
 import { armarTemas, type Tema } from "@/lib/balance/recorrido"
-import { temasVentasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
+import { temasVentasVsArca, temasComprasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
 import { leerDatosConciliacion, proponerConciliaciones } from "@/lib/conciliacion/propuestas-ejercicio"
 import { temasDeMovimientos, temasDeDeudas, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
 import { leerChequesVencidos } from "@/lib/conciliacion/cheques-vencidos"
@@ -219,7 +219,7 @@ export function PapelesDeBalance() {
     void (async () => {
       const base = "periodo, secuencia, codigo_presentacion, archivo"
       const q = (cols: string) => supabase.from("ddjj_presentadas").select(cols).eq("empresa", empresa.id).eq("impuesto", "IVA").in("periodo", periodos)
-      let r = await q(`${base}, ventas, totales_ventas`)
+      let r = await q(`${base}, comprobantes, ventas, totales_ventas`)
       // Antes del script 145 la tabla no guarda las ventas: se leen igual los meses, y el recorrido dice que faltan.
       if (r.error && /ventas/.test(r.error.message)) r = await q(base)
       if (r.error) { setDdjjGuardadas({ filas: [], error: r.error.message }); return }
@@ -227,6 +227,7 @@ export function PapelesDeBalance() {
         periodo: String(d.periodo), secuencia: Number(d.secuencia ?? 1), codigo_presentacion: (d.codigo_presentacion as string) ?? null,
         archivo: (d.archivo as string) ?? null, ventas: Array.isArray(d.ventas) ? d.ventas as DdjjGuardada["ventas"] : null,
         totales_ventas: (d.totales_ventas as DdjjGuardada["totales_ventas"]) ?? null,
+        compras: Array.isArray(d.comprobantes) ? d.comprobantes as DdjjGuardada["compras"] : null,
       })), error: null })
     })()
   }, [verRecorrido, libro]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -281,9 +282,9 @@ export function PapelesDeBalance() {
         otros.push(...(ddjjGuardadas.error
           ? [{ clave: "arca:ventas:error-lectura", grupo: "error" as const, papel: "Ventas contra lo presentado a ARCA", titulo: "No se pudo leer lo presentado a ARCA",
               que: ddjjGuardadas.error, links: [], respondido: false }]
-          : temasVentasVsArca(libro, empresa.id, ddjjGuardadas.filas)))
+          : [...temasVentasVsArca(libro, empresa.id, ddjjGuardadas.filas), ...temasComprasVsArca(libro, empresa.id, ddjjGuardadas.filas)]))
       } catch (e) {
-        otros.push({ clave: "arca:ventas:error-cruce", grupo: "error", papel: "Ventas contra lo presentado a ARCA", titulo: "No se pudo comparar las ventas contra lo presentado a ARCA",
+        otros.push({ clave: "arca:ventas:error-cruce", grupo: "error", papel: "Contra lo presentado a ARCA", titulo: "No se pudo comparar contra lo presentado a ARCA",
           que: (e as Error).message, links: [], respondido: false })
       }
     }
