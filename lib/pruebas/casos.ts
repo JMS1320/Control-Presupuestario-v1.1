@@ -201,7 +201,7 @@ import { controlarProvisionAnterior } from "@/lib/balance/control-inicio"
 import { esFilaDeAlerta, solapasDelLibro } from "@/lib/balance/vista-previa"
 import { armarInicioYCierre, textoEstado } from "@/lib/balance/inicio-y-cierre"
 import { armarCobertura, CANTIDAD_DE_DATOS, datosSinAncla } from "@/lib/balance/cobertura-papeles"
-import { armarTemas, GRUPOS, conciliacionPorCuenta, subdiariosContraArca, progreso, textoPendienteDe, fuenteDe, linksDeLaApp, sinTresVistas, type Tema as TemaRecorrido } from "@/lib/balance/recorrido"
+import { armarTemas, GRUPOS, conciliacionPorCuenta, subdiariosContraArca, linksAlExtracto, progreso, textoPendienteDe, fuenteDe, linksDeLaApp, sinTresVistas, type Tema as TemaRecorrido } from "@/lib/balance/recorrido"
 import { temasVentasVsArca, temasComprasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
 import { linkComprobantesVenta, ventasDelLink } from "@/lib/ventas/link"
 import { linkExtracto, extractoDelLink, rangoQueContiene } from "@/lib/extracto/link"
@@ -5307,6 +5307,13 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · recorrido", "⚠️ Ventanas de 3 meses alrededor del ejercicio para las alertas secundarias de conciliación (fin de mes bien)",
       "2025-04-01→2025-06-30 · 2026-07-01→2026-09-30 · 2026-02-28 · 2026-02-28", vVa,
       vVa === "2025-04-01→2025-06-30 · 2026-07-01→2026-09-30 · 2026-02-28 · 2026-02-28", "A-FEAT-1439")
+    // 🔗 Filtro y link a la vez: de lo filtrado, un link por cuenta con exactamente esos movimientos (lo que no es conciliación no entra).
+    const la = linksAlExtracto([mov("1", "gal", "D", 100, "2025-08-01"), mov("2", "gal", "C", 50, "2026-03-10"), mov("4", "san", "D", 10, "2026-01-05"),
+      { clave: "cob:x", grupo: "error" as const, titulo: "x", papel: "x", que: "x", links: [], respondido: false }])
+    const vLa = la.map(l => { const f = extractoDelLink(l.href.slice(l.href.indexOf("?")))!; return `${l.nombre} ${l.n} ${f.cuenta} [${f.movs.join(",")}] ${f.desde}→${f.hasta}` }).join(" | ")
+    chequear("Balance · recorrido", "🔗 Lo filtrado abre en el extracto: un link por cuenta con esos movimientos y las fechas que los contienen",
+      "GAL 2 gal [1,2] 2025-07-29→2026-03-13 | SAN 1 san [4] 2026-01-02→2026-01-08", vLa,
+      vLa === "GAL 2 gal [1,2] 2025-07-29→2026-03-13 | SAN 1 san [4] 2026-01-02→2026-01-08", "A-FEAT-1439")
     // 🧾 Los subdiarios pasan a la base (grupo ARCA) y toman lo presentado como fuente: la última secuencia de cada mes.
     const tSub = [{ clave: "cob:x", grupo: "error" as const, titulo: "Subdiarios de compras y ventas por mes y cuenta", papel: "LIBRO DIARIO", que: "x", links: [], respondido: false },
       { clave: "pend:1", grupo: "pregunta" as const, titulo: "p", papel: "x", que: "x", links: [], respondido: false }]

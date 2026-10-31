@@ -15,7 +15,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { ahoraISO } from "@/lib/fechas"
 import type { PendienteBalance } from "@/lib/balance/pendientes-balance"
-import { GRUPOS, conciliacionPorCuenta, progreso, textoPendienteDe, fuenteDe, sinTresVistas, type GrupoTema, type Tema } from "@/lib/balance/recorrido"
+import { GRUPOS, conciliacionPorCuenta, linksAlExtracto, progreso, textoPendienteDe, fuenteDe, sinTresVistas, type GrupoTema, type Tema } from "@/lib/balance/recorrido"
 import { armarPapelDeTrabajo, vinculoDe } from "@/lib/cuaderno/papel-de-trabajo"
 import { linkExtracto } from "@/lib/extracto/link"
 import type { ConteoCuenta } from "@/lib/conciliacion/propuestas-ejercicio"
@@ -393,13 +393,38 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
         {verFiltros && filtro.size > 0 && tiposPresentes.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
             <span className="text-muted-foreground">Tipo:</span>
-            {tiposPresentes.map(([e, c]) => (
-              <button key={e} type="button" aria-pressed={etiquetas.has(e)}
-                onClick={() => setEtiquetas(s => { const n = new Set(s); if (n.has(e)) n.delete(e); else n.add(e); return n })}
-                className={`rounded-full border px-2 py-0.5 ${etiquetas.has(e) ? "bg-muted font-medium" : "hover:bg-muted"}`}>{e} <span className="text-muted-foreground tabular-nums">{c}</span></button>
-            ))}
+            {/* Cada tipo es FILTRO (click; ctrl+click = sólo ése) y, si sus movimientos son de una sola cuenta, LINK (↗) al extracto con esos. */}
+            {tiposPresentes.map(([e, c]) => {
+              const delTipo = linksAlExtracto(temas.filter(t => t.etiqueta === e && (!filtro.size || filtro.has(t.grupo)) && (!ocultarRespondidos || !t.respondido)
+                && (!cuentas.size || (t.cuenta != null && cuentas.has(t.cuenta.id)))))
+              return (
+                <span key={e} className={`inline-flex items-stretch overflow-hidden rounded-full border ${etiquetas.has(e) ? "bg-muted font-medium" : ""}`}>
+                  <button type="button" aria-pressed={etiquetas.has(e)} title={tituloChip(e)}
+                    onClick={ev => toggleChip(setEtiquetas, e, esSoloEste(ev))}
+                    className="px-2 py-0.5 hover:bg-muted">{e} <span className="text-muted-foreground tabular-nums">{c}</span></button>
+                  {delTipo.length === 1 && (
+                    <a href={delTipo[0].href} target="_blank" rel="noreferrer" className="border-l px-1.5 py-0.5 hover:bg-muted"
+                      title={`Abre en el extracto de ${delTipo[0].nombre} estos ${delTipo[0].n} movimientos («${e}»)`}>↗</a>
+                  )}
+                </span>
+              )
+            })}
           </div>
         )}
+        {/* ↗ Lo que se está mirando, al extracto: un link por cuenta con exactamente esos movimientos. */}
+        {verFiltros && filtro.has("conciliacion") && (etiquetas.size > 0 || cuentas.size > 0) && (() => {
+          const ls = linksAlExtracto(visibles)
+          if (!ls.length) return null
+          return (
+            <div className="flex flex-wrap items-center gap-1.5 text-xs" data-test="recorrido-abrir-filtrado">
+              <span className="text-muted-foreground">↗ Abrir lo filtrado en el extracto:</span>
+              {ls.map(l => (
+                <a key={l.cuentaId} href={l.href} target="_blank" rel="noreferrer"
+                  className="rounded border border-blue-300 bg-blue-50 px-2 py-0.5 text-blue-900 hover:bg-blue-100">{l.nombre}: {l.n} ↗</a>
+              ))}
+            </div>
+          )
+        })()}
       </div>
 
       <div className={`relative flex-1 min-h-0 grid grid-cols-1 ${verLista ? "md:grid-cols-[340px_1fr]" : ""}`}>

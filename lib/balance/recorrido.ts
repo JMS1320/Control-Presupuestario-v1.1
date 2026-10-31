@@ -15,6 +15,7 @@
 import type { CoberturaPapeles, EstadoCobertura, ItemCobertura, LinkDato } from "./cobertura-papeles"
 import type { PendienteBalance } from "./pendientes-balance"
 import type { Comparacion } from "@/lib/cuaderno/papel-de-trabajo"
+import { linkExtracto, rangoQueContiene } from "@/lib/extracto/link"
 
 export type GrupoTema = "error" | "decision" | "falta inicio" | "sin informacion" | "pendiente desarrollo" | "pregunta" | "arca" | "documento" | "conciliacion" | "deuda" | "cheque"
 
@@ -259,4 +260,22 @@ export function subdiariosContraArca(temas: Tema[], presentadas: { periodo: stri
     return { ...t, grupo: "arca" as const, fuente: fuente ?? t.fuente, fuenteEsperada: fuente ? undefined : t.fuenteEsperada }
   }).filter((t): t is Tema => t != null)
   return out.sort((a, b) => ORDEN.indexOf(a.grupo) - ORDEN.indexOf(b.grupo))
+}
+
+/**
+ * 🔗 **Filtro Y link a la vez** (nota de JMS 31/10: *«que cada chip sea filtro y link al mismo tiempo… elijo Galicia, filtro
+ * Pareja exacta y quiero abrir esos 29 casos en el extracto»*). De los temas de conciliación que se están mirando, un link
+ * por cuenta al extracto con EXACTAMENTE esos movimientos (y las fechas que los contienen).
+ */
+export function linksAlExtracto(temas: Tema[]): { cuentaId: string; nombre: string; n: number; href: string }[] {
+  const m = new Map<string, { nombre: string; movs: string[]; fechas: string[] }>()
+  for (const t of temas) {
+    if (t.grupo !== "conciliacion" || !t.cuenta) continue
+    const c = m.get(t.cuenta.id) ?? { nombre: t.cuenta.nombre, movs: [], fechas: [] }
+    c.movs.push(t.clave.split(":").slice(2).join(":"))
+    if (t.fecha) c.fechas.push(t.fecha)
+    m.set(t.cuenta.id, c)
+  }
+  return [...m.entries()].map(([cuentaId, c]) => ({ cuentaId, nombre: c.nombre, n: c.movs.length,
+    href: linkExtracto({ cuenta: cuentaId, movs: c.movs, ...rangoQueContiene(c.fechas) }) })).sort((a, b) => b.n - a.n)
 }
