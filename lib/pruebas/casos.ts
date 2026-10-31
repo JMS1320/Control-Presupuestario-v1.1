@@ -264,6 +264,7 @@ import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla,
   claveDeTipoMail, problemaDeTipoNuevo, contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarPendientesArriba,
   juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves } from "@/lib/mails/registro"
 import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
+import { partesDeRuta, problemaDeRuta, estadoDestino, idDeLinkDrive } from "@/lib/archivo/destinos"
 import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
 import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe, cuentaCorriente } from "@/lib/polizas/resumen-ejercicio"
 import { aseguradoraAlCierre } from "@/lib/balance/seguros-al-cierre"
@@ -10209,6 +10210,16 @@ export function correrCasos(): Resultado[] {
       const vGr = gr.map(x => `${x.nivel}:${x.ids.join("+")}:${x.ultimo.id}`).join(" ") + " | " + gravedadDeMail(M({ asunto: "Moratoria", extracto: "demora" })).nivel
       chequear("Mails", "🚨 Graves: los de impuestos primero, el mismo aviso repetido es UNO (×2, con el último), sin terminados ni propaganda; «moratoria»/«demora» no cuentan",
         "2:a1:a1 1:s1+s2:s2 | 0", vGr, vGr === "2:a1:a1 1:s1+s2:s2 | 0", "A-FEAT-1438")
+      // 🗂️ A-FEAT-1442: dónde se archiva — el ícono rojo cuando falta la carpeta, la del año cuando está
+      const vD = [estadoDestino(null).falta, estadoDestino({ drive_folder_id: null, ruta_drive: null, ruta: "x", por_anio: true }).falta,
+        estadoDestino({ drive_folder_id: "abc", ruta_drive: "Mi unidad / SAN MANUEL / INMOBILIARIO", ruta: "I:\\x", por_anio: true }, 2026).texto,
+        estadoDestino({ drive_folder_id: "abc", ruta_drive: null, ruta: "I:\\Mi unidad\\X", por_anio: false }, 2026).texto,
+        partesDeRuta("I:\\Mi unidad\\SAN MANUEL\\IMPUESTOS\\").join(">"),
+        problemaDeRuta("   ") ? "vacía" : "-", problemaDeRuta("I:\\Mi unidad\\") ? "sin carpeta" : "-", problemaDeRuta("https://drive.google.com/drive/folders/1AbCdEfGhIj") ?? "link ok",
+        idDeLinkDrive("https://drive.google.com/drive/folders/1AbCdEfGhIj?usp=sharing")].join(" | ")
+      chequear("Archivo digital", "🗂️ Sin carpeta = ícono rojo; con carpeta, la ruta + el año; la ruta del usuario sin unidad ni «Mi unidad»; vacía o sin carpetas frena; un link de Drive sirve",
+        "true | true | Mi unidad / SAN MANUEL / INMOBILIARIO / 2026 | I:\\Mi unidad\\X | SAN MANUEL>IMPUESTOS | vacía | sin carpeta | link ok | 1AbCdEfGhIj", vD,
+        vD === "true | true | Mi unidad / SAN MANUEL / INMOBILIARIO / 2026 | I:\\Mi unidad\\X | SAN MANUEL>IMPUESTOS | vacía | sin carpeta | link ok | 1AbCdEfGhIj", "A-FEAT-1442")
       chequear("Mails", "🔽 «Qué se hizo» se filtra por clase, no por factura", "factura archivada | reenvío leído | boletas_arba", vCl, vCl === "factura archivada | reenvío leído | boletas_arba", "A-FEAT-1441")
     }
 

@@ -419,6 +419,9 @@ function bajarBoletasArba(soloContar, opciones) {
   var empresaPorCuit = op.empresa_por_cuit || null
 
   var carpeta = soloContar ? null : carpetaArba_(op.carpeta_id)
+  // 🗂️ A-FEAT-1442: adentro de la carpeta elegida, la del AÑO (si existe la usa, si no la crea) y ahí las de cada empresa
+  var carpetaBase = carpeta ? { id: carpeta.getId(), nombre: carpeta.getName() } : null
+  if (carpeta && Number(op.anio) > 2000) carpeta = carpetaDelAnio_(carpeta, Math.round(Number(op.anio)))
   /**
    * 🧮 **Se informa QUÉ carpeta se usó, y no es un detalle: es el control de que el pedido llegó.**
    *
@@ -568,7 +571,7 @@ function bajarBoletasArba(soloContar, opciones) {
   for (var b = 0; b < bajadas.length; b++) if (bajadas[b].importe_mail != null) conImporte++
 
   return {
-    ok: true, carpeta_usada: carpetaUsada, modo: soloContar ? 'contar' : 'bajar', query: query,
+    ok: true, carpeta_usada: carpetaUsada, carpeta_base: carpetaBase, modo: soloContar ? 'contar' : 'bajar', query: query,
     hilos: hilos.length, truncado: truncado,
     bajadas: bajadas, ya_estaban: yaEstaban, sin_pdf: sinPdf, errores: errores,
     tablas: tablas, descuadres: descuadres,

@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 🗂️ Tabla nueva `public.archivo_destinos` (2026-10-31) — ⏳ AVISO PREVIO (OK de JMS dado en la terminal GAS)
+### 🗂️ Tabla nueva `public.archivo_destinos` (2026-10-31) — ✅ APLICADA el 31/10 con OK de JMS (aviso previo): 1 tabla, 1 fila, 1 en recurso_tablas
 - `scripts/148-archivo-destinos.sql` (+ `-deshacer`). A-FEAT-1442: la carpeta del Drive donde se archiva cada tipo de documento (guardada por id), con 1 fila inicial (ARBA Inmobiliario, sin carpeta).
 - **RLS** como el resto (`puede_ver` / `puede_escribir`), recurso `egresos` sin restringir lectura (como las boletas de ARBA); `anon` sin acceso. No toca roles, políticas existentes ni datos.
 

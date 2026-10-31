@@ -16,7 +16,9 @@
  * Los PDFs se pueden subir a mano acá; el GAS (`accion: boletas_arba`) hace lo mismo desde el mail.
  */
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
+import { IconoDestinoArchivo, useDestinoArchivo } from "@/components/destino-archivo"
+import { hoyArgentina } from "@/lib/fechas"
 import { supabase } from "@/lib/supabase"
 import { parsearBoletaArba, type BoletaArba } from "@/lib/arba/parsear-boleta"
 import { decidirAplicar, controlDosCaminos, huellaBoleta, aMonto } from "@/lib/arba/casar-boleta"
@@ -183,27 +185,17 @@ export function PanelBoletasArba() {
   /** Cuántos días de mail mirar. Achicarlo es lo primero que hay que probar si la bajada no llega. */
   const [dias, setDias] = useState("60")
   /**
-   * 🗂️ **La carpeta de Drive donde archivar.** Pedido del usuario 2026-09-30: *«el nombre de cada
-   * PDF descargado no lo tengo que nombrar yo… **yo solo digo la carpeta**»*.
-   *
-   * El nombre del archivo ya salía solo con su convención (`2026 - Inmob - Cuota 3 - Tango Parra 1`);
-   * lo único que faltaba era poder decir **dónde**, sin entrar al Apps Script a tocar una propiedad.
-   *
-   * 📌 Se **recuerda la última**: es siempre la misma y volver a pegarla cada vez es el tipo de
-   * fricción que hace que una herramienta no se use. Vive en el navegador porque es una comodidad
-   * de quien la usa, no un dato del sistema — y si el storage falla, el campo arranca vacío y la
-   * bajada usa la carpeta de siempre.
+   * 🗂️ **La carpeta de Drive donde archivar** — ⚠️ cambió 31/10 (A-FEAT-1442 / A-BUG-1446): hasta acá se pegaba el link
+   * y se recordaba en el NAVEGADOR, y además el GAS nunca la recibía (archivaba siempre en «Boletas ARBA»). Ahora vive
+   * en `public.archivo_destinos` (clave `arba_inmobiliario`), se escribe como se ve en la PC, se guarda por id (si se
+   * mueve, se sigue encontrando) y adentro va la carpeta del AÑO. Sin carpeta, el ícono rojo: «Bajar» queda pendiente
+   * y se hace solo apenas se dice dónde.
    */
-  const [carpeta, setCarpeta] = useState("")
+  const { destino, setDestino } = useDestinoArchivo("arba_inmobiliario")
+  const anioArchivo = Number(hoyArgentina().slice(0, 4))
+  const [bajarPendiente, setBajarPendiente] = useState(false)
   /** Dónde archivó realmente la última corrida. Lo informa el GAS; vacío = GAS viejo. */
   const [carpetaUsada, setCarpetaUsada] = useState<{ id: string; nombre: string } | null>(null)
-  useEffect(() => {
-    try { setCarpeta(localStorage.getItem("arba-carpeta-drive") ?? "") } catch { /* sin storage */ }
-  }, [])
-  const recordarCarpeta = (v: string) => {
-    setCarpeta(v)
-    try { localStorage.setItem("arba-carpeta-drive", v) } catch { /* sin storage */ }
-  }
   const [informe, setInforme] = useState<Informe | null>(null)
   /** Cuántas pasadas hizo falta. Se muestra sólo cuando fue más de una. */
   const [pasadas, setPasadas] = useState(0)
@@ -338,8 +330,8 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
           body: JSON.stringify({
             solo_contar: soloContar, dias: Number(dias) || undefined,
             partidas, empresa_por_cuit: EMPRESA_POR_CUIT,
-            // Vacío = la carpeta de siempre. Acepta el id o la URL pegada de Drive.
-            carpeta_id: carpeta.trim() || undefined,
+            // La carpeta elegida (por id) y el año: adentro se usa o se crea la carpeta del año (A-FEAT-1442)
+            carpeta_id: destino?.drive_folder_id || undefined, anio: anioArchivo,
           }),
         })
         j = await r.json()
@@ -389,8 +381,10 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
           )
         } else {
           setCarpetaUsada(usada as { id: string; nombre: string })
-          const pedida = carpeta.trim()
-          const coincide = !pedida || pedida.includes(usada.id!)
+          // Se compara contra la carpeta ELEGIDA (la del año va adentro y tiene otro id)
+          const base = (j as { carpeta_base?: { id?: string } | null }).carpeta_base
+          const pedida = destino?.drive_folder_id ?? ""
+          const coincide = !pedida || base?.id === pedida || usada.id === pedida
           if (!coincide) {
             toast.warning(
               `Se archivó en «${usada.nombre}», que no es la carpeta que pediste. Revisá el link.`,
@@ -584,8 +578,17 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
                 {bajando && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
                 👁 Ver qué hay (no baja nada)
               </Button>
-              <Button size="sm" disabled={bajando} onClick={() => bajarDelMail(false)}>
-                ⬇ Bajar y archivar
+              <Button size="sm" disabled={bajando} variant={destino?.drive_folder_id ? "default" : "destructive"}
+                title={destino?.drive_folder_id ? undefined : "Falta decir dónde se archiva: queda pendiente y se baja solo apenas elegís la carpeta"}
+                onClick={() => {
+                  if (!destino?.drive_folder_id) {
+                    setBajarPendiente(true)
+                    toast.warning("Falta la carpeta: hacé click en el 📁❗ rojo y decime dónde va. Apenas la guardes, bajo y archivo solo.", { duration: 10000 })
+                    return
+                  }
+                  bajarDelMail(false)
+                }}>
+                ⬇ Bajar y archivar{bajarPendiente && !destino?.drive_folder_id ? " (pendiente: falta la carpeta)" : ""}
               </Button>
               <label className="flex items-center gap-1 text-[10px] text-gray-600">
                 últimos
@@ -593,22 +596,17 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
                   className="h-6 w-12 text-center text-[11px] tabular-nums" />
                 días
               </label>
-              <label className="flex items-center gap-1 text-[10px] text-gray-600">
-                carpeta
-                <Input
-                  type="text" value={carpeta} onChange={e => recordarCarpeta(e.target.value)}
-                  placeholder="pegá el link de la carpeta de Drive"
-                  className="h-6 w-64 text-[11px]"
-                />
-              </label>
+              <IconoDestinoArchivo clave="arba_inmobiliario" nombre="ARBA Inmobiliario" anio={anioArchivo}
+                destino={destino} setDestino={setDestino}
+                onListo={() => { if (bajarPendiente) { setBajarPendiente(false); bajarDelMail(false) } }} />
               <span className="text-[10px] text-gray-500">
                 Busca en el mail de ARBA y archiva los PDFs en Drive. No toca ningún template.
                 {carpetaUsada && (
                   <><br />📁 La última bajada archivó en <b>{carpetaUsada.nombre}</b>.</>
                 )}
                 <br /><b>El nombre del archivo sale solo</b>: «2026 - Inmob - Cuota 3 - Tango Parra 1».
-                Vos sólo elegís la carpeta — se recuerda la última, y adentro se arman las subcarpetas
-                por empresa. Si la dejás vacía, va a la de siempre.
+                Vos sólo elegís la carpeta (el 📁): adentro se usa la del año y se arman las subcarpetas
+                por empresa. Si la movés en el Drive, la app la sigue encontrando.
                 <br />Si no entra todo en una pasada, <b>sigue solo</b> hasta terminar. No borres lo
                 ya archivado: lo que está no se vuelve a bajar.
               </span>

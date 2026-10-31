@@ -41,6 +41,8 @@ export async function POST(request: Request) {
   let empresaPorCuit: unknown
   /** 🗂️ La carpeta de Drive que eligió el usuario. Vacío = la de siempre. */
   let carpetaId: string | undefined
+  /** 🗂️ A-FEAT-1442: el año → adentro de la carpeta elegida se usa (o se crea) la del año. */
+  let anio: number | undefined
   try {
     const body = await request.json()
     soloContar = body?.solo_contar !== false
@@ -51,6 +53,7 @@ export async function POST(request: Request) {
     empresaPorCuit = body?.empresa_por_cuit
     carpetaId = typeof body?.carpeta_id === "string" && body.carpeta_id.trim()
       ? body.carpeta_id.trim() : undefined
+    if (Number(body?.anio) > 2000) anio = Math.round(Number(body.anio))
   } catch { /* body vacío = contar */ }
 
   let r: Response
@@ -59,7 +62,7 @@ export async function POST(request: Request) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         _token: token, accion: "boletas_arba", solo_contar: soloContar, dias,
-        partidas, empresa_por_cuit: empresaPorCuit, carpeta_id: carpetaId,
+        partidas, empresa_por_cuit: empresaPorCuit, carpeta_id: carpetaId, anio,
         // El GAS corta solo antes que nosotros: así devuelve «quedaron N» en vez de morir mudo.
         presupuesto_ms: TOPE_GAS_MS - 10_000,
       }),

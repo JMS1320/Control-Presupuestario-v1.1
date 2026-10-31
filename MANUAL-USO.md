@@ -3432,7 +3432,9 @@ En **Cash Flow → 🏛️ Boletas ARBA**. Dos botones y dos campos:
 | **👁 Ver qué hay** | mira los mails y te dice qué encontraría. **No baja ni guarda nada** |
 | **⬇ Bajar y archivar** | baja los PDF, los renombra y los archiva en Drive |
 | **últimos N días** | la ventana de búsqueda en el mail. Achicarla es lo primero si tarda mucho |
-| **carpeta** | dónde archivar: **pegá el link de la carpeta de Drive**. Se recuerda la última |
+| **📁 carpeta** | dónde archivar. ⚠️ cambió 31/10: si falta, el **📁❗ rojo**; click y escribí la carpeta **como la ves en tu PC** (`I:\Mi unidad\SAN MANUEL\…\INMOBILIARIO`) o pegá el link. Adentro se usa (o se crea) la del **año**. Queda guardada para todos, y si movés la carpeta en el Drive la app la sigue encontrando. Si apretaste **Bajar** sin carpeta, queda pendiente y baja sola apenas la elegís |
+
+→ ⚠️ Sin probar todavía → A-TEST-1300
 
 💡 **El nombre del archivo sale solo**, con tu convención de siempre:
 

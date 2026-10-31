@@ -139,6 +139,19 @@ const vG = [agr.map((x: any) => `${x.nivel}:${x.n}:${x.ultimo.mensaje_id}`).join
 chequear("graves en el reporte: agrupados por remitente + asunto (el RE: no separa), el terminado no va, doble primero, arriba de todo",
   "2:1:a1 1:2:s2 · asunto · arriba · x2", vG)
 
+// 🗂️ A-FEAT-1442: la ruta como la escribe el usuario → carpetas desde «Mi unidad». La del GAS y la de la app, iguales
+const carpetas = new Function(fs.readFileSync(`${process.cwd().split("\\").join("/")}/gas-buscar-pdf/Carpetas.gs`, "utf8") + `\nreturn { partesDeRuta_ }`)()
+const destinos = await import("../lib/archivo/destinos.ts")
+const rutas = ["I:\\Mi unidad\\SAN MANUEL\\IMPUESTOS\\INMOBLILIARIOS - RED VIAL - AUTOMOTOR\\INMOBILIARIO", "\"I:\\Mi unidad\\SAN MANUEL\\\"", "My Drive/Carpeta/ Sub /", "SAN MANUEL\\IMPUESTOS", "I:\\Mi unidad\\"]
+const vRg = rutas.map(x => carpetas.partesDeRuta_(x).join(">")).join(" | ")
+chequear("ruta del usuario → carpetas: saca la unidad y «Mi unidad», acepta \\ y /, comillas y espacios",
+  "SAN MANUEL>IMPUESTOS>INMOBLILIARIOS - RED VIAL - AUTOMOTOR>INMOBILIARIO | SAN MANUEL | Carpeta>Sub | SAN MANUEL>IMPUESTOS | ", vRg)
+chequear("ruta: el GAS y la app dan lo mismo (" + rutas.length + " casos)", vRg, rutas.map(x => destinos.partesDeRuta(x).join(">")).join(" | "))
+// 🐞 A-BUG-1446: la carpeta elegida y el año tienen que pasar de doPost a bajarBoletasArba (antes se perdían)
+const main = fs.readFileSync(`${process.cwd().split("\\").join("/")}/gas-buscar-pdf/Main.gs`, "utf8")
+chequear("boletas ARBA: doPost le pasa la carpeta elegida y el año al GAS (A-BUG-1446)", "pasa",
+  /accion === 'boletas_arba'[\s\S]{0,700}carpeta_id: body\.carpeta_id, anio: body\.anio/.test(main) ? "pasa" : "se pierde")
+
 for (const x of r) console.log(`${x.ok ? "✓" : "✗"} ${x.caso}${x.ok ? "" : `\n    esperado: ${x.esperado}\n    obtenido: ${x.obtenido}`}`)
 const malos = r.filter(x => !x.ok).length
 console.log(`\n${r.length - malos} de ${r.length} pasaron`)
