@@ -16,7 +16,7 @@ import type { CoberturaPapeles, EstadoCobertura, ItemCobertura, LinkDato } from 
 import type { PendienteBalance } from "./pendientes-balance"
 import type { Comparacion } from "@/lib/cuaderno/papel-de-trabajo"
 
-export type GrupoTema = "error" | "decision" | "falta inicio" | "sin informacion" | "pendiente desarrollo" | "pregunta" | "arca" | "conciliacion" | "deuda" | "cheque"
+export type GrupoTema = "error" | "decision" | "falta inicio" | "sin informacion" | "pendiente desarrollo" | "pregunta" | "arca" | "documento" | "conciliacion" | "deuda" | "cheque"
 
 export const GRUPOS: { id: GrupoTema; icono: string; titulo: string }[] = [
   { id: "error", icono: "⛔", titulo: "Errores" },
@@ -24,6 +24,8 @@ export const GRUPOS: { id: GrupoTema; icono: string; titulo: string }[] = [
   { id: "pregunta", icono: "💬", titulo: "Preguntas" },
   // 🧾 A-FEAT-1439: la app contra lo PRESENTADO a ARCA (libro IVA de cada mes, guardado en `ddjj_presentadas`).
   { id: "arca", icono: "🧾", titulo: "Contra lo presentado a ARCA" },
+  // 📥 A-FEAT-1439: los datos que «salen» con lo que tiene la app pero sin el documento que los respalda — el pedido.
+  { id: "documento", icono: "📥", titulo: "Documentos que faltan" },
   // 🏦 A-FEAT-1430 paso 4: la conciliación, movimiento por movimiento y deuda por deuda.
   { id: "conciliacion", icono: "🏦", titulo: "Conciliar movimientos" },
   { id: "deuda", icono: "🧾", titulo: "Deudas sin pago" },
@@ -94,7 +96,7 @@ export const textoPendienteDe = (t: Pick<Tema, "clave" | "titulo" | "que">) => `
 
 const ORDEN: GrupoTema[] = GRUPOS.map(g => g.id)
 /** La clave de un tema dentro del texto de su respuesta: `[cob:…]`, `[conc:…]`, `[deu:…]`, `[chq:…]` o `[arca:…]`. */
-const CLAVE_EN_TEXTO = /^\[((?:cob|conc|deu|chq|arca):[^\]]+)\]/
+const CLAVE_EN_TEXTO = /^\[((?:cob|conc|deu|chq|arca|doc):[^\]]+)\]/
 const GRUPO_DE: Partial<Record<EstadoCobertura, GrupoTema>> = {
   "error": "error", "decision": "decision", "falta inicio": "falta inicio",
   "sin informacion": "sin informacion", "pendiente desarrollo": "pendiente desarrollo",
@@ -112,6 +114,18 @@ export function armarTemas(cobertura: CoberturaPapeles | null, pendientes: Pendi
   }
   const temas: Tema[] = []
   for (const i of cobertura?.items ?? []) {
+    // 📥 Sale con lo que tiene la app, pero sin su documento: se pide (JMS 31/10: «eso que falta me será pedido en el recorrido, ¿verdad?»).
+    if (i.estado === "sale" && i.fuenteEsperada && !i.fuente) {
+      const clave = `doc:${slug(`${i.papel} ${i.dato}`)}`
+      const p = porClave.get(clave)
+      temas.push({
+        clave, grupo: "documento", titulo: `${i.dato}: falta ${i.fuenteEsperada}`, papel: i.papel, valor2425: i.valor2425,
+        que: `Sale con lo que tiene la app (${i.detalle}), pero no está el documento que lo respalda: ${i.fuenteEsperada}.`,
+        propuesta: "Dejá el documento en la carpeta de comunicación (o cargalo en la app): pasa a ser la fuente de este dato. Si no existe o no hace falta, «👍 Está bien así» con el motivo.",
+        links: i.links ?? [], solapa: i.solapa, fuenteEsperada: i.fuenteEsperada, pendiente: p, respondido: p?.estado === "resuelto",
+      })
+      continue
+    }
     const grupo = GRUPO_DE[i.estado]
     if (!grupo) continue
     const clave = claveCobertura(i)

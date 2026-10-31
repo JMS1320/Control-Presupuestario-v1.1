@@ -5365,6 +5365,17 @@ export function correrCasos(): Resultado[] {
     const e3 = "sin ancla 0 · provisión → Balance 24/25 presentado (papeles del contador) · existencia → fuente —, esperada «el conteo físico de insumos al 30/06/2026» · link Productivo"
     chequear("Recorrido · fuente de cada dato", "📄 Ningún dato del catálogo queda sin fuente prevista ni link; el inicio se respalda en el balance 24/25 presentado y lo del cierre dice qué documento falta",
       e3, v3, v3 === e3, "A-FEAT-1439")
+    // 📥 Un dato que «sale» con lo que tiene la app pero sin su documento se PIDE (grupo «Documentos que faltan»); uno con
+    // fuente cargada, no. JMS 31/10: «eso que falta me será pedido en el recorrido, ¿verdad?».
+    const item = (o: Record<string, unknown>) => ({ papel: "STOCKS", valor2425: "—", solapa: "x", detalle: "10 productos", estado: "sale", ...o })
+    const tDoc = armarTemas({ items: [
+      item({ dato: "Existencia valuada al cierre", fuenteEsperada: "el conteo físico de insumos al 30/06/2026" }),
+      item({ dato: "Banco Galicia (pesos)", fuente: { origen: "Extracto del banco", detalle: "x" }, fuenteEsperada: undefined }),
+    ], cuenta: {} } as never, [])
+    const vD = `${tDoc.length} · ${tDoc[0]?.grupo} · ${tDoc[0]?.titulo} · ${tDoc[0]?.clave.startsWith("doc:")}`
+    chequear("Recorrido · documentos que faltan", "📥 Lo que sale sin su documento se pide como tema (y su respuesta se engancha por la clave); lo que tiene fuente, no",
+      "1 · documento · Existencia valuada al cierre: falta el conteo físico de insumos al 30/06/2026 · true", vD,
+      vD === "1 · documento · Existencia valuada al cierre: falta el conteo físico de insumos al 30/06/2026 · true", "A-FEAT-1439")
     const vacio = temasVentasVsArca(libro, "MSA", [])
     chequear("Recorrido · ventas vs ARCA", "🧾 Sin nada presentado guardado no se saltea: es un tema «falta información» que dice cómo cargarlo",
       "1 · sin informacion · Lo presentado a ARCA no está cargado en la app", `${vacio.length} · ${vacio[0]?.grupo} · ${vacio[0]?.titulo}`,
