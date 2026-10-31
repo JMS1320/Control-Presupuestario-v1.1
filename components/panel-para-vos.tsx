@@ -25,6 +25,7 @@ interface Marca extends MarcaParaVos {
   subpantalla?: string | null
   seguimiento?: { fecha: string; texto: string; autor: string | null }[] | null
   resolucion?: string | null
+  cierre_auto?: string | null
 }
 
 const dm = (f: string) => f.slice(0, 10).split("-").reverse().slice(0, 2).join("/")
@@ -99,6 +100,7 @@ export function PanelParaVos() {
                   {NIVELES[nv.nivel].emoji} {NIVELES[nv.nivel].etiqueta}
                 </span>)}
               <span>{m.motivo}</span>
+              {m.cierre_auto?.startsWith("cuota_conciliada:") && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-normal text-gray-600" title="Se cierra sola cuando el pago de su cuota queda conciliado">🔒 se cierra sola al conciliar</span>}
             </div>
             <div className="text-xs text-muted-foreground">
               {m.descripcion_ref}{m.pantalla ? ` · ${m.pantalla}${m.subpantalla ? ` → ${m.subpantalla}` : ""}` : ""} · {mia ? `de ${m.creado_por ?? "—"}` : `para ${m.asignado_a}`} · {dm(m.created_at)}

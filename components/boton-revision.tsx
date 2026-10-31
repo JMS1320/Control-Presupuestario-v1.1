@@ -26,6 +26,7 @@
  * convierte en pendiente con ID — la separación se hace **cuando ya se sabe**, no antes.
  */
 
+import { SelectorCuotaCierre } from "@/components/selector-cuota-cierre"
 import type { Senal } from "@/lib/revisiones/nivel"
 import { useState, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
@@ -95,7 +96,13 @@ export function useRevisionesDe(schema: string, tabla: string) {
 interface AnclaFila { schema: string; tabla: string; registroId: string; descripcion: string }
 
 /** A-FEAT-1449: lo que trae una tarea que sale de otro lado (un mail, un aviso) — el texto y las señales fijas. */
-export interface TareaInicial { motivo?: string; origen?: "mail" | "cuota" | "control"; senales?: Senal[]; esTarea?: boolean; hasta?: string; para?: string }
+export interface TareaInicial {
+  motivo?: string; origen?: "mail" | "cuota" | "control"; senales?: Senal[]; esTarea?: boolean; hasta?: string; para?: string
+  /** 🔒 Tanda 2: la cuota a la que queda atada (se cierra sola al conciliarse). Fija (desde el aviso de impuestos)… */
+  cuota?: { id: string; texto: string }
+  /** …o a elegir (desde un mail), con los textos para proponerla. */
+  elegirCuota?: { pistas: string[]; fechaRef: string }
+}
 
 function ModalMarca({
   abierto, onClose, ancla, yaAbierta, onGuardada, inicial,
@@ -121,6 +128,8 @@ function ModalMarca({
   const [tareaHasta, setTareaHasta] = useState("")
   /** A-FEAT-1449: quién CONFIRMA el cierre (vacío = se cierra cuando la persona dice «Listo»). */
   const [confirma, setConfirma] = useState("")
+  /** 🔒 Tanda 2: la cuota con la que se cierra sola (null = se cierra a mano). */
+  const [cuotaCierre, setCuotaCierre] = useState<{ id: string; texto: string } | null>(null)
   const [personas, setPersonas] = useState<{ mail: string; nombre: string }[]>([])
   const [yoMail, setYoMail] = useState<string | null>(null)
 
@@ -136,7 +145,7 @@ function ModalMarca({
   useEffect(() => {
     if (abierto) {
       setCtx(contextoActual()); setMotivo(inicial?.motivo ?? ""); setImagen(""); setPara(inicial?.para ?? "")
-      setEsTarea(inicial?.esTarea ?? false); setTareaHasta(inicial?.hasta ?? ""); setConfirma("")
+      setEsTarea(inicial?.esTarea ?? false); setTareaHasta(inicial?.hasta ?? ""); setConfirma(""); setCuotaCierre(inicial?.cuota ?? null)
     }
   }, [abierto])
 
@@ -193,6 +202,7 @@ function ModalMarca({
         origen: inicial?.origen ?? "manual",
         senales: inicial?.senales?.length ? inicial.senales : null,
         confirma: para && esTarea && confirma ? confirma : null,
+        cierre_auto: cuotaCierre ? `cuota_conciliada:${cuotaCierre.id}` : null,
       })
       if (error) throw error
       const destinatario = personas.find((p) => p.mail === para)?.nombre
@@ -270,6 +280,15 @@ function ModalMarca({
                     ))}
                   </select>
                 </div>
+              )}
+              {esTarea && inicial?.cuota && (
+                <label className="mt-1 flex items-center gap-2 text-xs">
+                  <input type="checkbox" checked={!!cuotaCierre} onChange={(e) => setCuotaCierre(e.target.checked ? inicial.cuota! : null)} />
+                  🔒 Se cierra sola cuando se concilie el pago de {inicial.cuota.texto}
+                </label>
+              )}
+              {esTarea && !inicial?.cuota && inicial?.elegirCuota && (
+                <div className="mt-1"><SelectorCuotaCierre pistas={inicial.elegirCuota.pistas} fechaRef={inicial.elegirCuota.fechaRef} onCambio={setCuotaCierre} /></div>
               )}
               {inicial?.senales?.length ? (
                 <p className="mt-1 text-[11px] text-gray-500">Señales: {inicial.senales.map(x => `${x.nombre} (+${x.peso})`).join(" · ")} — con éstas y la fecha se calcula qué tan urgente es.</p>

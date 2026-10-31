@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 🔒 Trigger nuevo en `public.cuotas_egresos_sin_factura`: la tarea se cierra sola con la cuota conciliada (2026-10-31) — ⏳ AVISO PREVIO (OK de JMS dado en la terminal GAS)
+### 🔒 Trigger nuevo en `public.cuotas_egresos_sin_factura`: la tarea se cierra sola con la cuota conciliada (2026-10-31) — ✅ APLICADA el 31/10 con OK de JMS (aviso previo): función + trigger activo
 - `scripts/152-cierre-automatico-por-cuota.sql` (+ `-deshacer`). A-FEAT-1449 tanda 2: `after update of estado` → si la cuota pasa a `conciliado`, cierra las `revisiones` con `cierre_auto = 'cuota_conciliada:<id>'` y deja «terminado» el mail de donde salió (`mails_registro`). Función `security definer`, `search_path = public`.
 - **No toca RLS, grants ni datos existentes.** Ojo si tocás conciliación: cualquier camino que ponga una cuota en `conciliado` dispara el cierre.
 

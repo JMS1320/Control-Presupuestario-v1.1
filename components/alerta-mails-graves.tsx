@@ -108,7 +108,7 @@ export function AlertaMailsGraves() {
                       <td className="whitespace-nowrap px-2 py-1.5 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <PasarTarea ancla={{ schema: "public", tabla: "mails_registro", registroId: g.ultimo.id, descripcion: `Mail: ${g.asunto} — ${g.remitente}${g.ids.length > 1 ? ` (×${g.ids.length})` : ""}`.slice(0, 280) }}
-                            inicial={{ motivo: g.asunto, origen: "mail", senales: senalesDeMail(gravedadDeMail(g.ultimo), tipoDeMail(g.ultimo)) }} />
+                            inicial={{ motivo: g.asunto, origen: "mail", senales: senalesDeMail(gravedadDeMail(g.ultimo), tipoDeMail(g.ultimo)), elegirCuota: { pistas: [g.asunto, g.remitente], fechaRef: g.ultimo.fecha } }} />
                           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => terminar(g)}>✔ Terminado{g.ids.length > 1 ? ` (${g.ids.length})` : ""}</Button>
                         </div>
                       </td>

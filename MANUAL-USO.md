@@ -3803,7 +3803,9 @@ solo, y al pie dice cuántos pagos se exportaron para que lo cruces con la panta
 - **🚩 Pasarle a…** está en cada mail (Egresos → Mails) y en el aviso de mails graves: arma la tarea con el asunto y las señales del mail, y elegís a quién va — cualquier usuario o **🤖 Claude** (lo de Claude lo ve al abrir la próxima sesión).
 - Al crear una tarea, **¿quién confirma que está hecha?**: si elegís «Yo», cuando la persona aprieta «Listo» la tarea no se cierra: te aparece en **«✔ Para que confirmes»** con lo que dijo, y la **confirmás** o la **devolvés** con un motivo.
 
-→ ⚠️ Sin probar todavía → A-TEST-1304
+- **🔒 Se cierra sola**: una tarea atada a una cuota se cierra **sola cuando el pago de esa cuota queda conciliado** (y el mail de donde salió queda «terminado»). En el aviso de impuestos, «Pasarle a…» ya viene atada a su cuota; desde un mail, tildás «🔒 Se cierra sola…» y elegís template y cuota (viene propuesta la que dice el asunto, ej. «cuota 3»). Marcar «pagado» sin conciliar no la cierra.
+
+→ ⚠️ Sin probar todavía → A-TEST-1304 · A-TEST-1305
 
 ## 📬 Egresos → Mails *(2026-10-30, sólo admin)*
 

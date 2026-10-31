@@ -527,7 +527,7 @@ function RegistroMails() {
                             <CeldaSeguimiento mail={m} hoy={hoy} onGuardado={c => actualizar([m.id], c)} />
                             {/* 🚩 A-FEAT-1449: de un mail sale una tarea para cualquiera (o para Claude) */}
                             <PasarTarea ancla={{ schema: "public", tabla: "mails_registro", registroId: m.id, descripcion: `Mail: ${m.asunto ?? "(sin asunto)"} — ${m.remitente_nombre || m.remitente || ""}`.slice(0, 280) }}
-                              inicial={{ motivo: m.asunto ?? "", origen: "mail", senales: senalesDeMail(grave, tipoDeMail(m)) }} />
+                              inicial={{ motivo: m.asunto ?? "", origen: "mail", senales: senalesDeMail(grave, tipoDeMail(m)), elegirCuota: { pistas: [m.asunto ?? "", m.remitente_nombre ?? ""], fechaRef: m.fecha } }} />
                           </div>
                         : <span className="text-xs text-muted-foreground">—</span>}
                     </TableCell>
