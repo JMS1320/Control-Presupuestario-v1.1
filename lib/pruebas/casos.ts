@@ -200,7 +200,7 @@ import { controlarProvisionAnterior } from "@/lib/balance/control-inicio"
 import { esFilaDeAlerta, solapasDelLibro } from "@/lib/balance/vista-previa"
 import { armarInicioYCierre, textoEstado } from "@/lib/balance/inicio-y-cierre"
 import { armarCobertura, CANTIDAD_DE_DATOS, datosSinAncla } from "@/lib/balance/cobertura-papeles"
-import { armarTemas, progreso, textoPendienteDe, fuenteDe, linksDeLaApp, sinTresVistas, type Tema as TemaRecorrido } from "@/lib/balance/recorrido"
+import { armarTemas, GRUPOS, conciliacionPorCuenta, progreso, textoPendienteDe, fuenteDe, linksDeLaApp, sinTresVistas, type Tema as TemaRecorrido } from "@/lib/balance/recorrido"
 import { temasVentasVsArca, temasComprasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
 import { linkComprobantesVenta, ventasDelLink } from "@/lib/ventas/link"
 import { linkExtracto, extractoDelLink, rangoQueContiene } from "@/lib/extracto/link"
@@ -5266,12 +5266,32 @@ export function correrCasos(): Resultado[] {
     const pregunta = { ...respuesta, id: "p2", texto: "❓ ¿Qué es la caja USD del contador?", estado: "abierto" as const, resolucion: null, resuelto_at: null }
     const temas = armarTemas(con, [respuesta, pregunta])
     const p = progreso(temas)
-    chequear("Balance · recorrido", "🧭 Cola de temas: errores primero, sin los que salen; la respuesta con la clave del tema lo marca respondido (no queda como pregunta suelta)",
-      `primero error · provisión respondida · 1 pregunta · ${temasVacios.length + 1} temas, 1 respondido`,
+    chequear("Balance · recorrido", "🧭 Cola de temas: en el orden de los grupos (la base primero, después errores), sin los que salen; la respuesta con la clave del tema lo marca respondido (no queda como pregunta suelta)",
+      `primero ${GRUPOS.find(g => p.porGrupo[g.id].total)!.id} · provisión respondida · 1 pregunta · ${temasVacios.length + 1} temas, 1 respondido`,
       `primero ${temas[0].grupo} · provisión ${temas.find(t => t.clave === provision.clave)?.respondido ? "respondida" : "sin responder"} · ${temas.filter(t => t.grupo === "pregunta").length} pregunta · ${p.total} temas, ${p.respondidos} respondido`,
-      temas[0].grupo === "error" && temas.find(t => t.clave === provision.clave)?.respondido === true
+      temas[0].grupo === GRUPOS.find(g => p.porGrupo[g.id].total)!.id && temas.every((t, k) => !k || GRUPOS.findIndex(g => g.id === temas[k - 1].grupo) <= GRUPOS.findIndex(g => g.id === t.grupo)) && temas.find(t => t.clave === provision.clave)?.respondido === true
         && temas.filter(t => t.grupo === "pregunta").length === 1 && p.total === temasVacios.length + 1 && p.respondidos === 1
         && !temas.some(t => /^Equinos/.test(t.titulo)) && /buscar qué comprobantes/.test(provision.propuesta ?? ""), "A-FEAT-1430")
+    /**
+     * 🧱 **Dos niveles + lo pendiente de conciliar por cuenta** (JMS 31/10): la base (ARCA, conciliación, echeqs, saldo de
+     * inicio) va primero; el resto en el orden en que conviene mirarlo. Y la conciliación se resume por cuenta: cuántos,
+     * cuánto salió y entró, y el rango de fechas para el link. Lo respondido no cuenta.
+     */
+    const niveles = GRUPOS.map(g => g.nivel).join("")
+    chequear("Balance · recorrido", "🧱 La base (nivel 1) va antes que el resto (nivel 2), y empieza por ARCA y la conciliación",
+      "11112222222 · arca,conciliacion", `${niveles} · ${GRUPOS.slice(0, 2).map(g => g.id).join(",")}`,
+      niveles === "11112222222" && GRUPOS[0].id === "arca" && GRUPOS[1].id === "conciliacion", "A-FEAT-1439")
+    const mov = (id: string, cuenta: string, lado: "D" | "C", importe: number, fecha: string, respondido = false) =>
+      ({ clave: `conc:${cuenta}:${id}`, grupo: "conciliacion" as const, titulo: id, papel: "x", que: "x", links: [], respondido,
+        cuenta: { id: cuenta, nombre: cuenta.toUpperCase() }, lado, importe, fecha })
+    const pc = conciliacionPorCuenta([
+      mov("1", "gal", "D", 100, "2025-08-01"), mov("2", "gal", "C", 50, "2026-03-10"), mov("3", "gal", "D", 30, "2025-12-01"),
+      mov("4", "san", "D", 10, "2026-01-05"), mov("5", "san", "D", 999, "2026-02-01", true),
+    ])
+    const vPc = pc.map(c => `${c.nombre} ${c.abiertos} −${c.debitos} +${c.creditos} ${c.desde}→${c.hasta}`).join(" | ")
+    chequear("Balance · recorrido", "🏦 Lo pendiente de conciliar, por cuenta: cuántos, débitos y créditos, rango de fechas; lo respondido no cuenta",
+      "GAL 3 −130 +50 2025-08-01→2026-03-10 | SAN 1 −10 +0 2026-01-05→2026-01-05", vPc,
+      vPc === "GAL 3 −130 +50 2025-08-01→2026-03-10 | SAN 1 −10 +0 2026-01-05→2026-01-05", "A-FEAT-1439")
   }
 
   /**

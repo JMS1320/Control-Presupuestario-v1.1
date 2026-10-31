@@ -18,21 +18,30 @@ import type { Comparacion } from "@/lib/cuaderno/papel-de-trabajo"
 
 export type GrupoTema = "error" | "decision" | "falta inicio" | "sin informacion" | "pendiente desarrollo" | "pregunta" | "arca" | "documento" | "conciliacion" | "deuda" | "cheque"
 
-export const GRUPOS: { id: GrupoTema; icono: string; titulo: string }[] = [
-  { id: "error", icono: "⛔", titulo: "Errores" },
-  { id: "decision", icono: "❓", titulo: "A decidir" },
-  { id: "pregunta", icono: "💬", titulo: "Preguntas" },
+/**
+ * 🧱 **Dos niveles de grupos** (JMS 31/10: *«subdiarios cargados tal cual ARCA, todos los canales de pagos y cobros
+ * conciliados, saldo del balance anterior: eso es la base; si no está completa no sería bueno trabajar demasiado,
+ * porque después cambia lo que compone el resto»*).
+ * - **nivel 1 · la base**: va primero en la cola y arriba en los chips; si tiene abiertos, el recorrido recomienda
+ *   terminarla antes.
+ * - **nivel 2 · el resto**, en el orden en que conviene mirarlo: errores, decisiones, preguntas, deudas, documentos…
+ * Los tipos de cada grupo (el «nivel 3») aparecen sólo al elegir un grupo.
+ */
+export const GRUPOS: { id: GrupoTema; icono: string; titulo: string; nivel: 1 | 2 }[] = [
   // 🧾 A-FEAT-1439: la app contra lo PRESENTADO a ARCA (libro IVA de cada mes, guardado en `ddjj_presentadas`).
-  { id: "arca", icono: "🧾", titulo: "Contra lo presentado a ARCA" },
+  { id: "arca", icono: "🧾", titulo: "Subdiarios contra lo presentado a ARCA", nivel: 1 },
+  // 🏦 A-FEAT-1430 paso 4: la conciliación, movimiento por movimiento.
+  { id: "conciliacion", icono: "🏦", titulo: "Conciliar movimientos", nivel: 1 },
+  { id: "cheque", icono: "✍️", titulo: "Echeqs sin marcar cobrados", nivel: 1 },
+  { id: "falta inicio", icono: "⏳", titulo: "Falta el saldo de inicio", nivel: 1 },
+  { id: "error", icono: "⛔", titulo: "Errores", nivel: 2 },
+  { id: "decision", icono: "❓", titulo: "A decidir", nivel: 2 },
+  { id: "pregunta", icono: "💬", titulo: "Preguntas", nivel: 2 },
+  { id: "deuda", icono: "🧾", titulo: "Deudas sin pago", nivel: 2 },
   // 📥 A-FEAT-1439: los datos que «salen» con lo que tiene la app pero sin el documento que los respalda — el pedido.
-  { id: "documento", icono: "📥", titulo: "Documentos que faltan" },
-  // 🏦 A-FEAT-1430 paso 4: la conciliación, movimiento por movimiento y deuda por deuda.
-  { id: "conciliacion", icono: "🏦", titulo: "Conciliar movimientos" },
-  { id: "deuda", icono: "🧾", titulo: "Deudas sin pago" },
-  { id: "cheque", icono: "✍️", titulo: "Echeqs sin marcar cobrados" },
-  { id: "falta inicio", icono: "⏳", titulo: "Falta el saldo de inicio" },
-  { id: "sin informacion", icono: "📭", titulo: "Falta información" },
-  { id: "pendiente desarrollo", icono: "🛠️", titulo: "Pendiente de desarrollo" },
+  { id: "documento", icono: "📥", titulo: "Documentos que faltan", nivel: 2 },
+  { id: "sin informacion", icono: "📭", titulo: "Falta información", nivel: 2 },
+  { id: "pendiente desarrollo", icono: "🛠️", titulo: "Pendiente de desarrollo", nivel: 2 },
 ]
 
 export interface Tema {
@@ -65,6 +74,12 @@ export interface Tema {
   fuenteEsperada?: string
   /** Una etiqueta corta del tipo (en la conciliación: «Pareja exacta», «Con diferencia»…), para filtrar y ver de un vistazo. */
   etiqueta?: string
+  /** 🏦 La cuenta del movimiento (conciliación), para el resumen por cuenta. */
+  cuenta?: { id: string; nombre: string }
+  /** 🏦 Débito o crédito (conciliación). */
+  lado?: "D" | "C"
+  /** 🏦 Fecha del movimiento (conciliación), ISO. */
+  fecha?: string
   /** Importe del tema (la conciliación lo muestra en la lista). */
   importe?: number
   /**
@@ -187,4 +202,26 @@ export function sinTresVistas(temas: Tema[]): { sinFuente: number; sinLink: numb
     sinFuente: abiertos.filter(t => !fuenteDe(t)).length,
     sinLink: abiertos.filter(t => !linksDeLaApp(t).length).length,
   }
+}
+
+/**
+ * 🏦 **Lo pendiente de conciliar, por cuenta** (JMS 31/10: *«¿dónde figura rápidamente a la vista lo pendiente de
+ * conciliar, e ir a verlo y trabajarlo para terminarlo?»*). Para el balance no interesan 419 movimientos sueltos sino
+ * cuánto falta en cada cuenta: cuántos, cuánta plata salió y entró, y un link a la cuenta en ese rango de fechas.
+ */
+export interface ConciliacionPorCuenta { cuentaId: string; nombre: string; abiertos: number; debitos: number; creditos: number; desde: string | null; hasta: string | null }
+export function conciliacionPorCuenta(temas: Tema[]): ConciliacionPorCuenta[] {
+  const m = new Map<string, ConciliacionPorCuenta & { fechas: string[] }>()
+  for (const t of temas) {
+    if (t.grupo !== "conciliacion" || t.respondido || !t.cuenta) continue
+    const c = m.get(t.cuenta.id) ?? { cuentaId: t.cuenta.id, nombre: t.cuenta.nombre, abiertos: 0, debitos: 0, creditos: 0, desde: null, hasta: null, fechas: [] }
+    c.abiertos++
+    if (t.lado === "D") c.debitos += t.importe ?? 0; else c.creditos += t.importe ?? 0
+    if (t.fecha) c.fechas.push(t.fecha)
+    m.set(t.cuenta.id, c)
+  }
+  return [...m.values()].map(({ fechas, ...c }) => {
+    const f = [...fechas].sort()
+    return { ...c, desde: f[0] ?? null, hasta: f[f.length - 1] ?? null }
+  }).sort((a, b) => b.abiertos - a.abiertos)
 }
