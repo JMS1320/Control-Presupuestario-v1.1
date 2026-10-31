@@ -26,6 +26,7 @@ const COLOR: Record<GrupoTema, string> = {
   "decision": "border-amber-300 bg-amber-50 text-amber-900",
   "pregunta": "border-sky-300 bg-sky-50 text-sky-900",
   "arca": "border-rose-300 bg-rose-50 text-rose-900",
+  "documento": "border-amber-300 bg-amber-50 text-amber-900",
   "falta inicio": "border-violet-300 bg-violet-50 text-violet-900",
   "sin informacion": "border-slate-300 bg-slate-50 text-slate-800",
   "pendiente desarrollo": "border-teal-300 bg-teal-50 text-teal-900",
@@ -316,7 +317,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
                 {fuente
                   ? <p className="text-sm">{fuente.detalle}</p>
                   : <p className="text-sm text-amber-900">⚠️ {actual.fuenteEsperada
-                    ? <>No está cargada en la app. <strong>La fuente es {actual.fuenteEsperada}</strong>: hasta tenerla, lo que ves es sólo lo que dice la app (y mi propuesta).</>
+                    ? <><strong>📥 Hace falta: {actual.fuenteEsperada}.</strong> Dejalo en la carpeta de comunicación (o cargalo en la app) y pasa a ser la fuente. Hasta tenerlo, lo que ves es sólo lo que dice la app (y mi propuesta).</>
                     : "Este tema no tiene fuente externa todavía: lo que ves es sólo lo que dice la app (y mi propuesta)."}</p>}
                 {!!fuente?.links?.length && (
                   <div className="flex flex-wrap gap-2 pt-1">
