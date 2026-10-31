@@ -18,6 +18,7 @@ import type { PendienteBalance } from "@/lib/balance/pendientes-balance"
 import { GRUPOS, conciliacionPorCuenta, progreso, textoPendienteDe, fuenteDe, sinTresVistas, type GrupoTema, type Tema } from "@/lib/balance/recorrido"
 import { armarPapelDeTrabajo, vinculoDe } from "@/lib/cuaderno/papel-de-trabajo"
 import { linkExtracto } from "@/lib/extracto/link"
+import { PISTA_CTRL_CLICK, esSoloEste, tituloChip, toggleChip } from "@/lib/ui/chips"
 import { COLOR, DetalleTema, ICONO } from "@/components/recorrido-tema-detalle"
 
 /** Preferencias de este navegador (si el navegador no deja guardar, se usa el default). */
@@ -44,6 +45,8 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   const [ocultarRespondidos, setOcultarRespondidos] = useState(false)
   /** 🏦 Filtro por tipo (sólo los temas que traen etiqueta: la conciliación). */
   const [etiquetas, setEtiquetas] = useState<Set<string>>(new Set())
+  /** 🏦 Filtro por cuenta (los chips de «Sin conciliar, por cuenta»: JMS 31/10 «son links pero no filtran el panel izquierdo»). */
+  const [cuentas, setCuentas] = useState<Set<string>>(new Set())
   const [claveActual, setClaveActual] = useState<string | null>(null)
   const [nota, setNota] = useState("")
   const [guardando, setGuardando] = useState(false)
@@ -52,13 +55,16 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
 
   const visibles = useMemo(() => temas.filter(t =>
     (!filtro.size || filtro.has(t.grupo)) && (!ocultarRespondidos || !t.respondido)
-    && (!etiquetas.size || (t.etiqueta != null && etiquetas.has(t.etiqueta)))), [temas, filtro, ocultarRespondidos, etiquetas])
+    && (!etiquetas.size || (t.etiqueta != null && etiquetas.has(t.etiqueta)))
+    && (!cuentas.size || (t.cuenta != null && cuentas.has(t.cuenta.id)))), [temas, filtro, ocultarRespondidos, etiquetas, cuentas])
   /** Los tipos que hay entre los temas filtrados por grupo (para los chips de tipo). */
   const tiposPresentes = useMemo(() => {
     const m = new Map<string, number>()
-    for (const t of temas) if (t.etiqueta && (!filtro.size || filtro.has(t.grupo))) m.set(t.etiqueta, (m.get(t.etiqueta) ?? 0) + 1)
+    // El número de cada tipo cuenta sobre lo filtrado por lo demás (grupo y cuenta), como todos los chips.
+    for (const t of temas) if (t.etiqueta && (!filtro.size || filtro.has(t.grupo)) && (!cuentas.size || (t.cuenta != null && cuentas.has(t.cuenta.id))))
+      m.set(t.etiqueta, (m.get(t.etiqueta) ?? 0) + 1)
     return [...m.entries()]
-  }, [temas, filtro])
+  }, [temas, filtro, cuentas])
   // Si el tema abierto desaparece (se concilió y se recalculó al volver a la pestaña), se queda en la misma posición en vez
   // de saltar al primero.
   const ultimoIdx = useRef(0)
@@ -74,7 +80,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   /** 🏦 Lo pendiente de conciliar, por cuenta (se ve al elegir «Conciliar movimientos»). */
   const porCuenta = useMemo(() => conciliacionPorCuenta(temas), [temas])
   // Los tipos (nivel 3) dependen del grupo elegido: al cambiar de grupo, el filtro de tipo arranca de cero.
-  useEffect(() => { setEtiquetas(new Set()) }, [filtro])
+  useEffect(() => { setEtiquetas(new Set()); setCuentas(new Set()) }, [filtro])
   /**
    * 🪟 Los tres paneles se pliegan (JMS 31/10: «tenerlos como están o colapsados, o del tipo de menú que se abre de la
    * izquierda como es la app, así cuando estoy dentro del tema lo veo grande»). Se recuerda en este navegador.
@@ -281,7 +287,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
         {!verFiltros && (
           <div className="text-xs text-muted-foreground" data-test="recorrido-filtros-plegados">
             Mostrando: {filtro.size ? GRUPOS.filter(g => filtro.has(g.id)).map(g => `${g.icono} ${g.titulo}`).join(" · ") : "todos los grupos"}
-            {etiquetas.size ? ` · tipo ${[...etiquetas].join(", ")}` : ""}{ocultarRespondidos ? " · sin los respondidos" : ""} · {visibles.length} tema(s)
+            {etiquetas.size ? ` · tipo ${[...etiquetas].join(", ")}` : ""}{cuentas.size ? ` · cuenta ${porCuenta.filter(c => cuentas.has(c.cuentaId)).map(c => c.nombre).join(", ")}` : ""}{ocultarRespondidos ? " · sin los respondidos" : ""} · {visibles.length} tema(s)
           </div>
         )}
         {/* 🧱 Nivel 1 — la base · nivel 2 — el resto. Los tipos (nivel 3) sólo con un grupo elegido (JMS 31/10). */}
@@ -315,13 +321,20 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
         {verFiltros && filtro.has("conciliacion") && conciliacion && !conciliacion.cargando && (
           <div className="flex flex-wrap items-center gap-1.5 text-xs" data-test="recorrido-conciliacion-por-cuenta">
             <span className="text-muted-foreground">🏦 Sin conciliar, por cuenta:</span>
+            {/* El nombre FILTRA la lista de la izquierda (mismo gesto que todos los chips: ctrl+click = sólo ésa); la ↗ abre el extracto. */}
             {porCuenta.map(c => (
-              <a key={c.cuentaId} href={linkExtracto({ cuenta: c.cuentaId, movs: c.movs, desde: c.desde, hasta: c.hasta })} target="_blank" rel="noreferrer"
-                className="rounded border border-blue-300 bg-blue-50 px-2 py-0.5 text-blue-900 hover:bg-blue-100"
-                title={`Abre en el extracto de ${c.nombre} exactamente estos ${c.abiertos} movimientos sin conciliar (${c.desde ?? "?"} al ${c.hasta ?? "?"})`}>
-                {c.nombre}: <strong className="tabular-nums">{c.abiertos}</strong> · −{fmt(c.debitos)} / +{fmt(c.creditos)} ↗
-              </a>
+              <span key={c.cuentaId} className={`inline-flex items-stretch overflow-hidden rounded border ${cuentas.has(c.cuentaId) ? "border-blue-500 bg-blue-200" : "border-blue-300 bg-blue-50"} text-blue-900`}>
+                <button type="button" aria-pressed={cuentas.has(c.cuentaId)} onClick={e => toggleChip(setCuentas, c.cuentaId, esSoloEste(e))}
+                  className="px-2 py-0.5 hover:bg-blue-100" title={tituloChip(c.nombre)}>
+                  {c.nombre}: <strong className="tabular-nums">{c.abiertos}</strong> · −{fmt(c.debitos)} / +{fmt(c.creditos)}
+                </button>
+                <a href={linkExtracto({ cuenta: c.cuentaId, movs: c.movs, desde: c.desde, hasta: c.hasta })} target="_blank" rel="noreferrer"
+                  className="border-l border-blue-300 px-1.5 py-0.5 hover:bg-blue-100"
+                  title={`Abre en el extracto de ${c.nombre} exactamente estos ${c.abiertos} movimientos sin conciliar (${c.desde ?? "?"} al ${c.hasta ?? "?"})`}>↗</a>
+              </span>
             ))}
+            {cuentas.size > 0 && <button type="button" className="underline text-muted-foreground" onClick={() => setCuentas(new Set())}>todas las cuentas</button>}
+            <span className="text-muted-foreground">{PISTA_CTRL_CLICK}</span>
             {porCuenta.length === 0 && <span className="text-emerald-700">✓ nada pendiente</span>}
             <span className="ml-2 text-muted-foreground">calculada {conciliacion.calculado ? `a las ${conciliacion.calculado}` : ""}{conciliacion.historicos ? ` · ${conciliacion.historicos} del histórico jul–nov no entran` : ""}{conciliacion.avisos.length ? ` · ⚠️ ${conciliacion.avisos.length} lectura(s) fallaron` : ""}</span>
             <button type="button" className="rounded border px-2 py-0.5 hover:bg-muted" onClick={conciliacion.recalcular}
