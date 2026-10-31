@@ -86,6 +86,7 @@ function doPost(e) {
     if (body.accion === 'resolver_carpeta') return resolverCarpeta(body)
     if (body.accion === 'info_carpeta') return infoCarpeta(body)
     if (body.accion === 'archivar_mail') return archivarMail(body)
+    if (body.accion === 'leer_archivo') return leerArchivo(body)
 
     // Acción 'confirmar': mueve un PDF de _Revisar a la carpeta del mes + lo renombra al estándar.
     if (body.accion === 'confirmar') {

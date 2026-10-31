@@ -265,7 +265,8 @@ import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla,
   juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves } from "@/lib/mails/registro"
 import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
 import { partesDeRuta, problemaDeRuta, estadoDestino, idDeLinkDrive } from "@/lib/archivo/destinos"
-import { mailsParaArchivar, agruparPorRegla, anioDeMail, vinculosConArchivos, controlArchivado } from "@/lib/mails/lotes"
+import { mailsParaArchivar, mailsParaCuota, agruparPorRegla, anioDeMail, vinculosConArchivos, controlArchivado } from "@/lib/mails/lotes"
+import { leerDocumento, templateSugerido, cuotaSugerida, huellaCuota, diferenciaCuota } from "@/lib/mails/leer-documento"
 import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
 import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe, cuentaCorriente } from "@/lib/polizas/resumen-ejercicio"
 import { aseguradoraAlCierre } from "@/lib/balance/seguros-al-cierre"
@@ -10275,6 +10276,41 @@ export function correrCasos(): Resultado[] {
       const pd = procesadoDeMail({ mensaje_id: "z", procesado_por: "archivado en 2026", vinculos: [{ schema: "drive", tabla: "archivo", id: "9", que: "2026-10-01 - exp.pdf | https://drive/x" }] }, [], [])
       const vP2 = pd ? `${pd.ok}:${pd.texto}:${pd.link}` : "-"
       chequear("Mails", "📦 Lo archivado se ve en «Qué se hizo» con el link al archivo (y el 📎 en verde)", "true:archivado: 1 archivo:https://drive/x", vP2, vP2 === "true:archivado: 1 archivo:https://drive/x", "A-FEAT-1442")
+      // 💲 A-FEAT-1442 etapa 3: del documento a la cuota
+      const docRV = "MUNICIPIO DE ROJAS\nTasa Red Vial - Cuota 04/2026\nInmueble 12934\n1er Vencimiento 08/10/2026 $ 1.437.552,50\n2do Vencimiento 14/10/2026 $ 1.446.177,82\nPróximo vencimiento: 09/12/2026"
+      const docEx = "CONSORCIO LIBERTAD 1366\nLiquidación de expensas Septiembre 2026\nSaldo anterior 1.585.019,00\nPagos recibidos 1.585.019,00\nExpensas ordinarias 1.502.300,00\nTotal a pagar\n1.623.450,75\nVencimiento: 10/10/2026"
+      const docVep = "VOLANTE ELECTRONICO DE PAGO\nCUIT 27-06682461-1\nPeríodo 09/2026\nImporte a pagar $ 412.880,00\nFecha de expiración del VEP 20/10/2026\nIVA 0,00"
+      const ld = [docRV, docEx, docVep, "Hola, te mando lo pedido"].map(t => { const l = leerDocumento(t); return `${l.importe ?? "-"}/${l.vencimiento ?? "-"}/${l.periodo ?? "-"}${l.aviso ? "/aviso" : ""}` }).join(" | ")
+      chequear("Mails", "💲 Lector de documentos: Red Vial toma el 1er vencimiento (no el 2do ni el próximo), expensas el «Total a pagar» de la línea de abajo (no el saldo anterior), el VEP el importe a pagar y su expiración; sin importe, avisa y no inventa",
+        "1437552.5/2026-10-08/04/2026 | 1623450.75/2026-10-10/09/2026 | 412880/2026-10-20/09/2026 | -/-/-/aviso", ld,
+        ld === "1437552.5/2026-10-08/04/2026 | 1623450.75/2026-10-10/09/2026 | 412880/2026-10-20/09/2026 | -/-/-/aviso", "A-FEAT-1442")
+      const tpl = [{ id: "t1", nombre_referencia: "Expensas Libertad", responsable: "MA" }, { id: "t2", nombre_referencia: "ABL Libertad Cuota", responsable: "MA" }, { id: "t3", nombre_referencia: "Red Vial Cuota Rojas", responsable: "MSA" }]
+      const vT2 = [templateSugerido(tpl, "ABL Libertad Cuota", ["Expensas LIBERTAD 1366"])?.id, templateSugerido(tpl, null, ["Expensas LIBERTAD 1366 Septiembre"])?.id,
+        templateSugerido(tpl, null, ["Municipio de Rojas – Liquidación Red Vial"])?.id, templateSugerido(tpl, null, ["Hola"])?.id ?? "ninguno"].join(" ")
+      chequear("Mails", "💲 Template propuesto: el que se usó la vez anterior para esa regla (por nombre: sobrevive a la campaña nueva); si no, el que más palabras comparte; si nada se parece, ninguno",
+        "t2 t1 t3 ninguno", vT2, vT2 === "t2 t1 t3 ninguno", "A-FEAT-1442")
+      const cs = [
+        { id: "c9", numero_cuota: 9, fecha_vencimiento: "2026-09-10", fecha_estimada: null, monto: 1500000, estado: "conciliado" },
+        { id: "c10", numero_cuota: 10, fecha_vencimiento: "2026-10-10", fecha_estimada: null, monto: 1585019, estado: "pendiente" },
+        { id: "c11", numero_cuota: 11, fecha_vencimiento: "2026-11-10", fecha_estimada: null, monto: 1585019, estado: "pendiente" },
+        { id: "cg", numero_cuota: 12, fecha_vencimiento: "2026-10-09", fecha_estimada: null, monto: 1, estado: "pendiente", grupo_pago_id: "g" },
+      ]
+      const vC3 = [cuotaSugerida(cs, "2026-10-10", "2026-10-01T10:00:00Z")?.id, cuotaSugerida(cs, null, "2026-10-25T10:00:00Z")?.id, cuotaSugerida(cs, "2027-06-10", "2027-06-01T10:00:00Z")?.id ?? "ninguna"].join(" ")
+      chequear("Mails", "💲 Cuota propuesta: la sin pagar de vencimiento más cercano (no la conciliada ni la de un pago agrupado); sin vencimiento leído, la del mail + 15 días; lejos de todas, ninguna",
+        "c10 c11 ninguna", vC3, vC3 === "c10 c11 ninguna", "A-FEAT-1442")
+      const lEx = leerDocumento(docEx)
+      const h1 = JSON.parse(huellaCuota({ cuota_id: "c10", template: "Expensas Libertad", leido: lEx, aplicado: { monto: 1623450.75, vencimiento: "2026-10-10" }, antes: { monto: 1585019, vencimiento: "2026-10-10" } }).que)
+      const h2 = JSON.parse(huellaCuota({ cuota_id: "c10", template: "Expensas Libertad", leido: lEx, aplicado: { monto: 1600000, vencimiento: "2026-10-10" }, antes: { monto: 1585019, vencimiento: "2026-10-10" } }).que)
+      const vH = `${h1.corregido} ${h2.corregido} ${h2.leido.importe}→${h2.aplicado.monto} antes ${h2.antes.monto} | ${diferenciaCuota(1585019, 1623450.75).texto} ${diferenciaCuota(100, 200).grande}`
+      chequear("Mails", "💲 Huella: guarda lo leído, lo aplicado y lo que tenía la cuota, y marca si se corrigió a mano; la diferencia se muestra y avisa si es grande (no frena)",
+        "false true 1623450.75→1600000 antes 1585019 | +2.4 % sobre lo que tenía la app true", vH, vH === "false true 1623450.75→1600000 antes 1585019 | +2.4 % sobre lo que tenía la app true", "A-FEAT-1442")
+      const vPc = mailsParaCuota([
+        L({ id: "q1", vinculos: [{ schema: "drive", tabla: "archivo", id: "1" }] }),
+        L({ id: "q2", vinculos: [{ schema: "drive", tabla: "archivo", id: "2" }, { schema: "public", tabla: "cuotas_egresos_sin_factura", id: "c" }] }),
+        L({ id: "q3", vinculos: [{ schema: "drive", tabla: "archivo", id: "3" }, { schema: "ninguna", tabla: "cuota", id: "-" }] }),
+        L({ id: "q4" }), L({ id: "q5", tipo: "factura", vinculos: [{ schema: "drive", tabla: "archivo", id: "5" }] }),
+      ]).map(m => m.id).join(",")
+      chequear("Mails", "💲 Pasan a cuota sólo los archivados que no se aplicaron ni se marcaron «no va» (y nunca las facturas)", "q1", vPc, vPc === "q1", "A-FEAT-1442")
       chequear("Mails", "🔽 «Qué se hizo» se filtra por clase, no por factura", "factura archivada | reenvío leído | boletas_arba", vCl, vCl === "factura archivada | reenvío leído | boletas_arba", "A-FEAT-1441")
     }
 

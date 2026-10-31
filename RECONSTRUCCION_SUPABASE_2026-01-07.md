@@ -3335,6 +3335,9 @@ Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantid
 ### 2026-10-31 · VENTAS de lo presentado a ARCA — 2 columnas en `public.ddjj_presentadas` (script 145) — A-FEAT-1439 — ✅ CORRIDO 2026-10-31 con OK de JMS («1 ok»)
 `ventas jsonb` (las ventas del `comprobantes_ventas.csv` del zip) y `totales_ventas jsonb` (los totales de ventas del `libro_iva.xml`), vacías, con marca `[script 145]` en el comentario de cada columna. Sin RLS ni grants nuevos. Al reconstruir: correr `scripts/145-ddjj-presentadas-ventas.sql` después del 107. Deshacer: `-deshacer.sql` (verifica la marca de cada columna).
 
+### 2026-10-31 · Cada regla de mails sabe a qué carpeta van sus documentos (script 149) — A-FEAT-1442 — ✅ CORRIDO 2026-10-31 con OK de JMS («ok, corré el 149»)
+`public.mails_reglas.archivo_destino text` → FK `mails_reglas_archivo_destino_fk` a `archivo_destinos(clave)` (on update cascade, on delete set null), vacía. Al reconstruir: correr `scripts/149-mails-reglas-destino.sql` después del 148. Deshacer: `scripts/149-mails-reglas-destino-deshacer.sql`.
+
 ### 2026-10-31 · DÓNDE SE ARCHIVA cada tipo de documento — tabla `archivo_destinos` (script 148) — A-FEAT-1442 — ✅ CORRIDO 2026-10-31 con OK de JMS («ok, creá la tabla y arrancá la tanda 4»)
 `public.archivo_destinos` (`clave` pk, `nombre`, `ruta`, `drive_folder_id`, `ruta_drive`, `por_anio` default true) con 1 fila (`arba_inmobiliario`, sin carpeta). RLS `ver_segun_permiso`/`escribir_segun_permiso`, recurso `egresos` sin restringir lectura (marca `[script 148]`), `anon` sin acceso. Al reconstruir: correr `scripts/148-archivo-destinos.sql`. Deshacer: `scripts/148-archivo-destinos-deshacer.sql` (se pierden las carpetas elegidas; los archivos del Drive no se tocan).
 

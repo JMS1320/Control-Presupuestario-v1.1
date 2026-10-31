@@ -17,10 +17,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { IconoDestinoArchivo, useDestinoArchivo } from "@/components/destino-archivo"
+import { PasarACuota } from "@/components/mails-a-cuota"
 import { ExternalLink, Paperclip, RefreshCw } from "lucide-react"
 import { claveDeTipoMail, linkGmail, type MailRegistrado } from "@/lib/mails/registro"
 import {
-  mailsParaArchivar, agruparPorRegla, anioDeMail, vinculosConArchivos, controlArchivado, esDocumento,
+  mailsParaArchivar, mailsParaCuota, agruparPorRegla, anioDeMail, vinculosConArchivos, controlArchivado, esDocumento,
   type GrupoLote, type ReglaConDestino, type ResultadoArchivo,
 } from "@/lib/mails/lotes"
 
@@ -78,6 +79,8 @@ export function LotesMails() {
         archiva el buscador de facturas, y las <b>boletas de ARBA</b> se bajan desde Cash Flow → Boletas ARBA.
       </p>
       {error && <p className="text-sm text-red-600">{error}</p>}
+      <PasarACuota mails={mailsParaCuota(mails)} todosLosMails={mails}
+        onCambio={(id, v) => setMails(prev => prev.map(m => m.id === id ? { ...m, vinculos: v } : m))} />
       {!cargando && !error && grupos.length === 0 && <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No hay documentos pendientes de guardar en este período.</p>}
       {grupos.map(g => (
         <GrupoParaGuardar key={g.clave} grupo={g} destinos={destinos} setDestinos={setDestinos}

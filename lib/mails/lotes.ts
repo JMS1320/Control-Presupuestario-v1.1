@@ -78,3 +78,9 @@ export function linkDeArchivo(vinculos: VinculoMail[] | null): string | null {
   const v = (vinculos ?? []).find(x => x.schema === "drive")
   return v?.que?.split(" | ")[1] ?? null
 }
+
+/** Pura: los mails ARCHIVADOS que todavía no pasaron su monto a una cuota (ni se marcaron «no va») — etapa 3. */
+export function mailsParaCuota(mails: MailRegistrado[]): MailRegistrado[] {
+  return mails.filter(m => tipoDeMail(m) !== "factura" && (m.vinculos ?? []).some(v => v.schema === "drive")
+    && !(m.vinculos ?? []).some(v => v.tabla === "cuotas_egresos_sin_factura" || v.schema === "ninguna"))
+}

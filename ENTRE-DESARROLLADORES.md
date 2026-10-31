@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 🗂️ 1 columna nueva en `public.mails_reglas`: `archivo_destino` (2026-10-31) — ⏳ AVISO PREVIO, todavía sin aplicar (espera OK de JMS)
+### 🗂️ 1 columna nueva en `public.mails_reglas`: `archivo_destino` (2026-10-31) — ✅ APLICADA el 31/10 con OK de JMS (aviso previo): columna vacía + FK, 70 reglas
 - `scripts/149-mails-reglas-destino.sql` (+ `-deshacer`). A-FEAT-1442 etapa 2: a qué carpeta del archivo digital van los adjuntos de cada regla. FK a `archivo_destinos.clave` (on update cascade, on delete set null), vacía. No toca RLS ni datos.
 
 ### 🗂️ Tabla nueva `public.archivo_destinos` (2026-10-31) — ✅ APLICADA el 31/10 con OK de JMS (aviso previo): 1 tabla, 1 fila, 1 en recurso_tablas

@@ -148,3 +148,18 @@ function infoCarpeta(body) {
     return responseJson({ ok: false, error: 'La carpeta guardada ya no existe o no es accesible: ' + String(e && e.message || e) }, 200)
   }
 }
+
+/**
+ * Acción `leer_archivo` { file_id } — A-FEAT-1442 etapa 3: el TEXTO de un documento ya archivado (PDF o imagen, con el
+ * mismo OCR del buscador de facturas: `extraerTextoDeBlob`). La app lo lee y propone el monto y el vencimiento de la
+ * cuota; nada se escribe acá.
+ */
+function leerArchivo(body) {
+  try {
+    var f = DriveApp.getFileById(String(body.file_id || ''))
+    var texto = extraerTextoDeBlob(f.getBlob())
+    return responseJson({ ok: true, nombre: f.getName(), texto: String(texto || '').slice(0, 20000) }, 200)
+  } catch (e) {
+    return responseJson({ ok: false, error: String(e && e.message || e) }, 200)
+  }
+}
