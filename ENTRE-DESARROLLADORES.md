@@ -44,7 +44,7 @@
 - `scripts/147-mails-tipos-y-seguimiento.sql` (+ `-deshacer`). A-FEAT-1440 / A-FEAT-1437: los tipos de mail pasan a un maestro editable (12 filas iniciales) y el CHECK de `mails_reglas.tipo` se cambia por FK a ese maestro (también `mails_registro.tipo` y `tipo_manual`); cada mail recibido tiene `seguimiento` (pendiente / terminado) con nota, fecha y cuándo; un trigger BEFORE INSERT marca pendiente lo que entra con acción «avisar».
 - **RLS**: `mails_tipos` igual que las otras dos de mails (`puede_ver` / `puede_escribir`, recurso `importar.mails`, sólo admin; `anon` sin acceso). No toca roles ni las políticas existentes. Datos: pasa a pendiente los 46 mails «avisar» ya registrados.
 
-### 🧾 2 columnas nuevas en `public.ddjj_presentadas`: `ventas` y `totales_ventas` (2026-10-31) — ⏳ AVISO PREVIO, todavía sin aplicar (espera OK de JMS)
+### 🧾 2 columnas nuevas en `public.ddjj_presentadas`: `ventas` y `totales_ventas` (2026-10-31) — ✅ APLICADA el 31/10 con OK de JMS (aviso previo): 2 columnas vacías con su marca; después el 146 cargó los 12 meses de MSA 25/26
 - `scripts/145-ddjj-presentadas-ventas.sql` (+ `-deshacer`), en `desarrollo`. A-FEAT-1439: la tabla de lo presentado a ARCA (script 107) guardaba sólo las compras del libro IVA; ahora guarda también las ventas, para mostrarlas en el recorrido del balance. Dos columnas `jsonb` vacías, con marca `[script 145]`.
 - **No toca RLS, grants, funciones ni datos.** Después corre el `scripts/146` (carga los 12 meses de MSA 25/26 en esa tabla, marca `cargado_por = '[script 146]'`).
 
