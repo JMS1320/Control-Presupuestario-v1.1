@@ -82,6 +82,7 @@ import { EstadoMesesDDJJ } from "@/components/estado-meses-ddjj"
 import { RectificacionDelMes, consultarMesesARectificar } from "@/components/rectificacion-del-mes"
 import { esColumnaFiscal, type MesARectificar } from "@/lib/subdiarios/rectificacion"
 import { BotonRevision, useRevisionesDe } from "@/components/boton-revision"
+import { BotonNoSeConsigue } from "@/components/no-se-consigue"
 import { BotonPropuestaFactura, usePropuestasFactura } from "@/components/propuesta-factura"
 import { Paperclip, Banknote } from "lucide-react"
 import { ModalExportarLote } from "@/components/lotes-galicia/modal-exportar-lote"
@@ -7317,7 +7318,14 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
             <CardContent>
               <PanelFacturasSinPdf filas={visibles} dondeBusca="mail" buscando={buscandoPdfs} proveedores={provPorCuit}
                 onGuardarMail={guardarMailProveedor} onPortal={marcarProveedorPortal}
-                onPedir={ids => setPedirFacturas(ids)} onLlegaron={buscarRespuestasSinPdf} onBuscar={ids => buscarSinPdf(ids, 'mail')} />
+                onPedir={ids => setPedirFacturas(ids)} onLlegaron={buscarRespuestasSinPdf} onBuscar={ids => buscarSinPdf(ids, 'mail')}
+                accionFila={id => {
+                  // 🙅 A-FEAT-1451: pedir que la saquen de faltantes (sale sólo con la confirmación de JMS)
+                  const f = facturasPeriodo.find(x => x.id === id)
+                  if (!f) return null
+                  const p = revisionesFactura[id] as unknown as { tipo?: string; estado: string } | undefined
+                  return <BotonNoSeConsigue schema={schemaName} factura={f} pendiente={p?.tipo === 'sin_pdf' ? p : null} onPedido={() => recargarRevisiones()} />
+                }} />
             </CardContent>
           </Card>
         )
@@ -9161,6 +9169,10 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                       </Button>
                     ) : (
                       <div className="flex items-center gap-1 justify-end">
+                        {/* 🙅 A-FEAT-1451: ya se pidió y nadie la tiene → pedir que la saquen (sale sólo con la confirmación de JMS) */}
+                        <BotonNoSeConsigue schema={schemaName} factura={f}
+                          pendiente={(revisionesFactura[f.id] as unknown as { tipo?: string; estado: string } | undefined)?.tipo === 'sin_pdf' ? revisionesFactura[f.id] : null}
+                          onPedido={() => recargarRevisiones()} />
                         <Input
                           type="text"
                           placeholder="https://drive.google.com/…"
