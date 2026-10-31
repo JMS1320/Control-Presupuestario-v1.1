@@ -27,6 +27,8 @@ export interface FiltrosEnMemoria {
   okAuditar?: boolean
   /** 🔗 A-FEAT-1430: sólo estos movimientos (los pidió un link desde el balance). */
   ids?: Set<string> | null
+  /** 🔽 A-FEAT-1456: los filtros por columna (tipo Excel) del encabezado de la tabla. */
+  columnas?: Record<string, Set<string> | null> | null
 }
 
 export function filtrosEnMemoria(f: FiltrosEnMemoria): boolean {
@@ -35,6 +37,7 @@ export function filtrosEnMemoria(f: FiltrosEnMemoria): boolean {
     || !!f.categs // null = sin filtro; un conjunto (aunque sea vacío) filtra lo cargado
     || !!f.okAuditar
     || !!(f.ids && f.ids.size)
+    || Object.values(f.columnas ?? {}).some(s => s != null)
 }
 
 /** El límite con que se pide una carga: si hay filtros en memoria, la cuenta entera. */

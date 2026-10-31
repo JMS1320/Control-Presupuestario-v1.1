@@ -10792,6 +10792,12 @@ export function correrCasos(): Resultado[] {
     chequear("Extracto — filtros sobre la cuenta entera", "La contraparte vacía no cuenta como filtro; categ sí; con un filtro en memoria todo chip pide la cuenta entera y, si quedó recortada, se vuelve a traer",
       "sin filtros: respeta 200 · categ: trae todo · chip con búsqueda pide 5000 · tras chip (200 cargados con límite 200): recarga · ya entera (límite 5000, 1892): nada · cuenta chica (límite 200, 57): nada", v,
       v === "sin filtros: respeta 200 · categ: trae todo · chip con búsqueda pide 5000 · tras chip (200 cargados con límite 200): recarga · ya entera (límite 5000, 1892): nada · cuenta chica (límite 200, 57): nada", "A-BUG-1404")
+    // 🔽 A-FEAT-1456: un filtro por columna también es «en memoria» (trae la cuenta entera); columnas en null no cuentan.
+    const conCol = { ...nada, columnas: { comprobante_arca_id: new Set(["(vacío)"]) } }
+    const colNull = { ...nada, columnas: { comprobante_arca_id: null } }
+    const vc = `${filtrosEnMemoria(conCol) ? "columna trae todo" : "NO"} · ${filtrosEnMemoria(colNull) ? "NULL CUENTA" : "null no cuenta"}`
+    chequear("Extracto — filtros sobre la cuenta entera", "🔽 El filtro por columna (tipo Excel) cuenta como filtro en memoria; una columna sin filtro (null) no",
+      "columna trae todo · null no cuenta", vc, vc === "columna trae todo · null no cuenta", "A-FEAT-1456")
   }
 
   // ══ 📅 Cash Flow: pasar UNA fila a pagado sin fecha de pago la pide (A-BUG-1407, Zavala Ortiz 28/10) ══

@@ -101,6 +101,22 @@ import { traerTodo } from "@/lib/supabase-paginado"
 import { avisarSiIncompleta } from "@/lib/ui/avisar-lectura"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 import { extractoDelLink } from "@/lib/extracto/link"
+import { FiltroColumna } from "@/components/ui/filtro-columna"
+import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
+
+/** 🔽 A-FEAT-1456 — columnas con filtro tipo Excel: el título y el valor de cada fila (el que se ve en la celda). */
+const TITULO_COL: Record<string, string> = {
+  estado: "Estado", proveedor_nombre: "Proveedor", centro_de_costo: "Centro Costo", contable: "Contable", interno: "Interno",
+  nro_cuenta: "Nro Cuenta", template_id: "Template", template_cuota_id: "Cuota", comprobante_arca_id: "Factura ARCA", leyenda1: "Nombre / comercio",
+}
+const vinculo = (x: unknown) => (x ? "vinculado" : null)
+const VALOR_COL: Record<string, (m: any) => string | null | undefined> = {
+  estado: m => (esHistorico(m.estado) ? "histórico" : m.estado),
+  proveedor_nombre: m => m.proveedor_nombre, centro_de_costo: m => m.centro_de_costo, contable: m => m.contable,
+  interno: m => m.interno, nro_cuenta: m => m.nro_cuenta,
+  template_id: m => vinculo(m.template_id), template_cuota_id: m => vinculo(m.template_cuota_id),
+  comprobante_arca_id: m => vinculo(m.comprobante_arca_id), leyenda1: m => m.leyendas_adicionales_1,
+}
 
 // ─── Helpers para scoring de propuestas ARCA ────────────────────────────────
 
@@ -363,6 +379,12 @@ export function VistaExtractoBancario() {
   const [filtroNota, setFiltroNota] = useState<'todas' | 'con_nota' | 'sin_nota'>('todas')
   /** ↕️ A-FEAT-1224 — sólo débitos / sólo créditos. Decide también sobre qué columna mira el rango de montos. */
   const [filtroSentido, setFiltroSentido] = useState<Sentido>('todos')
+  /**
+   * 🔽 A-FEAT-1456 — filtro por columna, tipo Excel, en el encabezado (nota de JMS 31/10: «abro la columna con el filtro
+   * de vínculo con facturas y debería ver vacío en todos»). Trabaja sobre lo que se está mirando —también lo que pidió
+   * un link del recorrido— y entra en la lista de filtros en memoria (trae la cuenta entera) y en «filtros activos».
+   */
+  const [filtrosCol, setFiltrosCol] = useState<Record<string, Set<string> | null>>({})
   // 🔗 A-FEAT-1430: al abrir desde un link, la cuenta, las fechas que contienen los movimientos y los movimientos.
   useEffect(() => {
     const f = extractoDelLink(window.location.search)
@@ -862,6 +884,7 @@ ${texto.trim()}` : texto.trim()
       const cierre = (movimientos.find(m => (m as any).nro_resumen === resumenFiltro) as any)?.fecha_cierre
       items.push(`resumen ${cierre ? fmt(String(cierre).slice(0, 10)) : resumenFiltro}`)
     }
+    for (const [col, sel] of Object.entries(filtrosCol)) if (sel) items.push(`${TITULO_COL[col] ?? col}: ${sel.size} valor(es)`)
     if (resumenesElegidos.size > 0) {
       const cierres = [...resumenesElegidos].map(nr => {
         const c = (movimientos.find(m => (m as any).nro_resumen === nr) as any)?.fecha_cierre
@@ -872,11 +895,11 @@ ${texto.trim()}` : texto.trim()
     return items
   }, [usarFechas, fechaMovDesde, fechaMovHasta, montoDesde, montoHasta, categsFiltro, busquedaCateg,
       busqueda, filtroProveedor, busquedaDetalle, filtroEstado, filtroRevisado, filtroNota, busquedaNota, filtroCategEspecial,
-      filtroSentido, resumenFiltro, resumenesElegidos, movimientos])
+      filtroSentido, resumenFiltro, resumenesElegidos, movimientos, filtrosCol])
 
   const hayFiltros = filtrosActivos.length > 0
 
-  const movimientosVisibles = useMemo(() => {
+  const movimientosSinColumnas = useMemo(() => {
     // Excluir filas 'resumen' de tarjeta (son cabeceras de mes, se muestran en el panel agrupado)
     const base = movimientos.filter(m => (m as any).tipo_fila !== 'resumen'
       && (!resumenFiltro || (m as any).nro_resumen === resumenFiltro)
@@ -938,6 +961,15 @@ ${texto.trim()}` : texto.trim()
 
     return lista
   }, [movimientos, categsFiltro, busqueda, filtroProveedor, idsCorrida, resumenFiltro, resumenesElegidos, modoOkAuditar, idsLink])
+  // 🔽 A-FEAT-1456: los filtros por columna, sobre lo de arriba.
+  const movimientosVisibles = useMemo(() => filtrarPorColumnas(movimientosSinColumnas, filtrosCol, VALOR_COL),
+    [movimientosSinColumnas, filtrosCol])
+  /** Las opciones de cada columna: los valores de lo filtrado por TODO LO DEMÁS (como en Excel). */
+  const opcionesCol = (col: string) => opcionesDeColumna(filtrarPorColumnas(movimientosSinColumnas, { ...filtrosCol, [col]: null }, VALOR_COL), VALOR_COL[col])
+  const encabezado = (col: string) => (
+    <FiltroColumna titulo={TITULO_COL[col]} opciones={opcionesCol(col)} seleccion={filtrosCol[col] ?? null}
+      onChange={s => setFiltrosCol(f => ({ ...f, [col]: s }))} />
+  )
 
   /** Cuántos pendientes hay en lo filtrado — es el número que el botón anticipa. */
   const pendientesFiltrados = useMemo(
@@ -1356,7 +1388,7 @@ ${texto.trim()}` : texto.trim()
    * problema: devuelve cero sobre un subconjunto sin decir que era un subconjunto.
    */
   // 🔎 A-BUG-1404: TODOS los filtros que trabajan sobre lo cargado, en un solo lugar (lib/extracto/alcance-filtros).
-  const enMemoria = { busqueda, proveedor: filtroProveedor, categs: categsFiltro, okAuditar: modoOkAuditar, ids: idsLink }
+  const enMemoria = { busqueda, proveedor: filtroProveedor, categs: categsFiltro, okAuditar: modoOkAuditar, ids: idsLink, columnas: filtrosCol }
   const hayQueBuscarSobreTodo = filtrosEnMemoria(enMemoria)
 
   useEffect(() => {
@@ -3331,7 +3363,7 @@ ${marca}` : marca
       estado: filtroEstado,
       busqueda: busqueda.trim() || undefined,
       // A-BUG-1404: con un filtro en memoria puesto, TODA carga trae la cuenta entera (chips, Filtrar, Enter…)
-      limite: limiteParaCargar(limiteRegistros, { busqueda, proveedor: filtroProveedor, categs: categsFiltro, okAuditar: modoOkAuditar, ids: idsLink }),
+      limite: limiteParaCargar(limiteRegistros, { busqueda, proveedor: filtroProveedor, categs: categsFiltro, okAuditar: modoOkAuditar, ids: idsLink, columnas: filtrosCol }),
     }
     if (usarFechas && fechaMovDesde) filtros.fechaDesde = fechaMovDesde
     if (usarFechas && fechaMovHasta) filtros.fechaHasta = fechaMovHasta
@@ -3352,6 +3384,7 @@ ${marca}` : marca
 
   // Limpiar filtros avanzados
   const limpiarFiltrosAvanzados = () => {
+    setFiltrosCol({})
     setFechaMovDesde('')
     setFechaMovHasta('')
     setUsarFechas(false)
@@ -4843,19 +4876,19 @@ ${marca}` : marca
                         <TableHead className="text-right">Créditos</TableHead>
                         {col('saldo') && <TableHead className="text-right">Saldo</TableHead>}
                         {col('categ') && <TableHead>CATEG</TableHead>}
-                        <TableHead>Estado</TableHead>
-                        {col('proveedor_nombre') && <TableHead>Proveedor</TableHead>}
+                        <TableHead>{encabezado('estado')}</TableHead>
+                        {col('proveedor_nombre') && <TableHead>{encabezado('proveedor_nombre')}</TableHead>}
                         {col('comprobantes_pagados') && <TableHead>Comprobantes</TableHead>}
                         {col('detalle') && <TableHead>Detalle</TableHead>}
                         {col('motivo_revision') && <TableHead>Motivo Revisión</TableHead>}
-                        {col('centro_de_costo') && <TableHead>Centro Costo</TableHead>}
-                        {col('contable') && <TableHead>Contable</TableHead>}
-                        {col('interno') && <TableHead>Interno</TableHead>}
-                        {col('nro_cuenta') && <TableHead>Nro Cuenta</TableHead>}
-                        {col('template_id') && <TableHead>Template</TableHead>}
-                        {col('template_cuota_id') && <TableHead>Cuota</TableHead>}
-                        {col('comprobante_arca_id') && <TableHead>Factura ARCA</TableHead>}
-                        {col('leyenda1') && <TableHead>Nombre / comercio</TableHead>}
+                        {col('centro_de_costo') && <TableHead>{encabezado('centro_de_costo')}</TableHead>}
+                        {col('contable') && <TableHead>{encabezado('contable')}</TableHead>}
+                        {col('interno') && <TableHead>{encabezado('interno')}</TableHead>}
+                        {col('nro_cuenta') && <TableHead>{encabezado('nro_cuenta')}</TableHead>}
+                        {col('template_id') && <TableHead>{encabezado('template_id')}</TableHead>}
+                        {col('template_cuota_id') && <TableHead>{encabezado('template_cuota_id')}</TableHead>}
+                        {col('comprobante_arca_id') && <TableHead>{encabezado('comprobante_arca_id')}</TableHead>}
+                        {col('leyenda1') && <TableHead>{encabezado('leyenda1')}</TableHead>}
                         {col('leyenda2') && <TableHead>CUIT contraparte</TableHead>}
                         {col('leyenda3') && <TableHead>Concepto</TableHead>}
                         {col('leyenda4') && <TableHead>Banco o red</TableHead>}
