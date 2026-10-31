@@ -38,7 +38,7 @@ const COLOR: Record<GrupoTema, string> = {
   "cheque": "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-900",
 }
 
-export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerrar, onPendientes, conciliacion }: {
+export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerrar, onPendientes, conciliacion, enCamino = [] }: {
   empresa: string
   anioCierre: number
   /** «25/26», para el título. */
@@ -48,6 +48,8 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   /** Después de responder: la lista al día, para que el export y el cuadro de pendientes la lleven. */
   onPendientes: (lista: PendienteBalance[]) => void
   /** 🏦 El estado de las propuestas de conciliación (se calculan aparte, tardan unos segundos). */
+  /** ⏳ Lo que todavía se está trayendo (vacío = están todos los temas). */
+  enCamino?: string[]
   conciliacion?: { cargando: string | null; historicos: number; avisos: string[]; calculado: string | null; recalcular: () => void }
 }) {
   const [filtro, setFiltro] = useState<Set<GrupoTema>>(new Set())
@@ -75,7 +77,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   /** 🧮 A-FEAT-1439: cuántos temas abiertos no tienen fuente (lo objetivo) o no tienen dónde verlos en la app. */
   const tres = useMemo(() => sinTresVistas(temas), [temas])
   /** 🧱 La base (nivel 1): cuántos abiertos le quedan — si tiene, se recomienda terminarla antes. */
-  const baseAbiertos = GRUPOS.filter(g => g.nivel === 1).reduce((n, g) => n + prog.porGrupo[g.id].total - prog.porGrupo[g.id].respondidos, 0)
+  const baseFalta = GRUPOS.filter(g => g.nivel === 1).map(g => ({ g, n: prog.porGrupo[g.id].total - prog.porGrupo[g.id].respondidos })).filter(x => x.n > 0)
   /** 🏦 Lo pendiente de conciliar, por cuenta (se ve al elegir «Conciliar movimientos»). */
   const porCuenta = useMemo(() => conciliacionPorCuenta(temas), [temas])
   // Los tipos (nivel 3) dependen del grupo elegido: al cambiar de grupo, el filtro de tipo arranca de cero.
@@ -251,6 +253,9 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
               ⚠️ Abiertos {tres.sinFuente > 0 ? `· ${tres.sinFuente} sin fuente` : ""}{tres.sinLink > 0 ? ` · ${tres.sinLink} sin link a la app` : ""}
             </span>
           )}
+          {enCamino.length > 0
+            ? <span className="text-xs text-amber-800" data-test="recorrido-cargando">⏳ Todavía llega: {enCamino.join(", ")} — la lista puede crecer y reordenarse</span>
+            : <span className="text-xs text-emerald-700" data-test="recorrido-listo">✓ Están todos los temas</span>}
           <div className="ml-auto flex items-center gap-2">
             <span className="hidden md:inline text-xs text-muted-foreground">↑ ↓ para moverse · Esc cierra</span>
             <Button variant="outline" size="sm" onClick={cerrar}>Cerrar</Button>
@@ -269,9 +274,10 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
                   {g.icono} {g.titulo} <span className="tabular-nums text-muted-foreground">{prog.porGrupo[g.id].respondidos}/{prog.porGrupo[g.id].total}</span>
                 </button>
               ))}
-              {nivel === 1 && baseAbiertos > 0 && (
-                <span className="text-xs text-amber-800" data-test="recorrido-base-recomendacion">
-                  ⚠️ Faltan {baseAbiertos} de la base: conviene cerrarla primero, porque de ella se compone el resto.
+              {nivel === 1 && baseFalta.length > 0 && (
+                <span className="w-full pl-16 text-xs text-amber-800" data-test="recorrido-base-recomendacion">
+                  ⚠️ La base todavía no está completa — falta: {baseFalta.map(x => `«${x.g.titulo}» ${x.n}`).join(" · ")}.
+                  {" "}Conviene terminarla antes que «El resto»: los otros números salen de ahí y pueden cambiar.
                 </span>
               )}
               {nivel === 2 && (
@@ -282,7 +288,6 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
             </div>
           )
         })}
-        {conciliacion?.cargando && <div className="text-xs text-amber-800">⏳ Calculando las propuestas de conciliación: {conciliacion.cargando}</div>}
         {/* 🏦 Con «Conciliar movimientos» elegido: lo pendiente por cuenta, con su link para ir a trabajarlo. */}
         {filtro.has("conciliacion") && conciliacion && !conciliacion.cargando && (
           <div className="flex flex-wrap items-center gap-1.5 text-xs" data-test="recorrido-conciliacion-por-cuenta">

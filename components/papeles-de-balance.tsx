@@ -48,7 +48,7 @@ import { ProponerFotoBalance } from "./proponer-foto-balance"
 import { ivaConSigno, RENGLONES, type DatosDeLosPapeles, type ValorPropuesto } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { armarWorkbook, coberturaDeArgs, descargarLibroDiario } from "@/lib/balance/export-libro-diario"
-import { armarTemas, type Tema } from "@/lib/balance/recorrido"
+import { armarTemas, subdiariosContraArca, type Tema } from "@/lib/balance/recorrido"
 import { temasVentasVsArca, temasComprasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
 import { leerDatosConciliacion, proponerConciliaciones } from "@/lib/conciliacion/propuestas-ejercicio"
 import { temasDeMovimientos, temasDeDeudas, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
@@ -288,7 +288,9 @@ export function PapelesDeBalance() {
           que: (e as Error).message, links: [], respondido: false })
       }
     }
-    try { return armarTemas(coberturaDeArgs(...argsDelExcel(libro)), pendientes, otros) } catch { return armarTemas(null, pendientes, otros) }
+    // 🧾 Los subdiarios, en la base y con lo presentado a ARCA como fuente (JMS 31/10).
+    const conArca = (ts: ReturnType<typeof armarTemas>) => subdiariosContraArca(ts, ddjjGuardadas?.filas ?? null, libro.ejercicio.subdiarios.length)
+    try { return conArca(armarTemas(coberturaDeArgs(...argsDelExcel(libro)), pendientes, otros)) } catch { return conArca(armarTemas(null, pendientes, otros)) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [libro, empresa.id, templates, hacienda, cuentas, valores, bancarios, sueldos, cuentasCorrientesConInicio,
     pendientes, ajustes, anioCierre, asientosContables, lecturas, controlCuotas, controlesInicio, propuestaCierre, fotoInicio, conciliacion, ddjjGuardadas])
@@ -1092,6 +1094,8 @@ export function PapelesDeBalance() {
         {verRecorrido && libro && (
           <RecorridoBalance empresa={empresa.id} anioCierre={anioCierre} etiqueta={libro.ejercicio.etiqueta}
             temas={temasRecorrido} onCerrar={() => setVerRecorrido(false)}
+            // ⏳ Lo que todavía se está trayendo: mientras haya algo, la lista puede crecer y reordenarse (JMS 31/10: «va cambiando solo… no sé si está listo para empezar»).
+            enCamino={[...(!ddjjGuardadas ? ["lo presentado a ARCA"] : []), ...(cargandoConciliacion || !conciliacion ? ["la conciliación"] : []), ...(!hacienda && pedidoStock > 0 ? ["stock y precios"] : [])]}
             conciliacion={{ cargando: cargandoConciliacion, historicos: conciliacion?.historicos ?? 0, avisos: conciliacion?.avisos ?? [],
               calculado: conciliacion?.calculado ?? null, recalcular: () => void calcularConciliacion() }}
             onPendientes={l => { setPendientes(l); setVersionPendientes(v => v + 1) }} />

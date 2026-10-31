@@ -71,6 +71,14 @@ export interface ControlProvisionAnterior {
    * si lo son, ese gasto ya se reconoció el año pasado y no es de este ejercicio.
    */
   candidatos: AsientoLibroDiario[]
+  /**
+   * Contra qué se encontraron: `diferencia` = marcándolas, cierra; `declarado` = suman lo provisionado ENTERO, así que
+   * lo que la app reconoce hoy sobraría (JMS 31/10: PAM 2-31 + Magdalena 10-269 suman el declarado, y la app reconocía
+   * otra de $ 56.001,07, con lo que la búsqueda por diferencia no las encontraba).
+   */
+  candidatosContra?: "diferencia" | "declarado"
+  /** Lo que la app reconoce hoy como provisión anterior (para linkearlo). */
+  reconocidos?: AsientoLibroDiario[]
 }
 
 const r2 = (x: number) => Math.round(x * 100) / 100
@@ -89,32 +97,39 @@ export function controlarProvisionAnterior(
   const fuenteDeclarado = foto == null ? "no hay foto del balance anterior"
     : r?.contador != null ? "foto del balance anterior, versión contador («Provisión para gastos»)"
     : r?.jms != null ? "foto del balance anterior, versión JMS" : "la foto no tiene el renglón «Provisión para gastos»"
-  if (declarado == null) return { declarado: null, fuenteDeclarado, reconocido, diferencia: null, estado: "sin foto", candidatos: [] }
+  const reconocidos = provisionesAnteriores
+  if (declarado == null) return { declarado: null, fuenteDeclarado, reconocido, diferencia: null, estado: "sin foto", candidatos: [], reconocidos }
 
   const diferencia = r2(declarado - reconocido)
-  if (Math.abs(diferencia) <= TOLERANCIA) return { declarado, fuenteDeclarado, reconocido, diferencia, estado: "cierra", candidatos: [] }
+  if (Math.abs(diferencia) <= TOLERANCIA) return { declarado, fuenteDeclarado, reconocido, diferencia, estado: "cierra", candidatos: [], reconocidos }
 
-  // Candidatos: compras del ejercicio que no están ya en la lista del anterior, que dan la diferencia solas o de a dos.
+  // Candidatos: compras del ejercicio que no están ya en la lista del anterior, que dan el objetivo solas o de a dos.
   const ya = new Set(provisionesAnteriores.map(a => a.id))
-  const pool = compras.filter(a => !ya.has(a.id) && Number(a.total) > 0 && Number(a.total) <= diferencia + TOLERANCIA)
-    .sort((a, b) => String(a.fecha ?? "").localeCompare(String(b.fecha ?? "")))
-  let candidatos: AsientoLibroDiario[] = []
-  const uno = pool.find(a => Math.abs(Number(a.total) - diferencia) <= TOLERANCIA)
-  if (uno) candidatos = [uno]
-  else if (diferencia > 0) {
+  const buscar = (objetivo: number): AsientoLibroDiario[] => {
+    if (objetivo <= TOLERANCIA) return []
+    const pool = compras.filter(a => !ya.has(a.id) && Number(a.total) > 0 && Number(a.total) <= objetivo + TOLERANCIA)
+      .sort((a, b) => String(a.fecha ?? "").localeCompare(String(b.fecha ?? "")))
+    const uno = pool.find(a => Math.abs(Number(a.total) - objetivo) <= TOLERANCIA)
+    if (uno) return [uno]
     const porImporte = new Map<number, AsientoLibroDiario[]>()
     for (const a of pool) {
       const k = Math.round(Number(a.total))
       porImporte.set(k, [...(porImporte.get(k) ?? []), a])
     }
     for (const a of pool) {
-      const falta = Math.round(diferencia - Number(a.total))
+      const falta = Math.round(objetivo - Number(a.total))
       for (const k of [falta - 1, falta, falta + 1]) {
-        const b = (porImporte.get(k) ?? []).find(x => x.id !== a.id && Math.abs(Number(a.total) + Number(x.total) - diferencia) <= TOLERANCIA)
-        if (b) { candidatos = [a, b]; break }
+        const b = (porImporte.get(k) ?? []).find(x => x.id !== a.id && Math.abs(Number(a.total) + Number(x.total) - objetivo) <= TOLERANCIA)
+        if (b) return [a, b]
       }
-      if (candidatos.length) break
     }
+    return []
   }
-  return { declarado, fuenteDeclarado, reconocido, diferencia, estado: "no cierra", candidatos }
+  let candidatos = buscar(diferencia)
+  let candidatosContra: "diferencia" | "declarado" | undefined = candidatos.length ? "diferencia" : undefined
+  if (!candidatos.length && reconocido > TOLERANCIA) {
+    candidatos = buscar(declarado)
+    if (candidatos.length) candidatosContra = "declarado"
+  }
+  return { declarado, fuenteDeclarado, reconocido, diferencia, estado: "no cierra", candidatos, candidatosContra, reconocidos }
 }

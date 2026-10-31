@@ -201,7 +201,7 @@ import { controlarProvisionAnterior } from "@/lib/balance/control-inicio"
 import { esFilaDeAlerta, solapasDelLibro } from "@/lib/balance/vista-previa"
 import { armarInicioYCierre, textoEstado } from "@/lib/balance/inicio-y-cierre"
 import { armarCobertura, CANTIDAD_DE_DATOS, datosSinAncla } from "@/lib/balance/cobertura-papeles"
-import { armarTemas, GRUPOS, conciliacionPorCuenta, progreso, textoPendienteDe, fuenteDe, linksDeLaApp, sinTresVistas, type Tema as TemaRecorrido } from "@/lib/balance/recorrido"
+import { armarTemas, GRUPOS, conciliacionPorCuenta, subdiariosContraArca, progreso, textoPendienteDe, fuenteDe, linksDeLaApp, sinTresVistas, type Tema as TemaRecorrido } from "@/lib/balance/recorrido"
 import { temasVentasVsArca, temasComprasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
 import { linkComprobantesVenta, ventasDelLink } from "@/lib/ventas/link"
 import { linkExtracto, extractoDelLink, rangoQueContiene } from "@/lib/extracto/link"
@@ -5185,6 +5185,14 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · provisión anterior", "🔁 Con las dos marcadas como provisión anterior cierra; sin foto del balance anterior lo dice (no inventa un cero)",
       "cierra · sin foto", `${cierra.estado} · ${sinFoto.estado}`,
       cierra.estado === "cierra" && cierra.candidatos.length === 0 && sinFoto.estado === "sin foto" && sinFoto.declarado === null, "A-FEAT-1427")
+    // 🔁 El caso real (31/10): la app ya reconocía OTRA factura de $ 56.001,07, así que la diferencia quedó corrida y la
+    // búsqueda por diferencia no encontraba PAM + Magdalena. Ahora busca también las que suman lo DECLARADO entero.
+    const intrusa = comp({ numero: 7, denominacion: "INTRUSA", total: 56001.07 })
+    const corrida = controlarProvisionAnterior(foto, [intrusa], [...otras, pam, magda])
+    const vCorr = `${corrida.estado} · contra ${corrida.candidatosContra} · ${corrida.candidatos.map(a => `${a.punto_venta}-${a.numero}`).join(" + ")} · reconocidas ${(corrida.reconocidos ?? []).map(a => a.numero).join(",")}`
+    chequear("Balance · provisión anterior", "🔁 Si la app ya reconoce otra factura, igual encuentra las 2 que suman lo declarado (y lista la que sobra para linkearla)",
+      "no cierra · contra declarado · 2-31 + 10-269 · reconocidas 7", vCorr,
+      vCorr === "no cierra · contra declarado · 2-31 + 10-269 · reconocidas 7", "A-FEAT-1439")
   }
 
   /**
@@ -5293,6 +5301,16 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · recorrido", "🏦 Lo pendiente de conciliar, por cuenta: cuántos, débitos y créditos, rango de fechas; lo respondido no cuenta",
       "GAL 3 −130 +50 2025-08-01→2026-03-10 | SAN 1 −10 +0 2026-01-05→2026-01-05", vPc,
       vPc === "GAL 3 −130 +50 2025-08-01→2026-03-10 | SAN 1 −10 +0 2026-01-05→2026-01-05", "A-FEAT-1439")
+    // 🧾 Los subdiarios pasan a la base (grupo ARCA) y toman lo presentado como fuente: la última secuencia de cada mes.
+    const tSub = [{ clave: "cob:x", grupo: "error" as const, titulo: "Subdiarios de compras y ventas por mes y cuenta", papel: "LIBRO DIARIO", que: "x", links: [], respondido: false },
+      { clave: "pend:1", grupo: "pregunta" as const, titulo: "p", papel: "x", que: "x", links: [], respondido: false }]
+    const sa = subdiariosContraArca(tSub, [{ periodo: "202507", secuencia: 1, codigo_presentacion: "62100821" },
+      { periodo: "202508", secuencia: 1, codigo_presentacion: "1" }, { periodo: "202508", secuencia: 2, codigo_presentacion: "2" }], 12)
+    const vSa = `${sa[0].grupo} · ${sa[0].fuente?.origen} · ${sa[0].fuente?.detalle.split(". ")[0]}`
+    const sinDdjj = subdiariosContraArca(tSub, null, 12)[0]
+    chequear("Balance · recorrido", "🧾 «Subdiarios» va a la base y su fuente es lo presentado a ARCA (la secuencia más alta de cada mes); sin DDJJ queda sin fuente",
+      "arca · Libro IVA presentado a ARCA · 2 de 12 meses guardados en la app: 07/2025 · 62100821 · 08/2025 (secuencia 2) · 2 · sin fuente", `${vSa} · ${sinDdjj.fuente ? "con" : "sin"} fuente`,
+      `${vSa} · ${sinDdjj.fuente ? "con" : "sin"} fuente` === "arca · Libro IVA presentado a ARCA · 2 de 12 meses guardados en la app: 07/2025 · 62100821 · 08/2025 (secuencia 2) · 2 · sin fuente", "A-FEAT-1439")
   }
 
   /**
@@ -5338,6 +5356,15 @@ export function correrCasos(): Resultado[] {
     const e = "Extracto del banco (app: La factura) · papel 24/25 → null · null · sin fuente 2 · sin link 2"
     chequear("Recorrido · tres vistas", "📄 La fuente sale del extracto del banco (y ese link no se repite en «En la app»); el valor 24/25 NO es fuente (es lo del año pasado) y el tema cuenta como «sin fuente»",
       e, v, v === e, "A-FEAT-1439")
+    // 🏦 Un movimiento SIN pareja: el extracto es la fuente Y el lugar donde se concilia (no cuenta «sin link»). Y un tema
+    // que espera otro documento (el resumen del FCI) no toma el extracto como fuente: ahí es sólo dónde mirar.
+    const sinPareja = { ...base, clave: "d", titulo: "mov", links: [{ texto: "El movimiento", href: linkExtracto({ cuenta: "msa_galicia", movs: ["8"] }) }] }
+    const fci = { ...base, clave: "e", titulo: "FCI", fuenteEsperada: "el resumen del fondo", links: [{ texto: "Extracto Galicia", href: linkExtracto({ cuenta: "msa_galicia" }) }] }
+    const t3b = sinTresVistas([sinPareja, fci] as TemaRecorrido[])
+    const vb = `${fuenteDe(sinPareja)?.origen} · app: ${linksDeLaApp(sinPareja).map(l => l.texto).join(",")} · FCI fuente ${fuenteDe(fci)} · app: ${linksDeLaApp(fci).map(l => l.texto).join(",")} · sin fuente ${t3b.sinFuente} · sin link ${t3b.sinLink}`
+    const eb = "Extracto del banco · app: Conciliar ahí: El movimiento · FCI fuente null · app: Extracto Galicia · sin fuente 1 · sin link 0"
+    chequear("Recorrido · tres vistas", "🏦 Sin pareja: el extracto es fuente y lugar de trabajo (no «sin link»); el FCI que espera su resumen NO toma el extracto como fuente",
+      eb, vb, vb === eb, "A-FEAT-1439")
 
     // 🧾 Ventas contra lo presentado: la liquidación de Genta cargada como tipo 60 sin PV ni número, presentada como 180 11-75880.
     const ej = armarEjercicio(2026, 6)

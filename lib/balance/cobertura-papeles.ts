@@ -23,11 +23,11 @@ import type { CuentasAlCierre } from "./cuentas-al-cierre"
 import type { GastosBancarios, RetirosYAportes } from "./papeles-bancarios"
 import type { TemplatesDelEjercicio } from "./templates-libro"
 import type { SaldosAnteriores } from "./ajustes-balance"
-import type { LibroDiario } from "./libro-diario"
+import type { AsientoLibroDiario, LibroDiario } from "./libro-diario"
 import { linkTemplates } from "@/lib/impuestos/planilla"
 import { linkExtracto, rangoQueContiene } from "@/lib/extracto/link"
 import type { FuenteTema } from "./recorrido"
-import { linkHistorico } from "@/lib/egresos/link-facturas"
+import { linkFacturas, linkHistorico } from "@/lib/egresos/link-facturas"
 import { celdaNumero, type Comparacion } from "@/lib/cuaderno/papel-de-trabajo"
 
 export type EstadoCobertura =
@@ -261,11 +261,14 @@ const REGLAS: Regla[] = [
           ...p.candidatos.map(a => [`Candidata: ${a.denominacion} ${a.punto_venta ?? ""}-${a.numero ?? ""} (${a.fecha ? a.fecha.split("-").reverse().join("/") : ""})`, celdaNumero(a.total)]),
           ...(p.candidatos.length ? [["Si se marcan las candidatas, la diferencia queda en", `=B4-SUMA(B6:B${5 + p.candidatos.length})`]] : []),
         ] },
-        links: (() => {
-          const hist = p.candidatos.filter(a => a.fuente === "historico").map(a => a.id)
-          return hist.length ? [{ texto: `Ver las ${hist.length} factura(s) en Facturas → Histórico`, href: linkHistorico(hist) }] : []
-        })(),
-        propuesta: p.candidatos.length
+        // 🔗 Las candidatas y lo que la app reconoce hoy, cada una donde vive (Histórico o Facturas).
+        links: [
+          ...linksDeAsientos(p.candidatos, "Las candidatas"),
+          ...linksDeAsientos(p.reconocidos ?? [], `Lo que la app reconoce hoy (${pesos(p.reconocido)})`),
+        ],
+        propuesta: p.candidatos.length && p.candidatosContra === "declarado"
+          ? `${p.candidatos.map(a => `${a.denominacion} ${a.punto_venta ?? ""}-${a.numero ?? ""} (${pesos(a.total)})`).join(" y ")} suman lo provisionado entero: marcarlas como «provisión del ejercicio anterior» y sacarle esa marca a lo que la app reconoce hoy (${(p.reconocidos ?? []).map(a => `${a.denominacion} ${a.punto_venta ?? ""}-${a.numero ?? ""}`).join(", ") || pesos(p.reconocido)}) → la provisión cierra; avisar al contador`
+          : p.candidatos.length
           ? `marcar ${p.candidatos.map(a => `${a.denominacion} ${a.punto_venta ?? ""}-${a.numero ?? ""} (${pesos(a.total)})`).join(" y ")} como «provisión del ejercicio anterior» → la provisión cierra (diferencia $ 0) y el gasto 25/26 baja ${pesos(p.candidatos.reduce((s, a) => s + a.total, 0))}; avisar al contador`
           : "buscar qué comprobantes provisionó el balance anterior" }
     } },
@@ -505,3 +508,13 @@ export function datosSinAncla(): string[] {
 
 /** Cuántos renglones del catálogo hay (para el caso de prueba: que no se pierda ninguno en silencio). */
 export const CANTIDAD_DE_DATOS = REGLAS.length
+
+/** 🔗 Comprobantes del libro diario → links a donde viven: los del Histórico por un lado, los de ARCA por otro. */
+function linksDeAsientos(as: AsientoLibroDiario[], texto: string): LinkDato[] {
+  const hist = as.filter(a => a.fuente === "historico").map(a => a.id)
+  const arca = as.filter(a => a.fuente === "arca").map(a => a.id)
+  return [
+    ...(hist.length ? [{ texto: `${texto}: ${hist.length} en Facturas → Histórico`, href: linkHistorico(hist) }] : []),
+    ...(arca.length ? [{ texto: `${texto}: ${arca.length} en Facturas`, href: linkFacturas(arca) }] : []),
+  ]
+}

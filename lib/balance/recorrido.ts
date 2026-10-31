@@ -181,18 +181,27 @@ const esLinkDeBanco = (l: LinkDato) => /[?&]seccion=extracto(&|$)/.test(l.href)
  * objetivo del número de este año. Con eso, los 45 datos de la cobertura figuraban «con fuente» sin tenerla y el
  * control de arriba mentía. El valor 24/25 sigue a la vista («El año pasado»), como referencia.
  */
-export function fuenteDe(t: Pick<Tema, "fuente" | "links" | "valor2425">): FuenteTema | null {
+export function fuenteDe(t: Pick<Tema, "fuente" | "links" | "valor2425"> & { fuenteEsperada?: string }): FuenteTema | null {
   if (t.fuente) return t.fuente
+  // ⚠️ cambió 31/10: si el tema espera OTRO documento (el resumen del fondo, del broker…), el extracto no es su fuente —
+  // es dónde mirar en la app. Antes el FCI decía «Fuente: extracto del banco» y a la vez «hace falta el resumen del fondo».
+  if (t.fuenteEsperada) return null
   const banco = t.links.filter(esLinkDeBanco)
   if (banco.length) return { origen: "Extracto del banco", detalle: "El movimiento tal cual lo informó el banco.", links: banco }
   return null
 }
 
-/** 🗂️ Los links «En la app»: todos menos los que ya se usaron como fuente. */
-export function linksDeLaApp(t: Pick<Tema, "fuente" | "links" | "valor2425">): LinkDato[] {
+/**
+ * 🗂️ Los links «En la app»: todos menos los que ya se usaron como fuente.
+ * ⚠️ cambió 31/10: si no queda ninguno y la fuente es el EXTRACTO, ése mismo es el lugar de la app donde se trabaja
+ * (ahí se concilia). Antes cada movimiento «sin pareja» contaba como «sin link» y el control de arriba decía 360.
+ */
+export function linksDeLaApp(t: Pick<Tema, "fuente" | "links" | "valor2425"> & { fuenteEsperada?: string }): LinkDato[] {
   const f = fuenteDe(t)
   const usados = new Set((f?.links ?? []).map(l => l.href))
-  return t.links.filter(l => !usados.has(l.href))
+  const resto = t.links.filter(l => !usados.has(l.href))
+  if (resto.length) return resto
+  return (f?.links ?? []).filter(esLinkDeBanco).map(l => ({ ...l, texto: `Conciliar ahí: ${l.texto}` }))
 }
 
 /** 🧮 El control de los tres bloques: cuántos temas abiertos no tienen fuente, o no tienen dónde verlo en la app. */
@@ -224,4 +233,27 @@ export function conciliacionPorCuenta(temas: Tema[]): ConciliacionPorCuenta[] {
     const f = [...fechas].sort()
     return { ...c, desde: f[0] ?? null, hasta: f[f.length - 1] ?? null }
   }).sort((a, b) => b.abiertos - a.abiertos)
+}
+
+/**
+ * 🧾 **Los subdiarios se leen contra lo presentado a ARCA** (JMS 31/10: la base empieza por *«subdiarios cargados tal cual
+ * ARCA»*). El tema de cobertura «Subdiarios de compras y ventas por mes y cuenta» pasa al grupo de ARCA (la base) y,
+ * si hay DDJJ guardadas, las toma como su fuente: qué meses, con qué secuencia y código.
+ */
+export const DATO_SUBDIARIOS = "Subdiarios de compras y ventas por mes y cuenta"
+export function subdiariosContraArca(temas: Tema[], presentadas: { periodo: string; secuencia: number; codigo_presentacion: string | null }[] | null, meses: number): Tema[] {
+  const out = temas.map(t => {
+    if (!/^(cob|doc):/.test(t.clave) || !t.titulo.startsWith(DATO_SUBDIARIOS)) return t
+    const ult = new Map<string, { secuencia: number; codigo_presentacion: string | null }>()
+    for (const d of presentadas ?? []) if ((ult.get(d.periodo)?.secuencia ?? -1) < d.secuencia) ult.set(d.periodo, d)
+    const lista = [...ult.entries()].sort(([a], [b]) => a.localeCompare(b))
+      .map(([p, d]) => `${p.slice(4)}/${p.slice(0, 4)}${d.secuencia > 1 ? ` (secuencia ${d.secuencia})` : ""}${d.codigo_presentacion ? ` · ${d.codigo_presentacion}` : ""}`)
+    const fuente: FuenteTema | undefined = lista.length
+      ? { origen: "Libro IVA presentado a ARCA", detalle: `${lista.length} de ${meses} meses guardados en la app: ${lista.join(" · ")}. El detalle, comprobante por comprobante, en los temas de este mismo grupo.` }
+      : undefined
+    // Si sale bien y lo único que pedía era el documento, con las DDJJ cargadas ya no falta nada: el tema se va.
+    if (t.clave.startsWith("doc:")) return fuente ? null : t
+    return { ...t, grupo: "arca" as const, fuente: fuente ?? t.fuente, fuenteEsperada: fuente ? undefined : t.fuenteEsperada }
+  }).filter((t): t is Tema => t != null)
+  return out.sort((a, b) => ORDEN.indexOf(a.grupo) - ORDEN.indexOf(b.grupo))
 }
