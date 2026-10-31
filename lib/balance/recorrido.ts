@@ -79,6 +79,8 @@ export interface Tema {
   cuenta?: { id: string; nombre: string }
   /** 🏦 Débito o crédito (conciliación). */
   lado?: "D" | "C"
+  /** 🗄️ Movimiento histórico sugerido (va a un template): se muestra, pero no cuenta como «sin conciliar». */
+  historico?: boolean
   /** 🏦 Fecha del movimiento (conciliación), ISO. */
   fecha?: string
   /** Importe del tema (la conciliación lo muestra en la lista). */
@@ -225,7 +227,7 @@ export interface ConciliacionPorCuenta { cuentaId: string; nombre: string; abier
 export function conciliacionPorCuenta(temas: Tema[]): ConciliacionPorCuenta[] {
   const m = new Map<string, ConciliacionPorCuenta & { fechas: string[] }>()
   for (const t of temas) {
-    if (t.grupo !== "conciliacion" || t.respondido || !t.cuenta) continue
+    if (t.grupo !== "conciliacion" || t.respondido || !t.cuenta || t.historico) continue
     const c = m.get(t.cuenta.id) ?? { cuentaId: t.cuenta.id, nombre: t.cuenta.nombre, abiertos: 0, debitos: 0, creditos: 0, desde: null, hasta: null, fechas: [], movs: [] }
     c.abiertos++
     c.movs.push(t.clave.split(":").slice(2).join(":"))

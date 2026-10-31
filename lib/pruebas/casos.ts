@@ -5530,6 +5530,13 @@ export function correrCasos(): Resultado[] {
     const vH = `h1 ${th("h1")} · h2 ${th("h2")} · p1 ${th("p1")}`
     chequear("Conciliación · propuestas", "🗄️ Histórico (aunque sea de dic/ene) NO se concilia contra factura, sí contra template; uno pendiente sí contra factura",
       "h1 HISTORICO_FACTURA · h2 EXACTO:ch · p1 EXACTO:fp", vH, vH === "h1 HISTORICO_FACTURA · h2 EXACTO:ch · p1 EXACTO:fp", "A-FEAT-1315")
+    // …y en el recorrido: el histórico con template se SUGIERE (etiqueta propia) pero no cuenta como «sin conciliar» de la cuenta.
+    const { temas: tH } = temasDeMovimientos(r3.movimientos)
+    const pcH = conciliacionPorCuenta(tH)
+    const vH2 = `${tH.map(t => `${t.clave.split(":").pop()}:${t.historico ? "H" : "-"}`).join(",")} · ${tH.find(t => t.historico)?.etiqueta} · sin conciliar ${pcH.reduce((n, c) => n + c.abiertos, 0)}`
+    chequear("Conciliación · en el recorrido", "🗄️ El histórico sugerido a template se muestra con su etiqueta y no suma a «sin conciliar»; el histórico sin pareja ni aparece",
+      "h2:H,p1:- · Histórico: ¿va a este template? (sugerencia) · sin conciliar 1", vH2,
+      vH2 === "h2:H,p1:- · Histórico: ¿va a este template? (sugerencia) · sin conciliar 1", "A-FEAT-1315")
   }
 
   /**

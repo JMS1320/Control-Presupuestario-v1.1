@@ -342,6 +342,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
                   {c.nombre}: <strong className="tabular-nums">{c.abiertos}</strong>
                   {conciliacion.porCuenta?.[c.cuentaId]?.totalEjercicio != null && <span className="tabular-nums"> de {conciliacion.porCuenta[c.cuentaId].totalEjercicio}</span>}
                   {" "}sin conciliar · −{fmt(c.debitos)} / +{fmt(c.creditos)}
+                  {!!conciliacion.porCuenta?.[c.cuentaId]?.historicosEjercicio && <span className="text-muted-foreground"> · 🗄️ {conciliacion.porCuenta[c.cuentaId].historicosEjercicio} históricos (no van)</span>}
                 </button>
                 <a href={linkExtracto({ cuenta: c.cuentaId, movs: c.movs, desde: c.desde, hasta: c.hasta })} target="_blank" rel="noreferrer"
                   className="border-l border-blue-300 px-1.5 py-0.5 hover:bg-blue-100"
@@ -350,7 +351,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
             ))}
             {/* Cuentas sin nada pendiente en el ejercicio: se dicen igual, con su total (un 0 que no se ve no es un control). */}
             {Object.entries(conciliacion.porCuenta ?? {}).filter(([id]) => !porCuenta.some(c => c.cuentaId === id)).map(([id, k]) => (
-              <span key={id} className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-emerald-900">✓ {k.nombre}: 0{k.totalEjercicio != null ? ` de ${k.totalEjercicio}` : ""} sin conciliar</span>
+              <span key={id} className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-emerald-900">✓ {k.nombre}: 0{k.totalEjercicio != null ? ` de ${k.totalEjercicio}` : ""} sin conciliar{k.historicosEjercicio ? ` · 🗄️ ${k.historicosEjercicio} históricos (no van)` : ""}</span>
             ))}
             {cuentas.size > 0 && <button type="button" className="underline text-muted-foreground" onClick={() => setCuentas(new Set())}>todas las cuentas</button>}
             <span className="text-muted-foreground">{PISTA_CTRL_CLICK}</span>

@@ -139,6 +139,8 @@ export interface DatosConciliacion {
 }
 
 export interface ConteoCuenta { nombre: string; totalEjercicio: number | null; sinConciliarAntes: number | null; sinConciliarDespues: number | null
+  /** 🗄️ Movimientos del ejercicio en estado «histórico»: por decisión no van (no cuentan como sin conciliar). */
+  historicosEjercicio?: number | null
   antes: { desde: string; hasta: string }; despues: { desde: string; hasta: string } }
 
 /** Suma (o resta) meses a una fecha ISO, sin pasarse del último día del mes. */
@@ -316,17 +318,19 @@ export async function leerDatosConciliacion(sb: Cliente, empresa: string, desde:
   progreso?.("contando los movimientos de cada cuenta…")
   const porCuenta: Record<string, ConteoCuenta> = {}
   const v = ventanasAlrededor(desde, hasta)
-  const contar = async (c: CuentaConciliable, d: string, h: string, soloSinConciliar: boolean): Promise<number | null> => {
+  const contar = async (c: CuentaConciliable, d: string, h: string, soloSinConciliar: boolean | "historico"): Promise<number | null> => {
     let q = (c.schema === "public" ? sb.from(c.tabla) : sb.schema(c.schema).from(c.tabla)).select("id", { count: "exact", head: true }).gte("fecha", d).lte("fecha", h)
-    if (soloSinConciliar) q = q.in("estado", ["pendiente", "Pendiente", "PENDIENTE", "auditar", "Auditar"])
+    if (soloSinConciliar === "historico") q = q.eq("estado", "historico")
+    else if (soloSinConciliar) q = q.in("estado", ["pendiente", "Pendiente", "PENDIENTE", "auditar", "Auditar"])
     const { count, error } = await q
     if (error) { avisos.push(`${c.nombre}: no se pudo contar (${error.message})`); return null }
     return count ?? 0
   }
   await Promise.all(CUENTAS_CONCILIABLES.filter(x => x.empresa === empresa).map(async c => {
-    const [totalEjercicio, sinConciliarAntes, sinConciliarDespues] = await Promise.all([
-      contar(c, desde, hasta, false), contar(c, v.antes.desde, v.antes.hasta, true), contar(c, v.despues.desde, v.despues.hasta, true)])
-    porCuenta[c.cuentaId] = { nombre: c.nombre, totalEjercicio, sinConciliarAntes, sinConciliarDespues, ...v }
+    const [totalEjercicio, sinConciliarAntes, sinConciliarDespues, historicosEjercicio] = await Promise.all([
+      contar(c, desde, hasta, false), contar(c, v.antes.desde, v.antes.hasta, true), contar(c, v.despues.desde, v.despues.hasta, true),
+      contar(c, desde, hasta, "historico")])
+    porCuenta[c.cuentaId] = { nombre: c.nombre, totalEjercicio, sinConciliarAntes, sinConciliarDespues, historicosEjercicio, ...v }
   }))
   return { movimientos, obligaciones, usadoPor, conciliados, avisos, porCuenta }
 }
@@ -417,6 +421,14 @@ export function proponerConciliaciones(d: DatosConciliacion, empresa: string, de
           propuesta: histFactura ? "Histórico: si es pago de factura, por decisión no se concilia (A-FEAT-1315); sí si es de un template."
             : `Sin pareja en lo registrado. ${pista}.${coincidencias.length ? ` (Hay ${coincidencias.length} registro(s) por el mismo importe redondo —${coincidencias.slice(0, 2).map(o => o.quien).join(", ")}— pero nada los confirma: probable coincidencia.)` : ""}` }
       }
+    }
+    /**
+     * 🗄️ Histórico (JMS 31/10: «histórico ok… si llegás a ver que algún histórico iría a template, sugerímelo»): lo que
+     * no encontró una pareja que NO sea factura queda «no va» (no se avisa como sin conciliar); si la encontró (template,
+     * sueldo, anticipo), se sugiere, marcado como histórico.
+     */
+    if (histFactura && !["EXACTO", "AGRUPADO", "VARIOS", "CON_DIF"].includes(r.tipo)) {
+      r = { tipo: "HISTORICO_FACTURA", parejas: [], propuesta: "Histórico: por decisión no se concilia contra facturas (A-FEAT-1315)." }
     }
     return { mov: m, pista, ...r }
   })
