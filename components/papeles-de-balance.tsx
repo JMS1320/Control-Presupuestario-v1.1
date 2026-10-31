@@ -331,7 +331,7 @@ export function PapelesDeBalance() {
     setFotoInicio(null)
     setPropuestaCierre(null)
     const lect: Lectura[] = []
-    // 🧭 A-BUG-1451: lo que el armado ENCUENTRA en los datos no es una falla de la app: ya está en el informe y en el
+    // 🧭 A-BUG-1452: lo que el armado ENCUENTRA en los datos no es una falla de la app: ya está en el informe y en el
     // recorrido. Se junta y sale UN cartel tranquilo al final. Sólo salta como aviso lo que la app no pudo leer.
     const hallazgos: string[] = []
     const anotar = (nombre: string, r: { data: unknown[]; esperadas: number | null }) =>
@@ -1052,7 +1052,7 @@ export function PapelesDeBalance() {
                   for (const a of cyr.avisos) toast.warning(a)
                   return descargarLibroDiarioConsensuado(libro, empresa.id, cyr)
                 })
-                // 🧭 A-BUG-1451: que haya ventas que no cierran es un hallazgo de los datos (está en la solapa «Control cobros»), no una falla.
+                // 🧭 A-BUG-1452: que haya ventas que no cierran es un hallazgo de los datos (está en la solapa «Control cobros»), no una falla.
                 .then(r => toast.success(r.cobros?.noCierra
                   ? `✓ Libro Diario bajado · ${r.cobros.noCierra} venta(s) para revisar en «Control cobros» (total − retenciones ≠ cobrado).`
                   : "✓ Libro Diario bajado."))
@@ -1072,7 +1072,7 @@ export function PapelesDeBalance() {
                 if (!archivos.length) return
                 descargarDiferenciasVsArca(libro, empresa.id, archivos)
                   .then(r => {
-                    // 🧭 A-BUG-1451: en ámbar sólo lo que no se pudo usar o lo que el control no hace cerrar; lo demás
+                    // 🧭 A-BUG-1452: en ámbar sólo lo que no se pudo usar o lo que el control no hace cerrar; lo demás
                     // (qué secuencia se tomó, qué meses faltan) va en el cartel verde y en la solapa «Zips de ARCA».
                     const esFalla = (a: string) => /no se pudo|no se usa|queda en 0|no cierra|no coincide/i.test(a)
                     for (const a of r.avisos.filter(esFalla)) toast.warning(a, { duration: 15000 })

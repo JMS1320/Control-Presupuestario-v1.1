@@ -118,7 +118,7 @@ const GRUPO_DE: Partial<Record<EstadoCobertura, GrupoTema>> = {
 }
 
 /**
- * La cola: primero lo que más importa (errores, decisiones, preguntas), y dentro de cada grupo en el orden del
+ * La cola: en el orden de GRUPOS — ⚠️ cambió 31/10: primero LA BASE (ARCA, conciliación, echeqs, inicio), después errores, decisiones, preguntas…; dentro de cada grupo en el orden del
  * catálogo. Un dato de cobertura que ya sale no entra; uno que no sale entra aunque esté respondido (queda tildado).
  */
 export function armarTemas(cobertura: CoberturaPapeles | null, pendientes: PendienteBalance[], otros: Tema[] = []): Tema[] {

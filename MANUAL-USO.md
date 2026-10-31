@@ -3606,12 +3606,16 @@ mismo grupo, más un tema aparte para el **crédito computable declarado distint
 al 30/06, lo dice); un saldo de inicio, el balance 24/25 presentado; lo demás dice **qué documento es su fuente** y, si
 todavía no está en la app, lo avisa en ámbar. **Tu respuesta se guarda sola** como nota si pasás a otro tema o cerrás
 sin apretar un botón.
+**En qué orden**: «⚡ Armar todo» (trae también stock y precios) → esperar que arriba del recorrido diga **«✓ Están todos los temas»** (mientras dice «⏳ Todavía llega…», la lista crece y se reordena) → recorrer. Al armar sale **un solo cartel verde** con lo que hay para revisar; en ámbar salta sólo lo que la app **no pudo leer**. Igual en «Bajar Libro Diario» y «Bajar Diferencias vs ARCA».
+**Los grupos, en dos filas**: **🧱 La base** — subdiarios contra lo presentado a ARCA, conciliar movimientos, echeqs, saldo de inicio — va primero y, mientras le falte algo, el recorrido dice qué y recomienda cerrarla antes (*de ella se compone el resto*); abajo **El resto** (errores, a decidir, preguntas, deudas, 📥 documentos que faltan, falta información, pendiente de desarrollo). Los **tipos** de un grupo aparecen al elegirlo. Con **🏦 Conciliar movimientos** elegido: **«Sin conciliar, por cuenta»** — cuántos, cuánto salió y entró, y cada cuenta abre su extracto en ese rango.
+**📥 Documentos que faltan**: un tema por cada dato que sale con lo que tiene la app pero sin el documento que lo respalda; dejalo en la carpeta de comunicación (o cargalo) y pasa a ser su fuente, o «👍 Está bien así» con el motivo.
 → A-TEST-1297
 
 **Controles que se ven solos** (no hace falta abrir el Excel):
 - **Provisión del ejercicio anterior**: compara lo que el balance anterior dejó provisionado (la foto del Balance
   propio al cierre anterior) con lo que la app reconoce; si no cierra, propone qué comprobantes de este ejercicio
-  lo explican — si son ésos, su gasto se estaría contando dos veces.
+  lo explican (o los que suman lo declarado entero, si la app ya cuenta otro) — si son ésos, su gasto se estaría
+  contando dos veces. En el recorrido, el tema trae el link a esos comprobantes y a lo que la app reconoce hoy.
 - **Stock de insumos al cierre**: la existencia de cada producto es la de sus compras, usos y ajustes **hasta el
   cierre**, no la de hoy. Si la existencia de hoy no es la suma de sus movimientos, el producto sale en rojo.
 - **Cuentas en dólares**: entran al papel 07 en pesos al dólar BNA comprador del cierre; una cuenta en dólares sin

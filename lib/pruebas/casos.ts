@@ -5265,7 +5265,7 @@ export function correrCasos(): Resultado[] {
 
     /**
      * 🧭 **EL RECORRIDO — A-FEAT-1430.** La cola: los datos que no salen (no los que salen ni los que no corresponden),
-     * más las preguntas; los errores primero. Una respuesta guardada con la clave del tema lo marca respondido y
+     * más las preguntas; en el orden de los grupos (⚠️ cambió 31/10: la base primero). Una respuesta guardada con la clave del tema lo marca respondido y
      * NO aparece además como pregunta suelta.
      */
     const temasVacios = armarTemas(con, [])
