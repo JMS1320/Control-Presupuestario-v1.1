@@ -40,6 +40,10 @@
 
 ## 📨 PARA JAVIER
 
+### 🚦 4 columnas nuevas en `public.revisiones` (las 🚩): `origen`, `senales`, `confirma`, `cierre_auto` + estado 'por_confirmar' (2026-10-31) — ⏳ AVISO PREVIO (OK de JMS dado en la terminal GAS)
+- `scripts/151-revisiones-origen-nivel-confirma.sql` (+ `-deshacer`). A-FEAT-1449: la 🚩 pasa a ser LA tarea de la app (de dónde viene, señales para el nivel de urgencia, quién confirma el cierre). `estado` no tiene CHECK: se suma el valor `por_confirmar`. Las 13 marcas que hay quedan `origen = 'manual'`.
+- **No toca RLS, grants ni políticas.** `/api/revisiones` (GET `?mias=1` y PATCH) cambia: lista también `por_confirmar` y lo que me toca confirmar; un «Listo» con `confirma` deja `por_confirmar`. 🤖 `asignado_a = 'claude'` es un destinatario válido (no es un mail).
+
 ### 🗂️ 1 columna nueva en `public.mails_reglas`: `archivo_destino` (2026-10-31) — ✅ APLICADA el 31/10 con OK de JMS (aviso previo): columna vacía + FK, 70 reglas
 - `scripts/149-mails-reglas-destino.sql` (+ `-deshacer`). A-FEAT-1442 etapa 2: a qué carpeta del archivo digital van los adjuntos de cada regla. FK a `archivo_destinos.clave` (on update cascade, on delete set null), vacía. No toca RLS ni datos.
 
