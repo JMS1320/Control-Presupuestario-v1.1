@@ -29,6 +29,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { FiltroColumna } from "@/components/ui/filtro-columna"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { LotesMails } from "@/components/mails-lotes"
+import { PasarTarea } from "@/components/boton-revision"
+import { senalesDeMail } from "@/lib/revisiones/nivel"
 import { AlertTriangle, CheckCircle2, ExternalLink, Paperclip, RefreshCw } from "lucide-react"
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
@@ -521,7 +523,12 @@ function RegistroMails() {
                     </TableCell>
                     <TableCell className="max-w-[180px]">
                       {m.sentido === "recibido"
-                        ? <CeldaSeguimiento mail={m} hoy={hoy} onGuardado={c => actualizar([m.id], c)} />
+                        ? <div className="flex flex-col items-start gap-0.5">
+                            <CeldaSeguimiento mail={m} hoy={hoy} onGuardado={c => actualizar([m.id], c)} />
+                            {/* 🚩 A-FEAT-1449: de un mail sale una tarea para cualquiera (o para Claude) */}
+                            <PasarTarea ancla={{ schema: "public", tabla: "mails_registro", registroId: m.id, descripcion: `Mail: ${m.asunto ?? "(sin asunto)"} — ${m.remitente_nombre || m.remitente || ""}`.slice(0, 280) }}
+                              inicial={{ motivo: m.asunto ?? "", origen: "mail", senales: senalesDeMail(grave, tipoDeMail(m)) }} />
+                          </div>
                         : <span className="text-xs text-muted-foreground">—</span>}
                     </TableCell>
                   </TableRow>

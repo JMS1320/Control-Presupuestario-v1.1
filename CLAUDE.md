@@ -946,6 +946,13 @@ tratado de una nota, para no olvidar darla como cerrada»**.*
 - **Se cierra en el mismo paso**: escribir la fila en `PENDIENTES.md`, commitear, y marcar la nota.
   «La proceso y la marco después» es la misma apuesta que perdió el corte de luz (§ ⚡).
 - **Una nota que pide algo con fecha** («urgente para el…») se avisa aunque no se vaya a trabajar.
+- 🤖 **El CUARTO canal — las tareas asignadas a Claude** *(JMS 2026-10-31: «algunas cosas debo poder dejarlas
+  direccionadas a Claude… cuando abra Code lo vemos juntos, pero vos lo podés identificar rápido»)*. Desde la 🚩 o
+  «🚩 Pasarle a…», JMS (o cualquiera) puede elegir **🤖 Claude** como destinatario. 📍 **Acá:** `public.revisiones`
+  con `asignado_a = 'claude'` y `estado in ('abierta','por_confirmar')`. Se consultan al abrir sesión **junto con las
+  tres bandejas** y se listan aparte: son trabajo pedido, no notas. Se cierran igual que una nota —en el mismo paso—:
+  `estado` según `confirma` (si confirma JMS, queda `por_confirmar`), `resolucion` = qué se hizo (el commit o el ID
+  del pendiente), `resuelto_por = 'Claude'`. → [A-FEAT-1449](PENDIENTES.md#a-feat-1449).
 
 *Motivo: la bandeja existía y se usaba; lo que faltaba era el paso de cerrarla. De las 38, 17 ya
 estaban resueltas sin marcar — y por eso las otras 21 quedaron escondidas entre ellas.*

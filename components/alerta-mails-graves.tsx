@@ -21,7 +21,9 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { CheckCircle2, ChevronDown, ChevronRight, ExternalLink, Siren } from "lucide-react"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
-import { agruparGraves, linkGmail, type GrupoGrave, type MailRegistrado } from "@/lib/mails/registro"
+import { agruparGraves, gravedadDeMail, linkGmail, tipoDeMail, type GrupoGrave, type MailRegistrado } from "@/lib/mails/registro"
+import { PasarTarea } from "@/components/boton-revision"
+import { senalesDeMail } from "@/lib/revisiones/nivel"
 
 const COLS = "id, casilla, mensaje_id, sentido, fecha, remitente, remitente_nombre, destinatarios, asunto, extracto, adjuntos, tipo, tipo_manual, accion, estado, procesado_por, vinculos, seguimiento, seguimiento_nota, seguimiento_fecha, seguimiento_at"
 const MOSTRAR = 6
@@ -104,7 +106,11 @@ export function AlertaMailsGraves() {
                           {g.ultimo.seguimiento_nota ? <> · <i>{g.ultimo.seguimiento_nota}</i></> : null}</div>
                       </td>
                       <td className="whitespace-nowrap px-2 py-1.5 text-right">
-                        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => terminar(g)}>✔ Terminado{g.ids.length > 1 ? ` (${g.ids.length})` : ""}</Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <PasarTarea ancla={{ schema: "public", tabla: "mails_registro", registroId: g.ultimo.id, descripcion: `Mail: ${g.asunto} — ${g.remitente}${g.ids.length > 1 ? ` (×${g.ids.length})` : ""}`.slice(0, 280) }}
+                            inicial={{ motivo: g.asunto, origen: "mail", senales: senalesDeMail(gravedadDeMail(g.ultimo), tipoDeMail(g.ultimo)) }} />
+                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => terminar(g)}>✔ Terminado{g.ids.length > 1 ? ` (${g.ids.length})` : ""}</Button>
+                        </div>
                       </td>
                     </tr>
                   ))}

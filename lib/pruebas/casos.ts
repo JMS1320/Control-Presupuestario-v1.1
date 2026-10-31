@@ -85,7 +85,8 @@ import { importeDeVenta, cuotasNoFijadas, leyendaEnDolares } from "@/lib/arrenda
 import { armarPapel, campoDeTemplate, cuentasRedVialDe, hectareasDe, ordenarPapel, moverPartida, clavePartida } from "@/lib/impuestos/papel-inmobiliario"
 import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
-import { paraVos } from "@/lib/revisiones/para-vos"
+import { paraVos, estadoAlCerrar } from "@/lib/revisiones/para-vos"
+import { nivelDeTarea, senalesDeMail, senalMonto } from "@/lib/revisiones/nivel"
 import { armarCambio, saldoCuenta, cuentaCorriente as cuentaCorrienteDolares, flujoPorMes, erroresCambio, pesosDe } from "@/lib/dolares/cuentas"
 import { posicionAlCierre } from "@/lib/dolares/posicion-cierre"
 import { esHabilitable, diferencias, estadoVisible } from "@/lib/propuestas/factura"
@@ -11027,6 +11028,40 @@ export function correrCasos(): Resultado[] {
     const v = `para mí: ${r.paraMi.map(x => x.id).join(",")} · mandadas: ${r.mandadas.map(x => x.id).join(",")} · vencidas: ${r.vencidas}`
     chequear("Principal — Para vos", "Sólo lo asignado a quien mira (sin importar mayúsculas del mail), la tarea vencida primero, después por fecha; abajo lo que mandó; nunca lo de otro ni lo cerrado",
       "para mí: vencida,vence30,sinFecha · mandadas: mande · vencidas: 1", v, v === "para mí: vencida,vence30,sinFecha · mandadas: mande · vencidas: 1", "A-FEAT-1411")
+  }
+
+  // ══ 🚦 A-FEAT-1449: la tarea con NIVEL (señales sumadas) y el cierre que CONFIRMA otro (JMS 31/10) ══
+  {
+    const hoy = "2026-10-31"
+    const ns = [
+      nivelDeTarea({ senales: [{ nombre: "impuestos", peso: 1 }, { nombre: "avisa mora", peso: 1 }], es_tarea: true, tarea_hasta: "2026-09-08" }, hoy),
+      nivelDeTarea({ senales: [{ nombre: "impuestos", peso: 1 }, ...senalMonto(2460212.6)], es_tarea: true, tarea_hasta: "2026-11-12" }, hoy, 30),  // Rojas: «30 dias antes»
+      nivelDeTarea({ senales: [{ nombre: "impuestos", peso: 1 }] }, hoy),
+      nivelDeTarea({ senales: null }, hoy),
+      nivelDeTarea({ senales: [{ nombre: "impuestos", peso: 1 }], es_tarea: true, tarea_hasta: "2026-12-20" }, hoy),
+    ].map(r => `${r.puntos}→${r.nivel}`).join(" ")
+    chequear("Tareas y alarmas", "🚦 Nivel = suma de señales: mora de ARBA vencida (impuestos+mora+vencida) es MÁXIMO; la cuota 4 que vence en 12 días (Rojas avisa 30 antes) con monto grande es URGENTE; sin señales, «para saber»; vencer lejos no suma",
+      "3→4 2→3 1→2 0→1 1→2", ns, ns === "3→4 2→3 1→2 0→1 1→2", "A-FEAT-1449")
+    const sm = [senalesDeMail({ nivel: 2, palabras: ["mora"] }, "impuestos"), senalesDeMail({ nivel: 1, palabras: ["saldo negativo", "descubierto"] }, "banco"),
+      senalesDeMail({ nivel: 0, palabras: [] }, "factura"), senalesDeMail({ nivel: 0, palabras: [] }, "impuestos")].map(x => x.map(y => `${y.nombre}+${y.peso}`).join(",") || "-").join(" | ")
+    chequear("Tareas y alarmas", "🚦 Señales de un mail: impuestos suma; un aviso de deuda/mora/saldo negativo suma; una factura sola no suma nada (es para saber)",
+      "impuestos+1,avisa mora+1 | avisa saldo negativo, descubierto+1 | - | impuestos+1", sm, sm === "impuestos+1,avisa mora+1 | avisa saldo negativo, descubierto+1 | - | impuestos+1", "A-FEAT-1449")
+    const t = (id: string, x: Record<string, unknown>) => ({ id, estado: "abierta", asignado_a: null, creado_por: "José", created_at: "2026-10-20T10:00:00Z", es_tarea: true, tarea_hasta: null, senales: null, confirma: null, ...x })
+    const lista = [
+      t("faltante", { asignado_a: "ulises@x.com", confirma: "jose@x.com", estado: "por_confirmar" }),
+      t("sinSenal", { asignado_a: "jose@x.com", created_at: "2026-10-30T10:00:00Z" }),
+      t("mora", { asignado_a: "jose@x.com", senales: [{ nombre: "impuestos", peso: 1 }, { nombre: "avisa mora", peso: 1 }], tarea_hasta: "2026-09-08" }),
+      t("deUlises", { asignado_a: "ulises@x.com", confirma: "jose@x.com" }),
+    ]
+    const rj = paraVos(lista, { mail: "jose@x.com", etiqueta: "José" }, hoy)
+    const ru = paraVos(lista, { mail: "ulises@x.com", etiqueta: "Ulises" }, hoy)
+    const v = `JMS: para mí ${rj.paraMi.map(x => x.id).join(",")} · a confirmar ${rj.aConfirmar.map(x => x.id).join(",")} | Ulises: para mí ${ru.paraMi.map(x => x.id).join(",")} · esperando ${ru.esperanConfirmacion.map(x => x.id).join(",")}`
+    chequear("Tareas y alarmas", "🚦 Para vos: lo más urgente arriba (la mora antes que una sin señales más nueva); lo que Ulises dio por hecho le aparece a JMS «para confirmar» y a Ulises «esperando»",
+      "JMS: para mí mora,sinSenal · a confirmar faltante | Ulises: para mí deUlises · esperando faltante", v,
+      v === "JMS: para mí mora,sinSenal · a confirmar faltante | Ulises: para mí deUlises · esperando faltante", "A-FEAT-1449")
+    const vc = [estadoAlCerrar({ confirma: "jose@x.com" }, "ulises@x.com"), estadoAlCerrar({ confirma: "Jose@X.com" }, "jose@x.com"), estadoAlCerrar({ confirma: null }, "ulises@x.com")].join(" ")
+    chequear("Tareas y alarmas", "🚦 «Listo»: si confirma otro, queda «por confirmar»; si confirma el mismo que la cierra (o nadie), se cierra",
+      "por_confirmar resuelta resuelta", vc, vc === "por_confirmar resuelta resuelta", "A-FEAT-1449")
   }
 
   // ══ 🔢 Control de cuotas de templates (decisión de JMS del 28/10/2026) ══

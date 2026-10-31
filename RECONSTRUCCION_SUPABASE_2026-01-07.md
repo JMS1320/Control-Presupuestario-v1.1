@@ -3335,6 +3335,9 @@ Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantid
 ### 2026-10-31 · VENTAS de lo presentado a ARCA — 2 columnas en `public.ddjj_presentadas` (script 145) — A-FEAT-1439 — ✅ CORRIDO 2026-10-31 con OK de JMS («1 ok»)
 `ventas jsonb` (las ventas del `comprobantes_ventas.csv` del zip) y `totales_ventas jsonb` (los totales de ventas del `libro_iva.xml`), vacías, con marca `[script 145]` en el comentario de cada columna. Sin RLS ni grants nuevos. Al reconstruir: correr `scripts/145-ddjj-presentadas-ventas.sql` después del 107. Deshacer: `-deshacer.sql` (verifica la marca de cada columna).
 
+### 2026-10-31 · La 🚩 pasa a ser la TAREA: origen, señales, confirma, cierre_auto (script 151) — A-FEAT-1449 — ✅ CORRIDO 2026-10-31 con OK de JMS («arrancá»)
+`public.revisiones`: `origen text not null default 'manual'`, `senales jsonb`, `confirma text`, `cierre_auto text` (marca `[script 151]` en el comentario de cada columna). `estado` (texto libre) suma el valor `por_confirmar`. Las 13 marcas existentes quedaron `origen = 'manual'`. No toca RLS. Al reconstruir: correr `scripts/151-revisiones-origen-nivel-confirma.sql` después del 125. Deshacer: `…-deshacer.sql` (vuelve `por_confirmar` a `abierta` y saca las columnas).
+
 ### 2026-10-31 · Marzo 2026 de Cotitulares en pesos intercalado (script 150, DATOS) — A-FEAT-1424 — ✅ CORRIDO 2026-10-31 con OK de JMS («ok, cargá marzo con el 150»)
 `public.cotitulares_ca_pesos`: +7 movimientos de marzo (estado «pendiente», orden 24-30) y los 9 posteriores corridos +7 (orden 31-39). Empalma con febrero ($ 0) y junio (arranca de $ 12,82); la cadena de saldos de los 39 movimientos cierra. Ids en `scripts/150-intercalar-cotitulares-pesos-26-03-ids.json`. Al reconstruir: correr el 136 y después el 150 (desde la carpeta principal: `npx tsx <árbol>/scripts/150-….mts --escribir`). Deshacer: `scripts/150-…-deshacer.mts` (frena si alguno ya se concilió).
 
