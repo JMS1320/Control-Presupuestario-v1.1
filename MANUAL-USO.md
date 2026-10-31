@@ -3803,7 +3803,21 @@ Todo lo que entra y sale de la casilla **sanmanuel.sp**, registrado y con link a
 - **Reglas → «Ver qué cambiaría»** muestra qué pasaría si se reaplican las reglas a lo ya registrado (nunca toca los que corregiste a mano); **«Aplicar»** lo hace y al final tiene que decir «El registro coincide con las reglas».
 - **El reporte diario** llega a la propia casilla a las 7: «[Registro de mails] …», con lo mismo que esta pantalla.
 
-→ A-TEST-1290
+**Seguimiento de cada mail** *(2026-10-31)*
+- La columna **Seguimiento** marca cada mail recibido como **📌 Pendiente** o **✔ Terminado**. Hacé click: elegís el estado, escribís qué falta y, si querés, la fecha para volver a mirarlo. «Terminado ya» lo cierra de un click.
+- Los **pendientes se ven siempre**, arriba de todo y aunque sean de antes del período elegido. Si pasó la fecha, el renglón se pone **rojo** («vencido»). Los chips **Vencidos / Pendientes / Terminados / Sin marcar** filtran por eso.
+- Lo que una regla manda **Avisar** entra solo como pendiente, para que no se pierda.
+- El reporte de las 7 trae **los pendientes arriba de todo**, con su nota y su fecha, hasta que los das por terminados.
+
+**Cambiar el tipo: a cuántos mails alcanza** *(2026-10-31)*
+- Al elegir otro tipo en el renglón de un mail, la app pregunta: **sólo este mail**, **todos los de ese remitente** o **los de ese remitente cuyo asunto dice…** (el asunto viene escrito y se puede cambiar). Los dos últimos crean la regla y cambian también los mails que ya llegaron. Los que corregiste a mano uno por uno no se tocan.
+- Si el tipo no existe, elegí **«＋ Nuevo tipo…»** al final de la lista: lo creás ahí y queda elegido. En **Reglas → Tipos de mail** se renombran.
+
+**Filtros por columna, como en Excel** *(2026-10-31)*
+- En los títulos **De / Para**, **Tipo** y **Qué se hizo** hay un embudo: abre la lista de valores sin repetir, con cuántos mails tiene cada uno, un buscador y casillas. Sirve para ver de un vistazo si llegó algo de alguien.
+- El **📎** abre el archivo ya archivado (en verde) si el sistema lo guardó; si no, abre el mail, donde están los adjuntos.
+
+→ A-TEST-1290 · ⚠️ Sin probar todavía → A-TEST-1298
 
 ## 🛡️ Egresos → Seguros *(2026-10-20)*
 
