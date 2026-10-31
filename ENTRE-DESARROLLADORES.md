@@ -40,7 +40,10 @@
 
 ## 📨 PARA JAVIER
 
-### 🏦 19 columnas nuevas en las 10 cuentas de carga manual (2026-10-31) — ⏳ AVISO PREVIO, espera OK de JMS
+### 🏦 Las mismas columnas en las 3 cajas de MSA, `msa.echeqs_terceros` y las 3 tarjetas VISA (2026-10-31) — ⏳ AVISO PREVIO (se corre a continuación, JMS: «aprovechá a dejar todo bien»)
+- `scripts/156-columnas-cajas-echeqs-tarjetas.sql` (+ `-deshacer`). Segunda parte de A-BUG-1458: `msa.caja_general`, `msa.caja_ams`, `msa.caja_sigot` (19 columnas c/u), `msa.echeqs_terceros` (15) y `msa.tarjeta_visa_business`, `pam.tarjeta_visa`, `ma.tarjeta_visa` (12 c/u) reciben las columnas de `public.msa_galicia` que les faltaban, vacías, comentario `[script 156]`. **Sin cambios de RLS ni de permisos.**
+
+### 🏦 19 columnas nuevas en las 10 cuentas de carga manual (2026-10-31) — ✅ APLICADA el 31/10 con OK de JMS («dale, corré el 155»; aviso previo): 190 columnas (19 × 10), todas vacías; verificado con EXPLAIN UPDATE
 - `scripts/155-columnas-cuentas-carga-manual.sql` (+ `-deshacer`). A-BUG-1458: `msa.santander`, `msa.provincia`, `ma.anses_ca_pesos`, `public.cotitulares_ca_pesos` y las 6 en dólares (`msa.cc_usd`, `msa.caja_usd`, `ma.ca_usd`, `ma.caja_usd`, `public.cotitulares_ca_usd`, `public.cotitulares_caja_usd`) reciben las 19 columnas de `public.msa_galicia` que les faltaban (origen, leyendas 1-4, revisado default false, nota_operador, proveedor_nombre, anticipo_id, sueldo_pago_id, comprobante_venta_id, comprobantes_pagados, nro_resumen, etc.), todas vacías, con comentario `[script 155]`. **Sin cambios de RLS ni de permisos** (las tablas ya tienen `ver_segun_permiso` / `escribir_segun_permiso`). Motivo: la conciliación de Santander falló al grabar los 113 movimientos que tocaban regla.
 
 ### 📮 2 tablas nuevas: `public.avisos_destinatarios` y `public.obligaciones_recurrentes` + 1 índice único parcial en `public.revisiones` (2026-10-31) — ✅ APLICADA el 31/10 con OK de JMS (aviso previo): 2 tablas (10 + 2 filas), 2 en recurso_tablas, índice; verificado: todos los roles leen, sólo admin escribe
