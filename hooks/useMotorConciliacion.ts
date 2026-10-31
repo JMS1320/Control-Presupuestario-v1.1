@@ -7,6 +7,7 @@ import { conciliarCuota, type PlazoCobro } from "@/lib/ventas/hacienda"
 import { supabase } from "@/lib/supabase"
 import { useMultiCashFlowData } from "./useMultiCashFlowData"
 import { useReglasConciliacion } from "./useReglasConciliacion"
+import { motivoDeError, sumarMotivo } from "@/lib/conciliacion/motivo-error"
 import {
   extraerCuitBancario as extraerCuitDelMovimiento,
   buscarNombreProveedor as buscarNombreEnMaestro,
@@ -530,6 +531,8 @@ export function useMotorConciliacion() {
         revision_manual: 0,
         sin_match: 0,
         errores: 0,
+        /** 🧯 A-BUG-1458: por qué falló cada movimiento, agrupado (antes sólo quedaba en la consola). */
+        motivosError: [] as { motivo: string; n: number }[],
         detalles: [] as any[]
       }
 
@@ -1056,6 +1059,7 @@ export function useMotorConciliacion() {
         } catch (error) {
           console.error(`Error procesando movimiento ${movimiento.id}:`, error)
           resultadosProceso.errores++
+          sumarMotivo(resultadosProceso.motivosError, motivoDeError(error))
         }
       }
 

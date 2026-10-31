@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 🏦 Las mismas columnas en las 3 cajas de MSA, `msa.echeqs_terceros` y las 3 tarjetas VISA (2026-10-31) — ⏳ AVISO PREVIO (se corre a continuación, JMS: «aprovechá a dejar todo bien»)
+### 🏦 Las mismas columnas en las 3 cajas de MSA, `msa.echeqs_terceros` y las 3 tarjetas VISA (2026-10-31) — ✅ APLICADA el 31/10 (aviso previo; JMS: «aprovechá a dejar todo bien»): 108 columnas (19×3 + 15 + 12×3), vacías
 - `scripts/156-columnas-cajas-echeqs-tarjetas.sql` (+ `-deshacer`). Segunda parte de A-BUG-1458: `msa.caja_general`, `msa.caja_ams`, `msa.caja_sigot` (19 columnas c/u), `msa.echeqs_terceros` (15) y `msa.tarjeta_visa_business`, `pam.tarjeta_visa`, `ma.tarjeta_visa` (12 c/u) reciben las columnas de `public.msa_galicia` que les faltaban, vacías, comentario `[script 156]`. **Sin cambios de RLS ni de permisos.**
 
 ### 🏦 19 columnas nuevas en las 10 cuentas de carga manual (2026-10-31) — ✅ APLICADA el 31/10 con OK de JMS («dale, corré el 155»; aviso previo): 190 columnas (19 × 10), todas vacías; verificado con EXPLAIN UPDATE

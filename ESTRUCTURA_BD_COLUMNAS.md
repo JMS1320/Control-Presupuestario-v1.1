@@ -133,6 +133,8 @@ Schemas de usuario: `public` (22 tablas + 6 vistas `sueldos_*`) · `msa` (12) ·
 > **`comprobantes_venta` existe en los 3 schemas** (`msa`, `pam`, `ma`) y **hasta 2026-10-01 eran idénticas** — 53 columnas — desde 2026-08-13 (ver RECONSTRUCCION § CAMBIOS POST-RECONSTRUCCIÓN). `ventas` y `ventas_comprobantes` siguen siendo **sólo de MSA**: son del circuito de granos. En PAM y MA se factura arrendamiento (Fac C, sólo total), así que las columnas de liquidación quedan en null.
 
 ### caja_general · caja_ams · caja_sigot  (cajas efectivo — misma estructura, base de movimiento)
+
+> ⚠️ **Cambió 2026-10-31 (scripts 155 y 156, A-BUG-1458):** TODAS las tablas de extracto (las cajas, `echeqs_terceros`, las 3 tarjetas y las 10 de carga manual: santander, provincia, anses_ca_pesos, cotitulares_ca_pesos y las 6 en dólares) tienen ahora **las mismas columnas de movimiento que `public.msa_galicia`** (origen, leyendas_adicionales_1..4, tipo_de_movimiento, numero_de_comprobante/terminal, observaciones_cliente, grupo_de_conceptos, concepto, sueldo_pago_id, anticipo_id, comprobante_venta_id, revisado default false, nota_operador, proveedor_nombre, comprobantes_pagados, nro_resumen) — vacías donde no aplican. Motivo: el motor escribe esas columnas y la conciliación de Santander falló entera («Errores 113»). **Una tabla de extracto nueva tiene que nacer con ellas.**
 `id uuid, fecha date, descripcion text, debitos numeric, creditos numeric, saldo numeric, control numeric, categ text, detalle text, contable text, interno text, centro_de_costo text, cuenta text, orden numeric, estado text, motivo_revision text, comprobante_arca_id uuid, nro_cuenta varchar, template_id uuid, template_cuota_id uuid`
 
 ### cheques

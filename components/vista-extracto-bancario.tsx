@@ -3731,6 +3731,15 @@ ${marca}` : marca
             <p className="text-xs text-gray-500 mt-3">
               Procesados = Conciliados + A auditar + Sin match + Errores. Verificá que "Procesados" coincida con el lote que esperabas.
             </p>
+            {/* 🧯 A-BUG-1458 — por qué fallaron, agrupado (antes sólo quedaba en la consola). */}
+            {resultados.errores > 0 && !!resultados.motivosError?.length && (
+              <div className="mt-2 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-900" data-test="conciliacion-motivos-error">
+                <div className="font-medium">Por qué fallaron:</div>
+                <ul className="list-disc pl-5">
+                  {resultados.motivosError.map((m: { motivo: string; n: number }) => <li key={m.motivo}>{m.motivo} — <b>{m.n}</b> movimiento(s)</li>)}
+                </ul>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

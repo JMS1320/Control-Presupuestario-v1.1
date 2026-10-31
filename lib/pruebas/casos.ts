@@ -208,6 +208,7 @@ import { linkExtracto, extractoDelLink, rangoQueContiene } from "@/lib/extracto/
 import { linkHistorico, subFacturasDelLink, historicoDelLink } from "@/lib/egresos/link-facturas"
 import { armarPapelDeTrabajo, vinculoDe } from "@/lib/cuaderno/papel-de-trabajo"
 import { calcularTabla as calcularTablaCuaderno } from "@/lib/cuaderno/formulas"
+import { motivoDeError, sumarMotivo } from "@/lib/conciliacion/motivo-error"
 import { proponerConciliaciones, CUENTAS_CONCILIABLES, ventanasAlrededor, moverMeses, type DatosConciliacion, type MovimientoSinConciliar, type Obligacion } from "@/lib/conciliacion/propuestas-ejercicio"
 import { temasDeMovimientos, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
 import { cruzarChequesConDebitos, numeroEnDescripcion } from "@/lib/conciliacion/cheques-vencidos"
@@ -5537,6 +5538,15 @@ export function correrCasos(): Resultado[] {
     chequear("Conciliación · en el recorrido", "🗄️ El histórico sugerido a template se muestra con su etiqueta y no suma a «sin conciliar»; el histórico sin pareja ni aparece",
       "h2:H,p1:- · Histórico: ¿va a este template? (sugerencia) · sin conciliar 1", vH2,
       vH2 === "h2:H,p1:- · Histórico: ¿va a este template? (sugerencia) · sin conciliar 1", "A-FEAT-1315")
+
+    // 🧯 A-BUG-1458: el error de la base se explica (Santander dio «Errores 113» mudo: le faltaban columnas).
+    const mot: { motivo: string; n: number }[] = []
+    for (let k = 0; k < 3; k++) sumarMotivo(mot, motivoDeError({ code: "PGRST204", message: "Could not find the 'proveedor_nombre' column of 'santander' in the schema cache" }))
+    sumarMotivo(mot, motivoDeError({ code: "42501", message: "new row violates row-level security policy" }))
+    const vMot = mot.map(m => `${m.n}× ${m.motivo.split(" (")[0]}`).join(" | ")
+    chequear("Conciliación · errores", "🧯 Los errores del motor se agrupan con un motivo legible (columna faltante → «le falta la columna», permisos → «sin permiso»)",
+      "3× A la tabla de esta cuenta le falta la columna «proveedor_nombre» | 1× Sin permiso para grabar en esta cuenta", vMot,
+      vMot === "3× A la tabla de esta cuenta le falta la columna «proveedor_nombre» | 1× Sin permiso para grabar en esta cuenta", "A-BUG-1458")
   }
 
   /**
