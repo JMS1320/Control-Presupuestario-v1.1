@@ -660,6 +660,22 @@ function ReglasMails() {
     setNueva({ remitente_patron: "", asunto_patron: "", tipo: "otro", accion: "guardar", orden: "50" })
     cargar()
   }
+  // 🔽 Filtros por columna también en Reglas (nota 🌙 JMS 31/10 → A-FEAT-1448)
+  type ColRegla = "activa" | "remitente" | "asunto" | "tipo" | "accion"
+  const [filtrosRegla, setFiltrosRegla] = useState<Record<ColRegla, Set<string> | null>>({ activa: null, remitente: null, asunto: null, tipo: null, accion: null })
+  const valoresRegla: Record<ColRegla, (r: ReglaMail) => string> = useMemo(() => ({
+    activa: (r: ReglaMail) => r.activa ? "activa" : "apagada",
+    remitente: (r: ReglaMail) => r.remitente_patron,
+    asunto: (r: ReglaMail) => r.asunto_patron ?? "",
+    tipo: (r: ReglaMail) => r.tipo,
+    accion: (r: ReglaMail) => r.accion,
+  }), [])
+  const reglasVisibles = useMemo(() => filtrarPorColumnas(reglas, filtrosRegla, valoresRegla), [reglas, filtrosRegla, valoresRegla])
+  const opcionesRegla = (col: ColRegla, etiqueta?: (v: string) => string) =>
+    opcionesDeColumna(filtrarPorColumnas(reglas, { ...filtrosRegla, [col]: null }, valoresRegla), valoresRegla[col], etiqueta ? v => etiqueta(v) : undefined)
+  const filtroRegla = (col: ColRegla, titulo: string, etiqueta?: (v: string) => string) => (
+    <FiltroColumna titulo={titulo} opciones={opcionesRegla(col, etiqueta)} seleccion={filtrosRegla[col]} onChange={x => setFiltrosRegla(f => ({ ...f, [col]: x }))} />
+  )
   const usoPorTipo = useMemo(() => {
     const r: Record<string, number> = {}
     for (const x of reglas) r[x.tipo] = (r[x.tipo] ?? 0) + 1
@@ -704,13 +720,13 @@ function ReglasMails() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-16">Activa</TableHead><TableHead className="w-16">Orden</TableHead>
-              <TableHead>De quién viene</TableHead><TableHead>Asunto contiene</TableHead>
-              <TableHead>Tipo</TableHead><TableHead>Qué se hace</TableHead><TableHead>Nota</TableHead>
+              <TableHead className="w-20">{filtroRegla("activa", "Activa")}</TableHead><TableHead className="w-16">Orden</TableHead>
+              <TableHead>{filtroRegla("remitente", "De quién viene")}</TableHead><TableHead>{filtroRegla("asunto", "Asunto contiene")}</TableHead>
+              <TableHead>{filtroRegla("tipo", "Tipo", v => nombres[v] ?? v)}</TableHead><TableHead>{filtroRegla("accion", "Qué se hace", v => NOMBRE_ACCION[v as AccionMail] ?? v)}</TableHead><TableHead>Nota</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {reglas.map(r => (
+            {reglasVisibles.map(r => (
               <TableRow key={r.id} className={r.activa ? undefined : "opacity-50"}>
                 <TableCell><input type="checkbox" checked={r.activa} onChange={() => alternar(r)} aria-label="Activa" /></TableCell>
                 <TableCell className="tabular-nums">{r.orden}</TableCell>

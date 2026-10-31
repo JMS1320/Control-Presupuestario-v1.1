@@ -3835,6 +3835,7 @@ Todo lo que entra y sale de la casilla **sanmanuel.sp**, registrado y con link a
 - Tildá los mails y **Archivar**: cada adjunto va a la **carpeta del año del mail**, como «AAAA-MM-DD - nombre del archivo». **Nada se pisa ni se duplica**: si ya estaba, queda como estaba. Si tu carpeta del año se llama distinto («Año 2026»), la usa.
 - Lo archivado queda en el Registro («✔ archivado», con el 📎 en verde que abre el archivo) y sale de esta lista.
 
+- **Reglas** también tiene el embudo en cada columna (Activa, De quién viene, Asunto, Tipo, Qué se hace) para encontrar una regla rápido.
 - **Tildar de a muchos**: la casilla del título del grupo (y la de cada tema) tilda o destilda todos.
 - **Un mismo remitente, varias carpetas**: adentro del grupo, los mails se ordenan por **tema del asunto** (SICORE, IIBB, Subdiarios…). **↪ otra carpeta** en un tema crea la regla «de este remitente, con este asunto» y ese tema pasa a ser su propio grupo, con su carpeta. Vale también para lo que llegue después.
 
