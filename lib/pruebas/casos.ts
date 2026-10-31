@@ -199,7 +199,9 @@ import { controlarProvisionAnterior } from "@/lib/balance/control-inicio"
 import { esFilaDeAlerta, solapasDelLibro } from "@/lib/balance/vista-previa"
 import { armarInicioYCierre, textoEstado } from "@/lib/balance/inicio-y-cierre"
 import { armarCobertura, CANTIDAD_DE_DATOS } from "@/lib/balance/cobertura-papeles"
-import { armarTemas, progreso, textoPendienteDe } from "@/lib/balance/recorrido"
+import { armarTemas, progreso, textoPendienteDe, fuenteDe, linksDeLaApp, sinTresVistas, type Tema as TemaRecorrido } from "@/lib/balance/recorrido"
+import { temasVentasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
+import { linkComprobantesVenta, ventasDelLink } from "@/lib/ventas/link"
 import { linkExtracto, extractoDelLink, rangoQueContiene } from "@/lib/extracto/link"
 import { linkHistorico, subFacturasDelLink, historicoDelLink } from "@/lib/egresos/link-facturas"
 import { armarPapelDeTrabajo, vinculoDe } from "@/lib/cuaderno/papel-de-trabajo"
@@ -5273,6 +5275,52 @@ export function correrCasos(): Resultado[] {
       "facturas-msa · historico · h1,h2", `${new URLSearchParams(q).get("tab")} · ${subFacturasDelLink(q)} · ${historicoDelLink(q).join(",")}`,
       new URLSearchParams(q).get("tab") === "facturas-msa" && subFacturasDelLink(q) === "historico" && historicoDelLink(q).join(",") === "h1,h2"
         && subFacturasDelLink("?sub=otra") === null && historicoDelLink("?sub=historico").length === 0, "A-FEAT-1430")
+  }
+
+  /**
+   * 📄 **LAS TRES VISTAS DE CADA TEMA — A-FEAT-1439** (JMS 31/10: «siempre con la posibilidad de ver lo objetivo, no sólo
+   * tu propuesta»). La fuente se deduce cuando se puede (el extracto del banco, el papel 24/25) y si no hay, se cuenta.
+   */
+  {
+    const url = linkComprobantesVenta(["v1", "v2", "v1"], "msa")
+    const vuelta = ventasDelLink(url.slice(url.indexOf("?")))
+    chequear("Ventas · link", "🔗 El link del recorrido abre Ingresos → MSA → Comprobantes mostrando sólo esos comprobantes",
+      "MSA · comprobantes · v1,v2 · otra sección null", `${vuelta?.empresa} · ${vuelta?.vista} · ${vuelta?.ids.join(",")} · otra sección ${ventasDelLink("?seccion=egresos&ventas=1")}`,
+      vuelta?.empresa === "MSA" && vuelta.vista === "comprobantes" && vuelta.ids.join(",") === "v1,v2" && ventasDelLink("?seccion=egresos&ventas=1") === null, "A-FEAT-1439")
+
+    const base = { grupo: "conciliacion" as const, papel: "x", que: "x", respondido: false }
+    const banco = { ...base, clave: "a", titulo: "mov", links: [{ texto: "El movimiento", href: linkExtracto({ cuenta: "msa_galicia", movs: ["7"] }) }, { texto: "La factura", href: "/?seccion=egresos&tab=facturas-msa&facturas=f1" }] }
+    const papel = { ...base, clave: "b", titulo: "dato", links: [], valor2425: "$ 100" }
+    const nada = { ...base, clave: "c", titulo: "pregunta", links: [] }
+    const t3 = sinTresVistas([banco, papel, nada] as TemaRecorrido[])
+    const v = `${fuenteDe(banco)?.origen} (app: ${linksDeLaApp(banco).map(l => l.texto).join(",")}) · ${fuenteDe(papel)?.origen}: ${fuenteDe(papel)?.detalle} · ${fuenteDe(nada)} · sin fuente ${t3.sinFuente} · sin link ${t3.sinLink}`
+    const e = "Extracto del banco (app: La factura) · Papeles 24/25 del contador: El año pasado: $ 100 · null · sin fuente 1 · sin link 2"
+    chequear("Recorrido · tres vistas", "📄 La fuente sale del extracto del banco (y ese link no se repite en «En la app») o del papel 24/25; sin ninguna, el tema cuenta como «sin fuente»",
+      e, v, v === e, "A-FEAT-1439")
+
+    // 🧾 Ventas contra lo presentado: la liquidación de Genta cargada como tipo 60 sin PV ni número, presentada como 180 11-75880.
+    const ej = armarEjercicio(2026, 6)
+    const pres = (o: Partial<ComprobantePresentado>): ComprobantePresentado => ({ fecha: "2026-01-28", tipo: 180, puntoVenta: 11, numero: 75880,
+      cuit: "30526554562", denominacion: "PEDRO GENTA", total: 0, creditoFiscal: 0, netoGravado: 0, noGravado: 0, exento: 0, iva: 0, otrosTributos: 0, ...o })
+    const genta = desdeVenta({ id: "g1", año_contable: 2026, mes_contable: 1, fecha_liquidacion: "2026-01-28", tipo_comprobante: 60,
+      punto_venta: null, numero_desde: null, nro_comprobante: "11-75880", cuit_cliente: "30526554562", denominacion_cliente: "PEDRO GENTA",
+      imp_neto_gravado: 126441000, imp_neto_no_gravado: 0, imp_op_exentas: 0, iva: 13276305, imp_total: 139717305, ret_iibb: 970830, ddjj_iva: "No" })
+    const libro = { ejercicio: ej, ventas: [genta], compras: [] } as unknown as Parameters<typeof temasVentasVsArca>[0]
+    const ddjj = (periodo: string, ventas: ComprobantePresentado[] | null): DdjjGuardada =>
+      ({ periodo, secuencia: 1, codigo_presentacion: "69497529", archivo: `libro_iva_periodo_${periodo}_original.zip`, ventas, totales_ventas: null })
+    const temas = temasVentasVsArca(libro, "MSA", [ddjj("202601", [pres({ netoGravado: 126441000, iva: 13276305, otrosTributos: -970830, total: 138746475 })]), ddjj("202602", null)])
+    const ident = temas.find(t => t.clave === "arca:ventas:3-identificacion-distinta")
+    const ddjjT = temas.find(t => t.clave === "arca:ventas:ddjj-no-marcada")
+    const faltan = temas.find(t => t.clave === "arca:ventas:faltan-meses")
+    const fila = ident?.comparacion?.celdas[1] ?? []
+    const v2 = `${ident?.titulo} · fuente «${ident?.fuente?.origen}» ${/presentación 69497529/.test(ident?.fuente?.detalle ?? "") ? "con código" : "SIN código"} · link ${/ventas=g1/.test(ident?.links[0]?.href ?? "") ? "g1" : "?"} · fila ${fila[2]} | ${fila[3]} | ${fila[10]} · ddjj ${ddjjT ? /«No»/.test(ddjjT.que) ? "No" : "?" : "-"} · ${faltan?.titulo} (feb ${/02\/2026/.test(faltan?.que ?? "") ? "incluido" : "falta"})`
+    const e2 = "Ventas · Identificación distinta (1) · fuente «Libro IVA presentado a ARCA» con código · link g1 · fila tipo 60 / PV (vacío) / N° (vacío) (11-75880) | tipo 180 / PV 11 / N° 75880 | =J2-I2 · ddjj No · Faltan 11 mes(es) de lo presentado a ARCA (feb incluido)"
+    chequear("Recorrido · ventas vs ARCA", "🧾 La liquidación cargada como tipo 60 sin número sale como «identificación distinta» con la fuente (libro presentado, con su código), el link a ese comprobante y la tabla de los dos lados; la «DDJJ No» es otro tema; un mes guardado sin ventas cuenta como faltante",
+      e2, v2, v2 === e2, "A-FEAT-1439")
+    const vacio = temasVentasVsArca(libro, "MSA", [])
+    chequear("Recorrido · ventas vs ARCA", "🧾 Sin nada presentado guardado no se saltea: es un tema «falta información» que dice cómo cargarlo",
+      "1 · sin informacion · Lo presentado a ARCA no está cargado en la app", `${vacio.length} · ${vacio[0]?.grupo} · ${vacio[0]?.titulo}`,
+      vacio.length === 1 && vacio[0].grupo === "sin informacion" && vacio[0].titulo === "Lo presentado a ARCA no está cargado en la app", "A-FEAT-1439")
   }
 
   /**

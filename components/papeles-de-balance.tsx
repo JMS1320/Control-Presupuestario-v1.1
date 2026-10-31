@@ -49,6 +49,7 @@ import { ivaConSigno, RENGLONES, type DatosDeLosPapeles, type ValorPropuesto } f
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { armarWorkbook, coberturaDeArgs, descargarLibroDiario } from "@/lib/balance/export-libro-diario"
 import { armarTemas, type Tema } from "@/lib/balance/recorrido"
+import { temasVentasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
 import { leerDatosConciliacion, proponerConciliaciones } from "@/lib/conciliacion/propuestas-ejercicio"
 import { temasDeMovimientos, temasDeDeudas, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
 import { leerChequesVencidos } from "@/lib/conciliacion/cheques-vencidos"
@@ -205,6 +206,29 @@ export function PapelesDeBalance() {
   // Se calculan la primera vez que se abre el recorrido (después, con «↻ Recalcular»).
   useEffect(() => { if (verRecorrido && libro && !conciliacion && !cargandoConciliacion) void calcularConciliacion() }, [verRecorrido, libro]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setConciliacion(null) }, [libro])
+  /**
+   * 🧾 A-FEAT-1439: lo PRESENTADO a ARCA (libro IVA de cada mes, `public.ddjj_presentadas`), para que el recorrido
+   * muestre las ventas contra lo declarado — la fuente objetiva al lado de la app.
+   */
+  const [ddjjGuardadas, setDdjjGuardadas] = useState<{ filas: DdjjGuardada[]; error: string | null } | null>(null)
+  useEffect(() => {
+    if (!verRecorrido || !libro || ddjjGuardadas) return
+    const periodos = libro.ejercicio.subdiarios.map(s => `${s.anio}${String(s.mes).padStart(2, "0")}`)
+    void (async () => {
+      const base = "periodo, secuencia, codigo_presentacion, archivo"
+      const q = (cols: string) => supabase.from("ddjj_presentadas").select(cols).eq("empresa", empresa.id).eq("impuesto", "IVA").in("periodo", periodos)
+      let r = await q(`${base}, ventas, totales_ventas`)
+      // Antes del script 145 la tabla no guarda las ventas: se leen igual los meses, y el recorrido dice que faltan.
+      if (r.error && /ventas/.test(r.error.message)) r = await q(base)
+      if (r.error) { setDdjjGuardadas({ filas: [], error: r.error.message }); return }
+      setDdjjGuardadas({ filas: ((r.data ?? []) as unknown as Record<string, unknown>[]).map(d => ({
+        periodo: String(d.periodo), secuencia: Number(d.secuencia ?? 1), codigo_presentacion: (d.codigo_presentacion as string) ?? null,
+        archivo: (d.archivo as string) ?? null, ventas: Array.isArray(d.ventas) ? d.ventas as DdjjGuardada["ventas"] : null,
+        totales_ventas: (d.totales_ventas as DdjjGuardada["totales_ventas"]) ?? null,
+      })), error: null })
+    })()
+  }, [verRecorrido, libro]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setDdjjGuardadas(null) }, [libro])
   const [versionPendientes, setVersionPendientes] = useState(0)
   /** ⚡ A-FEAT-1427: «Armar todo» le pide a Hacienda/insumos que traiga stock y precios (cada pedido, un número nuevo). */
   const [pedidoStock, setPedidoStock] = useState(0)
@@ -249,10 +273,22 @@ export function PapelesDeBalance() {
   const temasRecorrido = useMemo(() => {
     if (!libro) return []
     const otros = conciliacion ? [...conciliacion.movimientos, ...conciliacion.deudas, ...conciliacion.cheques] : []
+    // 🧾 A-FEAT-1439: ventas contra lo presentado a ARCA. Si no se pudo leer o cruzar, se dice como tema (no se saltea).
+    if (ddjjGuardadas) {
+      try {
+        otros.push(...(ddjjGuardadas.error
+          ? [{ clave: "arca:ventas:error-lectura", grupo: "error" as const, papel: "Ventas contra lo presentado a ARCA", titulo: "No se pudo leer lo presentado a ARCA",
+              que: ddjjGuardadas.error, links: [], respondido: false }]
+          : temasVentasVsArca(libro, empresa.id, ddjjGuardadas.filas)))
+      } catch (e) {
+        otros.push({ clave: "arca:ventas:error-cruce", grupo: "error", papel: "Ventas contra lo presentado a ARCA", titulo: "No se pudo comparar las ventas contra lo presentado a ARCA",
+          que: (e as Error).message, links: [], respondido: false })
+      }
+    }
     try { return armarTemas(coberturaDeArgs(...argsDelExcel(libro)), pendientes, otros) } catch { return armarTemas(null, pendientes, otros) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [libro, empresa.id, templates, hacienda, cuentas, valores, bancarios, sueldos, cuentasCorrientesConInicio,
-    pendientes, ajustes, anioCierre, asientosContables, lecturas, controlCuotas, controlesInicio, propuestaCierre, fotoInicio, conciliacion])
+    pendientes, ajustes, anioCierre, asientosContables, lecturas, controlCuotas, controlesInicio, propuestaCierre, fotoInicio, conciliacion, ddjjGuardadas])
   const sinResponder = temasRecorrido.filter(t => !t.respondido).length
   /** Lo que todavía no llegó, para que la vista previa lo diga en vez de parecer completa. */
   const faltanEnPrevia = [

@@ -207,6 +207,11 @@ export interface FilaDiferencia {
   link?: string
   /** Para ordenar dentro del grupo. */
   orden: string
+  /** 🔗 El id del comprobante en la app (ventas), para el link del recorrido (A-FEAT-1439). Vacío = sólo en ARCA. */
+  appId?: string
+  /** Ventas: los importes de cada lado (neto, no gravado, exento, IVA, total) — la «foto» de lo presentado en el recorrido. */
+  arca?: number[]
+  app?: number[]
 }
 
 export const GRUPOS_COMPRAS = {
@@ -396,7 +401,7 @@ export interface CruceVentas {
   app: number[]
   noEntra: Array<{ concepto: string; subdiario: string; cliente: string; comprobante: string; importe: number; porQue: string }>
   csvVsXml: Array<{ subdiario: string; csvNeto: number; xmlNeto: number; csvIva: number; xmlIva: number; csvExento: number; xmlExento: number }>
-  ddjjDistinta: Array<{ subdiario: string; fecha: string | null; cliente: string; cuit: string; comprobante: string; ddjj: string }>
+  ddjjDistinta: Array<{ subdiario: string; fecha: string | null; cliente: string; cuit: string; comprobante: string; ddjj: string; appId?: string }>
   avisos: string[]
 }
 
@@ -417,7 +422,7 @@ export function cruzarVentas(ventas: FilaVentaConsensuada[], porSub: Map<string,
     const dif = x.v.map((v, i) => r2(v - importesAppVenta(a)[i]))
     const misma = String(a.tipo ?? "") === String(x.p.tipo) && (a.puntoVenta ?? 0) === x.p.puntoVenta && a.numero != null && a.numero === x.p.numero
     const base = {
-      subdiario: a.subdiario, fecha: a.fecha, denominacion: a.cliente, cuit: a.cuit, ddjj: a.ddjjIva, orden: ordenApp(a),
+      subdiario: a.subdiario, fecha: a.fecha, denominacion: a.cliente, cuit: a.cuit, ddjj: a.ddjjIva, orden: ordenApp(a), appId: a.asiento.id, arca: [...x.v], app: importesAppVenta(a),
       compApp: `${identApp(String(a.tipo ?? ""), a.puntoVenta, a.numero)} (${a.nroComprobante})`, compArca: identArca(x.p),
     }
     const lineas: Array<[string, string, string]> = []
@@ -439,11 +444,11 @@ export function cruzarVentas(ventas: FilaVentaConsensuada[], porSub: Map<string,
       const d = i === 0 ? dif : [0, 0, 0, 0, 0]   // el importe se cuenta una sola vez
       filas.push({ ...base, grupo, dif: d, modificaIva: modificaIva(d[3]), quePasa: que, queHacer: hacer })
     })
-    if (a.ddjjIva !== "DDJJ OK") ddjjDistinta.push({ subdiario: a.subdiario, fecha: a.fecha, cliente: a.cliente, cuit: a.cuit, comprobante: `tipo ${a.tipo ?? ""} / ${a.nroComprobante}`, ddjj: a.ddjjIva })
+    if (a.ddjjIva !== "DDJJ OK") ddjjDistinta.push({ subdiario: a.subdiario, fecha: a.fecha, cliente: a.cliente, cuit: a.cuit, comprobante: `tipo ${a.tipo ?? ""} / ${a.nroComprobante}`, ddjj: a.ddjjIva, appId: a.asiento.id })
   }
   for (const x of soloArca) filas.push({
     grupo: GRUPOS_VENTAS.soloArca, subdiario: x.sub, fecha: isoFecha(x.p.fecha), denominacion: x.p.denominacion, cuit: x.p.cuit,
-    compApp: "", compArca: identArca(x.p), dif: [...x.v], modificaIva: modificaIva(x.v[3]),
+    compApp: "", compArca: identArca(x.p), dif: [...x.v], modificaIva: modificaIva(x.v[3]), arca: [...x.v],
     quePasa: "Está presentada en ARCA y no se encontró en la app.", queHacer: "Cargarla en la app, o rectificar la DDJJ si no corresponde.",
     ddjj: "", orden: `${isoFecha(x.p.fecha) ?? ""}|${x.p.numero}`,
   })
@@ -453,7 +458,7 @@ export function cruzarVentas(ventas: FilaVentaConsensuada[], porSub: Map<string,
       grupo: GRUPOS_VENTAS.soloApp, subdiario: a.subdiario, fecha: a.fecha, denominacion: a.cliente, cuit: a.cuit,
       compApp: `${identApp(String(a.tipo ?? ""), a.puntoVenta, a.numero)} (${a.nroComprobante})`, compArca: "", dif: v, modificaIva: modificaIva(v[3]),
       quePasa: "Está en la app y no se encontró en lo presentado a ARCA.", queHacer: "Revisar: presentarla (rectificativa) o sacarla / reimputarla en la app.",
-      ddjj: a.ddjjIva, orden: ordenApp(a),
+      ddjj: a.ddjjIva, orden: ordenApp(a), appId: a.asiento.id, app: importesAppVenta(a),
     })
   }
   ordenarFilas(filas)

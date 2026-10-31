@@ -16,6 +16,7 @@ import { toast } from "sonner"
 import { ModalLiquidacionMsa, type LiquidacionMsa } from "./modal-liquidacion-msa"
 import { ModalLiquidacionHacienda } from "./modal-liquidacion-hacienda"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
+import { ventasDelLink } from "@/lib/ventas/link"
 
 interface Props {
   userRole?: UserRole
@@ -171,8 +172,16 @@ export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: P
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { cargar() }, [empresa])
 
+  // 🔗 A-FEAT-1439: un link (el recorrido del balance) puede pedir sólo ciertos comprobantes, por id.
+  const [idsLink, setIdsLink] = useState<Set<string> | null>(null)
+  useEffect(() => {
+    const l = ventasDelLink(window.location.search)
+    if (l && l.ids.length && (l.empresa ?? 'MSA') === empresa) setIdsLink(new Set(l.ids))
+  }, [empresa])
+  const base = idsLink ? liquidaciones.filter(l => idsLink.has(l.id)) : liquidaciones
+
   const filtradas = busqueda.trim()
-    ? liquidaciones.filter(l => {
+    ? base.filter(l => {
         const q = normalizarBusqueda(busqueda)
         return normalizarBusqueda(l.nro_comprobante || '').includes(q)
           || normalizarBusqueda(l.coe || '').includes(q)
@@ -180,7 +189,7 @@ export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: P
           || l.cuit_cliente?.includes(q)
           || normalizarBusqueda(l.puerto || '').includes(q)
       })
-    : liquidaciones
+    : base
 
   const abrirAlta = () => {
     setLiqEditando(null)
@@ -234,6 +243,13 @@ export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: P
 
   return (
     <div className="space-y-4">
+      {idsLink && (
+        <div className="flex items-center gap-3 rounded border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-900" data-test="ventas-filtro-link">
+          <span>🔗 Mostrando sólo los {idsLink.size} comprobante(s) que pidió el link{!loading && base.length < idsLink.size ? ` — ⚠️ ${idsLink.size - base.length} no se encontraron (¿borrados?)` : ''}.</span>
+          <button type="button" className="ml-auto underline"
+            onClick={() => { setIdsLink(null); window.history.replaceState(null, '', `/?seccion=ingresos&empresa=${empresa}&vista=comprobantes`) }}>Quitar este filtro</button>
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-gray-400" />

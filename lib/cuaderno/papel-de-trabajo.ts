@@ -9,7 +9,7 @@
  * por `public.cuadernos.vinculo` (script 141). La tabla de comparación usa las **fórmulas del cuaderno**, así la
  * diferencia y el «daría así» se recalculan si se toca un número: es un borrador para pensar, no un dato.
  */
-import type { Tema } from "@/lib/balance/recorrido"
+import { fuenteDe, linksDeLaApp, type Tema } from "@/lib/balance/recorrido"
 
 /** Una tabla A contra B, con la diferencia como fórmula. Las celdas son texto del cuaderno («=B2-B3», «12456000,14»). */
 export interface Comparacion {
@@ -39,11 +39,17 @@ export function armarPapelDeTrabajo(t: Tema, empresa: string, etiqueta: string, 
     t.propuesta ? `**Propuesta:** ${t.propuesta}` : "",
   ].filter((x, i, a) => x !== "" || (i > 0 && a[i - 1] !== ""))
   const bloques: BloquePapel[] = [{ id: id(1), tipo: "texto", texto: lineas.join("\n") }]
+  // 📄 A-FEAT-1439: lo objetivo, separado de lo que dice la app y de la propuesta.
+  const f = fuenteDe(t)
+  bloques.push({ id: id(6), tipo: "texto", texto: f
+    ? ["## 📄 Fuente — " + f.origen, f.detalle, ...(f.links ?? []).map(l => `- ${l.texto}: ${l.href}`)].join("\n")
+    : "## 📄 Fuente\n⚠️ Este tema no tiene fuente externa: lo de arriba es sólo lo que dice la app." })
   if (comparacion && comparacion.celdas.length) {
     bloques.push({ id: id(2), tipo: "texto", texto: `## ${comparacion.titulo}` })
     bloques.push({ id: id(3), tipo: "tabla", celdas: comparacion.celdas })
   }
-  if (t.links.length) bloques.push({ id: id(4), tipo: "texto", texto: ["## Dónde verlo", ...t.links.map(l => `- ${l.texto}: ${l.href}`)].join("\n") })
+  const enApp = linksDeLaApp(t)
+  if (enApp.length) bloques.push({ id: id(4), tipo: "texto", texto: ["## 🗂️ En la app", ...enApp.map(l => `- ${l.texto}: ${l.href}`)].join("\n") })
   bloques.push({ id: id(5), tipo: "texto", texto: "## Notas\n" })
   return { titulo: `📎 ${t.titulo} — balance ${empresa} ${etiqueta}`.slice(0, 200), bloques }
 }

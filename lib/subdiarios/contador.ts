@@ -109,6 +109,32 @@ export interface ResultadoDdjj {
 export async function procesarLibroPresentado(db: any, p: {
   empresa: string; schema: string; datos: ArrayBuffer | Uint8Array; archivo: string; origen: "subida" | "mail"; cargadoPor: string | null
 }): Promise<ResultadoDdjj> {
+  const { fila, comparacion, previa, anio, mes, periodo } = await armarYGuardarDdjj(db, p)
+  const res: ResultadoDdjj = { periodo, secuencia: fila.secuencia, coincide: comparacion.ok, comparacion, marcadosDdjjOk: 0, avisados: [], yaEstaba: !!previa }
+  if (comparacion.ok) {
+    // Lo mismo que «Confirmar DDJJ»: lo Imputado y Enviado del mes pasa a «DDJJ OK».
+    const u = await db.schema(p.schema).from("comprobantes_arca").update({ ddjj_iva: "DDJJ OK" })
+      .eq("año_contable", anio).eq("mes_contable", mes).in("ddjj_iva", ["Imputado", "Enviado"]).select("id")
+    if (!u.error) res.marcadosDdjjOk = (u.data ?? []).length
+    return res
+  }
+  // No coincide: aviso a JMS (admin) y a Ulises (contable), por la campanita (una marca con destinatario). Si la
+  // misma presentación ya estaba guardada y avisada, no se repite el aviso.
+  if (previa && previa.coincide === false) return res
+  return avisarQueNoCoincide(db, p.schema, res, anio, mes, fila.secuencia, comparacion)
+}
+
+/**
+ * 🗃️ Lee el zip, lo compara contra el subdiario de compras de la app y GUARDA la fila en `ddjj_presentadas` (sin
+ * efectos sobre nada más). La usan la pantalla y la vuelta del mail (vía `procesarLibroPresentado`) y la carga en lote
+ * del script 146 — un solo camino, así la fila queda igual venga de donde venga.
+ *
+ * 🧾 Desde A-FEAT-1439 guarda también las VENTAS del libro (`ventas`, `totales_ventas`, script 145): el recorrido del
+ * balance las muestra como la fuente objetiva. Si la base todavía no tiene esas columnas, guarda como antes.
+ */
+export async function armarYGuardarDdjj(db: any, p: {
+  empresa: string; schema: string; datos: ArrayBuffer | Uint8Array; archivo: string; origen: "subida" | "mail"; cargadoPor: string | null
+}) {
   const z = await leerZipLibroIva(p.datos)
   if (!z.totales?.periodo) throw new Error("El zip no trae libro_iva.xml con el período: no parece el libro IVA que exporta ARCA.")
   const periodo = z.totales.periodo
@@ -133,28 +159,23 @@ export async function procesarLibroPresentado(db: any, p: {
     totales: z.totales, comprobantes: z.compras, resultado: comparacion, coincide: comparacion.ok,
     cargado_por: p.cargadoPor, updated_at: new Date().toISOString(),
   }
-  const g = await db.from("ddjj_presentadas").upsert(fila, { onConflict: "empresa,impuesto,periodo,secuencia" })
+  let g = await db.from("ddjj_presentadas").upsert({ ...fila, ventas: z.ventas, totales_ventas: z.totalesVentas }, { onConflict: "empresa,impuesto,periodo,secuencia" })
+  // Antes del script 145 no existen las columnas de ventas: se guarda lo de siempre (y el recorrido avisa que faltan).
+  if (g.error && /ventas/.test(g.error.message)) g = await db.from("ddjj_presentadas").upsert(fila, { onConflict: "empresa,impuesto,periodo,secuencia" })
   if (g.error) throw new Error("No se pudo guardar la DDJJ: " + g.error.message)
+  return { fila, comparacion, previa: (previa.data ?? null) as { id: string; coincide: boolean | null } | null, anio, mes, periodo, ventas: z.ventas.length }
+}
 
-  const res: ResultadoDdjj = { periodo, secuencia: fila.secuencia, coincide: comparacion.ok, comparacion, marcadosDdjjOk: 0, avisados: [], yaEstaba: !!previa.data }
-  if (comparacion.ok) {
-    // Lo mismo que «Confirmar DDJJ»: lo Imputado y Enviado del mes pasa a «DDJJ OK».
-    const u = await db.schema(p.schema).from("comprobantes_arca").update({ ddjj_iva: "DDJJ OK" })
-      .eq("año_contable", anio).eq("mes_contable", mes).in("ddjj_iva", ["Imputado", "Enviado"]).select("id")
-    if (!u.error) res.marcadosDdjjOk = (u.data ?? []).length
-    return res
-  }
-  // No coincide: aviso a JMS (admin) y a Ulises (contable), por la campanita (una marca con destinatario). Si la
-  // misma presentación ya estaba guardada y avisada, no se repite el aviso.
-  if (previa.data && previa.data.coincide === false) return res
+/** El aviso a JMS y a Ulises cuando lo presentado no coincide con el subdiario (por la campanita). */
+async function avisarQueNoCoincide(db: any, schema: string, res: ResultadoDdjj, anio: number, mes: number, secuencia: number, comparacion: ResultadoContraPresentado): Promise<ResultadoDdjj> {
   const destinatarios = await destinatariosDelAviso(db)
-  const motivo = `Lo presentado a ARCA (${String(mes).padStart(2, "0")}/${anio}, secuencia ${fila.secuencia}) NO coincide con el subdiario: `
+  const motivo = `Lo presentado a ARCA (${String(mes).padStart(2, "0")}/${anio}, secuencia ${secuencia}) NO coincide con el subdiario: `
     + `${comparacion.soloApp.length} en la app y no presentadas, ${comparacion.soloPresentado.length} presentadas y no en la app, `
     + `${comparacion.importeDistinto.length} con otro importe · diferencia total ${comparacion.totales.diferencia.total} · crédito fiscal ${comparacion.totales.diferencia.creditoFiscal}. `
     + `Ver Subdiarios → ${String(mes).padStart(2, "0")}/${anio} → «Lo que devolvió el contador».`
   for (const email of destinatarios) {
     const r = await db.from("revisiones").insert({
-      schema_ref: p.schema, tabla_ref: "subdiario", registro_id: `presentado-${anio}-${String(mes).padStart(2, "0")}`,
+      schema_ref: schema, tabla_ref: "subdiario", registro_id: `presentado-${anio}-${String(mes).padStart(2, "0")}`,
       descripcion_ref: `Subdiario ${String(mes).padStart(2, "0")}/${anio} contra lo presentado a ARCA`,
       motivo, pantalla: "egresos", estado: "abierta", creado_por: "app (control de la DDJJ)", asignado_a: email,
     })

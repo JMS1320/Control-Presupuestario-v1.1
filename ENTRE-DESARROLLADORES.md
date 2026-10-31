@@ -40,6 +40,10 @@
 
 ## 📨 PARA JAVIER
 
+### 🧾 2 columnas nuevas en `public.ddjj_presentadas`: `ventas` y `totales_ventas` (2026-10-31) — ⏳ AVISO PREVIO, todavía sin aplicar (espera OK de JMS)
+- `scripts/145-ddjj-presentadas-ventas.sql` (+ `-deshacer`), en `desarrollo`. A-FEAT-1439: la tabla de lo presentado a ARCA (script 107) guardaba sólo las compras del libro IVA; ahora guarda también las ventas, para mostrarlas en el recorrido del balance. Dos columnas `jsonb` vacías, con marca `[script 145]`.
+- **No toca RLS, grants, funciones ni datos.** Después corre el `scripts/146` (carga los 12 meses de MSA 25/26 en esa tabla, marca `cargado_por = '[script 146]'`).
+
 ### ✍️ Trigger nuevo en `public.msa_galicia`: el echeq se marca cobrado al conciliar su débito (2026-10-30) — ✅ APLICADA el 30/10 a pedido de JMS (aviso previo): función + trigger, simulado sin escribir
 - `scripts/144-echeq-cobrado-al-conciliar.sql` (+ `-deshacer`), rama `jms/balance`. A-AUTO-10: `after insert or update of estado` sobre `public.msa_galicia` → función `msa.marcar_echeq_cobrado_al_conciliar()` (`security definer`, `search_path` fijo) que, si un débito de cheque pasa a `conciliado`, pone su `msa.cheques` en `cobrado` con la fecha del débito. **Escribe en `msa.cheques` desde un trigger**: si tocás RLS de cheques o de `msa_galicia`, tenelo en cuenta.
 

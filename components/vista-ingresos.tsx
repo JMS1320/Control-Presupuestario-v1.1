@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import type { UserRole } from "@/lib/auth/roles"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -13,6 +13,7 @@ import { VistaCobrosVenta } from "./vista-cobros-venta"
 import { VistaArrendamientos } from "./vista-arrendamientos"
 import { VistaGanaderia } from "./vista-ganaderia"
 import { EMPRESAS, COLOR_EMPRESA, type Empresa } from "@/lib/empresas"
+import { ventasDelLink } from "@/lib/ventas/link"
 
 // ════════════════════════════════════════════════════════════════════════════
 // Ingresos, en 2 niveles: EMPRESA → vista. (Antes eran 8 solapas planas con la
@@ -44,6 +45,15 @@ const vistasDe = (empresa: Empresa) =>
 export function VistaIngresos({ userRole = 'admin' }: { userRole?: UserRole }) {
   const [empresa, setEmpresa] = useState<Empresa>('MSA')
   const [vista, setVista] = useState<Vista>('arrendamientos')
+  // 🔗 A-FEAT-1439: un link (p. ej. desde el recorrido del balance) puede pedir la empresa y la solapa.
+  useEffect(() => {
+    const l = ventasDelLink(window.location.search)
+    if (!l) return
+    const emp = (l.empresa ?? 'MSA') as Empresa
+    setEmpresa(emp)
+    const v = l.vista as Vista | null
+    if (v && vistasDe(emp).some(x => x.id === v)) setVista(v)
+  }, [])
 
   // Al cambiar de empresa, si la vista actual no existe ahí, se cae a la primera disponible
   const cambiarEmpresa = (valor: string) => {

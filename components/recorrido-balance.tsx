@@ -15,7 +15,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { ahoraISO } from "@/lib/fechas"
 import type { PendienteBalance } from "@/lib/balance/pendientes-balance"
-import { GRUPOS, progreso, textoPendienteDe, type GrupoTema, type Tema } from "@/lib/balance/recorrido"
+import { GRUPOS, progreso, textoPendienteDe, fuenteDe, linksDeLaApp, sinTresVistas, type GrupoTema, type Tema } from "@/lib/balance/recorrido"
 import { armarPapelDeTrabajo, vinculoDe } from "@/lib/cuaderno/papel-de-trabajo"
 import { calcularTabla, mostrarValor } from "@/lib/cuaderno/formulas"
 
@@ -25,6 +25,7 @@ const COLOR: Record<GrupoTema, string> = {
   "error": "border-red-300 bg-red-50 text-red-900",
   "decision": "border-amber-300 bg-amber-50 text-amber-900",
   "pregunta": "border-sky-300 bg-sky-50 text-sky-900",
+  "arca": "border-rose-300 bg-rose-50 text-rose-900",
   "falta inicio": "border-violet-300 bg-violet-50 text-violet-900",
   "sin informacion": "border-slate-300 bg-slate-50 text-slate-800",
   "pendiente desarrollo": "border-teal-300 bg-teal-50 text-teal-900",
@@ -67,6 +68,10 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   const idx = Math.max(0, visibles.findIndex(t => t.clave === claveActual))
   const actual = visibles[idx] ?? null
   const prog = progreso(temas)
+  /** 🧮 A-FEAT-1439: cuántos temas abiertos no tienen fuente (lo objetivo) o no tienen dónde verlos en la app. */
+  const tres = useMemo(() => sinTresVistas(temas), [temas])
+  const fuente = actual ? fuenteDe(actual) : null
+  const enApp = actual ? linksDeLaApp(actual) : []
 
   // Al cambiar de tema, la nota arranca con lo que ya se había escrito (si lo hay).
   useEffect(() => { setNota(actual?.pendiente?.resolucion ?? "") }, [actual?.clave]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -201,6 +206,12 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
           <div className="h-2 w-40 rounded bg-muted overflow-hidden" aria-hidden>
             <div className="h-full bg-emerald-500" style={{ width: `${prog.total ? (prog.respondidos / prog.total) * 100 : 0}%` }} />
           </div>
+          {(tres.sinFuente > 0 || tres.sinLink > 0) && (
+            <span className="text-xs text-amber-800" data-test="recorrido-control-tres-vistas"
+              title="Cada tema debería mostrar la fuente (lo objetivo), dónde verlo en la app y la propuesta. Éstos todavía no la tienen completa.">
+              ⚠️ Abiertos {tres.sinFuente > 0 ? `· ${tres.sinFuente} sin fuente` : ""}{tres.sinLink > 0 ? ` · ${tres.sinLink} sin link a la app` : ""}
+            </span>
+          )}
           <div className="ml-auto flex items-center gap-2">
             <span className="hidden md:inline text-xs text-muted-foreground">↑ ↓ para moverse · Esc cierra</span>
             <Button variant="outline" size="sm" onClick={onCerrar}>Cerrar</Button>
@@ -247,7 +258,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
               <span aria-hidden>{t.respondido ? "✅" : ICONO[t.grupo]}</span>
               <span className="min-w-0">
                 <span className={`block truncate ${t.respondido ? "text-muted-foreground line-through" : ""}`}>{t.titulo}</span>
-                <span className="block truncate text-xs text-muted-foreground">{t.etiqueta ? `${t.etiqueta} · ` : ""}{t.papel.replace(/ · .*$/, "")}</span>
+                <span className="block truncate text-xs text-muted-foreground">{t.etiqueta ? `${t.etiqueta} · ` : ""}{t.papel.replace(/ · .*$/, "")}{!t.respondido && !fuenteDe(t) ? " · sin fuente" : ""}</span>
               </span>
             </button>
           ))}
@@ -270,26 +281,35 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
                 <p className="text-sm">{actual.que}</p>
               </div>
 
-              {actual.propuesta && (
-                <div className="rounded border border-emerald-300 bg-emerald-50 p-3 space-y-2">
-                  <div className="text-xs font-medium uppercase tracking-wide text-emerald-800">Propuesta</div>
-                  <p className="text-sm text-emerald-950">{actual.propuesta}</p>
-                  {actual.accion && !actual.respondido && (
-                    <Button size="sm" onClick={aplicar} disabled={guardando} data-test="recorrido-aplicar">⚡ Aplicar: {actual.accion.texto}</Button>
-                  )}
-                </div>
-              )}
+              {/* 📄 A-FEAT-1439 — las TRES vistas: lo objetivo, lo que dice la app, y la propuesta. */}
+              <div className={`rounded border p-3 space-y-1 ${fuente ? "border-slate-300 bg-slate-50" : "border-amber-300 bg-amber-50"}`} data-test="recorrido-fuente">
+                <div className="text-xs font-medium uppercase tracking-wide text-slate-700">📄 Fuente — lo objetivo{fuente ? `: ${fuente.origen}` : ""}</div>
+                {fuente
+                  ? <p className="text-sm">{fuente.detalle}</p>
+                  : <p className="text-sm text-amber-900">⚠️ Este tema no tiene fuente externa todavía: lo que ves es sólo lo que dice la app (y mi propuesta).</p>}
+                {!!fuente?.links?.length && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {fuente.links.map(l => (
+                      <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer" className="rounded border bg-background px-3 py-1.5 text-sm hover:bg-muted">↗ {l.texto}</a>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-              <div className="flex flex-wrap gap-2">
-                {actual.links.map(l => (
-                  <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer"
-                    className="rounded border px-3 py-1.5 text-sm hover:bg-muted">↗ {l.texto}</a>
-                ))}
-                <button type="button" onClick={abrirPapel} disabled={papelId === undefined}
-                  className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-sm text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
-                  title="Un documento del Cuaderno atado a este tema: el problema, la propuesta y la cuenta, para pensar y anotar sin tocar datos">
-                  📓 {papelId ? "Abrir el papel de trabajo" : actual.comparacion ? "Armar papel de trabajo (con la cuenta)" : "Armar papel de trabajo"}
-                </button>
+              <div className="space-y-1" data-test="recorrido-en-la-app">
+                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">🗂️ En la app</div>
+                <div className="flex flex-wrap gap-2">
+                  {enApp.map(l => (
+                    <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer"
+                      className="rounded border px-3 py-1.5 text-sm hover:bg-muted">↗ {l.texto}</a>
+                  ))}
+                  {!enApp.length && <span className="text-sm text-amber-900">⚠️ Sin link a la pantalla donde vive el dato.</span>}
+                  <button type="button" onClick={abrirPapel} disabled={papelId === undefined}
+                    className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-sm text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
+                    title="Un documento del Cuaderno atado a este tema: la fuente, lo que dice la app, la propuesta y la cuenta, para pensar y anotar sin tocar datos">
+                    📓 {papelId ? "Abrir el papel de trabajo" : actual.comparacion ? "Armar papel de trabajo (con la cuenta)" : "Armar papel de trabajo"}
+                  </button>
+                </div>
               </div>
 
               {actual.comparacion && (
@@ -308,6 +328,16 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
                       </tbody>
                     </table>
                   </div>
+                </div>
+              )}
+
+              {actual.propuesta && (
+                <div className="rounded border border-emerald-300 bg-emerald-50 p-3 space-y-2">
+                  <div className="text-xs font-medium uppercase tracking-wide text-emerald-800">💡 Propuesta</div>
+                  <p className="text-sm text-emerald-950">{actual.propuesta}</p>
+                  {actual.accion && !actual.respondido && (
+                    <Button size="sm" onClick={aplicar} disabled={guardando} data-test="recorrido-aplicar">⚡ Aplicar: {actual.accion.texto}</Button>
+                  )}
                 </div>
               )}
 

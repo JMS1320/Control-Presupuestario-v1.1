@@ -3590,6 +3590,16 @@ pareja propuesta: exacta, varios comprobantes, con diferencia, ya usada por otro
 pareja con una pista) y **🧾 Deudas sin pago** (facturas y cuotas «pendientes» del ejercicio sin movimiento, con el que
 probablemente las pagó). Los links abren el movimiento en el extracto y la factura o el template; se concilia ahí, como
 siempre, y **↻ Recalcular** actualiza el recorrido.
+**Cada tema tiene tres partes, siempre en el mismo orden**: **📄 Fuente** — lo objetivo: el extracto del banco, el
+papel 24/25 del contador o lo presentado a ARCA (si un tema no tiene, lo dice en ámbar: ahí se lee sólo lo que dice la
+app) · **🗂️ En la app** — los links a donde vive el dato, filtrado · **💡 Propuesta**. Arriba, al lado del progreso,
+cuántos temas abiertos todavía no tienen fuente o link.
+**🧾 Contra lo presentado a ARCA**: las ventas de la app contra el libro IVA presentado de cada mes, por tipo de
+diferencia (identificación distinta, centavos, IVA de comisión, otro importe, de un solo lado) y las ventas presentadas
+que en la app figuran sin declarar. La tabla muestra lo presentado al lado de la app; el link abre **Ingresos →
+Comprobantes** con sólo esos comprobantes (**Quitar este filtro** vuelve a la lista entera). Lo presentado se carga
+subiendo el zip del libro IVA en Egresos → Subdiarios → «📥 Lo que devolvió el contador».
+→ A-TEST-1297
 
 **Controles que se ven solos** (no hace falta abrir el Excel):
 - **Provisión del ejercicio anterior**: compara lo que el balance anterior dejó provisionado (la foto del Balance
