@@ -15,9 +15,12 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { ahoraISO } from "@/lib/fechas"
 import type { PendienteBalance } from "@/lib/balance/pendientes-balance"
-import { GRUPOS, progreso, textoPendienteDe, fuenteDe, linksDeLaApp, sinTresVistas, type GrupoTema, type Tema } from "@/lib/balance/recorrido"
+import { GRUPOS, conciliacionPorCuenta, progreso, textoPendienteDe, fuenteDe, linksDeLaApp, sinTresVistas, type GrupoTema, type Tema } from "@/lib/balance/recorrido"
 import { armarPapelDeTrabajo, vinculoDe } from "@/lib/cuaderno/papel-de-trabajo"
 import { calcularTabla, mostrarValor } from "@/lib/cuaderno/formulas"
+import { linkExtracto } from "@/lib/extracto/link"
+
+const fmt = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const ICONO = Object.fromEntries(GRUPOS.map(g => [g.id, g.icono])) as Record<GrupoTema, string>
 const TITULO = Object.fromEntries(GRUPOS.map(g => [g.id, g.titulo])) as Record<GrupoTema, string>
@@ -71,6 +74,12 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   const prog = progreso(temas)
   /** 🧮 A-FEAT-1439: cuántos temas abiertos no tienen fuente (lo objetivo) o no tienen dónde verlos en la app. */
   const tres = useMemo(() => sinTresVistas(temas), [temas])
+  /** 🧱 La base (nivel 1): cuántos abiertos le quedan — si tiene, se recomienda terminarla antes. */
+  const baseAbiertos = GRUPOS.filter(g => g.nivel === 1).reduce((n, g) => n + prog.porGrupo[g.id].total - prog.porGrupo[g.id].respondidos, 0)
+  /** 🏦 Lo pendiente de conciliar, por cuenta (se ve al elegir «Conciliar movimientos»). */
+  const porCuenta = useMemo(() => conciliacionPorCuenta(temas), [temas])
+  // Los tipos (nivel 3) dependen del grupo elegido: al cambiar de grupo, el filtro de tipo arranca de cero.
+  useEffect(() => { setEtiquetas(new Set()) }, [filtro])
   const fuente = actual ? fuenteDe(actual) : null
   const enApp = actual ? linksDeLaApp(actual) : []
 
@@ -247,28 +256,54 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
             <Button variant="outline" size="sm" onClick={cerrar}>Cerrar</Button>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {GRUPOS.filter(g => prog.porGrupo[g.id].total).map(g => (
-            <button key={g.id} type="button" onClick={() => alternar(g.id)} aria-pressed={filtro.has(g.id)}
-              className={`rounded-full border px-2.5 py-0.5 text-xs ${filtro.has(g.id) ? COLOR[g.id] : "bg-background hover:bg-muted"}`}>
-              {g.icono} {g.titulo} <span className="tabular-nums text-muted-foreground">{prog.porGrupo[g.id].respondidos}/{prog.porGrupo[g.id].total}</span>
-            </button>
-          ))}
-          <label className="ml-2 flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
-            <input type="checkbox" checked={ocultarRespondidos} onChange={e => setOcultarRespondidos(e.target.checked)} /> ocultar los respondidos
-          </label>
-        </div>
-        {/* 🏦 La conciliación: si se está calculando, cuándo se calculó, y los tipos para filtrar */}
-        {conciliacion && (
+        {/* 🧱 Nivel 1 — la base · nivel 2 — el resto. Los tipos (nivel 3) sólo con un grupo elegido (JMS 31/10). */}
+        {([1, 2] as const).map(nivel => {
+          const gs = GRUPOS.filter(g => g.nivel === nivel && prog.porGrupo[g.id].total)
+          if (!gs.length) return null
+          return (
+            <div key={nivel} className="flex flex-wrap items-center gap-1.5" data-test={`recorrido-nivel-${nivel}`}>
+              <span className="w-16 shrink-0 text-xs font-medium text-muted-foreground">{nivel === 1 ? "🧱 La base" : "El resto"}</span>
+              {gs.map(g => (
+                <button key={g.id} type="button" onClick={() => alternar(g.id)} aria-pressed={filtro.has(g.id)}
+                  className={`rounded-full border px-2.5 py-0.5 text-xs ${filtro.has(g.id) ? COLOR[g.id] : "bg-background hover:bg-muted"}`}>
+                  {g.icono} {g.titulo} <span className="tabular-nums text-muted-foreground">{prog.porGrupo[g.id].respondidos}/{prog.porGrupo[g.id].total}</span>
+                </button>
+              ))}
+              {nivel === 1 && baseAbiertos > 0 && (
+                <span className="text-xs text-amber-800" data-test="recorrido-base-recomendacion">
+                  ⚠️ Faltan {baseAbiertos} de la base: conviene cerrarla primero, porque de ella se compone el resto.
+                </span>
+              )}
+              {nivel === 2 && (
+                <label className="ml-2 flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
+                  <input type="checkbox" checked={ocultarRespondidos} onChange={e => setOcultarRespondidos(e.target.checked)} /> ocultar los respondidos
+                </label>
+              )}
+            </div>
+          )
+        })}
+        {conciliacion?.cargando && <div className="text-xs text-amber-800">⏳ Calculando las propuestas de conciliación: {conciliacion.cargando}</div>}
+        {/* 🏦 Con «Conciliar movimientos» elegido: lo pendiente por cuenta, con su link para ir a trabajarlo. */}
+        {filtro.has("conciliacion") && conciliacion && !conciliacion.cargando && (
+          <div className="flex flex-wrap items-center gap-1.5 text-xs" data-test="recorrido-conciliacion-por-cuenta">
+            <span className="text-muted-foreground">🏦 Sin conciliar, por cuenta:</span>
+            {porCuenta.map(c => (
+              <a key={c.cuentaId} href={linkExtracto({ cuenta: c.cuentaId, desde: c.desde, hasta: c.hasta })} target="_blank" rel="noreferrer"
+                className="rounded border border-blue-300 bg-blue-50 px-2 py-0.5 text-blue-900 hover:bg-blue-100"
+                title={`Abre ${c.nombre} del ${c.desde ?? "?"} al ${c.hasta ?? "?"}`}>
+                {c.nombre}: <strong className="tabular-nums">{c.abiertos}</strong> · −{fmt(c.debitos)} / +{fmt(c.creditos)} ↗
+              </a>
+            ))}
+            {porCuenta.length === 0 && <span className="text-emerald-700">✓ nada pendiente</span>}
+            <span className="ml-2 text-muted-foreground">calculada {conciliacion.calculado ? `a las ${conciliacion.calculado}` : ""}{conciliacion.historicos ? ` · ${conciliacion.historicos} del histórico jul–nov no entran` : ""}{conciliacion.avisos.length ? ` · ⚠️ ${conciliacion.avisos.length} lectura(s) fallaron` : ""}</span>
+            <button type="button" className="rounded border px-2 py-0.5 hover:bg-muted" onClick={conciliacion.recalcular}
+              title="Después de conciliar en el extracto, para que los temas resueltos desaparezcan">↻ Recalcular</button>
+          </div>
+        )}
+        {/* Nivel 3 — los tipos, sólo los del grupo elegido */}
+        {filtro.size > 0 && tiposPresentes.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
-            {conciliacion.cargando
-              ? <span className="text-amber-800">⏳ Calculando las propuestas de conciliación: {conciliacion.cargando}</span>
-              : <span className="text-muted-foreground">🏦 Conciliación calculada {conciliacion.calculado ? `a las ${conciliacion.calculado}` : ""}{conciliacion.historicos ? ` · ${conciliacion.historicos} del histórico jul–nov no entran (no se concilian)` : ""}{conciliacion.avisos.length ? ` · ⚠️ ${conciliacion.avisos.length} lectura(s) fallaron` : ""}</span>}
-            {!conciliacion.cargando && (
-              <button type="button" className="rounded border px-2 py-0.5 hover:bg-muted" onClick={conciliacion.recalcular}
-                title="Después de conciliar en el extracto, para que los temas resueltos desaparezcan">↻ Recalcular</button>
-            )}
-            {tiposPresentes.length > 0 && <span className="ml-2 text-muted-foreground">Tipo:</span>}
+            <span className="text-muted-foreground">Tipo:</span>
             {tiposPresentes.map(([e, c]) => (
               <button key={e} type="button" aria-pressed={etiquetas.has(e)}
                 onClick={() => setEtiquetas(s => { const n = new Set(s); if (n.has(e)) n.delete(e); else n.add(e); return n })}

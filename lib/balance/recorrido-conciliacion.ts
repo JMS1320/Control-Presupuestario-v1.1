@@ -86,7 +86,7 @@ export function temasDeMovimientos(propuestas: PropuestaMovimiento[]): { temas: 
       clave: `conc:${m.cuenta.cuentaId}:${m.id}`, grupo: "conciliacion",
       titulo: `${dmy(m.fecha)} · ${signo}${plata(m.importe)} · ${quien}`.slice(0, 160),
       papel: `Conciliación ${m.cuenta.nombre} · ${TIPOS_PROPUESTA[p.tipo]}`,
-      etiqueta: TIPOS_PROPUESTA[p.tipo], importe: m.importe,
+      etiqueta: TIPOS_PROPUESTA[p.tipo], importe: m.importe, cuenta: { id: m.cuenta.cuentaId, nombre: m.cuenta.nombre }, lado: m.lado, fecha: m.fecha.slice(0, 10),
       que, propuesta: p.tipo === "SIN_PAREJA" ? p.propuesta : `${p.propuesta}${p.tipo === "CUIT_SIN_CIERRE" ? ` ${p.pista}.` : ""}`,
       links: [
         { texto: `El movimiento en el extracto (${m.cuenta.nombre})`, href: linkMovimiento(m) },
