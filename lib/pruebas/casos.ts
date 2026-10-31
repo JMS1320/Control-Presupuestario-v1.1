@@ -262,8 +262,9 @@ import { leerResumenCajaAhorro, controlarResumen, armarConocido, resumenComoExce
 import { leerResumenSantander, controlarResumenSantander } from "@/lib/extractos/pdf-santander"
 import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla, linkGmail, procesadoDeMail, cambiosAlReaplicar, type MailRegistrado,
   claveDeTipoMail, problemaDeTipoNuevo, contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarPendientesArriba,
-  juntarConPendientes, claseDeProcesado } from "@/lib/mails/registro"
+  juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves } from "@/lib/mails/registro"
 import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
+import { partesDeRuta, problemaDeRuta, estadoDestino, idDeLinkDrive } from "@/lib/archivo/destinos"
 import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
 import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe, cuentaCorriente } from "@/lib/polizas/resumen-ejercicio"
 import { aseguradoraAlCierre } from "@/lib/balance/seguros-al-cierre"
@@ -10225,6 +10226,29 @@ export function correrCasos(): Resultado[] {
       chequear("Filtro por columna", "🔽 Lista sin repetir con su cantidad (ordenada, el vacío como «(vacío)»); sin filtro = todas, «ninguna» = 0, se puede elegir el vacío",
         "(vacío)=1 a@x.com=1 b@x.com=2 | 2 4 0 1", vX, vX === "(vacío)=1 a@x.com=1 b@x.com=2 | 2 4 0 1", "A-FEAT-1441")
       const vCl = [claseDeProcesado("factura archivada MSA 3-1520 (+1)"), claseDeProcesado("reenvío leído: 2 adjuntos, 1 ilegible"), claseDeProcesado("boletas_arba")].join(" | ")
+      // 🚨 A-FEAT-1438: mails graves agrupados para el aviso de Principal
+      const G = (o: Partial<MailRegistrado>): MailRegistrado => M({ accion: "avisar", ...o })
+      const gr = agruparGraves([
+        G({ id: "s1", fecha: "2026-10-01T10:00:00Z", remitente: "avisos@santander.com.ar", asunto: "Saldo negativo excedido" }),
+        G({ id: "s2", fecha: "2026-10-30T10:00:00Z", remitente: "avisos@santander.com.ar", asunto: "Saldo negativo excedido" }),
+        G({ id: "a1", fecha: "2026-10-21T10:00:00Z", remitente: "novedades@arba.gov.ar", tipo: "impuestos", asunto: "Mora en el pago" }),
+        G({ id: "t1", fecha: "2026-10-29T10:00:00Z", remitente: "x@y.com", asunto: "Intimación", seguimiento: "terminado" }),
+        G({ id: "p1", fecha: "2026-10-29T10:00:00Z", remitente: "x@y.com", asunto: "Deuda", tipo: "propaganda", accion: "archivar" }),
+        G({ id: "n1", fecha: "2026-10-29T10:00:00Z", remitente: "x@y.com", asunto: "Hola" }),
+      ])
+      const vGr = gr.map(x => `${x.nivel}:${x.ids.join("+")}:${x.ultimo.id}`).join(" ") + " | " + gravedadDeMail(M({ asunto: "Moratoria", extracto: "demora" })).nivel
+      chequear("Mails", "🚨 Graves: los de impuestos primero, el mismo aviso repetido es UNO (×2, con el último), sin terminados ni propaganda; «moratoria»/«demora» no cuentan",
+        "2:a1:a1 1:s1+s2:s2 | 0", vGr, vGr === "2:a1:a1 1:s1+s2:s2 | 0", "A-FEAT-1438")
+      // 🗂️ A-FEAT-1442: dónde se archiva — el ícono rojo cuando falta la carpeta, la del año cuando está
+      const vD = [estadoDestino(null).falta, estadoDestino({ drive_folder_id: null, ruta_drive: null, ruta: "x", por_anio: true }).falta,
+        estadoDestino({ drive_folder_id: "abc", ruta_drive: "Mi unidad / SAN MANUEL / INMOBILIARIO", ruta: "I:\\x", por_anio: true }, 2026).texto,
+        estadoDestino({ drive_folder_id: "abc", ruta_drive: null, ruta: "I:\\Mi unidad\\X", por_anio: false }, 2026).texto,
+        partesDeRuta("I:\\Mi unidad\\SAN MANUEL\\IMPUESTOS\\").join(">"),
+        problemaDeRuta("   ") ? "vacía" : "-", problemaDeRuta("I:\\Mi unidad\\") ? "sin carpeta" : "-", problemaDeRuta("https://drive.google.com/drive/folders/1AbCdEfGhIj") ?? "link ok",
+        idDeLinkDrive("https://drive.google.com/drive/folders/1AbCdEfGhIj?usp=sharing")].join(" | ")
+      chequear("Archivo digital", "🗂️ Sin carpeta = ícono rojo; con carpeta, la ruta + el año; la ruta del usuario sin unidad ni «Mi unidad»; vacía o sin carpetas frena; un link de Drive sirve",
+        "true | true | Mi unidad / SAN MANUEL / INMOBILIARIO / 2026 | I:\\Mi unidad\\X | SAN MANUEL>IMPUESTOS | vacía | sin carpeta | link ok | 1AbCdEfGhIj", vD,
+        vD === "true | true | Mi unidad / SAN MANUEL / INMOBILIARIO / 2026 | I:\\Mi unidad\\X | SAN MANUEL>IMPUESTOS | vacía | sin carpeta | link ok | 1AbCdEfGhIj", "A-FEAT-1442")
       chequear("Mails", "🔽 «Qué se hizo» se filtra por clase, no por factura", "factura archivada | reenvío leído | boletas_arba", vCl, vCl === "factura archivada | reenvío leído | boletas_arba", "A-FEAT-1441")
     }
 

@@ -40,6 +40,10 @@
 
 ## 📨 PARA JAVIER
 
+### 🗂️ Tabla nueva `public.archivo_destinos` (2026-10-31) — ✅ APLICADA el 31/10 con OK de JMS (aviso previo): 1 tabla, 1 fila, 1 en recurso_tablas
+- `scripts/148-archivo-destinos.sql` (+ `-deshacer`). A-FEAT-1442: la carpeta del Drive donde se archiva cada tipo de documento (guardada por id), con 1 fila inicial (ARBA Inmobiliario, sin carpeta).
+- **RLS** como el resto (`puede_ver` / `puede_escribir`), recurso `egresos` sin restringir lectura (como las boletas de ARBA); `anon` sin acceso. No toca roles, políticas existentes ni datos.
+
 ### 📬 Mails: tabla nueva `public.mails_tipos` + 4 columnas de seguimiento + 1 trigger en `public.mails_registro` (2026-10-31) — ✅ APLICADA el 31/10 con OK de JMS (aviso previo): verificado simulando cada rol — sólo admin lee y escribe `mails_tipos`; 52 mails pasaron a pendiente
 - `scripts/147-mails-tipos-y-seguimiento.sql` (+ `-deshacer`). A-FEAT-1440 / A-FEAT-1437: los tipos de mail pasan a un maestro editable (12 filas iniciales) y el CHECK de `mails_reglas.tipo` se cambia por FK a ese maestro (también `mails_registro.tipo` y `tipo_manual`); cada mail recibido tiene `seguimiento` (pendiente / terminado) con nota, fecha y cuándo; un trigger BEFORE INSERT marca pendiente lo que entra con acción «avisar».
 - **RLS**: `mails_tipos` igual que las otras dos de mails (`puede_ver` / `puede_escribir`, recurso `importar.mails`, sólo admin; `anon` sin acceso). No toca roles ni las políticas existentes. Datos: pasa a pendiente los 46 mails «avisar» ya registrados.

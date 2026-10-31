@@ -346,3 +346,58 @@ export function problemaDeSeguimiento(s: { fecha: string }): string | null {
 export function claseDeProcesado(texto: string): string {
   return texto.replace(/\s*\(\+\d+\)$/, "").replace(/\s+(MSA|PAM|MA)\b.*$/, "").replace(/[:\s]+\d.*$/, "").trim()
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mails GRAVES — A-FEAT-1438 (JMS 31/10: «palabras clave: Mora, Deuda, Intimación; y si está relacionado con
+// impuestos es doblemente grave… una alerta de las importantes en mi principal»). La MISMA lista y la misma regla
+// están en el GAS (`gravedadMail_`): un caso de `npm run probar:registro-mails` vigila que den lo mismo.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Palabras (sin tildes, palabra entera) que vuelven grave un mail. Medidas contra los ~1.500 mails reales del 31/10. */
+export const PALABRAS_GRAVES = [
+  "mora", "deuda", "deudas", "adeuda", "adeudado", "intimacion", "intimamos", "embargo", "apremio", "ejecucion fiscal",
+  "juicio", "carta documento", "rechazado", "rechazada", "rechazo", "saldo negativo", "descubierto", "multa", "sancion",
+  "suspension", "inhabilitacion", "incumplimiento", "vencido", "vencida", "vencio",
+]
+/** Tipos (o remitentes) donde una palabra grave pesa DOBLE. */
+const TIPOS_DOBLE = ["impuestos", "legal"]
+const DOMINIOS_DOBLE = ["arba.gov.ar", "afip.gob.ar", "arca.gob.ar", "agip.gob.ar"]
+
+/**
+ * Pura: qué tan grave es un mail. 0 = nada · 1 = grave · 2 = doblemente grave (impuestos / legal / ARBA-AFIP-AGIP).
+ * No cuenta lo que sale, lo archivado ni la propaganda (los boletines de mercados dicen «deuda» todos los días).
+ */
+export function gravedadDeMail(m: Pick<MailRegistrado, "sentido" | "accion" | "tipo" | "tipo_manual" | "asunto" | "extracto" | "remitente">): { nivel: 0 | 1 | 2; palabras: string[] } {
+  const tipo = tipoDeMail(m)
+  if (m.sentido !== "recibido" || m.accion === "archivar" || tipo === "propaganda") return { nivel: 0, palabras: [] }
+  const texto = " " + sinTildes(`${m.asunto ?? ""} ${m.extracto ?? ""}`).replace(/[^a-z0-9ñ]+/g, " ") + " "
+  const palabras = PALABRAS_GRAVES.filter(p => texto.includes(" " + p + " "))
+  if (!palabras.length) return { nivel: 0, palabras }
+  const dom = String(m.remitente ?? "").toLowerCase().split("@")[1] ?? ""
+  const doble = (tipo && TIPOS_DOBLE.includes(tipo)) || DOMINIOS_DOBLE.some(d => dom === d || dom.endsWith("." + d))
+  return { nivel: doble ? 2 : 1, palabras }
+}
+
+export interface GrupoGrave { clave: string; asunto: string; remitente: string; nivel: 1 | 2; palabras: string[]; ids: string[]; ultimo: MailRegistrado }
+
+/**
+ * Pura: los mails graves que NO están terminados, agrupados por remitente + asunto (23 «Saldo negativo excedido» son
+ * un solo aviso con ×23). Los doblemente graves primero, después el más reciente.
+ */
+export function agruparGraves(mails: MailRegistrado[]): GrupoGrave[] {
+  const g = new Map<string, GrupoGrave>()
+  for (const m of mails) {
+    if (m.seguimiento === "terminado") continue
+    const gr = gravedadDeMail(m)
+    if (!gr.nivel) continue
+    const asunto = asuntoBase(m.asunto)
+    const clave = `${String(m.remitente ?? "").toLowerCase()}|${sinTildes(asunto)}`
+    const x = g.get(clave)
+    if (!x) { g.set(clave, { clave, asunto: asunto || "(sin asunto)", remitente: m.remitente_nombre || m.remitente || "", nivel: gr.nivel as 1 | 2, palabras: gr.palabras, ids: [m.id], ultimo: m }); continue }
+    x.ids.push(m.id)
+    if (gr.nivel > x.nivel) x.nivel = gr.nivel as 1 | 2
+    for (const p of gr.palabras) if (!x.palabras.includes(p)) x.palabras.push(p)
+    if (m.fecha > x.ultimo.fecha) x.ultimo = m
+  }
+  return [...g.values()].sort((a, b) => (b.nivel - a.nivel) || (a.ultimo.fecha < b.ultimo.fecha ? 1 : -1))
+}

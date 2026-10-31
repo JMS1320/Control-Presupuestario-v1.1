@@ -46,6 +46,13 @@ Capacidades acumuladas (más allá del "buscar y archivar" original):
 ⚠️ **Regla dura**: el GAS **NUNCA** borra/mueve/reemplaza CARPETAS (solo find-or-create + mover/borrar
 archivos puntuales por id). Único delete: el Google Doc temporal de extracción de texto.
 
+## 🗂️ Carpetas del archivo digital (`Carpetas.gs`, v0.20.0, A-FEAT-1442, 2026-10-31)
+
+Archivo NUEVO: acciones `resolver_carpeta` ({ ruta } como la escribe el usuario en su PC, o un link de Drive → id de la
+carpeta; si una carpeta del camino no existe, dice cuál y NO crea nada) e `info_carpeta` ({ id } → dónde está hoy).
+`boletas_arba` recibe por fin `carpeta_id` (A-BUG-1446: se perdía en `doPost`) y `anio` (adentro, la del año).
+**Se despliega con «Nueva versión»** (lo llama la app como web app).
+
 ## 📬 Registro de mails (`RegistroMails.gs`, A-FEAT-1425, 2026-10-30)
 
 Archivo NUEVO, independiente del buscador: registra cada mail de la casilla en `public.mails_registro`, lo clasifica con
