@@ -260,7 +260,10 @@ import { parsearPoliza } from "@/lib/polizas/parsear-poliza"
 import { armarRenglones, type TextoUbicado } from "@/lib/polizas/renglones-pdf"
 import { leerResumenCajaAhorro, controlarResumen, armarConocido, resumenComoExcel, adaptarMovimiento } from "@/lib/extractos/pdf-caja-ahorro-galicia"
 import { leerResumenSantander, controlarResumenSantander } from "@/lib/extractos/pdf-santander"
-import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla, linkGmail, procesadoDeMail, cambiosAlReaplicar, type MailRegistrado } from "@/lib/mails/registro"
+import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla, linkGmail, procesadoDeMail, cambiosAlReaplicar, type MailRegistrado,
+  claveDeTipoMail, problemaDeTipoNuevo, contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarPendientesArriba,
+  juntarConPendientes, claseDeProcesado } from "@/lib/mails/registro"
+import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
 import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
 import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe, cuentaCorriente } from "@/lib/polizas/resumen-ejercicio"
 import { aseguradoraAlCierre } from "@/lib/balance/seguros-al-cierre"
@@ -10135,6 +10138,65 @@ export function correrCasos(): Resultado[] {
       chequear("Mails", "📬 El link a Gmail es IGUAL al que arma el GAS (si cambia uno, cambiar el otro)",
         "https://mail.google.com/mail/u/?authuser=sanmanuel.sp%40gmail.com#all/1a16045a7b9ffafb", vL,
         vL === "https://mail.google.com/mail/u/?authuser=sanmanuel.sp%40gmail.com#all/1a16045a7b9ffafb", "A-FEAT-1425")
+
+      // 🧩 A-FEAT-1440: tipos que se crean ahí mismo y reasignar con ALCANCE
+      const tiposT = [{ id: "banco", nombre: "Bancos", orden: 10 }, { id: "cuenta_corriente", nombre: "Cuenta corriente", orden: 20 }]
+      const vT = [claveDeTipoMail("Cuenta corriente", tiposT.map(t => t.id)), claveDeTipoMail("Sucesión / Legal", []),
+        problemaDeTipoNuevo("bancos", tiposT) ? "repetido" : "pasa", problemaDeTipoNuevo("  ", tiposT) ? "vacío" : "pasa", problemaDeTipoNuevo("Arrendatarios", tiposT) ?? "ok"].join(" ")
+      chequear("Mails", "🧩 Tipo nuevo: clave sin chocar con las que hay, sin tildes; frena repetido (sin importar mayúsculas) y vacío",
+        "cuenta_corriente_2 sucesion_legal repetido vacío ok", vT, vT === "cuenta_corriente_2 sucesion_legal repetido vacío ok", "A-FEAT-1440")
+      const vC2 = [contraparteDeMail({ sentido: "recibido", remitente: "Cobranzas@Regalia.com", destinatarios: null }),
+        contraparteDeMail({ sentido: "enviado", remitente: "sanmanuel.sp@gmail.com", destinatarios: "Juan <juan@x.com>, otro@y.com" }),
+        asuntoBase("RE: Fwd: COMPROBANTES PENDIENTES")].join(" | ")
+      chequear("Mails", "🧩 Con quién es el mail (recibido: remitente; enviado: primer destinatario) y el asunto sin RE:/Fwd:",
+        "cobranzas@regalia.com | juan@x.com | COMPROBANTES PENDIENTES", vC2, vC2 === "cobranzas@regalia.com | juan@x.com | COMPROBANTES PENDIENTES", "A-FEAT-1440")
+      const reglasA = [
+        { id: "g", orden: 50, activa: true, remitente_patron: "@regalia.com", asunto_patron: null, tipo: "productivo", accion: "guardar", nota: null },
+        { id: "x", orden: 5, activa: true, remitente_patron: "cobranzas@regalia.com", asunto_patron: "comprobantes", tipo: "otro", accion: "guardar", nota: null },
+      ] as any[]
+      const mA = { sentido: "recibido" as const, remitente: "cobranzas@regalia.com", destinatarios: null, accion: "guardar" as const }
+      const pA = reglaParaAlcance(reglasA, mA, "remitente", "contador")
+      const pB = reglaParaAlcance(reglasA, mA, "remitente_asunto", "contador", " Comprobantes ")
+      const vA = [`${pA.existente?.id ?? "nueva"}:${pA.regla.remitente_patron}/${pA.regla.asunto_patron ?? "-"}/${pA.regla.orden}`,
+        `${pB.existente?.id ?? "nueva"}:${pB.regla.asunto_patron}/${pB.regla.orden}`].join(" ")
+      chequear("Mails", "🧩 Alcance: «todos de este remitente» crea una regla nueva que gana a la general; «con este asunto» reusa la que ya había (no duplica)",
+        "nueva:cobranzas@regalia.com/-/5 x:Comprobantes/5", vA, vA === "nueva:cobranzas@regalia.com/-/5 x:Comprobantes/5", "A-FEAT-1440")
+      const reglasDespues = [...reglasA, { id: "n", activa: true, nota: null, ...pA.regla }] as any[]
+      const candA = [
+        { id: "1", sentido: "recibido", remitente: "cobranzas@regalia.com", destinatarios: null, asunto: "Factura", tipo_manual: null },
+        { id: "2", sentido: "recibido", remitente: "cobranzas@regalia.com", destinatarios: null, asunto: "RE: comprobantes pendientes", tipo_manual: null },
+        { id: "3", sentido: "recibido", remitente: "cobranzas@regalia.com", destinatarios: null, asunto: "Otra", tipo_manual: "legal" },
+        { id: "4", sentido: "enviado", remitente: "sanmanuel.sp@gmail.com", destinatarios: "cobranzas@regalia.com", asunto: "Pago", tipo_manual: null },
+        { id: "5", sentido: "recibido", remitente: "ventas@regalia.com", destinatarios: null, asunto: "Factura", tipo_manual: null },
+        { id: "6", sentido: "recibido", remitente: "cobranzas@regalia.com", destinatarios: null, asunto: "Lo que reasigno", tipo_manual: "otro" },
+      ] as any[]
+      const alc = mailsQueAlcanza(candA, pA.regla, reglasDespues, "contador", "6")
+      const vM = `alcanza ${alc.alcanza.join(",")} · gana otra ${alc.ganaOtra.join(",")}`
+      chequear("Mails", "🧩 Hacia atrás: alcanza recibidos y enviados de ese remitente; NO toca los corregidos a mano (salvo el que se reasigna) ni otro remitente; avisa los que otra regla le gana",
+        "alcanza 1,4,6 · gana otra 2", vM, vM === "alcanza 1,4,6 · gana otra 2", "A-FEAT-1440")
+
+      // 📌 A-FEAT-1437: seguimiento pendiente / terminado
+      const S = (id: string, fecha: string, seguimiento: any, seguimiento_fecha: string | null) => ({ id, fecha, seguimiento, seguimiento_fecha })
+      const sm = [S("a", "2026-10-30", null, null), S("b", "2026-10-01", "pendiente", "2026-11-10"), S("c", "2026-09-01", "pendiente", "2026-10-20"),
+        S("d", "2026-10-31", "terminado", null), S("e", "2026-10-29", "pendiente", null), S("f", "2026-10-20", "pendiente", "2026-10-31")]
+      const hoyS = "2026-10-31"
+      const vS = sm.map(m => `${m.id}:${estadoSeguimiento(m, hoyS)}`).join(" ") + " | " + ordenarPendientesArriba(sm, hoyS).map(m => m.id).join("")
+      chequear("Mails", "📌 Seguimiento: vencido sólo si la fecha ya pasó (la de hoy no vence); arriba los vencidos, después los pendientes por fecha (sin fecha al final), después el resto (el más nuevo primero)",
+        "a:sin_marcar b:pendiente c:vencido d:terminado e:pendiente f:pendiente | cfbeda", vS,
+        vS === "a:sin_marcar b:pendiente c:vencido d:terminado e:pendiente f:pendiente | cfbeda", "A-FEAT-1437")
+      const vJ = juntarConPendientes([{ id: "1" }, { id: "2" }], [{ id: "2" }, { id: "9" }]).map(x => x.id).join("")
+      chequear("Mails", "📌 Los pendientes de antes del período se suman a la lista sin repetir", "129", vJ, vJ === "129", "A-FEAT-1437")
+
+      // 🔽 A-FEAT-1441: filtro por columna tipo Excel
+      const filasX = [{ de: "b@x.com" }, { de: "a@x.com" }, { de: "b@x.com" }, { de: null }]
+      const ops = opcionesDeColumna(filasX, f => f.de)
+      const vX = ops.map(o => `${o.etiqueta}=${o.cuenta}`).join(" ") + " | " +
+        [filtrarPorColumnas(filasX, { de: new Set(["b@x.com"]) }, { de: f => f.de }).length, filtrarPorColumnas(filasX, { de: null }, { de: f => f.de }).length,
+         filtrarPorColumnas(filasX, { de: new Set() }, { de: f => f.de }).length, filtrarPorColumnas(filasX, { de: new Set(["(vacío)"]) }, { de: f => f.de }).length].join(" ")
+      chequear("Filtro por columna", "🔽 Lista sin repetir con su cantidad (ordenada, el vacío como «(vacío)»); sin filtro = todas, «ninguna» = 0, se puede elegir el vacío",
+        "(vacío)=1 a@x.com=1 b@x.com=2 | 2 4 0 1", vX, vX === "(vacío)=1 a@x.com=1 b@x.com=2 | 2 4 0 1", "A-FEAT-1441")
+      const vCl = [claseDeProcesado("factura archivada MSA 3-1520 (+1)"), claseDeProcesado("reenvío leído: 2 adjuntos, 1 ilegible"), claseDeProcesado("boletas_arba")].join(" | ")
+      chequear("Mails", "🔽 «Qué se hizo» se filtra por clase, no por factura", "factura archivada | reenvío leído | boletas_arba", vCl, vCl === "factura archivada | reenvío leído | boletas_arba", "A-FEAT-1441")
     }
 
     // 🏦 A-FEAT-1424: CUENTA CORRIENTE Galicia (PAM, enero 2025, disposición real): el saldo deudor viene «43.019,88-».

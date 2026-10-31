@@ -82,6 +82,23 @@ chequear("reporte: lo que mirar arriba, sin regla aparte, el tipo a mano manda, 
   "cierra · [Registro de mails] 30/10 07:00 — 1 para mirar · 7 recibidos · mirar1 · sinregla1 · manual-manda · archivados-contados · escapado · enviado-con-link · procesado",
   resumen)
 
+// Pendientes (A-FEAT-1437): arriba de todo, de cualquier fecha, vencidos primero y marcados; el asunto los cuenta
+const pend = [
+  { mensaje_id: "p1", fecha: "2026-10-21T10:00:00Z", asunto: "Mora complementario", remitente: "x@arba.gov.ar", seguimiento_fecha: "2026-11-05", seguimiento_nota: "pagar <cuota 3>" },
+  { mensaje_id: "p2", fecha: "2026-09-01T10:00:00Z", asunto: "Intimación", remitente: "x@y.com", seguimiento_fecha: "2026-10-25", seguimiento_nota: null },
+  { mensaje_id: "p3", fecha: "2026-10-30T10:00:00Z", asunto: "Sin fecha", remitente: "x@y.com", seguimiento_fecha: null, seguimiento_nota: null },
+]
+const repP = g.armarReporte_(filas, "sanmanuel.sp@gmail.com", "30/10 07:00", "31/10 07:00", pend, "2026-10-31")
+const iP = repP.html.indexOf("📌 Pendientes"), iM = repP.html.indexOf("Para mirar")
+const orden = ["#all/p2", "#all/p1", "#all/p3"].map(x => repP.html.indexOf(x))
+const resumenP = [repP.asunto, iP >= 0 && iP < iM ? "arriba" : "-", orden[0] < orden[1] && orden[1] < orden[2] ? "vencido-primero" : "-",
+  repP.html.includes("vencido 25/10") ? "marca-vencido" : "-", repP.html.includes("para el 05/11") ? "fecha" : "-",
+  repP.html.includes("pagar &lt;cuota 3&gt;") ? "nota-escapada" : "-",
+  g.armarReporte_(filas, "sanmanuel.sp@gmail.com", "a", "b").html.includes("Pendientes") ? "aparece-sin" : "sin-pendientes-no-aparece"].join(" · ")
+chequear("reporte: los pendientes van arriba, vencidos primero y marcados, con su nota; sin pendientes no hay sección",
+  "[Registro de mails] 31/10 07:00 — 3 pendientes (1 vencidos) · 1 para mirar · 7 recibidos · arriba · vencido-primero · marca-vencido · fecha · nota-escapada · sin-pendientes-no-aparece",
+  resumenP)
+
 // Paridad GAS ↔ app: la clasificación de la app (para «reaplicar reglas») tiene que dar lo mismo que la del GAS
 const app = await import("../lib/mails/registro.ts")
 const casos: [string, string][] = [

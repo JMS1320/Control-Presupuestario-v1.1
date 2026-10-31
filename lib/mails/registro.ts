@@ -9,12 +9,15 @@
  * tienen su prueba (`npm run probar` y `npm run probar:registro-mails`).
  */
 
-export type TipoMail =
-  | "factura" | "banco" | "impuestos" | "contador" | "productivo" | "legal" | "interno"
-  | "servicios" | "seguros" | "notificacion" | "propaganda" | "otro"
+/** La clave de un tipo de `public.mails_tipos` (script 147: los tipos son editables desde la app — A-FEAT-1440). */
+export type TipoMail = string
 export type AccionMail = "guardar" | "avisar" | "archivar"
 export type GrupoMail = "mirar" | "sin_regla" | "guardado" | "archivado" | "enviado"
 
+/** Un tipo del maestro `public.mails_tipos`. */
+export interface TipoMailFila { id: string; nombre: string; orden: number }
+
+/** Los 12 tipos con los que arrancó el maestro (script 147). La app usa los de la base; éstos sólo mientras carga. */
 export const TIPOS_MAIL: { id: TipoMail; nombre: string }[] = [
   { id: "impuestos", nombre: "Impuestos" }, { id: "contador", nombre: "Contadores" }, { id: "legal", nombre: "Legal / sucesión" },
   { id: "productivo", nombre: "Productivo" }, { id: "factura", nombre: "Facturas" }, { id: "banco", nombre: "Bancos" },
@@ -45,6 +48,18 @@ export interface MailRegistrado {
   estado: string
   procesado_por: string | null
   vinculos: { schema: string; tabla: string; id: string; que?: string }[] | null
+  seguimiento?: SeguimientoMail | null
+  seguimiento_nota?: string | null
+  seguimiento_fecha?: string | null
+  seguimiento_at?: string | null
+}
+
+export type SeguimientoMail = "pendiente" | "terminado"
+export interface CamposSeguimiento {
+  seguimiento?: SeguimientoMail | null
+  seguimiento_nota?: string | null
+  seguimiento_fecha?: string | null   // 'AAAA-MM-DD'
+  seguimiento_at?: string | null
 }
 
 export interface ReglaMail {
@@ -113,14 +128,14 @@ export function contarPorTipo(mails: MailRegistrado[]): Record<string, number> {
   return r
 }
 
-/** Pura: valida una regla nueva antes de guardarla. Devuelve el motivo, o null si está bien. */
-export function problemaDeRegla(r: { remitente_patron: string; tipo: string; accion: string }): string | null {
+/** Pura: valida una regla nueva antes de guardarla. Devuelve el motivo, o null si está bien. `tipos` = las claves del maestro. */
+export function problemaDeRegla(r: { remitente_patron: string; tipo: string; accion: string }, tipos: string[] = TIPOS_MAIL.map(t => t.id)): string | null {
   const p = r.remitente_patron.trim().toLowerCase()
   if (!p) return "Falta de quién viene (un mail como x@y.com, o un dominio como @y.com)."
   if (p.startsWith("@") ? !/^@[a-z0-9.-]+\.[a-z]{2,}$/.test(p) : !/^[^@\s]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(p)) {
     return "«De quién viene» tiene que ser un mail (x@y.com) o un dominio (@y.com)."
   }
-  if (!NOMBRE_TIPO_MAIL[r.tipo]) return "Elegí un tipo."
+  if (!tipos.includes(r.tipo)) return "Elegí un tipo."
   if (!["guardar", "avisar", "archivar"].includes(r.accion)) return "Elegí qué se hace."
   return null
 }
@@ -210,4 +225,124 @@ export function cambiosAlReaplicar(
     if (c.tipo !== m.tipo || c.accion !== m.accion) out.push({ id: m.id, ...c, antes: `${m.tipo ?? "sin tipo"}/${m.accion ?? "-"}` })
   }
   return out
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tipos editables y reasignar con ALCANCE — A-FEAT-1440 (CLAUDE.md § 🧩: se crea y se reasigna ahí mismo)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Pura: nombre de cada tipo por su clave, desde el maestro. */
+export function nombresDeTipos(tipos: TipoMailFila[]): Record<string, string> {
+  return Object.fromEntries(tipos.map(t => [t.id, t.nombre]))
+}
+
+/** Pura: la clave de un tipo nuevo a partir de su nombre ('Cuenta corriente' → 'cuenta_corriente'), sin chocar con las que hay. */
+export function claveDeTipoMail(nombre: string, existentes: string[]): string {
+  const base = sinTildes(nombre).replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "tipo"
+  let k = base, n = 2
+  while (existentes.includes(k)) k = `${base}_${n++}`
+  return k
+}
+
+/** Pura: por qué no se puede crear un tipo con ese nombre (vacío o repetido), o null. */
+export function problemaDeTipoNuevo(nombre: string, tipos: TipoMailFila[]): string | null {
+  const n = nombre.trim()
+  if (!n) return "Escribí el nombre del tipo."
+  if (tipos.some(t => sinTildes(t.nombre) === sinTildes(n))) return `Ya existe el tipo «${n}».`
+  return null
+}
+
+/** Con quién es el mail: el remitente si llegó, el primer destinatario si salió. Es lo que mira una regla. */
+export function contraparteDeMail(m: Pick<MailRegistrado, "sentido" | "remitente" | "destinatarios">): string {
+  const x = m.sentido === "enviado" ? String(m.destinatarios ?? "").split(",")[0] : String(m.remitente ?? "")
+  return x.trim().toLowerCase().replace(/^.*<([^>]+)>.*$/, "$1")
+}
+
+/** El asunto sin «RE:», «Fwd:», «RV:» adelante: lo que tiene sentido usar como «asunto contiene». */
+export function asuntoBase(asunto: string | null): string {
+  return String(asunto ?? "").replace(/^\s*((re|rv|fw|fwd|tr)\s*:\s*)+/i, "").trim()
+}
+
+export type AlcanceTipo = "este" | "remitente" | "remitente_asunto"
+
+/**
+ * Pura: la regla que hace falta para reasignar «todos los de este remitente» (o «…con este asunto»). Si ya hay una
+ * regla con el mismo remitente y asunto, se actualiza ésa (no se duplica). Orden 5: gana a las generales de antes.
+ */
+export function reglaParaAlcance(
+  reglas: ReglaMail[],
+  m: Pick<MailRegistrado, "sentido" | "remitente" | "destinatarios" | "accion">,
+  alcance: Exclude<AlcanceTipo, "este">, tipo: string, asuntoContiene?: string,
+): { existente: ReglaMail | null; regla: { remitente_patron: string; asunto_patron: string | null; tipo: string; accion: AccionMail; orden: number } } {
+  const remitente_patron = contraparteDeMail(m)
+  const asunto_patron = alcance === "remitente_asunto" ? (asuntoContiene ?? "").trim() || null : null
+  const existente = reglas.find(r => r.remitente_patron.trim().toLowerCase() === remitente_patron &&
+    sinTildes(r.asunto_patron ?? "") === sinTildes(asunto_patron ?? "")) ?? null
+  const accion = (existente?.accion ?? m.accion ?? "guardar") as AccionMail
+  return { existente, regla: { remitente_patron, asunto_patron, tipo, accion, orden: existente ? Math.min(existente.orden, 5) : 5 } }
+}
+
+/**
+ * Pura: a qué mails ya registrados alcanza una regla, hacia atrás. Nunca los corregidos a mano (salvo el que se está
+ * reasignando, `incluir`), nunca el propio reporte. El control: después de aplicar, con TODAS las reglas, cada uno
+ * tiene que quedar con ese tipo — los que no (otra regla anterior gana) se devuelven aparte para mostrarlos.
+ */
+export function mailsQueAlcanza(
+  mails: (Pick<MailRegistrado, "id" | "sentido" | "remitente" | "destinatarios" | "asunto" | "tipo_manual">)[],
+  regla: Pick<ReglaMail, "remitente_patron" | "asunto_patron">, reglasDespues: ReglaMail[], tipo: string, incluir?: string,
+): { alcanza: string[]; ganaOtra: string[] } {
+  const alcanza: string[] = [], ganaOtra: string[] = []
+  for (const m of mails) {
+    if (m.tipo_manual && m.id !== incluir) continue
+    if (String(m.asunto ?? "").startsWith("[Registro de mails]")) continue
+    const quien = contraparteDeMail(m)
+    if (!reglaCoincide({ ...regla, activa: true }, quien, m.asunto)) continue
+    if (clasificarConReglas(reglasDespues, quien, m.asunto).tipo === tipo) alcanza.push(m.id)
+    else ganaOtra.push(m.id)
+  }
+  return { alcanza, ganaOtra }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Seguimiento: pendiente / terminado — A-FEAT-1437
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type EstadoSeguimiento = "vencido" | "pendiente" | "terminado" | "sin_marcar"
+export const NOMBRE_SEGUIMIENTO: Record<EstadoSeguimiento, string> = {
+  vencido: "Vencidos", pendiente: "Pendientes", terminado: "Terminados", sin_marcar: "Sin marcar",
+}
+
+/** Pura: el estado de seguimiento de un mail. Pendiente con fecha ANTERIOR a hoy = vencido (hoy = 'AAAA-MM-DD', hora argentina). */
+export function estadoSeguimiento(m: CamposSeguimiento, hoy: string): EstadoSeguimiento {
+  if (m.seguimiento === "terminado") return "terminado"
+  if (m.seguimiento === "pendiente") return m.seguimiento_fecha && m.seguimiento_fecha < hoy ? "vencido" : "pendiente"
+  return "sin_marcar"
+}
+
+/** Pura: los pendientes primero (los vencidos y los de fecha más cercana arriba), después el resto por fecha del mail. */
+export function ordenarPendientesArriba<T extends CamposSeguimiento & { fecha: string }>(mails: T[], hoy: string): T[] {
+  const peso = (m: T) => { const e = estadoSeguimiento(m, hoy); return e === "vencido" ? 0 : e === "pendiente" ? 1 : 2 }
+  return [...mails].sort((a, b) => {
+    const d = peso(a) - peso(b)
+    if (d) return d
+    if (peso(a) < 2) return (a.seguimiento_fecha ?? "9999") < (b.seguimiento_fecha ?? "9999") ? -1 : (a.seguimiento_fecha ?? "9999") > (b.seguimiento_fecha ?? "9999") ? 1 : (a.fecha < b.fecha ? 1 : -1)
+    return a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : 0
+  })
+}
+
+/** Pura: suma los mails de un período con TODOS los pendientes (aunque sean de antes), sin repetir. */
+export function juntarConPendientes<T extends { id: string }>(periodo: T[], pendientes: T[]): T[] {
+  const ids = new Set(periodo.map(m => m.id))
+  return [...periodo, ...pendientes.filter(p => !ids.has(p.id))]
+}
+
+/** Pura: por qué no se puede guardar un seguimiento, o null. La nota y la fecha son optativas (marcar pendiente es un clic). */
+export function problemaDeSeguimiento(s: { fecha: string }): string | null {
+  if (s.fecha && !/^\d{4}-\d{2}-\d{2}$/.test(s.fecha)) return "La fecha no es válida."
+  return null
+}
+
+/** Pura: la CLASE de lo que se hizo con un mail, para filtrar ('factura archivada MSA 3-1520 (+1)' → 'factura archivada'). */
+export function claseDeProcesado(texto: string): string {
+  return texto.replace(/\s*\(\+\d+\)$/, "").replace(/\s+(MSA|PAM|MA)\b.*$/, "").replace(/[:\s]+\d.*$/, "").trim()
 }

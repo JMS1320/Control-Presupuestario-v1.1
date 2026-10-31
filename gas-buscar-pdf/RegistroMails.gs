@@ -136,10 +136,11 @@ function escHtml_(s) {
 
 /**
  * Pura: las filas del registro de un período → { asunto, html, texto } del reporte.
- * Orden de minuta: lo que hay que mirar · lo que no tiene regla · lo que llegó, por tipo · lo archivado, contado ·
- * lo que salió. Los conteos de arriba tienen que sumar el total: si no, se dice.
+ * Orden de minuta: los PENDIENTES (de cualquier fecha, vencidos primero) · lo que hay que mirar · lo que no tiene
+ * regla · lo que llegó, por tipo · lo archivado, contado · lo que salió. Los conteos del período tienen que sumar el
+ * total: si no, se dice. `pendientes` (A-FEAT-1437) y `hoyTxt` ('AAAA-MM-DD') son optativos.
  */
-function armarReporte_(filas, casilla, desdeTxt, hastaTxt) {
+function armarReporte_(filas, casilla, desdeTxt, hastaTxt, pendientes, hoyTxt) {
   var tipoDe = function (f) { return f.tipo_manual || f.tipo }
   var recibidos = filas.filter(function (f) { return f.sentido === 'recibido' })
   var enviados = filas.filter(function (f) { return f.sentido === 'enviado' })
@@ -165,6 +166,18 @@ function armarReporte_(filas, casilla, desdeTxt, hastaTxt) {
   var h = []
   h.push('<p>Casilla ' + escHtml_(casilla) + ' · del ' + escHtml_(desdeTxt) + ' al ' + escHtml_(hastaTxt) + ' · ' +
     recibidos.length + ' recibidos · ' + enviados.length + ' enviados.</p>')
+  var pend = (pendientes || []).slice().sort(function (a, b) {
+    var fa = a.seguimiento_fecha || '9999', fb = b.seguimiento_fecha || '9999'
+    return fa < fb ? -1 : fa > fb ? 1 : (a.fecha < b.fecha ? -1 : 1)
+  })
+  var vencidos = pend.filter(function (f) { return f.seguimiento_fecha && hoyTxt && f.seguimiento_fecha < hoyTxt }).length
+  if (pend.length) {
+    h.push('<h3>📌 Pendientes (' + pend.length + (vencidos ? ', ' + vencidos + ' vencidos' : '') + ')</h3><ul>' + pend.map(function (f) {
+      var venc = f.seguimiento_fecha && hoyTxt && f.seguimiento_fecha < hoyTxt
+      var cuando = f.seguimiento_fecha ? ' · ' + (venc ? '<b style="color:#b3261e">vencido ' : 'para el ') + f.seguimiento_fecha.slice(8, 10) + '/' + f.seguimiento_fecha.slice(5, 7) + (venc ? '</b>' : '') : ''
+      return '<li>' + link(f) + ' — ' + quien(f) + cuando + (f.seguimiento_nota ? ' · <i>' + escHtml_(f.seguimiento_nota) + '</i>' : '') + '</li>'
+    }).join('') + '</ul>')
+  }
   if (avisar.length) h.push('<h3>🔴 Para mirar (' + avisar.length + ')</h3>' + lista(avisar))
   if (sinRegla.length) h.push('<h3>❓ Sin regla — decir qué son (' + sinRegla.length + ')</h3>' + lista(sinRegla))
   porTipo(guardar).forEach(function (g) { h.push('<h3>' + REG_NOMBRE_TIPO[g.tipo] + ' (' + g.filas.length + ')</h3>' + lista(g.filas)) })
@@ -184,7 +197,8 @@ function armarReporte_(filas, casilla, desdeTxt, hastaTxt) {
   h.push('<p style="color:#666">' + (cierra ? '✓ ' : '⚠️ NO CIERRA: ') + 'para mirar ' + avisar.length + ' + sin regla ' + sinRegla.length +
     ' + guardados ' + guardar.length + ' + archivados ' + archivar.length + ' = ' + suma + ' de ' + recibidos.length + ' recibidos.</p>')
 
-  var asunto = REG_PREFIJO_REPORTE + ' ' + hastaTxt + ' — ' + (avisar.length ? avisar.length + ' para mirar · ' : '') + recibidos.length + ' recibidos'
+  var asunto = REG_PREFIJO_REPORTE + ' ' + hastaTxt + ' — ' + (pend.length ? pend.length + ' pendientes' + (vencidos ? ' (' + vencidos + ' vencidos)' : '') + ' · ' : '') +
+    (avisar.length ? avisar.length + ' para mirar · ' : '') + recibidos.length + ' recibidos'
   return { asunto: asunto, html: h.join('\n'), cierra: cierra }
 }
 
@@ -289,8 +303,11 @@ function enviarReporteDiario() {
   var filas = regSupa_('get', 'mails_registro?casilla=eq.' + encodeURIComponent(casilla) +
     '&fecha=gte.' + encodeURIComponent(desde.toISOString()) + '&fecha=lt.' + encodeURIComponent(hasta.toISOString()) +
     '&select=mensaje_id,sentido,fecha,remitente,remitente_nombre,destinatarios,asunto,adjuntos,tipo,tipo_manual,accion,procesado_por&order=fecha.asc')
+  // Los pendientes, de cualquier fecha: quedan en el reporte hasta que se dan por terminados (A-FEAT-1437)
+  var pendientes = regSupa_('get', 'mails_registro?casilla=eq.' + encodeURIComponent(casilla) + '&seguimiento=eq.pendiente' +
+    '&select=mensaje_id,fecha,remitente,remitente_nombre,asunto,seguimiento_fecha,seguimiento_nota&order=fecha.asc')
   var fmt = function (d) { return Utilities.formatDate(d, 'America/Argentina/Buenos_Aires', 'dd/MM HH:mm') }
-  var r = armarReporte_(filas || [], casilla, fmt(desde), fmt(hasta))
+  var r = armarReporte_(filas || [], casilla, fmt(desde), fmt(hasta), pendientes || [], regFechaTxt_(hasta))
   GmailApp.sendEmail(casilla, r.asunto, 'Abrí este mail en HTML para ver el reporte con links.', { htmlBody: r.html })
   Logger.log('Reporte enviado: ' + r.asunto + (r.cierra ? '' : ' (⚠️ el control no cierra)'))
 }
