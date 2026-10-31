@@ -11,7 +11,7 @@ import { etiquetaPersona } from "@/lib/auth/identidad"
  * fechas, que es lo que muestra la pantalla de Usuarios a un admin. Lo pide cualquiera que tenga un
  * rol, porque cualquiera puede contestarle o escribirle a otro.
  */
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = await createClientServer()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: "Sin sesión." }, { status: 401 })
@@ -25,5 +25,9 @@ export async function GET() {
     .map((u) => ({ mail: u.email as string, nombre: etiquetaPersona(u) ?? (u.email as string) }))
     .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"))
 
-  return NextResponse.json({ personas, yo: user.email ?? null })
+  // 🤖 A-FEAT-1449 (JMS 31/10): «algunas cosas debo poder dejarlas direccionadas a Claude… cuando abra Code lo vemos
+  // juntos». Claude es un destinatario más; lo suyo lo lee al abrir sesión (CLAUDE.md § los canales del usuario).
+  // Sólo donde se asigna una TAREA (`?con_claude=1`): habilitar a Claude a editar una factura no tiene sentido.
+  const conClaude = new URL(request.url).searchParams.get("con_claude") === "1"
+  return NextResponse.json({ personas: conClaude ? [...personas, { mail: "claude", nombre: "🤖 Claude" }] : personas, yo: user.email ?? null })
 }

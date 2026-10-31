@@ -3797,6 +3797,14 @@ solo, y al pie dice cuántos pagos se exportaron para que lo cruces con la panta
 ⚠️ Sin probar todavía → A-TEST-1174
 
 
+## 🚦 Tareas: «Para vos», «Pasarle a…» y lo que confirmás vos *(2026-10-31)*
+
+- **«Para vos»**, arriba del Principal, ordena tus tareas por **urgencia**: 🔴 Máximo · 🟠 Urgente · 🟡 A mirar · ⚪ Para saber. La urgencia suma señales (si es de impuestos, si avisa una deuda o mora, si está vencida o vence pronto, si el monto es grande); pasando el mouse por la etiqueta se ven.
+- **🚩 Pasarle a…** está en cada mail (Egresos → Mails) y en el aviso de mails graves: arma la tarea con el asunto y las señales del mail, y elegís a quién va — cualquier usuario o **🤖 Claude** (lo de Claude lo ve al abrir la próxima sesión).
+- Al crear una tarea, **¿quién confirma que está hecha?**: si elegís «Yo», cuando la persona aprieta «Listo» la tarea no se cierra: te aparece en **«✔ Para que confirmes»** con lo que dijo, y la **confirmás** o la **devolvés** con un motivo.
+
+→ ⚠️ Sin probar todavía → A-TEST-1304
+
 ## 📬 Egresos → Mails *(2026-10-30, sólo admin)*
 
 Todo lo que entra y sale de la casilla **sanmanuel.sp**, registrado y con link a cada mail.

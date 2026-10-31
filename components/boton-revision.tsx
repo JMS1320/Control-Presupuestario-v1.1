@@ -26,6 +26,7 @@
  * convierte en pendiente con ID — la separación se hace **cuando ya se sabe**, no antes.
  */
 
+import type { Senal } from "@/lib/revisiones/nivel"
 import { useState, useEffect, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
@@ -93,8 +94,11 @@ export function useRevisionesDe(schema: string, tabla: string) {
 
 interface AnclaFila { schema: string; tabla: string; registroId: string; descripcion: string }
 
+/** A-FEAT-1449: lo que trae una tarea que sale de otro lado (un mail, un aviso) — el texto y las señales fijas. */
+export interface TareaInicial { motivo?: string; origen?: "mail" | "cuota" | "control"; senales?: Senal[]; esTarea?: boolean; hasta?: string; para?: string }
+
 function ModalMarca({
-  abierto, onClose, ancla, yaAbierta, onGuardada,
+  abierto, onClose, ancla, yaAbierta, onGuardada, inicial,
 }: {
   abierto: boolean
   onClose: () => void
@@ -102,6 +106,7 @@ function ModalMarca({
   ancla?: AnclaFila
   yaAbierta?: RevisionAbierta
   onGuardada?: () => void
+  inicial?: TareaInicial
 }) {
   const [motivo, setMotivo] = useState("")
   const [imagen, setImagen] = useState("")
@@ -114,6 +119,8 @@ function ModalMarca({
   // A-FEAT-1411: la 🚩 puede ser una TAREA para esa persona, con fecha
   const [esTarea, setEsTarea] = useState(false)
   const [tareaHasta, setTareaHasta] = useState("")
+  /** A-FEAT-1449: quién CONFIRMA el cierre (vacío = se cierra cuando la persona dice «Listo»). */
+  const [confirma, setConfirma] = useState("")
   const [personas, setPersonas] = useState<{ mail: string; nombre: string }[]>([])
   const [yoMail, setYoMail] = useState<string | null>(null)
 
@@ -127,12 +134,15 @@ function ModalMarca({
   const [ctx, setCtx] = useState(contextoActual)
 
   useEffect(() => {
-    if (abierto) { setCtx(contextoActual()); setMotivo(""); setImagen(""); setPara(""); setEsTarea(false); setTareaHasta("") }
+    if (abierto) {
+      setCtx(contextoActual()); setMotivo(inicial?.motivo ?? ""); setImagen(""); setPara(inicial?.para ?? "")
+      setEsTarea(inicial?.esTarea ?? false); setTareaHasta(inicial?.hasta ?? ""); setConfirma("")
+    }
   }, [abierto])
 
   useEffect(() => {
     if (!abierto || personas.length) return
-    fetch("/api/sesion/personas")
+    fetch("/api/sesion/personas?con_claude=1")
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => { if (j?.personas) { setPersonas(j.personas); setYoMail(j.yo ?? null) } })
       .catch(() => {})
@@ -179,6 +189,10 @@ function ModalMarca({
         asignado_a: para || null,
         es_tarea: !!para && esTarea,
         tarea_hasta: para && esTarea && tareaHasta ? tareaHasta : null,
+        // A-FEAT-1449: de dónde viene, sus señales (el nivel) y quién confirma el cierre
+        origen: inicial?.origen ?? "manual",
+        senales: inicial?.senales?.length ? inicial.senales : null,
+        confirma: para && esTarea && confirma ? confirma : null,
       })
       if (error) throw error
       const destinatario = personas.find((p) => p.mail === para)?.nombre
@@ -245,6 +259,21 @@ function ModalMarca({
                   <input type="date" className="h-8 rounded border px-2" value={tareaHasta} onChange={(e) => setTareaHasta(e.target.value)} />
                 </div>
               )}
+              {esTarea && (
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                  <span>¿Quién confirma que está hecha?</span>
+                  <select className="h-8 rounded border bg-white px-2" value={confirma} onChange={(e) => setConfirma(e.target.value)}>
+                    <option value="">Nadie: se cierra cuando la persona dice «Listo»</option>
+                    {yoMail && <option value={yoMail}>Yo: no se cierra hasta que yo confirme</option>}
+                    {personas.filter((p) => p.mail !== yoMail && p.mail !== para && p.mail !== "claude").map((p) => (
+                      <option key={p.mail} value={p.mail}>{p.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {inicial?.senales?.length ? (
+                <p className="mt-1 text-[11px] text-gray-500">Señales: {inicial.senales.map(x => `${x.nombre} (+${x.peso})`).join(" · ")} — con éstas y la fecha se calcula qué tan urgente es.</p>
+              ) : null}
             </>
           )}
         </div>
@@ -308,6 +337,26 @@ export function BotonRevision({
         ancla={{ schema, tabla, registroId, descripcion }}
         yaAbierta={abierta} onGuardada={onCambio}
       />
+    </>
+  )
+}
+
+/* ── 1b · «Pasarle a…» desde un aviso o un mail (A-FEAT-1449) ─────────────── */
+
+/**
+ * La misma 🚩, pero precargada: el texto, las señales (para el nivel) y el ancla al registro de donde sale (el mail,
+ * la cuota). Se usa en Mails, en el aviso de mails graves y en cualquier aviso que tenga que pasar a una persona.
+ */
+export function PasarTarea({ ancla, inicial, etiqueta = "🚩 Pasarle a…", className, onGuardada }: {
+  ancla: AnclaFila; inicial: TareaInicial; etiqueta?: string; className?: string; onGuardada?: () => void
+}) {
+  const [modal, setModal] = useState(false)
+  return (
+    <>
+      <button type="button" onClick={() => setModal(true)} title="Crear una tarea para alguien (o para Claude) a partir de esto"
+        className={className ?? "rounded px-1.5 py-0.5 text-xs text-amber-700 hover:bg-amber-50"}>{etiqueta}</button>
+      <ModalMarca abierto={modal} onClose={() => setModal(false)} ancla={ancla}
+        inicial={{ esTarea: true, ...inicial }} onGuardada={onGuardada} />
     </>
   )
 }
