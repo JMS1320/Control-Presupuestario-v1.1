@@ -31,6 +31,8 @@ import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { LotesMails } from "@/components/mails-lotes"
 import { PasarTarea } from "@/components/boton-revision"
 import { senalesDeMail } from "@/lib/revisiones/nivel"
+import { tipoAvisoDeMail } from "@/lib/revisiones/avisos"
+import { ConfigAvisos } from "@/components/config-avisos"
 import { AlertTriangle, CheckCircle2, ExternalLink, Paperclip, RefreshCw } from "lucide-react"
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
@@ -527,7 +529,7 @@ function RegistroMails() {
                             <CeldaSeguimiento mail={m} hoy={hoy} onGuardado={c => actualizar([m.id], c)} />
                             {/* 🚩 A-FEAT-1449: de un mail sale una tarea para cualquiera (o para Claude) */}
                             <PasarTarea ancla={{ schema: "public", tabla: "mails_registro", registroId: m.id, descripcion: `Mail: ${m.asunto ?? "(sin asunto)"} — ${m.remitente_nombre || m.remitente || ""}`.slice(0, 280) }}
-                              inicial={{ motivo: m.asunto ?? "", origen: "mail", senales: senalesDeMail(grave, tipoDeMail(m)), elegirCuota: { pistas: [m.asunto ?? "", m.remitente_nombre ?? ""], fechaRef: m.fecha } }} />
+                              inicial={{ motivo: m.asunto ?? "", origen: "mail", senales: senalesDeMail(grave, tipoDeMail(m)), elegirCuota: { pistas: [m.asunto ?? "", m.remitente_nombre ?? ""], fechaRef: m.fecha }, avisoTipo: tipoAvisoDeMail(tipoDeMail(m)) }} />
                           </div>
                         : <span className="text-xs text-muted-foreground">—</span>}
                     </TableCell>
@@ -708,6 +710,8 @@ function ReglasMails() {
         <Button size="sm" onClick={agregar}>Agregar regla</Button>
       </div>
       <ReaplicarReglas reglas={reglas} nombres={nombres} />
+      {/* 📮 A-FEAT-1449 tanda 3: quién recibe cada tipo de aviso y lo que hay que hacer cada mes */}
+      <ConfigAvisos />
 
       <details className="rounded-md border p-3">
         <summary className="cursor-pointer text-sm font-medium">Tipos de mail ({tipos.length}) — renombrar</summary>

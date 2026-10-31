@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 📮 2 tablas nuevas: `public.avisos_destinatarios` y `public.obligaciones_recurrentes` + 1 índice único parcial en `public.revisiones` (2026-10-31) — ⏳ AVISO PREVIO (OK de JMS dado en la terminal GAS)
+### 📮 2 tablas nuevas: `public.avisos_destinatarios` y `public.obligaciones_recurrentes` + 1 índice único parcial en `public.revisiones` (2026-10-31) — ✅ APLICADA el 31/10 con OK de JMS (aviso previo): 2 tablas (10 + 2 filas), 2 en recurso_tablas, índice; verificado: todos los roles leen, sólo admin escribe
 - `scripts/153-avisos-destinatarios-y-obligaciones.sql` (+ `-deshacer`). A-FEAT-1449 tanda 3: tipo de aviso → a quién va (10 tipos, sin personas: los mails los carga JMS desde la app), y lo que hay que hacer cada mes antes de un día (2 filas). Índice `revisiones_obligacion_unica (tabla_ref, registro_id) where origen = 'obligacion'`.
 - **RLS** como el resto (`puede_ver` / `puede_escribir`), recurso `importar.avisos` **sin** restringir lectura (las lee «Pasarle a…» con cualquier sesión; se escriben sólo con admin). `anon` sin acceso. Ruta nueva `/api/obligaciones` (crea con `service_role` la tarea del mes, idempotente).
 

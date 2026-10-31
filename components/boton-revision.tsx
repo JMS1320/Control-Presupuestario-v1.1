@@ -102,6 +102,8 @@ export interface TareaInicial {
   cuota?: { id: string; texto: string }
   /** …o a elegir (desde un mail), con los textos para proponerla. */
   elegirCuota?: { pistas: string[]; fechaRef: string }
+  /** 📮 Tanda 3: el tipo de aviso (avisos_destinatarios) — propone a quién va y ofrece «siempre a esta persona». */
+  avisoTipo?: string
 }
 
 function ModalMarca({
@@ -130,6 +132,9 @@ function ModalMarca({
   const [confirma, setConfirma] = useState("")
   /** 🔒 Tanda 2: la cuota con la que se cierra sola (null = se cierra a mano). */
   const [cuotaCierre, setCuotaCierre] = useState<{ id: string; texto: string } | null>(null)
+  /** 📮 Tanda 3: a quién va por defecto este tipo de aviso, y si hay que recordarlo para la próxima. */
+  const [aviso, setAviso] = useState<{ tipo: string; nombre: string; destinatarios: string[] } | null>(null)
+  const [siempre, setSiempre] = useState(false)
   const [personas, setPersonas] = useState<{ mail: string; nombre: string }[]>([])
   const [yoMail, setYoMail] = useState<string | null>(null)
 
@@ -148,6 +153,17 @@ function ModalMarca({
       setEsTarea(inicial?.esTarea ?? false); setTareaHasta(inicial?.hasta ?? ""); setConfirma(""); setCuotaCierre(inicial?.cuota ?? null)
     }
   }, [abierto])
+
+  useEffect(() => {
+    if (!abierto || !inicial?.avisoTipo) { setAviso(null); return }
+    setSiempre(false)
+    supabase.from("avisos_destinatarios").select("tipo, nombre, destinatarios").eq("tipo", inicial.avisoTipo).maybeSingle()
+      .then(({ data }) => {
+        setAviso((data as typeof aviso) ?? null)
+        const d = (data as { destinatarios?: string[] } | null)?.destinatarios?.[0]
+        if (d && !inicial?.para) setPara(d)
+      })
+  }, [abierto]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!abierto || personas.length) return
@@ -205,6 +221,11 @@ function ModalMarca({
         cierre_auto: cuotaCierre ? `cuota_conciliada:${cuotaCierre.id}` : null,
       })
       if (error) throw error
+      // 📮 «Siempre que sea esto, a esta persona»: se guarda para la próxima (sólo admin puede; si no, se avisa)
+      if (siempre && aviso && para) {
+        const { error: eA } = await supabase.from("avisos_destinatarios").update({ destinatarios: [para], updated_at: new Date().toISOString() }).eq("tipo", aviso.tipo)
+        if (eA) toast.warning("La tarea se creó, pero no se pudo guardar a quién va siempre: " + eA.message)
+      }
       const destinatario = personas.find((p) => p.mail === para)?.nombre
       toast.success(destinatario
         ? `Marcada. Le llega a ${destinatario} en su 🔔, y su respuesta te llega a la tuya.`
@@ -256,6 +277,13 @@ function ModalMarca({
               <option key={p.mail} value={p.mail}>{p.nombre}</option>
             ))}
           </select>
+          {aviso && para && aviso.destinatarios[0] !== para && (
+            <label className="mt-1 flex items-center gap-2 text-xs">
+              <input type="checkbox" checked={siempre} onChange={(e) => setSiempre(e.target.checked)} />
+              Siempre que sea «{aviso.nombre}», a esta persona
+            </label>
+          )}
+          {aviso && aviso.destinatarios[0] === para && <p className="mt-1 text-[11px] text-gray-500">📮 Es quien recibe «{aviso.nombre}».</p>}
           {para && (
             <>
               <p className="mt-1 text-[11px] text-gray-500">Le aparece arriba de su <b>Principal</b> («Para vos») y en su 🔔; puede contestarte ahí.</p>

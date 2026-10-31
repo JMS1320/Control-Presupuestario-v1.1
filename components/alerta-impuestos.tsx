@@ -20,6 +20,7 @@ import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { impuestosAAvisar, ESTADOS_SIN_PAGAR, type CuotaImpuesto, type ImpuestoAvisado } from "@/lib/impuestos/vencimientos"
 import { PasarTarea } from "@/components/boton-revision"
 import { senalMonto } from "@/lib/revisiones/nivel"
+import { linkPagar } from "@/lib/revisiones/avisos"
 
 const plata = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fecha = (iso: string) => iso.split("-").reverse().join("/")
@@ -121,7 +122,8 @@ function Lista({ titulo, items, vencido = false }: { titulo: string; items: Impu
                   <PasarTarea ancla={{ schema: "public", tabla: "cuotas_egresos_sin_factura", registroId: x.id, descripcion: `${x.impuesto} · ${x.empresa} · cuota ${x.numero_cuota ?? ""} · vence ${fecha(x.vencimiento)}` }}
                     inicial={{ motivo: `Pagar ${x.impuesto} cuota ${x.numero_cuota ?? ""} (${x.empresa}) — ${plata(x.monto)}`, origen: "cuota", hasta: x.vencimiento,
                       senales: [{ nombre: "impuestos", peso: 1 }, ...senalMonto(x.monto)],
-                      cuota: { id: x.id, texto: `${x.impuesto} cuota ${x.numero_cuota ?? ""}` } }} />
+                      cuota: { id: x.id, texto: `${x.impuesto} cuota ${x.numero_cuota ?? ""}` }, avisoTipo: "vencimiento_impuesto" }} />
+                  <a href={linkPagar({ cuotaId: x.id, buscar: x.impuesto })} className="ml-1 rounded px-1.5 py-0.5 text-xs text-green-700 hover:bg-green-50" title="Abrir el Cash Flow con esta cuota seleccionada, para sacar el pago">💸 Pagar</a>
                 </td>
               </tr>
             ))}

@@ -474,6 +474,29 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro, actualizarBatch, actualizarLocal } = useMultiCashFlowData(filtros)
 
   /**
+   * 💸 A-FEAT-1449 tanda 3 — «Pagar» desde un aviso o una tarea llega con `?seccion=cashflow&cuota=<id>&buscar=<texto>`:
+   * se pone la búsqueda y, cuando cargan los datos, la cuota queda SELECCIONADA para sacar el pago desde acá.
+   */
+  const [cuotaDelLink, setCuotaDelLink] = useState<string | null>(null)
+  useEffect(() => {
+    try {
+      const p = new URLSearchParams(window.location.search)
+      const b = p.get('buscar'); if (b) setBusquedaRapida(b)
+      setCuotaDelLink(p.get('cuota'))
+    } catch { /* sin URL legible: nada */ }
+  }, [])
+  useEffect(() => {
+    if (!cuotaDelLink || loading) return
+    if (data.some(f => f.id === cuotaDelLink)) {
+      setFilasSeleccionadas(new Set([cuotaDelLink]))
+      toast.info('La cuota del aviso quedó seleccionada: sacá el pago desde acá.')
+    } else if (data.length) {
+      toast.warning('La cuota del aviso no está en lo que muestra el Cash Flow (fechas o filtros): ampliá el período para verla.')
+    } else return
+    setCuotaDelLink(null)
+  }, [cuotaDelLink, data, loading])
+
+  /**
    * 🔄 A-FEAT-1232 — el modal de cancelación de notas de crédito, abierto ACÁ (antes había que ir a la
    * Vista de Pagos, que se va a borrar). El modal y su lógica se mudaron a su propio componente.
    */

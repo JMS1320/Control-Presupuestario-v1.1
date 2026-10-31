@@ -87,6 +87,7 @@ import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import { filtrarStock } from "@/lib/productivo/filtro-stock"
 import { paraVos, estadoAlCerrar } from "@/lib/revisiones/para-vos"
 import { nivelDeTarea, senalesDeMail, senalMonto } from "@/lib/revisiones/nivel"
+import { tareasDelMes, destinatarioPorDefecto, tipoAvisoDeMail, linkPagar, cuotaDeTarea } from "@/lib/revisiones/avisos"
 import { armarCambio, saldoCuenta, cuentaCorriente as cuentaCorrienteDolares, flujoPorMes, erroresCambio, pesosDe } from "@/lib/dolares/cuentas"
 import { posicionAlCierre } from "@/lib/dolares/posicion-cierre"
 import { esHabilitable, diferencias, estadoVisible } from "@/lib/propuestas/factura"
@@ -11078,6 +11079,31 @@ export function correrCasos(): Resultado[] {
       cuotaParaCierre(cs, "Aviso de vencimiento", "2026-10-21T18:02:00Z")?.id, cuotaParaCierre(cs, "cuota 2", "2026-10-21T18:02:00Z")?.id].join(" ")
     chequear("Tareas y alarmas", "🔒 La mora de la cuota 3 se ata a la cuota 3 aunque esté vencida (no a la próxima); sin número, la más cercana; una ya conciliada no se propone",
       "c3 c4 c4", vc, vc === "c3 c4 c4", "A-FEAT-1449")
+  }
+
+  // ══ 📮 A-FEAT-1449 tanda 3: quién recibe qué, las obligaciones del mes y «Pagar» ══
+  {
+    const avisos = [
+      { tipo: "subdiarios", nombre: "Presentar los Subdiarios", destinatarios: ["ulises@x.com"] },
+      { tipo: "extractos_sin_mail", nombre: "Extractos", destinatarios: [] },
+      { tipo: "mail_impuestos", nombre: "Mails de impuestos", destinatarios: ["jose@x.com"] },
+    ]
+    const obl = [
+      { id: "o1", nombre: "Presentar los Subdiarios del mes", aviso_tipo: "subdiarios", dia_mes: 10, activa: true },
+      { id: "o2", nombre: "Cargar los extractos de MSA", aviso_tipo: "extractos_sin_mail", dia_mes: 10, activa: true },
+      { id: "o3", nombre: "Apagada", aviso_tipo: "subdiarios", dia_mes: 5, activa: false },
+    ]
+    const t = tareasDelMes(obl, avisos, "2026-11-03")
+    const vt = t.map(x => `${x.registro_id}→${x.asignado_a} hasta ${x.tarea_hasta} «${x.motivo}»`).join(" | ")
+    chequear("Tareas y alarmas", "📅 Obligaciones del mes: una tarea por obligación activa y mes, para quien recibe ese aviso, con fecha = ese día; sin destinatario o apagada, no se crea",
+      "o1:2026-11→ulises@x.com hasta 2026-11-10 «Presentar los Subdiarios del mes — noviembre»", vt,
+      vt === "o1:2026-11→ulises@x.com hasta 2026-11-10 «Presentar los Subdiarios del mes — noviembre»", "A-FEAT-1449")
+    const vd = [destinatarioPorDefecto(avisos, tipoAvisoDeMail("impuestos")), destinatarioPorDefecto(avisos, tipoAvisoDeMail("banco")) || "-", tipoAvisoDeMail(null) || "-"].join(" ")
+    chequear("Tareas y alarmas", "📮 «Pasarle a…» propone a quién recibe ese tipo de aviso (mail de impuestos → JMS); sin configurar, nadie", "jose@x.com - -", vd, vd === "jose@x.com - -", "A-FEAT-1449")
+    const vp = [linkPagar({ cuotaId: "c3", buscar: "Inmobiliario Complementario" }), linkPagar({ buscar: "Santander" }), cuotaDeTarea("cuota_conciliada:c3") ?? "-", cuotaDeTarea(null) ?? "-"].join(" | ")
+    chequear("Tareas y alarmas", "💸 «Pagar» abre el Cash Flow con la cuota seleccionada y la búsqueda; de una tarea atada se saca su cuota",
+      "/?seccion=cashflow&cuota=c3&buscar=Inmobiliario+Complementario | /?seccion=cashflow&buscar=Santander | c3 | -", vp,
+      vp === "/?seccion=cashflow&cuota=c3&buscar=Inmobiliario+Complementario | /?seccion=cashflow&buscar=Santander | c3 | -", "A-FEAT-1449")
   }
 
   // ══ 🔢 Control de cuotas de templates (decisión de JMS del 28/10/2026) ══
