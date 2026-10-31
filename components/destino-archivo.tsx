@@ -24,6 +24,7 @@ export function useDestinoArchivo(clave: string) {
   const [destino, setDestino] = useState<DestinoArchivo | null>(null)
   const [cargado, setCargado] = useState(false)
   const cargar = useCallback(async () => {
+    if (!clave) { setDestino(null); setCargado(true); return }
     const { data, error } = await supabase.from("archivo_destinos").select("clave, nombre, ruta, drive_folder_id, ruta_drive, por_anio").eq("clave", clave).maybeSingle()
     if (error) toast.error("No se pudo leer la carpeta de destino: " + error.message)
     setDestino((data as DestinoArchivo | null) ?? null)

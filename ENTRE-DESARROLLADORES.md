@@ -40,6 +40,9 @@
 
 ## 📨 PARA JAVIER
 
+### 🗂️ 1 columna nueva en `public.mails_reglas`: `archivo_destino` (2026-10-31) — ⏳ AVISO PREVIO, todavía sin aplicar (espera OK de JMS)
+- `scripts/149-mails-reglas-destino.sql` (+ `-deshacer`). A-FEAT-1442 etapa 2: a qué carpeta del archivo digital van los adjuntos de cada regla. FK a `archivo_destinos.clave` (on update cascade, on delete set null), vacía. No toca RLS ni datos.
+
 ### 🗂️ Tabla nueva `public.archivo_destinos` (2026-10-31) — ✅ APLICADA el 31/10 con OK de JMS (aviso previo): 1 tabla, 1 fila, 1 en recurso_tablas
 - `scripts/148-archivo-destinos.sql` (+ `-deshacer`). A-FEAT-1442: la carpeta del Drive donde se archiva cada tipo de documento (guardada por id), con 1 fila inicial (ARBA Inmobiliario, sin carpeta).
 - **RLS** como el resto (`puede_ver` / `puede_escribir`), recurso `egresos` sin restringir lectura (como las boletas de ARBA); `anon` sin acceso. No toca roles, políticas existentes ni datos.

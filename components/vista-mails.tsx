@@ -28,6 +28,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { FiltroColumna } from "@/components/ui/filtro-columna"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
+import { LotesMails } from "@/components/mails-lotes"
 import { AlertTriangle, CheckCircle2, ExternalLink, Paperclip, RefreshCw } from "lucide-react"
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
@@ -40,7 +41,7 @@ import {
   type TipoMailFila, type AlcanceTipo, type EstadoSeguimiento, type SeguimientoMail,
 } from "@/lib/mails/registro"
 
-const COLUMNAS = "id, casilla, mensaje_id, sentido, fecha, remitente, remitente_nombre, destinatarios, asunto, extracto, adjuntos, tipo, tipo_manual, accion, estado, procesado_por, vinculos, seguimiento, seguimiento_nota, seguimiento_fecha, seguimiento_at"
+const COLUMNAS = "id, regla_id, casilla, mensaje_id, sentido, fecha, remitente, remitente_nombre, destinatarios, asunto, extracto, adjuntos, tipo, tipo_manual, accion, estado, procesado_por, vinculos, seguimiento, seguimiento_nota, seguimiento_fecha, seguimiento_at"
 const GRUPOS: GrupoMail[] = ["mirar", "sin_regla", "guardado", "archivado", "enviado"]
 const SEGUIMIENTOS: EstadoSeguimiento[] = ["vencido", "pendiente", "terminado", "sin_marcar"]
 const PERIODOS = [{ dias: 1, nombre: "Último día" }, { dias: 7, nombre: "7 días" }, { dias: 30, nombre: "30 días" }, { dias: 90, nombre: "90 días" }]
@@ -740,8 +741,9 @@ export function VistaMails() {
       <CardHeader><CardTitle>Mails de la casilla</CardTitle></CardHeader>
       <CardContent>
         <Tabs defaultValue="registro">
-          <TabsList><TabsTrigger value="registro">Registro</TabsTrigger><TabsTrigger value="reglas">Reglas</TabsTrigger></TabsList>
+          <TabsList><TabsTrigger value="registro">Registro</TabsTrigger><TabsTrigger value="guardar">📦 Para guardar</TabsTrigger><TabsTrigger value="reglas">Reglas</TabsTrigger></TabsList>
           <TabsContent value="registro" className="pt-4"><RegistroMails /></TabsContent>
+          <TabsContent value="guardar" className="pt-4"><LotesMails /></TabsContent>
           <TabsContent value="reglas" className="pt-4"><ReglasMails /></TabsContent>
         </Tabs>
       </CardContent>

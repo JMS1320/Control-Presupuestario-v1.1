@@ -140,7 +140,7 @@ chequear("graves en el reporte: agrupados por remitente + asunto (el RE: no sepa
   "2:1:a1 1:2:s2 · asunto · arriba · x2", vG)
 
 // 🗂️ A-FEAT-1442: la ruta como la escribe el usuario → carpetas desde «Mi unidad». La del GAS y la de la app, iguales
-const carpetas = new Function(fs.readFileSync(`${process.cwd().split("\\").join("/")}/gas-buscar-pdf/Carpetas.gs`, "utf8") + `\nreturn { partesDeRuta_ }`)()
+const carpetas = new Function(fs.readFileSync(`${process.cwd().split("\\").join("/")}/gas-buscar-pdf/Carpetas.gs`, "utf8") + `\nreturn { partesDeRuta_, elegirCarpetaDelAnio_, nombreArchivoMail_ }`)()
 const destinos = await import("../lib/archivo/destinos.ts")
 const rutas = ["I:\\Mi unidad\\SAN MANUEL\\IMPUESTOS\\INMOBLILIARIOS - RED VIAL - AUTOMOTOR\\INMOBILIARIO", "\"I:\\Mi unidad\\SAN MANUEL\\\"", "My Drive/Carpeta/ Sub /", "SAN MANUEL\\IMPUESTOS", "I:\\Mi unidad\\"]
 const vRg = rutas.map(x => carpetas.partesDeRuta_(x).join(">")).join(" | ")
@@ -151,6 +151,15 @@ chequear("ruta: el GAS y la app dan lo mismo (" + rutas.length + " casos)", vRg,
 const main = fs.readFileSync(`${process.cwd().split("\\").join("/")}/gas-buscar-pdf/Main.gs`, "utf8")
 chequear("boletas ARBA: doPost le pasa la carpeta elegida y el año al GAS (A-BUG-1446)", "pasa",
   /accion === 'boletas_arba'[\s\S]{0,700}carpeta_id: body\.carpeta_id, anio: body\.anio/.test(main) ? "pasa" : "se pierde")
+
+// 🗂️ La carpeta del año: la exacta; si no, la ÚNICA con el año como palabra; si hay varias parecidas o ninguna → crear
+const vA = [carpetas.elegirCarpetaDelAnio_(["2025", "2026", "Año 2026"], 2026), carpetas.elegirCarpetaDelAnio_(["2025", "Año 2026"], 2026),
+  carpetas.elegirCarpetaDelAnio_(["2026 - Inmob", "Inmob 2026"], 2026) ?? "crear", carpetas.elegirCarpetaDelAnio_(["20261", "Cuota 4"], 2026) ?? "crear",
+  carpetas.elegirCarpetaDelAnio_([], 2026) ?? "crear"].join(" | ")
+chequear("carpeta del año: usa la que existe (aunque se llame «Año 2026»), no adivina entre dos parecidas, «20261» no es 2026",
+  "2026 | Año 2026 | crear | crear | crear", vA)
+const vN = [carpetas.nombreArchivoMail_("2026-10-01T13:00:00Z", "expensas.pdf"), carpetas.nombreArchivoMail_("2026-09-30", 'Liq: "sep"/26.pdf')].join(" | ")
+chequear("nombre del archivo: fecha adelante + el original, sin caracteres que el Drive no acepta", '2026-10-01 - expensas.pdf | 2026-09-30 - Liq- -sep-26.pdf', vN)
 
 for (const x of r) console.log(`${x.ok ? "✓" : "✗"} ${x.caso}${x.ok ? "" : `\n    esperado: ${x.esperado}\n    obtenido: ${x.obtenido}`}`)
 const malos = r.filter(x => !x.ok).length
