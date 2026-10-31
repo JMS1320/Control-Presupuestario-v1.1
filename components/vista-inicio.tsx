@@ -12,6 +12,7 @@ import { WIDGETS, WIDGETS_POR_DEFECTO, widgetsVisibles, type Widget } from "@/li
 import { PanelParaVos } from "@/components/panel-para-vos"
 import { AlertaMailsGraves } from "@/components/alerta-mails-graves"
 import { AlertaImpuestos } from "@/components/alerta-impuestos"
+import { TableroFaltantes } from "@/components/no-se-consigue"
 import type { Preferencias } from "@/lib/auth/preferencias"
 
 type Tamano = { ancho: 1 | 2; alto: number }
@@ -169,6 +170,8 @@ export function VistaInicio({
 
       {/* 🚩 A-FEAT-1411: lo de cada uno, arriba de todo y para todos (no es un widget que se pueda sacar) */}
       <PanelParaVos />
+      {/* 🧾 A-FEAT-1451: las facturas sin comprobante — la tarea principal de Ulises (y lo que JMS tiene que confirmar) */}
+      <TableroFaltantes />
 
       {/*
         🚨 Los avisos que no se pueden perder, fijos arriba (no son widgets que se puedan sacar). A-BUG-1450 (31/10): los

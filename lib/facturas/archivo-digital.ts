@@ -40,7 +40,7 @@ export interface FilaConArchivo {
   facturas_agrupadas?: number | null
 }
 
-export type EstadoArchivo = 'con' | 'portal' | 'falta' | 'sin-factura' | 'grupo'
+export type EstadoArchivo = 'con' | 'portal' | 'falta' | 'sin-factura' | 'grupo' | 'no-se-consigue'
 
 /**
  * Clasifica el archivo digital de una fila.
@@ -57,6 +57,7 @@ export function estadoArchivoDigital(fila: FilaConArchivo): EstadoArchivo {
   if (origen !== 'ARCA') return 'sin-factura'
   if ((fila.facturas_agrupadas ?? 1) > 1) return 'grupo'
   if (fila.pdf_drive_url) return 'con'
+  if (fila.fc === 'No se consigue') return 'no-se-consigue'   // A-FEAT-1451: confirmado por JMS
   return fila.fc === 'Portal' ? 'portal' : 'falta'
 }
 
@@ -81,6 +82,11 @@ export const PRESENTACION_ARCHIVO: Record<EstadoArchivo, { icono: string; clase:
     icono: '–',
     clase: 'text-gray-300',
     titulo: 'Esta fila no viene de una factura (es un template, un anticipo, un sueldo o una venta), así que no le corresponde tener una',
+  },
+  'no-se-consigue': {
+    icono: '🚫',
+    clase: 'text-gray-400',
+    titulo: 'No se consigue: se pidió y nadie la tiene (lo confirmó JMS). Ya no cuenta como faltante',
   },
   'grupo': {
     icono: '⧉',

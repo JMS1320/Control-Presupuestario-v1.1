@@ -53,10 +53,11 @@ export async function GET(request: Request) {
 
     let q = supabaseAdmin
       .from('revisiones')
-      .select('id, schema_ref, tabla_ref, registro_id, descripcion_ref, motivo, tipo, pantalla, estado, creado_por, asignado_a, seguimiento, resolucion, resuelto_por, resuelto_at, created_at')
+      .select('id, schema_ref, tabla_ref, registro_id, descripcion_ref, motivo, tipo, pantalla, estado, creado_por, asignado_a, seguimiento, resolucion, resuelto_por, resuelto_at, created_at, confirma')
       .order('created_at', { ascending: false })
       .limit(200)
-    if (!todas) q = q.eq('estado', 'abierta')
+    // A-FEAT-1449: las que esperan confirmación siguen abiertas para todos los fines (no están resueltas)
+    if (!todas) q = q.in('estado', ['abierta', 'por_confirmar'])
 
     const { data, error } = await q
     if (error) throw error
@@ -103,7 +104,7 @@ export async function PATCH(request: Request) {
      * Devolver vuelve la tarea a 'abierta' y deja el motivo en el hilo.
      */
     if (body.confirmar || body.devolver) {
-      const { data: t, error: eT } = await supabaseAdmin.from('revisiones').select('estado, confirma, seguimiento').eq('id', body.id).single()
+      const { data: t, error: eT } = await supabaseAdmin.from('revisiones').select('estado, confirma, seguimiento, tipo, schema_ref, tabla_ref, registro_id').eq('id', body.id).single()
       if (eT) throw eT
       const n = (x: string | null | undefined) => (x ?? '').trim().toLowerCase()
       if (!n(t?.confirma) || n(t?.confirma) !== n(miMail)) {
@@ -111,6 +112,16 @@ export async function PATCH(request: Request) {
       }
       if (t?.estado !== 'por_confirmar') return NextResponse.json({ ok: false, error: 'La tarea no está esperando confirmación.' }, { status: 400 })
       if (body.confirmar) {
+        /**
+         * 🚫 A-FEAT-1451: si lo que se confirma es «esta factura no se consigue», la factura queda marcada y sale de
+         * faltantes. Primero la factura y después la tarea: si la factura falla, la tarea sigue esperando (no queda
+         * «confirmada» algo que no se hizo).
+         */
+        if (t?.tipo === 'sin_pdf' && t?.tabla_ref === 'comprobantes_arca' && ['msa', 'pam', 'ma'].includes(String(t?.schema_ref)) && t?.registro_id) {
+          const { error: eF } = await supabaseAdmin.schema(String(t.schema_ref)).from('comprobantes_arca')
+            .update({ fc: 'No se consigue' }).eq('id', t.registro_id).is('pdf_drive_url', null)
+          if (eF) throw eF
+        }
         const { error } = await supabaseAdmin.from('revisiones')
           .update({ estado: 'resuelta', resuelto_por: quien, resuelto_at: new Date().toISOString() }).eq('id', body.id)
         if (error) throw error

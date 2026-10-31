@@ -127,7 +127,9 @@ export const esPendienteDeBuscar = (f: { fc?: string | null; pdf_drive_url?: str
  * busca ni en carpeta ni en mail), No (no corresponde), OK (revisada) y VER (ya tiene candidatos:
  * se resuelve con el ✓, buscarla otra vez sólo duplicaría archivos en _Revisar).
  */
-export const FC_QUE_NO_SE_BUSCAN: ReadonlySet<string> = new Set(['Portal', 'No', 'OK', 'VER'])
+/** A-FEAT-1451: la factura que nadie tiene — la marca la pone la confirmación de JMS, nunca a mano por otro. */
+export const FC_NO_SE_CONSIGUE = 'No se consigue'
+export const FC_QUE_NO_SE_BUSCAN: ReadonlySet<string> = new Set(['Portal', 'No', 'OK', 'VER', FC_NO_SE_CONSIGUE])
 
 /**
  * Las facturas que ofrecía el modal Buscar PDFs (retirado 2026-10-23; queda para los casos):
@@ -150,7 +152,8 @@ export function candidatosParaBuscar<T extends { fc?: string | null; estado?: st
  * 2026-10-20 quiere decir lo contrario: «no corresponde, no hay que buscarla».
  */
 export function faltaComprobante(f: { fc?: string | null; estado?: string | null; pdf_drive_url?: string | null }): boolean {
-  return f.estado !== 'historico' && !f.pdf_drive_url && !(f.fc && ['Portal', 'No', 'OK'].includes(f.fc))
+  // 'No se consigue' (A-FEAT-1451): Ulises pidió sacarla con lo que hizo y JMS lo confirmó — ya no falta
+  return f.estado !== 'historico' && !f.pdf_drive_url && !(f.fc && ['Portal', 'No', 'OK', FC_NO_SE_CONSIGUE].includes(f.fc))
 }
 
 /**

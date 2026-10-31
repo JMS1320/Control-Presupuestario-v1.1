@@ -3809,7 +3809,9 @@ solo, y al pie dice cuántos pagos se exportaron para que lo cruces con la panta
 - **📅 Lo que hay que hacer todos los meses** (mismo lugar): cada obligación crea sola, cada mes, una tarea con fecha en el «Para vos» de quien recibe ese tipo de aviso (ej. los Subdiarios del 10 → Ulises). Se agregan ahí mismo.
 - **💸 Pagar**: en el aviso de impuestos, en una tarea atada a una cuota y en los mails graves («Ir a pagar»), abre el **Cash Flow con esa cuota seleccionada** (o buscando al remitente) para sacar el pago desde ahí.
 
-→ ⚠️ Sin probar todavía → A-TEST-1304 · A-TEST-1305 · A-TEST-1306
+- **🧾 Facturas sin comprobante** (arriba del Principal de Ulises y del tuyo): cuántas facturas siguen sin PDF por empresa y cuántas esperan tu confirmación. En cada una de la lista, **🙅 No se consigue** pide que la saquen, contando a quién se la pidió; sale de faltantes **sólo cuando confirmás** (queda 🚫 «No se consigue»). Si la devolvés, vuelve a quien la pidió con tu motivo.
+
+→ ⚠️ Sin probar todavía → A-TEST-1304 · A-TEST-1305 · A-TEST-1306 · A-TEST-1307
 
 ## 📬 Egresos → Mails *(2026-10-30, sólo admin)*
 

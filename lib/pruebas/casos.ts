@@ -40,7 +40,7 @@ import { detallePropio as detallePropioCF, detallePropioDeGrupo } from "@/lib/ca
 import { motivosParaPreguntar, puedeVincularseSola, buscarFacturaDeOtraEmpresa } from "@/lib/conciliacion/cruce-empresa"
 import { ordenarColumnas, moverColumna, leerColumnasUsuario } from "@/lib/cashflow/columnas-usuario"
 import { archivosParaFactura, periodoDeArchivo, subcarpetasDelMes } from "@/lib/facturas/vincular-archivo"
-import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual, decidirVinculosCarpeta, listasTrasCarpeta, textoLeido, decisionArchivadaEnOtra, fcAlVincularDesdeCarpeta, candidatosDelLog, agruparInforme, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, textoPedidoFacturas, descartadosDelLog, esDescartado, ultimasBusquedas, resumenUltimas } from "@/lib/gas-pdf/lote"
+import { agruparPorCarpeta, controlDelLote, idsParaBuscarTrasImportar, candidatosParaBuscar, opcionesFcManual, decidirVinculosCarpeta, listasTrasCarpeta, textoLeido, decisionArchivadaEnOtra, fcAlVincularDesdeCarpeta, candidatosDelLog, agruparInforme, subdiarioDe, subdiariosPresentes, faltaComprobante, linkParaConfirmar, sePuedeConfirmarApp, textoPedidoFacturas, descartadosDelLog, esDescartado, ultimasBusquedas, resumenUltimas, FC_QUE_NO_SE_BUSCAN } from "@/lib/gas-pdf/lote"
 import { ventanasPendientes, bloquesLeidos, partirTramo, decidirDesdeInventario, desdeParaBarrer } from "@/lib/gas-pdf/barrido"
 import { armarPedidoProveedor, haceCuanto } from "@/lib/gas-pdf/pedido"
 import { colorFc, ESTADOS_FC } from "@/lib/gas-pdf/estados-fc"
@@ -11104,6 +11104,20 @@ export function correrCasos(): Resultado[] {
     chequear("Tareas y alarmas", "💸 «Pagar» abre el Cash Flow con la cuota seleccionada y la búsqueda; de una tarea atada se saca su cuota",
       "/?seccion=cashflow&cuota=c3&buscar=Inmobiliario+Complementario | /?seccion=cashflow&buscar=Santander | c3 | -", vp,
       vp === "/?seccion=cashflow&cuota=c3&buscar=Inmobiliario+Complementario | /?seccion=cashflow&buscar=Santander | c3 | -", "A-FEAT-1449")
+  }
+
+  // ══ 🚫 A-FEAT-1451: «No se consigue» (confirmado por JMS) sale de faltantes y no se vuelve a buscar ══
+  {
+    const v = [
+      faltaComprobante({ fc: "Buscar", estado: "pendiente", pdf_drive_url: null }),
+      faltaComprobante({ fc: "No se consigue", estado: "pendiente", pdf_drive_url: null }),
+      faltaComprobante({ fc: "No", estado: "pendiente", pdf_drive_url: null }),
+      estadoArchivoDigital({ origen: "ARCA", fc: "No se consigue", pdf_drive_url: null } as any),
+      estadoArchivoDigital({ origen: "ARCA", fc: "Buscar", pdf_drive_url: null } as any),
+      FC_QUE_NO_SE_BUSCAN.has("No se consigue"),
+    ].join(" ")
+    chequear("Facturas sin comprobante", "🚫 Una factura marcada «No se consigue» (lo confirmó JMS) deja de faltar, se muestra 🚫 y no se vuelve a buscar; «No» (no corresponde) sigue siendo otra cosa",
+      "true false false no-se-consigue falta true", v, v === "true false false no-se-consigue falta true", "A-FEAT-1451")
   }
 
   // ══ 🔢 Control de cuotas de templates (decisión de JMS del 28/10/2026) ══
