@@ -40,6 +40,10 @@
 
 ## 📨 PARA JAVIER
 
+### 🔒 Trigger nuevo en `public.cuotas_egresos_sin_factura`: la tarea se cierra sola con la cuota conciliada (2026-10-31) — ⏳ AVISO PREVIO (OK de JMS dado en la terminal GAS)
+- `scripts/152-cierre-automatico-por-cuota.sql` (+ `-deshacer`). A-FEAT-1449 tanda 2: `after update of estado` → si la cuota pasa a `conciliado`, cierra las `revisiones` con `cierre_auto = 'cuota_conciliada:<id>'` y deja «terminado» el mail de donde salió (`mails_registro`). Función `security definer`, `search_path = public`.
+- **No toca RLS, grants ni datos existentes.** Ojo si tocás conciliación: cualquier camino que ponga una cuota en `conciliado` dispara el cierre.
+
 ### 🚦 4 columnas nuevas en `public.revisiones` (las 🚩): `origen`, `senales`, `confirma`, `cierre_auto` + estado 'por_confirmar' (2026-10-31) — ✅ APLICADA el 31/10 con OK de JMS (aviso previo): 4 columnas, las 13 marcas quedaron 'manual'
 - `scripts/151-revisiones-origen-nivel-confirma.sql` (+ `-deshacer`). A-FEAT-1449: la 🚩 pasa a ser LA tarea de la app (de dónde viene, señales para el nivel de urgencia, quién confirma el cierre). `estado` no tiene CHECK: se suma el valor `por_confirmar`. Las 13 marcas que hay quedan `origen = 'manual'`.
 - **No toca RLS, grants ni políticas.** `/api/revisiones` (GET `?mias=1` y PATCH) cambia: lista también `por_confirmar` y lo que me toca confirmar; un «Listo» con `confirma` deja `por_confirmar`. 🤖 `asignado_a = 'claude'` es un destinatario válido (no es un mail).
