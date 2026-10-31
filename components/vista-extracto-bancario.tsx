@@ -370,7 +370,11 @@ export function VistaExtractoBancario() {
     if (f.cuenta && CUENTAS_BANCARIAS.some(c => c.id === f.cuenta) && cuentaPermitida(f.cuenta)) setCuentaSeleccionada(f.cuenta)
     if (f.desde || f.hasta) { setUsarFechas(true); if (f.desde) setFechaMovDesde(f.desde); if (f.hasta) setFechaMovHasta(f.hasta) }
     if (f.movs.length) setIdsLink(new Set(f.movs))
+    // 🏁 A-BUG-1453: con sólo fechas, nada recargaba con ellas (la lista quedaba con la cuenta entera). Se recarga UNA vez,
+    // cuando termina la carga inicial de la cuenta del link.
+    else if (f.desde || f.hasta) linkFechas.current = { cuenta: f.cuenta ?? null, desde: f.desde, hasta: f.hasta, vioCarga: false }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const linkFechas = useRef<{ cuenta: string | null; desde: string | null; hasta: string | null; vioCarga: boolean } | null>(null)
   const [busquedaNota, setBusquedaNota] = useState('')               // 🔍 A-FEAT-134
   /**
    * 🧹 **A-FEAT-135** — qué hacer con las notas de lo que se acaba de conciliar.
@@ -550,6 +554,16 @@ export function VistaExtractoBancario() {
   const schemaVentaCuenta = (cuentaActivaObj?.empresa || 'MSA').toLowerCase()
   const extractoActivo = { tabla: tablaActiva, schema: schemaActivo !== 'public' ? schemaActivo : undefined }
   const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, actualizarLocal, recargar, inyectarFilas, ultimoLimite } = useMovimientosBancarios(tablaActiva, schemaActivo)
+  // 🏁 A-BUG-1453: el link con fechas recarga con ellas cuando la cuenta del link terminó su primera carga.
+  useEffect(() => {
+    const p = linkFechas.current
+    if (!p || (p.cuenta && p.cuenta !== cuentaId)) return
+    if (loading) { p.vioCarga = true; return }
+    if (!p.vioCarga) return
+    linkFechas.current = null
+    cargarMovimientos(construirFiltros({ fechaDesde: p.desde ?? undefined, fechaHasta: p.hasta ?? undefined }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, cuentaId])
   // 💵 A-FEAT-1398: el panel de dólares y la carga a mano de las cuentas que no tienen extracto
   const [dolaresAbierto, setDolaresAbierto] = useState(false)
   const [cargaManualAbierta, setCargaManualAbierta] = useState(false)

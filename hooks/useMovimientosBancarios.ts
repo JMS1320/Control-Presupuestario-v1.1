@@ -72,6 +72,15 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
    * agosto). Ver A-BUG-34.
    */
   const ultimosFiltros = useRef<Record<string, any> | undefined>(undefined)
+  /**
+   * 🏁 A-BUG-1453 — **la última carga gana, y sólo si es de la cuenta que se está mirando.** Al abrir el extracto desde un
+   * link a Santander, la carga inicial de Galicia (la cuenta por defecto) terminaba DESPUÉS y pisaba la lista y los
+   * contadores: JMS vio «1892 · 1541 conciliados · 50 pendientes» en una cuenta que tiene 148, todos pendientes.
+   */
+  const cuentaVista = useRef(`${schema}.${tabla}`)
+  cuentaVista.current = `${schema}.${tabla}`
+  const nroCarga = useRef(0)
+  const nroStats = useRef(0)
 
   // Cargar movimientos bancarios
   const cargarMovimientos = async (filtros?: {
@@ -101,6 +110,9 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
     /** 🔍 A-FEAT-134 — texto a buscar DENTRO de la nota del usuario. Se combina con `filtroNota`. */
     busquedaNota?: string
   }) => {
+    const miCuenta = `${schema}.${tabla}`
+    const miCarga = ++nroCarga.current
+    const vigente = () => miCarga === nroCarga.current && miCuenta === cuentaVista.current
     try {
       setLoading(true)
       setError(null)
@@ -212,18 +224,22 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
         throw new Error(`Error cargando movimientos: ${error.message}`)
       }
 
+      if (!vigente()) return   // llegó tarde: hay una carga más nueva o es de otra cuenta
       setMovimientos(data || [])
 
     } catch (err) {
+      if (!vigente()) return
       console.error('Error en cargarMovimientos:', err)
       setError(err instanceof Error ? err.message : 'Error desconocido')
     } finally {
-      setLoading(false)
+      if (vigente()) setLoading(false)
     }
   }
 
   // Cargar estadísticas
   const cargarEstadisticas = async () => {
+    const miCuenta = `${schema}.${tabla}`
+    const miCarga = ++nroStats.current
     try {
       /**
        * Paginado: la API devuelve como máximo 1.000 filas por consulta, y el extracto de MSA ya las
@@ -245,6 +261,7 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
 
       const stats = contarEstadisticasExtracto(data)
 
+      if (miCarga !== nroStats.current || miCuenta !== cuentaVista.current) return   // A-BUG-1453: de otra cuenta o vieja
       setEstadisticas(stats)
 
     } catch (err) {

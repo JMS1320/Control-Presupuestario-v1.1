@@ -5297,10 +5297,10 @@ export function correrCasos(): Resultado[] {
       mov("1", "gal", "D", 100, "2025-08-01"), mov("2", "gal", "C", 50, "2026-03-10"), mov("3", "gal", "D", 30, "2025-12-01"),
       mov("4", "san", "D", 10, "2026-01-05"), mov("5", "san", "D", 999, "2026-02-01", true),
     ])
-    const vPc = pc.map(c => `${c.nombre} ${c.abiertos} −${c.debitos} +${c.creditos} ${c.desde}→${c.hasta}`).join(" | ")
+    const vPc = pc.map(c => `${c.nombre} ${c.abiertos} −${c.debitos} +${c.creditos} ${c.desde}→${c.hasta} [${c.movs.join(",")}]`).join(" | ")
     chequear("Balance · recorrido", "🏦 Lo pendiente de conciliar, por cuenta: cuántos, débitos y créditos, rango de fechas; lo respondido no cuenta",
-      "GAL 3 −130 +50 2025-08-01→2026-03-10 | SAN 1 −10 +0 2026-01-05→2026-01-05", vPc,
-      vPc === "GAL 3 −130 +50 2025-08-01→2026-03-10 | SAN 1 −10 +0 2026-01-05→2026-01-05", "A-FEAT-1439")
+      "GAL 3 −130 +50 2025-08-01→2026-03-10 [1,2,3] | SAN 1 −10 +0 2026-01-05→2026-01-05 [4]", vPc,
+      vPc === "GAL 3 −130 +50 2025-08-01→2026-03-10 [1,2,3] | SAN 1 −10 +0 2026-01-05→2026-01-05 [4]", "A-FEAT-1439")
     // 🧾 Los subdiarios pasan a la base (grupo ARCA) y toman lo presentado como fuente: la última secuencia de cada mes.
     const tSub = [{ clave: "cob:x", grupo: "error" as const, titulo: "Subdiarios de compras y ventas por mes y cuenta", papel: "LIBRO DIARIO", que: "x", links: [], respondido: false },
       { clave: "pend:1", grupo: "pregunta" as const, titulo: "p", papel: "x", que: "x", links: [], respondido: false }]

@@ -218,13 +218,16 @@ export function sinTresVistas(temas: Tema[]): { sinFuente: number; sinLink: numb
  * conciliar, e ir a verlo y trabajarlo para terminarlo?»*). Para el balance no interesan 419 movimientos sueltos sino
  * cuánto falta en cada cuenta: cuántos, cuánta plata salió y entró, y un link a la cuenta en ese rango de fechas.
  */
-export interface ConciliacionPorCuenta { cuentaId: string; nombre: string; abiertos: number; debitos: number; creditos: number; desde: string | null; hasta: string | null }
+export interface ConciliacionPorCuenta { cuentaId: string; nombre: string; abiertos: number; debitos: number; creditos: number; desde: string | null; hasta: string | null
+  /** Los movimientos (id): el link abre exactamente éstos en el extracto (JMS 31/10: «dice 121, estimo que son 121 sin conciliar»). */
+  movs: string[] }
 export function conciliacionPorCuenta(temas: Tema[]): ConciliacionPorCuenta[] {
   const m = new Map<string, ConciliacionPorCuenta & { fechas: string[] }>()
   for (const t of temas) {
     if (t.grupo !== "conciliacion" || t.respondido || !t.cuenta) continue
-    const c = m.get(t.cuenta.id) ?? { cuentaId: t.cuenta.id, nombre: t.cuenta.nombre, abiertos: 0, debitos: 0, creditos: 0, desde: null, hasta: null, fechas: [] }
+    const c = m.get(t.cuenta.id) ?? { cuentaId: t.cuenta.id, nombre: t.cuenta.nombre, abiertos: 0, debitos: 0, creditos: 0, desde: null, hasta: null, fechas: [], movs: [] }
     c.abiertos++
+    c.movs.push(t.clave.split(":").slice(2).join(":"))
     if (t.lado === "D") c.debitos += t.importe ?? 0; else c.creditos += t.importe ?? 0
     if (t.fecha) c.fechas.push(t.fecha)
     m.set(t.cuenta.id, c)

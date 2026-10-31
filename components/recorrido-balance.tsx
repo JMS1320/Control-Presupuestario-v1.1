@@ -59,7 +59,12 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
     for (const t of temas) if (t.etiqueta && (!filtro.size || filtro.has(t.grupo))) m.set(t.etiqueta, (m.get(t.etiqueta) ?? 0) + 1)
     return [...m.entries()]
   }, [temas, filtro])
-  const idx = Math.max(0, visibles.findIndex(t => t.clave === claveActual))
+  // Si el tema abierto desaparece (se concilió y se recalculó al volver a la pestaña), se queda en la misma posición en vez
+  // de saltar al primero.
+  const ultimoIdx = useRef(0)
+  const hallado = visibles.findIndex(t => t.clave === claveActual)
+  const idx = hallado >= 0 ? hallado : Math.max(0, Math.min(ultimoIdx.current, visibles.length - 1))
+  ultimoIdx.current = idx
   const actual = visibles[idx] ?? null
   const prog = progreso(temas)
   /** 🧮 A-FEAT-1439: cuántos temas abiertos no tienen fuente (lo objetivo) o no tienen dónde verlos en la app. */
@@ -311,9 +316,9 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
           <div className="flex flex-wrap items-center gap-1.5 text-xs" data-test="recorrido-conciliacion-por-cuenta">
             <span className="text-muted-foreground">🏦 Sin conciliar, por cuenta:</span>
             {porCuenta.map(c => (
-              <a key={c.cuentaId} href={linkExtracto({ cuenta: c.cuentaId, desde: c.desde, hasta: c.hasta })} target="_blank" rel="noreferrer"
+              <a key={c.cuentaId} href={linkExtracto({ cuenta: c.cuentaId, movs: c.movs, desde: c.desde, hasta: c.hasta })} target="_blank" rel="noreferrer"
                 className="rounded border border-blue-300 bg-blue-50 px-2 py-0.5 text-blue-900 hover:bg-blue-100"
-                title={`Abre ${c.nombre} del ${c.desde ?? "?"} al ${c.hasta ?? "?"}`}>
+                title={`Abre en el extracto de ${c.nombre} exactamente estos ${c.abiertos} movimientos sin conciliar (${c.desde ?? "?"} al ${c.hasta ?? "?"})`}>
                 {c.nombre}: <strong className="tabular-nums">{c.abiertos}</strong> · −{fmt(c.debitos)} / +{fmt(c.creditos)} ↗
               </a>
             ))}

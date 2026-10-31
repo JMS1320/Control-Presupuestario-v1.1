@@ -28,7 +28,7 @@ import { SaldosEjercicioAnterior } from "./saldos-ejercicio-anterior"
 import { ProvisionManual, tablaFacturas } from "./provision-manual"
 import { saldosDelEjercicioAnterior, type AjusteBalance } from "@/lib/balance/ajustes-balance"
 import type { PendienteBalance } from "@/lib/balance/pendientes-balance"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -185,7 +185,7 @@ export function PapelesDeBalance() {
   /** 🏦 A-FEAT-1430 paso 4: las propuestas de conciliación del ejercicio (se calculan al abrir el recorrido). */
   const [conciliacion, setConciliacion] = useState<{ movimientos: Tema[]; deudas: Tema[]; cheques: Tema[]; historicos: number; avisos: string[]; calculado: string } | null>(null)
   const [cargandoConciliacion, setCargandoConciliacion] = useState<string | null>(null)
-  const calcularConciliacion = useCallback(async () => {
+  const calcularConciliacion = useCallback(async (silencioso = false) => {
     if (!libro) return
     const desde = primerDiaDelEjercicio(libro.ejercicio), hasta = libro.ejercicio.fechaCierre
     setCargandoConciliacion("empezando…")
@@ -200,7 +200,7 @@ export function PapelesDeBalance() {
       setConciliacion({ movimientos: mov.temas, deudas: temasDeDeudas(r.deudas, empresa.id), cheques: temasDeCheques(ch.cruces, ch.extractoHasta),
         historicos: mov.historicos, avisos: datos.avisos,
         calculado: new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) })
-      if (datos.avisos.length) toast.warning(`Conciliación: no se pudo leer ${datos.avisos.length} cosa(s) — ${datos.avisos.slice(0, 2).join(" · ")}`)
+      if (datos.avisos.length && !silencioso) toast.warning(`Conciliación: no se pudo leer ${datos.avisos.length} cosa(s) — ${datos.avisos.slice(0, 2).join(" · ")}`)
     } catch (e) {
       toast.error("No se pudieron calcular las propuestas de conciliación: " + (e as Error).message)
     } finally { setCargandoConciliacion(null) }
@@ -208,6 +208,24 @@ export function PapelesDeBalance() {
   // Se calculan la primera vez que se abre el recorrido (después, con «↻ Recalcular»).
   useEffect(() => { if (verRecorrido && libro && !conciliacion && !cargandoConciliacion) void calcularConciliacion() }, [verRecorrido, libro]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setConciliacion(null) }, [libro])
+  /**
+   * ↻ Al VOLVER a la pestaña del recorrido, la conciliación se recalcula sola (JMS 31/10: «que se actualice solo al volver
+   * a su pestaña y vemos si ralentiza»): los links abren en otra pestaña, se concilia allá, y al volver los temas resueltos
+   * se van sin apretar «↻ Recalcular». Sólo si estuvo afuera más de unos segundos y no hay otro cálculo en curso. Lo que
+   * se cambia en otras pantallas (una factura, una marca) sigue pidiendo «↻ Volver a armar».
+   */
+  const ocultoDesde = useRef<number | null>(null)
+  useEffect(() => {
+    if (!verRecorrido || !libro) return
+    const alCambiar = () => {
+      if (document.visibilityState === "hidden") { ocultoDesde.current = Date.now(); return }
+      const afuera = ocultoDesde.current ? Date.now() - ocultoDesde.current : 0
+      ocultoDesde.current = null
+      if (afuera > 3000 && !cargandoConciliacion && conciliacion) void calcularConciliacion(true)
+    }
+    document.addEventListener("visibilitychange", alCambiar)
+    return () => document.removeEventListener("visibilitychange", alCambiar)
+  }, [verRecorrido, libro, cargandoConciliacion, conciliacion, calcularConciliacion])
   /**
    * 🧾 A-FEAT-1439: lo PRESENTADO a ARCA (libro IVA de cada mes, `public.ddjj_presentadas`), para que el recorrido
    * muestre las ventas contra lo declarado — la fuente objetiva al lado de la app.
