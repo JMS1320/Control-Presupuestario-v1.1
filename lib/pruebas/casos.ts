@@ -265,7 +265,7 @@ import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla,
   juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves } from "@/lib/mails/registro"
 import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
 import { partesDeRuta, problemaDeRuta, estadoDestino, idDeLinkDrive } from "@/lib/archivo/destinos"
-import { mailsParaArchivar, mailsParaCuota, agruparPorRegla, anioDeMail, vinculosConArchivos, controlArchivado } from "@/lib/mails/lotes"
+import { mailsParaArchivar, mailsParaCuota, agruparPorRegla, anioDeMail, vinculosConArchivos, controlArchivado, agruparPorTema, estadoSeleccion } from "@/lib/mails/lotes"
 import { leerDocumento, templateSugerido, cuotaSugerida, huellaCuota, diferenciaCuota } from "@/lib/mails/leer-documento"
 import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
 import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe, cuentaCorriente } from "@/lib/polizas/resumen-ejercicio"
@@ -10322,6 +10322,16 @@ export function correrCasos(): Resultado[] {
         L({ id: "q4" }), L({ id: "q5", tipo: "factura", vinculos: [{ schema: "drive", tabla: "archivo", id: "5" }] }),
       ]).map(m => m.id).join(",")
       chequear("Mails", "💲 Pasan a cuota sólo los archivados que no se aplicaron ni se marcaron «no va» (y nunca las facturas)", "q1", vPc, vPc === "q1", "A-FEAT-1442")
+      // 📦 A-FEAT-1447: separar por asunto un mismo remitente — los 13 asuntos reales de la contadora (captura de JMS 31/10)
+      const asuntosContadora = ["Re: 2 Facturas de Venta de hacienda para emitir", "Re: SICORE - desde Marzo 2026 en adelante", "Re: IIBB 09/2026 - ARECO MERCEDES",
+        "Re: Subdiarios MSA Septiembre 2026", "IIBB 09/2026 - ARECO MERCEDES", "Re: SICORE - desde Marzo 2026 en adelante", "Re: SICORE - desde Marzo 2026 en adelante",
+        "Re: Subdiarios Agosto", "Re: SICORE - desde Marzo 2026 en adelante", "Re: SICORE - desde Marzo 2026 en adelante", "Re: Subdiarios 07 2026 Julio",
+        "DJ IIBB 2026/07 - Maria De La Mercedes Areco", "Re: SICORE - desde Marzo 2026 en adelante"]
+      const vTm = agruparPorTema(asuntosContadora.map((a, i) => M({ id: `c${i}`, asunto: a }))).map(t => `${t.clave} ${t.mails.length}`).join(" | ")
+      chequear("Mails", "📦 Por tema del asunto: sin RE:, fechas, meses ni el nombre del cliente — la contadora queda en SICORE, IIBB (también la «DJ IIBB»), Subdiarios y Facturas",
+        "sicore 6 | iibb 3 | subdiarios 3 | facturas 1", vTm, vTm === "sicore 6 | iibb 3 | subdiarios 3 | facturas 1", "A-FEAT-1447")
+      const vSel = [estadoSeleccion(["a", "b"], new Set(["a", "b", "x"])), estadoSeleccion(["a", "b"], new Set(["a"])), estadoSeleccion(["a", "b"], new Set())].join(" ")
+      chequear("Mails", "📦 La casilla del título: todos / algunos (–) / ninguno", "todos algunos ninguno", vSel, vSel === "todos algunos ninguno", "A-FEAT-1447")
       chequear("Mails", "🔽 «Qué se hizo» se filtra por clase, no por factura", "factura archivada | reenvío leído | boletas_arba", vCl, vCl === "factura archivada | reenvío leído | boletas_arba", "A-FEAT-1441")
     }
 

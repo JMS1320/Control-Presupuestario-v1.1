@@ -19,9 +19,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { IconoDestinoArchivo, useDestinoArchivo } from "@/components/destino-archivo"
 import { PasarACuota } from "@/components/mails-a-cuota"
 import { ExternalLink, Paperclip, RefreshCw } from "lucide-react"
-import { claveDeTipoMail, linkGmail, type MailRegistrado } from "@/lib/mails/registro"
+import { claveDeTipoMail, linkGmail, reglaParaAlcance, mailsQueAlcanza, contraparteDeMail, problemaDeRegla, type MailRegistrado, type ReglaMail } from "@/lib/mails/registro"
 import {
-  mailsParaArchivar, mailsParaCuota, agruparPorRegla, anioDeMail, vinculosConArchivos, controlArchivado, esDocumento,
+  mailsParaArchivar, mailsParaCuota, agruparPorRegla, agruparPorTema, estadoSeleccion, anioDeMail, vinculosConArchivos, controlArchivado, esDocumento,
   type GrupoLote, type ReglaConDestino, type ResultadoArchivo,
 } from "@/lib/mails/lotes"
 
@@ -83,15 +83,15 @@ export function LotesMails() {
         onCambio={(id, v) => setMails(prev => prev.map(m => m.id === id ? { ...m, vinculos: v } : m))} />
       {!cargando && !error && grupos.length === 0 && <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">No hay documentos pendientes de guardar en este período.</p>}
       {grupos.map(g => (
-        <GrupoParaGuardar key={g.clave} grupo={g} destinos={destinos} setDestinos={setDestinos}
+        <GrupoParaGuardar key={g.clave} grupo={g} destinos={destinos} setDestinos={setDestinos} reglas={reglas} onRecargar={() => void cargar()}
           onDestino={clave => g.regla && ponerDestino(g.regla.id, clave)} onArchivados={quitarArchivados} />
       ))}
     </div>
   )
 }
 
-function GrupoParaGuardar({ grupo, destinos, setDestinos, onDestino, onArchivados }: {
-  grupo: GrupoLote; destinos: Destino[]; setDestinos: (d: Destino[]) => void
+function GrupoParaGuardar({ grupo, destinos, setDestinos, onDestino, onArchivados, reglas, onRecargar }: {
+  grupo: GrupoLote; destinos: Destino[]; setDestinos: (d: Destino[]) => void; reglas: ReglaConDestino[]; onRecargar: () => void
   onDestino: (clave: string) => void; onArchivados: (ids: string[], vinculos: Record<string, MailRegistrado["vinculos"]>) => void
 }) {
   const clave = grupo.regla?.archivo_destino ?? ""
@@ -102,6 +102,47 @@ function GrupoParaGuardar({ grupo, destinos, setDestinos, onDestino, onArchivado
   const [resultados, setResultados] = useState<Record<string, string>>({})
   const [nuevo, setNuevo] = useState(false)
   useEffect(() => { setMarcados(new Set(grupo.mails.map(m => m.id))) }, [grupo.mails])
+  // ✅ A-FEAT-1447: tildar todos / ninguno (del grupo o de un tema)
+  const alternarVarios = (ids: string[]) => setMarcados(s => {
+    const n = new Set(s)
+    if (estadoSeleccion(ids, s) === "todos") ids.forEach(id => n.delete(id)); else ids.forEach(id => n.add(id))
+    return n
+  })
+  const temas = useMemo(() => agruparPorTema(grupo.mails), [grupo.mails])
+  const [separando, setSeparando] = useState<{ clave: string; patron: string } | null>(null)
+  /**
+   * ↪ A-FEAT-1447: este TEMA va a otra carpeta. Crea (o reusa) la regla «remitente + asunto contiene» —gana a la del
+   * grupo— y le pasa esos mails; al recargar, el tema es su propio grupo con su 📁. Nada se archiva acá.
+   */
+  const separar = async () => {
+    if (!separando || !grupo.regla) return
+    const patron = separando.patron.trim()
+    if (patron.length < 3) { toast.error("Escribí qué tiene que decir el asunto (al menos 3 letras)."); return }
+    const muestra = temas.find(t => t.clave === separando.clave)?.mails[0] ?? grupo.mails[0]
+    const { existente, regla } = reglaParaAlcance(reglas, muestra, "remitente_asunto", grupo.regla.tipo, patron)
+    const problema = problemaDeRegla(regla, [regla.tipo])
+    if (problema) { toast.error(problema); return }
+    let reglaId: string
+    if (existente) { reglaId = existente.id }
+    else {
+      const { data, error } = await supabase.from("mails_reglas").insert({ ...regla, accion: grupo.regla.accion, nota: "separada por asunto desde Para guardar" }).select("id").single()
+      if (error) { toast.error("No se pudo crear la regla: " + error.message); return }
+      reglaId = data.id
+    }
+    const reglasDespues = (existente ? reglas : [...reglas, { id: reglaId, activa: true, nota: null, ...regla, accion: grupo.regla.accion }]) as ReglaMail[]
+    const quien = contraparteDeMail(muestra)
+    const { data: cand, error: eC } = await supabase.from("mails_registro").select("id, sentido, remitente, destinatarios, asunto, tipo_manual")
+      .or(`remitente.eq.${quien},destinatarios.ilike.${quien}%`)
+    if (eC) { toast.error(eC.message); return }
+    const { alcanza } = mailsQueAlcanza(cand ?? [], regla, reglasDespues, regla.tipo)
+    for (let i = 0; i < alcanza.length; i += 100) {
+      const { error } = await supabase.from("mails_registro").update({ regla_id: reglaId, updated_at: ahoraISO() }).in("id", alcanza.slice(i, i + 100))
+      if (error) { toast.error("No se pudo pasar los mails a la regla nueva: " + error.message); return }
+    }
+    toast.success(`«${patron}» de ${quien} ahora es su propio grupo (${alcanza.length} mails): elegile su carpeta`)
+    setSeparando(null)
+    onRecargar()
+  }
 
   /** Elegir (o crear) el destino de la regla — § 🧩: ahí mismo. */
   const elegirDestino = async (c: string) => {
@@ -162,6 +203,11 @@ function GrupoParaGuardar({ grupo, destinos, setDestinos, onDestino, onArchivado
   return (
     <div className="space-y-2 rounded-md border p-3">
       <div className="flex flex-wrap items-center gap-2">
+        {grupo.regla && (
+          <input type="checkbox" title="Tildar todos / ninguno" checked={estadoSeleccion(grupo.mails.map(m => m.id), marcados) === "todos"}
+            ref={el => { if (el) el.indeterminate = estadoSeleccion(grupo.mails.map(m => m.id), marcados) === "algunos" }}
+            onChange={() => alternarVarios(grupo.mails.map(m => m.id))} />
+        )}
         <span className="font-medium">{grupo.titulo}</span>
         <span className="text-xs text-muted-foreground">{grupo.mails.length} mail{grupo.mails.length > 1 ? "s" : ""}</span>
         {!grupo.regla ? (
@@ -184,22 +230,47 @@ function GrupoParaGuardar({ grupo, destinos, setDestinos, onDestino, onArchivado
           </Button>
         )}
       </div>
-      <ul className="space-y-0.5 text-xs">
-        {grupo.mails.map(m => (
-          <li key={m.id} className="flex items-center gap-2">
-            <input type="checkbox" checked={marcados.has(m.id)} disabled={!grupo.regla}
-              onChange={() => setMarcados(s => { const n = new Set(s); if (n.has(m.id)) n.delete(m.id); else n.add(m.id); return n })} />
-            <span className="w-16 tabular-nums text-muted-foreground">{fmt(m.fecha)}</span>
-            <a href={linkGmail(m.casilla, m.mensaje_id)} target="_blank" rel="noopener noreferrer" className="inline-flex flex-1 items-center gap-1 truncate hover:underline">
-              {m.asunto || "(sin asunto)"}<ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
-            </a>
-            <span className="inline-flex items-center gap-0.5 text-muted-foreground" title={(m.adjuntos ?? []).map(a => a.nombre).join("\n")}>
-              <Paperclip className="h-3 w-3" />{(m.adjuntos ?? []).filter(esDocumento).length}
-            </span>
-            {resultados[m.id] && <span className={resultados[m.id].startsWith("✗") ? "text-red-600" : resultados[m.id].startsWith("⚠") ? "text-amber-700" : "text-green-700"}>{resultados[m.id]}</span>}
-          </li>
-        ))}
-      </ul>
+      {(temas.length > 1 ? temas : [{ clave: "", mails: grupo.mails }]).map(t => (
+        <div key={t.clave || "todos"} className="space-y-0.5">
+          {t.clave && (
+            <div className="mt-1 flex flex-wrap items-center gap-2 border-t pt-1 text-xs">
+              {grupo.regla && (
+                <input type="checkbox" title={`Tildar todos / ninguno de «${t.clave}»`} checked={estadoSeleccion(t.mails.map(m => m.id), marcados) === "todos"}
+                  ref={el => { if (el) el.indeterminate = estadoSeleccion(t.mails.map(m => m.id), marcados) === "algunos" }}
+                  onChange={() => alternarVarios(t.mails.map(m => m.id))} />
+              )}
+              <span className="font-semibold">«{t.clave}»</span><span className="text-muted-foreground">{t.mails.length}</span>
+              {grupo.regla && (separando?.clave === t.clave ? (
+                <span className="flex items-center gap-1">
+                  asunto contiene <Input autoFocus value={separando.patron} onChange={e => setSeparando({ clave: t.clave, patron: e.target.value })} className="h-6 w-36 text-xs"
+                    onKeyDown={e => { if (e.key === "Enter") void separar() }} />
+                  <Button size="sm" className="h-6 text-xs" onClick={() => void separar()}>Separar</Button>
+                  <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => setSeparando(null)}>Cancelar</Button>
+                </span>
+              ) : (
+                <button type="button" className="text-blue-700 hover:underline" title="Estos mails van a otra carpeta: pasan a ser su propio grupo"
+                  onClick={() => setSeparando({ clave: t.clave, patron: t.clave })}>↪ otra carpeta</button>
+              ))}
+            </div>
+          )}
+          <ul className="space-y-0.5 text-xs">
+            {t.mails.map(m => (
+              <li key={m.id} className="flex items-center gap-2">
+                <input type="checkbox" checked={marcados.has(m.id)} disabled={!grupo.regla}
+                  onChange={() => setMarcados(s => { const n = new Set(s); if (n.has(m.id)) n.delete(m.id); else n.add(m.id); return n })} />
+                <span className="w-16 tabular-nums text-muted-foreground">{fmt(m.fecha)}</span>
+                <a href={linkGmail(m.casilla, m.mensaje_id)} target="_blank" rel="noopener noreferrer" className="inline-flex flex-1 items-center gap-1 truncate hover:underline">
+                  {m.asunto || "(sin asunto)"}<ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+                </a>
+                <span className="inline-flex items-center gap-0.5 text-muted-foreground" title={(m.adjuntos ?? []).map(a => a.nombre).join("\n")}>
+                  <Paperclip className="h-3 w-3" />{(m.adjuntos ?? []).filter(esDocumento).length}
+                </span>
+                {resultados[m.id] && <span className={resultados[m.id].startsWith("✗") ? "text-red-600" : resultados[m.id].startsWith("⚠") ? "text-amber-700" : "text-green-700"}>{resultados[m.id]}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
       <DialogoDestinoNuevo abierto={nuevo} onCerrar={() => setNuevo(false)} onCrear={crearDestino} />
     </div>
   )

@@ -84,3 +84,39 @@ export function mailsParaCuota(mails: MailRegistrado[]): MailRegistrado[] {
   return mails.filter(m => tipoDeMail(m) !== "factura" && (m.vinculos ?? []).some(v => v.schema === "drive")
     && !(m.vinculos ?? []).some(v => v.tabla === "cuotas_egresos_sin_factura" || v.schema === "ninguna"))
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Separar por ASUNTO un mismo remitente — A-FEAT-1447 (nota 🌙 JMS 31/10: «algunas tendrán una lógica y otras otra de
+// acuerdo al asunto… mensuales o anuales, que irían a distintas carpetas»)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const sinTildesL = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+const MESES = "enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre"
+const VACIAS = new Set(["desde", "hasta", "para", "adelante", "sobre", "envio", "adjunto", "adjunta", "pedido", "maria", "mercedes", "areco"])
+
+/** Pura: el TEMA de un asunto — sin RE:/Fwd:, fechas, meses, años ni números («Re: SICORE - desde Marzo 2026» → «sicore desde en adelante»). */
+export function temaDeAsunto(asunto: string | null): string {
+  return sinTildesL(String(asunto ?? "").replace(/^\s*((re|rv|fw|fwd|tr)\s*:\s*)+/i, ""))
+    .replace(/\b\d{1,4}[/-]\d{1,4}([/-]\d{1,4})?\b/g, " ")
+    .replace(new RegExp(`\b(${MESES})\b`, "g"), " ")
+    .replace(/\b\d+\b/g, " ").replace(/[^a-z0-9ñ]+/g, " ").replace(/\s+/g, " ").trim()
+}
+
+/** Pura: la palabra que define el tema, para el «asunto contiene» de la regla (la primera de 4+ letras que dice algo). */
+export function claveDeTema(asunto: string | null): string {
+  const palabras = temaDeAsunto(asunto).split(" ").filter(p => p.length >= 4 && !VACIAS.has(p))
+  return palabras[0] ?? temaDeAsunto(asunto).split(" ")[0] ?? ""
+}
+
+/** Pura: los mails de un grupo, por tema (la palabra clave del asunto). Los más numerosos primero. */
+export function agruparPorTema(mails: MailRegistrado[]): { clave: string; mails: MailRegistrado[] }[] {
+  const g = new Map<string, MailRegistrado[]>()
+  for (const m of mails) { const k = claveDeTema(m.asunto) || "(sin asunto)"; if (!g.has(k)) g.set(k, []); g.get(k)!.push(m) }
+  return [...g.entries()].map(([clave, ms]) => ({ clave, mails: ms })).sort((a, b) => b.mails.length - a.mails.length || a.clave.localeCompare(b.clave))
+}
+
+/** Pura: el estado de la casilla del título: todos, ninguno o algunos (para el «–»). */
+export function estadoSeleccion(ids: string[], marcados: Set<string>): "todos" | "ninguno" | "algunos" {
+  const n = ids.filter(id => marcados.has(id)).length
+  return n === 0 ? "ninguno" : n === ids.length ? "todos" : "algunos"
+}

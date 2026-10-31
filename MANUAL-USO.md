@@ -3835,6 +3835,9 @@ Todo lo que entra y sale de la casilla **sanmanuel.sp**, registrado y con link a
 - Tildá los mails y **Archivar**: cada adjunto va a la **carpeta del año del mail**, como «AAAA-MM-DD - nombre del archivo». **Nada se pisa ni se duplica**: si ya estaba, queda como estaba. Si tu carpeta del año se llama distinto («Año 2026»), la usa.
 - Lo archivado queda en el Registro («✔ archivado», con el 📎 en verde que abre el archivo) y sale de esta lista.
 
+- **Tildar de a muchos**: la casilla del título del grupo (y la de cada tema) tilda o destilda todos.
+- **Un mismo remitente, varias carpetas**: adentro del grupo, los mails se ordenan por **tema del asunto** (SICORE, IIBB, Subdiarios…). **↪ otra carpeta** en un tema crea la regla «de este remitente, con este asunto» y ese tema pasa a ser su propio grupo, con su carpeta. Vale también para lo que llegue después.
+
 **💲 Pasar el monto a su cuota** *(2026-10-31)*
 - Arriba de «Para guardar» aparecen los documentos **ya archivados** que todavía no pasaron a su cuota. **📄 Leer** lee el PDF y propone el **importe**, el **vencimiento**, el **template** (el de la vez anterior para ese remitente, o el más parecido) y la **cuota** sin pagar más cercana. Todo se puede cambiar; si leyó varios importes, «otros…» los ofrece.
 - **Aplicar** cambia sólo el monto y el vencimiento de esa cuota (como en Boletas ARBA), después de confirmar. Queda anotado en el mail lo que se leyó y lo que pusiste. **No va** lo saca de la lista sin tocar nada.
