@@ -18,6 +18,9 @@ import { Button } from "@/components/ui/button"
 import { AlertTriangle, CalendarClock, CheckCircle2, ChevronDown, ChevronRight } from "lucide-react"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { impuestosAAvisar, ESTADOS_SIN_PAGAR, type CuotaImpuesto, type ImpuestoAvisado } from "@/lib/impuestos/vencimientos"
+import { PasarTarea } from "@/components/boton-revision"
+import { senalMonto } from "@/lib/revisiones/nivel"
+import { linkPagar } from "@/lib/revisiones/avisos"
 
 const plata = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fecha = (iso: string) => iso.split("-").reverse().join("/")
@@ -100,7 +103,7 @@ function Lista({ titulo, items, vencido = false }: { titulo: string; items: Impu
       <div className="overflow-x-auto rounded border bg-white">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-left text-xs text-gray-500">
-            <tr><th className="px-2 py-1">Impuesto</th><th className="px-2 py-1">Empresa</th><th className="px-2 py-1">Cuota</th><th className="px-2 py-1">Vence</th><th className="px-2 py-1"></th><th className="px-2 py-1 text-right">Monto</th><th className="px-2 py-1">Estado</th></tr>
+            <tr><th className="px-2 py-1">Impuesto</th><th className="px-2 py-1">Empresa</th><th className="px-2 py-1">Cuota</th><th className="px-2 py-1">Vence</th><th className="px-2 py-1"></th><th className="px-2 py-1 text-right">Monto</th><th className="px-2 py-1">Estado</th><th className="px-2 py-1"></th></tr>
           </thead>
           <tbody>
             {visibles.map(x => (
@@ -114,6 +117,14 @@ function Lista({ titulo, items, vencido = false }: { titulo: string; items: Impu
                 </td>
                 <td className="px-2 py-1 text-right">{plata(x.monto)}</td>
                 <td className="px-2 py-1 text-gray-600">{x.estado === "pagar" ? "marcada para pagar" : "pendiente"}</td>
+                <td className="px-2 py-1">
+                  {/* 🚩 A-FEAT-1449: la tarea queda atada a ESTA cuota y se cierra sola cuando se concilia (script 152) */}
+                  <PasarTarea ancla={{ schema: "public", tabla: "cuotas_egresos_sin_factura", registroId: x.id, descripcion: `${x.impuesto} · ${x.empresa} · cuota ${x.numero_cuota ?? ""} · vence ${fecha(x.vencimiento)}` }}
+                    inicial={{ motivo: `Pagar ${x.impuesto} cuota ${x.numero_cuota ?? ""} (${x.empresa}) — ${plata(x.monto)}`, origen: "cuota", hasta: x.vencimiento,
+                      senales: [{ nombre: "impuestos", peso: 1 }, ...senalMonto(x.monto)],
+                      cuota: { id: x.id, texto: `${x.impuesto} cuota ${x.numero_cuota ?? ""}` }, avisoTipo: "vencimiento_impuesto" }} />
+                  <a href={linkPagar({ cuotaId: x.id, buscar: x.impuesto })} className="ml-1 rounded px-1.5 py-0.5 text-xs text-green-700 hover:bg-green-50" title="Abrir el Cash Flow con esta cuota seleccionada, para sacar el pago">💸 Pagar</a>
+                </td>
               </tr>
             ))}
           </tbody>

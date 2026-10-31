@@ -24,6 +24,7 @@ import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { agruparGraves, gravedadDeMail, linkGmail, tipoDeMail, type GrupoGrave, type MailRegistrado } from "@/lib/mails/registro"
 import { PasarTarea } from "@/components/boton-revision"
 import { senalesDeMail } from "@/lib/revisiones/nivel"
+import { linkPagar, tipoAvisoDeMail } from "@/lib/revisiones/avisos"
 
 const COLS = "id, casilla, mensaje_id, sentido, fecha, remitente, remitente_nombre, destinatarios, asunto, extracto, adjuntos, tipo, tipo_manual, accion, estado, procesado_por, vinculos, seguimiento, seguimiento_nota, seguimiento_fecha, seguimiento_at"
 const MOSTRAR = 6
@@ -108,7 +109,9 @@ export function AlertaMailsGraves() {
                       <td className="whitespace-nowrap px-2 py-1.5 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <PasarTarea ancla={{ schema: "public", tabla: "mails_registro", registroId: g.ultimo.id, descripcion: `Mail: ${g.asunto} — ${g.remitente}${g.ids.length > 1 ? ` (×${g.ids.length})` : ""}`.slice(0, 280) }}
-                            inicial={{ motivo: g.asunto, origen: "mail", senales: senalesDeMail(gravedadDeMail(g.ultimo), tipoDeMail(g.ultimo)) }} />
+                            inicial={{ motivo: g.asunto, origen: "mail", senales: senalesDeMail(gravedadDeMail(g.ultimo), tipoDeMail(g.ultimo)), elegirCuota: { pistas: [g.asunto, g.remitente], fechaRef: g.ultimo.fecha }, avisoTipo: tipoAvisoDeMail(tipoDeMail(g.ultimo)) }} />
+                          {/* 💸 Tanda 3 (JMS: «opción de transferir vía link: me lleva a Cash Flow identificando template o factura») */}
+                          <a href={linkPagar({ buscar: (g.remitente.split(/[\s<@]/)[0] || g.remitente).slice(0, 30) })} className="rounded px-1.5 py-0.5 text-xs text-green-700 hover:bg-green-50" title="Abrir el Cash Flow buscando a este remitente, para sacar el pago">💸 Ir a pagar</a>
                           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => terminar(g)}>✔ Terminado{g.ids.length > 1 ? ` (${g.ids.length})` : ""}</Button>
                         </div>
                       </td>

@@ -163,3 +163,26 @@ export function diferenciaCuota(antes: number | null, nuevo: number): { texto: s
   const pct = ((nuevo - antes) / antes) * 100
   return { texto: `${pct > 0 ? "+" : ""}${pct.toFixed(1)} % sobre lo que tenía la app`, grande: Math.abs(pct) > 30 }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// La cuota a la que queda ATADA una tarea (para que se cierre sola al conciliarse) — A-FEAT-1449 tanda 2
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Pura: el número de cuota que dice un texto («…complementario cuota 3 del año 2026» → 3), o null. */
+export function numeroDeCuota(texto: string | null | undefined): number | null {
+  const m = String(texto ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").match(/\bcuota\s*n?[°º.]?\s*(\d{1,2})\b/)
+  return m ? Number(m[1]) : null
+}
+
+/**
+ * Pura: la cuota propuesta para atar una tarea. Si el texto dice el número («cuota 3»), la cuota SIN CONCILIAR con ese
+ * número (aunque ya haya vencido: es justo el caso de la mora); si no, la más cercana como en `cuotaSugerida`.
+ */
+export function cuotaParaCierre(cuotas: CuotaSimple[], texto: string | null, fechaMail: string): CuotaSimple | null {
+  const n = numeroDeCuota(texto)
+  if (n != null) {
+    const conNumero = cuotas.filter(c => c.numero_cuota === n && String(c.estado).toLowerCase() !== "conciliado")
+    if (conNumero.length) return conNumero.sort((a, b) => String(b.fecha_vencimiento ?? "").localeCompare(String(a.fecha_vencimiento ?? "")))[0]
+  }
+  return cuotaSugerida(cuotas, null, fechaMail)
+}

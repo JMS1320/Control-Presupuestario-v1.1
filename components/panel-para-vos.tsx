@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Flag, Loader2, CalendarClock } from "lucide-react"
 import { paraVos, estaVencida, type MarcaParaVos } from "@/lib/revisiones/para-vos"
 import { nivelDeTarea, NIVELES } from "@/lib/revisiones/nivel"
+import { cuotaDeTarea, linkPagar } from "@/lib/revisiones/avisos"
 import { hoyArgentina } from "@/lib/fechas"
 
 interface Marca extends MarcaParaVos {
@@ -25,6 +26,7 @@ interface Marca extends MarcaParaVos {
   subpantalla?: string | null
   seguimiento?: { fecha: string; texto: string; autor: string | null }[] | null
   resolucion?: string | null
+  cierre_auto?: string | null
 }
 
 const dm = (f: string) => f.slice(0, 10).split("-").reverse().slice(0, 2).join("/")
@@ -43,7 +45,10 @@ export function PanelParaVos() {
       setYo({ mail: j.yo?.mail ?? null, etiqueta: j.yo?.etiqueta ?? null })
     } catch { setMarcas([]) }
   }, [])
-  useEffect(() => { cargar() }, [cargar])
+  // 📅 Tanda 3: antes de cargar, se crean (si faltan) las tareas del mes de las obligaciones recurrentes
+  useEffect(() => {
+    fetch("/api/obligaciones", { method: "POST" }).catch(() => {}).finally(() => { void cargar() })
+  }, [cargar])
 
   const responder = async (id: string, cerrar: boolean) => {
     const t = texto.trim()
@@ -99,6 +104,8 @@ export function PanelParaVos() {
                   {NIVELES[nv.nivel].emoji} {NIVELES[nv.nivel].etiqueta}
                 </span>)}
               <span>{m.motivo}</span>
+              {cuotaDeTarea(m.cierre_auto) && mia && <a href={linkPagar({ cuotaId: cuotaDeTarea(m.cierre_auto) })} className="rounded px-1.5 py-0.5 text-[11px] font-normal text-green-700 hover:bg-green-50" title="Abrir el Cash Flow con la cuota seleccionada, para sacar el pago">💸 Pagar</a>}
+              {m.cierre_auto?.startsWith("cuota_conciliada:") && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-normal text-gray-600" title="Se cierra sola cuando el pago de su cuota queda conciliado">🔒 se cierra sola al conciliar</span>}
             </div>
             <div className="text-xs text-muted-foreground">
               {m.descripcion_ref}{m.pantalla ? ` · ${m.pantalla}${m.subpantalla ? ` → ${m.subpantalla}` : ""}` : ""} · {mia ? `de ${m.creado_por ?? "—"}` : `para ${m.asignado_a}`} · {dm(m.created_at)}

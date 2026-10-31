@@ -3803,7 +3803,13 @@ solo, y al pie dice cuántos pagos se exportaron para que lo cruces con la panta
 - **🚩 Pasarle a…** está en cada mail (Egresos → Mails) y en el aviso de mails graves: arma la tarea con el asunto y las señales del mail, y elegís a quién va — cualquier usuario o **🤖 Claude** (lo de Claude lo ve al abrir la próxima sesión).
 - Al crear una tarea, **¿quién confirma que está hecha?**: si elegís «Yo», cuando la persona aprieta «Listo» la tarea no se cierra: te aparece en **«✔ Para que confirmes»** con lo que dijo, y la **confirmás** o la **devolvés** con un motivo.
 
-→ ⚠️ Sin probar todavía → A-TEST-1304
+- **🔒 Se cierra sola**: una tarea atada a una cuota se cierra **sola cuando el pago de esa cuota queda conciliado** (y el mail de donde salió queda «terminado»). En el aviso de impuestos, «Pasarle a…» ya viene atada a su cuota; desde un mail, tildás «🔒 Se cierra sola…» y elegís template y cuota (viene propuesta la que dice el asunto, ej. «cuota 3»). Marcar «pagado» sin conciliar no la cierra.
+
+- **📮 Quién recibe qué** (Egresos → Mails → Reglas, abajo): cada tipo de aviso tiene la persona a la que va por defecto; «Pasarle a…» la propone sola, y si elegís a otra podés tildar «Siempre que sea…, a esta persona». Los 🔴 son tipos sin nadie.
+- **📅 Lo que hay que hacer todos los meses** (mismo lugar): cada obligación crea sola, cada mes, una tarea con fecha en el «Para vos» de quien recibe ese tipo de aviso (ej. los Subdiarios del 10 → Ulises). Se agregan ahí mismo.
+- **💸 Pagar**: en el aviso de impuestos, en una tarea atada a una cuota y en los mails graves («Ir a pagar»), abre el **Cash Flow con esa cuota seleccionada** (o buscando al remitente) para sacar el pago desde ahí.
+
+→ ⚠️ Sin probar todavía → A-TEST-1304 · A-TEST-1305 · A-TEST-1306
 
 ## 📬 Egresos → Mails *(2026-10-30, sólo admin)*
 
