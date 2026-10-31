@@ -3332,6 +3332,12 @@ Alta de `MA` (CUIL 27-06682461-1, `plano_ipc`, MSA, ingreso 01/06/2025, id fijo 
 ### 2026-10-29 · Stock declarado al 30/06/2025 de MSA (script 132, DATOS) — A-FEAT-1420 — ✅ CORRIDO con OK de JMS
 Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantidad 0, marca `[script 132]` en observaciones), 94 renglones en `stock_inicio` ($ 31.730.444,08 = la planilla) y 3 `pasturas`. Se corre con `scripts/132-stock-inicio-msa-30-06-2025.mts` (desde su `.json`; el `.sql` es el registro legible). Deshacer: `scripts/132-stock-inicio-msa-30-06-2025-deshacer.sql` (por ids; frena si un producto ya tiene movimientos).
 
+### 2026-10-31 · VENTAS de lo presentado a ARCA — 2 columnas en `public.ddjj_presentadas` (script 145) — A-FEAT-1439 — ✅ CORRIDO 2026-10-31 con OK de JMS («1 ok»)
+`ventas jsonb` (las ventas del `comprobantes_ventas.csv` del zip) y `totales_ventas jsonb` (los totales de ventas del `libro_iva.xml`), vacías, con marca `[script 145]` en el comentario de cada columna. Sin RLS ni grants nuevos. Al reconstruir: correr `scripts/145-ddjj-presentadas-ventas.sql` después del 107. Deshacer: `-deshacer.sql` (verifica la marca de cada columna).
+
+### 2026-10-31 · Lo presentado a ARCA de MSA 25/26 cargado (script 146, DATOS) — A-FEAT-1439 — ✅ CORRIDO 2026-10-31 con OK de JMS («2 ok»)
+Los 12 libros IVA `202507 → 202606` (zips de «Sesion Claude Estanco») en `public.ddjj_presentadas`, con `cargado_por = '[script 146]'`: 563 compras y 14 ventas declaradas. Mismo camino que la pantalla (`armarYGuardarDdjj`) pero sin pasar compras a «DDJJ OK» ni avisar. Se corre con `scripts/146-cargar-ddjj-iva-msa-25-26.mts --escribir`. Deshacer: `scripts/146-cargar-ddjj-iva-msa-25-26-deshacer.sql` (por la marca).
+
 ### 2026-10-30 · Tablas de mails SÓLO ADMIN (script 142) — A-FEAT-1425 — ✅ CORRIDO 2026-10-30 con OK de JMS
 `recurso_tablas`: `mails_registro` y `mails_reglas` pasan de `egresos` a `importar.mails` con `restringe_lectura = true` (marca `[script 142]` en `motivo`). Verificado simulando el JWT de cada rol: admin lee y escribe; los demás, nada. Deshacer: `scripts/142-mails-lectura-solo-admin-deshacer.sql`.
 

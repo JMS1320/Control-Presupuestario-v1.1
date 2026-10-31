@@ -161,7 +161,11 @@ export function temasVentasVsArca(libro: LibroDiario, empresa: string, guardadas
     titulo: `Presentado a ARCA que no entra en el cuadro de ventas (${cv.noEntra.length})`,
     etiqueta: "No entra en el cuadro",
     que: cv.noEntra.map(n => `${n.cliente} ${n.comprobante} (${mesDe(n.subdiario)}, $ ${n.importe.toLocaleString("es-AR", { minimumFractionDigits: 2 })}): ${n.porQue}`).join(" · "),
-    propuesta: "Revisar con el contador si corresponde en ventas.",
+    // Las retenciones sólo se listan (van en «Retenciones sufridas»); lo que trae sólo total es una pregunta para el contador.
+    propuesta: [
+      cv.noEntra.some(n => /^Retenciones/.test(n.concepto)) ? "Retenciones / pagos a cuenta: sin acción, no van en la DDJJ de IVA (están en «Retenciones sufridas» del Libro Diario)." : "",
+      cv.noEntra.some(n => !/^Retenciones/.test(n.concepto)) ? "Lo que trae sólo total (sin neto ni IVA): preguntarle al contador si corresponde en ventas." : "",
+    ].filter(Boolean).join(" "),
     fuente: fuenteDeMeses(cv.noEntra.map(n => n.subdiario), v.porSubdiario, conVentas),
   })
 
