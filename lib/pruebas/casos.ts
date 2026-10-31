@@ -265,6 +265,7 @@ import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla,
   juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves } from "@/lib/mails/registro"
 import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
 import { partesDeRuta, problemaDeRuta, estadoDestino, idDeLinkDrive } from "@/lib/archivo/destinos"
+import { mailsParaArchivar, agruparPorRegla, anioDeMail, vinculosConArchivos, controlArchivado } from "@/lib/mails/lotes"
 import { controlarDebitos, cuotasEsperadas, esDeLaAseguradora, type CuotaEsperada, type MovimientoAseguradora } from "@/lib/polizas/control-debitos"
 import { resumenPorEjercicio, ejercicioDe, polizaAnteriorDe, cuentaCorriente } from "@/lib/polizas/resumen-ejercicio"
 import { aseguradoraAlCierre } from "@/lib/balance/seguros-al-cierre"
@@ -10260,6 +10261,31 @@ export function correrCasos(): Resultado[] {
       chequear("Archivo digital", "🗂️ Sin carpeta = ícono rojo; con carpeta, la ruta + el año; la ruta del usuario sin unidad ni «Mi unidad»; vacía o sin carpetas frena; un link de Drive sirve",
         "true | true | Mi unidad / SAN MANUEL / INMOBILIARIO / 2026 | I:\\Mi unidad\\X | SAN MANUEL>IMPUESTOS | vacía | sin carpeta | link ok | 1AbCdEfGhIj", vD,
         vD === "true | true | Mi unidad / SAN MANUEL / INMOBILIARIO / 2026 | I:\\Mi unidad\\X | SAN MANUEL>IMPUESTOS | vacía | sin carpeta | link ok | 1AbCdEfGhIj", "A-FEAT-1442")
+      // 📦 A-FEAT-1442 etapa 2: archivar por lotes desde Mails
+      const L = (o: Partial<MailRegistrado>): MailRegistrado => M({ accion: "guardar", tipo: "servicios", adjuntos: [{ nombre: "exp.pdf", tipo: "application/pdf" }], ...o })
+      const lm = [
+        L({ id: "e1", regla_id: "rE", remitente: "admin@consorcio.com" }), L({ id: "e2", regla_id: "rE", remitente: "admin@consorcio.com" }),
+        L({ id: "f1", tipo: "factura", regla_id: "rF" }),                                   // facturas: las toma el buscador
+        L({ id: "x1", adjuntos: [{ nombre: "firma.gif", tipo: "image/gif" }] }),            // sin documentos
+        L({ id: "a1", regla_id: "rE", vinculos: [{ schema: "drive", tabla: "archivo", id: "f", que: "x | u" }] }), // ya archivado
+        L({ id: "s1", regla_id: null, remitente: "nuevo@x.com" }),                          // sin regla
+        L({ id: "v1", accion: "avisar", regla_id: "rE" }),                                  // no es «guardar»
+      ]
+      const reglasL = [{ id: "rE", orden: 50, activa: true, remitente_patron: "admin@consorcio.com", asunto_patron: null, tipo: "servicios", accion: "guardar", nota: null, archivo_destino: "expensas" }] as any[]
+      const gl = agruparPorRegla(mailsParaArchivar(lm), reglasL)
+      const vLote = gl.map(g => `${g.regla ? g.regla.archivo_destino : "sin regla"}:${g.mails.map(m => m.id).join("+")}`).join(" | ")
+      chequear("Mails", "📦 Lote: sólo «guardar» con documentos, sin facturas ni lo ya archivado; agrupado por regla (con su destino), los sin regla aparte y al final",
+        "expensas:e1+e2 | sin regla:s1", vLote, vLote === "expensas:e1+e2 | sin regla:s1", "A-FEAT-1442")
+      const vY = [anioDeMail("2026-01-01T02:30:00Z"), anioDeMail("2026-01-01T03:30:00Z")].join(" ")
+      chequear("Mails", "📦 El año del mail es el de Argentina: el 31/12 a las 23:30 va a la carpeta del año que termina", "2025 2026", vY, vY === "2025 2026", "A-FEAT-1442")
+      const resA = { ok: true, guardados: [{ nombre: "a", id: "1", url: "u1" }], ya_estaban: [{ nombre: "b", id: "2", url: "u2" }], salteados: ["firma.png"] }
+      const vV = vinculosConArchivos([{ schema: "drive", tabla: "archivo", id: "1", que: "a | u1" }], resA).map(v => v.id).join(",") + " | " +
+        controlArchivado(3, resA).cierra + " " + controlArchivado(4, resA).cierra + " | " + controlArchivado(3, resA).texto
+      chequear("Mails", "📦 Archivar suma los vínculos sin repetir el mismo archivo, y el control: guardados + ya estaban + salteados tiene que dar los adjuntos",
+        "1,2 | true false | 1 guardado + 1 ya estaba + 1 salteado = 3 de 3", vV, vV === "1,2 | true false | 1 guardado + 1 ya estaba + 1 salteado = 3 de 3", "A-FEAT-1442")
+      const pd = procesadoDeMail({ mensaje_id: "z", procesado_por: "archivado en 2026", vinculos: [{ schema: "drive", tabla: "archivo", id: "9", que: "2026-10-01 - exp.pdf | https://drive/x" }] }, [], [])
+      const vP2 = pd ? `${pd.ok}:${pd.texto}:${pd.link}` : "-"
+      chequear("Mails", "📦 Lo archivado se ve en «Qué se hizo» con el link al archivo (y el 📎 en verde)", "true:archivado: 1 archivo:https://drive/x", vP2, vP2 === "true:archivado: 1 archivo:https://drive/x", "A-FEAT-1442")
       chequear("Mails", "🔽 «Qué se hizo» se filtra por clase, no por factura", "factura archivada | reenvío leído | boletas_arba", vCl, vCl === "factura archivada | reenvío leído | boletas_arba", "A-FEAT-1441")
     }
 

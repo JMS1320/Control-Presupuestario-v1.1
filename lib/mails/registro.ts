@@ -48,6 +48,7 @@ export interface MailRegistrado {
   estado: string
   procesado_por: string | null
   vinculos: { schema: string; tabla: string; id: string; que?: string }[] | null
+  regla_id?: string | null
   seguimiento?: SeguimientoMail | null
   seguimiento_nota?: string | null
   seguimiento_fecha?: string | null
@@ -160,9 +161,12 @@ const RESULTADO_BUSQUEDA: Record<string, string> = {
  * reenvíos. Devuelve null si nadie lo procesó. `ok` = terminó bien (archivada / leído).
  */
 export function procesadoDeMail(
-  m: Pick<MailRegistrado, "mensaje_id" | "procesado_por">,
+  m: Pick<MailRegistrado, "mensaje_id" | "procesado_por"> & { vinculos?: MailRegistrado["vinculos"] },
   busquedas: BusquedaConMail[], inventario: InventarioConMail[],
 ): { texto: string; ok: boolean; link: string | null } | null {
+  // Archivado desde los lotes de Mails (A-FEAT-1442): el vínculo al archivo del Drive manda, con su link
+  const drive = (m.vinculos ?? []).filter(v => v.schema === "drive")
+  if (drive.length) return { texto: `archivado: ${drive.length} archivo${drive.length > 1 ? "s" : ""}`, ok: true, link: drive[0].que?.split(" | ")[1] ?? null }
   if (m.procesado_por) return { texto: m.procesado_por, ok: true, link: null }
   const bs = busquedas.filter(b => b.gmail_message_id === m.mensaje_id)
   if (bs.length) {

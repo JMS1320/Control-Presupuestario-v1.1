@@ -51,6 +51,7 @@ archivos puntuales por id). Único delete: el Google Doc temporal de extracción
 Archivo NUEVO: acciones `resolver_carpeta` ({ ruta } como la escribe el usuario en su PC, o un link de Drive → id de la
 carpeta; si una carpeta del camino no existe, dice cuál y NO crea nada) e `info_carpeta` ({ id } → dónde está hoy).
 `boletas_arba` recibe por fin `carpeta_id` (A-BUG-1446: se perdía en `doPost`) y `anio` (adentro, la del año).
+`archivar_mail` ({ message_id, carpeta_id, anio }): los PDF/imágenes del mail a la carpeta → la del año, como «AAAA-MM-DD - nombre»; si ya existe, «ya estaba» (nunca pisa ni duplica). La carpeta del año se reconoce aunque se llame «Año 2026». La ruta se busca también entre las carpetas compartidas con la cuenta.
 **Se despliega con «Nueva versión»** (lo llama la app como web app).
 
 ## 📬 Registro de mails (`RegistroMails.gs`, A-FEAT-1425, 2026-10-30)

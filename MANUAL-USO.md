@@ -3829,7 +3829,13 @@ Todo lo que entra y sale de la casilla **sanmanuel.sp**, registrado y con link a
 - En **Principal**, debajo del aviso de impuestos, aparece **«🚨 N avisos graves en el mail sin terminar»**. El mismo aviso repetido va una sola vez con «×N». **«✔ Terminado»** lo saca de ahí (queda terminado en Mails).
 - En **Mails**, el chip **«🚨 Graves sin terminar»** deja sólo esos. El reporte de las 7 los trae arriba de todo.
 
-→ A-TEST-1290 · ⚠️ Sin probar todavía → A-TEST-1298 · A-TEST-1299
+**📦 Para guardar — archivar de a lotes** *(2026-10-31)*
+- La pestaña **📦 Para guardar** junta los mails que hay que guardar y traen documentos (PDF o fotos), **agrupados por regla** (de quién vienen). Las facturas no aparecen (las archiva el buscador de facturas) ni las boletas de ARBA (Cash Flow → Boletas ARBA).
+- Cada grupo dice **a qué carpeta va**. Si no lo sabe, **📁❗ en rojo**: elegí un destino de la lista o creá uno («＋ Nuevo destino…»), y después la carpeta de tu PC (la primera vez).
+- Tildá los mails y **Archivar**: cada adjunto va a la **carpeta del año del mail**, como «AAAA-MM-DD - nombre del archivo». **Nada se pisa ni se duplica**: si ya estaba, queda como estaba. Si tu carpeta del año se llama distinto («Año 2026»), la usa.
+- Lo archivado queda en el Registro («✔ archivado», con el 📎 en verde que abre el archivo) y sale de esta lista.
+
+→ A-TEST-1290 · ⚠️ Sin probar todavía → A-TEST-1298 · A-TEST-1299 · A-TEST-1301
 
 ## 🛡️ Egresos → Seguros *(2026-10-20)*
 
