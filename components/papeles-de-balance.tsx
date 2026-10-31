@@ -124,6 +124,8 @@ export function PapelesDeBalance() {
   const [ajustes, setAjustes] = useState<AjusteBalance[]>([])
   const [cargando, setCargando] = useState(false)
   const [libro, setLibro] = useState<LibroDiario | null>(null)
+  /** 🕐 Nota 🌙 de JMS 30/10 («me sigue diciendo armar todo pero ya lo armé, presenta confusión»): a qué hora se armó. */
+  const [armadoA, setArmadoA] = useState<string | null>(null)
   /**
    * 💳 Papeles 03 y 04. Se arman junto con el libro porque necesitan **lo mismo** que él más una
    * consulta: cuándo se pagó cada comprobante. Ver `lib/balance/cuentas-al-cierre.ts`.
@@ -426,6 +428,7 @@ export function PapelesDeBalance() {
       }
       const armado = armarLibroDiario(compras, (ventas.data ?? []).map(desdeVenta), ej, PRESENTADO_ARCA_COMPRAS[empresa.id], manuales, fijos)
       setLibro(armado)
+      setArmadoA(new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }))
 
       // 🔁 A-FEAT-1427: lo que el balance anterior dejó provisionado contra lo que la app reconoce (avisa, no frena).
       try {
@@ -1000,13 +1003,18 @@ export function PapelesDeBalance() {
               onChange={e => setAnioCierre(parseInt(e.target.value.replace(/\D/g, "")) || 0)}
             />
           </div>
-          <Button onClick={armarTodo} disabled={cargando} title="Arma el libro, trae stock y precios y abre la vista previa">
+          {/* Ya armado, «Armar todo» pasa a segundo plano (con la hora) y el destacado es el paso siguiente: el recorrido. */}
+          <Button onClick={armarTodo} disabled={cargando} variant={libro ? "outline" : "default"}
+            title={libro ? "Vuelve a leer todo de la base (si cargaste algo nuevo) y abre la vista previa" : "Arma el libro, trae stock y precios y abre la vista previa"}>
             {cargando ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-            ⚡ Armar todo
+            {libro ? "↻ Volver a armar" : "⚡ Armar todo"}
           </Button>
-          <Button variant="outline" onClick={generar} disabled={cargando}>
-            Armar sólo el libro
-          </Button>
+          {!libro && (
+            <Button variant="outline" onClick={generar} disabled={cargando}>
+              Armar sólo el libro
+            </Button>
+          )}
+          {libro && armadoA && !cargando && <span className="text-xs text-green-700" data-test="balance-armado-a">✓ Armado a las {armadoA}</span>}
           {libro && (
             /* 👁️ A-FEAT-1427: el mismo libro que se baja, mostrado acá con sus alertas arriba. */
             <Button variant="outline" onClick={() => setVerPrevia(true)}>
@@ -1014,7 +1022,7 @@ export function PapelesDeBalance() {
             </Button>
           )}
           {libro && (
-            <Button variant="outline" onClick={() => setVerRecorrido(true)} title="Los temas a resolver del balance, uno por uno">
+            <Button onClick={() => setVerRecorrido(true)} title="Los temas a resolver del balance, uno por uno">
               🧭 Recorrer temas{sinResponder ? ` (${sinResponder})` : ""}
             </Button>
           )}
