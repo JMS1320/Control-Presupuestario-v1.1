@@ -162,6 +162,11 @@ function parsearCsvLibro(csv: string, lado: "compras" | "ventas"): ComprobantePr
     .filter(i => i >= 0)
   const val = (v: string[], i: number) => (i >= 0 ? num(v[i]) : 0)
   const vacio = (v: string[], i: number) => i < 0 || !String(v[i] ?? "").replace(/"/g, "").trim()
+  // ⚠️ Jul y nov 2025 traen la columna «Crédito Fiscal Computable» SIN CARGAR: vacía o con «0,00» en TODOS los
+  // renglones (jul: 47 de 47). Ahí el crédito es el IVA. Se decide por el MES entero, no por renglón: un 0 suelto es un
+  // dato (Medicus, sin IVA; la NC 10183421 de Federación declarada sin crédito en may-26) y tiene que verse.
+  const filasCsv = lineas.slice(1).map(l => l.split(";"))
+  const credSinCargar = lado === "compras" && filasCsv.every(v => vacio(v, iCred) || val(v, iCred) === 0)
   return lineas.slice(1).map(l => {
     const v = l.split(";")
     const tc = 1
@@ -175,7 +180,7 @@ function parsearCsvLibro(csv: string, lado: "compras" | "ventas"): ComprobantePr
       denominacion: String(v[iDen] ?? "").replace(/"/g, "").trim(),
       total: r2(num(v[iTotal]) * tc),
       // En algunos meses (jul y nov 2025) el libro trae «Crédito Fiscal Computable» VACÍO: ahí el crédito es el IVA.
-      creditoFiscal: lado === "compras" ? (vacio(v, iCred) ? iva : r2(val(v, iCred) * tc)) : iva,
+      creditoFiscal: lado === "compras" ? (credSinCargar || vacio(v, iCred) ? iva : r2(val(v, iCred) * tc)) : iva,
       netoGravado: r2(val(v, iNeto) * tc),
       noGravado: r2(val(v, iNoGrav) * tc),
       exento: r2(val(v, iExento) * tc),

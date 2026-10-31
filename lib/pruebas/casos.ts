@@ -1339,6 +1339,19 @@ export function correrCasos(): Resultado[] {
     const cmpOk = compararSubdiarioConLibro(appDic.slice(0, 3), pres, TIPOS_SIN_CREDITO_COMPRAS)
     chequear("Subdiarios — lo presentado", "Si la app y lo presentado tienen lo mismo, coincide",
       "true", String(cmpOk.ok), cmpOk.ok, "A-AUTO-09")
+    // 🧾 A-FEAT-1439 (31/10): jul y nov 2025 traen «Crédito Fiscal Computable» en 0,00 en TODOS los renglones → el crédito
+    // es el IVA (si no, el control dice que no coincide por $ 2,5 M y $ 4,7 M). Un 0 suelto en un mes cargado es un dato:
+    // la NC 10183421 de Federación (may-26) se declaró sin crédito, y eso SÍ tiene que saltar. Renglones reales.
+    const cabIva = '"Fecha de Emisión";"Tipo de Comprobante";"Punto de Venta";"Número de Comprobante";"Tipo Doc. Vendedor";"Nro. Doc. Vendedor";"Denominación Vendedor";"Importe Total";"Total IVA";"Crédito Fiscal Computable"\n'
+    const jul = parsearComprasCsv(cabIva
+      + '2025-07-01;1;2;433;80;20233952746;"MASSAGLIA ALDO ENRIQUE";1427800,00;247800,00;0,00\n'
+      + '2025-07-01;1;1;9240824;80;30639453738;"TELECOM ARGENTINA";160427,43;27120,67;0,00\n')
+    const may = parsearComprasCsv(cabIva
+      + '2026-05-01;3;1;10183421;80;30500036911;"FEDERACION PATRONAL";-130899,60;-21832,40;0,00\n'
+      + '2026-05-01;3;2;795;80;20111111112;"ALCORTA EDMUNDO ERNESTO";-61333,33;-10644,58;-10644,60\n')
+    const vCred = `jul ${jul.map(p => p.creditoFiscal).join(" + ")} · may ${may.map(p => p.creditoFiscal).join(" + ")}`
+    chequear("Subdiarios — lo presentado", "🧾 Un mes con «Crédito Fiscal Computable» en 0 en todos los renglones (jul/nov 2025) toma el IVA; un 0 suelto en un mes cargado (la NC de Federación de may-26) se respeta y salta",
+      "jul 247800 + 27120.67 · may 0 + -10644.6", vCred, vCred === "jul 247800 + 27120.67 · may 0 + -10644.6", "A-FEAT-1439")
     // 🔢 A-FEAT-1388 ronda 3: el mismo comprobante con OTRO número (Federación 0- vs 1-) se empareja por CUIT + importe
     // y no cuenta como «no declarado»; con otro importe además (Genta enero), sí es un error.
     const mismoOtroNro = compararSubdiarioConLibro([{ ...appDic[0], punto_venta: 0 }], [pres[0]], TIPOS_SIN_CREDITO_COMPRAS)
