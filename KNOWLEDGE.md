@@ -3009,6 +3009,18 @@ Una **factura B o C no discrimina el IVA**: su total no tiene partes, y sin esa 
 base hay facturas C guardadas de dos maneras (con el total en «no gravado», o con todo en 0): el total no cambia, pero la columna «No
 gravado» da muy distinto que ARCA. Tolerancia: 0,05 por comprobante (`TOLERANCIA_POR_COMPROBANTE`, redondeo del emisor).
 
+## Mails, archivo digital y tareas — lo que se aprendió el 31/10 `#mails #gas #tareas #principal #worktree #2026-10-31`
+
+- **El Principal real es `components/vista-inicio.tsx` (widgets), NO `vista-principal.tsx`** (que ya no se monta desde el 05/10). Un aviso que se monta en el viejo **no se ve en ningún lado y nada lo delata**: pasó con mails graves y con impuestos vencidos (A-BUG-1450). Lo fijo va en `vista-inicio.tsx` (como «Para vos»); lo configurable, en `lib/widgets/registro.ts`.
+- **Un widget nuevo no le aparece a quien ya guardó su configuración de inicio** (`preferencias.widgets`): lo que no se puede perder va fijo, no como widget.
+- **Build en un árbol con `node_modules` por junction**: `npx next build --webpack` con variables de mentira (`NEXT_PUBLIC_SUPABASE_URL=https://ejemplo.supabase.co`, `…ANON_KEY=x`, `SUPABASE_SERVICE_ROLE_KEY=x`). Sin las variables falla al «recolectar datos» de `/api/arca-asignar` (no es el código). Y **al cerrar el árbol, sacar el junction ANTES** de `git worktree remove` (`cmd /c rmdir`), o se lleva el `node_modules` de la carpeta principal.
+- **El GAS: subir el número de versión con CADA cambio.** Se agregó `leer_archivo` sin tocar `VERSION` y JMS no podía saber si lo que tenía era lo último; se verificó buscando el texto de la acción. Próxima: 0.20.1.
+- **Un `appsscript.json` con `oauthScopes` explícitos necesita `script.scriptapp` para crear disparadores** (`ScriptApp.newTrigger`): sin él, `instalarTriggersRegistro` falla por permiso.
+- **El menú «Ejecutar» del editor de Apps Script muestra sólo las funciones del archivo abierto**: para correr una función de `RegistroMails.gs` hay que estar parado en ese archivo.
+- **La carpeta elegida en Boletas ARBA nunca llegaba al GAS** (A-BUG-1446): `doPost` armaba las opciones sin `carpeta_id`. El control que lo delataba existía (`carpeta_usada` contra la pedida) pero nadie lo había mirado: un parámetro nuevo hay que seguirlo hasta la función que lo usa.
+- **Mails de personas y destinatarios NO van en `scripts/`** (repo público): las tablas se crean vacías y los datos se cargan desde la app o con OK por MCP, anotando en RECONSTRUCCION sin los mails.
+- **Palabras «graves» medidas contra el registro real**: sin excluir la propaganda, los boletines de mercados dicen «deuda» y «embargo» casi a diario. Agrupar por remitente + asunto (23 «Saldo negativo excedido» = un aviso ×23).
+
 ## Cargar resúmenes PDF y el registro de mails — lo que se aprendió el 30/10 `#pdf #extractos #mails #repo-publico #2026-10-30`
 
 - 🔒 **El repo es PÚBLICO: nada con datos reales ni direcciones de personas va a `scripts/`.** El clasificador frenó dos subidas: la «foto antes» de un resumen de tarjeta (consumos reales) y las reglas de mails con los Gmail de contadores, familia y abogados. Van a la carpeta de comunicación (fuera de git) y el script del repo apunta ahí.
