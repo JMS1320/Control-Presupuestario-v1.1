@@ -1050,7 +1050,10 @@ export function PapelesDeBalance() {
                   for (const a of cyr.avisos) toast.warning(a)
                   return descargarLibroDiarioConsensuado(libro, empresa.id, cyr)
                 })
-                .then(r => { if (r.cobros?.noCierra) toast.warning(`Control cobros: ${r.cobros.noCierra} venta(s) no cierran (total − retenciones ≠ cobrado).`) })
+                // 🧭 A-BUG-1451: que haya ventas que no cierran es un hallazgo de los datos (está en la solapa «Control cobros»), no una falla.
+                .then(r => toast.success(r.cobros?.noCierra
+                  ? `✓ Libro Diario bajado · ${r.cobros.noCierra} venta(s) para revisar en «Control cobros» (total − retenciones ≠ cobrado).`
+                  : "✓ Libro Diario bajado."))
                 .catch(e => toast.error("No se pudo armar el Libro Diario: " + (e as Error).message))}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               Bajar Libro Diario
@@ -1067,8 +1070,13 @@ export function PapelesDeBalance() {
                 if (!archivos.length) return
                 descargarDiferenciasVsArca(libro, empresa.id, archivos)
                   .then(r => {
-                    for (const a of r.avisos) toast.warning(a, { duration: 15000 })
-                    toast.success(`Diferencias vs ARCA: ${r.zips.usados} zip(s) usados · compras ${r.compras.filas} diferencia(s) · ventas ${r.ventas.filas} fila(s). Detalle de los zips en la solapa «Zips de ARCA».`)
+                    // 🧭 A-BUG-1451: en ámbar sólo lo que no se pudo usar o lo que el control no hace cerrar; lo demás
+                    // (qué secuencia se tomó, qué meses faltan) va en el cartel verde y en la solapa «Zips de ARCA».
+                    const esFalla = (a: string) => /no se pudo|no se usa|queda en 0|no cierra|no coincide/i.test(a)
+                    for (const a of r.avisos.filter(esFalla)) toast.warning(a, { duration: 15000 })
+                    const info = r.avisos.filter(a => !esFalla(a))
+                    toast.success(`✓ Diferencias vs ARCA: ${r.zips.usados} zip(s) usados · compras ${r.compras.filas} diferencia(s) · ventas ${r.ventas.filas} fila(s). Detalle de los zips en la solapa «Zips de ARCA».`,
+                      { description: info.length ? info.join(" · ") : undefined, duration: info.length ? 12000 : undefined })
                   })
                   .catch(err => toast.error("No se pudo armar «Diferencias vs ARCA»: " + (err as Error).message))
               }} />
