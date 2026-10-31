@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { WIDGETS, WIDGETS_POR_DEFECTO, widgetsVisibles, type Widget } from "@/lib/widgets/registro"
 import { PanelParaVos } from "@/components/panel-para-vos"
+import { AlertaMailsGraves } from "@/components/alerta-mails-graves"
+import { AlertaImpuestos } from "@/components/alerta-impuestos"
 import type { Preferencias } from "@/lib/auth/preferencias"
 
 type Tamano = { ancho: 1 | 2; alto: number }
@@ -167,6 +169,15 @@ export function VistaInicio({
 
       {/* 🚩 A-FEAT-1411: lo de cada uno, arriba de todo y para todos (no es un widget que se pueda sacar) */}
       <PanelParaVos />
+
+      {/*
+        🚨 Los avisos que no se pueden perder, fijos arriba (no son widgets que se puedan sacar). A-BUG-1450 (31/10): los
+        dos estaban montados en `vista-principal.tsx`, que ya no se muestra, y por eso no se veían en ningún lado.
+        · Mails graves: sólo si la sesión ve los mails (admin); el componente se oculta solo para el resto.
+        · Impuestos vencidos / por vencer: sólo para quien tiene Egresos (sus datos son las cuotas de los templates).
+      */}
+      <AlertaMailsGraves />
+      {secciones.includes("egresos") && <AlertaImpuestos />}
 
       {configurando && (
         <Card className="border-dashed">
