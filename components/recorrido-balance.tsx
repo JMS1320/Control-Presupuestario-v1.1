@@ -18,6 +18,7 @@ import type { PendienteBalance } from "@/lib/balance/pendientes-balance"
 import { GRUPOS, conciliacionPorCuenta, progreso, textoPendienteDe, fuenteDe, sinTresVistas, type GrupoTema, type Tema } from "@/lib/balance/recorrido"
 import { armarPapelDeTrabajo, vinculoDe } from "@/lib/cuaderno/papel-de-trabajo"
 import { linkExtracto } from "@/lib/extracto/link"
+import type { ConteoCuenta } from "@/lib/conciliacion/propuestas-ejercicio"
 import { PISTA_CTRL_CLICK, esSoloEste, tituloChip, toggleChip } from "@/lib/ui/chips"
 import { COLOR, DetalleTema, ICONO } from "@/components/recorrido-tema-detalle"
 
@@ -39,7 +40,9 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   /** 🏦 El estado de las propuestas de conciliación (se calculan aparte, tardan unos segundos). */
   /** ⏳ Lo que todavía se está trayendo (vacío = están todos los temas). */
   enCamino?: string[]
-  conciliacion?: { cargando: string | null; historicos: number; avisos: string[]; calculado: string | null; recalcular: () => void }
+  conciliacion?: { cargando: string | null; historicos: number; avisos: string[]; calculado: string | null; recalcular: () => void
+    /** 🏦 Por cuenta: total del ejercicio y sin conciliar 3 meses antes / después. */
+    porCuenta?: Record<string, ConteoCuenta> }
 }) {
   const [filtro, setFiltro] = useState<Set<GrupoTema>>(new Set())
   const [ocultarRespondidos, setOcultarRespondidos] = useState(false)
@@ -326,12 +329,18 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
               <span key={c.cuentaId} className={`inline-flex items-stretch overflow-hidden rounded border ${cuentas.has(c.cuentaId) ? "border-blue-500 bg-blue-200" : "border-blue-300 bg-blue-50"} text-blue-900`}>
                 <button type="button" aria-pressed={cuentas.has(c.cuentaId)} onClick={e => toggleChip(setCuentas, c.cuentaId, esSoloEste(e))}
                   className="px-2 py-0.5 hover:bg-blue-100" title={tituloChip(c.nombre)}>
-                  {c.nombre}: <strong className="tabular-nums">{c.abiertos}</strong> · −{fmt(c.debitos)} / +{fmt(c.creditos)}
+                  {c.nombre}: <strong className="tabular-nums">{c.abiertos}</strong>
+                  {conciliacion.porCuenta?.[c.cuentaId]?.totalEjercicio != null && <span className="tabular-nums"> de {conciliacion.porCuenta[c.cuentaId].totalEjercicio}</span>}
+                  {" "}sin conciliar · −{fmt(c.debitos)} / +{fmt(c.creditos)}
                 </button>
                 <a href={linkExtracto({ cuenta: c.cuentaId, movs: c.movs, desde: c.desde, hasta: c.hasta })} target="_blank" rel="noreferrer"
                   className="border-l border-blue-300 px-1.5 py-0.5 hover:bg-blue-100"
                   title={`Abre en el extracto de ${c.nombre} exactamente estos ${c.abiertos} movimientos sin conciliar (${c.desde ?? "?"} al ${c.hasta ?? "?"})`}>↗</a>
               </span>
+            ))}
+            {/* Cuentas sin nada pendiente en el ejercicio: se dicen igual, con su total (un 0 que no se ve no es un control). */}
+            {Object.entries(conciliacion.porCuenta ?? {}).filter(([id]) => !porCuenta.some(c => c.cuentaId === id)).map(([id, k]) => (
+              <span key={id} className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-emerald-900">✓ {k.nombre}: 0{k.totalEjercicio != null ? ` de ${k.totalEjercicio}` : ""} sin conciliar</span>
             ))}
             {cuentas.size > 0 && <button type="button" className="underline text-muted-foreground" onClick={() => setCuentas(new Set())}>todas las cuentas</button>}
             <span className="text-muted-foreground">{PISTA_CTRL_CLICK}</span>
@@ -341,6 +350,35 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
               title="Después de conciliar en el extracto, para que los temas resueltos desaparezcan">↻ Recalcular</button>
           </div>
         )}
+        {/* ⚠️ Alertas secundarias: lo sin conciliar en los 3 meses de antes y de después del ejercicio (JMS 31/10). */}
+        {verFiltros && filtro.has("conciliacion") && conciliacion?.porCuenta && !conciliacion.cargando && (() => {
+          const ks = Object.entries(conciliacion.porCuenta)
+          const lado = (cual: "antes" | "despues") => ks.filter(([, k]) => (cual === "antes" ? k.sinConciliarAntes : k.sinConciliarDespues))
+          const dm = (iso: string) => iso.split("-").reverse().join("/")
+          const fila = (cual: "antes" | "despues", rotulo: string) => {
+            const con = lado(cual)
+            const v = ks[0]?.[1][cual]
+            return (
+              <span className="inline-flex flex-wrap items-center gap-1.5">
+                <span className="text-muted-foreground">{rotulo}{v ? ` (${dm(v.desde)}–${dm(v.hasta)})` : ""}:</span>
+                {con.length === 0 ? <span className="text-emerald-700">✓ nada</span> : con.map(([id, k]) => (
+                  <a key={id} href={linkExtracto({ cuenta: id, desde: k[cual].desde, hasta: k[cual].hasta })} target="_blank" rel="noreferrer"
+                    className="rounded border border-amber-300 bg-amber-50 px-2 py-0.5 text-amber-900 hover:bg-amber-100"
+                    title={`Abre ${k.nombre} en esas fechas (los «pendiente» y «auditar» son los sin conciliar)`}>
+                    {k.nombre}: {cual === "antes" ? k.sinConciliarAntes : k.sinConciliarDespues} ↗
+                  </a>
+                ))}
+              </span>
+            )
+          }
+          return (
+            <div className="flex flex-wrap items-center gap-3 text-xs" data-test="recorrido-conciliacion-alrededor">
+              <span className="text-muted-foreground">⚠️ Sin conciliar alrededor del ejercicio —</span>
+              {fila("antes", "3 meses antes")}
+              {fila("despues", "3 meses después")}
+            </div>
+          )
+        })()}
         {/* Nivel 3 — los tipos, sólo los del grupo elegido */}
         {verFiltros && filtro.size > 0 && tiposPresentes.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 text-xs">

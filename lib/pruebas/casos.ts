@@ -208,7 +208,7 @@ import { linkExtracto, extractoDelLink, rangoQueContiene } from "@/lib/extracto/
 import { linkHistorico, subFacturasDelLink, historicoDelLink } from "@/lib/egresos/link-facturas"
 import { armarPapelDeTrabajo, vinculoDe } from "@/lib/cuaderno/papel-de-trabajo"
 import { calcularTabla as calcularTablaCuaderno } from "@/lib/cuaderno/formulas"
-import { proponerConciliaciones, CUENTAS_CONCILIABLES, type DatosConciliacion, type MovimientoSinConciliar, type Obligacion } from "@/lib/conciliacion/propuestas-ejercicio"
+import { proponerConciliaciones, CUENTAS_CONCILIABLES, ventanasAlrededor, moverMeses, type DatosConciliacion, type MovimientoSinConciliar, type Obligacion } from "@/lib/conciliacion/propuestas-ejercicio"
 import { temasDeMovimientos, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
 import { cruzarChequesConDebitos, numeroEnDescripcion } from "@/lib/conciliacion/cheques-vencidos"
 import { RENGLONES as RENGLONES_BALANCE } from "@/lib/balance/balance-propio"
@@ -5301,6 +5301,12 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · recorrido", "🏦 Lo pendiente de conciliar, por cuenta: cuántos, débitos y créditos, rango de fechas; lo respondido no cuenta",
       "GAL 3 −130 +50 2025-08-01→2026-03-10 [1,2,3] | SAN 1 −10 +0 2026-01-05→2026-01-05 [4]", vPc,
       vPc === "GAL 3 −130 +50 2025-08-01→2026-03-10 [1,2,3] | SAN 1 −10 +0 2026-01-05→2026-01-05 [4]", "A-FEAT-1439")
+    // ⚠️ Las alertas secundarias: los 3 meses de antes y de después del ejercicio, sin pasarse de fin de mes.
+    const va = ventanasAlrededor("2025-07-01", "2026-06-30")
+    const vVa = `${va.antes.desde}→${va.antes.hasta} · ${va.despues.desde}→${va.despues.hasta} · ${moverMeses("2025-11-30", 3)} · ${moverMeses("2026-05-31", -3)}`
+    chequear("Balance · recorrido", "⚠️ Ventanas de 3 meses alrededor del ejercicio para las alertas secundarias de conciliación (fin de mes bien)",
+      "2025-04-01→2025-06-30 · 2026-07-01→2026-09-30 · 2026-02-28 · 2026-02-28", vVa,
+      vVa === "2025-04-01→2025-06-30 · 2026-07-01→2026-09-30 · 2026-02-28 · 2026-02-28", "A-FEAT-1439")
     // 🧾 Los subdiarios pasan a la base (grupo ARCA) y toman lo presentado como fuente: la última secuencia de cada mes.
     const tSub = [{ clave: "cob:x", grupo: "error" as const, titulo: "Subdiarios de compras y ventas por mes y cuenta", papel: "LIBRO DIARIO", que: "x", links: [], respondido: false },
       { clave: "pend:1", grupo: "pregunta" as const, titulo: "p", papel: "x", que: "x", links: [], respondido: false }]

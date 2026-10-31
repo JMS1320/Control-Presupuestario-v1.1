@@ -50,7 +50,7 @@ import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/bal
 import { armarWorkbook, coberturaDeArgs, descargarLibroDiario } from "@/lib/balance/export-libro-diario"
 import { armarTemas, subdiariosContraArca, type Tema } from "@/lib/balance/recorrido"
 import { temasVentasVsArca, temasComprasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
-import { leerDatosConciliacion, proponerConciliaciones } from "@/lib/conciliacion/propuestas-ejercicio"
+import { leerDatosConciliacion, proponerConciliaciones, type ConteoCuenta } from "@/lib/conciliacion/propuestas-ejercicio"
 import { temasDeMovimientos, temasDeDeudas, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
 import { leerChequesVencidos } from "@/lib/conciliacion/cheques-vencidos"
 import { RecorridoBalance } from "./recorrido-balance"
@@ -183,7 +183,7 @@ export function PapelesDeBalance() {
   /** 🧭 A-FEAT-1430: el recorrido del balance (pantalla completa) y la versión de los pendientes que respondió. */
   const [verRecorrido, setVerRecorrido] = useState(false)
   /** 🏦 A-FEAT-1430 paso 4: las propuestas de conciliación del ejercicio (se calculan al abrir el recorrido). */
-  const [conciliacion, setConciliacion] = useState<{ movimientos: Tema[]; deudas: Tema[]; cheques: Tema[]; historicos: number; avisos: string[]; calculado: string } | null>(null)
+  const [conciliacion, setConciliacion] = useState<{ movimientos: Tema[]; deudas: Tema[]; cheques: Tema[]; historicos: number; avisos: string[]; calculado: string; porCuenta?: Record<string, ConteoCuenta> } | null>(null)
   const [cargandoConciliacion, setCargandoConciliacion] = useState<string | null>(null)
   const calcularConciliacion = useCallback(async (silencioso = false) => {
     if (!libro) return
@@ -198,7 +198,7 @@ export function PapelesDeBalance() {
       const ch = empresa.id === "MSA" ? await leerChequesVencidos(supabase, hoyArgentina()) : { cruces: [], extractoHasta: null, error: null }
       if (ch.error) datos.avisos.push(`echeqs: ${ch.error}`)
       setConciliacion({ movimientos: mov.temas, deudas: temasDeDeudas(r.deudas, empresa.id), cheques: temasDeCheques(ch.cruces, ch.extractoHasta),
-        historicos: mov.historicos, avisos: datos.avisos,
+        historicos: mov.historicos, avisos: datos.avisos, porCuenta: datos.porCuenta,
         calculado: new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) })
       if (datos.avisos.length && !silencioso) toast.warning(`Conciliación: no se pudo leer ${datos.avisos.length} cosa(s) — ${datos.avisos.slice(0, 2).join(" · ")}`)
     } catch (e) {
@@ -1115,7 +1115,7 @@ export function PapelesDeBalance() {
             // ⏳ Lo que todavía se está trayendo: mientras haya algo, la lista puede crecer y reordenarse (JMS 31/10: «va cambiando solo… no sé si está listo para empezar»).
             enCamino={[...(!ddjjGuardadas ? ["lo presentado a ARCA"] : []), ...(cargandoConciliacion || !conciliacion ? ["la conciliación"] : []), ...(!hacienda && pedidoStock > 0 ? ["stock y precios"] : [])]}
             conciliacion={{ cargando: cargandoConciliacion, historicos: conciliacion?.historicos ?? 0, avisos: conciliacion?.avisos ?? [],
-              calculado: conciliacion?.calculado ?? null, recalcular: () => void calcularConciliacion() }}
+              calculado: conciliacion?.calculado ?? null, porCuenta: conciliacion?.porCuenta, recalcular: () => void calcularConciliacion() }}
             onPendientes={l => { setPendientes(l); setVersionPendientes(v => v + 1) }} />
         )}
         {/* ✍️ A-FEAT-1207 — lo que el balance anterior dejó para tomar en éste. */}

@@ -129,6 +129,30 @@ export interface DatosConciliacion {
   conciliados: Array<{ tabla: string; id: string; fecha: string; debitos: number; creditos: number; descripcion: string }>
   /** Lo que no se pudo leer: se dice, no se calla. */
   avisos: string[]
+  /**
+   * 🏦 Por cuenta (JMS 31/10: «ver los sin conciliar dentro del total de movimientos — del propio ejercicio — y 3 meses
+   * antes y 3 después para alertas secundarias»): cuántos movimientos tiene en el ejercicio, y cuántos quedan sin
+   * conciliar (pendiente/auditar) en los 3 meses anteriores y los 3 posteriores. `null` = no se pudo contar.
+   */
+  porCuenta?: Record<string, ConteoCuenta>
+}
+
+export interface ConteoCuenta { nombre: string; totalEjercicio: number | null; sinConciliarAntes: number | null; sinConciliarDespues: number | null
+  antes: { desde: string; hasta: string }; despues: { desde: string; hasta: string } }
+
+/** Suma (o resta) meses a una fecha ISO, sin pasarse del último día del mes. */
+export function moverMeses(iso: string, meses: number): string {
+  const [a, m, d] = iso.slice(0, 10).split("-").map(Number)
+  const t = new Date(Date.UTC(a, m - 1 + meses, 1))
+  const ultimo = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate()
+  t.setUTCDate(Math.min(d, ultimo))
+  return t.toISOString().slice(0, 10)
+}
+const diaAntes = (iso: string) => { const t = new Date(`${iso}T00:00:00Z`); t.setUTCDate(t.getUTCDate() - 1); return t.toISOString().slice(0, 10) }
+const diaDespues = (iso: string) => { const t = new Date(`${iso}T00:00:00Z`); t.setUTCDate(t.getUTCDate() + 1); return t.toISOString().slice(0, 10) }
+/** Las dos ventanas de 3 meses alrededor del ejercicio (puro, para el caso de prueba). */
+export function ventanasAlrededor(desde: string, hasta: string): { antes: { desde: string; hasta: string }; despues: { desde: string; hasta: string } } {
+  return { antes: { desde: moverMeses(desde, -3), hasta: diaAntes(desde) }, despues: { desde: diaDespues(hasta), hasta: moverMeses(hasta, 3) } }
 }
 
 const n = (x: unknown) => Number(x) || 0
@@ -288,7 +312,23 @@ export async function leerDatosConciliacion(sb: Cliente, empresa: string, desde:
       }
     } catch (e) { avisos.push(`${c.nombre}: ${(e as Error).message}`) }
   }
-  return { movimientos, obligaciones, usadoPor, conciliados, avisos }
+  // 4 · Conteos por cuenta: el total del ejercicio y lo sin conciliar 3 meses antes y 3 después (alertas secundarias).
+  progreso?.("contando los movimientos de cada cuenta…")
+  const porCuenta: Record<string, ConteoCuenta> = {}
+  const v = ventanasAlrededor(desde, hasta)
+  const contar = async (c: CuentaConciliable, d: string, h: string, soloSinConciliar: boolean): Promise<number | null> => {
+    let q = (c.schema === "public" ? sb.from(c.tabla) : sb.schema(c.schema).from(c.tabla)).select("id", { count: "exact", head: true }).gte("fecha", d).lte("fecha", h)
+    if (soloSinConciliar) q = q.in("estado", ["pendiente", "Pendiente", "PENDIENTE", "auditar", "Auditar"])
+    const { count, error } = await q
+    if (error) { avisos.push(`${c.nombre}: no se pudo contar (${error.message})`); return null }
+    return count ?? 0
+  }
+  await Promise.all(CUENTAS_CONCILIABLES.filter(x => x.empresa === empresa).map(async c => {
+    const [totalEjercicio, sinConciliarAntes, sinConciliarDespues] = await Promise.all([
+      contar(c, desde, hasta, false), contar(c, v.antes.desde, v.antes.hasta, true), contar(c, v.despues.desde, v.despues.hasta, true)])
+    porCuenta[c.cuentaId] = { nombre: c.nombre, totalEjercicio, sinConciliarAntes, sinConciliarDespues, ...v }
+  }))
+  return { movimientos, obligaciones, usadoPor, conciliados, avisos, porCuenta }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════
