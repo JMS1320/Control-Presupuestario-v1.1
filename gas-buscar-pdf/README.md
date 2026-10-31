@@ -52,7 +52,7 @@ Archivo NUEVO, independiente del buscador: registra cada mail de la casilla en `
 `public.mails_reglas` (script 140) y manda un reporte diario **a la propia casilla**. **Sólo lee** la casilla.
 
 Instalación (una vez, en el proyecto de Apps Script de esta casilla):
-1. Pegar `RegistroMails.gs` como archivo nuevo del proyecto (o `clasp push`).
+1. Pegar `RegistroMails.gs` como archivo nuevo del proyecto (o `clasp push`), **y reemplazar `appsscript.json`**: el registro crea disparadores y necesita el permiso `script.scriptapp` (⚠️ agregado 31/10 — sin él, `instalarTriggersRegistro` falla por permiso).
 2. ⚙ Propiedades del script → agregar `SUPABASE_KEY` = la **service_role** (la misma del GAS de detalles de pago).
 3. Correr `iniciarRegistroDesdeAgosto` (o `iniciarRegistro('AAAA-MM-DD')` con otra fecha): fija desde qué día se registra.
 4. Correr `instalarTriggersRegistro` → crea «registrar cada 15 min» y «reporte a las 7». Google pide permisos (leer Gmail,
