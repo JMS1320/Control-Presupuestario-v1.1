@@ -1262,6 +1262,25 @@ pantallas — y eso se descubre tarde y mal.
 **Señal de alarma:** si al escribir algo aparece el pensamiento *"esto seguro ya está resuelto en
 algún lado"* — **ese es el momento de buscar**, no de seguir escribiendo.
 
+### 🧩 Toda clasificación se CREA y se REASIGNA ahí mismo — y al reasignar se elige el ALCANCE (REGLA)
+*Pedida por el usuario 2026-10-31, en la pantalla de Mails: **«el usuario quiere adjudicar a un grupo que no existe. No
+se debe tener que ir a otra pantalla a crear, volver, hacer todo de nuevo, sino poder crearlo ahí como ya sucede en la
+app en general»**. Ya era la práctica; no estaba escrita.*
+
+> **Donde se elige una categoría, grupo o tipo, se puede crear uno nuevo sin salir. Y al cambiársela a un registro, se
+> elige a qué alcanza: sólo éste, o también los parecidos hacia atrás y hacia adelante.**
+
+- **Crear en el lugar**: la lista ofrece «＋ Nuevo…» y queda elegido al crearlo. La categoría igual va a su **maestro**
+  (§ Templates — un tipo no se usa si no existe antes): crear en el lugar es *escribir en el maestro desde ahí*, no saltearlo.
+- **El alcance se pregunta, no se adivina**: *sólo éste* · *todos los de este origen* (remitente, proveedor, CUIT) ·
+  *los de este origen con esta señal* (asunto, concepto). Lo amplio crea la regla y la aplica al pasado en el mismo paso.
+- **Lo corregido a mano uno por uno no lo pisa una regla** (§ Default del dato real).
+
+*Motivo, el caso: en Mails, cambiar el tipo de un mail afectaba sólo a ése; para el resto había que ir a «Reglas»,
+crearla y apretar «Reaplicar» — tres pasos en otra pestaña para algo que el usuario hace mientras lee. Y los 12 tipos
+eran fijos: un grupo nuevo necesitaba un cambio de código.* → [A-FEAT-1440](PENDIENTES.md#a-feat-1440). Las demás
+normas «desde el usuario» que todavía viven sólo en la práctica → [A-DOC-14](PENDIENTES.md#a-doc-14).
+
 ### ♻️ Centralizar, no duplicar (REGLA)
 Si algo lo van a usar varias pantallas o modales, va en **un solo lugar**, de modo que tocar
 ese lugar afecte a todo lo que lo usa.
