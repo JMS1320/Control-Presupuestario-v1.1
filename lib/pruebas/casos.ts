@@ -5309,9 +5309,9 @@ export function correrCasos(): Resultado[] {
     const papel = { ...base, clave: "b", titulo: "dato", links: [], valor2425: "$ 100" }
     const nada = { ...base, clave: "c", titulo: "pregunta", links: [] }
     const t3 = sinTresVistas([banco, papel, nada] as TemaRecorrido[])
-    const v = `${fuenteDe(banco)?.origen} (app: ${linksDeLaApp(banco).map(l => l.texto).join(",")}) · ${fuenteDe(papel)?.origen}: ${fuenteDe(papel)?.detalle} · ${fuenteDe(nada)} · sin fuente ${t3.sinFuente} · sin link ${t3.sinLink}`
-    const e = "Extracto del banco (app: La factura) · Papeles 24/25 del contador: El año pasado: $ 100 · null · sin fuente 1 · sin link 2"
-    chequear("Recorrido · tres vistas", "📄 La fuente sale del extracto del banco (y ese link no se repite en «En la app») o del papel 24/25; sin ninguna, el tema cuenta como «sin fuente»",
+    const v = `${fuenteDe(banco)?.origen} (app: ${linksDeLaApp(banco).map(l => l.texto).join(",")}) · papel 24/25 → ${fuenteDe(papel)} · ${fuenteDe(nada)} · sin fuente ${t3.sinFuente} · sin link ${t3.sinLink}`
+    const e = "Extracto del banco (app: La factura) · papel 24/25 → null · null · sin fuente 2 · sin link 2"
+    chequear("Recorrido · tres vistas", "📄 La fuente sale del extracto del banco (y ese link no se repite en «En la app»); el valor 24/25 NO es fuente (es lo del año pasado) y el tema cuenta como «sin fuente»",
       e, v, v === e, "A-FEAT-1439")
 
     // 🧾 Ventas contra lo presentado: la liquidación de Genta cargada como tipo 60 sin PV ni número, presentada como 180 11-75880.

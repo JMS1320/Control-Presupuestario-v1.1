@@ -143,15 +143,17 @@ export function progreso(temas: Tema[]) {
 const esLinkDeBanco = (l: LinkDato) => /[?&]seccion=extracto(&|$)/.test(l.href)
 
 /**
- * 📄 La fuente de un tema (A-FEAT-1439): la que trae, o la que se deduce de lo que ya tiene —
- * el extracto del banco entre sus links, o el valor de los papeles 24/25 del contador. `null` = no tiene: el
- * recorrido lo muestra como «sin fuente», para que se vea que ahí se lee sólo lo que dice la app.
+ * 📄 La fuente de un tema (A-FEAT-1439): la que trae, o la que se deduce de lo que ya tiene — el extracto del banco
+ * entre sus links. `null` = no tiene: el recorrido lo muestra como «sin fuente», para que se vea que ahí se lee sólo
+ * lo que dice la app.
+ * ⚠️ cambió 31/10: también contaba el valor de los papeles 24/25 como fuente, y NO lo es — es lo del año pasado, no lo
+ * objetivo del número de este año. Con eso, los 45 datos de la cobertura figuraban «con fuente» sin tenerla y el
+ * control de arriba mentía. El valor 24/25 sigue a la vista («El año pasado»), como referencia.
  */
 export function fuenteDe(t: Pick<Tema, "fuente" | "links" | "valor2425">): FuenteTema | null {
   if (t.fuente) return t.fuente
   const banco = t.links.filter(esLinkDeBanco)
   if (banco.length) return { origen: "Extracto del banco", detalle: "El movimiento tal cual lo informó el banco.", links: banco }
-  if (t.valor2425) return { origen: "Papeles 24/25 del contador", detalle: `El año pasado: ${t.valor2425}` }
   return null
 }
 
