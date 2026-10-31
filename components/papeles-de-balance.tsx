@@ -329,6 +329,9 @@ export function PapelesDeBalance() {
     setFotoInicio(null)
     setPropuestaCierre(null)
     const lect: Lectura[] = []
+    // 🧭 A-BUG-1451: lo que el armado ENCUENTRA en los datos no es una falla de la app: ya está en el informe y en el
+    // recorrido. Se junta y sale UN cartel tranquilo al final. Sólo salta como aviso lo que la app no pudo leer.
+    const hallazgos: string[] = []
     const anotar = (nombre: string, r: { data: unknown[]; esperadas: number | null }) =>
       lect.push({ nombre, llegaron: r.data.length, esperadas: r.esperadas })
     try {
@@ -401,7 +404,7 @@ export function PapelesDeBalance() {
           }
           for (const a of ajustesIncl) {
             const f = a.registro_id ? porId.get(a.registro_id) : undefined
-            if (!f) { toast.warning(`Una provisión a mano apunta a una factura que no se encontró: ${a.concepto}`); continue }
+            if (!f) { hallazgos.push(`Una provisión a mano apunta a una factura que no se encontró: ${a.concepto}`); continue }
             const asiento = { ...f, provision_motivo: a.motivo }
             ;(a.anio_cierre === anioCierre ? manuales.esteEjercicio : manuales.anterior).push(asiento)
           }
@@ -456,7 +459,7 @@ export function PapelesDeBalance() {
           } catch { /* queda sin saber */ }
         }
         setControlesInicio({ provision, hechos })
-        if (provision.estado === "no cierra") toast.warning(
+        if (provision.estado === "no cierra") hallazgos.push(
           `Provisión del ejercicio anterior: el balance anterior provisionó $ ${fmt(provision.declarado ?? 0)} y la app reconoce $ ${fmt(provision.reconocido)}. Ver «05 Provisión».`)
       } catch (e) {
         toast.warning("No se pudo controlar la provisión contra el balance anterior: " + (e as Error).message)
@@ -611,7 +614,7 @@ export function PapelesDeBalance() {
 
         // 🧮 El control del camino inverso se muestra, no sólo se escribe en la solapa.
         if (anticipos.descuadres.length > 0) {
-          toast.warning(
+          hallazgos.push(
             `El saldo de ${anticipos.descuadres.length} anticipo(s) no coincide con el del sistema: `
             + "está en la solapa 04.2, al final.",
           )
@@ -683,14 +686,14 @@ export function PapelesDeBalance() {
         // 💵 A-FEAT-1398: las cuentas en dólares de la empresa, en pesos al TC de cierre (sólo si tienen movimientos)
         const dolares = await saldosEnDolaresParaBalance(supabase, empresa.id, finDelEjercicio)
         saldos.push(...dolares.saldos)
-        if (dolares.avisos.length) toast.warning(`Dólares: ${dolares.avisos.join(" · ")}`)
+        for (const a of dolares.avisos) { if (a.startsWith("No se pudo")) toast.warning(`Dólares: ${a}`); else hallazgos.push(`Dólares: ${a}`) }
         /**
          * 🧮 El control se VE, no vive sólo en la solapa (§ 🧮). Si los importes del extracto no
          * explican sus propios saldos, el saldo que va al papel no se puede entregar.
          */
         const noCierran = cadenas.filter(c => c.diferencia != null && Math.abs(c.diferencia) > 0.01)
         if (noCierran.length > 0) {
-          toast.warning(
+          hallazgos.push(
             `En ${noCierran.map(c => c.cuenta).join(", ")} los movimientos no explican el saldo `
             + "al cierre. Está en la solapa 07 Bancos, arriba.",
           )
@@ -750,7 +753,7 @@ export function PapelesDeBalance() {
 
         // 🧮 El control se ve: si el bruto recompuesto no da el guardado, hay que mirarlo.
         if (armadoSueldos.descuadres.length > 0) {
-          toast.warning(
+          hallazgos.push(
             `En ${armadoSueldos.descuadres.length} sueldo(s) el bruto no coincide con sus partes: `
             + "está en la solapa 13 Sueldos, al final.")
         }
@@ -843,7 +846,7 @@ export function PapelesDeBalance() {
                 } catch { /* sin desglose de la flota: el 14 sale igual */ }
                 armadoCC.aseguradoras = [seg]
                 if (seg.saldo !== 0) {
-                  toast.warning(`Seguros: faltan comprobantes de Federación Patronal al cierre — saldo ${fmt(seg.saldo)} `
+                  hallazgos.push(`Seguros: faltan comprobantes de Federación Patronal al cierre — saldo ${fmt(seg.saldo)} `
                     + `(${seg.aReclamar.length} cosa(s) a reclamar). Está en la solapa 14 del Excel.`)
                 }
               }
@@ -874,7 +877,7 @@ export function PapelesDeBalance() {
             armadoCC = abrirDesglosar(armadoCC, (movsCC ?? []) as unknown as MovimientoParaCC[], consumos)
             const sinAbrir = armadoCC.desgloseTarjeta?.sinAbrir ?? 0
             if (sinAbrir !== 0) {
-              toast.warning(`«Desglosar»: ${fmt(sinAbrir)} de pagos de la tarjeta no se pudieron abrir con su resumen. Está en la solapa 14.`)
+              hallazgos.push(`«Desglosar»: ${fmt(sinAbrir)} de pagos de la tarjeta no se pudieron abrir con su resumen. Está en la solapa 14.`)
             }
           } catch {
             toast.warning("No se pudo abrir «Desglosar» con los consumos de la tarjeta: queda entero en «sin tratar».")
@@ -883,7 +886,7 @@ export function PapelesDeBalance() {
 
           // 🛑 Lo que falta encuadrar se ve: es plata marcada que todavía no es de nadie.
           if (armadoCC.totalSinTratar !== 0) {
-            toast.warning(
+            hallazgos.push(
               `Hay ${armadoCC.sinTratar.length} marca(s) del extracto sin encuadrar `
               + `(${fmt(armadoCC.totalSinTratar)}): están en la solapa 14, abajo.`)
           }
@@ -933,6 +936,9 @@ export function PapelesDeBalance() {
       if (armado.compras.length === 0 && armado.ventas.length === 0) {
         toast.warning(`No hay comprobantes en los 12 subdiarios del ejercicio ${ej.etiqueta}.`)
       }
+      toast.success(hallazgos.length
+        ? `✓ Libro armado · ${hallazgos.length} cosa(s) para revisar: están en el informe y en «🧭 Recorrer temas».`
+        : "✓ Libro armado.", { description: hallazgos.length ? hallazgos.map(h => h.split(":")[0]).join(" · ") : undefined })
     } catch (e) {
       toast.error("No se pudo armar el libro: " + (e as Error).message)
     } finally {
