@@ -12,7 +12,7 @@
  *   template de la cuota; si está usada, el OTRO movimiento). La conciliación se hace ahí, con el «asignar» de siempre:
  *   el recorrido propone y lleva, no escribe. Cuando se concilia, el tema desaparece solo en la próxima carga.
  *
- * Los del histórico jul–nov 2025 (pagos de facturas: por decisión no se concilian) NO entran: se cuentan aparte.
+ * Los históricos sin pareja de template (jul-25 → ene-26: pagos de facturas, que por decisión no se concilian) NO entran: se cuentan aparte.
  */
 import type { PropuestaMovimiento, PropuestaDeuda, Pareja, MovimientoSinConciliar } from "@/lib/conciliacion/propuestas-ejercicio"
 import { ORDEN_PROPUESTA, ORIGEN_TEXTO, TIPOS_PROPUESTA, cuentaDeTabla } from "@/lib/conciliacion/propuestas-ejercicio"

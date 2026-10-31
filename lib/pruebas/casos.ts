@@ -5516,6 +5516,20 @@ export function correrCasos(): Resultado[] {
     chequear("Conciliación · propuestas", "🛡️ Ruido real descartado: $ 300.000 redondo sin CUIT contra una cuota de PAM ya usada → sin pareja («probable coincidencia»); CUIT del banco distinto → no es pareja",
       "e1 SIN_PAREJA coincidencia · e2 SIN_PAREJA", `e1 ${e1.tipo} ${/probable coincidencia/.test(e1.propuesta) ? "coincidencia" : "?"} · e2 ${e2.tipo}`,
       e1.tipo === "SIN_PAREJA" && /probable coincidencia/.test(e1.propuesta) && e2.tipo === "SIN_PAREJA", "A-FEAT-1430")
+
+    // 🗄️ A-FEAT-1315 (⚠️ cambió 31/10): un movimiento HISTÓRICO de MSA —también de diciembre/enero— no se concilia
+    // contra una factura; contra un template sí. Antes se proponía la factura (26 de los 29 «Pareja exacta» de Galicia).
+    const hist = (id: string, imp: number, fecha: string): MovimientoSinConciliar => ({ ...mov(id, imp, "TRF"), estado: "historico", fecha })
+    const r3 = proponerConciliaciones({
+      movimientos: [hist("h1", 5555, "2025-12-15"), hist("h2", 6666, "2026-01-20"), mov("p1", 5555, "TRF")],
+      obligaciones: [{ ...fac("fh", 5555, "20000000005"), fecha: "2025-12-10" }, { ...fac("ch", 6666, ""), origen: "cuota", quien: "Template X", fecha: "2026-01-18" },
+        { ...fac("fp", 5555, "20000000006"), fecha: "2026-03-08" }],
+      usadoPor: new Map(), conciliados: [], avisos: [],
+    }, "MSA", "2025-07-01", "2026-06-30")
+    const th = (id: string) => { const p = r3.movimientos.find(x => x.mov.id === id)!; return `${p.tipo}${p.parejas[0] ? ":" + p.parejas[0].id : ""}` }
+    const vH = `h1 ${th("h1")} · h2 ${th("h2")} · p1 ${th("p1")}`
+    chequear("Conciliación · propuestas", "🗄️ Histórico (aunque sea de dic/ene) NO se concilia contra factura, sí contra template; uno pendiente sí contra factura",
+      "h1 HISTORICO_FACTURA · h2 EXACTO:ch · p1 EXACTO:fp", vH, vH === "h1 HISTORICO_FACTURA · h2 EXACTO:ch · p1 EXACTO:fp", "A-FEAT-1315")
   }
 
   /**

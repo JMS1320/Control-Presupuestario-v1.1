@@ -20,7 +20,8 @@
  *  6. YA_USADA      la pareja exacta ya tiene otro movimiento → ¿duplicado o vínculo equivocado?
  *  7. CUIT_SIN_CIERRE el proveedor tiene comprobantes libres, ninguno (ni sumados) da el importe.
  *  8. SIN_PAREJA    nada; la pista dice qué es probablemente.
- *  —  HISTORICO_FACTURA  histórico de MSA jul–nov 2025: por decisión NO se concilian las facturas (A-FEAT-1315).
+ *  —  HISTORICO_FACTURA  histórico de MSA (estado «historico»: jul-25 → ene-26 en Galicia): NO se concilia contra
+ *     FACTURAS, sí contra templates (A-FEAT-1315; ⚠️ cambió 31/10: antes cortaba en el 01/12/2025 y sólo rotulaba).
  *
  * Una sola implementación: la usan la app (el recorrido del balance) y `scripts/propuestas-conciliacion-2526.mts`.
  */
@@ -31,7 +32,7 @@ export type TipoPropuesta = "EXACTO" | "AGRUPADO" | "CON_DIF" | "VARIOS" | "OTRA
 export const TIPOS_PROPUESTA: Record<TipoPropuesta, string> = {
   EXACTO: "Pareja exacta", AGRUPADO: "Pago de varios comprobantes", CON_DIF: "Con diferencia",
   VARIOS: "Varias parejas posibles", OTRA_EMPRESA: "La pareja es de otra empresa", YA_USADA: "La pareja ya está usada",
-  CUIT_SIN_CIERRE: "El proveedor tiene comprobantes que no cierran", SIN_PAREJA: "Sin pareja", HISTORICO_FACTURA: "Histórico jul–nov (no se concilia)",
+  CUIT_SIN_CIERRE: "El proveedor tiene comprobantes que no cierran", SIN_PAREJA: "Sin pareja", HISTORICO_FACTURA: "Histórico (no se concilia contra factura)",
 }
 /** El orden en que conviene recorrerlas: primero lo que se resuelve en un clic. */
 export const ORDEN_PROPUESTA: TipoPropuesta[] = ["EXACTO", "AGRUPADO", "CON_DIF", "VARIOS", "YA_USADA", "OTRA_EMPRESA", "CUIT_SIN_CIERRE", "SIN_PAREJA", "HISTORICO_FACTURA"]
@@ -159,7 +160,6 @@ const n = (x: unknown) => Number(x) || 0
 const cuitDe = (x: unknown) => String(x ?? "").replace(/\D/g, "")
 const dias = (a?: string | null, b?: string | null) => (!a || !b) ? 9999 : Math.round(Math.abs(Date.parse(a) - Date.parse(b)) / 86400000)
 const plata = (x: number) => `$ ${x.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-const CORTE_HIST_FACTURAS = "2025-12-01"
 const CUIT_PROPIOS: Record<string, string> = { "30617786016": "MSA", "20044390222": "PAM", "27066824611": "MA" }
 const COLS_VINC = ["comprobante_arca_id", "template_cuota_id", "sueldo_pago_id", "anticipo_id", "comprobante_venta_id"]
 
@@ -352,7 +352,15 @@ export function proponerConciliaciones(d: DatosConciliacion, empresa: string, de
      */
     const confirmaCuit = (o: Obligacion) => !!m.cuitBanco && o.cuit === m.cuitBanco
     const compatible = (o: Obligacion) => !(m.cuitBanco && o.cuit && o.cuit !== m.cuitBanco)
-    const cerca = (o: Obligacion) => o.signo === m.lado && compatible(o) && dias(o.fecha, m.fecha) <= (confirmaCuit(o) ? 60 : 20)
+    /**
+     * 🗄️ A-FEAT-1315 — un movimiento HISTÓRICO de MSA no se concilia contra FACTURAS (sí contra templates, sueldos,
+     * anticipos…). ⚠️ cambió 31/10 (nota de JMS «no conciliar históricos contra factura, sí contra templates»): antes la
+     * regla sólo ponía el rótulo a los que quedaban sin pareja —las facturas se seguían proponiendo— y además cortaba en
+     * el 01/12/2025, pero el histórico de Galicia llega hasta enero 2026 (26 de los 29 «Pareja exacta» eran de ahí).
+     */
+    const histFactura = m.cuenta.empresa === "MSA" && m.estado === "historico"
+    const esFactura = (o: Obligacion) => o.origen === "factura" || o.origen === "NC" || o.origen === "factura-neta-sicore"
+    const cerca = (o: Obligacion) => o.signo === m.lado && compatible(o) && !(histFactura && esFactura(o)) && dias(o.fecha, m.fecha) <= (confirmaCuit(o) ? 60 : 20)
     const exactas = d.obligaciones.filter(o => cerca(o) && Math.abs(o.importe - imp) < 1)
     const redondo = Math.abs(imp % 1000) < 0.005
     const debil = (o: Obligacion) => redondo && !confirmaCuit(o)
@@ -360,8 +368,7 @@ export function proponerConciliaciones(d: DatosConciliacion, empresa: string, de
     const exLibreOtra = unicos(exactas.filter(o => libre(o) && o.empresa !== m.cuenta.empresa && !debil(o)))
     const exUsadas = unicos(exactas.filter(o => !libre(o) && !debil(o)))
     const coincidencias = unicos(exactas.filter(o => debil(o) && (o.empresa !== m.cuenta.empresa || !libre(o))))
-    const delCuit = m.cuitBanco ? d.obligaciones.filter(o => o.cuit === m.cuitBanco && o.signo === m.lado && libre(o) && o.origen !== "factura-neta-sicore" && dias(o.fecha, m.fecha) <= 150) : []
-    const histFactura = m.cuenta.empresa === "MSA" && m.estado === "historico" && m.fecha < CORTE_HIST_FACTURAS
+    const delCuit = m.cuitBanco ? d.obligaciones.filter(o => o.cuit === m.cuitBanco && o.signo === m.lado && libre(o) && o.origen !== "factura-neta-sicore" && !(histFactura && esFactura(o)) && dias(o.fecha, m.fecha) <= 150) : []
     const pista = pistaDe(m.descripcion, m.quienBanco, m.cuitBanco, m.lado)
     const con = (o: Obligacion, extra: Partial<Pareja> = {}): Pareja => ({ ...o, dias: dias(o.fecha, m.fecha), ...extra })
 
@@ -407,7 +414,7 @@ export function proponerConciliaciones(d: DatosConciliacion, empresa: string, de
           propuesta: `${m.quienBanco ?? "El proveedor"} tiene ${delCuit.length} comprobante(s) libres, pero ninguno (ni sumados) da ${plata(imp)}. Revisar montos (¿retención, anticipo?) o falta un comprobante.` }
       } else {
         r = { tipo: histFactura ? "HISTORICO_FACTURA" : "SIN_PAREJA", parejas: [],
-          propuesta: histFactura ? "Histórico jul–nov 2025: si es pago de factura, por decisión no se concilia (A-FEAT-1315)."
+          propuesta: histFactura ? "Histórico: si es pago de factura, por decisión no se concilia (A-FEAT-1315); sí si es de un template."
             : `Sin pareja en lo registrado. ${pista}.${coincidencias.length ? ` (Hay ${coincidencias.length} registro(s) por el mismo importe redondo —${coincidencias.slice(0, 2).map(o => o.quien).join(", ")}— pero nada los confirma: probable coincidencia.)` : ""}` }
       }
     }

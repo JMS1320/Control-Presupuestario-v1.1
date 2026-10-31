@@ -355,7 +355,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
             {cuentas.size > 0 && <button type="button" className="underline text-muted-foreground" onClick={() => setCuentas(new Set())}>todas las cuentas</button>}
             <span className="text-muted-foreground">{PISTA_CTRL_CLICK}</span>
             {porCuenta.length === 0 && <span className="text-emerald-700">✓ nada pendiente</span>}
-            <span className="ml-2 text-muted-foreground">calculada {conciliacion.calculado ? `a las ${conciliacion.calculado}` : ""}{conciliacion.historicos ? ` · ${conciliacion.historicos} del histórico jul–nov no entran` : ""}{conciliacion.avisos.length ? ` · ⚠️ ${conciliacion.avisos.length} lectura(s) fallaron` : ""}</span>
+            <span className="ml-2 text-muted-foreground">calculada {conciliacion.calculado ? `a las ${conciliacion.calculado}` : ""}{conciliacion.historicos ? ` · ${conciliacion.historicos} históricos sin pareja de template no entran (el histórico no se concilia contra facturas)` : ""}{conciliacion.avisos.length ? ` · ⚠️ ${conciliacion.avisos.length} lectura(s) fallaron` : ""}</span>
             <button type="button" className="rounded border px-2 py-0.5 hover:bg-muted" onClick={conciliacion.recalcular}
               title="Después de conciliar en el extracto, para que los temas resueltos desaparezcan">↻ Recalcular</button>
           </div>
