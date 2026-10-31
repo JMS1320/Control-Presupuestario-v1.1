@@ -15,28 +15,16 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { ahoraISO } from "@/lib/fechas"
 import type { PendienteBalance } from "@/lib/balance/pendientes-balance"
-import { GRUPOS, conciliacionPorCuenta, progreso, textoPendienteDe, fuenteDe, linksDeLaApp, sinTresVistas, type GrupoTema, type Tema } from "@/lib/balance/recorrido"
+import { GRUPOS, conciliacionPorCuenta, progreso, textoPendienteDe, fuenteDe, sinTresVistas, type GrupoTema, type Tema } from "@/lib/balance/recorrido"
 import { armarPapelDeTrabajo, vinculoDe } from "@/lib/cuaderno/papel-de-trabajo"
-import { calcularTabla, mostrarValor } from "@/lib/cuaderno/formulas"
 import { linkExtracto } from "@/lib/extracto/link"
+import { COLOR, DetalleTema, ICONO } from "@/components/recorrido-tema-detalle"
 
+/** Preferencias de este navegador (si el navegador no deja guardar, se usa el default). */
+const leerPref = (k: string, def: boolean) => { try { const v = localStorage.getItem(k); return v == null ? def : v === "1" } catch { return def } }
+const guardarPref = (k: string, v: boolean) => { try { localStorage.setItem(k, v ? "1" : "0") } catch { /* sin preferencia guardada */ } }
 const fmt = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-const ICONO = Object.fromEntries(GRUPOS.map(g => [g.id, g.icono])) as Record<GrupoTema, string>
-const TITULO = Object.fromEntries(GRUPOS.map(g => [g.id, g.titulo])) as Record<GrupoTema, string>
-const COLOR: Record<GrupoTema, string> = {
-  "error": "border-red-300 bg-red-50 text-red-900",
-  "decision": "border-amber-300 bg-amber-50 text-amber-900",
-  "pregunta": "border-sky-300 bg-sky-50 text-sky-900",
-  "arca": "border-rose-300 bg-rose-50 text-rose-900",
-  "documento": "border-amber-300 bg-amber-50 text-amber-900",
-  "falta inicio": "border-violet-300 bg-violet-50 text-violet-900",
-  "sin informacion": "border-slate-300 bg-slate-50 text-slate-800",
-  "pendiente desarrollo": "border-teal-300 bg-teal-50 text-teal-900",
-  "conciliacion": "border-blue-300 bg-blue-50 text-blue-900",
-  "deuda": "border-orange-300 bg-orange-50 text-orange-900",
-  "cheque": "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-900",
-}
 
 export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerrar, onPendientes, conciliacion, enCamino = [] }: {
   empresa: string
@@ -82,8 +70,27 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   const porCuenta = useMemo(() => conciliacionPorCuenta(temas), [temas])
   // Los tipos (nivel 3) dependen del grupo elegido: al cambiar de grupo, el filtro de tipo arranca de cero.
   useEffect(() => { setEtiquetas(new Set()) }, [filtro])
-  const fuente = actual ? fuenteDe(actual) : null
-  const enApp = actual ? linksDeLaApp(actual) : []
+  /**
+   * 🪟 Los tres paneles se pliegan (JMS 31/10: «tenerlos como están o colapsados, o del tipo de menú que se abre de la
+   * izquierda como es la app, así cuando estoy dentro del tema lo veo grande»). Se recuerda en este navegador.
+   */
+  const [verFiltros, setVerFiltros] = useState(() => leerPref("recorrido-ver-filtros", true))
+  const [verLista, setVerLista] = useState(() => leerPref("recorrido-ver-lista", true))
+  const [listaFlotante, setListaFlotante] = useState(false)
+  useEffect(() => { guardarPref("recorrido-ver-filtros", verFiltros) }, [verFiltros])
+  useEffect(() => { guardarPref("recorrido-ver-lista", verLista) }, [verLista])
+  /** ↗ El tema solo, en otra pestaña: una foto de cómo está ahora (sólo lectura). */
+  const abrirAparte = () => {
+    if (!actual) return
+    const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    try {
+      // Las fotos viejas se van (quedan las últimas 20): son para mirar ahora, no un archivo.
+      const viejas = Object.keys(localStorage).filter(k => k.startsWith("recorrido-tema:")).sort()
+      for (const k of viejas.slice(0, Math.max(0, viejas.length - 19))) localStorage.removeItem(k)
+      localStorage.setItem(`recorrido-tema:${id}`, JSON.stringify({ tema: actual, empresa, etiqueta, foto: new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) }))
+    } catch { toast.error("El navegador no dejó guardar la foto del tema para abrirla aparte"); return }
+    window.open(`/recorrido-tema?id=${id}`, "_blank", "noopener")
+  }
 
   /**
    * 💾 Lo escrito y no confirmado se guarda solo como nota al pasar a otro tema o al cerrar (JMS 31/10: «prefiero
@@ -258,11 +265,22 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
             : <span className="text-xs text-emerald-700" data-test="recorrido-listo">✓ Están todos los temas</span>}
           <div className="ml-auto flex items-center gap-2">
             <span className="hidden md:inline text-xs text-muted-foreground">↑ ↓ para moverse · Esc cierra</span>
+            <Button variant="outline" size="sm" onClick={() => { setVerLista(v => !v); setListaFlotante(false) }} aria-pressed={verLista}
+              title={verLista ? "Ocultar la lista de temas (se abre con ☰ desde la izquierda)" : "Mostrar la lista de temas fija a la izquierda"}>☰ {verLista ? "Ocultar lista" : "Fijar lista"}</Button>
+            <Button variant="outline" size="sm" onClick={() => setVerFiltros(v => !v)} aria-pressed={verFiltros}
+              title={verFiltros ? "Plegar los grupos y filtros para ver el tema más grande" : "Mostrar los grupos y filtros"}>{verFiltros ? "▴ Plegar filtros" : "▾ Filtros"}</Button>
             <Button variant="outline" size="sm" onClick={cerrar}>Cerrar</Button>
           </div>
         </div>
+        {/* Plegados: una línea con lo que está filtrado, para no perder de vista dónde se está. */}
+        {!verFiltros && (
+          <div className="text-xs text-muted-foreground" data-test="recorrido-filtros-plegados">
+            Mostrando: {filtro.size ? GRUPOS.filter(g => filtro.has(g.id)).map(g => `${g.icono} ${g.titulo}`).join(" · ") : "todos los grupos"}
+            {etiquetas.size ? ` · tipo ${[...etiquetas].join(", ")}` : ""}{ocultarRespondidos ? " · sin los respondidos" : ""} · {visibles.length} tema(s)
+          </div>
+        )}
         {/* 🧱 Nivel 1 — la base · nivel 2 — el resto. Los tipos (nivel 3) sólo con un grupo elegido (JMS 31/10). */}
-        {([1, 2] as const).map(nivel => {
+        {verFiltros && ([1, 2] as const).map(nivel => {
           const gs = GRUPOS.filter(g => g.nivel === nivel && prog.porGrupo[g.id].total)
           if (!gs.length) return null
           return (
@@ -289,7 +307,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
           )
         })}
         {/* 🏦 Con «Conciliar movimientos» elegido: lo pendiente por cuenta, con su link para ir a trabajarlo. */}
-        {filtro.has("conciliacion") && conciliacion && !conciliacion.cargando && (
+        {verFiltros && filtro.has("conciliacion") && conciliacion && !conciliacion.cargando && (
           <div className="flex flex-wrap items-center gap-1.5 text-xs" data-test="recorrido-conciliacion-por-cuenta">
             <span className="text-muted-foreground">🏦 Sin conciliar, por cuenta:</span>
             {porCuenta.map(c => (
@@ -306,7 +324,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
           </div>
         )}
         {/* Nivel 3 — los tipos, sólo los del grupo elegido */}
-        {filtro.size > 0 && tiposPresentes.length > 0 && (
+        {verFiltros && filtro.size > 0 && tiposPresentes.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
             <span className="text-muted-foreground">Tipo:</span>
             {tiposPresentes.map(([e, c]) => (
@@ -318,12 +336,20 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
         )}
       </div>
 
-      <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[340px_1fr]">
+      <div className={`relative flex-1 min-h-0 grid grid-cols-1 ${verLista ? "md:grid-cols-[340px_1fr]" : ""}`}>
+        {/* ☰ Con la lista oculta: un botón a la izquierda la abre flotando, como el menú de la app. */}
+        {!verLista && (
+          <button type="button" onClick={() => setListaFlotante(v => !v)} data-test="recorrido-lista-flotante"
+            className="absolute left-0 top-2 z-20 rounded-r border border-l-0 bg-background px-2 py-1 text-sm shadow hover:bg-muted"
+            title="Abrir la lista de temas">☰</button>
+        )}
+        {!verLista && listaFlotante && <div className="absolute inset-0 z-10 bg-black/20" onClick={() => setListaFlotante(false)} aria-hidden />}
         {/* La cola */}
-        <nav className="border-r overflow-y-auto max-h-[30vh] md:max-h-none" aria-label="Temas">
+        <nav className={verLista ? "border-r overflow-y-auto max-h-[30vh] md:max-h-none"
+          : listaFlotante ? "absolute inset-y-0 left-0 z-20 w-[340px] max-w-[90vw] overflow-y-auto border-r bg-background shadow-xl" : "hidden"} aria-label="Temas">
           {visibles.length === 0 && <p className="p-4 text-sm text-muted-foreground">No hay temas con estos filtros.</p>}
           {visibles.map((t, i) => (
-            <button key={t.clave} id={`tema-${t.clave}`} type="button" onClick={() => setClaveActual(t.clave)}
+            <button key={t.clave} id={`tema-${t.clave}`} type="button" onClick={() => { setClaveActual(t.clave); setListaFlotante(false) }}
               className={`w-full text-left px-3 py-2 border-b text-sm flex gap-2 items-start ${i === idx ? "bg-muted" : "hover:bg-muted/50"}`}>
               <span aria-hidden>{t.respondido ? "✅" : ICONO[t.grupo]}</span>
               <span className="min-w-0">
@@ -335,90 +361,24 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
         </nav>
 
         {/* El tema abierto */}
-        <section className="overflow-y-auto p-4 md:p-6" aria-live="polite">
+        <section className={`overflow-y-auto p-4 md:p-6 ${verLista ? "" : "pl-10 md:pl-12"}`} aria-live="polite">
           {!actual ? <p className="text-sm text-muted-foreground">Elegí un tema.</p> : (
-            <div className="max-w-3xl space-y-4">
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className={`rounded border px-2 py-0.5 ${COLOR[actual.grupo]}`}>{ICONO[actual.grupo]} {TITULO[actual.grupo]}</span>
-                <span className="text-muted-foreground">{actual.papel}{actual.solapa ? ` · solapa ${actual.solapa}` : ""}{actual.idPendiente ? ` · ${actual.idPendiente}` : ""}</span>
-                <span className="ml-auto text-muted-foreground tabular-nums">{idx + 1} de {visibles.length}</span>
-              </div>
-              <h3 className="text-xl font-semibold leading-snug">{actual.titulo}</h3>
-              {actual.valor2425 && <p className="text-sm"><span className="text-muted-foreground">El año pasado:</span> <span className="tabular-nums">{actual.valor2425}</span></p>}
-
-              <div className="space-y-1">
-                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Qué pasa</div>
-                <p className="text-sm">{actual.que}</p>
-              </div>
-
-              {/* 📄 A-FEAT-1439 — las TRES vistas: lo objetivo, lo que dice la app, y la propuesta. */}
-              <div className={`rounded border p-3 space-y-1 ${fuente ? "border-slate-300 bg-slate-50" : "border-amber-300 bg-amber-50"}`} data-test="recorrido-fuente">
-                <div className="text-xs font-medium uppercase tracking-wide text-slate-700">📄 Fuente — lo objetivo{fuente ? `: ${fuente.origen}` : ""}</div>
-                {fuente
-                  ? <p className="text-sm">{fuente.detalle}</p>
-                  : <p className="text-sm text-amber-900">⚠️ {actual.fuenteEsperada
-                    ? <><strong>📥 Hace falta: {actual.fuenteEsperada}.</strong> Dejalo en la carpeta de comunicación (o cargalo en la app) y pasa a ser la fuente. Hasta tenerlo, lo que ves es sólo lo que dice la app (y mi propuesta).</>
-                    : "Este tema no tiene fuente externa todavía: lo que ves es sólo lo que dice la app (y mi propuesta)."}</p>}
-                {!!fuente?.links?.length && (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {fuente.links.map(l => (
-                      <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer" className="rounded border bg-background px-3 py-1.5 text-sm hover:bg-muted">↗ {l.texto}</a>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-1" data-test="recorrido-en-la-app">
-                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">🗂️ En la app</div>
-                <div className="flex flex-wrap gap-2">
-                  {enApp.map(l => (
-                    <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer"
-                      className="rounded border px-3 py-1.5 text-sm hover:bg-muted">↗ {l.texto}</a>
-                  ))}
-                  {!enApp.length && <span className="text-sm text-amber-900">⚠️ Sin link a la pantalla donde vive el dato.</span>}
-                  <button type="button" onClick={abrirPapel} disabled={papelId === undefined}
+            <div className={`${verLista ? "max-w-3xl" : "max-w-5xl"} space-y-4`}>
+              <DetalleTema tema={actual}
+                arriba={<span className="ml-auto flex items-center gap-2 text-muted-foreground tabular-nums">
+                  {idx + 1} de {visibles.length}
+                  <button type="button" onClick={abrirAparte} className="rounded border px-2 py-0.5 hover:bg-muted" data-test="recorrido-abrir-aparte"
+                    title="Abre este tema solo, en otra pestaña (una foto de cómo está ahora; para responder, volvé acá)">↗ Abrir en otra pestaña</button>
+                </span>}
+                enAppExtra={<button type="button" onClick={abrirPapel} disabled={papelId === undefined}
                     className="rounded border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-sm text-indigo-900 hover:bg-indigo-100 disabled:opacity-50"
                     title="Un documento del Cuaderno atado a este tema: la fuente, lo que dice la app, la propuesta y la cuenta, para pensar y anotar sin tocar datos">
                     📓 {papelId ? "Abrir el papel de trabajo" : actual.comparacion ? "Armar papel de trabajo (con la cuenta)" : "Armar papel de trabajo"}
-                  </button>
-                </div>
-              </div>
-
-              {actual.comparacion && (
-                <div className="space-y-1">
-                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{actual.comparacion.titulo}</div>
-                  <div className="overflow-x-auto">
-                    <table className="border-collapse text-sm">
-                      <tbody>
-                        {calcularTabla(actual.comparacion.celdas).map((fila, f) => (
-                          <tr key={f} className={f === 0 ? "bg-muted/50 font-medium" : ""}>
-                            {fila.map((v, c) => (
-                              <td key={c} className={`border px-2 py-1 ${typeof v === "number" ? "text-right tabular-nums" : ""}`}>{mostrarValor(v)}</td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {actual.propuesta && (
-                <div className="rounded border border-emerald-300 bg-emerald-50 p-3 space-y-2">
-                  <div className="text-xs font-medium uppercase tracking-wide text-emerald-800">💡 Propuesta</div>
-                  <p className="text-sm text-emerald-950">{actual.propuesta}</p>
-                  {actual.accion && !actual.respondido && (
-                    <Button size="sm" onClick={aplicar} disabled={guardando} data-test="recorrido-aplicar">⚡ Aplicar: {actual.accion.texto}</Button>
-                  )}
-                </div>
-              )}
-
-              {actual.pendiente?.resolucion && (
-                <div className="rounded border bg-muted/40 p-3 text-sm">
-                  <span className="text-muted-foreground">{actual.respondido ? "Respondido" : "Nota"}: </span>{actual.pendiente.resolucion}
-                  {actual.respondido && <button type="button" className="ml-2 text-xs underline text-muted-foreground" onClick={reabrir}>reabrir</button>}
-                </div>
-              )}
+                  </button>}
+                propuestaExtra={actual.accion && !actual.respondido
+                  ? <Button size="sm" onClick={aplicar} disabled={guardando} data-test="recorrido-aplicar">⚡ Aplicar: {actual.accion.texto}</Button> : null}
+                resolucionExtra={actual.respondido
+                  ? <button type="button" className="ml-2 text-xs underline text-muted-foreground" onClick={reabrir}>reabrir</button> : null} />
 
               <div className="space-y-2 border-t pt-4">
                 <label htmlFor="recorrido-nota" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tu respuesta</label>
