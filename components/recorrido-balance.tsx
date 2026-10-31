@@ -480,7 +480,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
                     <div className="text-xs font-medium uppercase tracking-wide text-amber-800">👤 Pasado a {tarea.asignado_a ?? "alguien"} · desde el {new Date(tarea.created_at).toLocaleDateString("es-AR")}{tarea.creado_por ? ` · por ${tarea.creado_por}` : ""}</div>
                     <p className="whitespace-pre-wrap">{tarea.motivo}</p>
                     {tarea.imagen && <img src={tarea.imagen} alt="foto adjunta" className="max-h-64 rounded border bg-white object-contain" />}
-                    {!!tarea.seguimiento?.length && <p className="text-xs text-muted-foreground">Última respuesta: {tarea.seguimiento[tarea.seguimiento.length - 1].texto}</p>}
+                    {!!tarea.seguimiento?.length && <p className="whitespace-pre-wrap text-xs text-muted-foreground">Última respuesta: {tarea.seguimiento[tarea.seguimiento.length - 1].texto}</p>}
                     <p className="text-xs text-muted-foreground">Se contesta y se cierra desde la 🔔 de quien la recibe (o Principal → Para revisar).</p>
                   </div>
                 )

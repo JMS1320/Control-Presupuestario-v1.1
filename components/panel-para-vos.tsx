@@ -103,7 +103,7 @@ export function PanelParaVos() {
                   className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${nv.nivel === 4 ? "bg-red-600 text-white" : nv.nivel === 3 ? "bg-orange-100 text-orange-800" : nv.nivel === 2 ? "bg-yellow-100 text-yellow-800" : "bg-gray-100 text-gray-600"}`}>
                   {NIVELES[nv.nivel].emoji} {NIVELES[nv.nivel].etiqueta}
                 </span>)}
-              <span>{m.motivo}</span>
+              <span className="whitespace-pre-wrap">{m.motivo}</span>
               {cuotaDeTarea(m.cierre_auto) && mia && <a href={linkPagar({ cuotaId: cuotaDeTarea(m.cierre_auto) })} className="rounded px-1.5 py-0.5 text-[11px] font-normal text-green-700 hover:bg-green-50" title="Abrir el Cash Flow con la cuota seleccionada, para sacar el pago">💸 Pagar</a>}
               {m.cierre_auto?.startsWith("cuota_conciliada:") && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-normal text-gray-600" title="Se cierra sola cuando el pago de su cuota queda conciliado">🔒 se cierra sola al conciliar</span>}
             </div>
@@ -116,7 +116,8 @@ export function PanelParaVos() {
               </div>)}
             {hilo.length > 0 && (
               <ul className="mt-2 space-y-1 border-l-2 pl-2 text-xs">
-                {hilo.map((h, i) => <li key={i}><b>{h.autor ?? "—"}</b>: {h.texto}</li>)}
+                {/* Renglones como se escribieron (JMS 31/10: «renglones en vez de todo de corrido»). */}
+                {hilo.map((h, i) => <li key={i} className="whitespace-pre-wrap"><b>{h.autor ?? "—"}</b>: {h.texto}</li>)}
               </ul>)}
           </div>
           {modo === "esperando" && <span className="text-xs text-muted-foreground">Esperando que confirme {m.confirma}{m.resolucion ? ` · «${m.resolucion}»` : ""}</span>}
