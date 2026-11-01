@@ -3344,6 +3344,9 @@ Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantid
 ### 2026-11-01 · Categoría de los gastos de la cuenta en dólares de MSA (script 171, DATOS) — A-FEAT-1503 — ✅ CORRIDO (JMS: «serán gastos bancarios en dólares»)
 `msa.cc_usd`: 49 de las 50 filas del 169 reciben la MISMA categoría que esos conceptos tienen en el Galicia en pesos (mantenimiento → Comision Cuenta Bancaria · IVA → Iva Bancario · Imp. Deb. Ley 25413 → Debitos / Creditos · IIBB servicios digitales → IIBB Bancario · Percep. IVA → Percepcion IVA · Google One → INFORMATICA). La transferencia de US$ 34.000 a Galicia Securities queda sin categoría. Marca `motivo_revision = '[script 171]'`; deshacer: `171-…-deshacer.sql`.
 
+### 2026-11-01 · Reglas de conciliación de la cuenta en dólares de MSA (script 172, DATOS) — A-FEAT-1503 — ✅ CORRIDO con OK de JMS («las reglas de cta cte dólares hacelas así; después corro la conciliación»)
+`public.reglas_conciliacion`, `cuenta_bancaria_id = 'msa_cc_usd'`: 6 reglas, las mismas categorías del Galicia en pesos (Percep. Iva · Imp. Ing. Brutos · Imp. Deb. Ley 25413 · IVA exacto · Comision Mantenimiento · Google One). Tocan 49 de los 50 movimientos; la transferencia a Galicia Securities queda para conciliar a mano. Marca `[script 172]` en el detalle; deshacer: `172-…-deshacer.sql`.
+
 ### 2026-11-01 · Parseo de SANTANDER (script 167, DATOS) — A-FEAT-1485 — ✅ CORRIDO con OK de JMS («ok corré el 167»)
 `msa.santander`: `concepto` (texto en líneas, `bloqueSantander`) + desglose de los 148 movimientos (descripcion, grupo_de_conceptos, leyendas_adicionales_1..3, numero_de_comprobante, numero_de_terminal); `public.config_parseo_extracto` + 20 reglas de `msa_santander` (marca `[script 167]` en `descripcion_campo`); `public.reglas_conciliacion` + 1 (CUIT 30617786016 → template «Interbancaria Santander», marca en `detalle`). Foto antes: `scripts/167-parseo-santander-foto.json`. Deshacer: `167-parseo-santander-deshacer.mts`.
 
