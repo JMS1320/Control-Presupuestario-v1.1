@@ -66,6 +66,11 @@ export interface ContraparteDelBalance {
    * 🔑 Acá está el arreglo de `CTA JMS` / `CUENTA JMS`.
    */
   etiquetasContable: string[]
+  /**
+   * 🔁 A-FEAT-1499 (JMS 01/11: *«AFA y ACREN se concilian contra su cta cte»*): además de su marca, entran TODOS los
+   * movimientos del banco con su CUIT, conciliados o no — los que van contra una factura también son plata de esa cuenta.
+   */
+  porCuit?: boolean
 }
 
 /**
@@ -101,16 +106,19 @@ export const CONTRAPARTES_DEL_BALANCE: ContraparteDelBalance[] = [
     // ⚠️ `RET PAM`, `RET 1 PAM` y `RET 3 PAM` tampoco: son retiros, y van en el papel 09.
     etiquetasContable: [],
   },
+  // ⚠️ cambió 01/11 (A-FEAT-1499): hasta acá no tenían marca y sus pagos «salían del vínculo con la factura» — pero el
+  // papel sólo toma pagos marcados, así que les daba CERO cobrado y pagado (AFA «le debo $ 2.745.698,32» sin serlo).
+  // Ahora: marca CTA AFA / CTA ACREN para lo que no va contra una factura, y además todo lo del banco con su CUIT.
   {
     clave: "AFA", nombre: "Agricultores Federados Argentinos", cuit: "30525718626",
     aliasHistorico: ["AGRICULTORES FEDERADOS ARGENTINOS SOC COOP LTDA"],
-    etiquetasContable: [],
+    etiquetasContable: ["CTA AFA"], porCuit: true,
   },
   {
     clave: "ACREN", nombre: "Agro Centros Región Núcleo", cuit: "33716360429",
     // El nombre es idéntico en las tres fuentes: de las fáciles.
     aliasHistorico: ["AGRO CENTROS REGION NUCLEO S.A."],
-    etiquetasContable: [],
+    etiquetasContable: ["CTA ACREN"], porCuit: true,
   },
 ]
 
@@ -140,6 +148,8 @@ export interface VentaParaCC {
   numero: string
   total: number
   cuit?: string | null
+  /** 🔁 A-FEAT-1499: las retenciones que sufrió la venta (IVA, IIBB, Ganancias): se cobraron en papel, no en el banco. */
+  retenciones?: number
 }
 
 /** Un movimiento del extracto, para los pagos marcados a mano. */
@@ -153,6 +163,10 @@ export interface MovimientoParaCC {
   /** La marca del usuario. Es la que decide de quién es el pago. */
   contable?: string | null
   comprobantes_pagados?: string | null
+  /** 🔁 A-FEAT-1499: el CUIT que informa el banco (`leyendas_adicionales_2`), para las cuentas que van por CUIT. */
+  cuit?: string | null
+  /** El estado del movimiento: los sin marcar ni conciliar se cuentan aparte (falta encuadrarlos). */
+  estado?: string | null
 }
 
 export interface CuentaCorrienteDelBalance {
@@ -174,6 +188,13 @@ export interface CuentaCorrienteDelBalance {
   saldoAlCierre: number
   /** Cuántos comprobantes salieron del histórico, que es el tramo sin CUIT. */
   desdeHistorico: number
+  /**
+   * 🔁 A-FEAT-1499: los movimientos con su CUIT que todavía no están marcados ni conciliados. Ya suman al saldo (son plata
+   * de esa cuenta), pero falta encuadrarlos: se muestran, no se esconden.
+   */
+  sinMarcar?: { movimientos: number; total: number }
+  /** 🔁 A-FEAT-1499: lo retenido en las ventas, que cuenta como cobrado. */
+  retenciones?: number
 }
 
 export interface PapelDeCuentasCorrientes {
@@ -418,8 +439,26 @@ export function armarCuentasCorrientes(
       })
     }
 
-    const pagos: PagoCC[] = movimientos
-      .filter(m => porEtiqueta.get(normalizar(m.contable))?.clave === c.clave)
+    // 🔁 A-FEAT-1499: la marca manda; una cuenta «por CUIT» suma además todo lo de su CUIT que no esté marcado para otra.
+    const esDeEsta = (m: MovimientoParaCC) => {
+      const deMarca = porEtiqueta.get(normalizar(m.contable))
+      if (deMarca) return deMarca.clave === c.clave
+      return !!c.porCuit && String(m.cuit ?? "").replace(/\D/g, "") === c.cuit
+    }
+    const vistos = new Set<string>()
+    const suyos = movimientos.filter(m => { if (vistos.has(m.id) || !esDeEsta(m)) return false; vistos.add(m.id); return true })
+    let sinMarcarN = 0, sinMarcarT = 0
+    for (const m of suyos) {
+      const marcado = porEtiqueta.get(normalizar(m.contable))?.clave === c.clave
+      if (c.porCuit && !marcado && !/^(conciliado|historico)$/i.test(String(m.estado ?? ""))) {
+        sinMarcarN += 1; sinMarcarT = r2(sinMarcarT + Number(m.debitos ?? 0) - Number(m.creditos ?? 0))
+      }
+    }
+    const retenciones: PagoCC[] = ventas.filter(v => v.cuit === c.cuit && Number(v.retenciones) > 0).map(v => ({
+      id: `ret-${v.id}`, fecha: v.fecha, monto: -r2(Number(v.retenciones)),
+      descripcion: `Retenciones sufridas · ${v.numero}`, comprobantes_pagados: v.numero,
+    }))
+    const pagos: PagoCC[] = suyos
       .map(m => ({
         id: m.id,
         fecha: m.fecha,
@@ -429,6 +468,7 @@ export function armarCuentasCorrientes(
         detalle: m.detalle ?? null,
         comprobantes_pagados: m.comprobantes_pagados ?? null,
       }))
+    pagos.push(...retenciones)
 
     const resumen = armarCuentaCorriente(facturas, pagos)
     const cargado = saldosInicio[c.clave]
@@ -440,6 +480,8 @@ export function armarCuentasCorrientes(
       resumen,
       saldoAlCierre: r2(inicio + resumen.saldo),
       desdeHistorico,
+      ...(c.porCuit ? { sinMarcar: { movimientos: sinMarcarN, total: sinMarcarT },
+        retenciones: r2(retenciones.reduce((t, x) => t - x.monto, 0)) } : {}),
     })
   }
 

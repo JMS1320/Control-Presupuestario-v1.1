@@ -71,6 +71,65 @@ function comparacionDe(p: PropuestaMovimiento): Comparacion | undefined {
 }
 
 /** Los temas de conciliación de movimientos, en el orden en que conviene recorrerlos. */
+/**
+ * 🔁 A-FEAT-1499 — una contraparte que va por CUENTA CORRIENTE (JMS 01/11: *«AFA no tiene facturas a pagar sino saldo en
+ * cta cte: verlo en su sector y no en facturas no conciliadas»*). `etiqueta` = la marca que la encuadra (CTA AFA); sin
+ * etiqueta (Federación Patronal) su saldo sale de otro lado (las pólizas) y sólo se da por conciliado.
+ */
+export interface ContraparteCuentaCorriente { clave: string; nombre: string; cuit: string; etiqueta: string | null; nombreBanco?: RegExp
+  /** Federación: sólo los que no tienen pareja (los que la tienen se concilian contra la cuota de su póliza). */
+  soloSinPareja?: boolean }
+
+const esDe = (c: ContraparteCuentaCorriente, m: MovimientoSinConciliar) =>
+  String(m.cuitBanco ?? "").replace(/\D/g, "") === c.cuit || (!!c.nombreBanco && c.nombreBanco.test(`${m.quienBanco ?? ""} ${m.descripcion}`))
+
+/** Pura: un tema por contraparte y cuenta con sus movimientos sin conciliar, para encuadrarlos en su cuenta corriente. */
+export function temasDeCuentaCorriente(propuestas: PropuestaMovimiento[], contrapartes: ContraparteCuentaCorriente[], extras: ExtrasTemas = SIN_EXTRAS): { temas: Tema[]; cubiertos: Set<string> } {
+  const cubiertos = new Set<string>()
+  const grupos = new Map<string, { c: ContraparteCuentaCorriente; ps: PropuestaMovimiento[] }>()
+  for (const p of propuestas) {
+    if (p.tipo === "HISTORICO_FACTURA") continue
+    const c = contrapartes.find(x => esDe(x, p.mov))
+    if (!c || (c.soloSinPareja && p.parejas.length)) continue
+    const k = `${c.clave}:${p.mov.cuenta.cuentaId}`
+    const g = grupos.get(k) ?? { c, ps: [] }
+    g.ps.push(p); grupos.set(k, g)
+    cubiertos.add(`conc:${p.mov.cuenta.cuentaId}:${p.mov.id}`)
+  }
+  const temas = [...grupos.entries()].map(([k, { c, ps }]): Tema => {
+    const movs = ps.map(p => p.mov).sort((a, b) => a.fecha.localeCompare(b.fecha))
+    const cuenta = movs[0].cuenta
+    const neto = movs.reduce((t, m) => t + (m.lado === "C" ? m.importe : -m.importe), 0)
+    const r = rangoQueContiene(movs.map(m => m.fecha))
+    const lineas = ps.map(p => {
+      const m = p.mov
+      const conPareja = p.parejas[0] ? ` — la app le encuentra pareja: ${`${ORIGEN_TEXTO[p.parejas[0].origen] ?? p.parejas[0].origen} ${p.parejas[0].ref ?? ""} de ${plata(p.parejas[0].importe)}`.trim()}` : ""
+      return `• ${dmy(m.fecha)} ${m.lado === "D" ? "−" : "+"}${plata(m.importe)} «${m.descripcion}»${m.detalle ? ` · ${m.detalle}` : ""}${conPareja}`
+    })
+    return {
+      clave: `conc:cc:${k}`, grupo: "conciliacion", etiqueta: "Va por su cuenta corriente",
+      titulo: `🔁 ${c.nombre}: ${movs.length} movimiento(s) van por su cuenta corriente (${cuenta.nombre})`,
+      papel: `Conciliación ${cuenta.nombre} · Va por su cuenta corriente (papel 14)`,
+      importe: Math.abs(neto), cuenta: { id: cuenta.cuentaId, nombre: cuenta.nombre }, fecha: movs[0].fecha.slice(0, 10), solapa: "14 Cuentas corrientes",
+      que: `${c.nombre} tiene cuenta corriente: sus cobros y pagos no se concilian contra facturas sueltas sino contra su saldo, que está en la solapa 14 (ya los suma por su CUIT).
+${lineas.join("\n")}
+Neto: ${neto >= 0 ? "+" : "−"}${plata(Math.abs(neto))}`,
+      propuesta: c.etiqueta
+        ? `Marcarlos «${c.etiqueta}» y darlos por conciliados contra su cuenta corriente. Si alguno es el pago de una factura puntual, conciliálo desde su link en el extracto.`
+        : `Darlos por conciliados contra su cuenta corriente: su saldo sale de las pólizas contra el banco (solapa 14). Si alguno es la cuota de una póliza, conciliálo contra esa cuota.`,
+      links: [
+        { texto: `Los ${movs.length} movimiento(s) en el extracto (${cuenta.nombre})`, href: linkExtracto({ cuenta: cuenta.cuentaId, movs: movs.map(m => m.id), desde: r.desde, hasta: r.hasta }) },
+        ...linksSerieMovimientos(extras, c.cuit, c.nombre),
+      ],
+      accion: { tipo: "estado-movimientos", texto: c.etiqueta ? `marcar «${c.etiqueta}» y conciliar` : "dar por conciliados (cuenta corriente)",
+        schema: cuenta.schema, tabla: cuenta.tabla, ids: movs.map(m => m.id), estado: "conciliado",
+        detalle: `Va por la cuenta corriente de ${c.nombre}`, ...(c.etiqueta ? { contable: c.etiqueta } : {}) },
+      respondido: false,
+    }
+  })
+  return { temas, cubiertos }
+}
+
 export function temasDeMovimientos(propuestas: PropuestaMovimiento[], extras: ExtrasTemas = SIN_EXTRAS): { temas: Tema[]; historicos: number } {
   const utiles = propuestas.filter(p => p.tipo !== "HISTORICO_FACTURA")
     .sort((a, b) => ORDEN_PROPUESTA.indexOf(a.tipo) - ORDEN_PROPUESTA.indexOf(b.tipo) || a.mov.fecha.localeCompare(b.mov.fecha))

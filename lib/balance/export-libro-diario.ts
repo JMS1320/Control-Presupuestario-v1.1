@@ -1392,7 +1392,7 @@ export function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierr
         ? `sin dato de inicio (0 por default) · ${leyendaSaldo(c.saldoAlCierre)}`
         // 🤖 A-FEAT-1386: el inicio que puso Claude y espera el OK de JMS se dice en el Excel
         : c.inicioTentativo ? `${c.inicioTentativo} · ${leyendaSaldo(c.saldoAlCierre)}` : leyendaSaldo(c.saldoAlCierre),
-    ])
+    ].map((v, i, a) => i === a.length - 1 ? `${v}${extraCC(c)}` : v))
   }
   const hasta = f.length
   f.push(["TOTAL", "", ...(["C", "D", "E", "F", "G", "H"] as const).map((col, i) =>
@@ -1525,6 +1525,10 @@ export function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierr
     }
     if (c.resumen.pagosSinReferencia > 0) {
       f.push([`${c.resumen.pagosSinReferencia} pago(s) no dicen contra que comprobante fueron.`])
+    }
+    // 🔁 A-FEAT-1499: lo que entra por CUIT sin marca todavía suma, pero se dice (falta encuadrarlo en el recorrido).
+    if (c.sinMarcar?.movimientos) {
+      f.push([`⚠️ ${c.sinMarcar.movimientos} movimiento(s) del banco con su CUIT, sin marcar ni conciliar (${"$ " + fmtAr(c.sinMarcar.total)}): ya suman al saldo; se encuadran en el recorrido («Va por su cuenta corriente»).`])
     }
   }
   return f
@@ -1668,6 +1672,14 @@ const etiquetaEstado = (e: EstadoParte): string => ({
 }[e])
 
 /** La solapa de pendientes: número, texto largo, fechas y la resolución. */
+/** 🔁 A-FEAT-1499: en «Cómo se lee», lo que la cuenta incluye por ir por CUIT (retenciones y sin marcar). */
+function extraCC(c: PapelDeCuentasCorrientes["cuentas"][number]): string {
+  const partes: string[] = []
+  if (c.retenciones) partes.push(`incluye retenciones sufridas ${"$ " + fmtAr(c.retenciones)} como cobrado`)
+  if (c.sinMarcar?.movimientos) partes.push(`${c.sinMarcar.movimientos} mov. sin marcar`)
+  return partes.length ? ` · ${partes.join(" · ")}` : ""
+}
+
 const COLS_PENDIENTES: Columna[] = [
   { ancho: 4 }, { ancho: 80 }, { ancho: 11 }, { ancho: 10 }, { ancho: 50 }, { ancho: 11 }, { ancho: 30 },  // ✔ Visto (A-FEAT-1487)
   { ancho: 26 }, { ancho: 90 },  // 🔁 A-FEAT-1500: Tarea · Conversación

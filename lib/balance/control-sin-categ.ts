@@ -10,6 +10,9 @@
 import { CUENTAS_CONCILIABLES } from "@/lib/conciliacion/propuestas-ejercicio"
 import { linkExtracto, rangoQueContiene } from "@/lib/extracto/link"
 import type { Tema } from "./recorrido"
+import { CONTRAPARTES_DEL_BALANCE, normalizar } from "./cuentas-corrientes"
+
+const ETIQUETAS_CC = new Set(CONTRAPARTES_DEL_BALANCE.flatMap(c => c.etiquetasContable.map(normalizar)))
 
 const dmy = (f?: string | null) => (f ? f.slice(0, 10).split("-").reverse().join("/") : "")
 const plata = (x: number) => `$ ${x.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -48,7 +51,10 @@ export async function leerTemasSinCateg(sb: Cliente, empresa: string, desde: str
       if (esTarjeta) q = q.eq("tipo_fila", "movimiento")
       const { data, error } = await q
       if (error) throw new Error(error.message)
-      porCuenta.push({ cuentaId: c.cuentaId, nombre: c.nombre, movs: (data ?? []).map((m: Record<string, unknown>) => {
+      // 🔁 A-FEAT-1499: el marcado con la cuenta corriente de una contraparte (CTA AFA, CTA JMS…) sí cae en una cuenta:
+      // la suya, en el papel 14. No es un conciliado sin categoría.
+      const deCuentaCorriente = (m: Record<string, unknown>) => ETIQUETAS_CC.has(normalizar(String(m.contable ?? "")))
+      porCuenta.push({ cuentaId: c.cuentaId, nombre: c.nombre, movs: (data ?? []).filter((m: Record<string, unknown>) => !deCuentaCorriente(m)).map((m: Record<string, unknown>) => {
         const deb = Number(m.debitos) || 0
         const vinc = m.comprobante_arca_id ? "una factura" : m.template_cuota_id ? "una cuota de template" : m.sueldo_pago_id ? "un pago de sueldo" : m.anticipo_id ? "un anticipo" : m.comprobante_venta_id ? "una venta" : null
         return { id: String(m.id), fecha: String(m.fecha), importe: deb > 0 ? deb : Number(m.creditos) || 0, signo: deb > 0 ? "−" : "+", descripcion: String(m.descripcion ?? ""), vinculo: vinc }

@@ -62,6 +62,12 @@ pagar»*.
   MSA, Federación Patronal) **salen del total del 03 y del 04**. Lógica: `lib/balance/fuera-por-cuenta-corriente.ts`.
 - No se descartan en silencio: en el Excel quedan en un bloque «VAN POR SU CUENTA CORRIENTE (papel 14)», con su total.
 - Una contraparte nueva en el 14 tiene que entrar en esa lista; si no, se cuenta dos veces.
+- ⚠️ **cambió 01/11 (A-FEAT-1499) — AFA y ACREN van por CUIT.** Hasta acá el código decía que sus pagos «salían del vínculo con
+  la factura», pero el papel sólo tomaba pagos marcados `CTA *` y ellos no tenían marca: les daba **cero** cobrado y pagado
+  (AFA «le debo $ 2.745.698,32»). Ahora suman **todo lo del banco con su CUIT** (conciliado o no), la marca **CTA AFA / CTA
+  ACREN** para lo que no va contra una factura, y las **retenciones sufridas** como cobrado. Con eso **AFA da 0** en 25/26
+  (lo que le debemos compensa lo que nos debe). Lo sin marcar suma igual y se dice aparte. Un movimiento marcado `CTA *`
+  no cuenta como «conciliado sin categoría»: su cuenta es la corriente.
 
 ## 🧾 Dos datos, siempre: el del CAMPO y el del CONTADOR `#balance #inicio #criterio #2026-10-29`
 

@@ -339,7 +339,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
       }
       // ⚡ A-FEAT-1489 — un grupo de movimientos: sólo los que siguen pendientes o a auditar (nunca pisa uno ya conciliado)
       if (a.tipo === "estado-movimientos") {
-        const cambios: Record<string, unknown> = { estado: a.estado, ...(a.detalle ? { detalle: a.detalle } : {}) }
+        const cambios: Record<string, unknown> = { estado: a.estado, ...(a.detalle ? { detalle: a.detalle } : {}), ...(a.contable ? { contable: a.contable } : {}) }
         const db = a.schema === "public" ? supabase : supabase.schema(a.schema)
         const { error } = await db.from(a.tabla).update(cambios).in("id", a.ids).in("estado", ["pendiente", "auditar"])
         if (error) throw error

@@ -33,6 +33,8 @@
  * empieza a mentir.
  */
 
+import { temasDeCuentaCorriente } from "@/lib/balance/recorrido-conciliacion"
+import { contrapartesDelRecorrido } from "@/lib/balance/fuera-por-cuenta-corriente"
 import { unirPorClave, sincronizarPendientes, hojaDelRecorrido } from "@/lib/balance/recorrido-excel"
 import { idsDelUltimoLote } from "@/lib/facturas/ultimo-lote"
 import { cruzarVentasImportadas } from "@/lib/ventas/import-cruce"
@@ -12091,6 +12093,36 @@ export function correrCasos(): Resultado[] {
     ], tareas: [] }, "x")
     const v5 = rec.slice(4).map(f => `${f[3]}:${f[6]}`).join(",")
     chequear("Excel y recorrido", "1 · La solapa «00 Recorrido» lista la misma cola (primero lo abierto)", "Mov A:sin tocar,Cuota B:respondido", v5, v5 === "Mov A:sin tocar,Cuota B:respondido", "A-FEAT-1500")
+  }
+
+  // ══ 🔁 AFA y ACREN por su cuenta corriente: cobros, pagos y retenciones (A-FEAT-1499) ══
+  {
+    // Como el AFA real del 25/26: lo que le debemos compensa lo que nos debe, y la cuenta da CERO.
+    const compras = [{ id: "fa", fecha: "2026-03-01", numero: "1-1", total: 1000, cuit: "30525718626" }]
+    const ventas = [{ id: "va", fecha: "2026-05-13", numero: "332", total: 600, cuit: "30525718626", retenciones: 20 }]
+    const movs = [
+      { id: "p1", fecha: "2026-03-09", debitos: 800, creditos: 0, contable: "", cuit: "30525718626", estado: "conciliado" },
+      { id: "c1", fecha: "2026-05-20", debitos: 0, creditos: 380, contable: "", cuit: "30525718626", estado: "pendiente" },
+      // con el CUIT de AFA pero marcado para JMS: la marca manda
+      { id: "x", fecha: "2026-05-21", debitos: 50, creditos: 0, contable: "CTA JMS", cuit: "30525718626", estado: "conciliado" },
+    ]
+    const r = armarCuentasCorrientes(compras, ventas, movs)
+    const afa = r.cuentas.find(c => c.contraparte.clave === "AFA")!, jms = r.cuentas.find(c => c.contraparte.clave === "JMS")!
+    const v = `saldo ${n2(afa.resumen.saldo)} · retenciones ${n2(afa.retenciones ?? 0)} · sin marcar ${afa.sinMarcar?.movimientos} (${n2(afa.sinMarcar?.total ?? 0)}) · JMS pagado ${n2(jms.resumen.totalPagado)}`
+    const e = `saldo ${n2(0)} · retenciones ${n2(20)} · sin marcar 1 (${n2(-380)}) · JMS pagado ${n2(50)}`
+    chequear("Cuentas corrientes", "🔁 AFA suma TODO lo del banco con su CUIT (conciliado o no) y las retenciones como cobrado: la cuenta da 0 como la real; lo sin marcar se cuenta aparte; una marca de otra cuenta manda",
+      e, v, v === e, "A-FEAT-1499")
+
+    const mov = (id: string, cuit: string, lado: "D" | "C", importe: number, quien = "") => ({ mov: { cuenta: { empresa: "MSA", schema: "public", tabla: "msa_galicia", cuentaId: "msa_galicia", nombre: "MSA Galicia", leyendas: true },
+      id, fecha: "2026-05-20", importe, lado, estado: "pendiente", descripcion: "Transferencia", quienBanco: quien, cuitBanco: cuit }, parejas: [], tipo: "SIN_PAREJA", propuesta: "", pista: "" })
+    const props = [mov("a1", "30525718626", "C", 304814.2), mov("a2", "30525718626", "C", 5013553.46), mov("o", "20111111112", "D", 10)] as never
+    const t = temasDeCuentaCorriente(props, contrapartesDelRecorrido("MSA"))
+    const tema = t.temas[0]
+    const acc = tema?.accion as { contable?: string; ids?: string[] } | undefined
+    const v2 = `${t.temas.length} tema · ${acc?.ids?.join(",")} · ${acc?.contable} · cubre ${[...t.cubiertos].length} · PAM ${contrapartesDelRecorrido("PAM").length}`
+    const e2 = "1 tema · a1,a2 · CTA AFA · cubre 2 · PAM 0"
+    chequear("Cuentas corrientes", "🔁 En el recorrido, los movimientos de AFA salen de «conciliar» y van a UN tema «Va por su cuenta corriente», con «Aplicar» = marcar CTA AFA y conciliar; los de otros no; Federación sólo en MSA",
+      e2, v2, v2 === e2, "A-FEAT-1499")
   }
 
   return r

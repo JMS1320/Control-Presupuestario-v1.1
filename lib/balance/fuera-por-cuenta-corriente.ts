@@ -10,6 +10,7 @@
  */
 import type { CuentasAlCierre, FilaCuenta } from "@/lib/balance/cuentas-al-cierre"
 import { CONTRAPARTES_DEL_BALANCE } from "@/lib/balance/cuentas-corrientes"
+import type { ContraparteCuentaCorriente } from "@/lib/balance/recorrido-conciliacion"
 
 /** Federación Patronal: su cuenta corriente al cierre va en el 14 (A-FEAT-1385, sólo MSA). */
 export const CUIT_FEDERACION_PATRONAL = "33707366589"
@@ -20,6 +21,19 @@ export function cuitsConCuentaCorriente(empresa: string): Map<string, string> {
   for (const c of CONTRAPARTES_DEL_BALANCE) if (c.cuit) m.set(c.cuit, c.nombre)
   if (empresa.toUpperCase() === "MSA") m.set(CUIT_FEDERACION_PATRONAL, "Federación Patronal Seguros")
   return m
+}
+
+/**
+ * 🔁 A-FEAT-1499 — las que el RECORRIDO encuadra por su cuenta corriente: las que van por CUIT (AFA, ACREN, con su marca) y,
+ * en MSA, Federación Patronal (sin marca: su saldo sale de las pólizas; sólo sus movimientos sin pareja).
+ */
+export function contrapartesDelRecorrido(empresa: string): ContraparteCuentaCorriente[] {
+  if (empresa.toUpperCase() !== "MSA") return []
+  return [
+    ...CONTRAPARTES_DEL_BALANCE.filter(c => c.porCuit).map(c => ({ clave: c.clave, nombre: c.nombre, cuit: c.cuit, etiqueta: c.etiquetasContable[0] ?? null })),
+    { clave: "FEDERACION", nombre: "Federación Patronal Seguros", cuit: CUIT_FEDERACION_PATRONAL, etiqueta: null,
+      nombreBanco: /federaci[oó]n\s+patronal/i, soloSinPareja: true },
+  ]
 }
 
 export type CuentasSinCuentaCorriente = CuentasAlCierre & {

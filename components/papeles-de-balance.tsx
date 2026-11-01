@@ -52,7 +52,8 @@ import { armarWorkbook, coberturaDeArgs, descargarLibroDiario } from "@/lib/bala
 import { armarTemas, subdiariosContraArca, temaDelLink, type Tema } from "@/lib/balance/recorrido"
 import { temasVentasVsArca, temasComprasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
 import { leerDatosConciliacion, proponerConciliaciones, CUENTAS_CONCILIABLES, type ConteoCuenta } from "@/lib/conciliacion/propuestas-ejercicio"
-import { temasDeMovimientos, temasDeDeudas, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
+import { temasDeMovimientos, temasDeDeudas, temasDeCheques, temasDeCuentaCorriente } from "@/lib/balance/recorrido-conciliacion"
+import { contrapartesDelRecorrido } from "@/lib/balance/fuera-por-cuenta-corriente"
 import { leerTemasSueldoOtraPersona } from "@/lib/balance/control-sueldo-otra-persona"
 import { leerExtrasTemas } from "@/lib/balance/series-tema"
 import { leerTemasTarjeta } from "@/lib/balance/control-tarjeta"
@@ -62,7 +63,7 @@ import type { RecorridoParaExcel, TareaDelRecorrido } from "@/lib/balance/recorr
 import { leerChequesVencidos } from "@/lib/conciliacion/cheques-vencidos"
 import { RecorridoBalance } from "./recorrido-balance"
 import { VistaPreviaBalance } from "./vista-previa-balance"
-import { descargarLibroDiarioConsensuado } from "@/lib/balance/libro-diario-consensuado"
+import { descargarLibroDiarioConsensuado, retencionesDeVenta, type FilaVentaConsensuada } from "@/lib/balance/libro-diario-consensuado"
 import { leerCobrosYRetenciones } from "@/lib/balance/cobros-de-ventas"
 import { descargarDiferenciasVsArca } from "@/lib/balance/diferencias-vs-arca"
 import { saldosEnDolaresParaBalance } from "@/lib/dolares/posicion-cierre"
@@ -222,12 +223,14 @@ export function PapelesDeBalance() {
       setCargandoConciliacion("agrupando la tarjeta por causa…")
       const tj = await leerTemasTarjeta(supabase, empresa.id, desde, hasta)
       if (tj.error) datos.avisos.push(`control de la tarjeta: ${tj.error}`)
-      const movSinTarjeta = mov.temas.filter(t => !tj.cubiertos.has(t.clave.replace(/^conc:/, "")))
+      // 🔁 A-FEAT-1499: AFA, ACREN y Federación (MSA) van por su cuenta corriente: un tema por contraparte, no sueltos
+      const cc = temasDeCuentaCorriente(r.movimientos, contrapartesDelRecorrido(empresa.id), ex.extras)
+      const movSinTarjeta = mov.temas.filter(t => !tj.cubiertos.has(t.clave.replace(/^conc:/, "")) && !cc.cubiertos.has(t.clave))
       // ✔ A-FEAT-1487: lo resuelto por Claude que espera tu visto sigue en el recorrido, con cómo quedó
       setCargandoConciliacion("trayendo lo que espera tu visto…")
       const vt = await leerParaTuVisto(supabase, empresa.id, anioCierre, ex.extras)
       if (vt.error) datos.avisos.push(`para tu visto: ${vt.error}`)
-      const calculada = { movimientos: [...tj.temas, ...movSinTarjeta], deudas: temasDeDeudas(r.deudas, empresa.id, ex.extras), cheques: temasDeCheques(ch.cruces, ch.extractoHasta), controles: [...ctl.temas, ...sc.temas], visto: { tareas: vt.tareas, rearmados: vt.rearmados },
+      const calculada = { movimientos: [...tj.temas, ...cc.temas, ...movSinTarjeta], deudas: temasDeDeudas(r.deudas, empresa.id, ex.extras), cheques: temasDeCheques(ch.cruces, ch.extractoHasta), controles: [...ctl.temas, ...sc.temas], visto: { tareas: vt.tareas, rearmados: vt.rearmados },
         tareasRecorrido: vt.todas,
         historicos: mov.historicos, avisos: datos.avisos, porCuenta: datos.porCuenta,
         calculado: new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) }
@@ -898,23 +901,40 @@ export function PapelesDeBalance() {
             cuit: a2.fuente === "historico" ? null : a2.cuit,
             denominacion: a2.denominacion,
           }))
-          const ventasCC: VentaParaCC[] = armado.ventas.map(v => ({
-            id: v.id,
-            fecha: v.fecha,
-            numero: `${v.punto_venta ?? ""}-${v.numero ?? ""}`,
-            total: v.total,
-            cuit: v.cuit,
-          }))
+          // 🔁 A-FEAT-1499: las retenciones sufridas cuentan como cobrado (la regla de siempre: las de la tabla mandan,
+          // las de la liquidación valen si la tabla no tiene ese impuesto — `retencionesDeVenta`).
+          const leidoRet = await leerCobrosYRetenciones(supabase, empresa.id, empresa.schema)
+          if (!leidoRet.retenciones) toast.warning("Cuentas corrientes: no se pudieron leer las retenciones recibidas; van sólo las de la liquidación.")
+          const ventasCC: VentaParaCC[] = armado.ventas.map(v => {
+            const r = retencionesDeVenta({ asiento: v, retIva: v.detalleVenta?.ret_iva ?? 0, retIibb: v.detalleVenta?.ret_iibb ?? 0 } as unknown as FilaVentaConsensuada, leidoRet.retenciones ?? [])
+            return {
+              id: v.id,
+              fecha: v.fecha,
+              numero: `${v.punto_venta ?? ""}-${v.numero ?? ""}`,
+              total: v.total,
+              cuit: v.cuit,
+              retenciones: Math.round((r.iva + r.iibb + r.gan) * 100) / 100,
+            }
+          })
 
           const meses = mesesDelEjercicio(anioCierre, empresa.mesCierre)
           const [aaF2, mmF2] = meses[11].split("-").map(Number)
           const finEj = new Date(Date.UTC(aaF2, mmF2, 0)).toISOString().slice(0, 10)
+          const colsCC = "id, fecha, debitos, creditos, descripcion, detalle, contable, comprobantes_pagados, estado, cuit:leyendas_adicionales_2"
           const leidoCC = await traerTodo((d, h) => supabase.from("msa_galicia")
-            .select("id, fecha, debitos, creditos, descripcion, detalle, contable, comprobantes_pagados", { count: "exact" })
+            .select(colsCC, { count: "exact" })
             .gte("fecha", `${meses[0]}-01`).lte("fecha", finEj)
             .not("contable", "is", null).order("id").range(d, h))
-          const movsCC = leidoCC.data
           anotar("Movimientos de cuentas corrientes", leidoCC)
+          // 🔁 A-FEAT-1499: las cuentas que van por CUIT (AFA, ACREN) suman todo lo del banco con su CUIT, marcado o no.
+          const cuitsCC = CONTRAPARTES_DEL_BALANCE.filter(c => c.porCuit).map(c => `leyendas_adicionales_2.ilike.*${c.cuit}*`).join(",")
+          const leidoCuit = await traerTodo((d, h) => supabase.from("msa_galicia")
+            .select(colsCC, { count: "exact" })
+            .gte("fecha", `${meses[0]}-01`).lte("fecha", finEj)
+            .or(cuitsCC).order("id").range(d, h))
+          anotar("Movimientos de AFA y ACREN (por CUIT)", leidoCuit)
+          const movsCC = [...(leidoCC.data ?? []), ...((leidoCuit.data ?? []) as unknown[])
+            .filter(m => !(leidoCC.data ?? []).some((x: { id: string }) => x.id === (m as { id: string }).id))]
 
           /**
            * 👷 A-FEAT-1422 (8) — el sueldo pendiente de un socio (MA) entra a SU cuenta corriente como deuda
