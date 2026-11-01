@@ -29,6 +29,7 @@
 import { SelectorCuotaCierre } from "@/components/selector-cuota-cierre"
 import type { Senal } from "@/lib/revisiones/nivel"
 import { useState, useEffect, useCallback, useRef } from "react"
+import { hoyArgentina } from "@/lib/fechas"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -156,7 +157,7 @@ function ModalMarca({
   useEffect(() => {
     if (abierto) {
       setCtx(contextoActual()); setMotivo(inicial?.motivo ?? ""); setImagen(""); setPara(inicial?.para ?? "")
-      setEsTarea(inicial?.esTarea ?? false); setTareaHasta(inicial?.hasta ?? ""); setConfirma(yoMail ?? ""); setCuotaCierre(inicial?.cuota ?? null)
+      setEsTarea(inicial?.esTarea ?? false); setTareaHasta(inicial?.hasta ?? hoyArgentina()); setConfirma(yoMail ?? ""); setCuotaCierre(inicial?.cuota ?? null)
       confirmaTocado.current = false
     }
   }, [abierto])
@@ -298,12 +299,13 @@ function ModalMarca({
                 <input type="checkbox" checked={esTarea} onChange={(e) => setEsTarea(e.target.checked)} />
                 Es una tarea para esa persona
               </label>
-              {esTarea && (
-                <div className="mt-1 flex items-center gap-2 text-xs">
-                  <span>Para cuándo</span>
-                  <input type="date" className="h-8 rounded border px-2" value={tareaHasta} onChange={(e) => setTareaHasta(e.target.value)} />
-                </div>
-              )}
+              {/* 📅 JMS 01/11: la fecha arranca en HOY y se guarda sin tener que tocarla; y cambiarla marca «es una tarea». */}
+              <div className="mt-1 flex items-center gap-2 text-xs">
+                <span>Para cuándo</span>
+                <input type="date" className="h-8 rounded border px-2" value={tareaHasta}
+                  onChange={(e) => { setTareaHasta(e.target.value); if (e.target.value) setEsTarea(true) }} />
+                {!esTarea && <span className="text-gray-400">(al elegir fecha pasa a ser tarea)</span>}
+              </div>
               {esTarea && (
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                   <span>¿Quién confirma que está hecha?</span>
