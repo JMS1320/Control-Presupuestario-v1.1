@@ -3332,6 +3332,9 @@ Alta de `MA` (CUIL 27-06682461-1, `plano_ipc`, MSA, ingreso 01/06/2025, id fijo 
 ### 2026-10-29 · Stock declarado al 30/06/2025 de MSA (script 132, DATOS) — A-FEAT-1420 — ✅ CORRIDO con OK de JMS
 Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantidad 0, marca `[script 132]` en observaciones), 94 renglones en `stock_inicio` ($ 31.730.444,08 = la planilla) y 3 `pasturas`. Se corre con `scripts/132-stock-inicio-msa-30-06-2025.mts` (desde su `.json`; el `.sql` es el registro legible). Deshacer: `scripts/132-stock-inicio-msa-30-06-2025-deshacer.sql` (por ids; frena si un producto ya tiene movimientos).
 
+### 2026-11-01 · El $ 1 de prueba a Wilson (script 158, DATOS) — ✅ CORRIDO 2026-11-01 con OK de JMS en su tarea («que quede que se le pagó un peso de más»)
+`sueldos.pagos`: +1 pago de $ 1 (anticipo, banco, conciliado) en marzo 2026 de Wilson Barreto; `public.msa_galicia` 3014cf6c… (25/03/2026, $ 1) conciliado contra él (CATEG Sueldos, ESTRUCTURA). Deshacer: `158-…-deshacer.sql`.
+
 ### 2026-10-31 · Proveedor de los cargos bancarios de Santander (script 157, DATOS) — A-BUG-1461 — ✅ CORRIDO 2026-10-31 con OK de JMS («corregí por Santander»)
 `msa.santander`: 108 movimientos (conciliados con las reglas del 154) `proveedor_nombre` «Banco Galicia» → «Banco Santander». Deshacer: `157-…-deshacer.sql` (por id, sólo si siguen en «Banco Santander»).
 

@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Flag, Loader2, CalendarClock } from "lucide-react"
 import { paraVos, estaVencida, type MarcaParaVos } from "@/lib/revisiones/para-vos"
+import { linkTemaBalance } from "@/lib/balance/recorrido"
 import { nivelDeTarea, NIVELES } from "@/lib/revisiones/nivel"
 import { cuotaDeTarea, linkPagar } from "@/lib/revisiones/avisos"
 import { hoyArgentina } from "@/lib/fechas"
@@ -27,6 +28,8 @@ interface Marca extends MarcaParaVos {
   seguimiento?: { fecha: string; texto: string; autor: string | null }[] | null
   resolucion?: string | null
   cierre_auto?: string | null
+  tabla_ref?: string | null
+  registro_id?: string | null
 }
 
 const dm = (f: string) => f.slice(0, 10).split("-").reverse().slice(0, 2).join("/")
@@ -105,6 +108,9 @@ export function PanelParaVos() {
                 </span>)}
               <span className="whitespace-pre-wrap">{m.motivo}</span>
               {cuotaDeTarea(m.cierre_auto) && mia && <a href={linkPagar({ cuotaId: cuotaDeTarea(m.cierre_auto) })} className="rounded px-1.5 py-0.5 text-[11px] font-normal text-green-700 hover:bg-green-50" title="Abrir el Cash Flow con la cuota seleccionada, para sacar el pago">💸 Pagar</a>}
+              {/* 🔗 A-FEAT-1466 — una tarea del recorrido del balance lleva a su tema (y de ahí a su papel de trabajo). */}
+              {m.tabla_ref === "recorrido_balance" && m.registro_id && <a href={linkTemaBalance(m.registro_id)} target="_blank" rel="noreferrer"
+                className="rounded px-1.5 py-0.5 text-[11px] font-normal text-blue-700 hover:bg-blue-50" title="Abre el recorrido del balance parado en este tema (y desde ahí, su papel de trabajo)">↗ Ir al tema del balance</a>}
               {m.cierre_auto?.startsWith("cuota_conciliada:") && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-normal text-gray-600" title="Se cierra sola cuando el pago de su cuota queda conciliado">🔒 se cierra sola al conciliar</span>}
             </div>
             <div className="text-xs text-muted-foreground">

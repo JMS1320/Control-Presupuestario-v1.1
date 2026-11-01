@@ -48,7 +48,7 @@ import { ProponerFotoBalance } from "./proponer-foto-balance"
 import { ivaConSigno, RENGLONES, type DatosDeLosPapeles, type ValorPropuesto } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { armarWorkbook, coberturaDeArgs, descargarLibroDiario } from "@/lib/balance/export-libro-diario"
-import { armarTemas, subdiariosContraArca, type Tema } from "@/lib/balance/recorrido"
+import { armarTemas, subdiariosContraArca, temaDelLink, type Tema } from "@/lib/balance/recorrido"
 import { temasVentasVsArca, temasComprasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
 import { leerDatosConciliacion, proponerConciliaciones, type ConteoCuenta } from "@/lib/conciliacion/propuestas-ejercicio"
 import { temasDeMovimientos, temasDeDeudas, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
@@ -182,6 +182,9 @@ export function PapelesDeBalance() {
   const [verPrevia, setVerPrevia] = useState(false)
   /** 🧭 A-FEAT-1430: el recorrido del balance (pantalla completa) y la versión de los pendientes que respondió. */
   const [verRecorrido, setVerRecorrido] = useState(false)
+  /** 🔗 A-FEAT-1466 — el tema que pidió un link (desde una tarea en Principal); se abre cuando el libro está armado. */
+  const [temaPedido, setTemaPedido] = useState<{ empresa: string; anioCierre: number; clave: string; armando: boolean } | null>(null)
+  const [claveRecorrido, setClaveRecorrido] = useState<string | null>(null)
   /** 🏦 A-FEAT-1430 paso 4: las propuestas de conciliación del ejercicio (se calculan al abrir el recorrido). */
   const [conciliacion, setConciliacion] = useState<{ movimientos: Tema[]; deudas: Tema[]; cheques: Tema[]; historicos: number; avisos: string[]; calculado: string; porCuenta?: Record<string, ConteoCuenta> } | null>(null)
   const [cargandoConciliacion, setCargandoConciliacion] = useState<string | null>(null)
@@ -325,6 +328,23 @@ export function PapelesDeBalance() {
    * Bajar el Excel queda a un clic, después de mirarlo (*«en vez de exportarlo para ir a revisar las solapas,
    * empezaría a ver en las preview»*).
    */
+  // 🔗 A-FEAT-1466 — llegar por el link: elegir empresa y año, armar el libro y abrir el recorrido en el tema.
+  useEffect(() => {
+    const t = temaDelLink(window.location.search)
+    const e = t && EMPRESAS.find(x => x.id === t.empresa)
+    if (!t || !e) return
+    setEmpresa(e); setAnioCierre(t.anioCierre); setTemaPedido({ ...t, armando: false })
+  }, [])
+  useEffect(() => {
+    if (!temaPedido || temaPedido.armando || empresa.id !== temaPedido.empresa || anioCierre !== temaPedido.anioCierre) return
+    setTemaPedido({ ...temaPedido, armando: true })
+    void armarTodo()
+  }, [temaPedido, empresa, anioCierre]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!temaPedido?.armando || !libro) return
+    setClaveRecorrido(temaPedido.clave); setVerRecorrido(true); setTemaPedido(null)
+  }, [temaPedido, libro])
+
   const armarTodo = async () => {
     setVerPrevia(false)
     await generar()
@@ -1110,7 +1130,7 @@ export function PapelesDeBalance() {
         {/* 📌 A-FEAT-1258 — a la vista mientras se trabaja; salen en el export. */}
         <PendientesBalance empresa={empresa.id} anioCierre={anioCierre} onCambio={setPendientes} version={versionPendientes} />
         {verRecorrido && libro && (
-          <RecorridoBalance empresa={empresa.id} anioCierre={anioCierre} etiqueta={libro.ejercicio.etiqueta}
+          <RecorridoBalance empresa={empresa.id} anioCierre={anioCierre} etiqueta={libro.ejercicio.etiqueta} claveInicial={claveRecorrido}
             temas={temasRecorrido} onCerrar={() => setVerRecorrido(false)}
             // ⏳ Lo que todavía se está trayendo: mientras haya algo, la lista puede crecer y reordenarse (JMS 31/10: «va cambiando solo… no sé si está listo para empezar»).
             enCamino={[...(!ddjjGuardadas ? ["lo presentado a ARCA"] : []), ...(cargandoConciliacion || !conciliacion ? ["la conciliación"] : []), ...(!hacienda && pedidoStock > 0 ? ["stock y precios"] : [])]}

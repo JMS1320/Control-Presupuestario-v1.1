@@ -281,3 +281,17 @@ export function linksAlExtracto(temas: Tema[]): { cuentaId: string; nombre: stri
   return [...m.entries()].map(([cuentaId, c]) => ({ cuentaId, nombre: c.nombre, n: c.movs.length,
     href: linkExtracto({ cuenta: cuentaId, movs: c.movs, ...rangoQueContiene(c.fechas) }) })).sort((a, b) => b.n - a.n)
 }
+
+/**
+ * 🔗 **Link a UN TEMA del recorrido** (A-FEAT-1466, JMS 01/11: *«yo debería tener los links del tema acá en Principal para
+ * atender tus respuestas, o viajar a través de esta tarjeta a la hoja de trabajo de esto que estaba originalmente en
+ * balance»*). El registro de una tarea del recorrido es `EMPRESA:AÑO:clave`; el link abre Reportes → Papeles de balance,
+ * arma el libro de esa empresa y año, y abre el recorrido parado en ese tema.
+ */
+export const linkTemaBalance = (registro: string) => `/?seccion=reporte&recorrido=${encodeURIComponent(registro)}`
+
+export function temaDelLink(search: string): { empresa: string; anioCierre: number; clave: string } | null {
+  const v = new URLSearchParams(search).get("recorrido")
+  const m = v?.match(/^([A-Z]+):(\d{4}):(.+)$/)
+  return m ? { empresa: m[1], anioCierre: Number(m[2]), clave: m[3] } : null
+}

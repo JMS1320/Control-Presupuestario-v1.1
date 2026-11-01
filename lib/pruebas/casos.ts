@@ -201,7 +201,7 @@ import { controlarProvisionAnterior } from "@/lib/balance/control-inicio"
 import { esFilaDeAlerta, solapasDelLibro } from "@/lib/balance/vista-previa"
 import { armarInicioYCierre, textoEstado } from "@/lib/balance/inicio-y-cierre"
 import { armarCobertura, CANTIDAD_DE_DATOS, datosSinAncla } from "@/lib/balance/cobertura-papeles"
-import { armarTemas, GRUPOS, conciliacionPorCuenta, subdiariosContraArca, linksAlExtracto, progreso, textoPendienteDe, fuenteDe, linksDeLaApp, sinTresVistas, type Tema as TemaRecorrido } from "@/lib/balance/recorrido"
+import { armarTemas, GRUPOS, conciliacionPorCuenta, subdiariosContraArca, linksAlExtracto, linkTemaBalance, temaDelLink, progreso, textoPendienteDe, fuenteDe, linksDeLaApp, sinTresVistas, type Tema as TemaRecorrido } from "@/lib/balance/recorrido"
 import { temasVentasVsArca, temasComprasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
 import { linkComprobantesVenta, ventasDelLink } from "@/lib/ventas/link"
 import { linkExtracto, extractoDelLink, rangoQueContiene } from "@/lib/extracto/link"
@@ -5329,6 +5329,12 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · recorrido", "🔗 Lo filtrado abre en el extracto: un link por cuenta con esos movimientos y las fechas que los contienen",
       "GAL 2 gal [1,2] 2025-07-29→2026-03-13 | SAN 1 san [4] 2026-01-02→2026-01-08", vLa,
       vLa === "GAL 2 gal [1,2] 2025-07-29→2026-03-13 | SAN 1 san [4] 2026-01-02→2026-01-08", "A-FEAT-1439")
+    // 🔗 A-FEAT-1466: de la tarea en Principal al tema del recorrido — ida y vuelta (la clave lleva «:»).
+    const lt = linkTemaBalance("MSA:2026:conc:msa_galicia:3e9aac95")
+    const vt = temaDelLink(lt.slice(lt.indexOf("?")))
+    const vLt = `${lt.startsWith("/?seccion=reporte&recorrido=") ? "reporte" : "?"} · ${vt?.empresa} ${vt?.anioCierre} ${vt?.clave} · otro ${temaDelLink("?seccion=reporte")}`
+    chequear("Balance · recorrido", "🔗 El link de una tarea abre Reportes y el recorrido en ese tema (empresa, año y clave vuelven iguales)",
+      "reporte · MSA 2026 conc:msa_galicia:3e9aac95 · otro null", vLt, vLt === "reporte · MSA 2026 conc:msa_galicia:3e9aac95 · otro null", "A-FEAT-1466")
     // 🧾 Los subdiarios pasan a la base (grupo ARCA) y toman lo presentado como fuente: la última secuencia de cada mes.
     const tSub = [{ clave: "cob:x", grupo: "error" as const, titulo: "Subdiarios de compras y ventas por mes y cuenta", papel: "LIBRO DIARIO", que: "x", links: [], respondido: false },
       { clave: "pend:1", grupo: "pregunta" as const, titulo: "p", papel: "x", que: "x", links: [], respondido: false }]

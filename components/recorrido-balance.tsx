@@ -29,7 +29,7 @@ const guardarPref = (k: string, v: boolean) => { try { localStorage.setItem(k, v
 const fmt = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 
-export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerrar, onPendientes, conciliacion, enCamino = [] }: {
+export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerrar, onPendientes, conciliacion, enCamino = [], claveInicial = null }: {
   empresa: string
   anioCierre: number
   /** «25/26», para el título. */
@@ -39,6 +39,8 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   /** Después de responder: la lista al día, para que el export y el cuadro de pendientes la lleven. */
   onPendientes: (lista: PendienteBalance[]) => void
   /** 🏦 El estado de las propuestas de conciliación (se calculan aparte, tardan unos segundos). */
+  /** 🔗 A-FEAT-1466 — abrir parado en este tema (llegó por un link desde una tarea). */
+  claveInicial?: string | null
   /** ⏳ Lo que todavía se está trayendo (vacío = están todos los temas). */
   enCamino?: string[]
   conciliacion?: { cargando: string | null; historicos: number; avisos: string[]; calculado: string | null; recalcular: () => void
@@ -58,7 +60,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   const registroDe = (t: Tema) => `${empresa}:${anioCierre}:${t.clave}`
   /** 🏦 Filtro por cuenta (los chips de «Sin conciliar, por cuenta»: JMS 31/10 «son links pero no filtran el panel izquierdo»). */
   const [cuentas, setCuentas] = useState<Set<string>>(new Set())
-  const [claveActual, setClaveActual] = useState<string | null>(null)
+  const [claveActual, setClaveActual] = useState<string | null>(claveInicial)
   const [nota, setNota] = useState("")
   const [guardando, setGuardando] = useState(false)
   /** 📓 El papel de trabajo del tema abierto: su id si ya existe (`null` = no hay; `undefined` = buscando). */
