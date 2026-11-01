@@ -9,6 +9,7 @@
  *
  * Teclado: ↓ / j siguiente · ↑ / k anterior · Esc cierra (fuera de un campo de texto).
  */
+import { imagenPegada } from "@/lib/captura-imagen"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
@@ -62,6 +63,8 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   const [cuentas, setCuentas] = useState<Set<string>>(new Set())
   const [claveActual, setClaveActual] = useState<string | null>(claveInicial)
   const [nota, setNota] = useState("")
+  /** 📷 A-FEAT-1472 — la captura pegada en «Tu respuesta» (Win+Shift+S → Ctrl+V), sin tener que pasarse el tema a uno mismo. */
+  const [imagen, setImagen] = useState<string | null>(null)
   const [guardando, setGuardando] = useState(false)
   /** 📓 El papel de trabajo del tema abierto: su id si ya existe (`null` = no hay; `undefined` = buscando). */
   const [papelId, setPapelId] = useState<string | null | undefined>(undefined)
@@ -121,12 +124,14 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
    * guardar cada dato o cada modal por tema, que tener que hacer guardados totales»). No cierra el tema: queda abierto
    * con la nota, igual que «📝 Guardar nota».
    */
-  const borrador = useRef<{ tema: Tema | null; texto: string }>({ tema: null, texto: "" })
+  const borrador = useRef<{ tema: Tema | null; texto: string; imagen: string | null }>({ tema: null, texto: "", imagen: null })
   useEffect(() => { borrador.current.texto = nota }, [nota])
-  const guardarBorrador = async (t: Tema | null, texto: string) => {
+  useEffect(() => { borrador.current.imagen = imagen }, [imagen])
+  const guardarBorrador = async (t: Tema | null, texto: string, img: string | null = null) => {
     const limpio = texto.trim()
-    if (!t || !limpio || limpio === (t.pendiente?.resolucion ?? "").trim()) return
-    const cambios = { estado: "abierto", resolucion: limpio, resuelto_at: null }
+    const imagenCambio = (img ?? null) !== (t?.pendiente?.imagen ?? null)
+    if (!t || (!limpio && !img) || (limpio === (t.pendiente?.resolucion ?? "").trim() && !imagenCambio)) return
+    const cambios = { estado: "abierto", resolucion: limpio || "📷 (captura)", resuelto_at: null, imagen: img }
     const r = t.pendiente
       ? await supabase.from("balance_pendientes").update(cambios).eq("id", t.pendiente.id)
       : await supabase.from("balance_pendientes").insert({ empresa, anio_cierre: anioCierre, texto: textoPendienteDe(t), creado_por: "recorrido del balance", ...cambios })
@@ -136,14 +141,15 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   }
   // Al cambiar de tema: lo escrito en el anterior se guarda, y la nota arranca con lo que ya se había escrito (si lo hay).
   useEffect(() => {
-    const { tema, texto } = borrador.current
-    if (tema && tema.clave !== actual?.clave) void guardarBorrador(tema, texto)
-    borrador.current = { tema: actual ?? null, texto: actual?.pendiente?.resolucion ?? "" }
+    const { tema, texto, imagen: img } = borrador.current
+    if (tema && tema.clave !== actual?.clave) void guardarBorrador(tema, texto, img)
+    borrador.current = { tema: actual ?? null, texto: actual?.pendiente?.resolucion ?? "", imagen: actual?.pendiente?.imagen ?? null }
     setNota(actual?.pendiente?.resolucion ?? "")
+    setImagen(actual?.pendiente?.imagen ?? null)
   }, [actual?.clave]) // eslint-disable-line react-hooks/exhaustive-deps
   const cerrar = useCallback(() => {
-    const { tema, texto } = borrador.current
-    void guardarBorrador(tema, texto).finally(onCerrar)
+    const { tema, texto, imagen: img } = borrador.current
+    void guardarBorrador(tema, texto, img).finally(onCerrar)
   }, [onCerrar]) // eslint-disable-line react-hooks/exhaustive-deps
   // 📓 ¿Ya hay un papel de trabajo atado a este tema? (los cuadernos son personales: se busca entre los propios)
   useEffect(() => {
@@ -211,18 +217,19 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   const responder = async (tipo: "resuelto" | "bien" | "nota") => {
     if (!actual) return
     const texto = nota.trim()
-    if (tipo === "nota" && !texto) { toast.error("Escribí la nota"); return }
+    if (tipo === "nota" && !texto && !imagen) { toast.error("Escribí la nota o pegá una captura"); return }
     const resolucion = tipo === "resuelto" ? `✓ Resuelto${texto ? `: ${texto}` : ""}`
-      : tipo === "bien" ? `👍 Está bien así${texto ? `: ${texto}` : ""}` : texto
+      : tipo === "bien" ? `👍 Está bien así${texto ? `: ${texto}` : ""}` : (texto || "📷 (captura)")
     const estado = tipo === "nota" ? "abierto" : "resuelto"
     setGuardando(true)
     try {
-      const cambios = { estado, resolucion, resuelto_at: estado === "resuelto" ? ahoraISO() : null }
+      const cambios = { estado, resolucion, resuelto_at: estado === "resuelto" ? ahoraISO() : null, imagen }
       const r = actual.pendiente
         ? await supabase.from("balance_pendientes").update(cambios).eq("id", actual.pendiente.id)
         : await supabase.from("balance_pendientes").insert({ empresa, anio_cierre: anioCierre, texto: textoPendienteDe(actual), creado_por: "recorrido del balance", ...cambios })
       if (r.error) throw r.error
       borrador.current.texto = ""   // ya quedó guardado: al pasar de tema no se vuelve a guardar como nota
+      borrador.current.imagen = null   // ídem la captura
       toast.success(tipo === "nota" ? "Nota guardada" : "Respondido")
       await recargar()
       if (tipo !== "nota") ir(1)
@@ -246,12 +253,12 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
         if (error) throw error
       }
       const resolucion = `⚡ Aplicado desde el recorrido: ${a.texto}${nota.trim() ? ` — ${nota.trim()}` : ""}`
-      const cambiosP = { estado: "resuelto", resolucion, resuelto_at: ahoraISO() }
+      const cambiosP = { estado: "resuelto", resolucion, resuelto_at: ahoraISO(), imagen }
       const r = actual.pendiente
         ? await supabase.from("balance_pendientes").update(cambiosP).eq("id", actual.pendiente.id)
         : await supabase.from("balance_pendientes").insert({ empresa, anio_cierre: anioCierre, texto: textoPendienteDe(actual), creado_por: "recorrido del balance", ...cambiosP })
       if (r.error) throw r.error
-      borrador.current.texto = ""
+      borrador.current.texto = ""; borrador.current.imagen = null
       toast.success(`Hecho: ${a.texto}`)
       await recargar()
       ir(1)
@@ -492,8 +499,16 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
               <div className="space-y-2 border-t pt-4">
                 <label htmlFor="recorrido-nota" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tu respuesta</label>
                 <textarea id="recorrido-nota" value={nota} onChange={e => setNota(e.target.value)} rows={3}
-                  placeholder="Qué es, qué hacer, o a quién preguntarle… (si pasás a otro tema sin apretar un botón, se guarda solo como nota)"
+                  onPaste={e => { void imagenPegada(e.nativeEvent).then(img => { if (img) setImagen(img) }) }}
+                  placeholder="Qué es, qué hacer, o a quién preguntarle… Podés pegar una captura (Win+Shift+S → Ctrl+V). Si pasás a otro tema sin apretar un botón, se guarda solo como nota."
                   className="w-full rounded border bg-background p-2 text-sm" />
+                {imagen && (
+                  <div className="relative inline-block" data-test="recorrido-captura">
+                    <img src={imagen} alt="captura pegada" className="max-h-48 rounded border bg-white object-contain" />
+                    <button type="button" onClick={() => setImagen(null)} title="Sacar la captura"
+                      className="absolute right-1 top-1 rounded bg-white/90 px-1.5 text-xs text-red-700 shadow hover:bg-white">✕ sacar</button>
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" onClick={() => responder("resuelto")} disabled={guardando}>✓ Resuelto</Button>
                   <Button size="sm" variant="outline" onClick={() => responder("bien")} disabled={guardando}>👍 Está bien así</Button>

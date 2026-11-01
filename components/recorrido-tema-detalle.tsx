@@ -120,6 +120,7 @@ export function DetalleTema({ tema, arriba, enAppExtra, propuestaExtra, resoluci
       {tema.pendiente?.resolucion && (
         <div className="rounded border bg-muted/40 p-3 text-sm">
           <span className="text-muted-foreground">{tema.respondido ? "Respondido" : "Nota"}: </span>{tema.pendiente.resolucion}
+          {tema.pendiente.imagen && <img src={tema.pendiente.imagen} alt="captura de la respuesta" className="mt-2 max-h-64 rounded border bg-white object-contain" />}
           {resolucionExtra}
         </div>
       )}

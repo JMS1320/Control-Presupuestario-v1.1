@@ -18,6 +18,8 @@ export interface PendienteBalance {
   resolucion: string | null
   created_at: string
   resuelto_at: string | null
+  /** 📷 A-FEAT-1472 — la captura pegada en «Tu respuesta» del recorrido (data-URL; script 159). */
+  imagen?: string | null
 }
 
 const dmy = (iso: string | null) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : '')

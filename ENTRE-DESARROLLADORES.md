@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 📷 1 columna nueva en `public.balance_pendientes`: `imagen` (2026-11-01) — ⏳ AVISO PREVIO (se corre a continuación con OK de JMS)
+### 📷 1 columna nueva en `public.balance_pendientes`: `imagen` (2026-11-01) — ✅ APLICADA 2026-11-01
 - `scripts/159-balance-pendientes-imagen.sql` (+ `-deshacer`). La captura pegada en «Tu respuesta» de un tema del recorrido del balance (data-URL comprimida, como `revisiones.imagen`). Vacía, comentario `[script 159]`. **Sin cambios de RLS ni de permisos.** Ojo: las pantallas leen la tabla con `select('*')`, así que la traen sola.
 
 ### 🏦 Las mismas columnas en las 3 cajas de MSA, `msa.echeqs_terceros` y las 3 tarjetas VISA (2026-10-31) — ✅ APLICADA el 31/10 (aviso previo; JMS: «aprovechá a dejar todo bien»): 108 columnas (19×3 + 15 + 12×3), vacías
