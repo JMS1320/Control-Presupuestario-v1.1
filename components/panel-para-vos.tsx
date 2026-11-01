@@ -143,10 +143,13 @@ export function PanelParaVos() {
                 <CalendarClock className="h-3 w-3" /> Tarea{m.tarea_hasta ? ` · para el ${dm(m.tarea_hasta)}${venc ? " — VENCIDA" : ""}` : ""}
               </div>)}
             {hilo.length > 0 && (
-              <ul className="mt-2 space-y-1 border-l-2 pl-2 text-xs">
-                {/* Renglones como se escribieron (JMS 31/10: «renglones en vez de todo de corrido»). */}
-                {hilo.map((h, i) => <li key={i} className="whitespace-pre-wrap"><b>{h.autor ?? "—"}</b>: {h.texto}
-                  {h.imagen && <a href={h.imagen} target="_blank" rel="noreferrer" title="Ver la captura grande"><img src={h.imagen} alt="captura" className="mt-1 max-h-48 rounded border bg-white object-contain" /></a>}</li>)}
+              <ul className="mt-2 space-y-1.5 text-xs">
+                {/* Renglones como se escribieron (JMS 31/10). 💬 01/11: el color es de QUIÉN escribe — Claude en violeta a la
+                    izquierda, la persona en verde a la derecha (JMS: «me salteé contestaciones tuyas»). */}
+                {hilo.map((h, i) => { const esClaude = /^claude$/i.test(String(h.autor ?? "").trim()); return <li key={i}
+                  className={`whitespace-pre-wrap rounded-lg border px-2.5 py-1.5 ${esClaude ? "mr-8 border-violet-300 bg-violet-50" : "ml-8 border-emerald-300 bg-emerald-50"}`}>
+                  <b className={esClaude ? "text-violet-800" : "text-emerald-800"}>{esClaude ? "🤖 Claude" : `🧑 ${h.autor ?? "—"}`}</b>: {h.texto}
+                  {h.imagen && <a href={h.imagen} target="_blank" rel="noreferrer" title="Ver la captura grande"><img src={h.imagen} alt="captura" className="mt-1 max-h-48 rounded border bg-white object-contain" /></a>}</li> })}
               </ul>)}
           </div>
           {modo === "esperando" && <span className="text-xs text-muted-foreground">Esperando que confirme {m.confirma}{m.resolucion ? ` · «${m.resolucion}»` : ""}</span>}

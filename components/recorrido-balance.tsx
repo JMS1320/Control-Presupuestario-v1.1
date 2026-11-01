@@ -675,12 +675,18 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
                       {tarea ? `👤 Pasado a ${tarea.asignado_a ?? "alguien"} · lo que escribas acá le llega a su 🔔` : "🧵 Conversación del tema"}
                     </div>
                     <ul className="space-y-1.5">
-                      {hilo.map((m, i) => (
-                        <li key={i} className="whitespace-pre-wrap border-l-2 pl-2" style={{ borderColor: m.de === "tarea" ? "#f59e0b" : "#94a3b8" }}>
-                          <span className="text-xs text-muted-foreground">{m.autor ?? "—"} · {cuando(m.fecha)}</span><br />{m.texto}
+                      {/* 💬 Nota 🌙 JMS 01/11: «hay dos colores pero los usás para los dos; me salteé contestaciones tuyas» → el color
+                          es de QUIÉN escribe (Claude a la izquierda en violeta, vos a la derecha en verde), no de dónde viene. */}
+                      {hilo.map((m, i) => {
+                        const esClaude = /^claude$/i.test(String(m.autor ?? "").trim())
+                        return (
+                        <li key={i} className={`whitespace-pre-wrap rounded-lg border px-3 py-2 ${esClaude ? "mr-10 border-violet-300 bg-violet-50" : "ml-10 border-emerald-300 bg-emerald-50"}`}>
+                          <span className={`text-xs font-semibold ${esClaude ? "text-violet-800" : "text-emerald-800"}`}>{esClaude ? "🤖 Claude" : `🧑 ${m.autor ?? "Vos"}`}</span>
+                          <span className="text-xs text-muted-foreground"> · {cuando(m.fecha)}{m.de === "tarea" ? " · en la tarea" : ""}</span><br />{m.texto}
                           {m.imagen && <a href={m.imagen} target="_blank" rel="noreferrer"><img src={m.imagen} alt="captura" className="mt-1 max-h-48 rounded border bg-white object-contain" /></a>}
                         </li>
-                      ))}
+                        )
+                      })}
                     </ul>
                   </div>
                 )
