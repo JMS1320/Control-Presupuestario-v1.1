@@ -53,6 +53,7 @@ import { armarTemas, subdiariosContraArca, temaDelLink, type Tema } from "@/lib/
 import { temasVentasVsArca, temasComprasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
 import { leerDatosConciliacion, proponerConciliaciones, CUENTAS_CONCILIABLES, type ConteoCuenta } from "@/lib/conciliacion/propuestas-ejercicio"
 import { temasDeMovimientos, temasDeDeudas, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
+import { leerTemasSueldoOtraPersona } from "@/lib/balance/control-sueldo-otra-persona"
 import { leerChequesVencidos } from "@/lib/conciliacion/cheques-vencidos"
 import { RecorridoBalance } from "./recorrido-balance"
 import { VistaPreviaBalance } from "./vista-previa-balance"
@@ -187,7 +188,7 @@ export function PapelesDeBalance() {
   const [temaPedido, setTemaPedido] = useState<{ empresa: string; anioCierre: number; clave: string; armando: boolean } | null>(null)
   const [claveRecorrido, setClaveRecorrido] = useState<string | null>(null)
   /** 🏦 A-FEAT-1430 paso 4: las propuestas de conciliación del ejercicio (se calculan al abrir el recorrido). */
-  const [conciliacion, setConciliacion] = useState<{ movimientos: Tema[]; deudas: Tema[]; cheques: Tema[]; historicos: number; avisos: string[]; calculado: string; porCuenta?: Record<string, ConteoCuenta> } | null>(null)
+  const [conciliacion, setConciliacion] = useState<{ movimientos: Tema[]; deudas: Tema[]; cheques: Tema[]; controles: Tema[]; historicos: number; avisos: string[]; calculado: string; porCuenta?: Record<string, ConteoCuenta> } | null>(null)
   const [cargandoConciliacion, setCargandoConciliacion] = useState<string | null>(null)
   const calcularConciliacion = useCallback(async (silencioso = false) => {
     if (!libro) return
@@ -201,7 +202,11 @@ export function PapelesDeBalance() {
       setCargandoConciliacion("cruzando los echeqs vencidos con sus débitos…")
       const ch = empresa.id === "MSA" ? await leerChequesVencidos(supabase, hoyArgentina()) : { cruces: [], extractoHasta: null, error: null }
       if (ch.error) datos.avisos.push(`echeqs: ${ch.error}`)
-      setConciliacion({ movimientos: mov.temas, deudas: temasDeDeudas(r.deudas, empresa.id), cheques: temasDeCheques(ch.cruces, ch.extractoHasta),
+      // 🔗 A-BUG-1486: pagos de sueldo atados al movimiento de otra persona (CUIL de Sueldos contra el CUIT del banco)
+      setCargandoConciliacion("controlando los pagos de sueldo contra el CUIT del banco…")
+      const ctl = await leerTemasSueldoOtraPersona(supabase, empresa.id, desde, hasta)
+      if (ctl.error) datos.avisos.push(`control de sueldos: ${ctl.error}`)
+      setConciliacion({ movimientos: mov.temas, deudas: temasDeDeudas(r.deudas, empresa.id), cheques: temasDeCheques(ch.cruces, ch.extractoHasta), controles: ctl.temas,
         historicos: mov.historicos, avisos: datos.avisos, porCuenta: datos.porCuenta,
         calculado: new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) })
       if (datos.avisos.length && !silencioso) toast.warning(`Conciliación: no se pudo leer ${datos.avisos.length} cosa(s) — ${datos.avisos.slice(0, 2).join(" · ")}`)
@@ -297,7 +302,7 @@ export function PapelesDeBalance() {
   /** 🧭 Los temas del recorrido: la cobertura (mismos datos del Excel) + las preguntas de «Pendientes a revisar». */
   const temasRecorrido = useMemo(() => {
     if (!libro) return []
-    const otros = conciliacion ? [...conciliacion.movimientos, ...conciliacion.deudas, ...conciliacion.cheques] : []
+    const otros = conciliacion ? [...conciliacion.movimientos, ...conciliacion.deudas, ...conciliacion.cheques, ...conciliacion.controles] : []
     // 🧾 A-FEAT-1439: ventas contra lo presentado a ARCA. Si no se pudo leer o cruzar, se dice como tema (no se saltea).
     if (ddjjGuardadas) {
       try {

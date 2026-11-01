@@ -212,6 +212,7 @@ import { motivoDeError, sumarMotivo } from "@/lib/conciliacion/motivo-error"
 import { resumenDeFilas } from "@/lib/ui/resumen-filas"
 import { empleadoPorNombre, tiraDeContraparte, proponerConciliaciones, CUENTAS_CONCILIABLES, ventanasAlrededor, moverMeses, type DatosConciliacion, type MovimientoSinConciliar, type Obligacion } from "@/lib/conciliacion/propuestas-ejercicio"
 import { temasDeMovimientos, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
+import { temasSueldoOtraPersona } from "@/lib/balance/control-sueldo-otra-persona"
 import { cruzarChequesConDebitos, numeroEnDescripcion } from "@/lib/conciliacion/cheques-vencidos"
 import { echeqDelDebito } from "@/lib/conciliacion/echeq-del-debito"
 import { agregarAlHilo, hiloDelTema } from "@/lib/balance/hilo-tema"
@@ -5681,6 +5682,38 @@ export function correrCasos(): Resultado[] {
       `c101 ${cruces[0].por} · cLongo ${cruces[1].por} ${longo.accion?.numero} → ${longo.accion?.fecha} · cBriki ${cruces[2].debito ? "con débito" : "sin débito"}, ${/Cargar el extracto/.test(temasCh[2].propuesta ?? "") ? "«Cargar el extracto»" : "?"}`,
       cruces[0].por === "numero" && cruces[1].por === "importe" && longo.accion?.numero === "107" && longo.accion?.fecha === "2026-09-07"
         && !cruces[2].debito && /Cargar el extracto/.test(temasCh[2].propuesta ?? "") && !temasCh[2].accion && numeroEnDescripcion("Echeq 48 Hs. Nro.      101") === "101", "A-AUTO-10")
+  }
+
+  /**
+   * 🔗 **PAGOS DE SUELDO ATADOS AL MOVIMIENTO DE OTRA PERSONA — A-BUG-1486.** Los tres casos reales de MSA Galicia
+   * (29/05 Alondra → anticipo de Sigot por caja; 06/04 Amestoy → saldo de marzo de Alondra, que ya tiene su movimiento;
+   * 04/03 Wilson → anticipo de febrero de Alondra) y los dos que NO tienen que salir: el Juzgado (organismo, cuota
+   * alimentaria de Sigot) y un pago bien atado.
+   */
+  {
+    const cta = { cuentaId: "msa_galicia", nombre: "MSA Galicia" }
+    const emps = [{ id: "alo", nombre: "Alondra Olivo", cuit: "27-47926088-0" }, { id: "sig", nombre: "Ruben Sigot", cuit: "20-17985912-3" }, { id: "wil", nombre: "Wilson Barreto", cuit: "20-33318934-9" }]
+    const pagos = [
+      { id: "pSigCaja", empleadoId: "sig", fecha: "2026-05-29", monto: 110000, medio: "caja_sigot", tipo: "anticipo", mes: 5, anio: 2026 },
+      { id: "pAlo2905", empleadoId: "alo", fecha: "2026-05-29", monto: 110000, medio: "banco", tipo: "anticipo", mes: 5, anio: 2026 },
+      { id: "pAloMar", empleadoId: "alo", fecha: "2026-04-08", monto: 84000, medio: "banco", tipo: "sueldo", mes: 3, anio: 2026 },
+      { id: "pAloFeb", empleadoId: "alo", fecha: "2026-03-04", monto: 250000, medio: "banco", tipo: "anticipo", mes: 2, anio: 2026 },
+      { id: "pSigJuz", empleadoId: "sig", fecha: "2026-06-02", monto: 461352.3, medio: "banco", tipo: "anticipo", mes: 5, anio: 2026 },
+    ]
+    const movs = [
+      { cuenta: cta, id: "m2905", fecha: "2026-05-29", importe: 110000, quienBanco: "Alondra Aylin Olivo", cuitBanco: "27479260880", estado: "auditar", pagoId: "pSigCaja" },
+      { cuenta: cta, id: "m0604", fecha: "2026-04-06", importe: 84000, quienBanco: "Marcela Sandra,amestoy", cuitBanco: "27177378858", detalle: "Reintegro Vulcano Gastos Medicos", estado: "conciliado", pagoId: "pAloMar" },
+      { cuenta: cta, id: "m0804", fecha: "2026-04-08", importe: 84000, quienBanco: "Alondra Aylin Olivo", cuitBanco: "27479260880", estado: "conciliado", pagoId: "pAloMar" },
+      { cuenta: cta, id: "m0403", fecha: "2026-03-04", importe: 250000, quienBanco: "Wilson Severiano Barreto", cuitBanco: "20333189349", estado: "conciliado", pagoId: "pAloFeb" },
+      { cuenta: cta, id: "mJuz", fecha: "2026-06-02", importe: 461352.3, quienBanco: "Juzgado De Paz Letrado San Pedro", cuitBanco: "30707216650", estado: "conciliado", pagoId: "pSigJuz" },
+    ]
+    const t = temasSueldoOtraPersona(movs, movs, pagos, emps)
+    const de = (id: string) => t.find(x => x.clave === `ctl:sueldo-otra-persona:${id}`)
+    const v = `${t.length} · ${de("m2905")?.etiqueta} · ${de("m0604")?.etiqueta} · ${de("m0403")?.etiqueta} · juzgado ${de("mJuz") ? "sale" : "no sale"} · 08/04 ${de("m0804") ? "sale" : "no sale"}`
+    chequear("Recorrido · control de sueldos", "🔗 3 movimientos atados a otra persona: al empleado equivocado (con el pago bueno), dos contra un pago, pagado a otra cuenta; el Juzgado y el bien atado no salen",
+      "3 · Atado al empleado equivocado · Dos movimientos, un solo pago · Pagado a otra cuenta · juzgado no sale · 08/04 no sale", v,
+      v === "3 · Atado al empleado equivocado · Dos movimientos, un solo pago · Pagado a otra cuenta · juzgado no sale · 08/04 no sale"
+        && /pago de Alondra Olivo del 29\/05/.test(de("m2905")?.propuesta ?? "") && de("m0604")!.links.some(l => /otro movimiento/.test(l.texto)) && de("m2905")!.grupo === "error", "A-BUG-1486")
   }
 
   /**

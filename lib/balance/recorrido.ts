@@ -118,8 +118,8 @@ export const claveCobertura = (i: Pick<ItemCobertura, "papel" | "dato">) => `cob
 export const textoPendienteDe = (t: Pick<Tema, "clave" | "titulo" | "que">) => `[${t.clave}] ${t.titulo} — ${t.que}`.slice(0, 900)
 
 const ORDEN: GrupoTema[] = GRUPOS.map(g => g.id)
-/** La clave de un tema dentro del texto de su respuesta: `[cob:…]`, `[conc:…]`, `[deu:…]`, `[chq:…]` o `[arca:…]`. */
-const CLAVE_EN_TEXTO = /^\[((?:cob|conc|deu|chq|arca|doc):[^\]]+)\]/
+/** La clave de un tema dentro del texto de su respuesta: `[cob:…]`, `[conc:…]`, `[deu:…]`, `[chq:…]`, `[arca:…]` o `[ctl:…]` (controles, A-BUG-1486). */
+const CLAVE_EN_TEXTO = /^\[((?:cob|conc|deu|chq|arca|doc|ctl):[^\]]+)\]/
 const GRUPO_DE: Partial<Record<EstadoCobertura, GrupoTema>> = {
   "error": "error", "decision": "decision", "falta inicio": "falta inicio",
   "sin informacion": "sin informacion", "pendiente desarrollo": "pendiente desarrollo",
