@@ -33,6 +33,7 @@
  * empieza a mentir.
  */
 
+import { armarGruposTemplates, nombreSolapaGrupo, hojaGrupo } from "@/lib/balance/grupos-templates"
 import { filasBalanceEnLinea, hojaCajaYBancos } from "@/lib/balance/balance-en-linea"
 import { APERTURA_MSA_2025 } from "@/lib/balance/apertura-contador"
 import { libroDeSolapa, repartirEnLibros, templatesDeResponsable, detalleBancarioDelLibroC, canalDePago, hojaDeDetalle } from "@/lib/balance/libros-del-balance"
@@ -12287,6 +12288,23 @@ export function correrCasos(): Resultado[] {
     const v = `IVA $ ${iva[1].v} · US$ ${iva[2].v} · ${iva[4]} · total $ ${tot[1].v} · fórmula sobre el detalle ${apunta}`
     const e = "IVA $ 140 · US$ 2 · Galicia, Santander, USD · total $ 147 · fórmula sobre el detalle true"
     chequear("Libro C", "Impuestos y gastos bancarios: arriba una línea por categoría con el neto de todas las cuentas de la empresa (dólares aparte) y el total, con fórmulas sobre el detalle de abajo", e, v, v === e, "A-FEAT-1511")
+  }
+
+  // ══ 📚 Libro G — grupos de templates con el formato de impuestos bancarios (A-FEAT-1512) ══
+  {
+    const q = (resp: string, ag: string, categ: string, monto: number, estado = "pagado") => ({ id: Math.random().toString(), fecha: "2025-09-01", concepto: `T ${categ}`, proveedor: "P", categ,
+      cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable: resp, estado, monto, agrupadoraTemplate: ag })
+    const cuotas = [q("MA", "Fijos Buenos Aires MA", "EXPENSAS", 100), q("MA", "Fijos Buenos Aires MA", "AGUA", 20, "pendiente"), q("PAM/MA", "Fijos Buenos Aires MA", "GAS", 5),
+      q("PAM", "Fijos Buenos Aires MA", "GAS", 7), q("MSA", "Inversiones", "FCI", 999), q("MSA", "Honorarios", "HONORARIOS", 50)] as never
+    const gs = armarGruposTemplates(cuotas)
+    const v = gs.map(g => `${nombreSolapaGrupo(g)}=${g.total}`).join(" | ")
+    const e = "G · MA · Fijos BA MA=120 | G · PAM · Fijos BA MA=12"
+    chequear("Libro G", "Un grupo por responsable + agrupadora del template (el compartido va al primero); no entran lo financiero ni los grupos de una sola cuota; nombres de solapa cortos",
+      e, v, v === e, "A-FEAT-1512")
+    const h = hojaGrupo(gs[0], "25/26")
+    const exp = h.find(r => r[0] === "EXPENSAS") as any[], agua = h.find(r => r[0] === "AGUA") as any[]
+    const v2 = `expensas ${exp[1].v} pagado ${exp[4]} · agua ${agua[1].v} pendiente ${agua[5]} · fórmula ${String(exp[1].f).startsWith("SUMIFS")}`
+    chequear("Libro G", "Cada solapa: una línea por categoría con total (fórmula), pagado y pendiente; abajo el detalle", "expensas 100 pagado 100 · agua 20 pendiente 20 · fórmula true", v2, v2 === "expensas 100 pagado 100 · agua 20 pendiente 20 · fórmula true", "A-FEAT-1512")
   }
 
   return r

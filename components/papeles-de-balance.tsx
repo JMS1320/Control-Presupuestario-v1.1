@@ -70,6 +70,7 @@ import { saldosEnDolaresParaBalance, CUENTAS_EN_MONEDA_EXTRANJERA } from "@/lib/
 import { detalleBancarioDelLibroC, canalDePago, dolaresParaBalance } from "@/lib/balance/libros-del-balance"
 import { APERTURA_MSA_2025 } from "@/lib/balance/apertura-contador"
 import type { EntradaBalanceEnLinea } from "@/lib/balance/balance-en-linea"
+import type { MovimientoLib } from "@/lib/balance/grupos-templates"
 import { leerDeudaTarjeta, leerSussAlCierre, leerFci, leerSojaInicio, leerTcCierre } from "@/lib/balance/balance-en-linea-lectura"
 import { MarcaTentativo } from "@/components/marca-tentativo"
 import { leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
@@ -408,6 +409,24 @@ export function PapelesDeBalance() {
       hacienda: hacienda ? { valuacion: hacienda.valuacion, inicio: hacienda.saldos?.hacienda?.inicio ?? null, cierre: hacienda.saldos?.hacienda?.cierre ?? null } : null,
     }
   }
+  /**
+   * 📚 A-FEAT-1512: lo marcado «LIB» (contable) en los bancos de las tres empresas, para el libro G (va en paralelo: no es de
+   * una sola empresa). Si una cuenta no se puede leer, se avisa y sale lo demás.
+   */
+  const leerMovimientosLib = async (lib: LibroDiario) => {
+    const desde = primerDiaDelEjercicio(lib.ejercicio), hasta = lib.ejercicio.fechaCierre
+    const cuentas = [{ empresa: "MSA", schema: "public", tabla: "msa_galicia", nombre: "Galicia MSA" }, { empresa: "PAM", schema: "public", tabla: "pam_galicia", nombre: "Galicia PAM caja de ahorro" },
+      { empresa: "PAM", schema: "public", tabla: "pam_galicia_cc", nombre: "Galicia PAM cta cte" }, { empresa: "MA", schema: "ma", tabla: "ma_galicia", nombre: "Galicia MA" }]
+    const out: MovimientoLib[] = []
+    for (const c of cuentas) {
+      const q = c.schema === "public" ? supabase.from(c.tabla) : supabase.schema(c.schema).from(c.tabla)
+      const { data, error } = await q.select("fecha, descripcion, categ, detalle, debitos, creditos").ilike("contable", "lib").gte("fecha", desde).lte("fecha", hasta)
+      if (error) { toast.warning(`LIB: no se pudo leer ${c.nombre}`); continue }
+      for (const m of (data ?? []) as Record<string, unknown>[]) out.push({ empresa: c.empresa, cuenta: c.nombre, fecha: String(m.fecha).slice(0, 10), descripcion: String(m.descripcion ?? ""),
+        categ: String(m.categ ?? ""), detalle: String(m.detalle ?? ""), debitos: Number(m.debitos) || 0, creditos: Number(m.creditos) || 0 })
+    }
+    return out
+  }
   /** 📚 Para el clic del set: lo de la ÚLTIMA vuelta de la pantalla (si esperó el stock, el estado del clic ya quedó viejo). */
   const ultimo = useRef({ argsConRecorrido, entradaBalanceEnLinea })
   ultimo.current = { argsConRecorrido, entradaBalanceEnLinea }
@@ -423,7 +442,7 @@ export function PapelesDeBalance() {
     }
     const args = await ultimo.current.argsConRecorrido(lib)
     const entradaF = await ultimo.current.entradaBalanceEnLinea(lib)
-    await descargarSetDelBalance(args, entradaF)
+    await descargarSetDelBalance(args, entradaF, await leerMovimientosLib(lib))
   }
   const sinResponder = temasRecorrido.filter(t => !t.respondido).length
   /** Lo que todavía no llegó, para que la vista previa lo diga en vez de parecer completa. */

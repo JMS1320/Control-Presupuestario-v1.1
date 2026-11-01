@@ -45,6 +45,7 @@ import type { CuentasSinCuentaCorriente } from "./fuera-por-cuenta-corriente"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
 import { armarStocksUnificados, hojaDeStocks } from "./stocks-unificado"
+import { armarGruposTemplates, hojaGrupo, hojaIndiceGrupos, hojaLib, nombreSolapaGrupo, type MovimientoLib } from "./grupos-templates"
 import { filasBalanceEnLinea, hojaBalanceEnLinea, hojaCajaYBancos, hojaFci, hojaDeudasYCreditos, hojaSoja, hojaVacasDeCria, type EntradaBalanceEnLinea } from "./balance-en-linea"
 import { LIBROS, repartirEnLibros, templatesDeResponsable, hojaListadoTemplates, hojaDeDetalle, type GrupoDetalle, type MovimientoDelDetalle } from "./libros-del-balance"
 import { hojaDelRecorrido, sincronizarPendientes, type RecorridoParaExcel } from "./recorrido-excel"
@@ -2855,11 +2856,12 @@ const COLS_DETALLE_BANCARIO: Columna[] = [
  * 📚 A-FEAT-1505 — baja el SET: los libros A a E en un .zip (JMS: «así tengo siempre todo el set parejo»). Se arma el libro
  * completo una sola vez (más el C) y se reparte: los cinco salen del mismo cálculo que el Excel de siempre.
  */
-export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>, entradaF?: EntradaBalanceEnLinea | null): Promise<void> {
+export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>, entradaF?: EntradaBalanceEnLinea | null, lib?: MovimientoLib[] | null): Promise<void> {
   const [libro, empresa, templates, , , , , bancarios] = a
   const wb = armarWorkbook(...a)
   agregarLibroC(wb, empresa, libro.ejercicio.etiqueta, templates ?? null, bancarios?.detalleBancario ?? null)
   if (entradaF) agregarLibroF(wb, entradaF)
+  if (templates) agregarLibroG(wb, templates.detalle, libro.ejercicio.etiqueta, lib ?? null)
   const { default: JSZip } = await import("jszip")
   const zip = new JSZip()
   const base = nombreArchivo(libro, empresa).replace(/\.xlsx$/, "")
@@ -2875,6 +2877,15 @@ export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>
   document.body.appendChild(el)
   el.click()
   setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(el) }, ESPERA_ANTES_DE_LIBERAR_MS)
+}
+
+/** 📚 A-FEAT-1512 — el LIBRO G: los grupos de templates (propuesta) y lo marcado LIB, con el formato de «impuestos bancarios». */
+export function agregarLibroG(wb: XLSX.WorkBook, cuotas: CuotaTemplate[], etiqueta: string, lib: MovimientoLib[] | null): void {
+  const gs = armarGruposTemplates(cuotas)
+  hoja(wb, "G · Indice de grupos", hojaIndiceGrupos(gs, cuotas, etiqueta, lib), [{ ancho: 14 }, { ancho: 44 }, { ancho: 32 }, { ancho: 10, z: ENTERO }, { ancho: 18, z: MONEDA }])
+  const cols: Columna[] = [{ ancho: 38 }, { ancho: 18, z: MONEDA }, { ancho: 10 }, { ancho: 10 }, { ancho: 18, z: MONEDA }, { ancho: 30 }]
+  for (const g of gs) hoja(wb, nombreSolapaGrupo(g), hojaGrupo(g, etiqueta), cols)
+  if (lib) hoja(wb, "G · LIB (paralelo)", hojaLib(lib, etiqueta), [{ ancho: 30 }, { ancho: 18, z: MONEDA }, { ancho: 16, z: MONEDA }, { ancho: 16, z: MONEDA }, { ancho: 16, z: MONEDA }, { ancho: 16, z: MONEDA }, { ancho: 14, z: MONEDA }, { ancho: 40 }])
 }
 
 /** 📒 A-FEAT-1509 — las hojas del LIBRO F: el balance en línea y una de detalle por renglón de la tanda de Claude. */

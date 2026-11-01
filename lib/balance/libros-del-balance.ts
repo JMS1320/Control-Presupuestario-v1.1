@@ -23,7 +23,7 @@ import { buscarCuenta } from "./papeles-bancarios"
 import type { CuotaTemplate, TemplatesDelEjercicio } from "./templates-libro"
 import { armarTemplatesDelEjercicio } from "./templates-libro"
 
-export type LetraLibro = "A" | "B" | "C" | "D" | "E" | "F"
+export type LetraLibro = "A" | "B" | "C" | "D" | "E" | "F" | "G"
 
 export const LIBROS: Record<LetraLibro, string> = {
   A: "A - Subdiarios (terminado)",
@@ -32,6 +32,7 @@ export const LIBROS: Record<LetraLibro, string> = {
   D: "D - El resto",
   E: "E - Stocks inicio y cierre",
   F: "F - Balance en linea",
+  G: "G - Grupos de templates (propuesta)",
 }
 
 const DE_A = new Set(["Compras", "Ventas", "Compras por cuenta", "Ventas por cuenta"])
@@ -45,6 +46,7 @@ export function libroDeSolapa(nombre: string): LetraLibro {
   if (DE_E.has(nombre)) return "E"
   if (nombre.startsWith("C · ")) return "C"
   if (nombre.startsWith("F · ")) return "F"
+  if (nombre.startsWith("G · ")) return "G"
   return "D"
 }
 
@@ -205,7 +207,7 @@ export function repartirEnLibros<V>(wb: XLSX.WorkBook, vistas: V[]): { letra: Le
     l.solapas.push(nombre)
     out.set(letra, l)
   })
-  return (["A", "B", "C", "D", "E", "F"] as LetraLibro[]).filter(k => out.has(k)).map(letra => ({ letra, ...out.get(letra)! }))
+  return (["A", "B", "C", "D", "E", "F", "G"] as LetraLibro[]).filter(k => out.has(k)).map(letra => ({ letra, ...out.get(letra)! }))
 }
 
 /** 🔎 A-FEAT-1506: el nombre del canal de pago (la tabla donde se encontró el movimiento) en palabras de la app. */
