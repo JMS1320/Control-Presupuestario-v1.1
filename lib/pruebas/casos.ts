@@ -33,6 +33,7 @@
  * empieza a mentir.
  */
 
+import { libroDeSolapa, repartirEnLibros, templatesDeResponsable, detalleBancarioDelLibroC } from "@/lib/balance/libros-del-balance"
 import { armarStocksUnificados, hojaDeStocks } from "@/lib/balance/stocks-unificado"
 import { temasDeCuentaCorriente } from "@/lib/balance/recorrido-conciliacion"
 import { contrapartesDelRecorrido } from "@/lib/balance/fuera-por-cuenta-corriente"
@@ -12177,6 +12178,45 @@ export function correrCasos(): Resultado[] {
     chequear("Papeles bancarios", "💵 Los gastos de la cuenta en dólares van al papel 08 en un bloque aparte EN DÓLARES (no se suman a los pesos); Google One y la transferencia al broker no son gasto bancario",
       e, v, v === e, "A-FEAT-1503")
     void totales
+  }
+
+  // ══ 📚 El set de libros A–E (A-FEAT-1505) ══
+  {
+    const v1 = ["Compras", "B - 04 Cuentas a pagar", "04 Cuentas a pagar", "14 Cuentas corrientes", "00 Stocks inicio y cierre", "C · MSA · Templates", "07 Bancos", "00 Cobertura"]
+      .map(n => `${n}=${libroDeSolapa(n)}`).join(" · ")
+    const e1 = "Compras=A · B - 04 Cuentas a pagar=D · 04 Cuentas a pagar=B · 14 Cuentas corrientes=B · 00 Stocks inicio y cierre=E · C · MSA · Templates=C · 07 Bancos=D · 00 Cobertura=D"
+    chequear("Set de libros", "Cada solapa va al libro de su letra (A subdiarios, B deudas/créditos/cuentas corrientes, C templates y detalle, E stocks; el resto al D)",
+      e1, v1, v1 === e1, "A-FEAT-1505")
+
+    const wb = XLSXcasos.utils.book_new()
+    for (const n of ["00 Cobertura", "Compras", "Ventas", "04 Cuentas a pagar", "C · MSA · Templates", "00 Stocks inicio y cierre"]) XLSXcasos.utils.book_append_sheet(wb, XLSXcasos.utils.aoa_to_sheet([[n]]), n)
+    const partes = repartirEnLibros(wb, wb.SheetNames.map((_, i) => i))
+    const v2 = partes.map(p => `${p.letra}:${p.solapas.length}/${p.vistas.join("")}`).join(" ")
+    const e2 = "A:2/12 B:1/3 C:1/4 D:1/0 E:1/5"
+    chequear("Set de libros", "El reparto no pierde ni repite solapas y cada una viaja con su formato", e2, v2, v2 === e2, "A-FEAT-1505")
+
+    const ej = armarEjercicio(2026, 6)
+    const cu = (id: string, resp: string, monto: number) => ({ id, fecha: "2025-09-10", concepto: `T ${id}`, proveedor: "P", categ: "Otros Gastos", cuenta_contable: "", nro_cuenta: "",
+      centro_costo: "", responsable: resp, estado: "pagado", monto, egresoId: id })
+    const todo = armarTemplatesDelEjercicio([cu("a", "MSA", 100), cu("b", "MA", 50), cu("c", "MSA/PAM", 30), cu("d", "PAM", 20)] as never, ej)
+    const tot = (r: string) => templatesDeResponsable(todo, r)?.detalle.reduce((t, c) => t + c.monto, 0) ?? 0
+    const v3 = `MSA ${tot("MSA")} · MA ${tot("MA")} · PAM ${tot("PAM")} · suma ${tot("MSA") + tot("MA") + tot("PAM")} = libro ${todo.detalle.reduce((t, c) => t + c.monto, 0)}`
+    chequear("Set de libros", "Los templates por responsable suman lo mismo que el libro (un compartido «MSA/PAM» va al primero, no se cuenta dos veces)",
+      "MSA 130 · MA 50 · PAM 20 · suma 200 = libro 200", v3, v3 === "MSA 130 · MA 50 · PAM 20 · suma 200 = libro 200", "A-FEAT-1505")
+
+    const plan = [{ nro_cuenta: null, cuenta_contable: "IVA Bancario", nombre_totalizadora: "IMPUESTOS BANCARIOS", tipo: "egreso" },
+      { nro_cuenta: null, cuenta_contable: "Comisión Cuenta Bancaria", nombre_totalizadora: "GASTOS BANCARIOS", tipo: "egreso" }]
+    const det = detalleBancarioDelLibroC([
+      { fecha: "2025-07-03", descripcion: "Iva", categ: "Iva Bancario", debitos: 21, creditos: 0, donde: "Galicia" },
+      { fecha: "2025-07-04", descripcion: "Rescate Fima", categ: "FCI", debitos: 0, creditos: 1000, donde: "Galicia" },
+      { fecha: "2025-07-05", descripcion: "Intereses PF", categ: "INTERESES", debitos: 0, creditos: 50, donde: "Galicia" },
+      { fecha: "2025-07-06", descripcion: "Sueldo", categ: "Sueldos", debitos: 900, creditos: 0, donde: "Galicia" },
+    ] as never, [{ fecha: "2025-08-01", descripcion: "TRF INMED PROVEED · Galicia Securities S", categ: null, debitos: 34000, creditos: 0, donde: "MSA Cuenta Corriente USD" },
+      { fecha: "2025-08-04", descripcion: "COMISION", categ: "Comision Cuenta Bancaria", debitos: 10, creditos: 0, donde: "MSA Cuenta Corriente USD" }] as never,
+      plan as never, (m: { categ?: string | null }) => /fci/i.test(String(m.categ ?? "")))
+    const v4 = det.map(d => `${d.grupo[0]}${d.moneda === "USD" ? "$" : ""}`).sort().join("")
+    chequear("Set de libros", "El detalle bancario del libro C: impuestos y gastos por el plan, intereses, inversiones (FCI y el envío de dólares al broker); los sueldos no entran; lo de la cuenta en dólares va en dólares",
+      "G$IIII$", v4, v4 === "G$IIII$", "A-FEAT-1505")
   }
 
   return r

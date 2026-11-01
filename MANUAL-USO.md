@@ -6530,6 +6530,10 @@ En *Reportes → Papeles de trabajo del balance*, debajo de los botones, está e
 
 → A-TEST-1189
 
+**El set de libros A–E — «📚 Bajar el set A–E (.zip)».** Al lado de «Bajar el Excel». Baja un .zip con cinco Excel: **A** subdiarios (terminado) · **B** deudas, créditos y cuentas corrientes (confirmar datos) · **C** templates por responsable (MSA, MA, PAM: listado, cuotas y por mes) y el detalle de impuestos y gastos bancarios, intereses e inversiones · **D** el resto · **E** stocks al inicio y al cierre. Son las mismas solapas del Excel completo, repartidas: dan los mismos números.
+
+→ A-TEST-1312
+
 **Todos los stocks en una tabla — solapa «00 Stocks inicio y cierre».** Insumos, forrajes, gas oil, hacienda por categoría, soja, sementeras y pasturas: una línea por ítem con la cantidad y el precio al inicio y al cierre, en las dos valuaciones (**contable** = para el balance del contador; **económica** = para márgenes y presupuesto). Lo que la app tiene o calcula ya está; lo vacío es lo que falta: completalo en el Excel y el valor sale solo (es fórmula). La columna «Qué falta» dice qué pedir de cada línea. No reemplaza ninguna otra solapa.
 
 → A-TEST-1310

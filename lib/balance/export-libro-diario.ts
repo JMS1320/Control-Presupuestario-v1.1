@@ -45,6 +45,7 @@ import type { CuentasSinCuentaCorriente } from "./fuera-por-cuenta-corriente"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
 import { armarStocksUnificados, hojaDeStocks } from "./stocks-unificado"
+import { LIBROS, repartirEnLibros, templatesDeResponsable, hojaListadoTemplates, hojaDeDetalle, type GrupoDetalle, type MovimientoDelDetalle } from "./libros-del-balance"
 import { hojaDelRecorrido, sincronizarPendientes, type RecorridoParaExcel } from "./recorrido-excel"
 import { hojaDeSaldosAnteriores, type SaldosAnteriores } from "./ajustes-balance"
 import {
@@ -2776,6 +2777,63 @@ export function nombreArchivo(libro: LibroDiario, empresa: string): string {
   const hoy = new Date().toISOString().slice(0, 10)
   const estado = libro.controles.sePuedeEntregar ? "" : "_REVISAR"
   return `Papeles_balance_${empresa}_${libro.ejercicio.etiqueta.replace("/", "-")}_${hoy}${estado}.xlsx`
+}
+
+/**
+ * 📚 A-FEAT-1505 — las hojas del LIBRO C: por responsable (MSA, después MA, después PAM) el listado de templates, sus
+ * cuotas (fecha de pago o, si no, la estimada) y el por mes agrupado por agrupadora; y, después del set de la empresa del
+ * balance, el detalle de impuestos y gastos bancarios, intereses e inversiones (JMS 01/11, solapa «C - Ver nuevas…»).
+ */
+export function agregarLibroC(wb: XLSX.WorkBook, empresa: string, etiqueta: string, templates?: TemplatesDelEjercicio | null,
+  detalle?: MovimientoDelDetalle[] | null): void {
+  const orden = [empresa, ...["MSA", "MA", "PAM"].filter(r => r !== empresa)]
+  const corto = (r: string) => r.slice(0, 4)
+  orden.forEach((resp, i) => {
+    const t = templates ? templatesDeResponsable(templates, resp) : null
+    if (t) {
+      hoja(wb, `C · ${corto(resp)} · Templates`, hojaListadoTemplates(t, resp, etiqueta), COLS_LISTADO_TEMPLATES)
+      hoja(wb, `C · ${corto(resp)} · Cuotas`, hojaDeTemplates(t), COLS_TEMPLATES)
+      hoja(wb, `C · ${corto(resp)} · Por mes`, hojaTemplatesPorMes(t), COLS_TEMPLATES_POR_MES(t.columnas.length))
+    }
+    if (i === 0) {
+      for (const g of ["Impuestos bancarios", "Gastos bancarios", "Intereses", "Inversiones"] as GrupoDetalle[]) {
+        hoja(wb, `C · ${g}`, detalle ? hojaDeDetalle(g, detalle, etiqueta) : [[`${g.toUpperCase()}`], ["⚠️ No se armaron los papeles bancarios: falta el detalle."]], COLS_DETALLE_BANCARIO)
+      }
+    }
+  })
+}
+
+const COLS_LISTADO_TEMPLATES: Columna[] = [
+  { ancho: 34 }, { ancho: 30 }, { ancho: 16 }, { ancho: 26 }, { ancho: 26 }, { ancho: 24 }, { ancho: 14 },
+  { ancho: 9, z: ENTERO }, { ancho: 9, z: ENTERO }, { ancho: 10, z: ENTERO }, { ancho: 18, z: MONEDA },
+]
+const COLS_DETALLE_BANCARIO: Columna[] = [
+  { ancho: 26 }, { ancho: 8 }, { ancho: 11 }, { ancho: 44 }, { ancho: 22 }, { ancho: 28 }, { ancho: 16, z: MONEDA }, { ancho: 16, z: MONEDA },
+]
+
+/**
+ * 📚 A-FEAT-1505 — baja el SET: los libros A a E en un .zip (JMS: «así tengo siempre todo el set parejo»). Se arma el libro
+ * completo una sola vez (más el C) y se reparte: los cinco salen del mismo cálculo que el Excel de siempre.
+ */
+export async function descargarSetDelBalance(...a: Parameters<typeof armarWorkbook>): Promise<void> {
+  const [libro, empresa, templates, , , , , bancarios] = a
+  const wb = armarWorkbook(...a)
+  agregarLibroC(wb, empresa, libro.ejercicio.etiqueta, templates ?? null, bancarios?.detalleBancario ?? null)
+  const { default: JSZip } = await import("jszip")
+  const zip = new JSZip()
+  const base = nombreArchivo(libro, empresa).replace(/\.xlsx$/, "")
+  for (const l of repartirEnLibros(wb, vistasDe(wb))) {
+    const datos = await aplicarVistas(XLSX.write(l.wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, l.vistas)
+    zip.file(`${base} - ${LIBROS[l.letra]}.xlsx`, datos)
+  }
+  const blob = await zip.generateAsync({ type: "blob" })
+  const url = URL.createObjectURL(blob)
+  const el = document.createElement("a")
+  el.href = url
+  el.download = `${base} - set A-E.zip`
+  document.body.appendChild(el)
+  el.click()
+  setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(el) }, ESPERA_ANTES_DE_LIBERAR_MS)
 }
 
 /** Descarga el archivo en el navegador. */

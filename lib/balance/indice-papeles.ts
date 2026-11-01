@@ -89,6 +89,8 @@ export interface DatosDelIndice {
     gastos: GastosBancarios
     /** 💵 A-FEAT-1503: los gastos de cada cuenta en dólares, en dólares (papel 08, aparte). */
     gastosEnDolares?: { cuenta: string; gastos: GastosBancarios }[]
+    /** 📚 A-FEAT-1505: el detalle de impuestos y gastos bancarios, intereses e inversiones (libro C). */
+    detalleBancario?: import("./libros-del-balance").MovimientoDelDetalle[]
     retiros: RetirosYAportes
     /** Saldo al cierre por cuenta. `null` = no se pudo leer o no hubo movimientos en el período. */
     saldos: Array<{ nombre: string; saldo: number | null; fecha: string | null }>

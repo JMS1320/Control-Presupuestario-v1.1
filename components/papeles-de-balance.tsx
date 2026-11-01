@@ -48,7 +48,7 @@ import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { ProponerFotoBalance } from "./proponer-foto-balance"
 import { ivaConSigno, RENGLONES, type DatosDeLosPapeles, type ValorPropuesto } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
-import { armarWorkbook, coberturaDeArgs, descargarLibroDiario } from "@/lib/balance/export-libro-diario"
+import { armarWorkbook, coberturaDeArgs, descargarLibroDiario, descargarSetDelBalance } from "@/lib/balance/export-libro-diario"
 import { armarTemas, subdiariosContraArca, temaDelLink, type Tema } from "@/lib/balance/recorrido"
 import { temasVentasVsArca, temasComprasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
 import { leerDatosConciliacion, proponerConciliaciones, CUENTAS_CONCILIABLES, type ConteoCuenta } from "@/lib/conciliacion/propuestas-ejercicio"
@@ -67,6 +67,7 @@ import { descargarLibroDiarioConsensuado, retencionesDeVenta, type FilaVentaCons
 import { leerCobrosYRetenciones } from "@/lib/balance/cobros-de-ventas"
 import { descargarDiferenciasVsArca } from "@/lib/balance/diferencias-vs-arca"
 import { saldosEnDolaresParaBalance, CUENTAS_EN_MONEDA_EXTRANJERA } from "@/lib/dolares/posicion-cierre"
+import { detalleBancarioDelLibroC } from "@/lib/balance/libros-del-balance"
 import { MarcaTentativo } from "@/components/marca-tentativo"
 import { leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { traerTodo, lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
@@ -362,6 +363,18 @@ export function PapelesDeBalance() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [verPrevia, libro, empresa.id, templates, hacienda, cuentas, valores, bancarios, sueldos, cuentasCorrientesConInicio,
     pendientes, ajustes, anioCierre, asientosContables, lecturas, controlCuotas, controlesInicio, propuestaCierre, fotoInicio, conciliacion, temasRecorrido])
+  /**
+   * 🔁 A-FEAT-1500: el Excel lleva el recorrido; si no se abrió todavía, se calcula ahora (si no, faltarían los movimientos,
+   * las deudas, los echeqs y el cruce contra ARCA, y los resueltos en la app seguirían «abiertos»). Lo usan las dos descargas.
+   */
+  const argsConRecorrido = async (lib: LibroDiario) => {
+    let conc = conciliacion
+    if (!conc) { toast.info("Calculando el recorrido para que el Excel diga lo mismo que la pantalla…"); conc = await calcularConciliacion(true) }
+    let dd = ddjjGuardadas
+    if (!dd) { dd = await leerDdjj(lib); setDdjjGuardadas(dd) }
+    const temas = conc ? armarTemasRecorrido(lib, conc, dd) : []
+    return argsDelExcel(lib, recorridoParaExcel(temas, conc), conc)
+  }
   const sinResponder = temasRecorrido.filter(t => !t.respondido).length
   /** Lo que todavía no llegó, para que la vista previa lo diga en vez de parecer completa. */
   const faltanEnPrevia = [
@@ -808,6 +821,7 @@ export function PapelesDeBalance() {
         for (const a of dolares.avisos) { if (a.startsWith("No se pudo")) toast.warning(`Dólares: ${a}`); else hallazgos.push(`Dólares: ${a}`) }
         // 💵 A-FEAT-1503: los gastos de las cuentas BANCARIAS en dólares, en dólares (van aparte en el papel 08).
         const gastosEnDolares: { cuenta: string; gastos: ReturnType<typeof armarGastosBancarios> }[] = []
+        const movsEnDolares: Array<MovimientoExtracto & { donde: string }> = []
         for (const c of (CUENTAS_EN_MONEDA_EXTRANJERA[empresa.id] ?? []).filter(x => x.tipo === "banco")) {
           const q = c.schema_bd === "public" ? supabase.from(c.tabla_bd) : supabase.schema(c.schema_bd).from(c.tabla_bd)
           const leido = await traerTodo((d, h) => q.select("fecha, descripcion, categ, nro_cuenta, debitos, creditos, saldo, orden", { count: "exact" })
@@ -815,6 +829,7 @@ export function PapelesDeBalance() {
           if (leido.error) { toast.warning(`No se pudieron leer los gastos de ${c.nombre}: faltan en el papel 08.`); continue }
           anotar(`Extracto ${c.nombre}`, leido)
           gastosEnDolares.push({ cuenta: c.nombre, gastos: armarGastosBancarios((leido.data ?? []) as MovimientoExtracto[], (planCuentas ?? []) as CuentaDelPlan[], meses) })
+          movsEnDolares.push(...((leido.data ?? []) as MovimientoExtracto[]).map(m => ({ ...m, donde: c.nombre })))
         }
         /**
          * 🧮 El control se VE, no vive sólo en la solapa (§ 🧮). Si los importes del extracto no
@@ -842,6 +857,8 @@ export function PapelesDeBalance() {
             pctComputable(empresa.id).general, pctComputable(empresa.id).efectivo),
           gastos: armarGastosBancarios(movimientos, (planCuentas ?? []) as CuentaDelPlan[], meses),
           gastosEnDolares,
+          // 📚 A-FEAT-1505: el detalle movimiento por movimiento para el libro C (impuestos y gastos bancarios, intereses, inversiones)
+          detalleBancario: detalleBancarioDelLibroC(movimientos, movsEnDolares, (planCuentas ?? []) as CuentaDelPlan[], esFCI),
           retiros: armarRetirosYAportes(movimientos, meses),
           saldos,
           cadenas,
@@ -1188,19 +1205,18 @@ export function PapelesDeBalance() {
           )}
           {libro && (
             <Button variant="outline" disabled={!!cargandoConciliacion} onClick={async () => {
-              // 🔁 A-FEAT-1500: el Excel lleva el recorrido; si no se abrió todavía, se calcula ahora (si no, faltarían
-              // los movimientos, las deudas, los echeqs y el cruce contra ARCA, y los resueltos en la app seguirían «abiertos»).
-              let conc = conciliacion
-              if (!conc) { toast.info("Calculando el recorrido para que el Excel diga lo mismo que la pantalla…"); conc = await calcularConciliacion(true) }
-              let dd = ddjjGuardadas
-              if (!dd) { dd = await leerDdjj(libro); setDdjjGuardadas(dd) }
-              const temas = conc ? armarTemasRecorrido(libro, conc, dd) : []
-              await descargarLibroDiario(...argsDelExcel(libro, recorridoParaExcel(temas, conc), conc))
+              await descargarLibroDiario(...await argsConRecorrido(libro))
             }}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               {/* A-FEAT-1388: decía «sin el sector productivo» y confundía cuando los precios ya se
                   veían cargados — lo que falta es traer el stock, y eso es lo que se dice. */}
               Bajar el Excel{hacienda ? " completo" : " — sin hacienda ni insumos (falta «Traer stock y precios»)"}
+            </Button>
+          )}
+          {libro && (
+            <Button disabled={!!cargandoConciliacion} title="Los libros A a E en un .zip: A subdiarios · B deudas, créditos y cuentas corrientes · C templates y detalle bancario · D el resto · E stocks"
+              onClick={async () => { await descargarSetDelBalance(...await argsConRecorrido(libro)) }}>
+              📚 Bajar el set A–E (.zip)
             </Button>
           )}
           {/* 📗 El Libro Diario consensuado con el contador (compras, ventas, por cuenta y retenciones), solo. */}
