@@ -46,6 +46,7 @@ import useInlineEditor, { type CeldaEnEdicion } from "@/hooks/useInlineEditor"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
+import { BarraResumen } from "@/components/ui/barra-resumen"
 import { VistaHistoricoFacturas } from "@/components/vista-historico-facturas"
 import { VistaAsignacionArca } from "@/components/vista-asignacion-arca"
 import { ModalReglasImport } from "@/components/modal-reglas-import"
@@ -731,6 +732,21 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // Estados para edición masiva en tab Facturas principal
   const [modoEdicionMasiva, setModoEdicionMasiva] = useState(false)
   const [facturasSeleccionadasMasiva, setFacturasSeleccionadasMasiva] = useState<Set<string>>(new Set())
+  /**
+   * 📋 Las facturas que muestra la tabla principal (búsqueda rápida y filtro del link). Una sola definición: la usan la
+   * tabla y la barra de abajo (A-FEAT-1464), para que la barra cuente exactamente lo que se ve.
+   */
+  const facturasEnPantalla = () => {
+    const q = normalizarBusqueda(busquedaRapida.trim())
+    const base = facturasLink ? facturas.filter(f => facturasLink.has(String(f.id))) : facturas
+    return q
+      ? base.filter(f =>
+          normalizarBusqueda(f.denominacion_emisor).includes(q) ||
+          f.cuit?.includes(q) ||
+          normalizarBusqueda(f.cuenta_contable ?? '').includes(q)
+        )
+      : base
+  }
   const [nuevoEstadoMasivo, setNuevoEstadoMasivo] = useState('')
   const [facturasSeleccionadasPagos, setFacturasSeleccionadasPagos] = useState<Set<string>>(new Set())
   const [templatesSeleccionadosPagos, setTemplatesSeleccionadosPagos] = useState<Set<string>>(new Set())
@@ -8261,15 +8277,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                   </TableHeader>
                   <TableBody>
                     {(() => {
-                      const q = normalizarBusqueda(busquedaRapida.trim())
-                      const base = facturasLink ? facturas.filter(f => facturasLink.has(String(f.id))) : facturas
-                      const facturasDisplay = q
-                        ? base.filter(f =>
-                            normalizarBusqueda(f.denominacion_emisor).includes(q) ||
-                            f.cuit?.includes(q) ||
-                            normalizarBusqueda(f.cuenta_contable ?? '').includes(q)
-                          )
-                        : base
+                      const facturasDisplay = facturasEnPantalla()
                       return facturasDisplay.length === 0 ? (
                       <TableRow>
                         <TableCell
@@ -8402,6 +8410,9 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                     )})()}
                   </TableBody>
                 </Table>
+                {/* 📊 A-FEAT-1464 — la barra de abajo, como Excel (en pesos: las de dólares, al tipo de cambio de la factura). */}
+                <BarraResumen filas={facturasEnPantalla()} elegidas={facturasEnPantalla().filter(f => facturasSeleccionadasMasiva.has(f.id))}
+                  fecha={f => f.fecha_emision} columnas={[{ rotulo: "total", valor: f => (Number(f.imp_total) || 0) * (Number(f.tipo_cambio) || 1) }]} />
             </div>
 
             {/* Panel de control edición masiva */}

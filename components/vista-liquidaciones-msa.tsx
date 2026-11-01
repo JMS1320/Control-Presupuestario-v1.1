@@ -17,6 +17,7 @@ import { ModalLiquidacionMsa, type LiquidacionMsa } from "./modal-liquidacion-ms
 import { ModalLiquidacionHacienda } from "./modal-liquidacion-hacienda"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { ventasDelLink } from "@/lib/ventas/link"
+import { BarraResumen } from "@/components/ui/barra-resumen"
 
 interface Props {
   userRole?: UserRole
@@ -390,6 +391,9 @@ export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: P
                 })}
               </TableBody>
             </Table>
+            {/* 📊 A-FEAT-1464 — la barra de abajo, como Excel. */}
+            <BarraResumen filas={filtradas} fecha={l => l.fecha_liquidacion}
+              columnas={[{ rotulo: "total", valor: l => (l as any).imp_total }]} />
           </div>
         </CardContent>
       </Card>

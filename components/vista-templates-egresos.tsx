@@ -5,6 +5,7 @@ import { Permisable } from "@/components/modo-permisos"
 import { templatesDelLink } from "@/lib/impuestos/planilla"
 import { traerTodo } from "@/lib/supabase-paginado"
 import { ModalPropagarMontoCuota } from "@/components/modal-propagar-monto-cuota"
+import { BarraResumen } from "@/components/ui/barra-resumen"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -2007,6 +2008,9 @@ export function VistaTemplatesEgresos() {
                     )}
                   </TableBody>
                 </Table>
+                {/* 📊 A-FEAT-1464 — la barra de abajo, como Excel. */}
+                <BarraResumen filas={cuotas} elegidas={cuotas.filter(c => cuotasSeleccionadasMasiva.has(c.id))}
+                  fecha={c => c.fecha_estimada} columnas={[{ rotulo: "monto", valor: c => c.monto }]} />
             </div>
 
             {/* Panel de control edición masiva */}

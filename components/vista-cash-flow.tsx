@@ -80,6 +80,7 @@ import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
 import { ModalVinculacionAnticipo } from "./modal-vinculacion-anticipo"
 import { useVinculacionAnticipo, buscarFacturasCandidatas, type AnticipoVinculable } from "@/hooks/useVinculacionAnticipo"
 import { normalizarCuit } from "@/lib/proveedores/alta"
+import { BarraResumen } from "@/components/ui/barra-resumen"
 
 // Definición de columnas Cash Flow (10 columnas finales + editabilidad)
 const columnasDefinicion = [
@@ -5318,6 +5319,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 </tbody>
               </table>
             </div>
+            {/* 📊 A-FEAT-1464 — la barra de abajo, como Excel (lo que muestra la grilla, y lo tildado). */}
+            <BarraResumen filas={(modoPagos ? datosFiltradosPagos : datosOperativos) as any[]}
+              elegidas={((modoPagos ? datosFiltradosPagos : datosOperativos) as any[]).filter(f => filasSeleccionadas.has(f.id))}
+              fecha={f => f.fecha_estimada} neto columnas={[{ rotulo: "débitos", valor: f => f.debitos }, { rotulo: "créditos", valor: f => f.creditos }]} />
           </div>
 
           {/* Footer con información */}

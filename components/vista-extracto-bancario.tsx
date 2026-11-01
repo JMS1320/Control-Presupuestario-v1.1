@@ -104,7 +104,7 @@ import { extractoDelLink } from "@/lib/extracto/link"
 import { FiltroColumna } from "@/components/ui/filtro-columna"
 import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
 import { pegadaSigueVisible } from "@/lib/extracto/alcance-filtros"
-import { resumenDeFilas } from "@/lib/ui/resumen-filas"
+import { BarraResumen } from "@/components/ui/barra-resumen"
 
 /** 🔽 A-FEAT-1456 — columnas con filtro tipo Excel: el título y el valor de cada fila (el que se ve en la celda). */
 const TITULO_COL: Record<string, string> = {
@@ -5290,7 +5290,8 @@ ${marca}` : marca
                     </TableBody>
                   </Table>
                   {/* 📊 A-FEAT-1464 — la barra de abajo, como en Excel: filas, meses, sumas y promedio (y lo tildado, si hay). */}
-                  <BarraResumen filas={movimientosVisibles as any[]} elegidas={(movimientosVisibles as any[]).filter(m => seleccionados.has(m.id))} />
+                  <BarraResumen filas={movimientosVisibles as any[]} elegidas={(movimientosVisibles as any[]).filter(m => seleccionados.has(m.id))}
+                    fecha={m => m.fecha} neto columnas={[{ rotulo: "débitos", valor: m => m.debitos }, { rotulo: "créditos", valor: m => m.creditos }]} />
                 </div>
               )}
             </CardContent>
@@ -6962,26 +6963,3 @@ function ImporteUsd({ usd, cuota }: { usd: any; cuota?: { monto: number; tipo_ca
   )
 }
 
-/** 📊 A-FEAT-1464 — la barra de abajo de la tabla, chica y discreta, como la de Excel. */
-function BarraResumen({ filas, elegidas }: { filas: any[]; elegidas: any[] }) {
-  const pesos = (x: number) => x.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  const linea = (rot: string, xs: any[]) => {
-    const r = resumenDeFilas(xs, m => m.fecha, m => m.debitos, m => m.creditos)
-    return (
-      <span>
-        <b>{rot}</b> {r.filas} fila(s)
-        {r.meses > 0 && <> · {r.meses} mes(es){r.meses > 0 ? ` (${r.porMes}/mes)` : ''}</>}
-        {r.debitos !== 0 && <> · débitos $ {pesos(r.debitos)}</>}
-        {r.creditos !== 0 && <> · créditos $ {pesos(r.creditos)}</>}
-        {r.debitos !== 0 && r.creditos !== 0 && <> · neto $ {pesos(r.neto)}</>}
-        {r.filas > 0 && <> · promedio $ {pesos(r.promedio)}</>}
-      </span>
-    )
-  }
-  return (
-    <div className="sticky bottom-0 flex flex-wrap gap-x-4 gap-y-0.5 border-t bg-gray-50/95 px-3 py-1 text-[11px] text-gray-600 tabular-nums" data-test="extracto-barra-resumen">
-      {linea('En la lista:', filas)}
-      {elegidas.length > 0 && linea('Tildadas:', elegidas)}
-    </div>
-  )
-}
