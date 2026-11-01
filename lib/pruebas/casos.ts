@@ -209,6 +209,7 @@ import { linkHistorico, subFacturasDelLink, historicoDelLink } from "@/lib/egres
 import { armarPapelDeTrabajo, vinculoDe } from "@/lib/cuaderno/papel-de-trabajo"
 import { calcularTabla as calcularTablaCuaderno } from "@/lib/cuaderno/formulas"
 import { motivoDeError, sumarMotivo } from "@/lib/conciliacion/motivo-error"
+import { resumenDeFilas } from "@/lib/ui/resumen-filas"
 import { proponerConciliaciones, CUENTAS_CONCILIABLES, ventanasAlrededor, moverMeses, type DatosConciliacion, type MovimientoSinConciliar, type Obligacion } from "@/lib/conciliacion/propuestas-ejercicio"
 import { temasDeMovimientos, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
 import { cruzarChequesConDebitos, numeroEnDescripcion } from "@/lib/conciliacion/cheques-vencidos"
@@ -10831,6 +10832,14 @@ export function correrCasos(): Resultado[] {
     ].map(b => (b ? "sí" : "no")).join(" ")
     chequear("Extracto — filas pegadas de la corrida", "🧷 Pegada con el filtro de antes → se queda; CATEG cambiado después → se va si no coincide; fechas cambiadas → se va si cae afuera",
       "sí no sí no", vp, vp === "sí no sí no", "A-BUG-1460")
+    // 📊 A-FEAT-1464: la barra de abajo, como Excel — el caso de JMS: comisión de cuenta y de tarjeta, 4 meses → 8 débitos.
+    const com = ["2026-03", "2026-04", "2026-05", "2026-06"].flatMap(m => [{ fecha: `${m}-28`, debitos: 69000, creditos: 0 }, { fecha: `${m}-01`, debitos: 996, creditos: 0 }])
+    const rb = resumenDeFilas(com, x => x.fecha, x => x.debitos, x => x.creditos)
+    const vrb = `${rb.filas} filas · ${rb.meses} meses (${rb.porMes}/mes) · débitos ${rb.debitos} · neto ${rb.neto} · promedio ${rb.promedio} · ${rb.desde}→${rb.hasta}`
+    const vacio = resumenDeFilas([] as typeof com, x => x.fecha, x => x.debitos, x => x.creditos)
+    chequear("Barra de resumen (como Excel)", "📊 Filas, meses (y filas por mes), sumas, neto y promedio; sin filas, todo en 0",
+      "8 filas · 4 meses (2/mes) · débitos 279984 · neto -279984 · promedio 34998 · 2026-03-01→2026-06-28 · vacío 0/0", `${vrb} · vacío ${vacio.filas}/${vacio.promedio}`,
+      `${vrb} · vacío ${vacio.filas}/${vacio.promedio}` === "8 filas · 4 meses (2/mes) · débitos 279984 · neto -279984 · promedio 34998 · 2026-03-01→2026-06-28 · vacío 0/0", "A-FEAT-1464")
   }
 
   // ══ 📅 Cash Flow: pasar UNA fila a pagado sin fecha de pago la pide (A-BUG-1407, Zavala Ortiz 28/10) ══

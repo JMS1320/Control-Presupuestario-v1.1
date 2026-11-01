@@ -104,6 +104,7 @@ import { extractoDelLink } from "@/lib/extracto/link"
 import { FiltroColumna } from "@/components/ui/filtro-columna"
 import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
 import { pegadaSigueVisible } from "@/lib/extracto/alcance-filtros"
+import { resumenDeFilas } from "@/lib/ui/resumen-filas"
 
 /** 🔽 A-FEAT-1456 — columnas con filtro tipo Excel: el título y el valor de cada fila (el que se ve en la celda). */
 const TITULO_COL: Record<string, string> = {
@@ -341,6 +342,8 @@ export function VistaExtractoBancario() {
    * refresco la página sí filtra por categs, pero no lo hace luego de haber conciliado; eso fue siempre el problema».
    * Se arregló el buscador y la contraparte (A-BUG-1314) pero quedaban afuera CATEG, las fechas y las columnas.
    */
+  /** 🧷 A-FEAT-1464 — ver SÓLO las filas de la última corrida (para chequear la tanda sin mezclarla con el resto). */
+  const [soloCorrida, setSoloCorrida] = useState(false)
   const [filtrosAlCorrer, setFiltrosAlCorrer] = useState<{ categs: Set<string> | null; cols: Record<string, Set<string> | null>; fechas: string } | null>(null)
 
   // Hook para validación de categorías
@@ -913,6 +916,7 @@ ${texto.trim()}` : texto.trim()
       items.push(`resumen ${cierre ? fmt(String(cierre).slice(0, 10)) : resumenFiltro}`)
     }
     for (const [col, sel] of Object.entries(filtrosCol)) if (sel) items.push(`${TITULO_COL[col] ?? col}: ${sel.size} valor(es)`)
+    if (soloCorrida && filasCorrida.length) items.push(`sólo la última corrida (${filasCorrida.length})`)
     if (resumenesElegidos.size > 0) {
       const cierres = [...resumenesElegidos].map(nr => {
         const c = (movimientos.find(m => (m as any).nro_resumen === nr) as any)?.fecha_cierre
@@ -923,7 +927,7 @@ ${texto.trim()}` : texto.trim()
     return items
   }, [usarFechas, fechaMovDesde, fechaMovHasta, montoDesde, montoHasta, categsFiltro, busquedaCateg,
       busqueda, filtroProveedor, busquedaDetalle, filtroEstado, filtroRevisado, filtroNota, busquedaNota, filtroCategEspecial,
-      filtroSentido, resumenFiltro, resumenesElegidos, movimientos, filtrosCol])
+      filtroSentido, resumenFiltro, resumenesElegidos, movimientos, filtrosCol, soloCorrida, filasCorrida])
 
   const hayFiltros = filtrosActivos.length > 0
 
@@ -991,9 +995,12 @@ ${texto.trim()}` : texto.trim()
     // 🔗 A-FEAT-1430 — los movimientos que pidió el link (por id).
     if (idsLink && idsLink.size) lista = lista.filter(m => idsLink.has(String(m.id)))
 
+    // 🧷 A-FEAT-1464 — sólo la tanda que se acaba de conciliar.
+    if (soloCorrida && idsCorrida.size) lista = lista.filter(m => idsCorrida.has(m.id))
+
     return lista
   }, [movimientos, categsFiltro, busqueda, filtroProveedor, idsCorrida, resumenFiltro, resumenesElegidos, modoOkAuditar, idsLink,
-      filtrosAlCorrer, usarFechas, fechaMovDesde, fechaMovHasta])
+      filtrosAlCorrer, usarFechas, fechaMovDesde, fechaMovHasta, soloCorrida])
   // 🔽 A-FEAT-1456: los filtros por columna, sobre lo de arriba.
   // 🧷 A-BUG-1460: las filas pegadas de la corrida se saltean los filtros de columna que ya estaban al conciliar (el estado
   // les cambió), pero no los que se ponen después.
@@ -1227,6 +1234,7 @@ ${texto.trim()}` : texto.trim()
   /** Suelta las filas pinneadas y vuelve a aplicar los filtros de verdad. */
   const soltarCorrida = () => {
     setFiltrosAlCorrer(null)
+    setSoloCorrida(false)
     setFilasCorrida([])
     setEstadoPrevioCorrida({})
     recargar()
@@ -4107,6 +4115,14 @@ ${marca}` : marca
                 >
                   Conciliados ({estadisticas.conciliados})
                 </Button>
+                {/* 🧷 A-FEAT-1464 — sólo la tanda recién conciliada, para ir chequeándola (con las columnas, la barra de abajo…). */}
+                {filasCorrida.length > 0 && (
+                  <Button variant={soloCorrida ? 'default' : 'outline'} size="sm" className="h-7 text-xs px-2" aria-pressed={soloCorrida}
+                    data-test="extracto-solo-corrida" title="Ver sólo los movimientos de la última conciliación (hasta «Actualizar y soltar»)"
+                    onClick={() => setSoloCorrida(v => !v)}>
+                    🧷 Sólo esta corrida ({filasCorrida.length})
+                  </Button>
+                )}
                 <span className="text-gray-300">|</span>
                 <select
                   value={filtroRevisado}
@@ -5273,6 +5289,8 @@ ${marca}` : marca
                       ))}
                     </TableBody>
                   </Table>
+                  {/* 📊 A-FEAT-1464 — la barra de abajo, como en Excel: filas, meses, sumas y promedio (y lo tildado, si hay). */}
+                  <BarraResumen filas={movimientosVisibles as any[]} elegidas={(movimientosVisibles as any[]).filter(m => seleccionados.has(m.id))} />
                 </div>
               )}
             </CardContent>
@@ -6941,5 +6959,29 @@ function ImporteUsd({ usd, cuota }: { usd: any; cuota?: { monto: number; tipo_ca
         ? <span className="text-[10px] text-gray-500">${cuota.monto.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · TC {cuota.tipo_cambio.toLocaleString('es-AR', { maximumFractionDigits: 4 })}</span>
         : <span className="text-[10px] text-amber-600">sin TC</span>}
     </span>
+  )
+}
+
+/** 📊 A-FEAT-1464 — la barra de abajo de la tabla, chica y discreta, como la de Excel. */
+function BarraResumen({ filas, elegidas }: { filas: any[]; elegidas: any[] }) {
+  const pesos = (x: number) => x.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const linea = (rot: string, xs: any[]) => {
+    const r = resumenDeFilas(xs, m => m.fecha, m => m.debitos, m => m.creditos)
+    return (
+      <span>
+        <b>{rot}</b> {r.filas} fila(s)
+        {r.meses > 0 && <> · {r.meses} mes(es){r.meses > 0 ? ` (${r.porMes}/mes)` : ''}</>}
+        {r.debitos !== 0 && <> · débitos $ {pesos(r.debitos)}</>}
+        {r.creditos !== 0 && <> · créditos $ {pesos(r.creditos)}</>}
+        {r.debitos !== 0 && r.creditos !== 0 && <> · neto $ {pesos(r.neto)}</>}
+        {r.filas > 0 && <> · promedio $ {pesos(r.promedio)}</>}
+      </span>
+    )
+  }
+  return (
+    <div className="sticky bottom-0 flex flex-wrap gap-x-4 gap-y-0.5 border-t bg-gray-50/95 px-3 py-1 text-[11px] text-gray-600 tabular-nums" data-test="extracto-barra-resumen">
+      {linea('En la lista:', filas)}
+      {elegidas.length > 0 && linea('Tildadas:', elegidas)}
+    </div>
   )
 }
