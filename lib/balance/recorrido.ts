@@ -14,6 +14,7 @@
  */
 import type { CoberturaPapeles, EstadoCobertura, ItemCobertura, LinkDato } from "./cobertura-papeles"
 import type { PendienteBalance } from "./pendientes-balance"
+import { unirPorClave } from "./recorrido-excel"
 import type { Comparacion } from "@/lib/cuaderno/papel-de-trabajo"
 import { linkExtracto, rangoQueContiene } from "@/lib/extracto/link"
 import type { PagoAVincular } from "@/lib/conciliacion/vincular-pago-tarjeta"
@@ -150,7 +151,9 @@ const GRUPO_DE: Partial<Record<EstadoCobertura, GrupoTema>> = {
  * La cola: en el orden de GRUPOS — ⚠️ cambió 31/10: primero LA BASE (ARCA, conciliación, echeqs, inicio), después errores, decisiones, preguntas…; dentro de cada grupo en el orden del
  * catálogo. Un dato de cobertura que ya sale no entra; uno que no sale entra aunque esté respondido (queda tildado).
  */
-export function armarTemas(cobertura: CoberturaPapeles | null, pendientes: PendienteBalance[], otros: Tema[] = []): Tema[] {
+export function armarTemas(cobertura: CoberturaPapeles | null, pendientesLeidos: PendienteBalance[], otros: Tema[] = []): Tema[] {
+  // 🔁 A-FEAT-1500 (4): las filas de respuesta repetidas de un mismo tema se juntan en una (la conversación de todas).
+  const pendientes = unirPorClave(pendientesLeidos)
   const porClave = new Map<string, PendienteBalance>()
   for (const p of pendientes) {
     const m = CLAVE_EN_TEXTO.exec(p.texto)

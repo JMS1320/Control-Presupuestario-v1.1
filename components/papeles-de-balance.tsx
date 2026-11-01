@@ -58,6 +58,7 @@ import { leerExtrasTemas } from "@/lib/balance/series-tema"
 import { leerTemasTarjeta } from "@/lib/balance/control-tarjeta"
 import { leerTemasSinCateg } from "@/lib/balance/control-sin-categ"
 import { leerParaTuVisto, aplicarParaTuVisto, type TareaPorConfirmar } from "@/lib/balance/para-tu-visto"
+import type { RecorridoParaExcel, TareaDelRecorrido } from "@/lib/balance/recorrido-excel"
 import { leerChequesVencidos } from "@/lib/conciliacion/cheques-vencidos"
 import { RecorridoBalance } from "./recorrido-balance"
 import { VistaPreviaBalance } from "./vista-previa-balance"
@@ -192,10 +193,10 @@ export function PapelesDeBalance() {
   const [temaPedido, setTemaPedido] = useState<{ empresa: string; anioCierre: number; clave: string; armando: boolean } | null>(null)
   const [claveRecorrido, setClaveRecorrido] = useState<string | null>(null)
   /** 🏦 A-FEAT-1430 paso 4: las propuestas de conciliación del ejercicio (se calculan al abrir el recorrido). */
-  const [conciliacion, setConciliacion] = useState<{ movimientos: Tema[]; deudas: Tema[]; cheques: Tema[]; controles: Tema[]; visto?: { tareas: TareaPorConfirmar[]; rearmados: Tema[] }; historicos: number; avisos: string[]; calculado: string; porCuenta?: Record<string, ConteoCuenta> } | null>(null)
+  const [conciliacion, setConciliacion] = useState<{ movimientos: Tema[]; deudas: Tema[]; cheques: Tema[]; controles: Tema[]; visto?: { tareas: TareaPorConfirmar[]; rearmados: Tema[] }; tareasRecorrido?: TareaDelRecorrido[]; historicos: number; avisos: string[]; calculado: string; porCuenta?: Record<string, ConteoCuenta> } | null>(null)
   const [cargandoConciliacion, setCargandoConciliacion] = useState<string | null>(null)
-  const calcularConciliacion = useCallback(async (silencioso = false) => {
-    if (!libro) return
+  const calcularConciliacion = useCallback(async (silencioso = false): Promise<NonNullable<typeof conciliacion> | null> => {
+    if (!libro) return null
     const desde = primerDiaDelEjercicio(libro.ejercicio), hasta = libro.ejercicio.fechaCierre
     setCargandoConciliacion("empezando…")
     try {
@@ -226,12 +227,16 @@ export function PapelesDeBalance() {
       setCargandoConciliacion("trayendo lo que espera tu visto…")
       const vt = await leerParaTuVisto(supabase, empresa.id, anioCierre, ex.extras)
       if (vt.error) datos.avisos.push(`para tu visto: ${vt.error}`)
-      setConciliacion({ movimientos: [...tj.temas, ...movSinTarjeta], deudas: temasDeDeudas(r.deudas, empresa.id, ex.extras), cheques: temasDeCheques(ch.cruces, ch.extractoHasta), controles: [...ctl.temas, ...sc.temas], visto: { tareas: vt.tareas, rearmados: vt.rearmados },
+      const calculada = { movimientos: [...tj.temas, ...movSinTarjeta], deudas: temasDeDeudas(r.deudas, empresa.id, ex.extras), cheques: temasDeCheques(ch.cruces, ch.extractoHasta), controles: [...ctl.temas, ...sc.temas], visto: { tareas: vt.tareas, rearmados: vt.rearmados },
+        tareasRecorrido: vt.todas,
         historicos: mov.historicos, avisos: datos.avisos, porCuenta: datos.porCuenta,
-        calculado: new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) })
+        calculado: new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) }
+      setConciliacion(calculada)
       if (datos.avisos.length && !silencioso) toast.warning(`Conciliación: no se pudo leer ${datos.avisos.length} cosa(s) — ${datos.avisos.slice(0, 2).join(" · ")}`)
+      return calculada
     } catch (e) {
       toast.error("No se pudieron calcular las propuestas de conciliación: " + (e as Error).message)
+      return null
     } finally { setCargandoConciliacion(null) }
   }, [libro, empresa.id, anioCierre])
   // Se calculan la primera vez que se abre el recorrido (después, con «↻ Recalcular»).
@@ -260,23 +265,25 @@ export function PapelesDeBalance() {
    * muestre las ventas contra lo declarado — la fuente objetiva al lado de la app.
    */
   const [ddjjGuardadas, setDdjjGuardadas] = useState<{ filas: DdjjGuardada[]; error: string | null } | null>(null)
+  /** 🔁 A-FEAT-1500: la lectura sirve al recorrido y a la descarga del Excel (que la pide si el recorrido no se abrió). */
+  const leerDdjj = useCallback(async (lib: LibroDiario): Promise<{ filas: DdjjGuardada[]; error: string | null }> => {
+    const periodos = lib.ejercicio.subdiarios.map(s => `${s.anio}${String(s.mes).padStart(2, "0")}`)
+    const base = "periodo, secuencia, codigo_presentacion, archivo"
+    const q = (cols: string) => supabase.from("ddjj_presentadas").select(cols).eq("empresa", empresa.id).eq("impuesto", "IVA").in("periodo", periodos)
+    let r = await q(`${base}, comprobantes, ventas, totales_ventas`)
+    // Antes del script 145 la tabla no guarda las ventas: se leen igual los meses, y el recorrido dice que faltan.
+    if (r.error && /ventas/.test(r.error.message)) r = await q(base)
+    if (r.error) return { filas: [], error: r.error.message }
+    return { filas: ((r.data ?? []) as unknown as Record<string, unknown>[]).map(d => ({
+      periodo: String(d.periodo), secuencia: Number(d.secuencia ?? 1), codigo_presentacion: (d.codigo_presentacion as string) ?? null,
+      archivo: (d.archivo as string) ?? null, ventas: Array.isArray(d.ventas) ? d.ventas as DdjjGuardada["ventas"] : null,
+      totales_ventas: (d.totales_ventas as DdjjGuardada["totales_ventas"]) ?? null,
+      compras: Array.isArray(d.comprobantes) ? d.comprobantes as DdjjGuardada["compras"] : null,
+    })), error: null }
+  }, [empresa.id])
   useEffect(() => {
     if (!verRecorrido || !libro || ddjjGuardadas) return
-    const periodos = libro.ejercicio.subdiarios.map(s => `${s.anio}${String(s.mes).padStart(2, "0")}`)
-    void (async () => {
-      const base = "periodo, secuencia, codigo_presentacion, archivo"
-      const q = (cols: string) => supabase.from("ddjj_presentadas").select(cols).eq("empresa", empresa.id).eq("impuesto", "IVA").in("periodo", periodos)
-      let r = await q(`${base}, comprobantes, ventas, totales_ventas`)
-      // Antes del script 145 la tabla no guarda las ventas: se leen igual los meses, y el recorrido dice que faltan.
-      if (r.error && /ventas/.test(r.error.message)) r = await q(base)
-      if (r.error) { setDdjjGuardadas({ filas: [], error: r.error.message }); return }
-      setDdjjGuardadas({ filas: ((r.data ?? []) as unknown as Record<string, unknown>[]).map(d => ({
-        periodo: String(d.periodo), secuencia: Number(d.secuencia ?? 1), codigo_presentacion: (d.codigo_presentacion as string) ?? null,
-        archivo: (d.archivo as string) ?? null, ventas: Array.isArray(d.ventas) ? d.ventas as DdjjGuardada["ventas"] : null,
-        totales_ventas: (d.totales_ventas as DdjjGuardada["totales_ventas"]) ?? null,
-        compras: Array.isArray(d.comprobantes) ? d.comprobantes as DdjjGuardada["compras"] : null,
-      })), error: null })
-    })()
+    void leerDdjj(libro).then(setDdjjGuardadas)
   }, [verRecorrido, libro]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setDdjjGuardadas(null) }, [libro])
   const [versionPendientes, setVersionPendientes] = useState(0)
@@ -287,7 +294,7 @@ export function PapelesDeBalance() {
    * 🧾 Los datos del Excel del balance, en el orden de `armarWorkbook`. Los usan la descarga Y la vista previa
    * (A-FEAT-1427): una sola lista, para que lo que se ve y lo que se baja no puedan diferir.
    */
-  const argsDelExcel = (lib: LibroDiario): Parameters<typeof armarWorkbook> => [
+  const argsDelExcel = (lib: LibroDiario, recorrido?: RecorridoParaExcel | null, conc: typeof conciliacion = conciliacion): Parameters<typeof armarWorkbook> => [
     lib, empresa.id, templates ?? undefined, hacienda ?? undefined,
     hacienda?.insumos, hacienda?.campo,
     // Los cuatro bloques de los papeles 03 y 04 viajan juntos: el listado de
@@ -297,7 +304,7 @@ export function PapelesDeBalance() {
     sueldos ?? undefined,
     cuentasCorrientesConInicio ?? undefined,
     // ✔ A-FEAT-1487: los pendientes con quién los vio (JMS o sólo Claude), y lo resuelto por Claude sin pendiente propio
-    conciliacion?.visto ? pendientesConVisto(pendientes, conciliacion.visto.tareas.map(t => ({ clave: t.clave,
+    conc?.visto ? pendientesConVisto(pendientes, conc.visto.tareas.map(t => ({ clave: t.clave,
       titulo: t.descripcion.replace(/^Balance \S+ \S+ · /, ""), resolucion: t.resolucion })), empresa.id, anioCierre) : pendientes,
     saldosDelEjercicioAnterior(ajustes, empresa.id, anioCierre),
     asientosContables ?? undefined,
@@ -308,22 +315,16 @@ export function PapelesDeBalance() {
       // 📋 Sólo si el cálculo de cierre ya corrió (aparece al armar el libro, en «Pasar a la foto»).
       ...(propuestaCierre ? { inicioYCierre: armarInicioYCierre(fotoInicio, propuestaCierre.valores, propuestaCierre.faltan) } : {}),
     },
+    recorrido,
   ]
 
-  /**
-   * 👁️ La vista previa se RECALCULA cuando llega cada dato (stock y precios, el cálculo de cierre…): con «Armar todo»
-   * se abre enseguida y se va completando sola, en vez de mostrar una foto de cuando se apretó el botón.
-   */
-  const previa = useMemo(() => {
-    if (!verPrevia || !libro) return null
-    try { return { wb: armarWorkbook(...argsDelExcel(libro)), error: null as string | null } }
-    catch (e) { return { wb: null, error: (e as Error).message } }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [verPrevia, libro, empresa.id, templates, hacienda, cuentas, valores, bancarios, sueldos, cuentasCorrientesConInicio,
-    pendientes, ajustes, anioCierre, asientosContables, lecturas, controlCuotas, controlesInicio, propuestaCierre, fotoInicio, conciliacion])
   /** 🧭 Los temas del recorrido: la cobertura (mismos datos del Excel) + las preguntas de «Pendientes a revisar». */
-  const temasRecorrido = useMemo(() => {
-    if (!libro) return []
+  type ConcEstado = typeof conciliacion
+  type DdjjEstado = typeof ddjjGuardadas
+  /** 🔁 A-FEAT-1500: lo que el Excel recibe del recorrido — los mismos temas y las tareas vivas. */
+  const recorridoParaExcel = (temas: Tema[], conc: ConcEstado): RecorridoParaExcel =>
+    ({ calculado: !!conc, temas: conc ? temas : [], tareas: conc?.tareasRecorrido ?? [] })
+  const armarTemasRecorrido = (libro: LibroDiario, conciliacion: ConcEstado, ddjjGuardadas: DdjjEstado): Tema[] => {
     const otros = conciliacion ? [...conciliacion.movimientos, ...conciliacion.deudas, ...conciliacion.cheques, ...conciliacion.controles] : []
     // 🧾 A-FEAT-1439: ventas contra lo presentado a ARCA. Si no se pudo leer o cruzar, se dice como tema (no se saltea).
     if (ddjjGuardadas) {
@@ -341,10 +342,23 @@ export function PapelesDeBalance() {
     const conArca = (ts: ReturnType<typeof armarTemas>) => subdiariosContraArca(ts, ddjjGuardadas?.filas ?? null, libro.ejercicio.subdiarios.length)
     // ✔ A-FEAT-1487: los temas con una tarea por confirmar pasan a «Para tu visto» (o se rearman si ya no salen solos)
     const visto = (ts: Tema[]) => conciliacion?.visto ? aplicarParaTuVisto(ts, conciliacion.visto.tareas, conciliacion.visto.rearmados, pendientes) : ts
-    try { return visto(conArca(armarTemas(coberturaDeArgs(...argsDelExcel(libro)), pendientes, otros))) } catch { return visto(conArca(armarTemas(null, pendientes, otros))) }
+    try { return visto(conArca(armarTemas(coberturaDeArgs(...argsDelExcel(libro, undefined, conciliacion)), pendientes, otros))) } catch { return visto(conArca(armarTemas(null, pendientes, otros))) }
+  }
+  const temasRecorrido = useMemo(() => libro ? armarTemasRecorrido(libro, conciliacion, ddjjGuardadas) : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [libro, empresa.id, templates, hacienda, cuentas, valores, bancarios, sueldos, cuentasCorrientesConInicio,
+  [libro, empresa.id, templates, hacienda, cuentas, valores, bancarios, sueldos, cuentasCorrientesConInicio,
     pendientes, ajustes, anioCierre, asientosContables, lecturas, controlCuotas, controlesInicio, propuestaCierre, fotoInicio, conciliacion, ddjjGuardadas])
+  /**
+   * 👁️ La vista previa se RECALCULA cuando llega cada dato (stock y precios, el cálculo de cierre…): con «Armar todo»
+   * se abre enseguida y se va completando sola, en vez de mostrar una foto de cuando se apretó el botón.
+   */
+  const previa = useMemo(() => {
+    if (!verPrevia || !libro) return null
+    try { return { wb: armarWorkbook(...argsDelExcel(libro, recorridoParaExcel(temasRecorrido, conciliacion))), error: null as string | null } }
+    catch (e) { return { wb: null, error: (e as Error).message } }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [verPrevia, libro, empresa.id, templates, hacienda, cuentas, valores, bancarios, sueldos, cuentasCorrientesConInicio,
+    pendientes, ajustes, anioCierre, asientosContables, lecturas, controlCuotas, controlesInicio, propuestaCierre, fotoInicio, conciliacion, temasRecorrido])
   const sinResponder = temasRecorrido.filter(t => !t.respondido).length
   /** Lo que todavía no llegó, para que la vista previa lo diga en vez de parecer completa. */
   const faltanEnPrevia = [
@@ -1142,7 +1156,16 @@ export function PapelesDeBalance() {
             </Button>
           )}
           {libro && (
-            <Button variant="outline" onClick={() => descargarLibroDiario(...argsDelExcel(libro))}>
+            <Button variant="outline" disabled={!!cargandoConciliacion} onClick={async () => {
+              // 🔁 A-FEAT-1500: el Excel lleva el recorrido; si no se abrió todavía, se calcula ahora (si no, faltarían
+              // los movimientos, las deudas, los echeqs y el cruce contra ARCA, y los resueltos en la app seguirían «abiertos»).
+              let conc = conciliacion
+              if (!conc) { toast.info("Calculando el recorrido para que el Excel diga lo mismo que la pantalla…"); conc = await calcularConciliacion(true) }
+              let dd = ddjjGuardadas
+              if (!dd) { dd = await leerDdjj(libro); setDdjjGuardadas(dd) }
+              const temas = conc ? armarTemasRecorrido(libro, conc, dd) : []
+              await descargarLibroDiario(...argsDelExcel(libro, recorridoParaExcel(temas, conc), conc))
+            }}>
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               {/* A-FEAT-1388: decía «sin el sector productivo» y confundía cuando los precios ya se
                   veían cargados — lo que falta es traer el stock, y eso es lo que se dice. */}

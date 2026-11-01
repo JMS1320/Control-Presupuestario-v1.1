@@ -14,6 +14,7 @@
  * de la contraparte y lo que quedó vinculado (el sueldo, la factura, la cuota del template y su par). Si el tema
  * todavía se arma solo (sigue abierto), se lo pasa a ese grupo; si ya no, se lo rearma desde la base.
  */
+import type { TareaDelRecorrido } from "./recorrido-excel"
 import { CUENTAS_CONCILIABLES } from "@/lib/conciliacion/propuestas-ejercicio"
 import { linkExtracto, rangoQueContiene } from "@/lib/extracto/link"
 import { linkFacturas } from "@/lib/egresos/link-facturas"
@@ -122,10 +123,16 @@ const temaGenerico = (t: TareaPorConfirmar): Tema => ({
  * Lee las tareas por confirmar ancladas a este recorrido (por la API de siempre, que respeta los permisos) y rearma
  * sus temas. Nunca tira: lo que no pudo rearmar queda como tema genérico, y el error va a `error`.
  */
-export async function leerParaTuVisto(sb: Cliente, empresa: string, anioCierre: number, extras: ExtrasTemas = SIN_EXTRAS): Promise<{ tareas: TareaPorConfirmar[]; rearmados: Tema[]; error: string | null }> {
+export async function leerParaTuVisto(sb: Cliente, empresa: string, anioCierre: number, extras: ExtrasTemas = SIN_EXTRAS): Promise<{ tareas: TareaPorConfirmar[]; rearmados: Tema[]; todas: TareaDelRecorrido[]; error: string | null }> {
   try {
     const j = await (await fetch("/api/revisiones")).json()
     const prefijo = `${empresa}:${anioCierre}:`
+    // 🔁 A-FEAT-1500: TODAS las tareas vivas del recorrido (también las que están en manos de JMS u otro), para el Excel.
+    const todas: TareaDelRecorrido[] = ((j.revisiones ?? []) as Record<string, unknown>[])
+      .filter(v => v.tabla_ref === "recorrido_balance" && String(v.registro_id ?? "").startsWith(prefijo))
+      .map(v => ({ clave: String(v.registro_id).slice(prefijo.length), estado: String(v.estado ?? ""), asignado_a: (v.asignado_a as string) ?? null,
+        creado_por: (v.creado_por as string) ?? null, motivo: String(v.motivo ?? ""), resolucion: (v.resolucion as string) ?? null,
+        created_at: String(v.created_at ?? ""), seguimiento: Array.isArray(v.seguimiento) ? v.seguimiento as TareaDelRecorrido["seguimiento"] : null }))
     const tareas: TareaPorConfirmar[] = ((j.revisiones ?? []) as Record<string, unknown>[])
       // por confirmar (falta tu visto) y DEVUELTAS a Claude con algo ya hecho (abiertas con resolución): las dos siguen
       .filter(v => v.tabla_ref === "recorrido_balance" && String(v.registro_id ?? "").startsWith(prefijo)
@@ -142,6 +149,6 @@ export async function leerParaTuVisto(sb: Cliente, empresa: string, anioCierre: 
       } catch { tema = null }
       rearmados.push(tema ?? temaGenerico(t))
     }
-    return { tareas, rearmados, error: null }
-  } catch (e) { return { tareas: [], rearmados: [], error: (e as Error).message } }
+    return { tareas, rearmados, todas, error: null }
+  } catch (e) { return { tareas: [], rearmados: [], todas: [], error: (e as Error).message } }
 }

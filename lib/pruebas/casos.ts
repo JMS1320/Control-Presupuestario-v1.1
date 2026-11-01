@@ -33,6 +33,7 @@
  * empieza a mentir.
  */
 
+import { unirPorClave, sincronizarPendientes, hojaDelRecorrido } from "@/lib/balance/recorrido-excel"
 import { idsDelUltimoLote } from "@/lib/facturas/ultimo-lote"
 import { cruzarVentasImportadas } from "@/lib/ventas/import-cruce"
 import { proponerReparto, controlReparto } from "@/lib/pagos/repartir-grupo"
@@ -12042,6 +12043,54 @@ export function correrCasos(): Resultado[] {
     const v = r.map(x => x.estado === "posible" ? `posible→${x.existente.id}` : x.estado).join(",")
     const e = "posible→g,duplicada,nueva,nueva"
     chequear("Importar ventas — ya cargadas", "Una venta cargada a mano con otro tipo o sin número se reconoce por cliente + total + fecha cercana (posible, no se duplica); la exacta es duplicada; una existente no se usa dos veces, y con fecha lejana es nueva", e, v, v === e, "A-BUG-1432")
+  }
+
+  // ══ 🔁 El Excel y el recorrido en sincronía (A-FEAT-1500) ══
+  {
+    const P = (id: string, texto: string, estado: "abierto" | "resuelto", created_at: string, resolucion: string | null, hilo?: { fecha: string; autor: string | null; texto: string }[]) =>
+      ({ id, empresa: "MSA", anio_cierre: 2026, texto, estado, resolucion, created_at, resuelto_at: estado === "resuelto" ? created_at : null, hilo: hilo ?? null })
+    const pend = [
+      // 4 · Manuel: tres filas del mismo tema (el bug ya corregido)
+      P("m1", "[conc:galicia:manuel] Manuel", "abierto", "2026-11-01T02:00", "ok pero yo lo puedo hacer al conciliar?"),
+      P("m2", "[conc:galicia:manuel] Manuel", "abierto", "2026-11-01T03:00", "esto esta bien", [{ fecha: "2026-11-01T03:00", autor: "JMS", texto: "esto esta bien" }]),
+      P("m3", "[conc:galicia:manuel] Manuel", "abierto", "2026-11-01T04:00", "y esto queria saber", [{ fecha: "2026-11-01T03:00", autor: "JMS", texto: "esto esta bien" }, { fecha: "2026-11-01T04:00", autor: "JMS", texto: "y esto queria saber" }]),
+      // 3 · Juzgado: conciliado en la app, su tema ya no sale
+      P("j", "[conc:galicia:juzgado] Juzgado", "abierto", "2026-11-01T05:00", "Perfecto lo concilie"),
+      // 5 · Echeq 102: resuelto, con su tarea todavía en manos de JMS
+      P("e", "[conc:galicia:echeq] Echeq 102", "resuelto", "2026-11-01T06:00", "Esta bien asi"),
+      // una pregunta suelta, sin clave: no se toca
+      P("q", "❓ ¿Caja dólares?", "abierto", "2026-10-30T10:00", null),
+    ]
+    const unidos = unirPorClave(pend as never)
+    const manuel = unidos.find(x => x.texto.includes("manuel"))!
+    const v1 = `${unidos.length} filas · Manuel id ${manuel.id} con ${manuel.hilo?.length} mensajes`
+    chequear("Excel y recorrido", "4 · Las respuestas repetidas de un tema se juntan en UNA (la más vieja), con los mensajes de todas sin repetir",
+      "4 filas · Manuel id m1 con 3 mensajes", v1, v1 === "4 filas · Manuel id m1 con 3 mensajes", "A-FEAT-1500")
+
+    const temasHoy = [{ clave: "conc:galicia:manuel" }, { clave: "conc:galicia:echeq" }] as never
+    const tareas = [{ clave: "conc:galicia:echeq", estado: "abierta", asignado_a: "josemartinezsobrado@gmail.com", creado_por: "Claude",
+      motivo: "OK para completar MAIZ", resolucion: null, created_at: "2026-11-01T07:00", seguimiento: [] }]
+    const sinc = sincronizarPendientes(pend as never, { calculado: true, temas: temasHoy, tareas })
+    const hoja = hojaDePendientes(sinc, "x")
+    const estadoDe = (t: string) => String((hoja.find(f => String(f[1] ?? "").includes(t)) ?? [])[3] ?? "")
+    const v2 = `${estadoDe("juzgado")} | ${estadoDe("echeq")} | ${estadoDe("manuel")} | ${estadoDe("Caja")}`
+    const e2 = "resuelto en la app — el movimiento ya no está pendiente (se concilió) | resuelto — falta aplicar (tarea abierta) | ABIERTO | ABIERTO"
+    chequear("Excel y recorrido", "3 y 5 · Un tema que ya no sale (conciliado) se lee «resuelto en la app»; uno resuelto con su tarea abierta dice «falta aplicar»; los demás igual",
+      e2, v2, v2 === e2, "A-FEAT-1500")
+
+    const v3 = String((hoja.find(f => String(f[1] ?? "").includes("echeq")) ?? [])[7] ?? "")
+    chequear("Excel y recorrido", "2 · Cada pendiente dice en manos de quién está su tarea", "En manos de JMS", v3, v3 === "En manos de JMS", "A-FEAT-1500")
+
+    const sinCalc = hojaDePendientes(sincronizarPendientes(pend as never, { calculado: false, temas: [], tareas: [] }), "x")
+    const v4 = String((sinCalc.find(f => String(f[1] ?? "").includes("juzgado")) ?? [])[3] ?? "")
+    chequear("Excel y recorrido", "🛑 Sin el recorrido calculado NO se da nada por resuelto (no se puede saber)", "ABIERTO", v4, v4 === "ABIERTO", "A-FEAT-1500")
+
+    const rec = hojaDelRecorrido({ calculado: true, temas: [
+      { clave: "conc:a", grupo: "conciliacion", titulo: "Mov A", papel: "07", que: "sin conciliar", links: [], respondido: false },
+      { clave: "deu:b", grupo: "deuda", titulo: "Cuota B", papel: "04", que: "sin pago", links: [], respondido: true },
+    ], tareas: [] }, "x")
+    const v5 = rec.slice(4).map(f => `${f[3]}:${f[6]}`).join(",")
+    chequear("Excel y recorrido", "1 · La solapa «00 Recorrido» lista la misma cola (primero lo abierto)", "Mov A:sin tocar,Cuota B:respondido", v5, v5 === "Mov A:sin tocar,Cuota B:respondido", "A-FEAT-1500")
   }
 
   return r

@@ -54,20 +54,26 @@ export function pendientesConVisto(pendientes: PendienteBalance[], porConfirmar:
 const dmy = (iso: string | null) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : '')
 
 /** La solapa del export: primero los abiertos (es lo que hay que mirar), después los resueltos con su nota. */
-export function hojaDePendientes(pendientes: PendienteBalance[], encabezado: string): unknown[][] {
-  const abiertos = pendientes.filter(p => p.estado === 'abierto').sort((a, b) => a.created_at.localeCompare(b.created_at))
-  const resueltos = pendientes.filter(p => p.estado === 'resuelto').sort((a, b) => (a.resuelto_at || '').localeCompare(b.resuelto_at || ''))
+export function hojaDePendientes(pendientes: (PendienteBalance & { resueltoEnLaApp?: string; tarea?: string; conversacion?: string })[], encabezado: string): unknown[][] {
+  // 🔁 A-FEAT-1500: un tema que ya se resolvió en la app (el movimiento se concilió) cuenta como resuelto aunque la fila diga abierto.
+  const abierto = (p: typeof pendientes[number]) => p.estado === 'abierto' && !p.resueltoEnLaApp
+  const abiertos = pendientes.filter(abierto).sort((a, b) => a.created_at.localeCompare(b.created_at))
+  const resueltos = pendientes.filter(p => !abierto(p)).sort((a, b) => (a.resuelto_at || '').localeCompare(b.resuelto_at || ''))
   const filas: unknown[][] = [
     [encabezado],
     [abiertos.length ? `${abiertos.length} pendiente(s) a revisar antes de dar el balance por cerrado` : '✓ Sin pendientes abiertos'],
     // ✔ A-FEAT-1487 — lo que está visto sólo por Claude se cuenta aparte: es lo que JMS no miró.
     ...(resueltos.some(p => p.vistoPor === 'Claude') ? [[`✔ ${resueltos.filter(p => p.vistoPor === 'Claude').length} resuelto(s) por Claude, sin el visto de JMS`]] : []),
     [],
-    ['#', 'Pendiente', 'Anotado', 'Estado', 'Resolución', 'Resuelto', 'Visto'],
+    ['#', 'Pendiente', 'Anotado', 'Estado', 'Resolución', 'Resuelto', 'Visto', 'Tarea', 'Conversación'],
   ]
   ;[...abiertos, ...resueltos].forEach((p, i) => filas.push([
-    i + 1, p.texto, dmy(p.created_at), p.estado === 'abierto' ? 'ABIERTO' : 'resuelto', p.resolucion || '', dmy(p.resuelto_at),
+    i + 1, p.texto, dmy(p.created_at),
+    p.resueltoEnLaApp ? `resuelto en la app — ${p.resueltoEnLaApp}` : p.estado === 'abierto' ? 'ABIERTO'
+      : p.tarea && !/visto/.test(p.tarea) ? 'resuelto — falta aplicar (tarea abierta)' : 'resuelto',
+    p.resolucion || '', dmy(p.resuelto_at),
     p.vistoPor === 'Claude' ? 'Resuelto por Claude — sin tu visto' : p.vistoPor === 'JMS' ? 'Visto por JMS' : '',
+    p.tarea || '', p.conversacion || '',
   ]))
   return filas
 }

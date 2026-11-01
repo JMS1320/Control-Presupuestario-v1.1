@@ -44,6 +44,7 @@ import type { FuentePrecio } from "./precio-al-cierre"
 import type { CuentasSinCuentaCorriente } from "./fuera-por-cuenta-corriente"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
+import { hojaDelRecorrido, sincronizarPendientes, type RecorridoParaExcel } from "./recorrido-excel"
 import { hojaDeSaldosAnteriores, type SaldosAnteriores } from "./ajustes-balance"
 import {
   TOTALIZADORAS_BANCARIAS,
@@ -1669,6 +1670,12 @@ const etiquetaEstado = (e: EstadoParte): string => ({
 /** La solapa de pendientes: número, texto largo, fechas y la resolución. */
 const COLS_PENDIENTES: Columna[] = [
   { ancho: 4 }, { ancho: 80 }, { ancho: 11 }, { ancho: 10 }, { ancho: 50 }, { ancho: 11 }, { ancho: 30 },  // ✔ Visto (A-FEAT-1487)
+  { ancho: 26 }, { ancho: 90 },  // 🔁 A-FEAT-1500: Tarea · Conversación
+]
+
+/** 🔁 A-FEAT-1500 — la solapa «00 Recorrido». */
+const COLS_RECORRIDO: Columna[] = [
+  { ancho: 4 }, { ancho: 20 }, { ancho: 28 }, { ancho: 60 }, { ancho: 70 }, { ancho: 50 }, { ancho: 16 }, { ancho: 26 }, { ancho: 90 },
 ]
 
 const COLS_INDICE: Columna[] = [
@@ -2527,6 +2534,8 @@ export function armarWorkbook(
   controlCuotas?: ControlCuotasTemplates,
   /** 🔁 A-FEAT-1427: el inicio según el balance anterior contra lo que reconoce la app. */
   controlesInicio?: ControlesInicio,
+  /** 🔁 A-FEAT-1500: los temas del recorrido y sus tareas, para que el Excel diga lo mismo que la pantalla. */
+  recorrido?: RecorridoParaExcel | null,
 ): XLSX.WorkBook {
   const wb = XLSX.utils.book_new()
 
@@ -2552,8 +2561,13 @@ export function armarWorkbook(
   if (controlesInicio?.inicioYCierre) hoja(wb, "00 Inicio y cierre", hojaInicioYCierre(controlesInicio.inicioYCierre, libro.ejercicio.etiqueta))
   // 📌 A-FEAT-1258 — los pendientes a revisar van pegados al índice: también contestan «¿qué falta?».
   if (pendientes && pendientes.length) {
-    hoja(wb, "00 Pendientes a revisar", hojaDePendientes(pendientes,
+    hoja(wb, "00 Pendientes a revisar", hojaDePendientes(sincronizarPendientes(pendientes, recorrido),
       `${empresa} — pendientes a revisar del ejercicio ${libro.ejercicio.etiqueta}`), COLS_PENDIENTES)
+  }
+  // 🔁 A-FEAT-1500: la cola entera del recorrido (movimientos, deudas, echeqs, ARCA…), igual que en pantalla.
+  if (recorrido !== undefined) {
+    hoja(wb, "00 Recorrido", hojaDelRecorrido(recorrido,
+      `${empresa} — temas del recorrido del balance, ejercicio ${libro.ejercicio.etiqueta}`), COLS_RECORRIDO)
   }
   hoja(wb, "Control", hojaDeControl(libro, lecturas))
   // 📅 Los 12 meses en una línea cada uno, pegado al Control: es otro control (contra lo presentado a ARCA).
@@ -2743,9 +2757,10 @@ export async function descargarLibroDiario(
   lecturas?: Lectura[],
   controlCuotas?: ControlCuotasTemplates,
   controlesInicio?: ControlesInicio,
+  recorrido?: RecorridoParaExcel | null,
 ) {
   const wb = armarWorkbook(libro, empresa, templates, hacienda, insumos, campo, cuentas,
-    bancarios, sueldos, cuentasCorrientes, pendientes, saldosAnteriores, asientosContables, lecturas, controlCuotas, controlesInicio)
+    bancarios, sueldos, cuentasCorrientes, pendientes, saldosAnteriores, asientosContables, lecturas, controlCuotas, controlesInicio, recorrido)
   const out = await aplicarVistas(XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(wb))
   const url = URL.createObjectURL(
     new Blob([out as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
