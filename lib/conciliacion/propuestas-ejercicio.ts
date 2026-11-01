@@ -99,6 +99,8 @@ export interface MovimientoSinConciliar {
   cuitBanco?: string
   detalle?: string
   categ?: string
+  /** 📝 A-FEAT-1468 — la nota del usuario en el movimiento (la que se deja con el 📝 del extracto). */
+  nota?: string
 }
 
 export interface Pareja extends Obligacion {
@@ -306,7 +308,7 @@ export async function leerDatosConciliacion(sb: Cliente, empresa: string, desde:
   const movimientos: MovimientoSinConciliar[] = []
   for (const c of CUENTAS_CONCILIABLES.filter(x => x.empresa === empresa)) {
     try {
-      const cols = ["id", "fecha", "debitos", "creditos", "estado", "descripcion", "categ", "detalle", ...(c.leyendas ? ["leyendas_adicionales_1", "leyendas_adicionales_2"] : [])].join(",")
+      const cols = ["id", "fecha", "debitos", "creditos", "estado", "descripcion", "categ", "detalle", "nota_operador", ...(c.leyendas ? ["leyendas_adicionales_1", "leyendas_adicionales_2"] : [])].join(",")
       // ⚠️ medido 30/10: msa.santander se cargó con «Pendiente» (mayúscula) — el motor del extracto busca «pendiente» y no
       // los toma. Acá se leen igual y se AVISA, para que se corrija el dato (no se adivina en silencio).
       const filas = await todo(sb, c.schema, c.tabla, cols, q => q.gte("fecha", desde).lte("fecha", hasta).in("estado", ["pendiente", "Pendiente", "PENDIENTE", "auditar", "Auditar", "historico"]))
@@ -318,7 +320,7 @@ export async function leerDatosConciliacion(sb: Cliente, empresa: string, desde:
         if (imp < 0.005) continue
         const cuit = cuitDe(m.leyendas_adicionales_2)
         movimientos.push({ cuenta: c, id: String(m.id), fecha: m.fecha, importe: imp, lado, estado: String(m.estado ?? "").toLowerCase(), descripcion: m.descripcion ?? "",
-          quienBanco: m.leyendas_adicionales_1 ?? undefined, cuitBanco: cuit.length === 11 ? cuit : undefined, detalle: m.detalle ?? undefined, categ: m.categ ?? undefined })
+          quienBanco: m.leyendas_adicionales_1 ?? undefined, cuitBanco: cuit.length === 11 ? cuit : undefined, detalle: m.detalle ?? undefined, categ: m.categ ?? undefined, nota: m.nota_operador ?? undefined })
       }
     } catch (e) { avisos.push(`${c.nombre}: ${(e as Error).message}`) }
   }

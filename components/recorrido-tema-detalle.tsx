@@ -53,6 +53,14 @@ export function DetalleTema({ tema, arriba, enAppExtra, propuestaExtra, resoluci
         <p className="text-sm">{tema.que}</p>
       </div>
 
+      {/* 📝 A-FEAT-1468 — tu nota en el movimiento del extracto, a la vista (la dejaste ahí explicando algo). */}
+      {tema.notaMovimiento && (
+        <div className="rounded border border-yellow-300 bg-yellow-50 p-3 text-sm" data-test="recorrido-nota-movimiento">
+          <div className="text-xs font-medium uppercase tracking-wide text-yellow-800">📝 Tu nota en el movimiento</div>
+          <p className="whitespace-pre-wrap text-yellow-950">{tema.notaMovimiento}</p>
+        </div>
+      )}
+
       {/* 📄 A-FEAT-1439 — las TRES vistas: lo objetivo, lo que dice la app, y la propuesta. */}
       <div className={`rounded border p-3 space-y-1 ${fuente ? "border-slate-300 bg-slate-50" : "border-amber-300 bg-amber-50"}`} data-test="recorrido-fuente">
         <div className="text-xs font-medium uppercase tracking-wide text-slate-700">📄 Fuente — lo objetivo{fuente ? `: ${fuente.origen}` : ""}</div>

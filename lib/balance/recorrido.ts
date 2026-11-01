@@ -79,6 +79,11 @@ export interface Tema {
   cuenta?: { id: string; nombre: string }
   /** 🏦 Débito o crédito (conciliación). */
   lado?: "D" | "C"
+  /**
+   * 📝 A-FEAT-1468 — la nota que el usuario dejó en el movimiento del extracto (JMS 01/11: «si el movimiento tiene una
+   * nota mía debe mostrarla, porque yo las dejé ahí explicando algo pertinente»).
+   */
+  notaMovimiento?: string
   /** 🗄️ Movimiento histórico sugerido (va a un template): se muestra, pero no cuenta como «sin conciliar». */
   historico?: boolean
   /** 🏦 Fecha del movimiento (conciliación), ISO. */

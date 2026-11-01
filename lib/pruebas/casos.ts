@@ -5572,6 +5572,14 @@ export function correrCasos(): Resultado[] {
       "Manuel Martínez · 📜 Los sueldos de Manuel Martínez (toda la tira) · /?seccion=sueldos&empleado=emp-manuel", vM,
       vM === "Manuel Martínez · 📜 Los sueldos de Manuel Martínez (toda la tira) · /?seccion=sueldos&empleado=emp-manuel", "A-FEAT-1467")
 
+    // 📝 A-FEAT-1468: la nota del usuario en el movimiento llega al tema (y sin nota, nada).
+    const r5 = proponerConciliaciones({ movimientos: [{ ...mov("nn", 999, "TRF"), nota: "  pagado por AMS, ver con él  " }, mov("sn", 888, "TRF")],
+      obligaciones: [], usadoPor: new Map(), conciliados: [], avisos: [] }, "MSA", "2025-07-01", "2026-06-30")
+    const tN = temasDeMovimientos(r5.movimientos).temas
+    const vN = tN.map(t => `${t.clave.split(":").pop()}:${t.notaMovimiento ?? "—"}`).sort().join(" | ")
+    chequear("Conciliación · en el recorrido", "📝 La nota que dejaste en el movimiento se ve en el tema (sin espacios de más); sin nota, no aparece",
+      "nn:pagado por AMS, ver con él | sn:—", vN, vN === "nn:pagado por AMS, ver con él | sn:—", "A-FEAT-1468")
+
     // 🧯 A-BUG-1458: el error de la base se explica (Santander dio «Errores 113» mudo: le faltaban columnas).
     const mot: { motivo: string; n: number }[] = []
     for (let k = 0; k < 3; k++) sumarMotivo(mot, motivoDeError({ code: "PGRST204", message: "Could not find the 'proveedor_nombre' column of 'santander' in the schema cache" }))
