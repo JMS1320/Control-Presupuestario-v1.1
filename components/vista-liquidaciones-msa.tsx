@@ -391,10 +391,10 @@ export function VistaLiquidacionesMsa({ userRole = 'admin', empresa = 'MSA' }: P
                 })}
               </TableBody>
             </Table>
+          </div>
             {/* 📊 A-FEAT-1464 — la barra de abajo, como Excel. */}
             <BarraResumen filas={filtradas} fecha={l => l.fecha_liquidacion}
               columnas={[{ rotulo: "total", valor: l => (l as any).imp_total }]} />
-          </div>
         </CardContent>
       </Card>
 

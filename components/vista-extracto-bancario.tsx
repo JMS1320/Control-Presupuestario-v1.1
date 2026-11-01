@@ -5289,11 +5289,11 @@ ${marca}` : marca
                       ))}
                     </TableBody>
                   </Table>
-                  {/* 📊 A-FEAT-1464 — la barra de abajo, como en Excel: filas, meses, sumas y promedio (y lo tildado, si hay). */}
-                  <BarraResumen filas={movimientosVisibles as any[]} elegidas={(movimientosVisibles as any[]).filter(m => seleccionados.has(m.id))}
-                    fecha={m => m.fecha} neto columnas={[{ rotulo: "débitos", valor: m => m.debitos }, { rotulo: "créditos", valor: m => m.creditos }]} />
                 </div>
               )}
+              {/* 📊 A-FEAT-1464 — la barra de abajo, como en Excel: filas, meses, sumas y promedio (y lo tildado, si hay). */}
+              <BarraResumen filas={movimientosVisibles as any[]} elegidas={(movimientosVisibles as any[]).filter(m => seleccionados.has(m.id))}
+                fecha={m => m.fecha} neto columnas={[{ rotulo: "débitos", valor: m => m.debitos }, { rotulo: "créditos", valor: m => m.creditos }]} />
             </CardContent>
           </Card>
         </SoloLectura>

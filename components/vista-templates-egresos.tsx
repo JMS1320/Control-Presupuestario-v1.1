@@ -2008,10 +2008,10 @@ export function VistaTemplatesEgresos() {
                     )}
                   </TableBody>
                 </Table>
+            </div>
                 {/* 📊 A-FEAT-1464 — la barra de abajo, como Excel. */}
                 <BarraResumen filas={cuotas} elegidas={cuotas.filter(c => cuotasSeleccionadasMasiva.has(c.id))}
                   fecha={c => c.fecha_estimada} columnas={[{ rotulo: "monto", valor: c => c.monto }]} />
-            </div>
 
             {/* Panel de control edición masiva */}
             {modoEdicionMasiva && cuotasSeleccionadasMasiva.size > 0 && (

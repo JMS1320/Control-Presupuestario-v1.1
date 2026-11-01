@@ -8410,10 +8410,10 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                     )})()}
                   </TableBody>
                 </Table>
+            </div>
                 {/* 📊 A-FEAT-1464 — la barra de abajo, como Excel (en pesos: las de dólares, al tipo de cambio de la factura). */}
                 <BarraResumen filas={facturasEnPantalla()} elegidas={facturasEnPantalla().filter(f => facturasSeleccionadasMasiva.has(f.id))}
                   fecha={f => f.fecha_emision} columnas={[{ rotulo: "total", valor: f => (Number(f.imp_total) || 0) * (Number(f.tipo_cambio) || 1) }]} />
-            </div>
 
             {/* Panel de control edición masiva */}
             {modoEdicionMasiva && facturasSeleccionadasMasiva.size > 0 && (

@@ -6,6 +6,9 @@
  *
  * Va al pie de cualquier tabla: filas · en cuántos meses (y cuántas por mes) · la suma de cada columna de importe · el
  * promedio — y la misma línea para lo tildado, si hay. El cálculo de meses está en `lib/ui/resumen-filas.ts`.
+ *
+ * ⚠️ Va AFUERA del contenedor que se desplaza de costado (no adentro de la tabla): adentro, la columna fija de la
+ * izquierda le tapaba el comienzo y sólo aparecía al llegar al final de la lista (nota de JMS 01/11).
  */
 import { resumenDeFilas } from "@/lib/ui/resumen-filas"
 
@@ -40,7 +43,7 @@ export function BarraResumen<T>({ filas, elegidas, fecha, columnas, neto, classN
     )
   }
   return (
-    <div className={`sticky bottom-0 flex flex-wrap gap-x-4 gap-y-0.5 border-t bg-gray-50/95 px-3 py-1 text-[11px] text-gray-600 tabular-nums ${className ?? ""}`}
+    <div className={`sticky bottom-0 z-20 flex flex-wrap gap-x-4 gap-y-0.5 border-t bg-gray-50/95 px-3 py-1 text-[11px] text-gray-600 tabular-nums backdrop-blur ${className ?? ""}`}
       data-test="barra-resumen">
       {linea("En la lista:", filas)}
       {!!elegidas?.length && linea("Tildadas:", elegidas)}
