@@ -40,6 +40,9 @@
 
 ## 📨 PARA JAVIER
 
+### 📷 1 columna nueva en `public.balance_pendientes`: `imagen` (2026-11-01) — ⏳ AVISO PREVIO (se corre a continuación con OK de JMS)
+- `scripts/159-balance-pendientes-imagen.sql` (+ `-deshacer`). La captura pegada en «Tu respuesta» de un tema del recorrido del balance (data-URL comprimida, como `revisiones.imagen`). Vacía, comentario `[script 159]`. **Sin cambios de RLS ni de permisos.** Ojo: las pantallas leen la tabla con `select('*')`, así que la traen sola.
+
 ### 🏦 Las mismas columnas en las 3 cajas de MSA, `msa.echeqs_terceros` y las 3 tarjetas VISA (2026-10-31) — ✅ APLICADA el 31/10 (aviso previo; JMS: «aprovechá a dejar todo bien»): 108 columnas (19×3 + 15 + 12×3), vacías
 - `scripts/156-columnas-cajas-echeqs-tarjetas.sql` (+ `-deshacer`). Segunda parte de A-BUG-1458: `msa.caja_general`, `msa.caja_ams`, `msa.caja_sigot` (19 columnas c/u), `msa.echeqs_terceros` (15) y `msa.tarjeta_visa_business`, `pam.tarjeta_visa`, `ma.tarjeta_visa` (12 c/u) reciben las columnas de `public.msa_galicia` que les faltaban, vacías, comentario `[script 156]`. **Sin cambios de RLS ni de permisos.**
 
