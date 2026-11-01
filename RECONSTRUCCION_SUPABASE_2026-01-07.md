@@ -3332,6 +3332,9 @@ Alta de `MA` (CUIL 27-06682461-1, `plano_ipc`, MSA, ingreso 01/06/2025, id fijo 
 ### 2026-10-29 · Stock declarado al 30/06/2025 de MSA (script 132, DATOS) — A-FEAT-1420 — ✅ CORRIDO con OK de JMS
 Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantidad 0, marca `[script 132]` en observaciones), 94 renglones en `stock_inicio` ($ 31.730.444,08 = la planilla) y 3 `pasturas`. Se corre con `scripts/132-stock-inicio-msa-30-06-2025.mts` (desde su `.json`; el `.sql` es el registro legible). Deshacer: `scripts/132-stock-inicio-msa-30-06-2025-deshacer.sql` (por ids; frena si un producto ya tiene movimientos).
 
+### 2026-11-01 · Carpeta de LEGAJOS en el archivo digital (script 166, DATOS) — A-FEAT-1480 — ✅ CORRIDO con OK de JMS («ok legajos»)
+`public.archivo_destinos` + fila `sueldos_legajos` («Legajos de empleados», `SAN MANUEL/SUELDOS - altas - bajas - legajos/- LEGAJOS`, Drive `1m_4Tn2tzFCtq9FSW2TrjLq0JPArELVOP`, una carpeta por empleado adentro). Deshacer: `166-…-deshacer.sql`.
+
 ### 2026-11-01 · El CUIL de Alondra Olivo (script 165, DATOS) — A-BUG-1475 — ✅ CORRIDO con OK de JMS («alondra corregí el cuit»)
 `sueldos.empleados` 67f4f0aa…: 27-20361536-7 → 27-47926088-0 (el de su alta en ARCA). Deshacer: `165-…-deshacer.sql`.
 
