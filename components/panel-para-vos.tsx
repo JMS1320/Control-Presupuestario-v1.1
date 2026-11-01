@@ -131,6 +131,7 @@ export function PanelParaVos() {
               {cuotaDeTarea(m.cierre_auto) && mia && <a href={linkPagar({ cuotaId: cuotaDeTarea(m.cierre_auto) })} className="rounded px-1.5 py-0.5 text-[11px] font-normal text-green-700 hover:bg-green-50" title="Abrir el Cash Flow con la cuota seleccionada, para sacar el pago">💸 Pagar</a>}
               {/* 🔗 A-FEAT-1466 — una tarea del recorrido del balance lleva a su tema (y de ahí a su papel de trabajo). */}
               {m.tabla_ref === "recorrido_balance" && m.registro_id && <a href={linkTemaBalance(m.registro_id)} target="_blank" rel="noreferrer"
+                onClick={e => irAlTemaBalance(e, m.registro_id as string)}
                 className="rounded px-1.5 py-0.5 text-[11px] font-normal text-blue-700 hover:bg-blue-50" title="Abre el recorrido del balance parado en este tema (y desde ahí, su papel de trabajo)">↗ Ir al tema del balance</a>}
               {m.cierre_auto?.startsWith("cuota_conciliada:") && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-normal text-gray-600" title="Se cierra sola cuando el pago de su cuota queda conciliado">🔒 se cierra sola al conciliar</span>}
             </div>
@@ -204,4 +205,19 @@ export function PanelParaVos() {
         </div>)}
     </div>
   )
+}
+
+/**
+ * ⚡ Nota 🌙 JMS 01/11 — el link al tema reusa la pestaña del recorrido si ya está abierta y armada: salta al tema sin
+ * recargar. Si no hay, abre la pestaña «recorrido-balance» con el link (la próxima vez ya la encuentra).
+ */
+function irAlTemaBalance(e: { preventDefault: () => void }, registro: string) {
+  try {
+    const w = window.open("", "recorrido-balance")
+    if (!w) return
+    e.preventDefault()
+    const ir = (w as unknown as { __irATemaBalance?: (r: string) => boolean }).__irATemaBalance
+    if (ir && ir(registro)) { w.focus(); return }
+    w.location.href = linkTemaBalance(registro)
+  } catch { /* si el navegador no deja, sigue el link normal */ }
 }

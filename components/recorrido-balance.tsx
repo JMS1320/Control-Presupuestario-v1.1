@@ -124,6 +124,14 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
    * primer tema como si fuera el pedido (JMS 01/11: «el link debe llevar a ese tema en el balance y no a cualquier lugar»).
    */
   const [pedido, setPedido] = useState<string | null>(claveInicial)
+  // ⚡ un link nuevo del Principal en la MISMA pestaña (sin recargar): ir a ese tema, sin filtros que lo escondan
+  const claveAnterior = useRef(claveInicial)
+  useEffect(() => {
+    if (!claveInicial || claveInicial === claveAnterior.current) return
+    claveAnterior.current = claveInicial
+    setPedido(claveInicial); setClaveActual(claveInicial)
+    setFiltro(new Set()); setEtiquetas(new Set()); setCuentas(new Set()); setOcultarRespondidos(false)
+  }, [claveInicial])
   const pedidoEnTemas = !!pedido && temas.some(t => t.clave === pedido)
   const pedidoVisible = !!pedido && visibles.some(t => t.clave === pedido)
   /** Mientras se busca el tema del link no se muestra otro en su lugar (era Parra: el primero de la lista). */

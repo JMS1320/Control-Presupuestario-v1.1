@@ -370,6 +370,23 @@ export function PapelesDeBalance() {
     if (!temaPedido?.armando || !libro) return
     setClaveRecorrido(temaPedido.clave); setVerRecorrido(true); setTemaPedido(null)
   }, [temaPedido, libro])
+  /**
+   * ⚡ Nota 🌙 JMS 01/11: *«abro otro link y tarda lo mismo en cargar cuando tiene prácticamente todo recién cargado»*.
+   * La pestaña del recorrido se llama «recorrido-balance» y deja un atajo: si el link del Principal la encuentra con
+   * el libro de esa empresa y año ya armado, salta al tema sin volver a cargar nada (`ABRIR_TEMA_BALANCE`).
+   */
+  useEffect(() => {
+    if (!verRecorrido) return
+    try { window.name = "recorrido-balance" } catch { /* sin nombre: el link abre otra pestaña, como antes */ }
+    const w = window as unknown as Record<string, unknown>
+    w.__irATemaBalance = (registro: string) => {
+      const t = temaDelLink(`?seccion=reporte&recorrido=${encodeURIComponent(registro)}`)
+      if (!t || !libro || t.empresa !== empresa.id || t.anioCierre !== anioCierre) return false
+      setClaveRecorrido(t.clave); setVerRecorrido(true)
+      return true
+    }
+    return () => { delete w.__irATemaBalance }
+  }, [verRecorrido, libro, empresa.id, anioCierre])
 
   const armarTodo = async () => {
     setVerPrevia(false)
