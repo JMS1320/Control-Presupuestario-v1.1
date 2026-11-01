@@ -3332,6 +3332,9 @@ Alta de `MA` (CUIL 27-06682461-1, `plano_ipc`, MSA, ingreso 01/06/2025, id fijo 
 ### 2026-10-29 · Stock declarado al 30/06/2025 de MSA (script 132, DATOS) — A-FEAT-1420 — ✅ CORRIDO con OK de JMS
 Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantidad 0, marca `[script 132]` en observaciones), 94 renglones en `stock_inicio` ($ 31.730.444,08 = la planilla) y 3 `pasturas`. Se corre con `scripts/132-stock-inicio-msa-30-06-2025.mts` (desde su `.json`; el `.sql` es el registro legible). Deshacer: `scripts/132-stock-inicio-msa-30-06-2025-deshacer.sql` (por ids; frena si un producto ya tiene movimientos).
 
+### 2026-11-01 · Alondra 29/05 al pago correcto (script 168, DATOS) — A-BUG-1486 — ✅ CORRIDO con OK de JMS en el tema del recorrido
+`public.msa_galicia` 6dc505bc…: `sueldo_pago_id` 566df873… (Sigot, caja) → 9954c5fc… (anticipo de Alondra 29/05), estado auditar → conciliado, con los datos de sus otros anticipos de mayo. Deshacer: `168-…-deshacer.sql`.
+
 ### 2026-11-01 · Parseo de SANTANDER (script 167, DATOS) — A-FEAT-1485 — ✅ CORRIDO con OK de JMS («ok corré el 167»)
 `msa.santander`: `concepto` (texto en líneas, `bloqueSantander`) + desglose de los 148 movimientos (descripcion, grupo_de_conceptos, leyendas_adicionales_1..3, numero_de_comprobante, numero_de_terminal); `public.config_parseo_extracto` + 20 reglas de `msa_santander` (marca `[script 167]` en `descripcion_campo`); `public.reglas_conciliacion` + 1 (CUIT 30617786016 → template «Interbancaria Santander», marca en `detalle`). Foto antes: `scripts/167-parseo-santander-foto.json`. Deshacer: `167-parseo-santander-deshacer.mts`.
 
