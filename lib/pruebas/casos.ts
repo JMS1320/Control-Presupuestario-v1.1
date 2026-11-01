@@ -210,7 +210,7 @@ import { armarPapelDeTrabajo, vinculoDe } from "@/lib/cuaderno/papel-de-trabajo"
 import { calcularTabla as calcularTablaCuaderno } from "@/lib/cuaderno/formulas"
 import { motivoDeError, sumarMotivo } from "@/lib/conciliacion/motivo-error"
 import { resumenDeFilas } from "@/lib/ui/resumen-filas"
-import { tiraDeContraparte, proponerConciliaciones, CUENTAS_CONCILIABLES, ventanasAlrededor, moverMeses, type DatosConciliacion, type MovimientoSinConciliar, type Obligacion } from "@/lib/conciliacion/propuestas-ejercicio"
+import { empleadoPorNombre, tiraDeContraparte, proponerConciliaciones, CUENTAS_CONCILIABLES, ventanasAlrededor, moverMeses, type DatosConciliacion, type MovimientoSinConciliar, type Obligacion } from "@/lib/conciliacion/propuestas-ejercicio"
 import { temasDeMovimientos, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
 import { cruzarChequesConDebitos, numeroEnDescripcion } from "@/lib/conciliacion/cheques-vencidos"
 import { RENGLONES as RENGLONES_BALANCE } from "@/lib/balance/balance-propio"
@@ -5597,6 +5597,11 @@ export function correrCasos(): Resultado[] {
       { ...fac("c1x", 70, "27222222222"), origen: "cuota", egresoId: "tpl-a", quien: "ALONDRA" },
       { ...fac("otro", 10, "20999999999") },
     ]
+    // 🔤 A-BUG-1475 — por nombre cuando el CUIT no coincide: uno solo, todas las palabras; dos candidatos = ninguno.
+    const empsN = [{ id: "a", nombre: "Alondra Olivo", cuit: "27203615367" }, { id: "m", nombre: "Manuel Martínez", cuit: "" }, { id: "m2", nombre: "Manuel Martinez", cuit: "" }]
+    const vPn = `${empleadoPorNombre("ALONDRA AYLIN OLIVO", empsN)?.id} · ${empleadoPorNombre("Manuel Martinez", empsN)?.id} · ${empleadoPorNombre("Alondra Perez", empsN)?.id} · ${empleadoPorNombre(undefined, empsN)?.id}`
+    chequear("Conciliación · en el recorrido", "🔤 El empleado se reconoce por nombre si el CUIT del banco no es el de Sueldos (uno solo; dos iguales = ninguno)",
+      "a · undefined · undefined · undefined", vPn, vPn === "a · undefined · undefined · undefined", "A-BUG-1475")
     const tcA = tiraDeContraparte("27-22222222-2", "Alondra", obs)
     const vTc = `${tcA?.nombre} · ventas ${tcA?.ventas.map(v => `${v.empresa}:${v.ids.join(",")}`).join(" ")} · facturas ${tcA?.facturas.map(v => `${v.empresa}:${v.ids.join(",")}`).join(" ")} · templates ${tcA?.egresos.join(",")} · propio ${tiraDeContraparte("30617786016", "MSA", obs)}`
     chequear("Conciliación · en el recorrido", "📜 La tira de una contraparte por CUIT: sus ventas y facturas por empresa y sus templates; con un CUIT propio, nada",

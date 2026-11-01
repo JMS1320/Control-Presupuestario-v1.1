@@ -94,7 +94,7 @@ export function temasDeMovimientos(propuestas: PropuestaMovimiento[]): { temas: 
         { texto: `El movimiento en el extracto (${m.cuenta.nombre})`, href: linkMovimiento(m) },
         ...p.parejas.flatMap(x => linksDePareja(x, m.cuenta.empresa)).filter((l, i, a) => a.findIndex(y => y.href === l.href) === i).slice(0, 6),
         // 📜 A-FEAT-1467 — la TIRA: si es de una persona de Sueldos, todos sus sueldos (JMS: «la tira de eso»).
-        ...(p.empleado ? [{ texto: `📜 Los sueldos de ${p.empleado.nombre} (toda la tira)`, href: linkSueldosDe(p.empleado.id) }] : []),
+        ...(p.empleado ? [{ texto: `📜 Los sueldos de ${p.empleado.nombre} (toda la tira)${p.empleado.cuitSueldos !== undefined ? ` — reconocida por nombre: en Sueldos su CUIL es ${p.empleado.cuitSueldos || "(vacío)"}, el banco informa otro` : ""}`, href: linkSueldosDe(p.empleado.id) }] : []),
         // 📜 A-FEAT-1469 — la tira de la CONTRAPARTE (mismo CUIT): sus facturas, sus ventas y sus templates.
         ...linksDeContraparte(p.contraparte),
       ],

@@ -113,7 +113,7 @@ export interface Pareja extends Obligacion {
 export interface PropuestaMovimiento {
   mov: MovimientoSinConciliar
   /** 👤 A-FEAT-1467 — la persona de Sueldos de este movimiento (por su pareja de sueldo o por el CUIT del banco). */
-  empleado?: { id: string; nombre: string }
+  empleado?: { id: string; nombre: string; /** 🔤 A-BUG-1475 — reconocido por NOMBRE: el CUIT del banco no es el de Sueldos. */ cuitSueldos?: string }
   /**
    * 📜 A-FEAT-1469 — LA TIRA DE LA CONTRAPARTE (JMS 01/11: «tengo a Alondra que dice no tener contrapartida y yo debería
    * ver la serie de ella para ver si le falta un cobro y es éste, o si lo meto duplico»): todo lo registrado del mismo
@@ -450,8 +450,11 @@ export function proponerConciliaciones(d: DatosConciliacion, empresa: string, de
     const empPareja = r.parejas.find(x => x.origen === "sueldo" && (x as Obligacion).empleadoId)
     const emp = (empPareja && (d.empleados ?? []).find(e => e.id === (empPareja as Obligacion).empleadoId))
       || (m.cuitBanco ? (d.empleados ?? []).find(e => e.cuit && e.cuit === m.cuitBanco) : undefined)
+    // 🔤 A-BUG-1475 — si el CUIT no coincide (Alondra: Sueldos tiene otro CUIL que el que informa el banco), por NOMBRE:
+    // todas las palabras del nombre de Sueldos dentro del nombre del banco, y un solo empleado que cumpla.
+    const porNombre = !emp ? empleadoPorNombre(m.quienBanco, d.empleados ?? []) : undefined
     const contraparte = tiraDeContraparte(m.cuitBanco || r.parejas.find(x => x.cuit)?.cuit, m.quienBanco || r.parejas[0]?.quien, d.obligaciones)
-    return { mov: m, pista, ...(emp ? { empleado: { id: emp.id, nombre: emp.nombre } } : {}), ...(contraparte ? { contraparte } : {}), ...r }
+    return { mov: m, pista, ...(emp ? { empleado: { id: emp.id, nombre: emp.nombre } } : porNombre ? { empleado: { id: porNombre.id, nombre: porNombre.nombre, cuitSueldos: porNombre.cuit } } : {}), ...(contraparte ? { contraparte } : {}), ...r }
   })
 
   // Deudas de ESTA empresa en el ejercicio, sin movimiento, en un estado que dice «abierta»
@@ -485,4 +488,13 @@ export function tiraDeContraparte(cuit: string | null | undefined, nombre: strin
     ventas: porEmpresa(["venta"]),
     egresos: [...new Set(del.filter(o => o.origen === "cuota" && o.egresoId).map(o => o.egresoId as string))],
   }
+}
+
+/** 🔤 A-BUG-1475 — pura: el empleado cuyo nombre (todas sus palabras, sin tildes ni mayúsculas) está en el nombre del banco. Uno solo, o nada. */
+export function empleadoPorNombre(quien: string | null | undefined, empleados: { id: string; nombre: string; cuit: string }[]) {
+  const norm = (x: string) => x.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 1)
+  const banco = new Set(norm(quien ?? ""))
+  if (!banco.size) return undefined
+  const hallados = empleados.filter(e => { const ws = norm(e.nombre); return ws.length >= 2 && ws.every(w => banco.has(w)) })
+  return hallados.length === 1 ? hallados[0] : undefined
 }

@@ -79,6 +79,8 @@ export async function PATCH(request: Request) {
     const body = (await request.json()) as {
       id?: string; estado?: string; resolucion?: string; resuelto_por?: string
       seguimiento?: string; autor?: string
+      /** 📷 A-FEAT-1474 — la captura pegada en la respuesta (data-URL comprimida): viaja dentro de la entrada del hilo. */
+      imagen?: string
       /** A-FEAT-1449: quien confirma acepta el cierre, o lo devuelve con un mensaje */
       confirmar?: boolean; devolver?: boolean
     }
@@ -132,7 +134,7 @@ export async function PATCH(request: Request) {
       const previo = Array.isArray(t?.seguimiento) ? t.seguimiento : []
       const { error } = await supabaseAdmin.from('revisiones').update({
         estado: 'abierta', resolucion: null,
-        seguimiento: [...previo, { fecha: new Date().toISOString(), texto: `↩ Devuelta: ${texto}`, autor: quien }],
+        seguimiento: [...previo, { fecha: new Date().toISOString(), texto: `↩ Devuelta: ${texto}`, autor: quien, ...imagenOk(body.imagen) }],
       }).eq('id', body.id)
       if (error) throw error
       return NextResponse.json({ ok: true })
@@ -158,7 +160,7 @@ export async function PATCH(request: Request) {
       const previo = Array.isArray(actual?.seguimiento) ? actual.seguimiento : []
       const { error } = await supabaseAdmin
         .from('revisiones')
-        .update({ seguimiento: [...previo, { fecha: new Date().toISOString(), texto, autor: quien ?? body.autor ?? null }] })
+        .update({ seguimiento: [...previo, { fecha: new Date().toISOString(), texto, autor: quien ?? body.autor ?? null, ...imagenOk(body.imagen) }] })
         .eq('id', body.id)
       if (error) throw error
       return NextResponse.json({ ok: true })
@@ -191,4 +193,9 @@ export async function PATCH(request: Request) {
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 })
   }
+}
+
+/** 📷 A-FEAT-1474 — sólo una imagen comprimida de verdad (data-URL), y con tope: el hilo vive en una columna jsonb. */
+function imagenOk(imagen: unknown): { imagen?: string } {
+  return typeof imagen === 'string' && imagen.startsWith('data:image/') && imagen.length < 3_000_000 ? { imagen } : {}
 }

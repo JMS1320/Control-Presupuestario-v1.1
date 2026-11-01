@@ -13,7 +13,7 @@
 
 export type Yo = { mail: string | null; etiqueta: string | null }
 
-export type EntradaHilo = { fecha: string; texto: string; autor: string | null }
+export type EntradaHilo = { fecha: string; texto: string; autor: string | null; /** 📷 A-FEAT-1474 */ imagen?: string }
 
 export type MarcaCampanita = {
   id: string

@@ -9,6 +9,7 @@
  * arriba lo que le asignaron (las tareas vencidas en rojo), abajo lo que mandó y espera respuesta. Se contesta o se
  * cierra acá mismo, por el mismo camino que la campanita (PATCH /api/revisiones).
  */
+import { imagenPegada } from "@/lib/captura-imagen"
 import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -25,7 +26,7 @@ interface Marca extends MarcaParaVos {
   motivo: string
   pantalla: string | null
   subpantalla?: string | null
-  seguimiento?: { fecha: string; texto: string; autor: string | null }[] | null
+  seguimiento?: { fecha: string; texto: string; autor: string | null; imagen?: string }[] | null
   resolucion?: string | null
   cierre_auto?: string | null
   tabla_ref?: string | null
@@ -39,6 +40,8 @@ export function PanelParaVos() {
   const [yo, setYo] = useState<{ mail: string | null; etiqueta: string | null }>({ mail: null, etiqueta: null })
   const [abierta, setAbierta] = useState<string | null>(null)
   const [texto, setTexto] = useState("")
+  /** 📷 A-FEAT-1474 — la captura pegada en la respuesta. */
+  const [imagen, setImagen] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
 
   const cargar = useCallback(async () => {
@@ -53,11 +56,27 @@ export function PanelParaVos() {
     fetch("/api/obligaciones", { method: "POST" }).catch(() => {}).finally(() => { void cargar() })
   }, [cargar])
 
+  /**
+   * 📷 A-FEAT-1474 — la captura de la respuesta va como entrada del hilo (con el texto, si lo hay). Al cerrar o confirmar
+   * se manda primero como respuesta y después se cierra, así la foto queda en la historia de la tarea.
+   */
+  const mandarFoto = async (id: string, t: string) => {
+    if (!imagen) return
+    const r = await fetch("/api/revisiones", { method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, seguimiento: t || "📷 (captura)", imagen }) })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) throw new Error(j?.error ?? `error ${r.status}`)
+  }
   const responder = async (id: string, cerrar: boolean) => {
     const t = texto.trim()
-    if (!t) { toast.error(cerrar ? "Escribí qué se hizo antes de cerrarla" : "Escribí la respuesta"); return }
+    if (!t && !(imagen && !cerrar)) { toast.error(cerrar ? "Escribí qué se hizo antes de cerrarla" : "Escribí la respuesta o pegá una captura"); return }
     setEnviando(true)
     try {
+      if (!cerrar && imagen) {
+        await mandarFoto(id, t)
+        toast.success("Respuesta enviada"); setTexto(""); setImagen(null); setAbierta(null); cargar(); return
+      }
+      if (cerrar && imagen) await mandarFoto(id, "📷 Captura al cerrar")
       const r = await fetch("/api/revisiones", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(cerrar ? { id, estado: "resuelta", resolucion: t } : { id, seguimiento: t }),
@@ -65,7 +84,7 @@ export function PanelParaVos() {
       const j = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(j?.error ?? `error ${r.status}`)
       toast.success(cerrar ? (j?.estado === "por_confirmar" ? "Lista: queda esperando que la confirmen" : "Cerrada") : "Respuesta enviada")
-      setTexto(""); setAbierta(null); cargar()
+      setTexto(""); setImagen(null); setAbierta(null); cargar()
     } catch (e) { toast.error("No se pudo: " + (e as Error).message) } finally { setEnviando(false) }
   }
 
@@ -75,12 +94,13 @@ export function PanelParaVos() {
     if (!confirmar && !t) { toast.error("Escribí por qué la devolvés"); return }
     setEnviando(true)
     try {
+      if (confirmar && imagen) await mandarFoto(id, t || "📷 Captura al confirmar")
       const r = await fetch("/api/revisiones", { method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(confirmar ? { id, confirmar: true } : { id, devolver: true, seguimiento: t }) })
+        body: JSON.stringify(confirmar ? { id, confirmar: true } : { id, devolver: true, seguimiento: t, ...(imagen ? { imagen } : {}) }) })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(j?.error ?? `error ${r.status}`)
       toast.success(confirmar ? "Confirmada: cerrada" : "Devuelta: vuelve a quien la tenía")
-      setTexto(""); setAbierta(null); cargar()
+      setTexto(""); setImagen(null); setAbierta(null); cargar()
     } catch (e) { toast.error("No se pudo: " + (e as Error).message) } finally { setEnviando(false) }
   }
 
@@ -123,18 +143,27 @@ export function PanelParaVos() {
             {hilo.length > 0 && (
               <ul className="mt-2 space-y-1 border-l-2 pl-2 text-xs">
                 {/* Renglones como se escribieron (JMS 31/10: «renglones en vez de todo de corrido»). */}
-                {hilo.map((h, i) => <li key={i} className="whitespace-pre-wrap"><b>{h.autor ?? "—"}</b>: {h.texto}</li>)}
+                {hilo.map((h, i) => <li key={i} className="whitespace-pre-wrap"><b>{h.autor ?? "—"}</b>: {h.texto}
+                  {h.imagen && <a href={h.imagen} target="_blank" rel="noreferrer" title="Ver la captura grande"><img src={h.imagen} alt="captura" className="mt-1 max-h-48 rounded border bg-white object-contain" /></a>}</li>)}
               </ul>)}
           </div>
           {modo === "esperando" && <span className="text-xs text-muted-foreground">Esperando que confirme {m.confirma}{m.resolucion ? ` · «${m.resolucion}»` : ""}</span>}
           {modo === "confirmar" && m.resolucion && <span className="w-full text-xs">Dice que está hecha: <b>«{m.resolucion}»</b></span>}
-          {modo !== "esperando" && abierta !== m.id && <Button size="sm" variant="outline" onClick={() => { setAbierta(m.id); setTexto("") }}>{modo === "confirmar" ? "Confirmar / devolver" : mia ? "Responder / cerrar" : "Escribir"}</Button>}
+          {modo !== "esperando" && abierta !== m.id && <Button size="sm" variant="outline" onClick={() => { setAbierta(m.id); setTexto(""); setImagen(null) }}>{modo === "confirmar" ? "Confirmar / devolver" : mia ? "Responder / cerrar" : "Escribir"}</Button>}
         </div>
         {abierta === m.id && (
           <div className="mt-2 space-y-2">
-            <Textarea rows={2} value={texto} onChange={e => setTexto(e.target.value)} placeholder={mia ? "Qué hiciste, o tu pregunta" : "Tu mensaje"} />
+            <Textarea rows={2} value={texto} onChange={e => setTexto(e.target.value)}
+              onPaste={e => { void imagenPegada(e.nativeEvent).then(img => { if (img) setImagen(img) }) }}
+              placeholder={`${mia ? "Qué hiciste, o tu pregunta" : "Tu mensaje"} — podés pegar una captura (Win+Shift+S → Ctrl+V)`} />
+            {imagen && (
+              <div className="relative inline-block" data-test="para-vos-captura">
+                <img src={imagen} alt="captura pegada" className="max-h-48 rounded border bg-white object-contain" />
+                <button type="button" onClick={() => setImagen(null)} title="Sacar la captura"
+                  className="absolute right-1 top-1 rounded bg-white/90 px-1.5 text-xs text-red-700 shadow hover:bg-white">✕ sacar</button>
+              </div>)}
             <div className="flex flex-wrap justify-end gap-2">
-              <Button size="sm" variant="ghost" onClick={() => setAbierta(null)}>Cancelar</Button>
+              <Button size="sm" variant="ghost" onClick={() => { setAbierta(null); setImagen(null) }}>Cancelar</Button>
               {modo === "confirmar" ? (<>
                 <Button size="sm" variant="outline" disabled={enviando} onClick={() => decidir(m.id, false)}>↩ Devolver</Button>
                 <Button size="sm" disabled={enviando} onClick={() => decidir(m.id, true)}>✔ Confirmar, cerrar</Button>
