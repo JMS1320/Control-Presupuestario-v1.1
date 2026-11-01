@@ -522,6 +522,21 @@ export function PapelesDeBalance() {
             if (!r.error) hechos[campo] = r.data?.[0]?.fecha ? String(r.data[0].fecha).slice(0, 10) : null
           } catch { /* queda sin saber */ }
         }
+        // 🐄 el hueco de la hacienda: con qué arranca la app y qué ventas facturadas caen antes (cuadre del stock)
+        try {
+          const arranque = hechos.primerMovimientoHacienda
+          if (arranque && arranque > inicio) {
+            const tope = new Date(Date.parse(arranque) + 3 * 86400000).toISOString().slice(0, 10)
+            const { data: aj, error: e1 } = await supabase.schema("productivo").from("movimientos_hacienda").select("cantidad").eq("tipo", "ajuste_stock").gte("fecha", arranque).lte("fecha", tope)
+            const { data: vs, error: e2 } = await supabase.schema(empresa.schema).from("comprobantes_venta").select("fecha_liquidacion, cabezas, denominacion_cliente").gte("fecha_liquidacion", inicio).lt("fecha_liquidacion", arranque).not("cabezas", "is", null)
+            if (!e1 && !e2) hechos.huecoHacienda = {
+              arranque, cabezasArranque: (aj ?? []).reduce((s, x: { cantidad: number | null }) => s + (Number(x.cantidad) || 0), 0),
+              vendidas: (vs ?? []).reduce((s, x: { cabezas: number | string | null }) => s + (Number(x.cabezas) || 0), 0),
+              liquidaciones: (vs ?? []).map((x: { fecha_liquidacion: string; cabezas: number | string | null; denominacion_cliente: string | null }) =>
+                `${String(x.fecha_liquidacion).slice(0, 10).split("-").reverse().join("/")} ${String(x.denominacion_cliente ?? "?").split(" ")[0]} ${Number(x.cabezas) || 0} cab`),
+            }
+          }
+        } catch { /* queda sin saber */ }
         setControlesInicio({ provision, hechos })
         if (provision.estado === "no cierra") hallazgos.push(
           `Provisión del ejercicio anterior: el balance anterior provisionó $ ${fmt(provision.declarado ?? 0)} y la app reconoce $ ${fmt(provision.reconocido)}. Ver «05 Provisión».`)

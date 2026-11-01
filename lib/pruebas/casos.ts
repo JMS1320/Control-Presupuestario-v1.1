@@ -5715,6 +5715,24 @@ export function correrCasos(): Resultado[] {
   }
 
   /**
+   * 🐄 **EL HUECO DE LA HACIENDA (stocks, 01/11)** — con los números reales de MSA: inicio 321 (balance anterior),
+   * 83 vendidas en enero 2026 (3 liquidaciones), la app arranca el 15/02/2026 con 421 → faltan explicar +183 cabezas.
+   * El tema lo dice con la cuenta y propone cómo cerrarlo; sin el dato del hueco queda el texto de antes.
+   */
+  {
+    const libroMin = { compras: [], ventas: [], controles: { sePuedeEntregar: true, motivos: [] } } as unknown as Parameters<typeof armarCobertura>[0]["libro"]
+    const hacienda = { cuadre: { existenciaInicio: 321, diferencia: 0 } } as never
+    const conHueco = armarCobertura({ libro: libroMin, fechaInicio: "2025-07-01", hacienda,
+      hechos: { primerMovimientoHacienda: "2026-02-15", huecoHacienda: { arranque: "2026-02-15", cabezasArranque: 421, vendidas: 83, liquidaciones: ["27/01/2026 SAENZ 8 cab", "27/01/2026 SAENZ 5 cab", "28/01/2026 PEDRO 70 cab"] } } } as never)
+    const sinHueco = armarCobertura({ libro: libroMin, fechaInicio: "2025-07-01", hacienda, hechos: { primerMovimientoHacienda: "2026-02-15" } } as never)
+    const it = conHueco.items.find(i => /^Cuadre: inicio/.test(i.dato))!
+    const it2 = sinHueco.items.find(i => /^Cuadre: inicio/.test(i.dato))!
+    const v = `${/faltan explicar 183 cabezas/.test(it.detalle)} · ${/\+183 cabezas/.test(it.propuesta ?? "")} · ${it.comparacion?.celdas.length} filas · sin hueco: ${/JMS los provee/.test(it2.detalle)}`
+    chequear("Balance · stocks", "🐄 El cuadre de la hacienda muestra el hueco jul-25 → feb-26 con su cuenta (321 − 83 + 183 = 421) y propone cómo cerrarlo", "true · true · 5 filas · sin hueco: true", v,
+      v === "true · true · 5 filas · sin hueco: true", "stocks")
+  }
+
+  /**
    * ✔ **PARA TU VISTO — A-FEAT-1487.** Lo que resolvió Claude no desaparece: el tema que todavía sale (echeq 102) pasa al
    * grupo «Para tu visto» con lo que se hizo arriba; el que ya no sale (Manuel, conciliado) entra rearmado; el que no
    * tiene tarea queda como estaba; y un rearmado no duplica a uno que ya está.

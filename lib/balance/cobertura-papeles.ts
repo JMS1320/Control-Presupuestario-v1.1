@@ -59,6 +59,12 @@ export interface HechosCobertura {
   primerMovimientoHacienda?: string | null
   /** Fecha del primer movimiento de insumos cargado. */
   primerMovimientoInsumos?: string | null
+  /**
+   * 🐄 El HUECO de la hacienda (stocks, 01/11): con cuántas cabezas arranca la app (los ajustes de stock de los primeros
+   * días) y qué ventas FACTURADAS caen entre el inicio del ejercicio y ese arranque — las que la app no tiene como
+   * movimiento. Con eso el cuadre dice cuántas cabezas falta explicar (nacimientos, compras, mortandad del período).
+   */
+  huecoHacienda?: { arranque: string; cabezasArranque: number; vendidas: number; liquidaciones: string[] } | null
 }
 
 /** Todo lo que el export ya recibe, más los hechos de arriba. Cada campo puede faltar: eso también es información. */
@@ -381,6 +387,18 @@ const REGLAS: Regla[] = [
       const c = d.hacienda?.cuadre
       if (!c) return { estado: "sin informacion", detalle: "falta «Traer stock y precios»" }
       const desde = d.hechos?.primerMovimientoHacienda
+      const h = d.hechos?.huecoHacienda
+      if (desde && desde > d.fechaInicio && h) {
+        // 🐄 la cuenta del hueco, con sus números: inicio − vendidas + X = arranque de la app
+        const falta = h.cabezasArranque - (c.existenciaInicio - h.vendidas)
+        const f = (x: string) => x.split("-").reverse().join("/")
+        return { estado: "sin informacion",
+          detalle: `la app arranca el ${f(h.arranque)} con ${h.cabezasArranque} cabezas (ajuste de stock); del ${f(d.fechaInicio)} a esa fecha no hay movimientos. Inicio ${c.existenciaInicio} − ${h.vendidas} vendidas en el hueco${h.liquidaciones.length ? ` (${h.liquidaciones.join(" · ")})` : ""} ${falta >= 0 ? "+" : "−"} ${Math.abs(falta)} = ${h.cabezasArranque}: faltan explicar ${Math.abs(falta)} cabezas (nacimientos, compras y mortandad de ese período)`,
+          propuesta: `Cargar los movimientos del hueco (marcación/nacimientos, compras, mortandad) desde la libreta o SENASA; o, si no los hay, un ajuste único «movimientos ${f(d.fechaInicio)} → ${f(h.arranque)}» de ${falta >= 0 ? "+" : "−"}${Math.abs(falta)} cabezas con su detalle, para que el cuadre cierre y el papel lo diga.`,
+          comparacion: { titulo: "El hueco de la hacienda: inicio − vendidas ± lo que falta = arranque de la app", celdas: [
+            ["", "Cabezas"], ["Existencia al inicio (balance anterior)", String(c.existenciaInicio)], ["Vendidas en el hueco (liquidaciones)", String(-h.vendidas)],
+            ["Arranque de la app (ajuste de stock)", String(h.cabezasArranque)], ["Falta explicar (nacimientos, compras, mortandad)", "=B4-B2-B3"]] } }
+      }
       if (desde && desde > d.fechaInicio) return { estado: "sin informacion", detalle: `los movimientos arrancan el ${desde.split("-").reverse().join("/")}: faltan los del ${d.fechaInicio.split("-").reverse().join("/")} en adelante (JMS los provee)` }
       return c.diferencia !== 0 ? { estado: "error", detalle: `el cuadre no cierra por ${c.diferencia} cabezas` } : { estado: "sale", detalle: "cierra" }
     } },
