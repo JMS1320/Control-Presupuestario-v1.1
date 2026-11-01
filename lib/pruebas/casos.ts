@@ -210,7 +210,7 @@ import { armarPapelDeTrabajo, vinculoDe } from "@/lib/cuaderno/papel-de-trabajo"
 import { calcularTabla as calcularTablaCuaderno } from "@/lib/cuaderno/formulas"
 import { motivoDeError, sumarMotivo } from "@/lib/conciliacion/motivo-error"
 import { resumenDeFilas } from "@/lib/ui/resumen-filas"
-import { proponerConciliaciones, CUENTAS_CONCILIABLES, ventanasAlrededor, moverMeses, type DatosConciliacion, type MovimientoSinConciliar, type Obligacion } from "@/lib/conciliacion/propuestas-ejercicio"
+import { tiraDeContraparte, proponerConciliaciones, CUENTAS_CONCILIABLES, ventanasAlrededor, moverMeses, type DatosConciliacion, type MovimientoSinConciliar, type Obligacion } from "@/lib/conciliacion/propuestas-ejercicio"
 import { temasDeMovimientos, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
 import { cruzarChequesConDebitos, numeroEnDescripcion } from "@/lib/conciliacion/cheques-vencidos"
 import { RENGLONES as RENGLONES_BALANCE } from "@/lib/balance/balance-propio"
@@ -5579,6 +5579,20 @@ export function correrCasos(): Resultado[] {
     const vN = tN.map(t => `${t.clave.split(":").pop()}:${t.notaMovimiento ?? "—"}`).sort().join(" | ")
     chequear("Conciliación · en el recorrido", "📝 La nota que dejaste en el movimiento se ve en el tema (sin espacios de más); sin nota, no aparece",
       "nn:pagado por AMS, ver con él | sn:—", vN, vN === "nn:pagado por AMS, ver con él | sn:—", "A-FEAT-1468")
+
+    // 📜 A-FEAT-1469: la tira de la contraparte por CUIT — facturas y ventas por empresa, templates; un CUIT propio no.
+    const obs: Obligacion[] = [
+      { ...fac("v1", 100, "27222222222"), origen: "venta", empresa: "MA", quien: "ALONDRA" },
+      { ...fac("v2", 100, "27222222222"), origen: "venta", empresa: "MA", quien: "ALONDRA" },
+      { ...fac("f1x", 50, "27222222222"), empresa: "MSA", quien: "ALONDRA" },
+      { ...fac("c1x", 70, "27222222222"), origen: "cuota", egresoId: "tpl-a", quien: "ALONDRA" },
+      { ...fac("otro", 10, "20999999999") },
+    ]
+    const tcA = tiraDeContraparte("27-22222222-2", "Alondra", obs)
+    const vTc = `${tcA?.nombre} · ventas ${tcA?.ventas.map(v => `${v.empresa}:${v.ids.join(",")}`).join(" ")} · facturas ${tcA?.facturas.map(v => `${v.empresa}:${v.ids.join(",")}`).join(" ")} · templates ${tcA?.egresos.join(",")} · propio ${tiraDeContraparte("30617786016", "MSA", obs)}`
+    chequear("Conciliación · en el recorrido", "📜 La tira de una contraparte por CUIT: sus ventas y facturas por empresa y sus templates; con un CUIT propio, nada",
+      "Alondra · ventas MA:v1,v2 · facturas MSA:f1x · templates tpl-a · propio undefined", vTc,
+      vTc === "Alondra · ventas MA:v1,v2 · facturas MSA:f1x · templates tpl-a · propio undefined", "A-FEAT-1469")
 
     // 🧯 A-BUG-1458: el error de la base se explica (Santander dio «Errores 113» mudo: le faltaban columnas).
     const mot: { motivo: string; n: number }[] = []

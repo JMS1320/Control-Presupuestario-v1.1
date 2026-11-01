@@ -14,6 +14,7 @@
  *
  * Los históricos sin pareja de template (jul-25 → ene-26: pagos de facturas, que por decisión no se concilian) NO entran: se cuentan aparte.
  */
+import { linkComprobantesVenta } from "@/lib/ventas/link"
 import { linkSueldosDe } from "@/lib/sueldos/link"
 import type { PropuestaMovimiento, PropuestaDeuda, Pareja, MovimientoSinConciliar } from "@/lib/conciliacion/propuestas-ejercicio"
 import { ORDEN_PROPUESTA, ORIGEN_TEXTO, TIPOS_PROPUESTA, cuentaDeTabla } from "@/lib/conciliacion/propuestas-ejercicio"
@@ -94,6 +95,8 @@ export function temasDeMovimientos(propuestas: PropuestaMovimiento[]): { temas: 
         ...p.parejas.flatMap(x => linksDePareja(x, m.cuenta.empresa)).filter((l, i, a) => a.findIndex(y => y.href === l.href) === i).slice(0, 6),
         // 📜 A-FEAT-1467 — la TIRA: si es de una persona de Sueldos, todos sus sueldos (JMS: «la tira de eso»).
         ...(p.empleado ? [{ texto: `📜 Los sueldos de ${p.empleado.nombre} (toda la tira)`, href: linkSueldosDe(p.empleado.id) }] : []),
+        // 📜 A-FEAT-1469 — la tira de la CONTRAPARTE (mismo CUIT): sus facturas, sus ventas y sus templates.
+        ...linksDeContraparte(p.contraparte),
       ],
       comparacion: comparacionDe(p),
       respondido: false,
@@ -166,4 +169,14 @@ export function temasDeCheques(cruces: CruceCheque[], extractoHasta: string | nu
       propuesta, links, accion, respondido: false,
     }
   })
+}
+
+/** 📜 A-FEAT-1469 — los links de la tira de una contraparte (facturas y ventas por empresa, templates). */
+export function linksDeContraparte(c: PropuestaMovimiento["contraparte"]): LinkDato[] {
+  if (!c) return []
+  return [
+    ...c.facturas.map(f => ({ texto: `📜 Todas las facturas de ${c.nombre} en ${f.empresa} (${f.ids.length})`, href: linkFacturas(f.ids, f.empresa) })),
+    ...c.ventas.map(v => ({ texto: `📜 Todas las ventas a ${c.nombre} en ${v.empresa} (${v.ids.length})`, href: linkComprobantesVenta(v.ids, v.empresa) })),
+    ...(c.egresos.length ? [{ texto: `📜 Los templates de ${c.nombre} (${c.egresos.length}, con sus cuotas)`, href: linkTemplates(c.egresos) }] : []),
+  ]
 }

@@ -114,6 +114,12 @@ export interface PropuestaMovimiento {
   mov: MovimientoSinConciliar
   /** 👤 A-FEAT-1467 — la persona de Sueldos de este movimiento (por su pareja de sueldo o por el CUIT del banco). */
   empleado?: { id: string; nombre: string }
+  /**
+   * 📜 A-FEAT-1469 — LA TIRA DE LA CONTRAPARTE (JMS 01/11: «tengo a Alondra que dice no tener contrapartida y yo debería
+   * ver la serie de ella para ver si le falta un cobro y es éste, o si lo meto duplico»): todo lo registrado del mismo
+   * CUIT en el ejercicio — facturas de compra, ventas y templates —, para abrirlo filtrado.
+   */
+  contraparte?: { cuit: string; nombre: string; facturas: { empresa: string; ids: string[] }[]; ventas: { empresa: string; ids: string[] }[]; egresos: string[] }
   tipo: TipoPropuesta
   propuesta: string
   pista: string
@@ -444,7 +450,8 @@ export function proponerConciliaciones(d: DatosConciliacion, empresa: string, de
     const empPareja = r.parejas.find(x => x.origen === "sueldo" && (x as Obligacion).empleadoId)
     const emp = (empPareja && (d.empleados ?? []).find(e => e.id === (empPareja as Obligacion).empleadoId))
       || (m.cuitBanco ? (d.empleados ?? []).find(e => e.cuit && e.cuit === m.cuitBanco) : undefined)
-    return { mov: m, pista, ...(emp ? { empleado: { id: emp.id, nombre: emp.nombre } } : {}), ...r }
+    const contraparte = tiraDeContraparte(m.cuitBanco || r.parejas.find(x => x.cuit)?.cuit, m.quienBanco || r.parejas[0]?.quien, d.obligaciones)
+    return { mov: m, pista, ...(emp ? { empleado: { id: emp.id, nombre: emp.nombre } } : {}), ...(contraparte ? { contraparte } : {}), ...r }
   })
 
   // Deudas de ESTA empresa en el ejercicio, sin movimiento, en un estado que dice «abierta»
@@ -459,4 +466,23 @@ export function proponerConciliaciones(d: DatosConciliacion, empresa: string, de
     }))
 
   return { movimientos, deudas }
+}
+
+/** 📜 A-FEAT-1469 — pura: todo lo del mismo CUIT entre las obligaciones (facturas y ventas por empresa; templates). */
+export function tiraDeContraparte(cuit: string | null | undefined, nombre: string | null | undefined, obligaciones: Obligacion[]): PropuestaMovimiento["contraparte"] | undefined {
+  const c = (cuit ?? "").replace(/\D/g, "")
+  if (c.length !== 11 || CUIT_PROPIOS[c]) return undefined
+  const del = obligaciones.filter(o => o.cuit === c)
+  if (!del.length) return undefined
+  const porEmpresa = (origenes: string[]) => {
+    const m = new Map<string, string[]>()
+    for (const o of del) if (origenes.includes(o.origen)) m.set(o.empresa, [...(m.get(o.empresa) ?? []), o.id])
+    return [...m.entries()].map(([empresa, ids]) => ({ empresa, ids: [...new Set(ids)] }))
+  }
+  return {
+    cuit: c, nombre: nombre || del[0].quien,
+    facturas: porEmpresa(["factura", "NC", "factura-neta-sicore"]),
+    ventas: porEmpresa(["venta"]),
+    egresos: [...new Set(del.filter(o => o.origen === "cuota" && o.egresoId).map(o => o.egresoId as string))],
+  }
 }
