@@ -9,6 +9,7 @@
  *
  * Teclado: ↓ / j siguiente · ↑ / k anterior · Esc cierra (fuera de un campo de texto).
  */
+import { agregarAlHilo, hiloDelTema, mensajesDelTema } from "@/lib/balance/hilo-tema"
 import { imagenPegada } from "@/lib/captura-imagen"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase"
@@ -63,6 +64,14 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   const [cuentas, setCuentas] = useState<Set<string>>(new Set())
   const [claveActual, setClaveActual] = useState<string | null>(claveInicial)
   const [nota, setNota] = useState("")
+  /** 🧵 Quién escribe (para el hilo del tema). */
+  const [yo, setYo] = useState<string | null>(null)
+  useEffect(() => {
+    void supabase.auth.getUser().then(({ data }) => {
+      const u = data.user
+      setYo((u?.user_metadata?.full_name as string | undefined) || (u?.user_metadata?.name as string | undefined) || u?.email || null)
+    })
+  }, [])
   /** 📷 A-FEAT-1472 — la captura pegada en «Tu respuesta» (Win+Shift+S → Ctrl+V), sin tener que pasarse el tema a uno mismo. */
   const [imagen, setImagen] = useState<string | null>(null)
   const [guardando, setGuardando] = useState(false)
@@ -144,25 +153,48 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   const borrador = useRef<{ tema: Tema | null; texto: string; imagen: string | null }>({ tema: null, texto: "", imagen: null })
   useEffect(() => { borrador.current.texto = nota }, [nota])
   useEffect(() => { borrador.current.imagen = imagen }, [imagen])
-  const guardarBorrador = async (t: Tema | null, texto: string, img: string | null = null) => {
-    const limpio = texto.trim()
-    const imagenCambio = (img ?? null) !== (t?.pendiente?.imagen ?? null)
-    if (!t || (!limpio && !img) || (limpio === (t.pendiente?.resolucion ?? "").trim() && !imagenCambio)) return
-    const cambios = { estado: "abierto", resolucion: limpio || "📷 (captura)", resuelto_at: null, imagen: img }
+  /**
+   * 🧵 A-BUG-1478 — un mensaje nuevo va AL FINAL del hilo (nunca pisa al anterior). Si el tema está pasado a alguien y sigue
+   * abierto, va al hilo de la tarea (lo ve la otra persona en su 🔔); si no, al del tema. `resolucion` lleva el último
+   * mensaje, que es lo que usan el export y el papel.
+   */
+  const escribir = async (t: Tema, texto: string, img: string | null, estado: "abierto" | "resuelto") => {
+    const msg = texto || "📷 (captura)"
+    const tarea = tareas[registroDe(t)]
+    const aLaTarea = !!tarea && estado === "abierto"
+    if (aLaTarea) {
+      const r = await fetch("/api/revisiones", { method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: tarea.id, seguimiento: msg, ...(img ? { imagen: img } : {}) }) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j?.error ?? `error ${r.status}`)
+    }
+    const cambios: Record<string, unknown> = { estado, resolucion: msg, resuelto_at: estado === "resuelto" ? ahoraISO() : null }
+    if (img) cambios.imagen = img
+    if (!aLaTarea) cambios.hilo = agregarAlHilo(t.pendiente, { fecha: ahoraISO(), autor: yo, texto: msg, imagen: img })
+    // Una respuesta vieja (de antes del hilo) no se pierde aunque el mensaje nuevo vaya a la tarea.
+    else if (!t.pendiente?.hilo?.length && (t.pendiente?.resolucion ?? "").trim()) cambios.hilo = mensajesDelTema(t.pendiente).map(({ de: _de, ...m }) => m)
     const r = t.pendiente
       ? await supabase.from("balance_pendientes").update(cambios).eq("id", t.pendiente.id)
       : await supabase.from("balance_pendientes").insert({ empresa, anio_cierre: anioCierre, texto: textoPendienteDe(t), creado_por: "recorrido del balance", ...cambios })
-    if (r.error) { toast.error(`No se pudo guardar la nota de «${t.titulo}»: ${r.error.message}`); return }
-    toast.success(`📝 Nota guardada: ${t.titulo}`)
-    await recargar()
+    if (r.error) throw r.error
+    if (aLaTarea) await recargarTareas()
   }
-  // Al cambiar de tema: lo escrito en el anterior se guarda, y la nota arranca con lo que ya se había escrito (si lo hay).
+  const guardarBorrador = async (t: Tema | null, texto: string, img: string | null = null) => {
+    const limpio = texto.trim()
+    if (!t || (!limpio && !img)) return
+    try {
+      await escribir(t, limpio, img, "abierto")
+      toast.success(`📝 Mensaje guardado: ${t.titulo}`)
+      await recargar()
+    } catch (e) { toast.error(`No se pudo guardar el mensaje de «${t.titulo}»: ${(e as Error).message}`) }
+  }
+  // Al cambiar de tema: lo escrito en el anterior se guarda como mensaje, y el cuadro arranca vacío (el hilo se ve arriba).
   useEffect(() => {
     const { tema, texto, imagen: img } = borrador.current
     if (tema && tema.clave !== actual?.clave) void guardarBorrador(tema, texto, img)
-    borrador.current = { tema: actual ?? null, texto: actual?.pendiente?.resolucion ?? "", imagen: actual?.pendiente?.imagen ?? null }
-    setNota(actual?.pendiente?.resolucion ?? "")
-    setImagen(actual?.pendiente?.imagen ?? null)
+    borrador.current = { tema: actual ?? null, texto: "", imagen: null }
+    setNota("")
+    setImagen(null)
   }, [actual?.clave]) // eslint-disable-line react-hooks/exhaustive-deps
   const cerrar = useCallback(() => {
     const { tema, texto, imagen: img } = borrador.current
@@ -235,19 +267,16 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
     if (!actual) return
     const texto = nota.trim()
     if (tipo === "nota" && !texto && !imagen) { toast.error("Escribí la nota o pegá una captura"); return }
-    const resolucion = tipo === "resuelto" ? `✓ Resuelto${texto ? `: ${texto}` : ""}`
-      : tipo === "bien" ? `👍 Está bien así${texto ? `: ${texto}` : ""}` : (texto || "📷 (captura)")
+    const mensaje = tipo === "resuelto" ? `✓ Resuelto${texto ? `: ${texto}` : ""}`
+      : tipo === "bien" ? `👍 Está bien así${texto ? `: ${texto}` : ""}` : texto
     const estado = tipo === "nota" ? "abierto" : "resuelto"
     setGuardando(true)
     try {
-      const cambios = { estado, resolucion, resuelto_at: estado === "resuelto" ? ahoraISO() : null, imagen }
-      const r = actual.pendiente
-        ? await supabase.from("balance_pendientes").update(cambios).eq("id", actual.pendiente.id)
-        : await supabase.from("balance_pendientes").insert({ empresa, anio_cierre: anioCierre, texto: textoPendienteDe(actual), creado_por: "recorrido del balance", ...cambios })
-      if (r.error) throw r.error
-      borrador.current.texto = ""   // ya quedó guardado: al pasar de tema no se vuelve a guardar como nota
-      borrador.current.imagen = null   // ídem la captura
-      toast.success(tipo === "nota" ? "Nota guardada" : "Respondido")
+      await escribir(actual, mensaje, imagen, estado)
+      borrador.current.texto = ""   // ya quedó guardado: al pasar de tema no se vuelve a guardar
+      borrador.current.imagen = null
+      setNota(""); setImagen(null)
+      toast.success(tipo === "nota" ? "Mensaje guardado" : "Respondido")
       await recargar()
       if (tipo !== "nota") ir(1)
     } catch (e) {
@@ -269,13 +298,9 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
         const { error } = await supabase.schema("msa").from("cheques").update(cambios).eq("id", a.chequeId).eq("estado", "vigente")
         if (error) throw error
       }
-      const resolucion = `⚡ Aplicado desde el recorrido: ${a.texto}${nota.trim() ? ` — ${nota.trim()}` : ""}`
-      const cambiosP = { estado: "resuelto", resolucion, resuelto_at: ahoraISO(), imagen }
-      const r = actual.pendiente
-        ? await supabase.from("balance_pendientes").update(cambiosP).eq("id", actual.pendiente.id)
-        : await supabase.from("balance_pendientes").insert({ empresa, anio_cierre: anioCierre, texto: textoPendienteDe(actual), creado_por: "recorrido del balance", ...cambiosP })
-      if (r.error) throw r.error
+      await escribir(actual, `⚡ Aplicado desde el recorrido: ${a.texto}${nota.trim() ? ` — ${nota.trim()}` : ""}`, imagen, "resuelto")
       borrador.current.texto = ""; borrador.current.imagen = null
+      setNota(""); setImagen(null)
       toast.success(`Hecho: ${a.texto}`)
       await recargar()
       ir(1)
@@ -515,20 +540,29 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
                   </button>}
                 propuestaExtra={actual.accion && !actual.respondido
                   ? <Button size="sm" onClick={aplicar} disabled={guardando} data-test="recorrido-aplicar">⚡ Aplicar: {actual.accion.texto}</Button> : null}
+                sinRespuesta
                 resolucionExtra={actual.respondido
                   ? <button type="button" className="ml-2 text-xs underline text-muted-foreground" onClick={reabrir}>reabrir</button> : null} />
 
-              {/* 👤 Si el tema está pasado a alguien, se dice a quién y qué se le pidió (con la foto, si tiene). */}
+              {/* 🧵 A-BUG-1478 — la conversación del tema, en orden: lo respondido acá + el pedido de la tarea y sus respuestas. */}
               {(() => {
                 const tarea = tareas[registroDe(actual)] as (typeof tareas)[string] & { asignado_a?: string | null } | undefined
-                if (!tarea) return null
+                const hilo = hiloDelTema(actual.pendiente, tarea)
+                if (!hilo.length && !tarea) return null
+                const cuando = (f: string) => f ? new Date(f).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""
                 return (
-                  <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm space-y-1" data-test="recorrido-tarea">
-                    <div className="text-xs font-medium uppercase tracking-wide text-amber-800">👤 Pasado a {tarea.asignado_a ?? "alguien"} · desde el {new Date(tarea.created_at).toLocaleDateString("es-AR")}{tarea.creado_por ? ` · por ${tarea.creado_por}` : ""}</div>
-                    <p className="whitespace-pre-wrap">{tarea.motivo}</p>
-                    {tarea.imagen && <img src={tarea.imagen} alt="foto adjunta" className="max-h-64 rounded border bg-white object-contain" />}
-                    {!!tarea.seguimiento?.length && <p className="whitespace-pre-wrap text-xs text-muted-foreground">Última respuesta: {tarea.seguimiento[tarea.seguimiento.length - 1].texto}</p>}
-                    <p className="text-xs text-muted-foreground">Se contesta y se cierra desde la 🔔 de quien la recibe (o Principal → Para revisar).</p>
+                  <div className={`rounded border p-3 text-sm space-y-2 ${tarea ? "border-amber-300 bg-amber-50" : "bg-muted/30"}`} data-test="recorrido-hilo">
+                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      {tarea ? `👤 Pasado a ${tarea.asignado_a ?? "alguien"} · lo que escribas acá le llega a su 🔔` : "🧵 Conversación del tema"}
+                    </div>
+                    <ul className="space-y-1.5">
+                      {hilo.map((m, i) => (
+                        <li key={i} className="whitespace-pre-wrap border-l-2 pl-2" style={{ borderColor: m.de === "tarea" ? "#f59e0b" : "#94a3b8" }}>
+                          <span className="text-xs text-muted-foreground">{m.autor ?? "—"} · {cuando(m.fecha)}</span><br />{m.texto}
+                          {m.imagen && <a href={m.imagen} target="_blank" rel="noreferrer"><img src={m.imagen} alt="captura" className="mt-1 max-h-48 rounded border bg-white object-contain" /></a>}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )
               })()}
@@ -537,7 +571,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
                 <label htmlFor="recorrido-nota" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Tu respuesta</label>
                 <textarea id="recorrido-nota" value={nota} onChange={e => setNota(e.target.value)} rows={3}
                   onPaste={e => { void imagenPegada(e.nativeEvent).then(img => { if (img) setImagen(img) }) }}
-                  placeholder="Qué es, qué hacer, o a quién preguntarle… Podés pegar una captura (Win+Shift+S → Ctrl+V). Si pasás a otro tema sin apretar un botón, se guarda solo como nota."
+                  placeholder="Escribí abajo de todo: se agrega como último mensaje (no pisa lo anterior). Podés pegar una captura (Win+Shift+S → Ctrl+V). Si pasás a otro tema sin apretar un botón, se guarda solo."
                   className="w-full rounded border bg-background p-2 text-sm" />
                 {imagen && (
                   <div className="relative inline-block" data-test="recorrido-captura">
@@ -549,7 +583,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
                 <div className="flex flex-wrap gap-2">
                   <Button size="sm" onClick={() => responder("resuelto")} disabled={guardando}>✓ Resuelto</Button>
                   <Button size="sm" variant="outline" onClick={() => responder("bien")} disabled={guardando}>👍 Está bien así</Button>
-                  <Button size="sm" variant="outline" onClick={() => responder("nota")} disabled={guardando}>📝 Guardar nota (sigue abierto)</Button>
+                  <Button size="sm" variant="outline" onClick={() => responder("nota")} disabled={guardando}>📝 Guardar mensaje (sigue abierto)</Button>
                   <PasarTarea key={actual.clave} etiqueta="👤 Pasarle a…"
                     className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-amber-50 px-3 text-sm text-amber-900 hover:bg-amber-100"
                     ancla={{ schema: "public", tabla: "recorrido_balance", registroId: registroDe(actual), descripcion: `Balance ${empresa} ${etiqueta} · ${actual.titulo}`.slice(0, 300) }}

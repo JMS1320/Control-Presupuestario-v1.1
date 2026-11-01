@@ -1340,6 +1340,8 @@ export function useMotorConciliacion() {
       proveedor_nombre: proveedor,
       comprobantes_pagados: fc ? `${abrev((fc as any).tipo_comprobante)} - ${(fc as any).numero_desde ?? ''}` : null,
       comprobante_arca_id: facturaId, anticipo_id: ch.anticipo_id || null,
+      // 🧾 script 164 — qué echeq pagó este débito (sólo las 3 cuentas bancarias de MSA tienen la columna).
+      ...(['msa_galicia', 'msa_santander', 'msa_provincia'].includes(cuenta.id) ? { cheque_id: ch.id } : {}),
     })
     // ¿Era el último echeq vigente de lo que paga? Entonces lo que paga queda conciliado (sólo si el match es seguro).
     if (estado === 'conciliado') {

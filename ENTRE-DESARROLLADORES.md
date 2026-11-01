@@ -40,6 +40,9 @@
 
 ## 📨 PARA JAVIER
 
+### 🚦 `vercel.json` nuevo: Vercel deja de publicar algunos push (2026-11-01, OK de JMS)
+- Por el tope del plan gratis (100 publicaciones por día; el 31/10 y el 01/11 rebotaron varias). `scripts/vercel-ignorar.sh`: **no** publica las ramas `jms/*` ni un push que sólo cambie `*.md` o `scripts/*.sql`. **Tus ramas y `main` publican igual que siempre** (salvo un push sólo de documentación). Si algo tuyo no se publica y debería, avisá y lo ajustamos.
+
 ### 🧾 1 columna nueva `cheque_id` en `public.msa_galicia`, `msa.santander` y `msa.provincia` (2026-11-01) — ⏳ AVISO PREVIO (se corre a continuación con OK de JMS)
 - `scripts/164-cheque-id-en-movimientos.sql` (+ `-deshacer`). El echeq que pagó cada débito (FK a `msa.cheques`, al borrarse queda null). Vacía, comentario `[script 164]`. **Sin cambios de RLS ni de permisos.** La llena el motor de conciliación.
 

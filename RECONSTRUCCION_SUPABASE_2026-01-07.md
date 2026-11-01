@@ -3332,6 +3332,15 @@ Alta de `MA` (CUIL 27-06682461-1, `plano_ipc`, MSA, ingreso 01/06/2025, id fijo 
 ### 2026-10-29 · Stock declarado al 30/06/2025 de MSA (script 132, DATOS) — A-FEAT-1420 — ✅ CORRIDO con OK de JMS
 Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantidad 0, marca `[script 132]` en observaciones), 94 renglones en `stock_inicio` ($ 31.730.444,08 = la planilla) y 3 `pasturas`. Se corre con `scripts/132-stock-inicio-msa-30-06-2025.mts` (desde su `.json`; el `.sql` es el registro legible). Deshacer: `scripts/132-stock-inicio-msa-30-06-2025-deshacer.sql` (por ids; frena si un producto ya tiene movimientos).
 
+### 2026-11-01 · cheque_id en los movimientos de MSA (script 164, ESTRUCTURA) — A-FEAT-1476 — ✅ CORRIDO con OK de JMS («6) ok»)
+`public.msa_galicia`, `msa.santander`, `msa.provincia` + `cheque_id uuid` → `msa.cheques(id)` on delete set null, vacías, comentario `[script 164]`. Al reconstruir: después de crear `msa.cheques`. Deshacer: `164-…-deshacer.sql` (sólo si siguen vacías).
+
+### 2026-11-01 · AMS: 2 sueldos pagados por Santander (script 163, DATOS) — ✅ CORRIDO con OK de JMS («el pago que sale hacia Andrés va a la cuenta de sueldos de Andrés»)
+`sueldos.pagos` +2 (01/08/2025 $ 389.920 → jul-25; 01/09/2025 $ 238.994 → ago-25), `sueldos.periodos` de jul y ago 2025 suben en lo mismo, `msa.santander` 7d5fae13 y a394d55b conciliados (CATEG Sueldos). Marca `[script 163]`. El del 08/07/2025 ($ 1.064.403) espera a JMS. Deshacer: `163-…-deshacer.sql`.
+
+### 2026-11-01 · Hilo de «Tu respuesta» (script 162, ESTRUCTURA) — A-BUG-1478 — ✅ CORRIDO con OK de JMS («un hilo secuencial»)
+`public.balance_pendientes` + `hilo jsonb` ([{fecha, autor, texto, imagen?}], se agregan), vacía, comentario `[script 162]`. Al reconstruir: después del 80. Deshacer: `162-…-deshacer.sql` (sólo si sigue vacía).
+
 ### 2026-11-01 · Voyage: cuotas 2026 del template de cuotas desactivadas (script 161, DATOS) — A-BUG-1477 — ✅ CORRIDO 2026-11-01 con OK de JMS («voyage debe quedar las cuotas desactivadas y el anual activado»)
 `public.cuotas_egresos_sin_factura`: las 6 cuotas 2026 de «Imp Automotores Voyage Cuota» (template c8abaa5e…, ya desactivado) pendiente → desactivado, como hace el pase a anual. El anual (863e7c88…) queda activo con su cuota del 30/01/2026 conciliada. Deshacer: `161-…-deshacer.sql` (por ids).
 

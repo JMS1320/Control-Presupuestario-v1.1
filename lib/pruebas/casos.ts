@@ -214,6 +214,7 @@ import { empleadoPorNombre, tiraDeContraparte, proponerConciliaciones, CUENTAS_C
 import { temasDeMovimientos, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
 import { cruzarChequesConDebitos, numeroEnDescripcion } from "@/lib/conciliacion/cheques-vencidos"
 import { echeqDelDebito } from "@/lib/conciliacion/echeq-del-debito"
+import { agregarAlHilo, hiloDelTema } from "@/lib/balance/hilo-tema"
 import { RENGLONES as RENGLONES_BALANCE } from "@/lib/balance/balance-propio"
 import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
@@ -5447,7 +5448,7 @@ export function correrCasos(): Resultado[] {
     const cobFF = armarCobertura({ libro: libroCob, fechaInicio: "2025-07-01", bancarios: { cadenas: [], saldos: [] } as never,
       templates: { detalle: [cuotaOG(1000000), cuotaOG(688345)], porMes: [], columnas: [], totalDebitos: 0, totalCreditos: 0, sinCategoria: [], sinFecha: [] } as never })
     const ff = cobFF.items.find(i => i.dato === "Fondo fijo (caja)")
-    const vFF = `${/«Otros Gastos» \(gastos del fondo fijo\) \$ 1\.688\.345,00 en 2 cuota\(s\) — 2 sin CATEG/.test(ff?.detalle ?? "") ? "total y sin categ" : ff?.detalle} · ${ff?.links?.some(l => /templates=tpl-otros/.test(l.href)) ? "link" : "sin link"} · ${ff?.comparacion ? "cuenta" : "sin cuenta"}`
+    const vFF = `${/«Otros Gastos» \(gastos del fondo fijo\) \$ 1\.688\.345,00 en 2 cuota\(s\), mirado por template/.test(ff?.detalle ?? "") ? "total y sin categ" : ff?.detalle} · ${ff?.links?.some(l => /templates=tpl-otros/.test(l.href)) ? "link" : "sin link"} · ${ff?.comparacion ? "cuenta" : "sin cuenta"}`
     chequear("Balance · fondo fijo", "🔗 El fondo fijo muestra el total de «Otros Gastos» del ejercicio (y avisa si le falta CATEG), con el link a sus cuotas y la cuenta contra 24/25",
       "total y sin categ · link · cuenta", vFF, vFF === "total y sin categ · link · cuenta", "A-FEAT-1471")
     // 📄 Punto 3: cada dato del catálogo tiene su fuente prevista y su link. Un saldo de INICIO tiene como fuente el balance
@@ -5620,6 +5621,20 @@ export function correrCasos(): Resultado[] {
       const esp = "c102/numero/4 · nada · cSin/importe/19 · nada · nada · nada"
       chequear("Conciliación", "🧾 El débito de un echeq va contra su echeq: por número seguro; por importe sólo en 30 días y sin empate",
         esp, vEch, vEch === esp, "A-FEAT-1476")
+    }
+
+    // 🧵 A-BUG-1478 — el mensaje nuevo se AGREGA al final (la respuesta vieja queda primera); con tarea, una sola conversación
+    // en orden de fecha, sin repetir el pedido que se pasó tal cual.
+    {
+      const viejo = { resolucion: "Primer mensaje", created_at: "2026-11-01T01:00:00Z", resuelto_at: null, hilo: null }
+      const h1 = agregarAlHilo(viejo, { fecha: "2026-11-01T02:00:00Z", autor: "JMS", texto: "Segundo" })
+      const h2 = agregarAlHilo({ hilo: h1 }, { fecha: "2026-11-01T03:00:00Z", autor: "JMS", texto: "Tercero" })
+      const conTarea = hiloDelTema({ resolucion: "Pedido igual", created_at: "2026-11-01T01:00:00Z", hilo: null },
+        { motivo: "Pedido igual", created_at: "2026-11-01T01:05:00Z", creado_por: "JMS", seguimiento: [{ fecha: "2026-11-01T04:00:00Z", texto: "Respuesta", autor: "Claude" }] })
+      const vH = `${h2.map(m => m.texto).join(">")} · ${conTarea.map(m => `${m.de}:${m.texto}`).join(">")}`
+      const espH = "Primer mensaje>Segundo>Tercero · tarea:Pedido igual>tarea:Respuesta"
+      chequear("Recorrido", "🧵 «Tu respuesta» es un hilo: lo nuevo va al final y no pisa; con tarea, una sola conversación",
+        espH, vH, vH === espH, "A-BUG-1478")
     }
 
     // 🔤 A-BUG-1475 — por nombre cuando el CUIT no coincide: uno solo, todas las palabras; dos candidatos = ninguno.

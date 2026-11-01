@@ -20,6 +20,8 @@ export interface PendienteBalance {
   resuelto_at: string | null
   /** 📷 A-FEAT-1472 — la captura pegada en «Tu respuesta» del recorrido (data-URL; script 159). */
   imagen?: string | null
+  /** 🧵 A-BUG-1478 — los mensajes del tema, en orden (script 162). Se agregan, no se pisan. */
+  hilo?: { fecha: string; autor: string | null; texto: string; imagen?: string | null }[] | null
 }
 
 const dmy = (iso: string | null) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : '')

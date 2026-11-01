@@ -25,7 +25,7 @@ export const COLOR: Record<GrupoTema, string> = {
   "cheque": "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-900",
 }
 
-export function DetalleTema({ tema, arriba, enAppExtra, propuestaExtra, resolucionExtra }: {
+export function DetalleTema({ tema, arriba, enAppExtra, propuestaExtra, resolucionExtra, sinRespuesta }: {
   tema: Tema
   /** A la derecha del encabezado (p. ej. «3 de 419» y el botón de abrir aparte). */
   arriba?: ReactNode
@@ -35,6 +35,8 @@ export function DetalleTema({ tema, arriba, enAppExtra, propuestaExtra, resoluci
   propuestaExtra?: ReactNode
   /** Al lado de la respuesta guardada (reabrir). */
   resolucionExtra?: ReactNode
+  /** 🧵 La respuesta se muestra aparte, como hilo (en el recorrido); acá no se repite. */
+  sinRespuesta?: boolean
 }) {
   const fuente = fuenteDe(tema)
   const enApp = linksDeLaApp(tema)
@@ -117,7 +119,7 @@ export function DetalleTema({ tema, arriba, enAppExtra, propuestaExtra, resoluci
         </div>
       )}
 
-      {tema.pendiente?.resolucion && (
+      {tema.pendiente?.resolucion && !sinRespuesta && (
         <div className="rounded border bg-muted/40 p-3 text-sm">
           <span className="text-muted-foreground">{tema.respondido ? "Respondido" : "Nota"}: </span>{tema.pendiente.resolucion}
           {tema.pendiente.imagen && <img src={tema.pendiente.imagen} alt="captura de la respuesta" className="mt-2 max-h-64 rounded border bg-white object-contain" />}

@@ -346,9 +346,10 @@ const REGLAS: Regla[] = [
       const totalOtros = Math.round(otros.reduce((x, c) => x + c.monto, 0) * 100) / 100
       const egresos = [...new Set(otros.map(c => c.egresoId).filter((x): x is string => !!x))]
       const linkOtros = egresos.length ? [{ texto: `Template «Otros Gastos» (el fondo fijo: ${otros.length} cuota(s))`, href: linkTemplates(egresos) }] : []
-      const sinCateg = otros.filter(c => !c.categ).length
+      // ⚠️ cambió 01/11 (JMS: «tiene sub templates, lo debemos ver por su template, no por su cuenta, por ahora»): ya no se
+      // avisa que le falta CATEG.
       const otrosTxt = otros.length
-        ? `«Otros Gastos» (gastos del fondo fijo) ${pesos(totalOtros)} en ${otros.length} cuota(s)${sinCateg ? ` — ${sinCateg} sin CATEG: cargarle la cuenta al template` : ""}`
+        ? `«Otros Gastos» (gastos del fondo fijo) ${pesos(totalOtros)} en ${otros.length} cuota(s), mirado por template`
         : "no hay cuotas del template «Otros Gastos» en el ejercicio"
       const comparacion = { titulo: "Fondo fijo: lo del balance 24/25 contra «Otros Gastos» 25/26", celdas: [
         ["Concepto", "Importe"], ["Fondo fijo (balance 24/25)", celdaNumero(1194833.68)], ["«Otros Gastos» 25/26 (cuotas del template)", celdaNumero(totalOtros)],
