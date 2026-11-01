@@ -56,6 +56,7 @@ import { temasDeMovimientos, temasDeDeudas, temasDeCheques } from "@/lib/balance
 import { leerTemasSueldoOtraPersona } from "@/lib/balance/control-sueldo-otra-persona"
 import { leerExtrasTemas } from "@/lib/balance/series-tema"
 import { leerTemasTarjeta } from "@/lib/balance/control-tarjeta"
+import { leerTemasSinCateg } from "@/lib/balance/control-sin-categ"
 import { leerParaTuVisto, aplicarParaTuVisto, type TareaPorConfirmar } from "@/lib/balance/para-tu-visto"
 import { leerChequesVencidos } from "@/lib/conciliacion/cheques-vencidos"
 import { RecorridoBalance } from "./recorrido-balance"
@@ -213,6 +214,9 @@ export function PapelesDeBalance() {
       setCargandoConciliacion("controlando los pagos de sueldo contra el CUIT del banco…")
       const ctl = await leerTemasSueldoOtraPersona(supabase, empresa.id, desde, hasta)
       if (ctl.error) datos.avisos.push(`control de sueldos: ${ctl.error}`)
+      // 🏷️ A-FEAT-1496: conciliados sin categoría (en el balance no caen en ninguna cuenta)
+      const sc = await leerTemasSinCateg(supabase, empresa.id, desde, hasta)
+      if (sc.error) datos.avisos.push(`conciliados sin categoría: ${sc.error}`)
       // 💳 A-FEAT-1481: la tarjeta por causa (pagos sin vincular, peajes, históricos…); esos movimientos no salen además sueltos
       setCargandoConciliacion("agrupando la tarjeta por causa…")
       const tj = await leerTemasTarjeta(supabase, empresa.id, desde, hasta)
@@ -222,7 +226,7 @@ export function PapelesDeBalance() {
       setCargandoConciliacion("trayendo lo que espera tu visto…")
       const vt = await leerParaTuVisto(supabase, empresa.id, anioCierre, ex.extras)
       if (vt.error) datos.avisos.push(`para tu visto: ${vt.error}`)
-      setConciliacion({ movimientos: [...tj.temas, ...movSinTarjeta], deudas: temasDeDeudas(r.deudas, empresa.id, ex.extras), cheques: temasDeCheques(ch.cruces, ch.extractoHasta), controles: ctl.temas, visto: { tareas: vt.tareas, rearmados: vt.rearmados },
+      setConciliacion({ movimientos: [...tj.temas, ...movSinTarjeta], deudas: temasDeDeudas(r.deudas, empresa.id, ex.extras), cheques: temasDeCheques(ch.cruces, ch.extractoHasta), controles: [...ctl.temas, ...sc.temas], visto: { tareas: vt.tareas, rearmados: vt.rearmados },
         historicos: mov.historicos, avisos: datos.avisos, porCuenta: datos.porCuenta,
         calculado: new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) })
       if (datos.avisos.length && !silencioso) toast.warning(`Conciliación: no se pudo leer ${datos.avisos.length} cosa(s) — ${datos.avisos.slice(0, 2).join(" · ")}`)

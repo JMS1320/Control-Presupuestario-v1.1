@@ -215,6 +215,7 @@ import { temasDeMovimientos, temasDeCheques } from "@/lib/balance/recorrido-conc
 import { temasSueldoOtraPersona } from "@/lib/balance/control-sueldo-otra-persona"
 import { linksSerieMovimientos, linksSerieNombre, claveNombre, parDeTemplate } from "@/lib/balance/series-tema"
 import { temasTarjeta } from "@/lib/balance/control-tarjeta"
+import { temasSinCateg } from "@/lib/balance/control-sin-categ"
 import { aplicarParaTuVisto } from "@/lib/balance/para-tu-visto"
 import { pendientesConVisto } from "@/lib/balance/pendientes-balance"
 import { bloqueSantander, IDS_CON_PARSEO } from "@/lib/extractos/cuentas-con-parseo"
@@ -5717,6 +5718,17 @@ export function correrCasos(): Resultado[] {
   }
 
   /**
+   * 🏷️ **CONCILIADOS SIN CATEGORÍA — A-FEAT-1496.** Un tema por cuenta, en Errores, con el vínculo de cada movimiento
+   * (de dónde sacar la categoría); una cuenta sin casos no arma tema.
+   */
+  {
+    const t = temasSinCateg([{ cuentaId: "msa_galicia", nombre: "MSA Galicia", movs: [{ id: "e102", fecha: "2026-05-26", importe: 1455755.7, signo: "−", descripcion: "Echeq 48 Hs. Nro. 102", vinculo: "una factura" }] },
+      { cuentaId: "caja_general", nombre: "MSA Caja general", movs: [] }])
+    const v = `${t.length} · ${t[0]?.grupo} · ${/vinculado a una factura/.test(t[0]?.que ?? "")}`
+    chequear("Recorrido · conciliados sin categoría", "🏷️ Un conciliado sin categoría sale en Errores con su vínculo; una cuenta sin casos no arma tema", "1 · error · true", v, v === "1 · error · true", "A-FEAT-1496")
+  }
+
+  /**
    * 🧺 **LA TANDA DE PAGOS DE LA TARJETA — A-FEAT-1491.** Cada resumen con su débito y su «SU PAGO» es un renglón con
    * sus links; el que difiere arranca destildado con el aviso; los «SU PAGO» de la tanda no salen como «sin débito».
    */
@@ -5819,10 +5831,14 @@ export function correrCasos(): Resultado[] {
       { id: "t2", clave: "conc:msa_galicia:manuel", descripcion: "d", resolucion: "Script 160", resueltoPor: "Claude", motivo: "m" },
     ]
     const rearmados = [{ ...base("conc:msa_galicia:manuel", "conciliacion"), grupo: "visto" as const }, { ...base("conc:msa_galicia:echeq102", "conciliacion"), grupo: "visto" as const, titulo: "duplicado" }]
+    // ⚠️ 01/11: una tarea DEVUELTA (abierta, de Claude) mantiene el tema rearmado, pero no regrupa uno que sale solo
+    const dev = aplicarParaTuVisto([base("conc:msa_galicia:abierto", "conciliacion")], [{ id: "d1", clave: "conc:msa_galicia:abierto", descripcion: "d", resolucion: "", resueltoPor: "", motivo: "m", devuelta: true },
+      { id: "d2", clave: "conc:msa_galicia:ido", descripcion: "d", resolucion: "", resueltoPor: "", motivo: "m", devuelta: true }], [{ ...base("conc:msa_galicia:ido", "conciliacion"), grupo: "visto" as const }])
+    const devOk = dev.length === 2 && dev[0].grupo === "conciliacion" && dev[1].clave.endsWith("ido")
     const resp = (id: string, creado: string) => ({ id, empresa: "MSA", anio_cierre: 2026, texto: "[conc:msa_galicia:manuel] Manuel", estado: "abierto" as const, resolucion: null, created_at: creado, resuelto_at: null })
     const r = aplicarParaTuVisto(temas, tareas, rearmados, [resp("viejo", "2026-11-01T02:00"), resp("nuevo", "2026-11-01T09:00")])
     // ⚠️ 01/11: el rearmado lleva su respuesta (la más reciente): si no, cada mensaje creaba otra fila
-    const v = r.map(t => `${t.clave.split(":").pop()}=${t.grupo}`).join(" · ") + ` · ${r.length}` + (r.find(t => t.clave.endsWith("manuel"))?.pendiente?.id === "nuevo" ? "" : " · SIN SU RESPUESTA")
+    const v = r.map(t => `${t.clave.split(":").pop()}=${t.grupo}`).join(" · ") + ` · ${r.length}` + (r.find(t => t.clave.endsWith("manuel"))?.pendiente?.id === "nuevo" ? "" : " · SIN SU RESPUESTA") + (devOk ? "" : " · DEVUELTA MAL")
     const esp = "echeq102=visto · otra=deuda · manuel=visto · 3"
     chequear("Recorrido · para tu visto", "✔ Lo resuelto por Claude queda en «Para tu visto» (el que sale y el rearmado), sin duplicar; lo demás no cambia", esp, v,
       v === esp && r[0].que.startsWith("✔ Lo que se hizo: El motor lo concilia") && r[0].titulo !== "duplicado" && r[0].etiqueta === "Hecho por Claude — falta tu visto", "A-FEAT-1487")

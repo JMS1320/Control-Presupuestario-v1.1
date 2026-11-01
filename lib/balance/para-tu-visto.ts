@@ -28,10 +28,12 @@ const dmy = (f?: string | null) => (f ? f.slice(0, 10).split("-").reverse().join
 const plata = (x: number) => `$ ${x.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 /** Lo que importa de una tarea por confirmar. */
-export interface TareaPorConfirmar { id: string; clave: string; descripcion: string; resolucion: string; resueltoPor: string; motivo: string }
+export interface TareaPorConfirmar { id: string; clave: string; descripcion: string; resolucion: string; resueltoPor: string; motivo: string
+  /** ⚠️ 01/11: una tarea DEVUELTA (abierta, en manos de Claude) también mantiene su tema — si no, al devolver desaparecía. */
+  devuelta?: boolean }
 
-const etiquetaVisto = (t: TareaPorConfirmar) => `Hecho por ${t.resueltoPor || "Claude"} — falta tu visto`
-const queVisto = (t: TareaPorConfirmar) => `✔ Lo que se hizo: ${t.resolucion || "(sin resumen)"}`
+const etiquetaVisto = (t: TareaPorConfirmar) => t.devuelta ? "Devuelto a Claude — en curso" : `Hecho por ${t.resueltoPor || "Claude"} — falta tu visto`
+const queVisto = (t: TareaPorConfirmar) => t.devuelta ? "↩ En manos de Claude (lo devolviste o se lo pediste): la conversación sigue abajo." : `✔ Lo que se hizo: ${t.resolucion || "(sin resumen)"}`
 
 /**
  * Pura: pasa al grupo «Para tu visto» los temas que tienen una tarea por confirmar, y agrega los rearmados para las que
@@ -44,7 +46,8 @@ export function aplicarParaTuVisto(temas: Tema[], tareas: TareaPorConfirmar[], r
   const porClave = new Map(tareas.map(t => [t.clave, t]))
   const out = temas.map(t => {
     const tarea = porClave.get(t.clave)
-    return tarea ? { ...t, grupo: "visto" as const, etiqueta: etiquetaVisto(tarea), que: `${queVisto(tarea)}\n\n${t.que}`, respondido: false } : t
+    // una tarea abierta de Claude sobre un tema que todavía sale solo: el tema queda en su grupo (no es «para tu visto»)
+    return tarea && !tarea.devuelta ? { ...t, grupo: "visto" as const, etiqueta: etiquetaVisto(tarea), que: `${queVisto(tarea)}\n\n${t.que}`, respondido: false } : t
   })
   const hay = new Set(out.map(t => t.clave))
   for (const r of rearmados) if (!hay.has(r.clave)) { out.push({ ...r, pendiente: respuestaDe(r.clave) }); hay.add(r.clave) }
@@ -124,9 +127,11 @@ export async function leerParaTuVisto(sb: Cliente, empresa: string, anioCierre: 
     const j = await (await fetch("/api/revisiones")).json()
     const prefijo = `${empresa}:${anioCierre}:`
     const tareas: TareaPorConfirmar[] = ((j.revisiones ?? []) as Record<string, unknown>[])
-      .filter(v => v.tabla_ref === "recorrido_balance" && v.estado === "por_confirmar" && String(v.registro_id ?? "").startsWith(prefijo))
+      // por confirmar (falta tu visto) y DEVUELTAS a Claude con algo ya hecho (abiertas con resolución): las dos siguen
+      .filter(v => v.tabla_ref === "recorrido_balance" && String(v.registro_id ?? "").startsWith(prefijo)
+        && (v.estado === "por_confirmar" || (v.estado === "abierta" && v.asignado_a === "claude")))
       .map(v => ({ id: String(v.id), clave: String(v.registro_id).slice(prefijo.length), descripcion: String(v.descripcion_ref ?? ""),
-        resolucion: String(v.resolucion ?? ""), resueltoPor: String(v.resuelto_por ?? ""), motivo: String(v.motivo ?? "") }))
+        resolucion: String(v.resolucion ?? ""), resueltoPor: String(v.resuelto_por ?? ""), motivo: String(v.motivo ?? ""), devuelta: v.estado === "abierta" }))
     const rearmados: Tema[] = []
     for (const t of tareas) {
       let tema: Tema | null = null

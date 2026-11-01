@@ -1317,15 +1317,18 @@ export function useMotorConciliacion() {
       : { data: null }
     const facturaId = ch.factura_id || (ant as any)?.factura_id || null
     const { data: fc } = facturaId
-      ? await supabase.schema('msa').from('comprobantes_arca').select('id, categ, nro_cuenta, tipo_comprobante, numero_desde').eq('id', facturaId).maybeSingle()
+      // ⚠️ 01/11 (nota 🌙 JMS: «lo concilió al echeq pero lo dejó sin categ y la factura tiene»): pedía `categ`, una
+      // columna que comprobantes_arca NO tiene → la consulta fallaba en silencio y el movimiento quedaba sin factura,
+      // sin cuenta, sin categoría y sin centro de costo. La categoría sale del plan de cuentas por el nro de cuenta.
+      ? await supabase.schema('msa').from('comprobantes_arca').select('id, cuenta_contable, nro_cuenta, centro_costo, tipo_comprobante, numero_desde').eq('id', facturaId).maybeSingle()
       : { data: null }
-    let categAnt: string | null = null
-    if ((ant as any)?.nro_cuenta) {
-      const { data: cta } = await supabase.from('cuentas_contables').select('categ').eq('nro_cuenta', (ant as any).nro_cuenta).maybeSingle()
-      categAnt = (cta as any)?.categ ?? null
-    }
     const nroCuenta = (ant as any)?.nro_cuenta || (fc as any)?.nro_cuenta || null
-    const categ = ((ant as any)?.nro_cuenta ? categAnt : (fc as any)?.categ) || null
+    let categ: string | null = null
+    if (nroCuenta) {
+      const { data: cta } = await supabase.from('cuentas_contables').select('categ').eq('nro_cuenta', nroCuenta).maybeSingle()
+      categ = (cta as any)?.categ ?? null
+    }
+    if (!categ) categ = (fc as any)?.cuenta_contable || null
     const abrev = (t: number) => [2,7,12,52,202,207,212].includes(t) ? 'ND' : [3,8,13,53,203,208,213].includes(t) ? 'NC' : 'FC'
     const numero = ch.numero || null
     const desvio = textoDesvio(ech.desvioDias)
@@ -1337,6 +1340,7 @@ export function useMotorConciliacion() {
     const detalle = (movimiento as any).detalle || `${(ant as any)?.descripcion || ch.concepto || 'Pago'} · echeq${numero ? ` Nº ${numero}` : ''} (${desvio})`
     await actualizarMovimientoBD(cuenta, movimiento.id, {
       categ, nro_cuenta: nroCuenta, detalle, estado, motivo_revision: motivos.join(' · ') || null,
+      ...((fc as any)?.centro_costo ? { centro_de_costo: (fc as any).centro_costo } : {}),
       proveedor_nombre: proveedor,
       comprobantes_pagados: fc ? `${abrev((fc as any).tipo_comprobante)} - ${(fc as any).numero_desde ?? ''}` : null,
       comprobante_arca_id: facturaId, anticipo_id: ch.anticipo_id || null,
