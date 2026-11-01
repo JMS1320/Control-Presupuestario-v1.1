@@ -21,6 +21,7 @@ import { linkTemplates } from "@/lib/impuestos/planilla"
 import { linkSueldosDe } from "@/lib/sueldos/link"
 import type { LinkDato } from "./cobertura-papeles"
 import type { Tema } from "./recorrido"
+import type { PendienteBalance } from "./pendientes-balance"
 import { linksSerieMovimientos, linksSerieNombre, parDeTemplate, SIN_EXTRAS, type ExtrasTemas } from "./series-tema"
 
 const dmy = (f?: string | null) => (f ? f.slice(0, 10).split("-").reverse().join("/") : "")
@@ -36,14 +37,17 @@ const queVisto = (t: TareaPorConfirmar) => `✔ Lo que se hizo: ${t.resolucion |
  * Pura: pasa al grupo «Para tu visto» los temas que tienen una tarea por confirmar, y agrega los rearmados para las que
  * ya no tienen tema. Un tema rearmado sólo entra si no hay otro con la misma clave.
  */
-export function aplicarParaTuVisto(temas: Tema[], tareas: TareaPorConfirmar[], rearmados: Tema[]): Tema[] {
+export function aplicarParaTuVisto(temas: Tema[], tareas: TareaPorConfirmar[], rearmados: Tema[], pendientes: PendienteBalance[] = []): Tema[] {
+  // ⚠️ 01/11: el tema rearmado tiene que llevar SU respuesta (la fila de «Pendientes a revisar» con su clave). Sin esto,
+  // cada mensaje escrito en un tema rearmado creaba una fila nueva y la conversación quedaba partida (pasó con Manuel).
+  const respuestaDe = (clave: string) => [...pendientes].filter(p => p.texto.startsWith(`[${clave}]`)).sort((a, b) => a.created_at.localeCompare(b.created_at)).pop()
   const porClave = new Map(tareas.map(t => [t.clave, t]))
   const out = temas.map(t => {
     const tarea = porClave.get(t.clave)
     return tarea ? { ...t, grupo: "visto" as const, etiqueta: etiquetaVisto(tarea), que: `${queVisto(tarea)}\n\n${t.que}`, respondido: false } : t
   })
   const hay = new Set(out.map(t => t.clave))
-  for (const r of rearmados) if (!hay.has(r.clave)) { out.push(r); hay.add(r.clave) }
+  for (const r of rearmados) if (!hay.has(r.clave)) { out.push({ ...r, pendiente: respuestaDe(r.clave) }); hay.add(r.clave) }
   return out
 }
 

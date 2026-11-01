@@ -336,7 +336,7 @@ export function PapelesDeBalance() {
     // 🧾 Los subdiarios, en la base y con lo presentado a ARCA como fuente (JMS 31/10).
     const conArca = (ts: ReturnType<typeof armarTemas>) => subdiariosContraArca(ts, ddjjGuardadas?.filas ?? null, libro.ejercicio.subdiarios.length)
     // ✔ A-FEAT-1487: los temas con una tarea por confirmar pasan a «Para tu visto» (o se rearman si ya no salen solos)
-    const visto = (ts: Tema[]) => conciliacion?.visto ? aplicarParaTuVisto(ts, conciliacion.visto.tareas, conciliacion.visto.rearmados) : ts
+    const visto = (ts: Tema[]) => conciliacion?.visto ? aplicarParaTuVisto(ts, conciliacion.visto.tareas, conciliacion.visto.rearmados, pendientes) : ts
     try { return visto(conArca(armarTemas(coberturaDeArgs(...argsDelExcel(libro)), pendientes, otros))) } catch { return visto(conArca(armarTemas(null, pendientes, otros))) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [libro, empresa.id, templates, hacienda, cuentas, valores, bancarios, sueldos, cuentasCorrientesConInicio,

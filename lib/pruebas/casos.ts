@@ -5819,8 +5819,10 @@ export function correrCasos(): Resultado[] {
       { id: "t2", clave: "conc:msa_galicia:manuel", descripcion: "d", resolucion: "Script 160", resueltoPor: "Claude", motivo: "m" },
     ]
     const rearmados = [{ ...base("conc:msa_galicia:manuel", "conciliacion"), grupo: "visto" as const }, { ...base("conc:msa_galicia:echeq102", "conciliacion"), grupo: "visto" as const, titulo: "duplicado" }]
-    const r = aplicarParaTuVisto(temas, tareas, rearmados)
-    const v = r.map(t => `${t.clave.split(":").pop()}=${t.grupo}`).join(" · ") + ` · ${r.length}`
+    const resp = (id: string, creado: string) => ({ id, empresa: "MSA", anio_cierre: 2026, texto: "[conc:msa_galicia:manuel] Manuel", estado: "abierto" as const, resolucion: null, created_at: creado, resuelto_at: null })
+    const r = aplicarParaTuVisto(temas, tareas, rearmados, [resp("viejo", "2026-11-01T02:00"), resp("nuevo", "2026-11-01T09:00")])
+    // ⚠️ 01/11: el rearmado lleva su respuesta (la más reciente): si no, cada mensaje creaba otra fila
+    const v = r.map(t => `${t.clave.split(":").pop()}=${t.grupo}`).join(" · ") + ` · ${r.length}` + (r.find(t => t.clave.endsWith("manuel"))?.pendiente?.id === "nuevo" ? "" : " · SIN SU RESPUESTA")
     const esp = "echeq102=visto · otra=deuda · manuel=visto · 3"
     chequear("Recorrido · para tu visto", "✔ Lo resuelto por Claude queda en «Para tu visto» (el que sale y el rearmado), sin duplicar; lo demás no cambia", esp, v,
       v === esp && r[0].que.startsWith("✔ Lo que se hizo: El motor lo concilia") && r[0].titulo !== "duplicado" && r[0].etiqueta === "Hecho por Claude — falta tu visto", "A-FEAT-1487")
