@@ -25,6 +25,7 @@ import { celdaNumero, type Comparacion } from "@/lib/cuaderno/papel-de-trabajo"
 import type { LinkDato } from "./cobertura-papeles"
 import type { Tema } from "./recorrido"
 import type { CruceCheque } from "@/lib/conciliacion/cheques-vencidos"
+import { SIN_EXTRAS, linksSerieMovimientos, parDeTemplate, type ExtrasTemas } from "./series-tema"
 
 const dmy = (f?: string | null) => (f ? f.slice(0, 10).split("-").reverse().join("/") : "")
 const plata = (x: number) => `$ ${x.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -70,20 +71,23 @@ function comparacionDe(p: PropuestaMovimiento): Comparacion | undefined {
 }
 
 /** Los temas de conciliación de movimientos, en el orden en que conviene recorrerlos. */
-export function temasDeMovimientos(propuestas: PropuestaMovimiento[]): { temas: Tema[]; historicos: number } {
+export function temasDeMovimientos(propuestas: PropuestaMovimiento[], extras: ExtrasTemas = SIN_EXTRAS): { temas: Tema[]; historicos: number } {
   const utiles = propuestas.filter(p => p.tipo !== "HISTORICO_FACTURA")
     .sort((a, b) => ORDEN_PROPUESTA.indexOf(a.tipo) - ORDEN_PROPUESTA.indexOf(b.tipo) || a.mov.fecha.localeCompare(b.mov.fecha))
   const temas = utiles.map((p): Tema => {
     const m = p.mov
     const signo = m.lado === "D" ? "−" : "+"
     const quien = m.quienBanco || m.descripcion
+    // 🔗 A-FEAT-1479 — si la pareja es la cuota de un template vinculado (anual ↔ cuotas), el par entero
+    const par = p.parejas.map(x => (x.origen === "cuota" ? parDeTemplate(extras, x.egresoId) : null)).find(Boolean) ?? null
     const que = [
       `${m.cuenta.nombre} · ${dmy(m.fecha)} · ${signo}${plata(m.importe)} · «${m.descripcion}»`,
       m.quienBanco ? `a/de ${m.quienBanco}${m.cuitBanco ? ` (CUIT ${m.cuitBanco})` : ""}` : "",
       m.detalle ? `tu detalle: ${m.detalle}` : "",
       m.categ ? `CATEG ${m.categ}` : "",
       m.estado !== "pendiente" ? `estado: ${m.estado}` : "",
-    ].filter(Boolean).join(" · ")
+    ].filter(Boolean).join(" · ") + (par ? `
+${par.texto}` : "")
     return {
       clave: `conc:${m.cuenta.cuentaId}:${m.id}`, grupo: "conciliacion",
       titulo: `${dmy(m.fecha)} · ${signo}${plata(m.importe)} · ${quien}`.slice(0, 160),
@@ -92,6 +96,9 @@ export function temasDeMovimientos(propuestas: PropuestaMovimiento[]): { temas: 
       que, propuesta: p.tipo === "SIN_PAREJA" ? p.propuesta : `${p.propuesta}${p.tipo === "CUIT_SIN_CIERRE" ? ` ${p.pista}.` : ""}`,
       links: [
         { texto: `El movimiento en el extracto (${m.cuenta.nombre})`, href: linkMovimiento(m) },
+        // 📜 A-FEAT-1484 — la serie: todos los movimientos de esa contraparte en el banco (conciliados o no)
+        ...linksSerieMovimientos(extras, m.cuitBanco, m.quienBanco || p.contraparte?.nombre || "esta contraparte"),
+        ...(par ? [par.link] : []),
         ...p.parejas.flatMap(x => linksDePareja(x, m.cuenta.empresa)).filter((l, i, a) => a.findIndex(y => y.href === l.href) === i).slice(0, 6),
         // 📜 A-FEAT-1467 — la TIRA: si es de una persona de Sueldos, todos sus sueldos (JMS: «la tira de eso»).
         ...(p.empleado ? [{ texto: `📜 Los sueldos de ${p.empleado.nombre} (toda la tira)${p.empleado.cuitSueldos !== undefined ? ` — reconocida por nombre: en Sueldos su CUIL es ${p.empleado.cuitSueldos || "(vacío)"}, el banco informa otro` : ""}`, href: linkSueldosDe(p.empleado.id) }] : []),
@@ -106,7 +113,7 @@ export function temasDeMovimientos(propuestas: PropuestaMovimiento[]): { temas: 
 }
 
 /** Los temas de deudas sin pago: la deuda, los movimientos que probablemente la pagaron y dónde verla. */
-export function temasDeDeudas(deudas: PropuestaDeuda[], empresa: string): Tema[] {
+export function temasDeDeudas(deudas: PropuestaDeuda[], empresa: string, extras: ExtrasTemas = SIN_EXTRAS): Tema[] {
   return deudas
     .sort((a, b) => b.candidatos.length - a.candidatos.length || b.obligacion.importe - a.obligacion.importe)
     .map((d): Tema => {
@@ -122,6 +129,10 @@ export function temasDeDeudas(deudas: PropuestaDeuda[], empresa: string): Tema[]
         }
       }
       links.push(...linksDePareja({ ...o }, empresa))
+      // 📜 A-FEAT-1484 — la serie de movimientos del mismo CUIT, y 🔗 A-FEAT-1479 el par anual/cuotas
+      links.push(...linksSerieMovimientos(extras, o.cuit, o.quien))
+      const par = o.origen === "cuota" ? parDeTemplate(extras, o.egresoId) : null
+      if (par) links.push(par.link)
       const propuesta = d.candidatos.length === 1
         ? `Conciliar contra el movimiento del ${dmy(d.candidatos[0].fecha)} en ${d.candidatos[0].cuenta.nombre} («${d.candidatos[0].descripcion}»): mismo importe.`
         : d.candidatos.length > 1 ? `${d.candidatos.length} movimientos sin conciliar del mismo importe: elegir cuál la pagó.`
@@ -134,7 +145,9 @@ export function temasDeDeudas(deudas: PropuestaDeuda[], empresa: string): Tema[]
         titulo: `${ORIGEN_TEXTO[o.origen]} ${o.quien} · ${plata(o.importe)}`.slice(0, 160),
         papel: `Deuda sin pago · estado «${o.estado}»`, etiqueta: d.candidatos.length ? "Con movimiento candidato" : "Sin movimiento", importe: o.importe,
         que: `${ORIGEN_TEXTO[o.origen]} de ${o.quien}${o.ref ? ` (${o.ref})` : ""} por ${plata(o.importe)}, en estado «${o.estado}» y sin ningún movimiento del banco vinculado: al cierre sale como ${o.signo === "D" ? "deuda" : "crédito a cobrar"}.`
-          + (d.yaConciliados.length ? ` Ya conciliados del mismo importe: ${d.yaConciliados.map(c => `${c.tabla} ${dmy(c.fecha)} «${c.descripcion}»`).join(" · ")}.` : ""),
+          + (d.yaConciliados.length ? ` Ya conciliados del mismo importe: ${d.yaConciliados.map(c => `${c.tabla} ${dmy(c.fecha)} «${c.descripcion}»`).join(" · ")}.` : "")
+          + (par ? `
+${par.texto}` : ""),
         propuesta, links,
         comparacion: d.candidatos.length ? { titulo: "La deuda contra los movimientos candidatos", celdas: [...filas, ["Diferencia con el primero", "", "=C2-C3"]] } : undefined,
         respondido: false,

@@ -54,6 +54,7 @@ import { temasVentasVsArca, temasComprasVsArca, type DdjjGuardada } from "@/lib/
 import { leerDatosConciliacion, proponerConciliaciones, CUENTAS_CONCILIABLES, type ConteoCuenta } from "@/lib/conciliacion/propuestas-ejercicio"
 import { temasDeMovimientos, temasDeDeudas, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
 import { leerTemasSueldoOtraPersona } from "@/lib/balance/control-sueldo-otra-persona"
+import { leerExtrasTemas } from "@/lib/balance/series-tema"
 import { leerChequesVencidos } from "@/lib/conciliacion/cheques-vencidos"
 import { RecorridoBalance } from "./recorrido-balance"
 import { VistaPreviaBalance } from "./vista-previa-balance"
@@ -197,7 +198,11 @@ export function PapelesDeBalance() {
     try {
       const datos = await leerDatosConciliacion(supabase, empresa.id, desde, hasta, t => setCargandoConciliacion(t))
       const r = proponerConciliaciones(datos, empresa.id, desde, hasta)
-      const mov = temasDeMovimientos(r.movimientos)
+      // 📜 A-FEAT-1484 / 1479: las tiras de movimientos por contraparte y los pares anual/cuotas
+      setCargandoConciliacion("armando la tira de movimientos de cada contraparte…")
+      const ex = await leerExtrasTemas(supabase, empresa.id, desde, hasta)
+      datos.avisos.push(...ex.avisos)
+      const mov = temasDeMovimientos(r.movimientos, ex.extras)
       // ✍️ A-AUTO-10: los echeqs vencidos sin marcar (sólo MSA emite cheques)
       setCargandoConciliacion("cruzando los echeqs vencidos con sus débitos…")
       const ch = empresa.id === "MSA" ? await leerChequesVencidos(supabase, hoyArgentina()) : { cruces: [], extractoHasta: null, error: null }
@@ -206,7 +211,7 @@ export function PapelesDeBalance() {
       setCargandoConciliacion("controlando los pagos de sueldo contra el CUIT del banco…")
       const ctl = await leerTemasSueldoOtraPersona(supabase, empresa.id, desde, hasta)
       if (ctl.error) datos.avisos.push(`control de sueldos: ${ctl.error}`)
-      setConciliacion({ movimientos: mov.temas, deudas: temasDeDeudas(r.deudas, empresa.id), cheques: temasDeCheques(ch.cruces, ch.extractoHasta), controles: ctl.temas,
+      setConciliacion({ movimientos: mov.temas, deudas: temasDeDeudas(r.deudas, empresa.id, ex.extras), cheques: temasDeCheques(ch.cruces, ch.extractoHasta), controles: ctl.temas,
         historicos: mov.historicos, avisos: datos.avisos, porCuenta: datos.porCuenta,
         calculado: new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) })
       if (datos.avisos.length && !silencioso) toast.warning(`Conciliación: no se pudo leer ${datos.avisos.length} cosa(s) — ${datos.avisos.slice(0, 2).join(" · ")}`)

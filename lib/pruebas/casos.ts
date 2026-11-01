@@ -213,6 +213,7 @@ import { resumenDeFilas } from "@/lib/ui/resumen-filas"
 import { empleadoPorNombre, tiraDeContraparte, proponerConciliaciones, CUENTAS_CONCILIABLES, ventanasAlrededor, moverMeses, type DatosConciliacion, type MovimientoSinConciliar, type Obligacion } from "@/lib/conciliacion/propuestas-ejercicio"
 import { temasDeMovimientos, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
 import { temasSueldoOtraPersona } from "@/lib/balance/control-sueldo-otra-persona"
+import { linksSerieMovimientos, parDeTemplate } from "@/lib/balance/series-tema"
 import { cruzarChequesConDebitos, numeroEnDescripcion } from "@/lib/conciliacion/cheques-vencidos"
 import { echeqDelDebito } from "@/lib/conciliacion/echeq-del-debito"
 import { agregarAlHilo, hiloDelTema } from "@/lib/balance/hilo-tema"
@@ -5682,6 +5683,30 @@ export function correrCasos(): Resultado[] {
       `c101 ${cruces[0].por} · cLongo ${cruces[1].por} ${longo.accion?.numero} → ${longo.accion?.fecha} · cBriki ${cruces[2].debito ? "con débito" : "sin débito"}, ${/Cargar el extracto/.test(temasCh[2].propuesta ?? "") ? "«Cargar el extracto»" : "?"}`,
       cruces[0].por === "numero" && cruces[1].por === "importe" && longo.accion?.numero === "107" && longo.accion?.fecha === "2026-09-07"
         && !cruces[2].debito && /Cargar el extracto/.test(temasCh[2].propuesta ?? "") && !temasCh[2].accion && numeroEnDescripcion("Echeq 48 Hs. Nro.      101") === "101", "A-AUTO-10")
+  }
+
+  /**
+   * 📜 **LAS TIRAS DE CADA TEMA — A-FEAT-1484 / 1479.** La serie de movimientos de un CUIT en el banco (con cuántos
+   * conciliados; un CUIT con un solo movimiento sin conciliar no trae tira: sería el mismo movimiento) y el par
+   * anual/cuotas del Voyage con el estado de cada template.
+   */
+  {
+    const extras = {
+      series: new Map([
+        ["20333189349", [{ cuentaId: "msa_galicia", nombreCuenta: "MSA Galicia", ids: ["a", "b", "c"], fechas: ["2026-03-04", "2026-03-09", "2026-03-25"], conciliados: 3 }]],
+        ["27000000001", [{ cuentaId: "msa_galicia", nombreCuenta: "MSA Galicia", ids: ["x"], fechas: ["2026-05-01"], conciliados: 0 }]],
+      ]),
+      pares: new Map(),
+    }
+    const voy = [{ id: "anual", nombre: "Voyage Anual", activo: true, anual: true, cuotas: { conciliado: 1 } }, { id: "cuotas", nombre: "Voyage Cuota", activo: false, anual: false, cuotas: { desactivado: 6 } }]
+    extras.pares.set("anual", voy); extras.pares.set("cuotas", voy)
+    const ls = linksSerieMovimientos(extras, "20-33318934-9", "Wilson")
+    const solo = linksSerieMovimientos(extras, "27000000001", "Uno solo")
+    const par = parDeTemplate(extras, "cuotas")
+    const v = `${ls.length} · ${ls[0]?.texto} · ${/movs=a%2Cb%2Cc/.test(ls[0]?.href ?? "") ? "ids ok" : ls[0]?.href} · solo ${solo.length} · ${par?.link.texto}`
+    const esp = "1 · 📜 Todos los movimientos de Wilson en MSA Galicia (3: 3 conciliados) · ids ok · solo 0 · 🔗 El par anual/cuotas: «Voyage Anual» activo y «Voyage Cuota» desactivado (sus cuotas)"
+    chequear("Recorrido · tiras del tema", "📜 La tira de movimientos del CUIT (todos, con cuántos conciliados) y 🔗 el par anual/cuotas con el estado de cada uno", esp, v,
+      v === esp && /ACTIVO — 1 conciliado/.test(par?.texto ?? "") && /desactivado — 6 desactivado/.test(par?.texto ?? "") && parDeTemplate(extras, "otro") === null, "A-FEAT-1484")
   }
 
   /**

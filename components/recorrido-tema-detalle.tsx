@@ -52,7 +52,7 @@ export function DetalleTema({ tema, arriba, enAppExtra, propuestaExtra, resoluci
 
       <div className="space-y-1">
         <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Qué pasa</div>
-        <p className="text-sm">{tema.que}</p>
+        <p className="text-sm whitespace-pre-line">{tema.que}</p>
       </div>
 
       {/* 📝 A-FEAT-1468 — tu nota en el movimiento del extracto, a la vista (la dejaste ahí explicando algo). */}
