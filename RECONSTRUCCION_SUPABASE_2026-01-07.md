@@ -3335,6 +3335,9 @@ Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantid
 ### 2026-11-01 · Alondra 29/05 al pago correcto (script 168, DATOS) — A-BUG-1486 — ✅ CORRIDO con OK de JMS en el tema del recorrido
 `public.msa_galicia` 6dc505bc…: `sueldo_pago_id` 566df873… (Sigot, caja) → 9954c5fc… (anticipo de Alondra 29/05), estado auditar → conciliado, con los datos de sus otros anticipos de mayo. Deshacer: `168-…-deshacer.sql`.
 
+### 2026-11-01 · Cuenta corriente especial en DÓLARES de MSA desde sus resúmenes PDF (script 169, DATOS) — A-FEAT-1503 — ✅ CORRIDO con OK de JMS («te dejé los pdf… para que puedas hacer las cuentas y cargar los datos»)
+`msa.cc_usd` ← 50 movimientos de los 12 resúmenes PDF jul-25 → jun-26 (Galicia N° 9750271-0 360-3), leídos con el lector del importador (`leerResumenCajaAhorro`). Los 12 cierran contra sí mismos y encadenan: abren en US$ 35.001,63 (= saldo de inicio del script 128) y cierran en US$ 599,71. Débitos US$ 34.401,92 (US$ 34.000 = transferencia del 01/08/2025 a Galicia Securities); créditos 0. Estado `pendiente`, `nro_resumen` = nombre del PDF. Ids en `169-cargar-cc-usd-msa-ids.json`; deshacer: `169-cargar-cc-usd-msa-deshacer.mts` (borra sólo esos ids y frena si alguno ya se trabajó).
+
 ### 2026-11-01 · Parseo de SANTANDER (script 167, DATOS) — A-FEAT-1485 — ✅ CORRIDO con OK de JMS («ok corré el 167»)
 `msa.santander`: `concepto` (texto en líneas, `bloqueSantander`) + desglose de los 148 movimientos (descripcion, grupo_de_conceptos, leyendas_adicionales_1..3, numero_de_comprobante, numero_de_terminal); `public.config_parseo_extracto` + 20 reglas de `msa_santander` (marca `[script 167]` en `descripcion_campo`); `public.reglas_conciliacion` + 1 (CUIT 30617786016 → template «Interbancaria Santander», marca en `detalle`). Foto antes: `scripts/167-parseo-santander-foto.json`. Deshacer: `167-parseo-santander-deshacer.mts`.
 
