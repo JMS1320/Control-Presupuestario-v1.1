@@ -3488,7 +3488,12 @@ ${marca}` : marca
         <div className="flex flex-wrap items-center gap-2 rounded border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-900" data-test="extracto-filtro-link">
           <span>🔗 <strong>Filtrado desde el balance:</strong> {movimientosVisibles.length} de {idsLink.size} movimiento(s) pedido(s){loading ? " (cargando…)" : ""}.</span>
           {!loading && movimientosVisibles.length < idsLink.size && (
-            <span className="text-amber-800">Faltan {idsLink.size - movimientosVisibles.length}: pueden estar fuera de las fechas o de los otros filtros.</span>
+            <span className="text-amber-800">
+              {filtroEstado !== 'Todos'
+                // ↩ A-FEAT-1462 (JMS 31/10: «aprieto Conciliados y me muestra 0»): el link trae SÓLO lo que pidió el recorrido.
+                ? <>Con «{filtroEstado}» quedan {movimientosVisibles.length} de los {idsLink.size} del recorrido. Para ver ese estado en <strong>toda la cuenta</strong>: «Quitar este filtro» (después «↩ Volver al filtro del recorrido» te trae de vuelta).</>
+                : <>Faltan {idsLink.size - movimientosVisibles.length}: pueden estar fuera de las fechas o de los otros filtros.</>}
+            </span>
           )}
           <button type="button" className="ml-auto underline" onClick={() => { setIdsLink(null); window.history.replaceState(null, "", "/?seccion=extracto") }}>Quitar este filtro</button>
         </div>
