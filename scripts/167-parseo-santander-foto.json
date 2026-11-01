@@ -1,0 +1,1079 @@
+[
+  {
+    "id": "d84a37d0-66fb-4cb5-aa53-a43d10dd9145",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "8b3b6ce8-5ea0-444d-9648-044e411849aa",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "08854a8c-a50f-49b4-b0a6-c486345aaa03",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "cec2f7ac-a333-47b5-8f3d-86c55f051c7f",
+    "antes": {
+      "concepto": null,
+      "descripcion": "Intereses por descubierto excedido · Del 01/06/25 al 30/06/25",
+      "grupo_de_conceptos": null,
+      "leyendas_adicionales_3": null
+    }
+  },
+  {
+    "id": "0957e1d6-80ec-41d9-96aa-1a1960968f5b",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "969e2711-d455-4d04-9df8-809a0f0ff06b",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "ee743d21-ade0-4c4b-b124-c7477daeb89e",
+    "antes": {
+      "concepto": null,
+      "descripcion": "Pagos ctas propias interbanking in · Martinez sobrado agro s r l 30617786016 01 3449842 · Comp. 3449842",
+      "grupo_de_conceptos": null,
+      "leyendas_adicionales_1": null,
+      "leyendas_adicionales_2": null,
+      "numero_de_comprobante": null
+    }
+  },
+  {
+    "id": "22fa8a8d-718a-489c-a9ef-443e5c2fe5e7",
+    "antes": {
+      "concepto": null,
+      "descripcion": "Pago de honorarios · 2507085072 · Comp. 28406785",
+      "grupo_de_conceptos": null,
+      "numero_de_comprobante": null,
+      "numero_de_terminal": null
+    }
+  },
+  {
+    "id": "b7719dd2-61d6-4e7e-855f-20a4ec58a4a2",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "f2012eca-9cec-4470-a90d-b0a118e58919",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "e4f82e16-8e41-4500-805b-251b7ce0d4d7",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "28d997e7-ae00-4c1a-9bd7-cc29b4279636",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "5d765245-5afb-4a98-a889-3edccca0d274",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "c924d454-7cdf-4b65-a41a-6bf7e91e1c64",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "2354fe4c-5b7e-4c50-a866-f2d4e9e969d0",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "49a5f55d-aeb9-4dee-a67e-5fa8ee5a6514",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "610a2ee8-2af4-47c9-9d03-bc3ae5dfce31",
+    "antes": {
+      "concepto": null,
+      "descripcion": "Pagos ctas propias interbanking in · Martinez sobrado agro s r l 30617786016 01 3240597 · Comp. 3240597",
+      "grupo_de_conceptos": null,
+      "leyendas_adicionales_1": null,
+      "leyendas_adicionales_2": null,
+      "numero_de_comprobante": null
+    }
+  },
+  {
+    "id": "7d5fae13-6d72-4451-ade4-02f72ee2eca5",
+    "antes": {
+      "concepto": null,
+      "descripcion": "Pago de honorarios · 2508015072 · Comp. 28667808",
+      "grupo_de_conceptos": null,
+      "numero_de_comprobante": null,
+      "numero_de_terminal": null
+    }
+  },
+  {
+    "id": "06131ae9-4538-4e62-ae07-eaa0cfe0933f",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "ed3a3bec-0856-4f82-8672-76c9eb348d52",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "40b97ff2-4bea-4450-a31e-879351c40801",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "028ef60e-babe-4ea0-b1a0-4984c608c105",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "2e1ddad7-3f33-42c2-a7de-032d0f39dd2d",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "17bf27d7-59ea-4f1d-bb4b-15bdc5ceab3f",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "7097cad7-7ed8-4054-a8b6-869ad68e257a",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "73b51977-9379-4a01-8a36-668b35063230",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "0189d736-7d36-4565-a7a6-9a93d09df501",
+    "antes": {
+      "concepto": null,
+      "descripcion": "Pagos ctas propias interbanking in · Martinez sobrado agro s r l 30617786016 01 3068170 · Comp. 3068170",
+      "grupo_de_conceptos": null,
+      "leyendas_adicionales_1": null,
+      "leyendas_adicionales_2": null,
+      "numero_de_comprobante": null
+    }
+  },
+  {
+    "id": "a394d55b-9938-4cc4-946b-1ae07bb3c709",
+    "antes": {
+      "concepto": null,
+      "descripcion": "Pago de honorarios · 2509015072 · Comp. 29102404",
+      "grupo_de_conceptos": null,
+      "numero_de_comprobante": null,
+      "numero_de_terminal": null
+    }
+  },
+  {
+    "id": "428f7ac6-7ea0-410e-882b-9fc222e5eba7",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "cecc1471-ee80-4e97-b451-fe87349b52f9",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "f1bf2e78-61bb-427a-94b2-06417ab48307",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "3c5c81e8-e275-43d3-a6b8-b4b70a96169b",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "113d7de8-5ee5-47ba-a3c6-0f92299bd1de",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "5b1e6261-3e46-40b0-a389-489baffb3289",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "927eed73-407f-4e17-9ade-1208fcf00233",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "0f26deee-e607-4b49-bdc9-2f887851fdbe",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "fa4959e9-969c-42ae-908c-2a663ad44b75",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "42e0389e-1c1b-4c0f-bae5-eb6251aa2c0f",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "4c648c4f-624e-4276-a038-e1d01ba4c26e",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "17331899-90ec-421d-961c-f3b438cf9fa4",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "f72b8637-dbab-41f9-94ae-96908bb97cb9",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "8ea5153d-6b5f-49d1-88ff-2ec999541a0f",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "299a9c6a-6e55-4dac-904d-16dc34156c8f",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "caced707-7df4-4a1b-91b4-d23f7c655e5d",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "6cf4e3e8-9cea-4ac7-af98-50ac56d54747",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "9a5bb9e5-0648-4a43-87a6-16ffeeb6872d",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "0185f3b9-c6d8-474e-a317-074efa68b7ae",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "3f7e0df8-b14b-465a-8b93-cd40bba35777",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "81a93fe6-9ba4-442f-ab84-90a4ccb611fc",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "aaf910f2-9e86-423e-a6c4-d0fbd0a5a4dc",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "bc0d0226-0d8a-4fc0-9123-f50878c9a6ee",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "1f68161d-472a-4cbc-a59f-22b870529831",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "e602e1f2-b92e-4722-8993-3eae86cc57f4",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "ce80c7ca-ee27-44c0-9ea7-83a4b0fcc209",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "7c4549d1-9017-4fdc-8043-59cacfaa1354",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "9db15d69-5be1-4c93-a349-3d8707bda328",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "fadfc8a4-44a8-4a8a-88fe-099d5c973017",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "f84b873e-452a-443c-a53c-08f1a36227b2",
+    "antes": {
+      "concepto": null,
+      "descripcion": "Intereses por descubierto excedido · Del 01/12/25 al 31/12/25",
+      "grupo_de_conceptos": null,
+      "leyendas_adicionales_3": null
+    }
+  },
+  {
+    "id": "5257609c-1e6b-4332-8231-e15ed5dc2ed2",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "a86d96cd-4ed0-4a56-b7d2-dbe92c91f6e8",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "52937bdd-0afd-43ca-92a1-93ed4758708e",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "d9e30302-0420-403c-8b3e-4ec93fddacac",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "5a22970b-daee-4663-8789-a0249e52f0e7",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "5bb6967f-0060-43b8-9ae8-4ba56e4b7b55",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "9676099c-b4d2-4d8d-b240-55fe442daaba",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "5554008e-212c-438d-9b65-0bd4111d93b4",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "44af6274-4c26-4fa1-8335-a77799b42206",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "7b65816e-56be-4a0f-a1f1-aefb7fa932b6",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "15248a12-7d06-4bbf-af71-954f114b3dca",
+    "antes": {
+      "concepto": null,
+      "descripcion": "Intereses por descubierto excedido · Del 01/01/26 al 31/01/26",
+      "grupo_de_conceptos": null,
+      "leyendas_adicionales_3": null
+    }
+  },
+  {
+    "id": "a8541a61-6445-4187-831b-cb8f25213f05",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "6c1d790a-1e81-442a-ac17-1d8a3f87c47f",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "b7e47058-2b08-40f8-a7ac-f995efd75473",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "128429f7-3c92-43af-91af-41dfbc65b4f3",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "84452f43-304c-44c6-85b8-0736c664728f",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "088e96ae-39ef-4515-b244-de129de49b09",
+    "antes": {
+      "concepto": null,
+      "descripcion": "Pagos ctas propias interbanking in · Martinez sobrado agro s r l 30617786016 01 3260787 · Comp. 3260787",
+      "grupo_de_conceptos": null,
+      "leyendas_adicionales_1": null,
+      "leyendas_adicionales_2": null,
+      "numero_de_comprobante": null
+    }
+  },
+  {
+    "id": "79b5d263-7a16-4ac4-a79f-7356af664039",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "ece5f928-dc6e-404f-a8ce-c8e657dc3fb4",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "3cfdabdb-0c1a-4306-b800-a662bb8eec7f",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "882d2608-2dc3-4149-b9b9-6d73de615521",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "14ef8eda-adca-4aac-b489-fa464885dde3",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "d665b267-bb6c-4c02-9946-8dc638b9b68c",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "64127eda-276d-4ba4-9cea-5012892b40d7",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "8adb8b31-c2c3-417d-8e37-070a7b929696",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "fcd79760-a936-4c38-bbb5-aab7409d1753",
+    "antes": {
+      "concepto": null,
+      "descripcion": "Intereses por descubierto excedido · Del 01/02/26 al 28/02/26",
+      "grupo_de_conceptos": null,
+      "leyendas_adicionales_3": null
+    }
+  },
+  {
+    "id": "26879df3-7314-46df-a392-5a1ae19022ae",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "fdcbeaa9-ec3e-46ec-8726-e967afc90522",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "5256621e-0593-4599-b4ee-ef9f6d23a17c",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "ba230336-4c30-48fc-949b-12b0ce4ac6b0",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "7c262a6d-34b5-48bc-8393-a35dae5072eb",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "a09e5ff6-f9f4-4beb-b54a-896658b060a4",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "2a2218f1-e9e3-42ba-ab94-30bda861b2e1",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "6312ba08-7473-4bff-90f2-7889bcd8da3d",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "8214865c-cb66-42be-81ad-ea53920e9f5e",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "ea0e9aa5-f9e5-445f-a19b-c4ec4c8fdaa7",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "3619710c-9562-4cb5-8373-8cde96a11712",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "d380fd86-af52-4e35-88ef-0a817c7fe119",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "a11ea072-4273-48ee-bfb7-4542b66f3096",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "34245328-6429-49dc-b7ff-8c0140dc81c9",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "e3af70c9-e073-4485-9a6b-45de05148e2d",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "ebb231a2-8ed4-4cc4-9fa1-4345d10dace6",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "aec07b66-6ad0-44af-be2c-10c49faf988c",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "9d1f5730-4f12-4271-aa3d-199dae8df3ac",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "07be0007-2baf-49bd-84bd-72ce0813ed22",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "44c1da76-18af-46fb-97fe-f7a1ecaa4006",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "c8e7b8c5-37ec-4fc2-a95a-b5dadb60ab81",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "31d484a6-9b8d-4967-93ff-a42efd3cbad3",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "a84b12bb-1fea-4b97-86d3-03554663d73a",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "f11a6f8a-db56-4128-8856-a2323e6b8851",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "f0140e03-da51-4901-a6c6-5eb9f6fb7bdd",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "584b5736-2ca9-4485-893b-badd9bb084fe",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "d1079a9b-b5d1-4da0-a430-986713bc9b02",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "b40410ad-de65-40dc-99eb-02d0d51c040c",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "8411d8f3-f1cd-43c2-b357-7b3db3644ac4",
+    "antes": {
+      "concepto": null,
+      "descripcion": "Intereses por descubierto excedido · Del 01/05/26 al 31/05/26",
+      "grupo_de_conceptos": null,
+      "leyendas_adicionales_3": null
+    }
+  },
+  {
+    "id": "f1ef8d69-d992-4f4a-8cb8-b661544001d3",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "0cd7fa73-6843-4126-ac2f-0e884195e37e",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "0d49d5b7-8590-453e-ade9-6247ee944bd4",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "c69a2258-a75a-4421-8049-4f2f5c4fd6fe",
+    "antes": {
+      "concepto": null,
+      "descripcion": "Pagos ctas propias interbanking in · Martinez sobrado agro s.r.l. 30617786016 01 3190375 · Comp. 3190375",
+      "grupo_de_conceptos": null,
+      "leyendas_adicionales_1": null,
+      "leyendas_adicionales_2": null,
+      "numero_de_comprobante": null
+    }
+  },
+  {
+    "id": "9c1342d0-cc31-4e0e-912e-c6bfdb1ec8b8",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "2f484bad-62ae-475a-8990-b1487f70842e",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "6cd1f9c3-3a70-439c-9f4e-c32eec051c7f",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "b0a4fbec-d765-4a38-9afc-d8bdaed76f95",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "d61dc6c8-948d-462e-bcdc-57ab9797dec1",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "1f3ab998-34fc-4c68-98f5-b1bec555f2f1",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "9e945c4b-23f6-4da3-9a41-d326f9c00c60",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "0e8c53fd-b53e-4fc5-9cea-37226c041935",
+    "antes": {
+      "concepto": null,
+      "descripcion": "Intereses por descubierto excedido · Del 01/06/26 al 30/06/26",
+      "grupo_de_conceptos": null,
+      "leyendas_adicionales_3": null
+    }
+  },
+  {
+    "id": "52be1429-1952-4c41-b7f5-badb2901db8a",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "da0efa13-f1fd-4352-afca-45f9ac6b9bc7",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "11388630-d696-4386-a929-dacbbd1c2693",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "7280e672-4b41-4f3d-8780-f383675c5973",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "f356f017-65d4-4e58-91c2-a2bc729c337d",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "db24f7f4-a19e-4792-b16d-782d84297184",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "18caedbb-7137-4bd9-8c4f-7238750c5507",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "eaaca4e1-9394-47a2-b899-db301f644741",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "7d97313c-96a8-4406-bc42-ab6834b1272f",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "a672d5b9-64a3-4eb4-99b6-848c58a50553",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "9392c65f-bd98-491c-84f6-f63d2abc90dd",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "4db79761-9956-4665-945c-7834fcf13344",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "02384712-5598-4c13-8c45-bcdb824ea6cf",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "32cbcb08-11dd-47df-a75d-9b6f48d892c1",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "f064cce4-9d01-48d8-8d78-b8bd7d732b98",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "d93f591b-ed3a-48bd-aabe-8098b3453523",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "b43d1d27-d439-49ef-af11-3170484fe891",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "879075df-ed4a-4c19-ad55-b5f0e0e1ef55",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "3b8c0280-e1da-455b-bc79-73c5fc04cdb9",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "ee1c02e6-9552-4f3e-b4d4-ff2a95df4cf5",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "2b24ed2d-97ef-4da4-b84b-e93e8e4466c7",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "1ddafec7-a13a-411a-b09a-c03c83b71aae",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  },
+  {
+    "id": "ead4a7c7-1777-4c84-8ec2-b01989fe4e0c",
+    "antes": {
+      "concepto": null,
+      "grupo_de_conceptos": null
+    }
+  }
+]
