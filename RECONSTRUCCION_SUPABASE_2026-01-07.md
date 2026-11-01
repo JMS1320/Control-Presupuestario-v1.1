@@ -3332,6 +3332,9 @@ Alta de `MA` (CUIL 27-06682461-1, `plano_ipc`, MSA, ingreso 01/06/2025, id fijo 
 ### 2026-10-29 · Stock declarado al 30/06/2025 de MSA (script 132, DATOS) — A-FEAT-1420 — ✅ CORRIDO con OK de JMS
 Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantidad 0, marca `[script 132]` en observaciones), 94 renglones en `stock_inicio` ($ 31.730.444,08 = la planilla) y 3 `pasturas`. Se corre con `scripts/132-stock-inicio-msa-30-06-2025.mts` (desde su `.json`; el `.sql` es el registro legible). Deshacer: `scripts/132-stock-inicio-msa-30-06-2025-deshacer.sql` (por ids; frena si un producto ya tiene movimientos).
 
+### 2026-11-01 · Manuel: CUIT y sueldos de abril y mayo 2026 (script 160, DATOS) — ✅ CORRIDO 2026-11-01 con OK de JMS («3 adelante. 4 también»)
+`sueldos.empleados` Manuel Martínez: CUIT 24-24754471-9 (estaba vacío; el del banco). `sueldos.periodos` abril (10 h × $ 24.862,33 + $ 24.000 = $ 272.623,30, pagado $ 272.623) y mayo 2026 (6 h × $ 25.708 + $ 30.000 = $ 184.248), campaña 25/26, con su pago de sueldo cada uno (`sueldos.pagos`, conciliado); `public.msa_galicia` 5015630e (08/05) y 42fa3b63 (05/06) conciliados contra ellos, CATEG Sueldos. Marca `[script 160]`. Deshacer: `160-…-deshacer.sql` (por ids).
+
 ### 2026-11-01 · La captura en «Tu respuesta» del recorrido (script 159, ESTRUCTURA) — A-FEAT-1472 — ✅ CORRIDO 2026-11-01 con OK de JMS («dale, agregá la columna para pegar captura»)
 `public.balance_pendientes` + `imagen text` (data-URL comprimida, como `revisiones.imagen`), vacía, comentario `[script 159]`. Sin cambios de RLS ni permisos. Al reconstruir: `scripts/159-balance-pendientes-imagen.sql` después del 80. Deshacer: `159-…-deshacer.sql` (sólo si sigue vacía).
 
