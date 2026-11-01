@@ -2837,7 +2837,7 @@ export function agregarLibroC(wb: XLSX.WorkBook, empresa: string, etiqueta: stri
     }
     if (i === 0) {
       for (const g of ["Impuestos bancarios", "Gastos bancarios", "Intereses", "Inversiones"] as GrupoDetalle[]) {
-        hoja(wb, `C · ${g}`, detalle ? hojaDeDetalle(g, detalle, etiqueta) : [[`${g.toUpperCase()}`], ["⚠️ No se armaron los papeles bancarios: falta el detalle."]], COLS_DETALLE_BANCARIO)
+        hoja(wb, `C · ${g}`, detalle ? hojaDeDetalle(g, detalle, etiqueta, empresa) : [[`${g.toUpperCase()}`], ["⚠️ No se armaron los papeles bancarios: falta el detalle."]], COLS_DETALLE_BANCARIO)
       }
     }
   })

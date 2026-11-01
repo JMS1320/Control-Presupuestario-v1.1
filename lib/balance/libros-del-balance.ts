@@ -102,11 +102,41 @@ export function detalleBancarioDelLibroC(
 }
 
 /** Una solapa de detalle: un renglón por movimiento, subtotal por cuenta y moneda. */
-export function hojaDeDetalle(grupo: GrupoDetalle, movs: MovimientoDelDetalle[], etiqueta: string): unknown[][] {
-  const f: unknown[][] = [[`${grupo.toUpperCase()} — detalle movimiento por movimiento, ejercicio ${etiqueta}`],
-    ["Sale del extracto de cada cuenta. Las cuentas en dólares, EN DÓLARES (no se suman a los pesos)."], [],
-    ["Cuenta", "Moneda", "Fecha", "Descripción", "Categoría", "Concepto del plan", "Débito", "Crédito"]]
+export function hojaDeDetalle(grupo: GrupoDetalle, movs: MovimientoDelDetalle[], etiqueta: string, empresa = ""): unknown[][] {
   const deEste = movs.filter(m => m.grupo === grupo)
+  const f: unknown[][] = [[`${grupo.toUpperCase()}${empresa ? ` — ${empresa}` : ""} — ejercicio ${etiqueta}`]]
+  /**
+   * 🧮 A-FEAT-1511 (JMS 01/11, en el libro C: *«esta planilla debe concluir cuánto es el total de cada impuesto en el total de
+   * todas las cuentas, por responsable; una línea por categoría y la suma del total; debajo se listan todos los movimientos»*;
+   * y *«cada empresa toma el gasto de lo que pasa por sus resúmenes»*). Arriba el resumen por categoría — con FÓRMULAS sobre
+   * el detalle de abajo —; los dólares, aparte.
+   */
+  const conResumen = grupo === "Impuestos bancarios" || grupo === "Gastos bancarios"
+  const conceptos = conResumen ? [...new Set(deEste.map(m => m.concepto || m.categ || "(sin categoría)"))].sort((x, y) => x.localeCompare(y)) : []
+  // El detalle arranca después del resumen: 2 de título, encabezado, una por concepto, total, 2 en blanco, encabezado del detalle.
+  const filaDetalle1 = conResumen ? 1 + 2 + 1 + conceptos.length + 1 + 2 + 1 + 1 : 0
+  const colConcepto = "F", colMoneda = "B", colDeb = "G", colCred = "H"
+  if (conResumen) {
+    f.push([`Cuánto se pagó de cada concepto en el año, sumando todos los resúmenes${empresa ? ` de ${empresa}` : ""} (cada empresa toma lo que pasa por sus resúmenes). Neto = débitos − devoluciones.`])
+    f.push([])
+    f.push(["Concepto", "Pesos (neto)", "Dólares (neto)", "Movimientos", "Cuentas"])
+    const r1 = f.length + 1
+    const rango = (col: string) => `${col}$${filaDetalle1}:${col}$${filaDetalle1 + deEste.length + 200}`
+    for (const c of conceptos) {
+      const ms = deEste.filter(m => (m.concepto || m.categ || "(sin categoría)") === c)
+      const neto = (mon: "ARS" | "USD") => Math.round(ms.filter(m => m.moneda === mon).reduce((t, m) => t + m.debitos - m.creditos, 0) * 100) / 100
+      const n = f.length + 1
+      const sumif = (mon: string) => `SUMIFS(${rango(colDeb)},${rango(colConcepto)},A${n},${rango(colMoneda)},"${mon}")-SUMIFS(${rango(colCred)},${rango(colConcepto)},A${n},${rango(colMoneda)},"${mon}")`
+      f.push([c, { t: "n", f: sumif("ARS"), v: neto("ARS") }, { t: "n", f: sumif("USD"), v: neto("USD") }, ms.length, [...new Set(ms.map(m => m.cuenta))].join(", ")])
+    }
+    const r2 = f.length
+    const tot = (mon: "ARS" | "USD") => Math.round(deEste.filter(m => m.moneda === mon).reduce((t, m) => t + m.debitos - m.creditos, 0) * 100) / 100
+    f.push(["TOTAL", { t: "n", f: `SUM(B${r1}:B${r2})`, v: tot("ARS") }, { t: "n", f: `SUM(C${r1}:C${r2})`, v: tot("USD") }, deEste.length])
+    f.push([], [])
+  } else {
+    f.push(["Sale del extracto de cada cuenta. Las cuentas en dólares, EN DÓLARES (no se suman a los pesos)."], [])
+  }
+  f.push(["Cuenta", "Moneda", "Fecha", "Descripción", "Categoría", "Concepto del plan", "Débito", "Crédito"])
   if (!deEste.length) { f.push(["(no hay movimientos de este tipo en el ejercicio)"]); return f }
   const cuentas = [...new Set(deEste.map(m => `${m.cuenta}|${m.moneda}`))]
   for (const k of cuentas) {

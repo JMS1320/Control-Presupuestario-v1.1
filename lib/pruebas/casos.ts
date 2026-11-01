@@ -35,7 +35,7 @@
 
 import { filasBalanceEnLinea, hojaCajaYBancos } from "@/lib/balance/balance-en-linea"
 import { APERTURA_MSA_2025 } from "@/lib/balance/apertura-contador"
-import { libroDeSolapa, repartirEnLibros, templatesDeResponsable, detalleBancarioDelLibroC, canalDePago } from "@/lib/balance/libros-del-balance"
+import { libroDeSolapa, repartirEnLibros, templatesDeResponsable, detalleBancarioDelLibroC, canalDePago, hojaDeDetalle } from "@/lib/balance/libros-del-balance"
 import { armarStocksUnificados, hojaDeStocks } from "@/lib/balance/stocks-unificado"
 import { temasDeCuentaCorriente } from "@/lib/balance/recorrido-conciliacion"
 import { contrapartesDelRecorrido } from "@/lib/balance/fuera-por-cuenta-corriente"
@@ -12274,6 +12274,19 @@ export function correrCasos(): Resultado[] {
     const gal = cb.find(r => r[0] === "BANCO GALICIA (cta cte)")!
     const ctl = (gal[7] as { v: number }).v
     chequear("Libro F", "Control de cada banco: apertura del contador + movimientos − saldo de la app = 0 (Galicia real)", "0 ✓ cierra", `${ctl} ${gal[8]}`, ctl === 0 && gal[8] === "✓ cierra", "A-FEAT-1509")
+  }
+
+  // ══ 🧮 Libro C: resumen por categoría arriba del detalle bancario (A-FEAT-1511) ══
+  {
+    const mv = (cuenta: string, moneda: "ARS" | "USD", concepto: string, deb: number, cred = 0) => ({ grupo: "Impuestos bancarios" as const, cuenta, fecha: "2025-08-01", descripcion: "x", categ: concepto, concepto, debitos: deb, creditos: cred, moneda })
+    const h = hojaDeDetalle("Impuestos bancarios", [mv("Galicia", "ARS", "IVA Bancario", 100), mv("Santander", "ARS", "IVA Bancario", 50, 10), mv("USD", "USD", "IVA Bancario", 2), mv("Galicia", "ARS", "Sellos Bancario", 7)], "25/26", "MSA")
+    const fila = (c: string) => h.find(r => r[0] === c) as any[]
+    const iva = fila("IVA Bancario"), tot = fila("TOTAL")
+    const primerDetalle = h.findIndex(r => r[0] === "Cuenta") + 2
+    const apunta = String(iva[1].f).includes(`$${primerDetalle}:`)
+    const v = `IVA $ ${iva[1].v} · US$ ${iva[2].v} · ${iva[4]} · total $ ${tot[1].v} · fórmula sobre el detalle ${apunta}`
+    const e = "IVA $ 140 · US$ 2 · Galicia, Santander, USD · total $ 147 · fórmula sobre el detalle true"
+    chequear("Libro C", "Impuestos y gastos bancarios: arriba una línea por categoría con el neto de todas las cuentas de la empresa (dólares aparte) y el total, con fórmulas sobre el detalle de abajo", e, v, v === e, "A-FEAT-1511")
   }
 
   return r
