@@ -103,7 +103,12 @@ export function armarStocksUnificados(d: DatosStocks): LineaStock[] {
     }
   }
   const insumos = [...porItem.values()]
-  for (const e of ITEMS_ESPERADOS) {
+  // 🛑 A-BUG-1508: si no se trajeron el stock al inicio y la existencia, NO se afirma que falten: se dice que no se trajeron.
+  const seTrajo = !!d.insumos && !!d.stockInicio
+  if (!seTrajo) {
+    insumos.push({ rubro: "Insumos", item: "⚠️ No se trajo el stock", unidad: "", inicio: vacio(), cierre: vacio(),
+      origen: "no se trajeron el stock al inicio ni la existencia de la app: «⚡ Armar todo» (o «Traer stock y precios») antes de bajar el Excel" })
+  } else for (const e of ITEMS_ESPERADOS) {
     if (insumos.some(l => l.rubro === e.rubro && e.busca.test(norm(l.item)))) continue
     insumos.push({ rubro: e.rubro, item: `${e.item} (no está en la app)`, unidad: e.unidad, inicio: vacio(), cierre: vacio(), origen: "lo nombraste vos: no hay ni stock declarado ni existencia en la app" })
   }
@@ -170,7 +175,8 @@ export function armarStocksUnificados(d: DatosStocks): LineaStock[] {
       origen: `app (pasturas): US$ ${p.usd_por_ha ?? "?"}/ha amortizado ${Math.round(a.amortizado * 100)} % al inicio y ${Math.round(b.amortizado * 100)} % al cierre · ⚠️ en DÓLARES` })
   }
   if (!(d.stockInicio?.pasturas ?? []).length) {
-    lineas.push({ rubro: "Pasturas", item: "Lotes de pasturas", unidad: "ha", inicio: vacio(), cierre: vacio(), origen: "no hay pasturas cargadas: lote, año de siembra, ha y US$/ha" })
+    lineas.push({ rubro: "Pasturas", item: "Lotes de pasturas", unidad: "ha", inicio: vacio(), cierre: vacio(),
+      origen: d.stockInicio ? "no hay pasturas cargadas: lote, año de siembra, ha y US$/ha" : "no se trajeron las pasturas (falta «Traer stock y precios»)" })
   }
   return lineas
 }

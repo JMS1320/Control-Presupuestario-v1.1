@@ -33,6 +33,8 @@
  * empieza a mentir.
  */
 
+import { filasBalanceEnLinea, hojaCajaYBancos } from "@/lib/balance/balance-en-linea"
+import { APERTURA_MSA_2025 } from "@/lib/balance/apertura-contador"
 import { libroDeSolapa, repartirEnLibros, templatesDeResponsable, detalleBancarioDelLibroC, canalDePago } from "@/lib/balance/libros-del-balance"
 import { armarStocksUnificados, hojaDeStocks } from "@/lib/balance/stocks-unificado"
 import { temasDeCuentaCorriente } from "@/lib/balance/recorrido-conciliacion"
@@ -12245,6 +12247,33 @@ export function correrCasos(): Resultado[] {
     const e2 = "pagar: true false 19728504.98=f · cobrar: true 18445080=f · col «Dónde verlo» true"
     chequear("Papel 04", "🔁 Al pie del 04, las cuentas corrientes con saldo a pagar (y en el 03 las que somos acreedores), con razón social y saldo, sumadas al total con fórmula",
       e2, v2, v2 === e2, "A-FEAT-1506")
+  }
+
+  // ══ 📒 Libro F — balance en línea (A-FEAT-1509) ══
+  {
+    const ap = APERTURA_MSA_2025.filter(r => ["1.1.1/01/01", "1.1.1/02/02", "1.1.1/02/07", "1.1.1/02/09", "1.1.1/01/03", "1.1.4/01/04", "1.1.4/03/06", "2.1.2/02/01", "4.1.1/01/01"].includes(r.cuenta))
+    const cad = (cuenta: string, antes: number, neto: number, cierre: number) => ({ cuenta, saldoInicio: null, fuenteInicio: null, saldoAntesDeLoCargado: antes, desde: "2025-07-01",
+      netoNoCargado: null, netoCargado: neto, hasta: "2026-06-30", saldoAlCierre: cierre, cierreCalculado: antes + neto, diferencia: 0 })
+    const e = {
+      apertura: ap, fechaCierre: "2026-06-30",
+      cadenas: [cad("BANCO GALICIA (cta cte)", 832605.05, -3093975.02, -2261369.97), cad("CAJA SIGOT", 598826, 915047, 1308873)],
+      dolares: { cuenta: "MSA Cuenta Corriente USD", usdInicio: 35001.63, netoUsd: -34401.92, usdCierre: 599.71, desde: "2025-07-03", hasta: "2026-06-02", tcCierre: 1473, fuenteTc: "BNA" },
+      cajaUsd: { movimientos: 0, netoUsd: 0 },
+      suss: { concepto: "Cargas Sociales", vencimiento: "2026-07-14", monto: 2495547.51, estado: "conciliado" },
+    } as never
+    const filas = filasBalanceEnLinea(e)
+    const de = (c: string) => filas.find(x => x.renglon.cuenta === c)!
+    const v = [
+      `caja ${de("1.1.1/01/01").cierre}`, `galicia ${de("1.1.1/02/07").cierre}`, `provincia ${de("1.1.1/02/02").cierre}`, `usd ${de("1.1.1/02/09").cierre}`,
+      `cajaUSD ${de("1.1.1/01/03").cierre}`, `ganancias ${de("1.1.4/01/04").cierre}`, `cheque ${de("1.1.4/03/06").cierre}`, `suss ${de("2.1.2/02/01").cierre}`, `arrend ${de("4.1.1/01/01").cierre}`,
+    ].join(" · ")
+    const esp = "caja 10818664.62 · galicia -2261369.97 · provincia null · usd 883372.83 · cajaUSD 932000 · ganancias null · cheque null · suss -2495547.51 · arrend null"
+    chequear("Libro F", "Cierre SÓLO en la tanda de Claude: caja = apertura + movimientos de las cajas; bancos = saldo del extracto; USD × dólar de cierre; SUSS = el template que vence después; lo del contador, Libro Diario/templates e «impuesto al cheque» quedan en blanco",
+      esp, v, v === esp, "A-FEAT-1509")
+    const cb = hojaCajaYBancos(e)
+    const gal = cb.find(r => r[0] === "BANCO GALICIA (cta cte)")!
+    const ctl = (gal[7] as { v: number }).v
+    chequear("Libro F", "Control de cada banco: apertura del contador + movimientos − saldo de la app = 0 (Galicia real)", "0 ✓ cierra", `${ctl} ${gal[8]}`, ctl === 0 && gal[8] === "✓ cierra", "A-FEAT-1509")
   }
 
   return r

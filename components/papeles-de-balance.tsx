@@ -67,7 +67,10 @@ import { descargarLibroDiarioConsensuado, retencionesDeVenta, type FilaVentaCons
 import { leerCobrosYRetenciones } from "@/lib/balance/cobros-de-ventas"
 import { descargarDiferenciasVsArca } from "@/lib/balance/diferencias-vs-arca"
 import { saldosEnDolaresParaBalance, CUENTAS_EN_MONEDA_EXTRANJERA } from "@/lib/dolares/posicion-cierre"
-import { detalleBancarioDelLibroC, canalDePago } from "@/lib/balance/libros-del-balance"
+import { detalleBancarioDelLibroC, canalDePago, dolaresParaBalance } from "@/lib/balance/libros-del-balance"
+import { APERTURA_MSA_2025 } from "@/lib/balance/apertura-contador"
+import type { EntradaBalanceEnLinea } from "@/lib/balance/balance-en-linea"
+import { leerDeudaTarjeta, leerSussAlCierre, leerFci, leerSojaInicio, leerTcCierre } from "@/lib/balance/balance-en-linea-lectura"
 import { MarcaTentativo } from "@/components/marca-tentativo"
 import { leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { traerTodo, lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
@@ -155,6 +158,9 @@ export function PapelesDeBalance() {
   /** 🔢 ¿Cada template tiene sus cuotas en la campaña? (decisión de JMS del 28/10/2026). */
   const [controlCuotas, setControlCuotas] = useState<ControlCuotasTemplates | null>(null)
   const [hacienda, setHacienda] = useState<DatosHacienda | null>(null)
+  /** 📚 A-BUG-1508: el set espera el stock si no se trajo (un ref, porque el estado no se ve dentro del clic). */
+  const haciendaRef = useRef<DatosHacienda | null>(null)
+  useEffect(() => { haciendaRef.current = hacienda }, [hacienda])
   /**
    * 👷 El papel de sueldos (A-FEAT-1216). Va en su propio estado: si falla, el resto del libro sale
    * igual — es una parte más del balance, no el balance.
@@ -374,6 +380,50 @@ export function PapelesDeBalance() {
     if (!dd) { dd = await leerDdjj(lib); setDdjjGuardadas(dd) }
     const temas = conc ? armarTemasRecorrido(lib, conc, dd) : []
     return argsDelExcel(lib, recorridoParaExcel(temas, conc), conc)
+  }
+  /**
+   * 📒 A-FEAT-1509 — lo que el libro F junta: lo que ya armó la pantalla (papeles bancarios, 03/04, 05, hacienda) y lo que
+   * lee aparte (tarjeta, SUSS, FCI, soja, dólar de cierre). Sólo MSA tiene la apertura del contador cargada.
+   */
+  const entradaBalanceEnLinea = async (lib: LibroDiario): Promise<EntradaBalanceEnLinea | null> => {
+    if (empresa.id !== "MSA") return null
+    const fc = lib.ejercicio.fechaCierre
+    const [tarjeta, suss, fci, soja, tc] = await Promise.all([
+      leerDeudaTarjeta(supabase, empresa.schema, fc), leerSussAlCierre(supabase, empresa.id, fc),
+      leerFci(supabase, empresa.id, anioCierre), leerSojaInicio(supabase, empresa.id, anioCierre), leerTcCierre(supabase, fc),
+    ])
+    const { dolares, cajaUsd } = dolaresParaBalance(bancarios?.cuentasEnDolares, tc)
+    const provCompras = lib.provisiones.filter(a => a.fuente !== "venta")
+    const ccAPagar = (cuentasCorrientesConInicio?.cuentas ?? []).filter(c => c.saldoAlCierre > 0).reduce((t, c) => t + c.saldoAlCierre, 0)
+    return {
+      apertura: APERTURA_MSA_2025, fechaCierre: fc,
+      cadenas: bancarios?.cadenas ?? null,
+      dolares, cajaUsd,
+      fci: fci ? { ...fci, banco: bancarios?.fci?.total ?? null } : null,
+      cheques: valores?.cheques ? { total: valores.cheques.total, cantidad: valores.cheques.filas.length } : null,
+      anticipos: valores?.anticipos ? { total: valores.anticipos.totalAProveedores, cantidad: valores.anticipos.aProveedores.length } : null,
+      proveedores: cuentas?.pagar ? { facturas: cuentas.pagar.total, cuentasCorrientes: Math.round(ccAPagar * 100) / 100 } : null,
+      provision: { total: Math.round(provCompras.reduce((t, a) => t + a.total, 0) * 100) / 100, cantidad: provCompras.length },
+      tarjeta, suss, soja,
+      hacienda: hacienda ? { valuacion: hacienda.valuacion, inicio: hacienda.saldos?.hacienda?.inicio ?? null, cierre: hacienda.saldos?.hacienda?.cierre ?? null } : null,
+    }
+  }
+  /** 📚 Para el clic del set: lo de la ÚLTIMA vuelta de la pantalla (si esperó el stock, el estado del clic ya quedó viejo). */
+  const ultimo = useRef({ argsConRecorrido, entradaBalanceEnLinea })
+  ultimo.current = { argsConRecorrido, entradaBalanceEnLinea }
+  const bajarSet = async (lib: LibroDiario) => {
+    // 🛑 A-BUG-1508: sin stock y precios, el libro E y la hacienda del F salían vacíos. Si no se trajeron, se traen primero.
+    if (!haciendaRef.current) {
+      toast.info("Trayendo stock y precios antes de bajar el set…")
+      setPedidoStock(n => n + 1)
+      const hasta = Date.now() + 180000
+      while (!haciendaRef.current && Date.now() < hasta) await new Promise(r => setTimeout(r, 1000))
+      if (!haciendaRef.current) toast.warning("No llegaron el stock y los precios: el set sale igual y lo dice en cada renglón.")
+      await new Promise(r => setTimeout(r, 300))
+    }
+    const args = await ultimo.current.argsConRecorrido(lib)
+    const entradaF = await ultimo.current.entradaBalanceEnLinea(lib)
+    await descargarSetDelBalance(args, entradaF)
   }
   const sinResponder = temasRecorrido.filter(t => !t.respondido).length
   /** Lo que todavía no llegó, para que la vista previa lo diga en vez de parecer completa. */
@@ -833,12 +883,16 @@ export function PapelesDeBalance() {
         // 💵 A-FEAT-1503: los gastos de las cuentas BANCARIAS en dólares, en dólares (van aparte en el papel 08).
         const gastosEnDolares: { cuenta: string; gastos: ReturnType<typeof armarGastosBancarios> }[] = []
         const movsEnDolares: Array<MovimientoExtracto & { donde: string }> = []
-        for (const c of (CUENTAS_EN_MONEDA_EXTRANJERA[empresa.id] ?? []).filter(x => x.tipo === "banco")) {
+        const cuentasEnDolares: { cuenta: string; tipo: string; movs: MovimientoExtracto[] }[] = []
+        for (const c of (CUENTAS_EN_MONEDA_EXTRANJERA[empresa.id] ?? [])) {
           const q = c.schema_bd === "public" ? supabase.from(c.tabla_bd) : supabase.schema(c.schema_bd).from(c.tabla_bd)
           const leido = await traerTodo((d, h) => q.select("fecha, descripcion, categ, nro_cuenta, debitos, creditos, saldo, orden", { count: "exact" })
             .gte("fecha", `${meses[0]}-01`).lte("fecha", finDelEjercicio).order("fecha").order("orden").order("id").range(d, h))
           if (leido.error) { toast.warning(`No se pudieron leer los gastos de ${c.nombre}: faltan en el papel 08.`); continue }
           anotar(`Extracto ${c.nombre}`, leido)
+          // 📒 A-FEAT-1509: los movimientos de cada cuenta en dólares (bancos y cajas), para el libro F
+          cuentasEnDolares.push({ cuenta: c.nombre, tipo: c.tipo, movs: (leido.data ?? []) as MovimientoExtracto[] })
+          if (c.tipo !== "banco") continue
           gastosEnDolares.push({ cuenta: c.nombre, gastos: armarGastosBancarios((leido.data ?? []) as MovimientoExtracto[], (planCuentas ?? []) as CuentaDelPlan[], meses) })
           movsEnDolares.push(...((leido.data ?? []) as MovimientoExtracto[]).map(m => ({ ...m, donde: c.nombre })))
         }
@@ -868,6 +922,7 @@ export function PapelesDeBalance() {
             pctComputable(empresa.id).general, pctComputable(empresa.id).efectivo),
           gastos: armarGastosBancarios(movimientos, (planCuentas ?? []) as CuentaDelPlan[], meses),
           gastosEnDolares,
+          cuentasEnDolares,
           // 📚 A-FEAT-1505: el detalle movimiento por movimiento para el libro C (impuestos y gastos bancarios, intereses, inversiones)
           detalleBancario: detalleBancarioDelLibroC(movimientos, movsEnDolares, (planCuentas ?? []) as CuentaDelPlan[], esFCI),
           retiros: armarRetirosYAportes(movimientos, meses),
@@ -1226,7 +1281,7 @@ export function PapelesDeBalance() {
           )}
           {libro && (
             <Button disabled={!!cargandoConciliacion} title="Los libros A a E en un .zip: A subdiarios · B deudas, créditos y cuentas corrientes · C templates y detalle bancario · D el resto · E stocks"
-              onClick={async () => { await descargarSetDelBalance(...await argsConRecorrido(libro)) }}>
+              onClick={async () => { await bajarSet(libro) }}>
               📚 Bajar el set A–E (.zip)
             </Button>
           )}

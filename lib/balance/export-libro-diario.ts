@@ -45,6 +45,7 @@ import type { CuentasSinCuentaCorriente } from "./fuera-por-cuenta-corriente"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
 import { armarStocksUnificados, hojaDeStocks } from "./stocks-unificado"
+import { filasBalanceEnLinea, hojaBalanceEnLinea, hojaCajaYBancos, hojaFci, hojaDeudasYCreditos, hojaSoja, hojaVacasDeCria, type EntradaBalanceEnLinea } from "./balance-en-linea"
 import { LIBROS, repartirEnLibros, templatesDeResponsable, hojaListadoTemplates, hojaDeDetalle, type GrupoDetalle, type MovimientoDelDetalle } from "./libros-del-balance"
 import { hojaDelRecorrido, sincronizarPendientes, type RecorridoParaExcel } from "./recorrido-excel"
 import { hojaDeSaldosAnteriores, type SaldosAnteriores } from "./ajustes-balance"
@@ -2854,10 +2855,11 @@ const COLS_DETALLE_BANCARIO: Columna[] = [
  * 📚 A-FEAT-1505 — baja el SET: los libros A a E en un .zip (JMS: «así tengo siempre todo el set parejo»). Se arma el libro
  * completo una sola vez (más el C) y se reparte: los cinco salen del mismo cálculo que el Excel de siempre.
  */
-export async function descargarSetDelBalance(...a: Parameters<typeof armarWorkbook>): Promise<void> {
+export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>, entradaF?: EntradaBalanceEnLinea | null): Promise<void> {
   const [libro, empresa, templates, , , , , bancarios] = a
   const wb = armarWorkbook(...a)
   agregarLibroC(wb, empresa, libro.ejercicio.etiqueta, templates ?? null, bancarios?.detalleBancario ?? null)
+  if (entradaF) agregarLibroF(wb, entradaF)
   const { default: JSZip } = await import("jszip")
   const zip = new JSZip()
   const base = nombreArchivo(libro, empresa).replace(/\.xlsx$/, "")
@@ -2874,6 +2876,24 @@ export async function descargarSetDelBalance(...a: Parameters<typeof armarWorkbo
   el.click()
   setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(el) }, ESPERA_ANTES_DE_LIBERAR_MS)
 }
+
+/** 📒 A-FEAT-1509 — las hojas del LIBRO F: el balance en línea y una de detalle por renglón de la tanda de Claude. */
+export function agregarLibroF(wb: XLSX.WorkBook, e: EntradaBalanceEnLinea): void {
+  hoja(wb, "F · Balance en linea", hojaBalanceEnLinea(filasBalanceEnLinea(e), e.fechaCierre), COLS_BEL)
+  hoja(wb, "F · Caja y bancos", hojaCajaYBancos(e), COLS_DET_F)
+  hoja(wb, "F · FCI", hojaFci(e), COLS_DET_F)
+  hoja(wb, "F · Deudas y creditos", hojaDeudasYCreditos(e), COLS_DET_F)
+  hoja(wb, "F · Soja", hojaSoja(e), COLS_DET_F)
+  hoja(wb, "F · Vacas de cria", hojaVacasDeCria(e), COLS_DET_F)
+}
+const COLS_BEL: Columna[] = [
+  { ancho: 16 }, { ancho: 13 }, { ancho: 44 }, { ancho: 18, z: MONEDA }, { ancho: 18, z: MONEDA }, { ancho: 16, z: MONEDA },
+  { ancho: 12 }, { ancho: 34 }, { ancho: 52 }, { ancho: 22 }, { ancho: 60 },
+]
+const COLS_DET_F: Columna[] = [
+  { ancho: 34 }, { ancho: 17, z: MONEDA }, { ancho: 17, z: MONEDA }, { ancho: 17, z: MONEDA }, { ancho: 18, z: MONEDA },
+  { ancho: 18, z: MONEDA }, { ancho: 18, z: MONEDA }, { ancho: 16, z: MONEDA }, { ancho: 70 },
+]
 
 /** Descarga el archivo en el navegador. */
 export async function descargarLibroDiario(

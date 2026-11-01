@@ -23,7 +23,7 @@ import { buscarCuenta } from "./papeles-bancarios"
 import type { CuotaTemplate, TemplatesDelEjercicio } from "./templates-libro"
 import { armarTemplatesDelEjercicio } from "./templates-libro"
 
-export type LetraLibro = "A" | "B" | "C" | "D" | "E"
+export type LetraLibro = "A" | "B" | "C" | "D" | "E" | "F"
 
 export const LIBROS: Record<LetraLibro, string> = {
   A: "A - Subdiarios (terminado)",
@@ -31,6 +31,7 @@ export const LIBROS: Record<LetraLibro, string> = {
   C: "C - Templates y detalle bancario (para trabajar)",
   D: "D - El resto",
   E: "E - Stocks inicio y cierre",
+  F: "F - Balance en linea",
 }
 
 const DE_A = new Set(["Compras", "Ventas", "Compras por cuenta", "Ventas por cuenta"])
@@ -43,6 +44,7 @@ export function libroDeSolapa(nombre: string): LetraLibro {
   if (DE_B.has(nombre)) return "B"
   if (DE_E.has(nombre)) return "E"
   if (nombre.startsWith("C · ")) return "C"
+  if (nombre.startsWith("F · ")) return "F"
   return "D"
 }
 
@@ -173,7 +175,7 @@ export function repartirEnLibros<V>(wb: XLSX.WorkBook, vistas: V[]): { letra: Le
     l.solapas.push(nombre)
     out.set(letra, l)
   })
-  return (["A", "B", "C", "D", "E"] as LetraLibro[]).filter(k => out.has(k)).map(letra => ({ letra, ...out.get(letra)! }))
+  return (["A", "B", "C", "D", "E", "F"] as LetraLibro[]).filter(k => out.has(k)).map(letra => ({ letra, ...out.get(letra)! }))
 }
 
 /** 🔎 A-FEAT-1506: el nombre del canal de pago (la tabla donde se encontró el movimiento) en palabras de la app. */
@@ -187,4 +189,30 @@ export function canalDePago(tabla: string | undefined | null): string | undefine
     pam_galicia: "PAM Galicia (extracto)", pam_galicia_cc: "PAM Galicia cta cte (extracto)", "ma.ma_galicia": "MA Galicia (extracto)",
   }
   return NOMBRES[t] ?? t
+}
+
+/**
+ * 📒 A-FEAT-1509: la cuenta y la caja en dólares para el libro F. Pura: de los movimientos del ejercicio, el saldo en US$
+ * antes del primero (saldo + débito − crédito), el neto y el saldo del último.
+ */
+export function dolaresParaBalance(cuentas: { cuenta: string; tipo: string; movs: MovimientoExtracto[] }[] | undefined, tc: { tc: number; fuente: string } | null) {
+  if (!cuentas) return { dolares: null, cajaUsd: null }
+  const banco = cuentas.find(c => c.tipo === "banco")
+  const caja = cuentas.filter(c => c.tipo !== "banco")
+  const n = (v: unknown) => Number(v ?? 0) || 0
+  let dolares = null
+  if (banco) {
+    const ms = [...banco.movs].sort((a, b) => a.fecha.localeCompare(b.fecha) || n(a.orden) - n(b.orden))
+    const pri = ms[0], ult = ms[ms.length - 1]
+    dolares = {
+      cuenta: banco.cuenta,
+      usdInicio: pri && pri.saldo != null ? Math.round((n(pri.saldo) + n(pri.debitos) - n(pri.creditos)) * 100) / 100 : null,
+      netoUsd: Math.round(ms.reduce((t, m) => t + n(m.creditos) - n(m.debitos), 0) * 100) / 100,
+      usdCierre: ult && ult.saldo != null ? n(ult.saldo) : null,
+      desde: pri?.fecha ?? null, hasta: ult?.fecha ?? null,
+      tcCierre: tc?.tc ?? null, fuenteTc: tc?.fuente ?? "sin dólar al cierre",
+    }
+  }
+  const movsCaja = caja.flatMap(c => c.movs)
+  return { dolares, cajaUsd: { movimientos: movsCaja.length, netoUsd: movsCaja.reduce((t, m) => t + n(m.creditos) - n(m.debitos), 0) } }
 }

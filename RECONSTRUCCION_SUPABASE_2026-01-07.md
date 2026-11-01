@@ -3350,6 +3350,9 @@ Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantid
 ### 2026-11-01 · Las notas de JMS sobre los papeles 04 y 14 (script 173, DATOS) — A-FEAT-1506 — ✅ CORRIDO con OK de JMS
 (a) `balance_datos_usuario` `cc.saldo-inicio` MSA 2026: JMS y AMS → 0 (eran TENTATIVOS de Claude, $ 15 M y $ 10,5 M; el anterior queda en `historial`). (b) `ajustes_balance`: 20 filas `accion = 'pagado_al_cierre'` (`tabla = 'msa.comprobantes_arca'`, `registro_id` = la factura), $ 3.090.891,91: el papel 04 las da por pagadas; la factura NO cambia. (c) `balance_pendientes`: 2 pendientes de MA y PAM («ver con Mauricio»). Marca `[script 173]`; deshacer: `173-…-deshacer.sql`.
 
+### 2026-11-01 · El FCI de MSA al INICIO (script 174, DATOS) — A-FEAT-1509 — ✅ CORRIDO con OK de JMS («sí», precio deducido)
+`balance_datos_usuario` (papel `fci`, MSA, cierre 2026): `cuotapartes_inicio` = 362.898,06 (de los resúmenes FIMA: 577.094,86 al 31/07/2025 − 820.696,97 suscriptas + 606.500,17 rescatadas en julio) y `valor_cuotaparte_inicio` = 64,0511 DEDUCIDO (apertura del contador $ 23.244.019,93 ÷ cuotas). Marca `[script 174]`; deshacer: `174-…-deshacer.sql`.
+
 ### 2026-11-01 · Parseo de SANTANDER (script 167, DATOS) — A-FEAT-1485 — ✅ CORRIDO con OK de JMS («ok corré el 167»)
 `msa.santander`: `concepto` (texto en líneas, `bloqueSantander`) + desglose de los 148 movimientos (descripcion, grupo_de_conceptos, leyendas_adicionales_1..3, numero_de_comprobante, numero_de_terminal); `public.config_parseo_extracto` + 20 reglas de `msa_santander` (marca `[script 167]` en `descripcion_campo`); `public.reglas_conciliacion` + 1 (CUIT 30617786016 → template «Interbancaria Santander», marca en `detalle`). Foto antes: `scripts/167-parseo-santander-foto.json`. Deshacer: `167-parseo-santander-deshacer.mts`.
 

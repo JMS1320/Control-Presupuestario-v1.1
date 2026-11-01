@@ -11,6 +11,7 @@
  * 🔔 Si la foto ya tenía valores del sistema y hoy el sistema dice otra cosa, **se muestra la
  * diferencia y no se pisa sola**: se actualiza sólo si el usuario aprieta el botón.
  */
+import { leerDeudaTarjeta } from "@/lib/balance/balance-en-linea-lectura"
 import { useEffect, useMemo, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
@@ -20,7 +21,7 @@ import { Input } from "@/components/ui/input"
 import { tcDolarAl } from "@/lib/dolares/tc-cierre"
 import { useDatosDelBalance, textoEstadoGuardado } from "@/lib/balance/datos-usuario"
 import {
-  RENGLONES, propuestaDelSistema, cambiosContraLoGuardado, deudaDeTarjeta, parsearMonto,
+  RENGLONES, propuestaDelSistema, cambiosContraLoGuardado, parsearMonto,
   type DatosDeLosPapeles, type ValorFoto, type ValorPropuesto,
 } from "@/lib/balance/balance-propio"
 
@@ -80,18 +81,10 @@ export function ProponerFotoBalance({ empresa, fechaInicio, fechaCierre, datos, 
         if (error) throw error
         e.echeqsCartera = suma((data ?? []) as any[], x => (Number(x.creditos) || 0) - (Number(x.debitos) || 0))
       } catch { fallas.push("echeqs de terceros") }
-      try {
-        const { data, error } = await supabase.schema(sch).from("tarjeta_visa_business")
-          .select("tipo_fila, fecha, debitos, creditos, fecha_cierre, fecha_vencimiento")
-        if (error) throw error
-        const filas = (data ?? []) as any[]
-        e.tarjeta = deudaDeTarjeta(
-          filas.filter(f => f.tipo_fila === "resumen" && f.fecha_cierre && f.fecha_vencimiento)
-            .map(f => ({ cierre: f.fecha_cierre, vencimiento: f.fecha_vencimiento, total: Number(f.debitos) || 0 })),
-          filas.filter(f => f.tipo_fila === "movimiento")
-            .map(f => ({ fecha: f.fecha, importe: (Number(f.debitos) || 0) - (Number(f.creditos) || 0), cierreResumen: f.fecha_cierre ?? null })),
-          fechaCierre)
-      } catch { fallas.push("tarjeta") }
+      // 💳 La misma lectura que usa el libro F (A-FEAT-1509): un solo cálculo de la deuda de la tarjeta.
+      const tj = await leerDeudaTarjeta(supabase, sch, fechaCierre)
+      if (tj) e.tarjeta = tj
+      else fallas.push("tarjeta")
       try {
         // Anticipos de Ganancias: las cuotas pagadas en el ejercicio del template de la empresa.
         const { data, error } = await supabase.from("cuotas_egresos_sin_factura")
