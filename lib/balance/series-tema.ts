@@ -27,10 +27,37 @@ export interface TemplatePar { id: string; nombre: string; activo: boolean; anua
 export interface ExtrasTemas {
   /** CUIT → sus movimientos en cada cuenta de la empresa. */
   series: Map<string, SerieCuenta[]>
+  /** 🏪 Sin CUIT (cajas, tarjetas, gastos del banco): `cuenta|clave del nombre` → sus movimientos en esa cuenta. */
+  seriesNombre?: Map<string, SerieCuenta>
   /** id de template → los templates de su grupo (él incluido). */
   pares: Map<string, TemplatePar[]>
 }
-export const SIN_EXTRAS: ExtrasTemas = { series: new Map(), pares: new Map() }
+export const SIN_EXTRAS: ExtrasTemas = { series: new Map(), pares: new Map(), seriesNombre: new Map() }
+
+/**
+ * 🏪 **La clave del NOMBRE** para las cuentas que no traen CUIT (A-FEAT-1484, JMS 01/11: «seguí con la tira en cajas y
+ * tarjetas»): mayúsculas, sin acentos, sin las palabras con números (terminal, comprobante, sucursal) y las DOS primeras
+ * palabras que quedan. Así «AUTOPISTAS DEL S 8030…» y «AUTOPISTA DEL OE 8030…» no, pero «AUTOPISTAS DEL S» y «AUTOPISTAS
+ * DEL OESTE» sí caen juntas; «FARMACITY 62» y «FARMACITY 105» también; y en la caja, «Pago Elvio jornales» y «Pago Elvio
+ * viatico» son la tira de Elvio. Vacía = no se arma tira (mejor ninguna que una que junte cualquier cosa).
+ */
+export function claveNombre(texto: string | null | undefined): string {
+  const palabras = String(texto ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase()
+    .replace(/[()\[\],.;:'"]/g, " ").split(/\s+/).filter(w => w && !/\d/.test(w))
+  return palabras.length ? palabras.slice(0, 2).join(" ") : ""
+}
+
+/** 🏪 El link a la tira por NOMBRE dentro de UNA cuenta (cuando el movimiento no trae CUIT). */
+export function linksSerieNombre(extras: ExtrasTemas, cuentaId: string, texto: string | null | undefined): LinkDato[] {
+  const k = claveNombre(texto)
+  const s = k ? extras.seriesNombre?.get(`${cuentaId}|${k}`) : undefined
+  if (!s || (s.ids.length < 2 && s.conciliados === 0)) return []
+  const ult = s.ids.length > MAX_IDS ? s.ids.slice(-MAX_IDS) : s.ids
+  const fechas = s.ids.length > MAX_IDS ? s.fechas.slice(-MAX_IDS) : s.fechas
+  const r = rangoQueContiene(fechas, 1)
+  return [{ texto: `📜 Todos los movimientos «${k}» en ${s.nombreCuenta} (${s.ids.length}: ${s.conciliados} conciliados${s.ids.length > MAX_IDS ? `; se abren los últimos ${MAX_IDS}` : ""})`,
+    href: linkExtracto({ cuenta: s.cuentaId, movs: ult, desde: r.desde, hasta: r.hasta }) }]
+}
 
 /** El link a la tira de movimientos de un CUIT (uno por cuenta). `excepto` = la cuenta+movimiento que ya tiene su propio link. */
 export function linksSerieMovimientos(extras: ExtrasTemas, cuit: string | undefined, nombre: string): LinkDato[] {
@@ -65,22 +92,35 @@ type Cliente = any
 export async function leerExtrasTemas(sb: Cliente, empresa: string, desde: string, hasta: string): Promise<{ extras: ExtrasTemas; avisos: string[] }> {
   const avisos: string[] = []
   const series = new Map<string, SerieCuenta[]>()
+  const seriesNombre = new Map<string, SerieCuenta>()
   const d = new Date(Date.parse(desde) - 183 * 86400000).toISOString().slice(0, 10)
   const h = new Date(Date.parse(hasta) + 92 * 86400000).toISOString().slice(0, 10)
-  for (const c of CUENTAS_CONCILIABLES.filter(x => x.empresa === empresa && x.leyendas)) {
+  for (const c of CUENTAS_CONCILIABLES.filter(x => x.empresa === empresa)) {
     try {
-      const filas: { id: string; fecha: string; estado: string | null; leyendas_adicionales_2: string | null }[] = []
+      const filas: { id: string; fecha: string; estado: string | null; descripcion?: string | null; leyendas_adicionales_1?: string | null; leyendas_adicionales_2?: string | null; tipo_fila?: string | null }[] = []
+      const esTarjeta = /tarjeta/.test(c.tabla)
+      const cols = ["id", "fecha", "estado", "descripcion", ...(c.leyendas ? ["leyendas_adicionales_1", "leyendas_adicionales_2"] : []), ...(esTarjeta ? ["tipo_fila"] : [])].join(",")
       for (let i = 0; ; i += 1000) {
         const base = c.schema === "public" ? sb.from(c.tabla) : sb.schema(c.schema).from(c.tabla)
-        const { data, error } = await base.select("id,fecha,estado,leyendas_adicionales_2").gte("fecha", d).lte("fecha", h).order("fecha").order("id").range(i, i + 999)
+        const { data, error } = await base.select(cols).gte("fecha", d).lte("fecha", h).order("fecha").order("id").range(i, i + 999)
         if (error) throw new Error(error.message)
         filas.push(...(data ?? []))
         if (!data || data.length < 1000) break
       }
       const porCuit = new Map<string, SerieCuenta>()
       for (const f of filas) {
+        if (esTarjeta && f.tipo_fila && f.tipo_fila !== "movimiento") continue
         const k = cuitDe(f.leyendas_adicionales_2)
-        if (k.length !== 11) continue
+        if (k.length !== 11) {
+          // 🏪 sin CUIT: la tira por nombre dentro de esta cuenta
+          const kn = claveNombre(f.leyendas_adicionales_1 || f.descripcion)
+          if (!kn) continue
+          const sn = seriesNombre.get(`${c.cuentaId}|${kn}`) ?? { cuentaId: c.cuentaId, nombreCuenta: c.nombre, ids: [], fechas: [], conciliados: 0 }
+          sn.ids.push(String(f.id)); sn.fechas.push(String(f.fecha).slice(0, 10))
+          if (String(f.estado ?? "").toLowerCase() === "conciliado") sn.conciliados++
+          seriesNombre.set(`${c.cuentaId}|${kn}`, sn)
+          continue
+        }
         const s = porCuit.get(k) ?? { cuentaId: c.cuentaId, nombreCuenta: c.nombre, ids: [], fechas: [], conciliados: 0 }
         s.ids.push(String(f.id)); s.fechas.push(String(f.fecha).slice(0, 10))
         if (String(f.estado ?? "").toLowerCase() === "conciliado") s.conciliados++
@@ -106,5 +146,5 @@ export async function leerExtrasTemas(sb: Cliente, empresa: string, desde: strin
       id: String(e.id), nombre: e.nombre_referencia ?? "?", activo: !!e.activo, anual: !!e.pago_anual, cuotas: cuotas.get(e.id) ?? {} }])
     for (const g of porGrupo.values()) if (g.length > 1) for (const t of g) pares.set(t.id, g)
   } catch (e) { avisos.push(`templates vinculados (anual/cuotas): ${(e as Error).message}`) }
-  return { extras: { series, pares }, avisos }
+  return { extras: { series, pares, seriesNombre }, avisos }
 }

@@ -25,7 +25,7 @@ import { celdaNumero, type Comparacion } from "@/lib/cuaderno/papel-de-trabajo"
 import type { LinkDato } from "./cobertura-papeles"
 import type { Tema } from "./recorrido"
 import type { CruceCheque } from "@/lib/conciliacion/cheques-vencidos"
-import { SIN_EXTRAS, linksSerieMovimientos, parDeTemplate, type ExtrasTemas } from "./series-tema"
+import { SIN_EXTRAS, linksSerieMovimientos, linksSerieNombre, parDeTemplate, type ExtrasTemas } from "./series-tema"
 
 const dmy = (f?: string | null) => (f ? f.slice(0, 10).split("-").reverse().join("/") : "")
 const plata = (x: number) => `$ ${x.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -97,7 +97,9 @@ ${par.texto}` : "")
       links: [
         { texto: `El movimiento en el extracto (${m.cuenta.nombre})`, href: linkMovimiento(m) },
         // 📜 A-FEAT-1484 — la serie: todos los movimientos de esa contraparte en el banco (conciliados o no)
-        ...linksSerieMovimientos(extras, m.cuitBanco, m.quienBanco || p.contraparte?.nombre || "esta contraparte"),
+        ...(m.cuitBanco ? linksSerieMovimientos(extras, m.cuitBanco, m.quienBanco || p.contraparte?.nombre || "esta contraparte")
+          // 🏪 sin CUIT (cajas, tarjetas, gastos del banco): la tira por nombre en esa cuenta
+          : linksSerieNombre(extras, m.cuenta.cuentaId, m.quienBanco || m.descripcion)),
         ...(par ? [par.link] : []),
         ...p.parejas.flatMap(x => linksDePareja(x, m.cuenta.empresa)).filter((l, i, a) => a.findIndex(y => y.href === l.href) === i).slice(0, 6),
         // 📜 A-FEAT-1467 — la TIRA: si es de una persona de Sueldos, todos sus sueldos (JMS: «la tira de eso»).

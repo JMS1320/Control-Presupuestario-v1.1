@@ -213,7 +213,7 @@ import { resumenDeFilas } from "@/lib/ui/resumen-filas"
 import { empleadoPorNombre, tiraDeContraparte, proponerConciliaciones, CUENTAS_CONCILIABLES, ventanasAlrededor, moverMeses, type DatosConciliacion, type MovimientoSinConciliar, type Obligacion } from "@/lib/conciliacion/propuestas-ejercicio"
 import { temasDeMovimientos, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
 import { temasSueldoOtraPersona } from "@/lib/balance/control-sueldo-otra-persona"
-import { linksSerieMovimientos, parDeTemplate } from "@/lib/balance/series-tema"
+import { linksSerieMovimientos, linksSerieNombre, claveNombre, parDeTemplate } from "@/lib/balance/series-tema"
 import { temasTarjeta } from "@/lib/balance/control-tarjeta"
 import { bloqueSantander, IDS_CON_PARSEO } from "@/lib/extractos/cuentas-con-parseo"
 import { cruzarChequesConDebitos, numeroEnDescripcion } from "@/lib/conciliacion/cheques-vencidos"
@@ -5709,6 +5709,21 @@ export function correrCasos(): Resultado[] {
     const esp = "1 · 📜 Todos los movimientos de Wilson en MSA Galicia (3: 3 conciliados) · ids ok · solo 0 · 🔗 El par anual/cuotas: «Voyage Anual» activo y «Voyage Cuota» desactivado (sus cuotas)"
     chequear("Recorrido · tiras del tema", "📜 La tira de movimientos del CUIT (todos, con cuántos conciliados) y 🔗 el par anual/cuotas con el estado de cada uno", esp, v,
       v === esp && /ACTIVO — 1 conciliado/.test(par?.texto ?? "") && /desactivado — 6 desactivado/.test(par?.texto ?? "") && parDeTemplate(extras, "otro") === null, "A-FEAT-1484")
+  }
+
+  /**
+   * 🏪 **LA TIRA POR NOMBRE (cajas, tarjetas, gastos del banco) — A-FEAT-1484.** La clave saca números y acentos y
+   * toma dos palabras: Autopistas del Sol y del Oeste juntas, Farmacity con cualquier sucursal, «Pago Elvio» junta
+   * jornales y viáticos; un texto sólo de números no arma tira; y la tira es de ESA cuenta.
+   */
+  {
+    const claves = ["AUTOPISTAS DEL S 803061778601601", "AUTOPISTAS DEL OESTE", "FARMACITY 62", "Pago Elvio jornales", "Pago Élvio viático", "000123 4567"].map(claveNombre)
+    const extras = { series: new Map(), pares: new Map(), seriesNombre: new Map([["caja_sigot|PAGO ELVIO", { cuentaId: "caja_sigot", nombreCuenta: "MSA Caja Sigot", ids: ["e1", "e2", "e3"], fechas: ["2026-01-05", "2026-02-05", "2026-03-05"], conciliados: 2 }]]) }
+    const l = linksSerieNombre(extras, "caja_sigot", "Pago Elvio viatico")
+    const otraCuenta = linksSerieNombre(extras, "caja_general", "Pago Elvio viatico")
+    const v = `${claves.join(" / ")} · ${l[0]?.texto} · otra cuenta ${otraCuenta.length}`
+    const esp = "AUTOPISTAS DEL / AUTOPISTAS DEL / FARMACITY / PAGO ELVIO / PAGO ELVIO /  · 📜 Todos los movimientos «PAGO ELVIO» en MSA Caja Sigot (3: 2 conciliados) · otra cuenta 0"
+    chequear("Recorrido · tira por nombre", "🏪 Sin CUIT, la tira sale por nombre (sin números ni acentos, dos palabras) y dentro de la misma cuenta", esp, v, v === esp, "A-FEAT-1484")
   }
 
   /**
