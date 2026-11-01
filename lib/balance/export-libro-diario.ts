@@ -1668,7 +1668,7 @@ const etiquetaEstado = (e: EstadoParte): string => ({
 
 /** La solapa de pendientes: número, texto largo, fechas y la resolución. */
 const COLS_PENDIENTES: Columna[] = [
-  { ancho: 4 }, { ancho: 80 }, { ancho: 11 }, { ancho: 10 }, { ancho: 50 }, { ancho: 11 },
+  { ancho: 4 }, { ancho: 80 }, { ancho: 11 }, { ancho: 10 }, { ancho: 50 }, { ancho: 11 }, { ancho: 30 },  // ✔ Visto (A-FEAT-1487)
 ]
 
 const COLS_INDICE: Columna[] = [

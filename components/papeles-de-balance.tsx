@@ -27,7 +27,7 @@ import { PendientesBalance } from "./pendientes-balance"
 import { SaldosEjercicioAnterior } from "./saldos-ejercicio-anterior"
 import { ProvisionManual, tablaFacturas } from "./provision-manual"
 import { saldosDelEjercicioAnterior, type AjusteBalance } from "@/lib/balance/ajustes-balance"
-import type { PendienteBalance } from "@/lib/balance/pendientes-balance"
+import { pendientesConVisto, type PendienteBalance } from "@/lib/balance/pendientes-balance"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
@@ -292,7 +292,9 @@ export function PapelesDeBalance() {
     bancarios ?? undefined,
     sueldos ?? undefined,
     cuentasCorrientesConInicio ?? undefined,
-    pendientes,
+    // ✔ A-FEAT-1487: los pendientes con quién los vio (JMS o sólo Claude), y lo resuelto por Claude sin pendiente propio
+    conciliacion?.visto ? pendientesConVisto(pendientes, conciliacion.visto.tareas.map(t => ({ clave: t.clave,
+      titulo: t.descripcion.replace(/^Balance \S+ \S+ · /, ""), resolucion: t.resolucion })), empresa.id, anioCierre) : pendientes,
     saldosDelEjercicioAnterior(ajustes, empresa.id, anioCierre),
     asientosContables ?? undefined,
     lecturas ?? undefined,
@@ -314,7 +316,7 @@ export function PapelesDeBalance() {
     catch (e) { return { wb: null, error: (e as Error).message } }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [verPrevia, libro, empresa.id, templates, hacienda, cuentas, valores, bancarios, sueldos, cuentasCorrientesConInicio,
-    pendientes, ajustes, anioCierre, asientosContables, lecturas, controlCuotas, controlesInicio, propuestaCierre, fotoInicio])
+    pendientes, ajustes, anioCierre, asientosContables, lecturas, controlCuotas, controlesInicio, propuestaCierre, fotoInicio, conciliacion])
   /** 🧭 Los temas del recorrido: la cobertura (mismos datos del Excel) + las preguntas de «Pendientes a revisar». */
   const temasRecorrido = useMemo(() => {
     if (!libro) return []

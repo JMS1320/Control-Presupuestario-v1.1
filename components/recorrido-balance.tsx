@@ -354,6 +354,14 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
               ⚠️ Abiertos {tres.sinFuente > 0 ? `· ${tres.sinFuente} sin fuente` : ""}{tres.sinLink > 0 ? ` · ${tres.sinLink} sin link a la app` : ""}
             </span>
           )}
+          {/* ✔ A-FEAT-1487 — lo visto sólo por Claude, a la vista: un clic lo filtra. */}
+          {prog.porGrupo.visto.total > 0 && (
+            <button type="button" onClick={() => { setFiltro(new Set(["visto"])); setEtiquetas(new Set()); setCuentas(new Set()) }}
+              className="rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-xs text-emerald-900 hover:bg-emerald-100" data-test="recorrido-sin-visto"
+              title="Temas que resolvió Claude y esperan tu visto. Hasta que los confirmes, en el export figuran «Resuelto por Claude — sin tu visto».">
+              ✔ {prog.porGrupo.visto.total} resuelto(s) por Claude sin tu visto
+            </button>
+          )}
           {enCamino.length > 0
             ? <span className="text-xs text-amber-800" data-test="recorrido-cargando">⏳ Todavía llega: {enCamino.join(", ")} — la lista puede crecer y reordenarse</span>
             : <span className="text-xs text-emerald-700" data-test="recorrido-listo">✓ Están todos los temas</span>}

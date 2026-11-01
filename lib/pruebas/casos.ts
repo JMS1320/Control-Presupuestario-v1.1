@@ -216,6 +216,7 @@ import { temasSueldoOtraPersona } from "@/lib/balance/control-sueldo-otra-person
 import { linksSerieMovimientos, linksSerieNombre, claveNombre, parDeTemplate } from "@/lib/balance/series-tema"
 import { temasTarjeta } from "@/lib/balance/control-tarjeta"
 import { aplicarParaTuVisto } from "@/lib/balance/para-tu-visto"
+import { pendientesConVisto } from "@/lib/balance/pendientes-balance"
 import { bloqueSantander, IDS_CON_PARSEO } from "@/lib/extractos/cuentas-con-parseo"
 import { cruzarChequesConDebitos, numeroEnDescripcion } from "@/lib/conciliacion/cheques-vencidos"
 import { echeqDelDebito } from "@/lib/conciliacion/echeq-del-debito"
@@ -5712,6 +5713,22 @@ export function correrCasos(): Resultado[] {
     const esp = "1 · 📜 Todos los movimientos de Wilson en MSA Galicia (3: 3 conciliados) · ids ok · solo 0 · 🔗 El par anual/cuotas: «Voyage Anual» activo y «Voyage Cuota» desactivado (sus cuotas)"
     chequear("Recorrido · tiras del tema", "📜 La tira de movimientos del CUIT (todos, con cuántos conciliados) y 🔗 el par anual/cuotas con el estado de cada uno", esp, v,
       v === esp && /ACTIVO — 1 conciliado/.test(par?.texto ?? "") && /desactivado — 6 desactivado/.test(par?.texto ?? "") && parDeTemplate(extras, "otro") === null, "A-FEAT-1484")
+  }
+
+  /**
+   * ✔ **EL EXPORT DICE QUIÉN LO VIO — A-FEAT-1487.** Un pendiente resuelto en la app = «Visto por JMS»; uno con tarea
+   * por confirmar = «Resuelto por Claude — sin tu visto»; una tarea sin pendiente propio entra igual; un abierto, vacío.
+   * Y arriba de la solapa se cuentan los vistos sólo por Claude.
+   */
+  {
+    const p = (id: string, texto: string, estado: "abierto" | "resuelto") => ({ id, empresa: "MSA", anio_cierre: 2026, texto, estado, resolucion: null, created_at: "2026-10-31", resuelto_at: estado === "resuelto" ? "2026-11-01" : null })
+    const pend = [p("a", "[conc:msa_galicia:echeq102] Echeq 102", "resuelto"), p("b", "[deu:cuota:x] Cuota X", "resuelto"), p("c", "❓ pregunta suelta", "abierto")]
+    const r = pendientesConVisto(pend, [{ clave: "conc:msa_galicia:echeq102", titulo: "Echeq 102", resolucion: "motor" }, { clave: "conc:msa_galicia:manuel", titulo: "Manuel", resolucion: "script 160" }], "MSA", 2026)
+    const hoja = hojaDePendientes(r, "MSA")
+    const visto = (id: string) => hoja.find(f => typeof f[1] === "string" && (f[1] as string).includes(id))?.[6]
+    const v = `${r.length} · echeq ${visto("Echeq 102")} · cuota ${visto("Cuota X")} · manuel ${visto("Manuel")} · abierto «${visto("pregunta suelta")}» · ${hoja[2]?.[0]}`
+    const esp = "4 · echeq Resuelto por Claude — sin tu visto · cuota Visto por JMS · manuel Resuelto por Claude — sin tu visto · abierto «» · ✔ 2 resuelto(s) por Claude, sin el visto de JMS"
+    chequear("Balance · export quién lo vio", "✔ El export distingue lo visto por JMS de lo resuelto por Claude sin su visto, y lo cuenta arriba", esp, v, v === esp, "A-FEAT-1487")
   }
 
   /**
