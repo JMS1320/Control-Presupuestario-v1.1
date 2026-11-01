@@ -66,7 +66,7 @@ import { VistaPreviaBalance } from "./vista-previa-balance"
 import { descargarLibroDiarioConsensuado, retencionesDeVenta, type FilaVentaConsensuada } from "@/lib/balance/libro-diario-consensuado"
 import { leerCobrosYRetenciones } from "@/lib/balance/cobros-de-ventas"
 import { descargarDiferenciasVsArca } from "@/lib/balance/diferencias-vs-arca"
-import { saldosEnDolaresParaBalance } from "@/lib/dolares/posicion-cierre"
+import { saldosEnDolaresParaBalance, CUENTAS_EN_MONEDA_EXTRANJERA } from "@/lib/dolares/posicion-cierre"
 import { MarcaTentativo } from "@/components/marca-tentativo"
 import { leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { traerTodo, lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
@@ -806,6 +806,16 @@ export function PapelesDeBalance() {
         const dolares = await saldosEnDolaresParaBalance(supabase, empresa.id, finDelEjercicio)
         saldos.push(...dolares.saldos)
         for (const a of dolares.avisos) { if (a.startsWith("No se pudo")) toast.warning(`Dólares: ${a}`); else hallazgos.push(`Dólares: ${a}`) }
+        // 💵 A-FEAT-1503: los gastos de las cuentas BANCARIAS en dólares, en dólares (van aparte en el papel 08).
+        const gastosEnDolares: { cuenta: string; gastos: ReturnType<typeof armarGastosBancarios> }[] = []
+        for (const c of (CUENTAS_EN_MONEDA_EXTRANJERA[empresa.id] ?? []).filter(x => x.tipo === "banco")) {
+          const q = c.schema_bd === "public" ? supabase.from(c.tabla_bd) : supabase.schema(c.schema_bd).from(c.tabla_bd)
+          const leido = await traerTodo((d, h) => q.select("fecha, descripcion, categ, nro_cuenta, debitos, creditos, saldo, orden", { count: "exact" })
+            .gte("fecha", `${meses[0]}-01`).lte("fecha", finDelEjercicio).order("fecha").order("orden").order("id").range(d, h))
+          if (leido.error) { toast.warning(`No se pudieron leer los gastos de ${c.nombre}: faltan en el papel 08.`); continue }
+          anotar(`Extracto ${c.nombre}`, leido)
+          gastosEnDolares.push({ cuenta: c.nombre, gastos: armarGastosBancarios((leido.data ?? []) as MovimientoExtracto[], (planCuentas ?? []) as CuentaDelPlan[], meses) })
+        }
         /**
          * 🧮 El control se VE, no vive sólo en la solapa (§ 🧮). Si los importes del extracto no
          * explican sus propios saldos, el saldo que va al papel no se puede entregar.
@@ -831,6 +841,7 @@ export function PapelesDeBalance() {
           impuestoCheque: armarImpuestoCheque(movBanco, meses,
             pctComputable(empresa.id).general, pctComputable(empresa.id).efectivo),
           gastos: armarGastosBancarios(movimientos, (planCuentas ?? []) as CuentaDelPlan[], meses),
+          gastosEnDolares,
           retiros: armarRetirosYAportes(movimientos, meses),
           saldos,
           cadenas,

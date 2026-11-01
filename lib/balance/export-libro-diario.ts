@@ -1840,7 +1840,9 @@ const COLS_BANCOS: Columna[] = [
  * conceptos salen del **plan de cuentas** (`IMPUESTOS BANCARIOS` y `GASTOS BANCARIOS`), no de una
  * lista escrita acá.
  */
-function hojaDeGastosBancarios(g: GastosBancarios, etiqueta: string): unknown[][] {
+export function hojaDeGastosBancarios(g: GastosBancarios, etiqueta: string,
+  /** 💵 A-FEAT-1503: los gastos de las cuentas en DÓLARES, en dólares (JMS 01/11: «serán gastos bancarios en dólares»). */
+  enDolares: { cuenta: string; gastos: GastosBancarios }[] = []): unknown[][] {
   const f: unknown[][] = []
   f.push([`GASTOS BANCARIOS E IMPUESTOS DEL EXTRACTO — ejercicio ${etiqueta}`])
   f.push(["Los conceptos salen del plan de cuentas: totalizadoras IMPUESTOS BANCARIOS y GASTOS BANCARIOS."])
@@ -1855,6 +1857,7 @@ function hojaDeGastosBancarios(g: GastosBancarios, etiqueta: string): unknown[][
     f.push(["El total de abajo NO es el del ejercicio completo."])
   }
   f.push([])
+  const tabla = (g: GastosBancarios) => {
   f.push(["Totalizadora", "Concepto", ...g.meses, "TOTAL (neto)", "Devoluciones", "Movimientos"])
 
   const fila = (x: FilaConceptoPorMes, esTotal = false) => {
@@ -1878,6 +1881,8 @@ function hojaDeGastosBancarios(g: GastosBancarios, etiqueta: string): unknown[][
     f.push([])
   }
   fila(g.total, true)
+  }
+  tabla(g)
 
   if (g.sinClasificar.length > 0) {
     f.push([])
@@ -1886,6 +1891,18 @@ function hojaDeGastosBancarios(g: GastosBancarios, etiqueta: string): unknown[][
     f.push(["No entran al papel porque no se sabe en que totalizadora van. Hay que darles cuenta contable."])
     f.push(["Categoria del extracto", "Debitos", "Creditos", "Movimientos"])
     g.sinClasificar.forEach(s => f.push([s.categ, money(s.debitos), money(s.creditos), s.movimientos]))
+  }
+  // 💵 A-FEAT-1503: cada cuenta en dólares, aparte y EN DÓLARES: no se suma a lo de arriba (son otra moneda).
+  for (const d of enDolares) {
+    if (!d.gastos.filas.length && !d.gastos.sinClasificar.length) continue
+    f.push([])
+    f.push([])
+    f.push([`EN DÓLARES (US$) — ${d.cuenta} — importes en dólares, NO se suman a los de arriba`])
+    tabla(d.gastos)
+    if (d.gastos.sinClasificar.length) {
+      f.push(["Parecen bancarios y no están en el plan de cuentas (US$):"])
+      d.gastos.sinClasificar.forEach(s => f.push([s.categ, money(s.debitos), money(s.creditos), s.movimientos]))
+    }
   }
   return f
 }
@@ -2738,7 +2755,7 @@ export function armarWorkbook(
       }
     }
     hoja(wb, "08 Gastos bancarios",
-      hojaDeGastosBancarios(bancarios.gastos, libro.ejercicio.etiqueta))
+      hojaDeGastosBancarios(bancarios.gastos, libro.ejercicio.etiqueta, bancarios.gastosEnDolares ?? []))
     if (bancarios.impuestoCheque) {
       hoja(wb, "08.1 Impuesto al cheque",
         hojaDeImpuestoCheque(bancarios.impuestoCheque, libro.ejercicio.etiqueta,

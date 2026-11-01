@@ -87,6 +87,8 @@ export interface DatosDelIndice {
   cuentasCorrientes?: PapelDeCuentasCorrientes | null
   bancarios?: {
     gastos: GastosBancarios
+    /** 💵 A-FEAT-1503: los gastos de cada cuenta en dólares, en dólares (papel 08, aparte). */
+    gastosEnDolares?: { cuenta: string; gastos: GastosBancarios }[]
     retiros: RetirosYAportes
     /** Saldo al cierre por cuenta. `null` = no se pudo leer o no hubo movimientos en el período. */
     saldos: Array<{ nombre: string; saldo: number | null; fecha: string | null }>

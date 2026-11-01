@@ -324,7 +324,7 @@ import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
-import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas, hojaPorCuenta, hojaResumenMensual, hojaDeAsientos, conTotalAlPie } from "@/lib/balance/export-libro-diario"
+import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas, hojaPorCuenta, hojaResumenMensual, hojaDeAsientos, conTotalAlPie, hojaDeGastosBancarios } from "@/lib/balance/export-libro-diario"
 import type { LibroDiario as LibroDiarioT } from "@/lib/balance/libro-diario"
 import { juntarTandas, lecturaIncompleta, juntarHasta, mensajeLecturaIncompleta } from "@/lib/supabase-paginado"
 import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
@@ -12152,6 +12152,31 @@ export function correrCasos(): Resultado[] {
     const e2 = "true · 500000 · económico cierre vacío con fórmula true · falta «precio económico cierre»"
     chequear("Stocks en una tabla", "Cantidad y precio son dato; el valor es FÓRMULA (da lo mismo que la cuenta) y queda lista aunque falte el precio; «Qué falta» lo pide",
       e2, v2, v2 === e2, "A-FEAT-1501")
+  }
+
+  // ══ 💵 Gastos bancarios en DÓLARES, aparte en el papel 08 (A-FEAT-1503) ══
+  {
+    const plan = [
+      { nro_cuenta: null, cuenta_contable: "Comisión Cuenta Bancaria", nombre_totalizadora: "GASTOS BANCARIOS", tipo: "egreso" },
+      { nro_cuenta: null, cuenta_contable: "IVA Bancario", nombre_totalizadora: "IMPUESTOS BANCARIOS", tipo: "egreso" },
+      { nro_cuenta: null, cuenta_contable: "INFORMATICA", nombre_totalizadora: "ADMINISTRACION Y ESTRUCTURA", tipo: "egreso" },
+    ]
+    const meses = mesesDelEjercicio(2026, 6)
+    const usd = armarGastosBancarios([
+      { fecha: "2025-07-03", descripcion: "COMISION MANTENIMIENTO", categ: "Comision Cuenta Bancaria", debitos: 10, creditos: 0 },
+      { fecha: "2025-07-03", descripcion: "IVA", categ: "Iva Bancario", debitos: 2.1, creditos: 0 },
+      { fecha: "2025-07-14", descripcion: "GOOGLE ONE", categ: "INFORMATICA", debitos: 19.99, creditos: 0 },
+      { fecha: "2025-08-01", descripcion: "TRF a Galicia Securities", categ: null, debitos: 34000, creditos: 0 },
+    ] as never, plan as never, meses)
+    const pesos = armarGastosBancarios([{ fecha: "2025-07-03", descripcion: "Iva", categ: "Iva Bancario", debitos: 500, creditos: 0 }] as never, plan as never, meses)
+    const hoja = hojaDeGastosBancarios(pesos, "25/26", [{ cuenta: "MSA Cuenta Corriente USD", gastos: usd }])
+    const titulo = hoja.findIndex(f => String(f[0] ?? "").startsWith("EN DÓLARES (US$)"))
+    const totales = hoja.filter(f => f[1] === "TOTAL" || f[1] === "Total" || (f[0] === "" && /total/i.test(String(f[1] ?? ""))))
+    const v = `usd total ${usd.total.totalDebitos} · pesos total ${pesos.total.totalDebitos} · bloque US$ ${titulo > 0} · tablas ${hoja.filter(f => f[0] === "Totalizadora").length}`
+    const e = "usd total 12.1 · pesos total 500 · bloque US$ true · tablas 2"
+    chequear("Papeles bancarios", "💵 Los gastos de la cuenta en dólares van al papel 08 en un bloque aparte EN DÓLARES (no se suman a los pesos); Google One y la transferencia al broker no son gasto bancario",
+      e, v, v === e, "A-FEAT-1503")
+    void totales
   }
 
   return r
