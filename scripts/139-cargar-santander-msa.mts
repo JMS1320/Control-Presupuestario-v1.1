@@ -18,6 +18,7 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { leerResumenSantander, controlarResumenSantander } from "../lib/extractos/pdf-santander"
 import { textosUbicadosPorPagina } from "../lib/polizas/renglones-pdf"
+import { bloqueSantander } from "../lib/extractos/cuentas-con-parseo"
 
 const ESCRIBIR = process.argv.includes("--escribir")
 const VARIAS = join("../Control-Presupuestario-v1.1", "- Comunicacion JMS Claude - Archivos", "Extractos", "Varias")
@@ -54,6 +55,8 @@ for (const f of readdirSync(VARIAS).filter(x => x.startsWith("MSA - Santander - 
   for (const m of r.movimientos) {
     filas.push({
       fecha: m.fecha, descripcion: m.lineas.join(" · ") + (m.comprobante ? ` · Comp. ${m.comprobante}` : ""),
+      // A-FEAT-1485: el texto en líneas para el parseo (lo mismo que hace el script 167 sobre lo ya cargado)
+      concepto: bloqueSantander(m.lineas.join(" · ") + (m.comprobante ? ` · Comp. ${m.comprobante}` : "")),
       debitos: m.debito, creditos: m.credito, saldo: m.saldo, control: 0, orden: orden++,
       estado: "pendiente", moneda: "ARS", cuenta: "santander",
     })

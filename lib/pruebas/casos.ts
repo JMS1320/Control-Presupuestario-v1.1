@@ -215,6 +215,7 @@ import { temasDeMovimientos, temasDeCheques } from "@/lib/balance/recorrido-conc
 import { temasSueldoOtraPersona } from "@/lib/balance/control-sueldo-otra-persona"
 import { linksSerieMovimientos, parDeTemplate } from "@/lib/balance/series-tema"
 import { temasTarjeta } from "@/lib/balance/control-tarjeta"
+import { bloqueSantander, IDS_CON_PARSEO } from "@/lib/extractos/cuentas-con-parseo"
 import { cruzarChequesConDebitos, numeroEnDescripcion } from "@/lib/conciliacion/cheques-vencidos"
 import { echeqDelDebito } from "@/lib/conciliacion/echeq-del-debito"
 import { agregarAlHilo, hiloDelTema } from "@/lib/balance/hilo-tema"
@@ -5708,6 +5709,20 @@ export function correrCasos(): Resultado[] {
     const esp = "1 · 📜 Todos los movimientos de Wilson en MSA Galicia (3: 3 conciliados) · ids ok · solo 0 · 🔗 El par anual/cuotas: «Voyage Anual» activo y «Voyage Cuota» desactivado (sus cuotas)"
     chequear("Recorrido · tiras del tema", "📜 La tira de movimientos del CUIT (todos, con cuántos conciliados) y 🔗 el par anual/cuotas con el estado de cada uno", esp, v,
       v === esp && /ACTIVO — 1 conciliado/.test(par?.texto ?? "") && /desactivado — 6 desactivado/.test(par?.texto ?? "") && parDeTemplate(extras, "otro") === null, "A-FEAT-1484")
+  }
+
+  /**
+   * 🧩 **SANTANDER → EL BLOQUE DEL PARSEO — A-FEAT-1485.** El CUIT pegado al nombre se separa en su línea; «Comp. N»
+   * queda como N al final (lo toma «Nº de operación»); un renglón sin CUIT queda igual; el tipo nunca se parte aunque
+   * tenga números. Y Santander está en la lista única de cuentas con parseo.
+   */
+  {
+    const a = bloqueSantander("Pagos ctas propias interbanking in · Martinez sobrado agro s r l 30617786016 01 3449842 · Comp. 3449842")
+    const b = bloqueSantander("Pago de honorarios · 2507085072 · Comp. 28406785")
+    const c = bloqueSantander("Impuesto ley 25.413 debito 0,6%")
+    const v = [a, b, c].map(x => x.split("\n").join(" | ")).join(" ¦ ") + ` ¦ ${IDS_CON_PARSEO.includes("msa_santander")}`
+    const esp = "Pagos ctas propias interbanking in | Martinez sobrado agro s r l | 30617786016 | 01 3449842 | 3449842 ¦ Pago de honorarios | 2507085072 | 28406785 ¦ Impuesto ley 25.413 debito 0,6% ¦ true"
+    chequear("Parseo · Santander", "🧩 El texto de Santander queda en líneas: nombre / CUIT / resto / comprobante; un gasto bancario queda igual", esp, v, v === esp, "A-FEAT-1485")
   }
 
   /**

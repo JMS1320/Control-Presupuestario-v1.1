@@ -1,5 +1,6 @@
 "use client"
 
+import { IDS_CON_PARSEO } from "@/lib/extractos/cuentas-con-parseo"
 import { pagosDeResumenes, ETIQUETA_ESTADO_PAGO, type DebitoCtaCte } from "@/lib/conciliacion/pago-tarjeta"
 import { pesosDeConsumosUsd, cuotaDeConsumoUsd } from "@/lib/conciliacion/consumos-usd"
 import { hoyArgentina } from "@/lib/fechas"
@@ -1103,7 +1104,7 @@ ${texto.trim()}` : texto.trim()
    * Sólo aplica a Caja de Ahorro: son las cuentas cuyo importador desglosa por reglas.
    */
   const [reparseando, setReparseando] = useState(false)
-  const CUENTAS_CON_PARSEO = ['pam_galicia', 'ma_galicia']
+  const CUENTAS_CON_PARSEO = IDS_CON_PARSEO  // una sola lista para toda la app (A-FEAT-1485)
 
   /**
    * 🧪 **A-FEAT-1172 — si hay un filtro puesto, se re-parsea SÓLO lo que se está viendo.**

@@ -47,7 +47,7 @@ export const CUENTAS_CONCILIABLES: CuentaConciliable[] = [
   { empresa: "MSA", schema: "msa", tabla: "caja_general", cuentaId: "caja_general", nombre: "MSA Caja general", leyendas: false },
   { empresa: "MSA", schema: "msa", tabla: "caja_ams", cuentaId: "caja_ams", nombre: "MSA Caja AMS", leyendas: false },
   { empresa: "MSA", schema: "msa", tabla: "caja_sigot", cuentaId: "caja_sigot", nombre: "MSA Caja Sigot", leyendas: false },
-  { empresa: "MSA", schema: "msa", tabla: "santander", cuentaId: "msa_santander", nombre: "MSA Santander", leyendas: false },
+  { empresa: "MSA", schema: "msa", tabla: "santander", cuentaId: "msa_santander", nombre: "MSA Santander", leyendas: true },  // A-FEAT-1485: parseado (script 167)
   { empresa: "MSA", schema: "msa", tabla: "provincia", cuentaId: "msa_provincia", nombre: "MSA Provincia", leyendas: false },
   { empresa: "PAM", schema: "public", tabla: "pam_galicia", cuentaId: "pam_galicia", nombre: "PAM Galicia CA", leyendas: true },
   { empresa: "PAM", schema: "public", tabla: "pam_galicia_cc", cuentaId: "pam_galicia_cc", nombre: "PAM Galicia CC", leyendas: true },

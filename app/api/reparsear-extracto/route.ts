@@ -31,6 +31,7 @@ import {
   GRUPO_CHOQUE,
 } from "@/lib/extractos/parseo-movimiento"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
+import { CUENTAS_CON_PARSEO } from "@/lib/extractos/cuentas-con-parseo"
 import { exigirEscritura } from "@/lib/auth/guard-recurso"
 
 const supabase = createClient(
@@ -40,11 +41,8 @@ const supabase = createClient(
 
 export const runtime = "nodejs"
 
-/** Las mismas cuentas que acepta el importador de Caja de Ahorro. */
-const CUENTAS: Record<string, { schema: string }> = {
-  pam_galicia: { schema: "public" },
-  ma_galicia: { schema: "ma" },
-}
+/** Las cuentas con parseo: una sola lista para toda la app (A-FEAT-1485 sumó Santander). */
+const CUENTAS: Record<string, { schema: string; tabla: string }> = Object.fromEntries(CUENTAS_CON_PARSEO.map(c => [c.id, { schema: c.schema, tabla: c.tabla }]))
 
 export async function POST(req: Request) {
   const sesion = await exigirSesion()
@@ -91,7 +89,7 @@ export async function POST(req: Request) {
     const mapaReglas = await cargarReglasParseo(supabase, cuenta)
 
     const consulta = db
-      .from(cuenta)
+      .from(cfg.tabla)
       .select("id, fecha, estado, concepto, descripcion, grupo_de_conceptos, tipo_de_movimiento, numero_de_comprobante, numero_de_terminal, observaciones_cliente, leyendas_adicionales_1, leyendas_adicionales_2, leyendas_adicionales_3, leyendas_adicionales_4")
       .not("concepto", "is", null)
       .neq("concepto", "")
@@ -123,6 +121,9 @@ export async function POST(req: Request) {
       const update: Record<string, any> = {}
       for (const [campo, valor] of Object.entries(parsed)) {
         const actual = m[campo] ?? ""
+        // La descripción sólo cambia de mayúsculas (Santander la guardó en minúsculas y el parseo pone el tipo en
+        // mayúsculas): no es un cambio, no se escribe (A-FEAT-1485).
+        if (campo === "descripcion" && String(valor ?? "").toUpperCase() === String(actual).toUpperCase()) continue
         if (String(valor ?? "") !== String(actual)) update[campo] = valor
       }
 
@@ -171,7 +172,7 @@ export async function POST(req: Request) {
     const fallos: any[] = []
     for (const c of cambios) {
       const { error: errUpd, count } = await db
-        .from(cuenta)
+        .from(cfg.tabla)
         .update(c.despues, { count: "exact" })
         .eq("id", c.id)
       if (errUpd) fallos.push({ id: c.id, error: errUpd.message })
@@ -225,7 +226,7 @@ export async function GET(req: Request) {
      * no se corrió jamás. La regla existía; el desglose no. Ver PENDIENTES § A-BUG-1199.
      */
     const { data, error } = await db
-      .from(cuenta)
+      .from(cfg.tabla)
       .select("concepto, descripcion, grupo_de_conceptos, tipo_de_movimiento, numero_de_comprobante, numero_de_terminal, leyendas_adicionales_1, leyendas_adicionales_2, leyendas_adicionales_3, leyendas_adicionales_4")
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

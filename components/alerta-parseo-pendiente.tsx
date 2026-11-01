@@ -22,12 +22,9 @@ import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { FileWarning } from "lucide-react"
 import { COLOR_EMPRESA, type Empresa } from "@/lib/empresas"
+import { CUENTAS_CON_PARSEO } from "@/lib/extractos/cuentas-con-parseo"
 
-/** Las cuentas cuyo importador usa reglas de parseo. Ver `app/api/import-excel-ca`. */
-const CUENTAS_CON_PARSEO: { id: string; nombre: string; empresa: Empresa }[] = [
-  { id: "pam_galicia", nombre: "PAM Galicia CA", empresa: "PAM" },
-  { id: "ma_galicia", nombre: "MA Galicia CA", empresa: "MA" },
-]
+/** Las cuentas con parseo: una sola lista para toda la app (`lib/extractos/cuentas-con-parseo`, A-FEAT-1485). */
 
 interface Causas {
   sinRegla: number

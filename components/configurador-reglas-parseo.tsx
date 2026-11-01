@@ -35,6 +35,7 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, Plus, Trash2, FileWarning, Check, Pencil, Info } from "lucide-react"
 import { toast } from "sonner"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
+import { IDS_CON_PARSEO } from "@/lib/extractos/cuentas-con-parseo"
 import { aplicarRegla, proponerMapeo, esCuit, esCbu, claveDeTipo, mismoTipo, columnasRepetidas, reglasDeLaPropuesta, tieneGrupoPrevisto, COLUMNA_CBU, auditarSubtipo, resolverFilaExistente, grupoParaGuardar, GRUPOS_GALICIA, grupoSugeridoParaTipo, type LineaPropuesta, type ContenidoLinea, type AuditoriaSubtipo, ESTRUCTURA_DATOS, COLUMNAS_INTOCABLES, DESTINO_POR_CONTENIDO } from "@/lib/extractos/parseo-movimiento"
 
 /**
@@ -42,7 +43,7 @@ import { aplicarRegla, proponerMapeo, esCuit, esCbu, claveDeTipo, mismoTipo, col
  * que aceptan `app/api/import-excel-ca` y `app/api/reparsear-extracto`; el nombre se toma de
  * `CUENTAS_BANCARIAS` para que sea idéntico al del selector del modal.
  */
-const IDS_CA = ["pam_galicia", "ma_galicia"]
+const IDS_CA = IDS_CON_PARSEO  // una sola lista para toda la app (A-FEAT-1485)
 const CUENTAS_CA = IDS_CA.map(id => ({
   id,
   nombre: CUENTAS_BANCARIAS.find(c => c.id === id)?.nombre ?? id,
