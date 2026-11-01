@@ -494,6 +494,7 @@ const COLS_TEMPLATES_POR_MES = (meses: number): Columna[] => [
   ...Array.from({ length: meses }, () => ({ ancho: 15, z: MONEDA })),
   { ancho: 17, z: MONEDA },                        // TOTAL
   { ancho: 11, z: ENTERO },                        // Meses con movimiento
+  { ancho: 10, z: ENTERO },                        // Nro (A-FEAT-1513)
 ]
 
 const COLS_TEMPLATES: Columna[] = [
@@ -508,6 +509,7 @@ const COLS_TEMPLATES: Columna[] = [
   { ancho: 12 },                    // Estado
   { ancho: 16, z: MONEDA },         // Débito
   { ancho: 16, z: MONEDA },         // Crédito
+  { ancho: 10, z: ENTERO },         // Nro de «Por mes» (A-FEAT-1513)
 ]
 
 /** Hacienda: cabezas enteras, coeficientes con dos decimales, importes en Contabilidad. */
@@ -2081,11 +2083,30 @@ const COLS_VENTAS: Columna[] = [
  * Las cuotas de templates, en el mismo formato de fila que el libro diario — pedido del usuario:
  * *«replicar formato de libro diario con los templates»*.
  */
+/**
+ * 🧮 A-FEAT-1513 — el Nro de cada fila de «Por mes», en el orden en que se muestra (tipo → responsable → agrupadora). Lo usan
+ * «Por mes» y «Cuotas»: filtrando las cuotas por ese Nro se ve qué forma la fila.
+ */
+export function numerarFilasPorMes(t: TemplatesDelEjercicio): Map<string, number> {
+  const m = new Map<string, number>()
+  for (const tp of ORDEN_TIPOS) {
+    const delTipo = t.porMes.filter(x => x.tipo === tp)
+    for (const r of [...new Set(delTipo.map(x => x.responsable))]) {
+      const dela = delTipo.filter(x => x.responsable === r)
+      for (const a of [...new Set(dela.map(x => x.agrupadora ?? SIN_AGRUPADORA))]) {
+        for (const x of dela.filter(y => (y.agrupadora ?? SIN_AGRUPADORA) === a)) if (x.clave && !m.has(x.clave)) m.set(x.clave, m.size + 1)
+      }
+    }
+  }
+  return m
+}
+
 export function hojaDeTemplates(t: TemplatesDelEjercicio): unknown[][] {
   const f: unknown[][] = [[
     "Fecha", "Concepto", "Proveedor", "Categoría", "Cuenta contable", "Nro cuenta",
-    "Centro de costo", "Responsable", "Estado", "Débito", "Crédito",
+    "Centro de costo", "Responsable", "Estado", "Débito", "Crédito", "Nro (fila de «Por mes»)",
   ]]
+  const nroFila = numerarFilasPorMes(t)
   // Ordenado por tipo, responsable (la empresa del balance primero) y fecha: el orden lo pone
   // `armarTemplatesDelEjercicio`, el mismo de «Templates por mes» (usuario 2026-10-24: «las 2 deben
   // estar ordenadas por responsable»; 2026-10-27: «si es MSA primero MSA, luego MA, luego PAM»).
@@ -2095,6 +2116,7 @@ export function hojaDeTemplates(t: TemplatesDelEjercicio): unknown[][] {
     c.fecha ?? "", c.concepto, c.proveedor, c.categ, c.cuenta_contable, c.nro_cuenta,
     c.centro_costo, c.responsable, c.estado,
     c.monto >= 0 ? money(c.monto) : "", c.monto < 0 ? money(-c.monto) : "",
+    c.filaPorMes ? nroFila.get(c.filaPorMes) ?? "" : "",
   ]
   // 🗂️ A-FEAT-1342: un bloque por tipo, con su subtotal.
   let tipoActual: string | null = null
@@ -2182,7 +2204,8 @@ export function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
    * 🗂️ A-FEAT-1388: la columna **Agrupadora** (la totalizadora del plan de cuentas) para poder filtrar
    * por ella — usuario 27/10: *«mejorar orden, agrupadoras»*. Por eso los meses arrancan en la D.
    */
-  f.push(["Responsable", "Agrupadora", "Categoría", ...t.columnas, "TOTAL", "Meses con movimiento"])
+  f.push(["Responsable", "Agrupadora", "Categoría", ...t.columnas, "TOTAL", "Meses con movimiento", "Nro (filtrá «Cuotas» por este)"])
+  const nroFila = numerarFilasPorMes(t)
 
   /** La letra de la columna del mes `j` (0 = el primero, en la D). */
   const colMes = (j: number) => String.fromCharCode(68 + j)
@@ -2191,13 +2214,14 @@ export function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
   const colTotal = colMes(t.columnas.length)
   const sumaFilas = (filas: number[], j: number) => filas.map(r => `${colMes(j)}${r}`).join("+") || "0"
 
-  const filaDe = (x: { responsable: string; agrupadora: string; categ: string; neto: number[]; totalNeto: number }) => {
+  const filaDe = (x: { clave?: string; responsable: string; agrupadora: string; categ: string; neto: number[]; totalNeto: number }) => {
     const n = f.length + 1
     f.push([
       x.responsable, x.agrupadora, x.categ,
       ...x.neto.map(v => money(v)),
       conFormula(`SUM(D${n}:${ultima}${n})`, money(x.totalNeto)),
       x.neto.filter(v => v !== 0).length,
+      x.clave ? nroFila.get(x.clave) ?? "" : "",
     ])
     return n
   }
@@ -2826,7 +2850,7 @@ export function nombreArchivo(libro: LibroDiario, empresa: string): string {
  * balance, el detalle de impuestos y gastos bancarios, intereses e inversiones (JMS 01/11, solapa «C - Ver nuevas…»).
  */
 export function agregarLibroC(wb: XLSX.WorkBook, empresa: string, etiqueta: string, templates?: TemplatesDelEjercicio | null,
-  detalle?: MovimientoDelDetalle[] | null): void {
+  detalle?: MovimientoDelDetalle[] | null, meses: { clave: string; rotulo: string }[] = []): void {
   const orden = [empresa, ...["MSA", "MA", "PAM"].filter(r => r !== empresa)]
   const corto = (r: string) => r.slice(0, 4)
   orden.forEach((resp, i) => {
@@ -2838,7 +2862,7 @@ export function agregarLibroC(wb: XLSX.WorkBook, empresa: string, etiqueta: stri
     }
     if (i === 0) {
       for (const g of ["Impuestos bancarios", "Gastos bancarios", "Intereses", "Inversiones"] as GrupoDetalle[]) {
-        hoja(wb, `C · ${g}`, detalle ? hojaDeDetalle(g, detalle, etiqueta, empresa) : [[`${g.toUpperCase()}`], ["⚠️ No se armaron los papeles bancarios: falta el detalle."]], COLS_DETALLE_BANCARIO)
+        hoja(wb, `C · ${g}`, detalle ? hojaDeDetalle(g, detalle, etiqueta, empresa, meses) : [[`${g.toUpperCase()}`], ["⚠️ No se armaron los papeles bancarios: falta el detalle."]], COLS_RESUMEN_MES)
       }
     }
   })
@@ -2859,9 +2883,10 @@ const COLS_DETALLE_BANCARIO: Columna[] = [
 export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>, entradaF?: EntradaBalanceEnLinea | null, lib?: MovimientoLib[] | null): Promise<void> {
   const [libro, empresa, templates, , , , , bancarios] = a
   const wb = armarWorkbook(...a)
-  agregarLibroC(wb, empresa, libro.ejercicio.etiqueta, templates ?? null, bancarios?.detalleBancario ?? null)
+  const meses = mesesDelLibro(libro)
+  agregarLibroC(wb, empresa, libro.ejercicio.etiqueta, templates ?? null, bancarios?.detalleBancario ?? null, meses)
   if (entradaF) agregarLibroF(wb, entradaF)
-  if (templates) agregarLibroG(wb, templates.detalle, libro.ejercicio.etiqueta, lib ?? null)
+  if (templates) agregarLibroG(wb, templates.detalle, libro.ejercicio.etiqueta, lib ?? null, meses)
   const { default: JSZip } = await import("jszip")
   const zip = new JSZip()
   const base = nombreArchivo(libro, empresa).replace(/\.xlsx$/, "")
@@ -2880,12 +2905,18 @@ export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>
 }
 
 /** 📚 A-FEAT-1512 — el LIBRO G: los grupos de templates (propuesta) y lo marcado LIB, con el formato de «impuestos bancarios». */
-export function agregarLibroG(wb: XLSX.WorkBook, cuotas: CuotaTemplate[], etiqueta: string, lib: MovimientoLib[] | null): void {
+/** 🧮 A-FEAT-1513: los 12 meses del ejercicio como `AAAA-MM` y su rótulo (`jul-25`). */
+export function mesesDelLibro(libro: LibroDiario): { clave: string; rotulo: string }[] {
+  const MES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+  return libro.ejercicio.subdiarios.map(x => ({ clave: `${x.anio}-${String(x.mes).padStart(2, "0")}`, rotulo: `${MES[x.mes - 1]}-${String(x.anio).slice(-2)}` }))
+}
+const COLS_RESUMEN_MES: Columna[] = [{ ancho: 22 }, { ancho: 32 }, ...Array.from({ length: 12 }, () => ({ ancho: 13, z: MONEDA })), { ancho: 15, z: MONEDA }]
+
+export function agregarLibroG(wb: XLSX.WorkBook, cuotas: CuotaTemplate[], etiqueta: string, lib: MovimientoLib[] | null, meses: { clave: string; rotulo: string }[] = []): void {
   const gs = armarGruposTemplates(cuotas)
   hoja(wb, "G · Indice de grupos", hojaIndiceGrupos(gs, cuotas, etiqueta, lib), [{ ancho: 14 }, { ancho: 44 }, { ancho: 32 }, { ancho: 10, z: ENTERO }, { ancho: 18, z: MONEDA }])
-  const cols: Columna[] = [{ ancho: 38 }, { ancho: 18, z: MONEDA }, { ancho: 10 }, { ancho: 10 }, { ancho: 18, z: MONEDA }, { ancho: 30 }]
-  for (const g of gs) hoja(wb, nombreSolapaGrupo(g), hojaGrupo(g, etiqueta), cols)
-  if (lib) hoja(wb, "G · LIB (paralelo)", hojaLib(lib, etiqueta), [{ ancho: 30 }, { ancho: 18, z: MONEDA }, { ancho: 16, z: MONEDA }, { ancho: 16, z: MONEDA }, { ancho: 16, z: MONEDA }, { ancho: 16, z: MONEDA }, { ancho: 14, z: MONEDA }, { ancho: 40 }])
+  for (const g of gs) hoja(wb, nombreSolapaGrupo(g), hojaGrupo(g, etiqueta, meses), COLS_RESUMEN_MES)
+  if (lib) hoja(wb, "G · LIB (paralelo)", hojaLib(lib, etiqueta, meses), COLS_RESUMEN_MES)
 }
 
 /** 📒 A-FEAT-1509 — las hojas del LIBRO F: el balance en línea y una de detalle por renglón de la tanda de Claude. */

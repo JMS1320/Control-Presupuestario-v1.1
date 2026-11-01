@@ -1300,6 +1300,12 @@ ese lugar afecte a todo lo que lo usa.
   ése · un «todos» para volver**, con `toggleChip` / `esSoloEste` / `tituloChip` / `PISTA_CTRL_CLICK` de
   `lib/ui/chips.ts`. El número de cada chip cuenta sobre lo filtrado por lo demás. Una barra de chips nueva **no** se
   escribe a mano. Las que todavía no lo usan → [A-FEAT-1376](PENDIENTES.md#a-feat-1376).
+- 🧮 **Toda tabla RESUMEN de un Excel va por categoría Y POR MES, y cada línea lleva un Nro que la une con su detalle**
+  *(regla del usuario 2026-11-01, en el libro C: «por categ y por mes siempre. Y que cada línea del resumen tenga un Nro que
+  referencia a la tabla de abajo, para filtrar por número y ver cómo se componen. Esto como línea general»)*. Arriba: Nro ·
+  categoría · los 12 meses · total, cada celda **fórmula** sobre el detalle; abajo (o en la solapa del detalle) cada fila con
+  su Nro. Se arma con `hojaResumenPorMes` (`lib/balance/resumen-por-mes.ts`) — no se escribe otro. *Motivo: un total anual no
+  dice cuándo pasó ni de qué se compone; con el Nro se filtra el detalle y se ve.* → [A-FEAT-1513](PENDIENTES.md#a-feat-1513).
 - Si la vista tiene **export (Excel/PDF)**, al sumarle un campo se actualiza también el export.
   Motivo: el usuario usa las descargas como registro fuera de la app; si el export queda viejo,
   pierde datos que sí ve en pantalla.

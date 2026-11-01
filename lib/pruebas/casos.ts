@@ -12277,17 +12277,19 @@ export function correrCasos(): Resultado[] {
     chequear("Libro F", "Control de cada banco: apertura del contador + movimientos − saldo de la app = 0 (Galicia real)", "0 ✓ cierra", `${ctl} ${gal[8]}`, ctl === 0 && gal[8] === "✓ cierra", "A-FEAT-1509")
   }
 
-  // ══ 🧮 Libro C: resumen por categoría arriba del detalle bancario (A-FEAT-1511) ══
+  // ══ 🧮 Libro C: resumen por categoría y POR MES arriba del detalle bancario, con Nro (A-FEAT-1511 + A-FEAT-1513) ══
   {
-    const mv = (cuenta: string, moneda: "ARS" | "USD", concepto: string, deb: number, cred = 0) => ({ grupo: "Impuestos bancarios" as const, cuenta, fecha: "2025-08-01", descripcion: "x", categ: concepto, concepto, debitos: deb, creditos: cred, moneda })
-    const h = hojaDeDetalle("Impuestos bancarios", [mv("Galicia", "ARS", "IVA Bancario", 100), mv("Santander", "ARS", "IVA Bancario", 50, 10), mv("USD", "USD", "IVA Bancario", 2), mv("Galicia", "ARS", "Sellos Bancario", 7)], "25/26", "MSA")
-    const fila = (c: string) => h.find(r => r[0] === c) as any[]
-    const iva = fila("IVA Bancario"), tot = fila("TOTAL")
-    const primerDetalle = h.findIndex(r => r[0] === "Cuenta") + 2
-    const apunta = String(iva[1].f).includes(`$${primerDetalle}:`)
-    const v = `IVA $ ${iva[1].v} · US$ ${iva[2].v} · ${iva[4]} · total $ ${tot[1].v} · fórmula sobre el detalle ${apunta}`
-    const e = "IVA $ 140 · US$ 2 · Galicia, Santander, USD · total $ 147 · fórmula sobre el detalle true"
-    chequear("Libro C", "Impuestos y gastos bancarios: arriba una línea por categoría con el neto de todas las cuentas de la empresa (dólares aparte) y el total, con fórmulas sobre el detalle de abajo", e, v, v === e, "A-FEAT-1511")
+    const meses = [{ clave: "2025-07", rotulo: "jul-25" }, { clave: "2025-08", rotulo: "ago-25" }]
+    const mv = (cuenta: string, moneda: "ARS" | "USD", concepto: string, fecha: string, deb: number, cred = 0) => ({ grupo: "Impuestos bancarios" as const, cuenta, fecha, descripcion: "x", categ: concepto, concepto, debitos: deb, creditos: cred, moneda })
+    const h = hojaDeDetalle("Impuestos bancarios", [mv("Galicia", "ARS", "IVA Bancario", "2025-07-10", 100), mv("Santander", "ARS", "IVA Bancario", "2025-08-02", 50, 10),
+      mv("USD", "USD", "IVA Bancario", "2025-07-03", 2), mv("Galicia", "ARS", "Sellos Bancario", "2025-08-05", 7)], "25/26", "MSA", meses)
+    const enPesos = h.findIndex(r => r[0] === "EN PESOS"), enUsd = h.findIndex(r => String(r[0] ?? "").startsWith("EN DÓLARES"))
+    const iva = h[enPesos + 2] as any[], ivaUsd = h[enUsd + 2] as any[]
+    const encDet = h.findIndex(r => r[0] === "Nro" && r[1] === "Mes")
+    const det = h.slice(encDet + 1).filter(r => r[0] === iva[0]) as any[][]
+    const v = `Nro ${iva[0]} ${iva[1]}: jul ${iva[2].v} ago ${iva[3].v} total ${iva[4].v} · US$ jul ${ivaUsd[2].v} · detalle con Nro ${iva[0]}: ${det.length} · fórmula por Nro y mes ${String(iva[2].f).includes('"2025-07"') && String(iva[2].f).includes(`$A$${encDet + 2}:`)}`
+    const e = "Nro 1 IVA Bancario: jul 100 ago 40 total 140 · US$ jul 2 · detalle con Nro 1: 3 · fórmula por Nro y mes true"
+    chequear("Libro C", "Impuestos y gastos bancarios: resumen categoría × mes (pesos y dólares aparte), cada línea con su Nro, y el detalle de abajo con ese Nro para filtrar; cada celda es fórmula sobre el detalle", e, v, v === e, "A-FEAT-1513")
   }
 
   // ══ 📚 Libro G — grupos de templates con el formato de impuestos bancarios (A-FEAT-1512) ══
@@ -12301,10 +12303,28 @@ export function correrCasos(): Resultado[] {
     const e = "G · MA · Fijos BA MA=120 | G · PAM · Fijos BA MA=12"
     chequear("Libro G", "Un grupo por responsable + agrupadora del template (el compartido va al primero); no entran lo financiero ni los grupos de una sola cuota; nombres de solapa cortos",
       e, v, v === e, "A-FEAT-1512")
-    const h = hojaGrupo(gs[0], "25/26")
-    const exp = h.find(r => r[0] === "EXPENSAS") as any[], agua = h.find(r => r[0] === "AGUA") as any[]
-    const v2 = `expensas ${exp[1].v} pagado ${exp[4]} · agua ${agua[1].v} pendiente ${agua[5]} · fórmula ${String(exp[1].f).startsWith("SUMIFS")}`
-    chequear("Libro G", "Cada solapa: una línea por categoría con total (fórmula), pagado y pendiente; abajo el detalle", "expensas 100 pagado 100 · agua 20 pendiente 20 · fórmula true", v2, v2 === "expensas 100 pagado 100 · agua 20 pendiente 20 · fórmula true", "A-FEAT-1512")
+    const h = hojaGrupo(gs[0], "25/26", [{ clave: "2025-09", rotulo: "sep-25" }])
+    const exp = h.find(r => r[1] === "EXPENSAS") as any[], agua = h.find(r => r[1] === "AGUA") as any[]
+    const v2 = `expensas Nro ${exp[0]} sep ${exp[2].v} total ${exp[3].v} · agua Nro ${agua[0]} ${agua[3].v} · fórmula ${String(exp[2].f).startsWith("SUMIFS")}`
+    chequear("Libro G", "Cada solapa de grupo: categoría × mes con su Nro (fórmula sobre el detalle); abajo cada cuota con su Nro", "expensas Nro 2 sep 100 total 100 · agua Nro 1 20 · fórmula true", v2, v2 === "expensas Nro 2 sep 100 total 100 · agua Nro 1 20 · fórmula true", "A-FEAT-1513")
+  }
+
+
+  // ══ 🧮 Templates: el Nro de cada fila de «Por mes» es el mismo que llevan sus cuotas en «Cuotas» (A-FEAT-1513) ══
+  {
+    const ej = armarEjercicio(2026, 6)
+    const cu = (id: string, resp: string, categ: string, monto: number) => ({ id, fecha: "2025-09-10", concepto: `T ${id}`, proveedor: "P", categ, cuenta_contable: "", nro_cuenta: "",
+      centro_costo: "", responsable: resp, estado: "pagado", monto, egresoId: id })
+    const t = armarTemplatesDelEjercicio([cu("a", "MSA", "Seguros", 100), cu("b", "MSA", "Seguros", 50), cu("c", "MA", "Expensas", 30)] as never, ej)
+    const pm = hojaTemplatesPorMes(t), cq = hojaDeTemplates(t)
+    const enc = pm.findIndex(r => r[0] === "Responsable")
+    const nroCol = (pm[enc] as any[]).length - 1
+    const filaSeg = pm.find(r => r[2] === "Seguros") as any[]
+    const nroSeg = filaSeg[nroCol]
+    const cuotasSeg = cq.filter(r => (r as any[])[3] === "Seguros").map(r => (r as any[])[(cq[0] as any[]).length - 1])
+    const v = `Seguros Nro ${nroSeg} · sus cuotas: ${cuotasSeg.join(",")}`
+    chequear("Templates", "El Nro de una fila de «Por mes» es el que llevan sus cuotas en «Cuotas»: filtrando por ese Nro se ve qué la forma",
+      `Seguros Nro ${nroSeg} · sus cuotas: ${nroSeg},${nroSeg}`, v, typeof nroSeg === "number" && v === `Seguros Nro ${nroSeg} · sus cuotas: ${nroSeg},${nroSeg}`, "A-FEAT-1513")
   }
 
   return r

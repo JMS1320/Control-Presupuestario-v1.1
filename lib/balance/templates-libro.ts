@@ -134,9 +134,13 @@ export interface CuotaTemplate {
   egresoId?: string
   /** La agrupadora del TEMPLATE («Impuestos General», «Gastos Bancarios»…), no la del plan. Ver `esImpuesto`. */
   agrupadoraTemplate?: string
+  /** 🧮 A-FEAT-1513: la fila de «Por mes» a la que suma (su `clave`), para que el Nro sea el mismo en las dos solapas. */
+  filaPorMes?: string
 }
 
 export interface FilaPorMes {
+  /** 🧮 A-FEAT-1513: tipo|responsable|categoría — la misma que guarda cada cuota en `filaPorMes`. */
+  clave?: string
   /** Qué es: el primer eje de la solapa (A-FEAT-1342). */
   tipo: TipoTemplate
   /**
@@ -340,9 +344,10 @@ export function armarTemplatesDelEjercicio(
     const responsable = c.responsable || "(sin responsable)"
     const tipo = tipoDe(c)
     const clave = `${tipo}|${responsable}|${normalizar(categ)}`
+    c.filaPorMes = clave
     if (!filas.has(clave)) {
       filas.set(clave, {
-        tipo, responsable, categ,
+        clave, tipo, responsable, categ,
         agrupadora: cuenta?.nombre_totalizadora?.trim() || SIN_AGRUPADORA,
         nroCuenta: cuenta?.nro_cuenta?.trim() || "",
         debitos: new Array(12).fill(0), creditos: new Array(12).fill(0),

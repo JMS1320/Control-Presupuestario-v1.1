@@ -1,0 +1,101 @@
+/**
+ * 🧮 **RESUMEN POR CATEGORÍA Y POR MES, CON Nro QUE LLEVA AL DETALLE** — A-FEAT-1513, regla general de JMS (01/11, libro C):
+ * *«el cuadro de resumen debe ser por mes. Por categ y por mes siempre. Y que cada línea del resumen tenga un Nro que referencia
+ * a la tabla de abajo, para filtrar por número y ver cómo se componen. Esto como línea general.»*
+ *
+ * Arriba: una fila por categoría (con su Nro) y una columna por mes del ejercicio, más el total — cada celda es FÓRMULA sobre el
+ * detalle (SUMAR.SI.CONJUNTO por Nro, mes y, si hay, moneda). Abajo: el detalle, con su Nro y su mes en las dos primeras columnas.
+ * Filtrar el detalle por un Nro muestra exactamente lo que suma esa línea.
+ *
+ * Pura. Un solo armado para todas las hojas que lo usan (impuestos y gastos bancarios, intereses, inversiones, grupos de
+ * templates, LIB), para que la regla no tenga cuatro versiones.
+ */
+
+export interface ItemDetalle {
+  /** La categoría: define la línea del resumen. */
+  categoria: string
+  /** `AAAA-MM`. Fuera del ejercicio no suma en ningún mes (se ve en el detalle igual). */
+  mes: string
+  /** Lo que suma (con signo: neto). */
+  importe: number
+  /** Para separar pesos y dólares; sin moneda = una sola tabla. */
+  moneda?: "ARS" | "USD"
+  /** El resto de las columnas del detalle, tal cual se muestran. */
+  columnas: unknown[]
+}
+
+export interface OpcionesResumen {
+  titulo: string
+  notas?: string[]
+  /** Los meses del ejercicio en orden (`AAAA-MM`) y cómo se rotulan (`jul-25`). */
+  meses: { clave: string; rotulo: string }[]
+  /** Encabezados de `columnas` del detalle (sin Nro, Mes ni Importe, que se agregan). */
+  encabezadoDetalle: string[]
+  /** Cómo se llama la columna del importe en el detalle. */
+  rotuloImporte?: string
+  /** Si es `true`, arma un bloque en pesos y otro en dólares (por `moneda`). */
+  porMoneda?: boolean
+}
+
+const MONEDA = '#,##0.00;(#,##0.00);"-"'
+const r2 = (n: number) => Math.round(n * 100) / 100
+const col = (i: number) => { let s = "", n = i + 1; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26) } return s }
+
+/** Arma la hoja: resumen (categoría × mes, con Nro) y debajo el detalle con su Nro. */
+export function hojaResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): unknown[][] {
+  const cats = [...new Set(items.map(i => i.categoria || "(sin categoría)"))].sort((a, b) => a.localeCompare(b))
+  const nro = new Map(cats.map((c, i) => [c, i + 1]))
+  const monedas: ("ARS" | "USD" | undefined)[] = o.porMoneda
+    ? (["ARS", "USD"] as const).filter(m => items.some(i => i.moneda === m))
+    : [undefined]
+  if (!monedas.length) monedas.push(undefined)
+
+  // Filas del resumen: por moneda, encabezado + una por categoría con movimientos en esa moneda + total + blanco.
+  const filasPorMoneda = monedas.map(m => cats.filter(c => items.some(i => (i.categoria || "(sin categoría)") === c && (m === undefined || i.moneda === m))))
+  const altoResumen = monedas.reduce((t, _m, k) => t + 1 + 1 + filasPorMoneda[k].length + 1 + 1, 0)
+  const cabecera = 1 + (o.notas?.length ?? 0) + 1
+  const filaEncDetalle = cabecera + altoResumen + 1 + 1
+  const det1 = filaEncDetalle + 1, detN = filaEncDetalle + items.length + 1
+  // Columnas del detalle: A Nro · B Mes · C… las propias · después Moneda (si hay) · Importe
+  const nCols = o.encabezadoDetalle.length
+  const colMoneda = o.porMoneda ? col(2 + nCols) : null
+  const colImporte = col(2 + nCols + (o.porMoneda ? 1 : 0))
+  const rng = (c: string) => `$${c}$${det1}:$${c}$${detN}`
+
+  const h: unknown[][] = [[o.titulo], ...(o.notas ?? []).map(n => [n]), []]
+  monedas.forEach((m, k) => {
+    h.push([m === "USD" ? "EN DÓLARES (US$) — no se suman a los pesos" : m === "ARS" ? "EN PESOS" : "RESUMEN POR CATEGORÍA Y POR MES"])
+    h.push(["Nro", "Categoría", ...o.meses.map(x => x.rotulo), "TOTAL"])
+    const r1 = h.length + 1
+    for (const c of filasPorMoneda[k]) {
+      const n = h.length + 1, num = nro.get(c)!
+      const fila: unknown[] = [num, c]
+      o.meses.forEach((mes, j) => {
+        const v = r2(items.filter(i => (i.categoria || "(sin categoría)") === c && i.mes === mes.clave && (m === undefined || i.moneda === m)).reduce((t, i) => t + i.importe, 0))
+        const crit = `${rng("A")},$A${n},${rng("B")},"${mes.clave}"${m && colMoneda ? `,${rng(colMoneda)},"${m}"` : ""}`
+        fila.push({ t: "n", f: `SUMIFS(${rng(colImporte)},${crit})`, v, z: MONEDA })
+        void j
+      })
+      const tot = r2(items.filter(i => (i.categoria || "(sin categoría)") === c && o.meses.some(x => x.clave === i.mes) && (m === undefined || i.moneda === m)).reduce((t, i) => t + i.importe, 0))
+      fila.push({ t: "n", f: `SUM(${col(2)}${n}:${col(1 + o.meses.length)}${n})`, v: tot, z: MONEDA })
+      h.push(fila)
+    }
+    const rN = h.length
+    const totales: unknown[] = ["", "TOTAL"]
+    for (let j = 0; j <= o.meses.length; j++) {
+      const c = col(2 + j)
+      const v = j < o.meses.length
+        ? r2(items.filter(i => i.mes === o.meses[j].clave && (m === undefined || i.moneda === m)).reduce((t, i) => t + i.importe, 0))
+        : r2(items.filter(i => o.meses.some(x => x.clave === i.mes) && (m === undefined || i.moneda === m)).reduce((t, i) => t + i.importe, 0))
+      totales.push({ t: "n", f: rN >= r1 ? `SUM(${c}${r1}:${c}${rN})` : "0", v, z: MONEDA })
+    }
+    h.push(totales)
+    h.push([])
+  })
+  h.push(["DETALLE — filtrá por «Nro» para ver qué forma cada línea del resumen"])
+  h.push(["Nro", "Mes", ...o.encabezadoDetalle, ...(o.porMoneda ? ["Moneda"] : []), o.rotuloImporte ?? "Importe"])
+  const orden = [...items].sort((a, b) => (nro.get(a.categoria || "(sin categoría)")! - nro.get(b.categoria || "(sin categoría)")!) || a.mes.localeCompare(b.mes))
+  for (const i of orden) h.push([nro.get(i.categoria || "(sin categoría)"), i.mes, ...i.columnas, ...(o.porMoneda ? [i.moneda ?? ""] : []), r2(i.importe)])
+  if (!items.length) h.push(["", "", "(no hay movimientos en el ejercicio)"])
+  return h
+}
