@@ -215,6 +215,7 @@ import { temasDeMovimientos, temasDeCheques } from "@/lib/balance/recorrido-conc
 import { temasSueldoOtraPersona } from "@/lib/balance/control-sueldo-otra-persona"
 import { linksSerieMovimientos, linksSerieNombre, claveNombre, parDeTemplate } from "@/lib/balance/series-tema"
 import { temasTarjeta } from "@/lib/balance/control-tarjeta"
+import { aplicarParaTuVisto } from "@/lib/balance/para-tu-visto"
 import { bloqueSantander, IDS_CON_PARSEO } from "@/lib/extractos/cuentas-con-parseo"
 import { cruzarChequesConDebitos, numeroEnDescripcion } from "@/lib/conciliacion/cheques-vencidos"
 import { echeqDelDebito } from "@/lib/conciliacion/echeq-del-debito"
@@ -5308,9 +5309,11 @@ export function correrCasos(): Resultado[] {
      * cuánto salió y entró, y el rango de fechas para el link. Lo respondido no cuenta.
      */
     const niveles = GRUPOS.map(g => g.nivel).join("")
-    chequear("Balance · recorrido", "🧱 La base (nivel 1) va antes que el resto (nivel 2), y empieza por ARCA y la conciliación",
-      "11112222222 · arca,conciliacion", `${niveles} · ${GRUPOS.slice(0, 2).map(g => g.id).join(",")}`,
-      niveles === "11112222222" && GRUPOS[0].id === "arca" && GRUPOS[1].id === "conciliacion", "A-FEAT-1439")
+    // ⚠️ cambió 01/11 (A-FEAT-1487): arriba de todo va «Para tu visto» (nivel 0); la base sigue antes que el resto.
+    const base1 = GRUPOS.filter(g => g.nivel === 1).slice(0, 2).map(g => g.id).join(",")
+    chequear("Balance · recorrido", "🧱 Primero «Para tu visto» (nivel 0), después la base (nivel 1) — que empieza por ARCA y la conciliación — y el resto (nivel 2)",
+      "011112222222 · visto · arca,conciliacion", `${niveles} · ${GRUPOS[0].id} · ${base1}`,
+      niveles === "011112222222" && GRUPOS[0].id === "visto" && base1 === "arca,conciliacion", "A-FEAT-1439")
     const mov = (id: string, cuenta: string, lado: "D" | "C", importe: number, fecha: string, respondido = false) =>
       ({ clave: `conc:${cuenta}:${id}`, grupo: "conciliacion" as const, titulo: id, papel: "x", que: "x", links: [], respondido,
         cuenta: { id: cuenta, nombre: cuenta.toUpperCase() }, lado, importe, fecha })
@@ -5709,6 +5712,26 @@ export function correrCasos(): Resultado[] {
     const esp = "1 · 📜 Todos los movimientos de Wilson en MSA Galicia (3: 3 conciliados) · ids ok · solo 0 · 🔗 El par anual/cuotas: «Voyage Anual» activo y «Voyage Cuota» desactivado (sus cuotas)"
     chequear("Recorrido · tiras del tema", "📜 La tira de movimientos del CUIT (todos, con cuántos conciliados) y 🔗 el par anual/cuotas con el estado de cada uno", esp, v,
       v === esp && /ACTIVO — 1 conciliado/.test(par?.texto ?? "") && /desactivado — 6 desactivado/.test(par?.texto ?? "") && parDeTemplate(extras, "otro") === null, "A-FEAT-1484")
+  }
+
+  /**
+   * ✔ **PARA TU VISTO — A-FEAT-1487.** Lo que resolvió Claude no desaparece: el tema que todavía sale (echeq 102) pasa al
+   * grupo «Para tu visto» con lo que se hizo arriba; el que ya no sale (Manuel, conciliado) entra rearmado; el que no
+   * tiene tarea queda como estaba; y un rearmado no duplica a uno que ya está.
+   */
+  {
+    const base = (clave: string, grupo: "conciliacion" | "deuda") => ({ clave, grupo, titulo: clave, papel: "p", que: "lo de antes", links: [], respondido: false })
+    const temas = [base("conc:msa_galicia:echeq102", "conciliacion"), base("deu:cuota:otra", "deuda")]
+    const tareas = [
+      { id: "t1", clave: "conc:msa_galicia:echeq102", descripcion: "d", resolucion: "El motor lo concilia contra su echeq", resueltoPor: "Claude", motivo: "m" },
+      { id: "t2", clave: "conc:msa_galicia:manuel", descripcion: "d", resolucion: "Script 160", resueltoPor: "Claude", motivo: "m" },
+    ]
+    const rearmados = [{ ...base("conc:msa_galicia:manuel", "conciliacion"), grupo: "visto" as const }, { ...base("conc:msa_galicia:echeq102", "conciliacion"), grupo: "visto" as const, titulo: "duplicado" }]
+    const r = aplicarParaTuVisto(temas, tareas, rearmados)
+    const v = r.map(t => `${t.clave.split(":").pop()}=${t.grupo}`).join(" · ") + ` · ${r.length}`
+    const esp = "echeq102=visto · otra=deuda · manuel=visto · 3"
+    chequear("Recorrido · para tu visto", "✔ Lo resuelto por Claude queda en «Para tu visto» (el que sale y el rearmado), sin duplicar; lo demás no cambia", esp, v,
+      v === esp && r[0].que.startsWith("✔ Lo que se hizo: El motor lo concilia") && r[0].titulo !== "duplicado" && r[0].etiqueta === "Hecho por Claude — falta tu visto", "A-FEAT-1487")
   }
 
   /**

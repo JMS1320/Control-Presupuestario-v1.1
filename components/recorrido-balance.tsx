@@ -60,6 +60,25 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
    */
   const { porRegistro: tareas, recargar: recargarTareas } = useRevisionesDe("public", "recorrido_balance")
   const registroDe = (t: Tema) => `${empresa}:${anioCierre}:${t.clave}`
+  /**
+   * ✔ A-FEAT-1487 — confirmar o devolver desde el tema lo que resolvió Claude (la misma acción que «Para vos» en
+   * Principal: una sola tarea, las dos listas quedan iguales). Al confirmar, el tema sale en el próximo cálculo.
+   */
+  const decidirVisto = async (id: string, confirmar: boolean) => {
+    const t = nota.trim()
+    if (!confirmar && !t) { toast.error("Escribí en «Tu respuesta» por qué lo devolvés"); return }
+    setGuardando(true)
+    try {
+      const r = await fetch("/api/revisiones", { method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(confirmar ? { id, confirmar: true } : { id, devolver: true, seguimiento: t, ...(imagen ? { imagen } : {}) }) })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j?.error ?? `error ${r.status}`)
+      toast.success(confirmar ? "✔ Confirmado: sale del recorrido y se cerró en Principal" : "↩ Devuelto: vuelve a quien lo resolvió")
+      setNota(""); setImagen(null)
+      await recargarTareas()
+      conciliacion?.recalcular()
+    } catch (e) { toast.error("No se pudo: " + (e as Error).message) } finally { setGuardando(false) }
+  }
   /** 🏦 Filtro por cuenta (los chips de «Sin conciliar, por cuenta»: JMS 31/10 «son links pero no filtran el panel izquierdo»). */
   const [cuentas, setCuentas] = useState<Set<string>>(new Set())
   const [claveActual, setClaveActual] = useState<string | null>(claveInicial)
@@ -369,12 +388,12 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
           </div>
         )}
         {/* 🧱 Nivel 1 — la base · nivel 2 — el resto. Los tipos (nivel 3) sólo con un grupo elegido (JMS 31/10). */}
-        {verFiltros && ([1, 2] as const).map(nivel => {
+        {verFiltros && ([0, 1, 2] as const).map(nivel => {
           const gs = GRUPOS.filter(g => g.nivel === nivel && prog.porGrupo[g.id].total)
           if (!gs.length) return null
           return (
             <div key={nivel} className="flex flex-wrap items-center gap-1.5" data-test={`recorrido-nivel-${nivel}`}>
-              <span className="w-16 shrink-0 text-xs font-medium text-muted-foreground">{nivel === 1 ? "🧱 La base" : "El resto"}</span>
+              <span className="w-16 shrink-0 text-xs font-medium text-muted-foreground">{nivel === 0 ? "✔ Tu visto" : nivel === 1 ? "🧱 La base" : "El resto"}</span>
               {gs.map(g => (
                 <button key={g.id} type="button" onClick={() => alternar(g.id)} aria-pressed={filtro.has(g.id)}
                   className={`rounded-full border px-2.5 py-0.5 text-xs ${filtro.has(g.id) ? COLOR[g.id] : "bg-background hover:bg-muted"}`}>
@@ -563,6 +582,23 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
                         </li>
                       ))}
                     </ul>
+                  </div>
+                )
+              })()}
+
+              {/* ✔ A-FEAT-1487 — resuelto por Claude: tu visto se da ACÁ, con los links de arriba a la vista. */}
+              {(() => {
+                const tarea = tareas[registroDe(actual)] as ((typeof tareas)[string] & { resolucion?: string | null; resuelto_por?: string | null }) | undefined
+                if (!tarea || tarea.estado !== "por_confirmar") return null
+                return (
+                  <div className="rounded border border-emerald-300 bg-emerald-50 p-3 text-sm space-y-2" data-test="recorrido-visto">
+                    <div className="text-xs font-medium uppercase tracking-wide text-emerald-900">✔ Hecho por {tarea.resuelto_por || "Claude"} — falta tu visto</div>
+                    {tarea.resolucion && <p className="whitespace-pre-wrap">{tarea.resolucion}</p>}
+                    <p className="text-xs text-muted-foreground">Auditalo con los links de arriba. «Confirmar» lo saca del recorrido y lo cierra en Principal; «Devolver» necesita el motivo en «Tu respuesta».</p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" disabled={guardando} onClick={() => void decidirVisto(tarea.id, true)}>✔ Confirmar</Button>
+                      <Button size="sm" variant="outline" disabled={guardando} onClick={() => void decidirVisto(tarea.id, false)}>↩ Devolver</Button>
+                    </div>
                   </div>
                 )
               })()}

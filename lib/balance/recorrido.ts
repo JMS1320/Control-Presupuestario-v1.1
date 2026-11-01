@@ -17,7 +17,7 @@ import type { PendienteBalance } from "./pendientes-balance"
 import type { Comparacion } from "@/lib/cuaderno/papel-de-trabajo"
 import { linkExtracto, rangoQueContiene } from "@/lib/extracto/link"
 
-export type GrupoTema = "error" | "decision" | "falta inicio" | "sin informacion" | "pendiente desarrollo" | "pregunta" | "arca" | "documento" | "conciliacion" | "deuda" | "cheque"
+export type GrupoTema = "visto" | "error" | "decision" | "falta inicio" | "sin informacion" | "pendiente desarrollo" | "pregunta" | "arca" | "documento" | "conciliacion" | "deuda" | "cheque"
 
 /**
  * 🧱 **Dos niveles de grupos** (JMS 31/10: *«subdiarios cargados tal cual ARCA, todos los canales de pagos y cobros
@@ -28,7 +28,9 @@ export type GrupoTema = "error" | "decision" | "falta inicio" | "sin informacion
  * - **nivel 2 · el resto**, en el orden en que conviene mirarlo: errores, decisiones, preguntas, deudas, documentos…
  * Los tipos de cada grupo (el «nivel 3») aparecen sólo al elegir un grupo.
  */
-export const GRUPOS: { id: GrupoTema; icono: string; titulo: string; nivel: 1 | 2 }[] = [
+export const GRUPOS: { id: GrupoTema; icono: string; titulo: string; nivel: 0 | 1 | 2 }[] = [
+  // ✔ A-FEAT-1487: lo que resolvió Claude y espera el visto de JMS — su propia fila, arriba de todo.
+  { id: "visto", icono: "✔", titulo: "Para tu visto (hecho por Claude)", nivel: 0 },
   // 🧾 A-FEAT-1439: la app contra lo PRESENTADO a ARCA (libro IVA de cada mes, guardado en `ddjj_presentadas`).
   { id: "arca", icono: "🧾", titulo: "Subdiarios contra lo presentado a ARCA", nivel: 1 },
   // 🏦 A-FEAT-1430 paso 4: la conciliación, movimiento por movimiento.

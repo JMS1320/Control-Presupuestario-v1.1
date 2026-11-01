@@ -56,6 +56,7 @@ import { temasDeMovimientos, temasDeDeudas, temasDeCheques } from "@/lib/balance
 import { leerTemasSueldoOtraPersona } from "@/lib/balance/control-sueldo-otra-persona"
 import { leerExtrasTemas } from "@/lib/balance/series-tema"
 import { leerTemasTarjeta } from "@/lib/balance/control-tarjeta"
+import { leerParaTuVisto, aplicarParaTuVisto, type TareaPorConfirmar } from "@/lib/balance/para-tu-visto"
 import { leerChequesVencidos } from "@/lib/conciliacion/cheques-vencidos"
 import { RecorridoBalance } from "./recorrido-balance"
 import { VistaPreviaBalance } from "./vista-previa-balance"
@@ -190,7 +191,7 @@ export function PapelesDeBalance() {
   const [temaPedido, setTemaPedido] = useState<{ empresa: string; anioCierre: number; clave: string; armando: boolean } | null>(null)
   const [claveRecorrido, setClaveRecorrido] = useState<string | null>(null)
   /** 🏦 A-FEAT-1430 paso 4: las propuestas de conciliación del ejercicio (se calculan al abrir el recorrido). */
-  const [conciliacion, setConciliacion] = useState<{ movimientos: Tema[]; deudas: Tema[]; cheques: Tema[]; controles: Tema[]; historicos: number; avisos: string[]; calculado: string; porCuenta?: Record<string, ConteoCuenta> } | null>(null)
+  const [conciliacion, setConciliacion] = useState<{ movimientos: Tema[]; deudas: Tema[]; cheques: Tema[]; controles: Tema[]; visto?: { tareas: TareaPorConfirmar[]; rearmados: Tema[] }; historicos: number; avisos: string[]; calculado: string; porCuenta?: Record<string, ConteoCuenta> } | null>(null)
   const [cargandoConciliacion, setCargandoConciliacion] = useState<string | null>(null)
   const calcularConciliacion = useCallback(async (silencioso = false) => {
     if (!libro) return
@@ -217,14 +218,18 @@ export function PapelesDeBalance() {
       const tj = await leerTemasTarjeta(supabase, empresa.id, desde, hasta)
       if (tj.error) datos.avisos.push(`control de la tarjeta: ${tj.error}`)
       const movSinTarjeta = mov.temas.filter(t => !tj.cubiertos.has(t.clave.replace(/^conc:/, "")))
-      setConciliacion({ movimientos: [...tj.temas, ...movSinTarjeta], deudas: temasDeDeudas(r.deudas, empresa.id, ex.extras), cheques: temasDeCheques(ch.cruces, ch.extractoHasta), controles: ctl.temas,
+      // ✔ A-FEAT-1487: lo resuelto por Claude que espera tu visto sigue en el recorrido, con cómo quedó
+      setCargandoConciliacion("trayendo lo que espera tu visto…")
+      const vt = await leerParaTuVisto(supabase, empresa.id, anioCierre, ex.extras)
+      if (vt.error) datos.avisos.push(`para tu visto: ${vt.error}`)
+      setConciliacion({ movimientos: [...tj.temas, ...movSinTarjeta], deudas: temasDeDeudas(r.deudas, empresa.id, ex.extras), cheques: temasDeCheques(ch.cruces, ch.extractoHasta), controles: ctl.temas, visto: { tareas: vt.tareas, rearmados: vt.rearmados },
         historicos: mov.historicos, avisos: datos.avisos, porCuenta: datos.porCuenta,
         calculado: new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) })
       if (datos.avisos.length && !silencioso) toast.warning(`Conciliación: no se pudo leer ${datos.avisos.length} cosa(s) — ${datos.avisos.slice(0, 2).join(" · ")}`)
     } catch (e) {
       toast.error("No se pudieron calcular las propuestas de conciliación: " + (e as Error).message)
     } finally { setCargandoConciliacion(null) }
-  }, [libro, empresa.id])
+  }, [libro, empresa.id, anioCierre])
   // Se calculan la primera vez que se abre el recorrido (después, con «↻ Recalcular»).
   useEffect(() => { if (verRecorrido && libro && !conciliacion && !cargandoConciliacion) void calcularConciliacion() }, [verRecorrido, libro]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setConciliacion(null) }, [libro])
@@ -328,7 +333,9 @@ export function PapelesDeBalance() {
     }
     // 🧾 Los subdiarios, en la base y con lo presentado a ARCA como fuente (JMS 31/10).
     const conArca = (ts: ReturnType<typeof armarTemas>) => subdiariosContraArca(ts, ddjjGuardadas?.filas ?? null, libro.ejercicio.subdiarios.length)
-    try { return conArca(armarTemas(coberturaDeArgs(...argsDelExcel(libro)), pendientes, otros)) } catch { return conArca(armarTemas(null, pendientes, otros)) }
+    // ✔ A-FEAT-1487: los temas con una tarea por confirmar pasan a «Para tu visto» (o se rearman si ya no salen solos)
+    const visto = (ts: Tema[]) => conciliacion?.visto ? aplicarParaTuVisto(ts, conciliacion.visto.tareas, conciliacion.visto.rearmados) : ts
+    try { return visto(conArca(armarTemas(coberturaDeArgs(...argsDelExcel(libro)), pendientes, otros))) } catch { return visto(conArca(armarTemas(null, pendientes, otros))) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [libro, empresa.id, templates, hacienda, cuentas, valores, bancarios, sueldos, cuentasCorrientesConInicio,
     pendientes, ajustes, anioCierre, asientosContables, lecturas, controlCuotas, controlesInicio, propuestaCierre, fotoInicio, conciliacion, ddjjGuardadas])

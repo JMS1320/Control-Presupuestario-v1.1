@@ -12,6 +12,7 @@ import { calcularTabla, mostrarValor } from "@/lib/cuaderno/formulas"
 export const ICONO = Object.fromEntries(GRUPOS.map(g => [g.id, g.icono])) as Record<GrupoTema, string>
 export const TITULO = Object.fromEntries(GRUPOS.map(g => [g.id, g.titulo])) as Record<GrupoTema, string>
 export const COLOR: Record<GrupoTema, string> = {
+  "visto": "border-emerald-300 bg-emerald-50 text-emerald-900",
   "error": "border-red-300 bg-red-50 text-red-900",
   "decision": "border-amber-300 bg-amber-50 text-amber-900",
   "pregunta": "border-sky-300 bg-sky-50 text-sky-900",
