@@ -23,7 +23,7 @@ import { linkExtracto } from "@/lib/extracto/link"
 import type { ConteoCuenta } from "@/lib/conciliacion/propuestas-ejercicio"
 import { PISTA_CTRL_CLICK, esSoloEste, tituloChip, toggleChip } from "@/lib/ui/chips"
 import { COLOR, DetalleTema, ICONO } from "@/components/recorrido-tema-detalle"
-import { PasarTarea, useRevisionesDe } from "@/components/boton-revision"
+import { PasarTarea, quienMarca, useRevisionesDe } from "@/components/boton-revision"
 
 /** Preferencias de este navegador (si el navegador no deja guardar, se usa el default). */
 const leerPref = (k: string, def: boolean) => { try { const v = localStorage.getItem(k); return v == null ? def : v === "1" } catch { return def } }
@@ -317,6 +317,13 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
         const { error } = await supabase.schema("msa").from("cheques").update(cambios).eq("id", a.chequeId).eq("estado", "vigente")
         if (error) throw error
       }
+      // ⚡ A-FEAT-1489 — un grupo de movimientos: sólo los que siguen pendientes o a auditar (nunca pisa uno ya conciliado)
+      if (a.tipo === "estado-movimientos") {
+        const cambios: Record<string, unknown> = { estado: a.estado, ...(a.detalle ? { detalle: a.detalle } : {}) }
+        const db = a.schema === "public" ? supabase : supabase.schema(a.schema)
+        const { error } = await db.from(a.tabla).update(cambios).in("id", a.ids).in("estado", ["pendiente", "auditar"])
+        if (error) throw error
+      }
       await escribir(actual, `⚡ Aplicado desde el recorrido: ${a.texto}${nota.trim() ? ` — ${nota.trim()}` : ""}`, imagen, "resuelto")
       borrador.current.texto = ""; borrador.current.imagen = null
       setNota(""); setImagen(null)
@@ -327,6 +334,32 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
     } catch (e) {
       toast.error("No se pudo aplicar: " + (e as Error).message)
     } finally { setGuardando(false) }
+  }
+
+  /**
+   * ⚡ A-FEAT-1489 — «Aplicá vos»: lo que no es de un clic (crear una regla, vincular, cargar en Sueldos) queda como TAREA
+   * para Claude, anclada al tema, con la propuesta y lo que escribiste. Cuando Claude la resuelve, vuelve a «Para tu
+   * visto» y confirma quien la pidió. Así se resuelve desde el tema, no desde el chat (A-FEAT-1484).
+   */
+  const aplicaVos = async () => {
+    if (!actual) return
+    setGuardando(true)
+    try {
+      const { data: u } = await supabase.auth.getUser()
+      const yo = u?.user?.email ?? null
+      const { error } = await supabase.from("revisiones").insert({
+        id: crypto.randomUUID(), schema_ref: "public", tabla_ref: "recorrido_balance", registro_id: registroDe(actual),
+        descripcion_ref: `Balance ${empresa} ${etiqueta} · ${actual.titulo}`.slice(0, 300),
+        motivo: `⚡ Aplicá la propuesta${actual.propuesta ? `: ${actual.propuesta}` : ""}${nota.trim() ? `\n\nJMS: ${nota.trim()}` : ""}`,
+        imagen: imagen || null, pantalla: "Reporte Detallado", subpantalla: "Recorrido del balance",
+        creado_por: await quienMarca(), asignado_a: "claude", es_tarea: true, origen: "manual", confirma: yo,
+      })
+      if (error) throw error
+      borrador.current.texto = ""; borrador.current.imagen = null
+      setNota(""); setImagen(null)
+      toast.success("⚡ Pedido a Claude: cuando lo aplique, vuelve a «Para tu visto»")
+      await recargarTareas()
+    } catch (e) { toast.error("No se pudo pedir: " + (e as Error).message) } finally { setGuardando(false) }
   }
 
   const reabrir = async () => {
@@ -565,8 +598,13 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
                     title="Un documento del Cuaderno atado a este tema: la fuente, lo que dice la app, la propuesta y la cuenta, para pensar y anotar sin tocar datos">
                     📓 {papelId ? "Abrir el papel de trabajo" : actual.comparacion ? "Armar papel de trabajo (con la cuenta)" : "Armar papel de trabajo"}
                   </button>}
-                propuestaExtra={actual.accion && !actual.respondido
-                  ? <Button size="sm" onClick={aplicar} disabled={guardando} data-test="recorrido-aplicar">⚡ Aplicar: {actual.accion.texto}</Button> : null}
+                propuestaExtra={actual.respondido || actual.grupo === "visto" ? null
+                  : actual.accion
+                    ? <Button size="sm" onClick={aplicar} disabled={guardando} data-test="recorrido-aplicar">⚡ Aplicar: {actual.accion.texto}</Button>
+                    : actual.propuesta && !tareas[registroDe(actual)]
+                      ? <Button size="sm" variant="outline" onClick={() => void aplicaVos()} disabled={guardando} data-test="recorrido-aplica-vos"
+                          title="Lo que no es de un clic: queda como tarea para Claude, con la propuesta y lo que escribas en «Tu respuesta». Vuelve a «Para tu visto».">⚡ Aplicá vos (Claude)</Button>
+                      : null}
                 sinRespuesta
                 resolucionExtra={actual.respondido
                   ? <button type="button" className="ml-2 text-xs underline text-muted-foreground" onClick={reabrir}>reabrir</button> : null} />

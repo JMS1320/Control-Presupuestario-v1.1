@@ -108,7 +108,10 @@ export interface FuenteTema {
   links?: LinkDato[]
 }
 
-export type AccionTema = { tipo: "cheque-cobrado"; texto: string; chequeId: string; fecha: string; numero?: string | null }
+export type AccionTema =
+  | { tipo: "cheque-cobrado"; texto: string; chequeId: string; fecha: string; numero?: string | null }
+  /** ⚡ A-FEAT-1489 — cambiar el estado de un grupo de movimientos (sólo los que siguen pendientes o a auditar). */
+  | { tipo: "estado-movimientos"; texto: string; schema: string; tabla: string; ids: string[]; estado: "conciliado" | "historico"; detalle?: string }
 
 const slug = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
   .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80)

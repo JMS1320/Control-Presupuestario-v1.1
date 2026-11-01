@@ -63,7 +63,7 @@ export interface RevisionAbierta {
  * QUIÉN marca: la persona de la sesión, no el rol ni la URL (A-BUG-1327).
  * Antes salía del 1er segmento de la ruta (las rutas-contraseña); desde el login real quedaba vacío.
  */
-async function quienMarca(): Promise<string | null> {
+export async function quienMarca(): Promise<string | null> {
   try {
     const { data } = await supabase.auth.getUser()
     return etiquetaPersona(data.user)

@@ -31,7 +31,7 @@ const ES_FACTURA_SERVICIO = /\d{4}-\d{6,}|PERSONAL FLOW/i
 export const FIN_HISTORICO = "2026-01-31"
 
 /** Arma los temas. `cuenta` = la tarjeta; `cc` = la cuenta corriente desde donde se paga. */
-export function temasTarjeta(filas: FilaTarjeta[], debitos: DebitoCC[], cuenta: { cuentaId: string; nombre: string }, cc: { cuentaId: string; nombre: string }): { temas: Tema[]; cubiertos: Set<string> } {
+export function temasTarjeta(filas: FilaTarjeta[], debitos: DebitoCC[], cuenta: { cuentaId: string; nombre: string; schema?: string; tabla?: string }, cc: { cuentaId: string; nombre: string }): { temas: Tema[]; cubiertos: Set<string> } {
   const link = (ids: string[], fechas: string[], cuentaId = cuenta.cuentaId) => { const r = rangoQueContiene(fechas); return linkExtracto({ cuenta: cuentaId, movs: ids, desde: r.desde, hasta: r.hasta }) }
   const cubiertos = new Set<string>()
   const temas: Tema[] = []
@@ -72,8 +72,11 @@ export function temasTarjeta(filas: FilaTarjeta[], debitos: DebitoCC[], cuenta: 
       titulo: `${cuenta.nombre}: ${ceros.length} filas de pago en $ 0 (el pago en dólares sin importe)`,
       papel: "Control de la tarjeta · por causa",
       que: `Son las filas «SU PAGO» en dólares de resúmenes sin consumos en dólares: $ 0 y US$ 0. No mueven plata.\n` + ceros.map(p => `• ${dmy(p.fecha)} «${p.descripcion}»`).join("\n"),
-      propuesta: "Darlas por conciliadas (no hay nada que buscarles), con el detalle «pago en dólares sin importe». Si te cierra, «👍 Está bien así».",
+      propuesta: "Darlas por conciliadas (no hay nada que buscarles), con el detalle «pago en dólares sin importe».",
       links: [{ texto: `Las ${ceros.length} filas en ${cuenta.nombre}`, href: link(ceros.map(p => p.id), ceros.map(p => p.fecha)) }], respondido: false,
+      // ⚡ A-FEAT-1489 — de un clic: no hay nada que decidir
+      accion: cuenta.schema && cuenta.tabla ? { tipo: "estado-movimientos", texto: `dar por conciliadas las ${ceros.length} filas en $ 0`, schema: cuenta.schema, tabla: cuenta.tabla,
+        ids: ceros.map(p => p.id), estado: "conciliado", detalle: "Pago en dólares sin importe (fila del resumen)" } : undefined,
     })
   }
   if (sinDebito.length) {
@@ -116,8 +119,11 @@ export function temasTarjeta(filas: FilaTarjeta[], debitos: DebitoCC[], cuenta: 
       papel: "Control de la tarjeta · por causa",
       que: `Sus facturas son del sistema anterior (las de ARCA entran desde dic-25), y es el mismo período en que los pagos de facturas de la cuenta corriente quedaron «histórico» por decisión — por eso el motor no les encuentra pareja.\n`
         + antes.map(f => `• ${dmy(f.fecha)} ${plata(f.debitos)} «${f.descripcion}»`).join("\n"),
-      propuesta: "Pasarlos a «histórico», igual que los pagos de facturas de la cuenta corriente de ese período (no se concilian). Si te cierra, «👍 Está bien así».",
+      propuesta: "Pasarlos a «histórico», igual que los pagos de facturas de la cuenta corriente de ese período (no se concilian).",
       links: [{ texto: `Los ${antes.length} cargos en ${cuenta.nombre}`, href: link(antes.map(f => f.id), antes.map(f => f.fecha)) }], respondido: false,
+      // ⚡ A-FEAT-1489 — de un clic: es la misma decisión ya tomada para la cuenta corriente
+      accion: cuenta.schema && cuenta.tabla ? { tipo: "estado-movimientos", texto: `pasar los ${antes.length} cargos a «histórico»`, schema: cuenta.schema, tabla: cuenta.tabla,
+        ids: antes.map(f => f.id), estado: "historico" } : undefined,
     })
   }
   return { temas, cubiertos }

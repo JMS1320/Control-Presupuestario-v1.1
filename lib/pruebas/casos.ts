@@ -5684,10 +5684,11 @@ export function correrCasos(): Resultado[] {
     const cruces = cruzarChequesConDebitos(cheques, debitos)
     const temasCh = temasDeCheques(cruces, "2026-09-23")
     const longo = temasCh.find(t => t.clave === "chq:cLongo")!
+    const accLongo = longo.accion?.tipo === "cheque-cobrado" ? longo.accion : undefined
     chequear("Echeqs · recorrido", "✍️ El 101 por número (débito conciliado); Longo por importe → «marcar cobrado el 07/09 y poner el Nº 107»; Briki sin débito (el extracto llega al 23/09)",
       "c101 numero · cLongo importe 107 → 2026-09-07 · cBriki sin débito, «Cargar el extracto»",
-      `c101 ${cruces[0].por} · cLongo ${cruces[1].por} ${longo.accion?.numero} → ${longo.accion?.fecha} · cBriki ${cruces[2].debito ? "con débito" : "sin débito"}, ${/Cargar el extracto/.test(temasCh[2].propuesta ?? "") ? "«Cargar el extracto»" : "?"}`,
-      cruces[0].por === "numero" && cruces[1].por === "importe" && longo.accion?.numero === "107" && longo.accion?.fecha === "2026-09-07"
+      `c101 ${cruces[0].por} · cLongo ${cruces[1].por} ${accLongo?.numero} → ${accLongo?.fecha} · cBriki ${cruces[2].debito ? "con débito" : "sin débito"}, ${/Cargar el extracto/.test(temasCh[2].propuesta ?? "") ? "«Cargar el extracto»" : "?"}`,
+      cruces[0].por === "numero" && cruces[1].por === "importe" && accLongo?.numero === "107" && accLongo?.fecha === "2026-09-07"
         && !cruces[2].debito && /Cargar el extracto/.test(temasCh[2].propuesta ?? "") && !temasCh[2].accion && numeroEnDescripcion("Echeq 48 Hs. Nro.      101") === "101", "A-AUTO-10")
   }
 
@@ -5713,6 +5714,22 @@ export function correrCasos(): Resultado[] {
     const esp = "1 · 📜 Todos los movimientos de Wilson en MSA Galicia (3: 3 conciliados) · ids ok · solo 0 · 🔗 El par anual/cuotas: «Voyage Anual» activo y «Voyage Cuota» desactivado (sus cuotas)"
     chequear("Recorrido · tiras del tema", "📜 La tira de movimientos del CUIT (todos, con cuántos conciliados) y 🔗 el par anual/cuotas con el estado de cada uno", esp, v,
       v === esp && /ACTIVO — 1 conciliado/.test(par?.texto ?? "") && /desactivado — 6 desactivado/.test(par?.texto ?? "") && parDeTemplate(extras, "otro") === null, "A-FEAT-1484")
+  }
+
+  /**
+   * ⚡ **APLICAR DESDE EL TEMA — A-FEAT-1489.** Los pagos en $ 0 y los cargos de antes de ARCA traen su acción de un clic
+   * (cambiar el estado de ESOS movimientos); los pagos a vincular y los peajes no (no son de un clic: «Aplicá vos»). Sin
+   * la tabla de la tarjeta no se arma la acción.
+   */
+  {
+    const f = (id: string, fecha: string, descripcion: string, debitos: number, creditos: number, tipoFila: string) => ({ id, fecha, descripcion, debitos, creditos, debitosUsd: 0, creditosUsd: 0, tipoFila, estado: "pendiente" })
+    const filas = [f("p0", "2025-09-08", "SU PAGO EN USD", 0, 0, "pago"), f("a1", "2025-08-03", "AUTOPISTAS DEL S 8030", 3500, 0, "movimiento"), f("c1", "2025-07-14", "COOPSER O-0023-00181720", 38101.68, 0, "movimiento")]
+    const con = temasTarjeta(filas, [], { cuentaId: "tarjeta_visa_business_msa", nombre: "MSA Visa", schema: "msa", tabla: "tarjeta_visa_business" }, { cuentaId: "msa_galicia", nombre: "MSA Galicia" })
+    const sin = temasTarjeta(filas, [], { cuentaId: "tarjeta_visa_business_msa", nombre: "MSA Visa" }, { cuentaId: "msa_galicia", nombre: "MSA Galicia" })
+    const ac = (r: typeof con, et: string) => { const a = r.temas.find(t => t.etiqueta === et)?.accion; return a && a.tipo === "estado-movimientos" ? `${a.estado}:${a.ids.join(",")}` : "—" }
+    const v = `cero ${ac(con, "Tarjeta: pagos en $ 0")} · hist ${ac(con, "Tarjeta: facturas antes de ARCA")} · peajes ${ac(con, "Tarjeta: peajes sin regla")} · sin tabla ${ac(sin, "Tarjeta: pagos en $ 0")}`
+    const esp = "cero conciliado:p0 · hist historico:c1 · peajes — · sin tabla —"
+    chequear("Recorrido · aplicar desde el tema", "⚡ Lo de un clic trae su acción (sólo esos movimientos); lo que no, queda para «Aplicá vos»", esp, v, v === esp, "A-FEAT-1489")
   }
 
   /**
