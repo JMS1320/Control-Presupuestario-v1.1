@@ -41,6 +41,7 @@ import { explicarFila, type ProveedorFijo } from "@/lib/balance/facturas-fijas"
 import { armarTemplatesDelEjercicio, desdeCuota, type TemplatesDelEjercicio } from "@/lib/balance/templates-libro"
 import {
   armarControlCuotas, resumenControlCuotas, conProblema, cuotaParaControlDesde, subdiariosConVentasDesde,
+  leerComisionesPorCuenta, COMISIONES_MSA, campaniaDelControl, ultimoDiaDelMes,
   presentacionesSicoreDesde, type ControlCuotasTemplates, type PresentacionSicore,
 } from "@/lib/balance/control-cuotas-templates"
 import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
@@ -50,7 +51,7 @@ import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/bal
 import { armarWorkbook, coberturaDeArgs, descargarLibroDiario } from "@/lib/balance/export-libro-diario"
 import { armarTemas, subdiariosContraArca, temaDelLink, type Tema } from "@/lib/balance/recorrido"
 import { temasVentasVsArca, temasComprasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
-import { leerDatosConciliacion, proponerConciliaciones, type ConteoCuenta } from "@/lib/conciliacion/propuestas-ejercicio"
+import { leerDatosConciliacion, proponerConciliaciones, CUENTAS_CONCILIABLES, type ConteoCuenta } from "@/lib/conciliacion/propuestas-ejercicio"
 import { temasDeMovimientos, temasDeDeudas, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
 import { leerChequesVencidos } from "@/lib/conciliacion/cheques-vencidos"
 import { RecorridoBalance } from "./recorrido-balance"
@@ -966,7 +967,13 @@ export function PapelesDeBalance() {
         sicore = errRet ? null : presentacionesSicoreDesde((ret ?? []) as Record<string, unknown>[])
         if (errRet) toast.warning("No se pudieron leer las presentaciones de SICORE: su control de cuotas sale «a revisar».")
       }
+      // 🏦 A-FEAT-1470: las comisiones de cada cuenta, contadas en su extracto (MSA; las otras empresas siguen por cuotas).
+      const campCtl = campaniaDelControl(empresa.id, anioCierre)
+      const comisiones = empresa.id === "MSA"
+        ? await leerComisionesPorCuenta(supabase, COMISIONES_MSA, CUENTAS_CONCILIABLES, `${campCtl.meses[0]}-01`, ultimoDiaDelMes(campCtl.meses[campCtl.meses.length - 1]))
+        : null
       setControlCuotas(armarControlCuotas(empresa.id, anioCierre, {
+        comisiones,
         cuotas: (cuotas.data ?? []).map(f => cuotaParaControlDesde(f as Record<string, unknown>)),
         subdiariosConVentas: subdiariosConVentasDesde((ventas.data ?? []) as Record<string, unknown>[]),
         presentacionesSicore: sicore,

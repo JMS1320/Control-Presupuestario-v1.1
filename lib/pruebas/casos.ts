@@ -189,7 +189,7 @@ import { estadoArchivoDigital } from "@/lib/facturas/archivo-digital"
 import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiariosVacios } from "@/lib/balance/ejercicio"
 import { PRESENTADO_ARCA_COMPRAS, compararConPresentado } from "@/lib/balance/presentado-arca"
 import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/balance/facturas-fijas"
-import { controlarCuotasTemplates, campaniaDelControl, claveDeNombre, CONTROL_CUOTAS_TEMPLATES, type CuotaParaControl, type TemplateControlado, type EntradaControlCuotas } from "@/lib/balance/control-cuotas-templates"
+import { controlarCuotasTemplates, campaniaDelControl, claveDeNombre, CONTROL_CUOTAS_TEMPLATES, ultimoDiaDelMes, type ComisionesDelMes, type CuotaParaControl, type TemplateControlado, type EntradaControlCuotas } from "@/lib/balance/control-cuotas-templates"
 import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuestosYOtros } from "@/lib/balance/templates-libro"
 import { repartoDeLaFlota } from "@/lib/balance/reparto-flota"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
@@ -10873,6 +10873,20 @@ export function correrCasos(): Resultado[] {
     ].map(b => (b ? "sí" : "no")).join(" ")
     chequear("Extracto — filas pegadas de la corrida", "🧷 Pegada con el filtro de antes → se queda; CATEG cambiado después → se va si no coincide; fechas cambiadas → se va si cae afuera",
       "sí no sí no", vp, vp === "sí no sí no", "A-BUG-1460")
+    // 🏦 A-FEAT-1470: comisiones bancarias por cuenta, en su extracto — Galicia 1/mes ok, Santander 2/mes con un mes corto,
+    // Provincia sin NINGÚN movimiento (la alarma), VISA ok. Y el último día de cada mes bien (junio 30).
+    const mesesC = campaniaDelControl("MSA", 2026).meses
+    const datosC: ComisionesDelMes[] = [
+      ...mesesC.map(m => ({ cuentaId: "msa_galicia", mes: m, comisiones: 1, movimientos: 100 })),
+      ...mesesC.map(m => ({ cuentaId: "msa_santander", mes: m, comisiones: m === "2026-03" ? 1 : 2, movimientos: 10 })),
+      ...mesesC.map(m => ({ cuentaId: "tarjeta_visa_business_msa", mes: m, comisiones: 1, movimientos: 30 })),
+    ]
+    const filasC = controlarCuotasTemplates({ empresa: "MSA", meses: mesesC, cuotas: [], comisiones: datosC, hoy: "2026-11-01" })
+      .filter(f => f.nombre.startsWith("Comisión bancaria"))
+    const vC = filasC.map(f => `${f.nombre.replace("Comisión bancaria · ", "")}:${f.estado}${f.estado === "falta" ? `(${f.detalle.slice(0, 40)})` : ""}`).sort().join(" | ")
+    const eC = "MSA Galicia:ok | MSA Provincia:falta(🚨 la cuenta NO tiene movimientos cargad) | MSA Santander:falta(faltan comisiones en mar-26) | VISA Business MSA:ok"
+    chequear("Control de cuotas — comisiones bancarias", "🏦 Por cuenta en su extracto: Galicia 1/mes ok, Santander 2/mes con marzo corto, Provincia sin extracto → alarma; junio termina el 30",
+      `${eC} · ${ultimoDiaDelMes("2026-06")}`, `${vC} · ${ultimoDiaDelMes("2026-06")}`, `${vC} · ${ultimoDiaDelMes("2026-06")}` === `${eC} · 2026-06-30`, "A-FEAT-1470")
     // 🔢 A-BUG-1465: el desplegable de revisadas — los tres números de la cuenta (Santander 31/10: 113 revisadas + 35 no).
     const santRev = [...Array(113)].map(() => ({ estado: "conciliado", revisado: true, categ: "x" })).concat([...Array(35)].map(() => ({ estado: "pendiente", revisado: false, categ: "" })))
     const eR = contarEstadisticasExtracto(santRev)

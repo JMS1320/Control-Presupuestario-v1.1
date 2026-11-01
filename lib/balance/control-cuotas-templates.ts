@@ -37,7 +37,12 @@
  *    (buscar los pagos en los extractos).
  * 5. **SICORE 1ª / 2ª quincena** — un pago por cada presentación. La 1ª quincena del mes M se paga en M;
  *    la 2ª, en M+1 (es como lo propone el cierre de quincena: «la primera cuota que vence después»).
- * 6. **Comisiones bancarias** (cuenta, caja de seguridad) — regla a desarrollar (una por cuenta y por mes).
+ * 6. **Comisiones bancarias** (cuenta, caja de seguridad) — ⚠️ cambió 01/11 (A-FEAT-1470, JMS: «los costos bancarios deben
+ *    exigir de mínima 1 cuota mensual por cuenta por banco, y si cobran mensual por tarjetas sumarlo; en algún lado debe
+ *    salir la alarma de que Banco Provincia no tiene movimientos cargados»): la de la cuenta se controla **por cuenta, en
+ *    su EXTRACTO** (movimientos con CATEG «Comision Cuenta Bancaria» por mes), no por las cuotas del template — el
+ *    template es uno para todos los bancos y no dice de cuál es. Un mes sin NINGÚN movimiento en la cuenta = «no hay
+ *    extracto cargado: falta imputar sus gastos». La caja de seguridad sigue por cuotas (trimestral).
  * 7. **Campaña**: MSA = ejercicio 1/7 → 30/6; PAM y MA = año calendario. Un template compartido
  *    («MSA/PAM», «PAM/MA/Duhau») se controla en la PRIMERA empresa nombrada.
  * 8. **Preview importante** — van primero.
@@ -66,6 +71,22 @@ export type ReglaCuotas =
   | { tipo: "sicore"; quincena: "1ra" | "2da" }
   | { tipo: "a-revisar"; motivo: string }
   | { tipo: "a-desarrollar"; motivo: string }
+  /** 🏦 A-FEAT-1470 — comisiones contadas en el EXTRACTO de cada cuenta: N por mes (cuenta + tarjeta de débito…). */
+  | { tipo: "comisiones-por-cuenta"; cuentas: CuentaConComision[] }
+
+/** 🏦 A-FEAT-1470 — una cuenta cuyo extracto debe traer N comisiones por mes. */
+export interface CuentaConComision { cuentaId: string; nombre: string; porMes: number; motivo: string; desde?: string }
+
+/** 🏦 A-FEAT-1470 — lo leído del extracto: por cuenta y mes, cuántas comisiones y cuántos movimientos en total. */
+export interface ComisionesDelMes { cuentaId: string; mes: string; comisiones: number; movimientos: number }
+
+/** Las cuentas de MSA y lo que cobra cada una por mes (medido 01/11/2026 en los extractos del ejercicio 25/26). */
+export const COMISIONES_MSA: CuentaConComision[] = [
+  { cuentaId: "msa_galicia", nombre: "MSA Galicia", porMes: 1, motivo: "«Comision Servicio de Cuenta», 1 por mes" },
+  { cuentaId: "msa_santander", nombre: "MSA Santander", porMes: 2, motivo: "cuenta + tarjeta de débito adicional, 2 por mes" },
+  { cuentaId: "msa_provincia", nombre: "MSA Provincia", porMes: 1, motivo: "1 por mes, como toda cuenta" },
+  { cuentaId: "tarjeta_visa_business_msa", nombre: "VISA Business MSA", porMes: 1, motivo: "«Comisión mant. de cta.» de la tarjeta, 1 por mes" },
+]
 
 export interface TemplateControlado {
   empresa: EmpresaControl
@@ -203,8 +224,9 @@ export const CONTROL_CUOTAS_TEMPLATES: TemplateControlado[] = [
   { empresa: "MSA", agrupadora: "Seguros", nombre: "Seguro Accidentes Personales", prefijo: true, regla: fijo(12), preview: true,
     desde: "2026-02", nota: `${NOTA_AP} — la de MSA empezó en feb-26 (póliza 10183421)` },
   { empresa: "MSA", agrupadora: "Tarjetas", nombre: "Tarjeta Visa Business MSA", regla: fijo(12), preview: true },
-  { empresa: "MSA", agrupadora: "Gastos Bancarios", nombre: "Comision Cuenta Bancaria", regla: fijo(12), preview: true,
-    excluirDetalle: "tarjeta", nota: `${NOTA_SERVICIO} — no cuentan las de la tarjeta cargadas en este template` },
+  // ⚠️ cambió 01/11 (A-FEAT-1470): era fijo(12) sobre las cuotas del template; ahora, por cuenta en su extracto.
+  { empresa: "MSA", agrupadora: "Gastos Bancarios", nombre: "Comision Cuenta Bancaria", regla: { tipo: "comisiones-por-cuenta", cuentas: COMISIONES_MSA }, preview: true,
+    nota: "por cuenta, en su extracto (el template es uno para todos los bancos)" },
   { empresa: "MSA", agrupadora: "Gastos Bancarios", nombre: "Comision Caja de Seguridad", regla: fijo(4), preview: true, nota: NOTA_CAJA },
 
   // ═══ PAM — año calendario ═══
@@ -325,6 +347,7 @@ function textoRegla(t: TemplateControlado): string {
     case "sicore": return `1 por presentación de la ${r.quincena} quincena`
     case "a-revisar": return `a revisar: ${r.motivo}`
     case "a-desarrollar": return `regla a desarrollar: ${r.motivo}`
+    case "comisiones-por-cuenta": return `por cuenta, en su extracto (${r.cuentas.map(c => `${c.nombre} ${c.porMes}/mes`).join(", ")})`
   }
 }
 
@@ -342,6 +365,8 @@ export interface EntradaControlCuotas {
   presentacionesSicore?: PresentacionSicore[] | null
   /** `AAAA-MM-DD`. Un pago que vence este mes o después todavía no falta. */
   hoy?: string
+  /** 🏦 A-FEAT-1470 — las comisiones de cada cuenta por mes, leídas del extracto. `null`/ausente = no se pudieron leer. */
+  comisiones?: ComisionesDelMes[] | null
   config?: TemplateControlado[]
 }
 
@@ -352,7 +377,11 @@ export function controlarCuotasTemplates(e: EntradaControlCuotas): FilaControlCu
   const deLaEmpresa = e.cuotas.filter(c =>
     empresaDelResponsable(c.responsable) === e.empresa && (c.estado || "").toLowerCase() !== ESTADO_EXCLUIDO)
 
-  const filas = config.map((t): FilaControlCuotas => {
+  const filas = config.flatMap((t): FilaControlCuotas[] => t.regla.tipo === "comisiones-por-cuenta"
+    ? t.regla.cuentas.map(c => porCuentaConComision(t, c, e.meses, e.comisiones ?? null, mesHoy))
+    : [filaDeTemplate(t)])
+
+  function filaDeTemplate(t: TemplateControlado): FilaControlCuotas {
     const clave = claveDeNombre(t.nombre)
     const suyas = deLaEmpresa.filter(c => {
       const k = claveDeNombre(c.nombre)
@@ -387,7 +416,7 @@ export function controlarCuotasTemplates(e: EntradaControlCuotas): FilaControlCu
       excluidas.length ? `${excluidas.length} de «${t.excluirDetalle}» no cuentan` : "",
     ].filter(Boolean)
     return { ...base, ...fila, detalle: [fila.detalle, ...extras].join(" · "), templates }
-  })
+  }
 
   return ordenar(filas)
 }
@@ -646,4 +675,70 @@ export function presentacionesSicoreDesde(filas: Array<Record<string, unknown>>)
     por.set(q, p)
   }
   return [...por.values()]
+}
+
+/**
+ * 🏦 A-FEAT-1470 — una cuenta: cada mes de la campaña (hasta el anterior al actual) tiene que traer `porMes` comisiones en
+ * su extracto. Un mes sin ningún movimiento no es «falta una comisión»: es que el extracto no está cargado.
+ */
+function porCuentaConComision(t: TemplateControlado, c: CuentaConComision, meses: string[], datos: ComisionesDelMes[] | null, mesHoy: string): FilaControlCuotas {
+  const base = { empresa: t.empresa, agrupadora: t.agrupadora, nombre: `Comisión bancaria · ${c.nombre}`, regla: c.motivo, preview: t.preview, templates: 0, nota: t.nota }
+  if (!datos) return { ...base, esperado: null, encontrado: 0, meses: [], estado: "a revisar", detalle: "no se pudo leer el extracto de la cuenta" }
+  const cuenta = (m: string) => datos.find(d => d.cuentaId === c.cuentaId && d.mes === m)
+  const controlables = meses.filter(m => m < mesHoy && (!c.desde || m >= c.desde))
+  const sinExtracto = controlables.filter(m => !(cuenta(m)?.movimientos))
+  const cortos = controlables.filter(m => cuenta(m)?.movimientos && (cuenta(m)?.comisiones ?? 0) < c.porMes)
+  const de_mas = controlables.filter(m => (cuenta(m)?.comisiones ?? 0) > c.porMes)
+  const encontrado = controlables.reduce((s, m) => s + Math.min(cuenta(m)?.comisiones ?? 0, c.porMes), 0)
+  const mesesOk = controlables.filter(m => (cuenta(m)?.comisiones ?? 0) >= c.porMes)
+  const lista = (ms: string[]) => ms.map(nombreMesCorto).join(", ")
+  const partes: string[] = []
+  if (sinExtracto.length === controlables.length && controlables.length) partes.push(`🚨 la cuenta NO tiene movimientos cargados en todo el período: falta el extracto (y sus gastos sin imputar)`)
+  else if (sinExtracto.length) partes.push(`🚨 sin extracto cargado en ${lista(sinExtracto)}: falta imputar sus gastos`)
+  if (cortos.length) partes.push(`faltan comisiones en ${lista(cortos)}`)
+  if (de_mas.length) partes.push(`más de ${c.porMes} en ${lista(de_mas)} (aviso)`)
+  const estado: EstadoCuotas = sinExtracto.length || cortos.length ? "falta" : "ok"
+  return { ...base, esperado: controlables.length * c.porMes, encontrado, meses: mesesOk, estado,
+    detalle: partes.join(" · ") || `${c.porMes} por mes en los ${controlables.length} meses` }
+}
+
+/**
+ * 🏦 A-FEAT-1470 — lectura: por cada cuenta, de su extracto en los meses de la campaña, cuántas comisiones (CATEG
+ * «Comision Cuenta Bancaria») y cuántos movimientos hay por mes. Las tablas salen de `CUENTAS_CONCILIABLES` (la misma lista
+ * que usa la conciliación). `null` si alguna no se pudo leer (el control dice «a revisar», no inventa un cero).
+ */
+export async function leerComisionesPorCuenta(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sb: any, cuentas: CuentaConComision[], tablas: { cuentaId: string; schema: string; tabla: string }[], desde: string, hasta: string,
+): Promise<ComisionesDelMes[] | null> {
+  const out: ComisionesDelMes[] = []
+  for (const c of cuentas) {
+    const t = tablas.find(x => x.cuentaId === c.cuentaId)
+    if (!t) return null
+    const filas: { fecha: string; categ: string | null }[] = []
+    for (let d = 0; ; d += 1000) {
+      const q = (t.schema === "public" ? sb.from(t.tabla) : sb.schema(t.schema).from(t.tabla))
+        .select("fecha, categ").gte("fecha", desde).lte("fecha", hasta).order("id").range(d, d + 999)
+      const { data, error } = await q
+      if (error) return null
+      filas.push(...(data ?? []))
+      if (!data || data.length < 1000) break
+    }
+    const porMes = new Map<string, ComisionesDelMes>()
+    for (const f of filas) {
+      const mes = String(f.fecha).slice(0, 7)
+      const x = porMes.get(mes) ?? { cuentaId: c.cuentaId, mes, comisiones: 0, movimientos: 0 }
+      x.movimientos++
+      if ((f.categ ?? "").trim().toLowerCase() === "comision cuenta bancaria") x.comisiones++
+      porMes.set(mes, x)
+    }
+    out.push(...porMes.values())
+  }
+  return out
+}
+
+/** `AAAA-MM` → el último día de ese mes (`AAAA-MM-DD`): junio da 30, febrero 28/29. */
+export function ultimoDiaDelMes(mes: string): string {
+  const [a, m] = mes.split("-").map(Number)
+  return new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10)
 }
