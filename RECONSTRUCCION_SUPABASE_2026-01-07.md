@@ -3332,6 +3332,9 @@ Alta de `MA` (CUIL 27-06682461-1, `plano_ipc`, MSA, ingreso 01/06/2025, id fijo 
 ### 2026-10-29 · Stock declarado al 30/06/2025 de MSA (script 132, DATOS) — A-FEAT-1420 — ✅ CORRIDO con OK de JMS
 Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantidad 0, marca `[script 132]` en observaciones), 94 renglones en `stock_inicio` ($ 31.730.444,08 = la planilla) y 3 `pasturas`. Se corre con `scripts/132-stock-inicio-msa-30-06-2025.mts` (desde su `.json`; el `.sql` es el registro legible). Deshacer: `scripts/132-stock-inicio-msa-30-06-2025-deshacer.sql` (por ids; frena si un producto ya tiene movimientos).
 
+### 2026-10-31 · Proveedor de los cargos bancarios de Santander (script 157, DATOS) — A-BUG-1461 — ✅ CORRIDO 2026-10-31 con OK de JMS («corregí por Santander»)
+`msa.santander`: 108 movimientos (conciliados con las reglas del 154) `proveedor_nombre` «Banco Galicia» → «Banco Santander». Deshacer: `157-…-deshacer.sql` (por id, sólo si siguen en «Banco Santander»).
+
 ### 2026-10-31 · Las 3 cajas de MSA, los echeqs y las 3 tarjetas con las columnas de las bancarias (script 156, ESTRUCTURA) — A-BUG-1458 — ✅ CORRIDO 2026-10-31 con OK de JMS («aprovechá a dejar todo bien»)
 `msa.caja_general`, `msa.caja_ams`, `msa.caja_sigot` (+19 c/u), `msa.echeqs_terceros` (+15), `msa.tarjeta_visa_business`, `pam.tarjeta_visa`, `ma.tarjeta_visa` (+12 c/u): las columnas de `public.msa_galicia` que les faltaban, vacías, comentario `[script 156]`. Al reconstruir: `scripts/156-columnas-cajas-echeqs-tarjetas.sql` después de crear esas tablas. Deshacer: `156-…-deshacer.sql` (sólo si siguen vacías).
 

@@ -17,7 +17,7 @@ import { schemaDeFila } from "@/lib/empresas"
 import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
 import { puedeVincularseSola, buscarFacturaDeOtraEmpresa } from "@/lib/conciliacion/cruce-empresa"
 import { columnasDelExtracto } from "@/lib/conciliacion/columnas-extracto"
-import { heredarDelOrigen, cuitsDiscrepan, motivoCuitDistinto, type TemplateOrigen } from "@/lib/conciliacion/datos-del-origen"
+import { heredarDelOrigen, bancoDeLaCuenta, cuitsDiscrepan, motivoCuitDistinto, type TemplateOrigen } from "@/lib/conciliacion/datos-del-origen"
 import { matchPorImporteExacto } from "@/lib/conciliacion/match-por-importe"
 import { buscarConDobleAudit, cargarVinculosEnAuditar } from "@/lib/conciliacion/doble-audit"
 import { templateParaFecha, detalleDeRegla, motivoFaltaCampana } from "@/lib/conciliacion/template-de-regla"
@@ -1006,6 +1006,8 @@ export function useMotorConciliacion() {
                         { fecha_estimada: cuotaResult.fechaCuota ?? movimiento.fecha },
                         cuotaResult.template ?? {}),
                     provNombreRegla,
+                    // 🏦 A-BUG-1461: un cargo bancario lo cobra el banco de ESTA cuenta (Santander no es Galicia).
+                    cuenta.tipo === 'tarjeta' ? null : bancoDeLaCuenta(cuenta.nombre),
                   )
 
                   /**
@@ -1097,7 +1099,7 @@ export function useMotorConciliacion() {
        * reglas viejas, que no tienen template elegido.
        */
       if ((regla as any).template_id) {
-        const COLS = 'id, nombre_referencia, responsable, año, periodicidad, activo, solo_conciliacion, nombre_quien_cobra, proveedor, centro_costo, cuit_quien_cobra, template_origen_id'
+        const COLS = 'id, nombre_referencia, responsable, año, periodicidad, activo, solo_conciliacion, nombre_quien_cobra, proveedor, centro_costo, cuit_quien_cobra, template_origen_id, cuenta_agrupadora'
         const { data: elegido } = await supabase.from('egresos_sin_factura').select(COLS)
           .eq('id', (regla as any).template_id).maybeSingle()
         if (!elegido) {
@@ -1140,7 +1142,7 @@ export function useMotorConciliacion() {
         // 🧲 A-BUG-175 — se traen también las columnas que el movimiento HEREDA. Antes el select
         //    pedía sólo `id, responsable, solo_conciliacion`, así que el motor vinculaba el
         //    movimiento a su template y no tenía de dónde copiar el proveedor ni el comprobante.
-        .select('id, responsable, solo_conciliacion, nombre_referencia, nombre_quien_cobra, proveedor, centro_costo, cuit_quien_cobra')
+        .select('id, responsable, solo_conciliacion, nombre_referencia, nombre_quien_cobra, proveedor, centro_costo, cuit_quien_cobra, cuenta_agrupadora')
         .eq('categ', regla.categ)
         .eq('activo', true)
 

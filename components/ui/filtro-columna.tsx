@@ -4,6 +4,10 @@
  * 🔽 Filtro por columna, tipo Excel (A-FEAT-1441): va en el encabezado de una tabla. Abre la lista de valores sin
  * repetir, con su cantidad, un buscador y casillas. La lógica está en `lib/ui/filtro-columna.ts`.
  * `seleccion` null = sin filtro.
+ *
+ * ⚠️ cambió 31/10 (A-BUG-1460, JMS: «puse "Ninguna" para después elegir cuál quería y me lo tomó definitivo y quedó
+ * mostrando nada; debe funcionar como Excel: pongo Ninguna, después selecciono y le doy OK»): las casillas, «Todas» y
+ * «Ninguna» cambian un BORRADOR; recién **Aceptar** filtra. Cancelar (o cerrar) lo descarta.
  */
 
 import { useMemo, useState } from "react"
@@ -19,20 +23,33 @@ export function FiltroColumna({ titulo, opciones, seleccion, onChange }: {
   onChange: (s: Set<string> | null) => void
 }) {
   const [busqueda, setBusqueda] = useState("")
+  const [abierto, setAbierto] = useState(false)
+  /** Lo que se está eligiendo, todavía sin aplicar (null = todas). */
+  const [borrador, setBorrador] = useState<Set<string> | null>(seleccion)
   const visibles = useMemo(() => {
     const q = busqueda.trim().toLowerCase()
     return q ? opciones.filter(o => o.etiqueta.toLowerCase().includes(q) || o.valor.toLowerCase().includes(q)) : opciones
   }, [opciones, busqueda])
   const activo = seleccion !== null
-  const marcado = (v: string) => !seleccion || seleccion.has(v)
+  const marcado = (v: string) => !borrador || borrador.has(v)
   const alternar = (v: string) => {
-    const s = new Set(seleccion ?? opciones.map(o => o.valor))
+    const s = new Set(borrador ?? opciones.map(o => o.valor))
     if (s.has(v)) s.delete(v); else s.add(v)
-    onChange(s.size === opciones.length ? null : s)
+    setBorrador(s.size === opciones.length ? null : s)
   }
+  const abrirOCerrar = (a: boolean) => {
+    setAbierto(a)
+    if (a) setBorrador(seleccion)
+    else setBusqueda("")
+  }
+  const aceptar = () => {
+    onChange(borrador && borrador.size === opciones.length ? null : borrador)
+    abrirOCerrar(false)
+  }
+  const elegidos = borrador ? borrador.size : opciones.length
 
   return (
-    <Popover onOpenChange={abierto => { if (!abierto) setBusqueda("") }}>
+    <Popover open={abierto} onOpenChange={abrirOCerrar}>
       <PopoverTrigger asChild>
         <button type="button" className={`inline-flex items-center gap-1 rounded px-1 hover:bg-muted ${activo ? "font-semibold text-primary" : ""}`}
           title={activo ? `Filtrado: ${seleccion!.size} de ${opciones.length}` : `Filtrar por ${titulo.toLowerCase()}`}>
@@ -42,13 +59,14 @@ export function FiltroColumna({ titulo, opciones, seleccion, onChange }: {
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 p-0">
         <div className="border-b p-2">
-          <Input autoFocus placeholder={`Buscar en ${titulo.toLowerCase()}…`} value={busqueda} onChange={e => setBusqueda(e.target.value)} className="h-7 text-xs" />
+          <Input autoFocus placeholder={`Buscar en ${titulo.toLowerCase()}…`} value={busqueda} onChange={e => setBusqueda(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); aceptar() } }} className="h-7 text-xs" />
         </div>
         <div className="flex gap-1 border-b p-2 text-[11px]">
-          <button type="button" className="rounded bg-muted px-2 py-0.5 hover:bg-muted/70" onClick={() => onChange(null)}>Todas</button>
-          <button type="button" className="rounded bg-muted px-2 py-0.5 hover:bg-muted/70" onClick={() => onChange(new Set())}>Ninguna</button>
+          <button type="button" className="rounded bg-muted px-2 py-0.5 hover:bg-muted/70" onClick={() => setBorrador(null)}>Todas</button>
+          <button type="button" className="rounded bg-muted px-2 py-0.5 hover:bg-muted/70" onClick={() => setBorrador(new Set())}>Ninguna</button>
           {busqueda && visibles.length > 0 && (
-            <button type="button" className="rounded bg-muted px-2 py-0.5 hover:bg-muted/70" onClick={() => onChange(new Set(visibles.map(o => o.valor)))}>
+            <button type="button" className="rounded bg-muted px-2 py-0.5 hover:bg-muted/70" onClick={() => setBorrador(new Set(visibles.map(o => o.valor)))}>
               Sólo las {visibles.length} que coinciden
             </button>
           )}
@@ -63,6 +81,12 @@ export function FiltroColumna({ titulo, opciones, seleccion, onChange }: {
             </label>
           ))}
           {visibles.length === 0 && <p className="p-2 text-xs text-muted-foreground">Nada coincide con «{busqueda}».</p>}
+        </div>
+        <div className="flex items-center gap-2 border-t p-2 text-xs">
+          <span className="text-muted-foreground">{elegidos} de {opciones.length} elegidos</span>
+          <button type="button" className="ml-auto rounded border px-2 py-1 hover:bg-muted" onClick={() => abrirOCerrar(false)}>Cancelar</button>
+          <button type="button" className="rounded bg-primary px-3 py-1 text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            disabled={elegidos === 0} title={elegidos === 0 ? "Elegí al menos uno" : "Aplicar el filtro"} onClick={aceptar}>Aceptar</button>
         </div>
       </PopoverContent>
     </Popover>

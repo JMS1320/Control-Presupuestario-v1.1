@@ -40,6 +40,25 @@ export interface TemplateOrigen {
   nombre_quien_cobra?: string | null
   proveedor?: string | null
   centro_costo?: string | null
+  /** 🏦 A-BUG-1461: «Impuestos Bancarios» / «Gastos Bancarios» = un cargo del BANCO de la cuenta. */
+  cuenta_agrupadora?: string | null
+}
+
+/**
+ * 🏦 **A-BUG-1461 — el cargo de un banco lo cobra EL BANCO DE LA CUENTA, no el que diga el template.** Los templates de
+ * impuestos y gastos bancarios de MSA tienen «Banco Galicia» como proveedor (nacieron con Galicia); al conciliar
+ * Santander con ellos, los 108 movimientos quedaron con proveedor «Banco Galicia» (JMS 31/10: «corregí por Santander»).
+ */
+export const esCargoBancario = (tpl: TemplateOrigen | null | undefined) => /bancari/i.test(tpl?.cuenta_agrupadora ?? "")
+
+/** El banco de una cuenta, por su nombre («MSA Banco Santander» → «Banco Santander»). `null` si no es un banco conocido. */
+export function bancoDeLaCuenta(nombreCuenta: string | null | undefined): string | null {
+  const m = String(nombreCuenta ?? "").match(/\b(galicia|santander|provincia|naci[oó]n|macro|bbva|franc[eé]s|patagonia|credicoop|hsbc|icbc)\b/i)
+  if (!m) return null
+  const b = m[1].toLowerCase()
+  const nombre: Record<string, string> = { galicia: "Galicia", santander: "Santander", provincia: "Provincia", nacion: "Nación", "nación": "Nación",
+    macro: "Macro", bbva: "BBVA", frances: "Francés", "francés": "Francés", patagonia: "Patagonia", credicoop: "Credicoop", hsbc: "HSBC", icbc: "ICBC" }
+  return `Banco ${nombre[b] ?? m[1]}`
 }
 
 const t = (s: string | null | undefined) => (s ?? '').trim()
@@ -82,8 +101,10 @@ export function heredarDelOrigen(
   tpl: TemplateOrigen | null | undefined,
   identificador: string | null,
   proveedorSegunBanco?: string | null,
+  /** 🏦 A-BUG-1461: el banco de la cuenta del movimiento (para los cargos bancarios). */
+  bancoCuenta?: string | null,
 ): Heredado {
-  const delOrigen = proveedorDelTemplate(tpl)
+  const delOrigen = (esCargoBancario(tpl) && t(bancoCuenta)) || proveedorDelTemplate(tpl)
   const yaTiene = t(actual.proveedor_nombre)
 
   const proveedor = yaTiene || delOrigen || t(proveedorSegunBanco) || null

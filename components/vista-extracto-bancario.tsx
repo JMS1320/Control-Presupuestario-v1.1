@@ -103,6 +103,7 @@ import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 import { extractoDelLink } from "@/lib/extracto/link"
 import { FiltroColumna } from "@/components/ui/filtro-columna"
 import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
+import { pegadaSigueVisible } from "@/lib/extracto/alcance-filtros"
 
 /** 🔽 A-FEAT-1456 — columnas con filtro tipo Excel: el título y el valor de cada fila (el que se ve en la celda). */
 const TITULO_COL: Record<string, string> = {
@@ -328,6 +329,13 @@ export function VistaExtractoBancario() {
   const [estadoPrevioCorrida, setEstadoPrevioCorrida] = useState<Record<string, string>>({})
   /** Sólo los IDs, para que la grilla no los suelte. Las filas de verdad viven en `movimientos`. */
   const idsCorrida = useMemo(() => new Set(filasCorrida.map((f: any) => f.id)), [filasCorrida])
+  /**
+   * 🧷 A-BUG-1460 — los filtros como estaban AL CONCILIAR. La excepción de las filas pegadas es para que no se vayan por
+   * lo que la corrida les cambió (el estado, la categ); un filtro que el usuario pone DESPUÉS se respeta. JMS 31/10: «si
+   * refresco la página sí filtra por categs, pero no lo hace luego de haber conciliado; eso fue siempre el problema».
+   * Se arregló el buscador y la contraparte (A-BUG-1314) pero quedaban afuera CATEG, las fechas y las columnas.
+   */
+  const [filtrosAlCorrer, setFiltrosAlCorrer] = useState<{ categs: Set<string> | null; cols: Record<string, Set<string> | null>; fechas: string } | null>(null)
 
   // Hook para validación de categorías
   const { cuentas, validarCateg, buscarSimilares, crearCuentaContable } = useCuentasContables()
@@ -958,8 +966,12 @@ ${texto.trim()}` : texto.trim()
     // filtraba nada — volvían todas las filas de la corrida.
     if (idsCorrida.size > 0) {
       const yaEstan = new Set(lista.map(m => m.id))
+      // 🧷 A-BUG-1460: también CATEG y fechas, si cambiaron después de conciliar.
+      const categCambio = !!filtrosAlCorrer && categsFiltro !== filtrosAlCorrer.categs
+      const fechasCambio = !!filtrosAlCorrer && `${usarFechas}|${fechaMovDesde}|${fechaMovHasta}` !== filtrosAlCorrer.fechas
       const faltantes = base.filter(m => idsCorrida.has(m.id) && !yaEstan.has(m.id)
-        && coincideBusqueda(m) && coincideProveedor(m))
+        && coincideBusqueda(m) && coincideProveedor(m)
+        && pegadaSigueVisible(m as any, { categCambio, categs: categsFiltro, fechasCambio, usarFechas, desde: fechaMovDesde, hasta: fechaMovHasta }))
       if (faltantes.length > 0) {
         lista = [...lista, ...faltantes]
           .sort((a, b) => (Number((b as any).orden) || 0) - (Number((a as any).orden) || 0))
@@ -973,10 +985,18 @@ ${texto.trim()}` : texto.trim()
     if (idsLink && idsLink.size) lista = lista.filter(m => idsLink.has(String(m.id)))
 
     return lista
-  }, [movimientos, categsFiltro, busqueda, filtroProveedor, idsCorrida, resumenFiltro, resumenesElegidos, modoOkAuditar, idsLink])
+  }, [movimientos, categsFiltro, busqueda, filtroProveedor, idsCorrida, resumenFiltro, resumenesElegidos, modoOkAuditar, idsLink,
+      filtrosAlCorrer, usarFechas, fechaMovDesde, fechaMovHasta])
   // 🔽 A-FEAT-1456: los filtros por columna, sobre lo de arriba.
-  const movimientosVisibles = useMemo(() => filtrarPorColumnas(movimientosSinColumnas, filtrosCol, VALOR_COL),
-    [movimientosSinColumnas, filtrosCol])
+  // 🧷 A-BUG-1460: las filas pegadas de la corrida se saltean los filtros de columna que ya estaban al conciliar (el estado
+  // les cambió), pero no los que se ponen después.
+  const movimientosVisibles = useMemo(() => {
+    const filtradas = filtrarPorColumnas(movimientosSinColumnas, filtrosCol, VALOR_COL)
+    if (!idsCorrida.size || !filtrosAlCorrer || filtrosCol !== filtrosAlCorrer.cols) return filtradas
+    const ya = new Set(filtradas.map(m => m.id))
+    const pegadas = movimientosSinColumnas.filter(m => idsCorrida.has(m.id) && !ya.has(m.id))
+    return pegadas.length ? movimientosSinColumnas.filter(m => ya.has(m.id) || idsCorrida.has(m.id)) : filtradas
+  }, [movimientosSinColumnas, filtrosCol, idsCorrida, filtrosAlCorrer])
   /** Las opciones de cada columna: los valores de lo filtrado por TODO LO DEMÁS (como en Excel). */
   // Se calculan UNA vez por cambio de datos o de filtros (no en cada tecla): son ~25 columnas sobre hasta 5.000 filas.
   const opcionesPorCol = useMemo(() => Object.fromEntries(Object.keys(VALOR_COL).map(col =>
@@ -1184,6 +1204,7 @@ ${texto.trim()}` : texto.trim()
     const ids = movs.map(m => m.id).filter(Boolean)
     if (ids.length === 0) { setFilasCorrida([]); setEstadoPrevioCorrida({}); return }
     setEstadoPrevioCorrida(Object.fromEntries(movs.map(m => [m.id, m.estado ?? ''])))
+    setFiltrosAlCorrer({ categs: categsFiltro, cols: filtrosCol, fechas: `${usarFechas}|${fechaMovDesde}|${fechaMovHasta}` })
     const db = cuenta.schema_bd && cuenta.schema_bd !== 'public'
       ? supabase.schema(cuenta.schema_bd)
       : supabase
@@ -1198,6 +1219,7 @@ ${texto.trim()}` : texto.trim()
 
   /** Suelta las filas pinneadas y vuelve a aplicar los filtros de verdad. */
   const soltarCorrida = () => {
+    setFiltrosAlCorrer(null)
     setFilasCorrida([])
     setEstadoPrevioCorrida({})
     recargar()

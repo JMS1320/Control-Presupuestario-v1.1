@@ -96,7 +96,7 @@ import { pedirCampo, verPedidoCampo, tomarPedidoCampo } from "@/lib/productivo/p
 import { condicionesVenta, cobroVentaSinLiquidacion } from "@/lib/productivo/venta-condiciones"
 import { dosisYTotal } from "@/lib/productivo/dosis-orden"
 import { pideFechaPagoAlCambiarEstado } from "@/lib/pagos/fecha-pago-fila"
-import { filtrosEnMemoria, hayQueTraerTodo, limiteParaCargar } from "@/lib/extracto/alcance-filtros"
+import { filtrosEnMemoria, hayQueTraerTodo, limiteParaCargar, pegadaSigueVisible } from "@/lib/extracto/alcance-filtros"
 import { ordenarYFiltrarFaltantes } from "@/lib/gas-pdf/orden-faltantes"
 import { resolverHaOrden } from "@/lib/productivo/hectareas-orden"
 import { filtrarOrdenesAgricolas, chipsDe, resumenOrdenes, FILTRO_ORDENES_VACIO, padreDePorNombre, arbolLotes, lotesQueCoinciden } from "@/lib/productivo/filtro-ordenes-agricolas"
@@ -302,7 +302,7 @@ import {
   armarCandidatos, dondeSeCargaElCuit,
   type VentaEsperando, type FacturaVenta, type Vinculo,
 } from "@/lib/ventas/candidatos-factura"
-import { heredarDelOrigen, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
+import { heredarDelOrigen, bancoDeLaCuenta, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
 import { esHistorico, estadoCuotaAlDesvincular, contarEstadisticasExtracto } from "@/lib/conciliacion/estado-historico"
 import { buscarConDobleAudit, type VinculoEnAuditar } from "@/lib/conciliacion/doble-audit"
 import { firmaDeMovimiento, parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA, claveDedupMovimiento, claveDeTipo, tipoDeMovimiento, tieneReglaPropia, columnasRepetidas, reglasDeLaPropuesta, estaSinParsear, tieneGrupoPrevisto } from "@/lib/extractos/parseo-movimiento"
@@ -2425,6 +2425,19 @@ export function correrCasos(): Resultado[] {
   chequear("Herencia del origen", "🏦 Sin dato en el origen se usa el del banco, y se MARCA",
     "PROVEEDOR DEL BANCO · marcado", `${h3.proveedor_nombre} · ${h3.proveedorVieneDelBanco ? "marcado" : "sin marcar"}`,
     h3.proveedor_nombre === "PROVEEDOR DEL BANCO" && h3.proveedorVieneDelBanco === true, "A-BUG-175")
+
+  // 🏦 A-BUG-1461: el cargo bancario lo cobra el banco DE LA CUENTA (Santander no es Galicia); un template que no es
+  // bancario sigue con su proveedor; y lo escrito a mano sigue mandando.
+  const tplBancario = { ...tplBanco, cuenta_agrupadora: "Impuestos Bancarios" }
+  const vB = [
+    heredarDelOrigen({}, tplBancario, null, null, bancoDeLaCuenta("MSA Banco Santander")).proveedor_nombre,
+    heredarDelOrigen({}, tplBancario, null, null, bancoDeLaCuenta("MSA Galicia")).proveedor_nombre,
+    heredarDelOrigen({}, { ...tplBanco, cuenta_agrupadora: "Servicios" }, null, null, "Banco Santander").proveedor_nombre,
+    heredarDelOrigen({ proveedor_nombre: "MANUAL" }, tplBancario, null, null, "Banco Santander").proveedor_nombre,
+    bancoDeLaCuenta("Caja General"),
+  ].join(" · ")
+  chequear("Herencia del origen", "🏦 Cargo bancario → el banco de la cuenta; template no bancario → el suyo; lo manual manda; una caja no es banco",
+    "Banco Santander · Banco Galicia · Banco Galicia · MANUAL · ", vB, vB === "Banco Santander · Banco Galicia · Banco Galicia · MANUAL · ", "A-BUG-1461")
 
   // ⚠️ Lo que el usuario escribio a mano NUNCA se pisa.
   const h4 = heredarDelOrigen({ proveedor_nombre: "LO QUE PUSE YO", comprobantes_pagados: "MI COMPROBANTE" },
@@ -10808,6 +10821,16 @@ export function correrCasos(): Resultado[] {
     const vc = `${filtrosEnMemoria(conCol) ? "columna trae todo" : "NO"} · ${filtrosEnMemoria(colNull) ? "NULL CUENTA" : "null no cuenta"}`
     chequear("Extracto — filtros sobre la cuenta entera", "🔽 El filtro por columna (tipo Excel) cuenta como filtro en memoria; una columna sin filtro (null) no",
       "columna trae todo · null no cuenta", vc, vc === "columna trae todo · null no cuenta", "A-FEAT-1456")
+    // 🧷 A-BUG-1460: la fila pegada de la corrida respeta un filtro de CATEG o de fechas puesto DESPUÉS de conciliar.
+    const peg = { categ: "Iva Bancario", fecha: "2026-05-04" }
+    const vp = [
+      pegadaSigueVisible(peg, { categCambio: false, categs: new Set(["(sin categ)"]), fechasCambio: false, usarFechas: false }),
+      pegadaSigueVisible(peg, { categCambio: true, categs: new Set(["Comision Cuenta Bancaria"]), fechasCambio: false, usarFechas: false }),
+      pegadaSigueVisible(peg, { categCambio: true, categs: new Set(["Iva Bancario"]), fechasCambio: false, usarFechas: false }),
+      pegadaSigueVisible(peg, { categCambio: false, categs: null, fechasCambio: true, usarFechas: true, desde: "2026-06-01", hasta: "2026-06-30" }),
+    ].map(b => (b ? "sí" : "no")).join(" ")
+    chequear("Extracto — filas pegadas de la corrida", "🧷 Pegada con el filtro de antes → se queda; CATEG cambiado después → se va si no coincide; fechas cambiadas → se va si cae afuera",
+      "sí no sí no", vp, vp === "sí no sí no", "A-BUG-1460")
   }
 
   // ══ 📅 Cash Flow: pasar UNA fila a pagado sin fecha de pago la pide (A-BUG-1407, Zavala Ortiz 28/10) ══

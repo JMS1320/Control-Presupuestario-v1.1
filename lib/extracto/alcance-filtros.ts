@@ -54,3 +54,20 @@ export function hayQueTraerTodo(f: FiltrosEnMemoria, ultimoLimite: number | unde
   if (lim >= LIMITE_TODO) return false
   return cargados >= lim
 }
+
+/**
+ * 🧷 A-BUG-1460 — ¿una fila PEGADA de la corrida sigue a la vista? Se salta los filtros que ya estaban al conciliar (la
+ * corrida le cambió el estado o la categ y no tiene que irse antes de revisarla), pero respeta CATEG y fechas si el
+ * usuario los cambió DESPUÉS. JMS 31/10: «si refresco sí filtra por categs, pero no luego de haber conciliado».
+ */
+export function pegadaSigueVisible(
+  m: { categ?: string | null; fecha?: string | null },
+  f: { categCambio: boolean; categs: Set<string> | null; fechasCambio: boolean; usarFechas: boolean; desde?: string; hasta?: string },
+): boolean {
+  if (f.categCambio && f.categs && !f.categs.has(m.categ || "(sin categ)")) return false
+  if (f.fechasCambio && f.usarFechas) {
+    const d = String(m.fecha ?? "")
+    if ((f.desde && d < f.desde) || (f.hasta && d > f.hasta)) return false
+  }
+  return true
+}
