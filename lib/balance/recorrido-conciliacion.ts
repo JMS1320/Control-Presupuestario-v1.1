@@ -14,6 +14,7 @@
  *
  * Los históricos sin pareja de template (jul-25 → ene-26: pagos de facturas, que por decisión no se concilian) NO entran: se cuentan aparte.
  */
+import { linkSueldosDe } from "@/lib/sueldos/link"
 import type { PropuestaMovimiento, PropuestaDeuda, Pareja, MovimientoSinConciliar } from "@/lib/conciliacion/propuestas-ejercicio"
 import { ORDEN_PROPUESTA, ORIGEN_TEXTO, TIPOS_PROPUESTA, cuentaDeTabla } from "@/lib/conciliacion/propuestas-ejercicio"
 import { linkExtracto, rangoQueContiene } from "@/lib/extracto/link"
@@ -91,6 +92,8 @@ export function temasDeMovimientos(propuestas: PropuestaMovimiento[]): { temas: 
       links: [
         { texto: `El movimiento en el extracto (${m.cuenta.nombre})`, href: linkMovimiento(m) },
         ...p.parejas.flatMap(x => linksDePareja(x, m.cuenta.empresa)).filter((l, i, a) => a.findIndex(y => y.href === l.href) === i).slice(0, 6),
+        // 📜 A-FEAT-1467 — la TIRA: si es de una persona de Sueldos, todos sus sueldos (JMS: «la tira de eso»).
+        ...(p.empleado ? [{ texto: `📜 Los sueldos de ${p.empleado.nombre} (toda la tira)`, href: linkSueldosDe(p.empleado.id) }] : []),
       ],
       comparacion: comparacionDe(p),
       respondido: false,

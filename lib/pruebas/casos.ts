@@ -5559,6 +5559,19 @@ export function correrCasos(): Resultado[] {
       "h2:H,p1:- · Histórico: ¿va a este template? (sugerencia) · sin conciliar 1", vH2,
       vH2 === "h2:H,p1:- · Histórico: ¿va a este template? (sugerencia) · sin conciliar 1", "A-FEAT-1315")
 
+    // 📜 A-FEAT-1467: un pago a una persona de Sueldos (reconocida por el CUIT del banco) trae el link a TODA su tira de sueldos.
+    const r4 = proponerConciliaciones({
+      movimientos: [mov("mm", 272623, "Trf Inmed Proveed", "20111111112")],
+      obligaciones: [], usadoPor: new Map(), conciliados: [], avisos: [],
+      empleados: [{ id: "emp-manuel", nombre: "Manuel Martínez", cuit: "20111111112" }],
+    }, "MSA", "2025-07-01", "2026-06-30")
+    const tM = temasDeMovimientos(r4.movimientos).temas[0]
+    const lM = tM.links.find(l => /sueldos/.test(l.href))
+    const vM = `${r4.movimientos[0].empleado?.nombre} · ${lM?.texto} · ${lM?.href}`
+    chequear("Conciliación · en el recorrido", "📜 Movimiento de una persona de Sueldos (por CUIT) → link a todos sus sueldos",
+      "Manuel Martínez · 📜 Los sueldos de Manuel Martínez (toda la tira) · /?seccion=sueldos&empleado=emp-manuel", vM,
+      vM === "Manuel Martínez · 📜 Los sueldos de Manuel Martínez (toda la tira) · /?seccion=sueldos&empleado=emp-manuel", "A-FEAT-1467")
+
     // 🧯 A-BUG-1458: el error de la base se explica (Santander dio «Errores 113» mudo: le faltaban columnas).
     const mot: { motivo: string; n: number }[] = []
     for (let k = 0; k < 3; k++) sumarMotivo(mot, motivoDeError({ code: "PGRST204", message: "Could not find the 'proveedor_nombre' column of 'santander' in the schema cache" }))

@@ -2,6 +2,8 @@
 
 
 
+import { SueldosDePersona } from "@/components/sueldos-de-persona"
+import { empleadoDelLink } from "@/lib/sueldos/link"
 import {
   repartirTotalEnAB, valorFrancoDeTotal, componerA, abrirA, aplicarCuotaManteniendoA,
 } from "@/lib/sueldos/reparto-ab"
@@ -218,6 +220,9 @@ function mesKey(anio: number, mes: number) {
 // ── Componente principal ──────────────────────────────────────────────────────
 
 export function TabSueldos() {
+  /** 📜 A-FEAT-1467 — la tira de sueldos de UNA persona (por link `?seccion=sueldos&empleado=`, o desde su cabecera). */
+  const [personaTira, setPersonaTira] = useState<string | null>(null)
+  useEffect(() => { const id = empleadoDelLink(window.location.search); if (id) setPersonaTira(id) }, [])
   const [periodos, setPeriodos] = useState<Periodo[]>([])
   const [cuentas, setCuentas] = useState<CuentaEmpleado[]>([])
   const [pagos, setPagos] = useState<Pago[]>([])
@@ -1610,6 +1615,9 @@ export function TabSueldos() {
                           onClick={e => e.stopPropagation()}
                           onChange={e => tildarPagos(grupo.pagos.map(p => p.id), e.target.checked)} />
                         {grupo.nombre}
+                        <button type="button" className="ml-2 rounded px-1 text-xs font-normal text-blue-700 hover:bg-blue-50"
+                          title="Ver todos los sueldos de esta persona, mes por mes (toda la tira)"
+                          onClick={e => { e.stopPropagation(); setPersonaTira(grupo.empleadoId) }}>📜 toda la tira</button>
                       </TableCell>
                       <TableCell colSpan={3} className="text-xs text-gray-500">
                         {grupo.cantidad} {grupo.cantidad === 1 ? 'pago' : 'pagos'}
@@ -2213,6 +2221,7 @@ export function TabSueldos() {
       </Dialog>
 
       {/* ── Modal Historial (pivot) ── */}
+      <SueldosDePersona empleadoId={personaTira} onClose={() => setPersonaTira(null)} />
       <Dialog open={modalHistorial} onOpenChange={setModalHistorial}>
         <DialogContent className="max-w-6xl max-h-[90vh] overflow-auto">
           <DialogHeader>

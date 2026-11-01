@@ -83,6 +83,8 @@ export interface Obligacion {
   ref?: string
   /** Para el link: el template de la cuota. */
   egresoId?: string | null
+  /** 👤 A-FEAT-1467 — si es un pago de sueldo: de quién. */
+  empleadoId?: string
 }
 
 export interface MovimientoSinConciliar {
@@ -108,6 +110,8 @@ export interface Pareja extends Obligacion {
 
 export interface PropuestaMovimiento {
   mov: MovimientoSinConciliar
+  /** 👤 A-FEAT-1467 — la persona de Sueldos de este movimiento (por su pareja de sueldo o por el CUIT del banco). */
+  empleado?: { id: string; nombre: string }
   tipo: TipoPropuesta
   propuesta: string
   pista: string
@@ -136,6 +140,8 @@ export interface DatosConciliacion {
    * conciliar (pendiente/auditar) en los 3 meses anteriores y los 3 posteriores. `null` = no se pudo contar.
    */
   porCuenta?: Record<string, ConteoCuenta>
+  /** 👤 A-FEAT-1467 — los empleados de Sueldos (para reconocer un movimiento a una persona por su CUIT). */
+  empleados?: { id: string; nombre: string; cuit: string }[]
 }
 
 export interface ConteoCuenta { nombre: string; totalEjercicio: number | null; sinConciliarAntes: number | null; sinConciliarDespues: number | null
@@ -214,6 +220,7 @@ export async function leerDatosConciliacion(sb: Cliente, empresa: string, desde:
   const margenDesde = new Date(Date.parse(desde) - 120 * 86400000).toISOString().slice(0, 10)
   const margenHasta = new Date(Date.parse(hasta) + 60 * 86400000).toISOString().slice(0, 10)
 
+  const listaEmpleados: { id: string; nombre: string; cuit: string }[] = []
   // 1 · Vínculos existentes en todas las tablas que pueden llevarlos
   progreso?.("leyendo los vínculos ya hechos…")
   for (const t of TABLAS_CON_VINCULO_ARCA) {
@@ -281,9 +288,10 @@ export async function leerDatosConciliacion(sb: Cliente, empresa: string, desde:
   } catch (e) { avisos.push(`anticipos: ${(e as Error).message}`) }
   try {
     const empleados = new Map((await todo(sb, "sueldos", "empleados", "id,nombre,empresa,cuit_empleado")).map(e => [String(e.id), e]))
+    listaEmpleados.push(...[...empleados.values()].map(e => ({ id: String(e.id), nombre: String(e.nombre ?? ""), cuit: cuitDe(e.cuit_empleado) })))
     const pagos = await todo(sb, "sueldos", "pagos", "id,empleado_id,fecha,monto,estado,tipo", q => q.gte("fecha", margenDesde).lte("fecha", margenHasta))
     for (const p of pagos) { const e = empleados.get(String(p.empleado_id)) ?? {}
-      obligaciones.push({ empresa: e.empresa ?? "MSA", origen: "sueldo", id: String(p.id), fecha: p.fecha, importe: Math.abs(n(p.monto)), estado: String(p.estado ?? ""),
+      obligaciones.push({ empresa: e.empresa ?? "MSA", origen: "sueldo", id: String(p.id), empleadoId: String(p.empleado_id), fecha: p.fecha, importe: Math.abs(n(p.monto)), estado: String(p.estado ?? ""),
         quien: e.nombre ?? "?", cuit: cuitDe(e.cuit_empleado), signo: "D", ref: `sueldo ${p.tipo ?? ""}` }) }
   } catch (e) { avisos.push(`sueldos: ${(e as Error).message}`) }
   try {
@@ -332,7 +340,7 @@ export async function leerDatosConciliacion(sb: Cliente, empresa: string, desde:
       contar(c, desde, hasta, "historico")])
     porCuenta[c.cuentaId] = { nombre: c.nombre, totalEjercicio, sinConciliarAntes, sinConciliarDespues, historicosEjercicio, ...v }
   }))
-  return { movimientos, obligaciones, usadoPor, conciliados, avisos, porCuenta }
+  return { movimientos, obligaciones, usadoPor, conciliados, avisos, porCuenta, empleados: listaEmpleados }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════════════════
@@ -430,7 +438,11 @@ export function proponerConciliaciones(d: DatosConciliacion, empresa: string, de
     if (histFactura && !["EXACTO", "AGRUPADO", "VARIOS", "CON_DIF"].includes(r.tipo)) {
       r = { tipo: "HISTORICO_FACTURA", parejas: [], propuesta: "Histórico: por decisión no se concilia contra facturas (A-FEAT-1315)." }
     }
-    return { mov: m, pista, ...r }
+    // 👤 A-FEAT-1467 — ¿es de una persona de Sueldos? Por su pareja de sueldo o, si no, por el CUIT que informa el banco.
+    const empPareja = r.parejas.find(x => x.origen === "sueldo" && (x as Obligacion).empleadoId)
+    const emp = (empPareja && (d.empleados ?? []).find(e => e.id === (empPareja as Obligacion).empleadoId))
+      || (m.cuitBanco ? (d.empleados ?? []).find(e => e.cuit && e.cuit === m.cuitBanco) : undefined)
+    return { mov: m, pista, ...(emp ? { empleado: { id: emp.id, nombre: emp.nombre } } : {}), ...r }
   })
 
   // Deudas de ESTA empresa en el ejercicio, sin movimiento, en un estado que dice «abierta»
