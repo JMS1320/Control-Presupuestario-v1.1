@@ -55,6 +55,7 @@ import { leerDatosConciliacion, proponerConciliaciones, CUENTAS_CONCILIABLES, ty
 import { temasDeMovimientos, temasDeDeudas, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
 import { leerTemasSueldoOtraPersona } from "@/lib/balance/control-sueldo-otra-persona"
 import { leerExtrasTemas } from "@/lib/balance/series-tema"
+import { leerTemasTarjeta } from "@/lib/balance/control-tarjeta"
 import { leerChequesVencidos } from "@/lib/conciliacion/cheques-vencidos"
 import { RecorridoBalance } from "./recorrido-balance"
 import { VistaPreviaBalance } from "./vista-previa-balance"
@@ -211,7 +212,12 @@ export function PapelesDeBalance() {
       setCargandoConciliacion("controlando los pagos de sueldo contra el CUIT del banco…")
       const ctl = await leerTemasSueldoOtraPersona(supabase, empresa.id, desde, hasta)
       if (ctl.error) datos.avisos.push(`control de sueldos: ${ctl.error}`)
-      setConciliacion({ movimientos: mov.temas, deudas: temasDeDeudas(r.deudas, empresa.id, ex.extras), cheques: temasDeCheques(ch.cruces, ch.extractoHasta), controles: ctl.temas,
+      // 💳 A-FEAT-1481: la tarjeta por causa (pagos sin vincular, peajes, históricos…); esos movimientos no salen además sueltos
+      setCargandoConciliacion("agrupando la tarjeta por causa…")
+      const tj = await leerTemasTarjeta(supabase, empresa.id, desde, hasta)
+      if (tj.error) datos.avisos.push(`control de la tarjeta: ${tj.error}`)
+      const movSinTarjeta = mov.temas.filter(t => !tj.cubiertos.has(t.clave.replace(/^conc:/, "")))
+      setConciliacion({ movimientos: [...tj.temas, ...movSinTarjeta], deudas: temasDeDeudas(r.deudas, empresa.id, ex.extras), cheques: temasDeCheques(ch.cruces, ch.extractoHasta), controles: ctl.temas,
         historicos: mov.historicos, avisos: datos.avisos, porCuenta: datos.porCuenta,
         calculado: new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) })
       if (datos.avisos.length && !silencioso) toast.warning(`Conciliación: no se pudo leer ${datos.avisos.length} cosa(s) — ${datos.avisos.slice(0, 2).join(" · ")}`)

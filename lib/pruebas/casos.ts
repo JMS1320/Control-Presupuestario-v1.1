@@ -214,6 +214,7 @@ import { empleadoPorNombre, tiraDeContraparte, proponerConciliaciones, CUENTAS_C
 import { temasDeMovimientos, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
 import { temasSueldoOtraPersona } from "@/lib/balance/control-sueldo-otra-persona"
 import { linksSerieMovimientos, parDeTemplate } from "@/lib/balance/series-tema"
+import { temasTarjeta } from "@/lib/balance/control-tarjeta"
 import { cruzarChequesConDebitos, numeroEnDescripcion } from "@/lib/conciliacion/cheques-vencidos"
 import { echeqDelDebito } from "@/lib/conciliacion/echeq-del-debito"
 import { agregarAlHilo, hiloDelTema } from "@/lib/balance/hilo-tema"
@@ -5707,6 +5708,29 @@ export function correrCasos(): Resultado[] {
     const esp = "1 · 📜 Todos los movimientos de Wilson en MSA Galicia (3: 3 conciliados) · ids ok · solo 0 · 🔗 El par anual/cuotas: «Voyage Anual» activo y «Voyage Cuota» desactivado (sus cuotas)"
     chequear("Recorrido · tiras del tema", "📜 La tira de movimientos del CUIT (todos, con cuántos conciliados) y 🔗 el par anual/cuotas con el estado de cada uno", esp, v,
       v === esp && /ACTIVO — 1 conciliado/.test(par?.texto ?? "") && /desactivado — 6 desactivado/.test(par?.texto ?? "") && parDeTemplate(extras, "otro") === null, "A-FEAT-1484")
+  }
+
+  /**
+   * 💳 **LA TARJETA POR CAUSA — A-FEAT-1481.** Con datos reales de la VISA de MSA: un pago con su débito exacto en Galicia
+   * (histórico) → «vincular»; uno en $ 0 → «pagos en $ 0»; uno sin débito; un peaje; un cargo de Coopser de jul-25 →
+   * «antes de ARCA»; y Medicus de feb-26, que NO cae en ningún grupo (queda como tema suelto).
+   */
+  {
+    const f = (id: string, fecha: string, descripcion: string, debitos: number, creditos: number, tipoFila: string) => ({ id, fecha, descripcion, debitos, creditos, debitosUsd: 0, creditosUsd: 0, tipoFila, estado: "pendiente" })
+    const filas = [
+      f("p1", "2025-07-07", "SU PAGO EN PESOS", 0, 887674.27, "pago"),
+      f("p0", "2025-09-08", "SU PAGO EN USD", 0, 0, "pago"),
+      f("p9", "2026-03-01", "SU PAGO EN PESOS", 0, 12345, "pago"),
+      f("a1", "2025-08-03", "AUTOPISTAS DEL S 803061778601601", 3500, 0, "movimiento"),
+      f("c1", "2025-07-14", "COOPSER O-0023-00181720", 38101.68, 0, "movimiento"),
+      f("m1", "2026-02-19", "MEDICUS SA DEB A 00000067140", 592213.16, 0, "movimiento"),
+    ]
+    const deb = [{ id: "g1", fecha: "2025-07-07", importe: 887674.27, descripcion: "Pago Visa Empresa", estado: "historico" }, { id: "g2", fecha: "2026-03-20", importe: 12345, descripcion: "Pago Visa Empresa", estado: "conciliado" }]
+    const r = temasTarjeta(filas, deb, { cuentaId: "tarjeta_visa_business_msa", nombre: "MSA Visa" }, { cuentaId: "msa_galicia", nombre: "MSA Galicia" })
+    const v = `${r.temas.map(t => t.etiqueta).join(" · ")} · cubiertos ${[...r.cubiertos].sort().join(",")}`
+    const esp = "Tarjeta: pagos sin vincular · Tarjeta: pagos en $ 0 · Tarjeta: pago sin débito · Tarjeta: peajes sin regla · Tarjeta: facturas antes de ARCA · cubiertos a1,c1,p0,p1,p9"
+    chequear("Recorrido · tarjeta por causa", "💳 Pago con su débito → vincular; $ 0 → aparte; sin débito (el de 19 días después no cuenta); peaje; Coopser jul-25 → antes de ARCA; Medicus feb-26 queda suelto", esp, v,
+      v === esp && /887\.674,27 ↔ MSA Galicia 07\/07\/2025/.test(r.temas[0].que), "A-FEAT-1481")
   }
 
   /**
