@@ -24,6 +24,8 @@ import type { ConteoCuenta } from "@/lib/conciliacion/propuestas-ejercicio"
 import { PISTA_CTRL_CLICK, esSoloEste, tituloChip, toggleChip } from "@/lib/ui/chips"
 import { COLOR, DetalleTema, ICONO } from "@/components/recorrido-tema-detalle"
 import { PasarTarea, quienMarca, useRevisionesDe } from "@/components/boton-revision"
+import { vincularPagoTarjeta } from "@/lib/conciliacion/vincular-pago-tarjeta"
+import type { TandaTema } from "@/lib/balance/recorrido"
 
 /** Preferencias de este navegador (si el navegador no deja guardar, se usa el default). */
 const leerPref = (k: string, def: boolean) => { try { const v = localStorage.getItem(k); return v == null ? def : v === "1" } catch { return def } }
@@ -362,6 +364,44 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
     } catch (e) { toast.error("No se pudo pedir: " + (e as Error).message) } finally { setGuardando(false) }
   }
 
+  /**
+   * 🧺 A-FEAT-1491 — aplicar la tanda a los renglones tildados. Uno por uno (si uno falla, se dice cuál y los demás
+   * siguen hechos), y queda escrito en el tema cuántos de cuántos.
+   */
+  const aplicarTanda = async (ids: string[]) => {
+    const t = actual?.tanda
+    if (!actual || !t || !ids.length) return
+    setGuardando(true)
+    const hechos: string[] = [], fallos: string[] = []
+    try {
+      const elegidos = t.items.filter(x => ids.includes(x.id))
+      if (t.accion.tipo === "estado-movimientos") {
+        const a = t.accion
+        const db = a.schema === "public" ? supabase : supabase.schema(a.schema)
+        const { error } = await db.from(a.tabla).update({ estado: a.estado, ...(a.detalle ? { detalle: a.detalle } : {}) }).in("id", ids).in("estado", ["pendiente", "auditar"])
+        if (error) throw error
+        hechos.push(...elegidos.map(x => x.celdas.join(" · ")))
+      } else {
+        for (const x of elegidos) {
+          if (!x.pago) { fallos.push(`${x.celdas[0]}: sin datos para vincular`); continue }
+          try { await vincularPagoTarjeta(supabase, x.pago); hechos.push(x.celdas[0]) }
+          catch (e) { fallos.push(`${x.celdas[0]}: ${(e as Error).message}`) }
+        }
+      }
+      const todos = hechos.length === t.items.length && !fallos.length
+      await escribir(actual, `⚡ Aplicado desde el recorrido (${t.accion.texto}) a ${hechos.length} de ${t.items.length}: ${hechos.join(" | ")}${fallos.length ? `\n❌ No se pudo: ${fallos.join(" | ")}` : ""}${nota.trim() ? `\n${nota.trim()}` : ""}`,
+        imagen, todos ? "resuelto" : "abierto")
+      borrador.current.texto = ""; borrador.current.imagen = null
+      setNota(""); setImagen(null)
+      if (fallos.length) toast.error(`Hecho ${hechos.length}; no se pudo ${fallos.length}: ${fallos[0]}`)
+      else toast.success(`⚡ Hecho: ${hechos.length} de ${t.items.length}`)
+      await recargar()
+      conciliacion?.recalcular()
+    } catch (e) {
+      toast.error("No se pudo aplicar: " + (e as Error).message)
+    } finally { setGuardando(false) }
+  }
+
   const reabrir = async () => {
     if (!actual?.pendiente) return
     const { error } = await supabase.from("balance_pendientes").update({ estado: "abierto", resuelto_at: null }).eq("id", actual.pendiente.id)
@@ -598,7 +638,7 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
                     title="Un documento del Cuaderno atado a este tema: la fuente, lo que dice la app, la propuesta y la cuenta, para pensar y anotar sin tocar datos">
                     📓 {papelId ? "Abrir el papel de trabajo" : actual.comparacion ? "Armar papel de trabajo (con la cuenta)" : "Armar papel de trabajo"}
                   </button>}
-                propuestaExtra={actual.respondido || actual.grupo === "visto" ? null
+                propuestaExtra={actual.respondido || actual.grupo === "visto" || actual.tanda ? null
                   : actual.accion
                     ? <Button size="sm" onClick={aplicar} disabled={guardando} data-test="recorrido-aplicar">⚡ Aplicar: {actual.accion.texto}</Button>
                     : actual.propuesta && !tareas[registroDe(actual)]
@@ -608,6 +648,11 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
                 sinRespuesta
                 resolucionExtra={actual.respondido
                   ? <button type="button" className="ml-2 text-xs underline text-muted-foreground" onClick={reabrir}>reabrir</button> : null} />
+
+              {/* 🧺 A-FEAT-1491 — la tanda: renglón por renglón, se aplica a los tildados */}
+              {actual.tanda && !actual.respondido && actual.grupo !== "visto" && (
+                <TandaTabla key={actual.clave} tanda={actual.tanda} disabled={guardando} onAplicar={ids => void aplicarTanda(ids)} />
+              )}
 
               {/* 🧵 A-BUG-1478 — la conversación del tema, en orden: lo respondido acá + el pedido de la tarea y sus respuestas. */}
               {(() => {
@@ -681,6 +726,44 @@ ${actual.propuesta ? `Propuesta: ${actual.propuesta}` : actual.que}` }}
             </div>
           )}
         </section>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 🧺 A-FEAT-1491 — la tabla de una tanda: cada renglón con su contexto y sus links; los que traen aviso arrancan
+ * destildados (y dicen por qué). Se aplica sólo a los tildados.
+ */
+function TandaTabla({ tanda, disabled, onAplicar }: { tanda: TandaTema; disabled: boolean; onAplicar: (ids: string[]) => void }) {
+  const [tildados, setTildados] = useState<Set<string>>(() => new Set(tanda.items.filter(x => !x.aviso).map(x => x.id)))
+  const alternar = (id: string) => setTildados(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  const todos = tildados.size === tanda.items.length
+  return (
+    <div className="rounded border border-blue-300 bg-blue-50/40 p-3 text-sm space-y-2" data-test="recorrido-tanda">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium uppercase tracking-wide text-blue-900">🧺 Tanda · {tanda.items.length} renglones · {tildados.size} tildados</span>
+        <button type="button" className="text-xs underline" onClick={() => setTildados(todos ? new Set() : new Set(tanda.items.map(x => x.id)))}>{todos ? "destildar todos" : "tildar todos"}</button>
+        <Button size="sm" className="ml-auto" disabled={disabled || !tildados.size} onClick={() => onAplicar([...tildados])} data-test="recorrido-tanda-aplicar">
+          ⚡ {tanda.accion.texto} los {tildados.size} tildados
+        </Button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead><tr className="text-left text-muted-foreground"><th className="w-6"></th>{tanda.columnas.map(c => <th key={c} className="px-1.5 py-1 font-medium">{c}</th>)}<th className="px-1.5 py-1 font-medium">Ver</th></tr></thead>
+          <tbody>
+            {tanda.items.map(x => (
+              <tr key={x.id} className={`border-t ${x.aviso ? "bg-amber-50" : ""}`}>
+                <td className="px-1"><input type="checkbox" checked={tildados.has(x.id)} onChange={() => alternar(x.id)} aria-label={`incluir ${x.celdas[0]}`} /></td>
+                {x.celdas.map((c, i) => <td key={i} className="px-1.5 py-1 tabular-nums">{c}</td>)}
+                <td className="px-1.5 py-1 whitespace-nowrap">
+                  {x.links.map(l => <a key={l.href} href={l.href} target="_blank" rel="noreferrer" className="mr-2 text-blue-700 underline">{l.texto}</a>)}
+                  {x.aviso && <span className="block text-amber-800">⚠️ {x.aviso}</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )

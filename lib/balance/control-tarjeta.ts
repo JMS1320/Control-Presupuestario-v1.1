@@ -18,6 +18,8 @@ import { linkExtracto, rangoQueContiene } from "@/lib/extracto/link"
 import type { LinkDato } from "./cobertura-papeles"
 import { linkFacturas } from "@/lib/egresos/link-facturas"
 import { claveNombre } from "./series-tema"
+import type { PagoAVincular } from "@/lib/conciliacion/vincular-pago-tarjeta"
+import { pagosDeResumenes } from "@/lib/conciliacion/pago-tarjeta"
 import type { Tema } from "./recorrido"
 
 const dmy = (f?: string | null) => (f ? f.slice(0, 10).split("-").reverse().join("/") : "")
@@ -33,6 +35,17 @@ export interface FacturaEmisor { id: string; cuit: string; emisor: string; fecha
  * vez, y las facturas de esos emisores. JMS 01/11: *«los peajes siempre fueron contra facturas; si no hay facturas
  * debería avisar eso el filtro de balance: por qué no se concilian»*.
  */
+/**
+ * 🧺 Un pago de resumen listo para vincular (A-FEAT-1491), armado con `pagosDeResumenes` — la misma lógica que el
+ * Extracto: el débito paga el resumen y el «SU PAGO» del resumen siguiente se concilia contra él.
+ */
+export interface PagoResumenItem {
+  pago: PagoAVincular
+  totalResumen: number
+  debito: { fecha: string; importe: number; estado: string; descripcion: string }
+  suPagos: { id: string; fecha: string; creditos: number }[]
+  avisos: string[]
+}
 export interface FacturasDeCargos { cuitPorNombre: Map<string, string>; facturas: FacturaEmisor[]; primeraFacturaArca?: string | null }
 
 export const ES_PEAJE = /AUTOPISTA|CORREDORES VIAL|AUBASA|PEAJE|AUSOL|AUSA\b/i
@@ -43,7 +56,7 @@ export const FIN_HISTORICO = "2026-01-31"
 
 /** Arma los temas. `cuenta` = la tarjeta; `cc` = la cuenta corriente desde donde se paga. */
 export function temasTarjeta(filas: FilaTarjeta[], debitos: DebitoCC[], cuenta: { cuentaId: string; nombre: string; schema?: string; tabla?: string; empresa?: string }, cc: { cuentaId: string; nombre: string },
-  fc: FacturasDeCargos = { cuitPorNombre: new Map(), facturas: [] }): { temas: Tema[]; cubiertos: Set<string> } {
+  fc: FacturasDeCargos = { cuitPorNombre: new Map(), facturas: [] }, pagosRes?: PagoResumenItem[]): { temas: Tema[]; cubiertos: Set<string> } {
   const link = (ids: string[], fechas: string[], cuentaId = cuenta.cuentaId) => { const r = rangoQueContiene(fechas); return linkExtracto({ cuenta: cuentaId, movs: ids, desde: r.desde, hasta: r.hasta }) }
   const cubiertos = new Set<string>()
   const temas: Tema[] = []
@@ -51,31 +64,65 @@ export function temasTarjeta(filas: FilaTarjeta[], debitos: DebitoCC[], cuenta: 
   // 1 y 2 · los pagos
   const pagos = filas.filter(f => f.tipoFila === "pago")
   const ceros = pagos.filter(p => p.creditos < 0.005 && p.creditosUsd < 0.005)
-  const vincular: { p: FilaTarjeta; d: DebitoCC }[] = []
   const sinDebito: FilaTarjeta[] = []
-  for (const p of pagos.filter(x => !ceros.includes(x))) {
-    const d = debitos.filter(x => !usados.has(x.id) && Math.abs(x.importe - p.creditos) < 0.01 && Math.abs(Date.parse(x.fecha) - Date.parse(p.fecha)) <= 3 * 86400000)
-      .sort((a, b) => Math.abs(Date.parse(a.fecha) - Date.parse(p.fecha)) - Math.abs(Date.parse(b.fecha) - Date.parse(p.fecha)))[0]
-    if (d) { usados.add(d.id); vincular.push({ p, d }) } else sinDebito.push(p)
-  }
-  if (vincular.length) {
-    vincular.forEach(v => cubiertos.add(v.p.id))
-    const hist = vincular.filter(v => v.d.estado === "historico").length
-    const total = vincular.reduce((s, v) => s + v.p.creditos, 0)
-    temas.push({
-      clave: `ctl:tarjeta-pagos:${cuenta.cuentaId}`, grupo: "conciliacion", etiqueta: "Tarjeta: pagos sin vincular", importe: total, cuenta: { id: cuenta.cuentaId, nombre: cuenta.nombre },
-      titulo: `${cuenta.nombre}: ${vincular.length} pagos del resumen con su débito en ${cc.nombre}, sin vincular (${plata(total)})`,
-      papel: "Control de la tarjeta · por causa",
-      que: `Cada «SU PAGO» tiene su débito exacto en ${cc.nombre} (mismo día o ±3, mismo importe), pero nunca se apretó «Vincular pago» y el motor los deja afuera a propósito. `
-        + `${hist ? `${hist} de los débitos están «histórico» en ${cc.nombre}; ` : ""}${vincular.length - hist} conciliados ahí.\n`
-        + vincular.map(v => `• ${dmy(v.p.fecha)} ${plata(v.p.creditos)} ↔ ${cc.nombre} ${dmy(v.d.fecha)} «${v.d.descripcion}» (${v.d.estado})`).join("\n"),
-      propuesta: `Vincular los ${vincular.length}: el débito de ${cc.nombre} queda con el número de resumen y el «SU PAGO» conciliado — lo mismo que hace «Vincular pago», de una vez. Si te cierra, «👍 Está bien así» y lo aplico con un script con su deshacer.`,
-      links: [
-        { texto: `Los ${vincular.length} pagos en ${cuenta.nombre}`, href: link(vincular.map(v => v.p.id), vincular.map(v => v.p.fecha)) },
-        { texto: `Sus ${vincular.length} débitos en ${cc.nombre}`, href: link(vincular.map(v => v.d.id), vincular.map(v => v.d.fecha), cc.cuentaId) },
-      ],
-      respondido: false,
-    })
+  if (pagosRes) {
+    // 🧺 A-FEAT-1491 — la tanda de pagos: cada resumen con su débito y su «SU PAGO», renglón por renglón
+    const items = pagosRes.filter(x => x.pago.suPagoIds.length)
+    const cub = new Set(items.flatMap(x => x.pago.suPagoIds))
+    for (const p of pagos) if (!ceros.includes(p) && !cub.has(p.id)) sinDebito.push(p)
+    if (items.length) {
+      cub.forEach(id => cubiertos.add(id))
+      const total = items.reduce((a, x) => a + x.suPagos.reduce((b, y) => b + y.creditos, 0), 0)
+      const hist = items.filter(x => x.debito.estado === "historico").length
+      temas.push({
+        clave: `ctl:tarjeta-pagos:${cuenta.cuentaId}`, grupo: "conciliacion", etiqueta: "Tarjeta: pagos sin vincular", importe: total, cuenta: { id: cuenta.cuentaId, nombre: cuenta.nombre },
+        titulo: `${cuenta.nombre}: ${items.length} pagos de resumen con su débito en ${cc.nombre}, sin vincular (${plata(total)})`,
+        papel: "Control de la tarjeta · por causa",
+        que: `Cada resumen tiene su débito en ${cc.nombre} (el mismo importe que el total, entre el cierre y el vencimiento) y el «SU PAGO» del resumen siguiente, pero nunca se apretó «Vincular pago» — el motor los deja afuera a propósito. `
+          + `${hist ? `${hist} débitos están «histórico» en ${cc.nombre}; ` : ""}${items.length - hist} conciliados ahí. Mirá la tabla: los que traen aviso arrancan destildados.`,
+        propuesta: `Vincular los tildados: el débito queda con el número de resumen y el «SU PAGO» conciliado — lo mismo que «Vincular pago» del Extracto, renglón por renglón.`,
+        links: [{ texto: `Los ${items.length} débitos en ${cc.nombre}`, href: link(items.map(x => x.pago.debito.id), items.map(x => x.debito.fecha), cc.cuentaId) },
+          { texto: `Los «SU PAGO» en ${cuenta.nombre}`, href: link(items.flatMap(x => x.pago.suPagoIds), items.flatMap(x => x.suPagos.map(y => y.fecha))) }],
+        tanda: {
+          columnas: ["Resumen", "Total del resumen", `Débito en ${cc.nombre}`, "«SU PAGO» del siguiente", "Diferencia"],
+          accion: { tipo: "vincular-pago-tarjeta", texto: "vincular" },
+          items: items.map(x => {
+            const su = x.suPagos.reduce((b, y) => b + y.creditos, 0)
+            const dif = Math.round((su - x.debito.importe) * 100) / 100
+            const aviso = [...x.avisos, ...(Math.abs(dif) > 1 ? [`el «SU PAGO» difiere del débito en ${plata(dif)}`] : [])].join(" · ") || undefined
+            return { id: x.pago.debito.id, pago: x.pago, aviso,
+              celdas: [`cierre ${dmy(x.pago.cierre)}`, plata(x.totalResumen), `${dmy(x.debito.fecha)} · ${plata(x.debito.importe)} · ${x.debito.estado}`,
+                x.suPagos.map(y => `${dmy(y.fecha)} · ${plata(y.creditos)}`).join(" + "), dif === 0 ? "—" : plata(dif)],
+              links: [{ texto: "el débito", href: link([x.pago.debito.id], [x.debito.fecha], cc.cuentaId) }, { texto: "el «SU PAGO»", href: link(x.pago.suPagoIds, x.suPagos.map(y => y.fecha)) }] }
+          }),
+        },
+        respondido: false,
+      })
+    }
+  } else {
+    const vincular: { p: FilaTarjeta; d: DebitoCC }[] = []
+    for (const p of pagos.filter(x => !ceros.includes(x))) {
+      const d = debitos.filter(x => !usados.has(x.id) && Math.abs(x.importe - p.creditos) < 0.01 && Math.abs(Date.parse(x.fecha) - Date.parse(p.fecha)) <= 3 * 86400000)
+        .sort((a, b) => Math.abs(Date.parse(a.fecha) - Date.parse(p.fecha)) - Math.abs(Date.parse(b.fecha) - Date.parse(p.fecha)))[0]
+      if (d) { usados.add(d.id); vincular.push({ p, d }) } else sinDebito.push(p)
+    }
+    if (vincular.length) {
+      vincular.forEach(v => cubiertos.add(v.p.id))
+      const hist = vincular.filter(v => v.d.estado === "historico").length
+      const total = vincular.reduce((a, v) => a + v.p.creditos, 0)
+      temas.push({
+        clave: `ctl:tarjeta-pagos:${cuenta.cuentaId}`, grupo: "conciliacion", etiqueta: "Tarjeta: pagos sin vincular", importe: total, cuenta: { id: cuenta.cuentaId, nombre: cuenta.nombre },
+        titulo: `${cuenta.nombre}: ${vincular.length} pagos del resumen con su débito en ${cc.nombre}, sin vincular (${plata(total)})`,
+        papel: "Control de la tarjeta · por causa",
+        que: `Cada «SU PAGO» tiene su débito exacto en ${cc.nombre} (mismo día o ±3, mismo importe), pero nunca se apretó «Vincular pago». `
+          + `${hist ? `${hist} de los débitos están «histórico» en ${cc.nombre}; ` : ""}${vincular.length - hist} conciliados ahí.\n`
+          + vincular.map(v => `• ${dmy(v.p.fecha)} ${plata(v.p.creditos)} ↔ ${cc.nombre} ${dmy(v.d.fecha)} «${v.d.descripcion}» (${v.d.estado})`).join("\n"),
+        propuesta: `Vincular los ${vincular.length} con «Vincular pago» del Extracto.`,
+        links: [{ texto: `Los ${vincular.length} pagos en ${cuenta.nombre}`, href: link(vincular.map(v => v.p.id), vincular.map(v => v.p.fecha)) },
+          { texto: `Sus ${vincular.length} débitos en ${cc.nombre}`, href: link(vincular.map(v => v.d.id), vincular.map(v => v.d.fecha), cc.cuentaId) }],
+        respondido: false,
+      })
+    }
   }
   if (ceros.length) {
     ceros.forEach(p => cubiertos.add(p.id))
@@ -86,9 +133,10 @@ export function temasTarjeta(filas: FilaTarjeta[], debitos: DebitoCC[], cuenta: 
       que: `Son las filas «SU PAGO» en dólares de resúmenes sin consumos en dólares: $ 0 y US$ 0. No mueven plata.\n` + ceros.map(p => `• ${dmy(p.fecha)} «${p.descripcion}»`).join("\n"),
       propuesta: "Darlas por conciliadas (no hay nada que buscarles), con el detalle «pago en dólares sin importe».",
       links: [{ texto: `Las ${ceros.length} filas en ${cuenta.nombre}`, href: link(ceros.map(p => p.id), ceros.map(p => p.fecha)) }], respondido: false,
-      // ⚡ A-FEAT-1489 — de un clic: no hay nada que decidir
-      accion: cuenta.schema && cuenta.tabla ? { tipo: "estado-movimientos", texto: `dar por conciliadas las ${ceros.length} filas en $ 0`, schema: cuenta.schema, tabla: cuenta.tabla,
-        ids: ceros.map(p => p.id), estado: "conciliado", detalle: "Pago en dólares sin importe (fila del resumen)" } : undefined,
+      // 🧺 A-FEAT-1491 — tanda: renglón por renglón, se aplica a los tildados
+      tanda: cuenta.schema && cuenta.tabla ? { columnas: ["Fecha", "Fila del resumen"], accion: { tipo: "estado-movimientos", texto: "dar por conciliadas", schema: cuenta.schema, tabla: cuenta.tabla,
+        estado: "conciliado", detalle: "Pago en dólares sin importe (fila del resumen)" },
+        items: ceros.map(p => ({ id: p.id, celdas: [dmy(p.fecha), p.descripcion], links: [{ texto: "la fila", href: link([p.id], [p.fecha]) }] })) } : undefined,
     })
   }
   if (sinDebito.length) {
@@ -157,9 +205,9 @@ export function temasTarjeta(filas: FilaTarjeta[], debitos: DebitoCC[], cuenta: 
         + antes.map(f => `• ${dmy(f.fecha)} ${plata(f.debitos)} «${f.descripcion}»`).join("\n"),
       propuesta: "Pasarlos a «histórico», igual que los pagos de facturas de la cuenta corriente de ese período (no se concilian).",
       links: [{ texto: `Los ${antes.length} cargos en ${cuenta.nombre}`, href: link(antes.map(f => f.id), antes.map(f => f.fecha)) }], respondido: false,
-      // ⚡ A-FEAT-1489 — de un clic: es la misma decisión ya tomada para la cuenta corriente
-      accion: cuenta.schema && cuenta.tabla ? { tipo: "estado-movimientos", texto: `pasar los ${antes.length} cargos a «histórico»`, schema: cuenta.schema, tabla: cuenta.tabla,
-        ids: antes.map(f => f.id), estado: "historico" } : undefined,
+      // 🧺 A-FEAT-1491 — tanda: es la misma decisión ya tomada para la cuenta corriente, renglón por renglón
+      tanda: cuenta.schema && cuenta.tabla ? { columnas: ["Fecha", "Cargo", "Importe"], accion: { tipo: "estado-movimientos", texto: "pasar a «histórico»", schema: cuenta.schema, tabla: cuenta.tabla, estado: "historico" },
+        items: antes.map(f => ({ id: f.id, celdas: [dmy(f.fecha), f.descripcion, plata(f.debitos)], links: [{ texto: "el cargo", href: link([f.id], [f.fecha]) }] })) } : undefined,
     })
   }
   return { temas, cubiertos }
@@ -217,7 +265,36 @@ export async function leerTemasTarjeta(sb: Cliente, empresa: string, desde: stri
           fc.primeraFacturaArca = pri?.[0]?.fecha_emision ? String(pri[0].fecha_emision).slice(0, 10) : null
         }
       } catch { /* sin el aprendizaje, los peajes quedan «sin emisor»: se ve, no se inventa */ }
-      const r = temasTarjeta(filas, debitos, t, cc, fc)
+      // 🧺 A-FEAT-1491 — los pagos de cada resumen con la MISMA lógica que el Extracto (pagosDeResumenes)
+      let pagosRes: PagoResumenItem[] | undefined
+      try {
+        const { data: rs } = await sb.schema(t.schema).from(t.tabla).select("nro_resumen, fecha_cierre, fecha_vencimiento, debitos").eq("tipo_fila", "resumen").not("nro_resumen", "is", null).limit(2000)
+        const { data: sp } = await sb.schema(t.schema).from(t.tabla).select("id, nro_resumen, creditos, estado, fecha").eq("tipo_fila", "pago").limit(5000)
+        const baseCC = cc.schema === "public" ? sb.from(cc.tabla) : sb.schema(cc.schema).from(cc.tabla)
+        const { data: dc } = await baseCC.select("id, fecha, debitos, descripcion, nro_resumen, estado").gt("debitos", 0).or("nro_resumen.not.is.null,categ.ilike.%tarjeta%,descripcion.ilike.%visa%").limit(5000)
+        const tablaCC = `${cc.schema}.${cc.tabla}`
+        const resumenes = (rs ?? []).filter((x: Record<string, unknown>) => x.fecha_cierre).map((x: Record<string, unknown>) => ({ nr: String(x.nro_resumen), cierre: String(x.fecha_cierre).slice(0, 10),
+          vencimiento: x.fecha_vencimiento ? String(x.fecha_vencimiento).slice(0, 10) : null, total: n(x.debitos) }))
+        const debCC = (dc ?? []).map((d: Record<string, unknown>) => ({ id: String(d.id), tabla: tablaCC, fecha: String(d.fecha), debitos: n(d.debitos), nro_resumen: (d.nro_resumen as string | null) ?? null, descripcion: (d.descripcion as string | null) ?? null }))
+        const sus = (sp ?? []).map((x: Record<string, unknown>) => ({ id: String(x.id), nr: String(x.nro_resumen ?? ""), creditos: n(x.creditos), estado: (x.estado as string | null) ?? null }))
+        const mapa = pagosDeResumenes(resumenes, debCC, sus, hasta)
+        const porId = new Map((dc ?? []).map((d: Record<string, unknown>) => [String(d.id), d]))
+        const fechaSu = new Map((sp ?? []).map((x: Record<string, unknown>) => [String(x.id), String(x.fecha)]))
+        const enEjercicio = new Set(filas.filter(f => f.tipoFila === "pago").map(f => f.id))
+        pagosRes = []
+        for (const r of resumenes) {
+          const pr = mapa.get(r.nr)
+          if (!pr) continue
+          const deb = pr.propuesto ?? (pr.vinculados.length === 1 ? pr.vinculados[0] : null)
+          const pend = pr.suPagos.filter(x => x.estado !== "conciliado" && x.creditos > 0.005 && enEjercicio.has(x.id))
+          if (!deb || !pend.length) continue
+          const d = porId.get(deb.id) as Record<string, unknown> | undefined
+          pagosRes.push({ pago: { nr: r.nr, cierre: r.cierre, debito: { tabla: tablaCC, id: deb.id }, tarjeta: { tabla: `${t.schema}.${t.tabla}` }, suPagoIds: pend.map(x => x.id) },
+            totalResumen: r.total, debito: { fecha: deb.fecha, importe: deb.debitos, estado: String(d?.estado ?? ""), descripcion: deb.descripcion ?? "" },
+            suPagos: pend.map(x => ({ id: x.id, fecha: String(fechaSu.get(x.id) ?? ""), creditos: x.creditos })), avisos: pr.avisos })
+        }
+      } catch { pagosRes = undefined /* sin la tanda, queda el emparejamiento simple */ }
+      const r = temasTarjeta(filas, debitos, t, cc, fc, pagosRes)
       temas.push(...r.temas); r.cubiertos.forEach(id => cubiertos.add(`${t.cuentaId}:${id}`))
     }
     return { temas, cubiertos, error: null }

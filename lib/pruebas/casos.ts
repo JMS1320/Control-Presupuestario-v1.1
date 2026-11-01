@@ -5717,6 +5717,25 @@ export function correrCasos(): Resultado[] {
   }
 
   /**
+   * 🧺 **LA TANDA DE PAGOS DE LA TARJETA — A-FEAT-1491.** Cada resumen con su débito y su «SU PAGO» es un renglón con
+   * sus links; el que difiere arranca destildado con el aviso; los «SU PAGO» de la tanda no salen como «sin débito».
+   */
+  {
+    const f = (id: string, fecha: string, creditos: number) => ({ id, fecha, descripcion: "SU PAGO EN PESOS", debitos: 0, creditos, debitosUsd: 0, creditosUsd: 0, tipoFila: "pago", estado: "pendiente" })
+    const filas = [f("su1", "2026-03-09", 1668147.34), f("su2", "2026-04-06", 2055000), f("su3", "2026-05-11", 999)]
+    const item = (nr: string, debId: string, fecha: string, importe: number, suId: string, suFecha: string, su: number) => ({
+      pago: { nr, cierre: "2026-02-26", debito: { tabla: "public.msa_galicia", id: debId }, tarjeta: { tabla: "msa.tarjeta_visa_business" }, suPagoIds: [suId] },
+      totalResumen: importe, debito: { fecha, importe, estado: "conciliado", descripcion: "Pago Visa Empresa" }, suPagos: [{ id: suId, fecha: suFecha, creditos: su }], avisos: [] })
+    const pr = [item("A", "g1", "2026-03-09", 1668147.34, "su1", "2026-03-09", 1668147.34), item("B", "g2", "2026-04-06", 2055966.65, "su2", "2026-04-06", 2055000)]
+    const r = temasTarjeta(filas, [], { cuentaId: "tarjeta_visa_business_msa", nombre: "MSA Visa", schema: "msa", tabla: "tarjeta_visa_business" }, { cuentaId: "msa_galicia", nombre: "MSA Galicia" }, undefined, pr)
+    const t = r.temas.find(x => x.etiqueta === "Tarjeta: pagos sin vincular")!
+    const sinDeb = r.temas.find(x => x.etiqueta === "Tarjeta: pago sin débito")
+    const v = `${t.tanda?.items.length} renglones · avisos ${t.tanda?.items.filter(x => x.aviso).length} · links ${t.tanda?.items[0].links.length} · ${t.tanda?.accion.tipo} · sin débito: ${sinDeb ? sinDeb.que.includes("999") : "—"}`
+    chequear("Recorrido · tanda de pagos", "🧺 Cada pago es un renglón con sus links; el que difiere viene con aviso (destildado); lo que no está en la tanda sigue como «sin débito»",
+      "2 renglones · avisos 1 · links 2 · vincular-pago-tarjeta · sin débito: true", v, v === "2 renglones · avisos 1 · links 2 · vincular-pago-tarjeta · sin débito: true", "A-FEAT-1491")
+  }
+
+  /**
    * 🧾 **LOS PEAJES CONTRA SU FACTURA — JMS 01/11** («los peajes siempre fueron contra facturas; si no hay, que avise»).
    * El emisor de cada nombre sale de lo ya conciliado: un cargo con su factura sin vincular → se propone esa; uno sin
    * factura después de que ARCA está en la app → «falta»; uno de antes → «de antes del 01/12/2025»; un nombre nunca
@@ -5746,7 +5765,8 @@ export function correrCasos(): Resultado[] {
     const filas = [f("p0", "2025-09-08", "SU PAGO EN USD", 0, 0, "pago"), f("a1", "2025-08-03", "AUTOPISTAS DEL S 8030", 3500, 0, "movimiento"), f("c1", "2025-07-14", "COOPSER O-0023-00181720", 38101.68, 0, "movimiento")]
     const con = temasTarjeta(filas, [], { cuentaId: "tarjeta_visa_business_msa", nombre: "MSA Visa", schema: "msa", tabla: "tarjeta_visa_business" }, { cuentaId: "msa_galicia", nombre: "MSA Galicia" })
     const sin = temasTarjeta(filas, [], { cuentaId: "tarjeta_visa_business_msa", nombre: "MSA Visa" }, { cuentaId: "msa_galicia", nombre: "MSA Galicia" })
-    const ac = (r: typeof con, et: string) => { const a = r.temas.find(t => t.etiqueta === et)?.accion; return a && a.tipo === "estado-movimientos" ? `${a.estado}:${a.ids.join(",")}` : "—" }
+    // ⚠️ cambió 01/11 (A-FEAT-1491): lo de un clic de la tarjeta pasó a TANDA (renglón por renglón, se aplica a los tildados)
+    const ac = (r: typeof con, et: string) => { const t = r.temas.find(x => x.etiqueta === et)?.tanda; return t && t.accion.tipo === "estado-movimientos" ? `${t.accion.estado}:${t.items.map(x => x.id).join(",")}` : "—" }
     const v = `cero ${ac(con, "Tarjeta: pagos en $ 0")} · hist ${ac(con, "Tarjeta: facturas antes de ARCA")} · peajes ${ac(con, "Tarjeta: peajes contra su factura")} · sin tabla ${ac(sin, "Tarjeta: pagos en $ 0")}`
     const esp = "cero conciliado:p0 · hist historico:c1 · peajes — · sin tabla —"
     chequear("Recorrido · aplicar desde el tema", "⚡ Lo de un clic trae su acción (sólo esos movimientos); lo que no, queda para «Aplicá vos»", esp, v, v === esp, "A-FEAT-1489")

@@ -16,6 +16,7 @@ import type { CoberturaPapeles, EstadoCobertura, ItemCobertura, LinkDato } from 
 import type { PendienteBalance } from "./pendientes-balance"
 import type { Comparacion } from "@/lib/cuaderno/papel-de-trabajo"
 import { linkExtracto, rangoQueContiene } from "@/lib/extracto/link"
+import type { PagoAVincular } from "@/lib/conciliacion/vincular-pago-tarjeta"
 
 export type GrupoTema = "visto" | "error" | "decision" | "falta inicio" | "sin informacion" | "pendiente desarrollo" | "pregunta" | "arca" | "documento" | "conciliacion" | "deuda" | "cheque"
 
@@ -97,6 +98,12 @@ export interface Tema {
    * fecha de su débito). La ejecuta el usuario con el botón; el recorrido nunca escribe solo.
    */
   accion?: AccionTema
+  /**
+   * 🧺 A-FEAT-1491 — una TANDA de parecidos (JMS 01/11: *«iría haciendo tandas de parecidos y con las herramientas
+   * evalúo; puedo con todas si cada cosa me la das en su contexto»*): renglón por renglón con su contexto y sus links, se
+   * destildan los que no cierran y se aplica a los tildados. Los que traen aviso arrancan destildados.
+   */
+  tanda?: TandaTema
 }
 
 /** 📄 Lo objetivo de un tema: qué documento es, qué dice, y dónde verlo (si se puede abrir). */
@@ -106,6 +113,15 @@ export interface FuenteTema {
   /** Lo que dice, en una o dos líneas (período, secuencia, código de presentación, el valor). */
   detalle: string
   links?: LinkDato[]
+}
+
+/** 🧺 Un renglón de una tanda: lo que se ve, sus links, y el dato para aplicar. */
+export interface ItemTanda { id: string; celdas: string[]; links: LinkDato[]; aviso?: string; pago?: PagoAVincular }
+export interface TandaTema {
+  columnas: string[]
+  items: ItemTanda[]
+  accion: { tipo: "vincular-pago-tarjeta"; texto: string }
+    | { tipo: "estado-movimientos"; texto: string; schema: string; tabla: string; estado: "conciliado" | "historico"; detalle?: string }
 }
 
 export type AccionTema =

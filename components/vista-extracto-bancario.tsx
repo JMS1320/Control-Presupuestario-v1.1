@@ -91,7 +91,7 @@ import { toast } from "sonner"
 import { ProveedorCombobox, type ProveedorSeleccionado } from "@/components/ui/proveedor-combobox"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
 import { esFilaConciliable } from "@/lib/conciliacion/filas-conciliables"
-import { etiquetaResumenTarjeta } from "@/lib/conciliacion/pool-tarjeta"
+import { vincularPagoTarjeta } from "@/lib/conciliacion/vincular-pago-tarjeta"
 import { unirCodigos } from "@/lib/conciliacion/codigos-usados"
 import { ajusteTarjetaPorEmision } from "@/lib/conciliacion/motivo-fecha"
 import { cargarDetallesFijos, aplicarDetalleFijo, marcarDetalleFijo } from "@/lib/conciliacion/detalle-fijo-db"
@@ -1278,26 +1278,10 @@ ${texto.trim()}` : texto.trim()
   const vincularPagoResumen = async (nr: string, cierre: string, debito: DebitoCtaCte, suPagoIds: string[]) => {
     setVinculandoNr(nr)
     try {
-      const [sch, tabla] = debito.tabla.split('.')
-      const cli = sch && sch !== 'public' ? supabase.schema(sch) : supabase
-      const etiqueta = etiquetaResumenTarjeta(cierre) ?? `Resumen tarjeta ${nr}`  // mismo rótulo que los cargos (A-FEAT-1299)
-      const { data: actual } = await cli.from(tabla).select('comprobantes_pagados, categ').eq('id', debito.id).maybeSingle()
-      const { error } = await cli.from(tabla)
-        .update({ nro_resumen: nr, ...((actual as any)?.comprobantes_pagados ? {} : { comprobantes_pagados: etiqueta }) })
-        .eq('id', debito.id)
-      if (error) throw error
-      if (suPagoIds.length) {
-        const upd = {
-          estado: 'conciliado',
-          categ: (actual as any)?.categ || null,
-          proveedor_nombre: 'Pago desde cuenta corriente',
-          comprobantes_pagados: etiqueta,
-          detalle: null,
-        }
-        const { error: e2 } = await dbCuenta().from(tablaActiva).update(upd).in('id', suPagoIds)
-        if (e2) throw e2
-        suPagoIds.forEach(id => actualizarLocal(id, upd))
-      }
+      // Una sola función para el Extracto y la tanda del recorrido (lib/conciliacion/vincular-pago-tarjeta, A-FEAT-1491)
+      const upd = await vincularPagoTarjeta(supabase, { nr, cierre, debito: { tabla: debito.tabla, id: debito.id },
+        tarjeta: { tabla: `${schemaActivo || 'public'}.${tablaActiva}` }, suPagoIds })
+      suPagoIds.forEach(id => actualizarLocal(id, upd as any))
       toast.success(`Pago vinculado al resumen del ${new Date(cierre + 'T12:00:00').toLocaleDateString('es-AR')}`)
       await cargarDebitosTarjeta()
     } catch (err) {
