@@ -291,6 +291,12 @@ export function VistaExtractoBancario() {
    */
   const [idsLink, setIdsLink] = useState<Set<string> | null>(null)
   /**
+   * ↩ A-FEAT-1462 — el filtro con que llegó el link (cuenta, movimientos, fechas), para poder VOLVER a él después de
+   * sacarlo o de cambiar de cuenta (JMS 31/10: «ir a conciliados a terminar la tanda y después un botón para volver al
+   * filtro que había dado el sistema»).
+   */
+  const [filtroLinkOriginal, setFiltroLinkOriginal] = useState<{ cuenta: string | null; movs: string[]; desde: string | null; hasta: string | null; url: string } | null>(null)
+  /**
    * 🌙 Nota del usuario 2026-10-24: «abrí configuración reglas y me abre en cta cte MSA… debería abrir
    * las reglas de cta cte PAM… que abra desde donde se está». Al ABRIR el modal toma la cuenta del
    * extracto que se está viendo; adentro se puede cambiar igual.
@@ -413,6 +419,7 @@ export function VistaExtractoBancario() {
     if (f.cuenta && CUENTAS_BANCARIAS.some(c => c.id === f.cuenta) && cuentaPermitida(f.cuenta)) setCuentaSeleccionada(f.cuenta)
     if (f.desde || f.hasta) { setUsarFechas(true); if (f.desde) setFechaMovDesde(f.desde); if (f.hasta) setFechaMovHasta(f.hasta) }
     if (f.movs.length) setIdsLink(new Set(f.movs))
+    if (f.movs.length || f.desde || f.hasta) setFiltroLinkOriginal({ cuenta: f.cuenta ?? null, movs: f.movs, desde: f.desde, hasta: f.hasta, url: window.location.search })
     // 🏁 A-BUG-1453: con sólo fechas, nada recargaba con ellas (la lista quedaba con la cuenta entera). Se recarga UNA vez,
     // cuando termina la carga inicial de la cuenta del link.
     else if (f.desde || f.hasta) linkFechas.current = { cuenta: f.cuenta ?? null, desde: f.desde, hasta: f.hasta, vioCarga: false }
@@ -3484,6 +3491,19 @@ ${marca}` : marca
             <span className="text-amber-800">Faltan {idsLink.size - movimientosVisibles.length}: pueden estar fuera de las fechas o de los otros filtros.</span>
           )}
           <button type="button" className="ml-auto underline" onClick={() => { setIdsLink(null); window.history.replaceState(null, "", "/?seccion=extracto") }}>Quitar este filtro</button>
+        </div>
+      )}
+      {/* ↩ A-FEAT-1462 — sacado el filtro del recorrido (o en otra cuenta), se puede volver a él con un click. */}
+      {filtroLinkOriginal && filtroLinkOriginal.movs.length > 0 && (!idsLink || !idsLink.size || (filtroLinkOriginal.cuenta && filtroLinkOriginal.cuenta !== cuentaId)) && (
+        <div className="flex flex-wrap items-center gap-2 rounded border border-sky-200 bg-sky-50/60 px-3 py-1.5 text-sm text-sky-900" data-test="extracto-volver-filtro-link">
+          <span>Llegaste desde el balance con {filtroLinkOriginal.movs.length} movimiento(s){filtroLinkOriginal.cuenta ? ` de ${CUENTAS_BANCARIAS.find(c => c.id === filtroLinkOriginal.cuenta)?.nombre ?? filtroLinkOriginal.cuenta}` : ""}.</span>
+          <button type="button" className="rounded border border-sky-300 bg-white px-2 py-0.5 hover:bg-sky-100" onClick={() => {
+            const o = filtroLinkOriginal
+            if (o.cuenta && CUENTAS_BANCARIAS.some(c => c.id === o.cuenta) && cuentaPermitida(o.cuenta)) setCuentaSeleccionada(o.cuenta)
+            if (o.desde || o.hasta) { setUsarFechas(true); if (o.desde) setFechaMovDesde(o.desde); if (o.hasta) setFechaMovHasta(o.hasta) }
+            setIdsLink(new Set(o.movs))
+            window.history.replaceState(null, "", `/${o.url}`)
+          }}>↩ Volver al filtro del recorrido</button>
         </div>
       )}
       {/* Header */}
