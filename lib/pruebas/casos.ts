@@ -10832,6 +10832,12 @@ export function correrCasos(): Resultado[] {
     ].map(b => (b ? "sí" : "no")).join(" ")
     chequear("Extracto — filas pegadas de la corrida", "🧷 Pegada con el filtro de antes → se queda; CATEG cambiado después → se va si no coincide; fechas cambiadas → se va si cae afuera",
       "sí no sí no", vp, vp === "sí no sí no", "A-BUG-1460")
+    // 🔢 A-BUG-1465: el desplegable de revisadas — los tres números de la cuenta (Santander 31/10: 113 revisadas + 35 no).
+    const santRev = [...Array(113)].map(() => ({ estado: "conciliado", revisado: true, categ: "x" })).concat([...Array(35)].map(() => ({ estado: "pendiente", revisado: false, categ: "" })))
+    const eR = contarEstadisticasExtracto(santRev)
+    const vR = `Todas ${eR.total - eR.historicos} · No revisadas ${eR.sin_revisar} · Revisadas ${eR.total - eR.historicos - eR.sin_revisar}`
+    chequear("Extracto — revisadas", "🔢 Todas / No revisadas / Revisadas salen de la cuenta y suman (113 + 35 = 148)",
+      "Todas 148 · No revisadas 35 · Revisadas 113", vR, vR === "Todas 148 · No revisadas 35 · Revisadas 113", "A-BUG-1465")
     // 📊 A-FEAT-1464: la barra de abajo, como Excel — el caso de JMS: comisión de cuenta y de tarjeta, 4 meses → 8 débitos.
     const com = ["2026-03", "2026-04", "2026-05", "2026-06"].flatMap(m => [{ fecha: `${m}-28`, debitos: 69000, creditos: 0 }, { fecha: `${m}-01`, debitos: 996, creditos: 0 }])
     const rb = resumenDeFilas(com, x => x.fecha, x => x.debitos, x => x.creditos)

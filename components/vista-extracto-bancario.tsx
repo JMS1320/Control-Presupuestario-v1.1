@@ -606,7 +606,7 @@ export function VistaExtractoBancario() {
   const extractoConVenta = TODOS_LOS_EXTRACTOS.some(e => e.tabla === tablaActiva)
   const schemaVentaCuenta = (cuentaActivaObj?.empresa || 'MSA').toLowerCase()
   const extractoActivo = { tabla: tablaActiva, schema: schemaActivo !== 'public' ? schemaActivo : undefined }
-  const { movimientos, estadisticas, loading, cargarMovimientos, actualizarMasivo, actualizarLocal, recargar, inyectarFilas, ultimoLimite } = useMovimientosBancarios(tablaActiva, schemaActivo)
+  const { movimientos, estadisticas, loading, cargarMovimientos, cargarEstadisticas, actualizarMasivo, actualizarLocal, recargar, inyectarFilas, ultimoLimite } = useMovimientosBancarios(tablaActiva, schemaActivo)
   // 🏁 A-BUG-1453: el link con fechas recarga con ellas cuando la cuenta del link terminó su primera carga.
   useEffect(() => {
     const p = linkFechas.current
@@ -3340,6 +3340,8 @@ ${marca}` : marca
         if (err) throw err
       }
       actualizarLocal(ids, { revisado: valor })
+      // 🔢 A-BUG-1465: el contador «No revisadas (N)» se quedaba con el número de antes (mostraba 40 con 35 reales).
+      void cargarEstadisticas()
     } catch (err) {
       console.error('Error marcando revisado:', err)
       alert('Error al marcar como revisado')
@@ -4133,9 +4135,10 @@ ${marca}` : marca
                   }}
                   className={`h-7 text-xs px-2 rounded-md border cursor-pointer ${filtroRevisado !== 'todas' ? 'bg-rose-600 text-white border-rose-600' : 'bg-white text-rose-600 border-rose-300'}`}
                 >
-                  <option value="todas">Todas ({estadisticas.sin_revisar + (movimientos.length - (estadisticas.sin_revisar || 0))})</option>
+                  {/* 🔢 A-BUG-1465 — los tres de la cuenta entera, como los otros chips (antes «Todas» eran las filas cargadas y «Revisadas» no tenía número). Los históricos no cuentan. */}
+                  <option value="todas">Todas ({estadisticas.total - estadisticas.historicos})</option>
                   <option value="no_revisadas">No revisadas ({estadisticas.sin_revisar})</option>
-                  <option value="revisadas">Revisadas</option>
+                  <option value="revisadas">Revisadas ({Math.max(0, estadisticas.total - estadisticas.historicos - estadisticas.sin_revisar)})</option>
                 </select>
                 {/* 📝 A-FEAT-130 — filtrar por MIS notas.
                     Se usa el mismo `select`-chip que el filtro de al lado y no dos botones sueltos:
