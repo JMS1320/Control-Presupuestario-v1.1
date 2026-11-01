@@ -10,7 +10,7 @@ import { supabase } from "@/lib/supabase"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { BarraResumen } from "@/components/ui/barra-resumen"
 
-interface PeriodoP { id: string; anio: number; mes: number; estado: string | null; monto_a: number | null; monto_b: number | null; saldo_pendiente: number | null; horas_mes: number | null; valor_por_hora: number | null; varios: number | null }
+interface PeriodoP { id: string; anio: number; mes: number; estado: string | null; monto_a: number | null; monto_b: number | null; saldo_pendiente: number | null; bruto_calculado: number | null; horas_mes: number | null; valor_por_hora: number | null; varios: number | null }
 interface PagoP { id: string; periodo_id: string | null; fecha: string; monto: number; tipo: string | null; estado: string | null; medio_pago: string | null; descripcion: string | null }
 
 const pesos = (x: number) => x.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -28,7 +28,7 @@ export function SueldosDePersona({ empleadoId, onClose }: { empleadoId: string |
     void (async () => {
       const [e, p, g] = await Promise.all([
         supabase.from("sueldos_empleados").select("nombre").eq("id", empleadoId).maybeSingle(),
-        supabase.from("sueldos_periodos").select("id, anio, mes, estado, monto_a, monto_b, saldo_pendiente, horas_mes, valor_por_hora, varios").eq("empleado_id", empleadoId).order("anio").order("mes"),
+        supabase.from("sueldos_periodos").select("id, anio, mes, estado, monto_a, monto_b, saldo_pendiente, bruto_calculado, horas_mes, valor_por_hora, varios").eq("empleado_id", empleadoId).order("anio").order("mes"),
         supabase.from("sueldos_pagos").select("id, periodo_id, fecha, monto, tipo, estado, medio_pago, descripcion").eq("empleado_id", empleadoId).order("fecha"),
       ])
       if (p.error || g.error) { setError((p.error ?? g.error)!.message); setPeriodos([]); return }
@@ -54,7 +54,9 @@ export function SueldosDePersona({ empleadoId, onClose }: { empleadoId: string |
                 {periodos.map(p => {
                   const ps = pagos.filter(x => x.periodo_id === p.id)
                   const pagado = ps.reduce((s, x) => s + (Number(x.monto) || 0), 0)
-                  const sueldo = (Number(p.monto_a) || 0) + (Number(p.monto_b) || 0)
+                  // ⚠️ 01/11 (JMS: «no termino de entender por qué siempre saldo negativo»): el sueldo del mes es el TOTAL del
+                  // período (A + B + francos, varios, aguinaldo…), no sólo A + B — con A + B casi todo daba negativo.
+                  const sueldo = p.bruto_calculado != null ? Number(p.bruto_calculado) || 0 : (Number(p.monto_a) || 0) + (Number(p.monto_b) || 0)
                   return (
                     <tr key={p.id} className="border-b align-top">
                       <td className="p-1 whitespace-nowrap">{MESES[p.mes]} {p.anio}</td>
