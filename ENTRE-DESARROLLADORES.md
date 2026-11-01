@@ -40,7 +40,10 @@
 
 ## 📨 PARA JAVIER
 
-### 🧵 1 columna nueva en `public.balance_pendientes`: `hilo` jsonb (2026-11-01) — ⏳ AVISO PREVIO (se corre a continuación con OK de JMS)
+### 🧾 1 columna nueva `cheque_id` en `public.msa_galicia`, `msa.santander` y `msa.provincia` (2026-11-01) — ⏳ AVISO PREVIO (se corre a continuación con OK de JMS)
+- `scripts/164-cheque-id-en-movimientos.sql` (+ `-deshacer`). El echeq que pagó cada débito (FK a `msa.cheques`, al borrarse queda null). Vacía, comentario `[script 164]`. **Sin cambios de RLS ni de permisos.** La llena el motor de conciliación.
+
+### 🧵 1 columna nueva en `public.balance_pendientes`: `hilo` jsonb (2026-11-01) — ✅ APLICADA 2026-11-01
 - `scripts/162-balance-pendientes-hilo.sql` (+ `-deshacer`). Los mensajes de «Tu respuesta» de cada tema del recorrido, en orden (se agregan, no se pisan). Vacía, comentario `[script 162]`. **Sin cambios de RLS ni de permisos.**
 
 ### 📷 1 columna nueva en `public.balance_pendientes`: `imagen` (2026-11-01) — ✅ APLICADA 2026-11-01
