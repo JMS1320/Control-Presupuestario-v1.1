@@ -28,7 +28,7 @@
 
 import { SelectorCuotaCierre } from "@/components/selector-cuota-cierre"
 import type { Senal } from "@/lib/revisiones/nivel"
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { supabase } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -137,6 +137,12 @@ function ModalMarca({
   const [siempre, setSiempre] = useState(false)
   const [personas, setPersonas] = useState<{ mail: string; nombre: string }[]>([])
   const [yoMail, setYoMail] = useState<string | null>(null)
+  /**
+   * ✅ JMS 01/11 (nota «recordá: por default no se cierra hasta que yo confirme»): «¿Quién confirma?» arranca en **quien
+   * crea la tarea**. Si la elige a mano, se respeta (`confirmaTocado`).
+   */
+  const confirmaTocado = useRef(false)
+  useEffect(() => { if (abierto && yoMail && !confirmaTocado.current) setConfirma(yoMail) }, [abierto, yoMail])
 
   /**
    * El contexto se congela al ABRIR, y va en ESTADO, no en una referencia.
@@ -150,7 +156,8 @@ function ModalMarca({
   useEffect(() => {
     if (abierto) {
       setCtx(contextoActual()); setMotivo(inicial?.motivo ?? ""); setImagen(""); setPara(inicial?.para ?? "")
-      setEsTarea(inicial?.esTarea ?? false); setTareaHasta(inicial?.hasta ?? ""); setConfirma(""); setCuotaCierre(inicial?.cuota ?? null)
+      setEsTarea(inicial?.esTarea ?? false); setTareaHasta(inicial?.hasta ?? ""); setConfirma(yoMail ?? ""); setCuotaCierre(inicial?.cuota ?? null)
+      confirmaTocado.current = false
     }
   }, [abierto])
 
@@ -300,7 +307,7 @@ function ModalMarca({
               {esTarea && (
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                   <span>¿Quién confirma que está hecha?</span>
-                  <select className="h-8 rounded border bg-white px-2" value={confirma} onChange={(e) => setConfirma(e.target.value)}>
+                  <select className="h-8 rounded border bg-white px-2" value={confirma} onChange={(e) => { confirmaTocado.current = true; setConfirma(e.target.value) }}>
                     <option value="">Nadie: se cierra cuando la persona dice «Listo»</option>
                     {yoMail && <option value={yoMail}>Yo: no se cierra hasta que yo confirme</option>}
                     {personas.filter((p) => p.mail !== yoMail && p.mail !== para && p.mail !== "claude").map((p) => (
