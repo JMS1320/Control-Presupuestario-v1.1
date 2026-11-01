@@ -213,6 +213,7 @@ import { resumenDeFilas } from "@/lib/ui/resumen-filas"
 import { empleadoPorNombre, tiraDeContraparte, proponerConciliaciones, CUENTAS_CONCILIABLES, ventanasAlrededor, moverMeses, type DatosConciliacion, type MovimientoSinConciliar, type Obligacion } from "@/lib/conciliacion/propuestas-ejercicio"
 import { temasDeMovimientos, temasDeCheques } from "@/lib/balance/recorrido-conciliacion"
 import { cruzarChequesConDebitos, numeroEnDescripcion } from "@/lib/conciliacion/cheques-vencidos"
+import { echeqDelDebito } from "@/lib/conciliacion/echeq-del-debito"
 import { RENGLONES as RENGLONES_BALANCE } from "@/lib/balance/balance-propio"
 import {
   cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
@@ -5597,6 +5598,30 @@ export function correrCasos(): Resultado[] {
       { ...fac("c1x", 70, "27222222222"), origen: "cuota", egresoId: "tpl-a", quien: "ALONDRA" },
       { ...fac("otro", 10, "20999999999") },
     ]
+    // 🧾 A-FEAT-1476 — el motor concilia un débito de echeq contra SU echeq: por número = seguro; por importe sólo en la
+    // ventana (3 antes / 30 después) y con UN solo candidato; un débito que no es de cheque, nada.
+    {
+      const chs = [
+        { id: "c102", numero: "102", monto: 1455755.7, fecha_cobro: "2026-05-22", beneficiario_nombre: "Eduardo Castillo", factura_id: null, anticipo_id: "a1" },
+        { id: "cSin", numero: null, monto: 500000, fecha_cobro: "2026-06-01", beneficiario_nombre: "Longo", factura_id: "f1", anticipo_id: null },
+        { id: "cA", numero: null, monto: 80000, fecha_cobro: "2026-06-01", beneficiario_nombre: "A", factura_id: "f2", anticipo_id: null },
+        { id: "cB", numero: null, monto: 80000, fecha_cobro: "2026-06-05", beneficiario_nombre: "B", factura_id: "f3", anticipo_id: null },
+      ]
+      const mv = (descripcion: string, debitos: number, fecha: string) => ({ id: "m", fecha, debitos, descripcion })
+      const r = (x: ReturnType<typeof echeqDelDebito>) => x ? `${x.cheque.id}/${x.por}/${x.desvioDias}` : "nada"
+      const vEch = [
+        r(echeqDelDebito(mv("Echeq 48 Hs. Nro. 102", 1455755.7, "2026-05-26"), chs)),
+        r(echeqDelDebito(mv("Echeq 48 Hs. Nro. 102", 1455000, "2026-05-26"), chs)),
+        r(echeqDelDebito(mv("Echeq Galicia", 500000, "2026-06-20"), chs)),
+        r(echeqDelDebito(mv("Echeq Galicia", 500000, "2026-07-15"), chs)),
+        r(echeqDelDebito(mv("Echeq Galicia", 80000, "2026-06-06"), chs)),
+        r(echeqDelDebito(mv("Trf Inmed Proveed", 1455755.7, "2026-05-26"), chs)),
+      ].join(" · ")
+      const esp = "c102/numero/4 · nada · cSin/importe/19 · nada · nada · nada"
+      chequear("Conciliación", "🧾 El débito de un echeq va contra su echeq: por número seguro; por importe sólo en 30 días y sin empate",
+        esp, vEch, vEch === esp, "A-FEAT-1476")
+    }
+
     // 🔤 A-BUG-1475 — por nombre cuando el CUIT no coincide: uno solo, todas las palabras; dos candidatos = ninguno.
     const empsN = [{ id: "a", nombre: "Alondra Olivo", cuit: "27203615367" }, { id: "m", nombre: "Manuel Martínez", cuit: "" }, { id: "m2", nombre: "Manuel Martinez", cuit: "" }]
     const vPn = `${empleadoPorNombre("ALONDRA AYLIN OLIVO", empsN)?.id} · ${empleadoPorNombre("Manuel Martinez", empsN)?.id} · ${empleadoPorNombre("Alondra Perez", empsN)?.id} · ${empleadoPorNombre(undefined, empsN)?.id}`

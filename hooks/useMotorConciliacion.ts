@@ -2,6 +2,7 @@
 
 import { imputacionParaElBanco, anotarQueSeCobro } from "@/lib/ventas/detalle-cobro-db"
 import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
+import { echeqDelDebito, esDebitoDeCheque, textoDesvio, type ChequeVigente } from "@/lib/conciliacion/echeq-del-debito"
 import { useState } from "react"
 import { conciliarCuota, type PlazoCobro } from "@/lib/ventas/hacienda"
 import { supabase } from "@/lib/supabase"
@@ -515,6 +516,20 @@ export function useMotorConciliacion() {
        */
       const { enAuditar, tablasQueFallaron: tablasSinLeer } = await cargarVinculosEnAuditar(supabase)
       const detallesFijos = await cargarDetallesFijos(supabase as any)  // A-FEAT-1296
+      /**
+       * 🧾 A-FEAT-1476 — los echeqs VIGENTES de MSA (los cheques viven en `msa.cheques`): un débito de echeq se busca
+       * primero contra ellos, antes que contra el Cash Flow (donde el echeq muchas veces no tiene fila propia).
+       */
+      let chequesVigentes: ChequeVigente[] = []
+      if (cuenta.empresa === 'MSA' && cuenta.tipo !== 'tarjeta') {
+        const { data: chs, error: eCh } = await supabase.schema('msa').from('cheques')
+          .select('id, numero, monto, fecha_cobro, beneficiario_nombre, beneficiario_cuit, factura_id, anticipo_id, concepto')
+          .eq('estado', 'vigente')
+        if (eCh) console.warn('⚠️ No se pudieron leer los echeqs vigentes:', eCh.message)
+        chequesVigentes = ((chs ?? []) as any[]).map(c => ({ ...c, id: String(c.id), monto: Number(c.monto) || 0,
+          numero: c.numero == null ? null : String(c.numero), fecha_cobro: c.fecha_cobro ? String(c.fecha_cobro) : null }))
+      }
+      const chequesUsados = new Set<string>()
       if (tablasSinLeer.length) console.warn(`⚠️ Doble audit: no se pudieron leer ${tablasSinLeer.join(', ')}`)
       const buscar = (mov: MovimientoBancario, pool: typeof datosCF) =>
         buscarConDobleAudit((p: any[]) => buscarMatchCashFlow(mov, p, cuenta.empresa), sinUsar(pool), enAuditar)
@@ -542,6 +557,22 @@ export function useMotorConciliacion() {
             movimiento_id: movimiento.id,
             tipo_match: 'sin_match',
             requiere_revision: false
+          }
+
+          // PASO 0 — 🧾 A-FEAT-1476: un débito de echeq contra su echeq (por número seguro; por importe, a auditar)
+          if (chequesVigentes.length && esDebitoDeCheque(movimiento.descripcion)) {
+            const ech = echeqDelDebito(movimiento as any, chequesVigentes.filter(c => !chequesUsados.has(c.id)))
+            if (ech) {
+              chequesUsados.add(ech.cheque.id)
+              const r = await conciliarContraEcheq(cuenta, movimiento, ech)
+              for (const id of r.idsUsados) usadosEnCorrida.add(id)
+              resultado = { movimiento_id: movimiento.id, tipo_match: 'cash_flow', requiere_revision: r.estado === 'auditar',
+                motivo_revision: r.motivo ?? undefined, categ_asignado: r.categ ?? undefined, detalle_asignado: r.detalle ?? undefined }
+              if (r.estado === 'auditar') resultadosProceso.revision_manual++
+              else resultadosProceso.automaticos++
+              resultadosProceso.detalles.push(resultado)
+              continue
+            }
           }
 
           // PASO 1: Intentar match con Cash Flow
@@ -1272,6 +1303,64 @@ export function useMotorConciliacion() {
   }
 
   // Función para actualizar movimiento en BD
+  /**
+   * 🧾 A-FEAT-1476 — concilia un débito contra SU echeq: el movimiento queda atado a la factura / anticipo que paga el
+   * echeq, con la cuenta y la categoría de ahí (la del anticipo gana, como en el camino de anticipos). El echeq pasa a
+   * «cobrado» con la fecha real del débito por el trigger del script 144. Cuando era el ÚLTIMO echeq vigente de la factura
+   * (o del anticipo), la factura queda conciliada (o el anticipo, conciliado en banco).
+   * Por importe (sin número que lo confirme) o sin factura ni cuenta → a auditar, con el motivo.
+   */
+  const conciliarContraEcheq = async (cuenta: CuentaBancaria, movimiento: MovimientoBancario, ech: { cheque: ChequeVigente; por: 'numero' | 'importe'; desvioDias: number | null }) => {
+    const ch = ech.cheque
+    const { data: ant } = ch.anticipo_id
+      ? await supabase.from('anticipos_proveedores').select('id, factura_id, descripcion, nro_cuenta, nombre_proveedor').eq('id', ch.anticipo_id).maybeSingle()
+      : { data: null }
+    const facturaId = ch.factura_id || (ant as any)?.factura_id || null
+    const { data: fc } = facturaId
+      ? await supabase.schema('msa').from('comprobantes_arca').select('id, categ, nro_cuenta, tipo_comprobante, numero_desde').eq('id', facturaId).maybeSingle()
+      : { data: null }
+    let categAnt: string | null = null
+    if ((ant as any)?.nro_cuenta) {
+      const { data: cta } = await supabase.from('cuentas_contables').select('categ').eq('nro_cuenta', (ant as any).nro_cuenta).maybeSingle()
+      categAnt = (cta as any)?.categ ?? null
+    }
+    const nroCuenta = (ant as any)?.nro_cuenta || (fc as any)?.nro_cuenta || null
+    const categ = ((ant as any)?.nro_cuenta ? categAnt : (fc as any)?.categ) || null
+    const abrev = (t: number) => [2,7,12,52,202,207,212].includes(t) ? 'ND' : [3,8,13,53,203,208,213].includes(t) ? 'NC' : 'FC'
+    const numero = ch.numero || null
+    const desvio = textoDesvio(ech.desvioDias)
+    const motivos: string[] = []
+    if (ech.por === 'importe') motivos.push(`Echeq${numero ? ` Nº ${numero}` : ''} de ${ch.beneficiario_nombre ?? '—'} encontrado sólo por importe (el banco no confirma el número); ${desvio}`)
+    if (!fc && !categ) motivos.push(`Echeq${numero ? ` Nº ${numero}` : ''}: ${ch.anticipo_id ? 'anticipo sin factura vinculada ni cuenta' : 'sin factura'} — falta la cuenta`)
+    const estado = motivos.length ? 'auditar' : 'conciliado'
+    const proveedor = (await buscarNombreProveedor(ch.beneficiario_cuit ?? null)) || ch.beneficiario_nombre || null
+    const detalle = (movimiento as any).detalle || `${(ant as any)?.descripcion || ch.concepto || 'Pago'} · echeq${numero ? ` Nº ${numero}` : ''} (${desvio})`
+    await actualizarMovimientoBD(cuenta, movimiento.id, {
+      categ, nro_cuenta: nroCuenta, detalle, estado, motivo_revision: motivos.join(' · ') || null,
+      proveedor_nombre: proveedor,
+      comprobantes_pagados: fc ? `${abrev((fc as any).tipo_comprobante)} - ${(fc as any).numero_desde ?? ''}` : null,
+      comprobante_arca_id: facturaId, anticipo_id: ch.anticipo_id || null,
+    })
+    // ¿Era el último echeq vigente de lo que paga? Entonces lo que paga queda conciliado (sólo si el match es seguro).
+    if (estado === 'conciliado') {
+      const padre = ch.factura_id ? { col: 'factura_id', id: ch.factura_id } : ch.anticipo_id ? { col: 'anticipo_id', id: ch.anticipo_id } : null
+      if (padre) {
+        const { count: otros } = await supabase.schema('msa').from('cheques').select('id', { count: 'exact', head: true })
+          .eq(padre.col, padre.id).eq('estado', 'vigente').neq('id', ch.id)
+        if (!otros) {
+          if (ch.factura_id) {
+            await supabase.schema('msa').from('comprobantes_arca').update({ estado: 'conciliado' }).eq('id', ch.factura_id)
+            await completarFechaPago(supabase, 'msa', [ch.factura_id], movimiento.fecha)
+          } else if (ch.anticipo_id) {
+            await supabase.from('anticipos_proveedores').update({ estado_pago: 'conciliado' }).eq('id', ch.anticipo_id)
+          }
+        }
+      }
+    }
+    return { estado, motivo: motivos.join(' · ') || null, categ, detalle,
+      idsUsados: [ch.id, ...(ch.factura_id ? [ch.factura_id] : []), ...(ch.anticipo_id ? [ch.anticipo_id] : [])] }
+  }
+
   const actualizarMovimientoBD = async (cuenta: CuentaBancaria, movimientoId: string, datos: any) => {
     try {
       const clientSchema = cuenta.schema_bd && cuenta.schema_bd !== 'public' ? supabase.schema(cuenta.schema_bd) : supabase

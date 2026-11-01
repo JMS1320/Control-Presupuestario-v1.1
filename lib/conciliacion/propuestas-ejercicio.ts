@@ -276,13 +276,16 @@ export async function leerDatosConciliacion(sb: Cliente, empresa: string, desde:
     } catch (e) { avisos.push(`ventas ${emp}: ${(e as Error).message}`) }
   }
   try {
-    const egresos = await todo(sb, "public", "egresos_sin_factura", "id,nombre_referencia,responsable,cuit_quien_cobra,categ")
+    const egresos = await todo(sb, "public", "egresos_sin_factura", "id,nombre_referencia,responsable,cuit_quien_cobra,categ,activo")
     const egr = new Map(egresos.map(e => [String(e.id), e]))
     const cuotas = await todo(sb, "public", "cuotas_egresos_sin_factura", "id,egreso_id,fecha_estimada,fecha_vencimiento,fecha_pago,monto,estado,tipo_movimiento,grupo_pago_id",
       q => q.gte("fecha_estimada", margenDesde).lte("fecha_estimada", margenHasta))
     for (const c of cuotas) {
       if (!n(c.monto)) continue
       const e = egr.get(String(c.egreso_id)) ?? {}
+      // 🔕 A-BUG-1477 — la cuota impaga de un template DESACTIVADO no es deuda ni pareja (el par anual/cuotas: JMS 01/11
+      // «están vinculados para que si uno está activo el otro se desactive»). Lo pagado sí sigue siendo un hecho.
+      if (e.activo === false && !/conciliado|pagado|anterior/i.test(String(c.estado ?? ""))) continue
       const ingreso = /ingreso|credito|crédito/i.test(String(c.tipo_movimiento ?? ""))
       obligaciones.push({ empresa: String(e.responsable ?? "?").split("/")[0], origen: "cuota", id: String(c.id), fecha: c.fecha_pago ?? c.fecha_estimada ?? c.fecha_vencimiento,
         importe: Math.abs(n(c.monto)), estado: String(c.estado ?? ""), quien: e.nombre_referencia ?? "?", cuit: cuitDe(e.cuit_quien_cobra), grupo: c.grupo_pago_id,

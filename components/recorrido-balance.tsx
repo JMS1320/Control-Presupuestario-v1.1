@@ -97,7 +97,9 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   const pedidoVisible = !!pedido && visibles.some(t => t.clave === pedido)
   /** Mientras se busca el tema del link no se muestra otro en su lugar (era Parra: el primero de la lista). */
   const buscandoPedido = !!pedido && !pedidoEnTemas && enCamino.length > 0
-  const actual = buscandoPedido ? null : visibles[idx] ?? null
+  /** Terminó de cargar y el tema del link no está (se resolvió): tampoco se muestra otro en su lugar (JMS 01/11, Manuel). */
+  const pedidoNoEsta = !!pedido && !pedidoEnTemas && enCamino.length === 0
+  const actual = buscandoPedido || pedidoNoEsta ? null : visibles[idx] ?? null
   useEffect(() => { if (pedido && claveActual !== pedido) setPedido(null) }, [claveActual]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (pedido && pedidoVisible) document.getElementById(`tema-${pedido}`)?.scrollIntoView({ block: "center" })
@@ -492,7 +494,13 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
 
         {/* El tema abierto */}
         <section className={`overflow-y-auto p-4 md:p-6 ${verLista ? "" : "pl-10 md:pl-12"}`} aria-live="polite">
-          {!actual ? <p className="text-sm text-muted-foreground">{buscandoPedido ? `🔎 Buscando el tema del link… llega con ${enCamino.join(", ")}; en cuanto aparezca, se abre solo.` : "Elegí un tema."}</p> : (
+          {!actual ? (pedidoNoEsta ? (
+            <div className="space-y-2 rounded border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" data-test="recorrido-pedido-resuelto">
+              <p><b>El tema del link ya no está en el recorrido: se resolvió.</b> Por ejemplo, el movimiento quedó conciliado o el dato se corrigió.</p>
+              <p className="text-xs">Si la tarea que te trajo acá sigue abierta, se cierra desde «Para vos» (✔ Confirmar, cerrar).</p>
+              <Button size="sm" variant="outline" onClick={() => setPedido(null)}>Ir al primer tema</Button>
+            </div>
+          ) : <p className="text-sm text-muted-foreground">{buscandoPedido ? `🔎 Buscando el tema del link… llega con ${enCamino.join(", ")}; en cuanto aparezca, se abre solo.` : "Elegí un tema."}</p>) : (
             <div className={`${verLista ? "max-w-3xl" : "max-w-5xl"} space-y-4`}>
               <DetalleTema tema={actual}
                 arriba={<span className="ml-auto flex items-center gap-2 text-muted-foreground tabular-nums">
