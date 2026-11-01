@@ -569,6 +569,18 @@ export function VistaExtractoBancario() {
   const [contableManual, setContableManual] = useState('')
   const [internoManual, setInternoManual] = useState('')
   const [categManualAsignar, setCategManualAsignar] = useState('')
+  /**
+   * 📝 A-FEAT-1482 — el DETALLE al asignar un movimiento a un template (nota 🌙 JMS 01/11: «en estos casos de crear la cuenta o
+   * el template se está conciliando un movimiento, entonces se debe pedir el detalle»). Arranca con el del movimiento; en un
+   * template de varias cuentas (Otros Gastos…) con cuota nueva es obligatorio: si no, el gasto queda sin decir qué fue.
+   */
+  const [detalleAsignar, setDetalleAsignar] = useState('')
+  /**
+   * 👀 A-BUG-1483 — un movimiento atado a un pago de sueldo pero con las columnas vacías (Proveedor / Comprobante) se veía
+   * «— — —» y no se sabía a qué quedó atado (nota 🌙 JMS 01/11: «si ya reconoció y dejó auditar, debería mostrar los datos
+   * para que, si veo que está bien, le doy OK y se plasman; si no veo nada no puedo dar OK»). Se lee el pago: quién y qué mes.
+   */
+  const [infoSueldo, setInfoSueldo] = useState<Record<string, { nombre: string; mes: string }>>({})
   const [subcategsDisponibles, setSubcategsDisponibles] = useState<string[]>([])
   const [cuotasExistentes, setCuotasExistentes] = useState<any[]>([])
   const [cuotaElegida, setCuotaElegida] = useState<any>(null) // null = crear nueva
@@ -812,6 +824,23 @@ ${texto.trim()}` : texto.trim()
       setCuitPorFactura(nuevo)
     })()
   }, [movimientos, detallesFijos])
+
+  useEffect(() => {
+    const ids = [...new Set((movimientos as any[]).filter(m => m.sueldo_pago_id && !(m.proveedor_nombre || '').trim())
+      .map(m => String(m.sueldo_pago_id)))].filter(id => !(id in infoSueldo)).slice(0, 200)
+    if (!ids.length) return
+    void (async () => {
+      const { data: pagos } = await supabase.from('sueldos_pagos').select('id, periodo_id, empleado:sueldos_empleados(nombre)').in('id', ids)
+      const perIds = [...new Set(((pagos || []) as any[]).map(x => x.periodo_id).filter(Boolean))]
+      const { data: pers } = perIds.length ? await supabase.from('sueldos_periodos').select('id, anio, mes').in('id', perIds) : { data: [] }
+      const MES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+      const per = new Map(((pers || []) as any[]).map(x => [String(x.id), `${MES[x.mes] ?? ''} ${x.anio}`]))
+      const nuevo = { ...infoSueldo }
+      for (const id of ids) nuevo[id] = { nombre: '', mes: '' }   // los que no se encuentren no se vuelven a pedir
+      for (const x of (pagos || []) as any[]) nuevo[String(x.id)] = { nombre: x.empleado?.nombre ?? '', mes: per.get(String(x.periodo_id)) ?? '' }
+      setInfoSueldo(nuevo)
+    })()
+  }, [movimientos]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const propagarDetalleAlTemplate = async (movimiento: any, detalle: string) => {
     const r = await propagarDetalleACuota(movimiento?.template_cuota_id, detalle)
@@ -1505,6 +1534,10 @@ ${texto.trim()}` : texto.trim()
       const previa = String(movimiento.nota_operador || '').trim()
       const huella = `OK a mano${movimiento.motivo_revision ? ' · ' + movimiento.motivo_revision : ''}`
       const upd: Record<string, any> = { estado: 'conciliado', motivo_revision: null, nota_operador: [previa, huella].filter(Boolean).join(' · ') }
+      // 👀 A-BUG-1483 — lo que se mostró al lado del OK se plasma: quién y qué mes, si las columnas estaban vacías.
+      const inf = movimiento.sueldo_pago_id ? infoSueldo[String(movimiento.sueldo_pago_id)] : undefined
+      if (inf?.nombre && !(movimiento.proveedor_nombre || '').trim()) upd.proveedor_nombre = inf.nombre
+      if (inf?.mes && !(movimiento.comprobantes_pagados || '').trim()) upd.comprobantes_pagados = `Sueldo ${inf.mes}`
       if (movimiento.comprobante_venta_id && !movimiento.anticipo_id) {
         const cuit = String(movimiento.leyendas_adicionales_2 ?? '').replace(/\D/g, '')
         const { data: ants } = await supabase.from('anticipos_proveedores')
@@ -2209,6 +2242,7 @@ Pasan a conciliado junto con su factura o cuota. El motivo queda en la nota.`)) 
     setContableManual(movimiento.contable || '')
     setInternoManual(movimiento.interno || '')
     setCategManualAsignar('')
+    setDetalleAsignar(movimiento.detalle || '')
     setCuotaElegida(null)
     setCuotasExistentes([])
 
@@ -2504,6 +2538,10 @@ Pasan a conciliado junto con su factura o cuota. El motivo queda en la nota.`)) 
 
   const ejecutarAsignacion = async () => {
     if (!movimientoAsignando) return
+    if (tabAsignar === 'template' && templateElegido?.es_multi_cuenta && !cuotaElegida && !detalleAsignar.trim()) {
+      toast.error('Escribí el detalle: qué fue este gasto (se guarda en el movimiento y en la cuota del template)')
+      return
+    }
     /**
      * 🔀 A-BUG-1256 — vincular con algo de OTRA empresa o de otro CUIT se puede, pero nunca sin
      * aviso (regla del usuario 2026-10-14). Se pregunta ANTES de escribir nada.
@@ -2583,6 +2621,7 @@ Pasan a conciliado junto con su factura o cuota. El motivo queda en la nota.`)) 
           if (parseFloat(cuotaElegida.monto) !== monto) {
             updateCuota.monto = monto
           }
+          if (detalleAsignar.trim()) updateCuota.detalle = detalleAsignar.trim()
           // Actualizar fechas a la fecha real de débito bancario
           const fechaExtracto = movimientoAsignando.fecha
           if (fechaExtracto) {
@@ -2613,6 +2652,7 @@ Pasan a conciliado junto con su factura o cuota. El motivo queda en la nota.`)) 
           if (templateElegido.es_multi_cuenta && categManualAsignar) {
             cuotaInsert.categ = categManualAsignar
           }
+          if (detalleAsignar.trim()) cuotaInsert.detalle = detalleAsignar.trim()
           const { data: cuota, error: errCuota } = await supabase
             .from('cuotas_egresos_sin_factura')
             .insert(cuotaInsert)
@@ -2653,7 +2693,7 @@ Pasan a conciliado junto con su factura o cuota. El motivo queda en la nota.`)) 
         // 📝 A-DAT-51 — ídem ARCA: el nombre del template ya va al comprobante y el proveedor a su
         //    columna. Inventar un detalle con los dos era copiar las dos celdas de al lado.
         //    ⚠️ Lo escrito a mano se sigue respetando (eso era A-BUG-05).
-        updateTemplate.detalle = movimientoAsignando.detalle?.trim() || null
+        updateTemplate.detalle = detalleAsignar.trim() || movimientoAsignando.detalle?.trim() || null
         updateTemplate.contable = contableManual.trim() || codigos.contable || ''
         updateTemplate.interno  = internoManual.trim()  || codigos.interno  || ''
 
@@ -5045,7 +5085,9 @@ ${marca}` : marca
                           </TableCell>
                           {col('proveedor_nombre') && (
                             <TableCell className="text-sm truncate max-w-[180px]" title={movimiento.proveedor_nombre || ''}>
-                              {movimiento.proveedor_nombre || <span className="text-gray-300">—</span>}
+                              {movimiento.proveedor_nombre || (movimiento.sueldo_pago_id && infoSueldo[String(movimiento.sueldo_pago_id)]?.nombre
+                                ? <span className="text-blue-700" title="Pago de sueldo al que quedó atado (la columna está vacía: con ✓ OK se guarda)">🔗 {infoSueldo[String(movimiento.sueldo_pago_id)].nombre} · sueldo {infoSueldo[String(movimiento.sueldo_pago_id)].mes}</span>
+                                : <span className="text-gray-300">—</span>)}
                             </TableCell>
                           )}
                           {col('comprobantes_pagados') && (
@@ -6410,6 +6452,20 @@ ${marca}` : marca
                       />
                     </div>
                   )}
+                  {/* 📝 A-FEAT-1482 — el detalle: qué fue (va al movimiento y a la cuota del template) */}
+                  <div>
+                    <label className="text-xs font-medium text-gray-600 mb-1 block">
+                      Detalle — qué fue{templateElegido.es_multi_cuenta && !cuotaElegida ? <span className="text-red-600"> (obligatorio)</span> : ''}
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full border rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                      placeholder="Ej.: vacunas para el rodeo, repuesto del tractor…"
+                      value={detalleAsignar}
+                      onChange={(e) => setDetalleAsignar(e.target.value)}
+                      data-test="asignar-detalle"
+                    />
+                  </div>
                   <div className="text-xs text-gray-500 bg-gray-50 rounded p-2">
                     {cuotaElegida ? (
                       <>Se usará cuota existente de <strong>{templateElegido.nombre_referencia}</strong> — monto y fechas se actualizarán desde el extracto.</>
