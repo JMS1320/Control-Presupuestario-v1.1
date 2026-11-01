@@ -337,8 +337,25 @@ const REGLAS: Regla[] = [
   { papel: "GASTOS BANCARIOS", dato: "Fondo fijo (caja)", valor2425: "$ 1.194.833,68", solapa: "08 Gastos bancarios",
     evaluar: d => {
       const cajas = (d.bancarios?.cadenas ?? []).filter(c => /caja/i.test(c.cuenta))
-      return cajas.some(c => c.movimientos > 0) ? { estado: "sale", detalle: `${cajas.filter(c => c.movimientos > 0).map(c => c.cuenta).join(", ")} con movimientos` }
-        : { estado: "sin informacion", detalle: "las cajas no tienen movimientos 25/26: falta la rendición de caja" }
+      /**
+       * 🔗 A-FEAT-1471 (JMS 01/11: «relacionalo con el template de otros gastos a lo de fondo fijo»): lo que se gasta
+       * del fondo fijo se carga en el template «Otros Gastos»; su total del ejercicio va al lado del fondo fijo 24/25,
+       * con el link a sus cuotas.
+       */
+      const otros = (d.templates?.detalle ?? []).filter(c => claveTpl(c.concepto) === "otros gastos")
+      const totalOtros = Math.round(otros.reduce((x, c) => x + c.monto, 0) * 100) / 100
+      const egresos = [...new Set(otros.map(c => c.egresoId).filter((x): x is string => !!x))]
+      const linkOtros = egresos.length ? [{ texto: `Template «Otros Gastos» (el fondo fijo: ${otros.length} cuota(s))`, href: linkTemplates(egresos) }] : []
+      const sinCateg = otros.filter(c => !c.categ).length
+      const otrosTxt = otros.length
+        ? `«Otros Gastos» (gastos del fondo fijo) ${pesos(totalOtros)} en ${otros.length} cuota(s)${sinCateg ? ` — ${sinCateg} sin CATEG: cargarle la cuenta al template` : ""}`
+        : "no hay cuotas del template «Otros Gastos» en el ejercicio"
+      const comparacion = { titulo: "Fondo fijo: lo del balance 24/25 contra «Otros Gastos» 25/26", celdas: [
+        ["Concepto", "Importe"], ["Fondo fijo (balance 24/25)", celdaNumero(1194833.68)], ["«Otros Gastos» 25/26 (cuotas del template)", celdaNumero(totalOtros)],
+        ["Diferencia", "=B3-B2"]] }
+      return cajas.some(c => c.movimientos > 0)
+        ? { estado: "sale", detalle: `${cajas.filter(c => c.movimientos > 0).map(c => c.cuenta).join(", ")} con movimientos · ${otrosTxt}`, links: linkOtros, comparacion }
+        : { estado: "sin informacion", detalle: `las cajas no tienen movimientos 25/26: falta la rendición de caja · ${otrosTxt}`, links: linkOtros, comparacion }
     } },
 
   // ── LIBRO DIARIO ─────────────────────────────────────────────────────────────────────────
@@ -518,3 +535,6 @@ function linksDeAsientos(as: AsientoLibroDiario[], texto: string): LinkDato[] {
     ...(arca.length ? [{ texto: `${texto}: ${arca.length} en Facturas`, href: linkFacturas(arca) }] : []),
   ]
 }
+
+/** Nombre de template normalizado (sin tildes, minúsculas, espacios simples) para encontrarlo por nombre y no por id. */
+const claveTpl = (s: string | null | undefined) => (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim()

@@ -5440,6 +5440,15 @@ export function correrCasos(): Resultado[] {
     chequear("Recorrido · fuente del banco", "🏦 El saldo de una cuenta tiene como fuente lo que informó el banco (fecha y saldo del último movimiento, link a ese tramo); si el extracto no llega al cierre, lo dice",
       "Extracto del banco — Banco Galicia · saldo del banco · avisa que no llega al cierre · link al tramo", vB,
       vB === "Extracto del banco — Banco Galicia · saldo del banco · avisa que no llega al cierre · link al tramo", "A-FEAT-1439")
+    // 🔗 A-FEAT-1471: el fondo fijo se relaciona con el template «Otros Gastos» (total del ejercicio, link a sus cuotas, la cuenta contra 24/25).
+    const cuotaOG = (monto: number, categ = "") => ({ id: String(monto), fecha: "2026-01-10", concepto: "Otros  Gastos", proveedor: "", categ, cuenta_contable: "", nro_cuenta: "",
+      centro_costo: "", responsable: "MSA", estado: "pagado", monto, egresoId: "tpl-otros" })
+    const cobFF = armarCobertura({ libro: libroCob, fechaInicio: "2025-07-01", bancarios: { cadenas: [], saldos: [] } as never,
+      templates: { detalle: [cuotaOG(1000000), cuotaOG(688345)], porMes: [], columnas: [], totalDebitos: 0, totalCreditos: 0, sinCategoria: [], sinFecha: [] } as never })
+    const ff = cobFF.items.find(i => i.dato === "Fondo fijo (caja)")
+    const vFF = `${/«Otros Gastos» \(gastos del fondo fijo\) \$ 1\.688\.345,00 en 2 cuota\(s\) — 2 sin CATEG/.test(ff?.detalle ?? "") ? "total y sin categ" : ff?.detalle} · ${ff?.links?.some(l => /templates=tpl-otros/.test(l.href)) ? "link" : "sin link"} · ${ff?.comparacion ? "cuenta" : "sin cuenta"}`
+    chequear("Balance · fondo fijo", "🔗 El fondo fijo muestra el total de «Otros Gastos» del ejercicio (y avisa si le falta CATEG), con el link a sus cuotas y la cuenta contra 24/25",
+      "total y sin categ · link · cuenta", vFF, vFF === "total y sin categ · link · cuenta", "A-FEAT-1471")
     // 📄 Punto 3: cada dato del catálogo tiene su fuente prevista y su link. Un saldo de INICIO tiene como fuente el balance
     // 24/25 presentado; uno del cierre sin documento cargado dice cuál es su fuente (no se calla) y lleva el link a la app.
     const prov = cobB.items.find(i => i.dato.startsWith("Provisión del ejercicio anterior"))
