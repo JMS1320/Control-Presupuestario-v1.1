@@ -175,3 +175,16 @@ export function repartirEnLibros<V>(wb: XLSX.WorkBook, vistas: V[]): { letra: Le
   })
   return (["A", "B", "C", "D", "E"] as LetraLibro[]).filter(k => out.has(k)).map(letra => ({ letra, ...out.get(letra)! }))
 }
+
+/** 🔎 A-FEAT-1506: el nombre del canal de pago (la tabla donde se encontró el movimiento) en palabras de la app. */
+export function canalDePago(tabla: string | undefined | null): string | undefined {
+  if (!tabla) return undefined
+  const t = tabla.replace(/^public\./, "")
+  const NOMBRES: Record<string, string> = {
+    msa_galicia: "Banco Galicia (extracto)", "msa.santander": "Banco Santander (extracto)", "msa.provincia": "Banco Provincia (extracto)",
+    "msa.tarjeta_visa_business": "Tarjeta Visa MSA (resumen)", "msa.caja_general": "Caja general", "msa.caja_ams": "Caja AMS",
+    "msa.caja_sigot": "Caja Sigot", "msa.echeqs_terceros": "Echeqs de terceros", "msa.cc_usd": "Cuenta en dólares",
+    pam_galicia: "PAM Galicia (extracto)", pam_galicia_cc: "PAM Galicia cta cte (extracto)", "ma.ma_galicia": "MA Galicia (extracto)",
+  }
+  return NOMBRES[t] ?? t
+}

@@ -3347,6 +3347,9 @@ Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantid
 ### 2026-11-01 · Reglas de conciliación de la cuenta en dólares de MSA (script 172, DATOS) — A-FEAT-1503 — ✅ CORRIDO con OK de JMS («las reglas de cta cte dólares hacelas así; después corro la conciliación»)
 `public.reglas_conciliacion`, `cuenta_bancaria_id = 'msa_cc_usd'`: 6 reglas, las mismas categorías del Galicia en pesos (Percep. Iva · Imp. Ing. Brutos · Imp. Deb. Ley 25413 · IVA exacto · Comision Mantenimiento · Google One). Tocan 49 de los 50 movimientos; la transferencia a Galicia Securities queda para conciliar a mano. Marca `[script 172]` en el detalle; deshacer: `172-…-deshacer.sql`.
 
+### 2026-11-01 · Las notas de JMS sobre los papeles 04 y 14 (script 173, DATOS) — A-FEAT-1506 — ✅ CORRIDO con OK de JMS
+(a) `balance_datos_usuario` `cc.saldo-inicio` MSA 2026: JMS y AMS → 0 (eran TENTATIVOS de Claude, $ 15 M y $ 10,5 M; el anterior queda en `historial`). (b) `ajustes_balance`: 20 filas `accion = 'pagado_al_cierre'` (`tabla = 'msa.comprobantes_arca'`, `registro_id` = la factura), $ 3.090.891,91: el papel 04 las da por pagadas; la factura NO cambia. (c) `balance_pendientes`: 2 pendientes de MA y PAM («ver con Mauricio»). Marca `[script 173]`; deshacer: `173-…-deshacer.sql`.
+
 ### 2026-11-01 · Parseo de SANTANDER (script 167, DATOS) — A-FEAT-1485 — ✅ CORRIDO con OK de JMS («ok corré el 167»)
 `msa.santander`: `concepto` (texto en líneas, `bloqueSantander`) + desglose de los 148 movimientos (descripcion, grupo_de_conceptos, leyendas_adicionales_1..3, numero_de_comprobante, numero_de_terminal); `public.config_parseo_extracto` + 20 reglas de `msa_santander` (marca `[script 167]` en `descripcion_campo`); `public.reglas_conciliacion` + 1 (CUIT 30617786016 → template «Interbancaria Santander», marca en `detalle`). Foto antes: `scripts/167-parseo-santander-foto.json`. Deshacer: `167-parseo-santander-deshacer.mts`.
 

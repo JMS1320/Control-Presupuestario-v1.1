@@ -33,7 +33,7 @@
  * empieza a mentir.
  */
 
-import { libroDeSolapa, repartirEnLibros, templatesDeResponsable, detalleBancarioDelLibroC } from "@/lib/balance/libros-del-balance"
+import { libroDeSolapa, repartirEnLibros, templatesDeResponsable, detalleBancarioDelLibroC, canalDePago } from "@/lib/balance/libros-del-balance"
 import { armarStocksUnificados, hojaDeStocks } from "@/lib/balance/stocks-unificado"
 import { temasDeCuentaCorriente } from "@/lib/balance/recorrido-conciliacion"
 import { contrapartesDelRecorrido } from "@/lib/balance/fuera-por-cuenta-corriente"
@@ -325,7 +325,7 @@ import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
-import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas, hojaPorCuenta, hojaResumenMensual, hojaDeAsientos, conTotalAlPie, hojaDeGastosBancarios } from "@/lib/balance/export-libro-diario"
+import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas, hojaPorCuenta, hojaResumenMensual, hojaDeAsientos, conTotalAlPie, hojaDeGastosBancarios, hojaDeCuentas } from "@/lib/balance/export-libro-diario"
 import type { LibroDiario as LibroDiarioT } from "@/lib/balance/libro-diario"
 import { juntarTandas, lecturaIncompleta, juntarHasta, mensajeLecturaIncompleta } from "@/lib/supabase-paginado"
 import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
@@ -12217,6 +12217,34 @@ export function correrCasos(): Resultado[] {
     const v4 = det.map(d => `${d.grupo[0]}${d.moneda === "USD" ? "$" : ""}`).sort().join("")
     chequear("Set de libros", "El detalle bancario del libro C: impuestos y gastos por el plan, intereses, inversiones (FCI y el envío de dólares al broker); los sueldos no entran; lo de la cuenta en dólares va en dólares",
       "G$IIII$", v4, v4 === "G$IIII$", "A-FEAT-1505")
+  }
+
+  // ══ ✍️ Papel 04: dadas por pagadas al cierre, dónde verlo y las cuentas corrientes al pie (A-FEAT-1506) ══
+  {
+    const as = (id: string, total: number, den: string) => ({ id, fuente: "arca", subdiario: "2026-03", fecha: "2026-03-10", tipo: 1, punto_venta: 1, numero: 1, cuit: "1", denominacion: den,
+      neto_gravado: total, no_gravado: 0, exento: 0, otros_tributos: 0, iva: 0, total, cuenta_contable: "X" })
+    const comp = [
+      { asiento: as("a", 100, "Bus Pack"), estado: "pendiente", fechaPago: null, origenFecha: "sin dato" },
+      { asiento: as("b", 50, "Proveedor"), estado: "pendiente", fechaPago: null, origenFecha: "sin dato" },
+      { asiento: as("c", 30, "Peaje"), estado: "conciliado", fechaPago: "2026-07-01", origenFecha: "movimiento bancario", dondeSeVe: canalDePago("msa.tarjeta_visa_business") },
+    ] as never
+    const r = armarCuentasAlCierre(comp, "2026-06-30", undefined, new Map([["a", "JMS: «Pagado»"]]))
+    const v1 = `deuda ${r.total} (${r.filas.map(f => f.asiento.id).join(",")}) · dadas por pagadas ${r.totalDadasPorPagadas} · peaje ve «${r.filas.find(f => f.asiento.id === "c")?.dondeSeVe}»`
+    const e1 = "deuda 80 (c,b) · dadas por pagadas 100 · peaje ve «Tarjeta Visa MSA (resumen)»"
+    chequear("Papel 04", "✍️ Una factura «dada por pagada al cierre» sale de la deuda y se lista aparte (la factura no cambia); cada fila dice dónde se ve el pago",
+      e1, v1, v1 === e1, "A-FEAT-1506")
+
+    const cc = { cuentas: [
+      { contraparte: { clave: "AMS", nombre: "Andrés Martínez", cuit: "2" }, saldoInicio: 0, inicioSinDato: false, resumen: {}, saldoAlCierre: 19728424.98, desdeHistorico: 0 },
+      { contraparte: { clave: "MA", nombre: "Mercedes Areco", cuit: "3" }, saldoInicio: 0, inicioSinDato: true, resumen: {}, saldoAlCierre: -18445000, desdeHistorico: 0 },
+    ], sinTratar: [], totalSinTratar: 0, historicoSinAtribuir: 0 } as never
+    const hp = hojaDeCuentas(r, "CUENTAS A PAGAR", "2026-06-30", undefined, { lado: "pagar", cc })
+    const hc = hojaDeCuentas(r, "CUENTAS A COBRAR", "2026-06-30", undefined, { lado: "cobrar", cc })
+    const tot = (h: unknown[][]) => { const f = h.find(x => String(x[6] ?? "").startsWith("TOTAL AL CIERRE")); const c = f?.[12] as { v?: number; f?: string } | undefined; return `${c?.v}${c?.f ? "=f" : ""}` }
+    const v2 = `pagar: ${hp.some(x => x[6] === "Andrés Martínez")} ${hp.some(x => x[6] === "Mercedes Areco")} ${tot(hp)} · cobrar: ${hc.some(x => x[6] === "Mercedes Areco")} ${tot(hc)} · col «Dónde verlo» ${hp.some(x => x.includes("Dónde verlo"))}`
+    const e2 = "pagar: true false 19728504.98=f · cobrar: true 18445080=f · col «Dónde verlo» true"
+    chequear("Papel 04", "🔁 Al pie del 04, las cuentas corrientes con saldo a pagar (y en el 03 las que somos acreedores), con razón social y saldo, sumadas al total con fórmula",
+      e2, v2, v2 === e2, "A-FEAT-1506")
   }
 
   return r

@@ -41,6 +41,8 @@ export interface ClienteMinimo {
 export interface FechasDePago {
   /** id del comprobante → fecha del movimiento bancario más temprano (`AAAA-MM-DD`). */
   porComprobante: Map<string, string>
+  /** 🔎 A-FEAT-1506: de qué tabla salió esa fecha (`schema.tabla`), para decir DÓNDE se ve el pago. */
+  dondePorComprobante?: Map<string, string>
   /** Las que no se pudieron leer. Se informan: un error de lectura no puede parecer una deuda. */
   tablasQueFallaron: string[]
 }
@@ -107,8 +109,9 @@ async function buscarFechas(
   columna: "comprobante_arca_id" | "comprobante_venta_id" | "template_cuota_id",
 ): Promise<FechasDePago> {
   const porComprobante = new Map<string, string>()
+  const dondePorComprobante = new Map<string, string>()
   const tablasQueFallaron: string[] = []
-  if (ids.length === 0) return { porComprobante, tablasQueFallaron }
+  if (ids.length === 0) return { porComprobante, dondePorComprobante, tablasQueFallaron }
 
   /** Postgres tolera `in` grandes, pero la URL de PostgREST no: se parte en tandas. */
   const TANDA = 300
@@ -135,12 +138,12 @@ async function buscarFechas(
         if (!id || !fecha) continue
         const actual = porComprobante.get(id)
         // El más temprano: es el momento en que la deuda dejó de serlo.
-        if (!actual || fecha < actual) porComprobante.set(id, fecha)
+        if (!actual || fecha < actual) { porComprobante.set(id, fecha); dondePorComprobante.set(id, nombre) }
       }
     }
   }
 
-  return { porComprobante, tablasQueFallaron }
+  return { porComprobante, dondePorComprobante, tablasQueFallaron }
 }
 
 /** `2026-06-30T00:00:00` → `2026-06-30`. Comparar fechas ISO como texto sólo funciona recortadas. */

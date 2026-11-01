@@ -6530,6 +6530,10 @@ En *Reportes → Papeles de trabajo del balance*, debajo de los botones, está e
 
 → A-TEST-1189
 
+**Papel 04 — «Dónde verlo» y las «dadas por pagadas al cierre».** Cada factura del 04 dice dónde se ve su pago (el extracto, el resumen de la tarjeta, la caja…). Una factura que se pagó pero no se puede rastrear el pago se puede **dar por pagada al cierre**: sale de la deuda y queda listada abajo con su motivo, sin tocar la factura ni el Cash Flow (hoy se carga pidiéndoselo a Claude). Al pie del 04 están las cuentas corrientes con saldo a pagar, y al pie del 03 las que te deben.
+
+→ A-TEST-1313
+
 **El set de libros A–E — «📚 Bajar el set A–E (.zip)».** Al lado de «Bajar el Excel». Baja un .zip con cinco Excel: **A** subdiarios (terminado) · **B** deudas, créditos y cuentas corrientes (confirmar datos) · **C** templates por responsable (MSA, MA, PAM: listado, cuotas y por mes) y el detalle de impuestos y gastos bancarios, intereses e inversiones · **D** el resto · **E** stocks al inicio y al cierre. Son las mismas solapas del Excel completo, repartidas: dan los mismos números.
 
 → A-TEST-1312

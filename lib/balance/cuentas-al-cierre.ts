@@ -108,11 +108,14 @@ export interface ComprobanteConPago {
   /** `fecha_pago` del comprobante, o la del movimiento bancario conciliado. `null` si no hay. */
   fechaPago: string | null
   origenFecha: OrigenFechaPago
+  /** 🔎 A-FEAT-1506 (JMS: «que diga dónde verlo — cta cte, tarjeta, etc.»): el canal de donde salió la fecha de pago. */
+  dondeSeVe?: string
 }
 
 /** Por qué un comprobante quedó (o no) en el papel. Se muestra: el criterio tiene que ser auditable. */
 export type MotivoCuenta =
   | "no se pagó nunca"
+  | "dada por pagada al cierre (ajuste del balance)"
   | "se pagó DESPUÉS del cierre"
   | "conciliado, pero sin saber cuándo"
   | "del sistema anterior: se da por pagado (decisión del usuario 2026-09-29)"
@@ -133,6 +136,8 @@ export interface FilaCuenta {
   importe: number
   /** Cómo se llegó al importe, cuando no es el total (los seguros en cuotas). */
   detalle?: string
+  /** 🔎 A-FEAT-1506: dónde se ve el pago (o por qué no hay). */
+  dondeSeVe?: string
 }
 
 export interface CuentasAlCierre {
@@ -184,6 +189,13 @@ export interface CuentasAlCierre {
    */
   faltaNc: FilaCuenta[]
   totalFaltaNc: number
+  /**
+   * ✍️ A-FEAT-1506 — **dadas por PAGADAS al cierre por un ajuste del balance** (`ajustes_balance`, acción
+   * `pagado_al_cierre`). JMS 01/11: *«a cierre de balance decís que están pagas aunque no puedas rastrear el dato… que no
+   * se confunda con cosas del cash flow de lo real»*. Salen de la deuda, se listan con su motivo, y la factura NO cambia.
+   */
+  dadasPorPagadas: FilaCuenta[]
+  totalDadasPorPagadas: number
   /** Cuántos se pagaron después del cierre — el caso que el criterio ingenuo perdía. */
   pagadosDespues: number
   /** Total de comprobantes mirados, para poder cerrar contra el libro. */
@@ -445,6 +457,8 @@ export function armarCuentasAlCierre(
   comprobantes: ComprobanteConPago[],
   fechaCierre: string,
   cuotasPoliza?: Map<string, CanceladoPorCuotas>,
+  /** ✍️ A-FEAT-1506: id del comprobante → motivo del ajuste «pagado al cierre». */
+  pagadosAlCierre?: Map<string, string>,
 ): CuentasAlCierre {
   const filas: FilaCuenta[] = []
   const sinDatoDePago: FilaCuenta[] = []
@@ -453,12 +467,13 @@ export function armarCuentasAlCierre(
   const canceladasPorCuotas: FilaCuenta[] = []
   const sinVinculoPoliza: FilaCuenta[] = []
   const faltaNc: FilaCuenta[] = []
+  const dadasPorPagadas: FilaCuenta[] = []
   const estadosSinClasificar = new Set<string>()
   let pagadosDespues = 0
 
   for (const c of comprobantes) {
     const estado = (c.estado || "pendiente").toLowerCase()
-    const base = { asiento: c.asiento, estado, fechaPago: c.fechaPago, importe: c.asiento.total }
+    const base = { asiento: c.asiento, estado, fechaPago: c.fechaPago, importe: c.asiento.total, dondeSeVe: c.dondeSeVe }
 
     /**
      * 🧨 El histórico primero, ANTES de mirar el estado: no tiene ninguno, y el default de la
@@ -512,6 +527,13 @@ export function armarCuentasAlCierre(
       continue
     }
 
+    // ✍️ A-FEAT-1506: sin fecha de pago, pero el balance la da por pagada (ajuste con motivo). No es deuda; se lista.
+    const ajuste = pagadosAlCierre?.get(c.asiento.id)
+    if (ajuste) {
+      dadasPorPagadas.push({ ...base, motivo: "dada por pagada al cierre (ajuste del balance)", detalle: ajuste, dondeSeVe: "ajuste del balance — la factura no cambia" })
+      continue
+    }
+
     // Sin fecha, manda el estado — y sólo alcanza para uno de los dos lados.
     if (ESTADOS_IMPAGOS.includes(estado)) {
       filas.push({ ...base, motivo: "no se pagó nunca" })
@@ -550,6 +572,8 @@ export function armarCuentasAlCierre(
     totalSinVinculoPoliza: sumar(sinVinculoPoliza),
     faltaNc: porPeso(faltaNc),
     totalFaltaNc: sumar(faltaNc),
+    dadasPorPagadas: porPeso(dadasPorPagadas),
+    totalDadasPorPagadas: sumar(dadasPorPagadas),
     pagadosDespues,
     mirados: comprobantes.length,
   }

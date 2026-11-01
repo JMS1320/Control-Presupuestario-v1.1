@@ -67,7 +67,7 @@ import { descargarLibroDiarioConsensuado, retencionesDeVenta, type FilaVentaCons
 import { leerCobrosYRetenciones } from "@/lib/balance/cobros-de-ventas"
 import { descargarDiferenciasVsArca } from "@/lib/balance/diferencias-vs-arca"
 import { saldosEnDolaresParaBalance, CUENTAS_EN_MONEDA_EXTRANJERA } from "@/lib/dolares/posicion-cierre"
-import { detalleBancarioDelLibroC } from "@/lib/balance/libros-del-balance"
+import { detalleBancarioDelLibroC, canalDePago } from "@/lib/balance/libros-del-balance"
 import { MarcaTentativo } from "@/components/marca-tentativo"
 import { leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { traerTodo, lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
@@ -655,6 +655,16 @@ export function PapelesDeBalance() {
         const fechasCobro = completarConGrupoDeCobro(
           (ventas.data ?? []).map(x => x as { id: string; grupo_cobro_id?: string | null }), conPropia)
         const porComprobante = new Map([...pagos.porComprobante, ...fechasCobro])
+        /** 🔎 A-FEAT-1506: dónde se ve el pago — el canal de donde salió la fecha. */
+        const donde = new Map([...(pagos.dondePorComprobante ?? []), ...(cobros.dondePorComprobante ?? [])])
+        // ✍️ A-FEAT-1506: las facturas que el balance da por pagadas al cierre (ajuste con motivo; la factura no cambia).
+        const pagadosAlCierre = new Map<string, string>()
+        {
+          const { data: aj, error: eAj } = await supabase.from("ajustes_balance").select("registro_id, motivo")
+            .eq("empresa", empresa.id).eq("anio_cierre", anioCierre).eq("accion", "pagado_al_cierre").is("anulado_at", null)
+          if (eAj) toast.warning("No se pudieron leer las facturas dadas por pagadas al cierre: figuran como deuda. " + eAj.message)
+          for (const a of (aj ?? []) as { registro_id: string | null; motivo: string }[]) if (a.registro_id) pagadosAlCierre.set(a.registro_id, a.motivo)
+        }
 
         const conPago = (asientos: typeof armado.compras): ComprobanteConPago[] =>
           asientos.map(a => {
@@ -665,6 +675,7 @@ export function PapelesDeBalance() {
               estado: porId.get(a.id)?.estado ?? "pendiente",
               fechaPago: propia ?? banco,
               origenFecha: propia ? "fecha_pago" : banco ? "movimiento bancario" : "sin dato",
+              dondeSeVe: propia ? "fecha de pago cargada (Cash Flow)" : banco ? canalDePago(donde.get(a.id)) : undefined,
             }
           })
 
@@ -688,7 +699,7 @@ export function PapelesDeBalance() {
          */
         const conCC = cuitsConCuentaCorriente(empresa.id)
         setCuentas({
-          pagar: sacarLosDeCuentaCorriente(armarCuentasAlCierre(conPago(armado.compras), ej.fechaCierre, cuotasPoliza), conCC),
+          pagar: sacarLosDeCuentaCorriente(armarCuentasAlCierre(conPago(armado.compras), ej.fechaCierre, cuotasPoliza, pagadosAlCierre), conCC),
           cobrar: sacarLosDeCuentaCorriente(armarCuentasAlCierre(conPago(armado.ventas), ej.fechaCierre), conCC),
         })
       } catch (e) {

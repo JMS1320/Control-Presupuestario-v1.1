@@ -854,10 +854,15 @@ export const COLS_POR_CUENTA_VENTAS: Columna[] = [
  * 🧮 **Y abajo van los tres bloques de lo que NO se pudo determinar**, con sus totales. No son un
  * apéndice: son la parte que dice hasta dónde llega lo que el papel afirma.
  */
-function hojaDeCuentas(
+export function hojaDeCuentas(
   c: CuentasAlCierre, titulo: string, fechaCierre: string,
   /** 💳 Sólo en «a pagar»: las cuotas de templates impagas al cierre (A-BUG-1289). */
   templatesImpagos?: { cuotas: CuotaTemplate[]; total: number },
+  /**
+   * 🔁 A-FEAT-1506 (JMS 01/11 en el Excel: *«esta primer tabla debe tener al final las cuentas corrientes que da a pagar; la
+   * de cuentas a cobrar, la cuenta corriente donde somos acreedores; se pone la razón social y el saldo»*).
+   */
+  cuentasCorrientes?: { lado: "pagar" | "cobrar"; cc: PapelDeCuentasCorrientes },
 ): unknown[][] {
   const f: unknown[][] = []
   f.push([titulo])
@@ -868,7 +873,7 @@ function hojaDeCuentas(
   f.push([
     "Subdiario", "Fecha", "Tipo", "Pto Vta", "Número", "CUIT", "Denominación",
     "Neto Gravado", "No Gravado", "Exentas", "Otros Tributos", "IVA", "Total",
-    "Cuenta contable", "Estado hoy", "Fecha de pago", "Motivo",
+    "Cuenta contable", "Estado hoy", "Fecha de pago", "Motivo", "Dónde verlo",
   ])
 
   const fila = (x: FilaCuenta) => {
@@ -880,6 +885,8 @@ function hojaDeCuentas(
       // 🛡️ A-FEAT-1385: en un seguro en cuotas, «Total» es el saldo al cierre; la cuenta va en el motivo.
       money(a.otros_tributos), money(a.iva), money(x.importe ?? a.total),
       a.cuenta_contable, x.estado, x.fechaPago ?? "", x.detalle ? `${x.motivo} — ${x.detalle}` : x.motivo,
+      // 🔎 A-FEAT-1506: el canal donde se ve el pago; si no hay pago, dónde está la factura.
+      x.dondeSeVe ?? (x.fechaPago ? "" : "sin pago: la factura en Egresos → Facturas / Cash Flow"),
     ]
   }
 
@@ -914,6 +921,30 @@ function hojaDeCuentas(
     f.push(["", "", "", "", "", "", "TOTAL DEUDA AL CIERRE (facturas + templates)", "", "", "", "", "",
       conFormula(`M${nTotFacturas}+M${nTotTpl}`, Math.round((c.total + templatesImpagos.total) * 100) / 100)])
   }
+  // 🔁 A-FEAT-1506: las cuentas corrientes (papel 14) con saldo de este lado, con su razón social y su saldo al cierre.
+  if (cuentasCorrientes) {
+    const delLado = cuentasCorrientes.cc.cuentas.filter(x => cuentasCorrientes.lado === "pagar" ? x.saldoAlCierre > 0.005 : x.saldoAlCierre < -0.005)
+    if (delLado.length) {
+      const filaTotalComprobantes = f.findIndex(r => r[6] === "TOTAL") + 1
+      f.push([])
+      f.push([cuentasCorrientes.lado === "pagar" ? "CUENTAS CORRIENTES CON SALDO A PAGAR (papel 14) — se suman a la deuda" : "CUENTAS CORRIENTES DONDE SOMOS ACREEDORES (papel 14) — se suman a lo a cobrar"])
+      const d = f.length + 1
+      for (const x of delLado) {
+        f.push(["Cta cte", "", "", "", "", x.contraparte.cuit, x.contraparte.nombre, "", "", "", "", "",
+          money(Math.abs(x.saldoAlCierre)), "", "", "", x.inicioSinDato ? "saldo de inicio sin dato (0)" : "", "papel 14 Cuentas corrientes"])
+      }
+      const h = f.length
+      const nCC = f.length + 1
+      const totCC = Math.round(delLado.reduce((t, x) => t + Math.abs(x.saldoAlCierre), 0) * 100) / 100
+      f.push(["", "", "", "", "", "", "TOTAL CUENTAS CORRIENTES", "", "", "", "", "", conFormula(`SUM(M${d}:M${h})`, totCC)])
+      if (filaTotalComprobantes > 0) {
+        const tpl = f.findIndex(r => r[6] === "TOTAL TEMPLATES") + 1
+        const base = Math.round((c.total + (tpl > 0 && templatesImpagos ? templatesImpagos.total : 0) + totCC) * 100) / 100
+        f.push(["", "", "", "", "", "", cuentasCorrientes.lado === "pagar" ? "TOTAL AL CIERRE (comprobantes + templates + cuentas corrientes)" : "TOTAL AL CIERRE (comprobantes + cuentas corrientes)",
+          "", "", "", "", "", conFormula(`M${filaTotalComprobantes}${tpl > 0 ? `+M${tpl}` : ""}+M${nCC}`, base)])
+      }
+    }
+  }
   f.push([])
 
   /** Los tres bloques de lo que no se pudo afirmar. Cada uno dice por qué y cuánto pesa. */
@@ -924,6 +955,12 @@ function hojaDeCuentas(
     f.push([`${filas.length} comprobante(s) — total ${money(total)}`])
     filas.forEach(x => f.push(fila(x)))
   }
+
+  // ✍️ A-FEAT-1506: lo que el balance da por pagado al cierre sin poder rastrear el pago. NO cambia la factura ni el Cash Flow.
+  bloque([
+    "DADAS POR PAGADAS AL CIERRE — ajuste del balance, NO son deuda (la factura y el Cash Flow no cambian)",
+    "Vistas y chequeadas: se pagaron, pero no se puede rastrear el pago. Cada una dice el motivo del ajuste.",
+  ], c.dadasPorPagadas ?? [], c.totalDadasPorPagadas ?? 0)
 
   bloque([
     "DEL SISTEMA ANTERIOR — SE DAN POR PAGADOS (decisión del usuario, 29/09/2026)",
@@ -990,6 +1027,7 @@ const COLS_CUENTAS: Columna[] = [
   { ancho: 13 },                    // Estado hoy
   { ancho: 13 },                    // Fecha de pago
   { ancho: 34 },                    // Motivo
+  { ancho: 30 },                    // Dónde verlo (A-FEAT-1506)
 ]
 
 /**
@@ -2655,7 +2693,8 @@ export function armarWorkbook(
     hoja(wb, "04 Cuentas a pagar",
       hojaDeCuentas(cuentas.pagar, `CUENTAS A PAGAR — ejercicio ${libro.ejercicio.etiqueta}`,
         libro.ejercicio.fechaCierre,
-        templates ? { cuotas: templates.impagasAlCierre, total: templates.totalImpagas } : undefined),
+        templates ? { cuotas: templates.impagasAlCierre, total: templates.totalImpagas } : undefined,
+        cuentasCorrientes ? { lado: "pagar", cc: cuentasCorrientes } : undefined),
       COLS_CUENTAS)
   }
   if (cuentas?.cheques) {
@@ -2671,7 +2710,7 @@ export function armarWorkbook(
   if (cuentas?.cobrar) {
     hoja(wb, "03 Cuentas a cobrar",
       hojaDeCuentas(cuentas.cobrar, `CUENTAS A COBRAR — ejercicio ${libro.ejercicio.etiqueta}`,
-        libro.ejercicio.fechaCierre), COLS_CUENTAS)
+        libro.ejercicio.fechaCierre, undefined, cuentasCorrientes ? { lado: "cobrar", cc: cuentasCorrientes } : undefined), COLS_CUENTAS)
   }
   // ⚠️ Va SIEMPRE, incluso sin una sola fila: es donde se dice que los cheques en cartera no salen
   //    del sistema. Si la solapa faltara, el contador leería «no había» (§ 🧮).
