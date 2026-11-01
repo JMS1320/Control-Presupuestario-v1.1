@@ -6530,6 +6530,10 @@ En *Reportes → Papeles de trabajo del balance*, debajo de los botones, está e
 
 → A-TEST-1189
 
+**Todos los stocks en una tabla — solapa «00 Stocks inicio y cierre».** Insumos, forrajes, gas oil, hacienda por categoría, soja, sementeras y pasturas: una línea por ítem con la cantidad y el precio al inicio y al cierre, en las dos valuaciones (**contable** = para el balance del contador; **económica** = para márgenes y presupuesto). Lo que la app tiene o calcula ya está; lo vacío es lo que falta: completalo en el Excel y el valor sale solo (es fórmula). La columna «Qué falta» dice qué pedir de cada línea. No reemplaza ninguna otra solapa.
+
+→ A-TEST-1310
+
 **El Excel dice lo mismo que el recorrido.** Al apretar «Bajar el Excel», si el recorrido no estaba abierto la app lo calcula primero (tarda un poco más):
 - **«00 Recorrido»**: la misma lista de temas del recorrido (movimientos, deudas, echeqs, contra ARCA, errores, preguntas…), primero los abiertos, con su propuesta, en manos de quién está la tarea y la conversación.
 - **«00 Pendientes a revisar»**: dos columnas nuevas, **Tarea** y **Conversación**. Un tema que ya se resolvió en la app (el movimiento se concilió, la cuota se desactivó) figura **«resuelto en la app»**; uno resuelto cuya tarea sigue abierta, **«resuelto — falta aplicar»**. Las respuestas repetidas de un mismo tema salen en una sola fila.

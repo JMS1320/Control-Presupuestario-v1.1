@@ -33,6 +33,7 @@
  * empieza a mentir.
  */
 
+import { armarStocksUnificados, hojaDeStocks } from "@/lib/balance/stocks-unificado"
 import { temasDeCuentaCorriente } from "@/lib/balance/recorrido-conciliacion"
 import { contrapartesDelRecorrido } from "@/lib/balance/fuera-por-cuenta-corriente"
 import { unirPorClave, sincronizarPendientes, hojaDelRecorrido } from "@/lib/balance/recorrido-excel"
@@ -12123,6 +12124,34 @@ export function correrCasos(): Resultado[] {
     const e2 = "1 tema · a1,a2 · CTA AFA · cubre 2 · PAM 0"
     chequear("Cuentas corrientes", "🔁 En el recorrido, los movimientos de AFA salen de «conciliar» y van a UN tema «Va por su cuenta corriente», con «Aplicar» = marcar CTA AFA y conciliar; los de otros no; Federación sólo en MSA",
       e2, v2, v2 === e2, "A-FEAT-1499")
+  }
+
+  // ══ 📦 Los stocks en una sola tabla (A-FEAT-1501) ══
+  {
+    const ren = (version: "jms" | "contador", precio: number) => ({ rubro: "insumo" as const, producto_planilla: "Urea granulada", categoria_planilla: "Fertilizantes",
+      producto_app: "Urea", cantidad: 1000, unidad: "kg", precio_unitario: precio, moneda: "ARS" as const, valor_pesos: 1000 * precio, emparejado: "mismo" as const, version, fuente: "BAPU", nota: null })
+    const lineas = armarStocksUnificados({
+      fechaInicio: "2025-06-30", fechaCierre: "2026-06-30",
+      stockInicio: { renglones: [ren("jms", 600), ren("contador", 500)], pasturas: [{ lotes: "Lote 5", anio_siembra: 2023, hectareas: 10, usd_por_ha: 400, vida_util_anios: 4, baja_fecha: null, baja_motivo: null, fuente: "x", nota: null }] },
+      insumos: { grupos: [{ papel: "", ambito: "agricola", filas: [{ id: "u", categoria: "Fertilizantes", ambito: "agricola", producto: "Urea", cantidad: 300, unidad: "kg", costoUnitario: 700, observaciones: "", valorTotal: 210000, esHueco: false }], valuado: 210000, huecos: 0 }], productos: 1, valuado: 210000, huecos: [] },
+      hacienda: { valuacion: { filas: [{ categoria: "Vaca", cabezas: 10, criterio: "", precioReferencia: 1, origenPrecio: "MAG", factor: 1, pesoKg: 450, origenPeso: "", valorPorCabeza: 900000, valorTotal: 9000000, esHueco: false }], cabezas: 10, valuado: 9000000, huecos: [], cabezasSinValuar: 0, sinCriterio: [] } },
+    } as never)
+    const urea = lineas.find(l => l.item === "Urea")!
+    const vacas = lineas.find(l => l.item === "Vacas")!
+    const pastura = lineas.find(l => l.rubro === "Pasturas")!
+    const v1 = `urea ini ${urea.inicio.cantidad} c${urea.inicio.precioContable} e${urea.inicio.precioEconomico} · cie ${urea.cierre.cantidad} c${urea.cierre.precioContable} · vacas cie ${vacas.cierre.cantidad} a ${vacas.cierre.precioContable} · pastura US$/ha ${pastura.inicio.precioContable}→${pastura.cierre.precioContable} · gas oil pedido ${lineas.some(l => /Gas oil \(no está/.test(l.item))}`
+    const e1 = "urea ini 1000 c500 e600 · cie 300 c700 · vacas cie 10 a 900000 · pastura US$/ha 200→100 · gas oil pedido true"
+    chequear("Stocks en una tabla", "Junta en una línea el inicio declarado (contador = contable, JMS = económico) y el cierre de la app; hacienda por categoría de tu planilla; pasturas amortizadas a cada fecha; lo que nombraste y no está se pide",
+      e1, v1, v1 === e1, "A-FEAT-1501")
+
+    const hoja = hojaDeStocks(lineas, { fechaInicio: "2025-06-30", fechaCierre: "2026-06-30" })
+    const fila = hoja.find(f => f[1] === "Urea")!
+    const cel = fila[5] as { f?: string; v?: number }
+    const vacia = (hoja.find(f => f[1] === "Urea")![12] as { f?: string; v?: unknown })
+    const v2 = `${cel.f?.includes("D") && cel.f.includes("E")} · ${cel.v} · económico cierre vacío con fórmula ${!!vacia.f && vacia.v === ""} · falta «${fila[15]}»`
+    const e2 = "true · 500000 · económico cierre vacío con fórmula true · falta «precio económico cierre»"
+    chequear("Stocks en una tabla", "Cantidad y precio son dato; el valor es FÓRMULA (da lo mismo que la cuenta) y queda lista aunque falte el precio; «Qué falta» lo pide",
+      e2, v2, v2 === e2, "A-FEAT-1501")
   }
 
   return r

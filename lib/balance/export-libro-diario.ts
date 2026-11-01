@@ -44,6 +44,7 @@ import type { FuentePrecio } from "./precio-al-cierre"
 import type { CuentasSinCuentaCorriente } from "./fuera-por-cuenta-corriente"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
+import { armarStocksUnificados, hojaDeStocks } from "./stocks-unificado"
 import { hojaDelRecorrido, sincronizarPendientes, type RecorridoParaExcel } from "./recorrido-excel"
 import { hojaDeSaldosAnteriores, type SaldosAnteriores } from "./ajustes-balance"
 import {
@@ -1685,6 +1686,14 @@ const COLS_PENDIENTES: Columna[] = [
   { ancho: 26 }, { ancho: 90 },  // 🔁 A-FEAT-1500: Tarea · Conversación
 ]
 
+/** 📦 A-FEAT-1501 — la solapa «00 Stocks inicio y cierre». */
+const COLS_STOCKS: Columna[] = [
+  { ancho: 12 }, { ancho: 40 }, { ancho: 14 },
+  { ancho: 12, z: "#,##0.00" }, { ancho: 14, z: MONEDA }, { ancho: 16, z: MONEDA }, { ancho: 14, z: MONEDA }, { ancho: 16, z: MONEDA },
+  { ancho: 12, z: "#,##0.00" }, { ancho: 14, z: MONEDA }, { ancho: 16, z: MONEDA }, { ancho: 14, z: MONEDA }, { ancho: 16, z: MONEDA },
+  { ancho: 22 }, { ancho: 60 }, { ancho: 50 },
+]
+
 /** 🔁 A-FEAT-1500 — la solapa «00 Recorrido». */
 const COLS_RECORRIDO: Columna[] = [
   { ancho: 4 }, { ancho: 20 }, { ancho: 28 }, { ancho: 60 }, { ancho: 70 }, { ancho: 50 }, { ancho: 16 }, { ancho: 26 }, { ancho: 90 },
@@ -2571,6 +2580,19 @@ export function armarWorkbook(
   hoja(wb, "00 Indice", hojaDeIndice(indice, libro, empresa), COLS_INDICE)
   // 📋 A-FEAT-1427: cada renglón del balance con su saldo del año pasado y el de este año.
   if (controlesInicio?.inicioYCierre) hoja(wb, "00 Inicio y cierre", hojaInicioYCierre(controlesInicio.inicioYCierre, libro.ejercicio.etiqueta))
+  // 📦 A-FEAT-1501: todos los stocks en una sola tabla — inicio y cierre, cantidad y precio, contable y económico.
+  {
+    const dia = new Date(Date.parse(`${primerDiaDelEjercicio(libro.ejercicio)}T12:00:00Z`) - 86400000).toISOString().slice(0, 10)
+    const datosStocks = {
+      fechaInicio: dia, fechaCierre: libro.ejercicio.fechaCierre,
+      insumos: insumos ?? null,
+      stockInicio: hacienda?.stockInicio ?? null,
+      hacienda: hacienda ? { valuacion: hacienda.valuacion, saldos: hacienda.saldos?.hacienda ? { inicio: hacienda.saldos.hacienda.inicio, cierre: hacienda.saldos.hacienda.cierre } : undefined } : null,
+      granos: campo ? { cuadre: campo.granos, valuacion: campo.valuacionGranos } : null,
+      sementeras: campo?.sementeras ?? null,
+    }
+    hoja(wb, "00 Stocks inicio y cierre", hojaDeStocks(armarStocksUnificados(datosStocks), datosStocks), COLS_STOCKS)
+  }
   // 📌 A-FEAT-1258 — los pendientes a revisar van pegados al índice: también contestan «¿qué falta?».
   if (pendientes && pendientes.length) {
     hoja(wb, "00 Pendientes a revisar", hojaDePendientes(sincronizarPendientes(pendientes, recorrido),
