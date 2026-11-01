@@ -5717,6 +5717,26 @@ export function correrCasos(): Resultado[] {
   }
 
   /**
+   * 🧾 **LOS PEAJES CONTRA SU FACTURA — JMS 01/11** («los peajes siempre fueron contra facturas; si no hay, que avise»).
+   * El emisor de cada nombre sale de lo ya conciliado: un cargo con su factura sin vincular → se propone esa; uno sin
+   * factura después de que ARCA está en la app → «falta»; uno de antes → «de antes del 01/12/2025»; un nombre nunca
+   * conciliado → «sin emisor». Nada de reglas a un template.
+   */
+  {
+    const f = (id: string, fecha: string, descripcion: string, debitos: number) => ({ id, fecha, descripcion, debitos, creditos: 0, debitosUsd: 0, creditosUsd: 0, tipoFila: "movimiento", estado: "pendiente" })
+    const filas = [f("s1", "2026-01-10", "AUTOPISTAS DEL S 803061778601601", 4500), f("c1", "2026-02-01", "CORREDORES VIALE 000000222093975", 8809),
+      f("c0", "2025-08-05", "CORREDORES VIALE 000000111111111", 8867), f("o1", "2025-07-20", "AUTOPISTA DEL OE 803061778601601", 839)]
+    const fc = { cuitPorNombre: new Map([["AUTOPISTAS DEL", "30677237119"], ["CORREDORES VIALE", "30715804812"]]), primeraFacturaArca: "2025-12-01",
+      facturas: [{ id: "fS", cuit: "30677237119", emisor: "AUTOPISTAS DEL SOL S A", fecha: "2026-01-05", total: 4500, vinculada: false },
+        { id: "fV", cuit: "30715804812", emisor: "CORREDORES VIALES", fecha: "2026-01-20", total: 8809, vinculada: true }] }
+    const r = temasTarjeta(filas, [], { cuentaId: "tarjeta_visa_business_msa", nombre: "MSA Visa" }, { cuentaId: "msa_galicia", nombre: "MSA Galicia" }, fc)
+    const t = r.temas.find(x => x.etiqueta === "Tarjeta: peajes contra su factura")!
+    const v = [/Con su factura en la app, sin vincular \(1\)/, /Falta la factura \(1\)/, /de antes del 01\/12\/2025 \(1\)/, /nunca se concilió contra una factura \(1\)/].map(re => re.test(t.que)).join(",") + ` · ${/regla/i.test(t.propuesta ?? "")}`
+    chequear("Recorrido · peajes contra factura", "🧾 Cada peaje contra la factura de su emisor (aprendido de lo conciliado): con factura, falta, de antes de ARCA, sin emisor — sin proponer reglas", "true,true,true,true · false", v,
+      v === "true,true,true,true · false", "A-FEAT-1481")
+  }
+
+  /**
    * ⚡ **APLICAR DESDE EL TEMA — A-FEAT-1489.** Los pagos en $ 0 y los cargos de antes de ARCA traen su acción de un clic
    * (cambiar el estado de ESOS movimientos); los pagos a vincular y los peajes no (no son de un clic: «Aplicá vos»). Sin
    * la tabla de la tarjeta no se arma la acción.
@@ -5727,7 +5747,7 @@ export function correrCasos(): Resultado[] {
     const con = temasTarjeta(filas, [], { cuentaId: "tarjeta_visa_business_msa", nombre: "MSA Visa", schema: "msa", tabla: "tarjeta_visa_business" }, { cuentaId: "msa_galicia", nombre: "MSA Galicia" })
     const sin = temasTarjeta(filas, [], { cuentaId: "tarjeta_visa_business_msa", nombre: "MSA Visa" }, { cuentaId: "msa_galicia", nombre: "MSA Galicia" })
     const ac = (r: typeof con, et: string) => { const a = r.temas.find(t => t.etiqueta === et)?.accion; return a && a.tipo === "estado-movimientos" ? `${a.estado}:${a.ids.join(",")}` : "—" }
-    const v = `cero ${ac(con, "Tarjeta: pagos en $ 0")} · hist ${ac(con, "Tarjeta: facturas antes de ARCA")} · peajes ${ac(con, "Tarjeta: peajes sin regla")} · sin tabla ${ac(sin, "Tarjeta: pagos en $ 0")}`
+    const v = `cero ${ac(con, "Tarjeta: pagos en $ 0")} · hist ${ac(con, "Tarjeta: facturas antes de ARCA")} · peajes ${ac(con, "Tarjeta: peajes contra su factura")} · sin tabla ${ac(sin, "Tarjeta: pagos en $ 0")}`
     const esp = "cero conciliado:p0 · hist historico:c1 · peajes — · sin tabla —"
     chequear("Recorrido · aplicar desde el tema", "⚡ Lo de un clic trae su acción (sólo esos movimientos); lo que no, queda para «Aplicá vos»", esp, v, v === esp, "A-FEAT-1489")
   }
@@ -5833,7 +5853,7 @@ export function correrCasos(): Resultado[] {
     const deb = [{ id: "g1", fecha: "2025-07-07", importe: 887674.27, descripcion: "Pago Visa Empresa", estado: "historico" }, { id: "g2", fecha: "2026-03-20", importe: 12345, descripcion: "Pago Visa Empresa", estado: "conciliado" }]
     const r = temasTarjeta(filas, deb, { cuentaId: "tarjeta_visa_business_msa", nombre: "MSA Visa" }, { cuentaId: "msa_galicia", nombre: "MSA Galicia" })
     const v = `${r.temas.map(t => t.etiqueta).join(" · ")} · cubiertos ${[...r.cubiertos].sort().join(",")}`
-    const esp = "Tarjeta: pagos sin vincular · Tarjeta: pagos en $ 0 · Tarjeta: pago sin débito · Tarjeta: peajes sin regla · Tarjeta: facturas antes de ARCA · cubiertos a1,c1,p0,p1,p9"
+    const esp = "Tarjeta: pagos sin vincular · Tarjeta: pagos en $ 0 · Tarjeta: pago sin débito · Tarjeta: peajes contra su factura · Tarjeta: facturas antes de ARCA · cubiertos a1,c1,p0,p1,p9"
     chequear("Recorrido · tarjeta por causa", "💳 Pago con su débito → vincular; $ 0 → aparte; sin débito (el de 19 días después no cuenta); peaje; Coopser jul-25 → antes de ARCA; Medicus feb-26 queda suelto", esp, v,
       v === esp && /887\.674,27 ↔ MSA Galicia 07\/07\/2025/.test(r.temas[0].que), "A-FEAT-1481")
   }
