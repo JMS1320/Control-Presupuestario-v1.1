@@ -6,6 +6,9 @@
 #  - las ramas jms/* (terminales en paralelo): se prueban cuando llegan a `desarrollo`;
 #  - un push que sólo cambió documentación (*.md) o scripts SQL de la base: la app es la misma.
 # Todo lo demás publica (incluidas las ramas de Javier y `main`).
+#
+# ⚠️ Republicar después del tope diario: un commit VACÍO no alcanza (no cambia nada y esto lo saltea).
+#    Usar «Redeploy» en Vercel, o un commit que toque algún archivo de la app (pasó el 01/11).
 
 rama="$VERCEL_GIT_COMMIT_REF"
 case "$rama" in
