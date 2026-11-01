@@ -67,8 +67,9 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
    * Principal: una sola tarea, las dos listas quedan iguales). Al confirmar, el tema sale en el próximo cálculo.
    */
   const decidirVisto = async (id: string, confirmar: boolean) => {
-    const t = nota.trim()
-    if (!confirmar && !t) { toast.error("Escribí en «Tu respuesta» por qué lo devolvés"); return }
+    // ⚠️ 01/11 (JMS: «devuelvo estos mensajes, después pongo devolver para mandarte de nuevo la pelota, pero no me lo
+    // toma»): si ya escribiste en el hilo, devolver no te pide escribirlo de nuevo — el motivo son tus mensajes de arriba.
+    const t = nota.trim() || (confirmar ? "" : "↩ Devuelto: el motivo está en mis mensajes de arriba")
     setGuardando(true)
     try {
       const r = await fetch("/api/revisiones", { method: "PATCH", headers: { "Content-Type": "application/json" },

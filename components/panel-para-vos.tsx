@@ -90,8 +90,9 @@ export function PanelParaVos() {
 
   /** ✔ / ↩ A-FEAT-1449: quien confirma acepta el cierre o lo devuelve con un motivo. */
   const decidir = async (id: string, confirmar: boolean) => {
-    const t = texto.trim()
-    if (!confirmar && !t) { toast.error("Escribí por qué la devolvés"); return }
+    // ⚠️ 01/11: si el motivo ya está en los mensajes de la tarea, devolver no obliga a escribirlo otra vez (JMS: «después
+    // pongo devolver para mandarte de nuevo la pelota, pero no me lo toma»).
+    const t = texto.trim() || (confirmar ? "" : "↩ Devuelta: el motivo está en mis mensajes de arriba")
     setEnviando(true)
     try {
       if (confirmar && imagen) await mandarFoto(id, t || "📷 Captura al confirmar")
