@@ -53,6 +53,8 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
 }) {
   const [filtro, setFiltro] = useState<Set<GrupoTema>>(new Set())
   const [ocultarRespondidos, setOcultarRespondidos] = useState(false)
+  /** 👀 Nota 🌙 JMS 01/11: «si asigné, tomé acción; no es lo mismo que una que nunca vi» → filtro y marca por estado. */
+  const [soloSinTocar, setSoloSinTocar] = useState(false)
   /** 🏦 Filtro por tipo (sólo los temas que traen etiqueta: la conciliación). */
   const [etiquetas, setEtiquetas] = useState<Set<string>>(new Set())
   /**
@@ -62,6 +64,13 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
    */
   const { porRegistro: tareas, recargar: recargarTareas } = useRevisionesDe("public", "recorrido_balance")
   const registroDe = (t: Tema) => `${empresa}:${anioCierre}:${t.clave}`
+  /**
+   * 👀 Qué hiciste con cada tema (nota 🌙 JMS 01/11): respondido · pasado a alguien (tarea abierta) · con mensaje tuyo ·
+   * sin tocar. Sale de lo que ya está guardado (la respuesta del tema y su tarea): no hay dato nuevo.
+   */
+  const accionDe = (t: Tema): "respondido" | "pasado" | "con mensaje" | "sin tocar" =>
+    t.respondido ? "respondido" : tareas[registroDe(t)] ? "pasado"
+      : t.pendiente && ((t.pendiente.resolucion ?? "").trim() || (t.pendiente.hilo ?? []).length) ? "con mensaje" : "sin tocar"
   /**
    * ✔ A-FEAT-1487 — confirmar o devolver desde el tema lo que resolvió Claude (la misma acción que «Para vos» en
    * Principal: una sola tarea, las dos listas quedan iguales). Al confirmar, el tema sale en el próximo cálculo.
@@ -101,9 +110,9 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
   const [papelId, setPapelId] = useState<string | null | undefined>(undefined)
 
   const visibles = useMemo(() => temas.filter(t =>
-    (!filtro.size || filtro.has(t.grupo)) && (!ocultarRespondidos || !t.respondido)
+    (!filtro.size || filtro.has(t.grupo)) && (!ocultarRespondidos || !t.respondido) && (!soloSinTocar || accionDe(t) === "sin tocar")
     && (!etiquetas.size || (t.etiqueta != null && etiquetas.has(t.etiqueta)))
-    && (!cuentas.size || (t.cuenta != null && cuentas.has(t.cuenta.id)))), [temas, filtro, ocultarRespondidos, etiquetas, cuentas])
+    && (!cuentas.size || (t.cuenta != null && cuentas.has(t.cuenta.id)))), [temas, filtro, ocultarRespondidos, etiquetas, cuentas, soloSinTocar, tareas]) // eslint-disable-line react-hooks/exhaustive-deps
   /** Los tipos que hay entre los temas filtrados por grupo (para los chips de tipo). */
   const tiposPresentes = useMemo(() => {
     const m = new Map<string, number>()
@@ -496,11 +505,14 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
                   {" "}Conviene terminarla antes que «El resto»: los otros números salen de ahí y pueden cambiar.
                 </span>
               )}
-              {nivel === 2 && (
+              {nivel === 2 && (<>
                 <label className="ml-2 flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
                   <input type="checkbox" checked={ocultarRespondidos} onChange={e => setOcultarRespondidos(e.target.checked)} /> ocultar los respondidos
                 </label>
-              )}
+                <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer" data-test="recorrido-sin-tocar">
+                  <input type="checkbox" checked={soloSinTocar} onChange={e => setSoloSinTocar(e.target.checked)} /> sólo los que nunca toqué ({temas.filter(t => accionDe(t) === "sin tocar").length})
+                </label>
+              </>)}
             </div>
           )
         })}
@@ -617,9 +629,12 @@ export function RecorridoBalance({ empresa, anioCierre, etiqueta, temas, onCerra
           {visibles.map((t, i) => (
             <button key={t.clave} id={`tema-${t.clave}`} type="button" onClick={() => { setClaveActual(t.clave); setListaFlotante(false) }}
               className={`w-full text-left px-3 py-2 border-b text-sm flex gap-2 items-start ${i === idx ? "bg-muted" : "hover:bg-muted/50"}`}>
-              <span aria-hidden>{t.respondido ? "✅" : ICONO[t.grupo]}{!t.respondido && tareas[registroDe(t)] ? "👤" : ""}</span>
+              <span aria-hidden>{t.respondido ? "✅" : ICONO[t.grupo]}</span>
               <span className="min-w-0">
-                <span className={`block truncate ${t.respondido ? "text-muted-foreground line-through" : ""}`}>{t.titulo}</span>
+                <span className={`block truncate ${t.respondido ? "text-muted-foreground line-through" : accionDe(t) === "sin tocar" ? "font-medium" : "text-muted-foreground"}`}>{t.titulo}</span>
+                {/* 👀 lo que ya hiciste con el tema se ve en la lista (nota 🌙 JMS 01/11) */}
+                {accionDe(t) === "pasado" && <span className="mr-1 inline-block rounded bg-amber-100 px-1.5 text-[11px] text-amber-900">👤 en manos de {(tareas[registroDe(t)] as { asignado_a?: string | null } | undefined)?.asignado_a === "claude" ? "Claude" : (tareas[registroDe(t)] as { asignado_a?: string | null } | undefined)?.asignado_a ?? "alguien"}{tareas[registroDe(t)]?.estado === "por_confirmar" ? " · falta tu visto" : ""}</span>}
+                {accionDe(t) === "con mensaje" && <span className="mr-1 inline-block rounded bg-sky-100 px-1.5 text-[11px] text-sky-900">💬 le escribiste</span>}
                 <span className="block truncate text-xs text-muted-foreground">{t.etiqueta ? `${t.etiqueta} · ` : ""}{t.papel.replace(/ · .*$/, "")}{!t.respondido && !fuenteDe(t) ? " · sin fuente" : ""}</span>
               </span>
             </button>
