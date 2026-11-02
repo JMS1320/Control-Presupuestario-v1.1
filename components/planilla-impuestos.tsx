@@ -28,6 +28,7 @@ import { AlertaImpuestos } from "@/components/alerta-impuestos"
 import { PapelInmobiliario } from "@/components/papel-inmobiliario"
 import { papelDeTemplate, type TipoPapel } from "@/lib/impuestos/papel-inmobiliario"
 import { cargarAuxiliaresPapel, cargarCuotasImpuestos } from "@/lib/impuestos/datos-papel"
+import type { UbicacionPartidas } from "@/lib/impuestos/papel-formato-jms"
 import type { TipoCambio } from "@/lib/arrendamientos/calculo"
 import { ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, GripVertical, Loader2, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
@@ -70,6 +71,7 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
   const [tcs, setTcs] = useState<TipoCambio[]>([])
   const [hectareas, setHectareas] = useState<Record<string, number>>({})
   const [cuentasRedVial, setCuentasRedVial] = useState<Record<string, string>>({})
+  const [ubicacion, setUbicacion] = useState<UbicacionPartidas>({})
 
   const cargar = useCallback(async () => {
     setError(null)
@@ -88,7 +90,7 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
     supabase.auth.getUser().then(({ data }) => setOrden(leerPreferencias(data.user).ordenImpuestos ?? []))
     // Para el detalle: TC (columna U$S) y hectáreas (columnas por ha). Si no se pueden leer, el detalle
     // sale igual sin esas columnas.
-    cargarAuxiliaresPapel(supabase).then(x => { setTcs(x.tcs); setHectareas(x.hectareas); setCuentasRedVial(x.cuentasRedVial) }).catch(() => {})
+    cargarAuxiliaresPapel(supabase).then(x => { setTcs(x.tcs); setHectareas(x.hectareas); setCuentasRedVial(x.cuentasRedVial); setUbicacion(x.ubicacion) }).catch(() => {})
   }, [open, cargar])
 
   /** El total de las filas de un papel en la Planilla de un año: el control del detalle. */
@@ -307,7 +309,7 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
       </DialogContent>
       {cuotas && (
         <PapelInmobiliario open={papel !== null} onOpenChange={v => { if (!v) setPapel(null) }} tipoInicial={papel ?? "inmobiliario"}
-          anioInicial={anio} cuotas={cuotas} tcs={tcs} hectareas={hectareas} cuentasRedVial={cuentasRedVial} totalEnPlanilla={totalEnPlanilla} />
+          anioInicial={anio} cuotas={cuotas} tcs={tcs} hectareas={hectareas} cuentasRedVial={cuentasRedVial} ubicacion={ubicacion} totalEnPlanilla={totalEnPlanilla} />
       )}
     </Dialog>
   )

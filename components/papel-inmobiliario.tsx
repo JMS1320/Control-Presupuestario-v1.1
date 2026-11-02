@@ -16,11 +16,13 @@ import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
 import { leerPreferencias } from "@/lib/auth/preferencias"
 import { guardarPreferencias } from "@/lib/auth/guardar-preferencias"
-import * as XLSX from "xlsx"
+import XLSX from "xlsx-js-style"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, ChevronRight, Download, GripVertical } from "lucide-react"
-import { armarPapel, ordenarPapel, moverPartida, clavePartida, filasPapel, encabezadoPapel, TITULO_PAPEL, type TipoPapel, type Papel } from "@/lib/impuestos/papel-inmobiliario"
+import { armarPapel, ordenarPapel, moverPartida, clavePartida, TITULO_PAPEL, type TipoPapel, type Papel } from "@/lib/impuestos/papel-inmobiliario"
+import { hojaPapelJms, type UbicacionPartidas } from "@/lib/impuestos/papel-formato-jms"
+import { hoyArgentina } from "@/lib/fechas"
 import type { CuotaPlanilla } from "@/lib/impuestos/planilla"
 import type { TipoCambio } from "@/lib/arrendamientos/calculo"
 import { fechasReales } from "@/lib/excel/fechas-reales"
@@ -39,11 +41,13 @@ export interface PropsPapel {
   tcs: TipoCambio[]
   hectareas: Record<string, number>
   cuentasRedVial?: Record<string, string>
+  /** 🎨 Zona y parcela de cada partida (para el Excel con la estética de JMS). */
+  ubicacion?: UbicacionPartidas
   /** El total de esas mismas filas en la Planilla, para el control (por año y tipo). */
   totalEnPlanilla: (tipo: TipoPapel, anio: number) => number
 }
 
-export function PapelInmobiliario({ open, onOpenChange, tipoInicial, anioInicial, cuotas, tcs, hectareas, cuentasRedVial, totalEnPlanilla }: PropsPapel) {
+export function PapelInmobiliario({ open, onOpenChange, tipoInicial, anioInicial, cuotas, tcs, hectareas, cuentasRedVial, ubicacion, totalEnPlanilla }: PropsPapel) {
   const [tipo, setTipo] = useState<TipoPapel>(tipoInicial)
   const [anio, setAnio] = useState(anioInicial)
   const [abiertoCon, setAbiertoCon] = useState<string>("")
@@ -98,7 +102,7 @@ export function PapelInmobiliario({ open, onOpenChange, tipoInicial, anioInicial
               ))}
             </span>
             {ordenable && orden.length > 0 && <Button size="sm" variant="ghost" className="ml-auto" onClick={restablecer} title="Vuelve al orden alfabético (en Inmobiliario y en Red Vial)">Orden de siempre</Button>}
-            <Button size="sm" variant="outline" className={ordenable && orden.length > 0 ? "" : "ml-auto"} onClick={() => exportarPapel(papel)} disabled={papel.bloques.length === 0}>
+            <Button size="sm" variant="outline" className={ordenable && orden.length > 0 ? "" : "ml-auto"} onClick={() => exportarPapel(papel, ubicacion ?? {})} disabled={papel.bloques.length === 0}>
               <Download className="mr-1 h-4 w-4" />Excel
             </Button>
           </DialogTitle>
@@ -221,10 +225,15 @@ function BloqueFilas({ b, anio, max, arrastre }: { b: Papel["bloques"][number]; 
   )
 }
 
-/** Excel con las fórmulas de la planilla. Las filas las arma `filasPapel` (el mismo armado que el libro H del balance). */
-function exportarPapel(p: Papel) {
-  const ws = XLSX.utils.aoa_to_sheet(filasPapel(p))
-  ws["!cols"] = [{ wch: 26 }, { wch: 15 }, { wch: 8 }, ...encabezadoPapel(p.maxCuotas).slice(3).map(() => ({ wch: 14 }))]
+/**
+ * Excel con las fórmulas y la ESTÉTICA de la planilla de JMS (A-FEAT-1516, 02/11): el mismo armado que el libro H del balance
+ * (`hojaPapelJms`). Se escribe con xlsx-js-style, que es el que guarda los colores.
+ */
+function exportarPapel(p: Papel, ubicacion: UbicacionPartidas) {
+  const h = hojaPapelJms([p], ubicacion, hoyArgentina())
+  const ws = XLSX.utils.aoa_to_sheet(h.filas)
+  if (h.uniones.length) ws["!merges"] = h.uniones
+  ws["!cols"] = h.anchos.map(wch => ({ wch }))
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, TITULO_PAPEL[p.tipo].slice(0, 28))
   fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)

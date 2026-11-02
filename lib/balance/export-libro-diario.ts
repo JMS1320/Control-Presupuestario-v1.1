@@ -46,6 +46,7 @@ import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndi
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
 import { armarStocksUnificados, hojaDeStocks } from "./stocks-unificado"
 import { solapasPapelesH, type DatosPapelesH } from "./papeles-impuestos-h"
+import type { HojaConEstilo } from "@/lib/impuestos/papel-formato-jms"
 import { hojaLibertad } from "./libertad"
 import { armarGruposTemplates, armarHojaGrupo, gruposDelResponsable, hojaExtractoSinCategoria, hojaGrupo, hojaIndiceGrupos, hojaLib, nombreSolapaGrupo, type GrupoTemplates, type MovimientoLib } from "./grupos-templates"
 import { sinCategoriaNiVinculo, type MovimientoExtractoH } from "./movimientos-de-cuotas"
@@ -487,6 +488,18 @@ const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: 
 }
 /** La misma forma de agregar una hoja (formato, presentación y plegado), para el libro diario aparte. */
 export const agregarHoja = hoja
+
+/**
+ * 🎨 Una hoja que trae SU propio estilo (celdas con `s`, uniones y anchos), y por eso no pasa por `presentarHoja`: el papel de
+ * impuestos con la estética de la planilla de JMS (A-FEAT-1516). Sí lleva su vista (encabezado inmovilizado, color de solapa).
+ */
+export function agregarHojaConEstilo(wb: XLSX.WorkBook, nombre: string, h: HojaConEstilo): void {
+  const ws = XLSX.utils.aoa_to_sheet(h.filas)
+  if (h.uniones.length) ws["!merges"] = h.uniones
+  ws["!cols"] = h.anchos.map(wch => ({ wch }))
+  VISTAS.set(wb, [...vistasDe(wb), { congelarFilas: h.congelarFilas, colorSolapa: colorDeSolapa(nombre) }])
+  XLSX.utils.book_append_sheet(wb, ws, nombre.slice(0, 31))
+}
 /** Anota qué filas se pliegan (1 = detalle de un grupo) en una hoja que se va a agregar con `agregarHoja`. */
 export const plegar = (filas: unknown[][], niveles: number[], cerrado = false) => { NIVELES.set(filas, niveles); if (cerrado) CERRADAS.add(filas) }
 
@@ -2966,7 +2979,7 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
     if (sinCateg.length) hoja(wb, hojaSinCateg, hojaExtractoSinCategoria(sinCateg, resp, etiqueta, meses), COLS_RESUMEN_MES)
     // 🏛️ A-FEAT-1516: el papel de cada impuesto por partida (2 años calendario) con su control contra las solapas de arriba.
     if (papeles) {
-      for (const x of solapasPapelesH(papeles, resp, meses.map(m => m.clave), t.detalle)) hoja(wb, x.nombre, x.filas, x.columnas)
+      for (const x of solapasPapelesH(papeles, resp, meses.map(m => m.clave), t.detalle)) agregarHojaConEstilo(wb, x.nombre, x.hoja)
     } else {
       hoja(wb, `H · ${resp} · Papel impuestos`, [["INMOBILIARIO, RED VIAL Y AUTOMOTORES"], ["⚠️ No se pudieron leer las cuotas de impuestos: el papel no salió. Bajalo desde Egresos → Templates → Planilla de impuestos."]], [{ ancho: 90 }])
     }
