@@ -4766,13 +4766,13 @@ export function correrCasos(): Resultado[] {
         { categ: "HONORARIOS VARIOS", nro_cuenta: "422110", nombre_totalizadora: "ADMINISTRACION Y ESTRUCTURA" },
         { categ: "Debitos / Creditos", nro_cuenta: "421502", nombre_totalizadora: "IMPUESTOS BANCARIOS" },
       ]
-      const cA = (id: string, categ: string, monto: number) => ({ ...base, id, concepto: id, categ, responsable: "MSA", fecha: "2025-09-01", monto, tipo: "egreso" as const })
-      const tAg = armarTemplatesDelEjercicio([cA("s1", "SEGUROS ESTRUCTURA", 100), cA("s2", "Seguros Estructura", 50),
-        cA("h", "HONORARIOS VARIOS", 10), cA("d", "Debitos / Creditos", 7), cA("x", "Algo fuera del plan", 999)], ej, { empresa: "MSA", plan: planAg })
+      const cA = (id: string, categ: string, monto: number, ag?: string) => ({ ...base, id, concepto: id, categ, responsable: "MSA", fecha: "2025-09-01", monto, tipo: "egreso" as const, agrupadoraTemplate: ag })
+      const tAg = armarTemplatesDelEjercicio([cA("s1", "SEGUROS ESTRUCTURA", 100, "ADMINISTRACION Y ESTRUCTURA"), cA("s2", "Seguros Estructura", 50, "ADMINISTRACION Y ESTRUCTURA"),
+        cA("h", "HONORARIOS VARIOS", 10, "ADMINISTRACION Y ESTRUCTURA"), cA("d", "Debitos / Creditos", 7, "IMPUESTOS BANCARIOS"), cA("x", "Algo fuera del plan", 999)], ej, { empresa: "MSA", plan: planAg })
       const vAg = tAg.porMes.map(x => `${x.agrupadora === SIN_AGRUPADORA ? "(sin)" : x.agrupadora.split(" ")[0]}/${x.categ} ${x.totalNeto}`).join(" · ")
-      chequear("Balance · templates", "🗂️ Por agrupadora del plan y en su orden; «SEGUROS ESTRUCTURA» y «Seguros Estructura» son UNA fila; lo que no está en el plan, al final",
-        "IMPUESTOS/Debitos / Creditos 7 · ADMINISTRACION/HONORARIOS VARIOS 10 · ADMINISTRACION/SEGUROS ESTRUCTURA 150 · (sin)/Algo fuera del plan 999", vAg,
-        vAg === "IMPUESTOS/Debitos / Creditos 7 · ADMINISTRACION/HONORARIOS VARIOS 10 · ADMINISTRACION/SEGUROS ESTRUCTURA 150 · (sin)/Algo fuera del plan 999", "A-FEAT-1388")
+      chequear("Balance · templates", "🗂️ Por agrupadora DEL TEMPLATE (la de la solapa Templates), por nombre; la misma cuenta escrita distinto es UNA fila; sin agrupadora, al final",
+        "ADMINISTRACION/HONORARIOS VARIOS 10 · ADMINISTRACION/SEGUROS ESTRUCTURA 150 · IMPUESTOS/Debitos / Creditos 7 · (sin)/Algo fuera del plan 999", vAg,
+        vAg === "ADMINISTRACION/HONORARIOS VARIOS 10 · ADMINISTRACION/SEGUROS ESTRUCTURA 150 · IMPUESTOS/Debitos / Creditos 7 · (sin)/Algo fuera del plan 999", "A-FEAT-1388")
 
       // 🧮 Las fórmulas de «Templates por mes»: el total del responsable suma el SUBTOTAL de la agrupadora
       //    (no un rango, que lo contaría dos veces) y el del ejercicio da débitos − créditos.

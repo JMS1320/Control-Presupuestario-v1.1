@@ -219,8 +219,8 @@ export interface TemplatesDelEjercicio {
   entrada?: { cuotas: CuotaTemplate[]; ej: Ejercicio; opciones: OpcionesTemplates }
 }
 
-/** Donde van las categorías que no están en el plan de cuentas. */
-export const SIN_AGRUPADORA = "(sin agrupadora en el plan de cuentas)"
+/** Donde van los templates sin agrupadora cargada (⚠️ cambió 01/11: antes era «sin agrupadora en el plan de cuentas»). */
+export const SIN_AGRUPADORA = "(sin agrupadora en el template)"
 
 /**
  * Compara dos números del plan (`422113`, `4221`) como texto, que respeta la jerarquía: `4221` va
@@ -343,12 +343,15 @@ export function armarTemplatesDelEjercicio(
     const categ = cuenta?.categ || c.categ || "(sin categoría)"
     const responsable = c.responsable || "(sin responsable)"
     const tipo = tipoDe(c)
-    const clave = `${tipo}|${responsable}|${normalizar(categ)}`
+    // 🗂️ ⚠️ Cambió 01/11 (JMS: «hay un solo dato de agrupadora de un template… usá ésta»): manda la agrupadora DEL
+    // TEMPLATE, la misma de la solapa «Templates». Antes era la totalizadora del plan y las dos solapas no coincidían.
+    const agrupadora = (c.agrupadoraTemplate ?? "").trim() || SIN_AGRUPADORA
+    const clave = `${tipo}|${responsable}|${agrupadora}|${normalizar(categ)}`
     c.filaPorMes = clave
     if (!filas.has(clave)) {
       filas.set(clave, {
         clave, tipo, responsable, categ,
-        agrupadora: cuenta?.nombre_totalizadora?.trim() || SIN_AGRUPADORA,
+        agrupadora,
         nroCuenta: cuenta?.nro_cuenta?.trim() || "",
         debitos: new Array(12).fill(0), creditos: new Array(12).fill(0),
         neto: new Array(12).fill(0),
@@ -385,7 +388,9 @@ export function armarTemplatesDelEjercicio(
     const ya = ordenAgrupadora.get(f.agrupadora)
     if (!ya || compararNro(f.nroCuenta, ya) < 0) ordenAgrupadora.set(f.agrupadora, f.nroCuenta)
   }
-  const claveAgrupadora = (a: string) => a === SIN_AGRUPADORA ? "~" : (ordenAgrupadora.get(a) ?? "~")
+  // Agrupadoras del template: por nombre; las sin agrupadora, al final. (`ordenAgrupadora` queda sin uso para el orden.)
+  void ordenAgrupadora
+  const claveAgrupadora = (a: string) => a === SIN_AGRUPADORA ? "~" : "0"
   // Tipo → responsable (la empresa del balance primero) → agrupadora (orden del plan) → cuenta.
   porMes.sort((a, b) => ORDEN_TIPOS.indexOf(a.tipo) - ORDEN_TIPOS.indexOf(b.tipo)
     || ordenResp(a.responsable) - ordenResp(b.responsable)
