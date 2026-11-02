@@ -45,7 +45,7 @@ import type { CuentasSinCuentaCorriente } from "./fuera-por-cuenta-corriente"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
 import { armarStocksUnificados, hojaDeStocks } from "./stocks-unificado"
-import { armarGruposTemplates, hojaGrupo, hojaIndiceGrupos, hojaLib, nombreSolapaGrupo, type MovimientoLib } from "./grupos-templates"
+import { armarGruposTemplates, gruposDelResponsable, hojaGrupo, hojaIndiceGrupos, hojaLib, nombreSolapaGrupo, type MovimientoLib } from "./grupos-templates"
 import { filasBalanceEnLinea, hojaBalanceEnLinea, hojaCajaYBancos, hojaFci, hojaDeudasYCreditos, hojaSoja, hojaVacasDeCria, type EntradaBalanceEnLinea } from "./balance-en-linea"
 import { LIBROS, repartirEnLibros, templatesDeResponsable, hojaListadoTemplates, hojaDeDetalle, type GrupoDetalle, type MovimientoDelDetalle } from "./libros-del-balance"
 import { hojaDelRecorrido, sincronizarPendientes, type RecorridoParaExcel } from "./recorrido-excel"
@@ -2887,6 +2887,7 @@ export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>
   agregarLibroC(wb, empresa, libro.ejercicio.etiqueta, templates ?? null, bancarios?.detalleBancario ?? null, meses)
   if (entradaF) agregarLibroF(wb, entradaF)
   if (templates) agregarLibroG(wb, templates.detalle, libro.ejercicio.etiqueta, lib ?? null, meses)
+  if (templates) agregarLibroH(wb, templates, libro.ejercicio.etiqueta, meses)
   const { default: JSZip } = await import("jszip")
   const zip = new JSZip()
   const base = nombreArchivo(libro, empresa).replace(/\.xlsx$/, "")
@@ -2898,7 +2899,7 @@ export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>
   const url = URL.createObjectURL(blob)
   const el = document.createElement("a")
   el.href = url
-  el.download = `${base} - set A-E.zip`
+  el.download = `${base} - set A-H.zip`
   document.body.appendChild(el)
   el.click()
   setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(el) }, ESPERA_ANTES_DE_LIBERAR_MS)
@@ -2917,6 +2918,28 @@ export function agregarLibroG(wb: XLSX.WorkBook, cuotas: CuotaTemplate[], etique
   hoja(wb, "G · Indice de grupos", hojaIndiceGrupos(gs, cuotas, etiqueta, lib), [{ ancho: 14 }, { ancho: 44 }, { ancho: 32 }, { ancho: 10, z: ENTERO }, { ancho: 18, z: MONEDA }])
   for (const g of gs) hoja(wb, nombreSolapaGrupo(g), hojaGrupo(g, etiqueta, meses), COLS_RESUMEN_MES)
   if (lib) hoja(wb, "G · LIB (paralelo)", hojaLib(lib, etiqueta, meses), COLS_RESUMEN_MES)
+}
+
+/**
+ * 📗 A-FEAT-1514 — el LIBRO H, templates integral (JMS 01/11: «el export de templates debe ser uno integral… reporte total»).
+ * Por responsable, MSA → MA → PAM: Templates, Cuotas y Por mes (tal cual las del libro C) y después una solapa por agrupadora
+ * del template, todas, con el grupo sin agrupadora al final. No reemplaza a C ni a G.
+ */
+export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercicio, etiqueta: string, meses: { clave: string; rotulo: string }[] = []): void {
+  for (const resp of ["MSA", "MA", "PAM"]) {
+    const t = templatesDeResponsable(templates, resp)
+    if (!t) continue
+    hoja(wb, `H · ${resp} · Templates`, hojaListadoTemplates(t, resp, etiqueta), COLS_LISTADO_TEMPLATES)
+    hoja(wb, `H · ${resp} · Cuotas`, hojaDeTemplates(t), COLS_TEMPLATES)
+    hoja(wb, `H · ${resp} · Por mes`, hojaTemplatesPorMes(t), COLS_TEMPLATES_POR_MES(t.columnas.length))
+    const usados = new Set(wb.SheetNames)
+    for (const g of gruposDelResponsable(t.detalle, resp)) {
+      let nombre = nombreSolapaGrupo(g, "H"), n = 2
+      while (usados.has(nombre)) nombre = `${nombreSolapaGrupo(g, "H").slice(0, 28)} ${n++}`
+      usados.add(nombre)
+      hoja(wb, nombre, hojaGrupo(g, etiqueta, meses), COLS_RESUMEN_MES)
+    }
+  }
 }
 
 /** 📒 A-FEAT-1509 — las hojas del LIBRO F: el balance en línea y una de detalle por renglón de la tanda de Claude. */

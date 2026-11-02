@@ -37,10 +37,29 @@ export function armarGruposTemplates(cuotas: CuotaTemplate[]): GrupoTemplates[] 
 }
 
 /** Un nombre de solapa corto y único (Excel admite 31 caracteres). */
-export function nombreSolapaGrupo(g: Pick<GrupoTemplates, "responsable" | "agrupadora">): string {
+export function nombreSolapaGrupo(g: Pick<GrupoTemplates, "responsable" | "agrupadora">, libro = "G"): string {
   const corto = g.agrupadora.replace(/Impuestos/gi, "Imp").replace(/Buenos Aires/gi, "BA").replace(/General/gi, "Gral")
     .replace(/Distribuci[oó]n/gi, "Distrib").replace(/Socios/gi, "soc").replace(/\s*\/\s*/g, "-")
-  return `G · ${g.responsable} · ${corto}`.slice(0, 31)
+  return `${libro} · ${g.responsable} · ${corto}`.slice(0, 31)
+}
+
+/** El grupo de los templates sin agrupadora en el libro H (JMS: «las sin agrupadora como un grupo sin etiqueta»). */
+export const SIN_GRUPO = "(sin agrupadora)"
+
+/**
+ * 📗 A-FEAT-1514 — los grupos del LIBRO H para UN responsable: TODAS sus agrupadoras, sin filtros (también lo financiero, las de
+ * una sola cuota y las sin agrupadora). Recibe las cuotas que ya están en su «Por mes», así las solapas suman lo mismo.
+ * Orden: por nombre, y el grupo sin agrupadora al final (el mismo orden de «Por mes»).
+ */
+export function gruposDelResponsable(cuotas: CuotaTemplate[], responsable: string): GrupoTemplates[] {
+  const m = new Map<string, GrupoTemplates>()
+  for (const c of cuotas) {
+    const ag = (c.agrupadoraTemplate ?? "").trim() || SIN_GRUPO
+    const g = m.get(ag) ?? { responsable, agrupadora: ag, cuotas: [], total: 0 }
+    g.cuotas.push(c); g.total = r2(g.total + c.monto); m.set(ag, g)
+  }
+  return [...m.values()].sort((a, b) => (a.agrupadora === SIN_GRUPO ? 1 : 0) - (b.agrupadora === SIN_GRUPO ? 1 : 0)
+    || a.agrupadora.localeCompare(b.agrupadora, "es"))
 }
 
 const ESTADOS_PAGOS = /pagad|conciliad/i

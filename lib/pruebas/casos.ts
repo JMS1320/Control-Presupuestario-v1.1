@@ -33,7 +33,7 @@
  * empieza a mentir.
  */
 
-import { armarGruposTemplates, nombreSolapaGrupo, hojaGrupo } from "@/lib/balance/grupos-templates"
+import { armarGruposTemplates, nombreSolapaGrupo, hojaGrupo, gruposDelResponsable } from "@/lib/balance/grupos-templates"
 import { filasBalanceEnLinea, hojaCajaYBancos } from "@/lib/balance/balance-en-linea"
 import { APERTURA_MSA_2025 } from "@/lib/balance/apertura-contador"
 import { libroDeSolapa, repartirEnLibros, templatesDeResponsable, detalleBancarioDelLibroC, canalDePago, hojaDeDetalle } from "@/lib/balance/libros-del-balance"
@@ -12307,6 +12307,18 @@ export function correrCasos(): Resultado[] {
     const exp = h.find(r => r[1] === "EXPENSAS") as any[], agua = h.find(r => r[1] === "AGUA") as any[]
     const v2 = `expensas Nro ${exp[0]} sep ${exp[2].v} total ${exp[3].v} · agua Nro ${agua[0]} ${agua[3].v} · fórmula ${String(exp[2].f).startsWith("SUMIFS")}`
     chequear("Libro G", "Cada solapa de grupo: categoría × mes con su Nro (fórmula sobre el detalle); abajo cada cuota con su Nro", "expensas Nro 2 sep 100 total 100 · agua Nro 1 20 · fórmula true", v2, v2 === "expensas Nro 2 sep 100 total 100 · agua Nro 1 20 · fórmula true", "A-FEAT-1513")
+  }
+
+  // ══ 📗 Libro H — templates integral: TODAS las agrupadoras del responsable, sin filtros (A-FEAT-1514) ══
+  {
+    const q = (ag: string, monto: number) => ({ id: Math.random().toString(), fecha: "2025-09-01", concepto: "T", proveedor: "P", categ: "X",
+      cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable: "MSA", estado: "pagado", monto, agrupadoraTemplate: ag || undefined })
+    const cs = [q("Tarjetas", 10), q("", 3), q("Honorarios", 50), q("Inversiones", 7), q("Inversiones", 1)] as never
+    const gs = gruposDelResponsable(cs, "MSA")
+    const v = gs.map(g => `${nombreSolapaGrupo(g, "H")}=${g.total}`).join(" | ") + ` · suma ${gs.reduce((t, g) => t + g.total, 0)} · libro ${libroDeSolapa("H · MSA · Templates")}`
+    const e = "H · MSA · Honorarios=50 | H · MSA · Inversiones=8 | H · MSA · Tarjetas=10 | H · MSA · (sin agrupadora)=3 · suma 71 · libro H"
+    chequear("Libro H", "Una solapa por agrupadora del template, TODAS (también financieras y las de una cuota), por nombre y las sin agrupadora al final; suman lo mismo que las cuotas",
+      e, v, v === e, "A-FEAT-1514")
   }
 
 

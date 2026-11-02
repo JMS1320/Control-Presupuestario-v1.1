@@ -1301,7 +1301,7 @@ export function PapelesDeBalance() {
           {libro && (
             <Button disabled={!!cargandoConciliacion} title="Los libros A a E en un .zip: A subdiarios · B deudas, créditos y cuentas corrientes · C templates y detalle bancario · D el resto · E stocks"
               onClick={async () => { await bajarSet(libro) }}>
-              📚 Bajar el set A–E (.zip)
+              📚 Bajar el set A–H (.zip)
             </Button>
           )}
           {/* 📗 El Libro Diario consensuado con el contador (compras, ventas, por cuenta y retenciones), solo. */}
