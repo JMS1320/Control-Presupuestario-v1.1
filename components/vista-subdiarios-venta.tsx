@@ -32,6 +32,7 @@ import { EstadoMesesDDJJ } from "@/components/estado-meses-ddjj"
 import { RectificacionDelMes, consultarMesesARectificar } from "@/components/rectificacion-del-mes"
 import type { MesARectificar } from "@/lib/subdiarios/rectificacion"
 import { ivaDelLibroVenta } from "@/lib/ventas/libro-iva"
+import { fechasReales } from "@/lib/excel/fechas-reales"
 
 type RetencionesDelSubdiario = Awaited<ReturnType<typeof cargarRetencionesSubdiario>>
 
@@ -478,8 +479,10 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
 
       const filename = await generarNombreUnico(directorio, nombreBaseReporte(periodo), 'xlsx')
       if (directorio) {
+        fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
         await guardarEnCarpeta(directorio, filename, XLSX.write(wb, { bookType: 'xlsx', type: 'array' }))
       } else {
+        fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
         XLSX.writeFile(wb, filename)
       }
     } catch (err) {

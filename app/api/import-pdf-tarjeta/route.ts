@@ -4,6 +4,7 @@ import * as XLSX from "xlsx"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 import { exigirCuentaExtracto } from "@/lib/auth/guard-recurso"
 import { parsearResumen, calcularControl, normalizarTextoResumen, filasDeResumen, type ResumenParsed, type ControlSaldo } from "@/lib/tarjetas/parseo-resumen-pdf"
+import { fechasReales } from "@/lib/excel/fechas-reales"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -75,6 +76,7 @@ function generarExcelAuditoria(r: ResumenParsed, control: ControlSaldo, cuentaId
   const ws = XLSX.utils.aoa_to_sheet(datos)
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, "Auditoría")
+  fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
   const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" })
   return Buffer.from(buffer).toString("base64")
 }

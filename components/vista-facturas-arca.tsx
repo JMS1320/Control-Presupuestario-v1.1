@@ -100,6 +100,7 @@ import { pedirAsignacionDeCuenta, mensajeDePropagacion, type RespuestaAsignacion
 import { contarMovimientosDeFactura, type ClienteParaPropagar } from "@/lib/conciliacion/propagar-cuenta"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 import { subFacturasDelLink, facturasDelLink } from "@/lib/egresos/link-facturas"
+import { fechasReales } from "@/lib/excel/fechas-reales"
 
 interface FacturaArca {
   id: string
@@ -3266,10 +3267,12 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
 
       if (directorio) {
         // Guardar en carpeta personalizada usando File System Access API
+        fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
         await guardarEnCarpeta(directorio, filename, XLSX.write(wb, { bookType: 'xlsx', type: 'array' }))
         console.log('✅ Excel guardado en carpeta personalizada:', filename)
       } else {
         // Descargar normalmente
+        fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
         XLSX.writeFile(wb, filename)
         console.log('✅ Excel descargado en carpeta por defecto:', filename)
       }
@@ -3620,6 +3623,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
       const añoCorto = año.slice(-2) // últimos 2 dígitos del año
       const filename = `Subdiario Compras (MSA) ${añoCorto}-${mes.padStart(2, '0')}.xlsx`
       console.log('💾 Descargando Excel:', filename)
+      fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
       XLSX.writeFile(wb, filename)
       
       console.log('✅ Excel generado exitosamente:', filename)
@@ -5425,9 +5429,11 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
     if (directorio) {
       const h = await directorio.getFileHandle(nombre, { create: true })
       const w = await h.createWritable()
+      fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
       await w.write(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }))
       await w.close()
     } else {
+      fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
       XLSX.writeFile(wb, nombre)
     }
   }
@@ -6102,10 +6108,12 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
       if (directorio) {
         const archivoHandle = await directorio.getFileHandle(nombreArchivo, { create: true })
         const writableStream = await archivoHandle.createWritable()
+        fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
         const buffer = XLSX.write(wb, { type: 'array', bookType: 'xlsx' })
         await writableStream.write(buffer)
         await writableStream.close()
       } else {
+        fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
         XLSX.writeFile(wb, nombreArchivo)
       }
 

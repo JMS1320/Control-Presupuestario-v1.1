@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Plus, Trash2, ArrowUp, ArrowDown, Download, Type, Table2, Loader2, Check } from "lucide-react"
+import { fechasReales } from "@/lib/excel/fechas-reales"
 
 type Bloque = { id: string; tipo: "texto"; texto: string } | { id: string; tipo: "tabla"; celdas: string[][] }
 interface Cuaderno { id: string; titulo: string; bloques: Bloque[]; updated_at: string; vinculo?: string | null }
@@ -171,6 +172,7 @@ export function PanelCuaderno() {
     }
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(filas), "Cuaderno")
+    fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
     XLSX.writeFile(wb, `${c.titulo.replace(/[\\/:*?"<>|]/g, "-") || "cuaderno"}.xlsx`)
   }
 

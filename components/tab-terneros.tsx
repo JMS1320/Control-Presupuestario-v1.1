@@ -22,6 +22,7 @@ import { AnalisisProductivo, type SegConfig, type SegSnapshot, type ModoCarga } 
 import { Segmentador, type SegPayload } from "./segmentador"
 import { traerTodo } from "@/lib/supabase-paginado"
 import { Permisable } from "@/components/modo-permisos"
+import { fechasReales } from "@/lib/excel/fechas-reales"
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -533,6 +534,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Terneros')
     const fecha = new Date().toISOString().split('T')[0]
+    fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
     XLSX.writeFile(wb, `Terneros_${fecha}.xlsx`)
     setModalDescarga(false)
   }
@@ -594,6 +596,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
     }
 
     const fecha = new Date().toISOString().split('T')[0]
+    fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
     XLSX.writeFile(wb, `Caravanas_${fecha}.xlsx`)
     setModalDescarga(false)
   }

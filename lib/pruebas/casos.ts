@@ -36,6 +36,7 @@
 import { armarGruposTemplates, armarHojaGrupo, nombreSolapaGrupo, hojaGrupo, gruposDelResponsable } from "@/lib/balance/grupos-templates"
 import { indiceDeDestinos, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
 import { solapasPapelesH } from "@/lib/balance/papeles-impuestos-h"
+import { fechasReales, serieDeFecha } from "@/lib/excel/fechas-reales"
 import { filtroDe } from "@/lib/balance/formato-excel"
 import { hojaResumenPorMes } from "@/lib/balance/resumen-por-mes"
 import { filasBalanceEnLinea, hojaCajaYBancos } from "@/lib/balance/balance-en-linea"
@@ -12398,6 +12399,18 @@ export function correrCasos(): Resultado[] {
     const e = "159/100/40/7/9/3 · ⚠️ 2 movimiento(s) para mirar: ver la lista abajo · pagó «Inmob Tapera» de PAM | sin template ni factura | está en la solapa «Impuestos Urbanos» («Inmob Lote Puerto») | pagó una factura (va por el subdiario)"
     chequear("Libro H", "Control 4 desde el extracto: los movimientos de las cuentas del responsable con las categorías de la solapa, separados en esta solapa · otra empresa ⚠️ · sin nada ⚠️ · otra solapa · factura; no entran las cuentas de otro titular ni otras categorías",
       e, v, v === e, "A-FEAT-1518")
+  }
+
+  // ══ 📅 Todos los exports: una fecha «dd/mm/aaaa» se escribe como FECHA (el filtro de Excel agrupa por año y mes) (JMS 01/11) ══
+  {
+    const ws: Record<string, unknown> = { "!ref": "A1:E1", A1: { t: "s", v: "01/04/2026" }, B1: { t: "s", v: "31/02/2026" }, C1: { t: "s", v: "vence el 10/07/2025" },
+      D1: { t: "s", v: "2025-07" }, E1: { t: "s", v: "01/07/2025", f: "X" } }
+    const n = fechasReales({ SheetNames: ["H"], Sheets: { H: ws } })
+    const a = ws.A1 as any
+    const v = `${n} · A1 ${a.t} ${a.v} ${a.z} · ${serieDeFecha("01/07/2025")} = ${serieDeFecha("2025-07-01")} · resto texto ${["B1", "C1", "D1"].every(k => (ws[k] as any).t === "s")}`
+    const e = "1 · A1 n 46113 dd/mm/yyyy · 45839 = 45839 · resto texto true"
+    chequear("Exports", "Una fecha «dd/mm/aaaa» escrita como texto (o «aaaa-mm-dd») pasa a fecha de Excel (el filtro agrupa por año y mes); no toca fechas imposibles, textos con una fecha adentro, claves de mes ni fórmulas",
+      e, v, v === e, "A-FEAT-1519")
   }
 
   // ══ 🏛️ Libro H — el papel de inmobiliario: 2 años apilados con sus fórmulas corridas, y el control contra templates por fechas (A-FEAT-1516) ══

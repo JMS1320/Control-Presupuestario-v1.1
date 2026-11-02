@@ -20,6 +20,7 @@ import XLSX from 'xlsx-js-style'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
+import { fechasReales } from "@/lib/excel/fechas-reales"
 
 export interface MesExport { anio: number; mes: number; label: string }
 
@@ -475,6 +476,7 @@ export function exportarExcel(d: DatosExport, nombreArchivo: string) {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(filas), nombre)
   }
 
+  fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
   const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
   descargar(new Blob([out], { type: 'application/octet-stream' }), `${nombreArchivo}.xlsx`)
 }

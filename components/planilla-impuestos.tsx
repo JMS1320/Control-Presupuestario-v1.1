@@ -31,6 +31,7 @@ import { cargarAuxiliaresPapel, cargarCuotasImpuestos } from "@/lib/impuestos/da
 import type { TipoCambio } from "@/lib/arrendamientos/calculo"
 import { ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, GripVertical, Loader2, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
+import { fechasReales } from "@/lib/excel/fechas-reales"
 
 const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 const plata = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -157,6 +158,7 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumen), `Impuestos ${anio}`)
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detalle), "Cuotas")
+    fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
     XLSX.writeFile(wb, `Impuestos_${anio}_al_${hoy}.xlsx`)
   }
 

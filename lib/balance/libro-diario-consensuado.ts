@@ -48,6 +48,7 @@ import { hoyArgentina } from "@/lib/fechas"
 import { MONEDA, aplicarVistas } from "./formato-excel"
 import type { CobrosYRetenciones, RetencionRecibida, CobroDeVenta } from "./cobros-de-ventas"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
+import { fechasReales } from "@/lib/excel/fechas-reales"
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════
 // Constantes por empresa y ejercicio
@@ -1071,6 +1072,7 @@ export { aplicarVistas }
 
 /** Los bytes del .xlsx, listos para bajar o guardar. */
 export async function bytesLibroDiarioConsensuado(l: LibroConsensuado): Promise<Uint8Array> {
+  fechasReales(l.wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
   const out = XLSX.write(l.wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer
   return aplicarVistas(out, l.vistas)
 }

@@ -27,6 +27,7 @@
 import * as XLSX from "xlsx"
 import { formatearHoja, conFormula, MONEDA, type Columna } from "@/lib/balance/formato-excel"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
+import { fechasReales } from "@/lib/excel/fechas-reales"
 
 /** Un pago de sueldo, con lo que hace falta para el listado. */
 export interface PagoParaExportar {
@@ -121,7 +122,9 @@ export function armarWorkbookPagos(pagos: PagoParaExportar[], etiqueta: string):
 
 /** Descarga el Excel en el navegador. */
 export function descargarPagosDeSueldos(pagos: PagoParaExportar[], etiqueta: string): void {
-  const out = XLSX.write(armarWorkbookPagos(pagos, etiqueta), { bookType: "xlsx", type: "array" })
+  const wb = armarWorkbookPagos(pagos, etiqueta)
+  fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
+  const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
   const url = URL.createObjectURL(
     new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
   )

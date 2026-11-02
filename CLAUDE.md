@@ -1306,6 +1306,10 @@ ese lugar afecte a todo lo que lo usa.
   categoría · los 12 meses · total, cada celda **fórmula** sobre el detalle; abajo (o en la solapa del detalle) cada fila con
   su Nro. Se arma con `hojaResumenPorMes` (`lib/balance/resumen-por-mes.ts`) — no se escribe otro. *Motivo: un total anual no
   dice cuándo pasó ni de qué se compone; con el Nro se filtra el detalle y se ve.* → [A-FEAT-1513](PENDIENTES.md#a-feat-1513).
+- 📅 **Toda fecha de un export es FECHA, no texto** *(regla del usuario 2026-11-01: «parámetro para todos los exports»; con
+  texto, el filtro de Excel lista «01/04/2026» como una palabra y no agrupa por año y mes)*. Antes de escribir un libro se llama
+  `fechasReales(wb)` (`lib/excel/fechas-reales.ts`). Un export nuevo **la lleva**; los únicos que no son los archivos que se
+  suben al banco (formato fijo). → [A-FEAT-1519](PENDIENTES.md#a-feat-1519).
 - Si la vista tiene **export (Excel/PDF)**, al sumarle un campo se actualiza también el export.
   Motivo: el usuario usa las descargas como registro fuera de la app; si el export queda viejo,
   pierde datos que sí ve en pantalla.

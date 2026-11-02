@@ -1,9 +1,11 @@
 import * as XLSX from "xlsx"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
+import { fechasReales } from "@/lib/excel/fechas-reales"
 
 // Descarga el workbook en el navegador evitando llamadas a APIs de Node/Deno.
 function saveWorkbook(workbook: XLSX.WorkBook, fileName: string) {
   // Generar un ArrayBuffer con el contenido XLSX
+  fechasReales(workbook) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
   const wbout = XLSX.write(workbook, { bookType: "xlsx", type: "array" })
 
   // Crear un Blob y disparar la descarga

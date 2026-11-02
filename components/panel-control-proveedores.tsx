@@ -25,6 +25,7 @@ import {
   analizarProveedores, resumenCartera, ETIQUETA_SEMAFORO,
   type FacturaMes, type PuntoIpc, type AnalisisProveedor, type Semaforo,
 } from "@/lib/proveedores/control-subas"
+import { fechasReales } from "@/lib/excel/fechas-reales"
 
 const pesos = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
 const pct = (n: number | null, dec = 1) => (n == null ? "—" : `${n >= 0 ? "" : "−"}${fmtNumeroAR(Math.abs(n) * 100, dec)} %`)
@@ -135,6 +136,7 @@ export function PanelControlProveedores() {
     ws2["!cols"] = [{ wch: 42 }, { wch: 10 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 14 }]
     XLSX.utils.book_append_sheet(wb, ws2, "Detalle mensual")
 
+    fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
     XLSX.writeFile(wb, `Control_proveedores_${new Date().toISOString().slice(0, 10)}.xlsx`)
   }
 

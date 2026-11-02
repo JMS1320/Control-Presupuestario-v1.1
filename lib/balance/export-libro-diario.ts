@@ -68,6 +68,7 @@ import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 import type { ControlesInicio, ControlProvisionAnterior } from "./control-inicio"
 import { textoEstado, type InicioYCierre } from "./inicio-y-cierre"
 import { armarCobertura, ICONO, TEXTO_ESTADO, type CoberturaPapeles, type EstadoCobertura } from "./cobertura-papeles"
+import { fechasReales } from "@/lib/excel/fechas-reales"
 
 const money = (n: number) => Math.round(n * 100) / 100
 
@@ -2896,6 +2897,7 @@ export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>
   const zip = new JSZip()
   const base = nombreArchivo(libro, empresa).replace(/\.xlsx$/, "")
   for (const l of repartirEnLibros(wb, vistasDe(wb))) {
+    fechasReales(l.wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
     const datos = await aplicarVistas(XLSX.write(l.wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, l.vistas)
     zip.file(`${base} - ${LIBROS[l.letra]}.xlsx`, datos)
   }
@@ -3035,6 +3037,7 @@ export async function descargarLibroDiario(
 ) {
   const wb = armarWorkbook(libro, empresa, templates, hacienda, insumos, campo, cuentas,
     bancarios, sueldos, cuentasCorrientes, pendientes, saldosAnteriores, asientosContables, lecturas, controlCuotas, controlesInicio, recorrido)
+  fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
   const out = await aplicarVistas(XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(wb))
   const url = URL.createObjectURL(
     new Blob([out as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),

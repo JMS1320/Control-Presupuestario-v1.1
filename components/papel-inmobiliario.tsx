@@ -23,6 +23,7 @@ import { ChevronLeft, ChevronRight, Download, GripVertical } from "lucide-react"
 import { armarPapel, ordenarPapel, moverPartida, clavePartida, filasPapel, encabezadoPapel, TITULO_PAPEL, type TipoPapel, type Papel } from "@/lib/impuestos/papel-inmobiliario"
 import type { CuotaPlanilla } from "@/lib/impuestos/planilla"
 import type { TipoCambio } from "@/lib/arrendamientos/calculo"
+import { fechasReales } from "@/lib/excel/fechas-reales"
 
 const plata = (n: number | null | undefined) => n == null ? "" : n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fecha = (iso: string) => iso.split("-").reverse().join("/")
@@ -226,5 +227,6 @@ function exportarPapel(p: Papel) {
   ws["!cols"] = [{ wch: 26 }, { wch: 15 }, { wch: 8 }, ...encabezadoPapel(p.maxCuotas).slice(3).map(() => ({ wch: 14 }))]
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, TITULO_PAPEL[p.tipo].slice(0, 28))
+  fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
   XLSX.writeFile(wb, `${TITULO_PAPEL[p.tipo].split(" ")[0]}_${p.anio}.xlsx`)
 }

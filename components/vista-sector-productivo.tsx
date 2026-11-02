@@ -66,6 +66,7 @@ import { usePedidoCampo, tomarPedidoCampo, esModoCampo } from "@/lib/productivo/
 import { PanelCampo } from "@/components/panel-campo"
 import { dosisYTotal } from "@/lib/productivo/dosis-orden"
 import { traerTodo } from "@/lib/supabase-paginado"
+import { fechasReales } from "@/lib/excel/fechas-reales"
 
 // ============================================================
 // TIPOS
@@ -2577,9 +2578,11 @@ function TabHacienda() {
       for (const p of periodos) {
         const { wb, doc } = await construirPlanilla(p.desde, p.hasta, p.label)
         if (directorioDestino) {
+          fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
           await guardarEnCarpeta(`${p.base}.xlsx`, XLSX.write(wb, { bookType: 'xlsx', type: 'array' }))
           await guardarEnCarpeta(`${p.base}.pdf`, doc.output('arraybuffer'))
         } else {
+          fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
           XLSX.writeFile(wb, `${p.base}.xlsx`)
           doc.save(`${p.base}.pdf`)
         }

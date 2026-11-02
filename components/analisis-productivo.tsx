@@ -24,6 +24,7 @@ import { calcular, type CalcInputs } from "@/lib/productivo/racion"
 import { SelectorComercializacion, useNormasComercializacion, parametrosDe } from "./selector-comercializacion"
 import type { SexoLote } from "@/lib/ganaderia/comercializacion"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
+import { fechasReales } from "@/lib/excel/fechas-reales"
 
 
 const LS_ESTUDIOS = "analisis_engorde_estudios"
@@ -478,6 +479,7 @@ function AnalisisSegmento({ secciones, total, indice, onRemove, onDuplicar, onTo
     const ws = XLSX.utils.aoa_to_sheet(filasExport())
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Análisis")
+    fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
     XLSX.writeFile(wb, nombreArch() + ".xlsx")
   }
 
@@ -1327,6 +1329,7 @@ export function AnalisisProductivo({ secciones, total, segConfigs, onRestoreSegC
       usados.add(n)
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(d.filas), n)
     })
+    fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
     XLSX.writeFile(wb, `Estudio_${nombreEstudioArch()}.xlsx`)
   }
   const cargarArchivo = (e: ChangeEvent<HTMLInputElement>) => {

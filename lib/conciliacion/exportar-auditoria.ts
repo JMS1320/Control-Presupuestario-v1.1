@@ -21,6 +21,7 @@
 import * as XLSX from "xlsx"
 import type { ResultadoAuditoria, Hallazgo } from "./auditoria"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
+import { fechasReales } from "@/lib/excel/fechas-reales"
 
 /** Nombre de hoja seguro para Excel: máximo 31 caracteres y sin `: \ / ? * [ ]`. */
 function hoja(nombre: string): string {
@@ -96,6 +97,7 @@ export function exportarAuditoria(
       hoja(`${i + 1} ${g.titulo.replace(/^🕳️ /, "")}`))
   })
 
+  fechasReales(wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
   const blob = new Blob([out], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
