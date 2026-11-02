@@ -36,6 +36,7 @@
 import { armarGruposTemplates, armarHojaGrupo, nombreSolapaGrupo, hojaGrupo, gruposDelResponsable } from "@/lib/balance/grupos-templates"
 import { indiceDeDestinos, sinCategoriaNiVinculo, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
 import { solapasPapelesH } from "@/lib/balance/papeles-impuestos-h"
+import { hojaLibertad } from "@/lib/balance/libertad"
 import { fechasReales, serieDeFecha } from "@/lib/excel/fechas-reales"
 import { filtroDe } from "@/lib/balance/formato-excel"
 import { hojaResumenPorMes } from "@/lib/balance/resumen-por-mes"
@@ -12421,6 +12422,27 @@ export function correrCasos(): Resultado[] {
     const ms = [m("MSA", ""), m("MSA", "Tarjetas MSA"), m("MSA", "", { otroVinculo: true }), m("MSA", "", { templateCuotaId: "x" }), m("PAM", ""), m("MSA", "  ", { debitos: 0 })]
     const v = String(sinCategoriaNiVinculo(ms as never, "MSA").length)
     chequear("Libro H", "Extracto sin categoría ni vínculo: sólo los del titular, sin categoría y sin cuota, factura, sueldo, venta ni anticipo (y con importe)", "1", v, v === "1", "A-FEAT-1518")
+  }
+
+  // ══ 🏢 Gastos Libertad: costo, 50% MSA / 50% socio (PAM → MA el 01/01/26), quién pagó y la cuenta corriente (A-FEAT-1521) ══
+  {
+    const q = (id: string, resp: string, ag: string, categ: string, concepto: string, fecha: string, monto: number, titular: string | null, estado = "conciliado") => ({
+      id, fecha, concepto, proveedor: "", categ, cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable: resp, estado, monto, agrupadoraTemplate: ag,
+      banco: titular ? { cuenta: `Galicia ${titular}`, titular, comprobante: "", respaldo: monto, motivo: null } : { cuenta: "", comprobante: "", respaldo: null, motivo: null } })
+    const F = "Fijos Buenos Aires MA", I = "Impuestos Buenos Aires MA"
+    const cs = [q("a", "PAM", F, "EXPENSAS", "Expensas Libertad", "2025-09-10", 100, "MSA"), q("b", "PAM", F, "AGUA", "AYSA Libertad", "2025-10-10", 40, "PAM"),
+      q("c", "MA", F, "GAS", "Metrogas Libertad", "2026-02-10", 30, "MA"), q("d", "MA", F, "EXPENSAS", "Expensas Libertad", "2026-03-10", 50, "MSA"),
+      q("e", "MA", I, "ABL", "ABL Libertad Cuota", "2026-04-10", 20, null, "pendiente"), q("x", "PAM/MA/Duhau", I, "ABL Libertad Cochera", "ABL Cochera Libertad Anual", "2026-05-30", 999, "MA"),
+      q("y", "PAM", F, "GASTOS MEDICOS", "Gastos Medicos", "2026-06-18", 77, "PAM")] as never
+    const meses = ["2025-07", "2025-08", "2025-09", "2025-10", "2025-11", "2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"].map(clave => ({ clave, rotulo: clave }))
+    const h = hojaLibertad(cs, "25/26", meses)
+    const fila = (et: string) => (h.find(r => (r as any[])[1] === et) as any[]).slice(2, 15).map((x: any) => x.v)
+    const costo = fila("Costo de Libertad del mes"), pam = fila("PAM toma el 50% (hasta dic-25)"), ma = fila("MA toma el 50% (desde ene-26)")
+    const cc = fila("CUENTA CORRIENTE LIBERTAD — el socio RETIRÓ de MSA (+) / APORTÓ (−): lo que MSA pagó − su 50%"), ctrl = fila("Control: costo − todo lo de arriba (tiene que dar 0)")
+    const v = `costo ${costo[12]} · PAM ${pam[12]} · MA ${ma[12]} · cc sep ${cc[2]} oct ${cc[3]} feb ${cc[7]} mar ${cc[8]} total ${cc[12]} · control ${ctrl[12]}`
+    const e = "costo 240 · PAM 70 · MA 50 · cc sep 50 oct -20 feb -15 mar 25 total 30 · control 0"
+    chequear("Libertad", "Gastos Libertad: costo de las categorías de Libertad (sin cochera ni otros), 50% MSA y 50% PAM hasta dic-25 / MA desde ene-26; cuenta corriente = lo que pagó MSA − su 50%; el control del todo a las partes da 0",
+      e, v, v === e, "A-FEAT-1521")
   }
 
   // ══ 🏛️ Libro H — el papel de inmobiliario: 2 años apilados con sus fórmulas corridas, y el control contra templates por fechas (A-FEAT-1516) ══

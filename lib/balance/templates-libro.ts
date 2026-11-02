@@ -164,6 +164,8 @@ export interface BancoDeCuota {
   cuenta: string
   /** El comprobante del movimiento (número de operación, cupón de la tarjeta). */
   comprobante: string
+  /** De quién es la cuenta que pagó (MSA / PAM / MA): QUIÉN PAGÓ. Vacío = sin movimiento. */
+  titular?: string
   /** Cuánto de esta cuota respalda el banco, con el signo de la cuota. `null` = no se puede comparar. */
   respaldo: number | null
   /** Por qué no cierra con el banco. `null` = cierra (o no corresponde: no está conciliada). */

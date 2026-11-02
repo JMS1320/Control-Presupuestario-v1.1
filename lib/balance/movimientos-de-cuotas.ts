@@ -23,6 +23,8 @@ export interface MovimientoDeCuota {
   /** A qué apunta: el id de la cuota o el de su grupo de pago. */
   vinculo: string
   cuenta: string
+  /** De quién es la cuenta (MSA / PAM / MA / Cotitulares): QUIÉN PAGÓ la cuota (A-FEAT-1521, Libertad). */
+  titular: string
   fecha: string
   comprobante: string
   debitos: number
@@ -58,6 +60,7 @@ export async function leerMovimientosDeCuotas(cliente: ClienteMinimo, cuotas: Cu
         movimientos.push({
           vinculo: String(m.template_cuota_id),
           cuenta: nombreCuenta(t),
+          titular: t.titular ?? "",
           fecha: String(m.fecha ?? "").slice(0, 10),
           comprobante: String((esTarjeta ? m.comprobante || m.numero_de_comprobante : m.numero_de_comprobante) ?? "").trim(),
           debitos: Number(m.debitos) || 0,
@@ -98,6 +101,7 @@ function bancoDe(c: CuotaTemplate, porVinculo: Map<string, MovimientoDeCuota[]>,
   const ms = propios.length ? propios : delGrupo
   const cuenta = unicos(ms.map(m => m.cuenta))
   const comprobante = unicos(ms.map(m => m.comprobante))
+  const titular = unicos(ms.map(m => m.titular))
   if (!ms.length) {
     if (!conciliada) return { cuenta: "", comprobante: "", respaldo: null, motivo: null }
     // 01/11: 85 de las 87 conciliadas sin movimiento están en $ 0 (SICORE sin retenciones, retiros semestrales…): no mueven
@@ -106,15 +110,15 @@ function bancoDe(c: CuotaTemplate, porVinculo: Map<string, MovimientoDeCuota[]>,
       ? { cuenta: "", comprobante: "", respaldo: 0, motivo: MOTIVO_EN_CERO }
       : { cuenta: "", comprobante: "", respaldo: null, motivo: "conciliada sin movimiento en el banco" }
   }
-  if (ms.some(m => m.enDolares)) return { cuenta, comprobante, respaldo: null, motivo: "pagada desde una cuenta en dólares: no se compara con la cuota en pesos" }
+  if (ms.some(m => m.enDolares)) return { cuenta, titular, comprobante, respaldo: null, motivo: "pagada desde una cuenta en dólares: no se compara con la cuota en pesos" }
   const neto = r2(ms.reduce((t, m) => t + m.debitos - m.creditos, 0))
   if (propios.length) {
-    return { cuenta, comprobante, respaldo: neto, motivo: Math.abs(neto - c.monto) > 0.01 ? `el banco movió $ ${fmt(neto)} y la cuota dice $ ${fmt(c.monto)}` : null }
+    return { cuenta, titular, comprobante, respaldo: neto, motivo: Math.abs(neto - c.monto) > 0.01 ? `el banco movió $ ${fmt(neto)} y la cuota dice $ ${fmt(c.monto)}` : null }
   }
   const g = totalGrupo.get(c.grupoPagoId!) ?? { total: c.monto, n: 1 }
-  if (Math.abs(neto - g.total) <= 0.01) return { cuenta, comprobante, respaldo: c.monto, motivo: null }
+  if (Math.abs(neto - g.total) <= 0.01) return { cuenta, titular, comprobante, respaldo: c.monto, motivo: null }
   const respaldo = g.total ? r2(c.monto * neto / g.total) : 0
-  return { cuenta, comprobante, respaldo, motivo: `pago agrupado de ${g.n} cuotas por $ ${fmt(g.total)}; el banco movió $ ${fmt(neto)}` }
+  return { cuenta, titular, comprobante, respaldo, motivo: `pago agrupado de ${g.n} cuotas por $ ${fmt(g.total)}; el banco movió $ ${fmt(neto)}` }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
@@ -140,6 +144,8 @@ export interface MovimientoExtractoH {
   /** Atado a un sueldo, una venta (cobro) o un anticipo: ya figura en su papel. */
   otroVinculo: boolean
   estado: string
+  /** La marca contable del movimiento (`LIB`, `CTA MA`…). */
+  contable: string
   enDolares: boolean
 }
 
@@ -155,7 +161,7 @@ export async function leerExtractoDelEjercicio(cliente: ClienteMinimo, desde: st
       const q = t.schema === "public" ? cliente.from(t.tabla) : cliente.schema(t.schema).from(t.tabla)
       // ClienteMinimo no tipa gte/lte/not/range: se usan igual que en el resto del repo.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (q.select("fecha, descripcion, categ, debitos, creditos, estado, template_cuota_id, comprobante_arca_id, sueldo_pago_id, comprobante_venta_id, anticipo_id") as any)
+      const { data, error } = await (q.select("fecha, descripcion, categ, contable, debitos, creditos, estado, template_cuota_id, comprobante_arca_id, sueldo_pago_id, comprobante_venta_id, anticipo_id") as any)
         .gte("fecha", desde).lte("fecha", hasta).order("fecha").range(d, d + 999)
       if (error) { tablasQueFallaron.push(nombreCuenta(t)); break }
       for (const m of (data ?? []) as Array<Record<string, unknown>>) {
@@ -167,6 +173,7 @@ export async function leerExtractoDelEjercicio(cliente: ClienteMinimo, desde: st
           comprobanteArcaId: m.comprobante_arca_id ? String(m.comprobante_arca_id) : null,
           otroVinculo: !!(m.sueldo_pago_id || m.comprobante_venta_id || m.anticipo_id),
           estado: String(m.estado ?? ""),
+          contable: String(m.contable ?? ""),
           enDolares: !!t.enDolares,
         })
       }

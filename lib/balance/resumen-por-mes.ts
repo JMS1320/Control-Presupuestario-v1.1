@@ -41,6 +41,28 @@ export interface OpcionesResumen {
    * § «Los Excel de trabajo con el usuario»: nunca netos). El resumen sigue siendo el neto: SUMAR.SI(débito) − SUMAR.SI(crédito).
    */
   debeHaber?: boolean
+  /**
+   * 🏢 A-FEAT-1521: un bloque propio ENTRE el resumen y el detalle (el reparto de Libertad), de alto fijo. `armar` recibe dónde
+   * quedaron el total del resumen y las columnas del detalle, para escribir fórmulas sobre ellos.
+   */
+  bloqueExtra?: { alto: number; armar: (u: UbicacionBloque) => unknown[][] }
+}
+
+/** Lo que necesita un bloque extra para apuntarle al resumen y al detalle con fórmulas. Filas en base 1. */
+export interface UbicacionBloque {
+  /** La primera fila del bloque. */
+  fila: number
+  /** La fila del TOTAL del resumen (una sola tabla). */
+  filaTotal: number
+  /** La letra de la columna del mes `j` (0 = el primero) y la del TOTAL, en el resumen y en el bloque. */
+  colMes: (j: number) => string
+  colTotal: string
+  /** El rango absoluto de una columna del detalle (`$J$20:$J$80`). */
+  rng: (col: string) => string
+  colDebito: string
+  colCredito: string | null
+  /** La letra de una columna propia del detalle (`encabezadoDetalle[i]`). */
+  colDetalle: (i: number) => string
 }
 
 /** Dónde quedó cada cosa en la hoja, para que otro bloque (un control) pueda apuntarle con fórmulas. Filas en base 1. */
@@ -81,7 +103,8 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
   const altoResumen = monedas.reduce((t, _m, k) => t + 1 + 1 + filasPorMoneda[k].length + 1 + 1, 0)
   const cabecera = 1 + (o.notas?.length ?? 0) + 1
   // +2: el renglón amarillo «Nro a ver» y un blanco (A-FEAT-1515, JMS 02/11), antes del título del detalle.
-  const filaEncDetalle = cabecera + altoResumen + 2 + 1 + 1
+  const altoExtra = o.bloqueExtra?.alto ?? 0
+  const filaEncDetalle = cabecera + altoResumen + altoExtra + 2 + 1 + 1
   const det1 = filaEncDetalle + 1, detN = filaEncDetalle + items.length + 1
   // Columnas del detalle: A Nro · B Mes · C… las propias · después Moneda (si hay) · Importe
   const nCols = o.encabezadoDetalle.length
@@ -127,6 +150,14 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
     if (monedas.length === 1 && m === undefined) celdaTotal = `${col(2 + o.meses.length)}${h.length}`
     h.push([])
   })
+  if (o.bloqueExtra) {
+    const filaTotal = h.length - 1 // el TOTAL del resumen (antes del blanco)
+    const b = o.bloqueExtra.armar({
+      fila: h.length + 1, filaTotal, colMes: (j: number) => col(2 + j), colTotal: col(2 + o.meses.length),
+      rng, colDebito: colImporte, colCredito, colDetalle: (i: number) => col(2 + i),
+    })
+    for (let k = 0; k < o.bloqueExtra.alto; k++) h.push(b[k] ?? [])
+  }
   /**
    * 🟨 A-FEAT-1515 (JMS 02/11, opción 1): «idealmente en el amarillo ponés el Nro que querés filtrar». Excel no filtra sin macro,
    * así que la celda amarilla dice qué categoría es, cuántos renglones tiene y cuánto suma ese Nro (fórmulas sobre el detalle);
