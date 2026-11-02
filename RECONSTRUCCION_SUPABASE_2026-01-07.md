@@ -3353,6 +3353,9 @@ Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantid
 ### 2026-11-01 · El FCI de MSA al INICIO (script 174, DATOS) — A-FEAT-1509 — ✅ CORRIDO con OK de JMS («sí», precio deducido)
 `balance_datos_usuario` (papel `fci`, MSA, cierre 2026): `cuotapartes_inicio` = 362.898,06 (de los resúmenes FIMA: 577.094,86 al 31/07/2025 − 820.696,97 suscriptas + 606.500,17 rescatadas en julio) y `valor_cuotaparte_inicio` = 64,0511 DEDUCIDO (apertura del contador $ 23.244.019,93 ÷ cuotas). Marca `[script 174]`; deshacer: `174-…-deshacer.sql`.
 
+### 2026-11-02 · Los 12 pagos de la VISA de MSA del extracto histórico, conciliados (script 175, DATOS) — A-FEAT-1481 — ✅ CORRIDO con OK de JMS («concilialas vos por favor»)
+`public.msa_galicia` (12 «Pago Visa Empresa» jul-25 → ene-26, estado `historico`, sin vínculo) ↔ `cuotas_egresos_sin_factura` del template «Tarjeta Visa Business MSA» (`92adc604…`): las 6 cuotas ago→ene en $ 0 toman monto y fecha del pago mayor del mes; 6 cuotas nuevas (julio y el 2º pago de sep→ene, ids `17500000-…-00000000000N`); los movimientos quedan `historico` con `template_id` + `template_cuota_id` (convención A-DEC-1009). Total $ 7.114.869,17 en los dos lados. Marca `[script 175]`; deshacer: `175-…-deshacer.sql`.
+
 ### 2026-11-01 · Parseo de SANTANDER (script 167, DATOS) — A-FEAT-1485 — ✅ CORRIDO con OK de JMS («ok corré el 167»)
 `msa.santander`: `concepto` (texto en líneas, `bloqueSantander`) + desglose de los 148 movimientos (descripcion, grupo_de_conceptos, leyendas_adicionales_1..3, numero_de_comprobante, numero_de_terminal); `public.config_parseo_extracto` + 20 reglas de `msa_santander` (marca `[script 167]` en `descripcion_campo`); `public.reglas_conciliacion` + 1 (CUIT 30617786016 → template «Interbancaria Santander», marca en `detalle`). Foto antes: `scripts/167-parseo-santander-foto.json`. Deshacer: `167-parseo-santander-deshacer.mts`.
 
