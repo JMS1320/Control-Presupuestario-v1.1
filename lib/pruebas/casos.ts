@@ -35,6 +35,7 @@
 
 import { armarGruposTemplates, armarHojaGrupo, nombreSolapaGrupo, hojaGrupo, gruposDelResponsable } from "@/lib/balance/grupos-templates"
 import { vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
+import { solapasPapelesH } from "@/lib/balance/papeles-impuestos-h"
 import { filasBalanceEnLinea, hojaCajaYBancos } from "@/lib/balance/balance-en-linea"
 import { APERTURA_MSA_2025 } from "@/lib/balance/apertura-contador"
 import { libroDeSolapa, repartirEnLibros, templatesDeResponsable, detalleBancarioDelLibroC, canalDePago, hojaDeDetalle } from "@/lib/balance/libros-del-balance"
@@ -12363,6 +12364,27 @@ export function correrCasos(): Resultado[] {
       e, v, v === e, "A-FEAT-1515")
   }
 
+
+  // ══ 🏛️ Libro H — el papel de inmobiliario: 2 años apilados con sus fórmulas corridas, y el control contra templates por fechas (A-FEAT-1516) ══
+  {
+    const tpl = { nombre_referencia: "Inmobiliario Cuota Tango Parra 1", responsable: "MSA", cuenta_agrupadora: "Impuestos Rurales", categ: "Impuesto Inmobiliario", activo: true, partida_arba: "123" }
+    const cp = (id: string, venc: string, pago: string | null, monto: number) => ({ id, estado: "conciliado", fecha_vencimiento: venc, fecha_estimada: venc, fecha_pago: pago, monto, template: tpl })
+    const cuotas = [cp("a", "2025-09-10", "2025-09-10", 100), cp("b", "2026-06-10", "2026-07-05", 40), cp("c", "2025-06-20", "2025-07-02", 7), cp("d", "2026-03-10", "2026-03-10", 50)]
+    const ch = (id: string, fecha: string, monto: number) => ({ id, fecha, concepto: tpl.nombre_referencia, proveedor: "ARBA", categ: tpl.categ, cuenta_contable: "", nro_cuenta: "",
+      centro_costo: "", responsable: "MSA", estado: "conciliado", monto })
+    const meses = ["2025-07", "2025-08", "2025-09", "2025-10", "2025-11", "2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]
+    const sol = solapasPapelesH({ cuotas: cuotas as never, tcs: [], hectareas: {}, cuentasRedVial: {} }, "MSA", meses, [ch("a", "2025-09-10", 100), ch("c", "2025-07-02", 7), ch("d", "2026-03-10", 50)] as never)
+    const h = sol[0]?.filas ?? []
+    const t2026 = h.findIndex(r => (r as any[])[0] === "Inmobiliario (con complementario) 2026")
+    const filaTango26 = h.findIndex((r, i) => i > t2026 && (r as any[])[0] === "Tango Parra 1")
+    const usd = String(((h[filaTango26] as any[]).at(-2) as any).f)
+    const dif = h.find(r => (r as any[])[1] === "Diferencia (tiene que dar 0)") as any[]
+    const porque = h.filter(r => typeof (r as any[])[6] === "string" && /ejercicio/.test((r as any[])[6])).map(r => String((r as any[])[6]).slice(0, 26))
+    const v = `${sol.map(x => x.nombre).join(",")} · TC del 2026 en B${t2026 + 2}: ${usd.includes(`B${t2026 + 2}`)} · dif ${dif[3].v} · ${porque.join(" | ")}`
+    const e = `H · MSA · Papel Inmobiliario · TC del 2026 en B${t2026 + 2}: true · dif 33 · vence en el ejercicio y se | se pagó el 02/07/2025 (en `
+    chequear("Libro H", "El papel de inmobiliario en el libro H: los dos años en la misma solapa con sus fórmulas corridas; control contra las solapas de templates para el ejercicio, con los casos que se explican por vencimiento vs. pago",
+      e, v, v === e, "A-FEAT-1516")
+  }
 
   // ══ 🧮 Templates: el Nro de cada fila de «Por mes» es el mismo que llevan sus cuotas en «Cuotas» (A-FEAT-1513) ══
   {

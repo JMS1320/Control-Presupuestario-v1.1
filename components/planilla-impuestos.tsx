@@ -26,7 +26,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from "@/components/ui/button"
 import { AlertaImpuestos } from "@/components/alerta-impuestos"
 import { PapelInmobiliario } from "@/components/papel-inmobiliario"
-import { cuentasRedVialDe, hectareasDe, papelDeTemplate, type TipoPapel } from "@/lib/impuestos/papel-inmobiliario"
+import { papelDeTemplate, type TipoPapel } from "@/lib/impuestos/papel-inmobiliario"
+import { cargarAuxiliaresPapel, cargarCuotasImpuestos } from "@/lib/impuestos/datos-papel"
 import type { TipoCambio } from "@/lib/arrendamientos/calculo"
 import { ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, GripVertical, Loader2, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
@@ -50,21 +51,8 @@ const CLASE_CELDA: Record<EstadoCelda, string> = {
 const ROTULO: Record<string, string> = { conciliada: "conciliada", pagada: "pagada", "sin-pagar": "sin pagar (presupuestada)" }
 const rotulo = (c: CeldaCuota) => c.rara ? `pagada, pero en ${c.estadoOriginal} — raro en un impuesto, revisar` : c.vencida ? "vencida sin pagar" : ROTULO[c.estado]
 
-const SELECT = "id,estado,fecha_vencimiento,fecha_estimada,fecha_pago,monto,numero_cuota,detalle,template:egresos_sin_factura!inner(id,nombre_referencia,responsable,cuenta_agrupadora,categ,solo_conciliacion,activo,partida_arba)"
-
-async function cargarCuotas(): Promise<CuotaPlanilla[]> {
-  const todas: CuotaPlanilla[] = []
-  // De a 1000: el límite por consulta de Supabase. Sin esto, el día que haya más cuotas la planilla
-  // mostraría menos sin avisar.
-  for (let desde = 0; ; desde += 1000) {
-    const { data, error } = await supabase.from("cuotas_egresos_sin_factura").select(SELECT)
-      .ilike("template.cuenta_agrupadora", "impuesto%").order("id").range(desde, desde + 999)
-    if (error) throw new Error(error.message)
-    todas.push(...((data ?? []) as unknown as CuotaPlanilla[]))
-    if (!data || data.length < 1000) break
-  }
-  return todas
-}
+/** La lectura vive en `lib/impuestos/datos-papel.ts`: el libro H del balance lee igual (A-FEAT-1516). */
+const cargarCuotas = () => cargarCuotasImpuestos(supabase)
 
 export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const hoy = hoyArgentina()
@@ -99,14 +87,7 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
     supabase.auth.getUser().then(({ data }) => setOrden(leerPreferencias(data.user).ordenImpuestos ?? []))
     // Para el detalle: TC (columna U$S) y hectáreas (columnas por ha). Si no se pueden leer, el detalle
     // sale igual sin esas columnas.
-    supabase.from("tipos_cambio").select("anio, mes, tc_presupuestado, tc_real").then(({ data }) => setTcs((data ?? []) as TipoCambio[]))
-    Promise.all([
-      supabase.from("partidas").select("campo, partida_inmobiliario, partida_red_vial, has_totales, has_productivas"),
-      supabase.from("campo_partidas").select("nombre_partida, nro_partida, has"),
-    ]).then(([p, c]) => {
-      setHectareas(hectareasDe((p.data ?? []) as any[], (c.data ?? []) as any[]))
-      setCuentasRedVial(cuentasRedVialDe((p.data ?? []) as any[]))
-    })
+    cargarAuxiliaresPapel(supabase).then(x => { setTcs(x.tcs); setHectareas(x.hectareas); setCuentasRedVial(x.cuentasRedVial) }).catch(() => {})
   }, [open, cargar])
 
   /** El total de las filas de un papel en la Planilla de un año: el control del detalle. */

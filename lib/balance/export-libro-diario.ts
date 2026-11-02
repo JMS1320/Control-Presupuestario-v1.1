@@ -45,6 +45,7 @@ import type { CuentasSinCuentaCorriente } from "./fuera-por-cuenta-corriente"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
 import { armarStocksUnificados, hojaDeStocks } from "./stocks-unificado"
+import { solapasPapelesH, type DatosPapelesH } from "./papeles-impuestos-h"
 import { armarGruposTemplates, armarHojaGrupo, gruposDelResponsable, hojaGrupo, hojaIndiceGrupos, hojaLib, nombreSolapaGrupo, type GrupoTemplates, type MovimientoLib } from "./grupos-templates"
 import { filasBalanceEnLinea, hojaBalanceEnLinea, hojaCajaYBancos, hojaFci, hojaDeudasYCreditos, hojaSoja, hojaVacasDeCria, type EntradaBalanceEnLinea } from "./balance-en-linea"
 import { LIBROS, repartirEnLibros, templatesDeResponsable, hojaListadoTemplates, hojaDeDetalle, type GrupoDetalle, type MovimientoDelDetalle } from "./libros-del-balance"
@@ -2880,14 +2881,14 @@ const COLS_DETALLE_BANCARIO: Columna[] = [
  * 📚 A-FEAT-1505 — baja el SET: los libros A a E en un .zip (JMS: «así tengo siempre todo el set parejo»). Se arma el libro
  * completo una sola vez (más el C) y se reparte: los cinco salen del mismo cálculo que el Excel de siempre.
  */
-export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>, entradaF?: EntradaBalanceEnLinea | null, lib?: MovimientoLib[] | null): Promise<void> {
+export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>, entradaF?: EntradaBalanceEnLinea | null, lib?: MovimientoLib[] | null, papeles?: DatosPapelesH | null): Promise<void> {
   const [libro, empresa, templates, , , , , bancarios] = a
   const wb = armarWorkbook(...a)
   const meses = mesesDelLibro(libro)
   agregarLibroC(wb, empresa, libro.ejercicio.etiqueta, templates ?? null, bancarios?.detalleBancario ?? null, meses)
   if (entradaF) agregarLibroF(wb, entradaF)
   if (templates) agregarLibroG(wb, templates.detalle, libro.ejercicio.etiqueta, lib ?? null, meses)
-  if (templates) agregarLibroH(wb, templates, libro.ejercicio.etiqueta, meses)
+  if (templates) agregarLibroH(wb, templates, libro.ejercicio.etiqueta, meses, papeles)
   const { default: JSZip } = await import("jszip")
   const zip = new JSZip()
   const base = nombreArchivo(libro, empresa).replace(/\.xlsx$/, "")
@@ -2925,7 +2926,9 @@ export function agregarLibroG(wb: XLSX.WorkBook, cuotas: CuotaTemplate[], etique
  * Por responsable, MSA → MA → PAM: Templates, Cuotas y Por mes (tal cual las del libro C) y después una solapa por agrupadora
  * del template, todas, con el grupo sin agrupadora al final. No reemplaza a C ni a G.
  */
-export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercicio, etiqueta: string, meses: { clave: string; rotulo: string }[] = []): void {
+export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercicio, etiqueta: string, meses: { clave: string; rotulo: string }[] = [],
+  /** 🏛️ A-FEAT-1516: las cuotas de impuestos y sus auxiliares, para el papel de inmobiliario / Red Vial / automotores. */
+  papeles?: DatosPapelesH | null): void {
   for (const resp of ["MSA", "MA", "PAM"]) {
     const t = templatesDeResponsable(templates, resp)
     if (!t) continue
@@ -2944,6 +2947,12 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
     const porMes = hojaTemplatesPorMes(t)
     hoja(wb, hojaPorMes, [...porMes, ...controlSolapasH(t, grupos, porMes.length)], COLS_TEMPLATES_POR_MES(t.columnas.length))
     for (const x of grupos) hoja(wb, x.nombre, x.filas, COLS_RESUMEN_MES)
+    // 🏛️ A-FEAT-1516: el papel de cada impuesto por partida (2 años calendario) con su control contra las solapas de arriba.
+    if (papeles) {
+      for (const x of solapasPapelesH(papeles, resp, meses.map(m => m.clave), t.detalle)) hoja(wb, x.nombre, x.filas, x.anchos.map(ancho => ({ ancho })))
+    } else {
+      hoja(wb, `H · ${resp} · Papel impuestos`, [["INMOBILIARIO, RED VIAL Y AUTOMOTORES"], ["⚠️ No se pudieron leer las cuotas de impuestos: el papel no salió. Bajalo desde Egresos → Templates → Planilla de impuestos."]], [{ ancho: 90 }])
+    }
   }
 }
 

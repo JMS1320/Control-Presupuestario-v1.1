@@ -6542,6 +6542,10 @@ En *Reportes → Papeles de trabajo del balance*, debajo de los botones, está e
 
 → A-TEST-1315
 
+**El papel de los impuestos por partida, dentro del libro H.** Al final de cada responsable, una solapa por impuesto —«Papel Inmobiliario», «Papel Red Vial», «Papel Automotores»— con el mismo papel que se baja desde la Planilla de impuestos, con los dos años del ejercicio uno debajo del otro. Al pie, el control: lo que el papel cuenta por **vencimiento** dentro del ejercicio contra lo que las solapas de templates cuentan por **fecha de pago**. Tienen que dar lo mismo; si no, abajo está cada cuota que vence de un lado y se pagó del otro.
+
+→ A-TEST-1316
+
 **Todos los stocks en una tabla — solapa «00 Stocks inicio y cierre».** Insumos, forrajes, gas oil, hacienda por categoría, soja, sementeras y pasturas: una línea por ítem con la cantidad y el precio al inicio y al cierre, en las dos valuaciones (**contable** = para el balance del contador; **económica** = para márgenes y presupuesto). Lo que la app tiene o calcula ya está; lo vacío es lo que falta: completalo en el Excel y el valor sale solo (es fórmula). La columna «Qué falta» dice qué pedir de cada línea. No reemplaza ninguna otra solapa.
 
 → A-TEST-1310

@@ -90,8 +90,8 @@ export interface Papel {
 
 const redondear = (n: number) => Math.round(n * 100) / 100
 
-/** ¿La cuota entra al papel? El mismo criterio que la Planilla (para que el control cierre). */
-function entra(c: CuotaPlanilla): string | null {
+/** ¿La cuota entra al papel? El mismo criterio que la Planilla (para que el control cierre). Devuelve su vencimiento. */
+export function vencimientoEnPapel(c: CuotaPlanilla): string | null {
   if (!esImpuesto(c.template)) return null
   const e = estadoDePlanilla(c.estado)
   if (!e) return null
@@ -120,7 +120,7 @@ export function armarPapel(
   for (const c of cuotas) {
     const p = papelDeTemplate(c.template.categ)
     if (!p || p.papel !== tipo) continue
-    const venc = entra(c)
+    const venc = vencimientoEnPapel(c)
     if (!venc) continue
     const a = Number(venc.slice(0, 4))
     if (a !== anio && a !== anio - 1) continue
@@ -239,4 +239,60 @@ export function ordenarPapel(p: Papel, orden: readonly string[]): Papel {
 export function moverPartida(orden: readonly string[], visibles: readonly string[], desde: string, hasta: string): string[] {
   const base = [...orden, ...visibles.filter(k => !orden.includes(k))]
   return moverColumna(base, desde, hasta, "antes")
+}
+
+const colLetra = (i: number) => { let s = ""; i += 1; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26) } return s }
+
+/** El encabezado del papel (para los anchos de columna de quien lo escriba). */
+export function encabezadoPapel(maxCuotas: number): string[] {
+  return ["Campo", "Partida", "Has", "Total año anterior", "Pago anual", "Total en cuotas", "Costo anual $", "Aumento",
+    ...Array.from({ length: maxCuotas }, (_, i) => [`Cuota ${i + 1}`, `Vto. ${i + 1}`]).flat(), "Costo x ha $", "Costo U$S", "Costo x ha U$S"]
+}
+
+/**
+ * 📗 A-FEAT-1516 — las filas del Excel del papel, con las fórmulas de la planilla del usuario: Costo anual = Pago anual +
+ * Total en cuotas · Aumento = Costo / Total anterior − 1 · U$S = Costo / TC promedio · por hectárea = / Has · totales con
+ * SUMA · y un CONTROL que resta el total general de la suma de las empresas (tiene que dar 0).
+ *
+ * Un solo armado para el botón «Excel» de la pantalla y para el libro H del balance (§ Centralizar). `filaInicial` deja
+ * apilar dos años en la misma hoja: todas las fórmulas se corren con él.
+ */
+export function filasPapel(p: Papel, filaInicial = 1): unknown[][] {
+  const o = filaInicial - 1
+  const n = p.maxCuotas
+  const cab = encabezadoPapel(n)
+  cab[3] = `Total ${p.anio - 1}`
+  const cG = colLetra(6), cD = colLetra(3), cC = colLetra(2), cE = colLetra(4), cF = colLetra(5)
+  const cTc = `B${o + 2}`
+  const filas: unknown[][] = [
+    [`${TITULO_PAPEL[p.tipo]} ${p.anio}`],
+    ["TC promedio", p.tcPromedio ?? ""],
+    [],
+    cab,
+  ]
+  const fila = () => o + filas.length + 1
+  const totalesEmpresa: number[] = []
+  for (const b of p.bloques) {
+    filas.push([b.empresa])
+    const desde = fila()
+    for (const f of b.filas) {
+      const r = fila()
+      filas.push([
+        f.campo, f.partida ?? "", f.has ?? "", f.totalAnterior, f.pagoAnual ?? 0, f.totalCuotas,
+        { f: `${cE}${r}+${cF}${r}`, v: f.costoAnual }, { f: `IF(${cD}${r}>0,${cG}${r}/${cD}${r}-1,"")` },
+        ...Array.from({ length: n }, (_, i) => f.cuotas[i] ? [f.cuotas[i].monto, f.cuotas[i].vencimiento.split("-").reverse().join("/")] : ["", ""]).flat(),
+        { f: `IF(N(${cC}${r})>0,${cG}${r}/${cC}${r},"")` }, { f: `IF(N(${cTc})>0,${cG}${r}/${cTc},"")` }, { f: `IF(AND(N(${cC}${r})>0,N(${cTc})>0),${cG}${r}/${cTc}/${cC}${r},"")` },
+      ])
+    }
+    const hasta = fila() - 1
+    const r = fila()
+    totalesEmpresa.push(r)
+    filas.push([`TOTAL ${b.empresa}`, "", "", { f: `SUM(${cD}${desde}:${cD}${hasta})`, v: b.totalAnterior }, { f: `SUM(${cE}${desde}:${cE}${hasta})` }, { f: `SUM(${cF}${desde}:${cF}${hasta})` },
+      { f: `SUM(${cG}${desde}:${cG}${hasta})`, v: b.total }, { f: `IF(${cD}${r}>0,${cG}${r}/${cD}${r}-1,"")` }])
+    filas.push([])
+  }
+  const rTot = fila()
+  filas.push(["TOTAL GENERAL", "", "", { f: totalesEmpresa.map(r => `${cD}${r}`).join("+") || "0", v: p.totalAnterior }, "", "", { f: totalesEmpresa.map(r => `${cG}${r}`).join("+") || "0", v: p.total }])
+  filas.push(["CONTROL (tiene que dar 0)", "", "", "", "", "", { f: `${cG}${rTot}-(SUM(${cG}${o + 5}:${cG}${rTot - 1})-SUMIF(A${o + 5}:A${rTot - 1},"TOTAL *",${cG}${o + 5}:${cG}${rTot - 1}))`, v: 0 }])
+  return filas
 }

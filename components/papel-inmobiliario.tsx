@@ -20,7 +20,7 @@ import * as XLSX from "xlsx"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft, ChevronRight, Download, GripVertical } from "lucide-react"
-import { armarPapel, ordenarPapel, moverPartida, clavePartida, TITULO_PAPEL, type TipoPapel, type Papel } from "@/lib/impuestos/papel-inmobiliario"
+import { armarPapel, ordenarPapel, moverPartida, clavePartida, filasPapel, encabezadoPapel, TITULO_PAPEL, type TipoPapel, type Papel } from "@/lib/impuestos/papel-inmobiliario"
 import type { CuotaPlanilla } from "@/lib/impuestos/planilla"
 import type { TipoCambio } from "@/lib/arrendamientos/calculo"
 
@@ -220,51 +220,10 @@ function BloqueFilas({ b, anio, max, arrastre }: { b: Papel["bloques"][number]; 
   )
 }
 
-/** Columna de Excel (0 → A). */
-const col = (i: number) => { let s = ""; i += 1; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26) } return s }
-
-/**
- * Excel con las fórmulas de la planilla: Costo anual = Pago anual + Total en cuotas · Aumento =
- * Costo / Total anterior − 1 · U$S = Costo / TC promedio · por hectárea = / Has · totales con SUMA ·
- * y un CONTROL que resta el total general de la suma de las empresas (tiene que dar 0).
- */
+/** Excel con las fórmulas de la planilla. Las filas las arma `filasPapel` (el mismo armado que el libro H del balance). */
 function exportarPapel(p: Papel) {
-  const n = p.maxCuotas
-  const cab = ["Campo", "Partida", "Has", `Total ${p.anio - 1}`, "Pago anual", "Total en cuotas", "Costo anual $", "Aumento",
-    ...Array.from({ length: n }, (_, i) => [`Cuota ${i + 1}`, `Vto. ${i + 1}`]).flat(), "Costo x ha $", "Costo U$S", "Costo x ha U$S"]
-  const cG = col(6), cD = col(3), cC = col(2), cE = col(4), cF = col(5)
-  const cTc = "B2"
-  const filas: any[][] = [
-    [`${TITULO_PAPEL[p.tipo]} ${p.anio}`],
-    ["TC promedio", p.tcPromedio ?? ""],
-    [],
-    cab,
-  ]
-  const totalesEmpresa: number[] = []
-  for (const b of p.bloques) {
-    filas.push([b.empresa])
-    const desde = filas.length + 1
-    for (const f of b.filas) {
-      const r = filas.length + 1
-      filas.push([
-        f.campo, f.partida ?? "", f.has ?? "", f.totalAnterior, f.pagoAnual ?? 0, f.totalCuotas,
-        { f: `${cE}${r}+${cF}${r}` }, { f: `IF(${cD}${r}>0,${cG}${r}/${cD}${r}-1,"")` },
-        ...Array.from({ length: n }, (_, i) => f.cuotas[i] ? [f.cuotas[i].monto, f.cuotas[i].vencimiento.split("-").reverse().join("/")] : ["", ""]).flat(),
-        { f: `IF(N(${cC}${r})>0,${cG}${r}/${cC}${r},"")` }, { f: `IF(N(${cTc})>0,${cG}${r}/${cTc},"")` }, { f: `IF(AND(N(${cC}${r})>0,N(${cTc})>0),${cG}${r}/${cTc}/${cC}${r},"")` },
-      ])
-    }
-    const hasta = filas.length
-    const r = filas.length + 1
-    totalesEmpresa.push(r)
-    filas.push([`TOTAL ${b.empresa}`, "", "", { f: `SUM(${cD}${desde}:${cD}${hasta})` }, { f: `SUM(${cE}${desde}:${cE}${hasta})` }, { f: `SUM(${cF}${desde}:${cF}${hasta})` },
-      { f: `SUM(${cG}${desde}:${cG}${hasta})` }, { f: `IF(${cD}${r}>0,${cG}${r}/${cD}${r}-1,"")` }])
-    filas.push([])
-  }
-  const rTot = filas.length + 1
-  filas.push(["TOTAL GENERAL", "", "", { f: totalesEmpresa.map(r => `${cD}${r}`).join("+") || "0" }, "", "", { f: totalesEmpresa.map(r => `${cG}${r}`).join("+") || "0" }])
-  filas.push(["CONTROL (tiene que dar 0)", "", "", "", "", "", { f: `${cG}${rTot}-(SUM(${cG}5:${cG}${rTot - 1})-SUMIF(A5:A${rTot - 1},"TOTAL *",${cG}5:${cG}${rTot - 1}))` }])
-  const ws = XLSX.utils.aoa_to_sheet(filas)
-  ws["!cols"] = [{ wch: 26 }, { wch: 15 }, { wch: 8 }, ...cab.slice(3).map(() => ({ wch: 14 }))]
+  const ws = XLSX.utils.aoa_to_sheet(filasPapel(p))
+  ws["!cols"] = [{ wch: 26 }, { wch: 15 }, { wch: 8 }, ...encabezadoPapel(p.maxCuotas).slice(3).map(() => ({ wch: 14 }))]
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, TITULO_PAPEL[p.tipo].slice(0, 28))
   XLSX.writeFile(wb, `${TITULO_PAPEL[p.tipo].split(" ")[0]}_${p.anio}.xlsx`)

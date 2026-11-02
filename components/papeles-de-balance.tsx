@@ -40,6 +40,8 @@ import { PRESENTADO_ARCA_COMPRAS } from "@/lib/balance/presentado-arca"
 import { explicarFila, type ProveedorFijo } from "@/lib/balance/facturas-fijas"
 import { armarTemplatesDelEjercicio, desdeCuota, type TemplatesDelEjercicio } from "@/lib/balance/templates-libro"
 import { leerMovimientosDeCuotas, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
+import { cargarAuxiliaresPapel, cargarCuotasImpuestos } from "@/lib/impuestos/datos-papel"
+import type { DatosPapelesH } from "@/lib/balance/papeles-impuestos-h"
 import {
   armarControlCuotas, resumenControlCuotas, conProblema, cuotaParaControlDesde, subdiariosConVentasDesde,
   leerComisionesPorCuenta, COMISIONES_MSA, campaniaDelControl, ultimoDiaDelMes,
@@ -443,7 +445,15 @@ export function PapelesDeBalance() {
     }
     const args = await ultimo.current.argsConRecorrido(lib)
     const entradaF = await ultimo.current.entradaBalanceEnLinea(lib)
-    await descargarSetDelBalance(args, entradaF, await leerMovimientosLib(lib))
+    // 🏛️ A-FEAT-1516: el papel de inmobiliario / Red Vial / automotores del libro H se lee igual que la Planilla de impuestos.
+    let papeles: DatosPapelesH | null = null
+    try {
+      const [cuotasImp, aux] = await Promise.all([cargarCuotasImpuestos(supabase), cargarAuxiliaresPapel(supabase)])
+      papeles = { cuotas: cuotasImp, ...aux }
+    } catch {
+      toast.warning("No se pudieron leer las cuotas de impuestos: el libro H sale sin el papel de inmobiliario, Red Vial y automotores.")
+    }
+    await descargarSetDelBalance(args, entradaF, await leerMovimientosLib(lib), papeles)
   }
   const sinResponder = temasRecorrido.filter(t => !t.respondido).length
   /** Lo que todavía no llegó, para que la vista previa lo diga en vez de parecer completa. */
