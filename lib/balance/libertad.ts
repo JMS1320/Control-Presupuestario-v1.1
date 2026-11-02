@@ -26,7 +26,8 @@ export const MES_CAMBIO_SOCIO = "2026-01"
 
 const AGRUPADORAS = new Set(["fijos buenos aires ma", "impuestos buenos aires ma"])
 /** Las categorías de Libertad (las de JMS 02/11) → cómo se rotulan en el cuadro. */
-const CONCEPTOS: Record<string, string> = { "expensas": "Expensas", "agua": "Agua (AySA)", "gas": "Gas (Metrogas)", "abl": "ABL", "fijos libertad": "Fijos Libertad (ACA)" }
+// ⚠️ cambió 02/11 — sin «Fijos Libertad» (ACA). JMS: «acá no debería ser un gasto de Libertad sino de PAM o MA respectivamente».
+const CONCEPTOS: Record<string, string> = { "expensas": "Expensas", "agua": "Agua (AySA)", "gas": "Gas (Metrogas)", "abl": "ABL" }
 const SIN_PAGAR = new Set(["pendiente", "pagar", "preparado"])
 
 const r2 = (n: number) => Math.round(n * 100) / 100
@@ -38,7 +39,7 @@ const dmy = (f: string | null | undefined) => (f ? f.slice(0, 10).split("-").rev
 export function esDeLibertad(c: CuotaTemplate): boolean {
   if (!["PAM", "MA"].includes(resp1(c.responsable))) return false
   if (!AGRUPADORAS.has(norm(c.agrupadoraTemplate ?? ""))) return false
-  if (/cochera/i.test(c.concepto) || /cochera/i.test(c.categ)) return false
+  if (/cochera/i.test(c.concepto) || /cochera/i.test(c.categ) || /\baca\b/i.test(c.concepto)) return false
   return norm(c.categ) in CONCEPTOS
 }
 
@@ -54,7 +55,7 @@ export function quienPago(c: CuotaTemplate): string {
 }
 
 /** Las filas del bloque REPARTO + QUIÉN PAGÓ (alto fijo), con fórmulas sobre el resumen y el detalle. */
-const ALTO_BLOQUE = 20
+const ALTO_BLOQUE = 25
 function bloqueReparto(cs: CuotaTemplate[], meses: { clave: string; rotulo: string }[], u: UbicacionBloque): unknown[][] {
   const f: unknown[][] = []
   const r = (k: number) => u.fila + k
@@ -99,6 +100,18 @@ function bloqueReparto(cs: CuotaTemplate[], meses: { clave: string; rotulo: stri
   const rPagoN = r(f.length) - 1
   const difControl = meses.map((_, j) => r2(costo[j] - pagos.reduce((t, p) => t + p[j], 0)))
   f.push(fila("Control: costo − todo lo de arriba (tiene que dar 0)", (_j, c) => `${c}${rCosto}-SUM(${c}${rPago0}:${c}${rPagoN})`, difControl))
+  // JMS 02/11: «¿pagó MSA + pagó PAM + pagó MA = total Libertad?» — explícito, y lo que falta para llegar.
+  const tres = meses.map((_, j) => r2(pagos[0][j] + pagos[1][j] + pagos[2][j]))
+  const rTres = r(f.length)
+  f.push(fila("Pagó MSA + PAM + MA", (_j, c) => `${c}${rPago0}+${c}${rPago0 + 1}+${c}${rPago0 + 2}`, tres))
+  f.push(fila("  diferencia con el costo (= varias cuentas + sin dato del banco + sin pagar: ver el detalle)", (_j, c) => `${c}${rCosto}-${c}${rTres}`, meses.map((_, j) => r2(costo[j] - tres[j]))))
+  // Contra el BANCO: lo pagado según las cuotas contra lo que respaldan sus movimientos (otra fuente).
+  const conBanco = (j: number) => enMes(meses[j].clave).filter(c => c.banco?.titular)
+  const segunCuotas = meses.map((_, j) => r2(conBanco(j).reduce((t, c) => t + c.monto, 0)))
+  const segunBanco = meses.map((_, j) => r2(conBanco(j).reduce((t, c) => t + (c.banco?.respaldo ?? 0), 0)))
+  const rBanco = r(f.length)
+  f.push(fila("Pagado según los movimientos del BANCO (otra fuente)", j => String(segunBanco[j]), segunBanco))
+  f.push(fila("  diferencia (pagado según cuotas − según banco; tiene que dar 0)", (_j, c) => `${c}${rTres}+${c}${rPago0 + 3}-${c}${rBanco}`, meses.map((_, j) => r2(segunCuotas[j] - segunBanco[j]))))
   const cc = meses.map((_, j) => r2(pagos[0][j] - mitad[j]))
   const rCc = r(f.length)
   f.push(fila("CUENTA CORRIENTE LIBERTAD — el socio RETIRÓ de MSA (+) / APORTÓ (−): lo que MSA pagó − su 50%", (_j, c) => `${c}${rPago0}-${c}${rMsa}`, cc))
@@ -106,6 +119,8 @@ function bloqueReparto(cs: CuotaTemplate[], meses: { clave: string; rotulo: stri
   const acumulado = cc.map(v => (acum = r2(acum + v)))
   f.push(fila("  acumulado del ejercicio", (j, c) => (j === 0 ? `${c}${rCc}` : `${u.colMes(j - 1)}${r(f.length)}+${c}${rCc}`), acumulado, "ultimo"))
   f.push(["", "⚠️ Lo «sin dato del banco» y lo «sin pagar» no tienen pagador: hasta conciliarlos, la cuenta corriente no los cuenta."])
+  const casos = cs.filter(c => c.banco?.titular && c.banco.motivo).length
+  f.push(["", casos ? `⚠️ ${casos} cuota(s) pagadas por otro importe que el del banco: ver «Contra el banco» al pie.` : "✓ Lo pagado coincide con el banco, cuota por cuota."])
   f.push([])
   return f
 }
@@ -120,12 +135,17 @@ export function hojaLibertad(cuotas: CuotaTemplate[], etiqueta: string, meses: {
   })), {
     titulo: `GASTOS LIBERTAD — costo, reparto 50/50 y quién lo pagó — ejercicio ${etiqueta}`,
     notas: ["Costo de estructura de las oficinas: siempre 50% MSA y 50% el socio — PAM hasta el 31/12/2025, MA desde el 01/01/2026.",
-      "Gasto = las cuotas de los templates de Libertad (Expensas, AySA, Metrogas, ABL, ACA; las dos versiones, PAM y MA; sin la cochera).",
+      "Gasto = las cuotas de los templates de Libertad (Expensas, AySA, Metrogas, ABL; las dos versiones, PAM y MA; sin la cochera ni ACA, que son de PAM o MA).",
       "Quién pagó = el titular de la cuenta con que se concilió cada cuota. Internamente MA toma el 100% (todo LIB es DIST MA)."],
     meses, encabezadoDetalle: ["Fecha", "Template", "Responsable del template", "Pagó", "Cuenta", "Comprobante", "Estado"], debeHaber: true,
     bloqueExtra: { alto: ALTO_BLOQUE, armar: u => bloqueReparto(cs, meses, u) },
   })
   h.push(...controlLib(cs, meses, extracto))
+  const difBanco = cs.filter(c => c.banco?.titular && c.banco.motivo)
+  if (difBanco.length) {
+    h.push([], ["CONTRA EL BANCO — cuotas de Libertad pagadas por otro importe que el del movimiento"], ["", "Fecha", "Template", "Pagó", "Cuota", "Respalda el banco", "Por qué"])
+    for (const c of difBanco) h.push(["", dmy(c.fecha), c.concepto, quienPago(c), c.monto, c.banco?.respaldo ?? "", c.banco?.motivo])
+  }
   return h
 }
 

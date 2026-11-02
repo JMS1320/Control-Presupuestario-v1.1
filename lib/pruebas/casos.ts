@@ -12375,9 +12375,8 @@ export function correrCasos(): Resultado[] {
     const h = hojaResumenPorMes([it("A", "2025-07", 10), it("A", "2025-08", -4), it("B", "2025-07", 5)], { titulo: "T", meses: [{ clave: "2025-07", rotulo: "jul-25" }, { clave: "2025-08", rotulo: "ago-25" }], encabezadoDetalle: ["X"], debeHaber: true })
     const enc = h.findIndex(r => (r as any[])[0] === "Nro" && (r as any[]).includes("Débito")) + 1
     const sub = h[enc + 3] as any[]
-    const am = h.find(r => (r as any[])[0]?.v === "Nro a ver ▶") as any[]
-    const v = `filtro ${filtroDe(h)} · ${sub[2]} · ${sub[3].f}=${sub[3].v} · ${sub[4].f}=${sub[4].v} · neto ${sub[5].v} · amarillo Nro ${am[1].v} ${am[2].v} ${am[3].v} renglones ${am[5].v}`
-    const e = `filtro A${enc}:E${enc + 3} · Subtotal de lo filtrado · SUBTOTAL(9,D${enc + 1}:D${enc + 3})=15 · SUBTOTAL(9,E${enc + 1}:E${enc + 3})=4 · neto 11 · amarillo Nro 1 A 2 renglones 6`
+    const v = `filtro ${filtroDe(h)} · ${sub[2]} · ${sub[3].f}=${sub[3].v} · ${sub[4].f}=${sub[4].v} · neto ${sub[5].v} · amarillo ${h.some(r => (r as any[])[0]?.v === "Nro a ver ▶")}`
+    const e = `filtro A${enc}:E${enc + 3} · Subtotal de lo filtrado · SUBTOTAL(9,D${enc + 1}:D${enc + 3})=15 · SUBTOTAL(9,E${enc + 1}:E${enc + 3})=4 · neto 11 · amarillo false`
     chequear("Libro H", "Todo detalle de resumen por mes: filtro sobre el detalle (no sobre el resumen) y subtotal de lo filtrado pegado abajo, con débito, crédito y neto",
       e, v, v === e, "A-FEAT-1515")
   }
@@ -12433,15 +12432,16 @@ export function correrCasos(): Resultado[] {
     const cs = [q("a", "PAM", F, "EXPENSAS", "Expensas Libertad", "2025-09-10", 100, "MSA"), q("b", "PAM", F, "AGUA", "AYSA Libertad", "2025-10-10", 40, "PAM"),
       q("c", "MA", F, "GAS", "Metrogas Libertad", "2026-02-10", 30, "MA"), q("d", "MA", F, "EXPENSAS", "Expensas Libertad", "2026-03-10", 50, "MSA"),
       q("e", "MA", I, "ABL", "ABL Libertad Cuota", "2026-04-10", 20, null, "pendiente"), q("x", "PAM/MA/Duhau", I, "ABL Libertad Cochera", "ABL Cochera Libertad Anual", "2026-05-30", 999, "MA"),
-      q("y", "PAM", F, "GASTOS MEDICOS", "Gastos Medicos", "2026-06-18", 77, "PAM")] as never
+      q("y", "PAM", F, "GASTOS MEDICOS", "Gastos Medicos", "2026-06-18", 77, "PAM"), q("z", "MA", F, "Fijos Libertad", "ACA", "2026-02-05", 29, "MA")] as never
     const meses = ["2025-07", "2025-08", "2025-09", "2025-10", "2025-11", "2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"].map(clave => ({ clave, rotulo: clave }))
     const h = hojaLibertad(cs, "25/26", meses)
     const fila = (et: string) => (h.find(r => (r as any[])[1] === et) as any[]).slice(2, 15).map((x: any) => x.v)
     const costo = fila("Costo de Libertad del mes"), pam = fila("PAM toma el 50% (hasta dic-25)"), ma = fila("MA toma el 50% (desde ene-26)")
     const cc = fila("CUENTA CORRIENTE LIBERTAD — el socio RETIRÓ de MSA (+) / APORTÓ (−): lo que MSA pagó − su 50%"), ctrl = fila("Control: costo − todo lo de arriba (tiene que dar 0)")
-    const v = `costo ${costo[12]} · PAM ${pam[12]} · MA ${ma[12]} · cc sep ${cc[2]} oct ${cc[3]} feb ${cc[7]} mar ${cc[8]} total ${cc[12]} · control ${ctrl[12]}`
-    const e = "costo 240 · PAM 70 · MA 50 · cc sep 50 oct -20 feb -15 mar 25 total 30 · control 0"
-    chequear("Libertad", "Gastos Libertad: costo de las categorías de Libertad (sin cochera ni otros), 50% MSA y 50% PAM hasta dic-25 / MA desde ene-26; cuenta corriente = lo que pagó MSA − su 50%; el control del todo a las partes da 0",
+    const tres = fila("Pagó MSA + PAM + MA"), dif = fila("  diferencia con el costo (= varias cuentas + sin dato del banco + sin pagar: ver el detalle)")
+    const v = `costo ${costo[12]} · PAM ${pam[12]} · MA ${ma[12]} · cc sep ${cc[2]} oct ${cc[3]} feb ${cc[7]} mar ${cc[8]} total ${cc[12]} · control ${ctrl[12]} · tres ${tres[12]} dif ${dif[12]}`
+    const e = "costo 240 · PAM 70 · MA 50 · cc sep 50 oct -20 feb -15 mar 25 total 30 · control 0 · tres 220 dif 20"
+    chequear("Libertad", "Gastos Libertad: costo de las categorías de Libertad (sin cochera, ACA ni otros), 50% MSA y 50% PAM hasta dic-25 / MA desde ene-26; cuenta corriente = lo que pagó MSA − su 50%; el control del todo a las partes da 0",
       e, v, v === e, "A-FEAT-1521")
   }
 
