@@ -38,8 +38,8 @@ import { armarEjercicio, nombreSubdiario, primerDiaDelEjercicio } from "@/lib/ba
 import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta, ULTIMO_SUBDIARIO_HISTORICO, type LibroDiario } from "@/lib/balance/libro-diario"
 import { PRESENTADO_ARCA_COMPRAS } from "@/lib/balance/presentado-arca"
 import { explicarFila, type ProveedorFijo } from "@/lib/balance/facturas-fijas"
-import { armarTemplatesDelEjercicio, desdeCuota, type TemplatesDelEjercicio } from "@/lib/balance/templates-libro"
-import { leerMovimientosDeCuotas, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
+import { armarTemplatesDelEjercicio, desdeCuota, type ExtractoParaH, type TemplatesDelEjercicio } from "@/lib/balance/templates-libro"
+import { indiceDeDestinos, leerExtractoDelEjercicio, leerMovimientosDeCuotas, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
 import { cargarAuxiliaresPapel, cargarCuotasImpuestos } from "@/lib/impuestos/datos-papel"
 import type { DatosPapelesH } from "@/lib/balance/papeles-impuestos-h"
 import {
@@ -1174,6 +1174,7 @@ export function PapelesDeBalance() {
        */
       let cuotasLibro = (cuotas.data ?? []).map(f => desdeCuota(f, tipoDeCateg))
       let bancoSinLeer: string[] | undefined
+      let extracto: ExtractoParaH | undefined
       try {
         const leido = await leerMovimientosDeCuotas(supabase as unknown as ClienteMinimo, cuotasLibro)
         cuotasLibro = vincularBanco(cuotasLibro, cuotasLibro, leido.movimientos)
@@ -1182,11 +1183,19 @@ export function PapelesDeBalance() {
       } catch {
         toast.warning("No se pudo leer el banco de las cuotas: el libro H sale sin cuenta ni comprobante, y sin su control contra el banco.")
       }
+      // 🔎 A-FEAT-1518: el extracto del ejercicio, para el control «desde el extracto» de cada solapa del libro H.
+      try {
+        const ex = await leerExtractoDelEjercicio(supabase as unknown as ClienteMinimo, primerDiaDelEjercicio(ej), ej.fechaCierre)
+        extracto = { movimientos: ex.movimientos, destinos: indiceDeDestinos(cuotasLibro), tablasQueFallaron: ex.tablasQueFallaron }
+      } catch {
+        toast.warning("No se pudo leer el extracto del ejercicio: el libro H sale sin el control desde el extracto.")
+      }
       setTemplates(armarTemplatesDelEjercicio(cuotasLibro, ej, {
         empresa: empresa.id,
         plan,
         templatesConPoliza: ((conPoliza ?? []) as Array<{ template_id: string | null }>).map(p => p.template_id!).filter(Boolean),
         bancoSinLeer,
+        extracto,
       }))
 
       /**

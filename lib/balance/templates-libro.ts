@@ -109,6 +109,15 @@ export interface OpcionesTemplates {
    * Viaja con las opciones para que el control contra el banco del libro H lo diga.
    */
   bancoSinLeer?: string[]
+  /** 🔎 A-FEAT-1518: el extracto del ejercicio y a qué quedó atado cada movimiento (control 4 del libro H). */
+  extracto?: ExtractoParaH
+}
+
+/** 🔎 A-FEAT-1518 — lo que necesita el control «desde el extracto» del libro H. */
+export interface ExtractoParaH {
+  movimientos: import("./movimientos-de-cuotas").MovimientoExtractoH[]
+  destinos: Map<string, import("./movimientos-de-cuotas").DestinoMovimiento>
+  tablasQueFallaron: string[]
 }
 
 /** Una cuota de template, ya normalizada desde `cuotas_egresos_sin_factura` + su egreso. */

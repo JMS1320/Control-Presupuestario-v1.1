@@ -116,3 +116,78 @@ function bancoDe(c: CuotaTemplate, porVinculo: Map<string, MovimientoDeCuota[]>,
   const respaldo = g.total ? r2(c.monto * neto / g.total) : 0
   return { cuenta, comprobante, respaldo, motivo: `pago agrupado de ${g.n} cuotas por $ ${fmt(g.total)}; el banco movió $ ${fmt(neto)}` }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+/**
+ * 🔎 **EL EXTRACTO DEL EJERCICIO, PARA EL CONTROL 4 DEL LIBRO H** — A-FEAT-1518 (JMS 01/11, «H · MSA · Imp Rurales»:
+ * *«¿están hechos los controles de los registros desde extractos contra templates?»*).
+ *
+ * El control 3 va de la cuota al banco. Éste va al revés: cada movimiento del banco con la categoría de una solapa, ¿a qué
+ * quedó atado? A una cuota de esa solapa (✓), a una cuota de OTRO responsable (pagado por cuenta de otra empresa ⚠️), a una
+ * cuota del mismo responsable en otra solapa (ℹ️ ya está allá), a una factura (ℹ️ va por el subdiario) o a nada (⚠️).
+ * Caso que lo justificó (01/11): de 31 movimientos de MSA con categoría de impuesto rural, 17 pagaban impuestos de MA y PAM.
+ */
+export interface MovimientoExtractoH {
+  titular: string
+  cuenta: string
+  fecha: string
+  descripcion: string
+  categ: string
+  debitos: number
+  creditos: number
+  templateCuotaId: string | null
+  comprobanteArcaId: string | null
+  enDolares: boolean
+}
+
+/** Los movimientos del ejercicio CON categoría, de todas las cuentas, de a 1000. */
+export async function leerExtractoDelEjercicio(cliente: ClienteMinimo, desde: string, hasta: string): Promise<{ movimientos: MovimientoExtractoH[]; tablasQueFallaron: string[] }> {
+  const movimientos: MovimientoExtractoH[] = []
+  const tablasQueFallaron: string[] = []
+  for (const t of TABLAS_CON_VINCULO_ARCA) {
+    for (let d = 0; ; d += 1000) {
+      const q = t.schema === "public" ? cliente.from(t.tabla) : cliente.schema(t.schema).from(t.tabla)
+      // ClienteMinimo no tipa gte/lte/not/range: se usan igual que en el resto del repo.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (q.select("fecha, descripcion, categ, debitos, creditos, template_cuota_id, comprobante_arca_id") as any)
+        .gte("fecha", desde).lte("fecha", hasta).not("categ", "is", null).order("fecha").range(d, d + 999)
+      if (error) { tablasQueFallaron.push(nombreCuenta(t)); break }
+      for (const m of (data ?? []) as Array<Record<string, unknown>>) {
+        movimientos.push({
+          titular: t.titular ?? "", cuenta: nombreCuenta(t), fecha: String(m.fecha ?? "").slice(0, 10),
+          descripcion: String(m.descripcion ?? ""), categ: String(m.categ ?? ""),
+          debitos: Number(m.debitos) || 0, creditos: Number(m.creditos) || 0,
+          templateCuotaId: m.template_cuota_id ? String(m.template_cuota_id) : null,
+          comprobanteArcaId: m.comprobante_arca_id ? String(m.comprobante_arca_id) : null,
+          enDolares: !!t.enDolares,
+        })
+      }
+      if (!data || data.length < 1000) break
+    }
+  }
+  return { movimientos, tablasQueFallaron }
+}
+
+/** A qué quedó atado un movimiento: la cuota (o el grupo de pago) resuelta contra todas las cuotas leídas. */
+export interface DestinoMovimiento { responsable: string; agrupadora: string; concepto: string; cuotaIds: string[] }
+
+/** Pura. El índice de destinos: id de cuota o de grupo → a qué responsable / agrupadora / template pertenece. */
+export function indiceDeDestinos(todas: CuotaTemplate[]): Map<string, DestinoMovimiento> {
+  const resp1 = (r: string) => (r || "").split("/")[0].trim().toUpperCase()
+  const m = new Map<string, DestinoMovimiento>()
+  for (const c of todas) {
+    const d = { responsable: resp1(c.responsable), agrupadora: (c.agrupadoraTemplate ?? "").trim(), concepto: c.concepto, cuotaIds: [c.id] }
+    m.set(c.id, d)
+    if (c.grupoPagoId) {
+      const g = m.get(c.grupoPagoId)
+      if (!g) m.set(c.grupoPagoId, { ...d, cuotaIds: [c.id] })
+      else {
+        g.cuotaIds.push(c.id)
+        if (g.responsable !== d.responsable) g.responsable = "varios"
+        if (g.agrupadora !== d.agrupadora) g.agrupadora = "varias"
+        if (g.concepto !== d.concepto) g.concepto = `pago agrupado (${g.cuotaIds.length} cuotas)`
+      }
+    }
+  }
+  return m
+}

@@ -8,7 +8,7 @@
  *
  * Pura: recibe las cuotas del ejercicio (las del libro de templates) y los movimientos LIB ya leídos.
  */
-import type { CuotaTemplate } from "./templates-libro"
+import type { CuotaTemplate, ExtractoParaH } from "./templates-libro"
 import { armarResumenPorMes, hojaResumenPorMes } from "./resumen-por-mes"
 import { MOTIVO_EN_CERO } from "./movimientos-de-cuotas"
 
@@ -76,6 +76,8 @@ export interface OpcionesHojaGrupo {
   hojaPorMes?: string
   /** Las cuentas que no se pudieron leer al buscar el banco de las cuotas (se dicen en el control 3). */
   tablasSinLeer?: string[]
+  /** 🔎 A-FEAT-1518: el extracto del ejercicio, para el control 4 (desde el extracto). Sin esto, el control no se hace y se dice. */
+  extracto?: ExtractoParaH
 }
 
 /** Las columnas de «Por mes» (ver `hojaTemplatesPorMes`): B = agrupadora, C = categoría, P = TOTAL (12 meses desde la D). */
@@ -156,6 +158,8 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
   h.push(["", "", "= Total de la solapa", { t: "n", f: `D${r3}+D${rP}+D${rP + 1}`, v: total }])
 
   // Primero los que mueven plata; las conciliadas en $ 0 sin movimiento, al final (no cambian el control).
+  h.push(...control4(g, opciones, fila()))
+
   const casos = g.cuotas.filter(c => c.banco?.motivo)
     .sort((a, b) => Number(a.banco!.motivo === MOTIVO_EN_CERO) - Number(b.banco!.motivo === MOTIVO_EN_CERO))
   if (casos.length) {
@@ -201,4 +205,51 @@ export function hojaLib(ms: MovimientoLib[], etiqueta: string, meses: { clave: s
     notas: ["Agrupado en paralelo, por categoría del movimiento y por mes. Neto = débitos − créditos. La empresa de cada banco, en el detalle."],
     meses, rotuloImporte: "Neto", encabezadoDetalle: ["Empresa", "Cuenta", "Fecha", "Descripción", "Detalle", "Débito", "Crédito"],
   })
+}
+
+const fmtFecha = (f: string) => f.split("-").reverse().join("/")
+const normCateg = (c: string) => c.trim().toLowerCase()
+
+/**
+ * 🔎 A-FEAT-1518 — **control 4 · desde el extracto**: los movimientos de las cuentas DE ESTE RESPONSABLE con las categorías de
+ * esta solapa, y a qué quedó atado cada uno. ⚠️ si pagó algo de otra empresa (por cuenta y orden) o no está atado a nada;
+ * ℹ️ si está en otra solapa o pagó una factura (ya figura en otro lado). Los valores van en la columna D, como el resto.
+ */
+function control4(g: GrupoTemplates, o: OpcionesHojaGrupo, filaInicial: number): unknown[][] {
+  const f: unknown[][] = []
+  if (!o.extracto) return [["", "4 · Desde el extracto", "No se leyó el extracto: este control no se hizo", ""]]
+  const categs = new Set(g.cuotas.map(c => normCateg(c.categ)).filter(Boolean))
+  const propios = new Set(g.cuotas.flatMap(c => [c.id, c.grupoPagoId]).filter((x): x is string => !!x))
+  const ms = o.extracto.movimientos.filter(m => m.titular === g.responsable && !m.enDolares && categs.has(normCateg(m.categ)))
+  type Clase = "esta" | "otraEmpresa" | "otraSolapa" | "factura" | "nada"
+  const clase = (m: (typeof ms)[number]): { c: Clase; a: string } => {
+    if (m.templateCuotaId && propios.has(m.templateCuotaId)) return { c: "esta", a: "" }
+    const d = m.templateCuotaId ? o.extracto!.destinos.get(m.templateCuotaId) : undefined
+    if (d && d.responsable !== g.responsable) return { c: "otraEmpresa", a: `pagó «${d.concepto}» de ${d.responsable}` }
+    if (d) return { c: "otraSolapa", a: `está en la solapa «${d.agrupadora || "sin agrupadora"}» («${d.concepto}»)` }
+    if (m.templateCuotaId) return { c: "nada", a: "atado a una cuota que no está en el libro (otro ejercicio o desactivada)" }
+    if (m.comprobanteArcaId) return { c: "factura", a: "pagó una factura (va por el subdiario)" }
+    return { c: "nada", a: "sin template ni factura" }
+  }
+  const neto = (xs: typeof ms) => r2(xs.reduce((t, m) => t + m.debitos - m.creditos, 0))
+  const porClase = new Map<Clase, { m: (typeof ms)[number]; a: string }[]>()
+  for (const m of ms) { const k = clase(m); porClase.set(k.c, [...(porClase.get(k.c) ?? []), { m, a: k.a }]) }
+  const de = (c: Clase) => (porClase.get(c) ?? []).map(x => x.m)
+  const r = filaInicial
+  f.push(["", "4 · Desde el extracto", `Movimientos de las cuentas de ${g.responsable} con las categorías de esta solapa (${ms.length})`, neto(ms)])
+  f.push(["", "", "  − atados a cuotas de esta solapa", neto(de("esta"))])
+  f.push(["", "", "  − pagaron algo de OTRA empresa (por cuenta y orden) — a mirar", neto(de("otraEmpresa"))])
+  f.push(["", "", "  − sin template ni factura — a mirar", neto(de("nada"))])
+  f.push(["", "", "  − están en otra solapa de este libro (ya figuran)", neto(de("otraSolapa"))])
+  f.push(["", "", "  − pagaron una factura (ya figuran en el subdiario)", neto(de("factura"))])
+  const avisos = (porClase.get("otraEmpresa")?.length ?? 0) + (porClase.get("nada")?.length ?? 0)
+  const v = avisos ? `⚠️ ${avisos} movimiento(s) para mirar: ver la lista abajo` : "✓ cierra"
+  f.push(["", "", "= Diferencia (tiene que dar 0)", { t: "n", f: `D${r}-SUM(D${r + 1}:D${r + 5})`, v: 0 }, { t: "s", v }])
+  if (o.extracto.tablasQueFallaron.length) f.push(["", "", `⚠️ No se pudieron leer: ${o.extracto.tablasQueFallaron.join(", ")}`])
+  const lista = (["otraEmpresa", "nada", "otraSolapa", "factura"] as Clase[]).flatMap(c => porClase.get(c) ?? [])
+  if (lista.length) {
+    f.push([], ["", "Movimientos del extracto que no están en esta solapa", "Fecha", "Cuenta", "Descripción del banco", "Importe", "Adónde fue"])
+    for (const x of lista) f.push(["", "", fmtFecha(x.m.fecha), x.m.cuenta, x.m.descripcion, r2(x.m.debitos - x.m.creditos), x.a])
+  }
+  return f
 }

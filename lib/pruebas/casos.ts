@@ -34,7 +34,7 @@
  */
 
 import { armarGruposTemplates, armarHojaGrupo, nombreSolapaGrupo, hojaGrupo, gruposDelResponsable } from "@/lib/balance/grupos-templates"
-import { vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
+import { indiceDeDestinos, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
 import { solapasPapelesH } from "@/lib/balance/papeles-impuestos-h"
 import { filtroDe } from "@/lib/balance/formato-excel"
 import { hojaResumenPorMes } from "@/lib/balance/resumen-por-mes"
@@ -12377,6 +12377,27 @@ export function correrCasos(): Resultado[] {
     const e = `filtro A${enc}:E${enc + 3} · Subtotal de lo filtrado · SUBTOTAL(9,D${enc + 1}:D${enc + 3})=15 · SUBTOTAL(9,E${enc + 1}:E${enc + 3})=4 · neto 11`
     chequear("Libro H", "Todo detalle de resumen por mes: filtro sobre el detalle (no sobre el resumen) y subtotal de lo filtrado pegado abajo, con débito, crédito y neto",
       e, v, v === e, "A-FEAT-1515")
+  }
+
+  // ══ 🔎 Libro H — control 4 · desde el extracto: a qué quedó atado cada movimiento de las cuentas del responsable (A-FEAT-1518) ══
+  {
+    const q = (id: string, resp: string, ag: string, concepto: string) => ({ id, fecha: "2025-09-10", concepto, proveedor: "ARBA", categ: "Impuesto Inmobiliario", cuenta_contable: "",
+      nro_cuenta: "", centro_costo: "", responsable: resp, estado: "conciliado", monto: 100, agrupadoraTemplate: ag })
+    const todas = [q("a", "MSA", "Impuestos Rurales", "Inmob Rojas"), q("p", "PAM", "Impuestos Rurales", "Inmob Tapera"), q("u", "MSA", "Impuestos Urbanos", "Inmob Lote Puerto")] as never[]
+    const mv = (titular: string, tc: string | null, fac: string | null, monto: number, categ = "Impuesto inmobiliario ") => ({ titular, cuenta: "Galicia MSA CC", fecha: "2025-09-10", descripcion: "ARBA",
+      categ, debitos: monto, creditos: 0, templateCuotaId: tc, comprobanteArcaId: fac, enDolares: false })
+    const extracto = { movimientos: [mv("MSA", "a", null, 100), mv("MSA", "p", null, 40), mv("MSA", null, null, 7), mv("MSA", null, "f1", 3), mv("MSA", "u", null, 9), mv("PAM", "p", null, 500), mv("MSA", null, null, 1000, "Otra cosa")],
+      destinos: indiceDeDestinos(todas as never), tablasQueFallaron: [] }
+    const g = { responsable: "MSA", agrupadora: "Impuestos Rurales", total: 100, cuotas: [{ ...(todas[0] as object), banco: { cuenta: "Galicia MSA CC", comprobante: "", respaldo: 100, motivo: null } }] } as never
+    const { filas: h } = armarHojaGrupo(g, "25/26", [{ clave: "2025-09", rotulo: "sep-25" }], { extracto: extracto as never })
+    const i = h.findIndex(r => (r as any[])[1] === "4 · Desde el extracto")
+    const vals = [0, 1, 2, 3, 4, 5].map(k => (h[i + k] as any[])[3]).join("/")
+    const veredicto = (h[i + 6] as any[])[4].v
+    const adonde = h.filter(r => (r as any[])[1] === "" && typeof (r as any[])[6] === "string" && (r as any[])[2]?.includes?.("/")).map(r => (r as any[])[6]).join(" | ")
+    const v = `${vals} · ${veredicto} · ${adonde}`
+    const e = "159/100/40/7/9/3 · ⚠️ 2 movimiento(s) para mirar: ver la lista abajo · pagó «Inmob Tapera» de PAM | sin template ni factura | está en la solapa «Impuestos Urbanos» («Inmob Lote Puerto») | pagó una factura (va por el subdiario)"
+    chequear("Libro H", "Control 4 desde el extracto: los movimientos de las cuentas del responsable con las categorías de la solapa, separados en esta solapa · otra empresa ⚠️ · sin nada ⚠️ · otra solapa · factura; no entran las cuentas de otro titular ni otras categorías",
+      e, v, v === e, "A-FEAT-1518")
   }
 
   // ══ 🏛️ Libro H — el papel de inmobiliario: 2 años apilados con sus fórmulas corridas, y el control contra templates por fechas (A-FEAT-1516) ══

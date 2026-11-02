@@ -6546,6 +6546,10 @@ En *Reportes → Papeles de trabajo del balance*, debajo de los botones, está e
 
 → A-TEST-1316
 
+**El control desde el extracto (4).** Al pie de cada solapa de agrupadora, después de los otros tres: los movimientos de las cuentas de ese responsable con las categorías de la solapa, y adónde fue cada uno — a esta solapa (✓), a otra empresa (pagado por cuenta y orden, ⚠️), a nada (⚠️), a otra solapa o a una factura (ya figuran en otro lado). Abajo, la lista con fecha, cuenta, descripción del banco e importe.
+
+→ A-TEST-1317
+
 **Todos los stocks en una tabla — solapa «00 Stocks inicio y cierre».** Insumos, forrajes, gas oil, hacienda por categoría, soja, sementeras y pasturas: una línea por ítem con la cantidad y el precio al inicio y al cierre, en las dos valuaciones (**contable** = para el balance del contador; **económica** = para márgenes y presupuesto). Lo que la app tiene o calcula ya está; lo vacío es lo que falta: completalo en el Excel y el valor sale solo (es fórmula). La columna «Qué falta» dice qué pedir de cada línea. No reemplaza ninguna otra solapa.
 
 → A-TEST-1310

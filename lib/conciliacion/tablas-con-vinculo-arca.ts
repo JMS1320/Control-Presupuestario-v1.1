@@ -43,6 +43,8 @@ export interface TablaConVinculoArca {
   cuenta?: string
   /** La cuenta está en dólares: sus importes no se comparan con una cuota en pesos. */
   enDolares?: boolean
+  /** 📗 A-FEAT-1518: de quién es la cuenta (para el control desde el extracto del libro H). */
+  titular?: "MSA" | "PAM" | "MA" | "Cotitulares"
 }
 
 /**
@@ -52,31 +54,31 @@ export interface TablaConVinculoArca {
  * mails al proveedor. Propagarle una cuenta contable no significa nada.
  */
 export const TABLAS_CON_VINCULO_ARCA: TablaConVinculoArca[] = [
-  { schema: "public", tabla: "msa_galicia", que: "extracto de la cuenta corriente de MSA", cuenta: "Galicia MSA CC" },
-  { schema: "public", tabla: "pam_galicia", que: "extracto de la caja de ahorro de PAM", cuenta: "Galicia PAM CA" },
-  { schema: "public", tabla: "pam_galicia_cc", que: "extracto de la cuenta corriente de PAM", cuenta: "Galicia PAM CC" },
-  { schema: "ma", tabla: "ma_galicia", que: "extracto de MA", cuenta: "Galicia MA CA" },
-  { schema: "msa", tabla: "tarjeta_visa_business", que: "resumen de la tarjeta de MSA", cuenta: "VISA MSA" },
-  { schema: "pam", tabla: "tarjeta_visa", que: "resumen de la tarjeta de PAM", cuenta: "VISA PAM" },
-  { schema: "ma", tabla: "tarjeta_visa", que: "resumen de la tarjeta de MA", cuenta: "VISA MA" },
-  { schema: "msa", tabla: "caja_general", que: "caja general", cuenta: "Caja General MSA" },
-  { schema: "msa", tabla: "caja_ams", que: "caja de AMS", cuenta: "Caja AMS" },
-  { schema: "msa", tabla: "caja_sigot", que: "caja de Sigot", cuenta: "Caja Sigot" },
+  { schema: "public", tabla: "msa_galicia", que: "extracto de la cuenta corriente de MSA", cuenta: "Galicia MSA CC", titular: "MSA" },
+  { schema: "public", tabla: "pam_galicia", que: "extracto de la caja de ahorro de PAM", cuenta: "Galicia PAM CA", titular: "PAM" },
+  { schema: "public", tabla: "pam_galicia_cc", que: "extracto de la cuenta corriente de PAM", cuenta: "Galicia PAM CC", titular: "PAM" },
+  { schema: "ma", tabla: "ma_galicia", que: "extracto de MA", cuenta: "Galicia MA CA", titular: "MA" },
+  { schema: "msa", tabla: "tarjeta_visa_business", que: "resumen de la tarjeta de MSA", cuenta: "VISA MSA", titular: "MSA" },
+  { schema: "pam", tabla: "tarjeta_visa", que: "resumen de la tarjeta de PAM", cuenta: "VISA PAM", titular: "PAM" },
+  { schema: "ma", tabla: "tarjeta_visa", que: "resumen de la tarjeta de MA", cuenta: "VISA MA", titular: "MA" },
+  { schema: "msa", tabla: "caja_general", que: "caja general", cuenta: "Caja General MSA", titular: "MSA" },
+  { schema: "msa", tabla: "caja_ams", que: "caja de AMS", cuenta: "Caja AMS", titular: "MSA" },
+  { schema: "msa", tabla: "caja_sigot", que: "caja de Sigot", cuenta: "Caja Sigot", titular: "MSA" },
   // A-FEAT-1230: la salida de un echeq endosado lleva la factura que pagó.
-  { schema: "msa", tabla: "echeqs_terceros", que: "extracto de echeqs de terceros (endosos)", cuenta: "Echeqs de terceros MSA" },
+  { schema: "msa", tabla: "echeqs_terceros", que: "extracto de echeqs de terceros (endosos)", cuenta: "Echeqs de terceros MSA", titular: "MSA" },
   // 💵 A-FEAT-1398 (scripts/126): las cuentas en dólares y de Cotitulares también pueden pagar una factura.
-  { schema: "msa", tabla: "cc_usd", que: "cuenta corriente en dólares de MSA", cuenta: "CC dólares MSA", enDolares: true },
-  { schema: "msa", tabla: "caja_usd", que: "caja en dólares de MSA", cuenta: "Caja dólares MSA", enDolares: true },
-  { schema: "ma", tabla: "ca_usd", que: "caja de ahorro en dólares de MA", cuenta: "CA dólares MA", enDolares: true },
-  { schema: "ma", tabla: "caja_usd", que: "caja en dólares de MA", cuenta: "Caja dólares MA", enDolares: true },
-  { schema: "public", tabla: "cotitulares_ca_usd", que: "caja de ahorro en dólares de Cotitulares", cuenta: "CA dólares Cotitulares", enDolares: true },
-  { schema: "public", tabla: "cotitulares_ca_pesos", que: "caja de ahorro en pesos de Cotitulares (pagó la factura de MSA del 28/10)", cuenta: "CA pesos Cotitulares" },
-  { schema: "public", tabla: "cotitulares_caja_usd", que: "caja en dólares de Cotitulares", cuenta: "Caja dólares Cotitulares", enDolares: true },
+  { schema: "msa", tabla: "cc_usd", que: "cuenta corriente en dólares de MSA", cuenta: "CC dólares MSA", enDolares: true, titular: "MSA" },
+  { schema: "msa", tabla: "caja_usd", que: "caja en dólares de MSA", cuenta: "Caja dólares MSA", enDolares: true, titular: "MSA" },
+  { schema: "ma", tabla: "ca_usd", que: "caja de ahorro en dólares de MA", cuenta: "CA dólares MA", enDolares: true, titular: "MA" },
+  { schema: "ma", tabla: "caja_usd", que: "caja en dólares de MA", cuenta: "Caja dólares MA", enDolares: true, titular: "MA" },
+  { schema: "public", tabla: "cotitulares_ca_usd", que: "caja de ahorro en dólares de Cotitulares", cuenta: "CA dólares Cotitulares", enDolares: true, titular: "Cotitulares" },
+  { schema: "public", tabla: "cotitulares_ca_pesos", que: "caja de ahorro en pesos de Cotitulares (pagó la factura de MSA del 28/10)", cuenta: "CA pesos Cotitulares", titular: "Cotitulares" },
+  { schema: "public", tabla: "cotitulares_caja_usd", que: "caja en dólares de Cotitulares", cuenta: "Caja dólares Cotitulares", enDolares: true, titular: "Cotitulares" },
   // 🏦 A-FEAT-1386 (scripts/129): Santander y Provincia de MSA, en pesos
-  { schema: "msa", tabla: "santander", que: "Banco Santander de MSA", cuenta: "Santander MSA" },
-  { schema: "msa", tabla: "provincia", que: "Banco Provincia de MSA", cuenta: "Provincia MSA" },
+  { schema: "msa", tabla: "santander", que: "Banco Santander de MSA", cuenta: "Santander MSA", titular: "MSA" },
+  { schema: "msa", tabla: "provincia", que: "Banco Provincia de MSA", cuenta: "Provincia MSA", titular: "MSA" },
   // 🏦 A-FEAT-1424 (scripts/135): la caja de ahorro ANSES de MA
-  { schema: "ma", tabla: "anses_ca_pesos", que: "caja de ahorro ANSES de MA", cuenta: "ANSES MA" },
+  { schema: "ma", tabla: "anses_ca_pesos", que: "caja de ahorro ANSES de MA", cuenta: "ANSES MA", titular: "MA" },
 ]
 
 /** La columna del vínculo. Se nombra una vez para que un `grep` por ella encuentre todo. */
