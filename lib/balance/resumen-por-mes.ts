@@ -35,6 +35,26 @@ export interface OpcionesResumen {
   rotuloImporte?: string
   /** Si es `true`, arma un bloque en pesos y otro en dólares (por `moneda`). */
   porMoneda?: boolean
+  /**
+   * 📗 A-FEAT-1515: el detalle con **Débito y Crédito en columnas separadas** (regla de los Excel de control, KNOWLEDGE
+   * § «Los Excel de trabajo con el usuario»: nunca netos). El resumen sigue siendo el neto: SUMAR.SI(débito) − SUMAR.SI(crédito).
+   */
+  debeHaber?: boolean
+}
+
+/** Dónde quedó cada cosa en la hoja, para que otro bloque (un control) pueda apuntarle con fórmulas. Filas en base 1. */
+export interface UbicacionResumen {
+  /** La celda del TOTAL general del resumen (sólo cuando hay una sola tabla, sin `porMoneda`). */
+  celdaTotal: string | null
+  /** Primera y última fila del detalle. */
+  det1: number
+  detN: number
+  /** Columnas del detalle: la del importe neto, o la de débito y la de crédito si `debeHaber`. */
+  colImporte: string | null
+  colDebito: string | null
+  colCredito: string | null
+  /** La letra de una columna propia del detalle (`encabezadoDetalle[i]`). */
+  colDetalle: (i: number) => string
 }
 
 const MONEDA = '#,##0.00;(#,##0.00);"-"'
@@ -43,6 +63,11 @@ const col = (i: number) => { let s = "", n = i + 1; while (n > 0) { const m = (n
 
 /** Arma la hoja: resumen (categoría × mes, con Nro) y debajo el detalle con su Nro. */
 export function hojaResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): unknown[][] {
+  return armarResumenPorMes(items, o).filas
+}
+
+/** Lo mismo que `hojaResumenPorMes`, y además dice dónde quedó cada cosa (para los controles al pie). */
+export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { filas: unknown[][]; ubicacion: UbicacionResumen } {
   const cats = [...new Set(items.map(i => i.categoria || "(sin categoría)"))].sort((a, b) => a.localeCompare(b))
   const nro = new Map(cats.map((c, i) => [c, i + 1]))
   const monedas: ("ARS" | "USD" | undefined)[] = o.porMoneda
@@ -60,7 +85,14 @@ export function hojaResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): unk
   const nCols = o.encabezadoDetalle.length
   const colMoneda = o.porMoneda ? col(2 + nCols) : null
   const colImporte = col(2 + nCols + (o.porMoneda ? 1 : 0))
+  // Con débito y crédito: débito en la columna del importe, crédito en la siguiente.
+  const colCredito = o.debeHaber ? col(2 + nCols + (o.porMoneda ? 1 : 0) + 1) : null
   const rng = (c: string) => `$${c}$${det1}:$${c}$${detN}`
+  /** El neto de un criterio: SUMAR.SI del importe, o del débito menos el del crédito. */
+  const suma = (crit: string) => colCredito
+    ? `SUMIFS(${rng(colImporte)},${crit})-SUMIFS(${rng(colCredito)},${crit})`
+    : `SUMIFS(${rng(colImporte)},${crit})`
+  let celdaTotal: string | null = null
 
   const h: unknown[][] = [[o.titulo], ...(o.notas ?? []).map(n => [n]), []]
   monedas.forEach((m, k) => {
@@ -73,7 +105,7 @@ export function hojaResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): unk
       o.meses.forEach((mes, j) => {
         const v = r2(items.filter(i => (i.categoria || "(sin categoría)") === c && i.mes === mes.clave && (m === undefined || i.moneda === m)).reduce((t, i) => t + i.importe, 0))
         const crit = `${rng("A")},$A${n},${rng("B")},"${mes.clave}"${m && colMoneda ? `,${rng(colMoneda)},"${m}"` : ""}`
-        fila.push({ t: "n", f: `SUMIFS(${rng(colImporte)},${crit})`, v, z: MONEDA })
+        fila.push({ t: "n", f: suma(crit), v, z: MONEDA })
         void j
       })
       const tot = r2(items.filter(i => (i.categoria || "(sin categoría)") === c && o.meses.some(x => x.clave === i.mes) && (m === undefined || i.moneda === m)).reduce((t, i) => t + i.importe, 0))
@@ -90,12 +122,27 @@ export function hojaResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): unk
       totales.push({ t: "n", f: rN >= r1 ? `SUM(${c}${r1}:${c}${rN})` : "0", v, z: MONEDA })
     }
     h.push(totales)
+    if (monedas.length === 1 && m === undefined) celdaTotal = `${col(2 + o.meses.length)}${h.length}`
     h.push([])
   })
   h.push(["DETALLE — filtrá por «Nro» para ver qué forma cada línea del resumen"])
-  h.push(["Nro", "Mes", ...o.encabezadoDetalle, ...(o.porMoneda ? ["Moneda"] : []), o.rotuloImporte ?? "Importe"])
+  h.push(["Nro", "Mes", ...o.encabezadoDetalle, ...(o.porMoneda ? ["Moneda"] : []),
+    ...(o.debeHaber ? ["Débito", "Crédito"] : [o.rotuloImporte ?? "Importe"])])
   const orden = [...items].sort((a, b) => (nro.get(a.categoria || "(sin categoría)")! - nro.get(b.categoria || "(sin categoría)")!) || a.mes.localeCompare(b.mes))
-  for (const i of orden) h.push([nro.get(i.categoria || "(sin categoría)"), i.mes, ...i.columnas, ...(o.porMoneda ? [i.moneda ?? ""] : []), r2(i.importe)])
+  for (const i of orden) {
+    const imp = r2(i.importe)
+    h.push([nro.get(i.categoria || "(sin categoría)"), i.mes, ...i.columnas, ...(o.porMoneda ? [i.moneda ?? ""] : []),
+      ...(o.debeHaber ? [imp > 0 ? imp : "", imp < 0 ? -imp : ""] : [imp])])
+  }
   if (!items.length) h.push(["", "", "(no hay movimientos en el ejercicio)"])
-  return h
+  return {
+    filas: h,
+    ubicacion: {
+      celdaTotal, det1, detN: Math.max(det1, detN - 1),
+      colImporte: o.debeHaber ? null : colImporte,
+      colDebito: o.debeHaber ? colImporte : null,
+      colCredito,
+      colDetalle: (i: number) => col(2 + i),
+    },
+  }
 }

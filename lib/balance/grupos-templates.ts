@@ -9,7 +9,8 @@
  * Pura: recibe las cuotas del ejercicio (las del libro de templates) y los movimientos LIB ya leídos.
  */
 import type { CuotaTemplate } from "./templates-libro"
-import { hojaResumenPorMes } from "./resumen-por-mes"
+import { armarResumenPorMes, hojaResumenPorMes } from "./resumen-por-mes"
+import { MOTIVO_EN_CERO } from "./movimientos-de-cuotas"
 
 /** Lo que NO se arma como grupo: lo financiero (no es gasto) y lo bancario (ya está en el libro C). */
 export const AGRUPADORAS_FUERA = new Set(["inversiones", "movimientos internos empresa", "tarjetas", "créditos bancarios", "creditos bancarios",
@@ -66,15 +67,105 @@ const ESTADOS_PAGOS = /pagad|conciliad/i
 const dmy = (f: string | null | undefined) => (f ? f.slice(0, 10).split("-").reverse().join("/") : "")
 
 /** Una solapa de grupo (A-FEAT-1513): resumen categoría × mes con Nro, y abajo cada cuota con su Nro. */
-export function hojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { clave: string; rotulo: string }[] = []): unknown[][] {
-  return hojaResumenPorMes(g.cuotas.map(c => ({
+export function hojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { clave: string; rotulo: string }[] = [], opciones: OpcionesHojaGrupo = {}): unknown[][] {
+  return armarHojaGrupo(g, etiqueta, meses, opciones).filas
+}
+
+export interface OpcionesHojaGrupo {
+  /** 📗 A-FEAT-1515: la solapa «Por mes» del mismo responsable, para el control 2 (esta agrupadora vista desde allá). */
+  hojaPorMes?: string
+  /** Las cuentas que no se pudieron leer al buscar el banco de las cuotas (se dicen en el control 3). */
+  tablasSinLeer?: string[]
+}
+
+/** Las columnas de «Por mes» (ver `hojaTemplatesPorMes`): B = agrupadora, C = categoría, P = TOTAL (12 meses desde la D). */
+const POR_MES = { agrupadora: "B", categoria: "C", total: "P" }
+/** Cómo se rotula en «Por mes» el grupo sin agrupadora (`SIN_AGRUPADORA` de templates-libro). */
+const SIN_AGRUPADORA_POR_MES = "(sin agrupadora en el template)"
+const ESTADOS_SIN_PAGAR = ["pendiente", "pagar", "preparado"]
+
+/**
+ * 📗 A-FEAT-1515 — la solapa de una agrupadora del libro H, escrita para AUDITARLA (JMS 01/11: *«el primer usuario del
+ * reporte soy yo… tiene que tener sentido para mí»*).
+ *
+ * Detalle como un renglón del extracto: Fecha · Template · Cuenta · Comprobante · Proveedor · Detalle · Estado · Débito ·
+ * Crédito (sin la descripción del banco: JMS, «descripción de banco no pondría»). Proveedor: el del template; si no tiene,
+ * la cuenta donde se pagó (Créditos Bancarios no tenía ninguno).
+ *
+ * Y al pie, el CONTROL (§ 🧮), con fórmulas vivas:
+ * 1. **Interno** — el detalle suma el total del resumen. Si no, la hoja se contradice: 🛑.
+ * 2. **Contra «Por mes»** — la misma agrupadora sumada en la otra solapa (las cuotas agrupadas por otro camino). 🛑 si no da.
+ * 3. **Contra el banco** — lo conciliado según las cuotas vs. lo que respaldan sus movimientos. ⚠️ avisa y lista los casos
+ *    (un pago agrupado, una cuota en $ 0): puede tener explicación. Y lo pagado sin banco y lo sin pagar, como renglones.
+ */
+export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { clave: string; rotulo: string }[] = [], opciones: OpcionesHojaGrupo = {}): { filas: unknown[][]; celdaTotal: string | null } {
+  const { filas: h, ubicacion: u } = armarResumenPorMes(g.cuotas.map(c => ({
     categoria: c.categ || "(sin categoría)", mes: (c.fecha ?? "").slice(0, 7), importe: c.monto,
-    columnas: [dmy(c.fecha), c.concepto, c.estado, c.proveedor],
+    columnas: [dmy(c.fecha), c.concepto, c.banco?.cuenta ?? "", c.banco?.comprobante ?? "",
+      c.proveedor || c.banco?.cuenta || "", c.detalle ?? "", c.estado],
   })), {
     titulo: `${g.agrupadora.toUpperCase()} — ${g.responsable} — ejercicio ${etiqueta}`,
-    notas: ["Por categoría y por mes (fórmulas sobre el detalle). Las cuotas cuentan por fecha de pago, o la estimada si no se pagó."],
-    meses, encabezadoDetalle: ["Fecha", "Template", "Estado", "Proveedor"],
+    notas: ["Por categoría y por mes (fórmulas sobre el detalle). Las cuotas cuentan por fecha de pago, o la estimada si no se pagó.",
+      "Cuenta y comprobante: los del movimiento del banco con el que se concilió la cuota. Al pie, el CONTROL."],
+    meses, encabezadoDetalle: ["Fecha", "Template", "Cuenta", "Comprobante", "Proveedor", "Detalle", "Estado"],
+    debeHaber: true,
   })
+  if (!u.celdaTotal || !u.colDebito || !u.colCredito) return { filas: h, celdaTotal: u.celdaTotal }
+
+  const deb = `${u.colDebito}${u.det1}:${u.colDebito}${u.detN}`, cred = `${u.colCredito}${u.det1}:${u.colCredito}${u.detN}`
+  const est = `${u.colDetalle(6)}${u.det1}:${u.colDetalle(6)}${u.detN}`
+  const netoSi = (estado: string) => `SUMIFS(${deb},${est},"${estado}")-SUMIFS(${cred},${est},"${estado}")`
+  const total = r2(g.cuotas.reduce((t, c) => t + c.monto, 0))
+  const conciliadas = g.cuotas.filter(c => /^conciliad/i.test(c.estado))
+  const conciliado = r2(conciliadas.reduce((t, c) => t + c.monto, 0))
+  const sinPagar = r2(g.cuotas.filter(c => ESTADOS_SIN_PAGAR.includes(c.estado.toLowerCase())).reduce((t, c) => t + c.monto, 0))
+  const miroBanco = g.cuotas.some(c => c.banco !== undefined)
+  const respaldo = r2(conciliadas.reduce((t, c) => t + (c.banco?.respaldo ?? 0), 0))
+  /** El veredicto, con el valor ya calculado (el que se ve si Excel no recalcula al abrir). */
+  const ok = (dif: string, valor: number, siNo: string) => ({ t: "s", f: `IF(ABS(${dif})<0.005,"✓ cierra","${siNo}")`, v: Math.abs(valor) < 0.005 ? "✓ cierra" : siNo })
+  const fila = () => h.length + 1
+
+  h.push([], ["CONTROL — todo cruzado (§ controles de la app): 1 frena si no da, 2 frena si no da, 3 avisa"])
+  // 1 · Interno
+  const r1 = fila()
+  h.push(["", "1 · Interno", "Detalle (débitos − créditos)", { t: "n", f: `SUM(${deb})-SUM(${cred})`, v: total }])
+  h.push(["", "", "Total del resumen de arriba", { t: "n", f: u.celdaTotal, v: total }])
+  h.push(["", "", "Diferencia (tiene que dar 0)", { t: "n", f: `D${r1}-D${r1 + 1}`, v: 0 }, ok(`D${r1}-D${r1 + 1}`, 0, "🛑 NO CIERRA: la hoja se contradice")])
+  // 2 · Contra «Por mes»
+  if (opciones.hojaPorMes) {
+    const ref = (c: string) => `'${opciones.hojaPorMes!.replace(/'/g, "''")}'!${c}:${c}`
+    const agr = g.agrupadora === SIN_GRUPO ? SIN_AGRUPADORA_POR_MES : g.agrupadora
+    const r2f = fila()
+    h.push(["", "2 · Contra «Por mes»", `Esta agrupadora en «${opciones.hojaPorMes}»`,
+      { t: "n", f: `SUMIFS(${ref(POR_MES.total)},${ref(POR_MES.agrupadora)},"${agr.replace(/"/g, '""')}",${ref(POR_MES.categoria)},"<>")`, v: total }])
+    h.push(["", "", "Diferencia con esta solapa (tiene que dar 0)", { t: "n", f: `D${r1 + 1}-D${r2f}`, v: 0 }, ok(`D${r1 + 1}-D${r2f}`, 0, "🛑 NO CIERRA: una cuota quedó afuera o contada dos veces")])
+  }
+  // 3 · Contra el banco
+  const r3 = fila()
+  h.push(["", "3 · Contra el banco", "Conciliado (según las cuotas)", { t: "n", f: netoSi("conciliado"), v: conciliado }])
+  if (miroBanco) {
+    h.push(["", "", "Lo que respaldan los movimientos del banco", respaldo])
+    h.push(["", "", "Diferencia", { t: "n", f: `D${r3}-D${r3 + 1}`, v: r2(conciliado - respaldo) }, ok(`D${r3}-D${r3 + 1}`, r2(conciliado - respaldo), "⚠️ no cierra: ver los casos abajo")])
+  } else {
+    h.push(["", "", "No se leyó el banco: este control no se hizo", ""])
+  }
+  if (opciones.tablasSinLeer?.length) h.push(["", "", `⚠️ No se pudieron leer: ${opciones.tablasSinLeer.join(", ")}`])
+  const rP = fila()
+  h.push(["", "", "Pagado sin banco (anterior, pagado, débito…)", { t: "n", f: `D${r1 + 1}-D${r3}-D${rP + 1}`, v: r2(total - conciliado - sinPagar) }])
+  h.push(["", "", "Sin pagar al cierre (pendiente, a pagar, preparado)", { t: "n", f: ESTADOS_SIN_PAGAR.map(netoSi).join("+"), v: sinPagar }])
+  h.push(["", "", "= Total de la solapa", { t: "n", f: `D${r3}+D${rP}+D${rP + 1}`, v: total }])
+
+  // Primero los que mueven plata; las conciliadas en $ 0 sin movimiento, al final (no cambian el control).
+  const casos = g.cuotas.filter(c => c.banco?.motivo)
+    .sort((a, b) => Number(a.banco!.motivo === MOTIVO_EN_CERO) - Number(b.banco!.motivo === MOTIVO_EN_CERO))
+  if (casos.length) {
+    h.push([], ["", "Casos que no cierran con el banco", "Fecha", "Template", "Cuota", "Respalda el banco", "Diferencia", "Por qué"])
+    for (const c of casos) {
+      const rb = c.banco!.respaldo
+      h.push(["", "", dmy(c.fecha), c.concepto, c.monto, rb ?? "", rb === null ? "" : r2(c.monto - rb), c.banco!.motivo])
+    }
+  }
+  return { filas: h, celdaTotal: u.celdaTotal }
 }
 
 /** El índice del libro G: cada grupo con su total; el control es que la suma dé el total de las cuotas agrupadas. */

@@ -33,7 +33,8 @@
  * empieza a mentir.
  */
 
-import { armarGruposTemplates, nombreSolapaGrupo, hojaGrupo, gruposDelResponsable } from "@/lib/balance/grupos-templates"
+import { armarGruposTemplates, armarHojaGrupo, nombreSolapaGrupo, hojaGrupo, gruposDelResponsable } from "@/lib/balance/grupos-templates"
+import { vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
 import { filasBalanceEnLinea, hojaCajaYBancos } from "@/lib/balance/balance-en-linea"
 import { APERTURA_MSA_2025 } from "@/lib/balance/apertura-contador"
 import { libroDeSolapa, repartirEnLibros, templatesDeResponsable, detalleBancarioDelLibroC, canalDePago, hojaDeDetalle } from "@/lib/balance/libros-del-balance"
@@ -12319,6 +12320,47 @@ export function correrCasos(): Resultado[] {
     const e = "H · MSA · Honorarios=50 | H · MSA · Inversiones=8 | H · MSA · Tarjetas=10 | H · MSA · (sin agrupadora)=3 · suma 71 · libro H"
     chequear("Libro H", "Una solapa por agrupadora del template, TODAS (también financieras y las de una cuota), por nombre y las sin agrupadora al final; suman lo mismo que las cuotas",
       e, v, v === e, "A-FEAT-1514")
+  }
+
+  // ══ 🏦 Libro H — el banco de cada cuota: directo, por grupo (cierra / no cierra), sin movimiento, en dólares (A-FEAT-1515) ══
+  {
+    const q = (id: string, monto: number, estado = "conciliado", grupoPagoId?: string) => ({ id, fecha: "2025-09-01", concepto: `T ${id}`, proveedor: "", categ: "X",
+      cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable: "MSA", estado, monto, grupoPagoId })
+    const m = (vinculo: string, debitos: number, cuenta = "Santander MSA", enDolares = false) => ({ vinculo, cuenta, fecha: "2025-09-01", comprobante: "123", debitos, creditos: 0, enDolares })
+    const cs = [q("a", 100), q("b", 30, "conciliado", "G1"), q("c", 70, "conciliado", "G1"), q("d", 40, "conciliado", "G2"), q("e", 60, "conciliado", "G2"),
+      q("f", 0), q("g", 25), q("h", 9), q("i", 5, "pendiente")] as never
+    const out = vincularBanco(cs, cs, [m("a", 100), m("G1", 100), m("G2", 50), m("f", 500), m("h", 9, "CA dólares MA", true)] as never)
+    const v = out.map(c => `${c.id}:${c.banco!.respaldo ?? "—"}${c.banco!.motivo ? "!" : ""}`).join(" ")
+    const e = "a:100 b:30 c:70 d:20! e:30! f:500! g:—! h:—! i:—"
+    chequear("Libro H", "El banco de cada cuota: el movimiento propio respalda lo que movió; un grupo que cierra respalda cada cuota entera, uno que no cierra se reparte y se avisa; conciliada sin movimiento, en dólares o en $ 0 con banco: se avisa",
+      e, v, v === e, "A-FEAT-1515")
+  }
+
+  // ══ 📗 Libro H — la solapa de agrupadora: renglón tipo extracto, débito y crédito separados, y los 3 controles con fórmulas que apuntan bien (A-FEAT-1515) ══
+  {
+    const q = (id: string, monto: number, estado: string, banco?: { cuenta: string; comprobante: string; respaldo: number | null; motivo: string | null }) => ({
+      id, fecha: "2025-09-05", concepto: "Créditos Pagados", proveedor: "", categ: "CRED P", cuenta_contable: "", nro_cuenta: "", centro_costo: "",
+      responsable: "MSA", estado, monto, detalle: "Interés descubierto", agrupadoraTemplate: "Créditos Bancarios", banco })
+    const g = { responsable: "MSA", agrupadora: "Créditos Bancarios", total: 105, cuotas: [
+      q("a", 100, "conciliado", { cuenta: "Santander MSA", comprobante: "77", respaldo: 100, motivo: null }),
+      q("b", -10, "conciliado", { cuenta: "Santander MSA", comprobante: "", respaldo: -5, motivo: "el banco movió distinto" }),
+      q("c", 15, "pendiente", { cuenta: "", comprobante: "", respaldo: null, motivo: null })] } as never
+    const { filas: h, celdaTotal } = armarHojaGrupo(g, "25/26", [{ clave: "2025-09", rotulo: "sep-25" }], { hojaPorMes: "H · MSA · Por mes" })
+    const enc = h.findIndex(r => (r as any[])[0] === "Nro" && (r as any[]).includes("Débito")) as number
+    const cab = (h[enc] as any[]).join("|")
+    const filaA = h[enc + 1] as any[]
+    const rTot = Number(String(celdaTotal).replace(/^[A-Z]+/, ""))
+    const interno = h.find(r => (r as any[])[1] === "1 · Interno") as any[]
+    const [, ini, fin] = String(interno[3].f).match(/SUM\(J(\d+):J(\d+)\)/) ?? []
+    const debitos = h.slice(Number(ini) - 1, Number(fin)).map(r => (r as any[])[9]).filter(x => typeof x === "number").reduce((t, x) => t + x, 0)
+    const creditos = h.slice(Number(ini) - 1, Number(fin)).map(r => (r as any[])[10]).filter(x => typeof x === "number").reduce((t, x) => t + x, 0)
+    const porMes = h.find(r => String((r as any[])[2] ?? "").startsWith("Esta agrupadora")) as any[]
+    const banco = h.find(r => (r as any[])[2] === "Diferencia" && (r as any[])[4]) as any[]
+    const caso = h.find(r => (r as any[])[7] === "el banco movió distinto") as any[]
+    const v = `${cab} · A: ${filaA.slice(2, 11).join("/")} · total en ${(h[rTot - 1] as any[])[1]} · detalle ${debitos}−${creditos} · porMes ${String(porMes[3].f).includes("'H · MSA · Por mes'!B:B,\"Créditos Bancarios\"")} · banco ${banco[3].v} ${banco[4].v} · caso ${caso ? caso[6] : "—"}`
+    const e = "Nro|Mes|Fecha|Template|Cuenta|Comprobante|Proveedor|Detalle|Estado|Débito|Crédito · A: 05/09/2025/Créditos Pagados/Santander MSA/77/Santander MSA/Interés descubierto/conciliado/100/ · total en TOTAL · detalle 115−10 · porMes true · banco -5 ⚠️ no cierra: ver los casos abajo · caso -5"
+    chequear("Libro H", "Solapa de agrupadora para auditar: Fecha · Template · Cuenta · Comprobante · Proveedor (si falta, la cuenta) · Detalle · Estado · Débito · Crédito; control interno sobre el detalle entero, contra «Por mes» por agrupadora y contra el banco con sus casos",
+      e, v, v === e, "A-FEAT-1515")
   }
 
 

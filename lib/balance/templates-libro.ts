@@ -104,6 +104,11 @@ export interface OpcionesTemplates {
    * facturas todavía no están cargadas (el Chalet de MA, Chubb) sigue contando hasta que se cargue.
    */
   templatesConPoliza?: Iterable<string>
+  /**
+   * 📗 A-FEAT-1515: las cuentas que no se pudieron leer al buscar el banco de cada cuota (`leerMovimientosDeCuotas`).
+   * Viaja con las opciones para que el control contra el banco del libro H lo diga.
+   */
+  bancoSinLeer?: string[]
 }
 
 /** Una cuota de template, ya normalizada desde `cuotas_egresos_sin_factura` + su egreso. */
@@ -136,6 +141,24 @@ export interface CuotaTemplate {
   agrupadoraTemplate?: string
   /** 🧮 A-FEAT-1513: la fila de «Por mes» a la que suma (su `clave`), para que el Nro sea el mismo en las dos solapas. */
   filaPorMes?: string
+  /** 📗 A-FEAT-1515: el detalle escrito en la cuota («Luz Libertad», «Interés descubierto»). */
+  detalle?: string
+  /** Las cuotas pagadas JUNTAS comparten grupo, y el movimiento del banco apunta al GRUPO (no a cada cuota). */
+  grupoPagoId?: string
+  /** 📗 A-FEAT-1515: lo que dice el banco de esta cuota. Sin dato = no se miró (ver `vincularBanco`). */
+  banco?: BancoDeCuota
+}
+
+/** 📗 A-FEAT-1515 — el lado del banco de una cuota: dónde se pagó y cuánto respalda. */
+export interface BancoDeCuota {
+  /** La cuenta (banco, caja o tarjeta) del movimiento conciliado. Vacío = no tiene movimiento. */
+  cuenta: string
+  /** El comprobante del movimiento (número de operación, cupón de la tarjeta). */
+  comprobante: string
+  /** Cuánto de esta cuota respalda el banco, con el signo de la cuota. `null` = no se puede comparar. */
+  respaldo: number | null
+  /** Por qué no cierra con el banco. `null` = cierra (o no corresponde: no está conciliada). */
+  motivo: string | null
 }
 
 export interface FilaPorMes {
@@ -280,6 +303,8 @@ export function desdeCuota(f: Record<string, unknown>, tipoDeCateg?: Record<stri
     estado: s(f.estado),
     monto: entro ? -n(f.monto) : n(f.monto),
     agrupadoraTemplate: s(e.cuenta_agrupadora) || undefined,
+    detalle: s(f.detalle) || undefined,
+    grupoPagoId: s(f.grupo_pago_id) || undefined,
   }
 }
 

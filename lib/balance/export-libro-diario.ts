@@ -45,7 +45,7 @@ import type { CuentasSinCuentaCorriente } from "./fuera-por-cuenta-corriente"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
 import { armarStocksUnificados, hojaDeStocks } from "./stocks-unificado"
-import { armarGruposTemplates, gruposDelResponsable, hojaGrupo, hojaIndiceGrupos, hojaLib, nombreSolapaGrupo, type MovimientoLib } from "./grupos-templates"
+import { armarGruposTemplates, armarHojaGrupo, gruposDelResponsable, hojaGrupo, hojaIndiceGrupos, hojaLib, nombreSolapaGrupo, type GrupoTemplates, type MovimientoLib } from "./grupos-templates"
 import { filasBalanceEnLinea, hojaBalanceEnLinea, hojaCajaYBancos, hojaFci, hojaDeudasYCreditos, hojaSoja, hojaVacasDeCria, type EntradaBalanceEnLinea } from "./balance-en-linea"
 import { LIBROS, repartirEnLibros, templatesDeResponsable, hojaListadoTemplates, hojaDeDetalle, type GrupoDetalle, type MovimientoDelDetalle } from "./libros-del-balance"
 import { hojaDelRecorrido, sincronizarPendientes, type RecorridoParaExcel } from "./recorrido-excel"
@@ -2929,17 +2929,46 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
   for (const resp of ["MSA", "MA", "PAM"]) {
     const t = templatesDeResponsable(templates, resp)
     if (!t) continue
-    hoja(wb, `H · ${resp} · Templates`, hojaListadoTemplates(t, resp, etiqueta), COLS_LISTADO_TEMPLATES)
-    hoja(wb, `H · ${resp} · Cuotas`, hojaDeTemplates(t), COLS_TEMPLATES)
-    hoja(wb, `H · ${resp} · Por mes`, hojaTemplatesPorMes(t), COLS_TEMPLATES_POR_MES(t.columnas.length))
-    const usados = new Set(wb.SheetNames)
-    for (const g of gruposDelResponsable(t.detalle, resp)) {
+    const hojaPorMes = `H · ${resp} · Por mes`
+    const usados = new Set([...wb.SheetNames, `H · ${resp} · Templates`, `H · ${resp} · Cuotas`, hojaPorMes])
+    const tablasSinLeer = t.entrada?.opciones.bancoSinLeer
+    // Las solapas de agrupadora se arman antes, para que «Por mes» pueda apuntar a sus totales (control del todo a las partes).
+    const grupos = gruposDelResponsable(t.detalle, resp).map(g => {
       let nombre = nombreSolapaGrupo(g, "H"), n = 2
       while (usados.has(nombre)) nombre = `${nombreSolapaGrupo(g, "H").slice(0, 28)} ${n++}`
       usados.add(nombre)
-      hoja(wb, nombre, hojaGrupo(g, etiqueta, meses), COLS_RESUMEN_MES)
-    }
+      return { g, nombre, ...armarHojaGrupo(g, etiqueta, meses, { hojaPorMes, tablasSinLeer }) }
+    })
+    hoja(wb, `H · ${resp} · Templates`, hojaListadoTemplates(t, resp, etiqueta), COLS_LISTADO_TEMPLATES)
+    hoja(wb, `H · ${resp} · Cuotas`, hojaDeTemplates(t), COLS_TEMPLATES)
+    const porMes = hojaTemplatesPorMes(t)
+    hoja(wb, hojaPorMes, [...porMes, ...controlSolapasH(t, grupos, porMes.length)], COLS_TEMPLATES_POR_MES(t.columnas.length))
+    for (const x of grupos) hoja(wb, x.nombre, x.filas, COLS_RESUMEN_MES)
   }
+}
+
+/**
+ * 📗 A-FEAT-1515 — al pie de «Por mes» del libro H: **del todo a las partes**. El total de esta solapa (sus renglones de
+ * categoría, columna TOTAL) menos el total de cada solapa de agrupadora tiene que dar 0: una cuota perdida o contada dos
+ * veces salta acá. Los valores van en la columna D (la P y la C de estos renglones quedan vacías: no entran en el SUMAR.SI).
+ */
+function controlSolapasH(t: TemplatesDelEjercicio, grupos: { g: GrupoTemplates; nombre: string; celdaTotal: string | null }[], filasAntes: number): unknown[][] {
+  const total = Math.round((t.totalDebitos - t.totalCreditos) * 100) / 100
+  const colTotal = String.fromCharCode(68 + t.columnas.length)
+  const f: unknown[][] = [[], ["CONTROL DEL LIBRO H — esta solapa contra las solapas de agrupadora (del todo a las partes)"]]
+  const rTotal = filasAntes + f.length + 1
+  f.push(["", "Total de esta solapa (renglones de categoría)", "", { t: "n", f: `SUMIFS(${colTotal}:${colTotal},C:C,"<>")`, v: total }])
+  for (const x of grupos) {
+    f.push(["", `  − ${x.g.agrupadora}  («${x.nombre}»)`, "", x.celdaTotal
+      ? { t: "n", f: `'${x.nombre.replace(/'/g, "''")}'!${x.celdaTotal}`, v: x.g.total }
+      : x.g.total])
+  }
+  const rUlt = filasAntes + f.length
+  const dif = Math.round((total - grupos.reduce((a, x) => a + x.g.total, 0)) * 100) / 100
+  const fDif = rUlt > rTotal ? `D${rTotal}-SUM(D${rTotal + 1}:D${rUlt})` : `D${rTotal}`
+  f.push(["", "= Diferencia (tiene que dar 0)", "", { t: "n", f: fDif, v: dif },
+    { t: "s", f: `IF(ABS(D${rUlt + 1})<0.005,"✓ cierra","🛑 NO CIERRA: una cuota quedó afuera o contada dos veces")`, v: Math.abs(dif) < 0.005 ? "✓ cierra" : "🛑 NO CIERRA: una cuota quedó afuera o contada dos veces" }])
+  return f
 }
 
 /** 📒 A-FEAT-1509 — las hojas del LIBRO F: el balance en línea y una de detalle por renglón de la tanda de Claude. */

@@ -6534,9 +6534,13 @@ En *Reportes → Papeles de trabajo del balance*, debajo de los botones, está e
 
 → A-TEST-1313
 
-**El set de libros A–E — «📚 Bajar el set A–E (.zip)».** Al lado de «Bajar el Excel». Baja un .zip con cinco Excel: **A** subdiarios (terminado) · **B** deudas, créditos y cuentas corrientes (confirmar datos) · **C** templates por responsable (MSA, MA, PAM: listado, cuotas y por mes) y el detalle de impuestos y gastos bancarios, intereses e inversiones · **D** el resto · **E** stocks al inicio y al cierre. Son las mismas solapas del Excel completo, repartidas: dan los mismos números.
+**El set de libros A–H — «📚 Bajar el set A–H (.zip)».** *(⚠️ cambió 01/11: eran cinco, A–E.)* Al lado de «Bajar el Excel». Baja un .zip con ocho Excel: **A** subdiarios (terminado) · **B** deudas, créditos y cuentas corrientes (confirmar datos) · **C** templates por responsable (MSA, MA, PAM: listado, cuotas y por mes) y el detalle de impuestos y gastos bancarios, intereses e inversiones · **D** el resto · **E** stocks al inicio y al cierre · **F** el balance en línea · **G** grupos de templates (propuesta) · **H** templates integral (el reporte total). Son las mismas solapas del Excel completo, repartidas: dan los mismos números.
 
 → A-TEST-1312
+
+**Cómo se lee el libro H.** Por responsable (MSA, después MA, después PAM): Templates, Cuotas, Por mes y una solapa por agrupadora. En cada solapa de agrupadora, arriba el resumen por categoría y por mes; abajo cada cuota **como un renglón del extracto**: fecha, template, la **cuenta** y el **comprobante** del movimiento del banco con que se concilió, proveedor (si el template no tiene, la cuenta), el **detalle** de la cuota, estado, y débito y crédito por separado. Al pie, el **CONTROL**: 1) el detalle suma el total de arriba; 2) la misma agrupadora da lo mismo en «Por mes»; 3) lo conciliado da lo mismo que respaldan los movimientos del banco — si no, abajo están los casos con el porqué (las conciliadas en $ 0 sin movimiento van al final). «Por mes» termina con el control del todo a las partes: su total menos cada solapa de agrupadora tiene que dar 0. Un ✓ dice que cierra; 🛑 es un error de la app, ⚠️ es algo para mirar.
+
+→ A-TEST-1315
 
 **Todos los stocks en una tabla — solapa «00 Stocks inicio y cierre».** Insumos, forrajes, gas oil, hacienda por categoría, soja, sementeras y pasturas: una línea por ítem con la cantidad y el precio al inicio y al cierre, en las dos valuaciones (**contable** = para el balance del contador; **económica** = para márgenes y presupuesto). Lo que la app tiene o calcula ya está; lo vacío es lo que falta: completalo en el Excel y el valor sale solo (es fórmula). La columna «Qué falta» dice qué pedir de cada línea. No reemplaza ninguna otra solapa.
 

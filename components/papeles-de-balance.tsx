@@ -39,6 +39,7 @@ import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta, ULTIMO_SUBDIAR
 import { PRESENTADO_ARCA_COMPRAS } from "@/lib/balance/presentado-arca"
 import { explicarFila, type ProveedorFijo } from "@/lib/balance/facturas-fijas"
 import { armarTemplatesDelEjercicio, desdeCuota, type TemplatesDelEjercicio } from "@/lib/balance/templates-libro"
+import { leerMovimientosDeCuotas, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
 import {
   armarControlCuotas, resumenControlCuotas, conProblema, cuotaParaControlDesde, subdiariosConVentasDesde,
   leerComisionesPorCuenta, COMISIONES_MSA, campaniaDelControl, ultimoDiaDelMes,
@@ -1157,10 +1158,25 @@ export function PapelesDeBalance() {
       const { data: conPoliza, error: errPoliza } = await supabase.from("polizas_seguro")
         .select("template_id").not("template_id", "is", null)
       if (errPoliza) toast.warning("No se pudieron leer las pólizas: los seguros quedan dentro de Templates (pueden estar contados dos veces).")
-      setTemplates(armarTemplatesDelEjercicio((cuotas.data ?? []).map(f => desdeCuota(f, tipoDeCateg)), ej, {
+      /**
+       * 🏦 A-FEAT-1515: el banco de cada cuota (cuenta, comprobante y cuánto respalda), para que el libro H se lea como el
+       * extracto y tenga su control contra el banco. Si la lectura falla entera, las cuotas salen sin banco y el control lo dice.
+       */
+      let cuotasLibro = (cuotas.data ?? []).map(f => desdeCuota(f, tipoDeCateg))
+      let bancoSinLeer: string[] | undefined
+      try {
+        const leido = await leerMovimientosDeCuotas(supabase as unknown as ClienteMinimo, cuotasLibro)
+        cuotasLibro = vincularBanco(cuotasLibro, cuotasLibro, leido.movimientos)
+        bancoSinLeer = leido.tablasQueFallaron
+        if (leido.tablasQueFallaron.length) toast.warning(`No se pudo leer el banco de: ${leido.tablasQueFallaron.join(", ")}. El control contra el banco del libro H lo dice.`)
+      } catch {
+        toast.warning("No se pudo leer el banco de las cuotas: el libro H sale sin cuenta ni comprobante, y sin su control contra el banco.")
+      }
+      setTemplates(armarTemplatesDelEjercicio(cuotasLibro, ej, {
         empresa: empresa.id,
         plan,
         templatesConPoliza: ((conPoliza ?? []) as Array<{ template_id: string | null }>).map(p => p.template_id!).filter(Boolean),
+        bancoSinLeer,
       }))
 
       /**
