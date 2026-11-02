@@ -1796,6 +1796,7 @@ movimiento una sola vez → reparto de dividendos, [A-FEAT-1288](PENDIENTES.md#a
   resulta más claro para el contador **«CTA MA» desglosado por cuenta** que por RET 1/3/i.
 - **Tiguan** (y casos así): automotor de **MSA en los papeles** → MSA se toma el gasto, contable **vacío** (no entra en
   `CTA MA`), interno **`DIST MA`**. Internamente el **sueldo de MA también cuenta como dividendo**.
+- ⚠️ **cambió 2026-11-02 — DEFINIDO por JMS y construido** ([A-FEAT-1521](PENDIENTES.md#a-feat-1521), solapa «H · Gastos Libertad»): siempre 50% MSA y 50% el socio — **PAM hasta el 31/12/2025, MA desde el 01/01/2026** —; el gasto son las cuotas de los templates de Libertad (GAS, AGUA, EXPENSAS, Fijos Libertad, ABL; sin la cochera); quién pagó = el titular de la cuenta del movimiento conciliado (lo de PAM queda como PAM); MA declara anual y MSA bianual, pero el detalle va siempre por mes. Ya no hace falta lo de MA «de su bolsillo»: sus cuentas están cargadas. Lo que sigue es el planteo del 16/10, vigente en el cálculo:
 - **`LIB` (contable) = gastos de Libertad**, que **contablemente se reparten 50% MSA y 50% MA** (antes PAM). El cálculo:
   (1) el **total gastado** en Libertad, lo haya pagado quien sea (ej. 100); (2) cuánto pagó cada uno (ej. MSA 70, MA 30);
   (3) contablemente cada uno se toma 50 de gasto; (4) lo que MSA pagó **por encima de su 50%** (70 − 50 = 20) **es un retiro
