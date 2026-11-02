@@ -12374,8 +12374,9 @@ export function correrCasos(): Resultado[] {
     const h = hojaResumenPorMes([it("A", "2025-07", 10), it("A", "2025-08", -4), it("B", "2025-07", 5)], { titulo: "T", meses: [{ clave: "2025-07", rotulo: "jul-25" }, { clave: "2025-08", rotulo: "ago-25" }], encabezadoDetalle: ["X"], debeHaber: true })
     const enc = h.findIndex(r => (r as any[])[0] === "Nro" && (r as any[]).includes("Débito")) + 1
     const sub = h[enc + 3] as any[]
-    const v = `filtro ${filtroDe(h)} · ${sub[2]} · ${sub[3].f}=${sub[3].v} · ${sub[4].f}=${sub[4].v} · neto ${sub[5].v}`
-    const e = `filtro A${enc}:E${enc + 3} · Subtotal de lo filtrado · SUBTOTAL(9,D${enc + 1}:D${enc + 3})=15 · SUBTOTAL(9,E${enc + 1}:E${enc + 3})=4 · neto 11`
+    const am = h.find(r => (r as any[])[0]?.v === "Nro a ver ▶") as any[]
+    const v = `filtro ${filtroDe(h)} · ${sub[2]} · ${sub[3].f}=${sub[3].v} · ${sub[4].f}=${sub[4].v} · neto ${sub[5].v} · amarillo Nro ${am[1].v} ${am[2].v} ${am[3].v} renglones ${am[5].v}`
+    const e = `filtro A${enc}:E${enc + 3} · Subtotal de lo filtrado · SUBTOTAL(9,D${enc + 1}:D${enc + 3})=15 · SUBTOTAL(9,E${enc + 1}:E${enc + 3})=4 · neto 11 · amarillo Nro 1 A 2 renglones 6`
     chequear("Libro H", "Todo detalle de resumen por mes: filtro sobre el detalle (no sobre el resumen) y subtotal de lo filtrado pegado abajo, con débito, crédito y neto",
       e, v, v === e, "A-FEAT-1515")
   }

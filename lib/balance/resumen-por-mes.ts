@@ -80,7 +80,8 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
   const filasPorMoneda = monedas.map(m => cats.filter(c => items.some(i => (i.categoria || "(sin categoría)") === c && (m === undefined || i.moneda === m))))
   const altoResumen = monedas.reduce((t, _m, k) => t + 1 + 1 + filasPorMoneda[k].length + 1 + 1, 0)
   const cabecera = 1 + (o.notas?.length ?? 0) + 1
-  const filaEncDetalle = cabecera + altoResumen + 1 + 1
+  // +2: el renglón amarillo «Nro a ver» y un blanco (A-FEAT-1515, JMS 02/11), antes del título del detalle.
+  const filaEncDetalle = cabecera + altoResumen + 2 + 1 + 1
   const det1 = filaEncDetalle + 1, detN = filaEncDetalle + items.length + 1
   // Columnas del detalle: A Nro · B Mes · C… las propias · después Moneda (si hay) · Importe
   const nCols = o.encabezadoDetalle.length
@@ -126,6 +127,29 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
     if (monedas.length === 1 && m === undefined) celdaTotal = `${col(2 + o.meses.length)}${h.length}`
     h.push([])
   })
+  /**
+   * 🟨 A-FEAT-1515 (JMS 02/11, opción 1): «idealmente en el amarillo ponés el Nro que querés filtrar». Excel no filtra sin macro,
+   * así que la celda amarilla dice qué categoría es, cuántos renglones tiene y cuánto suma ese Nro (fórmulas sobre el detalle);
+   * los renglones se ven con el filtro de la columna Nro, que ya viene puesto.
+   */
+  {
+    const r = h.length + 1
+    const amarillo = { patternType: "solid", fgColor: { rgb: "FFFFFF00" } }
+    const nro0 = cats.length ? 1 : ""
+    const crit = `${rng("A")},$B$${r}`
+    const sumaNro = colCredito ? `SUMIFS(${rng(colImporte)},${crit})-SUMIFS(${rng(colCredito)},${crit})` : `SUMIFS(${rng(colImporte)},${crit})`
+    const de1 = items.filter(i => nro.get(i.categoria || "(sin categoría)") === 1)
+    h.push([
+      { t: "s", v: "Nro a ver ▶", s: { font: { bold: true }, fill: amarillo } },
+      { t: "n", v: nro0, s: { font: { bold: true, sz: 12 }, fill: amarillo, alignment: { horizontal: "center" } } },
+      { t: "s", f: `IFERROR(INDEX($B$1:$B$${filaEncDetalle - 3},MATCH($B$${r},$A$1:$A$${filaEncDetalle - 3},0)),"(no hay ese Nro)")`, v: cats[0] ?? "", s: { fill: amarillo } },
+      { t: "n", f: `COUNTIF(${rng("A")},$B$${r})`, v: de1.length, s: { fill: amarillo } },
+      { t: "s", v: "renglones · suma", s: { fill: amarillo } },
+      { t: "n", f: sumaNro, v: r2(de1.reduce((t, i) => t + i.importe, 0)), z: MONEDA, s: { font: { bold: true }, fill: amarillo } },
+      { t: "s", v: "← para ver los renglones, filtrá la columna Nro (con un clic)", s: { font: { italic: true } } },
+    ])
+    h.push([])
+  }
   h.push(["DETALLE — filtrá por «Nro» para ver qué forma cada línea del resumen"])
   h.push(["Nro", "Mes", ...o.encabezadoDetalle, ...(o.porMoneda ? ["Moneda"] : []),
     ...(o.debeHaber ? ["Débito", "Crédito"] : [o.rotuloImporte ?? "Importe"])])
