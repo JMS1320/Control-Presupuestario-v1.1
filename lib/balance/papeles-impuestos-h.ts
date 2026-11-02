@@ -23,13 +23,28 @@ import type { CuotaTemplate } from "./templates-libro"
 import { responsablePrincipal } from "./libros-del-balance"
 import type { CuotaPlanilla } from "@/lib/impuestos/planilla"
 import type { AuxiliaresPapel } from "@/lib/impuestos/datos-papel"
-import { armarPapel, encabezadoPapel, filasPapel, papelDeTemplate, vencimientoEnPapel, TITULO_PAPEL, type Papel, type TipoPapel } from "@/lib/impuestos/papel-inmobiliario"
+import { COEFICIENTE, MONEDA, PORCENTAJE, type Columna } from "./formato-excel"
+import { armarPapel, filasPapel, papelDeTemplate, vencimientoEnPapel, TITULO_PAPEL, type Papel, type TipoPapel } from "@/lib/impuestos/papel-inmobiliario"
 
 export interface DatosPapelesH extends AuxiliaresPapel {
   cuotas: CuotaPlanilla[]
 }
 
-export interface SolapaPapelH { nombre: string; filas: unknown[][]; anchos: number[] }
+export interface SolapaPapelH { nombre: string; filas: unknown[][]; columnas: Columna[] }
+
+/**
+ * 🎨 A-FEAT-1516 (JMS 01/11: *«precisaría ahora la parte estética profesional del reporte»*): montos en $ con paréntesis para
+ * los negativos, el aumento en %, las hectáreas con dos decimales. Títulos, encabezados, totales y el control los pinta
+ * `presentarHoja` (el mismo estilo de todo el balance).
+ */
+function columnasPapel(maxCuotas: number): Columna[] {
+  return [
+    { ancho: 28 }, { ancho: 14 }, { ancho: 9, z: COEFICIENTE },
+    { ancho: 16, z: MONEDA }, { ancho: 15, z: MONEDA }, { ancho: 16, z: MONEDA }, { ancho: 16, z: MONEDA }, { ancho: 10, z: PORCENTAJE },
+    ...Array.from({ length: maxCuotas }, (): Columna[] => [{ ancho: 14, z: MONEDA }, { ancho: 11 }]).flat(),
+    { ancho: 14, z: MONEDA }, { ancho: 14, z: MONEDA }, { ancho: 14, z: MONEDA },
+  ]
+}
 
 const TIPOS: TipoPapel[] = ["inmobiliario", "red-vial", "automotores"]
 const CORTO: Record<TipoPapel, string> = { inmobiliario: "Inmobiliario", "red-vial": "Red Vial", automotores: "Automotores" }
@@ -60,12 +75,11 @@ export function solapasPapelesH(d: DatosPapelesH, resp: string, mesesEjercicio: 
     if (papeles.every(p => p.bloques.length === 0)) continue
     const filas: unknown[][] = []
     for (const p of papeles) {
-      if (p.bloques.length === 0) { filas.push([`${TITULO_PAPEL[tipo]} ${p.anio}`], [`(${resp} no tiene cuotas de ${CORTO[tipo].toLowerCase()} en ${p.anio})`], [], []); continue }
+      if (p.bloques.length === 0) { filas.push([`${TITULO_PAPEL[tipo].toUpperCase()} ${p.anio}`], [`(${resp} no tiene cuotas de ${CORTO[tipo].toLowerCase()} en ${p.anio})`], [], []); continue }
       filas.push(...filasPapel(p, filas.length + 1), [], [])
     }
     filas.push(...controlCruzado(d.cuotas, tipo, resp, enEjercicio, cuotasH, filas.length + 1))
-    const max = Math.max(...papeles.map(p => p.maxCuotas))
-    out.push({ nombre: `H · ${resp} · Papel ${CORTO[tipo]}`.slice(0, 31), filas, anchos: [26, 15, 8, ...encabezadoPapel(max).slice(3).map(() => 14)] })
+    out.push({ nombre: `H · ${resp} · Papel ${CORTO[tipo]}`.slice(0, 31), filas, columnas: columnasPapel(Math.max(...papeles.map(p => p.maxCuotas))) })
   }
   return out
 }

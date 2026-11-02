@@ -36,6 +36,8 @@
 import { armarGruposTemplates, armarHojaGrupo, nombreSolapaGrupo, hojaGrupo, gruposDelResponsable } from "@/lib/balance/grupos-templates"
 import { vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
 import { solapasPapelesH } from "@/lib/balance/papeles-impuestos-h"
+import { filtroDe } from "@/lib/balance/formato-excel"
+import { hojaResumenPorMes } from "@/lib/balance/resumen-por-mes"
 import { filasBalanceEnLinea, hojaCajaYBancos } from "@/lib/balance/balance-en-linea"
 import { APERTURA_MSA_2025 } from "@/lib/balance/apertura-contador"
 import { libroDeSolapa, repartirEnLibros, templatesDeResponsable, detalleBancarioDelLibroC, canalDePago, hojaDeDetalle } from "@/lib/balance/libros-del-balance"
@@ -12365,6 +12367,18 @@ export function correrCasos(): Resultado[] {
   }
 
 
+  // ══ 🔎 Todo detalle de resumen por mes: viene con el filtro sobre el DETALLE y un subtotal de lo filtrado pegado abajo (A-FEAT-1515) ══
+  {
+    const it = (cat: string, mes: string, imp: number) => ({ categoria: cat, mes, importe: imp, columnas: ["x"] })
+    const h = hojaResumenPorMes([it("A", "2025-07", 10), it("A", "2025-08", -4), it("B", "2025-07", 5)], { titulo: "T", meses: [{ clave: "2025-07", rotulo: "jul-25" }, { clave: "2025-08", rotulo: "ago-25" }], encabezadoDetalle: ["X"], debeHaber: true })
+    const enc = h.findIndex(r => (r as any[])[0] === "Nro" && (r as any[]).includes("Débito")) + 1
+    const sub = h[enc + 3] as any[]
+    const v = `filtro ${filtroDe(h)} · ${sub[2]} · ${sub[3].f}=${sub[3].v} · ${sub[4].f}=${sub[4].v} · neto ${sub[5].v}`
+    const e = `filtro A${enc}:E${enc + 3} · Subtotal de lo filtrado · SUBTOTAL(9,D${enc + 1}:D${enc + 3})=15 · SUBTOTAL(9,E${enc + 1}:E${enc + 3})=4 · neto 11`
+    chequear("Libro H", "Todo detalle de resumen por mes: filtro sobre el detalle (no sobre el resumen) y subtotal de lo filtrado pegado abajo, con débito, crédito y neto",
+      e, v, v === e, "A-FEAT-1515")
+  }
+
   // ══ 🏛️ Libro H — el papel de inmobiliario: 2 años apilados con sus fórmulas corridas, y el control contra templates por fechas (A-FEAT-1516) ══
   {
     const tpl = { nombre_referencia: "Inmobiliario Cuota Tango Parra 1", responsable: "MSA", cuenta_agrupadora: "Impuestos Rurales", categ: "Impuesto Inmobiliario", activo: true, partida_arba: "123" }
@@ -12375,7 +12389,7 @@ export function correrCasos(): Resultado[] {
     const meses = ["2025-07", "2025-08", "2025-09", "2025-10", "2025-11", "2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]
     const sol = solapasPapelesH({ cuotas: cuotas as never, tcs: [], hectareas: {}, cuentasRedVial: {} }, "MSA", meses, [ch("a", "2025-09-10", 100), ch("c", "2025-07-02", 7), ch("d", "2026-03-10", 50)] as never)
     const h = sol[0]?.filas ?? []
-    const t2026 = h.findIndex(r => (r as any[])[0] === "Inmobiliario (con complementario) 2026")
+    const t2026 = h.findIndex(r => (r as any[])[0] === "INMOBILIARIO (CON COMPLEMENTARIO) 2026")
     const filaTango26 = h.findIndex((r, i) => i > t2026 && (r as any[])[0] === "Tango Parra 1")
     const usd = String(((h[filaTango26] as any[]).at(-2) as any).f)
     const dif = h.find(r => (r as any[])[1] === "Diferencia (tiene que dar 0)") as any[]

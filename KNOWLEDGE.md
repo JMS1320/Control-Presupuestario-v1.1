@@ -1702,6 +1702,10 @@ saca justo lo que él usa para reconocer el movimiento (la leyenda, el comproban
 - **No arrastrar columnas vacías**: las que Excel da por «usadas» por formato no son suyas (salieron 4
   `JMS: (sin título)` vacías en la v2 de sugeridos y preguntó por qué).
 
+**1 bis · Todo detalle viene con el FILTRO puesto y un SUBTOTAL de lo filtrado debajo** *(JMS 01/11, libro H: «que ya vengan con los filtros acá» · «subtotales acá siempre, para trabajo»)*. El filtro va sobre el detalle, no sobre un resumen de arriba (Excel admite uno por hoja: se declara con `filtrarEn`). El subtotal usa SUBTOTALES, así sigue al filtro.
+
+**1 ter · Lo que marca en MSA vale para MA y PAM** *(JMS 01/11: «hay que aplicar a MA y PAM todo lo mismo que MSA, yo ni lo menciono pero se sobreentiende»)*. Una nota en una solapa de MSA es una regla del libro, no de esa solapa.
+
 **2 · El CONTROL al pie o en el resumen, con fórmulas vivas, del todo a las partes.** Es el que él
 mismo agregó en la solapa resumen de los sugeridos: *«así debemos trabajar»*.
 - Fórmulas que apuntan a los **subtotales** de cada solapa, no números pegados.

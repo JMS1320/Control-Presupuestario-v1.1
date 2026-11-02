@@ -10,6 +10,7 @@
  * Pura. Un solo armado para todas las hojas que lo usan (impuestos y gastos bancarios, intereses, inversiones, grupos de
  * templates, LIB), para que la regla no tenga cuatro versiones.
  */
+import { filtrarEn } from "./formato-excel"
 
 export interface ItemDetalle {
   /** La categoría: define la línea del resumen. */
@@ -135,6 +136,22 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
       ...(o.debeHaber ? [imp > 0 ? imp : "", imp < 0 ? -imp : ""] : [imp])])
   }
   if (!items.length) h.push(["", "", "(no hay movimientos en el ejercicio)"])
+  else {
+    /**
+     * 🧮 A-FEAT-1515 (JMS 01/11: *«subtotales acá siempre, para trabajo»*): pegado al detalle, lo que suma LO FILTRADO
+     * (SUBTOTALES ignora las filas ocultas por el filtro). Queda dentro del rango del resumen pero no suma ahí: no tiene Nro.
+     * Y el filtro va sobre el detalle (encabezado → último renglón), no sobre el resumen de arriba.
+     */
+    const ultima = filaEncDetalle + items.length
+    const sub = (c: string, v: number) => ({ t: "n", f: `SUBTOTAL(9,${c}${det1}:${c}${ultima})`, v: r2(v), z: MONEDA })
+    const fila: unknown[] = Array.from({ length: 2 + nCols + (o.porMoneda ? 1 : 0) }, () => "")
+    fila[1 + nCols] = o.porMoneda ? "Subtotal de lo filtrado (filtrá una moneda: no mezcla)" : "Subtotal de lo filtrado"
+    const deb = items.reduce((t, i) => t + Math.max(r2(i.importe), 0), 0), cre = items.reduce((t, i) => t + Math.max(-r2(i.importe), 0), 0)
+    if (colCredito) fila.push(sub(colImporte, deb), sub(colCredito, cre), { t: "n", f: `${colImporte}${ultima + 1}-${colCredito}${ultima + 1}`, v: r2(deb - cre), z: MONEDA }, "← neto")
+    else fila.push(sub(colImporte, deb - cre))
+    h.push(fila)
+    filtrarEn(h, `A${filaEncDetalle}:${colCredito ?? colImporte}${ultima}`)
+  }
   return {
     filas: h,
     ubicacion: {

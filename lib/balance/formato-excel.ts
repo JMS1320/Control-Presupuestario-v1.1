@@ -38,6 +38,20 @@ export const TONELADAS = "#,##0.000_);(#,##0.000)"
 export const COEFICIENTE = "0.00"
 export const FECHA = "dd/mm/yyyy"
 
+/** Porcentaje con un decimal (el «Aumento» del papel de impuestos). */
+export const PORCENTAJE = "0.0%"
+
+/**
+ * 🔎 El FILTRO de una hoja, cuando lo decide quien la arma (A-FEAT-1515, JMS 01/11: *«que ya vengan con los filtros acá»*).
+ * Excel admite UNO por hoja; sin declararlo, `presentarHoja` lo pone en el primer encabezado — en una hoja de resumen + detalle
+ * caía en el resumen de arriba y no en el detalle, que es lo que se filtra. Se anota contra las filas (como el plegado).
+ */
+const FILTROS = new WeakMap<unknown[][], string>()
+/** Anota el rango del filtro (`A15:K203`) de unas filas que se van a agregar como hoja. */
+export const filtrarEn = (filas: unknown[][], ref: string) => { FILTROS.set(filas, ref) }
+/** El filtro declarado para estas filas, si hay. */
+export const filtroDe = (filas: unknown[][]): string | undefined => FILTROS.get(filas)
+
 /** Qué formato y qué ancho lleva cada columna de una hoja. */
 export interface Columna {
   /** Ancho en caracteres. */

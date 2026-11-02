@@ -61,7 +61,7 @@ import { resumenControlCuotas, conProblema, type ControlCuotasTemplates } from "
 import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
 import type { CuadreGranos, ValuacionGranos, Sementeras } from "./granos-sementeras"
 import {
-  formatearHoja, presentarHoja, anchosAutomaticos, colorDeSolapa, aplicarVistas,
+  formatearHoja, presentarHoja, anchosAutomaticos, colorDeSolapa, aplicarVistas, filtroDe,
   conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna, type Vista,
 } from "./formato-excel"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
@@ -471,6 +471,9 @@ const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: 
   if (columnas) formatearHoja(ws, columnas)
   else anchosAutomaticos(ws)
   const vista = { ...presentarHoja(ws), colorSolapa: colorDeSolapa(nombre) }
+  // 🔎 Si quien armó la hoja dijo dónde va el filtro, manda sobre el que adivina `presentarHoja`.
+  const filtro = filtroDe(filas)
+  if (filtro) ws["!autofilter"] = { ref: filtro }
   VISTAS.set(wb, [...vistasDe(wb), vista])
   const niveles = NIVELES.get(filas)
   if (niveles) ws["!rows"] = niveles.map(l => (l ? { level: l } : {}))
@@ -2949,7 +2952,7 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
     for (const x of grupos) hoja(wb, x.nombre, x.filas, COLS_RESUMEN_MES)
     // 🏛️ A-FEAT-1516: el papel de cada impuesto por partida (2 años calendario) con su control contra las solapas de arriba.
     if (papeles) {
-      for (const x of solapasPapelesH(papeles, resp, meses.map(m => m.clave), t.detalle)) hoja(wb, x.nombre, x.filas, x.anchos.map(ancho => ({ ancho })))
+      for (const x of solapasPapelesH(papeles, resp, meses.map(m => m.clave), t.detalle)) hoja(wb, x.nombre, x.filas, x.columnas)
     } else {
       hoja(wb, `H · ${resp} · Papel impuestos`, [["INMOBILIARIO, RED VIAL Y AUTOMOTORES"], ["⚠️ No se pudieron leer las cuotas de impuestos: el papel no salió. Bajalo desde Egresos → Templates → Planilla de impuestos."]], [{ ancho: 90 }])
     }

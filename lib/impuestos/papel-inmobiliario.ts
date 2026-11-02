@@ -265,7 +265,8 @@ export function filasPapel(p: Papel, filaInicial = 1): unknown[][] {
   const cG = colLetra(6), cD = colLetra(3), cC = colLetra(2), cE = colLetra(4), cF = colLetra(5)
   const cTc = `B${o + 2}`
   const filas: unknown[][] = [
-    [`${TITULO_PAPEL[p.tipo]} ${p.anio}`],
+    // En mayúsculas: el estilo del balance lo pinta como sección (con dos años en una hoja, el segundo también se distingue).
+    [`${TITULO_PAPEL[p.tipo].toUpperCase()} ${p.anio}`],
     ["TC promedio", p.tcPromedio ?? ""],
     [],
     cab,
@@ -273,26 +274,26 @@ export function filasPapel(p: Papel, filaInicial = 1): unknown[][] {
   const fila = () => o + filas.length + 1
   const totalesEmpresa: number[] = []
   for (const b of p.bloques) {
-    filas.push([b.empresa])
+    filas.push([`RESPONSABLE: ${b.empresa}`])
     const desde = fila()
     for (const f of b.filas) {
       const r = fila()
       filas.push([
         f.campo, f.partida ?? "", f.has ?? "", f.totalAnterior, f.pagoAnual ?? 0, f.totalCuotas,
-        { f: `${cE}${r}+${cF}${r}`, v: f.costoAnual }, { f: `IF(${cD}${r}>0,${cG}${r}/${cD}${r}-1,"")` },
+        { t: "n", f: `${cE}${r}+${cF}${r}`, v: f.costoAnual }, { t: "n", f: `IF(${cD}${r}>0,${cG}${r}/${cD}${r}-1,"")` },
         ...Array.from({ length: n }, (_, i) => f.cuotas[i] ? [f.cuotas[i].monto, f.cuotas[i].vencimiento.split("-").reverse().join("/")] : ["", ""]).flat(),
-        { f: `IF(N(${cC}${r})>0,${cG}${r}/${cC}${r},"")` }, { f: `IF(N(${cTc})>0,${cG}${r}/${cTc},"")` }, { f: `IF(AND(N(${cC}${r})>0,N(${cTc})>0),${cG}${r}/${cTc}/${cC}${r},"")` },
+        { t: "n", f: `IF(N(${cC}${r})>0,${cG}${r}/${cC}${r},"")` }, { t: "n", f: `IF(N(${cTc})>0,${cG}${r}/${cTc},"")` }, { t: "n", f: `IF(AND(N(${cC}${r})>0,N(${cTc})>0),${cG}${r}/${cTc}/${cC}${r},"")` },
       ])
     }
     const hasta = fila() - 1
     const r = fila()
     totalesEmpresa.push(r)
-    filas.push([`TOTAL ${b.empresa}`, "", "", { f: `SUM(${cD}${desde}:${cD}${hasta})`, v: b.totalAnterior }, { f: `SUM(${cE}${desde}:${cE}${hasta})` }, { f: `SUM(${cF}${desde}:${cF}${hasta})` },
-      { f: `SUM(${cG}${desde}:${cG}${hasta})`, v: b.total }, { f: `IF(${cD}${r}>0,${cG}${r}/${cD}${r}-1,"")` }])
+    filas.push([`TOTAL ${b.empresa}`, "", "", { t: "n", f: `SUM(${cD}${desde}:${cD}${hasta})`, v: b.totalAnterior }, { t: "n", f: `SUM(${cE}${desde}:${cE}${hasta})` }, { t: "n", f: `SUM(${cF}${desde}:${cF}${hasta})` },
+      { t: "n", f: `SUM(${cG}${desde}:${cG}${hasta})`, v: b.total }, { t: "n", f: `IF(${cD}${r}>0,${cG}${r}/${cD}${r}-1,"")` }])
     filas.push([])
   }
   const rTot = fila()
   filas.push(["TOTAL GENERAL", "", "", { f: totalesEmpresa.map(r => `${cD}${r}`).join("+") || "0", v: p.totalAnterior }, "", "", { f: totalesEmpresa.map(r => `${cG}${r}`).join("+") || "0", v: p.total }])
-  filas.push(["CONTROL (tiene que dar 0)", "", "", "", "", "", { f: `${cG}${rTot}-(SUM(${cG}${o + 5}:${cG}${rTot - 1})-SUMIF(A${o + 5}:A${rTot - 1},"TOTAL *",${cG}${o + 5}:${cG}${rTot - 1}))`, v: 0 }])
+  filas.push(["CONTROL (tiene que dar 0)", "", "", "", "", "", { t: "n", f: `${cG}${rTot}-(SUM(${cG}${o + 5}:${cG}${rTot - 1})-SUMIF(A${o + 5}:A${rTot - 1},"TOTAL *",${cG}${o + 5}:${cG}${rTot - 1}))`, v: 0 }])
   return filas
 }
