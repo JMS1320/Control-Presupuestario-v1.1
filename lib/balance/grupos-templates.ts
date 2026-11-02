@@ -9,6 +9,7 @@
  * Pura: recibe las cuotas del ejercicio (las del libro de templates) y los movimientos LIB ya leídos.
  */
 import type { CuotaTemplate, ExtractoParaH } from "./templates-libro"
+import type { MovimientoExtractoH } from "./movimientos-de-cuotas"
 import { armarResumenPorMes, hojaResumenPorMes } from "./resumen-por-mes"
 import { MOTIVO_EN_CERO } from "./movimientos-de-cuotas"
 
@@ -229,6 +230,7 @@ function control4(g: GrupoTemplates, o: OpcionesHojaGrupo, filaInicial: number):
     if (d) return { c: "otraSolapa", a: `está en la solapa «${d.agrupadora || "sin agrupadora"}» («${d.concepto}»)` }
     if (m.templateCuotaId) return { c: "nada", a: "atado a una cuota que no está en el libro (otro ejercicio o desactivada)" }
     if (m.comprobanteArcaId) return { c: "factura", a: "pagó una factura (va por el subdiario)" }
+    if (m.otroVinculo) return { c: "factura", a: "pagó un sueldo, cobró una venta o es un anticipo (va por su papel)" }
     return { c: "nada", a: "sin template ni factura" }
   }
   const neto = (xs: typeof ms) => r2(xs.reduce((t, m) => t + m.debitos - m.creditos, 0))
@@ -241,7 +243,7 @@ function control4(g: GrupoTemplates, o: OpcionesHojaGrupo, filaInicial: number):
   f.push(["", "", "  − pagaron algo de OTRA empresa (por cuenta y orden) — a mirar", neto(de("otraEmpresa"))])
   f.push(["", "", "  − sin template ni factura — a mirar", neto(de("nada"))])
   f.push(["", "", "  − están en otra solapa de este libro (ya figuran)", neto(de("otraSolapa"))])
-  f.push(["", "", "  − pagaron una factura (ya figuran en el subdiario)", neto(de("factura"))])
+  f.push(["", "", "  − pagaron una factura, un sueldo o un anticipo (ya figuran en su papel)", neto(de("factura"))])
   const avisos = (porClase.get("otraEmpresa")?.length ?? 0) + (porClase.get("nada")?.length ?? 0)
   const v = avisos ? `⚠️ ${avisos} movimiento(s) para mirar: ver la lista abajo` : "✓ cierra"
   f.push(["", "", "= Diferencia (tiene que dar 0)", { t: "n", f: `D${r}-SUM(D${r + 1}:D${r + 5})`, v: 0 }, { t: "s", v }])
@@ -252,4 +254,22 @@ function control4(g: GrupoTemplates, o: OpcionesHojaGrupo, filaInicial: number):
     for (const x of lista) f.push(["", "", fmtFecha(x.m.fecha), x.m.cuenta, x.m.descripcion, r2(x.m.debitos - x.m.creditos), x.a])
   }
   return f
+}
+
+/**
+ * 🔎 A-FEAT-1518 (02/11) — la solapa de lo que el extracto tiene SIN categoría ni vínculo, de un responsable: no entra en ningún
+ * control por categoría del libro, así que se muestra aparte (resumen por cuenta y por mes, y abajo cada movimiento). Es lo que
+ * falta conciliar. Caso que la originó: los 12 pagos de la VISA de MSA del histórico (script 175).
+ */
+export function hojaExtractoSinCategoria(ms: MovimientoExtractoH[], responsable: string, etiqueta: string,
+  meses: { clave: string; rotulo: string }[] = []): unknown[][] {
+  return hojaResumenPorMes(ms.map(m => ({
+    categoria: m.cuenta, mes: m.fecha.slice(0, 7), importe: m.debitos - m.creditos, moneda: m.enDolares ? "USD" as const : "ARS" as const,
+    columnas: [fmtFecha(m.fecha), m.descripcion, m.estado],
+  })), {
+    titulo: `EXTRACTO SIN CATEGORÍA NI VÍNCULO — cuentas de ${responsable} — ejercicio ${etiqueta}`,
+    notas: ["Movimientos del banco sin categoría y sin cuota, factura, sueldo, venta ni anticipo: no entran en ningún control del libro.",
+      "Es lo que falta conciliar (el histórico jul-25 → ene-26 se cargó así). Por cuenta y por mes; abajo cada movimiento."],
+    meses, encabezadoDetalle: ["Fecha", "Descripción del banco", "Estado"], debeHaber: true, porMoneda: true,
+  })
 }

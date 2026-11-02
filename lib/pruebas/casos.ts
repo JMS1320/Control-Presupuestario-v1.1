@@ -34,7 +34,7 @@
  */
 
 import { armarGruposTemplates, armarHojaGrupo, nombreSolapaGrupo, hojaGrupo, gruposDelResponsable } from "@/lib/balance/grupos-templates"
-import { indiceDeDestinos, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
+import { indiceDeDestinos, sinCategoriaNiVinculo, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
 import { solapasPapelesH } from "@/lib/balance/papeles-impuestos-h"
 import { fechasReales, serieDeFecha } from "@/lib/excel/fechas-reales"
 import { filtroDe } from "@/lib/balance/formato-excel"
@@ -12411,6 +12411,15 @@ export function correrCasos(): Resultado[] {
     const e = "1 · A1 n 46113 dd/mm/yyyy · 45839 = 45839 · resto texto true"
     chequear("Exports", "Una fecha «dd/mm/aaaa» escrita como texto (o «aaaa-mm-dd») pasa a fecha de Excel (el filtro agrupa por año y mes); no toca fechas imposibles, textos con una fecha adentro, claves de mes ni fórmulas",
       e, v, v === e, "A-FEAT-1519")
+  }
+
+  // ══ 🔎 Libro H — lo del extracto SIN categoría ni vínculo va a su solapa: lo atado a sueldo/venta/anticipo no (A-FEAT-1518) ══
+  {
+    const m = (titular: string, categ: string, extra: Record<string, unknown> = {}) => ({ titular, cuenta: "Galicia MSA CC", fecha: "2025-09-08", descripcion: "Pago Visa Empresa",
+      categ, debitos: 100, creditos: 0, templateCuotaId: null, comprobanteArcaId: null, otroVinculo: false, estado: "historico", enDolares: false, ...extra })
+    const ms = [m("MSA", ""), m("MSA", "Tarjetas MSA"), m("MSA", "", { otroVinculo: true }), m("MSA", "", { templateCuotaId: "x" }), m("PAM", ""), m("MSA", "  ", { debitos: 0 })]
+    const v = String(sinCategoriaNiVinculo(ms as never, "MSA").length)
+    chequear("Libro H", "Extracto sin categoría ni vínculo: sólo los del titular, sin categoría y sin cuota, factura, sueldo, venta ni anticipo (y con importe)", "1", v, v === "1", "A-FEAT-1518")
   }
 
   // ══ 🏛️ Libro H — el papel de inmobiliario: 2 años apilados con sus fórmulas corridas, y el control contra templates por fechas (A-FEAT-1516) ══

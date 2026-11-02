@@ -137,10 +137,16 @@ export interface MovimientoExtractoH {
   creditos: number
   templateCuotaId: string | null
   comprobanteArcaId: string | null
+  /** Atado a un sueldo, una venta (cobro) o un anticipo: ya figura en su papel. */
+  otroVinculo: boolean
+  estado: string
   enDolares: boolean
 }
 
-/** Los movimientos del ejercicio CON categoría, de todas las cuentas, de a 1000. */
+/**
+ * Los movimientos del ejercicio de todas las cuentas, de a 1000 — con categoría Y sin ella (02/11: los 12 pagos de la VISA de
+ * MSA estaban sin categoría y por eso el control 4 no los vio; ahora los sin categoría van a su propia solapa).
+ */
 export async function leerExtractoDelEjercicio(cliente: ClienteMinimo, desde: string, hasta: string): Promise<{ movimientos: MovimientoExtractoH[]; tablasQueFallaron: string[] }> {
   const movimientos: MovimientoExtractoH[] = []
   const tablasQueFallaron: string[] = []
@@ -149,8 +155,8 @@ export async function leerExtractoDelEjercicio(cliente: ClienteMinimo, desde: st
       const q = t.schema === "public" ? cliente.from(t.tabla) : cliente.schema(t.schema).from(t.tabla)
       // ClienteMinimo no tipa gte/lte/not/range: se usan igual que en el resto del repo.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await (q.select("fecha, descripcion, categ, debitos, creditos, template_cuota_id, comprobante_arca_id") as any)
-        .gte("fecha", desde).lte("fecha", hasta).not("categ", "is", null).order("fecha").range(d, d + 999)
+      const { data, error } = await (q.select("fecha, descripcion, categ, debitos, creditos, estado, template_cuota_id, comprobante_arca_id, sueldo_pago_id, comprobante_venta_id, anticipo_id") as any)
+        .gte("fecha", desde).lte("fecha", hasta).order("fecha").range(d, d + 999)
       if (error) { tablasQueFallaron.push(nombreCuenta(t)); break }
       for (const m of (data ?? []) as Array<Record<string, unknown>>) {
         movimientos.push({
@@ -159,6 +165,8 @@ export async function leerExtractoDelEjercicio(cliente: ClienteMinimo, desde: st
           debitos: Number(m.debitos) || 0, creditos: Number(m.creditos) || 0,
           templateCuotaId: m.template_cuota_id ? String(m.template_cuota_id) : null,
           comprobanteArcaId: m.comprobante_arca_id ? String(m.comprobante_arca_id) : null,
+          otroVinculo: !!(m.sueldo_pago_id || m.comprobante_venta_id || m.anticipo_id),
+          estado: String(m.estado ?? ""),
           enDolares: !!t.enDolares,
         })
       }
@@ -190,4 +198,10 @@ export function indiceDeDestinos(todas: CuotaTemplate[]): Map<string, DestinoMov
     }
   }
   return m
+}
+
+/** 🔎 Pura. Los movimientos SIN categoría y SIN ningún vínculo (cuota, factura, sueldo, venta, anticipo) de un titular. */
+export function sinCategoriaNiVinculo(movs: MovimientoExtractoH[], titular: string): MovimientoExtractoH[] {
+  return movs.filter(m => m.titular === titular && !m.categ.trim() && !m.templateCuotaId && !m.comprobanteArcaId && !m.otroVinculo
+    && (m.debitos !== 0 || m.creditos !== 0))
 }

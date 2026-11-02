@@ -46,7 +46,8 @@ import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndi
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
 import { armarStocksUnificados, hojaDeStocks } from "./stocks-unificado"
 import { solapasPapelesH, type DatosPapelesH } from "./papeles-impuestos-h"
-import { armarGruposTemplates, armarHojaGrupo, gruposDelResponsable, hojaGrupo, hojaIndiceGrupos, hojaLib, nombreSolapaGrupo, type GrupoTemplates, type MovimientoLib } from "./grupos-templates"
+import { armarGruposTemplates, armarHojaGrupo, gruposDelResponsable, hojaExtractoSinCategoria, hojaGrupo, hojaIndiceGrupos, hojaLib, nombreSolapaGrupo, type GrupoTemplates, type MovimientoLib } from "./grupos-templates"
+import { sinCategoriaNiVinculo, type MovimientoExtractoH } from "./movimientos-de-cuotas"
 import { filasBalanceEnLinea, hojaBalanceEnLinea, hojaCajaYBancos, hojaFci, hojaDeudasYCreditos, hojaSoja, hojaVacasDeCria, type EntradaBalanceEnLinea } from "./balance-en-linea"
 import { LIBROS, repartirEnLibros, templatesDeResponsable, hojaListadoTemplates, hojaDeDetalle, type GrupoDetalle, type MovimientoDelDetalle } from "./libros-del-balance"
 import { hojaDelRecorrido, sincronizarPendientes, type RecorridoParaExcel } from "./recorrido-excel"
@@ -445,6 +446,8 @@ function hojaDeControl(libro: LibroDiario, lecturas?: Lectura[]): unknown[][] {
  * plegar como el «Subtotal» de Excel. La hoja que lo necesita lo anota acá, sin cambiar su firma.
  */
 const NIVELES = new WeakMap<unknown[][], number[]>()
+/** Las hojas cuyo esquema viene CERRADO (las filas de nivel 1 ocultas, como las deja Excel al apretar el [−]). */
+const CERRADAS = new WeakSet<unknown[][]>()
 
 /** Un renglón de SUBTOTAL: negrita, fondo suave y línea arriba — se distingue de las cuentas. */
 export const ESTILO_SUBTOTAL = {
@@ -477,14 +480,14 @@ const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: 
   if (filtro) ws["!autofilter"] = { ref: filtro }
   VISTAS.set(wb, [...vistasDe(wb), vista])
   const niveles = NIVELES.get(filas)
-  if (niveles) ws["!rows"] = niveles.map(l => (l ? { level: l } : {}))
+  if (niveles) ws["!rows"] = niveles.map(l => (l ? { level: l, ...(CERRADAS.has(filas) ? { hidden: true } : {}) } : {}))
   // 31 caracteres es el máximo que acepta Excel para el nombre de una solapa.
   XLSX.utils.book_append_sheet(wb, ws, nombre.slice(0, 31))
 }
 /** La misma forma de agregar una hoja (formato, presentación y plegado), para el libro diario aparte. */
 export const agregarHoja = hoja
 /** Anota qué filas se pliegan (1 = detalle de un grupo) en una hoja que se va a agregar con `agregarHoja`. */
-export const plegar = (filas: unknown[][], niveles: number[]) => { NIVELES.set(filas, niveles) }
+export const plegar = (filas: unknown[][], niveles: number[], cerrado = false) => { NIVELES.set(filas, niveles); if (cerrado) CERRADAS.add(filas) }
 
 /**
  * Las columnas de un listado de asientos (Compras, Ventas, Provisión, Sin subdiario).
@@ -2311,6 +2314,7 @@ export function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
       f.push(["", `${t.sinFecha.length} cuota(s) SIN FECHA (ni de pago ni estimada): no se pueden asignar a un período.`])
     }
   }
+  plegarNotasPorMes(f) // 📑 las notas de arriba, plegadas (JMS 02/11)
   return f
 }
 
@@ -2949,9 +2953,16 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
     })
     hoja(wb, `H · ${resp} · Templates`, hojaListadoTemplates(t, resp, etiqueta), COLS_LISTADO_TEMPLATES)
     hoja(wb, `H · ${resp} · Cuotas`, hojaDeTemplates(t), COLS_TEMPLATES)
+    // 🔎 A-FEAT-1518 (02/11): lo del extracto de este responsable sin categoría ni vínculo — no lo ve ningún control de abajo.
+    const extracto = t.entrada?.opciones.extracto
+    const sinCateg = extracto ? sinCategoriaNiVinculo(extracto.movimientos, resp) : []
+    const hojaSinCateg = `H · ${resp} · Extracto sin categ`
     const porMes = hojaTemplatesPorMes(t)
-    hoja(wb, hojaPorMes, [...porMes, ...controlSolapasH(t, grupos, porMes.length)], COLS_TEMPLATES_POR_MES(t.columnas.length))
+    const filasPorMes = [...porMes, ...controlSolapasH(t, grupos, porMes.length), ...lineaSinCategoria(sinCateg, hojaSinCateg, !!extracto)]
+    plegarNotasPorMes(filasPorMes)
+    hoja(wb, hojaPorMes, filasPorMes, COLS_TEMPLATES_POR_MES(t.columnas.length))
     for (const x of grupos) hoja(wb, x.nombre, x.filas, COLS_RESUMEN_MES)
+    if (sinCateg.length) hoja(wb, hojaSinCateg, hojaExtractoSinCategoria(sinCateg, resp, etiqueta, meses), COLS_RESUMEN_MES)
     // 🏛️ A-FEAT-1516: el papel de cada impuesto por partida (2 años calendario) con su control contra las solapas de arriba.
     if (papeles) {
       for (const x of solapasPapelesH(papeles, resp, meses.map(m => m.clave), t.detalle)) hoja(wb, x.nombre, x.filas, x.columnas)
@@ -2966,6 +2977,24 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
  * categoría, columna TOTAL) menos el total de cada solapa de agrupadora tiene que dar 0: una cuota perdida o contada dos
  * veces salta acá. Los valores van en la columna D (la P y la C de estos renglones quedan vacías: no entran en el SUMAR.SI).
  */
+/** La línea del control de «Por mes» que apunta a la solapa de lo sin categoría (o dice que no se leyó el extracto). */
+function lineaSinCategoria(ms: MovimientoExtractoH[], hojaSinCateg: string, leido: boolean): unknown[][] {
+  if (!leido) return [[], ["", "⚠️ No se leyó el extracto: no se sabe qué movimientos quedaron sin categoría."]]
+  if (!ms.length) return [[], ["", "✓ Ningún movimiento del extracto sin categoría ni vínculo."]]
+  const neto = Math.round(ms.reduce((t, m) => t + (m.enDolares ? 0 : m.debitos - m.creditos), 0) * 100) / 100
+  return [[], ["", `⚠️ Extracto SIN categoría ni vínculo: ${ms.length} movimiento(s), neto en pesos`, "", neto, `— no entran en ningún control de este libro: ver «${hojaSinCateg}»`]]
+}
+
+/**
+ * 📑 Las notas de arriba de «Por mes» vienen PLEGADAS (JMS 02/11: «agrupo estas porque me ocupan mucho lugar de tabla»):
+ * del renglón 2 hasta el anterior al encabezado «Responsable». Se despliegan con el [+] de Excel.
+ */
+export function plegarNotasPorMes(filas: unknown[][]): void {
+  const enc = filas.findIndex(r => Array.isArray(r) && r[0] === "Responsable")
+  if (enc <= 1) return
+  plegar(filas, filas.map((_, i) => (i >= 1 && i < enc ? 1 : 0)), true)
+}
+
 function controlSolapasH(t: TemplatesDelEjercicio, grupos: { g: GrupoTemplates; nombre: string; celdaTotal: string | null }[], filasAntes: number): unknown[][] {
   const total = Math.round((t.totalDebitos - t.totalCreditos) * 100) / 100
   const colTotal = String.fromCharCode(68 + t.columnas.length)
