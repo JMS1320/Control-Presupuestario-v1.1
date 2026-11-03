@@ -48,7 +48,7 @@ const sb = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_
 const de = (s: string, t: string) => (s === "public" ? sb.from(t) : sb.schema(s).from(t))
 const n = (x: unknown) => Number(x) || 0
 const r2 = (x: number) => Math.round(x * 100) / 100
-const igual = (a: number, b: number) => Math.abs(a - b) < 0.01
+const igual = (a: number, b: number) => Math.abs(a - b) < 0.015   // redondeo de 1 centavo (el emisor redondea distinto que el banco)
 const plata = (x: number) => `$ ${x.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const dmy = (f?: string | null) => (f ? String(f).slice(0, 10).split("-").reverse().join("/") : "")
 const dias = (a: string, b: string) => Math.round((Date.parse(a) - Date.parse(b)) / 86400000)
@@ -221,14 +221,14 @@ function candidatas(f: any): { cands: Cand[]; alertas: string[]; cuit: string; c
       for (const c of fcMsa) {
         if (c.id === f.comprobante_arca_id || cands.some(x => x.ref === c.id)) continue
         const m = montosFc(c).find(([, x]) => igual(x, imp)); if (!m) continue
-        const dd = dias(f.fecha, c.fecha_emision); if (dd < -45 || dd > 240) continue
+        const dd = dias(f.fecha, c.fecha_emision); if (dd < (cta.tarjeta ? -2 : -45) || dd > (cta.tarjeta ? 20 : 240)) continue   // tarjeta: débito automático, la factura viene ANTES
         if (cuit && cuit !== CUIT_MSA && c.cuit !== cuit) { alertas.push(`Mismo importe, OTRO proveedor (no se propone): ${descFc({ ...c, empresa: "MSA" })}`); continue }
         const libre = fcLibre(c.id, f.id)
         cands.push({ tipo: `Factura MSA (${m[0]})`, texto: descFc({ ...c, empresa: "MSA" }) + txtAtada(c.id, f.id) + ` · ${dd} días`, fuerza: !libre ? 1 : cuit ? 3 : 2, ref: c.id })
       }
       // 3 · sumas de 2–3 facturas del MISMO proveedor (sólo si se sabe quién es)
       if (cuit && cuit !== CUIT_MSA) {
-        const delProv = fcMsa.filter(c => c.cuit === cuit && fcLibre(c.id, f.id) && !["conciliado", "pagado"].includes(String(c.estado)) && dias(f.fecha, c.fecha_emision) >= -45 && dias(f.fecha, c.fecha_emision) <= 240).slice(0, 25)
+        const delProv = fcMsa.filter(c => c.cuit === cuit && fcLibre(c.id, f.id) && !["conciliado", "pagado"].includes(String(c.estado)) && dias(f.fecha, c.fecha_emision) >= (cta.tarjeta ? -2 : -45) && dias(f.fecha, c.fecha_emision) <= (cta.tarjeta ? 35 : 240)).slice(0, 25)
         for (const s of subconjuntos(delProv, totalFc, imp)) cands.push({ tipo: `Suma de ${s.length} facturas del proveedor`, texto: s.map(c => `${esNC(c) ? "NC" : "FC"} ${c.numero_desde} ${dmy(c.fecha_emision)} ${plata(totalFc(c))}`).join(" + "), fuerza: 2, ref: s.map(c => c.id).join(",") })
         // y la suma neta de retención
         for (const s of subconjuntos(delProv.filter(c => n(c.monto_sicore) > 0 || true), c => r2(totalFc(c) - n(c.monto_sicore)), imp)) if (s.some(c => n(c.monto_sicore) > 0))
@@ -349,7 +349,7 @@ function emparejar(f: any, cuit: string, monto: number): any | null {
     const fcs = fcMsa.filter(c => c.cuit === cuit && igual(totalFc(c), monto) && fcLibre(c.id, "-")).sort((a, b) => a.fecha_emision.localeCompare(b.fecha_emision))
     const usadas = new Set<string>(), mapa = new Map<string, any>()
     for (const m of movs) {
-      const c = fcs.filter(c => !usadas.has(c.id) && Math.abs(dias(m.fecha, c.fecha_emision)) <= 45).sort((a, b) => Math.abs(dias(m.fecha, a.fecha_emision)) - Math.abs(dias(m.fecha, b.fecha_emision)))[0]
+      const c = fcs.filter(c => !usadas.has(c.id) && dias(m.fecha, c.fecha_emision) >= -2 && dias(m.fecha, c.fecha_emision) <= 20).sort((a, b) => dias(m.fecha, a.fecha_emision) - dias(m.fecha, b.fecha_emision))[0]
       if (c) { usadas.add(c.id); mapa.set(m.id, c) }
     }
     emparejados.set(k, mapa)
@@ -358,7 +358,7 @@ function emparejar(f: any, cuit: string, monto: number): any | null {
 }
 
 // ── Propuesta ────────────────────────────────────────────────────────────────────────────────────────────
-interface Prop { seguridad: "ALTA" | "MEDIA" | "BAJA" | "SIN"; accion: string; cuenta: string; porque: string; candidatas: string; alertas: string; cuit: string }
+interface Prop { seguridad: "ALTA" | "MEDIA" | "BAJA" | "SIN"; accion: string; cuenta: string; porque: string; candidatas: string; alertas: string; cuit: string; ref?: string }
 function propuesta(f: any): Prop | null {
   if (!["pendiente", "auditar"].includes(String(f.estado))) return null
   const { cands, alertas, cuit, cuitFuente } = candidatas(f)
@@ -376,7 +376,12 @@ function propuesta(f: any): Prop | null {
       accion: deb ? `Vincular con el «Pago Visa Empresa» del ${dmy(deb.fecha)} (${deb.estado})` : f.fecha < "2025-07-01" ? "El débito es del ejercicio 24/25: el extracto de Galicia MSA arranca el 01/07/2025. Cerrar como pagado (control 1 ✓)" : "Revisar: no hay débito «Pago Visa Empresa» de ese importe (±5 días)",
       porque: `${plata(n(f.creditos))} · control 1 del resumen ${ok1 ? "✓" : r ? `✗ (dif ${plata(r.c1)})` : "sin resumen"} · control 2 ${deb ? "✓" : "✗"}` }
   }
-  if (cta.tarjeta && /^SU PAGO EN USD/i.test(d)) return { ...base, seguridad: "MEDIA", cuenta: "Tarjetas MSA", accion: "Informativo: la parte en dólares del pago", porque: `US$ ${n(f.creditos_usd)}` }
+  if (cta.tarjeta && /^SU PAGO EN USD/i.test(d)) {
+    const deb = debitosVisa.filter(x => !usadosVisa.has(x.id) && Math.abs(dias(x.fecha, f.fecha)) <= 3).sort((a, b) => Math.abs(dias(a.fecha, f.fecha)) - Math.abs(dias(b.fecha, f.fecha)))[0]
+    if (deb) usadosVisa.add(deb.id)
+    return { ...base, seguridad: deb ? "ALTA" : "SIN", cuenta: "Tarjetas MSA", accion: deb ? `Vincular con el «Pago Visa Empresa» del ${dmy(deb.fecha)} por ${plata(n(deb.debitos))} (la parte en dólares, pagada en pesos)` : "Revisar: no encontré el débito en pesos de la parte en dólares",
+      porque: deb ? `US$ ${n(f.creditos_usd)} → ${plata(n(deb.debitos))} (≈ ${Math.round(n(deb.debitos) / (n(f.creditos_usd) || 1))} por dólar)` : `US$ ${n(f.creditos_usd)}` }
+  }
   // Tarjeta: suma mensual de un comercio contra una factura
   if (sumaMensual.has(f.id) && !cands.some(c => c.fuerza === 3 && /Factura/.test(c.tipo)))
     return { ...base, seguridad: "ALTA", cuenta: "", accion: "Conciliar contra la factura mensual del comercio (junto con los otros consumos de la suma)", porque: sumaMensual.get(f.id)! }
@@ -393,23 +398,23 @@ function propuesta(f: any): Prop | null {
   const motor = cands.find(c => /atada por el motor/.test(c.tipo))
   const bloqueante = alertas.some(x => x.startsWith("🚫"))
   if (motor && !bloqueante && (motor.fuerza >= 2) && fuertes.filter(c => c !== motor).length === 0 && medias.filter(c => c !== motor).length === 0)
-    return { ...base, seguridad: motor.fuerza === 3 ? "ALTA" : "MEDIA", cuenta: fcPorId.get(motor.ref!)?.cuenta_contable ?? "", accion: "Confirmar lo que propuso el motor", porque: `${motor.texto}${f.motivo_revision ? ` · Motor: ${f.motivo_revision}` : ""}` }
+    return { ...base, ref: motor.ref, seguridad: motor.fuerza === 3 ? "ALTA" : "MEDIA", cuenta: fcPorId.get(motor.ref!)?.cuenta_contable ?? "", accion: "Confirmar lo que propuso el motor", porque: `${motor.texto}${f.motivo_revision ? ` · Motor: ${f.motivo_revision}` : ""}` }
   if (motor && bloqueante) {
     const alt = cands.filter(c => c !== motor && c.fuerza >= 2)
     return { ...base, seguridad: alt.length === 1 ? "MEDIA" : "BAJA", cuenta: a?.v.split(" · ")[0] ?? "", accion: `NO confirmar lo del motor${alt.length === 1 ? ` → ${alt[0].tipo}` : alt.length ? " → elegir entre las candidatas" : a ? ` → como antes: ${a.v}` : " → a estudiar"}`, porque: alertas.filter(x => x.startsWith("🚫")).join(" · ") }
   }
-  if (fuertes.length === 1) { const c = fuertes[0]; return { ...base, seguridad: "ALTA", cuenta: c.ref && fcPorId.get(c.ref)?.cuenta_contable || "", accion: `${c.tipo} →  conciliar`, porque: c.texto } }
+  if (fuertes.length === 1) { const c = fuertes[0]; return { ...base, ref: c.ref, seguridad: "ALTA", cuenta: c.ref && fcPorId.get(c.ref)?.cuenta_contable || "", accion: `${c.tipo} →  conciliar`, porque: c.texto } }
   if (fuertes.length > 1) {
     // Mismo proveedor y mismo importe todos los meses (p. ej. un peaje fijo): se empareja por orden de fecha, cada factura una sola vez
     const facts = fuertes.filter(c => /^Factura MSA/.test(c.tipo)).map(c => fcPorId.get(c.ref!)).filter(Boolean)
     if (facts.length === fuertes.length && new Set(facts.map(x => `${x.cuit}|${r2(totalFc(x))}`)).size === 1) {
       const elegida = emparejar(f, facts[0].cuit, r2(totalFc(facts[0])))
-      if (elegida) return { ...base, seguridad: "ALTA", cuenta: elegida.cuenta_contable ?? "", accion: "Factura MSA →  conciliar (emparejada por orden de fecha)",
-        porque: `${descFc(elegida)} · el proveedor cobra el mismo importe varios meses: cada débito se empareja con la factura más cercana que no tomó otro débito` }
+      if (elegida) return { ...base, ref: elegida.id, seguridad: "ALTA", cuenta: elegida.cuenta_contable ?? "", accion: "Factura MSA →  conciliar (emparejada por orden de fecha)",
+        porque: `${descFc(elegida)} · el proveedor cobra el mismo importe varios meses: cada débito va con la factura INMEDIATA ANTERIOR (débito automático) que no tomó otro débito` }
     }
     return { ...base, seguridad: "BAJA", cuenta: "", accion: `Hay ${fuertes.length} candidatas fuertes: elegir`, porque: "Ver la lista" }
   }
-  if (medias.length === 1 && !(a && esCargoBanco(f))) { const c = medias[0]; return { ...base, seguridad: "MEDIA", cuenta: c.ref && fcPorId.get(c.ref)?.cuenta_contable || "", accion: `${c.tipo} → conciliar (sólo coincide el importe: confirmalo)`, porque: c.texto } }
+  if (medias.length === 1 && !(a && esCargoBanco(f))) { const c = medias[0]; return { ...base, ref: c.ref, seguridad: "MEDIA", cuenta: c.ref && fcPorId.get(c.ref)?.cuenta_contable || "", accion: `${c.tipo} → conciliar (sólo coincide el importe: confirmalo)`, porque: c.texto } }
   if (medias.length > 1) return { ...base, seguridad: "BAJA", cuenta: "", accion: `Hay ${medias.length} candidatas por importe: elegir`, porque: "Ninguna se distingue de las otras sin el destinatario. Ver la lista" }
   if (a && /· factura/.test(a.v) && a.claro && n(f.debitos) > 0)
     return { ...base, seguridad: "BAJA", cuenta: a.v.split(" · ")[0], accion: `Va contra factura (como siempre: ${a.v}) — falta la factura de este importe`,
@@ -446,6 +451,22 @@ const L = (i: number) => XLSX.utils.encode_col(i)
 const iCol = (t: string) => L(COLS.findIndex(c => c[0] === t))
 const detalle = filas.filter(f => f.estado !== "total")
 const props = detalle.map(f => propuesta(f))
+// 🔒 Una factura (o cuota, o pago) se propone para UN solo movimiento: el más cercano después de ella; los demás quedan avisados
+{
+  const porRef = new Map<string, number[]>()
+  props.forEach((p, i) => { if (p?.ref && (fcPorId.has(p.ref) || cuotaPorId.has(p.ref))) porRef.set(p.ref, [...(porRef.get(p.ref) ?? []), i]) })
+  for (const [ref, idx] of porRef) {
+    if (idx.length < 2) continue
+    const fecha = fcPorId.get(ref)?.fecha_emision ?? cuotaPorId.get(ref)?.fecha_estimada
+    const dist = (i: number) => { const dd = dias(detalle[i].fecha, fecha); return dd < -2 ? 9999 : dd }
+    const gana = [...idx].sort((a, b) => dist(a) - dist(b))[0]
+    for (const i of idx.filter(i => i !== gana)) {
+      const p = props[i]!
+      props[i] = { ...p, ref: undefined, seguridad: "BAJA", accion: "Falta la factura de este movimiento: la candidata ya es del otro", porque: `La que coincidía (${p.porque.slice(0, 160)}) va con el movimiento del ${dmy(detalle[gana].fecha)}, que está más cerca`,
+        alertas: [p.alertas, `⚠️ Misma candidata que el movimiento del ${dmy(detalle[gana].fecha)} (${plata(n(detalle[gana].debitos) || n(detalle[gana].creditos))}): no puede ir a los dos`].filter(Boolean).join(" | ") }
+    }
+  }
+}
 const aoa: any[][] = [COLS.map(([t, c]) => cab(t, c))]
 detalle.forEach((f, i) => aoa.push(COLS.map(([, , g]) => g(f, props[i]))))
 const ult = aoa.length
