@@ -3365,6 +3365,9 @@ Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantid
 ### 2026-11-02 · Trabucco al pago más cercano + reglas de la tarjeta VISA MA (script 180, DATOS) — A-FEAT-1526 — ✅ CORRIDO con OK de JMS
 `ma.ma_galicia`: la factura de Trabucco del 18/07/26 pasa del pago del 07/09 (queda pendiente) al del 13/07 (conciliado). `public.reglas_conciliacion` (`tarjeta_visa_ma`, orden 98-110): 13 reglas de descripción hacia los 4 templates del 179 (DISCO, DIS.COM, CENCOSUD, DIA TIENDA, JUMBO → Supermercados MA · EST DE SERVICIO CERRITO, AXION, PARADOR SAN PEDRO → Combustibles MA · VTV → Mantenimiento autos MA · SODIMAC, EASY, CENTRO PINTURERIAS, PRESTIGIO → Pintura, materiales y herramientas MA). Ids y foto en `scripts/180-hecho.json`; deshacer: `180-…-deshacer.mts`.
 
+### 2026-11-03 · Santander MSA: cargos del banco a sus templates (script 195, DATOS) — ✅ CORRIDO con OK de JMS
+`msa.santander`: 27 cargos de jul–sep 2026 → `conciliado`, cada uno con una cuota nueva en el template de sus anteriores (Iva Bancario 7 · Comision Cuenta Bancaria 6 · Debitos / Creditos 7 · Créditos Pagados 1 · Sellos Bancario 1 · Percepcion IVA 3 · IIBB Bancario 2). Queda el «Pago de honorarios» 08/07/25 $ 1.064.403 (AMS, sin ningún registro en la app). `scripts/195-hecho.json`. Deshacer: `195-…-deshacer.mts`.
+
 ### 2026-11-03 · Templates EN DÓLARES de MSA (script 194, DATOS) — ✅ CORRIDO con OK de JMS («deben ir en templates de dólares»)
 `egresos_sin_factura`: 6 templates «… USD» copia de los de pesos de MSA (Comision Cuenta Bancaria, Iva Bancario, Debitos / Creditos, IIBB Bancario, Percepcion IVA, Otros Gastos; `template_origen_id` = el de pesos). `cuotas_egresos_sin_factura`: 49 cuotas con `monto_usd`, `tipo_cambio` = dólar BNA divisas vendedor del día (o el hábil anterior, `cotizaciones`) y `monto` = pesos. `msa.cc_usd`: los 49 cargos atados a su cuota, con `tipo_cambio` e `importe_pesos`. `scripts/194-hecho.json`. Deshacer: `194-…-deshacer.mts`.
 
