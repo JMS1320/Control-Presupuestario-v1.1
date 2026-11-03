@@ -916,7 +916,8 @@ export function PapelesDeBalance() {
         const cuentasEnDolares: { cuenta: string; tipo: string; movs: MovimientoExtracto[] }[] = []
         for (const c of (CUENTAS_EN_MONEDA_EXTRANJERA[empresa.id] ?? [])) {
           const q = c.schema_bd === "public" ? supabase.from(c.tabla_bd) : supabase.schema(c.schema_bd).from(c.tabla_bd)
-          const leido = await traerTodo((d, h) => q.select("fecha, descripcion, categ, nro_cuenta, debitos, creditos, saldo, orden", { count: "exact" })
+          // 💵 A-FEAT-1530: también el TC, los pesos y el template de cada movimiento, para la solapa «07.2 Operaciones en dólares»
+          const leido = await traerTodo((d, h) => q.select("fecha, descripcion, categ, nro_cuenta, debitos, creditos, saldo, orden, tipo_cambio, importe_pesos, comprobantes_pagados, nota_operador", { count: "exact" })
             .gte("fecha", `${meses[0]}-01`).lte("fecha", finDelEjercicio).order("fecha").order("orden").order("id").range(d, h))
           if (leido.error) { toast.warning(`No se pudieron leer los gastos de ${c.nombre}: faltan en el papel 08.`); continue }
           anotar(`Extracto ${c.nombre}`, leido)
@@ -953,6 +954,9 @@ export function PapelesDeBalance() {
           gastos: armarGastosBancarios(movimientos, (planCuentas ?? []) as CuentaDelPlan[], meses),
           gastosEnDolares,
           cuentasEnDolares,
+          // 💵 A-FEAT-1530: la otra punta en PESOS de las compraventas de dólares (cuenta «Compra / Venta de dólares» en los extractos en pesos)
+          compraVentaPesos: movimientos.filter(m => /compra\s*\/\s*venta de d[oó]lares/i.test(String(m.categ ?? "")))
+            .map(m => ({ fecha: String(m.fecha).slice(0, 10), cuenta: m.donde, descripcion: m.descripcion, debitos: m.debitos, creditos: m.creditos })),
           // 📚 A-FEAT-1505: el detalle movimiento por movimiento para el libro C (impuestos y gastos bancarios, intereses, inversiones)
           detalleBancario: detalleBancarioDelLibroC(movimientos, movsEnDolares, (planCuentas ?? []) as CuentaDelPlan[], esFCI),
           retiros: armarRetirosYAportes(movimientos, meses),

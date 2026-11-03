@@ -20,6 +20,7 @@
  */
 // 🎨 `xlsx-js-style` (misma API) para que el Excel guarde negrita y colores — ver `presentarHoja`.
 // Import por DEFAULT: el paquete es CommonJS (ver lib/presupuesto/export.ts).
+import { hojaOperacionesEnDolares } from "./operaciones-en-dolares"
 import XLSX from "xlsx-js-style"
 import { lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
 import { ETIQUETA_CONCEPTO, type ImpuestoCheque } from "./impuesto-cheque"
@@ -2842,6 +2843,11 @@ export function armarWorkbook(
         hoja(wb, "07.1 Cadena de saldos",
           hojaDeCadenaDeSaldos(bancarios.cadenas ?? [], libro.ejercicio.fechaCierre), COLS_CADENA)
       }
+    }
+    // 💵 A-FEAT-1530: cada movimiento en dólares con su TC y sus pesos, y las compraventas con el TC que resulta
+    if ((bancarios.cuentasEnDolares ?? []).some(c => c.movs.length)) {
+      hoja(wb, "07.2 Operaciones en dólares",
+        hojaOperacionesEnDolares(bancarios.cuentasEnDolares ?? [], bancarios.compraVentaPesos ?? [], libro.ejercicio.etiqueta, empresa, mesesDelLibro(libro)))
     }
     hoja(wb, "08 Gastos bancarios",
       hojaDeGastosBancarios(bancarios.gastos, libro.ejercicio.etiqueta, bancarios.gastosEnDolares ?? []))

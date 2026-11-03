@@ -3744,6 +3744,14 @@ no falta nada — lo que hay que arreglar es el orden.
 💡 **Los meses que la app no tiene no hay que cargarlos**: se deducen del primer movimiento que sí
 está. Por eso el ejercicio cierra sin cargar julio-25 a enero-26.
 
+💵 **«07.2 Operaciones en dólares»** *(desde el 2026-11-03)*: cada movimiento de las cuentas en dólares con
+**cuántos dólares, a qué TC y cuántos pesos**, y de dónde sale ese TC (el BNA divisas vendedor del día, o el que
+tiene cargado el movimiento). Arriba, el resumen en pesos por cuenta contable y mes, con su Nro para filtrar el
+detalle. Al pie, las **compraventas de dólares**: los dólares que salieron, los pesos que entraron (la cuenta
+«Compra / Venta de dólares» del extracto en pesos) y el TC que resulta. Un renglón que dice «sin TC» es un
+movimiento al que todavía le falta el cambio.
+⚠️ Sin probar todavía → [A-TEST-1320](PENDIENTES.md#a-test-1320)
+
 🔑 **Lo que sí queda para completar vos** es el **saldo del fondo** en las dos puntas: eso no está en
 el sistema, porque el extracto ve la plata que entra y sale de la cuenta, no cuánto quedó invertido.
 **Completalo y el resultado financiero se calcula solo**, porque es una fórmula.

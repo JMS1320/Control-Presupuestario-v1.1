@@ -33,6 +33,7 @@
  * empieza a mentir.
  */
 
+import { operacionesEnDolares, comprasVentasDeDolares } from "@/lib/balance/operaciones-en-dolares"
 import { armarGruposTemplates, armarHojaGrupo, nombreSolapaGrupo, hojaGrupo, gruposDelResponsable } from "@/lib/balance/grupos-templates"
 import { indiceDeDestinos, sinCategoriaNiVinculo, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
 import { solapasPapelesH } from "@/lib/balance/papeles-impuestos-h"
@@ -12482,6 +12483,25 @@ export function correrCasos(): Resultado[] {
     const v = `Seguros Nro ${nroSeg} · sus cuotas: ${cuotasSeg.join(",")}`
     chequear("Templates", "El Nro de una fila de «Por mes» es el que llevan sus cuotas en «Cuotas»: filtrando por ese Nro se ve qué la forma",
       `Seguros Nro ${nroSeg} · sus cuotas: ${nroSeg},${nroSeg}`, v, typeof nroSeg === "number" && v === `Seguros Nro ${nroSeg} · sus cuotas: ${nroSeg},${nroSeg}`, "A-FEAT-1513")
+  }
+
+  // ══ 💵 Operaciones en dólares: US$ × TC = pesos, y la compraventa con su otra punta en pesos (A-FEAT-1530) ══
+  {
+    const cuentas = [{ cuenta: "CC dólares MSA", tipo: "cc", movs: [
+      { fecha: "2025-08-01", descripcion: "TRANSF A GSEC SECURITIES", categ: "Compra / Venta de dólares", debitos: 34000, creditos: 0, saldo: 0 },
+      { fecha: "2025-09-10", descripcion: "COMISION", categ: "Comision Cuenta Bancaria", debitos: 10, creditos: 0, saldo: 0, tipo_cambio: 1231, importe_pesos: 12310, nota_operador: "[script 194] TC BNA divisas vendedor 2025-09-10" },
+      { fecha: "2025-09-11", descripcion: "IVA", categ: "Iva Bancario", debitos: 2.1, creditos: 0, saldo: 0 },
+    ] }] as never
+    const puntas = [
+      { fecha: "2025-08-04", cuenta: "CC Galicia MSA", descripcion: "GSEC", debitos: 0, creditos: 45431590.72 },
+      { fecha: "2025-08-04", cuenta: "CC Galicia MSA", descripcion: "GSEC", debitos: 0, creditos: 0.29 },
+    ]
+    const ops = operacionesEnDolares(cuentas), cv = comprasVentasDeDolares(cuentas, puntas)
+    const com = ops.find(o => o.descripcion === "COMISION")!, iva = ops.find(o => o.descripcion === "IVA")!
+    const v = `comisión ${com.pesos} control ${com.control} (${com.origenTc}) · IVA ${iva.origenTc} · ${cv[0]?.tipo} US$ ${cv[0]?.usd} → $ ${cv[0]?.pesos} a TC ${cv[0]?.tcImplicito} · ${cv[0]?.estado}`
+    const e = "comisión 12310 control 0 (BNA divisas vendedor del día) · IVA sin TC · venta US$ 34000 → $ 45431591.01 a TC 1336.2233 · con su otra punta en pesos (2 movimientos)"
+    chequear("Operaciones en dólares", "💵 Cada movimiento en dólares con su TC y sus pesos (control 0); el que no tiene TC dice «sin TC»; la venta a GSEC se empareja con los dos créditos en pesos del 04/08 y da el TC que resulta",
+      e, v, v === e, "A-FEAT-1530")
   }
 
   return r

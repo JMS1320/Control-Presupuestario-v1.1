@@ -91,6 +91,8 @@ export interface DatosDelIndice {
     gastosEnDolares?: { cuenta: string; gastos: GastosBancarios }[]
     /** 📒 A-FEAT-1509: los movimientos del ejercicio de cada cuenta en dólares (bancos y cajas). */
     cuentasEnDolares?: { cuenta: string; tipo: string; movs: import("./papeles-bancarios").MovimientoExtracto[] }[]
+    /** 💵 A-FEAT-1530: la otra punta en pesos de las compraventas de dólares (solapa «07.2 Operaciones en dólares»). */
+    compraVentaPesos?: import("./operaciones-en-dolares").PuntaEnPesos[]
     /** 📚 A-FEAT-1505: el detalle de impuestos y gastos bancarios, intereses e inversiones (libro C). */
     detalleBancario?: import("./libros-del-balance").MovimientoDelDetalle[]
     retiros: RetirosYAportes
