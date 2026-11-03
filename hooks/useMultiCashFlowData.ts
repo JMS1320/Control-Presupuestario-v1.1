@@ -19,6 +19,8 @@ import { detallePropio, detallePropioDeGrupo, type DetalleDeFactura } from "@/li
 import { partirFilasEnEcheqs } from "@/lib/cashflow/echeqs-en-filas"
 import { anterioresLibres } from "@/lib/conciliacion/pool-tarjeta"
 import { TABLAS_CON_VINCULO_ARCA } from "@/lib/conciliacion/tablas-con-vinculo-arca"
+import { cuitsEnCuentaCorriente } from "@/lib/proveedores/opera-cuenta-corriente"
+import { canceladosPorCuentaCorriente, type CuentaCorrienteOperativa } from "@/lib/proveedores/cuenta-corriente-a-hoy"
 
 // Abreviatura tipo comprobante AFIP → FC/ND/NC
 const tipoComprobanteAbrev = (tipo: number | null | undefined): string => {
@@ -229,6 +231,8 @@ export interface CashFlowFilters {
 
 export function useMultiCashFlowData(filtros?: CashFlowFilters) {
   const [data, setData] = useState<CashFlowRow[]>([])
+  /** 🔁 A-FEAT-140: las contrapartes que operan en cuenta corriente, con su saldo y cuántos comprobantes dejaron de figurar. */
+  const [cuentasCorrientes, setCuentasCorrientes] = useState<CuentaCorrienteOperativa[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -897,6 +901,9 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     setError(null)
 
     try {
+      // 🔁 A-FEAT-140: las contrapartes que operan en cuenta corriente (AFA). Se arma en paralelo con el resto.
+      const ccPromesa = cuitsEnCuentaCorriente(supabase).then(cuits => canceladosPorCuentaCorriente(supabase, cuits))
+        .catch(() => ({ ocultos: new Set<string>(), cuentas: [] as CuentaCorrienteOperativa[] }))
       // 1. Cargar facturas ARCA de LAS TRES EMPRESAS (excluir: conciliado, credito, anterior, cuotas).
       //    Cada empresa vive en su schema; la fila se queda con la empresa de donde salió.
       //    Antes se leía sólo `msa` y por eso las FC de PAM y MA no se podían pagar (A-FEAT-13).
@@ -923,6 +930,11 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       for (const r of resultadosArca) {
         if (r.error) console.error(`Error cargando facturas ARCA de ${r.empresa}:`, r.error)
       }
+      // 🔁 A-FEAT-140: de una contraparte en cuenta corriente sólo figuran los comprobantes que explican su saldo; los
+      // cancelados por la cuenta (p. ej. las facturas de AFA descontadas de la soja) dejan de figurar como pendientes.
+      const cc = await ccPromesa
+      setCuentasCorrientes(cc.cuentas)
+      if (cc.ocultos.size) for (const r of resultadosArca) r.data = r.data.filter((f: { id: string }) => !cc.ocultos.has(f.id))
 
       // 2. Cargar templates egresos (excluir: conciliado, desactivado, credito, anterior)
       const { data: templatesEgresos, error: errorTemplates } = await supabase
@@ -992,7 +1004,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
 
       // 5b. Cargar facturas de venta pendientes de cobrar/conciliar + sus retenciones.
       //     Como compras: 'a cobrar' y 'cobrado' (=pagado) SIGUEN en cash flow; solo 'conciliado'/'anterior' salen.
-      const { data: ventasACobrar, error: errorVentas } = await supabase
+      const { data: ventasLeidas, error: errorVentas } = await supabase
         .schema('msa')
         .from('comprobantes_venta')
         .select('id, nro_comprobante, cuit_cliente, denominacion_cliente, imp_total, fecha_liquidacion, fecha_cobro_estimada, centro_costo, estado, tipo_comprobante, plazos, iva, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, subtotal_neto, comision_neto, comision_iva, almacenaje_neto, almacenaje_iva, ret_iva, ret_iibb')
@@ -1000,6 +1012,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         .neq('estado', 'anterior')
         .order('fecha_cobro_estimada', { ascending: true, nullsFirst: false })
       if (errorVentas) console.error('Error cargando ventas a cobrar:', errorVentas)
+      // 🔁 A-FEAT-140: las ventas canceladas por la cuenta corriente tampoco figuran a cobrar.
+      const ventasACobrar = (ventasLeidas || []).filter(v => !cc.ocultos.has(v.id))
 
       const idsVentas = (ventasACobrar || []).map(v => v.id)
       // Lo ya imputado a cada factura de venta: retenciones sufridas + anticipos de cobro
@@ -1655,6 +1669,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     loading,
     error,
     estadisticas,
+    cuentasCorrientes,
     cargarDatos,
     cargarPagadoConTarjeta,
     actualizarRegistro,

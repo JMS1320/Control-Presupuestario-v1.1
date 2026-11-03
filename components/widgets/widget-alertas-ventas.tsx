@@ -1,5 +1,6 @@
 "use client"
 
+import { idsCanceladosPorCuentaCorriente } from "@/lib/proveedores/cuenta-corriente-a-hoy"
 import { useState, useEffect, useCallback } from "react"
 import { TrendingUp, CheckCircle2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -25,7 +26,7 @@ export function WidgetAlertasVentas() {
   const cargarAlertasVentas = useCallback(async () => {
     setCargandoVentas(true)
     try {
-      const [{ data: facturas }, { data: rets }] = await Promise.all([
+      const [{ data: facturas }, { data: rets }, canceladasCC] = await Promise.all([
         supabase.schema('msa').from('comprobantes_venta')
           .select('id, nro_comprobante, denominacion_cliente, imp_total, estado, fecha_cobro_estimada')
           .neq('estado', 'conciliado').neq('estado', 'anterior')
@@ -34,8 +35,10 @@ export function WidgetAlertasVentas() {
           .select('id, tipo, monto, denominacion_cliente, cuit_cliente')
           .is('comprobante_venta_id', null)
           .order('created_at', { ascending: false }),
+        // 🔁 A-FEAT-140: las ventas que ya canceló la cuenta corriente (AFA) no se cuentan a cobrar
+        idsCanceladosPorCuentaCorriente(supabase).catch(() => new Set<string>()),
       ])
-      setVentasPendientes(facturas || [])
+      setVentasPendientes((facturas || []).filter((f: { id: string }) => !canceladasCC.has(f.id)))
       setRetencionesSinVincular(rets || [])
     } catch (err) {
       console.error('Error cargando alertas de ventas:', err)

@@ -6,6 +6,7 @@ import { conversionDe } from "@/lib/pagos/moneda-factura"
 import { toggleChip, esSoloEste, tituloChip } from "@/lib/ui/chips"
 import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useRef } from "react"
+import { idsCanceladosPorCuentaCorriente } from "@/lib/proveedores/cuenta-corriente-a-hoy"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { facturasRestringidas, type UserRole } from "@/lib/auth/roles"
 import jsPDF from 'jspdf'
@@ -726,6 +727,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // Estados para Vista de Pagos
   const [mostrarModalPagos, setMostrarModalPagos] = useState(false)
   const [facturasPagos, setFacturasPagos] = useState<FacturaArca[]>([])
+  /** 🔁 A-FEAT-140: las facturas que ya canceló la cuenta corriente de su contraparte (AFA) no se ofrecen para pagar. */
+  const canceladasPorCCRef = useRef<Set<string>>(new Set())
+  const sinCanceladasPorCC = <T extends { id: string }>(fs: T[]) => fs.filter(f => !canceladasPorCCRef.current.has(f.id))
   const [templatesPagos, setTemplatesPagos] = useState<any[]>([])
   const [anticiposPagos, setAnticiposPagos] = useState<any[]>([])
   const [sueldosPagos, setSueldosPagos] = useState<any[]>([])
@@ -4430,7 +4434,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
           .select('*')
           .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
           .order('fecha_vencimiento', { ascending: true })
-        if (data) setFacturasPagos(data)
+        if (data) setFacturasPagos(sinCanceladasPorCC(data))
       }
       cargarFacturas()
     }
@@ -4847,7 +4851,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
           .select('*')
           .in('estado', ['pendiente', 'pagar', 'preparado', 'echeq'])
           .order('fecha_vencimiento', { ascending: true })
-        if (data) setFacturasPagos(data)
+        if (data) setFacturasPagos(sinCanceladasPorCC(data))
       }
       cargarFacturas()
       return
@@ -7603,7 +7607,8 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
           .order('nombre_totalizadora').order('nro_cuenta')
       ])
 
-      if (!arcaResult.error && arcaResult.data) setFacturasPagos(arcaResult.data)
+      canceladasPorCCRef.current = await idsCanceladosPorCuentaCorriente(supabase).catch(() => new Set<string>())
+      if (!arcaResult.error && arcaResult.data) setFacturasPagos(sinCanceladasPorCC(arcaResult.data))
       if (!templatesResult.error && templatesResult.data) setTemplatesPagos(templatesResult.data)
       if (!anticiposResult.error && anticiposResult.data) setAnticiposPagos(anticiposResult.data)
       if (!sueldosResult.error && sueldosResult.data) setSueldosPagos(sueldosResult.data)

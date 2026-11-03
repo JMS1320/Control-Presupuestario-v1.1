@@ -33,6 +33,8 @@
  * empieza a mentir.
  */
 
+import { armarCuentaCorrienteAHoy, comprobantesQueExplicanElSaldo } from "@/lib/proveedores/cuenta-corriente-a-hoy"
+import { separarPorCuentaCorriente } from "@/lib/proveedores/opera-cuenta-corriente"
 import { operacionesEnDolares, comprasVentasDeDolares } from "@/lib/balance/operaciones-en-dolares"
 import { armarGruposTemplates, armarHojaGrupo, nombreSolapaGrupo, hojaGrupo, gruposDelResponsable } from "@/lib/balance/grupos-templates"
 import { indiceDeDestinos, sinCategoriaNiVinculo, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
@@ -12502,6 +12504,34 @@ export function correrCasos(): Resultado[] {
     const e = "comisión 12310 control 0 (BNA divisas vendedor del día) · IVA sin TC · venta US$ 34000 → $ 45431591.01 a TC 1336.2233 · con su otra punta en pesos (2 movimientos)"
     chequear("Operaciones en dólares", "💵 Cada movimiento en dólares con su TC y sus pesos (control 0); el que no tiene TC dice «sin TC»; la venta a GSEC se empareja con los dos créditos en pesos del 04/08 y da el TC que resulta",
       e, v, v === e, "A-FEAT-1530")
+  }
+
+  // ══ 🔁 Cuenta corriente operativa (A-FEAT-140): AFA con los números de su resumen del 27/10/26 ══
+  {
+    const afa = { clave: "AFA", nombre: "AFA", cuit: "30525718626", aliasHistorico: [], etiquetasContable: ["CTA AFA"], porCuit: true }
+    const c = (id: string, fecha: string, numero: string, total: number, fuente: "arca" | "historico" = "arca") => ({ id, fecha, numero, total, cuit: "30525718626", fuente })
+    const compras = [
+      c("h6271", "2025-12-30", "1772-6271", 1218564.86, "historico"), c("a6271", "2025-12-30", "1772-6271", 1218564.86),
+      c("cert", "2026-04-28", "0-42191", 1058678.05), c("flete", "2026-05-13", "1292-131082", 631880.42),
+      c("f6954", "2026-10-26", "1772-6954", 2807101.37),
+    ]
+    const ventas = [{ id: "soja", fecha: "2026-05-13", numero: "31274417", total: 3009121.48, cuit: "30525718626", retenciones: 0 }]
+    const mov = (id: string, fecha: string, debitos: number, creditos: number, contable: string | null = null) =>
+      ({ id, fecha, debitos, creditos, contable, cuit: "30525718626", estado: "conciliado" })
+    const movimientos = [mov("pago6271", "2026-01-26", 1218564.86, 0), mov("cobro", "2026-05-20", 0, 1318563.01, "CTA AFA")]
+    const cc = armarCuentaCorrienteAHoy(afa, compras, ventas, movimientos)
+    const e = comprobantesQueExplicanElSaldo(cc)
+    const sep = separarPorCuentaCorriente([{ id: 1, cuit: "30-52571862-6" }, { id: 2, cuit: "20111111112" }], x => x.cuit, new Set(["30525718626"]))
+    const v = `saldo ${cc.saldoAlCierre} · abierta ${[...e.abiertos].join(",")} · canceladas ${e.cancelados.size} · parcial ${e.parcial ? e.parcial.resta : "no"} · separa ${sep.enCuentaCorriente.map(x => x.id)}|${sep.pendientes.map(x => x.id)}`
+    const esp = "saldo 2807101.37 · abierta f6954 · canceladas 4 · parcial no · separa 1|2"
+    chequear("Cuenta corriente", "🔁 AFA: la 6271 en ARCA y en el histórico va una vez; la soja compensa sus facturas y el cobro sin factura («CTA AFA») cierra; queda abierta sólo la FC 6954, que es el saldo de su resumen",
+      esp, v, v === esp, "A-FEAT-140")
+    // Si el saldo no llega a cubrir la factura más nueva, queda abierta y se dice cuánto resta de ella
+    const e2 = comprobantesQueExplicanElSaldo({ saldoAlCierre: 1000, resumen: { asientos: [
+      { id: "x", fecha: "2026-01-01", tipo: "compra", concepto: "", importe: 5000, saldo: 0 }, { id: "y", fecha: "2026-02-01", tipo: "compra", concepto: "", importe: 3000, saldo: 0 }] } as never })
+    const v2 = `${[...e2.abiertos].join(",")} · resta ${e2.parcial?.id}:${e2.parcial?.resta}`
+    chequear("Cuenta corriente", "Con saldo menor que la factura más nueva, queda abierta ésa sola y se informa lo que resta",
+      "y · resta y:1000", v2, v2 === "y · resta y:1000", "A-FEAT-140")
   }
 
   return r

@@ -1,5 +1,6 @@
 "use client"
 
+import { idsCanceladosPorCuentaCorriente } from "@/lib/proveedores/cuenta-corriente-a-hoy"
 import { useEffect, useState, Fragment } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -62,6 +63,8 @@ export function VistaCobrosVenta({ empresa = 'MSA' }: { empresa?: string } = {})
   const schema = empresa.toLowerCase()
   const esMsa = schema === 'msa'
   const [facturas, setFacturas] = useState<Factura[]>([])
+  /** 🔁 A-FEAT-140: las ventas que ya canceló la cuenta corriente de su cliente (AFA): no quedan a cobrar. */
+  const [canceladasCC, setCanceladasCC] = useState<Set<string>>(new Set())
   const [cobrosPorFac, setCobrosPorFac] = useState<Map<string, Cobro[]>>(new Map())
   const [retsPorFac, setRetsPorFac] = useState<Map<string, Ret[]>>(new Map())
   /** 💰 Las fuentes del detalle del cobro de cada comprobante (A-FEAT-1228). */
@@ -97,6 +100,7 @@ export function VistaCobrosVenta({ empresa = 'MSA' }: { empresa?: string } = {})
       if (eFacs) throw eFacs
       const lista = ((facs as any[]) || []).map(f => ({ plazos: null, ...f })) as Factura[]
       setFacturas(lista)
+      setCanceladasCC(await idsCanceladosPorCuentaCorriente(supabase).catch(() => new Set<string>()))
       const ids = lista.map(f => f.id)
 
       const cMap = new Map<string, Cobro[]>()
@@ -146,7 +150,16 @@ export function VistaCobrosVenta({ empresa = 'MSA' }: { empresa?: string } = {})
    * cuota de SU FECHA (`repartirEnCuotas`, la misma cuenta que usa el Cash Flow). Pedido del usuario
    * 2026-10-02: la retención de Ganancias del 03/09 «quedó como general» y las cuotas no bajaban.
    */
+  /**
+   * 🔁 A-FEAT-140: una venta que ya canceló la cuenta corriente (AFA la descontó al liquidar) no queda a cobrar:
+   * lo que no entró por el banco ni por retención se cobró en la cuenta. El saldo de la cuenta se ve en la ficha del cliente.
+   */
   const derivados = (f: Factura) => {
+    const d = derivadosSinCC(f)
+    if (!canceladasCC.has(f.id) || Math.abs(d.saldo) < 0.01) return { ...d, porCuentaCorriente: false }
+    return { ...d, cobrado: d.total - d.retenido, saldo: 0, porCuentaCorriente: true }
+  }
+  const derivadosSinCC = (f: Factura) => {
     const total = Number(f.imp_total) || 0
     // Lo que el papel dice que se cobra: el total menos la retención impresa (hacienda).
     const esperado = total - impresas(f)
@@ -429,7 +442,7 @@ export function VistaCobrosVenta({ empresa = 'MSA' }: { empresa?: string } = {})
                         {abierta ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm font-mono">{f.nro_comprobante || '—'}{d.grupo && <span className="ml-1 rounded bg-indigo-100 px-1 font-sans text-[10px] text-indigo-800" title="Se cobra junto con otras ventas del mismo cliente">agrupado</span>}</TableCell>
+                    <TableCell className="text-sm font-mono">{f.nro_comprobante || '—'}{d.porCuentaCorriente && <span className="ml-1 rounded bg-amber-100 px-1 font-sans text-[10px] text-amber-800" title="Cancelada por la cuenta corriente del cliente (se descontó contra sus facturas). El saldo de la cuenta está en la ficha del cliente.">cuenta corriente</span>}{d.grupo && <span className="ml-1 rounded bg-indigo-100 px-1 font-sans text-[10px] text-indigo-800" title="Se cobra junto con otras ventas del mismo cliente">agrupado</span>}</TableCell>
                     <TableCell className="text-sm max-w-[220px] truncate" title={f.denominacion_cliente || ''}>{f.denominacion_cliente || '—'}</TableCell>
                     <TableCell className="text-sm text-right">{fmt(d.total)}</TableCell>
                     <TableCell className="text-sm text-right text-green-700">{fmt(d.cobrado)}</TableCell>

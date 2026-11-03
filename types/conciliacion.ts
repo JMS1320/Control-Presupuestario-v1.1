@@ -72,7 +72,8 @@ export interface MovimientoBancario {
 export interface ResultadoConciliacion {
   movimiento_id: string
   regla_aplicada?: ReglaConciliacion
-  tipo_match: 'cash_flow' | 'regla' | 'manual' | 'sin_match'
+  /** `cuenta_corriente` = A-FEAT-140: contra la cuenta corriente de la contraparte («CTA AFA»), sin comprobante. */
+  tipo_match: 'cash_flow' | 'regla' | 'manual' | 'sin_match' | 'cuenta_corriente'
   requiere_revision: boolean
   motivo_revision?: string
   categ_asignado?: string

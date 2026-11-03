@@ -37,6 +37,7 @@ import { NextResponse } from 'next/server'
 import { clienteUsuario } from "@/lib/supabase-usuario"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 import { armarCuentaCorriente } from "@/lib/proveedores/cuenta-corriente"
+import { cuentaCorrienteAHoy, comprobantesQueExplicanElSaldo } from "@/lib/proveedores/cuenta-corriente-a-hoy"
 import { cargarFuentesCobro } from "@/lib/ventas/detalle-cobro-db"
 import { controlDosCaminos } from "@/lib/ventas/grupo-cobro"
 import { TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
@@ -271,7 +272,23 @@ export async function GET(request: Request) {
     pagos.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
 
     // ── La cuenta corriente, con TODO (la pantalla recibe las listas recortadas) ──
-    const cuentaCorriente = armarCuentaCorriente(facturas as any, pagos as any)
+    let cuentaCorriente = armarCuentaCorriente(facturas as any, pagos as any)
+    /**
+     * 🔁 A-FEAT-140: si opera en cuenta corriente (AFA), la cuenta es la MISMA del papel 14 del balance, a hoy: suma además
+     * lo del banco con su CUIT o con su marca «CTA …» y las retenciones de sus ventas. La de arriba no ve los cobros sin
+     * vínculo (los de AFA del 20/05) y daba otro saldo. Control: AFA al 27/10/26 = $ 2.807.101,38 según su resumen.
+     */
+    let cuentaCorrienteOperativa: { saldo: number; abiertos: number; cancelados: number } | null = null
+    if ((proveedor as any).opera_cuenta_corriente) {
+      try {
+        const cc = await cuentaCorrienteAHoy(supabase, cuit)
+        const e = comprobantesQueExplicanElSaldo(cc)
+        cuentaCorriente = cc.resumen
+        cuentaCorrienteOperativa = { saldo: cc.saldoAlCierre, abiertos: e.abiertos.size, cancelados: e.cancelados.size }
+      } catch (err) {
+        console.error('Ficha: no se pudo armar la cuenta corriente a hoy; va la de la ficha', err)
+      }
+    }
 
     // ── 🔁 El control: el saldo de las ventas por dos caminos (A-FEAT-167) ──────
     // Camino 1, cuenta corriente: lo vendido − lo que entró del cliente − sus retenciones. «Lo que
@@ -328,6 +345,7 @@ export async function GET(request: Request) {
       anticipos: anticipos || [],
       resumen,
       cuentaCorriente,
+      cuentaCorrienteOperativa,
       controlCobros,
     })
 

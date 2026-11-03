@@ -37,6 +37,7 @@ interface ProveedorLista {
   razon_social: string
   nombre_fantasia: string | null
   es_cliente: boolean | null
+  opera_cuenta_corriente?: boolean | null
   es_proveedor: boolean | null
   activo: boolean | null
 }
@@ -53,6 +54,8 @@ interface Ficha {
   cuentaCorriente?: ReturnType<typeof armarCuentaCorriente>
   /** 🔁 A-FEAT-167 — el saldo de las ventas por dos caminos: cuenta corriente vs comprobante por comprobante. */
   controlCobros?: { porComprobante: number; porCuentaCorriente: number; diferencia: number; cierra: boolean; ventas: number } | null
+  /** 🔁 A-FEAT-140 — si opera en cuenta corriente: el saldo de la cuenta y cuántos comprobantes siguen figurando. */
+  cuentaCorrienteOperativa?: { saldo: number; abiertos: number; cancelados: number } | null
 }
 
 interface Props {
@@ -87,6 +90,8 @@ const SECCIONES: Array<{
       { campo: 'empresa_principal', label: 'Empresa principal' },
       { campo: 'es_proveedor', label: 'Es proveedor', tipo: 'bool' },
       { campo: 'es_cliente', label: 'Es cliente', tipo: 'bool' },
+      // 🔁 A-FEAT-140: con la marca, sus facturas y ventas no figuran como pendientes una por una; se ve el saldo de la cuenta corriente
+      { campo: 'opera_cuenta_corriente', label: 'Opera en cuenta corriente', tipo: 'bool' },
       { campo: 'activo', label: 'Activo', tipo: 'bool' },
     ],
   },
@@ -481,7 +486,9 @@ export function ModalFichaProveedor({ open, onClose, cuitInicial }: Props) {
                   // ⚠️ Cambió 27/10: se armaba acá con las listas recortadas a 40 y el saldo de un cliente de
                   // mucho movimiento daba mal. Ahora viene armada del servidor con todo.
                   const cc = ficha.cuentaCorriente ?? armarCuentaCorriente(ficha.facturas as any, ficha.pagos as any)
-                  const ctl = ficha.controlCobros
+                  // 🔁 A-FEAT-140: en cuenta corriente el control comprobante por comprobante no aplica (la compensación es justamente lo que los separa)
+                  const op = ficha.cuentaCorrienteOperativa
+                  const ctl = op ? null : ficha.controlCobros
                   if (cc.asientos.length === 0) return null
                   const aFavor = cc.saldo < -0.005
                   return (
@@ -496,6 +503,7 @@ export function ModalFichaProveedor({ open, onClose, cuitInicial }: Props) {
                             lo note. Se nombra acá arriba, no escondido en una fila de la tabla. */}
                         {/* 🔁 A-FEAT-167 — las dos miradas tienen que dar lo mismo (JMS: «deben dar lo mismo»).
                             Avisa, no frena: la diferencia suele ser un cobro sin imputar a una venta. */}
+                        {op && <ControlContraSuResumen saldo={op.saldo} abiertos={op.abiertos} cancelados={op.cancelados} />}
                         {ctl && (
                           <p className={`mt-1 text-xs ${ctl.cierra ? 'text-green-700' : 'text-amber-700'}`}>
                             {ctl.cierra
@@ -754,4 +762,34 @@ function Bloque({ titulo, total, mostradas, children }: {
 
 function Vacio({ texto }: { texto: string }) {
   return <p className="py-4 text-center text-xs text-gray-400">{texto}</p>
+}
+
+
+/**
+ * 🔁 A-FEAT-140 — la cuenta corriente de una contraparte que opera así (AFA), con su CONTROL: el saldo de la app contra el
+ * que dice el resumen que manda la contraparte. Es el mismo número por dos caminos independientes (pieza 4 del norte
+ * administrativo). El saldo del resumen se escribe acá (es-AR) y no se guarda todavía: guardarlo con su PDF es el archivo
+ * digital (A-FEAT-1531). Avisa, no frena: una diferencia puede ser algo que todavía no llegó a uno de los dos lados.
+ */
+function ControlContraSuResumen({ saldo, abiertos, cancelados }: { saldo: number; abiertos: number; cancelados: number }) {
+  const [suResumen, setSuResumen] = useState('')
+  const valor = suResumen.trim() ? parseFloat(suResumen.replace(/\./g, '').replace(',', '.')) : NaN
+  const dif = Number.isFinite(valor) ? Math.round((saldo - valor) * 100) / 100 : null
+  const p = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return (
+    <div className="mt-1 space-y-1 text-xs">
+      <p className="text-gray-600">
+        🔁 <b>Opera en cuenta corriente</b>: de sus comprobantes, figuran como pendientes sólo los {abiertos} que explican el saldo;
+        los otros {cancelados} ya los canceló la cuenta y no se listan en Pagos, Cobros ni el Cash Flow.
+      </p>
+      <label className="flex flex-wrap items-center gap-2">
+        Saldo según su resumen:
+        <input type="text" placeholder="0,00" value={suResumen} onChange={e => setSuResumen(e.target.value)}
+          className="w-32 rounded border px-1 py-0.5 text-right" title="El saldo total que dice el resumen de cuenta corriente que manda la contraparte (positivo = le debemos)" />
+        {dif !== null && (Math.abs(dif) <= 0.05
+          ? <span className="text-green-700">✓ coincide con la app (diferencia $ {p(dif)})</span>
+          : <span className="font-semibold text-amber-700">⚠️ la app dice $ {p(saldo)}: difieren en $ {p(dif)}</span>)}
+      </label>
+    </div>
+  )
 }

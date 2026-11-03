@@ -38,6 +38,8 @@ const CAMPOS_PERMITIDOS = [
   'banco', 'tipo_cuenta', 'moneda_cuenta', 'mensaje_transferencia',
   // 🔢 Proveedor fijo: cuántas facturas trae por mes (A-FEAT-1332). null = no es fijo.
   'facturas_por_mes',
+  // 🔁 A-FEAT-140: sus compras y ventas se cancelan por cuenta corriente (scripts/197).
+  'opera_cuenta_corriente',
 ]
 
 export async function GET(request: Request) {

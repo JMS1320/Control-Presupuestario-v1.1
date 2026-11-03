@@ -29,6 +29,7 @@ import { motivoFechaNoExacta, elegirPorImporteCercano } from "@/lib/conciliacion
 import { cargarDetallesFijos, aplicarDetalleFijo } from "@/lib/conciliacion/detalle-fijo-db"
 import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 import { CUENTAS_DOLARES_Y_COTITULARES, type Titular } from "@/lib/dolares/cuentas"
+import { contrapartesEnCuentaCorriente } from "@/lib/proveedores/opera-cuenta-corriente"
 
 // Configuración de cuentas bancarias y cajas
 export interface CuentaBancaria {
@@ -481,6 +482,8 @@ export function useMotorConciliacion() {
         console.log(`🎯 Modo acotado: conciliando solo ${movimientos.length} movimiento(s) filtrado(s)`)
       }
       const reglas = await cargarReglasActivas(cuenta.id)
+      // 🔁 A-FEAT-140: las contrapartes que operan en cuenta corriente (AFA): lo suyo que no paga un comprobante abierto va a su cuenta.
+      const enCuentaCorriente = await contrapartesEnCuentaCorriente(supabase)
 
       // Cash Flow FRESCO. El que vive en el estado es una foto tomada al montar la pantalla, así
       // que cualquier cambio hecho fuera de esta pestaña —otra solapa, un SQL, otro usuario— era
@@ -844,6 +847,21 @@ export function useMotorConciliacion() {
               resultadosProceso.automaticos++
             }
             
+            resultadosProceso.detalles.push(resultado)
+            continue
+          }
+
+          // PASO 1b — 🔁 A-FEAT-140: un movimiento con el CUIT de una contraparte que opera en cuenta corriente y que no paga
+          // un comprobante abierto se concilia contra SU CUENTA («CTA AFA»): no se le busca factura. JMS 03/11: «¿y las cosas
+          // se concilien contra cuenta corriente?». Suma solo al saldo (la cuenta corriente toma todo lo de su CUIT).
+          const ccDelMov = enCuentaCorriente.get(String(extraerCuitBancario(movimiento) ?? '').replace(/\D/g, ''))
+          if (ccDelMov) {
+            await actualizarMovimientoBD(cuenta, movimiento.id, {
+              estado: 'conciliado', contable: ccDelMov.etiqueta, motivo_revision: null, proveedor_nombre: ccDelMov.nombre,
+              comprobantes_pagados: `Cuenta corriente ${ccDelMov.etiqueta.replace(/^CTA /, '')}`,
+            })
+            resultado = { movimiento_id: movimiento.id, tipo_match: 'cuenta_corriente', requiere_revision: false, detalle_asignado: ccDelMov.etiqueta }
+            resultadosProceso.automaticos++
             resultadosProceso.detalles.push(resultado)
             continue
           }

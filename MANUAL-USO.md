@@ -5123,6 +5123,22 @@ extracto.
 
 ⚠️ Sin probar todavía → A-TEST-130
 
+### 🔁 Una contraparte que OPERA en cuenta corriente (AFA) *(desde el 2026-11-03)*
+En la ficha, **Identidad → «Opera en cuenta corriente»**. Prendela para quien se cancela contra lo que le vendés —AFA
+te liquida la soja descontando sus facturas— en vez de pagarse factura por factura. Con la marca:
+
+- **Lo que se debe es el saldo**, no cada comprobante. De sus compras y ventas siguen figurando como pendientes **sólo
+  las que explican el saldo** (las más nuevas, hasta cubrirlo). Las demás ya las canceló la cuenta, y **no aparecen**
+  en Pagos, en el Cash Flow, en Cobros de ventas (ahí salen con saldo 0 y el rótulo «cuenta corriente»), en las
+  alertas de ventas a cobrar ni en las «deudas sin pago» del recorrido del balance.
+- **El banco se concilia contra su cuenta**: al conciliar, un movimiento con su CUIT queda conciliado con la marca
+  **«CTA AFA»**. Si paga una factura que sigue abierta, va contra esa factura como siempre.
+- **El control**: la ficha arma la misma cuenta que el papel 14 del balance (con el histórico, las retenciones de las
+  ventas y todo lo del banco con su CUIT). Escribí en **«Saldo según su resumen»** el total que dice el resumen que te
+  manda: tiene que decir ✓ coincide.
+
+⚠️ Sin probar todavía → A-TEST-1321
+
 ---
 
 ## 📐 Cómo se registra un movimiento — qué va en cada columna

@@ -236,12 +236,15 @@ export function PapelesDeBalance() {
       if (tj.error) datos.avisos.push(`control de la tarjeta: ${tj.error}`)
       // 🔁 A-FEAT-1499: AFA, ACREN y Federación (MSA) van por su cuenta corriente: un tema por contraparte, no sueltos
       const cc = temasDeCuentaCorriente(r.movimientos, contrapartesDelRecorrido(empresa.id), ex.extras)
+      // 🔁 A-FEAT-140 (y la regla del 29/10): sus comprobantes tampoco van sueltos como «deudas sin pago» — van por su cuenta.
+      // JMS 01/11 sobre AFA: «esto tiene un lugar en la parte de cuentas corrientes… no acá, que es de facturas no conciliadas».
+      const cuitsDeCuentaCorriente = new Set(contrapartesDelRecorrido(empresa.id).map(c => c.cuit))
       const movSinTarjeta = mov.temas.filter(t => !tj.cubiertos.has(t.clave.replace(/^conc:/, "")) && !cc.cubiertos.has(t.clave))
       // ✔ A-FEAT-1487: lo resuelto por Claude que espera tu visto sigue en el recorrido, con cómo quedó
       setCargandoConciliacion("trayendo lo que espera tu visto…")
       const vt = await leerParaTuVisto(supabase, empresa.id, anioCierre, ex.extras)
       if (vt.error) datos.avisos.push(`para tu visto: ${vt.error}`)
-      const calculada = { movimientos: [...tj.temas, ...cc.temas, ...movSinTarjeta], deudas: temasDeDeudas(r.deudas, empresa.id, ex.extras), cheques: temasDeCheques(ch.cruces, ch.extractoHasta), controles: [...ctl.temas, ...sc.temas], visto: { tareas: vt.tareas, rearmados: vt.rearmados },
+      const calculada = { movimientos: [...tj.temas, ...cc.temas, ...movSinTarjeta], deudas: temasDeDeudas(r.deudas.filter(d => !cuitsDeCuentaCorriente.has(String(d.obligacion.cuit ?? "").replace(/\D/g, ""))), empresa.id, ex.extras), cheques: temasDeCheques(ch.cruces, ch.extractoHasta), controles: [...ctl.temas, ...sc.temas], visto: { tareas: vt.tareas, rearmados: vt.rearmados },
         tareasRecorrido: vt.todas,
         historicos: mov.historicos, avisos: datos.avisos, porCuenta: datos.porCuenta,
         calculado: new Date().toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) }
