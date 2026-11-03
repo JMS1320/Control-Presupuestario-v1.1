@@ -228,7 +228,7 @@ function candidatas(f: any): { cands: Cand[]; alertas: string[]; cuit: string; c
       }
       // 3 · sumas de 2–3 facturas del MISMO proveedor (sólo si se sabe quién es)
       if (cuit && cuit !== CUIT_MSA) {
-        const delProv = fcMsa.filter(c => c.cuit === cuit && fcLibre(c.id, f.id) && !["conciliado", "pagado"].includes(String(c.estado)) && dias(f.fecha, c.fecha_emision) >= (cta.tarjeta ? -2 : -45) && dias(f.fecha, c.fecha_emision) <= (cta.tarjeta ? 35 : 240)).slice(0, 25)
+        const delProv = fcMsa.filter(c => c.cuit === cuit && fcLibre(c.id, f.id) && String(c.estado) !== "conciliado" && dias(f.fecha, c.fecha_emision) >= (cta.tarjeta ? -2 : -45) && dias(f.fecha, c.fecha_emision) <= (cta.tarjeta ? 35 : 240)).slice(0, 25)
         for (const s of subconjuntos(delProv, totalFc, imp)) cands.push({ tipo: `Suma de ${s.length} facturas del proveedor`, texto: s.map(c => `${esNC(c) ? "NC" : "FC"} ${c.numero_desde} ${dmy(c.fecha_emision)} ${plata(totalFc(c))}`).join(" + "), fuerza: 2, ref: s.map(c => c.id).join(",") })
         // y la suma neta de retención
         for (const s of subconjuntos(delProv.filter(c => n(c.monto_sicore) > 0 || true), c => r2(totalFc(c) - n(c.monto_sicore)), imp)) if (s.some(c => n(c.monto_sicore) > 0))
@@ -420,7 +420,7 @@ function propuesta(f: any): Prop | null {
     return { ...base, seguridad: "BAJA", cuenta: a.v.split(" · ")[0], accion: `Va contra factura (como siempre: ${a.v}) — falta la factura de este importe`,
       porque: `${base.cuit || "el comercio"}: ninguna factura del proveedor coincide${cands.length ? "; ver las más cercanas en la lista" : ""}. Historia: ${a.reparto}` }
   if (a) return { ...base, seguridad: a.claro ? "MEDIA" : "BAJA", cuenta: a.claro ? a.v.split(" · ")[0] : "", accion: a.claro ? `Igual que antes: ${a.v}` : "A estudiar: la historia no alcanza (el mismo tipo de movimiento fue a destinos distintos)",
-    porque: `Historia de «${String(f.descripcion).trim()}» en esta cuenta (${a.total}): ${a.reparto}` }
+    porque: `${base.cuit ? `Es de ${base.cuit}. ` : ""}Historia de «${String(f.descripcion).trim()}» en esta cuenta (${a.total}): ${a.reparto}` }
   return { ...base, seguridad: "SIN", cuenta: "", accion: "A estudiar: no hay ninguna candidata", porque: `${d} · ${plata(imp)}${cuit ? ` · ${base.cuit}` : ""}` }
 }
 
