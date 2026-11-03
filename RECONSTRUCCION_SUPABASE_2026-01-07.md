@@ -3365,6 +3365,9 @@ Categoría `Forraje` + 77 productos nuevos en `productivo.stock_insumos` (cantid
 ### 2026-11-02 · Trabucco al pago más cercano + reglas de la tarjeta VISA MA (script 180, DATOS) — A-FEAT-1526 — ✅ CORRIDO con OK de JMS
 `ma.ma_galicia`: la factura de Trabucco del 18/07/26 pasa del pago del 07/09 (queda pendiente) al del 13/07 (conciliado). `public.reglas_conciliacion` (`tarjeta_visa_ma`, orden 98-110): 13 reglas de descripción hacia los 4 templates del 179 (DISCO, DIS.COM, CENCOSUD, DIA TIENDA, JUMBO → Supermercados MA · EST DE SERVICIO CERRITO, AXION, PARADOR SAN PEDRO → Combustibles MA · VTV → Mantenimiento autos MA · SODIMAC, EASY, CENTRO PINTURERIAS, PRESTIGIO → Pintura, materiales y herramientas MA). Ids y foto en `scripts/180-hecho.json`; deshacer: `180-…-deshacer.mts`.
 
+### 2026-11-03 · Templates EN DÓLARES de MSA (script 194, DATOS) — ✅ CORRIDO con OK de JMS («deben ir en templates de dólares»)
+`egresos_sin_factura`: 6 templates «… USD» copia de los de pesos de MSA (Comision Cuenta Bancaria, Iva Bancario, Debitos / Creditos, IIBB Bancario, Percepcion IVA, Otros Gastos; `template_origen_id` = el de pesos). `cuotas_egresos_sin_factura`: 49 cuotas con `monto_usd`, `tipo_cambio` = dólar BNA divisas vendedor del día (o el hábil anterior, `cotizaciones`) y `monto` = pesos. `msa.cc_usd`: los 49 cargos atados a su cuota, con `tipo_cambio` e `importe_pesos`. `scripts/194-hecho.json`. Deshacer: `194-…-deshacer.mts`.
+
 ### 2026-11-03 · CC dólares MSA: sus 6 reglas aplicadas (script 193, DATOS) — ✅ CORRIDO con OK de JMS («el resto lo podés conciliar vos»)
 `msa.cc_usd`: 49 cargos → `conciliado` con la cuenta de su regla (script 172): comisión 12 · IVA 12 · impuesto al débito 17 · Google One 2 · IIBB 2 · percepción IVA 2+2. Sin template (importes en US$; el TC se carga aparte). No toca el saldo de inicio ni la transferencia a Galicia Securities. Foto `scripts/193-foto-antes.json`. Deshacer: `193-…-deshacer.mts`.
 
