@@ -3323,6 +3323,9 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-11-03 · `public.proveedores.opera_cuenta_corriente` + marca AFA (script 197, ESTRUCTURA) — A-FEAT-140 — ✅ CORRIDO con OK de JMS
+`alter table public.proveedores add column if not exists opera_cuenta_corriente boolean not null default false` (con su comment) y `update … set opera_cuenta_corriente = true where cuit = '30525718626'` (AFA, la única marcada). Sin vistas (la tabla se expone directa), sin RLS ni permisos. Aplicado por el MCP de Supabase (`apply_migration`), porque `scripts/correr-sql.mts` busca `DATABASE_URL` y el `.env.local` la tiene como `SUPABASE_DB_URL` (y `pg` no está instalado). Verificado leyendo por la API: 1 marcada, saldo de su cuenta corriente $ 2.807.101,37, 18 comprobantes cancelados y 1 abierto (FC 1772-6954). Deshacer: `197-…-deshacer.sql` (la columna no existía antes).
+
 ### 2026-10-29 · STOCK DECLARADO AL INICIO + PASTURAS — 2 tablas (script 131) — A-FEAT-1420 — ✅ CORRIDO 2026-10-29 con JMS
 `productivo.stock_inicio` (empresa, fecha, version jms/contador, insumo_stock_id → stock_insumos, rubro insumo/forraje/combustible, producto_planilla, categoria_planilla, cantidad, unidad, precio_unitario, moneda, tipo_cambio, valor_pesos, emparejado mismo/a confirmar/nuevo, fuente, nota) y `productivo.pasturas` (empresa, lotes, anio_siembra, hectareas, usd_por_ha, vida_util_anios, baja_fecha, baja_motivo, fuente, nota). RLS `ver/escribir_segun_permiso`, recurso `productivo` (marca `[script 131]`). Deshacer: `scripts/131-stock-inicio-y-pasturas-deshacer.sql`.
 

@@ -895,7 +895,7 @@ propio (script 75)**: RLS `ver_segun_permiso` / `escribir_segun_permiso` con `pu
 `contable` no la ve). Script `scripts/80-balance-pendientes.sql` (+ `-deshacer`). Al leerlo, borrá esta entrada.
 
 
-## 📨 2026-11-03 · PARA JAVIER — columna nueva `public.proveedores.opera_cuenta_corriente` (aviso ANTES; no hay nada que hacer)
+## 📨 2026-11-03 · PARA JAVIER — columna nueva `public.proveedores.opera_cuenta_corriente` (aviso ANTES; no hay nada que hacer) — ✅ APLICADA 03/11 con OK de JMS
 
 `boolean not null default false` (A-FEAT-140). Con la marca, las compras y ventas de esa contraparte no figuran como
 pendientes una por una: se ve el saldo de su cuenta corriente. Primera marcada: AFA. Se edita desde la ficha del
