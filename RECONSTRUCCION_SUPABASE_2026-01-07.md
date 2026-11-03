@@ -3323,6 +3323,9 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-11-03 · Banco Provincia MSA: 15 extractos cargados y conciliados (script 198, DATOS) — ✅ CORRIDO con OK de JMS
+`msa.provincia` (estaba vacía): 125 movimientos del 14/07/25 al 29/09/26 leídos de los PDF que mandó el banco (cta cte 8682/2), todos `conciliado` con una cuota por movimiento en los templates de MSA (Comision Cuenta Bancaria, Debitos / Creditos, IIBB Bancario, Sellos Bancario, Créditos Pagados = intereses, Interbancaria BAPRO = las 3 transferencias desde Galicia). Cadena de saldos cerrada renglón por renglón: $ 15.298,25 al 30/06/25 → − $ 179.053,43 al 30/06/26 → $ 311.888,77 al 29/09/26. Además `public.msa_galicia` 03/12/25 $ 350.000 y su cuota pasan de «Interbancaria Santander» a «Interbancaria BAPRO» (Santander no tiene ese crédito; el Provincia lo recibió el 04/12). Ids en `scripts/198-hecho.json`. Deshacer: `198-…-deshacer.mts`.
+
 ### 2026-11-03 · `public.proveedores.opera_cuenta_corriente` + marca AFA (script 197, ESTRUCTURA) — A-FEAT-140 — ✅ CORRIDO con OK de JMS
 `alter table public.proveedores add column if not exists opera_cuenta_corriente boolean not null default false` (con su comment) y `update … set opera_cuenta_corriente = true where cuit = '30525718626'` (AFA, la única marcada). Sin vistas (la tabla se expone directa), sin RLS ni permisos. Aplicado por el MCP de Supabase (`apply_migration`), porque `scripts/correr-sql.mts` busca `DATABASE_URL` y el `.env.local` la tiene como `SUPABASE_DB_URL` (y `pg` no está instalado). Verificado leyendo por la API: 1 marcada, saldo de su cuenta corriente $ 2.807.101,37, 18 comprobantes cancelados y 1 abierto (FC 1772-6954). Deshacer: `197-…-deshacer.sql` (la columna no existía antes).
 
