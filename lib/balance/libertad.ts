@@ -40,6 +40,8 @@ export function esDeLibertad(c: CuotaTemplate): boolean {
   if (!["PAM", "MA"].includes(resp1(c.responsable))) return false
   if (!AGRUPADORAS.has(norm(c.agrupadoraTemplate ?? ""))) return false
   if (/cochera/i.test(c.concepto) || /cochera/i.test(c.categ) || /\baca\b/i.test(c.concepto)) return false
+  // Duhau es otro inmueble (JMS 03/11: «AySA de Duhau», script 199): comparte cuenta y agrupadora con Libertad pero no es de Libertad
+  if (/duhau/i.test(c.concepto)) return false
   return norm(c.categ) in CONCEPTOS
 }
 
