@@ -1,0 +1,11 @@
+{
+  "anticipo": "6529186f-5c0c-4e66-97fc-77d014e008fa",
+  "mov": {
+    "id": "5d1ae990-8352-42e3-b46e-e5b98c3ef090",
+    "estado": "pendiente",
+    "detalle": null,
+    "anticipo_id": null,
+    "nota_operador": null,
+    "motivo_revision": null
+  }
+}
