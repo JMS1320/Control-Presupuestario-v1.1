@@ -894,3 +894,11 @@ propio (script 75)**: RLS `ver_segun_permiso` / `escribir_segun_permiso` con `pu
 `revoke` a `anon`, registrada en `recurso_tablas` con recurso `extracto` y `restringe_lectura = true` (el rol
 `contable` no la ve). Script `scripts/80-balance-pendientes.sql` (+ `-deshacer`). Al leerlo, borrá esta entrada.
 
+
+## 📨 2026-11-03 · PARA JAVIER — columna nueva `public.proveedores.opera_cuenta_corriente` (aviso ANTES; no hay nada que hacer)
+
+`boolean not null default false` (A-FEAT-140). Con la marca, las compras y ventas de esa contraparte no figuran como
+pendientes una por una: se ve el saldo de su cuenta corriente. Primera marcada: AFA. Se edita desde la ficha del
+proveedor (sumada a `CAMPOS_PERMITIDOS` de `/api/gas/config-proveedor`). Sin cambios de RLS, permisos ni vistas (la
+tabla se expone directa). Script `scripts/197-proveedores-opera-cuenta-corriente.sql` (+ `-deshacer`). Al leerlo,
+borrá esta entrada.
