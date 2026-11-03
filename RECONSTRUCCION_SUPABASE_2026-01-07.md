@@ -3323,6 +3323,9 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 
 ## 🔧 **CAMBIOS POST-RECONSTRUCCIÓN**
 
+### 2026-11-03 · Template «AYSA Duhau» de MA (script 199, DATOS) — A-FEAT-1529 (2) — ✅ CORRIDO con OK de JMS
+`egresos_sin_factura`: «AYSA Duhau», copia de «AYSA Libertad» MA 2026 (AGUA · Fijos Buenos Aires MA · MA). Una cuota conciliada 20/04/2026 $ 27.588,70 y `ma.ma_galicia` de ese día («Pago de servicios AYSA 000158245700») atado a ella, sin la marca LIB. Ids en `scripts/199-hecho.json`. Deshacer: `199-…-deshacer.mts`.
+
 ### 2026-11-03 · Banco Provincia MSA: 15 extractos cargados y conciliados (script 198, DATOS) — ✅ CORRIDO con OK de JMS
 `msa.provincia` (estaba vacía): 125 movimientos del 14/07/25 al 29/09/26 leídos de los PDF que mandó el banco (cta cte 8682/2), todos `conciliado` con una cuota por movimiento en los templates de MSA (Comision Cuenta Bancaria, Debitos / Creditos, IIBB Bancario, Sellos Bancario, Créditos Pagados = intereses, Interbancaria BAPRO = las 3 transferencias desde Galicia). Cadena de saldos cerrada renglón por renglón: $ 15.298,25 al 30/06/25 → − $ 179.053,43 al 30/06/26 → $ 311.888,77 al 29/09/26. Además `public.msa_galicia` 03/12/25 $ 350.000 y su cuota pasan de «Interbancaria Santander» a «Interbancaria BAPRO» (Santander no tiene ese crédito; el Provincia lo recibió el 04/12). Ids en `scripts/198-hecho.json`. Deshacer: `198-…-deshacer.mts`.
 
