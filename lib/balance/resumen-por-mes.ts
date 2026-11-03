@@ -46,6 +46,12 @@ export interface OpcionesResumen {
    * quedaron el total del resumen y las columnas del detalle, para escribir fórmulas sobre ellos.
    */
   bloqueExtra?: { alto: number; armar: (u: UbicacionBloque) => unknown[][] }
+  /**
+   * 📅 JMS 03/11 (en el Excel de la cuenta MSA–MA): *«cuando hay tabla por mes, siempre los 2 semestres… va para Libertad y para todo
+   * lo que sea retiros»*. Tres columnas A LA IZQUIERDA del resumen — **1er sem** (los primeros 6 meses), **2do sem** (los otros 6) y
+   * **total** — con fórmulas; el Nro y la categoría se corren a D y E. El detalle de abajo no se mueve. También al bloque extra.
+   */
+  semestres?: boolean
 }
 
 /** Lo que necesita un bloque extra para apuntarle al resumen y al detalle con fórmulas. Filas en base 1. */
@@ -117,45 +123,70 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
     ? `SUMIFS(${rng(colImporte)},${crit})-SUMIFS(${rng(colCredito)},${crit})`
     : `SUMIFS(${rng(colImporte)},${crit})`
   let celdaTotal: string | null = null
+  // 📅 Con semestres, el resumen se corre S columnas a la derecha (A, B, C = 1er sem, 2do sem, total)
+  const S = o.semestres ? 3 : 0
+  const nM = o.meses.length, mitad = Math.ceil(nM / 2)
+  const cM = (j: number) => col(2 + S + j)
+  /** Las 3 celdas de semestre de la fila `n`, sobre sus columnas de mes; `v` = los valores de los meses. */
+  const semCeldas = (n: number, v: number[]): unknown[] => !S ? [] : [
+    { t: "n", f: `SUM(${cM(0)}${n}:${cM(mitad - 1)}${n})`, v: r2(v.slice(0, mitad).reduce((a, b) => a + b, 0)), z: MONEDA },
+    { t: "n", f: `SUM(${cM(mitad)}${n}:${cM(nM - 1)}${n})`, v: r2(v.slice(mitad).reduce((a, b) => a + b, 0)), z: MONEDA },
+    { t: "n", f: `${col(0)}${n}+${col(1)}${n}`, v: r2(v.reduce((a, b) => a + b, 0)), z: MONEDA },
+  ]
+  const vacias = (): unknown[] => Array.from({ length: S }, () => "")
 
   const h: unknown[][] = [[o.titulo], ...(o.notas ?? []).map(n => [n]), []]
   monedas.forEach((m, k) => {
-    h.push([m === "USD" ? "EN DÓLARES (US$) — no se suman a los pesos" : m === "ARS" ? "EN PESOS" : "RESUMEN POR CATEGORÍA Y POR MES"])
-    h.push(["Nro", "Categoría", ...o.meses.map(x => x.rotulo), "TOTAL"])
+    h.push([...vacias(), m === "USD" ? "EN DÓLARES (US$) — no se suman a los pesos" : m === "ARS" ? "EN PESOS" : "RESUMEN POR CATEGORÍA Y POR MES"])
+    h.push([...(S ? ["1er sem", "2do sem", "total"] : []), "Nro", "Categoría", ...o.meses.map(x => x.rotulo), "TOTAL"])
     const r1 = h.length + 1
     for (const c of filasPorMoneda[k]) {
       const n = h.length + 1, num = nro.get(c)!
+      const vals: number[] = []
       const fila: unknown[] = [num, c]
       o.meses.forEach((mes, j) => {
         const v = r2(items.filter(i => (i.categoria || "(sin categoría)") === c && i.mes === mes.clave && (m === undefined || i.moneda === m)).reduce((t, i) => t + i.importe, 0))
-        const crit = `${rng("A")},$A${n},${rng("B")},"${mes.clave}"${m && colMoneda ? `,${rng(colMoneda)},"${m}"` : ""}`
+        const crit = `${rng("A")},$${col(S)}${n},${rng("B")},"${mes.clave}"${m && colMoneda ? `,${rng(colMoneda)},"${m}"` : ""}`
         fila.push({ t: "n", f: suma(crit), v, z: MONEDA })
+        vals.push(v)
         void j
       })
       const tot = r2(items.filter(i => (i.categoria || "(sin categoría)") === c && o.meses.some(x => x.clave === i.mes) && (m === undefined || i.moneda === m)).reduce((t, i) => t + i.importe, 0))
-      fila.push({ t: "n", f: `SUM(${col(2)}${n}:${col(1 + o.meses.length)}${n})`, v: tot, z: MONEDA })
-      h.push(fila)
+      fila.push({ t: "n", f: `SUM(${cM(0)}${n}:${cM(nM - 1)}${n})`, v: tot, z: MONEDA })
+      h.push([...semCeldas(n, vals), ...fila])
     }
     const rN = h.length
     const totales: unknown[] = ["", "TOTAL"]
-    for (let j = 0; j <= o.meses.length; j++) {
-      const c = col(2 + j)
-      const v = j < o.meses.length
+    const valsT: number[] = []
+    for (let j = 0; j <= nM; j++) {
+      const c = cM(j)
+      const v = j < nM
         ? r2(items.filter(i => i.mes === o.meses[j].clave && (m === undefined || i.moneda === m)).reduce((t, i) => t + i.importe, 0))
         : r2(items.filter(i => o.meses.some(x => x.clave === i.mes) && (m === undefined || i.moneda === m)).reduce((t, i) => t + i.importe, 0))
+      if (j < nM) valsT.push(v)
       totales.push({ t: "n", f: rN >= r1 ? `SUM(${c}${r1}:${c}${rN})` : "0", v, z: MONEDA })
     }
-    h.push(totales)
-    if (monedas.length === 1 && m === undefined) celdaTotal = `${col(2 + o.meses.length)}${h.length}`
+    h.push([...semCeldas(h.length + 1, valsT), ...totales])
+    if (monedas.length === 1 && m === undefined) celdaTotal = `${cM(nM)}${h.length}`
     h.push([])
   })
   if (o.bloqueExtra) {
     const filaTotal = h.length - 1 // el TOTAL del resumen (antes del blanco)
+    const fila0 = h.length + 1
     const b = o.bloqueExtra.armar({
-      fila: h.length + 1, filaTotal, colMes: (j: number) => col(2 + j), colTotal: col(2 + o.meses.length),
+      fila: fila0, filaTotal, colMes: (j: number) => cM(j), colTotal: cM(nM),
       rng, colDebito: colImporte, colCredito, colDetalle: (i: number) => col(2 + i),
     })
-    for (let k = 0; k < o.bloqueExtra.alto; k++) h.push(b[k] ?? [])
+    for (let k = 0; k < o.bloqueExtra.alto; k++) {
+      const r = (b[k] ?? []) as unknown[]
+      if (!S) { h.push(r); continue }
+      // Una fila de meses del bloque (12 números en C…): lleva sus semestres; un acumulado o un título, no
+      const meses = r.slice(2, 2 + nM)
+      const esNum = (x: unknown) => typeof x === "number" || (!!x && typeof x === "object" && (x as { t?: string }).t === "n")
+      const conMeses = meses.length === nM && meses.every(esNum) && !/acumulado/i.test(String(r[1] ?? ""))
+      const vals = meses.map(x => (typeof x === "number" ? x : Number((x as { v?: number })?.v ?? 0)))
+      h.push([...(conMeses ? semCeldas(fila0 + k, vals) : vacias()), ...r])
+    }
   }
   // 🟨 ⚠️ cambió 02/11: el renglón amarillo «Nro a ver» se sacó (JMS: «pensé que era algo súper sencillo, no te líes con esto»).
   // Excel no filtra desde una celda sin macro; para ver un Nro está el filtro de la columna Nro, que ya viene puesto.

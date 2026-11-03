@@ -218,7 +218,7 @@ const filasCta = hojaResumenPorMes(det, {
   notas: ["Sin saldo de inicio: es el MOVIMIENTO del ejercicio. Libertad entra como un renglón por mes (ene–jun 2026; jul–dic 2025 el socio de Libertad es PAM).",
     "Entra todo lo que MSA pagó y era de MA (templates de MA, facturas de MA, sueldos de empleados de MA, lo marcado CTA MA / RET … MA) y al revés (MA pagando cosas de MSA). No entra el sueldo de MA como empleada de MSA.",
     `Control: ${sinMarca.length} movimiento(s) detectados por la base SIN marca contable · ${marcadosSinNada.length} marcados SIN ningún vínculo — ver la solapa Control.`],
-  meses, encabezadoDetalle: ["Fecha", "Cuenta", "Descripción del banco", "Qué es", "Detectado por", "Contable", "Interno", "Nota del movimiento"], rotuloImporte: "Importe (+ retiró / − aportó)",
+  meses, encabezadoDetalle: ["Fecha", "Cuenta", "Descripción del banco", "Qué es", "Detectado por", "Contable", "Interno", "Nota del movimiento"], rotuloImporte: "Importe (+ retiró / − aportó)", semestres: true,
 })
 // ── El estudio por INTERNO, mes por mes, y la comparación con el de contable
 const filasInt = hojaResumenPorMes(porInterno.map(it => ({ categoria: it.que.replace(/ \d+-\d+$/, ""), mes: it.mes, importe: it.imp,
@@ -226,17 +226,18 @@ const filasInt = hojaResumenPorMes(porInterno.map(it => ({ categoria: it.que.rep
   titulo: `MA por INTERNO («DIST MA» / «DIST MECHI») — cuentas de MSA — ejercicio ${ETIQ} (+ = salió de MSA para MA)`,
   notas: ["Otro estudio (JMS): de quién es el gasto puertas adentro. Toma TODO lo de las cuentas de MSA con interno de MA, sin repartir: Libertad entra entera (internamente MA toma el 100%).",
     "No mira las cuentas de MA (no llevan interno). «DIST MECHI» NO es MA. Casco, Tapera y Posadas: de MA desde 03/2026, antes de PAM (corte por fecha, manda sobre la marca)."],
-  meses, encabezadoDetalle: ["Fecha", "Cuenta", "Descripción del banco", "Qué es", "Contable", "Interno", "Nota"], rotuloImporte: "Importe",
+  meses, encabezadoDetalle: ["Fecha", "Cuenta", "Descripción del banco", "Qué es", "Contable", "Interno", "Nota"], rotuloImporte: "Importe", semestres: true,
 })
 const sumaMes = (xs: { mes: string; imp: number }[], m: string) => r2(xs.filter(x => x.mes === m).reduce((t, x) => t + x.imp, 0))
 const contMes = MESES.map(m => r2(sumaMes(items, m) + (m >= "2026-01" ? (libMes.find(x => x.mes === m)?.neto ?? 0) : 0)))
 const intMes = MESES.map(m => sumaMes(porInterno, m))
 const comparar: unknown[][] = [[`CONTABLE vs INTERNO — MA, mes por mes (${ETIQ})`],
   ["La diferencia se explica sobre todo por: Libertad (en contable va el neto MSA−50%; en interno, todo lo que pagó MSA), Casco/Tapera/Posadas en ene–feb 2026 (contable MA desde enero, interno MA desde marzo), y lo que MA pagó por MSA (sólo en contable)."], [],
-  ["", ...ROT, "TOTAL"],
-  ["Cuenta por CONTABLE (+ Libertad neto)", ...contMes, r2(contMes.reduce((a, b) => a + b, 0))],
-  ["MA por INTERNO", ...intMes, r2(intMes.reduce((a, b) => a + b, 0))],
-  ["Diferencia", ...MESES.map((_, j) => r2(contMes[j] - intMes[j])), r2(contMes.reduce((a, b) => a + b, 0) - intMes.reduce((a, b) => a + b, 0))]]
+  ["1er sem", "2do sem", "total", "", ...ROT, "TOTAL"],
+  ...([["Cuenta por CONTABLE (+ Libertad neto)", contMes], ["MA por INTERNO", intMes], ["Diferencia", MESES.map((_, j) => r2(contMes[j] - intMes[j]))]] as [string, number[]][])
+    .map(([et, v], k) => { const n = 5 + k, c = (j: number) => String.fromCharCode(69 + j)   // E = jul-25 … P = jun-26
+      return [{ t: "n", f: `SUM(E${n}:J${n})`, v: r2(v.slice(0, 6).reduce((a, b) => a + b, 0)) }, { t: "n", f: `SUM(K${n}:P${n})`, v: r2(v.slice(6).reduce((a, b) => a + b, 0)) },
+        { t: "n", f: `A${n}+B${n}`, v: r2(v.reduce((a, b) => a + b, 0)) }, et, ...v, { t: "n", f: `SUM(${c(0)}${n}:${c(11)}${n})`, v: r2(v.reduce((a, b) => a + b, 0)) }] })]
 const control: unknown[][] = [["CONTROL — lo que la marca contable y la base no dicen igual"], [],
   ["Detectado por la BASE (template o factura de la otra empresa) SIN marca contable"], ["Fecha", "Cuenta", "Descripción", "Qué es", "Importe"],
   ...sinMarca.map(i => [i.fecha.split("-").reverse().join("/"), i.cuenta, i.desc, i.que, i.imp]), [],
@@ -252,9 +253,23 @@ const control: unknown[][] = [["CONTROL — lo que la marca contable y la base n
 // ── 4 · Escribir (nunca pisa: v2, v3…)
 if (!existsSync(CARPETA)) mkdirSync(CARPETA, { recursive: true })
 const nombre = (base: string) => { let p = join(CARPETA, `${base}.xlsx`), v = 2; while (existsSync(p)) p = join(CARPETA, `${base} v${v++}.xlsx`); return p }
-const wbL = XLSX.utils.book_new(); agregarHoja(wbL, "Gastos Libertad", filasLib); fechasReales(wbL as any)
+/** 📌 JMS 03/11: «estas cosas seguilas poniendo dentro del reporte, porque son temas no cerrados». Primera solapa. */
+const temas: unknown[][] = [["TEMAS ABIERTOS — lo que falta decidir para cerrar la cuenta MSA ↔ MA y Libertad (" + ETIQ + ")"],
+  ["Se actualiza en cada versión. Cuando JMS responde, el tema sale de acá y queda aplicado en las solapas."], [],
+  ["#", "Tema", "Qué hay", "Qué falta decidir", "Dónde mirarlo"],
+  [1, "AUTO del histórico", "3 pagos jul–sep 2025 «CATEG AUTO» con interno DIST MA en la nota, $ 5.782.079, sin contable", "¿También son retiro de MA por CONTABLE? Hoy cuentan sólo por interno", "MA por interno · «Histórico — AUTO»"],
+  [2, "FC - 105 y FC - 851", "Interno DIST MA, contable vacío: $ 522.000 y $ 94.700", "¿Qué son y de quién?", "MA por interno · Control (interno MA, contable otro)"],
+  [3, "Posadas en Libertad", "Expensas y ABL de la cochera de Posadas hoy NO entran a Libertad (JMS anotó: «¿habría que agregar Posadas? creo que sí y luego ver con contador»)", "Confirmar con el contador si entra al 50/50", "Libertad"],
+  [4, "Fechas de cuotas de Libertad", "Expensas de feb-26 fechada en mar-26 (pago agrupado feb+mar del 10/03); ABL de mar-26 fechado en ene-26", "OK para corregir las 2 fechas (script con deshacer) — no cambia el total, sí el mes", "Libertad"],
+  [5, "Luz de diciembre", "Dos pagos de luz en dic-25: $ 205.421 (10/12) y $ 32.770 (31/12)", "¿Qué es la chica?", "Libertad · detalle"],
+  [6, "Prosegur", "6 facturas a MA, ene–jun 2026", "¿Empezó en enero 2026 o antes se pagaba de otro modo?", "Libertad"],
+  [7, "Cruce PAM ↔ MA en Libertad", "PAM pagó $ 3,0 M de la mitad de MA (2026) y MA $ 2,7 M de la de PAM (2025)", "¿Se registra como cuenta PAM–MA o se deja así? (con MSA no cambia nada)", "Libertad · Quién pagó"],
+  [8, "Marcas del histórico en la nota", "286 movimientos jul-25 → ene-26 con contable/interno sólo en la nota (41 con marca)", "Pasarlas a las columnas (cambio de datos: script con OK) — hoy el Excel las lee de la nota", "Detalle · columna Nota"],
+  [9, "«Desglosar» sin repartir", "Pagos de la tarjeta de MSA (se desglosan por sus consumos) y sueldos de JMS/AMS", "Nada para MA; van a las cuentas con JMS y AMS cuando se armen", "Control · último cuadro"],
+  [10, "Corte por fecha (regla)", "Casco, Tapera, Posadas, Complementario, Ombú, Entre Ríos: contable MA desde 2026, interno desde 03/2026 (fechas escritas en el script)", "Generalizar: una tabla «de quién es tal cosa desde tal fecha» por estudio, que lean socios, Libertad y el papel 14", "—"]]
+const wbL = XLSX.utils.book_new(); agregarHoja(wbL, "Gastos Libertad", filasLib); agregarHoja(wbL, "Temas abiertos", [temas[0], temas[1], [], temas[3], ...temas.slice(4).filter((r: any) => [3, 4, 5, 6, 7].includes(r[0]))]); fechasReales(wbL as any)
 const pL = nombre("Libertad 25-26 (2026-11-03)"); XLSX.writeFile(wbL, pL)
-const wbC = XLSX.utils.book_new(); agregarHoja(wbC, "Cuenta MSA-MA", filasCta); agregarHoja(wbC, "Libertad", filasLib); agregarHoja(wbC, "Control", control)
+const wbC = XLSX.utils.book_new(); agregarHoja(wbC, "Temas abiertos", temas); agregarHoja(wbC, "Cuenta MSA-MA", filasCta); agregarHoja(wbC, "Libertad", filasLib); agregarHoja(wbC, "Control", control)
 agregarHoja(wbC, "MA por interno", filasInt); agregarHoja(wbC, "Contable vs interno", comparar); fechasReales(wbC as any)
 const pC = nombre("Cuenta MSA-MA 25-26 (2026-11-03)"); XLSX.writeFile(wbC, pC)
 

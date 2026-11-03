@@ -12440,7 +12440,8 @@ export function correrCasos(): Resultado[] {
       q("w", "MA", F, "AGUA", "AYSA Duhau", "2026-04-20", 555, "MA")] as never
     const meses = ["2025-07", "2025-08", "2025-09", "2025-10", "2025-11", "2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"].map(clave => ({ clave, rotulo: clave }))
     const h = hojaLibertad(cs, "25/26", meses)
-    const fila = (et: string) => (h.find(r => (r as any[])[1] === et) as any[]).slice(2, 15).map((x: any) => x.v)
+    // con semestres (03/11) la etiqueta ya no está en la columna B: se busca en la fila y se toman los 13 valores que la siguen
+    const fila = (et: string) => { const r = h.find(r => (r as any[]).includes(et)) as any[]; const i = r.indexOf(et); return r.slice(i + 1, i + 14).map((x: any) => x.v) }
     const costo = fila("Costo de Libertad del mes"), pam = fila("PAM toma el 50% (hasta dic-25)"), ma = fila("MA toma el 50% (desde ene-26)")
     const cc = fila("CUENTA CORRIENTE LIBERTAD — el socio RETIRÓ de MSA (+) / APORTÓ (−): lo que MSA pagó − su 50%"), ctrl = fila("Control: costo − todo lo de arriba (tiene que dar 0)")
     const tres = fila("Pagó MSA + PAM + MA"), dif = fila("  diferencia con el costo (= varias cuentas + sin dato del banco + sin pagar: ver el detalle)")
@@ -12457,7 +12458,8 @@ export function correrCasos(): Resultado[] {
       descripcion: "MELI PROSEGUR", categ: "", debitos, creditos: 0, templateCuotaId: null, comprobanteArcaId: null, otroVinculo: false, estado: "conciliado", contable, enDolares: false, ...extra })
     const ext = { movimientos: [mov("2026-02-22", 80, "LIB", "MA", { comprobanteArcaId: "fc-prosegur" }), mov("2026-05-05", 7, "LIB", "MA", { descripcion: "LIB SIN NADA" })] as never, destinos: new Map() }
     const h2 = hojaLibertad(cs2, "25/26", meses, ext)
-    const fila2 = (et: string) => (h2.find(r => (r as any[])[1] === et) as any[]).slice(2, 15).map((x: any) => x.v)
+    // con semestres (03/11) la etiqueta ya no está en la columna B: se busca en la fila y se toman los 13 valores que la siguen
+    const fila2 = (et: string) => { const r = h2.find(r => (r as any[]).includes(et)) as any[]; const i = r.indexOf(et); return r.slice(i + 1, i + 14).map((x: any) => x.v) }
     const busca = (txt: string) => h2.find(r => (r as any[]).some(x => typeof x === "string" && x.startsWith(txt))) as any[] | undefined
     const otrosLib = busca("  − marcados LIB pero de OTRA cosa")
     const hayCero = h2.some(r => (r as any[]).includes("ABL Libertad Anual"))
@@ -12466,6 +12468,14 @@ export function correrCasos(): Resultado[] {
     const e2 = "costo 390 · MA pagó 170 · otros LIB 1 (7) · cuota $0 afuera · renglón Prosegur true"
     chequear("Libertad", "Gastos Libertad, todo el inmueble: suma Luz, Internet y teléfono, y lo pagado por factura con la marca LIB (Prosegur); el control LIB sólo deja «a mirar» lo LIB que no es ni cuota ni factura",
       e2, v2, v2 === e2, "A-FEAT-1521")
+    // 📅 JMS 03/11: «cuando hay tabla por mes, siempre los 2 semestres» — 1er sem · 2do sem · total a la izquierda, con fórmulas
+    const enc = h2.find(r => (r as any[])[0] === "1er sem") as any[] | undefined
+    const rCosto = h2.find(r => (r as any[]).includes("Costo de Libertad del mes")) as any[]
+    const iTot = h2.findIndex(r => (r as any[]).includes("TOTAL") && (r as any[]).length > 5 && typeof (r as any[])[0] === "object")
+    const vS = `encabezado ${enc ? enc.slice(0, 5).join("|") : "no"} · costo 1er ${rCosto[0]?.v} 2do ${rCosto[1]?.v} total ${rCosto[2]?.v} · fórmula ${rCosto[0]?.f} · total ${rCosto[2]?.f?.replace(/\d+/g, "n")} · resumen con semestres ${iTot > 0}`
+    const eS = "encabezado 1er sem|2do sem|total|Nro|Categoría · costo 1er 150 2do 240 total 390 · fórmula SUM(F" + (h2.indexOf(rCosto) + 1) + ":K" + (h2.indexOf(rCosto) + 1) + ") · total An+Bn · resumen con semestres true"
+    chequear("Libertad", "Toda tabla por mes con los 2 semestres (Libertad y retiros): 1er sem (jul–dic) + 2do sem (ene–jun) = total, con fórmulas sobre los meses, también en el bloque de reparto",
+      eS, vS, vS === eS, "A-FEAT-1532")
   }
 
   // ══ 🏛️ Libro H — el papel de inmobiliario: 2 años apilados con sus fórmulas corridas, y el control contra templates por fechas (A-FEAT-1516) ══

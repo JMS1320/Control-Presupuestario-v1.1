@@ -149,7 +149,7 @@ export function hojaLibertad(cuotas: CuotaTemplate[], etiqueta: string, meses: {
     notas: ["Costo de estructura de las oficinas: siempre 50% MSA y 50% el socio — PAM hasta el 31/12/2025, MA desde el 01/01/2026.",
       "Gasto = todo lo del inmueble: las cuotas de los templates de Libertad (Expensas, AySA, Metrogas, ABL, Luz, Internet y teléfono; las dos versiones, PAM y MA; sin la cochera, ACA ni Duhau) + lo pagado por factura con la marca LIB en el banco (Prosegur).",
       "Quién pagó = el titular de la cuenta con que se concilió cada cuota. Internamente MA toma el 100% (todo LIB es DIST MA)."],
-    meses, encabezadoDetalle: ["Fecha", "Template", "Responsable del template", "Pagó", "Cuenta", "Comprobante", "Estado"], debeHaber: true,
+    meses, encabezadoDetalle: ["Fecha", "Template", "Responsable del template", "Pagó", "Cuenta", "Comprobante", "Estado"], debeHaber: true, semestres: true,
     bloqueExtra: { alto: ALTO_BLOQUE, armar: u => bloqueReparto(cs, meses, u) },
   })
   h.push(...controlLib(cs, meses, extracto))
