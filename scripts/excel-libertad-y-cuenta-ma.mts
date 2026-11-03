@@ -84,7 +84,38 @@ const INTERNO_MA = /\bdist\s*ma\b/i
  * ✂️ CORTE POR FECHA (JMS 03/11): Casco, Tapera y Posadas — «son contable PAM en 2025, contable MA en 2026; a nivel interno son de MA
  * desde 3 del 2026 y antes de PAM». Manda sobre la marca del movimiento. Mismo patrón que Libertad (PAM → MA): a generalizar.
  */
-const CORTE = /casco|tapera|posadas/i, CORTE_CONTABLE_MA = "2026-01-01", CORTE_INTERNO_MA = "2026-03-01"
+// ⚠️ ampliado 03/11 — JMS: «el complementario de PAM pasa a MA como Casco, Ombú, Tapera, Entre Ríos»
+const CORTE = /casco|tapera|posadas|complementario|omb[uú]|entre\s*r[ií]os/i, CORTE_CONTABLE_MA = "2026-01-01", CORTE_INTERNO_MA = "2026-03-01"
+/**
+ * 🧩 «DESGLOSAR» (JMS 03/11: «ej. seguro flota: a interno MA lo afecta, ya que tiene su seguro ahí»). Se reparte con lo que ya sabe la base:
+ *  · una PÓLIZA: la prima de cada bien del endoso vigente × de quién es ese bien (`polizas_responsables`, contable e interno) — la Tiguan
+ *    de la flota es contable MSA / interno MA;
+ *  · un detalle «X | Y» (dos facturas en un pago): partes iguales, y la parte que nombra a un empleado de MA es de MA (preocupacional Alondra).
+ * Lo que no se puede repartir así se lista en Control con lo que es.
+ */
+const polizas = await todo((d, h) => sb.from("polizas_seguro").select("id, poliza, template_id").order("id").range(d, h))
+const endosos = await todo((d, h) => sb.from("polizas_endosos").select("id, poliza_id, endoso, periodo_desde, periodo_hasta, es_nota_credito").order("id").range(d, h))
+const bienes = await todo((d, h) => sb.from("polizas_bienes").select("endoso_id, clave, descripcion, prima").order("id").range(d, h))
+const respBien = new Map((await todo((d, h) => sb.from("polizas_responsables").select("clave, responsable_contable, responsable_interno").order("clave").range(d, h))).map((r: any) => [r.clave, r]))
+const polizaDeTemplate = new Map(polizas.filter((p: any) => p.template_id).map((p: any) => [p.template_id, p]))
+/** La parte de MA en una cuota de póliza, por estudio, según el endoso vigente a la fecha. */
+function parteMAPoliza(egresoId: string | undefined, fecha: string): { contable: number; interno: number; detalle: string } | null {
+  const p: any = egresoId ? polizaDeTemplate.get(egresoId) : undefined
+  if (!p) return null
+  const vig = endosos.filter((e: any) => e.poliza_id === p.id && !e.es_nota_credito && String(e.periodo_desde) <= fecha).sort((a: any, b: any) => String(b.periodo_desde).localeCompare(String(a.periodo_desde)))
+  // el endoso vigente es el último que empezó antes de la fecha del pago (la cuota se paga dentro del período o apenas después)
+  const e = vig.find((x: any) => bienes.some((b: any) => b.endoso_id === x.id))
+  if (!e) return null
+  const bs = bienes.filter((b: any) => b.endoso_id === e.id)
+  const tot = bs.reduce((t: number, b: any) => t + Number(b.prima || 0), 0)
+  if (!tot) return null
+  const de = (campo: "responsable_contable" | "responsable_interno") => bs.filter((b: any) => String(respBien.get(b.clave)?.[campo] ?? "").toUpperCase() === "MA").reduce((t: number, b: any) => t + Number(b.prima || 0), 0) / tot
+  const ma = bs.filter((b: any) => ["responsable_contable", "responsable_interno"].some(c => String(respBien.get(b.clave)?.[c] ?? "").toUpperCase() === "MA"))
+  return { contable: de("responsable_contable"), interno: de("responsable_interno"),
+    detalle: `póliza ${p.poliza} endoso ${e.endoso}: ${ma.map((b: any) => `${b.clave} ${String(b.descripcion ?? "").slice(0, 22)} ${(Number(b.prima) / tot * 100).toFixed(1)}%`).join(", ") || "ningún bien de MA"}` }
+}
+/** Lo «Desglosar» que no se pudo repartir (para Control). */
+const desglosarSinRepartir: Item[] = []
 // Sueldos: los de un EMPLEADO DE MA pagados por MSA (Alondra Olivo) son retiro de MA; el sueldo de MA como empleada de MSA, no.
 const empleados = new Map((await todo((d, h) => sb.from("sueldos_empleados").select("id, nombre, empresa").order("id").range(d, h))).map((e: any) => [e.id, e]))
 const pagosSueldo = await todo((d, h) => sb.from("sueldos_pagos").select("id, grupo_pago_id, empleado_id").order("id").range(d, h))
@@ -104,16 +135,44 @@ for (const t of TABLAS_CON_VINCULO_ARCA) {
   try { movs = await todo(q) } catch (e: any) { console.log(`⚠️ ${t.schema}.${t.tabla}: ${e.message}`); continue }
   for (const m of movs) {
     if (m.moneda && String(m.moneda).toUpperCase() !== "ARS" && /usd|dolar/i.test(t.tabla)) continue
-    const contable = String(m.contable ?? "").trim(), interno = String(m.interno ?? "").trim()
+    // 📜 El HISTÓRICO (jul-25 → ene-26) guardó su contable e interno en la NOTA («tu planilla: … Contable X · Interno Y»), no en las columnas
+    const nTxt = String(m.nota_operador ?? "")
+    const deNota = (k: string) => (m.estado === "historico" ? new RegExp(`${k}\\s+([^·]+)`, "i").exec(nTxt)?.[1]?.trim() ?? "" : "")
+    const contable = String(m.contable ?? "").trim() || deNota("Contable"), interno = String(m.interno ?? "").trim() || deNota("Interno")
+    const deLaNota = !String(m.contable ?? "").trim() && !String(m.interno ?? "").trim() && !!(contable || interno)
     const deb = Number(m.debitos) || 0, cred = Number(m.creditos) || 0
     const cuota = m.template_cuota_id ? porCuota.get(m.template_cuota_id) ?? porGrupo.get(m.template_cuota_id)?.[0] : undefined
     const nota = String(m.nota_operador ?? "").slice(0, 200)
     // El sueldo manda sobre el template (un sueldo pagado en efectivo queda atado también a la cuota de Caja)
     const nombreDe = () => m.sueldo_pago_id && empleadoDePago.get(m.sueldo_pago_id) ? `Sueldos de ${empleadoDePago.get(m.sueldo_pago_id).nombre}`
       : cuota ? (/^caja\b/i.test(cuota.concepto) ? "Efectivo (caja) — ver la nota" : cuota.concepto.replace(/ (MA|MSA|PAM)$/, ""))
+      : m.estado === "historico" && /CATEG\s+([A-ZÁÉÍÓÚÑ ]+?)(\s*·|$)/.test(nTxt) ? `Histórico — ${/CATEG\s+([A-ZÁÉÍÓÚÑ ]+?)(\s*·|$)/.exec(nTxt)![1].trim()} (tu planilla)`
       : String(m.comprobantes_pagados || m.categ || m.descripcion || "(sin vínculo)")
     const fecha = String(m.fecha).slice(0, 10)
     const corte = t.titular === "MSA" && !!cuota && CORTE.test(cuota.concepto)
+    // ── 🧩 DESGLOSAR: se reparte (póliza o detalle «X | Y») y la parte de MA entra a cada estudio; lo demás va a Control
+    if (t.titular === "MSA" && (/^desglos/i.test(contable) || /^desglos/i.test(interno))) {
+      const base = { mes: fecha.slice(0, 7), fecha, cuenta: t.cuenta, titular: "MSA", desc: String(m.descripcion ?? "").slice(0, 80), contable, interno, nota: (deLaNota ? "[marca de la nota del histórico] " : "") + nota }
+      const imp0 = r2(deb - cred)
+      const pol = parteMAPoliza(cuota?.egresoId, fecha)
+      const partes = String(m.detalle ?? "").split("|").map(x => x.trim()).filter(Boolean)
+      const nombresMA = [...empleados.values()].filter((e: any) => String(e.empresa).toUpperCase() === "MA").map((e: any) => String(e.nombre).split(" ")[0].toLowerCase())
+      const parteEmpleado = partes.length > 1 ? partes.filter(p => nombresMA.some(n => p.toLowerCase().includes(n))) : []
+      let repartido = false
+      if (pol && (pol.contable > 0 || pol.interno > 0)) {
+        const que = `${nombreDe()} — parte de MA`
+        if (pol.contable > 0 && /^desglos/i.test(contable)) items.push({ ...base, que, por: `desglose por póliza (${(pol.contable * 100).toFixed(1)}% contable)`, imp: r2(imp0 * pol.contable), nota: pol.detalle })
+        if (pol.interno > 0 && /^desglos/i.test(interno)) porInterno.push({ ...base, que, por: "", imp: r2(imp0 * pol.interno), nota: `${(pol.interno * 100).toFixed(1)}% · ${pol.detalle}` })
+        repartido = true
+      } else if (parteEmpleado.length) {
+        const share = parteEmpleado.length / partes.length, que = `${nombreDe()} — ${parteEmpleado.join(", ")} (empleada de MA)`
+        if (/^desglos/i.test(contable) || !contable) items.push({ ...base, que, por: `desglose por detalle (${parteEmpleado.length} de ${partes.length} partes)`, imp: r2(imp0 * share) })
+        if (/^desglos/i.test(interno)) porInterno.push({ ...base, que, por: "", imp: r2(imp0 * share) })
+        repartido = true
+      }
+      if (!repartido) desglosarSinRepartir.push({ ...base, que: nombreDe(), por: pol ? "póliza sin bienes de MA" : "", imp: imp0 })
+      continue
+    }
     // ── Estudio por INTERNO: antes de cualquier filtro (Libertad entra entera, como dice el interno)
     const esInternoMA = corte ? fecha >= CORTE_INTERNO_MA : INTERNO_MA.test(interno)
     if (t.titular === "MSA" && esInternoMA) porInterno.push({ mes: String(m.fecha).slice(0, 7), fecha: String(m.fecha).slice(0, 10), cuenta: t.cuenta, titular: "MSA",
@@ -138,7 +197,7 @@ for (const t of TABLAS_CON_VINCULO_ARCA) {
     const que = porFc ? `Facturas de ${fc.denominacion_emisor}` : nombreDe()
     // + = MA retiró de MSA: sale plata de MSA por MA (débito en MSA) o entra plata de MA a MSA al revés
     const imp = r2(t.titular === "MSA" ? deb - cred : -(deb - cred))
-    const por = [corte ? "corte por fecha (Casco/Tapera/Posadas: de MA desde 2026)" : porTpl ? "template de " + otra : "", porFc ? "factura de " + otra : "", porSueldo ? "sueldo de un empleado de " + otra : "", marca ? "marca contable" : ""].filter(Boolean).join(" + ")
+    const por = [corte ? "corte por fecha (Casco/Tapera/Posadas/Complementario: de MA desde 2026)" : porTpl ? "template de " + otra : "", porFc ? "factura de " + otra : "", porSueldo ? "sueldo de un empleado de " + otra : "", marca ? (deLaNota ? "marca contable (de la nota del histórico)" : "marca contable") : ""].filter(Boolean).join(" + ")
     const it: Item = { mes: String(m.fecha).slice(0, 7), fecha: String(m.fecha).slice(0, 10), cuenta: t.cuenta, titular: String(t.titular), desc: String(m.descripcion ?? "").slice(0, 80),
       que: porFc ? `${que} ${fc.punto_venta}-${fc.numero_desde}` : String(que), por, contable, interno, imp, nota }
     items.push(it)
@@ -185,7 +244,10 @@ const control: unknown[][] = [["CONTROL — lo que la marca contable y la base n
   ...marcadosSinNada.map(i => [i.fecha.split("-").reverse().join("/"), i.cuenta, i.desc, i.contable, i.imp]), [],
   ["INTERNO dice «DIST MA» pero CONTABLE dice otra cosa — los dos estudios no coinciden (no entran a esta cuenta)"],
   ["Fecha", "Cuenta", "Descripción", "Qué pagó", "Contable", "Interno", "Importe"],
-  ...internoSinContable.map(i => [i.fecha.split("-").reverse().join("/"), i.cuenta, i.desc, i.que, i.contable || "(vacío)", i.interno, i.imp])]
+  ...internoSinContable.map(i => [i.fecha.split("-").reverse().join("/"), i.cuenta, i.desc, i.que, i.contable || "(vacío)", i.interno, i.imp]), [],
+  ["«DESGLOSAR» que no se reparte con lo que sabe la base (no toca a MA salvo que me digas) — pagos de la tarjeta (se desglosa por su resumen), sueldos de JMS/AMS…"],
+  ["Fecha", "Cuenta", "Descripción", "Qué pagó", "Contable", "Interno", "Importe", "Nota"],
+  ...desglosarSinRepartir.map(i => [i.fecha.split("-").reverse().join("/"), i.cuenta, i.desc, i.que, i.contable || "(vacío)", i.interno || "(vacío)", i.imp, i.nota ?? ""])]
 
 // ── 4 · Escribir (nunca pisa: v2, v3…)
 if (!existsSync(CARPETA)) mkdirSync(CARPETA, { recursive: true })
