@@ -12451,7 +12451,8 @@ export function correrCasos(): Resultado[] {
     // 03/11 — JMS: «Libertad es todo el gasto del inmueble… servicios de funcionamiento (internet, teléfonos)»: entran Luz e
     // Internet/teléfono, y lo pagado POR FACTURA con la marca LIB (Prosegur, sin template). El control LIB no lo marca como «otra cosa».
     const cs2 = [...(cs as unknown as any[]), q("l", "MA", F, "LUZ", "Luz Libertad", "2026-03-12", 60, "MA"),
-      q("t", "PAM", F, "TELEFONOS E INTERNET BS. AS.", "Internet Libertad", "2025-08-12", 10, "PAM")] as never
+      q("t", "PAM", F, "TELEFONOS E INTERNET BS. AS.", "Internet Libertad", "2025-08-12", 10, "PAM"),
+      q("0", "MA", I, "ABL", "ABL Libertad Anual", "2026-01-30", 0, null)] as never
     const mov = (fecha: string, debitos: number, contable: string, titular: string, extra: Record<string, unknown>) => ({ titular, cuenta: `VISA ${titular}`, fecha,
       descripcion: "MELI PROSEGUR", categ: "", debitos, creditos: 0, templateCuotaId: null, comprobanteArcaId: null, otroVinculo: false, estado: "conciliado", contable, enDolares: false, ...extra })
     const ext = { movimientos: [mov("2026-02-22", 80, "LIB", "MA", { comprobanteArcaId: "fc-prosegur" }), mov("2026-05-05", 7, "LIB", "MA", { descripcion: "LIB SIN NADA" })] as never, destinos: new Map() }
@@ -12459,8 +12460,10 @@ export function correrCasos(): Resultado[] {
     const fila2 = (et: string) => (h2.find(r => (r as any[])[1] === et) as any[]).slice(2, 15).map((x: any) => x.v)
     const busca = (txt: string) => h2.find(r => (r as any[]).some(x => typeof x === "string" && x.startsWith(txt))) as any[] | undefined
     const otrosLib = busca("  − marcados LIB pero de OTRA cosa")
-    const v2 = `costo ${fila2("Costo de Libertad del mes")[12]} · MA pagó ${fila2("Pagó MA")[12]} · otros LIB ${otrosLib?.[2]} (${otrosLib?.[3]})`
-    const e2 = "costo 390 · MA pagó 170 · otros LIB 1 (7)"
+    const hayCero = h2.some(r => (r as any[]).includes("ABL Libertad Anual"))
+    const prosegur = !!busca("Prosegur (por factura)")
+    const v2 = `costo ${fila2("Costo de Libertad del mes")[12]} · MA pagó ${fila2("Pagó MA")[12]} · otros LIB ${otrosLib?.[2]} (${otrosLib?.[3]}) · cuota $0 ${hayCero ? "aparece" : "afuera"} · renglón Prosegur ${prosegur}`
+    const e2 = "costo 390 · MA pagó 170 · otros LIB 1 (7) · cuota $0 afuera · renglón Prosegur true"
     chequear("Libertad", "Gastos Libertad, todo el inmueble: suma Luz, Internet y teléfono, y lo pagado por factura con la marca LIB (Prosegur); el control LIB sólo deja «a mirar» lo LIB que no es ni cuota ni factura",
       e2, v2, v2 === e2, "A-FEAT-1521")
   }

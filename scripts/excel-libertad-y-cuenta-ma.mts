@@ -61,7 +61,7 @@ console.log(`Cuotas leídas ${cuotas.length} (del ejercicio ${cuotasEj.length}) 
 
 // ── 2 · LIBERTAD — la hoja del balance tal cual, y el neto por mes
 const filasLib = hojaLibertad(cuotasEj, ETIQ, meses, extracto)
-const libDeTpl = cuotasEj.filter(esDeLibertad)
+const libDeTpl = cuotasEj.filter(c => esDeLibertad(c) && Math.abs(c.monto) >= 0.005)
 const libTodo = [...libDeTpl, ...pagosPorFacturaLib(libDeTpl, extracto).filter(c => enEj(c.fecha))]
 const libMes = MESES.map(m => {
   const cs = libTodo.filter(c => (c.fecha ?? "").slice(0, 7) === m)

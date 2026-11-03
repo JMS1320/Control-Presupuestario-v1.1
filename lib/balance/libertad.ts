@@ -136,10 +136,13 @@ function bloqueReparto(cs: CuotaTemplate[], meses: { clave: string; rotulo: stri
 export function hojaLibertad(cuotas: CuotaTemplate[], etiqueta: string, meses: { clave: string; rotulo: string }[],
   extracto?: { movimientos: MovimientoExtractoH[]; destinos: Map<string, DestinoMovimiento> }): unknown[][] {
   const enEj = (f: string | null | undefined) => meses.some(m => m.clave === (f ?? "").slice(0, 7))
-  const deTemplates = cuotas.filter(esDeLibertad).filter(c => enEj(c.fecha))
+  // JMS 03/11 sobre las cuotas en $ 0 («es algo que no se usó en realidad, ¿verdad?»): sí — el ABL anual (se pagó por cuota) y las
+  // cuotas de enero del template de MA mientras pagaba el de PAM. No son gasto ni pago: no van al cuadro.
+  const deTemplates = cuotas.filter(esDeLibertad).filter(c => enEj(c.fecha) && Math.abs(c.monto) >= 0.005)
   const cs = [...deTemplates, ...pagosPorFacturaLib(deTemplates, extracto).filter(c => enEj(c.fecha))]
   const h = hojaResumenPorMes(cs.map(c => ({
-    categoria: CONCEPTOS[norm(c.categ)], mes: (c.fecha ?? "").slice(0, 7), importe: c.monto,
+    // Lo pagado por factura va con su nombre (JMS: «poner cada cosa»), no en un renglón genérico
+    categoria: c.categ === CATEG_FACTURA_LIB ? `${c.concepto} (por factura)` : CONCEPTOS[norm(c.categ)], mes: (c.fecha ?? "").slice(0, 7), importe: c.monto,
     columnas: [dmy(c.fecha), c.concepto, c.responsable, quienPago(c), c.banco?.cuenta ?? "", c.banco?.comprobante ?? "", c.estado],
   })), {
     titulo: `GASTOS LIBERTAD — costo, reparto 50/50 y quién lo pagó — ejercicio ${etiqueta}`,
@@ -170,7 +173,10 @@ export function pagosPorFacturaLib(cuotasLib: CuotaTemplate[],
     .filter(m => norm(m.contable) === "lib" && !m.enDolares && m.comprobanteArcaId && !(m.templateCuotaId && ids.has(m.templateCuotaId)))
     .map(m => {
       const monto = r2(m.debitos - m.creditos)
-      return { id: `factura-lib:${m.comprobanteArcaId}:${m.fecha}`, fecha: m.fecha, concepto: m.descripcion, proveedor: "", categ: CATEG_FACTURA_LIB,
+      // «MELI PROSEGUR 000056695740521» → «Prosegur»: el nombre del comercio, sin el canal ni el número de operación
+      const nombre = m.descripcion.replace(/^(meli|mercadopago|mp)\s*\*?\s*/i, "").replace(/\s+\d{5,}.*$/, "").trim()
+      const concepto = nombre ? nombre.charAt(0).toUpperCase() + nombre.slice(1).toLowerCase() : m.descripcion
+      return { id: `factura-lib:${m.comprobanteArcaId}:${m.fecha}`, fecha: m.fecha, concepto, detalle: m.descripcion, proveedor: "", categ: CATEG_FACTURA_LIB,
         cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable: m.titular, estado: m.estado || "conciliado", monto,
         banco: { cuenta: m.cuenta, titular: m.titular, comprobante: "factura", respaldo: monto, motivo: null } } as CuotaTemplate
     })
