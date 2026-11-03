@@ -27,7 +27,12 @@ export const MES_CAMBIO_SOCIO = "2026-01"
 const AGRUPADORAS = new Set(["fijos buenos aires ma", "impuestos buenos aires ma"])
 /** Las categorías de Libertad (las de JMS 02/11) → cómo se rotulan en el cuadro. */
 // ⚠️ cambió 02/11 — sin «Fijos Libertad» (ACA). JMS: «acá no debería ser un gasto de Libertad sino de PAM o MA respectivamente».
-const CONCEPTOS: Record<string, string> = { "expensas": "Expensas", "agua": "Agua (AySA)", "gas": "Gas (Metrogas)", "abl": "ABL" }
+// ⚠️ cambió 03/11 — JMS: «Libertad es todo el gasto relacionado con ese inmueble: los impuestos, expensas, servicios de
+// funcionamiento (internet, teléfonos)». Se suman LUZ y TELÉFONOS E INTERNET (Luz Libertad, Internet Libertad, Teléfono Fijo 812),
+// y lo que se paga POR FACTURA con la marca LIB (Prosegur: no tiene template y no debe tenerlo — A-FEAT-1526).
+const CATEG_FACTURA_LIB = "__factura_lib"
+const CONCEPTOS: Record<string, string> = { "expensas": "Expensas", "agua": "Agua (AySA)", "gas": "Gas (Metrogas)", "abl": "ABL", "luz": "Luz",
+  "telefonos e internet bs. as.": "Internet y teléfono", [CATEG_FACTURA_LIB]: "Pagado por factura (marca LIB: Prosegur…)" }
 const SIN_PAGAR = new Set(["pendiente", "pagar", "preparado"])
 
 const r2 = (n: number) => Math.round(n * 100) / 100
@@ -130,14 +135,16 @@ function bloqueReparto(cs: CuotaTemplate[], meses: { clave: string; rotulo: stri
 /** La solapa «Gastos Libertad» del libro H. */
 export function hojaLibertad(cuotas: CuotaTemplate[], etiqueta: string, meses: { clave: string; rotulo: string }[],
   extracto?: { movimientos: MovimientoExtractoH[]; destinos: Map<string, DestinoMovimiento> }): unknown[][] {
-  const cs = cuotas.filter(esDeLibertad).filter(c => meses.some(m => m.clave === (c.fecha ?? "").slice(0, 7)))
+  const enEj = (f: string | null | undefined) => meses.some(m => m.clave === (f ?? "").slice(0, 7))
+  const deTemplates = cuotas.filter(esDeLibertad).filter(c => enEj(c.fecha))
+  const cs = [...deTemplates, ...pagosPorFacturaLib(deTemplates, extracto).filter(c => enEj(c.fecha))]
   const h = hojaResumenPorMes(cs.map(c => ({
     categoria: CONCEPTOS[norm(c.categ)], mes: (c.fecha ?? "").slice(0, 7), importe: c.monto,
     columnas: [dmy(c.fecha), c.concepto, c.responsable, quienPago(c), c.banco?.cuenta ?? "", c.banco?.comprobante ?? "", c.estado],
   })), {
     titulo: `GASTOS LIBERTAD — costo, reparto 50/50 y quién lo pagó — ejercicio ${etiqueta}`,
     notas: ["Costo de estructura de las oficinas: siempre 50% MSA y 50% el socio — PAM hasta el 31/12/2025, MA desde el 01/01/2026.",
-      "Gasto = las cuotas de los templates de Libertad (Expensas, AySA, Metrogas, ABL; las dos versiones, PAM y MA; sin la cochera ni ACA, que son de PAM o MA).",
+      "Gasto = todo lo del inmueble: las cuotas de los templates de Libertad (Expensas, AySA, Metrogas, ABL, Luz, Internet y teléfono; las dos versiones, PAM y MA; sin la cochera, ACA ni Duhau) + lo pagado por factura con la marca LIB en el banco (Prosegur).",
       "Quién pagó = el titular de la cuenta con que se concilió cada cuota. Internamente MA toma el 100% (todo LIB es DIST MA)."],
     meses, encabezadoDetalle: ["Fecha", "Template", "Responsable del template", "Pagó", "Cuenta", "Comprobante", "Estado"], debeHaber: true,
     bloqueExtra: { alto: ALTO_BLOQUE, armar: u => bloqueReparto(cs, meses, u) },
@@ -152,6 +159,24 @@ export function hojaLibertad(cuotas: CuotaTemplate[], etiqueta: string, meses: {
 }
 
 /**
+ * 🧾 Lo de Libertad que se paga POR FACTURA, no por template (Prosegur, A-FEAT-1526): los movimientos con la marca LIB que pagaron
+ * una factura y no están atados a una cuota de Libertad. Entran al gasto como una cuota más, pagada por el titular de la cuenta.
+ */
+export function pagosPorFacturaLib(cuotasLib: CuotaTemplate[],
+  extracto?: { movimientos: MovimientoExtractoH[] }): CuotaTemplate[] {
+  if (!extracto) return []
+  const ids = new Set(cuotasLib.flatMap(c => [c.id, c.grupoPagoId]).filter((x): x is string => !!x))
+  return extracto.movimientos
+    .filter(m => norm(m.contable) === "lib" && !m.enDolares && m.comprobanteArcaId && !(m.templateCuotaId && ids.has(m.templateCuotaId)))
+    .map(m => {
+      const monto = r2(m.debitos - m.creditos)
+      return { id: `factura-lib:${m.comprobanteArcaId}:${m.fecha}`, fecha: m.fecha, concepto: m.descripcion, proveedor: "", categ: CATEG_FACTURA_LIB,
+        cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable: m.titular, estado: m.estado || "conciliado", monto,
+        banco: { cuenta: m.cuenta, titular: m.titular, comprobante: "factura", respaldo: monto, motivo: null } } as CuotaTemplate
+    })
+}
+
+/**
  * 🔎 El control LIB (JMS: «sí o sí hay que ver todo el gasto de LIB»): todo lo marcado LIB en el banco, en el ejercicio, contra
  * lo que pagaron las cuotas de Libertad. Lo marcado LIB que no es una cuota de Libertad, y lo que pagó Libertad sin marca LIB.
  */
@@ -163,12 +188,14 @@ function controlLib(cs: CuotaTemplate[], meses: { clave: string; rotulo: string 
   const enEj = (m: MovimientoExtractoH) => meses.some(x => x.clave === m.fecha.slice(0, 7))
   const lib = extracto.movimientos.filter(m => enEj(m) && norm(m.contable) === "lib" && !m.enDolares)
   const neto = (xs: MovimientoExtractoH[]) => r2(xs.reduce((t, m) => t + m.debitos - m.creditos, 0))
-  const deLib = lib.filter(m => m.templateCuotaId && ids.has(m.templateCuotaId))
-  const otros = lib.filter(m => !(m.templateCuotaId && ids.has(m.templateCuotaId)))
+  // Atado a una cuota de Libertad, o pagó una factura con la marca LIB (entró al gasto por `pagosPorFacturaLib`)
+  const esDeLib = (m: MovimientoExtractoH) => (m.templateCuotaId && ids.has(m.templateCuotaId)) || (!m.templateCuotaId && !!m.comprobanteArcaId)
+  const deLib = lib.filter(esDeLib)
+  const otros = lib.filter(m => !esDeLib(m))
   const pagadoCuotas = r2(cs.filter(c => c.banco?.titular).reduce((t, c) => t + c.monto, 0))
   const sinMarca = extracto.movimientos.filter(m => enEj(m) && m.templateCuotaId && ids.has(m.templateCuotaId) && norm(m.contable) !== "lib")
   f.push(["", "Movimientos marcados LIB en el ejercicio", lib.length, neto(lib)])
-  f.push(["", "  − atados a cuotas de Libertad", deLib.length, neto(deLib)])
+  f.push(["", "  − atados a cuotas de Libertad o pagando una factura (Prosegur)", deLib.length, neto(deLib)])
   f.push(["", "  − marcados LIB pero de OTRA cosa o sin vínculo — a mirar", otros.length, neto(otros)])
   f.push(["", "Lo que pagaron las cuotas de Libertad (con banco)", "", pagadoCuotas])
   f.push(["", "  de eso, pagado con movimientos SIN la marca LIB", sinMarca.length, neto(sinMarca)])

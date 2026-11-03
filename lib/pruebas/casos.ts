@@ -12448,6 +12448,21 @@ export function correrCasos(): Resultado[] {
     const e = "costo 240 · PAM 70 · MA 50 · cc sep 50 oct -20 feb -15 mar 25 total 30 · control 0 · tres 220 dif 20"
     chequear("Libertad", "Gastos Libertad: costo de las categorías de Libertad (sin cochera, ACA, Duhau ni otros), 50% MSA y 50% PAM hasta dic-25 / MA desde ene-26; cuenta corriente = lo que pagó MSA − su 50%; el control del todo a las partes da 0",
       e, v, v === e, "A-FEAT-1521")
+    // 03/11 — JMS: «Libertad es todo el gasto del inmueble… servicios de funcionamiento (internet, teléfonos)»: entran Luz e
+    // Internet/teléfono, y lo pagado POR FACTURA con la marca LIB (Prosegur, sin template). El control LIB no lo marca como «otra cosa».
+    const cs2 = [...(cs as unknown as any[]), q("l", "MA", F, "LUZ", "Luz Libertad", "2026-03-12", 60, "MA"),
+      q("t", "PAM", F, "TELEFONOS E INTERNET BS. AS.", "Internet Libertad", "2025-08-12", 10, "PAM")] as never
+    const mov = (fecha: string, debitos: number, contable: string, titular: string, extra: Record<string, unknown>) => ({ titular, cuenta: `VISA ${titular}`, fecha,
+      descripcion: "MELI PROSEGUR", categ: "", debitos, creditos: 0, templateCuotaId: null, comprobanteArcaId: null, otroVinculo: false, estado: "conciliado", contable, enDolares: false, ...extra })
+    const ext = { movimientos: [mov("2026-02-22", 80, "LIB", "MA", { comprobanteArcaId: "fc-prosegur" }), mov("2026-05-05", 7, "LIB", "MA", { descripcion: "LIB SIN NADA" })] as never, destinos: new Map() }
+    const h2 = hojaLibertad(cs2, "25/26", meses, ext)
+    const fila2 = (et: string) => (h2.find(r => (r as any[])[1] === et) as any[]).slice(2, 15).map((x: any) => x.v)
+    const busca = (txt: string) => h2.find(r => (r as any[]).some(x => typeof x === "string" && x.startsWith(txt))) as any[] | undefined
+    const otrosLib = busca("  − marcados LIB pero de OTRA cosa")
+    const v2 = `costo ${fila2("Costo de Libertad del mes")[12]} · MA pagó ${fila2("Pagó MA")[12]} · otros LIB ${otrosLib?.[2]} (${otrosLib?.[3]})`
+    const e2 = "costo 390 · MA pagó 170 · otros LIB 1 (7)"
+    chequear("Libertad", "Gastos Libertad, todo el inmueble: suma Luz, Internet y teléfono, y lo pagado por factura con la marca LIB (Prosegur); el control LIB sólo deja «a mirar» lo LIB que no es ni cuota ni factura",
+      e2, v2, v2 === e2, "A-FEAT-1521")
   }
 
   // ══ 🏛️ Libro H — el papel de inmobiliario: 2 años apilados con sus fórmulas corridas, y el control contra templates por fechas (A-FEAT-1516) ══
