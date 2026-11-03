@@ -78,8 +78,13 @@ const respDe = (c?: CuotaTemplate) => (c?.responsable ?? "").split("/")[0].trim(
 const fcMA = new Map((await todo((d, h) => sb.schema("ma").from("comprobantes_arca").select("id, denominacion_emisor, punto_venta, numero_desde").order("id").range(d, h))).map((f: any) => [f.id, f]))
 const fcMSA = new Map((await todo((d, h) => sb.schema("msa").from("comprobantes_arca").select("id, denominacion_emisor, punto_venta, numero_desde").order("id").range(d, h))).map((f: any) => [f.id, f]))
 const MARCA_MA = /\b(cta|ret\s*\d*|cuenta)\s*ma\b/i, MARCA_MSA = /\b(cta|cuenta)\s*msa\b/i
-/** El interno de MA: «DIST MA» y «DIST MECHI» (Mechi = Mercedes — a confirmar con JMS). */
-const INTERNO_MA = /\bdist\s*(ma|mechi)\b/i
+/** El interno de MA: «DIST MA». ⚠️ «DIST MECHI» NO es MA (JMS 03/11). */
+const INTERNO_MA = /\bdist\s*ma\b/i
+/**
+ * ✂️ CORTE POR FECHA (JMS 03/11): Casco, Tapera y Posadas — «son contable PAM en 2025, contable MA en 2026; a nivel interno son de MA
+ * desde 3 del 2026 y antes de PAM». Manda sobre la marca del movimiento. Mismo patrón que Libertad (PAM → MA): a generalizar.
+ */
+const CORTE = /casco|tapera|posadas/i, CORTE_CONTABLE_MA = "2026-01-01", CORTE_INTERNO_MA = "2026-03-01"
 // Sueldos: los de un EMPLEADO DE MA pagados por MSA (Alondra Olivo) son retiro de MA; el sueldo de MA como empleada de MSA, no.
 const empleados = new Map((await todo((d, h) => sb.from("sueldos_empleados").select("id, nombre, empresa").order("id").range(d, h))).map((e: any) => [e.id, e]))
 const pagosSueldo = await todo((d, h) => sb.from("sueldos_pagos").select("id, grupo_pago_id, empleado_id").order("id").range(d, h))
@@ -107,8 +112,11 @@ for (const t of TABLAS_CON_VINCULO_ARCA) {
     const nombreDe = () => m.sueldo_pago_id && empleadoDePago.get(m.sueldo_pago_id) ? `Sueldos de ${empleadoDePago.get(m.sueldo_pago_id).nombre}`
       : cuota ? (/^caja\b/i.test(cuota.concepto) ? "Efectivo (caja) — ver la nota" : cuota.concepto.replace(/ (MA|MSA|PAM)$/, ""))
       : String(m.comprobantes_pagados || m.categ || m.descripcion || "(sin vínculo)")
+    const fecha = String(m.fecha).slice(0, 10)
+    const corte = t.titular === "MSA" && !!cuota && CORTE.test(cuota.concepto)
     // ── Estudio por INTERNO: antes de cualquier filtro (Libertad entra entera, como dice el interno)
-    if (t.titular === "MSA" && INTERNO_MA.test(interno)) porInterno.push({ mes: String(m.fecha).slice(0, 7), fecha: String(m.fecha).slice(0, 10), cuenta: t.cuenta, titular: "MSA",
+    const esInternoMA = corte ? fecha >= CORTE_INTERNO_MA : INTERNO_MA.test(interno)
+    if (t.titular === "MSA" && esInternoMA) porInterno.push({ mes: String(m.fecha).slice(0, 7), fecha: String(m.fecha).slice(0, 10), cuenta: t.cuenta, titular: "MSA",
       desc: String(m.descripcion ?? "").slice(0, 80), que: /^lib/i.test(contable) ? "Libertad (todo, sin repartir)" : nombreDe(), por: "", contable, interno, imp: r2(deb - cred), nota })
     if (/^lib/i.test(contable)) continue                          // Libertad va en su renglón
     if (m.template_cuota_id && libIds.has(m.template_cuota_id)) continue
@@ -118,8 +126,9 @@ for (const t of TABLAS_CON_VINCULO_ARCA) {
     const emp = m.sueldo_pago_id ? empleadoDePago.get(m.sueldo_pago_id) : undefined
     const porSueldo = !!emp && String(emp.empresa).toUpperCase() === otra
     if (m.sueldo_pago_id && !porSueldo && !MARCA_MA.test(contable)) continue
-    const porTpl = cuota && respDe(cuota) === otra, porFc = !!fc
-    const marca = t.titular === "MSA" ? MARCA_MA.test(contable) : MARCA_MSA.test(contable)
+    const porTpl = corte ? fecha >= CORTE_CONTABLE_MA : !!cuota && respDe(cuota) === otra, porFc = !!fc
+    const marca = corte ? fecha >= CORTE_CONTABLE_MA : t.titular === "MSA" ? MARCA_MA.test(contable) : MARCA_MSA.test(contable)
+    if (corte && fecha < CORTE_CONTABLE_MA) continue             // 2025: es de PAM, no entra a la cuenta con MA
     if (!porTpl && !porFc && !marca && !porSueldo) {
       if (t.titular === "MSA" && /\bdist\s*ma\b/i.test(interno)) internoSinContable.push({ mes: String(m.fecha).slice(0, 7), fecha: String(m.fecha).slice(0, 10), cuenta: t.cuenta,
         titular: "MSA", desc: String(m.descripcion ?? "").slice(0, 80), que: String(m.comprobantes_pagados || m.categ || ""), por: "", contable, interno, imp: r2(deb - cred) })
@@ -129,7 +138,7 @@ for (const t of TABLAS_CON_VINCULO_ARCA) {
     const que = porFc ? `Facturas de ${fc.denominacion_emisor}` : nombreDe()
     // + = MA retiró de MSA: sale plata de MSA por MA (débito en MSA) o entra plata de MA a MSA al revés
     const imp = r2(t.titular === "MSA" ? deb - cred : -(deb - cred))
-    const por = [porTpl ? "template de " + otra : "", porFc ? "factura de " + otra : "", porSueldo ? "sueldo de un empleado de " + otra : "", marca ? "marca contable" : ""].filter(Boolean).join(" + ")
+    const por = [corte ? "corte por fecha (Casco/Tapera/Posadas: de MA desde 2026)" : porTpl ? "template de " + otra : "", porFc ? "factura de " + otra : "", porSueldo ? "sueldo de un empleado de " + otra : "", marca ? "marca contable" : ""].filter(Boolean).join(" + ")
     const it: Item = { mes: String(m.fecha).slice(0, 7), fecha: String(m.fecha).slice(0, 10), cuenta: t.cuenta, titular: String(t.titular), desc: String(m.descripcion ?? "").slice(0, 80),
       que: porFc ? `${que} ${fc.punto_venta}-${fc.numero_desde}` : String(que), por, contable, interno, imp, nota }
     items.push(it)
@@ -157,14 +166,14 @@ const filasInt = hojaResumenPorMes(porInterno.map(it => ({ categoria: it.que.rep
   columnas: [it.fecha.split("-").reverse().join("/"), it.cuenta, it.desc, it.que, it.contable, it.interno, it.nota ?? ""] })), {
   titulo: `MA por INTERNO («DIST MA» / «DIST MECHI») — cuentas de MSA — ejercicio ${ETIQ} (+ = salió de MSA para MA)`,
   notas: ["Otro estudio (JMS): de quién es el gasto puertas adentro. Toma TODO lo de las cuentas de MSA con interno de MA, sin repartir: Libertad entra entera (internamente MA toma el 100%).",
-    "No mira las cuentas de MA (no llevan interno). «DIST MECHI» se toma como MA (Mechi = Mercedes): a confirmar."],
+    "No mira las cuentas de MA (no llevan interno). «DIST MECHI» NO es MA. Casco, Tapera y Posadas: de MA desde 03/2026, antes de PAM (corte por fecha, manda sobre la marca)."],
   meses, encabezadoDetalle: ["Fecha", "Cuenta", "Descripción del banco", "Qué es", "Contable", "Interno", "Nota"], rotuloImporte: "Importe",
 })
 const sumaMes = (xs: { mes: string; imp: number }[], m: string) => r2(xs.filter(x => x.mes === m).reduce((t, x) => t + x.imp, 0))
 const contMes = MESES.map(m => r2(sumaMes(items, m) + (m >= "2026-01" ? (libMes.find(x => x.mes === m)?.neto ?? 0) : 0)))
 const intMes = MESES.map(m => sumaMes(porInterno, m))
 const comparar: unknown[][] = [[`CONTABLE vs INTERNO — MA, mes por mes (${ETIQ})`],
-  ["La diferencia se explica sobre todo por: Libertad (en contable va el neto MSA−50%; en interno, todo lo que pagó MSA), lo de interno MA con contable de PAM o vacío, y lo que MA pagó por MSA (sólo en contable)."], [],
+  ["La diferencia se explica sobre todo por: Libertad (en contable va el neto MSA−50%; en interno, todo lo que pagó MSA), Casco/Tapera/Posadas en ene–feb 2026 (contable MA desde enero, interno MA desde marzo), y lo que MA pagó por MSA (sólo en contable)."], [],
   ["", ...ROT, "TOTAL"],
   ["Cuenta por CONTABLE (+ Libertad neto)", ...contMes, r2(contMes.reduce((a, b) => a + b, 0))],
   ["MA por INTERNO", ...intMes, r2(intMes.reduce((a, b) => a + b, 0))],
