@@ -62,7 +62,7 @@ export function quienPago(c: CuotaTemplate): string {
 }
 
 /** Las filas del bloque REPARTO + QUIÉN PAGÓ (alto fijo), con fórmulas sobre el resumen y el detalle. */
-const ALTO_BLOQUE = 25
+const ALTO_BLOQUE = 30
 function bloqueReparto(cs: CuotaTemplate[], meses: { clave: string; rotulo: string }[], u: UbicacionBloque): unknown[][] {
   const f: unknown[][] = []
   const r = (k: number) => u.fila + k
@@ -121,10 +121,29 @@ function bloqueReparto(cs: CuotaTemplate[], meses: { clave: string; rotulo: stri
   f.push(fila("  diferencia (pagado según cuotas − según banco; tiene que dar 0)", (_j, c) => `${c}${rTres}+${c}${rPago0 + 3}-${c}${rBanco}`, meses.map((_, j) => r2(segunCuotas[j] - segunBanco[j]))))
   const cc = meses.map((_, j) => r2(pagos[0][j] - mitad[j]))
   const rCc = r(f.length)
-  f.push(fila("CUENTA CORRIENTE LIBERTAD — el socio RETIRÓ de MSA (+) / APORTÓ (−): lo que MSA pagó − su 50%", (_j, c) => `${c}${rPago0}-${c}${rMsa}`, cc))
+  f.push(fila("MSA pagó − su 50%: lo que MSA puso de más (+) o de menos (−), con los dos — se reparte abajo entre PAM y MA", (_j, c) => `${c}${rPago0}-${c}${rMsa}`, cc))
   let acum = 0
   const acumulado = cc.map(v => (acum = r2(acum + v)))
   f.push(fila("  acumulado del ejercicio", (j, c) => (j === 0 ? `${c}${rCc}` : `${u.colMes(j - 1)}${r(f.length)}+${c}${rCc}`), acumulado, "ultimo"))
+  // 🔺 EL REPARTO ENTRE TRES (JMS 03/11: «por ahí MA no toma gasto en un semestre porque lo toma PAM, pero justo pagó expensas: entonces
+  // en ese movimiento MA hizo un aporte, 50% a cada uno de ellos»). Lo que paga el TERCERO del mes (el que no es socio ese mes) cubre la
+  // mitad de MSA y la mitad del socio: aportó a MSA su 50%, y el socio, que se ahorró esa otra mitad, queda debiéndosela al tercero.
+  //   MSA ↔ socio   = MSA pagó − su 50% + la mitad de lo del tercero   (+ el socio retiró / − aportó)
+  //   MSA ↔ tercero = − la mitad de lo que pagó el tercero              (el tercero aportó)
+  //   la suma de las dos = MSA pagó − su 50% (el renglón de arriba): sólo cambia A QUÉ CUENTA va.
+  const rPam = rPago0 + 1, rMa = rPago0 + 2
+  const tercero = meses.map((m, j) => (socioDelMes(m.clave) === "PAM" ? pagos[2][j] : pagos[1][j]))
+  const rTer = r(f.length)
+  f.push(fila("Pagó el TERCERO del mes (MA hasta dic-25 · PAM desde ene-26)", (j, c) => (socioDelMes(meses[j].clave) === "PAM" ? `${c}${rMa}` : `${c}${rPam}`), tercero))
+  // Sin redondear la mitad (puede tener medio centavo): así las dos cuentas suman exacto el neto de MSA, como las fórmulas
+  const ctaCon = (quien: "PAM" | "MA") => meses.map((m, j) => (socioDelMes(m.clave) === quien ? cc[j] + tercero[j] / 2 : -tercero[j] / 2))
+  const fCta = (quien: "PAM" | "MA") => (j: number, c: string) => (socioDelMes(meses[j].clave) === quien ? `${c}${rCc}+${c}${rTer}/2` : `-${c}${rTer}/2`)
+  const rCtaPam = r(f.length)
+  f.push(fila("CUENTA MSA ↔ PAM por Libertad — PAM retiró (+) / aportó (−)", fCta("PAM"), ctaCon("PAM")))
+  f.push(fila("CUENTA MSA ↔ MA por Libertad — MA retiró (+) / aportó (−)", fCta("MA"), ctaCon("MA")))
+  f.push(fila("  control: MSA↔PAM + MSA↔MA − (MSA pagó − su 50%) — tiene que dar 0", (_j, c) => `${c}${rCtaPam}+${c}${rCtaPam + 1}-${c}${rCc}`,
+    meses.map((_, j) => r2(ctaCon("PAM")[j] + ctaCon("MA")[j] - cc[j]))))
+  f.push(fila("ENTRE PAM Y MA (no toca a MSA): el socio le debe al tercero la mitad de lo que pagó", (_j, c) => `${c}${rTer}/2`, tercero.map(v => r2(v / 2))))
   f.push(["", "⚠️ Lo «sin dato del banco» y lo «sin pagar» no tienen pagador: hasta conciliarlos, la cuenta corriente no los cuenta."])
   const casos = cs.filter(c => c.banco?.titular && c.banco.motivo).length
   f.push(["", casos ? `⚠️ ${casos} cuota(s) pagadas por otro importe que el del banco: ver «Contra el banco» al pie.` : "✓ Lo pagado coincide con el banco, cuota por cuota."])

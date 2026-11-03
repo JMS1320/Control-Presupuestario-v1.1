@@ -66,8 +66,12 @@ const libTodo = [...libDeTpl, ...pagosPorFacturaLib(libDeTpl, extracto).filter(c
 const libMes = MESES.map(m => {
   const cs = libTodo.filter(c => (c.fecha ?? "").slice(0, 7) === m)
   const costo = r2(cs.reduce((t, c) => t + c.monto, 0))
-  const msa = r2(cs.filter(c => quienPago(c) === "MSA").reduce((t, c) => t + c.monto, 0))
-  return { mes: m, costo, msa, neto: r2(msa - costo / 2) }
+  const pago = (q: string) => r2(cs.filter(c => quienPago(c) === q).reduce((t, c) => t + c.monto, 0))
+  const msa = pago("MSA"), pam = pago("PAM"), ma = pago("MA")
+  const neto = r2(msa - costo / 2), socioMA = m >= "2026-01"
+  // 🔺 Reparto entre tres (el mismo de la solapa Libertad): MA socio → neto + la mitad de lo que pagó PAM; MA tercero → aportó la mitad de lo suyo
+  const ctaMA = socioMA ? r2(neto + pam / 2) : r2(-ma / 2)
+  return { mes: m, costo, msa, pam, ma, neto, ctaMA, socioMA }
 })
 const libIds = new Set(libTodo.flatMap(c => [c.id, c.grupoPagoId]).filter(Boolean) as string[])
 
@@ -210,12 +214,14 @@ const categoria = (it: Item) => it.que.replace(/ \d+-\d+$/, "")
 const det = [
   ...items.map(it => ({ categoria: categoria(it), mes: it.mes, importe: it.imp,
     columnas: [it.fecha.split("-").reverse().join("/"), it.cuenta, it.desc, it.que, it.por, it.contable, it.interno, it.nota ?? ""] })),
-  ...libMes.filter(x => x.mes >= "2026-01" && x.neto !== 0).map(x => ({ categoria: "LIBERTAD — MSA pagó − su 50% (detalle en la solapa Libertad)", mes: x.mes, importe: x.neto,
-    columnas: ["", "Libertad", `costo ${x.costo.toLocaleString("es-AR")} · MSA pagó ${x.msa.toLocaleString("es-AR")} · su 50% ${(x.costo / 2).toLocaleString("es-AR")}`, "Libertad", "cuadro Libertad", "LIB", "", ""] })),
+  ...libMes.filter(x => x.ctaMA !== 0).map(x => ({ categoria: "LIBERTAD — reparto entre tres (detalle en la solapa Libertad)", mes: x.mes, importe: x.ctaMA,
+    columnas: ["", "Libertad", x.socioMA
+      ? `MA socio: MSA pagó ${x.msa.toLocaleString("es-AR")} − su 50% ${(x.costo / 2).toLocaleString("es-AR")} + mitad de lo que pagó PAM ${(x.pam / 2).toLocaleString("es-AR")}`
+      : `MA tercero (socio PAM): MA pagó ${x.ma.toLocaleString("es-AR")} → aportó la mitad a MSA`, "Libertad", "cuadro Libertad", "LIB", "", ""] })),
 ]
 const filasCta = hojaResumenPorMes(det, {
   titulo: `CUENTA MSA ↔ MA — ejercicio ${ETIQ} — por CONTABLE y cruce de la base (+ = MA retiró de MSA · − = MA aportó)`,
-  notas: ["Sin saldo de inicio: es el MOVIMIENTO del ejercicio. Libertad entra como un renglón por mes (ene–jun 2026; jul–dic 2025 el socio de Libertad es PAM).",
+  notas: ["Sin saldo de inicio: es el MOVIMIENTO del ejercicio. Libertad entra como un renglón por mes con el reparto entre tres: ene–jun 2026 MA es socia (MSA pagó − su 50% + la mitad de lo que pagó PAM); jul–dic 2025 es tercera (aportó la mitad de lo que pagó).",
     "Entra todo lo que MSA pagó y era de MA (templates de MA, facturas de MA, sueldos de empleados de MA, lo marcado CTA MA / RET … MA) y al revés (MA pagando cosas de MSA). No entra el sueldo de MA como empleada de MSA.",
     `Control: ${sinMarca.length} movimiento(s) detectados por la base SIN marca contable · ${marcadosSinNada.length} marcados SIN ningún vínculo — ver la solapa Control.`],
   meses, encabezadoDetalle: ["Fecha", "Cuenta", "Descripción del banco", "Qué es", "Detectado por", "Contable", "Interno", "Nota del movimiento"], rotuloImporte: "Importe (+ retiró / − aportó)", semestres: true,
@@ -229,12 +235,12 @@ const filasInt = hojaResumenPorMes(porInterno.map(it => ({ categoria: it.que.rep
   meses, encabezadoDetalle: ["Fecha", "Cuenta", "Descripción del banco", "Qué es", "Contable", "Interno", "Nota"], rotuloImporte: "Importe", semestres: true,
 })
 const sumaMes = (xs: { mes: string; imp: number }[], m: string) => r2(xs.filter(x => x.mes === m).reduce((t, x) => t + x.imp, 0))
-const contMes = MESES.map(m => r2(sumaMes(items, m) + (m >= "2026-01" ? (libMes.find(x => x.mes === m)?.neto ?? 0) : 0)))
+const contMes = MESES.map(m => r2(sumaMes(items, m) + (libMes.find(x => x.mes === m)?.ctaMA ?? 0)))
 const intMes = MESES.map(m => sumaMes(porInterno, m))
 const comparar: unknown[][] = [[`CONTABLE vs INTERNO — MA, mes por mes (${ETIQ})`],
-  ["La diferencia se explica sobre todo por: Libertad (en contable va el neto MSA−50%; en interno, todo lo que pagó MSA), Casco/Tapera/Posadas en ene–feb 2026 (contable MA desde enero, interno MA desde marzo), y lo que MA pagó por MSA (sólo en contable)."], [],
+  ["La diferencia se explica sobre todo por: Libertad (en contable va el reparto entre tres; en interno, todo lo que pagó MSA), Casco/Tapera/Posadas en ene–feb 2026 (contable MA desde enero, interno MA desde marzo), y lo que MA pagó por MSA (sólo en contable)."], [],
   ["1er sem", "2do sem", "total", "", ...ROT, "TOTAL"],
-  ...([["Cuenta por CONTABLE (+ Libertad neto)", contMes], ["MA por INTERNO", intMes], ["Diferencia", MESES.map((_, j) => r2(contMes[j] - intMes[j]))]] as [string, number[]][])
+  ...([["Cuenta por CONTABLE (+ Libertad, reparto entre tres)", contMes], ["MA por INTERNO", intMes], ["Diferencia", MESES.map((_, j) => r2(contMes[j] - intMes[j]))]] as [string, number[]][])
     .map(([et, v], k) => { const n = 5 + k, c = (j: number) => String.fromCharCode(69 + j)   // E = jul-25 … P = jun-26
       return [{ t: "n", f: `SUM(E${n}:J${n})`, v: r2(v.slice(0, 6).reduce((a, b) => a + b, 0)) }, { t: "n", f: `SUM(K${n}:P${n})`, v: r2(v.slice(6).reduce((a, b) => a + b, 0)) },
         { t: "n", f: `A${n}+B${n}`, v: r2(v.reduce((a, b) => a + b, 0)) }, et, ...v, { t: "n", f: `SUM(${c(0)}${n}:${c(11)}${n})`, v: r2(v.reduce((a, b) => a + b, 0)) }] })]
@@ -263,7 +269,7 @@ const temas: unknown[][] = [["TEMAS ABIERTOS — lo que falta decidir para cerra
   [4, "Fechas de cuotas de Libertad", "Expensas de feb-26 fechada en mar-26 (pago agrupado feb+mar del 10/03); ABL de mar-26 fechado en ene-26", "OK para corregir las 2 fechas (script con deshacer) — no cambia el total, sí el mes", "Libertad"],
   [5, "Luz de diciembre", "Dos pagos de luz en dic-25: $ 205.421 (10/12) y $ 32.770 (31/12)", "¿Qué es la chica?", "Libertad · detalle"],
   [6, "Prosegur", "6 facturas a MA, ene–jun 2026", "¿Empezó en enero 2026 o antes se pagaba de otro modo?", "Libertad"],
-  [7, "Cruce PAM ↔ MA en Libertad", "PAM pagó $ 3,0 M de la mitad de MA (2026) y MA $ 2,7 M de la de PAM (2025)", "¿Se registra como cuenta PAM–MA o se deja así? (con MSA no cambia nada)", "Libertad · Quién pagó"],
+  [7, "Cruce PAM ↔ MA en Libertad", "✅ Calculado (reparto entre tres, JMS 03/11): el tercero aporta 50% a MSA y 50% al socio. Queda el renglón «ENTRE PAM Y MA» (lo que el socio le debe al tercero)", "¿Ese saldo entre PAM y MA se registra en algún lado?", "Libertad · reparto entre tres"],
   [8, "Marcas del histórico en la nota", "286 movimientos jul-25 → ene-26 con contable/interno sólo en la nota (41 con marca)", "Pasarlas a las columnas (cambio de datos: script con OK) — hoy el Excel las lee de la nota", "Detalle · columna Nota"],
   [9, "«Desglosar» sin repartir", "Pagos de la tarjeta de MSA (se desglosan por sus consumos) y sueldos de JMS/AMS", "Nada para MA; van a las cuentas con JMS y AMS cuando se armen", "Control · último cuadro"],
   [10, "Corte por fecha (regla)", "Casco, Tapera, Posadas, Complementario, Ombú, Entre Ríos: contable MA desde 2026, interno desde 03/2026 (fechas escritas en el script)", "Generalizar: una tabla «de quién es tal cosa desde tal fecha» por estudio, que lean socios, Libertad y el papel 14", "—"]]
@@ -277,7 +283,8 @@ const pC = nombre("Cuenta MSA-MA 25-26 (2026-11-03)"); XLSX.writeFile(wbC, pC)
 const tot = (xs: Item[]) => r2(xs.reduce((t, i) => t + i.imp, 0))
 console.log(`\nLIBERTAD por mes (costo · MSA pagó · neto MSA−50%):`); for (const x of libMes) console.log(`  ${x.mes}  ${x.costo.toFixed(2).padStart(13)}  ${x.msa.toFixed(2).padStart(13)}  ${x.neto.toFixed(2).padStart(12)}`)
 console.log(`  total costo ${r2(libMes.reduce((t, x) => t + x.costo, 0))} · neto 2025 ${r2(libMes.slice(0, 6).reduce((t, x) => t + x.neto, 0))} · neto 2026 ${r2(libMes.slice(6).reduce((t, x) => t + x.neto, 0))}`)
-console.log(`\nCUENTA MSA↔MA: ${items.length} movimientos · neto ${tot(items)} · + Libertad 2026 ${r2(libMes.slice(6).reduce((t, x) => t + x.neto, 0))}`)
+console.log(`
+CUENTA MSA↔MA: ${items.length} movimientos · neto ${tot(items)} · + Libertad (reparto entre tres) 2025 ${r2(libMes.slice(0, 6).reduce((t, x) => t + x.ctaMA, 0))} · 2026 ${r2(libMes.slice(6).reduce((t, x) => t + x.ctaMA, 0))}`)
 const porCat = new Map<string, number>(); for (const i of items) porCat.set(categoria(i), r2((porCat.get(categoria(i)) ?? 0) + i.imp))
 for (const [k, v] of [...porCat].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))) console.log(`  ${v.toFixed(2).padStart(14)}  ${k}`)
 console.log(`  por mes: ${MESES.map(m => `${m.slice(2)} ${tot(items.filter(i => i.mes === m)).toFixed(0)}`).join(" · ")}`)

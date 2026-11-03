@@ -12443,7 +12443,7 @@ export function correrCasos(): Resultado[] {
     // con semestres (03/11) la etiqueta ya no está en la columna B: se busca en la fila y se toman los 13 valores que la siguen
     const fila = (et: string) => { const r = h.find(r => (r as any[]).includes(et)) as any[]; const i = r.indexOf(et); return r.slice(i + 1, i + 14).map((x: any) => x.v) }
     const costo = fila("Costo de Libertad del mes"), pam = fila("PAM toma el 50% (hasta dic-25)"), ma = fila("MA toma el 50% (desde ene-26)")
-    const cc = fila("CUENTA CORRIENTE LIBERTAD — el socio RETIRÓ de MSA (+) / APORTÓ (−): lo que MSA pagó − su 50%"), ctrl = fila("Control: costo − todo lo de arriba (tiene que dar 0)")
+    const cc = fila("MSA pagó − su 50%: lo que MSA puso de más (+) o de menos (−), con los dos — se reparte abajo entre PAM y MA"), ctrl = fila("Control: costo − todo lo de arriba (tiene que dar 0)")
     const tres = fila("Pagó MSA + PAM + MA"), dif = fila("  diferencia con el costo (= varias cuentas + sin dato del banco + sin pagar: ver el detalle)")
     const v = `costo ${costo[12]} · PAM ${pam[12]} · MA ${ma[12]} · cc sep ${cc[2]} oct ${cc[3]} feb ${cc[7]} mar ${cc[8]} total ${cc[12]} · control ${ctrl[12]} · tres ${tres[12]} dif ${dif[12]}`
     const e = "costo 240 · PAM 70 · MA 50 · cc sep 50 oct -20 feb -15 mar 25 total 30 · control 0 · tres 220 dif 20"
@@ -12453,7 +12453,9 @@ export function correrCasos(): Resultado[] {
     // Internet/teléfono, y lo pagado POR FACTURA con la marca LIB (Prosegur, sin template). El control LIB no lo marca como «otra cosa».
     const cs2 = [...(cs as unknown as any[]), q("l", "MA", F, "LUZ", "Luz Libertad", "2026-03-12", 60, "MA"),
       q("t", "PAM", F, "TELEFONOS E INTERNET BS. AS.", "Internet Libertad", "2025-08-12", 10, "PAM"),
-      q("0", "MA", I, "ABL", "ABL Libertad Anual", "2026-01-30", 0, null)] as never
+      q("0", "MA", I, "ABL", "ABL Libertad Anual", "2026-01-30", 0, null),
+      // un pago del TERCERO: en nov-25 (socio PAM) MA paga expensas por 40 → MA aportó 20 a MSA y 20 a PAM
+      q("m", "PAM", F, "EXPENSAS", "Expensas Libertad", "2025-11-10", 40, "MA")] as never
     const mov = (fecha: string, debitos: number, contable: string, titular: string, extra: Record<string, unknown>) => ({ titular, cuenta: `VISA ${titular}`, fecha,
       descripcion: "MELI PROSEGUR", categ: "", debitos, creditos: 0, templateCuotaId: null, comprobanteArcaId: null, otroVinculo: false, estado: "conciliado", contable, enDolares: false, ...extra })
     const ext = { movimientos: [mov("2026-02-22", 80, "LIB", "MA", { comprobanteArcaId: "fc-prosegur" }), mov("2026-05-05", 7, "LIB", "MA", { descripcion: "LIB SIN NADA" })] as never, destinos: new Map() }
@@ -12465,7 +12467,7 @@ export function correrCasos(): Resultado[] {
     const hayCero = h2.some(r => (r as any[]).includes("ABL Libertad Anual"))
     const prosegur = !!busca("Prosegur (por factura)")
     const v2 = `costo ${fila2("Costo de Libertad del mes")[12]} · MA pagó ${fila2("Pagó MA")[12]} · otros LIB ${otrosLib?.[2]} (${otrosLib?.[3]}) · cuota $0 ${hayCero ? "aparece" : "afuera"} · renglón Prosegur ${prosegur}`
-    const e2 = "costo 390 · MA pagó 170 · otros LIB 1 (7) · cuota $0 afuera · renglón Prosegur true"
+    const e2 = "costo 430 · MA pagó 210 · otros LIB 1 (7) · cuota $0 afuera · renglón Prosegur true"
     chequear("Libertad", "Gastos Libertad, todo el inmueble: suma Luz, Internet y teléfono, y lo pagado por factura con la marca LIB (Prosegur); el control LIB sólo deja «a mirar» lo LIB que no es ni cuota ni factura",
       e2, v2, v2 === e2, "A-FEAT-1521")
     // 📅 JMS 03/11: «cuando hay tabla por mes, siempre los 2 semestres» — 1er sem · 2do sem · total a la izquierda, con fórmulas
@@ -12473,9 +12475,17 @@ export function correrCasos(): Resultado[] {
     const rCosto = h2.find(r => (r as any[]).includes("Costo de Libertad del mes")) as any[]
     const iTot = h2.findIndex(r => (r as any[]).includes("TOTAL") && (r as any[]).length > 5 && typeof (r as any[])[0] === "object")
     const vS = `encabezado ${enc ? enc.slice(0, 5).join("|") : "no"} · costo 1er ${rCosto[0]?.v} 2do ${rCosto[1]?.v} total ${rCosto[2]?.v} · fórmula ${rCosto[0]?.f} · total ${rCosto[2]?.f?.replace(/\d+/g, "n")} · resumen con semestres ${iTot > 0}`
-    const eS = "encabezado 1er sem|2do sem|total|Nro|Categoría · costo 1er 150 2do 240 total 390 · fórmula SUM(F" + (h2.indexOf(rCosto) + 1) + ":K" + (h2.indexOf(rCosto) + 1) + ") · total An+Bn · resumen con semestres true"
+    const eS = "encabezado 1er sem|2do sem|total|Nro|Categoría · costo 1er 190 2do 240 total 430 · fórmula SUM(F" + (h2.indexOf(rCosto) + 1) + ":K" + (h2.indexOf(rCosto) + 1) + ") · total An+Bn · resumen con semestres true"
     chequear("Libertad", "Toda tabla por mes con los 2 semestres (Libertad y retiros): 1er sem (jul–dic) + 2do sem (ene–jun) = total, con fórmulas sobre los meses, también en el bloque de reparto",
       eS, vS, vS === eS, "A-FEAT-1532")
+    // 🔺 El reparto entre tres: nov-25 (socio PAM) MA pagó 40 → MSA↔PAM nov 0 (MSA no pagó: −20, +20 del tercero) · MSA↔MA nov −20 (aportó)
+    // · entre PAM y MA 20. Y la suma de las dos cuentas de MSA = MSA pagó − su 50%, mes por mes (control 0).
+    const fPam = fila2("CUENTA MSA ↔ PAM por Libertad — PAM retiró (+) / aportó (−)"), fMa = fila2("CUENTA MSA ↔ MA por Libertad — MA retiró (+) / aportó (−)")
+    const fCtl = fila2("  control: MSA↔PAM + MSA↔MA − (MSA pagó − su 50%) — tiene que dar 0"), fEntre = fila2("ENTRE PAM Y MA (no toca a MSA): el socio le debe al tercero la mitad de lo que pagó")
+    const v3 = `nov: MSA↔PAM ${fPam[4]} · MSA↔MA ${fMa[4]} · entre PAM y MA ${fEntre[4]} · totales PAM ${fPam[12]} MA ${fMa[12]} · control ${fCtl.every((x: number) => x === 0) ? 0 : fCtl.join("/")}`
+    const e3 = "nov: MSA↔PAM 0 · MSA↔MA -20 · entre PAM y MA 20 · totales PAM 25 MA -90 · control 0"
+    chequear("Libertad", "Reparto entre tres: lo que paga el tercero del mes (MA en el semestre de PAM, PAM en el de MA) es un aporte del 50% a MSA y 50% al socio; las dos cuentas de MSA suman lo que MSA pagó − su 50%",
+      e3, v3, v3 === e3, "A-FEAT-1532")
   }
 
   // ══ 🏛️ Libro H — el papel de inmobiliario: 2 años apilados con sus fórmulas corridas, y el control contra templates por fechas (A-FEAT-1516) ══
