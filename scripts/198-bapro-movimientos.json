@@ -1,0 +1,1002 @@
+[
+ {
+  "fecha": "2025-07-14",
+  "descripcion": "COMISION MENSUAL TRANSFER. DESDE 01-06-2025 HASTA 30-06-2025",
+  "importe": -4.0,
+  "saldo": 15294.25,
+  "pdf": "pdf\\Extracto (7).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2025-07-14",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -0.02,
+  "saldo": 15294.23,
+  "pdf": "pdf\\Extracto (7).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-07-30",
+  "descripcion": "COMISION MANTENIM. PERIODO DESDE 26-06-2025 HASTA 29-07-2025",
+  "importe": -47520.0,
+  "saldo": -32225.77,
+  "pdf": "pdf\\Extracto (7).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2025-07-30",
+  "descripcion": "IMPUESTO I.BRUTOS - PERCEPCION",
+  "importe": -427.68,
+  "saldo": -32653.45,
+  "pdf": "pdf\\Extracto (7).pdf 2 pag",
+  "tipo": "iibb"
+ },
+ {
+  "fecha": "2025-07-30",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -285.12,
+  "saldo": -32938.57,
+  "pdf": "pdf\\Extracto (7).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-07-30",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -2.57,
+  "saldo": -32941.14,
+  "pdf": "pdf\\Extracto (7).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-08-11",
+  "descripcion": "COMISION MENSUAL TRANSFER. DESDE 01-07-2025 HASTA 31-07-2025",
+  "importe": -4.0,
+  "saldo": -32945.14,
+  "pdf": "pdf\\Extracto (8).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2025-08-11",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -0.02,
+  "saldo": -32945.16,
+  "pdf": "pdf\\Extracto (8).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-08-28",
+  "descripcion": "LIQUIDACION PRESTAMOS - IMPUESTOS - COMISIONES",
+  "importe": -30.33,
+  "saldo": -32975.49,
+  "pdf": "pdf\\Extracto (8).pdf 2 pag",
+  "tipo": "liq_prestamo"
+ },
+ {
+  "fecha": "2025-08-28",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -0.18,
+  "saldo": -32975.67,
+  "pdf": "pdf\\Extracto (8).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-08-28",
+  "descripcion": "INTERESES COBRADOS PERIODO DESDE 29-07-2025 HASTA 27-08-2025",
+  "importe": -1788.75,
+  "saldo": -34764.42,
+  "pdf": "pdf\\Extracto (8).pdf 2 pag",
+  "tipo": "intereses"
+ },
+ {
+  "fecha": "2025-08-28",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -10.73,
+  "saldo": -34775.15,
+  "pdf": "pdf\\Extracto (8).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-08-28",
+  "descripcion": "COMISION MANTENIM. PERIODO DESDE 29-07-2025 HASTA 27-08-2025",
+  "importe": -47520.0,
+  "saldo": -82295.15,
+  "pdf": "pdf\\Extracto (8).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2025-08-28",
+  "descripcion": "IMPUESTO I.BRUTOS - PERCEPCION",
+  "importe": -380.16,
+  "saldo": -82675.31,
+  "pdf": "pdf\\Extracto (8).pdf 2 pag",
+  "tipo": "iibb"
+ },
+ {
+  "fecha": "2025-08-28",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -285.12,
+  "saldo": -82960.43,
+  "pdf": "pdf\\Extracto (8).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-08-28",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -2.28,
+  "saldo": -82962.71,
+  "pdf": "pdf\\Extracto (8).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-09-08",
+  "descripcion": "COMISION MENSUAL TRANSFER. DESDE 01-08-2025 HASTA 31-08-2025",
+  "importe": -4.0,
+  "saldo": -82966.71,
+  "pdf": "pdf\\Extracto (9).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2025-09-08",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -0.02,
+  "saldo": -82966.73,
+  "pdf": "pdf\\Extracto (9).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-09-29",
+  "descripcion": "LIQUIDACION PRESTAMOS - IMPUESTOS - COMISIONES",
+  "importe": -80.18,
+  "saldo": -83046.91,
+  "pdf": "pdf\\Extracto (9).pdf 2 pag",
+  "tipo": "liq_prestamo"
+ },
+ {
+  "fecha": "2025-09-29",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -0.48,
+  "saldo": -83047.39,
+  "pdf": "pdf\\Extracto (9).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-09-29",
+  "descripcion": "INTERESES COBRADOS PERIODO DESDE 27-08-2025 HASTA 26-09-2025",
+  "importe": -6218.19,
+  "saldo": -89265.58,
+  "pdf": "pdf\\Extracto (9).pdf 2 pag",
+  "tipo": "intereses"
+ },
+ {
+  "fecha": "2025-09-29",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -37.31,
+  "saldo": -89302.89,
+  "pdf": "pdf\\Extracto (9).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-09-29",
+  "descripcion": "COMISION MANTENIM. PERIODO DESDE 27-08-2025 HASTA 26-09-2025",
+  "importe": -47520.0,
+  "saldo": -136822.89,
+  "pdf": "pdf\\Extracto (9).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2025-09-29",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -285.12,
+  "saldo": -137108.01,
+  "pdf": "pdf\\Extracto (9).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-10-13",
+  "descripcion": "COMISION MENSUAL TRANSFER. DESDE 01-09-2025 HASTA 30-09-2025",
+  "importe": -4.0,
+  "saldo": -137112.01,
+  "pdf": "pdf\\Extracto (10).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2025-10-13",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -0.02,
+  "saldo": -137112.03,
+  "pdf": "pdf\\Extracto (10).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-10-30",
+  "descripcion": "LIQUIDACION PRESTAMOS - IMPUESTOS - COMISIONES",
+  "importe": -143.41,
+  "saldo": -137255.44,
+  "pdf": "pdf\\Extracto (10).pdf 2 pag",
+  "tipo": "liq_prestamo"
+ },
+ {
+  "fecha": "2025-10-30",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -0.86,
+  "saldo": -137256.3,
+  "pdf": "pdf\\Extracto (10).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-10-30",
+  "descripcion": "INTERESES COBRADOS PERIODO DESDE 26-09-2025 HASTA 29-10-2025",
+  "importe": -10431.42,
+  "saldo": -147687.72,
+  "pdf": "pdf\\Extracto (10).pdf 2 pag",
+  "tipo": "intereses"
+ },
+ {
+  "fecha": "2025-10-30",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -62.59,
+  "saldo": -147750.31,
+  "pdf": "pdf\\Extracto (10).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-10-30",
+  "descripcion": "COMISION MANTENIM. PERIODO DESDE 26-09-2025 HASTA 29-10-2025",
+  "importe": -47520.0,
+  "saldo": -195270.31,
+  "pdf": "pdf\\Extracto (10).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2025-10-30",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -285.12,
+  "saldo": -195555.43,
+  "pdf": "pdf\\Extracto (10).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-11-10",
+  "descripcion": "COMISION MENSUAL TRANSFER. DESDE 01-10-2025 HASTA 31-10-2025",
+  "importe": -4.0,
+  "saldo": -195559.43,
+  "pdf": "pdf\\Extracto (11).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2025-11-10",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -0.02,
+  "saldo": -195559.45,
+  "pdf": "pdf\\Extracto (11).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-11-27",
+  "descripcion": "LIQUIDACION PRESTAMOS - IMPUESTOS - COMISIONES",
+  "importe": -178.1,
+  "saldo": -195737.55,
+  "pdf": "pdf\\Extracto (11).pdf 2 pag",
+  "tipo": "liq_prestamo"
+ },
+ {
+  "fecha": "2025-11-27",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -1.07,
+  "saldo": -195738.62,
+  "pdf": "pdf\\Extracto (11).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-11-27",
+  "descripcion": "INTERESES COBRADOS PERIODO DESDE 29-10-2025 HASTA 26-11-2025",
+  "importe": -13053.43,
+  "saldo": -208792.05,
+  "pdf": "pdf\\Extracto (11).pdf 2 pag",
+  "tipo": "intereses"
+ },
+ {
+  "fecha": "2025-11-27",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -78.32,
+  "saldo": -208870.37,
+  "pdf": "pdf\\Extracto (11).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-11-27",
+  "descripcion": "COMISION MANTENIM. PERIODO DESDE 29-10-2025 HASTA 26-11-2025",
+  "importe": -47520.0,
+  "saldo": -256390.37,
+  "pdf": "pdf\\Extracto (11).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2025-11-27",
+  "descripcion": "IMPUESTO DEBITO -LEY 25413",
+  "importe": -285.12,
+  "saldo": -256675.49,
+  "pdf": "pdf\\Extracto (11).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-12-04",
+  "descripcion": "CR.TRAN. 30617786016 MARTINEZ SOBRADO AGRO S R L",
+  "importe": 350000.0,
+  "saldo": 93324.51,
+  "pdf": "pdf\\Extracto (12).pdf 2 pag",
+  "tipo": "interbancaria"
+ },
+ {
+  "fecha": "2025-12-09",
+  "descripcion": "COMISION MENSUAL TRANSFER. DESDE 01-11-2025 HASTA 30-11-2025",
+  "importe": -4.0,
+  "saldo": 93320.51,
+  "pdf": "pdf\\Extracto (12).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2025-12-09",
+  "descripcion": "IMPUESTO LEY 25413",
+  "importe": -0.02,
+  "saldo": 93320.49,
+  "pdf": "pdf\\Extracto (12).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-12-30",
+  "descripcion": "LIQUIDACION DE PRESTAMO",
+  "importe": -65.5,
+  "saldo": 93254.99,
+  "pdf": "pdf\\Extracto (12).pdf 2 pag",
+  "tipo": "liq_prestamo"
+ },
+ {
+  "fecha": "2025-12-30",
+  "descripcion": "IMPUESTO LEY 25413",
+  "importe": -0.39,
+  "saldo": 93254.6,
+  "pdf": "pdf\\Extracto (12).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-12-30",
+  "descripcion": "INTERESES COBRADOS PERIODO DESDE 26-11-2025 HASTA 29-12-2025",
+  "importe": -4547.05,
+  "saldo": 88707.55,
+  "pdf": "pdf\\Extracto (12).pdf 2 pag",
+  "tipo": "intereses"
+ },
+ {
+  "fecha": "2025-12-30",
+  "descripcion": "IMPUESTO LEY 25413",
+  "importe": -27.28,
+  "saldo": 88680.27,
+  "pdf": "pdf\\Extracto (12).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2025-12-30",
+  "descripcion": "COMISION MANTENIM. PERIODO DESDE 26-11-2025 HASTA 29-12-2025",
+  "importe": -47520.0,
+  "saldo": 41160.27,
+  "pdf": "pdf\\Extracto (12).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2025-12-30",
+  "descripcion": "IMPUESTO LEY 25413",
+  "importe": -285.12,
+  "saldo": 40875.15,
+  "pdf": "pdf\\Extracto (12).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-01-12",
+  "descripcion": "COMISION MENSUAL TRANSFER. DESDE 01-00-2026 HASTA 28-00-2026",
+  "importe": -4.0,
+  "saldo": 40871.15,
+  "pdf": "pdf\\Extracto (1).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2026-01-12",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -0.02,
+  "saldo": 40871.13,
+  "pdf": "pdf\\Extracto (1).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-01-29",
+  "descripcion": "COMISION MANTENIM. PERIODO DESDE 29-12-2025 HASTA 28-01-2026",
+  "importe": -47520.0,
+  "saldo": -6648.87,
+  "pdf": "pdf\\Extracto (1).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2026-01-29",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -285.12,
+  "saldo": -6933.99,
+  "pdf": "pdf\\Extracto (1).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-02-09",
+  "descripcion": "COMISION MENSUAL TRANSFER. DESDE 01-01-2026 HASTA 31-01-2026",
+  "importe": -4.0,
+  "saldo": -6937.99,
+  "pdf": "pdf\\Extracto (2).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2026-02-09",
+  "descripcion": "IMPUESTO LEY 25413",
+  "importe": -0.02,
+  "saldo": -6938.01,
+  "pdf": "pdf\\Extracto (2).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-02-13",
+  "descripcion": "CR.TRAN. 30617786016 MARTINEZ SOBRADO AGRO S R L",
+  "importe": 155000.0,
+  "saldo": 148061.99,
+  "pdf": "pdf\\Extracto (2).pdf 2 pag",
+  "tipo": "interbancaria"
+ },
+ {
+  "fecha": "2026-02-26",
+  "descripcion": "LIQUIDACION DE PRESTAMO",
+  "importe": -3.42,
+  "saldo": 148058.57,
+  "pdf": "pdf\\Extracto (2).pdf 2 pag",
+  "tipo": "liq_prestamo"
+ },
+ {
+  "fecha": "2026-02-26",
+  "descripcion": "IMPUESTO LEY 25413",
+  "importe": -0.02,
+  "saldo": 148058.55,
+  "pdf": "pdf\\Extracto (2).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-02-26",
+  "descripcion": "INTERESES COBRADOS PERIODO DESDE 28-01-2026 HASTA 25-02-2026",
+  "importe": -257.48,
+  "saldo": 147801.07,
+  "pdf": "pdf\\Extracto (2).pdf 2 pag",
+  "tipo": "intereses"
+ },
+ {
+  "fecha": "2026-02-26",
+  "descripcion": "IMPUESTO LEY 25413",
+  "importe": -1.54,
+  "saldo": 147799.53,
+  "pdf": "pdf\\Extracto (2).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-02-26",
+  "descripcion": "COMISION MANTENIM. PERIODO DESDE 28-01-2026 HASTA 25-02-2026",
+  "importe": -60000.0,
+  "saldo": 87799.53,
+  "pdf": "pdf\\Extracto (2).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2026-02-26",
+  "descripcion": "IMPUESTO IIBB",
+  "importe": -3000.0,
+  "saldo": 84799.53,
+  "pdf": "pdf\\Extracto (2).pdf 2 pag",
+  "tipo": "iibb"
+ },
+ {
+  "fecha": "2026-02-26",
+  "descripcion": "IMPUESTO LEY 25413",
+  "importe": -360.0,
+  "saldo": 84439.53,
+  "pdf": "pdf\\Extracto (2).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-02-26",
+  "descripcion": "IMPUESTO LEY 25413",
+  "importe": -18.0,
+  "saldo": 84421.53,
+  "pdf": "pdf\\Extracto (2).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-03-09",
+  "descripcion": "COMISION MENSUAL TRANSFER. DESDE 01-02-2026 HASTA 28-02-2026",
+  "importe": -4.0,
+  "saldo": 84417.53,
+  "pdf": "pdf\\Extracto (3).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2026-03-09",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -0.02,
+  "saldo": 84417.51,
+  "pdf": "pdf\\Extracto (3).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-03-30",
+  "descripcion": "COMISION MANTENIM. PERIODO DESDE 25-02-2026 HASTA 27-03-2026",
+  "importe": -60000.0,
+  "saldo": 24417.51,
+  "pdf": "pdf\\Extracto (3).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2026-03-30",
+  "descripcion": "IMPUESTO I.BRUTOS - PERCEPCION",
+  "importe": -3000.0,
+  "saldo": 21417.51,
+  "pdf": "pdf\\Extracto (3).pdf 2 pag",
+  "tipo": "iibb"
+ },
+ {
+  "fecha": "2026-03-30",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -360.0,
+  "saldo": 21057.51,
+  "pdf": "pdf\\Extracto (3).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-03-30",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -18.0,
+  "saldo": 21039.51,
+  "pdf": "pdf\\Extracto (3).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-04-13",
+  "descripcion": "COMISION MENSUAL TRANSFER. DESDE 01-03-2026 HASTA 31-03-2026",
+  "importe": -4.0,
+  "saldo": 21035.51,
+  "pdf": "pdf\\Extracto (4).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2026-04-13",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -0.02,
+  "saldo": 21035.49,
+  "pdf": "pdf\\Extracto (4).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-04-29",
+  "descripcion": "COMISION MANTENIM. PERIODO DESDE 27-03-2026 HASTA 28-04-2026",
+  "importe": -60000.0,
+  "saldo": -38964.51,
+  "pdf": "pdf\\Extracto (4).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2026-04-29",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -360.0,
+  "saldo": -39324.51,
+  "pdf": "pdf\\Extracto (4).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-05-11",
+  "descripcion": "COMISION MENSUAL TRANSFER. DESDE 01-04-2026 HASTA 30-04-2026",
+  "importe": -4.0,
+  "saldo": -39328.51,
+  "pdf": "pdf\\Extracto (5).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2026-05-11",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -0.02,
+  "saldo": -39328.53,
+  "pdf": "pdf\\Extracto (5).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-05-28",
+  "descripcion": "IMPUESTO SELLOS",
+  "importe": -36.2,
+  "saldo": -39364.73,
+  "pdf": "pdf\\Extracto (5).pdf 2 pag",
+  "tipo": "sellos"
+ },
+ {
+  "fecha": "2026-05-28",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -0.22,
+  "saldo": -39364.95,
+  "pdf": "pdf\\Extracto (5).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-05-28",
+  "descripcion": "INTERESES COBRADOS PERIODO DESDE 28-04-2026 HASTA 27-05-2026",
+  "importe": -2482.64,
+  "saldo": -41847.59,
+  "pdf": "pdf\\Extracto (5).pdf 2 pag",
+  "tipo": "intereses"
+ },
+ {
+  "fecha": "2026-05-28",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -14.9,
+  "saldo": -41862.49,
+  "pdf": "pdf\\Extracto (5).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-05-28",
+  "descripcion": "COMISION MANTENIM. PERIODO DESDE 28-04-2026 HASTA 27-05-2026",
+  "importe": -60000.0,
+  "saldo": -101862.49,
+  "pdf": "pdf\\Extracto (5).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2026-05-28",
+  "descripcion": "IMPUESTO I.BRUTOS - PERCEPCION",
+  "importe": -480.0,
+  "saldo": -102342.49,
+  "pdf": "pdf\\Extracto (5).pdf 2 pag",
+  "tipo": "iibb"
+ },
+ {
+  "fecha": "2026-05-28",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -360.0,
+  "saldo": -102702.49,
+  "pdf": "pdf\\Extracto (5).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-05-28",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -2.88,
+  "saldo": -102705.37,
+  "pdf": "pdf\\Extracto (5).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-06-08",
+  "descripcion": "COMISION MENSUAL TRANSFER. DESDE 01-05-2026 HASTA 31-05-2026",
+  "importe": -4.0,
+  "saldo": -102709.37,
+  "pdf": "pdf\\Extracto (6).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2026-06-08",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -0.02,
+  "saldo": -102709.39,
+  "pdf": "pdf\\Extracto (6).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-06-29",
+  "descripcion": "IMPUESTO SELLOS",
+  "importe": -99.22,
+  "saldo": -102808.61,
+  "pdf": "pdf\\Extracto (6).pdf 2 pag",
+  "tipo": "sellos"
+ },
+ {
+  "fecha": "2026-06-29",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -0.6,
+  "saldo": -102809.21,
+  "pdf": "pdf\\Extracto (6).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-06-29",
+  "descripcion": "INTERESES COBRADOS PERIODO DESDE 27-05-2026 HASTA 26-06-2026",
+  "importe": -6789.48,
+  "saldo": -109598.69,
+  "pdf": "pdf\\Extracto (6).pdf 2 pag",
+  "tipo": "intereses"
+ },
+ {
+  "fecha": "2026-06-29",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -40.74,
+  "saldo": -109639.43,
+  "pdf": "pdf\\Extracto (6).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-06-29",
+  "descripcion": "COMISION MANTENIM. PERIODO DESDE 27-05-2026 HASTA 26-06-2026",
+  "importe": -69000.0,
+  "saldo": -178639.43,
+  "pdf": "pdf\\Extracto (6).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2026-06-29",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -414.0,
+  "saldo": -179053.43,
+  "pdf": "pdf\\Extracto (6).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-07-13",
+  "descripcion": "COMISION MENSUAL TRANSFER. DESDE 01-06-2026 HASTA 30-06-2026",
+  "importe": -4.0,
+  "saldo": -179057.43,
+  "pdf": "pdf\\Extracto (7-26).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2026-07-13",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -0.02,
+  "saldo": -179057.45,
+  "pdf": "pdf\\Extracto (7-26).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-07-30",
+  "descripcion": "IMPUESTO SELLOS",
+  "importe": -186.73,
+  "saldo": -179244.18,
+  "pdf": "pdf\\Extracto (7-26).pdf 2 pag",
+  "tipo": "sellos"
+ },
+ {
+  "fecha": "2026-07-30",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -1.12,
+  "saldo": -179245.3,
+  "pdf": "pdf\\Extracto (7-26).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-07-30",
+  "descripcion": "INTERESES COBRADOS PERIODO DESDE 26-06-2026 HASTA 29-07-2026",
+  "importe": -12727.86,
+  "saldo": -191973.16,
+  "pdf": "pdf\\Extracto (7-26).pdf 2 pag",
+  "tipo": "intereses"
+ },
+ {
+  "fecha": "2026-07-30",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -76.37,
+  "saldo": -192049.53,
+  "pdf": "pdf\\Extracto (7-26).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-07-30",
+  "descripcion": "COMISION MANTENIM. PERIODO DESDE 26-06-2026 HASTA 29-07-2026",
+  "importe": -69000.0,
+  "saldo": -261049.53,
+  "pdf": "pdf\\Extracto (7-26).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2026-07-30",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -414.0,
+  "saldo": -261463.53,
+  "pdf": "pdf\\Extracto (7-26).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-08-10",
+  "descripcion": "COMISION MENSUAL TRANSFER. DESDE 01-07-2026 HASTA 31-07-2026",
+  "importe": -4.0,
+  "saldo": -261467.53,
+  "pdf": "pdf\\Extracto (8-26).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2026-08-10",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -0.02,
+  "saldo": -261467.55,
+  "pdf": "pdf\\Extracto (8-26).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-08-28",
+  "descripcion": "IMPUESTO SELLOS",
+  "importe": -246.58,
+  "saldo": -261714.13,
+  "pdf": "pdf\\Extracto (8-26).pdf 2 pag",
+  "tipo": "sellos"
+ },
+ {
+  "fecha": "2026-08-28",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -1.48,
+  "saldo": -261715.61,
+  "pdf": "pdf\\Extracto (8-26).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-08-28",
+  "descripcion": "INTERESES COBRADOS PERIODO DESDE 29-07-2026 HASTA 27-08-2026",
+  "importe": -16851.11,
+  "saldo": -278566.72,
+  "pdf": "pdf\\Extracto (8-26).pdf 2 pag",
+  "tipo": "intereses"
+ },
+ {
+  "fecha": "2026-08-28",
+  "descripcion": "IMPUESTO I.BRUTOS - PERCEPCION",
+  "importe": -842.56,
+  "saldo": -279409.28,
+  "pdf": "pdf\\Extracto (8-26).pdf 2 pag",
+  "tipo": "iibb"
+ },
+ {
+  "fecha": "2026-08-28",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -101.11,
+  "saldo": -279510.39,
+  "pdf": "pdf\\Extracto (8-26).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-08-28",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -5.06,
+  "saldo": -279515.45,
+  "pdf": "pdf\\Extracto (8-26).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-08-28",
+  "descripcion": "COMISION MANTENIM. PERIODO DESDE 29-07-2026 HASTA 27-08-2026",
+  "importe": -69000.0,
+  "saldo": -348515.45,
+  "pdf": "pdf\\Extracto (8-26).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2026-08-28",
+  "descripcion": "IMPUESTO I.BRUTOS - PERCEPCION",
+  "importe": -3450.0,
+  "saldo": -351965.45,
+  "pdf": "pdf\\Extracto (8-26).pdf 2 pag",
+  "tipo": "iibb"
+ },
+ {
+  "fecha": "2026-08-28",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -414.0,
+  "saldo": -352379.45,
+  "pdf": "pdf\\Extracto (8-26).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-08-28",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -20.7,
+  "saldo": -352400.15,
+  "pdf": "pdf\\Extracto (8-26).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-09-11",
+  "descripcion": "CR.TRAN. 30617786016 MARTINEZ SOBRADO AGRO S.R.L.",
+  "importe": 750000.0,
+  "saldo": 397599.85,
+  "pdf": "pdf\\Extracto (9-26).pdf 2 pag",
+  "tipo": "interbancaria"
+ },
+ {
+  "fecha": "2026-09-14",
+  "descripcion": "COMISION MENSUAL TRANSFER. DESDE 01-08-2026 HASTA 31-08-2026",
+  "importe": -4.0,
+  "saldo": 397595.85,
+  "pdf": "pdf\\Extracto (9-26).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2026-09-14",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -0.02,
+  "saldo": 397595.83,
+  "pdf": "pdf\\Extracto (9-26).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-09-29",
+  "descripcion": "IMPUESTO SELLOS",
+  "importe": -170.8,
+  "saldo": 397425.03,
+  "pdf": "pdf\\Extracto (9-26).pdf 2 pag",
+  "tipo": "sellos"
+ },
+ {
+  "fecha": "2026-09-29",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -1.02,
+  "saldo": 397424.01,
+  "pdf": "pdf\\Extracto (9-26).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-09-29",
+  "descripcion": "INTERESES COBRADOS PERIODO DESDE 27-08-2026 HASTA 28-09-2026",
+  "importe": -11976.28,
+  "saldo": 385447.73,
+  "pdf": "pdf\\Extracto (9-26).pdf 2 pag",
+  "tipo": "intereses"
+ },
+ {
+  "fecha": "2026-09-29",
+  "descripcion": "IMPUESTO I.BRUTOS - PERCEPCION",
+  "importe": -598.81,
+  "saldo": 384848.92,
+  "pdf": "pdf\\Extracto (9-26).pdf 2 pag",
+  "tipo": "iibb"
+ },
+ {
+  "fecha": "2026-09-29",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -71.86,
+  "saldo": 384777.06,
+  "pdf": "pdf\\Extracto (9-26).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-09-29",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -3.59,
+  "saldo": 384773.47,
+  "pdf": "pdf\\Extracto (9-26).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-09-29",
+  "descripcion": "COMISION MANTENIM. PERIODO DESDE 27-08-2026 HASTA 28-09-2026",
+  "importe": -69000.0,
+  "saldo": 315773.47,
+  "pdf": "pdf\\Extracto (9-26).pdf 2 pag",
+  "tipo": "comision"
+ },
+ {
+  "fecha": "2026-09-29",
+  "descripcion": "IMPUESTO I.BRUTOS - PERCEPCION",
+  "importe": -3450.0,
+  "saldo": 312323.47,
+  "pdf": "pdf\\Extracto (9-26).pdf 2 pag",
+  "tipo": "iibb"
+ },
+ {
+  "fecha": "2026-09-29",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -414.0,
+  "saldo": 311909.47,
+  "pdf": "pdf\\Extracto (9-26).pdf 2 pag",
+  "tipo": "ley25413"
+ },
+ {
+  "fecha": "2026-09-29",
+  "descripcion": "IMPUESTO DEBITO - LEY 25413",
+  "importe": -20.7,
+  "saldo": 311888.77,
+  "pdf": "pdf\\Extracto (9-26).pdf 2 pag",
+  "tipo": "ley25413"
+ }
+]
