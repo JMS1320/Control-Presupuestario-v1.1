@@ -8,7 +8,7 @@
  * | Libro | Qué es (JMS) | Qué lleva |
  * |---|---|---|
  * | **A** | terminado, a último chequeo | los subdiarios: Compras, Ventas y sus «por cuenta» |
- * | **B** | bien encaminado, confirmar datos de José | 03 y 04 (con 03.1, 04.1, 04.2) y 14 Cuentas corrientes |
+ * | **B** | bien encaminado, confirmar datos de José | 03 y 04 (con 04.1, 04.2, 04.3) y 14 · 14.1 Cuentas corrientes — la provisión de cobros (03.1) va al D, junto al 05 (JMS 04/11) |
  * | **C** | lo que precisa para trabajar ahora | templates por responsable (listado, cuotas, por mes) + el detalle de impuestos y gastos bancarios, intereses e inversiones |
  * | **D** | el resto, que se va viendo | todas las demás solapas |
  * | **E** | los saldos | «00 Stocks inicio y cierre» |
@@ -24,7 +24,7 @@ import type { CuotaTemplate, TemplatesDelEjercicio } from "./templates-libro"
 import { armarTemplatesDelEjercicio } from "./templates-libro"
 import { hojaResumenPorMes } from "./resumen-por-mes"
 
-export type LetraLibro = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H"
+export type LetraLibro = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I"
 
 export const LIBROS: Record<LetraLibro, string> = {
   A: "A - Subdiarios (terminado)",
@@ -35,17 +35,22 @@ export const LIBROS: Record<LetraLibro, string> = {
   F: "F - Balance en linea",
   G: "G - Grupos de templates (propuesta)",
   H: "H - Egresos con boleta, extracto y demás liquidaciones",
+  // 👥 JMS 04/11: «cuentas con socios y Libertad también van a próximo excel: salen de deudas y se van a otros».
+  I: "I - Socios y Libertad (próximo)",
 }
 
 const DE_A = new Set(["Compras", "Ventas", "Compras por cuenta", "Ventas por cuenta"])
-const DE_B = new Set(["04 Cuentas a pagar", "04.1 Cheques dados", "04.2 Anticipos", "04.3 Respaldo cuentas a pagar", "03 Cuentas a cobrar", "03.1 Provision cobros", "14 Cuentas corrientes", "14.1 Cuentas con socios"])
+const DE_B = new Set(["04 Cuentas a pagar", "04.1 Cheques dados", "04.2 Anticipos", "04.3 Respaldo cuentas a pagar", "03 Cuentas a cobrar", "14 Cuentas corrientes"])
 const DE_E = new Set(["00 Stocks inicio y cierre"])
+/** 👥 Lo que se manda después: las cuentas con los socios y Libertad (JMS 04/11). */
+const DE_I = new Set(["14.1 Cuentas con socios", "Gastos Libertad"])
 
 /** A qué libro va una solapa (por su nombre en el Excel completo). Las del C empiezan con «C · ». */
 export function libroDeSolapa(nombre: string): LetraLibro {
   if (DE_A.has(nombre)) return "A"
   if (DE_B.has(nombre)) return "B"
   if (DE_E.has(nombre)) return "E"
+  if (DE_I.has(nombre)) return "I"
   if (nombre.startsWith("C · ")) return "C"
   if (nombre.startsWith("F · ")) return "F"
   if (nombre.startsWith("G · ")) return "G"
@@ -174,7 +179,7 @@ export function repartirEnLibros<V>(wb: XLSX.WorkBook, vistas: V[]): { letra: Le
     l.solapas.push(nombre)
     out.set(letra, l)
   })
-  return (["A", "B", "C", "D", "E", "F", "G", "H"] as LetraLibro[]).filter(k => out.has(k)).map(letra => ({ letra, ...out.get(letra)! }))
+  return (["A", "B", "C", "D", "E", "F", "G", "H", "I"] as LetraLibro[]).filter(k => out.has(k)).map(letra => ({ letra, ...out.get(letra)! }))
 }
 
 /** 🔎 A-FEAT-1506: el nombre del canal de pago (la tabla donde se encontró el movimiento) en palabras de la app. */

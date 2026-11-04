@@ -2878,6 +2878,11 @@ export function armarWorkbook(
     libro.ejercicio.etiqueta, armarEjercicio(libro.ejercicio.anioCierre - 1, libro.ejercicio.mesCierre).etiqueta,
     controlesInicio?.provision),
     [...COLS_ASIENTOS, { ancho: 30 }, { ancho: 50 }])
+  // 🧾 JMS 04/11: «provisión de cobros pasalo junto con provisión de gasto» → pegada al 05 (libro D).
+  // ⚠️ Va SIEMPRE, incluso sin una sola fila: es donde se dice que los cheques en cartera no salen
+  //    del sistema. Si la solapa faltara, el contador leería «no había» (§ 🧮).
+  hoja(wb, "03.1 Provision cobros",
+    hojaDeProvisionCobros(provisionVentas, libro.ejercicio.etiqueta), COLS_ASIENTOS)
   // 💳 Cuentas a pagar y a cobrar al cierre — papeles 03 y 04 (A-FEAT-1187), con sus bloques de
   //    cheques, anticipos y provisión de cobros (A-FEAT-1195).
   /**
@@ -2919,10 +2924,6 @@ export function armarWorkbook(
       hojaDeCuentas(cuentas.cobrar, `CUENTAS A COBRAR — ejercicio ${libro.ejercicio.etiqueta}`,
         libro.ejercicio.fechaCierre, undefined, cc ? { lado: "cobrar", cc: cc.terceros } : undefined), COLS_CUENTAS)
   }
-  // ⚠️ Va SIEMPRE, incluso sin una sola fila: es donde se dice que los cheques en cartera no salen
-  //    del sistema. Si la solapa faltara, el contador leería «no había» (§ 🧮).
-  hoja(wb, "03.1 Provision cobros",
-    hojaDeProvisionCobros(provisionVentas, libro.ejercicio.etiqueta), COLS_ASIENTOS)
   // ⚠️ Se incluye SIEMPRE, aunque esté vacía: una solapa vacía dice «no hay», y que falte dice
   // «no se miró». No es lo mismo (§ 🧮: nada se descarta en silencio).
   hoja(wb, "Sin subdiario", hojaDeAsientos(libro.sinSubdiario), COLS_ASIENTOS)
@@ -3096,7 +3097,7 @@ export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>
   const url = URL.createObjectURL(blob)
   const el = document.createElement("a")
   el.href = url
-  el.download = `${base} - set A-H.zip`
+  el.download = `${base} - set A-I.zip`
   document.body.appendChild(el)
   el.click()
   setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(el) }, ESPERA_ANTES_DE_LIBERAR_MS)
@@ -3166,7 +3167,8 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
     }
   }
   // 🏢 A-FEAT-1521: Libertad cruza responsables (PAM hasta dic-25, MA desde ene-26, siempre con MSA): una sola solapa al final.
-  hoja(wb, "H · Gastos Libertad", hojaLibertad(templates.detalle, etiqueta, meses, templates.entrada?.opciones.extracto), COLS_RESUMEN_MES)
+  // 👥 JMS 04/11: Libertad va al libro I (próximo excel), con las cuentas de los socios.
+  hoja(wb, "Gastos Libertad", hojaLibertad(templates.detalle, etiqueta, meses, templates.entrada?.opciones.extracto), COLS_RESUMEN_MES)
   // 📗 A-FEAT-1539: el libro para mandar — sin la palabra «template» (no es contable) y sin subtítulos.
   pulirLibroH(wb)
 }
@@ -3226,7 +3228,7 @@ const sinTemplate = (s: string) => SIN_TEMPLATE.reduce((x, [re, por]) => x.repla
  *   fila se oculta (borrar la fila correría las fórmulas que ya apuntan a sus filas).
  */
 export function pulirLibroH(wb: XLSX.WorkBook): void {
-  const esH = (n: string) => n.startsWith("H · ")
+  const esH = (n: string) => n.startsWith("H · ") || n === "Gastos Libertad"
   const renombre = new Map(wb.SheetNames.filter(esH).map(n => [n, sinTemplate(n)]))
   for (const [viejo, nuevo] of renombre) {
     if (viejo === nuevo) continue

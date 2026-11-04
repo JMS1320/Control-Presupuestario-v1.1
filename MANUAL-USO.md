@@ -3996,6 +3996,9 @@ categoría y banco** y el detalle **por banco y por fecha**; lo que no se pagó 
 tabla con un renglón por vehículo (qué se pagó, cuándo y por qué banco, y qué no se pagó). Lo que va por la cuenta de un socio (por
 ejemplo «Gastos Reintegro JMS») no es gasto: está al pie de «Por mes». → A-TEST-1324
 
+⚠️ **Cambió 04/11 (noche) — el set trae un libro I, «Socios y Libertad (próximo)»**: las cuentas con los socios (14.1) y «Gastos
+Libertad» salen de los libros B y H y se mandan después. La provisión de cobros (03.1) pasó al libro D, junto a «05 Provisión».
+
 ⚠️ **Cambió 04/11 — tres solapas en el libro B:**
 - **«04 Cuentas a pagar»** lleva **sólo lo que es deuda**: facturas sin pagar al cierre y las cuentas corrientes de
   proveedores. Los **sueldos** van en su export aparte (en el 04.3 se listan los pagados después del cierre). Abajo, el **total al cierre** con

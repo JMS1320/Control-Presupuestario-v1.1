@@ -12219,6 +12219,10 @@ export function correrCasos(): Resultado[] {
     const e1 = "Compras=A · B - 04 Cuentas a pagar=D · 04 Cuentas a pagar=B · 14 Cuentas corrientes=B · 00 Stocks inicio y cierre=E · C · MSA · Templates=C · 07 Bancos=D · 00 Cobertura=D"
     chequear("Set de libros", "Cada solapa va al libro de su letra (A subdiarios, B deudas/créditos/cuentas corrientes, C templates y detalle, E stocks; el resto al D)",
       e1, v1, v1 === e1, "A-FEAT-1505")
+    const v1b = ["14.1 Cuentas con socios", "Gastos Libertad", "03.1 Provision cobros", "04.3 Respaldo cuentas a pagar", "05 Provision"].map(n => `${n}=${libroDeSolapa(n)}`).join(" · ")
+    const e1b = "14.1 Cuentas con socios=I · Gastos Libertad=I · 03.1 Provision cobros=D · 04.3 Respaldo cuentas a pagar=B · 05 Provision=D"
+    chequear("Set de libros", "👥 Socios y Libertad salen de deudas al libro I (próximo excel); la provisión de cobros va al D, junto a la de gastos (JMS 04/11)",
+      e1b, v1b, v1b === e1b, "A-FEAT-1537")
 
     const wb = XLSXcasos.utils.book_new()
     for (const n of ["00 Cobertura", "Compras", "Ventas", "04 Cuentas a pagar", "C · MSA · Templates", "00 Stocks inicio y cierre"]) XLSXcasos.utils.book_append_sheet(wb, XLSXcasos.utils.aoa_to_sheet([[n]]), n)
