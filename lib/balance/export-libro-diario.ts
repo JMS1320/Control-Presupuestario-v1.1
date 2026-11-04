@@ -109,7 +109,11 @@ export function hojaDeAsientos(asientos: AsientoLibroDiario[], descuadres?: Desc
     ...(conCantidades ? ["Producto", "Toneladas", "Cabezas", "Kilos"] : []),
     ...(descuadres ? ["Control de partes"] : []),
   ]]
-  for (const a of asientos) {
+  // 📅 JMS 03/11: «lo que exporté de la app no está ordenado por fecha, por lo menos ventas… como ordena ARCA, el cálculo debe ser
+  // por fecha; nosotros lo ponemos también por fecha y debería quedar igual». Subdiario → fecha → tipo → punto de venta → número.
+  const orden = [...asientos].sort((x, y) => (x.subdiario || "").localeCompare(y.subdiario || "") || (x.fecha || "").localeCompare(y.fecha || "")
+    || (x.tipo ?? 0) - (y.tipo ?? 0) || (x.punto_venta ?? 0) - (y.punto_venta ?? 0) || (x.numero ?? 0) - (y.numero ?? 0))
+  for (const a of orden) {
     const enOtraMoneda = !!a.moneda && a.moneda !== "PES"
     const fila: unknown[] = [
       a.subdiario, a.fecha ?? "", a.tipo ?? "", a.punto_venta ?? "", a.numero ?? "",

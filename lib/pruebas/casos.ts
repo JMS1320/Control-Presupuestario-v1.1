@@ -4864,6 +4864,13 @@ export function correrCasos(): Resultado[] {
       chequear("Balance · libro diario", "🛑 Detalle: el comprobante que no cuadra va en rojo con la marca (cuánto suman las partes y cuánto falta); el que cuadra, sin marca",
         "NO CUADRA: las partes suman 94.276,40 y el total es 113.338,52 — faltan 19.062,12 · rojo sí · la que cuadra: «»", vDet,
         vDet === "NO CUADRA: las partes suman 94.276,40 y el total es 113.338,52 — faltan 19.062,12 · rojo sí · la que cuadra: «»", "A-FEAT-1388")
+      // 📅 JMS 03/11: «lo exportado no está ordenado por fecha, por lo menos ventas» — las solapas Compras/Ventas van por
+      //    subdiario → fecha → tipo → pto vta → número, aunque lleguen desordenadas de la base
+      const desord = [{ ...asi("2026-03", 10, "Luz"), id: "c", fecha: "2026-03-20" }, { ...asi("2026-02", 20, "Luz"), id: "b", fecha: "2026-02-25" },
+        { ...asi("2026-02", 30, "Luz"), id: "a", fecha: "2026-02-03" }] as unknown as LibroDiarioT["compras"]
+      const ord = hojaDeAsientos(desord).slice(1).map(x => (x[12] as { v?: number } | undefined)?.v ?? x[12]).join(",")
+      chequear("Balance · libro diario", "📅 Las solapas Compras y Ventas salen ordenadas por subdiario y fecha (como ARCA), aunque la base las traiga en otro orden",
+        "30,20,10", ord, ord === "30,20,10", "A-FEAT-1533")
       const sub = hojaPorCuenta(armarLibroPorCuenta(comprasErr), "LIBRO", { asientos: comprasErr, descuadres: desc })
       const filaCta = (cuenta: string) => ultimaCelda(sub.find(x => ((x[2] as { v?: string } | undefined)?.v ?? x[2]) === cuenta))
       const vSub = `${filaCta("Combustible y lubricantes")?.v?.startsWith("NO CUADRA: 1 comprobante") ? "marcada" : "sin marca"} · Luz ${filaCta("Luz")?.v ? "marcada" : "sin marca"} · mes ${filaCta("Total 02/2026")?.v?.startsWith("NO CUADRA") ? "avisa" : "no avisa"}`
