@@ -1685,7 +1685,7 @@ Cuando se le arma un Excel que **usa movimientos de una planilla suya** (un extr
 propuesta), tiene dos reglas que él fijó el 2026-10-07 mientras revisaba la carga del histórico
 (→ [A-DAT-68](PENDIENTES.md#a-dat-68)):
 
-**1 · Cada movimiento va con TODA su planilla, tal cual, y lo nuestro como columnas anexas.**
+**1 · Cada movimiento va con TODA su planilla, tal cual, y lo nuestro como columnas anexas.** ↻ *Se volvió a olvidar el 03/11 en las cuentas con los socios (faltaban «Detalle» y la contraparte de las leyendas); JMS: «falta eso para que yo pueda trabajar». Y su complemento, del mismo día: **los temas abiertos van DENTRO del Excel, cada uno con sus movimientos, «dónde filtrarlo» y una columna «Tu respuesta»** — «preciso que me pongas referencia para poder responderte».*
 *«En los reportes, al quitar los datos que te di yo, me cuesta más auditar… siempre que se usa un
 movimiento, que vaya con la info completa.»* Un derivado que se queda con 6 columnas «relevantes» le
 saca justo lo que él usa para reconocer el movimiento (la leyenda, el comprobante, su detalle).
@@ -2964,7 +2964,7 @@ quinta el mismo día, al cargar los 12 zips a mano: las NC aparte); todas invent
 | **Los importes ya están en PESOS** | una factura en dólares trae «Importe Total» en pesos **y** la moneda DOL con su tipo de cambio (Agro Centros 3-5282: 5.023.287,17 con TC 1.403 = neto 4.151.477 + IVA 871.810,17) | **no** multiplicar por el TC. Hacerlo daba 7.047 millones y toda factura en dólares salía «con otro importe» |
 | **El «Total IVA» viene redondeado** | IVA 21 % 4.464,57 figura «Total IVA» 4.464,60 | el IVA exacto es la suma de las columnas «Importe IVA x %» |
 | **El crédito fiscal puede ser GLOBAL** | en jul y nov 2025 la columna «Crédito Fiscal Computable» vino en 0 en todos los renglones: el crédito está sólo en el XML (`total_computable_global`) | para comparar contra la app se compara **IVA contra IVA**, no contra el crédito computable (en mayo 2026 también difiere del IVA, por decisión del contador) |
-| **Las notas de crédito van APARTE en el XML** *(27/10)* | `totales_compras` del XML suma sólo las facturas; las NC recibidas están en `totales_compras_mlcf_restituir` (y su IVA es el `total_debito_fiscal`). Los CSV traen las NC en negativo | la suma de los renglones = `totales_compras` − `totales_compras_mlcf_restituir`, neto y liquidado. Así cierran los 12 meses de 25/26 al centavo. Sin restarlo, 10 de 12 «no coinciden» → [A-BUG-1396](PENDIENTES.md#a-bug-1396) |
+| **Las notas de crédito van APARTE en el XML** *(27/10)* — ↻ *el 03/11 se volvió a caer al apilar los 12 CSV: les di vuelta el signo a las NC, que ya venían negativas, y aparecieron $ 23,4 M «faltantes» en compras. Bien sumado, ARCA = presentado al centavo* | `totales_compras` del XML suma sólo las facturas; las NC recibidas están en `totales_compras_mlcf_restituir` (y su IVA es el `total_debito_fiscal`). Los CSV traen las NC en negativo | la suma de los renglones = `totales_compras` − `totales_compras_mlcf_restituir`, neto y liquidado. Así cierran los 12 meses de 25/26 al centavo. Sin restarlo, 10 de 12 «no coinciden» → [A-BUG-1396](PENDIENTES.md#a-bug-1396) |
 | **El mismo comprobante con otro número** | las liquidaciones de granos están en la app sin número y con tipo 332 (ARCA: tipo 33 con número); la póliza de Federación con punto de venta 0 (ARCA: 1) | emparejar por tipo + punto de venta + número + CUIT y, si no aparece, **por CUIT + importe** (o por CUIT cuando queda uno de cada lado). Es aviso para corregir la carga, no un mes a rectificar |
 
 ⚠️ **Cambió 27/10 — NO es una diferencia: es cómo declara ARCA, y la app está bien** (hasta acá decía «a definir con el contador»;
@@ -3019,6 +3019,24 @@ cual**, las mismas 21 columnas en las 4 hojas (las del objetivo de JMS), + «Sin
 Una **factura B o C no discrimina el IVA**: su total no tiene partes, y sin esa columna el control marcaba en rojo todas las C. Y en la
 base hay facturas C guardadas de dos maneras (con el total en «no gravado», o con todo en 0): el total no cambia, pero la columna «No
 gravado» da muy distinto que ARCA. Tolerancia: 0,05 por comprobante (`TOLERANCIA_POR_COMPROBANTE`, redondeo del emisor).
+
+## Cuentas con los socios y control de la plata — lo que se aprendió el 03/11 `#balance #socios #libertad #plata #2026-11-03`
+
+De armar las cuentas MSA↔MA y MSA↔PAM ([A-FEAT-1532](PENDIENTES.md#a-feat-1532)) y la primera corrida del control de la plata
+([A-FEAT-1533](PENDIENTES.md#a-feat-1533)). Scripts de sólo lectura: `scripts/excel-cuenta-socio.mts --socio MA|PAM` y `scripts/excel-control-plata.mts`.
+
+| Trampa | Qué pasa | Cómo se lee |
+|---|---|---|
+| **Las marcas del histórico viven en la NOTA** | jul-25 → ene-26: `contable`/`interno` vacíos y la marca en `nota_operador` («tu planilla: CATEG X · Contable Y · Interno Z») — **también en los que se conciliaron después** (ya no dicen «histórico») | leer la nota cuando las columnas están vacías y la nota dice «tu planilla». Sin esto faltaban **$ 11,65 M de retiros a MA** (oct-25 → ene-26) |
+| **La lista de tablas con vínculo a facturas no tiene Santander ni Provincia de MSA** | `TABLAS_CON_VINCULO_ARCA` no las incluye (se cargan a mano, scripts/129 y 198) | recorrerlas aparte (están en `CUENTAS_DOLARES_Y_COTITULARES`, `lib/dolares/cuentas.ts`) |
+| **Las marcas contables** | `RET n X` / `CTA X` / `CUENTA X` = retiro del socio X · `AP n MSA` = el socio le **aportó** a MSA (pagó algo de MSA) · `DIST X` en interno = de quién es puertas adentro · **«DIST MECHI» NO es MA** · `LIB` = Libertad · `Desglosar` = repartir | la cuenta va por **contable**; el interno es otro estudio, y lo que no coincide se lista |
+| **Sueldos** | un empleado **de MA** pagado por MSA (Alondra Olivo) es retiro de MA; **MA como empleada de MSA es sueldo**, no retiro | decidir por la empresa del empleado (`sueldos_empleados.empresa`) |
+| **«Desglosar» de una póliza** | el Seguro Flota tiene la Tiguan (contable MSA / interno MA) | prima de cada bien del endoso vigente × `polizas_responsables` — ya está en la base |
+| **Corte por fecha** (JMS) | Casco, Tapera, Posadas, Complementario, Ombú, Entre Ríos: contable PAM en 2025 y MA desde 2026; interno PAM hasta feb-26 y MA desde mar-26 | manda sobre la marca del movimiento; a generalizar en una tabla |
+| **Libertad entre tres** | el que paga en el semestre del otro socio hace un aporte: 50% a MSA y 50% al socio | `libertad.ts`: MSA↔socio = MSA pagó − su 50% + la mitad de lo del tercero; MSA↔tercero = − la mitad de lo suyo |
+| **El control de la plata** | facturas por su **TOTAL** (lo que se paga o cobra), templates por **mes de pago**, sueldos como template; el anual sólo necesita clientes, proveedores, anticipos, tarjeta, FCI, caja y US$ al inicio y al cierre | la diferencia se explica por bloques; el mes a mes sirve para encontrar EN QUÉ mes no cierra |
+| **La CC en dólares arranca sin saldo** | el movimiento del 30/06/25 de `msa.cc_usd` no trae saldo; el contador dice US$ 35.001,63 | no tomar 0: usar el saldo del contador como arranque |
+| **El FCI rinde** | en 25/26 se rescató $ 75,6 M más de lo suscripto, partiendo de $ 23,2 M | la diferencia es rendimiento: plata que entra sin factura — renglón propio |
 
 ## Mails, archivo digital y tareas — lo que se aprendió el 31/10 `#mails #gas #tareas #principal #worktree #2026-10-31`
 
