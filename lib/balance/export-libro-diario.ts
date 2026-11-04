@@ -995,7 +995,7 @@ export function hojaDeCuentas(
   }
   if (extra?.soloDeuda) {
     f.push([])
-    f.push(["Lo que NO es deuda (pagadas sin rastro, sistema anterior, conciliadas sin fecha, seguros, cuentas con socios, cuotas de templates, sueldos pagados por caja y anticipos sin vincular) está en la solapa «04.3 Respaldo cuentas a pagar»."])
+    f.push(["Lo que NO es deuda (pagadas sin rastro, sistema anterior, conciliadas sin fecha, seguros, cuentas con socios, cuotas de templates, sueldos —van en su export aparte— y anticipos sin vincular) está en la solapa «04.3 Respaldo cuentas a pagar»."])
     f.push([`Se miraron ${c.mirados} comprobantes del ejercicio.`])
     return f
   }
@@ -1090,6 +1090,15 @@ export function hojaRespaldoDeCuentas(c: CuentasAlCierre, titulo: string, fechaC
     for (const q of templatesImpagos.cuotas) {
       f.push(["Template", q.fecha ?? "", "", "", "", "", `${q.concepto}${q.proveedor ? " — " + q.proveedor : ""}`,
         "", "", "", "", "", money(q.monto), q.categ, q.estado, "", "cuota sin pago al cierre: ¿deuda, duplicada o de otra empresa?"])
+    }
+  }
+  if (sueldos && sueldos.filas.length > 0) {
+    f.push([])
+    f.push(["SUELDOS DEVENGADOS Y PAGADOS DESPUÉS DEL CIERRE — van en el export de sueldos, NO suman acá (JMS 04/11: «sueldos vamos a hacer un export aparte, sacalo de a pagar»)"])
+    f.push([`${sueldos.filas.length} período(s) — ${money(sueldos.total)}`])
+    for (const x of sueldos.filas) {
+      f.push(["Sueldo", x.periodo, "", "", "", "", x.empleado, "", "", "", "", "", money(x.pagadoDespues), "SUELDOS", "pagado después",
+        x.fechaPago ?? "", `bruto ${fmtAr(x.bruto)} − pagado al cierre ${fmtAr(x.pagadoAlCierre)}`, "Sueldos → pagos del período"])
     }
   }
   if (sueldos && sueldos.aConfirmar.length > 0) {
@@ -2882,7 +2891,8 @@ export function armarWorkbook(
         libro.ejercicio.fechaCierre,
         templates ? { cuotas: templates.impagasAlCierre, total: templates.totalImpagas } : undefined,
         cc ? { lado: "pagar", cc: cc.terceros } : undefined,
-        { soloDeuda: true, sueldos: sueldos?.impagosAlCierre }),
+        // 👷 JMS 04/11: «sueldos vamos a hacer un export aparte, sacalo de a pagar» → no suman acá; se ven en el 04.3.
+        { soloDeuda: true }),
       COLS_CUENTAS)
   }
   if (cuentas?.cheques) {

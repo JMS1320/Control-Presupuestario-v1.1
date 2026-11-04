@@ -12313,9 +12313,9 @@ export function correrCasos(): Resultado[] {
     const tiene = (h: unknown[][], t: string) => h.some(x => String(x[0] ?? "").startsWith(t) || String(x[6] ?? "") === t)
     const v5 = [
       `04: total ${tot(h04)} · sueldos ${tiene(h04, "SUELDOS DEVENGADOS")} · dadas por pagadas ${tiene(h04, "DADAS POR PAGADAS")} · templates ${tiene(h04, "CUOTAS DE TEMPLATES")} · Andrés ${tiene(h04, "Andrés Martínez")}`,
-      `04.3: dadas por pagadas ${tiene(hR, "DADAS POR PAGADAS")} · templates ${tiene(hR, "CUOTAS DE TEMPLATES")} · sueldos a confirmar ${tiene(hR, "SUELDOS SIN PAGO")} · socios ${tiene(hR, "Andrés Martínez")}`,
+      `04.3: dadas por pagadas ${tiene(hR, "DADAS POR PAGADAS")} · templates ${tiene(hR, "CUOTAS DE TEMPLATES")} · sueldos a confirmar ${tiene(hR, "SUELDOS SIN PAGO")} · socios ${tiene(hR, "Andrés Martínez")} · sueldos pagados después ${tiene(hR, "SUELDOS DEVENGADOS Y PAGADOS DESPUÉS")}`,
     ].join(" | ")
-    const e5 = "04: total 580=f · sueldos true · dadas por pagadas false · templates false · Andrés false | 04.3: dadas por pagadas true · templates true · sueldos a confirmar true · socios true"
+    const e5 = "04: total 580=f · sueldos true · dadas por pagadas false · templates false · Andrés false | 04.3: dadas por pagadas true · templates true · sueldos a confirmar true · socios true · sueldos pagados después true"
     chequear("Papel 04", "📒 El 04 lleva sólo lo que suma (comprobantes + sueldos pagados después + cuentas corrientes de terceros, con fórmula); lo que no es deuda va entero a «04.3 Respaldo»",
       e5, v5, v5 === e5, "A-FEAT-1537")
 

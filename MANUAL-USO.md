@@ -3997,8 +3997,8 @@ tabla con un renglón por vehículo (qué se pagó, cuándo y por qué banco, y 
 ejemplo «Gastos Reintegro JMS») no es gasto: está al pie de «Por mes». → A-TEST-1324
 
 ⚠️ **Cambió 04/11 — tres solapas en el libro B:**
-- **«04 Cuentas a pagar»** lleva **sólo lo que es deuda**: facturas sin pagar al cierre, **sueldos devengados que se
-  pagaron después** (sin José, Andrés ni MA) y las cuentas corrientes de proveedores. Abajo, el **total al cierre** con
+- **«04 Cuentas a pagar»** lleva **sólo lo que es deuda**: facturas sin pagar al cierre y las cuentas corrientes de
+  proveedores. Los **sueldos** van en su export aparte (en el 04.3 se listan los pagados después del cierre). Abajo, el **total al cierre** con
   fórmula.
 - **«04.3 Respaldo cuentas a pagar»**: todo lo que se miró y **no** es deuda, con su motivo — dadas por pagadas, las del
   sistema anterior, conciliadas sin fecha, seguros, cuotas de templates y sueldos sin pago cargado (a confirmar), y las
