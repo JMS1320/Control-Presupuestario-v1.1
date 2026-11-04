@@ -71,6 +71,11 @@ export interface ContraparteDelBalance {
    * movimientos del banco con su CUIT, conciliados o no — los que van contra una factura también son plata de esa cuenta.
    */
   porCuit?: boolean
+  /**
+   * 👥 A-FEAT-1537 (JMS 04/11 en el papel 14: *«que esto sea sólo clientes y proveedores; las cuentas de socios las
+   * veremos después»*): los socios van a una solapa aparte y NO suman a las cuentas a pagar ni a cobrar.
+   */
+  socio?: boolean
 }
 
 /**
@@ -88,23 +93,27 @@ export const CONTRAPARTES_DEL_BALANCE: ContraparteDelBalance[] = [
     aliasHistorico: ["MARTINEZ JOSE MARIA"],
     // 🔑 Las dos: él confirmó que son la misma cuenta. Sin esto, JMS sale partido en dos.
     etiquetasContable: ["CTA JMS", "CUENTA JMS"],
+    socio: true,
   },
   {
     clave: "AMS", nombre: "Andrés Martínez", cuit: "20287492546",
     aliasHistorico: ["MARTINEZ PLACIDO ANDRES"],
     etiquetasContable: ["CTA AMS"],
+    socio: true,
   },
   {
     clave: "MA", nombre: "Mercedes Areco", cuit: "27066824611",
     aliasHistorico: [],
     // ⚠️ `RET 3 MA` NO está acá: es otra cosa y se trata aparte.
     etiquetasContable: ["CTA MA"],
+    socio: true,
   },
   {
     clave: "PAM", nombre: "Sucesión de Plácido Martínez", cuit: "20044390222",
     aliasHistorico: ["SUCESION DE MARTINEZ PLACIDO ALBERTO"],
     // ⚠️ `RET PAM`, `RET 1 PAM` y `RET 3 PAM` tampoco: son retiros, y van en el papel 09.
     etiquetasContable: [],
+    socio: true,
   },
   // ⚠️ cambió 01/11 (A-FEAT-1499): hasta acá no tenían marca y sus pagos «salían del vínculo con la factura» — pero el
   // papel sólo toma pagos marcados, así que les daba CERO cobrado y pagado (AFA «le debo $ 2.745.698,32» sin serlo).
@@ -195,6 +204,8 @@ export interface CuentaCorrienteDelBalance {
   sinMarcar?: { movimientos: number; total: number }
   /** 🔁 A-FEAT-1499: lo retenido en las ventas, que cuenta como cobrado. */
   retenciones?: number
+  /** ✍️ A-FEAT-1537: el saldo al cierre lo decidió el usuario; acá queda cuánto se ajustó y por qué (no se esconde). */
+  ajusteCierre?: { importe: number; motivo: string }
 }
 
 export interface PapelDeCuentasCorrientes {
@@ -528,6 +539,41 @@ export function aplicarSaldosInicio(
       return { ...c, saldoInicio: inicio, inicioSinDato: !hay, saldoAlCierre: r2(inicio + c.resumen.saldo),
         inicioTentativo: hay ? tentativos[c.contraparte.clave] : undefined }
     }),
+  }
+}
+
+/**
+ * ✍️ **Saldos al cierre DECIDIDOS por el usuario** (A-FEAT-1537). El saldo calculado se ve igual: la diferencia queda
+ * como ajuste con su motivo, en el papel 14 (§ 🧮: nada se descarta en silencio).
+ */
+export const CIERRES_DECIDIDOS: Array<{ clave: string; anioCierre: number; saldo: number; motivo: string }> = [
+  {
+    clave: "ACREN", anioCierre: 2026, saldo: 0,
+    // JMS 04/11, mirando la cuenta corriente de la extranet de ACREN: «ACREN igual lo podemos dejar en cero».
+    motivo: "cuenta en dólares: al 30/06/26 se le deben US$ 7,28 (ND interna de diferencia de cambio). El saldo en pesos es "
+      + "diferencia de cambio (se pagó a un dólar más alto que el facturado), no plata a favor — se deja en 0 (JMS 04/11)",
+  },
+]
+
+/** ✍️ A-FEAT-1537: aplica los saldos al cierre decididos; el ajuste queda a la vista en `ajusteCierre`. */
+export function aplicarCierresDecididos(papel: PapelDeCuentasCorrientes, anioCierre: number,
+  decididos = CIERRES_DECIDIDOS): PapelDeCuentasCorrientes {
+  return {
+    ...papel,
+    cuentas: papel.cuentas.map(c => {
+      const d = decididos.find(x => x.clave === c.contraparte.clave && x.anioCierre === anioCierre)
+      if (!d) return c
+      const importe = r2(d.saldo - c.saldoAlCierre)
+      return Math.abs(importe) < 0.005 ? c : { ...c, saldoAlCierre: d.saldo, ajusteCierre: { importe, motivo: d.motivo } }
+    }),
+  }
+}
+
+/** 👥 A-FEAT-1537: el papel 14 sólo con clientes y proveedores; los socios, aparte. */
+export function separarSocios(papel: PapelDeCuentasCorrientes): { terceros: PapelDeCuentasCorrientes; socios: CuentaCorrienteDelBalance[] } {
+  return {
+    terceros: { ...papel, cuentas: papel.cuentas.filter(c => !c.contraparte.socio) },
+    socios: papel.cuentas.filter(c => c.contraparte.socio),
   }
 }
 

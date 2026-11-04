@@ -181,11 +181,11 @@ import {
   leerIpc, controlarIpc, acumuladaDelAnio, urlIpc, mesAnteriorISO,
 } from "@/lib/indices/ipc-indec"
 import {
-  armarSueldosDelEjercicio, brutoDesdePartes, type PeriodoDeSueldo,
+  armarSueldosDelEjercicio, brutoDesdePartes, type PeriodoDeSueldo, sueldosImpagosAlCierre,
 } from "@/lib/balance/sueldos-balance"
 import {
   armarCuentasCorrientes, aplicarSaldosInicio, abrirDesglosar, DESTINO_PROPIO, normalizar, CONTRAPARTES_DEL_BALANCE,
-  sueldosPendientesComoCompras,
+  sueldosPendientesComoCompras, aplicarCierresDecididos, separarSocios,
 } from "@/lib/balance/cuentas-corrientes"
 import { controlarCheque, chequeEnPapel08, chequeEnTemplates } from "@/lib/balance/control-cheque"
 import { cuadrarHacienda, type MovimientoDeHacienda } from "@/lib/balance/cuadre-hacienda"
@@ -337,7 +337,7 @@ import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
-import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas, hojaPorCuenta, hojaResumenMensual, hojaDeAsientos, conTotalAlPie, hojaDeGastosBancarios, hojaDeCuentas } from "@/lib/balance/export-libro-diario"
+import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas, hojaPorCuenta, hojaResumenMensual, hojaDeAsientos, conTotalAlPie, hojaDeGastosBancarios, hojaDeCuentas, hojaRespaldoDeCuentas } from "@/lib/balance/export-libro-diario"
 import type { LibroDiario as LibroDiarioT } from "@/lib/balance/libro-diario"
 import { juntarTandas, lecturaIncompleta, juntarHasta, mensajeLecturaIncompleta } from "@/lib/supabase-paginado"
 import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
@@ -12276,6 +12276,47 @@ export function correrCasos(): Resultado[] {
     const e2 = "pagar: true false 19728504.98=f · cobrar: true 18445080=f · col «Dónde verlo» true"
     chequear("Papel 04", "🔁 Al pie del 04, las cuentas corrientes con saldo a pagar (y en el 03 las que somos acreedores), con razón social y saldo, sumadas al total con fórmula",
       e2, v2, v2 === e2, "A-FEAT-1506")
+
+    // ── 📒 A-FEAT-1537 (JMS 04/11): 04 sólo con lo que es deuda + sueldos al cierre; el resto al respaldo; socios aparte ──
+    const per = (id: string, nombre: string, empresa: string, bruto: number, mes = 6) =>
+      ({ id, anio: 2026, mes, empleado: { nombre, empresa }, bruto_calculado: bruto })
+    const meses = ["2026-05", "2026-06"]
+    const su = sueldosImpagosAlCierre([
+      per("s", "Ruben Sigot", "MSA", 1000), per("e", "Elvio Paz", "MSA", 500), per("m", "MA", "MSA", 1500),
+      per("a", "Alondra Olivo", "MA", 700), per("w", "Wilson Barreto", "MSA", 900), per("v", "Viejo", "MSA", 400, 1),
+    ] as never, [
+      { periodo_id: "s", fecha: "2026-06-30", monto: 800 }, { periodo_id: "s", fecha: "2026-07-24", monto: 200 },
+      { periodo_id: "w", fecha: "2026-06-30", monto: 900 }, { periodo_id: "a", fecha: "2026-07-10", monto: 700 },
+    ], meses, "2026-06-30", "MSA")
+    const v3 = `deuda ${su.total} (${su.filas.map(x => x.empleado).join(",")}) · a confirmar ${su.totalAConfirmar} (${su.aConfirmar.map(x => x.empleado).join(",")})`
+    const e3 = "deuda 200 (Ruben Sigot) · a confirmar 500 (Elvio Paz)"
+    chequear("Papel 04", "👷 Sueldos al cierre: lo pagado DESPUÉS del cierre es deuda; sin pago cargado va a confirmar; socios (MA), empleados de otra empresa y meses fuera del ejercicio no entran",
+      e3, v3, v3 === e3, "A-FEAT-1537")
+
+    const ccMix = { cuentas: [
+      { contraparte: { clave: "AMS", nombre: "Andrés Martínez", cuit: "2", socio: true }, saldoInicio: 0, inicioSinDato: false, resumen: {}, saldoAlCierre: 19728424.98, desdeHistorico: 0 },
+      { contraparte: { clave: "ACREN", nombre: "Agro Centros Región Núcleo", cuit: "4" }, saldoInicio: 0, inicioSinDato: true, resumen: { saldo: -84036.64 }, saldoAlCierre: -84036.64, desdeHistorico: 0 },
+      { contraparte: { clave: "AFA", nombre: "Agricultores Federados", cuit: "5" }, saldoInicio: 0, inicioSinDato: true, resumen: {}, saldoAlCierre: 300, desdeHistorico: 0 },
+    ], sinTratar: [], totalSinTratar: 0, historicoSinAtribuir: 0 } as never
+    const decidido = aplicarCierresDecididos(ccMix, 2026)
+    const acren = decidido.cuentas.find(c => c.contraparte.clave === "ACREN")!
+    const { terceros, socios } = separarSocios(decidido)
+    const v4 = `ACREN ${acren.saldoAlCierre} ajuste ${acren.ajusteCierre?.importe} · terceros ${terceros.cuentas.map(c => c.contraparte.clave).join(",")} · socios ${socios.map(c => c.contraparte.clave).join(",")} · otro año ${aplicarCierresDecididos(ccMix, 2027).cuentas[1].saldoAlCierre}`
+    const e4 = "ACREN 0 ajuste 84036.64 · terceros ACREN,AFA · socios AMS · otro año -84036.64"
+    chequear("Papel 14", "✍️ ACREN en 0 al cierre 25/26 con el ajuste a la vista (cuenta en US$), y los socios separados de clientes y proveedores",
+      e4, v4, v4 === e4, "A-FEAT-1537")
+
+    const h04 = hojaDeCuentas(r, "CUENTAS A PAGAR", "2026-06-30", { cuotas: [{ fecha: "2026-06-05", concepto: "ABL", monto: 50, categ: "X", estado: "pendiente" }], total: 50 } as never,
+      { lado: "pagar", cc: terceros }, { soloDeuda: true, sueldos: su })
+    const hR = hojaRespaldoDeCuentas(r, "RESPALDO", "2026-06-30", { cuotas: [{ fecha: "2026-06-05", concepto: "ABL", monto: 50, categ: "X", estado: "pendiente" }], total: 50 } as never, su, socios)
+    const tiene = (h: unknown[][], t: string) => h.some(x => String(x[0] ?? "").startsWith(t) || String(x[6] ?? "") === t)
+    const v5 = [
+      `04: total ${tot(h04)} · sueldos ${tiene(h04, "SUELDOS DEVENGADOS")} · dadas por pagadas ${tiene(h04, "DADAS POR PAGADAS")} · templates ${tiene(h04, "CUOTAS DE TEMPLATES")} · Andrés ${tiene(h04, "Andrés Martínez")}`,
+      `04.3: dadas por pagadas ${tiene(hR, "DADAS POR PAGADAS")} · templates ${tiene(hR, "CUOTAS DE TEMPLATES")} · sueldos a confirmar ${tiene(hR, "SUELDOS SIN PAGO")} · socios ${tiene(hR, "Andrés Martínez")}`,
+    ].join(" | ")
+    const e5 = "04: total 580=f · sueldos true · dadas por pagadas false · templates false · Andrés false | 04.3: dadas por pagadas true · templates true · sueldos a confirmar true · socios true"
+    chequear("Papel 04", "📒 El 04 lleva sólo lo que suma (comprobantes + sueldos pagados después + cuentas corrientes de terceros, con fórmula); lo que no es deuda va entero a «04.3 Respaldo»",
+      e5, v5, v5 === e5, "A-FEAT-1537")
   }
 
   // ══ 📒 Libro F — balance en línea (A-FEAT-1509) ══

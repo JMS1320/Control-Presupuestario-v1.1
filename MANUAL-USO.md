@@ -3341,9 +3341,10 @@ en la solapa de **provisión**. No hay que marcar nada a mano.
 - **Las cuotas desactivadas no son gasto.** Cuando un impuesto se puede pagar anual o en cuotas y
   elegiste una forma, la otra queda desactivada: el libro **no la suma** y la lista al pie de la
   solapa **Templates**, bajo «NO INCLUIDAS», con su total.
-- **Las cuotas impagas del ejercicio son gasto y además deuda**, igual que una factura impaga: siguen
-  en el total de **Templates** y aparecen también en **04 Cuentas a pagar**, en el bloque «Cuotas de
-  templates impagas al cierre», con el **total deuda al cierre** (facturas + templates).
+- **Las cuotas sin pago al cierre siguen en el total de Templates**, pero ⚠️ *cambió 04/11*: ya **no** suman a la
+  deuda de **04 Cuentas a pagar**. Van a **04.3 Respaldo cuentas a pagar** como «a confirmar» (muchas son de otra
+  empresa o se pagaron por otro lado); lo que importa es que cada template tenga sus cuotas → solapa **Control cuotas
+  templates**.
 - En la pantalla, el recuadro de templates dice cuántas quedaron afuera y cuántas son deuda.
 
 → A-TEST-1218
@@ -3988,6 +3989,21 @@ la cuenta llega a todos los extractos: bancos, las tres tarjetas, las cajas y lo
 ⚠️ Sin probar todavía → A-TEST-1170
 
 ## 🧾 Papeles de balance → CUENTAS CORRIENTES *(2026-10-01)*
+
+⚠️ **Cambió 04/11 — tres solapas en el libro B:**
+- **«04 Cuentas a pagar»** lleva **sólo lo que es deuda**: facturas sin pagar al cierre, **sueldos devengados que se
+  pagaron después** (sin José, Andrés ni MA) y las cuentas corrientes de proveedores. Abajo, el **total al cierre** con
+  fórmula.
+- **«04.3 Respaldo cuentas a pagar»**: todo lo que se miró y **no** es deuda, con su motivo — dadas por pagadas, las del
+  sistema anterior, conciliadas sin fecha, seguros, cuotas de templates y sueldos sin pago cargado (a confirmar), y las
+  cuentas con los socios.
+- **«14 Cuentas corrientes»** es sólo de **clientes y proveedores** (AFA, ACREN). Las de **José, Andrés, MA y la
+  Sucesión** van a **«14.1 Cuentas con socios»** y no suman a 03 ni a 04, junto con las marcas sin tratar y el
+  «Desglosar» de la tarjeta.
+- **ACREN sale en 0**: la cuenta es en dólares (se le deben US$ 7,28); el saldo en pesos es diferencia de cambio. El
+  ajuste se ve en la fórmula y en «Cómo se lee».
+
+→ A-TEST-1323
 
 **«14 Cuentas corrientes»**: el saldo al cierre con cada contraparte — **JMS · AMS · MA · PAM · AFA ·
 ACREN**.

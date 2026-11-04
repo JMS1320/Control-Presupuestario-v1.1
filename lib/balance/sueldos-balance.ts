@@ -122,6 +122,8 @@ export interface SueldosDelEjercicio {
   descuadres: FilaSueldo[]
   /** Los meses del ejercicio que no tienen ni un período cargado. */
   mesesVacios: string[]
+  /** 👷 A-FEAT-1537: lo devengado y no pagado al cierre (deuda del papel 04). Lo agrega la pantalla con los pagos. */
+  impagosAlCierre?: SueldosImpagosAlCierre
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100
@@ -227,5 +229,80 @@ export function armarSueldosDelEjercicio(
     descuadres: filas.filter(f => Math.abs(f.diferencia) > 0.01),
     // 🛑 Un mes sin un solo período no se nota mirando el total, igual que los subdiarios vacíos.
     mesesVacios: meses.filter(m => !filas.some(f => f.periodo === m)),
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// 👷 SUELDOS DEVENGADOS Y NO PAGADOS AL CIERRE — deuda del papel 04 (A-FEAT-1537, 2026-11-04)
+// ══════════════════════════════════════════════════════════════════════════════════════════
+
+/** Un pago de sueldo con su fecha (de `sueldos_pagos`). */
+export interface PagoDeSueldo { periodo_id: string; fecha: string | null; monto: number | string | null }
+
+/** Un período del ejercicio con el `id`, para unirlo con sus pagos. */
+export type PeriodoConId = PeriodoDeSueldo & { id: string }
+
+export interface SueldoImpagoAlCierre {
+  periodo: string
+  empleado: string
+  bruto: number
+  pagadoAlCierre: number
+  /** Lo que se pagó después del cierre: ESO es la deuda al cierre. */
+  pagadoDespues: number
+  fechaPago: string | null
+  /** Lo que no se pagó nunca (si hay pagos después, es la diferencia que queda). */
+  sinPagar: number
+}
+
+export interface SueldosImpagosAlCierre {
+  /** Pagados (en todo o en parte) después del cierre: deuda al cierre, suman. */
+  filas: SueldoImpagoAlCierre[]
+  total: number
+  /**
+   * 🛑 A confirmar: períodos sin NINGÚN pago cargado, o con un resto que no se pagó nunca. No se sabe si son deuda —
+   * van al respaldo, NO suman (nada se descarta en silencio).
+   */
+  aConfirmar: SueldoImpagoAlCierre[]
+  totalAConfirmar: number
+}
+
+/**
+ * JMS 04/11 en el papel 04: *«agregar sueldos (sin José, Andrés, MA que van por cta cte)»*.
+ *
+ * Manda la **fecha de cada pago**, no el estado de hoy (igual que las facturas): lo pagado después del cierre era deuda al
+ * cierre. Entran sólo los empleados de la empresa del papel; los socios (MA, AMS, JMS) y los empleados de otra empresa,
+ * no. Lo que no se pagó NUNCA (sin pagos cargados, o un resto) no se afirma como deuda: se lista aparte para confirmar.
+ */
+export function sueldosImpagosAlCierre(periodos: PeriodoConId[], pagos: PagoDeSueldo[], meses: string[],
+  fechaCierre: string, empresa = "MSA"): SueldosImpagosAlCierre {
+  const SOCIOS = new Set(["MA", "AMS", "JMS", "JOSE MARIA MARTINEZ", "ANDRES MARTINEZ", "MERCEDES ARECO"])
+  const norm = (v: string | null | undefined) => (v ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().trim()
+  const delEjercicio = new Set(meses)
+  const porPeriodo = new Map<string, PagoDeSueldo[]>()
+  for (const p of pagos) porPeriodo.set(p.periodo_id, [...(porPeriodo.get(p.periodo_id) ?? []), p])
+  const filas: SueldoImpagoAlCierre[] = [], aConfirmar: SueldoImpagoAlCierre[] = []
+  for (const p of periodos) {
+    const periodo = `${p.anio}-${String(p.mes).padStart(2, "0")}`
+    if (!delEjercicio.has(periodo)) continue
+    if (norm(p.empleado?.empresa) !== norm(empresa) || SOCIOS.has(norm(p.empleado?.nombre))) continue
+    const bruto = r2(n0(p.bruto_calculado))
+    const ps = porPeriodo.get(p.id) ?? []
+    const antes = r2(ps.filter(x => x.fecha && x.fecha <= fechaCierre).reduce((t, x) => t + n0(Number(x.monto)), 0))
+    const despues = ps.filter(x => x.fecha && x.fecha > fechaCierre)
+    const pagadoDespues = r2(despues.reduce((t, x) => t + n0(Number(x.monto)), 0))
+    // $ 100 de tolerancia: los anticipos se redondean (Sigot enero: $ 30 de diferencia).
+    if (bruto - antes < 100) continue
+    const fila: SueldoImpagoAlCierre = {
+      periodo, empleado: p.empleado?.nombre ?? "(sin nombre)", bruto, pagadoAlCierre: antes, pagadoDespues,
+      fechaPago: despues.map(x => x.fecha!).sort().pop() ?? null, sinPagar: r2(Math.max(0, bruto - antes - pagadoDespues)),
+    }
+    if (pagadoDespues > 0) filas.push(fila)
+    if (fila.sinPagar >= 100) aConfirmar.push(fila)
+  }
+  const orden = (a: SueldoImpagoAlCierre, b: SueldoImpagoAlCierre) => a.periodo.localeCompare(b.periodo) || a.empleado.localeCompare(b.empleado, "es")
+  filas.sort(orden); aConfirmar.sort(orden)
+  return {
+    filas, total: r2(filas.reduce((t, x) => t + x.pagadoDespues, 0)),
+    aConfirmar, totalAConfirmar: r2(aConfirmar.reduce((t, x) => t + x.sinPagar, 0)),
   }
 }

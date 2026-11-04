@@ -38,7 +38,7 @@ export const LIBROS: Record<LetraLibro, string> = {
 }
 
 const DE_A = new Set(["Compras", "Ventas", "Compras por cuenta", "Ventas por cuenta"])
-const DE_B = new Set(["04 Cuentas a pagar", "04.1 Cheques dados", "04.2 Anticipos", "03 Cuentas a cobrar", "03.1 Provision cobros", "14 Cuentas corrientes"])
+const DE_B = new Set(["04 Cuentas a pagar", "04.1 Cheques dados", "04.2 Anticipos", "04.3 Respaldo cuentas a pagar", "03 Cuentas a cobrar", "03.1 Provision cobros", "14 Cuentas corrientes", "14.1 Cuentas con socios"])
 const DE_E = new Set(["00 Stocks inicio y cierre"])
 
 /** A qué libro va una solapa (por su nombre en el Excel completo). Las del C empiezan con «C · ». */

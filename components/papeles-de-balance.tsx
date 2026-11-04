@@ -104,9 +104,10 @@ import {
 } from "@/lib/balance/saldos-al-inicio"
 import {
   armarSueldosDelEjercicio, type SueldosDelEjercicio, type PeriodoDeSueldo,
+  sueldosImpagosAlCierre, type PagoDeSueldo, type PeriodoConId,
 } from "@/lib/balance/sueldos-balance"
 import {
-  armarCuentasCorrientes, aplicarSaldosInicio, abrirDesglosar, CONTRAPARTES_DEL_BALANCE,
+  armarCuentasCorrientes, aplicarSaldosInicio, abrirDesglosar, CONTRAPARTES_DEL_BALANCE, aplicarCierresDecididos,
   sueldosPendientesComoCompras, type SueldoParaCC,
   type PapelDeCuentasCorrientes, type ConsumoTarjeta,
   type CompraParaCC, type VentaParaCC, type MovimientoParaCC,
@@ -179,11 +180,12 @@ export function PapelesDeBalance() {
    */
   const saldosCC = useDatosDelBalance(empresa.id, anioCierre, "cc.saldo-inicio")
   const cuentasCorrientesConInicio = useMemo(() => cuentasCorrientes
-    ? aplicarSaldosInicio(cuentasCorrientes, Object.fromEntries(
+    // ✍️ A-FEAT-1537: después del inicio, los saldos al cierre que decidió el usuario (ACREN en 0), con su ajuste a la vista.
+    ? aplicarCierresDecididos(aplicarSaldosInicio(cuentasCorrientes, Object.fromEntries(
         CONTRAPARTES_DEL_BALANCE.map(c => [c.clave, leerNumero(saldosCC.valores[c.clave])])),
         // 🤖 A-FEAT-1386: el inicio que puso Claude sale TENTATIVO en el Excel hasta el OK
-        Object.fromEntries(Object.entries(saldosCC.tentativos).map(([k, f]) => [k, leyendaTentativo(f)])))
-    : null, [cuentasCorrientes, saldosCC.valores, saldosCC.tentativos])
+        Object.fromEntries(Object.entries(saldosCC.tentativos).map(([k, f]) => [k, leyendaTentativo(f)]))), anioCierre)
+    : null, [cuentasCorrientes, saldosCC.valores, saldosCC.tentativos, anioCierre])
   /**
    * 📒 «Asientos Contables» (A-FEAT-1318): las facturas no informadas en ARCA que no van al subdiario.
    * `null` = no se pudo leer (la solapa no sale, y se avisa); `[]` = se leyó y no hay.
@@ -401,7 +403,8 @@ export function PapelesDeBalance() {
     ])
     const { dolares, cajaUsd } = dolaresParaBalance(bancarios?.cuentasEnDolares, tc)
     const provCompras = lib.provisiones.filter(a => a.fuente !== "venta")
-    const ccAPagar = (cuentasCorrientesConInicio?.cuentas ?? []).filter(c => c.saldoAlCierre > 0).reduce((t, c) => t + c.saldoAlCierre, 0)
+    // 👥 A-FEAT-1537: los socios no son proveedores (van a su propia cuenta, después).
+    const ccAPagar = (cuentasCorrientesConInicio?.cuentas ?? []).filter(c => !c.contraparte.socio && c.saldoAlCierre > 0).reduce((t, c) => t + c.saldoAlCierre, 0)
     return {
       apertura: APERTURA_MSA_2025, fechaCierre: fc,
       cadenas: bancarios?.cadenas ?? null,
@@ -999,6 +1002,25 @@ export function PapelesDeBalance() {
 
         const armadoSueldos = armarSueldosDelEjercicio(
           (periodosSueldo ?? []) as unknown as PeriodoDeSueldo[], meses)
+        /**
+         * 👷 A-FEAT-1537 (JMS 04/11: «agregar sueldos, sin José, Andrés, MA»): lo devengado y no pagado al cierre, por la
+         * FECHA de cada pago. En su propio try: si no se leen los pagos, el papel 13 sale igual y se avisa.
+         */
+        try {
+          const ids = ((periodosSueldo ?? []) as Array<{ id: string; anio: number; mes: number }>)
+            .filter(p => meses.includes(`${p.anio}-${String(p.mes).padStart(2, "0")}`)).map(p => p.id)
+          const pagosSueldo: PagoDeSueldo[] = []
+          for (let i = 0; i < ids.length; i += 200) {
+            const leidoPagos = await traerTodo((d, h) => supabase.from("sueldos_pagos")
+              .select("periodo_id, fecha, monto", { count: "exact" }).in("periodo_id", ids.slice(i, i + 200)).order("id").range(d, h))
+            if (leidoPagos.error) throw new Error(leidoPagos.error.message)
+            pagosSueldo.push(...((leidoPagos.data ?? []) as unknown as PagoDeSueldo[]))
+          }
+          armadoSueldos.impagosAlCierre = sueldosImpagosAlCierre((periodosSueldo ?? []) as unknown as PeriodoConId[],
+            pagosSueldo, meses, armarEjercicio(anioCierre, empresa.mesCierre).fechaCierre, empresa.id)
+        } catch {
+          toast.warning("No se pudieron leer los pagos de sueldos: el papel 04 sale sin los sueldos impagos al cierre.")
+        }
         setSueldos(armadoSueldos)
 
         // 🧮 El control se ve: si el bruto recompuesto no da el guardado, hay que mirarlo.

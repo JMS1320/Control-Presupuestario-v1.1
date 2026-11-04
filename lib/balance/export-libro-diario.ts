@@ -32,9 +32,9 @@ import { armarLibroPorCuenta, TIPOS_SIN_CREDITO_VENTAS, SIN_IMPUTAR, type LibroP
 import type { Descuadre } from "@/lib/subdiarios/cuadratura"
 import type { CuentasAlCierre, FilaCuenta } from "./cuentas-al-cierre"
 import type { CadenaDeSaldos } from "./saldos-al-inicio"
-import type { SueldosDelEjercicio, FilaSueldo } from "./sueldos-balance"
+import type { SueldosDelEjercicio, FilaSueldo, SueldosImpagosAlCierre } from "./sueldos-balance"
 import { leyendaSaldo } from "@/lib/proveedores/cuenta-corriente"
-import type { PapelDeCuentasCorrientes } from "./cuentas-corrientes"
+import { separarSocios, type PapelDeCuentasCorrientes, type CuentaCorrienteDelBalance } from "./cuentas-corrientes"
 import type {
   ChequesDados, ChequeAlCierre, AnticiposAlCierre, AnticipoAlCierre,
 } from "./valores-al-cierre"
@@ -900,6 +900,12 @@ export function hojaDeCuentas(
    * de cuentas a cobrar, la cuenta corriente donde somos acreedores; se pone la razón social y el saldo»*).
    */
   cuentasCorrientes?: { lado: "pagar" | "cobrar"; cc: PapelDeCuentasCorrientes },
+  /**
+   * 📒 A-FEAT-1537 (JMS 04/11: *«cuentas a pagar se manda sin todo eso, sino confunde; pero solapa aparte todo, así queda
+   * documentado»*): `soloDeuda` deja acá sólo lo que suma — los bloques que explican lo que NO es deuda van a
+   * `hojaRespaldoDeCuentas` — y suma los sueldos devengados y no pagados al cierre.
+   */
+  extra?: { soloDeuda?: boolean; sueldos?: SueldosImpagosAlCierre },
 ): unknown[][] {
   const f: unknown[][] = []
   f.push([titulo])
@@ -913,21 +919,7 @@ export function hojaDeCuentas(
     "Cuenta contable", "Estado hoy", "Fecha de pago", "Motivo", "Dónde verlo",
   ])
 
-  const fila = (x: FilaCuenta) => {
-    const a = x.asiento
-    return [
-      a.subdiario, a.fecha ?? "", a.tipo ?? "", a.punto_venta ?? "", a.numero ?? "",
-      a.cuit, a.denominacion,
-      money(a.neto_gravado), money(a.no_gravado), money(a.exento),
-      // 🛡️ A-FEAT-1385: en un seguro en cuotas, «Total» es el saldo al cierre; la cuenta va en el motivo.
-      money(a.otros_tributos), money(a.iva), money(x.importe ?? a.total),
-      a.cuenta_contable, x.estado, x.fechaPago ?? "", x.detalle ? `${x.motivo} — ${x.detalle}` : x.motivo,
-      // 🔎 A-FEAT-1506: el canal donde se ve el pago; si no hay pago, dónde está la factura.
-      x.dondeSeVe ?? (x.fechaPago ? "" : "sin pago: la factura en Egresos → Facturas / Cash Flow"),
-    ]
-  }
-
-  c.filas.forEach(x => f.push(fila(x)))
+  c.filas.forEach(x => f.push(filaDeCuenta(x)))
   const desde = 7
   const hasta = 6 + c.filas.length
   if (c.filas.length > 0) {
@@ -938,12 +930,13 @@ export function hojaDeCuentas(
   } else {
     f.push(["", "", "", "", "", "", "TOTAL", "", "", "", "", "", 0])
   }
+  /** Los subtotales que componen el total al cierre (fila de Excel, importe, qué es). */
+  const partes: Array<{ fila: number; importe: number; que: string }> = [{ fila: f.length, importe: c.total, que: "comprobantes" }]
   /**
    * 💳 **Las cuotas de templates impagas: deuda igual que las facturas** (usuario 2026-10-18). Van en
    * su propio bloque —no tienen tipo, punto de venta ni CUIT— y el TOTAL DEUDA suma los dos con fórmula.
    */
-  if (templatesImpagos && templatesImpagos.cuotas.length > 0) {
-    const nTotFacturas = f.length
+  if (!extra?.soloDeuda && templatesImpagos && templatesImpagos.cuotas.length > 0) {
     f.push([])
     f.push(["CUOTAS DE TEMPLATES IMPAGAS AL CIERRE — son deuda igual que las facturas"])
     const d = f.length + 1
@@ -955,14 +948,26 @@ export function hojaDeCuentas(
     const nTotTpl = f.length + 1
     f.push(["", "", "", "", "", "", "TOTAL TEMPLATES", "", "", "", "", "",
       conFormula(`SUM(M${d}:M${h})`, templatesImpagos.total)])
-    f.push(["", "", "", "", "", "", "TOTAL DEUDA AL CIERRE (facturas + templates)", "", "", "", "", "",
-      conFormula(`M${nTotFacturas}+M${nTotTpl}`, Math.round((c.total + templatesImpagos.total) * 100) / 100)])
+    partes.push({ fila: nTotTpl, importe: templatesImpagos.total, que: "templates" })
+  }
+  // 👷 A-FEAT-1537: los sueldos devengados y no pagados al cierre (lo que se pagó después), sin los socios.
+  const su = extra?.sueldos
+  if (su && su.filas.length > 0) {
+    f.push([])
+    f.push(["SUELDOS DEVENGADOS Y NO PAGADOS AL CIERRE — se pagaron después (manda la fecha de cada pago; sin José, Andrés ni MA, que van por su cuenta)"])
+    const d = f.length + 1
+    for (const x of su.filas) {
+      f.push(["Sueldo", x.periodo, "", "", "", "", x.empleado, "", "", "", "", "", money(x.pagadoDespues), "SUELDOS", "pagado después",
+        x.fechaPago ?? "", `bruto ${fmtAr(x.bruto)} − pagado al cierre ${fmtAr(x.pagadoAlCierre)}`, "Sueldos → pagos del período"])
+    }
+    const nTot = f.length + 1
+    f.push(["", "", "", "", "", "", "TOTAL SUELDOS", "", "", "", "", "", conFormula(`SUM(M${d}:M${nTot - 1})`, su.total)])
+    partes.push({ fila: nTot, importe: su.total, que: "sueldos" })
   }
   // 🔁 A-FEAT-1506: las cuentas corrientes (papel 14) con saldo de este lado, con su razón social y su saldo al cierre.
   if (cuentasCorrientes) {
     const delLado = cuentasCorrientes.cc.cuentas.filter(x => cuentasCorrientes.lado === "pagar" ? x.saldoAlCierre > 0.005 : x.saldoAlCierre < -0.005)
     if (delLado.length) {
-      const filaTotalComprobantes = f.findIndex(r => r[6] === "TOTAL") + 1
       f.push([])
       f.push([cuentasCorrientes.lado === "pagar" ? "CUENTAS CORRIENTES CON SALDO A PAGAR (papel 14) — se suman a la deuda" : "CUENTAS CORRIENTES DONDE SOMOS ACREEDORES (papel 14) — se suman a lo a cobrar"])
       const d = f.length + 1
@@ -974,23 +979,38 @@ export function hojaDeCuentas(
       const nCC = f.length + 1
       const totCC = Math.round(delLado.reduce((t, x) => t + Math.abs(x.saldoAlCierre), 0) * 100) / 100
       f.push(["", "", "", "", "", "", "TOTAL CUENTAS CORRIENTES", "", "", "", "", "", conFormula(`SUM(M${d}:M${h})`, totCC)])
-      if (filaTotalComprobantes > 0) {
-        const tpl = f.findIndex(r => r[6] === "TOTAL TEMPLATES") + 1
-        const base = Math.round((c.total + (tpl > 0 && templatesImpagos ? templatesImpagos.total : 0) + totCC) * 100) / 100
-        f.push(["", "", "", "", "", "", cuentasCorrientes.lado === "pagar" ? "TOTAL AL CIERRE (comprobantes + templates + cuentas corrientes)" : "TOTAL AL CIERRE (comprobantes + cuentas corrientes)",
-          "", "", "", "", "", conFormula(`M${filaTotalComprobantes}${tpl > 0 ? `+M${tpl}` : ""}+M${nCC}`, base)])
-      }
+      partes.push({ fila: nCC, importe: totCC, que: "cuentas corrientes" })
     }
   }
-  f.push([])
+  // El total al cierre, con fórmula, cuando hay más de una parte.
+  if (partes.length > 1) {
+    const ques = partes.map(x => x.que)
+    const etiqueta = ques.length === 2 && ques[1] === "templates" ? "TOTAL DEUDA AL CIERRE (facturas + templates)"
+      : `TOTAL AL CIERRE (${ques.join(" + ")})`
+    f.push(["", "", "", "", "", "", etiqueta, "", "", "", "", "",
+      conFormula(partes.map(x => `M${x.fila}`).join("+"), Math.round(partes.reduce((t, x) => t + x.importe, 0) * 100) / 100)])
+  }
+  if (extra?.soloDeuda) {
+    f.push([])
+    f.push(["Lo que NO es deuda (pagadas sin rastro, sistema anterior, conciliadas sin fecha, seguros, cuentas corrientes, cuotas de templates y sueldos a confirmar) está en la solapa «04.3 Respaldo cuentas a pagar»."])
+    f.push([`Se miraron ${c.mirados} comprobantes del ejercicio.`])
+    return f
+  }
+  bloquesInformativos(f, c)
 
-  /** Los tres bloques de lo que no se pudo afirmar. Cada uno dice por qué y cuánto pesa. */
+  f.push([])
+  f.push([`Se miraron ${c.mirados} comprobantes del ejercicio.`])
+  return f
+}
+
+/** Los bloques de lo que no se pudo afirmar como deuda. Cada uno dice por qué y cuánto pesa. */
+function bloquesInformativos(f: unknown[][], c: CuentasAlCierre): void {
   const bloque = (t: string[], filas: FilaCuenta[], total: number) => {
     if (filas.length === 0) return
     f.push([])
     t.forEach(l => f.push([l]))
     f.push([`${filas.length} comprobante(s) — total ${money(total)}`])
-    filas.forEach(x => f.push(fila(x)))
+    filas.forEach(x => f.push(filaDeCuenta(x)))
   }
 
   // ✍️ A-FEAT-1506: lo que el balance da por pagado al cierre sin poder rastrear el pago. NO cambia la factura ni el Cash Flow.
@@ -1040,10 +1060,68 @@ export function hojaDeCuentas(
       "Regla del usuario (29/10/2026): si el balance muestra el saldo en cuenta corriente, no se muestran aparte sus comprobantes.",
     ], enCC, (c as CuentasSinCuentaCorriente).totalEnCuentaCorriente)
   }
+}
 
+/**
+ * 📒 **04.3 Respaldo cuentas a pagar** (A-FEAT-1537). Todo lo que se miró y NO es deuda, con su motivo — fuera del papel
+ * que va al contador para no confundir, pero en el mismo Excel para que quede documentado.
+ */
+export function hojaRespaldoDeCuentas(c: CuentasAlCierre, titulo: string, fechaCierre: string,
+  templatesImpagos?: { cuotas: CuotaTemplate[]; total: number },
+  sueldos?: SueldosImpagosAlCierre,
+  socios?: CuentaCorrienteDelBalance[],
+): unknown[][] {
+  const f: unknown[][] = []
+  f.push([titulo])
+  f.push([`Al ${fechaCierre} — lo que se miró y NO suma a la deuda de «04 Cuentas a pagar». Cada bloque dice por qué.`])
+  f.push([])
+  f.push(["Subdiario", "Fecha", "Tipo", "Pto Vta", "Número", "CUIT", "Denominación",
+    "Neto Gravado", "No Gravado", "Exentas", "Otros Tributos", "IVA", "Total",
+    "Cuenta contable", "Estado hoy", "Fecha de pago", "Motivo", "Dónde verlo"])
+  if (templatesImpagos && templatesImpagos.cuotas.length > 0) {
+    f.push([])
+    f.push(["CUOTAS DE TEMPLATES SIN PAGO AL CIERRE — A CONFIRMAR, no suman (JMS 04/11: «lo importante es que se tomen los 12 pagos de cada cosa» → solapa «Control cuotas templates»)"])
+    f.push([`${templatesImpagos.cuotas.length} cuota(s) — total ${money(templatesImpagos.total)}`])
+    for (const q of templatesImpagos.cuotas) {
+      f.push(["Template", q.fecha ?? "", "", "", "", "", `${q.concepto}${q.proveedor ? " — " + q.proveedor : ""}`,
+        "", "", "", "", "", money(q.monto), q.categ, q.estado, "", "cuota sin pago al cierre: ¿deuda, duplicada o de otra empresa?"])
+    }
+  }
+  if (sueldos && sueldos.aConfirmar.length > 0) {
+    f.push([])
+    f.push(["SUELDOS SIN PAGO CARGADO — A CONFIRMAR, no suman (o no se pagaron, o se pagaron por fuera del módulo de Sueldos)"])
+    f.push([`${sueldos.aConfirmar.length} período(s) — total ${money(sueldos.totalAConfirmar)}`])
+    for (const x of sueldos.aConfirmar) {
+      f.push(["Sueldo", x.periodo, "", "", "", "", x.empleado, "", "", "", "", "", money(x.sinPagar), "SUELDOS", "sin pago",
+        "", `bruto ${fmtAr(x.bruto)} − pagado ${fmtAr(x.pagadoAlCierre + x.pagadoDespues)}`, "Sueldos → pagos del período"])
+    }
+  }
+  if (socios && socios.length > 0) {
+    f.push([])
+    f.push(["CUENTAS CORRIENTES CON LOS SOCIOS — no suman acá (JMS 04/11: «las cuentas de socios las veremos después») → solapa «14.1 Cuentas con socios»"])
+    for (const x of socios) {
+      f.push(["Cta cte", "", "", "", "", x.contraparte.cuit, x.contraparte.nombre, "", "", "", "", "", money(x.saldoAlCierre), "", "",
+        "", x.saldoAlCierre > 0 ? "le debemos" : x.saldoAlCierre < 0 ? "nos debe" : "en cero", "14.1 Cuentas con socios"])
+    }
+  }
+  bloquesInformativos(f, c)
   f.push([])
   f.push([`Se miraron ${c.mirados} comprobantes del ejercicio.`])
   return f
+}
+
+function filaDeCuenta(x: FilaCuenta): unknown[] {
+  const a = x.asiento
+  return [
+    a.subdiario, a.fecha ?? "", a.tipo ?? "", a.punto_venta ?? "", a.numero ?? "",
+    a.cuit, a.denominacion,
+    money(a.neto_gravado), money(a.no_gravado), money(a.exento),
+    // 🛡️ A-FEAT-1385: en un seguro en cuotas, «Total» es el saldo al cierre; la cuenta va en el motivo.
+    money(a.otros_tributos), money(a.iva), money(x.importe ?? a.total),
+    a.cuenta_contable, x.estado, x.fechaPago ?? "", x.detalle ? `${x.motivo} — ${x.detalle}` : x.motivo,
+    // 🔎 A-FEAT-1506: el canal donde se ve el pago; si no hay pago, dónde está la factura.
+    x.dondeSeVe ?? (x.fechaPago ? "" : "sin pago: la factura en Egresos → Facturas / Cash Flow"),
+  ]
 }
 
 const COLS_CUENTAS: Columna[] = [
@@ -1442,9 +1520,12 @@ const COLS_SUELDOS: Columna[] = [
  * relacionado a RET, RET 3, AP; debemos ir tratando cada cosa a la vez»*. No se reparte ni se
  * esconde — se muestra con su total, que es cuánta plata falta encuadrar.
  */
-export function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierre: string): unknown[][] {
+export function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierre: string,
+  /** 👥 A-FEAT-1537: «CUENTAS CORRIENTES — clientes y proveedores» o «… con los socios». */
+  titulo = "CUENTAS CORRIENTES", nota?: string): unknown[][] {
   const f: unknown[][] = []
-  f.push([`CUENTAS CORRIENTES — saldo al ${fechaCierre}`])
+  f.push([`${titulo} — saldo al ${fechaCierre}`])
+  if (nota) f.push([nota])
   f.push(["Saldo positivo = le debemos. Negativo = tenemos a cobrar."])
   // ✍️ A-FEAT-1388 — usuario 27/10: «poner saldo de inicio cero y que dé lo que dé, pero luego podremos modificar».
   f.push(["Saldo de INICIO: el cargado en la pantalla del balance; si no hay, 0 marcado «sin dato». El SALDO AL CIERRE es formula: se puede cambiar el inicio aca."])
@@ -1463,13 +1544,15 @@ export function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierr
       money(c.resumen.totalVendido),
       money(c.resumen.totalPagado),
       money(c.resumen.saldo),
-      conFormula(`C${n}+G${n}`, money(c.saldoAlCierre)),
+      // ✍️ A-FEAT-1537: si el usuario decidió el saldo al cierre, el ajuste va en la fórmula y su motivo en «Cómo se lee».
+      conFormula(c.ajusteCierre ? `C${n}+G${n}+(${money(c.ajusteCierre.importe)})` : `C${n}+G${n}`, money(c.saldoAlCierre)),
       // 🎚️ El 0 de un inicio sin cargar es un default, no un dato: se dice (y sale en ámbar).
       c.inicioSinDato
         ? `sin dato de inicio (0 por default) · ${leyendaSaldo(c.saldoAlCierre)}`
         // 🤖 A-FEAT-1386: el inicio que puso Claude y espera el OK de JMS se dice en el Excel
         : c.inicioTentativo ? `${c.inicioTentativo} · ${leyendaSaldo(c.saldoAlCierre)}` : leyendaSaldo(c.saldoAlCierre),
-    ].map((v, i, a) => i === a.length - 1 ? `${v}${extraCC(c)}` : v))
+    ].map((v, i, a) => i === a.length - 1
+      ? `${v}${extraCC(c)}${c.ajusteCierre ? ` · AJUSTE AL CIERRE ${fmtAr(c.ajusteCierre.importe)}: ${c.ajusteCierre.motivo}` : ""}` : v))
   }
   const hasta = f.length
   f.push(["TOTAL", "", ...(["C", "D", "E", "F", "G", "H"] as const).map((col, i) =>
@@ -2751,12 +2834,18 @@ export function armarWorkbook(
     [...COLS_ASIENTOS, { ancho: 30 }, { ancho: 50 }])
   // 💳 Cuentas a pagar y a cobrar al cierre — papeles 03 y 04 (A-FEAT-1187), con sus bloques de
   //    cheques, anticipos y provisión de cobros (A-FEAT-1195).
+  /**
+   * 👥 A-FEAT-1537 (JMS 04/11): el papel 14 y los totales de 03/04 sólo con clientes y proveedores; los socios, aparte
+   * (solapa 14.1) hasta que se vean sus cuentas.
+   */
+  const cc = cuentasCorrientes ? separarSocios(cuentasCorrientes) : null
   if (cuentas?.pagar) {
     hoja(wb, "04 Cuentas a pagar",
       hojaDeCuentas(cuentas.pagar, `CUENTAS A PAGAR — ejercicio ${libro.ejercicio.etiqueta}`,
         libro.ejercicio.fechaCierre,
         templates ? { cuotas: templates.impagasAlCierre, total: templates.totalImpagas } : undefined,
-        cuentasCorrientes ? { lado: "pagar", cc: cuentasCorrientes } : undefined),
+        cc ? { lado: "pagar", cc: cc.terceros } : undefined,
+        { soloDeuda: true, sueldos: sueldos?.impagosAlCierre }),
       COLS_CUENTAS)
   }
   if (cuentas?.cheques) {
@@ -2769,10 +2858,19 @@ export function armarWorkbook(
       hojaDeAnticipos(cuentas.anticipos, libro.ejercicio.etiqueta, libro.ejercicio.fechaCierre),
       COLS_ANTICIPOS)
   }
+  // 📒 A-FEAT-1537: el respaldo de 04, pegado a sus bloques (después de cheques y anticipos).
+  if (cuentas?.pagar) {
+    hoja(wb, "04.3 Respaldo cuentas a pagar",
+      hojaRespaldoDeCuentas(cuentas.pagar, `RESPALDO DE CUENTAS A PAGAR — ejercicio ${libro.ejercicio.etiqueta}`,
+        libro.ejercicio.fechaCierre,
+        templates ? { cuotas: templates.impagasAlCierre, total: templates.totalImpagas } : undefined,
+        sueldos?.impagosAlCierre, cc?.socios),
+      COLS_CUENTAS)
+  }
   if (cuentas?.cobrar) {
     hoja(wb, "03 Cuentas a cobrar",
       hojaDeCuentas(cuentas.cobrar, `CUENTAS A COBRAR — ejercicio ${libro.ejercicio.etiqueta}`,
-        libro.ejercicio.fechaCierre, undefined, cuentasCorrientes ? { lado: "cobrar", cc: cuentasCorrientes } : undefined), COLS_CUENTAS)
+        libro.ejercicio.fechaCierre, undefined, cc ? { lado: "cobrar", cc: cc.terceros } : undefined), COLS_CUENTAS)
   }
   // ⚠️ Va SIEMPRE, incluso sin una sola fila: es donde se dice que los cheques en cartera no salen
   //    del sistema. Si la solapa faltara, el contador leería «no había» (§ 🧮).
@@ -2790,10 +2888,20 @@ export function armarWorkbook(
     hoja(wb, "13 Sueldos", hojaDeSueldos(sueldos, libro.ejercicio.etiqueta), COLS_SUELDOS)
   }
   // 🧾 Las cuentas corrientes, pegadas a los sueldos: las dos son saldos con personas.
-  if (cuentasCorrientes) {
+  if (cc) {
+    // 👥 A-FEAT-1537: 14 = clientes y proveedores; las marcas sin tratar y «Desglosar» son de los socios → 14.1.
     hoja(wb, "14 Cuentas corrientes",
-      hojaDeCuentasCorrientes(cuentasCorrientes, libro.ejercicio.fechaCierre),
+      hojaDeCuentasCorrientes({ ...cc.terceros, sinTratar: [], totalSinTratar: 0, desgloseTarjeta: undefined },
+        libro.ejercicio.fechaCierre, "CUENTAS CORRIENTES — clientes y proveedores",
+        "Las cuentas con los socios (José, Andrés, MA, Sucesión) están en la solapa «14.1 Cuentas con socios» y no suman a 03 ni a 04."),
       COLS_CUENTAS_CORRIENTES)
+    if (cc.socios.length > 0 || cc.terceros.sinTratar.length > 0) {
+      hoja(wb, "14.1 Cuentas con socios",
+        hojaDeCuentasCorrientes({ ...cc.terceros, cuentas: cc.socios, aseguradoras: undefined, historicoSinAtribuir: 0 },
+          libro.ejercicio.fechaCierre, "CUENTAS CORRIENTES CON LOS SOCIOS — se ven después (JMS 04/11)",
+          "No suman a las cuentas a pagar ni a cobrar. Abajo, las marcas del extracto todavía sin tratar y los pagos de la tarjeta a desglosar."),
+        COLS_CUENTAS_CORRIENTES)
+    }
   }
   if (templates) {
     // 🧾 JMS 29/10 (A-FEAT-1422 nota 10): en dos solapas, «Impuestos» y «Otros», cada una con su «por mes».
