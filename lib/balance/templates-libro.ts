@@ -249,9 +249,21 @@ export interface TemplatesDelEjercicio {
    */
   enFacturas: CuotaTemplate[]
   totalEnFacturas: number
+  /** ✍️ A-FEAT-1539: las cuotas que van por la cuenta corriente de un socio (`CATEGORIAS_A_CUENTA_SOCIO`): fuera del gasto, se listan. */
+  aCuentaSocio?: Array<CuotaTemplate & { socio: string }>
+  totalACuentaSocio?: number
   /** Con qué se armó (para partirlo en Impuestos / Otros sin volver a leer). */
   entrada?: { cuotas: CuotaTemplate[]; ej: Ejercicio; opciones: OpcionesTemplates }
 }
+
+/**
+ * ✍️ **Categorías que NO son gasto de la empresa: van por la cuenta corriente de un socio** (A-FEAT-1539). JMS 04/11, en el libro H
+ * (Impuestos General): *«Gastos Reintegro JMS — este ponelo en la cta de JMS, así lo facturo»*. El movimiento del banco ya lleva la
+ * marca «CUENTA JMS» y suma en la cuenta con JMS (papel 14.1): contarlo además como gasto era contarlo dos veces.
+ */
+export const CATEGORIAS_A_CUENTA_SOCIO: Array<{ categ: string; socio: string }> = [
+  { categ: "Gastos Reintegro JMS", socio: "JMS" },
+]
 
 /** Donde van los templates sin agrupadora cargada (⚠️ cambió 01/11: antes era «sin agrupadora en el plan de cuentas»). */
 export const SIN_AGRUPADORA = "(sin agrupadora en el template)"
@@ -344,6 +356,8 @@ export function armarTemplatesDelEjercicio(
   const sinFecha: CuotaTemplate[] = []
   const noIncluidas: CuotaTemplate[] = []
   const enFacturas: CuotaTemplate[] = []
+  const aCuentaSocio: Array<CuotaTemplate & { socio: string }> = []
+  const socioDe = new Map(CATEGORIAS_A_CUENTA_SOCIO.map(x => [normalizar(x.categ), x.socio]))
   const excluida = (c: CuotaTemplate) => ESTADOS_TEMPLATE_EXCLUIDOS.includes((c.estado || "").toLowerCase())
   const impaga = (c: CuotaTemplate) => ESTADOS_TEMPLATE_IMPAGOS.includes((c.estado || "").toLowerCase())
   for (const c of cuotas) {
@@ -354,6 +368,9 @@ export function armarTemplatesDelEjercicio(
     if (excluida(c)) { noIncluidas.push(c); continue }      // A-BUG-1289: no es gasto, pero se ve
     // 🛡️ A-FEAT-1388: ya es gasto por la factura de la aseguradora. Fuera del total, pero se lista.
     if (c.egresoId && conPoliza.has(c.egresoId)) { enFacturas.push(c); continue }
+    // ✍️ A-FEAT-1539: va por la cuenta del socio (papel 14.1), no es gasto. Fuera del total, pero se lista.
+    const socio = socioDe.get(normalizar(c.categ))
+    if (socio) { aCuentaSocio.push({ ...c, socio }); continue }
     detalle.push(c)
   }
   // Mismo orden en las dos solapas: tipo → responsable (la empresa del balance primero) → fecha.
@@ -457,6 +474,7 @@ export function armarTemplatesDelEjercicio(
     impagasAlCierre, totalImpagas: redondear(impagasAlCierre.reduce((x, c) => x + c.monto, 0)),
     porTipo,
     enFacturas, totalEnFacturas: redondear(enFacturas.reduce((x, c) => x + c.monto, 0)),
+    aCuentaSocio, totalACuentaSocio: redondear(aCuentaSocio.reduce((x, c) => x + c.monto, 0)),
     entrada: { cuotas, ej, opciones },
   }
 }

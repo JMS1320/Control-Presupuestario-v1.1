@@ -49,10 +49,10 @@ import { armarStocksUnificados, hojaDeStocks } from "./stocks-unificado"
 import { solapasPapelesH, type DatosPapelesH } from "./papeles-impuestos-h"
 import type { HojaConEstilo } from "@/lib/impuestos/papel-formato-jms"
 import { hojaLibertad } from "./libertad"
-import { armarGruposTemplates, armarHojaGrupo, gruposDelResponsable, hojaExtractoSinCategoria, hojaGrupo, hojaIndiceGrupos, hojaLib, nombreSolapaGrupo, type GrupoTemplates, type MovimientoLib } from "./grupos-templates"
+import { armarGruposTemplates, cuotaSinPago, armarHojaGrupo, gruposDelResponsable, hojaExtractoSinCategoria, hojaGrupo, hojaIndiceGrupos, hojaLib, nombreSolapaGrupo, type GrupoTemplates, type MovimientoLib } from "./grupos-templates"
 import { sinCategoriaNiVinculo, type MovimientoExtractoH } from "./movimientos-de-cuotas"
 import { filasBalanceEnLinea, hojaBalanceEnLinea, hojaCajaYBancos, hojaFci, hojaDeudasYCreditos, hojaSoja, hojaVacasDeCria, type EntradaBalanceEnLinea } from "./balance-en-linea"
-import { LIBROS, repartirEnLibros, templatesDeResponsable, hojaListadoTemplates, hojaDeDetalle, type GrupoDetalle, type MovimientoDelDetalle } from "./libros-del-balance"
+import { LIBROS, repartirEnLibros, templatesDeResponsable, responsablePrincipal, hojaListadoTemplates, hojaDeDetalle, type GrupoDetalle, type MovimientoDelDetalle } from "./libros-del-balance"
 import { hojaDelRecorrido, sincronizarPendientes, type RecorridoParaExcel } from "./recorrido-excel"
 import { hojaDeSaldosAnteriores, type SaldosAnteriores } from "./ajustes-balance"
 import {
@@ -75,6 +75,9 @@ import { armarCobertura, ICONO, TEXTO_ESTADO, type CoberturaPapeles, type Estado
 import { fechasReales } from "@/lib/excel/fechas-reales"
 
 const money = (n: number) => Math.round(n * 100) / 100
+/** 📗 A-FEAT-1539: AAAA-MM-DD → DD/MM/AAAA. */
+const dmy = (f: string | null | undefined) => (f ? f.slice(0, 10).split("-").reverse().join("/") : "")
+const r2 = money
 
 /**
  * 🛑 Un renglón con ERROR (las partes del comprobante no suman su propio total): fondo rojo suave y letra roja.
@@ -3132,20 +3135,114 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
     const sinCateg = extracto ? sinCategoriaNiVinculo(extracto.movimientos, resp) : []
     const hojaSinCateg = `H · ${resp} · Extracto sin categ`
     const porMes = hojaTemplatesPorMes(t)
-    const filasPorMes = [...porMes, ...controlSolapasH(t, grupos, porMes.length), ...lineaSinCategoria(sinCateg, hojaSinCateg, !!extracto)]
+    const filasPorMes = [...porMes, ...controlSolapasH(t, grupos, porMes.length), ...lineaSinCategoria(sinCateg, hojaSinCateg, !!extracto),
+      ...lineaACuentaSocio(templates, resp)]
     plegarNotasPorMes(filasPorMes)
     hoja(wb, hojaPorMes, filasPorMes, COLS_TEMPLATES_POR_MES(t.columnas.length))
     for (const x of grupos) hoja(wb, x.nombre, x.filas, COLS_RESUMEN_MES)
     if (sinCateg.length) hoja(wb, hojaSinCateg, hojaExtractoSinCategoria(sinCateg, resp, etiqueta, meses), COLS_RESUMEN_MES)
     // 🏛️ A-FEAT-1516: el papel de cada impuesto por partida (2 años calendario) con su control contra las solapas de arriba.
+    // 🚗 A-FEAT-1539 (JMS 04/11: «esto hay que armarlo mejor, no me convence ni éste ni el otro de automotores»): un renglón por
+    // vehículo con lo pagado y cuándo; reemplaza al papel de automotores (el de la planilla de impuestos).
+    const autos = hojaAutomotores(t.detalle, resp, etiqueta)
+    if (autos) hoja(wb, `H · ${resp} · Automotores`, autos, COLS_AUTOMOTORES)
     if (papeles) {
-      for (const x of solapasPapelesH(papeles, resp, meses.map(m => m.clave), t.detalle)) agregarHojaConEstilo(wb, x.nombre, x.hoja)
+      for (const x of solapasPapelesH(papeles, resp, meses.map(m => m.clave), t.detalle)) {
+        if (autos && / Papel Automotores$/.test(x.nombre)) continue
+        agregarHojaConEstilo(wb, x.nombre, x.hoja)
+      }
     } else {
       hoja(wb, `H · ${resp} · Papel impuestos`, [["INMOBILIARIO, RED VIAL Y AUTOMOTORES"], ["⚠️ No se pudieron leer las cuotas de impuestos: el papel no salió. Bajalo desde Egresos → Templates → Planilla de impuestos."]], [{ ancho: 90 }])
     }
   }
   // 🏢 A-FEAT-1521: Libertad cruza responsables (PAM hasta dic-25, MA desde ene-26, siempre con MSA): una sola solapa al final.
   hoja(wb, "H · Gastos Libertad", hojaLibertad(templates.detalle, etiqueta, meses, templates.entrada?.opciones.extracto), COLS_RESUMEN_MES)
+  // 📗 A-FEAT-1539: el libro para mandar — sin la palabra «template» (no es contable) y sin subtítulos.
+  pulirLibroH(wb)
+}
+
+/** ✍️ A-FEAT-1539: lo que va por la cuenta de un socio, al pie de «Por mes» (no es gasto, pero se ve). */
+function lineaACuentaSocio(t: TemplatesDelEjercicio, resp: string): unknown[][] {
+  const del = (t.aCuentaSocio ?? []).filter(c => responsablePrincipal(c.responsable) === resp)
+  if (!del.length) return []
+  return [[], ["VAN POR LA CUENTA DE UN SOCIO — no son gasto: suman en su cuenta corriente (libro B, solapa 14.1)"],
+    ...del.map(c => ["", c.socio, c.categ, `${dmy(c.fecha)} · ${c.detalle || c.concepto}`, money(c.monto)])]
+}
+
+/**
+ * 🚗 **Automotores, un renglón por vehículo** (A-FEAT-1539). Por el criterio contable todo es de la empresa del libro. Cada
+ * vehículo con su impuesto, lo pagado en el ejercicio (cuándo, cuánto y por qué banco) y lo que no se pagó, marcado.
+ */
+export function hojaAutomotores(cuotas: CuotaTemplate[], resp: string, etiqueta: string): unknown[][] | null {
+  const del = cuotas.filter(c => responsablePrincipal(c.responsable) === resp && /automotor/i.test(`${c.agrupadoraTemplate ?? ""} ${c.categ} ${c.concepto}`))
+  if (!del.length) return null
+  const vehiculo = (c: CuotaTemplate) => c.concepto.replace(/imp(uesto)?\.?\s*automotor(es)?/i, "").replace(/\b(cuota|anual)\b.*$/i, "").trim() || c.concepto
+  const porVehiculo = new Map<string, CuotaTemplate[]>()
+  for (const c of del) porVehiculo.set(vehiculo(c), [...(porVehiculo.get(vehiculo(c)) ?? []), c])
+  const f: unknown[][] = [[`AUTOMOTORES — ${resp} — ejercicio ${etiqueta}`], []]
+  f.push(["Vehículo", "Impuesto (organismo)", "Modalidad", "Pagado en el ejercicio", "Pagos (fecha · importe · banco)", "Sin pago en el ejercicio", "Estado"])
+  const d = f.length + 1
+  let total = 0
+  for (const [v, cs] of [...porVehiculo].sort((a, b) => a[0].localeCompare(b[0], "es"))) {
+    const pagas = cs.filter(c => !cuotaSinPago(c)).sort((a, b) => (a.fecha ?? "").localeCompare(b.fecha ?? ""))
+    const sinPago = cs.filter(c => cuotaSinPago(c))
+    const pagado = r2(pagas.reduce((s, c) => s + c.monto, 0))
+    total = r2(total + pagado)
+    const modal = [...new Set(pagas.map(c => (/anual/i.test(c.concepto) ? "anual" : "cuotas")))].join(" + ") || "—"
+    f.push([v, [...new Set(cs.map(c => c.proveedor).filter(Boolean))].join(" / "), modal, money(pagado),
+      pagas.map(c => `${dmy(c.fecha)} · ${fmtAr(c.monto)} · ${c.banco?.cuenta || "sin movimiento"}`).join("  |  "),
+      sinPago.length ? `${sinPago.length} cuota(s): ${sinPago.map(c => `${dmy(c.fecha)} ${c.estado}${Math.abs(c.monto) < 0.005 ? " en $ 0" : " " + fmtAr(c.monto)}`).join(", ")}` : "",
+      pagas.length ? (sinPago.length ? "pagado en parte" : "pagado") : "SIN PAGO EN EL EJERCICIO"])
+  }
+  const h = f.length
+  f.push(["TOTAL", "", "", conFormula(`SUM(D${d}:D${h})`, total)])
+  return f
+}
+
+const COLS_AUTOMOTORES: Columna[] = [{ ancho: 18 }, { ancho: 24 }, { ancho: 12 }, { ancho: 18, z: MONEDA }, { ancho: 80 }, { ancho: 50 }, { ancho: 26 }]
+
+/** Lo que reemplaza a la palabra «template» en el libro H, en el orden en que se aplica (respeta mayúsculas). */
+const SIN_TEMPLATE: Array<[RegExp, string]> = [
+  [/TEMPLATES/g, "EGRESOS"], [/Templates/g, "Egresos"], [/templates/g, "egresos"],
+  [/TEMPLATE/g, "CONCEPTO"], [/Template/g, "Concepto"], [/template/g, "concepto"],
+]
+const sinTemplate = (s: string) => SIN_TEMPLATE.reduce((x, [re, por]) => x.replace(re, por), s)
+
+/**
+ * 📗 A-FEAT-1539 — el libro H listo para mandar (JMS 04/11):
+ * - *«no diga templates (tampoco en las solapas), no es una palabra contable»*: se cambia en los nombres de solapa, en el texto y
+ *   en las fórmulas (los criterios de SUMAR.SI y las referencias a solapas cambian igual, así siguen cerrando);
+ * - *«borrar subtítulos en todo el libro»*: los renglones de texto suelto entre el título y el primer renglón vacío se borran y la
+ *   fila se oculta (borrar la fila correría las fórmulas que ya apuntan a sus filas).
+ */
+export function pulirLibroH(wb: XLSX.WorkBook): void {
+  const esH = (n: string) => n.startsWith("H · ")
+  const renombre = new Map(wb.SheetNames.filter(esH).map(n => [n, sinTemplate(n)]))
+  for (const [viejo, nuevo] of renombre) {
+    if (viejo === nuevo) continue
+    wb.Sheets[nuevo] = wb.Sheets[viejo]; delete wb.Sheets[viejo]
+    wb.SheetNames[wb.SheetNames.indexOf(viejo)] = nuevo
+  }
+  for (const n of wb.SheetNames.filter(esH)) {
+    const ws = wb.Sheets[n]
+    for (const k of Object.keys(ws)) {
+      if (k.startsWith("!")) continue
+      const c = ws[k] as XLSX.CellObject & { f?: string }
+      if (typeof c.f === "string") c.f = sinTemplate(c.f)
+      if (typeof c.v === "string") { c.v = sinTemplate(c.v); if ((c as { w?: string }).w) (c as { w?: string }).w = c.v as string }
+    }
+    // Subtítulos: renglones 2.. con UNA sola celda de texto, hasta el primer renglón vacío, si el 1 es un título.
+    const a1 = ws["A1"] as XLSX.CellObject | undefined
+    if (!a1 || typeof a1.v !== "string" || ws["B1"]) continue
+    const celdasDe = (r: number) => Object.keys(ws).filter(k => !k.startsWith("!") && XLSX.utils.decode_cell(k).r === r)
+    const filas: XLSX.RowInfo[] = (ws["!rows"] ??= [])
+    for (let r = 1; r < 30; r++) {
+      const cs = celdasDe(r)
+      if (cs.length !== 1 || cs[0] !== XLSX.utils.encode_cell({ r, c: 0 }) || typeof (ws[cs[0]] as XLSX.CellObject).v !== "string") break
+      delete ws[cs[0]]
+      filas[r] = { ...(filas[r] ?? {}), hidden: true }
+    }
+  }
 }
 
 /**

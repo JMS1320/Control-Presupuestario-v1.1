@@ -15,6 +15,8 @@ import { filtrarEn } from "./formato-excel"
 export interface ItemDetalle {
   /** La categoría: define la línea del resumen. */
   categoria: string
+  /** 📗 A-FEAT-1539: clave de orden del detalle (banco → fecha). Si los ítems la traen, el detalle va en ese orden. */
+  orden?: string
   /** `AAAA-MM`. Fuera del ejercicio no suma en ningún mes (se ve en el detalle igual). */
   mes: string
   /** Lo que suma (con signo: neto). */
@@ -193,7 +195,10 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
   h.push(["DETALLE — filtrá por «Nro» para ver qué forma cada línea del resumen"])
   h.push(["Nro", "Mes", ...o.encabezadoDetalle, ...(o.porMoneda ? ["Moneda"] : []),
     ...(o.debeHaber ? ["Débito", "Crédito"] : [o.rotuloImporte ?? "Importe"])])
-  const orden = [...items].sort((a, b) => (nro.get(a.categoria || "(sin categoría)")! - nro.get(b.categoria || "(sin categoría)")!) || a.mes.localeCompare(b.mes))
+  const conOrden = items.some(i => i.orden !== undefined)
+  const orden = [...items].sort((a, b) => conOrden
+    ? (a.orden ?? "").localeCompare(b.orden ?? "")
+    : (nro.get(a.categoria || "(sin categoría)")! - nro.get(b.categoria || "(sin categoría)")!) || a.mes.localeCompare(b.mes))
   for (const i of orden) {
     const imp = r2(i.importe)
     h.push([nro.get(i.categoria || "(sin categoría)"), i.mes, ...i.columnas, ...(o.porMoneda ? [i.moneda ?? ""] : []),

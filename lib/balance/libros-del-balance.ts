@@ -34,7 +34,7 @@ export const LIBROS: Record<LetraLibro, string> = {
   E: "E - Stocks inicio y cierre",
   F: "F - Balance en linea",
   G: "G - Grupos de templates (propuesta)",
-  H: "H - Templates integral (reporte total)",
+  H: "H - Egresos con boleta, extracto y demás liquidaciones",
 }
 
 const DE_A = new Set(["Compras", "Ventas", "Compras por cuenta", "Ventas por cuenta"])

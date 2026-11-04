@@ -208,6 +208,7 @@ import { PRESENTADO_ARCA_COMPRAS, compararConPresentado } from "@/lib/balance/pr
 import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/balance/facturas-fijas"
 import { controlarCuotasTemplates, campaniaDelControl, claveDeNombre, CONTROL_CUOTAS_TEMPLATES, ultimoDiaDelMes, type ComisionesDelMes, type CuotaParaControl, type TemplateControlado, type EntradaControlCuotas } from "@/lib/balance/control-cuotas-templates"
 import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuestosYOtros } from "@/lib/balance/templates-libro"
+import { hojaAutomotores, pulirLibroH } from "@/lib/balance/export-libro-diario"
 import { repartoDeLaFlota } from "@/lib/balance/reparto-flota"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda } from "@/lib/balance/hacienda-stock"
@@ -12384,7 +12385,8 @@ export function correrCasos(): Resultado[] {
     chequear("Libro G", "Un grupo por responsable + agrupadora del template (el compartido va al primero); no entran lo financiero ni los grupos de una sola cuota; nombres de solapa cortos",
       e, v, v === e, "A-FEAT-1512")
     const h = hojaGrupo(gs[0], "25/26", [{ clave: "2025-09", rotulo: "sep-25" }])
-    const exp = h.find(r => r[1] === "EXPENSAS") as any[], agua = h.find(r => r[1] === "AGUA") as any[]
+    // 📗 A-FEAT-1539: la línea del resumen es categoría × banco («EXPENSAS — pagado sin movimiento del banco», «AGUA — sin pago»).
+    const exp = h.find(r => String(r[1] ?? "").startsWith("EXPENSAS — ")) as any[], agua = h.find(r => r[1] === "AGUA — sin pago") as any[]
     const v2 = `expensas Nro ${exp[0]} sep ${exp[2].v} total ${exp[3].v} · agua Nro ${agua[0]} ${agua[3].v} · fórmula ${String(exp[2].f).startsWith("SUMIFS")}`
     chequear("Libro G", "Cada solapa de grupo: categoría × mes con su Nro (fórmula sobre el detalle); abajo cada cuota con su Nro", "expensas Nro 2 sep 100 total 100 · agua Nro 1 20 · fórmula true", v2, v2 === "expensas Nro 2 sep 100 total 100 · agua Nro 1 20 · fórmula true", "A-FEAT-1513")
   }
@@ -12437,9 +12439,60 @@ export function correrCasos(): Resultado[] {
     const banco = h.find(r => (r as any[])[2] === "Diferencia" && (r as any[])[4]) as any[]
     const caso = h.find(r => (r as any[])[7] === "el banco movió distinto") as any[]
     const v = `${cab} · A: ${filaA.slice(2, 11).join("/")} · total en ${(h[rTot - 1] as any[])[1]} · detalle ${debitos}−${creditos} · porMes ${String(porMes[3].f).includes("'H · MSA · Por mes'!B:B,\"Créditos Bancarios\"")} · banco ${banco[3].v} ${banco[4].v} · caso ${caso ? caso[6] : "—"}`
-    const e = "Nro|Mes|Fecha|Template|Cuenta|Comprobante|Proveedor|Detalle|Estado|Débito|Crédito · A: 05/09/2025/Créditos Pagados/Santander MSA/77/Santander MSA/Interés descubierto/conciliado/100/ · total en TOTAL · detalle 115−10 · porMes true · banco -5 ⚠️ no cierra: ver los casos abajo · caso -5"
+    const e = "Nro|Mes|Fecha|Concepto|Banco / cuenta|Comprobante|Proveedor|Detalle|Estado|Débito|Crédito · A: 05/09/2025/Créditos Pagados/Santander MSA/77/Santander MSA/Interés descubierto/conciliado/100/ · total en TOTAL · detalle 115−10 · porMes true · banco -5 ⚠️ no cierra: ver los casos abajo · caso -5"
     chequear("Libro H", "Solapa de agrupadora para auditar: Fecha · Template · Cuenta · Comprobante · Proveedor (si falta, la cuenta) · Detalle · Estado · Débito · Crédito; control interno sobre el detalle entero, contra «Por mes» por agrupadora y contra el banco con sus casos",
       e, v, v === e, "A-FEAT-1515")
+  }
+
+  // ══ 📗 A-FEAT-1539 — el libro H para mandar: por banco y por fecha, sin «templates», sin subtítulos, automotores, reintegro JMS ══
+  {
+    const q = (id: string, fecha: string, monto: number, estado: string, cuenta: string, concepto = "Créditos Pagados") => ({ id, fecha, concepto, proveedor: "", categ: "CRED P",
+      cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable: "MSA", estado, monto, agrupadoraTemplate: "Créditos Bancarios",
+      banco: { cuenta, comprobante: "", respaldo: cuenta ? monto : null, motivo: null } })
+    const g = { responsable: "MSA", agrupadora: "Créditos Bancarios", total: 0, cuotas: [
+      q("1", "2025-09-20", 30, "conciliado", "Santander MSA"), q("2", "2025-09-05", 10, "conciliado", "Galicia MSA CC"),
+      q("3", "2025-09-01", 20, "conciliado", "Santander MSA"), q("4", "2025-09-02", 5, "pendiente", ""), q("5", "2025-09-03", 0, "conciliado", "")] } as never
+    const { filas: h } = armarHojaGrupo(g, "25/26", [{ clave: "2025-09", rotulo: "sep-25" }])
+    const enc = h.findIndex(r => (r as any[])[0] === "Nro" && (r as any[]).includes("Débito"))
+    const det = h.slice(enc + 1).filter(r => typeof (r as any[])[0] === "number") as any[][]
+    const resumen = h.filter(r => typeof (r as any[])[1] === "string" && String((r as any[])[1]).startsWith("CRED P — ")).map(r => (r as any[])[1])
+    const v = `subtítulos ${h[1]?.length ? "sí" : "no"} · resumen ${resumen.join(" | ")} · detalle ${det.map(r => `${r[4]} ${r[2]}`).join(" | ")}`
+    const e = "subtítulos no · resumen CRED P — Galicia MSA CC | CRED P — Santander MSA | CRED P — sin pago · detalle Galicia MSA CC 05/09/2025 | Santander MSA 01/09/2025 | Santander MSA 20/09/2025 | sin pago 02/09/2025 | sin pago 03/09/2025"
+    chequear("Libro H", "📗 Cada línea del resumen es categoría × banco y el detalle va por banco y por fecha; lo sin pago (pendiente o en $ 0) es su propio segmento, al final; sin subtítulos",
+      e, v, v === e, "A-FEAT-1539")
+
+    const autos = hojaAutomotores([
+      { ...q("a1", "2025-07-15", 151442.6, "anterior", "Galicia MSA CC", "Imp Automotores Amarok Cuota"), categ: "Impuesto Automotores", proveedor: "ARBA", agrupadoraTemplate: "Impuestos Automotores" },
+      { ...q("a2", "2025-09-08", 151442.6, "anterior", "Galicia MSA CC", "Imp Automotores Amarok Cuota"), categ: "Impuesto Automotores", proveedor: "ARBA", agrupadoraTemplate: "Impuestos Automotores" },
+      { ...q("g1", "2026-01-05", 0, "conciliado", "", "Imp Automotores Gol 2012 Anual"), categ: "Impuesto Automotores", proveedor: "Municipalidad SP", agrupadoraTemplate: "Impuestos Automotores" },
+      { ...q("x", "2026-01-05", 99, "conciliado", "Galicia MSA CC", "Honorarios"), categ: "HONORARIOS", agrupadoraTemplate: "Honorarios" },
+    ] as never, "MSA", "25/26")!
+    const fila = (v: string) => autos.find(r => (r as any[])[0] === v) as any[]
+    const tot = autos.find(r => (r as any[])[0] === "TOTAL") as any[]
+    const v2 = `Amarok ${fila("Amarok")[3]} ${fila("Amarok")[6]} pagos ${String(fila("Amarok")[4]).split("|").length} · Gol 2012 ${fila("Gol 2012")[3]} «${fila("Gol 2012")[6]}» · total ${tot[3].v} · honorarios ${autos.some(r => (r as any[])[0] === "Honorarios")}`
+    const e2 = "Amarok 302885.2 pagado pagos 2 · Gol 2012 0 «SIN PAGO EN EL EJERCICIO» · total 302885.2 · honorarios false"
+    chequear("Libro H", "🚗 Automotores: un renglón por vehículo con lo pagado en el ejercicio (fecha · importe · banco) y lo que no se pagó marcado; sólo cuotas de automotores",
+      e2, v2, v2 === e2, "A-FEAT-1539")
+
+    const wb = XLSXcasos.utils.book_new()
+    XLSXcasos.utils.book_append_sheet(wb, XLSXcasos.utils.aoa_to_sheet([["TEMPLATES DE MSA"], ["Un renglón por template."], ["Otra nota"], [], ["Concepto", "Template"],
+      [{ t: "n", f: "SUMIFS(A1:A2,B1:B2,\"(sin agrupadora en el template)\")", v: 0 }]]), "H · MSA · Templates")
+    XLSXcasos.utils.book_append_sheet(wb, XLSXcasos.utils.aoa_to_sheet([["Otro libro"], ["template"]]), "C · MSA · Templates")
+    pulirLibroH(wb)
+    const ws = wb.Sheets["H · MSA · Egresos"]
+    const v3 = `solapas ${wb.SheetNames.join(" | ")} · A1 ${ws?.A1?.v} · A2 ${ws?.A2?.v ?? "(borrado)"} oculta ${!!ws?.["!rows"]?.[1]?.hidden} · A3 ${ws?.A3?.v ?? "(borrado)"} · B5 ${ws?.B5?.v} · fórmula ${ws?.A6?.f} · otro libro ${wb.Sheets["C · MSA · Templates"].A2.v}`
+    const e3 = "solapas H · MSA · Egresos | C · MSA · Templates · A1 EGRESOS DE MSA · A2 (borrado) oculta true · A3 (borrado) · B5 Concepto · fórmula SUMIFS(A1:A2,B1:B2,\"(sin agrupadora en el concepto)\") · otro libro template"
+    chequear("Libro H", "📗 El libro H para mandar: sin la palabra «template» (solapas, texto y fórmulas por igual, así los controles siguen cerrando) y sin subtítulos; los otros libros no se tocan",
+      e3, v3, v3 === e3, "A-FEAT-1539")
+
+    const ej = armarEjercicio(2026, 6)
+    const cq = (categ: string, monto: number) => ({ id: categ, fecha: "2026-04-16", concepto: categ, proveedor: "", categ, cuenta_contable: "", nro_cuenta: "", centro_costo: "",
+      responsable: "MSA", estado: "conciliado", monto })
+    const tr = armarTemplatesDelEjercicio([cq("Gastos Reintegro JMS", 2137884.27), cq("Impuesto IIBB", 100)] as never, ej)
+    const v4 = `gasto ${tr.detalle.map(c => c.categ).join(",")} · a cuenta ${tr.aCuentaSocio?.map(c => `${c.socio} ${c.monto}`).join(",")} · total ${tr.totalACuentaSocio}`
+    const e4 = "gasto Impuesto IIBB · a cuenta JMS 2137884.27 · total 2137884.27"
+    chequear("Libro H", "✍️ «Gastos Reintegro JMS» no es gasto de MSA: va por la cuenta de JMS (el movimiento ya lleva «CUENTA JMS»); se lista aparte, no se tira",
+      e4, v4, v4 === e4, "A-FEAT-1539")
   }
 
 

@@ -86,6 +86,8 @@ const POR_MES = { agrupadora: "B", categoria: "C", total: "P" }
 /** Cómo se rotula en «Por mes» el grupo sin agrupadora (`SIN_AGRUPADORA` de templates-libro). */
 const SIN_AGRUPADORA_POR_MES = "(sin agrupadora en el template)"
 const ESTADOS_SIN_PAGAR = ["pendiente", "pagar", "preparado"]
+/** 📗 A-FEAT-1539: sin pago en el ejercicio = pendiente (o a pagar), o una cuota en $ 0 (no se pagó nada). */
+export const cuotaSinPago = (c: CuotaTemplate) => ESTADOS_SIN_PAGAR.includes((c.estado || "").toLowerCase()) || Math.abs(c.monto) < 0.005
 
 /**
  * 📗 A-FEAT-1515 — la solapa de una agrupadora del libro H, escrita para AUDITARLA (JMS 01/11: *«el primer usuario del
@@ -102,15 +104,20 @@ const ESTADOS_SIN_PAGAR = ["pendiente", "pagar", "preparado"]
  *    (un pago agrupado, una cuota en $ 0): puede tener explicación. Y lo pagado sin banco y lo sin pagar, como renglones.
  */
 export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { clave: string; rotulo: string }[] = [], opciones: OpcionesHojaGrupo = {}): { filas: unknown[][]; celdaTotal: string | null } {
+  /**
+   * 📗 A-FEAT-1539 (JMS 04/11: *«en general siempre segmentalo por banco, así uno puede seguir una lógica al leer, y por fecha»*):
+   * cada línea del resumen es categoría × banco, y el detalle va por banco y por fecha. Lo que no tiene pago (pendiente, en
+   * $ 0, sin movimiento) queda como su propio segmento, «sin pago», al final. Sin subtítulos (*«borrar subtítulos en todo el libro»*).
+   */
+  const bancoDe = (c: CuotaTemplate) => cuotaSinPago(c) ? "" : (c.banco?.cuenta || "pagado sin movimiento del banco")
   const { filas: h, ubicacion: u } = armarResumenPorMes(g.cuotas.map(c => ({
-    categoria: c.categ || "(sin categoría)", mes: (c.fecha ?? "").slice(0, 7), importe: c.monto,
-    columnas: [dmy(c.fecha), c.concepto, c.banco?.cuenta ?? "", c.banco?.comprobante ?? "",
+    categoria: `${c.categ || "(sin categoría)"} — ${bancoDe(c) || "sin pago"}`, mes: (c.fecha ?? "").slice(0, 7), importe: c.monto,
+    orden: `${bancoDe(c) ? "0" + bancoDe(c) : "1"}|${c.fecha ?? ""}|${c.concepto}`,
+    columnas: [dmy(c.fecha), c.concepto, bancoDe(c) || "sin pago", c.banco?.comprobante ?? "",
       c.proveedor || c.banco?.cuenta || "", c.detalle ?? "", c.estado],
   })), {
     titulo: `${g.agrupadora.toUpperCase()} — ${g.responsable} — ejercicio ${etiqueta}`,
-    notas: ["Por categoría y por mes (fórmulas sobre el detalle). Las cuotas cuentan por fecha de pago, o la estimada si no se pagó.",
-      "Cuenta y comprobante: los del movimiento del banco con el que se concilió la cuota. Al pie, el CONTROL."],
-    meses, encabezadoDetalle: ["Fecha", "Template", "Cuenta", "Comprobante", "Proveedor", "Detalle", "Estado"],
+    meses, encabezadoDetalle: ["Fecha", "Concepto", "Banco / cuenta", "Comprobante", "Proveedor", "Detalle", "Estado"],
     debeHaber: true,
   })
   if (!u.celdaTotal || !u.colDebito || !u.colCredito) return { filas: h, celdaTotal: u.celdaTotal }

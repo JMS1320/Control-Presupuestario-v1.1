@@ -3990,6 +3990,12 @@ la cuenta llega a todos los extractos: bancos, las tres tarjetas, las cajas y lo
 
 ## 🧾 Papeles de balance → CUENTAS CORRIENTES *(2026-10-01)*
 
+⚠️ **Cambió 04/11 — el libro H, para mandar:** se llama **«Egresos con boleta, extracto y demás liquidaciones»** y no usa la
+palabra «template» (la lista es «Egresos», la columna es «Concepto»). Sin subtítulos. En cada agrupadora, el resumen va **por
+categoría y banco** y el detalle **por banco y por fecha**; lo que no se pagó queda al final como «sin pago». **Automotores** es una
+tabla con un renglón por vehículo (qué se pagó, cuándo y por qué banco, y qué no se pagó). Lo que va por la cuenta de un socio (por
+ejemplo «Gastos Reintegro JMS») no es gasto: está al pie de «Por mes». → A-TEST-1324
+
 ⚠️ **Cambió 04/11 — tres solapas en el libro B:**
 - **«04 Cuentas a pagar»** lleva **sólo lo que es deuda**: facturas sin pagar al cierre, **sueldos devengados que se
   pagaron después** (sin José, Andrés ni MA) y las cuentas corrientes de proveedores. Abajo, el **total al cierre** con
