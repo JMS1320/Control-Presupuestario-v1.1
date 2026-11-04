@@ -3021,6 +3021,32 @@ Una **factura B o C no discrimina el IVA**: su total no tiene partes, y sin esa 
 base hay facturas C guardadas de dos maneras (con el total en «no gravado», o con todo en 0): el total no cambia, pero la columna «No
 gravado» da muy distinto que ARCA. Tolerancia: 0,05 por comprobante (`TOLERANCIA_POR_COMPROBANTE`, redondeo del emisor).
 
+## Los papeles del balance «para mandar» — lo que se aprendió el 04/11 `#balance #export #papeles #2026-11-04`
+
+Notas de JMS en el set (libros B y H) antes de mandarle la base al contador. Lo que vale para cualquier papel:
+
+- **El papel que va al contador lleva sólo lo que suma; lo demás va a una solapa de RESPALDO en el mismo libro.** JMS: *«se
+  manda sin todo eso, sino confunde; pero solapa aparte todo, así queda documentado»*. Ej.: 04 Cuentas a pagar → 04.3 Respaldo
+  (dadas por pagadas, sistema anterior, conciliadas sin fecha, seguros, cuotas de templates a confirmar, sueldos, anticipos,
+  socios). § 🧮 «nada se descarta en silencio» se cumple en el respaldo, no en el papel.
+- **Clientes y proveedores, por un lado; socios, por otro.** El papel 14 es sólo de terceros (AFA, ACREN); los socios (José,
+  Andrés, MA, Sucesión) van a 14.1 y no suman a 03/04 hasta que se vean sus cuentas.
+- **Una decisión del usuario sobre un saldo se escribe como AJUSTE a la vista, no como dato pisado**: `CIERRES_DECIDIDOS`
+  (ACREN en 0: cuenta en US$, el saldo en pesos es diferencia de cambio), `ANTICIPOS_EN_CERO` (25/26: registros del principio
+  sin vincular — la lista va al respaldo, la base no se tocó), `PAGADOS_EN_EFECTIVO_POR_FUERA` (Elvio y Vulcano por Caja Sigot).
+- **Un detalle se segmenta POR BANCO y por fecha** (*«así uno puede seguir una lógica al leer»*): línea del resumen = categoría ×
+  banco; lo sin pago (pendiente o en $ 0) es su propio segmento al final.
+- **«Template» no es una palabra contable**: el libro H se llama «Egresos con boleta, extracto y demás liquidaciones» y la palabra
+  sale de solapas, texto y fórmulas por igual (`pulirLibroH`) — si se cambia el texto y no el criterio de un SUMAR.SI, el control
+  deja de cerrar.
+- **Borrar subtítulos de un Excel armado = ocultar la fila, no borrarla**: borrarla corre todas las fórmulas que ya apuntan a sus
+  filas.
+- **Un movimiento marcado a la cuenta de un socio no es además gasto**: «Gastos Reintegro JMS» tenía «CUENTA JMS» y también
+  sumaba en Impuestos General → contado dos veces (`CATEGORIAS_A_CUENTA_SOCIO`).
+- **Sueldos van en su export aparte** (JMS), no en cuentas a pagar.
+- **Comparar dos versiones de un set**: por solapa y por total; las sumas «sueltas» engañan (en el H subieron unos pesos por los
+  números de renglón nuevos, no por plata).
+
 ## Cuentas con los socios y control de la plata — lo que se aprendió el 03/11 `#balance #socios #libertad #plata #2026-11-03`
 
 De armar las cuentas MSA↔MA y MSA↔PAM ([A-FEAT-1532](PENDIENTES.md#a-feat-1532)) y la primera corrida del control de la plata
