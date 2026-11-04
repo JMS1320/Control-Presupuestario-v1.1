@@ -154,7 +154,7 @@ import {
 import { armarCuentasAlCierre, canceladoPorCuotasAlCierre, type ComprobanteConPago } from "@/lib/balance/cuentas-al-cierre"
 import { sacarLosDeCuentaCorriente, cuitsConCuentaCorriente } from "@/lib/balance/fuera-por-cuenta-corriente"
 import {
-  armarChequesDados, armarAnticiposAlCierre,
+  armarChequesDados, armarAnticiposAlCierre, aplicarAnticiposEnCero,
   type ChequeCrudo, type AnticipoCrudo, type AplicacionDeAnticipo,
 } from "@/lib/balance/valores-al-cierre"
 import {
@@ -12282,15 +12282,15 @@ export function correrCasos(): Resultado[] {
       ({ id, anio: 2026, mes, empleado: { nombre, empresa }, bruto_calculado: bruto })
     const meses = ["2026-05", "2026-06"]
     const su = sueldosImpagosAlCierre([
-      per("s", "Ruben Sigot", "MSA", 1000), per("e", "Elvio Paz", "MSA", 500), per("m", "MA", "MSA", 1500),
+      per("s", "Ruben Sigot", "MSA", 1000), per("e", "Elvio Paz", "MSA", 500), per("m", "MA", "MSA", 1500), per("n", "Juan Nuevo", "MSA", 300),
       per("a", "Alondra Olivo", "MA", 700), per("w", "Wilson Barreto", "MSA", 900), per("v", "Viejo", "MSA", 400, 1),
     ] as never, [
       { periodo_id: "s", fecha: "2026-06-30", monto: 800 }, { periodo_id: "s", fecha: "2026-07-24", monto: 200 },
       { periodo_id: "w", fecha: "2026-06-30", monto: 900 }, { periodo_id: "a", fecha: "2026-07-10", monto: 700 },
     ], meses, "2026-06-30", "MSA")
-    const v3 = `deuda ${su.total} (${su.filas.map(x => x.empleado).join(",")}) · a confirmar ${su.totalAConfirmar} (${su.aConfirmar.map(x => x.empleado).join(",")})`
-    const e3 = "deuda 200 (Ruben Sigot) · a confirmar 500 (Elvio Paz)"
-    chequear("Papel 04", "👷 Sueldos al cierre: lo pagado DESPUÉS del cierre es deuda; sin pago cargado va a confirmar; socios (MA), empleados de otra empresa y meses fuera del ejercicio no entran",
+    const v3 = `deuda ${su.total} (${su.filas.map(x => x.empleado).join(",")}) · a confirmar ${su.totalAConfirmar} (${su.aConfirmar.map(x => x.empleado).join(",")}) · pagados por caja ${su.totalPagadosPorFuera} (${su.pagadosPorFuera.map(x => x.empleado).join(",")})`
+    const e3 = "deuda 200 (Ruben Sigot) · a confirmar 300 (Juan Nuevo) · pagados por caja 500 (Elvio Paz)"
+    chequear("Papel 04", "👷 Sueldos al cierre: lo pagado DESPUÉS del cierre es deuda; sin pago cargado va a confirmar, salvo los que se pagan por Caja Sigot (Elvio, Vulcano: nada adeudado); socios (MA), empleados de otra empresa y meses fuera del ejercicio no entran",
       e3, v3, v3 === e3, "A-FEAT-1537")
 
     const ccMix = { cuentas: [
@@ -12317,6 +12317,17 @@ export function correrCasos(): Resultado[] {
     const e5 = "04: total 580=f · sueldos true · dadas por pagadas false · templates false · Andrés false | 04.3: dadas por pagadas true · templates true · sueldos a confirmar true · socios true"
     chequear("Papel 04", "📒 El 04 lleva sólo lo que suma (comprobantes + sueldos pagados después + cuentas corrientes de terceros, con fórmula); lo que no es deuda va entero a «04.3 Respaldo»",
       e5, v5, v5 === e5, "A-FEAT-1537")
+
+    const antX = (tipo: string, nombre: string, saldo: number) => ({ anticipo: { tipo, nombre_proveedor: nombre, monto: saldo, fecha_pago: "2026-04-20" }, aplicadoAlCierre: 0, saldoAlCierre: saldo, aplicadoDespues: 0 })
+    const anBase = { aProveedores: [antX("pago", "Biscayart", 3000)], totalAProveedores: 3000, deClientes: [antX("cobro", "Genta", 9000)], totalDeClientes: 9000,
+      sinTipo: [], totalSinTipo: 0, sinEmpresa: 0, totalSinEmpresa: 0, deOtraEmpresa: 0, descuadres: [], tiposSinClasificar: [], avisos: [], mirados: 2 } as never
+    const an0 = aplicarAnticiposEnCero(anBase, "MSA", 2026)
+    const anOtro = aplicarAnticiposEnCero(anBase, "MSA", 2027)
+    const hR2 = hojaRespaldoDeCuentas(r, "RESPALDO", "2026-06-30", undefined, su, [], an0)
+    const v6 = `2026: ${an0.totalAProveedores}/${an0.totalDeClientes} guardados ${an0.enCeroPorDecision?.totalAProveedores}/${an0.enCeroPorDecision?.totalDeClientes} · 2027: ${anOtro.totalAProveedores} · respaldo Biscayart ${tiene(hR2, "Biscayart")} Genta ${tiene(hR2, "Genta")} · Elvio por caja ${tiene(hR2, "SUELDOS PAGADOS EN EFECTIVO")}`
+    const e6 = "2026: 0/0 guardados 3000/9000 · 2027: 3000 · respaldo Biscayart true Genta true · Elvio por caja true"
+    chequear("Papel 04", "✍️ Anticipos de 25/26 en 0 al cierre por decisión de JMS (registros del principio sin vincular): los totales no los suman y la lista queda en el respaldo; otro ejercicio no se toca",
+      e6, v6, v6 === e6, "A-FEAT-1537")
   }
 
   // ══ 📒 Libro F — balance en línea (A-FEAT-1509) ══

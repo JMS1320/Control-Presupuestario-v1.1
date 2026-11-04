@@ -264,7 +264,19 @@ export interface SueldosImpagosAlCierre {
    */
   aConfirmar: SueldoImpagoAlCierre[]
   totalAConfirmar: number
+  /** ✍️ Los que se pagan en efectivo por fuera del módulo (sin el pago cargado): NO son deuda. Se listan en el respaldo. */
+  pagadosPorFuera: SueldoImpagoAlCierre[]
+  totalPagadosPorFuera: number
 }
+
+/**
+ * ✍️ JMS 04/11: *«siempre en efectivo desde Caja Sigot, pero no les he cargado su sueldo nunca, quedaron boyando»* · *«a Elvio
+ * y Vulcano no le pongas nada adeudado»*. Su sueldo está pagado: no es deuda aunque Sueldos no tenga el pago.
+ */
+export const PAGADOS_EN_EFECTIVO_POR_FUERA: Array<{ empleado: string; como: string }> = [
+  { empleado: "Elvio Paz", como: "en efectivo desde Caja Sigot (JMS 04/11)" },
+  { empleado: "Fabian Vulcano", como: "en efectivo desde Caja Sigot (JMS 04/11)" },
+]
 
 /**
  * JMS 04/11 en el papel 04: *«agregar sueldos (sin José, Andrés, MA que van por cta cte)»*.
@@ -280,7 +292,8 @@ export function sueldosImpagosAlCierre(periodos: PeriodoConId[], pagos: PagoDeSu
   const delEjercicio = new Set(meses)
   const porPeriodo = new Map<string, PagoDeSueldo[]>()
   for (const p of pagos) porPeriodo.set(p.periodo_id, [...(porPeriodo.get(p.periodo_id) ?? []), p])
-  const filas: SueldoImpagoAlCierre[] = [], aConfirmar: SueldoImpagoAlCierre[] = []
+  const filas: SueldoImpagoAlCierre[] = [], aConfirmar: SueldoImpagoAlCierre[] = [], pagadosPorFuera: SueldoImpagoAlCierre[] = []
+  const porFuera = new Set(PAGADOS_EN_EFECTIVO_POR_FUERA.map(x => norm(x.empleado)))
   for (const p of periodos) {
     const periodo = `${p.anio}-${String(p.mes).padStart(2, "0")}`
     if (!delEjercicio.has(periodo)) continue
@@ -296,13 +309,15 @@ export function sueldosImpagosAlCierre(periodos: PeriodoConId[], pagos: PagoDeSu
       periodo, empleado: p.empleado?.nombre ?? "(sin nombre)", bruto, pagadoAlCierre: antes, pagadoDespues,
       fechaPago: despues.map(x => x.fecha!).sort().pop() ?? null, sinPagar: r2(Math.max(0, bruto - antes - pagadoDespues)),
     }
+    if (porFuera.has(norm(p.empleado?.nombre))) { if (fila.sinPagar >= 100) pagadosPorFuera.push(fila); continue }
     if (pagadoDespues > 0) filas.push(fila)
     if (fila.sinPagar >= 100) aConfirmar.push(fila)
   }
   const orden = (a: SueldoImpagoAlCierre, b: SueldoImpagoAlCierre) => a.periodo.localeCompare(b.periodo) || a.empleado.localeCompare(b.empleado, "es")
-  filas.sort(orden); aConfirmar.sort(orden)
+  filas.sort(orden); aConfirmar.sort(orden); pagadosPorFuera.sort(orden)
   return {
     filas, total: r2(filas.reduce((t, x) => t + x.pagadoDespues, 0)),
     aConfirmar, totalAConfirmar: r2(aConfirmar.reduce((t, x) => t + x.sinPagar, 0)),
+    pagadosPorFuera, totalPagadosPorFuera: r2(pagadosPorFuera.reduce((t, x) => t + x.sinPagar, 0)),
   }
 }

@@ -287,6 +287,35 @@ export interface AnticiposAlCierre {
   avisos: string[]
   /** Cuántos anticipos de esta empresa existían al cierre. Cierra el conteo. */
   mirados: number
+  /**
+   * ✍️ A-FEAT-1537: el usuario decidió que al cierre NO hay anticipos (son registros del principio que no llegaron a
+   * vincularse bien). Lo que había queda acá, para el respaldo; los totales de arriba van en 0.
+   */
+  enCeroPorDecision?: { motivo: string; aProveedores: AnticipoAlCierre[]; totalAProveedores: number; deClientes: AnticipoAlCierre[]; totalDeClientes: number }
+}
+
+/** ✍️ A-FEAT-1537 — los ejercicios donde el usuario decidió los anticipos al cierre en 0. */
+export const ANTICIPOS_EN_CERO: Array<{ empresa: string; anioCierre: number; motivo: string }> = [
+  {
+    empresa: "MSA", anioCierre: 2026,
+    // JMS 04/11, en el papel 04.2: «en realidad acá no habría nada, ¿verdad? Mucho anticipo que no llegó la FC o cosas que
+    // no se procesaron bien en su momento» · «podemos dejarlo así pero que no vayan al export».
+    motivo: "al 30/06/26 no hay anticipos: son registros del principio que no llegaron a vincularse a su factura o a su venta "
+      + "(JMS 04/11). Los datos no se tocaron; la lista está en «04.3 Respaldo cuentas a pagar»",
+  },
+]
+
+/** ✍️ A-FEAT-1537: aplica la decisión — totales en 0, lo que había se guarda para el respaldo (nada se tira). */
+export function aplicarAnticiposEnCero(an: AnticiposAlCierre, empresa: string, anioCierre: number,
+  decisiones = ANTICIPOS_EN_CERO): AnticiposAlCierre {
+  const d = decisiones.find(x => x.empresa === empresa && x.anioCierre === anioCierre)
+  if (!d || (an.aProveedores.length === 0 && an.deClientes.length === 0)) return an
+  return {
+    ...an,
+    aProveedores: [], totalAProveedores: 0, deClientes: [], totalDeClientes: 0,
+    enCeroPorDecision: { motivo: d.motivo, aProveedores: an.aProveedores, totalAProveedores: an.totalAProveedores,
+      deClientes: an.deClientes, totalDeClientes: an.totalDeClientes },
+  }
 }
 
 /**

@@ -89,7 +89,7 @@ import {
   type CuentasAlCierre, type ComprobanteConPago, type CanceladoPorCuotas,
 } from "@/lib/balance/cuentas-al-cierre"
 import {
-  armarChequesDados, armarAnticiposAlCierre,
+  armarChequesDados, armarAnticiposAlCierre, aplicarAnticiposEnCero,
   type ChequesDados, type AnticiposAlCierre, type ChequeCrudo,
   type AnticipoCrudo, type AplicacionDeAnticipo,
 } from "@/lib/balance/valores-al-cierre"
@@ -827,7 +827,8 @@ export function PapelesDeBalance() {
         for (const r of [ant, apl]) if (r.error) throw new Error(r.error.message)
         anotar("Anticipos", ant); anotar("Aplicaciones de anticipos", apl)
 
-        const anticipos = armarAnticiposAlCierre(
+        // ✍️ A-FEAT-1537: si el usuario decidió los anticipos de este ejercicio en 0, van en 0 (la lista, al respaldo).
+        const anticipos = aplicarAnticiposEnCero(armarAnticiposAlCierre(
           (ant.data ?? []) as unknown as AnticipoCrudo[],
           (apl.data ?? []) as unknown as AplicacionDeAnticipo[],
           ej.fechaCierre,
@@ -838,7 +839,7 @@ export function PapelesDeBalance() {
            * papel y el índice lo avisa — no es un silencio, es un criterio declarado (A-DAT-73).
            */
           empresa.id === "MSA",
-        )
+        ), empresa.id, anioCierre)
         setValores({ cheques, anticipos })
 
         // 🧮 El control del camino inverso se muestra, no sólo se escribe en la solapa.

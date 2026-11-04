@@ -992,7 +992,7 @@ export function hojaDeCuentas(
   }
   if (extra?.soloDeuda) {
     f.push([])
-    f.push(["Lo que NO es deuda (pagadas sin rastro, sistema anterior, conciliadas sin fecha, seguros, cuentas corrientes, cuotas de templates y sueldos a confirmar) está en la solapa «04.3 Respaldo cuentas a pagar»."])
+    f.push(["Lo que NO es deuda (pagadas sin rastro, sistema anterior, conciliadas sin fecha, seguros, cuentas con socios, cuotas de templates, sueldos pagados por caja y anticipos sin vincular) está en la solapa «04.3 Respaldo cuentas a pagar»."])
     f.push([`Se miraron ${c.mirados} comprobantes del ejercicio.`])
     return f
   }
@@ -1070,6 +1070,8 @@ export function hojaRespaldoDeCuentas(c: CuentasAlCierre, titulo: string, fechaC
   templatesImpagos?: { cuotas: CuotaTemplate[]; total: number },
   sueldos?: SueldosImpagosAlCierre,
   socios?: CuentaCorrienteDelBalance[],
+  /** ✍️ A-FEAT-1537: los anticipos que el usuario decidió en 0 al cierre, para que queden documentados. */
+  anticipos?: AnticiposAlCierre,
 ): unknown[][] {
   const f: unknown[][] = []
   f.push([titulo])
@@ -1102,6 +1104,33 @@ export function hojaRespaldoDeCuentas(c: CuentasAlCierre, titulo: string, fechaC
     for (const x of socios) {
       f.push(["Cta cte", "", "", "", "", x.contraparte.cuit, x.contraparte.nombre, "", "", "", "", "", money(x.saldoAlCierre), "", "",
         "", x.saldoAlCierre > 0 ? "le debemos" : x.saldoAlCierre < 0 ? "nos debe" : "en cero", "14.1 Cuentas con socios"])
+    }
+  }
+  if (sueldos && sueldos.pagadosPorFuera.length > 0) {
+    f.push([])
+    f.push(["SUELDOS PAGADOS EN EFECTIVO POR FUERA DE SUELDOS — NO son deuda (JMS 04/11: «a Elvio y Vulcano no le pongas nada adeudado»)"])
+    f.push([`${sueldos.pagadosPorFuera.length} período(s) — ${money(sueldos.totalPagadosPorFuera)} sin el pago cargado en el módulo de Sueldos`])
+    for (const x of sueldos.pagadosPorFuera) {
+      f.push(["Sueldo", x.periodo, "", "", "", "", x.empleado, "", "", "", "", "", money(x.sinPagar), "SUELDOS", "pagado por caja",
+        "", "pagado en efectivo desde Caja Sigot; el pago no está cargado en Sueldos", "Caja Sigot"])
+    }
+  }
+  const ant = anticipos?.enCeroPorDecision
+  if (ant) {
+    for (const [titulo, filas, total] of [
+      ["ANTICIPOS A PROVEEDORES QUE FIGURAN CON SALDO — al cierre van en 0 (JMS 04/11)", ant.aProveedores, ant.totalAProveedores],
+      ["ANTICIPOS DE CLIENTES QUE FIGURAN CON SALDO — al cierre van en 0 (JMS 04/11)", ant.deClientes, ant.totalDeClientes],
+    ] as const) {
+      if (filas.length === 0) continue
+      f.push([])
+      f.push([titulo])
+      f.push([`${filas.length} anticipo(s) — ${money(total)} · registros del principio sin vincular a su factura o a su venta; los datos no se tocaron`])
+      for (const x of filas) {
+        const a = x.anticipo
+        f.push(["Anticipo", a.fecha_pago ? String(a.fecha_pago).slice(0, 10) : "", a.tipo ?? "", "", "", a.cuit_proveedor ?? "", a.nombre_proveedor ?? "",
+          "", "", "", "", "", money(x.saldoAlCierre), "", [a.estado, a.estado_pago].filter(Boolean).join(" / "), "",
+          `monto ${fmtAr(Number(a.monto ?? 0))} − aplicado al cierre ${fmtAr(x.aplicadoAlCierre)}`, "Egresos → Anticipos"])
+      }
     }
   }
   bloquesInformativos(f, c)
@@ -1232,6 +1261,11 @@ function hojaDeAnticipos(an: AnticiposAlCierre, etiqueta: string, fechaCierre: s
   f.push(["El saldo se RECALCULA a la fecha de cierre. La columna del sistema es la foto de hoy:"])
   f.push(["un anticipo hoy consumido pudo tener saldo al cierre, y ese saldo es el que va al balance."])
   f.push(["Saldo = monto - aplicado a facturas hasta el cierre - retencion de SICORE - descuento."])
+  // ✍️ A-FEAT-1537: decisión del usuario — al cierre no hay anticipos; la lista que había va al respaldo.
+  if (an.enCeroPorDecision) {
+    f.push([])
+    f.push([`ANTICIPOS AL CIERRE: 0 — ${an.enCeroPorDecision.motivo}.`])
+  }
 
   const cabecera = [
     "Fecha", "Razón Social", "CUIT", "Empresa", "Tipo", "Monto original",
@@ -2864,7 +2898,7 @@ export function armarWorkbook(
       hojaRespaldoDeCuentas(cuentas.pagar, `RESPALDO DE CUENTAS A PAGAR — ejercicio ${libro.ejercicio.etiqueta}`,
         libro.ejercicio.fechaCierre,
         templates ? { cuotas: templates.impagasAlCierre, total: templates.totalImpagas } : undefined,
-        sueldos?.impagosAlCierre, cc?.socios),
+        sueldos?.impagosAlCierre, cc?.socios, cuentas.anticipos),
       COLS_CUENTAS)
   }
   if (cuentas?.cobrar) {

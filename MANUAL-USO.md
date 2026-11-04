@@ -4002,6 +4002,10 @@ la cuenta llega a todos los extractos: bancos, las tres tarjetas, las cajas y lo
   «Desglosar» de la tarjeta.
 - **ACREN sale en 0**: la cuenta es en dólares (se le deben US$ 7,28); el saldo en pesos es diferencia de cambio. El
   ajuste se ve en la fórmula y en «Cómo se lee».
+- **04.2 Anticipos sale en 0 para 25/26**: eran registros del principio sin vincular. La lista, con su saldo, está en el 04.3;
+  los anticipos no se tocaron.
+- **Elvio Paz y Fabián Vulcano** no figuran como deuda: se les paga en efectivo desde Caja Sigot (sin cargar el pago en
+  Sueldos). Se ven en el 04.3 como «pagados por caja».
 
 → A-TEST-1323
 
