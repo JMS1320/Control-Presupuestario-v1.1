@@ -4474,8 +4474,8 @@ export function correrCasos(): Resultado[] {
 
     const filaExcel = hojaDeAsientosContables([usd], "25/26").find(f => f[6] === "ALMACEN VETERINARIO S.R.L.") ?? []
     chequear("Balance · export", "El Excel muestra Total en pesos y, al final, USD · 1390 · 3213,58",
-      "4466876.2 | USD | 1390 | 3213.58", `${filaExcel[12]} | ${filaExcel[17]} | ${filaExcel[18]} | ${filaExcel[19]}`,
-      filaExcel[12] === 4466876.2 && filaExcel[17] === "USD" && filaExcel[18] === 1390 && filaExcel[19] === 3213.58, "A-BUG-1316")
+      "4466876.2 | USD | 1390 | 3213.58", `${filaExcel[13]} | ${filaExcel[19]} | ${filaExcel[20]} | ${filaExcel[21]}`,
+      filaExcel[13] === 4466876.2 && filaExcel[19] === "USD" && filaExcel[20] === 1390 && filaExcel[21] === 3213.58, "A-BUG-1316")
   }
   /**
    * 🔤 **El tipo de comprobante del HISTÓRICO es texto libre — A-FEAT-1184.**
@@ -4858,8 +4858,8 @@ export function correrCasos(): Resultado[] {
         TIPOS_SIN_CREDITO_COMPRAS, false).descuadres
       const det = hojaDeAsientos(comprasErr, desc)
       const ultimaCelda = (x: unknown[] | undefined) => { const c = x?.[x.length - 1] as { v?: string; s?: { fill?: unknown } } | string | undefined; return typeof c === "string" ? { v: c } : c }
-      const filaPan = ultimaCelda(det.find(x => ((x[6] as { v?: string } | undefined)?.v ?? x[6]) === "COOPSER" && ((x[12] as { v?: number } | undefined)?.v ?? x[12]) === 113338.52))
-      const filaBien = ultimaCelda(det.find(x => (x[12] as unknown) === 1000))
+      const filaPan = ultimaCelda(det.find(x => ((x[6] as { v?: string } | undefined)?.v ?? x[6]) === "COOPSER" && ((x[13] as { v?: number } | undefined)?.v ?? x[13]) === 113338.52))
+      const filaBien = ultimaCelda(det.find(x => (x[13] as unknown) === 1000))
       const vDet = `${filaPan?.v} · rojo ${filaPan?.s?.fill ? "sí" : "no"} · la que cuadra: «${filaBien?.v ?? "?"}»`
       chequear("Balance · libro diario", "🛑 Detalle: el comprobante que no cuadra va en rojo con la marca (cuánto suman las partes y cuánto falta); el que cuadra, sin marca",
         "NO CUADRA: las partes suman 94.276,40 y el total es 113.338,52 — faltan 19.062,12 · rojo sí · la que cuadra: «»", vDet,
@@ -4868,9 +4868,21 @@ export function correrCasos(): Resultado[] {
       //    subdiario → fecha → tipo → pto vta → número, aunque lleguen desordenadas de la base
       const desord = [{ ...asi("2026-03", 10, "Luz"), id: "c", fecha: "2026-03-20" }, { ...asi("2026-02", 20, "Luz"), id: "b", fecha: "2026-02-25" },
         { ...asi("2026-02", 30, "Luz"), id: "a", fecha: "2026-02-03" }] as unknown as LibroDiarioT["compras"]
-      const ord = hojaDeAsientos(desord).slice(1).map(x => (x[12] as { v?: number } | undefined)?.v ?? x[12]).join(",")
+      const ord = hojaDeAsientos(desord).slice(1).map(x => (x[13] as { v?: number } | undefined)?.v ?? x[13]).join(",")
       chequear("Balance · libro diario", "📅 Las solapas Compras y Ventas salen ordenadas por subdiario y fecha (como ARCA), aunque la base las traiga en otro orden",
         "30,20,10", ord, ord === "30,20,10", "A-FEAT-1533")
+      // 🧾 A-BUG-1534 (JMS 03/11): la factura C va entera a «Monotributo» (como en el Libro Diario consensuado), y «Dif. de algo más»
+      //    = total − partes. Una C cargada con el importe como no gravado, una C sin desglose y una B sin desglose (Aeropuertos 6.300)
+      const cNoGrav = { ...asi("2026-02", 0, "Honorarios"), id: "c1", tipo: 11, no_gravado: 1000, total: 1000 }
+      const cSola = { ...asi("2026-02", 0, "Honorarios"), id: "c2", tipo: 11, total: 500 }
+      const bSola = { ...asi("2026-02", 0, "Peajes"), id: "b1", tipo: 6, total: 6300 }
+      const hM = conTotalAlPie(hojaDeAsientos([cNoGrav, cSola, bSola] as unknown as LibroDiarioT["compras"]))
+      const iCol = (t: string) => (hM[0] as unknown[]).indexOf(t)
+      const totM = hM[hM.length - 1] as unknown[]
+      const val = (x: unknown) => (x && typeof x === "object" && "v" in (x as object) ? (x as { v: unknown }).v : x)
+      const vM = `no gravado ${val(totM[iCol("No Gravado")])} · monotributo ${val(totM[iCol("Monotributo")])} · dif ${val(totM[iCol("Dif. de algo más")])} · total ${val(totM[iCol("Total")])}`
+      chequear("Balance · libro diario", "🧾 Compras del set: la factura C va entera a Monotributo (no gravado y exento en 0) y «Dif. de algo más» = total − partes (la factura B sin desglose queda ahí)",
+        "no gravado 0 · monotributo 1500 · dif 6300 · total 7800", vM, vM === "no gravado 0 · monotributo 1500 · dif 6300 · total 7800", "A-BUG-1534")
       const sub = hojaPorCuenta(armarLibroPorCuenta(comprasErr), "LIBRO", { asientos: comprasErr, descuadres: desc })
       const filaCta = (cuenta: string) => ultimaCelda(sub.find(x => ((x[2] as { v?: string } | undefined)?.v ?? x[2]) === cuenta))
       const vSub = `${filaCta("Combustible y lubricantes")?.v?.startsWith("NO CUADRA: 1 comprobante") ? "marcada" : "sin marca"} · Luz ${filaCta("Luz")?.v ? "marcada" : "sin marca"} · mes ${filaCta("Total 02/2026")?.v?.startsWith("NO CUADRA") ? "avisa" : "no avisa"}`

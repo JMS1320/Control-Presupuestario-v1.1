@@ -100,7 +100,10 @@ export function hojaDeAsientos(asientos: AsientoLibroDiario[], descuadres?: Desc
   const conCantidades = asientos.some(a => a.cantidades && (a.cantidades.producto || a.cantidades.toneladas || a.cantidades.cabezas || a.cantidades.kilos))
   const filas: unknown[][] = [[
     "Subdiario", "Fecha", "Tipo", "Pto Vta", "Número", "CUIT", "Denominación",
-    "Neto Gravado", "No Gravado", "Exentas", "Otros Tributos", "IVA", "Total",
+    // 🧾 A-BUG-1534 (JMS 03/11): con la MISMA regla del Libro Diario consensuado — la factura C (tipo 11) va entera a
+    // «Monotributo» (no gravado y exento en 0) y «Dif. de algo más» = total − partes. Sin esto, $ 43 M de facturas C quedaban
+    // en «No gravado» y $ 26 M en ninguna columna, y el total no cerraba contra sus partes.
+    "Neto Gravado", "No Gravado", "Exentas", "Monotributo", "Otros Tributos", "IVA", "Total", "Dif. de algo más",
     "Cuenta contable", "Nro cuenta", "Centro de costo", "Origen del dato",
     // 💵 A-BUG-1316: los importes van en pesos; la moneda y la cotización quedan a la vista al final
     // (al final y no al lado del Total, para no correr las columnas que suman otras solapas).
@@ -115,11 +118,14 @@ export function hojaDeAsientos(asientos: AsientoLibroDiario[], descuadres?: Desc
     || (x.tipo ?? 0) - (y.tipo ?? 0) || (x.punto_venta ?? 0) - (y.punto_venta ?? 0) || (x.numero ?? 0) - (y.numero ?? 0))
   for (const a of orden) {
     const enOtraMoneda = !!a.moneda && a.moneda !== "PES"
+    const es11 = a.tipo === 11
+    const noGrav = es11 ? 0 : a.no_gravado, exento = es11 ? 0 : a.exento, mono = es11 ? a.total : 0
+    const difPartes = Math.round((a.total - (a.neto_gravado + noGrav + exento + mono + a.otros_tributos + a.iva)) * 100) / 100
     const fila: unknown[] = [
       a.subdiario, a.fecha ?? "", a.tipo ?? "", a.punto_venta ?? "", a.numero ?? "",
       a.cuit, a.denominacion,
-      money(a.neto_gravado), money(a.no_gravado), money(a.exento),
-      money(a.otros_tributos), money(a.iva), money(a.total),
+      money(a.neto_gravado), money(noGrav), money(exento), money(mono),
+      money(a.otros_tributos), money(a.iva), money(a.total), money(difPartes),
       a.cuenta_contable, a.nro_cuenta, a.centro_costo,
       a.fuente === "historico" ? "sistema anterior" : a.fuente === "arca" ? "ARCA" : "ventas",
       enOtraMoneda ? (a.moneda === "DOL" ? "USD" : a.moneda) : "$",
@@ -145,7 +151,7 @@ export function hojaDeAsientos(asientos: AsientoLibroDiario[], descuadres?: Desc
 export function conTotalAlPie(filas: unknown[][]): unknown[][] {
   if (filas.length < 2) return filas
   const titulos = (filas[0] as unknown[]).map(String)
-  const SUMAN = ["Neto Gravado", "No Gravado", "Exentas", "Otros Tributos", "IVA", "Total", "Toneladas", "Cabezas", "Kilos"]
+  const SUMAN = ["Neto Gravado", "No Gravado", "Exentas", "Monotributo", "Otros Tributos", "IVA", "Total", "Dif. de algo más", "Toneladas", "Cabezas", "Kilos"]
   const n = filas.length          // la última fila de datos, en la numeración de Excel (encabezado = 1)
   const total: unknown[] = titulos.map(() => "")
   total[0] = "TOTAL"
@@ -2083,9 +2089,11 @@ const COLS_ASIENTOS: Columna[] = [
   { ancho: 15, z: MONEDA },         // Neto Gravado
   { ancho: 14, z: MONEDA },         // No Gravado
   { ancho: 13, z: MONEDA },         // Exentas
+  { ancho: 14, z: MONEDA },         // Monotributo (A-BUG-1534)
   { ancho: 14, z: MONEDA },         // Otros Tributos
   { ancho: 13, z: MONEDA },         // IVA
   { ancho: 16, z: MONEDA },         // Total
+  { ancho: 13, z: MONEDA },         // Dif. de algo más (A-BUG-1534)
   { ancho: 26 },                    // Cuenta contable
   { ancho: 12 },                    // Nro cuenta
   { ancho: 18 },                    // Centro de costo
@@ -2098,7 +2106,7 @@ const COLS_ASIENTOS: Columna[] = [
 
 /** Ventas: lo mismo que los asientos, más qué se vendió y cuánto (U2), antes del Control de partes. */
 const COLS_VENTAS: Columna[] = [
-  ...COLS_ASIENTOS.slice(0, 20),
+  ...COLS_ASIENTOS.slice(0, 22),
   { ancho: 16 },                    // Producto
   { ancho: 12, z: TONELADAS },      // Toneladas
   { ancho: 10, z: ENTERO },         // Cabezas
