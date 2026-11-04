@@ -125,9 +125,14 @@ const empleadoDePago = new Map<string, any>()
 for (const p of pagosSueldo) { const e = empleados.get(p.empleado_id); if (!e) continue; empleadoDePago.set(p.id, e); if (p.grupo_pago_id && !empleadoDePago.has(p.grupo_pago_id)) empleadoDePago.set(p.grupo_pago_id, e) }
 const nombresEmpleadosSocio = [...empleados.values()].filter((e: any) => String(e.empresa).toUpperCase() === S).map((e: any) => String(e.nombre).split(" ")[0].toLowerCase())
 
-type Item = { mes: string; fecha: string; cuenta: string; titular: string; desc: string; que: string; por: string; contable: string; interno: string; imp: number; nota?: string }
+type Item = { mes: string; fecha: string; cuenta: string; titular: string; desc: string; que: string; por: string; contable: string; interno: string; imp: number; nota?: string; detalle?: string; contra?: string }
 const items: Item[] = [], marcadosSinNada: Item[] = [], sinMarca: Item[] = [], internoSinContable: Item[] = [], porInterno: Item[] = [], desglosarSinRepartir: Item[] = [], marcasDeNota: Item[] = []
-for (const t of TABLAS_CON_VINCULO_ARCA) {
+// ⚠️ 03/11: la lista de tablas con vínculo a facturas no tiene Santander ni Provincia de MSA (se cargan a mano, scripts/129):
+// se suman acá para que un pago por cuenta del socio desde esos bancos no se pierda.
+const TABLAS = [...TABLAS_CON_VINCULO_ARCA,
+  { schema: "msa", tabla: "santander", que: "Santander MSA", cuenta: "Santander MSA", titular: "MSA" },
+  { schema: "msa", tabla: "provincia", que: "Banco Provincia MSA", cuenta: "Provincia MSA", titular: "MSA" }] as typeof TABLAS_CON_VINCULO_ARCA
+for (const t of TABLAS) {
   if (!["MSA", S].includes(String(t.titular))) continue
   const q = (d: number, h: number) => (t.schema === "public" ? sb.from(t.tabla) : sb.schema(t.schema).from(t.tabla)).select("*").gte("fecha", DESDE).lte("fecha", HASTA).order("id").range(d, h)
   let movs: any[] = []
@@ -149,7 +154,9 @@ for (const t of TABLAS_CON_VINCULO_ARCA) {
       : /tu planilla/i.test(nTxt) && /CATEG\s+([A-ZÁÉÍÓÚÑ ]+?)(\s*·|$)/.test(nTxt) ? `Histórico — ${/CATEG\s+([A-ZÁÉÍÓÚÑ ]+?)(\s*·|$)/.exec(nTxt)![1].trim()} (tu planilla)`
       : String(m.comprobantes_pagados || m.categ || m.descripcion || "(sin vínculo)")
     const fecha = String(m.fecha).slice(0, 10), mes = fecha.slice(0, 7)
-    const base = { mes, fecha, cuenta: t.cuenta, titular: String(t.titular), desc: String(m.descripcion ?? "").slice(0, 80), contable, interno }
+    const base = { mes, fecha, cuenta: t.cuenta, titular: String(t.titular), desc: String(m.descripcion ?? "").slice(0, 80), contable, interno,
+      // JMS 03/11: «falta lo que había en Detalle y el proveedor de leyendas adicionales para que yo pueda trabajar»
+      detalle: String(m.detalle ?? "").trim(), contra: String(m.leyendas_adicionales_1 ?? m.proveedor_nombre ?? "").trim() }
     // Para «Temas abiertos»: los movimientos cuya marca está sólo en la nota de la planilla (y que tocan al socio)
     if (deLaNota && (MARCA_SOCIO.test(contable) || INTERNO_SOCIO.test(interno) || /^desglos/i.test(contable) || /^desglos/i.test(interno)))
       marcasDeNota.push({ ...base, que: nombreDe(), por: "", imp: r2(deb - cred), nota })
@@ -205,7 +212,7 @@ for (const t of TABLAS_CON_VINCULO_ARCA) {
 const categoria = (it: Item) => it.que.replace(/ \d+-\d+$/, "")
 const det = [
   ...items.map(it => ({ categoria: categoria(it), mes: it.mes, importe: it.imp,
-    columnas: [dmy(it.fecha), it.cuenta, it.desc, it.que, it.por, it.contable, it.interno, it.nota ?? ""] })),
+    columnas: [dmy(it.fecha), it.cuenta, it.desc, it.detalle ?? "", it.contra ?? "", it.que, it.por, it.contable, it.interno, it.nota ?? ""] })),
   ...libMes.filter(x => x.cta !== 0).map(x => ({ categoria: "LIBERTAD — reparto entre tres (detalle en la solapa Libertad)", mes: x.mes, importe: x.cta,
     columnas: ["", "Libertad", x.esSocio
       ? `${S} socio: MSA pagó ${x.msa.toLocaleString("es-AR")} − su 50% ${(x.costo / 2).toLocaleString("es-AR")} + mitad de lo que pagó ${OTRO} ${(x.delOtro / 2).toLocaleString("es-AR")}`
@@ -216,18 +223,26 @@ const filasCta = hojaResumenPorMes(det, {
   notas: [`Sin saldo de inicio: es el MOVIMIENTO del ejercicio. Libertad: un renglón por mes con el reparto entre tres (${S} es socio de Libertad ${S === "MA" ? "ene–jun 2026" : "jul–dic 2025"} y tercero el otro semestre).`,
     `Entra todo lo que MSA pagó y era de ${S} (templates, facturas, sueldos de sus empleados, lo marcado CTA/RET … ${S}) y al revés (${S} pagando cosas de MSA).`,
     `Control: ${sinMarca.length} detectados por la base SIN marca contable · ${marcadosSinNada.length} marcados SIN ningún vínculo — ver la solapa Control.`],
-  meses, encabezadoDetalle: ["Fecha", "Cuenta", "Descripción del banco", "Qué es", "Detectado por", "Contable", "Interno", "Nota del movimiento"], rotuloImporte: "Importe (+ retiró / − aportó)", semestres: true,
+  meses, encabezadoDetalle: ["Fecha", "Cuenta", "Descripción del banco", "Detalle", "Contraparte (leyendas)", "Qué es", "Detectado por", "Contable", "Interno", "Nota del movimiento"], rotuloImporte: "Importe (+ retiró / − aportó)", semestres: true,
 })
 const filasInt = hojaResumenPorMes(porInterno.map(it => ({ categoria: it.que.replace(/ \d+-\d+$/, ""), mes: it.mes, importe: it.imp,
-  columnas: [dmy(it.fecha), it.cuenta, it.desc, it.que, it.contable, it.interno, it.nota ?? ""] })), {
+  columnas: [dmy(it.fecha), it.cuenta, it.desc, it.detalle ?? "", it.contra ?? "", it.que, it.contable, it.interno, it.nota ?? ""] })), {
   titulo: `${S} por INTERNO («DIST ${S}») — cuentas de MSA — ejercicio ${ETIQ} (+ = salió de MSA para ${S})`,
   notas: [`Otro estudio (JMS): de quién es el gasto puertas adentro. Toma TODO lo de las cuentas de MSA con interno de ${S}, sin repartir (Libertad entra entera).`,
     `No mira las cuentas de ${S} (no llevan interno). «DIST MECHI» NO es MA. Casco, Tapera, Posadas, Complementario: de PAM hasta feb-26 y de MA desde mar-26 (corte por fecha).`],
-  meses, encabezadoDetalle: ["Fecha", "Cuenta", "Descripción del banco", "Qué es", "Contable", "Interno", "Nota"], rotuloImporte: "Importe", semestres: true,
+  meses, encabezadoDetalle: ["Fecha", "Cuenta", "Descripción del banco", "Detalle", "Contraparte (leyendas)", "Qué es", "Contable", "Interno", "Nota"], rotuloImporte: "Importe", semestres: true,
 })
 const sumaMes = (xs: { mes: string; imp: number }[], m: string) => r2(xs.filter(x => x.mes === m).reduce((t, x) => t + x.imp, 0))
 const contMes = MESES.map(m => r2(sumaMes(items, m) + (libMes.find(x => x.mes === m)?.cta ?? 0)))
 const intMes = MESES.map(m => sumaMes(porInterno, m))
+// 📤 Para el control de la plata (A-FEAT-1533): la cuenta del socio por mes (+ retiró / − aportó, con Libertad) y el 50% de MSA en Libertad
+{
+  const dir = join(CARPETA, "datos"); if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  const { writeFileSync } = await import("node:fs")
+  writeFileSync(join(dir, `cuenta-socio-${S}.json`), JSON.stringify({ socio: S, generado: new Date().toISOString(), meses: MESES,
+    cuenta: contMes, sinLibertad: MESES.map(m => sumaMes(items, m)), libertadSocio: libMes.map(x => x.cta), libertad50MSA: libMes.map(x => r2(x.costo / 2)),
+    libertadMSApago: libMes.map(x => x.msa) }, null, 1))
+}
 const comparar: unknown[][] = [[`CONTABLE vs INTERNO — ${S}, mes por mes (${ETIQ})`],
   ["La diferencia se explica sobre todo por: Libertad (en contable va el reparto entre tres; en interno, todo lo que pagó MSA), el corte por fecha (contable cambia en enero, interno en marzo), y lo que el socio pagó por MSA (sólo en contable)."], [],
   ["1er sem", "2do sem", "total", "", ...ROT, "TOTAL"],
@@ -257,8 +272,8 @@ const nroDe = (cats: string[]) => new Map([...new Set(cats)].sort((a, b) => a.lo
 const nroCta = nroDe(det.map(d => d.categoria)), nroInt = nroDe(porInterno.map(i => categoria(i)))
 const dondeItem = (i: Item) => nroCta.has(categoria(i)) && items.includes(i) ? `«Cuenta MSA-${S}» · Nro ${nroCta.get(categoria(i))}`
   : porInterno.includes(i) ? `«${S} por interno» · Nro ${nroInt.get(categoria(i))}` : "«Control»"
-const COLS_MOV = ["Fecha", "Cuenta", "Descripción del banco", "Qué es", "Importe", "Contable", "Interno", "Nota del movimiento", "Dónde filtrarlo", "Tu respuesta"]
-const filaItem = (i: Item) => [dmy(i.fecha), i.cuenta, i.desc, i.que, i.imp, i.contable || "(vacío)", i.interno || "(vacío)", i.nota ?? "", dondeItem(i), ""]
+const COLS_MOV = ["Fecha", "Cuenta", "Descripción del banco", "Detalle", "Contraparte (leyendas)", "Qué es", "Importe", "Contable", "Interno", "Nota del movimiento", "Dónde filtrarlo", "Tu respuesta"]
+const filaItem = (i: Item) => [dmy(i.fecha), i.cuenta, i.desc, i.detalle ?? "", i.contra ?? "", i.que, i.imp, i.contable || "(vacío)", i.interno || "(vacío)", i.nota ?? "", dondeItem(i), ""]
 const COLS_CUOTA = ["Fecha", "Template", "Pagó", "Cuenta", "Importe", "Estado", "", "", "Dónde filtrarlo", "Tu respuesta"]
 const filaCuota = (c: CuotaTemplate) => [dmy(String(c.fecha ?? "")), c.concepto, quienPago(c), c.banco?.cuenta ?? "", c.monto, c.estado, "", "",
   esDeLibertad(c) || c.categ === "__factura_lib" ? "«Libertad» · detalle" : "hoy NO está en «Libertad»", ""]
