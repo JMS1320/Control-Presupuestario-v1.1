@@ -91,7 +91,7 @@ for (const c of cuotas) { porCuota.set(c.id, c); if (c.grupoPagoId) porGrupo.set
 const respDe = (c?: CuotaTemplate) => (c?.responsable ?? "").split("/")[0].trim().toUpperCase()
 const leerFc = async (schema: string) => new Map((await todo((d, h) => sb.schema(schema).from("comprobantes_arca").select("id, denominacion_emisor, punto_venta, numero_desde").order("id").range(d, h))).map((f: any) => [f.id, f]))
 const fcSocio = await leerFc(S.toLowerCase()), fcMSA = await leerFc("msa")
-const MARCA_SOCIO = new RegExp(`\\b(cta|ret\\s*\\d*|cuenta)\\s*${S}\\b`, "i"), MARCA_MSA = /\b(cta|cuenta)\s*msa\b/i
+const MARCA_SOCIO = new RegExp(`\\b(cta|ret\\s*\\d*|cuenta)\\s*${S}\\b`, "i"), MARCA_MSA = /\b(cta|cuenta|ap\s*\d*)\s*msa\b/i   // «AP 3 MSA» = el socio le aportó a MSA (pagó algo de MSA)
 /** El interno del socio: «DIST MA» / «DIST PAM». ⚠️ «DIST MECHI» NO es MA (JMS 03/11). */
 const INTERNO_SOCIO = new RegExp(`\\bdist\\s*${S}\\b`, "i")
 // ✂️ CORTE POR FECHA (JMS 03/11): de PAM hasta la fecha, de MA desde la fecha. A generalizar en una tabla (A-FEAT-1532).
@@ -126,7 +126,7 @@ for (const p of pagosSueldo) { const e = empleados.get(p.empleado_id); if (!e) c
 const nombresEmpleadosSocio = [...empleados.values()].filter((e: any) => String(e.empresa).toUpperCase() === S).map((e: any) => String(e.nombre).split(" ")[0].toLowerCase())
 
 type Item = { mes: string; fecha: string; cuenta: string; titular: string; desc: string; que: string; por: string; contable: string; interno: string; imp: number; nota?: string }
-const items: Item[] = [], marcadosSinNada: Item[] = [], sinMarca: Item[] = [], internoSinContable: Item[] = [], porInterno: Item[] = [], desglosarSinRepartir: Item[] = []
+const items: Item[] = [], marcadosSinNada: Item[] = [], sinMarca: Item[] = [], internoSinContable: Item[] = [], porInterno: Item[] = [], desglosarSinRepartir: Item[] = [], marcasDeNota: Item[] = []
 for (const t of TABLAS_CON_VINCULO_ARCA) {
   if (!["MSA", S].includes(String(t.titular))) continue
   const q = (d: number, h: number) => (t.schema === "public" ? sb.from(t.tabla) : sb.schema(t.schema).from(t.tabla)).select("*").gte("fecha", DESDE).lte("fecha", HASTA).order("id").range(d, h)
@@ -150,6 +150,9 @@ for (const t of TABLAS_CON_VINCULO_ARCA) {
       : String(m.comprobantes_pagados || m.categ || m.descripcion || "(sin vínculo)")
     const fecha = String(m.fecha).slice(0, 10), mes = fecha.slice(0, 7)
     const base = { mes, fecha, cuenta: t.cuenta, titular: String(t.titular), desc: String(m.descripcion ?? "").slice(0, 80), contable, interno }
+    // Para «Temas abiertos»: los movimientos cuya marca está sólo en la nota de la planilla (y que tocan al socio)
+    if (deLaNota && (MARCA_SOCIO.test(contable) || INTERNO_SOCIO.test(interno) || /^desglos/i.test(contable) || /^desglos/i.test(interno)))
+      marcasDeNota.push({ ...base, que: nombreDe(), por: "", imp: r2(deb - cred), nota })
     const corte = deMSA && !!cuota && CORTE.test(cuota.concepto)
     // ── 🧩 DESGLOSAR
     if (deMSA && (/^desglos/i.test(contable) || /^desglos/i.test(interno))) {
@@ -244,32 +247,66 @@ const control: unknown[][] = [[`CONTROL — lo que la marca contable y la base n
   ["Fecha", "Cuenta", "Descripción", "Qué pagó", "Contable", "Interno", "Importe", "Nota"],
   ...desglosarSinRepartir.map(i => [dmy(i.fecha), i.cuenta, i.desc, i.que, i.contable || "(vacío)", i.interno || "(vacío)", i.imp, i.nota ?? ""])]
 
-// ── 4 · Temas abiertos (JMS: «seguilas poniendo dentro del reporte, porque son temas no cerrados») — primera solapa
+// ── 4 · Temas abiertos (JMS: «seguilas poniendo dentro del reporte, porque son temas no cerrados») — primera solapa.
+// JMS 03/11 en la v8: «preciso que me pongas referencia para que te pueda responder… más contexto cuando debo responder… para MA y
+// para PAM». Cada tema lleva DEBAJO sus movimientos (fecha, cuenta, banco, importe, nota, dónde filtrarlo) y una columna «Tu respuesta».
 const tot = (xs: Item[]) => r2(xs.reduce((t, i) => t + i.imp, 0))
-const T_LIB: unknown[][] = [
-  ["Libertad", "Posadas en Libertad", "Expensas y ABL de la cochera de Posadas hoy NO entran (JMS: «¿habría que agregar Posadas? creo que sí y luego ver con contador»)", "Confirmar con el contador si entra al 50/50", "Libertad"],
-  ["Libertad", "Fechas de cuotas", "Expensas de feb-26 fechada en mar-26 (pago agrupado feb+mar del 10/03); ABL de mar-26 fechado en ene-26", "OK para corregir las 2 fechas (script con deshacer) — no cambia el total, sí el mes", "Libertad"],
-  ["Libertad", "Luz de diciembre", "Dos pagos de luz en dic-25: $ 205.421 (10/12) y $ 32.770 (31/12)", "¿Qué es la chica?", "Libertad · detalle"],
-  ["Libertad", "Prosegur", "6 facturas a MA, ene–jun 2026", "¿Empezó en enero 2026 o antes se pagaba de otro modo?", "Libertad"],
-  ["Libertad", "Saldo entre PAM y MA", "Calculado (reparto entre tres): el renglón «ENTRE PAM Y MA» es lo que el socio le debe al tercero", "¿Se registra en algún lado?", "Libertad · reparto entre tres"],
-]
-const T_COMUN: unknown[][] = [
-  ["Histórico", "Marcas en la nota", "286 movimientos jul-25 → ene-26 con contable/interno sólo en la nota (41 con marca)", "Pasarlas a las columnas (cambio de datos: script con OK) — hoy el Excel las lee de la nota", "Detalle · columna Nota"],
-  ["Regla", "Corte por fecha", "Casco, Tapera, Posadas, Complementario, Ombú, Entre Ríos: contable MA desde 2026, interno desde 03/2026 (fechas escritas en el script)", "Generalizar: una tabla «de quién es tal cosa desde tal fecha» por estudio", "—"],
-  ["Control", "«Desglosar» sin repartir", `${desglosarSinRepartir.length} movimientos ($ ${tot(desglosarSinRepartir).toLocaleString("es-AR")}): pagos de la tarjeta de MSA y sueldos de JMS/AMS`, `Nada para ${S}, salvo que alguno lo sea`, "Control · último cuadro"],
-]
-const T_SOCIO: unknown[][] = S === "MA" ? [
-  [S, "AUTO del histórico", "3 pagos jul–sep 2025 «CATEG AUTO» con interno DIST MA en la nota, $ 5.782.079, sin contable", "¿También son retiro de MA por CONTABLE? Hoy cuentan sólo por interno", "MA por interno · «Histórico — AUTO»"],
-  [S, "FC - 105 y FC - 851", "Interno DIST MA, contable vacío: $ 522.000 y $ 94.700", "¿Qué son y de quién?", "MA por interno · Control"],
-] : [
-  [S, `Interno ${S} sin contable`, `${internoSinContable.length} movimientos ($ ${tot(internoSinContable).toLocaleString("es-AR")}) con interno DIST ${S} y contable de otro o vacío`, "¿Son retiro de PAM también por contable?", "Control · interno sin contable"],
-  [S, "Sin marca contable", `${sinMarca.length} movimientos ($ ${tot(sinMarca).toLocaleString("es-AR")}) que la base da a ${S} sin marca contable`, "Confirmar que son de PAM", "Control · primer cuadro"],
-  [S, "Marcados sin vínculo", `${marcadosSinNada.length} movimientos ($ ${tot(marcadosSinNada).toLocaleString("es-AR")}) marcados ${S} sin nada en la base (transferencias, retiros)`, "Que sean lo que dice la marca", "Control · segundo cuadro"],
-]
+const ars = (n: number) => `$ ${n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+// El Nro de cada categoría en la solapa de la cuenta y en la de interno (mismo orden que `hojaResumenPorMes`: alfabético)
+const nroDe = (cats: string[]) => new Map([...new Set(cats)].sort((a, b) => a.localeCompare(b)).map((c, k) => [c, k + 1]))
+const nroCta = nroDe(det.map(d => d.categoria)), nroInt = nroDe(porInterno.map(i => categoria(i)))
+const dondeItem = (i: Item) => nroCta.has(categoria(i)) && items.includes(i) ? `«Cuenta MSA-${S}» · Nro ${nroCta.get(categoria(i))}`
+  : porInterno.includes(i) ? `«${S} por interno» · Nro ${nroInt.get(categoria(i))}` : "«Control»"
+const COLS_MOV = ["Fecha", "Cuenta", "Descripción del banco", "Qué es", "Importe", "Contable", "Interno", "Nota del movimiento", "Dónde filtrarlo", "Tu respuesta"]
+const filaItem = (i: Item) => [dmy(i.fecha), i.cuenta, i.desc, i.que, i.imp, i.contable || "(vacío)", i.interno || "(vacío)", i.nota ?? "", dondeItem(i), ""]
+const COLS_CUOTA = ["Fecha", "Template", "Pagó", "Cuenta", "Importe", "Estado", "", "", "Dónde filtrarlo", "Tu respuesta"]
+const filaCuota = (c: CuotaTemplate) => [dmy(String(c.fecha ?? "")), c.concepto, quienPago(c), c.banco?.cuenta ?? "", c.monto, c.estado, "", "",
+  esDeLibertad(c) || c.categ === "__factura_lib" ? "«Libertad» · detalle" : "hoy NO está en «Libertad»", ""]
+type Tema = { de: string; tema: string; hay: string; decidir: string; cols: string[]; filas: unknown[][] }
+const libDe = (re: RegExp, mes?: string) => libTodo.filter(c => re.test(c.concepto) && (!mes || (c.fecha ?? "").startsWith(mes)))
+const posadas = cuotasEj.filter(c => /posadas/i.test(c.concepto) && Math.abs(c.monto) >= 0.005)
+const fechasMal = [...libDe(/^expensas libertad/i, "2026-03"), ...libDe(/^abl libertad cuota/i, "2026-01")]
+const luzDic = libDe(/^luz libertad/i, "2025-12"), prosegur = libTodo.filter(c => /prosegur/i.test(c.concepto))
+const entre = libMes.map(x => { const ter = x.esSocio ? x.delOtro : x.suyo; return { mes: x.mes, ter, half: r2(ter / 2) } }).filter(x => x.ter)
+// Cada tema, ordenado por fecha (JMS: contexto para responder)
+const porFecha = (a: { fecha?: string | null }, b: { fecha?: string | null }) => String(a.fecha ?? "").localeCompare(String(b.fecha ?? ""))
+for (const xs of [porInterno, internoSinContable, sinMarca, marcadosSinNada, marcasDeNota, items, desglosarSinRepartir]) (xs as Item[]).sort(porFecha)
+for (const xs of [posadas, fechasMal, luzDic, prosegur]) (xs as CuotaTemplate[]).sort(porFecha)
+const temasLista: Tema[] = [
+  ...(S === "MA" ? [
+    { de: S, tema: "AUTO del histórico", hay: `Pagos «CATEG AUTO» con interno DIST MA (en la nota de tu planilla) y sin contable: ${ars(tot(porInterno.filter(i => /AUTO/.test(i.que))))}`,
+      decidir: "¿También son retiro de MA por CONTABLE? Hoy cuentan sólo por interno", cols: COLS_MOV, filas: porInterno.filter(i => /AUTO/.test(i.que)).map(filaItem) },
+    { de: S, tema: "FC - 105 y FC - 851", hay: "Interno DIST MA, contable vacío", decidir: "¿Qué son y de quién? (si son de MA, ¿también por contable?)", cols: COLS_MOV,
+      filas: internoSinContable.filter(i => /FC - (105|851)\b/.test(i.que)).map(filaItem) },
+  ] : [
+    { de: S, tema: `Interno ${S} sin contable`, hay: `${internoSinContable.length} movimientos con interno DIST ${S} y contable de otro o vacío: ${ars(tot(internoSinContable))}`,
+      decidir: `¿Son retiro de ${S} también por contable?`, cols: COLS_MOV, filas: internoSinContable.map(filaItem) },
+  ]),
+  { de: S, tema: "Sin marca contable", hay: `${sinMarca.length} movimientos que la base da a ${S} (template, factura o sueldo de ${S}) sin la marca contable: ${ars(tot(sinMarca))}`,
+    decidir: `Confirmar que son de ${S} (si no, decime de quién)`, cols: COLS_MOV, filas: sinMarca.map(filaItem) },
+  { de: S, tema: "Marcados sin vínculo", hay: `${marcadosSinNada.length} movimientos marcados ${S} sin nada en la base: ${ars(tot(marcadosSinNada))}`,
+    decidir: "Que sean lo que dice la marca", cols: COLS_MOV, filas: marcadosSinNada.map(filaItem) },
+  { de: "Libertad", tema: "Posadas en Libertad", hay: "Expensas y ABL de la cochera de Posadas hoy NO entran a Libertad (tu nota: «¿habría que agregar Posadas? creo que sí y luego ver con contador»)",
+    decidir: "¿Entra al 50/50 de Libertad? (ver con el contador)", cols: COLS_CUOTA, filas: posadas.map(filaCuota) },
+  { de: "Libertad", tema: "Fechas de cuotas", hay: "Expensas de feb-26 fechada en mar-26 (pago agrupado feb+mar del 10/03); dos ABL el 30/01 y ninguno en marzo",
+    decidir: "OK para corregir las fechas (script con deshacer) — no cambia el total, sí el mes", cols: COLS_CUOTA, filas: fechasMal.map(filaCuota) },
+  { de: "Libertad", tema: "Luz de diciembre", hay: "Dos pagos de luz en dic-25", decidir: "¿Qué es el chico?", cols: COLS_CUOTA, filas: luzDic.map(filaCuota) },
+  { de: "Libertad", tema: "Prosegur", hay: `${prosegur.length} facturas a MA pagadas con su tarjeta`, decidir: "¿Empezó en enero 2026 o antes se pagaba de otro modo?", cols: COLS_CUOTA, filas: prosegur.map(filaCuota) },
+  { de: "Libertad", tema: "Saldo entre PAM y MA", hay: "Reparto entre tres: lo que pagó el tercero del mes; la mitad la debe el socio al tercero (renglón «ENTRE PAM Y MA» de la solapa Libertad)",
+    decidir: "¿Se registra en algún lado?", cols: ["Mes", "Pagó el tercero", "El socio le debe al tercero (la mitad)", "", "", "", "", "", "Dónde", "Tu respuesta"],
+    filas: entre.map(x => [x.mes, x.ter, x.half, "", "", "", "", "", "«Libertad» · reparto entre tres", ""]) },
+  { de: "Histórico", tema: "Marcas en la nota", hay: `${marcasDeNota.length} movimientos de ${S} con contable/interno sólo en la nota de tu planilla (no en las columnas)`,
+    decidir: "OK para pasarlas a las columnas (cambio de datos: script con deshacer) — hoy el Excel las lee de la nota", cols: COLS_MOV, filas: marcasDeNota.map(filaItem) },
+  { de: "Regla", tema: "Corte por fecha", hay: `Casco, Tapera, Posadas, Complementario, Ombú, Entre Ríos: contable de MA desde 2026, interno desde 03/2026 (fechas escritas en el script). En esta cuenta entran por el corte:`,
+    decidir: "Generalizar: una tabla «de quién es tal cosa desde tal fecha» — ¿te parece?", cols: COLS_MOV, filas: items.filter(i => /^corte/.test(i.por)).map(filaItem) },
+  { de: "Control", tema: "«Desglosar» sin repartir", hay: `${desglosarSinRepartir.length} movimientos (pagos de la tarjeta de MSA, sueldos de JMS/AMS…): ${ars(tot(desglosarSinRepartir))}`,
+    decidir: `¿Alguno es de ${S}? (los de la tarjeta se reparten por sus consumos)`, cols: COLS_MOV, filas: desglosarSinRepartir.map(filaItem) },
+].filter(t => t.filas.length || t.de === "Regla")
 const temas: unknown[][] = [[`TEMAS ABIERTOS — lo que falta decidir para cerrar la cuenta MSA ↔ ${S} y Libertad (${ETIQ})`],
-  ["Se actualiza en cada versión. Cuando JMS responde, el tema sale de acá y queda aplicado en las solapas."], [],
-  ["#", "De", "Tema", "Qué hay", "Qué falta decidir", "Dónde mirarlo"],
-  ...[...T_SOCIO, ...T_LIB, ...T_COMUN].map((r, i) => [i + 1, ...r])]
+  ["Cada tema tiene DEBAJO sus movimientos, con dónde filtrarlo. Respondé en «Tu respuesta» (en el tema o en cada movimiento). Cuando respondés, el tema sale de acá y queda aplicado."], [],
+  ["#", "De", "Tema", "Qué hay", "Qué falta decidir", "Movimientos", "Tu respuesta"],
+  ...temasLista.map((t, k) => [k + 1, t.de, t.tema, t.hay, t.decidir, t.filas.length, ""]), []]
+temasLista.forEach((t, k) => { temas.push([`#${k + 1} · ${t.tema} — ${t.decidir}`], t.cols, ...t.filas, []) })
 
 // ── 5 · Escribir (nunca pisa: v2, v3…)
 if (!existsSync(CARPETA)) mkdirSync(CARPETA, { recursive: true })
