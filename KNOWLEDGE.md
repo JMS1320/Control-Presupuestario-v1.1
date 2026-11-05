@@ -3113,3 +3113,6 @@ De armar las cuentas MSA↔MA y MSA↔PAM ([A-FEAT-1532](PENDIENTES.md#a-feat-15
 - **Build en un árbol aparte con node_modules por junction**: Turbopack lo rechaza («Symlink node_modules is invalid»). Correr el build en la carpeta principal (o con webpack).
 - **El conector de Gmail de Claude va a UNA casilla por vez** (hoy sanmanuel.sp). Cambiarla: claude.ai → Conectores → Gmail → desconectar/conectar con la otra cuenta, y en la terminal `/mcp` → reconectar.
 - **Un mismo mail de ARBA no trae texto plano**: el contenido está en el HTML (lo lee el GAS). La mayoría de los mails de servicios e impuestos traen el importe **en el PDF adjunto** o en la boleta del link, no en el texto: el procesamiento tiene que leer el documento.
+
+### 🐞 Un lector de PDF que anda en Node puede fallar en el navegador (2026-11-05, A-FEAT-1565)
+`DecompressionStream("deflate")` es **estricto en Chrome**: si después de los datos comprimidos queda algo (el salto de línea antes de `endstream`), tira el stream entero; Node lo tolera. Por eso las pruebas en Node daban verde y en la app las 26 boletas de ARBA de la cuota 4 salían mudas. Regla: un lector que corre en el navegador se prueba **en un navegador** (`scripts/probar-boletas-navegador.mts`, Chromium de Playwright).
