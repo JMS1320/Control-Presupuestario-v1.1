@@ -157,6 +157,12 @@ function infoCarpeta(body) {
 function leerArchivo(body) {
   try {
     var f = DriveApp.getFileById(String(body.file_id || ''))
+    // 0.21.0 (A-FEAT-1565): con `bytes: true` devuelve el archivo TAL CUAL (base64), sin OCR — la app lo lee con el mismo
+    // lector que cuando el usuario lo sube a mano (las boletas de ARBA ya archivadas, sin volver a subirlas).
+    if (body.bytes) {
+      var blob = f.getBlob()
+      return responseJson({ ok: true, nombre: f.getName(), tipo: blob.getContentType(), b64: Utilities.base64Encode(blob.getBytes()) }, 200)
+    }
     var texto = extraerTextoDeBlob(f.getBlob())
     return responseJson({ ok: true, nombre: f.getName(), texto: String(texto || '').slice(0, 20000) }, 200)
   } catch (e) {

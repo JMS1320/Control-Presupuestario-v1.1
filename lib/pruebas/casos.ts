@@ -87,7 +87,7 @@ import { desvioPorPausa, vigiaDebeDesviar } from "@/lib/auth/pausa"
 import { puedeMirarComo } from "@/lib/auth/como-persona"
 import { nuevasPrimero } from "@/lib/importar/orden-preview"
 import { echeqDelAnticipo } from "@/lib/pagos/echeq-anticipo"
-import { armarPlanillaBoletas, decisionPropuesta, importeElegido } from "@/lib/arba/planilla-boletas"
+import { armarPlanillaBoletas, decisionPropuesta, importeElegido, claveBoleta, partidaDeClave } from "@/lib/arba/planilla-boletas"
 import { marcarAnticiposSinVincular } from "@/lib/cashflow/anticipo-sin-vincular"
 import { pideOtraVentana, linkSeccion } from "@/lib/ui/links"
 import { teclaDeItem, itemDeTecla, escribiendoEn } from "@/lib/ui/atajos-menu"
@@ -10344,6 +10344,17 @@ export function correrCasos(): Resultado[] {
       chequear("Boletas ARBA", "Planilla por responsable: cuotas anteriores, presupuestada vs la que vino y contra la anterior; la que no vino figura (con su cuota presupuestada); propone aceptar sólo si cambia; el elegido según la decisión",
         "Rojas · 123 · 2214038.5 · 2460212.6 · 246174.1 · 11.12 · 246174.1 · 1 · 4 · 50000 · no vino · aceptar · presupuestada · 2460212.6 · 2214038.5 · 2400000", vPl,
         vPl === "Rojas · 123 · 2214038.5 · 2460212.6 · 246174.1 · 11.12 · 246174.1 · 1 · 4 · 50000 · no vino · aceptar · presupuestada · 2460212.6 · 2214038.5 · 2400000", "A-FEAT-1565")
+    }
+    // ── 💾 La clave con que se guarda la PROPUESTA de una boleta (A-FEAT-1565 etapa 2) ──
+    {
+      const base = { partidaPdf: null as string | null, objetoMail: null as string | null, complementario: false, egresoId: null as string | null, archivo: "ARBA 2026-C4 - LUI.pdf" }
+      const ks = [claveBoleta({ ...base, partidaPdf: "099-015881-9" }), claveBoleta({ ...base, objetoMail: "099-015881-9" }),
+        claveBoleta({ ...base, objetoMail: "30617786016" }), claveBoleta({ ...base, partidaAsignada: "099-006595-0" }),
+        claveBoleta({ ...base, complementario: true, egresoId: "eg-pam" }), claveBoleta(base)]
+      const vK = ks.join(" · ") + " | " + ks.map(k => partidaDeClave(k) ?? "-").join(" · ")
+      chequear("Boletas ARBA", "Clave de la propuesta guardada: la partida del PDF o del mail o la asignada; el complementario y la sin asignar con clave provisoria (un CUIT no es partida)",
+        "099-015881-9 · 099-015881-9 · sin-asignar:ARBA 2026-C4 - LUI.pdf · 099-006595-0 · complementario:eg-pam · sin-asignar:ARBA 2026-C4 - LUI.pdf | 099-015881-9 · 099-015881-9 · - · 099-006595-0 · - · -", vK,
+        vK === "099-015881-9 · 099-015881-9 · sin-asignar:ARBA 2026-C4 - LUI.pdf · 099-006595-0 · complementario:eg-pam · sin-asignar:ARBA 2026-C4 - LUI.pdf | 099-015881-9 · 099-015881-9 · - · 099-006595-0 · - · -", "A-FEAT-1565")
     }
     // ── ⬆️ Importar facturas: las nuevas arriba (A-FEAT-1554), el resto en el orden del archivo ──
     const np = nuevasPrimero([{ id: 1, estado: "duplicado" }, { id: 2, estado: "nueva" }, { id: 3, estado: "error" }, { id: 4, estado: "nueva" }, { id: 5, estado: "duplicado" }]).map(x => x.id).join("")

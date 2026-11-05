@@ -16,7 +16,7 @@
  * Los PDFs se pueden subir a mano acá; el GAS (`accion: boletas_arba`) hace lo mismo desde el mail.
  */
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { IconoDestinoArchivo, useDestinoArchivo } from "@/components/destino-archivo"
 import { hoyArgentina } from "@/lib/fechas"
 import { supabase } from "@/lib/supabase"
@@ -29,7 +29,7 @@ import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Loader2 } from "lucide-react"
 import { PlanillaBoletasArba } from "@/components/planilla-boletas-arba"
-import type { Decision as DecisionPlanilla } from "@/lib/arba/planilla-boletas"
+import { claveBoleta, partidaDeClave, PREFIJO_SIN_ASIGNAR, type Decision as DecisionPlanilla } from "@/lib/arba/planilla-boletas"
 import { toast } from "sonner"
 
 interface Comparacion {
@@ -64,7 +64,15 @@ interface Comparacion {
   importeFix: string
   /** La fecha de vencimiento corregida a mano (ISO). Vacía = vale la de la boleta. */
   vencFix: string
+  /** 🗂️ A-FEAT-1565: la partida que el usuario le asignó a una boleta «Sin asignar» (la del template elegido). */
+  partidaAsignada?: string | null
 }
+
+/** 💾 A-FEAT-1565: la clave con que se guarda la boleta (la partida real, o una provisoria). */
+const claveDe = (f: Comparacion) => claveBoleta({
+  partidaPdf: f.boleta.partida, objetoMail: f.objetoMail, partidaAsignada: f.partidaAsignada ?? null,
+  complementario: f.boleta.impuesto === "complementario", egresoId: f.egresoId, archivo: f.archivo,
+})
 
 const m = (n: number | null | undefined) =>
   n == null ? "—" : `$${n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -185,6 +193,10 @@ export function PanelBoletasArba() {
   const [filas, setFilas] = useState<Comparacion[]>([])
   /** 🗂️ A-FEAT-1565: la planilla por responsable, con la historia de cada partida. */
   const [verPlanilla, setVerPlanilla] = useState(false)
+  /** Las filas de ESTE momento, para leerlas desde funciones que se armaron en otro render. */
+  const filasRef = useRef<Comparacion[]>([])
+  filasRef.current = filas
+  type InfoArchivo = { objeto: string | null; importe: number | null; url: string | null; carpeta: string | null; file_id?: string | null }
   const [bajando, setBajando] = useState(false)
   /** Cuántos días de mail mirar. Achicarlo es lo primero que hay que probar si la bajada no llega. */
   const [dias, setDias] = useState("60")
@@ -203,7 +215,7 @@ export function PanelBoletasArba() {
   const [informe, setInforme] = useState<Informe | null>(null)
   /** Cuántas pasadas hizo falta. Se muestra sólo cuando fue más de una. */
   const [pasadas, setPasadas] = useState(0)
-  type Bajada = { archivo: string; carpeta?: string; url?: string; objeto_mail?: string | null; importe_mail?: number | null }
+  type Bajada = { archivo: string; carpeta?: string; url?: string; file_id?: string; objeto_mail?: string | null; importe_mail?: number | null }
   const [delMail, setDelMail] = useState<{ resumen: string; bajadas: Bajada[]; ya_estaban: Bajada[]; descuadres?: { asunto: string; detalle: string }[] } | null>(null)
   /**
    * Lo que dijo el MAIL, por nombre de archivo. Se llena al bajar y se usa cuando después subís
@@ -214,18 +226,123 @@ export function PanelBoletasArba() {
    * link de Drive**, que es lo que permite abrir la boleta desde la app para verificar el importe.
    */
   const [mailPorArchivo, setMailPorArchivo] = useState<Record<string, {
-    objeto: string | null; importe: number | null; url: string | null; carpeta: string | null
+    objeto: string | null; importe: number | null; url: string | null; carpeta: string | null; file_id?: string | null
   }>>({})
+  const mailRef = useRef(mailPorArchivo)
+  mailRef.current = mailPorArchivo
+
+  /**
+   * 💾 A-FEAT-1565 — cada boleta leída queda GUARDADA como propuesta (`boletas_arba.aplicada = false`), así al volver
+   * se ve el estado de situación sin subir ni leer nada de nuevo. Nunca pisa una ya aplicada.
+   */
+  const guardarPropuestas = async (rows: Comparacion[], extra: Record<string, InfoArchivo> = {}) => {
+    const info = { ...mailRef.current, ...extra }
+    const anio = anioArchivo
+    const { data: aplicadas } = await supabase.from("boletas_arba").select("partida, anio, cuota, impuesto").eq("aplicada", true)
+    const yaAplicada = new Set((aplicadas ?? []).map((x: { partida: string; anio: number; cuota: string; impuesto: string }) => `${x.partida}|${x.anio}|${x.cuota}|${x.impuesto}`))
+    const payload = rows.filter(f => !f.aplicada).map(f => ({
+      partida: claveDe(f), anio: f.boleta.anio ?? anio, cuota: f.boleta.cuota ?? "?", impuesto: f.boleta.impuesto,
+      importe: f.boleta.importe, importe_anual: f.boleta.importeAnual, vencimiento: f.boleta.vencimiento,
+      valuacion_fiscal: f.boleta.valuacionFiscal, base_imponible: f.boleta.baseImponible, codigo_pago_electronico: f.boleta.codigoPagoElectronico,
+      importe_mail: f.importeMail, objeto_mail: f.objetoMail, archivo_nombre: f.archivo,
+      archivo_url: info[f.archivo]?.url ?? null, archivo_file_id: info[f.archivo]?.file_id ?? null,
+      egreso_id: f.egresoId, cuota_id: f.cuotaId, aplicada: false, origen: "pdf", observaciones: "propuesta (A-FEAT-1565)",
+    })).filter(x => !yaAplicada.has(`${x.partida}|${x.anio}|${x.cuota}|${x.impuesto}`))
+    if (!payload.length) return
+    const { error } = await supabase.from("boletas_arba").upsert(payload, { onConflict: "partida,anio,cuota,impuesto" })
+    if (error) toast.error("No se pudo guardar la propuesta: " + error.message)
+  }
+
+  /**
+   * 💾 A-FEAT-1565 — al abrir: el ESTADO DE SITUACIÓN con lo ya guardado (propuestas y aplicadas del año), sin subir nada.
+   * Cada una se vuelve a casar con su cuota (por si la cuota cambió desde entonces).
+   */
+  const cargarGuardadas = async () => {
+    const { data, error } = await supabase.from("boletas_arba").select("*").eq("anio", anioArchivo)
+    if (error || !data?.length) return 0
+    type Fila = { partida: string; anio: number; cuota: string; impuesto: "inmobiliario" | "complementario"; importe: number | null; importe_anual: number | null
+      vencimiento: string | null; valuacion_fiscal: number | null; base_imponible: number | null; codigo_pago_electronico: string | null
+      importe_mail: number | null; objeto_mail: string | null; archivo_nombre: string | null; archivo_url: string | null; archivo_file_id: string | null
+      egreso_id: string | null; cuota_id: string | null; aplicada: boolean }
+    const rows: Comparacion[] = []
+    const mails: typeof mailPorArchivo = {}
+    for (const r of data as Fila[]) {
+      const archivo = r.archivo_nombre ?? r.partida
+      const boleta: BoletaArba = {
+        partida: partidaDeClave(r.partida), cuota: r.cuota, anio: r.anio, impuesto: r.impuesto,
+        importe: r.importe == null ? null : Number(r.importe), importeAnual: r.importe_anual == null ? null : Number(r.importe_anual),
+        vencimiento: r.vencimiento, proximoVencimiento: null, valuacionFiscal: r.valuacion_fiscal == null ? null : Number(r.valuacion_fiscal),
+        baseImponible: r.base_imponible == null ? null : Number(r.base_imponible), codigoPagoElectronico: r.codigo_pago_electronico, texto: "", avisos: [],
+      }
+      const fila: Comparacion = {
+        archivo, boleta, lote: null, egresoId: r.egreso_id, cuotaId: null, montoTemplate: null, vencTemplate: null, estadoCuota: null, cambia: [],
+        aplicar: false, aplicada: r.aplicada, problema: r.egreso_id ? null : (r.partida.startsWith(PREFIJO_SIN_ASIGNAR) ? "sin partida reconocida: asignala en la planilla" : null),
+        importeMail: r.importe_mail == null ? null : Number(r.importe_mail), objetoMail: r.objeto_mail, importeFix: "", vencFix: "",
+        partidaAsignada: partidaDeClave(r.partida),
+      }
+      if (r.egreso_id) {
+        const { data: eg } = await supabase.from("egresos_sin_factura").select("nombre_referencia").eq("id", r.egreso_id).single()
+        fila.lote = (eg as { nombre_referencia?: string } | null)?.nombre_referencia ?? null
+        await casarCuota(fila, r.egreso_id, boleta)
+        if (r.aplicada) { fila.aplicada = true; fila.aplicar = false }
+      }
+      rows.push(fila)
+      mails[archivo] = { objeto: r.objeto_mail, importe: fila.importeMail, url: r.archivo_url, carpeta: null, file_id: r.archivo_file_id }
+    }
+    setMailPorArchivo(prev => ({ ...mails, ...prev }))
+    setFilas(rows)
+    return rows.length
+  }
+  useEffect(() => {
+    if (!abierto || filas.length) return
+    void (async () => {
+      const n = await cargarGuardadas()
+      if (n) {
+        avisar("info", `${n} boleta(s) de ${anioArchivo} ya leídas`, "Es lo guardado de antes: propuestas sin aplicar y las ya aplicadas. No hace falta volver a subir ni leer nada.")
+        setVerPlanilla(true)
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abierto])
+
+  /** 📥 A-FEAT-1565 — leer las boletas ya archivadas en el Drive, sin subirlas (GAS 0.21.0: el PDF tal cual). */
+  const leerDelDrive = async (lista: { archivo: string; file_id: string }[], extra: Record<string, InfoArchivo> = {}) => {
+    if (!lista.length) { avisar("info", "No hay boletas archivadas para leer", "Primero «Bajar y archivar»."); return }
+    setLeyendo(true)
+    const items: { nombre: string; datos: ArrayBuffer }[] = []
+    const fallas: string[] = []
+    try {
+      for (let i = 0; i < lista.length; i += 3) {
+        await Promise.all(lista.slice(i, i + 3).map(async x => {
+          try {
+            const r = await fetch("/api/gas/leer-archivo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file_id: x.file_id, bytes: true }) })
+            const j = await r.json()
+            if (!j.ok || !j.b64) { fallas.push(`${x.archivo}: ${j.error ?? "sin contenido"}`); return }
+            const bin = atob(j.b64); const u8 = new Uint8Array(bin.length)
+            for (let k = 0; k < bin.length; k++) u8[k] = bin.charCodeAt(k)
+            items.push({ nombre: x.archivo, datos: u8.buffer })
+          } catch (e) { fallas.push(`${x.archivo}: ${(e as Error).message}`) }
+        }))
+      }
+    } finally { setLeyendo(false) }
+    if (fallas.length) avisar("error", `${fallas.length} no se pudieron leer del Drive`, fallas.join("\n"))
+    if (items.length) await procesarPdfs(items, extra)
+  }
 
   const subir = async (archivos: FileList) => {
+    await procesarPdfs(await Promise.all(Array.from(archivos).map(async f => ({ nombre: f.name, datos: await f.arrayBuffer() }))))
+  }
+
+  const procesarPdfs = async (items: { nombre: string; datos: ArrayBuffer }[], extra: Record<string, InfoArchivo> = {}) => {
+    const info = { ...mailRef.current, ...extra }
     setLeyendo(true)
     const nuevas: Comparacion[] = []
     try {
-      for (const f of Array.from(archivos)) {
-        const boleta = await parsearBoletaArba(await f.arrayBuffer())
-        const delMailEste = mailPorArchivo[f.name]
+      for (const f of items) {
+        const boleta = await parsearBoletaArba(f.datos)
+        const delMailEste = info[f.nombre]
         const fila: Comparacion = {
-          archivo: f.name, boleta, lote: null, egresoId: null, cuotaId: null,
+          archivo: f.nombre, boleta, lote: null, egresoId: null, cuotaId: null,
           montoTemplate: null, vencTemplate: null, estadoCuota: null, cambia: [],
           aplicar: false, aplicada: false, problema: null,
           importeMail: delMailEste?.importe ?? null, objetoMail: delMailEste?.objeto ?? null,
@@ -280,8 +397,10 @@ export function PanelBoletasArba() {
       anotarResultado("boletas-arba",
         `${nuevas.length} PDF · ${conPartida} con partida · ${casadas} casada(s) con su cuota`)
 
-      setFilas(f => [...f, ...nuevas])
-      avisar("ok", `${nuevas.length} boleta(s) leída(s)`, `${conPartida} con partida · ${casadas} casada(s) con su cuota del template.` + (nuevas.length - casadas > 0 ? `
+      // Una boleta leída de nuevo reemplaza a la anterior del mismo archivo (no se duplica)
+      setFilas(f => [...f.filter(x => !nuevas.some(n => n.archivo === x.archivo)), ...nuevas])
+      await guardarPropuestas(nuevas, extra)
+      avisar("ok", `${nuevas.length} boleta(s) leída(s) y guardadas como propuesta`, `${conPartida} con partida · ${casadas} casada(s) con su cuota del template.` + (nuevas.length - casadas > 0 ? `
 
 ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : ""))
     } catch (e) {
@@ -409,23 +528,29 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
        * linkeado para ver las boletas si tengo dudas y chequear que haya tomado bien los montos»*.
        * Sin el link, para verificar un importe hay que salir a buscar el archivo en el Drive.
        */
-      const idx: Record<string, { objeto: string | null; importe: number | null; url: string | null; carpeta: string | null }> = {}
+      const idx: Record<string, { objeto: string | null; importe: number | null; url: string | null; carpeta: string | null; file_id?: string | null }> = {}
       // 🔗 05/11: lo que YA estaba archivado también trae su link y lo del mail (GAS nuevo) — se suma igual que una bajada,
       // así «Aplicar» guarda el PDF aunque se haya bajado en otra corrida. Con un GAS viejo vienen sin link: no se pisa nada.
       for (const b of (j.ya_estaban ?? []) as Bajada[]) {
         if (!b.archivo || !(b as { url?: string | null }).url) continue
         idx[b.archivo] = {
           objeto: b.objeto_mail ?? null, importe: b.importe_mail ?? null,
-          url: b.url ?? null, carpeta: b.carpeta ?? null,
+          url: b.url ?? null, carpeta: b.carpeta ?? null, file_id: b.file_id ?? null,
         }
       }
       for (const b of (j.bajadas ?? []) as Bajada[]) {
         idx[b.archivo] = {
           objeto: b.objeto_mail ?? null, importe: b.importe_mail ?? null,
-          url: b.url ?? null, carpeta: b.carpeta ?? null,
+          url: b.url ?? null, carpeta: b.carpeta ?? null, file_id: b.file_id ?? null,
         }
       }
       setMailPorArchivo(prev => ({ ...prev, ...idx }))
+      // 📥 A-FEAT-1565: lo archivado se LEE solo (sin subirlo) y queda guardado como propuesta — sólo lo que no está leído.
+      if (!soloContar) {
+        const yaLeidas = new Set(filasRef.current.map(f => f.archivo))
+        const aLeer = Object.entries(idx).filter(([a, v]) => v.file_id && !yaLeidas.has(a)).map(([a, v]) => ({ archivo: a, file_id: v.file_id! }))
+        if (aLeer.length) setTimeout(() => void leerDelDrive(aLeer, idx), 0)
+      }
 
       // 🗣️ **El informe va en el idioma del usuario, no en el del sistema.**
       // Pedido textual (2026-09-08): *«el informe a mí tiene que ser en mi lenguaje: encontró
@@ -472,10 +597,17 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
   const asignarTemplate = async (idx: number, egresoId: string) => {
     const base = filas[idx]
     if (!base) return
-    const { data: eg } = await supabase.from("egresos_sin_factura").select("id, nombre_referencia").eq("id", egresoId).single()
-    const fila: Comparacion = { ...base, egresoId, lote: (eg as { nombre_referencia?: string } | null)?.nombre_referencia ?? base.lote, problema: null }
+    const { data: eg } = await supabase.from("egresos_sin_factura").select("id, nombre_referencia, partida_arba").eq("id", egresoId).single()
+    const egr = eg as { nombre_referencia?: string; partida_arba?: string | null } | null
+    const claveVieja = claveDe(base)
+    const fila: Comparacion = { ...base, egresoId, lote: egr?.nombre_referencia ?? base.lote, problema: null, partidaAsignada: egr?.partida_arba ?? null }
     await casarCuota(fila, egresoId, fila.boleta)
     setFilas(fs => fs.map((x, i) => i === idx ? fila : x))
+    // 💾 La propuesta pasa a su partida: se guarda con la nueva clave y se borra la provisoria (sólo si no está aplicada)
+    await guardarPropuestas([fila])
+    if (claveVieja !== claveDe(fila) && claveVieja.startsWith(PREFIJO_SIN_ASIGNAR)) {
+      await supabase.from("boletas_arba").delete().eq("partida", claveVieja).eq("aplicada", false)
+    }
   }
 
   /** 🗂️ A-FEAT-1565 — las decisiones de la planilla se vuelcan a las filas y se aplica con el aplicar de siempre. */
@@ -521,7 +653,8 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
 
         // Y queda registrado de dónde salió: la boleta guarda su propio dato, aparte.
         await supabase.from("boletas_arba").upsert({
-          partida: f.boleta.partida ?? (esPartida(f.objetoMail) ? f.objetoMail : null),
+          // 💾 A-FEAT-1565: la misma clave que la propuesta (antes el complementario iba con partida null y la tabla lo rechazaba)
+          partida: claveDe(f),
           anio: f.boleta.anio ?? new Date().getFullYear(),
           cuota: f.boleta.cuota ?? "?", impuesto: f.boleta.impuesto,
           importe, importe_anual: f.boleta.importeAnual,
@@ -533,6 +666,7 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
           archivo_nombre: f.archivo,
           // 🔗 El link al PDF en Drive, para poder abrirlo desde la app y verificar el importe.
           archivo_url: mailPorArchivo[f.archivo]?.url ?? null,
+          archivo_file_id: mailPorArchivo[f.archivo]?.file_id ?? null,
           egreso_id: f.egresoId, cuota_id: f.cuotaId,
           // 🐾 La huella: qué leyó el parser y qué puso el usuario. Sirve para preguntarle después
           // al importador qué campo se corrige más y si un cambio lo mejoró o lo empeoró.
@@ -767,6 +901,11 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
           <div className="flex items-center gap-2">
             <Input type="file" accept="application/pdf" multiple disabled={leyendo}
               onChange={e => { if (e.target.files?.length) subir(e.target.files) }} />
+            {/* 📥 A-FEAT-1565: sin subir nada — las que ya están archivadas */}
+            <Button variant="outline" size="sm" disabled={leyendo}
+              onClick={() => void leerDelDrive(Object.entries(mailPorArchivo).filter(([, v]) => v.file_id).map(([a, v]) => ({ archivo: a, file_id: v.file_id! })))}>
+              📥 Leer las archivadas
+            </Button>
             {leyendo && <Loader2 className="h-4 w-4 animate-spin text-gray-500" />}
             {filas.length > 0 && <Button variant="ghost" size="sm" onClick={() => setFilas([])}>Limpiar</Button>}
           </div>

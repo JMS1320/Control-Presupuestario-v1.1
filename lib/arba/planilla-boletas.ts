@@ -110,3 +110,28 @@ export function decisionPropuesta(f: Pick<FilaPlanillaBoleta, "vino" | "presupue
   if (f.idx == null || f.vino == null || f.aplicada || f.estadoCuota === "conciliado") return "presupuestada"
   return f.presupuestada == null || Math.abs(f.vino - f.presupuestada) > 1 ? "aceptar" : "presupuestada"
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// 💾 La PROPUESTA queda guardada (A-FEAT-1565 etapa 2, JMS 05/11: «si la proposición fue una, va a volver a ser la misma…
+// no haría falta correr el proceso para que me vuelva a proponer lo mismo»). Cada boleta leída se guarda en
+// `public.boletas_arba` con `aplicada = false` (= propuesta); «Aplicar» la pasa a `true`. La partida es obligatoria y forma
+// la clave única (partida, año, cuota, impuesto): el complementario no tiene partida y una «Sin asignar» todavía no la
+// tiene, así que llevan una clave PROVISORIA que se reemplaza al asignarla.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** ¿Es una partida de ARBA de verdad (099-015881-9 o sus 10 dígitos)? */
+export const esPartidaArba = (p: string | null | undefined) => /^\d{3}-?\d{6}-?\d$/.test(String(p ?? "").trim())
+
+export const PREFIJO_SIN_ASIGNAR = "sin-asignar:"
+export const PREFIJO_COMPLEMENTARIO = "complementario:"
+
+/** La clave `partida` con la que se guarda la boleta: la real si se conoce; si no, una provisoria que no choca con otra. */
+export function claveBoleta(b: { partidaPdf: string | null; objetoMail: string | null; partidaAsignada?: string | null; complementario: boolean; egresoId: string | null; archivo: string }): string {
+  const real = [b.partidaAsignada, b.partidaPdf, b.objetoMail].find(esPartidaArba)
+  if (real) return real.trim()
+  if (b.complementario) return PREFIJO_COMPLEMENTARIO + (b.egresoId ?? b.archivo)
+  return PREFIJO_SIN_ASIGNAR + b.archivo
+}
+
+/** Para mostrar: la partida real, o vacío si la clave es provisoria. */
+export const partidaDeClave = (clave: string) => clave.startsWith(PREFIJO_SIN_ASIGNAR) || clave.startsWith(PREFIJO_COMPLEMENTARIO) ? null : clave
