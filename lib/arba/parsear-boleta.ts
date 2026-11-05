@@ -49,12 +49,30 @@ function literalPdf(raw: string): string {
     .split(BS + BS).join(BS)
 }
 
+/**
+ * Descomprime un stream del PDF.
+ * 🐞 05/11 (A-FEAT-1565): el navegador es ESTRICTO — si después del final de los datos comprimidos queda algo (el salto de
+ * línea antes de `endstream`), Chrome tira «junk after end» y se perdía el stream ENTERO; Node lo tolera, por eso en las
+ * pruebas andaba y en la app las 26 boletas de la cuota 4 salían mudas. Se leen los pedazos a medida que salen y, si el
+ * error llega al final, se conserva lo ya descomprimido.
+ */
 async function inflar(bytes: Uint8Array): Promise<string | null> {
+  let fin = bytes.length
+  while (fin > 0 && (bytes[fin - 1] === 10 || bytes[fin - 1] === 13 || bytes[fin - 1] === 32)) fin--
+  const partes: Uint8Array[] = []
   try {
-    const ds = new DecompressionStream("deflate")
-    const buf = await new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(ds)).arrayBuffer()
-    return new TextDecoder("latin1").decode(buf)
-  } catch { return null }
+    const lector = new Blob([bytes.slice(0, fin) as BlobPart]).stream().pipeThrough(new DecompressionStream("deflate")).getReader()
+    for (;;) {
+      const { done, value } = await lector.read()
+      if (done) break
+      if (value) partes.push(value)
+    }
+  } catch { if (!partes.length) return null }
+  const total = partes.reduce((n, p) => n + p.length, 0)
+  const out = new Uint8Array(total)
+  let k = 0
+  for (const p of partes) { out.set(p, k); k += p.length }
+  return new TextDecoder("latin1").decode(out)
 }
 
 /** Un CMap `/ToUnicode` → Map<glyphIdHex, texto>. */
