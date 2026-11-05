@@ -217,6 +217,7 @@ import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/bal
 import { controlarCuotasTemplates, campaniaDelControl, claveDeNombre, CONTROL_CUOTAS_TEMPLATES, ultimoDiaDelMes, type ComisionesDelMes, type CuotaParaControl, type TemplateControlado, type EntradaControlCuotas } from "@/lib/balance/control-cuotas-templates"
 import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuestosYOtros } from "@/lib/balance/templates-libro"
 import { hojaAutomotores, pulirLibroH } from "@/lib/balance/export-libro-diario"
+import { filtrarComprobantes } from "@/lib/balance/provision-manual-filtro"
 import { hojaStockHacienda, hojaDetalleHacienda, hojaStockValorizado, hojaAumentoRodeo, linkCotizacion, DETALLES } from "@/lib/balance/stock-hacienda-papel"
 import { repartoDeLaFlota } from "@/lib/balance/reparto-flota"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
@@ -4387,6 +4388,28 @@ export function correrCasos(): Resultado[] {
     const sinDoble = armarLibroDiario([autoYManual], [], ej, undefined, { esteEjercicio: [{ ...autoYManual, provision_motivo: "x" }], anterior: [] })
     chequear("Balance · provisión", "Si una ya entraba por la regla y además se marcó a mano, no se cuenta dos veces",
       "1", String(sinDoble.provisiones.length), sinDoble.provisiones.length === 1, "A-FEAT-1331")
+
+    // 🧾 A-FEAT-1564 — una VENTA puesta a mano: entra a la provisión como venta (→ 03.1 cobros), no a las compras ni a la lista
+    //    del ejercicio anterior (que es del papel 05).
+    {
+      const ventaJul = comp({ id: "v1", fuente: "venta", subdiario: "2026-07", numero: 77, fecha: "2026-07-10", total: 900, provision_motivo: "hacienda entregada en junio" })
+      const l = armarLibroDiario([comp({ subdiario: "2026-01", numero: 1 })], [ventaJul], ej, undefined, { esteEjercicio: [ventaJul], anterior: [ventaJul] })
+      const v = `${l.provisiones.filter(a => a.fuente === "venta").length} venta · ${l.provisiones.filter(a => a.fuente !== "venta").length} compra · ${l.provisionesEjercicioAnterior.length} anterior`
+      chequear("Balance · provisión", "🧾 Una venta de julio puesta a mano entra a la provisión de COBROS (03.1), no a la de compras ni a la lista del ejercicio anterior",
+        "1 venta · 0 compra · 0 anterior", v, v === "1 venta · 0 compra · 0 anterior", "A-FEAT-1564")
+    }
+    // 🔎 A-FEAT-1564 — el selector: ordenado por fecha, filtro por subdiario y buscador por nombre, número o importe (con puntos y coma).
+    {
+      const L = [
+        { id: "b", fecha: "2026-08-02", nombre: "Pedro Genta", numero: "0003-00000088", total: 1234567.89, subdiario: "2026-08", cuenta: null },
+        { id: "a", fecha: "2026-07-10", nombre: "Frigorífico Sáenz", numero: "0002-00000555", total: 900000, subdiario: "2026-07", cuenta: null },
+        { id: "c", fecha: "2026-07-20", nombre: "Cargill", numero: "0001-00000001", total: 50, subdiario: null, cuenta: null },
+      ]
+      const ids = (b: string, sd: string | null) => filtrarComprobantes(L, b, sd).map(x => x.id).join("")
+      const r = `${ids("", null)} · ${ids("", "2026-07")} · ${ids("", "sin")} · ${ids("saenz", null)} · ${ids("1.234.567,89", null)} · ${ids("1234567", null)} · ${ids("88", null)} · ${ids("-genta", null)}`
+      chequear("Balance · provisión", "🔎 Selector de la provisión a mano: por fecha · subdiario · «sin subdiario» · nombre sin acento · importe con o sin puntos · número · excluir",
+        "acb · a · c · a · b · b · b · ac", r, r === "acb · a · c · a · b · b · b · ac", "A-FEAT-1564")
+    }
 
     // 📋 La del ejercicio ANTERIOR: se lista, no se resta.
     const delAnterior = comp({ id: "h1", fuente: "historico", subdiario: "2025-08", numero: 9, fecha: "2025-06-25", total: 1000 })

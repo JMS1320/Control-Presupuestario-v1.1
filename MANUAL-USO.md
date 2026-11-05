@@ -3710,17 +3710,18 @@ Para corregir una diferencia, se mueve o se carga la factura en su subdiario. Un
 
 ⚠️ Sin probar todavía → A-TEST-1233
 
-### ✍️ Provisionar a mano una factura posterior al cierre
+### ✍️ Provisionar a mano una compra o una venta posterior al cierre
 
-La provisión se arma sola con las facturas **con fecha del ejercicio** que se imputaron en un subdiario posterior. Para una factura **con fecha posterior al cierre** que igual es de este ejercicio (por ejemplo, un servicio puntual de junio facturado en julio):
+La provisión se arma sola con las facturas **con fecha del ejercicio** que se imputaron en un subdiario posterior. Para una factura **con fecha posterior al cierre** que igual es de este ejercicio (un servicio puntual de junio facturado en julio, o hacienda entregada en junio y liquidada en julio):
 
-1. En el cuadro **✍️ Provisión puesta a mano**, tocá **+ Provisionar una factura posterior al cierre**.
-2. Buscá por proveedor o número y elegí la factura.
-3. Escribí **por qué** (si lo dejás vacío queda «Facturación de un servicio brindado en el ejercicio …») y tocá **Provisionar**.
+1. En el cuadro **✍️ Provisión puesta a mano**, tocá **+ Provisionar una compra o venta posterior al cierre**.
+2. Elegí la pestaña **🧾 Compras** o **💰 Ventas**. Aparecen **todas** las posteriores al cierre, **ordenadas por fecha**: se pueden recorrer sin buscar.
+3. Para achicar: elegí un **subdiario** (o «Sin subdiario») y/o escribí en el buscador el **proveedor o cliente**, el **número** o el **importe** (con o sin puntos: `1.234.567,89` o `1234567`). Varias palabras = tienen que estar todas; `-palabra` = que no esté.
+4. Elegí la factura, escribí **por qué** (si lo dejás vacío queda un motivo por defecto) y tocá **Provisionar**.
 
-Sale en la solapa **05 Provision** marcada «puesta a mano», con el motivo. Para sacarla, **anular** con un motivo: no se borra. Debajo, en la misma solapa, va **la provisión del ejercicio anterior**, sólo para que la vea el contador: no se resta.
+Las **compras** salen en la solapa **05 Provision** y las **ventas** en **03.1 Provisión de cobros**, marcadas «puesta a mano», con el motivo. En el cuadro cada una lleva su etiqueta COMPRA o VENTA y abajo el total de cada lado. Para sacarla, **anular** con un motivo: no se borra. Debajo, en la misma solapa, va **la provisión del ejercicio anterior**, sólo para que la vea el contador: no se resta.
 
-⚠️ Sin probar todavía → A-TEST-1234
+⚠️ Sin probar todavía → A-TEST-1234 · las ventas y el selector nuevo → A-TEST-1335
 
 ### 🔢 Proveedores fijos: ¿están todas las facturas?
 

@@ -587,7 +587,8 @@ export function armarLibroDiario(
     const [anio, mes] = a.subdiario.split("-").map(Number)
     return esProvision(a.fecha, anio, mes, ejAnterior)
   })
-  const provisionesEjercicioAnterior = unirManuales(provAnteriorAuto, manuales?.anterior ?? [])
+  // 🧾 A-FEAT-1564: las ventas puestas a mano no van a esta lista (es la del papel 05, de compras).
+  const provisionesEjercicioAnterior = unirManuales(provAnteriorAuto, (manuales?.anterior ?? []).filter(a => a.fuente !== "venta"))
 
   // 🔢 Control de cantidad: lo que es gasto del ejercicio = sus 12 subdiarios + lo provisionado.
   const facturasFijas = fijos

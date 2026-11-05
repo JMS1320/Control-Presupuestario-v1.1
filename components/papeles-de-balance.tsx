@@ -25,7 +25,7 @@
  */
 import { PendientesBalance } from "./pendientes-balance"
 import { SaldosEjercicioAnterior } from "./saldos-ejercicio-anterior"
-import { ProvisionManual, tablaFacturas } from "./provision-manual"
+import { ProvisionManual, tablaFacturas, tablaVentas } from "./provision-manual"
 import { saldosDelEjercicioAnterior, type AjusteBalance } from "@/lib/balance/ajustes-balance"
 import { pendientesConVisto, type PendienteBalance } from "@/lib/balance/pendientes-balance"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -586,7 +586,7 @@ export function PapelesDeBalance() {
         // 🔁 A-FEAT-1427: también las del HISTÓRICO (la provisión 24/25 de MSA son dos facturas de ago/oct-25 que viven ahí).
         const TABLA_HISTORICO = "msa.comprobantes_historico"
         const { data: incl, error: eIncl } = await supabase.from("ajustes_balance").select("*")
-          .eq("empresa", empresa.id).eq("accion", "incluir").in("tabla", [tablaFacturas(empresa.schema), TABLA_HISTORICO])
+          .eq("empresa", empresa.id).eq("accion", "incluir").in("tabla", [tablaFacturas(empresa.schema), TABLA_HISTORICO, tablaVentas(empresa.schema)])
           .in("anio_cierre", [anioCierre, anioCierre - 1]).is("anulado_at", null)
         if (eIncl) throw new Error(eIncl.message)
         const ajustesIncl = (incl ?? []) as AjusteBalance[]
@@ -604,6 +604,13 @@ export function PapelesDeBalance() {
             const { data: hs, error: eHs } = await supabase.schema("msa").from("comprobantes_historico").select("*").in("id", idsHist)
             if (eHs) throw new Error(eHs.message)
             for (const f of hs ?? []) porId.set(String((f as Record<string, unknown>).id), desdeHistorico(f as Record<string, unknown>))
+          }
+          // 🧾 A-FEAT-1564: las VENTAS puestas a mano (van a «03.1 Provisión de cobros», por su fuente «venta»).
+          const idsVentas = idsDe(tablaVentas(empresa.schema))
+          if (idsVentas.length) {
+            const { data: vs, error: eVs } = await supabase.schema(empresa.schema).from("comprobantes_venta").select("*").in("id", idsVentas)
+            if (eVs) throw new Error(eVs.message)
+            for (const f of vs ?? []) porId.set(String((f as Record<string, unknown>).id), desdeVenta(f as Record<string, unknown>))
           }
           for (const a of ajustesIncl) {
             const f = a.registro_id ? porId.get(a.registro_id) : undefined
