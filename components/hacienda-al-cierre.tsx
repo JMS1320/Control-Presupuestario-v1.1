@@ -202,14 +202,26 @@ export function HaciendaAlCierre({
 
       // Los precios. Si un mercado falla NO se corta: se sigue con el otro y los que falten
       // quedan como huecos, que es la información útil.
+      /**
+       * ⚠️ cambió 05/11 (JMS: «cayeron muchísimos de estos avisos»): la búsqueda hacia atrás pide MUCHOS días, y un día sin remate
+       * (fin de semana, feriado, una categoría no operada) responde «sin datos» — es lo esperado, no un error. Esos no avisan; sí
+       * avisa una falla de verdad (la web caída, un error del servidor), y UNA sola vez por fuente. Lo que quede sin precio lo dice
+       * el papel («falta el precio»).
+       */
+      const avisados = new Set<string>()
       const pedir = async <T,>(url: string): Promise<T[]> => {
+        const fuente = url.split("?")[0]
         try {
           const r = await fetch(url)
           const j = await r.json()
-          if (!r.ok || j?.error) { toast.warning(`${url.split("?")[0]}: ${j?.error ?? r.status}`); return [] }
+          const sinDatos = r.status === 404 || /no se encontr|sin datos/i.test(String(j?.error ?? ""))
+          if (!r.ok || j?.error) {
+            if (!sinDatos && !avisados.has(fuente)) { avisados.add(fuente); toast.warning(`${fuente}: ${j?.error ?? r.status}`) }
+            return []
+          }
           return (j.filas ?? j.datos ?? j.precios ?? []) as T[]
         } catch (e) {
-          toast.warning("No se pudo traer precios: " + (e as Error).message)
+          if (!avisados.has(fuente)) { avisados.add(fuente); toast.warning("No se pudo traer precios: " + (e as Error).message) }
           return []
         }
       }
@@ -323,6 +335,10 @@ export function HaciendaAlCierre({
         ])
       }
       const [[rMag, rHem, rMac, rVie, rTor], pizSoja] = await Promise.all([preciosAl(fc, existencias, pesos), pizarraAlCierre(supabase, "soja", fc)])
+      // Si una fuente no devolvió NADA en todo el período, sí se avisa (puede ser que la web cambió): una vez por fuente.
+      for (const [nombre, r] of [["Cañuelas", rMag], ["terneras", rHem], ["terneros", rMac], ["vientres", rVie], ["toros", rTor]] as const) {
+        if (!r.filas.length) toast.warning(`No se encontraron precios de ${nombre} cerca del cierre: esas categorías quedan sin precio.`)
+      }
       const [mag, hembras, machos, vientres, toros] = [rMag.filas, rHem.filas, rMac.filas, rVie.filas, rTor.filas]
       const fuentesPrecios: FuentePrecio[] = [
         { nombre: "Cañuelas (MAG)", fecha: rMag.fecha, url: URL_FUENTES.canuelas },
