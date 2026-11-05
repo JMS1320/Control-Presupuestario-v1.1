@@ -249,7 +249,10 @@ export function PanelBoletasArba() {
       egreso_id: f.egresoId, cuota_id: f.cuotaId, aplicada: false, origen: "pdf", observaciones: "propuesta (A-FEAT-1565)",
     })).filter(x => !yaAplicada.has(`${x.partida}|${x.anio}|${x.cuota}|${x.impuesto}`))
     if (!payload.length) return
-    const { error } = await supabase.from("boletas_arba").upsert(payload, { onConflict: "partida,anio,cuota,impuesto" })
+    // 🐞 05/11: la misma boleta en DOS archivos (ARBA la manda en dos mails: 5 de 26 en la cuota 4) daba dos filas con la
+    // misma clave en un solo upsert, y la base rechaza el lote ENTERO. Se guarda una por clave.
+    const unicas = [...new Map(payload.map(x => [`${x.partida}|${x.anio}|${x.cuota}|${x.impuesto}`, x])).values()]
+    const { error } = await supabase.from("boletas_arba").upsert(unicas, { onConflict: "partida,anio,cuota,impuesto" })
     if (error) toast.error("No se pudo guardar la propuesta: " + error.message)
   }
 
