@@ -50,7 +50,7 @@ export function libroDeSolapa(nombre: string): LetraLibro {
   if (DE_A.has(nombre)) return "A"
   if (DE_B.has(nombre)) return "B"
   if (DE_E.has(nombre)) return "E"
-  if (DE_I.has(nombre)) return "I"
+  if (DE_I.has(nombre) || nombre.startsWith("I · ")) return "I"
   if (nombre.startsWith("C · ")) return "C"
   if (nombre.startsWith("F · ")) return "F"
   if (nombre.startsWith("G · ")) return "G"

@@ -59,7 +59,7 @@ import {
   TOTALIZADORAS_BANCARIAS,
   type GastosBancarios, type FilaConceptoPorMes, type RetirosYAportes, type FondoComun,
 } from "./papeles-bancarios"
-import { ORDEN_TIPOS, NOMBRE_TIPO, SIN_AGRUPADORA, partirEnImpuestosYOtros, type TemplatesDelEjercicio, type CuotaTemplate, type TipoTemplate } from "./templates-libro"
+import { ORDEN_TIPOS, NOMBRE_TIPO, SIN_AGRUPADORA, partirEnImpuestosYOtros, armarTemplatesDelEjercicio, type TemplatesDelEjercicio, type CuotaTemplate, type TipoTemplate } from "./templates-libro"
 import type { ValuacionHacienda, PrecioMag, PrecioMercado, PrecioCabeza } from "./hacienda-stock"
 import { resumenControlCuotas, conProblema, type ControlCuotasTemplates } from "./control-cuotas-templates"
 import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
@@ -1527,6 +1527,23 @@ function hojaDeSueldos(s: SueldosDelEjercicio, etiqueta: string): unknown[][] {
   if (s.mesesVacios.length > 0) {
     f.push([`ATENCION — ${s.mesesVacios.length} mes(es) del ejercicio sin ningun sueldo cargado: `
       + s.mesesVacios.join(", ")])
+  }
+  // 👷 JMS 05/11: «sueldos a pagar va aparte — puede ir en el detalle que ya se exporta de sueldos» (no en 04 ni en el libro F).
+  const ia = s.impagosAlCierre
+  if (ia && (ia.filas.length || ia.pagadosPorFuera.length)) {
+    f.push([])
+    f.push([])
+    f.push(["SUELDOS A PAGAR AL CIERRE — devengados en el ejercicio y pagados después (manda la fecha de cada pago; sin José, Andrés ni MA)"])
+    f.push(["Período", "Empleado", "Bruto", "Pagado al cierre", "Pagado después", "Fecha del pago"])
+    const d0 = f.length + 1
+    ia.filas.forEach(x => f.push([x.periodo, x.empleado, money(x.bruto), money(x.pagadoAlCierre), money(x.pagadoDespues), x.fechaPago ?? ""]))
+    const d1 = f.length
+    if (ia.filas.length) f.push(["TOTAL A PAGAR AL CIERRE", "", "", "", conFormula(`SUM(E${d0}:E${d1})`, money(ia.total))])
+    if (ia.pagadosPorFuera.length) {
+      f.push([])
+      f.push([`Pagados en efectivo desde Caja Sigot, sin el pago cargado en Sueldos (NO son deuda): ${ia.pagadosPorFuera.map(x => `${x.periodo} ${x.empleado}`).join(" · ")} — ${money(ia.totalPagadosPorFuera)}`])
+    }
+    if (ia.aConfirmar.length) f.push([`A confirmar (sin pago cargado): ${ia.aConfirmar.map(x => `${x.periodo} ${x.empleado} ${money(x.sinPagar)}`).join(" · ")}`])
   }
   return f
 }
@@ -3127,8 +3144,24 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
   /** 🏛️ A-FEAT-1516: las cuotas de impuestos y sus auxiliares, para el papel de inmobiliario / Red Vial / automotores. */
   papeles?: DatosPapelesH | null): void {
   for (const resp of ["MSA", "MA", "PAM"]) {
-    const t = templatesDeResponsable(templates, resp)
-    if (!t) continue
+    const tTodo = templatesDeResponsable(templates, resp)
+    if (!tTodo) continue
+    /**
+     * 👥 JMS 05/11: *«yo quiero entregar parte, pero nada de retiros»* → las DISTRIBUCIONES (retiros y aportes de socios) salen
+     * del libro H al libro I (socios), con su «Por mes» y sus solapas de agrupadora. El H queda con egresos y financiero.
+     */
+    const idsDist = new Set(tTodo.detalle.filter(c => c.tipo === "distribucion").map(c => c.id))
+    const rearmar = (quedan: (c: CuotaTemplate) => boolean) => tTodo.entrada
+      ? armarTemplatesDelEjercicio(tTodo.entrada.cuotas.filter(quedan), tTodo.entrada.ej, tTodo.entrada.opciones) : tTodo
+    const t = idsDist.size ? rearmar(c => !idsDist.has(c.id)) : tTodo
+    const tDist = idsDist.size ? rearmar(c => idsDist.has(c.id)) : null
+    if (tDist && tDist.detalle.length) {
+      const porMesI = `I · ${resp} · Retiros por mes`
+      for (const g of gruposDelResponsable(tDist.detalle, resp)) {
+        hoja(wb, nombreSolapaGrupo(g, "I"), armarHojaGrupo(g, etiqueta, meses, { hojaPorMes: porMesI, extracto: tDist.entrada?.opciones.extracto }).filas, COLS_RESUMEN_MES)
+      }
+      hoja(wb, porMesI, hojaTemplatesPorMes(tDist), COLS_TEMPLATES_POR_MES(tDist.columnas.length))
+    }
     const hojaPorMes = `H · ${resp} · Por mes`
     const usados = new Set([...wb.SheetNames, `H · ${resp} · Templates`, `H · ${resp} · Cuotas`, hojaPorMes])
     const tablasSinLeer = t.entrada?.opciones.bancoSinLeer
