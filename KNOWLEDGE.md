@@ -3047,6 +3047,21 @@ Notas de JMS en el set (libros B y H) antes de mandarle la base al contador. Lo 
 - **Comparar dos versiones de un set**: por solapa y por total; las sumas «sueltas» engañan (en el H subieron unos pesos por los
   números de renglón nuevos, no por plata).
 
+## Hacienda: el signo de los movimientos y SENASA — lo que se aprendió el 04/11 `#hacienda #balance #senasa #2026-11-04`
+
+- **`productivo.movimientos_hacienda.cantidad` de una VENTA o una MORTANDAD se guarda en POSITIVO**: el tipo dice que salen. La
+  pantalla de Hacienda resta; el papel del balance las sumaba (428 en vez de 414 al 30/06/26, ≈ $ 17,4 M de más en la valuación) →
+  todo cálculo nuevo usa `cantidadConSigno` (`lib/balance/cuadre-hacienda.ts`). Ajuste y cambio de categoría traen su signo.
+- **Un control que compara contra la misma suma no controla nada**: el cuadre decía «CIERRA» con el error adentro. Lo destapó
+  armar la planilla por otro camino (inicio + movimientos por tipo) y compararla contra la app.
+- **SENASA no se mueve por eventos sino por ACTAS DE VACUNACIÓN** (el vacunador cuenta y SENASA se pone al día: 04/12/25 +139,
+  26/03/26 +44). Entre actas va atrasado (45 cabezas en diciembre) y se iguala en el acta. Usa otras categorías (no tiene CUT ni
+  «vaquillona de 1ª parición»; la venta de enero son «11 vacas + 2 toros» para SENASA y 6 CUT + 5 vaquillonas + 2 toros en las
+  liquidaciones) y sus «cambios de categoría» son papel (suman 0). **Por eso el cierre SENASA es un DATO, no una fórmula** con
+  nuestros movimientos; se controla por SEXO y TOTAL. Al 30/06/26: SENASA 417 · nuestro 414 = 3 muertes abr–jun no informadas.
+- **Antes de la app**: la hacienda arrancaba con el recuento del 15/02/26 como «ajuste» (422) y el inicio daba 0. Se cargó del 30/06/25
+  al recuento (script 200): inicio 321 + 190 nacimientos − 6 muertes − 83 ventas = 422 por categoría, y el recuento quedó en 0.
+
 ## Cuentas con los socios y control de la plata — lo que se aprendió el 03/11 `#balance #socios #libertad #plata #2026-11-03`
 
 De armar las cuentas MSA↔MA y MSA↔PAM ([A-FEAT-1532](PENDIENTES.md#a-feat-1532)) y la primera corrida del control de la plata
