@@ -3646,6 +3646,9 @@ sin apretar un botón.
   propio al cierre anterior) con lo que la app reconoce; si no cierra, propone qué comprobantes de este ejercicio
   lo explican (o los que suman lo declarado entero, si la app ya cuenta otro) — si son ésos, su gasto se estaría
   contando dos veces. En el recorrido, el tema trae el link a esos comprobantes y a lo que la app reconoce hoy.
+  ⚠️ **Cambió 05/11**: lo que la app reconoce es **sólo lo que se marcó** como provisión del ejercicio anterior (lo que
+  se eligió provisionar ese año). Se marca con «✍️ Provisión puesta a mano» del ejercicio anterior. En MSA 24/25 son los
+  dos arrendamientos de ago y oct-25 ($ 12.456.000,14): cierra.
 - **Stock de insumos al cierre**: la existencia de cada producto es la de sus compras, usos y ajustes **hasta el
   cierre**, no la de hoy. Si la existencia de hoy no es la suma de sus movimientos, el producto sale en rojo.
 - **Cuentas en dólares**: entran al papel 07 en pesos al dólar BNA comprador del cierre; una cuenta en dólares sin
@@ -3719,7 +3722,7 @@ La provisión se arma sola con las facturas **con fecha del ejercicio** que se i
 3. Para achicar: elegí un **subdiario** (o «Sin subdiario») y/o escribí en el buscador el **proveedor o cliente**, el **número** o el **importe** (con o sin puntos: `1.234.567,89` o `1234567`). Varias palabras = tienen que estar todas; `-palabra` = que no esté.
 4. Elegí la factura, escribí **por qué** (si lo dejás vacío queda un motivo por defecto) y tocá **Provisionar**.
 
-Las **compras** salen en la solapa **05 Provision** y las **ventas** en **03.1 Provisión de cobros**, marcadas «puesta a mano», con el motivo. En el cuadro cada una lleva su etiqueta COMPRA o VENTA y abajo el total de cada lado. Para sacarla, **anular** con un motivo: no se borra. Debajo, en la misma solapa, va **la provisión del ejercicio anterior**, sólo para que la vea el contador: no se resta.
+Las **compras** salen en la solapa **05 Provision** y las **ventas** en **03.1 Provisión de cobros**, marcadas «puesta a mano», con el motivo; en la 03.1, además, debajo del total va **una línea destacada por venta con su motivo**. En el cuadro cada una lleva su etiqueta COMPRA o VENTA y abajo el total de cada lado. Para sacarla, **anular** con un motivo: no se borra. Debajo, en la misma solapa, va **la provisión del ejercicio anterior**, sólo para que la vea el contador: no se resta.
 
 ⚠️ Sin probar todavía → A-TEST-1234 · las ventas y el selector nuevo → A-TEST-1335
 
