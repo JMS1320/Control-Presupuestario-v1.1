@@ -3326,6 +3326,9 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 ### 2026-11-03 · Template «AYSA Duhau» de MA (script 199, DATOS) — A-FEAT-1529 (2) — ✅ CORRIDO con OK de JMS
 `egresos_sin_factura`: «AYSA Duhau», copia de «AYSA Libertad» MA 2026 (AGUA · Fijos Buenos Aires MA · MA). Una cuota conciliada 20/04/2026 $ 27.588,70 y `ma.ma_galicia` de ese día («Pago de servicios AYSA 000158245700») atado a ella, sin la marca LIB. Ids en `scripts/199-hecho.json`. Deshacer: `199-…-deshacer.mts`.
 
+### 2026-11-04 · Saldo de arranque de JMS y AMS en el papel 14 (script 201, DATOS) — ✅ CORRIDO con OK de JMS
+`balance_datos_usuario` (papel `cc.saldo-inicio`, MSA 2026): JMS −15.000.000 y AMS −10.500.000 (el anticipo a proveedores del contador al 30/06/25); el valor anterior (0, script 173) queda en `historial`. Deshacer: `npx tsx scripts/201-saldo-arranque-jms-ams.mts --deshacer`.
+
 ### 2026-11-04 · Hacienda: del stock inicial 30/06/25 al recuento de la app (script 200, DATOS) — A-DAT-98 — ✅ CORRIDO con OK de JMS
 `productivo.movimientos_hacienda`: 23 filas nuevas marcadas `[script 200]` (existencia inicial 30/06/25 = 321 como `ajuste_stock`, 190 nacimientos 31/07/25, cambios de categoría, 6 mortandades, ventas de enero Sáenz Valiente y Genta) y los 6 `ajuste_stock` del recuento del 15/02/26 (422) pasados a 0 con la nota. Control: al 29/01/26 da el recuento y el stock de hoy no cambió. Deshacer: `npx tsx scripts/200-hacienda-inicio-a-la-app.mts --deshacer` (borra sólo las `[script 200]` y vuelve los 6 ajustes a su cantidad por id).
 
