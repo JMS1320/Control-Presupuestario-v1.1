@@ -29,7 +29,7 @@ import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Loader2 } from "lucide-react"
 import { PlanillaBoletasArba } from "@/components/planilla-boletas-arba"
-import { claveBoleta, partidaDeClave, PREFIJO_SIN_ASIGNAR, type Decision as DecisionPlanilla } from "@/lib/arba/planilla-boletas"
+import { claveBoleta, esPartidaArba, partidaDeClave, PREFIJO_SIN_ASIGNAR, type Decision as DecisionPlanilla } from "@/lib/arba/planilla-boletas"
 import { toast } from "sonner"
 
 interface Comparacion {
@@ -112,7 +112,9 @@ async function cargarTemplates(): Promise<TemplateArba[]> {
   return ((data ?? []) as {
     nombre_referencia: string; partida_arba: string | null; responsable: string | null
   }[])
-    .filter(e => e.responsable && (e.partida_arba || /complementario/i.test(e.nombre_referencia)))
+    // 05/11: sólo partidas con formato de ARBA — el «ABL Libertad» guarda ahí su cuenta municipal (1005392-00) y el informe
+    // lo daba como «NO LLEGÓ» entre las boletas de ARBA.
+    .filter(e => e.responsable && (esPartidaArba(e.partida_arba) || /complementario/i.test(e.nombre_referencia)))
     .map(e => ({
       nombre: e.nombre_referencia, partida: e.partida_arba,
       responsable: e.responsable!, complementario: !e.partida_arba,
