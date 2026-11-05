@@ -298,7 +298,7 @@ import { leerResumenCajaAhorro, controlarResumen, armarConocido, resumenComoExce
 import { leerResumenSantander, controlarResumenSantander } from "@/lib/extractos/pdf-santander"
 import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla, linkGmail, procesadoDeMail, cambiosAlReaplicar, type MailRegistrado,
   claveDeTipoMail, problemaDeTipoNuevo, contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarPendientesArriba,
-  juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves, ordenarParaLista, rangoDelDia } from "@/lib/mails/registro"
+  juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves, ordenarParaLista, rangoDelDia, ordenarCronologico } from "@/lib/mails/registro"
 import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
 import { partesDeRuta, problemaDeRuta, estadoDestino, idDeLinkDrive } from "@/lib/archivo/destinos"
 import { mailsParaArchivar, mailsParaCuota, agruparPorRegla, anioDeMail, vinculosConArchivos, controlArchivado, agruparPorTema, estadoSeleccion } from "@/lib/mails/lotes"
@@ -10852,6 +10852,12 @@ export function correrCasos(): Resultado[] {
       const vDia = `${rD.desde}→${rD.hasta} | ` + oD.lista.slice(0, oD.delPeriodo).map(m => m.id).join("") + "|" + oD.lista.slice(oD.delPeriodo).map(m => m.id).join("")
       chequear("Mails", "📅 «Día»: de las 00 a las 24 hora argentina; sólo los de ese día arriba, el resto de los pendientes aparte (también los de días posteriores)",
         "2026-10-30T03:00:00.000Z→2026-10-31T03:00:00.000Z | d|cfbea", vDia, vDia === "2026-10-30T03:00:00.000Z→2026-10-31T03:00:00.000Z | d|cfbea", "A-FEAT-1563")
+      // A-FEAT-1551: la vista cronológica ordena por fecha (sin subir pendientes), en los dos sentidos, y respeta los bloques
+      const oC = ordenarParaLista(sm, hoyS, "2026-10-30T00:00:00Z", null, "cronologica")
+      const oCa = ordenarParaLista(sm, hoyS, "2026-10-30T00:00:00Z", null, "cronologica", true)
+      const vCrono = [ordenarCronologico(sm).map(m => m.id).join(""), oC.lista.map(m => m.id).join(""), oCa.lista.map(m => m.id).join("")].join(" · ")
+      chequear("Mails", "🕐 Vista cronológica: por fecha del mail (el más nuevo primero, o al revés), sin subir los pendientes; los del período siguen arriba de los pendientes viejos",
+        "daefbc · daefbc · adcbfe", vCrono, vCrono === "daefbc · daefbc · adcbfe", "A-FEAT-1551")
       const vJ = juntarConPendientes([{ id: "1" }, { id: "2" }], [{ id: "2" }, { id: "9" }]).map(x => x.id).join("")
       chequear("Mails", "📌 Los pendientes de antes del período se suman a la lista sin repetir", "129", vJ, vJ === "129", "A-FEAT-1437")
 

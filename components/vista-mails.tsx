@@ -305,6 +305,12 @@ function RegistroMails() {
   /** 📅 A-FEAT-1563: un DÍA puntual (por defecto hoy). `null` = se usan los períodos de siempre. */
   const [dia, setDia] = useState<string | null>(null)
   const [hastaLeido, setHastaLeido] = useState<string | null>(null)
+  /** 🕐 A-FEAT-1551: por prioridad (pendientes arriba) o cronológica; y el sentido de la fecha. Se recuerda en este navegador. */
+  const [vista, setVista] = useState<"prioridad" | "cronologica">(() => {
+    try { return (localStorage.getItem("cp-mails-vista") as "prioridad" | "cronologica") || "prioridad" } catch { return "prioridad" }
+  })
+  const [asc, setAsc] = useState(false)
+  useEffect(() => { try { localStorage.setItem("cp-mails-vista", vista) } catch { /* sin almacenamiento: no pasa nada */ } }, [vista])
   const [mails, setMails] = useState<MailRegistrado[]>([])
   /** El corte del período de la última lectura (A-BUG-1549: separa los del período de los pendientes viejos). */
   const [desdeLeido, setDesdeLeido] = useState<string | null>(null)
@@ -382,7 +388,7 @@ function RegistroMails() {
     return r
   }, [mails, columnas, valores, grupos, tiposChip, texto, seguimientos, soloGraves, hoy])
 
-  const { lista: visibles, delPeriodo } = useMemo(() => ordenarParaLista(aplicar(null), hoy, desdeLeido, hastaLeido), [aplicar, hoy, desdeLeido, hastaLeido])
+  const { lista: visibles, delPeriodo } = useMemo(() => ordenarParaLista(aplicar(null), hoy, desdeLeido, hastaLeido, vista, asc), [aplicar, hoy, desdeLeido, hastaLeido, vista, asc])
   const nombrePeriodo = dia ? `el ${dia.split("-").reverse().join("/")}` : PERIODOS.find(p => p.dias === dias)?.nombre.toLowerCase() ?? `${dias} días`
   const conteo = useMemo(() => contarMails(aplicar("grupo")), [aplicar])
   const porTipo = useMemo(() => contarPorTipo(aplicar("tipoChip")), [aplicar])
@@ -425,6 +431,13 @@ function RegistroMails() {
         {/* 📅 A-FEAT-1563: los mails de UN día (por defecto hoy) */}
         <Button size="sm" variant={dia ? "default" : "outline"} onClick={() => setDia(d => d ?? hoy)} title="Sólo los mails de un día">Día</Button>
         {dia && <Input type="date" value={dia} max={hoy} onChange={e => e.target.value && setDia(e.target.value)} className="h-8 w-40" />}
+        {/* 🕐 A-FEAT-1551: dos vistas complementarias */}
+        <div className="flex overflow-hidden rounded-md border text-xs">
+          <button type="button" className={`px-2 py-1 ${vista === "prioridad" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+            onClick={() => setVista("prioridad")} title="Los pendientes y vencidos arriba">Por prioridad</button>
+          <button type="button" className={`px-2 py-1 ${vista === "cronologica" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+            onClick={() => setVista("cronologica")} title="Por fecha del mail, como en la casilla">Cronológica</button>
+        </div>
         <Input placeholder="Buscar en asunto, remitente o destinatario" value={texto} onChange={e => setTexto(e.target.value)} className="h-8 max-w-xs" />
         {/* 🔄 A-BUG-1550: gira mientras lee y avisa al terminar. Lee lo que registró el robot del mail (pasa cada ~15 min). */}
         <Button size="sm" variant="ghost" disabled={cargando} title="Volver a leer lo que registró el robot del mail (pasa cada ~15 min; no trae de Gmail lo que todavía no registró)"
@@ -498,7 +511,13 @@ function RegistroMails() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-24">Fecha</TableHead>
+                <TableHead className="w-24">
+                  {/* 🕐 A-FEAT-1551: ordenar por fecha, de menor a mayor o al revés (pasa a la vista cronológica) */}
+                  <button type="button" className="inline-flex items-center gap-1 hover:underline" title="Ordenar por fecha"
+                    onClick={() => { if (vista !== "cronologica") { setVista("cronologica"); setAsc(false) } else setAsc(a => !a) }}>
+                    Fecha {vista === "cronologica" ? (asc ? "▲" : "▼") : "↕"}
+                  </button>
+                </TableHead>
                 <TableHead><FiltroColumna titulo="De / Para" opciones={opciones.dePara} seleccion={columnas.dePara} onChange={s => setColumnas(c => ({ ...c, dePara: s }))} /></TableHead>
                 <TableHead>Asunto</TableHead>
                 <TableHead className="w-44"><FiltroColumna titulo="Tipo" opciones={opciones.tipo} seleccion={columnas.tipo} onChange={s => setColumnas(c => ({ ...c, tipo: s }))} /></TableHead>

@@ -340,15 +340,28 @@ export function ordenarPendientesArriba<T extends CamposSeguimiento & { fecha: s
  * mails de hoy? y me muestra uno solo»): con los 52 pendientes viejos ordenados arriba, los 7 del día quedaban abajo de
  * todo y parecía que no estaban. `desde` es el instante de corte del período (ISO).
  */
-export function ordenarParaLista<T extends CamposSeguimiento & { fecha: string }>(mails: T[], hoy: string, desde: string | null, hasta: string | null = null):
-  { lista: T[]; delPeriodo: number } {
-  if (!desde) return { lista: ordenarPendientesArriba(mails, hoy), delPeriodo: mails.length }
+export type VistaMails = "prioridad" | "cronologica"
+
+/**
+ * Pura: el orden CRONOLÓGICO — A-FEAT-1551 (JMS 31/10: «ordena por prioridad pero ojo con no ver el orden cronológico;
+ * eso debería estar como una segunda vista principal… son complementarios» · 03/11: «falta un ordenador de menor a
+ * mayor y viceversa»). Por fecha del mail, el más nuevo primero (o el más viejo, con `asc`), sin subir los pendientes.
+ */
+export function ordenarCronologico<T extends { fecha: string }>(mails: T[], asc = false): T[] {
+  return [...mails].sort((a, b) => (asc ? 1 : -1) * (Date.parse(a.fecha) - Date.parse(b.fecha)))
+}
+
+export function ordenarParaLista<T extends CamposSeguimiento & { fecha: string }>(mails: T[], hoy: string, desde: string | null, hasta: string | null = null,
+  vista: VistaMails = "prioridad", asc = false): { lista: T[]; delPeriodo: number } {
+  // A-FEAT-1551: la vista elige cómo se ordena DENTRO de cada bloque (los del período y los pendientes de otros días)
+  const ordenar = (xs: T[]) => vista === "cronologica" ? ordenarCronologico(xs, asc) : ordenarPendientesArriba(xs, hoy)
+  if (!desde) return { lista: ordenar(mails), delPeriodo: mails.length }
   const corte = Date.parse(desde)
   const fin = hasta ? Date.parse(hasta) : Infinity
   // Con un DÍA elegido (A-FEAT-1563), los pendientes de días POSTERIORES también van aparte, no con los del día
   const del = mails.filter(m => Date.parse(m.fecha) >= corte && Date.parse(m.fecha) < fin)
   const antes = mails.filter(m => !(Date.parse(m.fecha) >= corte && Date.parse(m.fecha) < fin))
-  return { lista: [...ordenarPendientesArriba(del, hoy), ...ordenarPendientesArriba(antes, hoy)], delPeriodo: del.length }
+  return { lista: [...ordenar(del), ...ordenar(antes)], delPeriodo: del.length }
 }
 
 /**
