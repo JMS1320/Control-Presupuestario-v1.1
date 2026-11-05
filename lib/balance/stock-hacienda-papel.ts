@@ -134,13 +134,14 @@ const ETIQ: Record<string, string> = {
   "Ternera Recria": "Vaquillona (recría)", "Ternero Recria": "Novillito / ternero para venta",
 }
 const ORDEN = ["Vaca", "Vaquillona Preñada", "Vaca CUT/Descarte", "Toro", "Torito", "Vaquillona de Reposicion", "Ternera Recria", "Ternero Recria"]
-const MOD: Record<string, string> = { terneras: "ternera", terneros: "ternero", vientres: "vientre", toros: "precio-toros" }
+// 🔗 JMS 05/11: el link es la PÁGINA que él abre (vientres.html?desde=…), no la tabla interna (ajax-modulo-…php): mismos datos, con la web.
+const MOD: Record<string, string> = { terneras: "terneras", terneros: "terneros", vientres: "vientres", toros: "toros" }
 export const URL_MAG = "https://www.mercadoagroganadero.com.ar/dll/hacienda1.dll/haciinfo000502"
 /** El link a la cotización en la web original: Entresurcos con el día (o el rango) del dato; Cañuelas, la página. */
 export function linkCotizacion(fuente: string, fecha: string): string {
   if (fuente === "mag" || !MOD[fuente]) return URL_MAG
   const [de, ha] = fecha.includes(" a ") ? fecha.split(" a ") : [fecha, fecha]
-  return `https://www.entresurcosycorralesya.com/ajax-modulo-${MOD[fuente]}.php?desde=${de}&hasta=${ha}`
+  return `https://www.entresurcosycorralesya.com/${MOD[fuente]}.html?desde=${de}&hasta=${ha}`
 }
 const fuenteDe = (origen: string) => {
   const o = origen.toLowerCase()

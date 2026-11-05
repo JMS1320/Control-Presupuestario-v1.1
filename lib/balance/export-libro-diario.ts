@@ -26,7 +26,7 @@ import { lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
 import { ETIQUETA_CONCEPTO, type ImpuestoCheque } from "./impuesto-cheque"
 import { controlarCheque, chequeEnPapel08, chequeEnTemplates, type ControlCheque } from "./control-cheque"
 import type { LibroDiario, AsientoLibroDiario } from "./libro-diario"
-import { armarEjercicio, nombreSubdiario, primerDiaDelEjercicio } from "./ejercicio"
+import { armarEjercicio, nombreSubdiario, primerDiaDelEjercicio, type Ejercicio } from "./ejercicio"
 import { explicarFila } from "./facturas-fijas"
 import { armarLibroPorCuenta, TIPOS_SIN_CREDITO_VENTAS, SIN_IMPUTAR, type LibroPorCuenta } from "./libro-por-cuenta"
 import type { Descuadre } from "@/lib/subdiarios/cuadratura"
@@ -2499,6 +2499,46 @@ export function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
  * `02 - HACIENDA` — existencia al cierre y su valuación, con el criterio de cada categoría a la
  * vista y **los huecos listados**, no escondidos en un total.
  */
+/** 🐄 Lo que necesita el papel de hacienda (A-FEAT-1541). */
+export type DatosPapelHacienda = {
+  valuacion: ValuacionHacienda
+  movimientosPapel: MovimientoPapel[]
+  valuacionInicio?: ValuacionHacienda | null
+  tablasInicio?: TablasPreciosPapel | null
+  tablasCierre?: TablasPreciosPapel | null
+  tcCierre?: number | null
+  saldosGuardados?: Record<string, string | undefined>
+  pesos?: PesoCategoria[]
+}
+
+/**
+ * 🐄 Las solapas 02 a 02.9 del papel de hacienda. Función aparte para que el script `excel-papel-hacienda.mts` arme
+ * EXACTAMENTE el mismo papel con el dato real, sin pasar por el navegador (JMS 05/11: «dame el Excel sin que yo lo descargue»).
+ */
+export function agregarPapelHacienda(wb: XLSX.WorkBook, hacienda: DatosPapelHacienda, empresa: string, ejercicio: Ejercicio) {
+  /**
+   * 🐄 A-FEAT-1541 (JMS 05/11, «5 sí»): el papel de hacienda como el prototipo aprobado — el cuadro de stock (NZ · SENASA · DDJJ al
+   * inicio y al cierre, con los movimientos del ejercicio), el valorizado con el formato de su papel 2.2 (cierre e inicio, con
+   * la trazabilidad a la derecha), las tablas de precios tomados y una solapa por tipo de movimiento para auditar.
+   */
+  const primerDia = primerDiaDelEjercicio(ejercicio), fc = ejercicio.fechaCierre
+  const detalles = DETALLES.map(dd => ({ dd, ...hojaDetalleHacienda(hacienda.movimientosPapel, dd.tipo, dd.hoja.replace(/^02\.\d /, "").toUpperCase(), primerDia, fc) }))
+  hoja(wb, "02 Stock hacienda", hojaStockHacienda(hacienda.movimientosPapel, primerDia, fc, hacienda.saldosGuardados ?? {},
+    Object.fromEntries(detalles.map(x => [x.dd.tipo, { d0: x.d0, d1: x.d1 }]))), COLS_STOCK_HACIENDA)
+  const ddjj = empresa === "MSA" ? APERTURA_MSA_2025.find(r => r.cuenta === "1.2.2/05/01") : undefined
+  hoja(wb, "02.1 Stock valorizado", hojaStockValorizado({
+    cierre: hacienda.valuacion, inicio: hacienda.valuacionInicio ?? null, fechaCierre: fc,
+    fechaInicio: new Date(Date.parse(`${primerDia}T12:00:00Z`) - 86400000).toISOString().slice(0, 10), tcCierre: hacienda.tcCierre ?? null,
+    ddjjInicio: ddjj ? { cuenta: ddjj.cuenta, denominacion: ddjj.denominacion, valor: ddjj.hist } : null,
+  }), COLS_STOCK_VALORIZADO)
+  hoja(wb, "02.2 Precios tomados", hojaPreciosTomados([
+    { titulo: `CIERRE ${fc.split("-").reverse().join("/")}`, tablas: hacienda.tablasCierre, valuacion: hacienda.valuacion },
+    { titulo: "INICIO (el día anterior al ejercicio)", tablas: hacienda.tablasInicio, valuacion: hacienda.valuacionInicio },
+  ]), COLS_PRECIOS_TOMADOS)
+  for (const x of detalles) hoja(wb, x.dd.hoja, x.filas, COLS_DETALLE_HACIENDA)
+  if (hacienda.pesos) hoja(wb, "02.9 Calculo de los kilos", hojaCalculoKilos(hacienda.pesos, fc), COLS_CALCULO_KILOS)
+}
+
 const COLS_STOCK_HACIENDA: Columna[] = [{ ancho: 34 }, ...Array.from({ length: 14 }, () => ({ ancho: 12, z: ENTERO }))]
 const COLS_STOCK_VALORIZADO: Columna[] = [{ ancho: 34 }, { ancho: 10, z: ENTERO }, { ancho: 9 }, { ancho: 14, z: MONEDA }, { ancho: 14, z: MONEDA },
   { ancho: 17, z: MONEDA }, { ancho: 13, z: MONEDA }, { ancho: 3 }, { ancho: 22 }, { ancho: 40 }, { ancho: 14, z: MONEDA }, { ancho: 7 }, { ancho: 70 }, { ancho: 16 }, { ancho: 60 }]
@@ -3021,27 +3061,7 @@ export function armarWorkbook(
     hoja(wb, "Saldos ej. anterior", filas)
   }
   if (hacienda?.movimientosPapel) {
-    /**
-     * 🐄 A-FEAT-1541 (JMS 05/11, «5 sí»): el papel de hacienda como el prototipo aprobado — el cuadro de stock (NZ · SENASA · DDJJ al
-     * inicio y al cierre, con los movimientos del ejercicio), el valorizado con el formato de su papel 2.2 (cierre e inicio, con
-     * la trazabilidad a la derecha), las tablas de precios tomados y una solapa por tipo de movimiento para auditar.
-     */
-    const primerDia = primerDiaDelEjercicio(libro.ejercicio), fc = libro.ejercicio.fechaCierre
-    const detalles = DETALLES.map(dd => ({ dd, ...hojaDetalleHacienda(hacienda.movimientosPapel!, dd.tipo, dd.hoja.replace(/^02\.\d /, "").toUpperCase(), primerDia, fc) }))
-    hoja(wb, "02 Stock hacienda", hojaStockHacienda(hacienda.movimientosPapel, primerDia, fc, hacienda.saldosGuardados ?? {},
-      Object.fromEntries(detalles.map(x => [x.dd.tipo, { d0: x.d0, d1: x.d1 }]))), COLS_STOCK_HACIENDA)
-    const ddjj = empresa === "MSA" ? APERTURA_MSA_2025.find(r => r.cuenta === "1.2.2/05/01") : undefined
-    hoja(wb, "02.1 Stock valorizado", hojaStockValorizado({
-      cierre: hacienda.valuacion, inicio: hacienda.valuacionInicio ?? null, fechaCierre: fc,
-      fechaInicio: new Date(Date.parse(`${primerDia}T12:00:00Z`) - 86400000).toISOString().slice(0, 10), tcCierre: hacienda.tcCierre ?? null,
-      ddjjInicio: ddjj ? { cuenta: ddjj.cuenta, denominacion: ddjj.denominacion, valor: ddjj.hist } : null,
-    }), COLS_STOCK_VALORIZADO)
-    hoja(wb, "02.2 Precios tomados", hojaPreciosTomados([
-      { titulo: `CIERRE ${fc.split("-").reverse().join("/")}`, tablas: hacienda.tablasCierre, valuacion: hacienda.valuacion },
-      { titulo: "INICIO (el día anterior al ejercicio)", tablas: hacienda.tablasInicio, valuacion: hacienda.valuacionInicio },
-    ]), COLS_PRECIOS_TOMADOS)
-    for (const x of detalles) hoja(wb, x.dd.hoja, x.filas, COLS_DETALLE_HACIENDA)
-    if (hacienda.pesos) hoja(wb, "02.9 Calculo de los kilos", hojaCalculoKilos(hacienda.pesos, fc), COLS_CALCULO_KILOS)
+    agregarPapelHacienda(wb, hacienda as DatosPapelHacienda, empresa, libro.ejercicio)
   } else if (hacienda) {
     hoja(wb, "02 Hacienda",
       hojaDeHacienda(hacienda.valuacion, libro.ejercicio.fechaCierre, hacienda.mesPrecios, hacienda.cuadre,

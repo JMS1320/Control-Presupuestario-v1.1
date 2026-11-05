@@ -5091,7 +5091,7 @@ export function correrCasos(): Resultado[] {
       chequear("Balance · hacienda", "🐄 Papel de stock: inicio NZ/SENASA, movimientos con su signo (SUMAR.SI sobre las solapas de detalle), cierre por fórmula y control contra la app; lo posterior al cierre no entra",
         eS, vS, vS === eS, "A-FEAT-1541")
       const det = hojaDetalleHacienda(movs, "venta", "VENTAS", "2025-07-01", "2026-06-30")
-      const vD = `${det.filas.slice(det.d0 - 1, det.d1).map(r => `${(r as any[])[1]} ${(r as any[])[3]}`).join(",")} · ${linkCotizacion("vientres", "2026-06-29").includes("ajax-modulo-vientre.php?desde=2026-06-29&hasta=2026-06-29")} · ${linkCotizacion("toros", "2025-05-11 a 2025-06-09").includes("desde=2025-05-11&hasta=2025-06-09")}`
+      const vD = `${det.filas.slice(det.d0 - 1, det.d1).map(r => `${(r as any[])[1]} ${(r as any[])[3]}`).join(",")} · ${linkCotizacion("vientres", "2026-06-29").includes("vientres.html?desde=2026-06-29&hasta=2026-06-29")} · ${linkCotizacion("toros", "2025-05-11 a 2025-06-09").includes("desde=2025-05-11&hasta=2025-06-09")}`
       chequear("Balance · hacienda", "🐄 Solapa de detalle con las ventas del ejercicio (cabezas en positivo) y el link a la cotización por día o por rango",
         "Vaca CUT/Descarte 2 · true · true", vD, vD === "Vaca CUT/Descarte 2 · true · true", "A-FEAT-1541")
       const fv = (categoria: string, cabezas: number, precio: number, factor: number, kg: number | null) => ({ categoria, cabezas, criterio: "c", precioReferencia: precio,
