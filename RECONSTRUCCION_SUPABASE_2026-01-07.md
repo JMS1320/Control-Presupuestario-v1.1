@@ -3335,6 +3335,9 @@ Briki (anticipo `b6f3e5aa`, factura `07c378e3`) y De Francesco (`7dcfc3d2` / `d0
 ### 2026-11-04 · Saldo de arranque de JMS y AMS en el papel 14 (script 201, DATOS) — ✅ CORRIDO con OK de JMS
 `balance_datos_usuario` (papel `cc.saldo-inicio`, MSA 2026): JMS −15.000.000 y AMS −10.500.000 (el anticipo a proveedores del contador al 30/06/25); el valor anterior (0, script 173) queda en `historial`. Deshacer: `npx tsx scripts/201-saldo-arranque-jms-ams.mts --deshacer`.
 
+### 2026-11-05 · SENASA al cierre en la pantalla de Hacienda (script 204, DATOS) — ✅ CORRIDO con OK de JMS
+`balance_datos_usuario` (papel `hacienda.saldos`, MSA 2026, claves `cierre.senasa.*`): vacas 184 · vaquillonas 110 · toros 16 · toritos 16 · novillitos 91 · resto 0 = 417 (hembras 294, machos 123), del PDF de SENASA al 30/06/2026. Marca `[script 204]`. Deshacer: `scripts/204-senasa-al-cierre-msa-deshacer.sql` (sólo las filas que puso y que nadie editó).
+
 ### 2026-11-04 · Hacienda: del stock inicial 30/06/25 al recuento de la app (script 200, DATOS) — A-DAT-98 — ✅ CORRIDO con OK de JMS
 `productivo.movimientos_hacienda`: 23 filas nuevas marcadas `[script 200]` (existencia inicial 30/06/25 = 321 como `ajuste_stock`, 190 nacimientos 31/07/25, cambios de categoría, 6 mortandades, ventas de enero Sáenz Valiente y Genta) y los 6 `ajuste_stock` del recuento del 15/02/26 (422) pasados a 0 con la nota. Control: al 29/01/26 da el recuento y el stock de hoy no cambió. Deshacer: `npx tsx scripts/200-hacienda-inicio-a-la-app.mts --deshacer` (borra sólo las `[script 200]` y vuelve los 6 ajustes a su cantidad por id).
 
