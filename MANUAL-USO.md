@@ -4027,7 +4027,9 @@ link a la cotización; abajo el descuento del 10 % y el TOTAL NETO), «02.2 Prec
 movimiento, «02.9 Cálculo de los kilos» (arriba un resumen por categoría: pesada anterior y posterior, aumento entre
 pesadas, ganancia diaria y kilos al cierre; abajo animal por animal) y «02.10 Aumento del rodeo U$S» (cuánto subió el rodeo de
 cría —en cabezas— y el de recría —en kilos—, dólares contra dólares, abierto en «por cantidad» y «por precio»). En el 02.1 los
-pesos van en celeste y los dólares en verde; el precio y su link, en amarillo; abajo, la variación de precios entre el cierre
+pesos van en celeste y los dólares en verde; a la derecha, bajo «Referencia» (amarillo), el precio, el mercado (Entre Surcos y Corrales o
+Mercado Agroganadero de Cañuelas), la categoría del mercado y el link «ver la cotización»; el inicio se titula «VALUACIÓN ANTERIOR
+--((2025))--»; abajo, la variación de precios entre el cierre
 anterior y este, y el ternero liviano de 180–200 kg de referencia. SENASA al cierre se escribe en la pantalla (Hacienda →
 saldos); con eso el 02 compara por sexo y total. → A-TEST-1332
 Los **retiros** ya no están en el libro H: van al libro I. Los **sueldos a pagar** al cierre están al pie de «13 Sueldos».
