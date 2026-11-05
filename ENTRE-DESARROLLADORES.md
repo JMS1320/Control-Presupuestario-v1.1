@@ -903,7 +903,7 @@ proveedor (sumada a `CAMPOS_PERMITIDOS` de `/api/gas/config-proveedor`). Sin cam
 tabla se expone directa). Script `scripts/197-proveedores-opera-cuenta-corriente.sql` (+ `-deshacer`). Al leerlo,
 borrá esta entrada.
 
-## 📨 2026-11-05 · PARA JAVIER — columna nueva `public.egresos_sin_factura.avisar_a` + un rol nuevo «sólo Principal» (aviso ANTES; no hay nada que hacer)
+## 📨 2026-11-05 · PARA JAVIER — columna nueva `public.egresos_sin_factura.avisar_a` + un rol nuevo «sólo Principal» (aviso ANTES; no hay nada que hacer) — ✅ APLICADA 05/11 con OK de JMS
 
 `text[]` vacío por defecto (A-FEAT-1543): los mails de las personas a las que les vence ese template. Alimenta el bloque
 «Lo que te vence» del Principal, que lee y marca «pagado» por una ruta de servidor nueva (`/api/mis-vencimientos`, con

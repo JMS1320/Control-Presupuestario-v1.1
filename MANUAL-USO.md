@@ -795,6 +795,23 @@ Cada usuario tiene su **Principal**. Arriba de todo, **🚩 Para vos** muestra l
 
 ⚠️ Sin probar todavía → [A-TEST-1283](PENDIENTES.md#a-test-1283)
 
+## 💸 «Lo que te vence»: los vencimientos de cada persona en su Principal *(nuevo 2026-11-05)*
+
+Para que alguien (por ejemplo MA) vea en su Principal lo que le toca pagar y avise que lo pagó.
+1. **Vos, una vez**: Configuración → **Quién recibe qué** → **💸 Lo que le vence a cada persona** → elegí la persona y
+   tildá sus templates (Autónomos MA, ABL Libertad Cuota…). Pasa sola a la campaña siguiente.
+2. **Ella**: en su Principal aparece **💸 Lo que te vence**: 🔴 vencido · 🟠 vence hoy · 🟡 vence en los próximos días
+   (los días de anticipación del template; vacío = 10).
+3. **💸 Ya lo pagué** → la fecha viene con hoy, la cuenta con la principal de su empresa y el detalle con lo que ya
+   tenía la cuota; todo se puede cambiar → **Guardar**. Queda «pagado» y se ve con ✅ unos 15 días.
+   **↩ No lo pagué** lo vuelve a pendiente mientras no esté conciliado.
+4. **Vos**: cuando concilies el débito del banco, la cuota pasa a conciliada como siempre.
+
+Para que la persona vea **sólo** eso: Configuración → Roles → ➕ Crear rol (cerrado, sin secciones) y asignárselo en
+Usuarios. El Principal se ve siempre, aunque el rol no tenga secciones.
+
+⚠️ Sin probar todavía → [A-TEST-1326](PENDIENTES.md#a-test-1326)
+
 ## 🔓 Habilitar a alguien para que corrija una factura *(nuevo 2026-10-28)*
 
 Para que Ulises (u otra persona) corrija una factura **cargada por Excel** sin darle permiso sobre todas:

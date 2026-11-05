@@ -786,3 +786,25 @@ Las restricciones actuales (Vista de Pagos sin sección Pendiente, sin botón Re
 - **Un admin nunca queda en pausa**: si se le marcara por error, quedaría afuera de la única pantalla desde la que se saca.
 - **Cómo se pone / se saca** (no hay pantalla todavía): API de administración de Supabase (`PUT /auth/v1/admin/users/<id>` con la clave de servicio), mandando el `app_metadata` **completo** con o sin `pausa: true`. Antes, foto del `app_metadata` actual. Es un dato del usuario: con OK de JMS.
 - `app_metadata` y no `user_metadata`: el segundo lo edita la propia persona y se sacaría la pausa sola.
+- ⚠️ **cambió 05/11 (A-BUG-1542) — el middleware solo NO alcanza.** Frena al ABRIR la app o al llamar a su API; una
+  pestaña ya abierta habla directo con la base y seguía andando (Ulises, días). Desde el 05/11 la pantalla tiene un
+  **vigía** (`components/vigia-pausa.tsx`, montado en `app/layout.tsx`): consulta `/api/sesion/pausa` al volver a la
+  ventana y cada 3 min; si el middleware contesta 503, va al aviso. Decisión pura `vigiaDebeDesviar` en `lib/auth/pausa.ts`.
+  Lo que todavía NO cubre: entre dos consultas la pestaña puede escribir; y por la API REST la cuenta sigue leyendo
+  hasta que la RLS mire la pausa (A-SEC-14, Javier).
+- 🧨 **Y la pausa sólo existe donde está desplegada**: el 30/10 se publicó a `main` pero Vercel nunca desplegó, y
+  producción siguió con la versión sin pausa. Antes de dar una pausa por puesta, **mirar en Vercel → Deployments →
+  Production** que el último despliegue sea el commit publicado.
+
+## 8. 💸 ROL «SÓLO PRINCIPAL» — los vencimientos de una persona (2026-11-05, A-FEAT-1543)
+
+- **Para qué**: MA (Mercedes Areco) entra, ve qué le vence y avisa que lo pagó. Nada más.
+- **El rol**: cerrado y **sin secciones**. El Principal se ve siempre (A-FEAT-1411); sin secciones no le aparece ningún
+  widget de los demás, sólo «Para vos» y «Lo que te vence».
+- **Qué le vence**: `egresos_sin_factura.avisar_a` (mails, script 202). **No** «todo lo que tiene responsable MA»: con
+  ese criterio le salían ~30 cuotas vencidas que están pagadas y sin conciliar. Se tilda en Configuración → Quién recibe qué.
+- **Por qué por servidor**: `/api/mis-vencimientos` lee y marca con `service_role` filtrando por el mail de la
+  sesión, así el rol no necesita permisos sobre los templates. La cuota se busca DENTRO de lo suyo, nunca por id suelto.
+- **Marcar pagado**: estado `pagado`, `fecha_pago` (hoy por defecto, no futura), `medio_pago` = «Pagado desde»
+  (A-FEAT-1321) entre las cuentas de SUS empresas, la de la empresa más repetida primero, y el detalle tal cual lo
+  deja. Deshacer sólo si sigue `pagado` (no conciliado). Lógica en `lib/vencimientos/de-la-persona.ts`.

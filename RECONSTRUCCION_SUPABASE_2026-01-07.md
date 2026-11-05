@@ -3326,6 +3326,9 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 ### 2026-11-03 · Template «AYSA Duhau» de MA (script 199, DATOS) — A-FEAT-1529 (2) — ✅ CORRIDO con OK de JMS
 `egresos_sin_factura`: «AYSA Duhau», copia de «AYSA Libertad» MA 2026 (AGUA · Fijos Buenos Aires MA · MA). Una cuota conciliada 20/04/2026 $ 27.588,70 y `ma.ma_galicia` de ese día («Pago de servicios AYSA 000158245700») atado a ella, sin la marca LIB. Ids en `scripts/199-hecho.json`. Deshacer: `199-…-deshacer.mts`.
 
+### 2026-11-05 · `public.egresos_sin_factura.avisar_a` (script 202, ESTRUCTURA) — A-FEAT-1543 — ✅ CORRIDO con OK de JMS
+`alter table public.egresos_sin_factura add column if not exists avisar_a text[] not null default '{}'` (con su comment): los mails de las personas a las que les vence ese template («Lo que te vence» del Principal). Nace vacía en todas las filas (control en el script). Sin vistas (la tabla se expone directa), sin RLS ni permisos; el generador de campaña la copia sola (clona la fila). Aviso a Javier ANTES en ENTRE-DESARROLLADORES. Verificado con `explain update … set avisar_a`. Deshacer: `scripts/202-templates-avisar-a-deshacer.sql`.
+
 ### 2026-11-04 · Saldo de arranque de JMS y AMS en el papel 14 (script 201, DATOS) — ✅ CORRIDO con OK de JMS
 `balance_datos_usuario` (papel `cc.saldo-inicio`, MSA 2026): JMS −15.000.000 y AMS −10.500.000 (el anticipo a proveedores del contador al 30/06/25); el valor anterior (0, script 173) queda en `historial`. Deshacer: `npx tsx scripts/201-saldo-arranque-jms-ams.mts --deshacer`.
 
