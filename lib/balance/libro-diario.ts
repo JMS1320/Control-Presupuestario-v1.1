@@ -580,15 +580,12 @@ export function armarLibroDiario(
   }
   const provisiones = unirManuales([...c.provisiones, ...v.provisiones], manuales?.esteEjercicio ?? [])
 
-  // 📋 La del ejercicio anterior, con la misma regla: sólo compras (el papel 05), sólo para listar.
-  const ejAnterior = armarEjercicio(ej.anioCierre - 1, ej.mesCierre)
-  const provAnteriorAuto = comprasCrudas.filter(a => {
-    if (superados.has(a) || !a.subdiario) return false
-    const [anio, mes] = a.subdiario.split("-").map(Number)
-    return esProvision(a.fecha, anio, mes, ejAnterior)
-  })
+  // 📋 La del ejercicio anterior: SÓLO lo que se eligió provisionar (marcado a mano), sólo para listar.
+  // ⚠️ cambió 05/11 (JMS: «sólo que estén marcadas las de verdad y punto: el año pasado es lo que se eligió»). Antes se sumaban
+  //    solas las facturas con fecha del ejercicio anterior en un subdiario de éste — gastos cargados tarde que el contador NO
+  //    provisionó (Apellgran, Penduzzi), y la lista decía algo falso.
   // 🧾 A-FEAT-1564: las ventas puestas a mano no van a esta lista (es la del papel 05, de compras).
-  const provisionesEjercicioAnterior = unirManuales(provAnteriorAuto, (manuales?.anterior ?? []).filter(a => a.fuente !== "venta"))
+  const provisionesEjercicioAnterior = (manuales?.anterior ?? []).filter(a => a.fuente !== "venta")
 
   // 🔢 Control de cantidad: lo que es gasto del ejercicio = sus 12 subdiarios + lo provisionado.
   const facturasFijas = fijos

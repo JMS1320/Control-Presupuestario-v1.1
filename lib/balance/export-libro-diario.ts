@@ -1819,7 +1819,7 @@ export function hojaDeAsientosContables(asientos: AsientoLibroDiario[], etiqueta
   return f
 }
 
-function hojaDeProvisionCobros(ventas: AsientoLibroDiario[], etiqueta: string): unknown[][] {
+export function hojaDeProvisionCobros(ventas: AsientoLibroDiario[], etiqueta: string): unknown[][] {
   const f: unknown[][] = []
   f.push([`PROVISIÓN DE COBROS — ejercicio ${etiqueta}`])
   f.push(["Ventas de cosas que pasaron ANTES del cierre y se facturaron DESPUES:"])
@@ -1833,6 +1833,19 @@ function hojaDeProvisionCobros(ventas: AsientoLibroDiario[], etiqueta: string): 
     const total = ventas.reduce((s, a) => s + a.total, 0)
     f.push(["", "", "", "", "", "", "TOTAL", "", "", "", "", "",
       conFormula(`SUM(M${desde}:M${hasta})`, money(total))])
+    // ✍️ JMS 05/11 (03.1): «motivo de provisión venta: una línea para cada una provisionada según mi input de por qué se
+    //    provisiona» — «sin amarillo, pero que se destaque».
+    const conMotivo = ventas.filter(a => a.provision_motivo)
+    if (conMotivo.length) {
+      f.push([])
+      const destacada = (t: string) => ({ t: "s", v: t, s: { font: { bold: true, color: { rgb: "1F4E4A" } },
+        fill: { patternType: "solid", fgColor: { rgb: "DDEBF7" } } } })
+      for (const a of conMotivo) {
+        const fila: unknown[] = [destacada(`* Motivo de provisión — ${a.denominacion} ${a.punto_venta ?? ""}-${a.numero ?? ""} del ${a.fecha ? a.fecha.split("-").reverse().join("/") : ""}: ${a.provision_motivo}`)]
+        for (let i = 1; i < 7; i++) fila.push(destacada(""))
+        f.push(fila)
+      }
+    }
   }
   if (ventas.length === 0) {
     f.push([])

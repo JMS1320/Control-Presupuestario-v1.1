@@ -216,7 +216,7 @@ import { PRESENTADO_ARCA_COMPRAS, compararConPresentado } from "@/lib/balance/pr
 import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/balance/facturas-fijas"
 import { controlarCuotasTemplates, campaniaDelControl, claveDeNombre, CONTROL_CUOTAS_TEMPLATES, ultimoDiaDelMes, type ComisionesDelMes, type CuotaParaControl, type TemplateControlado, type EntradaControlCuotas } from "@/lib/balance/control-cuotas-templates"
 import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuestosYOtros } from "@/lib/balance/templates-libro"
-import { hojaAutomotores, pulirLibroH } from "@/lib/balance/export-libro-diario"
+import { hojaAutomotores, pulirLibroH, hojaDeProvisionCobros } from "@/lib/balance/export-libro-diario"
 import { filtrarComprobantes } from "@/lib/balance/provision-manual-filtro"
 import { hojaStockHacienda, hojaDetalleHacienda, hojaStockValorizado, hojaAumentoRodeo, linkCotizacion, DETALLES } from "@/lib/balance/stock-hacienda-papel"
 import { repartoDeLaFlota } from "@/lib/balance/reparto-flota"
@@ -4397,6 +4397,11 @@ export function correrCasos(): Resultado[] {
       const v = `${l.provisiones.filter(a => a.fuente === "venta").length} venta · ${l.provisiones.filter(a => a.fuente !== "venta").length} compra · ${l.provisionesEjercicioAnterior.length} anterior`
       chequear("Balance · provisión", "🧾 Una venta de julio puesta a mano entra a la provisión de COBROS (03.1), no a la de compras ni a la lista del ejercicio anterior",
         "1 venta · 0 compra · 0 anterior", v, v === "1 venta · 0 compra · 0 anterior", "A-FEAT-1564")
+      const h31 = hojaDeProvisionCobros(l.provisiones.filter(a => a.fuente === "venta"), "25/26")
+      const mot = h31.map(r => (r as any[])[0]).find(c => typeof c === "object" && String(c?.v ?? "").startsWith("* Motivo")) as any
+      const vm = mot ? `${mot.v.endsWith(": hacienda entregada en junio")} · ${mot.s.font.bold} · ${mot.s.fill.fgColor.rgb}` : "sin línea de motivo"
+      chequear("Balance · provisión", "✍️ La 03.1 dice debajo del total el motivo de cada venta provisionada, destacado sin amarillo",
+        "true · true · DDEBF7", vm, vm === "true · true · DDEBF7", "A-FEAT-1564")
     }
     // 🔎 A-FEAT-1564 — el selector: ordenado por fecha, filtro por subdiario y buscador por nombre, número o importe (con puntos y coma).
     {
@@ -4414,9 +4419,9 @@ export function correrCasos(): Resultado[] {
     // 📋 La del ejercicio ANTERIOR: se lista, no se resta.
     const delAnterior = comp({ id: "h1", fuente: "historico", subdiario: "2025-08", numero: 9, fecha: "2025-06-25", total: 1000 })
     const conAnterior = armarLibroDiario([delAnterior], [], ej)
-    chequear("Balance · provisión", "📋 Una factura del 24/25 (fecha ≤ 30/06/2025) en el subdiario de ago-25 se lista como provisión del ejercicio anterior",
-      "1 anterior", `${conAnterior.provisionesEjercicioAnterior.length} anterior`,
-      conAnterior.provisionesEjercicioAnterior.length === 1, "A-FEAT-1331")
+    chequear("Balance · provisión", "📋 Una factura del 24/25 en el subdiario de ago-25 NO es provisión del ejercicio anterior si no se marcó (JMS 05/11: «el año pasado es lo que se eligió»)",
+      "0 anterior", `${conAnterior.provisionesEjercicioAnterior.length} anterior`,
+      conAnterior.provisionesEjercicioAnterior.length === 0, "A-FEAT-1331")
     chequear("Balance · provisión", "Y NO se resta: sigue sumando en las compras del 25/26 (el contador lo maneja)",
       "1 compra · total 1000", `${conAnterior.compras.length} compra · total ${conAnterior.controles.compras.totalGeneral}`,
       conAnterior.compras.length === 1 && conAnterior.controles.compras.totalGeneral === 1000, "A-FEAT-1331")
