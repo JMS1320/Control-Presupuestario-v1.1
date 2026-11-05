@@ -808,3 +808,7 @@ Las restricciones actuales (Vista de Pagos sin sección Pendiente, sin botón Re
 - **Marcar pagado**: estado `pagado`, `fecha_pago` (hoy por defecto, no futura), `medio_pago` = «Pagado desde»
   (A-FEAT-1321) entre las cuentas de SUS empresas, la de la empresa más repetida primero, y el detalle tal cual lo
   deja. Deshacer sólo si sigue `pagado` (no conciliado). Lógica en `lib/vencimientos/de-la-persona.ts`.
+- **Verlo como lo ve ella** (A-BUG-1544): en el modo permisos, «Ver como lo ve él» + **«como [persona]»** (las cuentas
+  con ese rol, de `/api/admin/usuarios`). Los paneles personales leen con `?como=<mail>` —sólo un admin, sólo
+  lectura (`puedeMirarComo`)— y van en un marco «sólo para mirar»; el Principal toma las secciones del borrador del
+  rol y esconde los avisos que son del admin. Sin cuentas con el rol, un cartel.

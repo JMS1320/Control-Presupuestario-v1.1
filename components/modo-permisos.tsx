@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Lock, LockOpen, Eye, MousePointerClick } from "lucide-react"
@@ -46,6 +46,19 @@ export function ProveedorModoPermisos({ rol, children }: { rol: RolEnModo | null
   const [original, setOriginal] = useState<Borrador | null>(inicial)
   const [borrador, setBorrador] = useState<Borrador | null>(inicial)
   const [soloLoQueVe, setSoloLoQueVe] = useState(false)
+  /** 👁️ A-BUG-1544 — las cuentas que tienen este rol, y cuál se está mirando. */
+  const [personas, setPersonas] = useState<{ mail: string; nombre: string }[] | null>(null)
+  const [comoPersona, setComoPersona] = useState<{ mail: string; nombre: string } | null>(null)
+  useEffect(() => {
+    if (!soloLoQueVe || personas !== null || !rol) return
+    fetch("/api/admin/usuarios").then((r) => (r.ok ? r.json() : null)).then((j) => {
+      const lista = ((j?.usuarios ?? []) as { email: string | null; rol: string | null; nombre?: string | null }[])
+        .filter((u) => u.rol === rol.id && u.email)
+        .map((u) => ({ mail: String(u.email).toLowerCase(), nombre: u.nombre || String(u.email) }))
+      setPersonas(lista)
+      setComoPersona(lista[0] ?? null)
+    }).catch(() => setPersonas([]))
+  }, [soloLoQueVe, personas, rol])
 
   const valor = useMemo<EstadoModoPermisos | null>(() => {
     if (!rol || !borrador) return null
@@ -54,10 +67,11 @@ export function ProveedorModoPermisos({ rol, children }: { rol: RolEnModo | null
       descripcion: rol.descripcion,
       borrador,
       soloLoQueVe,
+      comoPersona,
       alternarSeccion: (s) => setBorrador((b) => (b ? alternarSeccionPuro(b, s) : b)),
       alternarRecurso: (r) => setBorrador((b) => (b ? alternarRecursoPuro(b, r) : b)),
     }
-  }, [rol, borrador, soloLoQueVe])
+  }, [rol, borrador, soloLoQueVe, comoPersona])
 
   if (!valor || !original) return <>{children}</>
 
@@ -70,6 +84,8 @@ export function ProveedorModoPermisos({ rol, children }: { rol: RolEnModo | null
         onDescartar={() => setBorrador(original)}
         setSoloLoQueVe={setSoloLoQueVe}
         cerrado={rol?.cerrado ?? false}
+        personas={personas}
+        setComoPersona={setComoPersona}
       />
     </ContextoModoPermisos.Provider>
   )
@@ -81,12 +97,16 @@ function BarraModoPermisos({
   onDescartar,
   setSoloLoQueVe,
   cerrado,
+  personas,
+  setComoPersona,
 }: {
   original: Borrador
   onGuardado: (b: Borrador) => void
   onDescartar: () => void
   setSoloLoQueVe: (v: boolean) => void
   cerrado: boolean
+  personas: { mail: string; nombre: string }[] | null
+  setComoPersona: (p: { mail: string; nombre: string } | null) => void
 }) {
   const modo = useModoPermisos()!
   const router = useRouter()
@@ -141,6 +161,22 @@ function BarraModoPermisos({
           <input type="checkbox" checked={modo.soloLoQueVe} onChange={(e) => setSoloLoQueVe(e.target.checked)} />
           Ver como lo ve él
         </label>
+        {modo.soloLoQueVe && personas && personas.length > 0 && (
+          <label className="flex items-center gap-1.5 text-xs">
+            como
+            <select
+              className="h-7 rounded border bg-background px-1"
+              value={modo.comoPersona?.mail ?? ""}
+              onChange={(e) => setComoPersona(personas.find((x) => x.mail === e.target.value) ?? null)}
+              title="Para vos y Lo que te vence son de cada persona: se muestran los de ésta, sólo para mirar"
+            >
+              {personas.map((x) => <option key={x.mail} value={x.mail}>{x.nombre}</option>)}
+            </select>
+          </label>
+        )}
+        {modo.soloLoQueVe && personas && personas.length === 0 && (
+          <span className="text-xs text-amber-700">Ninguna cuenta tiene este rol todavía</span>
+        )}
         <span className={`text-xs ${cambios ? "font-semibold text-violet-700" : "text-muted-foreground"}`}>
           {cambios === 0 ? "Sin cambios" : `${cambios} cambio(s)`}
         </span>

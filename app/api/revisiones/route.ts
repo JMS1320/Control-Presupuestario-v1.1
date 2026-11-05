@@ -13,6 +13,8 @@ import { supabaseAdmin, faltaConfiguracionAdmin } from '@/lib/supabase-admin'
 import { createClientServer } from '@/lib/supabase-server'
 import { etiquetaPersona } from '@/lib/auth/identidad'
 import { estadoAlCerrar } from '@/lib/revisiones/para-vos'
+import { puedeMirarComo } from '@/lib/auth/como-persona'
+import { usuarioPorMail } from '@/lib/auth/como-persona-servidor'
 
 export const runtime = 'nodejs'
 
@@ -34,7 +36,15 @@ export async function GET(request: Request) {
     if (searchParams.get('mias') === '1') {
       const { data: s } = await (await createClientServer()).auth.getUser()
       if (!s.user) return NextResponse.json({ ok: false, revisiones: [], error: 'Sin sesión' }, { status: 401 })
-      const yo = { mail: s.user.email ?? null, etiqueta: etiquetaPersona(s.user) }
+      let yo = { mail: s.user.email ?? null, etiqueta: etiquetaPersona(s.user) }
+      // 👁️ A-BUG-1544: un admin en «Ver como lo ve él» mira las de otra persona (sólo lectura).
+      const como = searchParams.get('como')
+      if (como) {
+        if (!puedeMirarComo(s.user.app_metadata?.role as string, como)) return NextResponse.json({ ok: false, revisiones: [], error: 'Sólo un admin puede mirar como otra persona.' }, { status: 403 })
+        const otro = await usuarioPorMail(como)
+        if (!otro) return NextResponse.json({ ok: true, revisiones: [], yo: { mail: como, etiqueta: null } })
+        yo = { mail: otro.email ?? null, etiqueta: etiquetaPersona(otro) }
+      }
       const { data, error } = await supabaseAdmin
         .from('revisiones')
         .select('id, schema_ref, tabla_ref, registro_id, descripcion_ref, motivo, pantalla, subpantalla, estado, creado_por, asignado_a, seguimiento, created_at, es_tarea, tarea_hasta, origen, senales, confirma, cierre_auto, resolucion')

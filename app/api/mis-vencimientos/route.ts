@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 import { supabaseAdmin, faltaConfiguracionAdmin } from "@/lib/supabase-admin"
 import { ahoraISO, hoyArgentina } from "@/lib/fechas"
+import { puedeMirarComo } from "@/lib/auth/como-persona"
 import {
   cuentasParaPagar, motivoPagoInvalido, vencimientosDeLaPersona, type CuotaDeLaPersona,
 } from "@/lib/vencimientos/de-la-persona"
@@ -48,12 +49,15 @@ function mailDe(user: { email?: string | null }) {
   return (user.email ?? "").toLowerCase()
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const g = await exigirSesion()
   if (!g.ok) return respuestaSinAcceso(g)
   const falta = faltaConfiguracionAdmin()
   if (falta) return NextResponse.json({ ok: false, error: falta }, { status: 500 })
-  const mail = mailDe(g.user)
+  // 👁️ A-BUG-1544: un admin en «Ver como lo ve él» mira lo de otra persona (sólo lectura: el POST usa la sesión).
+  const como = new URL(req.url).searchParams.get("como")
+  if (como && !puedeMirarComo(g.rol, como)) return NextResponse.json({ ok: false, error: "Sólo un admin puede mirar como otra persona." }, { status: 403 })
+  const mail = como ? como.trim().toLowerCase() : mailDe(g.user)
   if (!mail) return NextResponse.json({ ok: true, vencimientos: [], cuentas: [] })
   try {
     const { templates, cuotas } = await loDeLaPersona(mail)

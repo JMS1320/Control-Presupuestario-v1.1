@@ -11,6 +11,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { WIDGETS, WIDGETS_POR_DEFECTO, widgetsVisibles, type Widget } from "@/lib/widgets/registro"
 import { PanelParaVos } from "@/components/panel-para-vos"
 import { MisVencimientos } from "@/components/mis-vencimientos"
+import { useModoPermisos } from "@/components/contexto-permisos"
 import { AlertaMailsGraves } from "@/components/alerta-mails-graves"
 import { AlertaImpuestos } from "@/components/alerta-impuestos"
 import { TableroFaltantes } from "@/components/no-se-consigue"
@@ -38,12 +39,19 @@ type Redimension = {
  */
 export function VistaInicio({
   preferencias,
-  secciones,
+  secciones: seccionesSesion,
 }: {
   preferencias: Preferencias
   /** Las secciones que habilita el ROL, leídas en el servidor. La única fuente de verdad. */
   secciones: string[]
 }) {
+  /**
+   * 👁️ A-BUG-1544: en «Ver como lo ve él» manda el BORRADOR del rol (sus secciones), no las del admin: si no, el
+   * Principal de un rol sin secciones mostraba todos los widgets y avisos de JMS.
+   */
+  const modo = useModoPermisos()
+  const vistaPrevia = !!modo?.soloLoQueVe
+  const secciones = vistaPrevia ? modo!.borrador.secciones : seccionesSesion
   const [elegidos, setElegidos] = useState<string[]>(preferencias.widgets ?? WIDGETS_POR_DEFECTO)
   const [tamanos, setTamanos] = useState<Record<string, Tamano>>(preferencias.widgetsTamano)
   const [configurando, setConfigurando] = useState(false)
@@ -174,7 +182,8 @@ export function VistaInicio({
       {/* 💸 A-FEAT-1543: lo que le vence a esta persona (templates con su mail en «avisar a»); se oculta si no tiene nada asignado */}
       <MisVencimientos />
       {/* 🧾 A-FEAT-1451: las facturas sin comprobante — la tarea principal de Ulises (y lo que JMS tiene que confirmar) */}
-      <TableroFaltantes />
+      {/* En vista previa no: lee las marcas de la sesión (admin), no las de la persona. */}
+      {!vistaPrevia && <TableroFaltantes />}
 
       {/*
         🚨 Los avisos que no se pueden perder, fijos arriba (no son widgets que se puedan sacar). A-BUG-1450 (31/10): los
@@ -182,7 +191,7 @@ export function VistaInicio({
         · Mails graves: sólo si la sesión ve los mails (admin); el componente se oculta solo para el resto.
         · Impuestos vencidos / por vencer: sólo para quien tiene Egresos (sus datos son las cuotas de los templates).
       */}
-      <AlertaMailsGraves />
+      {!vistaPrevia && <AlertaMailsGraves />}
       {secciones.includes("egresos") && <AlertaImpuestos />}
 
       {configurando && (

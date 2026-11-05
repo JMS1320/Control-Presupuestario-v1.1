@@ -46,6 +46,11 @@ export type EstadoModoPermisos = {
   descripcion: string
   borrador: Borrador
   soloLoQueVe: boolean
+  /**
+   * 👁️ A-BUG-1544 — la PERSONA con ese rol cuya vista se mira en «Ver como lo ve él». Los paneles que son de cada
+   * persona («Para vos», «Lo que te vence») no dependen del rol sino de quién entra: sin esto mostraban lo del admin.
+   */
+  comoPersona: { mail: string; nombre: string } | null
   alternarSeccion: (seccion: string) => void
   alternarRecurso: (recurso: string) => void
 }
@@ -54,6 +59,16 @@ export const ContextoModoPermisos = createContext<EstadoModoPermisos | null>(nul
 
 export function useModoPermisos() {
   return useContext(ContextoModoPermisos)
+}
+
+/**
+ * 👁️ A-BUG-1544 — ¿se está mirando el Principal COMO OTRA PERSONA? `null` = no (lo normal: cada uno ve lo suyo).
+ * `{ persona: null }` = «Ver como lo ve él» sin ninguna cuenta con ese rol (los paneles personales muestran un cartel).
+ */
+export function useVistaComoPersona(): { persona: { mail: string; nombre: string } | null } | null {
+  const modo = useModoPermisos()
+  if (!modo || !modo.soloLoQueVe) return null
+  return { persona: modo.comoPersona }
 }
 
 /** El nivel de un recurso. Sin excepción declarada = `"escritura"` (hereda de la sección). */

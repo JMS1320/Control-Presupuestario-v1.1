@@ -84,6 +84,7 @@ import { borradorDe, alternarRecurso, alternarSeccion, nivelEnBorrador, contarCa
 import { motivoCuentaBloqueada } from "@/lib/auth/cuentas-extracto"
 import { minutosEfectivos, validarMinutos, textoMinutos, valorCookieActividad, msRestantes, sesionVencida, sesionDelToken } from "@/lib/auth/inactividad"
 import { desvioPorPausa, vigiaDebeDesviar } from "@/lib/auth/pausa"
+import { puedeMirarComo } from "@/lib/auth/como-persona"
 import { vencimientosDeLaPersona, cuentasParaPagar, motivoPagoInvalido, type CuotaDeLaPersona } from "@/lib/vencimientos/de-la-persona"
 import { REGLAS_EXTRACTO, ASIGNAR_EXTRACTO, ANTICIPOS_CASHFLOW, primeraPermitida, hayAlguna, tabInicialAsignar } from "@/lib/auth/ventanas"
 import { clasificarCampanita, contarNuevos, soyYo } from "@/lib/revisiones/campanita"
@@ -10197,6 +10198,11 @@ export function correrCasos(): Resultado[] {
       vigiaDebeDesviar(503, "/login"), vigiaDebeDesviar(401, "/")].map(b => b ? "va" : "queda").join(" · ")
     chequear("Accesos", "Vigía de pausa: con 503 lleva al aviso desde la app; con 200/401 o ya en el aviso o el login, se queda",
       "va · queda · queda · queda · queda", vgPz, vgPz === "va · queda · queda · queda · queda", "A-BUG-1542")
+    // ── 👁️ Ver como lo ve él, con la persona real (A-BUG-1544): sólo un admin, y con un mail ──
+    const mc = [puedeMirarComo("admin", "ma@x.com"), puedeMirarComo("contable", "ma@x.com"), puedeMirarComo("admin", " "),
+      puedeMirarComo(null, "ma@x.com")].map(b => b ? "sí" : "no").join(" · ")
+    chequear("Accesos", "Ver como otra persona: sólo un admin y con un mail; un contable o sin sesión, no",
+      "sí · no · no · no", mc, mc === "sí · no · no · no", "A-BUG-1544")
     // ── 💸 Lo que te vence (A-FEAT-1543) — datos fijos, hoy = 05/11/2026 ──
     const tpl = (nombre: string, alertas: string | null = null, responsable = "MA") => ({ nombre_referencia: nombre, responsable, alertas, categ: null })
     const cv = (id: string, estado: string, venc: string, t: CuotaDeLaPersona["template"], fecha_pago: string | null = null): CuotaDeLaPersona =>

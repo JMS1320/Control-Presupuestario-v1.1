@@ -18,6 +18,8 @@ import { Input } from "@/components/ui/input"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import type { Vencimiento } from "@/lib/vencimientos/de-la-persona"
 import type { CuentaDePago } from "@/lib/pagos/pagado-desde"
+import { useVistaComoPersona } from "@/components/contexto-permisos"
+import { VistaComoPersona } from "@/components/vista-como-persona"
 
 const plata = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fecha = (iso: string) => iso.split("-").reverse().join("/")
@@ -36,7 +38,18 @@ const ESTILO: Record<Vencimiento["urgencia"], string> = {
 }
 const ICONO: Record<Vencimiento["urgencia"], string> = { vencido: "🔴", hoy: "🟠", proximo: "🟡", pagado: "✅" }
 
+/** 👁️ A-BUG-1544: en «Ver como lo ve él», lo que le vence a la persona elegida, sólo para mirar. */
 export function MisVencimientos() {
+  const vista = useVistaComoPersona()
+  if (!vista) return <MisVencimientosDe como={null} />
+  return (
+    <VistaComoPersona titulo="Lo que te vence" persona={vista.persona}>
+      {vista.persona && <MisVencimientosDe key={vista.persona.mail} como={vista.persona.mail} />}
+    </VistaComoPersona>
+  )
+}
+
+function MisVencimientosDe({ como }: { como: string | null }) {
   const [lista, setLista] = useState<Vencimiento[]>([])
   const [cuentas, setCuentas] = useState<CuentaDePago[]>([])
   const [hoy, setHoy] = useState("")
@@ -49,12 +62,12 @@ export function MisVencimientos() {
 
   const cargar = useCallback(async () => {
     try {
-      const r = await fetch("/api/mis-vencimientos")
+      const r = await fetch(como ? `/api/mis-vencimientos?como=${encodeURIComponent(como)}` : "/api/mis-vencimientos")
       const j = await r.json()
       if (!r.ok || !j.ok) { setError(j.error ?? "No se pudo leer lo que te vence."); return }
       setError(null); setLista(j.vencimientos); setCuentas(j.cuentas); setHoy(j.hoy); setAsignados(j.asignados); setAdmin(j.admin)
     } catch { setError("No se pudo leer lo que te vence.") }
-  }, [])
+  }, [como])
   useEffect(() => { void cargar() }, [cargar])
 
   const abrir = (v: Vencimiento) => {
@@ -88,7 +101,9 @@ export function MisVencimientos() {
   }
 
   // A quien no tiene nada asignado, nada. Un error sí se muestra: un aviso que desaparece no distingue «nada» de «falló».
-  if (!error && asignados === 0) return null
+  if (!error && asignados === 0) {
+    return como ? <p className="p-3 text-sm text-muted-foreground">💸 Lo que te vence: no tiene nada asignado (Configuración → Quién recibe qué).</p> : null
+  }
   const rotuloCuenta = (id: string | null) => cuentas.find(c => c.id === id)?.rotulo ?? id ?? ""
   const pendientes = lista.filter(v => v.urgencia !== "pagado")
 

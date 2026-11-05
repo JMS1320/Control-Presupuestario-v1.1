@@ -20,6 +20,8 @@ import { linkTemaBalance } from "@/lib/balance/recorrido"
 import { nivelDeTarea, NIVELES } from "@/lib/revisiones/nivel"
 import { cuotaDeTarea, linkPagar } from "@/lib/revisiones/avisos"
 import { hoyArgentina } from "@/lib/fechas"
+import { useVistaComoPersona } from "@/components/contexto-permisos"
+import { VistaComoPersona } from "@/components/vista-como-persona"
 
 interface Marca extends MarcaParaVos {
   descripcion_ref: string
@@ -35,7 +37,18 @@ interface Marca extends MarcaParaVos {
 
 const dm = (f: string) => f.slice(0, 10).split("-").reverse().slice(0, 2).join("/")
 
+/** 👁️ A-BUG-1544: en «Ver como lo ve él», «Para vos» de la persona elegida, sólo para mirar. */
 export function PanelParaVos() {
+  const vista = useVistaComoPersona()
+  if (!vista) return <PanelParaVosDe como={null} />
+  return (
+    <VistaComoPersona titulo="Para vos" persona={vista.persona}>
+      {vista.persona && <PanelParaVosDe key={vista.persona.mail} como={vista.persona.mail} />}
+    </VistaComoPersona>
+  )
+}
+
+function PanelParaVosDe({ como }: { como: string | null }) {
   const [marcas, setMarcas] = useState<Marca[] | null>(null)
   const [yo, setYo] = useState<{ mail: string | null; etiqueta: string | null }>({ mail: null, etiqueta: null })
   const [abierta, setAbierta] = useState<string | null>(null)
@@ -46,15 +59,17 @@ export function PanelParaVos() {
 
   const cargar = useCallback(async () => {
     try {
-      const j = await (await fetch("/api/revisiones?mias=1")).json()
+      const j = await (await fetch(como ? `/api/revisiones?mias=1&como=${encodeURIComponent(como)}` : "/api/revisiones?mias=1")).json()
       setMarcas((j.revisiones ?? []) as Marca[])
       setYo({ mail: j.yo?.mail ?? null, etiqueta: j.yo?.etiqueta ?? null })
     } catch { setMarcas([]) }
-  }, [])
+  }, [como])
   // 📅 Tanda 3: antes de cargar, se crean (si faltan) las tareas del mes de las obligaciones recurrentes
   useEffect(() => {
+    // Mirando como otra persona no se crea nada: sólo se lee.
+    if (como) { void cargar(); return }
     fetch("/api/obligaciones", { method: "POST" }).catch(() => {}).finally(() => { void cargar() })
-  }, [cargar])
+  }, [cargar, como])
 
   /**
    * 📷 A-FEAT-1474 — la captura de la respuesta va como entrada del hilo (con el texto, si lo hay). Al cerrar o confirmar
