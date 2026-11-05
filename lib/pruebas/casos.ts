@@ -5018,9 +5018,10 @@ export function correrCasos(): Resultado[] {
     const de = (cat: string) => v.filas.find(f => f.categoria === cat)
 
     // CUT: vaca regular MAXIMO 2750 x 80% x 450 kg = 990.000 por cabeza — el numero de su planilla.
-    chequear("Balance · hacienda", "🔑 CUT sin pesadas: cae al estimado DECLARADO de 500 kg → 1.200.000/cab",
-      "1200000", String(de("Vaca CUT/Descarte")?.valorPorCabeza),
-      de("Vaca CUT/Descarte")?.valorPorCabeza === 1200000, "A-FEAT-1187")
+    // ⚠️ 05/11 (A-FEAT-1541): sin el 80 % por categoría — el 10 % de comercialización va sobre el total.
+    chequear("Balance · hacienda", "🔑 CUT sin pesadas: cae al estimado DECLARADO de 500 kg → 1.500.000/cab (sin el 80 %: va el 10 % sobre el total)",
+      "1500000", String(de("Vaca CUT/Descarte")?.valorPorCabeza),
+      de("Vaca CUT/Descarte")?.valorPorCabeza === 1500000, "A-FEAT-1541")
 
     // 🔑 Y lo dice: un estimado que no se declara es indistinguible de un dato.
     chequear("Balance · hacienda", "🔑 Y AVISA que son 500 kg estimados, no medidos",
@@ -5102,9 +5103,17 @@ export function correrCasos(): Resultado[] {
       chequear("Balance · hacienda", "💰 Valorizado con el formato del papel 2.2: valor kg/unidad = precio × factor (fórmula), link a la cotización y los tres valores del inicio (app, papeles de JMS, DDJJ)",
         eV, vV, vV === eV, "A-FEAT-1541")
     }
-    chequear("Balance · hacienda", "🔑 Toritos: el precio del toro (A.ANGUS GRAL. COLORADO mínimo), por cabeza = 7.000.000",
-      "7000000", String(de("Torito")?.valorPorCabeza),
-      de("Torito")?.valorPorCabeza === 7000000, "A-FEAT-1541")
+    // ⚠️ volvió 05/11 (JMS en el Excel: «es el MEJ × 1,5»): MEJ especial 3400 × 1,5 × 300 kg = 1.530.000.
+    chequear("Balance · hacienda", "🔑 Toritos: MEJ especial × 1,5 × 300 kg = 1.530.000/cab",
+      "1530000", String(de("Torito")?.valorPorCabeza),
+      de("Torito")?.valorPorCabeza === 1530000, "A-FEAT-1541")
+    // 💰 y el 10 % de comercialización sobre el total (JMS 05/11): neto = valuado × 0,9
+    {
+      const vt = valuarHacienda(existencias, mag, { macho: mercado, hembra: mercadoHembra }, {}, pesos, porCabeza)
+      const vN = `descuento ${vt.descuento === Math.round(vt.valuado * 10) / 100} · neto ${vt.neto === Math.round((vt.valuado - (vt.descuento ?? 0)) * 100) / 100}`
+      chequear("Balance · hacienda", "💰 Descuento de comercialización del 10 % sobre el TOTAL del rodeo; el valor del balance es el neto",
+        "descuento true · neto true", vN, vN === "descuento true · neto true", "A-FEAT-1541")
+    }
 
     // Ternera recria: vaquillona 250-290 al MAXIMO 3600 x 250 kg = 900.000 — idem.
     chequear("Balance · hacienda", "Ternera recría: vaquillona 250-290 al máximo × 250 kg = 900.000/cab",
@@ -5128,9 +5137,9 @@ export function correrCasos(): Resultado[] {
     //    publicado (es un precio que consigue el usuario). NO se valuan en cero.
     // ✅ La vaca DEJÓ DE SER HUECO el 2026-09-29: 2.073.207 × 90 % = 1.865.886,30 por cabeza.
     //    Eran 177 cabezas que no se valuaban.
-    chequear("Balance · hacienda", "✅ La vaca ya se valúa: preñez medio × 90 % = 1.865.886,30/cab",
-      "1865886.3", String(de("Vaca")?.valorPorCabeza),
-      Math.abs((de("Vaca")?.valorPorCabeza ?? 0) - 1865886.3) < 0.01, "A-FEAT-1187")
+    chequear("Balance · hacienda", "✅ La vaca ya se valúa: preñez medio = 2.073.207/cab (sin el 90 %: va el 10 % sobre el total, 05/11)",
+      "2073207", String(de("Vaca")?.valorPorCabeza),
+      Math.abs((de("Vaca")?.valorPorCabeza ?? 0) - 2073207) < 0.01, "A-FEAT-1541")
 
     // ⚠️ Pero una categoría que el mercado NO operó (precios en cero) sigue siendo hueco: tomar
     //    ese cero valuaría el rodeo en cero.
@@ -5155,10 +5164,10 @@ export function correrCasos(): Resultado[] {
     // 🎚️ El precio a mano MANDA sobre el de mercado (default del dato real, siempre editable).
     const conManual = valuarHacienda(existencias, mag, { macho: mercado, hembra: mercadoHembra }, { "Vaca": 1370000 }, pesos, porCabeza)
     const vaca = conManual.filas.find(f => f.categoria === "Vaca")
-    chequear("Balance · hacienda", "🎚️ Un precio cargado a mano manda: 1.370.000 × 90 % = 1.233.000/cab",
-      "1233000 · ya no es hueco",
+    chequear("Balance · hacienda", "🎚️ Un precio cargado a mano manda: 1.370.000/cab (sin factor: el 10 % va sobre el total)",
+      "1370000 · ya no es hueco",
       `${vaca?.valorPorCabeza} · ${vaca?.esHueco ? "sigue hueco" : "ya no es hueco"}`,
-      vaca?.valorPorCabeza === 1233000 && vaca?.esHueco === false, "A-FEAT-1184")
+      vaca?.valorPorCabeza === 1370000 && vaca?.esHueco === false, "A-FEAT-1184")
 
     // Una categoria con existencia y SIN criterio escrito tambien sale a la luz.
     const conRara = valuarHacienda([{ categoria: "Novillo", cabezas: 5 }], mag, { macho: mercado, hembra: mercadoHembra }, {}, pesos, porCabeza)

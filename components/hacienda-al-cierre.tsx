@@ -232,7 +232,7 @@ export function HaciendaAlCierre({
       // 📄 A-BUG-1339: 990 pesadas hoy — por tandas, para que no se corte en 1000 sin avisar.
       const { data: pes } = await traerTodo((d, h) => supabase
         .schema("productivo").from("pesadas_terneros")
-        .select("ternero_id, fecha, peso_kg, ternero:terneros(categoria:categorias_hacienda(nombre))")
+        .select("ternero_id, fecha, peso_kg, caravana_idv, ternero:terneros(categoria:categorias_hacienda(nombre))")
         // ⚖️ A-FEAT-1541: también las de hasta 120 días DESPUÉS del cierre, para interpolar el peso al 30/6.
         .lte("fecha", new Date(Date.parse(ejercicio.fechaCierre + "T12:00:00Z") + 120 * 86_400_000).toISOString().slice(0, 10)).order("id").range(d, h))
 
@@ -301,6 +301,7 @@ export function HaciendaAlCierre({
           animalId: String(p.ternero_id ?? ""),
           fecha: String(p.fecha ?? "").slice(0, 10),
           pesoKg: Number(p.peso_kg ?? 0),
+          caravana: (p.caravana_idv as string | null) ?? null,
         })).filter(p => p.categoria && p.pesoKg > 0),
         ganConfig,
         ejercicio.fechaCierre,

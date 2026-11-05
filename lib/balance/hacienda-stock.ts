@@ -118,7 +118,7 @@ export interface CriterioValuacion {
 export const CRITERIOS: CriterioValuacion[] = [
   {
     categoria: "Vaca",
-    criterio: "Vacas C. Gtía. Preñez MEDIO (Entresurcos, promedio) × 90 % — por cabeza",
+    criterio: "Vacas C. Gtía. Preñez MEDIO (Entresurcos, promedio) — por cabeza",
     /**
      * ✅ **Dejó de ser un hueco el 2026-09-29.** Hasta entonces esto decía `manual` porque yo no
      * sabía de dónde sacar el precio de un vientre. El usuario lo señaló: *«mi categoría vaca es
@@ -127,16 +127,16 @@ export const CRITERIOS: CriterioValuacion[] = [
      */
     fuente: "porCabeza", tipoPorCabeza: "vientres",
     categoriaPorCabeza: "Vacas C. Gtia. Preñez Medio", campoPorCabeza: "promedio",
-    factor: 0.9, porCabeza: true,
+    factor: 1, porCabeza: true, // ⚠️ 05/11: sin el 90 % — va el 10 % de comercialización sobre el total
   },
   {
     categoria: "Vaquillona Preñada",
-    criterio: "Vaquillonas C. Gtía. Preñez (Entresurcos, promedio) × 90 % — por cabeza",
+    criterio: "Vaquillonas C. Gtía. Preñez (Entresurcos, promedio) — por cabeza",
     fuente: "porCabeza", tipoPorCabeza: "vientres",
     // 📗 A-FEAT-1541 (JMS 05/11, «ok»): al 30/6 son las de 2 años que paren desde el 1/7 → «Vaquillonas C. Gtía. Preñez»
     //    (antes «Vacas C. Gtía. Preñez Nueva»).
     categoriaPorCabeza: "Vaquillonas C. Gtía. Preñez", campoPorCabeza: "promedio",
-    factor: 0.9, porCabeza: true,
+    factor: 1, porCabeza: true,
   },
   {
     categoria: "Vaca CUT/Descarte",
@@ -151,10 +151,10 @@ export const CRITERIOS: CriterioValuacion[] = [
      *
      * 📌 Y aplica **sólo a esta categoría**: el resto sigue como estaba.
      */
-    criterio: "vaca + de 430 kg, PROMEDIO × 80 % × el peso de la pesada",
+    criterio: "vaca + de 430 kg, PROMEDIO × el peso de la pesada",
     fuente: "mag", magFamilia: "VACAS", magCorte: "+ 430", magCampo: "promedio",
     // *«poner datos si hay, sino poner estimado de 500 kg»* (JMS 2026-09-29).
-    factor: 0.8, pesoKg: 500,
+    factor: 1, pesoKg: 500, // ⚠️ 05/11: sin el 80 % — va el 10 % sobre el total
   },
   {
     categoria: "Toro",
@@ -174,14 +174,11 @@ export const CRITERIOS: CriterioValuacion[] = [
   },
   {
     categoria: "Torito",
-    // 📗 A-FEAT-1541 (JMS 05/11: «toros de 1 o 2 años — toma precio toros según registrado», «ok», sin porcentaje): el mismo
-    //    precio del toro, por cabeza. Antes: MEJ especial × 1,5 × el peso de la pesada (Cañuelas).
-    criterio: "como el toro: A.ANGUS GRAL. COLORADO, precio MÍNIMO (Entresurcos toros) — por cabeza",
-    fuente: "porCabeza", tipoPorCabeza: "toros",
-    categoriaPorCabeza: "A.ANGUS GRAL. COLORADO", campoPorCabeza: "minimo",
-    // 📗 A-FEAT-1541 (JMS 05/11: «si sirve precio de negro, sí»): en 2025 no se vendió ningún colorado → si no hay, GRAL. NEGRO.
-    alternativasPorCabeza: ["A.ANGUS GRAL. NEGRO"],
-    factor: 1, porCabeza: true,
+    // ⚠️ cambió otra vez 05/11 (JMS, comentario en el Excel: «este creo que iba otra fórmula — es el MEJ × 1,5»): vuelve a MEJ
+    //    especial × 1,5 × los kilos (Cañuelas). El 1,5 es parte del precio, no un descuento.
+    criterio: "MEJ especial × 1,5 × los kilos",
+    fuente: "mag", magFamilia: "MEJ", magCalidad: "Esp", magCampo: "promedio",
+    factor: 1.5, pesoKg: null,
   },
   {
     categoria: "Ternera Recria",
@@ -273,11 +270,20 @@ export interface FilaValuada {
   esHueco: boolean
 }
 
+/**
+ * 💰 A-FEAT-1541 (JMS 05/11, comentario en el Excel: «esto mejor sea un descuento de CZ sobre el total del valor del rodeo, y le
+ * ponemos 10 % de comercialización total»): en vez de un factor por categoría (90 % vientres, 80 % CUT), un descuento sobre el total.
+ */
+export const DESCUENTO_COMERCIALIZACION = 0.10
+
 export interface ValuacionHacienda {
   filas: FilaValuada[]
   cabezas: number
-  /** Suma de lo que SÍ se pudo valuar. */
+  /** Suma de lo que SÍ se pudo valuar (a precio de mercado, ANTES del descuento de comercialización). */
   valuado: number
+  /** 💰 El descuento de comercialización (CZ) sobre el total y lo que queda: el valor del balance. */
+  descuento?: number
+  neto?: number
   /** Las categorías sin precio: hay que conseguirlo. */
   huecos: FilaValuada[]
   /** Cabezas que quedaron sin valuar por falta de precio. */
@@ -496,10 +502,12 @@ export function valuarHacienda(
   filas.sort((a, b) => (b.valorTotal ?? -1) - (a.valorTotal ?? -1))
   const huecos = filas.filter(f => f.esHueco)
 
+  const valuado = redondear(filas.reduce((s, f) => s + (f.valorTotal ?? 0), 0))
+  const descuento = redondear(valuado * DESCUENTO_COMERCIALIZACION)
   return {
     filas,
     cabezas: filas.reduce((s, f) => s + f.cabezas, 0),
-    valuado: redondear(filas.reduce((s, f) => s + (f.valorTotal ?? 0), 0)),
+    valuado, descuento, neto: redondear(valuado - descuento),
     huecos,
     cabezasSinValuar: huecos.reduce((s, f) => s + f.cabezas, 0),
     sinCriterio,

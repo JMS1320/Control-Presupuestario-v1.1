@@ -47,7 +47,8 @@ import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndi
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
 import { armarStocksUnificados, hojaDeStocks } from "./stocks-unificado"
 import { solapasPapelesH, type DatosPapelesH } from "./papeles-impuestos-h"
-import { DETALLES, hojaDetalleHacienda, hojaStockHacienda, hojaStockValorizado, hojaPreciosTomados, type MovimientoPapel } from "./stock-hacienda-papel"
+import { DETALLES, hojaDetalleHacienda, hojaStockHacienda, hojaStockValorizado, hojaPreciosTomados, hojaCalculoKilos, type MovimientoPapel } from "./stock-hacienda-papel"
+import type { PesoCategoria } from "./pesos-hacienda"
 import { APERTURA_MSA_2025 } from "./apertura-contador"
 type TablasPreciosPapel = { mag: PrecioMag[]; hembra: PrecioMercado[]; macho: PrecioMercado[]; vientres: PrecioCabeza[]; toros: PrecioCabeza[] }
 import type { HojaConEstilo } from "@/lib/impuestos/papel-formato-jms"
@@ -2502,6 +2503,7 @@ const COLS_STOCK_HACIENDA: Columna[] = [{ ancho: 34 }, ...Array.from({ length: 1
 const COLS_STOCK_VALORIZADO: Columna[] = [{ ancho: 34 }, { ancho: 10, z: ENTERO }, { ancho: 9 }, { ancho: 14, z: MONEDA }, { ancho: 14, z: MONEDA },
   { ancho: 17, z: MONEDA }, { ancho: 13, z: MONEDA }, { ancho: 3 }, { ancho: 22 }, { ancho: 40 }, { ancho: 14, z: MONEDA }, { ancho: 7 }, { ancho: 70 }, { ancho: 16 }, { ancho: 60 }]
 const COLS_PRECIOS_TOMADOS: Columna[] = [{ ancho: 34 }, { ancho: 12 }, { ancho: 12 }, { ancho: 14, z: MONEDA }, { ancho: 14, z: MONEDA }, { ancho: 22 }, { ancho: 9 }, { ancho: 22 }, { ancho: 8 }]
+const COLS_CALCULO_KILOS: Columna[] = [{ ancho: 22 }, { ancho: 14 }, { ancho: 9 }, { ancho: 16 }, { ancho: 9 }, { ancho: 11 }, { ancho: 11 }, { ancho: 13 }, { ancho: 40 }]
 const COLS_DETALLE_HACIENDA: Columna[] = [{ ancho: 12 }, { ancho: 24 }, { ancho: 32 }, { ancho: 10, z: ENTERO }, { ancho: 40 }, { ancho: 70 }]
 
 function hojaDeHacienda(
@@ -2802,6 +2804,8 @@ export function armarWorkbook(
     tablasCierre?: TablasPreciosPapel | null
     tcCierre?: number | null
     saldosGuardados?: Record<string, string | undefined>
+    /** ⚖️ A-FEAT-1541: los kilos por categoría con el detalle animal por animal. */
+    pesos?: PesoCategoria[]
   },
   insumos?: StockInsumos,
   campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras; origenPrecioGranos?: { texto: string; url: string | null } | null },
@@ -3037,6 +3041,7 @@ export function armarWorkbook(
       { titulo: "INICIO (el día anterior al ejercicio)", tablas: hacienda.tablasInicio, valuacion: hacienda.valuacionInicio },
     ]), COLS_PRECIOS_TOMADOS)
     for (const x of detalles) hoja(wb, x.dd.hoja, x.filas, COLS_DETALLE_HACIENDA)
+    if (hacienda.pesos) hoja(wb, "02.9 Calculo de los kilos", hojaCalculoKilos(hacienda.pesos, fc), COLS_CALCULO_KILOS)
   } else if (hacienda) {
     hoja(wb, "02 Hacienda",
       hojaDeHacienda(hacienda.valuacion, libro.ejercicio.fechaCierre, hacienda.mesPrecios, hacienda.cuadre,
@@ -3411,6 +3416,8 @@ export async function descargarLibroDiario(
     tablasCierre?: TablasPreciosPapel | null
     tcCierre?: number | null
     saldosGuardados?: Record<string, string | undefined>
+    /** ⚖️ A-FEAT-1541: los kilos por categoría con el detalle animal por animal. */
+    pesos?: PesoCategoria[]
   },
   insumos?: StockInsumos,
   campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras; origenPrecioGranos?: { texto: string; url: string | null } | null },

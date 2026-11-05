@@ -35,6 +35,18 @@ export interface PesadaAnimal {
   animalId: string
   fecha: string
   pesoKg: number
+  /** La caravana, para que el detalle se pueda buscar en el campo. */
+  caravana?: string | null
+}
+
+/** ⚖️ A-FEAT-1541 (JMS 05/11: «no está el detalle de cómo se calcularon los kg»): un animal, cómo se llegó a su peso al cierre. */
+export interface PesoDeAnimal {
+  animalId: string
+  caravana: string | null
+  antes: { fecha: string; kg: number }
+  despues: { fecha: string; kg: number } | null
+  kgAlCierre: number
+  metodo: "interpolado" | "ganancia medida" | "última pesada"
 }
 
 export interface PesoCategoria {
@@ -56,6 +68,8 @@ export interface PesoCategoria {
   origen: string
   /** true si medida y configurada difieren más de lo tolerable: hay que mirarlo. */
   difiereDeLaConfigurada: boolean
+  /** ⚖️ A-FEAT-1541: animal por animal (el promedio de `kgAlCierre` es `pesoProyectado`). */
+  detalle?: PesoDeAnimal[]
 }
 
 /**
@@ -136,12 +150,19 @@ export function pesosAlCierre(
     // ⚖️ Animal por animal: con pesada antes y después del cierre, se INTERPOLA; si no hay después, se proyecta con la medida.
     let interpolados = 0
     const fechasDespues = new Set<string>()
-    const alCierre = ultimas.map(p => {
+    const detalle: PesoDeAnimal[] = ultimas.map(p => {
       const q = despues.get(p.animalId)
       const dAntes = dias(p.fecha, fechaCierre), dTotal = q ? dias(p.fecha, q.fecha) : 0
-      if (q && dTotal > 0) { interpolados++; fechasDespues.add(q.fecha); return p.pesoKg + (q.pesoKg - p.pesoKg) * dAntes / dTotal }
-      return gananciaMedida != null ? p.pesoKg + gananciaMedida * dAntes : p.pesoKg
+      const base = { animalId: p.animalId, caravana: p.caravana ?? q?.caravana ?? null, antes: { fecha: p.fecha, kg: p.pesoKg } }
+      if (q && dTotal > 0) {
+        interpolados++; fechasDespues.add(q.fecha)
+        return { ...base, despues: { fecha: q.fecha, kg: q.pesoKg }, kgAlCierre: redondear(p.pesoKg + (q.pesoKg - p.pesoKg) * dAntes / dTotal, 2), metodo: "interpolado" as const }
+      }
+      return gananciaMedida != null
+        ? { ...base, despues: null, kgAlCierre: redondear(p.pesoKg + gananciaMedida * dAntes, 2), metodo: "ganancia medida" as const }
+        : { ...base, despues: null, kgAlCierre: p.pesoKg, metodo: "última pesada" as const }
     })
+    const alCierre = detalle.map(x => x.kgAlCierre)
     const pesoProyectado = redondear(alCierre.reduce((s, x) => s + x, 0) / alCierre.length, 1)
 
     const difiere = gananciaMedida != null && gananciaConfigurada != null &&
@@ -163,6 +184,7 @@ export function pesosAlCierre(
         ? `${origen} ⚠️ la ganancia cargada es ${gananciaConfigurada} kg/día`
         : origen,
       difiereDeLaConfigurada: difiere,
+      detalle: detalle.sort((a, b) => (a.caravana ?? a.animalId).localeCompare(b.caravana ?? b.animalId)),
     })
   }
   return out.sort((a, b) => b.animales - a.animales)

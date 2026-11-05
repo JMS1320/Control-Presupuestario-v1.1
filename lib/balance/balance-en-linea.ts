@@ -126,8 +126,10 @@ export function filasBalanceEnLinea(e: EntradaBalanceEnLinea): FilaBalanceEnLine
       case "1.2.2/05/01": {   // Vacas de cría
         const h = e.hacienda
         if (!h) return { ...enBlanco("no se trajo: falta «⚡ Armar todo» (stock y precios)"), detalle: DET_HACIENDA }
-        if (h.valuacion.huecos.length) return { renglon: r, cierre: r2(h.valuacion.valuado), estado: `valuado parcial: ${h.valuacion.cabezasSinValuar} cabeza(s) sin precio`, detalle: DET_HACIENDA }
-        return { renglon: r, cierre: r2(h.valuacion.valuado), estado: `${h.valuacion.cabezas} cabezas a los precios de cierre`, detalle: DET_HACIENDA }
+        // 💰 A-FEAT-1541: el valor del balance es el NETO del descuento de comercialización (10 % sobre el total).
+        const neto = h.valuacion.neto ?? h.valuacion.valuado
+        if (h.valuacion.huecos.length) return { renglon: r, cierre: r2(neto), estado: `valuado parcial: ${h.valuacion.cabezasSinValuar} cabeza(s) sin precio`, detalle: DET_HACIENDA }
+        return { renglon: r, cierre: r2(neto), estado: `${h.valuacion.cabezas} cabezas a los precios de cierre, menos 10 % de comercialización`, detalle: DET_HACIENDA }
       }
       case "2.1.1/01/01": {   // Proveedores
         if (!e.proveedores) return enBlanco("no se trajo: papel 04")
