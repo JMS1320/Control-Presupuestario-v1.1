@@ -334,6 +334,21 @@ export function ordenarPendientesArriba<T extends CamposSeguimiento & { fecha: s
   })
 }
 
+/**
+ * Pura: el orden de la lista — PRIMERO los mails del período (sus pendientes arriba) y DESPUÉS, aparte, los pendientes de
+ * días anteriores. A-BUG-1549 (JMS 31/10: «si estoy en último día sin nada filtrado, ¿no me debería mostrar todos los
+ * mails de hoy? y me muestra uno solo»): con los 52 pendientes viejos ordenados arriba, los 7 del día quedaban abajo de
+ * todo y parecía que no estaban. `desde` es el instante de corte del período (ISO).
+ */
+export function ordenarParaLista<T extends CamposSeguimiento & { fecha: string }>(mails: T[], hoy: string, desde: string | null):
+  { lista: T[]; delPeriodo: number } {
+  if (!desde) return { lista: ordenarPendientesArriba(mails, hoy), delPeriodo: mails.length }
+  const corte = Date.parse(desde)
+  const del = mails.filter(m => Date.parse(m.fecha) >= corte)
+  const antes = mails.filter(m => Date.parse(m.fecha) < corte)
+  return { lista: [...ordenarPendientesArriba(del, hoy), ...ordenarPendientesArriba(antes, hoy)], delPeriodo: del.length }
+}
+
 /** Pura: suma los mails de un período con TODOS los pendientes (aunque sean de antes), sin repetir. */
 export function juntarConPendientes<T extends { id: string }>(periodo: T[], pendientes: T[]): T[] {
   const ids = new Set(periodo.map(m => m.id))

@@ -14,7 +14,7 @@
  * 🔒 Sólo admin: tiene mails de la familia y de la sucesión (ver `vista-egresos.tsx`).
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { supabase } from "@/lib/supabase"
 import { ahoraISO, hoyArgentina } from "@/lib/fechas"
@@ -39,7 +39,7 @@ import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
 import {
   TIPOS_MAIL, NOMBRE_GRUPO_MAIL, NOMBRE_SEGUIMIENTO, linkGmail, tipoDeMail, grupoDeMail, filtrarMails, contarMails,
   contarPorTipo, problemaDeRegla, procesadoDeMail, cambiosAlReaplicar, nombresDeTipos, claveDeTipoMail, problemaDeTipoNuevo,
-  contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarPendientesArriba,
+  contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarParaLista,
   juntarConPendientes, problemaDeSeguimiento, claseDeProcesado, gravedadDeMail,
   type BusquedaConMail, type InventarioConMail, type MailRegistrado, type ReglaMail, type GrupoMail, type AccionMail,
   type TipoMailFila, type AlcanceTipo, type EstadoSeguimiento, type SeguimientoMail,
@@ -303,6 +303,10 @@ function RegistroMails() {
   const { tipos, nombres, crear } = useTiposMail()
   const [dias, setDias] = useState(7)
   const [mails, setMails] = useState<MailRegistrado[]>([])
+  /** El corte del período de la última lectura (A-BUG-1549: separa los del período de los pendientes viejos). */
+  const [desdeLeido, setDesdeLeido] = useState<string | null>(null)
+  /** A-BUG-1550: cuándo registró el robot el último mail (la app no lee Gmail: lee lo que el robot dejó). */
+  const [ultimoRegistro, setUltimoRegistro] = useState<string | null>(null)
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [grupos, setGrupos] = useState<Set<GrupoMail>>(new Set())
@@ -334,7 +338,11 @@ function RegistroMails() {
     const { data: pend, error: eP } = await supabase.from("mails_registro").select(COLUMNAS).eq("seguimiento", "pendiente")
     if (eP) setError(eP.message)
     const todos = juntarConPendientes(delPeriodo, (pend ?? []) as MailRegistrado[])
-    setMails(todos); setCargando(false)
+    setMails(todos); setDesdeLeido(desde); setCargando(false)
+    const { data: ult } = await supabase.from("mails_registro").select("created_at").order("created_at", { ascending: false }).limit(1)
+    const u = (ult?.[0] as { created_at?: string } | undefined)?.created_at ?? null
+    setUltimoRegistro(u)
+    return { cantidad: todos.length, ultimo: u }
     // Qué hizo el sistema con cada mail: el historial del buscador de facturas y el inventario de reenvíos, por id
     const ids = todos.map(m => m.mensaje_id)
     const bs: BusquedaConMail[] = [], inv: InventarioConMail[] = []
@@ -368,7 +376,8 @@ function RegistroMails() {
     return r
   }, [mails, columnas, valores, grupos, tiposChip, texto, seguimientos, soloGraves, hoy])
 
-  const visibles = useMemo(() => ordenarPendientesArriba(aplicar(null), hoy), [aplicar, hoy])
+  const { lista: visibles, delPeriodo } = useMemo(() => ordenarParaLista(aplicar(null), hoy, desdeLeido), [aplicar, hoy, desdeLeido])
+  const nombrePeriodo = PERIODOS.find(p => p.dias === dias)?.nombre.toLowerCase() ?? `${dias} días`
   const conteo = useMemo(() => contarMails(aplicar("grupo")), [aplicar])
   const porTipo = useMemo(() => contarPorTipo(aplicar("tipoChip")), [aplicar])
   const porSeguimiento = useMemo(() => {
@@ -408,7 +417,15 @@ function RegistroMails() {
           <Button key={p.dias} size="sm" variant={dias === p.dias ? "default" : "outline"} onClick={() => setDias(p.dias)}>{p.nombre}</Button>
         ))}
         <Input placeholder="Buscar en asunto, remitente o destinatario" value={texto} onChange={e => setTexto(e.target.value)} className="h-8 max-w-xs" />
-        <Button size="sm" variant="ghost" onClick={cargar} title="Volver a leer"><RefreshCw className="h-4 w-4" /></Button>
+        {/* 🔄 A-BUG-1550: gira mientras lee y avisa al terminar. Lee lo que registró el robot del mail (pasa cada ~15 min). */}
+        <Button size="sm" variant="ghost" disabled={cargando} title="Volver a leer lo que registró el robot del mail (pasa cada ~15 min; no trae de Gmail lo que todavía no registró)"
+          onClick={async () => {
+            const r = await cargar()
+            if (r) toast.success(`Leído de nuevo: ${r.cantidad} mails${r.ultimo ? ` · el último lo registró el robot ${fmtFecha(r.ultimo)}` : ""}`)
+          }}>
+          <RefreshCw className={`h-4 w-4 ${cargando ? "animate-spin" : ""}`} />
+        </Button>
+        {ultimoRegistro && <span className="text-xs text-muted-foreground" title="El robot del mail registra los mails nuevos cada ~15 minutos">último registrado {fmtFecha(ultimoRegistro)}</span>}
         {filtrosActivos > 0 && (
           <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => {
             setSoloGraves(false); setGrupos(new Set()); setSeguimientos(new Set()); setTiposChip(new Set()); setColumnas({ dePara: null, tipo: null, hizo: null }); setTexto("")
@@ -481,13 +498,20 @@ function RegistroMails() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {visibles.slice(0, 500).map(m => {
+              {visibles.length > 0 && delPeriodo === 0 && (
+                <TableRow><TableCell colSpan={6} className="bg-muted/40 text-center text-xs text-muted-foreground">Ningún mail en {nombrePeriodo} con estos filtros.</TableCell></TableRow>
+              )}
+              {visibles.slice(0, 500).map((m, i) => {
                 const grupo = grupoDeMail(m)
+                // A-BUG-1549: los pendientes de días anteriores van aparte, debajo de los del período
+                const separador = i === delPeriodo && i > 0 || (i === 0 && delPeriodo === 0)
+                  ? <TableRow key={`sep-${m.id}`}><TableCell colSpan={6} className="bg-amber-50 text-xs font-medium text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">📌 Pendientes de días anteriores ({visibles.length - delPeriodo}) — se muestran siempre, hasta que los termines</TableCell></TableRow>
+                  : null
                 const p = procesado(m)
                 const est = estadoSeguimiento(m, hoy)
                 const grave = gravedadDeMail(m)
-                return (
-                  <TableRow key={m.id} className={est === "vencido" ? "bg-red-50 dark:bg-red-950/30" : est === "pendiente" ? "bg-amber-50/60 dark:bg-amber-950/20" : undefined}>
+                return (<Fragment key={m.id}>{separador}
+                  <TableRow className={est === "vencido" ? "bg-red-50 dark:bg-red-950/30" : est === "pendiente" ? "bg-amber-50/60 dark:bg-amber-950/20" : undefined}>
                     <TableCell className="whitespace-nowrap text-xs tabular-nums">{fmtFecha(m.fecha)}</TableCell>
                     <TableCell className="max-w-[220px] text-xs">
                       {m.sentido === "enviado"
@@ -533,7 +557,7 @@ function RegistroMails() {
                           </div>
                         : <span className="text-xs text-muted-foreground">—</span>}
                     </TableCell>
-                  </TableRow>
+                  </TableRow></Fragment>
                 )
               })}
             </TableBody>

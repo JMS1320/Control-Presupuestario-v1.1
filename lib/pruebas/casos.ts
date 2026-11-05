@@ -295,7 +295,7 @@ import { leerResumenCajaAhorro, controlarResumen, armarConocido, resumenComoExce
 import { leerResumenSantander, controlarResumenSantander } from "@/lib/extractos/pdf-santander"
 import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla, linkGmail, procesadoDeMail, cambiosAlReaplicar, type MailRegistrado,
   claveDeTipoMail, problemaDeTipoNuevo, contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarPendientesArriba,
-  juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves } from "@/lib/mails/registro"
+  juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves, ordenarParaLista } from "@/lib/mails/registro"
 import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
 import { partesDeRuta, problemaDeRuta, estadoDestino, idDeLinkDrive } from "@/lib/archivo/destinos"
 import { mailsParaArchivar, mailsParaCuota, agruparPorRegla, anioDeMail, vinculosConArchivos, controlArchivado, agruparPorTema, estadoSeleccion } from "@/lib/mails/lotes"
@@ -10765,6 +10765,11 @@ export function correrCasos(): Resultado[] {
       chequear("Mails", "📌 Seguimiento: vencido sólo si la fecha ya pasó (la de hoy no vence); arriba los vencidos, después los pendientes por fecha (sin fecha al final), después el resto (el más nuevo primero)",
         "a:sin_marcar b:pendiente c:vencido d:terminado e:pendiente f:pendiente | cfbeda", vS,
         vS === "a:sin_marcar b:pendiente c:vencido d:terminado e:pendiente f:pendiente | cfbeda", "A-FEAT-1437")
+      // A-BUG-1549: primero los del período (aunque haya pendientes viejos), después los pendientes de días anteriores
+      const oL = ordenarParaLista(sm, hoyS, "2026-10-30T00:00:00Z")
+      const vLista1549 = oL.lista.slice(0, oL.delPeriodo).map(m => m.id).join("") + "|" + oL.lista.slice(oL.delPeriodo).map(m => m.id).join("")
+      chequear("Mails", "📬 «Último día»: los mails del período van PRIMERO y los pendientes de días anteriores aparte, debajo (no tapan los de hoy)",
+        "da|cfbe", vLista1549, vLista1549 === "da|cfbe", "A-BUG-1549")
       const vJ = juntarConPendientes([{ id: "1" }, { id: "2" }], [{ id: "2" }, { id: "9" }]).map(x => x.id).join("")
       chequear("Mails", "📌 Los pendientes de antes del período se suman a la lista sin repetir", "129", vJ, vJ === "129", "A-FEAT-1437")
 
