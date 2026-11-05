@@ -82,7 +82,8 @@ export function formatearHoja(ws: XLSX.WorkSheet, columnas: Columna[]): void {
       if (!z) continue
       const dir = XLSX.utils.encode_cell({ r: fila, c: col })
       const celda = ws[dir] as XLSX.CellObject | undefined
-      if (celda && celda.t === "n") celda.z = z
+      // una celda que trae su propio formato (un porcentaje en una columna de pesos) lo conserva
+      if (celda && celda.t === "n" && !celda.z) celda.z = z
     }
   }
 }

@@ -47,7 +47,7 @@ import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndi
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
 import { armarStocksUnificados, hojaDeStocks } from "./stocks-unificado"
 import { solapasPapelesH, type DatosPapelesH } from "./papeles-impuestos-h"
-import { DETALLES, hojaDetalleHacienda, hojaStockHacienda, hojaStockValorizado, hojaPreciosTomados, hojaCalculoKilos, type MovimientoPapel } from "./stock-hacienda-papel"
+import { DETALLES, hojaDetalleHacienda, hojaStockHacienda, hojaStockValorizado, hojaPreciosTomados, hojaCalculoKilos, hojaAumentoRodeo, type MovimientoPapel } from "./stock-hacienda-papel"
 import type { PesoCategoria } from "./pesos-hacienda"
 import { APERTURA_MSA_2025 } from "./apertura-contador"
 type TablasPreciosPapel = { mag: PrecioMag[]; hembra: PrecioMercado[]; macho: PrecioMercado[]; vientres: PrecioCabeza[]; toros: PrecioCabeza[] }
@@ -2526,24 +2526,32 @@ export function agregarPapelHacienda(wb: XLSX.WorkBook, hacienda: DatosPapelHaci
   hoja(wb, "02 Stock hacienda", hojaStockHacienda(hacienda.movimientosPapel, primerDia, fc, hacienda.saldosGuardados ?? {},
     Object.fromEntries(detalles.map(x => [x.dd.tipo, { d0: x.d0, d1: x.d1 }]))), COLS_STOCK_HACIENDA)
   const ddjj = empresa === "MSA" ? APERTURA_MSA_2025.find(r => r.cuenta === "1.2.2/05/01") : undefined
-  hoja(wb, "02.1 Stock valorizado", hojaStockValorizado({
+  const valorizado = {
     cierre: hacienda.valuacion, inicio: hacienda.valuacionInicio ?? null, fechaCierre: fc,
     fechaInicio: new Date(Date.parse(`${primerDia}T12:00:00Z`) - 86400000).toISOString().slice(0, 10), tcCierre: hacienda.tcCierre ?? null,
     ddjjInicio: ddjj ? { cuenta: ddjj.cuenta, denominacion: ddjj.denominacion, valor: ddjj.hist } : null,
-  }), COLS_STOCK_VALORIZADO)
+    tablasCierre: hacienda.tablasCierre ?? null, tablasInicio: hacienda.tablasInicio ?? null,
+  }
+  hoja(wb, "02.1 Stock valorizado", hojaStockValorizado(valorizado), COLS_STOCK_VALORIZADO)
   hoja(wb, "02.2 Precios tomados", hojaPreciosTomados([
     { titulo: `CIERRE ${fc.split("-").reverse().join("/")}`, tablas: hacienda.tablasCierre, valuacion: hacienda.valuacion },
     { titulo: "INICIO (el día anterior al ejercicio)", tablas: hacienda.tablasInicio, valuacion: hacienda.valuacionInicio },
   ]), COLS_PRECIOS_TOMADOS)
   for (const x of detalles) hoja(wb, x.dd.hoja, x.filas, COLS_DETALLE_HACIENDA)
   if (hacienda.pesos) hoja(wb, "02.9 Calculo de los kilos", hojaCalculoKilos(hacienda.pesos, fc), COLS_CALCULO_KILOS)
+  // 📈 JMS 05/11: cuánto aumentó el rodeo de cría y el de recría, dólares contra dólares.
+  hoja(wb, "02.10 Aumento del rodeo U$S", hojaAumentoRodeo(valorizado), COLS_AUMENTO_RODEO)
 }
 
 const COLS_STOCK_HACIENDA: Columna[] = [{ ancho: 34 }, ...Array.from({ length: 14 }, () => ({ ancho: 12, z: ENTERO }))]
 const COLS_STOCK_VALORIZADO: Columna[] = [{ ancho: 34 }, { ancho: 10, z: ENTERO }, { ancho: 9 }, { ancho: 14, z: MONEDA }, { ancho: 14, z: MONEDA },
-  { ancho: 17, z: MONEDA }, { ancho: 13, z: MONEDA }, { ancho: 3 }, { ancho: 22 }, { ancho: 40 }, { ancho: 14, z: MONEDA }, { ancho: 7 }, { ancho: 70 }, { ancho: 16 }, { ancho: 60 }]
+  { ancho: 17, z: MONEDA }, { ancho: 13, z: MONEDA }, { ancho: 13, z: MONEDA }, { ancho: 14, z: MONEDA }, { ancho: 3 },
+  { ancho: 15, z: MONEDA }, { ancho: 16 }, { ancho: 22 }, { ancho: 40 }, { ancho: 7 }, { ancho: 70 }, { ancho: 60 }]
+const COLS_AUMENTO_RODEO: Columna[] = [{ ancho: 34 }, { ancho: 10 }, { ancho: 10, z: ENTERO }, { ancho: 10, z: ENTERO }, { ancho: 10 }, { ancho: 10 },
+  { ancho: 12, z: ENTERO }, { ancho: 12, z: ENTERO }, { ancho: 11, z: ENTERO }, { ancho: 12, z: MONEDA }, { ancho: 12, z: MONEDA }, { ancho: 14, z: MONEDA },
+  { ancho: 14, z: MONEDA }, { ancho: 14, z: MONEDA }, { ancho: 13, z: MONEDA }, { ancho: 13, z: MONEDA }, { ancho: 9, z: MONEDA }]
 const COLS_PRECIOS_TOMADOS: Columna[] = [{ ancho: 34 }, { ancho: 12 }, { ancho: 12 }, { ancho: 14, z: MONEDA }, { ancho: 14, z: MONEDA }, { ancho: 22 }, { ancho: 9 }, { ancho: 22 }, { ancho: 8 }]
-const COLS_CALCULO_KILOS: Columna[] = [{ ancho: 22 }, { ancho: 14 }, { ancho: 9 }, { ancho: 16 }, { ancho: 9 }, { ancho: 11 }, { ancho: 11 }, { ancho: 13 }, { ancho: 40 }]
+const COLS_CALCULO_KILOS: Columna[] = [{ ancho: 22 }, { ancho: 14 }, { ancho: 9 }, { ancho: 16 }, { ancho: 9 }, { ancho: 11 }, { ancho: 11 }, { ancho: 13 }, { ancho: 40 }, { ancho: 13 }, { ancho: 12 }]
 const COLS_DETALLE_HACIENDA: Columna[] = [{ ancho: 12 }, { ancho: 24 }, { ancho: 32 }, { ancho: 10, z: ENTERO }, { ancho: 40 }, { ancho: 70 }]
 
 function hojaDeHacienda(

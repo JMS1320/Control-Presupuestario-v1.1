@@ -216,7 +216,7 @@ import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/bal
 import { controlarCuotasTemplates, campaniaDelControl, claveDeNombre, CONTROL_CUOTAS_TEMPLATES, ultimoDiaDelMes, type ComisionesDelMes, type CuotaParaControl, type TemplateControlado, type EntradaControlCuotas } from "@/lib/balance/control-cuotas-templates"
 import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuestosYOtros } from "@/lib/balance/templates-libro"
 import { hojaAutomotores, pulirLibroH } from "@/lib/balance/export-libro-diario"
-import { hojaStockHacienda, hojaDetalleHacienda, hojaStockValorizado, linkCotizacion, DETALLES } from "@/lib/balance/stock-hacienda-papel"
+import { hojaStockHacienda, hojaDetalleHacienda, hojaStockValorizado, hojaAumentoRodeo, linkCotizacion, DETALLES } from "@/lib/balance/stock-hacienda-papel"
 import { repartoDeLaFlota } from "@/lib/balance/reparto-flota"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda, precioDeCriterio, CRITERIOS } from "@/lib/balance/hacienda-stock"
@@ -5100,10 +5100,24 @@ export function correrCasos(): Resultado[] {
       const hv = hojaStockValorizado({ cierre: vi, inicio: vi, fechaCierre: "2026-06-30", fechaInicio: "2025-06-30", tcCierre: 1473, ddjjInicio: { cuenta: "1.2.2/05/01", denominacion: "VACAS DE CRÍA", valor: 255479054.9 } })
       const tres = hv.filter(r => /^(App|Papeles|DDJJ)/.test(String((r as any[])[0] ?? ""))).map(r => `${String((r as any[])[0]).split(" ")[0]} ${val((r as any[])[5])}`)
       const vaca = hv.find(r => (r as any[])[0] === "VACAS al parir") as any[]
-      const vV = `${tres.join(" · ")} · vaca ${String(vaca[3].f)}=${vaca[3].v} · link ${typeof vaca[13] === "object"}`
-      const eV = "App 135000000 · Papeles 405560000 · DDJJ 255479054.9 · vaca K9*L9=900000 · link true"
+      const vV = `${tres.join(" · ")} · vaca ${String(vaca[3].f)}=${vaca[3].v} · link ${typeof vaca[11] === "object"}`
+      const eV = "App 135000000 · Papeles 405560000 · DDJJ 255479054.9 · vaca K9*O9=900000 · link true"
       chequear("Balance · hacienda", "💰 Valorizado con el formato del papel 2.2: valor kg/unidad = precio × factor (fórmula), link a la cotización y los tres valores del inicio (app, papeles de JMS, DDJJ)",
         eV, vV, vV === eV, "A-FEAT-1541")
+      // 📈 JMS 05/11: el aumento del rodeo en dólares, cría y recría aparte — el aumento = por cantidad + por precio, y la categoría que
+      //    aparece sólo al cierre va toda «por cantidad» (mismo precio en dólares en las dos puntas, no el de pesos pasado con otro TC).
+      {
+        const ini = { filas: [fv("Vaca", 100, 1000000, 1, null), fv("Ternero Recria", 10, 4000, 1, 250)], cabezas: 110, valuado: 0, huecos: [], cabezasSinValuar: 0, sinCriterio: [] }
+        const cie = { filas: [fv("Vaca", 120, 2000000, 1, null), fv("Ternero Recria", 20, 6000, 1, 240), fv("Ternera Recria", 5, 5000, 1, 200)], cabezas: 145, valuado: 0, huecos: [], cabezasSinValuar: 0, sinCriterio: [] }
+        const h = hojaAumentoRodeo({ cierre: cie, inicio: ini, fechaCierre: "2026-06-30", fechaInicio: "2025-06-30", tcCierre: 2000 } as any)
+        const v = (r: any[] | undefined, i: number) => Math.round(Number(r?.[i]?.v ?? 0))
+        const tCria = h.find(r => (r as any[])[0] === "TOTAL CRÍA") as any[], tRec = h.find(r => (r as any[])[0] === "TOTAL RECRÍA") as any[]
+        const ternera = h.find(r => (r as any[])[0] === "Vaquillona (recría)") as any[]
+        // vacas: 100 × 1.000.000/1200,5 = 83.299 → 120 × 1.000 = 120.000 → +36.701 (cantidad 20 × 833 = 16.660 · precio 167,0 × 120 = 20.042)
+        const r = `cría ${v(tCria, 13)} = ${v(tCria, 14)} + ${v(tCria, 15)} · recría control ${v(tRec, 16)} · ternera por precio ${v(ternera, 15)}`
+        chequear("Balance · hacienda", "📈 02.10 Aumento del rodeo U$S: aumento = por cantidad + por precio; la categoría nueva va toda por cantidad",
+          "cría 36701 = 16660 + 20042 · recría control 0 · ternera por precio 0", r, r === "cría 36701 = 16660 + 20042 · recría control 0 · ternera por precio 0", "A-FEAT-1541")
+      }
     }
     // ⚖️ JMS 05/11: «toritos sin datos: el mismo peso que sus compañeros, 20 % más» → novillitos 250 × 1,2 = 300; con pesada propia manda la pesada.
     {
