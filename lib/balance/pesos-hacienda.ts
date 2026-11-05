@@ -198,6 +198,14 @@ export function pesosAlCierre(
  * poner estimado de 500 kg»* (vaca de descarte). **Un estimado declarado sirve; un cero
  * silencioso, no.**
  */
+/**
+ * ⚖️ A-FEAT-1541 (JMS 05/11: «les podemos poner el mismo peso que sus compañeros, 20 % más, si no se tienen datos»): una categoría
+ * sin pesada toma el peso de la categoría con la que se crió, por un factor. Los toritos van con los novillitos (Ternero Recría).
+ */
+export const PESO_DE_COMPANEROS: Record<string, { categoria: string; factor: number }> = {
+  Torito: { categoria: "Ternero Recria", factor: 1.2 },
+}
+
 export function pesoParaValuar(
   categoria: string,
   pesos: PesoCategoria[],
@@ -205,6 +213,12 @@ export function pesoParaValuar(
 ): { kg: number | null; origen: string } {
   const medido = pesos.find(p => p.categoria === categoria)
   if (medido) return { kg: medido.pesoProyectado, origen: medido.origen }
+  const comp = PESO_DE_COMPANEROS[categoria]
+  const deComp = comp ? pesos.find(p => p.categoria === comp.categoria) : undefined
+  if (comp && deComp) {
+    const kg = Math.round(deComp.pesoProyectado * comp.factor * 10) / 10
+    return { kg, origen: `${kg} kg = sus compañeros (${comp.categoria}, ${deComp.pesoProyectado} kg) + ${Math.round((comp.factor - 1) * 100)} % — sin pesada propia` }
+  }
   if (fallbackKg != null) return { kg: fallbackKg, origen: `estimado de ${fallbackKg} kg — no hay pesadas` }
   return { kg: null, origen: "no hay dato de pesada" }
 }

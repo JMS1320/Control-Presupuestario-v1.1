@@ -5103,6 +5103,13 @@ export function correrCasos(): Resultado[] {
       chequear("Balance · hacienda", "💰 Valorizado con el formato del papel 2.2: valor kg/unidad = precio × factor (fórmula), link a la cotización y los tres valores del inicio (app, papeles de JMS, DDJJ)",
         eV, vV, vV === eV, "A-FEAT-1541")
     }
+    // ⚖️ JMS 05/11: «toritos sin datos: el mismo peso que sus compañeros, 20 % más» → novillitos 250 × 1,2 = 300; con pesada propia manda la pesada.
+    {
+      const sinTorito = pesos.filter(p => p.categoria !== "Torito")
+      const r = `${pesoParaValuar("Torito", sinTorito, null).kg} · ${pesoParaValuar("Torito", pesos.map(p => p.categoria === "Torito" ? { ...p, pesoProyectado: 280 } : p), null).kg} · ${pesoParaValuar("Torito", [], null).kg}`
+      chequear("Balance · hacienda", "⚖️ Torito sin pesada = novillitos + 20 % (250 → 300); con pesada propia, la suya (280); sin nada, sin peso",
+        "300 · 280 · null", r, r === "300 · 280 · null", "A-FEAT-1541")
+    }
     // ⚠️ volvió 05/11 (JMS en el Excel: «es el MEJ × 1,5»): MEJ especial 3400 × 1,5 × 300 kg = 1.530.000.
     chequear("Balance · hacienda", "🔑 Toritos: MEJ especial × 1,5 × 300 kg = 1.530.000/cab",
       "1530000", String(de("Torito")?.valorPorCabeza),
