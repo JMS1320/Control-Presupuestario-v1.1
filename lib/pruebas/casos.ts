@@ -83,7 +83,8 @@ import { RECURSOS as RECURSOS_PERMISABLES } from "@/lib/auth/recursos"
 import { borradorDe, alternarRecurso, alternarSeccion, nivelEnBorrador, contarCambios, cuerpoGuardar } from "@/lib/auth/modo-permisos"
 import { motivoCuentaBloqueada } from "@/lib/auth/cuentas-extracto"
 import { minutosEfectivos, validarMinutos, textoMinutos, valorCookieActividad, msRestantes, sesionVencida, sesionDelToken } from "@/lib/auth/inactividad"
-import { desvioPorPausa } from "@/lib/auth/pausa"
+import { desvioPorPausa, vigiaDebeDesviar } from "@/lib/auth/pausa"
+import { vencimientosDeLaPersona, cuentasParaPagar, motivoPagoInvalido, type CuotaDeLaPersona } from "@/lib/vencimientos/de-la-persona"
 import { REGLAS_EXTRACTO, ASIGNAR_EXTRACTO, ANTICIPOS_CASHFLOW, primeraPermitida, hayAlguna, tabInicialAsignar } from "@/lib/auth/ventanas"
 import { clasificarCampanita, contarNuevos, soyYo } from "@/lib/revisiones/campanita"
 import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
@@ -10191,6 +10192,37 @@ export function correrCasos(): Resultado[] {
     ].join(" · ")
     chequear("Accesos", "Pausa: la persona en pausa ve sólo el aviso (la API da 503) y puede cerrar sesión; sin marca, o si es admin, pasa",
       "aviso · api-503 · pasa · pasa · pasa · pasa · pasa", pz, pz === "aviso · api-503 · pasa · pasa · pasa · pasa · pasa", "pausa-main")
+    // ── 👁️ Vigía de la pausa para la pestaña ya abierta (A-BUG-1542: Ulises siguió días con la app abierta) ──
+    const vgPz = [vigiaDebeDesviar(503, "/"), vigiaDebeDesviar(200, "/"), vigiaDebeDesviar(503, "/actualizando"),
+      vigiaDebeDesviar(503, "/login"), vigiaDebeDesviar(401, "/")].map(b => b ? "va" : "queda").join(" · ")
+    chequear("Accesos", "Vigía de pausa: con 503 lleva al aviso desde la app; con 200/401 o ya en el aviso o el login, se queda",
+      "va · queda · queda · queda · queda", vgPz, vgPz === "va · queda · queda · queda · queda", "A-BUG-1542")
+    // ── 💸 Lo que te vence (A-FEAT-1543) — datos fijos, hoy = 05/11/2026 ──
+    const tpl = (nombre: string, alertas: string | null = null, responsable = "MA") => ({ nombre_referencia: nombre, responsable, alertas, categ: null })
+    const cv = (id: string, estado: string, venc: string, t: CuotaDeLaPersona["template"], fecha_pago: string | null = null): CuotaDeLaPersona =>
+      ({ id, estado, fecha_vencimiento: venc, fecha_estimada: null, fecha_pago, monto: 100, numero_cuota: null, detalle: null, medio_pago: null, template: t })
+    const venceMA = vencimientosDeLaPersona([
+      cv("aut", "pendiente", "2026-11-05", tpl("Autonomos MA")),                     // hoy
+      cv("abl12", "pendiente", "2026-12-05", tpl("ABL Libertad Cuota", "10 dias antes")), // a 30 días: todavía no
+      cv("abl10", "pendiente", "2026-10-05", tpl("ABL Libertad Cuota", "10 dias antes")), // vencida
+      cv("exp", "pagar", "2026-11-10", tpl("Expensas Libertad", "10 dias antes")),    // próxima (5 días)
+      cv("abl9", "pagado", "2026-09-05", tpl("ABL Libertad Cuota"), "2026-10-28"),    // pagada hace 8 días: se ve
+      cv("abl8", "conciliado", "2026-08-05", tpl("ABL Libertad Cuota"), "2026-08-04"), // pagada hace 3 meses: no
+      cv("desc", "desactivado", "2026-11-01", tpl("Otro")),                            // desactivada: no
+    ], "2026-11-05").map(v => `${v.id}:${v.urgencia}`).join(" · ")
+    chequear("Accesos", "Lo que te vence: vencido, hoy, próximo dentro de la anticipación y lo pagado hace poco; ni lo lejano, ni lo viejo, ni lo desactivado",
+      "abl10:vencido · aut:hoy · exp:proximo · abl9:pagado", venceMA, venceMA === "abl10:vencido · aut:hoy · exp:proximo · abl9:pagado", "A-FEAT-1543")
+    const ctasMA = cuentasParaPagar(["MA", "MA", "PAM/MA/Duhau"]).map(c => c.id).join(" · ")
+    chequear("Accesos", "Lo que te vence: paga desde SUS cuentas, la de la empresa que más se repite primero (la principal)",
+      "ma_galicia · pam_galicia · pam_galicia_cc", ctasMA, ctasMA === "ma_galicia · pam_galicia · pam_galicia_cc", "A-FEAT-1543")
+    const pagoMA = [
+      motivoPagoInvalido({ fecha: "2026-11-05", medio: "ma_galicia", estado: "pendiente" }, ["ma_galicia"], "2026-11-05") ?? "ok",
+      motivoPagoInvalido({ fecha: "2026-11-06", medio: "ma_galicia", estado: "pendiente" }, ["ma_galicia"], "2026-11-05") ? "futura" : "ok",
+      motivoPagoInvalido({ fecha: "2026-11-01", medio: "msa_galicia", estado: "pendiente" }, ["ma_galicia"], "2026-11-05") ? "ajena" : "ok",
+      motivoPagoInvalido({ fecha: "2026-11-01", medio: "ma_galicia", estado: "conciliado" }, ["ma_galicia"], "2026-11-05") ? "ya-conciliada" : "ok",
+    ].join(" · ")
+    chequear("Accesos", "Lo que te vence: marcar pagado frena la fecha futura, la cuenta que no es suya y la cuota que ya no está pendiente",
+      "ok · futura · ajena · ya-conciliada", pagoMA, pagoMA === "ok · futura · ajena · ya-conciliada", "A-FEAT-1543")
     // ── Funciones de adentro de las ventanas (A-BUG-1335) ──
     // Ulises: sólo carga en Extracto (sin reglas ni asignar) y nada de anticipos.
     const vnUlises = (id: string) => ["extracto.importar", "extracto.movimientos"].includes(id)

@@ -253,3 +253,13 @@ estaban el 24/10, al hacer A-FEAT-1351). Sin investigar.
 |---|---|---|
 | `npm run verificar:rutas` | 🚨 4 rutas que escriben y no están en el mapeo (`lib/auth/rutas-recursos.ts`) | `facturas/cargar-desde-pdf`, `gas/descartar-candidato`, `gas/inventario`, `gas/pedir-factura` |
 | `npx tsx scripts/verificar-service-role.mts` | 🚨 usa service_role y no está en la lista de excepciones | `facturas/cargar-desde-pdf` |
+
+## 2026-11-05 — Los mismos controles de rutas, con más rutas sin declarar (visto en camino 3)
+
+Capturado al correr los controles para [A-FEAT-1543](PENDIENTES.md#a-feat-1543); **no son de ese cambio** (la ruta
+nueva `mis-vencimientos` quedó declarada en los dos). Se suman a las del 25/10. Sin investigar.
+
+| Control | Qué dice | Rutas que se sumaron desde el 25/10 |
+|---|---|---|
+| `npm run verificar:rutas` | 🚨 escribe y no está en el mapeo · 🚨 declarada que ya no escribe | `obligaciones` · ya no escribe: `arca-asignar` |
+| `npx tsx scripts/verificar-service-role.mts` | 🚨 usa service_role y no está en la lista de excepciones | `contador/ddjj`, `obligaciones`, `polizas/sincronizar` |

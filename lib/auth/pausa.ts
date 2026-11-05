@@ -39,3 +39,17 @@ export function desvioPorPausa(
   if (libres.some((r) => pathname === r || pathname.startsWith(r + "/"))) return "pasa"
   return pathname.startsWith("/api/") ? "api-503" : "aviso"
 }
+
+/**
+ * 👁️ El VIGÍA de la pantalla (A-BUG-1542). El middleware frena a la persona en pausa sólo cuando ABRE la app o llama a
+ * su API; una pestaña que ya estaba abierta lee y escribe directo en la base y seguía andando días. La pantalla consulta
+ * `/api/sesion/pausa` al volver a la ventana y cada tanto: si contesta 503 (el middleware la frenó), se va al aviso.
+ * Pura: ¿hay que desviar con esta respuesta, estando en esta ruta?
+ */
+export const RUTA_VIGIA = "/api/sesion/pausa"
+export const MS_ENTRE_VIGIAS = 3 * 60_000
+export function vigiaDebeDesviar(status: number, pathname: string): boolean {
+  if (status !== 503) return false
+  const libres = [RUTA_PAUSA, "/login", "/auth", "/no-access"]
+  return !libres.some((r) => pathname === r || pathname.startsWith(r + "/"))
+}

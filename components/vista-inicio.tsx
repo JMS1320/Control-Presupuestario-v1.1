@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { WIDGETS, WIDGETS_POR_DEFECTO, widgetsVisibles, type Widget } from "@/lib/widgets/registro"
 import { PanelParaVos } from "@/components/panel-para-vos"
+import { MisVencimientos } from "@/components/mis-vencimientos"
 import { AlertaMailsGraves } from "@/components/alerta-mails-graves"
 import { AlertaImpuestos } from "@/components/alerta-impuestos"
 import { TableroFaltantes } from "@/components/no-se-consigue"
@@ -170,6 +171,8 @@ export function VistaInicio({
 
       {/* 🚩 A-FEAT-1411: lo de cada uno, arriba de todo y para todos (no es un widget que se pueda sacar) */}
       <PanelParaVos />
+      {/* 💸 A-FEAT-1543: lo que le vence a esta persona (templates con su mail en «avisar a»); se oculta si no tiene nada asignado */}
+      <MisVencimientos />
       {/* 🧾 A-FEAT-1451: las facturas sin comprobante — la tarea principal de Ulises (y lo que JMS tiene que confirmar) */}
       <TableroFaltantes />
 

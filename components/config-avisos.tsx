@@ -22,6 +22,10 @@ export function ConfigAvisos() {
   const [obligaciones, setObligaciones] = useState<ObligacionRecurrente[]>([])
   const [personas, setPersonas] = useState<{ mail: string; nombre: string }[]>([])
   const [nueva, setNueva] = useState({ nombre: "", aviso_tipo: "", dia_mes: "10" })
+  /** 💸 A-FEAT-1543: los templates activos y a quién le vence cada uno (`avisar_a`). */
+  const [templates, setTemplates] = useState<{ id: string; nombre_referencia: string; responsable: string | null; año: string | null; avisar_a: string[] }[]>([])
+  const [personaVence, setPersonaVence] = useState("")
+  const [buscarTemplate, setBuscarTemplate] = useState("")
 
   const cargar = useCallback(async () => {
     const [{ data: a }, { data: o }] = await Promise.all([
@@ -29,6 +33,8 @@ export function ConfigAvisos() {
       supabase.from("obligaciones_recurrentes").select("id, nombre, aviso_tipo, dia_mes, activa").order("dia_mes"),
     ])
     setAvisos((a ?? []) as AvisoDestinatarios[]); setObligaciones((o ?? []) as ObligacionRecurrente[])
+    const { data: t } = await supabase.from("egresos_sin_factura").select("id, nombre_referencia, responsable, año, avisar_a").eq("activo", true).order("nombre_referencia")
+    setTemplates(((t ?? []) as unknown as typeof templates).map(x => ({ ...x, avisar_a: x.avisar_a ?? [] })))
   }, [])
   useEffect(() => {
     void cargar()
@@ -53,6 +59,15 @@ export function ConfigAvisos() {
     if (error) { toast.error("No se pudo agregar: " + error.message); return }
     setNueva({ nombre: "", aviso_tipo: "", dia_mes: "10" }); void cargar()
     toast.success("Obligación agregada: la tarea del mes se crea sola al abrir el Principal")
+  }
+  /** Le suma o le saca la persona elegida al template. Se guarda el arreglo entero (el resto de los mails, intacto). */
+  const alternarVence = async (t: (typeof templates)[number]) => {
+    if (!personaVence) return
+    const tiene = t.avisar_a.includes(personaVence)
+    const nuevo = tiene ? t.avisar_a.filter(m => m !== personaVence) : [...t.avisar_a, personaVence]
+    const { error } = await supabase.from("egresos_sin_factura").update({ avisar_a: nuevo, updated_at: ahoraISO() }).eq("id", t.id)
+    if (error) { toast.error("No se pudo guardar: " + error.message); return }
+    setTemplates(prev => prev.map(x => x.id === t.id ? { ...x, avisar_a: nuevo } : x))
   }
   const nombrePersona = (mail?: string) => personas.find(p => p.mail === mail)?.nombre ?? mail ?? ""
 
@@ -104,6 +119,35 @@ export function ConfigAvisos() {
           <Input value={nueva.dia_mes} onChange={e => setNueva({ ...nueva, dia_mes: e.target.value.replace(/\D/g, "") })} className="h-7 w-12 text-xs" />
           <Button size="sm" className="h-7 text-xs" onClick={() => void agregar()}>＋ Agregar</Button>
         </div>
+      </div>
+
+      <div className="space-y-2 rounded-md border p-3">
+        <p className="text-sm font-medium">💸 Lo que le vence a cada persona</p>
+        <p className="text-xs text-muted-foreground">Lo tildado le aparece en «Lo que te vence» de su Principal, desde los días de anticipación del template (vacío = 10), y lo puede marcar pagado. Pasa solo a la campaña siguiente.</p>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <select className="h-7 rounded border bg-background px-1" value={personaVence} onChange={e => setPersonaVence(e.target.value)}>
+            <option value="">— elegí la persona —</option>
+            {personas.filter(p => p.mail !== "claude").map(p => <option key={p.mail} value={p.mail}>{p.nombre}</option>)}
+          </select>
+          <Input placeholder="Buscar template…" value={buscarTemplate} onChange={e => setBuscarTemplate(e.target.value)} className="h-7 w-56 text-xs" />
+          {personaVence && <span className="text-muted-foreground">{templates.filter(t => t.avisar_a.includes(personaVence)).length} tildados</span>}
+        </div>
+        {personaVence && (
+          <ul className="max-h-72 space-y-0.5 overflow-y-auto text-xs">
+            {templates
+              .filter(t => !buscarTemplate.trim() || `${t.nombre_referencia} ${t.responsable ?? ""}`.toLowerCase().includes(buscarTemplate.trim().toLowerCase()))
+              .sort((a, b) => Number(b.avisar_a.includes(personaVence)) - Number(a.avisar_a.includes(personaVence)))
+              .map(t => (
+                <li key={t.id}>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={t.avisar_a.includes(personaVence)} onChange={() => void alternarVence(t)} />
+                    <span className="flex-1">{t.nombre_referencia}</span>
+                    <span className="text-muted-foreground">{t.responsable ?? "—"} · {t.año ?? ""}</span>
+                  </label>
+                </li>
+              ))}
+          </ul>
+        )}
       </div>
     </div>
   )
