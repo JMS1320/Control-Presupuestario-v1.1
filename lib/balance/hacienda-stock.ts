@@ -88,6 +88,8 @@ export interface CriterioValuacion {
    * peso de la categoría al cierre; `pesoDesde`/`pesoHasta` quedan sólo como respaldo si no hay peso.
    */
   segunPeso?: boolean
+  /** 📗 A-FEAT-1541: si la categoría por cabeza no se operó, estas otras, en orden (toro colorado → negro). */
+  alternativasPorCabeza?: string[]
   /** El castigo o la prima: 0,9 · 0,8 · 0,7 · 1,5 · 1,1. */
   factor: number
   /**
@@ -166,6 +168,8 @@ export const CRITERIOS: CriterioValuacion[] = [
     criterio: "A.ANGUS GRAL. COLORADO, precio MÍNIMO (Entresurcos toros) — por cabeza",
     fuente: "porCabeza", tipoPorCabeza: "toros",
     categoriaPorCabeza: "A.ANGUS GRAL. COLORADO", campoPorCabeza: "minimo",
+    // 📗 A-FEAT-1541 (JMS 05/11: «si sirve precio de negro, sí»): en 2025 no se vendió ningún colorado → si no hay, GRAL. NEGRO.
+    alternativasPorCabeza: ["A.ANGUS GRAL. NEGRO"],
     factor: 1, porCabeza: true,
   },
   {
@@ -175,6 +179,8 @@ export const CRITERIOS: CriterioValuacion[] = [
     criterio: "como el toro: A.ANGUS GRAL. COLORADO, precio MÍNIMO (Entresurcos toros) — por cabeza",
     fuente: "porCabeza", tipoPorCabeza: "toros",
     categoriaPorCabeza: "A.ANGUS GRAL. COLORADO", campoPorCabeza: "minimo",
+    // 📗 A-FEAT-1541 (JMS 05/11: «si sirve precio de negro, sí»): en 2025 no se vendió ningún colorado → si no hay, GRAL. NEGRO.
+    alternativasPorCabeza: ["A.ANGUS GRAL. NEGRO"],
     factor: 1, porCabeza: true,
   },
   {
@@ -350,20 +356,22 @@ function precioPorCabeza(
 ): { precio: number; origen: string } | null {
   if (!c.tipoPorCabeza || !c.categoriaPorCabeza) return null
   const sinRuido = (s: string) => norm(s).replace(/[.,]/g, "").replace(/\s+/g, " ")
-  const buscada = sinRuido(c.categoriaPorCabeza)
-
-  const fila = (porCabeza[c.tipoPorCabeza] ?? []).find(f => sinRuido(f.categoria) === buscada)
-  if (!fila) return null
-
   const campo = c.campoPorCabeza ?? "promedio"
-  const precio = fila[campo]
   // ⚠️ Cantidad 0 = el mercado NO operó esa categoría en el período. El precio que publica es 0 y
   //    tomarlo valuaría el rodeo en cero: se trata como «no hay precio», que es lo que pasa.
-  if (!(precio > 0)) return null
+  // 📗 A-FEAT-1541: la categoría del criterio y, si no se operó, sus alternativas en orden.
+  const buscadas = [c.categoriaPorCabeza, ...(c.alternativasPorCabeza ?? [])]
+  let fila: PrecioCabeza | undefined, alterna = false
+  for (const [i, b] of buscadas.entries()) {
+    fila = (porCabeza[c.tipoPorCabeza] ?? []).find(f => sinRuido(f.categoria) === sinRuido(b) && f[campo] > 0)
+    if (fila) { alterna = i > 0; break }
+  }
+  if (!fila) return null
+  const precio = fila[campo]
 
   return {
     precio,
-    origen: `Entresurcos ${c.tipoPorCabeza} · ${fila.categoria} · ${campo}` +
+    origen: `Entresurcos ${c.tipoPorCabeza} · ${fila.categoria} · ${campo}` + (alterna ? ` (no hubo ${c.categoriaPorCabeza})` : "") +
       (fila.cantidad > 0 ? ` (${fila.cantidad} cab. operadas)` : "") + fechaDe([fila]),
   }
 }
