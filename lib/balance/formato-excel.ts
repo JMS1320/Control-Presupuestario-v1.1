@@ -49,6 +49,10 @@ export const PORCENTAJE = "0.0%"
 const FILTROS = new WeakMap<unknown[][], string>()
 /** Anota el rango del filtro (`A15:K203`) de unas filas que se van a agregar como hoja. */
 export const filtrarEn = (filas: unknown[][], ref: string) => { FILTROS.set(filas, ref) }
+/** 🧊 Una hoja que NO lleva encabezado fijo aunque la presentación lo adivine (JMS 05/11 en la 02.1: «sacá fijar encabezado»). */
+const SIN_CONGELAR = new WeakSet<unknown[][]>()
+export const sinCongelar = (filas: unknown[][]) => { SIN_CONGELAR.add(filas) }
+export const esSinCongelar = (filas: unknown[][]) => SIN_CONGELAR.has(filas)
 /** El filtro declarado para estas filas, si hay. */
 export const filtroDe = (filas: unknown[][]): string | undefined => FILTROS.get(filas)
 

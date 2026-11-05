@@ -5110,8 +5110,8 @@ export function correrCasos(): Resultado[] {
       const fila = (n: string) => h.find(r => (r as any[])[0] === n) as any[]
       const val = (c: any) => typeof c === "object" ? c.v : c
       const vacas = fila("Vacas"), cut = fila("CUT / descarte"), tern = fila("Terneros/as")
-      const vS = `vacas inicio ${vacas[1]} senasa ${vacas[2]} · mort ${val(vacas[5])} reclas ${val(vacas[6])} · cierre ${val(vacas[10])} (${String(vacas[10].f)}) · control ${val(vacas[14])} · cut venta ${val(cut[8])} cierre ${val(cut[10])} · terneros nac ${val(tern[4])} · venta de julio fuera`
-      const eS = "vacas inicio 10 senasa 12 · mort -1 reclas -2 · cierre 7 (B5+SUM(E5:J5)) · control 0 · cut venta -2 cierre 0 · terneros nac 4 · venta de julio fuera"
+      const vS = `vacas inicio ${val(vacas[1])} senasa ${val(vacas[2])} · mort ${val(vacas[5])} reclas ${val(vacas[6])} · cierre ${val(vacas[10])} (${String(vacas[10].f)}) · control ${val(vacas[14])} · cut venta ${val(cut[8])} cierre ${val(cut[10])} · terneros nac ${val(tern[4])} · venta de julio fuera · ventas ${vacas[9].s.fill.fgColor.rgb} ${vacas[9].s.font.bold} · cierre ${vacas[10].s.fill.fgColor.rgb} ${vacas[10].s.border.left.style}`
+      const eS = "vacas inicio 10 senasa 12 · mort -1 reclas -2 · cierre 7 (B5+SUM(E5:J5)) · control 0 · cut venta -2 cierre 0 · terneros nac 4 · venta de julio fuera · ventas E26B0A true · cierre FDE9D9 medium"
       chequear("Balance · hacienda", "🐄 Papel de stock: inicio NZ/SENASA, movimientos con su signo (SUMAR.SI sobre las solapas de detalle), cierre por fórmula y control contra la app; lo posterior al cierre no entra",
         eS, vS, vS === eS, "A-FEAT-1541")
       const det = hojaDetalleHacienda(movs, "venta", "VENTAS", "2025-07-01", "2026-06-30")

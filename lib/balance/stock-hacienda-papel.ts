@@ -14,7 +14,7 @@
  */
 import { CATEGORIAS_PLANILLA } from "./tres-saldos-hacienda"
 import { cantidadConSigno } from "./cuadre-hacienda"
-import { unirCeldas, altoDeFila } from "./formato-excel"
+import { unirCeldas, altoDeFila, sinCongelar } from "./formato-excel"
 import { DESCUENTO_COMERCIALIZACION, type ValuacionHacienda, type PrecioMag, type PrecioMercado, type PrecioCabeza } from "./hacienda-stock"
 import type { PesoCategoria } from "./pesos-hacienda"
 
@@ -94,6 +94,7 @@ export function hojaStockHacienda(movs: MovimientoPapel[], primerDia: string, fe
   const t1 = f.length
   const col = (i: number) => String.fromCharCode(65 + i)
   f.push(["TOTAL", ...Array.from({ length: 14 }, (_, i) => ({ t: "n", f: `SUM(${col(i + 1)}${t0}:${col(i + 1)}${t1})`, v: valores.reduce((s, x) => s + x[i], 0) }))])
+  marcoDelStock(f, t0 - 1, t1 + 1)
   // Control por sexo y total contra SENASA (al cierre), cuando están los datos
   f.push([])
   f.push(["CONTROL CONTRA SENASA AL CIERRE — por sexo y total (SENASA usa otras categorías y se pone al día en las actas de vacunación)"])
@@ -117,6 +118,29 @@ export function hojaStockHacienda(movs: MovimientoPapel[], primerDia: string, fe
   f.push(["TOTAL", { t: "n", f: `K${t1 + 1}`, v: nzT }, { t: "n", f: `L${t1 + 1}`, v: snT }, sinSenasa ? "SENASA sin cargar" : { t: "n", f: `C${r}-B${r}`, v: snT - nzT }])
   f.push(["SENASA al cierre se carga a mano en la pantalla del balance (Hacienda → saldos). Una diferencia suele ser una muerte o un nacimiento no informado: se explica, no se fuerza."])
   return f
+}
+
+/**
+ * 🎨 JMS 05/11 (Papeles v11.03, solapa 02): tres recuadros de borde grueso — INICIO (B–D), Compras y Ventas (I–J) y CIERRE (K–M) —,
+ * inicio y cierre en durazno claro y compras/ventas en naranja con negrita. Filas de Excel `rEnc` (encabezado) a `rTot` (TOTAL).
+ */
+const DURAZNO = "FDE9D9", NARANJA = "E26B0A"
+function marcoDelStock(f: unknown[][], rEnc: number, rTot: number) {
+  const GRUESA = { style: "medium", color: { rgb: "000000" } }
+  const cajas: [number, number][] = [[1, 3], [8, 9], [10, 12]]
+  for (let r = rEnc; r <= rTot; r++) {
+    const fila = f[r - 1]
+    for (const [a, b] of cajas) for (let c = a; c <= b; c++) {
+      const borde: Record<string, unknown> = {}
+      if (c === a) borde.left = GRUESA
+      if (c === b) borde.right = GRUESA
+      if (r === rEnc) borde.top = GRUESA
+      if (r === rTot) borde.bottom = GRUESA
+      let celda = conEstilo(fila[c] ?? "", { border: borde })
+      if (r > rEnc && r < rTot) celda = c === 8 || c === 9 ? conEstilo(conRelleno(celda, NARANJA), { font: { bold: true } }) : conRelleno(celda, DURAZNO)
+      fila[c] = celda
+    }
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════
@@ -286,6 +310,7 @@ export interface DatosValorizado {
 export function hojaStockValorizado(d: DatosValorizado): unknown[][] {
   const f: unknown[][] = [["02.1 — STOCK DE HACIENDA VALORIZADO — cierre e inicio del ejercicio"],
     ["El reporte a la izquierda (formato del papel 2.2); a la derecha, la trazabilidad de cada renglón. Las tablas de precios, con su día y su link, en «02.2 Precios tomados»."]]
+  sinCongelar(f)   // JMS 05/11 (comentario en A8): «sacá fijar encabezado»
   const tc = d.tcCierre ?? 1
   const cie = bloque22(f, `2.2) - VALUACIÓN GANADERA (VALORES MERCADO) AL ${dmy(d.fechaCierre)}`, d.cierre, tc, d.tcCierre ? "BNA divisa comprador del cierre" : "⚠️ sin tipo de cambio del cierre")
   if (!d.inicio) {

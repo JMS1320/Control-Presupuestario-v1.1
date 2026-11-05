@@ -70,7 +70,7 @@ import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
 import type { CuadreGranos, ValuacionGranos, Sementeras } from "./granos-sementeras"
 import {
   formatearHoja, presentarHoja, anchosAutomaticos, colorDeSolapa, aplicarVistas, filtroDe,
-  conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna, type Vista, UNIONES, ALTOS } from "./formato-excel"
+  conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna, type Vista, UNIONES, ALTOS, esSinCongelar } from "./formato-excel"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 import type { ControlesInicio, ControlProvisionAnterior } from "./control-inicio"
 import { textoEstado, type InicioYCierre } from "./inicio-y-cierre"
@@ -494,6 +494,7 @@ const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: 
   if (columnas) formatearHoja(ws, columnas)
   else anchosAutomaticos(ws)
   const vista = { ...presentarHoja(ws), colorSolapa: colorDeSolapa(nombre) }
+  if (esSinCongelar(filas)) vista.congelarFilas = undefined
   // 🔎 Si quien armó la hoja dijo dónde va el filtro, manda sobre el que adivina `presentarHoja`.
   const filtro = filtroDe(filas)
   if (filtro) ws["!autofilter"] = { ref: filtro }
