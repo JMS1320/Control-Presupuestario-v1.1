@@ -183,10 +183,10 @@ function bloque22(f: unknown[][], titulo: string, v: ValuacionHacienda, tc: numb
     { t: "n", f: `SUM(G${r0}:G${r1})`, v: v.valuado / tc }])
   // 💰 JMS 05/11: «un descuento de CZ sobre el total del valor del rodeo, 10 % de comercialización total».
   const pct = DESCUENTO_COMERCIALIZACION
-  f.push([`Descuento de comercialización (CZ) ${Math.round(pct * 100)} % sobre el total`, "", "", "", "", { t: "n", f: `-F${rt}*${pct}`, v: -v.valuado * pct },
+  f.push([`Descuento de comercialización (CZ) ${Math.round(pct * 100)} % sobre el total`, "", "", "", "", { t: "n", f: `-F${rt}*${pct}`, v: -(v.descuento ?? Math.round(v.valuado * pct * 100) / 100) },
     { t: "n", f: `-G${rt}*${pct}`, v: -v.valuado * pct / tc }])
   const rn = f.length + 1
-  f.push(["TOTAL NETO — valor del balance", "", "", "", "", { t: "n", f: `F${rt}+F${rt + 1}`, v: v.valuado * (1 - pct) },
+  f.push(["TOTAL NETO — valor del balance", "", "", "", "", { t: "n", f: `F${rt}+F${rt + 1}`, v: v.neto ?? Math.round(v.valuado * (1 - pct) * 100) / 100 },
     { t: "n", f: `G${rt}+G${rt + 1}`, v: v.valuado * (1 - pct) / tc }])
   f.push(["", "", "", "", "Tipo de cambio", tc, tcOrigen])
   if (v.huecos.length) f.push([`⚠️ Sin precio: ${v.huecos.map(h => `${h.categoria} (${h.cabezas} cab.)`).join(", ")} — no se valúan en cero.`])
