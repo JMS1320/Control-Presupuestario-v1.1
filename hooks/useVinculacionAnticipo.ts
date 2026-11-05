@@ -5,6 +5,7 @@ import { calcularVinculacionPago, tcDeFactura, esMonedaExtranjera } from "@/lib/
 import { TIPOS_LIQ_HACIENDA } from "@/lib/ventas/cobro-esperado"
 import { vincularPagoACuenta } from "@/lib/ventas/detalle-cobro-db"
 import { supabase } from "@/lib/supabase"
+import { echeqDelAnticipo } from "@/lib/pagos/echeq-anticipo"
 import { toast } from "sonner"
 
 // Anticipo vinculable — los campos que necesita la lógica de vinculación.
@@ -407,16 +408,23 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
       // Si el anticipo no tiene la cuenta final → setearla (herencia hacia atrás)
       const anticipoDebeActualizarCuenta = cuentaFinal && antCuenta !== cuentaFinal
 
+      // 🔗 A-BUG-1553 (05/11): un anticipo pagado con ECHEQ le pasa el echeq a la factura. Antes la factura quedaba
+      // «pagado» el día del anticipo y, como el anticipo vinculado sale del Cash Flow, los echeqs que todavía no se
+      // cobraron desaparecían de la proyección (Briki: 3 echeqs hasta el 13/12). Ver `echeqDelAnticipo`.
+      const echeq = echeqDelAnticipo(anticipoParaVincular as AnticipoVinculable & { metodo_pago?: string | null; estado_pago?: string | null; fecha_cobro_echeq?: string | null })
+
       if (calculo.caso === 'A') {
         // Factura completamente cubierta
         // Si el extracto ya está conciliado → FC = conciliado (pago ya pasó por banco)
+        // Si el anticipo se pagó con echeq → FC = echeq (se proyecta echeq por echeq, como si se hubiera pagado así)
         // Si no → FC = pagado
-        const estadoFC = extractoInfo?.estado === 'conciliado' ? 'conciliado' : 'pagado'
+        const estadoFC = extractoInfo?.estado === 'conciliado' ? 'conciliado' : echeq ? 'echeq' : 'pagado'
         const { error: errFac } = await supabase
           .schema('msa')
           .from('comprobantes_arca')
           .update({
             ...herenciaComun,
+            ...(echeq && estadoFC === 'echeq' ? { metodo_pago: 'echeq', fecha_cobro_echeq: echeq.fechaCobro } : {}),
             estado: estadoFC,
             // En la moneda de la FACTURA (en dólares, dólares): A-BUG-1236.
             monto_a_abonar: calculo.montoAAbonarSiCubre,
@@ -451,6 +459,18 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
         .update(updateAnticipo)
         .eq('id', anticipoParaVincular.id)
       if (errAnticipo) throw errAnticipo
+
+      // 🔗 A-BUG-1553: los echeqs del anticipo pasan a la factura (sólo si la cubre: en un parcial el anticipo sigue en el
+      // Cash Flow con sus echeqs). Se conserva `anticipo_id` (la trazabilidad); `factura_id` manda en la proyección.
+      if (echeq && calculo.caso === 'A') {
+        const { error: errCh } = await supabase
+          .schema('msa')
+          .from('cheques')
+          .update({ factura_id: facturaElegida })
+          .eq('anticipo_id', anticipoParaVincular.id)
+          .is('factura_id', null)
+        if (errCh) throw errCh
+      }
 
       // Transferir sicore_retenciones: agregar factura_id al registro del anticipo
       if (anticipoParaVincular.sicore || anticipoParaVincular.monto_sicore) {
@@ -656,3 +676,4 @@ export function useVinculacionAnticipo(onVinculado?: () => void | Promise<void>)
 }
 
 export type VinculacionController = ReturnType<typeof useVinculacionAnticipo>
+

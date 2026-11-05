@@ -4286,6 +4286,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               </div>
             )
           }
+          // ⚠️ A-BUG-1553: factura que parece ya pagada por un anticipo sin vincular (no va al PDF ni al mail: es un campo aparte)
+          if (columna.key === 'detalle' && fila.aviso_anticipo) {
+            return (
+              <div className="flex items-center gap-1" title={fila.aviso_anticipo}>
+                <span className="shrink-0 rounded bg-amber-100 px-1 text-[10px] font-semibold text-amber-800">⚠️ ¿pagada por anticipo?</span>
+                <span className="truncate">{(valor as string) || '-'}</span>
+              </div>
+            )
+          }
           // Fila-grupo: ✕ para deshacer el grupo (en la columna Detalle)
           if (columna.key === 'detalle' && (fila.facturas_agrupadas ?? 0) > 1 && fila.grupo_pago_id) {
             return (

@@ -1,5 +1,6 @@
 "use client"
 
+import { marcarAnticiposSinVincular } from "@/lib/cashflow/anticipo-sin-vincular"
 import { useState, useEffect } from "react"
 import { cobroVentaSinLiquidacion } from "@/lib/productivo/venta-condiciones"
 import { cargarFuentesCobro } from "@/lib/ventas/detalle-cobro-db"
@@ -119,6 +120,8 @@ export interface CashFlowRow {
    * la fecha de cobro. Ver `lib/cashflow/echeqs-en-filas.ts`.
    */
   echeq_de?: string
+  /** ⚠️ A-BUG-1553: factura sin pagar con un anticipo sin vincular del mismo CUIT e importe (ver `lib/cashflow/anticipo-sin-vincular.ts`). */
+  aviso_anticipo?: string
   /**
    * De qué empresa(s) es la fila. Es una LISTA porque un template puede ser `MSA/PAM` y tiene
    * que aparecer al filtrar cualquiera de las dos. Las facturas siempre traen una sola (la del
@@ -1215,7 +1218,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         chequesDeFilas = chs || []
       }
       const [filasArcaEcheq, filasAnticiposEcheq] = [partirFilasEnEcheqs(filasArca, chequesDeFilas), partirFilasEnEcheqs(filasAnticipos, chequesDeFilas)]
-      const todasLasFilas = [...filasArcaEcheq, ...filasTemplates, ...filasAnticiposEcheq, ...filasSueldos, ...filasAnticiposSueldos, ...filasVentas, ...filasVentasSinFC]
+      const todasLasFilas = marcarAnticiposSinVincular([...filasArcaEcheq, ...filasTemplates, ...filasAnticiposEcheq, ...filasSueldos, ...filasAnticiposSueldos, ...filasVentas, ...filasVentasSinFC])
         .sort((a, b) => a.fecha_estimada.localeCompare(b.fecha_estimada))
 
       // 8. Aplicar filtros

@@ -86,6 +86,8 @@ import { minutosEfectivos, validarMinutos, textoMinutos, valorCookieActividad, m
 import { desvioPorPausa, vigiaDebeDesviar } from "@/lib/auth/pausa"
 import { puedeMirarComo } from "@/lib/auth/como-persona"
 import { nuevasPrimero } from "@/lib/importar/orden-preview"
+import { echeqDelAnticipo } from "@/lib/pagos/echeq-anticipo"
+import { marcarAnticiposSinVincular } from "@/lib/cashflow/anticipo-sin-vincular"
 import { pideOtraVentana, linkSeccion } from "@/lib/ui/links"
 import { teclaDeItem, itemDeTecla, escribiendoEn } from "@/lib/ui/atajos-menu"
 import { vencimientosDeLaPersona, cuentasParaPagar, motivoPagoInvalido, montoAR, empresaDelPago, PREFIJO_DEVUELTA, documentosDeCuotas, motivoComprobanteInvalido, type CuotaDeLaPersona } from "@/lib/vencimientos/de-la-persona"
@@ -10287,6 +10289,25 @@ export function correrCasos(): Resultado[] {
       vigiaDebeDesviar(503, "/login"), vigiaDebeDesviar(401, "/")].map(b => b ? "va" : "queda").join(" · ")
     chequear("Accesos", "Vigía de pausa: con 503 lleva al aviso desde la app; con 200/401 o ya en el aviso o el login, se queda",
       "va · queda · queda · queda · queda", vgPz, vgPz === "va · queda · queda · queda · queda", "A-BUG-1542")
+    // ── 🔗 Vincular un anticipo pagado con ECHEQ (A-BUG-1553): la factura hereda el echeq; uno conciliado o por transferencia, no ──
+    const eA = [echeqDelAnticipo({ metodo_pago: "echeq", estado_pago: "echeq", fecha_cobro_echeq: "2026-12-13", fecha_pago: "2026-10-14" })?.fechaCobro ?? "no",
+      echeqDelAnticipo({ metodo_pago: "transferencia", estado_pago: "pagado" })?.fechaCobro ?? "no",
+      echeqDelAnticipo({ metodo_pago: "echeq", estado_pago: "conciliado", fecha_cobro_echeq: "2026-06-08" })?.fechaCobro ?? "no",
+      echeqDelAnticipo({ metodo_pago: null, estado_pago: "echeq", fecha_cobro_echeq: null, fecha_pago: "2026-09-04" })?.fechaCobro ?? "no"].join(" · ")
+    chequear("Accesos", "Anticipo con echeq: la factura que cubre hereda el echeq (su fecha de cobro); por transferencia o ya conciliado, no",
+      "2026-12-13 · no · no · 2026-09-04", eA, eA === "2026-12-13 · no · no · 2026-09-04", "A-BUG-1553")
+    // ── ⚠️ Factura que parece ya pagada por un anticipo sin vincular (A-BUG-1553 c): el caso Briki, con sus 3 echeqs netos de SICORE ──
+    const mA = marcarAnticiposSinVincular<import("@/lib/cashflow/anticipo-sin-vincular").FilaParaAviso>([
+      { id: "fac-briki", origen: "ARCA", cuit_proveedor: "30-71464615-6", estado: "pendiente", debitos: 14000000, imp_total: 14000000 },
+      { id: "ch1", origen: "ANTICIPO", cuit_proveedor: "30714646156", estado: "echeq", debitos: 4591025.01, monto_sicore: 226924.96, echeq_de: "ant-briki" },
+      { id: "ch2", origen: "ANTICIPO", cuit_proveedor: "30714646156", estado: "echeq", debitos: 4591025.01, monto_sicore: 226924.96, echeq_de: "ant-briki" },
+      { id: "ch3", origen: "ANTICIPO", cuit_proveedor: "30714646156", estado: "echeq", debitos: 4591025.02, monto_sicore: 226924.96, echeq_de: "ant-briki" },
+      { id: "fac-otra", origen: "ARCA", cuit_proveedor: "30714646156", estado: "pendiente", debitos: 500000, imp_total: 500000 },
+      { id: "fac-pagada", origen: "ARCA", cuit_proveedor: "30714646156", estado: "pagado", debitos: 14000000, imp_total: 14000000 },
+      { id: "fac-otro-cuit", origen: "ARCA", cuit_proveedor: "20111111112", estado: "pendiente", debitos: 14000000, imp_total: 14000000 },
+    ]).map(f => `${f.id}:${f.aviso_anticipo ? "aviso" : "-"}`).filter(x => x.startsWith("fac")).join(" · ")
+    chequear("Accesos", "Cash Flow: avisa la factura sin pagar con un anticipo sin vincular del mismo CUIT e importe (sus echeqs suman uno, neto de SICORE); no otra factura, ni una pagada, ni otro CUIT",
+      "fac-briki:aviso · fac-otra:- · fac-pagada:- · fac-otro-cuit:-", mA, mA === "fac-briki:aviso · fac-otra:- · fac-pagada:- · fac-otro-cuit:-", "A-BUG-1553")
     // ── ⬆️ Importar facturas: las nuevas arriba (A-FEAT-1554), el resto en el orden del archivo ──
     const np = nuevasPrimero([{ id: 1, estado: "duplicado" }, { id: 2, estado: "nueva" }, { id: 3, estado: "error" }, { id: 4, estado: "nueva" }, { id: 5, estado: "duplicado" }]).map(x => x.id).join("")
     chequear("Accesos", "Importar facturas: las nuevas primero (en el orden del archivo), después las que no se leyeron, al final las que ya existen",
