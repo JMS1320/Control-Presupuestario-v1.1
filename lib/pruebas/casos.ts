@@ -6807,6 +6807,22 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · hacienda", "Sin avisos cuando todo cuadra y no falta nada",
       "0 avisos", `${sano.avisos.length} avisos`, sano.avisos.length === 0, "A-FEAT-1187")
 
+    // 🐄 A-BUG-1540: como lo guarda la base — la venta y la muerte en POSITIVO. Tienen que restar (antes sumaban: 428 en vez de 414).
+    const comoLaBase = cuadrarHacienda([
+      mov("2025-06-30", "ajuste_stock", 100), mov("2026-03-30", "venta", 4, "Vaca CUT/Descarte"),
+      mov("2026-04-15", "mortandad", 1, "Ternero Recria"), mov("2026-03-29", "cambio_categoria", 4, "Vaca CUT/Descarte"),
+      mov("2026-03-29", "cambio_categoria", -4), mov("2025-07-31", "nacimiento", 10, "Ternero al Pie"),
+    ], INICIO, CIERRE, 105)
+    const sa = sistemaAlMomento([
+      { fecha: "2025-06-30", tipo: "ajuste_stock", cantidad: 10, categoria: "Vaca CUT/Descarte" },
+      { fecha: "2026-03-30", tipo: "venta", cantidad: 4, categoria: "Vaca CUT/Descarte" },
+      { fecha: "2026-04-15", tipo: "mortandad", cantidad: 1, categoria: "Vaca CUT/Descarte" },
+    ], "cierre", INICIO, CIERRE)
+    const vB = `cierre ${comoLaBase.existenciaCierreCalculada} · venta ${comoLaBase.porTipo.find(t => t.tipo === "venta")?.cabezas} · mortandad ${comoLaBase.porTipo.find(t => t.tipo === "mortandad")?.cabezas} · tres saldos CUT ${sa["Vaca CUT/Descarte"]}`
+    const eB = "cierre 105 · venta -4 · mortandad -1 · tres saldos CUT 5"
+    chequear("Balance · hacienda", "🐄 Venta y mortandad se guardan en positivo y RESTAN: el cuadre, la existencia y los tres saldos (antes las sumaban)",
+      eB, vB, vB === eB, "A-BUG-1540")
+
     // 🧨 EL CASO REAL DE MSA: la carga inicial está fechada DENTRO del ejercicio, así que la
     //    existencia al inicio es CERO y el papel no puede mostrar la variación del rodeo.
     const comoEstaMSA = cuadrarHacienda([

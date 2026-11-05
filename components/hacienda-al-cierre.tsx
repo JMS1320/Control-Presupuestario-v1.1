@@ -30,7 +30,7 @@ import { toast } from "sonner"
 import { primerDiaDelEjercicio, type Ejercicio } from "@/lib/balance/ejercicio"
 import { useDatosDelBalance, textoEstadoGuardado } from "@/lib/balance/datos-usuario"
 import {
-  cuadrarHacienda, type CuadreHacienda, type MovimientoDeHacienda,
+  cuadrarHacienda, cantidadConSigno, type CuadreHacienda, type MovimientoDeHacienda,
 } from "@/lib/balance/cuadre-hacienda"
 import {
   valuarHacienda, CRITERIOS,
@@ -166,7 +166,8 @@ export function HaciendaAlCierre({
         .map(m => ({
           fecha: String(m.fecha ?? "").slice(0, 10),
           tipo: String(m.tipo ?? ""),
-          cantidad: Number(m.cantidad ?? 0),
+          // 🐄 A-BUG-1540: con su signo (venta y mortandad se guardan en positivo y RESTAN), para la existencia y el cuadre.
+          cantidad: cantidadConSigno(String(m.tipo ?? ""), Number(m.cantidad ?? 0)),
           categoria: ((m.categoria as { nombre?: string } | null)?.nombre) ?? "",
         }))
 

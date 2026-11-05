@@ -20,6 +20,8 @@
  * habitual es una mortandad sin registrar).
  */
 
+import { cantidadConSigno } from "./cuadre-hacienda"
+
 export type MomentoSaldo = "inicio" | "cierre"
 export type FuenteManual = "senasa" | "campo" | "balance"
 
@@ -108,14 +110,15 @@ export function armarTresSaldos(
 
 /** Cabezas por categoría de la app a un momento: inicio = antes de `primerDia`; cierre = hasta `fechaCierre`. */
 export function sistemaAlMomento(
-  movs: { fecha: string; cantidad: number; categoria: string }[],
+  movs: { fecha: string; cantidad: number; categoria: string; tipo?: string }[],
   momento: MomentoSaldo, primerDia: string, fechaCierre: string,
 ): Record<string, number> {
   const r: Record<string, number> = {}
   for (const m of movs) {
     if (!m.categoria) continue
     if (momento === "inicio" ? m.fecha >= primerDia : m.fecha > fechaCierre) continue
-    r[m.categoria] = (r[m.categoria] ?? 0) + m.cantidad
+    // 🐄 A-BUG-1540: ventas y muertes restan, aunque vengan en positivo.
+    r[m.categoria] = (r[m.categoria] ?? 0) + cantidadConSigno(m.tipo ?? "", m.cantidad)
   }
   return r
 }

@@ -74,6 +74,19 @@ export interface CuadreHacienda {
 const r2 = (n: number) => Math.round(n * 100) / 100
 
 /**
+ * 🐄 **El signo de un movimiento de hacienda** (A-BUG-1540, 04/11). La base guarda la `cantidad` de una **venta** o una
+ * **mortandad** en POSITIVO («4 vendidas»): el tipo dice que salen. La pantalla de Hacienda ya lo resta; el papel del balance
+ * la sumaba cruda y contaba los animales vendidos y muertos como si entraran (428 cabezas al 30/06/26 en vez de 414).
+ * Idempotente: una venta ya negativa queda igual. Ajustes y cambios de categoría traen su signo; compra y nacimiento suman.
+ */
+export function cantidadConSigno(tipo: string, cantidad: number): number {
+  const t = (tipo || "").toLowerCase()
+  if (t === "venta" || t === "mortandad") return -Math.abs(cantidad)
+  if (t === "compra" || t === "nacimiento") return Math.abs(cantidad)
+  return cantidad
+}
+
+/**
  * Cuadra la existencia de hacienda del ejercicio.
  *
  * @param movimientos    todos los de la empresa, sin filtrar por fecha
@@ -87,6 +100,8 @@ export function cuadrarHacienda(
   fechaCierre: string,
   declarada: number,
 ): CuadreHacienda {
+  // 🐄 A-BUG-1540: ventas y muertes restan, aunque vengan en positivo.
+  movimientos = movimientos.map(m => ({ ...m, cantidad: cantidadConSigno(m.tipo, m.cantidad) }))
   const sinCategoria = movimientos.filter(m => !m.categoria?.trim())
   const contables = movimientos.filter(m => m.categoria?.trim())
 
