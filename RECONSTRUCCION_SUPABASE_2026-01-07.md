@@ -3326,6 +3326,9 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 ### 2026-11-03 · Template «AYSA Duhau» de MA (script 199, DATOS) — A-FEAT-1529 (2) — ✅ CORRIDO con OK de JMS
 `egresos_sin_factura`: «AYSA Duhau», copia de «AYSA Libertad» MA 2026 (AGUA · Fijos Buenos Aires MA · MA). Una cuota conciliada 20/04/2026 $ 27.588,70 y `ma.ma_galicia` de ese día («Pago de servicios AYSA 000158245700») atado a ella, sin la marca LIB. Ids en `scripts/199-hecho.json`. Deshacer: `199-…-deshacer.mts`.
 
+### 2026-11-05 · Anticipos con echeq vinculados a sus facturas (script 203, DATOS) — A-BUG-1553 — ✅ CORRIDO con OK de JMS
+Briki (anticipo `b6f3e5aa`, factura `07c378e3`) y De Francesco (`7dcfc3d2` / `d009c6a9`): la factura hereda SICORE (26-10 1ra), detalle y saldo neto (13.773.075,04 / 3.525.504,64) y queda `estado = echeq` con `metodo_pago`/`fecha_cobro_echeq`; el anticipo pasa a `vinculado`; `msa.sicore_retenciones` y `msa.cheques` (3 y 2) se atan a la factura. Iglesias (`12cef0e4`) y Arroyo Tala (`a6a44632`): `parcial` → `vinculado`. Verifica una FOTO antes de escribir. Deshacer: `npx tsx scripts/203-anticipos-echeq-vincular.mts --deshacer`.
+
 ### 2026-11-05 · `public.egresos_sin_factura.avisar_a` (script 202, ESTRUCTURA) — A-FEAT-1543 — ✅ CORRIDO con OK de JMS
 `alter table public.egresos_sin_factura add column if not exists avisar_a text[] not null default '{}'` (con su comment): los mails de las personas a las que les vence ese template («Lo que te vence» del Principal). Nace vacía en todas las filas (control en el script). Sin vistas (la tabla se expone directa), sin RLS ni permisos; el generador de campaña la copia sola (clona la fila). Aviso a Javier ANTES en ENTRE-DESARROLLADORES. Verificado con `explain update … set avisar_a`. Deshacer: `scripts/202-templates-avisar-a-deshacer.sql`.
 
