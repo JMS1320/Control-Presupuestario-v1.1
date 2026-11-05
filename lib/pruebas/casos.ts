@@ -214,6 +214,7 @@ import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/bal
 import { controlarCuotasTemplates, campaniaDelControl, claveDeNombre, CONTROL_CUOTAS_TEMPLATES, ultimoDiaDelMes, type ComisionesDelMes, type CuotaParaControl, type TemplateControlado, type EntradaControlCuotas } from "@/lib/balance/control-cuotas-templates"
 import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuestosYOtros } from "@/lib/balance/templates-libro"
 import { hojaAutomotores, pulirLibroH } from "@/lib/balance/export-libro-diario"
+import { hojaStockHacienda, hojaDetalleHacienda, hojaStockValorizado, linkCotizacion, DETALLES } from "@/lib/balance/stock-hacienda-papel"
 import { repartoDeLaFlota } from "@/lib/balance/reparto-flota"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda, precioDeCriterio, CRITERIOS } from "@/lib/balance/hacienda-stock"
@@ -298,7 +299,7 @@ import { leerResumenCajaAhorro, controlarResumen, armarConocido, resumenComoExce
 import { leerResumenSantander, controlarResumenSantander } from "@/lib/extractos/pdf-santander"
 import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla, linkGmail, procesadoDeMail, cambiosAlReaplicar, type MailRegistrado,
   claveDeTipoMail, problemaDeTipoNuevo, contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarPendientesArriba,
-  juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves, ordenarParaLista, rangoDelDia, ordenarCronologico } from "@/lib/mails/registro"
+  juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves, ordenarParaLista, rangoDelDia, ordenarCronologico, leerBusqueda, coincideBusquedaMail, textoBuscable } from "@/lib/mails/registro"
 import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
 import { partesDeRuta, problemaDeRuta, estadoDestino, idDeLinkDrive } from "@/lib/archivo/destinos"
 import { mailsParaArchivar, mailsParaCuota, agruparPorRegla, anioDeMail, vinculosConArchivos, controlArchivado, agruparPorTema, estadoSeleccion } from "@/lib/mails/lotes"
@@ -5070,6 +5071,36 @@ export function correrCasos(): Resultado[] {
       const vT = `sólo negro ${soloNegro?.precio} (${soloNegro?.origen.includes("no hubo A.ANGUS GRAL. COLORADO")}) · con colorado ${ambos?.precio}`
       chequear("Balance · hacienda", "🐂 Toro: A.ANGUS GRAL. COLORADO mínimo; si no se operó colorado, GRAL. NEGRO mínimo, y se dice",
         "sólo negro 3000000 (true) · con colorado 6500000", vT, vT === "sólo negro 3000000 (true) · con colorado 6500000", "A-FEAT-1541")
+    }
+    // 🐄 A-FEAT-1541 — el papel de stock: inicio + nacimientos − muertes ± reclasificación − ventas = cierre, por categoría de la planilla.
+    {
+      const mv = (fecha: string, tipo: string, cantidad: number, categoria: string) => ({ fecha, tipo, cantidad, categoria })
+      const movs = [mv("2025-06-30", "ajuste_stock", 10, "Vaca"), mv("2025-07-31", "nacimiento", 4, "Ternero al Pie"), mv("2025-12-31", "mortandad", 1, "Vaca"),
+        mv("2026-01-26", "cambio_categoria", -2, "Vaca"), mv("2026-01-26", "cambio_categoria", 2, "Vaca CUT/Descarte"), mv("2026-01-27", "venta", 2, "Vaca CUT/Descarte"),
+        mv("2026-07-10", "venta", 3, "Vaca")]
+      const rangos = Object.fromEntries(DETALLES.map(dd => { const h = hojaDetalleHacienda(movs, dd.tipo, dd.hoja, "2025-07-01", "2026-06-30"); return [dd.tipo, { d0: h.d0, d1: h.d1 }] }))
+      const h = hojaStockHacienda(movs, "2025-07-01", "2026-06-30", { "inicio.senasa.vacas": "12", "cierre.senasa.vacas": "8" }, rangos)
+      const fila = (n: string) => h.find(r => (r as any[])[0] === n) as any[]
+      const val = (c: any) => typeof c === "object" ? c.v : c
+      const vacas = fila("Vacas"), cut = fila("CUT / descarte"), tern = fila("Terneros/as")
+      const vS = `vacas inicio ${vacas[1]} senasa ${vacas[2]} · mort ${val(vacas[5])} reclas ${val(vacas[6])} · cierre ${val(vacas[10])} (${String(vacas[10].f)}) · control ${val(vacas[14])} · cut venta ${val(cut[8])} cierre ${val(cut[10])} · terneros nac ${val(tern[4])} · venta de julio fuera`
+      const eS = "vacas inicio 10 senasa 12 · mort -1 reclas -2 · cierre 7 (B5+SUM(E5:J5)) · control 0 · cut venta -2 cierre 0 · terneros nac 4 · venta de julio fuera"
+      chequear("Balance · hacienda", "🐄 Papel de stock: inicio NZ/SENASA, movimientos con su signo (SUMAR.SI sobre las solapas de detalle), cierre por fórmula y control contra la app; lo posterior al cierre no entra",
+        eS, vS, vS === eS, "A-FEAT-1541")
+      const det = hojaDetalleHacienda(movs, "venta", "VENTAS", "2025-07-01", "2026-06-30")
+      const vD = `${det.filas.slice(det.d0 - 1, det.d1).map(r => `${(r as any[])[1]} ${(r as any[])[3]}`).join(",")} · ${linkCotizacion("vientres", "2026-06-29").includes("ajax-modulo-vientre.php?desde=2026-06-29&hasta=2026-06-29")} · ${linkCotizacion("toros", "2025-05-11 a 2025-06-09").includes("desde=2025-05-11&hasta=2025-06-09")}`
+      chequear("Balance · hacienda", "🐄 Solapa de detalle con las ventas del ejercicio (cabezas en positivo) y el link a la cotización por día o por rango",
+        "Vaca CUT/Descarte 2 · true · true", vD, vD === "Vaca CUT/Descarte 2 · true · true", "A-FEAT-1541")
+      const fv = (categoria: string, cabezas: number, precio: number, factor: number, kg: number | null) => ({ categoria, cabezas, criterio: "c", precioReferencia: precio,
+        origenPrecio: `Entresurcos vientres · x · promedio · al 27/06/2025`, factor, pesoKg: kg, origenPeso: "p", valorPorCabeza: precio * factor * (kg ?? 1), valorTotal: precio * factor * (kg ?? 1) * cabezas, esHueco: false })
+      const vi = { filas: [fv("Vaca", 150, 1000000, 0.9, null)], cabezas: 150, valuado: 135000000, huecos: [], cabezasSinValuar: 0, sinCriterio: [] }
+      const hv = hojaStockValorizado({ cierre: vi, inicio: vi, fechaCierre: "2026-06-30", fechaInicio: "2025-06-30", tcCierre: 1473, ddjjInicio: { cuenta: "1.2.2/05/01", denominacion: "VACAS DE CRÍA", valor: 255479054.9 } })
+      const tres = hv.filter(r => /^(App|Papeles|DDJJ)/.test(String((r as any[])[0] ?? ""))).map(r => `${String((r as any[])[0]).split(" ")[0]} ${val((r as any[])[5])}`)
+      const vaca = hv.find(r => (r as any[])[0] === "VACAS al parir") as any[]
+      const vV = `${tres.join(" · ")} · vaca ${String(vaca[3].f)}=${vaca[3].v} · link ${typeof vaca[13] === "object"}`
+      const eV = "App 135000000 · Papeles 405560000 · DDJJ 255479054.9 · vaca K9*L9=900000 · link true"
+      chequear("Balance · hacienda", "💰 Valorizado con el formato del papel 2.2: valor kg/unidad = precio × factor (fórmula), link a la cotización y los tres valores del inicio (app, papeles de JMS, DDJJ)",
+        eV, vV, vV === eV, "A-FEAT-1541")
     }
     chequear("Balance · hacienda", "🔑 Toritos: el precio del toro (A.ANGUS GRAL. COLORADO mínimo), por cabeza = 7.000.000",
       "7000000", String(de("Torito")?.valorPorCabeza),
@@ -10858,6 +10889,13 @@ export function correrCasos(): Resultado[] {
       const vCrono = [ordenarCronologico(sm).map(m => m.id).join(""), oC.lista.map(m => m.id).join(""), oCa.lista.map(m => m.id).join("")].join(" · ")
       chequear("Mails", "🕐 Vista cronológica: por fecha del mail (el más nuevo primero, o al revés), sin subir los pendientes; los del período siguen arriba de los pendientes viejos",
         "daefbc · daefbc · adcbfe", vCrono, vCrono === "daefbc · daefbc · adcbfe", "A-FEAT-1551")
+      // 🔎 A-FEAT-1548: buscador — sin acentos, todas las palabras en cualquier campo, «frase», -excluir, números con puntos
+      const mB = textoBuscable({ asunto: "Mora en el pago del impuesto Inmobiliario complementario cuota 3", remitente: "arba@arba.gov.ar", remitente_nombre: "ARBA",
+        destinatarios: null, extracto: "Importe adeudado $ 61.126,50", adjuntos: [{ nombre: "boleta-cuota3.pdf" } as never], tipo: "impuestos", tipo_manual: null, procesado_por: null, seguimiento_nota: "lo paga MA" })
+      const qs = ["INMOBILIARIO arba", "\"cuota 3\" boleta", "61126", "complementario -mora", "impuestos ma", "Inmobiliário"]
+      const vBus = qs.map(q => coincideBusquedaMail(mB, leerBusqueda(q)) ? "sí" : "no").join(" · ") + " | " + JSON.stringify(leerBusqueda('abl "cuota 11" -mora'))
+      chequear("Mails", "🔎 Buscador: sin acentos ni mayúsculas, todas las palabras en cualquier campo (texto, adjuntos, tipo, nota), «frase exacta», -excluir, y números con o sin puntos",
+        'sí · sí · sí · no · sí · sí | {"incluye":["abl","cuota 11"],"excluye":["mora"]}', vBus, vBus === 'sí · sí · sí · no · sí · sí | {"incluye":["abl","cuota 11"],"excluye":["mora"]}', "A-FEAT-1548")
       const vJ = juntarConPendientes([{ id: "1" }, { id: "2" }], [{ id: "2" }, { id: "9" }]).map(x => x.id).join("")
       chequear("Mails", "📌 Los pendientes de antes del período se suman a la lista sin repetir", "129", vJ, vJ === "129", "A-FEAT-1437")
 

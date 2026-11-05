@@ -438,7 +438,8 @@ function RegistroMails() {
           <button type="button" className={`px-2 py-1 ${vista === "cronologica" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
             onClick={() => setVista("cronologica")} title="Por fecha del mail, como en la casilla">Cronológica</button>
         </div>
-        <Input placeholder="Buscar en asunto, remitente o destinatario" value={texto} onChange={e => setTexto(e.target.value)} className="h-8 max-w-xs" />
+        <Input placeholder="Buscar… (varias palabras, «frase exacta», -sin esto)" value={texto} onChange={e => setTexto(e.target.value)} className="h-8 max-w-xs"
+          title={"Busca en asunto, de/para, el texto del mail, los adjuntos, el tipo, lo que se hizo y la nota.\nSin acentos ni mayúsculas. Varias palabras: tienen que estar todas.\n\"cuota 11\" = frase exacta · -mora = que no diga mora · 61126 encuentra 61.126,50"} />
         {/* 🔄 A-BUG-1550: gira mientras lee y avisa al terminar. Lee lo que registró el robot del mail (pasa cada ~15 min). */}
         <Button size="sm" variant="ghost" disabled={cargando} title="Volver a leer lo que registró el robot del mail (pasa cada ~15 min; no trae de Gmail lo que todavía no registró)"
           onClick={async () => {

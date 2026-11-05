@@ -99,16 +99,61 @@ export interface FiltroMails {
 
 /** Pura: aplica el filtro. */
 export function filtrarMails(mails: MailRegistrado[], f: FiltroMails): MailRegistrado[] {
-  const q = f.texto.trim().toLowerCase()
+  const consulta = f.texto.trim() ? leerBusqueda(f.texto) : null
   return mails.filter(m => {
     if (f.grupos.size && !f.grupos.has(grupoDeMail(m))) return false
     if (f.tipos.size && !f.tipos.has(tipoDeMail(m) ?? "sin_tipo")) return false
-    if (q) {
-      const en = [m.asunto, m.remitente, m.remitente_nombre, m.destinatarios].filter(Boolean).join(" ").toLowerCase()
-      if (!en.includes(q)) return false
-    }
+    if (consulta && !coincideBusquedaMail(textoBuscable(m), consulta)) return false
     return true
   })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// 🔎 BUSCADOR «INTELIGENTE» — A-FEAT-1548 (JMS 31/10: «buscador inteligente (ponerle esmero)» · 03/11 «falta un buscador»)
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Sin acentos ni mayúsculas: «Inmobiliario Complementario» = «inmobiliario complementario» = «INMOBILIARIO». */
+export function normalizarBusqueda(t: string): string {
+  return t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+}
+
+export interface Busqueda { incluye: string[]; excluye: string[] }
+
+/**
+ * Pura: «abl "cuota 11" -mora» → incluye [abl, cuota 11], excluye [mora]. Entre comillas = frase exacta; con «-» delante =
+ * que NO esté. Todas las palabras tienen que estar (en cualquier campo).
+ */
+export function leerBusqueda(texto: string): Busqueda {
+  const incluye: string[] = [], excluye: string[] = []
+  const re = /(-?)"([^"]+)"|(-?)(\S+)/g
+  let x: RegExpExecArray | null
+  while ((x = re.exec(texto))) {
+    const neg = (x[1] || x[3]) === "-"
+    const t = normalizarBusqueda((x[2] ?? x[4] ?? "").trim())
+    if (!t) continue
+    ;(neg ? excluye : incluye).push(t)
+  }
+  return { incluye, excluye }
+}
+
+/** Todo lo que se puede buscar de un mail, ya normalizado: asunto, de/para, texto, adjuntos, tipo, qué se hizo y la nota. */
+export function textoBuscable(m: Pick<MailRegistrado, "asunto" | "remitente" | "remitente_nombre" | "destinatarios" | "extracto" | "adjuntos" | "tipo" | "tipo_manual" | "procesado_por" | "seguimiento_nota">): string {
+  return normalizarBusqueda([
+    m.asunto, m.remitente, m.remitente_nombre, m.destinatarios, m.extracto,
+    ...(m.adjuntos ?? []).map(a => a.nombre), m.tipo_manual ?? m.tipo, m.procesado_por, m.seguimiento_nota,
+  ].filter(Boolean).join(" \n "))
+}
+
+/** ¿El texto tiene esta palabra? Un número se encuentra aunque esté escrito con puntos y coma (61126 ↔ 61.126,50). */
+function tiene(texto: string, palabra: string): boolean {
+  if (texto.includes(palabra)) return true
+  const soloDigitos = palabra.replace(/[.,]/g, "")
+  if (/^\d{3,}$/.test(soloDigitos)) return texto.replace(/(\d)[.,](?=\d)/g, "$1").includes(soloDigitos)
+  return false
+}
+
+export function coincideBusquedaMail(texto: string, b: Busqueda): boolean {
+  return b.incluye.every(p => tiene(texto, p)) && !b.excluye.some(p => tiene(texto, p))
 }
 
 /**
