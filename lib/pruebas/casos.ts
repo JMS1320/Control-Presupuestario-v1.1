@@ -87,6 +87,7 @@ import { desvioPorPausa, vigiaDebeDesviar } from "@/lib/auth/pausa"
 import { puedeMirarComo } from "@/lib/auth/como-persona"
 import { nuevasPrimero } from "@/lib/importar/orden-preview"
 import { echeqDelAnticipo } from "@/lib/pagos/echeq-anticipo"
+import { armarPlanillaBoletas, decisionPropuesta, importeElegido } from "@/lib/arba/planilla-boletas"
 import { marcarAnticiposSinVincular } from "@/lib/cashflow/anticipo-sin-vincular"
 import { pideOtraVentana, linkSeccion } from "@/lib/ui/links"
 import { teclaDeItem, itemDeTecla, escribiendoEn } from "@/lib/ui/atajos-menu"
@@ -5099,9 +5100,9 @@ export function correrCasos(): Resultado[] {
       const vi = { filas: [fv("Vaca", 150, 1000000, 0.9, null)], cabezas: 150, valuado: 135000000, huecos: [], cabezasSinValuar: 0, sinCriterio: [] }
       const hv = hojaStockValorizado({ cierre: vi, inicio: vi, fechaCierre: "2026-06-30", fechaInicio: "2025-06-30", tcCierre: 1473, ddjjInicio: { cuenta: "1.2.2/05/01", denominacion: "VACAS DE CRÍA", valor: 255479054.9 } })
       const tres = hv.filter(r => /^(App|Papeles|DDJJ)/.test(String((r as any[])[0] ?? ""))).map(r => `${String((r as any[])[0]).split(" ")[0]} ${val((r as any[])[5])}`)
-      const vaca = hv.find(r => (r as any[])[0] === "VACAS al parir") as any[]
+      const vaca = hv.find(r => { const c = (r as any[])[0]; return (c?.v ?? c) === "VACAS al parir" }) as any[]
       const vV = `${tres.join(" · ")} · vaca ${String(vaca[3].f)}=${vaca[3].v} · link ${typeof vaca[11] === "object"}`
-      const eV = "App 135000000 · Papeles 405560000 · DDJJ 255479054.9 · vaca K9*O9=900000 · link true"
+      const eV = "App 135000000 · Papeles 405560000 · DDJJ 255479054.9 · vaca K10*O10=900000 · link true"
       chequear("Balance · hacienda", "💰 Valorizado con el formato del papel 2.2: valor kg/unidad = precio × factor (fórmula), link a la cotización y los tres valores del inicio (app, papeles de JMS, DDJJ)",
         eV, vV, vV === eV, "A-FEAT-1541")
       // 📈 JMS 05/11: el aumento del rodeo en dólares, cría y recría aparte — el aumento = por cantidad + por precio, y la categoría que
@@ -10322,6 +10323,28 @@ export function correrCasos(): Resultado[] {
     ]).map(f => `${f.id}:${f.aviso_anticipo ? "aviso" : "-"}`).filter(x => x.startsWith("fac")).join(" · ")
     chequear("Accesos", "Cash Flow: avisa la factura sin pagar con un anticipo sin vincular del mismo CUIT e importe (sus echeqs suman uno, neto de SICORE); no otra factura, ni una pagada, ni otro CUIT",
       "fac-briki:aviso · fac-otra:- · fac-pagada:- · fac-otro-cuit:-", mA, mA === "fac-briki:aviso · fac-otra:- · fac-pagada:- · fac-otro-cuit:-", "A-BUG-1553")
+    // ── 🗂️ Boletas ARBA en la planilla (A-FEAT-1565): historia, presupuestada vs vino, dif vs anterior, y las que NO vinieron ──
+    {
+      const tps = [{ id: "rojas", nombre: "Inmobiliario Cuota Rojas", responsable: "MSA", partida: "090-016369-0" },
+        { id: "casco", nombre: "Inmobiliario Cuota Casco", responsable: "PAM", partida: "099-006595-0" },
+        { id: "tapera3", nombre: "Inmobiliario Cuota Tapera 3", responsable: "PAM", partida: "099-015886-0" }]
+      const cs = [1, 2, 3, 4].flatMap(n => [
+        { id: `r${n}`, egresoId: "rojas", numero: n, monto: n === 3 ? 2214038.5 : n === 4 ? 2214038.5 : 2000000, vencimiento: null, estado: n < 4 ? "conciliado" : "pendiente" },
+        { id: `c${n}`, egresoId: "casco", numero: n, monto: 1265318, vencimiento: null, estado: n < 4 ? "conciliado" : "pendiente" },
+        { id: `t${n}`, egresoId: "tapera3", numero: n, monto: 50000, vencimiento: null, estado: "pendiente" }])
+      const bs = [{ idx: 0, egresoId: "rojas", cuotaId: "r4", cuotaNro: 4, importe: 2460212.6, vencimiento: "2026-11-12", url: "https://drive/rojas", aplicada: false, problema: null },
+        { idx: 1, egresoId: "casco", cuotaId: "c4", cuotaNro: 4, importe: 1406006, vencimiento: "2026-11-12", url: null, aplicada: false, problema: null }]
+      const pl = armarPlanillaBoletas(tps, cs, bs)
+      const msa = pl.find(b => b.responsable === "MSA")!.filas[0]
+      const pam = pl.find(b => b.responsable === "PAM")!
+      const tap = pam.filas.find(f => f.campo === "Tapera 3")!
+      const vPl = [msa.campo, msa.anteriores.map(a => a.numero).join(""), msa.presupuestada, msa.vino, msa.difPresup, msa.pctPresup, msa.difAnterior,
+        pam.faltan, tap.cuotaNro, tap.presupuestada, tap.vino ?? "no vino", decisionPropuesta(msa), decisionPropuesta(tap),
+        importeElegido(msa, "aceptar", null), importeElegido(msa, "presupuestada", null), importeElegido(msa, "otra", 2400000)].join(" · ")
+      chequear("Boletas ARBA", "Planilla por responsable: cuotas anteriores, presupuestada vs la que vino y contra la anterior; la que no vino figura (con su cuota presupuestada); propone aceptar sólo si cambia; el elegido según la decisión",
+        "Rojas · 123 · 2214038.5 · 2460212.6 · 246174.1 · 11.12 · 246174.1 · 1 · 4 · 50000 · no vino · aceptar · presupuestada · 2460212.6 · 2214038.5 · 2400000", vPl,
+        vPl === "Rojas · 123 · 2214038.5 · 2460212.6 · 246174.1 · 11.12 · 246174.1 · 1 · 4 · 50000 · no vino · aceptar · presupuestada · 2460212.6 · 2214038.5 · 2400000", "A-FEAT-1565")
+    }
     // ── ⬆️ Importar facturas: las nuevas arriba (A-FEAT-1554), el resto en el orden del archivo ──
     const np = nuevasPrimero([{ id: 1, estado: "duplicado" }, { id: 2, estado: "nueva" }, { id: 3, estado: "error" }, { id: 4, estado: "nueva" }, { id: 5, estado: "duplicado" }]).map(x => x.id).join("")
     chequear("Accesos", "Importar facturas: las nuevas primero (en el orden del archivo), después las que no se leyeron, al final las que ya existen",

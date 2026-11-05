@@ -14,6 +14,7 @@
  */
 import { CATEGORIAS_PLANILLA } from "./tres-saldos-hacienda"
 import { cantidadConSigno } from "./cuadre-hacienda"
+import { unirCeldas } from "./formato-excel"
 import { DESCUENTO_COMERCIALIZACION, type ValuacionHacienda, type PrecioMag, type PrecioMercado, type PrecioCabeza } from "./hacienda-stock"
 import type { PesoCategoria } from "./pesos-hacienda"
 
@@ -103,14 +104,17 @@ export function hojaStockHacienda(movs: MovimientoPapel[], primerDia: string, fe
   const mac = CATEGORIAS_PLANILLA.filter(c => !HEMBRAS.has(c.clave) && c.clave !== "terneros").map(c => c.clave)
   const idx = (k: string) => CATEGORIAS_PLANILLA.findIndex(c => c.clave === k)
   const sumaV = (i: number, ks: string[]) => ks.reduce((s, k) => s + valores[idx(k)][i], 0)
+  const sinSenasa = CATEGORIAS_PLANILLA.every(c => v(`cierre.senasa.${c.clave}`) == null)
   for (const [nombre, ks] of [["Hembras (sin terneras al pie)", hem], ["Machos (sin terneros al pie)", mac]] as const) {
     const r = f.length + 1
     const nz = sumaV(9, ks), sn = sumaV(10, ks)
-    f.push([nombre, { t: "n", f: suma("K", ks), v: nz }, { t: "n", f: suma("L", ks), v: sn }, { t: "n", f: `C${r}-B${r}`, v: sn - nz }])
+    // SUM y no «+»: una celda sin cargar es texto vacío y la suma con «+» da #¡VALOR!
+    f.push([nombre, { t: "n", f: `SUM(${suma("K", ks).replace(/\+/g, ",")})`, v: nz }, { t: "n", f: `SUM(${suma("L", ks).replace(/\+/g, ",")})`, v: sn },
+      sinSenasa ? "SENASA sin cargar" : { t: "n", f: `C${r}-B${r}`, v: sn - nz }])
   }
   const r = f.length + 1
   const nzT = valores.reduce((s, x) => s + x[9], 0), snT = valores.reduce((s, x) => s + x[10], 0)
-  f.push(["TOTAL", { t: "n", f: `K${t1 + 1}`, v: nzT }, { t: "n", f: `L${t1 + 1}`, v: snT }, { t: "n", f: `C${r}-B${r}`, v: snT - nzT }])
+  f.push(["TOTAL", { t: "n", f: `K${t1 + 1}`, v: nzT }, { t: "n", f: `L${t1 + 1}`, v: snT }, sinSenasa ? "SENASA sin cargar" : { t: "n", f: `C${r}-B${r}`, v: snT - nzT }])
   f.push(["SENASA al cierre se carga a mano en la pantalla del balance (Hacienda → saldos). Una diferencia suele ser una muerte o un nacimiento no informado: se explica, no se fuerza."])
   return f
 }
@@ -152,15 +156,22 @@ const fechaDe = (origen: string) => { const m = origen.match(/al (\d{2})\/(\d{2}
 /** 🔗 Un link discreto: azul y subrayado, como los de la web (JMS 05/11). */
 const link = (texto: string, url: string) => ({ t: "s", v: texto, l: { Target: url }, s: { font: { color: { rgb: "0563C1" }, underline: true } } })
 /** Una celda con relleno (xlsx-js-style): conserva el valor, la fórmula y el link si los tiene. */
-const conRelleno = (c: unknown, rgb: string) => {
+const conEstilo = (c: unknown, estilo: Record<string, unknown>) => {
   const base = c != null && typeof c === "object" ? { ...(c as object) } as Record<string, unknown>
     : { v: c ?? "", t: typeof c === "number" ? "n" : "s" }
-  return { ...base, s: { ...((base.s as object) ?? {}), fill: { patternType: "solid", fgColor: { rgb } } } }
+  return { ...base, s: { ...((base.s as object) ?? {}), ...estilo } }
 }
+const conRelleno = (c: unknown, rgb: string) => conEstilo(c, { fill: { patternType: "solid", fgColor: { rgb } } })
 
 /** 💵 JMS 05/11: «siempre diferenciado de color las columnas de dólares de las de pesos» — los dólares en celeste. */
-const AZUL = "DDEBF7"
-const usd = (c: unknown) => conRelleno(c, AZUL)
+// 🎨 Los colores que puso JMS en su papel (05/11): pesos celeste, dólares verde, precio y link amarillo.
+const COLOR_PESOS = "DBEEF4", COLOR_USD = "D7E4BD"
+const usd = (c: unknown) => conRelleno(c, COLOR_USD)
+const pesos = (c: unknown) => conRelleno(c, COLOR_PESOS)
+const LINEA = { style: "thin", color: { rgb: "000000" } }
+/** Borde fino en los cuatro lados (la tabla del 2.2 va enmarcada). */
+const borde = (c: unknown) => conEstilo(c, { border: { top: LINEA, bottom: LINEA, left: LINEA, right: LINEA } })
+const centrado = (c: unknown) => conEstilo(c, { alignment: { horizontal: "center", vertical: "center", wrapText: true } })
 /** 👀 Lo que tiene que llamar la atención en la trazabilidad (el precio y su link): fondo ámbar. */
 const ojo = (c: unknown) => conRelleno(c, "FFE699")
 const enNegrita = (texto: string) => ({ t: "s", v: texto, s: { font: { bold: true } } })
@@ -173,13 +184,21 @@ const enNegrita = (texto: string) => ({ t: "s", v: texto, s: { font: { bold: tru
 function bloque22(f: unknown[][], titulo: string, v: ValuacionHacienda, tc: number, tcOrigen: string):
   { r0: number; r1: number; rt: number; rtc: number; filaDe: Record<string, number> } {
   f.push([]); f.push(["SAN MANUEL S.R.L."]); f.push([])
-  f.push([titulo, "", "", "", "", "VALORIZACIÓN"])
-  f.push(["Valores de mercado — mismo cálculo de la app", "", "", "PESOS", "", "", usd("DÓLARES"), usd(""), usd("")])
-  f.push(["HACIENDA", "CANTIDAD", "KG", "VALOR KG/UNIDAD", "VALOR POR CAB", "STOCK VALORIZADO", usd("VALOR KG/UNIDAD U$S"), usd("VALOR POR CAB U$S"), usd("STOCK U$S"), "",
-    ojo(enNegrita("Precio de referencia")), ojo(enNegrita("Ver en la web")), "Categoría (app)", "Criterio", "Factor", "De dónde sale el precio", "De dónde sale el peso"])
+  const tit = (c: unknown) => centrado(conEstilo(conRelleno(c, "EEF1F0"), { font: { bold: true } }))
+  f.push([tit(titulo), tit(""), tit(""), tit(""), tit(""), tit("VALORIZACIÓN"), tit(""), tit(""), tit("")])
+  f.push([])   // JMS 05/11: una fila entre el título y la tabla
+  const rv = f.length + 1
+  f.push([borde(conRelleno("Valores de mercado — mismo cálculo de la app", "FFFFFF")), borde(""), borde(""), borde(centrado(pesos("PESOS"))), borde(pesos("")), borde(pesos("")),
+    borde(centrado(usd("DÓLARES"))), borde(usd("")), borde(usd("")), ...Array.from({ length: 8 }, () => conRelleno("", "FFFFFF"))])
+  unirCeldas(f, [`A${rv}:C${rv}`, `D${rv}:F${rv}`, `G${rv}:I${rv}`])
+  const enc = (c: unknown) => borde(centrado(c))
+  f.push([enc("HACIENDA"), enc("CANTIDAD"), enc("KG"), enc(pesos("VALOR KG/UNIDAD")), enc(pesos("VALOR POR CAB")), enc(pesos("STOCK VALORIZADO")),
+    enc(usd("VALOR KG/UNIDAD U$S")), enc(usd("VALOR POR CAB U$S")), enc(usd("STOCK U$S")), "",
+    enc(ojo(enNegrita("Precio de referencia"))), enc(ojo(enNegrita("Ver en la web"))), enc("Categoría (app)"), enc("Criterio"), enc("Factor"),
+    enc("De dónde sale el precio"), enc("De dónde sale el peso")])
   const filas = [...v.filas].sort((a, b) => (ORDEN.indexOf(a.categoria) + 99) % 99 - (ORDEN.indexOf(b.categoria) + 99) % 99)
   const r0 = f.length + 1
-  const rtc = r0 + filas.length + 3   // TOTAL, descuento, neto, tipo de cambio
+  const rtc = r0 + filas.length + 3   // TOTAL, descuento, neto, tipo de cambio (r0 ya cuenta la fila en blanco de arriba)
   const T = `$F$${rtc}`
   const filaDe: Record<string, number> = {}
   for (const x of filas) {
@@ -190,9 +209,9 @@ function bloque22(f: unknown[][], titulo: string, v: ValuacionHacienda, tc: numb
     const fte = fuenteDe(x.origenPrecio)
     const unidad = (x.precioReferencia ?? 0) * x.factor
     f.push([ETIQ[x.categoria] ?? x.categoria, x.cabezas, porKg ? x.pesoKg : "",
-      conPrecio ? { t: "n", f: `K${r}*O${r}`, v: unidad } : "",
-      conPrecio ? { t: "n", f: porKg ? `C${r}*D${r}` : `D${r}`, v: x.valorPorCabeza ?? 0 } : "falta el precio",
-      conPrecio ? { t: "n", f: `B${r}*E${r}`, v: x.valorTotal ?? 0 } : 0,
+      pesos(conPrecio ? { t: "n", f: `K${r}*O${r}`, v: unidad } : ""),
+      pesos(conPrecio ? { t: "n", f: porKg ? `C${r}*D${r}` : `D${r}`, v: x.valorPorCabeza ?? 0 } : "falta el precio"),
+      pesos(conPrecio ? { t: "n", f: `B${r}*E${r}`, v: x.valorTotal ?? 0 } : 0),
       usd(conPrecio ? { t: "n", f: `D${r}/${T}`, v: unidad / tc } : ""),
       usd(conPrecio ? { t: "n", f: `E${r}/${T}`, v: (x.valorPorCabeza ?? 0) / tc } : ""),
       usd(conPrecio ? { t: "n", f: `F${r}/${T}`, v: (x.valorTotal ?? 0) / tc } : 0), "",
@@ -200,17 +219,20 @@ function bloque22(f: unknown[][], titulo: string, v: ValuacionHacienda, tc: numb
       //    "ver la cotización" en formato link discreto».
       ojo(x.precioReferencia ?? ""), ojo(fte ? link("ver la cotización", linkCotizacion(fte, fechaDe(x.origenPrecio))) : ""),
       x.categoria, x.criterio, x.factor, x.origenPrecio, porKg ? x.origenPeso : "se valúa por cabeza"])
+    // la tabla enmarcada: borde en el reporte (A–I) y en la trazabilidad (K–Q)
+    const fila = f[f.length - 1]
+    f[f.length - 1] = fila.map((c, i) => (i === 9 ? c : borde(c)))
   }
   const r1 = f.length
   const rt = f.length + 1
-  f.push(["TOTAL HACIENDA (a precio de mercado)", { t: "n", f: `SUM(B${r0}:B${r1})`, v: v.cabezas }, "", "", "", { t: "n", f: `SUM(F${r0}:F${r1})`, v: v.valuado },
+  f.push(["TOTAL HACIENDA (a precio de mercado)", { t: "n", f: `SUM(B${r0}:B${r1})`, v: v.cabezas }, "", pesos(""), pesos(""), pesos({ t: "n", f: `SUM(F${r0}:F${r1})`, v: v.valuado }),
     usd(""), usd(""), usd({ t: "n", f: `SUM(I${r0}:I${r1})`, v: v.valuado / tc })])
   // 💰 JMS 05/11: «un descuento de CZ sobre el total del valor del rodeo, 10 % de comercialización total».
   const pct = DESCUENTO_COMERCIALIZACION
-  f.push([`Descuento de comercialización (CZ) ${Math.round(pct * 100)} % sobre el total`, "", "", "", "", { t: "n", f: `-F${rt}*${pct}`, v: -(v.descuento ?? Math.round(v.valuado * pct * 100) / 100) },
+  f.push([`Descuento de comercialización (CZ) ${Math.round(pct * 100)} % sobre el total`, "", "", pesos(""), pesos(""), pesos({ t: "n", f: `-F${rt}*${pct}`, v: -(v.descuento ?? Math.round(v.valuado * pct * 100) / 100) }),
     usd(""), usd(""), usd({ t: "n", f: `-I${rt}*${pct}`, v: -v.valuado * pct / tc })])
   const rn = f.length + 1
-  f.push(["TOTAL NETO — valor del balance", "", "", "", "", { t: "n", f: `F${rt}+F${rt + 1}`, v: v.neto ?? Math.round(v.valuado * (1 - pct) * 100) / 100 },
+  f.push(["TOTAL NETO — valor del balance", "", "", pesos(""), pesos(""), pesos({ t: "n", f: `F${rt}+F${rt + 1}`, v: v.neto ?? Math.round(v.valuado * (1 - pct) * 100) / 100 }),
     usd(""), usd(""), usd({ t: "n", f: `I${rt}+I${rt + 1}`, v: v.valuado * (1 - pct) / tc })])
   f.push(["", "", "", "", "Tipo de cambio", tc, tcOrigen])
   if (v.huecos.length) f.push([`⚠️ Sin precio: ${v.huecos.map(h => `${h.categoria} (${h.cabezas} cab.)`).join(", ")} — no se valúan en cero.`])
@@ -258,7 +280,7 @@ export function hojaStockValorizado(d: DatosValorizado): unknown[][] {
   f.push([`Papeles de JMS ${dmy(p.fecha)} — ${p.fuente}`, "", "", "", "", papeles, { t: "n", f: `F${a + 1}-F${a}`, v: papeles - netoIni }])
   if (d.ddjjInicio) f.push([`DDJJ — balance del contador: ${d.ddjjInicio.cuenta} «${d.ddjjInicio.denominacion}» (sin apertura)`, "", "", "", "", d.ddjjInicio.valor,
     { t: "n", f: `F${a + 2}-F${a}`, v: d.ddjjInicio.valor - netoIni }])
-  f.push([]); f.push(["CATEGORÍA POR CATEGORÍA — app (a precio de mercado, antes del 10 %) contra los papeles de JMS", "", "", "", "", "App", "Papeles", "", "Diferencia"])
+  f.push([]); f.push([`CATEGORÍA POR CATEGORÍA AL ${dmy(d.fechaInicio)} (cierre anterior = inicio de este ejercicio) — app (a precio de mercado, antes del 10 %) contra los papeles de JMS`, "", "", "", "", "App", "Papeles", "", "Diferencia"])
   for (let r = ini.r0; r <= ini.r1; r++) {
     const fila = f[r - 1] as unknown[]
     const cat = String(fila[12] ?? "")
@@ -275,8 +297,9 @@ export function hojaStockValorizado(d: DatosValorizado): unknown[][] {
  * Inicio contra cierre del precio por unidad (columna «VALOR KG/UNIDAD» de cada bloque), con fórmula, en pesos y en dólares.
  */
 function variacionDePrecios(f: unknown[][], d: DatosValorizado, cie: ReturnType<typeof bloque22>, ini: ReturnType<typeof bloque22>) {
-  f.push([]); f.push(["VARIACIÓN DE PRECIOS POR CATEGORÍA — inicio contra cierre (por cabeza lo que se valúa por cabeza; por kilo la recría, sin importar cuánto pese)"])
-  f.push(["Categoría", "Unidad", "Inicio $", "Cierre $", "Variación $", "Variación %", usd("Inicio U$S"), usd("Cierre U$S"), usd("Variación U$S"), usd("Variación %")])
+  f.push([]); f.push([`VARIACIÓN DE PRECIOS POR CATEGORÍA — entre el cierre anterior (${dmy(d.fechaInicio)}) y este cierre (${dmy(d.fechaCierre)}) — por cabeza lo que se valúa por cabeza; por kilo la recría, sin importar cuánto pese`])
+  f.push(["Categoría", "Unidad", pesos(`Cierre anterior ${dmy(d.fechaInicio)} $`), pesos(`Este cierre ${dmy(d.fechaCierre)} $`), pesos("Variación $"), pesos("Variación %"),
+    usd(`Cierre anterior U$S`), usd(`Este cierre U$S`), usd("Variación U$S"), usd("Variación %")])
   const Ti = `$F$${ini.rtc}`, Tc = `$F$${cie.rtc}`
   const ti = PAPELES_JMS_INICIO_2025.tc, tc = d.tcCierre ?? 1
   const pct = (a: number, b: number) => (a ? b / a - 1 : 0)
@@ -284,8 +307,8 @@ function variacionDePrecios(f: unknown[][], d: DatosValorizado, cie: ReturnType<
   const renglon = (nombre: string, unidad: string, ci: { v: number; f?: string }, cc: { v: number; f?: string }) => {
     const r = f.length + 1
     const ui = ci.v / ti, uc = cc.v / tc
-    f.push([nombre, unidad, ci.f ? { t: "n", f: ci.f, v: ci.v } : ci.v, cc.f ? { t: "n", f: cc.f, v: cc.v } : cc.v,
-      { t: "n", f: `D${r}-C${r}`, v: cc.v - ci.v }, { t: "n", f: `IF(C${r}=0,0,D${r}/C${r}-1)`, v: pct(ci.v, cc.v), z: "0.0%" },
+    f.push([nombre, unidad, pesos(ci.f ? { t: "n", f: ci.f, v: ci.v } : ci.v), pesos(cc.f ? { t: "n", f: cc.f, v: cc.v } : cc.v),
+      pesos({ t: "n", f: `D${r}-C${r}`, v: cc.v - ci.v }), pesos({ t: "n", f: `IF(C${r}=0,0,D${r}/C${r}-1)`, v: pct(ci.v, cc.v), z: "0.0%" }),
       usd({ t: "n", f: `C${r}/${Ti}`, v: ui }), usd({ t: "n", f: `D${r}/${Tc}`, v: uc }), usd({ t: "n", f: `H${r}-G${r}`, v: uc - ui }),
       usd({ t: "n", f: `IF(G${r}=0,0,H${r}/G${r}-1)`, v: pct(ui, uc), z: "0.0%" })])
   }
@@ -410,7 +433,7 @@ type Tablas = { mag: Array<PrecioMag>; hembra: Array<PrecioMercado>; macho: Arra
 /** 💰 La solapa «02.2 Precios tomados»: cada fuente con el día de cada precio, lo usado y lo de otro día marcados, con link. */
 export function hojaPreciosTomados(momentos: Array<{ titulo: string; tablas: Tablas | null | undefined; valuacion: ValuacionHacienda | null | undefined }>): unknown[][] {
   const f: unknown[][] = [["02.2 — PRECIOS TOMADOS — lo que se usó para valuar, fuente por fuente, con el día de cada precio y el link a la web original"],
-    ["«Usado»: el renglón que toma la valuación. «Otro día»: sale de un día distinto al del resto de su tabla (esa categoría no se operó y se buscó hacia atrás)."]]
+    ["«Usado» (en amarillo): el renglón que toma la valuación. «Otro día» (en rojo): sale de un día distinto al del resto de su tabla (esa categoría no se operó y se buscó hacia atrás)."]]
   const NOMBRE: Record<string, string> = { vientres: "Entresurcos — vientres (por cabeza)", toros: "Entresurcos — toros (por cabeza)",
     hembra: "Entresurcos — terneras (por kilo)", macho: "Entresurcos — terneros (por kilo)", mag: "Cañuelas (MAG) — vacas" }
   const FTE: Record<string, string> = { vientres: "vientres", toros: "toros", hembra: "terneras", macho: "terneros", mag: "mag" }
@@ -435,9 +458,10 @@ export function hojaPreciosTomados(momentos: Array<{ titulo: string; tablas: Tab
           : k === "vientres" || k === "toros" ? usados.includes(String(x.categoria))
           : usados.includes(`${k === "hembra" ? "terneras" : "terneros"} ${x.pesoLo}-${x.pesoHi ?? "+"}`)
         const fe = String(x.fecha ?? "")
-        // 🟩 JMS 05/11: «resaltar tenue los renglones tomados, que se note — el ojo vaya directo».
-        const fila: unknown[] = [...vals, fe, usado ? "USADO" : "", fe !== comun ? `SÍ — ${fe}` : "", link("ver", linkCotizacion(FTE[k], fe))]
-        f.push(usado ? fila.map(c => conRelleno(c, "E2EFDA")) : fe !== comun ? fila.map((c, i) => i === vals.length || i === vals.length + 2 ? conRelleno(c, "FFF2CC") : c) : fila)
+        // 🟨 JMS 05/11: lo usado, el renglón entero en AMARILLO; el «otro día», en rojo y negrita («usar así, amarillo, como te pongo»).
+        const otro = fe !== comun ? conEstilo(`SÍ — ${fe}`, { font: { bold: true, color: { rgb: "FF0000" } } }) : ""
+        const fila: unknown[] = [...vals, fe, usado ? "USADO" : "", otro, link("ver", linkCotizacion(FTE[k], fe))]
+        f.push(usado ? fila.map(c => conRelleno(c, "FFFF00")) : fila)
       }
       if (k === "mag") f.push(["Cañuelas no tiene link por fecha: en la página se elige el día de la columna «Día del dato»."])
     }

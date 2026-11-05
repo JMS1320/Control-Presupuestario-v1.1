@@ -142,8 +142,17 @@ const ES_TOTAL_GRANDE = (t: string) => /^(=\s*)?TOTAL\b/.test(t) || /\b(ejercici
 type Estilo = Record<string, unknown>
 const unir = (c: XLSX.CellObject, s: Estilo) => {
   const prev = ((c as { s?: Estilo }).s ?? {}) as Estilo
-  ;(c as { s?: Estilo }).s = { ...prev, ...s, font: { ...(prev.font as object ?? {}), ...(s.font as object ?? {}) } }
+  // 🎨 JMS 05/11: el color, el borde y la alineación que trae la celda (los puso quien armó la hoja) mandan sobre la presentación
+  //    automática — si no, un encabezado o un total pintaba encima de los pesos/dólares.
+  ;(c as { s?: Estilo }).s = { ...prev, ...s, font: { ...(prev.font as object ?? {}), ...(s.font as object ?? {}) },
+    ...(prev.fill ? { fill: prev.fill } : {}),
+    ...(prev.border || s.border ? { border: { ...(s.border as object ?? {}), ...(prev.border as object ?? {}) } } : {}),
+    ...(prev.alignment || s.alignment ? { alignment: { ...(s.alignment as object ?? {}), ...(prev.alignment as object ?? {}) } } : {}) }
 }
+
+/** 🔗 Celdas combinadas de una hoja que se arma con `agregarHoja` (rangos «A8:C8»). */
+export const UNIONES = new WeakMap<unknown[][], string[]>()
+export const unirCeldas = (filas: unknown[][], rangos: string[]) => UNIONES.set(filas, [...(UNIONES.get(filas) ?? []), ...rangos])
 const tieneFondo = (c: XLSX.CellObject) => !!((c as { s?: Estilo }).s?.fill)
 
 /** Lo que la presentación averiguó de la hoja y `xlsx-js-style` no sabe escribir solo (ver `aplicarVistas`). */
