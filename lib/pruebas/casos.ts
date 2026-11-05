@@ -85,6 +85,8 @@ import { motivoCuentaBloqueada } from "@/lib/auth/cuentas-extracto"
 import { minutosEfectivos, validarMinutos, textoMinutos, valorCookieActividad, msRestantes, sesionVencida, sesionDelToken } from "@/lib/auth/inactividad"
 import { desvioPorPausa, vigiaDebeDesviar } from "@/lib/auth/pausa"
 import { puedeMirarComo } from "@/lib/auth/como-persona"
+import { pideOtraVentana, linkSeccion } from "@/lib/ui/links"
+import { teclaDeItem, itemDeTecla, escribiendoEn } from "@/lib/ui/atajos-menu"
 import { vencimientosDeLaPersona, cuentasParaPagar, motivoPagoInvalido, montoAR, empresaDelPago, PREFIJO_DEVUELTA, type CuotaDeLaPersona } from "@/lib/vencimientos/de-la-persona"
 import { REGLAS_EXTRACTO, ASIGNAR_EXTRACTO, ANTICIPOS_CASHFLOW, primeraPermitida, hayAlguna, tabInicialAsignar } from "@/lib/auth/ventanas"
 import { clasificarCampanita, contarNuevos, soyYo } from "@/lib/revisiones/campanita"
@@ -10224,6 +10226,16 @@ export function correrCasos(): Resultado[] {
       vigiaDebeDesviar(503, "/login"), vigiaDebeDesviar(401, "/")].map(b => b ? "va" : "queda").join(" · ")
     chequear("Accesos", "Vigía de pausa: con 503 lleva al aviso desde la app; con 200/401 o ya en el aviso o el login, se queda",
       "va · queda · queda · queda · queda", vgPz, vgPz === "va · queda · queda · queda · queda", "A-BUG-1542")
+    // ── 🗗 Abrir en otra ventana (A-FEAT-1546): Ctrl / Cmd / Shift / rueda piden otra ventana; el clic normal, no ──
+    const ov = [pideOtraVentana({ button: 0 }), pideOtraVentana({ ctrlKey: true, button: 0 }), pideOtraVentana({ metaKey: true }),
+      pideOtraVentana({ shiftKey: true }), pideOtraVentana({ button: 1 }), linkSeccion("cashflow")].map(String).join(" · ")
+    chequear("Accesos", "Menú: el clic normal cambia de sección en el lugar; Ctrl/Cmd/Shift o la rueda abren otra pestaña (link de verdad)",
+      "false · true · true · true · true · /?seccion=cashflow", ov, ov === "false · true · true · true · true · /?seccion=cashflow", "A-FEAT-1546")
+    // ── ⌨️ Alt+M y una tecla (A-FEAT-1545): 1…9, 0, a, b… por posición; fuera de rango no elige; escribiendo, no es atajo ──
+    const at = [teclaDeItem(0), teclaDeItem(9), teclaDeItem(10), itemDeTecla("3", 12), itemDeTecla("B", 12), itemDeTecla("c", 11),
+      escribiendoEn({ tagName: "input" }), escribiendoEn({ tagName: "DIV" }), escribiendoEn({ tagName: "DIV", isContentEditable: true })].map(String).join(" · ")
+    chequear("Accesos", "Menú con teclado: la tecla sale de la posición (1…9, 0, a…); una que no corresponde no elige; en un campo de texto no es atajo",
+      "1 · 0 · a · 2 · 11 · -1 · true · false · true", at, at === "1 · 0 · a · 2 · 11 · -1 · true · false · true", "A-FEAT-1545")
     // ── 👁️ Ver como lo ve él, con la persona real (A-BUG-1544): sólo un admin, y con un mail ──
     const mc = [puedeMirarComo("admin", "ma@x.com"), puedeMirarComo("contable", "ma@x.com"), puedeMirarComo("admin", " "),
       puedeMirarComo(null, "ma@x.com")].map(b => b ? "sí" : "no").join(" · ")

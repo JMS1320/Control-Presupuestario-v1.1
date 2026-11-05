@@ -1,7 +1,7 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import type { UserRole } from "@/lib/auth/roles"
 import {
   Sidebar,
@@ -21,6 +21,8 @@ import { Campanita } from "@/components/campanita"
 import { Toaster } from "@/components/ui/sonner"
 import { usePendientesPorPantalla } from "@/hooks/usePendientesPorPantalla"
 import { useModoPermisos } from "@/components/contexto-permisos"
+import { linkSeccion, pideOtraVentana } from "@/lib/ui/links"
+import { teclaDeItem, itemDeTecla, escribiendoEn } from "@/lib/ui/atajos-menu"
 import { Candado } from "@/components/modo-permisos"
 import { tieneSeccion } from "@/lib/auth/modo-permisos"
 import { PREFERENCIAS_DEFAULT, type Preferencias } from "@/lib/auth/preferencias"
@@ -150,7 +152,8 @@ function MenuLateral({
   contadores: boolean
   onElegir: (id: string) => void
 }) {
-  const { setOpen, setOpenMobile, isMobile } = useSidebar()
+  const { setOpen, setOpenMobile, isMobile, open, openMobile } = useSidebar()
+  const menuAbierto = isMobile ? openMobile : open
   // Sólo admin: el endpoint lo exige y el contable no trabaja los pendientes de desarrollo.
   // Y sólo si el usuario los quiere: apagados no se pide nada, no se pide y se esconde.
   const pendientes = usePendientesPorPantalla(userRole === "admin" && contadores)
@@ -167,6 +170,22 @@ function MenuLateral({
     if (isMobile) setOpenMobile(false)
     else setOpen(false)
   }
+
+  // ⌨️ A-FEAT-1545: con el menú abierto (Alt+M), la tecla de cada sección la elige. No si se está escribiendo.
+  const elegirRef = useRef(elegir)
+  elegirRef.current = elegir
+  useEffect(() => {
+    if (!menuAbierto) return
+    const tecla = (e: KeyboardEvent) => {
+      if (e.altKey || e.ctrlKey || e.metaKey || escribiendoEn(e.target as HTMLElement | null)) return
+      const i = itemDeTecla(e.key, lista.length)
+      if (i < 0) return
+      e.preventDefault()
+      elegirRef.current(lista[i].id)
+    }
+    document.addEventListener("keydown", tecla)
+    return () => document.removeEventListener("keydown", tecla)
+  }, [menuAbierto, lista])
 
   return (
     <Sidebar collapsible="offcanvas">
@@ -193,13 +212,26 @@ function MenuLateral({
               : "bg-gray-200 text-gray-600"
             return (
               <SidebarMenuItem key={id}>
+                {/* 🗗 A-FEAT-1546: es un link de verdad — Ctrl+clic o la rueda la abren en otra pestaña; el clic normal
+                    cambia de sección en el lugar, como siempre. En el modo permisos no (la otra pestaña lo perdería). */}
                 <SidebarMenuButton
+                  asChild
                   isActive={activa === id}
-                  onClick={() => elegir(id)}
                   className={prendida ? undefined : "opacity-40 grayscale"}
                 >
-                  <Icono className="h-4 w-4" />
-                  <span>{label}</span>
+                  <a
+                    href={linkSeccion(id)}
+                    title={modo ? undefined : `${label} · Ctrl+clic: en otra pestaña`}
+                    onClick={(e) => { if (!modo && pideOtraVentana(e)) return; e.preventDefault(); elegir(id) }}
+                  >
+                    <Icono className="h-4 w-4" />
+                    <span>{label}</span>
+                    {menuAbierto && teclaDeItem(lista.findIndex((s) => s.id === id)) && (
+                      <kbd className="ml-auto mr-6 rounded border px-1 font-mono text-[10px] leading-4 text-muted-foreground" title="Con el menú abierto, apretá esta tecla">
+                        {teclaDeItem(lista.findIndex((s) => s.id === id))}
+                      </kbd>
+                    )}
+                  </a>
                 </SidebarMenuButton>
                 {modo && !modo.soloLoQueVe && (
                   <Candado
