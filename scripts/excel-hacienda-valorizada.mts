@@ -73,7 +73,7 @@ async function valuar(fecha: string, existencias: ExistenciaHacienda[], pesos: P
     porCategoria(fecha, (d, h) => pedirCab("vientres", d, h), x => x.categoria, x => x.cantidad > 0 && x.promedio > 0, fs => todos(cs(c => c.tipoPorCabeza === "vientres"), { porCabeza: { vientres: fs, toros: [] } })),
     porCategoria(fecha, (d, h) => pedirCab("toros", d, h), x => x.categoria, x => x.cantidad > 0 && x.promedio > 0, fs => todos(cs(c => c.tipoPorCabeza === "toros"), { porCabeza: { vientres: [], toros: fs } })),
   ])
-  return valuarHacienda(existencias, mag, { macho, hembra }, {}, pesos, { vientres, toros })
+  return { ...valuarHacienda(existencias, mag, { macho, hembra }, {}, pesos, { vientres, toros }), tablas: { mag, hembra, macho, vientres, toros } }
 }
 
 // ── existencia por categoría de la app a una fecha ──
@@ -87,7 +87,7 @@ const existenciaAl = (f: string): ExistenciaHacienda[] => {
 // ── cierre: pesadas proyectadas como en la pantalla ──
 const pes: any[] = []
 for (let d = 0; ; d += 1000) {
-  const { data } = await sb.schema("productivo").from("pesadas_terneros").select("ternero_id, fecha, peso_kg, ternero:terneros(categoria:categorias_hacienda(nombre))").lte("fecha", "2026-06-30").order("id").range(d, d + 999)
+  const { data } = await sb.schema("productivo").from("pesadas_terneros").select("ternero_id, fecha, peso_kg, ternero:terneros(categoria:categorias_hacienda(nombre))").lte("fecha", "2026-10-28").order("id").range(d, d + 999)
   pes.push(...(data ?? [])); if (!data || data.length < 1000) break
 }
 const { data: lotes } = await sb.schema("productivo").from("stock_lotes").select("categoria, ganancia_diaria_kg")

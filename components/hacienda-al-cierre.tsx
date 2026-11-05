@@ -204,7 +204,8 @@ export function HaciendaAlCierre({
       const { data: pes } = await traerTodo((d, h) => supabase
         .schema("productivo").from("pesadas_terneros")
         .select("ternero_id, fecha, peso_kg, ternero:terneros(categoria:categorias_hacienda(nombre))")
-        .lte("fecha", ejercicio.fechaCierre).order("id").range(d, h))
+        // ⚖️ A-FEAT-1541: también las de hasta 120 días DESPUÉS del cierre, para interpolar el peso al 30/6.
+        .lte("fecha", new Date(Date.parse(ejercicio.fechaCierre + "T12:00:00Z") + 120 * 86_400_000).toISOString().slice(0, 10)).order("id").range(d, h))
 
       // La ganancia diaria CARGADA, para poder compararla con la medida y avisar si difieren.
       const { data: lotesGan } = await supabase

@@ -72,7 +72,7 @@ const redondear = (x: number, d = 2) => Math.round(x * 10 ** d) / 10 ** d
 /**
  * Arma el peso por categoría al cierre.
  *
- * @param pesadas             todas las pesadas hasta la fecha de cierre
+ * @param pesadas             todas las pesadas: las de hasta el cierre y, si hay, las de después (para interpolar)
  * @param configuradas        ganancia diaria cargada, por categoría (de `stock_lotes`)
  * @param fechaCierre         `YYYY-MM-DD`
  */
@@ -82,8 +82,19 @@ export function pesosAlCierre(
   fechaCierre: string,
 ): PesoCategoria[] {
   const porCategoria = new Map<string, PesadaAnimal[]>()
+  /**
+   * ⚖️ A-FEAT-1541 (JMS 05/11, en el Excel: *«¿usaste alguna pesada posterior al 30/6? Teniéndola se sabe cuánto tenían al 30/6…
+   * es mejor estimador peso antes, peso después, que peso antes y estimo cuánto siguieron ganando cuando el dato ya está»*): la
+   * primera pesada de cada animal DESPUÉS del cierre (hasta 120 días), para interpolar.
+   */
+  const despues = new Map<string, PesadaAnimal>()
   for (const p of pesadas) {
-    if (p.fecha > fechaCierre) continue
+    if (p.fecha > fechaCierre) {
+      if (dias(fechaCierre, p.fecha) > 120) continue
+      const ya = despues.get(p.animalId)
+      if (!ya || p.fecha < ya.fecha) despues.set(p.animalId, p)
+      continue
+    }
     porCategoria.set(p.categoria, [...(porCategoria.get(p.categoria) ?? []), p])
   }
 
@@ -122,15 +133,26 @@ export function pesosAlCierre(
 
     const gananciaConfigurada = configuradas[categoria] ?? null
     const d = Math.max(0, dias(fechaUltimaPesada, fechaCierre))
-    const pesoProyectado = gananciaMedida != null
-      ? redondear(pesoUltimaPesada + gananciaMedida * d, 1)
-      : pesoUltimaPesada
+    // ⚖️ Animal por animal: con pesada antes y después del cierre, se INTERPOLA; si no hay después, se proyecta con la medida.
+    let interpolados = 0
+    const fechasDespues = new Set<string>()
+    const alCierre = ultimas.map(p => {
+      const q = despues.get(p.animalId)
+      const dAntes = dias(p.fecha, fechaCierre), dTotal = q ? dias(p.fecha, q.fecha) : 0
+      if (q && dTotal > 0) { interpolados++; fechasDespues.add(q.fecha); return p.pesoKg + (q.pesoKg - p.pesoKg) * dAntes / dTotal }
+      return gananciaMedida != null ? p.pesoKg + gananciaMedida * dAntes : p.pesoKg
+    })
+    const pesoProyectado = redondear(alCierre.reduce((s, x) => s + x, 0) / alCierre.length, 1)
 
     const difiere = gananciaMedida != null && gananciaConfigurada != null &&
       gananciaConfigurada > 0 &&
       Math.abs(gananciaMedida - gananciaConfigurada) / gananciaConfigurada > TOLERANCIA_GANANCIA
 
-    const origen = gananciaMedida != null
+    const ddmm = (f: string) => f.slice(0, 10).split("-").reverse().join("/")
+    const origen = interpolados > 0
+      ? `${interpolados} de ${ultimas.length} animal(es) interpolados entre la pesada del ${ddmm(fechaUltimaPesada)} (${pesoUltimaPesada} kg) y la del ${[...fechasDespues].sort().map(ddmm).join(", ")}` +
+        (interpolados < ultimas.length ? ` · el resto con la ganancia medida (${gananciaMedida} kg/día)` : "")
+      : gananciaMedida != null
       ? `${ultimas.length} pesada(s) al ${fechaUltimaPesada} · ${pesoUltimaPesada} kg + ${gananciaMedida} kg/día × ${d} días`
       : `${ultimas.length} pesada(s) al ${fechaUltimaPesada} · ${pesoUltimaPesada} kg (sin segunda pesada: no se proyecta)`
 
