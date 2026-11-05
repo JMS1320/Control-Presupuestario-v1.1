@@ -4017,6 +4017,11 @@ categoría y banco** y el detalle **por banco y por fecha**; lo que no se pagó 
 tabla con un renglón por vehículo (qué se pagó, cuándo y por qué banco, y qué no se pagó). Lo que va por la cuenta de un socio (por
 ejemplo «Gastos Reintegro JMS») no es gasto: está al pie de «Por mes». → A-TEST-1324
 
+⚠️ **Cambió 05/11 — la hacienda en el libro D**: «02 Stock hacienda» (inicio y cierre en NZ, SENASA y DDJJ, con nacimientos, mortandad, reclasificación,
+compras, ventas y ajustes en el medio), «02.1 Stock valorizado» (como tu papel 2.2: cierre e inicio, y a la derecha de dónde sale cada número, con
+link a la cotización), «02.2 Precios tomados» y una solapa por tipo de movimiento. SENASA al cierre se escribe en la pantalla (Hacienda → saldos).
+Los **retiros** ya no están en el libro H: van al libro I. Los **sueldos a pagar** al cierre están al pie de «13 Sueldos».
+
 ⚠️ **Cambió 04/11 (noche) — el set trae un libro I, «Socios y Libertad (próximo)»**: las cuentas con los socios (14.1) y «Gastos
 Libertad» salen de los libros B y H y se mandan después. La provisión de cobros (03.1) pasó al libro D, junto a «05 Provisión».
 

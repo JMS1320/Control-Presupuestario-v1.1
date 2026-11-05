@@ -72,7 +72,7 @@ export interface DatosCobertura {
   libro: LibroDiario
   fechaInicio: string
   templates?: TemplatesDelEjercicio | null
-  hacienda?: { valuacion?: ValuacionHacienda; cuadre?: CuadreHacienda; stockInicio?: { renglones: RenglonStockInicio[]; pasturas: unknown[] } } | null
+  hacienda?: { valuacion?: ValuacionHacienda; valuacionInicio?: ValuacionHacienda | null; cuadre?: CuadreHacienda; stockInicio?: { renglones: RenglonStockInicio[]; pasturas: unknown[] } } | null
   insumos?: StockInsumos | null
   campo?: { granos: CuadreGranos; sementeras: Sementeras } | null
   cuentas?: { pagar?: CuentasAlCierre; cobrar?: CuentasAlCierre; cheques?: ChequesDados; anticipos?: AnticiposAlCierre } | null
@@ -371,18 +371,20 @@ const REGLAS: Regla[] = [
       : { estado: "error", detalle: d.libro.controles.motivos.join(" ") } },
 
   // ── STOCK HACIENDA ───────────────────────────────────────────────────────────────────────
-  { papel: "STOCK HACIENDA · 2 - Hacienda", dato: "Cabezas por categoría al inicio (balance · campo · SENASA)", valor2425: "321 cabezas", solapa: "02 Hacienda",
+  { papel: "STOCK HACIENDA · 2 - Hacienda", dato: "Cabezas por categoría al inicio (balance · campo · SENASA)", valor2425: "321 cabezas", solapa: "02 Stock hacienda",
     evaluar: d => d.hacienda?.cuadre ? { estado: "sale", detalle: `existencia al inicio ${d.hacienda.cuadre.existenciaInicio} (las tablas de los tres saldos)` }
       : { estado: "sin informacion", detalle: "falta «Traer stock y precios»" } },
-  { papel: "STOCK HACIENDA · 2 - Hacienda", dato: "Kg, $/kg y $/cabeza por categoría al inicio", valor2425: "$ 405.560.000", solapa: "02 Hacienda",
-    evaluar: () => ({ estado: "falta inicio", detalle: "sólo está el total cría/recría en la foto; falta la valuación por categoría al 30/06/2025" }) },
-  { papel: "STOCK HACIENDA · 2 - Hacienda", dato: "Valuación al cierre por categoría", valor2425: "—", solapa: "02 Hacienda · Precios",
+  { papel: "STOCK HACIENDA · 2 - Hacienda", dato: "Kg, $/kg y $/cabeza por categoría al inicio", valor2425: "$ 405.560.000", solapa: "02.1 Stock valorizado",
+    // 🐄 A-FEAT-1541: el inicio se valúa igual que el cierre, y se compara con los papeles de JMS y la DDJJ.
+    evaluar: d => d.hacienda?.valuacionInicio ? { estado: "sale", detalle: `${d.hacienda.valuacionInicio.cabezas} cabezas · ${pesos(d.hacienda.valuacionInicio.valuado)} (app) contra $ 405.560.000 (papeles) y la DDJJ` }
+      : { estado: "falta inicio", detalle: "no se pudieron leer los precios del inicio («Traer stock y precios»)" } },
+  { papel: "STOCK HACIENDA · 2 - Hacienda", dato: "Valuación al cierre por categoría", valor2425: "—", solapa: "02.1 Stock valorizado · 02.2 Precios tomados",
     evaluar: d => {
       const v = d.hacienda?.valuacion
       if (!v) return { estado: "sin informacion", detalle: "falta «Traer stock y precios»" }
       return v.huecos.length ? { estado: "sin informacion", detalle: `${v.huecos.length} categoría(s) sin precio (${v.cabezasSinValuar} cabezas sin valuar)` } : { estado: "sale", detalle: `${v.cabezas} cabezas · ${pesos(v.valuado)}` }
     } },
-  { papel: "STOCK HACIENDA · 2 - Hacienda", dato: "Cuadre: inicio ± movimientos = cierre", valor2425: "—", solapa: "02 Hacienda",
+  { papel: "STOCK HACIENDA · 2 - Hacienda", dato: "Cuadre: inicio ± movimientos = cierre", valor2425: "—", solapa: "02 Stock hacienda",
     evaluar: d => {
       const c = d.hacienda?.cuadre
       if (!c) return { estado: "sin informacion", detalle: "falta «Traer stock y precios»" }

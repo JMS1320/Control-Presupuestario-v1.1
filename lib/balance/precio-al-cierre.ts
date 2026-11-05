@@ -43,10 +43,21 @@ export async function ultimoPorCategoria<T>(
   conPrecio: (fila: T) => boolean,
   completo: (filas: Array<T & { fecha: string }>) => boolean,
   maxDias = 21,
+  /** Si en `maxDias` falta alguna, se sigue hacia atrás de a 30 días (hasta 12 ventanas) con esta consulta por rango. */
+  pedirRango?: (desde: string, hasta: string) => Promise<T[]>,
 ): Promise<{ filas: Array<T & { fecha: string }>; fecha: string | null }> {
   const tomadas = new Map<string, T & { fecha: string }>()
+  let listo = false
   for (const dia of diasHaciaAtras(fechaCierre, maxDias)) {
-    if (sumarDia(tomadas, dia, await pedirDia(dia), clave, conPrecio, completo)) break
+    if (sumarDia(tomadas, dia, await pedirDia(dia), clave, conPrecio, completo)) { listo = true; break }
+  }
+  if (!listo && pedirRango) {
+    let hasta = diasHaciaAtras(fechaCierre, maxDias + 1)[maxDias]
+    for (let k = 0; k < 12; k++) {
+      const desde = diasHaciaAtras(hasta, 30)[29]
+      if (sumarDia(tomadas, `${desde} a ${hasta}`, await pedirRango(desde, hasta), clave, conPrecio, completo)) break
+      hasta = diaAntes(desde)
+    }
   }
   const filas = [...tomadas.values()]
   return { filas, fecha: filas.length ? filas.map(f => f.fecha).sort().pop()! : null }

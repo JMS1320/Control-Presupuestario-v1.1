@@ -47,6 +47,9 @@ import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndi
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
 import { armarStocksUnificados, hojaDeStocks } from "./stocks-unificado"
 import { solapasPapelesH, type DatosPapelesH } from "./papeles-impuestos-h"
+import { DETALLES, hojaDetalleHacienda, hojaStockHacienda, hojaStockValorizado, hojaPreciosTomados, type MovimientoPapel } from "./stock-hacienda-papel"
+import { APERTURA_MSA_2025 } from "./apertura-contador"
+type TablasPreciosPapel = { mag: PrecioMag[]; hembra: PrecioMercado[]; macho: PrecioMercado[]; vientres: PrecioCabeza[]; toros: PrecioCabeza[] }
 import type { HojaConEstilo } from "@/lib/impuestos/papel-formato-jms"
 import { hojaLibertad } from "./libertad"
 import { armarGruposTemplates, cuotaSinPago, armarHojaGrupo, gruposDelResponsable, hojaExtractoSinCategoria, hojaGrupo, hojaIndiceGrupos, hojaLib, nombreSolapaGrupo, type GrupoTemplates, type MovimientoLib } from "./grupos-templates"
@@ -2495,6 +2498,12 @@ export function hojaTemplatesPorMes(t: TemplatesDelEjercicio): unknown[][] {
  * `02 - HACIENDA` — existencia al cierre y su valuación, con el criterio de cada categoría a la
  * vista y **los huecos listados**, no escondidos en un total.
  */
+const COLS_STOCK_HACIENDA: Columna[] = [{ ancho: 34 }, ...Array.from({ length: 14 }, () => ({ ancho: 12, z: ENTERO }))]
+const COLS_STOCK_VALORIZADO: Columna[] = [{ ancho: 34 }, { ancho: 10, z: ENTERO }, { ancho: 9 }, { ancho: 14, z: MONEDA }, { ancho: 14, z: MONEDA },
+  { ancho: 17, z: MONEDA }, { ancho: 13, z: MONEDA }, { ancho: 3 }, { ancho: 22 }, { ancho: 40 }, { ancho: 14, z: MONEDA }, { ancho: 7 }, { ancho: 70 }, { ancho: 16 }, { ancho: 60 }]
+const COLS_PRECIOS_TOMADOS: Columna[] = [{ ancho: 34 }, { ancho: 12 }, { ancho: 12 }, { ancho: 14, z: MONEDA }, { ancho: 14, z: MONEDA }, { ancho: 22 }, { ancho: 9 }, { ancho: 22 }, { ancho: 8 }]
+const COLS_DETALLE_HACIENDA: Columna[] = [{ ancho: 12 }, { ancho: 24 }, { ancho: 32 }, { ancho: 10, z: ENTERO }, { ancho: 40 }, { ancho: 70 }]
+
 function hojaDeHacienda(
   h: ValuacionHacienda, fechaCierre: string, mesPrecios: string, cuadre?: CuadreHacienda,
   saldos?: SaldosParaExcel["hacienda"], fechaInicio?: string, fuentes?: FuentePrecio[],
@@ -2786,6 +2795,13 @@ export function armarWorkbook(
     stockInicio?: { renglones: RenglonStockInicio[]; pasturas: Pastura[]; fecha: string }
     /** 📅 A-FEAT-1422: de dónde salió cada precio (fecha y link para el contador). */
     fuentesPrecios?: FuentePrecio[]
+    /** 🐄 A-FEAT-1541: el papel nuevo — movimientos, valorizado del inicio, tablas de precios, TC y saldos escritos. */
+    movimientosPapel?: MovimientoPapel[]
+    valuacionInicio?: ValuacionHacienda | null
+    tablasInicio?: TablasPreciosPapel | null
+    tablasCierre?: TablasPreciosPapel | null
+    tcCierre?: number | null
+    saldosGuardados?: Record<string, string | undefined>
   },
   insumos?: StockInsumos,
   campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras; origenPrecioGranos?: { texto: string; url: string | null } | null },
@@ -3000,7 +3016,28 @@ export function armarWorkbook(
     }
     hoja(wb, "Saldos ej. anterior", filas)
   }
-  if (hacienda) {
+  if (hacienda?.movimientosPapel) {
+    /**
+     * 🐄 A-FEAT-1541 (JMS 05/11, «5 sí»): el papel de hacienda como el prototipo aprobado — el cuadro de stock (NZ · SENASA · DDJJ al
+     * inicio y al cierre, con los movimientos del ejercicio), el valorizado con el formato de su papel 2.2 (cierre e inicio, con
+     * la trazabilidad a la derecha), las tablas de precios tomados y una solapa por tipo de movimiento para auditar.
+     */
+    const primerDia = primerDiaDelEjercicio(libro.ejercicio), fc = libro.ejercicio.fechaCierre
+    const detalles = DETALLES.map(dd => ({ dd, ...hojaDetalleHacienda(hacienda.movimientosPapel!, dd.tipo, dd.hoja.replace(/^02\.\d /, "").toUpperCase(), primerDia, fc) }))
+    hoja(wb, "02 Stock hacienda", hojaStockHacienda(hacienda.movimientosPapel, primerDia, fc, hacienda.saldosGuardados ?? {},
+      Object.fromEntries(detalles.map(x => [x.dd.tipo, { d0: x.d0, d1: x.d1 }]))), COLS_STOCK_HACIENDA)
+    const ddjj = empresa === "MSA" ? APERTURA_MSA_2025.find(r => r.cuenta === "1.2.2/05/01") : undefined
+    hoja(wb, "02.1 Stock valorizado", hojaStockValorizado({
+      cierre: hacienda.valuacion, inicio: hacienda.valuacionInicio ?? null, fechaCierre: fc,
+      fechaInicio: new Date(Date.parse(`${primerDia}T12:00:00Z`) - 86400000).toISOString().slice(0, 10), tcCierre: hacienda.tcCierre ?? null,
+      ddjjInicio: ddjj ? { cuenta: ddjj.cuenta, denominacion: ddjj.denominacion, valor: ddjj.hist } : null,
+    }), COLS_STOCK_VALORIZADO)
+    hoja(wb, "02.2 Precios tomados", hojaPreciosTomados([
+      { titulo: `CIERRE ${fc.split("-").reverse().join("/")}`, tablas: hacienda.tablasCierre, valuacion: hacienda.valuacion },
+      { titulo: "INICIO (el día anterior al ejercicio)", tablas: hacienda.tablasInicio, valuacion: hacienda.valuacionInicio },
+    ]), COLS_PRECIOS_TOMADOS)
+    for (const x of detalles) hoja(wb, x.dd.hoja, x.filas, COLS_DETALLE_HACIENDA)
+  } else if (hacienda) {
     hoja(wb, "02 Hacienda",
       hojaDeHacienda(hacienda.valuacion, libro.ejercicio.fechaCierre, hacienda.mesPrecios, hacienda.cuadre,
         hacienda.saldos?.hacienda, hacienda.saldos?.productivos?.fechaInicio, hacienda.fuentesPrecios),
@@ -3367,6 +3404,13 @@ export async function descargarLibroDiario(
     stockInicio?: { renglones: RenglonStockInicio[]; pasturas: Pastura[]; fecha: string }
     /** 📅 A-FEAT-1422: de dónde salió cada precio (fecha y link para el contador). */
     fuentesPrecios?: FuentePrecio[]
+    /** 🐄 A-FEAT-1541: el papel nuevo — movimientos, valorizado del inicio, tablas de precios, TC y saldos escritos. */
+    movimientosPapel?: MovimientoPapel[]
+    valuacionInicio?: ValuacionHacienda | null
+    tablasInicio?: TablasPreciosPapel | null
+    tablasCierre?: TablasPreciosPapel | null
+    tcCierre?: number | null
+    saldosGuardados?: Record<string, string | undefined>
   },
   insumos?: StockInsumos,
   campo?: { granos: CuadreGranos; valuacionGranos: ValuacionGranos; sementeras: Sementeras; origenPrecioGranos?: { texto: string; url: string | null } | null },

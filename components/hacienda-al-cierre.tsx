@@ -54,6 +54,9 @@ import { armarTresSaldos } from "@/lib/balance/tres-saldos-hacienda"
 import type { SaldosParaExcel } from "@/lib/balance/saldos-excel"
 import { leerStockInicio, type RenglonStockInicio, type Pastura } from "@/lib/balance/stock-inicio"
 import { ultimoPorCategoria, leyendaPrecios, pizarraAlCierre, URL_FUENTES, type FuentePrecio } from "@/lib/balance/precio-al-cierre"
+import { PAPELES_JMS_INICIO_2025, type MovimientoPapel } from "@/lib/balance/stock-hacienda-papel"
+import { leerTcCierre } from "@/lib/balance/balance-en-linea-lectura"
+type TablasPrecios = { mag: PrecioMag[]; hembra: PrecioMercado[]; macho: PrecioMercado[]; vientres: PrecioCabeza[]; toros: PrecioCabeza[] }
 import { StockInicioDetalle } from "@/components/stock-inicio-detalle"
 import { sistemaAlMomento } from "@/lib/balance/tres-saldos-hacienda"
 import { leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
@@ -82,6 +85,14 @@ export interface DatosHacienda {
   porCabeza: { vientres: PrecioCabeza[]; toros: PrecioCabeza[] }
   /** El mes que se usó para los precios, para que quede dicho en el papel. */
   mesPrecios: string
+  /** 🐄 A-FEAT-1541: los movimientos tal cual (para las solapas de detalle) y el valorizado del inicio con sus precios. */
+  movimientosPapel?: MovimientoPapel[]
+  valuacionInicio?: ValuacionHacienda | null
+  tablasInicio?: TablasPrecios | null
+  tablasCierre?: TablasPrecios | null
+  tcCierre?: number | null
+  /** Los saldos escritos en la pantalla (papel `hacienda.saldos`): SENASA y DDJJ al inicio y al cierre. */
+  saldosGuardados?: Record<string, string | undefined>
   /**
    * 🧮 El cuadre de la existencia: inicio ± movimientos = cierre, más lo que no se pudo contar.
    * Pedido del usuario 2026-09-29. Va **arriba** de la valuación en el papel.
@@ -158,8 +169,14 @@ export function HaciendaAlCierre({
         // 🧮 **Se traen TODOS, sin filtrar por fecha**: el cuadre necesita los anteriores al inicio
         //    del ejercicio (para la existencia de arranque) y los posteriores al cierre (para poder
         //    decir por qué el stock de hoy no es el del balance). El corte se hace en la lógica pura.
-        .select("cantidad, fecha, tipo, categoria:categorias_hacienda(nombre)")
+        .select("cantidad, fecha, tipo, proveedor_cliente, observaciones, categoria:categorias_hacienda(nombre)")
       if (error) throw new Error(error.message)
+      /** 🐄 A-FEAT-1541: los movimientos tal cual, para las solapas de detalle del papel (02.3 a 02.8). */
+      const movimientosPapel: MovimientoPapel[] = ((movs ?? []) as Array<Record<string, unknown>>).map(m => ({
+        fecha: String(m.fecha ?? "").slice(0, 10), tipo: String(m.tipo ?? ""), cantidad: Number(m.cantidad ?? 0),
+        categoria: ((m.categoria as { nombre?: string } | null)?.nombre) ?? "",
+        cliente: (m.proveedor_cliente as string | null) ?? null, obs: (m.observaciones as string | null) ?? null,
+      }))
 
       /** Normalizados una vez, para la existencia y para el cuadre. */
       const movimientos: MovimientoDeHacienda[] = ((movs ?? []) as Array<Record<string, unknown>>)
@@ -279,32 +296,33 @@ export function HaciendaAlCierre({
       const fc = ejercicio.fechaCierre
       /**
        * 📗 A-FEAT-1541 (JMS 05/11: «si no hay categoría, tomar el día anterior hasta encontrar»): cada fuente se busca hacia
-       * atrás CATEGORÍA POR CATEGORÍA, hasta que estén todas las que hacen falta para las categorías con existencia.
+       * atrás CATEGORÍA POR CATEGORÍA, hasta que estén todas las que hacen falta; si en 21 días no aparece, de a 30 días.
+       * Es una función porque se usa dos veces: al cierre y al inicio (el inicio se valúa igual — JMS 05/11).
        */
-      const conCabezas = new Set(existencias.filter(e => e.cabezas > 0).map(e => e.categoria))
-      const criteriosDe = (f: (c: CriterioValuacion) => boolean) => CRITERIOS.filter(c => conCabezas.has(c.categoria) && f(c))
-      const pesoDe = (cat: string) => pesoParaValuar(cat, pesos, CRITERIOS.find(c => c.categoria === cat)?.pesoKg ?? null).kg
-      const todos = (cs: CriterioValuacion[], fuentes: Parameters<typeof precioDeCriterio>[1]) =>
-        cs.every(c => precioDeCriterio(c, fuentes, pesoDe(c.categoria)) != null)
-      const sinMercado = { macho: [] as PrecioMercado[], hembra: [] as PrecioMercado[] }
-      const [rMag, rHem, rMac, rVie, rTor, pizSoja] = await Promise.all([
-        ultimoPorCategoria(fc, d => pedir<PrecioMag>(`/api/precios-mag?desde=${d}&hasta=${d}`),
-          x => `${x.familia}|${x.calidad}|${x.corte ?? ""}`, x => x.promedio > 0 || x.maximo > 0,
-          filas => todos(criteriosDe(c => c.fuente === "mag"), { mag: filas })),
-        ultimoPorCategoria(fc, d => pedir<PrecioMercado>(`/api/precios-mercado?desde=${d}&hasta=${d}&sexo=hembra`),
-          x => `${x.pesoLo}-${x.pesoHi ?? ""}`, x => (x.kiloMax || x.promKilo) > 0,
-          filas => todos(criteriosDe(c => c.fuente === "entresurcos" && c.sexo === "hembra"), { mercado: { ...sinMercado, hembra: filas } })),
-        ultimoPorCategoria(fc, d => pedir<PrecioMercado>(`/api/precios-mercado?desde=${d}&hasta=${d}&sexo=macho`),
-          x => `${x.pesoLo}-${x.pesoHi ?? ""}`, x => (x.kiloMax || x.promKilo) > 0,
-          filas => todos(criteriosDe(c => c.fuente === "entresurcos" && c.sexo !== "hembra"), { mercado: { ...sinMercado, macho: filas } })),
-        ultimoPorCategoria(fc, d => pedir<PrecioCabeza>(`/api/precios-por-cabeza?tipo=vientres&desde=${d}&hasta=${d}`),
-          x => x.categoria, x => x.cantidad > 0 && x.promedio > 0,
-          filas => todos(criteriosDe(c => c.tipoPorCabeza === "vientres"), { porCabeza: { vientres: filas, toros: [] } })),
-        ultimoPorCategoria(fc, d => pedir<PrecioCabeza>(`/api/precios-por-cabeza?tipo=toros&desde=${d}&hasta=${d}`),
-          x => x.categoria, x => x.cantidad > 0 && x.promedio > 0,
-          filas => todos(criteriosDe(c => c.tipoPorCabeza === "toros"), { porCabeza: { vientres: [], toros: filas } })),
-        pizarraAlCierre(supabase, "soja", fc),
-      ])
+      const preciosAl = async (fecha: string, exist: ExistenciaHacienda[], pesosDe: PesoCategoria[]) => {
+        const conCabezas = new Set(exist.filter(e => e.cabezas > 0).map(e => e.categoria))
+        const criteriosDe = (f: (c: CriterioValuacion) => boolean) => CRITERIOS.filter(c => conCabezas.has(c.categoria) && f(c))
+        const pesoDe = (cat: string) => pesoParaValuar(cat, pesosDe, CRITERIOS.find(c => c.categoria === cat)?.pesoKg ?? null).kg
+        const todos = (cs: CriterioValuacion[], fuentes: Parameters<typeof precioDeCriterio>[1]) =>
+          cs.every(c => precioDeCriterio(c, fuentes, pesoDe(c.categoria)) != null)
+        const sinMercado = { macho: [] as PrecioMercado[], hembra: [] as PrecioMercado[] }
+        const url = (base: string, extra = "") => (d: string, h = d) => `${base}?desde=${d}&hasta=${h}${extra}`
+        const uMag = url("/api/precios-mag"), uHem = url("/api/precios-mercado", "&sexo=hembra"), uMac = url("/api/precios-mercado", "&sexo=macho")
+        const uVie = url("/api/precios-por-cabeza", "&tipo=vientres"), uTor = url("/api/precios-por-cabeza", "&tipo=toros")
+        return Promise.all([
+          ultimoPorCategoria(fecha, d => pedir<PrecioMag>(uMag(d)), x => `${x.familia}|${x.calidad}|${x.corte ?? ""}`, x => x.promedio > 0 || x.maximo > 0,
+            filas => todos(criteriosDe(c => c.fuente === "mag"), { mag: filas }), 21, (d, h) => pedir<PrecioMag>(uMag(d, h))),
+          ultimoPorCategoria(fecha, d => pedir<PrecioMercado>(uHem(d)), x => `${x.pesoLo}-${x.pesoHi ?? ""}`, x => (x.kiloMax || x.promKilo) > 0,
+            filas => todos(criteriosDe(c => c.fuente === "entresurcos" && c.sexo === "hembra"), { mercado: { ...sinMercado, hembra: filas } }), 21, (d, h) => pedir<PrecioMercado>(uHem(d, h))),
+          ultimoPorCategoria(fecha, d => pedir<PrecioMercado>(uMac(d)), x => `${x.pesoLo}-${x.pesoHi ?? ""}`, x => (x.kiloMax || x.promKilo) > 0,
+            filas => todos(criteriosDe(c => c.fuente === "entresurcos" && c.sexo !== "hembra"), { mercado: { ...sinMercado, macho: filas } }), 21, (d, h) => pedir<PrecioMercado>(uMac(d, h))),
+          ultimoPorCategoria(fecha, d => pedir<PrecioCabeza>(uVie(d)), x => x.categoria, x => x.cantidad > 0 && x.promedio > 0,
+            filas => todos(criteriosDe(c => c.tipoPorCabeza === "vientres"), { porCabeza: { vientres: filas, toros: [] } }), 21, (d, h) => pedir<PrecioCabeza>(uVie(d, h))),
+          ultimoPorCategoria(fecha, d => pedir<PrecioCabeza>(uTor(d)), x => x.categoria, x => x.cantidad > 0 && x.promedio > 0,
+            filas => todos(criteriosDe(c => c.tipoPorCabeza === "toros"), { porCabeza: { vientres: [], toros: filas } }), 21, (d, h) => pedir<PrecioCabeza>(uTor(d, h))),
+        ])
+      }
+      const [[rMag, rHem, rMac, rVie, rTor], pizSoja] = await Promise.all([preciosAl(fc, existencias, pesos), pizarraAlCierre(supabase, "soja", fc)])
       const [mag, hembras, machos, vientres, toros] = [rMag.filas, rHem.filas, rMac.filas, rVie.filas, rTor.filas]
       const fuentesPrecios: FuentePrecio[] = [
         { nombre: "Cañuelas (MAG)", fecha: rMag.fecha, url: URL_FUENTES.canuelas },
@@ -345,8 +363,33 @@ export function HaciendaAlCierre({
         (vg ?? []).reduce((s, x: Record<string, unknown>) => s + Number(x.toneladas ?? 0), 0) * 1000,
       ) / 1000
 
+      /**
+       * 💰 A-FEAT-1541 (JMS 05/11: «usar lo mismo para valorizar el inicio»): la existencia de la app al inicio, valuada con los
+       * precios de ese día y los kilos de los papeles de JMS (si el inicio es el de esos papeles).
+       */
+      const diaInicio = diaAnterior(primerDiaDelEjercicio(ejercicio))
+      const existenciasInicio: ExistenciaHacienda[] = Object.entries(sistemaAlMomento(movimientos, "inicio", primerDiaDelEjercicio(ejercicio), ejercicio.fechaCierre))
+        .filter(([, n]) => n !== 0).map(([categoria, cabezas]) => ({ categoria, cabezas }))
+      const pesosInicio: PesoCategoria[] = diaInicio === PAPELES_JMS_INICIO_2025.fecha
+        ? Object.entries(PAPELES_JMS_INICIO_2025.kg).map(([categoria, kg]) => ({ categoria, animales: 0, pesoUltimaPesada: kg, fechaUltimaPesada: diaInicio,
+          gananciaMedida: null, gananciaConfigurada: null, diasHastaCierre: 0, pesoProyectado: kg, origen: `${kg} kg — papeles de JMS ${diaInicio.split("-").reverse().join("/")}`, difiereDeLaConfigurada: false }))
+        : []
+      let valuacionInicio: ValuacionHacienda | null = null
+      let tablasInicio: TablasPrecios | null = null
+      if (existenciasInicio.length) {
+        try {
+          const [iMag, iHem, iMac, iVie, iTor] = await preciosAl(diaInicio, existenciasInicio, pesosInicio)
+          tablasInicio = { mag: iMag.filas, hembra: iHem.filas, macho: iMac.filas, vientres: iVie.filas, toros: iTor.filas }
+          valuacionInicio = valuarHacienda(existenciasInicio, iMag.filas, { macho: iMac.filas, hembra: iHem.filas }, {}, pesosInicio, { vientres: iVie.filas, toros: iTor.filas })
+        } catch (e) { toast.warning("No se pudo valuar la hacienda al inicio: " + (e as Error).message) }
+      }
+      const tcCierre = await leerTcCierre(supabase, ejercicio.fechaCierre).catch(() => null)
+
       const d: DatosHacienda = {
         existencias, mag, mercado, porCabeza,
+        movimientosPapel, valuacionInicio, tablasInicio,
+        tablasCierre: { mag, hembra: hembras, macho: machos, vientres, toros },
+        tcCierre: tcCierre?.tc ?? null, saldosGuardados: saldosH.valores,
         valuacion: valuarHacienda(existencias, mag, mercado, numericos, pesos, porCabeza),
         /**
          * 🧮 El cuadre de la existencia (pedido del usuario 2026-09-29). El primer día del ejercicio
