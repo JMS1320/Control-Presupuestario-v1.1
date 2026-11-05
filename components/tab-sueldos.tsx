@@ -1417,6 +1417,9 @@ export function TabSueldos() {
                   <TableHead>Emp.</TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead className="text-right">Bruto</TableHead>
+                  {/* 👷 A-FEAT-1552 (nota 🌙 JMS 02/11: «en el display preciso ver siempre cat A y cat B por empleado») */}
+                  <TableHead className="text-right" title="Lo que va por recibo (Cat A)">Cat A</TableHead>
+                  <TableHead className="text-right" title="Lo que va por fuera del recibo (Cat B)">Cat B</TableHead>
                   <TableHead className="text-right">Anticipos</TableHead>
                   <TableHead className="text-right">Saldo</TableHead>
                   <TableHead className="text-right">IPC Ref.</TableHead>
@@ -1427,7 +1430,7 @@ export function TabSueldos() {
               <TableBody>
                 {periodos.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-gray-400 py-10">
+                    <TableCell colSpan={11} className="text-center text-gray-400 py-10">
                       No hay períodos para este mes
                     </TableCell>
                   </TableRow>
@@ -1467,6 +1470,13 @@ export function TabSueldos() {
                     </TableCell>
                     <TableCell className="text-right font-mono text-sm">
                       {formatoMoneda(p.bruto_calculado)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs text-gray-700">
+                      {p.monto_a !== null ? formatoMoneda(p.monto_a) : '—'}
+                      {p.cuota_alimentaria ? <div className="text-[10px] text-gray-400" title="Parte de A que va como cuota alimentaria">cuota alim. {formatoMoneda(p.cuota_alimentaria)}</div> : null}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-xs text-gray-700">
+                      {p.monto_b !== null ? formatoMoneda(p.monto_b) : '—'}
                     </TableCell>
                     <TableCell className="text-right font-mono text-sm text-orange-600">
                       {(p.anticipos_descontados ?? 0) > 0 ? formatoMoneda(p.anticipos_descontados) : '—'}

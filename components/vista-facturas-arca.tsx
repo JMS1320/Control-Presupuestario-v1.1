@@ -1,6 +1,7 @@
 "use client"
 
 
+import { nuevasPrimero } from "@/lib/importar/orden-preview"
 import { ModalVincularCompras } from "./modal-vincular-compras"
 import { conversionDe } from "@/lib/pagos/moneda-factura"
 import { toggleChip, esSoloEste, tituloChip } from "@/lib/ui/chips"
@@ -8878,7 +8879,8 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                           </tr>
                         </thead>
                         <tbody className="divide-y">
-                          {(previewData.facturas as any[]).map((f: any) => (
+                          {/* ⬆️ A-FEAT-1554: las nuevas arriba de todo */}
+                          {nuevasPrimero(previewData.facturas as any[]).map((f: any) => (
                             <tr key={f.fila} className={
                               f.estado === 'nueva' ? 'bg-white' :
                               f.estado === 'duplicado' ? 'bg-amber-50' : 'bg-red-50'

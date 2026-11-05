@@ -85,6 +85,7 @@ import { motivoCuentaBloqueada } from "@/lib/auth/cuentas-extracto"
 import { minutosEfectivos, validarMinutos, textoMinutos, valorCookieActividad, msRestantes, sesionVencida, sesionDelToken } from "@/lib/auth/inactividad"
 import { desvioPorPausa, vigiaDebeDesviar } from "@/lib/auth/pausa"
 import { puedeMirarComo } from "@/lib/auth/como-persona"
+import { nuevasPrimero } from "@/lib/importar/orden-preview"
 import { pideOtraVentana, linkSeccion } from "@/lib/ui/links"
 import { teclaDeItem, itemDeTecla, escribiendoEn } from "@/lib/ui/atajos-menu"
 import { vencimientosDeLaPersona, cuentasParaPagar, motivoPagoInvalido, montoAR, empresaDelPago, PREFIJO_DEVUELTA, documentosDeCuotas, motivoComprobanteInvalido, type CuotaDeLaPersona } from "@/lib/vencimientos/de-la-persona"
@@ -10239,6 +10240,10 @@ export function correrCasos(): Resultado[] {
       vigiaDebeDesviar(503, "/login"), vigiaDebeDesviar(401, "/")].map(b => b ? "va" : "queda").join(" · ")
     chequear("Accesos", "Vigía de pausa: con 503 lleva al aviso desde la app; con 200/401 o ya en el aviso o el login, se queda",
       "va · queda · queda · queda · queda", vgPz, vgPz === "va · queda · queda · queda · queda", "A-BUG-1542")
+    // ── ⬆️ Importar facturas: las nuevas arriba (A-FEAT-1554), el resto en el orden del archivo ──
+    const np = nuevasPrimero([{ id: 1, estado: "duplicado" }, { id: 2, estado: "nueva" }, { id: 3, estado: "error" }, { id: 4, estado: "nueva" }, { id: 5, estado: "duplicado" }]).map(x => x.id).join("")
+    chequear("Accesos", "Importar facturas: las nuevas primero (en el orden del archivo), después las que no se leyeron, al final las que ya existen",
+      "24315", np, np === "24315", "A-FEAT-1554")
     // ── 🗗 Abrir en otra ventana (A-FEAT-1546): Ctrl / Cmd / Shift / rueda piden otra ventana; el clic normal, no ──
     const ov = [pideOtraVentana({ button: 0 }), pideOtraVentana({ ctrlKey: true, button: 0 }), pideOtraVentana({ metaKey: true }),
       pideOtraVentana({ shiftKey: true }), pideOtraVentana({ button: 1 }), linkSeccion("cashflow")].map(String).join(" · ")
