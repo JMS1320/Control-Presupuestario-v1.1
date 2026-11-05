@@ -95,10 +95,25 @@ function yaEstaEn_(carpeta, nombre, cache) {
   if (!cache.archivos[clave]) {
     var mapa = {}
     var it = carpeta.getFiles()
-    while (it.hasNext()) mapa[it.next().getName()] = true
+    // Se guarda el id y el link (no sólo «está»): así el «ya estaba» puede devolver el link (05/11, ver `archivoEn_`)
+    while (it.hasNext()) { var f = it.next(); mapa[f.getName()] = { id: f.getId(), url: f.getUrl() } }
     cache.archivos[clave] = mapa
   }
-  return cache.archivos[clave][nombre] === true
+  return !!cache.archivos[clave][nombre]
+}
+
+/**
+ * 🔗 El archivo que YA está en la carpeta, con su id y su link — o null. JMS 05/11: *«si esto ya se corrió antes, ¿me
+ * mostraría los links, no me haría descargar todo nuevamente?»*. No baja de nuevo (eso ya pasaba), y ahora el «ya estaba»
+ * devuelve el link: si no, al aplicar la boleta en otra corrida quedaba sin su PDF vinculado.
+ */
+function archivoEn_(carpeta, nombre, cache) {
+  var m = cache && cache.archivos[carpeta.getId()]
+  var v = m ? m[nombre] : null
+  if (v && v.id) return v
+  var it = carpeta.getFilesByName(nombre)
+  if (it.hasNext()) { var f = it.next(); return { id: f.getId(), url: f.getUrl() } }
+  return null
 }
 
 /** Se anota lo recién creado: si no, dos links iguales del mismo mail se bajarían dos veces. */
@@ -525,8 +540,12 @@ function bajarBoletasArba(soloContar, opciones) {
           // empresa tiene la suya, buscar en el padre daría «ya estaba» por un archivo de otra.
           var nombre = nombreUsuario_(msg.getDate(), msg.getSubject(), elObjeto, mapaPartidas)
           if (nombre && yaEstaEn_(destino, nombre, cacheDrive)) {
-            // ✅ Acá se ahorra la descarga: es lo que hace que re-correr sea barato.
-            yaEstaban.push({ archivo: nombre, carpeta: destino.getName() })
+            // ✅ Acá se ahorra la descarga: es lo que hace que re-correr sea barato. Y vuelve con su link y lo que dice el
+            // mail, igual que una bajada (05/11): si no, la boleta aplicada en otra corrida quedaba sin su PDF.
+            var ya = archivoEn_(destino, nombre, cacheDrive)
+            yaEstaban.push({ archivo: nombre, carpeta: destino.getName(), url: ya ? ya.url : null, file_id: ya ? ya.id : null,
+              asunto: msg.getSubject(), fecha: Utilities.formatDate(msg.getDate(), 'GMT-3', 'yyyy-MM-dd'),
+              objeto_mail: fila ? fila.objeto : null, importe_mail: fila ? fila.importe : null, contribuyente: tabla.contribuyente || null })
             continue
           }
 
@@ -545,7 +564,10 @@ function bajarBoletasArba(soloContar, opciones) {
             }
             nombre = nombreDeArchivo_(r.nombre, msg.getDate(), k, msg.getSubject(), elObjeto, links[k])
             if (yaEstaEn_(destino, nombre, cacheDrive)) {
-              yaEstaban.push({ archivo: nombre, carpeta: destino.getName() })
+              var ya2 = archivoEn_(destino, nombre, cacheDrive)
+              yaEstaban.push({ archivo: nombre, carpeta: destino.getName(), url: ya2 ? ya2.url : null, file_id: ya2 ? ya2.id : null,
+                asunto: msg.getSubject(), objeto_mail: fila ? fila.objeto : null, importe_mail: fila ? fila.importe : null,
+                contribuyente: tabla.contribuyente || null })
               continue
             }
           }

@@ -200,7 +200,7 @@ export function PanelBoletasArba() {
   /** Cuántas pasadas hizo falta. Se muestra sólo cuando fue más de una. */
   const [pasadas, setPasadas] = useState(0)
   type Bajada = { archivo: string; carpeta?: string; url?: string; objeto_mail?: string | null; importe_mail?: number | null }
-  const [delMail, setDelMail] = useState<{ resumen: string; bajadas: Bajada[]; ya_estaban: { archivo: string }[]; descuadres?: { asunto: string; detalle: string }[] } | null>(null)
+  const [delMail, setDelMail] = useState<{ resumen: string; bajadas: Bajada[]; ya_estaban: Bajada[]; descuadres?: { asunto: string; detalle: string }[] } | null>(null)
   /**
    * Lo que dijo el MAIL, por nombre de archivo. Se llena al bajar y se usa cuando después subís
    * esos mismos PDFs: ahí es donde los dos caminos se encuentran y se pueden comparar.
@@ -321,7 +321,7 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
       let j: Record<string, unknown> = {}
       let pasada = 0
       const acumBajadas: Bajada[] = []
-      const acumYaEstaban: { archivo: string }[] = []
+      const acumYaEstaban: Bajada[] = []
 
       while (pasada < TOPE_PASADAS) {
         pasada++
@@ -344,7 +344,7 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
         }
         const nuevas = (j.bajadas ?? []) as Bajada[]
         acumBajadas.push(...nuevas)
-        acumYaEstaban.push(...((j.ya_estaban ?? []) as { archivo: string }[]))
+        acumYaEstaban.push(...((j.ya_estaban ?? []) as Bajada[]))
 
         // Contar no baja nada: una sola pasada alcanza y repetir daría siempre lo mismo.
         if (soloContar || !j.sin_tiempo) break
@@ -406,6 +406,15 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
        * Sin el link, para verificar un importe hay que salir a buscar el archivo en el Drive.
        */
       const idx: Record<string, { objeto: string | null; importe: number | null; url: string | null; carpeta: string | null }> = {}
+      // 🔗 05/11: lo que YA estaba archivado también trae su link y lo del mail (GAS nuevo) — se suma igual que una bajada,
+      // así «Aplicar» guarda el PDF aunque se haya bajado en otra corrida. Con un GAS viejo vienen sin link: no se pisa nada.
+      for (const b of (j.ya_estaban ?? []) as Bajada[]) {
+        if (!b.archivo || !(b as { url?: string | null }).url) continue
+        idx[b.archivo] = {
+          objeto: b.objeto_mail ?? null, importe: b.importe_mail ?? null,
+          url: b.url ?? null, carpeta: b.carpeta ?? null,
+        }
+      }
       for (const b of (j.bajadas ?? []) as Bajada[]) {
         idx[b.archivo] = {
           objeto: b.objeto_mail ?? null, importe: b.importe_mail ?? null,
@@ -699,7 +708,13 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
                 ))}
                 {delMail.ya_estaban.length > 0 && (
                   <div className="mt-1 text-[10px] text-gray-500">
-                    {delMail.ya_estaban.length} ya estaban archivadas (no se duplicaron).
+                    {delMail.ya_estaban.length} ya estaban archivadas (no se bajaron de nuevo){delMail.ya_estaban.some(b => !b.url) ? " — para ver sus links hay que subir el GAS nuevo" : ""}:
+                    {delMail.ya_estaban.map((b, i) => (
+                      <div key={i} className="text-gray-600">
+                        · {b.carpeta && <span className="text-gray-400">{b.carpeta}/</span>}{b.archivo}
+                        {b.url && <> — <a href={b.url} target="_blank" rel="noreferrer" className="text-blue-700 underline">ver</a></>}
+                      </div>
+                    ))}
                   </div>
                 )}
                 {(delMail.descuadres ?? []).length > 0 && (

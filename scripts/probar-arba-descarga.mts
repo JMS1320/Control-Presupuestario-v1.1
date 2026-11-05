@@ -30,7 +30,7 @@ if (!fs.existsSync(GS)) {
 // Se normalizan los fines de línea: en Windows git deja CRLF y el corte por `\n}\n` no matchea.
 // Sin esto el test falla con «linksDeBoleta_ is not defined», que no dice nada de la causa.
 const fuente = fs.readFileSync(GS, "utf8").split("\r\n").join("\n")
-const necesarias = ["linksDeBoleta_", "nombreDeArchivo_", "nombreUsuario_", "nombreCarpeta_", "textoPlanoDeMail_", "soloDigitos_", "partidaDeNombre_", "filasDelMail_"]
+const necesarias = ["linksDeBoleta_", "nombreDeArchivo_", "nombreUsuario_", "nombreCarpeta_", "textoPlanoDeMail_", "soloDigitos_", "partidaDeNombre_", "filasDelMail_", "yaEstaEn_", "archivoEn_", "anotarCreado_"]
 let codigo = ""
 for (const fn of necesarias) {
   const i = fuente.indexOf(`function ${fn}(`)
@@ -49,7 +49,7 @@ const Utilities = {
         : iso.slice(0, 10)
   },
 }
-const { linksDeBoleta_, nombreDeArchivo_, nombreUsuario_, nombreCarpeta_, textoPlanoDeMail_, soloDigitos_, partidaDeNombre_, filasDelMail_ } =
+const { linksDeBoleta_, nombreDeArchivo_, nombreUsuario_, nombreCarpeta_, textoPlanoDeMail_, soloDigitos_, partidaDeNombre_, filasDelMail_, yaEstaEn_, archivoEn_, anotarCreado_ } =
   new Function("Utilities", codigo + `\nreturn { ${necesarias.join(", ")} }`)(Utilities)
 
 const r: { ok: boolean; caso: string; esperado: string; obtenido: string }[] = []
@@ -310,6 +310,21 @@ chequear("Las entidades HTML no parten el importe (&nbsp; entre el $ y el númer
 
 chequear("El texto de un <style> no aporta números falsos",
   "1", String(filasDelMail_(`<style>.x{margin:10,00px}</style><td>099-015881-9</td><td>40.934,10</td>`).filas.length))
+
+// ── Re-correr: lo que ya está no se baja, y vuelve CON SU LINK (05/11) ─────────────────────────
+{
+  const archivos = [{ n: "2026 - Inmob - Cuota 4 - Rojas.pdf", id: "f1" }, { n: "2026 - Inmob - Cuota 4 - Casco.pdf", id: "f2" }]
+  const it = (xs: typeof archivos) => { let i = 0; return { hasNext: () => i < xs.length, next: () => { const a = xs[i++]; return { getName: () => a.n, getId: () => a.id, getUrl: () => `https://drive/${a.id}` } } } }
+  const carpeta = { getId: () => "c1", getFiles: () => it(archivos), getFilesByName: (n: string) => it(archivos.filter(a => a.n === n)) }
+  const cache = { archivos: {} as Record<string, Record<string, unknown>> }
+  const ya = yaEstaEn_(carpeta, "2026 - Inmob - Cuota 4 - Rojas.pdf", cache)
+  const link = archivoEn_(carpeta, "2026 - Inmob - Cuota 4 - Rojas.pdf", cache)?.url ?? "sin link"
+  const nueva = yaEstaEn_(carpeta, "2026 - Inmob - Cuota 4 - Ombu.pdf", cache)
+  anotarCreado_(carpeta, "2026 - Inmob - Cuota 4 - Ombu.pdf", cache)
+  const recienCreada = yaEstaEn_(carpeta, "2026 - Inmob - Cuota 4 - Ombu.pdf", cache)
+  chequear("Re-correr: lo que ya está en la carpeta no se baja y devuelve su link; lo nuevo sí se baja una vez",
+    "true · https://drive/f1 · false · true", `${ya} · ${link} · ${nueva} · ${recienCreada}`)
+}
 
 for (const x of r) {
   console.log(`  ${x.ok ? "✓" : "✗"} ${x.caso}`)
