@@ -4023,7 +4023,12 @@ ejemplo «Gastos Reintegro JMS») no es gasto: está al pie de «Por mes». → 
 ⚠️ **Cambió 05/11 — la hacienda en el libro D**: «02 Stock hacienda» (inicio y cierre en NZ, SENASA y DDJJ, con nacimientos, mortandad, reclasificación,
 compras, ventas y ajustes en el medio), «02.1 Stock valorizado» (como tu papel 2.2: cierre e inicio, y a la derecha de dónde sale cada número, con
 link a la cotización; abajo el descuento del 10 % y el TOTAL NETO), «02.2 Precios tomados» (lo usado en verde), una solapa por tipo de
-movimiento y «02.9 Cálculo de los kilos» (animal por animal, cómo se llegó al peso al cierre). → A-TEST-1332 SENASA al cierre se escribe en la pantalla (Hacienda → saldos).
+movimiento, «02.9 Cálculo de los kilos» (arriba un resumen por categoría: pesada anterior y posterior, aumento entre
+pesadas, ganancia diaria y kilos al cierre; abajo animal por animal) y «02.10 Aumento del rodeo U$S» (cuánto subió el rodeo de
+cría —en cabezas— y el de recría —en kilos—, dólares contra dólares, abierto en «por cantidad» y «por precio»). En el 02.1 los
+pesos van en celeste y los dólares en verde; el precio y su link, en amarillo; abajo, la variación de precios entre el cierre
+anterior y este, y el ternero liviano de 180–200 kg de referencia. SENASA al cierre se escribe en la pantalla (Hacienda →
+saldos); con eso el 02 compara por sexo y total. → A-TEST-1332
 Los **retiros** ya no están en el libro H: van al libro I. Los **sueldos a pagar** al cierre están al pie de «13 Sueldos».
 
 ⚠️ **Cambió 04/11 (noche) — el set trae un libro I, «Socios y Libertad (próximo)»**: las cuentas con los socios (14.1) y «Gastos

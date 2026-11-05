@@ -52,6 +52,18 @@
 - **Templates funcionalidades avanzadas** - Replicación anual, ajuste inflación `#templates #avanzado #pendiente`
 - **Expansión PAM** - Replicar infraestructura MSA `#pam #expansion #pendiente`
 
+## 📤 Un papel del balance se le entrega a JMS GENERADO, no «bajalo» `#balance #excel #flujo #2026-11-05`
+JMS 05/11: *«precisamos que me des el Excel sin que yo lo descargue, porque perdemos mucho tiempo en la ida y vuelta; subimos a
+Vercel una vez que terminemos»*. Bajar el set exige que Vercel haya publicado, F5 y «Traer stock y precios» — y si algo de eso
+falla, sale con la versión vieja sin avisar (pasó: vio los factores 0,90/0,80 que ya no existían).
+- **Cómo**: un script de sólo lectura arma las MISMAS solapas con la MISMA función del export y las deja en
+  `- Comunicacion JMS Claude - Archivos/Balance/Excels trabajando con claude/`. Para hacienda: `npx tsx scripts/excel-papel-hacienda.mts`
+  (usa `agregarPapelHacienda`). JMS anota en ese Excel; se leen sus notas y celdas cambiadas con `openpyxl` comparando contra el generado.
+- **Commit sí, push al final**: cada push gasta un despliegue de Vercel (tope diario, § 17 de CLAUDE.md).
+- **La estética que él arma en el Excel se copia leyendo el archivo** (colores exactos, bordes, celdas combinadas), no a ojo: los
+  colores de tema se convierten con el tema del libro (p. ej. accent3 9BBB59 + tint 0,6 = `D7E4BD`).
+- ⚠️ `presentarHoja` pintaba encima del color propio de una celda (encabezados y totales): desde 05/11 el estilo de la celda manda.
+
 ## 🔁 Con cuenta corriente, no van los comprobantes sueltos `#balance #papel14 #criterio #2026-10-29`
 
 JMS (29/10), a raíz de la NC de la póliza 670821 de Federación Patronal ($ 24.341,09 a favor) que salía en el 04 **y**
