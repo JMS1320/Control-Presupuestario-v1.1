@@ -4,7 +4,7 @@ import { supabaseAdmin, faltaConfiguracionAdmin } from "@/lib/supabase-admin"
 import { ahoraISO, hoyArgentina } from "@/lib/fechas"
 import { puedeMirarComo } from "@/lib/auth/como-persona"
 import {
-  cuentasParaPagar, empresaDelPago, motivoPagoInvalido, vencimientosDeLaPersona,
+  cuentasParaPagar, empresaDelPago, motivoPagoInvalido, vencimientosDeLaPersona, documentosDeCuotas, motivoComprobanteInvalido,
   type CuotaDeLaPersona, type PropuestaDePago,
 } from "@/lib/vencimientos/de-la-persona"
 
@@ -19,11 +19,23 @@ import {
  * `cuotas_egresos_sin_factura`) y la cuota cambia recién cuando JMS confirma (`/api/mis-vencimientos/confirmar`).
  *
  *   GET [?como=<mail> sólo admin]                     → { vencimientos, cuentas }
- *   POST { id, fecha, monto, medio, detalle }         → informa el pago (o edita lo informado, si sigue sin confirmar)
+ *   POST { id, fecha, monto, medio, detalle, comprobante? } → informa el pago (o edita lo informado, si sigue sin
+ *        confirmar). `comprobante` = { nombre, tipo, data (data URL) } opcional (A-FEAT-1560); `null` lo saca.
  *   POST { id, anular: true }                         → anula lo informado (mientras no esté confirmado)
  */
 
 const TABLA = "cuotas_egresos_sin_factura"
+type Comprobante = { nombre: string; tipo: string; data: string }
+
+/** 📎 Los documentos vinculados a estas cuotas: mails archivados (A-FEAT-1442), boletas de ARBA y el comprobante adjunto. */
+async function documentos(cuotaIds: string[], conComprobante: { id: string; registro_id: string; estado: string; con_comprobante: string | null }[]) {
+  if (cuotaIds.length === 0) return {}
+  const [{ data: mails }, { data: boletas }] = await Promise.all([
+    supabaseAdmin.from("mails_registro").select("asunto, vinculos").contains("vinculos", [{ tabla: TABLA }]),
+    supabaseAdmin.from("boletas_arba").select("cuota_id, archivo_url, archivo_nombre, impuesto").in("cuota_id", cuotaIds),
+  ])
+  return documentosDeCuotas(cuotaIds, (mails ?? []) as Parameters<typeof documentosDeCuotas>[1], boletas ?? [], conComprobante)
+}
 
 async function loDeLaPersona(mail: string) {
   const { data: templates, error: eT } = await supabaseAdmin
@@ -33,7 +45,7 @@ async function loDeLaPersona(mail: string) {
     .contains("avisar_a", [mail])
   if (eT) throw new Error(eT.message)
   const ids = (templates ?? []).map(t => t.id)
-  if (ids.length === 0) return { templates: [], cuotas: [] as (CuotaDeLaPersona & { egreso_id: string })[], propuestas: [] as PropuestaDePago[] }
+  if (ids.length === 0) return { templates: [], cuotas: [] as (CuotaDeLaPersona & { egreso_id: string })[], propuestas: [] as PropuestaDePago[], conComprobante: [] as { id: string; registro_id: string; estado: string; con_comprobante: string | null; comprobante: Comprobante | null }[] }
   const { data: cuotas, error: eC } = await supabaseAdmin
     .from(TABLA)
     .select("id, egreso_id, estado, fecha_vencimiento, fecha_estimada, fecha_pago, monto, numero_cuota, detalle, medio_pago")
@@ -51,14 +63,20 @@ async function loDeLaPersona(mail: string) {
   // Las propuestas de pago sobre SUS cuotas (de cualquiera: si otro informó, también se ve)
   const idsCuotas = conTemplate.map(c => c.id)
   const propuestas: PropuestaDePago[] = []
+  // El comprobante (A-FEAT-1560) viaja DENTRO de `cambios`: se separa acá para no mandarlo en cada lista.
+  const conComprobante: { id: string; registro_id: string; estado: string; con_comprobante: string | null; comprobante: Comprobante | null }[] = []
   for (let i = 0; i < idsCuotas.length; i += 200) {
     const { data: p, error: eP } = await supabaseAdmin.from("propuestas_cambio")
       .select("id, registro_id, estado, cambios, resolucion, resuelta_at, resuelta_por")
-      .eq("tabla", TABLA).in("registro_id", idsCuotas.slice(i, i + 200)).in("estado", ["propuesta", "cancelada"])
+      .eq("tabla", TABLA).in("registro_id", idsCuotas.slice(i, i + 200)).in("estado", ["propuesta", "cancelada", "aceptada"])
     if (eP) throw new Error(eP.message)
-    propuestas.push(...((p ?? []) as PropuestaDePago[]))
+    for (const x of (p ?? []) as (PropuestaDePago & { cambios: (Record<string, unknown> & { comprobante?: Comprobante }) | null })[]) {
+      const { comprobante, ...resto } = x.cambios ?? {}
+      propuestas.push({ ...x, cambios: x.cambios ? (resto as unknown as PropuestaDePago["cambios"]) : null })
+      conComprobante.push({ id: x.id, registro_id: x.registro_id, estado: x.estado, con_comprobante: comprobante?.nombre ?? null, comprobante: comprobante ?? null })
+    }
   }
-  return { templates: templates ?? [], cuotas: conTemplate, propuestas }
+  return { templates: templates ?? [], cuotas: conTemplate, propuestas, conComprobante }
 }
 
 function mailDe(user: { email?: string | null }) {
@@ -76,10 +94,11 @@ export async function GET(req: Request) {
   const mail = como ? como.trim().toLowerCase() : mailDe(g.user)
   if (!mail) return NextResponse.json({ ok: true, vencimientos: [], cuentas: [], asignados: 0 })
   try {
-    const { templates, cuotas, propuestas } = await loDeLaPersona(mail)
+    const { templates, cuotas, propuestas, conComprobante } = await loDeLaPersona(mail)
     return NextResponse.json({
       ok: true,
       vencimientos: vencimientosDeLaPersona(cuotas, hoyArgentina(), propuestas),
+      documentos: await documentos(cuotas.map(c => c.id), conComprobante),
       cuentas: cuentasParaPagar(templates.map(t => t.responsable)),
       hoy: hoyArgentina(),
       asignados: templates.length,
@@ -98,12 +117,12 @@ export async function POST(req: Request) {
   if (falta) return NextResponse.json({ ok: false, error: falta }, { status: 500 })
   const mail = mailDe(g.user)
   const body = await req.json().catch(() => null) as
-    { id?: string; fecha?: string; monto?: number; detalle?: string; medio?: string; anular?: boolean } | null
+    { id?: string; fecha?: string; monto?: number; detalle?: string; medio?: string; anular?: boolean; comprobante?: Comprobante | null } | null
   if (!body?.id || !mail) return NextResponse.json({ ok: false, error: "Falta la cuota." }, { status: 400 })
 
   try {
     // La cuota tiene que ser de un template asignado a esta persona: se busca DENTRO de lo suyo, nunca por id suelto.
-    const { templates, cuotas, propuestas } = await loDeLaPersona(mail)
+    const { templates, cuotas, propuestas, conComprobante } = await loDeLaPersona(mail)
     const cuota = cuotas.find(c => c.id === body.id)
     if (!cuota) return NextResponse.json({ ok: false, error: "Esa cuota no está entre las tuyas." }, { status: 403 })
     const abierta = propuestas.find(p => p.registro_id === cuota.id && p.estado === "propuesta")
@@ -127,8 +146,15 @@ export async function POST(req: Request) {
     const empresa = empresaDelPago(medio, cuota.template.responsable)
     if (!empresa) return NextResponse.json({ ok: false, error: "No se pudo saber de qué empresa es este pago." }, { status: 400 })
 
+    const motivoC = motivoComprobanteInvalido(body.comprobante)
+    if (motivoC) return NextResponse.json({ ok: false, error: motivoC }, { status: 400 })
+    // Editando sin mandar comprobante: se conserva el que ya tenía; `null` lo saca.
+    const comprobante = body.comprobante === undefined
+      ? (abierta ? conComprobante.find(x => x.id === abierta.id)?.comprobante ?? null : null)
+      : body.comprobante
+
     // El detalle es SUYO: va tal cual lo dejó (el campo arranca con el que la cuota ya tenía).
-    const cambios = { estado: "pagado", fecha_pago: fecha, monto, medio_pago: medio, detalle: (body.detalle ?? cuota.detalle ?? "").trim() || null }
+    const cambios = { estado: "pagado", fecha_pago: fecha, monto, medio_pago: medio, detalle: (body.detalle ?? cuota.detalle ?? "").trim() || null, ...(comprobante ? { comprobante } : {}) }
     if (abierta) {
       const { error } = await supabaseAdmin.from("propuestas_cambio")
         .update({ cambios, empresa, propuesta_at: ahoraISO() }).eq("id", abierta.id).eq("estado", "propuesta")

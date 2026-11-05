@@ -178,3 +178,55 @@ export function empresaDelPago(medio: string, responsable: string | null): "MSA"
   const deTemplate = empresasDe(responsable).find(e => (validas as readonly string[]).includes(e))
   return (deTemplate as "MSA" | "PAM" | "MA" | undefined) ?? null
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// 📎 Los DOCUMENTOS de cada cuota (JMS 05/11: «la vista de MA debe poder ver las fotos de lo que va a pagar si está
+// vinculado») + el comprobante que adjunta ella al informar (A-FEAT-1560, opcional: «ok, pero puede no adjuntarse»).
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+export interface DocumentoDeCuota { titulo: string; url: string; origen: "mail" | "boleta" | "comprobante" }
+
+/** El tope del comprobante adjunto (va dentro de la propuesta, como las capturas de las notas): ~1,5 MB en base64. */
+export const MAX_COMPROBANTE = 2_000_000
+
+/**
+ * Pura: los documentos de cada cuota, de los tres lugares donde hoy se vinculan:
+ *  · un MAIL archivado al que se le pasó el monto a la cuota (A-FEAT-1442: `vinculos` con la cuota + el link de Drive);
+ *  · una BOLETA de ARBA con `cuota_id` y `archivo_url`;
+ *  · el COMPROBANTE que adjuntó quien informó el pago (se sirve por `/api/mis-vencimientos/comprobante`).
+ */
+export function documentosDeCuotas(
+  cuotaIds: string[],
+  mails: { vinculos: { schema?: string; tabla?: string; id?: string; que?: string }[] | null; asunto?: string | null }[],
+  boletas: { cuota_id: string | null; archivo_url: string | null; archivo_nombre?: string | null; impuesto?: string | null }[],
+  propuestas: { id: string; registro_id: string; estado: string; con_comprobante: string | null }[],
+): Record<string, DocumentoDeCuota[]> {
+  const ids = new Set(cuotaIds)
+  const fuera: Record<string, DocumentoDeCuota[]> = {}
+  const sumar = (id: string, d: DocumentoDeCuota) => {
+    if (!ids.has(id)) return
+    const l = (fuera[id] ??= [])
+    if (!l.some(x => x.url === d.url)) l.push(d)
+  }
+  for (const m of mails) {
+    const v = m.vinculos ?? []
+    const drive = v.find(x => x.schema === "drive")
+    const url = drive?.que?.split(" | ")[1]
+    if (!url) continue
+    for (const c of v) if (c.tabla === "cuotas_egresos_sin_factura" && c.id) sumar(c.id, { titulo: drive?.que?.split(" | ")[0] || m.asunto || "Documento", url, origen: "mail" })
+  }
+  for (const b of boletas) if (b.cuota_id && b.archivo_url) sumar(b.cuota_id, { titulo: b.archivo_nombre || `Boleta ${b.impuesto ?? ""}`.trim(), url: b.archivo_url, origen: "boleta" })
+  for (const p of propuestas) {
+    if (!p.con_comprobante || p.estado === "cancelada") continue
+    sumar(p.registro_id, { titulo: `Comprobante: ${p.con_comprobante}`, url: `/api/mis-vencimientos/comprobante?id=${p.id}`, origen: "comprobante" })
+  }
+  return fuera
+}
+
+/** ¿Se acepta este archivo como comprobante? Imagen o PDF, y no más grande que el tope. */
+export function motivoComprobanteInvalido(c: { nombre: string; tipo: string; data: string } | null | undefined): string | null {
+  if (!c) return null
+  if (!/^(image\/|application\/pdf)/.test(c.tipo) || !c.data.startsWith(`data:${c.tipo}`)) return "El comprobante tiene que ser una foto o un PDF."
+  if (c.data.length > MAX_COMPROBANTE) return "El comprobante es muy grande (hasta ~1,5 MB)."
+  return null
+}

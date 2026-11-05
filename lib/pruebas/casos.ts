@@ -87,7 +87,7 @@ import { desvioPorPausa, vigiaDebeDesviar } from "@/lib/auth/pausa"
 import { puedeMirarComo } from "@/lib/auth/como-persona"
 import { pideOtraVentana, linkSeccion } from "@/lib/ui/links"
 import { teclaDeItem, itemDeTecla, escribiendoEn } from "@/lib/ui/atajos-menu"
-import { vencimientosDeLaPersona, cuentasParaPagar, motivoPagoInvalido, montoAR, empresaDelPago, PREFIJO_DEVUELTA, type CuotaDeLaPersona } from "@/lib/vencimientos/de-la-persona"
+import { vencimientosDeLaPersona, cuentasParaPagar, motivoPagoInvalido, montoAR, empresaDelPago, PREFIJO_DEVUELTA, documentosDeCuotas, motivoComprobanteInvalido, type CuotaDeLaPersona } from "@/lib/vencimientos/de-la-persona"
 import { REGLAS_EXTRACTO, ASIGNAR_EXTRACTO, ANTICIPOS_CASHFLOW, primeraPermitida, hayAlguna, tabInicialAsignar } from "@/lib/auth/ventanas"
 import { clasificarCampanita, contarNuevos, soyYo } from "@/lib/revisiones/campanita"
 import { caravanasDeHoja, planReposicion, cierraPlan, ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
@@ -6145,6 +6145,12 @@ export function correrCasos(): Resultado[] {
       unMes.origen.includes("2026-05-31") && unMes.origen.includes("kg/día"), "A-FEAT-1187")
 
     // ⚠️ Con UNA sola pesada no hay ganancia que medir: NO se proyecta ni se inventa una.
+    // ⚖️ A-FEAT-1541 (JMS 05/11): con una pesada DESPUÉS del cierre se interpola — 200 kg el 1/5 y 240 el 10/7 → al 30/6
+    //    (60 de 70 días) 234,3 kg. Sin la de después, el mismo animal se proyectaría con la ganancia.
+    const interp = pesosAlCierre([pesada("c", "2026-05-01", 200), pesada("c", "2026-07-10", 240)], {}, "2026-06-30")[0]
+    const vI = `${interp.pesoProyectado} · ${interp.origen.includes("interpolados") && interp.origen.includes("10/07")}`
+    chequear("Balance · pesos", "⚖️ Con pesada antes y después del cierre, el peso al 30/6 se INTERPOLA entre las dos (mejor que proyectar con la ganancia)",
+      "234.3 · true", vI, vI === "234.3 · true", "A-FEAT-1541")
     const unaSola = pesosAlCierre([pesada("b", "2026-05-04", 214.7)], {}, "2026-06-30")[0]
     chequear("Balance · pesos", "⚠️ Con una sola pesada no se proyecta: no hay ganancia que medir",
       "214.7 · sin ganancia",
@@ -10264,6 +10270,17 @@ export function correrCasos(): Resultado[] {
       .map(x => Number.isNaN(x as number) ? "NaN" : String(x)).join(" · ")
     chequear("Accesos", "Lo que te vence: el monto es-AR se lee bien; la empresa del pago sale de la cuenta (MA Galicia → MA), si no del template; nunca una que la tabla no acepta",
       "61126.5 · NaN · MA · PAM · null", montoYEmpresa, montoYEmpresa === "61126.5 · NaN · MA · PAM · null", "A-FEAT-1543")
+    // 📎 Documentos de cada cuota: del mail archivado, de la boleta ARBA y el comprobante (no el de una propuesta anulada)
+    const docs = documentosDeCuotas(["c1", "c2"],
+      [{ asunto: "ABL", vinculos: [{ schema: "drive", que: "ABL 11-26.pdf | https://drive/x" }, { schema: "public", tabla: "cuotas_egresos_sin_factura", id: "c1" }] },
+       { asunto: "otra", vinculos: [{ schema: "drive", que: "Otro | https://drive/y" }, { schema: "public", tabla: "cuotas_egresos_sin_factura", id: "zz" }] }],
+      [{ cuota_id: "c2", archivo_url: "https://drive/b", archivo_nombre: "Boleta inmob" }],
+      [{ id: "p9", registro_id: "c1", estado: "propuesta", con_comprobante: "vep.jpg" }, { id: "p8", registro_id: "c2", estado: "cancelada", con_comprobante: "x.pdf" }])
+    const vDocs = Object.entries(docs).map(([k, l]) => `${k}:${l.map(d => d.origen).join("+")}`).join(" · ")
+      + " | " + [motivoComprobanteInvalido(null) ?? "sin", motivoComprobanteInvalido({ nombre: "a.txt", tipo: "text/plain", data: "data:text/plain;base64,AA" }) ? "no-txt" : "ok",
+        motivoComprobanteInvalido({ nombre: "a.jpg", tipo: "image/jpeg", data: "data:image/jpeg;base64,AA" }) ?? "ok"].join(" ")
+    chequear("Accesos", "Lo que te vence: cada cuota con sus documentos (mail archivado, boleta, comprobante); no los de otra cuota ni el de una propuesta anulada; el adjunto es opcional y sólo foto o PDF",
+      "c1:mail+comprobante · c2:boleta | sin no-txt ok", vDocs, vDocs === "c1:mail+comprobante · c2:boleta | sin no-txt ok", "A-FEAT-1560")
     const ctasMA = cuentasParaPagar(["MA", "MA", "PAM/MA/Duhau"]).map(c => c.id).join(" · ")
     chequear("Accesos", "Lo que te vence: paga desde SUS cuentas, la de la empresa que más se repite primero (la principal)",
       "ma_galicia · pam_galicia · pam_galicia_cc", ctasMA, ctasMA === "ma_galicia · pam_galicia · pam_galicia_cc", "A-FEAT-1543")

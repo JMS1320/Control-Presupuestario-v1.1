@@ -804,7 +804,9 @@ Para que alguien (por ejemplo MA) vea en su Principal lo que le toca pagar y avi
    (los días de anticipación del template; vacío = 10).
 3. **💸 Pagué** → **Hoy** u **Otro día** (con la fecha), **cuánto pagó** (viene el monto de la cuota), **desde qué
    cuenta** (viene la principal de su empresa) y un detalle → **Informar el pago**. Queda ⏳ «esperando que JMS lo
-   confirme»; mientras tanto lo puede **✏️ Editar** o **Anular**. **La cuota todavía no cambia.**
+   confirme»; mientras tanto lo puede **✏️ Editar** o **Anular**. **La cuota todavía no cambia.** Puede adjuntar el
+   **comprobante** (foto o PDF), si quiere. En cada cuota ve con **📎** los documentos vinculados (la boleta, el mail
+   archivado, el comprobante).
 4. **Vos**: en tu Principal aparece **💸 Pagos informados por confirmar** con lo que puso (podés corregirlo) →
    **✔ Confirmar** (la cuota queda pagada) o **↩ Devolver** con un motivo (ella lo ve otra vez sin pagar, con el motivo).
 5. Cuando concilies el débito del banco, la cuota pasa a conciliada como siempre.

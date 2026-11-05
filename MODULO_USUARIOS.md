@@ -813,6 +813,11 @@ Las restricciones actuales (Vista de Pagos sin sección Pendiente, sin botón Re
   `resolucion` guarda qué corrigió él (la HUELLA); al devolver, `cancelada` con «devuelta: motivo», que ella ve.
   Sin cambios de estructura. *(Antes decía: «marcar pagado escribe la cuota al instante, deshacer mientras no se
   concilie» — eso se reemplazó.)* Lógica en `lib/vencimientos/de-la-persona.ts`.
+- **📎 Documentos y comprobante** (A-FEAT-1560, 05/11): cada cuota muestra lo vinculado — el mail archivado con «Pasar
+  el monto a su cuota» (`mails_registro.vinculos`: la cuota + el link de Drive), la boleta ARBA (`boletas_arba.cuota_id`
+  + `archivo_url`) y el comprobante adjunto al informar (opcional; foto comprimida o PDF ≤ ~1,5 MB, guardado en
+  `propuestas_cambio.cambios.comprobante`, servido por `/api/mis-vencimientos/comprobante` sólo a quien lo informó o a
+  un admin; nunca viaja en las listas). Los de Drive los abre ella sólo si la carpeta está compartida con su mail.
 - **Verlo como lo ve ella** (A-BUG-1544): en el modo permisos, «Ver como lo ve él» + **«como [persona]»** (las cuentas
   con ese rol, de `/api/admin/usuarios`). Los paneles personales leen con `?como=<mail>` —sólo un admin, sólo
   lectura (`puedeMirarComo`)— y van en un marco «sólo para mirar»; el Principal toma las secciones del borrador del

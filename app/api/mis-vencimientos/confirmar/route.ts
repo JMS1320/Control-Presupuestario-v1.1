@@ -20,6 +20,13 @@ import { motivoPagoInvalido, PREFIJO_DEVUELTA } from "@/lib/vencimientos/de-la-p
  */
 const TABLA = "cuotas_egresos_sin_factura"
 
+/** Lo informado, sin el archivo adjunto (que no viaja en la lista). */
+function sinComprobante(c: unknown): Record<string, unknown> {
+  const r = { ...((c ?? {}) as Record<string, unknown>) }
+  delete r.comprobante
+  return r
+}
+
 export async function GET() {
   const g = await exigirAdmin()
   if (!g.ok) return NextResponse.json({ ok: false, error: g.motivo }, { status: g.status })
@@ -38,7 +45,10 @@ export async function GET() {
     const c = porId.get(p.registro_id) as (typeof cuotas)[number] | undefined
     const t = (c as unknown as { egresos_sin_factura?: { nombre_referencia: string | null; responsable: string | null } } | undefined)?.egresos_sin_factura
     return {
-      id: p.id, persona: p.persona, empresa: p.empresa, nota: p.nota, informado: p.cambios, propuesta_at: p.propuesta_at,
+      // El comprobante (A-FEAT-1560) no viaja en la lista: sólo el nombre; se abre por /api/mis-vencimientos/comprobante.
+      id: p.id, persona: p.persona, empresa: p.empresa, nota: p.nota, propuesta_at: p.propuesta_at,
+      informado: sinComprobante(p.cambios),
+      comprobante: ((p.cambios as { comprobante?: { nombre?: string } } | null)?.comprobante?.nombre) ?? null,
       cuota: c ? {
         id: c.id, estado: c.estado, monto: Number(c.monto ?? 0), numero_cuota: c.numero_cuota,
         vencimiento: (c.fecha_vencimiento ?? c.fecha_estimada ?? "").slice(0, 10),

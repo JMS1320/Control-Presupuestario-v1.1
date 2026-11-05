@@ -17,6 +17,7 @@ const PERMITIDAS: Record<string, string> = {
   "admin/roles": "Lee y escribe `public.roles`, revocada a `authenticated` a propósito (scripts/60) para que nadie edite sus propios permisos.",
   "admin/roles/inactividad": "Escribe `public.roles.minutos_inactividad` (A-FEAT-1351); misma razón que admin/roles.",
   "sesion/inactividad": "Lee el tiempo de inactividad del PROPIO rol en `public.roles`, que está revocada a `authenticated` (scripts/60). El rol sale del JWT, no del pedido.",
+  "mis-vencimientos/comprobante": "A-FEAT-1560: sirve el comprobante adjunto a un pago informado; sólo a quien lo informó o a un admin (exigirSesion).",
   "mis-vencimientos/confirmar": "A-FEAT-1543: sólo admin con 2FA (`exigirAdmin`); aplica a la cuota el pago que JMS confirma y deja la huella en la propuesta.",
   "mis-vencimientos": "A-FEAT-1543: la persona (MA) tiene un rol SIN secciones y no tiene que necesitar permisos sobre los templates; la ruta filtra por el mail de la sesión (`avisar_a`) y sólo marca pagado una cuota de lo suyo. Exige sesión con rol.",
   "sesion/personas": "auth.admin.listUsers — a quién se le puede mandar un mensaje 🚩 (A-FEAT-1364). Devuelve sólo nombre y mail de cuentas con rol; exige sesión con rol.",

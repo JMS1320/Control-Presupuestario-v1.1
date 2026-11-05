@@ -24,6 +24,7 @@ interface Pendiente {
   persona: string
   informado: { fecha_pago: string; monto: number; medio_pago: string; detalle: string | null }
   propuesta_at: string
+  comprobante: string | null
   cuota: { id: string; estado: string; monto: number; numero_cuota: number | null; vencimiento: string; nombre: string; responsable: string | null } | null
 }
 
@@ -85,6 +86,9 @@ export function PagosPorConfirmar() {
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                   <span className="font-medium">{p.cuota?.nombre ?? "Cuota"}{p.cuota?.numero_cuota ? ` · cuota ${p.cuota.numero_cuota}` : ""}</span>
                   <span className="text-muted-foreground">{p.cuota?.responsable ?? ""} · vence {fecha(p.cuota?.vencimiento ?? "")} · cuota $ {plata(p.cuota?.monto ?? 0)}</span>
+                  {p.comprobante && (
+                    <a href={`/api/mis-vencimientos/comprobante?id=${p.id}`} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-700 hover:underline">📎 {p.comprobante}</a>
+                  )}
                   <span className="ml-auto text-xs text-muted-foreground">informó {p.persona} el {fecha(p.propuesta_at)}</span>
                 </div>
                 {p.cuota && p.cuota.estado !== "pendiente" && p.cuota.estado !== "pagar" && (

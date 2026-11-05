@@ -21,7 +21,8 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
-import { montoAR, type Vencimiento } from "@/lib/vencimientos/de-la-persona"
+import { montoAR, MAX_COMPROBANTE, type Vencimiento, type DocumentoDeCuota } from "@/lib/vencimientos/de-la-persona"
+import { comprimir } from "@/lib/captura-imagen"
 import type { CuentaDePago } from "@/lib/pagos/pagado-desde"
 import { useVistaComoPersona } from "@/components/contexto-permisos"
 import { VistaComoPersona } from "@/components/vista-como-persona"
@@ -55,7 +56,17 @@ export function MisVencimientos() {
   )
 }
 
-type Form = { cuando: "hoy" | "otro"; fecha: string; monto: string; medio: string; detalle: string }
+type Comprobante = { nombre: string; tipo: string; data: string }
+type Form = { cuando: "hoy" | "otro"; fecha: string; monto: string; medio: string; detalle: string
+  /** A-FEAT-1560 — `undefined` = no se tocó (al editar se conserva el que estaba); `null` = sacarlo. */
+  comprobante?: Comprobante | null }
+
+/** 📎 Foto → JPEG comprimido (como las capturas de las notas); PDF → tal cual. */
+async function leerComprobante(f: File): Promise<Comprobante> {
+  if (f.type.startsWith("image/")) return { nombre: f.name, tipo: "image/jpeg", data: await comprimir(f) }
+  const data = await new Promise<string>((ok, mal) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = () => mal(r.error); r.readAsDataURL(f) })
+  return { nombre: f.name, tipo: f.type || "application/pdf", data }
+}
 
 function MisVencimientosDe({ como }: { como: string | null }) {
   const [lista, setLista] = useState<Vencimiento[]>([])
@@ -67,6 +78,8 @@ function MisVencimientosDe({ como }: { como: string | null }) {
   const [abierto, setAbierto] = useState<string | null>(null)
   const [form, setForm] = useState<Form>({ cuando: "hoy", fecha: "", monto: "", medio: "", detalle: "" })
   const [guardando, setGuardando] = useState(false)
+  /** 📎 Lo que está vinculado a cada cuota (mails archivados, boletas, comprobantes). */
+  const [documentos, setDocumentos] = useState<Record<string, DocumentoDeCuota[]>>({})
 
   const cargar = useCallback(async () => {
     try {
@@ -74,6 +87,7 @@ function MisVencimientosDe({ como }: { como: string | null }) {
       const j = await r.json()
       if (!r.ok || !j.ok) { setError(j.error ?? "No se pudo leer lo que te vence."); return }
       setError(null); setLista(j.vencimientos); setCuentas(j.cuentas); setHoy(j.hoy); setAsignados(j.asignados); setAdmin(j.admin)
+      setDocumentos(j.documentos ?? {})
     } catch { setError("No se pudo leer lo que te vence.") }
   }, [como])
   useEffect(() => { void cargar() }, [cargar])
@@ -87,7 +101,7 @@ function MisVencimientosDe({ como }: { como: string | null }) {
     setForm({
       cuando: f === hoy ? "hoy" : "otro", fecha: f,
       monto: (inf?.monto ?? v.monto).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-      medio: inf?.medio_pago ?? cuentas[0]?.id ?? "", detalle: inf?.detalle ?? v.detalle,
+      medio: inf?.medio_pago ?? cuentas[0]?.id ?? "", detalle: inf?.detalle ?? v.detalle, comprobante: undefined,
     })
   }
 
@@ -99,7 +113,7 @@ function MisVencimientosDe({ como }: { como: string | null }) {
     try {
       const r = await fetch("/api/mis-vencimientos", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: v.id, fecha: fechaPago, monto, medio: form.medio, detalle: form.detalle }),
+        body: JSON.stringify({ id: v.id, fecha: fechaPago, monto, medio: form.medio, detalle: form.detalle, comprobante: form.comprobante }),
       })
       const j = await r.json()
       if (!r.ok || !j.ok) { toast.error(j.error ?? "No se pudo guardar."); return }
@@ -168,6 +182,15 @@ function MisVencimientosDe({ como }: { como: string | null }) {
                   </>
                 )}
               </div>
+              {(documentos[v.id]?.length ?? 0) > 0 && (
+                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm">
+                  {documentos[v.id].map(d => (
+                    <a key={d.url} href={d.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-700 hover:underline">
+                      📎 {d.titulo}
+                    </a>
+                  ))}
+                </div>
+              )}
               {v.devuelto && v.urgencia !== "informado" && (
                 <p className="mt-1 text-sm text-amber-800">↩ JMS te lo devolvió: «{v.devuelto}». Revisalo y volvé a informarlo.</p>
               )}
@@ -189,6 +212,27 @@ function MisVencimientosDe({ como }: { como: string | null }) {
                   <select className="h-8 rounded border bg-background px-2" value={form.medio} onChange={e => setForm({ ...form, medio: e.target.value })}>
                     {cuentas.map(c => <option key={c.id} value={c.id}>{c.rotulo}</option>)}
                   </select>
+                  <label className="self-center">Comprobante <span className="text-xs text-muted-foreground">(opcional)</span></label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {form.comprobante ? (
+                      <>
+                        <span className="text-sm">📎 {form.comprobante.nombre}</span>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setForm({ ...form, comprobante: null })}>Sacar</Button>
+                      </>
+                    ) : (
+                      <Input type="file" accept="image/*,application/pdf" className="h-9 max-w-xs text-xs"
+                        onChange={async e => {
+                          const f = e.target.files?.[0]
+                          if (!f) return
+                          try {
+                            const c = await leerComprobante(f)
+                            if (c.data.length > MAX_COMPROBANTE) { toast.error("Es muy grande (hasta ~1,5 MB). Probá con una foto."); return }
+                            setForm(prev => ({ ...prev, comprobante: c }))
+                          } catch { toast.error("No se pudo leer el archivo.") }
+                        }} />
+                    )}
+                    {form.comprobante === undefined && v.informado && <span className="text-xs text-muted-foreground">si ya habías adjuntado uno, queda</span>}
+                  </div>
                   <label className="self-start pt-1">Detalle</label>
                   <textarea className="min-h-[60px] rounded border bg-background p-2" placeholder="Opcional: nº de VEP, comprobante, algo que convenga saber"
                     value={form.detalle} onChange={e => setForm({ ...form, detalle: e.target.value })} />
