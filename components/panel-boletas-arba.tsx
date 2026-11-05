@@ -320,13 +320,16 @@ export function PanelBoletasArba() {
             if (!j.ok || !j.b64) { fallas.push(`${x.archivo}: ${j.error ?? "sin contenido"}`); return }
             const bin = atob(j.b64); const u8 = new Uint8Array(bin.length)
             for (let k = 0; k < bin.length; k++) u8[k] = bin.charCodeAt(k)
+            // 🔎 05/11: las 26 primeras leídas del Drive salieron vacías. Si lo que llegó no es un PDF, se dice QUÉ llegó.
+            if (bin.slice(0, 4) !== "%PDF") { fallas.push(`${x.archivo}: no llegó un PDF (${j.tipo ?? "sin tipo"}, ${u8.length} bytes, empieza «${bin.slice(0, 30).replace(/[^ -~]/g, "·")}»)`); return }
             items.push({ nombre: x.archivo, datos: u8.buffer })
           } catch (e) { fallas.push(`${x.archivo}: ${(e as Error).message}`) }
         }))
       }
     } finally { setLeyendo(false) }
-    if (fallas.length) avisar("error", `${fallas.length} no se pudieron leer del Drive`, fallas.join("\n"))
+    // Primero se procesa lo que llegó y DESPUÉS se avisa lo que falló (el cartel es uno solo: al revés, el «ok» lo tapaba)
     if (items.length) await procesarPdfs(items, extra)
+    if (fallas.length) avisar("error", `${fallas.length} no se pudieron leer del Drive`, fallas.join("\n"))
   }
 
   const subir = async (archivos: FileList) => {
@@ -399,7 +402,15 @@ export function PanelBoletasArba() {
 
       // Una boleta leída de nuevo reemplaza a la anterior del mismo archivo (no se duplica)
       setFilas(f => [...f.filter(x => !nuevas.some(n => n.archivo === x.archivo)), ...nuevas])
-      await guardarPropuestas(nuevas, extra)
+      // 🛑 05/11: una boleta de la que no se leyó NADA no se guarda como propuesta (quedaban 26 vacías, sin cuota ni
+      // importe, que después no se reemplazaban). Se avisa con el motivo del lector.
+      const vacias = nuevas.filter(n => !n.boleta.texto.trim())
+      await guardarPropuestas(nuevas.filter(n => n.boleta.texto.trim()), extra)
+      if (vacias.length) {
+        avisar("error", `${vacias.length} de ${nuevas.length} PDF no se pudieron leer — ésas no se guardaron`,
+          vacias.slice(0, 8).map(n => `${n.archivo}: ${n.boleta.avisos.join(" · ") || "sin texto"}`).join("\n"))
+        return
+      }
       avisar("ok", `${nuevas.length} boleta(s) leída(s) y guardadas como propuesta`, `${conPartida} con partida · ${casadas} casada(s) con su cuota del template.` + (nuevas.length - casadas > 0 ? `
 
 ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : ""))
@@ -547,7 +558,8 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
       setMailPorArchivo(prev => ({ ...prev, ...idx }))
       // 📥 A-FEAT-1565: lo archivado se LEE solo (sin subirlo) y queda guardado como propuesta — sólo lo que no está leído.
       if (!soloContar) {
-        const yaLeidas = new Set(filasRef.current.map(f => f.archivo))
+        // «leída» = que se le sacó algo (una propuesta guardada vacía se vuelve a leer)
+        const yaLeidas = new Set(filasRef.current.filter(f => f.boleta.importe != null || (f.boleta.cuota != null && f.boleta.cuota !== "?")).map(f => f.archivo))
         const aLeer = Object.entries(idx).filter(([a, v]) => v.file_id && !yaLeidas.has(a)).map(([a, v]) => ({ archivo: a, file_id: v.file_id! }))
         if (aLeer.length) setTimeout(() => void leerDelDrive(aLeer, idx), 0)
       }
