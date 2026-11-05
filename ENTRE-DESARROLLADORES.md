@@ -902,3 +902,14 @@ pendientes una por una: se ve el saldo de su cuenta corriente. Primera marcada: 
 proveedor (sumada a `CAMPOS_PERMITIDOS` de `/api/gas/config-proveedor`). Sin cambios de RLS, permisos ni vistas (la
 tabla se expone directa). Script `scripts/197-proveedores-opera-cuenta-corriente.sql` (+ `-deshacer`). Al leerlo,
 borrá esta entrada.
+
+## 📨 2026-11-05 · PARA JAVIER — columna nueva `public.egresos_sin_factura.avisar_a` + un rol nuevo «sólo Principal» (aviso ANTES; no hay nada que hacer)
+
+`text[]` vacío por defecto (A-FEAT-1543): los mails de las personas a las que les vence ese template. Alimenta el bloque
+«Lo que te vence» del Principal, que lee y marca «pagado» por una ruta de servidor nueva (`/api/mis-vencimientos`, con
+`exigirSesion` + `service_role`, y sólo las cuotas de templates que tienen el mail de la sesión). Sin cambios de RLS ni
+vistas. Script `scripts/202-templates-avisar-a.sql` (+ `-deshacer`). Después JMS crea desde Configuración un rol cerrado
+para MA (Mercedes Areco) **sin secciones**: sólo ve su Principal. ⚠️ Lo que sí te toca saber: con el hueco general de
+A-SEC-14 (66 tablas sin mapear), esa cuenta podría leer por la API REST lo que la pantalla no le muestra — igual que
+`contable` hoy. Además, A-BUG-1542: la pausa por persona no llegó a producción (Vercel nunca desplegó `main` 6a728bfd) y
+se le suma un vigía en la pantalla. Al leerlo, borrá esta entrada.
