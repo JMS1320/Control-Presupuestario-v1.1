@@ -64,7 +64,7 @@ import { ModalNuevoLoteAgricola } from "@/components/modal-nuevo-lote-agricola"
 import { resolverHaOrden } from "@/lib/productivo/hectareas-orden"
 import { usePedidoCampo, tomarPedidoCampo, esModoCampo } from "@/lib/productivo/pedido-campo"
 import { PanelCampo } from "@/components/panel-campo"
-import { dosisYTotal } from "@/lib/productivo/dosis-orden"
+import { dosisYTotal, UNIDADES_DOSIS, unidadDelInsumo, unidadesParaInsumo, unidadDosisParaInsumo } from "@/lib/productivo/dosis-orden"
 import { traerTodo } from "@/lib/supabase-paginado"
 import { fechasReales } from "@/lib/excel/fechas-reales"
 
@@ -260,8 +260,9 @@ interface LineaFormularioAgricola {
   insumo_nombre: string
   insumo_stock_id: string
   dosis: string
-  unidad_dosis: 'L' | 'cc'
-  /** A-FEAT-1397: total en litros escrito a mano — si está, MANDA y la dosis se deriva (ver lib/productivo/dosis-orden.ts) */
+  /** A-BUG-1238: L, cc, kg o g (por ha) — ver UNIDADES_DOSIS */
+  unidad_dosis: string
+  /** A-FEAT-1397: total escrito a mano, EN LA UNIDAD DEL INSUMO (A-BUG-1238) — si está, MANDA y la dosis se deriva (ver lib/productivo/dosis-orden.ts) */
   total?: string
 }
 
@@ -806,6 +807,13 @@ const entregarImagenOrden = async (canvas: HTMLCanvasElement, nombreArchivo: str
 }
 
 const exportarOrdenAgricolaImagen = async (orden: OrdenAgricola, modo: 'descargar' | 'copiar' = 'descargar') => {
+  // A-BUG-1238: el total está en la unidad de cada insumo (no siempre litros)
+  const idsIns = (orden.lineas || []).map(l => l.insumo_stock_id).filter(Boolean) as string[]
+  const unidadesIns: Record<string, string> = {}
+  if (idsIns.length) {
+    const { data } = await supabase.schema('productivo').from('stock_insumos').select('id, unidad_medida').in('id', idsIns)
+    for (const r of (data ?? []) as { id: string; unidad_medida: string | null }[]) unidadesIns[r.id] = unidadDelInsumo(r.unidad_medida)
+  }
   const lineas = orden.lineas || []
   const padding = 30
   const tableHeaderH = 32
@@ -932,7 +940,7 @@ const exportarOrdenAgricolaImagen = async (orden: OrdenAgricola, modo: 'descarga
     ctx.fillText('PRODUCTO', padding + 10, tableY + 21)
     ctx.fillText('DOSIS', 360, tableY + 21)
     ctx.fillText('UNIDAD', 450, tableY + 21)
-    ctx.fillText('TOTAL (L)', 560, tableY + 21)
+    ctx.fillText('TOTAL', 560, tableY + 21)
 
     lineas.forEach((l, i) => {
       const y = tableY + tableHeaderH + (i * rowH)
@@ -944,8 +952,8 @@ const exportarOrdenAgricolaImagen = async (orden: OrdenAgricola, modo: 'descarga
       ctx.font = '13px Georgia'
       ctx.fillStyle = colSecundario
       ctx.fillText(new Intl.NumberFormat('es-AR', { maximumFractionDigits: 4 }).format(l.dosis), 360, y + 19)
-      ctx.fillText(l.unidad_dosis === 'cc' ? 'cc/ha' : 'L/ha', 450, y + 19)
-      ctx.fillText(new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 }).format(l.cantidad_total_l) + ' L', 560, y + 19)
+      ctx.fillText(UNIDADES_DOSIS.find(u => u.id === l.unidad_dosis)?.rotulo ?? `${l.unidad_dosis}/ha`, 450, y + 19)
+      ctx.fillText(new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 }).format(l.cantidad_total_l) + ' ' + (unidadesIns[l.insumo_stock_id ?? ''] ?? 'L'), 560, y + 19)
     })
 
     const tableEndY = tableY + tableHeaderH + (lineas.length * rowH)
@@ -7651,6 +7659,12 @@ function SubTabOrdenesAgricolas() {
     }
     for (const l of lineasValidas) {
       if (!(dosisYTotal(l, totalHectareas).dosis > 0)) { toast.error('Cada insumo debe tener dosis (o total)'); return }
+      {
+        // A-BUG-1238: el total se descuenta del stock en la unidad del insumo; si no se puede convertir, no se guarda
+        const ins = insumosAgro.find(i => i.id === l.insumo_stock_id)
+        const dtU = dosisYTotal(l, totalHectareas, ins?.unidad_medida)
+        if (ins && dtU.incompatible) { toast.error(`${ins.producto} está en ${unidadDelInsumo(ins.unidad_medida)}: elegí una dosis que se pueda pasar a esa unidad (no ${l.unidad_dosis}/ha).`); return }
+      }
     }
     setGuardando(true)
     try {
@@ -7716,9 +7730,10 @@ function SubTabOrdenesAgricolas() {
       if (lineasValidas.length > 0) {
         const lineasInsert = lineasValidas.map(l => {
           // A-FEAT-1397: si se escribió el total, queda tal cual y la dosis se deriva
-          const dt = dosisYTotal(l, hectareas)
-          const dosis = dt.dosis
           const insumo = insumosAgro.find(i => i.id === l.insumo_stock_id)
+          // A-BUG-1238: el total, en la unidad del insumo (la del stock)
+          const dt = dosisYTotal(l, hectareas, insumo?.unidad_medida)
+          const dosis = dt.dosis
           return {
             orden_id: ordenId,
             insumo_nombre: insumo?.producto || l.insumo_nombre,
@@ -8035,7 +8050,7 @@ function SubTabOrdenesAgricolas() {
                       {(o.lineas || []).map(l => (
                         <div key={l.id} className="text-xs">
                           <span className="font-medium">{l.insumo_nombre}</span>
-                          {l.dosis ? `: ${l.dosis} ${l.unidad_dosis || ''}/ha` : ''} → {formatoCantidad(l.cantidad_total_l, 'L')}
+                          {l.dosis ? `: ${l.dosis} ${l.unidad_dosis || ''}/ha` : ''} → {formatoCantidad(l.cantidad_total_l, unidadDelInsumo(insumosAgro.find(i => i.id === l.insumo_stock_id)?.unidad_medida))}
                         </div>
                       ))}
                     </div>
@@ -8262,7 +8277,8 @@ function SubTabOrdenesAgricolas() {
                 {/* 📱 A-FEAT-1409 etapa 2: en el celular cada insumo es una tarjeta (mismos campos, mismas reglas) */}
                 <div className="space-y-2 sm:hidden">
                   {lineas.map(l => {
-                    const dt = dosisYTotal(l, totalHectareas)
+                    const uIns = insumosAgro.find(i => i.id === l.insumo_stock_id)?.unidad_medida
+                    const dt = dosisYTotal(l, totalHectareas, uIns)
                     return (
                       <div key={l.key} className="rounded-md border p-2 space-y-2">
                         <div className="flex items-start gap-2">
@@ -8274,6 +8290,8 @@ function SubTabOrdenesAgricolas() {
                                 actualizarLinea(l.key, 'insumo_stock_id', id)
                                 const ins = insumosAgro.find(s => s.id === id)
                                 if (ins) actualizarLinea(l.key, 'insumo_nombre', ins.producto)
+                                // A-BUG-1238: la unidad de la dosis pasa a una que se pueda descontar en la del insumo
+                                if (ins) actualizarLinea(l.key, 'unidad_dosis', unidadDosisParaInsumo(l.unidad_dosis, ins.unidad_medida))
                               }}
                               onCreated={cargarDatos}
                               ambito="agricola"
@@ -8296,19 +8314,18 @@ function SubTabOrdenesAgricolas() {
                             <Select value={l.unidad_dosis} onValueChange={v => actualizarLinea(l.key, 'unidad_dosis', v)}>
                               <SelectTrigger className="h-10 text-sm"><SelectValue /></SelectTrigger>
                               <SelectContent position="popper" className="z-[9999]">
-                                <SelectItem value="L">L/ha</SelectItem>
-                                <SelectItem value="cc">cc/ha</SelectItem>
+                                {unidadesParaInsumo(uIns).map(u => <SelectItem key={u.id} value={u.id}>{u.rotulo}</SelectItem>)}
                               </SelectContent>
                             </Select>
                           </div>
                           <div>
-                            <Label className="text-[11px] text-muted-foreground">Total (L)</Label>
+                            <Label className="text-[11px] text-muted-foreground">Total ({dt.unidadTotal}){dt.incompatible ? " ⚠️" : ""}</Label>
                             <Input type="number" inputMode="decimal" step="0.001" className="h-10 text-sm text-right"
                               placeholder="0"
                               value={dt.fuente === 'total' ? (l.total ?? '') : (dt.total > 0 ? String(dt.total) : '')}
                               onChange={e => {
                                 actualizarLinea(l.key, 'total', e.target.value)
-                                const d = dosisYTotal({ ...l, total: e.target.value }, totalHectareas).dosis
+                                const d = dosisYTotal({ ...l, total: e.target.value }, totalHectareas, uIns).dosis
                                 actualizarLinea(l.key, 'dosis', d > 0 ? String(d) : '')
                               }} />
                           </div>
@@ -8324,13 +8341,14 @@ function SubTabOrdenesAgricolas() {
                       <TableHead className="w-[200px]">Insumo</TableHead>
                       <TableHead className="w-[80px] text-right">Dosis</TableHead>
                       <TableHead className="w-[90px]">Unidad</TableHead>
-                      <TableHead className="w-[100px] text-right">Total (L)</TableHead>
+                      <TableHead className="w-[100px] text-right" title="En la unidad del insumo (la del stock)">Total</TableHead>
                       <TableHead className="w-[40px]"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {lineas.map(l => {
-                      const dt = dosisYTotal(l, totalHectareas)
+                      const uIns = insumosAgro.find(i => i.id === l.insumo_stock_id)?.unidad_medida
+                    const dt = dosisYTotal(l, totalHectareas, uIns)
                       return (
                         <TableRow key={l.key}>
                           <TableCell>
@@ -8341,6 +8359,8 @@ function SubTabOrdenesAgricolas() {
                                 actualizarLinea(l.key, 'insumo_stock_id', id)
                                 const ins = insumosAgro.find(s => s.id === id)
                                 if (ins) actualizarLinea(l.key, 'insumo_nombre', ins.producto)
+                                // A-BUG-1238: la unidad de la dosis pasa a una que se pueda descontar en la del insumo
+                                if (ins) actualizarLinea(l.key, 'unidad_dosis', unidadDosisParaInsumo(l.unidad_dosis, ins.unidad_medida))
                               }}
                               onCreated={cargarDatos}
                               ambito="agricola"
@@ -8357,8 +8377,7 @@ function SubTabOrdenesAgricolas() {
                             <Select value={l.unidad_dosis} onValueChange={v => actualizarLinea(l.key, 'unidad_dosis', v)}>
                               <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                               <SelectContent position="popper" className="z-[9999]">
-                                <SelectItem value="L">L/ha</SelectItem>
-                                <SelectItem value="cc">cc/ha</SelectItem>
+                                {unidadesParaInsumo(uIns).map(u => <SelectItem key={u.id} value={u.id}>{u.rotulo}</SelectItem>)}
                               </SelectContent>
                             </Select>
                           </TableCell>
@@ -8369,11 +8388,11 @@ function SubTabOrdenesAgricolas() {
                               className="h-8 text-xs text-right"
                               placeholder="0"
                               value={dt.fuente === 'total' ? (l.total ?? '') : (dt.total > 0 ? String(dt.total) : '')}
-                              title={dt.fuente === 'dosis' ? 'Sale de la dosis × hectáreas. Si escribís el total, pasa a mandar el total.' : undefined}
+                              title={(dt.incompatible ? `⚠️ La dosis en ${l.unidad_dosis}/ha no se puede pasar a ${unidadDelInsumo(uIns)} (la unidad del insumo). ` : `En ${dt.unidadTotal}, la unidad del insumo. `) + (dt.fuente === 'dosis' ? 'Sale de la dosis × hectáreas. Si escribís el total, pasa a mandar el total.' : '')}
                               onChange={e => {
                                 // A-FEAT-1397: lo que se escribe queda tal cual (ya no se re-redondea al tipear)
                                 actualizarLinea(l.key, 'total', e.target.value)
-                                const d = dosisYTotal({ ...l, total: e.target.value }, totalHectareas).dosis
+                                const d = dosisYTotal({ ...l, total: e.target.value }, totalHectareas, uIns).dosis
                                 actualizarLinea(l.key, 'dosis', d > 0 ? String(d) : '')
                               }}
                             />
@@ -8439,7 +8458,7 @@ function SubTabOrdenesAgricolas() {
                         <TableHead className="w-[40px]"></TableHead>
                         <TableHead>Insumo</TableHead>
                         <TableHead className="text-right">Planificado</TableHead>
-                        <TableHead className="text-right">Real (L)</TableHead>
+                        <TableHead className="text-right">Real</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -8453,7 +8472,7 @@ function SubTabOrdenesAgricolas() {
                             </TableCell>
                             <TableCell className="font-medium text-sm">{l.insumo_nombre}</TableCell>
                             <TableCell className="text-right text-sm">
-                              {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 }).format(l.cantidad_total_l)} L
+                              {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 }).format(l.cantidad_total_l)} {unidadDelInsumo(insumosAgro.find(i => i.id === l.insumo_stock_id)?.unidad_medida)}
                             </TableCell>
                             <TableCell>
                               {rec.checked ? (
@@ -8462,7 +8481,7 @@ function SubTabOrdenesAgricolas() {
                                   onChange={e => setRecuentoLineas(prev => ({ ...prev, [l.id]: { ...prev[l.id], cantidad: e.target.value } }))} />
                               ) : (
                                 <span className="text-xs text-muted-foreground block text-right">
-                                  {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 }).format(l.cantidad_total_l)} L
+                                  {new Intl.NumberFormat('es-AR', { maximumFractionDigits: 3 }).format(l.cantidad_total_l)} {unidadDelInsumo(insumosAgro.find(i => i.id === l.insumo_stock_id)?.unidad_medida)}
                                 </span>
                               )}
                             </TableCell>

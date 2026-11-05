@@ -115,7 +115,7 @@ import { esHabilitable, diferencias, estadoVisible } from "@/lib/propuestas/fact
 import { calcularTabla, mostrarValor } from "@/lib/cuaderno/formulas"
 import { pedirCampo, verPedidoCampo, tomarPedidoCampo } from "@/lib/productivo/pedido-campo"
 import { condicionesVenta, cobroVentaSinLiquidacion } from "@/lib/productivo/venta-condiciones"
-import { dosisYTotal } from "@/lib/productivo/dosis-orden"
+import { dosisYTotal, unidadesParaInsumo, unidadDosisParaInsumo } from "@/lib/productivo/dosis-orden"
 import { pideFechaPagoAlCambiarEstado } from "@/lib/pagos/fecha-pago-fila"
 import { filtrosEnMemoria, hayQueTraerTodo, limiteParaCargar, pegadaSigueVisible } from "@/lib/extracto/alcance-filtros"
 import { ordenarYFiltrarFaltantes } from "@/lib/gas-pdf/orden-faltantes"
@@ -11403,6 +11403,19 @@ export function correrCasos(): Resultado[] {
     chequear("Órdenes agrícolas — dosis y total", "Si se escribe el total queda tal cual (50, no 49,998) y la dosis se deriva; si se escribe la dosis, se deriva el total; si cambian las ha, se mueve el que no se escribió",
       "total 50 en 19,5 ha → total 50, dosis 2.5641 (total) · dosis 2,5641 → total 50 · 5 L en cc → 256.4103 cc/ha · total 50 con 25 ha → dosis 2", v,
       v === "total 50 en 19,5 ha → total 50, dosis 2.5641 (total) · dosis 2,5641 → total 50 · 5 L en cc → 256.4103 cc/ha · total 50 con 25 ha → dosis 2", "A-FEAT-1397")
+    // A-BUG-1238: el total va en la UNIDAD DEL INSUMO (la del stock): 256 cc/ha en 19,5 ha de un insumo en ml = 4.992 ml
+    // (antes salía «4,992 L» y el stock descontaba 4,992 ml); g/ha de un insumo en kg; L/ha de un insumo en kg no se puede
+    const enMl = dosisYTotal({ dosis: "256", unidad_dosis: "cc" }, 19.5, "ml")
+    const enKg = dosisYTotal({ dosis: "500", unidad_dosis: "g" }, 10, "kg")
+    const totalKg = dosisYTotal({ dosis: "", unidad_dosis: "g", total: "5" }, 10, "Kg")
+    const noVa = dosisYTotal({ dosis: "2", unidad_dosis: "L" }, 10, "kg")
+    const vU = `${enMl.total} ${enMl.unidadTotal} · ${enKg.total} ${enKg.unidadTotal} · dosis ${totalKg.dosis} g/ha · ${noVa.incompatible ? "incompatible" : "ok"} ${noVa.unidadTotal}`
+    chequear("Órdenes agrícolas — dosis y total", "El total sale en la unidad del insumo (cc→ml, g→kg, también escribiendo el total); si no se puede convertir (L contra kg) se marca y no se guarda",
+      "4992 ml · 5 kg · dosis 500 g/ha · incompatible L", vU, vU === "4992 ml · 5 kg · dosis 500 g/ha · incompatible L", "A-BUG-1238")
+    const vD = [unidadDosisParaInsumo("L", "kg"), unidadDosisParaInsumo("L", "ml"), unidadDosisParaInsumo("cc", "L"), unidadDosisParaInsumo("L", "unidad"),
+      unidadesParaInsumo("unidad").map(u => u.id).join("/"), unidadesParaInsumo("kg").length, dosisYTotal({ dosis: "1", unidad_dosis: "unidad" }, 15, "unidad").total].join(" · ")
+    chequear("Órdenes agrícolas — dosis y total", "Al elegir el insumo la dosis pasa a una unidad que se pueda descontar (L→kg para un insumo en kg; si se puede convertir, se conserva: L en un insumo en ml, cc en uno en L); los insumos por unidad ofrecen «unidad/ha»",
+      "kg · L · cc · unidad · L/cc/kg/g/unidad · 4 · 15", vD, vD === "kg · L · cc · unidad · L/cc/kg/g/unidad · 4 · 15", "A-BUG-1238")
   }
 
   // ══ 💵 Venta de hacienda: monto a mano, IVA y plazo (A-FEAT-1403, toros del 27/10 sin monto) ══
@@ -12355,8 +12368,8 @@ export function correrCasos(): Resultado[] {
     const e1 = "Compras=A · B - 04 Cuentas a pagar=D · 04 Cuentas a pagar=B · 14 Cuentas corrientes=B · 00 Stocks inicio y cierre=E · C · MSA · Templates=C · 07 Bancos=D · 00 Cobertura=D"
     chequear("Set de libros", "Cada solapa va al libro de su letra (A subdiarios, B deudas/créditos/cuentas corrientes, C templates y detalle, E stocks; el resto al D)",
       e1, v1, v1 === e1, "A-FEAT-1505")
-    const v1b = ["14.1 Cuentas con socios", "Gastos Libertad", "03.1 Provision cobros", "04.3 Respaldo cuentas a pagar", "05 Provision"].map(n => `${n}=${libroDeSolapa(n)}`).join(" · ")
-    const e1b = "14.1 Cuentas con socios=I · Gastos Libertad=I · 03.1 Provision cobros=D · 04.3 Respaldo cuentas a pagar=B · 05 Provision=D"
+    const v1b = ["14.1 Cuentas con socios", "Gastos Libertad", "03.1 Provision cobros", "04.3 Respaldo cuentas a pagar", "05 Provision", "I · MSA · Retiros por mes", "I · MSA · Retiros-Distrib soc"].map(n => `${n}=${libroDeSolapa(n)}`).join(" · ")
+    const e1b = "14.1 Cuentas con socios=I · Gastos Libertad=I · 03.1 Provision cobros=D · 04.3 Respaldo cuentas a pagar=B · 05 Provision=D · I · MSA · Retiros por mes=I · I · MSA · Retiros-Distrib soc=I"
     chequear("Set de libros", "👥 Socios y Libertad salen de deudas al libro I (próximo excel); la provisión de cobros va al D, junto a la de gastos (JMS 04/11)",
       e1b, v1b, v1b === e1b, "A-FEAT-1537")
 

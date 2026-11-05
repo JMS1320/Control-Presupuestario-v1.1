@@ -141,21 +141,13 @@ function BarraModoPermisos({
   return (
     <div
       data-nota-ignorar
-      className="fixed inset-x-0 bottom-3 z-50 mx-auto w-[calc(100%-2rem)] max-w-3xl rounded-xl border-2 border-violet-400 bg-white/95 px-4 py-3 shadow-xl backdrop-blur"
+      className="fixed inset-x-0 bottom-3 z-50 mx-auto w-[calc(100%-2rem)] max-w-4xl rounded-xl border-2 border-violet-400 bg-white/95 px-3 py-2 shadow-xl backdrop-blur"
     >
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          <MousePointerClick className="h-5 w-5 shrink-0 text-violet-600" />
-          <div className="min-w-0 text-sm">
-            <div className="font-semibold">
-              Prendiendo permisos de «{modo.rolId}» {cerrado ? "🔒" : ""}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {modo.soloLoQueVe
-                ? "Así lo ve él. Destildá «Ver como lo ve él» para seguir prendiendo."
-                : "Lo atenuado no lo ve: apretá su candado para dárselo. Nada se aplica hasta Guardar."}
-            </div>
-          </div>
+      {/* Una sola fila de controles; las explicaciones van abajo en chico (JMS 05/11: «se ve muy grande el cartel»). */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-sm font-semibold">
+          <MousePointerClick className="h-4 w-4 text-violet-600" />
+          Permisos de «{modo.rolId}» {cerrado ? "🔒" : ""}
         </div>
         <label className="flex cursor-pointer items-center gap-1.5 text-xs">
           <input type="checkbox" checked={modo.soloLoQueVe} onChange={(e) => setSoloLoQueVe(e.target.checked)} />
@@ -174,13 +166,10 @@ function BarraModoPermisos({
             </select>
           </label>
         )}
-        {modo.soloLoQueVe && personas && personas.length === 0 && (
-          <span className="text-xs text-amber-700">Ninguna cuenta tiene este rol todavía</span>
-        )}
-        <span className={`text-xs ${cambios ? "font-semibold text-violet-700" : "text-muted-foreground"}`}>
+        <span className={`ml-auto text-xs ${cambios ? "font-semibold text-violet-700" : "text-muted-foreground"}`}>
           {cambios === 0 ? "Sin cambios" : `${cambios} cambio(s)`}
         </span>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5">
           <Button size="sm" disabled={cambios === 0 || guardando} onClick={guardar}>
             {guardando ? "Guardando…" : "Guardar"}
           </Button>
@@ -192,8 +181,16 @@ function BarraModoPermisos({
           </Button>
         </div>
       </div>
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        {modo.soloLoQueVe
+          ? "Así lo ve. Destildá «Ver como lo ve él» para seguir prendiendo."
+          : "Lo atenuado no lo ve: apretá su candado para dárselo. Nada se aplica hasta Guardar."}
+        {modo.soloLoQueVe && personas && personas.length === 0 && (
+          <span className="text-amber-700"> · Ninguna cuenta tiene este rol todavía: «Para vos» y «Lo que te vence» se ven cuando se lo asignes a alguien.</span>
+        )}
+      </p>
       {!cerrado && (
-        <p className="mt-2 text-xs text-amber-700">
+        <p className="mt-1 text-xs text-amber-700">
           ⚠️ Es un rol abierto: lo que se agregue a la app más adelante le va a aparecer solo. Para que nazca
           apagado, marcalo «🔒 Rol cerrado» en Configuración → Roles.
         </p>
