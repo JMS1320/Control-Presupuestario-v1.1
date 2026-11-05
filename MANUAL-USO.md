@@ -3399,8 +3399,11 @@ final. Es a propósito: si algo está mal, lo primero que hace falta es poder mi
 ### 🐄 La hacienda al cierre
 
 Abajo de todo, **«Traer stock y precios»** arma la existencia de hacienda al día del cierre y la
-valúa con **tus criterios** — los mismos que venías escribiendo en la planilla (*«vaca regular
-máximo × 80 % × 450 kg»*, *«MEJ especial × 1,5 × 300 kg»*…).
+valúa con **tus criterios** — los mismos que venías escribiendo en la planilla (*«MEJ especial × 1,5 × los kilos»*
+para los toritos…). ⚠️ *(cambió 05/11)* Ya no hay porcentajes por categoría (el 90 % de las vacas, el 80 % de la CUT): todo
+se valúa a precio de mercado y **al total se le descuenta un 10 % de comercialización**; el valor del balance es el **neto**.
+Al inicio el descuento va sólo en el valor de la app: tus papeles y la DDJJ se muestran tal cual. Un torito sin pesada
+toma el peso de los novillitos + 20 %.
 
 **De dónde salen los precios:** del **Mercado Agroganadero de Cañuelas** y de **Entresurcos y
 Corrales**, ⚠️ *(cambió 29/10)* tomando **el precio del día de cierre o el último publicado antes** —antes era el
@@ -4019,7 +4022,8 @@ ejemplo «Gastos Reintegro JMS») no es gasto: está al pie de «Por mes». → 
 
 ⚠️ **Cambió 05/11 — la hacienda en el libro D**: «02 Stock hacienda» (inicio y cierre en NZ, SENASA y DDJJ, con nacimientos, mortandad, reclasificación,
 compras, ventas y ajustes en el medio), «02.1 Stock valorizado» (como tu papel 2.2: cierre e inicio, y a la derecha de dónde sale cada número, con
-link a la cotización), «02.2 Precios tomados» y una solapa por tipo de movimiento. SENASA al cierre se escribe en la pantalla (Hacienda → saldos).
+link a la cotización; abajo el descuento del 10 % y el TOTAL NETO), «02.2 Precios tomados» (lo usado en verde), una solapa por tipo de
+movimiento y «02.9 Cálculo de los kilos» (animal por animal, cómo se llegó al peso al cierre). → A-TEST-1332 SENASA al cierre se escribe en la pantalla (Hacienda → saldos).
 Los **retiros** ya no están en el libro H: van al libro I. Los **sueldos a pagar** al cierre están al pie de «13 Sueldos».
 
 ⚠️ **Cambió 04/11 (noche) — el set trae un libro I, «Socios y Libertad (próximo)»**: las cuentas con los socios (14.1) y «Gastos
