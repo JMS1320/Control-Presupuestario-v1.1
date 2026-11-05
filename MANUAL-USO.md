@@ -802,10 +802,12 @@ Para que alguien (por ejemplo MA) vea en su Principal lo que le toca pagar y avi
    tildá sus templates (Autónomos MA, ABL Libertad Cuota…). Pasa sola a la campaña siguiente.
 2. **Ella**: en su Principal aparece **💸 Lo que te vence**: 🔴 vencido · 🟠 vence hoy · 🟡 vence en los próximos días
    (los días de anticipación del template; vacío = 10).
-3. **💸 Ya lo pagué** → la fecha viene con hoy, la cuenta con la principal de su empresa y el detalle con lo que ya
-   tenía la cuota; todo se puede cambiar → **Guardar**. Queda «pagado» y se ve con ✅ unos 15 días.
-   **↩ No lo pagué** lo vuelve a pendiente mientras no esté conciliado.
-4. **Vos**: cuando concilies el débito del banco, la cuota pasa a conciliada como siempre.
+3. **💸 Pagué** → **Hoy** u **Otro día** (con la fecha), **cuánto pagó** (viene el monto de la cuota), **desde qué
+   cuenta** (viene la principal de su empresa) y un detalle → **Informar el pago**. Queda ⏳ «esperando que JMS lo
+   confirme»; mientras tanto lo puede **✏️ Editar** o **Anular**. **La cuota todavía no cambia.**
+4. **Vos**: en tu Principal aparece **💸 Pagos informados por confirmar** con lo que puso (podés corregirlo) →
+   **✔ Confirmar** (la cuota queda pagada) o **↩ Devolver** con un motivo (ella lo ve otra vez sin pagar, con el motivo).
+5. Cuando concilies el débito del banco, la cuota pasa a conciliada como siempre.
 
 Para que la persona vea **sólo** eso: Configuración → Roles → ➕ Crear rol (cerrado, sin secciones) y asignárselo en
 Usuarios. El Principal se ve siempre, aunque el rol no tenga secciones.

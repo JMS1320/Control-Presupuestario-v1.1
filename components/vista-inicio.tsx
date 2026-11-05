@@ -11,6 +11,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { WIDGETS, WIDGETS_POR_DEFECTO, widgetsVisibles, type Widget } from "@/lib/widgets/registro"
 import { PanelParaVos } from "@/components/panel-para-vos"
 import { MisVencimientos } from "@/components/mis-vencimientos"
+import { PagosPorConfirmar } from "@/components/pagos-por-confirmar"
 import { useModoPermisos } from "@/components/contexto-permisos"
 import { AlertaMailsGraves } from "@/components/alerta-mails-graves"
 import { AlertaImpuestos } from "@/components/alerta-impuestos"
@@ -181,6 +182,8 @@ export function VistaInicio({
       <PanelParaVos />
       {/* 💸 A-FEAT-1543: lo que le vence a esta persona (templates con su mail en «avisar a»); se oculta si no tiene nada asignado */}
       <MisVencimientos />
+      {/* ✔ A-FEAT-1543: lo que informaron pagar y espera que confirmes (sólo admin; se oculta si no hay nada) */}
+      {!vistaPrevia && <PagosPorConfirmar />}
       {/* 🧾 A-FEAT-1451: las facturas sin comprobante — la tarea principal de Ulises (y lo que JMS tiene que confirmar) */}
       {/* En vista previa no: lee las marcas de la sesión (admin), no las de la persona. */}
       {!vistaPrevia && <TableroFaltantes />}

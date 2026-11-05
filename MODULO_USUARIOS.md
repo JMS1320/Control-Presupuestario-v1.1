@@ -805,9 +805,14 @@ Las restricciones actuales (Vista de Pagos sin sección Pendiente, sin botón Re
   ese criterio le salían ~30 cuotas vencidas que están pagadas y sin conciliar. Se tilda en Configuración → Quién recibe qué.
 - **Por qué por servidor**: `/api/mis-vencimientos` lee y marca con `service_role` filtrando por el mail de la
   sesión, así el rol no necesita permisos sobre los templates. La cuota se busca DENTRO de lo suyo, nunca por id suelto.
-- **Marcar pagado**: estado `pagado`, `fecha_pago` (hoy por defecto, no futura), `medio_pago` = «Pagado desde»
-  (A-FEAT-1321) entre las cuentas de SUS empresas, la de la empresa más repetida primero, y el detalle tal cual lo
-  deja. Deshacer sólo si sigue `pagado` (no conciliado). Lógica en `lib/vencimientos/de-la-persona.ts`.
+- ⚠️ **cambió 05/11 tarde — informar NO impacta** (JMS: *«¿eso quedará conmigo hasta que confirme antes de
+  impactar?»*). «💸 Pagué» deja una **propuesta** en `public.propuestas_cambio` (la de A-FEAT-1400, `tabla =
+  'cuotas_egresos_sin_factura'`, `antes` = la cuota, `cambios` = {estado pagado, fecha_pago, monto, medio_pago,
+  detalle}); ella la puede editar o anular mientras siga `propuesta`. JMS confirma o devuelve desde «💸 Pagos
+  informados por confirmar» (`/api/mis-vencimientos/confirmar`, `exigirAdmin`): al confirmar se escribe la cuota y
+  `resolucion` guarda qué corrigió él (la HUELLA); al devolver, `cancelada` con «devuelta: motivo», que ella ve.
+  Sin cambios de estructura. *(Antes decía: «marcar pagado escribe la cuota al instante, deshacer mientras no se
+  concilie» — eso se reemplazó.)* Lógica en `lib/vencimientos/de-la-persona.ts`.
 - **Verlo como lo ve ella** (A-BUG-1544): en el modo permisos, «Ver como lo ve él» + **«como [persona]»** (las cuentas
   con ese rol, de `/api/admin/usuarios`). Los paneles personales leen con `?como=<mail>` —sólo un admin, sólo
   lectura (`puedeMirarComo`)— y van en un marco «sólo para mirar»; el Principal toma las secciones del borrador del
