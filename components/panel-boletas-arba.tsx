@@ -28,6 +28,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Loader2 } from "lucide-react"
+import { PlanillaBoletasArba } from "@/components/planilla-boletas-arba"
+import type { Decision as DecisionPlanilla } from "@/lib/arba/planilla-boletas"
 import { toast } from "sonner"
 
 interface Comparacion {
@@ -181,6 +183,8 @@ export function PanelBoletasArba() {
   const [leyendo, setLeyendo] = useState(false)
   const [aplicando, setAplicando] = useState(false)
   const [filas, setFilas] = useState<Comparacion[]>([])
+  /** 🗂️ A-FEAT-1565: la planilla por responsable, con la historia de cada partida. */
+  const [verPlanilla, setVerPlanilla] = useState(false)
   const [bajando, setBajando] = useState(false)
   /** Cuántos días de mail mirar. Achicarlo es lo primero que hay que probar si la bajada no llega. */
   const [dias, setDias] = useState("60")
@@ -461,8 +465,34 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
     } finally { setBajando(false) }
   }
 
-  const aplicar = async () => {
-    const sel = filas.filter(f => f.aplicar && f.cuotaId && importeDe(f) != null && !f.aplicada)
+  /**
+   * 🗂️ A-FEAT-1565 — asigna una boleta «Sin asignar» al template que elige el usuario en la planilla, y la casa con su
+   * cuota como si se hubiera reconocido la partida.
+   */
+  const asignarTemplate = async (idx: number, egresoId: string) => {
+    const base = filas[idx]
+    if (!base) return
+    const { data: eg } = await supabase.from("egresos_sin_factura").select("id, nombre_referencia").eq("id", egresoId).single()
+    const fila: Comparacion = { ...base, egresoId, lote: (eg as { nombre_referencia?: string } | null)?.nombre_referencia ?? base.lote, problema: null }
+    await casarCuota(fila, egresoId, fila.boleta)
+    setFilas(fs => fs.map((x, i) => i === idx ? fila : x))
+  }
+
+  /** 🗂️ A-FEAT-1565 — las decisiones de la planilla se vuelcan a las filas y se aplica con el aplicar de siempre. */
+  const aplicarDesdePlanilla = async (decisiones: { idx: number; decision: DecisionPlanilla; otra: string }[]) => {
+    const porIdx = new Map(decisiones.map(d => [d.idx, d]))
+    const nuevas = filas.map((f, i) => {
+      const d = porIdx.get(i)
+      if (!d || f.aplicada) return f
+      if (d.decision === "presupuestada") return { ...f, aplicar: false }
+      return { ...f, aplicar: true, importeFix: d.decision === "otra" ? d.otra : "" }
+    })
+    setFilas(nuevas)
+    await aplicar(nuevas)
+  }
+
+  const aplicar = async (base: Comparacion[] = filas) => {
+    const sel = base.filter(f => f.aplicar && f.cuotaId && importeDe(f) != null && !f.aplicada)
     if (!sel.length) { avisar("error", "No hay ninguna tildada", "Tildá al menos una fila, o usá «Tildar todas las que se pueden»."); return }
     const conciliadas = sel.filter(f => f.estadoCuota === "conciliado").length
     const noCierran = sel.filter(f => controlDosCaminos(f.boleta.importe, f.importeMail).estado === "difiere").length
@@ -872,7 +902,8 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
                 </button>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-gray-500">{pendientes} tildada(s)</span>
-                  <Button onClick={aplicar} disabled={aplicando || pendientes === 0}>
+                  <Button variant="outline" onClick={() => setVerPlanilla(true)} title="Por responsable, con las cuotas anteriores y las diferencias">🗂️ Ver en la planilla</Button>
+                  <Button onClick={() => void aplicar()} disabled={aplicando || pendientes === 0}>
                     {aplicando && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
                     Aplicar al presupuesto
                   </Button>
@@ -893,6 +924,18 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
           )}
         </DialogContent>
       </Dialog>
+      {/* 🗂️ A-FEAT-1565 */}
+      <PlanillaBoletasArba
+        open={verPlanilla} onOpenChange={setVerPlanilla} aplicando={aplicando}
+        boletas={filas.map(f => ({
+          archivo: f.archivo, egresoId: f.egresoId, cuotaId: f.cuotaId,
+          cuotaNro: f.boleta.cuota && /^\d+$/.test(f.boleta.cuota) ? parseInt(f.boleta.cuota) : null,
+          importe: importeDe(f), vencimiento: vencDe(f), aplicada: f.aplicada, problema: f.problema, lote: f.lote,
+        }))}
+        urlDe={archivo => mailPorArchivo[archivo]?.url ?? null}
+        onAsignar={asignarTemplate}
+        onAplicar={aplicarDesdePlanilla}
+      />
     </>
   )
 }
