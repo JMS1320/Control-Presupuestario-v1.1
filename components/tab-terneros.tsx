@@ -23,6 +23,8 @@ import { Segmentador, type SegPayload } from "./segmentador"
 import { traerTodo } from "@/lib/supabase-paginado"
 import { Permisable } from "@/components/modo-permisos"
 import { fechasReales } from "@/lib/excel/fechas-reales"
+import { FiltroColumna } from "@/components/ui/filtro-columna"
+import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -273,6 +275,8 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
    */
   const [vistaHist, setVistaHist] = useState<'todo' | 'cabezas'>('todo')
   const [buscaCaravana, setBuscaCaravana] = useState('')
+  /** 🔽 A-FEAT-1555 (JMS 05/11: «prefiero que todo tenga filtro»): filtro tipo Excel por columna del historial. */
+  const [filtrosHist, setFiltrosHist] = useState<Record<string, Set<string> | null>>({})
   // Segmentadores (múltiples: uno por población). Cada uno reporta sus secciones y su config.
   const segNextId = useRef(1)
   const [segmentadorIds, setSegmentadorIds] = useState<number[]>([0])
@@ -903,6 +907,24 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
 
   const hayConflictos = analisis && (analisis.no_encontradas.length > 0 || analisis.duplicadas.length > 0)
   const duplicadasSinResolver = analisis?.duplicadas.filter(d => !decisionesDuplicadas[d.idv]) ?? []
+
+  // 🔽 A-FEAT-1555: el historial con filtro tipo Excel en cada columna (caravanas, sexo y cada fecha de pesada)
+  const conPesadasHist = terneros.filter(t => t.pesadas_terneros.length > 0)
+    .filter(t => !buscaCaravana.trim() || `${t.caravana_oficial ?? ''} ${t.caravana_interna ?? ''}`.toLowerCase().includes(buscaCaravana.trim().toLowerCase()))
+  type TerneroHist = (typeof conPesadasHist)[number]
+  const valoresHist: Record<string, (t: TerneroHist) => string | null> = {
+    oficial: t => t.caravana_oficial ?? null,
+    interna: t => t.caravana_interna ?? null,
+    sexo: t => t.sexo ?? null,
+    ...Object.fromEntries(todasFechas.map(f => [`f:${f}`, (t: TerneroHist) => {
+      const p = t.pesadas_terneros.find(x => x.fecha === f)
+      return p ? p.peso_kg.toFixed(1).replace('.', ',') : null
+    }])),
+  }
+  const filasHist = filtrarPorColumnas(conPesadasHist, filtrosHist, valoresHist)
+  /** Cada lista cuenta sobre lo filtrado por las DEMÁS columnas (como en Excel y en Mails). */
+  const opcionesHist: Record<string, ReturnType<typeof opcionesDeColumna>> = Object.fromEntries(Object.keys(valoresHist).map(col => [col,
+    opcionesDeColumna(filtrarPorColumnas(conPesadasHist, { ...filtrosHist, [col]: null }, valoresHist), valoresHist[col])]))
 
   // ─── Render ──────────────────────────────────────────────────────────────
 
@@ -2142,21 +2164,18 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
               <Table>
                 <TableHeader>
                   <TableRow className="bg-gray-50">
-                    <TableHead className="text-xs whitespace-nowrap">Carav. Oficial</TableHead>
-                    <TableHead className="text-xs whitespace-nowrap">Carav. Int.</TableHead>
-                    <TableHead className="text-xs">Sexo</TableHead>
+                    <TableHead className="text-xs whitespace-nowrap"><FiltroColumna titulo="Carav. Oficial" opciones={opcionesHist.oficial} seleccion={filtrosHist.oficial ?? null} onChange={s => setFiltrosHist(x => ({ ...x, oficial: s }))} /></TableHead>
+                    <TableHead className="text-xs whitespace-nowrap"><FiltroColumna titulo="Carav. Int." opciones={opcionesHist.interna} seleccion={filtrosHist.interna ?? null} onChange={s => setFiltrosHist(x => ({ ...x, interna: s }))} /></TableHead>
+                    <TableHead className="text-xs"><FiltroColumna titulo="Sexo" opciones={opcionesHist.sexo} seleccion={filtrosHist.sexo ?? null} onChange={s => setFiltrosHist(x => ({ ...x, sexo: s }))} /></TableHead>
                     {todasFechas.map(f => (
                       <TableHead key={f} className="text-xs text-center whitespace-nowrap text-green-700">
-                        {formatFecha(f)}
+                        <FiltroColumna titulo={formatFecha(f)} opciones={opcionesHist[`f:${f}`] ?? []} seleccion={filtrosHist[`f:${f}`] ?? null} onChange={s => setFiltrosHist(x => ({ ...x, [`f:${f}`]: s }))} />
                       </TableHead>
                     ))}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {terneros
-                    .filter(t => t.pesadas_terneros.length > 0)
-                    .filter(t => !buscaCaravana.trim() || `${t.caravana_oficial ?? ''} ${t.caravana_interna ?? ''}`.toLowerCase().includes(buscaCaravana.trim().toLowerCase()))
-                    .map(t => (
+                  {filasHist.map(t => (
                       <TableRow key={t.id} className="text-sm">
                         <TableCell className="font-mono text-xs">{t.caravana_oficial ?? '—'}</TableCell>
                         <TableCell className="font-mono text-xs">{t.caravana_interna ?? '—'}</TableCell>
@@ -2187,13 +2206,19 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
 
                   {/* ── Filas de totales por grupo ── */}
                   {todasFechas.length > 0 && (() => {
+                    // 🔽 A-FEAT-1555: con un filtro puesto, los totales suman SÓLO lo filtrado (como el subtotal de Excel)
+                    const filtrado = Object.values(filtrosHist).some(Boolean) || !!buscaCaravana.trim()
+                    const mL = filtrado ? filasHist.filter(t => t.sexo === 'Macho') : machos
+                    const hL = filtrado ? filasHist.filter(t => t.sexo === 'Hembra') : hembras
+                    const tL = filtrado ? filasHist : terneros
+                    const suf = filtrado ? ' (filtrado)' : ''
                     const grupos = [
-                      { label: '♂ Total',    lista: machos,   cls: 'text-sky-700',   bold: true },
-                      { label: '♂ Promedio', lista: machos,   cls: 'text-sky-600',   bold: false },
-                      { label: '♀ Total',    lista: hembras,  cls: 'text-pink-700',  bold: true },
-                      { label: '♀ Promedio', lista: hembras,  cls: 'text-pink-600',  bold: false },
-                      { label: '🐄 Total',   lista: terneros, cls: 'text-green-700', bold: true },
-                      { label: '🐄 Prom.',   lista: terneros, cls: 'text-green-600', bold: false },
+                      { label: '♂ Total' + suf,    lista: mL, cls: 'text-sky-700',   bold: true },
+                      { label: '♂ Promedio' + suf, lista: mL, cls: 'text-sky-600',   bold: false },
+                      { label: '♀ Total' + suf,    lista: hL, cls: 'text-pink-700',  bold: true },
+                      { label: '♀ Promedio' + suf, lista: hL, cls: 'text-pink-600',  bold: false },
+                      { label: '🐄 Total' + suf,   lista: tL, cls: 'text-green-700', bold: true },
+                      { label: '🐄 Prom.' + suf,   lista: tL, cls: 'text-green-600', bold: false },
                     ]
                     return (
                       <>
