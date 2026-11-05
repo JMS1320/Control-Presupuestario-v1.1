@@ -70,7 +70,7 @@ import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
 import type { CuadreGranos, ValuacionGranos, Sementeras } from "./granos-sementeras"
 import {
   formatearHoja, presentarHoja, anchosAutomaticos, colorDeSolapa, aplicarVistas, filtroDe,
-  conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna, type Vista, UNIONES } from "./formato-excel"
+  conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna, type Vista, UNIONES, ALTOS } from "./formato-excel"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 import type { ControlesInicio, ControlProvisionAnterior } from "./control-inicio"
 import { textoEstado, type InicioYCierre } from "./inicio-y-cierre"
@@ -502,6 +502,8 @@ const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: 
   if (uniones?.length) ws["!merges"] = uniones.map(u => XLSX.utils.decode_range(u))
   const niveles = NIVELES.get(filas)
   if (niveles) ws["!rows"] = niveles.map(l => (l ? { level: l, ...(CERRADAS.has(filas) ? { hidden: true } : {}) } : {}))
+  const altos = ALTOS.get(filas)
+  if (altos) { const rs: XLSX.RowInfo[] = (ws["!rows"] ??= []); for (const [r, h] of Object.entries(altos)) rs[Number(r) - 1] = { ...(rs[Number(r) - 1] ?? {}), hpt: h } }
   // 31 caracteres es el máximo que acepta Excel para el nombre de una solapa.
   XLSX.utils.book_append_sheet(wb, ws, nombre.slice(0, 31))
 }
@@ -2547,7 +2549,7 @@ export function agregarPapelHacienda(wb: XLSX.WorkBook, hacienda: DatosPapelHaci
 const COLS_STOCK_HACIENDA: Columna[] = [{ ancho: 34 }, ...Array.from({ length: 14 }, () => ({ ancho: 12, z: ENTERO }))]
 const COLS_STOCK_VALORIZADO: Columna[] = [{ ancho: 34 }, { ancho: 10, z: ENTERO }, { ancho: 14 }, { ancho: 14, z: MONEDA }, { ancho: 14, z: MONEDA },
   { ancho: 17, z: MONEDA }, { ancho: 13, z: MONEDA }, { ancho: 13, z: MONEDA }, { ancho: 14, z: MONEDA }, { ancho: 3 },
-  { ancho: 15, z: MONEDA }, { ancho: 16 }, { ancho: 22 }, { ancho: 40 }, { ancho: 7 }, { ancho: 70 }, { ancho: 60 }]
+  { ancho: 15, z: MONEDA }, { ancho: 22 }, { ancho: 24 }, { ancho: 17 }, { ancho: 22 }, { ancho: 40 }, { ancho: 7 }, { ancho: 70 }, { ancho: 60 }]
 const COLS_AUMENTO_RODEO: Columna[] = [{ ancho: 34 }, { ancho: 10 }, { ancho: 10, z: ENTERO }, { ancho: 10, z: ENTERO }, { ancho: 10 }, { ancho: 10 },
   { ancho: 12, z: ENTERO }, { ancho: 12, z: ENTERO }, { ancho: 11, z: ENTERO }, { ancho: 12, z: MONEDA }, { ancho: 12, z: MONEDA }, { ancho: 14, z: MONEDA },
   { ancho: 14, z: MONEDA }, { ancho: 14, z: MONEDA }, { ancho: 13, z: MONEDA }, { ancho: 13, z: MONEDA }, { ancho: 9, z: MONEDA }]

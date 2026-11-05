@@ -5124,8 +5124,8 @@ export function correrCasos(): Resultado[] {
       const hv = hojaStockValorizado({ cierre: vi, inicio: vi, fechaCierre: "2026-06-30", fechaInicio: "2025-06-30", tcCierre: 1473, ddjjInicio: { cuenta: "1.2.2/05/01", denominacion: "VACAS DE CRÍA", valor: 255479054.9 } })
       const tres = hv.filter(r => /^(App|Papeles|DDJJ)/.test(String((r as any[])[0] ?? ""))).map(r => `${String((r as any[])[0]).split(" ")[0]} ${val((r as any[])[5])}`)
       const vaca = hv.find(r => { const c = (r as any[])[0]; return (c?.v ?? c) === "VACAS al parir" }) as any[]
-      const vV = `${tres.join(" · ")} · vaca ${String(vaca[3].f)}=${vaca[3].v} · link ${typeof vaca[11] === "object"}`
-      const eV = "App 135000000 · Papeles 405560000 · DDJJ 255479054.9 · vaca K10*O10=900000 · link true"
+      const vV = `${tres.join(" · ")} · vaca ${String(vaca[3].f)}=${vaca[3].v} · link ${typeof vaca[13] === "object"} · ${vaca[11].v} · ${vaca[12].v} · papeles vaca ${(hv[hv.findIndex(r => String((r as any[])[0] ?? "").startsWith("CATEGORÍA POR CATEGORÍA")) + 1] as any[])[6]}`
+      const eV = "App 135000000 · Papeles 405560000 · DDJJ 255479054.9 · vaca K10*Q10=900000 · link true · Entre Surcos y Corrales · X · papeles vaca 184950000"
       chequear("Balance · hacienda", "💰 Valorizado con el formato del papel 2.2: valor kg/unidad = precio × factor (fórmula), link a la cotización y los tres valores del inicio (app, papeles de JMS, DDJJ)",
         eV, vV, vV === eV, "A-FEAT-1541")
       // 📈 JMS 05/11: el aumento del rodeo en dólares, cría y recría aparte — el aumento = por cantidad + por precio, y la categoría que

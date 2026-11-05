@@ -14,7 +14,7 @@
  */
 import { CATEGORIAS_PLANILLA } from "./tres-saldos-hacienda"
 import { cantidadConSigno } from "./cuadre-hacienda"
-import { unirCeldas } from "./formato-excel"
+import { unirCeldas, altoDeFila } from "./formato-excel"
 import { DESCUENTO_COMERCIALIZACION, type ValuacionHacienda, type PrecioMag, type PrecioMercado, type PrecioCabeza } from "./hacienda-stock"
 import type { PesoCategoria } from "./pesos-hacienda"
 
@@ -177,24 +177,43 @@ const ojo = (c: unknown) => conRelleno(c, "FFE699")
 const enNegrita = (texto: string) => ({ t: "s", v: texto, s: { font: { bold: true } } })
 
 /**
+ * 🏷️ JMS 05/11 (en la 02.1): la referencia del precio en cuatro columnas — precio · mercado · categoría · ver en la web. El mercado y
+ * la categoría del mercado salen de «de dónde sale el precio» (`MAG · VACAS + 430 · …`, `Entresurcos vientres · Vacas C. Gtia. … · …`).
+ */
+export function referenciaDelPrecio(origen: string): { mercado: string; categoria: string } {
+  const partes = origen.split(" · ")
+  const cat = (partes[1] ?? "").replace(/\s*\(pesan [^)]*\)/, "").trim()
+  const mayus = cat ? cat[0].toUpperCase() + cat.slice(1) : ""
+  if (/^MAG\b/.test(origen)) return { mercado: "Mercado Agroganadero (Cañuelas)", categoria: mayus }
+  if (/^Entresurcos\b/.test(origen)) return { mercado: "Entre Surcos y Corrales", categoria: mayus }
+  if (origen === "cargado a mano") return { mercado: "cargado a mano", categoria: "" }
+  return { mercado: "", categoria: "" }
+}
+
+/**
  * Un bloque 2.2 (cierre o inicio): reporte a la izquierda, trazabilidad a la derecha. Devuelve dónde quedó cada renglón.
  * Columnas: A hacienda · B cantidad · C kg · D-F pesos (kg/unidad, por cabeza, stock) · G-I dólares (ídem) · K-Q trazabilidad
- * (K precio de referencia · L ver en la web · M categoría · N criterio · O factor · P de dónde sale el precio · Q de dónde sale el peso).
+ * (K precio · L mercado · M categoría del mercado · N ver en la web — juntas bajo «Referencia» — · O categoría (app) · P criterio · Q factor ·
+ * R de dónde sale el precio · S de dónde sale el peso).
  */
-function bloque22(f: unknown[][], titulo: string, v: ValuacionHacienda, tc: number, tcOrigen: string):
+function bloque22(f: unknown[][], titulo: string, v: ValuacionHacienda, tc: number, tcOrigen: string, altoTitulo = 30):
   { r0: number; r1: number; rt: number; rtc: number; filaDe: Record<string, number> } {
   f.push([]); f.push(["SAN MANUEL S.R.L."]); f.push([])
   const tit = (c: unknown) => centrado(conEstilo(conRelleno(c, "EEF1F0"), { font: { bold: true } }))
   f.push([tit(titulo), tit(""), tit(""), tit(""), tit(""), tit("VALORIZACIÓN"), tit(""), tit(""), tit("")])
+  altoDeFila(f, f.length, altoTitulo)
   f.push([])   // JMS 05/11: una fila entre el título y la tabla
   const rv = f.length + 1
   f.push([borde(conRelleno("Valores de mercado — mismo cálculo de la app", "FFFFFF")), borde(""), borde(""), borde(centrado(pesos("PESOS"))), borde(pesos("")), borde(pesos("")),
-    borde(centrado(usd("DÓLARES"))), borde(usd("")), borde(usd("")), ...Array.from({ length: 8 }, () => conRelleno("", "FFFFFF"))])
-  unirCeldas(f, [`A${rv}:C${rv}`, `D${rv}:F${rv}`, `G${rv}:I${rv}`])
+    borde(centrado(usd("DÓLARES"))), borde(usd("")), borde(usd("")), conRelleno("", "FFFFFF"),
+    borde(centrado(ojo(enNegrita("Referencia")))), borde(ojo("")), borde(ojo("")), borde(ojo("")), ...Array.from({ length: 5 }, () => conRelleno("", "FFFFFF"))])
+  unirCeldas(f, [`A${rv}:C${rv}`, `D${rv}:F${rv}`, `G${rv}:I${rv}`, `K${rv}:N${rv}`])
   const enc = (c: unknown) => borde(centrado(c))
+  altoDeFila(f, rv + 1, 45)
   f.push([enc("HACIENDA"), enc("CANTIDAD"), enc("KG"), enc(pesos("VALOR KG/UNIDAD")), enc(pesos("VALOR POR CAB")), enc(pesos("STOCK VALORIZADO")),
     enc(usd("VALOR KG/UNIDAD U$S")), enc(usd("VALOR POR CAB U$S")), enc(usd("STOCK U$S")), "",
-    enc(ojo(enNegrita("Precio de referencia"))), enc(ojo(enNegrita("Ver en la web"))), enc("Categoría (app)"), enc("Criterio"), enc("Factor"),
+    enc(ojo(enNegrita("Precio"))), enc(ojo(enNegrita("Mercado"))), enc(ojo(enNegrita("Categoría"))), enc(ojo(enNegrita("Ver en la web"))),
+    enc("Categoría (app)"), enc("Criterio"), enc("Factor"),
     enc("De dónde sale el precio"), enc("De dónde sale el peso")])
   const filas = [...v.filas].sort((a, b) => (ORDEN.indexOf(a.categoria) + 99) % 99 - (ORDEN.indexOf(b.categoria) + 99) % 99)
   const r0 = f.length + 1
@@ -207,9 +226,10 @@ function bloque22(f: unknown[][], titulo: string, v: ValuacionHacienda, tc: numb
     const porKg = x.pesoKg != null
     const conPrecio = x.precioReferencia != null
     const fte = fuenteDe(x.origenPrecio)
+    const ref = referenciaDelPrecio(x.origenPrecio)
     const unidad = (x.precioReferencia ?? 0) * x.factor
     f.push([ETIQ[x.categoria] ?? x.categoria, x.cabezas, porKg ? x.pesoKg : "",
-      pesos(conPrecio ? { t: "n", f: `K${r}*O${r}`, v: unidad } : ""),
+      pesos(conPrecio ? { t: "n", f: `K${r}*Q${r}`, v: unidad } : ""),
       pesos(conPrecio ? { t: "n", f: porKg ? `C${r}*D${r}` : `D${r}`, v: x.valorPorCabeza ?? 0 } : "falta el precio"),
       pesos(conPrecio ? { t: "n", f: `B${r}*E${r}`, v: x.valorTotal ?? 0 } : 0),
       usd(conPrecio ? { t: "n", f: `D${r}/${T}`, v: unidad / tc } : ""),
@@ -217,11 +237,13 @@ function bloque22(f: unknown[][], titulo: string, v: ValuacionHacienda, tc: numb
       usd(conPrecio ? { t: "n", f: `F${r}/${T}`, v: (x.valorTotal ?? 0) / tc } : 0), "",
       // 👀 JMS 05/11 (nota en la 02.1): «rearmé el orden de columnas; a estas dos ponerles que visualmente llamen a ser vistas, y
       //    "ver la cotización" en formato link discreto».
-      ojo(x.precioReferencia ?? ""), ojo(fte ? link("ver la cotización", linkCotizacion(fte, fechaDe(x.origenPrecio))) : ""),
+      ojo(x.precioReferencia ?? ""), ojo(ref.mercado), centrado(ojo(enNegrita(ref.categoria))),
+      ojo(fte ? link("ver la cotización", linkCotizacion(fte, fechaDe(x.origenPrecio))) : ""),
       x.categoria, x.criterio, x.factor, x.origenPrecio, porKg ? x.origenPeso : "se valúa por cabeza"])
     // la tabla enmarcada: borde en el reporte (A–I) y en la trazabilidad (K–Q)
     const fila = f[f.length - 1]
     f[f.length - 1] = fila.map((c, i) => (i === 9 ? c : borde(c)))
+    altoDeFila(f, r, 30)
   }
   const r1 = f.length
   const rt = f.length + 1
@@ -271,7 +293,8 @@ export function hojaStockValorizado(d: DatosValorizado): unknown[][] {
     return f
   }
   const p = PAPELES_JMS_INICIO_2025
-  const ini = bloque22(f, `2.2) - VALUACIÓN GANADERA (VALORES MERCADO) AL ${dmy(d.fechaInicio)}`, d.inicio, p.tc, "el de los papeles de JMS 2025 (TC prom div)")
+  // 🎨 JMS 05/11: el título del inicio, como en su papel — «VALUACIÓN ANTERIOR» y el año abajo.
+  const ini = bloque22(f, `2.2) - VALUACIÓN ANTERIOR\n--((${d.fechaInicio.slice(0, 4)}))--`, d.inicio, p.tc, "el de los papeles de JMS 2025 (TC prom div)", 36)
   f.push([]); f.push(["LOS TRES VALORES DEL INICIO", "", "", "", "", "PESOS", "Dif. con la app"])
   const a = f.length + 1
   const papeles = Object.values(p.valor).reduce((s, x) => s + x, 0)
@@ -283,7 +306,8 @@ export function hojaStockValorizado(d: DatosValorizado): unknown[][] {
   f.push([]); f.push([`CATEGORÍA POR CATEGORÍA AL ${dmy(d.fechaInicio)} (cierre anterior = inicio de este ejercicio) — app (a precio de mercado, antes del 10 %) contra los papeles de JMS`, "", "", "", "", "App", "Papeles", "", "Diferencia"])
   for (let r = ini.r0; r <= ini.r1; r++) {
     const fila = f[r - 1] as unknown[]
-    const cat = String(fila[12] ?? "")
+    const c14 = fila[14] as { v?: unknown } | string | undefined   // la celda viene enmarcada (objeto con estilo)
+    const cat = String((typeof c14 === "object" ? c14?.v : c14) ?? "")
     const rr = f.length + 1
     f.push([fila[0], "", "", "", "", { t: "n", f: `F${r}`, v: 0 }, p.valor[cat] ?? 0, "", { t: "n", f: `F${rr}-G${rr}`, v: 0 }])
   }

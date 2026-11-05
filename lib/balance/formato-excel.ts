@@ -153,6 +153,9 @@ const unir = (c: XLSX.CellObject, s: Estilo) => {
 /** 🔗 Celdas combinadas de una hoja que se arma con `agregarHoja` (rangos «A8:C8»). */
 export const UNIONES = new WeakMap<unknown[][], string[]>()
 export const unirCeldas = (filas: unknown[][], rangos: string[]) => UNIONES.set(filas, [...(UNIONES.get(filas) ?? []), ...rangos])
+/** ↕️ Alto de un renglón (en puntos), por número de renglón de Excel (1 = el primero). */
+export const ALTOS = new WeakMap<unknown[][], Record<number, number>>()
+export const altoDeFila = (filas: unknown[][], fila: number, puntos: number) => ALTOS.set(filas, { ...(ALTOS.get(filas) ?? {}), [fila]: puntos })
 const tieneFondo = (c: XLSX.CellObject) => !!((c as { s?: Estilo }).s?.fill)
 
 /** Lo que la presentación averiguó de la hoja y `xlsx-js-style` no sabe escribir solo (ver `aplicarVistas`). */
