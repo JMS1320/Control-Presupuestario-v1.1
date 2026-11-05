@@ -297,7 +297,7 @@ import { leerResumenCajaAhorro, controlarResumen, armarConocido, resumenComoExce
 import { leerResumenSantander, controlarResumenSantander } from "@/lib/extractos/pdf-santander"
 import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla, linkGmail, procesadoDeMail, cambiosAlReaplicar, type MailRegistrado,
   claveDeTipoMail, problemaDeTipoNuevo, contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarPendientesArriba,
-  juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves, ordenarParaLista } from "@/lib/mails/registro"
+  juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves, ordenarParaLista, rangoDelDia } from "@/lib/mails/registro"
 import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
 import { partesDeRuta, problemaDeRuta, estadoDestino, idDeLinkDrive } from "@/lib/archivo/destinos"
 import { mailsParaArchivar, mailsParaCuota, agruparPorRegla, anioDeMail, vinculosConArchivos, controlArchivado, agruparPorTema, estadoSeleccion } from "@/lib/mails/lotes"
@@ -5062,6 +5062,13 @@ export function correrCasos(): Resultado[] {
       const eD = "día 1 completo false · día 2 completo true · Nueva 10 (2026-06-30) · Medio 8 (2026-06-29)"
       chequear("Balance · hacienda", "📅 Si un día no se operó una categoría, se busca el día anterior SÓLO para esa (la que ya tenía precio queda con el más reciente)",
         eD, vD, vD === eD, "A-FEAT-1541")
+      const toro = CRITERIOS.find(c => c.categoria === "Toro")!
+      const soloNegro = precioDeCriterio(toro, { porCabeza: { vientres: [], toros: [{ categoria: "A.ANGUS GRAL. NEGRO", cantidad: 99, promedio: 5179991, maximo: 9300000, minimo: 3000000 }] } })
+      const ambos = precioDeCriterio(toro, { porCabeza: { vientres: [], toros: [{ categoria: "A.ANGUS GRAL. NEGRO", cantidad: 29, promedio: 6910344, maximo: 9200000, minimo: 5000000 },
+        { categoria: "A.ANGUS GRAL. COLORADO", cantidad: 1, promedio: 6500000, maximo: 6500000, minimo: 6500000 }] } })
+      const vT = `sólo negro ${soloNegro?.precio} (${soloNegro?.origen.includes("no hubo A.ANGUS GRAL. COLORADO")}) · con colorado ${ambos?.precio}`
+      chequear("Balance · hacienda", "🐂 Toro: A.ANGUS GRAL. COLORADO mínimo; si no se operó colorado, GRAL. NEGRO mínimo, y se dice",
+        "sólo negro 3000000 (true) · con colorado 6500000", vT, vT === "sólo negro 3000000 (true) · con colorado 6500000", "A-FEAT-1541")
     }
     chequear("Balance · hacienda", "🔑 Toritos: el precio del toro (A.ANGUS GRAL. COLORADO mínimo), por cabeza = 7.000.000",
       "7000000", String(de("Torito")?.valorPorCabeza),
@@ -10834,6 +10841,12 @@ export function correrCasos(): Resultado[] {
       const vLista1549 = oL.lista.slice(0, oL.delPeriodo).map(m => m.id).join("") + "|" + oL.lista.slice(oL.delPeriodo).map(m => m.id).join("")
       chequear("Mails", "📬 «Último día»: los mails del período van PRIMERO y los pendientes de días anteriores aparte, debajo (no tapan los de hoy)",
         "da|cfbe", vLista1549, vLista1549 === "da|cfbe", "A-BUG-1549")
+      // A-FEAT-1563: un DÍA argentino es de 03:00 UTC a 03:00 UTC del siguiente («2026-10-31» a las 00 UTC = 30/10 21 h → es del 30); los pendientes de otros días van aparte
+      const rD = rangoDelDia("2026-10-30")
+      const oD = ordenarParaLista(sm, hoyS, rD.desde, rD.hasta)
+      const vDia = `${rD.desde}→${rD.hasta} | ` + oD.lista.slice(0, oD.delPeriodo).map(m => m.id).join("") + "|" + oD.lista.slice(oD.delPeriodo).map(m => m.id).join("")
+      chequear("Mails", "📅 «Día»: de las 00 a las 24 hora argentina; sólo los de ese día arriba, el resto de los pendientes aparte (también los de días posteriores)",
+        "2026-10-30T03:00:00.000Z→2026-10-31T03:00:00.000Z | d|cfbea", vDia, vDia === "2026-10-30T03:00:00.000Z→2026-10-31T03:00:00.000Z | d|cfbea", "A-FEAT-1563")
       const vJ = juntarConPendientes([{ id: "1" }, { id: "2" }], [{ id: "2" }, { id: "9" }]).map(x => x.id).join("")
       chequear("Mails", "📌 Los pendientes de antes del período se suman a la lista sin repetir", "129", vJ, vJ === "129", "A-FEAT-1437")
 

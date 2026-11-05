@@ -39,7 +39,7 @@ import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
 import {
   TIPOS_MAIL, NOMBRE_GRUPO_MAIL, NOMBRE_SEGUIMIENTO, linkGmail, tipoDeMail, grupoDeMail, filtrarMails, contarMails,
   contarPorTipo, problemaDeRegla, procesadoDeMail, cambiosAlReaplicar, nombresDeTipos, claveDeTipoMail, problemaDeTipoNuevo,
-  contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarParaLista,
+  contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarParaLista, rangoDelDia,
   juntarConPendientes, problemaDeSeguimiento, claseDeProcesado, gravedadDeMail,
   type BusquedaConMail, type InventarioConMail, type MailRegistrado, type ReglaMail, type GrupoMail, type AccionMail,
   type TipoMailFila, type AlcanceTipo, type EstadoSeguimiento, type SeguimientoMail,
@@ -302,6 +302,9 @@ type Columna = "dePara" | "tipo" | "hizo"
 function RegistroMails() {
   const { tipos, nombres, crear } = useTiposMail()
   const [dias, setDias] = useState(7)
+  /** 📅 A-FEAT-1563: un DÍA puntual (por defecto hoy). `null` = se usan los períodos de siempre. */
+  const [dia, setDia] = useState<string | null>(null)
+  const [hastaLeido, setHastaLeido] = useState<string | null>(null)
   const [mails, setMails] = useState<MailRegistrado[]>([])
   /** El corte del período de la última lectura (A-BUG-1549: separa los del período de los pendientes viejos). */
   const [desdeLeido, setDesdeLeido] = useState<string | null>(null)
@@ -324,12 +327,15 @@ function RegistroMails() {
 
   const cargar = useCallback(async () => {
     setCargando(true); setError(null)
-    const desde = new Date(Date.now() - dias * 86400000).toISOString()
+    const rango = dia ? rangoDelDia(dia) : null
+    const desde = rango ? rango.desde : new Date(Date.now() - dias * 86400000).toISOString()
+    const hasta = rango ? rango.hasta : null
     const delPeriodo: MailRegistrado[] = []
     // La API corta en 1000 filas: se pide de a tramos
     for (let i = 0; ; i += 1000) {
-      const { data, error: e } = await supabase.from("mails_registro").select(COLUMNAS)
-        .gte("fecha", desde).order("fecha", { ascending: false }).range(i, i + 999)
+      let q = supabase.from("mails_registro").select(COLUMNAS).gte("fecha", desde)
+      if (hasta) q = q.lt("fecha", hasta)
+      const { data, error: e } = await q.order("fecha", { ascending: false }).range(i, i + 999)
       if (e) { setError(e.message); break }
       delPeriodo.push(...((data ?? []) as MailRegistrado[]))
       if (!data || data.length < 1000) break
@@ -338,7 +344,7 @@ function RegistroMails() {
     const { data: pend, error: eP } = await supabase.from("mails_registro").select(COLUMNAS).eq("seguimiento", "pendiente")
     if (eP) setError(eP.message)
     const todos = juntarConPendientes(delPeriodo, (pend ?? []) as MailRegistrado[])
-    setMails(todos); setDesdeLeido(desde); setCargando(false)
+    setMails(todos); setDesdeLeido(desde); setHastaLeido(hasta); setCargando(false)
     const { data: ult } = await supabase.from("mails_registro").select("created_at").order("created_at", { ascending: false }).limit(1)
     const u = (ult?.[0] as { created_at?: string } | undefined)?.created_at ?? null
     setUltimoRegistro(u)
@@ -355,7 +361,7 @@ function RegistroMails() {
       bs.push(...((b ?? []) as BusquedaConMail[])); inv.push(...((v ?? []) as InventarioConMail[]))
     }
     setBusquedas(bs); setInventario(inv)
-  }, [dias])
+  }, [dias, dia])
   useEffect(() => { cargar() }, [cargar])
 
   const procesado = useCallback((m: MailRegistrado) => procesadoDeMail(m, busquedas, inventario), [busquedas, inventario])
@@ -376,8 +382,8 @@ function RegistroMails() {
     return r
   }, [mails, columnas, valores, grupos, tiposChip, texto, seguimientos, soloGraves, hoy])
 
-  const { lista: visibles, delPeriodo } = useMemo(() => ordenarParaLista(aplicar(null), hoy, desdeLeido), [aplicar, hoy, desdeLeido])
-  const nombrePeriodo = PERIODOS.find(p => p.dias === dias)?.nombre.toLowerCase() ?? `${dias} días`
+  const { lista: visibles, delPeriodo } = useMemo(() => ordenarParaLista(aplicar(null), hoy, desdeLeido, hastaLeido), [aplicar, hoy, desdeLeido, hastaLeido])
+  const nombrePeriodo = dia ? `el ${dia.split("-").reverse().join("/")}` : PERIODOS.find(p => p.dias === dias)?.nombre.toLowerCase() ?? `${dias} días`
   const conteo = useMemo(() => contarMails(aplicar("grupo")), [aplicar])
   const porTipo = useMemo(() => contarPorTipo(aplicar("tipoChip")), [aplicar])
   const porSeguimiento = useMemo(() => {
@@ -414,8 +420,11 @@ function RegistroMails() {
       <TestsDelProceso proceso="egresos/mails" pantalla="egresos" />
       <div className="flex flex-wrap items-center gap-2">
         {PERIODOS.map(p => (
-          <Button key={p.dias} size="sm" variant={dias === p.dias ? "default" : "outline"} onClick={() => setDias(p.dias)}>{p.nombre}</Button>
+          <Button key={p.dias} size="sm" variant={!dia && dias === p.dias ? "default" : "outline"} onClick={() => { setDia(null); setDias(p.dias) }}>{p.nombre}</Button>
         ))}
+        {/* 📅 A-FEAT-1563: los mails de UN día (por defecto hoy) */}
+        <Button size="sm" variant={dia ? "default" : "outline"} onClick={() => setDia(d => d ?? hoy)} title="Sólo los mails de un día">Día</Button>
+        {dia && <Input type="date" value={dia} max={hoy} onChange={e => e.target.value && setDia(e.target.value)} className="h-8 w-40" />}
         <Input placeholder="Buscar en asunto, remitente o destinatario" value={texto} onChange={e => setTexto(e.target.value)} className="h-8 max-w-xs" />
         {/* 🔄 A-BUG-1550: gira mientras lee y avisa al terminar. Lee lo que registró el robot del mail (pasa cada ~15 min). */}
         <Button size="sm" variant="ghost" disabled={cargando} title="Volver a leer lo que registró el robot del mail (pasa cada ~15 min; no trae de Gmail lo que todavía no registró)"

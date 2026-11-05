@@ -340,13 +340,24 @@ export function ordenarPendientesArriba<T extends CamposSeguimiento & { fecha: s
  * mails de hoy? y me muestra uno solo»): con los 52 pendientes viejos ordenados arriba, los 7 del día quedaban abajo de
  * todo y parecía que no estaban. `desde` es el instante de corte del período (ISO).
  */
-export function ordenarParaLista<T extends CamposSeguimiento & { fecha: string }>(mails: T[], hoy: string, desde: string | null):
+export function ordenarParaLista<T extends CamposSeguimiento & { fecha: string }>(mails: T[], hoy: string, desde: string | null, hasta: string | null = null):
   { lista: T[]; delPeriodo: number } {
   if (!desde) return { lista: ordenarPendientesArriba(mails, hoy), delPeriodo: mails.length }
   const corte = Date.parse(desde)
-  const del = mails.filter(m => Date.parse(m.fecha) >= corte)
-  const antes = mails.filter(m => Date.parse(m.fecha) < corte)
+  const fin = hasta ? Date.parse(hasta) : Infinity
+  // Con un DÍA elegido (A-FEAT-1563), los pendientes de días POSTERIORES también van aparte, no con los del día
+  const del = mails.filter(m => Date.parse(m.fecha) >= corte && Date.parse(m.fecha) < fin)
+  const antes = mails.filter(m => !(Date.parse(m.fecha) >= corte && Date.parse(m.fecha) < fin))
   return { lista: [...ordenarPendientesArriba(del, hoy), ...ordenarPendientesArriba(antes, hoy)], delPeriodo: del.length }
+}
+
+/**
+ * Pura: el rango de UN día argentino ('AAAA-MM-DD') como instantes — A-FEAT-1563 (JMS 05/11: «selector de mails del
+ * día, y selector de día, por default hoy»). Argentina es UTC−3 todo el año (§ 🕐: un día es hora argentina).
+ */
+export function rangoDelDia(dia: string): { desde: string; hasta: string } {
+  const desde = new Date(`${dia}T00:00:00-03:00`)
+  return { desde: desde.toISOString(), hasta: new Date(desde.getTime() + 86_400_000).toISOString() }
 }
 
 /** Pura: suma los mails de un período con TODOS los pendientes (aunque sean de antes), sin repetir. */
