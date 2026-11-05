@@ -12,7 +12,14 @@
 
 ## 🧪 <a id="guia-pruebas-2026-10-05"></a>GUÍA DE PRUEBAS — vigente al 1 de noviembre (todo en `desarrollo` salvo lo marcado)
 
-> 🆕 **05/11 — Camino 3: «💸 LO QUE TE VENCE» (rol de MA) + VIGÍA DE LA PAUSA** → [A-TEST-1326](#a-test-1326), 6 pasos. Antes: que Vercel haya publicado `desarrollo` (commit `b6fbef81` o posterior). ⚠️ Producción sigue en la versión del 03/10 hasta desplegar `main` a mano ([A-BUG-1542](#a-bug-1542)).
+> 🆕 **05/11 — Camino 3 + notas (todo en `desarrollo`; antes, que Vercel haya publicado el último commit).** ⚠️ Producción sigue en la versión del 03/10 hasta desplegar `main` a mano ([A-BUG-1542](#a-bug-1542)). En este orden:
+> 1. 💸 **MA — «Lo que te vence», «Pagué» con tu confirmación, comprobante, verla como la ve ella** → [A-TEST-1326](#a-test-1326) (8 pasos).
+> 2. 📬 **Mails — Último día, refrescar, Día, cronológica, buscador** → [A-TEST-1327](#a-test-1327) (6 pasos).
+> 3. ⌨️🗗 **Menú — Alt+M y una tecla, Ctrl+clic = otra pestaña** → [A-TEST-1328](#a-test-1328).
+> 4. 🔽 **Historial de pesadas con filtros** → [A-TEST-1329](#a-test-1329).
+> 5. 🧪 **Orden agrícola en cualquier unidad** → [A-TEST-1330](#a-test-1330).
+> 6. 👷⬆️ **Sueldos Cat A/B · Importar facturas con las nuevas arriba** → [A-TEST-1331](#a-test-1331).
+> Esperan tu decisión: [A-BUG-1553](#a-bug-1553) (anticipos con echeq sin vincular: ≈ $ 17,3 M duplicados en el Cash Flow) · [A-FEAT-1556](#a-feat-1556)/[1557](#a-feat-1557) (productivo) · [A-FEAT-1547](#a-feat-1547) (temas de mails) · [A-FEAT-1214](#a-feat-1214) (Red Vial: registrar el mail + partida de Lima) · [A-FEAT-1559](#a-feat-1559) (código del script del contador).
 >
 > 🆕 **01/11 — T1 (Camino 1): EL RECORRIDO COMO LUGAR DE TRABAJO + CONCILIACIÓN** ([A-TEST-1297](#a-test-1297) pasos **36 a 44**; los anteriores siguen valiendo). **F5 antes.** Reportes → Papeles de balance, MSA 25/26 → «🧭 Recorrer temas».
 > 1. 🧵 **«Tu respuesta» es un hilo** (paso 42): arriba del cuadro, la conversación en orden; lo nuevo va al final. Con **captura** (Ctrl+V) en el tema (36) y al responder en «Para vos» (38).
