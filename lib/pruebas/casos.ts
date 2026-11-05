@@ -213,7 +213,7 @@ import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuest
 import { hojaAutomotores, pulirLibroH } from "@/lib/balance/export-libro-diario"
 import { repartoDeLaFlota } from "@/lib/balance/reparto-flota"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
-import { valuarHacienda } from "@/lib/balance/hacienda-stock"
+import { valuarHacienda, precioDeCriterio, CRITERIOS } from "@/lib/balance/hacienda-stock"
 import { pesosAlCierre, pesoParaValuar } from "@/lib/balance/pesos-hacienda"
 import { armarStockInsumos, existenciaAlCierre, PAPELES_SIN_ORIGEN, type LineaInsumo } from "@/lib/balance/stock-insumos"
 import { elegirTcAl } from "@/lib/dolares/tc-cierre"
@@ -355,7 +355,7 @@ import { agregarSaldosHacienda, agregarSaldosProductivos } from "@/lib/balance/s
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 import { agruparStockInicio, valuarPastura, type RenglonStockInicio } from "@/lib/balance/stock-inicio"
 import { hojaStockInicio } from "@/lib/balance/saldos-excel"
-import { diasHaciaAtras, leyendaPrecios, urlPizarraDelDia } from "@/lib/balance/precio-al-cierre"
+import { diasHaciaAtras, leyendaPrecios, urlPizarraDelDia, sumarDia } from "@/lib/balance/precio-al-cierre"
 import { armarSaldosProductivos, sistemaProductivoAlCierre, diaAnterior } from "@/lib/balance/saldos-productivos"
 import { armarFilaDato, leerNumero, textoEstadoGuardado, MARCA_TENTATIVO, esTentativo, fuenteTentativo, confirmarFila, leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
@@ -4974,6 +4974,8 @@ export function correrCasos(): Resultado[] {
       vientres: [
         { categoria: "Vacas C. Gtia. Preñez Medio", cantidad: 2320, promedio: 2073207, maximo: 2550000, minimo: 1600000 },
         { categoria: "Vacas C. Gtia. Preñez Nueva", cantidad: 3687, promedio: 2409494, maximo: 3200000, minimo: 1800000 },
+        // 📗 A-FEAT-1541: la vaquillona de 1ª parición toma esta (antes «Preñez Nueva»).
+        { categoria: "Vaquillonas C. Gtía. Preñez", cantidad: 963, promedio: 2148432, maximo: 3200000, minimo: 1700000 },
         // Una categoría que el mercado NO operó: precios en cero. No se puede usar.
         { categoria: "Vacas Con Servicio", cantidad: 0, promedio: 0, maximo: 0, minimo: 0 },
       ],
@@ -5034,10 +5036,34 @@ export function correrCasos(): Resultado[] {
       "7000000", String(de("Toro")?.valorPorCabeza),
       de("Toro")?.valorPorCabeza === 7000000, "A-FEAT-1187")
 
-    // TORITOS: MEJ especial 3400 x 1,5 x 300 kg = 1.530.000 — idem.
-    chequear("Balance · hacienda", "🔑 Toritos: MEJ especial × 1,5 × 300 kg = 1.530.000/cab",
-      "1530000", String(de("Torito")?.valorPorCabeza),
-      de("Torito")?.valorPorCabeza === 1530000, "A-FEAT-1184")
+    // TORITOS: ⚠️ cambió 05/11 (A-FEAT-1541, JMS: «toros de 1 o 2 años — toma precio toros», sin porcentaje): el mismo precio
+    //    del toro, por cabeza (antes MEJ especial × 1,5 × 300 kg = 1.530.000).
+    // 📗 A-FEAT-1541: el rango de kilos es el que contiene el peso (JMS: «depende lo que pese cae en un rango u otro»).
+    {
+      const bandas = [{ categoria: "t", pesoLo: 200, pesoHi: 230, promKilo: 5000, kiloMax: 5200, kiloMin: 4800 },
+        { categoria: "t", pesoLo: 230, pesoHi: 260, promKilo: 4800, kiloMax: 5000, kiloMin: 4600, fecha: "2026-06-26" }]
+      const ct = CRITERIOS.find(c => c.categoria === "Ternero Recria")!
+      const p215 = precioDeCriterio(ct, { mercado: { macho: bandas, hembra: [] } }, 215)
+      const p241 = precioDeCriterio(ct, { mercado: { macho: bandas, hembra: [] } }, 241)
+      const vq = CRITERIOS.find(c => c.categoria === "Vaquillona Preñada")!
+      const vR = `215 kg → ${p215?.precio} · 241 kg → ${p241?.precio} (${p241?.origen.includes("230-260") && p241?.origen.includes("al 26/06/2026")}) · vaq. 1ª parición «${vq.categoriaPorCabeza}»`
+      const eR = "215 kg → 5200 · 241 kg → 5000 (true) · vaq. 1ª parición «Vaquillonas C. Gtía. Preñez»"
+      chequear("Balance · hacienda", "📗 El rango de Entresurcos es el que contiene el peso de la categoría (con la fecha del precio); la vaquillona de 1ª parición toma «Vaquillonas C. Gtía. Preñez»",
+        eR, vR, vR === eR, "A-FEAT-1541")
+      // y la búsqueda hacia atrás POR CATEGORÍA: el 30/06 publicó sólo «Nueva»; el 29/06, «Medio» → se toman las dos, cada una con su día.
+      type Fv = { categoria: string; promedio: number }
+      const tomadas = new Map<string, Fv & { fecha: string }>()
+      const completo = (fs: Array<Fv & { fecha: string }>) => ["Medio", "Nueva"].every(k => fs.some(f => f.categoria === k))
+      const d1 = sumarDia(tomadas, "2026-06-30", [{ categoria: "Nueva", promedio: 10 }, { categoria: "Medio", promedio: 0 }], f => f.categoria, f => f.promedio > 0, completo)
+      const d2 = sumarDia(tomadas, "2026-06-29", [{ categoria: "Nueva", promedio: 9 }, { categoria: "Medio", promedio: 8 }], f => f.categoria, f => f.promedio > 0, completo)
+      const vD = `día 1 completo ${d1} · día 2 completo ${d2} · ${[...tomadas.values()].map(f => `${f.categoria} ${f.promedio} (${f.fecha})`).join(" · ")}`
+      const eD = "día 1 completo false · día 2 completo true · Nueva 10 (2026-06-30) · Medio 8 (2026-06-29)"
+      chequear("Balance · hacienda", "📅 Si un día no se operó una categoría, se busca el día anterior SÓLO para esa (la que ya tenía precio queda con el más reciente)",
+        eD, vD, vD === eD, "A-FEAT-1541")
+    }
+    chequear("Balance · hacienda", "🔑 Toritos: el precio del toro (A.ANGUS GRAL. COLORADO mínimo), por cabeza = 7.000.000",
+      "7000000", String(de("Torito")?.valorPorCabeza),
+      de("Torito")?.valorPorCabeza === 7000000, "A-FEAT-1541")
 
     // Ternera recria: vaquillona 250-290 al MAXIMO 3600 x 250 kg = 900.000 — idem.
     chequear("Balance · hacienda", "Ternera recría: vaquillona 250-290 al máximo × 250 kg = 900.000/cab",

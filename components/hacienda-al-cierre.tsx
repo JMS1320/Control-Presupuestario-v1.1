@@ -33,7 +33,7 @@ import {
   cuadrarHacienda, cantidadConSigno, type CuadreHacienda, type MovimientoDeHacienda,
 } from "@/lib/balance/cuadre-hacienda"
 import {
-  valuarHacienda, CRITERIOS,
+  valuarHacienda, CRITERIOS, precioDeCriterio, type CriterioValuacion,
   type ValuacionHacienda, type PrecioMag, type PrecioMercado, type PrecioCabeza,
   type ExistenciaHacienda,
 } from "@/lib/balance/hacienda-stock"
@@ -53,11 +53,11 @@ import {
 import { armarTresSaldos } from "@/lib/balance/tres-saldos-hacienda"
 import type { SaldosParaExcel } from "@/lib/balance/saldos-excel"
 import { leerStockInicio, type RenglonStockInicio, type Pastura } from "@/lib/balance/stock-inicio"
-import { ultimoPublicado, leyendaPrecios, pizarraAlCierre, URL_FUENTES, type FuentePrecio } from "@/lib/balance/precio-al-cierre"
+import { ultimoPorCategoria, leyendaPrecios, pizarraAlCierre, URL_FUENTES, type FuentePrecio } from "@/lib/balance/precio-al-cierre"
 import { StockInicioDetalle } from "@/components/stock-inicio-detalle"
 import { sistemaAlMomento } from "@/lib/balance/tres-saldos-hacienda"
 import { leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
-import { pesosAlCierre, type PesoCategoria } from "@/lib/balance/pesos-hacienda"
+import { pesosAlCierre, pesoParaValuar, type PesoCategoria } from "@/lib/balance/pesos-hacienda"
 
 /**
  * es-AR: coma decimal, punto de miles. **Vacío devuelve `null`, no 0** — «no lo sé» y «cero»
@@ -254,32 +254,7 @@ export function HaciendaAlCierre({
        * y no como promedio del mes; al 30/6 o último precio publicado». Cada fuente se busca hacia atrás desde el cierre
        * hasta el primer día que publicó con precio; la fecha usada y el link quedan en el papel.
        */
-      const fc = ejercicio.fechaCierre
-      const conPrecioMag = (xs: PrecioMag[]) => xs.some(x => x.promedio > 0 || x.maximo > 0)
-      const conPrecioKg = (xs: PrecioMercado[]) => xs.some(x => (x.kiloMax || x.promKilo) > 0)
-      const conPrecioCab = (xs: PrecioCabeza[]) => xs.some(x => x.cantidad > 0 && x.promedio > 0)
-      const [rMag, rHem, rMac, rVie, rTor, pizSoja] = await Promise.all([
-        ultimoPublicado(fc, d => pedir<PrecioMag>(`/api/precios-mag?desde=${d}&hasta=${d}`), conPrecioMag),
-        ultimoPublicado(fc, d => pedir<PrecioMercado>(`/api/precios-mercado?desde=${d}&hasta=${d}&sexo=hembra`), conPrecioKg),
-        ultimoPublicado(fc, d => pedir<PrecioMercado>(`/api/precios-mercado?desde=${d}&hasta=${d}&sexo=macho`), conPrecioKg),
-        ultimoPublicado(fc, d => pedir<PrecioCabeza>(`/api/precios-por-cabeza?tipo=vientres&desde=${d}&hasta=${d}`), conPrecioCab),
-        ultimoPublicado(fc, d => pedir<PrecioCabeza>(`/api/precios-por-cabeza?tipo=toros&desde=${d}&hasta=${d}`), conPrecioCab),
-        pizarraAlCierre(supabase, "soja", fc),
-      ])
-      const [mag, hembras, machos, vientres, toros] = [rMag.filas, rHem.filas, rMac.filas, rVie.filas, rTor.filas]
-      const fuentesPrecios: FuentePrecio[] = [
-        { nombre: "Cañuelas (MAG)", fecha: rMag.fecha, url: URL_FUENTES.canuelas },
-        { nombre: "Entresurcos terneras", fecha: rHem.fecha, url: URL_FUENTES.terneras },
-        { nombre: "Entresurcos terneros", fecha: rMac.fecha, url: URL_FUENTES.terneros },
-        { nombre: "Entresurcos vientres", fecha: rVie.fecha, url: URL_FUENTES.vientres },
-        { nombre: "Entresurcos toros", fecha: rTor.fecha, url: URL_FUENTES.toros },
-      ]
-      const etiqueta = leyendaPrecios(fc, fuentesPrecios)
-      // 🎚️ Granos: la pizarra de Rosario al cierre es el default; el precio escrito a mano manda.
-      const precioGranos = tn(granos.precio) ?? pizSoja?.valor ?? null
-      const mercado = { macho: machos, hembra: hembras }
-      const porCabeza = { vientres, toros }
-
+      // ⚖️ Los kilos ANTES que los precios: el rango de Entresurcos depende de lo que pesa cada categoría (A-FEAT-1541).
       const ganConfig: Record<string, number> = {}
       for (const l of (lotesGan ?? []) as Array<Record<string, unknown>>) {
         const cat = String(l.categoria ?? "")
@@ -300,6 +275,49 @@ export function HaciendaAlCierre({
         ganConfig,
         ejercicio.fechaCierre,
       )
+      const fc = ejercicio.fechaCierre
+      /**
+       * 📗 A-FEAT-1541 (JMS 05/11: «si no hay categoría, tomar el día anterior hasta encontrar»): cada fuente se busca hacia
+       * atrás CATEGORÍA POR CATEGORÍA, hasta que estén todas las que hacen falta para las categorías con existencia.
+       */
+      const conCabezas = new Set(existencias.filter(e => e.cabezas > 0).map(e => e.categoria))
+      const criteriosDe = (f: (c: CriterioValuacion) => boolean) => CRITERIOS.filter(c => conCabezas.has(c.categoria) && f(c))
+      const pesoDe = (cat: string) => pesoParaValuar(cat, pesos, CRITERIOS.find(c => c.categoria === cat)?.pesoKg ?? null).kg
+      const todos = (cs: CriterioValuacion[], fuentes: Parameters<typeof precioDeCriterio>[1]) =>
+        cs.every(c => precioDeCriterio(c, fuentes, pesoDe(c.categoria)) != null)
+      const sinMercado = { macho: [] as PrecioMercado[], hembra: [] as PrecioMercado[] }
+      const [rMag, rHem, rMac, rVie, rTor, pizSoja] = await Promise.all([
+        ultimoPorCategoria(fc, d => pedir<PrecioMag>(`/api/precios-mag?desde=${d}&hasta=${d}`),
+          x => `${x.familia}|${x.calidad}|${x.corte ?? ""}`, x => x.promedio > 0 || x.maximo > 0,
+          filas => todos(criteriosDe(c => c.fuente === "mag"), { mag: filas })),
+        ultimoPorCategoria(fc, d => pedir<PrecioMercado>(`/api/precios-mercado?desde=${d}&hasta=${d}&sexo=hembra`),
+          x => `${x.pesoLo}-${x.pesoHi ?? ""}`, x => (x.kiloMax || x.promKilo) > 0,
+          filas => todos(criteriosDe(c => c.fuente === "entresurcos" && c.sexo === "hembra"), { mercado: { ...sinMercado, hembra: filas } })),
+        ultimoPorCategoria(fc, d => pedir<PrecioMercado>(`/api/precios-mercado?desde=${d}&hasta=${d}&sexo=macho`),
+          x => `${x.pesoLo}-${x.pesoHi ?? ""}`, x => (x.kiloMax || x.promKilo) > 0,
+          filas => todos(criteriosDe(c => c.fuente === "entresurcos" && c.sexo !== "hembra"), { mercado: { ...sinMercado, macho: filas } })),
+        ultimoPorCategoria(fc, d => pedir<PrecioCabeza>(`/api/precios-por-cabeza?tipo=vientres&desde=${d}&hasta=${d}`),
+          x => x.categoria, x => x.cantidad > 0 && x.promedio > 0,
+          filas => todos(criteriosDe(c => c.tipoPorCabeza === "vientres"), { porCabeza: { vientres: filas, toros: [] } })),
+        ultimoPorCategoria(fc, d => pedir<PrecioCabeza>(`/api/precios-por-cabeza?tipo=toros&desde=${d}&hasta=${d}`),
+          x => x.categoria, x => x.cantidad > 0 && x.promedio > 0,
+          filas => todos(criteriosDe(c => c.tipoPorCabeza === "toros"), { porCabeza: { vientres: [], toros: filas } })),
+        pizarraAlCierre(supabase, "soja", fc),
+      ])
+      const [mag, hembras, machos, vientres, toros] = [rMag.filas, rHem.filas, rMac.filas, rVie.filas, rTor.filas]
+      const fuentesPrecios: FuentePrecio[] = [
+        { nombre: "Cañuelas (MAG)", fecha: rMag.fecha, url: URL_FUENTES.canuelas },
+        { nombre: "Entresurcos terneras", fecha: rHem.fecha, url: URL_FUENTES.terneras },
+        { nombre: "Entresurcos terneros", fecha: rMac.fecha, url: URL_FUENTES.terneros },
+        { nombre: "Entresurcos vientres", fecha: rVie.fecha, url: URL_FUENTES.vientres },
+        { nombre: "Entresurcos toros", fecha: rTor.fecha, url: URL_FUENTES.toros },
+      ]
+      const etiqueta = leyendaPrecios(fc, fuentesPrecios)
+      // 🎚️ Granos: la pizarra de Rosario al cierre es el default; el precio escrito a mano manda.
+      const precioGranos = tn(granos.precio) ?? pizSoja?.valor ?? null
+      const mercado = { macho: machos, hembra: hembras }
+      const porCabeza = { vientres, toros }
+
 
       const numericos: Record<string, number> = {}
       for (const [k, v] of Object.entries(manuales)) {

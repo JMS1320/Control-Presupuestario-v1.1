@@ -83,6 +83,11 @@ export interface CriterioValuacion {
   sexo?: "macho" | "hembra"
   pesoDesde?: number
   pesoHasta?: number
+  /**
+   * 📗 A-FEAT-1541 (JMS 05/11: *«depende lo que pese cae en un rango u otro»*): el rango de Entresurcos es el que CONTIENE el
+   * peso de la categoría al cierre; `pesoDesde`/`pesoHasta` quedan sólo como respaldo si no hay peso.
+   */
+  segunPeso?: boolean
   /** El castigo o la prima: 0,9 · 0,8 · 0,7 · 1,5 · 1,1. */
   factor: number
   /**
@@ -124,9 +129,11 @@ export const CRITERIOS: CriterioValuacion[] = [
   },
   {
     categoria: "Vaquillona Preñada",
-    criterio: "Vacas C. Gtía. Preñez NUEVA (Entresurcos, promedio) × 90 % — por cabeza",
+    criterio: "Vaquillonas C. Gtía. Preñez (Entresurcos, promedio) × 90 % — por cabeza",
     fuente: "porCabeza", tipoPorCabeza: "vientres",
-    categoriaPorCabeza: "Vacas C. Gtia. Preñez Nueva", campoPorCabeza: "promedio",
+    // 📗 A-FEAT-1541 (JMS 05/11, «ok»): al 30/6 son las de 2 años que paren desde el 1/7 → «Vaquillonas C. Gtía. Preñez»
+    //    (antes «Vacas C. Gtía. Preñez Nueva»).
+    categoriaPorCabeza: "Vaquillonas C. Gtía. Preñez", campoPorCabeza: "promedio",
     factor: 0.9, porCabeza: true,
   },
   {
@@ -163,15 +170,25 @@ export const CRITERIOS: CriterioValuacion[] = [
   },
   {
     categoria: "Torito",
-    criterio: "MEJ especial × 1,5 × el peso de la pesada",
-    fuente: "mag", magFamilia: "MEJ", magCalidad: "Esp", magCampo: "promedio",
-    // *«traer kg de app»* (JMS). Sin pesadas no se estima.
-    factor: 1.5, pesoKg: null,
+    // 📗 A-FEAT-1541 (JMS 05/11: «toros de 1 o 2 años — toma precio toros según registrado», «ok», sin porcentaje): el mismo
+    //    precio del toro, por cabeza. Antes: MEJ especial × 1,5 × el peso de la pesada (Cañuelas).
+    criterio: "como el toro: A.ANGUS GRAL. COLORADO, precio MÍNIMO (Entresurcos toros) — por cabeza",
+    fuente: "porCabeza", tipoPorCabeza: "toros",
+    categoriaPorCabeza: "A.ANGUS GRAL. COLORADO", campoPorCabeza: "minimo",
+    factor: 1, porCabeza: true,
   },
   {
     categoria: "Ternera Recria",
-    criterio: "vaquillona 250-290 kg a precio MÁXIMO × el peso de la pesada",
-    fuente: "entresurcos", sexo: "hembra", pesoDesde: 250, pesoHasta: 290,
+    criterio: "ternera: el rango de kilos que contiene su peso, a precio MÁXIMO × el peso",
+    fuente: "entresurcos", sexo: "hembra", pesoDesde: 250, pesoHasta: 290, segunPeso: true,
+    factor: 1, pesoKg: null,
+  },
+  {
+    // 📗 A-FEAT-1541 (JMS 05/11: «de 1 año, va por la categoría de su peso, valor de Entresurcos; acá están las terneras de
+    //    reposición»): la reposición no tenía criterio (al 30/06/25 eran 28). Va como la ternera de recría, por su peso.
+    categoria: "Vaquillona de Reposicion",
+    criterio: "vaquillona de reposición: el rango de kilos que contiene su peso, a precio MÁXIMO × el peso",
+    fuente: "entresurcos", sexo: "hembra", pesoDesde: 250, pesoHasta: 290, segunPeso: true,
     factor: 1, pesoKg: null,
   },
   {
@@ -185,14 +202,16 @@ export const CRITERIOS: CriterioValuacion[] = [
      * 📌 El 10 % era una **aproximación suya para cuando no tenía el dato**. Teniéndolo, se usa el
      * dato.
      */
-    criterio: "ternero macho 250-290 kg a precio MÁXIMO × el peso de la pesada",
-    fuente: "entresurcos", sexo: "macho", pesoDesde: 250, pesoHasta: 290,
+    criterio: "ternero macho: el rango de kilos que contiene su peso, a precio MÁXIMO × el peso",
+    fuente: "entresurcos", sexo: "macho", pesoDesde: 250, pesoHasta: 290, segunPeso: true,
     factor: 1, pesoKg: null,
   },
 ]
 
 /** Fila del MAG que necesitamos (subconjunto de `FilaMag`). */
 export interface PrecioMag {
+  /** 📅 A-FEAT-1541: el día del que salió el precio (se busca hacia atrás por categoría). */
+  fecha?: string
   familia: string
   calidad: string
   corte: string | null
@@ -207,6 +226,8 @@ export interface PrecioMag {
  * Ver `app/api/precios-por-cabeza/route.ts`, que explica de dónde sale y cómo mantenerlo.
  */
 export interface PrecioCabeza {
+  /** 📅 A-FEAT-1541: el día del que salió el precio. */
+  fecha?: string
   categoria: string
   cantidad: number
   promedio: number
@@ -216,6 +237,8 @@ export interface PrecioCabeza {
 
 /** Fila de Entresurcos (subconjunto de `FilaMercado`). */
 export interface PrecioMercado {
+  /** 📅 A-FEAT-1541: el día del que salió el precio. */
+  fecha?: string
   categoria: string
   pesoLo: number
   pesoHi: number | null
@@ -258,6 +281,26 @@ export interface ValuacionHacienda {
 }
 
 const redondear = (x: number) => Math.round(x * 100) / 100
+/** 📅 A-FEAT-1541: « · al 26/06/2026» cuando el precio trae su día. */
+const fechaDe = (filas: Array<{ fecha?: string }>) => {
+  const f = [...new Set(filas.map(x => x.fecha).filter(Boolean))] as string[]
+  return f.length ? ` · al ${f.map(d => d.split("-").reverse().join("/")).join(", ")}` : ""
+}
+
+/**
+ * 📗 A-FEAT-1541 — el precio de UN criterio con las listas que haya (para buscar hacia atrás categoría por categoría: el día
+ * sirve para esa categoría si este devuelve algo). `pesoKg` = el de la categoría al cierre (para el rango según el peso).
+ */
+export function precioDeCriterio(
+  c: CriterioValuacion,
+  fuentes: { mag?: PrecioMag[]; mercado?: { macho: PrecioMercado[]; hembra: PrecioMercado[] }; porCabeza?: Record<"vientres" | "toros", PrecioCabeza[]> },
+  pesoKg?: number | null,
+): { precio: number; origen: string } | null {
+  if (c.fuente === "mag") return precioDeMag(c, fuentes.mag ?? [])
+  if (c.fuente === "porCabeza") return precioPorCabeza(c, fuentes.porCabeza ?? { vientres: [], toros: [] })
+  if (c.fuente === "entresurcos") return precioDeMercado(c, fuentes.mercado?.[c.sexo ?? "hembra"] ?? [], pesoKg)
+  return null
+}
 const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim()
 
 /** Busca en el MAG la fila que pide el criterio. */
@@ -289,7 +332,7 @@ function precioDeMag(c: CriterioValuacion, mag: PrecioMag[]): { precio: number; 
 
   return {
     precio,
-    origen: `MAG · ${c.magFamilia} ${c.magCalidad ?? c.magCorte ?? ""}`.trim() + ` · ${campo}` + detalle,
+    origen: `MAG · ${c.magFamilia} ${c.magCalidad ?? c.magCorte ?? ""}`.trim() + ` · ${campo}` + detalle + fechaDe(candidatas),
   }
 }
 
@@ -321,24 +364,30 @@ function precioPorCabeza(
   return {
     precio,
     origen: `Entresurcos ${c.tipoPorCabeza} · ${fila.categoria} · ${campo}` +
-      (fila.cantidad > 0 ? ` (${fila.cantidad} cab. operadas)` : ""),
+      (fila.cantidad > 0 ? ` (${fila.cantidad} cab. operadas)` : "") + fechaDe([fila]),
   }
 }
 
 /** Busca en Entresurcos el rango de kilos que pide el criterio. */
-function precioDeMercado(c: CriterioValuacion, filas: PrecioMercado[]): { precio: number; origen: string } | null {
-  const desde = c.pesoDesde ?? 0
-  const hasta = c.pesoHasta ?? Infinity
+function precioDeMercado(c: CriterioValuacion, filas: PrecioMercado[], pesoKg?: number | null): { precio: number; origen: string } | null {
+  // 📗 A-FEAT-1541: con peso, el rango que lo contiene; sin peso, el del criterio.
+  const conPeso = c.segunPeso && pesoKg != null && pesoKg > 0
+  const desde = conPeso ? pesoKg! : c.pesoDesde ?? 0
+  const hasta = conPeso ? pesoKg! : c.pesoHasta ?? Infinity
   // ⚠️ Recibe **la lista del sexo que pide el criterio**, elegida por quien llama. Ver la nota de
   //    `mercado` en `valuarHacienda`: pasarle una sola lista fue un bug real.
   // Se toma el rango que SOLAPA con el pedido; si hay varios, el promedio de sus máximos.
-  const candidatas = filas.filter(f => f.pesoLo <= hasta && (f.pesoHi ?? Infinity) >= desde)
+  // Con peso, UN rango: el que lo contiene con el techo abierto (250 kg cae en 250-290, no en 210-250); si no hay, el borde.
+  const exacto = conPeso ? filas.filter(f => f.pesoLo <= pesoKg! && (f.pesoHi == null || pesoKg! < f.pesoHi)) : []
+  const candidatas = exacto.length ? exacto : filas.filter(f => f.pesoLo <= hasta && (f.pesoHi ?? Infinity) >= desde)
   if (candidatas.length === 0) return null
   const valores = candidatas.map(f => f.kiloMax || f.promKilo).filter(v => v > 0)
   if (valores.length === 0) return null
   return {
     precio: valores.reduce((a, b) => a + b, 0) / valores.length,
-    origen: `Entresurcos · ${c.sexo === "hembra" ? "terneras" : "terneros"} ${desde}-${hasta === Infinity ? "+" : hasta} kg · máximo`,
+    origen: conPeso
+      ? `Entresurcos · ${c.sexo === "hembra" ? "terneras" : "terneros"} ${candidatas.map(f => `${f.pesoLo}-${f.pesoHi ?? "+"}`).join(" / ")} kg (pesan ${Math.round(pesoKg! * 10) / 10}) · máximo${fechaDe(candidatas)}`
+      : `Entresurcos · ${c.sexo === "hembra" ? "terneras" : "terneros"} ${desde}-${hasta === Infinity ? "+" : hasta} kg · máximo${fechaDe(candidatas)}`,
   }
 }
 
@@ -376,7 +425,7 @@ export function valuarHacienda(
   const resueltas = new Map<string, number>()
   const filas: FilaValuada[] = []
 
-  const resolverPrecio = (c: CriterioValuacion): { precio: number; origen: string } | null => {
+  const resolverPrecio = (c: CriterioValuacion, pesoKg?: number | null): { precio: number; origen: string } | null => {
     const manual = preciosManuales[c.categoria]
     if (Number.isFinite(manual) && manual > 0) {
       return { precio: manual, origen: "cargado a mano" }
@@ -387,7 +436,7 @@ export function valuarHacienda(
     }
     if (c.fuente === "mag") return precioDeMag(c, mag)
     if (c.fuente === "porCabeza") return precioPorCabeza(c, porCabeza)
-    if (c.fuente === "entresurcos") return precioDeMercado(c, mercado[c.sexo ?? "hembra"] ?? [])
+    if (c.fuente === "entresurcos") return precioDeMercado(c, mercado[c.sexo ?? "hembra"] ?? [], pesoKg)
     return null // manual y sin carga = hueco
   }
 
@@ -400,13 +449,13 @@ export function valuarHacienda(
   for (const e of orden) {
     const c = porCategoria.get(e.categoria)
     if (!c) continue
-    const p = resolverPrecio(c)
-    if (p) resueltas.set(c.categoria, p.precio)
-
-    // ⚖️ El peso sale de las pesadas; el del criterio es sólo el fallback (A-FEAT-1187).
+    // ⚖️ El peso sale de las pesadas; el del criterio es sólo el fallback (A-FEAT-1187). Va ANTES que el precio: el rango
+    //    de Entresurcos depende de lo que pesa (A-FEAT-1541).
     const peso = c.porCabeza
       ? { kg: null, origen: "se valúa por cabeza, no por kilo" }
       : pesoParaValuar(e.categoria, pesos, c.pesoKg)
+    const p = resolverPrecio(c, peso.kg)
+    if (p) resueltas.set(c.categoria, p.precio)
 
     // 🔑 Sin precio NO se valúa; sin kilos tampoco, cuando la categoría se valúa por kilo.
     //    Poner 0 en cualquiera de los dos daría un valor que se lee como real y no lo es.
