@@ -5155,9 +5155,15 @@ export function correrCasos(): Resultado[] {
         const tCria = h.find(r => (r as any[])[0] === "TOTAL CRÍA") as any[], tRec = h.find(r => (r as any[])[0] === "TOTAL RECRÍA") as any[]
         const ternera = h.find(r => (r as any[])[0] === "Vaquillona (recría)") as any[]
         // vacas: 100 × 1.000.000/1200,5 = 83.299 → 120 × 1.000 = 120.000 → +36.701 (cantidad 20 × 833 = 16.660 · precio 167,0 × 120 = 20.042)
-        const r = `cría ${v(tCria, 13)} = ${v(tCria, 14)} + ${v(tCria, 15)} · recría control ${v(tRec, 16)} · ternera por precio ${v(ternera, 15)}`
+        const r = `cría ${v(tCria, 13)} = ${v(tCria, 14)} + ${v(tCria, 16)} · recría control ${v(tRec, 18)} · ternera por precio ${v(ternera, 16)}`
         chequear("Balance · hacienda", "📈 02.10 Aumento del rodeo U$S: aumento = por cantidad + por precio; la categoría nueva va toda por cantidad",
           "cría 36701 = 16660 + 20042 · recría control 0 · ternera por precio 0", r, r === "cría 36701 = 16660 + 20042 · recría control 0 · ternera por precio 0", "A-FEAT-1541")
+        // ➕ JMS 05/11: la segunda lectura, AGREGADA — por cantidad a precio actual (20 × 1.000) + por precio sobre lo que tenía
+        //    (167,0 × 100) = el mismo aumento; y el TOTAL RECRÍA con promedios ponderados (kg/cab y U$S por kilo).
+        const r2 = `cría ${v(tCria, 13)} = ${v(tCria, 15)} + ${v(tCria, 17)} · control (2) ${v(tCria, 19)} · recría kg/cab ${v(tRec, 4)} → ${v(tRec, 5)} · kilos ${v(tRec, 6)} → ${v(tRec, 7)} · U$S/kg ${Number(tRec[10].v).toFixed(3)}`
+        const e2 = "cría 36701 = 20000 + 16701 · control (2) 0 · recría kg/cab 250 → 232 · kilos 2500 → 5800 · U$S/kg 2.914"
+        chequear("Balance · hacienda", "➕ 02.10: segunda lectura (por cantidad a precio actual + por precio sobre lo que se tenía) con su control, y promedios ponderados en el TOTAL RECRÍA",
+          e2, r2, r2 === e2, "A-FEAT-1541")
         // 🐂 JMS 05/11 (v11.04): la recría también en cabezas × kg promedio (10 de 250 → 25 de 232), además del total de kilos.
         const cab = h.find(r => (r as any[])[0] === "Recría — cabezas") as any[], kgp = h.find(r => (r as any[])[0] === "Recría — kg promedio por cabeza") as any[]
         const tot = h.find(r => (r as any[])[0] === "TOTAL RODEO") as any[]

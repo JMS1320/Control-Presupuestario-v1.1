@@ -446,14 +446,17 @@ export function hojaAumentoRodeo(d: DatosValorizado): unknown[][] {
   const ti = PAPELES_JMS_INICIO_2025.tc, tc = d.tcCierre ?? 1
   const f: unknown[][] = [["02.10 — CUÁNTO AUMENTÓ EL RODEO, EN DÓLARES — cría y recría aparte"],
     ["Dólares del inicio contra dólares del cierre, a precio de mercado (antes del 10 % de comercialización, que es igual en las dos puntas). Cría se mide en cabezas; la recría, en kilos (cabezas × peso)."],
-    ["Aumento = por cantidad (Δ cabezas o Δ kilos × precio U$S del inicio) + por precio (Δ precio U$S × cantidad del cierre)."],
+    ["Dos lecturas del mismo aumento, cada una con su control: (1) por cantidad a precio del INICIO + por precio sobre la cantidad del CIERRE · (2) por cantidad a precio ACTUAL + por precio sobre lo que se TENÍA (lo que se revaluó el rodeo del inicio)."],
     ["Tipo de cambio inicio", ti, "papeles de JMS 2025 (TC prom div)"],
     ["Tipo de cambio cierre", tc, d.tcCierre ? "BNA divisa comprador del cierre" : "⚠️ sin tipo de cambio del cierre"],
     []]
   sinCongelar(f)   // JMS 05/11 (v11.04, comentario en H1): «movilizar paneles»
   if (!d.inicio) { f.push(["⚠️ El inicio no se pudo valuar: no hay contra qué comparar."]); return f }
   const enc = ["Categoría", "Unidad", "Cabezas inicio", "Cabezas cierre", "Kg/cab inicio", "Kg/cab cierre", "Cantidad inicio", "Cantidad cierre", "Δ cantidad",
-    usd("Precio U$S inicio"), usd("Precio U$S cierre"), usd("Valor U$S inicio"), usd("Valor U$S cierre"), usd("AUMENTO U$S"), usd("por cantidad"), usd("por precio"), "Control"]
+    usd("Precio U$S inicio"), usd("Precio U$S cierre"), usd("Valor U$S inicio"), usd("Valor U$S cierre"), usd("AUMENTO U$S"), usd("por cantidad (precio inicio)"), usd("por cantidad (precio actual)"),
+    usd("por precio (sobre lo del cierre)"), usd("por precio (sobre lo que tenía)"), "Control (1)", "Control (2)"]
+  // ➕ JMS 05/11 (en la 02.10): «por cantidad a precio actual» — «era para AGREGAR, no para reemplazar», en todas las filas. Con ella va
+  //    su pareja, la suba de precio sobre lo que se tenía, para que la lectura (2) también sume el aumento.
   const totales: Record<string, number[]> = {}
   const resumen: unknown[][] = []
   for (const grupo of ["Cría", "Recría"] as const) {
@@ -476,28 +479,36 @@ export function hojaAumentoRodeo(d: DatosValorizado): unknown[][] {
         { t: "n", f: porKg ? `C${r}*E${r}` : `C${r}`, v: qI }, { t: "n", f: porKg ? `D${r}*F${r}` : `D${r}`, v: qC }, { t: "n", f: `H${r}-G${r}`, v: qC - qI },
         usd({ t: "n", f: pi != null ? `${r2(pi)}/$B$4` : `K${r}`, v: puI }), usd({ t: "n", f: pc != null ? `${r2(pc)}/$B$5` : `J${r}`, v: puC }),
         usd({ t: "n", f: `G${r}*J${r}`, v: qI * puI }), usd({ t: "n", f: `H${r}*K${r}`, v: qC * puC }), usd({ t: "n", f: `M${r}-L${r}`, v: qC * puC - qI * puI }),
-        usd({ t: "n", f: `I${r}*J${r}`, v: (qC - qI) * puI }), usd({ t: "n", f: `(K${r}-J${r})*H${r}`, v: (puC - puI) * qC }),
-        { t: "n", f: `ROUND(N${r}-O${r}-P${r},2)`, v: 0 }])
+        usd({ t: "n", f: `I${r}*J${r}`, v: (qC - qI) * puI }), usd({ t: "n", f: `I${r}*K${r}`, v: (qC - qI) * puC }),
+        usd({ t: "n", f: `(K${r}-J${r})*H${r}`, v: (puC - puI) * qC }), usd({ t: "n", f: `(K${r}-J${r})*G${r}`, v: (puC - puI) * qI }),
+        { t: "n", f: `ROUND(N${r}-O${r}-Q${r},2)`, v: 0 }, { t: "n", f: `ROUND(N${r}-P${r}-R${r},2)`, v: 0 }])
     }
     const r1 = f.length, rt = f.length + 1
     const sum = (col: string) => ({ t: "n", f: `SUM(${col}${r0}:${col}${r1})` })
     const val = (i: number) => (f.slice(r0 - 1, r1) as unknown[][]).reduce((a, row) => a + (Number((row[i] as { v?: number })?.v ?? row[i]) || 0), 0)
-    const v = [2, 3, 11, 12, 13, 14, 15].map(val)
-    f.push([`TOTAL ${grupo.toUpperCase()}`, "", { ...sum("C"), v: v[0] }, { ...sum("D"), v: v[1] }, "", "", "", "", "", usd(""), usd(""),
+    const v = [2, 3, 11, 12, 13, 14, 15, 16, 17].map(val)
+    const kI = val(6), kC = val(7)
+    // ⚖️ JMS 05/11 (en el TOTAL RECRÍA): «acá debería suceder algún tipo de promedio ponderado» — kg por cabeza = kilos ÷ cabezas y
+    //    precio U$S por kilo = valor ÷ kilos. En cría no: mezcla cabezas con kilos (CUT) y el promedio no dice nada.
+    const pond = grupo === "Recría"
+    const div = (a: string, b: string, va: number, vb: number, z?: string) => ({ t: "n", f: `IF(${b}=0,0,${a}/${b})`, v: vb ? va / vb : 0, ...(z ? { z } : {}) })
+    f.push([`TOTAL ${grupo.toUpperCase()}`, "", { ...sum("C"), v: v[0] }, { ...sum("D"), v: v[1] },
+      pond ? div(`G${rt}`, `C${rt}`, kI, v[0], "0") : "", pond ? div(`H${rt}`, `D${rt}`, kC, v[1], "0") : "",
+      pond ? { ...sum("G"), v: kI } : "", pond ? { ...sum("H"), v: kC } : "", pond ? { t: "n", f: `H${rt}-G${rt}`, v: kC - kI } : "",
+      usd(pond ? div(`L${rt}`, `G${rt}`, v[2], kI) : ""), usd(pond ? div(`M${rt}`, `H${rt}`, v[3], kC) : ""),
       usd({ ...sum("L"), v: v[2] }), usd({ ...sum("M"), v: v[3] }), usd({ ...sum("N"), v: v[4] }), usd({ ...sum("O"), v: v[5] }), usd({ ...sum("P"), v: v[6] }),
-      { t: "n", f: `ROUND(N${rt}-O${rt}-P${rt},2)`, v: 0 }])
-    totales[grupo] = [rt, v[4], v[5], v[6]]
+      usd({ ...sum("Q"), v: v[7] }), usd({ ...sum("R"), v: v[8] }),
+      { t: "n", f: `ROUND(N${rt}-O${rt}-Q${rt},2)`, v: 0 }, { t: "n", f: `ROUND(N${rt}-P${rt}-R${rt},2)`, v: 0 }])
+    totales[grupo] = [rt, v[4], v[5], v[6], v[7], v[8]]
+    const usdRes = () => (["N", "O", "P", "Q", "R"] as const).map((c, i) => usd({ t: "n", f: `${c}${rt}`, v: v[4 + i] }))
     // La lectura en una línea: vientres (cría) y kilos (recría).
     if (grupo === "Cría") {
       const filasV = cats.map((c, k) => (VIENTRES.includes(c) ? r0 + k : 0)).filter(Boolean)
       const vi = filasV.reduce((a, r) => a + Number(f[r - 1][2]), 0), vc = filasV.reduce((a, r) => a + Number(f[r - 1][3]), 0)
       resumen.push(["Cría — vientres (vacas + vaquillonas preñadas)", "cabezas",
         { t: "n", f: filasV.map(r => `C${r}`).join("+") || "0", v: vi }, { t: "n", f: filasV.map(r => `D${r}`).join("+") || "0", v: vc },
-        { t: "n", f: `${filasV.map(r => `D${r}`).join("+") || "0"}-(${filasV.map(r => `C${r}`).join("+") || "0"})`, v: vc - vi }, "",
-        usd({ t: "n", f: `N${rt}`, v: v[4] }), usd({ t: "n", f: `O${rt}`, v: v[5] }), usd({ t: "n", f: `P${rt}`, v: v[6] })])
+        { t: "n", f: `${filasV.map(r => `D${r}`).join("+") || "0"}-(${filasV.map(r => `C${r}`).join("+") || "0"})`, v: vc - vi }, "", ...usdRes()])
     } else {
-      const kI = (f.slice(r0 - 1, r1) as unknown[][]).reduce((a, row) => a + (Number((row[6] as { v?: number })?.v) || 0), 0)
-      const kC = (f.slice(r0 - 1, r1) as unknown[][]).reduce((a, row) => a + (Number((row[7] as { v?: number })?.v) || 0), 0)
       // 🐂 JMS 05/11 (comentario en E26): «recría también se debe expresar en cantidades × kg promedio, además de mantener el total de kg».
       resumen.push(["Recría — cabezas", "cabezas", { t: "n", f: `SUM(C${r0}:C${r1})`, v: v[0] }, { t: "n", f: `SUM(D${r0}:D${r1})`, v: v[1] },
         { t: "n", f: `SUM(D${r0}:D${r1})-SUM(C${r0}:C${r1})`, v: v[1] - v[0] }])
@@ -506,17 +517,17 @@ export function hojaAumentoRodeo(d: DatosValorizado): unknown[][] {
         { t: "n", f: `IF(SUM(D${r0}:D${r1})=0,0,SUM(H${r0}:H${r1})/SUM(D${r0}:D${r1}))-IF(SUM(C${r0}:C${r1})=0,0,SUM(G${r0}:G${r1})/SUM(C${r0}:C${r1}))`,
           v: (v[1] ? kC / v[1] : 0) - (v[0] ? kI / v[0] : 0), z: "0" }])
       resumen.push(["Recría — kilos (cabezas × peso)", "kilos", { t: "n", f: `SUM(G${r0}:G${r1})`, v: kI }, { t: "n", f: `SUM(H${r0}:H${r1})`, v: kC },
-        { t: "n", f: `SUM(H${r0}:H${r1})-SUM(G${r0}:G${r1})`, v: kC - kI }, "",
-        usd({ t: "n", f: `N${rt}`, v: v[4] }), usd({ t: "n", f: `O${rt}`, v: v[5] }), usd({ t: "n", f: `P${rt}`, v: v[6] })])
+        { t: "n", f: `SUM(H${r0}:H${r1})-SUM(G${r0}:G${r1})`, v: kC - kI }, "", ...usdRes()])
     }
     f.push([])
   }
   const rc = totales["Cría"][0], rr = totales["Recría"][0]
   f.push(["EN RESUMEN"])
-  f.push(["", "Unidad", "Inicio", "Cierre", "Aumento", "", usd("AUMENTO U$S"), usd("por cantidad"), usd("por precio")]); altoDeFila(f, f.length, 30)
+  f.push(["", "Unidad", "Inicio", "Cierre", "Aumento", "", usd("AUMENTO U$S"), usd("por cantidad (precio inicio)"), usd("por cantidad (precio actual)"),
+    usd("por precio (sobre lo del cierre)"), usd("por precio (sobre lo que tenía)")]); altoDeFila(f, f.length, 45)
   for (const x of resumen) f.push(x)
-  const [, nC, oC, pC] = totales["Cría"], [, nR, oR, pR] = totales["Recría"]
-  f.push(["TOTAL RODEO", "", "", "", "", "", usd({ t: "n", f: `N${rc}+N${rr}`, v: nC + nR }), usd({ t: "n", f: `O${rc}+O${rr}`, v: oC + oR }), usd({ t: "n", f: `P${rc}+P${rr}`, v: pC + pR })])
+  const tC = totales["Cría"], tR = totales["Recría"]
+  f.push(["TOTAL RODEO", "", "", "", "", "", ...(["N", "O", "P", "Q", "R"] as const).map((c, i) => usd({ t: "n", f: `${c}${rc}+${c}${rr}`, v: tC[1 + i] + tR[1 + i] }))])
   return f
 }
 

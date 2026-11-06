@@ -2567,7 +2567,8 @@ const COLS_STOCK_VALORIZADO: Columna[] = [{ ancho: 34 }, { ancho: 6.5, z: ENTERO
   { ancho: 15, z: MONEDA }, { ancho: 22 }, { ancho: 24 }, { ancho: 17 }, { ancho: 22 }, { ancho: 40 }, { ancho: 7 }, { ancho: 70 }, { ancho: 60 }]
 const COLS_AUMENTO_RODEO: Columna[] = [{ ancho: 34 }, { ancho: 10 }, { ancho: 12.2, z: ENTERO }, { ancho: 12.2, z: ENTERO }, { ancho: 12.2 }, { ancho: 12.2 },
   { ancho: 12, z: ENTERO }, { ancho: 12, z: ENTERO }, { ancho: 11, z: ENTERO }, { ancho: 12, z: MONEDA }, { ancho: 12, z: MONEDA }, { ancho: 14, z: MONEDA },
-  { ancho: 12.2, z: MONEDA }, { ancho: 12.2, z: MONEDA }, { ancho: 13, z: MONEDA }, { ancho: 12.2, z: MONEDA }, { ancho: 9, z: MONEDA }]
+  { ancho: 12.2, z: MONEDA }, { ancho: 12.2, z: MONEDA }, { ancho: 13, z: MONEDA }, { ancho: 13, z: MONEDA }, { ancho: 13, z: MONEDA }, { ancho: 13, z: MONEDA },
+  { ancho: 9, z: MONEDA }, { ancho: 9, z: MONEDA }]
 const COLS_PRECIOS_TOMADOS: Columna[] = [{ ancho: 34 }, { ancho: 12 }, { ancho: 12 }, { ancho: 14, z: MONEDA }, { ancho: 12.2, z: MONEDA }, { ancho: 22 }, { ancho: 9 }, { ancho: 22 }, { ancho: 8 }]
 const COLS_CALCULO_KILOS: Columna[] = [{ ancho: 22 }, { ancho: 14 }, { ancho: 9 }, { ancho: 16 }, { ancho: 9 }, { ancho: 11 }, { ancho: 12.2 }, { ancho: 13 }, { ancho: 40 }, { ancho: 13 }, { ancho: 12 }]
 const COLS_DETALLE_HACIENDA: Columna[] = [{ ancho: 12 }, { ancho: 24 }, { ancho: 32 }, { ancho: 10, z: ENTERO }, { ancho: 40 }, { ancho: 70 }]

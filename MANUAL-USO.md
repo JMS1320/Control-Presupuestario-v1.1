@@ -4045,7 +4045,10 @@ saldos); con eso el 02 compara por sexo y total. → A-TEST-1332
 vaquillonas, novillitos, terneros y toros/toritos) con su **Control** contra el total (tiene que dar 0); en el control contra SENASA la
 diferencia va en amarillo y al lado hay un recuadro para escribir a qué se debe. En el 02.1 lo que se valúa **por cabeza** no lleva
 «valor kg/unidad» (el valor por cabeza sale directo del precio). El link «ver la cotización» del **MAG abre ese día** (antes abría el de hoy).
-En el 02.10 la recría se lee también en **cabezas y kg promedio**, y la solapa ya no tiene encabezado fijo. → A-TEST-1332
+En el 02.10 la recría se lee también en **cabezas y kg promedio**, y la solapa ya no tiene encabezado fijo. El aumento se lee de
+**dos maneras**, una al lado de la otra y cada una con su control: lo que creció el rodeo a precio del inicio + la suba de precio sobre
+lo del cierre, o lo que creció a precio **actual** + la suba de precio sobre lo que **se tenía**. El TOTAL RECRÍA trae los promedios
+ponderados (kg por cabeza y dólares por kilo). → A-TEST-1332
 Los **retiros** ya no están en el libro H: van al libro I. Los **sueldos a pagar** al cierre están al pie de «13 Sueldos».
 
 ⚠️ **Cambió 04/11 (noche) — el set trae un libro I, «Socios y Libertad (próximo)»**: las cuentas con los socios (14.1) y «Gastos
