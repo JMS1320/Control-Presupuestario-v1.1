@@ -1,0 +1,90 @@
+{
+ "fechas": [
+  {
+   "id": "02ae71f8-2f54-4be2-8abb-0ea6332a0979",
+   "fecha_estimada": "2026-11-05"
+  },
+  {
+   "id": "4d4430cd-9b57-4989-955f-5d746bba2d44",
+   "fecha_estimada": "2026-11-05"
+  },
+  {
+   "id": "fcb26044-1ed7-4123-b6b7-655642b74e82",
+   "fecha_estimada": "2026-11-05"
+  },
+  {
+   "id": "151b597a-9c1c-47c0-acb9-d28a5da45098",
+   "fecha_estimada": "2026-11-05"
+  },
+  {
+   "id": "dada6fd4-86de-4eae-adcd-d7ea017118cc",
+   "fecha_estimada": "2026-11-05"
+  },
+  {
+   "id": "6aaf8ff2-3595-4ad3-9f16-2307a2270ba8",
+   "fecha_estimada": "2026-11-05"
+  },
+  {
+   "id": "69a8ad42-080a-434f-ac37-d54afcc1b179",
+   "fecha_estimada": "2026-11-05"
+  },
+  {
+   "id": "c17366ba-b01b-42ca-8821-49394f914e58",
+   "fecha_estimada": "2026-11-05"
+  },
+  {
+   "id": "e7f43f6e-8153-4930-bf9d-935d7e796539",
+   "fecha_estimada": "2026-11-05"
+  },
+  {
+   "id": "435fcaa6-4751-4539-9f42-4b9177cfce3a",
+   "fecha_estimada": "2026-11-05"
+  },
+  {
+   "id": "a711fea8-8c62-450d-b89d-9ec0e0b3962d",
+   "fecha_estimada": "2026-11-05"
+  },
+  {
+   "id": "ef5edf3e-2f26-4d57-8f56-aec55241f6ac",
+   "fecha_estimada": "2026-11-05"
+  },
+  {
+   "id": "abe2b0e1-34fb-4fe0-8df3-2dcfc70675a3",
+   "fecha_estimada": "2026-11-05"
+  },
+  {
+   "id": "318b8214-f239-495c-871d-1a313e6699e3",
+   "fecha_estimada": "2026-11-05"
+  },
+  {
+   "id": "91d90f37-52aa-4cc8-9256-b22b194286fa",
+   "fecha_estimada": "2026-11-05"
+  },
+  {
+   "id": "99a19f43-5c61-410b-bb99-04d8af9eec9e",
+   "fecha_estimada": "2026-11-05"
+  },
+  {
+   "id": "0389af4a-5286-4935-87b2-d8e97b601475",
+   "fecha_estimada": "2026-11-05"
+  },
+  {
+   "id": "4dd9afe0-539a-4b78-aae2-ba0ecbfd5ebd",
+   "fecha_estimada": "2026-11-05"
+  },
+  {
+   "id": "d73fed15-f37f-48f4-95b9-102e0fdcdbd1",
+   "fecha_estimada": "2026-11-05"
+  }
+ ],
+ "boleta": {
+  "id": "fb3b7abc-17da-4986-9a9f-ff496e325c15",
+  "egreso_id": null,
+  "cuota_id": null,
+  "aplicada": false,
+  "importe": 180573.2,
+  "vencimiento": "2026-11-12"
+ },
+ "templateId": "52f46aed-e672-41d8-89fd-76083f288a1c",
+ "cuotaId": "9234d61f-478c-477f-864e-5a80917e7a44"
+}

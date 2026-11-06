@@ -676,11 +676,13 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
       for (const f of sel) {
         const importe = importeDe(f)!
         const venc = vencDe(f)
-        // Se escriben SOLO el monto y la fecha de vencimiento de esa cuota. Nada más del template
-        // se toca — y `fecha_estimada` **no**: ésa mueve la proyección del Cash Flow y no es lo que
-        // dice la boleta. Si hay que correrla, se hace desde Egresos sin Factura (→ A-FEAT-110).
+        // Se escriben SOLO el monto y las fechas de esa cuota. Nada más del template se toca.
+        // ⚠️ Cambió 05/11 (JMS: «yo nunca puse fecha de pago… si la fecha de venc pasa al 12/11 la estimada también debe
+        // pasar ahí»): hasta acá `fecha_estimada` NO se tocaba (A-FEAT-110). Ahora acompaña al vencimiento de la boleta,
+        // salvo que la cuota ya esté pagada o conciliada (ahí la fecha es la del pago real).
         const cambios: Record<string, unknown> = { monto: importe }
         if (venc) cambios.fecha_vencimiento = venc
+        if (venc && !["pagado", "conciliado"].includes(String(f.estadoCuota ?? ""))) cambios.fecha_estimada = venc
         const { error } = await supabase.from("cuotas_egresos_sin_factura")
           .update(cambios).eq("id", f.cuotaId!)
         if (error) throw error
