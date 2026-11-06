@@ -4,6 +4,7 @@
 -- Este script copia ese valor a la columna, SÓLO donde la columna está vacía. La nota NO se toca (queda como estaba).
 -- 252 movimientos (207 contable, 152 interno) — public.msa_galicia: 101 · public.pam_galicia: 128 · public.pam_galicia_cc: 23 · msa.caja_general: sin columnas contable/interno o vacía · msa.caja_ams: sin columnas contable/interno o vacía · msa.caja_usd: sin columnas contable/interno o vacía · ma.ca_usd: sin columnas contable/interno o vacía · ma.caja_usd: sin columnas contable/interno o vacía · public.cotitulares_caja_usd: sin columnas contable/interno o vacía
 -- Deshacer: 228-…-deshacer.sql (vuelve a vacío sólo donde quedó el valor que puso este script).
+-- ✅ CORRIDO 06/11 (OK JMS) por MCP con la misma regla en SQL; verificado en seco: mismos 252 id y valores que este archivo. Ver RECONSTRUCCION.
 begin;
 update public.msa_galicia set contable = 'AMS CTA' where id = '05300d7a-bcee-4cd6-a7ce-ea3f0ab302e8' and coalesce(trim(contable),'') = '';
 update public.msa_galicia set interno = 'DESGLOSAR' where id = '05bddaf8-c6b3-4747-bdfa-b0c321c01dd3' and coalesce(trim(interno),'') = '';
