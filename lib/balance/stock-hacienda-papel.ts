@@ -95,11 +95,36 @@ export function hojaStockHacienda(movs: MovimientoPapel[], primerDia: string, fe
   const col = (i: number) => String.fromCharCode(65 + i)
   f.push(["TOTAL", ...Array.from({ length: 14 }, (_, i) => ({ t: "n", f: `SUM(${col(i + 1)}${t0}:${col(i + 1)}${t1})`, v: valores.reduce((s, x) => s + x[i], 0) }))])
   marcoDelStock(f, t0 - 1, t1 + 1)
+  altoDeFila(f, t0 - 1, 45)
+  const filaDe = (clave: string) => t0 + CATEGORIAS_PLANILLA.findIndex(c => c.clave === clave)
+  // 🧮 JMS 05/11 (Papeles v11.04, solapa 02): el mismo stock AGRUPADO — vientres (vacas + vaquillonas a parir + CUT), vaquillonas,
+  //    novillitos, terneros y toros/toritos —, con su total y un control contra el total de arriba (tiene que dar 0).
+  f.push([])
+  const g0 = f.length + 1
+  const GRUPOS: Array<[string, string[]]> = [["Vacas Vqll a parir", ["vacas", "vaq-1ra", "cut"]], ["Vaquillonas", ["vaquillonas"]],
+    ["Novillitos", ["novillitos"]], ["Terneros/as", ["terneros"]], ["Toros/Toritos", ["toros", "toritos"]]]
+  const iDe = (k: string) => CATEGORIAS_PLANILLA.findIndex(c => c.clave === k)
+  for (const [nombre, ks] of GRUPOS) {
+    f.push([nombre, ...Array.from({ length: 14 }, (_, i) => ({ t: "n", f: `SUM(${ks.map(k => `${col(i + 1)}${filaDe(k)}`).join(",")})`,
+      v: ks.reduce((s, k) => s + (valores[iDe(k)]?.[i] ?? 0), 0) }))])
+  }
+  const g1 = f.length
+  f.push(["TOTAL", ...Array.from({ length: 14 }, (_, i) => ({ t: "n", f: `SUM(${col(i + 1)}${g0}:${col(i + 1)}${g1})`, v: valores.reduce((s, x) => s + x[i], 0) }))])
+  marcoDelStock(f, g0 - 1, g1 + 1)
+  const rg = g1 + 1
+  f.push(["Control", ...Array.from({ length: 14 }, (_, i) => ({ t: "n", f: `${col(i + 1)}${rg}-${col(i + 1)}${t1 + 1}`, v: 0 }))])
   // Control por sexo y total contra SENASA (al cierre), cuando están los datos
   f.push([])
   f.push(["CONTROL CONTRA SENASA AL CIERRE — por sexo y total (SENASA usa otras categorías y se pone al día en las actas de vacunación)"])
-  f.push(["", "NZ (cierre)", "SENASA (cierre)", "Diferencia"])
-  const filaDe = (clave: string) => t0 + CATEGORIAS_PLANILLA.findIndex(c => c.clave === clave)
+  // 🟨 JMS 05/11: la diferencia en amarillo, y al lado un recuadro para escribir a qué se debe.
+  const AMARILLO = "FFFF00"
+  const rEncS = f.length + 1
+  const recuadro = (c: unknown, i: number) => conEstilo(c, { border: { top: GRUESA_N, bottom: GRUESA_N, ...(i === 0 ? { left: GRUESA_N } : {}), ...(i === 4 ? { right: GRUESA_N } : {}) },
+    alignment: { vertical: "center", wrapText: true }, font: { italic: true, color: { rgb: "66706F" } } })
+  f.push(["", "NZ (cierre)", "SENASA (cierre)", conRelleno("Diferencia", AMARILLO), "", "", "", "", "",
+    ...["A qué se debe la diferencia (escribilo acá; por ejemplo, una muerte no informada)", "", "", "", ""].map(recuadro)])
+  unirCeldas(f, [`J${rEncS}:N${rEncS}`])
+  altoDeFila(f, rEncS, 30)
   const suma = (letra: string, claves: string[]) => claves.map(k => `${letra}${filaDe(k)}`).join("+")
   const hem = CATEGORIAS_PLANILLA.filter(c => HEMBRAS.has(c.clave)).map(c => c.clave)
   const mac = CATEGORIAS_PLANILLA.filter(c => !HEMBRAS.has(c.clave) && c.clave !== "terneros").map(c => c.clave)
@@ -111,11 +136,15 @@ export function hojaStockHacienda(movs: MovimientoPapel[], primerDia: string, fe
     const nz = sumaV(9, ks), sn = sumaV(10, ks)
     // SUM y no «+»: una celda sin cargar es texto vacío y la suma con «+» da #¡VALOR!
     f.push([nombre, { t: "n", f: `SUM(${suma("K", ks).replace(/\+/g, ",")})`, v: nz }, { t: "n", f: `SUM(${suma("L", ks).replace(/\+/g, ",")})`, v: sn },
-      sinSenasa ? "SENASA sin cargar" : { t: "n", f: `C${r}-B${r}`, v: sn - nz }])
+      conRelleno(sinSenasa ? "SENASA sin cargar" : { t: "n", f: `C${r}-B${r}`, v: sn - nz }, AMARILLO)])
   }
   const r = f.length + 1
   const nzT = valores.reduce((s, x) => s + x[9], 0), snT = valores.reduce((s, x) => s + x[10], 0)
-  f.push(["TOTAL", { t: "n", f: `K${t1 + 1}`, v: nzT }, { t: "n", f: `L${t1 + 1}`, v: snT }, sinSenasa ? "SENASA sin cargar" : { t: "n", f: `C${r}-B${r}`, v: snT - nzT }])
+  // la banda de TOTAL va a mano: con la diferencia en amarillo, la fila ya no recibe la automática
+  const LIN = { style: "thin", color: { rgb: "B9C4C0" } }
+  const tot = (c: unknown, fondo = "E3EEEC") => conEstilo(conRelleno(c, fondo), { font: { bold: true }, border: { top: LIN, bottom: { ...LIN, style: "double" } } })
+  f.push([tot("TOTAL"), tot({ t: "n", f: `K${t1 + 1}`, v: nzT }), tot({ t: "n", f: `L${t1 + 1}`, v: snT }),
+    tot(sinSenasa ? "SENASA sin cargar" : { t: "n", f: `C${r}-B${r}`, v: snT - nzT }, AMARILLO)])
   f.push(["SENASA al cierre se carga a mano en la pantalla del balance (Hacienda → saldos). Una diferencia suele ser una muerte o un nacimiento no informado: se explica, no se fuerza."])
   return f
 }
@@ -125,8 +154,9 @@ export function hojaStockHacienda(movs: MovimientoPapel[], primerDia: string, fe
  * inicio y cierre en durazno claro y compras/ventas en naranja con negrita. Filas de Excel `rEnc` (encabezado) a `rTot` (TOTAL).
  */
 const DURAZNO = "FDE9D9", NARANJA = "E26B0A"
+const GRUESA_N = { style: "medium", color: { rgb: "000000" } }
 function marcoDelStock(f: unknown[][], rEnc: number, rTot: number) {
-  const GRUESA = { style: "medium", color: { rgb: "000000" } }
+  const GRUESA = GRUESA_N
   const cajas: [number, number][] = [[1, 3], [8, 9], [10, 12]]
   for (let r = rEnc; r <= rTot; r++) {
     const fila = f[r - 1]
@@ -165,10 +195,15 @@ const ORDEN = ["Vaca", "Vaquillona Preñada", "Vaca CUT/Descarte", "Toro", "Tori
 // 🔗 JMS 05/11: el link es la PÁGINA que él abre (vientres.html?desde=…), no la tabla interna (ajax-modulo-…php): mismos datos, con la web.
 const MOD: Record<string, string> = { terneras: "terneras", terneros: "terneros", vientres: "vientres", toros: "toros" }
 export const URL_MAG = "https://www.mercadoagroganadero.com.ar/dll/hacienda1.dll/haciinfo000502"
-/** El link a la cotización en la web original: Entresurcos con el día (o el rango) del dato; Cañuelas, la página. */
+/**
+ * El link a la cotización en la web original, con el día (o el rango) del dato.
+ * ⚠️ Cambió 05/11 (JMS: «el link de las vacas del MAG no me lleva a los precios de esa fecha sino de hoy»): el MAG SÍ acepta la
+ * fecha en la dirección (`?txtFECHAINI=dd/mm/aaaa&txtFECHAFIN=dd/mm/aaaa`, la abre con las fechas cargadas). Sin fecha, la página.
+ */
 export function linkCotizacion(fuente: string, fecha: string): string {
-  if (fuente === "mag" || !MOD[fuente]) return URL_MAG
   const [de, ha] = fecha.includes(" a ") ? fecha.split(" a ") : [fecha, fecha]
+  if (fuente === "mag") return de ? `${URL_MAG}?txtFECHAINI=${dmy(de)}&txtFECHAFIN=${dmy(ha)}` : URL_MAG
+  if (!MOD[fuente]) return URL_MAG
   return `https://www.entresurcosycorralesya.com/${MOD[fuente]}.html?desde=${de}&hasta=${ha}`
 }
 const round1 = (x: number | null) => (x == null ? "" : Math.round(x * 10) / 10)
@@ -233,7 +268,7 @@ function bloque22(f: unknown[][], titulo: string, v: ValuacionHacienda, tc: numb
     borde(centrado(ojo(enNegrita("Referencia")))), borde(ojo("")), borde(ojo("")), borde(ojo("")), ...Array.from({ length: 5 }, () => conRelleno("", "FFFFFF"))])
   unirCeldas(f, [`A${rv}:C${rv}`, `D${rv}:F${rv}`, `G${rv}:I${rv}`, `K${rv}:N${rv}`])
   const enc = (c: unknown) => borde(centrado(c))
-  altoDeFila(f, rv + 1, 45)
+  altoDeFila(f, rv + 1, 33.75)   // JMS 05/11 (v11.04): 33,75
   f.push([enc("HACIENDA"), enc("CANTIDAD"), enc("KG"), enc(pesos("VALOR KG/UNIDAD")), enc(pesos("VALOR POR CAB")), enc(pesos("STOCK VALORIZADO")),
     enc(usd("VALOR KG/UNIDAD U$S")), enc(usd("VALOR POR CAB U$S")), enc(usd("STOCK U$S")), "",
     enc(ojo(enNegrita("Precio"))), enc(ojo(enNegrita("Mercado"))), enc(ojo(enNegrita("Categoría"))), enc(ojo(enNegrita("Ver en la web"))),
@@ -252,11 +287,15 @@ function bloque22(f: unknown[][], titulo: string, v: ValuacionHacienda, tc: numb
     const fte = fuenteDe(x.origenPrecio)
     const ref = referenciaDelPrecio(x.origenPrecio)
     const unidad = (x.precioReferencia ?? 0) * x.factor
-    f.push([ETIQ[x.categoria] ?? x.categoria, x.cabezas, porKg ? x.pesoKg : "",
-      pesos(conPrecio ? { t: "n", f: `K${r}*Q${r}`, v: unidad } : ""),
-      pesos(conPrecio ? { t: "n", f: porKg ? `C${r}*D${r}` : `D${r}`, v: x.valorPorCabeza ?? 0 } : "falta el precio"),
+    // 🎨 JMS 05/11 (v11.04): cantidad, kilos y nombre centrados; la cantidad en negrita y más grande; los kilos sin decimales.
+    const medio = (c: unknown, extra: Record<string, unknown> = {}) => conEstilo(c, { alignment: { horizontal: "center", vertical: "center" }, ...extra })
+    // 🐄 JMS 05/11 (comentario en la 02.1): lo que se valúa POR CABEZA no lleva «valor kg/unidad» — «no hay que pintarlos, sólo no
+    //    llenarlo». El valor por cabeza sale directo del precio (K × factor).
+    f.push([medio(ETIQ[x.categoria] ?? x.categoria), medio(x.cabezas, { font: { bold: true, sz: 12 } }), medio(porKg ? { t: "n", v: x.pesoKg, z: "0" } : ""),
+      pesos(conPrecio && porKg ? { t: "n", f: `K${r}*Q${r}`, v: unidad } : ""),
+      pesos(conPrecio ? { t: "n", f: porKg ? `C${r}*D${r}` : `K${r}*Q${r}`, v: x.valorPorCabeza ?? 0 } : "falta el precio"),
       pesos(conPrecio ? { t: "n", f: `B${r}*E${r}`, v: x.valorTotal ?? 0 } : 0),
-      usd(conPrecio ? { t: "n", f: `D${r}/${T}`, v: unidad / tc } : ""),
+      usd(conPrecio ? { t: "n", f: porKg ? `D${r}/${T}` : `K${r}*Q${r}/${T}`, v: unidad / tc } : ""),
       usd(conPrecio ? { t: "n", f: `E${r}/${T}`, v: (x.valorPorCabeza ?? 0) / tc } : ""),
       usd(conPrecio ? { t: "n", f: `F${r}/${T}`, v: (x.valorTotal ?? 0) / tc } : 0), "",
       // 👀 JMS 05/11 (nota en la 02.1): «rearmé el orden de columnas; a estas dos ponerles que visualmente llamen a ser vistas, y
@@ -271,6 +310,7 @@ function bloque22(f: unknown[][], titulo: string, v: ValuacionHacienda, tc: numb
   }
   const r1 = f.length
   const rt = f.length + 1
+  altoDeFila(f, rt, 20.25)
   f.push(["TOTAL HACIENDA (a precio de mercado)", { t: "n", f: `SUM(B${r0}:B${r1})`, v: v.cabezas }, "", pesos(""), pesos(""), pesos({ t: "n", f: `SUM(F${r0}:F${r1})`, v: v.valuado }),
     usd(""), usd(""), usd({ t: "n", f: `SUM(I${r0}:I${r1})`, v: v.valuado / tc })])
   // 💰 JMS 05/11: «un descuento de CZ sobre el total del valor del rodeo, 10 % de comercialización total».
@@ -328,7 +368,7 @@ export function hojaStockValorizado(d: DatosValorizado): unknown[][] {
   f.push([`Papeles de JMS ${dmy(p.fecha)} — ${p.fuente}`, "", "", "", "", papeles, { t: "n", f: `F${a + 1}-F${a}`, v: papeles - netoIni }])
   if (d.ddjjInicio) f.push([`DDJJ — balance del contador: ${d.ddjjInicio.cuenta} «${d.ddjjInicio.denominacion}» (sin apertura)`, "", "", "", "", d.ddjjInicio.valor,
     { t: "n", f: `F${a + 2}-F${a}`, v: d.ddjjInicio.valor - netoIni }])
-  f.push([]); f.push([`CATEGORÍA POR CATEGORÍA AL ${dmy(d.fechaInicio)} (cierre anterior = inicio de este ejercicio) — app (a precio de mercado, antes del 10 %) contra los papeles de JMS`, "", "", "", "", "App", "Papeles", "", "Diferencia"])
+  f.push([]); altoDeFila(f, f.length + 1, 75); f.push([`CATEGORÍA POR CATEGORÍA AL ${dmy(d.fechaInicio)} (cierre anterior = inicio de este ejercicio) — app (a precio de mercado, antes del 10 %) contra los papeles de JMS`, "", "", "", "", "App", "Papeles", "", "Diferencia"])
   for (let r = ini.r0; r <= ini.r1; r++) {
     const fila = f[r - 1] as unknown[]
     const c14 = fila[14] as { v?: unknown } | string | undefined   // la celda viene enmarcada (objeto con estilo)
@@ -347,6 +387,7 @@ export function hojaStockValorizado(d: DatosValorizado): unknown[][] {
  */
 function variacionDePrecios(f: unknown[][], d: DatosValorizado, cie: ReturnType<typeof bloque22>, ini: ReturnType<typeof bloque22>) {
   f.push([]); f.push([`VARIACIÓN DE PRECIOS POR CATEGORÍA — entre el cierre anterior (${dmy(d.fechaInicio)}) y este cierre (${dmy(d.fechaCierre)}) — por cabeza lo que se valúa por cabeza; por kilo la recría, sin importar cuánto pese`])
+  altoDeFila(f, f.length + 1, 75)   // JMS 05/11 (v11.04)
   f.push(["Categoría", "Unidad", pesos(`Cierre anterior ${dmy(d.fechaInicio)} $`), pesos(`Este cierre ${dmy(d.fechaCierre)} $`), pesos("Variación $"), pesos("Variación %"),
     usd(`Cierre anterior U$S`), usd(`Este cierre U$S`), usd("Variación U$S"), usd("Variación %")])
   const Ti = `$F$${ini.rtc}`, Tc = `$F$${cie.rtc}`
@@ -368,8 +409,10 @@ function variacionDePrecios(f: unknown[][], d: DatosValorizado, cie: ReturnType<
       if (ri || rc) f.push([ETIQ[cat] ?? cat, "—", ri ? "" : "no había al inicio", rc ? "" : "no hay al cierre"])
       continue
     }
+    // por cabeza: la columna «valor por cabeza» (E), porque «valor kg/unidad» (D) va vacía; por kilo: D.
+    const cI = fi.pesoKg != null ? "D" : "E", cC = fc.pesoKg != null ? "D" : "E"
     renglon(ETIQ[cat] ?? cat, fc.pesoKg != null ? "por kg" : "por cabeza",
-      { v: fi.precioReferencia * fi.factor, f: `D${ri}` }, { v: fc.precioReferencia * fc.factor, f: `D${rc}` })
+      { v: fi.precioReferencia * fi.factor, f: `${cI}${ri}` }, { v: fc.precioReferencia * fc.factor, f: `${cC}${rc}` })
   }
   // 🐂 El liviano de referencia: 180–200 kg, a precio máximo como el criterio.
   for (const [sexo, nombre] of [["macho", "Ternero liviano 180–200 kg (referencia)"]] as const) {
@@ -407,6 +450,7 @@ export function hojaAumentoRodeo(d: DatosValorizado): unknown[][] {
     ["Tipo de cambio inicio", ti, "papeles de JMS 2025 (TC prom div)"],
     ["Tipo de cambio cierre", tc, d.tcCierre ? "BNA divisa comprador del cierre" : "⚠️ sin tipo de cambio del cierre"],
     []]
+  sinCongelar(f)   // JMS 05/11 (v11.04, comentario en H1): «movilizar paneles»
   if (!d.inicio) { f.push(["⚠️ El inicio no se pudo valuar: no hay contra qué comparar."]); return f }
   const enc = ["Categoría", "Unidad", "Cabezas inicio", "Cabezas cierre", "Kg/cab inicio", "Kg/cab cierre", "Cantidad inicio", "Cantidad cierre", "Δ cantidad",
     usd("Precio U$S inicio"), usd("Precio U$S cierre"), usd("Valor U$S inicio"), usd("Valor U$S cierre"), usd("AUMENTO U$S"), usd("por cantidad"), usd("por precio"), "Control"]
@@ -414,7 +458,7 @@ export function hojaAumentoRodeo(d: DatosValorizado): unknown[][] {
   const resumen: unknown[][] = []
   for (const grupo of ["Cría", "Recría"] as const) {
     const cats = ORDEN.filter(c => GRUPO_RODEO[c] === grupo && (d.inicio!.filas.some(x => x.categoria === c) || d.cierre.filas.some(x => x.categoria === c)))
-    f.push([`RODEO DE ${grupo.toUpperCase()}`]); f.push(enc)
+    f.push([`RODEO DE ${grupo.toUpperCase()}`]); f.push(enc); altoDeFila(f, f.length, 30)
     const r0 = f.length + 1
     for (const cat of cats) {
       const fi = d.inicio.filas.find(x => x.categoria === cat), fc = d.cierre.filas.find(x => x.categoria === cat)
@@ -442,7 +486,7 @@ export function hojaAumentoRodeo(d: DatosValorizado): unknown[][] {
     f.push([`TOTAL ${grupo.toUpperCase()}`, "", { ...sum("C"), v: v[0] }, { ...sum("D"), v: v[1] }, "", "", "", "", "", usd(""), usd(""),
       usd({ ...sum("L"), v: v[2] }), usd({ ...sum("M"), v: v[3] }), usd({ ...sum("N"), v: v[4] }), usd({ ...sum("O"), v: v[5] }), usd({ ...sum("P"), v: v[6] }),
       { t: "n", f: `ROUND(N${rt}-O${rt}-P${rt},2)`, v: 0 }])
-    totales[grupo] = [rt]
+    totales[grupo] = [rt, v[4], v[5], v[6]]
     // La lectura en una línea: vientres (cría) y kilos (recría).
     if (grupo === "Cría") {
       const filasV = cats.map((c, k) => (VIENTRES.includes(c) ? r0 + k : 0)).filter(Boolean)
@@ -454,26 +498,25 @@ export function hojaAumentoRodeo(d: DatosValorizado): unknown[][] {
     } else {
       const kI = (f.slice(r0 - 1, r1) as unknown[][]).reduce((a, row) => a + (Number((row[6] as { v?: number })?.v) || 0), 0)
       const kC = (f.slice(r0 - 1, r1) as unknown[][]).reduce((a, row) => a + (Number((row[7] as { v?: number })?.v) || 0), 0)
+      // 🐂 JMS 05/11 (comentario en E26): «recría también se debe expresar en cantidades × kg promedio, además de mantener el total de kg».
+      resumen.push(["Recría — cabezas", "cabezas", { t: "n", f: `SUM(C${r0}:C${r1})`, v: v[0] }, { t: "n", f: `SUM(D${r0}:D${r1})`, v: v[1] },
+        { t: "n", f: `SUM(D${r0}:D${r1})-SUM(C${r0}:C${r1})`, v: v[1] - v[0] }])
+      resumen.push(["Recría — kg promedio por cabeza", "kg/cab", { t: "n", f: `IF(SUM(C${r0}:C${r1})=0,0,SUM(G${r0}:G${r1})/SUM(C${r0}:C${r1}))`, v: v[0] ? kI / v[0] : 0, z: "0" },
+        { t: "n", f: `IF(SUM(D${r0}:D${r1})=0,0,SUM(H${r0}:H${r1})/SUM(D${r0}:D${r1}))`, v: v[1] ? kC / v[1] : 0, z: "0" },
+        { t: "n", f: `IF(SUM(D${r0}:D${r1})=0,0,SUM(H${r0}:H${r1})/SUM(D${r0}:D${r1}))-IF(SUM(C${r0}:C${r1})=0,0,SUM(G${r0}:G${r1})/SUM(C${r0}:C${r1}))`,
+          v: (v[1] ? kC / v[1] : 0) - (v[0] ? kI / v[0] : 0), z: "0" }])
       resumen.push(["Recría — kilos (cabezas × peso)", "kilos", { t: "n", f: `SUM(G${r0}:G${r1})`, v: kI }, { t: "n", f: `SUM(H${r0}:H${r1})`, v: kC },
-        { t: "n", f: `SUM(H${r0}:H${r1})-SUM(G${r0}:G${r1})`, v: kC - kI },
-        `${v[0]} cab. de ${v[0] ? Math.round(kI / v[0]) : 0} kg → ${v[1]} cab. de ${v[1] ? Math.round(kC / v[1]) : 0} kg`,
+        { t: "n", f: `SUM(H${r0}:H${r1})-SUM(G${r0}:G${r1})`, v: kC - kI }, "",
         usd({ t: "n", f: `N${rt}`, v: v[4] }), usd({ t: "n", f: `O${rt}`, v: v[5] }), usd({ t: "n", f: `P${rt}`, v: v[6] })])
     }
     f.push([])
   }
   const rc = totales["Cría"][0], rr = totales["Recría"][0]
   f.push(["EN RESUMEN"])
-  f.push(["", "Unidad", "Inicio", "Cierre", "Aumento", "", usd("AUMENTO U$S"), usd("por cantidad"), usd("por precio")])
+  f.push(["", "Unidad", "Inicio", "Cierre", "Aumento", "", usd("AUMENTO U$S"), usd("por cantidad"), usd("por precio")]); altoDeFila(f, f.length, 30)
   for (const x of resumen) f.push(x)
-  const t = f.length + 1
-  f.push(["TOTAL RODEO", "", "", "", "", "", usd({ t: "n", f: `N${rc}+N${rr}` }), usd({ t: "n", f: `O${rc}+O${rr}` }), usd({ t: "n", f: `P${rc}+P${rr}` })])
-  // valores precalculados del total (para que se vea sin recalcular)
-  const row = f[t - 1] as Array<Record<string, unknown>>
-  for (const [i, k] of [[6, 4], [7, 5], [8, 6]] as const) {
-    const a = (resumen[0][i] as { v?: number })?.v ?? 0, b = (resumen[1]?.[i] as { v?: number })?.v ?? 0
-    row[i] = usd({ t: "n", f: (row[i] as { f?: string }).f, v: a + b }) as Record<string, unknown>
-    void k
-  }
+  const [, nC, oC, pC] = totales["Cría"], [, nR, oR, pR] = totales["Recría"]
+  f.push(["TOTAL RODEO", "", "", "", "", "", usd({ t: "n", f: `N${rc}+N${rr}`, v: nC + nR }), usd({ t: "n", f: `O${rc}+O${rr}`, v: oC + oR }), usd({ t: "n", f: `P${rc}+P${rr}`, v: pC + pR })])
   return f
 }
 
@@ -500,6 +543,7 @@ export function hojaPreciosTomados(momentos: Array<{ titulo: string; tablas: Tab
       const enc = k === "mag" ? ["Categoría", "Calidad", "Corte", "Promedio", "Máximo"]
         : k === "vientres" || k === "toros" ? ["Categoría", "Cabezas", "Promedio", "Máximo", "Mínimo"] : ["Categoría", "Kg desde", "Kg hasta", "$/kg promedio", "$/kg máximo"]
       f.push([...enc, "Día del dato", "¿Usado?", "¿Otro día?", "Ver en la web"])
+      altoDeFila(f, f.length, 30)   // JMS 05/11: encabezados más altos
       for (const x of [...filas].sort((a, b) => String(a.categoria ?? a.familia).localeCompare(String(b.categoria ?? b.familia)))) {
         const vals = k === "mag" ? [x.familia, x.calidad, x.corte, x.promedio, x.maximo]
           : k === "vientres" || k === "toros" ? [x.categoria, x.cantidad, x.promedio, x.maximo, x.minimo] : [x.categoria, x.pesoLo, x.pesoHi, x.promKilo, x.kiloMax]
@@ -512,7 +556,6 @@ export function hojaPreciosTomados(momentos: Array<{ titulo: string; tablas: Tab
         const fila: unknown[] = [...vals, fe, usado ? "USADO" : "", otro, link("ver", linkCotizacion(FTE[k], fe))]
         f.push(usado ? fila.map(c => conRelleno(c, "FFFF00")) : fila)
       }
-      if (k === "mag") f.push(["Cañuelas no tiene link por fecha: en la página se elige el día de la columna «Día del dato»."])
     }
   }
   return f
@@ -537,6 +580,7 @@ export function hojaCalculoKilos(pesos: PesoCategoria[], fechaCierre: string): u
   const prom = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null)
   const masComun = (xs: string[]) => { const m = new Map<string, number>(); for (const x of xs) m.set(x, (m.get(x) ?? 0) + 1); return [...m].sort((a, b) => b[1] - a[1]).map(([k]) => dmy(k)).slice(0, 2).join(", ") }
   f.push([]); f.push(["RESUMEN POR CATEGORÍA"])
+  altoDeFila(f, f.length + 1, 60)   // JMS 05/11 (v11.04)
   f.push(["Categoría", "Animales", "Pesada antes: fecha", "kg promedio", "Pesada después: fecha", "kg promedio", "Aumento entre pesadas (kg)", "Ganancia diaria (kg/día)", "KG AL CIERRE (promedio)", "Peso que usa la valuación"])
   for (const c of pesos) {
     const det = c.detalle ?? [], con = det.filter(x => x.despues)
@@ -549,6 +593,7 @@ export function hojaCalculoKilos(pesos: PesoCategoria[], fechaCierre: string): u
   }
   for (const c of pesos) {
     f.push([]); f.push([`${c.categoria} — ${c.animales} animal(es) · ${c.origen}`])
+    altoDeFila(f, f.length + 1, 45)
     f.push(["Caravana / animal", "Pesada antes: fecha", "kg", "Pesada después: fecha", "kg", "Días hasta el cierre", "Días entre pesadas", "KG AL CIERRE", "Cómo",
       "Aumento entre pesadas (kg)", "Ganancia diaria (kg/día)"])
     const d0 = f.length + 1

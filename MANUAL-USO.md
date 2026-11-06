@@ -4038,6 +4038,11 @@ Mercado Agroganadero de Cañuelas), la categoría del mercado y el link «ver la
 --((2025))--»; abajo, la variación de precios entre el cierre
 anterior y este, y el ternero liviano de 180–200 kg de referencia. SENASA al cierre se escribe en la pantalla (Hacienda →
 saldos); con eso el 02 compara por sexo y total. → A-TEST-1332
+⚠️ **Cambió 05/11 (noche, Papeles v11.04)**: el 02 trae abajo **el mismo stock agrupado** (vientres = vacas + vaquillonas a parir + CUT,
+vaquillonas, novillitos, terneros y toros/toritos) con su **Control** contra el total (tiene que dar 0); en el control contra SENASA la
+diferencia va en amarillo y al lado hay un recuadro para escribir a qué se debe. En el 02.1 lo que se valúa **por cabeza** no lleva
+«valor kg/unidad» (el valor por cabeza sale directo del precio). El link «ver la cotización» del **MAG abre ese día** (antes abría el de hoy).
+En el 02.10 la recría se lee también en **cabezas y kg promedio**, y la solapa ya no tiene encabezado fijo. → A-TEST-1332
 Los **retiros** ya no están en el libro H: van al libro I. Los **sueldos a pagar** al cierre están al pie de «13 Sueldos».
 
 ⚠️ **Cambió 04/11 (noche) — el set trae un libro I, «Socios y Libertad (próximo)»**: las cuentas con los socios (14.1) y «Gastos
