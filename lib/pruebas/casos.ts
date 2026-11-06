@@ -224,6 +224,7 @@ import { controlarCuotasTemplates, campaniaDelControl, claveDeNombre, CONTROL_CU
 import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuestosYOtros } from "@/lib/balance/templates-libro"
 import { hojaAutomotores, pulirLibroH, hojaDeProvisionCobros, hojaDeBancos, hojaDeRetiros } from "@/lib/balance/export-libro-diario"
 import { renglonesDeRespaldo, hojaDeRespaldos, itemsDelRespaldo, idDeArchivoDrive, carpetasDelRespaldo } from "@/lib/balance/respaldos"
+import { planDelEspejo, resumenesQueFaltan, carpetaDelEjercicio } from "@/lib/balance/espejo-ulises"
 import { filtrarComprobantes } from "@/lib/balance/provision-manual-filtro"
 import { hojaStockHacienda, hojaDetalleHacienda, hojaStockValorizado, hojaAumentoRodeo, linkCotizacion, DETALLES } from "@/lib/balance/stock-hacienda-papel"
 import { repartoDeLaFlota } from "@/lib/balance/reparto-flota"
@@ -4483,6 +4484,19 @@ export function correrCasos(): Resultado[] {
       const vc = `${cr?.destino} · ${cr?.bancos.map(b => b.ruta.split("/").slice(-2).join("/")).join(" · ")} · PAM ${carpetasDelRespaldo("PAM", 2026)} · id ${idDeArchivoDrive("https://drive.google.com/open?id=abcDEF123456")}`
       const ec = "I:/Mi unidad/SAN MANUEL/BALANCES/BALANCE 2026/- Respaldo · BANCO GALICIA SM/extractos 25-26 · BANCO PROVINCIA/2025-26 · BANCO SANTANDER RIO/2025-26 · PAM null · id abcDEF123456"
       chequear("Balance · respaldos", "🗂️ Las carpetas acordadas: destino «BALANCE 2026 / - Respaldo» y la carpeta de cada banco del ejercicio (sólo MSA)", ec, vc, vc === ec, "A-FEAT-1571")
+      // 🔁 paso 3 (JMS 06/11: «el sistema copie a la carpeta segura… conservando el espejo»): por el NOMBRE del archivo de Ulises,
+      //    la cuenta, el mes y la carpeta del ejercicio; lo ya vinculado no se copia; lo que no sigue el nombre se avisa.
+      const pe = planDelEspejo([
+        { id: "a", nombre: "CC_pesos_26-06.pdf" }, { id: "b", nombre: "CC_pesos_26-07.pdf" }, { id: "c", nombre: "26-07 - VISA BUISNESS.pdf" },
+        { id: "d", nombre: "Inv_26-08.pdf" }, { id: "e", nombre: "CA_dolar_25-06.pdf" }, { id: "f", nombre: "resumen raro.pdf" }, { id: "g", nombre: "planilla.xlsx" },
+      ], [{ cuenta: "BANCO GALICIA (cta cte)", periodo: "2026-06", tipo: "extracto" }])
+      const vpe = `${pe.copiar.map(c => `${c.file_id}→${c.subcarpeta}·${c.cuenta}·${c.periodo}`).join(" | ")} · sin regla: ${pe.sinRegla.join(",")} · ${carpetaDelEjercicio(26, 6)}`
+      const epe = "b→extractos 26-27/Pesos·BANCO GALICIA (cta cte)·2026-07 | c→extractos 26-27/Resumenes VISA·Tarjeta VISA Business MSA·2026-07 | d→extractos 26-27/Inversiones·FCI FIMA Premium A·2026-08 · sin regla: resumen raro.pdf · extractos 25-26"
+      chequear("Balance · respaldos", "🔁 Espejo de Ulises: por el nombre, cuenta, mes y carpeta del ejercicio; lo vinculado y lo anterior a 25/26 no se copia; lo que no sigue el nombre se avisa",
+        epe, vpe, vpe === epe, "A-FEAT-1571")
+      const vf = resumenesQueFaltan([{ cuenta: "BANCO GALICIA (cta cte)", periodo: "2026-10" }], "2026-11-16").length + " · " + resumenesQueFaltan([], "2026-11-10")[0]
+      chequear("Balance · respaldos", "🔔 Alerta antes: desde el 15 se espera el resumen del mes anterior (antes del 15, el de dos meses atrás)",
+        "4 · BANCO GALICIA (cta cte): 2026-09", vf, vf === "4 · BANCO GALICIA (cta cte): 2026-09", "A-FEAT-1571")
       chequear("Balance · respaldos", "📎 Con el extracto vinculado del mes de cierre, el saldo abre su documento (el de otro mes no cuenta); el FCI, su resumen",
         ed, vd, vd === ed, "A-FEAT-1571")
       chequear("Balance · respaldos", "📎 00 Respaldos: saldo → extracto o resumen; FCI → resumen del fondo; factura de compra → su PDF (link) o «falta»; histórico y ventas sin archivar; primero lo que falta",

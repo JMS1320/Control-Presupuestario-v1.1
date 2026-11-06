@@ -4057,7 +4057,9 @@ segura del Drive (`BANCOS y entidades financieras / <banco> / extractos 25-26`) 
 recuadro **«📎 Saldos al cierre y su extracto»**; en el Excel, el link de la columna «Respaldo». Y el recuadro **«📦 Respaldo
 del balance en el Drive»**: **Copiar los respaldos** deja una copia de cada documento con link en `BALANCES / BALANCE 2026 /
 - Respaldo`, una carpeta por papel (lo que ya está no se vuelve a copiar); **Armar el zip de cada banco** deja ahí, en «Extractos
-para el contador», un zip por banco con todos sus extractos del ejercicio. Nunca mueve ni borra nada. → A-TEST-1340
+para el contador», un zip por banco con todos sus extractos del ejercicio. **Traer lo nuevo del espejo de Ulises** copia a la
+carpeta segura los resúmenes que Ulises dejó en su carpeta (pesos, dólares, fondo común, VISA) y los vincula; avisa si falta el
+resumen del mes anterior de alguna cuenta. Nunca mueve ni borra nada. → A-TEST-1340
 Los **retiros** ya no están en el libro H: van al libro I. Los **sueldos a pagar** al cierre están al pie de «13 Sueldos».
 
 ⚠️ **Cambió 04/11 (noche) — el set trae un libro I, «Socios y Libertad (próximo)»**: las cuentas con los socios (14.1) y «Gastos

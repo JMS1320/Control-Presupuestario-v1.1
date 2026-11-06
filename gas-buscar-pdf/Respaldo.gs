@@ -15,10 +15,31 @@
  * existir (la ruta del usuario no se crea: `carpetaPorRuta_` de Carpetas.gs falla diciendo cuál falta).
  */
 
-/** La subcarpeta `nombre` adentro de `padre`: si existe la usa; si no, la crea. */
+/**
+ * La subcarpeta `nombre` adentro de `padre`: si existe la usa; si no, la crea. Acepta un camino con «/»
+ * («extractos 26-27/Pesos»): baja carpeta por carpeta, creando sólo la que falta.
+ */
 function subcarpetaRespaldo_(padre, nombre) {
-  var it = padre.getFoldersByName(nombre)
-  return it.hasNext() ? it.next() : padre.createFolder(nombre)
+  var partes = String(nombre).split('/').filter(function (p) { return p })
+  var actual = padre
+  for (var i = 0; i < partes.length; i++) {
+    var it = actual.getFoldersByName(partes[i])
+    actual = it.hasNext() ? it.next() : actual.createFolder(partes[i])
+  }
+  return actual
+}
+
+/**
+ * 🔁 Paso 3 (A-FEAT-1571): `respaldo_listar` { origen_id } → todos los archivos de esa carpeta y sus subcarpetas
+ * (id, nombre, camino). Es el espejo de Ulises: sólo se LEE.
+ */
+function respaldoListar(body) {
+  var origen
+  try { origen = DriveApp.getFolderById(body.origen_id) } catch (e) {
+    return responseJson({ ok: false, error: 'No pude abrir la carpeta del espejo (' + body.origen_id + ') con la cuenta ' + Session.getEffectiveUser().getEmail() + ': compartila con esa cuenta.' })
+  }
+  var archivos = archivosConCamino_(origen, '', []).map(function (x) { return { id: x.archivo.getId(), nombre: x.archivo.getName(), camino: x.camino } })
+  return responseJson({ ok: true, archivos: archivos })
 }
 
 function respaldoCopiar(body) {
@@ -36,12 +57,13 @@ function respaldoCopiar(body) {
       if (!nombres[it.subcarpeta]) {
         nombres[it.subcarpeta] = {}
         var fs = sub.getFiles()
-        while (fs.hasNext()) nombres[it.subcarpeta][fs.next().getName()] = true
+        while (fs.hasNext()) { var fx = fs.next(); nombres[it.subcarpeta][fx.getName()] = { id: fx.getId(), url: fx.getUrl() } }
       }
-      if (nombres[it.subcarpeta][it.nombre]) { yaEstaban.push(it.nombre); continue }
+      var ya = nombres[it.subcarpeta][it.nombre]
+      if (ya) { yaEstaban.push({ nombre: it.nombre, subcarpeta: it.subcarpeta, file_id: ya.id, url: ya.url, origen_id: it.file_id }); continue }
       var copia = DriveApp.getFileById(it.file_id).makeCopy(it.nombre, sub)
-      nombres[it.subcarpeta][it.nombre] = true
-      copiados.push({ nombre: it.nombre, subcarpeta: it.subcarpeta, url: copia.getUrl() })
+      nombres[it.subcarpeta][it.nombre] = { id: copia.getId(), url: copia.getUrl() }
+      copiados.push({ nombre: it.nombre, subcarpeta: it.subcarpeta, url: copia.getUrl(), file_id: copia.getId(), origen_id: it.file_id })
     } catch (e) {
       errores.push({ nombre: it.nombre, error: String(e.message || e) })
     }

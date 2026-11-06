@@ -1911,6 +1911,21 @@ export function PapelesDeBalance() {
                 }
                 setRespaldoEstado({ trabajando: false, lineas })
               }
+              /** 🔁 Paso 3: trae del espejo de Ulises a la carpeta segura lo que falte, y lo vincula (sólo copia). */
+              const espejo = async () => {
+                setRespaldoEstado({ trabajando: true, lineas: [{ texto: "Mirando el espejo de Ulises…" }] })
+                const r = await fetch("/api/respaldo/espejo", { method: "POST" })
+                const j = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }))
+                const lineas: Array<{ texto: string; url?: string; error?: boolean }> = []
+                if (!j.ok) lineas.push({ texto: `⚠️ ${j.error}`, error: true })
+                else {
+                  lineas.push({ texto: `✓ ${j.copiados} resumen(es) nuevos copiados a la carpeta segura · ${j.vinculados} vinculado(s)${j.pendientes ? ` · quedaron ${j.pendientes}: apretá de nuevo` : ""}` })
+                  for (const e of j.errores ?? []) lineas.push({ texto: `⚠️ ${e}`, error: true })
+                  if ((j.faltan ?? []).length) lineas.push({ texto: `🔔 Todavía no está el resumen de: ${j.faltan.join(" · ")}`, error: true })
+                  if ((j.sin_regla ?? []).length) lineas.push({ texto: `ℹ️ No sé dónde va (el nombre no sigue la convención): ${j.sin_regla.slice(0, 8).join(", ")}${j.sin_regla.length > 8 ? "…" : ""}` })
+                }
+                setRespaldoEstado({ trabajando: false, lineas })
+              }
               return (
                 <div className="text-xs border rounded p-2 space-y-1">
                   <div className="text-sm">📦 Respaldo del balance en el Drive</div>
@@ -1922,6 +1937,7 @@ export function PapelesDeBalance() {
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" disabled={respaldoEstado.trabajando || !items.length} onClick={copiar}>Copiar los respaldos</Button>
                     <Button size="sm" variant="outline" disabled={respaldoEstado.trabajando} onClick={zips}>Armar el zip de cada banco</Button>
+                    <Button size="sm" variant="outline" disabled={respaldoEstado.trabajando} onClick={espejo} title="Copia a la carpeta segura (BANCOS y entidades financieras) los resúmenes nuevos que Ulises dejó en su carpeta, y los vincula. No toca la carpeta de Ulises.">Traer lo nuevo del espejo de Ulises</Button>
                   </div>
                   {respaldoEstado.lineas.map((l, i) => (
                     <div key={i} className={l.error ? "text-red-700" : ""}>

@@ -19,9 +19,9 @@ export async function POST(request: Request) {
 
   let body: Record<string, unknown> = {}
   try { body = await request.json() } catch { /* vacío */ }
-  const accion = body.accion === "zip" ? "respaldo_zip" : body.accion === "copiar" ? "respaldo_copiar" : null
-  if (!accion) return NextResponse.json({ ok: false, error: "accion tiene que ser «copiar» o «zip»." }, { status: 400 })
-  if (typeof body.destino_ruta !== "string" || !body.destino_ruta.trim()) return NextResponse.json({ ok: false, error: "Falta la carpeta destino." }, { status: 400 })
+  const accion = body.accion === "zip" ? "respaldo_zip" : body.accion === "copiar" ? "respaldo_copiar" : body.accion === "listar" ? "respaldo_listar" : null
+  if (!accion) return NextResponse.json({ ok: false, error: "accion tiene que ser «copiar», «zip» o «listar»." }, { status: 400 })
+  if (accion !== "respaldo_listar" && (typeof body.destino_ruta !== "string" || !body.destino_ruta.trim())) return NextResponse.json({ ok: false, error: "Falta la carpeta destino." }, { status: 400 })
 
   let txt: string
   try {
