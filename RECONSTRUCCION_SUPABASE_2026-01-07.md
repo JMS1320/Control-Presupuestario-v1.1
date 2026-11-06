@@ -3341,6 +3341,9 @@ Columna `boolean not null default false` (con su comment) y trigger **BEFORE INS
 ### 2026-11-04 · Saldo de arranque de JMS y AMS en el papel 14 (script 201, DATOS) — ✅ CORRIDO con OK de JMS
 `balance_datos_usuario` (papel `cc.saldo-inicio`, MSA 2026): JMS −15.000.000 y AMS −10.500.000 (el anticipo a proveedores del contador al 30/06/25); el valor anterior (0, script 173) queda en `historial`. Deshacer: `npx tsx scripts/201-saldo-arranque-jms-ams.mts --deshacer`.
 
+### 2026-11-06 · Los 49 extractos de MSA 25/26 vinculados (script 212, DATOS) — A-FEAT-1571 — ✅ CORRIDO con OK de JMS («ok, corré el 212»)
+`public.documentos_respaldo`: Galicia cta cte pesos 12 (copias del espejo de Ulises) · MSA Cuenta Corriente USD 12 · FCI FIMA Premium A 12 · Banco Provincia 12 · Banco Santander 1 (julio), jul-25 → jun-26, todos en la carpeta segura «BANCOS y entidades financieras». Marca `[script 212]` en `creado_por`. Deshacer: `scripts/212-vincular-extractos-msa-deshacer.sql` (sólo las filas con la marca).
+
 ### 2026-11-06 · EL DOCUMENTO DE RESPALDO de cada cuenta y mes — tabla `public.documentos_respaldo` (script 211, ESTRUCTURA) — A-FEAT-1571 — ✅ CORRIDO con OK de JMS («ok, corré el 211»)
 Tabla nueva, vacía: `empresa` · `cuenta` · `periodo` (AAAA-MM) · `tipo` (extracto · resumen_usd · resumen_fci · resumen_tarjeta · arqueo · otro) · `drive_file_id` · `url` · `nombre_archivo` · `ruta_drive` · `saldo_documento` · `observaciones` · `creado_por` · timestamps; único (empresa, cuenta, periodo, tipo). RLS `puede_ver` / `puede_escribir` + 1 fila en `recurso_tablas` (recurso `extracto`, restringe lectura), `anon` sin acceso. Script `scripts/211-documentos-respaldo.sql`; deshacer `211-…-deshacer.sql`. Aviso a Javier en ENTRE-DESARROLLADORES.
 
