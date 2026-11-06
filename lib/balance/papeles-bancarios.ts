@@ -381,9 +381,29 @@ export interface FilaRetiro {
   porMes: number[]
   total: number
   movimientos: number
+  /** 🔢 A-FEAT-1513/1573: el Nro que une este renglón del resumen con sus movimientos del detalle. */
+  nro?: number
+}
+
+/** 👥 A-FEAT-1573: un movimiento de retiro o aporte, para la lista de auditoría abajo de la 09 (cuenta corriente de los socios). */
+export interface MovimientoRetiro {
+  nro: number
+  fecha: string
+  /** La cuenta del extracto donde pasó (Galicia cta cte, Caja General…). */
+  cuenta: string
+  /** PAM, AMS, JMS o MA. */
+  socio: string
+  concepto: string
+  clase: "retiro" | "aporte"
+  categ: string
+  descripcion: string
+  /** Con el mismo signo que el resumen: retiro negativo, aporte positivo. */
+  importe: number
 }
 
 export interface RetirosYAportes {
+  /** 👥 A-FEAT-1573 (JMS 06/11: «esto sería cta cte de socios y precisaría la lista abajo, con filtros… para auditar»). */
+  detalle?: MovimientoRetiro[]
   meses: string[]
   filas: FilaRetiro[]
   /** `aportes − retiros` por mes. Es la línea que él mira. */
@@ -406,6 +426,7 @@ export function armarRetirosYAportes(
   const porNormal = new Map(CONCEPTOS_RETIRO_APORTE.map(c => [normalizarCuenta(c.categ), c]))
   const filas = new Map<string, FilaRetiro>()
   const sinReconocer = new Map<string, { categ: string; movimientos: number; importe: number }>()
+  const crudo: Array<Omit<MovimientoRetiro, "nro">> = []
 
   for (const mov of movimientos) {
     const i = indice.get(String(mov.fecha ?? "").slice(0, 7))
@@ -439,10 +460,19 @@ export function armarRetirosYAportes(
     f.total = r2(f.total + valor)
     f.movimientos += 1
     filas.set(concepto.etiqueta, f)
+    crudo.push({ fecha: String(mov.fecha ?? "").slice(0, 10), cuenta: String((mov as { donde?: string | null }).donde ?? ""),
+      socio: /mam[aá]/i.test(concepto.categ) ? "MA" : (/(PAM|AMS|JMS)/.exec(concepto.categ)?.[1] ?? ""),
+      concepto: concepto.etiqueta, clase: concepto.clase, categ: String(mov.categ ?? ""), descripcion: String(mov.descripcion ?? ""), importe: r2(valor) })
   }
 
   const lista = [...filas.values()].sort((a, b) =>
     a.clase.localeCompare(b.clase) || a.etiqueta.localeCompare(b.etiqueta, "es"))
+  // 🔢 el Nro sigue el orden en que la 09 muestra los renglones: primero los retiros, después los aportes
+  const enOrden = [...lista.filter(x => x.clase === "retiro"), ...lista.filter(x => x.clase === "aporte")]
+  enOrden.forEach((x, k) => { x.nro = k + 1 })
+  const nroDe = new Map(enOrden.map(x => [x.etiqueta, x.nro!]))
+  const detalle: MovimientoRetiro[] = crudo.map(c => ({ nro: nroDe.get(c.concepto) ?? 0, ...c }))
+    .sort((a, b) => a.nro - b.nro || a.fecha.localeCompare(b.fecha))
 
   const neto: FilaRetiro = {
     etiqueta: "Aportes − Retiros", clase: "aporte",
@@ -455,7 +485,7 @@ export function armarRetirosYAportes(
   }
 
   return {
-    meses, filas: lista, neto,
+    meses, filas: lista, neto, detalle,
     sinReconocer: [...sinReconocer.values()].sort((a, b) => Math.abs(b.importe) - Math.abs(a.importe)),
   }
 }

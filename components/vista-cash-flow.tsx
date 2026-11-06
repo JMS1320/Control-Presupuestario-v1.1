@@ -2174,14 +2174,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     if (cambiarDetalleLote) {
       const pisadas = Array.from(filasSeleccionadas).map(id => data.find(f => f.id === id))
         .filter((f): f is CashFlowRow => !!f && !!detalleEditableDe(f).trim() && detalleEditableDe(f).trim() !== valorDetalleLote.trim())
-      if (pisadas.length && !window.confirm(`${pisadas.length} fila(s) ya tienen otro detalle y se va a reemplazar por «${valorDetalleLote.trim() || '(vacío)'}»:
-
-` +
-        pisadas.slice(0, 8).map(f => `· ${f.nombre_proveedor || ''}: ${detalleEditableDe(f)}`).join('
-') + (pisadas.length > 8 ? '
-…' : '') + '
-
-¿Seguir?')) return
+      if (pisadas.length && !window.confirm(`${pisadas.length} fila(s) ya tienen otro detalle y se va a reemplazar por «${valorDetalleLote.trim() || '(vacío)'}»:\n\n` +
+        pisadas.slice(0, 8).map(f => `· ${f.nombre_proveedor || ''}: ${detalleEditableDe(f)}`).join('\n') + (pisadas.length > 8 ? '\n…' : '') + '\n\n¿Seguir?')) return
     }
 
     // A-FEAT-22 · Si el estado implica que la plata sale, primero se confirma la FECHA DE PAGO.

@@ -3344,6 +3344,8 @@ Columna `boolean not null default false` (con su comment) y trigger **BEFORE INS
 ### 2026-11-04 · Saldo de arranque de JMS y AMS en el papel 14 (script 201, DATOS) — ✅ CORRIDO con OK de JMS
 `balance_datos_usuario` (papel `cc.saldo-inicio`, MSA 2026): JMS −15.000.000 y AMS −10.500.000 (el anticipo a proveedores del contador al 30/06/25); el valor anterior (0, script 173) queda en `historial`. Deshacer: `npx tsx scripts/201-saldo-arranque-jms-ams.mts --deshacer`.
 
+> ⚠️ **06/11 — NÚMEROS 212, 213 y 214 DUPLICADOS** (error de T1-balance: corrió los suyos sin leer los avisos de camino 3 en el tablero). Hay DOS scripts corridos con cada número, en archivos distintos: `212-vincular-extractos-msa` (T1) / `212-aca-orbith-a-credito` (camino 3) · `213-granos-cosecha-cierre-msa` (T1) / `213-template-se-paga-con-tarjeta` (camino 3) · `214-vincular-visa-msa` (T1) / `214-orden-agricola-contratista` (camino 3). Cada deshacer borra sólo en su tabla con su marca: no se pisan. Renumerar los de T1 (217/218/219 + la marca en sus filas) espera el OK de JMS.
+
 ### 2026-11-06 · Los 24 resúmenes de las VISA de MSA 25/26 vinculados (script 214, DATOS) — A-FEAT-1571 — ✅ CORRIDO con OK de JMS («sí, copiala y vinculá»)
 `public.documentos_respaldo`: «Tarjeta VISA Business MSA» 12 y «Tarjeta VISA Rural MSA» 12 (tipo resumen_tarjeta, jul-25 → jun-26), copias del espejo de Ulises en «extractos 25-26 / Resumenes VISA» y «/ VISA AGRO». Marca `[script 214]`. Deshacer: `scripts/214-vincular-visa-msa-deshacer.sql`.
 

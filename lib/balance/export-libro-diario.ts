@@ -72,7 +72,7 @@ import { resumenControlCuotas, conProblema, type ControlCuotasTemplates } from "
 import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
 import type { CuadreGranos, ValuacionGranos, Sementeras } from "./granos-sementeras"
 import {
-  formatearHoja, presentarHoja, anchosAutomaticos, colorDeSolapa, aplicarVistas, filtroDe,
+  formatearHoja, presentarHoja, anchosAutomaticos, colorDeSolapa, aplicarVistas, filtroDe, filtrarEn,
   conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna, type Vista, UNIONES, ALTOS, esSinCongelar } from "./formato-excel"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 import type { ControlesInicio, ControlProvisionAnterior } from "./control-inicio"
@@ -2281,25 +2281,44 @@ function hojaDeImpuestoCheque(c: ImpuestoCheque, etiqueta: string, control?: Con
   return f
 }
 
-function hojaDeRetiros(r: RetirosYAportes, etiqueta: string): unknown[][] {
+export function hojaDeRetiros(r: RetirosYAportes, etiqueta: string): unknown[][] {
   const f: unknown[][] = []
   f.push([`RETIROS Y APORTES DE LOS SOCIOS — ejercicio ${etiqueta}`])
   f.push(["Un retiro va en NEGATIVO (sale de la empresa) y un aporte en POSITIVO."])
   f.push(["No son gasto del resultado: son movimientos patrimoniales."])
   f.push([])
-  f.push(["Concepto", ...r.meses, "TOTAL", "Movimientos"])
+  f.push(["Concepto", ...r.meses, "TOTAL", "Movimientos", "Nro"])
 
   const ultima = String.fromCharCode(65 + r.meses.length)
   const fila = (x: typeof r.neto) => {
     const n = f.length + 1
     f.push([x.etiqueta, ...x.porMes.map(v => money(v)),
-      conFormula(`SUM(B${n}:${ultima}${n})`, money(x.total)), x.movimientos])
+      conFormula(`SUM(B${n}:${ultima}${n})`, money(x.total)), x.movimientos, x.nro ?? ""])
   }
 
   r.filas.filter(x => x.clase === "retiro").forEach(fila)
   r.filas.filter(x => x.clase === "aporte").forEach(fila)
   f.push([])
   fila(r.neto)
+
+  /**
+   * 👥 A-FEAT-1573 (JMS 06/11, nota en la 09: «esto sería cta cte de socios y precisaría la lista abajo. Con filtros y algo
+   * práctico con el suficiente detalle para auditar»): cada movimiento, con el Nro de su renglón de arriba (filtrar por Nro
+   * muestra cómo se compone) y el total, que tiene que dar el neto de arriba.
+   */
+  if (r.detalle?.length) {
+    f.push([])
+    f.push(["DETALLE — movimiento por movimiento (cuenta corriente de los socios). Filtrá por Nro, socio o cuenta: el Nro es el del renglón de arriba."])
+    const enc = f.length + 1
+    f.push(["Nro", "Fecha", "Cuenta", "Socio", "Concepto", "Categoría del extracto", "Descripción", "Importe"])
+    for (const d of r.detalle) f.push([d.nro, d.fecha, d.cuenta, d.socio, d.concepto, d.categ, d.descripcion, money(d.importe)])
+    const fin = f.length
+    filtrarEn(f, `A${enc}:H${fin}`)
+    const nT = f.length + 1
+    f.push(["TOTAL", "", "", "", "", "", "", conFormula(`SUBTOTAL(9,H${enc + 1}:H${fin})`, money(r.detalle.reduce((t, d) => t + d.importe, 0)))])
+    f.push(["Control: el TOTAL sin filtro tiene que dar el neto «Aportes − Retiros» de arriba.", "", "", "", "", "", "",
+      conFormula(`ROUND(H${nT}-${String.fromCharCode(65 + r.meses.length + 1)}${f.findIndex(x => x[0] === r.neto.etiqueta) + 1},2)`, 0)])
+  }
 
   if (r.sinReconocer.length > 0) {
     f.push([])

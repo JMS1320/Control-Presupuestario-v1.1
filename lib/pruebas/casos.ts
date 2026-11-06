@@ -222,7 +222,7 @@ import { PRESENTADO_ARCA_COMPRAS, compararConPresentado } from "@/lib/balance/pr
 import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/balance/facturas-fijas"
 import { controlarCuotasTemplates, campaniaDelControl, claveDeNombre, CONTROL_CUOTAS_TEMPLATES, ultimoDiaDelMes, type ComisionesDelMes, type CuotaParaControl, type TemplateControlado, type EntradaControlCuotas } from "@/lib/balance/control-cuotas-templates"
 import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuestosYOtros } from "@/lib/balance/templates-libro"
-import { hojaAutomotores, pulirLibroH, hojaDeProvisionCobros, hojaDeBancos } from "@/lib/balance/export-libro-diario"
+import { hojaAutomotores, pulirLibroH, hojaDeProvisionCobros, hojaDeBancos, hojaDeRetiros } from "@/lib/balance/export-libro-diario"
 import { renglonesDeRespaldo, hojaDeRespaldos, itemsDelRespaldo, idDeArchivoDrive, carpetasDelRespaldo } from "@/lib/balance/respaldos"
 import { filtrarComprobantes } from "@/lib/balance/provision-manual-filtro"
 import { hojaStockHacienda, hojaDetalleHacienda, hojaStockValorizado, hojaAumentoRodeo, linkCotizacion, DETALLES } from "@/lib/balance/stock-hacienda-papel"
@@ -7018,6 +7018,18 @@ export function correrCasos(): Resultado[] {
     chequear("Balance · bancos", "🧮 El neto es aportes menos retiros",
       "5100100", String(retiros.neto.total),
       retiros.neto.total === 5_100_100, "A-FEAT-1199")
+
+    // 👥 A-FEAT-1573 (JMS 06/11): la lista de abajo de la 09 — cada movimiento con el Nro de su renglón, su socio y su cuenta;
+    //    los Nro siguen el orden del resumen (retiros primero) y la suma da el neto. «Retiro PAM» es PAM, no MA.
+    {
+      const det = retiros.detalle ?? []
+      const v = `${det.map(d => `${d.nro}:${d.socio}:${d.importe}`).join(" ")} · suma ${det.reduce((t, d) => t + d.importe, 0)} · nros ${retiros.filas.map(f => `${f.etiqueta}=${f.nro}`).join(", ")}`
+      const e = "1:MA:-500000 2:PAM:-1300000 3:PAM:6900100 · suma 5100100 · nros Aporte de PAM=3, Distribución a MA=1, Retiro de PAM=2"
+      chequear("Balance · bancos", "👥 09: la lista movimiento por movimiento con el Nro de su renglón y el socio; suma el neto", e, v, v === e, "A-FEAT-1573")
+      const h = hojaDeRetiros(retiros, "25/26") as unknown[][]
+      const vh = `${h.some(r => String(r[0] ?? "").startsWith("DETALLE"))} · ${h.find(r => r[0] === "Nro")?.length}`
+      chequear("Balance · bancos", "👥 09: abajo del resumen, el DETALLE con sus 8 columnas", "true · 8", vh, vh === "true · 8", "A-FEAT-1573")
+    }
 
     // 🛑 Un concepto de retiro que no está en la lista se INFORMA: la lista es frágil a propósito.
     const raro = armarRetirosYAportes(
