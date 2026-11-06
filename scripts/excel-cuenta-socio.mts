@@ -227,7 +227,7 @@ const det = [
 const filasCta = hojaResumenPorMes(det, {
   titulo: `CUENTA MSA ↔ ${S} — ejercicio ${ETIQ} (+ = ${S} retiró de MSA · − = MSA le debe / ${S} aportó)`,
   notas: [`Esquema (JMS 06/11): el SUELDO de ${S} es lo que MSA le debe (−); lo que retira —sus pagos mensuales, los gastos suyos que paga MSA (RET 3 ${S}: impuestos, sueldos de sus empleados, facturas a su nombre) y lo de PAM que pasa a ${S} desde 2026— suma (+). Si retira más que su sueldo, el saldo queda como RETIRADO hasta una distribución.`,
-    `⚠️ LIBERTAD NO forma parte de esta cuenta: es algo extra y se maneja aparte (solapa «Libertad»). Saldo de inicio: 0 (sin dato) — ver la solapa «Saldo ${S}».`,
+    `⚠️ LIBERTAD NO forma parte de esta cuenta: es algo extra y se maneja aparte (solapa «Libertad»). Saldo de inicio: 0 (JMS 06/11: «MA arrancaba en cero») — ver la solapa «Saldo ${S}». Facturas de MA a MSA: no hay en 25/26.`,
     `Control: ${sinMarca.length} detectados por la base SIN marca contable · ${marcadosSinNada.length} marcados SIN ningún vínculo — ver la solapa Control.`],
   meses, encabezadoDetalle: ["Fecha", "Cuenta", "Descripción del banco", "Detalle", "Contraparte (leyendas)", "Qué es", "Detectado por", "Contable", "Interno", "Nota del movimiento"], rotuloImporte: "Importe (+ retiró / − le debe)", semestres: true,
 })
@@ -236,7 +236,7 @@ const sueldoMes = MESES.map(m => r2(-sueldoSocio.filter((p: any) => p.mes === m)
 const retiroMes = MESES.map(m => r2(items.filter(i => i.mes === m).reduce((t, i) => t + i.imp, 0)))
 const acumulado = MESES.map((_, j) => r2(sueldoMes.slice(0, j + 1).reduce((a, b) => a + b, 0) + retiroMes.slice(0, j + 1).reduce((a, b) => a + b, 0)))
 const filasSaldo: unknown[][] = [[`SALDO DE LA CUENTA MSA ↔ ${S} — mes por mes (${ETIQ})`],
-  [`+ = ${S} retiró más de lo que le corresponde (queda como RETIRADO hasta una distribución) · − = MSA le debe. Saldo de inicio: 0 (sin dato).`], [],
+  [`+ = ${S} retiró más de lo que le corresponde (queda como RETIRADO hasta una distribución) · − = MSA le debe. Saldo de inicio: 0 (confirmado por JMS 06/11).`], [],
   ["Mes", `Sueldo de ${S} (MSA le debe)`, "Retiros y gastos suyos pagados por MSA", "Movimiento del mes", "SALDO ACUMULADO", "", "Libertad del mes (APARTE, no suma)"],
   ["Inicio 30/06/2025", "", "", "", 0, "", ""],
   ...MESES.map((m, j) => { const n = 6 + j
@@ -313,8 +313,7 @@ const temasLista: Tema[] = [
       decidir: "¿También son retiro de MA por CONTABLE? Hoy cuentan sólo por interno", cols: COLS_MOV, filas: porInterno.filter(i => /AUTO/.test(i.que)).map(filaItem) },
     { de: S, tema: "FC - 105 y FC - 851", hay: "Interno DIST MA, contable vacío", decidir: "¿Qué son y de quién? (si son de MA, ¿también por contable?)", cols: COLS_MOV,
       filas: internoSinContable.filter(i => /FC - (105|851)\b/.test(i.que)).map(filaItem) },
-    { de: S, tema: "Saldo de inicio", hay: "La cuenta arranca en 0 al 30/06/2025 (sin dato)", decidir: `¿Con qué saldo arrancaba ${S} al 30/06/2025? (0 si estaba en cero)`, cols: ["", "", "", "", "", "", "", "", "", "Tu respuesta"], filas: [["", "", "", "", "", "", "", "", "", ""]] },
-    { de: S, tema: `Facturas de ${S} a MSA`, hay: `En 25/26 no hay ninguna factura de ${S} a MSA (${S} facturó sólo a Provinvest)`, decidir: "¿Qué facturas tenías en mente? (si ninguna, queda así)", cols: ["", "", "", "", "", "", "", "", "", "Tu respuesta"], filas: [["", "", "", "", "", "", "", "", "", ""]] },
+    // ✅ JMS 06/11: «MA arrancaba en cero. Facturas aún no hay» — los dos temas quedan cerrados (inicio 0 confirmado; sin facturas de MA a MSA en 25/26)
   ] : [
     { de: S, tema: `Interno ${S} sin contable`, hay: `${internoSinContable.length} movimientos con interno DIST ${S} y contable de otro o vacío: ${ars(tot(internoSinContable))}`,
       decidir: `¿Son retiro de ${S} también por contable?`, cols: COLS_MOV, filas: internoSinContable.map(filaItem) },
