@@ -29,7 +29,8 @@ import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Loader2 } from "lucide-react"
 import { PlanillaBoletasArba } from "@/components/planilla-boletas-arba"
-import { claveBoleta, esPartidaArba, partidaDeClave, PREFIJO_SIN_ASIGNAR, type Decision as DecisionPlanilla } from "@/lib/arba/planilla-boletas"
+import { DATOS_FISCALES } from "@/lib/empresas"
+import { claveBoleta, esPartidaArba, partidaDeClave, PREFIJO_COMPLEMENTARIO, PREFIJO_SIN_ASIGNAR, type Decision as DecisionPlanilla } from "@/lib/arba/planilla-boletas"
 import { toast } from "sonner"
 
 interface Comparacion {
@@ -255,7 +256,15 @@ export function PanelBoletasArba() {
     // misma clave en un solo upsert, y la base rechaza el lote ENTERO. Se guarda una por clave.
     const unicas = [...new Map(payload.map(x => [`${x.partida}|${x.anio}|${x.cuota}|${x.impuesto}`, x])).values()]
     const { error } = await supabase.from("boletas_arba").upsert(unicas, { onConflict: "partida,anio,cuota,impuesto" })
-    if (error) toast.error("No se pudo guardar la propuesta: " + error.message)
+    if (error) { toast.error("No se pudo guardar la propuesta: " + error.message); return }
+    // Si una boleta ya tiene su template, se borra su propuesta PROVISORIA (la que se guardó por nombre de archivo antes de
+    // saber de quién era) — sólo si no está aplicada.
+    for (const x of unicas) {
+      if (!x.egreso_id || !x.archivo_nombre) continue
+      for (const prov of [PREFIJO_COMPLEMENTARIO + x.archivo_nombre, PREFIJO_SIN_ASIGNAR + x.archivo_nombre]) {
+        if (prov !== x.partida) await supabase.from("boletas_arba").delete().eq("partida", prov).eq("aplicada", false)
+      }
+    }
   }
 
   /**
@@ -362,9 +371,17 @@ export function PanelBoletasArba() {
           // CUIT** a la vez, no una parcela. Por eso casa con los templates «Inmobiliario
           // Complementario» de la empresa, no con un lote. (Aclarado por el usuario 2026-09-06.)
           const { data: egs } = await supabase.from("egresos_sin_factura")
-            .select("id, nombre_referencia, activo")
+            .select("id, nombre_referencia, activo, responsable")
             .ilike("nombre_referencia", "%Complementario%").eq("activo", true)
-          const cands = (egs ?? []) as { id: string; nombre_referencia: string }[]
+          let cands = (egs ?? []) as { id: string; nombre_referencia: string; responsable: string | null }[]
+          // 05/11: el mail trae el CUIT del complementario («Objeto imponible»): con eso se sabe de qué empresa es
+          // y no hace falta que el usuario elija entre el de MSA y el de PAM.
+          const cuitMail = String(fila.objetoMail ?? "").replace(/\D/g, "")
+          const empresaMail = cuitMail ? (Object.entries(DATOS_FISCALES).find(([, d]) => d.cuit === cuitMail)?.[0] ?? null) : null
+          if (cands.length > 1 && empresaMail) {
+            const deEsa = cands.filter(c => c.responsable === empresaMail)
+            if (deEsa.length === 1) cands = deEsa
+          }
           if (cands.length === 1) {
             fila.lote = cands[0].nombre_referencia
             fila.egresoId = cands[0].id
