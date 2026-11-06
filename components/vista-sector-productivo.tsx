@@ -35,6 +35,7 @@ import { parseNumeroAR } from "@/lib/format/numero"
 // El buscador de contrapartes del proyecto — con CUIT, alta y normalización de acentos.
 // Escribir otro habría sido la cuarta copia.
 import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
+import { pedirCompra, tomarPedidoCompra, usePedidoCompra, renglonesDeOrden, estadoSinFactura } from "@/lib/productivo/pedido-compra"
 import { altaContraparte } from "@/lib/proveedores/alta"
 import { ModalCompletarVentaHacienda, type MovimientoVenta } from "@/components/modal-completar-venta-hacienda"
 import { ModalIdentificarAnimales, type MovimientoAIdentificar } from "@/components/modal-identificar-animales"
@@ -3631,6 +3632,7 @@ function TabInsumos() {
   const primeraVisible = usePrimeraVisible()
   const [subTab, setSubTab] = useState(() => primeraVisible(["productivo.stock", "productivo.ordenes", "productivo.compras"]))
   usePedidoCampo(() => setSubTab('ordenes')) // A-FEAT-1409: un pedido de campo trae a Órdenes
+  usePedidoCompra(() => setSubTab('stock')) // A-FEAT-1557: «🛒 Comprar» desde una orden trae a Stock & Movimientos
   // A-FEAT-169. Va acá y no en el componente de arriba: Stock, Órdenes y Compras son SUB-pestañas
   // de Insumos, no hermanas de Hacienda — viven en otro componente del mismo archivo.
 
@@ -3822,7 +3824,11 @@ function SubTabStockInsumos() {
     tipo: 'compra',
     proveedor: '',
     cuit: '',
-    observaciones: ''
+    observaciones: '',
+    // 🛒 A-FEAT-1557 etapa 1 (script 216): la compra como PRIMER registro — fecha de pago pactada, quién paga y de qué orden sale
+    fecha_pago: '',
+    empresa: 'MSA',
+    orden_agricola_id: '',
   })
   const [movLineas, setMovLineas] = useState<LineaMovInsumo[]>([])
 
@@ -3845,8 +3851,18 @@ function SubTabStockInsumos() {
     setMovLineas(prev => prev.filter(l => l.key !== key))
   }
 
+  // 🛒 A-FEAT-1557: «Comprar» desde una orden → el formulario de compra con sus insumos y la orden anotada
+  usePedidoCompra(() => {
+    const p = tomarPedidoCompra()
+    if (!p) return
+    void abrirModalMov('compra')
+    setMovCabecera(c => ({ ...c, orden_agricola_id: p.ordenId, observaciones: p.descripcion }))
+    setMovLineas(p.renglones.map((r, i) => ({ key: Date.now() + i, insumo_stock_id: r.insumo_stock_id,
+      cantidad: r.cantidad.toLocaleString('es-AR', { maximumFractionDigits: 3 }), costo_unitario: '', observaciones: '', factura_id: '' })))
+  }, !loading)
+
   const abrirModalMov = async (tipo: string) => {
-    setMovCabecera(p => ({ ...p, tipo, fecha: hoyArgentina(), proveedor: '', cuit: '', observaciones: '' }))
+    setMovCabecera(p => ({ ...p, tipo, fecha: hoyArgentina(), proveedor: '', cuit: '', observaciones: '', fecha_pago: '', empresa: 'MSA', orden_agricola_id: '' }))
     setMovLineas([])
     setBuscaFc({})
     agregarLineaMov()
@@ -3965,12 +3981,20 @@ function SubTabStockInsumos() {
 
     setGuardandoMov(true)
     try {
+      // 🛒 A-FEAT-1557: los renglones de una compra comparten `compra_id`; la fecha de pago vacía = la de la compra
+      const compraId = movCabecera.tipo === 'compra' ? crypto.randomUUID() : null
       const inserts = movLineas.map(l => {
         const datos: any = {
           fecha: movCabecera.fecha,
           tipo: movCabecera.tipo,
           insumo_stock_id: l.insumo_stock_id,
           cantidad: parseNumeroAR(l.cantidad),
+        }
+        if (compraId) {
+          datos.compra_id = compraId
+          datos.fecha_pago = movCabecera.fecha_pago || movCabecera.fecha
+          datos.empresa = movCabecera.empresa || 'MSA'
+          if (movCabecera.orden_agricola_id) datos.orden_agricola_id = movCabecera.orden_agricola_id
         }
         // El precio sale del respaldo si no se tipeó uno. Antes esto sólo pasaba al hacer
         // click en la factura, así que elegirla **antes** de escribir la cantidad dejaba el
@@ -4385,6 +4409,12 @@ function SubTabStockInsumos() {
                       </span>
                     ) : (
                       <span className="flex items-center gap-1">
+                        {/* 🛒 A-FEAT-1557: una compra sin factura queda a la vista; en rojo si pasó su fecha de pago o más de 30 días */}
+                        {(() => { const e = estadoSinFactura(m.fecha, m.fecha_pago ?? null, hoyArgentina()); return (
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap ${e.alerta ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}
+                            title={`Compra registrada sin factura todavía${m.fecha_pago ? ` · pago pactado ${m.fecha_pago.split('-').reverse().join('/')}` : ''}`}>
+                            sin factura · {e.dias} d
+                          </span>) })()}
                         <input type="checkbox" title="Seleccionar para vincular junto con otras"
                           checked={selCompras.has(m.id)}
                           onChange={e => setSelCompras(prev => { const n = new Set(prev); e.target.checked ? n.add(m.id) : n.delete(m.id); return n })} />
@@ -4427,13 +4457,36 @@ function SubTabStockInsumos() {
             <div className="col-span-2">
               <ProveedorCombobox
                 value={{ cuit: movCabecera.cuit, nombre: movCabecera.proveedor }}
-                onChange={sel => setMovCabecera(p => ({ ...p, proveedor: sel.nombre, cuit: sel.cuit }))} />
+                onChange={sel => setMovCabecera(p => {
+                  // 🛒 A-FEAT-1557: quién paga arranca con el de la última compra a ese proveedor (default del dato real)
+                  const previa = sel.cuit ? movimientos.find((m: any) => m.tipo === 'compra' && m.cuit === sel.cuit && m.empresa) : null
+                  return { ...p, proveedor: sel.nombre, cuit: sel.cuit, empresa: previa?.empresa || p.empresa }
+                })} />
             </div>
             <div>
               <Label>Observaciones</Label>
               <Input value={movCabecera.observaciones} placeholder="Obs. general"
                 onChange={e => setMovCabecera(p => ({ ...p, observaciones: e.target.value }))} />
             </div>
+            {/* 🛒 A-FEAT-1557 etapa 1: la compra como primer registro — de acá sale el egreso hasta que llegue la factura */}
+            {movCabecera.tipo === 'compra' && (<>
+              <div>
+                <Label>Fecha de pago pactada</Label>
+                <Input type="date" value={movCabecera.fecha_pago || movCabecera.fecha}
+                  title="Cuándo se paga. Vacío = la fecha de la compra. La factura, cuando llegue, la reemplaza."
+                  onChange={e => setMovCabecera(p => ({ ...p, fecha_pago: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Paga</Label>
+                <select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={movCabecera.empresa}
+                  onChange={e => setMovCabecera(p => ({ ...p, empresa: e.target.value }))}>
+                  {['MSA', 'PAM', 'MA'].map(e => <option key={e} value={e}>{e}</option>)}
+                </select>
+              </div>
+              {movCabecera.orden_agricola_id && (
+                <div className="col-span-2 self-end text-xs text-emerald-800">🚜 Sale de una orden agrícola: queda vinculada a ella.</div>
+              )}
+            </>)}
           </div>
 
           {/* Tabla de lineas */}
@@ -8122,6 +8175,12 @@ function SubTabOrdenesAgricolas() {
                             <Permisable recurso="productivo.ordenes.descargar"><Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Copiar la imagen (para pegar en WhatsApp)"
                               onClick={() => exportarOrdenAgricolaImagen(o, 'copiar')}>
                               <Copy className="h-3.5 w-3.5" />
+                            </Button></Permisable>)}
+                          {/* 🛒 A-FEAT-1557: comprar lo de esta orden — abre la compra con sus insumos y la deja vinculada */}
+                          {renglonesDeOrden(o.lineas || []).length > 0 && (
+                            <Permisable recurso="productivo.stock.compra"><Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Comprar los insumos de esta orden"
+                              onClick={() => pedirCompra({ ordenId: o.id, descripcion: `Orden ${o.fecha.split('-').reverse().join('/')}${o.lote_nombre ? ' · ' + o.lote_nombre : ''}`, renglones: renglonesDeOrden(o.lineas || []) })}>
+                              🛒
                             </Button></Permisable>)}
                           {b.borrar && (
                             <Permisable recurso="productivo.ordenes.borrar"><Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500"
