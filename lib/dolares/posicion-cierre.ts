@@ -67,6 +67,8 @@ export function posicionAlCierre(movs: MovimientoMoneda[], fechaCierre: string, 
 export interface SaldoParaBalance {
   nombre: string; saldo: number | null; fecha: string | null
   moneda?: "USD"; cuenta?: string; usd?: number | null; usdInicio?: number | null; tc?: number | null; fuenteTc?: string | null
+  /** 📎 El resumen de donde salió el último movimiento del ejercicio (el respaldo del saldo — A-FEAT-1571). */
+  nroResumen?: string | null
 }
 
 export async function saldosEnDolaresParaBalance(
@@ -84,7 +86,7 @@ export async function saldosEnDolaresParaBalance(
   const tc = cot?.tc ?? null
   for (const c of cuentas) {
     const q = c.schema_bd === "public" ? supabase.from(c.tabla_bd) : supabase.schema(c.schema_bd).from(c.tabla_bd)
-    const { data, error } = await q.select("fecha, debitos, creditos, moneda, tipo_cambio, importe_pesos")
+    const { data, error } = await q.select("fecha, debitos, creditos, moneda, tipo_cambio, importe_pesos, nro_resumen")
       .lte("fecha", finDelEjercicio).limit(10000)
     if (error) { avisos.push(`No se pudo leer ${c.nombre}`); saldos.push({ nombre: c.nombre, saldo: null, fecha: null, moneda: "USD", cuenta: c.nombre, usd: null, tc }); continue }
     const movs = (data ?? []) as MovimientoMoneda[]
@@ -102,6 +104,7 @@ export async function saldosEnDolaresParaBalance(
       saldo: p.pesosAlCierre, fecha: finDelEjercicio,
       moneda: "USD", cuenta: c.nombre, usd: p.usd, tc, fuenteTc: cot?.fuente ?? null,
       usdInicio: movs.some(m => m.fecha && m.fecha <= finAnterior) ? posicionAlCierre(movs, finAnterior, null).usd : null,
+      nroResumen: ([...movs].filter(m => m.fecha && m.fecha <= finDelEjercicio).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha))).pop() as { nro_resumen?: string | null } | undefined)?.nro_resumen ?? null,
     })
     if (tc == null) avisos.push(`${c.nombre}: no hay dólar BNA a la fecha de cierre, el saldo en pesos va vacío`)
     if (p.sinTC > 0) avisos.push(`${c.nombre}: ${p.sinTC} movimiento(s) sin tipo de cambio, la diferencia de cambio no se calcula`)

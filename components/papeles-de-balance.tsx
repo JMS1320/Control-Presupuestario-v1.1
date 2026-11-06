@@ -895,7 +895,7 @@ export function PapelesDeBalance() {
              * movimientos en Banco Galicia y entre el primero y el último hay **$2,58 M**
              * → A-BUG-1224. Las 7 tablas de extracto y caja la tienen.
              */
-            .select("fecha, descripcion, categ, nro_cuenta, debitos, creditos, saldo, orden", { count: "exact" })
+            .select("fecha, descripcion, categ, nro_cuenta, debitos, creditos, saldo, orden, nro_resumen", { count: "exact" })
             .gte("fecha", `${meses[0]}-01`).lte("fecha", finDelEjercicio)
             // 🧨 A-BUG-1339: jul→mar suman 1000 movimientos; sin tandas abril, mayo y junio no llegaban.
             .order("fecha", { ascending: true }).order("orden", { ascending: true }).order("id").range(d, h))
@@ -918,7 +918,9 @@ export function PapelesDeBalance() {
           const cadena = armarCadenaDeSaldos(
             t.nombre, filas, saldoAlInicioDe(empresa.id, ej.etiqueta, t.nombre))
           cadenas.push(cadena)
-          saldos.push({ nombre: t.nombre, saldo: cadena.saldoAlCierre, fecha: cadena.hasta })
+          // 📎 A-FEAT-1571: de qué resumen salió el último movimiento (el respaldo del saldo), si se sabe
+          saldos.push({ nombre: t.nombre, saldo: cadena.saldoAlCierre, fecha: cadena.hasta,
+            nroResumen: (filas[filas.length - 1] as { nro_resumen?: string | null } | undefined)?.nro_resumen ?? null })
         }
         // 💵 A-FEAT-1398: las cuentas en dólares de la empresa, en pesos al TC de cierre (sólo si tienen movimientos)
         const dolares = await saldosEnDolaresParaBalance(supabase, empresa.id, finDelEjercicio)

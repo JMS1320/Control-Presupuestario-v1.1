@@ -24,6 +24,7 @@ import { hojaOperacionesEnDolares } from "./operaciones-en-dolares"
 import XLSX from "xlsx-js-style"
 import type { SaldoParaBalance } from "@/lib/dolares/posicion-cierre"
 import type { TenenciaFci } from "./balance-en-linea-lectura"
+import { celdaRespaldo, respaldoDeSaldo, respaldoDeFci, respaldoDeComprobante, hojaDeRespaldos, renglonesDeRespaldo } from "./respaldos"
 import { lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
 import { ETIQUETA_CONCEPTO, type ImpuestoCheque } from "./impuesto-cheque"
 import { controlarCheque, chequeEnPapel08, chequeEnTemplates, type ControlCheque } from "./control-cheque"
@@ -200,11 +201,12 @@ export function filaTotalComprobantes(filas: unknown[][], desde: number, hasta: 
 function hojaDeProvision(este: AsientoLibroDiario[], anterior: AsientoLibroDiario[], etiqueta: string, etiquetaAnterior: string, control?: ControlProvisionAnterior): unknown[][] {
   const conMotivo = (lista: AsientoLibroDiario[]) => {
     const t = hojaDeAsientos(lista)
-    t[0] = [...t[0], "Cómo entró a provisión", "Motivo"]
+    t[0] = [...t[0], "Cómo entró a provisión", "Motivo", "Respaldo"]
     lista.forEach((a, i) => {
       t[i + 1] = [...t[i + 1],
         a.provision_motivo ? "puesta a mano" : `fecha del ejercicio, subdiario ${a.subdiario || "—"}`,
-        a.provision_motivo ?? ""]
+        a.provision_motivo ?? "",
+        celdaRespaldo(respaldoDeComprobante(a))]   // 📎 A-FEAT-1571: la factura que lo prueba
     })
     return t
   }
@@ -1850,6 +1852,8 @@ export function hojaDeProvisionCobros(ventas: AsientoLibroDiario[], etiqueta: st
   f.push(["fecha del comprobante anterior al cierre, pero entro en un subdiario posterior."])
   f.push([])
   const tabla = hojaDeAsientos(ventas)
+  // 📎 A-FEAT-1571: la factura que respalda cada venta provisionada
+  if (ventas.length) { tabla[0] = [...tabla[0], "Respaldo"]; ventas.forEach((a, i) => { tabla[i + 1] = [...tabla[i + 1], celdaRespaldo(respaldoDeComprobante(a))] }) }
   tabla.forEach(r => f.push(r))
   if (ventas.length > 0) {
     // ⚠️ cambió 06/11 (JMS: «el total no está sumando»): sumaba sólo la M, que desde que se agregaron columnas es el IVA.
@@ -1997,7 +2001,7 @@ export function hojaDeBancos(
   f.push([`SALDOS BANCARIOS Y DE CAJA AL ${fechaCierre}`])
   f.push([])
   const enPesos = saldos.filter(s => s.moneda !== "USD"), enDolares = saldos.filter(s => s.moneda === "USD")
-  f.push(["Cuenta", "Saldo al cierre $", "Fecha del ultimo movimiento", "Saldo al INICIO del ejercicio $"])
+  f.push(["Cuenta", "Saldo al cierre $", "Fecha del ultimo movimiento", "Saldo al INICIO del ejercicio $", "Respaldo del saldo al cierre"])
   const desde = f.length + 1
   for (const s of enPesos) {
     const c = cadenas.find(x => x.cuenta === s.nombre)
@@ -2009,6 +2013,8 @@ export function hojaDeBancos(
        * vacío en todas y no se distinguía «no lo sabemos» de «es cero».
        */
       plata(c?.saldoInicio ?? null),
+      // 📎 A-FEAT-1571 (JMS 06/11: «los saldos son los extractos donde figuran»)
+      celdaRespaldo(respaldoDeSaldo(s.nombre, fechaCierre, s.nroResumen, s.saldo == null)),
     ])
   }
   const hasta = f.length
@@ -2023,13 +2029,14 @@ export function hojaDeBancos(
    */
   if (enDolares.length) {
     f.push([])
-    f.push(["Cuenta en dólares", "Saldo al cierre U$S", "Fecha del ultimo movimiento", "Saldo al INICIO del ejercicio U$S", "TC al cierre", "En pesos (detalle)"])
+    f.push(["Cuenta en dólares", "Saldo al cierre U$S", "Fecha del ultimo movimiento", "Saldo al INICIO del ejercicio U$S", "TC al cierre", "En pesos (detalle)", "Respaldo del saldo al cierre"])
     const d0 = f.length + 1
     for (const s of enDolares) {
       const r = f.length + 1
       f.push([s.cuenta ?? s.nombre, s.usd == null ? "sin movimientos cargados" : plata(s.usd), s.usd == null ? "" : (s.fecha ?? ""), plata(s.usdInicio ?? null),
         s.tc == null ? "" : { t: "n", v: s.tc, z: "#,##0.00" },
-        s.usd == null || s.tc == null ? "" : { t: "n", f: `B${r}*E${r}`, v: Math.round(s.usd * s.tc * 100) / 100, z: PLATA }])
+        s.usd == null || s.tc == null ? "" : { t: "n", f: `B${r}*E${r}`, v: Math.round(s.usd * s.tc * 100) / 100, z: PLATA },
+        celdaRespaldo(respaldoDeSaldo(s.cuenta ?? s.nombre, fechaCierre, s.nroResumen, s.usd == null))])
     }
     const d1 = f.length
     const conUsd = enDolares.filter(s => s.usd != null)
@@ -2075,7 +2082,7 @@ export function hojaDeBancos(
     "Cuotapartes al inicio", "Precio al inicio", "Saldo al inicio",
     "Suscripciones", "Rescates",
     "Cuotapartes al cierre", "Precio al cierre", "Saldo al cierre",
-    "Resultado financiero", "Movimientos"])
+    "Resultado financiero", "Movimientos", "Respaldo (inicio · cierre)"])
 
   const filaPrimerFondo = f.length + 1
   // 💹 JMS 06/11: «¿podés tomar los saldos de FCI y la cantidad de cuotapartes con su valor de los PDF?» — ya estaban cargados
@@ -2097,6 +2104,7 @@ export function hojaDeBancos(
        */
       { t: "n", f: `IF(OR(D${n}="",I${n}=""),"faltan cuotapartes y precio",I${n}-(D${n}+E${n}-F${n}))`, z: MONEDA },
       x.movimientos,
+      t ? `${respaldoDeFci(t.notaInicio, "inicio", "").documento} · ${respaldoDeFci(t.notaCierre, "cierre", fechaCierre).documento}` : "",
     ])
   })
   const ultimoFondo = f.length
@@ -2130,6 +2138,7 @@ const COLS_BANCOS: Columna[] = [
   { ancho: 18, z: MONEDA },               // I · Saldo al cierre
   { ancho: 22, z: MONEDA },               // J · Resultado financiero
   { ancho: 13, z: ENTERO },               // K · Movimientos
+  { ancho: 70 },                          // L · Respaldo del FCI (A-FEAT-1571)
 ]
 
 /**
@@ -3040,12 +3049,12 @@ export function armarWorkbook(
   hoja(wb, "05 Provision", hojaDeProvision(provisionCompras, libro.provisionesEjercicioAnterior,
     libro.ejercicio.etiqueta, armarEjercicio(libro.ejercicio.anioCierre - 1, libro.ejercicio.mesCierre).etiqueta,
     controlesInicio?.provision),
-    [...COLS_ASIENTOS, { ancho: 30 }, { ancho: 50 }])
+    [...COLS_ASIENTOS, { ancho: 30 }, { ancho: 50 }, { ancho: 80 }])
   // 🧾 JMS 04/11: «provisión de cobros pasalo junto con provisión de gasto» → pegada al 05 (libro D).
   // ⚠️ Va SIEMPRE, incluso sin una sola fila: es donde se dice que los cheques en cartera no salen
   //    del sistema. Si la solapa faltara, el contador leería «no había» (§ 🧮).
   hoja(wb, "03.1 Provision cobros",
-    hojaDeProvisionCobros(provisionVentas, libro.ejercicio.etiqueta), COLS_ASIENTOS)
+    hojaDeProvisionCobros(provisionVentas, libro.ejercicio.etiqueta), [...COLS_ASIENTOS, { ancho: 80 }])
   // 💳 Cuentas a pagar y a cobrar al cierre — papeles 03 y 04 (A-FEAT-1187), con sus bloques de
   //    cheques, anticipos y provisión de cobros (A-FEAT-1195).
   /**
@@ -3177,6 +3186,13 @@ export function armarWorkbook(
           hojaDeCadenaDeSaldos(bancarios.cadenas ?? [], libro.ejercicio.fechaCierre), COLS_CADENA)
       }
     }
+    // 📎 A-FEAT-1571 (JMS 06/11): el documento que respalda cada número del 07 y de las provisiones, en una sola solapa.
+    hoja(wb, "00 Respaldos", hojaDeRespaldos(renglonesDeRespaldo({
+      fechaCierre: libro.ejercicio.fechaCierre, fechaInicio: `${Number(libro.ejercicio.fechaCierre.slice(0, 4)) - 1}${libro.ejercicio.fechaCierre.slice(4)}`,   // la tenencia al inicio = la del cierre anterior
+      saldos: bancarios.saldos, fci: bancarios.fciTenencia ?? null,
+      provision: libro.provisiones.filter(a => a.fuente !== "venta"), provisionAnterior: libro.provisionesEjercicioAnterior,
+      provisionCobros: libro.provisiones.filter(a => a.fuente === "venta"),
+    })), [{ ancho: 30 }, { ancho: 55 }, { ancho: 18 }, { ancho: 16 }, { ancho: 70 }, { ancho: 70 }])
     // 💵 A-FEAT-1530: cada movimiento en dólares con su TC y sus pesos, y las compraventas con el TC que resulta
     if ((bancarios.cuentasEnDolares ?? []).some(c => c.movs.length)) {
       hoja(wb, "07.2 Operaciones en dólares",

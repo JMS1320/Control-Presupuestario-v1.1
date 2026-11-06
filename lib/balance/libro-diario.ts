@@ -83,6 +83,9 @@ export interface AsientoLibroDiario {
    * está, la factura entró a la provisión por decisión suya y no por la regla de la fecha.
    */
   provision_motivo?: string
+  /** 📎 Sólo ARCA: el PDF de la factura en el Drive y el estado de su búsqueda (A-FEAT-1571, el respaldo de cada papel). */
+  pdf_url?: string | null
+  pdf_estado?: string | null
   /** Sólo ARCA: true si se cargó a mano («No Informada»). Para el control de cantidad (A-FEAT-1332). */
   no_informada?: boolean
   /**
@@ -315,6 +318,7 @@ export function desdeArca(f: Record<string, unknown>): AsientoLibroDiario {
     cuenta_contable: s(f.cuenta_contable), nro_cuenta: s(f.nro_cuenta),
     centro_costo: s(f.centro_costo),
     no_informada: cargadaAMano(f),
+    pdf_url: f.pdf_drive_url ? s(f.pdf_drive_url) : null, pdf_estado: f.pdf_estado ? s(f.pdf_estado) : null,
   }
 }
 

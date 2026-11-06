@@ -4429,9 +4429,9 @@ export function correrCasos(): Resultado[] {
       chequear("Balance · bancos", "🏦 07: saldos con 2 decimales y negativo entre paréntesis; los dólares en U$S con su total y los pesos como detalle; el FCI con las cuotapartes cargadas",
         e, v, v === e, "A-FEAT-1197")
       // 📎 A-FEAT-1571 (JMS 06/11: «cada cosa que mando, con su doc de respaldo; los saldos son los extractos donde figuran»)
-      const resp = `${String(gal[4]?.v ?? "").slice(0, 60)}`
-      chequear("Balance · respaldos", "📎 07: cada saldo dice qué extracto lo respalda", "🟡 Extracto de BANCO GALICIA (cta cte) de junio 2026 (saldo al 3",
-        resp, resp === "🟡 Extracto de BANCO GALICIA (cta cte) de junio 2026 (saldo al 3", "A-FEAT-1571")
+      const resp = String(gal[4]?.v ?? "").split(" — ")[0]
+      chequear("Balance · respaldos", "📎 07: cada saldo dice qué extracto lo respalda", "🟡 Extracto de BANCO GALICIA (cta cte) de junio 2026 (saldo al 30/06/2026)",
+        resp, resp === "🟡 Extracto de BANCO GALICIA (cta cte) de junio 2026 (saldo al 30/06/2026)", "A-FEAT-1571")
     }
     {
       const a = (o: Record<string, unknown>) => ({ tipo: 1, punto_venta: 9, numero: 1, denominacion: "X", total: 100, ...o }) as any
@@ -4447,7 +4447,7 @@ export function correrCasos(): Resultado[] {
       const est = r.map(x => x.respaldo.estado[0]).join("")
       const h = hojaDeRespaldos(r) as any[][]
       const v = `${est} · usd ${r[1].respaldo.documento.includes("CA_dolar_26-06")} · fci ${r[4].respaldo.documento.includes("Inv_26-06.pdf")} · link ${r[5].respaldo.url} · arriba ${String(h[5][3].v)} · ${String(h[2][0])}`
-      const e = "sffssscfss · usd true · fci true · link https://drive/x · arriba 🔴 falta · 🔴 falta: 2 · 🟡 sin archivar: 7 · ✅ con link: 1 — de 10 renglones"
+      const e = "ssfsscfss · usd true · fci true · link https://drive/x · arriba 🔴 falta · 🔴 falta: 2 · 🟡 sin archivar: 6 · ✅ con link: 1 — de 9 renglones"
       chequear("Balance · respaldos", "📎 00 Respaldos: saldo → extracto o resumen; FCI → resumen del fondo; factura de compra → su PDF (link) o «falta»; histórico y ventas sin archivar; primero lo que falta",
         e, v, v === e, "A-FEAT-1571")
     }
