@@ -75,6 +75,7 @@ import { esperadaDe, emparejar } from "@/lib/pagos/nc-diferencia-cambio"
 import { calcularVinculo, pctQueCierra, proponerCompras, comprasSinFacturaDelProveedor } from "@/lib/productivo/compras-factura"
 import { comprasSinFactura } from "@/lib/cashflow/compras-sin-factura"
 import { planNoVaMas, notaNoVaMas } from "@/lib/templates/no-va-mas"
+import { cuotasDelRenglon, documentosDelRenglon } from "@/lib/documentos/del-renglon"
 import { aPesosHa, equivalencias, precioAFecha, ultimaTarifa, controlFacturaContratista, mejorCombinacion } from "@/lib/productivo/tarifa-contratista"
 import { facturasCortas } from "@/lib/pagos/lineas-detalle-pago"
 import { NOMBRE_PARA_TERCEROS, empresaDeSchema } from "@/lib/empresas"
@@ -10612,6 +10613,25 @@ export function correrCasos(): Resultado[] {
       const e5 = "mar,may|abr|feb|false ¦ feb,mar,may|-|true ¦ mar|false ¦ -|abr ¦ Seguro ACA [🛑 No va más 06/11/2026: desde esta cuota · 2 cuotas desactivadas · se dio de baja] ¦ [🛑 No va más 06/11/2026: sólo una cuota · 1 cuota desactivada]"
       chequear("Cash Flow", "No va más: sólo las cuotas pendientes pasan a desactivado (la que está en un lote o pagada no se toca); desactivar el template se propone sólo si no esconde cuotas anteriores abiertas; la huella se agrega a las observaciones",
         e5, v5, v5 === e5, "A-FEAT-1572")
+    }
+    // ── 📎 A-FEAT-1576: la 📎 del renglón del Cash Flow muestra los documentos de sus cuotas de template ──
+    {
+      const porCuota = documentosDeCuotas(["c1", "c2", "c3"], [
+        // un mail archivado (boleta de Red Vial) pasado a dos cuotas: es UN documento
+        { asunto: "Boletas Red Vial", vinculos: [{ schema: "drive", tabla: "archivo", id: "f1", que: "RV cuota 3.pdf | https://d/f1" },
+          { schema: "public", tabla: "cuotas_egresos_sin_factura", id: "c1" }, { schema: "public", tabla: "cuotas_egresos_sin_factura", id: "c2" }] },
+      ], [{ cuota_id: "c2", archivo_url: "https://d/arba", archivo_nombre: "Boleta ARBA", impuesto: "inmobiliario" }], [])
+      const docs = (r: Parameters<typeof documentosDelRenglon>[0]) => documentosDelRenglon(r, porCuota).map(d => d.titulo).join("+") || "-"
+      const v7 = [
+        docs({ id: "c1", origen: "TEMPLATE", origen_tabla: "cuotas_egresos_sin_factura" }),
+        docs({ id: "g", origen: "TEMPLATE", origen_tabla: "msa.grupos_pago", ids_grupo: ["c1", "c2"] }),
+        docs({ id: "c3", origen: "TEMPLATE", origen_tabla: "cuotas_egresos_sin_factura" }),
+        docs({ id: "c1", origen: "ARCA", origen_tabla: "msa.comprobantes_arca" }),
+        cuotasDelRenglon({ id: "g", origen: "TEMPLATE", origen_tabla: "msa.grupos_pago" }).length,
+      ].join(" ¦ ")
+      const e7 = "RV cuota 3.pdf ¦ RV cuota 3.pdf+Boleta ARBA ¦ - ¦ - ¦ 0"
+      chequear("Cash Flow", "📎 del renglón: una cuota de template muestra su boleta del mail; el grupo junta los documentos de sus cuotas sin repetir el mismo archivo; sin documentos o si es una factura, nada (la factura tiene su propio 📎)",
+        e7, v7, v7 === e7, "A-FEAT-1576")
     }
     // ── 🚜 A-FEAT-1557: llega la factura del contratista → la combinación de órdenes que da el neto ──
     {

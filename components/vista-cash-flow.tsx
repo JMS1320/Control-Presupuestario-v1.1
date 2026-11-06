@@ -20,6 +20,8 @@ import { calcularSubtotales } from "@/lib/pagos/subtotales"
 import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
 import { facturasDelGrupo } from "@/lib/pagos/facturas-del-grupo"
 import { estadoArchivoDigital, PRESENTACION_ARCHIVO } from "@/lib/facturas/archivo-digital"
+import { documentosDeCuotas, type DocumentoDeCuota } from "@/lib/vencimientos/de-la-persona"
+import { cuotasDelRenglon, documentosDelRenglon } from "@/lib/documentos/del-renglon"
 import { cuentaDeFila, COLOR_CUENTA } from "@/lib/pagos/cuenta-de-fila"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { RangoDeFechas } from "@/components/rango-de-fechas"
@@ -480,6 +482,36 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [tcPagoOrigenPagar, setTcPagoOrigenPagar] = useState(false)
 
   const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro, actualizarBatch, actualizarLocal } = useMultiCashFlowData(filtros)
+
+  /**
+   * 📎 A-FEAT-1576 — los documentos de las cuotas de template (boleta o VEP pasado desde un mail, boleta de ARBA, comprobante
+   * de quien informó el pago), para que la 📎 del renglón los muestre igual que la factura. Se leen de una vez para todas las
+   * cuotas a la vista; la regla de qué documento es de qué cuota es la de «Lo que te vence» (`documentosDeCuotas`).
+   */
+  const [docsPorCuota, setDocsPorCuota] = useState<Record<string, DocumentoDeCuota[]>>({})
+  const claveCuotasConDocs = useMemo(() => [...new Set((data ?? []).flatMap(f => cuotasDelRenglon(f)))].sort().join(','), [data])
+  useEffect(() => {
+    const ids = claveCuotasConDocs ? claveCuotasConDocs.split(',') : []
+    if (!ids.length) { setDocsPorCuota({}); return }
+    let vigente = true
+    ;(async () => {
+      try {
+        const trozos: string[][] = []
+        for (let i = 0; i < ids.length; i += 200) trozos.push(ids.slice(i, i + 200))
+        const [{ data: mails }, boletas, propuestas] = await Promise.all([
+          supabase.from('mails_registro').select('asunto, vinculos').contains('vinculos', [{ tabla: 'cuotas_egresos_sin_factura' }]),
+          Promise.all(trozos.map(t => supabase.from('boletas_arba').select('cuota_id, archivo_url, archivo_nombre, impuesto').in('cuota_id', t))),
+          Promise.all(trozos.map(t => supabase.from('propuestas_cambio').select('id, registro_id, estado, nombre:cambios->comprobante->>nombre')
+            .eq('tabla', 'cuotas_egresos_sin_factura').in('registro_id', t))),
+        ])
+        if (!vigente) return
+        const conComprobante = propuestas.flatMap(r => (r.data ?? []) as unknown as { id: string; registro_id: string; estado: string; nombre: string | null }[])
+          .map(p => ({ id: p.id, registro_id: p.registro_id, estado: p.estado, con_comprobante: p.nombre }))
+        setDocsPorCuota(documentosDeCuotas(ids, (mails ?? []) as Parameters<typeof documentosDeCuotas>[1], boletas.flatMap(r => r.data ?? []), conComprobante))
+      } catch (e) { console.error('No se pudieron leer los documentos de las cuotas', e) }
+    })()
+    return () => { vigente = false }
+  }, [claveCuotasConDocs])
 
   /**
    * 💸 A-FEAT-1449 tanda 3 — «Pagar» desde un aviso o una tarea llega con `?seccion=cashflow&cuota=<id>&buscar=<texto>`:
@@ -4105,6 +4137,35 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       const estado = estadoArchivoDigital(fila)
       const { icono, clase, titulo } = PRESENTACION_ARCHIVO[estado]
       const cuantas = fila.facturas_agrupadas ?? 1
+      // 📎 A-FEAT-1576 — el renglón no es una factura pero tiene sus documentos (boleta, VEP, comprobante): se muestran.
+      const docs = estado === 'sin-factura' ? documentosDelRenglon(fila, docsPorCuota) : []
+      if (docs.length === 1) {
+        return (
+          <div className={`${columna.width} text-center`}>
+            <a href={docs[0].url} target="_blank" rel="noreferrer" className="text-green-600" title={`Ver: ${docs[0].titulo}`}
+              onClick={e => e.stopPropagation()}>📎</a>
+          </div>
+        )
+      }
+      if (docs.length > 1) {
+        return (
+          <div className={`${columna.width} text-center`} onClick={e => e.stopPropagation()}>
+            <Popover>
+              <PopoverTrigger asChild>
+                <button type="button" className="text-green-600 text-xs" title={`${docs.length} documentos — click para elegir`}>📎{docs.length}</button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80 p-2 text-xs">
+                <div className="mb-1 font-medium">Documentos de este renglón</div>
+                <ul className="space-y-1">
+                  {docs.map(d => (
+                    <li key={d.url}><a href={d.url} target="_blank" rel="noreferrer" className="text-blue-700 underline break-all">📎 {d.titulo}</a></li>
+                  ))}
+                </ul>
+              </PopoverContent>
+            </Popover>
+          </div>
+        )
+      }
       return (
         <div className={`${columna.width} text-center`}>
           {estado === 'con' ? (
