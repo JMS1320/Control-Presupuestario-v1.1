@@ -78,6 +78,11 @@ export type Preferencias = {
    * peligroso»*): una pantalla escondida no se refresca sola. Encendido, volver a una pestaña es instantáneo.
    */
   pantallasVivas: boolean
+  /**
+   * 🧪 Los carteles «N cosas para mirar en esta corrida» (las pruebas pendientes de cada proceso, A-FEAT-129).
+   * Encendidos por defecto; JMS 05/11 (nota 🌙): *«opción en configuración para no ver notas»* (A-FEAT-1570).
+   */
+  cartelesPrueba: boolean
 }
 
 /**
@@ -100,6 +105,7 @@ export const PREFERENCIAS_DEFAULT: Preferencias = {
   ordenImpuestos: null,
   ordenPartidas: null,
   pantallasVivas: false,
+  cartelesPrueba: true,
 }
 
 /**
@@ -146,6 +152,7 @@ export function leerPreferencias(user: User | null | undefined): Preferencias {
     confirmarSalida: bool("confirmarSalida", PREFERENCIAS_DEFAULT.confirmarSalida),
     explicaciones: bool("explicaciones", PREFERENCIAS_DEFAULT.explicaciones),
     pantallasVivas: bool("pantallasVivas", PREFERENCIAS_DEFAULT.pantallasVivas),
+    cartelesPrueba: bool("cartelesPrueba", PREFERENCIAS_DEFAULT.cartelesPrueba),
     // Se aceptan sólo strings: un id que no exista lo descarta después el registro, pero un
     // número o un objeto acá romperían el render.
     widgets: Array.isArray(p.widgets)

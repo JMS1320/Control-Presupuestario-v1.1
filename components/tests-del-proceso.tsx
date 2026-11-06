@@ -39,6 +39,9 @@
 
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
+import { supabase } from "@/lib/supabase"
+import { leerPreferencias } from "@/lib/auth/preferencias"
+import { guardarPreferencias } from "@/lib/auth/guardar-preferencias"
 import { Button } from "@/components/ui/button"
 import { esDelProceso, type Pendiente } from "@/lib/pendientes/parse"
 import { queProbarVos, tituloCorto, textoRespuesta, RESPUESTAS_TEST } from "@/lib/pendientes/resumen-test"
@@ -94,6 +97,19 @@ export function TestsDelProceso({ proceso, pantalla }: Props) {
   /** La nota que el usuario escribe en cada test, antes de responder. */
   const [notas, setNotas] = useState<Record<string, string>>({})
 
+  // 🧪 A-FEAT-1570 — la preferencia «Mostrar los carteles de prueba» (Configuración → Perfil). Mientras no se sabe, no se muestra.
+  const [mostrar, setMostrar] = useState<boolean | null>(null)
+  useEffect(() => {
+    void supabase.auth.getUser().then(({ data }) => setMostrar(leerPreferencias(data.user).cartelesPrueba)).catch(() => setMostrar(true))
+  }, [])
+
+  const noMostrarMas = async () => {
+    setMostrar(false)
+    const { error } = await guardarPreferencias({ cartelesPrueba: false })
+    if (error) toast.error("No se pudo guardar: " + error)
+    else toast.success("Listo: no se muestran más", { description: "Los volvés a prender en Configuración → Perfil → «Mostrar los carteles de prueba»." })
+  }
+
   useEffect(() => {
     let vivo = true
     ;(async () => {
@@ -142,7 +158,7 @@ export function TestsDelProceso({ proceso, pantalla }: Props) {
 
   const visibles = items.filter(p => !respondidos.has(p.id))
   // Sin nada que probar, el componente no ocupa lugar. Un cartel "no hay tests" es ruido.
-  if (visibles.length === 0) return null
+  if (visibles.length === 0 || mostrar !== true) return null
 
   return (
     <div className="rounded-lg border border-amber-300 bg-amber-50/70 px-3 py-2 text-left">
@@ -160,7 +176,8 @@ export function TestsDelProceso({ proceso, pantalla }: Props) {
       {!abierto && (
         // Arranca colapsado (modo de falla 2): se ve que hay algo, no tapa el trabajo.
         <p className="mt-0.5 text-[11px] leading-4 text-amber-800">
-          Son pruebas pendientes de este mismo proceso. Podés ignorarlas: el pago sigue igual.
+          Son pruebas pendientes de este mismo proceso. Podés ignorarlas: el pago sigue igual.{" "}
+          <button type="button" onClick={() => void noMostrarMas()} className="underline hover:text-amber-950">No mostrar más estos carteles</button>
         </p>
       )}
 

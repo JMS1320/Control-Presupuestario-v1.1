@@ -295,6 +295,14 @@ export function PanelPerfil({
             />
 
             <InterruptorPref
+              id="carteles-prueba"
+              titulo="Mostrar los carteles de prueba"
+              detalle="Los recuadros amarillos «🧪 N cosas para mirar en esta corrida» que aparecen en cada proceso con lo que falta probar. Si los apagás, las pruebas siguen en la guía de pruebas."
+              valor={prefs.cartelesPrueba}
+              onCambio={(v) => cambiarPref("cartelesPrueba", v)}
+            />
+
+            <InterruptorPref
               id="menu-abierto"
               titulo="Arrancar con el menú abierto"
               detalle="El menú lateral viene cerrado y se abre con el ☰. Si trabajás saltando entre secciones, conviene dejarlo abierto."
