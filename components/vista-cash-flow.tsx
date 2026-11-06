@@ -50,6 +50,7 @@ import { guardarChequeFactura, guardarChequeAnticipo, type EcheqDatos } from "@/
 import { problemasDelPlan, ultimaFechaCobro, clasificarLoteEcheq } from "@/lib/pagos/echeqs-multiples"
 import { EditorPlanEcheqs, planVacio, planDesdeUI, type PlanEcheqsUI } from "./editor-plan-echeqs"
 import { ModalExportarEcheqs } from "./modal-exportar-echeqs"
+import { ModalNoVaMas } from "./modal-no-va-mas"
 import { obtenerMediosPagoFactura } from "@/lib/pagos/medios-pago"
 import { EMPRESAS, COLOR_EMPRESA, schemaDeFila, esFilaMsa, type Empresa } from "@/lib/empresas"
 import { pedirAsignacionDeCuenta, mensajeDePropagacion } from "@/lib/conciliacion/asignar-cuenta-cliente"
@@ -253,6 +254,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   
   // Estado para cambio de estado (Shift+Click en débitos/créditos)
   const [filaParaCambioEstado, setFilaParaCambioEstado] = useState<CashFlowRow | null>(null)
+  /** 🛑 A-FEAT-1572 — «No va más» de una cuota de template (alcance: sólo ésta o ésta y las siguientes). */
+  const [noVaMas, setNoVaMas] = useState<{ cuotaId: string; egresoId: string } | null>(null)
   
   // Estado para validación de categ
   const [validandoCateg, setValidandoCateg] = useState<{
@@ -5546,9 +5549,30 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 Cancelar
               </Button>
             </div>
+            {/* 🛑 A-FEAT-1572 (nota 🌙 de JMS 05/11: «me lo encuentro desde Cash Flow… ir directo a la matriz»): esta cuota o
+                el gasto entero deja de correr, sin ir a Templates. Sólo cuotas sueltas: una agrupada se desagrupa primero. */}
+            {filaParaCambioEstado.origen === 'TEMPLATE' && filaParaCambioEstado.egreso_id && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2 w-full border-red-300 text-red-700 hover:bg-red-50"
+                disabled={guardandoCambio || filaParaCambioEstado.origen_tabla !== 'cuotas_egresos_sin_factura'}
+                title={filaParaCambioEstado.origen_tabla !== 'cuotas_egresos_sin_factura'
+                  ? 'Es un pago agrupado: desagrupalo primero para elegir qué cuota no va más'
+                  : 'Desactivar esta cuota, o ésta y las siguientes (y el template, para que no se renueve). Lo pagado no se toca.'}
+                onClick={() => {
+                  const fila = filaParaCambioEstado
+                  setFilaParaCambioEstado(null)
+                  if (fila?.egreso_id) setNoVaMas({ cuotaId: fila.id, egresoId: fila.egreso_id })
+                }}
+              >
+                🛑 No va más…
+              </Button>
+            )}
           </div>
         </div>
       )}
+      {noVaMas && <ModalNoVaMas cuotaId={noVaMas.cuotaId} egresoId={noVaMas.egresoId} onCerrar={() => setNoVaMas(null)} onHecho={() => { void cargarDatos() }} />}
 
       {/* Modal validación de categ */}
       <ModalValidarCateg

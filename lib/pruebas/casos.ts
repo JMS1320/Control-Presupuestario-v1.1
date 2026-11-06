@@ -74,6 +74,7 @@ import { textoQueSeCobro, detalleConQueSeCobro } from "@/lib/ventas/que-se-cobro
 import { esperadaDe, emparejar } from "@/lib/pagos/nc-diferencia-cambio"
 import { calcularVinculo, pctQueCierra, proponerCompras, comprasSinFacturaDelProveedor } from "@/lib/productivo/compras-factura"
 import { comprasSinFactura } from "@/lib/cashflow/compras-sin-factura"
+import { planNoVaMas, notaNoVaMas } from "@/lib/templates/no-va-mas"
 import { aPesosHa, equivalencias, precioAFecha, ultimaTarifa, controlFacturaContratista } from "@/lib/productivo/tarifa-contratista"
 import { facturasCortas } from "@/lib/pagos/lineas-detalle-pago"
 import { NOMBRE_PARA_TERCEROS, empresaDeSchema } from "@/lib/empresas"
@@ -10566,6 +10567,30 @@ export function correrCasos(): Resultado[] {
       const espP = "0170000000000000000001 · false · pepe.campo.mp · pepe@x.com · false · Destino sólo para esta transferencia · true · true · true · false · true · true · true · false · false"
       chequear("Accesos", "Lote Galicia: el CBU/alias y el mail escritos para esta transferencia sola la habilitan (sin tocar el proveedor); sólo en filas sin proveedor o con CUIT comodín, nunca en sueldos",
         espP, vP, vP === espP, "A-FEAT-1570")
+    }
+    // ── 🛑 A-FEAT-1572: «No va más» — sólo las pendientes pasan a desactivado; lo pagado no se toca; el template se
+    //    propone desactivar sólo si no deja cuotas anteriores abiertas escondidas ──
+    {
+      const cs = [
+        { id: "ene", fecha_estimada: "2026-01-05", estado: "conciliado" },
+        { id: "feb", fecha_estimada: "2026-02-05", estado: "pendiente" },
+        { id: "mar", fecha_estimada: "2026-03-05", estado: "pendiente" },
+        { id: "abr", fecha_estimada: "2026-04-05", estado: "pagar" },
+        { id: "may", fecha_estimada: "2026-05-05", estado: "pendiente" },
+        { id: "jun", fecha_estimada: "2026-06-05", estado: "desactivado" },
+      ]
+      const ids = (xs: { id: string }[]) => xs.map(x => x.id).join(",") || "-"
+      const a = planNoVaMas(cs, "mar", "siguientes")
+      const b = planNoVaMas(cs, "feb", "siguientes")
+      const c = planNoVaMas(cs, "mar", "esta")
+      const d = planNoVaMas(cs, "abr", "esta")
+      const v5 = [`${ids(a.desactivar)}|${ids(a.noSeTocan)}|${ids(a.anterioresAbiertas)}|${a.desactivarTemplate}`,
+        `${ids(b.desactivar)}|${ids(b.anterioresAbiertas)}|${b.desactivarTemplate}`,
+        `${ids(c.desactivar)}|${c.desactivarTemplate}`, `${ids(d.desactivar)}|${ids(d.noSeTocan)}`,
+        notaNoVaMas("Seguro ACA", "2026-11-06", "siguientes", 2, " se dio de baja "), notaNoVaMas(null, "2026-11-06", "esta", 1, "")].join(" ¦ ")
+      const e5 = "mar,may|abr|feb|false ¦ feb,mar,may|-|true ¦ mar|false ¦ -|abr ¦ Seguro ACA [🛑 No va más 06/11/2026: desde esta cuota · 2 cuotas desactivadas · se dio de baja] ¦ [🛑 No va más 06/11/2026: sólo una cuota · 1 cuota desactivada]"
+      chequear("Cash Flow", "No va más: sólo las cuotas pendientes pasan a desactivado (la que está en un lote o pagada no se toca); desactivar el template se propone sólo si no esconde cuotas anteriores abiertas; la huella se agrega a las observaciones",
+        e5, v5, v5 === e5, "A-FEAT-1572")
     }
     // ── 💲 A-FEAT-1557 etapa 4: la tarifa del contratista en todos los índices, con los precios de la fecha ──
     {
