@@ -15,6 +15,7 @@ import { ModalRepartoGrupo, type FilaGrupoReparto } from "@/components/modal-rep
 import { armarCancelacionPorCuit, facturasConDescuentoParaNC, type DatosCancelacionNC, type ComprobanteNC } from "@/lib/pagos/cancelacion-nc"
 import { useState, useRef, useEffect, useMemo } from "react"
 import { useMultiCashFlowData, type CashFlowRow, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
+import { detalleEditableDe, detalleSeEditaEnLote } from "@/lib/cashflow/detalle-lote"
 import { calcularSubtotales } from "@/lib/pagos/subtotales"
 import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
 import { facturasDelGrupo } from "@/lib/pagos/facturas-del-grupo"
@@ -320,6 +321,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     sinFecha: number
   } | null>(null)
   const [cambiarFechaVenc, setCambiarFechaVenc] = useState(false)
+  // ✏️ A-FEAT-1570 (nota 🌙 de JMS 05/11: «agregar editar detalle» en la barra de PAGOS)
+  const [cambiarDetalleLote, setCambiarDetalleLote] = useState(false)
+  const [valorDetalleLote, setValorDetalleLote] = useState('')
   const [cambiarEstadoLote, setCambiarEstadoLote] = useState(true)
   const [valorFechaLote, setValorFechaLote] = useState('')
   const [valorEstadoLote, setValorEstadoLote] = useState('pagado')
@@ -2155,14 +2159,28 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       return
     }
 
-    if (!cambiarFechaVenc && !cambiarEstadoLote) {
-      toast.error("Selecciona al menos una opción: fecha vencimiento o estado")
+    if (!cambiarFechaVenc && !cambiarEstadoLote && !cambiarDetalleLote) {
+      toast.error("Selecciona al menos una opción: fecha vencimiento, estado o detalle")
       return
     }
 
     if (cambiarFechaVenc && !valorFechaLote) {
       toast.error("Ingresa una fecha válida")
       return
+    }
+
+    // ✏️ A-FEAT-1570: el detalle REEMPLAZA el de cada fila — si alguna ya tiene uno distinto, se pregunta antes
+    if (cambiarDetalleLote) {
+      const pisadas = Array.from(filasSeleccionadas).map(id => data.find(f => f.id === id))
+        .filter((f): f is CashFlowRow => !!f && !!detalleEditableDe(f).trim() && detalleEditableDe(f).trim() !== valorDetalleLote.trim())
+      if (pisadas.length && !window.confirm(`${pisadas.length} fila(s) ya tienen otro detalle y se va a reemplazar por «${valorDetalleLote.trim() || '(vacío)'}»:
+
+` +
+        pisadas.slice(0, 8).map(f => `· ${f.nombre_proveedor || ''}: ${detalleEditableDe(f)}`).join('
+') + (pisadas.length > 8 ? '
+…' : '') + '
+
+¿Seguir?')) return
     }
 
     // A-FEAT-22 · Si el estado implica que la plata sale, primero se confirma la FECHA DE PAGO.
@@ -2272,6 +2290,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           actualizaciones.push({ id: fila.id, origen: fila.origen, campo: 'fecha_estimada', valor: valorFechaLote })
         }
       })
+
+      // ✏️ A-FEAT-1570 — el detalle, en las filas donde se puede (no en ventas, ni en un echeq de un pago en varios, ni en
+      // un GRUPO de facturas: ahí se edita factura por factura, A-FEAT-1269)
+      if (cambiarDetalleLote) {
+        const noVa = todasFilas.filter(f => !detalleSeEditaEnLote(f))
+        todasFilas.filter(detalleSeEditaEnLote).filter(f => detalleEditableDe(f).trim() !== valorDetalleLote.trim())
+          .forEach(f => actualizaciones.push({ id: f.id, origen: f.origen, campo: 'detalle', valor: valorDetalleLote.trim() || null }))
+        if (noVa.length) toast.info(`El detalle no se cambió en ${noVa.length} fila(s): ventas, grupos de facturas o echeqs de un pago en varios — editalos en su fila (Ctrl+clic en Detalle).`)
+      }
 
       // ECHEQ en lote: las FC ARCA pasan por el flujo echeq+SICORE (modal + cheque); el resto va directo.
       if (cambiarEstadoLote && valorEstadoLote === 'echeq') {
@@ -2438,6 +2465,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         const cambiosTexto = []
         if (cambiarFechaVenc) cambiosTexto.push('fecha vencimiento')
         if (cambiarEstadoLote) cambiosTexto.push('estado')
+        if (cambiarDetalleLote) cambiosTexto.push('detalle')
         toast.success(`${filasSeleccionadas.size} registros actualizados: ${cambiosTexto.join(' y ')}`)
         desactivarModoPagos()
       } else {
@@ -4487,6 +4515,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                     />
                     <Label htmlFor={`cambiar-estado-${sufijo}`}>Cambiar estado</Label>
                   </div>
+
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id={`cambiar-detalle-${sufijo}`}
+                      checked={cambiarDetalleLote}
+                      onCheckedChange={v => setCambiarDetalleLote(v === true)}
+                    />
+                    <Label htmlFor={`cambiar-detalle-${sufijo}`}>Cambiar detalle</Label>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-4">
@@ -4522,6 +4559,13 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                     </div>
                   )}
 
+                  {cambiarDetalleLote && (
+                    <div className="flex items-center gap-2" title="Reemplaza el detalle de las filas elegidas. Si alguna ya tiene otro, te pregunta antes.">
+                      <Label className="text-sm">Detalle:</Label>
+                      <Input value={valorDetalleLote} onChange={e => setValorDetalleLote(e.target.value)} placeholder="ej. pagado con la tarjeta de MA" className="w-64" />
+                    </div>
+                  )}
+
                   {/* 🏦 A-FEAT-1321 — de qué cuenta salió la plata, para no buscarla en el banco equivocado */}
                   {cambiarEstadoLote && ESTADOS_QUE_PAGAN.concat('echeq').includes(valorEstadoLote) && (
                     <div className="flex items-center gap-2" title="Si pagaste desde otra cuenta (ej. MA paga algo de MSA), elegila: queda marcado en la fila hasta que se concilie">
@@ -4542,7 +4586,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
                   <Permisable recurso="cashflow.cambio-lote"><Button
                     onClick={aplicarCambiosLote}
-                    disabled={filasSeleccionadas.size === 0 || procesandoLote || (!cambiarFechaVenc && !cambiarEstadoLote)}
+                    disabled={filasSeleccionadas.size === 0 || procesandoLote || (!cambiarFechaVenc && !cambiarEstadoLote && !cambiarDetalleLote)}
                     className="bg-blue-600 hover:bg-blue-700"
                   >
                     {procesandoLote ? (
@@ -5480,6 +5524,23 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
             </div>
             
             <div className="flex gap-2 mt-4">
+              {/* ✏️ A-FEAT-1570 (nota 🌙 de JMS 05/11: «dar la posibilidad de modificar detalle»): abre la edición de la celda
+                  Detalle de esta fila — la misma del Ctrl+clic, así que guarda por el mismo camino */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const fila = filaParaCambioEstado
+                  const col = columnasDefinicion.find(c => c.key === 'detalle')
+                  setFilaParaCambioEstado(null)
+                  if (fila && col) iniciarEdicion(fila, col, { ctrlKey: true, shiftKey: false, preventDefault() {}, stopPropagation() {} } as unknown as React.MouseEvent)
+                }}
+                disabled={guardandoCambio}
+                className="flex-1"
+                title="Editá el detalle de esta fila (también: Ctrl+clic en la celda Detalle)"
+              >
+                ✏️ Editar detalle
+              </Button>
               <Button
                 variant="outline"
                 size="sm"

@@ -90,6 +90,7 @@ import { echeqDelAnticipo } from "@/lib/pagos/echeq-anticipo"
 import { armarPlanillaBoletas, decisionPropuesta, importeElegido, claveBoleta, partidaDeClave } from "@/lib/arba/planilla-boletas"
 import { marcarAnticiposSinVincular } from "@/lib/cashflow/anticipo-sin-vincular"
 import { pedidoDeOrden } from "@/lib/arba/ordenar-archivo"
+import { detalleEditableDe, detalleSeEditaEnLote } from "@/lib/cashflow/detalle-lote"
 import { boletasQueFaltan, tareaBoletasFaltan } from "@/lib/arba/boletas-faltan"
 import { ordenarPorPlanilla } from "@/lib/arba/planilla-boletas"
 import { pideOtraVentana, linkSeccion } from "@/lib/ui/links"
@@ -220,6 +221,7 @@ import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/bal
 import { controlarCuotasTemplates, campaniaDelControl, claveDeNombre, CONTROL_CUOTAS_TEMPLATES, ultimoDiaDelMes, type ComisionesDelMes, type CuotaParaControl, type TemplateControlado, type EntradaControlCuotas } from "@/lib/balance/control-cuotas-templates"
 import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuestosYOtros } from "@/lib/balance/templates-libro"
 import { hojaAutomotores, pulirLibroH, hojaDeProvisionCobros, hojaDeBancos } from "@/lib/balance/export-libro-diario"
+import { renglonesDeRespaldo, hojaDeRespaldos } from "@/lib/balance/respaldos"
 import { filtrarComprobantes } from "@/lib/balance/provision-manual-filtro"
 import { hojaStockHacienda, hojaDetalleHacienda, hojaStockValorizado, hojaAumentoRodeo, linkCotizacion, DETALLES } from "@/lib/balance/stock-hacienda-papel"
 import { repartoDeLaFlota } from "@/lib/balance/reparto-flota"
@@ -4426,6 +4428,28 @@ export function correrCasos(): Resultado[] {
       const e = "gal #,##0.00;(#,##0.00) · total $ -2261369.97 · usd 599.71 pesos B8*E8=883372.83 · total U$S 599.71 (SUM(B8:B9)) · fci 362898.06 × 64.0511 → cierre 0"
       chequear("Balance · bancos", "🏦 07: saldos con 2 decimales y negativo entre paréntesis; los dólares en U$S con su total y los pesos como detalle; el FCI con las cuotapartes cargadas",
         e, v, v === e, "A-FEAT-1197")
+      // 📎 A-FEAT-1571 (JMS 06/11: «cada cosa que mando, con su doc de respaldo; los saldos son los extractos donde figuran»)
+      const resp = `${String(gal[4]?.v ?? "").slice(0, 60)}`
+      chequear("Balance · respaldos", "📎 07: cada saldo dice qué extracto lo respalda", "🟡 Extracto de BANCO GALICIA (cta cte) de junio 2026 (saldo al 3",
+        resp, resp === "🟡 Extracto de BANCO GALICIA (cta cte) de junio 2026 (saldo al 3", "A-FEAT-1571")
+    }
+    {
+      const a = (o: Record<string, unknown>) => ({ tipo: 1, punto_venta: 9, numero: 1, denominacion: "X", total: 100, ...o }) as any
+      const r = renglonesDeRespaldo({
+        fechaCierre: "2026-06-30", fechaInicio: "2025-06-30",
+        saldos: [{ nombre: "BANCO SANTANDER", saldo: 5, fecha: "2026-06-29" },
+          { nombre: "MSA Cuenta Corriente USD — …", saldo: 1, fecha: "2026-06-30", moneda: "USD", cuenta: "MSA Cuenta Corriente USD", usd: 599.71, tc: 1473, nroResumen: "CA_dolar_26-06" },
+          { nombre: "MSA Caja USD — sin", saldo: null, fecha: null, moneda: "USD", cuenta: "MSA Caja USD", usd: null }],
+        fci: { notaInicio: "DEDUCIDO: apertura del contador", notaCierre: "resumen FIMA (Inv_26-06.pdf): …", cuotasInicio: 10, valorInicio: 2, cuotasCierre: 0, valorCierre: 3 },
+        provision: [a({ fuente: "arca", pdf_url: "https://drive/x" }), a({ fuente: "arca", pdf_estado: "no_encontrado" })],
+        provisionAnterior: [a({ fuente: "historico" })], provisionCobros: [a({ fuente: "venta" })],
+      })
+      const est = r.map(x => x.respaldo.estado[0]).join("")
+      const h = hojaDeRespaldos(r) as any[][]
+      const v = `${est} · usd ${r[1].respaldo.documento.includes("CA_dolar_26-06")} · fci ${r[4].respaldo.documento.includes("Inv_26-06.pdf")} · link ${r[5].respaldo.url} · arriba ${String(h[5][3].v)} · ${String(h[2][0])}`
+      const e = "sffssscfss · usd true · fci true · link https://drive/x · arriba 🔴 falta · 🔴 falta: 2 · 🟡 sin archivar: 7 · ✅ con link: 1 — de 10 renglones"
+      chequear("Balance · respaldos", "📎 00 Respaldos: saldo → extracto o resumen; FCI → resumen del fondo; factura de compra → su PDF (link) o «falta»; histórico y ventas sin archivar; primero lo que falta",
+        e, v, v === e, "A-FEAT-1571")
     }
     // 🔎 A-FEAT-1564 — el selector: ordenado por fecha, filtro por subdiario y buscador por nombre, número o importe (con puntos y coma).
     {
@@ -10452,6 +10476,16 @@ export function correrCasos(): Resultado[] {
       const esp = "f1>MSA/2026 - Inmob - Cuota 4 - Rojas.pdf · f2>MSA - viene PAM/2026 - Inmob - Cuota 4 - Tango Parra 1.pdf · f7>ERM/2026 - Inmob - Cuota 4 - Quinta Rosello 2.pdf · f8>ERM/2026 - Inmob - Cuota 4 - El Relincho.pdf"
       chequear("Boletas ARBA", "Ordenar en el Drive: la de dueño conocido va con el nombre y la carpeta de JMS («viene PAM» si llegó en el mail de otra; ERM a ERM aunque la pague PAM); también se mueve la que tiene buen nombre pero está en otra carpeta, y se renombra la del campo renombrado; la sin dueño, la que ya está bien (aun con «(2)»), el complementario, la repetida y la sin cuota no se tocan",
         esp, pd, pd === esp, "A-FEAT-1567")
+    }
+    // ── ✏️ Detalle en la barra de PAGOS (A-FEAT-1570): qué filas lo aceptan y cuál es «su» detalle ──
+    {
+      const fs = [{ origen: "TEMPLATE", detalle: "ABL" }, { origen: "ANTICIPO", detalle: null }, { origen: "ARCA", detalle: "FC 1-23 · nota", detalle_propio: "nota" },
+        { origen: "ARCA", detalle: "grupo", ids_grupo: ["a", "b"] }, { origen: "VENTA", detalle: "x" }, { origen: "SUELDO", detalle: "y" },
+        { origen: "ANTICIPO", origen_tabla: "msa.cheques", detalle: "z" }]
+      const vD = fs.map(f => `${detalleSeEditaEnLote(f) ? "sí" : "no"}:${detalleEditableDe(f)}`).join(" · ")
+      const espD = "sí:ABL · sí: · sí:nota · no: · no:x · no:y · no:z"
+      chequear("Accesos", "Detalle en lote: cuotas, anticipos y facturas sueltas sí (en la factura, el detalle del usuario, no el armado); grupos, ventas, sueldos y el echeq de un pago en varios no",
+        espD, vD, vD === espD, "A-FEAT-1570")
     }
     // ── 📋 El orden de la planilla de JMS (05/11: «en el orden de mi planilla base»): su orden primero, lo demás por nombre ──
     {
