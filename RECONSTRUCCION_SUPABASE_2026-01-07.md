@@ -3329,6 +3329,9 @@ El proceso de auditoría y reconstrucción está **100% completado**. Todos los 
 ### 2026-11-05 · Anticipos con echeq vinculados a sus facturas (script 203, DATOS) — A-BUG-1553 — ✅ CORRIDO con OK de JMS
 Briki (anticipo `b6f3e5aa`, factura `07c378e3`) y De Francesco (`7dcfc3d2` / `d009c6a9`): la factura hereda SICORE (26-10 1ra), detalle y saldo neto (13.773.075,04 / 3.525.504,64) y queda `estado = echeq` con `metodo_pago`/`fecha_cobro_echeq`; el anticipo pasa a `vinculado`; `msa.sicore_retenciones` y `msa.cheques` (3 y 2) se atan a la factura. Iglesias (`12cef0e4`) y Arroyo Tala (`a6a44632`): `parcial` → `vinculado`. Verifica una FOTO antes de escribir. Deshacer: `npx tsx scripts/203-anticipos-echeq-vincular.mts --deshacer`.
 
+### 2026-11-06 · `productivo.movimientos_insumos`: `compra_id`, `fecha_pago`, `empresa`, `orden_agricola_id` (script 216, ESTRUCTURA) — A-FEAT-1557 — ✅ CORRIDO con OK de JMS
+4 columnas (con sus comments), vacías en lo existente; `orden_agricola_id` → `productivo.ordenes_agricolas(id) on delete set null`. La compra (movimiento `tipo = 'compra'`) pasa a ser el PRIMER registro: renglones agrupados, pago pactado, quién paga y de qué orden sale. Sin RLS nuevo. Aviso a Javier ANTES. Verificado con `explain insert`. El script verifica que no existían. Deshacer: `scripts/216-compra-fecha-pago-empresa-orden-deshacer.sql`.
+
 ### 2026-11-06 · `productivo.ordenes_agricolas.contratista_cuit` + `contratista_nombre` (script 214, ESTRUCTURA) — A-FEAT-1556 — ✅ CORRIDO con OK de JMS
 `alter table productivo.ordenes_agricolas add column contratista_cuit varchar(13), add column contratista_nombre text` (con sus comments). Vacías al crear. Un contratista por ORDEN (JMS 05/11), por CUIT para atar después su factura de ARCA. Sin RLS nuevo. Aviso a Javier ANTES. Verificado con `explain update`. El script verifica que no existían. Deshacer: `scripts/214-orden-agricola-contratista-deshacer.sql`.
 
