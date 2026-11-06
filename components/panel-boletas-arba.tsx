@@ -652,6 +652,9 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
       }
     }))
     if (!pedido.length) { if (!silencioso) avisar("ok", "Todo ordenado", "Las boletas con su campo ya tienen el nombre y la carpeta de siempre."); return }
+    // 05/11: el robot tarda unos segundos (renombra y mueve de a uno) y sin señal parecía que el botón no hacía nada
+    setLeyendo(true)
+    const espera = toast.loading(`🗂️ Ordenando ${pedido.length} boleta(s) en el Drive…`)
     try {
       const r = await fetch("/api/gas/ordenar-boletas", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ items: pedido.map(({ file_id, nombre, carpeta }) => ({ file_id, nombre, carpeta })) }) })
@@ -675,6 +678,7 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
       avisar(fallas.length ? "error" : "ok", `${bien.length} boleta(s) ordenadas en el Drive` + (fallas.length ? ` · ${fallas.length} no` : ""),
         bien.map(x => `${x.carpeta} / ${x.nombre}`).join("\n") + (fallas.length ? "\n\nNo se pudieron:\n" + fallas.map(x => `${x.file_id}: ${x.error}`).join("\n") : ""))
     } catch (e) { avisar("error", "No se pudieron ordenar en el Drive", (e as Error).message) }
+    finally { setLeyendo(false); toast.dismiss(espera) }
   }
 
   /**
