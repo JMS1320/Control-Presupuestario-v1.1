@@ -75,7 +75,7 @@ import { esperadaDe, emparejar } from "@/lib/pagos/nc-diferencia-cambio"
 import { calcularVinculo, pctQueCierra, proponerCompras, comprasSinFacturaDelProveedor } from "@/lib/productivo/compras-factura"
 import { comprasSinFactura } from "@/lib/cashflow/compras-sin-factura"
 import { planNoVaMas, notaNoVaMas } from "@/lib/templates/no-va-mas"
-import { aPesosHa, equivalencias, precioAFecha, ultimaTarifa, controlFacturaContratista } from "@/lib/productivo/tarifa-contratista"
+import { aPesosHa, equivalencias, precioAFecha, ultimaTarifa, controlFacturaContratista, mejorCombinacion } from "@/lib/productivo/tarifa-contratista"
 import { facturasCortas } from "@/lib/pagos/lineas-detalle-pago"
 import { NOMBRE_PARA_TERCEROS, empresaDeSchema } from "@/lib/empresas"
 import { facturasRestringidas } from "@/lib/auth/roles"
@@ -10591,6 +10591,15 @@ export function correrCasos(): Resultado[] {
       const e5 = "mar,may|abr|feb|false ¦ feb,mar,may|-|true ¦ mar|false ¦ -|abr ¦ Seguro ACA [🛑 No va más 06/11/2026: desde esta cuota · 2 cuotas desactivadas · se dio de baja] ¦ [🛑 No va más 06/11/2026: sólo una cuota · 1 cuota desactivada]"
       chequear("Cash Flow", "No va más: sólo las cuotas pendientes pasan a desactivado (la que está en un lote o pagada no se toca); desactivar el template se propone sólo si no esconde cuotas anteriores abiertas; la huella se agrega a las observaciones",
         e5, v5, v5 === e5, "A-FEAT-1572")
+    }
+    // ── 🚜 A-FEAT-1557: llega la factura del contratista → la combinación de órdenes que da el neto ──
+    {
+      const os = [{ id: "a", esperado: 1_000_000 }, { id: "b", esperado: 2_500_000 }, { id: "c", esperado: 1_500_000 }, { id: "d", esperado: null }, { id: "e", esperado: 4_000_000 }]
+      const r = (x: ReturnType<typeof mejorCombinacion>) => x ? `${x.ids.join("+")}:${x.dif}:${x.cierra}` : "null"
+      const v6 = [r(mejorCombinacion(3_510_000, os)), r(mejorCombinacion(4_000_000, os)), r(mejorCombinacion(700_000, os)), r(mejorCombinacion(0, os)), r(mejorCombinacion(1_000, [{ id: "z", esperado: null }]))].join(" ¦ ")
+      const e6 = "a+b:10000:true ¦ e:0:true ¦ a:-300000:false ¦ null ¦ null"
+      chequear("Productivo", "Factura del contratista: propone la combinación de órdenes cuyo pactado da el neto (±1 %; ante el empate, la de menos órdenes); sin tarifa no entra; si nada cierra, propone lo más parecido sin marcarlo como que cierra",
+        e6, v6, v6 === e6, "A-FEAT-1557")
     }
     // ── 💲 A-FEAT-1557 etapa 4: la tarifa del contratista en todos los índices, con los precios de la fecha ──
     {

@@ -4,6 +4,7 @@
 import { nuevasPrimero } from "@/lib/importar/orden-preview"
 import { ModalVincularCompras } from "./modal-vincular-compras"
 import { comprasSinFacturaDelProveedor } from "@/lib/productivo/compras-factura"
+import { ModalOrdenesDeFactura } from "./tarifas-contratistas"
 import { conversionDe } from "@/lib/pagos/moneda-factura"
 import { toggleChip, esSoloEste, tituloChip } from "@/lib/ui/chips"
 import { hoyArgentina } from "@/lib/fechas"
@@ -950,6 +951,27 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
       } catch (e) { console.error('No se pudieron leer las compras sin factura', e) }
     })()
   }, [schemaName, recargaComprasLibres])
+  /** 🚜 A-FEAT-1557 — contratistas con órdenes ejecutadas sin factura (por CUIT) y facturas ya atadas a órdenes. */
+  const [ordenesLibres, setOrdenesLibres] = useState<{ porCuit: Map<string, { n: number; desde: string }>; atadas: Set<string> }>({ porCuit: new Map(), atadas: new Set() })
+  const [facturaOrdenes, setFacturaOrdenes] = useState<string | null>(null)
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const { data } = await supabase.schema('productivo').from('ordenes_agricolas')
+          .select('fecha, estado, contratista_cuit, factura_contratista_id').not('contratista_cuit', 'is', null)
+        const porCuit = new Map<string, { n: number; desde: string }>()
+        const atadas = new Set<string>()
+        for (const o of (data || []) as any[]) {
+          if (o.factura_contratista_id) { atadas.add(o.factura_contratista_id); continue }
+          if (o.estado !== 'ejecutada' && o.estado !== 'a_confirmar') continue
+          const c = String(o.contratista_cuit).replace(/\D/g, '')
+          const p = porCuit.get(c)
+          porCuit.set(c, { n: (p?.n ?? 0) + 1, desde: p && p.desde < o.fecha ? p.desde : o.fecha })
+        }
+        setOrdenesLibres({ porCuit, atadas })
+      } catch (e) { console.error('No se pudieron leer las órdenes sin factura del contratista', e) }
+    })()
+  }, [recargaComprasLibres])
   const [provPorCuit, setProvPorCuit] = useState<Record<string, { id: string; email_facturacion: string | null; email_pagos: string | null; gas_habilitado: boolean | null; fc_modo: string | null }>>({})
   const [provEditMail, setProvEditMail] = useState<Record<string, string>>({})
   const [guardandoMailCuit, setGuardandoMailCuit] = useState<string | null>(null)
@@ -8379,6 +8401,17 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                                 </button></Permisable>
                               ) : null
                             })()}
+                            {/* 🚜 A-FEAT-1557: es de un contratista con órdenes ejecutadas sin factura → proponer cuáles cobra */}
+                            {(() => {
+                              const n = comprasSinFacturaDelProveedor({ id: factura.id, cuit: factura.cuit, fecha: factura.fecha_emision }, ordenesLibres.porCuit, ordenesLibres.atadas)
+                              return n > 0 ? (
+                                <Permisable recurso="egresos.vincular-compras"><button type="button" onClick={() => setFacturaOrdenes(factura.id)}
+                                  className="rounded bg-lime-100 px-1 text-[11px] text-lime-900 hover:bg-lime-200 whitespace-nowrap"
+                                  title={`Este contratista tiene ${n} orden(es) ejecutada(s) sin factura. Click para ver cuáles cobra esta factura.`}>
+                                  🚜{n}
+                                </button></Permisable>
+                              ) : null
+                            })()}
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
@@ -13162,6 +13195,8 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
       </Dialog>
       <ModalVincularCompras abierto={!!facturaVincularCompras} facturaId={facturaVincularCompras}
         onCerrar={() => setFacturaVincularCompras(null)} onGuardado={() => setRecargaComprasLibres(n => n + 1)} />
+      {facturaOrdenes && <ModalOrdenesDeFactura facturaId={facturaOrdenes} empresa={empresa}
+        onCerrar={() => setFacturaOrdenes(null)} onGuardado={() => setRecargaComprasLibres(n => n + 1)} />}
     </div>
   )
 }

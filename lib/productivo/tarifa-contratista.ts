@@ -136,3 +136,36 @@ export function controlFacturaContratista(
   const cierra = dif == null || esperado == null ? null : Math.abs(dif) <= Math.max(1, Math.abs(esperado) * 0.01)
   return { haTotales, realPesosHa, esperado, dif, cierra }
 }
+
+/**
+ * 🚜 **Llega la factura del contratista → qué órdenes cobra** (A-FEAT-1557, pedido JMS 06/11: «seguí con la factura que
+ * propone sola sus órdenes»).
+ *
+ * Un contratista suele facturar varias órdenes juntas. Entre sus órdenes ejecutadas sin factura (las `max` más
+ * recientes, para que la búsqueda sea instantánea: 2^12 = 4.096 combinaciones), busca la combinación cuyo esperado
+ * (ha × tarifa pactada en $) más se acerca al neto; ante el empate, la de menos órdenes. `cierra` = dentro del 1 %.
+ * Las órdenes sin tarifa pactada no entran a la búsqueda (no tienen esperado): se ofrecen igual, a mano.
+ * **Propone, no ata**: el usuario confirma.
+ */
+export function mejorCombinacion(
+  neto: number,
+  ordenes: { id: string; esperado: number | null }[],
+  max = 12,
+): { ids: string[]; esperado: number; dif: number; cierra: boolean } | null {
+  const conEsperado = ordenes.filter(o => o.esperado != null && o.esperado > 0).slice(0, max) as { id: string; esperado: number }[]
+  if (!conEsperado.length || !(neto > 0)) return null
+  let mejor: { mask: number; suma: number; n: number } | null = null
+  for (let mask = 1; mask < (1 << conEsperado.length); mask++) {
+    let suma = 0, n = 0
+    for (let i = 0; i < conEsperado.length; i++) if (mask & (1 << i)) { suma += conEsperado[i].esperado; n++ }
+    const d = Math.abs(neto - suma)
+    if (!mejor || d < Math.abs(neto - mejor.suma) - 0.005 || (Math.abs(d - Math.abs(neto - mejor.suma)) <= 0.005 && n < mejor.n)) mejor = { mask, suma, n }
+  }
+  if (!mejor) return null
+  const esperado = Math.round(mejor.suma * 100) / 100
+  const dif = Math.round((neto - esperado) * 100) / 100
+  return {
+    ids: conEsperado.filter((_, i) => mejor!.mask & (1 << i)).map(o => o.id),
+    esperado, dif, cierra: Math.abs(dif) <= Math.max(1, esperado * 0.01),
+  }
+}
