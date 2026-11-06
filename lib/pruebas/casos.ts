@@ -91,6 +91,7 @@ import { armarPlanillaBoletas, decisionPropuesta, importeElegido, claveBoleta, p
 import { marcarAnticiposSinVincular } from "@/lib/cashflow/anticipo-sin-vincular"
 import { pedidoDeOrden } from "@/lib/arba/ordenar-archivo"
 import { detalleEditableDe, detalleSeEditaEnLote } from "@/lib/cashflow/detalle-lote"
+import { aplicarDestinoPuntual, pideDestinoPuntual, esCuitComodin } from "@/lib/lotes-galicia/helpers"
 import { boletasQueFaltan, tareaBoletasFaltan } from "@/lib/arba/boletas-faltan"
 import { ordenarPorPlanilla } from "@/lib/arba/planilla-boletas"
 import { pideOtraVentana, linkSeccion } from "@/lib/ui/links"
@@ -10486,6 +10487,21 @@ export function correrCasos(): Resultado[] {
       const espD = "sí:ABL · sí: · sí:nota · no: · no:x · no:y · no:z"
       chequear("Accesos", "Detalle en lote: cuotas, anticipos y facturas sueltas sí (en la factura, el detalle del usuario, no el armado); grupos, ventas, sueldos y el echeq de un pago en varios no",
         espD, vD, vD === espD, "A-FEAT-1570")
+    }
+    // ── 🎯 Destino sólo para esta transferencia en el lote Galicia (A-FEAT-1570) ──
+    {
+      const base = { cbu: null as string | null, alias_cbu: null as string | null, email_pagos: null as string | null, excluido_del_excel: true, warnings: ["Sin email", "Sin CBU ni Alias"] }
+      const conCbu = aplicarDestinoPuntual(base, { cbuAlias: "0170 0000 0000 0000 0000 01" })
+      const conAlias = aplicarDestinoPuntual(base, { cbuAlias: "pepe.campo.mp", email: "pepe@x.com" })
+      const malo = aplicarDestinoPuntual(base, { cbuAlias: "ab" })
+      const sin = aplicarDestinoPuntual(base, undefined)
+      const vP = [conCbu.cbu, conCbu.excluido_del_excel, conAlias.alias_cbu, conAlias.email_pagos, conAlias.excluido_del_excel, conAlias.warnings.join("/"), malo.excluido_del_excel, sin === base,
+        esCuitComodin("11111111111"), esCuitComodin("30617786016"), esCuitComodin(""),
+        pideDestinoPuntual({ tipo: "cuota_template", proveedor_id: null, cuit: "" }), pideDestinoPuntual({ tipo: "anticipo", proveedor_id: "p1", cuit: "11111111111" }),
+        pideDestinoPuntual({ tipo: "factura", proveedor_id: "p2", cuit: "30617786016" }), pideDestinoPuntual({ tipo: "sueldo", proveedor_id: null, cuit: "" })].join(" · ")
+      const espP = "0170000000000000000001 · false · pepe.campo.mp · pepe@x.com · false · Destino sólo para esta transferencia · true · true · true · false · true · true · true · false · false"
+      chequear("Accesos", "Lote Galicia: el CBU/alias y el mail escritos para esta transferencia sola la habilitan (sin tocar el proveedor); sólo en filas sin proveedor o con CUIT comodín, nunca en sueldos",
+        espP, vP, vP === espP, "A-FEAT-1570")
     }
     // ── 📋 El orden de la planilla de JMS (05/11: «en el orden de mi planilla base»): su orden primero, lo demás por nombre ──
     {

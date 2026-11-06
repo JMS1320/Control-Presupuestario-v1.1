@@ -25,6 +25,7 @@ import type {
   ItemSeleccionado, PreviewLoteOutput, ItemPreview,
 } from '@/lib/lotes-galicia/types'
 import { ModalCompletarDatosProveedor } from './modal-completar-datos-proveedor'
+import { aplicarDestinoPuntual, pideDestinoPuntual, type DestinoPuntual } from '@/lib/lotes-galicia/helpers'
 
 interface Props {
   open: boolean
@@ -50,6 +51,8 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
   // Edición inline de cuenta de empleado por fila de sueldo (clave = item.id del pago)
   const [edSueldo, setEdSueldo] = useState<Record<string, { alias?: string; grupo?: string; concepto?: string; email?: string }>>({})
   const [guardandoSueldo, setGuardandoSueldo] = useState<string | null>(null)
+  // 🎯 A-FEAT-1570: CBU/alias y mail SÓLO para esta transferencia (filas sin proveedor o con CUIT comodín); no se guardan
+  const [soloEsta, setSoloEsta] = useState<Record<string, DestinoPuntual>>({})
   const [modalCompletar, setModalCompletar] = useState<{
     open: boolean
     modo: 'email' | 'cbu'
@@ -65,6 +68,7 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
     setFijar(new Set())
     setEdDatos({})
     setEdSueldo({})
+    setSoloEsta({})
     // Default fecha de pago: hoy
     const hoy = new Date()
     const isoHoy = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
@@ -86,7 +90,7 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
     if (!preview) return
     setGenerando(true)
     try {
-      const out = await llamarGenerar({ empresa, fecha_pago: fechaPago, items, user_role: userRole, mensajes, fijarMensaje: [...fijar] })
+      const out = await llamarGenerar({ empresa, fecha_pago: fechaPago, items, user_role: userRole, mensajes, fijarMensaje: [...fijar], destinos: soloEsta })
       if (!out.ok) { toast.error('Error: ' + out.error); return }
 
       // Descargar archivos
@@ -185,11 +189,15 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
     cargarPreview() // refrescar por si guardó algunos
   }
 
-  const itemsPagos = preview?.pagos.items || []
+  // 🎯 A-FEAT-1570: la vista ya con el destino puntual aplicado — los conteos y el botón se basan en esto
+  const itemsPagos = (preview?.pagos.items || []).map(it => pideDestinoPuntual(it) ? aplicarDestinoPuntual(it, soloEsta[it.id]) : it)
   const itemsSueldos = preview?.sueldos.items || []
   const hayBloqueantes = (preview?.bloqueantes?.length || 0) > 0
-  const totalValidos = (preview?.pagos.cantidad_validos || 0) + (preview?.sueldos.cantidad_validos || 0)
-  const totalExcluidos = (preview?.pagos.cantidad_excluidos || 0) + (preview?.sueldos.cantidad_excluidos || 0)
+  const validosPagos = itemsPagos.filter(p => !p.excluido_del_excel)
+  const excluidosPagos = itemsPagos.filter(p => p.excluido_del_excel)
+  const sumaMontos = (xs: { monto: number }[]) => xs.reduce((s, x) => s + (Number(x.monto) || 0), 0)
+  const totalValidos = validosPagos.length + (preview?.sueldos.cantidad_validos || 0)
+  const totalExcluidos = excluidosPagos.length + (preview?.sueldos.cantidad_excluidos || 0)
 
   return (
     <>
@@ -257,10 +265,12 @@ export function ModalExportarLote({ open, onClose, empresa, items, userRole }: P
                   <SectionTabla
                     titulo="🏦 Pagos (FC / Templates / Anticipos / Grupos)"
                     items={itemsPagos}
-                    totalValidos={preview.pagos.cantidad_validos}
-                    totalExcluidos={preview.pagos.cantidad_excluidos}
-                    montoValido={preview.pagos.monto_total_valido}
-                    montoExcluido={preview.pagos.monto_total_excluido}
+                    totalValidos={validosPagos.length}
+                    totalExcluidos={excluidosPagos.length}
+                    montoValido={sumaMontos(validosPagos)}
+                    montoExcluido={sumaMontos(excluidosPagos)}
+                    soloEsta={soloEsta}
+                    setSoloEsta={setSoloEsta}
                     mensajes={mensajes}
                     onMensaje={(id, v) => setMensajes(prev => ({ ...prev, [id]: v }))}
                     fijar={fijar}
@@ -335,7 +345,7 @@ function SectionTabla({
   titulo, items, totalValidos, totalExcluidos, montoValido, montoExcluido,
   mensajes, onMensaje, fijar, onToggleFijar,
   edDatos, setEdDatos, guardarDatosProv, guardandoProv,
-  edSueldo, setEdSueldo, guardarDatosSueldo, guardandoSueldo,
+  edSueldo, setEdSueldo, guardarDatosSueldo, guardandoSueldo, soloEsta, setSoloEsta,
 }: {
   titulo: string
   items: ItemPreview[]
@@ -355,6 +365,8 @@ function SectionTabla({
   setEdSueldo: (fn: (prev: Record<string, { alias?: string; grupo?: string; concepto?: string; email?: string }>) => Record<string, { alias?: string; grupo?: string; concepto?: string; email?: string }>) => void
   guardarDatosSueldo: (item: ItemPreview, campos: { alias?: string | null; grupo_export?: string | null; concepto?: string | null; email?: string | null }) => void
   guardandoSueldo: string | null
+  soloEsta?: Record<string, DestinoPuntual>
+  setSoloEsta?: (fn: (prev: Record<string, DestinoPuntual>) => Record<string, DestinoPuntual>) => void
 }) {
   return (
     <div className="border rounded-md overflow-hidden">
@@ -407,7 +419,14 @@ function SectionTabla({
                       )}
                     </div>
                   )
-                })() : p.proveedor_id ? (() => {
+                })() : (pideDestinoPuntual(p) && setSoloEsta) ? (
+                  // 🎯 A-FEAT-1570: sin proveedor (o CUIT comodín) → el mail es sólo para esta transferencia
+                  <input type="email" placeholder="mail (sólo esta)"
+                    title="Va sólo en esta transferencia; no se guarda en ningún proveedor"
+                    className="border border-sky-300 rounded px-1 py-0.5 text-[11px] w-36"
+                    value={soloEsta?.[p.id]?.email ?? ''}
+                    onChange={e => setSoloEsta(prev => ({ ...prev, [p.id]: { ...prev[p.id], email: e.target.value } }))} />
+                ) : p.proveedor_id ? (() => {
                   const stored = p.email_pagos ?? ''
                   const val = edDatos[p.proveedor_id]?.email ?? stored
                   const cambiado = val !== stored
@@ -467,7 +486,17 @@ function SectionTabla({
                       </div>
                     </div>
                   )
-                })() : p.proveedor_id ? (() => {
+                })() : (pideDestinoPuntual(p) && setSoloEsta) ? (
+                  // 🎯 A-FEAT-1570 (nota 🌙 de JMS 05/11): «debería pedir la data para esta transferencia sola»
+                  <div className="flex flex-col gap-0.5">
+                    <input type="text" placeholder="CBU o alias (sólo esta)"
+                      title="Va sólo en esta transferencia; no se guarda en ningún proveedor"
+                      className={`border rounded px-1 py-0.5 text-[11px] w-44 ${soloEsta?.[p.id]?.cbuAlias ? 'border-sky-300' : 'border-orange-300 placeholder-orange-500'}`}
+                      value={soloEsta?.[p.id]?.cbuAlias ?? ''}
+                      onChange={e => setSoloEsta(prev => ({ ...prev, [p.id]: { ...prev[p.id], cbuAlias: e.target.value } }))} />
+                    <span className="text-[10px] text-sky-700">sólo para esta transferencia</span>
+                  </div>
+                ) : p.proveedor_id ? (() => {
                   const stored = p.cbu ?? p.alias_cbu ?? ''
                   const val = edDatos[p.proveedor_id]?.cbuAlias ?? stored
                   const cambiado = val !== stored

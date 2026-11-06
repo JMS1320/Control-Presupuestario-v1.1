@@ -115,6 +115,8 @@ export interface GenerarLoteInput {
   user_role?: string
   mensajes?: Record<string, string>   // itemId → mensaje override (lo que tipeó el usuario para la col "Mensaje")
   fijarMensaje?: string[]             // itemIds cuyo mensaje hay que guardar como fijo en el proveedor
+  /** A-FEAT-1570: itemId → CBU/alias y mail SÓLO para esta transferencia (no se guardan en el proveedor) */
+  destinos?: Record<string, { cbuAlias?: string | null; email?: string | null }>
 }
 
 /** Output del endpoint /api/lotes/generar */

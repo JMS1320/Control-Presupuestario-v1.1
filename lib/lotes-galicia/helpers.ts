@@ -106,3 +106,44 @@ export function nombreArchivoLote(opts: {
     : ''
   return `Galicia ${opts.empresa} ${tipoTxt}${grupoTxt} ${fechaCorta}${parte}.xlsx`
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// 🎯 A-FEAT-1570 — el DESTINO SÓLO PARA ESTA TRANSFERENCIA (nota 🌙 de JMS 05/11, en «Exportar lote Galicia»):
+// «son templates que sirven a veces cuando es un CBU diferente; otros gastos tienen distintos destinatarios: debería pedir
+// la data para esta transferencia sola. Anticipos a ese CUIT también (se pone porque no se sabe), pero sí se sabe dónde
+// transferir». Lo que se escribe acá va al Excel y NO a la ficha del proveedor: un CUIT comodín (11111111111) o un
+// template sin proveedor no tienen un destino fijo que guardar.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+export interface DestinoPuntual { cbuAlias?: string | null; email?: string | null }
+
+/** Un CUIT que no identifica a nadie: vacío o el mismo dígito repetido («11111111111», el de «Aún no registrado»). */
+export function esCuitComodin(cuit: string | null | undefined): boolean {
+  const d = String(cuit ?? '').replace(/\D/g, '')
+  return !d || /^(\d)\1+$/.test(d)
+}
+
+/** ¿Esta fila pide el destino para esta transferencia sola (en vez de guardarlo en el proveedor)? */
+export const pideDestinoPuntual = (it: { tipo: string; proveedor_id: string | null; cuit: string | null }) =>
+  it.tipo !== 'sueldo' && (!it.proveedor_id || esCuitComodin(it.cuit))
+
+/** La fila con el destino puntual aplicado: CBU (22 dígitos) o alias, mail, y si queda o no afuera del Excel. Pura. */
+export function aplicarDestinoPuntual<T extends { cbu: string | null; alias_cbu: string | null; email_pagos: string | null; excluido_del_excel: boolean; warnings: string[] }>(
+  it: T, d: DestinoPuntual | undefined,
+): T {
+  if (!d || (!d.cbuAlias?.trim() && !d.email?.trim())) return it
+  const out = { ...it, warnings: [...it.warnings] }
+  const v = d.cbuAlias?.trim()
+  if (v) {
+    const limpio = v.replace(/\s/g, '')
+    if (/^\d{22}$/.test(limpio)) { out.cbu = limpio; out.alias_cbu = null } else { out.alias_cbu = v; out.cbu = null }
+  }
+  if (d.email?.trim()) out.email_pagos = d.email.trim()
+  const ok = validarCBU(out.cbu) || validarAlias(out.alias_cbu)
+  out.excluido_del_excel = !ok
+  out.warnings = out.warnings.filter(w => !/^Sin CBU ni Alias$|^CBU formato inválido$|^Alias formato inválido$/.test(w) && !(w === 'Sin email' && out.email_pagos))
+  if (v && !ok) out.warnings.push(validarCBU(v) ? '' : 'CBU/Alias puntual con formato inválido')
+  out.warnings.push('Destino sólo para esta transferencia')
+  out.warnings = out.warnings.filter(Boolean)
+  return out
+}

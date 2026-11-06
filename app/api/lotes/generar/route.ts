@@ -21,7 +21,7 @@ import * as XLSX from 'xlsx'
 import type {
   GenerarLoteInput, GenerarLoteOutput, ItemPreview, Empresa,
 } from '@/lib/lotes-galicia/types'
-import {
+import { pideDestinoPuntual, aplicarDestinoPuntual,
   validarCBU, validarAlias, obtenerDestinatarioValido,
   formatearImporteGalicia, motivoSugerido, abreviarDescripcion,
   nombreArchivoLote, empresaToSchema,
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
 
   try {
     const body = (await request.json()) as GenerarLoteInput
-    const { empresa, fecha_pago, items, user_role, mensajes, fijarMensaje } = body
+    const { empresa, fecha_pago, items, user_role, mensajes, fijarMensaje, destinos } = body
 
     if (!empresa || !['MSA', 'PAM', 'MA'].includes(empresa)) {
       return NextResponse.json({ ok: false, error: 'empresa requerida' }, { status: 400 })
@@ -73,7 +73,8 @@ export async function POST(request: Request) {
     }
 
     // ── 2. Filtrar items válidos (con destinatario) y armar excluidos ──
-    const itemsPagos: ItemPreview[] = previewData.pagos.items
+    // 🎯 A-FEAT-1570: el destino escrito para esta transferencia sola (sólo en filas sin proveedor o con CUIT comodín)
+    const itemsPagos: ItemPreview[] = previewData.pagos.items.map(it => pideDestinoPuntual(it) ? aplicarDestinoPuntual(it, destinos?.[it.id]) : it)
     const itemsSueldos: ItemPreview[] = previewData.sueldos.items
     const excluidos: GenerarLoteOutput['excluidos'] = []
 
