@@ -21,5 +21,6 @@ const fci = await leerFci(sb, "MSA", 2026)
 const pares = [[9,55857],[2,4690],[12,36430],[13,1684],[13,1685],[23,188411],[5366,17645],[23,188912],[5306,32309],[1,34160783]]
 const prov: any[] = []
 for (const [pv, n] of pares) { const { data } = await sb.schema("msa").from("comprobantes_arca").select("*").eq("punto_venta", pv).eq("numero_desde", n).limit(1); if (data?.[0]) prov.push(desdeArca(data[0])) }
-const r = renglonesDeRespaldo({ fechaCierre: fc, fechaInicio: "2025-06-30", saldos, fci, provision: prov })
+const documentos = (await sb.from("documentos_respaldo").select("cuenta, periodo, tipo, url, nombre_archivo, ruta_drive").eq("empresa", "MSA")).data ?? []
+const r = renglonesDeRespaldo({ fechaCierre: fc, fechaInicio: "2025-06-30", saldos, fci, provision: prov, documentos })
 for (const x of r) console.log(x.respaldo.estado.padEnd(13), "|", x.papel, "|", x.renglon.slice(0, 50), "|", x.importe, "|", x.respaldo.documento.slice(0, 80), x.respaldo.url ? "→ link" : "|", x.respaldo.nota ?? "")

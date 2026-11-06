@@ -49,6 +49,7 @@ import {
 } from "@/lib/balance/control-cuotas-templates"
 import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { ProponerFotoBalance } from "./proponer-foto-balance"
+import { respaldoDeSaldo } from "@/lib/balance/respaldos"
 import { ivaConSigno, RENGLONES, type DatosDeLosPapeles, type ValorPropuesto } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { armarWorkbook, coberturaDeArgs, descargarLibroDiario, descargarSetDelBalance } from "@/lib/balance/export-libro-diario"
@@ -987,6 +988,9 @@ export function PapelesDeBalance() {
           fci: armarFondosComunes(movFCI, {}, {}),
           // 💹 JMS 06/11: la tenencia del FCI ya cargada (resúmenes FIMA, scripts 170/174) va al papel 07
           fciTenencia: await leerFci(supabase, empresa.id, anioCierre).catch(() => null),
+          // 📎 A-FEAT-1571: los extractos y resúmenes vinculados (scripts 211/212) — el saldo abre su documento
+          documentosRespaldo: await Promise.resolve(supabase.from("documentos_respaldo").select("cuenta, periodo, tipo, url, nombre_archivo, ruta_drive").eq("empresa", empresa.id))
+            .then(r => (r.data ?? []) as import("@/lib/balance/respaldos").DocumentoRespaldo[]).catch(() => []),
         })
       } catch {
         toast.warning("No se pudieron armar los papeles bancarios; el resto del libro salió igual.")
@@ -1824,6 +1828,40 @@ export function PapelesDeBalance() {
                     {!ctl.cuadra && " — no dan igual: la diferencia está en la solapa 08.1."}
                   </div>
                 </div>
+              )
+            })()}
+
+            {/* 📎 A-FEAT-1571 (JMS 06/11: «cuando vea saldos, apretar para ver el resumen ya vinculado»): cada saldo al cierre con su extracto */}
+            {bancarios?.saldos && bancarios.saldos.length > 0 && (() => {
+              const fc = libro.ejercicio.fechaCierre
+              const filas = bancarios.saldos.map(s => {
+                const usd = s.moneda === "USD"
+                const cuenta = s.cuenta ?? s.nombre
+                return { cuenta, usd, importe: usd ? s.usd : s.saldo,
+                  r: respaldoDeSaldo(cuenta, fc, s.nroResumen, usd ? s.usd == null : s.saldo == null, bancarios.documentosRespaldo) }
+              })
+              const conLink = filas.filter(f => f.r.estado === "con_link").length
+              return (
+                <details className="text-xs border rounded p-2">
+                  <summary className="cursor-pointer text-sm">
+                    📎 Saldos al cierre y su extracto: {conLink} de {filas.length} con el documento vinculado
+                  </summary>
+                  <table className="mt-1 w-full">
+                    <tbody>
+                      {filas.map(f => (
+                        <tr key={f.cuenta}>
+                          <td className="pr-2 whitespace-nowrap">{f.cuenta}</td>
+                          <td className="pr-2 text-right whitespace-nowrap">{f.importe == null ? "—" : `${f.usd ? "US$ " : "$ "}${fmt(f.importe)}`}</td>
+                          <td>
+                            {f.r.url
+                              ? <a href={f.r.url} target="_blank" rel="noreferrer" className="text-blue-700 underline">📎 {f.r.documento}</a>
+                              : <span className={f.r.estado === "falta" ? "text-red-700" : "text-amber-800"}>{f.r.estado === "falta" ? "🔴" : "🟡"} {f.r.documento}{f.r.nota ? ` — ${f.r.nota}` : ""}</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </details>
               )
             })()}
 

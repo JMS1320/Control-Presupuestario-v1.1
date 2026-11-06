@@ -35,7 +35,10 @@ const SIN_ARCHIVAR = "no está archivado en la app todavía"
  * 🏦 El saldo al cierre de una cuenta: el extracto (o el resumen) donde figura. Si el último movimiento dice de qué resumen
  * salió (`nro_resumen`), ése; si no, el extracto del mes del cierre. Una caja no tiene extracto: su respaldo es el arqueo.
  */
-export function respaldoDeSaldo(cuenta: string, fechaCierre: string, nroResumen?: string | null, sinMovimientos = false): Respaldo {
+export function respaldoDeSaldo(cuenta: string, fechaCierre: string, nroResumen?: string | null, sinMovimientos = false, docs?: DocumentoRespaldo[]): Respaldo {
+  // ✅ JMS 06/11: «cuando vea saldos, apretar para ver el resumen (previamente ya vinculado)» — si está vinculado, el link manda
+  const d = documentoDe(docs, cuenta, fechaCierre)
+  if (d && !sinMovimientos) return conLink(d, `Extracto de ${mesDe(fechaCierre)}`)
   if (sinMovimientos) return { documento: `${cuenta}: no hay movimientos cargados`, estado: "falta", nota: "falta el dato y su documento" }
   const caja = /caja/i.test(cuenta) && !/caja de ahorro/i.test(cuenta)
   if (nroResumen) return { documento: `Resumen «${nroResumen}» (último movimiento del ejercicio)`, estado: "sin_archivar", nota: SIN_ARCHIVAR }
@@ -44,7 +47,9 @@ export function respaldoDeSaldo(cuenta: string, fechaCierre: string, nroResumen?
 }
 
 /** 💹 El FCI: el resumen del fondo del mes (sale del texto de la fuente que dejó la carga: «… (Inv_26-06.pdf) …»). */
-export function respaldoDeFci(nota: string | null | undefined, punta: "inicio" | "cierre", fecha: string): Respaldo {
+export function respaldoDeFci(nota: string | null | undefined, punta: "inicio" | "cierre", fecha: string, docs?: DocumentoRespaldo[]): Respaldo {
+  const d = fecha ? (docs ?? []).find(x => x.tipo === "resumen_fci" && x.periodo === fecha.slice(0, 7) && x.url) : undefined
+  if (d) return conLink(d, `Resumen del fondo (${punta}),`)
   const archivo = /\(([^)]+\.pdf)\)/i.exec(nota ?? "")?.[1]
   if (archivo) return { documento: `Resumen del fondo «${archivo}» (${punta})`, estado: "sin_archivar", nota: SIN_ARCHIVAR }
   if (punta === "inicio") return { documento: `Balance anterior (apertura del contador al ${dmy(fecha)}) y resumen del fondo del primer mes`, estado: "sin_archivar", nota: SIN_ARCHIVAR }
@@ -65,6 +70,17 @@ export function respaldoDeComprobante(a: Pick<AsientoLibroDiario, "fuente" | "ti
   if (a.fuente === "venta") return { documento: `Factura emitida ${comp} a ${a.denominacion}`, estado: "sin_archivar", nota: "está en ARCA (Mis Comprobantes emitidos); la app no la guarda todavía" }
   return { documento: `Factura ${comp} de ${a.denominacion} (sistema anterior)`, estado: "sin_archivar", nota: "viene del sistema anterior: el PDF no está en la app" }
 }
+
+/** 📎 Un documento ya vinculado en la app (`public.documentos_respaldo`, script 211). */
+export interface DocumentoRespaldo { cuenta: string; periodo: string; tipo: string; url: string | null; nombre_archivo: string | null; ruta_drive: string | null }
+
+/** El documento vinculado de una cuenta para el mes de una fecha (`AAAA-MM-DD` → `AAAA-MM`), si hay. */
+export function documentoDe(docs: DocumentoRespaldo[] | undefined, cuenta: string, fecha: string): DocumentoRespaldo | null {
+  const mes = fecha.slice(0, 7)
+  return (docs ?? []).find(d => d.cuenta === cuenta && d.periodo === mes && d.url) ?? null
+}
+const conLink = (d: DocumentoRespaldo, que: string): Respaldo =>
+  ({ documento: `${que} «${d.nombre_archivo ?? "archivo"}»`, estado: "con_link", url: d.url, nota: d.ruta_drive ?? undefined })
 
 const COLOR: Record<EstadoRespaldo, string> = { con_link: "0563C1", sin_archivar: "9C6500", falta: "C00000" }
 const ICONO: Record<EstadoRespaldo, string> = { con_link: "✅", sin_archivar: "🟡", falta: "🔴" }
@@ -116,17 +132,19 @@ export function renglonesDeRespaldo(d: {
   provision?: AsientoLibroDiario[]
   provisionAnterior?: AsientoLibroDiario[]
   provisionCobros?: AsientoLibroDiario[]
+  /** 📎 Los documentos ya vinculados (script 211/212). */
+  documentos?: DocumentoRespaldo[]
 }): RenglonRespaldado[] {
   const out: RenglonRespaldado[] = []
   for (const s of d.saldos ?? []) {
     const usd = s.moneda === "USD"
     out.push({ papel: "07 Bancos", renglon: `${s.cuenta ?? s.nombre} — saldo al cierre${usd ? " (U$S)" : ""}`, importe: usd ? (s.usd ?? null) : s.saldo,
-      respaldo: respaldoDeSaldo(s.cuenta ?? s.nombre, d.fechaCierre, s.nroResumen, usd ? s.usd == null : s.saldo == null) })
+      respaldo: respaldoDeSaldo(s.cuenta ?? s.nombre, d.fechaCierre, s.nroResumen, usd ? s.usd == null : s.saldo == null, d.documentos) })
   }
   if (d.fci) {
     const m = (a?: number | null, b?: number | null) => (a == null || b == null ? null : Math.round(a * b * 100) / 100)
-    out.push({ papel: "07 Bancos", renglon: "Fondo común — tenencia al inicio", importe: m(d.fci.cuotasInicio, d.fci.valorInicio), respaldo: respaldoDeFci(d.fci.notaInicio, "inicio", d.fechaInicio ?? "") })
-    out.push({ papel: "07 Bancos", renglon: "Fondo común — tenencia al cierre", importe: m(d.fci.cuotasCierre, d.fci.valorCierre), respaldo: respaldoDeFci(d.fci.notaCierre, "cierre", d.fechaCierre) })
+    out.push({ papel: "07 Bancos", renglon: "Fondo común — tenencia al inicio", importe: m(d.fci.cuotasInicio, d.fci.valorInicio), respaldo: respaldoDeFci(d.fci.notaInicio, "inicio", d.fechaInicio ?? "", d.documentos) })
+    out.push({ papel: "07 Bancos", renglon: "Fondo común — tenencia al cierre", importe: m(d.fci.cuotasCierre, d.fci.valorCierre), respaldo: respaldoDeFci(d.fci.notaCierre, "cierre", d.fechaCierre, d.documentos) })
   }
   const comp = (papel: string, l?: AsientoLibroDiario[]) => { for (const a of l ?? []) out.push({ papel, renglon: `${a.denominacion} ${a.punto_venta ?? ""}-${a.numero ?? ""}`, importe: a.total, respaldo: respaldoDeComprobante(a) }) }
   comp("05 Provisión", d.provision)

@@ -24,7 +24,7 @@ import { hojaOperacionesEnDolares } from "./operaciones-en-dolares"
 import XLSX from "xlsx-js-style"
 import type { SaldoParaBalance } from "@/lib/dolares/posicion-cierre"
 import type { TenenciaFci } from "./balance-en-linea-lectura"
-import { celdaRespaldo, respaldoDeSaldo, respaldoDeFci, respaldoDeComprobante, hojaDeRespaldos, renglonesDeRespaldo } from "./respaldos"
+import { celdaRespaldo, respaldoDeSaldo, respaldoDeFci, respaldoDeComprobante, hojaDeRespaldos, renglonesDeRespaldo, type DocumentoRespaldo } from "./respaldos"
 import { lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
 import { ETIQUETA_CONCEPTO, type ImpuestoCheque } from "./impuesto-cheque"
 import { controlarCheque, chequeEnPapel08, chequeEnTemplates, type ControlCheque } from "./control-cheque"
@@ -1993,6 +1993,8 @@ export function hojaDeBancos(
   cadenas: CadenaDeSaldos[] = [],
   /** 💹 JMS 06/11: la tenencia del FCI (cuotapartes y valor, inicio y cierre) de los resúmenes PDF, ya cargada en la app. */
   tenencia: TenenciaFci | null = null,
+  /** 📎 Los extractos y resúmenes vinculados (A-FEAT-1571): el saldo abre su documento. */
+  documentos: DocumentoRespaldo[] = [],
 ): unknown[][] {
   const f: unknown[][] = []
   // 🔢 JMS 06/11: «dos decimales y entre paréntesis el negativo» (la columna B lleva 4 decimales por las cuotapartes de abajo).
@@ -2014,7 +2016,7 @@ export function hojaDeBancos(
        */
       plata(c?.saldoInicio ?? null),
       // 📎 A-FEAT-1571 (JMS 06/11: «los saldos son los extractos donde figuran»)
-      celdaRespaldo(respaldoDeSaldo(s.nombre, fechaCierre, s.nroResumen, s.saldo == null)),
+      celdaRespaldo(respaldoDeSaldo(s.nombre, fechaCierre, s.nroResumen, s.saldo == null, documentos)),
     ])
   }
   const hasta = f.length
@@ -2036,7 +2038,7 @@ export function hojaDeBancos(
       f.push([s.cuenta ?? s.nombre, s.usd == null ? "sin movimientos cargados" : plata(s.usd), s.usd == null ? "" : (s.fecha ?? ""), plata(s.usdInicio ?? null),
         s.tc == null ? "" : { t: "n", v: s.tc, z: "#,##0.00" },
         s.usd == null || s.tc == null ? "" : { t: "n", f: `B${r}*E${r}`, v: Math.round(s.usd * s.tc * 100) / 100, z: PLATA },
-        celdaRespaldo(respaldoDeSaldo(s.cuenta ?? s.nombre, fechaCierre, s.nroResumen, s.usd == null))])
+        celdaRespaldo(respaldoDeSaldo(s.cuenta ?? s.nombre, fechaCierre, s.nroResumen, s.usd == null, documentos))])
     }
     const d1 = f.length
     const conUsd = enDolares.filter(s => s.usd != null)
@@ -2082,7 +2084,7 @@ export function hojaDeBancos(
     "Cuotapartes al inicio", "Precio al inicio", "Saldo al inicio",
     "Suscripciones", "Rescates",
     "Cuotapartes al cierre", "Precio al cierre", "Saldo al cierre",
-    "Resultado financiero", "Movimientos", "Respaldo (inicio · cierre)"])
+    "Resultado financiero", "Movimientos", "Respaldo (resumen del cierre)"])
 
   const filaPrimerFondo = f.length + 1
   // 💹 JMS 06/11: «¿podés tomar los saldos de FCI y la cantidad de cuotapartes con su valor de los PDF?» — ya estaban cargados
@@ -2104,7 +2106,7 @@ export function hojaDeBancos(
        */
       { t: "n", f: `IF(OR(D${n}="",I${n}=""),"faltan cuotapartes y precio",I${n}-(D${n}+E${n}-F${n}))`, z: MONEDA },
       x.movimientos,
-      t ? `${respaldoDeFci(t.notaInicio, "inicio", "").documento} · ${respaldoDeFci(t.notaCierre, "cierre", fechaCierre).documento}` : "",
+      t ? celdaRespaldo(respaldoDeFci(t.notaCierre, "cierre", fechaCierre, documentos)) : "",
     ])
   })
   const ultimoFondo = f.length
@@ -2955,6 +2957,8 @@ export function armarWorkbook(
     fci?: { fondos: FondoComun[]; total: FondoComun }
     /** 💹 La tenencia del FCI cargada en la app (cuotapartes y valor, inicio y cierre) — JMS 06/11. */
     fciTenencia?: TenenciaFci | null
+    /** 📎 Los extractos y resúmenes vinculados a cada cuenta y mes (A-FEAT-1571, scripts 211/212). */
+    documentosRespaldo?: DocumentoRespaldo[]
     /** 🧾 El impuesto al cheque, total y desglosado (A-FEAT-1190). */
     impuestoCheque?: ImpuestoCheque
   },
@@ -3179,7 +3183,7 @@ export function armarWorkbook(
     if (bancarios.fci) {
       hoja(wb, "07 Bancos",
         hojaDeBancos(bancarios.saldos, bancarios.fci, libro.ejercicio.fechaCierre,
-          bancarios.cadenas ?? [], bancarios.fciTenencia ?? null), COLS_BANCOS)
+          bancarios.cadenas ?? [], bancarios.fciTenencia ?? null, bancarios.documentosRespaldo ?? []), COLS_BANCOS)
       // 🧮 El control del papel 07, en su propia solapa: ver `hojaDeCadenaDeSaldos`.
       if ((bancarios.cadenas ?? []).length > 0) {
         hoja(wb, "07.1 Cadena de saldos",
@@ -3192,6 +3196,7 @@ export function armarWorkbook(
       saldos: bancarios.saldos, fci: bancarios.fciTenencia ?? null,
       provision: libro.provisiones.filter(a => a.fuente !== "venta"), provisionAnterior: libro.provisionesEjercicioAnterior,
       provisionCobros: libro.provisiones.filter(a => a.fuente === "venta"),
+      documentos: bancarios.documentosRespaldo ?? [],
     })), [{ ancho: 30 }, { ancho: 55 }, { ancho: 18 }, { ancho: 16 }, { ancho: 70 }, { ancho: 70 }])
     // 💵 A-FEAT-1530: cada movimiento en dólares con su TC y sus pesos, y las compraventas con el TC que resulta
     if ((bancarios.cuentasEnDolares ?? []).some(c => c.movs.length)) {

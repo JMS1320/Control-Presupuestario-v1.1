@@ -4052,7 +4052,9 @@ ponderados (kg por cabeza y dólares por kilo). En el 02.1, el renglón **«Dato
 que es sólo para nosotros (abajo): los tres valores del inicio, categoría por categoría y la variación de precios. → A-TEST-1332
 📎 **Respaldos (06/11)**: el libro D trae la solapa **«00 Respaldos»** — el documento que prueba cada número del 07 y de las
 provisiones: 🔴 lo que falta conseguir, 🟡 lo que existe pero la app todavía no guarda (extractos, resúmenes, ventas), ✅ lo que ya
-tiene link (el PDF de la factura). El 07, la 05 y la 03.1 llevan además su columna «Respaldo». → A-TEST-1340
+tiene link (el PDF de la factura). El 07, la 05 y la 03.1 llevan además su columna «Respaldo». Los extractos viven en la carpeta
+segura del Drive (`BANCOS y entidades financieras / <banco> / extractos 25-26`) y cada saldo abre el de su mes: en la pantalla, el
+recuadro **«📎 Saldos al cierre y su extracto»**; en el Excel, el link de la columna «Respaldo». → A-TEST-1340
 Los **retiros** ya no están en el libro H: van al libro I. Los **sueldos a pagar** al cierre están al pie de «13 Sueldos».
 
 ⚠️ **Cambió 04/11 (noche) — el set trae un libro I, «Socios y Libertad (próximo)»**: las cuentas con los socios (14.1) y «Gastos
