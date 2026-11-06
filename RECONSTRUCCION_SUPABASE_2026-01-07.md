@@ -3344,6 +3344,12 @@ Columna `boolean not null default false` (con su comment) y trigger **BEFORE INS
 ### 2026-11-04 · Saldo de arranque de JMS y AMS en el papel 14 (script 201, DATOS) — ✅ CORRIDO con OK de JMS
 `balance_datos_usuario` (papel `cc.saldo-inicio`, MSA 2026): JMS −15.000.000 y AMS −10.500.000 (el anticipo a proveedores del contador al 30/06/25); el valor anterior (0, script 173) queda en `historial`. Deshacer: `npx tsx scripts/201-saldo-arranque-jms-ams.mts --deshacer`.
 
+### 2026-11-06 · Los 24 resúmenes de las VISA de MSA 25/26 vinculados (script 214, DATOS) — A-FEAT-1571 — ✅ CORRIDO con OK de JMS («sí, copiala y vinculá»)
+`public.documentos_respaldo`: «Tarjeta VISA Business MSA» 12 y «Tarjeta VISA Rural MSA» 12 (tipo resumen_tarjeta, jul-25 → jun-26), copias del espejo de Ulises en «extractos 25-26 / Resumenes VISA» y «/ VISA AGRO». Marca `[script 214]`. Deshacer: `scripts/214-vincular-visa-msa-deshacer.sql`.
+
+### 2026-11-06 · Cosecha y existencia al cierre de granos de MSA 25/26 (script 213, DATOS) — A-FEAT-1574 — ✅ CORRIDO con OK de JMS
+`balance_datos_usuario` (MSA 2026, papel `granos`): `cosecha` 15,12 t (certificación electrónica AFA 28/04/2026, C.O.E. 332022543744) y `cierre` 0 («el saldo a 30/6 es cero»). Marca `[script 213]`. Deshacer: `scripts/213-granos-cosecha-cierre-msa-deshacer.sql` (sólo si nadie las editó).
+
 ### 2026-11-06 · Los 49 extractos de MSA 25/26 vinculados (script 212, DATOS) — A-FEAT-1571 — ✅ CORRIDO con OK de JMS («ok, corré el 212»)
 `public.documentos_respaldo`: Galicia cta cte pesos 12 (copias del espejo de Ulises) · MSA Cuenta Corriente USD 12 · FCI FIMA Premium A 12 · Banco Provincia 12 · Banco Santander 1 (julio), jul-25 → jun-26, todos en la carpeta segura «BANCOS y entidades financieras». Marca `[script 212]` en `creado_por`. Deshacer: `scripts/212-vincular-extractos-msa-deshacer.sql` (sólo las filas con la marca).
 
