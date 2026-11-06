@@ -15,6 +15,7 @@ import { useFinancialData } from "./hooks/useFinancialData"
 import { useDistribucionSociosData } from "./hooks/useDistribucionSociosData"
 import { TablaDistribucionSocios } from "./components/tabla-distribucion-socios"
 import { VistaEgresos } from "./components/vista-egresos"
+import { VistaMails } from "./components/vista-mails"
 import { PapelesDeBalance } from "./components/papeles-de-balance"
 import { BalancePropio } from "./components/balance-propio"
 import { VistaIngresos } from "./components/vista-ingresos"
@@ -49,7 +50,7 @@ import { Toaster } from "@/components/ui/sonner"
 import { EVENTO_IR } from "@/lib/recorrido/recorrido"
 import { BarraRecorrido } from "@/components/barra-recorrido"
 import { MarcaFlotante } from "@/components/boton-revision"
-import { Menu, Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon } from "lucide-react"
+import { Menu, Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon, Mail } from "lucide-react"
 
 interface ControlPresupuestarioProps {
   userRole?: UserRole
@@ -277,6 +278,14 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
                 {badgePendientes("importar")}
               </TabsTrigger>
             )}
+            {/* 📬 A-FEAT-1548: Mails es sección propia (antes, una solapa de Egresos sólo para admin) */}
+            {shouldShowTab('mails') && (
+              <TabsTrigger value="mails" className="flex items-center gap-2">
+                <Mail className="h-4 w-4" />
+                Mails
+                {badgePendientes("mails")}
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* VISTA PRINCIPAL — configurable por el usuario (A-FEAT-88) */}
@@ -477,6 +486,11 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
             {showProveedores && <div className="entrada-suave"><PanelControlProveedores /></div>}
 
             <TabPresupuesto recargarToken={tokenPresupuesto} />
+          </TabsContentVivo>
+
+          {/* 📬 MAILS — sección propia (A-FEAT-1548). Quién la ve lo decide el rol (`public.roles.secciones`); hoy, sólo admin. */}
+          <TabsContentVivo value="mails" className="space-y-6">
+            <VistaMails />
           </TabsContentVivo>
 
           {/* IMPORTAR */}

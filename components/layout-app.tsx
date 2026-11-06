@@ -28,7 +28,7 @@ import { tieneSeccion } from "@/lib/auth/modo-permisos"
 import { PREFERENCIAS_DEFAULT, type Preferencias } from "@/lib/auth/preferencias"
 import {
   Menu, Home, BarChart3, Users, FileText, Receipt, ArrowUpRight,
-  TrendingUp, Banknote, Tractor, Landmark, PieChart, Upload,
+  TrendingUp, Banknote, Tractor, Landmark, PieChart, Upload, Mail,
 } from "lucide-react"
 
 /**
@@ -50,6 +50,8 @@ export const SOLAPAS = [
   { id: "sueldos",      label: "Sueldos",             Icono: Landmark },
   { id: "presupuesto",  label: "Presupuesto",         Icono: PieChart },
   { id: "importar",     label: "Importar Excel",      Icono: Upload },
+  // 📬 A-FEAT-1548 (06/11): al final, para no correr las teclas de Alt+M
+  { id: "mails",        label: "Mails",               Icono: Mail },
 ] as const
 
 export type IdSeccion = (typeof SOLAPAS)[number]["id"]

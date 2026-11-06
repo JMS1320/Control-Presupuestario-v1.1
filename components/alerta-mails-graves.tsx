@@ -122,7 +122,7 @@ export function AlertaMailsGraves() {
             </div>
             <div className="flex items-center gap-3 text-xs">
               {grupos.length > MOSTRAR && <button className="text-blue-700 hover:underline" onClick={() => setTodos(!todos)}>{todos ? "Ver menos" : `Ver los ${grupos.length}`}</button>}
-              <a href="/?seccion=egresos&tab=mails" className="text-blue-700 hover:underline">Abrir Egresos → Mails</a>
+              <a href="/?seccion=mails" className="text-blue-700 hover:underline">Abrir Mails</a>
             </div>
             <TestsDelProceso proceso="principal/mails-graves" pantalla="principal" />
           </div>

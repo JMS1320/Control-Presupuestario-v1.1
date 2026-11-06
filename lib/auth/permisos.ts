@@ -1,10 +1,14 @@
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { nivelesEfectivos } from "@/lib/auth/rol-cerrado"
 
-/** Los ids de las 12 secciones, en el orden en que se muestran. Fuente: el menú lateral. */
+/**
+ * Los ids de las 13 secciones, en el orden en que se muestran. Fuente: el menú lateral.
+ * 📬 «mails» se sumó el 06/11 (A-FEAT-1548, JMS: «sí, Mails como sección propia del menú»); va AL FINAL a propósito: los
+ * atajos Alt+M + tecla salen de la posición, y así ninguna de las teclas que JMS ya usa cambia.
+ */
 export const SECCIONES_IDS = [
   "principal", "dashboard", "distribucion", "reporte", "egresos", "ingresos",
-  "cashflow", "extracto", "productivo", "sueldos", "presupuesto", "importar",
+  "cashflow", "extracto", "productivo", "sueldos", "presupuesto", "importar", "mails",
 ] as const
 
 /** Los niveles que existen. `"lectura"` está declarado pero todavía NO lo aplica nadie (etapa 3). */

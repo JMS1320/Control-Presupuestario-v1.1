@@ -50,7 +50,7 @@ export type Recurso = {
   archivo: string
 }
 
-/** Las 12 secciones, en el orden del menú. Debe coincidir con `SECCIONES_IDS` de `permisos.ts`. */
+/** Las 13 secciones, en el orden del menú. Debe coincidir con `SECCIONES_IDS` de `permisos.ts`. */
 export const SECCIONES: { id: string; etiqueta: string }[] = [
   { id: "principal",    etiqueta: "Principal" },
   { id: "dashboard",    etiqueta: "Dashboard" },
@@ -64,6 +64,7 @@ export const SECCIONES: { id: string; etiqueta: string }[] = [
   { id: "sueldos",      etiqueta: "Sueldos" },
   { id: "presupuesto",  etiqueta: "Presupuesto" },
   { id: "importar",     etiqueta: "Importar Excel" },
+  { id: "mails",        etiqueta: "Mails" },
 ]
 
 const EGRESOS = "components/vista-egresos.tsx"
@@ -296,6 +297,7 @@ export const SIN_RECURSOS: Record<string, string> = {
   sueldos:      "Hoy es una sola vista sin pestañas.",
   presupuesto:  "Una sola grilla. El botón de Proveedores abre un panel, no una sección aparte.",
   importar:     "Un solo importador.",
+  mails:        "Una sola pantalla (el registro de mails): quien tiene la sección la ve entera. Tiene mails de la familia y de la sucesión, por eso hoy sólo la tiene admin (A-FEAT-1548).",
 }
 
 /** Los recursos de una sección, en el orden declarado. */
