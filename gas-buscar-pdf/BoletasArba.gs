@@ -59,6 +59,9 @@ function nombreCarpeta_(responsable, empresaDelMail) {
   var duenio = String(responsable || '').trim()
   if (!duenio) return '_Sin asignar'
   var vino = String(empresaDelMail || '').trim()
+  // 0.22.1: un dueño que no es una de las 3 empresas (ERM: Quinta Rosello y El Relincho, que paga PAM) va a SU carpeta, sin
+  // «viene»: siempre llega en el mail de otro, y JMS lo archiva así (JMS 05/11: «a ERM deben venir…»).
+  if (!/^(MSA|PAM|MA)$/.test(duenio)) return duenio
   return (vino && vino !== duenio) ? duenio + ' - viene ' + vino : duenio
 }
 
@@ -640,7 +643,7 @@ function bajarBoletasArba(soloContar, opciones) {
 
 /** Las subcarpetas por responsable que arma el robot: «MSA», «PAM», «MA», «_Sin asignar», «MSA - viene PAM». */
 function esSubcarpetaArba_(nombre) {
-  return /^(MSA|PAM|MA|_Sin asignar)( - viene (MSA|PAM|MA))?$/.test(String(nombre || ''))
+  return /^(MSA|PAM|MA|ERM|_Sin asignar)( - viene (MSA|PAM|MA))?$/.test(String(nombre || ''))
 }
 
 /** Un nombre libre en la carpeta: el pedido, o con « (2)», « (3)»… si lo tiene OTRO archivo. `ocupado(n)` dice si n está tomado. */

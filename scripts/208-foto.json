@@ -1,0 +1,82 @@
+{
+ "copias": [
+  {
+   "id": "73a50106-f6ed-42ea-bdc2-7a29536413fc",
+   "partida": "complementario:2026 - Complementario - Cuota 4 - Aviso de debito.pdf",
+   "anio": 2026,
+   "cuota": "4",
+   "impuesto": "complementario",
+   "importe": 1002419.8,
+   "vencimiento": "2026-11-12",
+   "valuacion_fiscal": null,
+   "base_imponible": null,
+   "codigo_pago_electronico": null,
+   "importe_anual": null,
+   "archivo_file_id": "1Oeljb8n34amETLjaiXlUcqcmrsL3I0tu",
+   "archivo_url": "https://drive.google.com/file/d/1Oeljb8n34amETLjaiXlUcqcmrsL3I0tu/view?usp=drivesdk",
+   "archivo_nombre": "2026 - Complementario - Cuota 4 - Aviso de debito.pdf",
+   "egreso_id": null,
+   "cuota_id": null,
+   "aplicada": false,
+   "aplicada_at": null,
+   "origen": "pdf",
+   "observaciones": "propuesta (A-FEAT-1565)",
+   "created_at": "2026-11-06T00:31:22.527839+00:00",
+   "correcciones": [],
+   "importe_mail": 1002419.8,
+   "objeto_mail": "30-61778601-6"
+  },
+  {
+   "id": "cb81d5b1-202c-4181-8f6f-bf59fc80c487",
+   "partida": "complementario:2026 - Complementario - Cuota 4.pdf",
+   "anio": 2026,
+   "cuota": "4",
+   "impuesto": "complementario",
+   "importe": 1105502.5,
+   "vencimiento": "2026-11-12",
+   "valuacion_fiscal": null,
+   "base_imponible": null,
+   "codigo_pago_electronico": "0042004439022202269",
+   "importe_anual": null,
+   "archivo_file_id": "1-7TicKUBFjPtx_gKDGs2eEB3OJdTZvCB",
+   "archivo_url": "https://drive.google.com/file/d/1-7TicKUBFjPtx_gKDGs2eEB3OJdTZvCB/view?usp=drivesdk",
+   "archivo_nombre": "2026 - Complementario - Cuota 4.pdf",
+   "egreso_id": null,
+   "cuota_id": null,
+   "aplicada": false,
+   "aplicada_at": null,
+   "origen": "pdf",
+   "observaciones": "propuesta (A-FEAT-1565)",
+   "created_at": "2026-11-06T00:31:22.527839+00:00",
+   "correcciones": [],
+   "importe_mail": 1105502.5,
+   "objeto_mail": "20-04439022-2"
+  }
+ ],
+ "templates": [
+  {
+   "id": "78ca066a-ff4b-42c4-a9be-658dcc0f6ea2",
+   "nombre_referencia": "Inmobiliario Cuota Quinta Rosello 2",
+   "responsable": "PAM",
+   "responsable_interno": null,
+   "grupo_impuesto_id": "Inmobiliario Quinta Rosello 2",
+   "partida_arba": "099-001846-4"
+  },
+  {
+   "id": "52f46aed-e672-41d8-89fd-76083f288a1c",
+   "nombre_referencia": "Inmobiliario Cuota Relincho",
+   "responsable": "PAM",
+   "responsable_interno": null,
+   "grupo_impuesto_id": "Inmobiliario Relincho",
+   "partida_arba": "099-025089-8"
+  },
+  {
+   "id": "d092e6f8-1977-4515-b802-1a46d07bddf3",
+   "nombre_referencia": "Inmobiliario Cuota Quinta Rosello 1",
+   "responsable": "PAM",
+   "responsable_interno": null,
+   "grupo_impuesto_id": "Inmobiliario Quinta Rosello 1",
+   "partida_arba": "099-001854-5"
+  }
+ ]
+}

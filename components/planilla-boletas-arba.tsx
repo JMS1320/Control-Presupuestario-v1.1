@@ -11,6 +11,7 @@
  */
 import { useEffect, useMemo, useState } from "react"
 import { supabase } from "@/lib/supabase"
+import { leerPreferencias } from "@/lib/auth/preferencias"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -47,6 +48,9 @@ export function PlanillaBoletasArba({ open, onOpenChange, boletas, urlDe, onAsig
   aplicando: boolean
 }) {
   const [templates, setTemplates] = useState<TemplateParaPlanilla[]>([])
+  // 📋 El orden de la planilla de Inmobiliario de JMS (sus preferencias) — JMS 05/11: «en el orden de mi planilla base»
+  const [orden, setOrden] = useState<string[]>([])
+  useEffect(() => { void supabase.auth.getUser().then(({ data }) => setOrden(leerPreferencias(data.user).ordenPartidas ?? [])) }, [])
   const [cuotas, setCuotas] = useState<CuotaParaPlanilla[]>([])
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -84,7 +88,7 @@ export function PlanillaBoletasArba({ open, onOpenChange, boletas, urlDe, onAsig
     idx, egresoId: b.egresoId, cuotaId: b.cuotaId, cuotaNro: b.cuotaNro, importe: b.importe, vencimiento: b.vencimiento,
     url: urlDe(b.archivo), aplicada: b.aplicada, problema: b.problema,
   })), [boletas, urlDe])
-  const bloques = useMemo(() => armarPlanillaBoletas(templates, cuotas, paraPlanilla), [templates, cuotas, paraPlanilla])
+  const bloques = useMemo(() => armarPlanillaBoletas(templates, cuotas, paraPlanilla, orden), [templates, cuotas, paraPlanilla, orden])
   const sinAsignar = boletas.map((b, idx) => ({ b, idx })).filter(x => !x.b.egresoId)
   const maxAnteriores = Math.max(0, ...bloques.flatMap(b => b.filas.map(f => f.anteriores.length)))
 

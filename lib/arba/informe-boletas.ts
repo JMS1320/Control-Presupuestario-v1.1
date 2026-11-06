@@ -27,6 +27,8 @@
  */
 
 /** El objeto imponible del mail es una PARTIDA (`099-015881-9`) y no un CUIT (`20-04439022-2`). */
+import { ordenarPorPlanilla } from "@/lib/arba/planilla-boletas"
+
 export const esPartida = (s: string | null | undefined) => !!s && /^\d{3}-\d{6}-\d$/.test(s)
 
 export interface TablaMail {
@@ -52,6 +54,8 @@ export interface TemplateArba {
   /** `MSA` · `PAM` · `MA` — de `egresos_sin_factura.responsable`. */
   responsable: string
   complementario?: boolean
+  /** La carpeta del Drive cuando el dueño real no es quien paga (`responsable_interno`, ej. ERM). */
+  carpeta?: string | null
 }
 
 /** Las tres empresas, por el CUIT del contribuyente que trae el cuerpo del mail (`A-DAT-27`). */
@@ -114,6 +118,8 @@ export function armarInforme(
   tablas: TablaMail[],
   templates: TemplateArba[],
   res?: ResGas,
+  /** El orden de la planilla de JMS (`ordenPartidas`); vacío = el de los templates. */
+  orden: readonly string[] = [],
 ): Informe {
   // ── 1 · Qué llegó, y en el mail de quién ────────────────────────────────────────────────────
   const llegadas: Llegada[] = []
@@ -133,7 +139,11 @@ export function armarInforme(
   const bloques: BloqueEmpresa[] = []
 
   for (const empresa of empresas) {
-    const mios = templates.filter(t => t.responsable === empresa)
+    const delaEmpresa = templates.filter(t => t.responsable === empresa)
+    const campoT = (t: TemplateArba) => t.nombre.replace(/^Inmobiliario\s+(Cuota|Anual)\s+/i, "")
+    const mios = orden.length
+      ? [...ordenarPorPlanilla(delaEmpresa.filter(t => !t.complementario), campoT, orden), ...delaEmpresa.filter(t => t.complementario)]
+      : delaEmpresa
     const filas: FilaEmpresa[] = mios.map(t => {
       // El complementario no tiene partida: se lo reconoce por el CUIT de la empresa en el mail.
       const suyas = t.complementario

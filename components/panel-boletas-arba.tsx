@@ -31,6 +31,7 @@ import { Loader2 } from "lucide-react"
 import { PlanillaBoletasArba } from "@/components/planilla-boletas-arba"
 import { DATOS_FISCALES } from "@/lib/empresas"
 import { nombreCorto, pedidoDeOrden } from "@/lib/arba/ordenar-archivo"
+import { leerPreferencias } from "@/lib/auth/preferencias"
 import { claveBoleta, esPartidaArba, partidaDeClave, PREFIJO_COMPLEMENTARIO, PREFIJO_SIN_ASIGNAR, type Decision as DecisionPlanilla } from "@/lib/arba/planilla-boletas"
 import { toast } from "sonner"
 
@@ -107,11 +108,11 @@ const fecha = (iso: string | null | undefined) =>
  */
 async function cargarTemplates(): Promise<TemplateArba[]> {
   const { data } = await supabase.from("egresos_sin_factura")
-    .select("nombre_referencia, partida_arba, responsable, activo")
+    .select("nombre_referencia, partida_arba, responsable, responsable_interno, activo")
     .eq("activo", true)
     .or("partida_arba.not.is.null,nombre_referencia.ilike.%Complementario%")
   return ((data ?? []) as {
-    nombre_referencia: string; partida_arba: string | null; responsable: string | null
+    nombre_referencia: string; partida_arba: string | null; responsable: string | null; responsable_interno: string | null
   }[])
     // 05/11: sólo partidas con formato de ARBA — el «ABL Libertad» guarda ahí su cuenta municipal (1005392-00) y el informe
     // lo daba como «NO LLEGÓ» entre las boletas de ARBA.
@@ -119,6 +120,8 @@ async function cargarTemplates(): Promise<TemplateArba[]> {
     .map(e => ({
       nombre: e.nombre_referencia, partida: e.partida_arba,
       responsable: e.responsable!, complementario: !e.partida_arba,
+      // 🗂️ 05/11: la carpeta del Drive es la del dueño real (ERM para Quinta Rosello y El Relincho, que paga PAM)
+      carpeta: e.responsable_interno || null,
     }))
 }
 
@@ -461,7 +464,7 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
       const templates = await cargarTemplates()
       const partidas: Record<string, { nombre: string; responsable: string }> = {}
       for (const t of templates) {
-        if (t.partida) partidas[t.partida] = { nombre: nombreCorto(t.nombre), responsable: t.responsable }
+        if (t.partida) partidas[t.partida] = { nombre: nombreCorto(t.nombre), responsable: t.carpeta || t.responsable }
       }
 
       /**
@@ -594,7 +597,7 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
       // inmobiliario MSA, Tango 1, Tango 2, Tango 3; tal no encontró; tantos duplicados»*.
       // «4 links que no dieron PDF» no es un informe, es un log. El GAS no conoce los lotes —los
       // templates viven acá—, así que la traducción se hace en la app: partida → nombre del campo.
-      setInforme(armarInforme((j.tablas ?? []) as TablaMail[], templates, j as ResGas))
+      setInforme(armarInforme((j.tablas ?? []) as TablaMail[], templates, j as ResGas, (await supabase.auth.getUser().then(({ data }) => leerPreferencias(data.user).ordenPartidas)) ?? []))
 
       const tablasGas = (j.tablas ?? []) as TablaMail[]
       const filas = tablasGas.reduce((s: number, t: { filas?: unknown[] }) => s + (t.filas?.length ?? 0), 0)
@@ -640,14 +643,15 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
     const info = { ...mailRef.current, ...extra }
     const ids = [...new Set(filasRef.current.map(f => f.egresoId).filter((x): x is string => !!x))]
     if (!ids.length) { if (!silencioso) avisar("info", "No hay boletas con su campo para ordenar"); return }
-    const { data: tps } = await supabase.from("egresos_sin_factura").select("id, nombre_referencia, responsable").in("id", ids)
-    const tpl = new Map(((tps ?? []) as { id: string; nombre_referencia: string; responsable: string | null }[]).map(t => [t.id, t]))
+    const { data: tps } = await supabase.from("egresos_sin_factura").select("id, nombre_referencia, responsable, responsable_interno").in("id", ids)
+    const tpl = new Map(((tps ?? []) as { id: string; nombre_referencia: string; responsable: string | null; responsable_interno: string | null }[]).map(t => [t.id, t]))
     const pedido = pedidoDeOrden(filasRef.current.map(f => {
       const t = f.egresoId ? tpl.get(f.egresoId) : undefined
       const cuit = info[f.archivo]?.contribuyente ?? null
       return {
         archivo: f.archivo, fileId: info[f.archivo]?.file_id ?? null, anio: f.boleta.anio, cuota: f.boleta.cuota,
         complementario: f.boleta.impuesto === "complementario", template: t?.nombre_referencia ?? null, responsable: t?.responsable ?? null,
+        responsableInterno: t?.responsable_interno ?? null, carpetaActual: info[f.archivo]?.carpeta ?? null,
         empresaDelMail: cuit ? (EMPRESA_POR_CUIT[cuit] ?? null) : null,
       }
     }))

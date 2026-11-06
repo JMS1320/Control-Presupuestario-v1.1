@@ -35,18 +35,27 @@ export interface ParaOrdenar {
   /** El nombre del template (null = no se sabe de quién es: no se mueve). */
   template: string | null
   responsable: string | null
+  /** El dueño real cuando no es quien paga (ERM: Quinta Rosello y El Relincho los paga PAM). Manda en la carpeta. */
+  responsableInterno?: string | null
+  /** La carpeta donde está hoy (si se sabe): un archivo con el nombre bien pero en otra carpeta también se mueve. */
+  carpetaActual?: string | null
   empresaDelMail: string | null
 }
 
-/** Lo que hay que pedirle al robot: sólo las que tienen dueño conocido y todavía no siguen la convención. */
+/** Lo que hay que pedirle al robot: sólo las que tienen dueño conocido y no están ya con su nombre en su carpeta. */
 export function pedidoDeOrden(filas: ParaOrdenar[]): { file_id: string; nombre: string; carpeta: string; archivo: string }[] {
   const vistos = new Set<string>()
   const out: { file_id: string; nombre: string; carpeta: string; archivo: string }[] = []
   for (const f of filas) {
-    if (!f.fileId || vistos.has(f.fileId) || f.complementario || sigueConvencion(f.archivo)) continue
+    if (!f.fileId || vistos.has(f.fileId) || f.complementario) continue
     if (!f.template || !f.responsable || !f.anio || !f.cuota || f.cuota === "?") continue
+    const nombre = nombreBoleta(f.anio, f.cuota, nombreCorto(f.template))
+    const carpeta = f.responsableInterno ? f.responsableInterno : carpetaBoleta(f.responsable, f.empresaDelMail)
+    // Ya está bien: mismo nombre (o el «(2)» de una repetida) y la carpeta es la que va, o no se sabe dónde está
+    const mismoNombre = f.archivo === nombre || (sigueConvencion(f.archivo) && f.archivo.replace(/ \(\d+\)\.pdf$/i, ".pdf") === nombre)
+    if (mismoNombre && (!f.carpetaActual || f.carpetaActual === carpeta)) continue
     vistos.add(f.fileId)
-    out.push({ file_id: f.fileId, archivo: f.archivo, nombre: nombreBoleta(f.anio, f.cuota, nombreCorto(f.template)), carpeta: carpetaBoleta(f.responsable, f.empresaDelMail) })
+    out.push({ file_id: f.fileId, archivo: f.archivo, nombre, carpeta })
   }
   return out
 }

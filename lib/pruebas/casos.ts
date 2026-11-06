@@ -91,6 +91,7 @@ import { armarPlanillaBoletas, decisionPropuesta, importeElegido, claveBoleta, p
 import { marcarAnticiposSinVincular } from "@/lib/cashflow/anticipo-sin-vincular"
 import { pedidoDeOrden } from "@/lib/arba/ordenar-archivo"
 import { boletasQueFaltan, tareaBoletasFaltan } from "@/lib/arba/boletas-faltan"
+import { ordenarPorPlanilla } from "@/lib/arba/planilla-boletas"
 import { pideOtraVentana, linkSeccion } from "@/lib/ui/links"
 import { teclaDeItem, itemDeTecla, escribiendoEn } from "@/lib/ui/atajos-menu"
 import { vencimientosDeLaPersona, cuentasParaPagar, motivoPagoInvalido, montoAR, empresaDelPago, PREFIJO_DEVUELTA, documentosDeCuotas, motivoComprobanteInvalido, type CuotaDeLaPersona } from "@/lib/vencimientos/de-la-persona"
@@ -10419,10 +10420,19 @@ export function correrCasos(): Resultado[] {
         { ...b, archivo: "2026 - Complementario - Cuota 4.pdf", fileId: "f5", template: "Inmobiliario Complementario Cuota PAM", responsable: "PAM", complementario: true },
         { ...b, archivo: "ARBA 2026-C4 - LUk1.pdf", fileId: "f1", template: "Inmobiliario Cuota Rojas", responsable: "MSA" },
         { ...b, archivo: "ARBA 2026-C4 - LUk6.pdf", fileId: "f6", template: "Inmobiliario Cuota Relincho", responsable: "PAM", cuota: "?" },
+        { ...b, archivo: "2026 - Inmob - Cuota 4 - Quinta Rosello 2.pdf", fileId: "f7", template: "Inmobiliario Cuota Quinta Rosello 2", responsable: "PAM", responsableInterno: "ERM", carpetaActual: "PAM", empresaDelMail: "PAM" },
+        { ...b, archivo: "2026 - Inmob - Cuota 4 - Relincho.pdf", fileId: "f8", template: "Inmobiliario Cuota El Relincho", responsable: "PAM", responsableInterno: "ERM", carpetaActual: null },
+        { ...b, archivo: "2026 - Inmob - Cuota 4 - Tango Parra 1 (2).pdf", fileId: "f9", template: "Inmobiliario Cuota Tango Parra 1", responsable: "MSA", empresaDelMail: "PAM", carpetaActual: "MSA - viene PAM" },
       ]).map(x => `${x.file_id}>${x.carpeta}/${x.nombre}`).join(" · ")
-      const esp = "f1>MSA/2026 - Inmob - Cuota 4 - Rojas.pdf · f2>MSA - viene PAM/2026 - Inmob - Cuota 4 - Tango Parra 1.pdf"
-      chequear("Boletas ARBA", "Ordenar en el Drive: la de dueño conocido va con el nombre y la carpeta de JMS («viene PAM» si llegó en el mail de otra); la sin dueño, la que ya sigue la convención, el complementario, la repetida y la sin cuota no se tocan",
+      const esp = "f1>MSA/2026 - Inmob - Cuota 4 - Rojas.pdf · f2>MSA - viene PAM/2026 - Inmob - Cuota 4 - Tango Parra 1.pdf · f7>ERM/2026 - Inmob - Cuota 4 - Quinta Rosello 2.pdf · f8>ERM/2026 - Inmob - Cuota 4 - El Relincho.pdf"
+      chequear("Boletas ARBA", "Ordenar en el Drive: la de dueño conocido va con el nombre y la carpeta de JMS («viene PAM» si llegó en el mail de otra; ERM a ERM aunque la pague PAM); también se mueve la que tiene buen nombre pero está en otra carpeta, y se renombra la del campo renombrado; la sin dueño, la que ya está bien (aun con «(2)»), el complementario, la repetida y la sin cuota no se tocan",
         esp, pd, pd === esp, "A-FEAT-1567")
+    }
+    // ── 📋 El orden de la planilla de JMS (05/11: «en el orden de mi planilla base»): su orden primero, lo demás por nombre ──
+    {
+      const op = ordenarPorPlanilla(["Rojas", "Anexo", "Zeta", "Cholo 1", "Alfa", "Porteria Nuevo"], x => x, ["anexo", "lima", "cholo 1", "porteria nuevo", "rojas"]).join(" · ")
+      chequear("Boletas ARBA", "Las partidas en el orden de la planilla de JMS (el que arrastra en la Planilla de Inmobiliario); las que no están en su orden, después y por nombre",
+        "Anexo · Cholo 1 · Porteria Nuevo · Rojas · Alfa · Zeta", op, op === "Anexo · Cholo 1 · Porteria Nuevo · Rojas · Alfa · Zeta", "A-FEAT-1565")
     }
     // ── 🔔 Las boletas de ARBA que faltan → tarea (A-FEAT-1566): no cuentan las que llegaron ni las ya pagadas ──
     {

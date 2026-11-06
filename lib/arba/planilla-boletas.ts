@@ -60,7 +60,22 @@ const pct = (a: number, b: number) => (b ? r2(((a - b) / b) * 100) : null)
 /** «Inmobiliario Cuota Tango Parra 1» → «Tango Parra 1». */
 export const campoDe = (nombre: string) => nombre.replace(/^\s*Inmobiliario\s+(Complementario\s+)?(Cuota|Anual)?\s*/i, "").trim() || nombre
 
-export function armarPlanillaBoletas(templates: TemplateParaPlanilla[], cuotas: CuotaParaPlanilla[], boletas: BoletaParaPlanilla[]): BloquePlanillaBoleta[] {
+/**
+ * 📋 El ORDEN de la planilla de JMS (JMS 05/11: «preciso que en todas estas vistas y cuando se listan las partidas en todos
+ * lados de la app se listen en el orden de mi planilla base»). Es el que JMS arrastra en la Planilla de Inmobiliario y queda
+ * en sus preferencias (`ordenPartidas`: el campo en minúsculas). Lo que no está en su orden va después, por nombre.
+ */
+export function ordenarPorPlanilla<T>(items: readonly T[], campo: (t: T) => string, orden: readonly string[]): T[] {
+  const pos = new Map<string, number>()
+  orden.forEach((k, i) => { if (!pos.has(k)) pos.set(k, i) })
+  const clave = (t: T) => campo(t).trim().toLowerCase()
+  return [...items].sort((a, b) => {
+    const pa = pos.get(clave(a)) ?? Infinity, pb = pos.get(clave(b)) ?? Infinity
+    return pa !== pb ? pa - pb : clave(a).localeCompare(clave(b))
+  })
+}
+
+export function armarPlanillaBoletas(templates: TemplateParaPlanilla[], cuotas: CuotaParaPlanilla[], boletas: BoletaParaPlanilla[], orden: readonly string[] = []): BloquePlanillaBoleta[] {
   const porTemplate = new Map<string, CuotaParaPlanilla[]>()
   for (const c of cuotas) porTemplate.set(c.egresoId, [...(porTemplate.get(c.egresoId) ?? []), c])
   const boletaDe = new Map<string, BoletaParaPlanilla>()
@@ -87,8 +102,11 @@ export function armarPlanillaBoletas(templates: TemplateParaPlanilla[], cuotas: 
       idx: b?.idx ?? null, aplicada: b?.aplicada ?? false, problema: b?.problema ?? null, estadoCuota: actual?.estado ?? null,
     }])
   }
-  return [...porResp.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([responsable, filas]) => {
-    filas.sort((x, y) => Number(/complementario/i.test(x.campo)) - Number(/complementario/i.test(y.campo)) || x.campo.localeCompare(y.campo))
+  return [...porResp.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([responsable, filasResp]) => {
+    let filas = filasResp
+    const esComp = (f: FilaPlanillaBoleta) => /complementario/i.test(f.campo) || /^(MSA|PAM|MA)$/.test(f.campo)
+    const ordenadas = [...ordenarPorPlanilla(filas.filter(f => !esComp(f)), f => f.campo, orden), ...filas.filter(esComp)]
+    filas = ordenadas
     return {
       responsable, filas,
       totalPresup: r2(filas.reduce((s, f) => s + (f.presupuestada ?? 0), 0)),

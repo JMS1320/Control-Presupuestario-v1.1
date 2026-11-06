@@ -334,6 +334,8 @@ for (const x of r) {
 chequear("ordenar: MSA es subcarpeta", "true", String(esSubcarpetaArba_("MSA")))
 chequear("ordenar: «MSA - viene PAM» es subcarpeta", "true", String(esSubcarpetaArba_("MSA - viene PAM")))
 chequear("ordenar: «_Sin asignar» es subcarpeta", "true", String(esSubcarpetaArba_("_Sin asignar")))
+chequear("ordenar: «ERM» es subcarpeta (Quinta Rosello y El Relincho)", "true", String(esSubcarpetaArba_("ERM")))
+chequear("carpeta: ERM va a ERM aunque venga en el mail de PAM", "ERM", nombreCarpeta_("ERM", "PAM"))
 chequear("ordenar: «2026» NO (no se manda a cualquier lado)", "false", String(esSubcarpetaArba_("2026")))
 chequear("ordenar: «../MSA» NO", "false", String(esSubcarpetaArba_("../MSA")))
 chequear("ordenar: nombre libre queda igual", "2026 - Inmob - Cuota 4 - Rojas.pdf", nombreLibre_("2026 - Inmob - Cuota 4 - Rojas.pdf", () => false))
