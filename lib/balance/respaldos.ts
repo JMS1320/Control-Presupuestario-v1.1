@@ -47,6 +47,20 @@ export function respaldoDeSaldo(cuenta: string, fechaCierre: string, nroResumen?
   return { documento: `Extracto de ${cuenta} de ${mesDe(fechaCierre)} (saldo al ${dmy(fechaCierre)})`, estado: "sin_archivar", nota: SIN_ARCHIVAR }
 }
 
+/**
+ * 🏦 El saldo al INICIO de una cuenta: el extracto del PRIMER mes del ejercicio (julio), que arranca con el saldo de apertura —
+ * el mismo criterio que el FCI (JMS 06/11). Va en su propia columna de «00 Respaldos» (JMS 06/11: «en la hoja de respaldos
+ * ahí sí haya 2 columnas y se pueda buscar desde ahí»). Una caja no tiene extracto: su inicio es la planilla de saldos.
+ */
+export function respaldoDeSaldoInicio(cuenta: string, fechaInicio: string, docs?: DocumentoRespaldo[]): Respaldo {
+  const primerMes = mesSiguiente(fechaInicio.slice(0, 7))
+  const d = (docs ?? []).find(x => x.cuenta === cuenta && x.periodo === primerMes && x.url)
+  if (d) return conLink(d, `Extracto de ${mesDe(`${primerMes}-01`)} (arranca con el saldo de inicio)`)
+  const caja = /caja/i.test(cuenta) && !/caja de ahorro/i.test(cuenta)
+  if (caja) return { documento: `Planilla de saldos al ${dmy(fechaInicio)} (balance anterior)`, estado: "sin_archivar", nota: `${SIN_ARCHIVAR}: la caja no tiene extracto` }
+  return { documento: `Extracto de ${cuenta} de ${mesDe(`${primerMes}-01`)} (saldo de inicio)`, estado: "sin_archivar", nota: SIN_ARCHIVAR }
+}
+
 /** 💹 El FCI: el resumen del fondo del mes (sale del texto de la fuente que dejó la carga: «… (Inv_26-06.pdf) …»). */
 export function respaldoDeFci(nota: string | null | undefined, punta: "inicio" | "cierre", fecha: string, docs?: DocumentoRespaldo[]): Respaldo {
   // JMS 06/11: la tenencia al INICIO la respalda el resumen del PRIMER mes del ejercicio (julio), que arranca con el saldo de apertura
@@ -94,7 +108,17 @@ export function celdaRespaldo(r: Respaldo): Record<string, unknown> {
   return { t: "s", v: texto, ...(r.url ? { l: { Target: r.url } } : {}), s: { font: { color: { rgb: COLOR[r.estado] }, ...(r.url ? { underline: true } : {}) } } }
 }
 
-export interface RenglonRespaldado { papel: string; renglon: string; importe: number | null; respaldo: Respaldo }
+export interface RenglonRespaldado {
+  papel: string; renglon: string; importe: number | null; respaldo: Respaldo
+  /** 📎 Los saldos (bancos y FCI) tienen también el documento del INICIO del ejercicio: segunda columna de «00 Respaldos». */
+  respaldoInicio?: Respaldo
+}
+
+/** La celda de un documento en «00 Respaldos»: con link si lo hay; si no, el texto con su ícono. */
+const celdaDocumento = (r: Respaldo | undefined): unknown =>
+  !r ? "" : r.url
+    ? { t: "s", v: r.documento, l: { Target: r.url }, s: { font: { color: { rgb: "0563C1" }, underline: true } } }
+    : { t: "s", v: `${ICONO[r.estado]} ${r.documento}`, s: { font: { color: { rgb: COLOR[r.estado] } } } }
 
 /**
  * 📋 La solapa «00 Respaldos»: un renglón por número enviado, con su documento — primero lo que FALTA (hay que conseguirlo),
@@ -103,19 +127,24 @@ export interface RenglonRespaldado { papel: string; renglon: string; importe: nu
 export function hojaDeRespaldos(renglones: RenglonRespaldado[]): unknown[][] {
   const orden: EstadoRespaldo[] = ["falta", "sin_archivar", "con_link"]
   const cuenta = (e: EstadoRespaldo) => renglones.filter(r => r.respaldo.estado === e).length
+  const conInicio = renglones.filter(r => r.respaldoInicio)
+  const cuentaInicio = (e: EstadoRespaldo) => conInicio.filter(r => r.respaldoInicio?.estado === e).length
   const f: unknown[][] = [
     ["00 — RESPALDOS: el documento que prueba cada número de los papeles (07 Bancos y provisiones)"],
     ["Para mandar con cada papel y para auditar: 🔴 falta conseguirlo · 🟡 se sabe cuál es pero la app no lo guarda todavía · ✅ archivado, con link."],
-    [`🔴 falta: ${cuenta("falta")} · 🟡 sin archivar: ${cuenta("sin_archivar")} · ✅ con link: ${cuenta("con_link")} — de ${renglones.length} renglones`],
+    [`🔴 falta: ${cuenta("falta")} · 🟡 sin archivar: ${cuenta("sin_archivar")} · ✅ con link: ${cuenta("con_link")} — de ${renglones.length} renglones`
+      + (conInicio.length ? ` · INICIO de los saldos: ✅ ${cuentaInicio("con_link")} · 🟡 ${cuentaInicio("sin_archivar")} · 🔴 ${cuentaInicio("falta")}` : "")],
     [],
-    ["Papel", "Renglón", "Importe", "Estado", "Documento que lo respalda", "Qué falta / dónde está"],
+    ["Papel", "Renglón", "Importe (cierre)", "Estado", "Documento del CIERRE", "Documento del INICIO", "Qué falta / dónde está"],
   ]
   for (const e of orden) {
     for (const r of renglones.filter(x => x.respaldo.estado === e)) {
+      const notas = [r.respaldo.nota, r.respaldoInicio && !r.respaldoInicio.url && r.respaldoInicio.nota ? `inicio: ${r.respaldoInicio.nota}` : null].filter(Boolean)
       f.push([r.papel, r.renglon, r.importe == null ? "" : { t: "n", v: r.importe, z: "#,##0.00;(#,##0.00)" },
         { t: "s", v: `${ICONO[e]} ${e === "falta" ? "falta" : e === "sin_archivar" ? "sin archivar" : "con link"}`, s: { font: { bold: true, color: { rgb: COLOR[e] } } } },
         r.respaldo.url ? { t: "s", v: r.respaldo.documento, l: { Target: r.respaldo.url }, s: { font: { color: { rgb: "0563C1" }, underline: true } } } : r.respaldo.documento,
-        r.respaldo.nota ?? ""])
+        celdaDocumento(r.respaldoInicio),
+        notas.join(" · ")])
     }
   }
   f.push([])
@@ -141,13 +170,17 @@ export function renglonesDeRespaldo(d: {
   const out: RenglonRespaldado[] = []
   for (const s of d.saldos ?? []) {
     const usd = s.moneda === "USD"
-    out.push({ papel: "07 Bancos", renglon: `${s.cuenta ?? s.nombre} — saldo al cierre${usd ? " (U$S)" : ""}`, importe: usd ? (s.usd ?? null) : s.saldo,
-      respaldo: respaldoDeSaldo(s.cuenta ?? s.nombre, d.fechaCierre, s.nroResumen, usd ? s.usd == null : s.saldo == null, d.documentos) })
+    const sinMovs = usd ? s.usd == null : s.saldo == null
+    out.push({ papel: "07 Bancos", renglon: `${s.cuenta ?? s.nombre} — saldo${usd ? " (U$S)" : ""}`, importe: usd ? (s.usd ?? null) : s.saldo,
+      respaldo: respaldoDeSaldo(s.cuenta ?? s.nombre, d.fechaCierre, s.nroResumen, sinMovs, d.documentos),
+      ...(d.fechaInicio && !sinMovs ? { respaldoInicio: respaldoDeSaldoInicio(s.cuenta ?? s.nombre, d.fechaInicio, d.documentos) } : {}) })
   }
   if (d.fci) {
+    // JMS 06/11: un renglón con las dos puntas (inicio y cierre), cada una con su resumen en su columna
     const m = (a?: number | null, b?: number | null) => (a == null || b == null ? null : Math.round(a * b * 100) / 100)
-    out.push({ papel: "07 Bancos", renglon: "Fondo común — tenencia al inicio", importe: m(d.fci.cuotasInicio, d.fci.valorInicio), respaldo: respaldoDeFci(d.fci.notaInicio, "inicio", d.fechaInicio ?? "", d.documentos) })
-    out.push({ papel: "07 Bancos", renglon: "Fondo común — tenencia al cierre", importe: m(d.fci.cuotasCierre, d.fci.valorCierre), respaldo: respaldoDeFci(d.fci.notaCierre, "cierre", d.fechaCierre, d.documentos) })
+    out.push({ papel: "07 Bancos", renglon: "Fondo común — tenencia", importe: m(d.fci.cuotasCierre, d.fci.valorCierre),
+      respaldo: respaldoDeFci(d.fci.notaCierre, "cierre", d.fechaCierre, d.documentos),
+      respaldoInicio: respaldoDeFci(d.fci.notaInicio, "inicio", d.fechaInicio ?? "", d.documentos) })
   }
   const comp = (papel: string, l?: AsientoLibroDiario[]) => { for (const a of l ?? []) out.push({ papel, renglon: `${a.denominacion} ${a.punto_venta ?? ""}-${a.numero ?? ""}`, importe: a.total, respaldo: respaldoDeComprobante(a) }) }
   comp("05 Provisión", d.provision)
@@ -201,13 +234,15 @@ const limpio = (t: string) => t.replace(/[\/:*?"<>|]+/g, "-").replace(/\s+/g, " 
 export function itemsDelRespaldo(renglones: RenglonRespaldado[], documentos: Array<DocumentoRespaldo & { drive_file_id?: string | null }> = []): ItemDeRespaldo[] {
   const vistos = new Set<string>()
   const out: ItemDeRespaldo[] = []
-  for (const r of renglones) {
-    if (r.respaldo.estado !== "con_link" || !r.respaldo.url) continue
-    const id = documentos.find(d => d.url === r.respaldo.url)?.drive_file_id ?? idDeArchivoDrive(r.respaldo.url)
+  // los documentos del cierre y, después, los del inicio de los saldos (segunda columna de «00 Respaldos»)
+  const pares = [...renglones.map(r => ({ r, resp: r.respaldo })), ...renglones.filter(r => r.respaldoInicio).map(r => ({ r, resp: r.respaldoInicio as Respaldo }))]
+  for (const { r, resp } of pares) {
+    if (resp.estado !== "con_link" || !resp.url) continue
+    const id = documentos.find(d => d.url === resp.url)?.drive_file_id ?? idDeArchivoDrive(resp.url)
     if (!id || vistos.has(id)) continue
     vistos.add(id)
     const papel = r.papel.split(" ")[0]                                   // «07», «05», «03.1»
-    const archivo = /«([^»]+)»/.exec(r.respaldo.documento)?.[1]
+    const archivo = /«([^»]+)»/.exec(resp.documento)?.[1]
     const base = archivo ? `${papel} - ${r.renglon.replace(/ — .*$/, "")} - ${archivo}` : `${papel} - ${r.renglon}.pdf`
     out.push({ file_id: id, subcarpeta: r.papel, nombre: limpio(/\.pdf$/i.test(base) ? base : `${base}.pdf`) })
   }

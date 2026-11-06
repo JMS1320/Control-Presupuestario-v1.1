@@ -3239,7 +3239,7 @@ export function armarWorkbook(
       provision: libro.provisiones.filter(a => a.fuente !== "venta"), provisionAnterior: libro.provisionesEjercicioAnterior,
       provisionCobros: libro.provisiones.filter(a => a.fuente === "venta"),
       documentos: bancarios.documentosRespaldo ?? [],
-    })), [{ ancho: 30 }, { ancho: 55 }, { ancho: 18 }, { ancho: 16 }, { ancho: 70 }, { ancho: 70 }])
+    })), [{ ancho: 30 }, { ancho: 45 }, { ancho: 18 }, { ancho: 16 }, { ancho: 60 }, { ancho: 60 }, { ancho: 60 }])
     // 💵 A-FEAT-1530: cada movimiento en dólares con su TC y sus pesos, y las compraventas con el TC que resulta
     if ((bancarios.cuentasEnDolares ?? []).some(c => c.movs.length)) {
       hoja(wb, "07.2 Operaciones en dólares",

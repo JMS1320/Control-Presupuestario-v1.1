@@ -4464,20 +4464,23 @@ export function correrCasos(): Resultado[] {
       })
       const est = r.map(x => x.respaldo.estado[0]).join("")
       const h = hojaDeRespaldos(r) as any[][]
-      const v = `${est} · usd ${r[1].respaldo.documento.includes("CA_dolar_26-06")} · fci ${r[4].respaldo.documento.includes("Inv_26-06.pdf")} · link ${r[5].respaldo.url} · arriba ${String(h[5][3].v)} · ${String(h[2][0])}`
-      const e = "ssfsscfss · usd true · fci true · link https://drive/x · arriba 🔴 falta · 🔴 falta: 2 · 🟡 sin archivar: 6 · ✅ con link: 1 — de 9 renglones"
+      // JMS 06/11: el FCI va en UN renglón con sus dos puntas; los saldos llevan además el documento del INICIO (columna F)
+      const v = `${est} · usd ${r[1].respaldo.documento.includes("CA_dolar_26-06")} · fci ${r[3].respaldo.documento.includes("Inv_26-06.pdf")} · link ${r[4].respaldo.url} · arriba ${String(h[5][3].v)} · ${String(h[2][0])} · col ${String(h[4][5])}`
+      const e = "ssfscfss · usd true · fci true · link https://drive/x · arriba 🔴 falta · 🔴 falta: 2 · 🟡 sin archivar: 5 · ✅ con link: 1 — de 8 renglones · INICIO de los saldos: ✅ 0 · 🟡 3 · 🔴 0 · col Documento del INICIO"
       // 📎 con el documento vinculado (script 217), el saldo y el FCI pasan a ✅ con su link
       const conDocs = renglonesDeRespaldo({ fechaCierre: "2026-06-30", fechaInicio: "2025-06-30",
         saldos: [{ nombre: "BANCO SANTANDER", saldo: 5, fecha: "2026-06-29" }, { nombre: "BANCO PROVINCIA", saldo: 1, fecha: "2026-06-29" }],
         fci: { notaCierre: "x", cuotasCierre: 0, valorCierre: 1 },
         documentos: [{ cuenta: "BANCO SANTANDER", periodo: "2026-06", tipo: "extracto", url: "https://d/s", nombre_archivo: "SANTA - 26-06.pdf", ruta_drive: "r" },
+          // el inicio del saldo lo respalda el extracto de JULIO (primer mes del ejercicio)
+          { cuenta: "BANCO SANTANDER", periodo: "2025-07", tipo: "extracto", url: "https://d/s0", nombre_archivo: "SANTA - 25-07.pdf", ruta_drive: "r" },
           { cuenta: "BANCO PROVINCIA", periodo: "2026-05", tipo: "extracto", url: "https://d/p", nombre_archivo: "p", ruta_drive: "r" },
           { cuenta: "FCI FIMA Premium A", periodo: "2026-06", tipo: "resumen_fci", url: "https://d/f", nombre_archivo: "Inv_26-06.pdf", ruta_drive: "r" },
           // JMS 06/11: el inicio lo respalda el resumen de JULIO (arranca con el saldo de apertura), no el de junio del año anterior
           { cuenta: "FCI FIMA Premium A", periodo: "2025-06", tipo: "resumen_fci", url: "https://d/no", nombre_archivo: "Inv_25-06.pdf", ruta_drive: "r" },
           { cuenta: "FCI FIMA Premium A", periodo: "2025-07", tipo: "resumen_fci", url: "https://d/f0", nombre_archivo: "Inv_25-07.pdf", ruta_drive: "r" }] })
-      const vd = conDocs.map(x => `${x.respaldo.estado}${x.respaldo.url ? ":" + x.respaldo.url : ""}`).join(" · ")
-      const ed = "con_link:https://d/s · sin_archivar · con_link:https://d/f0 · con_link:https://d/f"
+      const vd = conDocs.map(x => `${x.respaldo.estado}${x.respaldo.url ? ":" + x.respaldo.url : ""}|ini:${x.respaldoInicio?.url ?? x.respaldoInicio?.estado}`).join(" · ")
+      const ed = "con_link:https://d/s|ini:https://d/s0 · sin_archivar|ini:sin_archivar · con_link:https://d/f|ini:https://d/f0"
       // 📦 paso 2: qué se copia a «- Respaldo» — sólo lo que tiene link, una vez cada archivo, con nombre legible y su papel
       const its = itemsDelRespaldo([...conDocs, { papel: "05 Provisión", renglon: "PARADOR SAN PEDRO 9-55857", importe: 1,
         respaldo: { documento: "Factura 1-9-55857 de PARADOR SAN PEDRO (PDF)", estado: "con_link", url: "https://drive.google.com/file/d/1X0SGtpCXpxutMV6yhijWW/view?usp=drivesdk" } }],
