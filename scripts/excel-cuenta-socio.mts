@@ -91,7 +91,8 @@ for (const c of cuotas) { porCuota.set(c.id, c); if (c.grupoPagoId) porGrupo.set
 const respDe = (c?: CuotaTemplate) => (c?.responsable ?? "").split("/")[0].trim().toUpperCase()
 const leerFc = async (schema: string) => new Map((await todo((d, h) => sb.schema(schema).from("comprobantes_arca").select("id, denominacion_emisor, punto_venta, numero_desde").order("id").range(d, h))).map((f: any) => [f.id, f]))
 const fcSocio = await leerFc(S.toLowerCase()), fcMSA = await leerFc("msa")
-const MARCA_SOCIO = new RegExp(`\\b(cta|ret\\s*\\d*|cuenta)\\s*${S}\\b`, "i"), MARCA_MSA = /\b(cta|cuenta|ap\s*\d*)\s*msa\b/i   // «AP 3 MSA» = el socio le aportó a MSA (pagó algo de MSA)
+// «RET i MA» / «RET i PAM» (06/11): la «i» es un «1» mal tipeado → también es retiro
+const MARCA_SOCIO = new RegExp(`\\b(cta|ret\\s*(\\d+|i)?|cuenta)\\s*${S}\\b`, "i"),MARCA_MSA = /\b(cta|cuenta|ap\s*\d*)\s*msa\b/i   // «AP 3 MSA» = el socio le aportó a MSA (pagó algo de MSA)
 /** El interno del socio: «DIST MA» / «DIST PAM». ⚠️ «DIST MECHI» NO es MA (JMS 03/11). */
 const INTERNO_SOCIO = new RegExp(`\\bdist\\s*${S}\\b`, "i")
 // ✂️ CORTE POR FECHA (JMS 03/11): de PAM hasta la fecha, de MA desde la fecha. A generalizar en una tabla (A-FEAT-1532).
@@ -226,7 +227,9 @@ const det = [
 ]
 const filasCta = hojaResumenPorMes(det, {
   titulo: `CUENTA MSA ↔ ${S} — ejercicio ${ETIQ} (+ = ${S} retiró de MSA · − = MSA le debe / ${S} aportó)`,
-  notas: [`Esquema (JMS 06/11): el SUELDO de ${S} es lo que MSA le debe (−); lo que retira —sus pagos mensuales, los gastos suyos que paga MSA (RET 3 ${S}: impuestos, sueldos de sus empleados, facturas a su nombre) y lo de PAM que pasa a ${S} desde 2026— suma (+). Si retira más que su sueldo, el saldo queda como RETIRADO hasta una distribución.`,
+  notas: [S === "MA"
+    ? `Esquema (JMS 06/11): el SUELDO de ${S} es lo que MSA le debe (−); lo que retira —sus pagos mensuales, los gastos suyos que paga MSA (RET 3 ${S}: impuestos, sueldos de sus empleados, facturas a su nombre) y lo de PAM que pasa a ${S} desde 2026— suma (+). Si retira más que su sueldo, el saldo queda como RETIRADO hasta una distribución.`
+    : `Esquema de MA aplicado a PAM (JMS 06/11): PAM no tiene sueldo en MSA ni le facturó a MSA en 25/26, así que no hay nada «a cobrar». Todo lo que retira —transferencias (RET 1 / RET PAM / RET i PAM), los gastos suyos que paga MSA (RET 3 PAM) y lo de los bienes que son de PAM hasta el corte (dic-25 en contable)— suma (+) y queda como RETIRADO hasta una distribución. Las «PAM RET 1 MSA» de la cuenta corriente de PAM son las mismas transferencias vistas desde PAM: se cuentan una sola vez, del lado de MSA.`,
     `⚠️ LIBERTAD NO forma parte de esta cuenta: es algo extra y se maneja aparte (solapa «Libertad»). ${S === "MA" ? "Saldo de inicio: 0 (JMS 06/11: «MA arrancaba en cero»). Facturas de MA a MSA: no hay en 25/26." : "Saldo de inicio: 0 (sin dato)."} Ver la solapa «Saldo ${S}».`,
     `Control: ${sinMarca.length} detectados por la base SIN marca contable · ${marcadosSinNada.length} marcados SIN ningún vínculo — ver la solapa Control.`],
   meses, encabezadoDetalle: ["Fecha", "Cuenta", "Descripción del banco", "Detalle", "Contraparte (leyendas)", "Qué es", "Detectado por", "Contable", "Interno", "Nota del movimiento"], rotuloImporte: "Importe (+ retiró / − le debe)", semestres: true,
