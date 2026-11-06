@@ -30,6 +30,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Loader2 } from "lucide-react"
 import { PlanillaBoletasArba } from "@/components/planilla-boletas-arba"
 import { DATOS_FISCALES } from "@/lib/empresas"
+import { nombreCorto, pedidoDeOrden } from "@/lib/arba/ordenar-archivo"
 import { claveBoleta, esPartidaArba, partidaDeClave, PREFIJO_COMPLEMENTARIO, PREFIJO_SIN_ASIGNAR, type Decision as DecisionPlanilla } from "@/lib/arba/planilla-boletas"
 import { toast } from "sonner"
 
@@ -96,8 +97,7 @@ const fecha = (iso: string | null | undefined) =>
  * El template lleva el prefijo para ordenar la grilla; el nombre del archivo no lo necesita — la
  * convención del usuario ya dice «Inmob» y la cuota.
  */
-const nombreCorto = (n: string) =>
-  n.replace(/^Inmobiliario\s+(Cuota|Anual)\s+/i, "").trim() || n
+// (vive en `lib/arba/ordenar-archivo.ts`: lo usa también el ordenar del Drive, A-FEAT-1567)
 
 /**
  * Los templates ACTIVOS de inmobiliario con su `responsable`.
@@ -199,7 +199,7 @@ export function PanelBoletasArba() {
   /** Las filas de ESTE momento, para leerlas desde funciones que se armaron en otro render. */
   const filasRef = useRef<Comparacion[]>([])
   filasRef.current = filas
-  type InfoArchivo = { objeto: string | null; importe: number | null; url: string | null; carpeta: string | null; file_id?: string | null }
+  type InfoArchivo = { objeto: string | null; importe: number | null; url: string | null; carpeta: string | null; file_id?: string | null; contribuyente?: string | null }
   const [bajando, setBajando] = useState(false)
   /** Cuántos días de mail mirar. Achicarlo es lo primero que hay que probar si la bajada no llega. */
   const [dias, setDias] = useState("60")
@@ -218,7 +218,7 @@ export function PanelBoletasArba() {
   const [informe, setInforme] = useState<Informe | null>(null)
   /** Cuántas pasadas hizo falta. Se muestra sólo cuando fue más de una. */
   const [pasadas, setPasadas] = useState(0)
-  type Bajada = { archivo: string; carpeta?: string; url?: string; file_id?: string; objeto_mail?: string | null; importe_mail?: number | null }
+  type Bajada = { archivo: string; carpeta?: string; url?: string; file_id?: string; objeto_mail?: string | null; importe_mail?: number | null; contribuyente?: string | null }
   const [delMail, setDelMail] = useState<{ resumen: string; bajadas: Bajada[]; ya_estaban: Bajada[]; descuadres?: { asunto: string; detalle: string }[] } | null>(null)
   /**
    * Lo que dijo el MAIL, por nombre de archivo. Se llena al bajar y se usa cuando después subís
@@ -229,7 +229,7 @@ export function PanelBoletasArba() {
    * link de Drive**, que es lo que permite abrir la boleta desde la app para verificar el importe.
    */
   const [mailPorArchivo, setMailPorArchivo] = useState<Record<string, {
-    objeto: string | null; importe: number | null; url: string | null; carpeta: string | null; file_id?: string | null
+    objeto: string | null; importe: number | null; url: string | null; carpeta: string | null; file_id?: string | null; contribuyente?: string | null
   }>>({})
   const mailRef = useRef(mailPorArchivo)
   mailRef.current = mailPorArchivo
@@ -561,20 +561,20 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
        * linkeado para ver las boletas si tengo dudas y chequear que haya tomado bien los montos»*.
        * Sin el link, para verificar un importe hay que salir a buscar el archivo en el Drive.
        */
-      const idx: Record<string, { objeto: string | null; importe: number | null; url: string | null; carpeta: string | null; file_id?: string | null }> = {}
+      const idx: Record<string, InfoArchivo> = {}
       // 🔗 05/11: lo que YA estaba archivado también trae su link y lo del mail (GAS nuevo) — se suma igual que una bajada,
       // así «Aplicar» guarda el PDF aunque se haya bajado en otra corrida. Con un GAS viejo vienen sin link: no se pisa nada.
       for (const b of (j.ya_estaban ?? []) as Bajada[]) {
         if (!b.archivo || !(b as { url?: string | null }).url) continue
         idx[b.archivo] = {
           objeto: b.objeto_mail ?? null, importe: b.importe_mail ?? null,
-          url: b.url ?? null, carpeta: b.carpeta ?? null, file_id: b.file_id ?? null,
+          url: b.url ?? null, carpeta: b.carpeta ?? null, file_id: b.file_id ?? null, contribuyente: b.contribuyente ?? null,
         }
       }
       for (const b of (j.bajadas ?? []) as Bajada[]) {
         idx[b.archivo] = {
           objeto: b.objeto_mail ?? null, importe: b.importe_mail ?? null,
-          url: b.url ?? null, carpeta: b.carpeta ?? null, file_id: b.file_id ?? null,
+          url: b.url ?? null, carpeta: b.carpeta ?? null, file_id: b.file_id ?? null, contribuyente: b.contribuyente ?? null,
         }
       }
       setMailPorArchivo(prev => ({ ...prev, ...idx }))
@@ -583,7 +583,8 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
         // «leída» = que se le sacó algo (una propuesta guardada vacía se vuelve a leer)
         const yaLeidas = new Set(filasRef.current.filter(f => f.boleta.importe != null || (f.boleta.cuota != null && f.boleta.cuota !== "?")).map(f => f.archivo))
         const aLeer = Object.entries(idx).filter(([a, v]) => v.file_id && !yaLeidas.has(a)).map(([a, v]) => ({ archivo: a, file_id: v.file_id! }))
-        if (aLeer.length) setTimeout(() => void leerDelDrive(aLeer, idx), 0)
+        // 🗂️ A-FEAT-1567: después de leer, cada boleta con dueño conocido se ORDENA en el Drive (nombre y carpeta de JMS)
+        setTimeout(async () => { if (aLeer.length) await leerDelDrive(aLeer, idx); await ordenarEnDrive(true, idx) }, 0)
       }
 
       // 🗣️ **El informe va en el idioma del usuario, no en el del sistema.**
@@ -628,6 +629,52 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
    * 🗂️ A-FEAT-1565 — asigna una boleta «Sin asignar» al template que elige el usuario en la planilla, y la casa con su
    * cuota como si se hubiera reconocido la partida.
    */
+  /**
+   * 🗂️ A-FEAT-1567 — ordena en el Drive las boletas ya leídas: «2026 - Inmob - Cuota 4 - Rojas.pdf» en la carpeta de su
+   * responsable («MSA - viene PAM» si llegó en el mail de otra). El robot sólo renombra y mueve: nunca borra ni pisa.
+   * JMS 05/11: 23 de 26 quedaban en «_Sin asignar» con el nombre del link. Las sin dueño (San Ignacio) no se tocan.
+   */
+  const ordenarEnDrive = async (silencioso: boolean, extra: Record<string, InfoArchivo> = {}) => {
+    const info = { ...mailRef.current, ...extra }
+    const ids = [...new Set(filasRef.current.map(f => f.egresoId).filter((x): x is string => !!x))]
+    if (!ids.length) { if (!silencioso) avisar("info", "No hay boletas con su campo para ordenar"); return }
+    const { data: tps } = await supabase.from("egresos_sin_factura").select("id, nombre_referencia, responsable").in("id", ids)
+    const tpl = new Map(((tps ?? []) as { id: string; nombre_referencia: string; responsable: string | null }[]).map(t => [t.id, t]))
+    const pedido = pedidoDeOrden(filasRef.current.map(f => {
+      const t = f.egresoId ? tpl.get(f.egresoId) : undefined
+      const cuit = info[f.archivo]?.contribuyente ?? null
+      return {
+        archivo: f.archivo, fileId: info[f.archivo]?.file_id ?? null, anio: f.boleta.anio, cuota: f.boleta.cuota,
+        complementario: f.boleta.impuesto === "complementario", template: t?.nombre_referencia ?? null, responsable: t?.responsable ?? null,
+        empresaDelMail: cuit ? (EMPRESA_POR_CUIT[cuit] ?? null) : null,
+      }
+    }))
+    if (!pedido.length) { if (!silencioso) avisar("ok", "Todo ordenado", "Las boletas con su campo ya tienen el nombre y la carpeta de siempre."); return }
+    try {
+      const r = await fetch("/api/gas/ordenar-boletas", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: pedido.map(({ file_id, nombre, carpeta }) => ({ file_id, nombre, carpeta })) }) })
+      const j = await r.json()
+      if (!j.ok) { avisar("error", "No se pudieron ordenar en el Drive", j.error ?? ""); return }
+      type Res = { file_id: string; antes?: string; nombre?: string; carpeta?: string; url?: string; error?: string }
+      const res = (j.resultados ?? []) as Res[]
+      const bien = res.filter(x => !x.error && x.nombre)
+      const nuevoNombre = new Map(bien.map(x => [x.antes!, x]))
+      // La propuesta guardada y la pantalla pasan al nombre nuevo (el link no cambia: es el mismo archivo)
+      for (const x of bien) {
+        await supabase.from("boletas_arba").update({ archivo_nombre: x.nombre, archivo_url: x.url ?? null }).eq("archivo_file_id", x.file_id)
+      }
+      setFilas(fs => fs.map(f => nuevoNombre.has(f.archivo) ? { ...f, archivo: nuevoNombre.get(f.archivo)!.nombre! } : f))
+      setMailPorArchivo(prev => {
+        const out = { ...prev }
+        for (const x of bien) if (x.antes && out[x.antes]) { out[x.nombre!] = { ...out[x.antes], carpeta: x.carpeta ?? null, url: x.url ?? out[x.antes].url }; delete out[x.antes] }
+        return out
+      })
+      const fallas = res.filter(x => x.error)
+      avisar(fallas.length ? "error" : "ok", `${bien.length} boleta(s) ordenadas en el Drive` + (fallas.length ? ` · ${fallas.length} no` : ""),
+        bien.map(x => `${x.carpeta} / ${x.nombre}`).join("\n") + (fallas.length ? "\n\nNo se pudieron:\n" + fallas.map(x => `${x.file_id}: ${x.error}`).join("\n") : ""))
+    } catch (e) { avisar("error", "No se pudieron ordenar en el Drive", (e as Error).message) }
+  }
+
   const asignarTemplate = async (idx: number, egresoId: string) => {
     const base = filas[idx]
     if (!base) return
@@ -941,6 +988,11 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
             <Button variant="outline" size="sm" disabled={leyendo}
               onClick={() => void leerDelDrive(Object.entries(mailPorArchivo).filter(([, v]) => v.file_id).map(([a, v]) => ({ archivo: a, file_id: v.file_id! })))}>
               📥 Leer las archivadas
+            </Button>
+            {/* 🗂️ A-FEAT-1567: nombre y carpeta de JMS en el Drive (también corre solo después de «Bajar y archivar») */}
+            <Button variant="outline" size="sm" disabled={leyendo || !filas.length} onClick={() => void ordenarEnDrive(false)}
+              title="Renombra y mueve cada boleta a la carpeta de su responsable, con tu convención. No borra ni pisa nada.">
+              🗂️ Ordenar en el Drive
             </Button>
             {leyendo && <Loader2 className="h-4 w-4 animate-spin text-gray-500" />}
             {filas.length > 0 && <Button variant="ghost" size="sm" onClick={() => setFilas([])}>Limpiar</Button>}

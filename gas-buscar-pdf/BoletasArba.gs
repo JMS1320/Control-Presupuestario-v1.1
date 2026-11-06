@@ -466,6 +466,8 @@ function bajarBoletasArba(soloContar, opciones) {
   // Caché de Drive de ESTA corrida: carpetas y nombres de archivo ya leídos (`A-BUG-129`).
   // Vive una sola ejecución, así no puede quedar desactualizado entre corridas.
   var cacheDrive = { carpetas: {}, archivos: {} }
+  // 🗂️ A-FEAT-1567: lo que la app ya ordenó (nombre viejo → id). Se lee UNA vez por corrida.
+  var registroOrdenadas = null
 
   for (var h = 0; h < hilos.length; h++) {
     var msgs = hilos[h].getMessages()
@@ -549,6 +551,23 @@ function bajarBoletasArba(soloContar, opciones) {
             continue
           }
 
+          // 🗂️ A-FEAT-1567 (0.22.0): cuando la tabla del mail no dice de quién es, el nombre sale del link («ARBA
+          // 2026-C4 - <tid>.pdf») y se puede saber ANTES de bajar. Si ya está —en la carpeta, o porque la app la renombró y
+          // la movió a la de su dueño—, no se baja de nuevo. Sin esto, cada corrida volvía a bajar las 23 de «_Sin asignar»
+          // y, una vez ordenadas, las habría duplicado.
+          if (!nombre) {
+            var provisorio = nombreDeArchivo_(null, msg.getDate(), k, msg.getSubject(), elObjeto, links[k])
+            if (registroOrdenadas === null) registroOrdenadas = PropertiesService.getScriptProperties().getProperties()
+            var previo = ordenadaAntes_(provisorio, registroOrdenadas)
+              || (yaEstaEn_(destino, provisorio, cacheDrive) ? archivoConCarpeta_(archivoEn_(destino, provisorio, cacheDrive), destino, provisorio) : null)
+            if (previo) {
+              yaEstaban.push({ archivo: previo.nombre, carpeta: previo.carpeta, url: previo.url, file_id: previo.id,
+                asunto: msg.getSubject(), fecha: Utilities.formatDate(msg.getDate(), 'GMT-3', 'yyyy-MM-dd'),
+                objeto_mail: fila ? fila.objeto : null, importe_mail: fila ? fila.importe : null, contribuyente: tabla.contribuyente || null })
+              continue
+            }
+          }
+
           var r = bajarBoleta_(links[k])
           if (!r) { sinPdf.push({ asunto: msg.getSubject(), link: links[k].slice(0, 90) }); continue }
 
@@ -611,6 +630,81 @@ function bajarBoletasArba(soloContar, opciones) {
 }
 
 /** Para correr a mano desde el editor: informa qué encontraría, sin guardar nada. */
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// 🗂️ A-FEAT-1567 (0.22.0) — ORDENAR lo archivado: el nombre y la carpeta de JMS.
+// JMS 05/11: «¿cómo quedaron archivadas en las carpetas? y nombres de los pdf?» → 23 de 26 de la cuota 4 quedaron en
+// «_Sin asignar» como «ARBA 2026-C4 - LUk….pdf», porque la tabla del mail no coincidía con los links. La app, que lee la
+// partida ADENTRO del PDF, dice el nombre y la carpeta de cada una; acá sólo se renombra y se MUEVE. Nunca se borra ni se
+// pisa: si el nombre ya lo tiene otro archivo, va con « (2)».
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Las subcarpetas por responsable que arma el robot: «MSA», «PAM», «MA», «_Sin asignar», «MSA - viene PAM». */
+function esSubcarpetaArba_(nombre) {
+  return /^(MSA|PAM|MA|_Sin asignar)( - viene (MSA|PAM|MA))?$/.test(String(nombre || ''))
+}
+
+/** Un nombre libre en la carpeta: el pedido, o con « (2)», « (3)»… si lo tiene OTRO archivo. `ocupado(n)` dice si n está tomado. */
+function nombreLibre_(nombre, ocupado) {
+  var n = String(nombre), sin = n.replace(/\.pdf$/i, ''), k = 2
+  while (ocupado(n) && k < 50) n = sin + ' (' + (k++) + ').pdf'
+  return n
+}
+
+/** ¿La app ya ordenó un archivo que se llamaba así? Devuelve dónde está hoy, o null. */
+function ordenadaAntes_(nombreViejo, registro) {
+  var id = registro ? registro['arba:' + nombreViejo] : null
+  if (!id) return null
+  try {
+    var f = DriveApp.getFileById(id)
+    if (f.isTrashed()) return null
+    var p = f.getParents()
+    return { id: id, url: f.getUrl(), nombre: f.getName(), carpeta: p.hasNext() ? p.next().getName() : null }
+  } catch (e) { return null }
+}
+
+function archivoConCarpeta_(v, carpeta, nombre) {
+  if (!v) return null
+  return { id: v.id, url: v.url, nombre: nombre, carpeta: carpeta.getName() }
+}
+
+/** Acción `ordenar_boletas_arba` { items: [{ file_id, nombre, carpeta }] } → renombra y mueve cada uno. */
+function ordenarBoletasArba(body) {
+  var items = (body && body.items) || []
+  var props = PropertiesService.getScriptProperties()
+  var res = []
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i]
+    try {
+      var carpetaNombre = String(it.carpeta || '').trim()
+      if (!esSubcarpetaArba_(carpetaNombre)) throw new Error('carpeta no válida: ' + carpetaNombre)
+      var f = DriveApp.getFileById(String(it.file_id || ''))
+      var ps = f.getParents()
+      if (!ps.hasNext()) throw new Error('el archivo no está en ninguna carpeta')
+      var padre = ps.next()
+      // La carpeta del año es la que contiene las subcarpetas por responsable.
+      var anio = padre
+      if (esSubcarpetaArba_(padre.getName())) { var pp = padre.getParents(); if (pp.hasNext()) anio = pp.next() }
+      var di = anio.getFoldersByName(carpetaNombre)
+      var dest = di.hasNext() ? di.next() : anio.createFolder(carpetaNombre)
+      var propio = f.getId()
+      var nombre = nombreLibre_(String(it.nombre), function (n) {
+        var x = dest.getFilesByName(n)
+        while (x.hasNext()) if (x.next().getId() !== propio) return true
+        return false
+      })
+      var antes = f.getName()
+      var renombrado = antes !== nombre
+      if (renombrado) { f.setName(nombre); props.setProperty('arba:' + antes, propio) }
+      var movido = padre.getId() !== dest.getId()
+      if (movido) f.moveTo(dest)
+      res.push({ file_id: propio, antes: antes, nombre: nombre, carpeta: dest.getName(), url: f.getUrl(), renombrado: renombrado, movido: movido })
+    } catch (e) {
+      res.push({ file_id: it && it.file_id, error: String(e && e.message || e) })
+    }
+  }
+  return responseJson({ ok: true, resultados: res }, 200)
+}
+
 function testArbaContar() {
   Logger.log(JSON.stringify(bajarBoletasArba(true), null, 1))
 }

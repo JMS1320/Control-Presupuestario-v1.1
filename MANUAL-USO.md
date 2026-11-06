@@ -3472,6 +3472,9 @@ En **Cash Flow → 🏛️ Boletas ARBA**. Dos botones y dos campos:
 **Vos sólo elegís la carpeta.** Adentro se arman solas las subcarpetas por empresa —*MSA*, *PAM*,
 *MA*, y el *MSA - viene PAM* para lo que es de una pero llegó en el mail de otra—.
 
+🗂️ **Las que el mail no dijo de quién eran** caen primero en *_Sin asignar* con el nombre del link. Al terminar «Bajar y archivar», la app las lee, sabe de qué campo son y **las renombra y mueve solas** a la carpeta de su dueño (también con el botón **«🗂️ Ordenar en el Drive»**). No borra ni pisa nada; en *_Sin asignar* queda sólo lo que no es de ningún campo tuyo.
+→ ⚠️ Sin probar todavía → A-TEST-1336
+
 ⚠️ **Si la carpeta que pegaste no existe o no se puede abrir, no baja nada y te lo dice.** Es a
 propósito: archivar 40 boletas donde vos no querías es peor que no archivarlas, porque quedan
 donde nadie las busca y la próxima corrida cree que ya están.

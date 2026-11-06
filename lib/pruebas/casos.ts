@@ -89,6 +89,7 @@ import { nuevasPrimero } from "@/lib/importar/orden-preview"
 import { echeqDelAnticipo } from "@/lib/pagos/echeq-anticipo"
 import { armarPlanillaBoletas, decisionPropuesta, importeElegido, claveBoleta, partidaDeClave } from "@/lib/arba/planilla-boletas"
 import { marcarAnticiposSinVincular } from "@/lib/cashflow/anticipo-sin-vincular"
+import { pedidoDeOrden } from "@/lib/arba/ordenar-archivo"
 import { pideOtraVentana, linkSeccion } from "@/lib/ui/links"
 import { teclaDeItem, itemDeTecla, escribiendoEn } from "@/lib/ui/atajos-menu"
 import { vencimientosDeLaPersona, cuentasParaPagar, motivoPagoInvalido, montoAR, empresaDelPago, PREFIJO_DEVUELTA, documentosDeCuotas, motivoComprobanteInvalido, type CuotaDeLaPersona } from "@/lib/vencimientos/de-la-persona"
@@ -5119,19 +5120,29 @@ export function correrCasos(): Resultado[] {
       const eS = "vacas inicio 10 senasa 12 · mort -1 reclas -2 · cierre 7 (B5+SUM(E5:J5)) · control 0 · cut venta -2 cierre 0 · terneros nac 4 · venta de julio fuera · ventas E26B0A true · cierre FDE9D9 medium"
       chequear("Balance · hacienda", "🐄 Papel de stock: inicio NZ/SENASA, movimientos con su signo (SUMAR.SI sobre las solapas de detalle), cierre por fórmula y control contra la app; lo posterior al cierre no entra",
         eS, vS, vS === eS, "A-FEAT-1541")
+      // 🧮 JMS 05/11 (v11.04): el mismo stock agrupado (vientres = vacas + vaquillonas a parir + CUT), con control contra el total = 0,
+      //    y la diferencia con SENASA en amarillo.
+      {
+        const g = fila("Vacas Vqll a parir"), ctl = fila("Control"), hem = fila("Hembras (sin terneras al pie)")
+        const vG = `vientres cierre ${val(g[10])} (${String(g[10].f)}) · control ${ctl.slice(1).every((c: any) => val(c) === 0)} · dif ${hem[3].s.fill.fgColor.rgb}`
+        const eG = "vientres cierre 7 (SUM(K5,K6,K7)) · control true · dif FFFF00"
+        chequear("Balance · hacienda", "🧮 Papel de stock agrupado (vientres, vaquillonas, novillitos, terneros, toros/toritos) con control contra el total; diferencia con SENASA en amarillo",
+          eG, vG, vG === eG, "A-FEAT-1541")
+      }
       const det = hojaDetalleHacienda(movs, "venta", "VENTAS", "2025-07-01", "2026-06-30")
-      const vD = `${det.filas.slice(det.d0 - 1, det.d1).map(r => `${(r as any[])[1]} ${(r as any[])[3]}`).join(",")} · ${linkCotizacion("vientres", "2026-06-29").includes("vientres.html?desde=2026-06-29&hasta=2026-06-29")} · ${linkCotizacion("toros", "2025-05-11 a 2025-06-09").includes("desde=2025-05-11&hasta=2025-06-09")}`
-      chequear("Balance · hacienda", "🐄 Solapa de detalle con las ventas del ejercicio (cabezas en positivo) y el link a la cotización por día o por rango",
-        "Vaca CUT/Descarte 2 · true · true", vD, vD === "Vaca CUT/Descarte 2 · true · true", "A-FEAT-1541")
+      const vD = `${det.filas.slice(det.d0 - 1, det.d1).map(r => `${(r as any[])[1]} ${(r as any[])[3]}`).join(",")} · ${linkCotizacion("vientres", "2026-06-29").includes("vientres.html?desde=2026-06-29&hasta=2026-06-29")} · ${linkCotizacion("toros", "2025-05-11 a 2025-06-09").includes("desde=2025-05-11&hasta=2025-06-09")} · mag ${linkCotizacion("mag", "2026-06-30").endsWith("haciinfo000502?txtFECHAINI=30/06/2026&txtFECHAFIN=30/06/2026")}`
+      // ⚠️ cambió 05/11: el MAG también lleva la fecha (JMS: «el link de las vacas del MAG me lleva a los precios de hoy»).
+      chequear("Balance · hacienda", "🐄 Solapa de detalle con las ventas del ejercicio (cabezas en positivo) y el link a la cotización por día o por rango — también el del MAG",
+        "Vaca CUT/Descarte 2 · true · true · mag true", vD, vD === "Vaca CUT/Descarte 2 · true · true · mag true", "A-FEAT-1541")
       const fv = (categoria: string, cabezas: number, precio: number, factor: number, kg: number | null) => ({ categoria, cabezas, criterio: "c", precioReferencia: precio,
         origenPrecio: `Entresurcos vientres · x · promedio · al 27/06/2025`, factor, pesoKg: kg, origenPeso: "p", valorPorCabeza: precio * factor * (kg ?? 1), valorTotal: precio * factor * (kg ?? 1) * cabezas, esHueco: false })
       const vi = { filas: [fv("Vaca", 150, 1000000, 0.9, null)], cabezas: 150, valuado: 135000000, huecos: [], cabezasSinValuar: 0, sinCriterio: [] }
       const hv = hojaStockValorizado({ cierre: vi, inicio: vi, fechaCierre: "2026-06-30", fechaInicio: "2025-06-30", tcCierre: 1473, ddjjInicio: { cuenta: "1.2.2/05/01", denominacion: "VACAS DE CRÍA", valor: 255479054.9 } })
       const tres = hv.filter(r => /^(App|Papeles|DDJJ)/.test(String((r as any[])[0] ?? ""))).map(r => `${String((r as any[])[0]).split(" ")[0]} ${val((r as any[])[5])}`)
       const vaca = hv.find(r => { const c = (r as any[])[0]; return (c?.v ?? c) === "VACAS al parir" }) as any[]
-      const vV = `${tres.join(" · ")} · vaca ${String(vaca[3].f)}=${vaca[3].v} · link ${typeof vaca[13] === "object"} · ${vaca[11].v} · ${vaca[12].v} · papeles vaca ${(hv[hv.findIndex(r => String((r as any[])[0] ?? "").startsWith("CATEGORÍA POR CATEGORÍA")) + 1] as any[])[6]}`
-      const eV = "App 135000000 · Papeles 405560000 · DDJJ 255479054.9 · vaca K10*Q10=900000 · link true · Entre Surcos y Corrales · X · papeles vaca 184950000"
-      chequear("Balance · hacienda", "💰 Valorizado con el formato del papel 2.2: valor kg/unidad = precio × factor (fórmula), link a la cotización y los tres valores del inicio (app, papeles de JMS, DDJJ)",
+      const vV = `${tres.join(" · ")} · vaca D «${vaca[3].v}» E ${String(vaca[4].f)}=${vaca[4].v} cab ${vaca[1].s.font.bold}/${vaca[1].s.font.sz} · link ${typeof vaca[13] === "object"} · ${vaca[11].v} · ${vaca[12].v} · papeles vaca ${(hv[hv.findIndex(r => String((r as any[])[0] ?? "").startsWith("CATEGORÍA POR CATEGORÍA")) + 1] as any[])[6]}`
+      const eV = "App 135000000 · Papeles 405560000 · DDJJ 255479054.9 · vaca D «» E K10*Q10=900000 cab true/12 · link true · Entre Surcos y Corrales · X · papeles vaca 184950000"
+      chequear("Balance · hacienda", "💰 Valorizado con el formato del papel 2.2: por cabeza sin «valor kg/unidad» y valor por cabeza = precio × factor (fórmula), link a la cotización y los tres valores del inicio (app, papeles de JMS, DDJJ)",
         eV, vV, vV === eV, "A-FEAT-1541")
       // 📈 JMS 05/11: el aumento del rodeo en dólares, cría y recría aparte — el aumento = por cantidad + por precio, y la categoría que
       //    aparece sólo al cierre va toda «por cantidad» (mismo precio en dólares en las dos puntas, no el de pesos pasado con otro TC).
@@ -5146,6 +5157,12 @@ export function correrCasos(): Resultado[] {
         const r = `cría ${v(tCria, 13)} = ${v(tCria, 14)} + ${v(tCria, 15)} · recría control ${v(tRec, 16)} · ternera por precio ${v(ternera, 15)}`
         chequear("Balance · hacienda", "📈 02.10 Aumento del rodeo U$S: aumento = por cantidad + por precio; la categoría nueva va toda por cantidad",
           "cría 36701 = 16660 + 20042 · recría control 0 · ternera por precio 0", r, r === "cría 36701 = 16660 + 20042 · recría control 0 · ternera por precio 0", "A-FEAT-1541")
+        // 🐂 JMS 05/11 (v11.04): la recría también en cabezas × kg promedio (10 de 250 → 25 de 232), además del total de kilos.
+        const cab = h.find(r => (r as any[])[0] === "Recría — cabezas") as any[], kgp = h.find(r => (r as any[])[0] === "Recría — kg promedio por cabeza") as any[]
+        const tot = h.find(r => (r as any[])[0] === "TOTAL RODEO") as any[]
+        const rr = `${v(cab, 2)} de ${v(kgp, 2)} → ${v(cab, 3)} de ${v(kgp, 3)} · total rodeo ${Math.abs(Number(tot?.[6]?.v) - Number(tCria?.[13]?.v) - Number(tRec?.[13]?.v)) < 0.01}`
+        chequear("Balance · hacienda", "🐂 02.10: la recría en cabezas y kg promedio, y el total del rodeo = cría + recría",
+          "10 de 250 → 25 de 232 · total rodeo true", rr, rr === "10 de 250 → 25 de 232 · total rodeo true", "A-FEAT-1541")
       }
     }
     // ⚖️ JMS 05/11: «toritos sin datos: el mismo peso que sus compañeros, 20 % más» → novillitos 250 × 1,2 = 300; con pesada propia manda la pesada.
@@ -10383,6 +10400,22 @@ export function correrCasos(): Resultado[] {
       chequear("Boletas ARBA", "Clave de la propuesta guardada: la partida del PDF o del mail o la asignada; el complementario y la sin asignar con clave provisoria (un CUIT no es partida)",
         "099-015881-9 · 099-015881-9 · sin-asignar:ARBA 2026-C4 - LUI.pdf · 099-006595-0 · complementario:eg-pam · sin-asignar:ARBA 2026-C4 - LUI.pdf | 099-015881-9 · 099-015881-9 · - · 099-006595-0 · - · -", vK,
         vK === "099-015881-9 · 099-015881-9 · sin-asignar:ARBA 2026-C4 - LUI.pdf · 099-006595-0 · complementario:eg-pam · sin-asignar:ARBA 2026-C4 - LUI.pdf | 099-015881-9 · 099-015881-9 · - · 099-006595-0 · - · -", "A-FEAT-1565")
+    }
+    // ── 🗂️ Ordenar en el Drive las boletas de ARBA (A-FEAT-1567): nombre y carpeta de JMS, sólo las que tienen dueño ──
+    {
+      const b = { anio: 2026, cuota: "4", complementario: false, empresaDelMail: null as string | null }
+      const pd = pedidoDeOrden([
+        { ...b, archivo: "ARBA 2026-C4 - LUk1.pdf", fileId: "f1", template: "Inmobiliario Cuota Rojas", responsable: "MSA", empresaDelMail: "MSA" },
+        { ...b, archivo: "ARBA 2026-C4 - LUk2.pdf", fileId: "f2", template: "Inmobiliario Cuota Tango Parra 1", responsable: "MSA", empresaDelMail: "PAM" },
+        { ...b, archivo: "ARBA 2026-C4 - LUk3.pdf", fileId: "f3", template: null, responsable: null },
+        { ...b, archivo: "2026 - Inmob - Cuota 4 - Lima.pdf", fileId: "f4", template: "Inmobiliario Cuota Lima", responsable: "MA" },
+        { ...b, archivo: "2026 - Complementario - Cuota 4.pdf", fileId: "f5", template: "Inmobiliario Complementario Cuota PAM", responsable: "PAM", complementario: true },
+        { ...b, archivo: "ARBA 2026-C4 - LUk1.pdf", fileId: "f1", template: "Inmobiliario Cuota Rojas", responsable: "MSA" },
+        { ...b, archivo: "ARBA 2026-C4 - LUk6.pdf", fileId: "f6", template: "Inmobiliario Cuota Relincho", responsable: "PAM", cuota: "?" },
+      ]).map(x => `${x.file_id}>${x.carpeta}/${x.nombre}`).join(" · ")
+      const esp = "f1>MSA/2026 - Inmob - Cuota 4 - Rojas.pdf · f2>MSA - viene PAM/2026 - Inmob - Cuota 4 - Tango Parra 1.pdf"
+      chequear("Boletas ARBA", "Ordenar en el Drive: la de dueño conocido va con el nombre y la carpeta de JMS («viene PAM» si llegó en el mail de otra); la sin dueño, la que ya sigue la convención, el complementario, la repetida y la sin cuota no se tocan",
+        esp, pd, pd === esp, "A-FEAT-1567")
     }
     // ── ⬆️ Importar facturas: las nuevas arriba (A-FEAT-1554), el resto en el orden del archivo ──
     const np = nuevasPrimero([{ id: 1, estado: "duplicado" }, { id: 2, estado: "nueva" }, { id: 3, estado: "error" }, { id: 4, estado: "nueva" }, { id: 5, estado: "duplicado" }]).map(x => x.id).join("")

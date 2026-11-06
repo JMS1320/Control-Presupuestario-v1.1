@@ -30,7 +30,7 @@ if (!fs.existsSync(GS)) {
 // Se normalizan los fines de línea: en Windows git deja CRLF y el corte por `\n}\n` no matchea.
 // Sin esto el test falla con «linksDeBoleta_ is not defined», que no dice nada de la causa.
 const fuente = fs.readFileSync(GS, "utf8").split("\r\n").join("\n")
-const necesarias = ["linksDeBoleta_", "nombreDeArchivo_", "nombreUsuario_", "nombreCarpeta_", "textoPlanoDeMail_", "soloDigitos_", "partidaDeNombre_", "filasDelMail_", "yaEstaEn_", "archivoEn_", "anotarCreado_"]
+const necesarias = ["linksDeBoleta_", "nombreDeArchivo_", "nombreUsuario_", "nombreCarpeta_", "textoPlanoDeMail_", "soloDigitos_", "partidaDeNombre_", "filasDelMail_", "yaEstaEn_", "archivoEn_", "anotarCreado_", "esSubcarpetaArba_", "nombreLibre_"]
 let codigo = ""
 for (const fn of necesarias) {
   const i = fuente.indexOf(`function ${fn}(`)
@@ -49,7 +49,7 @@ const Utilities = {
         : iso.slice(0, 10)
   },
 }
-const { linksDeBoleta_, nombreDeArchivo_, nombreUsuario_, nombreCarpeta_, textoPlanoDeMail_, soloDigitos_, partidaDeNombre_, filasDelMail_, yaEstaEn_, archivoEn_, anotarCreado_ } =
+const { linksDeBoleta_, nombreDeArchivo_, nombreUsuario_, nombreCarpeta_, textoPlanoDeMail_, soloDigitos_, partidaDeNombre_, filasDelMail_, yaEstaEn_, archivoEn_, anotarCreado_, esSubcarpetaArba_, nombreLibre_ } =
   new Function("Utilities", codigo + `\nreturn { ${necesarias.join(", ")} }`)(Utilities)
 
 const r: { ok: boolean; caso: string; esperado: string; obtenido: string }[] = []
@@ -330,6 +330,18 @@ for (const x of r) {
   console.log(`  ${x.ok ? "✓" : "✗"} ${x.caso}`)
   if (!x.ok) console.log(`      esperado: ${x.esperado}\n      obtenido: ${x.obtenido}`)
 }
+// ── 🗂️ A-FEAT-1567 · Ordenar: sólo a las subcarpetas del robot, y sin pisar nunca ──────────────────
+chequear("ordenar: MSA es subcarpeta", "true", String(esSubcarpetaArba_("MSA")))
+chequear("ordenar: «MSA - viene PAM» es subcarpeta", "true", String(esSubcarpetaArba_("MSA - viene PAM")))
+chequear("ordenar: «_Sin asignar» es subcarpeta", "true", String(esSubcarpetaArba_("_Sin asignar")))
+chequear("ordenar: «2026» NO (no se manda a cualquier lado)", "false", String(esSubcarpetaArba_("2026")))
+chequear("ordenar: «../MSA» NO", "false", String(esSubcarpetaArba_("../MSA")))
+chequear("ordenar: nombre libre queda igual", "2026 - Inmob - Cuota 4 - Rojas.pdf", nombreLibre_("2026 - Inmob - Cuota 4 - Rojas.pdf", () => false))
+const tomados = new Set(["2026 - Inmob - Cuota 4 - Rojas.pdf", "2026 - Inmob - Cuota 4 - Rojas (2).pdf"])
+chequear("ordenar: si el nombre lo tiene OTRO archivo, va con (3) — nunca se pisa", "2026 - Inmob - Cuota 4 - Rojas (3).pdf", nombreLibre_("2026 - Inmob - Cuota 4 - Rojas.pdf", (n: string) => tomados.has(n)))
+const sinMail = nombreDeArchivo_(null, new Date("2026-11-03T12:00:00Z"), 0, "Boleta por Mail - Vencimiento del Impuesto Inmobiliario Rural cuota 4", null, "http://arbalist07.arba.gov.ar/lt.php?tid=LUkGAgEBAVJQ")
+chequear("ordenar: el nombre del link se sabe ANTES de bajar (para no re-bajarla)", "ARBA 2026-C4 - LUkGAgEBAVJQ.pdf", sinMail)
+
 const mal = r.filter(x => !x.ok).length
 console.log(`\n${r.length - mal} de ${r.length} pasaron`)
 console.log(`\n⚠️ Esto NO prueba la bajada real: Gmail y Drive sólo los puede correr el usuario`)
