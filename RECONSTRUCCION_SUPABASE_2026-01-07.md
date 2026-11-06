@@ -3341,6 +3341,9 @@ Columna `boolean not null default false` (con su comment) y trigger **BEFORE INS
 ### 2026-11-04 · Saldo de arranque de JMS y AMS en el papel 14 (script 201, DATOS) — ✅ CORRIDO con OK de JMS
 `balance_datos_usuario` (papel `cc.saldo-inicio`, MSA 2026): JMS −15.000.000 y AMS −10.500.000 (el anticipo a proveedores del contador al 30/06/25); el valor anterior (0, script 173) queda en `historial`. Deshacer: `npx tsx scripts/201-saldo-arranque-jms-ams.mts --deshacer`.
 
+### 2026-11-06 · EL DOCUMENTO DE RESPALDO de cada cuenta y mes — tabla `public.documentos_respaldo` (script 211, ESTRUCTURA) — A-FEAT-1571 — ✅ CORRIDO con OK de JMS («ok, corré el 211»)
+Tabla nueva, vacía: `empresa` · `cuenta` · `periodo` (AAAA-MM) · `tipo` (extracto · resumen_usd · resumen_fci · resumen_tarjeta · arqueo · otro) · `drive_file_id` · `url` · `nombre_archivo` · `ruta_drive` · `saldo_documento` · `observaciones` · `creado_por` · timestamps; único (empresa, cuenta, periodo, tipo). RLS `puede_ver` / `puede_escribir` + 1 fila en `recurso_tablas` (recurso `extracto`, restringe lectura), `anon` sin acceso. Script `scripts/211-documentos-respaldo.sql`; deshacer `211-…-deshacer.sql`. Aviso a Javier en ENTRE-DESARROLLADORES.
+
 ### 2026-11-05 · Provisión 24/25 de MSA = los dos arrendamientos (script 206, DATOS) — ✅ CORRIDO con OK de JMS
 `public.ajustes_balance` (MSA, `anio_cierre` 2025, `accion` incluir, `tabla` msa.comprobantes_historico): Sucesión de Plácido Alberto Martínez 2-31 del 19/08/2025 y María Magdalena Martínez 10-269 del 17/10/2025, $ 6.228.000,07 cada una = $ 12.456.000,14, la «Provisión para gastos» del balance anterior. Marca `[script 206]` en `creado_por`. Deshacer: `scripts/206-provision-24-25-arrendamientos-msa-deshacer.sql`.
 
