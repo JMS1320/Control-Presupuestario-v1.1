@@ -2664,10 +2664,10 @@ dato no existía. `centro_costo` es **el campo** —Nazarenas · Lima · Rojas �
 | **PAM** | Tapera 2 | `099-015884-3` | |
 | **PAM** | Tapera 3 | `099-015886-0` | ✗ **no llegó el 08/09** |
 | **MA** | Lima | `038-040142-8` | |
-| **PAM** | Quinta Roselló 1 | `099-001854-5` | ⚠️ la carpeta la pone en **ERM**, el registro en **PAM** · ✗ **no llegó el 08/09** |
+| **PAM** | Quinta Roselló 1 | `099-001854-5` | ⚠️ la carpeta la pone en **ERM**, el registro en **PAM** · ✗ **no llegó el 08/09** · ✅ 06/11: `responsable_interno = ERM` (script 208) → el robot y el ordenar la archivan en `ERM` |
 | **PAM** | Quinta Roselló 2 | `099-001846-4` | ⚠️ idem: carpeta ERM, registro PAM |
-| **ERM** | El Relincho | `099-025089-8` | ⚠️ **sin template** (`A-DAT-26`) — ERM no está en `CLAUDE.md` |
-| **?** | — | `099-001274-1` | ⚠️ **sin template**, $510.316,10, llegó en el mail de PAM |
+| **ERM** | El Relincho | `099-025089-8` | ✅ **06/11: tiene template** «Inmobiliario Cuota El Relincho» (paga PAM, `responsable_interno = ERM`, scripts 207 y 208); antes figuraba sin template (`A-DAT-26`, cerrado) |
+| **—** | San Ignacio | `099-001274-1` | ✅ **06/11 (JMS): ya no es nuestro, ARBA no actualizó el titular.** Sin template a propósito: queda en «_Sin asignar» y aparece cada cuota como recordatorio. Llega en el mail de PAM |
 
 🔑 **Todas las repetidas del 08/09 son de MSA y todas se repiten en el mail de PAM.** No es azar:
 es el patrón que el usuario venía describiendo.
