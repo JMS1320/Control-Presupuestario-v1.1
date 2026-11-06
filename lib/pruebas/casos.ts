@@ -7584,6 +7584,12 @@ export function correrCasos(): Resultado[] {
       vacia.saldoAlCierre === null && vacia.diferencia === null && vacia.movimientos === 0,
       "A-FEAT-1206")
 
+    // 🗃️ JMS 06/11: vacía pero CON inicio declarado (Caja General $ 457.212,92) → cierra con su inicio, control 0.
+    const vaciaConInicio = armarCadenaDeSaldos("CAJA GENERAL", [], saldoAlInicioDe("MSA", "25/26", "CAJA GENERAL"))
+    chequear("Papel 07 · saldos", "Una caja sin movimientos y con inicio declarado cierra con ese inicio",
+      "cierre 457.212,92 · diferencia 0", `cierre ${n2(vaciaConInicio.saldoAlCierre ?? -1)} · diferencia ${vaciaConInicio.diferencia}`,
+      vaciaConInicio.saldoAlCierre === 457212.92 && vaciaConInicio.diferencia === 0, "A-FEAT-1197")
+
     // 🧨 Y el control TIENE que gritar si falta un movimiento: se saca el del neto y no cierra.
     const conHueco = armarCadenaDeSaldos("BANCO GALICIA (cta cte)",
       MOVS.filter(m => m.fecha !== "2026-03-15"), DECLARADO)
@@ -7625,7 +7631,8 @@ export function correrCasos(): Resultado[] {
       n2(saldoAlInicioDe("MSA", "25/26", "BANCO GALICIA (cta cte)")?.saldo ?? 0),
       saldoAlInicioDe("MSA", "25/26", "BANCO GALICIA (cta cte)")?.saldo === 832605.05
       && saldoAlInicioDe("MSA", "25/26", "CAJA GENERAL")?.saldo === 457212.92
-      && saldoAlInicioDe("MSA", "25/26", "CAJA SIGOT") === null
+      && saldoAlInicioDe("MSA", "25/26", "CAJA SIGOT")?.saldo === 0
+      && saldoAlInicioDe("MSA", "25/26", "CAJA AMS")?.saldo === 0
       && saldoAlInicioDe("MSA", "25/26", "BANCO SANTANDER")?.saldo === 7204.86
       && saldoAlInicioDe("MSA", "25/26", "BANCO PROVINCIA")?.saldo === 15298.25
       && saldoAlInicioDe("PAM", "25/26", "BANCO GALICIA (cta cte)") === null, "A-FEAT-1206")

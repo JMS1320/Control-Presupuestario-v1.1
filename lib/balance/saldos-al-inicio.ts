@@ -81,6 +81,12 @@ export const SALDOS_AL_INICIO: SaldoAlInicio[] = [
     fuente: 'planilla del usuario de saldos al 30/06/2025, renglón «Santander»' },
   { empresa: "MSA", ejercicio: "25/26", cuenta: "BANCO PROVINCIA", saldo: 15298.25,
     fuente: 'planilla del usuario de saldos al 30/06/2025, renglón «Provincia»' },
+  // JMS 06/11: «las cajas que arranquen en lo que yo dije que habían cerrado, sino que arranquen en cero». Su planilla de
+  // saldos al 30/06/2025 tiene una sola «CAJA» (la de Caja General); Caja AMS y Caja Sigot no figuran → 0.
+  { empresa: "MSA", ejercicio: "25/26", cuenta: "CAJA AMS", saldo: 0,
+    fuente: 'no figura en la planilla del usuario de saldos al 30/06/2025 → arranca en 0 (JMS 06/11)' },
+  { empresa: "MSA", ejercicio: "25/26", cuenta: "CAJA SIGOT", saldo: 0,
+    fuente: 'no figura en la planilla del usuario de saldos al 30/06/2025 → arranca en 0 (JMS 06/11)' },
 ]
 
 /** El saldo al inicio declarado para una cuenta, o `null` si no hay ninguno. */
@@ -236,10 +242,16 @@ export function armarCadenaDeSaldos(
     ? r2(saldoAntesDeLoCargado - saldoInicio)
     : null
 
-  const cierreCalculado = saldoAntesDeLoCargado != null
+  let cierreCalculado = saldoAntesDeLoCargado != null
     ? r2(saldoAntesDeLoCargado + netoCargado)
     : null
-  const saldoAlCierre = ultimo?.saldo ?? null
+  /**
+   * 🗃️ JMS 06/11: una cuenta SIN movimientos en el ejercicio pero con saldo de inicio declarado (las cajas) cierra con ese
+   * mismo saldo — nada la movió en la app. Sin inicio declarado sigue en `null`: no se sabe, y el papel lo dice.
+   */
+  const sinMovimientosConInicio = !primero && saldoInicio != null
+  const saldoAlCierre = ultimo?.saldo ?? (sinMovimientosConInicio ? saldoInicio : null)
+  if (sinMovimientosConInicio) cierreCalculado = saldoInicio
   const diferencia = cierreCalculado != null && saldoAlCierre != null
     ? r2(cierreCalculado - saldoAlCierre)
     : null
