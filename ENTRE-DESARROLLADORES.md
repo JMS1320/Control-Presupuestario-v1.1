@@ -40,6 +40,9 @@
 
 ## 📨 PARA JAVIER
 
+### 🛒 4 columnas nuevas en `productivo.movimientos_insumos`: `compra_id`, `fecha_pago`, `empresa`, `orden_agricola_id` (2026-11-06) — ⏳ AVISO PREVIO (se corre a continuación con OK de JMS)
+- A-FEAT-1557 etapa 1, JMS 06/11: *«la compra… ahí nace todo»*. La compra ya es un movimiento `tipo = 'compra'` (mueve el stock); le sumamos: `compra_id` uuid (agrupa los renglones de UNA compra), `fecha_pago` date (la pactada: con ella la compra sin factura irá al Cash Flow en la etapa 2), `empresa` text (MSA/PAM/MA: quién paga) y `orden_agricola_id` uuid → `productivo.ordenes_agricolas` (la orden de la que salió; `on delete set null`). Vacías en lo existente. `scripts/216-…sql` verifica que no existían; deshacer exacto. **No toca RLS ni roles.**
+
 ### 🚜 2 columnas nuevas en `productivo.ordenes_agricolas`: `contratista_cuit` y `contratista_nombre` (2026-11-06) — ✅ APLICADA el 06/11 con OK de JMS (aviso previo): 2 columnas vacías, verificado con EXPLAIN UPDATE
 - A-FEAT-1556, JMS 05/11: *«un contratista por ORDEN»*. Texto, vacías al crear (las órdenes viejas quedan sin contratista). Por CUIT como el maestro `public.proveedores`, para que después la factura del contratista (ARCA, por CUIT) se ate a sus órdenes. `scripts/214-…sql` verifica que no existían; deshacer exacto. **No toca RLS ni roles** (la tabla ya tiene los suyos).
 
