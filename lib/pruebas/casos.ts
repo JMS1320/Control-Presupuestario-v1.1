@@ -5143,6 +5143,10 @@ export function correrCasos(): Resultado[] {
       const tres = hv.filter(r => /^(App|Papeles|DDJJ)/.test(String((r as any[])[0] ?? ""))).map(r => `${String((r as any[])[0]).split(" ")[0]} ${val((r as any[])[5])}`)
       const vaca = hv.find(r => { const c = (r as any[])[0]; return (c?.v ?? c) === "VACAS al parir" }) as any[]
       const vV = `${tres.join(" · ")} · vaca D «${vaca[3].v}» E ${String(vaca[4].f)}=${vaca[4].v} cab ${vaca[1].s.font.bold}/${vaca[1].s.font.sz} · link ${typeof vaca[13] === "object"} · ${vaca[11].v} · ${vaca[12].v} · papeles vaca ${(hv[hv.findIndex(r => String((r as any[])[0] ?? "").startsWith("CATEGORÍA POR CATEGORÍA")) + 1] as any[])[6]}`
+      // ➖ JMS 05/11: la línea divisoria «Datos aparte para Análisis» va entre el papel y los datos de análisis
+      const iDiv = hv.findIndex(r => (r as any[])[0]?.v === "Datos aparte para Análisis"), iTres = hv.findIndex(r => (r as any[])[0] === "LOS TRES VALORES DEL INICIO")
+      const vDiv = `divisoria ${iDiv > 0 && iDiv < iTres}`
+      chequear("Balance · hacienda", "➖ 02.1: la línea «Datos aparte para Análisis» separa el papel de lo que el contador no necesita", "divisoria true", vDiv, vDiv === "divisoria true", "A-FEAT-1541")
       const eV = "App 135000000 · Papeles 405560000 · DDJJ 255479054.9 · vaca D «» E K10*Q10=900000 cab true/12 · link true · Entre Surcos y Corrales · X · papeles vaca 184950000"
       chequear("Balance · hacienda", "💰 Valorizado con el formato del papel 2.2: por cabeza sin «valor kg/unidad» y valor por cabeza = precio × factor (fórmula), link a la cotización y los tres valores del inicio (app, papeles de JMS, DDJJ)",
         eV, vV, vV === eV, "A-FEAT-1541")

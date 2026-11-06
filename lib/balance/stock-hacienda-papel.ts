@@ -360,6 +360,9 @@ export function hojaStockValorizado(d: DatosValorizado): unknown[][] {
   const p = PAPELES_JMS_INICIO_2025
   // 🎨 JMS 05/11: el título del inicio, como en su papel — «VALUACIÓN ANTERIOR» y el año abajo.
   const ini = bloque22(f, `2.2) - VALUACIÓN ANTERIOR\n--((${d.fechaInicio.slice(0, 4)}))--`, d.inicio, p.tc, "el de los papeles de JMS 2025 (TC prom div)", 36)
+  // ➖ JMS 05/11 (en lo que mandó al contador): una línea divisoria — lo de arriba es el papel; lo de abajo, «datos aparte para
+  //    análisis», para que el contador no se ponga a mirar lo que no va a precisar.
+  f.push([], [], [], [], [conEstilo("Datos aparte para Análisis", { font: { bold: true, sz: 12 } })], [])
   f.push([]); f.push(["LOS TRES VALORES DEL INICIO", "", "", "", "", "PESOS", "Dif. con la app"])
   const a = f.length + 1
   const papeles = Object.values(p.valor).reduce((s, x) => s + x, 0)
