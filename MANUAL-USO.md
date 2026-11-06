@@ -6717,6 +6717,19 @@ La compra que cargaste en *Productivo → Insumos → Stock & Movimientos* (con 
 
 → A-TEST-1345
 
+## 🛑 «No va más»: un gasto fijo que dejó de corresponder, desde el Cash Flow *(2026-11-06)*
+
+Cuando una cuota de template ya no va (un seguro dado de baja, un servicio que se cortó):
+1. En el **Cash Flow**, Shift+clic en el importe de la cuota (**Cambiar estado**) → **🛑 No va más…**
+2. Elegí el alcance: **Sólo esta cuota** (el template sigue) o **Esta y las siguientes**.
+3. Mirá las listas: las que pasan a **Desactivado** (no se borran: quedan en el historial) y las que **no se tocan** (en un lote, pagadas o conciliadas).
+4. Con «esta y las siguientes», **Desactivar también el template** hace que «Renovar campaña» no lo vuelva a crear. Si el template tiene cuotas anteriores sin pagar, te avisa: desactivarlo las sacaría del Cash Flow.
+5. Escribí el motivo (queda en el template) y **No va más**. Si te equivocaste, **Deshacer** en el aviso. **«ir al template ↗»** abre Templates en ése.
+
+Una cuota agrupada (⛓) se desagrupa primero.
+
+→ A-TEST-1346
+
 ### 🧾 Impuestos vencidos o por vencer (Principal) *(2026-10-21)*
 
 Es el **primer aviso de Principal**, arriba de todo. Muestra las cuotas de **impuestos** (los templates cuya
