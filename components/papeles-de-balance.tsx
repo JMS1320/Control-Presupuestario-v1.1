@@ -49,7 +49,7 @@ import {
 } from "@/lib/balance/control-cuotas-templates"
 import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { ProponerFotoBalance } from "./proponer-foto-balance"
-import { respaldoDeSaldo, renglonesDeRespaldo, itemsDelRespaldo, carpetasDelRespaldo, type ItemDeRespaldo } from "@/lib/balance/respaldos"
+import { respaldoDeSaldo, respaldoDeFci, renglonesDeRespaldo, itemsDelRespaldo, carpetasDelRespaldo, type ItemDeRespaldo } from "@/lib/balance/respaldos"
 import { ivaConSigno, RENGLONES, type DatosDeLosPapeles, type ValorPropuesto } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { armarWorkbook, coberturaDeArgs, descargarLibroDiario, descargarSetDelBalance } from "@/lib/balance/export-libro-diario"
@@ -1842,6 +1842,14 @@ export function PapelesDeBalance() {
                 return { cuenta, usd, importe: usd ? s.usd : s.saldo,
                   r: respaldoDeSaldo(cuenta, fc, s.nroResumen, usd ? s.usd == null : s.saldo == null, bancarios.documentosRespaldo) }
               })
+              // 💹 JMS 06/11: «no menciona FCI con su link» — el fondo común, al inicio y al cierre, con su resumen
+              const t = bancarios.fciTenencia
+              if (t) {
+                const m = (a?: number | null, b?: number | null) => (a == null || b == null ? null : Math.round(a * b * 100) / 100)
+                const ini = `${Number(fc.slice(0, 4)) - 1}${fc.slice(4)}`
+                filas.push({ cuenta: "Fondo común — al inicio", usd: false, importe: m(t.cuotasInicio, t.valorInicio), r: respaldoDeFci(t.notaInicio, "inicio", ini, bancarios.documentosRespaldo) })
+                filas.push({ cuenta: "Fondo común — al cierre", usd: false, importe: m(t.cuotasCierre, t.valorCierre), r: respaldoDeFci(t.notaCierre, "cierre", fc, bancarios.documentosRespaldo) })
+              }
               const conLink = filas.filter(f => f.r.estado === "con_link").length
               return (
                 <details className="text-xs border rounded p-2">
