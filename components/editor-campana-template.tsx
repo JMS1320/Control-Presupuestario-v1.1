@@ -52,6 +52,8 @@ interface TemplateFila {
   periodicidad: string | null
   año: string | null
   activo: boolean | null
+  /** 💳 script 213 (06/11): se paga con tarjeta → sus cuotas nuevas nacen en «crédito» (lo hace la base) */
+  se_paga_con_tarjeta?: boolean | null
 }
 
 /** Una fila del editor: lo que el usuario ve y toca. `id === null` es una cuota nueva. */
@@ -160,6 +162,7 @@ export function EditorCampanaTemplate({
     if (!template || !templateOriginal) return [] as string[]
     return CAMPOS_TEMPLATE.filter(c => (template[c.k] ?? "") !== (templateOriginal[c.k] ?? "")).map(c => c.label)
       .concat(template.activo !== templateOriginal.activo ? ["Activo"] : [])
+      .concat(!!template.se_paga_con_tarjeta !== !!templateOriginal.se_paga_con_tarjeta ? ["Se paga con tarjeta"] : [])
   }, [template, templateOriginal])
 
   const hayCambios = plan.acciones.length > 0 || cambiosTemplate.length > 0
@@ -200,6 +203,7 @@ export function EditorCampanaTemplate({
           if ((template[c.k] ?? "") !== (templateOriginal[c.k] ?? "")) cambios[c.k] = template[c.k]
         })
         if (template.activo !== templateOriginal.activo) cambios.activo = template.activo
+        if (!!template.se_paga_con_tarjeta !== !!templateOriginal.se_paga_con_tarjeta) cambios.se_paga_con_tarjeta = !!template.se_paga_con_tarjeta
         const { error: e } = await supabase.from("egresos_sin_factura").update(cambios).eq("id", templateId)
         if (e) throw e
       }
@@ -319,6 +323,15 @@ export function EditorCampanaTemplate({
                     onChange={e => setTemplate({ ...template, activo: e.target.checked })}
                   />
                   Activo
+                </label>
+                {/* 💳 A-FEAT-1570 (JMS 06/11: «agregá la marca de tarjeta») */}
+                <label className="text-xs text-gray-500 flex items-center gap-2 mt-1" title="Las cuotas NUEVAS de este template nacen en «Crédito» (pagado con tarjeta): no aparecen en el Cash Flow como salida de banco y se concilian contra el resumen de la tarjeta. Las que ya existen no cambian.">
+                  <input
+                    type="checkbox"
+                    checked={!!template.se_paga_con_tarjeta}
+                    onChange={e => setTemplate({ ...template, se_paga_con_tarjeta: e.target.checked })}
+                  />
+                  💳 Se paga con tarjeta
                 </label>
               </div>
             </div>
