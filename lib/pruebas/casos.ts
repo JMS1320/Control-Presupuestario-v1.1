@@ -74,6 +74,7 @@ import { textoQueSeCobro, detalleConQueSeCobro } from "@/lib/ventas/que-se-cobro
 import { esperadaDe, emparejar } from "@/lib/pagos/nc-diferencia-cambio"
 import { calcularVinculo, pctQueCierra, proponerCompras, comprasSinFacturaDelProveedor } from "@/lib/productivo/compras-factura"
 import { comprasSinFactura } from "@/lib/cashflow/compras-sin-factura"
+import { aPesosHa, equivalencias, precioAFecha, ultimaTarifa, controlFacturaContratista } from "@/lib/productivo/tarifa-contratista"
 import { facturasCortas } from "@/lib/pagos/lineas-detalle-pago"
 import { NOMBRE_PARA_TERCEROS, empresaDeSchema } from "@/lib/empresas"
 import { facturasRestringidas } from "@/lib/auth/roles"
@@ -10565,6 +10566,29 @@ export function correrCasos(): Resultado[] {
       const espP = "0170000000000000000001 · false · pepe.campo.mp · pepe@x.com · false · Destino sólo para esta transferencia · true · true · true · false · true · true · true · false · false"
       chequear("Accesos", "Lote Galicia: el CBU/alias y el mail escritos para esta transferencia sola la habilitan (sin tocar el proveedor); sólo en filas sin proveedor o con CUIT comodín, nunca en sueldos",
         espP, vP, vP === espP, "A-FEAT-1570")
+    }
+    // ── 💲 A-FEAT-1557 etapa 4: la tarifa del contratista en todos los índices, con los precios de la fecha ──
+    {
+      // dólar 1.000, soja $ 400.000/tn = 400 $/kg, gasoil 1.250 $/l, rinde 3.000 kg/ha con el grano a 400 $/kg
+      const p = { usd: 1000, sojaKg: 400, gasoilL: 1250, granoKg: 400, rindeKgHa: 3000 }
+      const deUsd = aPesosHa(20, "usd_ha", p)                      // 20 USD/ha → 20.000 $/ha
+      const eq = equivalencias(deUsd, p)                            // 20 USD · 50 kg soja · 16 l gasoil · 1,67 %
+      const dePct = aPesosHa(3, "pct_cosecha", p)                   // 3 % de 3.000 kg × 400 = 36.000 $/ha
+      const sinGasoil = equivalencias(10000, { ...p, gasoilL: null }).l_gasoil_ha
+      const serie = [{ fecha: "2026-03-01", valor: 900 }, { fecha: "2026-03-10", valor: 0 }, { fecha: "2026-03-05", valor: 950 }]
+      const pf = [precioAFecha(serie, "2026-03-12")?.valor, precioAFecha(serie, "2026-02-01")?.anticipado, precioAFecha([], "2026-01-01")].join("/")
+      const ut = ultimaTarifa([
+        { fecha: "2026-01-01", contratista_cuit: "20-111-3", labor_id: 7, tarifa: 18, tarifa_unidad: "usd_ha" },
+        { fecha: "2026-02-01", contratista_cuit: "201113", labor_id: 7, tarifa: 45, tarifa_unidad: "kg_soja_ha" },
+        { fecha: "2026-03-01", contratista_cuit: "999", labor_id: 7, tarifa: 99, tarifa_unidad: "usd_ha" },
+      ], "20111-3", 7)
+      const cf = controlFacturaContratista(2_040_000, [{ ha: 50, pesosHaPactado: 20000 }, { ha: 50, pesosHaPactado: 20000 }])
+      const cf2 = controlFacturaContratista(1_000_000, [{ ha: 50, pesosHaPactado: null }])
+      const v4 = [deUsd, eq.ars_ha, eq.usd_ha, eq.kg_soja_ha, eq.l_gasoil_ha, eq.pct_cosecha, dePct, sinGasoil ?? "(sin dato)", pf,
+        `${ut?.tarifa}${ut?.unidad}`, `${cf.realPesosHa}|${cf.esperado}|${cf.dif}|${cf.cierra}`, `${cf2.realPesosHa}|${cf2.cierra}`].join(" · ")
+      const e4 = "20000 · 20000 · 20 · 50 · 16 · 1.67 · 36000 · (sin dato) · 950/true/ · 45kg_soja_ha · 20400|2000000|40000|false · 20000|null"
+      chequear("Productivo", "Tarifa del contratista: cualquier unidad pasa a $/ha y de ahí a USD, kg de soja, litros de gasoil y % de cosecha con los precios de la fecha; sin precio queda vacío; la factura da la tarifa real y avisa si no cierra con lo pactado (±1 %)",
+        e4, v4, v4 === e4, "A-FEAT-1557")
     }
     // ── 🛒 A-FEAT-1557 etapa 2: la compra sin factura en el Cash Flow (una fila por compra; lo ya facturado sale) ──
     {

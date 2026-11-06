@@ -29,6 +29,8 @@ import { PanelCicloRecria } from "./panel-ciclo-recria"
 import { PanelMedicionesInsumo } from "./panel-mediciones-insumo"
 import { PanelEntregasFacturas } from "./panel-entregas-facturas"
 import { ModalVincularCompras } from "./modal-vincular-compras"
+import { TarifasContratistas } from "./tarifas-contratistas"
+import { UNIDADES_TARIFA, ultimaTarifa, type UnidadTarifa } from "@/lib/productivo/tarifa-contratista"
 // Parser único del proyecto: coma decimal y punto de miles, como manda
 // CLAUDE.md § Convención Inputs Monetarios (es-AR).
 import { parseNumeroAR } from "@/lib/format/numero"
@@ -249,6 +251,11 @@ interface OrdenAgricola {
   /** 🚜 A-FEAT-1556 (script 214): el contratista de la orden, por CUIT como el maestro de proveedores */
   contratista_cuit?: string | null
   contratista_nombre?: string | null
+  /** 💲 A-FEAT-1557 etapa 4 (script 221): la factura del contratista que cobra la orden */
+  factura_contratista_id?: string | null
+  factura_contratista_empresa?: string | null
+  /** 💲 cada labor con su tarifa pactada (valor + unidad) */
+  labores_det?: { labor_id: number; nombre: string; tarifa: number | null; tarifa_unidad: string | null }[]
 }
 
 interface LineaOrdenAgricola {
@@ -7634,8 +7641,20 @@ function SubTabOrdenesAgricolas() {
     setLineas(prev => prev.filter(l => l.key !== key))
   }
 
+  // 💲 A-FEAT-1557 etapa 4: la tarifa pactada de cada labor elegida (valor es-AR como texto + unidad)
+  const [tarifas, setTarifas] = useState<Record<number, { valor: string; unidad: UnidadTarifa }>>({})
+  const [verTarifas, setVerTarifas] = useState(false)
+  const historialTarifas = () => ordenes.flatMap(o => (o.labores_det || []).map(l => ({
+    fecha: o.fecha, contratista_cuit: o.contratista_cuit || null, labor_id: l.labor_id, tarifa: l.tarifa, tarifa_unidad: l.tarifa_unidad,
+  })))
   const toggleLabor = (laborId: number) => {
+    const prender = !laboresSeleccionadas[laborId]
     setLaboresSeleccionadas(prev => ({ ...prev, [laborId]: !prev[laborId] }))
+    // Default del dato real: la tarifa de la última vez para esa labor con ese contratista (se cambia acá)
+    if (prender && !tarifas[laborId]) {
+      const u = ultimaTarifa(historialTarifas(), nuevaOrden.contratista_cuit || null, laborId)
+      if (u) setTarifas(t => ({ ...t, [laborId]: { valor: u.tarifa.toLocaleString('es-AR', { maximumFractionDigits: 4 }), unidad: u.unidad } }))
+    }
   }
 
   const agregarLaborCustom = async () => {
@@ -7662,6 +7681,7 @@ function SubTabOrdenesAgricolas() {
     setLotesOrden([{ key: Date.now(), lote_id: '', lote_nombre: '', hectareas: '' }])
     setTotalHaEscrito('')
     setLaboresSeleccionadas({})
+    setTarifas({})
     setLineas([])
     setNuevaLabor('')
     setMostrarInputLabor(false)
@@ -7673,13 +7693,16 @@ function SubTabOrdenesAgricolas() {
     try {
       const { data: ordenesData, error } = await supabase.schema('productivo')
         .from('ordenes_agricolas')
-        .select('*, lote:lotes_agricolas(nombre_lote, hectareas), lotes_orden:ordenes_agricolas_lotes(lote_id, lote_nombre, hectareas, orden), lineas:lineas_orden_agricola(*), lineas_labores:lineas_orden_agricola_labores(labor_id, labores(nombre))')
+        .select('*, lote:lotes_agricolas(nombre_lote, hectareas), lotes_orden:ordenes_agricolas_lotes(lote_id, lote_nombre, hectareas, orden), lineas:lineas_orden_agricola(*), lineas_labores:lineas_orden_agricola_labores(labor_id, tarifa, tarifa_unidad, labores(nombre))')
         .order('fecha', { ascending: false })
         .order('created_at', { ascending: false })
       if (error) throw error
       const ordenesConLabores = (ordenesData || []).map((o: any) => ({
         ...o,
-        labores: (o.lineas_labores || []).map((ll: any) => ll.labores?.nombre).filter(Boolean)
+        labores: (o.lineas_labores || []).map((ll: any) => ll.labores?.nombre).filter(Boolean),
+        labores_det: (o.lineas_labores || []).map((ll: any) => ({
+          labor_id: ll.labor_id, nombre: ll.labores?.nombre || '', tarifa: ll.tarifa != null ? Number(ll.tarifa) : null, tarifa_unidad: ll.tarifa_unidad ?? null,
+        })),
       }))
       setOrdenes(ordenesConLabores)
 
@@ -7819,7 +7842,12 @@ function SubTabOrdenesAgricolas() {
       if (laboresIds.length > 0) {
         const { error: laboresError } = await supabase.schema('productivo')
           .from('lineas_orden_agricola_labores')
-          .insert(laboresIds.map(labor_id => ({ orden_id: ordenId, labor_id })))
+          .insert(laboresIds.map(labor_id => {
+            // 💲 A-FEAT-1557 etapa 4: la tarifa pactada, si se cargó (vacía = sin tarifa)
+            const t = tarifas[labor_id]
+            const valor = t?.valor ? parseNumeroAR(t.valor) : 0
+            return { orden_id: ordenId, labor_id, tarifa: valor > 0 ? valor : null, tarifa_unidad: valor > 0 ? t!.unidad : null }
+          }))
         if (laboresError) throw new Error(laboresError.message)
       }
 
@@ -7853,6 +7881,11 @@ function SubTabOrdenesAgricolas() {
       if (orden.labores?.includes(labor.nombre)) laboresMap[labor.id] = true
     }
     setLaboresSeleccionadas(laboresMap)
+    const tarifasMap: Record<number, { valor: string; unidad: UnidadTarifa }> = {}
+    for (const l of orden.labores_det || []) {
+      if (l.tarifa != null && l.tarifa_unidad) tarifasMap[l.labor_id] = { valor: l.tarifa.toLocaleString('es-AR', { maximumFractionDigits: 4 }), unidad: l.tarifa_unidad as UnidadTarifa }
+    }
+    setTarifas(tarifasMap)
     setLineas((orden.lineas || []).map(l => ({
       key: Math.random(),
       insumo_nombre: l.insumo_nombre,
@@ -8032,11 +8065,18 @@ function SubTabOrdenesAgricolas() {
             <Plus className="mr-1 h-4 w-4" />
             Nueva Orden
           </Button></Permisable>}
+          <Button variant={verTarifas ? 'default' : 'outline'} size="sm" onClick={() => setVerTarifas(v => !v)}
+            title="Las tarifas de los contratistas en $/ha, USD/ha, kg de soja, litros de gasoil y % de la cosecha, para comparar">
+            💲 Tarifas
+          </Button>
           <Button variant="outline" size="sm" onClick={cargarDatos}>
             <RefreshCw className="h-4 w-4" />
           </Button>
         </div>
       </div>
+
+      {/* 💲 A-FEAT-1557 etapa 4: el comparador de tarifas y la factura del contratista */}
+      {verTarifas && <TarifasContratistas ordenes={ordenes} onCambio={cargarDatos} />}
 
       {/* A-FEAT-1397: filtros */}
       {ordenes.length > 0 && (
@@ -8121,7 +8161,14 @@ function SubTabOrdenesAgricolas() {
                 <TableCell>{formatoFecha(o.fecha)}</TableCell>
                 <TableCell>{o.lote?.nombre_lote || o.lote_nombre || '-'}</TableCell>
                 <TableCell className="text-right">{formatoNumero(o.hectareas)}</TableCell>
-                <TableCell className="text-sm">{(o.labores || []).join(', ') || '-'}</TableCell>
+                <TableCell className="text-sm">
+                  {(o.labores_det || []).length ? (o.labores_det || []).map(l => (
+                    <div key={l.labor_id}>{l.nombre}{l.tarifa != null && <span className="ml-1 text-xs text-muted-foreground">· {l.tarifa.toLocaleString('es-AR', { maximumFractionDigits: 2 })} {UNIDADES_TARIFA.find(u => u.id === l.tarifa_unidad)?.corto}</span>}</div>
+                  )) : '-'}
+                  {o.estado === 'ejecutada' && o.contratista_cuit && !o.factura_contratista_id && (
+                    <button type="button" className="mt-0.5 rounded bg-amber-100 px-1 text-[10px] text-amber-800" title="Atar la factura del contratista (💲 Tarifas)"
+                      onClick={() => setVerTarifas(true)}>🧾 falta factura del contratista</button>)}
+                </TableCell>
                 <TableCell>
                   {(o.lineas || []).length > 0 ? (
                     <div className="space-y-0.5">
@@ -8352,6 +8399,25 @@ function SubTabOrdenesAgricolas() {
                   </Button></Permisable>
                 )}
               </div>
+              {/* 💲 A-FEAT-1557 etapa 4: la tarifa pactada con el contratista, en la unidad que se pactó */}
+              {laboresAgricolas.some(l => laboresSeleccionadas[l.id]) && (
+                <div className="space-y-1 rounded-md border bg-muted/20 p-2">
+                  <p className="text-xs text-muted-foreground">Tarifa pactada con el contratista (opcional) — en la unidad del trato; el comparador la pasa a los otros índices.</p>
+                  {laboresAgricolas.filter(l => laboresSeleccionadas[l.id]).map(l => (
+                    <div key={l.id} className="flex flex-wrap items-center gap-2 text-sm">
+                      <span className="w-40 truncate">{l.nombre}</span>
+                      <Input type="text" className="h-7 w-28 text-right" placeholder="0,00" disabled={modoVer}
+                        value={tarifas[l.id]?.valor || ''}
+                        onChange={e => { const v = e.target.value; setTarifas(t => ({ ...t, [l.id]: { valor: v, unidad: t[l.id]?.unidad || 'usd_ha' } })) }} />
+                      <select className="h-7 rounded border px-1 text-xs" disabled={modoVer}
+                        value={tarifas[l.id]?.unidad || 'usd_ha'}
+                        onChange={e => { const u = e.target.value as UnidadTarifa; setTarifas(t => ({ ...t, [l.id]: { valor: t[l.id]?.valor || '', unidad: u } })) }}>
+                        {UNIDADES_TARIFA.map(u => <option key={u.id} value={u.id}>{u.etiqueta}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Líneas insumos */}
