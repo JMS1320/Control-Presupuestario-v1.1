@@ -1310,6 +1310,12 @@ ese lugar afecte a todo lo que lo usa.
   texto, el filtro de Excel lista «01/04/2026» como una palabra y no agrupa por año y mes)*. Antes de escribir un libro se llama
   `fechasReales(wb)` (`lib/excel/fechas-reales.ts`). Un export nuevo **la lleva**; los únicos que no son los archivos que se
   suben al banco (formato fijo). → [A-FEAT-1519](PENDIENTES.md#a-feat-1519).
+- 📎 **Todo renglón del Cash Flow que tenga su comprobante lo MUESTRA** *(regla del usuario 2026-11-06: «todos los renglones de
+  cash flow que tengan su comprobante deben mostrarlo. Esto aplica a todo lo que vayamos cargando. Ejemplo VEP del contador»)*.
+  Un circuito nuevo que vincula un documento (boleta, VEP, recibo, comprobante) a algo que figura en el Cash Flow **tiene que
+  hacerlo aparecer en la 📎 de ese renglón**: la factura por `estadoArchivoDigital`, las cuotas de template por
+  `documentosDeCuotas` + `documentosDelRenglon` (`lib/documentos/del-renglon.ts`). Vincularlo y que no se vea es no haberlo
+  vinculado. → [A-FEAT-1576](PENDIENTES.md#a-feat-1576).
 - Si la vista tiene **export (Excel/PDF)**, al sumarle un campo se actualiza también el export.
   Motivo: el usuario usa las descargas como registro fuera de la app; si el export queda viejo,
   pierde datos que sí ve en pantalla.
