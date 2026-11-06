@@ -42,7 +42,7 @@ if (!["MA", "PAM"].includes(S)) { console.log("--socio MA | PAM"); process.exit(
 const OTRO = S === "MA" ? "PAM" : "MA"
 const env = Object.fromEntries(readFileSync(".env.local","utf8").split(/\r?\n/).filter(l=>l.includes("=")&&!l.trim().startsWith("#")).map(l=>{const i=l.indexOf("=");return [l.slice(0,i).trim(),l.slice(i+1).trim().replace(/^["']|["']$/g,"")]}))
 const sb: any = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
-const DESDE = "2025-07-01", HASTA = "2026-06-30", ETIQ = "25/26", HOY = "2026-11-03"
+const DESDE = "2025-07-01", HASTA = "2026-06-30", ETIQ = "25/26", HOY = "2026-11-06"
 const MESES = ["2025-07","2025-08","2025-09","2025-10","2025-11","2025-12","2026-01","2026-02","2026-03","2026-04","2026-05","2026-06"]
 const ROT = ["jul-25","ago-25","sep-25","oct-25","nov-25","dic-25","ene-26","feb-26","mar-26","abr-26","may-26","jun-26"]
 const meses = MESES.map((clave, i) => ({ clave, rotulo: ROT[i] }))
@@ -210,21 +210,41 @@ for (const t of TABLAS) {
   }
 }
 const categoria = (it: Item) => it.que.replace(/ \d+-\d+$/, "")
+// 👥 v11 — ESQUEMA DE JMS (06/11): «MA tiene sueldo… eso le da un monto a cobrar; luego tiene pagos que recibe; si retira más fondos que
+// eso le queda en cuenta como retirado hasta que se haga una distribución» · «RET 3 MA sí debe contar en el saldo: son retiros que ella va
+// haciendo mientras MSA le paga, y además le paga sus impuestos» · «Libertad se puede manejar aparte… que se anote que no forma parte de la
+// cuenta de retiros, que es algo extra». Entonces: SUELDO (−, lo que MSA le debe) + todo lo que retiró (+) = saldo; Libertad, aparte.
+const empleadoSocio = [...empleados.values()].find((e: any) => String(e.nombre).trim().toUpperCase() === S && String(e.empresa).toUpperCase() === "MSA") as any
+const sueldoSocio = empleadoSocio ? (await todo((d, h) => sb.from("sueldos_periodos").select("id, anio, mes, bruto_calculado, estado").eq("empleado_id", empleadoSocio.id).order("id").range(d, h)))
+  .map((p: any) => ({ mes: `${p.anio}-${String(p.mes).padStart(2, "0")}`, bruto: Number(p.bruto_calculado) || 0, estado: p.estado }))
+  .filter((p: any) => MESES.includes(p.mes)) : []
 const det = [
   ...items.map(it => ({ categoria: categoria(it), mes: it.mes, importe: it.imp,
     columnas: [dmy(it.fecha), it.cuenta, it.desc, it.detalle ?? "", it.contra ?? "", it.que, it.por, it.contable, it.interno, it.nota ?? ""] })),
-  ...libMes.filter(x => x.cta !== 0).map(x => ({ categoria: "LIBERTAD — reparto entre tres (detalle en la solapa Libertad)", mes: x.mes, importe: x.cta,
-    columnas: ["", "Libertad", x.esSocio
-      ? `${S} socio: MSA pagó ${x.msa.toLocaleString("es-AR")} − su 50% ${(x.costo / 2).toLocaleString("es-AR")} + mitad de lo que pagó ${OTRO} ${(x.delOtro / 2).toLocaleString("es-AR")}`
-      : `${S} tercero (socio ${OTRO}): ${S} pagó ${x.suyo.toLocaleString("es-AR")} → aportó la mitad a MSA`, "Libertad", "cuadro Libertad", "LIB", "", ""] })),
+  ...sueldoSocio.map((p: any) => ({ categoria: `Sueldo de ${S} (lo que MSA le debe)`, mes: p.mes, importe: r2(-p.bruto),
+    columnas: [dmy(`${p.mes}-${new Date(Number(p.mes.slice(0, 4)), Number(p.mes.slice(5, 7)), 0).getDate()}`), "Sueldos", `Sueldo ${p.mes.slice(5, 7)}/${p.mes.slice(0, 4)}`, "", "", `Sueldo de ${S}`, "período de Sueldos (devengado)", "", "", `estado del período: ${p.estado}`] })),
 ]
 const filasCta = hojaResumenPorMes(det, {
-  titulo: `CUENTA MSA ↔ ${S} — ejercicio ${ETIQ} — por CONTABLE y cruce de la base (+ = ${S} retiró de MSA · − = ${S} aportó)`,
-  notas: [`Sin saldo de inicio: es el MOVIMIENTO del ejercicio. Libertad: un renglón por mes con el reparto entre tres (${S} es socio de Libertad ${S === "MA" ? "ene–jun 2026" : "jul–dic 2025"} y tercero el otro semestre).`,
-    `Entra todo lo que MSA pagó y era de ${S} (templates, facturas, sueldos de sus empleados, lo marcado CTA/RET … ${S}) y al revés (${S} pagando cosas de MSA).`,
+  titulo: `CUENTA MSA ↔ ${S} — ejercicio ${ETIQ} (+ = ${S} retiró de MSA · − = MSA le debe / ${S} aportó)`,
+  notas: [`Esquema (JMS 06/11): el SUELDO de ${S} es lo que MSA le debe (−); lo que retira —sus pagos mensuales, los gastos suyos que paga MSA (RET 3 ${S}: impuestos, sueldos de sus empleados, facturas a su nombre) y lo de PAM que pasa a ${S} desde 2026— suma (+). Si retira más que su sueldo, el saldo queda como RETIRADO hasta una distribución.`,
+    `⚠️ LIBERTAD NO forma parte de esta cuenta: es algo extra y se maneja aparte (solapa «Libertad»). Saldo de inicio: 0 (sin dato) — ver la solapa «Saldo ${S}».`,
     `Control: ${sinMarca.length} detectados por la base SIN marca contable · ${marcadosSinNada.length} marcados SIN ningún vínculo — ver la solapa Control.`],
-  meses, encabezadoDetalle: ["Fecha", "Cuenta", "Descripción del banco", "Detalle", "Contraparte (leyendas)", "Qué es", "Detectado por", "Contable", "Interno", "Nota del movimiento"], rotuloImporte: "Importe (+ retiró / − aportó)", semestres: true,
+  meses, encabezadoDetalle: ["Fecha", "Cuenta", "Descripción del banco", "Detalle", "Contraparte (leyendas)", "Qué es", "Detectado por", "Contable", "Interno", "Nota del movimiento"], rotuloImporte: "Importe (+ retiró / − le debe)", semestres: true,
 })
+// 🧮 El saldo mes por mes: sueldo (−) · retiros y gastos suyos (+) · saldo acumulado. Libertad, aparte y al pie (no suma).
+const sueldoMes = MESES.map(m => r2(-sueldoSocio.filter((p: any) => p.mes === m).reduce((t: number, p: any) => t + p.bruto, 0)))
+const retiroMes = MESES.map(m => r2(items.filter(i => i.mes === m).reduce((t, i) => t + i.imp, 0)))
+const acumulado = MESES.map((_, j) => r2(sueldoMes.slice(0, j + 1).reduce((a, b) => a + b, 0) + retiroMes.slice(0, j + 1).reduce((a, b) => a + b, 0)))
+const filasSaldo: unknown[][] = [[`SALDO DE LA CUENTA MSA ↔ ${S} — mes por mes (${ETIQ})`],
+  [`+ = ${S} retiró más de lo que le corresponde (queda como RETIRADO hasta una distribución) · − = MSA le debe. Saldo de inicio: 0 (sin dato).`], [],
+  ["Mes", `Sueldo de ${S} (MSA le debe)`, "Retiros y gastos suyos pagados por MSA", "Movimiento del mes", "SALDO ACUMULADO", "", "Libertad del mes (APARTE, no suma)"],
+  ["Inicio 30/06/2025", "", "", "", 0, "", ""],
+  ...MESES.map((m, j) => { const n = 6 + j
+    return [ROT[j], sueldoMes[j], retiroMes[j], { t: "n", f: `B${n}+C${n}`, v: r2(sueldoMes[j] + retiroMes[j]) }, { t: "n", f: `E${n - 1}+D${n}`, v: acumulado[j] }, "", libMes[j]?.cta ?? 0] }),
+  ["TOTAL", { t: "n", f: "SUM(B6:B17)", v: r2(sueldoMes.reduce((a, b) => a + b, 0)) }, { t: "n", f: "SUM(C6:C17)", v: r2(retiroMes.reduce((a, b) => a + b, 0)) },
+    { t: "n", f: "SUM(D6:D17)", v: acumulado[11] }, { t: "n", f: "E17", v: acumulado[11] }, "", { t: "n", f: "SUM(G6:G17)", v: r2(libMes.reduce((t, x) => t + x.cta, 0)) }],
+  [], ["Control: el SALDO AL CIERRE (E18) tiene que ser igual al TOTAL de la solapa «Cuenta MSA-" + S + "»."],
+  [`Libertad (columna G): el reparto entre tres de la solapa «Libertad». Se maneja aparte — JMS 06/11: «no forma parte de la cuenta de retiros, es algo extra».`]]
 const filasInt = hojaResumenPorMes(porInterno.map(it => ({ categoria: it.que.replace(/ \d+-\d+$/, ""), mes: it.mes, importe: it.imp,
   columnas: [dmy(it.fecha), it.cuenta, it.desc, it.detalle ?? "", it.contra ?? "", it.que, it.contable, it.interno, it.nota ?? ""] })), {
   titulo: `${S} por INTERNO («DIST ${S}») — cuentas de MSA — ejercicio ${ETIQ} (+ = salió de MSA para ${S})`,
@@ -293,6 +313,8 @@ const temasLista: Tema[] = [
       decidir: "¿También son retiro de MA por CONTABLE? Hoy cuentan sólo por interno", cols: COLS_MOV, filas: porInterno.filter(i => /AUTO/.test(i.que)).map(filaItem) },
     { de: S, tema: "FC - 105 y FC - 851", hay: "Interno DIST MA, contable vacío", decidir: "¿Qué son y de quién? (si son de MA, ¿también por contable?)", cols: COLS_MOV,
       filas: internoSinContable.filter(i => /FC - (105|851)\b/.test(i.que)).map(filaItem) },
+    { de: S, tema: "Saldo de inicio", hay: "La cuenta arranca en 0 al 30/06/2025 (sin dato)", decidir: `¿Con qué saldo arrancaba ${S} al 30/06/2025? (0 si estaba en cero)`, cols: ["", "", "", "", "", "", "", "", "", "Tu respuesta"], filas: [["", "", "", "", "", "", "", "", "", ""]] },
+    { de: S, tema: `Facturas de ${S} a MSA`, hay: `En 25/26 no hay ninguna factura de ${S} a MSA (${S} facturó sólo a Provinvest)`, decidir: "¿Qué facturas tenías en mente? (si ninguna, queda así)", cols: ["", "", "", "", "", "", "", "", "", "Tu respuesta"], filas: [["", "", "", "", "", "", "", "", "", ""]] },
   ] : [
     { de: S, tema: `Interno ${S} sin contable`, hay: `${internoSinContable.length} movimientos con interno DIST ${S} y contable de otro o vacío: ${ars(tot(internoSinContable))}`,
       decidir: `¿Son retiro de ${S} también por contable?`, cols: COLS_MOV, filas: internoSinContable.map(filaItem) },
@@ -326,7 +348,7 @@ temasLista.forEach((t, k) => { temas.push([`#${k + 1} · ${t.tema} — ${t.decid
 // ── 5 · Escribir (nunca pisa: v2, v3…)
 if (!existsSync(CARPETA)) mkdirSync(CARPETA, { recursive: true })
 const nombre = (b: string) => { let p = join(CARPETA, `${b}.xlsx`), v = 2; while (existsSync(p)) p = join(CARPETA, `${b} v${v++}.xlsx`); return p }
-const wbC = XLSX.utils.book_new(); agregarHoja(wbC, "Temas abiertos", temas); agregarHoja(wbC, `Cuenta MSA-${S}`, filasCta); agregarHoja(wbC, "Libertad", filasLib)
+const wbC = XLSX.utils.book_new(); agregarHoja(wbC, "Temas abiertos", temas); agregarHoja(wbC, `Saldo ${S}`, filasSaldo); agregarHoja(wbC, `Cuenta MSA-${S}`, filasCta); agregarHoja(wbC, "Libertad", filasLib)
 agregarHoja(wbC, "Control", control); agregarHoja(wbC, `${S} por interno`, filasInt); agregarHoja(wbC, "Contable vs interno", comparar); fechasReales(wbC as any)
 const pC = nombre(`Cuenta MSA-${S} 25-26 (${HOY})`); XLSX.writeFile(wbC, pC)
 
