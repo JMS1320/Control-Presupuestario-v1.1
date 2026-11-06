@@ -3352,6 +3352,9 @@ Columna `boolean not null default false` (con su comment) y trigger **BEFORE INS
 >
 > ⚠️ **06/11 — NÚMEROS 212, 213 y 214 DUPLICADOS** (error de T1-balance: corrió los suyos sin leer los avisos de camino 3 en el tablero). Hay DOS scripts corridos con cada número, en archivos distintos: `212-vincular-extractos-msa` (T1) / `212-aca-orbith-a-credito` (camino 3) · `213-granos-cosecha-cierre-msa` (T1) / `213-template-se-paga-con-tarjeta` (camino 3) · `214-vincular-visa-msa` (T1) / `214-orden-agricola-contratista` (camino 3). Cada deshacer borra sólo en su tabla con su marca: no se pisan. Renumerar los de T1 (217/218/219 + la marca en sus filas) espera el OK de JMS.
 
+### 2026-11-06 · MSA Galicia: el «Compra Cash Back» del 21/07/2025 ($ 98.335,56) a CATEG «CAJA» (script 224, DATOS) — ✅ CORRIDO (JMS: «cash back es todo a caja»)
+Completa el 223. Id 8385fc8d-5c25-4374-8fa8-cf772164e352. Deshacer: `scripts/224-cash-back-a-caja-msa-deshacer.sql`. Queda sin categ sólo «Caja Navideña Personal» (compra con débito, 22/12) → A-DAT-99.
+
 ### 2026-11-06 · MSA Galicia: las 23 extracciones a caja de jul-25 → ene-26 con CATEG «CAJA» (script 223, DATOS) — ✅ CORRIDO con OK de JMS («sí, corré el 223»)
 Tramo histórico del extracto (antes de que la app conciliara): 19 a Caja AMS + 4 a Caja Sigot = $ 11.360.000, sin categ. Quedan igual que las de feb-26 en adelante. Sólo cambia `categ` (no toca detalle ni estado). Sin columna de marca en `msa_galicia`: el deshacer va por los 23 ids (`scripts/223-extracciones-a-caja-historico-msa-deshacer.sql`). Control al correrlo: 23 filas actualizadas; jul-25 → ene-26 con CAJA = 24 (con la del 01/07 que ya lo tenía) y $ 11.360.000 sin contar esa. Quedan 2 sin categ fuera del script (cash back 21/07 y «Caja Navideña Personal» 22/12) → A-DAT-99.
 
