@@ -3475,6 +3475,9 @@ En **Cash Flow → 🏛️ Boletas ARBA**. Dos botones y dos campos:
 🗂️ **Las que el mail no dijo de quién eran** caen primero en *_Sin asignar* con el nombre del link. Al terminar «Bajar y archivar», la app las lee, sabe de qué campo son y **las renombra y mueve solas** a la carpeta de su dueño (también con el botón **«🗂️ Ordenar en el Drive»**). No borra ni pisa nada; en *_Sin asignar* queda sólo lo que no es de ningún campo tuyo.
 → ⚠️ Sin probar todavía → A-TEST-1336
 
+🔔 **Las boletas que faltan te llegan como tarea.** Apenas llegan las boletas de una cuota, las de tus campos que no vinieron (y no están pagadas) quedan en **🔔 Para vos** como una sola tarea, con fecha 3 días antes del vencimiento. Si después llegan o las pagás, la tarea se cierra sola.
+→ ⚠️ Sin probar todavía → A-TEST-1337
+
 ⚠️ **Si la carpeta que pegaste no existe o no se puede abrir, no baja nada y te lo dice.** Es a
 propósito: archivar 40 boletas donde vos no querías es peor que no archivarlas, porque quedan
 donde nadie las busca y la próxima corrida cree que ya están.

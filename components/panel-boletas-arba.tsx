@@ -314,6 +314,8 @@ export function PanelBoletasArba() {
       if (n) {
         avisar("info", `${n} boleta(s) de ${anioArchivo} ya leídas`, "Es lo guardado de antes: propuestas sin aplicar y las ya aplicadas. No hace falta volver a subir ni leer nada.")
         setVerPlanilla(true)
+        // 🔔 A-FEAT-1566: al abrir también se repasa la tarea de las que faltan (se cierra sola si ya se pagaron)
+        setTimeout(() => void tareaFaltantes(), 0)
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -584,7 +586,7 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
         const yaLeidas = new Set(filasRef.current.filter(f => f.boleta.importe != null || (f.boleta.cuota != null && f.boleta.cuota !== "?")).map(f => f.archivo))
         const aLeer = Object.entries(idx).filter(([a, v]) => v.file_id && !yaLeidas.has(a)).map(([a, v]) => ({ archivo: a, file_id: v.file_id! }))
         // 🗂️ A-FEAT-1567: después de leer, cada boleta con dueño conocido se ORDENA en el Drive (nombre y carpeta de JMS)
-        setTimeout(async () => { if (aLeer.length) await leerDelDrive(aLeer, idx); await ordenarEnDrive(true, idx) }, 0)
+        setTimeout(async () => { if (aLeer.length) await leerDelDrive(aLeer, idx); await ordenarEnDrive(true, idx); await tareaFaltantes() }, 0)
       }
 
       // 🗣️ **El informe va en el idioma del usuario, no en el del sistema.**
@@ -673,6 +675,30 @@ ${nuevas.length - casadas} no casaron: mirá la columna Estado de cada fila.` : 
       avisar(fallas.length ? "error" : "ok", `${bien.length} boleta(s) ordenadas en el Drive` + (fallas.length ? ` · ${fallas.length} no` : ""),
         bien.map(x => `${x.carpeta} / ${x.nombre}`).join("\n") + (fallas.length ? "\n\nNo se pudieron:\n" + fallas.map(x => `${x.file_id}: ${x.error}`).join("\n") : ""))
     } catch (e) { avisar("error", "No se pudieron ordenar en el Drive", (e as Error).message) }
+  }
+
+  /**
+   * 🔔 A-FEAT-1566 — las boletas que FALTAN de la cuota que está llegando → una tarea para quien recibe los vencimientos de
+   * impuestos, unos días antes del vencimiento; se cierra sola cuando ya no falta ninguna. JMS 05/11: «desde que se tiene
+   * la 1ra el warning va para las que faltan» → «sí, exacto».
+   */
+  const tareaFaltantes = async () => {
+    const conTpl = filasRef.current.filter(f => f.egresoId && f.boleta.cuota && /^\d$/.test(f.boleta.cuota))
+    if (!conTpl.length) return
+    const cuenta = new Map<string, number>()
+    for (const f of conTpl) cuenta.set(f.boleta.cuota!, (cuenta.get(f.boleta.cuota!) ?? 0) + 1)
+    const cuota = [...cuenta.entries()].sort((a, b) => b[1] - a[1])[0][0]
+    const llegaron = [...new Set(conTpl.filter(f => f.boleta.cuota === cuota).map(f => f.egresoId!))]
+    // El vencimiento real es el que traen las boletas que llegaron (el del template de las que faltan puede estar viejo)
+    const vs = conTpl.filter(f => f.boleta.cuota === cuota && f.boleta.vencimiento).map(f => f.boleta.vencimiento!).sort()
+    const vencimiento = vs.length ? vs[Math.floor(vs.length / 2)] : null
+    try {
+      const r = await fetch("/api/arba/boletas-faltan", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ anio: anioArchivo, cuota, llegaron, vencimiento }) })
+      const j = await r.json()
+      if (j.ok && j.creada) toast.info("🔔 Tarea nueva: " + j.motivo)
+      else if (j.ok && j.cerrada) toast.success("🔔 Ya llegaron todas las boletas de la cuota " + cuota + ": la tarea se cerró sola")
+    } catch { /* la tarea es un aviso: si falla, el panel igual muestra las que faltan */ }
   }
 
   const asignarTemplate = async (idx: number, egresoId: string) => {

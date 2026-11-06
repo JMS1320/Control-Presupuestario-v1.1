@@ -90,6 +90,7 @@ import { echeqDelAnticipo } from "@/lib/pagos/echeq-anticipo"
 import { armarPlanillaBoletas, decisionPropuesta, importeElegido, claveBoleta, partidaDeClave } from "@/lib/arba/planilla-boletas"
 import { marcarAnticiposSinVincular } from "@/lib/cashflow/anticipo-sin-vincular"
 import { pedidoDeOrden } from "@/lib/arba/ordenar-archivo"
+import { boletasQueFaltan, tareaBoletasFaltan } from "@/lib/arba/boletas-faltan"
 import { pideOtraVentana, linkSeccion } from "@/lib/ui/links"
 import { teclaDeItem, itemDeTecla, escribiendoEn } from "@/lib/ui/atajos-menu"
 import { vencimientosDeLaPersona, cuentasParaPagar, motivoPagoInvalido, montoAR, empresaDelPago, PREFIJO_DEVUELTA, documentosDeCuotas, motivoComprobanteInvalido, type CuotaDeLaPersona } from "@/lib/vencimientos/de-la-persona"
@@ -10416,6 +10417,23 @@ export function correrCasos(): Resultado[] {
       const esp = "f1>MSA/2026 - Inmob - Cuota 4 - Rojas.pdf · f2>MSA - viene PAM/2026 - Inmob - Cuota 4 - Tango Parra 1.pdf"
       chequear("Boletas ARBA", "Ordenar en el Drive: la de dueño conocido va con el nombre y la carpeta de JMS («viene PAM» si llegó en el mail de otra); la sin dueño, la que ya sigue la convención, el complementario, la repetida y la sin cuota no se tocan",
         esp, pd, pd === esp, "A-FEAT-1567")
+    }
+    // ── 🔔 Las boletas de ARBA que faltan → tarea (A-FEAT-1566): no cuentan las que llegaron ni las ya pagadas ──
+    {
+      const tps = [{ id: "t1", nombre: "Inmobiliario Cuota Tapera 3", responsable: "PAM" }, { id: "t2", nombre: "Inmobiliario Cuota Quinta Rosello 1", responsable: "PAM" },
+        { id: "t3", nombre: "Inmobiliario Cuota Rojas", responsable: "MSA" }, { id: "t4", nombre: "Inmobiliario Cuota Lima", responsable: "MA" },
+        { id: "t5", nombre: "Inmobiliario Complementario Cuota PAM", responsable: "PAM" }]
+      const cs = [{ egresoId: "t1", estado: "pendiente", vencimiento: "2026-11-12" }, { egresoId: "t2", estado: "pendiente", vencimiento: "2026-11-12" },
+        { egresoId: "t3", estado: "pendiente", vencimiento: "2026-11-12" }, { egresoId: "t4", estado: "conciliado", vencimiento: "2026-11-12" }, { egresoId: "t5", estado: "pendiente", vencimiento: "2026-11-12" }]
+      const f = boletasQueFaltan(tps, cs, new Set(["t3", "t5"]))
+      const t = tareaBoletasFaltan({ anio: 2026, cuota: "4", faltan: f, hoy: "2026-11-05" })
+      const t2 = tareaBoletasFaltan({ anio: 2026, cuota: "4", faltan: f, hoy: "2026-11-11" })
+      const conVenc = tareaBoletasFaltan({ anio: 2026, cuota: "4", faltan: boletasQueFaltan(tps, cs.map(c => c.egresoId === "t1" ? { ...c, vencimiento: "2026-11-05" } : c), new Set(["t2", "t3", "t5"])), hoy: "2026-11-05", vencimientoBoletas: "2026-11-12" })
+      const ninguna = tareaBoletasFaltan({ anio: 2026, cuota: "4", faltan: boletasQueFaltan(tps, cs, new Set(["t1", "t2", "t3", "t5"])), hoy: "2026-11-05" })
+      const vF = [t?.registro_id, t?.motivo, t?.tarea_hasta, t2?.tarea_hasta, conVenc?.motivo, conVenc?.tarea_hasta, ninguna === null].join(" | ")
+      const espF = "arba:2026-C4 | Faltan 2 boletas de ARBA de la cuota 4: Quinta Rosello 1 (PAM), Tapera 3 (PAM) — vence 12/11 | 2026-11-09 | 2026-11-11 | Falta la boleta de ARBA de la cuota 4: Tapera 3 (PAM) — vence 12/11 | 2026-11-09 | true"
+      chequear("Boletas ARBA", "Las que faltan → tarea: no cuentan las que llegaron ni la ya conciliada; vence 3 días antes (nunca antes de hoy); si no falta ninguna, no hay tarea (se cierra)",
+        espF, vF, vF === espF, "A-FEAT-1566")
     }
     // ── ⬆️ Importar facturas: las nuevas arriba (A-FEAT-1554), el resto en el orden del archivo ──
     const np = nuevasPrimero([{ id: 1, estado: "duplicado" }, { id: 2, estado: "nueva" }, { id: 3, estado: "error" }, { id: 4, estado: "nueva" }, { id: 5, estado: "duplicado" }]).map(x => x.id).join("")
