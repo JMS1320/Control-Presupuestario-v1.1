@@ -175,7 +175,9 @@ export function repartirEnLibros<V>(wb: XLSX.WorkBook, vistas: V[]): { letra: Le
     const letra = libroDeSolapa(nombre)
     const l = out.get(letra) ?? { wb: XLSX.utils.book_new(), vistas: [], solapas: [] }
     XLSX.utils.book_append_sheet(l.wb, wb.Sheets[nombre], nombre)
-    l.vistas.push(vistas[i])
+    // JMS 06/11: «a este libro [I] hay que sacarle las filas inmovilizadas» — sus solapas son listas largas con varios bloques
+    const v = vistas[i] as V & { congelarFilas?: number }
+    l.vistas.push(letra === "I" && v && typeof v === "object" ? ({ ...v, congelarFilas: undefined } as V) : vistas[i])
     l.solapas.push(nombre)
     out.set(letra, l)
   })

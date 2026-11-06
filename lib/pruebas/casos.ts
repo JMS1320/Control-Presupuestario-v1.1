@@ -12872,6 +12872,12 @@ export function correrCasos(): Resultado[] {
     const v2 = partes.map(p => `${p.letra}:${p.solapas.length}/${p.vistas.join("")}`).join(" ")
     const e2 = "A:2/12 B:1/3 C:1/4 D:1/0 E:1/5"
     chequear("Set de libros", "El reparto no pierde ni repite solapas y cada una viaja con su formato", e2, v2, v2 === e2, "A-FEAT-1505")
+    // JMS 06/11: el libro I va SIN filas inmovilizadas (el D las conserva)
+    const wbI = XLSXcasos.utils.book_new()
+    for (const n of ["14.1 Cuentas con socios", "07 Bancos"]) XLSXcasos.utils.book_append_sheet(wbI, XLSXcasos.utils.aoa_to_sheet([[n]]), n)
+    const pI = repartirEnLibros(wbI, [{ congelarFilas: 6, colorSolapa: "X" }, { congelarFilas: 4 }])
+    const vI = pI.map(p => `${p.letra}:${p.vistas.map(x => `${x.congelarFilas ?? "sin"}${"colorSolapa" in x ? "/" + x.colorSolapa : ""}`).join(",")}`).join(" ")
+    chequear("Set de libros", "📌 El libro I sale sin filas inmovilizadas (conserva el color de la solapa); los demás no cambian", "D:4 I:sin/X", vI, vI === "D:4 I:sin/X", "A-FEAT-1537")
 
     const ej = armarEjercicio(2026, 6)
     const cu = (id: string, resp: string, monto: number) => ({ id, fecha: "2025-09-10", concepto: `T ${id}`, proveedor: "P", categ: "Otros Gastos", cuenta_contable: "", nro_cuenta: "",
