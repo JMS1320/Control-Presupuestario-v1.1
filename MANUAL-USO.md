@@ -6715,6 +6715,8 @@ La compra que cargaste en *Productivo → Insumos → Stock & Movimientos* (con 
 
 **La factura del contratista**: en la columna «Factura» (o desde el aviso **🧾 falta factura del contratista** de una orden ejecutada) elegís su factura entre las de ese CUIT (MSA, PAM o MA), y podés tildar las otras órdenes que cobra la misma factura. Abajo aparece **«Según la factura (lo real)»**: neto ÷ ha en todos los índices, y el control contra lo pactado — ✓ si cierra (±1 %), ⚠️ con la diferencia si no (es un aviso: puede ser un extra que vos conocés).
 
+**Cuando la factura del contratista entra por ARCA**, no hace falta ir a buscarla: en *Egresos → Facturas* su fila muestra **🚜N** (N órdenes ejecutadas de ese contratista sin factura). Click → **«¿Qué órdenes cobra esta factura?»**: cada orden con lo que debería costar (ha × tarifa en pesos a su fecha), y arriba la combinación que da el neto — **«Tildar las que cierran»** — con el control de lo tildado. **Atar la factura** y listo.
+
 → A-TEST-1345
 
 ## 🛑 «No va más»: un gasto fijo que dejó de corresponder, desde el Cash Flow *(2026-11-06)*
