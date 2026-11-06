@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 💲 3 columnas en `productivo.lineas_orden_agricola_labores` (`tarifa`, `tarifa_unidad`) y 2 en `productivo.ordenes_agricolas` (`factura_contratista_id`, `factura_contratista_empresa`) (2026-11-06) — ⏳ AVISO PREVIO (se corre a continuación con permiso de JMS: «puede crear columnas, con aviso a Javier»)
+### 💲 3 columnas en `productivo.lineas_orden_agricola_labores` (`tarifa`, `tarifa_unidad`) y 2 en `productivo.ordenes_agricolas` (`factura_contratista_id`, `factura_contratista_empresa`) (2026-11-06) — ✅ APLICADA el 06/11 (aviso previo; permiso de JMS: «puede crear columnas, con aviso a Javier»): 4 columnas vacías, verificado con EXPLAIN UPDATE
 - A-FEAT-1557 etapa 4 / A-FEAT-1556, JMS 06/11: *«convertir la tarifa en pesos de cada contratista a su equivalente en los otros índices para poder comparar»*. Cada labor de una orden lleva su **tarifa pactada** (`tarifa` numeric + `tarifa_unidad` text con check: `ars_ha` · `usd_ha` · `kg_soja_ha` · `l_gasoil_ha` · `pct_cosecha`); la orden lleva **la factura del contratista** que la cobra (`factura_contratista_id` uuid, sin FK porque puede ser de `msa`/`pam`/`ma.comprobantes_arca`, + `factura_contratista_empresa`). Todo vacío en lo existente. `scripts/221-…sql` verifica que no existían; deshacer exacto. **No toca RLS ni roles.**
 
 ### 🛒 4 columnas nuevas en `productivo.movimientos_insumos`: `compra_id`, `fecha_pago`, `empresa`, `orden_agricola_id` (2026-11-06) — ✅ APLICADA el 06/11 con OK de JMS (aviso previo): 4 columnas vacías + FK, verificado con EXPLAIN INSERT
