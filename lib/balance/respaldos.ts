@@ -14,6 +14,7 @@
  */
 import type { AsientoLibroDiario } from "./libro-diario"
 import type { SaldoParaBalance } from "@/lib/dolares/posicion-cierre"
+import { mesSiguiente } from "./control-cuotas-templates"
 
 export type EstadoRespaldo = "con_link" | "sin_archivar" | "falta"
 
@@ -48,8 +49,10 @@ export function respaldoDeSaldo(cuenta: string, fechaCierre: string, nroResumen?
 
 /** 💹 El FCI: el resumen del fondo del mes (sale del texto de la fuente que dejó la carga: «… (Inv_26-06.pdf) …»). */
 export function respaldoDeFci(nota: string | null | undefined, punta: "inicio" | "cierre", fecha: string, docs?: DocumentoRespaldo[]): Respaldo {
-  const d = fecha ? (docs ?? []).find(x => x.tipo === "resumen_fci" && x.periodo === fecha.slice(0, 7) && x.url) : undefined
-  if (d) return conLink(d, `Resumen del fondo (${punta}),`)
+  // JMS 06/11: la tenencia al INICIO la respalda el resumen del PRIMER mes del ejercicio (julio), que arranca con el saldo de apertura
+  const mes = !fecha ? "" : punta === "inicio" ? mesSiguiente(fecha.slice(0, 7)) : fecha.slice(0, 7)
+  const d = mes ? (docs ?? []).find(x => x.tipo === "resumen_fci" && x.periodo === mes && x.url) : undefined
+  if (d) return conLink(d, punta === "inicio" ? "Resumen del fondo del primer mes (su saldo inicial = la apertura)," : `Resumen del fondo (${punta}),`)
   const archivo = /\(([^)]+\.pdf)\)/i.exec(nota ?? "")?.[1]
   if (archivo) return { documento: `Resumen del fondo «${archivo}» (${punta})`, estado: "sin_archivar", nota: SIN_ARCHIVAR }
   if (punta === "inicio") return { documento: `Balance anterior (apertura del contador al ${dmy(fecha)}) y resumen del fondo del primer mes`, estado: "sin_archivar", nota: SIN_ARCHIVAR }
@@ -161,6 +164,29 @@ export function renglonesDeRespaldo(d: {
 export function idDeArchivoDrive(url: string | null | undefined): string | null {
   const u = String(url ?? "")
   return /\/d\/([A-Za-z0-9_-]{10,})/.exec(u)?.[1] ?? /[?&]id=([A-Za-z0-9_-]{10,})/.exec(u)?.[1] ?? null
+}
+
+/**
+ * 🔗 JMS 06/11 (1A): «que él pueda tener siempre el link para corroborar». El contador no puede abrir la carpeta de los
+ * bancos; se le comparte sólo «- Respaldo». Por eso, cuando un documento tiene su COPIA ahí (la dejó «Copiar los
+ * respaldos»), el link del Excel apunta a la copia. Lo que no tiene copia queda con el link original.
+ * La equivalencia original → copia vive en `balance_datos_usuario`, papel `respaldo.copia`, clave = id del original.
+ */
+export const PAPEL_COPIAS = "respaldo.copia"
+export const urlDeArchivoDrive = (id: string) => `https://drive.google.com/file/d/${id}/view`
+
+/** Cambia en todas las solapas los links al Drive que tienen copia en «- Respaldo». Devuelve cuántos cambió. */
+export function linksALasCopias(wb: { Sheets: Record<string, Record<string, unknown>> }, copias: Record<string, string>): number {
+  let n = 0
+  for (const hoja of Object.values(wb.Sheets)) {
+    for (const [ref, c] of Object.entries(hoja)) {
+      if (ref.startsWith("!")) continue
+      const l = (c as { l?: { Target?: string } } | null)?.l
+      const id = idDeArchivoDrive(l?.Target)
+      if (l && id && copias[id]) { l.Target = copias[id]; n++ }
+    }
+  }
+  return n
 }
 
 export interface ItemDeRespaldo { file_id: string; subcarpeta: string; nombre: string }

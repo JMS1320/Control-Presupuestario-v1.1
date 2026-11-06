@@ -226,7 +226,7 @@ import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/bal
 import { controlarCuotasTemplates, campaniaDelControl, claveDeNombre, CONTROL_CUOTAS_TEMPLATES, ultimoDiaDelMes, type ComisionesDelMes, type CuotaParaControl, type TemplateControlado, type EntradaControlCuotas } from "@/lib/balance/control-cuotas-templates"
 import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuestosYOtros } from "@/lib/balance/templates-libro"
 import { hojaAutomotores, pulirLibroH, hojaDeProvisionCobros, hojaDeBancos, hojaDeRetiros } from "@/lib/balance/export-libro-diario"
-import { renglonesDeRespaldo, hojaDeRespaldos, itemsDelRespaldo, idDeArchivoDrive, carpetasDelRespaldo } from "@/lib/balance/respaldos"
+import { renglonesDeRespaldo, hojaDeRespaldos, itemsDelRespaldo, idDeArchivoDrive, carpetasDelRespaldo, linksALasCopias, urlDeArchivoDrive } from "@/lib/balance/respaldos"
 import { planDelEspejo, resumenesQueFaltan, carpetaDelEjercicio } from "@/lib/balance/espejo-ulises"
 import { filtrarComprobantes } from "@/lib/balance/provision-manual-filtro"
 import { hojaStockHacienda, hojaDetalleHacienda, hojaStockValorizado, hojaAumentoRodeo, linkCotizacion, DETALLES } from "@/lib/balance/stock-hacienda-papel"
@@ -4472,9 +4472,12 @@ export function correrCasos(): Resultado[] {
         fci: { notaCierre: "x", cuotasCierre: 0, valorCierre: 1 },
         documentos: [{ cuenta: "BANCO SANTANDER", periodo: "2026-06", tipo: "extracto", url: "https://d/s", nombre_archivo: "SANTA - 26-06.pdf", ruta_drive: "r" },
           { cuenta: "BANCO PROVINCIA", periodo: "2026-05", tipo: "extracto", url: "https://d/p", nombre_archivo: "p", ruta_drive: "r" },
-          { cuenta: "FCI FIMA Premium A", periodo: "2026-06", tipo: "resumen_fci", url: "https://d/f", nombre_archivo: "Inv_26-06.pdf", ruta_drive: "r" }] })
+          { cuenta: "FCI FIMA Premium A", periodo: "2026-06", tipo: "resumen_fci", url: "https://d/f", nombre_archivo: "Inv_26-06.pdf", ruta_drive: "r" },
+          // JMS 06/11: el inicio lo respalda el resumen de JULIO (arranca con el saldo de apertura), no el de junio del año anterior
+          { cuenta: "FCI FIMA Premium A", periodo: "2025-06", tipo: "resumen_fci", url: "https://d/no", nombre_archivo: "Inv_25-06.pdf", ruta_drive: "r" },
+          { cuenta: "FCI FIMA Premium A", periodo: "2025-07", tipo: "resumen_fci", url: "https://d/f0", nombre_archivo: "Inv_25-07.pdf", ruta_drive: "r" }] })
       const vd = conDocs.map(x => `${x.respaldo.estado}${x.respaldo.url ? ":" + x.respaldo.url : ""}`).join(" · ")
-      const ed = "con_link:https://d/s · sin_archivar · sin_archivar · con_link:https://d/f"
+      const ed = "con_link:https://d/s · sin_archivar · con_link:https://d/f0 · con_link:https://d/f"
       // 📦 paso 2: qué se copia a «- Respaldo» — sólo lo que tiene link, una vez cada archivo, con nombre legible y su papel
       const its = itemsDelRespaldo([...conDocs, { papel: "05 Provisión", renglon: "PARADOR SAN PEDRO 9-55857", importe: 1,
         respaldo: { documento: "Factura 1-9-55857 de PARADOR SAN PEDRO (PDF)", estado: "con_link", url: "https://drive.google.com/file/d/1X0SGtpCXpxutMV6yhijWW/view?usp=drivesdk" } }],
@@ -4487,6 +4490,14 @@ export function correrCasos(): Resultado[] {
       const vc = `${cr?.destino} · ${cr?.bancos.map(b => b.ruta.split("/").slice(-2).join("/")).join(" · ")} · PAM ${carpetasDelRespaldo("PAM", 2026)} · id ${idDeArchivoDrive("https://drive.google.com/open?id=abcDEF123456")}`
       const ec = "I:/Mi unidad/SAN MANUEL/BALANCES/BALANCE 2026/- Respaldo · BANCO GALICIA SM/extractos 25-26 · BANCO PROVINCIA/2025-26 · BANCO SANTANDER RIO/2025-26 · PAM null · id abcDEF123456"
       chequear("Balance · respaldos", "🗂️ Las carpetas acordadas: destino «BALANCE 2026 / - Respaldo» y la carpeta de cada banco del ejercicio (sólo MSA)", ec, vc, vc === ec, "A-FEAT-1571")
+      // 🔗 1A (JMS 06/11: «que él pueda tener siempre el link»): el link apunta a la COPIA en «- Respaldo» si existe; si no, queda el original
+      const wbL = { Sheets: { "07": { "!ref": "A1:B2", A1: { v: "x", l: { Target: "https://drive.google.com/file/d/ORIGINAL0001/view" } },
+        B1: { v: "y", l: { Target: "https://drive.google.com/file/d/SINCOPIA0002/view" } }, A2: { v: 1 } } } }
+      const nL = linksALasCopias(wbL, { ORIGINAL0001: urlDeArchivoDrive("COPIA000001") })
+      const sL = wbL.Sheets["07"] as Record<string, { l?: { Target: string } }>
+      const vL = `${nL} · ${sL.A1.l?.Target} · ${sL.B1.l?.Target}`
+      const eL = "1 · https://drive.google.com/file/d/COPIA000001/view · https://drive.google.com/file/d/SINCOPIA0002/view"
+      chequear("Balance · respaldos", "🔗 El link del Excel va a la copia de «- Respaldo» (la carpeta que ve el contador); lo que no tiene copia conserva el original", eL, vL, vL === eL, "A-FEAT-1571")
       // 🔁 paso 3 (JMS 06/11: «el sistema copie a la carpeta segura… conservando el espejo»): por el NOMBRE del archivo de Ulises,
       //    la cuenta, el mes y la carpeta del ejercicio; lo ya vinculado no se copia; lo que no sigue el nombre se avisa.
       const pe = planDelEspejo([

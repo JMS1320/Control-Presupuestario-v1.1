@@ -49,7 +49,7 @@ import {
 } from "@/lib/balance/control-cuotas-templates"
 import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { ProponerFotoBalance } from "./proponer-foto-balance"
-import { respaldoDeSaldo, respaldoDeFci, renglonesDeRespaldo, itemsDelRespaldo, carpetasDelRespaldo, type ItemDeRespaldo } from "@/lib/balance/respaldos"
+import { respaldoDeSaldo, respaldoDeFci, PAPEL_COPIAS, urlDeArchivoDrive, renglonesDeRespaldo, itemsDelRespaldo, carpetasDelRespaldo, type ItemDeRespaldo } from "@/lib/balance/respaldos"
 import { ivaConSigno, RENGLONES, type DatosDeLosPapeles, type ValorPropuesto } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { armarWorkbook, coberturaDeArgs, descargarLibroDiario, descargarSetDelBalance } from "@/lib/balance/export-libro-diario"
@@ -993,6 +993,10 @@ export function PapelesDeBalance() {
           // 📎 A-FEAT-1571: los extractos y resúmenes vinculados (scripts 211/212) — el saldo abre su documento
           documentosRespaldo: await Promise.resolve(supabase.from("documentos_respaldo").select("cuenta, periodo, tipo, url, nombre_archivo, ruta_drive, drive_file_id").eq("empresa", empresa.id))
             .then(r => (r.data ?? []) as import("@/lib/balance/respaldos").DocumentoRespaldo[]).catch(() => []),
+          // 🔗 JMS 06/11 (1A): las copias en «- Respaldo» — el Excel apunta a ellas, que es lo que ve el contador
+          copiasRespaldo: await Promise.resolve(supabase.from("balance_datos_usuario").select("clave, texto")
+            .eq("empresa", empresa.id).eq("anio_cierre", anioCierre).eq("papel", PAPEL_COPIAS))
+            .then(r => Object.fromEntries((r.data ?? []).filter(x => x.texto).map(x => [x.clave as string, x.texto as string]))).catch(() => ({})),
         })
       } catch {
         toast.warning("No se pudieron armar los papeles bancarios; el resto del libro salió igual.")
@@ -1900,6 +1904,16 @@ export function PapelesDeBalance() {
                   const j = await llamar({ accion: "copiar", destino_ruta: carpetas.destino, items: falta })
                   if (!j.ok) { lineas.push({ texto: `⚠️ ${j.error}`, error: true }); break }
                   copiados += j.copiados.length; ya += j.ya_estaban.length
+                  // 🔗 guarda original → copia, para que el Excel apunte a la copia (la carpeta que se comparte con el contador)
+                  const pares = [...(j.copiados ?? []), ...(j.ya_estaban ?? [])].filter((x: { origen_id?: string; file_id?: string }) => x.origen_id && x.file_id)
+                  if (pares.length) {
+                    const { error: eCop } = await supabase.from("balance_datos_usuario").upsert(
+                      pares.map((x: { origen_id: string; file_id: string }) => ({ empresa: empresa.id, anio_cierre: anioCierre, papel: PAPEL_COPIAS,
+                        clave: x.origen_id, texto: urlDeArchivoDrive(x.file_id), actualizado_por: `Copiar los respaldos · ${hoyArgentina()}` })),
+                      { onConflict: "empresa,anio_cierre,papel,clave" })
+                    if (eCop) lineas.push({ texto: `⚠️ No se pudo anotar qué copia corresponde a cada documento: ${eCop.message}`, error: true })
+                    else setBancarios(b => b ? { ...b, copiasRespaldo: { ...(b.copiasRespaldo ?? {}), ...Object.fromEntries(pares.map((x: { origen_id: string; file_id: string }) => [x.origen_id, urlDeArchivoDrive(x.file_id)])) } } : b)
+                  }
                   for (const e of j.errores ?? []) lineas.push({ texto: `⚠️ ${e.nombre}: ${e.error}`, error: true })
                   if (vuelta === 0 && j.destino_url) lineas.unshift({ texto: "Abrir la carpeta «- Respaldo»", url: j.destino_url })
                   falta = j.pendientes ?? []

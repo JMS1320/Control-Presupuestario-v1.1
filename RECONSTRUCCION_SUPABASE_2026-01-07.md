@@ -3351,6 +3351,10 @@ Columna `boolean not null default false` (con su comment) y trigger **BEFORE INS
 >
 > ⚠️ **06/11 — NÚMEROS 212, 213 y 214 DUPLICADOS** (error de T1-balance: corrió los suyos sin leer los avisos de camino 3 en el tablero). Hay DOS scripts corridos con cada número, en archivos distintos: `212-vincular-extractos-msa` (T1) / `212-aca-orbith-a-credito` (camino 3) · `213-granos-cosecha-cierre-msa` (T1) / `213-template-se-paga-con-tarjeta` (camino 3) · `214-vincular-visa-msa` (T1) / `214-orden-agricola-contratista` (camino 3). Cada deshacer borra sólo en su tabla con su marca: no se pisan. Renumerar los de T1 (217/218/219 + la marca en sus filas) espera el OK de JMS.
 
+### 2026-11-06 · Los 11 extractos de Santander de MSA ago-25 → jun-26 vinculados (script 221, DATOS) — A-FEAT-1571 — ✅ CORRIDO con OK de JMS («vinculá todos los extractos»)
+`public.documentos_respaldo`: «BANCO SANTANDER» tipo extracto, con el saldo del documento (junio $ 208.814,82 = el de la app). Los PDF estaban en la carpeta de comunicación (`Extractos/Varias`, de donde los cargó el script 139) y se COPIARON a «BANCO SANTANDER RIO / 2025-26». Marca `[script 221]`. Deshacer: `scripts/221-vincular-santander-msa-deshacer.sql`.
+Además, desde el 06/11 la app escribe en `balance_datos_usuario` el papel **`respaldo.copia`** (clave = id del original en el Drive, texto = link de su copia en «- Respaldo») al apretar «Copiar los respaldos»: no es estructura nueva, es un papel más de la misma tabla.
+
 ### 2026-11-06 · Los 24 resúmenes de las VISA de MSA 25/26 vinculados (script 219 — era 214, DATOS) — A-FEAT-1571 — ✅ CORRIDO con OK de JMS («sí, copiala y vinculá»)
 `public.documentos_respaldo`: «Tarjeta VISA Business MSA» 12 y «Tarjeta VISA Rural MSA» 12 (tipo resumen_tarjeta, jul-25 → jun-26), copias del espejo de Ulises en «extractos 25-26 / Resumenes VISA» y «/ VISA AGRO». Marca `[script 219]` (era 214; script 220). Deshacer: `scripts/219-vincular-visa-msa-deshacer.sql`.
 

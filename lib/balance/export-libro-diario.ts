@@ -24,7 +24,7 @@ import { hojaOperacionesEnDolares } from "./operaciones-en-dolares"
 import XLSX from "xlsx-js-style"
 import type { SaldoParaBalance } from "@/lib/dolares/posicion-cierre"
 import type { TenenciaFci } from "./balance-en-linea-lectura"
-import { celdaRespaldo, respaldoDeSaldo, respaldoDeFci, respaldoDeComprobante, hojaDeRespaldos, renglonesDeRespaldo, type DocumentoRespaldo } from "./respaldos"
+import { celdaRespaldo, respaldoDeSaldo, respaldoDeFci, respaldoDeComprobante, hojaDeRespaldos, renglonesDeRespaldo, linksALasCopias, type DocumentoRespaldo } from "./respaldos"
 import { lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
 import { ETIQUETA_CONCEPTO, type ImpuestoCheque } from "./impuesto-cheque"
 import { controlarCheque, chequeEnPapel08, chequeEnTemplates, type ControlCheque } from "./control-cheque"
@@ -2999,6 +2999,8 @@ export function armarWorkbook(
     fciTenencia?: TenenciaFci | null
     /** 📎 Los extractos y resúmenes vinculados a cada cuenta y mes (A-FEAT-1571, scripts 211/212). */
     documentosRespaldo?: DocumentoRespaldo[]
+    /** 🔗 id del original → link de su copia en «- Respaldo» (la carpeta que ve el contador). JMS 06/11. */
+    copiasRespaldo?: Record<string, string>
     /** 🧾 El impuesto al cheque, total y desglosado (A-FEAT-1190). */
     impuestoCheque?: ImpuestoCheque
   },
@@ -3258,6 +3260,8 @@ export function armarWorkbook(
     hoja(wb, "1 Granos", hojaDeGranos(campo.granos, campo.valuacionGranos, libro.ejercicio.fechaCierre, campo.origenPrecioGranos), COLS_GRANOS)
     hoja(wb, "3 Sementeras", hojaDeSementeras(campo.sementeras, libro.ejercicio.fechaCierre), COLS_SEMENTERAS)
   }
+  // 🔗 JMS 06/11: los links apuntan a la copia en «- Respaldo» (la que se comparte con el contador) cuando existe
+  if (bancarios?.copiasRespaldo) linksALasCopias(wb as unknown as { Sheets: Record<string, Record<string, unknown>> }, bancarios.copiasRespaldo)
   return wb
 }
 
