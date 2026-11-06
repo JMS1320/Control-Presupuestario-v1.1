@@ -4463,7 +4463,7 @@ export function correrCasos(): Resultado[] {
       const h = hojaDeRespaldos(r) as any[][]
       const v = `${est} · usd ${r[1].respaldo.documento.includes("CA_dolar_26-06")} · fci ${r[4].respaldo.documento.includes("Inv_26-06.pdf")} · link ${r[5].respaldo.url} · arriba ${String(h[5][3].v)} · ${String(h[2][0])}`
       const e = "ssfsscfss · usd true · fci true · link https://drive/x · arriba 🔴 falta · 🔴 falta: 2 · 🟡 sin archivar: 6 · ✅ con link: 1 — de 9 renglones"
-      // 📎 con el documento vinculado (script 212), el saldo y el FCI pasan a ✅ con su link
+      // 📎 con el documento vinculado (script 217), el saldo y el FCI pasan a ✅ con su link
       const conDocs = renglonesDeRespaldo({ fechaCierre: "2026-06-30", fechaInicio: "2025-06-30",
         saldos: [{ nombre: "BANCO SANTANDER", saldo: 5, fecha: "2026-06-29" }, { nombre: "BANCO PROVINCIA", saldo: 1, fecha: "2026-06-29" }],
         fci: { notaCierre: "x", cuotasCierre: 0, valorCierre: 1 },
