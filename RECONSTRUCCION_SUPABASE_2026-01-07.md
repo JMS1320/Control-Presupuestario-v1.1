@@ -3352,6 +3352,9 @@ Columna `boolean not null default false` (con su comment) y trigger **BEFORE INS
 >
 > ⚠️ **06/11 — NÚMEROS 212, 213 y 214 DUPLICADOS** (error de T1-balance: corrió los suyos sin leer los avisos de camino 3 en el tablero). Hay DOS scripts corridos con cada número, en archivos distintos: `212-vincular-extractos-msa` (T1) / `212-aca-orbith-a-credito` (camino 3) · `213-granos-cosecha-cierre-msa` (T1) / `213-template-se-paga-con-tarjeta` (camino 3) · `214-vincular-visa-msa` (T1) / `214-orden-agricola-contratista` (camino 3). Cada deshacer borra sólo en su tabla con su marca: no se pisan. Renumerar los de T1 (217/218/219 + la marca en sus filas) espera el OK de JMS.
 
+### 2026-11-06 · ARBA inmobiliario 2026 CUOTA 3: montos reales, grupos y documentos (script 226, DATOS) — ✅ CORRIDO (JMS: «avanzá… vos podés linkear los docs antes»)
+`public.cuotas_egresos_sin_factura`: monto de 20 cuotas con vto 08/09/2026 (cuota 4 × 0,96877, grupos exactos a sus débitos); Taperas 1/2/3 fuera del grupo 6fb82662. `msa.grupos_pago`: monto_total de ee6556be, 48a7bcbf, 6fb82662, 252485d9. `public.boletas_arba`: 19 filas cuota '3' con `[script 226]` (documento = comprobante de pago o boleta). Control: cada grupo = su débito; 19 boletas por $ 5.773.042,70. No concilia (lo hace JMS). Deshacer: `scripts/226-arba-cuota3-montos-grupos-docs-deshacer.sql`.
+
 ### 2026-11-06 · MSA: PDF de la factura Coop. Rio Tala 0013-00001685 vinculado (script 225, DATOS) — ✅ CORRIDO (JMS: «sí, corré el 225»)
 `msa.comprobantes_arca` id 62cd1649…: `pdf_drive_url` = Drive «12-01 - Coop rio tala x2.pdf» (2ª factura del PDF), `pdf_estado` 'descargado', observación con `[script 225]`. Respaldo del 05 Provisión (A-FEAT-1571). Deshacer: `scripts/225-pdf-coop-rio-tala-13-1685-deshacer.sql`.
 
