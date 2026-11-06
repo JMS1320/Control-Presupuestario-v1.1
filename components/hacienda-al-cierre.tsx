@@ -41,7 +41,7 @@ import {
   armarStockInsumos, desdeStockInsumo, existenciaAlCierre, PAPELES_SIN_ORIGEN, type StockInsumos,
 } from "@/lib/balance/stock-insumos"
 import {
-  cuadrarGranos, valuarGranos, armarSementeras,
+  cuadrarGranos, ventasDeGrano, type CertificacionGrano, valuarGranos, armarSementeras,
   type CuadreGranos, type ValuacionGranos, type Sementeras,
 } from "@/lib/balance/granos-sementeras"
 import { MarcaTentativo } from "@/components/marca-tentativo"
@@ -244,9 +244,16 @@ export function HaciendaAlCierre({
       // Granos: las toneladas vendidas en el ejercicio. Es lo único del cuadre que la app sabe.
       const { data: vg } = await supabase
         .schema("msa").from("comprobantes_venta")
-        .select("toneladas, fecha_liquidacion")
+        .select("toneladas, fecha_liquidacion, cuenta_contable, denominacion_cliente, grano, nro_comprobante, punto_venta, numero_desde")
         .gte("fecha_liquidacion", `${Number(ejercicio.fechaCierre.slice(0, 4)) - 1}-07-01`)
         .lte("fecha_liquidacion", ejercicio.fechaCierre)
+      // 📎 A-FEAT-1574: las certificaciones electrónicas de granos del ejercicio (el depósito en acopio = la cosecha), con su PDF
+      const { data: certs } = await supabase
+        .schema("msa").from("comprobantes_arca")
+        .select("fecha_emision, denominacion_emisor, punto_venta, numero_desde, pdf_drive_url, tipo_comprobante_desc")
+        .eq("tipo_comprobante", 332)
+        .gte("fecha_emision", `${Number(ejercicio.fechaCierre.slice(0, 4)) - 1}-07-01`)
+        .lte("fecha_emision", ejercicio.fechaCierre)
 
       // Sementeras: las órdenes agrícolas con sus líneas de insumo.
       const { data: ord } = await supabase
@@ -376,9 +383,17 @@ export function HaciendaAlCierre({
         })),
         ejercicio.fechaCierre,
       )
-      const ventasGranosTn = Math.round(
-        (vg ?? []).reduce((s, x: Record<string, unknown>) => s + Number(x.toneladas ?? 0), 0) * 1000,
-      ) / 1000
+      // ⚠️ cambió 06/11 (A-FEAT-1574): los arrendamientos cobrados en soja no son grano vendido — ver `ventasDeGrano`
+      const ventasGrano = ventasDeGrano(((vg ?? []) as Array<Record<string, unknown>>).map(x => ({
+        fecha: String(x.fecha_liquidacion ?? "").slice(0, 10), quien: String(x.denominacion_cliente ?? ""), grano: (x.grano as string) ?? null,
+        toneladas: Number(x.toneladas ?? 0), cuenta: (x.cuenta_contable as string) ?? null,
+        comprobante: String(x.nro_comprobante ?? `${x.punto_venta ?? ""}-${x.numero_desde ?? ""}`),
+      })))
+      const ventasGranosTn = ventasGrano.tn
+      const certificacionesGrano: CertificacionGrano[] = ((certs ?? []) as Array<Record<string, unknown>>).map(c => ({
+        fecha: String(c.fecha_emision ?? "").slice(0, 10), depositario: String(c.denominacion_emisor ?? ""),
+        comprobante: `${c.punto_venta ?? ""}-${c.numero_desde ?? ""}`.replace(/^-/, ""), url: (c.pdf_drive_url as string) ?? null,
+      }))
 
       /**
        * 💰 A-FEAT-1541 (JMS 05/11: «usar lo mismo para valorizar el inicio»): la existencia de la app al inicio, valuada con los
@@ -437,6 +452,7 @@ export function HaciendaAlCierre({
               stockInicioTn: tn(granos.inicio), cosechaTn: tn(granos.cosecha),
               ventasTn: ventasGranosTn, stockEmpresaTn: tn(granos.cierre),
             }),
+            ventas: ventasGrano, certificaciones: certificacionesGrano,
             // 🤖 A-FEAT-1386: el stock al inicio que puso Claude sale TENTATIVO en el Excel hasta el OK
             notaInicio: leyendaTentativo(cuadre.tentativos.inicio) || undefined,
           },

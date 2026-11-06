@@ -2833,7 +2833,7 @@ function hojaDeGranos(c: CuadreGranos, v: ValuacionGranos, fechaCierre: string, 
   f.push(["CUADRE DE KILOS (toneladas)"])
   f.push(["Stock al inicio del ejercicio", c.stockInicioTn ?? "FALTA", c.notaInicio ?? ""])
   f.push(["+ Cosecha del ejercicio", c.cosechaTn ?? "FALTA"])
-  f.push(["− Ventas del ejercicio", c.ventasTn, "← esto lo sabe la app, de los comprobantes de venta"])
+  f.push(["− Ventas del ejercicio", c.ventasTn, "← de los comprobantes de venta, SIN los arrendamientos cobrados en soja (detalle abajo)"])
   f.push(["= Saldo", c.saldoTn ?? "no se puede calcular"])
   f.push(["− Existencia declarada al cierre", c.stockEmpresaTn ?? "FALTA"])
   f.push(["= DIFERENCIA", c.diferenciaTn ?? "no se puede calcular",
@@ -2842,6 +2842,27 @@ function hojaDeGranos(c: CuadreGranos, v: ValuacionGranos, fechaCierre: string, 
   if (c.faltan.length > 0) {
     f.push(["Para poder cuadrar falta cargar:"])
     c.faltan.forEach(x => f.push(["", x]))
+    f.push([])
+  }
+  // 📋 A-FEAT-1574 (JMS 06/11): de dónde sale cada número del cuadre — y su respaldo
+  if (c.ventas) {
+    f.push(["VENTAS DE GRANO QUE CUENTAN (salió grano)"])
+    f.push(["Fecha", "Cliente", "Grano", "Toneladas", "Cuenta", "Comprobante"])
+    c.ventas.cuentan.forEach(x => f.push([x.fecha, x.quien, x.grano ?? "", x.toneladas, x.cuenta ?? "", x.comprobante]))
+    f.push(["TOTAL", "", "", c.ventas.tn])
+    f.push([])
+    if (c.ventas.noCuentan.length) {
+      f.push(["NO CUENTAN EN EL CUADRE — arrendamientos cobrados en soja (la renta se fija en toneladas, pero no sale grano)"])
+      f.push(["Fecha", "Cliente", "Grano", "Toneladas", "Cuenta", "Comprobante"])
+      c.ventas.noCuentan.forEach(x => f.push([x.fecha, x.quien, x.grano ?? "", x.toneladas, x.cuenta ?? "", x.comprobante]))
+      f.push([])
+    }
+  }
+  if (c.certificaciones) {
+    f.push(["COSECHA — certificaciones electrónicas de granos del ejercicio (el depósito en acopio; son el respaldo de la cosecha)"])
+    f.push(["Fecha", "Depositario", "Comprobante", "Certificación (PDF)"])
+    if (!c.certificaciones.length) f.push(["(no hay certificaciones cargadas en el ejercicio)"])
+    c.certificaciones.forEach(x => f.push([x.fecha, x.depositario, x.comprobante, x.url ? conLink("ver la certificación", x.url) : "sin PDF vinculado"]))
     f.push([])
   }
   f.push(["VALUACIÓN"])

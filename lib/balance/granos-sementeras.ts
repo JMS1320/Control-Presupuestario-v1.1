@@ -51,7 +51,32 @@ export interface EntradasGranos {
   stockEmpresaTn: number | null
 }
 
+/** 🌾 Una venta de soja (u otro grano) del ejercicio, como la trae `comprobantes_venta`. */
+export interface VentaGrano { fecha: string; quien: string; grano: string | null; toneladas: number; cuenta: string | null; comprobante: string }
+
+/** 📎 Una certificación electrónica de granos (el depósito en acopio: el respaldo de la cosecha). */
+export interface CertificacionGrano { fecha: string; depositario: string; comprobante: string; url: string | null }
+
+/**
+ * 🌾 A-FEAT-1574 (JMS 06/11): las toneladas que de verdad SALIERON como grano. ⚠️ Cambió 06/11: hasta acá se sumaban todas las
+ * filas con toneladas de `comprobantes_venta` (450,184 t en MSA 25/26), y 427,14 t eran ARRENDAMIENTOS cobrados en soja (Sanpa
+ * 319,44 t, Provinvest 108,70 t): la renta se fija en quintales, pero no sale grano del campo. Esas no cuentan en el cuadre de
+ * kilos; se listan aparte para que se vea por qué.
+ */
+export function ventasDeGrano(filas: VentaGrano[]): { tn: number; cuentan: VentaGrano[]; noCuentan: Array<VentaGrano & { motivo: string }> } {
+  const cuentan: VentaGrano[] = [], noCuentan: Array<VentaGrano & { motivo: string }> = []
+  for (const f of filas) {
+    if (!(f.toneladas > 0)) continue
+    if (/arrendamiento/i.test(f.cuenta ?? "")) noCuentan.push({ ...f, motivo: "arrendamiento cobrado en soja: la renta se fija en toneladas, pero no sale grano" })
+    else cuentan.push(f)
+  }
+  return { tn: Math.round(cuentan.reduce((t, f) => t + f.toneladas, 0) * 1000) / 1000, cuentan, noCuentan }
+}
+
 export interface CuadreGranos {
+  /** 📋 A-FEAT-1574: el detalle que respalda el cuadre — las ventas que cuentan, las que no, y las certificaciones (cosecha). */
+  ventas?: ReturnType<typeof ventasDeGrano>
+  certificaciones?: CertificacionGrano[]
   stockInicioTn: number | null
   /** 🤖 A-FEAT-1386: «TENTATIVO (lo puso Claude…) · fuente» mientras el stock al inicio no tenga el OK de JMS. */
   notaInicio?: string

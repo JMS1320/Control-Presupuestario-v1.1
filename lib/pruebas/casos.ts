@@ -259,7 +259,7 @@ import { echeqDelDebito } from "@/lib/conciliacion/echeq-del-debito"
 import { agregarAlHilo, hiloDelTema } from "@/lib/balance/hilo-tema"
 import { RENGLONES as RENGLONES_BALANCE } from "@/lib/balance/balance-propio"
 import {
-  cuadrarGranos, valuarGranos, armarSementeras, type OrdenAgricola,
+  cuadrarGranos, ventasDeGrano, valuarGranos, armarSementeras, type OrdenAgricola,
 } from "@/lib/balance/granos-sementeras"
 import {
   armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados, tipoDesdeTexto, desdeArca, desdeHistorico, cargadaAMano,
@@ -4413,6 +4413,18 @@ export function correrCasos(): Resultado[] {
       const tot = h31.find(r => (r as any[])[6] === "TOTAL") as any[]
       const vt = tot ? `N ${tot[13].f}=${tot[13].v} · H ${tot[7].f}` : "sin total"
       chequear("Balance · provisión", "➕ La 03.1 suma TODAS las columnas de importes (no sólo la M)", "N SUM(N6:N6)=900 · H SUM(H6:H6)", vt, vt === "N SUM(N6:N6)=900 · H SUM(H6:H6)", "A-FEAT-1564")
+    }
+    // 🌾 A-FEAT-1574 (JMS 06/11): los arrendamientos cobrados en soja NO son grano vendido; con la cosecha de la certificación de
+    //    AFA (15,12 t) el cuadre de MSA 25/26 da 0, como dijo JMS («el saldo a 30/6 es cero»).
+    {
+      const v = (quien: string, tn: number, cuenta: string) => ({ fecha: "2025-07-01", quien, grano: "SOJA", toneladas: tn, cuenta, comprobante: "x" })
+      const vg = ventasDeGrano([v("Sanpa", 159.72, "ARRENDAMIENTOS Venta"), v("Sancor", 6.832, "VENTA SOJA"), v("Sanpa", 159.72, "ARRENDAMIENTOS Venta"),
+        v("Provinvest", 108.6975, "ARRENDAMIENTOS Venta"), v("AFA", 0.094, "VENTA SOJA"), v("AFA", 12.62, "VENTA SOJA"), v("AFA", 2.5, "VENTA SOJA")])
+      const c = cuadrarGranos({ stockInicioTn: 6.926, cosechaTn: 15.12, ventasTn: vg.tn, stockEmpresaTn: 0 })
+      const r = `ventas ${vg.tn} (${vg.cuentan.length} cuentan, ${vg.noCuentan.length} arrendamientos) · saldo ${c.saldoTn} · diferencia ${c.diferenciaTn} · cierra ${c.cierra}`
+      const e = "ventas 22.046 (4 cuentan, 3 arrendamientos) · saldo 0 · diferencia 0 · cierra true"
+      chequear("Balance · granos", "🌾 Cuadre de kilos: los arrendamientos cobrados en soja no son ventas de grano; con la cosecha de la certificación de AFA da 0",
+        e, r, r === e, "A-FEAT-1574")
     }
     // 🏦 JMS 06/11 (07 Bancos): saldos con dos decimales y el negativo entre paréntesis; las cuentas en dólares en DÓLARES con su
     //    total aparte y los pesos sólo como detalle; y el FCI con las cuotapartes y el valor que ya están cargados.
