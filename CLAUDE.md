@@ -118,7 +118,7 @@ Por eso el permiso se revisa **al diseñar**, no al final: es la pieza que decid
 descarga a alguien o sólo se ve mejor.
 
 > 🛤️ **«Camino 1» / «camino 2»** *(JMS 2026-10-30)*: si al abrir una terminal JMS dice sólo **«camino 1»** (BALANCE) o
-> **«camino 2»** (GAS) o **«camino 3»** (ULISES: accesos y publicación a `main`, sumado el mismo 30/10), leer **`PENDIENTES.md` § 🎯 FOCO ACTUAL** → la subsección de ese camino: ahí está el objetivo, el orden y
+> **«camino 2»** (GAS) o **«camino 3»** (ULISES: accesos y publicación a `main`, sumado el mismo 30/10) — ⚠️ **desde el 06/11 el 2 y el 3 son UNO, «camino 2+3 · ADMINISTRACIÓN»** (mails, impuestos, accesos, `main` y productivo) —, leer **`PENDIENTES.md` § 🎯 FOCO ACTUAL** → la subsección de ese camino: ahí está el objetivo, el orden y
 > dónde se trabaja. Es la única instrucción que va a recibir.
 
 > 🚧 **En construcción**: el usuario lo va completando. Última ampliación 2026-08-31 (norte

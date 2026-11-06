@@ -307,6 +307,8 @@ es un error de la guía y hay que corregirla, no ignorarla.
 
 ## 🎯 FOCO ACTUAL (rota — el norte permanente está en `CLAUDE.md`)
 
+> ⚠️ **cambió 2026-11-06 — los caminos 2 y 3 son UNO: «camino 2+3 · ADMINISTRACIÓN»** (JMS: *«entramos por roles y terminamos ocupando también lo de mail. ¿tal vez deberíamos mergear los 2 caminos en 1?»* → sí, con productivo adentro). Abarca: mails y GAS, impuestos y boletas (ARBA, Red Vial), accesos de Ulises y de MA, la publicación a `main`, y productivo (compras, contratistas). Si JMS dice «camino 2» o «camino 3», es éste: se leen las dos subsecciones de abajo. El balance sigue siendo el camino 1.
+>
 > ⚠️ **cambió 2026-10-30 — el foco son TRES CAMINOS, uno por terminal** *(el 3 se sumó el mismo 30/10)*. JMS abre cada terminal nueva en la carpeta
 > principal y le dice sólo **«camino 1»** (BALANCE), **«camino 2»** (GAS) o **«camino 3»** (ULISES / accesos y `main`). Cada camino es autosuficiente: objetivo,
 > orden, estado, qué espera de JMS y qué se comparte con el otro. **Lo que está debajo de los caminos (cría desde
@@ -446,6 +448,8 @@ Lo que no hay que recordarle: las 7 preguntas del control de cuotas. Lo que hay 
 
 ### 🛤️ Camino 2 — GAS: todo lo que pasa por el mail, y antes los resúmenes que faltan para conciliar
 
+> 🔀 **Desde el 06/11 es parte del camino 2+3 · ADMINISTRACIÓN** (ver § FOCO ACTUAL). Lo pendiente del 31/10 sigue valiendo, más la nota 📮 «Bug link desde principal» (b244349a) que el camino 1 dejó para esta terminal en el tablero el 01/11.
+
 > 📍 **Estado al cierre del 31/10 (terminal GAS) — LEER PRIMERO:**
 > - **Punto 1 (resúmenes) TERMINADO**: con marzo de Cotitulares $ intercalado (script 150). Sólo queda decidir la cuenta corriente vieja de PAM (0000862-2).
 > - **Punto 2 (mails) — construido entero, espera pruebas**: registro instalado (GAS 0.20.0 subido por JMS, ~1.500 mails); vista previa de mails respondida (https://claude.ai/artifact/3uD8ZPgEDFk9PDRXb39VsH) → seguimiento, tipos editables con alcance, filtros tipo Excel, mails graves en el Principal, «Para guardar» por lotes con la carpeta de cada regla (📁❗ en el proceso, carpeta del año, sin pisar), «Pasar el monto a su cuota» con huella ([A-FEAT-1437](#a-feat-1437)·[1438](#a-feat-1438)·[1440](#a-feat-1440)·[1441](#a-feat-1441)·[1442](#a-feat-1442)·[1447](#a-feat-1447)·[1448](#a-feat-1448)).
@@ -518,6 +522,8 @@ Lo que no hay que recordarle: las 7 preguntas del control de cuotas. Lo que hay 
 - La frecuencia no está decidida.
 
 ### 🛤️ Camino 3 — ULISES (rol `contable`): accesos en `main`, y después sus funciones en Subdiarios
+
+> 🔀 **Desde el 06/11 es parte del camino 2+3 · ADMINISTRACIÓN** (ver § FOCO ACTUAL).
 
 *(Lo escribió T-main al cierre del 30/10. JMS: «ulises sería el rol contable»; «para poder luego desarrollar puntualmente los permisos a él y funciones del sistema respecto de subdiarios».)*
 
