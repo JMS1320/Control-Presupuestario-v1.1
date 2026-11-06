@@ -72,7 +72,7 @@ export function respaldoDeComprobante(a: Pick<AsientoLibroDiario, "fuente" | "ti
 }
 
 /** 📎 Un documento ya vinculado en la app (`public.documentos_respaldo`, script 211). */
-export interface DocumentoRespaldo { cuenta: string; periodo: string; tipo: string; url: string | null; nombre_archivo: string | null; ruta_drive: string | null }
+export interface DocumentoRespaldo { cuenta: string; periodo: string; tipo: string; url: string | null; nombre_archivo: string | null; ruta_drive: string | null; drive_file_id?: string | null }
 
 /** El documento vinculado de una cuenta para el mes de una fecha (`AAAA-MM-DD` → `AAAA-MM`), si hay. */
 export function documentoDe(docs: DocumentoRespaldo[] | undefined, cuenta: string, fecha: string): DocumentoRespaldo | null {
@@ -151,4 +151,59 @@ export function renglonesDeRespaldo(d: {
   comp("05 Provisión (ejercicio anterior)", d.provisionAnterior)
   comp("03.1 Provisión cobros", d.provisionCobros)
   return out
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// 📦 PASO 2 — «Descargar el respaldo»: copiar los documentos a la carpeta del balance y armar el zip de cada banco
+// ══════════════════════════════════════════════════════════════════════════════════════════
+
+/** El id de un archivo del Drive a partir de su link (`…/file/d/<id>/view…` o `…?id=<id>`). */
+export function idDeArchivoDrive(url: string | null | undefined): string | null {
+  const u = String(url ?? "")
+  return /\/d\/([A-Za-z0-9_-]{10,})/.exec(u)?.[1] ?? /[?&]id=([A-Za-z0-9_-]{10,})/.exec(u)?.[1] ?? null
+}
+
+export interface ItemDeRespaldo { file_id: string; subcarpeta: string; nombre: string }
+
+const limpio = (t: string) => t.replace(/[\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim()
+
+/**
+ * Pura: qué se copia a la carpeta del balance. Cada renglón con link (✅) de «00 Respaldos» → un archivo en la subcarpeta de
+ * su papel, con un nombre que se entiende sin abrirlo: «07 - BANCO GALICIA (cta cte) - junio 2026 - CC_pesos_26-06.pdf»,
+ * «05 - PARADOR SAN PEDRO 9-55857.pdf». Lo que no tiene link no se copia (está en la lista de lo que falta).
+ */
+export function itemsDelRespaldo(renglones: RenglonRespaldado[], documentos: Array<DocumentoRespaldo & { drive_file_id?: string | null }> = []): ItemDeRespaldo[] {
+  const vistos = new Set<string>()
+  const out: ItemDeRespaldo[] = []
+  for (const r of renglones) {
+    if (r.respaldo.estado !== "con_link" || !r.respaldo.url) continue
+    const id = documentos.find(d => d.url === r.respaldo.url)?.drive_file_id ?? idDeArchivoDrive(r.respaldo.url)
+    if (!id || vistos.has(id)) continue
+    vistos.add(id)
+    const papel = r.papel.split(" ")[0]                                   // «07», «05», «03.1»
+    const archivo = /«([^»]+)»/.exec(r.respaldo.documento)?.[1]
+    const base = archivo ? `${papel} - ${r.renglon.replace(/ — .*$/, "")} - ${archivo}` : `${papel} - ${r.renglon}.pdf`
+    out.push({ file_id: id, subcarpeta: r.papel, nombre: limpio(/\.pdf$/i.test(base) ? base : `${base}.pdf`) })
+  }
+  return out
+}
+
+/**
+ * 🗂️ Dónde vive todo (JMS 06/11, de a una pregunta): la casa de los extractos es «BANCOS y entidades financieras» (la
+ * carpeta segura) y el respaldo del balance va a «BALANCES / BALANCE <año> / - Respaldo». Por ahora sólo MSA (JMS: «sólo
+ * para MSA sería»). `null` = la empresa todavía no tiene carpetas definidas.
+ */
+export function carpetasDelRespaldo(empresa: string, anioCierre: number): { destino: string; bancos: Array<{ banco: string; ruta: string }> } | null {
+  if (empresa !== "MSA") return null
+  const a = anioCierre, corto = `${String(a - 1).slice(2)}-${String(a).slice(2)}`, largo = `${a - 1}-${String(a).slice(2)}`
+  // rutas con «/» (el GAS acepta «/» o «\», y así no hay que escapar nada)
+  const B = "I:/Mi unidad/SAN MANUEL/BANCOS y entidades financieras"
+  return {
+    destino: `I:/Mi unidad/SAN MANUEL/BALANCES/BALANCE ${a}/- Respaldo`,
+    bancos: [
+      { banco: "Galicia", ruta: `${B}/BANCO GALICIA SM/extractos ${corto}` },
+      { banco: "Provincia", ruta: `${B}/BANCO PROVINCIA/${largo}` },
+      { banco: "Santander", ruta: `${B}/BANCO SANTANDER RIO/${largo}` },
+    ],
+  }
 }

@@ -90,6 +90,7 @@ import { echeqDelAnticipo } from "@/lib/pagos/echeq-anticipo"
 import { armarPlanillaBoletas, decisionPropuesta, importeElegido, claveBoleta, partidaDeClave } from "@/lib/arba/planilla-boletas"
 import { marcarAnticiposSinVincular } from "@/lib/cashflow/anticipo-sin-vincular"
 import { pedidoDeOrden } from "@/lib/arba/ordenar-archivo"
+import { renglonesDeOrden, estadoSinFactura } from "@/lib/productivo/pedido-compra"
 import { detalleEditableDe, detalleSeEditaEnLote } from "@/lib/cashflow/detalle-lote"
 import { aplicarDestinoPuntual, pideDestinoPuntual, esCuitComodin } from "@/lib/lotes-galicia/helpers"
 import { boletasQueFaltan, tareaBoletasFaltan } from "@/lib/arba/boletas-faltan"
@@ -222,7 +223,7 @@ import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/bal
 import { controlarCuotasTemplates, campaniaDelControl, claveDeNombre, CONTROL_CUOTAS_TEMPLATES, ultimoDiaDelMes, type ComisionesDelMes, type CuotaParaControl, type TemplateControlado, type EntradaControlCuotas } from "@/lib/balance/control-cuotas-templates"
 import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuestosYOtros } from "@/lib/balance/templates-libro"
 import { hojaAutomotores, pulirLibroH, hojaDeProvisionCobros, hojaDeBancos } from "@/lib/balance/export-libro-diario"
-import { renglonesDeRespaldo, hojaDeRespaldos } from "@/lib/balance/respaldos"
+import { renglonesDeRespaldo, hojaDeRespaldos, itemsDelRespaldo, idDeArchivoDrive, carpetasDelRespaldo } from "@/lib/balance/respaldos"
 import { filtrarComprobantes } from "@/lib/balance/provision-manual-filtro"
 import { hojaStockHacienda, hojaDetalleHacienda, hojaStockValorizado, hojaAumentoRodeo, linkCotizacion, DETALLES } from "@/lib/balance/stock-hacienda-papel"
 import { repartoDeLaFlota } from "@/lib/balance/reparto-flota"
@@ -4458,6 +4459,18 @@ export function correrCasos(): Resultado[] {
           { cuenta: "FCI FIMA Premium A", periodo: "2026-06", tipo: "resumen_fci", url: "https://d/f", nombre_archivo: "Inv_26-06.pdf", ruta_drive: "r" }] })
       const vd = conDocs.map(x => `${x.respaldo.estado}${x.respaldo.url ? ":" + x.respaldo.url : ""}`).join(" · ")
       const ed = "con_link:https://d/s · sin_archivar · sin_archivar · con_link:https://d/f"
+      // 📦 paso 2: qué se copia a «- Respaldo» — sólo lo que tiene link, una vez cada archivo, con nombre legible y su papel
+      const its = itemsDelRespaldo([...conDocs, { papel: "05 Provisión", renglon: "PARADOR SAN PEDRO 9-55857", importe: 1,
+        respaldo: { documento: "Factura 1-9-55857 de PARADOR SAN PEDRO (PDF)", estado: "con_link", url: "https://drive.google.com/file/d/1X0SGtpCXpxutMV6yhijWW/view?usp=drivesdk" } }],
+        [{ cuenta: "BANCO SANTANDER", periodo: "2026-06", tipo: "extracto", url: "https://d/s", nombre_archivo: "SANTA - 26-06.pdf", ruta_drive: "r", drive_file_id: "idSANTANDER123" }])
+      const vi = its.map(i => `${i.subcarpeta} | ${i.nombre} | ${i.file_id}`).join(" ; ")
+      const ei = "07 Bancos | 07 - BANCO SANTANDER - SANTA - 26-06.pdf | idSANTANDER123 ; 05 Provisión | 05 - PARADOR SAN PEDRO 9-55857.pdf | 1X0SGtpCXpxutMV6yhijWW"
+      chequear("Balance · respaldos", "📦 Copiar el respaldo: cada documento con link a la carpeta de su papel, con nombre legible; sin link no se copia (el FCI de prueba no tiene id)",
+        ei, vi, vi === ei, "A-FEAT-1571")
+      const cr = carpetasDelRespaldo("MSA", 2026)
+      const vc = `${cr?.destino} · ${cr?.bancos.map(b => b.ruta.split("/").slice(-2).join("/")).join(" · ")} · PAM ${carpetasDelRespaldo("PAM", 2026)} · id ${idDeArchivoDrive("https://drive.google.com/open?id=abcDEF123456")}`
+      const ec = "I:/Mi unidad/SAN MANUEL/BALANCES/BALANCE 2026/- Respaldo · BANCO GALICIA SM/extractos 25-26 · BANCO PROVINCIA/2025-26 · BANCO SANTANDER RIO/2025-26 · PAM null · id abcDEF123456"
+      chequear("Balance · respaldos", "🗂️ Las carpetas acordadas: destino «BALANCE 2026 / - Respaldo» y la carpeta de cada banco del ejercicio (sólo MSA)", ec, vc, vc === ec, "A-FEAT-1571")
       chequear("Balance · respaldos", "📎 Con el extracto vinculado del mes de cierre, el saldo abre su documento (el de otro mes no cuenta); el FCI, su resumen",
         ed, vd, vd === ed, "A-FEAT-1571")
       chequear("Balance · respaldos", "📎 00 Respaldos: saldo → extracto o resumen; FCI → resumen del fondo; factura de compra → su PDF (link) o «falta»; histórico y ventas sin archivar; primero lo que falta",
@@ -10513,6 +10526,18 @@ export function correrCasos(): Resultado[] {
       const espP = "0170000000000000000001 · false · pepe.campo.mp · pepe@x.com · false · Destino sólo para esta transferencia · true · true · true · false · true · true · true · false · false"
       chequear("Accesos", "Lote Galicia: el CBU/alias y el mail escritos para esta transferencia sola la habilitan (sin tocar el proveedor); sólo en filas sin proveedor o con CUIT comodín, nunca en sueldos",
         espP, vP, vP === espP, "A-FEAT-1570")
+    }
+    // ── 🛒 La compra como primer registro (A-FEAT-1557 etapa 1): renglones desde la orden y «sin factura» que llama la atención ──
+    {
+      const rg = renglonesDeOrden([{ insumo_stock_id: "urea", cantidad_total_l: 100 }, { insumo_stock_id: null, cantidad_total_l: 5 },
+        { insumo_stock_id: "urea", cantidad_total_l: 50.5 }, { insumo_stock_id: "glifo", cantidad_total_l: 0 }, { insumo_stock_id: "atra", cantidad_total_l: 12.25 }])
+        .map(r => `${r.insumo_stock_id}:${r.cantidad}`).join(" · ")
+      const sf = [estadoSinFactura("2026-11-01", "2026-12-01", "2026-11-06"), estadoSinFactura("2026-09-20", "2026-12-01", "2026-11-06"),
+        estadoSinFactura("2026-11-01", "2026-11-05", "2026-11-06"), estadoSinFactura("2026-11-06", null, "2026-11-06")].map(e => `${e.dias}${e.alerta ? "!" : ""}`).join(" · ")
+      const vC = rg + " | " + sf
+      const espC = "urea:150.5 · atra:12.25 | 5 · 47! · 5! · 0"
+      chequear("Productivo", "Comprar desde la orden: un renglón por insumo del stock (suma si se repite; sin insumo o sin cantidad no va); «sin factura» en rojo si pasó la fecha de pago o más de 30 días",
+        espC, vC, vC === espC, "A-FEAT-1557")
     }
     // ── 📋 El orden de la planilla de JMS (05/11: «en el orden de mi planilla base»): su orden primero, lo demás por nombre ──
     {

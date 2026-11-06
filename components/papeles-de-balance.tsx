@@ -49,7 +49,7 @@ import {
 } from "@/lib/balance/control-cuotas-templates"
 import { HaciendaAlCierre, type DatosHacienda } from "./hacienda-al-cierre"
 import { ProponerFotoBalance } from "./proponer-foto-balance"
-import { respaldoDeSaldo } from "@/lib/balance/respaldos"
+import { respaldoDeSaldo, renglonesDeRespaldo, itemsDelRespaldo, carpetasDelRespaldo, type ItemDeRespaldo } from "@/lib/balance/respaldos"
 import { ivaConSigno, RENGLONES, type DatosDeLosPapeles, type ValorPropuesto } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { armarWorkbook, coberturaDeArgs, descargarLibroDiario, descargarSetDelBalance } from "@/lib/balance/export-libro-diario"
@@ -160,6 +160,8 @@ export function PapelesDeBalance() {
    * junto con el libro: es una consulta más por cuenta bancaria.
    */
   const [bancarios, setBancarios] = useState<Parameters<typeof descargarLibroDiario>[7] | null>(null)
+  /** 📦 A-FEAT-1571 paso 2: lo que pasó al copiar el respaldo o armar los zip (se muestra en el recuadro). */
+  const [respaldoEstado, setRespaldoEstado] = useState<{ trabajando: boolean; lineas: Array<{ texto: string; url?: string; error?: boolean }> }>({ trabajando: false, lineas: [] })
   const [templates, setTemplates] = useState<TemplatesDelEjercicio | null>(null)
   /** 🔢 ¿Cada template tiene sus cuotas en la campaña? (decisión de JMS del 28/10/2026). */
   const [controlCuotas, setControlCuotas] = useState<ControlCuotasTemplates | null>(null)
@@ -989,7 +991,7 @@ export function PapelesDeBalance() {
           // 💹 JMS 06/11: la tenencia del FCI ya cargada (resúmenes FIMA, scripts 170/174) va al papel 07
           fciTenencia: await leerFci(supabase, empresa.id, anioCierre).catch(() => null),
           // 📎 A-FEAT-1571: los extractos y resúmenes vinculados (scripts 211/212) — el saldo abre su documento
-          documentosRespaldo: await Promise.resolve(supabase.from("documentos_respaldo").select("cuenta, periodo, tipo, url, nombre_archivo, ruta_drive").eq("empresa", empresa.id))
+          documentosRespaldo: await Promise.resolve(supabase.from("documentos_respaldo").select("cuenta, periodo, tipo, url, nombre_archivo, ruta_drive, drive_file_id").eq("empresa", empresa.id))
             .then(r => (r.data ?? []) as import("@/lib/balance/respaldos").DocumentoRespaldo[]).catch(() => []),
         })
       } catch {
@@ -1862,6 +1864,71 @@ export function PapelesDeBalance() {
                     </tbody>
                   </table>
                 </details>
+              )
+            })()}
+
+            {/* 📦 A-FEAT-1571 paso 2 (JMS 06/11: «"descargar" = copiar esos docs y dejarlos guardados» · «un zip por cada set
+                por banco, con carpetas dividiendo tarjeta, cuentas…»): sólo COPIA al Drive, nunca mueve ni borra. */}
+            {(() => {
+              const carpetas = carpetasDelRespaldo(empresa.id, anioCierre)
+              if (!carpetas || !bancarios) return null
+              const fc = libro.ejercicio.fechaCierre
+              const renglones = renglonesDeRespaldo({
+                fechaCierre: fc, fechaInicio: `${Number(fc.slice(0, 4)) - 1}${fc.slice(4)}`,
+                saldos: bancarios.saldos, fci: bancarios.fciTenencia ?? null,
+                provision: libro.provisiones.filter(a => a.fuente !== "venta"), provisionAnterior: libro.provisionesEjercicioAnterior,
+                provisionCobros: libro.provisiones.filter(a => a.fuente === "venta"), documentos: bancarios.documentosRespaldo ?? [],
+              })
+              const items = itemsDelRespaldo(renglones, bancarios.documentosRespaldo ?? [])
+              const llamar = async (cuerpo: object) => {
+                const r = await fetch("/api/gas/respaldo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo) })
+                return r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }))
+              }
+              const copiar = async () => {
+                setRespaldoEstado({ trabajando: true, lineas: [{ texto: `Copiando ${items.length} documento(s)…` }] })
+                let falta: ItemDeRespaldo[] = items, copiados = 0, ya = 0
+                const lineas: Array<{ texto: string; url?: string; error?: boolean }> = []
+                for (let vuelta = 0; vuelta < 6 && falta.length; vuelta++) {
+                  const j = await llamar({ accion: "copiar", destino_ruta: carpetas.destino, items: falta })
+                  if (!j.ok) { lineas.push({ texto: `⚠️ ${j.error}`, error: true }); break }
+                  copiados += j.copiados.length; ya += j.ya_estaban.length
+                  for (const e of j.errores ?? []) lineas.push({ texto: `⚠️ ${e.nombre}: ${e.error}`, error: true })
+                  if (vuelta === 0 && j.destino_url) lineas.unshift({ texto: "Abrir la carpeta «- Respaldo»", url: j.destino_url })
+                  falta = j.pendientes ?? []
+                }
+                lineas.push({ texto: `✓ ${copiados} copiado(s) · ${ya} ya estaban${falta.length ? ` · quedaron ${falta.length}: apretá de nuevo` : ""}` })
+                setRespaldoEstado({ trabajando: false, lineas })
+              }
+              const zips = async () => {
+                const lineas: Array<{ texto: string; url?: string; error?: boolean }> = []
+                setRespaldoEstado({ trabajando: true, lineas: [{ texto: "Armando un zip por banco…" }] })
+                for (const b of carpetas.bancos) {
+                  const nombre = `${empresa.id} - ${b.banco} - extractos ${libro.ejercicio.etiqueta.replace("/", "-")} (${hoyArgentina()}).zip`
+                  const j = await llamar({ accion: "zip", origen_ruta: b.ruta, destino_ruta: carpetas.destino, subcarpeta: "Extractos para el contador", nombre })
+                  lineas.push(j.ok
+                    ? { texto: `${j.ya_estaba ? "ya estaba" : "✓"} ${b.banco}: ${nombre}${j.archivos ? ` (${j.archivos} archivos, ${j.mb} MB)` : ""}`, url: j.url }
+                    : { texto: `⚠️ ${b.banco}: ${j.error}`, error: true })
+                }
+                setRespaldoEstado({ trabajando: false, lineas })
+              }
+              return (
+                <div className="text-xs border rounded p-2 space-y-1">
+                  <div className="text-sm">📦 Respaldo del balance en el Drive</div>
+                  <div className="text-muted-foreground">
+                    Copia a «BALANCES / BALANCE {anioCierre} / - Respaldo» los {items.length} documentos con link de «00 Respaldos» (una
+                    carpeta por papel), y arma un zip por banco con todos sus extractos del ejercicio para el contador. Sólo copia: no
+                    mueve ni borra nada, y lo que ya está no se vuelve a copiar.
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" disabled={respaldoEstado.trabajando || !items.length} onClick={copiar}>Copiar los respaldos</Button>
+                    <Button size="sm" variant="outline" disabled={respaldoEstado.trabajando} onClick={zips}>Armar el zip de cada banco</Button>
+                  </div>
+                  {respaldoEstado.lineas.map((l, i) => (
+                    <div key={i} className={l.error ? "text-red-700" : ""}>
+                      {l.url ? <a href={l.url} target="_blank" rel="noreferrer" className="text-blue-700 underline">{l.texto}</a> : l.texto}
+                    </div>
+                  ))}
+                </div>
               )
             })()}
 
