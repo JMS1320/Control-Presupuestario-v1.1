@@ -104,10 +104,33 @@ const combinaciones: unknown[][] = [["COMBINACIONES CONTABLE × INTERNO — cuá
   [], ["TOTAL", "", "", filas.length, r2(filas.reduce((t, f) => t + f.deb, 0)), r2(filas.reduce((t, f) => t + f.cred, 0)), r2(filas.reduce((t, f) => t + f.deb - f.cred, 0))],
   ...(fallaron.length ? [[], ["⚠️ No se pudieron leer:", fallaron.join(" · ")]] : [])]
 
+// 🏷️ JMS 06/11: «las marcas diferentes también me tenés que dejar todo en ese mismo Excel, para ver todas las marcas que dejé anotadas».
+// Cada marca TAL COMO ESTÁ ESCRITA, con su columna (contable / interno); las que parecen la misma escrita distinto («AMS CTA» y «CTA AMS»,
+// «X» y «x», «Desglosar» y «DESGLOSAR») comparten «Grupo» para que se vean juntas. No se unifica nada: eso lo decide JMS.
+const claveGrupo = (m: string) => m.toUpperCase().replace(/\s+/g, " ").trim().split(" ").sort().join(" ")
+type Marca = { donde: string; marca: string; n: number; deb: number; cred: number; cuentas: Set<string>; deNota: number }
+const marcas = new Map<string, Marca>()
+for (const f of filas) for (const [donde, marca] of [["Contable", f.contable], ["Interno", f.interno]] as const) {
+  if (!marca) continue
+  const k = `${donde}\u0000${marca}`
+  const x = marcas.get(k) ?? { donde, marca, n: 0, deb: 0, cred: 0, cuentas: new Set<string>(), deNota: 0 }
+  x.n++; x.deb = r2(x.deb + f.deb); x.cred = r2(x.cred + f.cred); x.cuentas.add(f.cuenta); if (f.de.startsWith("nota")) x.deNota++
+  marcas.set(k, x)
+}
+const grupos = new Map<string, string[]>()
+for (const m of marcas.values()) { const g = claveGrupo(m.marca); grupos.set(g, [...new Set([...(grupos.get(g) ?? []), m.marca])]) }
+const listaMarcas = [...marcas.values()].sort((a, b) => claveGrupo(a.marca).localeCompare(claveGrupo(b.marca)) || a.donde.localeCompare(b.donde) || a.marca.localeCompare(b.marca))
+const todasLasMarcas: unknown[][] = [["TODAS LAS MARCAS — cada una tal como está escrita, en contable y en interno (ejercicio 25/26)"],
+  ["Ordenadas para que las que parecen la misma marca escrita distinto queden juntas (columna «Otras formas de escribirla»). Para ver sus movimientos: solapa «Por contable» o «Por interno», filtrando por la marca."],
+  [`${listaMarcas.length} marcas distintas · ${[...grupos.values()].filter(v => v.length > 1).length} con más de una forma de escribirse · ${filas.filter(f => f.de.startsWith("nota")).length} movimientos con la marca sólo en la nota del histórico`], [],
+  ["Columna", "Marca (tal como está)", "Otras formas de escribirla", "Movimientos", "de la nota del histórico", "Débitos", "Créditos", "Neto", "Cuentas", "Tu respuesta (qué es / con cuál unificar)"],
+  ...listaMarcas.map(m => { const otras = (grupos.get(claveGrupo(m.marca)) ?? []).filter(x => x !== m.marca)
+    return [m.donde, m.marca, otras.length ? `⚠️ ${otras.join(" · ")}` : "", m.n, m.deNota || "", m.deb, m.cred, r2(m.deb - m.cred), [...m.cuentas].join(", "), ""] })]
+
 if (!existsSync(CARPETA)) mkdirSync(CARPETA, { recursive: true })
 const nombre = (b: string) => { let p = join(CARPETA, `${b}.xlsx`), v = 2; while (existsSync(p)) p = join(CARPETA, `${b} v${v++}.xlsx`); return p }
 const wb = XLSX.utils.book_new()
-agregarHoja(wb, "Por contable", porContable); agregarHoja(wb, "Por interno", porInterno); agregarHoja(wb, "Combinaciones", combinaciones)
+agregarHoja(wb, "Todas las marcas", todasLasMarcas); agregarHoja(wb, "Por contable", porContable); agregarHoja(wb, "Por interno", porInterno); agregarHoja(wb, "Combinaciones", combinaciones)
 fechasReales(wb as any)
 const p = nombre(`Marcas contable e interno 25-26 (${HOY})`); XLSX.writeFile(wb, p)
 
