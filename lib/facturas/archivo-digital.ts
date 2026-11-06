@@ -35,7 +35,7 @@ export interface FilaConArchivo {
    * De dónde nace la fila. Sólo `'ARCA'` corresponde a una factura; el resto **no tiene factura
    * por diseño** y por eso no puede mostrarse como faltante.
    */
-  origen?: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO' | 'VENTA' | null
+  origen?: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO' | 'VENTA' | 'COMPRA' | null
   /** Cuántas facturas hay detrás. `> 1` = pago agrupado: no hay un PDF único. */
   facturas_agrupadas?: number | null
 }

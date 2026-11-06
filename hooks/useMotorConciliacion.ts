@@ -308,6 +308,8 @@ export function useMotorConciliacion() {
       // 📝 A-FEAT-1282 — la fila de UN echeq de un pago en varios no se concilia sola: su id es el del
       // cheque, no el de la factura/anticipo. Conciliar cada débito contra su echeq es A-DEC-17.
       .filter(cf => (cf as any).origen_tabla !== 'msa.cheques')
+      // 🛒 A-FEAT-1557 — una COMPRA SIN FACTURA es una previsión: el débito del banco se concilia contra su factura cuando llegue
+      .filter(cf => cf.origen !== 'COMPRA')
       // 🌾 A-FEAT-1328 — una fila ESTIMADA (cuota de arrendamiento sin fijar, o fijada sin TC) no es un
       // hecho: su importe es una cuenta con el TC y el precio de la base. No se concilia contra nada.
       .filter(cf => !(cf as any).estimada)

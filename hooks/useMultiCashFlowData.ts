@@ -19,6 +19,7 @@ import { comprobanteDeSueldo, especificacionDeSueldo } from "@/lib/conciliacion/
 import { detallePropio, detallePropioDeGrupo, type DetalleDeFactura } from "@/lib/cashflow/detalle-propio"
 import { partirFilasEnEcheqs } from "@/lib/cashflow/echeqs-en-filas"
 import { anterioresLibres } from "@/lib/conciliacion/pool-tarjeta"
+import { comprasSinFactura } from "@/lib/cashflow/compras-sin-factura"
 import { TABLAS_CON_VINCULO_ARCA } from "@/lib/conciliacion/tablas-con-vinculo-arca"
 import { cuitsEnCuentaCorriente } from "@/lib/proveedores/opera-cuenta-corriente"
 import { canceladosPorCuentaCorriente, type CuentaCorrienteOperativa } from "@/lib/proveedores/cuenta-corriente-a-hoy"
@@ -112,7 +113,7 @@ function conArrastreDeFechas(campo: string, valor: any): Record<string, any> {
 
 export interface CashFlowRow {
   id: string
-  origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO' | 'VENTA'
+  origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO' | 'VENTA' | 'COMPRA'
   origen_tabla: string // Para identificar tabla específica al editar
   /**
    * 📝 A-FEAT-1282 — fila de UN echeq de un pago en varios echeqs: el id de la factura/anticipo que
@@ -216,7 +217,7 @@ export interface CashFlowFilters {
   fechaHasta?: string
   responsables?: string[]
   estados?: string[]
-  origenes?: ('ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO' | 'VENTA')[]
+  origenes?: ('ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO' | 'VENTA' | 'COMPRA')[]
   /**
    * Empresa: DOS filtros, no uno. Las facturas de MA por default no se ven (las paga MA de su
    * propia cuenta y se concilian cada tanto → sería ruido); los templates sí se ven todos
@@ -1089,6 +1090,31 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
       const filasAnticipos = mapearAnticipos(anticipos || [])
       const filasSueldos = mapearSueldos(periodosSueldos || [])
 
+      // 🛒 A-FEAT-1557 etapa 2 — las COMPRAS SIN FACTURA, como egreso a su fecha de pago pactada (JMS 06/11: «cuenta en el Cash
+      // Flow desde que se carga»). Al vincular la factura salen solas (cuenta la factura). Si no se pueden leer, el Cash Flow
+      // sigue igual: es una fuente más, no la condición del resto.
+      let filasCompras: CashFlowRow[] = []
+      try {
+        const { data: movsC, error: eC } = await supabase.schema('productivo').from('movimientos_insumos')
+          .select('id, compra_id, fecha, fecha_pago, empresa, proveedor, cuit, cantidad, costo_unitario, stock_insumos(producto, unidad_medida)')
+          .eq('tipo', 'compra').not('compra_id', 'is', null)
+        if (eC) throw eC
+        const idsC = (movsC || []).map((m: any) => m.id as string)
+        const conFactura = new Set<string>()
+        for (let i = 0; i < idsC.length; i += 200) {
+          const { data: vs } = await supabase.schema('productivo').from('entrega_factura').select('movimiento_id').in('movimiento_id', idsC.slice(i, i + 200))
+          for (const v of (vs || []) as any[]) conFactura.add(v.movimiento_id)
+        }
+        filasCompras = comprasSinFactura((movsC || []).map((m: any) => ({ ...m, producto: m.stock_insumos?.producto ?? null, unidad: m.stock_insumos?.unidad_medida ?? null })), conFactura)
+          .map(c => ({
+            id: `compra:${c.compra_id}`, origen: 'COMPRA' as const, origen_tabla: 'productivo.movimientos_insumos',
+            empresas: c.empresa ? [c.empresa] : [], fecha_estimada: c.fecha_pago, fecha_vencimiento: c.fecha_pago,
+            categ: 'COMPRA INSUMOS', centro_costo: '', cuit_proveedor: c.cuit, nombre_proveedor: c.proveedor,
+            detalle: c.detalle, detalle_usuario: c.detalle, debitos: c.monto, creditos: 0, saldo_cta_cte: 0, estado: 'sin_factura',
+            comprobante_display: 'Compra sin factura',
+          }))
+      } catch (e) { console.error('Cash Flow: no se pudieron leer las compras sin factura', e) }
+
       // Mapear pagos de sueldos (con agrupación por grupo_pago_id)
       const allSueldosPagos = anticiposSueldos || []
       const sueldosIndividuales = allSueldosPagos.filter(a => !a.grupo_pago_id)
@@ -1218,7 +1244,7 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         chequesDeFilas = chs || []
       }
       const [filasArcaEcheq, filasAnticiposEcheq] = [partirFilasEnEcheqs(filasArca, chequesDeFilas), partirFilasEnEcheqs(filasAnticipos, chequesDeFilas)]
-      const todasLasFilas = marcarAnticiposSinVincular([...filasArcaEcheq, ...filasTemplates, ...filasAnticiposEcheq, ...filasSueldos, ...filasAnticiposSueldos, ...filasVentas, ...filasVentasSinFC])
+      const todasLasFilas = marcarAnticiposSinVincular([...filasArcaEcheq, ...filasTemplates, ...filasAnticiposEcheq, ...filasSueldos, ...filasAnticiposSueldos, ...filasVentas, ...filasVentasSinFC, ...filasCompras])
         .sort((a, b) => a.fecha_estimada.localeCompare(b.fecha_estimada))
 
       // 8. Aplicar filtros
@@ -1257,10 +1283,15 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
     id: string,
     campo: string,
     valor: any,
-    origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO' | 'VENTA',
+    origen: 'ARCA' | 'TEMPLATE' | 'ANTICIPO' | 'SUELDO' | 'VENTA' | 'COMPRA',
     egresoId?: string
   ): Promise<boolean> => {
     const filaOrigen = data.find(f => f.id === id)
+    // 🛒 A-FEAT-1557: una compra sin factura se ve acá pero se maneja en Productivo (la fecha de pago, la factura)
+    if (origen === 'COMPRA') {
+      toast.info('Es una compra sin factura: se edita en Productivo → Insumos → Stock & Movimientos. Cuando vincules su factura, sale de acá y cuenta la factura.')
+      return false
+    }
 
     // Qué filas de sueldo se pueden escribir desde acá:
     //   ✅ `sueldos.pagos`    — un pago individual

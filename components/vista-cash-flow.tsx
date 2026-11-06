@@ -2047,7 +2047,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
   // E2.2: Agrupar filas seleccionadas en un grupo de pago (mismo origen + mismo proveedor). Reusa lib/pagos/agrupar.
   const agruparSeleccionados = async () => {
-    const seleccionadas = datosOperativos.filter(f => filasSeleccionadas.has(f.id) && f.origen_tabla !== 'msa.cheques')
+    // 🛒 A-FEAT-1557: una compra sin factura no se agrupa (se paga con su factura)
+    const seleccionadas = datosOperativos.filter(f => filasSeleccionadas.has(f.id) && f.origen_tabla !== 'msa.cheques' && f.origen !== 'COMPRA')
     // Las filas que YA son un grupo no se pueden meter dentro de otro grupo: se descartan acá.
     const yaAgrupadas = seleccionadas.filter(f => (f.facturas_agrupadas ?? 0) > 1)
     const filas = seleccionadas.filter(f => (f.facturas_agrupadas ?? 0) <= 1)
