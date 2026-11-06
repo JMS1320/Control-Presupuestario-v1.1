@@ -4353,7 +4353,8 @@ factura sin salir de la pantalla, igual que en el subdiario.
 | **📎 verde** | la factura está archivada | clickealo: abre el PDF en otra pestaña |
 | **🌐 gris** | la factura es de **Portal**, así que no llega por mail | nada — si la necesitás, la bajás del portal del proveedor |
 | **❌ roja** | esta factura **debería** tener el PDF archivado y no lo tiene | buscarlo (Subdiarios tiene la supervisión del archivo digital) |
-| **– gris claro** | esta fila **no viene de una factura**: es un template, un anticipo, un sueldo o una venta | nada, es lo normal |
+| **📎 verde en una cuota de template** *(desde 06/11)* | la cuota tiene su **documento**: la boleta o el VEP que llegó por mail y se pasó a la cuota, la boleta de ARBA o el comprobante que adjuntó quien informó el pago | clickealo: abre el documento. Si dice **📎2** (o más), al tocarlo lista cada uno. En un pago agrupado muestra los de todas sus cuotas |
+| **– gris claro** | esta fila **no viene de una factura** (template, anticipo, sueldo, venta) **y no tiene ningún documento vinculado** | nada, es lo normal |
 | **⧉ azul** | es un **pago agrupado**: hay varias facturas juntas | abrí el grupo para ver cada una |
 
 📌 **La diferencia entre la ❌ roja y el – gris es la que importa.** Las dos quieren decir "acá no
@@ -4362,7 +4363,7 @@ esperable**: una cuota de un impuesto o de un seguro nunca va a tener factura de
 
 💡 Clickear el clip **no abre el editor de la celda**: abre la factura y nada más.
 
-⚠️ Sin probar todavía → A-TEST-1154
+⚠️ Sin probar todavía → A-TEST-1154 · el 📎 de las cuotas de template → A-TEST-1348
 
 ## 📆 Cash Flow → cuándo te pregunta por la fecha de pago *(2026-09-11)*
 
