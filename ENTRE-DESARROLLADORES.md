@@ -40,6 +40,9 @@
 
 ## 📨 PARA JAVIER
 
+### 📎 Tabla nueva `public.documentos_respaldo` (2026-11-06) — ⏳ AVISO PREVIO (se corre cuando JMS dé el OK)
+- JMS 06/11 (A-FEAT-1571): cada saldo del balance tiene que abrir el extracto o resumen que lo respalda. Una fila por documento: `empresa` · `cuenta` · `periodo` (AAAA-MM) · `tipo` (extracto, resumen_usd, resumen_fci, resumen_tarjeta, arqueo, otro) · `drive_file_id` · `url` · `nombre_archivo` · `ruta_drive` · `saldo_documento` · `observaciones` · `creado_por`; único por empresa + cuenta + periodo + tipo. **Arranca vacía.** RLS igual que `balance_datos_usuario`: `puede_ver` / `puede_escribir` + 1 fila en `recurso_tablas` (recurso `extracto`, `restringe_lectura` true); `anon` sin nada. No toca ninguna tabla existente. Script `scripts/211-documentos-respaldo.sql` (deshacer: `211-…-deshacer.sql`), marca `[script 211]`.
+
 ### 📬 Sección nueva del menú: «mails» (13 secciones) (2026-11-06) — ⚠️ cambió: SIN cambio en la base. El script 210 lo rechazó la base (admin es de sistema) y no se usa: `leerRoles` (`lib/auth/permisos.ts`) le da a **admin todas las secciones** por código. Lo de abajo es el aviso original
 - JMS 05/11: *«sí, Mails como sección propia del menú»* (A-FEAT-1548). Hasta hoy era una solapa de Egresos sólo para admin. En el código: `SECCIONES_IDS` (`lib/auth/permisos.ts`) y `SECCIONES` (`lib/auth/recursos.ts`) pasan a 13 con `"mails"` **al final** (los atajos Alt+M salen de la posición y así no cambia ninguna tecla); `SOLAPAS` en `layout-app.tsx`; `dashboard.tsx` la monta. **En la base**: `scripts/210-…` agrega `"mails"` a `public.roles.secciones` del rol **admin** únicamente (foto + deshacer exacto). Ningún otro rol la recibe: tiene mails de la familia y de la sucesión. **Si tocás roles o el menú en tu rama**: al mergear, la lista de secciones tiene 13.
 
