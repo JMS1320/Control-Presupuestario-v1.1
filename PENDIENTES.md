@@ -525,6 +525,8 @@ Lo que no hay que recordarle: las 7 preguntas del control de cuotas. Lo que hay 
 ### 🛤️ Camino 3 — ULISES (rol `contable`): accesos en `main`, y después sus funciones en Subdiarios
 
 > 🔀 **Desde el 06/11 es parte del camino 2+3 · ADMINISTRACIÓN** (ver § FOCO ACTUAL).
+>
+> 📍 **Cierre del 06/11 noche (camino 2+3):** producción publicada con `main` 6a728bf y Ulises en pausa de verdad ([A-BUG-1542](#a-bug-1542)). **Red Vial San Pedro**: la cuota 3/2026 (vto 11/09) **no se pagó** — boletas leídas del mail archivado y aplicadas a las 15 cuotas (script 227, [A-FEAT-1214](#a-feat-1214)); **borrador del pedido de reliquidación** (Red Vial + ABL 20021 Puerto + Gol/Tiguan/Hilux 2026) en Borradores de sanmanuel.sp, **lo envía JMS**. Boletas por mail preset y entrada automática → [A-FEAT-1575](#a-feat-1575) (sin arrancar). 📎 del Cash Flow en cuotas de template → [A-FEAT-1576](#a-feat-1576) etapa 1 hecha, [A-TEST-1348](#a-test-1348). Datos de autos (Gol/Tiguan «conciliado $0», Hilux sin cuotas) y Lote Puerto: **no se tocan, los revisa JMS**.
 
 *(Lo escribió T-main al cierre del 30/10. JMS: «ulises sería el rol contable»; «para poder luego desarrollar puntualmente los permisos a él y funciones del sistema respecto de subdiarios».)*
 
