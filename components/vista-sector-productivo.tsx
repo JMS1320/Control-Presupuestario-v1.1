@@ -240,6 +240,9 @@ interface OrdenAgricola {
   lotes_orden?: { lote_id: string | null; lote_nombre: string; hectareas: number; orden: number }[]
   lineas?: LineaOrdenAgricola[]
   labores?: string[]
+  /** 🚜 A-FEAT-1556 (script 214): el contratista de la orden, por CUIT como el maestro de proveedores */
+  contratista_cuit?: string | null
+  contratista_nombre?: string | null
 }
 
 interface LineaOrdenAgricola {
@@ -7524,7 +7527,10 @@ function SubTabOrdenesAgricolas() {
 
   const [nuevaOrden, setNuevaOrden] = useState({
     fecha: hoyArgentina(),
-    observaciones: ''
+    observaciones: '',
+    // 🚜 A-FEAT-1556: un contratista por ORDEN (JMS 05/11)
+    contratista_cuit: '',
+    contratista_nombre: '',
   })
 
   // Multi-lote
@@ -7594,7 +7600,7 @@ function SubTabOrdenesAgricolas() {
     setMostrarModal(false)
     setOrdenEditandoId(null)
     setModoVer(false)
-    setNuevaOrden({ fecha: hoyArgentina(), observaciones: '' })
+    setNuevaOrden({ fecha: hoyArgentina(), observaciones: '', contratista_cuit: '', contratista_nombre: '' })
     setLotesOrden([{ key: Date.now(), lote_id: '', lote_nombre: '', hectareas: '' }])
     setTotalHaEscrito('')
     setLaboresSeleccionadas({})
@@ -7684,7 +7690,9 @@ function SubTabOrdenesAgricolas() {
             fecha: nuevaOrden.fecha,
             lote_nombre: loteNombreGuardar,
             hectareas,
-            observaciones: nuevaOrden.observaciones || null
+            observaciones: nuevaOrden.observaciones || null,
+            contratista_cuit: nuevaOrden.contratista_cuit || null,
+            contratista_nombre: nuevaOrden.contratista_nombre || null,
           })
           .eq('id', ordenEditandoId)
         if (ordenError) throw new Error(ordenError.message)
@@ -7702,7 +7710,9 @@ function SubTabOrdenesAgricolas() {
             lote_nombre: loteNombreGuardar,
             hectareas,
             estado: 'planificada',
-            observaciones: nuevaOrden.observaciones || null
+            observaciones: nuevaOrden.observaciones || null,
+            contratista_cuit: nuevaOrden.contratista_cuit || null,
+            contratista_nombre: nuevaOrden.contratista_nombre || null,
           })
           .select('id').single()
         if (ordenError) throw new Error(ordenError.message)
@@ -7768,7 +7778,7 @@ function SubTabOrdenesAgricolas() {
 
   const abrirEdicion = (orden: OrdenAgricola) => {
     setOrdenEditandoId(orden.id)
-    setNuevaOrden({ fecha: orden.fecha, observaciones: orden.observaciones || '' })
+    setNuevaOrden({ fecha: orden.fecha, observaciones: orden.observaciones || '', contratista_cuit: orden.contratista_cuit || '', contratista_nombre: orden.contratista_nombre || '' })
     // A-FEAT-1397: cada lote en su fila (antes la orden de 2 lotes se abría como una sola fila «A / B»)
     setTotalHaEscrito('')
     const lotesGuardados = [...(orden.lotes_orden || [])].sort((a, b) => a.orden - b.orden)
@@ -7923,6 +7933,16 @@ function SubTabOrdenesAgricolas() {
     }
   }
 
+  /**
+   * 🚜 A-FEAT-1556 — una orden NUEVA arranca con el contratista de la última orden que lo tenía (§ Default del dato real:
+   * se ve de dónde viene y se cambia en el selector). `ordenes` viene ordenada de la más nueva a la más vieja.
+   */
+  const abrirNuevaOrden = () => {
+    const ultima = ordenes.find(o => o.contratista_cuit)
+    if (ultima) setNuevaOrden(p => ({ ...p, contratista_cuit: ultima.contratista_cuit || '', contratista_nombre: ultima.contratista_nombre || '' }))
+    setMostrarModal(true)
+  }
+
   // 📱 A-FEAT-1409: un pedido de campo abre la orden agrícola (nueva o la elegida)
   usePedidoCampo(() => {
     const p = tomarPedidoCampo('agricola')
@@ -7930,7 +7950,7 @@ function SubTabOrdenesAgricolas() {
     if (p.ordenId) {
       const o = ordenes.find(x => x.id === p.ordenId)
       if (o) abrirEdicion(o); else toast.error('No encontré esa orden: puede que ya la hayan confirmado.')
-    } else setMostrarModal(true)
+    } else abrirNuevaOrden()
   }, !loading)
 
   if (loading) {
@@ -7950,7 +7970,7 @@ function SubTabOrdenesAgricolas() {
             <Badge className="ml-2 align-middle bg-amber-100 text-amber-900 border-amber-300">{ordenes.filter(o => o.estado === 'a_confirmar').length} a confirmar</Badge>)}
         </h3>
         <div className="flex gap-2">
-          {permOrden.nueva && <Permisable recurso="productivo.ordenes.nueva"><Button size="sm" onClick={() => setMostrarModal(true)}>
+          {permOrden.nueva && <Permisable recurso="productivo.ordenes.nueva"><Button size="sm" onClick={abrirNuevaOrden}>
             <Plus className="mr-1 h-4 w-4" />
             Nueva Orden
           </Button></Permisable>}
@@ -8152,6 +8172,17 @@ function SubTabOrdenesAgricolas() {
                 <Label>Observaciones</Label>
                 <Input value={nuevaOrden.observaciones}
                   onChange={e => setNuevaOrden(p => ({ ...p, observaciones: e.target.value }))} />
+              </div>
+              {/* 🚜 A-FEAT-1556: un contratista por orden (JMS 05/11). Arranca con el último usado; se cambia o se borra acá. */}
+              <div className="sm:col-span-2">
+                <ProveedorCombobox
+                  label="Contratista"
+                  value={{ cuit: nuevaOrden.contratista_cuit, nombre: nuevaOrden.contratista_nombre }}
+                  onChange={sel => setNuevaOrden(p => ({ ...p, contratista_cuit: sel.cuit, contratista_nombre: sel.nombre }))}
+                />
+                {!ordenEditandoId && nuevaOrden.contratista_cuit && ordenes.find(o => o.contratista_cuit)?.contratista_cuit === nuevaOrden.contratista_cuit && (
+                  <p className="text-[11px] text-gray-500 mt-0.5">El de la última orden — cambialo si esta la hace otro.</p>
+                )}
               </div>
             </div>
 

@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 🚜 2 columnas nuevas en `productivo.ordenes_agricolas`: `contratista_cuit` y `contratista_nombre` (2026-11-06) — ⏳ AVISO PREVIO (se corre a continuación con OK de JMS)
+### 🚜 2 columnas nuevas en `productivo.ordenes_agricolas`: `contratista_cuit` y `contratista_nombre` (2026-11-06) — ✅ APLICADA el 06/11 con OK de JMS (aviso previo): 2 columnas vacías, verificado con EXPLAIN UPDATE
 - A-FEAT-1556, JMS 05/11: *«un contratista por ORDEN»*. Texto, vacías al crear (las órdenes viejas quedan sin contratista). Por CUIT como el maestro `public.proveedores`, para que después la factura del contratista (ARCA, por CUIT) se ate a sus órdenes. `scripts/214-…sql` verifica que no existían; deshacer exacto. **No toca RLS ni roles** (la tabla ya tiene los suyos).
 
 ### 💳 1 columna nueva en `public.egresos_sin_factura`: `se_paga_con_tarjeta` boolean + 1 trigger en `public.cuotas_egresos_sin_factura` (2026-11-06) — ✅ APLICADA el 06/11 con OK de JMS (aviso previo): columna + función + trigger activo; marca en 2 templates
