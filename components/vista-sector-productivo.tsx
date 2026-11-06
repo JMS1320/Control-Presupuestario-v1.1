@@ -145,6 +145,11 @@ interface MovimientoInsumo {
   moneda?: string | null
   costo_unitario_moneda?: number | null
   tipo_cambio?: number | null
+  /** 🛒 A-FEAT-1557 — la compra como primer registro: renglones agrupados, pago pactado, quién paga, orden de origen. */
+  compra_id?: string | null
+  fecha_pago?: string | null
+  empresa?: string | null
+  orden_agricola_id?: string | null
 }
 
 interface OrdenAplicacionRodeo {

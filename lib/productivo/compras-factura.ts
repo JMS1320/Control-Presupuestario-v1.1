@@ -126,3 +126,66 @@ export function pctQueCierra(
   const pct = (1 - ((Number(factura.neto) || 0) - resto) / base) * 100
   return Math.round(pct * 100) / 100
 }
+
+/**
+ * 🛒 **A-FEAT-1557 etapa 3 — al llegar la factura, proponer las COMPRAS SIN FACTURA de ese proveedor.**
+ *
+ * La compra es el primer registro (renglones con el mismo `compra_id`); cuando entra la factura, el modal
+ * propone la compra que mejor encaja: agrupa los renglones libres (sin factura propia ni de otra) por
+ * compra, suma cantidad × precio pactado y ordena por cercanía al neto. `coincide` = la diferencia es de
+ * hasta 0,5 % del neto (o un centavo): el proveedor suele redondear. **No tilda solo** — el usuario lo
+ * pidió (*«no sabemos cómo van a facturar»*): propone, y un click tilda la compra entera.
+ */
+export interface RenglonDeCompra {
+  id: string
+  compra_id: string | null
+  fecha: string
+  cantidad: number
+  precioPactado: number | null
+  /** Ya vinculado a alguna factura (ésta u otra): no se propone. */
+  conFactura: boolean
+}
+
+export interface CompraPropuesta {
+  compra_id: string
+  fecha: string
+  ids: string[]
+  monto: number
+  sinPrecio: number
+  /** neto − monto */
+  dif: number
+  coincide: boolean
+}
+
+export function proponerCompras(neto: number, renglones: RenglonDeCompra[]): CompraPropuesta[] {
+  const grupos = new Map<string, RenglonDeCompra[]>()
+  for (const r of renglones) {
+    if (!r.compra_id || r.conFactura) continue
+    grupos.set(r.compra_id, [...(grupos.get(r.compra_id) ?? []), r])
+  }
+  const n = Number(neto) || 0
+  const tol = Math.max(TOLERANCIA_VINCULO, Math.abs(n) * 0.005)
+  return [...grupos.entries()].map(([compra_id, rs]) => {
+    const monto = r2(rs.reduce((s, r) => s + (r.precioPactado != null && r.precioPactado > 0 ? r.cantidad * r.precioPactado : 0), 0))
+    const sinPrecio = rs.filter(r => !(r.precioPactado != null && r.precioPactado > 0)).length
+    const dif = r2(n - monto)
+    return { compra_id, fecha: rs.map(r => r.fecha).sort()[0], ids: rs.map(r => r.id), monto, sinPrecio, dif, coincide: sinPrecio === 0 && Math.abs(dif) <= tol }
+  }).sort((a, b) => Number(b.coincide) - Number(a.coincide) || Math.abs(a.dif) - Math.abs(b.dif) || a.fecha.localeCompare(b.fecha))
+}
+
+/**
+ * El aviso en la lista de facturas: cuántas compras sin factura tiene el proveedor de ESTA factura.
+ * Sólo si la factura todavía no está vinculada a nada y no es anterior a la primera compra libre en más
+ * de 30 días (una factura vieja no puede ser de una compra nueva).
+ */
+export function comprasSinFacturaDelProveedor(
+  factura: { id: string; cuit: string | null; fecha: string },
+  porCuit: Map<string, { n: number; desde: string }>,
+  facturasVinculadas: Set<string>,
+): number {
+  if (!factura.cuit || facturasVinculadas.has(factura.id)) return 0
+  const p = porCuit.get(String(factura.cuit).replace(/\D/g, ''))
+  if (!p || !p.n) return 0
+  const limite = new Date(p.desde + 'T12:00:00'); limite.setDate(limite.getDate() - 30)
+  return factura.fecha >= limite.toISOString().slice(0, 10) ? p.n : 0
+}

@@ -3,6 +3,7 @@
 
 import { nuevasPrimero } from "@/lib/importar/orden-preview"
 import { ModalVincularCompras } from "./modal-vincular-compras"
+import { comprasSinFacturaDelProveedor } from "@/lib/productivo/compras-factura"
 import { conversionDe } from "@/lib/pagos/moneda-factura"
 import { toggleChip, esSoloEste, tituloChip } from "@/lib/ui/chips"
 import { hoyArgentina } from "@/lib/fechas"
@@ -921,6 +922,34 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   // (provEditMail = lo que se carga ahí) y la lista de facturas sin PDF.
   /** 🧾 A-BUG-1244 — la factura que se está vinculando con sus compras de insumos. */
   const [facturaVincularCompras, setFacturaVincularCompras] = useState<string | null>(null)
+  /** 🛒 A-FEAT-1557 etapa 3 — proveedores con compras sin factura (por CUIT) y facturas ya vinculadas a compras. */
+  const [comprasLibres, setComprasLibres] = useState<{ porCuit: Map<string, { n: number; desde: string }>; vinculadas: Set<string> }>({ porCuit: new Map(), vinculadas: new Set() })
+  const [recargaComprasLibres, setRecargaComprasLibres] = useState(0)
+  useEffect(() => {
+    if (schemaName !== 'msa') return
+    ;(async () => {
+      try {
+        const prod = supabase.schema('productivo')
+        const [{ data: movs }, { data: vincs }] = await Promise.all([
+          prod.from('movimientos_insumos').select('id, compra_id, cuit, fecha').eq('tipo', 'compra').not('compra_id', 'is', null),
+          prod.from('entrega_factura').select('movimiento_id, factura_id'),
+        ])
+        const conFactura = new Set((vincs || []).map((v: any) => v.movimiento_id))
+        const grupos = new Map<string, { cuit: string; fecha: string }>()
+        for (const m of (movs || []) as any[]) {
+          if (conFactura.has(m.id) || !m.cuit) continue
+          const g = grupos.get(m.compra_id)
+          if (!g || m.fecha < g.fecha) grupos.set(m.compra_id, { cuit: String(m.cuit).replace(/\D/g, ''), fecha: m.fecha })
+        }
+        const porCuit = new Map<string, { n: number; desde: string }>()
+        for (const g of grupos.values()) {
+          const p = porCuit.get(g.cuit)
+          porCuit.set(g.cuit, { n: (p?.n ?? 0) + 1, desde: p && p.desde < g.fecha ? p.desde : g.fecha })
+        }
+        setComprasLibres({ porCuit, vinculadas: new Set((vincs || []).map((v: any) => v.factura_id)) })
+      } catch (e) { console.error('No se pudieron leer las compras sin factura', e) }
+    })()
+  }, [schemaName, recargaComprasLibres])
   const [provPorCuit, setProvPorCuit] = useState<Record<string, { id: string; email_facturacion: string | null; email_pagos: string | null; gas_habilitado: boolean | null; fc_modo: string | null }>>({})
   const [provEditMail, setProvEditMail] = useState<Record<string, string>>({})
   const [guardandoMailCuit, setGuardandoMailCuit] = useState<string | null>(null)
@@ -8338,6 +8367,18 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                             </TableCell>
                           ))}
                           <TableCell style={{ width: '40px', padding: '0 4px' }}>
+                            <div className="flex items-center gap-0.5">
+                            {/* 🛒 A-FEAT-1557 etapa 3: el proveedor tiene compras cargadas sin factura → proponer atarla */}
+                            {schemaName === 'msa' && (() => {
+                              const n = comprasSinFacturaDelProveedor({ id: factura.id, cuit: factura.cuit, fecha: factura.fecha_emision }, comprasLibres.porCuit, comprasLibres.vinculadas)
+                              return n > 0 ? (
+                                <Permisable recurso="egresos.vincular-compras"><button type="button" onClick={() => setFacturaVincularCompras(factura.id)}
+                                  className="rounded bg-sky-100 px-1 text-[11px] text-sky-800 hover:bg-sky-200 whitespace-nowrap"
+                                  title={`Este proveedor tiene ${n} compra(s) cargada(s) sin factura. ¿Es de alguna? Click para vincularla.`}>
+                                  🛒{n}
+                                </button></Permisable>
+                              ) : null
+                            })()}
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
@@ -8417,6 +8458,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                                 )}
                               </DropdownMenuContent>
                             </DropdownMenu>
+                            </div>
                           </TableCell>
                         </TableRow>
                         )
@@ -13119,7 +13161,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
         </DialogContent>
       </Dialog>
       <ModalVincularCompras abierto={!!facturaVincularCompras} facturaId={facturaVincularCompras}
-        onCerrar={() => setFacturaVincularCompras(null)} />
+        onCerrar={() => setFacturaVincularCompras(null)} onGuardado={() => setRecargaComprasLibres(n => n + 1)} />
     </div>
   )
 }

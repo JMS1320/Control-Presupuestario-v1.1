@@ -19,11 +19,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
-import { calcularVinculo, pctQueCierra, type CompraParaVincular, type RenglonVinculo } from "@/lib/productivo/compras-factura"
+import { calcularVinculo, pctQueCierra, proponerCompras, type CompraParaVincular, type RenglonVinculo } from "@/lib/productivo/compras-factura"
 
 interface FacturaLeida {
   id: string; fecha: string; proveedor: string; cuit: string; numero: string
   moneda: string; tcFactura: number; neto: number
+  /** El detalle de la factura: si está vacío, hereda el de la compra (A-FEAT-1557 etapa 3, «el detalle nace acá»). */
+  detalle: string
   /** TC del pago, si ya se pagó. Es el que manda para el costo (A-FEAT-1255: «lo real es lo que se pagó»). */
   tcPago: number | null
 }
@@ -33,6 +35,8 @@ interface CompraLeida extends CompraParaVincular {
   otraFactura: boolean
   /** Ya vinculada a esta factura: el id del vínculo. */
   vinculoId: string | null
+  /** 🛒 A-FEAT-1557: la compra (primer registro) a la que pertenece el renglón. */
+  compraId: string | null
 }
 
 const sumarDias = (f: string, d: number) => { const x = new Date(f + 'T12:00:00'); x.setDate(x.getDate() + d); return x.toISOString().slice(0, 10) }
@@ -65,9 +69,9 @@ export function ModalVincularCompras({
   const [guardando, setGuardando] = useState(false)
 
   const arca = () => supabase.schema('msa').from('comprobantes_arca')
-  const COLS = 'id, fecha_emision, denominacion_emisor, cuit, punto_venta, numero_desde, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, moneda, tipo_cambio, tc_pago'
+  const COLS = 'id, fecha_emision, denominacion_emisor, cuit, punto_venta, numero_desde, imp_neto_gravado, imp_neto_no_gravado, imp_op_exentas, moneda, tipo_cambio, tc_pago, detalle'
   const aFactura = (f: any): FacturaLeida => ({
-    id: f.id, fecha: f.fecha_emision, proveedor: f.denominacion_emisor || '', cuit: f.cuit || '',
+    id: f.id, fecha: f.fecha_emision, proveedor: f.denominacion_emisor || '', cuit: f.cuit || '', detalle: f.detalle || '',
     numero: `${Number(f.punto_venta || 0)}-${Number(f.numero_desde || 0)}`,
     moneda: !f.moneda || f.moneda === 'PES' ? 'ARS' : f.moneda,
     tcFactura: Number(f.tipo_cambio) || 1,
@@ -108,18 +112,25 @@ export function ModalVincularCompras({
     setTc(f.moneda === 'ARS' ? '' : fmt(f.tcPago ?? f.tcFactura))
     const prod = supabase.schema('productivo')
     const desde = sumarDias(f.fecha, -120), hasta = sumarDias(f.fecha, 60)
-    const SEL = 'id, fecha, cantidad, costo_unitario, costo_unitario_moneda, moneda, proveedor, cuit, insumo_stock_id, stock_insumos(producto, unidad_medida)'
-    const [porCuit, porNombre] = await Promise.all([
+    const SEL = 'id, fecha, cantidad, costo_unitario, costo_unitario_moneda, moneda, proveedor, cuit, insumo_stock_id, compra_id, stock_insumos(producto, unidad_medida)'
+    const [porCuit, porNombre, comprasDelCuit] = await Promise.all([
       f.cuit ? prod.from('movimientos_insumos').select(SEL).eq('tipo', 'compra').eq('cuit', f.cuit).gte('fecha', desde).lte('fecha', hasta) : Promise.resolve({ data: [] as any[] }),
       prod.from('movimientos_insumos').select(SEL).eq('tipo', 'compra').ilike('proveedor', `%${primeraPalabra(f.proveedor)}%`).gte('fecha', desde).lte('fecha', hasta),
+      // 🛒 A-FEAT-1557 etapa 3: las compras cargadas como primer registro de este proveedor, sin ventana de
+      // fechas — una compra pactada hace 5 meses puede facturarse hoy. Las ya facturadas se filtran abajo.
+      f.cuit ? prod.from('movimientos_insumos').select(SEL).eq('tipo', 'compra').eq('cuit', f.cuit).not('compra_id', 'is', null) : Promise.resolve({ data: [] as any[] }),
     ])
     const vistos = new Map<string, any>()
     for (const m of [...(porCuit.data || []), ...(porNombre.data || [])]) vistos.set(m.id, m)
-    const movs = [...vistos.values()]
-    const ids = movs.map(m => m.id)
+    const fueraDeVentana = new Set<string>()
+    for (const m of (comprasDelCuit.data || []) as any[]) if (!vistos.has(m.id)) { vistos.set(m.id, m); fueraDeVentana.add(m.id) }
+    const todos = [...vistos.values()]
+    const ids = todos.map(m => m.id)
     const { data: vincs } = ids.length
       ? await prod.from('entrega_factura').select('id, movimiento_id, factura_id').in('movimiento_id', ids)
       : { data: [] as any[] }
+    // Las de fuera de la ventana sólo si siguen sin factura (o son de ésta): las otras ya tienen su factura.
+    const movs = todos.filter(m => !fueraDeVentana.has(m.id) || !(vincs || []).some(v => v.movimiento_id === m.id && v.factura_id !== f.id))
     const lista: CompraLeida[] = movs.map(m => {
       const deEsta = (vincs || []).find(v => v.movimiento_id === m.id && v.factura_id === f.id)
       return {
@@ -131,6 +142,7 @@ export function ModalVincularCompras({
         precioPactado: m.costo_unitario_moneda != null ? Number(m.costo_unitario_moneda) : (m.costo_unitario != null ? Number(m.costo_unitario) : null),
         otraFactura: (vincs || []).some(v => v.movimiento_id === m.id && v.factura_id !== f.id),
         vinculoId: deEsta?.id ?? null,
+        compraId: m.compra_id ?? null,
       }
     }).sort((a, b) => a.fecha.localeCompare(b.fecha) || a.producto.localeCompare(b.producto))
     setCompras(lista)
@@ -155,6 +167,13 @@ export function ModalVincularCompras({
   const aplicarPctMasivo = (pct: number) =>
     setRenglones(rs => rs.map(r => marcadas.has(r.compraId) ? { ...r, pctDescuento: pct } : r))
   const sugerido = factura && marcadas.size ? pctQueCierra({ neto: factura.neto }, compras, renglones, marcadas) : null
+
+  // 🛒 A-FEAT-1557 etapa 3: las compras sin factura del proveedor, la que mejor encaja primero. Propone, no tilda.
+  const propuestas = useMemo(() => factura ? proponerCompras(factura.neto, compras.map(c => ({
+    id: c.id, compra_id: c.compraId, fecha: c.fecha, cantidad: c.cantidad, precioPactado: c.precioPactado,
+    conFactura: c.otraFactura || !!c.vinculoId,
+  }))) : [], [factura, compras])
+  const tildarCompra = (ids: string[]) => setRenglones(rs => rs.map(r => ids.includes(r.compraId) ? { ...r, incluir: true } : r))
 
   const usd = factura && factura.moneda !== 'ARS'
   const tcNum = parse(tc)
@@ -197,7 +216,17 @@ export function ModalVincularCompras({
       // Destildadas que estaban vinculadas a esta factura: se desvinculan (el precio de la compra no se toca).
       const quitar = compras.filter(c => c.vinculoId && !renglones.find(r => r.compraId === c.id)?.incluir).map(c => c.vinculoId!)
       if (quitar.length) await prod.from('entrega_factura').delete().in('id', quitar)
+      // 🛒 A-FEAT-1557 etapa 3 — «el detalle nace acá»: una factura SIN detalle hereda el de la compra que la
+      // originó (insumos y cantidades). Una con detalle no se toca: el detalle del usuario manda.
+      let heredoDetalle = false
+      const deCompra = calc.renglones.filter(r => compras.find(x => x.id === r.compra.id)?.compraId)
+      if (!factura.detalle.trim() && deCompra.length) {
+        const detalle = 'Compra: ' + deCompra.map(r => `${r.compra.producto} ${fmt(r.compra.cantidad, 2)}${r.compra.unidad ? ' ' + r.compra.unidad : ''}`).join(', ')
+        const { error: e3 } = await arca().update({ detalle }).eq('id', factura.id)
+        heredoDetalle = !e3
+      }
       toast.success(`Factura ${factura.numero} vinculada a ${calc.renglones.length} compra(s)` +
+        (heredoDetalle ? ' · tomó el detalle de la compra' : '') +
         (stockConPrecio ? ` · ${stockConPrecio} insumo(s) del stock tomaron este costo` : '') +
         (quitar.length ? ` · ${quitar.length} desvinculada(s)` : ''))
       onGuardado?.()
@@ -253,6 +282,27 @@ export function ModalVincularCompras({
               <p className="text-xs text-amber-700">⚠️ El TC no es el {factura!.tcPago ? 'del pago' : 'de la factura'}: el costo sale con el tuyo, pero el control del panel de entregas compara con el {factura!.tcPago ? 'del pago' : 'de la factura'} y va a mostrar la diferencia. Y si después cambia el TC del pago, el costo se recalcula con ése.</p>
             )}
 
+            {propuestas.length > 0 && (
+              <div className="rounded border border-sky-300 bg-sky-50 p-2 text-xs text-sky-900 space-y-1">
+                <p><b>🛒 Este proveedor tiene {propuestas.length} compra{propuestas.length > 1 ? 's' : ''} sin factura.</b> ¿Es de alguna de éstas? Tildala entera y mirá el control de abajo.</p>
+                {propuestas.map(p => {
+                  const tildada = p.ids.every(id => renglones.find(r => r.compraId === id)?.incluir)
+                  return (
+                    <div key={p.compra_id} className="flex flex-wrap items-center gap-2">
+                      <span>Compra del {p.fecha.split('-').reverse().join('/')} · {p.ids.length} renglón{p.ids.length > 1 ? 'es' : ''} · {sim} {fmt(p.monto)}
+                        {p.sinPrecio > 0 && <span className="text-red-700"> · {p.sinPrecio} sin precio</span>}
+                        {p.coincide ? <b className="ml-1 text-emerald-700">✓ coincide con el neto</b> : <span className="ml-1 text-gray-600">(dif. {sim} {fmt(p.dif)})</span>}
+                      </span>
+                      <Button size="sm" variant="outline" className="h-6 px-2 text-xs" disabled={tildada} onClick={() => tildarCompra(p.ids)}>
+                        {tildada ? '✓ tildada' : 'Tildar esta compra'}
+                      </Button>
+                    </div>
+                  )
+                })}
+                {usd && <p className="text-amber-700">Ojo: la factura es en {factura.moneda} y las compras se cargan en pesos — la comparación es orientativa hasta que pongas el TC.</p>}
+              </div>
+            )}
+
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="text-xs text-gray-500">
@@ -279,7 +329,7 @@ export function ModalVincularCompras({
                           setRenglon(c.id, { incluir: e.target.checked })
                         }} /></td>
                         <td className="p-1">{c.fecha.split('-').reverse().join('/')}</td>
-                        <td className="p-1">{c.producto}{c.vinculoId && <span className="ml-1 rounded bg-emerald-100 px-1 text-[10px] text-emerald-800">✓ vinculada a esta FC</span>}{c.otraFactura && <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] text-amber-800">⚠ ya vinculada a otra FC</span>}</td>
+                        <td className="p-1">{c.producto}{c.compraId && !c.vinculoId && !c.otraFactura && <span className="ml-1 rounded bg-sky-100 px-1 text-[10px] text-sky-800" title="Cargada como compra sin factura">🛒 sin factura</span>}{c.vinculoId && <span className="ml-1 rounded bg-emerald-100 px-1 text-[10px] text-emerald-800">✓ vinculada a esta FC</span>}{c.otraFactura && <span className="ml-1 rounded bg-amber-100 px-1 text-[10px] text-amber-800">⚠ ya vinculada a otra FC</span>}</td>
                         <td className="p-1 text-right tabular-nums">{fmt(c.cantidad, 2)} {c.unidad || ''}</td>
                         <td className="p-1 text-right tabular-nums">{c.precioPactado != null ? fmt(c.precioPactado) : <span className="text-red-600">sin precio</span>}</td>
                         <td className="p-1 text-right">

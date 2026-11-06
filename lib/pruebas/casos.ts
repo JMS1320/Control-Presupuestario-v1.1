@@ -72,7 +72,8 @@ import { resumirMes, llenarConPresente, llenarCon, diasDelMes, tipoDia, type Mar
 import { brutoDelPeriodo, brutoSegunTipo } from "@/lib/sueldos/bruto"
 import { textoQueSeCobro, detalleConQueSeCobro } from "@/lib/ventas/que-se-cobro"
 import { esperadaDe, emparejar } from "@/lib/pagos/nc-diferencia-cambio"
-import { calcularVinculo, pctQueCierra } from "@/lib/productivo/compras-factura"
+import { calcularVinculo, pctQueCierra, proponerCompras, comprasSinFacturaDelProveedor } from "@/lib/productivo/compras-factura"
+import { comprasSinFactura } from "@/lib/cashflow/compras-sin-factura"
 import { facturasCortas } from "@/lib/pagos/lineas-detalle-pago"
 import { NOMBRE_PARA_TERCEROS, empresaDeSchema } from "@/lib/empresas"
 import { facturasRestringidas } from "@/lib/auth/roles"
@@ -10564,6 +10565,41 @@ export function correrCasos(): Resultado[] {
       const espP = "0170000000000000000001 · false · pepe.campo.mp · pepe@x.com · false · Destino sólo para esta transferencia · true · true · true · false · true · true · true · false · false"
       chequear("Accesos", "Lote Galicia: el CBU/alias y el mail escritos para esta transferencia sola la habilitan (sin tocar el proveedor); sólo en filas sin proveedor o con CUIT comodín, nunca en sueldos",
         espP, vP, vP === espP, "A-FEAT-1570")
+    }
+    // ── 🛒 A-FEAT-1557 etapa 2: la compra sin factura en el Cash Flow (una fila por compra; lo ya facturado sale) ──
+    {
+      const filas = comprasSinFactura([
+        { id: "a", compra_id: "c1", fecha: "2026-11-01", fecha_pago: "2026-12-01", empresa: "MSA", proveedor: "Agro", cuit: "30", cantidad: 10, costo_unitario: 100, producto: "urea", unidad: "kg" },
+        { id: "b", compra_id: "c1", fecha: "2026-11-01", fecha_pago: "2026-12-01", empresa: "MSA", proveedor: "Agro", cuit: "30", cantidad: 5, costo_unitario: null, producto: "glifo", unidad: "l" },
+        { id: "c", compra_id: "c2", fecha: "2026-10-01", fecha_pago: null, empresa: "MSA", proveedor: "Agro", cuit: "30", cantidad: 1, costo_unitario: 50 },
+        { id: "d", compra_id: "c3", fecha: "2026-09-01", fecha_pago: null, empresa: "PAM", proveedor: "Otro", cuit: "20", cantidad: 2, costo_unitario: 30 },
+        { id: "e", compra_id: null, fecha: "2026-09-01", fecha_pago: null, empresa: null, proveedor: "Vieja", cuit: "20", cantidad: 2, costo_unitario: 30 },
+      ], new Set(["c"]))
+      const v2 = filas.map(f => `${f.compra_id}:${f.fecha_pago}:${f.monto}:${f.sinPrecio}`).join(" · ")
+      const e2 = "c3:2026-09-01:60:0 · c1:2026-12-01:1000:1"
+      chequear("Cash Flow", "Compra sin factura en el Cash Flow: una fila por compra a su fecha de pago (sin fecha = la de la compra); lo ya atado a su factura y las compras viejas sin compra_id no entran",
+        e2, v2, v2 === e2, "A-FEAT-1557")
+    }
+    // ── 🛒 A-FEAT-1557 etapa 3: llega la factura → se propone la compra sin factura que mejor encaja ──
+    {
+      const ps = proponerCompras(1000, [
+        { id: "a", compra_id: "c1", fecha: "2026-10-01", cantidad: 10, precioPactado: 50, conFactura: false },
+        { id: "b", compra_id: "c2", fecha: "2026-10-20", cantidad: 10, precioPactado: 60, conFactura: false },
+        { id: "c", compra_id: "c2", fecha: "2026-10-20", cantidad: 4, precioPactado: 100.9, conFactura: false },
+        { id: "d", compra_id: "c3", fecha: "2026-09-01", cantidad: 1, precioPactado: 1000, conFactura: true },
+        { id: "e", compra_id: null, fecha: "2026-09-01", cantidad: 1, precioPactado: 1000, conFactura: false },
+      ]).map(p => `${p.compra_id}:${p.monto}${p.coincide ? "✓" : ""}`).join(" · ")
+      const pc = new Map([["30111", { n: 2, desde: "2026-10-01" }]])
+      const av = [
+        comprasSinFacturaDelProveedor({ id: "f1", cuit: "30-111", fecha: "2026-11-05" }, pc, new Set()),
+        comprasSinFacturaDelProveedor({ id: "f2", cuit: "30111", fecha: "2026-08-01" }, pc, new Set()),
+        comprasSinFacturaDelProveedor({ id: "f3", cuit: "30111", fecha: "2026-11-05" }, pc, new Set(["f3"])),
+        comprasSinFacturaDelProveedor({ id: "f4", cuit: "99", fecha: "2026-11-05" }, pc, new Set()),
+      ].join(" · ")
+      const v3 = ps + " | " + av
+      const e3 = "c2:1003.6✓ · c1:500 | 2 · 0 · 0 · 0"
+      chequear("Productivo", "Llega la factura: se propone primero la compra sin factura cuyo monto coincide con el neto (±0,5 %); lo ya facturado no; el 🛒 de la lista sólo en facturas sin vincular, del mismo CUIT y no más de 30 días antes de la compra",
+        e3, v3, v3 === e3, "A-FEAT-1557")
     }
     // ── 🛒 La compra como primer registro (A-FEAT-1557 etapa 1): renglones desde la orden y «sin factura» que llama la atención ──
     {
