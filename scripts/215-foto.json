@@ -1,0 +1,9 @@
+{
+ "regla": {
+  "id": "d98a33e4-9ccd-4ca4-af55-188bcc9ade6d",
+  "archivo_destino": null,
+  "remitente_patron": "mpittalugaa@gmail.com",
+  "tipo": "contador",
+  "accion": "guardar"
+ }
+}
