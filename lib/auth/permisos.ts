@@ -133,7 +133,10 @@ export async function leerRoles(): Promise<ResultadoRoles> {
   // `permisos` puede faltar si todavía no se corrió `scripts/61`: se normaliza a {} (sin
   // excepciones), que es el comportamiento anterior. Igual que el FALLBACK: se falla al reparto
   // que ya había, nunca a "no ve nada" ni a "ve todo".
-  const roles = data.map((r) => ({ ...r, permisos: r.permisos ?? {}, cerrado: r.cerrado === true }))
+  // 📬 06/11 (A-FEAT-1548): el rol `admin` ve TODAS las secciones, por definición («ve y edita todo el sistema»). La base no
+  // deja cambiar sus secciones (es de sistema: el script 210 que le sumaba «mails» lo rechazó), así que una sección nueva
+  // le llega acá y no pide tocar la base.
+  const roles = data.map((r) => ({ ...r, secciones: r.id === "admin" ? [...SECCIONES_IDS] : r.secciones, permisos: r.permisos ?? {}, cerrado: r.cerrado === true }))
   return { roles, desdeLaBase: true, falta, tieneCerrado }
 }
 

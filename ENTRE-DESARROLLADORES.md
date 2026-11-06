@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 📬 Sección nueva del menú: «mails» (13 secciones) + se la sumo al rol `admin` en `public.roles` (2026-11-06) — ⏳ AVISO PREVIO (se corre con OK de JMS)
+### 📬 Sección nueva del menú: «mails» (13 secciones) (2026-11-06) — ⚠️ cambió: SIN cambio en la base. El script 210 lo rechazó la base (admin es de sistema) y no se usa: `leerRoles` (`lib/auth/permisos.ts`) le da a **admin todas las secciones** por código. Lo de abajo es el aviso original
 - JMS 05/11: *«sí, Mails como sección propia del menú»* (A-FEAT-1548). Hasta hoy era una solapa de Egresos sólo para admin. En el código: `SECCIONES_IDS` (`lib/auth/permisos.ts`) y `SECCIONES` (`lib/auth/recursos.ts`) pasan a 13 con `"mails"` **al final** (los atajos Alt+M salen de la posición y así no cambia ninguna tecla); `SOLAPAS` en `layout-app.tsx`; `dashboard.tsx` la monta. **En la base**: `scripts/210-…` agrega `"mails"` a `public.roles.secciones` del rol **admin** únicamente (foto + deshacer exacto). Ningún otro rol la recibe: tiene mails de la familia y de la sucesión. **Si tocás roles o el menú en tu rama**: al mergear, la lista de secciones tiene 13.
 
 ### 🚦 `vercel.json` nuevo: Vercel deja de publicar algunos push (2026-11-01, OK de JMS)
