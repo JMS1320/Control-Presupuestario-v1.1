@@ -7,7 +7,7 @@
 -- de AMS están «armados con lo pagado»: si no, quedarían pagados de más).
 --   julio 2025:  1.500.000 + 389.920 = 1.889.920
 --   agosto 2025: 1.600.000 + 238.994 = 1.838.994
--- El del 08/07/2025 ($ 1.064.403) NO se toca: sería el sueldo de junio 2025 (ejercicio anterior) — espera a JMS.
+-- El del 08/07/2025 ($ 1.064.403) NO se toca acá: ⚠️ cambió 06/11 — es el sueldo de junio 2025, conciliado por el script 222.
 -- Marca «[script 163]». Deshacer: 163-…-deshacer.sql (por ids).
 
 insert into sueldos.pagos (id, periodo_id, empleado_id, tipo, fecha, monto, estado, medio_pago, descripcion, visible_contable) values
