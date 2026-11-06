@@ -219,7 +219,7 @@ import { PRESENTADO_ARCA_COMPRAS, compararConPresentado } from "@/lib/balance/pr
 import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/balance/facturas-fijas"
 import { controlarCuotasTemplates, campaniaDelControl, claveDeNombre, CONTROL_CUOTAS_TEMPLATES, ultimoDiaDelMes, type ComisionesDelMes, type CuotaParaControl, type TemplateControlado, type EntradaControlCuotas } from "@/lib/balance/control-cuotas-templates"
 import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuestosYOtros } from "@/lib/balance/templates-libro"
-import { hojaAutomotores, pulirLibroH, hojaDeProvisionCobros } from "@/lib/balance/export-libro-diario"
+import { hojaAutomotores, pulirLibroH, hojaDeProvisionCobros, hojaDeBancos } from "@/lib/balance/export-libro-diario"
 import { filtrarComprobantes } from "@/lib/balance/provision-manual-filtro"
 import { hojaStockHacienda, hojaDetalleHacienda, hojaStockValorizado, hojaAumentoRodeo, linkCotizacion, DETALLES } from "@/lib/balance/stock-hacienda-papel"
 import { repartoDeLaFlota } from "@/lib/balance/reparto-flota"
@@ -4405,6 +4405,27 @@ export function correrCasos(): Resultado[] {
       const vm = mot ? `${mot.v.endsWith(": hacienda entregada en junio")} · ${mot.s.font.bold} · ${mot.s.fill.fgColor.rgb}` : "sin línea de motivo"
       chequear("Balance · provisión", "✍️ La 03.1 dice debajo del total el motivo de cada venta provisionada, destacado sin amarillo",
         "true · true · DDEBF7", vm, vm === "true · true · DDEBF7", "A-FEAT-1564")
+      // ➕ JMS 06/11 (03.1): «el total no está sumando» — sumaba sólo la M (hoy el IVA): ahora suma H a O; el Total (N) = 900.
+      const tot = h31.find(r => (r as any[])[6] === "TOTAL") as any[]
+      const vt = tot ? `N ${tot[13].f}=${tot[13].v} · H ${tot[7].f}` : "sin total"
+      chequear("Balance · provisión", "➕ La 03.1 suma TODAS las columnas de importes (no sólo la M)", "N SUM(N6:N6)=900 · H SUM(H6:H6)", vt, vt === "N SUM(N6:N6)=900 · H SUM(H6:H6)", "A-FEAT-1564")
+    }
+    // 🏦 JMS 06/11 (07 Bancos): saldos con dos decimales y el negativo entre paréntesis; las cuentas en dólares en DÓLARES con su
+    //    total aparte y los pesos sólo como detalle; y el FCI con las cuotapartes y el valor que ya están cargados.
+    {
+      const fondo = { donde: "BANCO GALICIA (cta cte)", saldoInicio: 0, suscripciones: 376900000, rescates: 407127112.42, saldoCierre: 0, resultadoFinanciero: 0, movimientos: 125 }
+      const h = hojaDeBancos([
+        { nombre: "BANCO GALICIA (cta cte)", saldo: -2261369.97, fecha: "2026-06-30" },
+        { nombre: "MSA Cuenta Corriente USD — US$ 599,71", saldo: 883372.83, fecha: "2026-06-30", moneda: "USD", cuenta: "MSA Cuenta Corriente USD", usd: 599.71, usdInicio: 35001.63, tc: 1473 },
+        { nombre: "MSA Caja USD — ⚠️ SIN MOVIMIENTOS", saldo: null, fecha: null, moneda: "USD", cuenta: "MSA Caja USD", usd: null, tc: 1473 },
+      ], { fondos: [fondo], total: fondo }, "2026-06-30", [],
+        { cuotasInicio: 362898.06, valorInicio: 64.0511, notaInicio: "a", cuotasCierre: 0, valorCierre: 81.856194, notaCierre: "b" }) as any[][]
+      const fila = (t: string) => h.find(r => r[0] === t) ?? []
+      const gal = fila("BANCO GALICIA (cta cte)"), tp = fila("TOTAL EN PESOS"), usd = fila("MSA Cuenta Corriente USD"), tu = fila("TOTAL EN DÓLARES"), fci = h.filter(r => r[0] === "BANCO GALICIA (cta cte)")[1]
+      const v = `gal ${gal[1].z} · total $ ${tp[1].v} · usd ${usd[1].v} pesos ${usd[5].f}=${usd[5].v} · total U$S ${tu[1].v} (${tu[1].f}) · fci ${fci[1]} × ${fci[2]} → cierre ${fci[6]}`
+      const e = "gal #,##0.00;(#,##0.00) · total $ -2261369.97 · usd 599.71 pesos B8*E8=883372.83 · total U$S 599.71 (SUM(B8:B9)) · fci 362898.06 × 64.0511 → cierre 0"
+      chequear("Balance · bancos", "🏦 07: saldos con 2 decimales y negativo entre paréntesis; los dólares en U$S con su total y los pesos como detalle; el FCI con las cuotapartes cargadas",
+        e, v, v === e, "A-FEAT-1197")
     }
     // 🔎 A-FEAT-1564 — el selector: ordenado por fecha, filtro por subdiario y buscador por nombre, número o importe (con puntos y coma).
     {

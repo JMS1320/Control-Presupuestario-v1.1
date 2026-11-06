@@ -65,6 +65,9 @@ export async function leerFci(sb: Cliente, empresa: string, anioCierre: number) 
   }
 }
 
+/** 💹 La tenencia del FCI tal como la devuelve `leerFci` (también la usa el papel 07). */
+export type TenenciaFci = NonNullable<Awaited<ReturnType<typeof leerFci>>>
+
 /** 🌾 Soja: las toneladas al inicio (el dato del cuadre de granos). */
 export async function leerSojaInicio(sb: Cliente, empresa: string, anioCierre: number): Promise<{ tnInicio: number | null; nota: string } | null> {
   const d = await datos(sb, empresa, anioCierre, "granos")

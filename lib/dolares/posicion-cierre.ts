@@ -59,12 +59,24 @@ export function posicionAlCierre(movs: MovimientoMoneda[], fechaCierre: string, 
  * del balance). ⚠️ cambió 30/10: **una cuenta sin movimientos hasta el cierre sale igual, vacía y marcada** (antes
  * no aparecía). Lo que no se puede valuar (sin TC de cierre) va con saldo vacío y un aviso — nunca un cero inventado.
  */
+/**
+ * 💵 Un renglón del papel 07. Las cuentas en dólares traen además `moneda: "USD"`, la cuenta sin adornos, el saldo en
+ * dólares (cierre e inicio) y el TC — JMS 06/11: «la caja en U$S expresada en U$S, dos totales distintos en U$S y en
+ * pesos; como detalle queda la expresión en pesos de los dólares».
+ */
+export interface SaldoParaBalance {
+  nombre: string; saldo: number | null; fecha: string | null
+  moneda?: "USD"; cuenta?: string; usd?: number | null; usdInicio?: number | null; tc?: number | null; fuenteTc?: string | null
+}
+
 export async function saldosEnDolaresParaBalance(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any, empresa: string, finDelEjercicio: string,
-): Promise<{ saldos: { nombre: string; saldo: number | null; fecha: string | null }[]; avisos: string[] }> {
+): Promise<{ saldos: SaldoParaBalance[]; avisos: string[] }> {
   const cuentas = CUENTAS_EN_MONEDA_EXTRANJERA[empresa] ?? []
-  const saldos: { nombre: string; saldo: number | null; fecha: string | null }[] = []
+  const saldos: SaldoParaBalance[] = []
+  // el cierre anterior (= el día antes del inicio del ejercicio): mismo día y mes, un año antes
+  const finAnterior = `${Number(finDelEjercicio.slice(0, 4)) - 1}${finDelEjercicio.slice(4)}`
   const avisos: string[] = []
   if (cuentas.length === 0) return { saldos, avisos }
   // 💵 A-FEAT-1427: la serie guarda compra/venta, no `valor` — leerla por `valor` daba siempre vacío.
@@ -74,12 +86,12 @@ export async function saldosEnDolaresParaBalance(
     const q = c.schema_bd === "public" ? supabase.from(c.tabla_bd) : supabase.schema(c.schema_bd).from(c.tabla_bd)
     const { data, error } = await q.select("fecha, debitos, creditos, moneda, tipo_cambio, importe_pesos")
       .lte("fecha", finDelEjercicio).limit(10000)
-    if (error) { avisos.push(`No se pudo leer ${c.nombre}`); saldos.push({ nombre: c.nombre, saldo: null, fecha: null }); continue }
+    if (error) { avisos.push(`No se pudo leer ${c.nombre}`); saldos.push({ nombre: c.nombre, saldo: null, fecha: null, moneda: "USD", cuenta: c.nombre, usd: null, tc }); continue }
     const movs = (data ?? []) as MovimientoMoneda[]
     // ⚠️ cambió 30/10 (A-FEAT-1427, JMS: «de lo que no hay, salta la alerta de que falta»): hasta acá una cuenta sin
     // movimientos NO aparecía, y el papel parecía completo. Ahora sale con el saldo vacío y el aviso.
     if (movs.length === 0) {
-      saldos.push({ nombre: `${c.nombre} — ⚠️ SIN MOVIMIENTOS CARGADOS (falta el dato)`, saldo: null, fecha: null })
+      saldos.push({ nombre: `${c.nombre} — ⚠️ SIN MOVIMIENTOS CARGADOS (falta el dato)`, saldo: null, fecha: null, moneda: "USD", cuenta: c.nombre, usd: null, tc, fuenteTc: cot?.fuente ?? null })
       avisos.push(`${c.nombre}: no tiene ningún movimiento cargado hasta el cierre`)
       continue
     }
@@ -88,6 +100,8 @@ export async function saldosEnDolaresParaBalance(
     saldos.push({
       nombre: `${c.nombre} — US$ ${p.usd.toLocaleString("es-AR", { minimumFractionDigits: 2 })}${tc && cot ? ` × TC ${tc.toLocaleString("es-AR")} (${cot.fuente})` : ""}${dif}`,
       saldo: p.pesosAlCierre, fecha: finDelEjercicio,
+      moneda: "USD", cuenta: c.nombre, usd: p.usd, tc, fuenteTc: cot?.fuente ?? null,
+      usdInicio: movs.some(m => m.fecha && m.fecha <= finAnterior) ? posicionAlCierre(movs, finAnterior, null).usd : null,
     })
     if (tc == null) avisos.push(`${c.nombre}: no hay dólar BNA a la fecha de cierre, el saldo en pesos va vacío`)
     if (p.sinTC > 0) avisos.push(`${c.nombre}: ${p.sinTC} movimiento(s) sin tipo de cambio, la diferencia de cambio no se calcula`)

@@ -97,7 +97,7 @@ export interface DatosDelIndice {
     detalleBancario?: import("./libros-del-balance").MovimientoDelDetalle[]
     retiros: RetirosYAportes
     /** Saldo al cierre por cuenta. `null` = no se pudo leer o no hubo movimientos en el período. */
-    saldos: Array<{ nombre: string; saldo: number | null; fecha: string | null }>
+    saldos: Array<import("@/lib/dolares/posicion-cierre").SaldoParaBalance>
     /** Movimientos de FCI encontrados. */
     movimientosFCI: number
     /**

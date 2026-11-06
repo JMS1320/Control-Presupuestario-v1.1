@@ -879,7 +879,7 @@ export function PapelesDeBalance() {
           .select("nro_cuenta, cuenta_contable, nombre_totalizadora, tipo")
 
         const movimientos: Array<MovimientoExtracto & { donde: string }> = []
-        const saldos: Array<{ nombre: string; saldo: number | null; fecha: string | null }> = []
+        const saldos: Array<import("@/lib/dolares/posicion-cierre").SaldoParaBalance> = []
         /** 🏦 La cadena inicio → cierre de cada cuenta (A-FEAT-1206). */
         const cadenas: CadenaDeSaldos[] = []
         const noSePudoLeer: string[] = []
@@ -983,6 +983,8 @@ export function PapelesDeBalance() {
            * usuario los complete y el resultado financiero se calcula solo, con fórmula.
            */
           fci: armarFondosComunes(movFCI, {}, {}),
+          // 💹 JMS 06/11: la tenencia del FCI ya cargada (resúmenes FIMA, scripts 170/174) va al papel 07
+          fciTenencia: await leerFci(supabase, empresa.id, anioCierre).catch(() => null),
         })
       } catch {
         toast.warning("No se pudieron armar los papeles bancarios; el resto del libro salió igual.")

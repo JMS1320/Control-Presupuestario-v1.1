@@ -22,6 +22,8 @@
 // Import por DEFAULT: el paquete es CommonJS (ver lib/presupuesto/export.ts).
 import { hojaOperacionesEnDolares } from "./operaciones-en-dolares"
 import XLSX from "xlsx-js-style"
+import type { SaldoParaBalance } from "@/lib/dolares/posicion-cierre"
+import type { TenenciaFci } from "./balance-en-linea-lectura"
 import { lecturaIncompleta, type Lectura } from "@/lib/supabase-paginado"
 import { ETIQUETA_CONCEPTO, type ImpuestoCheque } from "./impuesto-cheque"
 import { controlarCheque, chequeEnPapel08, chequeEnTemplates, type ControlCheque } from "./control-cheque"
@@ -180,6 +182,21 @@ export function conTotalAlPie(filas: unknown[][]): unknown[][] {
  * mano con su motivo. Abajo la del ejercicio ANTERIOR, **sólo informativa** — no se resta: *«el
  * contador lo maneja»* (usuario 2026-10-23).
  */
+/**
+ * ➕ La fila TOTAL de una tabla de comprobantes (`hojaDeAsientos`): «TOTAL» en G y la suma de H a O (neto gravado … dif. de
+ * algo más), con fórmula. JMS 06/11: en la 05 «falta totales»; en la 03.1 «el total no está sumando» (sumaba sólo la M).
+ * `filas` = las filas de detalle tal como quedaron (sin el encabezado); `desde`/`hasta` = sus filas de Excel.
+ */
+export function filaTotalComprobantes(filas: unknown[][], desde: number, hasta: number): unknown[] {
+  const fila: unknown[] = ["", "", "", "", "", "", "TOTAL"]
+  for (let c = 7; c <= 14; c++) {
+    const letra = String.fromCharCode(65 + c)
+    const v = filas.reduce((t, r) => { const x = r[c] as unknown; const n = typeof x === "number" ? x : Number((x as { v?: unknown })?.v); return t + (Number.isFinite(n) ? n : 0) }, 0)
+    fila.push(conFormula(`SUM(${letra}${desde}:${letra}${hasta})`, money(v)))
+  }
+  return fila
+}
+
 function hojaDeProvision(este: AsientoLibroDiario[], anterior: AsientoLibroDiario[], etiqueta: string, etiquetaAnterior: string, control?: ControlProvisionAnterior): unknown[][] {
   const conMotivo = (lista: AsientoLibroDiario[]) => {
     const t = hojaDeAsientos(lista)
@@ -192,15 +209,22 @@ function hojaDeProvision(este: AsientoLibroDiario[], anterior: AsientoLibroDiari
     return t
   }
   const total = (l: AsientoLibroDiario[]) => money(l.reduce((s, a) => s + a.total, 0))
-  const f: unknown[][] = [
-    [`PROVISIÓN DE FACTURAS — ejercicio ${etiqueta} (suman al gasto de este ejercicio)`],
-    [`${este.length} comprobante(s) · total ${total(este).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`],
-    ...conMotivo(este),
-    [],
-    [`PROVISIÓN DEL EJERCICIO ANTERIOR — ${etiquetaAnterior} (sólo informativa: NO se resta)`],
-    [`${anterior.length} comprobante(s) · total ${total(anterior).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`],
-    ...conMotivo(anterior),
-  ]
+  const f: unknown[][] = []
+  /** La tabla con su TOTAL abajo (JMS 06/11: «falta totales»). */
+  const tablaConTotal = (lista: AsientoLibroDiario[]) => {
+    const t = conMotivo(lista)
+    f.push(t[0])
+    const desde = f.length + 1
+    t.slice(1).forEach(r => f.push(r))
+    if (lista.length) f.push(filaTotalComprobantes(t.slice(1), desde, f.length))
+  }
+  f.push([`PROVISIÓN DE FACTURAS — ejercicio ${etiqueta} (suman al gasto de este ejercicio)`])
+  f.push([`${este.length} comprobante(s) · total ${total(este).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`])
+  tablaConTotal(este)
+  f.push([])
+  f.push([`PROVISIÓN DEL EJERCICIO ANTERIOR — ${etiquetaAnterior} (sólo informativa: NO se resta)`])
+  f.push([`${anterior.length} comprobante(s) · total ${total(anterior).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`])
+  tablaConTotal(anterior)
   // 🔁 A-FEAT-1427: lo que el balance anterior dejó provisionado contra lo que la app reconoce.
   if (control) {
     f.push([])
@@ -1825,14 +1849,12 @@ export function hojaDeProvisionCobros(ventas: AsientoLibroDiario[], etiqueta: st
   f.push(["Ventas de cosas que pasaron ANTES del cierre y se facturaron DESPUES:"])
   f.push(["fecha del comprobante anterior al cierre, pero entro en un subdiario posterior."])
   f.push([])
-  hojaDeAsientos(ventas).forEach(r => f.push(r))
+  const tabla = hojaDeAsientos(ventas)
+  tabla.forEach(r => f.push(r))
   if (ventas.length > 0) {
-    // La fila 5 es la cabecera, así que el detalle arranca en la 6. La columna M es el Total.
-    const desde = 6
-    const hasta = 5 + ventas.length
-    const total = ventas.reduce((s, a) => s + a.total, 0)
-    f.push(["", "", "", "", "", "", "TOTAL", "", "", "", "", "",
-      conFormula(`SUM(M${desde}:M${hasta})`, money(total))])
+    // ⚠️ cambió 06/11 (JMS: «el total no está sumando»): sumaba sólo la M, que desde que se agregaron columnas es el IVA.
+    //    Ahora suma todas las columnas de importes, igual que la 05.
+    f.push(filaTotalComprobantes(tabla.slice(1), f.length - ventas.length + 1, f.length))
     // ✍️ JMS 05/11 (03.1): «motivo de provisión venta: una línea para cada una provisionada según mi input de por qué se
     //    provisiona» — «sin amarillo, pero que se destaque».
     const conMotivo = ventas.filter(a => a.provision_motivo)
@@ -1959,39 +1981,64 @@ const COLS_INDICE: Columna[] = [
  * entra y sale de la cuenta, no cuánto quedó invertido). Sin esos números el resultado financiero
  * **no se puede calcular**, y mostrar un cero ahí parecería un resultado.
  */
-function hojaDeBancos(
-  saldos: Array<{ nombre: string; saldo: number | null; fecha: string | null }>,
+export function hojaDeBancos(
+  saldos: Array<SaldoParaBalance>,
   fci: { fondos: FondoComun[]; total: FondoComun },
   fechaCierre: string,
   /** 🏦 La cadena inicio → cierre de cada cuenta (A-FEAT-1206). Vacío = no se pudo armar. */
   cadenas: CadenaDeSaldos[] = [],
+  /** 💹 JMS 06/11: la tenencia del FCI (cuotapartes y valor, inicio y cierre) de los resúmenes PDF, ya cargada en la app. */
+  tenencia: TenenciaFci | null = null,
 ): unknown[][] {
   const f: unknown[][] = []
+  // 🔢 JMS 06/11: «dos decimales y entre paréntesis el negativo» (la columna B lleva 4 decimales por las cuotapartes de abajo).
+  const PLATA = "#,##0.00;(#,##0.00)"
+  const plata = (v: number | null | undefined) => (v == null ? "" : { t: "n", v, z: PLATA })
   f.push([`SALDOS BANCARIOS Y DE CAJA AL ${fechaCierre}`])
   f.push([])
-  f.push(["Cuenta", "Saldo al cierre", "Fecha del ultimo movimiento", "Saldo al INICIO del ejercicio"])
-  for (const s of saldos) {
+  const enPesos = saldos.filter(s => s.moneda !== "USD"), enDolares = saldos.filter(s => s.moneda === "USD")
+  f.push(["Cuenta", "Saldo al cierre $", "Fecha del ultimo movimiento", "Saldo al INICIO del ejercicio $"])
+  const desde = f.length + 1
+  for (const s of enPesos) {
     const c = cadenas.find(x => x.cuenta === s.nombre)
     f.push([
-      s.nombre, s.saldo ?? "sin saldo en el periodo", s.fecha ?? "",
+      s.nombre, s.saldo == null ? "sin saldo en el periodo" : plata(s.saldo), s.fecha ?? "",
       /**
        * 🎚️ El saldo al inicio viene puesto **si está declarado**, y la celda sigue siendo suya
        * (§ 🎚️ *default del dato real, siempre editable*). Donde no se conoce, se dice — antes iba
        * vacío en todas y no se distinguía «no lo sabemos» de «es cero».
        */
-      c?.saldoInicio ?? "",
+      plata(c?.saldoInicio ?? null),
     ])
   }
-  const conSaldo = saldos.filter(s => s.saldo != null)
-  const desde = 4
-  const hasta = 3 + saldos.length
-  f.push(["TOTAL",
-    conSaldo.length > 0
-      ? conFormula(`SUM(B${desde}:B${hasta})`, money(conSaldo.reduce((t, s) => t + (s.saldo ?? 0), 0)))
-      : 0,
+  const hasta = f.length
+  f.push(["TOTAL EN PESOS",
+    { ...conFormula(`SUM(B${desde}:B${hasta})`, money(enPesos.reduce((t, s) => t + (s.saldo ?? 0), 0))), z: PLATA },
     "",
-    conFormula(`SUM(D${desde}:D${hasta})`,
-      money(cadenas.reduce((t, c) => t + (c.saldoInicio ?? 0), 0)))])
+    { ...conFormula(`SUM(D${desde}:D${hasta})`, money(cadenas.reduce((t, c) => t + (c.saldoInicio ?? 0), 0))), z: PLATA }])
+  /**
+   * 💵 JMS 06/11 (nota en la 07): «la caja en U$S expresada en U$S. Dos totales distintos, en U$S y en pesos. Y si querés,
+   * como detalle queda la expresión en pesos de los dólares» — las cuentas en dólares, en dólares, con su total aparte;
+   * a la derecha, el TC de cierre y el equivalente en pesos (detalle, no suma con los pesos).
+   */
+  if (enDolares.length) {
+    f.push([])
+    f.push(["Cuenta en dólares", "Saldo al cierre U$S", "Fecha del ultimo movimiento", "Saldo al INICIO del ejercicio U$S", "TC al cierre", "En pesos (detalle)"])
+    const d0 = f.length + 1
+    for (const s of enDolares) {
+      const r = f.length + 1
+      f.push([s.cuenta ?? s.nombre, s.usd == null ? "sin movimientos cargados" : plata(s.usd), s.usd == null ? "" : (s.fecha ?? ""), plata(s.usdInicio ?? null),
+        s.tc == null ? "" : { t: "n", v: s.tc, z: "#,##0.00" },
+        s.usd == null || s.tc == null ? "" : { t: "n", f: `B${r}*E${r}`, v: Math.round(s.usd * s.tc * 100) / 100, z: PLATA }])
+    }
+    const d1 = f.length
+    const conUsd = enDolares.filter(s => s.usd != null)
+    f.push(["TOTAL EN DÓLARES", { ...conFormula(`SUM(B${d0}:B${d1})`, money(conUsd.reduce((t, s) => t + (s.usd ?? 0), 0))), z: PLATA }, "",
+      { ...conFormula(`SUM(D${d0}:D${d1})`, money(enDolares.reduce((t, s) => t + (s.usdInicio ?? 0), 0))), z: PLATA }, "",
+      { ...conFormula(`SUM(F${d0}:F${d1})`, money(conUsd.reduce((t, s) => t + (s.usd != null && s.tc != null ? Math.round(s.usd * s.tc * 100) / 100 : 0), 0))), z: PLATA }])
+    const fte = enDolares.find(s => s.fuenteTc)?.fuenteTc
+    if (fte) f.push([`TC al cierre: ${fte}. Los pesos de la derecha son sólo el detalle: no se suman al total en pesos.`])
+  }
   f.push([])
   f.push(["El saldo al cierre es el del ULTIMO movimiento del ejercicio, tomado por fecha Y por orden"])
   f.push(["dentro del dia: el 30/06 hay 10 movimientos y entre el primero y el ultimo hay $2,58 M."])
@@ -2016,8 +2063,13 @@ function hojaDeBancos(
    */
   f.push(["FONDOS COMUNES DE INVERSION — son CUOTAPARTES: el saldo es cuotas x precio"])
   f.push([])
-  f.push(["Complete las cuatro columnas en amarillo (cuotapartes y precio, al inicio y al cierre)."])
-  f.push(["Los saldos y el resultado se calculan solos."])
+  if (tenencia && (tenencia.cuotasInicio != null || tenencia.cuotasCierre != null)) {
+    f.push([`Cuotapartes y precio: al inicio — ${tenencia.notaInicio}; al cierre — ${tenencia.notaCierre}.`])
+    f.push(["Los saldos y el resultado se calculan solos (si cambiás un número, se recalcula)."])
+  } else {
+    f.push(["Complete las cuatro columnas en amarillo (cuotapartes y precio, al inicio y al cierre)."])
+    f.push(["Los saldos y el resultado se calculan solos."])
+  }
   f.push([])
   f.push(["Donde",
     "Cuotapartes al inicio", "Precio al inicio", "Saldo al inicio",
@@ -2026,14 +2078,18 @@ function hojaDeBancos(
     "Resultado financiero", "Movimientos"])
 
   const filaPrimerFondo = f.length + 1
-  for (const x of fci.fondos) {
+  // 💹 JMS 06/11: «¿podés tomar los saldos de FCI y la cantidad de cuotapartes con su valor de los PDF?» — ya estaban cargados
+  //    (scripts 170 y 174, de los resúmenes FIMA). Van al primer fondo (MSA tiene uno solo); las celdas siguen siendo editables.
+  const num = (v: number | null | undefined) => (v == null ? "" : v)
+  fci.fondos.forEach((x, i) => {
     const n = f.length + 1
+    const t = i === 0 ? tenencia : null
     f.push([
       x.donde,
-      "", "",                                               // B, C — los carga el usuario
+      num(t?.cuotasInicio), num(t?.valorInicio),              // B, C — de la app (o a mano)
       { t: "n", f: `IF(OR(B${n}="",C${n}=""),"",B${n}*C${n})`, z: MONEDA },
       money(x.suscripciones), money(x.rescates),
-      "", "",                                               // G, H — los carga el usuario
+      num(t?.cuotasCierre), num(t?.valorCierre),              // G, H — de la app (o a mano)
       { t: "n", f: `IF(OR(G${n}="",H${n}=""),"",G${n}*H${n})`, z: MONEDA },
       /**
        * 🧮 El resultado por el camino inverso: lo que el fondo rindió es lo que el saldo final tiene
@@ -2042,7 +2098,7 @@ function hojaDeBancos(
       { t: "n", f: `IF(OR(D${n}="",I${n}=""),"faltan cuotapartes y precio",I${n}-(D${n}+E${n}-F${n}))`, z: MONEDA },
       x.movimientos,
     ])
-  }
+  })
   const ultimoFondo = f.length
   const nT = f.length + 1
   f.push(["TOTAL",
@@ -2888,6 +2944,8 @@ export function armarWorkbook(
   /** Papeles 07, 08 y 09. Salen del extracto ya parseado y categorizado. */
   bancarios?: DatosDelIndice["bancarios"] & {
     fci?: { fondos: FondoComun[]; total: FondoComun }
+    /** 💹 La tenencia del FCI cargada en la app (cuotapartes y valor, inicio y cierre) — JMS 06/11. */
+    fciTenencia?: TenenciaFci | null
     /** 🧾 El impuesto al cheque, total y desglosado (A-FEAT-1190). */
     impuestoCheque?: ImpuestoCheque
   },
@@ -3112,7 +3170,7 @@ export function armarWorkbook(
     if (bancarios.fci) {
       hoja(wb, "07 Bancos",
         hojaDeBancos(bancarios.saldos, bancarios.fci, libro.ejercicio.fechaCierre,
-          bancarios.cadenas ?? []), COLS_BANCOS)
+          bancarios.cadenas ?? [], bancarios.fciTenencia ?? null), COLS_BANCOS)
       // 🧮 El control del papel 07, en su propia solapa: ver `hojaDeCadenaDeSaldos`.
       if ((bancarios.cadenas ?? []).length > 0) {
         hoja(wb, "07.1 Cadena de saldos",
