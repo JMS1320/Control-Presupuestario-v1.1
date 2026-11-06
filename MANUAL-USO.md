@@ -6696,6 +6696,27 @@ Para que el **precio de cada compra** sea el real (el de la factura), con el des
 
 → A-TEST-1187
 
+### 🛒 Cuando llega la factura de una compra que cargaste sin factura *(2026-11-06)*
+
+La compra que cargaste en *Productivo → Insumos → Stock & Movimientos* (con su fecha de pago) figura en el **Cash Flow** como «Compra sin factura» hasta que llega la factura.
+- En *Egresos → Facturas* (MSA), la factura de ese proveedor muestra **🛒N** al lado del menú: N compras suyas sin factura. Click → se abre «Vincular con compras de insumos» con el cartel **«Este proveedor tiene N compras sin factura»**; la que coincide con el neto dice **✓ coincide con el neto**.
+- **«Tildar esta compra»** tilda todos sus renglones; revisá el control y **Vincular**.
+- La fila del Cash Flow desaparece (desde ahí cuenta la factura). Si la factura no tenía detalle, toma el de la compra («Compra: urea 150 kg, …»); si tenía, se respeta.
+
+→ A-TEST-1344
+
+## 💲 La tarifa del contratista, comparada en todos los índices *(2026-11-06)*
+
+**Al cargar la orden agrícola** (*Productivo → Órdenes agrícolas → Nueva Orden* o editar): en cada **labor** tildada aparece su **tarifa pactada** — el valor y la unidad del trato: **pesos, dólares, kg de soja o litros de gasoil por ha, o % de la cosecha**. Es opcional. Si ya pactaste esa labor con ese contratista, arranca con la última tarifa (la cambiás ahí).
+
+**Para comparar**: botón **💲 Tarifas** arriba de la lista. Cada labor con tarifa aparece en una fila con su valor en **$/ha · USD/ha · kg soja/ha · l gasoil/ha · % cosecha**, ordenadas por labor y de la más barata a la más cara.
+- El **dólar** (BNA divisas) y la **soja** (pizarra Rosario) son los **de la fecha de cada orden** (pasá el mouse para ver cuál se usó).
+- El **gasoil** ($/l) y el **rinde de referencia** (kg/ha) los escribís arriba; quedan guardados en tu navegador. Sin ellos, esas columnas quedan vacías. El % de cosecha usa el precio del grano del lote (maíz o soja).
+
+**La factura del contratista**: en la columna «Factura» (o desde el aviso **🧾 falta factura del contratista** de una orden ejecutada) elegís su factura entre las de ese CUIT (MSA, PAM o MA), y podés tildar las otras órdenes que cobra la misma factura. Abajo aparece **«Según la factura (lo real)»**: neto ÷ ha en todos los índices, y el control contra lo pactado — ✓ si cierra (±1 %), ⚠️ con la diferencia si no (es un aviso: puede ser un extra que vos conocés).
+
+→ A-TEST-1345
+
 ### 🧾 Impuestos vencidos o por vencer (Principal) *(2026-10-21)*
 
 Es el **primer aviso de Principal**, arriba de todo. Muestra las cuotas de **impuestos** (los templates cuya
