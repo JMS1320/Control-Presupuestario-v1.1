@@ -40,6 +40,9 @@
 
 ## 📨 PARA JAVIER
 
+### 🚜 2 columnas nuevas en `productivo.ordenes_agricolas`: `contratista_cuit` y `contratista_nombre` (2026-11-06) — ⏳ AVISO PREVIO (se corre a continuación con OK de JMS)
+- A-FEAT-1556, JMS 05/11: *«un contratista por ORDEN»*. Texto, vacías al crear (las órdenes viejas quedan sin contratista). Por CUIT como el maestro `public.proveedores`, para que después la factura del contratista (ARCA, por CUIT) se ate a sus órdenes. `scripts/214-…sql` verifica que no existían; deshacer exacto. **No toca RLS ni roles** (la tabla ya tiene los suyos).
+
 ### 💳 1 columna nueva en `public.egresos_sin_factura`: `se_paga_con_tarjeta` boolean + 1 trigger en `public.cuotas_egresos_sin_factura` (2026-11-06) — ✅ APLICADA el 06/11 con OK de JMS (aviso previo): columna + función + trigger activo; marca en 2 templates
 - JMS 06/11: *«agregá la marca de tarjeta»* (ACA de PAM e Internet NZ/Orbith de MA se pagan con tarjeta y aparecían en el Cash Flow como salida de banco). `scripts/213-…sql`: la columna (`not null default false`, así nada cambia para los demás templates) y el trigger **`cuota_nace_en_credito`** (BEFORE INSERT): si el template tiene la marca y la cuota llega `pendiente` (o sin estado), nace en **`credito`** (A-DEC-1002: pagado con tarjeta). Va en la base y no en el código porque las cuotas se crean desde 14 lugares. Marca puesta en 2 templates. Deshacer exacto en `scripts/213-…-deshacer.sql`. **No toca RLS ni roles.**
 
