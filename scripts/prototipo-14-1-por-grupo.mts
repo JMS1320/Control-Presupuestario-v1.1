@@ -16,6 +16,7 @@ import { join } from "node:path"
 import { armarCuentasCorrientes, movimientosDeLosSocios, consumosDeTarjetaComoMovimientos, sueldosPendientesComoCompras, CUENTA_FACTURAS, CONTRAPARTES_DEL_BALANCE,
   type CuentaDelSocio, type MovimientoParaCC, type CompraParaCC, type SueldoParaCC, type ConsumoTarjeta } from "../lib/balance/cuentas-corrientes"
 import { agregarHoja } from "../lib/balance/export-libro-diario"
+import { TABLAS_CON_VINCULO_ARCA } from "../lib/conciliacion/tablas-con-vinculo-arca"
 import { fechasReales } from "../lib/excel/fechas-reales"
 
 const env = Object.fromEntries(readFileSync(".env.local", "utf8").split(/\r?\n/).filter(l => l.includes("=") && !l.trim().startsWith("#")).map(l => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, "")] }))
@@ -156,9 +157,36 @@ for (const c of cuentas) {
     console.log(`${c.contraparte.clave}: sueldos pagado ${r2(pagado)} + pendiente ${r2(pendiente)} vs total ${total} → dif ${dif}`)
   }
 }
+// 🧾 JMS 07/11: «podés poner el detalle si lo miro» — las facturas A NOMBRE DE PAM desde el 01/01/26 (cuando sus bienes pasaron a MA), con
+// quién y cuándo las pagó y qué código quedó. Una factura de PAM es de PAM (lo dice la factura): esto es sólo para mirar si alguna es del campo
+// de San Pedro y debería haber venido a nombre de MA.
+const factPAM = await todo((d, h) => sb.schema("pam").from("comprobantes_arca")
+  .select("id, fecha_emision, tipo_comprobante_desc, punto_venta, numero_desde, denominacion_emisor, cuit, imp_total, detalle, estado")
+  .gte("fecha_emision", "2026-01-01").order("fecha_emision").range(d, h))
+const pagosDe = new Map<string, Array<{ cuenta: string; fecha: string; imp: number; contable: string }>>()
+const idsFact = factPAM.map((x: any) => x.id)
+for (const t of TABLAS_CON_VINCULO_ARCA) {
+  for (let i = 0; i < idsFact.length; i += 100) {
+    const { data } = await desde(t.schema, t.tabla).select("fecha, debitos, creditos, contable, comprobante_arca_id").in("comprobante_arca_id", idsFact.slice(i, i + 100))
+    for (const m of (data ?? []) as any[]) pagosDe.set(m.comprobante_arca_id, [...(pagosDe.get(m.comprobante_arca_id) ?? []),
+      { cuenta: t.cuenta, fecha: String(m.fecha).slice(0, 10), imp: Number(m.debitos || 0) - Number(m.creditos || 0), contable: String(m.contable ?? "").trim() }])
+  }
+}
+const hojaFact: unknown[][] = [["FACTURAS A NOMBRE DE PAM desde el 01/01/2026 — para mirar"],
+  ["Una factura a nombre de PAM es de PAM (lo dice la factura). Si alguna es del campo de San Pedro, debería haber venido a nombre de MA: se corrige pidiendo que la refacturen, o el código a mano al conciliar."],
+  [`${factPAM.length} facturas · ${factPAM.filter((x: any) => pagosDe.has(x.id)).length} con su pago en el banco`], [],
+  ["Fecha", "Comprobante", "Proveedor", "CUIT", "Total", "Detalle", "Estado", "Pagada desde", "Fecha del pago", "Importe pagado", "Código contable del pago", "¿De San Pedro? (tu respuesta)"],
+  ...factPAM.flatMap((x: any) => {
+    const comp = `${x.tipo_comprobante_desc ?? ""} ${x.punto_venta ?? ""}-${x.numero_desde ?? ""}`.trim()
+    const base = [x.fecha_emision, comp, x.denominacion_emisor, x.cuit, Number(x.imp_total) || 0, x.detalle ?? "", x.estado ?? ""]
+    const ps = pagosDe.get(x.id) ?? []
+    return ps.length ? ps.map(p => [...base, p.cuenta, p.fecha, r2(p.imp), p.contable || "(vacío)", ""]) : [[...base, "(sin pago vinculado)", "", "", "", ""]]
+  })]
+
 const wb = XLSX.utils.book_new()
 agregarHoja(wb, "14.1 prototipo por grupo", f, [{ ancho: 24 }, { ancho: 12 }, { ancho: 22 }, { ancho: 16, z: '#,##0.00;(#,##0.00);"-"' }, { ancho: 16, z: '#,##0.00;(#,##0.00);"-"' },
   { ancho: 18, z: '#,##0.00;(#,##0.00);"-"' }, { ancho: 34 }, { ancho: 60 }, { ancho: 26 }] as any)
+agregarHoja(wb, "Facturas a nombre de PAM", hojaFact, [{ ancho: 12 }, { ancho: 18 }, { ancho: 34 }, { ancho: 14 }, { ancho: 16, z: '#,##0.00;(#,##0.00);"-"' }, { ancho: 30 }, { ancho: 12 }, { ancho: 20 }, { ancho: 12 }, { ancho: 16, z: '#,##0.00;(#,##0.00);"-"' }, { ancho: 16 }, { ancho: 22 }] as any)
 fechasReales(wb as any)
 let p = join(CARPETA, "Prototipo 14.1 por grupo (2026-11-07).xlsx"), v = 2
 while (existsSync(p)) p = join(CARPETA, `Prototipo 14.1 por grupo (2026-11-07) v${v++}.xlsx`)
