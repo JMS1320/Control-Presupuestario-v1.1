@@ -12,6 +12,11 @@
 
 ## 🧪 <a id="guia-pruebas-2026-10-05"></a>GUÍA DE PRUEBAS — vigente al 1 de noviembre (todo en `desarrollo` salvo lo marcado)
 
+> 🆕 **07/11 — Camino 1: los códigos contable nuevos «CTA + quién» ya están en la base** (scripts 228-230 corridos; todo en `desarrollo` — antes, que Vercel haya publicado `e13c792f` o usar la app local).
+> 1. 🏷️ **Papel 14 (cuentas corrientes) con los códigos nuevos**: la cuenta de MA suma lo que era «RET 3 MA» y lo suyo por la tarjeta; aparece la de PAM; «sin tratar» sin Asiento contable / Desglosar / RET → [A-TEST-1349](#a-test-1349).
+> 2. 👷 **Sueldos**: aparece **Rojas Celia Mabel** (PAM) con jul–oct 2025 y sus 4 pagos vinculados (mismo A-TEST, paso 5). Los meses los asigné yo: si alguno va a otro mes, avisá.
+> Lo que quedó abierto (interno, Cotitulares, las 2 alertas, reporte por dentro, lado «a favor», caja, Desglosar como control, código automático, Excel de socios) → [A-FEAT-1577](#a-feat-1577).
+
 > 🆕 **06/11 noche — Camino 3: la compra como primer registro, la tarifa del contratista y «No va más»** (todo en `desarrollo`; script 221 corrido = sólo columnas vacías; antes, que Vercel haya publicado el commit 43dbdbe8 o posterior). En este orden:
 > 1. 🛒 **La compra cargada sin factura**: aparece en el Cash Flow a su fecha de pago y, cuando llega su factura, Egresos la propone con **🛒N** → [A-TEST-1343](#a-test-1343) (cargarla desde la orden) y [A-TEST-1344](#a-test-1344) (Cash Flow y factura).
 > 2. 💲 **Tarifa del contratista en todos los índices** (USD, kg soja, gasoil, % cosecha, pesos) y su factura → [A-TEST-1345](#a-test-1345). Antes cargá el contratista en la orden → [A-TEST-1342](#a-test-1342).
