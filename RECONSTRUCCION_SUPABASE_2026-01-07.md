@@ -3390,6 +3390,12 @@ Además, desde el 06/11 la app escribe en `balance_datos_usuario` el papel **`re
 ### 2026-11-06 · Cosecha y existencia al cierre de granos de MSA 25/26 (script 218 — era 213, DATOS) — A-FEAT-1574 — ✅ CORRIDO con OK de JMS
 `balance_datos_usuario` (MSA 2026, papel `granos`): `cosecha` 15,12 t (certificación electrónica AFA 28/04/2026, C.O.E. 332022543744) y `cierre` 0 («el saldo a 30/6 es cero»). Marca `[script 218]` (era 213; script 220). Deshacer: `scripts/218-granos-cosecha-cierre-msa-deshacer.sql` (sólo si nadie las editó).
 
+### 2026-11-07 · El PDF de cada comprobante de VENTA — columna `pdf_drive_url` en msa/pam/ma.comprobantes_venta (script 233, ESTRUCTURA) — A-FEAT-1578 — ✅ CORRIDO con OK de JMS («si adelante con la mejora»; aviso previo a Javier)
+`alter table {msa,pam,ma}.comprobantes_venta add column pdf_drive_url text` + comentario `[script 233]`. Vacía al crearla; la llena la pantalla «📎 PDFs de las ventas». El script verifica que no existía; deshacer: `scripts/233-pdf-de-ventas-deshacer.sql`. Sin vistas `public` que tocar.
+
+### 2026-11-07 · Posadas y bienes de PAM → MA en los templates 2026 (scripts 232 y 234, DATOS) — A-FEAT-1577 (14) — ✅ CORRIDOS con OK de JMS
+232: 12 cuotas del ABL Cochera Posadas Cuota 2026 → `desactivado` (se pagó el anual) · 27 templates 2026 (Posadas, inmobiliario y Red Vial de Casco, Entre Ríos, Ombú, Tapera 1-3) `responsable` PAM → MA · regla específica Galicia MSA de Expensas Posadas 2026 `codigo_contable` CTA PAM → CTA MA. 234: Inmobiliario Complementario PAM 2026 (anual y cuota) → MA. Fotos: `scripts/232-foto-antes.json`, `scripts/234-foto-antes.json`; deshacer en `scripts/23{2,4}-…-deshacer.sql`.
+
 ### 2026-11-06 · Los 49 extractos de MSA 25/26 vinculados (script 217 — era 212, DATOS) — A-FEAT-1571 — ✅ CORRIDO con OK de JMS («ok, corré el 212»)
 `public.documentos_respaldo`: Galicia cta cte pesos 12 (copias del espejo de Ulises) · MSA Cuenta Corriente USD 12 · FCI FIMA Premium A 12 · Banco Provincia 12 · Banco Santander 1 (julio), jul-25 → jun-26, todos en la carpeta segura «BANCOS y entidades financieras». Marca `[script 217]` (era 212; script 220) en `creado_por`. Deshacer: `scripts/217-vincular-extractos-msa-deshacer.sql` (sólo las filas con la marca).
 

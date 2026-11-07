@@ -12,8 +12,14 @@
 
 ## 🧪 <a id="guia-pruebas-2026-10-05"></a>GUÍA DE PRUEBAS — vigente al 1 de noviembre (todo en `desarrollo` salvo lo marcado)
 
+> 🆕 **07/11 noche — Camino 1: el libro H PARA AUDITAR + PDFs de ventas + Posadas y bienes a MA** (todo en `desarrollo`; antes, que Vercel haya publicado `176aff37` o posterior).
+> 1. 🔍 **H para auditar** (también generado con datos reales: `H para auditar MSA 25-26 (2026-11-07).xlsx` en Excels trabajando con claude): cada cuota con Quién pagó · Código · Efecto · Marca, control por template al pie y «H · Retiros y aportes» con su control contra el banco → [A-TEST-1352](#a-test-1352).
+> 2. 🧾 **Consumos MA**: mirá el `Anexo Consumos MA 2025-2026 (2026-11-07).xlsx` y decí qué es de MA (2025: $3,4 M los pagó PAM y $4,6 M MA) → [A-FEAT-1579](#a-feat-1579).
+> 3. 📎 **PDFs de las ventas** (Subdiario IVA Ventas → «📎 PDFs de las ventas»): buscar, vincular, zip y borrador de mail. Para el mail, **publicá el GAS 0.25.0** → [A-TEST-1351](#a-test-1351).
+> 4. 🏡 Ya en la base (no hay que probar nada, sólo saberlo): script 232 (12 mensuales del ABL Posadas 2026 desactivadas, 27 templates 2026 de bienes PAM→MA, regla de Expensas Posadas a CTA MA) y 234 (Complementario PAM 2026 → MA). Prototipo 14.1 vigente: **v7**.
+
 > 🆕 **07/11 tarde — Camino 1: 14.1 completa, corte PAM→MA y la conciliación con la regla de bienes.**
-> 1. 📊 **Prototipo de la 14.1** (`Prototipo 14.1 por grupo (2026-11-07) v6.xlsx`, Excels trabajando con claude — ⚠️ cambió 07/11: v6 reemplaza a la v4 y v5 (el saldo acumulado daba #¡VALOR! con Debe o Haber vacío) y suma las solapas «Quién pagó - resumen / detalle»): detalle por grupo, con fórmulas, cheq contra Sueldos, beneficiario, la solapa «Facturas a nombre de PAM» y quién pagó cada cuota de los templates pagados por retiro (A-FEAT-1577 (13)). Si te cierra, se pasa a la app → [A-FEAT-1577](#a-feat-1577) (11).
+> 1. 📊 **Prototipo de la 14.1** (⚠️ cambió 07/11 noche: la vigente es la **v7**, con Posadas y bienes a MA; lo de abajo habla de la v6) (`Prototipo 14.1 por grupo (2026-11-07) v6.xlsx`, Excels trabajando con claude — ⚠️ cambió 07/11: v6 reemplaza a la v4 y v5 (el saldo acumulado daba #¡VALOR! con Debe o Haber vacío) y suma las solapas «Quién pagó - resumen / detalle»): detalle por grupo, con fórmulas, cheq contra Sueldos, beneficiario, la solapa «Facturas a nombre de PAM» y quién pagó cada cuota de los templates pagados por retiro (A-FEAT-1577 (13)). Si te cierra, se pasa a la app → [A-FEAT-1577](#a-feat-1577) (11).
 > 2. 🏡 **Bienes de PAM a MA desde el 01/01/26** ya corregidos en la base (script 231, control 60/60 ✅).
 > 3. 🔀 **La conciliación pone el código del bien** — está en la rama `jms/conciliacion-bienes`: probala en SU vista previa → [A-TEST-1350](#a-test-1350).
 > 🆕 **07/11 — Camino 1: los códigos contable nuevos «CTA + quién» ya están en la base** (scripts 228-230 corridos; todo en `desarrollo` — antes, que Vercel haya publicado `e13c792f` o usar la app local).
