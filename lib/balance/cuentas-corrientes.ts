@@ -104,15 +104,17 @@ export const CONTRAPARTES_DEL_BALANCE: ContraparteDelBalance[] = [
   {
     clave: "MA", nombre: "Mercedes Areco", cuit: "27066824611",
     aliasHistorico: [],
-    // ⚠️ `RET 3 MA` NO está acá: es otra cosa y se trata aparte.
+    // ⚠️ cambió 07/11 (A-FEAT-1577): `RET 3 MA` ya no existe — lo que MSA paga por MA (impuestos, terceros, su tarjeta) es «CTA MA»
+    // (JMS 06/11: «RET 3 MA sí debe contar en el saldo, son retiros»). El motivo sale del template / factura, no del código.
     etiquetasContable: ["CTA MA"],
     socio: true,
   },
   {
     clave: "PAM", nombre: "Sucesión de Plácido Martínez", cuit: "20044390222",
     aliasHistorico: ["SUCESION DE MARTINEZ PLACIDO ALBERTO"],
-    // ⚠️ `RET PAM`, `RET 1 PAM` y `RET 3 PAM` tampoco: son retiros, y van en el papel 09.
-    etiquetasContable: [],
+    // ⚠️ cambió 07/11 (A-FEAT-1577, esquema de JMS «CTA + quién»): hasta acá iba vacía y `RET PAM` / `RET 1 PAM` / `RET 3 PAM`
+    // quedaban «sin tratar». Ahora todo lo de MSA con PAM es «CTA PAM» (script 229); el papel 09 sigue por CATEG, no lo toca.
+    etiquetasContable: ["CTA PAM"],
     socio: true,
   },
   // ⚠️ cambió 01/11 (A-FEAT-1499): hasta acá no tenían marca y sus pagos «salían del vínculo con la factura» — pero el
@@ -316,35 +318,90 @@ export function esPoliza(c: Pick<ConsumoTarjeta, "categ" | "descripcion" | "conP
 const r2 = (n: number) => Math.round(n * 100) / 100
 
 /**
- * 💳 Abre los pagos «Desglosar» con los consumos de su resumen (el que vence ese día) y corrige
+ * 💳 ¿Es un pago de la tarjeta? ⚠️ cambió 07/11 (A-FEAT-1577): hasta acá era SÓLO la marca «Desglosar». JMS: «Desglosar» deja de ser
+ * marca (el script 229 la vacía) — el pago se reconoce por lo que dice el banco. Sigue valiendo la marca vieja, y un pago marcado para
+ * una cuenta («CTA PAM»: otra empresa pagó la tarjeta) NO se abre acá: ése va entero a su cuenta corriente.
+ */
+const RE_PAGO_TARJETA = /pago (de )?(visa|tarjeta)|visa empresa/i
+export function esPagoDeTarjeta(m: MovimientoParaCC): boolean {
+  const c = normalizar(m.contable)
+  return c === normalizar(ETIQUETA_DESGLOSAR) || (!c && RE_PAGO_TARJETA.test(String(m.descripcion ?? "")))
+}
+
+/** Los pagos de la tarjeta agrupados por día (el día en que vence el resumen). */
+function pagosDeTarjetaPorFecha(movimientos: MovimientoParaCC[]): Map<string, MovimientoParaCC[]> {
+  const porFecha = new Map<string, MovimientoParaCC[]>()
+  for (const m of movimientos.filter(esPagoDeTarjeta)) {
+    const f = String(m.fecha ?? "").slice(0, 10)
+    porFecha.set(f, [...(porFecha.get(f) ?? []), m])
+  }
+  return porFecha
+}
+
+/**
+ * Cuánto vale cada consumo de un resumen en pesos: lo pagado en dólares es lo que el banco debitó de más sobre los pesos del resumen,
+ * y se reparte entre los consumos en dólares en proporción a su importe en dólares. Una sola cuenta para el desglose y para la cuenta
+ * corriente: si fueran dos, darían distinto.
+ */
+function valoresDelResumen(importe: number, delResumen: ConsumoTarjeta[]): number[] {
+  const pesos = delResumen.map(c => Number(c.debitos ?? 0) - Number(c.creditos ?? 0))
+  const usd = delResumen.map(c => Number(c.debitosUsd ?? 0))
+  const totalUsd = usd.reduce((s, x) => s + x, 0)
+  const enDolares = totalUsd > 0 ? r2(importe - pesos.reduce((s, x) => s + x, 0)) : 0
+  return delResumen.map((_, i) => r2(pesos[i] + (totalUsd > 0 && enDolares > 0 ? enDolares * usd[i] / totalUsd : 0)))
+}
+
+/**
+ * 💳 A-FEAT-1577 (esquema de JMS 07/11): los consumos de la tarjeta de MSA marcados para la cuenta de un socio («CTA MA», «CTA JMS»…)
+ * SON pagos de MSA por cuenta de ese socio: entran a SU cuenta corriente, como cualquier movimiento del banco con esa marca. Sólo los
+ * de resúmenes que cierran contra su pago (si no cierra, no se sabe cuánto fue y queda a la vista en el desglose).
+ */
+export function consumosDeTarjetaComoMovimientos(
+  movimientos: MovimientoParaCC[],
+  consumos: ConsumoTarjeta[],
+  contrapartes: ContraparteDelBalance[] = CONTRAPARTES_DEL_BALANCE,
+): MovimientoParaCC[] {
+  const etiquetas = new Set(contrapartes.flatMap(c => c.etiquetasContable.map(normalizar)))
+  const out: MovimientoParaCC[] = []
+  for (const [fecha, del] of pagosDeTarjetaPorFecha(movimientos)) {
+    const importe = r2(del.reduce((s, m) => s + Number(m.debitos ?? 0) - Number(m.creditos ?? 0), 0))
+    const delResumen = consumos.filter(c => String(c.vencimiento ?? "").slice(0, 10) === fecha)
+    const valores = valoresDelResumen(importe, delResumen)
+    if (!delResumen.length || Math.abs(r2(importe - r2(valores.reduce((s, x) => s + x, 0)))) >= 0.01) continue
+    delResumen.forEach((c, i) => {
+      if (!etiquetas.has(normalizar(c.contable))) return
+      out.push({ id: `tarjeta-${fecha}-${i}`, fecha, debitos: valores[i] > 0 ? valores[i] : 0, creditos: valores[i] < 0 ? -valores[i] : 0,
+        descripcion: `Tarjeta: ${c.descripcion ?? ""}`.trim(), detalle: c.categ ?? null, contable: c.contable ?? null, estado: "conciliado",
+        comprobantes_pagados: `Por la tarjeta (pago del ${fecha})` })
+    })
+  }
+  return out
+}
+
+/**
+ * 💳 Abre los pagos de la tarjeta con los consumos de su resumen (el que vence ese día) y corrige
  * `sinTratar`: sale el «Desglosar» abierto, entra cada marca de otra persona con lo suyo.
+ * ⚠️ 07/11: una marca que es la cuenta de un socio («CTA MA») ya entró a SU cuenta corriente
+ * (`consumosDeTarjetaComoMovimientos`): no va a «sin tratar».
  */
 export function abrirDesglosar(
   papel: PapelDeCuentasCorrientes,
   movimientos: MovimientoParaCC[],
   consumos: ConsumoTarjeta[],
+  contrapartes: ContraparteDelBalance[] = CONTRAPARTES_DEL_BALANCE,
 ): PapelDeCuentasCorrientes {
-  const esDesglosar = (m: MovimientoParaCC) => normalizar(m.contable) === normalizar(ETIQUETA_DESGLOSAR)
-  const porFecha = new Map<string, MovimientoParaCC[]>()
-  for (const m of movimientos.filter(esDesglosar)) {
-    const f = String(m.fecha ?? "").slice(0, 10)
-    porFecha.set(f, [...(porFecha.get(f) ?? []), m])
-  }
+  const etiquetasCC = new Set(contrapartes.flatMap(c => c.etiquetasContable.map(normalizar)))
+  const porFecha = pagosDeTarjetaPorFecha(movimientos)
   if (porFecha.size === 0) return papel
 
   const pagos: PagoDesglosado[] = []
   for (const [fecha, del] of [...porFecha.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     const importe = r2(del.reduce((s, m) => s + Number(m.debitos ?? 0) - Number(m.creditos ?? 0), 0))
     const delResumen = consumos.filter(c => String(c.vencimiento ?? "").slice(0, 10) === fecha)
-    const pesos = delResumen.map(c => Number(c.debitos ?? 0) - Number(c.creditos ?? 0))
-    const usd = delResumen.map(c => Number(c.debitosUsd ?? 0))
-    const totalUsd = usd.reduce((s, x) => s + x, 0)
-    // Lo pagado en dólares es lo que el banco debitó de más sobre los pesos del resumen: se reparte
-    // entre los consumos en dólares en proporción a su importe en dólares.
-    const enDolares = totalUsd > 0 ? r2(importe - pesos.reduce((s, x) => s + x, 0)) : 0
+    const valores = valoresDelResumen(importe, delResumen)
     const partes = new Map<string, ParteDesglose>()
     delResumen.forEach((c, i) => {
-      const valor = r2(pesos[i] + (totalUsd > 0 && enDolares > 0 ? enDolares * usd[i] / totalUsd : 0))
+      const valor = valores[i]
       const marca = (c.contable ?? "").trim()
       const destino = marca || DESTINO_PROPIO
       const poliza = esPoliza(c)
@@ -386,7 +443,7 @@ export function abrirDesglosar(
   const resto = papel.sinTratar.filter(x => normalizar(x.etiqueta) !== normalizar(ETIQUETA_DESGLOSAR))
   const nuevas: PapelDeCuentasCorrientes["sinTratar"] = []
   const porMarca = new Map<string, { total: number; consumos: number }>()
-  for (const d of destinos.filter(x => x.destino !== DESTINO_PROPIO)) {
+  for (const d of destinos.filter(x => x.destino !== DESTINO_PROPIO && !etiquetasCC.has(normalizar(x.destino)))) {
     const acc = porMarca.get(d.destino) ?? { total: 0, consumos: 0 }
     acc.total = r2(acc.total + d.importe); acc.consumos += d.consumos
     porMarca.set(d.destino, acc)

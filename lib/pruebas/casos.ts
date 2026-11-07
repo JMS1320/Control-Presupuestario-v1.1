@@ -202,7 +202,7 @@ import {
   armarSueldosDelEjercicio, brutoDesdePartes, type PeriodoDeSueldo, sueldosImpagosAlCierre,
 } from "@/lib/balance/sueldos-balance"
 import {
-  armarCuentasCorrientes, aplicarSaldosInicio, abrirDesglosar, DESTINO_PROPIO, normalizar, CONTRAPARTES_DEL_BALANCE,
+  armarCuentasCorrientes, aplicarSaldosInicio, abrirDesglosar, consumosDeTarjetaComoMovimientos, DESTINO_PROPIO, normalizar, CONTRAPARTES_DEL_BALANCE,
   sueldosPendientesComoCompras, aplicarCierresDecididos, separarSocios,
 } from "@/lib/balance/cuentas-corrientes"
 import { controlarCheque, chequeEnPapel08, chequeEnTemplates } from "@/lib/balance/control-cheque"
@@ -8499,6 +8499,23 @@ export function correrCasos(): Resultado[] {
     chequear("Cuentas corrientes", "🧮 El total sin tratar baja exactamente lo propio de MSA (2.579.580,41): nada se pierde en el camino",
       `${n2(r2(r.totalSinTratar + 5019739.52 - 2579580.41))}`, n2(conD.totalSinTratar),
       conD.totalSinTratar === totD && conD.totalSinTratar === r2(r.totalSinTratar + 5019739.52 - 2579580.41), "A-FEAT-1388")
+
+    // 🏷️ A-FEAT-1577 (esquema de JMS 07/11, script 229): «Desglosar» deja de ser marca y «RET 3 MA» pasa a «CTA MA». Los MISMOS datos:
+    //    el pago se reconoce por lo que dice el banco, y lo de MA por la tarjeta entra a SU cuenta corriente (no a «sin tratar»).
+    const PAGOS_N = PAGOS_D.map(p => ({ ...p, contable: null, descripcion: "Pago Visa Empresa" }))
+    const CONSUMOS_N = CONSUMOS_D.map(c => ("contable" in c && c.contable === "RET 3 MA" ? { ...c, contable: "CTA MA" } : c))
+    const porTj = consumosDeTarjetaComoMovimientos([...MOVS, ...PAGOS_N], CONSUMOS_N)
+    const sinTj = armarCuentasCorrientes(COMPRAS, VENTAS, [...MOVS, ...PAGOS_N])
+    const conTj = abrirDesglosar(armarCuentasCorrientes(COMPRAS, VENTAS, [...MOVS, ...PAGOS_N, ...porTj]), [...MOVS, ...PAGOS_N], CONSUMOS_N)
+    const maDe = (p: typeof sinTj) => p.cuentas.find(c => c.contraparte.clave === "MA")?.saldoAlCierre ?? NaN
+    const vN = `${porTj.length} consumos de MA ${n2(r2(porTj.reduce((s, m) => s + Number(m.debitos), 0)))} · MA baja ${n2(r2(maDe(sinTj) - maDe(conTj)))} · ${conTj.sinTratar.some(x => /CTA MA/.test(x.etiqueta)) ? "CTA MA en sin tratar" : "nada de MA en sin tratar"} · pagos que cuadran ${conTj.desgloseTarjeta?.pagos.filter(p => p.cierra).length}/${conTj.desgloseTarjeta?.pagos.length} · propio ${n2(conTj.desgloseTarjeta?.porDestino.find(d => d.destino === DESTINO_PROPIO)?.importe ?? NaN)}`
+    const eN = "4 consumos de MA 409.272,86 · MA baja 409.272,86 · nada de MA en sin tratar · pagos que cuadran 2/3 · propio 2.579.580,41"
+    chequear("Cuentas corrientes", "🏷️ Sin la marca «Desglosar»: el pago de la tarjeta se reconoce por el banco, y lo marcado «CTA MA» en la tarjeta entra a la cuenta de MA y baja lo que MSA le debe (lo propio de MSA y el pago sin resumen, igual que antes)",
+      eN, vN, vN === eN, "A-FEAT-1577")
+    const conPam = armarCuentasCorrientes([], [], [{ id: "p1", fecha: "2026-03-17", debitos: 4100000, contable: "CTA PAM" }, { id: "p2", fecha: "2026-03-20", creditos: 100000, contable: "cta pam" }])
+    const vP = `PAM ${n2(conPam.cuentas.find(c => c.contraparte.clave === "PAM")?.saldoAlCierre ?? NaN)} · sin tratar ${conPam.sinTratar.length}`
+    chequear("Cuentas corrientes", "🏷️ «CTA PAM» ya es la cuenta de PAM (antes quedaba sin tratar): retiro y aporte con su signo (el saldo es lo que MSA le debe: un retiro lo baja)",
+      "PAM -4.000.000,00 · sin tratar 0", vP, vP === "PAM -4.000.000,00 · sin tratar 0", "A-FEAT-1577")
 
     // 🔑 AFA es la única con las dos puntas: la venta compensa.
     chequear("Cuentas corrientes", "🔑 En AFA la venta COMPENSA y baja el saldo",

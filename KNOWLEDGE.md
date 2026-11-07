@@ -1771,6 +1771,21 @@ existente»*):
 
 ## Los códigos CONTABLE / INTERNO del extracto — qué significa cada uno `#codigos #extracto #2026-10-15`
 
+> ⚠️ **cambió 2026-11-07 — ESQUEMA NUEVO, aplicado en la base (scripts 229 y 230, [A-FEAT-1577](PENDIENTES.md#a-feat-1577))**. La tabla de abajo
+> (RET 1 / RET i / RET 3 / AP / Desglosar / Asiento contable) es HISTORIA: en 25/26 ya no queda ninguno de esos códigos. Lo vigente, aprobado por JMS 06-07/11:
+> 1. **CONTABLE = «CTA + quién»** (CTA MA, CTA PAM, CTA JMS, CTA AMS, CTA MSA, CTA COTITULARES): con quién es la cuenta. **Quién retira de quién** = el código +
+>    la empresa de la cuenta del movimiento (CTA MA en Galicia MSA = cuenta MSA↔MA; en la cuenta de MA, la contraparte es «CTA MSA»). **Retiro o aporte = el signo.**
+>    **El motivo** (transferencia, impuesto, Red Vial, factura de un tercero) sale del template / factura / sueldo, NO del código: por eso RET 1 / 3 / i no hacen falta.
+> 2. **DIST** sólo para una distribución ya decidida: PAM a los herederos, y **todo lo de PAM a MA es DIST MA** (del lado de MA, «DIST PAM»). Lo demás es cuenta
+>    corriente; la distribución de un saldo se decide al cierre, como registro aparte.
+> 3. **Se queda VACÍO** lo que no es de otro: gastos e impuestos del banco (el sistema los reconoce por la categoría), pago de la tarjeta (se abre con su resumen),
+>    terceros (el proveedor / su CUIT ya lo identifica; AFA entra a su cta cte por CUIT), consumos propios, facturado a la empresa, ACA, Posadas pagado por PAM.
+>    **LIB** se queda (reparto 50/50 propio). **X** = falta la factura. **FLIA** = entre personas de la familia (MA↔JMS/AMS), no suma en cuentas de empresa.
+> 4. **El mismo dinero en las dos puntas** (transferencia entre dos empresas con cuentas en la app) lleva el código en las dos, se cuenta UNA vez (del lado de la
+>    empresa de más arriba: MSA > PAM > MA > Cotitulares) y **la que no tiene su otra punta queda en ALERTA**.
+> 5. **Pago de la tarjeta por otra empresa** (MSA paga la VISA de PAM): el pago es CTA del dueño de la tarjeta y los consumos de adentro se codifican contra el
+>    dueño → se compensa solo. Las reglas por template ya escriben los códigos nuevos al conciliar.
+
 Son los que el usuario pone (o la regla pone por él) en las columnas **Contable** e **Interno** de cada movimiento. Viven **en el
 movimiento del extracto**, no en el template ni en la cuota (→ [A-DEC-1009](PENDIENTES.md#a-dec-1009)). Definiciones dadas por el
 usuario; **son distintos aunque se parezcan — no se normalizan entre sí**:

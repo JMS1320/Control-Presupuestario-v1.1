@@ -108,7 +108,7 @@ import {
   sueldosImpagosAlCierre, type PagoDeSueldo, type PeriodoConId,
 } from "@/lib/balance/sueldos-balance"
 import {
-  armarCuentasCorrientes, aplicarSaldosInicio, abrirDesglosar, CONTRAPARTES_DEL_BALANCE, aplicarCierresDecididos,
+  armarCuentasCorrientes, aplicarSaldosInicio, abrirDesglosar, consumosDeTarjetaComoMovimientos, CONTRAPARTES_DEL_BALANCE, aplicarCierresDecididos,
   sueldosPendientesComoCompras, type SueldoParaCC,
   type PapelDeCuentasCorrientes, type ConsumoTarjeta,
   type CompraParaCC, type VentaParaCC, type MovimientoParaCC,
@@ -1108,8 +1108,42 @@ export function PapelesDeBalance() {
             .gte("fecha", `${meses[0]}-01`).lte("fecha", finEj)
             .or(cuitsCC).order("id").range(d, h))
           anotar("Movimientos de AFA y ACREN (por CUIT)", leidoCuit)
-          const movsCC = [...(leidoCC.data ?? []), ...((leidoCuit.data ?? []) as unknown[])
-            .filter(m => !(leidoCC.data ?? []).some((x: { id: string }) => x.id === (m as { id: string }).id))]
+          // 💳 A-FEAT-1577 (07/11): el pago de la tarjeta ya no lleva la marca «Desglosar» (script 229): se lo reconoce por lo que
+          // dice el banco. Se trae aunque no tenga marca, para abrirlo con su resumen.
+          const leidoPagoTj = await traerTodo((d, h) => supabase.from("msa_galicia")
+            .select(colsCC, { count: "exact" })
+            .gte("fecha", `${meses[0]}-01`).lte("fecha", finEj)
+            .is("contable", null).ilike("descripcion", "%visa%").order("id").range(d, h))
+          anotar("Pagos de la tarjeta (sin marca)", leidoPagoTj)
+          const movsCC = [...(leidoCC.data ?? []), ...((leidoCuit.data ?? []) as unknown[]), ...((leidoPagoTj.data ?? []) as unknown[])]
+            .filter((m, i, todos) => todos.findIndex(x => (x as { id: string }).id === (m as { id: string }).id) === i)
+
+          /**
+           * 💳 Los consumos de la tarjeta de MSA, ANTES de armar las cuentas: los marcados para un socio («CTA MA») entran a su cuenta
+           * corriente (A-FEAT-1577), y con los mismos se abre el pago de la tarjeta más abajo. Si fallan, el papel sale igual y avisa.
+           */
+          let consumos: ConsumoTarjeta[] = []
+          try {
+            const [leidoTj, polTj] = await Promise.all([
+              traerTodo((d, h) => supabase.schema("msa").from("tarjeta_visa_business")
+                .select("fecha_vencimiento, descripcion, categ, contable, debitos, creditos, debitos_usd, template_id", { count: "exact" })
+                .eq("tipo_fila", "movimiento").gte("fecha_vencimiento", `${meses[0]}-01`).lte("fecha_vencimiento", finEj)
+                .order("id").range(d, h)),
+              supabase.from("polizas_seguro").select("template_id").not("template_id", "is", null),
+            ])
+            if (leidoTj.error) throw new Error(leidoTj.error.message)
+            anotar("Consumos de la tarjeta (para abrir su pago)", leidoTj)
+            const tplConPoliza = new Set(((polTj.data ?? []) as Array<{ template_id: string | null }>).map(p => p.template_id))
+            consumos = ((leidoTj.data ?? []) as Array<Record<string, unknown>>).map(x => ({
+              vencimiento: (x.fecha_vencimiento as string | null) ?? null,
+              descripcion: x.descripcion as string | null, categ: x.categ as string | null, contable: x.contable as string | null,
+              debitos: Number(x.debitos ?? 0), creditos: Number(x.creditos ?? 0), debitosUsd: Number(x.debitos_usd ?? 0),
+              conPoliza: !!x.template_id && tplConPoliza.has(x.template_id as string),
+            }))
+          } catch {
+            toast.warning("No se pudieron leer los consumos de la tarjeta: su pago queda sin abrir y lo de los socios por la tarjeta no entra a sus cuentas.")
+          }
+          const porLaTarjeta = consumosDeTarjetaComoMovimientos(movsCC as unknown as MovimientoParaCC[], consumos)
 
           /**
            * 👷 A-FEAT-1422 (8) — el sueldo pendiente de un socio (MA) entra a SU cuenta corriente como deuda
@@ -1118,7 +1152,7 @@ export function PapelesDeBalance() {
           comprasCC.push(...sueldosPendientesComoCompras(periodosParaCC, meses))
 
           let armadoCC = armarCuentasCorrientes(
-            comprasCC, ventasCC, (movsCC ?? []) as unknown as MovimientoParaCC[])
+            comprasCC, ventasCC, [...(movsCC as unknown as MovimientoParaCC[]), ...porLaTarjeta])
 
           // 🛡️ A-FEAT-1385 — la cuenta corriente con la aseguradora al cierre (las pólizas son de MSA).
           if (empresa.id === "MSA") {
@@ -1169,22 +1203,6 @@ export function PapelesDeBalance() {
            * entero en «sin tratar», como antes, y se avisa.
            */
           try {
-            const [leidoTj, polTj] = await Promise.all([
-              traerTodo((d, h) => supabase.schema("msa").from("tarjeta_visa_business")
-                .select("fecha_vencimiento, descripcion, categ, contable, debitos, creditos, debitos_usd, template_id", { count: "exact" })
-                .eq("tipo_fila", "movimiento").gte("fecha_vencimiento", `${meses[0]}-01`).lte("fecha_vencimiento", finEj)
-                .order("id").range(d, h)),
-              supabase.from("polizas_seguro").select("template_id").not("template_id", "is", null),
-            ])
-            if (leidoTj.error) throw new Error(leidoTj.error.message)
-            anotar("Consumos de la tarjeta (para abrir «Desglosar»)", leidoTj)
-            const tplConPoliza = new Set(((polTj.data ?? []) as Array<{ template_id: string | null }>).map(p => p.template_id))
-            const consumos: ConsumoTarjeta[] = ((leidoTj.data ?? []) as Array<Record<string, unknown>>).map(x => ({
-              vencimiento: (x.fecha_vencimiento as string | null) ?? null,
-              descripcion: x.descripcion as string | null, categ: x.categ as string | null, contable: x.contable as string | null,
-              debitos: Number(x.debitos ?? 0), creditos: Number(x.creditos ?? 0), debitosUsd: Number(x.debitos_usd ?? 0),
-              conPoliza: !!x.template_id && tplConPoliza.has(x.template_id as string),
-            }))
             armadoCC = abrirDesglosar(armadoCC, (movsCC ?? []) as unknown as MovimientoParaCC[], consumos)
             const sinAbrir = armadoCC.desgloseTarjeta?.sinAbrir ?? 0
             if (sinAbrir !== 0) {
