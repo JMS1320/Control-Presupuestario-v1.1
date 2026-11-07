@@ -12736,12 +12736,15 @@ export function correrCasos(): Resultado[] {
       { id: "b", anio: 2026, mes: 7, fecha_fin_periodo: "2026-07-31", saldo_pendiente: 1500000, empleado: ma },
       { id: "c", anio: 2026, mes: 2, saldo_pendiente: 0.1, empleado: { nombre: "JMS", cuit_empleado: "23-34214773-9" } },
       { id: "d", anio: 2026, mes: 3, saldo_pendiente: 500000, empleado: { nombre: "Sigot", cuit_empleado: "20-17985912-3" } },
+      // 07/11 (JMS: «no se debe poner ese saldo»): un sueldo pagado DE MÁS (pendiente negativo, AMS ene-26 −34,29) no entra
+      { id: "e", anio: 2026, mes: 1, saldo_pendiente: -34.29, empleado: { nombre: "AMS", cuit_empleado: "20-28749254-6" } },
+      { id: "f", anio: 2026, mes: 3, saldo_pendiente: -250000, empleado: ma },
     ], meses)
     const r = armarCuentasCorrientes(comp, [], [{ id: "m", fecha: "2026-02-04", debitos: 1000000, contable: "CTA MA" }])
     const deMA = r.cuentas.find(c => c.contraparte.clave === "MA")!
     const v = `${comp.map(c => `${c.numero}=${c.total}`).join(",")} · saldo MA ${deMA.resumen.saldo}`
     const e = "Sueldo 12/2025 (a pagar)=2250000 · saldo MA 1250000"
-    chequear("Cuentas corrientes", "👷 El sueldo pendiente de MA entra a su cuenta corriente como deuda de MSA; no entra lo de fuera del ejercicio, lo ya pagado (centavos) ni un empleado que no es contraparte", e, v, v === e, "A-FEAT-1422")
+    chequear("Cuentas corrientes", "👷 El sueldo pendiente de MA entra a su cuenta corriente como deuda de MSA; no entra lo de fuera del ejercicio, lo ya pagado (centavos) ni un empleado que no es contraparte; un sueldo pagado de más (pendiente negativo) tampoco", e, v, v === e, "A-FEAT-1422")
   }
 
   // ══ 💸 Cambiar el monto de un GRUPO reparte el total, no lo copia (A-BUG-1431) ══

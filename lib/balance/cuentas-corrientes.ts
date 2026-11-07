@@ -732,7 +732,9 @@ export function sueldosPendientesComoCompras(
     const cuit = String(p.empleado?.cuit_empleado ?? "").replace(/\D/g, "")
     const mm = `${p.anio}-${String(p.mes).padStart(2, "0")}`
     const pendiente = r2(Number(p.saldo_pendiente) || 0)
-    if (!cuits.has(cuit) || !delEjercicio.has(mm) || Math.abs(pendiente) < 1) continue
+    // ⚠️ cambió 07/11 (JMS, sobre los $ 34,29 de AMS en enero 2026: «no se debe poner ese saldo»): sólo entra lo que MSA DEBE (pendiente
+    // positivo). Un sueldo pagado de más no es una deuda del socio con MSA: es una diferencia de Sueldos y se corrige ahí.
+    if (!cuits.has(cuit) || !delEjercicio.has(mm) || pendiente < 1) continue
     const fin = p.fecha_fin_periodo
       ? String(p.fecha_fin_periodo).slice(0, 10)
       : new Date(Date.UTC(p.anio, p.mes, 0)).toISOString().slice(0, 10)
