@@ -360,6 +360,7 @@ import {
   lineasDelDetalle, controlarDetalle, sinElProveedor,
 } from "@/lib/pagos/lineas-detalle-pago"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
+import { duenoDelBien, codigoEsperado } from "@/lib/balance/dueno-de-bienes"
 import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas, hojaPorCuenta, hojaResumenMensual, hojaDeAsientos, conTotalAlPie, hojaDeGastosBancarios, hojaDeCuentas, hojaRespaldoDeCuentas } from "@/lib/balance/export-libro-diario"
 import type { LibroDiario as LibroDiarioT } from "@/lib/balance/libro-diario"
 import { juntarTandas, lecturaIncompleta, juntarHasta, mensajeLecturaIncompleta } from "@/lib/supabase-paginado"
@@ -13227,6 +13228,21 @@ export function correrCasos(): Resultado[] {
     const e = `filtro A${enc}:E${enc + 3} · Subtotal de lo filtrado · SUBTOTAL(9,D${enc + 1}:D${enc + 3})=15 · SUBTOTAL(9,E${enc + 1}:E${enc + 3})=4 · neto 11 · amarillo false`
     chequear("Libro H", "Todo detalle de resumen por mes: filtro sobre el detalle (no sobre el resumen) y subtotal de lo filtrado pegado abajo, con débito, crédito y neto",
       e, v, v === e, "A-FEAT-1515")
+  }
+
+  // ══ 🏡 De quién es cada bien y desde cuándo (JMS 07/11: «las partidas de PAM pasan a MA salvo El Relincho y Quinta Rosello… desde 1/1/26») ══
+  {
+    const t = (nombre: string, responsable = "PAM") => ({ nombre, responsable })
+    const casos: Array<[string, string, string, "MSA" | "PAM" | "MA"]> = [
+      ["Inmobiliario Cuota Casco", "PAM", "2025-12-10", "MSA"], ["Inmobiliario Cuota Casco", "PAM", "2026-01-10", "MSA"],
+      ["Inmobiliario Cuota Casco", "PAM", "2026-01-10", "PAM"], ["Expensas Posadas", "PAM", "2026-02-05", "MSA"],
+      ["Inmobiliario Cuota El Relincho", "PAM", "2026-03-01", "PAM"], ["Inmobiliario Cuota Quinta Rosello 1", "PAM", "2026-03-01", "MSA"],
+      ["Red Vial Lima Cuota", "MA", "2025-09-01", "MSA"], ["Expensas Libertad", "PAM", "2026-02-01", "MSA"], ["Debitos / Creditos", "PAM", "2026-02-01", "PAM"],
+    ]
+    const v = casos.map(([n, r, f, pag]) => { const d = duenoDelBien(t(n, r), f); return `${n.split(" ").slice(-1)[0]}:${d ?? "—"}:${d ? codigoEsperado(pag, d) ?? "vacío" : "—"}` }).join(" · ")
+    const e = "Casco:PAM:CTA PAM · Casco:MA:CTA MA · Casco:MA:DIST MA · Posadas:MA:CTA MA · Relincho:PAM:vacío · 1:PAM:CTA PAM · Cuota:MA:CTA MA · Libertad:—:— · Creditos:—:—"
+    chequear("Balance", "🏡 De quién es cada bien: las partidas de PAM y Posadas pasan a MA desde el 01/01/26 (MSA paga → CTA MA, PAM paga → DIST MA); Relincho y Quinta Rosello quedan en PAM; Lima siempre MA; Libertad y los gastos de la sucesión no los toca",
+      e, v, v === e, "A-FEAT-1577")
   }
 
   // ══ 📍 El débito y el crédito pueden ir EN EL MEDIO del detalle (JMS 06/11: «entre empresa de la cuenta y descripción del banco») ══

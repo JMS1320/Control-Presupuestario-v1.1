@@ -3352,6 +3352,9 @@ Columna `boolean not null default false` (con su comment) y trigger **BEFORE INS
 >
 > ⚠️ **06/11 — NÚMEROS 212, 213 y 214 DUPLICADOS** (error de T1-balance: corrió los suyos sin leer los avisos de camino 3 en el tablero). Hay DOS scripts corridos con cada número, en archivos distintos: `212-vincular-extractos-msa` (T1) / `212-aca-orbith-a-credito` (camino 3) · `213-granos-cosecha-cierre-msa` (T1) / `213-template-se-paga-con-tarjeta` (camino 3) · `214-vincular-visa-msa` (T1) / `214-orden-agricola-contratista` (camino 3). Cada deshacer borra sólo en su tabla con su marca: no se pisan. Renumerar los de T1 (217/218/219 + la marca en sus filas) espera el OK de JMS.
 
+### 2026-11-07 · Bienes de PAM a MA desde el 01/01/2026, sólo contable (script 231, DATOS) — ✅ CORRIDO (JMS: «desde 1/1/26 es MA… hacé un backup antes»)
+17 movimientos (Galicia MSA 13: CTA PAM → CTA MA · Galicia PAM CC 4: vacío → DIST MA) de las partidas de PAM (inmobiliario, Red Vial, Fondo Educativo) y Posadas, salvo El Relincho y Quinta Rosello. 2 de PAM CC tenían `''` (texto vacío) y se aplicaron aparte (anotado en el .sql). Regla: `lib/balance/dueno-de-bienes.ts`; control: `scripts/control-bienes-pam-a-ma.mts` (60/60 ✅). Backup: `scripts/231-foto-antes.json`. Deshacer: `scripts/231-bienes-pam-a-ma-deshacer.sql`.
+
 ### 2026-11-07 · CÓDIGOS CONTABLE NUEVOS «CTA + quién» (script 229, DATOS) — ✅ CORRIDO (JMS: «adaptá primero y corré todo junto»)
 451 movimientos de 9 tablas de extracto (Galicia MSA 298, PAM CA 28, PAM CC 24, MA CA 53, VISA MSA 20, VISA PAM 17, VISA MA 8, Cotitulares 3): sólo la columna `contable`, cada uno condicionado a seguir diciendo lo leído (451/451). Esquema y por qué → KNOWLEDGE § Los códigos CONTABLE / INTERNO (cambió 07/11). Se corrió con `scripts/229-correr.mts` (la API, misma condición del .sql). Foto antes: `scripts/229-230-foto-antes.json`. Deshacer: `scripts/229-codigos-contable-nuevos-deshacer.sql`.
 
