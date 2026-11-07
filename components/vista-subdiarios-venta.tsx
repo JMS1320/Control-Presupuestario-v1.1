@@ -33,6 +33,7 @@ import { RectificacionDelMes, consultarMesesARectificar } from "@/components/rec
 import type { MesARectificar } from "@/lib/subdiarios/rectificacion"
 import { ivaDelLibroVenta } from "@/lib/ventas/libro-iva"
 import { fechasReales } from "@/lib/excel/fechas-reales"
+import { VentasPdfs } from "@/components/ventas-pdfs"
 
 type RetencionesDelSubdiario = Awaited<ReturnType<typeof cargarRetencionesSubdiario>>
 
@@ -82,6 +83,7 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
 
   // Imputar masivo
   const [mostrarModalImputar, setMostrarModalImputar] = useState(false)
+  const [verPdfs, setVerPdfs] = useState(false) // 📎 A-FEAT-1578
   const [periodoImputacion, setPeriodoImputacion] = useState('')
 
   // Carpeta destino de los exports — la misma que recuerda el Libro IVA Compras
@@ -737,6 +739,14 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
         </CardContent>
       </Card>
 
+      {/* 📎 A-FEAT-1578: los PDFs de las ventas — vincular, bajar en zip o mandar en un borrador de mail */}
+      <Card>
+        <CardHeader className="py-3 cursor-pointer" onClick={() => setVerPdfs(v => !v)}>
+          <CardTitle className="text-base">{verPdfs ? '▾' : '▸'} 📎 PDFs de las ventas</CardTitle>
+        </CardHeader>
+        {verPdfs && <CardContent><VentasPdfs empresa={empresa} esAdmin={esAdmin} /></CardContent>}
+      </Card>
+
       {/* Subtotales estilo ARCA */}
       {subtotales && (() => {
         const fc = subtotales.ivaVentas.fc
@@ -914,6 +924,7 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
                     <TableHead>Cuenta contable</TableHead>
                     <TableHead>Centro costo</TableHead>
                     <TableHead>Estado</TableHead>
+                    <TableHead title="PDF de la venta">📎</TableHead>
                     {esAdmin && <TableHead className="text-right" style={{ width: 110 }}>Acciones</TableHead>}
                   </TableRow>
                 </TableHeader>
@@ -955,6 +966,11 @@ export function VistaSubdiariosVenta({ empresa, userRole = 'admin' }: Props) {
                           }>
                             {c.ddjj_iva === 'Enviado' ? '📨 Enviado' : (c.ddjj_iva || 'No')}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {c.pdf_drive_url
+                            ? <a href={c.pdf_drive_url} target="_blank" rel="noreferrer" title="Abrir el PDF">📎</a>
+                            : <span className="text-gray-400">—</span>}
                         </TableCell>
                         {esAdmin && (
                           <TableCell className="text-right">

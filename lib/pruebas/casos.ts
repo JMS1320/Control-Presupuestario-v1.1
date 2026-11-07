@@ -52,6 +52,7 @@ import { contrapartesDelRecorrido } from "@/lib/balance/fuera-por-cuenta-corrien
 import { unirPorClave, sincronizarPendientes, hojaDelRecorrido } from "@/lib/balance/recorrido-excel"
 import { idsDelUltimoLote } from "@/lib/facturas/ultimo-lote"
 import { cruzarVentasImportadas } from "@/lib/ventas/import-cruce"
+import { proponerPdfs, fechaDelNombre, nombreEnZip, carpetasDeLaVenta } from "@/lib/ventas/pdf-ventas"
 import { proponerReparto, controlReparto } from "@/lib/pagos/repartir-grupo"
 import { detallePropio as detallePropioCF, detallePropioDeGrupo } from "@/lib/cashflow/detalle-propio"
 import { motivosParaPreguntar, puedeVincularseSola, buscarFacturaDeOtraEmpresa } from "@/lib/conciliacion/cruce-empresa"
@@ -13446,6 +13447,49 @@ export function correrCasos(): Resultado[] {
     const v2 = `${[...e2.abiertos].join(",")} · resta ${e2.parcial?.id}:${e2.parcial?.resta}`
     chequear("Cuenta corriente", "Con saldo menor que la factura más nueva, queda abierta ésa sola y se informa lo que resta",
       "y · resta y:1000", v2, v2 === "y · resta y:1000", "A-FEAT-140")
+  }
+
+
+  // ══ 📎 PDFs de las ventas: qué archivo del Drive va con cada venta (A-FEAT-1578) ══
+  {
+    const ar = (file_id: string, archivo: string, carpeta: string) => ({ file_id, archivo, url: `https://drive.google.com/file/d/${file_id}/view`, carpeta })
+    const ID_A = "1AaaaaaaaaaaaaaaaaaaaaaaaaaaA", ID_B = "1BbbbbbbbbbbbbbbbbbbbbbbbbbbB", ID_C = "1CcccccccccccccccccccccccccC", ID_D = "1DdddddddddddddddddddddddddD"
+    // Pedro Genta: dos versiones de la misma liquidación → no elige, muestra las dos
+    const genta = proponerPdfs([{ id: "pg", fecha_liquidacion: "2025-08-10", denominacion_cliente: "GENTA PEDRO", año_contable: 2025, mes_contable: 8 }], [
+      ar(ID_A, "08-10 - Pedro Genta - Liq Hacienda Version Cliente.pdf", "2025-2026/25-08/- Ventas"),
+      ar(ID_B, "08-10 - Pedro Genta - Liq Hacienda Version ARCA.pdf", "2025-2026/25-08/- Ventas"),
+    ])[0]
+    // un solo archivo con cliente y fecha → se propone
+    const toros = ar(ID_C, "10-28 - 2 Toros Sanchez Daniel.pdf", "2025-2026/25-10/- Ventas")
+    const uno = proponerPdfs([{ id: "sd", fecha_liquidacion: "2025-10-27", denominacion_cliente: "SANCHEZ DANIEL OSCAR" }], [toros])[0]
+    // el cliente está pero la fecha queda a 20 días → no es candidato
+    const lejos = proponerPdfs([{ id: "sd2", fecha_liquidacion: "2025-10-08", denominacion_cliente: "SANCHEZ DANIEL OSCAR" }], [toros])[0]
+    // diciembre en la carpeta de enero → año anterior, y se propone
+    const dic = fechaDelNombre("12-30 - Arrendamiento Lopez.pdf", 2026, 1)
+    const enero = proponerPdfs([{ id: "lo", fecha_liquidacion: "2025-12-30", denominacion_cliente: "LOPEZ JUAN" }], [ar(ID_D, "12-30 - Arrendamiento Lopez.pdf", "2026/26-01/- Ventas")])[0]
+    // un archivo ya vinculado a otra venta no se vuelve a proponer (y la vinculada no aparece)
+    const ya = proponerPdfs([
+      { id: "v1", fecha_liquidacion: "2025-10-28", denominacion_cliente: "SANCHEZ DANIEL", pdf_drive_url: `https://drive.google.com/file/d/${ID_C}/view` },
+      { id: "v2", fecha_liquidacion: "2025-10-28", denominacion_cliente: "SANCHEZ DANIEL" },
+    ], [toros])
+    const zip = nombreEnZip({ fecha_liquidacion: "2025-08-10", denominacion_cliente: 'GENTA/PEDRO: "EL" <TORO>*?|', tipo_comprobante: 11, punto_venta: 3, numero_desde: 45 }, "x.PDF")
+    const carp = carpetasDeLaVenta("MSA", { id: "c", fecha_liquidacion: "2025-06-30", denominacion_cliente: "X", año_contable: 2025, mes_contable: 7 }).map(c => c.join("/")).join(" | ")
+    const v = [
+      `genta ${genta.candidatos.length} cand, propuesta ${genta.archivo ? "sí" : "no"}`,
+      `uno ${uno.archivo?.file_id === ID_C ? "toros" : "nada"}`,
+      `lejos ${lejos.candidatos.length}`,
+      `dic ${dic} → ${enero.archivo?.file_id === ID_D ? "propuesto" : "no"}`,
+      `ya ${ya.map(p => `${p.ventaId}:${p.candidatos.length}`).join(",")}`,
+      `zip ${zip}`,
+      `carpetas ${carp}`,
+    ].join(" · ")
+    const e = [
+      "genta 2 cand, propuesta no", "uno toros", "lejos 0", "dic 2025-12-30 → propuesto", "ya v2:0",
+      "zip 2025-08-10 - GENTA PEDRO EL TORO - 11 0003-00000045.pdf",
+      "carpetas 2025-2026/25-07/- Ventas | 2024-2025/25-06/- Ventas | 2025-2026/25-08/- Ventas",
+    ].join(" · ")
+    chequear("PDFs de ventas", "📎 Pedro Genta con 2 versiones → elige el usuario; un archivo con cliente y fecha → se propone; a 20 días → no; diciembre en la carpeta de enero es del año anterior; un PDF ya vinculado no se repite; el nombre del zip sin caracteres prohibidos; carpetas del subdiario, de la fecha y del mes siguiente",
+      e, v, v === e, "A-FEAT-1578")
   }
 
   return r
