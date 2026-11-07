@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 📎 1 columna nueva `pdf_drive_url` en `msa.comprobantes_venta`, `pam.comprobantes_venta` y `ma.comprobantes_venta` (2026-11-07) — ⏳ AVISO PREVIO (se corre a continuación con OK de JMS)
+### 📎 1 columna nueva `pdf_drive_url` en `msa.comprobantes_venta`, `pam.comprobantes_venta` y `ma.comprobantes_venta` (2026-11-07) — ✅ APLICADA el 07/11 con OK de JMS (aviso previo): 3 columnas vacías, verificado con EXPLAIN UPDATE
 - A-FEAT-1578, JMS 07/11: *«precisaría poder enviar todos los comprobantes de venta… seleccionar todas o alguna»*. El link al PDF de cada venta en el Drive, igual que `comprobantes_arca.pdf_drive_url` en compras. Columna text vacía, `scripts/233-pdf-de-ventas.sql` verifica que no existía; deshacer exacto. **No toca RLS, roles ni datos.**
 
 ### 💲 3 columnas en `productivo.lineas_orden_agricola_labores` (`tarifa`, `tarifa_unidad`) y 2 en `productivo.ordenes_agricolas` (`factura_contratista_id`, `factura_contratista_empresa`) (2026-11-06) — ✅ APLICADA el 06/11 (aviso previo; permiso de JMS: «puede crear columnas, con aviso a Javier»): 4 columnas vacías, verificado con EXPLAIN UPDATE
