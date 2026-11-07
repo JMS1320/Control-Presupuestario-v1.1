@@ -13,7 +13,7 @@
 ## 🧪 <a id="guia-pruebas-2026-10-05"></a>GUÍA DE PRUEBAS — vigente al 1 de noviembre (todo en `desarrollo` salvo lo marcado)
 
 > 🆕 **07/11 tarde — Camino 1: 14.1 completa, corte PAM→MA y la conciliación con la regla de bienes.**
-> 1. 📊 **Prototipo de la 14.1** (`Prototipo 14.1 por grupo (2026-11-07) v5.xlsx`, Excels trabajando con claude — ⚠️ cambió 07/11: v5 reemplaza a la v4 y suma las solapas «Quién pagó - resumen / detalle»): detalle por grupo, con fórmulas, cheq contra Sueldos, beneficiario, la solapa «Facturas a nombre de PAM» y quién pagó cada cuota de los templates pagados por retiro (A-FEAT-1577 (13)). Si te cierra, se pasa a la app → [A-FEAT-1577](#a-feat-1577) (11).
+> 1. 📊 **Prototipo de la 14.1** (`Prototipo 14.1 por grupo (2026-11-07) v6.xlsx`, Excels trabajando con claude — ⚠️ cambió 07/11: v6 reemplaza a la v4 y v5 (el saldo acumulado daba #¡VALOR! con Debe o Haber vacío) y suma las solapas «Quién pagó - resumen / detalle»): detalle por grupo, con fórmulas, cheq contra Sueldos, beneficiario, la solapa «Facturas a nombre de PAM» y quién pagó cada cuota de los templates pagados por retiro (A-FEAT-1577 (13)). Si te cierra, se pasa a la app → [A-FEAT-1577](#a-feat-1577) (11).
 > 2. 🏡 **Bienes de PAM a MA desde el 01/01/26** ya corregidos en la base (script 231, control 60/60 ✅).
 > 3. 🔀 **La conciliación pone el código del bien** — está en la rama `jms/conciliacion-bienes`: probala en SU vista previa → [A-TEST-1350](#a-test-1350).
 > 🆕 **07/11 — Camino 1: los códigos contable nuevos «CTA + quién» ya están en la base** (scripts 228-230 corridos; todo en `desarrollo` — antes, que Vercel haya publicado `e13c792f` o usar la app local).

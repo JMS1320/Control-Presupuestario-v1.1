@@ -127,7 +127,7 @@ for (const c of cuentas) {
       dB += d; hB += h; saldo += x.importe
       const n = f.length + 1
       f.push([b, x.fecha, x.tipo === "compra" ? "nos factura / sueldo" : x.tipo === "venta" ? "le facturamos" : x.importe > 0 ? "pagó por MSA / aportó" : "MSA le pagó / retiró",
-        d ? r2(d) : "", h ? r2(h) : "", num(`F${ultSaldo}-D${n}+E${n}`, saldo), x.grupo ?? (b === CUENTA_FACTURAS ? "Facturas y sueldo" : "Otros"), x.concepto, x.otraPunta ?? ""])
+        d ? r2(d) : null, h ? r2(h) : null, num(`F${ultSaldo}-N(D${n})+N(E${n})`, saldo)   /* N(): una celda vacía no rompe la resta (con "" Excel daba #¡VALOR!, JMS 07/11) */, x.grupo ?? (b === CUENTA_FACTURAS ? "Facturas y sueldo" : "Otros"), x.concepto, x.otraPunta ?? ""])
       ultSaldo = n
     }
     const hastaB = f.length
