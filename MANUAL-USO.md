@@ -1549,6 +1549,22 @@ mes, imputar una que llegó tarde, editarla o borrarla—: la app te avisa con u
 seguís. Si seguís, acordate de avisarle al contador. El rol contable (Ulises) no puede: le aparece un
 candado.
 
+### 📎 Los PDFs de las ventas: buscarlos, bajarlos o mandarlos por mail *(Ventas, 2026-11-07)*
+
+En **Subdiarios → IVA Ventas** de cada empresa, abrí **«📎 PDFs de las ventas»**. Muestra todas las ventas del ejercicio que elijas
+(o «Todas»), cada una con su 📎 (abre el PDF) o ❌ si todavía no tiene.
+
+1. **Vincular**: «🔎 Buscar los PDFs en el Drive» mira la carpeta **«- Ventas»** del mes de cada venta (y del mes siguiente) y propone
+   el archivo por **fecha y cliente** del nombre («10-28 - Cliente - qué.pdf»). Si hay uno solo, «✓ Vincular» o «Vincular las propuestas»;
+   si hay varios, elegís cuál; si no hay ninguno, «Elegir a mano…».
+2. **Tildá** las que quieras (el tilde de arriba marca todas).
+3. **«⬇️ Descargar (zip)»** baja un zip con los PDFs. **«✉️ Borrador de mail»** deja en Gmail un borrador con los PDFs adjuntos: no
+   se envía, lo revisás y lo mandás desde Gmail. Las tildadas sin PDF se avisan en ámbar y no van.
+
+La tabla de cada mes del subdiario también tiene la columna 📎.
+
+⚠️ Sin probar todavía → A-TEST-1351
+
 ### 🔁 Un mes «a rectificar» *(Compras y Ventas, 2026-10-27)*
 
 Si cambia un dato de una factura de un mes **enviado o presentado** —el tipo, el número, un importe, la fecha, o la sacás

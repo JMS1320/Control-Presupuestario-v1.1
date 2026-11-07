@@ -20,6 +20,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { hoyArgentina } from "@/lib/fechas"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
 import {
   carpetasDeLaVenta, proponerPdfs, nombreEnZip, idDeDrive,
   type ArchivoDeVentas, type EmpresaVenta, type Propuesta,
@@ -242,6 +243,7 @@ export function VentasPdfs({ empresa, esAdmin }: { empresa: EmpresaVenta; esAdmi
 
   return (
     <div className="space-y-3">
+      {esAdmin && <TestsDelProceso proceso="subdiarios/pdfs-ventas" pantalla="subdiarios" />}
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">
           <Label className="text-xs">Ejercicio</Label>
