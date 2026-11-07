@@ -38,7 +38,7 @@ import { separarPorCuentaCorriente } from "@/lib/proveedores/opera-cuenta-corrie
 import { operacionesEnDolares, comprasVentasDeDolares } from "@/lib/balance/operaciones-en-dolares"
 import { armarGruposTemplates, armarHojaGrupo, nombreSolapaGrupo, hojaGrupo, gruposDelResponsable } from "@/lib/balance/grupos-templates"
 import { indiceDeDestinos, sinCategoriaNiVinculo, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
-import { auditarCuota } from "@/lib/balance/auditoria-templates"
+import { auditarCuota, hojaRetirosYAportes } from "@/lib/balance/auditoria-templates"
 import { solapasPapelesH } from "@/lib/balance/papeles-impuestos-h"
 import { hojaLibertad } from "@/lib/balance/libertad"
 import { fechasReales, serieDeFecha } from "@/lib/excel/fechas-reales"
@@ -13522,6 +13522,26 @@ export function correrCasos(): Resultado[] {
       "distribución de PAM a MA | ✓",
     ].join(" ‖ ")
     chequear("Libro H para auditar", "🔍 Cada cuota dice quién pagó y qué efecto tiene: MSA por un socio = retiro, PAM por un bien de MA = distribución, el dueño = nada; avisa si el código no es el esperado; marca las sin pagar y las pagadas sin banco; Libertad aparte",
+      e, v, v === e, "A-FEAT-1579")
+  }
+
+  // ══ 🔍 Libro H para auditar: control por template al pie y retiros/aportes contra el banco (A-FEAT-1579) ══
+  {
+    const b = (titular: string, contable: string) => ({ cuenta: "Galicia " + titular, titular, contable, comprobante: "", respaldo: 100, motivo: null })
+    const q = (id: string, concepto: string, estado: string, monto: number, banco?: unknown) => ({ id, fecha: "2025-09-10", concepto, proveedor: "", categ: "X",
+      cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable: "MA", estado, monto, agrupadoraTemplate: "Fijos", banco }) as never
+    const cs = [q("1", "Seguro Chalet", "conciliado", 100, b("MSA", "CTA MA")), q("2", "Seguro Chalet", "pendiente", 100),
+      q("3", "Luz", "conciliado", 50, b("MA", ""))]
+    const { filas } = armarHojaGrupo({ responsable: "MA", agrupadora: "Fijos", total: 250, cuotas: cs } as never, "25/26", [{ clave: "2025-09", rotulo: "sep-25" }], { auditoria: true })
+    const ctl = (filas as unknown[][]).filter(f => f[1] === "Seguro Chalet" || f[1] === "Luz").filter(f => typeof f[2] === "object")
+      .map(f => `${f[1]}: ${(f.slice(2, 8) as Array<{ v: number }>).map(x => x.v).join("/")} ${(f[9] as { v: string }).v}`).join(" · ")
+    const ex = { movimientos: [{ titular: "MSA", cuenta: "Galicia MSA", fecha: "2025-09-10", descripcion: "", debitos: 100, creditos: 0, templateCuotaId: "1", contable: "CTA MA", enDolares: false },
+      { titular: "MSA", cuenta: "Galicia MSA", fecha: "2025-09-20", descripcion: "", debitos: 30, creditos: 0, templateCuotaId: null, contable: "CTA MA", enDolares: false }] }
+    const ra = hojaRetirosYAportes(cs, ex, "25/26", [{ clave: "2025-09", rotulo: "sep-25" }]) as unknown[][]
+    const fila = ra.find(f => f[0] === "MSA" && f[1] === "CTA MA")!
+    const v = `${ctl} ‖ MSA CTA MA: cuotas ${fila[2]} banco ${fila[3]} ${(fila[5] as { v: string }).v} directo ${fila[6]} total ${(fila[7] as { v: number }).v}`
+    const e = "Luz: 1/1/0/0/0/0 ✓ completo · Seguro Chalet: 2/1/1/0/0/0 revisar ‖ MSA CTA MA: cuotas 100 banco 100 ✓ directo 30 total 130"
+    chequear("Libro H para auditar", "🔍 Al pie, un renglón por template (cuotas · pagadas · sin pagar…, ¿completo?); y los retiros desde Efecto cierran contra el banco, con lo directo al lado",
       e, v, v === e, "A-FEAT-1579")
   }
 

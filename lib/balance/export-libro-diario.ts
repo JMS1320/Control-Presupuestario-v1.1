@@ -22,6 +22,7 @@
 // Import por DEFAULT: el paquete es CommonJS (ver lib/presupuesto/export.ts).
 import { hojaOperacionesEnDolares } from "./operaciones-en-dolares"
 import XLSX from "xlsx-js-style"
+import { hojaRetirosYAportes } from "./auditoria-templates"
 import type { SaldoParaBalance } from "@/lib/dolares/posicion-cierre"
 import type { TenenciaFci } from "./balance-en-linea-lectura"
 import { celdaRespaldo, respaldoDeSaldo, respaldoDeFci, respaldoDeComprobante, hojaDeRespaldos, renglonesDeRespaldo, linksALasCopias, type DocumentoRespaldo } from "./respaldos"
@@ -3469,6 +3470,9 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
   // 🏢 A-FEAT-1521: Libertad cruza responsables (PAM hasta dic-25, MA desde ene-26, siempre con MSA): una sola solapa al final.
   // 👥 JMS 04/11: Libertad va al libro I (próximo excel), con las cuentas de los socios.
   hoja(wb, "Gastos Libertad", hojaLibertad(templates.detalle, etiqueta, meses, templates.entrada?.opciones.extracto), COLS_RESUMEN_MES)
+  // 🔍 A-FEAT-1579: en el de auditar, los retiros y aportes desde la columna Efecto, con su control contra el banco (también lo que va
+  // «por la cuenta de un socio», como Gastos Reintegro JMS: no es gasto, pero es un movimiento con el socio)
+  if (aud) hoja(wb, "H · Retiros y aportes", hojaRetirosYAportes([...templates.detalle, ...(templates.aCuentaSocio ?? [])], templates.entrada?.opciones.extracto, etiqueta, meses), COLS_RESUMEN_MES)
   // 📗 A-FEAT-1539: el libro para mandar — sin la palabra «template» (no es contable) y sin subtítulos. El de auditar no se pule.
   if (!aud) pulirLibroH(wb)
 }

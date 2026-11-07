@@ -49,7 +49,7 @@ while (existsSync(p)) p = join(CARPETA, `H para auditar ${EMPRESA} ${ej.etiqueta
 XLSX.writeFile(wb, p)
 
 // lo que dice, para el control a ojo
-const a = templates.detalle.map((c: any) => ({ c, a: auditarCuota(c) }))
+const a = [...templates.detalle, ...(templates.aCuentaSocio ?? [])].map((c: any) => ({ c, a: auditarCuota(c) }))
 const cuenta = (re: RegExp) => a.filter(x => re.test(x.a.marca)).length
 console.log(`cuotas ${a.length} · ✓ ${cuenta(/^✓/)} · 🔴 sin pagar ${cuenta(/SIN PAGAR/)} · 🟡 ${cuenta(/^🟡/)} · ⚪ ${cuenta(/^⚪/)} · ⚠️ código ${cuenta(/código esperado/)}`)
 console.log(`con efecto (pagó otro): ${a.filter(x => x.a.efecto).length}`)

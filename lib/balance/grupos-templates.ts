@@ -12,7 +12,7 @@ import type { CuotaTemplate, ExtractoParaH } from "./templates-libro"
 import type { MovimientoExtractoH } from "./movimientos-de-cuotas"
 import { armarResumenPorMes, hojaResumenPorMes } from "./resumen-por-mes"
 import { MOTIVO_EN_CERO } from "./movimientos-de-cuotas"
-import { auditarCuota } from "./auditoria-templates"
+import { auditarCuota, controlPorTemplate } from "./auditoria-templates"
 
 /** Lo que NO se arma como grupo: lo financiero (no es gasto) y lo bancario (ya está en el libro C). */
 export const AGRUPADORAS_FUERA = new Set(["inversiones", "movimientos internos empresa", "tarjetas", "créditos bancarios", "creditos bancarios",
@@ -181,6 +181,13 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
       const rb = c.banco!.respaldo
       h.push(["", "", dmy(c.fecha), c.concepto, c.monto, rb ?? "", rb === null ? "" : r2(c.monto - rb), c.banco!.motivo])
     }
+  }
+  // 🔍 A-FEAT-1579: en el H para auditar, un renglón por template al pie (¿se pagaron todas sus cuotas?)
+  if (opciones.auditoria) {
+    const cC = `${u.colDetalle(1)}${u.det1}:${u.colDetalle(1)}${u.detN}`
+    const lit = (x: string) => x.replace(/[~*?]/g, m => `~${m}`).replace(/"/g, "\"\"")
+    h.push(...controlPorTemplate(g.cuotas, u.colDetalle(1), u.colDetalle(10), u.det1, u.detN,
+      t => `SUMIFS(${deb},${cC},"${lit(t)}")-SUMIFS(${cred},${cC},"${lit(t)}")`, h.length + 1))
   }
   return { filas: h, celdaTotal: u.celdaTotal }
 }
