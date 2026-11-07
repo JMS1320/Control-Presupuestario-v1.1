@@ -89,7 +89,7 @@ if (existsSync(RESPUESTAS)) {
 // ── Los movimientos: con marca contable, o que la base da a otro, o transferencia con el CUIT de alguien del grupo
 type Mov = { id: string; tabla: string; fecha: string; mes: string; cuenta: string; titular: string; usd: boolean; desc: string; detalle: string; contra: string
   deb: number; cred: number; categ: string; vinculo: string; respDe: string; cuitDe: string; viejo: string; interno: string; resp: string; porque: string[]
-  codigo: string; empresa: string; socio: string; tipo: string; lote: string; duda: string; punta: string; cuenta_aca: boolean; motivo: string; okV2?: string }
+  codigo: string; empresa: string; socio: string; tipo: string; lote: string; duda: string; punta: string; cuenta_aca: boolean; motivo: string; okV2?: string; viejoCrudo?: string | null }
 const movs: Mov[] = []
 const ctrlTabla: { cuenta: string; directoContable: number | null; leidosContable: number; enPropuesta: number; ok: boolean }[] = []
 const todosPorTitular = new Map<string, any[]>()      // todos los movimientos de cada empresa, para buscar la otra punta
@@ -105,7 +105,7 @@ for (const t of TABLAS_CON_VINCULO_ARCA) {
     const fecha = String(m.fecha).slice(0, 10), deb = r2(Number(m.debitos) || 0), cred = r2(Number(m.creditos) || 0)
     const txt = Object.values(m).filter(v => typeof v === "string").join(" ")
     const cuitDe = Object.keys(CUIT).find(k => txt.includes(k)) ? CUIT[Object.keys(CUIT).find(k => txt.includes(k))!] : ""
-    const base = { tabla: `${t.schema}.${t.tabla}`, cuenta: t.cuenta, titular, fecha, deb, cred, usd, id: String(m.id), cuitDe, viejo }
+    const base = { tabla: `${t.schema}.${t.tabla}`, cuenta: t.cuenta, titular, fecha, deb, cred, usd, id: String(m.id), cuitDe, viejo, viejoCrudo: m.contable == null ? null : String(m.contable) }
     todosPorTitular.set(titular, [...(todosPorTitular.get(titular) ?? []), base])
     const tpl = m.template_cuota_id ? tplDe.get(m.template_cuota_id) : undefined
     const emp = m.sueldo_pago_id ? sueldoDe.get(m.sueldo_pago_id) : undefined
@@ -321,3 +321,34 @@ console.log(`📄 ${p}`)
 const porPareja = new Map<string, number>()
 for (const m of cuentan) { const k = `${m.empresa} ↔ ${m.socio}${m.codigo.startsWith("DIST") ? " · distribución" : ""}${m.usd ? " (USD)" : ""}`; porPareja.set(k, r2((porPareja.get(k) ?? 0) + (m.titular === m.empresa ? 1 : -1) * (m.deb - m.cred))) }
 console.log("CUENTAS (+ retiró / − aportó):", [...porPareja].map(([k, v]) => `${k} ${v}`).join(" · "))
+
+// ══ 📜 SCRIPT 229 — escribir los códigos acordados (sólo con --sql; NO lo corre: genera el .sql y su deshacer) ══
+if (process.argv.includes("--sql")) {
+  const { writeFileSync } = await import("node:fs")
+  const esc = (x: string) => x.replace(/'/g, "''")
+  const lit = (x: string | null) => (x == null ? "null" : `'${esc(x)}'`)
+  const up: string[] = [], down: string[] = []
+  const cuenta = new Map<string, number>(), porCodigo = new Map<string, number>()
+  for (const m of movs) {
+    if (m.lote.startsWith("?")) continue                                          // las 17 de Cotitulares: se ven después
+    const nuevo = m.codigo === "(vacío)" ? null : m.codigo
+    const viejoCrudo = m.viejoCrudo ?? null
+    if ((viejoCrudo ?? "") === (nuevo ?? "")) continue                            // ya dice eso: no se toca
+    // condición: que la columna siga diciendo EXACTAMENTE lo que leí (si alguien la cambió en el medio, no se pisa)
+    up.push(`update ${m.tabla} set contable = ${lit(nuevo)} where id = '${m.id}' and contable is not distinct from ${lit(viejoCrudo)};`)
+    down.push(`update ${m.tabla} set contable = ${lit(viejoCrudo)} where id = '${m.id}' and contable is not distinct from ${lit(nuevo)};`)
+    cuenta.set(m.tabla, (cuenta.get(m.tabla) ?? 0) + 1); porCodigo.set(`${viejoCrudo ?? "(vacío)"} → ${nuevo ?? "(vacío)"}`, (porCodigo.get(`${viejoCrudo ?? "(vacío)"} → ${nuevo ?? "(vacío)"}`) ?? 0) + 1)
+  }
+  const head = `-- 229 · CÓDIGOS CONTABLE NUEVOS (DATOS) — A-FEAT-1577. Esquema aprobado por JMS 06-07/11: «CTA + quién» (sin RET 1/3/i), DIST sólo
+-- distribución decidida (PAM → MA todo DIST MA; del lado de MA «DIST PAM»), FLIA entre personas, X queda X, y VACÍO donde no lleva código
+-- (gastos del banco, tarjeta, terceros, consumos propios, facturado a la empresa, ACA, Posadas pagado por PAM, domésticas…).
+-- Fuente: «Propuesta codigos contable 25-26 (2026-11-06) v3» con las 730 respuestas de JMS aplicadas. Sólo toca la columna CONTABLE (interno no).
+-- ${up.length} movimientos · ${[...cuenta].map(([t, n]) => `${t} ${n}`).join(" · ")}
+-- Cada update exige que la columna siga diciendo lo que se leyó al generar: si cambió en el medio, no se pisa.
+-- Deshacer: 229-codigos-contable-nuevos-deshacer.sql (vuelve cada movimiento a su valor anterior, sólo si todavía tiene el que puso el 229).
+`
+  writeFileSync("scripts/229-codigos-contable-nuevos.sql", head + "begin;\n" + up.join("\n") + "\ncommit;\n")
+  writeFileSync("scripts/229-codigos-contable-nuevos-deshacer.sql", `-- Deshace el 229: cada movimiento vuelve a su contable anterior (sólo si todavía tiene el que puso el 229).\nbegin;\n${down.join("\n")}\ncommit;\n`)
+  console.log(`229: ${up.length} updates · ${[...cuenta].map(([t, n]) => `${t} ${n}`).join(" · ")}`)
+  console.log([...porCodigo].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${v} ${k}`).join(" | "))
+}
