@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { EMPRESAS, COLOR_EMPRESA, schemaDeEmpresa, parseEmpresas, type Empresa } from "@/lib/empresas"
+import { codigoPorBien, templatesDelPago } from "@/lib/conciliacion/codigo-al-conciliar"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -2679,7 +2680,9 @@ Pasan a conciliado junto con su factura o cuota. El motivo queda en la nota.`)) 
         //    columna. Inventar un detalle con los dos era copiar las dos celdas de al lado.
         //    ⚠️ Lo escrito a mano se sigue respetando (eso era A-BUG-05).
         updateTemplate.detalle = detalleAsignar.trim() || movimientoAsignando.detalle?.trim() || null
-        updateTemplate.contable = contableManual.trim() || codigos.contable || ''
+        // 🏡 A-FEAT-1577 (12): un BIEN (partida, Posadas) lleva el código de su dueño a esa fecha según quién pagó; lo escrito a mano manda.
+        const porBienTpl = codigoPorBien(cuentaActivaObj?.empresa, movimientoAsignando.fecha, await templatesDelPago(supabase, { egresoId: templateElegido.id }))
+        updateTemplate.contable = contableManual.trim() || (porBienTpl.aplica ? porBienTpl.contable : codigos.contable) || ''
         updateTemplate.interno  = internoManual.trim()  || codigos.interno  || ''
 
         const { error: errExt } = await dbCuenta()
@@ -3210,7 +3213,10 @@ ${marca}` : marca
           updateGrupo.comprobante_arca_id = null
         }
 
-        updateGrupo.contable = contableManual.trim() || codigos.contable || ''
+        // 🏡 A-FEAT-1577 (12): ídem para un grupo de pago — si TODOS sus templates son bienes del mismo dueño
+        const porBienGrupo = codigoPorBien(cuentaActivaObj?.empresa, movimientoAsignando.fecha,
+          await templatesDelPago(supabase, { grupoPagoId: grupoElegido.id, egresoId: grupoElegido.egreso_id }))
+        updateGrupo.contable = contableManual.trim() || (porBienGrupo.aplica ? porBienGrupo.contable : codigos.contable) || ''
         updateGrupo.interno  = internoManual.trim()  || codigos.interno  || ''
 
         const { error: errExt } = await dbCuenta()

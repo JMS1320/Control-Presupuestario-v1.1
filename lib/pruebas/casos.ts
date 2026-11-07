@@ -361,6 +361,7 @@ import {
 } from "@/lib/pagos/lineas-detalle-pago"
 import { asientosContablesDelEjercicio, ESTADO_ASIENTO_CONTABLE, CAMBIO_A_ASIENTO_CONTABLE } from "@/lib/balance/asientos-contables"
 import { duenoDelBien, codigoEsperado } from "@/lib/balance/dueno-de-bienes"
+import { codigoPorBien } from "@/lib/conciliacion/codigo-al-conciliar"
 import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas, hojaPorCuenta, hojaResumenMensual, hojaDeAsientos, conTotalAlPie, hojaDeGastosBancarios, hojaDeCuentas, hojaRespaldoDeCuentas } from "@/lib/balance/export-libro-diario"
 import type { LibroDiario as LibroDiarioT } from "@/lib/balance/libro-diario"
 import { juntarTandas, lecturaIncompleta, juntarHasta, mensajeLecturaIncompleta } from "@/lib/supabase-paginado"
@@ -13242,6 +13243,23 @@ export function correrCasos(): Resultado[] {
     const v = casos.map(([n, r, f, pag]) => { const d = duenoDelBien(t(n, r), f); return `${n.split(" ").slice(-1)[0]}:${d ?? "—"}:${d ? codigoEsperado(pag, d) ?? "vacío" : "—"}` }).join(" · ")
     const e = "Casco:PAM:CTA PAM · Casco:MA:CTA MA · Casco:MA:DIST MA · Posadas:MA:CTA MA · Relincho:PAM:vacío · 1:PAM:CTA PAM · Cuota:MA:CTA MA · Libertad:—:— · Creditos:—:—"
     chequear("Balance", "🏡 De quién es cada bien: las partidas de PAM y Posadas pasan a MA desde el 01/01/26 (MSA paga → CTA MA, PAM paga → DIST MA); Relincho y Quinta Rosello quedan en PAM; Lima siempre MA; Libertad y los gastos de la sucesión no los toca",
+      e, v, v === e, "A-FEAT-1577")
+  }
+
+  // ══ 🏡 Al CONCILIAR, un bien lleva el código de su dueño (A-FEAT-1577 punto 12: «que la conciliación ponga el código con la regla») ══
+  {
+    const T = (nombre: string, responsable = "PAM") => ({ nombre, responsable })
+    const v = [
+      codigoPorBien("MSA", "2026-09-08", [T("Inmobiliario Cuota Casco")]),                                         // 26/27, MSA paga una partida de PAM → MA
+      codigoPorBien("PAM", "2026-09-11", [T("Red Vial Cuota Tapera 1"), T("Red Vial Cuota Ombu")]),               // grupo, mismo dueño → DIST MA
+      codigoPorBien("PAM", "2026-11-12", [T("Inmobiliario Cuota El Relincho")]),                                   // PAM conserva → vacío
+      codigoPorBien("MSA", "2026-11-12", [T("Inmobiliario Cuota Casco"), T("Inmobiliario Cuota El Relincho")]),   // mezcla dueños → manda la regla de siempre
+      codigoPorBien("MSA", "2026-09-08", [T("Comision Cuenta Bancaria")]),                                         // no es un bien → regla de siempre
+      codigoPorBien("MA", "2026-09-08", [T("Expensas Posadas")]),                                                  // MA paga lo suyo → vacío
+      codigoPorBien("COTITULARES", "2026-09-08", [T("Expensas Posadas")]),                                         // cuenta que no es de una empresa → regla de siempre
+    ].map(r => r.aplica ? (r.contable ?? "vacío") : "regla").join(" · ")
+    const e = "CTA MA · DIST MA · vacío · regla · regla · vacío · regla"
+    chequear("Conciliación", "🏡 Al conciliar un pago de un bien, el código sale de quién es el bien a esa fecha y quién pagó (no del responsable del template); si no es un bien o mezcla dueños, manda la regla de siempre",
       e, v, v === e, "A-FEAT-1577")
   }
 

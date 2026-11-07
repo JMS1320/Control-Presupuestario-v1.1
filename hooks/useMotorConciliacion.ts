@@ -30,6 +30,7 @@ import { cargarDetallesFijos, aplicarDetalleFijo } from "@/lib/conciliacion/deta
 import { identificadorDeCuota } from "@/lib/templates/identificador-cuota"
 import { CUENTAS_DOLARES_Y_COTITULARES, type Titular } from "@/lib/dolares/cuentas"
 import { contrapartesEnCuentaCorriente } from "@/lib/proveedores/opera-cuenta-corriente"
+import { codigoPorBien, templatesDelPago } from "@/lib/conciliacion/codigo-al-conciliar"
 
 // Configuración de cuentas bancarias y cajas
 export interface CuentaBancaria {
@@ -652,6 +653,11 @@ export function useMotorConciliacion() {
                   if (!extraCF.interno && esValorContableValido(reglaQueMatcheaF1.codigo_interno)) extraCF.interno = reglaQueMatcheaF1.codigo_interno
                 }
               }
+              // 🏡 A-FEAT-1577 (12): si es un BIEN (partida, Posadas), el código contable sale de quién es el bien a esa fecha y quién pagó
+              // (PAM → MA desde el 01/01/26), no del responsable del template. El interno no se toca.
+              const porBienF1 = codigoPorBien(cuenta.empresa, movimiento.fecha,
+                await templatesDelPago(supabase, { egresoId: matchCF.cashFlowRow.egreso_id, grupoPagoId: matchCF.cashFlowRow.id }))
+              if (porBienF1.aplica) extraCF.contable = porBienF1.contable
             } else if (matchCF.cashFlowRow.origen === 'SUELDO') {
               // SUELDO: buscar regla tipo empleado (Tipo C)
               const empleadoIdCF = matchCF.cashFlowRow.empleado_id
@@ -1031,6 +1037,9 @@ export function useMotorConciliacion() {
                   const extraRegla: any = {}
                   if (codigosTab2F2.contable) extraRegla.contable = codigosTab2F2.contable
                   if (codigosTab2F2.interno) extraRegla.interno = codigosTab2F2.interno
+                  // 🏡 A-FEAT-1577 (12): un BIEN lleva el código de su dueño a esa fecha (ver la 1ª pasada)
+                  const porBienF2 = codigoPorBien(cuenta.empresa, movimiento.fecha, await templatesDelPago(supabase, { egresoId: cuotaResult.templateId }))
+                  if (porBienF2.aplica) extraRegla.contable = porBienF2.contable
 
                   /**
                    * 🧲 **A-BUG-175 — recién acá se sabe a qué template quedó vinculado, así que
