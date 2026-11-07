@@ -89,7 +89,7 @@ if (existsSync(RESPUESTAS)) {
 // ── Los movimientos: con marca contable, o que la base da a otro, o transferencia con el CUIT de alguien del grupo
 type Mov = { id: string; tabla: string; fecha: string; mes: string; cuenta: string; titular: string; usd: boolean; desc: string; detalle: string; contra: string
   deb: number; cred: number; categ: string; vinculo: string; respDe: string; cuitDe: string; viejo: string; interno: string; resp: string; porque: string[]
-  codigo: string; empresa: string; socio: string; tipo: string; lote: string; duda: string; punta: string; cuenta_aca: boolean; motivo: string }
+  codigo: string; empresa: string; socio: string; tipo: string; lote: string; duda: string; punta: string; cuenta_aca: boolean; motivo: string; okV2?: string }
 const movs: Mov[] = []
 const ctrlTabla: { cuenta: string; directoContable: number | null; leidosContable: number; enPropuesta: number; ok: boolean }[] = []
 const todosPorTitular = new Map<string, any[]>()      // todos los movimientos de cada empresa, para buscar la otra punta
@@ -189,25 +189,60 @@ for (const m of movs) {
   m.motivo = m.vinculo || m.categ || m.detalle || m.desc
 }
 
+// ══ CONSENSO con JMS (07/11) sobre la «Propuesta … v2»: sus respuestas por movimiento (columna Id) + las reglas acordadas ══
+const V2 = join(CARPETA, "Propuesta codigos contable 25-26 (2026-11-06) v2.xlsx")
+const okV2 = new Map<string, string>()
+if (existsSync(V2)) {
+  const aoa: any[][] = XLSX.utils.sheet_to_json(XLSX.readFile(V2).Sheets["Propuesta"], { header: 1, raw: true, defval: null })
+  const h = aoa.findIndex(r => r?.[0] === "Nro" && r.includes("Débito")); const H = new Map(aoa[h].map((v: any, j: number) => [sv(v), j]))
+  for (const r of aoa.slice(h + 1)) if (typeof r?.[0] === "number") okV2.set(sv(r[H.get("Id")!]), sv(r[H.get("Tu OK / corrección")!]))
+}
+let aplicadasV2 = 0
+for (const m of movs) {
+  const a = okV2.get(`${m.tabla}:${m.id}`) ?? ""; m.okV2 = a; if (a) aplicadasV2++
+  const A = a.toLowerCase(), antes = m.codigo
+  const vacio = (por: string) => { m.codigo = "(vacío)"; m.lote = `(vacío) · ${por}`; m.tipo = ""; m.empresa = ""; m.socio = "" }
+  const poner = (codigo: string, otro: string, tipo: string) => { m.codigo = codigo; pareja(m, otro); m.tipo = tipo; m.lote = `${m.empresa} ↔ ${m.socio} · ${tipo}` }
+  if (/estas de x quedar con x|seguir[ií]a dejando x/.test(A)) { m.codigo = "X"; m.lote = "X · falta la factura (queda X)" }
+  else if (/ir a cta jms|puede ir cta jms/.test(A)) poner("CTA JMS", "JMS", "gastos de JMS pagados por " + m.titular)
+  else if (/le pondr[ií]a algo para revisar/.test(A)) poner("CTA COTITULARES", "COTITULARES", "transferencias")            // C8: «ponele cta cotit»
+  else if (/posada|revisar templtae aparte/.test(A)) m.titular === "PAM" ? vacio("Posadas pagado por PAM (template propio, fuera de Libertad)") : poner("CTA PAM", "PAM", "gastos de PAM pagados por MSA (Posadas, template propio)")
+  else if (/dejalo como flia|flia pero/.test(A)) { m.codigo = "FLIA"; m.lote = "FLIA · entre personas de la familia (no suma en cuentas de empresa)"; m.empresa = ""; m.socio = "" }
+  else if (/dist ma pero es de pam/.test(A)) poner("DIST PAM", "PAM", "distribución")
+  else if (/dist ma tal vez/.test(A)) poner("DIST MA", "MA", "distribución (pagos de PAM por cuenta de MA)")
+  else if (/directa a cta ma/.test(A)) { poner("CTA MA", "MA", "gastos de MA pagados por MSA"); m.porque.push("🔗 vincular a la factura de Penino a MA del 23/04 ($ 1.000.000); NO pasa por caja") }
+  else if (/^no llevar[ií]a nada en contable\. pero/.test(A)) vacio("sueldo doméstico (va al template de PAM o MA, no a Libertad)")
+  else if (/ya no estar[ií]a en lib/.test(A)) vacio("ACA: gasto propio de PAM / MA (si lo pagara otro, sería retiro)")
+  else if (/^(no llevar[ií]a nada|nada|no llevar[ií]a nada)$|poner guion o dejar vac|pensaba que el guion/i.test(A)) vacio(m.lote.replace(/^— (No lleva código · )?/, "") || "no lleva")
+  else if (m.lote.startsWith("? A decidir · algo raro")) { poner("CTA MSA", "MSA", "gastos de MSA pagados por MA"); m.porque.push("la base lo vincula a un pago de sueldo de Wilson Barreto (MSA); si el vínculo es un error, se corrige el vínculo") }
+  else if (m.lote.startsWith("? A decidir · elegir") && /^cta pam$/i.test(a)) poner("CTA PAM", "PAM", m.tipo || "gastos de PAM pagados por MSA")
+  // los guiones que quedaron: también vacío
+  if (m.codigo.startsWith("—")) vacio(m.lote.replace(/^— (No lleva código · )?/, ""))
+  // PAM → MA: todo es DIST MA (JMS 07/11, punto 1) — también lo que PAM pagó por cuenta de MA
+  if (m.titular === "PAM" && m.codigo === "CTA MA") poner("DIST MA", "MA", "distribución (pagos de PAM por cuenta de MA)")
+  if (antes !== m.codigo) m.porque.push(`acordado 07/11 (antes «${antes}»)${a ? `: «${a.slice(0, 80)}»` : ""}`)
+  if (!m.lote.startsWith("?")) m.duda = ""
+}
+
 // ── 5 · LAS DOS PUNTAS: una transferencia entre dos empresas que tienen cuentas en la app tiene que estar en las dos
 const usados = new Set<string>()
 for (const m of movs) {
   if (!m.codigo.startsWith("CTA") && !m.codigo.startsWith("DIST") || m.lote.startsWith("?")) continue
   const otro = m.empresa === m.titular ? m.socio : m.empresa
-  if (!/transferencias|distribución/.test(m.tipo)) { m.punta = "no tiene otra punta (pagó a un tercero)"; continue }
+  if (m.tipo !== "transferencias" && m.tipo !== "distribución") { m.punta = "no tiene otra punta (pagó a un tercero)"; continue }
   if (!CON_CUENTAS_EN_LA_APP.has(otro)) { m.punta = `la otra punta (${otro}) no tiene cuentas en la app`; continue }
   const imp = m.deb || m.cred
   const dias = (a: string, b: string) => Math.abs((Date.parse(a) - Date.parse(b)) / 86400000)
   const cands = (todosPorTitular.get(otro) ?? []).filter((x: any) => !usados.has(x.id) && x.usd === m.usd && dias(x.fecha, m.fecha) <= 3
     && (m.deb ? x.cred === imp && !x.deb : x.deb === imp && !x.cred))
   const x = cands.sort((a: any, b: any) => dias(a.fecha, m.fecha) - dias(b.fecha, m.fecha))[0]
-  if (!x) { m.punta = `${MAL} falta la otra punta en ${otro}`; continue }
+  if (!x) { m.punta = `${MAL} ALERTA: falta la otra punta en ${otro}`; continue }   // JMS 07/11: «las que no tienen contrapartida y deberían, deben marcar alerta»
   usados.add(x.id)
   const enProp = movs.find(y => y.id === x.id && y.tabla !== m.tabla)
   m.punta = `${OK} ${x.cuenta} ${dmy(x.fecha)}${enProp ? ` («${enProp.codigo}»)` : " — 🟡 ahí NO tiene código"}`
   // la misma plata lleva el MISMO tipo en las dos puntas: si una es distribución, la otra también (PAM → MA: «DIST MA» en las dos)
   if (enProp) for (const [a, b] of [[m, enProp], [enProp, m]] as const) if (a.codigo.startsWith("DIST") && b.codigo.startsWith("CTA")) {
-    b.codigo = a.codigo; b.tipo = "distribución"; b.lote = `${b.empresa} ↔ ${b.socio} · distribución`; b.porque.push(`la otra punta es «${a.codigo}»: misma plata, mismo código`)
+    b.codigo = `DIST ${b.titular === b.empresa ? b.socio : b.empresa}`; b.tipo = "distribución";   // el código nombra al otro: en la cuenta de MA, «DIST PAM" b.lote = `${b.empresa} ↔ ${b.socio} · distribución`; b.porque.push(`la otra punta es «${a.codigo}»: misma plata, mismo código`)
   }
   // se cuenta UNA vez: del lado de la empresa (la de más arriba); la otra punta queda como espejo
   if (enProp) { const yo = rango(m.titular) <= rango(enProp.titular); m.cuenta_aca = yo; enProp.cuenta_aca = !yo; if (!yo) m.punta += " · espejo: se cuenta en la otra punta" }
@@ -228,6 +263,7 @@ const ctrl: unknown[][] = [
   ["Lo que el sistema suma solo", "Sin marca, pero la base lo da a otra empresa (template, sueldo, factura) o es una transferencia al CUIT de alguien del grupo",
     `${nuevos.length} movimientos nuevos (lote según lo que son)`, nuevos.length ? OJO : OK],
   ["Tus respuestas", "Renglones de la solapa «Contable» del Excel anterior encontrados en la base", `${respuestasLeidas - respSinUsar} de ${respuestasLeidas}`, respSinUsar ? MAL : OK],
+  ["Tu revisión del v2", "Respuestas de «Propuesta … v2» encontradas por Id y aplicadas (con las reglas acordadas el 07/11)", `${aplicadasV2} de ${okV2.size}`, aplicadasV2 === okV2.size ? OK : MAL],
   ["Código propuesto", "Movimientos a los que no les pude proponer código", `${sinCodigo.length}`, sinCodigo.length ? MAL : OK],
   ["Las dos puntas", "Transferencias entre empresas con cuentas en la app (MSA, PAM, MA, Cotitulares): la otra punta, mismo importe, ±3 días",
     `${movs.filter(m => m.punta.startsWith(OK)).length} con su otra punta · ${faltaPunta.length} sin la otra punta · ${puntaSinCodigo.length} con la otra punta SIN código`, faltaPunta.length ? MAL : puntaSinCodigo.length ? OJO : OK],
@@ -252,7 +288,7 @@ const propuesta = hojaResumenPorMes(movs.map(m => ({ categoria: m.lote || "(sin 
   columnas: [dmy(m.fecha), m.empresa ? `${m.empresa} ↔ ${m.socio}` : "", m.cuenta, m.titular, m.codigo, m.desc, m.detalle, m.contra, m.categ, m.vinculo, m.viejo || "(vacío)", m.resp,
     m.tipo, m.porque.join(" · "), m.punta, m.cuenta_aca ? "sí" : "no (espejo)", m.duda, "", `${m.tabla}:${m.id}`] })), {
   titulo: `PROPUESTA DE CÓDIGOS CONTABLE — ejercicio 25/26 (${movs.length} movimientos, por LOTE)`,
-  notas: ["Cada LOTE junta cosas que se tratan igual: «MSA ↔ MA · transferencias», «MSA ↔ MA · gastos de MA pagados por MSA», «— No lleva código · …», «? A decidir · …». Filtrá por «CÓDIGO PROPUESTO» o por «Entre» para ver una cuenta entera.",
+  notas: ["Cada LOTE junta cosas que se tratan igual: «MSA ↔ MA · transferencias», «MSA ↔ MA · gastos de MA pagados por MSA», «(vacío) · …» (en la base queda VACÍO: el texto después del punto es sólo para entender por qué), «FLIA», «X», «? A decidir · …». Filtrá por «CÓDIGO PROPUESTO» o por «Entre» para ver una cuenta entera.",
     "CÓDIGO = CTA + quién (con quién es la cuenta). Quién retira de quién = el código + la empresa de la cuenta. Retiro o aporte = el signo. El motivo = el template / sueldo / factura (no hace falta RET 1/3/i).",
     "Respondé en «Tu OK / corrección» sólo lo que no va. No se cambió nada en la base: al aplicar, se escribe el código con un script y su deshacer, con tu OK."],
   meses, encabezadoDetalle: ENC.filter(x => !["Moneda", "Débito", "Crédito"].includes(x)), semestres: true, porMoneda: true, debeHaber: true, importeEn: 4 })
@@ -262,11 +298,11 @@ const cuentan = movs.filter(m => m.empresa && m.cuenta_aca && (m.codigo.startsWi
 const cuentas = hojaResumenPorMes(cuentan.map(m => {
   const signo = m.titular === m.empresa ? 1 : -1   // en la cuenta de la empresa, débito = el socio retiró; en la del socio, crédito = retiró
   return { categoria: `${m.empresa} ↔ ${m.socio}${m.codigo.startsWith("DIST") ? " · distribución" : ""}`, mes: m.mes, importe: r2(signo * (m.deb - m.cred)), moneda: (m.usd ? "USD" : "ARS") as "ARS" | "USD",
-    orden: `${m.empresa}${m.socio}|${m.fecha}`, columnas: [dmy(m.fecha), m.cuenta, m.desc, m.codigo, m.tipo, m.motivo, m.punta] } }), {
+    orden: `${m.empresa}${m.socio}|${m.fecha}`, columnas: [m.punta.startsWith(MAL) ? "⚠️ ALERTA" : "", dmy(m.fecha), m.cuenta, m.desc, m.codigo, m.tipo, m.motivo, m.punta] } }), {
   titulo: "CUENTAS — lo que da el esquema: + = el socio RETIRÓ de la empresa · − = APORTÓ (cada transferencia contada una sola vez)",
-  notas: ["Así se vería el reporte con los códigos nuevos. El motivo (transferencia, Red Vial, municipalidad…) sale de la columna «Motivo».",
+  notas: [`⚠️ ALERTAS: ${movs.filter(m => m.punta.startsWith(MAL)).length} transferencia(s) sin la otra punta — filtrá «Alerta» (JMS 07/11: deben marcar alerta).`, "Así se vería el reporte con los códigos nuevos. El motivo (transferencia, Red Vial, municipalidad…) sale de la columna «Motivo».",
     "Falta sumar lo que la empresa le debe (sueldo, facturas): eso está en las cuentas MSA-MA y MSA-PAM. Libertad va aparte."],
-  meses, encabezadoDetalle: ["Fecha", "Cuenta", "Descripción", "Código", "Qué es", "Motivo", "Otra punta"], rotuloImporte: "Importe (+ retiró / − aportó)", semestres: true, porMoneda: true })
+  meses, encabezadoDetalle: ["Alerta", "Fecha", "Cuenta", "Descripción", "Código", "Qué es", "Motivo", "Otra punta"], rotuloImporte: "Importe (+ retiró / − aportó)", semestres: true, porMoneda: true })
 
 if (!existsSync(CARPETA)) mkdirSync(CARPETA, { recursive: true })
 const nombre = (b: string) => { let p = join(CARPETA, `${b}.xlsx`), v = 2; while (existsSync(p)) p = join(CARPETA, `${b} v${v++}.xlsx`); return p }
