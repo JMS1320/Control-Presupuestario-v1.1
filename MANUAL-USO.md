@@ -4042,6 +4042,8 @@ la cuenta llega a todos los extractos: bancos, las tres tarjetas, las cajas y lo
 
 ## 🧾 Papeles de balance → CUENTAS CORRIENTES *(2026-10-01)*
 
+🔍 **Nuevo 07/11 — el H PARA AUDITAR:** el set trae además «H para auditar (no va al contador)»: el mismo libro H con los retiros adentro y, en cada solapa, cuatro columnas por cuota después de Débito y Crédito: **Quién pagó** (empresa y cuenta), **Código contable**, **Efecto** («retiro de MA pagado por MSA», «distribución de PAM a MA») y **Marca** (✓ · 🔴 sin pagar · 🟡 pagada sin banco · ⚪ en $ 0 · ⚠️ código distinto al esperado). Filtrá la columna Marca para auditar. → A-TEST-1352
+
 ⚠️ **Cambió 04/11 — el libro H, para mandar:** se llama **«Egresos con boleta, extracto y demás liquidaciones»** y no usa la
 palabra «template» (la lista es «Egresos», la columna es «Concepto»). Sin subtítulos. En cada agrupadora, el resumen va **por
 categoría y banco** y el detalle **por banco y por fecha**; lo que no se pagó queda al final como «sin pago». **Automotores** es una
