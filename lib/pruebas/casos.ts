@@ -38,6 +38,7 @@ import { separarPorCuentaCorriente } from "@/lib/proveedores/opera-cuenta-corrie
 import { operacionesEnDolares, comprasVentasDeDolares } from "@/lib/balance/operaciones-en-dolares"
 import { armarGruposTemplates, armarHojaGrupo, nombreSolapaGrupo, hojaGrupo, gruposDelResponsable } from "@/lib/balance/grupos-templates"
 import { indiceDeDestinos, sinCategoriaNiVinculo, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
+import { auditarCuota } from "@/lib/balance/auditoria-templates"
 import { solapasPapelesH } from "@/lib/balance/papeles-impuestos-h"
 import { hojaLibertad } from "@/lib/balance/libertad"
 import { fechasReales, serieDeFecha } from "@/lib/excel/fechas-reales"
@@ -13490,6 +13491,38 @@ export function correrCasos(): Resultado[] {
     ].join(" · ")
     chequear("PDFs de ventas", "📎 Pedro Genta con 2 versiones → elige el usuario; un archivo con cliente y fecha → se propone; a 20 días → no; diciembre en la carpeta de enero es del año anterior; un PDF ya vinculado no se repite; el nombre del zip sin caracteres prohibidos; carpetas del subdiario, de la fecha y del mes siguiente",
       e, v, v === e, "A-FEAT-1578")
+  }
+
+  // ══ 🔍 Libro H para auditar: quién pagó, efecto y marca de cada cuota (A-FEAT-1579) ══
+  {
+    const q = (concepto: string, responsable: string, fecha: string, estado: string, monto: number, banco?: Record<string, unknown>) =>
+      ({ id: concepto, fecha, concepto, proveedor: "", categ: "X", cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable, estado, monto, banco }) as never
+    const b = (titular: string, cuenta: string, contable = "", motivo: string | null = null) => ({ cuenta, titular, contable, comprobante: "", respaldo: 1, motivo })
+    const casos = [
+      q("Seguro Chalet", "MA", "2025-09-01", "conciliado", 100, b("MSA", "Galicia MSA", "CTA MA")),              // retiro de MA pagado por MSA, código ok
+      q("Expensas Posadas", "PAM", "2026-02-10", "conciliado", 100, b("MSA", "Galicia MSA", "CTA PAM")),        // bien de MA desde 2026 → espera CTA MA
+      q("Expensas Posadas", "PAM", "2026-01-10", "conciliado", 100, b("PAM", "Galicia PAM", "DIST MA")),        // PAM paga un bien de MA → distribución
+      q("Luz oficina", "MSA", "2025-10-01", "conciliado", 100, b("MSA", "Galicia MSA")),                        // lo pagó el dueño: sin efecto
+      q("ABL", "MSA", "2025-10-01", "pendiente", 100),                                                          // sin pagar
+      q("Seguro X", "MSA", "2025-10-01", "pagado", 100, { cuenta: "", comprobante: "", respaldo: null, motivo: null }), // pagada sin movimiento
+      q("Luz Libertad", "PAM", "2025-10-01", "conciliado", 100, b("MSA", "Galicia MSA", "LIB")),               // Libertad: reparto propio
+      q("Retiro MA mensual", "MSA", "2025-10-01", "conciliado", 100, b("MSA", "Galicia MSA", "CTA MA")),      // el template ES el retiro: lo dice el código, sin aviso
+      q("Retiro MA mensual PAM", "PAM", "2025-10-01", "conciliado", 100, b("PAM", "Galicia PAM", "DIST MA")),
+    ].map(c => auditarCuota(c))
+    const v = casos.map(a => `${a.efecto || "—"} | ${a.marca}`).join(" ‖ ")
+    const e = [
+      "retiro de MA pagado por MSA | ✓",
+      "retiro de MA pagado por MSA | ✓ · ⚠️ código esperado: CTA MA",
+      "distribución de PAM a MA | ✓",
+      "— | ✓",
+      "— | 🔴 SIN PAGAR",
+      "— | 🟡 marcada pagada, sin movimiento en el banco",
+      "Libertad (LIB): reparto propio | ✓",
+      "retiro de MA pagado por MSA | ✓",
+      "distribución de PAM a MA | ✓",
+    ].join(" ‖ ")
+    chequear("Libro H para auditar", "🔍 Cada cuota dice quién pagó y qué efecto tiene: MSA por un socio = retiro, PAM por un bien de MA = distribución, el dueño = nada; avisa si el código no es el esperado; marca las sin pagar y las pagadas sin banco; Libertad aparte",
+      e, v, v === e, "A-FEAT-1579")
   }
 
   return r

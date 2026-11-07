@@ -3364,6 +3364,13 @@ export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>
     const datos = await aplicarVistas(XLSX.write(l.wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, l.vistas)
     zip.file(`${base} - ${LIBROS[l.letra]}.xlsx`, datos)
   }
+  // 🔍 A-FEAT-1579: el H PARA AUDITAR, aparte (no va al contador): misma base, con quién pagó, código, efecto y marca por cuota.
+  if (templates) {
+    const wbA = XLSX.utils.book_new()
+    agregarLibroH(wbA, templates, libro.ejercicio.etiqueta, meses, papeles, { auditoria: true })
+    fechasReales(wbA)
+    zip.file(`${base} - H para auditar (no va al contador).xlsx`, await aplicarVistas(XLSX.write(wbA, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(wbA)))
+  }
   const blob = await zip.generateAsync({ type: "blob" })
   const url = URL.createObjectURL(blob)
   const el = document.createElement("a")
@@ -3396,7 +3403,13 @@ export function agregarLibroG(wb: XLSX.WorkBook, cuotas: CuotaTemplate[], etique
  */
 export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercicio, etiqueta: string, meses: { clave: string; rotulo: string }[] = [],
   /** 🏛️ A-FEAT-1516: las cuotas de impuestos y sus auxiliares, para el papel de inmobiliario / Red Vial / automotores. */
-  papeles?: DatosPapelesH | null): void {
+  papeles?: DatosPapelesH | null,
+  /**
+   * 🔍 A-FEAT-1579 (JMS 07/11): el H PARA AUDITAR — la misma base, con los retiros adentro (no van al libro I), cada cuota con
+   * Quién pagó · Código contable · Efecto · Marca, y sin el pulido para el contador. El H del contador no cambia.
+   */
+  opcion: { auditoria?: boolean } = {}): void {
+  const aud = !!opcion.auditoria
   for (const resp of ["MSA", "MA", "PAM"]) {
     const tTodo = templatesDeResponsable(templates, resp)
     if (!tTodo) continue
@@ -3404,7 +3417,7 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
      * 👥 JMS 05/11: *«yo quiero entregar parte, pero nada de retiros»* → las DISTRIBUCIONES (retiros y aportes de socios) salen
      * del libro H al libro I (socios), con su «Por mes» y sus solapas de agrupadora. El H queda con egresos y financiero.
      */
-    const idsDist = new Set(tTodo.detalle.filter(c => c.tipo === "distribucion").map(c => c.id))
+    const idsDist = new Set(aud ? [] : tTodo.detalle.filter(c => c.tipo === "distribucion").map(c => c.id))
     const rearmar = (quedan: (c: CuotaTemplate) => boolean) => tTodo.entrada
       ? armarTemplatesDelEjercicio(tTodo.entrada.cuotas.filter(quedan), tTodo.entrada.ej, tTodo.entrada.opciones) : tTodo
     const t = idsDist.size ? rearmar(c => !idsDist.has(c.id)) : tTodo
@@ -3424,7 +3437,7 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
       let nombre = nombreSolapaGrupo(g, "H"), n = 2
       while (usados.has(nombre)) nombre = `${nombreSolapaGrupo(g, "H").slice(0, 28)} ${n++}`
       usados.add(nombre)
-      return { g, nombre, ...armarHojaGrupo(g, etiqueta, meses, { hojaPorMes, tablasSinLeer, extracto: t.entrada?.opciones.extracto }) }
+      return { g, nombre, ...armarHojaGrupo(g, etiqueta, meses, { hojaPorMes, tablasSinLeer, extracto: t.entrada?.opciones.extracto, auditoria: aud }) }
     })
     hoja(wb, `H · ${resp} · Templates`, hojaListadoTemplates(t, resp, etiqueta), COLS_LISTADO_TEMPLATES)
     hoja(wb, `H · ${resp} · Cuotas`, hojaDeTemplates(t), COLS_TEMPLATES)
@@ -3456,8 +3469,8 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
   // 🏢 A-FEAT-1521: Libertad cruza responsables (PAM hasta dic-25, MA desde ene-26, siempre con MSA): una sola solapa al final.
   // 👥 JMS 04/11: Libertad va al libro I (próximo excel), con las cuentas de los socios.
   hoja(wb, "Gastos Libertad", hojaLibertad(templates.detalle, etiqueta, meses, templates.entrada?.opciones.extracto), COLS_RESUMEN_MES)
-  // 📗 A-FEAT-1539: el libro para mandar — sin la palabra «template» (no es contable) y sin subtítulos.
-  pulirLibroH(wb)
+  // 📗 A-FEAT-1539: el libro para mandar — sin la palabra «template» (no es contable) y sin subtítulos. El de auditar no se pule.
+  if (!aud) pulirLibroH(wb)
 }
 
 /** ✍️ A-FEAT-1539: lo que va por la cuenta de un socio, al pie de «Por mes» (no es gasto, pero se ve). */

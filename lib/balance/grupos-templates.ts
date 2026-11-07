@@ -12,6 +12,7 @@ import type { CuotaTemplate, ExtractoParaH } from "./templates-libro"
 import type { MovimientoExtractoH } from "./movimientos-de-cuotas"
 import { armarResumenPorMes, hojaResumenPorMes } from "./resumen-por-mes"
 import { MOTIVO_EN_CERO } from "./movimientos-de-cuotas"
+import { auditarCuota } from "./auditoria-templates"
 
 /** Lo que NO se arma como grupo: lo financiero (no es gasto) y lo bancario (ya está en el libro C). */
 export const AGRUPADORAS_FUERA = new Set(["inversiones", "movimientos internos empresa", "tarjetas", "créditos bancarios", "creditos bancarios",
@@ -79,6 +80,8 @@ export interface OpcionesHojaGrupo {
   tablasSinLeer?: string[]
   /** 🔎 A-FEAT-1518: el extracto del ejercicio, para el control 4 (desde el extracto). Sin esto, el control no se hace y se dice. */
   extracto?: ExtractoParaH
+  /** 🔍 A-FEAT-1579: el H PARA AUDITAR — cada cuota suma Quién pagó · Código contable · Efecto · Marca (después de Débito y Crédito). */
+  auditoria?: boolean
 }
 
 /** Las columnas de «Por mes» (ver `hojaTemplatesPorMes`): B = agrupadora, C = categoría, P = TOTAL (12 meses desde la D). */
@@ -114,11 +117,13 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
     categoria: `${c.categ || "(sin categoría)"} — ${bancoDe(c) || "sin pago"}`, mes: (c.fecha ?? "").slice(0, 7), importe: c.monto,
     orden: `${bancoDe(c) ? "0" + bancoDe(c) : "1"}|${c.fecha ?? ""}|${c.concepto}`,
     columnas: [dmy(c.fecha), c.concepto, bancoDe(c) || "sin pago", c.banco?.comprobante ?? "",
-      c.proveedor || c.banco?.cuenta || "", c.detalle ?? "", c.estado],
+      c.proveedor || c.banco?.cuenta || "", c.detalle ?? "", c.estado,
+      ...(opciones.auditoria ? (a => [a.quienPago, a.codigo, a.efecto, a.marca])(auditarCuota(c)) : [])],
   })), {
     titulo: `${g.agrupadora.toUpperCase()} — ${g.responsable} — ejercicio ${etiqueta}`,
-    meses, encabezadoDetalle: ["Fecha", "Concepto", "Banco / cuenta", "Comprobante", "Proveedor", "Detalle", "Estado"],
-    debeHaber: true,
+    meses, encabezadoDetalle: ["Fecha", "Concepto", "Banco / cuenta", "Comprobante", "Proveedor", "Detalle", "Estado",
+      ...(opciones.auditoria ? ["Quién pagó", "Código contable", "Efecto", "Marca"] : [])],
+    debeHaber: true, ...(opciones.auditoria ? { importeEn: 7 } : {}),
   })
   if (!u.celdaTotal || !u.colDebito || !u.colCredito) return { filas: h, celdaTotal: u.celdaTotal }
 
