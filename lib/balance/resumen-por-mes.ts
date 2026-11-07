@@ -54,6 +54,11 @@ export interface OpcionesResumen {
    * **total** — con fórmulas; el Nro y la categoría se corren a D y E. El detalle de abajo no se mueve. También al bloque extra.
    */
   semestres?: boolean
+  /**
+   * 📍 JMS 06/11 (Excel de marcas contable/interno): *«preciso los montos débito y crédito entre empresa de la cuenta y descripción del
+   * banco»*. Índice dentro de `encabezadoDetalle` ANTES del cual van Moneda e Importe (o Débito y Crédito). Sin esto, al final, como siempre.
+   */
+  importeEn?: number
 }
 
 /** Lo que necesita un bloque extra para apuntarle al resumen y al detalle con fórmulas. Filas en base 1. */
@@ -115,10 +120,14 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
   const det1 = filaEncDetalle + 1, detN = filaEncDetalle + items.length + 1
   // Columnas del detalle: A Nro · B Mes · C… las propias · después Moneda (si hay) · Importe
   const nCols = o.encabezadoDetalle.length
-  const colMoneda = o.porMoneda ? col(2 + nCols) : null
-  const colImporte = col(2 + nCols + (o.porMoneda ? 1 : 0))
+  // 📍 dónde van Moneda e Importe dentro del detalle (por default, al final); `kImp` = cuántas columnas ocupan
+  const pos = Math.max(0, Math.min(o.importeEn ?? nCols, nCols))
+  const kImp = (o.porMoneda ? 1 : 0) + (o.debeHaber ? 2 : 1)
+  const colDet = (i: number) => col(2 + i + (i >= pos ? kImp : 0))
+  const colMoneda = o.porMoneda ? col(2 + pos) : null
+  const colImporte = col(2 + pos + (o.porMoneda ? 1 : 0))
   // Con débito y crédito: débito en la columna del importe, crédito en la siguiente.
-  const colCredito = o.debeHaber ? col(2 + nCols + (o.porMoneda ? 1 : 0) + 1) : null
+  const colCredito = o.debeHaber ? col(2 + pos + (o.porMoneda ? 1 : 0) + 1) : null
   const rng = (c: string) => `$${c}$${det1}:$${c}$${detN}`
   /** El neto de un criterio: SUMAR.SI del importe, o del débito menos el del crédito. */
   const suma = (crit: string) => colCredito
@@ -177,7 +186,7 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
     const fila0 = h.length + 1
     const b = o.bloqueExtra.armar({
       fila: fila0, filaTotal, colMes: (j: number) => cM(j), colTotal: cM(nM),
-      rng, colDebito: colImporte, colCredito, colDetalle: (i: number) => col(2 + i),
+      rng, colDebito: colImporte, colCredito, colDetalle: colDet,
     })
     for (let k = 0; k < o.bloqueExtra.alto; k++) {
       const r = (b[k] ?? []) as unknown[]
@@ -193,16 +202,16 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
   // 🟨 ⚠️ cambió 02/11: el renglón amarillo «Nro a ver» se sacó (JMS: «pensé que era algo súper sencillo, no te líes con esto»).
   // Excel no filtra desde una celda sin macro; para ver un Nro está el filtro de la columna Nro, que ya viene puesto.
   h.push(["DETALLE — filtrá por «Nro» para ver qué forma cada línea del resumen"])
-  h.push(["Nro", "Mes", ...o.encabezadoDetalle, ...(o.porMoneda ? ["Moneda"] : []),
-    ...(o.debeHaber ? ["Débito", "Crédito"] : [o.rotuloImporte ?? "Importe"])])
+  const encImp = [...(o.porMoneda ? ["Moneda"] : []), ...(o.debeHaber ? ["Débito", "Crédito"] : [o.rotuloImporte ?? "Importe"])]
+  h.push(["Nro", "Mes", ...o.encabezadoDetalle.slice(0, pos), ...encImp, ...o.encabezadoDetalle.slice(pos)])
   const conOrden = items.some(i => i.orden !== undefined)
   const orden = [...items].sort((a, b) => conOrden
     ? (a.orden ?? "").localeCompare(b.orden ?? "")
     : (nro.get(a.categoria || "(sin categoría)")! - nro.get(b.categoria || "(sin categoría)")!) || a.mes.localeCompare(b.mes))
   for (const i of orden) {
     const imp = r2(i.importe)
-    h.push([nro.get(i.categoria || "(sin categoría)"), i.mes, ...i.columnas, ...(o.porMoneda ? [i.moneda ?? ""] : []),
-      ...(o.debeHaber ? [imp > 0 ? imp : "", imp < 0 ? -imp : ""] : [imp])])
+    const celdasImp = [...(o.porMoneda ? [i.moneda ?? ""] : []), ...(o.debeHaber ? [imp > 0 ? imp : "", imp < 0 ? -imp : ""] : [imp])]
+    h.push([nro.get(i.categoria || "(sin categoría)"), i.mes, ...i.columnas.slice(0, pos), ...celdasImp, ...i.columnas.slice(pos)])
   }
   if (!items.length) h.push(["", "", "(no hay movimientos en el ejercicio)"])
   else {
@@ -213,13 +222,13 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
      */
     const ultima = filaEncDetalle + items.length
     const sub = (c: string, v: number) => ({ t: "n", f: `SUBTOTAL(9,${c}${det1}:${c}${ultima})`, v: r2(v), z: MONEDA })
-    const fila: unknown[] = Array.from({ length: 2 + nCols + (o.porMoneda ? 1 : 0) }, () => "")
-    fila[1 + nCols] = o.porMoneda ? "Subtotal de lo filtrado (filtrá una moneda: no mezcla)" : "Subtotal de lo filtrado"
+    const fila: unknown[] = Array.from({ length: 2 + pos + (o.porMoneda ? 1 : 0) }, () => "")
+    fila[1 + pos] = o.porMoneda ? "Subtotal de lo filtrado (filtrá una moneda: no mezcla)" : "Subtotal de lo filtrado"
     const deb = items.reduce((t, i) => t + Math.max(r2(i.importe), 0), 0), cre = items.reduce((t, i) => t + Math.max(-r2(i.importe), 0), 0)
     if (colCredito) fila.push(sub(colImporte, deb), sub(colCredito, cre), { t: "n", f: `${colImporte}${ultima + 1}-${colCredito}${ultima + 1}`, v: r2(deb - cre), z: MONEDA }, "← neto")
     else fila.push(sub(colImporte, deb - cre))
     h.push(fila)
-    filtrarEn(h, `A${filaEncDetalle}:${colCredito ?? colImporte}${ultima}`)
+    filtrarEn(h, `A${filaEncDetalle}:${col(2 + nCols + kImp - 1)}${ultima}`)
   }
   return {
     filas: h,
@@ -228,7 +237,7 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
       colImporte: o.debeHaber ? null : colImporte,
       colDebito: o.debeHaber ? colImporte : null,
       colCredito,
-      colDetalle: (i: number) => col(2 + i),
+      colDetalle: colDet,
     },
   }
 }

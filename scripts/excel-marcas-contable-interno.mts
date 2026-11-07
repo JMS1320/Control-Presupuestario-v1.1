@@ -230,7 +230,7 @@ function solapa(col: "contable" | "interno") {
       : "INTERNO = de quién es el gasto puertas adentro. La propuesta de CONTABLE está en la otra solapa.",
       "Cada renglón del resumen es un GRUPO PROPUESTO; filtrá el detalle por su Nro para barrerlo entero. Respondé en «Tu respuesta» sólo lo que no va como propongo.",
       "Débito = salió plata · crédito = entró. Pesos y dólares van en bloques separados. «La base se lo da a» = template, factura o sueldo de otra empresa."],
-    meses, encabezadoDetalle: ENC(col === "contable" ? "Contable" : "Interno"), semestres: true, porMoneda: true, debeHaber: true }) }
+    meses, encabezadoDetalle: ENC(col === "contable" ? "Contable" : "Interno"), semestres: true, porMoneda: true, debeHaber: true, importeEn: 3 }) }   // débito y crédito entre «Empresa de la cuenta» y «Descripción del banco» (JMS 06/11)
 }
 const sC = solapa("contable"), sI = solapa("interno")
 

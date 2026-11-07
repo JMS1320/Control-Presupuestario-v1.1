@@ -13180,6 +13180,19 @@ export function correrCasos(): Resultado[] {
       e, v, v === e, "A-FEAT-1515")
   }
 
+  // ══ 📍 El débito y el crédito pueden ir EN EL MEDIO del detalle (JMS 06/11: «entre empresa de la cuenta y descripción del banco») ══
+  {
+    const it = (cat: string, mes: string, imp: number) => ({ categoria: cat, mes, importe: imp, columnas: ["x", "y"] })
+    const h = hojaResumenPorMes([it("A", "2025-07", 10), it("A", "2025-08", -4)], { titulo: "T", meses: [{ clave: "2025-07", rotulo: "jul-25" }, { clave: "2025-08", rotulo: "ago-25" }],
+      encabezadoDetalle: ["X", "Y"], debeHaber: true, importeEn: 1 })
+    const enc = h.findIndex(r => (r as any[])[0] === "Nro" && (r as any[]).includes("Débito"))
+    const filaA = h.find(r => (r as any[])[1] === "A") as any[]
+    const v = `${(h[enc] as any[]).join(",")} · ${(h[enc + 1] as any[]).join(",")} · ${(h[enc + 2] as any[]).join(",")} · ${filaA[2].f} · filtro ${filtroDe(h)}`
+    const e = `Nro,Mes,X,Débito,Crédito,Y · 1,2025-07,x,10,,y · 1,2025-08,x,,4,y · SUMIFS($D$${enc + 2}:$D$${enc + 4},$A$${enc + 2}:$A$${enc + 4},$A${h.indexOf(filaA) + 1},$B$${enc + 2}:$B$${enc + 4},"2025-07")-SUMIFS($E$${enc + 2}:$E$${enc + 4},$A$${enc + 2}:$A$${enc + 4},$A${h.indexOf(filaA) + 1},$B$${enc + 2}:$B$${enc + 4},"2025-07") · filtro A${enc + 1}:F${enc + 3}`
+    chequear("Libro H", "📍 Débito y crédito en el medio del detalle (importeEn): encabezado, filas, fórmulas del resumen y filtro apuntan a las columnas corridas",
+      e, v, v === e, "A-FEAT-1577")
+  }
+
   // ══ 🔎 Libro H — control 4 · desde el extracto: a qué quedó atado cada movimiento de las cuentas del responsable (A-FEAT-1518) ══
   {
     const q = (id: string, resp: string, ag: string, concepto: string) => ({ id, fecha: "2025-09-10", concepto, proveedor: "ARBA", categ: "Impuesto Inmobiliario", cuenta_contable: "",
