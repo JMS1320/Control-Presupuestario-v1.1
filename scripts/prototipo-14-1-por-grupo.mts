@@ -4,6 +4,8 @@
  *
  *     npx tsx scripts/prototipo-14-1-por-grupo.mts
  *
+ * Solapas: 14.1 por grupo · Facturas a nombre de PAM · Quién pagó (resumen y detalle, de scripts/quien-pago-cada-cuota.mts).
+ *
  * El GRUPO de cada movimiento (columna a la derecha, igual en todo el grupo; sin subtítulos por grupo — JMS):
  *   1. vinculado a un pago de Sueldos → «Sueldos» · 2. con template → su agrupadora (o el template) · 3. si no, su CATEG · 4. si no, «Otros».
  * Dentro de cada cuenta: por grupo y, dentro del grupo, por fecha. Las cuentas siguen con su subtítulo y subtotal (eso ya estaba acordado).
@@ -18,6 +20,7 @@ import { armarCuentasCorrientes, movimientosDeLosSocios, consumosDeTarjetaComoMo
 import { agregarHoja } from "../lib/balance/export-libro-diario"
 import { TABLAS_CON_VINCULO_ARCA } from "../lib/conciliacion/tablas-con-vinculo-arca"
 import { fechasReales } from "../lib/excel/fechas-reales"
+import { armarQuienPagoCadaCuota, SOLAPA_RESUMEN, SOLAPA_DETALLE, ANCHOS_RESUMEN, ANCHOS_DETALLE } from "./quien-pago-cada-cuota.mts"
 
 const env = Object.fromEntries(readFileSync(".env.local", "utf8").split(/\r?\n/).filter(l => l.includes("=") && !l.trim().startsWith("#")).map(l => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, "")] }))
 const sb: any = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
@@ -187,6 +190,10 @@ const wb = XLSX.utils.book_new()
 agregarHoja(wb, "14.1 prototipo por grupo", f, [{ ancho: 24 }, { ancho: 12 }, { ancho: 22 }, { ancho: 16, z: '#,##0.00;(#,##0.00);"-"' }, { ancho: 16, z: '#,##0.00;(#,##0.00);"-"' },
   { ancho: 18, z: '#,##0.00;(#,##0.00);"-"' }, { ancho: 34 }, { ancho: 60 }, { ancho: 26 }] as any)
 agregarHoja(wb, "Facturas a nombre de PAM", hojaFact, [{ ancho: 12 }, { ancho: 18 }, { ancho: 34 }, { ancho: 14 }, { ancho: 16, z: '#,##0.00;(#,##0.00);"-"' }, { ancho: 30 }, { ancho: 12 }, { ancho: 20 }, { ancho: 12 }, { ancho: 16, z: '#,##0.00;(#,##0.00);"-"' }, { ancho: 16 }, { ancho: 22 }] as any)
+// 👥 JMS 07/11: «juntámelos en un solo Excel con lo anterior» — quién pagó cada cuota de los templates pagados por retiro (A-FEAT-1577 punto 13)
+const quienPago = await armarQuienPagoCadaCuota(sb)
+agregarHoja(wb, SOLAPA_RESUMEN, quienPago.resumen, ANCHOS_RESUMEN as any)
+agregarHoja(wb, SOLAPA_DETALLE, quienPago.detalle, ANCHOS_DETALLE as any)
 fechasReales(wb as any)
 let p = join(CARPETA, "Prototipo 14.1 por grupo (2026-11-07).xlsx"), v = 2
 while (existsSync(p)) p = join(CARPETA, `Prototipo 14.1 por grupo (2026-11-07) v${v++}.xlsx`)
