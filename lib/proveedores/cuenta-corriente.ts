@@ -42,6 +42,10 @@ export interface FacturaCC {
   total: number
   tipo: 'compra' | 'venta'
   descripcion?: string | null
+  /** 👥 A-FEAT-1577 (papel 14.1): de qué cuenta salió, su agrupadora o template, y si la otra punta está. Opcionales: sólo los usa el detalle por cuenta. */
+  cuenta?: string
+  grupo?: string
+  otraPunta?: string
 }
 
 export interface PagoCC {
@@ -51,6 +55,10 @@ export interface PagoCC {
   descripcion?: string | null
   detalle?: string | null
   comprobantes_pagados?: string | null
+  /** 👥 A-FEAT-1577 (papel 14.1): de qué cuenta salió, su agrupadora o template, y si la otra punta está. Opcionales: sólo los usa el detalle por cuenta. */
+  cuenta?: string
+  grupo?: string
+  otraPunta?: string
 }
 
 export interface AsientoCC {
@@ -65,6 +73,10 @@ export interface AsientoCC {
   saldo: number
   /** 🔴 `true` si es un pago que no dice contra qué comprobante fue. Es la señal a mirar. */
   sinReferencia?: boolean
+  /** 👥 A-FEAT-1577 (papel 14.1): de qué cuenta salió, su agrupadora o template, y si la otra punta está. Opcionales: sólo los usa el detalle por cuenta. */
+  cuenta?: string
+  grupo?: string
+  otraPunta?: string
 }
 
 export interface ResumenCC {
@@ -97,6 +109,7 @@ export function armarCuentaCorriente(facturas: FacturaCC[], pagos: PagoCC[]): Re
       concepto: [f.numero, f.descripcion].filter(Boolean).join(' · ') || (esCompra ? 'Compra' : 'Venta'),
       importe: esCompra ? Number(f.total) || 0 : -(Number(f.total) || 0),
       saldo: 0,
+      ...(f.cuenta ? { cuenta: f.cuenta } : {}), ...(f.grupo ? { grupo: f.grupo } : {}),
     })
   }
 
@@ -112,6 +125,7 @@ export function armarCuentaCorriente(facturas: FacturaCC[], pagos: PagoCC[]): Re
       importe: -(Number(p.monto) || 0),
       saldo: 0,
       ...(sinRef ? { sinReferencia: true } : {}),
+      ...(p.cuenta ? { cuenta: p.cuenta } : {}), ...(p.grupo ? { grupo: p.grupo } : {}), ...(p.otraPunta ? { otraPunta: p.otraPunta } : {}),
     })
   }
 

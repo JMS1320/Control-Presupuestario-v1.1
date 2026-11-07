@@ -202,7 +202,7 @@ import {
   armarSueldosDelEjercicio, brutoDesdePartes, type PeriodoDeSueldo, sueldosImpagosAlCierre,
 } from "@/lib/balance/sueldos-balance"
 import {
-  armarCuentasCorrientes, aplicarSaldosInicio, abrirDesglosar, consumosDeTarjetaComoMovimientos, DESTINO_PROPIO, normalizar, CONTRAPARTES_DEL_BALANCE,
+  armarCuentasCorrientes, aplicarSaldosInicio, abrirDesglosar, consumosDeTarjetaComoMovimientos, movimientosDeLosSocios, DESTINO_PROPIO, normalizar, CONTRAPARTES_DEL_BALANCE,
   sueldosPendientesComoCompras, aplicarCierresDecididos, separarSocios,
 } from "@/lib/balance/cuentas-corrientes"
 import { controlarCheque, chequeEnPapel08, chequeEnTemplates } from "@/lib/balance/control-cheque"
@@ -8514,6 +8514,35 @@ export function correrCasos(): Resultado[] {
       eN, vN, vN === eN, "A-FEAT-1577")
     const conPam = armarCuentasCorrientes([], [], [{ id: "p1", fecha: "2026-03-17", debitos: 4100000, contable: "CTA PAM" }, { id: "p2", fecha: "2026-03-20", creditos: 100000, contable: "cta pam" }])
     const vP = `PAM ${n2(conPam.cuentas.find(c => c.contraparte.clave === "PAM")?.saldoAlCierre ?? NaN)} · sin tratar ${conPam.sinTratar.length}`
+    // 👥 A-FEAT-1577 (JMS 07/11): la 14.1 junta TODO lo de MSA con el socio — también lo que el socio pagó por MSA desde sus cuentas —, la
+    //    transferencia que está en las dos puntas se cuenta una vez (la del socio no se lista, la de MSA dice si la otra está), y el detalle
+    //    es UNA tabla con un subtítulo por cuenta y Debe / Haber.
+    {
+      const MA_CUIT = "27066824611"
+      const msaMovs = [
+        { id: "t1", fecha: "2026-03-01", debitos: 1000, contable: "CTA MA", cuit: MA_CUIT, descripcion: "Transf a MA" },
+        { id: "t2", fecha: "2026-03-10", debitos: 500, contable: "CTA MA", cuit: MA_CUIT, descripcion: "Transf a MA sin espejo" },
+        { id: "t3", fecha: "2026-03-15", debitos: 300, contable: "CTA MA", cuit: "30999999999", descripcion: "Pago a un tercero por MA" },
+      ]
+      const caMA = { clave: "MA", nombre: "MA caja de ahorro", movimientos: [
+        { id: "a1", fecha: "2026-03-02", creditos: 1000, contable: "CTA MSA" },                       // espejo de t1
+        { id: "a2", fecha: "2026-03-20", debitos: 100, contable: "CTA MSA", descripcion: "DirecTV" },   // MA pagó algo de MSA
+        { id: "a3", fecha: "2026-03-21", debitos: 50, contable: null, descripcion: "consumo propio" },
+      ] }
+      const ms = movimientosDeLosSocios(msaMovs.map(m => ({ ...m, cuenta: "MSA Galicia cta cte" })), [caMA])
+      const papelS = armarCuentasCorrientes([], [], [...ms.msa, ...ms.delSocio])
+      const ma = papelS.cuentas.find(c => c.contraparte.clave === "MA")!
+      const hojaS = hojaDeCuentasCorrientes(papelS, "2026-06-30")
+      const desde = hojaS.findIndex(r => String((r as unknown[])[0] ?? "").startsWith("DETALLE — Mercedes"))
+      const filas = hojaS.slice(desde).map(r => (r as unknown[]).map(x => String(x ?? "")))
+      const subt = filas.filter(r => r[0].startsWith("▸ ")).map(r => r[0].slice(2)).join(" | ")
+      const otra = ms.msa.map(m => `${m.id}:${m.otraPunta ?? "-"}`).join(" · ")
+      const cierre = filas.find(r => r[0].startsWith("SALDO AL CIERRE"))
+      const vS = `del socio ${ms.delSocio.map(m => m.id).join(",")} · ${otra} · MA ${n2(ma.saldoAlCierre)} · bloques ${subt} · cierre ${cierre?.[3]}/${cierre?.[4]}/${cierre?.[5]} ${cierre?.[6]?.startsWith("✓") ? "cuadra" : "NO"} · encabezado ${filas[2]?.slice(3, 5).join("/")}`
+      const eS = "del socio MA caja de ahorro:a2 · t1:✅ en MA caja de ahorro 02/03 · t2:🔴 falta en la cuenta de MA · t3:- · MA -1.700,00 · bloques MSA Galicia cta cte | MA caja de ahorro · cierre 1800/100/-1700 cuadra · encabezado Debe/Haber"
+      chequear("Cuentas corrientes", "👥 La 14.1 suma lo que el socio pagó por MSA desde su cuenta, no lista el espejo (dice si la otra punta está o falta) y el detalle es una tabla por cuenta con Debe / Haber que cierra",
+        eS, vS, vS === eS, "A-FEAT-1577")
+    }
     chequear("Cuentas corrientes", "🏷️ «CTA PAM» ya es la cuenta de PAM (antes quedaba sin tratar): retiro y aporte con su signo (el saldo es lo que MSA le debe: un retiro lo baja)",
       "PAM -4.000.000,00 · sin tratar 0", vP, vP === "PAM -4.000.000,00 · sin tratar 0", "A-FEAT-1577")
 

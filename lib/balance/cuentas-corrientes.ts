@@ -178,6 +178,15 @@ export interface MovimientoParaCC {
   cuit?: string | null
   /** El estado del movimiento: los sin marcar ni conciliar se cuentan aparte (falta encuadrarlos). */
   estado?: string | null
+  /** 👥 A-FEAT-1577: de qué cuenta salió («MSA Galicia cta cte», «MA caja de ahorro»…), su agrupadora o template, y si la otra punta está. */
+  cuenta?: string
+  grupo?: string
+  otraPunta?: string
+  /**
+   * 👥 A-FEAT-1577: `true` = el movimiento es de la cuenta DEL SOCIO (lo pagó él): para MSA el signo se invierte — si MA paga una
+   * factura de MSA desde su caja de ahorro, MSA le debe más.
+   */
+  delSocio?: boolean
 }
 
 export interface CuentaCorrienteDelBalance {
@@ -372,7 +381,7 @@ export function consumosDeTarjetaComoMovimientos(
       if (!etiquetas.has(normalizar(c.contable))) return
       out.push({ id: `tarjeta-${fecha}-${i}`, fecha, debitos: valores[i] > 0 ? valores[i] : 0, creditos: valores[i] < 0 ? -valores[i] : 0,
         descripcion: `Tarjeta: ${c.descripcion ?? ""}`.trim(), detalle: c.categ ?? null, contable: c.contable ?? null, estado: "conciliado",
-        comprobantes_pagados: `Por la tarjeta (pago del ${fecha})` })
+        comprobantes_pagados: `Por la tarjeta (pago del ${fecha})`, cuenta: "MSA VISA", grupo: c.categ ?? undefined })
     })
   }
   return out
@@ -461,6 +470,59 @@ export function abrirDesglosar(
   }
 }
 
+/** 👥 A-FEAT-1577: el bloque del detalle donde van las facturas, el sueldo y las retenciones (lo que no es de una cuenta de banco). */
+export const CUENTA_FACTURAS = "Facturas y sueldo"
+
+/** Una cuenta de un socio, con todos sus movimientos del ejercicio (para buscar la otra punta y lo que pagó por MSA). */
+export interface CuentaDelSocio {
+  /** La clave de la contraparte: «MA», «PAM». */
+  clave: string
+  /** Cómo se llama en el detalle: «MA caja de ahorro». */
+  nombre: string
+  movimientos: Array<MovimientoParaCC & { cuit?: string | null }>
+}
+
+/**
+ * 👥 A-FEAT-1577 (JMS 07/11: *«la 14.1 debería sintetizar todo… si MA paga fac de MSA desde cta de MA eso le afecta a MSA»* ·
+ * *«que aparezca si está o no la contraparte pero no hace falta listarlo»*).
+ *
+ * 1. Lo que el socio pagó POR MSA desde SUS cuentas (marcado «CTA MSA») entra a su cuenta corriente, con el signo de MSA (le debe más).
+ * 2. La misma plata en las dos puntas (MSA le transfiere a MA y figura en las dos) se cuenta UNA vez, del lado de MSA: la punta del socio
+ *    no se lista, y la de MSA dice si la otra está («✅ en MA caja de ahorro 10/11») o falta («🔴 falta en la cuenta de MA»).
+ * La otra punta: misma plata en sentido contrario, mismo importe, ±3 días. Sólo se exige en lo que va al CUIT del socio (una transferencia);
+ * un pago de MSA a un tercero por cuenta del socio no tiene otra punta.
+ */
+export function movimientosDeLosSocios(
+  movsMSA: MovimientoParaCC[],
+  cuentasSocios: CuentaDelSocio[],
+  contrapartes: ContraparteDelBalance[] = CONTRAPARTES_DEL_BALANCE,
+): { delSocio: MovimientoParaCC[]; msa: MovimientoParaCC[] } {
+  const porEtiqueta = new Map<string, ContraparteDelBalance>()
+  for (const c of contrapartes) for (const e of c.etiquetasContable) porEtiqueta.set(normalizar(e), c)
+  const dias = (a: string | null, b: string | null) => Math.abs((Date.parse(String(a).slice(0, 10)) - Date.parse(String(b).slice(0, 10))) / 86400000)
+  const neto = (m: MovimientoParaCC) => r2(Number(m.debitos ?? 0) - Number(m.creditos ?? 0))
+  const usados = new Set<string>()
+  const msa = movsMSA.map(m => {
+    const c = porEtiqueta.get(normalizar(m.contable))
+    const suyas = c ? cuentasSocios.filter(x => x.clave === c.clave) : []
+    if (!c || !suyas.length) return m
+    const imp = neto(m)
+    const otra = suyas.flatMap(x => x.movimientos.map(y => ({ x, y })))
+      .filter(({ y }) => !usados.has(y.id) && neto(y) === -imp && dias(y.fecha, m.fecha) <= 3)
+      .sort((a, b) => dias(a.y.fecha, m.fecha) - dias(b.y.fecha, m.fecha))[0]
+    if (otra) { usados.add(otra.y.id); return { ...m, otraPunta: `✅ en ${otra.x.nombre} ${String(otra.y.fecha).slice(8, 10)}/${String(otra.y.fecha).slice(5, 7)}` } }
+    const alSocio = String(m.cuit ?? "").replace(/\D/g, "") === c.cuit
+    return alSocio ? { ...m, otraPunta: `🔴 falta en la cuenta de ${c.clave}` } : m
+  })
+  const delSocio: MovimientoParaCC[] = []
+  for (const x of cuentasSocios) for (const y of x.movimientos) {
+    if (usados.has(y.id) || normalizar(y.contable) !== "CTA MSA") continue           // espejo, o no es algo de MSA
+    delSocio.push({ ...y, id: `${x.nombre}:${y.id}`, contable: (contrapartes.find(c => c.clave === x.clave)?.etiquetasContable[0]) ?? y.contable,
+      cuenta: x.nombre, delSocio: true })
+  }
+  return { delSocio, msa }
+}
+
 /**
  * 🧾 Arma el papel.
  *
@@ -506,6 +568,7 @@ export function armarCuentasCorrientes(
         id: v.id, fecha: v.fecha, numero: v.numero, total: Number(v.total) || 0, tipo: "venta",
       })
     }
+    for (const fa of facturas) fa.cuenta = CUENTA_FACTURAS
 
     // 🔁 A-FEAT-1499: la marca manda; una cuenta «por CUIT» suma además todo lo de su CUIT que no esté marcado para otra.
     const esDeEsta = (m: MovimientoParaCC) => {
@@ -523,18 +586,19 @@ export function armarCuentasCorrientes(
       }
     }
     const retenciones: PagoCC[] = ventas.filter(v => v.cuit === c.cuit && Number(v.retenciones) > 0).map(v => ({
-      id: `ret-${v.id}`, fecha: v.fecha, monto: -r2(Number(v.retenciones)),
+      id: `ret-${v.id}`, fecha: v.fecha, monto: -r2(Number(v.retenciones)), cuenta: CUENTA_FACTURAS,
       descripcion: `Retenciones sufridas · ${v.numero}`, comprobantes_pagados: v.numero,
     }))
     const pagos: PagoCC[] = suyos
       .map(m => ({
         id: m.id,
         fecha: m.fecha,
-        // 🔑 Un débito del banco es plata que SALE: es un pago a la contraparte.
-        monto: r2(Number(m.debitos ?? 0) - Number(m.creditos ?? 0)),
+        // 🔑 Un débito del banco es plata que SALE: es un pago a la contraparte. En la cuenta del SOCIO es al revés (lo pagó él por MSA).
+        monto: r2((m.delSocio ? -1 : 1) * (Number(m.debitos ?? 0) - Number(m.creditos ?? 0))),
         descripcion: m.descripcion ?? null,
         detalle: m.detalle ?? null,
         comprobantes_pagados: m.comprobantes_pagados ?? null,
+        ...(m.cuenta ? { cuenta: m.cuenta } : {}), ...(m.grupo ? { grupo: m.grupo } : {}), ...(m.otraPunta ? { otraPunta: m.otraPunta } : {}),
       }))
     pagos.push(...retenciones)
 

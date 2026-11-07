@@ -108,7 +108,7 @@ import {
   sueldosImpagosAlCierre, type PagoDeSueldo, type PeriodoConId,
 } from "@/lib/balance/sueldos-balance"
 import {
-  armarCuentasCorrientes, aplicarSaldosInicio, abrirDesglosar, consumosDeTarjetaComoMovimientos, CONTRAPARTES_DEL_BALANCE, aplicarCierresDecididos,
+  armarCuentasCorrientes, aplicarSaldosInicio, abrirDesglosar, consumosDeTarjetaComoMovimientos, movimientosDeLosSocios, type CuentaDelSocio, CONTRAPARTES_DEL_BALANCE, aplicarCierresDecididos,
   sueldosPendientesComoCompras, type SueldoParaCC,
   type PapelDeCuentasCorrientes, type ConsumoTarjeta,
   type CompraParaCC, type VentaParaCC, type MovimientoParaCC,
@@ -1095,7 +1095,7 @@ export function PapelesDeBalance() {
           const meses = mesesDelEjercicio(anioCierre, empresa.mesCierre)
           const [aaF2, mmF2] = meses[11].split("-").map(Number)
           const finEj = new Date(Date.UTC(aaF2, mmF2, 0)).toISOString().slice(0, 10)
-          const colsCC = "id, fecha, debitos, creditos, descripcion, detalle, contable, comprobantes_pagados, estado, cuit:leyendas_adicionales_2"
+          const colsCC = "id, fecha, debitos, creditos, descripcion, detalle, contable, comprobantes_pagados, estado, cuit:leyendas_adicionales_2, template_cuota_id"
           const leidoCC = await traerTodo((d, h) => supabase.from("msa_galicia")
             .select(colsCC, { count: "exact" })
             .gte("fecha", `${meses[0]}-01`).lte("fecha", finEj)
@@ -1151,8 +1151,59 @@ export function PapelesDeBalance() {
            */
           comprasCC.push(...sueldosPendientesComoCompras(periodosParaCC, meses))
 
-          let armadoCC = armarCuentasCorrientes(
-            comprasCC, ventasCC, [...(movsCC as unknown as MovimientoParaCC[]), ...porLaTarjeta])
+          /**
+           * 👥 A-FEAT-1577 (JMS 07/11: «la 14.1 debería sintetizar todo»): (1) cada movimiento de Galicia MSA con su agrupadora o template,
+           * para ordenar el detalle; (2) las cuentas de MA y PAM: lo que pagaron POR MSA («CTA MSA») entra a su cuenta, y la otra punta de cada
+           * transferencia se marca (sin listarla). Si algo falla, el papel sale como antes y avisa.
+           */
+          let movsConSocios = [...(movsCC as unknown as MovimientoParaCC[]).map(m => ({ ...m, cuenta: "MSA Galicia cta cte" })), ...porLaTarjeta]
+          let delSocio: MovimientoParaCC[] = []
+          try {
+            const idsTpl = [...new Set((movsCC as Array<{ template_cuota_id?: string | null }>).map(m => m.template_cuota_id).filter(Boolean))] as string[]
+            const grupoDe = new Map<string, string>()
+            for (let i = 0; i < idsTpl.length; i += 100) {
+              const lote = idsTpl.slice(i, i + 100)
+              const { data } = await supabase.from("cuotas_egresos_sin_factura")
+                .select("id, grupo_pago_id, egreso:egresos_sin_factura(nombre_referencia, cuenta_agrupadora)")
+                .or(`id.in.(${lote.join(",")}),grupo_pago_id.in.(${lote.join(",")})`)
+              for (const c of (data ?? []) as Array<{ id: string; grupo_pago_id: string | null; egreso: { nombre_referencia?: string | null; cuenta_agrupadora?: string | null } | null }>) {
+                const g = String(c.egreso?.cuenta_agrupadora || c.egreso?.nombre_referencia || "").trim()
+                if (!g) continue
+                grupoDe.set(c.id, g); if (c.grupo_pago_id && !grupoDe.has(c.grupo_pago_id)) grupoDe.set(c.grupo_pago_id, g)
+              }
+            }
+            movsConSocios = movsConSocios.map(m => {
+              const tc = (m as { template_cuota_id?: string | null }).template_cuota_id
+              return m.grupo ? m : { ...m, grupo: (tc && grupoDe.get(tc)) || (/^Factura|^FC/i.test(String(m.comprobantes_pagados ?? "")) ? "Facturas" : "Transferencias y otros (sin template)") }
+            })
+            const CUENTAS_SOCIOS: Array<{ clave: string; nombre: string; schema: string; tabla: string; tarjeta?: boolean }> = [
+              { clave: "MA", nombre: "MA caja de ahorro", schema: "ma", tabla: "ma_galicia" },
+              { clave: "MA", nombre: "MA VISA", schema: "ma", tabla: "tarjeta_visa", tarjeta: true },
+              { clave: "PAM", nombre: "PAM caja de ahorro", schema: "public", tabla: "pam_galicia" },
+              { clave: "PAM", nombre: "PAM cta cte", schema: "public", tabla: "pam_galicia_cc" },
+              { clave: "PAM", nombre: "PAM VISA", schema: "pam", tabla: "tarjeta_visa", tarjeta: true },
+            ]
+            const cuentasSocios: CuentaDelSocio[] = []
+            for (const x of CUENTAS_SOCIOS) {
+              const base = () => (x.schema === "public" ? supabase.from(x.tabla) : supabase.schema(x.schema).from(x.tabla))
+              const leido = await traerTodo((d, h) => {
+                let q = base().select("id, fecha, debitos, creditos, descripcion, detalle, contable, comprobantes_pagados, estado, categ", { count: "exact" })
+                  .gte("fecha", `${meses[0]}-01`).lte("fecha", finEj)
+                if (x.tarjeta) q = q.eq("tipo_fila", "movimiento")
+                return q.order("id").range(d, h)
+              })
+              anotar(`Cuentas de los socios: ${x.nombre}`, leido)
+              if (leido.error) throw new Error(leido.error.message)
+              cuentasSocios.push({ clave: x.clave, nombre: x.nombre,
+                movimientos: ((leido.data ?? []) as Array<Record<string, unknown>>).map(r => ({ ...(r as unknown as MovimientoParaCC), grupo: String(r.categ ?? "") || undefined })) })
+            }
+            const conSocios = movimientosDeLosSocios(movsConSocios, cuentasSocios)
+            movsConSocios = conSocios.msa
+            delSocio = conSocios.delSocio
+          } catch (e) {
+            toast.warning(`14.1: no se pudieron leer las cuentas de los socios (${(e as Error).message}); lo que pagaron por MSA desde sus cuentas no entra.`)
+          }
+          let armadoCC = armarCuentasCorrientes(comprasCC, ventasCC, [...movsConSocios, ...delSocio])
 
           // 🛡️ A-FEAT-1385 — la cuenta corriente con la aseguradora al cierre (las pólizas son de MSA).
           if (empresa.id === "MSA") {

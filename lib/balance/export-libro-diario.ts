@@ -37,7 +37,7 @@ import type { CuentasAlCierre, FilaCuenta } from "./cuentas-al-cierre"
 import type { CadenaDeSaldos } from "./saldos-al-inicio"
 import type { SueldosDelEjercicio, FilaSueldo, SueldosImpagosAlCierre } from "./sueldos-balance"
 import { leyendaSaldo } from "@/lib/proveedores/cuenta-corriente"
-import { separarSocios, type PapelDeCuentasCorrientes, type CuentaCorrienteDelBalance } from "./cuentas-corrientes"
+import { separarSocios, CUENTA_FACTURAS, type PapelDeCuentasCorrientes, type CuentaCorrienteDelBalance } from "./cuentas-corrientes"
 import type {
   ChequesDados, ChequeAlCierre, AnticiposAlCierre, AnticipoAlCierre,
 } from "./valores-al-cierre"
@@ -1766,6 +1766,47 @@ export function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierr
   // ── El detalle de cada cuenta ────────────────────────────────────────────────────────
   for (const c of cc.cuentas) {
     if (c.resumen.asientos.length === 0) continue
+    /**
+     * 👥 A-FEAT-1577 (JMS 07/11): el detalle de un SOCIO es UNA sola tabla, con un subtítulo y un subtotal por cuenta (facturas y sueldo ·
+     * MSA Galicia —por agrupadora o template— · MSA VISA · las cuentas del socio), y DEBE / HABER en vez de un importe con signo:
+     * *«ayuda a ver de qué lado está para entender»*. El saldo arranca en el de inicio y termina en el de cierre (control abajo).
+     */
+    if (c.contraparte.socio) {
+      f.push([])
+      f.push([])
+      f.push([`DETALLE — ${c.contraparte.nombre} (una sola tabla: cada cuenta con su subtítulo y su subtotal)`])
+      f.push(["DEBE = MSA le pagó o él retiró (baja lo que MSA le debe) · HABER = MSA le debe más (su factura, su sueldo, lo que él pagó por MSA)."])
+      f.push(["Cuenta", "Fecha", "Qué es", "Debe", "Haber", "Saldo acumulado", "Agrupadora / template", "Concepto", "Otra punta"])
+      const ORDEN = [CUENTA_FACTURAS, "MSA Galicia cta cte", "MSA VISA"]
+      const cuentaDe = (x: { cuenta?: string }) => x.cuenta ?? "MSA Galicia cta cte"
+      const rango = (b: string) => { const i = ORDEN.indexOf(b); return i < 0 ? 99 : i }
+      const bloques = [...new Set(c.resumen.asientos.map(cuentaDe))].sort((a, b) => rango(a) - rango(b) || a.localeCompare(b, "es"))
+      let saldo = c.saldoInicio, totDebe = 0, totHaber = 0
+      f.push(["Saldo al inicio", "", "", "", "", money(saldo)])
+      for (const b of bloques) {
+        const del = c.resumen.asientos.filter(x => cuentaDe(x) === b)
+          .sort((x, y) => (b === "MSA Galicia cta cte" ? String(x.grupo ?? "").localeCompare(String(y.grupo ?? ""), "es") : 0) || x.fecha.localeCompare(y.fecha))
+        f.push([`▸ ${b}`])
+        let debe = 0, haber = 0
+        for (const x of del) {
+          const d = x.importe < 0 ? -x.importe : 0, h = x.importe > 0 ? x.importe : 0
+          debe += d; haber += h; saldo += x.importe
+          f.push([b, x.fecha,
+            x.tipo === "compra" ? "nos factura / sueldo" : x.tipo === "venta" ? "le facturamos" : x.importe > 0 ? "pagó por MSA / aportó" : "MSA le pagó / retiró",
+            d ? money(d) : "", h ? money(h) : "", money(saldo), x.grupo ?? "",
+            x.sinReferencia ? `${x.concepto}  ← sin referencia` : x.concepto, x.otraPunta ?? ""])
+        }
+        totDebe += debe; totHaber += haber
+        f.push([`Subtotal ${b}`, "", "", money(debe), money(haber)])
+      }
+      const esperado = money(c.saldoInicio + c.resumen.saldo)
+      f.push(["SALDO AL CIERRE (del detalle)", "", "", money(totDebe), money(totHaber), money(saldo),
+        Math.abs(money(saldo) - esperado) < 0.01 ? "✓ cuadra con el resumen de arriba" : `🛑 NO CUADRA con el resumen (${fmtAr(esperado)})`])
+      if (c.resumen.pagosSinReferencia > 0) f.push([`${c.resumen.pagosSinReferencia} pago(s) no dicen contra que comprobante fueron.`])
+      const faltan = c.resumen.asientos.filter(x => String(x.otraPunta ?? "").startsWith("🔴")).length
+      if (faltan) f.push([`⚠️ ALERTA: ${faltan} transferencia(s) a ${c.contraparte.nombre} sin su otra punta en la cuenta del socio (columna «Otra punta»).`])
+      continue
+    }
     f.push([])
     f.push([])
     f.push([`DETALLE — ${c.contraparte.nombre}`])
