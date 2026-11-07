@@ -1778,6 +1778,9 @@ No implementado aún — pendiente como mejora futura independiente.
 
 ## 24. SISTEMA `reglas_contable_interno` — FUENTE PRIMARIA CONTABLE/INTERNO
 
+> ⚠️ **cambió 2026-11-07** ([A-FEAT-1577](PENDIENTES.md#a-feat-1577), scripts 229/230): los códigos `RET 1/3/i`, `AP`, `Desglosar` y `Asiento contable` ya no se usan. Lo que acá dice `RET 3 PAM` / `RET 3 MA` hoy es **`CTA PAM` / `CTA MA`** (las reglas por template ya escriben eso), el pago de la tarjeta se reconoce por el banco (sin marca) y el esquema vigente está en KNOWLEDGE § Los códigos CONTABLE / INTERNO.
+
+
 > **Fecha**: 2026-03-28
 > **Objetivo**: Reemplazar `seccion_regla` de templates por una tabla dedicada que soporte multi-empresa y sea independiente del template.
 

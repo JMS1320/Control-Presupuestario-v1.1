@@ -3691,6 +3691,8 @@ Si borrás una casilla, queda vacía; la app guarda igual lo que había antes y 
 
 ## 📒 Papeles de balance → cómo leer Templates y el impuesto al cheque *(2026-10-27)*
 
+> ⚠️ **cambió 2026-11-07** ([A-FEAT-1577](PENDIENTES.md#a-feat-1577), scripts 229/230): los códigos `RET 1/3/i`, `AP`, `Desglosar` y `Asiento contable` ya no se usan. Lo que acá dice `RET 3 PAM` / `RET 3 MA` hoy es **`CTA PAM` / `CTA MA`** (las reglas por template ya escriben eso), el pago de la tarjeta se reconoce por el banco (sin marca) y el esquema vigente está en KNOWLEDGE § Los códigos CONTABLE / INTERNO.
+
 - **Templates** (fila por cuota): lo que **salió** de la cuenta va en **Débito** y lo que **entró** (un ingreso como Promoción Galicia, un rescate de FCI, una devolución del banco) en **Crédito**. Debajo de cada total dice **cuánto está pagado y cuánto pendiente** al cierre. Los renglones con un punto entre bloques están para que el filtro de Excel tome la tabla entera.
 - Los **seguros con póliza cargada** no suman en Templates: ya están en las facturas de la aseguradora y en su cuenta corriente (papel 14). Se listan al final, como «NO INCLUIDAS». Un seguro sin póliza cargada (por ejemplo, el Chalet de MA) sigue sumando hasta que se cargue.
 - **Templates por mes**: primero la empresa del balance (para MSA: MSA, MA, PAM) y, adentro, las cuentas agrupadas como en el plan de cuentas (columna **Agrupadora**, con su subtotal). Al final, el cuadro **Pagado y pendiente** por tipo.
@@ -4807,6 +4809,8 @@ fecha, mismo monto, mismo beneficiario— se queda sin candidato.
 ## 🏦 Conciliación multiempresa 🟡 *(nuevo 2026-08-08, sin testear)*
 
 > Diseño, reglas y huecos → `PENDIENTES.md` § A-FEAT-13 y § A-BUG-09.
+
+> ⚠️ **cambió 2026-11-07** ([A-FEAT-1577](PENDIENTES.md#a-feat-1577), scripts 229/230): los códigos `RET 1/3/i`, `AP`, `Desglosar` y `Asiento contable` ya no se usan. Lo que acá dice `RET 3 PAM` / `RET 3 MA` hoy es **`CTA PAM` / `CTA MA`** (las reglas por template ya escriben eso), el pago de la tarjeta se reconoce por el banco (sin marca) y el esquema vigente está en KNOWLEDGE § Los códigos CONTABLE / INTERNO.
 
 ### Qué cambió
 - **Los candidatos al reasignar ahora son de las tres empresas.** Cada uno muestra un **chip con su

@@ -6979,7 +6979,7 @@ function ChipEmpresaOpcion({ opcion, cuenta }: { opcion: any; cuenta?: { empresa
           key={e}
           className={`rounded border px-1 text-[10px] leading-4 ${COLOR_EMPRESA[e as Empresa] || 'border-gray-200 bg-gray-100 text-gray-500'}`}
           title={esOtra
-            ? `${que} de ${lista.join('/')} pagado desde una cuenta de ${cuenta!.empresa} → se registra como retiro (RET 3 ${canon[0]})`
+            ? `${que} de ${lista.join('/')} pagado desde una cuenta de ${cuenta!.empresa} → se registra en la cuenta de ${canon[0]} (CTA ${canon[0]}; el código lo pone la regla de la cuenta)`
             : `${que} de ${lista.join('/')}`}
         >
           {e}
