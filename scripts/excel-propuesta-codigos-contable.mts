@@ -244,17 +244,18 @@ const ctrl: unknown[][] = [
 ]
 
 // ── La propuesta, por LOTE
-const ENC = ["Fecha", "Cuenta", "Empresa de la cuenta", "Moneda", "Débito", "Crédito", "Descripción del banco", "Detalle", "Contraparte", "CATEG", "Template / sueldo / factura",
-  "Marca anterior", "Tu respuesta anterior", "CÓDIGO PROPUESTO", "Entre (empresa ↔ socio)", "Qué es", "De dónde sale", "Otra punta", "¿Suma en las cuentas?", "Tu duda (de tu respuesta)", "Tu OK / corrección", "Id"]
+// JMS 06/11: «Entre» después de Fecha y «CÓDIGO PROPUESTO» después de Crédito
+const ENC = ["Fecha", "Entre (empresa ↔ socio)", "Cuenta", "Empresa de la cuenta", "Moneda", "Débito", "Crédito", "CÓDIGO PROPUESTO", "Descripción del banco", "Detalle", "Contraparte", "CATEG", "Template / sueldo / factura",
+  "Marca anterior", "Tu respuesta anterior", "Qué es", "De dónde sale", "Otra punta", "¿Suma en las cuentas?", "Tu duda (de tu respuesta)", "Tu OK / corrección", "Id"]
 const propuesta = hojaResumenPorMes(movs.map(m => ({ categoria: m.lote || "(sin lote)", mes: m.mes, importe: r2(m.deb - m.cred), moneda: (m.usd ? "USD" : "ARS") as "ARS" | "USD",
   orden: `${m.lote}|${m.fecha}|${m.cuenta}`,
-  columnas: [dmy(m.fecha), m.cuenta, m.titular, m.desc, m.detalle, m.contra, m.categ, m.vinculo, m.viejo || "(vacío)", m.resp, m.codigo, m.empresa ? `${m.empresa} ↔ ${m.socio}` : "",
+  columnas: [dmy(m.fecha), m.empresa ? `${m.empresa} ↔ ${m.socio}` : "", m.cuenta, m.titular, m.codigo, m.desc, m.detalle, m.contra, m.categ, m.vinculo, m.viejo || "(vacío)", m.resp,
     m.tipo, m.porque.join(" · "), m.punta, m.cuenta_aca ? "sí" : "no (espejo)", m.duda, "", `${m.tabla}:${m.id}`] })), {
   titulo: `PROPUESTA DE CÓDIGOS CONTABLE — ejercicio 25/26 (${movs.length} movimientos, por LOTE)`,
   notas: ["Cada LOTE junta cosas que se tratan igual: «MSA ↔ MA · transferencias», «MSA ↔ MA · gastos de MA pagados por MSA», «— No lleva código · …», «? A decidir · …». Filtrá por «CÓDIGO PROPUESTO» o por «Entre» para ver una cuenta entera.",
     "CÓDIGO = CTA + quién (con quién es la cuenta). Quién retira de quién = el código + la empresa de la cuenta. Retiro o aporte = el signo. El motivo = el template / sueldo / factura (no hace falta RET 1/3/i).",
     "Respondé en «Tu OK / corrección» sólo lo que no va. No se cambió nada en la base: al aplicar, se escribe el código con un script y su deshacer, con tu OK."],
-  meses, encabezadoDetalle: ENC.filter(x => !["Moneda", "Débito", "Crédito"].includes(x)), semestres: true, porMoneda: true, debeHaber: true, importeEn: 3 })
+  meses, encabezadoDetalle: ENC.filter(x => !["Moneda", "Débito", "Crédito"].includes(x)), semestres: true, porMoneda: true, debeHaber: true, importeEn: 4 })
 
 // ── Lo que da el esquema: quién retiró / aportó de quién (cada movimiento una vez; + = el socio retiró de la empresa, − = aportó)
 const cuentan = movs.filter(m => m.empresa && m.cuenta_aca && (m.codigo.startsWith("CTA") || m.codigo.startsWith("DIST")))
