@@ -12,7 +12,7 @@ import { join } from "node:path"
 import { armarEjercicio, primerDiaDelEjercicio } from "../lib/balance/ejercicio"
 import { desdeCuota, armarTemplatesDelEjercicio } from "../lib/balance/templates-libro"
 import { leerMovimientosDeCuotas, vincularBanco, leerExtractoDelEjercicio, indiceDeDestinos, conFacturas } from "../lib/balance/movimientos-de-cuotas"
-import { agregarLibroH, vistasDe, agregarHoja } from "../lib/balance/export-libro-diario"
+import { agregarLibroH, vistasDe, agregarHoja, reordenarSolapas } from "../lib/balance/export-libro-diario"
 import { SOLAPA_CAMBIOS, CAMBIOS, ANCHOS_CAMBIOS } from "./cambios-presentacion-h.mts"
 import { aplicarVistas } from "../lib/balance/formato-excel"
 import { fechasReales } from "../lib/excel/fechas-reales"
@@ -52,6 +52,8 @@ if (process.argv.includes("--cambios")) {
   agregarHoja(wb as any, SOLAPA_CAMBIOS, CAMBIOS, ANCHOS_CAMBIOS.map((ancho, i) => (i >= 2 ? { ancho, z: "#,##0.00" } : { ancho })) as any)
   const ix: any = wb.Sheets["Índice"]
   if (ix) ix.A3 = { t: "s", v: "📝 Qué cambió el 09/11 en la presentación (con ejemplos): tocá acá", l: { Target: `#'${SOLAPA_CAMBIOS}'!A1` } }
+  // JMS 09/11: las solapas del desarrollo en curso (que después se sacan) van ANTES del índice
+  reordenarSolapas(wb as any, [SOLAPA_CAMBIOS, "Índice", "H · Retiros y aportes", "Gastos Libertad"])
 }
 fechasReales(wb as any)
 let p = join(CARPETA, `H para auditar ${EMPRESA} ${ej.etiqueta.replace("/", "-")} (2026-11-07).xlsx`), v = 2

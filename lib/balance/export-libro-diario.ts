@@ -3493,6 +3493,18 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
 }
 
 /**
+ * 🗂️ Pone primero estas solapas (en este orden) y deja las demás como estaban. La VISTA de cada solapa (filas fijas, color) va por
+ * posición, así que se reordena junto con los nombres.
+ */
+export function reordenarSolapas(wb: XLSX.WorkBook, primeras: string[]): void {
+  const vs = vistasDe(wb)
+  const viejo = [...wb.SheetNames]
+  const nuevo = [...primeras.filter(n => viejo.includes(n)), ...viejo.filter(n => !primeras.includes(n))]
+  wb.SheetNames = nuevo
+  if (vs.length === viejo.length) VISTAS.set(wb, nuevo.map(n => vs[viejo.indexOf(n)]))
+}
+
+/**
  * 🧭 **EL ÍNDICE del H para auditar** (A-FEAT-1579, JMS 09/11: *«¿se le puede armar un menú al Excel? para dirigirme a las solapas
  * desde el menú, desplegable, así me figuran los 3 responsables y le abro las subpestañas»*). Primera solapa: MSA, MA, PAM y General,
  * cada uno plegado con su [+]; cada solapa es un link. Y en cada solapa el título (A1) lleva de vuelta al índice.
@@ -3545,10 +3557,11 @@ export function agregarIndiceH(wb: XLSX.WorkBook): void {
   }
   plegar(filas, niveles, true)
   hoja(wb, NOMBRE, filas, [{ ancho: 40 }, { ancho: 44 }, { ancho: 22, z: MONEDA }, { ancho: 13 }, { ancho: 13 }, { ancho: 12 }])
-  // la primera solapa (y su vista, que va por posición), con el [+] arriba de cada grupo
-  wb.SheetNames = [NOMBRE, ...wb.SheetNames.filter(n => n !== NOMBRE)]
+  // la vista del índice: el [+] arriba de cada grupo y sin filas fijas
   const vs = vistasDe(wb)
-  if (vs.length) VISTAS.set(wb, [{ ...vs[vs.length - 1], resumenArriba: true, congelarFilas: undefined }, ...vs.slice(0, -1)])
+  if (vs.length) VISTAS.set(wb, [...vs.slice(0, -1), { ...vs[vs.length - 1], resumenArriba: true, congelarFilas: undefined }])
+  // 🗂️ JMS 09/11 (lo ordenó así en el v9): Índice → Retiros y aportes → Gastos Libertad → el set de MSA, MA y PAM
+  reordenarSolapas(wb, [NOMBRE, "H · Retiros y aportes", "Gastos Libertad"])
   for (const n of wb.SheetNames) {
     if (n === NOMBRE) continue
     const c = wb.Sheets[n]?.A1 as (XLSX.CellObject & { l?: unknown }) | undefined
