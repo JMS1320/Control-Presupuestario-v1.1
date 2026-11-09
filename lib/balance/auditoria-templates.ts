@@ -38,6 +38,10 @@ export function efectoEntre(pagador: string, dueno: string): string {
   return `${pagador} pagó por ${dueno}`
 }
 
+/** 🎨 JMS 09/11 (formato que dio en «H · MA · Imp Rurales»): la Marca centrada; el template de la tabla de control, a la derecha. */
+export const CENTRADO = (v: string) => ({ t: "s", v, s: { alignment: { horizontal: "center" } } })
+const A_LA_DERECHA = (v: string) => ({ t: "s", v, s: { alignment: { horizontal: "right" } } })
+
 /** Un texto como criterio literal de CONTAR.SI (sin comodines: `*`, `?` y `~` se escapan). */
 const literal = (s: string) => s.replace(/[~*?]/g, m => `~${m}`).replace(/"/g, '""')
 
@@ -55,15 +59,15 @@ export function controlPorTemplate(cuotas: CuotaTemplate[], colConcepto: string,
   const MARCAS: Array<[string, (m: string) => boolean]> = [["✓*", m => m.startsWith("✓")], ["🔴*", m => m.startsWith("🔴")],
     ["🟡*", m => m.startsWith("🟡")], ["⚪*", m => m.startsWith("⚪")], ["*código esperado*", m => m.includes("código esperado")]]
   const f: unknown[][] = [[], ["", "CONTROL POR TEMPLATE — cada template con sus cuotas: ¿se pagaron todas?"],
-    ["", "Template", "Cuotas", "✓ pagadas", "🔴 sin pagar", "🟡 a revisar", "⚪ en $ 0", "⚠️ código", "Total", "¿Completo?"]]
+    ["", "Template", "Cuotas", "✓ pagadas", "🔴 sin pagar", "🟡 a revisar", "⚪ en $ 0", "⚠️ código", "Total", "¿Completo?"].map(x => x ? CENTRADO(x) : x)]
   for (const [t, cs] of [...porTpl].sort((a, b) => a[0].localeCompare(b[0], "es"))) {
     const marcas = cs.map(c => auditarCuota(c).marca)
     const crit = `${rc},"${literal(t)}"`
     const n = (p: (m: string) => boolean) => marcas.filter(p).length
     const fila = filaInicial + f.length  // la fila (base 1) que va a ocupar este renglón en la hoja
     const completos = n(MARCAS[0][1]) + n(MARCAS[3][1])
-    f.push(["", t, { t: "n", f: `COUNTIFS(${crit})`, v: cs.length },
-      ...MARCAS.map(([k, p]) => ({ t: "n", f: `COUNTIFS(${crit},${rm},"${k}")`, v: n(p) })),
+    f.push(["", A_LA_DERECHA(t), { t: "n", f: `COUNTIFS(${crit})`, v: cs.length, z: "0" },
+      ...MARCAS.map(([k, p]) => ({ t: "n", f: `COUNTIFS(${crit},${rm},"${k}")`, v: n(p), z: "0" })),
       { t: "n", f: sumaDe(t), v: Math.round(cs.reduce((s, c) => s + c.monto, 0) * 100) / 100 },
       { t: "s", f: `IF(C${fila}=D${fila}+G${fila},"✓ completo","revisar")`, v: completos === cs.length ? "✓ completo" : "revisar" }])
   }
@@ -122,11 +126,11 @@ export function hojaRetirosYAportes(cuotas: CuotaTemplate[], extracto: { movimie
   const conEfecto = cuotas.map(c => ({ c, a: auditarCuota(c) })).filter(x => x.a.efecto && !cuotaSinPago(x.c))
   const { filas: h } = armarResumenPorMes(conEfecto.map(({ c, a }) => ({
     categoria: a.efecto, mes: (c.fecha ?? "").slice(0, 7), importe: c.monto, orden: `${a.efecto}|${c.fecha ?? ""}`,
-    columnas: [dmy(c.fecha), c.concepto, primero(c.responsable), a.quienPago, a.codigo, a.marca],
+    columnas: [dmy(c.fecha), c.concepto, c.agrupadoraTemplate || "(sin agrupadora)", primero(c.responsable), a.quienPago, a.codigo, CENTRADO(a.marca)],
   })), {
     titulo: `RETIROS Y APORTES — desde la columna Efecto de las cuotas — ejercicio ${etiqueta}`,
     notas: ["Cada cuota pagada por una empresa que no es la dueña del gasto (o que es un retiro en sí). Libertad (LIB) va aparte, con su reparto."],
-    meses, encabezadoDetalle: ["Fecha", "Concepto", "Responsable", "Quién pagó", "Código contable", "Marca"], debeHaber: true, semestres: true,
+    meses, encabezadoDetalle: ["Fecha", "Concepto", "Agrupadora", "Responsable", "Quién pagó", "Código contable", "Marca"], debeHaber: true, semestres: true,
   })
 
   // ── el control contra el banco: por cuenta que pagó (empresa) y código

@@ -12,7 +12,7 @@ import type { CuotaTemplate, ExtractoParaH } from "./templates-libro"
 import type { MovimientoExtractoH } from "./movimientos-de-cuotas"
 import { armarResumenPorMes, hojaResumenPorMes } from "./resumen-por-mes"
 import { MOTIVO_EN_CERO } from "./movimientos-de-cuotas"
-import { auditarCuota, controlPorTemplate } from "./auditoria-templates"
+import { auditarCuota, controlPorTemplate, CENTRADO } from "./auditoria-templates"
 
 /** Lo que NO se arma como grupo: lo financiero (no es gasto) y lo bancario (ya está en el libro C). */
 export const AGRUPADORAS_FUERA = new Set(["inversiones", "movimientos internos empresa", "tarjetas", "créditos bancarios", "creditos bancarios",
@@ -118,7 +118,7 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
     orden: `${bancoDe(c) ? "0" + bancoDe(c) : "1"}|${c.fecha ?? ""}|${c.concepto}`,
     columnas: [dmy(c.fecha), c.concepto, bancoDe(c) || "sin pago", c.banco?.comprobante ?? "",
       c.proveedor || c.banco?.cuenta || "", c.detalle ?? "", c.estado,
-      ...(opciones.auditoria ? (a => [a.quienPago, a.codigo, a.efecto, a.marca])(auditarCuota(c)) : [])],
+      ...(opciones.auditoria ? (a => [a.quienPago, a.codigo, a.efecto, CENTRADO(a.marca)])(auditarCuota(c)) : [])],
   })), {
     titulo: `${g.agrupadora.toUpperCase()} — ${g.responsable} — ejercicio ${etiqueta}`,
     meses, encabezadoDetalle: ["Fecha", "Concepto", "Banco / cuenta", "Comprobante", "Proveedor", "Detalle", "Estado",
