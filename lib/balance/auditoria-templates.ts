@@ -215,15 +215,16 @@ export function hojaRetirosYAportes(cuotas: CuotaTemplate[], extracto: { movimie
   const LINKS = ["📍 Ir a «TOTAL POR QUIÉN RECIBE» (tocá acá)", "📍 Ir a «OTRAS PUNTAS — no suman» (tocá acá)", "📍 Ir a «CONTROL contra el banco» (tocá acá)"]
   const { filas: h } = armarResumenPorMes(suman.map(({ c, a }) => ({
     categoria: categoria(a.efecto), mes: (c.fecha ?? "").slice(0, 7), importe: c.monto, orden: `${c.fecha ?? ""}|${categoria(a.efecto)}`,  // JMS 09/11: el detalle va por FECHA (07/25 → 06/26), aunque se filtre por agrupadora
-    columnas: [dmy(c.fecha), c.concepto, c.agrupadoraTemplate || "(sin agrupadora)", primero(c.responsable), a.quienPago, a.codigo, CENTRADO(a.marca),
+    // 🔍 JMS 09/11: el contexto completo también acá — Proveedor, Comprobante y Detalle (como en las solapas de agrupadora)
+    columnas: [dmy(c.fecha), c.concepto, c.proveedor ?? "", c.banco?.comprobante ?? "", c.detalle ?? "", c.agrupadoraTemplate || "(sin agrupadora)", primero(c.responsable), a.quienPago, a.codigo, CENTRADO(a.marca),
       a.descripcion, a.beneficiario, a.factura, a.interno],
   })), {
     titulo: `RETIROS Y APORTES — desde la columna Efecto de las cuotas — ejercicio ${etiqueta}`,
     notas: ["Cada cuota pagada por una empresa que no es la dueña del gasto (o que es un retiro en sí), agrupada por QUIÉN RECIBE. Libertad (LIB) va aparte, con su reparto.",
       "Una transferencia entre empresas tiene DOS PUNTAS (sale de una cuenta y entra a otra): acá suma UNA sola, la salida, y las dos puntas se rotulan con la MISMA frase («· salió de» / «· entró a»).",
       ...LINKS],
-    meses, encabezadoDetalle: ["Fecha", "Concepto", "Agrupadora", "Responsable", "Quién pagó", "Código contable", "Marca", "Descripción del banco", "Beneficiario / CUIT", "Factura vinculada", "Interno"],
-    debeHaber: true, semestres: true, importeEn: 7,
+    meses, encabezadoDetalle: ["Fecha", "Concepto", "Proveedor", "Comprobante", "Detalle", "Agrupadora", "Responsable", "Quién pagó", "Código contable", "Marca", "Descripción del banco", "Beneficiario / CUIT", "Factura vinculada", "Interno"],
+    debeHaber: true, semestres: true, importeEn: 10,
   })
   const ponerLink = (k: number, fila: number) => { const i = h.findIndex(r => r && r[0] === LINKS[k]); if (i >= 0 && fila > 0) h[i][0] = { t: "s", v: LINKS[k], l: { Target: `#'H · Retiros y aportes'!A${fila}` } } }
 
