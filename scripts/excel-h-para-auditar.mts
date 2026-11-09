@@ -11,15 +11,17 @@ import { readFileSync, existsSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { armarEjercicio, primerDiaDelEjercicio } from "../lib/balance/ejercicio"
 import { desdeCuota, armarTemplatesDelEjercicio } from "../lib/balance/templates-libro"
-import { leerMovimientosDeCuotas, vincularBanco, leerExtractoDelEjercicio, indiceDeDestinos } from "../lib/balance/movimientos-de-cuotas"
-import { agregarLibroH, vistasDe } from "../lib/balance/export-libro-diario"
+import { leerMovimientosDeCuotas, vincularBanco, leerExtractoDelEjercicio, indiceDeDestinos, conFacturas } from "../lib/balance/movimientos-de-cuotas"
+import { agregarLibroH, vistasDe, agregarHoja } from "../lib/balance/export-libro-diario"
+import { SOLAPA_CAMBIOS, CAMBIOS, ANCHOS_CAMBIOS } from "./cambios-presentacion-h.mts"
 import { aplicarVistas } from "../lib/balance/formato-excel"
 import { fechasReales } from "../lib/excel/fechas-reales"
 import { auditarCuota } from "../lib/balance/auditoria-templates"
 
 const env = Object.fromEntries(readFileSync(".env.local", "utf8").split(/\r?\n/).filter(l => l.includes("=") && !l.trim().startsWith("#")).map(l => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, "")] }))
 const sb: any = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
-const EMPRESA = process.argv[2] ?? "MSA", ANIO = Number(process.argv[3] ?? 2026)
+const ARGS = process.argv.slice(2).filter(a => !a.startsWith("--"))
+const EMPRESA = ARGS[0] ?? "MSA", ANIO = Number(ARGS[1] ?? 2026)
 const CARPETA = "- Comunicacion JMS Claude - Archivos/Balance/Excels trabajando con claude"
 async function todo(q: (d: number, h: number) => any): Promise<any[]> { const out: any[] = []; for (let d = 0; ; d += 1000) { const { data, error } = await q(d, d + 999); if (error) throw new Error(error.message); out.push(...(data ?? [])); if (!data || data.length < 1000) break } return out }
 
@@ -34,6 +36,7 @@ const { data: conPoliza } = await sb.from("polizas_seguro").select("template_id"
 let cuotas = filas.map((f: any) => desdeCuota(f, tipoDeCateg as any))
 const leido = await leerMovimientosDeCuotas(sb, cuotas)
 cuotas = vincularBanco(cuotas, cuotas, leido.movimientos)
+cuotas = await conFacturas(sb, cuotas)  // 🔍 el texto de la factura vinculada a cada movimiento
 const ex = await leerExtractoDelEjercicio(sb, primerDiaDelEjercicio(ej), ej.fechaCierre)
 const templates = armarTemplatesDelEjercicio(cuotas, ej, {
   empresa: EMPRESA, plan, templatesConPoliza: (conPoliza ?? []).map((p: any) => p.template_id).filter(Boolean),
@@ -44,6 +47,12 @@ const meses = ej.subdiarios.map((x: any) => ({ clave: `${x.anio}-${String(x.mes)
 
 const wb = XLSX.utils.book_new()
 agregarLibroH(wb as any, templates, ej.etiqueta, meses, null, { auditoria: true })
+// 📝 --cambios: la solapa «Cambios de presentación» al final, con un link desde el Índice
+if (process.argv.includes("--cambios")) {
+  agregarHoja(wb as any, SOLAPA_CAMBIOS, CAMBIOS, ANCHOS_CAMBIOS.map((ancho, i) => (i >= 2 ? { ancho, z: "#,##0.00" } : { ancho })) as any)
+  const ix: any = wb.Sheets["Índice"]
+  if (ix) ix.A3 = { t: "s", v: "📝 Qué cambió el 09/11 en la presentación (con ejemplos): tocá acá", l: { Target: `#'${SOLAPA_CAMBIOS}'!A1` } }
+}
 fechasReales(wb as any)
 let p = join(CARPETA, `H para auditar ${EMPRESA} ${ej.etiqueta.replace("/", "-")} (2026-11-07).xlsx`), v = 2
 while (existsSync(p)) p = join(CARPETA, `H para auditar ${EMPRESA} ${ej.etiqueta.replace("/", "-")} (2026-11-07) v${v++}.xlsx`)

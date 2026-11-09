@@ -74,7 +74,7 @@ import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
 import type { CuadreGranos, ValuacionGranos, Sementeras } from "./granos-sementeras"
 import {
   formatearHoja, presentarHoja, anchosAutomaticos, colorDeSolapa, aplicarVistas, filtroDe, filtrarEn,
-  conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna, type Vista, UNIONES, ALTOS, esSinCongelar, congeladoDe, nivelesDelResumen } from "./formato-excel"
+  conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna, type Vista, UNIONES, ALTOS, esSinCongelar, congeladoDe, nivelesDelResumen, columnasCongeladasDe } from "./formato-excel"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 import type { ControlesInicio, ControlProvisionAnterior } from "./control-inicio"
 import { textoEstado, type InicioYCierre } from "./inicio-y-cierre"
@@ -524,6 +524,8 @@ const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: 
   if (esSinCongelar(filas)) vista.congelarFilas = undefined
   const fijo = congeladoDe(filas)
   if (fijo) vista.congelarFilas = fijo
+  const cols = columnasCongeladasDe(filas)
+  if (cols) vista.congelarColumnas = cols
   // 🔎 Si quien armó la hoja dijo dónde va el filtro, manda sobre el que adivina `presentarHoja`.
   const filtro = filtroDe(filas)
   if (filtro) ws["!autofilter"] = { ref: filtro }
@@ -3395,7 +3397,10 @@ export function mesesDelLibro(libro: LibroDiario): { clave: string; rotulo: stri
  * de ese tipo»): A Nro · B Mes · C Fecha · D Concepto · E Banco · F Comprobante · G Proveedor · H Detalle · I Estado · J-K Débito/Crédito ·
  * L Quién pagó · M Código · N Efecto · O Marca. Arriba, las mismas columnas son los 12 meses y el total (con formato de pesos).
  */
-const COLS_H_AUDITAR: Columna[] = [8.17, 11.88, 15.45, 30.31, 16.74, 10.17, 23.31, 15.74, 13.03, 13.03, 13.03, 20.45, 10.31, 28.46, 13.17]  // = sus anchos de Excel − 0,83 (lo que suma Excel)
+/** 🎨 «Retiros y aportes» (JMS 09/11, revisión D.4.d): arriba semestres · Nro · categoría · 12 meses; abajo Nro · Mes · Fecha · Concepto · Agrupadora ·
+ * Responsable · Quién pagó · Código · Marca · Débito · Crédito · Descripción · Beneficiario · Factura · Interno. */
+const COLS_RETIROS: Columna[] = [14, 14, 14, 30, 50, 13, 30, 13, 16, 14, 14, 30, 36, 44, 13, 13, 15].map(ancho => ({ ancho, z: MONEDA }))
+const COLS_H_AUDITAR: Columna[] = [8.17, 11.88, 15.45, 30.31, 16.74, 10.17, 23.31, 15.74, 13.03, 13.03, 13.03, 20.45, 10.31, 28.46, 13.17, 30, 36, 44, 12]  // = sus anchos de Excel − 0,83 (lo que suma Excel)
   .map((ancho, i) => (i >= 2 ? { ancho, z: MONEDA } : { ancho }))
 const COLS_RESUMEN_MES: Columna[] = [{ ancho: 22 }, { ancho: 32 }, ...Array.from({ length: 12 }, () => ({ ancho: 13, z: MONEDA })), { ancho: 15, z: MONEDA }]
 
@@ -3481,7 +3486,7 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
   hoja(wb, "Gastos Libertad", hojaLibertad(templates.detalle, etiqueta, meses, templates.entrada?.opciones.extracto), COLS_RESUMEN_MES)
   // 🔍 A-FEAT-1579: en el de auditar, los retiros y aportes desde la columna Efecto, con su control contra el banco (también lo que va
   // «por la cuenta de un socio», como Gastos Reintegro JMS: no es gasto, pero es un movimiento con el socio)
-  if (aud) hoja(wb, "H · Retiros y aportes", hojaRetirosYAportes([...templates.detalle, ...(templates.aCuentaSocio ?? [])], templates.entrada?.opciones.extracto, etiqueta, meses), COLS_RESUMEN_MES)
+  if (aud) hoja(wb, "H · Retiros y aportes", hojaRetirosYAportes([...templates.detalle, ...(templates.aCuentaSocio ?? [])], templates.entrada?.opciones.extracto, etiqueta, meses), COLS_RETIROS)
   // 📗 A-FEAT-1539: el libro para mandar — sin la palabra «template» (no es contable) y sin subtítulos. El de auditar no se pule.
   if (!aud) pulirLibroH(wb)
   else agregarIndiceH(wb)
@@ -3497,18 +3502,49 @@ export function agregarIndiceH(wb: XLSX.WorkBook): void {
   const PREFIJO = /^H · (MSA|MA|PAM) · /
   const grupos = new Map<string, string[]>()
   for (const n of wb.SheetNames) { const g = n.match(PREFIJO)?.[1] ?? "General"; grupos.set(g, [...(grupos.get(g) ?? []), n]) }
-  const filas: unknown[][] = [["ÍNDICE — el [+] de la izquierda abre cada responsable; tocá una solapa para ir. En cada solapa, el título trae de vuelta acá."], []]
-  const niveles = [0, 0]
+  /**
+   * 🎨 JMS 09/11 (revisión D.1 y D.2): al lado de cada solapa su TOTAL y cuántas 🔴 / 🟡 / ⚠️ tiene (a dónde ir primero), la leyenda de las
+   * marcas arriba, y las agrupadoras PRIMERO; Templates, Cuotas, Por mes, el extracto sin categoría y los papeles, abajo («datos de base»).
+   */
+  const BASE = /· (Templates|Cuotas|Por mes|Extracto sin categ|Automotores|Papel .*)$/
+  const resumenDe = (n: string) => {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1 }) as unknown[][]
+    const hi = rows.findIndex(r => Array.isArray(r) && r[0] === "Nro" && r.includes("Marca") && r.includes("Débito"))
+    if (hi < 0) return null
+    const H = rows[hi], iD = H.indexOf("Débito"), iC = H.indexOf("Crédito"), iM = H.indexOf("Marca")
+    let total = 0, rojo = 0, amarillo = 0, codigo = 0
+    for (const r of rows.slice(hi + 1)) {
+      if (!Array.isArray(r) || typeof r[0] !== "number") break
+      total += (Number(r[iD]) || 0) - (Number(r[iC]) || 0)
+      const m = String(r[iM] ?? "")
+      if (m.startsWith("🔴")) rojo++
+      if (m.startsWith("🟡")) amarillo++
+      if (m.includes("código esperado")) codigo++
+    }
+    return { total: Math.round(total * 100) / 100, rojo, amarillo, codigo }
+  }
+  const link = (n: string) => ({ t: "s", v: n.replace(PREFIJO, ""), l: { Target: `#'${n.replace(/'/g, "''")}'!A1`, Tooltip: `Ir a «${n}»` } })
+  const cuenta = (x: number) => (x ? { t: "n", v: x, z: "0" } : "")
+  const filas: unknown[][] = [["ÍNDICE — el [+] de la izquierda abre cada responsable; tocá una solapa para ir. En cada solapa, el título («⬅ Índice») trae de vuelta acá."],
+    ["Marcas: ✓ pagada y respaldada por el banco · 🔴 sin pagar · 🟡 a revisar (pagada sin movimiento, o el banco movió otro importe) · ⚪ en $ 0 · ⚠️ el código contable no es el esperado"],
+    [], ["", "Solapa", "Total (débito − crédito)", "🔴 sin pagar", "🟡 a revisar", "⚠️ código"]]
+  const niveles = [0, 0, 0, 0]
   for (const g of ["MSA", "MA", "PAM", "General"]) {
     const ns = grupos.get(g)
     if (!ns?.length) continue
+    const agrup = ns.filter(n => !BASE.test(n)), base = ns.filter(n => BASE.test(n))
     filas.push([`${g === "General" ? "GENERAL (retiros y aportes, Libertad)" : g} — ${ns.length} solapa${ns.length === 1 ? "" : "s"}`]); niveles.push(0)
-    for (const n of ns) {
-      filas.push(["", { t: "s", v: n.replace(PREFIJO, ""), l: { Target: `#'${n.replace(/'/g, "''")}'!A1`, Tooltip: `Ir a «${n}»` } }]); niveles.push(1)
+    for (const n of agrup) {
+      const r = resumenDe(n)
+      filas.push(["", link(n), r ? { t: "n", v: r.total, z: MONEDA } : "", cuenta(r?.rojo ?? 0), cuenta(r?.amarillo ?? 0), cuenta(r?.codigo ?? 0)]); niveles.push(1)
+    }
+    if (base.length) {
+      filas.push(["", "— datos de base y papeles —"]); niveles.push(1)
+      for (const n of base) { filas.push(["", link(n)]); niveles.push(1) }
     }
   }
   plegar(filas, niveles, true)
-  hoja(wb, NOMBRE, filas, [{ ancho: 40 }, { ancho: 60 }])
+  hoja(wb, NOMBRE, filas, [{ ancho: 40 }, { ancho: 44 }, { ancho: 22, z: MONEDA }, { ancho: 13 }, { ancho: 13 }, { ancho: 12 }])
   // la primera solapa (y su vista, que va por posición), con el [+] arriba de cada grupo
   wb.SheetNames = [NOMBRE, ...wb.SheetNames.filter(n => n !== NOMBRE)]
   const vs = vistasDe(wb)

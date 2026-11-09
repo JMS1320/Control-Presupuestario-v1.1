@@ -39,7 +39,7 @@ import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta, ULTIMO_SUBDIAR
 import { PRESENTADO_ARCA_COMPRAS } from "@/lib/balance/presentado-arca"
 import { explicarFila, type ProveedorFijo } from "@/lib/balance/facturas-fijas"
 import { armarTemplatesDelEjercicio, desdeCuota, type ExtractoParaH, type TemplatesDelEjercicio } from "@/lib/balance/templates-libro"
-import { indiceDeDestinos, leerExtractoDelEjercicio, leerMovimientosDeCuotas, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
+import { conFacturas, indiceDeDestinos, leerExtractoDelEjercicio, leerMovimientosDeCuotas, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
 import { cargarAuxiliaresPapel, cargarCuotasImpuestos } from "@/lib/impuestos/datos-papel"
 import type { DatosPapelesH } from "@/lib/balance/papeles-impuestos-h"
 import {
@@ -1298,6 +1298,8 @@ export function PapelesDeBalance() {
       try {
         const leido = await leerMovimientosDeCuotas(supabase as unknown as ClienteMinimo, cuotasLibro)
         cuotasLibro = vincularBanco(cuotasLibro, cuotasLibro, leido.movimientos)
+        // 🔍 A-FEAT-1579: la factura vinculada a cada movimiento (contexto del H para auditar); si falla, salen sin ella
+        cuotasLibro = await conFacturas(supabase as unknown as ClienteMinimo, cuotasLibro).catch(() => cuotasLibro)
         bancoSinLeer = leido.tablasQueFallaron
         if (leido.tablasQueFallaron.length) toast.warning(`No se pudo leer el banco de: ${leido.tablasQueFallaron.join(", ")}. El control contra el banco del libro H lo dice.`)
       } catch {

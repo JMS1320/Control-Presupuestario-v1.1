@@ -13560,10 +13560,10 @@ export function correrCasos(): Resultado[] {
       { titular: "MA", cuenta: "Galicia MA CA", fecha: "2025-11-20", descripcion: "", debitos: 0, creditos: 4000000, templateCuotaId: "e", contable: "DIST PAM", enDolares: false }] }
     const h = hojaRetirosYAportes([sale, entra], ex, "25/26", [{ clave: "2025-11", rotulo: "nov-25" }]) as unknown[][]
     const hastaDetalle = h.findIndex(f => /^DETALLE/.test(String(f[0] ?? "")))
-    const cat = h.slice(0, hastaDetalle).flatMap(f => f.filter(x => typeof x === "string" && /^distribución/.test(x))).join(" | ")
+    const cat = h.slice(0, hastaDetalle).flatMap(f => f.filter(x => typeof x === "string" && /distribución/.test(x) && /^PARA /.test(x))).join(" | ")
     const otra = h.find(f => f[0] === "20/11/2025" && f[1] === "Retiro de PAM")
     const v = `${ae.quienPago} · ${ae.efecto} ‖ resumen: ${cat} ‖ otra punta: ${otra ? otra[4] : "no"}`
-    const e = "entró a MA · Galicia MA CA · distribución PAM → MA · entró a MA ‖ resumen: distribución PAM → MA · salió de PAM ‖ otra punta: 4000000"
+    const e = "entró a MA · Galicia MA CA · distribución PAM → MA · entró a MA ‖ resumen: PARA MA · distribución PAM → MA · salió de PAM ‖ otra punta: 4000000"
     chequear("Libro H para auditar", "🔁 Una transferencia PAM → MA: la entrada en MA se lee «entró a MA» (no «de MA a PAM»), queda como otra punta y no suma: el resumen tiene una sola línea",
       e, v, v === e, "A-FEAT-1579")
   }

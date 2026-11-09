@@ -13,6 +13,7 @@ import type { MovimientoExtractoH } from "./movimientos-de-cuotas"
 import { armarResumenPorMes, hojaResumenPorMes } from "./resumen-por-mes"
 import { MOTIVO_EN_CERO } from "./movimientos-de-cuotas"
 import { auditarCuota, controlPorTemplate, CENTRADO } from "./auditoria-templates"
+import { congelarColumnasEn } from "./formato-excel"
 
 /** Lo que NO se arma como grupo: lo financiero (no es gasto) y lo bancario (ya está en el libro C). */
 export const AGRUPADORAS_FUERA = new Set(["inversiones", "movimientos internos empresa", "tarjetas", "créditos bancarios", "creditos bancarios",
@@ -42,7 +43,7 @@ export function armarGruposTemplates(cuotas: CuotaTemplate[]): GrupoTemplates[] 
 /** Un nombre de solapa corto y único (Excel admite 31 caracteres). */
 export function nombreSolapaGrupo(g: Pick<GrupoTemplates, "responsable" | "agrupadora">, libro = "G"): string {
   const corto = g.agrupadora.replace(/Impuestos/gi, "Imp").replace(/Buenos Aires/gi, "BA").replace(/General/gi, "Gral")
-    .replace(/Distribuci[oó]n/gi, "Distrib").replace(/Socios/gi, "soc").replace(/\s*\/\s*/g, "-")
+    .replace(/Distribuci[oó]n/gi, "Distrib").replace(/Socios/gi, "soc").replace(/Movimientos Internos( empresa)?/gi, "Mov internos").replace(/\s*\/\s*/g, "-")
   return `${libro} · ${g.responsable} · ${corto}`.slice(0, 31)
 }
 
@@ -118,11 +119,11 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
     orden: `${bancoDe(c) ? "0" + bancoDe(c) : "1"}|${c.fecha ?? ""}|${c.concepto}`,
     columnas: [dmy(c.fecha), c.concepto, bancoDe(c) || "sin pago", c.banco?.comprobante ?? "",
       c.proveedor || c.banco?.cuenta || "", c.detalle ?? "", c.estado,
-      ...(opciones.auditoria ? (a => [a.quienPago, a.codigo, a.efecto, CENTRADO(a.marca)])(auditarCuota(c)) : [])],
+      ...(opciones.auditoria ? (a => [a.quienPago, a.codigo, a.efecto, CENTRADO(a.marca), a.descripcion, a.beneficiario, a.factura, a.interno])(auditarCuota(c)) : [])],
   })), {
     titulo: `${g.agrupadora.toUpperCase()} — ${g.responsable} — ejercicio ${etiqueta}`,
     meses, encabezadoDetalle: ["Fecha", "Concepto", "Banco / cuenta", "Comprobante", "Proveedor", "Detalle", "Estado",
-      ...(opciones.auditoria ? ["Quién pagó", "Código contable", "Efecto", "Marca"] : [])],
+      ...(opciones.auditoria ? ["Quién pagó", "Código contable", "Efecto", "Marca", "Descripción del banco", "Beneficiario / CUIT", "Factura vinculada", "Interno"] : [])],
     debeHaber: true, ...(opciones.auditoria ? { importeEn: 7 } : {}),
   })
   if (!u.celdaTotal || !u.colDebito || !u.colCredito) return { filas: h, celdaTotal: u.celdaTotal }
@@ -184,6 +185,7 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
   }
   // 🔍 A-FEAT-1579: en el H para auditar, un renglón por template al pie (¿se pagaron todas sus cuotas?)
   if (opciones.auditoria) {
+    congelarColumnasEn(h, 4)  // Nro · Mes · Fecha · Concepto quedan a la vista al ir a la derecha (Marca y el contexto)
     const cC = `${u.colDetalle(1)}${u.det1}:${u.colDetalle(1)}${u.detN}`
     const lit = (x: string) => x.replace(/[~*?]/g, m => `~${m}`).replace(/"/g, "\"\"")
     h.push(...controlPorTemplate(g.cuotas, u.colDetalle(1), u.colDetalle(10), u.det1, u.detN,

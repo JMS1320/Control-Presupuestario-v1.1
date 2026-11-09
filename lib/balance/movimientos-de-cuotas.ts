@@ -32,6 +32,12 @@ export interface MovimientoDeCuota {
   enDolares: boolean
   /** 🔍 A-FEAT-1579: el código contable del movimiento (`CTA MA`, `DIST MA`, `LIB`…), para el libro H para auditar. */
   contable?: string
+  /** 🔍 A-FEAT-1579 (contexto para auditar, JMS 09/11): la descripción del banco, el beneficiario / CUIT (leyendas), el código interno y la
+   * factura vinculada al movimiento (su id; el texto lo pone `conFacturas`). */
+  descripcion?: string
+  beneficiario?: string
+  interno?: string
+  comprobanteArcaId?: string
 }
 
 export interface MovimientosDeCuotas {
@@ -55,7 +61,8 @@ export async function leerMovimientosDeCuotas(cliente: ClienteMinimo, cuotas: Cu
     for (let i = 0; i < ids.length; i += TANDA) {
       const q = t.schema === "public" ? cliente.from(t.tabla) : cliente.schema(t.schema).from(t.tabla)
       const { data, error } = await q
-        .select(`template_cuota_id, fecha, debitos, creditos, numero_de_comprobante, contable${esTarjeta ? ", comprobante" : ""}`)
+        // todas las columnas: las leyendas (beneficiario) y el interno no están en todas las cuentas
+        .select("*")
         .in("template_cuota_id", ids.slice(i, i + TANDA))
       if (error) { if (!tablasQueFallaron.includes(nombreCuenta(t))) tablasQueFallaron.push(nombreCuenta(t)); continue }
       for (const m of (data ?? []) as Array<Record<string, unknown>>) {
@@ -69,6 +76,11 @@ export async function leerMovimientosDeCuotas(cliente: ClienteMinimo, cuotas: Cu
           creditos: Number(m.creditos) || 0,
           enDolares: !!t.enDolares,
           contable: String(m.contable ?? "").trim(),
+          descripcion: String(m.descripcion ?? "").trim(),
+          beneficiario: [m.leyendas_adicionales_1, m.leyendas_adicionales_2, m.leyendas_adicionales_3, m.leyendas_adicionales_4]
+            .map(x => String(x ?? "").trim()).filter(Boolean).join(" · "),
+          interno: String(m.interno ?? "").trim(),
+          comprobanteArcaId: m.comprobante_arca_id ? String(m.comprobante_arca_id) : undefined,
         })
       }
     }
@@ -106,6 +118,8 @@ function bancoDe(c: CuotaTemplate, porVinculo: Map<string, MovimientoDeCuota[]>,
   const comprobante = unicos(ms.map(m => m.comprobante))
   const titular = unicos(ms.map(m => m.titular))
   const contable = unicos(ms.map(m => m.contable ?? ""))
+  const contexto = { descripcion: unicos(ms.map(m => m.descripcion ?? "")), beneficiario: unicos(ms.map(m => m.beneficiario ?? "")),
+    interno: unicos(ms.map(m => m.interno ?? "")), facturaIds: [...new Set(ms.map(m => m.comprobanteArcaId).filter((x): x is string => !!x))] }
   if (!ms.length) {
     if (!conciliada) return { cuenta: "", comprobante: "", respaldo: null, motivo: null }
     // 01/11: 85 de las 87 conciliadas sin movimiento están en $ 0 (SICORE sin retenciones, retiros semestrales…): no mueven
@@ -114,15 +128,15 @@ function bancoDe(c: CuotaTemplate, porVinculo: Map<string, MovimientoDeCuota[]>,
       ? { cuenta: "", comprobante: "", respaldo: 0, motivo: MOTIVO_EN_CERO }
       : { cuenta: "", comprobante: "", respaldo: null, motivo: "conciliada sin movimiento en el banco" }
   }
-  if (ms.some(m => m.enDolares)) return { cuenta, titular, contable, comprobante, respaldo: null, motivo: "pagada desde una cuenta en dólares: no se compara con la cuota en pesos" }
+  if (ms.some(m => m.enDolares)) return { cuenta, titular, contable, ...contexto, comprobante, respaldo: null, motivo: "pagada desde una cuenta en dólares: no se compara con la cuota en pesos" }
   const neto = r2(ms.reduce((t, m) => t + m.debitos - m.creditos, 0))
   if (propios.length) {
-    return { cuenta, titular, contable, comprobante, respaldo: neto, motivo: Math.abs(neto - c.monto) > 0.01 ? `el banco movió $ ${fmt(neto)} y la cuota dice $ ${fmt(c.monto)}` : null }
+    return { cuenta, titular, contable, ...contexto, comprobante, respaldo: neto, motivo: Math.abs(neto - c.monto) > 0.01 ? `el banco movió $ ${fmt(neto)} y la cuota dice $ ${fmt(c.monto)}` : null }
   }
   const g = totalGrupo.get(c.grupoPagoId!) ?? { total: c.monto, n: 1 }
-  if (Math.abs(neto - g.total) <= 0.01) return { cuenta, titular, contable, comprobante, respaldo: c.monto, motivo: null }
+  if (Math.abs(neto - g.total) <= 0.01) return { cuenta, titular, contable, ...contexto, comprobante, respaldo: c.monto, motivo: null }
   const respaldo = g.total ? r2(c.monto * neto / g.total) : 0
-  return { cuenta, titular, contable, comprobante, respaldo, motivo: `pago agrupado de ${g.n} cuotas por $ ${fmt(g.total)}; el banco movió $ ${fmt(neto)}` }
+  return { cuenta, titular, contable, ...contexto, comprobante, respaldo, motivo: `pago agrupado de ${g.n} cuotas por $ ${fmt(g.total)}; el banco movió $ ${fmt(neto)}` }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
@@ -215,4 +229,25 @@ export function indiceDeDestinos(todas: CuotaTemplate[]): Map<string, DestinoMov
 export function sinCategoriaNiVinculo(movs: MovimientoExtractoH[], titular: string): MovimientoExtractoH[] {
   return movs.filter(m => m.titular === titular && !m.categ.trim() && !m.templateCuotaId && !m.comprobanteArcaId && !m.otroVinculo
     && (m.debitos !== 0 || m.creditos !== 0))
+}
+
+
+/**
+ * 🔍 A-FEAT-1579: el texto de la factura vinculada a cada movimiento («factura de MSA: BOLIG ALBERTO NICOLAS FC 39 · $ 95.000»), que en una
+ * cuota pagada por otra empresa dice de quién era la factura. Busca en las tres empresas. Si la lectura falla, las cuotas salen como estaban.
+ */
+export async function conFacturas(cliente: ClienteMinimo, cuotas: CuotaTemplate[]): Promise<CuotaTemplate[]> {
+  const ids = [...new Set(cuotas.flatMap(c => c.banco?.facturaIds ?? []))]
+  if (!ids.length) return cuotas
+  const texto = new Map<string, string>()
+  for (const s of ["msa", "pam", "ma"]) {
+    for (let i = 0; i < ids.length; i += TANDA) {
+      const { data, error } = await cliente.schema(s).from("comprobantes_arca")
+        .select("id, denominacion_emisor, tipo_comprobante_desc, punto_venta, numero_desde, imp_total").in("id", ids.slice(i, i + TANDA))
+      if (error) continue
+      for (const f of (data ?? []) as Array<Record<string, unknown>>) texto.set(String(f.id),
+        `factura de ${s.toUpperCase()}: ${f.denominacion_emisor ?? ""} ${f.tipo_comprobante_desc ?? ""} ${f.punto_venta ?? ""}-${f.numero_desde ?? ""} · $ ${fmt(Number(f.imp_total) || 0)}`)
+    }
+  }
+  return cuotas.map(c => c.banco?.facturaIds?.length ? { ...c, banco: { ...c.banco, factura: c.banco.facturaIds.map(id => texto.get(id) ?? "").filter(Boolean).join(" | ") } } : c)
 }

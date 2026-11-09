@@ -13,7 +13,7 @@ type Foto = { archivo: string; solapas: Record<string, { total: number; cuotas: 
   otrasPuntas: { n: number; total: number }; control: Record<string, { cuotas: number; banco: number; directo: number; totalBanco: number }> }
 
 const args = process.argv.slice(2), iJ = args.indexOf("--json"), salida = iJ >= 0 ? args[iJ + 1] : null
-const archivos = args.filter((a, i) => i !== iJ && i !== iJ + 1)
+const archivos = args.filter((a, i) => iJ < 0 || (i !== iJ && i !== iJ + 1))
 const r2 = (n: number) => Math.round(n * 100) / 100
 
 function foto(p: string): Foto {
@@ -38,7 +38,9 @@ function foto(p: string): Foto {
     const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 })
     for (const r of rows) {
       if (/^DETALLE/.test(String(r?.[0] ?? ""))) break
-      if (r && typeof r[4] === "string" && (typeof r[3] === "number" || r[4] === "TOTAL")) f.retiros[r[4]] = r2(Number(r[2]) || 0)
+      const tot = !!r && typeof r[4] === "string" && r[4].startsWith("TOTAL")
+      if (tot) { f.retiros["TOTAL"] = r2(Number(r[2]) || 0); continue }
+      if (r && typeof r[4] === "string" && typeof r[3] === "number") f.retiros[r[4].replace(/^PARA [^ ]+ · /, "")] = r2(Number(r[2]) || 0)
     }
     const op = rows.find(r => r && r[1] === "TOTAL de las otras puntas (no suma)")
     const ok = rows.find(r => r && String(r[0] ?? "").startsWith("✓ ") && /entrada/.test(String(r[0])))

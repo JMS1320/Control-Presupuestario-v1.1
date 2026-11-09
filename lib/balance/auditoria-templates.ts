@@ -19,6 +19,11 @@ export interface AuditoriaDeCuota {
   codigo: string
   efecto: string
   marca: string
+  /** 🔍 el contexto del banco para auditar sin ir a la app (JMS 09/11, revisión punto C) */
+  descripcion: string
+  beneficiario: string
+  factura: string
+  interno: string
 }
 
 const EMPRESAS = new Set(["MSA", "PAM", "MA"])
@@ -83,15 +88,37 @@ export const otraParteDelCodigo = (codigo: string): string => (codigo.trim().mat
  * sentido lo da el movimiento. Una SALIDA de PAM con «DIST MA» = «distribución PAM → MA · salió de PAM»; la ENTRADA en MA de esa misma
  * transferencia, con «DIST PAM», = «distribución PAM → MA · entró a MA» (antes decía «distribución de MA a PAM», al revés).
  */
-export function efectoDelCodigo(titular: string, codigo: string, entrada = false): string {
+/**
+ * 🔁 La frase de una TRANSFERENCIA entre dos partes — la MISMA en las dos puntas (JMS 09/11, revisión punto B.2: el mismo movimiento no
+ * puede tener dos rótulos). Después se le agrega «· salió de X» o «· entró a Y».
+ */
+function fraseTransferencia(dist: boolean, origen: string, destino: string): string {
+  if (dist) return `distribución ${origen} → ${destino}`
+  if (destino === "MSA") return `aporte de ${origen} a MSA`
+  if (origen === "MSA") return `retiro de ${destino} (MSA → ${destino})`
+  return `${origen} → ${destino} (cuenta corriente)`
+}
+
+export function efectoDelCodigo(titular: string, codigo: string, entrada = false, transferencia = false): string {
   const m = codigo.trim().match(/^(CTA|CUENTA|DIST|RET)\s+(.+)$/i)
   if (!m) return (/^FLIA\b/i.test(codigo) ? "gasto de la familia (FLIA)" : `código ${codigo}`) + (entrada ? ` · entró a ${titular}` : "")
-  const quien = m[2].trim().toUpperCase()
-  if (/^DIST$/i.test(m[1])) return entrada ? `distribución ${quien} → ${titular} · entró a ${titular}` : `distribución ${titular} → ${quien} · salió de ${titular}`
-  if (entrada) return `${quien} → ${titular} (cuenta corriente) · entró a ${titular}`
-  // JMS 09/11: la salida de PAM o MA con «CTA MSA» es un APORTE a MSA (el template de PAM se llama «Aporte a MSA»)
-  if (quien === "MSA") return `aporte de ${titular} a MSA`
+  const quien = m[2].trim().toUpperCase(), dist = /^DIST$/i.test(m[1])
+  // la ENTRADA siempre es la otra punta de algo que salió de `quien`
+  if (entrada) return `${fraseTransferencia(dist, quien, titular)} · entró a ${titular}`
+  // una TRANSFERENCIA a la otra parte (su CUIT en el banco) y toda distribución: la frase de las dos puntas
+  if (transferencia || dist) return `${fraseTransferencia(dist, titular, quien)} · salió de ${titular}`
+  // un PAGO A UN TERCERO por cuenta de otro: un gasto de ese otro
+  if (quien === "MSA") return `aporte de ${titular} a MSA (pagó un gasto de MSA)`
   return titular === "MSA" ? `retiro de ${quien} pagado por MSA` : `${titular} pagó por cuenta de ${quien}`
+}
+
+/** Los CUIT de las empresas: una salida al CUIT de la otra parte es una TRANSFERENCIA, no un pago a un tercero. */
+const CUIT_DE: Record<string, string> = { MSA: "30617786016", PAM: "20044390222", MA: "27066824611" }
+/** ¿El movimiento es una transferencia a `quien`? Su CUIT exacto entre las leyendas del banco, o «ctas / cuentas propias». */
+export function esTransferenciaA(quien: string, beneficiario: string | undefined, descripcion: string | undefined): boolean {
+  const cuit = CUIT_DE[quien]
+  const tokens = String(beneficiario ?? "").split(/[·|]/).map(x => x.replace(/\D/g, ""))
+  return (!!cuit && tokens.includes(cuit)) || /ctas propias|cuentas propias|entre cuentas/i.test(String(descripcion ?? ""))
 }
 
 export function auditarCuota(c: CuotaTemplate): AuditoriaDeCuota {
@@ -106,7 +133,10 @@ export function auditarCuota(c: CuotaTemplate): AuditoriaDeCuota {
   let efecto = "", aviso = ""
   if (!sinPago && pagadores.length === 1) {
     efecto = efectoEntre(pagadores[0], dueno)
-    if (/^LIB\b/i.test(codigo)) efecto = "Libertad (LIB): reparto propio"
+    // una TRANSFERENCIA a la otra parte se rotula como transferencia aunque el template sea de otro (la frase de las dos puntas)
+    const transferencia = !entrada && !!codigo && esTransferenciaA(otraParteDelCodigo(codigo), b?.beneficiario, b?.descripcion)
+    if (transferencia && !/^LIB\b/i.test(codigo)) efecto = efectoDelCodigo(pagadores[0], codigo, false, true)
+    else if (/^LIB\b/i.test(codigo)) efecto = "Libertad (LIB): reparto propio"
     // una ENTRADA con código: lo dice el código, mirado desde quien recibió (sin aviso: el código esperado es el de quien paga)
     // …salvo que entre a quien PAGÓ el gasto de otro, con el código de ese otro: es un REINTEGRO de ese gasto (la VISA de PAM devuelve
     // parte del Seguro Chalet de MA): va en la misma línea que el gasto, restando — no es una distribución al revés
@@ -115,7 +145,7 @@ export function auditarCuota(c: CuotaTemplate): AuditoriaDeCuota {
     else if (entrada) efecto = efecto ? `${efecto} · entró a ${pagadores[0]}` : ""
     // lo pagó el dueño y el movimiento tiene código: es un retiro o una distribución en sí (el template «Retiro MA mensual»):
     // el efecto lo dice el código, y no hay nada que avisar
-    else if (!efecto && codigo) efecto = efectoDelCodigo(pagadores[0], codigo)
+    else if (!efecto && codigo) efecto = efectoDelCodigo(pagadores[0], codigo, false, esTransferenciaA(otraParteDelCodigo(codigo), b?.beneficiario, b?.descripcion))
     else if (EMPRESAS.has(pagadores[0]) && EMPRESAS.has(dueno)) {
       const esperado = codigoEsperado(pagadores[0] as Empresa, dueno as Empresa) ?? ""
       if (esperado.toUpperCase() !== codigo.toUpperCase()) aviso = ` · ⚠️ código esperado: ${esperado || "(vacío)"}`
@@ -127,7 +157,18 @@ export function auditarCuota(c: CuotaTemplate): AuditoriaDeCuota {
   else if (b && !b.cuenta) marca = "🟡 marcada pagada, sin movimiento en el banco"
   else if (b?.motivo) marca = `🟡 ${b.motivo}`
   else marca = b ? "✓" : ""
-  return { quienPago, codigo, efecto, marca: marca + aviso }
+  return { quienPago, codigo, efecto, marca: marca + aviso, descripcion: b?.descripcion ?? "", beneficiario: b?.beneficiario ?? "", factura: b?.factura ?? "", interno: b?.interno ?? "" }
+}
+
+/** Quién RECIBE en un efecto: el destino de la flecha, la empresa del aporte o del retiro, Libertad o FLIA. */
+export function receptorDe(efecto: string): string {
+  if (/^Libertad/.test(efecto)) return "Libertad"
+  if (/FLIA/.test(efecto)) return "FLIA"
+  let m = efecto.match(/→ ([A-ZÁÉÍÓÚÑ]+)/); if (m) return m[1]
+  if (/^aporte de \S+ a MSA/.test(efecto)) return "MSA"
+  m = efecto.match(/^retiro de (\S+)/); if (m) return m[1]
+  m = efecto.match(/pagó por (?:cuenta de )?(\S+)/); if (m) return m[1]
+  return "otros"
 }
 
 /**
@@ -163,20 +204,50 @@ export function hojaRetirosYAportes(cuotas: CuotaTemplate[], extracto: { movimie
   }
   const suman = conEfecto.filter(x => !puntaDe.has(x.c))
 
+  // 🎨 JMS 09/11 (revisión D.4.b): el resumen agrupado por QUIÉN RECIBE — cada línea empieza «PARA MA ·», «PARA PAM ·»… y abajo su total
+  const categoria = (efecto: string) => `PARA ${receptorDe(efecto)} · ${efecto}`
+  const LINKS = ["📍 Ir a «TOTAL POR QUIÉN RECIBE» (tocá acá)", "📍 Ir a «OTRAS PUNTAS — no suman» (tocá acá)", "📍 Ir a «CONTROL contra el banco» (tocá acá)"]
   const { filas: h } = armarResumenPorMes(suman.map(({ c, a }) => ({
-    categoria: a.efecto, mes: (c.fecha ?? "").slice(0, 7), importe: c.monto, orden: `${a.efecto}|${c.fecha ?? ""}`,
-    columnas: [dmy(c.fecha), c.concepto, c.agrupadoraTemplate || "(sin agrupadora)", primero(c.responsable), a.quienPago, a.codigo, CENTRADO(a.marca)],
+    categoria: categoria(a.efecto), mes: (c.fecha ?? "").slice(0, 7), importe: c.monto, orden: `${categoria(a.efecto)}|${c.fecha ?? ""}`,
+    columnas: [dmy(c.fecha), c.concepto, c.agrupadoraTemplate || "(sin agrupadora)", primero(c.responsable), a.quienPago, a.codigo, CENTRADO(a.marca),
+      a.descripcion, a.beneficiario, a.factura, a.interno],
   })), {
     titulo: `RETIROS Y APORTES — desde la columna Efecto de las cuotas — ejercicio ${etiqueta}`,
-    notas: ["Cada cuota pagada por una empresa que no es la dueña del gasto (o que es un retiro en sí). Libertad (LIB) va aparte, con su reparto.",
-      "Una transferencia entre empresas tiene DOS PUNTAS (sale de una cuenta y entra a otra): acá suma UNA sola, la salida. La entrada va abajo, en «Otras puntas»."],
-    meses, encabezadoDetalle: ["Fecha", "Concepto", "Agrupadora", "Responsable", "Quién pagó", "Código contable", "Marca"], debeHaber: true, semestres: true,
+    notas: ["Cada cuota pagada por una empresa que no es la dueña del gasto (o que es un retiro en sí), agrupada por QUIÉN RECIBE. Libertad (LIB) va aparte, con su reparto.",
+      "Una transferencia entre empresas tiene DOS PUNTAS (sale de una cuenta y entra a otra): acá suma UNA sola, la salida, y las dos puntas se rotulan con la MISMA frase («· salió de» / «· entró a»).",
+      ...LINKS],
+    meses, encabezadoDetalle: ["Fecha", "Concepto", "Agrupadora", "Responsable", "Quién pagó", "Código contable", "Marca", "Descripción del banco", "Beneficiario / CUIT", "Factura vinculada", "Interno"],
+    debeHaber: true, semestres: true, importeEn: 7,
   })
+  const ponerLink = (k: number, fila: number) => { const i = h.findIndex(r => r && r[0] === LINKS[k]); if (i >= 0 && fila > 0) h[i][0] = { t: "s", v: LINKS[k], l: { Target: `#'H · Retiros y aportes'!A${fila}` } } }
+
+  // ── el TOTAL general: se aclara que mezcla todo (la lectura es por quién recibe)
+  const iEnc = h.findIndex(r => r && r[3] === "Nro" && r[4] === "Categoría"), iTot = h.findIndex((r, i) => i > iEnc && r && r[4] === "TOTAL")
+  if (iTot > 0) h[iTot][4] = "TOTAL (todo junto, mezcla quién recibe: leer «Total por quién recibe»)"
+  // 🎨 el Nro, ENTERO (JMS 09/11: salía «1,00» porque comparte columna con importes): en el resumen (col. D) y en el detalle (col. A)
+  const iDet = h.findIndex(r => r && r[0] === "Nro" && r[1] === "Mes")
+  h.forEach((r, i) => {
+    if (!r) return
+    if (i > iEnc && (iTot < 0 || i < iTot) && typeof r[3] === "number") r[3] = { t: "n", v: r[3], z: "0" }
+    if (iDet >= 0 && i > iDet && typeof r[0] === "number") r[0] = { t: "n", v: r[0], z: "0" }
+  })
+
+  // ── el TOTAL POR QUIÉN RECIBE, con fórmulas sobre el resumen de arriba
+  const receptores = [...new Set(suman.map(x => receptorDe(x.a.efecto)))].sort((x, y) => x.localeCompare(y, "es"))
+  h.push([], ["TOTAL POR QUIÉN RECIBE — la suma de las líneas «PARA …» del resumen de arriba"])
+  const filaTotalPorQuien = h.length
+  h.push(["Recibe", "", "Total del ejercicio", "Líneas del resumen"].map(x => x ? CENTRADO(x) : x))
+  for (const r of receptores) {
+    const v = r2(suman.filter(x => receptorDe(x.a.efecto) === r).reduce((t, x) => t + x.c.monto, 0))
+    const lineas = [...new Set(suman.filter(x => receptorDe(x.a.efecto) === r).map(x => x.a.efecto))].length
+    h.push([r, "", iEnc >= 0 && iTot > 0 ? { t: "n", f: `SUMIF($E${iEnc + 2}:$E${iTot},"PARA ${r} ·*",$C${iEnc + 2}:$C${iTot})`, v } : v, { t: "n", v: lineas, z: "0" }])
+  }
 
   // ── las otras puntas: entradas que ya están contadas por su salida
   const otras = conEfecto.filter(x => puntaDe.has(x.c)).sort((x, y) => (x.c.fecha ?? "").localeCompare(y.c.fecha ?? ""))
   const entradasSinSalida = suman.filter(x => x.c.monto < 0 && x.a.codigo && otraParteDelCodigo(x.a.codigo) && / · entró a /.test(x.a.efecto)).length
   h.push([], ["OTRAS PUNTAS — NO SUMAN: cada una es la entrada de una transferencia que ya suma arriba por su salida"])
+  const filaOtras = h.length
   h.push([`✓ ${otras.length} entrada(s) encontraron su salida en la otra cuenta · ${entradasSinSalida} entrada(s) con código sin salida en el sistema (esas sí suman arriba)`])
   if (otras.length) {
     h.push(["Fecha", "Concepto", "Entró a", "Código", "Importe", "Es la otra punta de (salida)", "Código de la salida", ""].map(x => x ? CENTRADO(x) : x))
@@ -203,6 +274,7 @@ export function hojaRetirosYAportes(cuotas: CuotaTemplate[], extracto: { movimie
   const claves = [...new Set([...desdeCuotas.keys(), ...conTpl.keys(), ...sinTpl.keys()])]
     .filter(k => /\|(CTA|CUENTA|DIST|RET|LIB)\b/.test(k)).sort()
   h.push([], ["CONTROL — el mismo número por dos caminos: las cuotas (columna Efecto) contra el banco (código del movimiento)"])
+  ponerLink(0, filaTotalPorQuien); ponerLink(1, filaOtras); ponerLink(2, h.length)
   if (!extracto) { h.push(["⚠️ No se leyó el extracto del ejercicio: el control no se hizo."]); return h }
   h.push(["Cuenta de (empresa)", "Código", "Desde las cuotas", "Banco, atado a una cuota", "Diferencia", "", "Banco SIN template (retiros directos)", "Total del banco con ese código"])
   for (const k of claves) {

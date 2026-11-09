@@ -58,6 +58,9 @@ export const esSinCongelar = (filas: unknown[][]) => SIN_CONGELAR.has(filas)
  * arriba se ve de un pantallazo y la lista de abajo es la que puede tener muchos movimientos»). Manda sobre lo que adivina la presentación.
  */
 const CONGELAR_EN = new WeakMap<unknown[][], number>()
+const CONGELAR_COLS = new WeakMap<unknown[][], number>()
+export const congelarColumnasEn = (filas: unknown[][], n: number) => { CONGELAR_COLS.set(filas, n) }
+export const columnasCongeladasDe = (filas: unknown[][]): number | undefined => CONGELAR_COLS.get(filas)
 export const congelarEn = (filas: unknown[][], fila: number) => { CONGELAR_EN.set(filas, fila) }
 export const congeladoDe = (filas: unknown[][]): number | undefined => CONGELAR_EN.get(filas)
 /**
@@ -183,7 +186,9 @@ const tieneFondo = (c: XLSX.CellObject) => !!((c as { s?: Estilo }).s?.fill)
 /** Lo que la presentación averiguó de la hoja y `xlsx-js-style` no sabe escribir solo (ver `aplicarVistas`). */
 export interface Vista { congelarFilas?: number; sinCuadricula?: boolean; colorSolapa?: string
   /** 🧭 A-FEAT-1579: el [+] de los renglones plegados va ARRIBA del grupo (en el renglón del título), no abajo. */
-  resumenArriba?: boolean }
+  resumenArriba?: boolean
+  /** 🧊 A-FEAT-1579: cuántas columnas quedan fijas a la izquierda (el Concepto se ve aunque se vaya a la derecha). */
+  congelarColumnas?: number }
 
 /**
  * 🎨 Presenta una hoja ya armada y devuelve su **vista** (cuántas filas inmovilizar).
@@ -401,10 +406,13 @@ export async function aplicarVistas(datos: Uint8Array | ArrayBuffer, vistas: Vis
      * vacío. Se escriben como celdas SIN valor (conservan el color, dejan desbordar).
      */
     let xml = (await f.async("string")).replace(/<c r="([A-Z]+\d+)"( s="\d+")? t="str"><v><\/v><\/c>/g, '<c r="$1"$2/>')
-    if (v.congelarFilas || v.sinCuadricula) {
+    if (v.congelarFilas || v.sinCuadricula || v.congelarColumnas) {
       const atrib = v.sinCuadricula ? ' showGridLines="0"' : ""
-      const pane = v.congelarFilas
-        ? `<pane ySplit="${v.congelarFilas}" topLeftCell="A${v.congelarFilas + 1}" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A${v.congelarFilas + 1}" sqref="A${v.congelarFilas + 1}"/>`
+      const fy = v.congelarFilas ?? 0, fx = v.congelarColumnas ?? 0
+      const letra = (n: number) => { let s = ""; for (let k = n + 1; k > 0; k = Math.floor((k - 1) / 26)) s = String.fromCharCode(65 + ((k - 1) % 26)) + s; return s }
+      const celda = `${letra(fx)}${fy + 1}`, panel = fx && fy ? "bottomRight" : fx ? "topRight" : "bottomLeft"
+      const pane = fy || fx
+        ? `<pane${fx ? ` xSplit="${fx}"` : ""}${fy ? ` ySplit="${fy}"` : ""} topLeftCell="${celda}" activePane="${panel}" state="frozen"/><selection pane="${panel}" activeCell="${celda}" sqref="${celda}"/>`
         : ""
       xml = xml.replace(/<sheetView ([^>]*?)\/>/, (_m, a: string) => `<sheetView ${a}${atrib}>${pane}</sheetView>`)
     }

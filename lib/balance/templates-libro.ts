@@ -168,6 +168,12 @@ export interface BancoDeCuota {
   titular?: string
   /** 🔍 A-FEAT-1579: el código contable del movimiento (vacío = sin código). */
   contable?: string
+  /** 🔍 A-FEAT-1579 — el contexto para auditar: descripción del banco, beneficiario / CUIT, código interno y la factura vinculada. */
+  descripcion?: string
+  beneficiario?: string
+  interno?: string
+  facturaIds?: string[]
+  factura?: string
   /** Cuánto de esta cuota respalda el banco, con el signo de la cuota. `null` = no se puede comparar. */
   respaldo: number | null
   /** Por qué no cierra con el banco. `null` = cierra (o no corresponde: no está conciliada). */
