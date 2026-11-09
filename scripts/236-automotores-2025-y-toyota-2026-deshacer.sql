@@ -1,0 +1,9 @@
+-- Deshace el 236: borra SÓLO lo que creó (ids fijos) y devuelve los Toyota a como estaban (foto 236-foto-antes.json, después del 235).
+begin;
+delete from public.cuotas_egresos_sin_factura where id in ('d1647685-ebfa-4ff1-bb87-39b1af7c3907', '3eb48886-bb6b-4ad5-ae26-f6b5d5c959dd', '853e18bc-3c6c-4a18-980d-51a7327ca11b', '58d3d854-4d9b-44d4-9b70-263ead7b3722', '0cee7ce8-5620-4781-b630-25916807dd6e', '6fd276d9-6acd-447b-9c3f-6f1d24ed880b', '5edab079-900e-4c06-afbc-578e15547e61', '9d66163e-b6b3-413e-b66f-c50dfa1846bf', 'd3345bd9-4a69-45f3-90f4-d021ae86c2c7', '6e862385-ae8a-4422-be17-f9fcea2d9612', '0ed2a9e3-4c15-491e-b7a3-a57307c6aa24', '966fdb6d-33fd-439f-bd00-b76bbc9fb87c', '587ba5e8-9f73-4d45-8e1e-93c18c2fe40e');
+delete from public.egresos_sin_factura where id in ('e6641233-dd41-48d3-8e68-20f6982c587a', 'ec12bb27-a02c-487e-bfcc-1df8d99dd4a1', '4cc03287-b898-426a-9464-302e3e1c1c2b', 'd4269d49-3e76-4754-b3ea-37da51f6fed4') and not exists (select 1 from public.cuotas_egresos_sin_factura c where c.egreso_id = egresos_sin_factura.id);
+update public.egresos_sin_factura set "año"='2026', activo=false, aplica_generacion=true, monto_por_cuota=175123.00, fecha_primera_cuota='2025-03-10', tipo_fecha='Estimada' where id='5336e47c-a3b8-4d73-ab86-6e462bac97e6';
+update public.egresos_sin_factura set "año"='2026', activo=true, aplica_generacion=true where id='404f2357-8f7c-4b8c-9b59-5015301b73a0';
+update public.cuotas_egresos_sin_factura set fecha_estimada='2025-03-10', fecha_vencimiento=null, monto=0, estado='desactivado', descripcion=null where id='72f8fa0d-c10d-45b7-9db3-a8582bc57326';
+update public.cuotas_egresos_sin_factura set estado='conciliado' where id in ('d22bbfd7-9276-4187-b2ca-f95baad8a295', 'ad0d206a-bf0f-44f7-ae2e-4abac8d48ede', 'c254f678-3489-4c13-9062-3b1b7bdcc6e2', 'dc784e25-65e6-4739-a000-f24aa7a20335', '3955df07-6f72-40f5-bc3a-58c37dfe8fd5') and estado='desactivado';
+commit;
