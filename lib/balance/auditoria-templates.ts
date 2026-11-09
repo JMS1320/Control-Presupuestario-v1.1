@@ -208,7 +208,7 @@ export function hojaRetirosYAportes(cuotas: CuotaTemplate[], extracto: { movimie
   const categoria = (efecto: string) => `PARA ${receptorDe(efecto)} · ${efecto}`
   const LINKS = ["📍 Ir a «TOTAL POR QUIÉN RECIBE» (tocá acá)", "📍 Ir a «OTRAS PUNTAS — no suman» (tocá acá)", "📍 Ir a «CONTROL contra el banco» (tocá acá)"]
   const { filas: h } = armarResumenPorMes(suman.map(({ c, a }) => ({
-    categoria: categoria(a.efecto), mes: (c.fecha ?? "").slice(0, 7), importe: c.monto, orden: `${categoria(a.efecto)}|${c.fecha ?? ""}`,
+    categoria: categoria(a.efecto), mes: (c.fecha ?? "").slice(0, 7), importe: c.monto, orden: `${c.fecha ?? ""}|${categoria(a.efecto)}`,  // JMS 09/11: el detalle va por FECHA (07/25 → 06/26), aunque se filtre por agrupadora
     columnas: [dmy(c.fecha), c.concepto, c.agrupadoraTemplate || "(sin agrupadora)", primero(c.responsable), a.quienPago, a.codigo, CENTRADO(a.marca),
       a.descripcion, a.beneficiario, a.factura, a.interno],
   })), {
