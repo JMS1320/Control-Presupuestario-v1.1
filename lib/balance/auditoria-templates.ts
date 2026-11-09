@@ -13,6 +13,7 @@ import type { CuotaTemplate } from "./templates-libro"
 import { duenoDelBien, codigoEsperado, type Empresa } from "./dueno-de-bienes"
 import { cuotaSinPago } from "./grupos-templates"
 import { armarResumenPorMes } from "./resumen-por-mes"
+import { filtrarEn, congelarEn } from "./formato-excel"
 
 export interface AuditoriaDeCuota {
   quienPago: string
@@ -378,5 +379,7 @@ export function hojaInconsistencias(cuotas: CuotaTemplate[], etiqueta: string, s
     const d = h.findIndex((r, n) => n > iDet && r[0] === t)
     if (d >= 0) h[k][0] = { t: "s", v: `${t} ➜`, l: { Target: `#'Inconsistencias'!A${d + 1}`, Tooltip: "Ir al primer renglón de este tipo" } }
   }
+  // 🔎 JMS 09/11: «el filtro debe estar en la de abajo» — el filtro y la fila fija van en el encabezado del DETALLE, no del resumen
+  if (iDet >= 0) { filtrarEn(h, `A${iDet + 1}:L${Math.max(h.length, iDet + 2)}`); congelarEn(h, iDet + 1) }
   return h
 }

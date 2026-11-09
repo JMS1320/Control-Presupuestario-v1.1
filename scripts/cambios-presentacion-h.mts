@@ -87,6 +87,8 @@ export const CAMBIOS: unknown[][] = [
     "10 casos: Gol y Tiguan (cuotas en $ 0 de un template de cuotas inactivo), Red Vial Rojas y Lima, ABL Libertad, Lote Puerto, Quintas Rosello (anual en $ 0 o pendiente + cuotas pagadas)"],
   [36, "Estética de las tablas del pie (Por efecto, Por establecimiento, Control por template): título en banda, encabezado con fondo y línea, importes con formato y TOTAL en negrita con línea arriba. «Por establecimiento» suma desde los «Subtotal» del resumen y tiene su total.", "Solapas de agrupadora",
     "Texto plano, «= Total de la solapa»", "«TOTAL de la solapa» en negrita sobre fondo; «TOTAL de los impuestos» en Por establecimiento"],
+  [37, "Inconsistencias: el filtro y la fila fija pasan al encabezado del DETALLE (la tabla de abajo), no al resumen de tipos.", "«Inconsistencias»",
+    "Filtro en la fila 4 (resumen)", "Filtro y fila fija en el encabezado del detalle (fila 12 hoy)"],
   [22, "Nueva solapa «INCONSISTENCIAS»: todo lo que hay que mirar de todas las solapas, por tipo, con link a la solapa de la cuota.", "Solapa «Inconsistencias» (después de Gastos Libertad)",
     "Había que recorrer las 51 solapas buscando 🔴 / 🟡 / ⚠️", "🔴 sin pagar · 🟡 sin movimiento · 🟡 el banco movió otro importe · 🟡 en dólares · ⚠️ código · ⚪ en $ 0 (al final): cada renglón con «Ir a» su solapa"],
   [],
