@@ -14,6 +14,8 @@ import { desdeCuota, armarTemplatesDelEjercicio } from "../lib/balance/templates
 import { leerMovimientosDeCuotas, vincularBanco, leerExtractoDelEjercicio, indiceDeDestinos, conFacturas } from "../lib/balance/movimientos-de-cuotas"
 import { agregarLibroH, vistasDe, agregarHoja, reordenarSolapas } from "../lib/balance/export-libro-diario"
 import { SOLAPA_CAMBIOS, CAMBIOS, ANCHOS_CAMBIOS } from "./cambios-presentacion-h.mts"
+import { SOLAPA_DATOS, ANCHOS_DATOS, armarDatosARevisar } from "./datos-a-revisar-h.mts"
+import { nombreSolapaGrupo, SIN_GRUPO } from "../lib/balance/grupos-templates"
 import { aplicarVistas } from "../lib/balance/formato-excel"
 import { fechasReales } from "../lib/excel/fechas-reales"
 import { cargarCuotasImpuestos, cargarAuxiliaresPapel } from "../lib/impuestos/datos-papel"
@@ -50,13 +52,19 @@ const wb = XLSX.utils.book_new()
 // los papeles de impuestos (y el establecimiento de cada partida), como en la app
 const [cuotasImp, aux] = await Promise.all([cargarCuotasImpuestos(sb), cargarAuxiliaresPapel(sb)])
 agregarLibroH(wb as any, templates, ej.etiqueta, meses, { cuotas: cuotasImp, ...aux } as any, { auditoria: true })
+// 📋 --revisar: la solapa «Datos a revisar» (cada punto de la revisión de datos con su contexto), antes del Índice
+if (process.argv.includes("--revisar")) {
+  const solapaDe = (c: any) => { const r = String(c.responsable ?? "").split("/")[0].trim().toUpperCase(); const n = nombreSolapaGrupo({ responsable: r, agrupadora: (c.agrupadoraTemplate ?? "").trim() || SIN_GRUPO }, "H"); return wb.SheetNames.includes(n) ? n : "" }
+  agregarHoja(wb as any, SOLAPA_DATOS, await armarDatosARevisar(sb, [...templates.detalle, ...(templates.aCuentaSocio ?? [])] as any, solapaDe), ANCHOS_DATOS.map((ancho, i) => (i === 3 ? { ancho, z: "#,##0.00" } : { ancho })) as any)
+  reordenarSolapas(wb as any, [SOLAPA_DATOS, ...wb.SheetNames.filter(n => n !== SOLAPA_DATOS)])
+}
 // 📝 --cambios: la solapa «Cambios de presentación» al final, con un link desde el Índice
 if (process.argv.includes("--cambios")) {
   agregarHoja(wb as any, SOLAPA_CAMBIOS, CAMBIOS, ANCHOS_CAMBIOS.map((ancho, i) => (i >= 2 ? { ancho, z: "#,##0.00" } : { ancho })) as any)
   const ix: any = wb.Sheets["Índice"]
   if (ix) ix.A3 = { t: "s", v: "📝 Qué cambió el 09/11 en la presentación (con ejemplos): tocá acá", l: { Target: `#'${SOLAPA_CAMBIOS}'!A1` } }
   // JMS 09/11: las solapas del desarrollo en curso (que después se sacan) van ANTES del índice
-  reordenarSolapas(wb as any, [SOLAPA_CAMBIOS, "Índice", "H · Retiros y aportes", "Gastos Libertad"])
+  reordenarSolapas(wb as any, [...(wb.SheetNames.includes(SOLAPA_DATOS) ? [SOLAPA_DATOS] : []), SOLAPA_CAMBIOS, "Índice", "H · Retiros y aportes", "Gastos Libertad", "Inconsistencias"])
 }
 fechasReales(wb as any)
 let p = join(CARPETA, `H para auditar ${EMPRESA} ${ej.etiqueta.replace("/", "-")} (2026-11-07).xlsx`), v = 2
