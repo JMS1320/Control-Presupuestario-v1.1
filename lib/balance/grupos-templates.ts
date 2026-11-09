@@ -74,6 +74,17 @@ export function familiaDe(concepto: string): string {
   if (/red vial/.test(n)) return "3 Red Vial"
   return `9 ${concepto}`
 }
+/**
+ * 🔍 JMS 09/11: el ORDEN de los impuestos en el H para auditar — Inmobiliario (por establecimiento) → Red Vial → lo demás (Fondo Educativo) →
+ * Complementario al final. Sirve para el resumen (por su renglón) y para el detalle (por el concepto).
+ */
+export function rangoAuditoria(texto: string): number {
+  const n = texto.toLowerCase()
+  if (/complementario/.test(n)) return 4
+  if (/inmobiliario/.test(n)) return 1
+  if (/red vial/.test(n)) return 2
+  return 3
+}
 /** …y la partida (Casco, Lima, Tapera 1…): el nombre sin la familia ni «cuota» / «anual». */
 export const partidaDe = (concepto: string) => concepto.replace(/inmobiliario|complementario|red vial|cuota|anual/gi, "").replace(/\s+/g, " ").trim()
 /**
@@ -141,7 +152,7 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
     categoria: opciones.auditoria ? renglonAuditoria(c.concepto, opciones.establecimientoDe) : `${c.categ || "(sin categoría)"} — ${bancoDe(c) || "sin pago"}`, mes: (c.fecha ?? "").slice(0, 7), importe: c.monto,
     // 🔍 JMS 09/11 (auditar): por IMPUESTO → PARTIDA → FECHA (Inmobiliario partida por partida, Complementario aparte, Red Vial partida por
     // partida); fuera de los impuestos, por template y fecha. El H del contador sigue por banco y fecha (04/11).
-    orden: opciones.auditoria ? `${familiaDe(c.concepto)}|${renglonAuditoria(c.concepto, opciones.establecimientoDe)}|${c.fecha ?? ""}|${c.concepto}` : `${bancoDe(c) ? "0" + bancoDe(c) : "1"}|${c.fecha ?? ""}|${c.concepto}`,
+    orden: opciones.auditoria ? `${rangoAuditoria(c.concepto)}|${renglonAuditoria(c.concepto, opciones.establecimientoDe)}|${c.fecha ?? ""}|${c.concepto}` : `${bancoDe(c) ? "0" + bancoDe(c) : "1"}|${c.fecha ?? ""}|${c.concepto}`,
     columnas: [dmy(c.fecha), c.concepto, bancoDe(c) || "sin pago", c.banco?.comprobante ?? "",
       c.proveedor || c.banco?.cuenta || "", c.detalle ?? "", c.estado,
       ...(opciones.auditoria ? (a => [a.quienPago, a.codigo, a.efecto, CENTRADO(a.marca), a.descripcion, a.beneficiario, a.factura, a.interno])(auditarCuota(c)) : [])],
@@ -151,6 +162,7 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
       ...(opciones.auditoria ? ["Quién pagó", "Código contable", "Efecto", "Marca", "Descripción del banco", "Beneficiario / CUIT", "Factura vinculada", "Interno"] : [])],
     debeHaber: true, ...(opciones.auditoria ? { importeEn: 7,
       // 🔍 JMS 09/11: subtotal por establecimiento cuando tiene varias partidas (Nazarenas); Lima y Rojas, partida única, no
+      ordenCategoria: (cat: string) => `${rangoAuditoria(cat)}|${cat}`,
       // ⚠️ cambió 09/11: TODO establecimiento lleva su «Subtotal» (Lima y Rojas también), con sus partidas plegadas debajo
       subtotalDe: (cat: string) => { const p = cat.split(" — "); return p.length >= 2 && familiaDe(p[0]) !== `9 ${p[0]}` ? `${p[0]} — ${p[1]}` : null } } : {}),
   })

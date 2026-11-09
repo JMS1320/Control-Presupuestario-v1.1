@@ -79,6 +79,8 @@ export const CAMBIOS: unknown[][] = [
   [31, "TODO establecimiento lleva su renglón «Subtotal» con el mismo formato (también Lima, Rojas y el Complementario), y sus partidas quedan PLEGADAS debajo: a la vista sólo los subtotales; con el [+] se abren.", "Resumen de las solapas de agrupadora",
     "Nazarenas partida por partida y Lima como un renglón común", "H · MA · Imp Rurales: Subtotal Inmobiliario — Lima · Subtotal Inmobiliario — Nazarenas · Subtotal Inmobiliario Complementario · Subtotal Red Vial — Lima · Subtotal Red Vial — Nazarenas. MSA: Nazarenas y Rojas"],
   [32, "Sin columnas fijas (se sacó el «inmovilizar» de las columnas A–D); queda fija la fila del encabezado del detalle.", "Solapas de agrupadora", "Columnas A–D fijas", "Al ir a la derecha se mueve todo"],
+  [33, "Orden de los impuestos: Inmobiliario (por establecimiento) → Red Vial → Fondo Educativo (anteúltimo) → Complementario (último), en el resumen y en el detalle.", "Solapas de impuestos",
+    "Alfabético: Fondo Educativo primero y el Complementario en el medio", "MSA · Imp Rurales: Inmob. Nazarenas · Inmob. Rojas · Red Vial Nazarenas · Red Vial Rojas · Fondo Educativo · Complementario MSA. MA: … · Complementario PAM último"],
   [22, "Nueva solapa «INCONSISTENCIAS»: todo lo que hay que mirar de todas las solapas, por tipo, con link a la solapa de la cuota.", "Solapa «Inconsistencias» (después de Gastos Libertad)",
     "Había que recorrer las 51 solapas buscando 🔴 / 🟡 / ⚠️", "🔴 sin pagar · 🟡 sin movimiento · 🟡 el banco movió otro importe · 🟡 en dólares · ⚠️ código · ⚪ en $ 0 (al final): cada renglón con «Ir a» su solapa"],
   [],

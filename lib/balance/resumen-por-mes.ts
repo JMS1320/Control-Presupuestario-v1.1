@@ -64,6 +64,8 @@ export interface OpcionesResumen {
    * Un grupo con 2 o más categorías SEGUIDAS lleva su renglón «Subtotal <clave>» (SUBTOTAL) y el TOTAL pasa a SUBTOTAL, así no suma doble.
    */
   subtotalDe?: (categoria: string) => string | null
+  /** 🔍 JMS 09/11: la clave de ORDEN de las categorías (sin esto, alfabético). Ej.: Inmobiliario → Red Vial → Fondo Educativo → Complementario. */
+  ordenCategoria?: (categoria: string) => string
 }
 
 /** Lo que necesita un bloque extra para apuntarle al resumen y al detalle con fórmulas. Filas en base 1. */
@@ -109,7 +111,8 @@ export function hojaResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): unk
 
 /** Lo mismo que `hojaResumenPorMes`, y además dice dónde quedó cada cosa (para los controles al pie). */
 export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { filas: unknown[][]; ubicacion: UbicacionResumen } {
-  const cats = [...new Set(items.map(i => i.categoria || "(sin categoría)"))].sort((a, b) => a.localeCompare(b))
+  const ordenCat = (x: string) => o.ordenCategoria?.(x) ?? x
+  const cats = [...new Set(items.map(i => i.categoria || "(sin categoría)"))].sort((a, b) => ordenCat(a).localeCompare(ordenCat(b)))
   const nro = new Map(cats.map((c, i) => [c, i + 1]))
   const monedas: ("ARS" | "USD" | undefined)[] = o.porMoneda
     ? (["ARS", "USD"] as const).filter(m => items.some(i => i.moneda === m))

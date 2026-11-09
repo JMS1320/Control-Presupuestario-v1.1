@@ -13584,5 +13584,20 @@ export function correrCasos(): Resultado[] {
     const e = "plegadas 2 · subtotal 150 · lima sin subtotal true · total 180 con SUBTOTAL"
     chequear("Libro H para auditar", "🔍 Resumen con subtotal por establecimiento (Nazarenas sí, Lima no) y el TOTAL con SUBTOTAL para no sumar doble", e, v, v === e, "A-FEAT-1579")
   }
+
+  // ══ 🔍 Orden de los impuestos en el H para auditar: Inmobiliario → Red Vial → Fondo Educativo → Complementario (JMS 09/11) ══
+  {
+    const q = (id: string, concepto: string) => ({ id, fecha: "2026-03-10", concepto, proveedor: "", categ: "X", cuenta_contable: "", nro_cuenta: "", centro_costo: "",
+      responsable: "MSA", estado: "conciliado", monto: 10, agrupadoraTemplate: "Impuestos Rurales", banco: { cuenta: "Galicia MSA", titular: "MSA", contable: "", comprobante: "", respaldo: 10, motivo: null } }) as never
+    const cs = [q("a", "Inmobiliario Complementario Cuota MSA"), q("b", "Fondo Educativo"), q("c", "Red Vial Cuota Rojas"), q("d", "Inmobiliario Cuota Rojas"), q("e", "Inmobiliario Cuota Casco")]
+    const est = (p: string) => (p === "Casco" ? "Nazarenas" : p)
+    const { filas } = armarHojaGrupo({ responsable: "MSA", agrupadora: "Impuestos Rurales", total: 50, cuotas: cs } as never, "25/26", [{ clave: "2026-03", rotulo: "mar-26" }], { auditoria: true, establecimientoDe: est })
+    const iE = (filas as unknown[][]).findIndex(f => f[0] === "Nro" && f[1] === "Categoría")
+    const orden: string[] = []
+    for (const f of (filas as unknown[][]).slice(iE + 1)) { if (f[1] === "TOTAL") break; if (typeof f[1] === "string" && f[1].startsWith("Subtotal ") || f[1] === "Fondo Educativo") orden.push(String(f[1]).replace("Subtotal ", "")) }
+    const v = orden.join(" → ")
+    const e = "Inmobiliario — Nazarenas → Inmobiliario — Rojas → Red Vial — Rojas → Fondo Educativo → Inmobiliario Complementario — MSA"
+    chequear("Libro H para auditar", "🔍 Orden de los impuestos: Inmobiliario → Red Vial → Fondo Educativo → Complementario al final", e, v, v === e, "A-FEAT-1579")
+  }
   return r
 }
