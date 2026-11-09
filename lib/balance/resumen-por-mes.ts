@@ -229,9 +229,10 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
     else fila.push(sub(colImporte, deb - cre))
     h.push(fila)
     filtrarEn(h, `A${filaEncDetalle}:${col(2 + nCols + kImp - 1)}${ultima}`)
-    // 🧊 JMS 09/11: fijo hasta el encabezado del DETALLE (el resumen de arriba entra de un pantallazo; el detalle es lo largo). Si el resumen
-    // es tan alto que no entraría en pantalla (más de 30 filas), queda lo de siempre.
-    if (filaEncDetalle <= 30) congelarEn(h, filaEncDetalle)
+    // 🧊 JMS 09/11: fijo hasta el encabezado del DETALLE (el resumen de arriba entra de un pantallazo; el detalle es lo largo). SIEMPRE.
+    // ⚠️ cambió 09/11: había un tope de 30 filas y en «Retiros y aportes» (encabezado en la 32) no se fijaba — JMS: «recordá que ya vimos
+    // esto». Si el resumen es alto, se pliega con el [−] (agruparResumen) y la parte fija se achica.
+    congelarEn(h, filaEncDetalle)
     // 📑 JMS 09/11: el resumen (de su título a la fila en blanco antes de «DETALLE») se pliega con el [−]
     agruparResumen(h, 3, filaEncDetalle - 2)
   }
