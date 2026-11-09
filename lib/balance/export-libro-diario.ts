@@ -543,7 +543,8 @@ const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: 
   const uniones = UNIONES.get(filas)
   if (uniones?.length) ws["!merges"] = uniones.map(u => XLSX.utils.decode_range(u))
   const niveles = NIVELES.get(filas) ?? nivelesDelResumen(filas)
-  if (niveles) ws["!rows"] = niveles.map(l => (l ? { level: l, ...(CERRADAS.has(filas) ? { hidden: true } : {}) } : {}))
+  // el segundo nivel (las partidas debajo de su subtotal) va plegado aunque el resto esté abierto
+  if (niveles) ws["!rows"] = niveles.map(l => (l ? { level: l, ...(CERRADAS.has(filas) || l === 2 ? { hidden: true } : {}) } : {}))
   const altos = ALTOS.get(filas)
   if (altos) { const rs: XLSX.RowInfo[] = (ws["!rows"] ??= []); for (const [r, h] of Object.entries(altos)) rs[Number(r) - 1] = { ...(rs[Number(r) - 1] ?? {}), hpt: h } }
   // 31 caracteres es el máximo que acepta Excel para el nombre de una solapa.

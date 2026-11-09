@@ -10,7 +10,7 @@
  * Pura. Un solo armado para todas las hojas que lo usan (impuestos y gastos bancarios, intereses, inversiones, grupos de
  * templates, LIB), para que la regla no tenga cuatro versiones.
  */
-import { filtrarEn, congelarEn, agruparResumen } from "./formato-excel"
+import { filtrarEn, congelarEn, agruparResumen, plegarEnSegundoNivel } from "./formato-excel"
 
 export interface ItemDetalle {
   /** La categoría: define la línea del resumen. */
@@ -126,7 +126,9 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
     while (i < fs.length) {
       const k = o.subtotalDe(fs[i]); let j = i
       while (k && j + 1 < fs.length && o.subtotalDe(fs[j + 1]) === k) j++
-      if (k && j > i) out.push([k, i, j])
+      // ⚠️ cambió 09/11 (JMS: «así como dice subtotal Nazarenas debe decirlo… para Lima y Rojas»): todo grupo con clave lleva su subtotal,
+      // aunque tenga una sola categoría; sus categorías quedan plegadas debajo (segundo nivel)
+      if (k && j >= i) out.push([k, i, j])
       i = j + 1
     }
     return out
@@ -186,6 +188,7 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
       const tot = r2(items.filter(i => (i.categoria || "(sin categoría)") === c && o.meses.some(x => x.clave === i.mes) && (m === undefined || i.moneda === m)).reduce((t, i) => t + i.importe, 0))
       fila.push({ t: "n", f: `SUM(${cM(0)}${n}:${cM(nM - 1)}${n})`, v: tot, z: MONEDA })
       h.push([...semCeldas(n, vals), ...fila])
+      if (gruposSub[k].some(g => idx >= g[1] && idx <= g[2])) plegarEnSegundoNivel(h, h.length - 1)
       // el subtotal del grupo, después de su última categoría
       const g = gruposSub[k].find(x => x[2] === idx)
       if (g) {

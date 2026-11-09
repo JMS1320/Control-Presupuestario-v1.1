@@ -151,7 +151,8 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
       ...(opciones.auditoria ? ["Quién pagó", "Código contable", "Efecto", "Marca", "Descripción del banco", "Beneficiario / CUIT", "Factura vinculada", "Interno"] : [])],
     debeHaber: true, ...(opciones.auditoria ? { importeEn: 7,
       // 🔍 JMS 09/11: subtotal por establecimiento cuando tiene varias partidas (Nazarenas); Lima y Rojas, partida única, no
-      subtotalDe: (cat: string) => { const p = cat.split(" — "); return p.length === 3 ? `${p[0]} — ${p[1]}` : null } } : {}),
+      // ⚠️ cambió 09/11: TODO establecimiento lleva su «Subtotal» (Lima y Rojas también), con sus partidas plegadas debajo
+      subtotalDe: (cat: string) => { const p = cat.split(" — "); return p.length >= 2 && familiaDe(p[0]) !== `9 ${p[0]}` ? `${p[0]} — ${p[1]}` : null } } : {}),
   })
   if (!u.celdaTotal || !u.colDebito || !u.colCredito) return { filas: h, celdaTotal: u.celdaTotal }
 
@@ -248,7 +249,7 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
   }
   // 🔍 A-FEAT-1579: en el H para auditar, un renglón por template al pie (¿se pagaron todas sus cuotas?)
   if (opciones.auditoria) {
-    congelarColumnasEn(h, 4)  // Nro · Mes · Fecha · Concepto quedan a la vista al ir a la derecha (Marca y el contexto)
+    // ⚠️ cambió 09/11: sin columnas fijas (JMS: «hay que sacar el inmovilizado de paneles»); queda fija la fila del encabezado del detalle
     // 🎨 JMS 09/11 (B3): las cuotas 🔴 sin pagar, con el renglón entero en rojo suave
     h.forEach((r, i) => { if (i >= u.det1 - 1 && i <= u.detN - 1 && Array.isArray(r) && r.some(x => String((x as { v?: unknown })?.v ?? x ?? "").startsWith("🔴"))) pintarFila(h, i, "FFFBE4E4") })
     const cC = `${u.colDetalle(1)}${u.det1}:${u.colDetalle(1)}${u.detN}`

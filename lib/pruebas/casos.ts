@@ -40,6 +40,7 @@ import { armarGruposTemplates, armarHojaGrupo, nombreSolapaGrupo, hojaGrupo, gru
 import { indiceDeDestinos, sinCategoriaNiVinculo, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
 import { auditarCuota, hojaRetirosYAportes } from "@/lib/balance/auditoria-templates"
 import { armarResumenPorMes } from "@/lib/balance/resumen-por-mes"
+import { filasNivel2De } from "@/lib/balance/formato-excel"
 import { solapasPapelesH } from "@/lib/balance/papeles-impuestos-h"
 import { hojaLibertad } from "@/lib/balance/libertad"
 import { fechasReales, serieDeFecha } from "@/lib/excel/fechas-reales"
@@ -13578,8 +13579,9 @@ export function correrCasos(): Resultado[] {
     const fs2 = filas as unknown[][]
     const sub = fs2.find(f => f[1] === "Subtotal Inmobiliario — Nazarenas")
     const tot = fs2.find(f => f[1] === "TOTAL")
-    const v = `subtotal ${sub ? (sub[2] as { v: number }).v : "no"} · lima sin subtotal ${!fs2.some(f => String(f[1]).startsWith("Subtotal Inmobiliario — Lima"))} · total ${(tot![2] as { v: number }).v} ${String((tot![2] as { f: string }).f).startsWith("SUBTOTAL") ? "con SUBTOTAL" : "con SUM"}`
-    const e = "subtotal 150 · lima sin subtotal true · total 180 con SUBTOTAL"
+    const plegadas = filasNivel2De(fs2)?.size ?? 0
+    const v = `plegadas ${plegadas} · subtotal ${sub ? (sub[2] as { v: number }).v : "no"} · lima sin subtotal ${!fs2.some(f => String(f[1]).startsWith("Subtotal Inmobiliario — Lima"))} · total ${(tot![2] as { v: number }).v} ${String((tot![2] as { f: string }).f).startsWith("SUBTOTAL") ? "con SUBTOTAL" : "con SUM"}`
+    const e = "plegadas 2 · subtotal 150 · lima sin subtotal true · total 180 con SUBTOTAL"
     chequear("Libro H para auditar", "🔍 Resumen con subtotal por establecimiento (Nazarenas sí, Lima no) y el TOTAL con SUBTOTAL para no sumar doble", e, v, v === e, "A-FEAT-1579")
   }
   return r

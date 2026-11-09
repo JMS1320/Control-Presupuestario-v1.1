@@ -73,10 +73,17 @@ export const congeladoDe = (filas: unknown[][]): number | undefined => CONGELAR_
  */
 const GRUPO_RESUMEN = new WeakMap<unknown[][], [number, number]>()
 export const agruparResumen = (filas: unknown[][], desde: number, hasta: number) => { if (hasta >= desde) GRUPO_RESUMEN.set(filas, [desde, hasta]) }
-/** Los niveles de plegado (1 = adentro del grupo) que corresponden al resumen agrupado, si hay. */
+/**
+ * 🔍 JMS 09/11: las filas de un SEGUNDO nivel, plegadas (las partidas de Nazarenas debajo de su «Subtotal»: a la vista quedan los
+ * subtotales y con el [+] se abren las partidas). Índices base 0 del arreglo.
+ */
+const NIVEL2_PLEGADO = new WeakMap<unknown[][], Set<number>>()
+export const plegarEnSegundoNivel = (filas: unknown[][], i: number) => { const s = NIVEL2_PLEGADO.get(filas) ?? new Set<number>(); s.add(i); NIVEL2_PLEGADO.set(filas, s) }
+export const filasNivel2De = (filas: unknown[][]) => NIVEL2_PLEGADO.get(filas)
+/** Los niveles de plegado (1 = adentro del grupo, 2 = las filas del segundo nivel) que corresponden al resumen agrupado, si hay. */
 export const nivelesDelResumen = (filas: unknown[][]): number[] | undefined => {
-  const g = GRUPO_RESUMEN.get(filas)
-  return g ? filas.map((_, i) => (i + 1 >= g[0] && i + 1 <= g[1] ? 1 : 0)) : undefined
+  const g = GRUPO_RESUMEN.get(filas), n2 = NIVEL2_PLEGADO.get(filas)
+  return g ? filas.map((_, i) => (n2?.has(i) ? 2 : i + 1 >= g[0] && i + 1 <= g[1] ? 1 : 0)) : undefined
 }
 /** El filtro declarado para estas filas, si hay. */
 export const filtroDe = (filas: unknown[][]): string | undefined => FILTROS.get(filas)
