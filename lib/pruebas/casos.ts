@@ -39,6 +39,7 @@ import { operacionesEnDolares, comprasVentasDeDolares } from "@/lib/balance/oper
 import { armarGruposTemplates, armarHojaGrupo, nombreSolapaGrupo, hojaGrupo, gruposDelResponsable } from "@/lib/balance/grupos-templates"
 import { indiceDeDestinos, sinCategoriaNiVinculo, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
 import { auditarCuota, hojaRetirosYAportes } from "@/lib/balance/auditoria-templates"
+import { armarResumenPorMes } from "@/lib/balance/resumen-por-mes"
 import { solapasPapelesH } from "@/lib/balance/papeles-impuestos-h"
 import { hojaLibertad } from "@/lib/balance/libertad"
 import { fechasReales, serieDeFecha } from "@/lib/excel/fechas-reales"
@@ -13566,6 +13567,20 @@ export function correrCasos(): Resultado[] {
     const e = "entró a MA · Galicia MA CA · distribución PAM → MA · entró a MA ‖ resumen: PARA MA · distribución PAM → MA · salió de PAM ‖ otra punta: 4000000"
     chequear("Libro H para auditar", "🔁 Una transferencia PAM → MA: la entrada en MA se lee «entró a MA» (no «de MA a PAM»), queda como otra punta y no suma: el resumen tiene una sola línea",
       e, v, v === e, "A-FEAT-1579")
+  }
+
+  // ══ 🔍 Subtotal por establecimiento en el resumen: Nazarenas con 2 partidas lleva subtotal, Lima (1) no; el TOTAL no suma doble (JMS 09/11) ══
+  {
+    const it = (categoria: string, importe: number) => ({ categoria, mes: "2025-09", importe, columnas: ["x"] })
+    const { filas } = armarResumenPorMes([it("Inmobiliario — Nazarenas — Casco", 100), it("Inmobiliario — Nazarenas — Ombu", 50), it("Inmobiliario — Lima", 30)], {
+      titulo: "T", meses: [{ clave: "2025-09", rotulo: "sep-25" }], encabezadoDetalle: ["X"],
+      subtotalDe: c => { const p = c.split(" — "); return p.length === 3 ? `${p[0]} — ${p[1]}` : null } })
+    const fs2 = filas as unknown[][]
+    const sub = fs2.find(f => f[1] === "Subtotal Inmobiliario — Nazarenas")
+    const tot = fs2.find(f => f[1] === "TOTAL")
+    const v = `subtotal ${sub ? (sub[2] as { v: number }).v : "no"} · lima sin subtotal ${!fs2.some(f => String(f[1]).startsWith("Subtotal Inmobiliario — Lima"))} · total ${(tot![2] as { v: number }).v} ${String((tot![2] as { f: string }).f).startsWith("SUBTOTAL") ? "con SUBTOTAL" : "con SUM"}`
+    const e = "subtotal 150 · lima sin subtotal true · total 180 con SUBTOTAL"
+    chequear("Libro H para auditar", "🔍 Resumen con subtotal por establecimiento (Nazarenas sí, Lima no) y el TOTAL con SUBTOTAL para no sumar doble", e, v, v === e, "A-FEAT-1579")
   }
   return r
 }

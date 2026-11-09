@@ -59,6 +59,11 @@ export interface OpcionesResumen {
    * banco»*. Índice dentro de `encabezadoDetalle` ANTES del cual van Moneda e Importe (o Débito y Crédito). Sin esto, al final, como siempre.
    */
   importeEn?: number
+  /**
+   * 🔍 JMS 09/11 («armame un subtotal de Nazarenas… para todo lo que tenga impuestos de este tipo»): la clave de grupo de cada categoría.
+   * Un grupo con 2 o más categorías SEGUIDAS lleva su renglón «Subtotal <clave>» (SUBTOTAL) y el TOTAL pasa a SUBTOTAL, así no suma doble.
+   */
+  subtotalDe?: (categoria: string) => string | null
 }
 
 /** Lo que necesita un bloque extra para apuntarle al resumen y al detalle con fórmulas. Filas en base 1. */
@@ -113,7 +118,20 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
 
   // Filas del resumen: por moneda, encabezado + una por categoría con movimientos en esa moneda + total + blanco.
   const filasPorMoneda = monedas.map(m => cats.filter(c => items.some(i => (i.categoria || "(sin categoría)") === c && (m === undefined || i.moneda === m))))
-  const altoResumen = monedas.reduce((t, _m, k) => t + 1 + 1 + filasPorMoneda[k].length + 1 + 1, 0)
+  /** Los grupos de cada moneda que llevan subtotal: [clave, primera, última] (índices dentro de filasPorMoneda[k]). */
+  const gruposSub = filasPorMoneda.map(fs => {
+    const out: Array<[string, number, number]> = []
+    if (!o.subtotalDe) return out
+    let i = 0
+    while (i < fs.length) {
+      const k = o.subtotalDe(fs[i]); let j = i
+      while (k && j + 1 < fs.length && o.subtotalDe(fs[j + 1]) === k) j++
+      if (k && j > i) out.push([k, i, j])
+      i = j + 1
+    }
+    return out
+  })
+  const altoResumen = monedas.reduce((t, _m, k) => t + 1 + 1 + filasPorMoneda[k].length + gruposSub[k].length + 1 + 1, 0)
   const cabecera = 1 + (o.notas?.length ?? 0) + 1
   const altoExtra = o.bloqueExtra?.alto ?? 0
   const filaEncDetalle = cabecera + altoResumen + altoExtra + 1 + 1
@@ -151,7 +169,10 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
     h.push([...vacias(), m === "USD" ? "EN DÓLARES (US$) — no se suman a los pesos" : m === "ARS" ? "EN PESOS" : "RESUMEN POR CATEGORÍA Y POR MES"])
     h.push([...(S ? ["1er sem", "2do sem", "total"] : []), "Nro", "Categoría", ...o.meses.map(x => x.rotulo), "TOTAL"])
     const r1 = h.length + 1
-    for (const c of filasPorMoneda[k]) {
+    const conSub = gruposSub[k].length > 0
+    let iniGrupo = 0
+    filasPorMoneda[k].forEach((c, idx) => {
+      if (gruposSub[k].some(g => g[1] === idx)) iniGrupo = h.length + 1
       const n = h.length + 1, num = nro.get(c)!
       const vals: number[] = []
       const fila: unknown[] = [num, c]
@@ -165,7 +186,16 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
       const tot = r2(items.filter(i => (i.categoria || "(sin categoría)") === c && o.meses.some(x => x.clave === i.mes) && (m === undefined || i.moneda === m)).reduce((t, i) => t + i.importe, 0))
       fila.push({ t: "n", f: `SUM(${cM(0)}${n}:${cM(nM - 1)}${n})`, v: tot, z: MONEDA })
       h.push([...semCeldas(n, vals), ...fila])
-    }
+      // el subtotal del grupo, después de su última categoría
+      const g = gruposSub[k].find(x => x[2] === idx)
+      if (g) {
+        const ns = h.length + 1, cs = filasPorMoneda[k].slice(g[1], g[2] + 1)
+        const vs = o.meses.map(mes => r2(items.filter(i => cs.includes(i.categoria || "(sin categoría)") && i.mes === mes.clave && (m === undefined || i.moneda === m)).reduce((t, i) => t + i.importe, 0)))
+        const celdas: unknown[] = vs.map((v, j) => ({ t: "n", f: `SUBTOTAL(9,${cM(j)}${iniGrupo}:${cM(j)}${ns - 1})`, v, z: MONEDA }))
+        celdas.push({ t: "n", f: `SUBTOTAL(9,${cM(nM)}${iniGrupo}:${cM(nM)}${ns - 1})`, v: r2(vs.reduce((a, b) => a + b, 0)), z: MONEDA })
+        h.push([...semCeldas(ns, vs), "", `Subtotal ${g[0]}`, ...celdas])
+      }
+    })
     const rN = h.length
     const totales: unknown[] = ["", "TOTAL"]
     const valsT: number[] = []
@@ -175,7 +205,7 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
         ? r2(items.filter(i => i.mes === o.meses[j].clave && (m === undefined || i.moneda === m)).reduce((t, i) => t + i.importe, 0))
         : r2(items.filter(i => o.meses.some(x => x.clave === i.mes) && (m === undefined || i.moneda === m)).reduce((t, i) => t + i.importe, 0))
       if (j < nM) valsT.push(v)
-      totales.push({ t: "n", f: rN >= r1 ? `SUM(${c}${r1}:${c}${rN})` : "0", v, z: MONEDA })
+      totales.push({ t: "n", f: rN >= r1 ? `${conSub ? "SUBTOTAL(9," : "SUM("}${c}${r1}:${c}${rN})` : "0", v, z: MONEDA })
     }
     h.push([...semCeldas(h.length + 1, valsT), ...totales])
     if (monedas.length === 1 && m === undefined) celdaTotal = `${cM(nM)}${h.length}`

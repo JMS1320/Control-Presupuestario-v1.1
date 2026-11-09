@@ -149,7 +149,9 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
     titulo: `${g.agrupadora.toUpperCase()} — ${g.responsable} — ejercicio ${etiqueta}`,
     meses, encabezadoDetalle: ["Fecha", "Concepto", "Banco / cuenta", "Comprobante", "Proveedor", "Detalle", "Estado",
       ...(opciones.auditoria ? ["Quién pagó", "Código contable", "Efecto", "Marca", "Descripción del banco", "Beneficiario / CUIT", "Factura vinculada", "Interno"] : [])],
-    debeHaber: true, ...(opciones.auditoria ? { importeEn: 7 } : {}),
+    debeHaber: true, ...(opciones.auditoria ? { importeEn: 7,
+      // 🔍 JMS 09/11: subtotal por establecimiento cuando tiene varias partidas (Nazarenas); Lima y Rojas, partida única, no
+      subtotalDe: (cat: string) => { const p = cat.split(" — "); return p.length === 3 ? `${p[0]} — ${p[1]}` : null } } : {}),
   })
   if (!u.celdaTotal || !u.colDebito || !u.colCredito) return { filas: h, celdaTotal: u.celdaTotal }
 
@@ -167,6 +169,38 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
   const ok = (dif: string, valor: number, siNo: string) => ({ t: "s", f: `IF(ABS(${dif})<0.005,"✓ cierra","${siNo}")`, v: Math.abs(valor) < 0.005 ? "✓ cierra" : siNo })
   const fila = () => h.length + 1
 
+  // 🔍 JMS 09/11: «Por efecto» y «Por establecimiento» van como TERCERA tabla — después del detalle y antes del control
+  if (opciones.auditoria) {
+    const lit = (x: string) => x.replace(/[~*?]/g, m => `~${m}`).replace(/"/g, "\"\"")
+    // 🔍 JMS 09/11 (punto 4): el SUBTOTAL POR EFECTO — quién pagó lo de esta agrupadora (fórmulas sobre la columna Efecto)
+    const cE = `${u.colDetalle(9)}${u.det1}:${u.colDetalle(9)}${u.detN}`
+    const porEfecto = new Map<string, number>()
+    for (const c of g.cuotas) { const e = auditarCuota(c).efecto; porEfecto.set(e, r2((porEfecto.get(e) ?? 0) + c.monto)) }
+    h.push([], ["", "POR EFECTO — quién pagó lo de esta agrupadora"], ["", "Efecto", "Total"].map(x => x ? CENTRADO(x) : x))
+    for (const [e, v] of [...porEfecto].sort((a, b) => a[0].localeCompare(b[0], "es")))
+      h.push(["", e, { t: "n", f: `SUMIFS(${deb},${cE},"${lit(e)}")-SUMIFS(${cred},${cE},"${lit(e)}")`, v }])
+    h.push(["", "= Total de la solapa", { t: "n", f: `SUM(${deb})-SUM(${cred})`, v: total }])
+    // 🔍 JMS 09/11 (D1.2 «siempre mostrar agrupadas»): POR ESTABLECIMIENTO — cada impuesto en cada establecimiento (Nazarenas, Lima,
+    // Rojas…), sumando los renglones del resumen de arriba
+    const iEnc = h.findIndex(r => Array.isArray(r) && r[0] === "Nro" && r[1] === "Categoría")
+    const imp = g.cuotas.filter(c => !familiaDe(c.concepto).startsWith("9 "))
+    if (iEnc >= 0 && imp.length) {
+      const enc = h[iEnc] as unknown[], colTot = String.fromCharCode(65 + enc.indexOf("TOTAL"))
+      // hasta el TOTAL del resumen (los renglones «Subtotal …» no empiezan igual: el SUMIF no los toma)
+      let fin = iEnc + 1
+      while (fin < h.length && (h[fin] as unknown[])?.[1] !== "TOTAL") fin++
+      const rango = (col: string) => `$${col}$${iEnc + 2}:$${col}$${fin}`
+      const porEst = new Map<string, number>()
+      for (const c of imp) {
+        const k = renglonAuditoria(c.concepto, opciones.establecimientoDe).split(" — ").slice(0, 2).join(" — ")
+        porEst.set(k, r2((porEst.get(k) ?? 0) + c.monto))
+      }
+      h.push([], ["", "POR ESTABLECIMIENTO — cada impuesto, por establecimiento (suma los renglones del resumen de arriba)"],
+        ["", "Impuesto — establecimiento", "Total"].map(x => x ? CENTRADO(x) : x))
+      for (const [k, v] of [...porEst].sort((a, b) => a[0].localeCompare(b[0], "es")))
+        h.push(["", k, { t: "n", f: `SUMIF(${rango("B")},"${lit(k)}*",${rango(colTot)})`, v }])
+    }
+  }
   h.push([], ["CONTROL — todo cruzado (§ controles de la app): 1 frena si no da, 2 frena si no da, 3 avisa"])
   // 1 · Interno
   const r1 = fila()
@@ -221,33 +255,6 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
     const lit = (x: string) => x.replace(/[~*?]/g, m => `~${m}`).replace(/"/g, "\"\"")
     h.push(...controlPorTemplate(g.cuotas, u.colDetalle(1), u.colDetalle(10), u.det1, u.detN,
       t => `SUMIFS(${deb},${cC},"${lit(t)}")-SUMIFS(${cred},${cC},"${lit(t)}")`, h.length + 1))
-    // 🔍 JMS 09/11 (punto 4): el SUBTOTAL POR EFECTO — quién pagó lo de esta agrupadora (fórmulas sobre la columna Efecto)
-    const cE = `${u.colDetalle(9)}${u.det1}:${u.colDetalle(9)}${u.detN}`
-    const porEfecto = new Map<string, number>()
-    for (const c of g.cuotas) { const e = auditarCuota(c).efecto; porEfecto.set(e, r2((porEfecto.get(e) ?? 0) + c.monto)) }
-    h.push([], ["", "POR EFECTO — quién pagó lo de esta agrupadora"], ["", "Efecto", "Total"].map(x => x ? CENTRADO(x) : x))
-    for (const [e, v] of [...porEfecto].sort((a, b) => a[0].localeCompare(b[0], "es")))
-      h.push(["", e, { t: "n", f: `SUMIFS(${deb},${cE},"${lit(e)}")-SUMIFS(${cred},${cE},"${lit(e)}")`, v }])
-    h.push(["", "= Total de la solapa", { t: "n", f: `SUM(${deb})-SUM(${cred})`, v: total }])
-    // 🔍 JMS 09/11 (D1.2 «siempre mostrar agrupadas»): POR ESTABLECIMIENTO — cada impuesto en cada establecimiento (Nazarenas, Lima,
-    // Rojas…), sumando los renglones del resumen de arriba
-    const iEnc = h.findIndex(r => Array.isArray(r) && r[0] === "Nro" && r[1] === "Categoría")
-    const imp = g.cuotas.filter(c => !familiaDe(c.concepto).startsWith("9 "))
-    if (iEnc >= 0 && imp.length) {
-      const enc = h[iEnc] as unknown[], colTot = String.fromCharCode(65 + enc.indexOf("TOTAL"))
-      let fin = iEnc + 1
-      while (fin < h.length && typeof (h[fin] as unknown[])?.[0] === "number") fin++
-      const rango = (col: string) => `$${col}$${iEnc + 2}:$${col}$${fin}`
-      const porEst = new Map<string, number>()
-      for (const c of imp) {
-        const k = renglonAuditoria(c.concepto, opciones.establecimientoDe).split(" — ").slice(0, 2).join(" — ")
-        porEst.set(k, r2((porEst.get(k) ?? 0) + c.monto))
-      }
-      h.push([], ["", "POR ESTABLECIMIENTO — cada impuesto, por establecimiento (suma los renglones del resumen de arriba)"],
-        ["", "Impuesto — establecimiento", "Total"].map(x => x ? CENTRADO(x) : x))
-      for (const [k, v] of [...porEst].sort((a, b) => a[0].localeCompare(b[0], "es")))
-        h.push(["", k, { t: "n", f: `SUMIF(${rango("B")},"${lit(k)}*",${rango(colTot)})`, v }])
-    }
   }
   return { filas: h, celdaTotal: u.celdaTotal }
 }
