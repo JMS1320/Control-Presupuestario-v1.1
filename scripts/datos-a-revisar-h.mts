@@ -73,6 +73,12 @@ export async function armarDatosARevisar(sb: any, cuotas: CuotaTemplate[], solap
     for (const f of p.filas) h.push([p.id, f.fecha, f.cuenta, f.importe, f.concepto, f.proveedor, f.comprobante, f.detalle, f.codigo, f.descripcion, f.beneficiario,
       f.ir ? { t: "s", v: f.ir, l: { Target: `#'${f.ir.replace(/'/g, "''")}'!A1`, Tooltip: `Ir a «${f.ir}»` } } : "", ""])
   }
+  // 🔗 JMS 09/11: «siempre un link desde los índices de cosas a definir»: cada DR del resumen lleva a su bloque
+  for (const p of PUNTOS) {
+    const k = h.findIndex(r => r[0] === p.id && r[1] === p.decidir)
+    const b = h.findIndex(r => typeof r[0] === "string" && (r[0] as string).startsWith(`${p.id} · `))
+    if (k >= 0 && b >= 0) h[k][0] = { t: "s", v: `${p.id} ➜`, l: { Target: `#'${SOLAPA_DATOS}'!A${b + 1}`, Tooltip: `Ir a ${p.id}` } }
+  }
   return h
 }
 export const ANCHOS_DATOS = [8, 14, 30, 16, 30, 24, 16, 30, 13, 32, 40, 26, 30]

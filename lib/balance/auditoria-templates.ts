@@ -331,5 +331,13 @@ export function hojaInconsistencias(cuotas: CuotaTemplate[], etiqueta: string, s
       a.quienPago, a.codigo, CENTRADO(a.marca), a.descripcion,
       solapa ? { t: "s", v: solapa, l: { Target: `#'${solapa.replace(/'/g, "''")}'!A1`, Tooltip: `Ir a «${solapa}»` } } : ""])
   }
+  // 🔗 JMS 09/11: cada tipo del resumen lleva a su primer renglón del detalle
+  const iDet = h.findIndex(r => r[0] && typeof r[0] === "object" && (r[0] as { v?: unknown }).v === "Tipo" && h.indexOf(r) > 4)
+  for (let k = 4; k < h.length && k < iDet; k++) {
+    const t = h[k][0]
+    if (typeof t !== "string") continue
+    const d = h.findIndex((r, n) => n > iDet && r[0] === t)
+    if (d >= 0) h[k][0] = { t: "s", v: `${t} ➜`, l: { Target: `#'Inconsistencias'!A${d + 1}`, Tooltip: "Ir al primer renglón de este tipo" } }
+  }
   return h
 }

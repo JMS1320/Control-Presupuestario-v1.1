@@ -62,7 +62,8 @@ if (process.argv.includes("--revisar")) {
 if (process.argv.includes("--cambios")) {
   agregarHoja(wb as any, SOLAPA_CAMBIOS, CAMBIOS, ANCHOS_CAMBIOS.map((ancho, i) => (i >= 2 ? { ancho, z: "#,##0.00" } : { ancho })) as any)
   const ix: any = wb.Sheets["Índice"]
-  if (ix) ix.A3 = { t: "s", v: "📝 Qué cambió el 09/11 en la presentación (con ejemplos): tocá acá", l: { Target: `#'${SOLAPA_CAMBIOS}'!A1` } }
+  if (ix) ix.B3 = { t: "s", v: "📝 Qué cambió en la presentación (con ejemplos): tocá acá", l: { Target: `#'${SOLAPA_CAMBIOS}'!A1` } }
+  if (ix && wb.SheetNames.includes(SOLAPA_DATOS)) ix.A3 = { t: "s", v: "📋 DATOS A REVISAR (DR1…DR10): tocá acá", l: { Target: `#'${SOLAPA_DATOS}'!A1` } }
   // JMS 09/11: las solapas del desarrollo en curso (que después se sacan) van ANTES del índice
   reordenarSolapas(wb as any, [...(wb.SheetNames.includes(SOLAPA_DATOS) ? [SOLAPA_DATOS] : []), SOLAPA_CAMBIOS, "Índice", "H · Retiros y aportes", "Gastos Libertad", "Inconsistencias"])
 }
