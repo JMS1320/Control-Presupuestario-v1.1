@@ -3507,7 +3507,8 @@ export function agregarIndiceH(wb: XLSX.WorkBook): void {
   for (const n of wb.SheetNames) {
     if (n === NOMBRE) continue
     const c = wb.Sheets[n]?.A1 as (XLSX.CellObject & { l?: unknown }) | undefined
-    if (c) c.l = { Target: `#'${NOMBRE}'!A1`, Tooltip: "Volver al índice" }
+    // JMS 09/11: «que lo tenga siempre a mano… son tantas solapas». La fila 1 queda fija arriba en todas: el link se ve si se nota.
+    if (c) { c.l = { Target: `#'${NOMBRE}'!A1`, Tooltip: "Volver al índice" }; if (c.t === "s") { c.v = `⬅ Índice  ·  ${c.v}`; delete (c as { w?: string }).w } }
   }
 }
 
