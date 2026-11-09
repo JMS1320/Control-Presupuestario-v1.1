@@ -74,7 +74,7 @@ import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
 import type { CuadreGranos, ValuacionGranos, Sementeras } from "./granos-sementeras"
 import {
   formatearHoja, presentarHoja, anchosAutomaticos, colorDeSolapa, aplicarVistas, filtroDe, filtrarEn,
-  conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna, type Vista, UNIONES, ALTOS, esSinCongelar, congeladoDe, nivelesDelResumen, columnasCongeladasDe } from "./formato-excel"
+  conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna, type Vista, UNIONES, ALTOS, esSinCongelar, congeladoDe, nivelesDelResumen, columnasCongeladasDe, filasPintadasDe } from "./formato-excel"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 import type { ControlesInicio, ControlProvisionAnterior } from "./control-inicio"
 import { textoEstado, type InicioYCierre } from "./inicio-y-cierre"
@@ -525,6 +525,16 @@ const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: 
   const fijo = congeladoDe(filas)
   if (fijo) vista.congelarFilas = fijo
   const cols = columnasCongeladasDe(filas)
+  // 🎨 los renglones pintados enteros (hasta la última columna de la hoja)
+  const pintadas = filasPintadasDe(filas)
+  if (pintadas?.size && ws["!ref"]) {
+    const rg = XLSX.utils.decode_range(ws["!ref"])
+    for (const [i, rgb] of pintadas) for (let c = 0; c <= rg.e.c; c++) {
+      const dir = XLSX.utils.encode_cell({ r: i, c })
+      const cel = (ws[dir] ??= { t: "s", v: "" }) as XLSX.CellObject & { s?: Record<string, unknown> }
+      cel.s = { ...(cel.s ?? {}), fill: { patternType: "solid", fgColor: { rgb } } }
+    }
+  }
   if (cols) vista.congelarColumnas = cols
   // 🔎 Si quien armó la hoja dijo dónde va el filtro, manda sobre el que adivina `presentarHoja`.
   const filtro = filtroDe(filas)
@@ -3530,22 +3540,22 @@ export function agregarIndiceH(wb: XLSX.WorkBook): void {
     const hi = rows.findIndex(r => Array.isArray(r) && r[0] === "Nro" && r.includes("Marca") && r.includes("Débito"))
     if (hi < 0) return null
     const H = rows[hi], iD = H.indexOf("Débito"), iC = H.indexOf("Crédito"), iM = H.indexOf("Marca")
-    let total = 0, rojo = 0, amarillo = 0, codigo = 0
+    let total = 0, rojo = 0, amarillo = 0, codigo = 0, impago = 0
     for (const r of rows.slice(hi + 1)) {
       if (!Array.isArray(r) || typeof r[0] !== "number") break
       total += (Number(r[iD]) || 0) - (Number(r[iC]) || 0)
       const m = String(r[iM] ?? "")
-      if (m.startsWith("🔴")) rojo++
+      if (m.startsWith("🔴")) { rojo++; impago += (Number(r[iD]) || 0) - (Number(r[iC]) || 0) }
       if (m.startsWith("🟡")) amarillo++
       if (m.includes("código esperado")) codigo++
     }
-    return { total: Math.round(total * 100) / 100, rojo, amarillo, codigo }
+    return { total: Math.round((total - impago) * 100) / 100, impago: Math.round(impago * 100) / 100, rojo, amarillo, codigo }
   }
   const link = (n: string) => ({ t: "s", v: n.replace(PREFIJO, ""), l: { Target: `#'${n.replace(/'/g, "''")}'!A1`, Tooltip: `Ir a «${n}»` } })
   const cuenta = (x: number) => (x ? { t: "n", v: x, z: "0" } : "")
   const filas: unknown[][] = [["ÍNDICE — el [+] de la izquierda abre cada responsable; tocá una solapa para ir. En cada solapa, el título («⬅ Índice») trae de vuelta acá."],
     ["Marcas: ✓ pagada y respaldada por el banco · 🔴 sin pagar · 🟡 a revisar (pagada sin movimiento, o el banco movió otro importe) · ⚪ en $ 0 · ⚠️ el código contable no es el esperado"],
-    [], ["", "Solapa", "Total (débito − crédito)", "🔴 sin pagar", "🟡 a revisar", "⚠️ código"]]
+    [], ["", "Solapa", "Pagado (débito − crédito)", "Sin pagar", "🔴 sin pagar", "🟡 a revisar", "⚠️ código"]]
   const niveles = [0, 0, 0, 0]
   for (const g of ["MSA", "MA", "PAM", "General"]) {
     const ns = grupos.get(g)
@@ -3554,7 +3564,7 @@ export function agregarIndiceH(wb: XLSX.WorkBook): void {
     filas.push([`${g === "General" ? "GENERAL (retiros y aportes, Libertad)" : g} — ${ns.length} solapa${ns.length === 1 ? "" : "s"}`]); niveles.push(0)
     for (const n of agrup) {
       const r = resumenDe(n)
-      filas.push(["", link(n), r ? { t: "n", v: r.total, z: MONEDA } : "", cuenta(r?.rojo ?? 0), cuenta(r?.amarillo ?? 0), cuenta(r?.codigo ?? 0)]); niveles.push(1)
+      filas.push(["", link(n), r ? { t: "n", v: r.total, z: MONEDA } : "", r?.impago ? { t: "n", v: r.impago, z: MONEDA } : "", cuenta(r?.rojo ?? 0), cuenta(r?.amarillo ?? 0), cuenta(r?.codigo ?? 0)]); niveles.push(1)
     }
     if (base.length) {
       filas.push(["", "— datos de base y papeles —"]); niveles.push(1)
@@ -3562,7 +3572,7 @@ export function agregarIndiceH(wb: XLSX.WorkBook): void {
     }
   }
   plegar(filas, niveles, true)
-  hoja(wb, NOMBRE, filas, [{ ancho: 40 }, { ancho: 44 }, { ancho: 22, z: MONEDA }, { ancho: 13 }, { ancho: 13 }, { ancho: 12 }])
+  hoja(wb, NOMBRE, filas, [{ ancho: 40 }, { ancho: 44 }, { ancho: 22, z: MONEDA }, { ancho: 18, z: MONEDA }, { ancho: 13 }, { ancho: 13 }, { ancho: 12 }])
   // la vista del índice: el [+] arriba de cada grupo y sin filas fijas
   const vs = vistasDe(wb)
   if (vs.length) VISTAS.set(wb, [...vs.slice(0, -1), { ...vs[vs.length - 1], resumenArriba: true, congelarFilas: undefined }])

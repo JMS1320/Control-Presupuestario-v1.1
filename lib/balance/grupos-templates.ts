@@ -13,7 +13,7 @@ import type { MovimientoExtractoH } from "./movimientos-de-cuotas"
 import { armarResumenPorMes, hojaResumenPorMes } from "./resumen-por-mes"
 import { MOTIVO_EN_CERO } from "./movimientos-de-cuotas"
 import { auditarCuota, controlPorTemplate, CENTRADO } from "./auditoria-templates"
-import { congelarColumnasEn } from "./formato-excel"
+import { congelarColumnasEn, pintarFila } from "./formato-excel"
 
 /** Lo que NO se arma como grupo: lo financiero (no es gasto) y lo bancario (ya está en el libro C). */
 export const AGRUPADORAS_FUERA = new Set(["inversiones", "movimientos internos empresa", "tarjetas", "créditos bancarios", "creditos bancarios",
@@ -203,6 +203,8 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
   // 🔍 A-FEAT-1579: en el H para auditar, un renglón por template al pie (¿se pagaron todas sus cuotas?)
   if (opciones.auditoria) {
     congelarColumnasEn(h, 4)  // Nro · Mes · Fecha · Concepto quedan a la vista al ir a la derecha (Marca y el contexto)
+    // 🎨 JMS 09/11 (B3): las cuotas 🔴 sin pagar, con el renglón entero en rojo suave
+    h.forEach((r, i) => { if (i >= u.det1 - 1 && i <= u.detN - 1 && Array.isArray(r) && r.some(x => String((x as { v?: unknown })?.v ?? x ?? "").startsWith("🔴"))) pintarFila(h, i, "FFFBE4E4") })
     const cC = `${u.colDetalle(1)}${u.det1}:${u.colDetalle(1)}${u.detN}`
     const lit = (x: string) => x.replace(/[~*?]/g, m => `~${m}`).replace(/"/g, "\"\"")
     h.push(...controlPorTemplate(g.cuotas, u.colDetalle(1), u.colDetalle(10), u.det1, u.detN,

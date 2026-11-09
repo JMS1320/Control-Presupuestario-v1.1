@@ -301,7 +301,8 @@ export function hojaRetirosYAportes(cuotas: CuotaTemplate[], extracto: { movimie
 export function hojaInconsistencias(cuotas: CuotaTemplate[], etiqueta: string, solapaDe: (c: CuotaTemplate) => string): unknown[][] {
   const dmy = (f: string | null | undefined) => (f ? f.slice(0, 10).split("-").reverse().join("/") : "")
   const TIPOS: Array<[string, (a: AuditoriaDeCuota) => boolean]> = [
-    ["🔴 Sin pagar", a => a.marca.startsWith("🔴")],
+    // JMS 09/11 (B4): lo impago al cierre se trata como DEUDA → va a los datos a revisar
+    ["🔴 Sin pagar al cierre → ¿DEUDA? (datos a revisar)", a => a.marca.startsWith("🔴")],
     ["🟡 Marcada pagada, sin movimiento en el banco", a => a.marca.startsWith("🟡 marcada pagada")],
     ["🟡 El banco movió otro importe que la cuota", a => a.marca.startsWith("🟡") && /banco movió|pago agrupado/.test(a.marca)],
     ["🟡 Pagada desde una cuenta en dólares (no se compara)", a => a.marca.startsWith("🟡") && /dólares/.test(a.marca)],

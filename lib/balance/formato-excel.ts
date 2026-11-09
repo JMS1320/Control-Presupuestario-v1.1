@@ -57,6 +57,10 @@ export const esSinCongelar = (filas: unknown[][]) => SIN_CONGELAR.has(filas)
  * 🧊 Hasta qué fila queda fijo arriba (JMS 09/11, en el H para auditar: «poner el fijado de fila en la 15 en vez de en la 4… la tabla de
  * arriba se ve de un pantallazo y la lista de abajo es la que puede tener muchos movimientos»). Manda sobre lo que adivina la presentación.
  */
+/** 🎨 Renglones pintados enteros (JMS 09/11, B3: las cuotas 🔴 sin pagar se ven sin leer la Marca). Filas en base 0 del arreglo. */
+const PINTADAS = new WeakMap<unknown[][], Map<number, string>>()
+export const pintarFila = (filas: unknown[][], i: number, rgb: string) => { const m = PINTADAS.get(filas) ?? new Map<number, string>(); m.set(i, rgb); PINTADAS.set(filas, m) }
+export const filasPintadasDe = (filas: unknown[][]) => PINTADAS.get(filas)
 const CONGELAR_EN = new WeakMap<unknown[][], number>()
 const CONGELAR_COLS = new WeakMap<unknown[][], number>()
 export const congelarColumnasEn = (filas: unknown[][], n: number) => { CONGELAR_COLS.set(filas, n) }
