@@ -34,7 +34,7 @@ export function efectoEntre(pagador: string, dueno: string): string {
   if (!pagador || !dueno || pagador === dueno) return ""
   if (pagador === "MSA") return `retiro de ${dueno} pagado por MSA`
   if (dueno === "MSA") return `aporte de ${pagador} (pagó un gasto de MSA)`
-  if (pagador === "PAM" && dueno === "MA") return "distribución de PAM a MA"
+  if (pagador === "PAM" && dueno === "MA") return "distribución PAM → MA (pagó un gasto de MA)"
   return `${pagador} pagó por ${dueno}`
 }
 
@@ -74,26 +74,43 @@ export function controlPorTemplate(cuotas: CuotaTemplate[], colConcepto: string,
   return f
 }
 
-/** El efecto que dice un código contable puesto por quien pagó: «CTA MA» pagado por MSA = retiro de MA; «DIST X» = distribución a X. */
-export function efectoDelCodigo(pagador: string, codigo: string): string {
+/** La otra parte que nombra un código «CTA / DIST + quién» («DIST PAM» → PAM). Vacío si el código no es de ese tipo. */
+export const otraParteDelCodigo = (codigo: string): string => (codigo.trim().match(/^(?:CTA|CUENTA|DIST|RET)\s+(.+)$/i)?.[1] ?? "").trim().toUpperCase()
+
+/**
+ * El efecto que dice el código contable del movimiento, mirado desde la cuenta del movimiento (`titular`).
+ * ⚠️ cambió 09/11 (JMS: «es un solo movimiento con 2 puntas… debe quedar claro y no debe duplicar»): el código nombra a LA OTRA PARTE, y el
+ * sentido lo da el movimiento. Una SALIDA de PAM con «DIST MA» = «distribución PAM → MA · salió de PAM»; la ENTRADA en MA de esa misma
+ * transferencia, con «DIST PAM», = «distribución PAM → MA · entró a MA» (antes decía «distribución de MA a PAM», al revés).
+ */
+export function efectoDelCodigo(titular: string, codigo: string, entrada = false): string {
   const m = codigo.trim().match(/^(CTA|CUENTA|DIST|RET)\s+(.+)$/i)
-  if (!m) return /^FLIA\b/i.test(codigo) ? "gasto de la familia (FLIA)" : `código ${codigo}`
+  if (!m) return (/^FLIA\b/i.test(codigo) ? "gasto de la familia (FLIA)" : `código ${codigo}`) + (entrada ? ` · entró a ${titular}` : "")
   const quien = m[2].trim().toUpperCase()
-  if (/^DIST$/i.test(m[1])) return `distribución de ${pagador} a ${quien}`
-  return pagador === "MSA" ? `retiro de ${quien} pagado por MSA` : `${pagador} pagó por cuenta de ${quien}`
+  if (/^DIST$/i.test(m[1])) return entrada ? `distribución ${quien} → ${titular} · entró a ${titular}` : `distribución ${titular} → ${quien} · salió de ${titular}`
+  if (entrada) return `${quien} → ${titular} (cuenta corriente) · entró a ${titular}`
+  return titular === "MSA" ? `retiro de ${quien} pagado por MSA` : `${titular} pagó por cuenta de ${quien}`
 }
 
 export function auditarCuota(c: CuotaTemplate): AuditoriaDeCuota {
   const sinPago = cuotaSinPago(c)
   const b = c.banco
   const pagadores = (b?.titular ?? "").split(" + ").map(s => s.trim().toUpperCase()).filter(Boolean)
-  const quienPago = sinPago ? "" : pagadores.length ? pagadores.join(" + ") + (b?.cuenta ? ` · ${b.cuenta}` : "") : ""
+  /** Un crédito en la cuenta del movimiento: la plata ENTRÓ (es la otra punta de una salida, o un reintegro). */
+  const entrada = c.monto < 0
+  const quienPago = sinPago ? "" : pagadores.length ? (entrada ? "entró a " : "") + pagadores.join(" + ") + (b?.cuenta ? ` · ${b.cuenta}` : "") : ""
   const codigo = (b?.contable ?? "").trim()
   const dueno = duenoDelGasto(c)
   let efecto = "", aviso = ""
   if (!sinPago && pagadores.length === 1) {
     efecto = efectoEntre(pagadores[0], dueno)
     if (/^LIB\b/i.test(codigo)) efecto = "Libertad (LIB): reparto propio"
+    // una ENTRADA con código: lo dice el código, mirado desde quien recibió (sin aviso: el código esperado es el de quien paga)
+    // …salvo que entre a quien PAGÓ el gasto de otro, con el código de ese otro: es un REINTEGRO de ese gasto (la VISA de PAM devuelve
+    // parte del Seguro Chalet de MA): va en la misma línea que el gasto, restando — no es una distribución al revés
+    else if (entrada && codigo && pagadores[0] !== dueno && otraParteDelCodigo(codigo) === dueno) efecto = efectoEntre(pagadores[0], dueno)
+    else if (entrada && codigo) efecto = efectoDelCodigo(pagadores[0], codigo, true)
+    else if (entrada) efecto = efecto ? `${efecto} · entró a ${pagadores[0]}` : ""
     // lo pagó el dueño y el movimiento tiene código: es un retiro o una distribución en sí (el template «Retiro MA mensual»):
     // el efecto lo dice el código, y no hay nada que avisar
     else if (!efecto && codigo) efecto = efectoDelCodigo(pagadores[0], codigo)
@@ -124,20 +141,56 @@ export function hojaRetirosYAportes(cuotas: CuotaTemplate[], extracto: { movimie
   const r2 = (n: number) => Math.round(n * 100) / 100
   const dmy = (f: string | null | undefined) => (f ? f.slice(0, 10).split("-").reverse().join("/") : "")
   const conEfecto = cuotas.map(c => ({ c, a: auditarCuota(c) })).filter(x => x.a.efecto && !cuotaSinPago(x.c))
-  const { filas: h } = armarResumenPorMes(conEfecto.map(({ c, a }) => ({
+
+  /**
+   * 🔁 UN MOVIMIENTO, DOS PUNTAS (JMS 09/11: «es un solo movimiento con 2 puntas… no debe duplicar ningún movimiento»). Una ENTRADA con
+   * código (MA recibe «DIST PAM») se busca como SALIDA en la cuenta de la otra parte (PAM paga «DIST MA»): mismo importe y hasta 5 días.
+   * Si aparece, la entrada es la OTRA PUNTA: se lista aparte y no suma. Si no aparece (la otra cuenta no está en el sistema), suma.
+   */
+  const dias = (a: string, b: string) => Math.abs((Date.parse(a.slice(0, 10)) - Date.parse(b.slice(0, 10))) / 86_400_000)
+  const salidas = (extracto?.movimientos ?? []).filter(m => !m.enDolares && m.contable && m.debitos - m.creditos > 0)
+  const usadas = new Set<number>()
+  const puntaDe = new Map<CuotaTemplate, (typeof salidas)[number]>()
+  for (const { c, a } of conEfecto) {
+    if (c.monto >= 0 || !a.codigo) continue
+    const receptor = String(c.banco?.titular ?? "").toUpperCase(), origen = otraParteDelCodigo(a.codigo)
+    if (!origen || !receptor || receptor.includes("+") || !c.fecha) continue
+    const i = salidas.findIndex((m, k) => !usadas.has(k) && m.titular.toUpperCase() === origen && otraParteDelCodigo(m.contable) === receptor
+      && Math.abs(r2(m.debitos - m.creditos) + c.monto) < 1 && dias(m.fecha, c.fecha!) <= 5)
+    if (i >= 0) { usadas.add(i); puntaDe.set(c, salidas[i]) }
+  }
+  const suman = conEfecto.filter(x => !puntaDe.has(x.c))
+
+  const { filas: h } = armarResumenPorMes(suman.map(({ c, a }) => ({
     categoria: a.efecto, mes: (c.fecha ?? "").slice(0, 7), importe: c.monto, orden: `${a.efecto}|${c.fecha ?? ""}`,
     columnas: [dmy(c.fecha), c.concepto, c.agrupadoraTemplate || "(sin agrupadora)", primero(c.responsable), a.quienPago, a.codigo, CENTRADO(a.marca)],
   })), {
     titulo: `RETIROS Y APORTES — desde la columna Efecto de las cuotas — ejercicio ${etiqueta}`,
-    notas: ["Cada cuota pagada por una empresa que no es la dueña del gasto (o que es un retiro en sí). Libertad (LIB) va aparte, con su reparto."],
+    notas: ["Cada cuota pagada por una empresa que no es la dueña del gasto (o que es un retiro en sí). Libertad (LIB) va aparte, con su reparto.",
+      "Una transferencia entre empresas tiene DOS PUNTAS (sale de una cuenta y entra a otra): acá suma UNA sola, la salida. La entrada va abajo, en «Otras puntas»."],
     meses, encabezadoDetalle: ["Fecha", "Concepto", "Agrupadora", "Responsable", "Quién pagó", "Código contable", "Marca"], debeHaber: true, semestres: true,
   })
 
-  // ── el control contra el banco: por cuenta que pagó (empresa) y código
+  // ── las otras puntas: entradas que ya están contadas por su salida
+  const otras = conEfecto.filter(x => puntaDe.has(x.c)).sort((x, y) => (x.c.fecha ?? "").localeCompare(y.c.fecha ?? ""))
+  const entradasSinSalida = suman.filter(x => x.c.monto < 0 && x.a.codigo && otraParteDelCodigo(x.a.codigo) && / · entró a /.test(x.a.efecto)).length
+  h.push([], ["OTRAS PUNTAS — NO SUMAN: cada una es la entrada de una transferencia que ya suma arriba por su salida"])
+  h.push([`✓ ${otras.length} entrada(s) encontraron su salida en la otra cuenta · ${entradasSinSalida} entrada(s) con código sin salida en el sistema (esas sí suman arriba)`])
+  if (otras.length) {
+    h.push(["Fecha", "Concepto", "Entró a", "Código", "Importe", "Es la otra punta de (salida)", "Código de la salida", ""].map(x => x ? CENTRADO(x) : x))
+    for (const { c, a } of otras) {
+      const s = puntaDe.get(c)!
+      h.push([dmy(c.fecha), c.concepto, a.quienPago.replace(/^entró a /, ""), a.codigo, r2(-c.monto),
+        `${dmy(s.fecha)} · ${s.cuenta} · ${r2(s.debitos - s.creditos).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`, s.contable, CENTRADO("✓")])
+    }
+    h.push(["", "TOTAL de las otras puntas (no suma)", "", "", r2(otras.reduce((t, x) => t - x.c.monto, 0))])
+  }
+
+  // ── el control contra el banco: por cuenta (empresa) y código — las DOS puntas, cada una en su cuenta (como la 14.1)
   const clave = (titular: string, codigo: string) => `${titular.toUpperCase()}|${codigo.toUpperCase()}`
   const desdeCuotas = new Map<string, number>()
-  for (const { a, c } of conEfecto) if (a.codigo && !a.quienPago.includes(" + ")) {
-    const k = clave(a.quienPago.split(" · ")[0], a.codigo); desdeCuotas.set(k, r2((desdeCuotas.get(k) ?? 0) + c.monto))
+  for (const { a, c } of conEfecto) if (a.codigo && c.banco?.titular && !c.banco.titular.includes(" + ")) {
+    const k = clave(c.banco.titular, a.codigo); desdeCuotas.set(k, r2((desdeCuotas.get(k) ?? 0) + c.monto))
   }
   const conTpl = new Map<string, number>(), sinTpl = new Map<string, number>()
   for (const m of extracto?.movimientos ?? []) {
@@ -149,7 +202,7 @@ export function hojaRetirosYAportes(cuotas: CuotaTemplate[], extracto: { movimie
     .filter(k => /\|(CTA|CUENTA|DIST|RET|LIB)\b/.test(k)).sort()
   h.push([], ["CONTROL — el mismo número por dos caminos: las cuotas (columna Efecto) contra el banco (código del movimiento)"])
   if (!extracto) { h.push(["⚠️ No se leyó el extracto del ejercicio: el control no se hizo."]); return h }
-  h.push(["Pagó (empresa)", "Código", "Desde las cuotas", "Banco, atado a una cuota", "Diferencia", "", "Banco SIN template (retiros directos)", "Total del banco con ese código"])
+  h.push(["Cuenta de (empresa)", "Código", "Desde las cuotas", "Banco, atado a una cuota", "Diferencia", "", "Banco SIN template (retiros directos)", "Total del banco con ese código"])
   for (const k of claves) {
     const [tit, cod] = k.split("|"), n = h.length + 1
     const cu = desdeCuotas.get(k) ?? 0, ba = conTpl.get(k) ?? 0, si = sinTpl.get(k) ?? 0
