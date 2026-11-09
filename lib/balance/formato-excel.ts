@@ -53,6 +53,13 @@ export const filtrarEn = (filas: unknown[][], ref: string) => { FILTROS.set(fila
 const SIN_CONGELAR = new WeakSet<unknown[][]>()
 export const sinCongelar = (filas: unknown[][]) => { SIN_CONGELAR.add(filas) }
 export const esSinCongelar = (filas: unknown[][]) => SIN_CONGELAR.has(filas)
+/**
+ * 🧊 Hasta qué fila queda fijo arriba (JMS 09/11, en el H para auditar: «poner el fijado de fila en la 15 en vez de en la 4… la tabla de
+ * arriba se ve de un pantallazo y la lista de abajo es la que puede tener muchos movimientos»). Manda sobre lo que adivina la presentación.
+ */
+const CONGELAR_EN = new WeakMap<unknown[][], number>()
+export const congelarEn = (filas: unknown[][], fila: number) => { CONGELAR_EN.set(filas, fila) }
+export const congeladoDe = (filas: unknown[][]): number | undefined => CONGELAR_EN.get(filas)
 /** El filtro declarado para estas filas, si hay. */
 export const filtroDe = (filas: unknown[][]): string | undefined => FILTROS.get(filas)
 
