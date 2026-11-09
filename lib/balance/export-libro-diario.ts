@@ -3463,7 +3463,8 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
       let nombre = nombreSolapaGrupo(g, "H"), n = 2
       while (usados.has(nombre)) nombre = `${nombreSolapaGrupo(g, "H").slice(0, 28)} ${n++}`
       usados.add(nombre)
-      return { g, nombre, ...armarHojaGrupo(g, etiqueta, meses, { hojaPorMes, tablasSinLeer, extracto: t.entrada?.opciones.extracto, auditoria: aud }) }
+      return { g, nombre, ...armarHojaGrupo(g, etiqueta, meses, { hojaPorMes, tablasSinLeer, extracto: t.entrada?.opciones.extracto, auditoria: aud,
+        establecimientoDe: (partida: string) => papeles?.ubicacion?.[`campo:${partida.toLowerCase()}`]?.establecimiento ?? partida }) }
     })
     hoja(wb, `H · ${resp} · Templates`, hojaListadoTemplates(t, resp, etiqueta), COLS_LISTADO_TEMPLATES)
     hoja(wb, `H · ${resp} · Cuotas`, hojaDeTemplates(t), COLS_TEMPLATES)

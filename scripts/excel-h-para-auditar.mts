@@ -16,6 +16,7 @@ import { agregarLibroH, vistasDe, agregarHoja, reordenarSolapas } from "../lib/b
 import { SOLAPA_CAMBIOS, CAMBIOS, ANCHOS_CAMBIOS } from "./cambios-presentacion-h.mts"
 import { aplicarVistas } from "../lib/balance/formato-excel"
 import { fechasReales } from "../lib/excel/fechas-reales"
+import { cargarCuotasImpuestos, cargarAuxiliaresPapel } from "../lib/impuestos/datos-papel"
 import { auditarCuota, esEfectoEntrePartes } from "../lib/balance/auditoria-templates"
 
 const env = Object.fromEntries(readFileSync(".env.local", "utf8").split(/\r?\n/).filter(l => l.includes("=") && !l.trim().startsWith("#")).map(l => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, "")] }))
@@ -46,7 +47,9 @@ const MES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct
 const meses = ej.subdiarios.map((x: any) => ({ clave: `${x.anio}-${String(x.mes).padStart(2, "0")}`, rotulo: `${MES[x.mes - 1]}-${String(x.anio).slice(-2)}` }))
 
 const wb = XLSX.utils.book_new()
-agregarLibroH(wb as any, templates, ej.etiqueta, meses, null, { auditoria: true })
+// los papeles de impuestos (y el establecimiento de cada partida), como en la app
+const [cuotasImp, aux] = await Promise.all([cargarCuotasImpuestos(sb), cargarAuxiliaresPapel(sb)])
+agregarLibroH(wb as any, templates, ej.etiqueta, meses, { cuotas: cuotasImp, ...aux } as any, { auditoria: true })
 // 📝 --cambios: la solapa «Cambios de presentación» al final, con un link desde el Índice
 if (process.argv.includes("--cambios")) {
   agregarHoja(wb as any, SOLAPA_CAMBIOS, CAMBIOS, ANCHOS_CAMBIOS.map((ancho, i) => (i >= 2 ? { ancho, z: "#,##0.00" } : { ancho })) as any)

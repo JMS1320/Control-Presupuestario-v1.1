@@ -76,6 +76,16 @@ export function familiaDe(concepto: string): string {
 }
 /** …y la partida (Casco, Lima, Tapera 1…): el nombre sin la familia ni «cuota» / «anual». */
 export const partidaDe = (concepto: string) => concepto.replace(/inmobiliario|complementario|red vial|cuota|anual/gi, "").replace(/\s+/g, " ").trim()
+/**
+ * 🔍 JMS 09/11 (D1.2 «siempre mostrar agrupadas»): el renglón del RESUMEN del H para auditar — impuesto → establecimiento → partida
+ * («Inmobiliario — Nazarenas — Casco», «Inmobiliario — Lima», «Red Vial — Rojas»); fuera de los impuestos, el template.
+ */
+export function renglonAuditoria(concepto: string, establecimientoDe?: (partida: string) => string): string {
+  const fam = familiaDe(concepto)
+  if (fam.startsWith("9 ")) return concepto
+  const partida = partidaDe(concepto), est = establecimientoDe?.(partida) || partida
+  return [fam.slice(2), est, est !== partida ? partida : ""].filter(Boolean).join(" — ")
+}
 
 const ESTADOS_PAGOS = /pagad|conciliad/i
 const dmy = (f: string | null | undefined) => (f ? f.slice(0, 10).split("-").reverse().join("/") : "")
@@ -94,6 +104,8 @@ export interface OpcionesHojaGrupo {
   extracto?: ExtractoParaH
   /** 🔍 A-FEAT-1579: el H PARA AUDITAR — cada cuota suma Quién pagó · Código contable · Efecto · Marca (después de Débito y Crédito). */
   auditoria?: boolean
+  /** 🔍 JMS 09/11: el ESTABLECIMIENTO de cada partida (Nazarenas, Rojas, Lima…) — de `public.partidas`; sin dato, la partida misma. */
+  establecimientoDe?: (partida: string) => string
 }
 
 /** Las columnas de «Por mes» (ver `hojaTemplatesPorMes`): B = agrupadora, C = categoría, P = TOTAL (12 meses desde la D). */
@@ -126,10 +138,10 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
    */
   const bancoDe = (c: CuotaTemplate) => cuotaSinPago(c) ? "" : (c.banco?.cuenta || "pagado sin movimiento del banco")
   const { filas: h, ubicacion: u } = armarResumenPorMes(g.cuotas.map(c => ({
-    categoria: `${c.categ || "(sin categoría)"} — ${bancoDe(c) || "sin pago"}`, mes: (c.fecha ?? "").slice(0, 7), importe: c.monto,
+    categoria: opciones.auditoria ? renglonAuditoria(c.concepto, opciones.establecimientoDe) : `${c.categ || "(sin categoría)"} — ${bancoDe(c) || "sin pago"}`, mes: (c.fecha ?? "").slice(0, 7), importe: c.monto,
     // 🔍 JMS 09/11 (auditar): por IMPUESTO → PARTIDA → FECHA (Inmobiliario partida por partida, Complementario aparte, Red Vial partida por
     // partida); fuera de los impuestos, por template y fecha. El H del contador sigue por banco y fecha (04/11).
-    orden: opciones.auditoria ? `${familiaDe(c.concepto)}|${partidaDe(c.concepto)}|${c.fecha ?? ""}|${c.concepto}` : `${bancoDe(c) ? "0" + bancoDe(c) : "1"}|${c.fecha ?? ""}|${c.concepto}`,
+    orden: opciones.auditoria ? `${familiaDe(c.concepto)}|${renglonAuditoria(c.concepto, opciones.establecimientoDe)}|${c.fecha ?? ""}|${c.concepto}` : `${bancoDe(c) ? "0" + bancoDe(c) : "1"}|${c.fecha ?? ""}|${c.concepto}`,
     columnas: [dmy(c.fecha), c.concepto, bancoDe(c) || "sin pago", c.banco?.comprobante ?? "",
       c.proveedor || c.banco?.cuenta || "", c.detalle ?? "", c.estado,
       ...(opciones.auditoria ? (a => [a.quienPago, a.codigo, a.efecto, CENTRADO(a.marca), a.descripcion, a.beneficiario, a.factura, a.interno])(auditarCuota(c)) : [])],
@@ -217,6 +229,25 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
     for (const [e, v] of [...porEfecto].sort((a, b) => a[0].localeCompare(b[0], "es")))
       h.push(["", e, { t: "n", f: `SUMIFS(${deb},${cE},"${lit(e)}")-SUMIFS(${cred},${cE},"${lit(e)}")`, v }])
     h.push(["", "= Total de la solapa", { t: "n", f: `SUM(${deb})-SUM(${cred})`, v: total }])
+    // 🔍 JMS 09/11 (D1.2 «siempre mostrar agrupadas»): POR ESTABLECIMIENTO — cada impuesto en cada establecimiento (Nazarenas, Lima,
+    // Rojas…), sumando los renglones del resumen de arriba
+    const iEnc = h.findIndex(r => Array.isArray(r) && r[0] === "Nro" && r[1] === "Categoría")
+    const imp = g.cuotas.filter(c => !familiaDe(c.concepto).startsWith("9 "))
+    if (iEnc >= 0 && imp.length) {
+      const enc = h[iEnc] as unknown[], colTot = String.fromCharCode(65 + enc.indexOf("TOTAL"))
+      let fin = iEnc + 1
+      while (fin < h.length && typeof (h[fin] as unknown[])?.[0] === "number") fin++
+      const rango = (col: string) => `$${col}$${iEnc + 2}:$${col}$${fin}`
+      const porEst = new Map<string, number>()
+      for (const c of imp) {
+        const k = renglonAuditoria(c.concepto, opciones.establecimientoDe).split(" — ").slice(0, 2).join(" — ")
+        porEst.set(k, r2((porEst.get(k) ?? 0) + c.monto))
+      }
+      h.push([], ["", "POR ESTABLECIMIENTO — cada impuesto, por establecimiento (suma los renglones del resumen de arriba)"],
+        ["", "Impuesto — establecimiento", "Total"].map(x => x ? CENTRADO(x) : x))
+      for (const [k, v] of [...porEst].sort((a, b) => a[0].localeCompare(b[0], "es")))
+        h.push(["", k, { t: "n", f: `SUMIF(${rango("B")},"${lit(k)}*",${rango(colTot)})`, v }])
+    }
   }
   return { filas: h, celdaTotal: u.celdaTotal }
 }

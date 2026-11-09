@@ -13534,7 +13534,7 @@ export function correrCasos(): Resultado[] {
       q("3", "Luz", "conciliado", 50, b("MA", ""))]
     const { filas } = armarHojaGrupo({ responsable: "MA", agrupadora: "Fijos", total: 250, cuotas: cs } as never, "25/26", [{ clave: "2025-09", rotulo: "sep-25" }], { auditoria: true })
     const txt = (x: unknown) => (x && typeof x === "object" ? (x as { v: unknown }).v : x)
-    const ctl = (filas as unknown[][]).filter(f => txt(f[1]) === "Seguro Chalet" || txt(f[1]) === "Luz").filter(f => typeof f[2] === "object")
+    const ctl = (filas as unknown[][]).filter(f => txt(f[1]) === "Seguro Chalet" || txt(f[1]) === "Luz").filter(f => typeof f[2] === "object" && !!f[9] && typeof f[9] === "object" && /completo|revisar/.test(String((f[9] as { v?: unknown }).v)))
       .map(f => `${txt(f[1])}: ${(f.slice(2, 8) as Array<{ v: number }>).map(x => x.v).join("/")} ${(f[9] as { v: string }).v}`).join(" · ")
     const ex = { movimientos: [{ titular: "MSA", cuenta: "Galicia MSA", fecha: "2025-09-10", descripcion: "", debitos: 100, creditos: 0, templateCuotaId: "1", contable: "CTA MA", enDolares: false },
       { titular: "MSA", cuenta: "Galicia MSA", fecha: "2025-09-20", descripcion: "", debitos: 30, creditos: 0, templateCuotaId: null, contable: "CTA MA", enDolares: false }] }
