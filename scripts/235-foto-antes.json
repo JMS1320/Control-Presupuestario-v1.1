@@ -1,0 +1,18 @@
+{"tomada":"2026-11-09","templates":[
+ {"id":"06c49a43-7547-49b7-aafc-aa75dba2b74f","nombre":"Imp Automotores Gol 2012 Anual","activo":true},
+ {"id":"42a3d238-7765-4c47-b6c9-38ea4190aa44","nombre":"Imp Automotores Gol 2012 Cuota","activo":false},
+ {"id":"5db555b9-dda3-4ccf-9f10-9060afd35034","nombre":"Imp Automotores Tiguan 2012 Anual","activo":true},
+ {"id":"cacc3523-9f3f-4c64-8771-dfece4ab8a60","nombre":"Imp Automotores Tiguan 2012 Cuota","activo":false},
+ {"id":"5336e47c-a3b8-4d73-ab86-6e462bac97e6","nombre":"Imp Automotores Toyota 2015 Anual","activo":true},
+ {"id":"404f2357-8f7c-4b8c-9b59-5015301b73a0","nombre":"Imp Automotores Toyota 2015 Cuota","activo":false}],
+"cuotas":[
+ {"id":"f993dc87-dbea-46b8-bc49-e78b47aee901","de":"Gol Anual","fecha":"2026-01-05","monto":0,"estado":"conciliado"},
+ {"id":"7bcae782-b860-4ce4-a562-7c64d5c992ac","de":"Gol Cuota","fecha":"2026-01-05","monto":0,"estado":"conciliado"},
+ {"id":"561b07d8-fe48-47b7-8d04-d37d38fd23b2","de":"Gol Cuota","fecha":"2026-04-05","monto":0,"estado":"pendiente"},
+ {"id":"3d0a56e0-f18e-4add-8985-c4d84fe557a2","de":"Gol Cuota","fecha":"2026-07-05","monto":0,"estado":"pendiente"},
+ {"id":"6b3a213e-4c80-4bd8-98cc-877f13872114","de":"Tiguan Anual","fecha":"2026-01-05","monto":0,"estado":"conciliado"},
+ {"id":"5b205b1f-54d9-4489-88b8-a03f8ac5b710","de":"Tiguan Cuota","fecha":"2026-01-05","monto":0,"estado":"conciliado"},
+ {"id":"7b257cad-80ff-4e08-9aec-862d3c893db2","de":"Tiguan Cuota","fecha":"2026-04-05","monto":0,"estado":"pendiente"},
+ {"id":"27b278ba-b9b6-4b34-bcee-78f5a85f9af6","de":"Tiguan Cuota","fecha":"2026-07-05","monto":0,"estado":"pendiente"},
+ {"id":"72f8fa0d-c10d-45b7-9db3-a8582bc57326","de":"Toyota Anual","fecha":"2025-03-10","monto":0,"estado":"conciliado"}],
+"nota":"Toyota Cuota 2025 (5 cuotas conciliadas en 0) NO se tocan (JMS 09/11: que salte la alarma). Ningún movimiento bancario vinculado a estas cuotas (verificado 09/11)."}
