@@ -33,7 +33,7 @@ export function duenoDelGasto(c: CuotaTemplate): string {
 export function efectoEntre(pagador: string, dueno: string): string {
   if (!pagador || !dueno || pagador === dueno) return ""
   if (pagador === "MSA") return `retiro de ${dueno} pagado por MSA`
-  if (dueno === "MSA") return `aporte de ${pagador} (pagó un gasto de MSA)`
+  if (dueno === "MSA") return `aporte de ${pagador} a MSA (pagó un gasto de MSA)`
   if (pagador === "PAM" && dueno === "MA") return "distribución PAM → MA (pagó un gasto de MA)"
   return `${pagador} pagó por ${dueno}`
 }
@@ -89,6 +89,8 @@ export function efectoDelCodigo(titular: string, codigo: string, entrada = false
   const quien = m[2].trim().toUpperCase()
   if (/^DIST$/i.test(m[1])) return entrada ? `distribución ${quien} → ${titular} · entró a ${titular}` : `distribución ${titular} → ${quien} · salió de ${titular}`
   if (entrada) return `${quien} → ${titular} (cuenta corriente) · entró a ${titular}`
+  // JMS 09/11: la salida de PAM o MA con «CTA MSA» es un APORTE a MSA (el template de PAM se llama «Aporte a MSA»)
+  if (quien === "MSA") return `aporte de ${titular} a MSA`
   return titular === "MSA" ? `retiro de ${quien} pagado por MSA` : `${titular} pagó por cuenta de ${quien}`
 }
 
