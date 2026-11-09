@@ -74,7 +74,7 @@ import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
 import type { CuadreGranos, ValuacionGranos, Sementeras } from "./granos-sementeras"
 import {
   formatearHoja, presentarHoja, anchosAutomaticos, colorDeSolapa, aplicarVistas, filtroDe, filtrarEn,
-  conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna, type Vista, UNIONES, ALTOS, esSinCongelar, congeladoDe } from "./formato-excel"
+  conFormula, MONEDA, ENTERO, TONELADAS, COEFICIENTE, type Columna, type Vista, UNIONES, ALTOS, esSinCongelar, congeladoDe, nivelesDelResumen } from "./formato-excel"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 import type { ControlesInicio, ControlProvisionAnterior } from "./control-inicio"
 import { textoEstado, type InicioYCierre } from "./inicio-y-cierre"
@@ -530,7 +530,7 @@ const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: 
   VISTAS.set(wb, [...vistasDe(wb), vista])
   const uniones = UNIONES.get(filas)
   if (uniones?.length) ws["!merges"] = uniones.map(u => XLSX.utils.decode_range(u))
-  const niveles = NIVELES.get(filas)
+  const niveles = NIVELES.get(filas) ?? nivelesDelResumen(filas)
   if (niveles) ws["!rows"] = niveles.map(l => (l ? { level: l, ...(CERRADAS.has(filas) ? { hidden: true } : {}) } : {}))
   const altos = ALTOS.get(filas)
   if (altos) { const rs: XLSX.RowInfo[] = (ws["!rows"] ??= []); for (const [r, h] of Object.entries(altos)) rs[Number(r) - 1] = { ...(rs[Number(r) - 1] ?? {}), hpt: h } }

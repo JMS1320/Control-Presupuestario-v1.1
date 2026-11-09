@@ -60,6 +60,17 @@ export const esSinCongelar = (filas: unknown[][]) => SIN_CONGELAR.has(filas)
 const CONGELAR_EN = new WeakMap<unknown[][], number>()
 export const congelarEn = (filas: unknown[][], fila: number) => { CONGELAR_EN.set(filas, fila) }
 export const congeladoDe = (filas: unknown[][]): number | undefined => CONGELAR_EN.get(filas)
+/**
+ * 📑 Las filas del RESUMEN se pliegan con el [−] de Excel (JMS 09/11: «que pueda agrupar la de arriba para que se vea el título de la fila 1,
+ * luego DETALLE… y luego la tabla»). Filas en base 1, inclusive. El botón queda en el renglón «DETALLE», justo debajo.
+ */
+const GRUPO_RESUMEN = new WeakMap<unknown[][], [number, number]>()
+export const agruparResumen = (filas: unknown[][], desde: number, hasta: number) => { if (hasta >= desde) GRUPO_RESUMEN.set(filas, [desde, hasta]) }
+/** Los niveles de plegado (1 = adentro del grupo) que corresponden al resumen agrupado, si hay. */
+export const nivelesDelResumen = (filas: unknown[][]): number[] | undefined => {
+  const g = GRUPO_RESUMEN.get(filas)
+  return g ? filas.map((_, i) => (i + 1 >= g[0] && i + 1 <= g[1] ? 1 : 0)) : undefined
+}
 /** El filtro declarado para estas filas, si hay. */
 export const filtroDe = (filas: unknown[][]): string | undefined => FILTROS.get(filas)
 

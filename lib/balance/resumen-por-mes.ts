@@ -10,7 +10,7 @@
  * Pura. Un solo armado para todas las hojas que lo usan (impuestos y gastos bancarios, intereses, inversiones, grupos de
  * templates, LIB), para que la regla no tenga cuatro versiones.
  */
-import { filtrarEn, congelarEn } from "./formato-excel"
+import { filtrarEn, congelarEn, agruparResumen } from "./formato-excel"
 
 export interface ItemDetalle {
   /** La categoría: define la línea del resumen. */
@@ -232,6 +232,8 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
     // 🧊 JMS 09/11: fijo hasta el encabezado del DETALLE (el resumen de arriba entra de un pantallazo; el detalle es lo largo). Si el resumen
     // es tan alto que no entraría en pantalla (más de 30 filas), queda lo de siempre.
     if (filaEncDetalle <= 30) congelarEn(h, filaEncDetalle)
+    // 📑 JMS 09/11: el resumen (de su título a la fila en blanco antes de «DETALLE») se pliega con el [−]
+    agruparResumen(h, 3, filaEncDetalle - 2)
   }
   return {
     filas: h,
