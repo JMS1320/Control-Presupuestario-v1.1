@@ -7,12 +7,13 @@
  */
 import { createClient } from "@supabase/supabase-js"
 import XLSX from "xlsx-js-style"
-import { readFileSync, existsSync } from "node:fs"
+import { readFileSync, existsSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { armarEjercicio, primerDiaDelEjercicio } from "../lib/balance/ejercicio"
 import { desdeCuota, armarTemplatesDelEjercicio } from "../lib/balance/templates-libro"
 import { leerMovimientosDeCuotas, vincularBanco, leerExtractoDelEjercicio, indiceDeDestinos } from "../lib/balance/movimientos-de-cuotas"
-import { agregarLibroH } from "../lib/balance/export-libro-diario"
+import { agregarLibroH, vistasDe } from "../lib/balance/export-libro-diario"
+import { aplicarVistas } from "../lib/balance/formato-excel"
 import { fechasReales } from "../lib/excel/fechas-reales"
 import { auditarCuota } from "../lib/balance/auditoria-templates"
 
@@ -46,7 +47,7 @@ agregarLibroH(wb as any, templates, ej.etiqueta, meses, null, { auditoria: true 
 fechasReales(wb as any)
 let p = join(CARPETA, `H para auditar ${EMPRESA} ${ej.etiqueta.replace("/", "-")} (2026-11-07).xlsx`), v = 2
 while (existsSync(p)) p = join(CARPETA, `H para auditar ${EMPRESA} ${ej.etiqueta.replace("/", "-")} (2026-11-07) v${v++}.xlsx`)
-XLSX.writeFile(wb, p)
+writeFileSync(p, await aplicarVistas(XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(wb as any)))  // como la app: [+] arriba, encabezados inmovilizados
 
 // lo que dice, para el control a ojo
 const a = [...templates.detalle, ...(templates.aCuentaSocio ?? [])].map((c: any) => ({ c, a: auditarCuota(c) }))

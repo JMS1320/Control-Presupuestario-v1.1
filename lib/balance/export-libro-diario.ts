@@ -3475,6 +3475,40 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
   if (aud) hoja(wb, "H · Retiros y aportes", hojaRetirosYAportes([...templates.detalle, ...(templates.aCuentaSocio ?? [])], templates.entrada?.opciones.extracto, etiqueta, meses), COLS_RESUMEN_MES)
   // 📗 A-FEAT-1539: el libro para mandar — sin la palabra «template» (no es contable) y sin subtítulos. El de auditar no se pule.
   if (!aud) pulirLibroH(wb)
+  else agregarIndiceH(wb)
+}
+
+/**
+ * 🧭 **EL ÍNDICE del H para auditar** (A-FEAT-1579, JMS 09/11: *«¿se le puede armar un menú al Excel? para dirigirme a las solapas
+ * desde el menú, desplegable, así me figuran los 3 responsables y le abro las subpestañas»*). Primera solapa: MSA, MA, PAM y General,
+ * cada uno plegado con su [+]; cada solapa es un link. Y en cada solapa el título (A1) lleva de vuelta al índice.
+ */
+export function agregarIndiceH(wb: XLSX.WorkBook): void {
+  const NOMBRE = "Índice"
+  const PREFIJO = /^H · (MSA|MA|PAM) · /
+  const grupos = new Map<string, string[]>()
+  for (const n of wb.SheetNames) { const g = n.match(PREFIJO)?.[1] ?? "General"; grupos.set(g, [...(grupos.get(g) ?? []), n]) }
+  const filas: unknown[][] = [["ÍNDICE — el [+] de la izquierda abre cada responsable; tocá una solapa para ir. En cada solapa, el título trae de vuelta acá."], []]
+  const niveles = [0, 0]
+  for (const g of ["MSA", "MA", "PAM", "General"]) {
+    const ns = grupos.get(g)
+    if (!ns?.length) continue
+    filas.push([`${g === "General" ? "GENERAL (retiros y aportes, Libertad)" : g} — ${ns.length} solapa${ns.length === 1 ? "" : "s"}`]); niveles.push(0)
+    for (const n of ns) {
+      filas.push(["", { t: "s", v: n.replace(PREFIJO, ""), l: { Target: `#'${n.replace(/'/g, "''")}'!A1`, Tooltip: `Ir a «${n}»` } }]); niveles.push(1)
+    }
+  }
+  plegar(filas, niveles, true)
+  hoja(wb, NOMBRE, filas, [{ ancho: 40 }, { ancho: 60 }])
+  // la primera solapa (y su vista, que va por posición), con el [+] arriba de cada grupo
+  wb.SheetNames = [NOMBRE, ...wb.SheetNames.filter(n => n !== NOMBRE)]
+  const vs = vistasDe(wb)
+  if (vs.length) VISTAS.set(wb, [{ ...vs[vs.length - 1], resumenArriba: true, congelarFilas: undefined }, ...vs.slice(0, -1)])
+  for (const n of wb.SheetNames) {
+    if (n === NOMBRE) continue
+    const c = wb.Sheets[n]?.A1 as (XLSX.CellObject & { l?: unknown }) | undefined
+    if (c) c.l = { Target: `#'${NOMBRE}'!A1`, Tooltip: "Volver al índice" }
+  }
 }
 
 /** ✍️ A-FEAT-1539: lo que va por la cuenta de un socio, al pie de «Por mes» (no es gasto, pero se ve). */

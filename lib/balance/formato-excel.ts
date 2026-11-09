@@ -163,7 +163,9 @@ export const altoDeFila = (filas: unknown[][], fila: number, puntos: number) => 
 const tieneFondo = (c: XLSX.CellObject) => !!((c as { s?: Estilo }).s?.fill)
 
 /** Lo que la presentación averiguó de la hoja y `xlsx-js-style` no sabe escribir solo (ver `aplicarVistas`). */
-export interface Vista { congelarFilas?: number; sinCuadricula?: boolean; colorSolapa?: string }
+export interface Vista { congelarFilas?: number; sinCuadricula?: boolean; colorSolapa?: string
+  /** 🧭 A-FEAT-1579: el [+] de los renglones plegados va ARRIBA del grupo (en el renglón del título), no abajo. */
+  resumenArriba?: boolean }
 
 /**
  * 🎨 Presenta una hoja ya armada y devuelve su **vista** (cuántas filas inmovilizar).
@@ -388,8 +390,8 @@ export async function aplicarVistas(datos: Uint8Array | ArrayBuffer, vistas: Vis
         : ""
       xml = xml.replace(/<sheetView ([^>]*?)\/>/, (_m, a: string) => `<sheetView ${a}${atrib}>${pane}</sheetView>`)
     }
-    if (v.colorSolapa) {
-      const tab = `<tabColor rgb="${v.colorSolapa}"/>`
+    if (v.colorSolapa || v.resumenArriba) {
+      const tab = (v.colorSolapa ? `<tabColor rgb="${v.colorSolapa}"/>` : "") + (v.resumenArriba ? `<outlinePr summaryBelow="0"/>` : "")
       if (/<sheetPr[^>]*\/>/.test(xml)) xml = xml.replace(/<sheetPr([^>]*)\/>/, `<sheetPr$1>${tab}</sheetPr>`)
       else if (/<sheetPr[^>]*>/.test(xml)) xml = xml.replace(/<sheetPr([^>]*)>/, `<sheetPr$1>${tab}`)
       else xml = xml.replace(/(<worksheet[^>]*>)/, `$1<sheetPr>${tab}</sheetPr>`)
