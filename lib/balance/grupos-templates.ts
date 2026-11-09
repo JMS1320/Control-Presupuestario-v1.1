@@ -66,6 +66,17 @@ export function gruposDelResponsable(cuotas: CuotaTemplate[], responsable: strin
     || a.agrupadora.localeCompare(b.agrupadora, "es"))
 }
 
+/** 🔍 Para el orden del H para auditar: la familia del impuesto (Inmobiliario, Complementario, Red Vial) o el template. */
+export function familiaDe(concepto: string): string {
+  const n = concepto.toLowerCase()
+  if (/complementario/.test(n)) return "2 Inmobiliario Complementario"
+  if (/inmobiliario/.test(n)) return "1 Inmobiliario"
+  if (/red vial/.test(n)) return "3 Red Vial"
+  return `9 ${concepto}`
+}
+/** …y la partida (Casco, Lima, Tapera 1…): el nombre sin la familia ni «cuota» / «anual». */
+export const partidaDe = (concepto: string) => concepto.replace(/inmobiliario|complementario|red vial|cuota|anual/gi, "").replace(/\s+/g, " ").trim()
+
 const ESTADOS_PAGOS = /pagad|conciliad/i
 const dmy = (f: string | null | undefined) => (f ? f.slice(0, 10).split("-").reverse().join("/") : "")
 
@@ -116,7 +127,9 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
   const bancoDe = (c: CuotaTemplate) => cuotaSinPago(c) ? "" : (c.banco?.cuenta || "pagado sin movimiento del banco")
   const { filas: h, ubicacion: u } = armarResumenPorMes(g.cuotas.map(c => ({
     categoria: `${c.categ || "(sin categoría)"} — ${bancoDe(c) || "sin pago"}`, mes: (c.fecha ?? "").slice(0, 7), importe: c.monto,
-    orden: `${bancoDe(c) ? "0" + bancoDe(c) : "1"}|${c.fecha ?? ""}|${c.concepto}`,
+    // 🔍 JMS 09/11 (auditar): por IMPUESTO → PARTIDA → FECHA (Inmobiliario partida por partida, Complementario aparte, Red Vial partida por
+    // partida); fuera de los impuestos, por template y fecha. El H del contador sigue por banco y fecha (04/11).
+    orden: opciones.auditoria ? `${familiaDe(c.concepto)}|${partidaDe(c.concepto)}|${c.fecha ?? ""}|${c.concepto}` : `${bancoDe(c) ? "0" + bancoDe(c) : "1"}|${c.fecha ?? ""}|${c.concepto}`,
     columnas: [dmy(c.fecha), c.concepto, bancoDe(c) || "sin pago", c.banco?.comprobante ?? "",
       c.proveedor || c.banco?.cuenta || "", c.detalle ?? "", c.estado,
       ...(opciones.auditoria ? (a => [a.quienPago, a.codigo, a.efecto, CENTRADO(a.marca), a.descripcion, a.beneficiario, a.factura, a.interno])(auditarCuota(c)) : [])],
@@ -132,7 +145,8 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
   const est = `${u.colDetalle(6)}${u.det1}:${u.colDetalle(6)}${u.detN}`
   const netoSi = (estado: string) => `SUMIFS(${deb},${est},"${estado}")-SUMIFS(${cred},${est},"${estado}")`
   const total = r2(g.cuotas.reduce((t, c) => t + c.monto, 0))
-  const conciliadas = g.cuotas.filter(c => /^conciliad/i.test(c.estado))
+  // 🔍 JMS 09/11 (auditar): el control 3 cuenta toda cuota CON MOVIMIENTO del banco, también las «anterior» (antes sólo «conciliado»)
+  const conciliadas = g.cuotas.filter(c => opciones.auditoria ? !cuotaSinPago(c) && !!c.banco?.cuenta : /^conciliad/i.test(c.estado))
   const conciliado = r2(conciliadas.reduce((t, c) => t + c.monto, 0))
   const sinPagar = r2(g.cuotas.filter(c => ESTADOS_SIN_PAGAR.includes(c.estado.toLowerCase())).reduce((t, c) => t + c.monto, 0))
   const miroBanco = g.cuotas.some(c => c.banco !== undefined)
@@ -158,7 +172,10 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
   }
   // 3 · Contra el banco
   const r3 = fila()
-  h.push(["", "3 · Contra el banco", "Conciliado (según las cuotas)", { t: "n", f: netoSi("conciliado"), v: conciliado }])
+  const colBanco = `${u.colDetalle(2)}${u.det1}:${u.colDetalle(2)}${u.detN}`
+  const conMovimiento = `SUMIFS(${deb},${colBanco},"<>sin pago",${colBanco},"<>pagado sin movimiento del banco")-SUMIFS(${cred},${colBanco},"<>sin pago",${colBanco},"<>pagado sin movimiento del banco")`
+  h.push(["", "3 · Contra el banco", opciones.auditoria ? "Con movimiento del banco (según las cuotas, también «anterior»)" : "Conciliado (según las cuotas)",
+    { t: "n", f: opciones.auditoria ? conMovimiento : netoSi("conciliado"), v: conciliado }])
   if (miroBanco) {
     h.push(["", "", "Lo que respaldan los movimientos del banco", respaldo])
     h.push(["", "", "Diferencia", { t: "n", f: `D${r3}-D${r3 + 1}`, v: r2(conciliado - respaldo) }, ok(`D${r3}-D${r3 + 1}`, r2(conciliado - respaldo), "⚠️ no cierra: ver los casos abajo")])
@@ -167,7 +184,7 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
   }
   if (opciones.tablasSinLeer?.length) h.push(["", "", `⚠️ No se pudieron leer: ${opciones.tablasSinLeer.join(", ")}`])
   const rP = fila()
-  h.push(["", "", "Pagado sin banco (anterior, pagado, débito…)", { t: "n", f: `D${r1 + 1}-D${r3}-D${rP + 1}`, v: r2(total - conciliado - sinPagar) }])
+  h.push(["", "", opciones.auditoria ? "Pagado sin movimiento del banco" : "Pagado sin banco (anterior, pagado, débito…)", { t: "n", f: `D${r1 + 1}-D${r3}-D${rP + 1}`, v: r2(total - conciliado - sinPagar) }])
   h.push(["", "", "Sin pagar al cierre (pendiente, a pagar, preparado)", { t: "n", f: ESTADOS_SIN_PAGAR.map(netoSi).join("+"), v: sinPagar }])
   h.push(["", "", "= Total de la solapa", { t: "n", f: `D${r3}+D${rP}+D${rP + 1}`, v: total }])
 
@@ -190,6 +207,14 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
     const lit = (x: string) => x.replace(/[~*?]/g, m => `~${m}`).replace(/"/g, "\"\"")
     h.push(...controlPorTemplate(g.cuotas, u.colDetalle(1), u.colDetalle(10), u.det1, u.detN,
       t => `SUMIFS(${deb},${cC},"${lit(t)}")-SUMIFS(${cred},${cC},"${lit(t)}")`, h.length + 1))
+    // 🔍 JMS 09/11 (punto 4): el SUBTOTAL POR EFECTO — quién pagó lo de esta agrupadora (fórmulas sobre la columna Efecto)
+    const cE = `${u.colDetalle(9)}${u.det1}:${u.colDetalle(9)}${u.detN}`
+    const porEfecto = new Map<string, number>()
+    for (const c of g.cuotas) { const e = auditarCuota(c).efecto; porEfecto.set(e, r2((porEfecto.get(e) ?? 0) + c.monto)) }
+    h.push([], ["", "POR EFECTO — quién pagó lo de esta agrupadora"], ["", "Efecto", "Total"].map(x => x ? CENTRADO(x) : x))
+    for (const [e, v] of [...porEfecto].sort((a, b) => a[0].localeCompare(b[0], "es")))
+      h.push(["", e, { t: "n", f: `SUMIFS(${deb},${cE},"${lit(e)}")-SUMIFS(${cred},${cE},"${lit(e)}")`, v }])
+    h.push(["", "= Total de la solapa", { t: "n", f: `SUM(${deb})-SUM(${cred})`, v: total }])
   }
   return { filas: h, celdaTotal: u.celdaTotal }
 }

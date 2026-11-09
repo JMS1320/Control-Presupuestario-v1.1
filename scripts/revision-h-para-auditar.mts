@@ -16,7 +16,7 @@ import { join } from "node:path"
 import { armarEjercicio, primerDiaDelEjercicio } from "../lib/balance/ejercicio"
 import { desdeCuota, armarTemplatesDelEjercicio } from "../lib/balance/templates-libro"
 import { leerMovimientosDeCuotas, vincularBanco, leerExtractoDelEjercicio, indiceDeDestinos } from "../lib/balance/movimientos-de-cuotas"
-import { auditarCuota, duenoDelGasto, otraParteDelCodigo } from "../lib/balance/auditoria-templates"
+import { auditarCuota, duenoDelGasto, otraParteDelCodigo, esEfectoEntrePartes } from "../lib/balance/auditoria-templates"
 import { cuotaSinPago } from "../lib/balance/grupos-templates"
 import { TABLAS_CON_VINCULO_ARCA } from "../lib/conciliacion/tablas-con-vinculo-arca"
 import { agregarHoja } from "../lib/balance/export-libro-diario"
@@ -113,12 +113,12 @@ for (const c of todas as any[]) {
     else if (otraParteDelCodigo(e.contable ?? "") !== titular) H(2, `la otra punta (${e.cuenta} ${e.fecha}) tiene código «${e.contable || "(vacío)"}», debería nombrar a ${titular}`)
   }
   // R6 · entrada SIN código con efecto (reintegro u otra cosa): leerla
-  if (entrada && !a.codigo && a.efecto) H(1, "entrada sin código: ¿reintegro? leer la descripción")
+  if (entrada && !a.codigo && esEfectoEntrePartes(a.efecto)) H(1, "entrada sin código: ¿reintegro? leer la descripción")
   // R7 · gasto de la empresa marcado como de un socio o familia (lo pagó el dueño y el código dice otra cosa)
   if (!entrada && titular === dueno && a.codigo && c.tipo !== "distribucion" && !/^LIB/i.test(a.codigo)) H(1, `gasto de ${dueno} (tipo ${c.tipo || "sin tipo"}) con código «${a.codigo}»: va a la cuenta de ${otra || a.codigo}, verificar que sea de esa persona`)
   // R8 · varias cuentas pagaron la misma cuota
   if (titular.includes("+")) H(2, "pagada desde varias cuentas: el efecto no se calcula")
-  if (a.efecto || f.hallazgos.length) out.push(f)
+  if (esEfectoEntrePartes(a.efecto) || f.hallazgos.length) out.push(f)
 }
 
 // ── los DIRECTOS: movimientos con código de retiro/aporte que no están en ningún template (el reporte sólo los suma)

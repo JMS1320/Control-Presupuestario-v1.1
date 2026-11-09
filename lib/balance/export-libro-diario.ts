@@ -22,7 +22,7 @@
 // Import por DEFAULT: el paquete es CommonJS (ver lib/presupuesto/export.ts).
 import { hojaOperacionesEnDolares } from "./operaciones-en-dolares"
 import XLSX from "xlsx-js-style"
-import { hojaRetirosYAportes } from "./auditoria-templates"
+import { hojaRetirosYAportes, hojaInconsistencias } from "./auditoria-templates"
 import type { SaldoParaBalance } from "@/lib/dolares/posicion-cierre"
 import type { TenenciaFci } from "./balance-en-linea-lectura"
 import { celdaRespaldo, respaldoDeSaldo, respaldoDeFci, respaldoDeComprobante, hojaDeRespaldos, renglonesDeRespaldo, linksALasCopias, type DocumentoRespaldo } from "./respaldos"
@@ -57,7 +57,7 @@ import { APERTURA_MSA_2025 } from "./apertura-contador"
 type TablasPreciosPapel = { mag: PrecioMag[]; hembra: PrecioMercado[]; macho: PrecioMercado[]; vientres: PrecioCabeza[]; toros: PrecioCabeza[] }
 import type { HojaConEstilo } from "@/lib/impuestos/papel-formato-jms"
 import { hojaLibertad } from "./libertad"
-import { armarGruposTemplates, cuotaSinPago, armarHojaGrupo, gruposDelResponsable, hojaExtractoSinCategoria, hojaGrupo, hojaIndiceGrupos, hojaLib, nombreSolapaGrupo, type GrupoTemplates, type MovimientoLib } from "./grupos-templates"
+import { armarGruposTemplates, cuotaSinPago, armarHojaGrupo, gruposDelResponsable, hojaExtractoSinCategoria, hojaGrupo, hojaIndiceGrupos, hojaLib, nombreSolapaGrupo, SIN_GRUPO, type GrupoTemplates, type MovimientoLib } from "./grupos-templates"
 import { sinCategoriaNiVinculo, type MovimientoExtractoH } from "./movimientos-de-cuotas"
 import { filasBalanceEnLinea, hojaBalanceEnLinea, hojaCajaYBancos, hojaFci, hojaDeudasYCreditos, hojaSoja, hojaVacasDeCria, type EntradaBalanceEnLinea } from "./balance-en-linea"
 import { LIBROS, repartirEnLibros, templatesDeResponsable, responsablePrincipal, hojaListadoTemplates, hojaDeDetalle, type GrupoDetalle, type MovimientoDelDetalle } from "./libros-del-balance"
@@ -3399,6 +3399,7 @@ export function mesesDelLibro(libro: LibroDiario): { clave: string; rotulo: stri
  */
 /** 🎨 «Retiros y aportes» (JMS 09/11, revisión D.4.d): arriba semestres · Nro · categoría · 12 meses; abajo Nro · Mes · Fecha · Concepto · Agrupadora ·
  * Responsable · Quién pagó · Código · Marca · Débito · Crédito · Descripción · Beneficiario · Factura · Interno. */
+const COLS_INCONSISTENCIAS: Columna[] = [44, 12, 30, 34, 12, 16, 12, 28, 12, 30, 34, 26].map((ancho, i) => (i === 5 || i === 2 ? { ancho, z: MONEDA } : { ancho }))
 const COLS_RETIROS: Columna[] = [14, 14, 14, 30, 50, 13, 30, 13, 16, 14, 14, 30, 36, 44, 13, 13, 15].map(ancho => ({ ancho, z: MONEDA }))
 const COLS_H_AUDITAR: Columna[] = [8.17, 11.88, 15.45, 30.31, 16.74, 10.17, 23.31, 15.74, 13.03, 13.03, 13.03, 20.45, 10.31, 28.46, 13.17, 30, 36, 44, 12]  // = sus anchos de Excel − 0,83 (lo que suma Excel)
   .map((ancho, i) => (i >= 2 ? { ancho, z: MONEDA } : { ancho }))
@@ -3486,6 +3487,11 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
   hoja(wb, "Gastos Libertad", hojaLibertad(templates.detalle, etiqueta, meses, templates.entrada?.opciones.extracto), COLS_RESUMEN_MES)
   // 🔍 A-FEAT-1579: en el de auditar, los retiros y aportes desde la columna Efecto, con su control contra el banco (también lo que va
   // «por la cuenta de un socio», como Gastos Reintegro JMS: no es gasto, pero es un movimiento con el socio)
+  // 🧾 JMS 09/11: las INCONSISTENCIAS de todas las solapas, en una sola, con link a la solapa de cada cuota
+  if (aud) {
+    const solapaDe = (c: CuotaTemplate) => { const r = responsablePrincipal(c.responsable); const n = nombreSolapaGrupo({ responsable: r, agrupadora: (c.agrupadoraTemplate ?? "").trim() || SIN_GRUPO }, "H"); return wb.SheetNames.includes(n) ? n : "" }
+    hoja(wb, "Inconsistencias", hojaInconsistencias([...templates.detalle, ...(templates.aCuentaSocio ?? [])], etiqueta, solapaDe), COLS_INCONSISTENCIAS)
+  }
   if (aud) hoja(wb, "H · Retiros y aportes", hojaRetirosYAportes([...templates.detalle, ...(templates.aCuentaSocio ?? [])], templates.entrada?.opciones.extracto, etiqueta, meses), COLS_RETIROS)
   // 📗 A-FEAT-1539: el libro para mandar — sin la palabra «template» (no es contable) y sin subtítulos. El de auditar no se pule.
   if (!aud) pulirLibroH(wb)
@@ -3561,7 +3567,7 @@ export function agregarIndiceH(wb: XLSX.WorkBook): void {
   const vs = vistasDe(wb)
   if (vs.length) VISTAS.set(wb, [...vs.slice(0, -1), { ...vs[vs.length - 1], resumenArriba: true, congelarFilas: undefined }])
   // 🗂️ JMS 09/11 (lo ordenó así en el v9): Índice → Retiros y aportes → Gastos Libertad → el set de MSA, MA y PAM
-  reordenarSolapas(wb, [NOMBRE, "H · Retiros y aportes", "Gastos Libertad"])
+  reordenarSolapas(wb, [NOMBRE, "H · Retiros y aportes", "Gastos Libertad", "Inconsistencias"])
   for (const n of wb.SheetNames) {
     if (n === NOMBRE) continue
     const c = wb.Sheets[n]?.A1 as (XLSX.CellObject & { l?: unknown }) | undefined

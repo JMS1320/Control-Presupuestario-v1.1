@@ -16,7 +16,7 @@ import { agregarLibroH, vistasDe, agregarHoja, reordenarSolapas } from "../lib/b
 import { SOLAPA_CAMBIOS, CAMBIOS, ANCHOS_CAMBIOS } from "./cambios-presentacion-h.mts"
 import { aplicarVistas } from "../lib/balance/formato-excel"
 import { fechasReales } from "../lib/excel/fechas-reales"
-import { auditarCuota } from "../lib/balance/auditoria-templates"
+import { auditarCuota, esEfectoEntrePartes } from "../lib/balance/auditoria-templates"
 
 const env = Object.fromEntries(readFileSync(".env.local", "utf8").split(/\r?\n/).filter(l => l.includes("=") && !l.trim().startsWith("#")).map(l => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, "")] }))
 const sb: any = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
@@ -64,8 +64,8 @@ writeFileSync(p, await aplicarVistas(XLSX.write(wb, { bookType: "xlsx", type: "a
 const a = [...templates.detalle, ...(templates.aCuentaSocio ?? [])].map((c: any) => ({ c, a: auditarCuota(c) }))
 const cuenta = (re: RegExp) => a.filter(x => re.test(x.a.marca)).length
 console.log(`cuotas ${a.length} · ✓ ${cuenta(/^✓/)} · 🔴 sin pagar ${cuenta(/SIN PAGAR/)} · 🟡 ${cuenta(/^🟡/)} · ⚪ ${cuenta(/^⚪/)} · ⚠️ código ${cuenta(/código esperado/)}`)
-console.log(`con efecto (pagó otro): ${a.filter(x => x.a.efecto).length}`)
-const ef = new Map<string, number>(); for (const x of a) if (x.a.efecto) ef.set(x.a.efecto, (ef.get(x.a.efecto) ?? 0) + 1)
+console.log(`con efecto (pagó otro): ${a.filter(x => esEfectoEntrePartes(x.a.efecto)).length}`)
+const ef = new Map<string, number>(); for (const x of a) if (esEfectoEntrePartes(x.a.efecto)) ef.set(x.a.efecto, (ef.get(x.a.efecto) ?? 0) + 1)
 for (const [k, n] of [...ef].sort((x, y) => y[1] - x[1])) console.log(`  ${n} × ${k}`)
 console.log(`bancos sin leer: ${leido.tablasQueFallaron.join(", ") || "ninguno"} · solapas ${wb.SheetNames.length}`)
 console.log(`📄 ${p}`)

@@ -151,6 +151,9 @@ export function auditarCuota(c: CuotaTemplate): AuditoriaDeCuota {
       if (esperado.toUpperCase() !== codigo.toUpperCase()) aviso = ` · ⚠️ código esperado: ${esperado || "(vacío)"}`
     }
   } else if (pagadores.length > 1) efecto = "pagada desde varias cuentas: ver una por una"
+  // 🎨 JMS 09/11 (punto 5): la columna Efecto NUNCA queda vacía — «pagó el dueño (MA)» es lo normal; lo que no se pagó se dice
+  // (y va a «Inconsistencias»)
+  if (!efecto) efecto = sinPago ? "sin pago" : b && !b.cuenta ? "sin movimiento en el banco" : pagadores.length ? `pagó el dueño (${dueno})` : ""
 
   let marca: string
   if (sinPago) marca = Math.abs(c.monto) < 0.005 ? "⚪ en $ 0 (no se pagó nada)" : "🔴 SIN PAGAR"
@@ -159,6 +162,9 @@ export function auditarCuota(c: CuotaTemplate): AuditoriaDeCuota {
   else marca = b ? "✓" : ""
   return { quienPago, codigo, efecto, marca: marca + aviso, descripcion: b?.descripcion ?? "", beneficiario: b?.beneficiario ?? "", factura: b?.factura ?? "", interno: b?.interno ?? "" }
 }
+
+/** ¿El efecto es un retiro / aporte / distribución entre partes? («pagó el dueño», «sin pago» y «sin movimiento» no lo son.) */
+export const esEfectoEntrePartes = (efecto: string) => !!efecto && !/^(pagó el dueño|sin pago|sin movimiento)/.test(efecto)
 
 /** Quién RECIBE en un efecto: el destino de la flecha, la empresa del aporte o del retiro, Libertad o FLIA. */
 export function receptorDe(efecto: string): string {
@@ -183,7 +189,7 @@ export function hojaRetirosYAportes(cuotas: CuotaTemplate[], extracto: { movimie
   etiqueta: string, meses: { clave: string; rotulo: string }[]): unknown[][] {
   const r2 = (n: number) => Math.round(n * 100) / 100
   const dmy = (f: string | null | undefined) => (f ? f.slice(0, 10).split("-").reverse().join("/") : "")
-  const conEfecto = cuotas.map(c => ({ c, a: auditarCuota(c) })).filter(x => x.a.efecto && !cuotaSinPago(x.c))
+  const conEfecto = cuotas.map(c => ({ c, a: auditarCuota(c) })).filter(x => esEfectoEntrePartes(x.a.efecto) && !cuotaSinPago(x.c))
 
   /**
    * 🔁 UN MOVIMIENTO, DOS PUNTAS (JMS 09/11: «es un solo movimiento con 2 puntas… no debe duplicar ningún movimiento»). Una ENTRADA con
@@ -284,5 +290,45 @@ export function hojaRetirosYAportes(cuotas: CuotaTemplate[], extracto: { movimie
       { t: "s", f: `IF(ABS(E${n})<1,"✓","⚠️ no da")`, v: Math.abs(cu - ba) < 1 ? "✓" : "⚠️ no da" }, si, { t: "n", f: `D${n}+G${n}`, v: r2(ba + si) }])
   }
   h.push([], ["«Total del banco con ese código» es lo que ven las cuentas de los socios (14.1) para esa cuenta: lo de templates + lo directo."])
+  return h
+}
+
+/**
+ * 🧾 INCONSISTENCIAS (JMS 09/11: «las inconsistencias deben ir en una pestaña… si hubiera problema, que quede marcado en la pestaña de
+ * inconsistencias» · «5.2 [lo no pagado] es una inconsistencia»). Todo lo que hay que mirar de todas las solapas, en un solo lugar, con link
+ * a la solapa de la cuota. Lo en $ 0 va aparte, al final (suele ser normal: SICORE sin retenciones, retiros semestrales).
+ */
+export function hojaInconsistencias(cuotas: CuotaTemplate[], etiqueta: string, solapaDe: (c: CuotaTemplate) => string): unknown[][] {
+  const dmy = (f: string | null | undefined) => (f ? f.slice(0, 10).split("-").reverse().join("/") : "")
+  const TIPOS: Array<[string, (a: AuditoriaDeCuota) => boolean]> = [
+    ["🔴 Sin pagar", a => a.marca.startsWith("🔴")],
+    ["🟡 Marcada pagada, sin movimiento en el banco", a => a.marca.startsWith("🟡 marcada pagada")],
+    ["🟡 El banco movió otro importe que la cuota", a => a.marca.startsWith("🟡") && /banco movió|pago agrupado/.test(a.marca)],
+    ["🟡 Pagada desde una cuenta en dólares (no se compara)", a => a.marca.startsWith("🟡") && /dólares/.test(a.marca)],
+    ["🟡 Otro aviso del banco", a => a.marca.startsWith("🟡")],
+    ["⚠️ El código contable no es el esperado", a => a.marca.includes("código esperado")],
+    ["⚪ En $ 0 (no se pagó nada) — suele ser normal", a => a.marca.startsWith("⚪")],
+  ]
+  const filas: Array<{ tipo: number; c: CuotaTemplate; a: AuditoriaDeCuota }> = []
+  for (const c of cuotas) {
+    const a = auditarCuota(c)
+    const i = TIPOS.findIndex(([, p]) => p(a))
+    if (i >= 0) filas.push({ tipo: i, c, a })
+  }
+  filas.sort((x, y) => x.tipo - y.tipo || primero(x.c.responsable).localeCompare(primero(y.c.responsable)) || (x.c.fecha ?? "").localeCompare(y.c.fecha ?? ""))
+  const h: unknown[][] = [[`INCONSISTENCIAS — lo que hay que mirar de todas las solapas — ejercicio ${etiqueta}`],
+    ["Cada renglón lleva a su solapa (columna «Ir a»). Lo en $ 0 va al final: suele ser normal, pero se lista para que se vea."], [],
+    ["Tipo", "Cuotas", "Importe"].map(CENTRADO)]
+  for (const [i, [t]] of TIPOS.entries()) {
+    const fs = filas.filter(f => f.tipo === i)
+    if (fs.length) h.push([t, { t: "n", v: fs.length, z: "0" }, Math.round(fs.reduce((s, f) => s + f.c.monto, 0) * 100) / 100])
+  }
+  h.push([], ["Tipo", "Responsable", "Agrupadora", "Concepto", "Fecha", "Importe", "Estado", "Quién pagó", "Código", "Marca", "Descripción del banco", "Ir a"].map(CENTRADO))
+  for (const { tipo, c, a } of filas) {
+    const solapa = solapaDe(c)
+    h.push([TIPOS[tipo][0], primero(c.responsable), c.agrupadoraTemplate || "(sin agrupadora)", c.concepto, dmy(c.fecha), c.monto, c.estado,
+      a.quienPago, a.codigo, CENTRADO(a.marca), a.descripcion,
+      solapa ? { t: "s", v: solapa, l: { Target: `#'${solapa.replace(/'/g, "''")}'!A1`, Tooltip: `Ir a «${solapa}»` } } : ""])
+  }
   return h
 }
