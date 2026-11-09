@@ -35,7 +35,7 @@ const CUIT: Record<string, string> = { MSA: "30617786016", PAM: "20044390222", M
 // ── lo mismo que arma el H para auditar
 const ej = armarEjercicio(2026, 6)
 const filas = await todo((d, h) => sb.from("cuotas_egresos_sin_factura")
-  .select("*, egreso:egresos_sin_factura(nombre_referencia, proveedor, nombre_quien_cobra, categ, centro_costo, responsable, codigo_contable, tipo, cuenta_agrupadora)")
+  .select("*, egreso:egresos_sin_factura(nombre_referencia, proveedor, nombre_quien_cobra, categ, centro_costo, responsable, codigo_contable, tipo, cuenta_agrupadora, año)")
   .gte("fecha_estimada", "2024-01-01").order("id").range(d, h))
 const { data: plan } = await sb.from("cuentas_contables").select("categ, tipo, nro_cuenta, nombre_totalizadora")
 const tipoDeCateg = Object.fromEntries((plan ?? []).map((x: any) => [x.categ, x.tipo]))

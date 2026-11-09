@@ -4,7 +4,7 @@
  * la solapa donde está y una columna vacía para la respuesta. SÓLO LEE. La usa scripts/excel-h-para-auditar.mts con --revisar.
  */
 import type { CuotaTemplate } from "../lib/balance/templates-libro"
-import { auditarCuota, CENTRADO } from "../lib/balance/auditoria-templates"
+import { auditarCuota, CENTRADO, baseYModalidad } from "../lib/balance/auditoria-templates"
 
 export const SOLAPA_DATOS = "Datos a revisar"
 const dmy = (f: string | null | undefined) => (f ? String(f).slice(0, 10).split("-").reverse().join("/") : "")
@@ -60,6 +60,10 @@ export async function armarDatosARevisar(sb: any, cuotas: CuotaTemplate[], solap
       filas: wilson },
     { id: "DR10", titulo: "Transferencias de MA a terceros con «CTA MSA» SIN factura que coincida (Leguizamón y Aduriz)", decidir: "¿Son gastos de MSA pagados por MA (aporte de MA)?",
       filas: await banco("ma", "ma_galicia", "Galicia MA CA", q => q.ilike("contable", "CTA MSA%").in("fecha", ["2025-12-04", "2026-04-09"]).gt("debitos", 0).is("template_cuota_id", null)) },
+    { id: "DR11", titulo: "ANUAL y CUOTA vivos el mismo año (vehículo o partida): tiene que ser uno u otro",
+      decidir: "¿Cuál modalidad corresponde? La otra se desactiva (hoy son cuotas en $ 0 de un template de cuotas ya inactivo).",
+      filas: (() => { const g = new Map<string, CuotaTemplate[]>(); for (const c of cuotas) { const b = baseYModalidad(c.concepto); if (!b.modalidad) continue; const k = `${b.base}|${c.anioTemplate ?? (c.fecha ?? "").slice(0, 4)}`; g.set(k, [...(g.get(k) ?? []), c]) }
+        return [...g.values()].filter(cs => new Set(cs.map(c => baseYModalidad(c.concepto).modalidad)).size === 2).flat().sort((x, y) => x.concepto.localeCompare(y.concepto) || (x.fecha ?? "").localeCompare(y.fecha ?? "")).map(desdeCuota) })() },
   ]
 
   const h: unknown[][] = [["DATOS A REVISAR — cada punto con sus movimientos y todo su contexto · escribí tu respuesta en la última columna"],

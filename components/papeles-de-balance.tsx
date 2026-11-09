@@ -133,6 +133,9 @@ const EMPRESAS = [
   { id: "MA", schema: "ma", mesCierre: 12 },
 ] as const
 
+/** 🔍 A-FEAT-1579: las cuotas del libro con su template — incluido el `año` (con ñ el tipado de Supabase no lo lee: va como string). */
+const SELECT_CUOTAS_LIBRO_H: string = "*, egreso:egresos_sin_factura(nombre_referencia, proveedor, nombre_quien_cobra, categ, centro_costo, responsable, codigo_contable, tipo, cuenta_agrupadora, año)"
+
 export function PapelesDeBalance() {
   const [empresa, setEmpresa] = useState<(typeof EMPRESAS)[number]>(EMPRESAS[0])
   const [anioCierre, setAnioCierre] = useState(2026)
@@ -563,7 +566,7 @@ export function PapelesDeBalance() {
          */
         // 🧨 2046 cuotas: sin tandas llegaban 1000 y la solapa Templates salía con meses vacíos.
         traerTodo((d, h) => supabase.from("cuotas_egresos_sin_factura")
-          .select("*, egreso:egresos_sin_factura(nombre_referencia, proveedor, nombre_quien_cobra, categ, centro_costo, responsable, codigo_contable, tipo, cuenta_agrupadora)", { count: "exact" })
+          .select(SELECT_CUOTAS_LIBRO_H, { count: "exact" })
           .gte("fecha_estimada", `${anioCierre - 2}-01-01`).order("id").range(d, h)),
       ])
 
@@ -782,7 +785,7 @@ export function PapelesDeBalance() {
           if (pol.error) throw new Error(pol.error.message)
           const filasPol = (pol.data ?? []) as Record<string, unknown>[]
           const tpls = new Set(filasPol.map(p => p.template_id).filter(Boolean))
-          const deTpl = ((cuotas.data ?? []) as Record<string, unknown>[]).filter(q => tpls.has(q.egreso_id))
+          const deTpl = ((cuotas.data ?? []) as unknown as Record<string, unknown>[]).filter(q => tpls.has(q.egreso_id))
           const fc = await buscarFechasDePagoDeCuotas(cliente, deTpl.map(q => String(q.id)))
           if (fc.tablasQueFallaron.length > 0) throw new Error(`no se pudo leer ${fc.tablasQueFallaron.join(", ")}`)
           cuotasPoliza = canceladoPorCuotasAlCierre(polizasParaCierreDesde(filasPol, deTpl, fc.porComprobante), ej.fechaCierre)
@@ -1292,7 +1295,7 @@ export function PapelesDeBalance() {
        * 🏦 A-FEAT-1515: el banco de cada cuota (cuenta, comprobante y cuánto respalda), para que el libro H se lea como el
        * extracto y tenga su control contra el banco. Si la lectura falla entera, las cuotas salen sin banco y el control lo dice.
        */
-      let cuotasLibro = (cuotas.data ?? []).map(f => desdeCuota(f, tipoDeCateg))
+      let cuotasLibro = ((cuotas.data ?? []) as unknown as Record<string, unknown>[]).map(f => desdeCuota(f, tipoDeCateg))
       let bancoSinLeer: string[] | undefined
       let extracto: ExtractoParaH | undefined
       try {
@@ -1339,7 +1342,7 @@ export function PapelesDeBalance() {
         : null
       setControlCuotas(armarControlCuotas(empresa.id, anioCierre, {
         comisiones,
-        cuotas: (cuotas.data ?? []).map(f => cuotaParaControlDesde(f as Record<string, unknown>)),
+        cuotas: ((cuotas.data ?? []) as unknown as Record<string, unknown>[]).map(f => cuotaParaControlDesde(f)),
         subdiariosConVentas: subdiariosConVentasDesde((ventas.data ?? []) as Record<string, unknown>[]),
         presentacionesSicore: sicore,
         hoy: hoyArgentina(),

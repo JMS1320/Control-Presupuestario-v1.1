@@ -146,6 +146,8 @@ export interface CuotaTemplate {
   tipo?: TipoTemplate
   /** El template del que sale la cuota (`egreso_id`). Hace falta para saber si es de una póliza. */
   egresoId?: string
+  /** 🔍 A-FEAT-1579: el año del template (`egresos_sin_factura.año`), si vino en la consulta. */
+  anioTemplate?: number
   /** La agrupadora del TEMPLATE («Impuestos General», «Gastos Bancarios»…), no la del plan. Ver `esImpuesto`. */
   agrupadoraTemplate?: string
   /** 🧮 A-FEAT-1513: la fila de «Por mes» a la que suma (su `clave`), para que el Nro sea el mismo en las dos solapas. */
@@ -320,6 +322,8 @@ export function desdeCuota(f: Record<string, unknown>, tipoDeCateg?: Record<stri
   return {
     tipo: r.origen === "signo" ? "sin clasificar" : r.tipo,
     egresoId: s(f.egreso_id) || undefined,
+    // 🔍 A-FEAT-1579: el año del template (campaña), para comparar anual vs cuotas del MISMO plan (no por la fecha de pago)
+    anioTemplate: Number(e["año"]) || undefined,
     id: s(f.id),
     // 🔑 El orden importa: lo pagado manda sobre lo estimado. Ver el § del encabezado.
     fecha: f.fecha_pago ? s(f.fecha_pago).slice(0, 10)

@@ -12,7 +12,7 @@ import type { CuotaTemplate, ExtractoParaH } from "./templates-libro"
 import type { MovimientoExtractoH } from "./movimientos-de-cuotas"
 import { armarResumenPorMes, hojaResumenPorMes } from "./resumen-por-mes"
 import { MOTIVO_EN_CERO } from "./movimientos-de-cuotas"
-import { auditarCuota, controlPorTemplate, CENTRADO } from "./auditoria-templates"
+import { auditarCuota, controlPorTemplate, CENTRADO, TITULO_TABLA, BANDA_VACIA, ENCABEZADO_TABLA, IMPORTE, TOTAL_TEXTO, TOTAL_IMPORTE } from "./auditoria-templates"
 import { congelarColumnasEn, pintarFila } from "./formato-excel"
 
 /** Lo que NO se arma como grupo: lo financiero (no es gasto) y lo bancario (ya está en el libro C). */
@@ -189,10 +189,10 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
     const cE = `${u.colDetalle(9)}${u.det1}:${u.colDetalle(9)}${u.detN}`
     const porEfecto = new Map<string, number>()
     for (const c of g.cuotas) { const e = auditarCuota(c).efecto; porEfecto.set(e, r2((porEfecto.get(e) ?? 0) + c.monto)) }
-    h.push([], ["", "POR EFECTO — quién pagó lo de esta agrupadora"], ["", "Efecto", "Total"].map(x => x ? CENTRADO(x) : x))
+    h.push([], ["", TITULO_TABLA("POR EFECTO — quién pagó lo de esta agrupadora"), BANDA_VACIA()], ["", ENCABEZADO_TABLA("Efecto"), ENCABEZADO_TABLA("Total")])
     for (const [e, v] of [...porEfecto].sort((a, b) => a[0].localeCompare(b[0], "es")))
-      h.push(["", e, { t: "n", f: `SUMIFS(${deb},${cE},"${lit(e)}")-SUMIFS(${cred},${cE},"${lit(e)}")`, v }])
-    h.push(["", "= Total de la solapa", { t: "n", f: `SUM(${deb})-SUM(${cred})`, v: total }])
+      h.push(["", e, IMPORTE(`SUMIFS(${deb},${cE},"${lit(e)}")-SUMIFS(${cred},${cE},"${lit(e)}")`, v)])
+    h.push(["", TOTAL_TEXTO("TOTAL de la solapa"), TOTAL_IMPORTE(`SUM(${deb})-SUM(${cred})`, total)])
     // 🔍 JMS 09/11 (D1.2 «siempre mostrar agrupadas»): POR ESTABLECIMIENTO — cada impuesto en cada establecimiento (Nazarenas, Lima,
     // Rojas…), sumando los renglones del resumen de arriba
     const iEnc = h.findIndex(r => Array.isArray(r) && r[0] === "Nro" && r[1] === "Categoría")
@@ -208,10 +208,12 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
         const k = renglonAuditoria(c.concepto, opciones.establecimientoDe).split(" — ").slice(0, 2).join(" — ")
         porEst.set(k, r2((porEst.get(k) ?? 0) + c.monto))
       }
-      h.push([], ["", "POR ESTABLECIMIENTO — cada impuesto, por establecimiento (suma los renglones del resumen de arriba)"],
-        ["", "Impuesto — establecimiento", "Total"].map(x => x ? CENTRADO(x) : x))
-      for (const [k, v] of [...porEst].sort((a, b) => a[0].localeCompare(b[0], "es")))
-        h.push(["", k, { t: "n", f: `SUMIF(${rango("B")},"${lit(k)}*",${rango(colTot)})`, v }])
+      h.push([], ["", TITULO_TABLA("POR ESTABLECIMIENTO — cada impuesto, por establecimiento"), BANDA_VACIA()],
+        ["", ENCABEZADO_TABLA("Impuesto — establecimiento"), ENCABEZADO_TABLA("Total")])
+      const ordenEst = [...porEst].sort((a, b) => `${rangoAuditoria(a[0])}|${a[0]}`.localeCompare(`${rangoAuditoria(b[0])}|${b[0]}`, "es"))
+      for (const [k, v] of ordenEst)
+        h.push(["", k, IMPORTE(`SUMIF(${rango("B")},"Subtotal ${lit(k)}",${rango(colTot)})`, v)])
+      h.push(["", TOTAL_TEXTO("TOTAL de los impuestos"), TOTAL_IMPORTE(`SUM(C${h.length - ordenEst.length + 1}:C${h.length})`, r2(ordenEst.reduce((t, [, v]) => t + v, 0)))])
     }
   }
   h.push([], ["CONTROL — todo cruzado (§ controles de la app): 1 frena si no da, 2 frena si no da, 3 avisa"])

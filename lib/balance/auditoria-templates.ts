@@ -45,6 +45,18 @@ export function efectoEntre(pagador: string, dueno: string): string {
 
 /** 🎨 JMS 09/11 (formato que dio en «H · MA · Imp Rurales»): la Marca centrada; el template de la tabla de control, a la derecha. */
 export const CENTRADO = (v: string) => ({ t: "s", v, s: { alignment: { horizontal: "center" } } })
+/**
+ * 🎨 JMS 09/11 («a esto le hace falta un poco de estética»): el formato de las tablas chicas del pie (Por efecto, Por establecimiento,
+ * Control por template) — título en banda, encabezado con fondo y línea, total en negrita con línea arriba.
+ */
+const MONEDA_AR = "#,##0.00;(#,##0.00);\"-\""
+export const TITULO_TABLA = (v: string) => ({ t: "s", v, s: { font: { bold: true, color: { rgb: "FF1F4E3D" } }, fill: { patternType: "solid", fgColor: { rgb: "FFE3EFEC" } } } })
+export const BANDA_VACIA = () => ({ t: "s", v: "", s: { fill: { patternType: "solid", fgColor: { rgb: "FFE3EFEC" } } } })
+export const ENCABEZADO_TABLA = (v: string) => ({ t: "s", v, s: { font: { bold: true }, alignment: { horizontal: "center", vertical: "center", wrapText: true }, fill: { patternType: "solid", fgColor: { rgb: "FFEEF1F0" } }, border: { bottom: { style: "thin", color: { rgb: "FFB9C4C0" } } } } })
+export const IMPORTE = (f: string, v: number) => ({ t: "n", f, v, z: MONEDA_AR })
+const ESTILO_TOT = { font: { bold: true }, fill: { patternType: "solid", fgColor: { rgb: "FFE6EEF6" } }, border: { top: { style: "thin", color: { rgb: "FFB9C4C0" } } } }
+export const TOTAL_TEXTO = (v: string) => ({ t: "s", v, s: ESTILO_TOT })
+export const TOTAL_IMPORTE = (f: string, v: number) => ({ t: "n", f, v, z: MONEDA_AR, s: ESTILO_TOT })
 const A_LA_DERECHA = (v: string) => ({ t: "s", v, s: { alignment: { horizontal: "right" } } })
 
 /** Un texto como criterio literal de CONTAR.SI (sin comodines: `*`, `?` y `~` se escapan). */
@@ -63,8 +75,8 @@ export function controlPorTemplate(cuotas: CuotaTemplate[], colConcepto: string,
   for (const c of cuotas) porTpl.set(c.concepto, [...(porTpl.get(c.concepto) ?? []), c])
   const MARCAS: Array<[string, (m: string) => boolean]> = [["✓*", m => m.startsWith("✓")], ["🔴*", m => m.startsWith("🔴")],
     ["🟡*", m => m.startsWith("🟡")], ["⚪*", m => m.startsWith("⚪")], ["*código esperado*", m => m.includes("código esperado")]]
-  const f: unknown[][] = [[], ["", "CONTROL POR TEMPLATE — cada template con sus cuotas: ¿se pagaron todas?"],
-    ["", "Template", "Cuotas", "✓ pagadas", "🔴 sin pagar", "🟡 a revisar", "⚪ en $ 0", "⚠️ código", "Total", "¿Completo?"].map(x => x ? CENTRADO(x) : x)]
+  const f: unknown[][] = [[], ["", TITULO_TABLA("CONTROL POR TEMPLATE — cada template con sus cuotas: ¿se pagaron todas?"), ...Array.from({ length: 8 }, BANDA_VACIA)],
+    ["", "Template", "Cuotas", "✓ pagadas", "🔴 sin pagar", "🟡 a revisar", "⚪ en $ 0", "⚠️ código", "Total", "¿Completo?"].map(x => x ? ENCABEZADO_TABLA(x) : x)]
   for (const [t, cs] of [...porTpl].sort((a, b) => a[0].localeCompare(b[0], "es"))) {
     const marcas = cs.map(c => auditarCuota(c).marca)
     const crit = `${rc},"${literal(t)}"`
@@ -294,6 +306,28 @@ export function hojaRetirosYAportes(cuotas: CuotaTemplate[], extracto: { movimie
   return h
 }
 
+/** La base de una cuota «Anual» / «Cuota» (el vehículo o la partida) y su año: «Imp Automotores Gol 2012 Anual» → «Imp Automotores Gol 2012». */
+export function baseYModalidad(concepto: string): { base: string; modalidad: "anual" | "cuota" | null } {
+  const m = /\banual\b/i.test(concepto) ? "anual" : /\bcuota\b/i.test(concepto) ? "cuota" : null
+  return { base: concepto.replace(/\b(anual|cuota)\b/gi, "").replace(/\s+/g, " ").trim().toLowerCase(), modalidad: m }
+}
+/** Las cuotas PAGADAS (con plata) de un vehículo / partida que el mismo año tiene pagos en anual Y en cuotas. */
+export function cuotasPagadasEnAnualYCuotas(cuotas: CuotaTemplate[]): Set<CuotaTemplate> {
+  const porBase = new Map<string, CuotaTemplate[]>()
+  for (const c of cuotas) {
+    const { base, modalidad } = baseYModalidad(c.concepto)
+    if (!modalidad || cuotaSinPago(c) || Math.abs(c.monto) < 0.005) continue
+    const k = `${base}|${c.anioTemplate ?? (c.fecha ?? "").slice(0, 4)}`  // el año del template (plan), no el de la fecha de pago
+    porBase.set(k, [...(porBase.get(k) ?? []), c])
+  }
+  const out = new Set<CuotaTemplate>()
+  for (const cs of porBase.values()) {
+    const mods = new Set(cs.map(c => baseYModalidad(c.concepto).modalidad))
+    if (mods.has("anual") && mods.has("cuota")) cs.forEach(c => out.add(c))
+  }
+  return out
+}
+
 /**
  * 🧾 INCONSISTENCIAS (JMS 09/11: «las inconsistencias deben ir en una pestaña… si hubiera problema, que quede marcado en la pestaña de
  * inconsistencias» · «5.2 [lo no pagado] es una inconsistencia»). Todo lo que hay que mirar de todas las solapas, en un solo lugar, con link
@@ -301,7 +335,11 @@ export function hojaRetirosYAportes(cuotas: CuotaTemplate[], extracto: { movimie
  */
 export function hojaInconsistencias(cuotas: CuotaTemplate[], etiqueta: string, solapaDe: (c: CuotaTemplate) => string): unknown[][] {
   const dmy = (f: string | null | undefined) => (f ? f.slice(0, 10).split("-").reverse().join("/") : "")
-  const TIPOS: Array<[string, (a: AuditoriaDeCuota) => boolean]> = [
+  // 🔁 JMS 09/11: un vehículo / partida va por ANUAL o por CUOTAS, no las dos. Si el mismo año tiene plata pagada en las dos modalidades,
+  // es una inconsistencia (se pagó dos veces lo mismo, o una de las dos está mal cargada)
+  const doble = cuotasPagadasEnAnualYCuotas(cuotas)
+  const TIPOS: Array<[string, (a: AuditoriaDeCuota, c: CuotaTemplate) => boolean]> = [
+    ["🔴 Pagado en ANUAL y en CUOTAS (mismo vehículo o partida y año)", (_a, c) => doble.has(c)],
     // JMS 09/11 (B4): lo impago al cierre se trata como DEUDA → va a los datos a revisar
     ["🔴 Sin pagar al cierre → ¿DEUDA? (datos a revisar)", a => a.marca.startsWith("🔴")],
     ["🟡 Marcada pagada, sin movimiento en el banco", a => a.marca.startsWith("🟡 marcada pagada")],
@@ -314,7 +352,7 @@ export function hojaInconsistencias(cuotas: CuotaTemplate[], etiqueta: string, s
   const filas: Array<{ tipo: number; c: CuotaTemplate; a: AuditoriaDeCuota }> = []
   for (const c of cuotas) {
     const a = auditarCuota(c)
-    const i = TIPOS.findIndex(([, p]) => p(a))
+    const i = TIPOS.findIndex(([, p]) => p(a, c))
     if (i >= 0) filas.push({ tipo: i, c, a })
   }
   filas.sort((x, y) => x.tipo - y.tipo || primero(x.c.responsable).localeCompare(primero(y.c.responsable)) || (x.c.fecha ?? "").localeCompare(y.c.fecha ?? ""))

@@ -30,7 +30,7 @@ async function todo(q: (d: number, h: number) => any): Promise<any[]> { const ou
 
 const ej = armarEjercicio(ANIO, 6)
 const filas = await todo((d, h) => sb.from("cuotas_egresos_sin_factura")
-  .select("*, egreso:egresos_sin_factura(nombre_referencia, proveedor, nombre_quien_cobra, categ, centro_costo, responsable, codigo_contable, tipo, cuenta_agrupadora)")
+  .select("*, egreso:egresos_sin_factura(nombre_referencia, proveedor, nombre_quien_cobra, categ, centro_costo, responsable, codigo_contable, tipo, cuenta_agrupadora, año)")
   .gte("fecha_estimada", `${ANIO - 2}-01-01`).order("id").range(d, h))
 const { data: planTipos } = await sb.from("cuentas_contables").select("categ, tipo, nro_cuenta, nombre_totalizadora")
 const plan = planTipos ?? []
