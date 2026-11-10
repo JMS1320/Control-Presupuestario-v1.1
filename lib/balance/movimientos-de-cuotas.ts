@@ -132,7 +132,14 @@ function bancoDe(c: CuotaTemplate, porVinculo: Map<string, MovimientoDeCuota[]>,
       ? { cuenta: "", comprobante: "", respaldo: 0, motivo: MOTIVO_EN_CERO }
       : { cuenta: "", comprobante: "", respaldo: null, motivo: "conciliada sin movimiento en el banco" }
   }
-  if (ms.some(m => m.enDolares)) return { cuenta, titular, contable, ...contexto, comprobante, respaldo: null, motivo: "pagada desde una cuenta en dólares: no se compara con la cuota en pesos" }
+  if (ms.some(m => m.enDolares)) {
+    // 💵 JMS 10/11 («sacar todo lo que ya no tenemos que sacar de encima»): pagada desde una cuenta EN DÓLARES y la cuota ya está PASADA A PESOS
+    // con su tipo de cambio anotado («TC BNA divisas …», «US$ × TC …») → el banco la respalda en dólares, igual que la tarjeta (A-BUG-1584). Sin
+    // el TC anotado sigue el aviso: no se elige un tipo de cambio en silencio.
+    const conTC = /\bTC\b/.test(`${c.detalle ?? ""} ${c.descripcionCuota ?? ""}`)
+    if (ms.every(m => m.enDolares) && Math.abs(c.monto) >= 0.005 && conTC) return { cuenta, titular, contable, ...contexto, comprobante, respaldo: c.monto, motivo: null }
+    return { cuenta, titular, contable, ...contexto, comprobante, respaldo: null, motivo: "pagada desde una cuenta en dólares: no se compara con la cuota en pesos" }
+  }
   const neto = r2(ms.reduce((t, m) => t + m.debitos - m.creditos, 0))
   // 💳 A-BUG-1584 (JMS 10/11: «siempre y cuando la inconsistencia salte»): una compra en DÓLARES con la tarjeta tiene $ 0 en pesos — si la
   // cuota también está en $ 0, el gasto no suma en pesos. Se dice con el importe en dólares (no se elige un tipo de cambio en silencio).

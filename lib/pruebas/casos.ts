@@ -13143,6 +13143,11 @@ export function correrCasos(): Resultado[] {
     const e = "a:100 b:30 c:70 d:20! e:30! f:500! g:—! h:—! i:—"
     chequear("Libro H", "El banco de cada cuota: el movimiento propio respalda lo que movió; un grupo que cierra respalda cada cuota entera, uno que no cierra se reparte y se avisa; conciliada sin movimiento, en dólares o en $ 0 con banco: se avisa",
       e, v, v === e, "A-FEAT-1515")
+    // 💵 JMS 10/11: pagada desde la cuenta EN DÓLARES y ya pasada a pesos con su TC anotado (Google One de MSA) → respaldada, sin aviso
+    const g1 = { ...q("u", 25587.2), detalle: "Otros Gastos USD — GOOGLE ONE (TC BNA divisas 2025-07-14)" }
+    const [vu] = vincularBanco([g1] as never, [g1] as never, [m("u", 17.99, "CC dólares MSA", true)] as never)
+    const vU = `${vu.banco!.respaldo}|${vu.banco!.motivo ?? ""}`, eU = "25587.2|"
+    chequear("Libro H", "Una cuota pagada desde la cuenta en dólares y pasada a pesos con su TC anotado queda respaldada (sin TC anotado sigue el aviso)", eU, vU, vU === eU, "A-FEAT-1579")
   }
 
   // ══ 📗 Libro H — la solapa de agrupadora: renglón tipo extracto, débito y crédito separados, y los 3 controles con fórmulas que apuntan bien (A-FEAT-1515) ══
