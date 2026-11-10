@@ -80,6 +80,7 @@ import { calcularVinculo, pctQueCierra, proponerCompras, comprasSinFacturaDelPro
 import { comprasSinFactura } from "@/lib/cashflow/compras-sin-factura"
 import { planNoVaMas, notaNoVaMas } from "@/lib/templates/no-va-mas"
 import { problemasDeModalidad } from "@/lib/templates/modalidad"
+import { sentidoDelMovimiento } from "@/lib/conciliacion/sentido-movimiento"
 import { cuotasDelRenglon, documentosDelRenglon } from "@/lib/documentos/del-renglon"
 import { aPesosHa, equivalencias, precioAFecha, ultimaTarifa, controlFacturaContratista, mejorCombinacion } from "@/lib/productivo/tarifa-contratista"
 import { facturasCortas } from "@/lib/pagos/lineas-detalle-pago"
@@ -13536,6 +13537,13 @@ export function correrCasos(): Resultado[] {
     const m4 = auditarCuota(vb).marca
     const e4 = "🟡 en $ 0 pero se pagó US$ 4,99 con la tarjeta y la cuota dice $ 0 (no está pasada a pesos)"
     chequear("Libro H para auditar", "💳 Una compra en dólares con la tarjeta ($ 0 en pesos) vinculada a una cuota en $ 0 salta como 🟡 (el gasto no está pasado a pesos)", e4, m4, m4 === e4, "A-BUG-1584")
+    // …y una vez pasada a pesos (US$ 4,99 × TC 1.460 = 7.285,40) queda respaldada por la tarjeta: ✓, sin aviso
+    const cu2 = { ...(cu as object), monto: 7285.4 } as never
+    const [vb2] = vincularBanco([cu2], [cu2], [{ vinculo: "apple", cuenta: "VISA PAM", titular: "PAM", fecha: "2025-07-05", comprobante: "032937", debitos: 0, creditos: 0, enDolares: false, usd: 4.99 }])
+    const m5 = auditarCuota(vb2).marca
+    const sv = [sentidoDelMovimiento({ debitos: 100 }), sentidoDelMovimiento({ creditos: 100 }), sentidoDelMovimiento({ debitos: 0, creditos: 0, debitos_usd: 4.99 }), sentidoDelMovimiento({ debitos: 0, creditos: 0, creditos_usd: 45 })].join(",")
+    chequear("Conciliación", "💳 El sentido de la cuota que se crea al conciliar: débito → egreso, crédito → ingreso, y una compra en US$ con tarjeta ($ 0 en pesos) → EGRESO (antes caía como ingreso); una devolución en US$ → ingreso", "egreso,ingreso,egreso,ingreso", sv, sv === "egreso,ingreso,egreso,ingreso", "A-BUG-1584")
+    chequear("Libro H para auditar", "💳 La compra en dólares ya pasada a pesos (US$ × TC de la tarjeta) queda ✓: no salta «el banco movió otro importe»", "✓ (sin aviso de banco)", m5, m5.startsWith("✓") && !m5.includes("banco"), "A-BUG-1584")
   }
 
   // ══ 🔍 Libro H para auditar: quién pagó, efecto y marca de cada cuota (A-FEAT-1579) ══

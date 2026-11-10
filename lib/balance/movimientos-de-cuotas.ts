@@ -139,6 +139,9 @@ function bancoDe(c: CuotaTemplate, porVinculo: Map<string, MovimientoDeCuota[]>,
   const usd = r2(ms.reduce((t, m) => t + (m.usd ?? 0), 0))
   if (Math.abs(neto) < 0.005 && Math.abs(usd) >= 0.005 && Math.abs(c.monto) < 0.005)
     return { cuenta, titular, contable, ...contexto, comprobante, respaldo: 0, motivo: `se pagó US$ ${fmt(usd)} con la tarjeta y la cuota dice $ 0 (no está pasada a pesos)` }
+  // 💳 ya PASADA A PESOS (script 241: US$ × el TC que usó la tarjeta, anotado en la cuota): la tarjeta la respalda en dólares, no hay aviso
+  if (Math.abs(neto) < 0.005 && Math.abs(usd) >= 0.005)
+    return { cuenta, titular, contable, ...contexto, comprobante, respaldo: c.monto, motivo: null }
   if (propios.length) {
     return { cuenta, titular, contable, ...contexto, comprobante, respaldo: neto, motivo: Math.abs(neto - c.monto) > 0.01 ? `el banco movió $ ${fmt(neto)} y la cuota dice $ ${fmt(c.monto)}` : null }
   }

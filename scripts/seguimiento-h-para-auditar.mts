@@ -15,7 +15,9 @@ import { agregarHoja, vistasDe } from "../lib/balance/export-libro-diario"
 type Foto = { archivo: string; solapas: Record<string, { total: number; cuotas: number }>; retiros: Record<string, number>;
   otrasPuntas: { n: number; total: number }; control: Record<string, { totalBanco: number }> }
 const crudo = JSON.parse(readFileSync(process.argv[2], "utf8"))
-const fotos: Foto[] = (Array.isArray(crudo) ? crudo : crudo.fotos).filter((f: Foto) => !/copia/i.test(f.archivo))
+// las versiones DESCARTADAS (salieron mal y se reemplazaron) no entran en la cadena de diferencias: se anotan al pie
+const DESCARTADAS: Record<number, string> = { 32: "v32 DESCARTADA: salió con las compras en dólares restando (53 cuotas marcadas «ingreso»). Se reemplazó por la v33 — no usarla." }
+const fotos: Foto[] = (Array.isArray(crudo) ? crudo : crudo.fotos).filter((f: Foto) => !/copia/i.test(f.archivo) && !DESCARTADAS[Number(f.archivo.match(/ v(\d+)\.xlsx$/)?.[1] ?? 1)])
 const r2 = (n: number) => Math.round(n * 100) / 100
 const version = (a: string) => Number(a.match(/ v(\d+)\.xlsx$/)?.[1] ?? 1)
 
@@ -51,6 +53,8 @@ const QUE: Record<number, [string, string, string]> = {  // [tipo, qué cambió,
   28: ["Presentación", "Corrige el TOTAL del DR1 desglosado (5.560.660,50 ✓).", ""],
   29: ["DATOS", "Consumos MA 2025, Gastos Médicos 2025 y Gastos Médicos sin año pasan de PAM a MA.", "239"],
   30: ["Presentación", "DR1 marca lo resuelto.", ""],
+  32: ["Descartada", "❌ Salió MAL: las compras en dólares pasadas a pesos (script 241) restaban, porque 53 cuotas estaban marcadas «ingreso». NO USAR: corregido en la v33.", "241"],
+  33: ["DATOS", "Compras en DÓLARES con tarjeta pasadas a PESOS con el TC que usó la tarjeta (60 cuotas, $ 1.932.079,75); corregido el sentido de 54 cuotas (las compras eran «ingreso»; 2 devoluciones con importe negativo) y la regla que lo causaba (Extracto y motor). El control contra el banco toma lo pasado a pesos.", "241, 242"],
   31: ["DATOS", "Suscripciones 2025 (Netflix, Paquete TV MA, Club La Nación, Jockey Club) pasan a MA; código interno «DIST MA» vacío. + Las compras en dólares con tarjeta en $ 0 saltan en Inconsistencias (61 cuotas).", "240"],
 }
 
@@ -80,9 +84,11 @@ for (const [i, x] of filas.entries()) {
   h.push(fila)
 }
 const fN = h.length
-h.push([], [{ t: "s", v: "CONTROL — el total de las cuotas no tiene que moverse en ninguna versión", s: { font: { bold: true } } }])
-h.push(["Máximo − mínimo del total de las cuotas", "", { t: "n", f: `MAX(C${f1}:C${fN})-MIN(C${f1}:C${fN})`, v: 0, z: MON },
-  { t: "s", f: `IF(ABS(C${h.length + 1})<0.01,"✓ igual en todas las versiones","⚠️ cambió: ver la columna Δ")`, v: "✓ igual en todas las versiones" }])
+h.push([], [{ t: "s", v: "CONTROL — el total de las cuotas sólo puede moverse en una versión de DATOS (las de presentación no tocan números)", s: { font: { bold: true } } }])
+const vPres = 0
+h.push(["Suma de «Δ total de las cuotas» en versiones que NO son de DATOS", "", { t: "n", f: `SUMIF(M${f1}:M${fN},"<>DATOS",J${f1}:J${fN})`, v: vPres, z: MON },
+  { t: "s", f: `IF(ABS(C${h.length + 1})<0.01,"✓ la presentación nunca movió el total","⚠️ una versión de presentación movió el total")`, v: "✓ la presentación nunca movió el total" }])
+for (const t of Object.values(DESCARTADAS)) h.push([], [{ t: "s", v: t, s: { font: { color: { rgb: "FF9C0006" } } } }])
 
 // ── 2 · Los saltos
 const s: unknown[][] = [["LOS SALTOS — cada cambio de número, explicado y con su control"], [],
@@ -99,6 +105,9 @@ salto("v22", "Cuotas", -12, [["Cuotas en $ 0 de la modalidad inactiva que dejaro
 salto("v25", "Retiros y aportes", 800000, [["Victor, albañil del chalet: 2 pagos de la Caja Sigot de $ 400.000, ahora «retiro de MA X pagado por MSA» (CTA MA X)", 800000]])
 salto("v25", "Total del banco", 800000, [["Los mismos 2 pagos, ahora con código CTA MA X: renglón nuevo «MSA · CTA MA X» en el control", 800000]])
 salto("v29", "Retiros y aportes", -5159951.86, [["Sale «MA pagó por PAM»: Consumos MA y Gastos Médicos 2025 pagados por MA, ahora de MA", -5233150.66], ["Entra «distribución PAM → MA»: lo que pagó PAM de esos templates (VISA PAM $ 43.050 + Galicia PAM CA $ 30.148,80)", 73198.80]])
+salto("v33", "Total de las cuotas", 1932079.75, [["Compras en US$ con tarjeta pasadas a pesos (58 compras)", 1998697.75], ["Devoluciones en US$ pasadas a pesos (Skool US$ 45 y vthebestpdf US$ 0,95), restan", -66618.00]])
+salto("v33", "Retiros y aportes", 455942.00, [["«distribución PAM → MA»: compras en US$ de MA pagadas con la VISA PAM, ahora con su importe en pesos", 455942.00]])
+salto("v33", "Total del banco", 13132.90, [["Compras en US$ de la VISA PAM con código DIST MA: el control toma su valor en pesos (el de la cuota) en vez de $ 0", 13132.90]])
 salto("v31", "Retiros y aportes", 194169.64, [["Sale «MA pagó por PAM»: suscripciones 2025 pagadas por MA, ahora de MA", -327509.84], ["Entra «distribución PAM → MA»: suscripciones 2025 pagadas con la VISA PAM", 521679.48]])
 
 // ── 3 · Scripts de datos
@@ -110,6 +119,8 @@ const d: unknown[][] = [["SCRIPTS DE DATOS — lo que se cambió en la base (con
   ["238", "09/11/2026", "Victor (albañil del chalet): 2 pagos de la Caja Sigot vinculados a sus 2 cuotas de Otros Gastos, CTA MA X / DIST MA, centro de costo Chalet; cuenta nueva 422141 MANTENIMIENTO EDILICIO.", "«son pagos al albañil Victor… CTA MA X… DIST MA en interno» · «A5.3 mantenimiento edilicio»", "238-victor-chalet-mantenimiento-edilicio-deshacer.sql", "v25"],
   ["239", "10/11/2026", "Consumos MA 2025, Gastos Médicos 2025 y Gastos Médicos sin año: responsable PAM → MA (el de sin año, año 2026 y agrupadora Gastos Personales MA).", "«D1 sí»", "239-gastos-ma-2025-responsable-ma-deshacer.sql", "v29"],
   ["240", "10/11/2026", "Suscripciones 2025 (Netflix, Paquete TV MA, Club La Nación, Jockey Club) → MA; código interno «DIST MA» vacío en esos 4 y en los 3 del 239.", "«C1 también son de MA» · «C ok»", "240-suscripciones-ma-y-codigo-interno-deshacer.sql", "v31"],
+  ["241", "10/11/2026", "60 compras en DÓLARES con tarjeta (cuotas en $ 0) pasadas a PESOS: US$ × el TC que usó la tarjeta (débito del Galicia ÷ «SU PAGO EN USD», o el TC del PDF del resumen de PAM). Falta 1 (VISA PAM cierre 30/04/26, sin el PDF 26-05).", "«D1 sí, dale con las 45 y vos no tenés esos extractos?»", "241-tarjetas-usd-a-pesos-deshacer.sql", "v33"],
+  ["242", "10/11/2026", "Sentido de esas cuotas: 52 compras estaban «ingreso» → egreso; 2 devoluciones con importe negativo → positivo e «ingreso». Bug de forma (la regla `debitos > 0` de la conciliación), corregido también en el código.", "bug de forma: se corrige por default (CLAUDE.md § Datos)", "242-sentido-cuotas-usd-deshacer.sql", "v33"],
   [], ["Respaldos del Excel: Balance/respaldos («ANTES script 239», «ANTES script 240», «DESPUES 2», «FOTO ANTES…»). Los scripts y sus fotos previas están en la carpeta scripts/ del repo."]]
 
 const wb = XLSX.utils.book_new()

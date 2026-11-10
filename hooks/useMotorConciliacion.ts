@@ -1,6 +1,7 @@
 "use client"
 
 import { imputacionParaElBanco, anotarQueSeCobro } from "@/lib/ventas/detalle-cobro-db"
+import { sentidoDelMovimiento } from "@/lib/conciliacion/sentido-movimiento"
 import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
 import { echeqDelDebito, esDebitoDeCheque, textoDesvio, type ChequeVigente } from "@/lib/conciliacion/echeq-del-debito"
 import { useState } from "react"
@@ -1236,7 +1237,8 @@ export function useMotorConciliacion() {
     /** La cuota conciliada en el template ya elegido — la usan los dos caminos de arriba (A-FEAT-1293). */
     async function insertarCuotaDeRegla(template: any, movimiento: MovimientoBancario) {
       // Determinar tipo_movimiento y monto desde el extracto
-      const tipoMovimiento = movimiento.debitos > 0 ? 'egreso' : 'ingreso'
+      // 💳 A-BUG-1584: una sola regla con el Extracto (mira también los dólares de la tarjeta)
+      const tipoMovimiento = sentidoDelMovimiento(movimiento as never)
       const monto = movimiento.debitos > 0 ? movimiento.debitos : movimiento.creditos
 
       // 🔗 A-FEAT-1302 — si el template ya tiene la cuota PENDIENTE de este mes (cronograma cargado), se

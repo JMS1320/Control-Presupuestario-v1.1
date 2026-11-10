@@ -117,6 +117,8 @@ export const CAMBIOS: unknown[][] = [
     "DR1 327.509,84 (8 mov.)", "DR1 en 0: resuelto"],
   [51, "Inconsistencias: las compras en DÓLARES con tarjeta ($ 0 en pesos) vinculadas a una cuota en $ 0 saltan como «🟡 En $ 0 pero el banco movió plata» con el importe en US$ — antes se leían como «⚪ en $ 0».", "«Inconsistencias», agrupadoras",
     "Apple US$ 4,99: «⚪ en $ 0 (no se pagó nada)»", "«🟡 en $ 0 pero se pagó US$ 4,99 con la tarjeta y la cuota dice $ 0 (no está pasada a pesos)»"],
+  [52, "Datos (script 241): 60 compras en DÓLARES con tarjeta que estaban en $ 0 pasan a PESOS con el TC que usó la tarjeta (débito del Galicia ÷ US$, o el TC del PDF del resumen); cada cuota dice «US$ X × TC Y (de dónde sale)». Las ya pasadas quedan ✓ (respaldadas por la tarjeta en dólares).", "Agrupadoras de Consumos, Suscripciones, Otros Gastos; Inconsistencias",
+    "61 cuotas «🟡 en $ 0 pero se pagó US$…»", "60 con su importe en pesos (✓); 1 pendiente (VISA PAM cierre 30/04/26, falta el PDF 26-05)"],
   [22, "Nueva solapa «INCONSISTENCIAS»: todo lo que hay que mirar de todas las solapas, por tipo, con link a la solapa de la cuota.", "Solapa «Inconsistencias» (después de Gastos Libertad)",
     "Había que recorrer las 51 solapas buscando 🔴 / 🟡 / ⚠️", "🔴 sin pagar · 🟡 sin movimiento · 🟡 el banco movió otro importe · 🟡 en dólares · ⚠️ código · ⚪ en $ 0 (al final): cada renglón con «Ir a» su solapa"],
   [],

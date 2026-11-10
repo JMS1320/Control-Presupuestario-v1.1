@@ -309,9 +309,14 @@ export function hojaRetirosYAportes(cuotas: CuotaTemplate[], extracto: { movimie
     const k = clave(c.banco.titular, a.codigo); desdeCuotas.set(k, r2((desdeCuotas.get(k) ?? 0) + c.monto))
   }
   const conTpl = new Map<string, number>(), sinTpl = new Map<string, number>()
+  // 💳 A-BUG-1584: una compra en US$ con tarjeta tiene $ 0 en pesos en el extracto; su valor en pesos es el de la cuota (US$ × el TC que usó
+  // la tarjeta, script 241). Sin esto el control de esa cuenta no da por exactamente lo pasado a pesos.
+  const montoCuota = new Map(cuotas.map(c => [c.id, c.monto]))
   for (const m of extracto?.movimientos ?? []) {
     if (!m.contable || m.enDolares) continue
-    const k = clave(m.titular, m.contable), v = r2(m.debitos - m.creditos), dest = m.templateCuotaId ? conTpl : sinTpl
+    const pesos = r2(m.debitos - m.creditos)
+    const v = Math.abs(pesos) < 0.005 && m.templateCuotaId && montoCuota.has(m.templateCuotaId) ? r2(montoCuota.get(m.templateCuotaId)!) : pesos
+    const k = clave(m.titular, m.contable), dest = m.templateCuotaId ? conTpl : sinTpl
     dest.set(k, r2((dest.get(k) ?? 0) + v))
   }
   const claves = [...new Set([...desdeCuotas.keys(), ...conTpl.keys(), ...sinTpl.keys()])]

@@ -1,6 +1,7 @@
 "use client"
 
 import { IDS_CON_PARSEO } from "@/lib/extractos/cuentas-con-parseo"
+import { sentidoDelMovimiento } from "@/lib/conciliacion/sentido-movimiento"
 import { pagosDeResumenes, ETIQUETA_ESTADO_PAGO, type DebitoCtaCte } from "@/lib/conciliacion/pago-tarjeta"
 import { pesosDeConsumosUsd, cuotaDeConsumoUsd } from "@/lib/conciliacion/consumos-usd"
 import { hoyArgentina } from "@/lib/fechas"
@@ -2552,7 +2553,8 @@ Pasan a conciliado junto con su factura o cuota. El motivo queda en la nota.`)) 
       const avisoCuotaVenta = await soltarCuotaDeVenta()
       if (avisoCuotaVenta) avisosAsignacion.push(avisoCuotaVenta)
       const monto = movimientoAsignando.debitos > 0 ? movimientoAsignando.debitos : movimientoAsignando.creditos
-      const tipoMovimiento = movimientoAsignando.debitos > 0 ? 'egreso' : 'ingreso'
+      // 💳 A-BUG-1584: el sentido lo decide una sola regla (también mira los dólares de la tarjeta) — la misma que el motor
+      const tipoMovimiento = sentidoDelMovimiento(movimientoAsignando as never)
 
       // Buscar códigos contable/interno en reglas_contable_interno (misma lógica que el motor)
       const buscarCodigos = async (templateId?: string | null, responsable?: string | null) => {
