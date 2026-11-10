@@ -1,0 +1,5 @@
+{"tomada":"2026-11-10",
+ "msa_galicia abe11128-25b2-4442-a5ce-086894183e00":{"fecha":"2025-08-20","debitos":1800000,"contable":"CTA COTITULARES","template_cuota_id":"be739799-df4d-4f40-860d-f074b6841d56",
+   "nota_operador":"📜 Histórico jul25-ene26 — tu planilla: CATEG CAJA · Contable VER · [script 176] atado a «Caja» por la regla «Extraccion En Autoservicio»"},
+ "msa.caja_ams":"vacía (0 movimientos)",
+ "creados":{"template":"7a2c1e0e-245a-4c0b-9b1a-c07170000245","cuota":"7a2c1e0e-245a-4c0b-9b1a-c07170001245","caja_ams":["7a2c1e0e-245a-4c0b-9b1a-c07170002245","7a2c1e0e-245a-4c0b-9b1a-c07170003245"]}}
