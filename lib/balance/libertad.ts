@@ -158,13 +158,36 @@ function bloqueReparto(cs: CuotaTemplate[], meses: { clave: string; rotulo: stri
   const conCartel = (row: unknown[], t: string) => { row[1] = { t: "s", v: String(row[1]), c: [{ a: "Balance", t }], s: { font: { bold: true } } }; return row }
   const rEntre = rCtaPam + 3
   f.push(conCartel(fila("MSA ↔ PAM — PAM retiró (+) / aportó (−)", (_j, c) => `${c}${rCtaPam}`, ctaCon("PAM")),
-    "Sale de «Gastos Libertad», cuadro final. Alimenta la cuenta MSA ↔ PAM: 1er semestre, 2do semestre y anual (columnas A, B y C)."))
+    "Sale de «Gastos Libertad», cuadro final. Alimenta la cuenta MSA ↔ PAM: 1er semestre, 2do semestre y anual (columnas A, B y C). Es el dato que se toma: viaja a «H · Retiros y aportes» (bloque «LIBERTAD → LO QUE VIAJA A LAS CUENTAS»)."))
   f.push(conCartel(fila("MSA ↔ MA — MA retiró (+) / aportó (−)", (_j, c) => `${c}${rCtaPam + 1}`, ctaCon("MA")),
-    "Sale de «Gastos Libertad», cuadro final. Alimenta la cuenta MSA ↔ MA: 1er semestre, 2do semestre y anual (columnas A, B y C)."))
+    "Sale de «Gastos Libertad», cuadro final. Alimenta la cuenta MSA ↔ MA: 1er semestre, 2do semestre y anual (columnas A, B y C). Es el dato que se toma: viaja a «H · Retiros y aportes» (bloque «LIBERTAD → LO QUE VIAJA A LAS CUENTAS»)."))
   f.push(conCartel(fila("PAM ↔ MA (no toca a MSA) — el socio le debe al tercero", (_j, c) => `${c}${rEntre}`, tercero.map(v => r2(v / 2))),
-    "Sale de «Gastos Libertad», cuadro final. Es la cuenta entre PAM y MA por Libertad (no pasa por MSA): 1er semestre, 2do semestre y anual (columnas A, B y C)."))
+    "Sale de «Gastos Libertad», cuadro final. Es la cuenta entre PAM y MA por Libertad (no pasa por MSA): 1er semestre, 2do semestre y anual (columnas A, B y C). Es el dato que se toma: viaja a «H · Retiros y aportes» (bloque «LIBERTAD → LO QUE VIAJA A LAS CUENTAS»)."))
   f.push([])
   return f
+}
+
+/** Una de las 3 cuentas del CUADRO FINAL de «Gastos Libertad»: dónde quedó (fila de Excel) y sus 3 datos. */
+export interface CuentaDeLibertad { etiqueta: string; fila: number; s1: number; s2: number; anual: number }
+
+/**
+ * 🏁 JMS 11/11 (*«ese número tiene que quedar resaltado en la solapa Libertad, y ése es el número que viaja a Retiros y aportes»*): busca en
+ * las filas ya armadas de «Gastos Libertad» las 3 cuentas del cuadro final, las RESALTA (1er sem · 2do sem · anual, columnas A-C) y devuelve
+ * dónde quedaron, para que Retiros y aportes las tome por fórmula.
+ */
+export function cuentasDeLibertad(filas: unknown[][]): CuentaDeLibertad[] {
+  const txt = (x: unknown) => String(x && typeof x === "object" ? (x as { v?: unknown }).v ?? "" : x ?? "")
+  const i0 = filas.findIndex(r => r?.some(x => txt(x).startsWith("CUADRO FINAL —")))
+  if (i0 < 0) return []
+  const RES = { font: { bold: true }, fill: { patternType: "solid", fgColor: { rgb: "FFE699" } } }
+  const out: CuentaDeLibertad[] = []
+  for (let i = i0 + 1; i < filas.length && out.length < 3; i++) {
+    const r = filas[i], k = r?.findIndex(x => /↔/.test(txt(x))) ?? -1
+    if (!r || k < 0) continue
+    const v = [0, 1, 2].map(j => { const c = r[j] as { v?: number; s?: object } | undefined; if (c && typeof c === "object") c.s = { ...(c.s ?? {}), ...RES }; return Number(c?.v ?? 0) })
+    out.push({ etiqueta: txt(r[k]), fila: i + 1, s1: v[0], s2: v[1], anual: v[2] })
+  }
+  return out
 }
 
 /** La solapa «Gastos Libertad» del libro H. */

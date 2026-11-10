@@ -215,7 +215,8 @@ export function receptorDe(efecto: string): string {
  */
 export function hojaRetirosYAportes(cuotas: CuotaTemplate[], extracto: { movimientos: Array<{ titular: string; cuenta: string; fecha: string;
   descripcion: string; debitos: number; creditos: number; templateCuotaId: string | null; contable: string; enDolares: boolean }> } | undefined,
-  etiqueta: string, meses: { clave: string; rotulo: string }[]): unknown[][] {
+  etiqueta: string, meses: { clave: string; rotulo: string }[],
+  libertad: Array<{ etiqueta: string; fila: number; s1: number; s2: number; anual: number }> = []): unknown[][] {
   const r2 = (n: number) => Math.round(n * 100) / 100
   const dmy = (f: string | null | undefined) => (f ? f.slice(0, 10).split("-").reverse().join("/") : "")
   const conEfecto = cuotas.map(c => ({ c, a: auditarCuota(c) })).filter(x => esEfectoEntrePartes(x.a.efecto) && !cuotaSinPago(x.c))
@@ -240,7 +241,11 @@ export function hojaRetirosYAportes(cuotas: CuotaTemplate[], extracto: { movimie
   const suman = conEfecto.filter(x => !puntaDe.has(x.c))
 
   // 🎨 JMS 09/11 (revisión D.4.b): el resumen agrupado por QUIÉN RECIBE — cada línea empieza «PARA MA ·», «PARA PAM ·»… y abajo su total
-  const categoria = (efecto: string) => `PARA ${receptorDe(efecto)} · ${efecto}`
+  // 🏁 JMS 11/11: el renglón de Libertad del resumen es el COSTO de la casa (las cuotas, contra el banco); a las cuentas entre socios viaja
+  // el bloque «LIBERTAD → LO QUE VIAJA A LAS CUENTAS», que toma el cuadro final de «Gastos Libertad»
+  const categoria = (efecto: string) => receptorDe(efecto) === "Libertad" && libertad.length
+    ? "PARA Libertad · costo de la casa (las cuotas) — NO viaja así: a las cuentas viaja el bloque «LIBERTAD → CUENTAS» de abajo"
+    : `PARA ${receptorDe(efecto)} · ${efecto}`
   const LINKS = ["📍 Ir a «TOTAL POR QUIÉN RECIBE» (tocá acá)", "📍 Ir a «OTRAS PUNTAS — no suman» (tocá acá)", "📍 Ir a «CONTROL contra el banco» (tocá acá)"]
   const { filas: h } = armarResumenPorMes(suman.map(({ c, a }) => ({
     categoria: categoria(a.efecto), mes: (c.fecha ?? "").slice(0, 7), importe: c.monto, orden: `${c.fecha ?? ""}|${categoria(a.efecto)}`,  // JMS 09/11: el detalle va por FECHA (07/25 → 06/26), aunque se filtre por agrupadora
@@ -270,6 +275,16 @@ export function hojaRetirosYAportes(cuotas: CuotaTemplate[], extracto: { movimie
 
   // ── el TOTAL POR QUIÉN RECIBE, con fórmulas sobre el resumen de arriba
   const receptores = [...new Set(suman.map(x => receptorDe(x.a.efecto)))].sort((x, y) => x.localeCompare(y, "es"))
+  // 🏁 JMS 11/11 («ese es el número que viaja a retiros y aportes»): las 3 cuentas por Libertad, por fórmula al cuadro final de
+  // «Gastos Libertad» (donde están resaltadas), con su cartel. Son las que se copian a las cuentas entre socios.
+  if (libertad.length) {
+    const RES = { font: { bold: true }, fill: { patternType: "solid", fgColor: { rgb: "FFE699" } } }
+    const ref = (c: string, fila: number, v: number) => ({ t: "n", f: `'Gastos Libertad'!${c}${fila}`, v, z: MONEDA_AR, s: RES })
+    h.push([], [TITULO_TABLA("LIBERTAD → LO QUE VIAJA A LAS CUENTAS ENTRE SOCIOS (sale del CUADRO FINAL de «Gastos Libertad», resaltado allá)")])
+    h.push([ENCABEZADO_TABLA("1er sem"), ENCABEZADO_TABLA("2do sem"), ENCABEZADO_TABLA("Anual"), ENCABEZADO_TABLA(""), ENCABEZADO_TABLA("Cuenta")])
+    for (const l of libertad) h.push([ref("A", l.fila, l.s1), ref("B", l.fila, l.s2), ref("C", l.fila, l.anual), "",
+      { t: "s", v: l.etiqueta, s: { font: { bold: true } }, c: [{ a: "Balance", t: `Sale de «Gastos Libertad», cuadro final (fila ${l.fila}). Es el número que viaja a la cuenta entre socios: 1er semestre, 2do semestre y anual.` }] }])
+  }
   h.push([], ["TOTAL POR QUIÉN RECIBE — la suma de las líneas «PARA …» del resumen de arriba"])
   const filaTotalPorQuien = h.length
   h.push(["Recibe", "", "Total del ejercicio", "Líneas del resumen"].map(x => x ? CENTRADO(x) : x))
