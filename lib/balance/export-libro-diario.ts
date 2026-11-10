@@ -517,6 +517,8 @@ const VISTAS = new WeakMap<XLSX.WorkBook, Vista[]>()
 /** Las vistas de un libro armado con `agregarHoja`, para `aplicarVistas` al escribirlo. */
 export const vistasDe = (wb: XLSX.WorkBook): Vista[] => VISTAS.get(wb) ?? []
 
+/** 🧊 Más filas fijas que esto tapan la pantalla: la solapa sale sin inmovilizar (JMS 11/11). */
+export const MAX_FILAS_FIJAS = 15
 const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: Columna[]) => {
   const ws = XLSX.utils.aoa_to_sheet(filas)
   if (columnas) formatearHoja(ws, columnas)
@@ -537,6 +539,10 @@ const hoja = (wb: XLSX.WorkBook, nombre: string, filas: unknown[][], columnas?: 
     }
   }
   if (cols) vista.congelarColumnas = cols
+  // 🧊 JMS 11/11 («no puedo ver la primer tabla completa porque se junta una 1ra tabla larga con el fijado del 2do encabezado… para esos
+  // casos yo deshabilito inmovilizar paneles»): si la fila fija queda tan abajo que tapa la pantalla (una tabla de resumen larga arriba del
+  // detalle), la solapa va SIN inmovilizar. Con ~20 filas fijas ya no queda lugar para moverse.
+  if ((vista.congelarFilas ?? 0) > MAX_FILAS_FIJAS) vista.congelarFilas = undefined
   // 🔎 Si quien armó la hoja dijo dónde va el filtro, manda sobre el que adivina `presentarHoja`.
   const filtro = filtroDe(filas)
   if (filtro) ws["!autofilter"] = { ref: filtro }

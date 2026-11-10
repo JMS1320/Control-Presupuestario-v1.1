@@ -170,7 +170,9 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
     titulo: `${g.agrupadora.toUpperCase()} — ${g.responsable} — ejercicio ${etiqueta}`,
     meses, encabezadoDetalle: ["Fecha", "Concepto", ...(opciones.auditoria ? ["Cuenta de la cuota"] : []), "Banco / cuenta", "Comprobante", "Proveedor", "Detalle", "Estado",
       ...(opciones.auditoria ? ["Quién pagó", "Código contable", "Efecto", "Marca", "Descripción del banco", "Beneficiario / CUIT", "Factura vinculada", "Interno"] : [])],
-    debeHaber: true, ...(opciones.auditoria ? { importeEn: 8,
+    // 📅 JMS 11/11 (nota en «MSA · Retiros-Distrib soc»: «acá preciso con el formato semestral también») — regla del 03/11: lo que sea retiros
+    // lleva 1er sem · 2do sem · total a la izquierda del resumen por mes
+    debeHaber: true, semestres: /retiro|distrib/i.test(g.agrupadora), ...(opciones.auditoria ? { importeEn: 8,
       // 🔍 JMS 09/11: subtotal por establecimiento cuando tiene varias partidas (Nazarenas); Lima y Rojas, partida única, no
       ordenCategoria: (cat: string) => `${rangoAuditoria(cat)}|${sinModalidad(cat)}|${primeraFecha.get(cat) ?? ""}|${cat}`,
       // ⚠️ cambió 09/11: TODO establecimiento lleva su «Subtotal» (Lima y Rojas también), con sus partidas plegadas debajo

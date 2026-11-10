@@ -62,7 +62,8 @@ export function quienPago(c: CuotaTemplate): string {
 }
 
 /** Las filas del bloque REPARTO + QUIÉN PAGÓ (alto fijo), con fórmulas sobre el resumen y el detalle. */
-const ALTO_BLOQUE = 30
+// ⚠️ cambió 11/11: 30 → 36 por el CUADRO FINAL de las cuentas por Libertad (6 filas más)
+const ALTO_BLOQUE = 36
 function bloqueReparto(cs: CuotaTemplate[], meses: { clave: string; rotulo: string }[], u: UbicacionBloque): unknown[][] {
   const f: unknown[][] = []
   const r = (k: number) => u.fila + k
@@ -147,6 +148,21 @@ function bloqueReparto(cs: CuotaTemplate[], meses: { clave: string; rotulo: stri
   f.push(["", "⚠️ Lo «sin dato del banco» y lo «sin pagar» no tienen pagador: hasta conciliarlos, la cuenta corriente no los cuenta."])
   const casos = cs.filter(c => c.banco?.titular && c.banco.motivo).length
   f.push(["", casos ? `⚠️ ${casos} cuota(s) pagadas por otro importe que el del banco: ver «Contra el banco» al pie.` : "✓ Lo pagado coincide con el banco, cuota por cuota."])
+  f.push([])
+  // 🏁 JMS 11/11 (nota en «TOTAL»: «darle un formato de final… el retiro o aporte por LIB que va entre las cuentas MSA con MA y/o PAM y entre
+  // los 3… Esos números deben salir de acá de forma semestral y anual (son 3 datos) y donde ese nro se vea se le debe dejar un cartel»).
+  // El CUADRO FINAL: las 3 cuentas; el 1er semestre · 2do semestre · anual salen en las columnas A-C (las pone el resumen por semestre),
+  // y cada renglón lleva su CARTEL (nota de Excel) con a dónde va el número.
+  f.push(["CUADRO FINAL — LO QUE ALIMENTA LAS CUENTAS POR LIBERTAD: 1er semestre · 2do semestre · anual (columnas A, B y C)"])
+  f.push(encab)
+  const conCartel = (row: unknown[], t: string) => { row[1] = { t: "s", v: String(row[1]), c: [{ a: "Balance", t }], s: { font: { bold: true } } }; return row }
+  const rEntre = rCtaPam + 3
+  f.push(conCartel(fila("MSA ↔ PAM — PAM retiró (+) / aportó (−)", (_j, c) => `${c}${rCtaPam}`, ctaCon("PAM")),
+    "Sale de «Gastos Libertad», cuadro final. Alimenta la cuenta MSA ↔ PAM: 1er semestre, 2do semestre y anual (columnas A, B y C)."))
+  f.push(conCartel(fila("MSA ↔ MA — MA retiró (+) / aportó (−)", (_j, c) => `${c}${rCtaPam + 1}`, ctaCon("MA")),
+    "Sale de «Gastos Libertad», cuadro final. Alimenta la cuenta MSA ↔ MA: 1er semestre, 2do semestre y anual (columnas A, B y C)."))
+  f.push(conCartel(fila("PAM ↔ MA (no toca a MSA) — el socio le debe al tercero", (_j, c) => `${c}${rEntre}`, tercero.map(v => r2(v / 2))),
+    "Sale de «Gastos Libertad», cuadro final. Es la cuenta entre PAM y MA por Libertad (no pasa por MSA): 1er semestre, 2do semestre y anual (columnas A, B y C)."))
   f.push([])
   return f
 }
