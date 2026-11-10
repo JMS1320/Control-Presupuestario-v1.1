@@ -13525,6 +13525,11 @@ export function correrCasos(): Resultado[] {
     const v2 = [q0("pendiente"), q0("pagar"), q0("conciliado")].join(" | ")
     const e2 = "🔴 SIN PAGAR (en $ 0: falta el importe) | 🔴 SIN PAGAR (en $ 0: falta el importe) | ⚪ en $ 0 (no se pagó nada)"
     chequear("Templates", "Una cuota pendiente en $ 0 de la modalidad activa va a «sin pagar → deuda» (falta el importe), no a «en $ 0»", e2, v2, v2 === e2, "A-FEAT-1582")
+    // 🟡 una cuota en $ 0 CON su movimiento, y el banco movió plata (vthebestpdf): no es «⚪ no se pagó nada»
+    const q1 = auditarCuota({ id: "x", fecha: "2025-08-13", concepto: "Otros Gastos", proveedor: "", categ: "", cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable: "MSA", estado: "conciliado", monto: 0,
+      banco: { cuenta: "VISA MSA", titular: "MSA", contable: "", comprobante: "", respaldo: 1250, motivo: "el banco movió $ 1.250,00 y la cuota dice $ 0,00" } } as never).marca
+    const e3 = "🟡 en $ 0 pero el banco movió $ 1.250,00 y la cuota dice $ 0,00"
+    chequear("Libro H para auditar", "Una cuota en $ 0 que tiene su movimiento y el banco movió plata va a 🟡 (el gasto no suma en pesos), no a «⚪ en $ 0»", e3, q1, q1 === e3, "A-FEAT-1579")
   }
 
   // ══ 🔍 Libro H para auditar: quién pagó, efecto y marca de cada cuota (A-FEAT-1579) ══

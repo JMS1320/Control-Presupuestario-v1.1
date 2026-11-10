@@ -103,6 +103,8 @@ export const CAMBIOS: unknown[][] = [
     "Importes fijos", "Fórmulas: tocás la celda y ves de dónde sale; si cambiás algo, se recalcula. Lo que viene del banco sigue siendo dato"],
   [44, "Agrupadoras: el mismo vehículo / partida va JUNTO y POR FECHA, sea Anual o Cuota (antes se ordenaba por el nombre y «Anual» iba antes que «Cuota»).", "Solapas de agrupadora",
     "Voyage Anual (ene-26) antes que Voyage Cuota (ago a dic-25)", "Voyage Cuota 11/08, 06/10, 15/12/25 → Voyage Anual 30/01/26"],
+  [45, "Inconsistencias: dos tipos nuevos — «🟡 Cuota SIN CUENTA» (Otros Gastos sin su sub-cuenta: el balance no la ubica) y «🟡 En $ 0 pero el banco movió plata» (antes quedaban tapadas como «⚪ en $ 0»). Y el Detalle de las agrupadoras muestra el texto que dejó la conciliación cuando la cuota no tiene detalle propio.", "«Inconsistencias» y agrupadoras",
+    "vthebestpdf: «⚪ en $ 0»; Otros Gastos sin cuenta: no aparecía", "vthebestpdf: «🟡 en $ 0 pero el banco movió…»; las cuotas sin cuenta, listadas"],
   [22, "Nueva solapa «INCONSISTENCIAS»: todo lo que hay que mirar de todas las solapas, por tipo, con link a la solapa de la cuota.", "Solapa «Inconsistencias» (después de Gastos Libertad)",
     "Había que recorrer las 51 solapas buscando 🔴 / 🟡 / ⚠️", "🔴 sin pagar · 🟡 sin movimiento · 🟡 el banco movió otro importe · 🟡 en dólares · ⚠️ código · ⚪ en $ 0 (al final): cada renglón con «Ir a» su solapa"],
   [],

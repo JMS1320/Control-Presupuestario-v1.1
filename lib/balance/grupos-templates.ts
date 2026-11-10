@@ -163,7 +163,7 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
     // partida); fuera de los impuestos, por template y fecha. El H del contador sigue por banco y fecha (04/11).
     orden: opciones.auditoria ? `${rangoAuditoria(c.concepto)}|${sinModalidad(renglonDe(c))}|${c.fecha ?? ""}|${c.concepto}` : `${bancoDe(c) ? "0" + bancoDe(c) : "1"}|${c.fecha ?? ""}|${c.concepto}`,
     columnas: [dmy(c.fecha), c.concepto, bancoDe(c) || "sin pago", c.banco?.comprobante ?? "",
-      c.proveedor || c.banco?.cuenta || "", c.detalle ?? "", c.estado,
+      c.proveedor || c.banco?.cuenta || "", (opciones.auditoria ? c.detalle || c.descripcionCuota : c.detalle) ?? "", c.estado,
       ...(opciones.auditoria ? (a => [a.quienPago, a.codigo, a.efecto, CENTRADO(a.marca), a.descripcion, a.beneficiario, a.factura, a.interno])(auditarCuota(c)) : [])],
   })), {
     titulo: `${g.agrupadora.toUpperCase()} — ${g.responsable} — ejercicio ${etiqueta}`,

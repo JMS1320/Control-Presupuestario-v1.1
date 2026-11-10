@@ -173,7 +173,11 @@ export function auditarCuota(c: CuotaTemplate): AuditoriaDeCuota {
   // 🔁 JMS 09/11: una cuota PENDIENTE va a la deuda aunque esté en $ 0 («si están pendientes, aunque estén en cero, tienen que ir a
   // la deuda y así uno vería la inconsistencia y lo arreglaría»): $ 0 + pendiente = falta el importe, no «no había nada que pagar»
   const pendiente = ESTADOS_TEMPLATE_IMPAGOS.includes((c.estado || "").toLowerCase())
-  if (sinPago) marca = Math.abs(c.monto) >= 0.005 ? "🔴 SIN PAGAR" : pendiente ? "🔴 SIN PAGAR (en $ 0: falta el importe)" : "⚪ en $ 0 (no se pagó nada)"
+  // 🔍 JMS 09/11 (vthebestpdf): una cuota en $ 0 que SÍ tiene su movimiento, y el banco movió plata (o en dólares), no es «no se pagó nada»:
+  // el gasto no está sumando en pesos → 🟡 con el motivo del banco
+  const ceroConBanco = Math.abs(c.monto) < 0.005 && !pendiente && !!b?.cuenta && !!b?.motivo
+  if (sinPago && ceroConBanco) marca = `🟡 en $ 0 pero ${b!.motivo}`
+  else if (sinPago) marca = Math.abs(c.monto) >= 0.005 ? "🔴 SIN PAGAR" : pendiente ? "🔴 SIN PAGAR (en $ 0: falta el importe)" : "⚪ en $ 0 (no se pagó nada)"
   else if (b && !b.cuenta) marca = "🟡 marcada pagada, sin movimiento en el banco"
   else if (b?.motivo) marca = `🟡 ${b.motivo}`
   else marca = b ? "✓" : ""
@@ -425,9 +429,13 @@ export function hojaInconsistencias(cuotas: CuotaTemplate[], etiqueta: string, s
     ["🔴 Sin pagar al cierre → ¿DEUDA? (datos a revisar)", a => a.marca.startsWith("🔴")],
     ["🟡 Marcada pagada, sin movimiento en el banco", a => a.marca.startsWith("🟡 marcada pagada")],
     ["🟡 El banco movió otro importe que la cuota", a => a.marca.startsWith("🟡") && /banco movió|pago agrupado/.test(a.marca)],
+    ["🟡 En $ 0 pero el banco movió plata (el gasto no suma en pesos)", a => a.marca.startsWith("🟡 en $ 0 pero")],
     ["🟡 Pagada desde una cuenta en dólares (no se compara)", a => a.marca.startsWith("🟡") && /dólares/.test(a.marca)],
     ["🟡 Otro aviso del banco", a => a.marca.startsWith("🟡")],
     ["⚠️ El código contable no es el esperado", a => a.marca.includes("código esperado")],
+    // 🔍 JMS 09/11: «se debe llegar siempre desde Inconsistencias» — una cuota SIN CUENTA (Otros Gastos sin su sub-cuenta) no se ubica en el
+    // balance (va a «sin clasificar»)
+    ["🟡 Cuota SIN CUENTA (el balance no sabe dónde ubicarla)", (_a, c) => !c.categ],
     ["⚪ En $ 0 (no se pagó nada) — suele ser normal", a => a.marca.startsWith("⚪")],
   ]
   const filas: Array<{ tipo: number; c: CuotaTemplate; a: AuditoriaDeCuota }> = []

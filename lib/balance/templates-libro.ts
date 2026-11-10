@@ -154,6 +154,8 @@ export interface CuotaTemplate {
   filaPorMes?: string
   /** 📗 A-FEAT-1515: el detalle escrito en la cuota («Luz Libertad», «Interés descubierto»). */
   detalle?: string
+  /** 🔍 La descripción de la cuota (la escribe la conciliación o el motor): el H para auditar la usa si no hay «detalle». */
+  descripcionCuota?: string
   /** Las cuotas pagadas JUNTAS comparten grupo, y el movimiento del banco apunta al GRUPO (no a cada cuota). */
   grupoPagoId?: string
   /** 📗 A-FEAT-1515: lo que dice el banco de esta cuota. Sin dato = no se miró (ver `vincularBanco`). */
@@ -339,6 +341,8 @@ export function desdeCuota(f: Record<string, unknown>, tipoDeCateg?: Record<stri
     monto: entro ? -n(f.monto) : n(f.monto),
     agrupadoraTemplate: s(e.cuenta_agrupadora) || undefined,
     detalle: s(f.detalle) || undefined,
+    // 🔍 JMS 09/11: el texto que deja la conciliación (o el motor) va a `descripcion` de la cuota — el H para auditar lo muestra como detalle
+    descripcionCuota: s(f.descripcion) || undefined,
     grupoPagoId: s(f.grupo_pago_id) || undefined,
   }
 }
