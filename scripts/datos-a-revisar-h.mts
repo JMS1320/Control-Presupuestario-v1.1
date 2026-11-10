@@ -75,8 +75,10 @@ export async function armarDatosARevisar(sb: any, cuotas: CuotaTemplate[], solap
     DR2: "RESUELTO (script 244): las medialunas de la Quinta Rosello → «CTA QUINTA X», cuenta Gastos de representación (sigue en Otros Gastos).",
     DR3: "RESUELTO (script 243): la extracción de MA era para su propia caja → sin código; el adelanto de Wilson va a la Caja Sigot.",
     DR4: "RESUELTO (script 245): la extracción va a la caja AMS sin código; el retiro de cotitulares es el ITGB de $ 1.756.595 pagado de la caja (template «Retiros Cotitulares»).",
-    DR5: "Pasajes: QUEDAN con «CTA JMS» — es un pago a JMS que él factura como reintegro (saldo a facturar; JMS 10/11). Amestoy: reintegro de gastos médicos a Fabián Vulcano, gasto de MSA → «Propuestas para aprobar» P5.",
-    DR6: "PROPUESTA: template «FLIA» sin código (no son consumos) → «Propuestas para aprobar» P4.",
+    DR5: "Pasajes: QUEDAN con «CTA JMS» — es un pago a JMS que él factura como reintegro (saldo a facturar; JMS 10/11). Amestoy: RESUELTO (script 250) — reintegro de gastos médicos a Fabián Vulcano en Sueldos (abril 2026), sin CTA MA; se soltó el vínculo erróneo con el pago de Alondra Olivo.",
+    DR6: "RESUELTO (script 247): template «FLIA» de MA (entra y sale), sin código contable ni interno.",
+    DR8: "RESUELTO (script 248): la transferencia del 06/08/25 entra al BBVA Francés de MA (cuenta sin extracto, no se usa más): anotada su otra punta.",
+    DR10: "RESUELTO sin cambios: Leguizamón y Aduriz le facturan sólo a MSA; los pagos de MA quedan «CTA MSA» (MA pagó algo de MSA).",
     DR9: "RESUELTO (scripts 243–244): el adelanto está atado a la Caja Sigot del 21/02 y en Sueldos tiene esa fecha.",
     DR11: "RESUELTO (scripts 235–237): una sola modalidad activa por vehículo / partida.",
   }
