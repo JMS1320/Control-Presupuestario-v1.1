@@ -1,0 +1,6 @@
+{"tomada":"2026-11-09",
+ "cuentas_contables":"no existe nro_cuenta 422141 ni categ MANTENIMIENTO EDILICIO",
+ "caja_sigot":{"a2293466-7ce5-491a-b9c8-2d839b869a14":{"fecha":"2026-05-16","debitos":400000,"descripcion":"Pago Victor ALBAÑIL CHALET","estado":"pendiente","categ":null,"centro_de_costo":null,"contable":null,"interno":null,"nro_cuenta":null,"template_id":null,"template_cuota_id":null},
+               "d456e858-e717-4fc0-bf73-13c5c72c16a2":{"fecha":"2026-05-19","debitos":400000,"descripcion":"Pago Victor ALBAÑIL CHALET","estado":"pendiente","categ":null,"centro_de_costo":null,"contable":null,"interno":null,"nro_cuenta":null,"template_id":null,"template_cuota_id":null}},
+ "cuotas":{"10033407-a616-4d12-b8ba-31d56b06cc7e":{"categ":"REPUESTOS Y REPARACIONES","centro_costo":null,"descripcion":null,"estado":"conciliado","monto":400000},
+           "88e3ffe7-8275-461d-96bb-7ea84e499d47":{"categ":"REPUESTOS Y REPARACIONES","centro_costo":null,"descripcion":null,"estado":"conciliado","monto":400000}}}
