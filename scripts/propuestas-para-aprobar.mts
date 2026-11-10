@@ -24,12 +24,31 @@ const VA = () => ({ t: "s", v: "", s: { fill: { patternType: "solid", fgColor: {
 const wb = XLSX.utils.book_new()
 /** Todas las filas (supabase corta en 1.000 por consulta). */
 async function todas(q: () => any): Promise<any[]> { const out: any[] = []; for (let d = 0; ; d += 1000) { const { data, error } = await q().range(d, d + 999); if (error) throw new Error(error.message); out.push(...(data ?? [])); if (!data || data.length < 1000) return out } }
+// Uniones y altos se ponen directo en la hoja (los marcadores de formato-excel viven en otra copia del módulo al correr con tsx).
+const UN = new WeakMap<unknown[][], string[]>(), AL = new WeakMap<unknown[][], Record<number, number>>()
+const unirCeldas = (f: unknown[][], rs: string[]) => UN.set(f, [...(UN.get(f) ?? []), ...rs])
+const altoDeFila = (f: unknown[][], r: number, h: number) => AL.set(f, { ...(AL.get(f) ?? {}), [r]: h })
+function agregar(nombre: string, f: unknown[][], anchos: number[], filtro?: string) {
+  agregarHoja(wb as any, nombre, f, anchos.map(ancho => ({ ancho })) as any)
+  const ws = wb.Sheets[nombre.slice(0, 31)]
+  ws["!merges"] = (UN.get(f) ?? []).map(u => XLSX.utils.decode_range(u))
+  const rs: any[] = (ws["!rows"] ??= []); for (const [r, h] of Object.entries(AL.get(f) ?? {})) rs[Number(r) - 1] = { ...(rs[Number(r) - 1] ?? {}), hpt: h }
+  if (filtro) ws["!autofilter"] = { ref: filtro }
+}
+/** Alto (en puntos) para que un texto entre entero en un ancho de `ancho` caracteres: Excel no autoajusta celdas unidas. */
+const altoTexto = (txt: string, ancho: number) => Math.max(20, Math.ceil(txt.length / Math.max(20, ancho * 0.95) + 0.3) * 15 + 6)
 const resumen: Array<{ id: string; solapa: string; que: string; cuantos: number; importe: number; hacer: string }> = []
 function hoja(id: string, solapa: string, titulo: string, que: string, hacer: string, porque: string, enc: string[], filas: unknown[][], importe: number, anchos: number[]) {
   const h: unknown[][] = [[{ t: "s", v: "⬅ Resumen", l: { Target: "#'Resumen'!A1" } }], [T(`${id} · ${titulo}`)], [], [C("Qué pasa"), N(que)], [C("Qué se haría"), N(hacer)], [C("Por qué"), N(porque)],
     [C("¿Va todo?"), VA(), N("← escribí «sí», «no» o «sí salvo…». Si querés decidir renglón por renglón, usá la columna «¿Va?» de abajo.")], [], [...enc.map(C), C("¿Va?"), C("Comentario")]]
   for (const f of filas) h.push([...f, VA(), ""])
-  agregarHoja(wb as any, solapa, h, anchos.map(ancho => ({ ancho })) as any)
+  // 📐 JMS 10/11: «está raro de formatos, no lo puedo leer». Las explicaciones iban en UNA celda angosta (la columna B de la tabla) y
+  // Excel estiraba el renglón para abajo. Ahora ocupan todo el ancho de la tabla (celdas unidas) con el alto calculado.
+  const ultima = XLSX.utils.encode_col(enc.length + 1)
+  const anchoTexto = anchos.slice(1).reduce((t, a) => t + a, 0)
+  unirCeldas(h, ["A2:" + ultima + "2", ...[4, 5, 6].map(r => `B${r}:${ultima}${r}`), `C7:${ultima}7`])
+  for (const [r, txt] of [[4, que], [5, hacer], [6, porque]] as const) altoDeFila(h, r, altoTexto(txt, anchoTexto))
+  agregar(solapa, h, anchos, `A9:${ultima}${h.length}`)
   resumen.push({ id, solapa, que: titulo, cuantos: filas.length, importe, hacer })
 }
 
@@ -114,21 +133,29 @@ for (const [id, solapa, titulo, que] of abiertos) {
     encDR, filas, filas.reduce((t, f) => t + Number((f[2] as { v: number }).v || 0), 0), [11, 22, 14, 24, 22, 14, 36, 14, 30, 34, 26, 10, 30])
 }
 
-// ── Resumen
+// ── Resumen: ÍNDICE arriba (JMS 10/11: «si vos me dejás el índice, yo voy a cada punto… de solapa en solapa»). Son 8 decisiones, una
+// por solapa; la columna «Tu respuesta» trae lo que escribiste en «¿Va todo?» de cada solapa, así se ve qué falta contestar.
 const r: unknown[][] = [[T("PROPUESTAS PARA APROBAR — H para auditar MSA 25/26")],
-  [N("Cada propuesta tiene su solapa con los renglones exactos. Escribí «sí» / «no» en «¿Va todo?» (o renglón por renglón). Nada está hecho todavía: cada una se aplica con un script con foto previa y deshacer.")], [],
-  ["Nº", "Propuesta", "Renglones", "Importe", "Qué se haría", "Ir a"].map(C)]
-for (const p of resumen) r.push([p.id, N(p.que), { t: "n", v: p.cuantos, z: "0" }, IMP(p.importe), N(p.hacer), { t: "s", v: `➜ ${p.solapa}`, l: { Target: `#'${p.solapa}'!A1` } }])
+  [N(`Son ${resumen.length} decisiones, una por solapa. Hacé click en «Ir a», leé la caja de arriba (qué pasa, qué se haría, por qué) y escribí «sí», «no» o «sí salvo…» en la celda amarilla «¿Va todo?». Los renglones de abajo de cada solapa son el detalle para mirar: no hace falta contestarlos uno por uno. Nada está hecho todavía: cada una se aplica después con un script con foto previa y deshacer.`)], [],
+  ["Nº", "Ir a", "Qué hay que decidir", "Renglones", "Importe", "Qué se haría", "Tu respuesta"].map(C)]
+for (const p of resumen) r.push([p.id, { t: "s", v: `➜ ${p.solapa}`, l: { Target: `#'${p.solapa}'!B7` }, s: { font: { color: { rgb: "FF0563C1" }, underline: true } } }, N(p.que),
+  { t: "n", v: p.cuantos, z: "0" }, IMP(p.importe), N(p.hacer), { t: "s", f: `IF('${p.solapa}'!B7="","(sin contestar)",'${p.solapa}'!B7)`, v: "(sin contestar)" }])
+const finIndice = r.length
 r.push([], [C("Te falta traer (para cerrar dos temas)")],
   ["📄", N("El PDF del resumen de la VISA PAM de MAYO 2026 («VISA PAM - 26-05»): para pasar a pesos la última compra en dólares (Spotify, US$ 2,40, resumen del 30/04/26). Dejalo en Extractos / Galicia Eminent PAM / TJ VISA PAM.")],
   ["🚗", N("La RELIQUIDACIÓN de automotores con la Municipalidad de San Pedro: importes de Gol, Tiguan y Toyota 2026 (y Gol y Tiguan jul–dic 2025). Con eso se cargan las cuotas pendientes (hoy en $ 0) y se pagan.")])
-r.push([], [C("Abiertos que decidís vos (no tengo propuesta segura): cada uno tiene su solapa con todo el contexto (A1, A2, A3)")],
-  ["DR7", N("25 cuotas SIN PAGAR al cierre (30/06/26), $ 1.629.456,87: ¿cuáles van como deuda y cuáles se desactivan porque no se iban a pagar? (incluye Gol, Tiguan y Toyota 2026, que van a la reliquidación)")],
-  ["DR8", N("El extracto del Galicia MA empieza el 07/10/2025: ¿cargamos jul–sep 2025? (la transferencia de PAM a MA del 06/08/25 por $ 4.000.000 no tiene su otra punta)")],
-  ["DR10", N("Leguizamón ($ 57.400, 09/04/26) y Aduriz ($ 60.000, 04/12/25): transferencias de MA con «CTA MSA» sin factura que coincida — ¿son gastos de MSA pagados por MA?")])
 r.push([], [C("Ya resuelto en la charla (no hace falta aprobar)")],
   ["DR5", N("Pasajes de JMS con «CTA JMS»: quedan así — es un pago a JMS que genera saldo a facturar (él lo factura como reintegro).")])
-agregarHoja(wb as any, "Resumen", r, [6, 50, 11, 16, 70, 22].map(ancho => ({ ancho })) as any)
+const anchosR = [7, 26, 44, 11, 16, 60, 22]
+const totalR = anchosR.reduce((t, a) => t + a, 0)
+const uR = ["A1:G1", "A2:G2"]; altoDeFila(r, 2, altoTexto(String((r[1][0] as { v: string }).v), totalR))
+r.forEach((fila, i) => {
+  if (i < finIndice) return
+  if (fila.length === 1) uR.push(`A${i + 1}:G${i + 1}`)
+  if (fila.length === 2) { uR.push(`B${i + 1}:G${i + 1}`); altoDeFila(r, i + 1, altoTexto(String((fila[1] as { v: string }).v), totalR - 7)) }
+})
+unirCeldas(r, uR)
+agregar("Resumen", r, anchosR)
 wb.SheetNames = ["Resumen", ...wb.SheetNames.filter(n => n !== "Resumen")]
 const destino = join("- Comunicacion JMS Claude - Archivos/Balance/Excels trabajando con claude", "Propuestas para aprobar - H para auditar (2026-11-10).xlsx")
 const vs = vistasDe(wb as any); const orden = wb.SheetNames; const vistas = [vs[vs.length - 1], ...vs.slice(0, -1)]
