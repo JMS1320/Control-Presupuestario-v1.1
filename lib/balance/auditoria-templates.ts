@@ -9,7 +9,8 @@
  * («retiro de MA pagado por MSA») · **Marca** de auditoría. De quién es el gasto: el dueño del bien a esa fecha si es un bien que cambió
  * de dueño (`duenoDelBien`), si no el responsable del template. Pura.
  */
-import type { CuotaTemplate } from "./templates-libro"
+import { ESTADOS_TEMPLATE_IMPAGOS, type CuotaTemplate } from "./templates-libro"
+import type { ProblemaModalidad } from "@/lib/templates/modalidad"
 import { duenoDelBien, codigoEsperado, type Empresa } from "./dueno-de-bienes"
 import { cuotaSinPago } from "./grupos-templates"
 import { armarResumenPorMes } from "./resumen-por-mes"
@@ -169,7 +170,10 @@ export function auditarCuota(c: CuotaTemplate): AuditoriaDeCuota {
   if (!efecto) efecto = sinPago ? "sin pago" : b && !b.cuenta ? "sin movimiento en el banco" : pagadores.length ? `pagó el dueño (${dueno})` : ""
 
   let marca: string
-  if (sinPago) marca = Math.abs(c.monto) < 0.005 ? "⚪ en $ 0 (no se pagó nada)" : "🔴 SIN PAGAR"
+  // 🔁 JMS 09/11: una cuota PENDIENTE va a la deuda aunque esté en $ 0 («si están pendientes, aunque estén en cero, tienen que ir a
+  // la deuda y así uno vería la inconsistencia y lo arreglaría»): $ 0 + pendiente = falta el importe, no «no había nada que pagar»
+  const pendiente = ESTADOS_TEMPLATE_IMPAGOS.includes((c.estado || "").toLowerCase())
+  if (sinPago) marca = Math.abs(c.monto) >= 0.005 ? "🔴 SIN PAGAR" : pendiente ? "🔴 SIN PAGAR (en $ 0: falta el importe)" : "⚪ en $ 0 (no se pagó nada)"
   else if (b && !b.cuenta) marca = "🟡 marcada pagada, sin movimiento en el banco"
   else if (b?.motivo) marca = `🟡 ${b.motivo}`
   else marca = b ? "✓" : ""
@@ -334,7 +338,7 @@ export function cuotasPagadasEnAnualYCuotas(cuotas: CuotaTemplate[]): Set<CuotaT
  * inconsistencias» · «5.2 [lo no pagado] es una inconsistencia»). Todo lo que hay que mirar de todas las solapas, en un solo lugar, con link
  * a la solapa de la cuota. Lo en $ 0 va aparte, al final (suele ser normal: SICORE sin retenciones, retiros semestrales).
  */
-export function hojaInconsistencias(cuotas: CuotaTemplate[], etiqueta: string, solapaDe: (c: CuotaTemplate) => string): unknown[][] {
+export function hojaInconsistencias(cuotas: CuotaTemplate[], etiqueta: string, solapaDe: (c: CuotaTemplate) => string, estructura?: ProblemaModalidad[]): unknown[][] {
   const dmy = (f: string | null | undefined) => (f ? f.slice(0, 10).split("-").reverse().join("/") : "")
   // 🔁 JMS 09/11: un vehículo / partida va por ANUAL o por CUOTAS, no las dos. Si el mismo año tiene plata pagada en las dos modalidades,
   // es una inconsistencia (se pagó dos veces lo mismo, o una de las dos está mal cargada)
@@ -363,6 +367,17 @@ export function hojaInconsistencias(cuotas: CuotaTemplate[], etiqueta: string, s
   for (const [i, [t]] of TIPOS.entries()) {
     const fs = filas.filter(f => f.tipo === i)
     if (fs.length) h.push([t, { t: "n", v: fs.length, z: "0" }, Math.round(fs.reduce((s, f) => s + f.c.monto, 0) * 100) / 100])
+  }
+  // 🔁 JMS 09/11 (A-FEAT-1582): el control de ESTRUCTURA de los templates — el mismo que salta en Principal (lib/templates/modalidad.ts):
+  // anual o cuotas (una sola modalidad activa, con cuotas; la inactiva sin cuotas vivas) y los pagos (desactivada con pago, conciliada
+  // sin pago). Mira TODA la base, no sólo las cuotas de este libro: un error de estructura es de la app, no del ejercicio.
+  if (estructura) {
+    h.push([], [`ESTRUCTURA DE LOS TEMPLATES — anual o cuotas y pagos (el mismo control que Principal) · ${estructura.length ? `${estructura.length} a corregir` : "✓ sin errores"}`])
+    if (estructura.length) {
+      h.push(["Qué pasa", "Template", "Año", "Cuotas", "Importe", "Qué hacer", "Fechas"].map(CENTRADO))
+      for (const p of estructura) h.push([`${p.tipo === "conciliada_en_cero" ? "⚪" : "🔴"} ${p.titulo}`, p.template, p.anio ?? "", { t: "n", v: p.cuotas.length, z: "0" },
+        Math.round(p.cuotas.reduce((x, c) => x + c.monto, 0) * 100) / 100, p.accion, p.cuotas.map(c => dmy(c.fecha)).join(" · ")])
+    }
   }
   h.push([], ["Tipo", "Responsable", "Agrupadora", "Concepto", "Fecha", "Importe", "Estado", "Quién pagó", "Código", "Marca", "Descripción del banco", "Ir a"].map(CENTRADO))
   for (const { tipo, c, a } of filas) {

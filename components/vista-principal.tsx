@@ -12,6 +12,7 @@ import { ModalFichaProveedor } from "./proveedores/modal-ficha-proveedor"
 import { ModalPendientes } from "./modal-pendientes"
 import { AlertaExtractosDesactualizados } from "./alerta-extractos-desactualizados"
 import { AlertaParseoPendiente } from "./alerta-parseo-pendiente"
+import { AlertaModalidadTemplates } from "./alerta-modalidad-templates"
 import { AlertaEcheqsEnFecha } from "./alerta-echeqs-en-fecha"
 import { AlertaImpuestos } from "./alerta-impuestos"
 import { AlertaMailsGraves } from "./alerta-mails-graves"
@@ -248,6 +249,9 @@ export function VistaPrincipal() {
 
       {/* Movimientos importados a los que les falta el desglose por reglas */}
       <AlertaParseoPendiente />
+
+      {/* 🔁 Templates: anual o cuotas, y cuotas conciliadas sin pago / desactivadas con pago (A-FEAT-1582) */}
+      <AlertaModalidadTemplates />
 
       {/* ECHEQs que ya pasaron su fecha de cobro y nadie confirmó que salieran */}
       <AlertaEcheqsEnFecha />

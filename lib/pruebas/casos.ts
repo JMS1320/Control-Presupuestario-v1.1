@@ -79,6 +79,7 @@ import { esperadaDe, emparejar } from "@/lib/pagos/nc-diferencia-cambio"
 import { calcularVinculo, pctQueCierra, proponerCompras, comprasSinFacturaDelProveedor } from "@/lib/productivo/compras-factura"
 import { comprasSinFactura } from "@/lib/cashflow/compras-sin-factura"
 import { planNoVaMas, notaNoVaMas } from "@/lib/templates/no-va-mas"
+import { problemasDeModalidad } from "@/lib/templates/modalidad"
 import { cuotasDelRenglon, documentosDelRenglon } from "@/lib/documentos/del-renglon"
 import { aPesosHa, equivalencias, precioAFecha, ultimaTarifa, controlFacturaContratista, mejorCombinacion } from "@/lib/productivo/tarifa-contratista"
 import { facturasCortas } from "@/lib/pagos/lineas-detalle-pago"
@@ -13493,6 +13494,37 @@ export function correrCasos(): Resultado[] {
     ].join(" · ")
     chequear("PDFs de ventas", "📎 Pedro Genta con 2 versiones → elige el usuario; un archivo con cliente y fecha → se propone; a 20 días → no; diciembre en la carpeta de enero es del año anterior; un PDF ya vinculado no se repite; el nombre del zip sin caracteres prohibidos; carpetas del subdiario, de la fecha y del mes siguiente",
       e, v, v === e, "A-FEAT-1578")
+  }
+
+  // ══ 🔁 ANUAL o CUOTAS: el control de estructura de los templates (A-FEAT-1582) ══
+  {
+    const T = (id: string, nombre: string, grupo: string, anio: string, activo: boolean) => ({ id, nombre, grupo, anio, activo })
+    const C = (id: string, egresoId: string, estado: string, monto: number, grupoPagoId: string | null = null) => ({ id, egresoId, estado, monto, fecha: "2026-01-05", grupoPagoId })
+    const templates = [
+      T("golA", "Imp Gol Anual", "Gol", "2026", true), T("golC", "Imp Gol Cuota", "Gol", "2026", true),          // las dos activas
+      T("tigA", "Imp Tiguan Anual", "Tiguan", "2026", false), T("tigC", "Imp Tiguan Cuota", "Tiguan", "2026", false), // ninguna activa
+      T("toyA", "Imp Toyota Anual", "Toyota", "2026", false), T("toyC", "Imp Toyota Cuota", "Toyota", "2026", true),  // bien, pero la activa sin cuotas
+      T("rojA", "Red Vial Anual Rojas", "Rojas", "2026", false), T("rojC", "Red Vial Cuota Rojas", "Rojas", "2026", true), // la inactiva con cuota viva
+      T("voy25A", "Imp Voyage Anual", "Voyage", "2025", false), T("voy25C", "Imp Voyage Cuota", "Voyage", "2025", false),  // año cerrado: no es error
+      T("iibb", "IIBB Mensual", "", "2026", true),
+    ]
+    const cuotas = [
+      C("g1", "golA", "pendiente", 10), C("g2", "golC", "pendiente", 5), C("t1", "tigA", "pendiente", 0), C("t2", "tigC", "pendiente", 0),
+      C("y1", "toyA", "desactivado", 0), C("y2", "toyC", "desactivado", 0),
+      C("r1", "rojA", "conciliado", 0), C("r2", "rojC", "conciliado", 100),
+      C("v1", "voy25C", "anterior", 50),
+      C("i1", "iibb", "conciliado", 0), C("i2", "iibb", "conciliado", 400), C("i3", "iibb", "desactivado", 0), C("i4", "iibb", "conciliado", 70, "grupoX"),
+    ]
+    const conPago = new Set(["r2", "i3", "grupoX"])
+    const v = problemasDeModalidad(templates, cuotas, conPago, 2026).map(p => `${p.tipo}:${p.template}:${p.cuotas.map(c => c.id).join("+") || "-"}`).join(" ¦ ")
+    const e = "dos_activas:Imp Gol Anual:- ¦ ninguna_activa:Imp Tiguan Anual:- ¦ activa_sin_cuotas:Imp Toyota Cuota:- ¦ inactiva_con_cuota_viva:Red Vial Anual Rojas:r1 ¦ desactivada_con_pago:IIBB Mensual:i3 ¦ conciliada_sin_pago:IIBB Mensual:i2 ¦ conciliada_en_cero:IIBB Mensual:i1 ¦ conciliada_en_cero:Red Vial Anual Rojas:r1"
+    chequear("Templates", "Anual o cuotas: salta si las dos modalidades están activas o ninguna, si la activa no tiene cuotas, si la inactiva tiene cuotas vivas, si una desactivada tiene pago o una conciliada no lo tiene (con importe aparte de las de $ 0; el pago por grupo cuenta); un año cerrado con todo inactivo no es error",
+      e, v, v === e, "A-FEAT-1582")
+    // la cuota PENDIENTE en $ 0 va a la deuda (🔴), no a «en $ 0»
+    const q0 = (estado: string) => auditarCuota({ id: estado, fecha: "2026-01-05", concepto: "Imp Gol Cuota", proveedor: "", categ: "X", cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable: "MSA", estado, monto: 0 } as never).marca
+    const v2 = [q0("pendiente"), q0("pagar"), q0("conciliado")].join(" | ")
+    const e2 = "🔴 SIN PAGAR (en $ 0: falta el importe) | 🔴 SIN PAGAR (en $ 0: falta el importe) | ⚪ en $ 0 (no se pagó nada)"
+    chequear("Templates", "Una cuota pendiente en $ 0 de la modalidad activa va a «sin pagar → deuda» (falta el importe), no a «en $ 0»", e2, v2, v2 === e2, "A-FEAT-1582")
   }
 
   // ══ 🔍 Libro H para auditar: quién pagó, efecto y marca de cada cuota (A-FEAT-1579) ══

@@ -20,6 +20,7 @@ import { aplicarVistas } from "../lib/balance/formato-excel"
 import { fechasReales } from "../lib/excel/fechas-reales"
 import { cargarCuotasImpuestos, cargarAuxiliaresPapel } from "../lib/impuestos/datos-papel"
 import { auditarCuota, esEfectoEntrePartes } from "../lib/balance/auditoria-templates"
+import { cargarProblemasDeModalidad } from "../lib/templates/modalidad"
 
 const env = Object.fromEntries(readFileSync(".env.local", "utf8").split(/\r?\n/).filter(l => l.includes("=") && !l.trim().startsWith("#")).map(l => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, "")] }))
 const sb: any = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
@@ -51,7 +52,9 @@ const meses = ej.subdiarios.map((x: any) => ({ clave: `${x.anio}-${String(x.mes)
 const wb = XLSX.utils.book_new()
 // los papeles de impuestos (y el establecimiento de cada partida), como en la app
 const [cuotasImp, aux] = await Promise.all([cargarCuotasImpuestos(sb), cargarAuxiliaresPapel(sb)])
-agregarLibroH(wb as any, templates, ej.etiqueta, meses, { cuotas: cuotasImp, ...aux } as any, { auditoria: true })
+const { problemas: estructura } = await cargarProblemasDeModalidad(sb, Number(new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).slice(0, 4)))
+console.log(`estructura de templates (anual o cuotas, pagos): ${estructura.length} a corregir`)
+agregarLibroH(wb as any, templates, ej.etiqueta, meses, { cuotas: cuotasImp, ...aux } as any, { auditoria: true, estructura })
 // 📋 --revisar: la solapa «Datos a revisar» (cada punto de la revisión de datos con su contexto), antes del Índice
 if (process.argv.includes("--revisar")) {
   const solapaDe = (c: any) => { const r = String(c.responsable ?? "").split("/")[0].trim().toUpperCase(); const n = nombreSolapaGrupo({ responsable: r, agrupadora: (c.agrupadoraTemplate ?? "").trim() || SIN_GRUPO }, "H"); return wb.SheetNames.includes(n) ? n : "" }

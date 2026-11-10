@@ -30,6 +30,7 @@ import { saldosDelEjercicioAnterior, type AjusteBalance } from "@/lib/balance/aj
 import { pendientesConVisto, type PendienteBalance } from "@/lib/balance/pendientes-balance"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase"
+import { cargarProblemasDeModalidad, type ProblemaModalidad } from "@/lib/templates/modalidad"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Loader2, FileSpreadsheet, AlertTriangle, CheckCircle2, Info } from "lucide-react"
@@ -465,7 +466,12 @@ export function PapelesDeBalance() {
     } catch {
       toast.warning("No se pudieron leer las cuotas de impuestos: el libro H sale sin el papel de inmobiliario, Red Vial y automotores.")
     }
-    await descargarSetDelBalance(args, entradaF, await leerMovimientosLib(lib), papeles)
+    // 🔁 A-FEAT-1582: el control de estructura de los templates (anual o cuotas, pagos) va a «Inconsistencias» del H para auditar
+    let estructura: ProblemaModalidad[] | undefined
+    try { estructura = (await cargarProblemasDeModalidad(supabase as any, Number(hoyArgentina().slice(0, 4)))).problemas } catch {
+      toast.warning("No se pudo correr el control de estructura de los templates: «Inconsistencias» sale sin ese bloque.")
+    }
+    await descargarSetDelBalance(args, entradaF, await leerMovimientosLib(lib), papeles, estructura)
   }
   const sinResponder = temasRecorrido.filter(t => !t.respondido).length
   /** Lo que todavía no llegó, para que la vista previa lo diga en vez de parecer completa. */

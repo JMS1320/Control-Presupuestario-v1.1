@@ -6769,6 +6769,24 @@ queda una sola línea verde.
 
 → A-TEST-1223
 
+### 🔁 Templates: anual o cuotas (Principal) *(2026-11-09)*
+
+Cada vehículo o partida se paga de **una** manera por año: el template **Anual** o el de **Cuotas**. El otro queda
+**desactivado**. Este aviso de Principal salta en **rojo** cuando algo no cierra:
+- las dos modalidades **activas** a la vez, o **ninguna**;
+- la modalidad activa **sin cuotas**;
+- el template inactivo con cuotas **todavía vivas** (pendientes o conciliadas);
+- una cuota **desactivada** que tiene un pago vinculado;
+- una cuota **conciliada con importe** que no tiene ningún pago vinculado.
+
+Plegado abajo, en gris: las cuotas **en $ 0 marcadas «conciliado»** sin movimiento (un mes en que no hubo nada que
+pagar). Lo correcto es pasarlas a **desactivadas**.
+
+Se corrige en *Egresos → Templates*. El mismo control sale en la solapa «Inconsistencias» del H para auditar. Una
+cuota **pendiente en $ 0** de la modalidad activa cuenta como **deuda** (falta el importe), no como «$ 0».
+
+→ A-TEST-1353
+
 ### 💱 NC esperadas por diferencia de cambio (Principal)
 
 Cuando pagás una factura en dólares a un TC distinto del suyo, el proveedor te debe una **NC** (pagaste a menos) o vos le debés una **ND**. La tarjeta **«NC esperadas por diferencia de cambio»** de Principal muestra cuánto se espera de cada proveedor (total USD × diferencia de TC) hasta que llega; cuando la importás de ARCA la reconoce sola y pasa a «ya llegaron». Si tu inicio está configurado, agregala desde el configurador.

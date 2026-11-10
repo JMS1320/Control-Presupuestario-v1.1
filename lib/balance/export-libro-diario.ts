@@ -23,6 +23,7 @@
 import { hojaOperacionesEnDolares } from "./operaciones-en-dolares"
 import XLSX from "xlsx-js-style"
 import { hojaRetirosYAportes, hojaInconsistencias } from "./auditoria-templates"
+import type { ProblemaModalidad } from "@/lib/templates/modalidad"
 import type { SaldoParaBalance } from "@/lib/dolares/posicion-cierre"
 import type { TenenciaFci } from "./balance-en-linea-lectura"
 import { celdaRespaldo, respaldoDeSaldo, respaldoDeFci, respaldoDeComprobante, hojaDeRespaldos, renglonesDeRespaldo, linksALasCopias, type DocumentoRespaldo } from "./respaldos"
@@ -3364,7 +3365,7 @@ const COLS_DETALLE_BANCARIO: Columna[] = [
  * 📚 A-FEAT-1505 — baja el SET: los libros A a E en un .zip (JMS: «así tengo siempre todo el set parejo»). Se arma el libro
  * completo una sola vez (más el C) y se reparte: los cinco salen del mismo cálculo que el Excel de siempre.
  */
-export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>, entradaF?: EntradaBalanceEnLinea | null, lib?: MovimientoLib[] | null, papeles?: DatosPapelesH | null): Promise<void> {
+export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>, entradaF?: EntradaBalanceEnLinea | null, lib?: MovimientoLib[] | null, papeles?: DatosPapelesH | null, estructura?: ProblemaModalidad[]): Promise<void> {
   const [libro, empresa, templates, , , , , bancarios] = a
   const wb = armarWorkbook(...a)
   const meses = mesesDelLibro(libro)
@@ -3383,7 +3384,7 @@ export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>
   // 🔍 A-FEAT-1579: el H PARA AUDITAR, aparte (no va al contador): misma base, con quién pagó, código, efecto y marca por cuota.
   if (templates) {
     const wbA = XLSX.utils.book_new()
-    agregarLibroH(wbA, templates, libro.ejercicio.etiqueta, meses, papeles, { auditoria: true })
+    agregarLibroH(wbA, templates, libro.ejercicio.etiqueta, meses, papeles, { auditoria: true, estructura })
     fechasReales(wbA)
     zip.file(`${base} - H para auditar (no va al contador).xlsx`, await aplicarVistas(XLSX.write(wbA, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(wbA)))
   }
@@ -3435,7 +3436,7 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
    * 🔍 A-FEAT-1579 (JMS 07/11): el H PARA AUDITAR — la misma base, con los retiros adentro (no van al libro I), cada cuota con
    * Quién pagó · Código contable · Efecto · Marca, y sin el pulido para el contador. El H del contador no cambia.
    */
-  opcion: { auditoria?: boolean } = {}): void {
+  opcion: { auditoria?: boolean; estructura?: ProblemaModalidad[] } = {}): void {
   const aud = !!opcion.auditoria
   for (const resp of ["MSA", "MA", "PAM"]) {
     const tTodo = templatesDeResponsable(templates, resp)
@@ -3502,7 +3503,7 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
   // 🧾 JMS 09/11: las INCONSISTENCIAS de todas las solapas, en una sola, con link a la solapa de cada cuota
   if (aud) {
     const solapaDe = (c: CuotaTemplate) => { const r = responsablePrincipal(c.responsable); const n = nombreSolapaGrupo({ responsable: r, agrupadora: (c.agrupadoraTemplate ?? "").trim() || SIN_GRUPO }, "H"); return wb.SheetNames.includes(n) ? n : "" }
-    hoja(wb, "Inconsistencias", hojaInconsistencias([...templates.detalle, ...(templates.aCuentaSocio ?? [])], etiqueta, solapaDe), COLS_INCONSISTENCIAS)
+    hoja(wb, "Inconsistencias", hojaInconsistencias([...templates.detalle, ...(templates.aCuentaSocio ?? [])], etiqueta, solapaDe, opcion.estructura), COLS_INCONSISTENCIAS)
   }
   if (aud) hoja(wb, "H · Retiros y aportes", hojaRetirosYAportes([...templates.detalle, ...(templates.aCuentaSocio ?? [])], templates.entrada?.opciones.extracto, etiqueta, meses), COLS_RETIROS)
   // 📗 A-FEAT-1539: el libro para mandar — sin la palabra «template» (no es contable) y sin subtítulos. El de auditar no se pule.
