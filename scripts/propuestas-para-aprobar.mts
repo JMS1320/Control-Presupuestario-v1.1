@@ -96,12 +96,33 @@ hoja("P5", "P5 Vulcano", "Reintegro de gastos médicos a Fabián Vulcano: gasto 
   [["06/04/2026", "Galicia MSA CC", IMP(84000), "Reintegro Vulcano Gastos Medicos (a Marcela Sandra Amestoy)", "Otros Gastos · CTA MA", "Sueldos · Fabián Vulcano · reintegro gastos médicos · sin código"]],
   84000, [12, 16, 12, 44, 22, 40, 10, 30])
 
+// ── Abiertos (DR7, DR8, DR10): con TODO el contexto (JMS 10/11: «siempre tenés que poner todo el contexto disponible»), copiados del último
+// H para auditar («Datos a revisar»: proveedor, comprobante, detalle, código, descripción del banco, beneficiario, link a su solapa)
+const carpeta = "- Comunicacion JMS Claude - Archivos/Balance/Excels trabajando con claude"
+const { readdirSync } = await import("node:fs")
+const ultimaH = readdirSync(carpeta).filter(f => /^H para auditar MSA 25-26 \(2026-11-07\) v\d+\.xlsx$/.test(f)).sort((a, b) => Number(a.match(/v(\d+)/)![1]) - Number(b.match(/v(\d+)/)![1])).pop()!
+const dr = XLSX.utils.sheet_to_json(XLSX.readFile(join(carpeta, ultimaH)).Sheets["Datos a revisar"], { header: 1, raw: true }) as unknown[][]
+const encDR = ["Fecha", "Cuenta / quién pagó", "Importe", "Concepto", "Proveedor", "Comprobante", "Detalle", "Código", "Descripción del banco", "Beneficiario / CUIT", "Está en (solapa del H)"]
+const abiertos: Array<[string, string, string, string]> = [
+  ["DR7", "A1 DR7 Deuda", "Cuotas SIN PAGAR al cierre (30/06/26): ¿van como DEUDA?", "Las cuotas del ejercicio que al 30/06/26 seguían pendientes. Si se iban a pagar, son deuda al cierre (van al papel de cuentas a pagar); si no se iban a pagar, se desactivan. Incluye Gol, Tiguan y Toyota 2026 (en $ 0: esperan la reliquidación de la Municipalidad SP)."],
+  ["DR8", "A2 DR8 Extracto MA", "El extracto del Galicia MA empieza el 07/10/2025: ¿cargamos jul–sep 2025?", "Sin esos tres meses, movimientos de PAM a MA de ese período no tienen su otra punta. Ej.: la transferencia de PAM a MA del 06/08/25 por $ 4.000.000 (abajo)."],
+  ["DR10", "A3 DR10 Leguizamon Aduriz", "Transferencias de MA con «CTA MSA» sin factura que coincida (Leguizamón y Aduriz)", "MA pagó desde su cuenta y el movimiento dice «CTA MSA» (gasto de MSA pagado por MA = aporte de MA), pero no hay una factura de MSA que coincida. ¿Son gastos de MSA? ¿de qué?"],
+]
+for (const [id, solapa, titulo, que] of abiertos) {
+  const filas = dr.filter(x => x && x[0] === id).map(x => [x[1], x[2], IMP(Number(x[3]) || 0), x[4], x[5], x[6], x[7], x[8], x[9], x[10], (x[11] as { v?: string })?.v ?? x[11] ?? ""])
+  hoja(id, solapa, titulo, que, "Decidís vos: escribí en «Comentario» qué es cada uno (o en «¿Va todo?» si es lo mismo para todos).", `Copiado de «${ultimaH}», solapa «Datos a revisar».`,
+    encDR, filas, filas.reduce((t, f) => t + Number((f[2] as { v: number }).v || 0), 0), [11, 22, 14, 24, 22, 14, 36, 14, 30, 34, 26, 10, 30])
+}
+
 // ── Resumen
 const r: unknown[][] = [[T("PROPUESTAS PARA APROBAR — H para auditar MSA 25/26")],
   [N("Cada propuesta tiene su solapa con los renglones exactos. Escribí «sí» / «no» en «¿Va todo?» (o renglón por renglón). Nada está hecho todavía: cada una se aplica con un script con foto previa y deshacer.")], [],
   ["Nº", "Propuesta", "Renglones", "Importe", "Qué se haría", "Ir a"].map(C)]
 for (const p of resumen) r.push([p.id, N(p.que), { t: "n", v: p.cuantos, z: "0" }, IMP(p.importe), N(p.hacer), { t: "s", v: `➜ ${p.solapa}`, l: { Target: `#'${p.solapa}'!A1` } }])
-r.push([], [C("Abiertos que decidís vos (no tengo propuesta segura): están en el H para auditar v35, solapa «Datos a revisar», con todo su contexto y la columna «Tu respuesta»")],
+r.push([], [C("Te falta traer (para cerrar dos temas)")],
+  ["📄", N("El PDF del resumen de la VISA PAM de MAYO 2026 («VISA PAM - 26-05»): para pasar a pesos la última compra en dólares (Spotify, US$ 2,40, resumen del 30/04/26). Dejalo en Extractos / Galicia Eminent PAM / TJ VISA PAM.")],
+  ["🚗", N("La RELIQUIDACIÓN de automotores con la Municipalidad de San Pedro: importes de Gol, Tiguan y Toyota 2026 (y Gol y Tiguan jul–dic 2025). Con eso se cargan las cuotas pendientes (hoy en $ 0) y se pagan.")])
+r.push([], [C("Abiertos que decidís vos (no tengo propuesta segura): cada uno tiene su solapa con todo el contexto (A1, A2, A3)")],
   ["DR7", N("25 cuotas SIN PAGAR al cierre (30/06/26), $ 1.629.456,87: ¿cuáles van como deuda y cuáles se desactivan porque no se iban a pagar? (incluye Gol, Tiguan y Toyota 2026, que van a la reliquidación)")],
   ["DR8", N("El extracto del Galicia MA empieza el 07/10/2025: ¿cargamos jul–sep 2025? (la transferencia de PAM a MA del 06/08/25 por $ 4.000.000 no tiene su otra punta)")],
   ["DR10", N("Leguizamón ($ 57.400, 09/04/26) y Aduriz ($ 60.000, 04/12/25): transferencias de MA con «CTA MSA» sin factura que coincida — ¿son gastos de MSA pagados por MA?")])
