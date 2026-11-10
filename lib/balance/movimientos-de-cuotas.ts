@@ -30,6 +30,8 @@ export interface MovimientoDeCuota {
   debitos: number
   creditos: number
   enDolares: boolean
+  /** 💳 A-BUG-1584: lo que la TARJETA cobró en dólares (`debitos_usd` − `creditos_usd`); 0 si no es tarjeta o no hay dólares. */
+  usd?: number
   /** 🔍 A-FEAT-1579: el código contable del movimiento (`CTA MA`, `DIST MA`, `LIB`…), para el libro H para auditar. */
   contable?: string
   /** 🔍 A-FEAT-1579 (contexto para auditar, JMS 09/11): la descripción del banco, el beneficiario / CUIT (leyendas), el código interno y la
@@ -75,6 +77,8 @@ export async function leerMovimientosDeCuotas(cliente: ClienteMinimo, cuotas: Cu
           debitos: Number(m.debitos) || 0,
           creditos: Number(m.creditos) || 0,
           enDolares: !!t.enDolares,
+          // 💳 A-BUG-1584: la tarjeta guarda las compras en dólares aparte (`debitos_usd`): sin esto, una compra en US$ se lee como $ 0
+          usd: esTarjeta ? (Number(m.debitos_usd) || 0) - (Number(m.creditos_usd) || 0) : 0,
           contable: String(m.contable ?? "").trim(),
           descripcion: String(m.descripcion ?? "").trim(),
           beneficiario: [m.leyendas_adicionales_1, m.leyendas_adicionales_2, m.leyendas_adicionales_3, m.leyendas_adicionales_4]
@@ -130,6 +134,11 @@ function bancoDe(c: CuotaTemplate, porVinculo: Map<string, MovimientoDeCuota[]>,
   }
   if (ms.some(m => m.enDolares)) return { cuenta, titular, contable, ...contexto, comprobante, respaldo: null, motivo: "pagada desde una cuenta en dólares: no se compara con la cuota en pesos" }
   const neto = r2(ms.reduce((t, m) => t + m.debitos - m.creditos, 0))
+  // 💳 A-BUG-1584 (JMS 10/11: «siempre y cuando la inconsistencia salte»): una compra en DÓLARES con la tarjeta tiene $ 0 en pesos — si la
+  // cuota también está en $ 0, el gasto no suma en pesos. Se dice con el importe en dólares (no se elige un tipo de cambio en silencio).
+  const usd = r2(ms.reduce((t, m) => t + (m.usd ?? 0), 0))
+  if (Math.abs(neto) < 0.005 && Math.abs(usd) >= 0.005 && Math.abs(c.monto) < 0.005)
+    return { cuenta, titular, contable, ...contexto, comprobante, respaldo: 0, motivo: `se pagó US$ ${fmt(usd)} con la tarjeta y la cuota dice $ 0 (no está pasada a pesos)` }
   if (propios.length) {
     return { cuenta, titular, contable, ...contexto, comprobante, respaldo: neto, motivo: Math.abs(neto - c.monto) > 0.01 ? `el banco movió $ ${fmt(neto)} y la cuota dice $ ${fmt(c.monto)}` : null }
   }

@@ -135,7 +135,7 @@ function guiaDR1(cuotas: CuotaTemplate[], solapaDe: (c: CuotaTemplate) => string
     CENTRADO("Qué pasa y qué se propone"), "", "", "", "", "", "", CENTRADO("Ir a"), CENTRADO("Tu respuesta")]]
   const parte = (id: string, titulo: string, enDr: CuotaTemplate[], texto: string, ir: unknown) => {
     // ✅ ya corregido (el template dejó de ser de PAM): se dice, no se borra el renglón
-    if (!enDr.length) { h.push([id, "", `${titulo} — ✅ RESUELTO`, { t: "n", v: 0, z: "#,##0.00" }, "✅ Resuelto con el script 239 (10/11/26): el template pasó a responsable MA. Lo que pagó MA ya es «pagó el dueño (MA)»; lo que pagó PAM quedó como «distribución PAM → MA» (en Retiros).", "", "", "", "", "", "", "", ""]); return }
+    if (!enDr.length) { h.push([id, "", `${titulo} — ✅ RESUELTO`, { t: "n", v: 0, z: "#,##0.00" }, "✅ Resuelto con los scripts 239 y 240 (10/11/26): el template pasó a responsable MA. Lo que pagó MA ya es «pagó el dueño (MA)»; lo que pagó PAM quedó como «distribución PAM → MA» (en Retiros).", "", "", "", "", "", "", "", ""]); return }
     h.push([id, "", `${titulo} — ${enDr.length} cuotas en DR1`, { t: "n", v: total(enDr), z: "#,##0.00" }, texto, "", "", "", "", "", "", ir, ""])
   }
   const desde = base + h.length + 1

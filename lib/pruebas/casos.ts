@@ -13530,6 +13530,12 @@ export function correrCasos(): Resultado[] {
       banco: { cuenta: "VISA MSA", titular: "MSA", contable: "", comprobante: "", respaldo: 1250, motivo: "el banco movió $ 1.250,00 y la cuota dice $ 0,00" } } as never).marca
     const e3 = "🟡 en $ 0 pero el banco movió $ 1.250,00 y la cuota dice $ 0,00"
     chequear("Libro H para auditar", "Una cuota en $ 0 que tiene su movimiento y el banco movió plata va a 🟡 (el gasto no suma en pesos), no a «⚪ en $ 0»", e3, q1, q1 === e3, "A-FEAT-1579")
+    // 💳 A-BUG-1584: compra en DÓLARES con la tarjeta ($ 0 en pesos, US$ 4,99) vinculada a una cuota en $ 0 → salta en Inconsistencias
+    const cu = { id: "apple", fecha: "2025-07-05", concepto: "Consumos MA", proveedor: "", categ: "Consumos", cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable: "MA", estado: "conciliado", monto: 0 } as never
+    const [vb] = vincularBanco([cu], [cu], [{ vinculo: "apple", cuenta: "VISA PAM", titular: "PAM", fecha: "2025-07-05", comprobante: "032937", debitos: 0, creditos: 0, enDolares: false, usd: 4.99 }])
+    const m4 = auditarCuota(vb).marca
+    const e4 = "🟡 en $ 0 pero se pagó US$ 4,99 con la tarjeta y la cuota dice $ 0 (no está pasada a pesos)"
+    chequear("Libro H para auditar", "💳 Una compra en dólares con la tarjeta ($ 0 en pesos) vinculada a una cuota en $ 0 salta como 🟡 (el gasto no está pasado a pesos)", e4, m4, m4 === e4, "A-BUG-1584")
   }
 
   // ══ 🔍 Libro H para auditar: quién pagó, efecto y marca de cada cuota (A-FEAT-1579) ══
