@@ -154,11 +154,19 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
    * se ordenan por el vehículo / partida y por su primera fecha.
    */
   const sinModalidad = (s: string) => s.replace(/\b(anual|cuota)\b/gi, "").replace(/\s+/g, " ").trim().toLowerCase()
-  const renglonDe = (c: CuotaTemplate) => renglonAuditoria(c.concepto, opciones.establecimientoDe)
+  // 🔍 JMS 11/11 (notas en «(sin agrupadora)»: «idealmente mostrar la subcuenta directo» · «avisar que está puesto en pesos»): en el grupo sin
+  // agrupadora el renglón es la SUBCUENTA de la cuota (Informática, Maíz, Rollos…), no el template («Otros Gastos»), y lo pagado en dólares
+  // dice que el importe está en pesos.
+  const sinGrupo = opciones.auditoria && g.agrupadora === SIN_GRUPO
+  const titulo = (x: string) => x.toLowerCase().replace(/(^|[\s,(])(\p{L})/gu, (_m, a: string, b: string) => a + b.toUpperCase())
+  const enDolares = (c: CuotaTemplate) => /\bUSD\b/i.test(c.concepto)
+  const renglonDe = (c: CuotaTemplate) => sinGrupo
+    ? `${c.categ ? titulo(c.categ) : "— sin cuenta"}${enDolares(c) ? " — pagado en US$ (importe en PESOS, al TC del día del pago)" : ""}`
+    : renglonAuditoria(c.concepto, opciones.establecimientoDe)
   const primeraFecha = new Map<string, string>()
   if (opciones.auditoria) for (const c of g.cuotas) { const k = renglonDe(c), f = c.fecha ?? ""; if (!primeraFecha.has(k) || f < primeraFecha.get(k)!) primeraFecha.set(k, f) }
   const { filas: h, ubicacion: u } = armarResumenPorMes(g.cuotas.map(c => ({
-    categoria: opciones.auditoria ? renglonAuditoria(c.concepto, opciones.establecimientoDe) : `${c.categ || "(sin categoría)"} — ${bancoDe(c) || "sin pago"}`, mes: (c.fecha ?? "").slice(0, 7), importe: c.monto,
+    categoria: opciones.auditoria ? renglonDe(c) : `${c.categ || "(sin categoría)"} — ${bancoDe(c) || "sin pago"}`, mes: (c.fecha ?? "").slice(0, 7), importe: c.monto,
     // 🔍 JMS 09/11 (auditar): por IMPUESTO → PARTIDA → FECHA (Inmobiliario partida por partida, Complementario aparte, Red Vial partida por
     // partida); fuera de los impuestos, por template y fecha. El H del contador sigue por banco y fecha (04/11).
     orden: opciones.auditoria ? `${rangoAuditoria(c.concepto)}|${sinModalidad(renglonDe(c))}|${c.fecha ?? ""}|${c.concepto}` : `${bancoDe(c) ? "0" + bancoDe(c) : "1"}|${c.fecha ?? ""}|${c.concepto}`,
@@ -168,6 +176,7 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
       ...(opciones.auditoria ? (a => [a.quienPago, a.codigo, a.efecto, CENTRADO(a.marca), a.descripcion, a.beneficiario, a.factura, a.interno])(auditarCuota(c)) : [])],
   })), {
     titulo: `${g.agrupadora.toUpperCase()} — ${g.responsable} — ejercicio ${etiqueta}`,
+    ...(sinGrupo && g.cuotas.some(enDolares) ? { notas: ["💲 Lo «pagado en US$» se pagó en DÓLARES y acá figura en PESOS, al TC del día del pago (el Detalle dice cuál y de dónde sale)."] } : {}),
     meses, encabezadoDetalle: ["Fecha", "Concepto", ...(opciones.auditoria ? ["Cuenta de la cuota"] : []), "Banco / cuenta", "Comprobante", "Proveedor", "Detalle", "Estado",
       ...(opciones.auditoria ? ["Quién pagó", "Código contable", "Efecto", "Marca", "Descripción del banco", "Beneficiario / CUIT", "Factura vinculada", "Interno"] : [])],
     // 📅 JMS 11/11 (nota en «MSA · Retiros-Distrib soc»: «acá preciso con el formato semestral también») — regla del 03/11: lo que sea retiros
@@ -377,7 +386,8 @@ function control4(g: GrupoTemplates, o: OpcionesHojaGrupo, filaInicial: number):
  */
 export function hojaExtractoSinCategoria(ms: MovimientoExtractoH[], responsable: string, etiqueta: string,
   meses: { clave: string; rotulo: string }[] = []): unknown[][] {
-  return hojaResumenPorMes(ms.map(m => ({
+  // 🧾 JMS 11/11: los renglones «RESUMEN VI…» de la tarjeta (estado «total») son el TOTAL del resumen, no un movimiento: no van acá
+  return hojaResumenPorMes(ms.filter(m => (m.estado ?? "").toLowerCase() !== "total").map(m => ({
     categoria: m.cuenta, mes: m.fecha.slice(0, 7), importe: m.debitos - m.creditos, moneda: m.enDolares ? "USD" as const : "ARS" as const,
     columnas: [fmtFecha(m.fecha), m.descripcion, m.estado],
   })), {
