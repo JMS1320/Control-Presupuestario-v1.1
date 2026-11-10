@@ -3413,8 +3413,8 @@ export function mesesDelLibro(libro: LibroDiario): { clave: string; rotulo: stri
  * Responsable · Quién pagó · Código · Marca · Débito · Crédito · Descripción · Beneficiario · Factura · Interno. */
 const COLS_INCONSISTENCIAS: Columna[] = [44, 12, 30, 34, 12, 16, 12, 28, 12, 30, 34, 26].map((ancho, i) => (i === 5 || i === 2 ? { ancho, z: MONEDA } : { ancho }))
 const COLS_RETIROS: Columna[] = [14, 14, 14, 30, 50, 16, 34, 28, 12, 30, 14, 14, 14, 14, 30, 36, 40, 13].map(ancho => ({ ancho, z: MONEDA }))
-const COLS_H_AUDITAR: Columna[] = [8.17, 11.88, 15.45, 30.31, 16.74, 10.17, 23.31, 15.74, 13.03, 13.03, 13.03, 20.45, 10.31, 28.46, 13.17, 30, 36, 44, 12]  // = sus anchos de Excel − 0,83 (lo que suma Excel)
-  .map((ancho, i) => (i >= 2 ? { ancho, z: MONEDA } : { ancho }))
+const COLS_H_AUDITAR: Columna[] = [8.17, 11.88, 15.45, 30.31, 24, 16.74, 10.17, 23.31, 15.74, 13.03, 13.03, 13.03, 20.45, 10.31, 28.46, 13.17, 30, 36, 44, 12]  // = sus anchos de Excel − 0,83 (lo que suma Excel)
+  .map((ancho, i) => (i >= 2 && i !== 4 ? { ancho, z: MONEDA } : { ancho }))   // E = «Cuenta de la cuota» (JMS 09/11), texto
 const COLS_RESUMEN_MES: Columna[] = [{ ancho: 22 }, { ancho: 32 }, ...Array.from({ length: 12 }, () => ({ ancho: 13, z: MONEDA })), { ancho: 15, z: MONEDA }]
 
 export function agregarLibroG(wb: XLSX.WorkBook, cuotas: CuotaTemplate[], etiqueta: string, lib: MovimientoLib[] | null, meses: { clave: string; rotulo: string }[] = []): void {

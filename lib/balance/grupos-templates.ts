@@ -162,14 +162,15 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
     // 🔍 JMS 09/11 (auditar): por IMPUESTO → PARTIDA → FECHA (Inmobiliario partida por partida, Complementario aparte, Red Vial partida por
     // partida); fuera de los impuestos, por template y fecha. El H del contador sigue por banco y fecha (04/11).
     orden: opciones.auditoria ? `${rangoAuditoria(c.concepto)}|${sinModalidad(renglonDe(c))}|${c.fecha ?? ""}|${c.concepto}` : `${bancoDe(c) ? "0" + bancoDe(c) : "1"}|${c.fecha ?? ""}|${c.concepto}`,
-    columnas: [dmy(c.fecha), c.concepto, bancoDe(c) || "sin pago", c.banco?.comprobante ?? "",
+    // 🔍 JMS 09/11 (D2): «Cuenta de la cuota» al lado de Concepto — en «Otros Gastos» es la que dice QUÉ fue (Maíz, Rollos, Mantenimiento edilicio…)
+    columnas: [dmy(c.fecha), c.concepto, ...(opciones.auditoria ? [c.categ || "— sin cuenta"] : []), bancoDe(c) || "sin pago", c.banco?.comprobante ?? "",
       c.proveedor || c.banco?.cuenta || "", (opciones.auditoria ? c.detalle || c.descripcionCuota : c.detalle) ?? "", c.estado,
       ...(opciones.auditoria ? (a => [a.quienPago, a.codigo, a.efecto, CENTRADO(a.marca), a.descripcion, a.beneficiario, a.factura, a.interno])(auditarCuota(c)) : [])],
   })), {
     titulo: `${g.agrupadora.toUpperCase()} — ${g.responsable} — ejercicio ${etiqueta}`,
-    meses, encabezadoDetalle: ["Fecha", "Concepto", "Banco / cuenta", "Comprobante", "Proveedor", "Detalle", "Estado",
+    meses, encabezadoDetalle: ["Fecha", "Concepto", ...(opciones.auditoria ? ["Cuenta de la cuota"] : []), "Banco / cuenta", "Comprobante", "Proveedor", "Detalle", "Estado",
       ...(opciones.auditoria ? ["Quién pagó", "Código contable", "Efecto", "Marca", "Descripción del banco", "Beneficiario / CUIT", "Factura vinculada", "Interno"] : [])],
-    debeHaber: true, ...(opciones.auditoria ? { importeEn: 7,
+    debeHaber: true, ...(opciones.auditoria ? { importeEn: 8,
       // 🔍 JMS 09/11: subtotal por establecimiento cuando tiene varias partidas (Nazarenas); Lima y Rojas, partida única, no
       ordenCategoria: (cat: string) => `${rangoAuditoria(cat)}|${sinModalidad(cat)}|${primeraFecha.get(cat) ?? ""}|${cat}`,
       // ⚠️ cambió 09/11: TODO establecimiento lleva su «Subtotal» (Lima y Rojas también), con sus partidas plegadas debajo
@@ -178,7 +179,8 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
   if (!u.celdaTotal || !u.colDebito || !u.colCredito) return { filas: h, celdaTotal: u.celdaTotal }
 
   const deb = `${u.colDebito}${u.det1}:${u.colDebito}${u.detN}`, cred = `${u.colCredito}${u.det1}:${u.colCredito}${u.detN}`
-  const est = `${u.colDetalle(6)}${u.det1}:${u.colDetalle(6)}${u.detN}`
+  const k1 = opciones.auditoria ? 1 : 0   // 🔍 la columna «Cuenta de la cuota» corre un lugar todo lo que está después de Concepto
+  const est = `${u.colDetalle(6 + k1)}${u.det1}:${u.colDetalle(6 + k1)}${u.detN}`
   const netoSi = (estado: string) => `SUMIFS(${deb},${est},"${estado}")-SUMIFS(${cred},${est},"${estado}")`
   const total = r2(g.cuotas.reduce((t, c) => t + c.monto, 0))
   // 🔍 JMS 09/11 (auditar): el control 3 cuenta toda cuota CON MOVIMIENTO del banco, también las «anterior» (antes sólo «conciliado»)
@@ -195,7 +197,7 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
   if (opciones.auditoria) {
     const lit = (x: string) => x.replace(/[~*?]/g, m => `~${m}`).replace(/"/g, "\"\"")
     // 🔍 JMS 09/11 (punto 4): el SUBTOTAL POR EFECTO — quién pagó lo de esta agrupadora (fórmulas sobre la columna Efecto)
-    const cE = `${u.colDetalle(9)}${u.det1}:${u.colDetalle(9)}${u.detN}`
+    const cE = `${u.colDetalle(10)}${u.det1}:${u.colDetalle(10)}${u.detN}`
     const porEfecto = new Map<string, number>()
     for (const c of g.cuotas) { const e = auditarCuota(c).efecto; porEfecto.set(e, r2((porEfecto.get(e) ?? 0) + c.monto)) }
     h.push([], ["", TITULO_TABLA("POR EFECTO — quién pagó lo de esta agrupadora"), BANDA_VACIA()], ["", ENCABEZADO_TABLA("Efecto"), ENCABEZADO_TABLA("Total")])
@@ -242,7 +244,7 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
   }
   // 3 · Contra el banco
   const r3 = fila()
-  const colBanco = `${u.colDetalle(2)}${u.det1}:${u.colDetalle(2)}${u.detN}`
+  const colBanco = `${u.colDetalle(2 + k1)}${u.det1}:${u.colDetalle(2 + k1)}${u.detN}`
   const conMovimiento = `SUMIFS(${deb},${colBanco},"<>sin pago",${colBanco},"<>pagado sin movimiento del banco")-SUMIFS(${cred},${colBanco},"<>sin pago",${colBanco},"<>pagado sin movimiento del banco")`
   h.push(["", "3 · Contra el banco", opciones.auditoria ? "Con movimiento del banco (según las cuotas, también «anterior»)" : "Conciliado (según las cuotas)",
     { t: "n", f: opciones.auditoria ? conMovimiento : netoSi("conciliado"), v: conciliado }])
@@ -277,7 +279,7 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
     h.forEach((r, i) => { if (i >= u.det1 - 1 && i <= u.detN - 1 && Array.isArray(r) && r.some(x => String((x as { v?: unknown })?.v ?? x ?? "").startsWith("🔴"))) pintarFila(h, i, "FFFBE4E4") })
     const cC = `${u.colDetalle(1)}${u.det1}:${u.colDetalle(1)}${u.detN}`
     const lit = (x: string) => x.replace(/[~*?]/g, m => `~${m}`).replace(/"/g, "\"\"")
-    h.push(...controlPorTemplate(g.cuotas, u.colDetalle(1), u.colDetalle(10), u.det1, u.detN,
+    h.push(...controlPorTemplate(g.cuotas, u.colDetalle(1), u.colDetalle(10 + k1), u.det1, u.detN,
       t => `SUMIFS(${deb},${cC},"${lit(t)}")-SUMIFS(${cred},${cC},"${lit(t)}")`, h.length + 1))
   }
   return { filas: h, celdaTotal: u.celdaTotal }
