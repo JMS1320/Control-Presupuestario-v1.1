@@ -11,6 +11,8 @@ import { readFileSync, existsSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { armarEjercicio, primerDiaDelEjercicio } from "../lib/balance/ejercicio"
 import { desdeCuota, armarTemplatesDelEjercicio } from "../lib/balance/templates-libro"
+import { leerCuentasConSaldo, resumirCuenta, hojaControlPlata } from "../lib/balance/control-plata"
+const SOLAPA_PLATA = "Control de la plata"
 import { leerMovimientosDeCuotas, vincularBanco, leerExtractoDelEjercicio, indiceDeDestinos, conFacturas } from "../lib/balance/movimientos-de-cuotas"
 import { agregarLibroH, vistasDe, agregarHoja, reordenarSolapas } from "../lib/balance/export-libro-diario"
 import { SOLAPA_CAMBIOS, CAMBIOS, ANCHOS_CAMBIOS } from "./cambios-presentacion-h.mts"
@@ -55,6 +57,15 @@ const [cuotasImp, aux] = await Promise.all([cargarCuotasImpuestos(sb), cargarAux
 const { problemas: estructura } = await cargarProblemasDeModalidad(sb, Number(new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).slice(0, 4)))
 console.log(`estructura de templates (anual o cuotas, pagos): ${estructura.length} a corregir`)
 agregarLibroH(wb as any, templates, ej.etiqueta, meses, { cuotas: cuotasImp, ...aux } as any, { auditoria: true, estructura })
+// 💰 A-FEAT-1533 (JMS 11/11): el CONTROL DE LA PLATA, etapa 1 — cada cuenta de la empresa, inicio + ingresos − egresos = saldo final, contra la planilla
+{
+  const corte = `${ANIO - 1}-12-31`, r2 = (n: number) => Math.round(n * 100) / 100
+  const leidas = await leerCuentasConSaldo(sb, EMPRESA, ej.fechaCierre)
+  const rs = leidas.cuentas.map(c => resumirCuenta(c, primerDiaDelEjercicio(ej), corte, ej.fechaCierre))
+  agregarHoja(wb as any, SOLAPA_PLATA, hojaControlPlata(rs, EMPRESA, ej.etiqueta, { desde: primerDiaDelEjercicio(ej), corte, hasta: ej.fechaCierre }, leidas.tablasQueFallaron),
+    [28, 16, 16, 16, 16, 16, 14, 16, 16, 16, 16, 14, 34, 11, 50].map((ancho, i) => (i >= 1 && i <= 11 ? { ancho, z: "#,##0.00" } : { ancho })) as any)
+  for (const r of rs) console.log(`plata · ${r.cuenta}: ${r.inicio} + ${r2(r.ing1 + r.ing2)} − ${r2(r.egr1 + r.egr2)} = ${r2(r.inicio + r.ing1 + r.ing2 - r.egr1 - r.egr2)} · planilla ${r.extractoFin} · saltos ${r.saltos.length} (${r.ordenadoPor})`)
+}
 // 📋 --revisar: la solapa «Datos a revisar» (cada punto de la revisión de datos con su contexto), antes del Índice
 if (process.argv.includes("--revisar")) {
   const solapaDe = (c: any) => { const r = String(c.responsable ?? "").split("/")[0].trim().toUpperCase(); const n = nombreSolapaGrupo({ responsable: r, agrupadora: (c.agrupadoraTemplate ?? "").trim() || SIN_GRUPO }, "H"); return wb.SheetNames.includes(n) ? n : "" }
@@ -77,10 +88,11 @@ if (process.argv.includes("--revisar")) {
 if (process.argv.includes("--cambios")) {
   agregarHoja(wb as any, SOLAPA_CAMBIOS, CAMBIOS, ANCHOS_CAMBIOS.map((ancho, i) => (i >= 2 ? { ancho, z: "#,##0.00" } : { ancho })) as any)
   const ix: any = wb.Sheets["Índice"]
+  if (ix && !ix.C3) ix.C3 = { t: "s", v: "💰 Control de la plata: tocá acá", l: { Target: `#'${SOLAPA_PLATA}'!A1` } }
   if (ix) ix.B3 = { t: "s", v: "📝 Qué cambió en la presentación (con ejemplos): tocá acá", l: { Target: `#'${SOLAPA_CAMBIOS}'!A1` } }
   if (ix && wb.SheetNames.includes(SOLAPA_DATOS)) ix.A3 = { t: "s", v: "📋 DATOS A REVISAR (DR1…DR10): tocá acá", l: { Target: `#'${SOLAPA_DATOS}'!A1` } }
   // JMS 09/11: las solapas del desarrollo en curso (que después se sacan) van ANTES del índice
-  reordenarSolapas(wb as any, [...(wb.SheetNames.includes(SOLAPA_DATOS) ? [SOLAPA_DATOS] : []), SOLAPA_CAMBIOS, "Índice", "H · Retiros y aportes", "Gastos Libertad", "Inconsistencias"])
+  reordenarSolapas(wb as any, [...(wb.SheetNames.includes(SOLAPA_DATOS) ? [SOLAPA_DATOS] : []), SOLAPA_CAMBIOS, "Índice", SOLAPA_PLATA, "H · Retiros y aportes", "Gastos Libertad", "Inconsistencias"])
 }
 fechasReales(wb as any)
 let p = join(CARPETA, `H para auditar ${EMPRESA} ${ej.etiqueta.replace("/", "-")} (2026-11-07).xlsx`), v = 2

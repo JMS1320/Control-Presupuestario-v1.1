@@ -38,6 +38,7 @@ import { separarPorCuentaCorriente } from "@/lib/proveedores/opera-cuenta-corrie
 import { operacionesEnDolares, comprasVentasDeDolares } from "@/lib/balance/operaciones-en-dolares"
 import { armarGruposTemplates, armarHojaGrupo, nombreSolapaGrupo, hojaGrupo, gruposDelResponsable } from "@/lib/balance/grupos-templates"
 import { indiceDeDestinos, sinCategoriaNiVinculo, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
+import { resumirCuenta } from "@/lib/balance/control-plata"
 import { auditarCuota, hojaRetirosYAportes } from "@/lib/balance/auditoria-templates"
 import { armarResumenPorMes } from "@/lib/balance/resumen-por-mes"
 import { filasNivel2De } from "@/lib/balance/formato-excel"
@@ -13688,6 +13689,18 @@ export function correrCasos(): Resultado[] {
     const v = `${res.join(" → ")} ‖ ${det.join(" → ")}`
     const e = "Amarok Cuota → Voyage Cuota → Voyage Anual ‖ Amarok Cuota 15/07/2025 → Voyage Cuota 11/08/2025 → Voyage Cuota 15/12/2025 → Voyage Anual 30/01/2026"
     chequear("Libro H para auditar", "🔁 El mismo vehículo / partida va junto y por fecha, sea Anual o Cuota (Voyage Cuota 2025 antes que Voyage Anual 2026)", e, v, v === e, "A-FEAT-1579")
+  }
+
+  // ══ 💰 Control de la plata, etapa 1 (JMS 11/11): inicio + ingresos − egresos = saldo final, y DÓNDE se rompe el saldo de la planilla ══
+  {
+    const m = (fecha: string, orden: number, deb: number, cred: number, saldo: number | null) => ({ fecha, orden, descripcion: `m${orden}`, debitos: deb, creditos: cred, saldo })
+    // cargada fuera de fecha (el orden 3 es del 05/07 y el 2 del 10/07) y con un salto de −50 en el orden 4
+    const caja = { cuenta: "Caja X", enDolares: false, movimientos: [m("2025-07-01", 1, 0, 1000, 1000), m("2025-07-10", 2, 200, 0, 800), m("2025-07-05", 3, 100, 0, 700), m("2026-02-01", 4, 0, 300, 950)] }
+    const r = resumirCuenta(caja, "2025-07-01", "2025-12-31", "2026-06-30")
+    const calc = r.inicio + r.ing1 - r.egr1 + r.ing2 - r.egr2
+    const v = `por ${r.ordenadoPor} · inicio ${r.inicio} · calc ${calc} · planilla ${r.extractoFin} · saltos ${r.saltos.map(s => `${s.orden}:${-s.salto}`).join(",")}`
+    const e = "por orden · inicio 0 · calc 1000 · planilla 950 · saltos 4:-50"
+    chequear("Control de la plata", "💰 Etapa 1: la cuenta (inicio + ingresos − egresos) contra la planilla, seguida por su ORDEN cuando está cargada fuera de fecha, y el salto donde se rompe", e, v, v === e, "A-FEAT-1533")
   }
   return r
 }

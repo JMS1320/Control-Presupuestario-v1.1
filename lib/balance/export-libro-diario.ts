@@ -3571,6 +3571,21 @@ export function agregarIndiceH(wb: XLSX.WorkBook): void {
     }
     return { total: Math.round((total - impago) * 100) / 100, impago: Math.round(impago * 100) / 100, todo: Math.round(total * 100) / 100, cuotas, rojo, amarillo, codigo, f }
   }
+  /**
+   * 📤 JMS 11/11 («marcar verdes los enviados que coinciden»): lo que ya se le mandó al contador del libro H (registro de envíos, A-FEAT-1188).
+   * Si el «Pagado» de hoy es el mismo, la celda va en VERDE con su nota; si cambió, en ROJO con la diferencia.
+   */
+  const ENVIADO_AL_CONTADOR: Record<string, { importe: number; cuando: string }> = {
+    "H · MSA · CZ Ganadera": { importe: 149107.39, cuando: "04/11/2026" }, "H · MSA · Gastos Bancarios": { importe: 3630918.2, cuando: "04/11/2026" },
+    "H · MSA · Honorarios": { importe: 451300, cuando: "04/11/2026" }, "H · MSA · Imp Bancarios": { importe: 7504936.07, cuando: "04/11/2026" },
+  }
+  const VERDE = { fill: { patternType: "solid", fgColor: { rgb: "FF92D050" } } }, ROJO = { fill: { patternType: "solid", fgColor: { rgb: "FFFF9999" } } }
+  const marcarEnviado = (n: string, celda: Record<string, unknown>, hoy: number) => {
+    const e = ENVIADO_AL_CONTADOR[n]; if (!e) return celda
+    const fmt = (x: number) => x.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    const igual = Math.abs(hoy - e.importe) < 0.005
+    return { ...celda, s: igual ? VERDE : ROJO, c: [{ a: "Balance", t: igual ? `Enviado al contador el ${e.cuando}: ${fmt(e.importe)} — coincide.` : `Enviado al contador el ${e.cuando}: ${fmt(e.importe)} — HOY DA OTRA COSA (diferencia ${fmt(hoy - e.importe)}): hay que avisarle.` }] }
+  }
   const link = (n: string) => ({ t: "s", v: n.replace(PREFIJO, ""), l: { Target: `#'${n.replace(/'/g, "''")}'!A1`, Tooltip: `Ir a «${n}»` } })
   const cuenta = (x: number, f?: string) => (f ? { t: "n", f, v: x, z: "0;-0;\"\"" } : x ? { t: "n", v: x, z: "0" } : "")
   const filas: unknown[][] = [["ÍNDICE — el [+] de la izquierda abre cada responsable; tocá una solapa para ir. En cada solapa, el título («⬅ Índice») trae de vuelta acá."],
@@ -3591,7 +3606,7 @@ export function agregarIndiceH(wb: XLSX.WorkBook): void {
     for (const n of agrup) {
       const r = resumenDe(n)
       if (r) { sub.pagado += r.total; sub.impago += r.impago; sub.rojo += r.rojo; sub.amarillo += r.amarillo; sub.codigo += r.codigo; sub.cuotas += r.cuotas; sub.todo += r.todo }
-      filas.push(["", link(n), r ? { t: "n", f: r.f.total, v: r.total, z: MONEDA } : "", r ? { t: "n", f: r.f.impago, v: r.impago, z: MONEDA } : "",
+      filas.push(["", link(n), r ? marcarEnviado(n, { t: "n", f: r.f.total, v: r.total, z: MONEDA }, r.total) : "", r ? { t: "n", f: r.f.impago, v: r.impago, z: MONEDA } : "",
         cuenta(r?.rojo ?? 0, r?.f.rojo), cuenta(r?.amarillo ?? 0, r?.f.amarillo), cuenta(r?.codigo ?? 0, r?.f.codigo),
         r ? { t: "n", f: r.f.cuotas, v: r.cuotas, z: "0" } : "", r ? { t: "n", f: r.f.todo, v: r.todo, z: MONEDA } : ""]); niveles.push(1)
     }
