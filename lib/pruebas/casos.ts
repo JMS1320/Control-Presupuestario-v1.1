@@ -13574,8 +13574,8 @@ export function correrCasos(): Resultado[] {
       { titular: "MSA", cuenta: "Galicia MSA", fecha: "2025-09-20", descripcion: "", debitos: 30, creditos: 0, templateCuotaId: null, contable: "CTA MA", enDolares: false }] }
     const ra = hojaRetirosYAportes(cs, ex, "25/26", [{ clave: "2025-09", rotulo: "sep-25" }]) as unknown[][]
     const fila = ra.find(f => f[0] === "MSA" && f[1] === "CTA MA")!
-    const v = `${ctl} ‖ MSA CTA MA: cuotas ${fila[2]} banco ${fila[3]} ${(fila[5] as { v: string }).v} directo ${fila[6]} total ${(fila[7] as { v: number }).v}`
-    const e = "Luz: 1/1/0/0/0/0 ✓ completo · Seguro Chalet: 2/1/1/0/0/0 revisar ‖ MSA CTA MA: cuotas 100 banco 100 ✓ directo 30 total 130"
+    const v = `${ctl} ‖ MSA CTA MA: cuotas ${txt(fila[2])}${typeof fila[2] === "object" && (fila[2] as { f?: string }).f ? " (fórmula)" : ""} banco ${fila[3]} ${(fila[5] as { v: string }).v} directo ${fila[6]} total ${(fila[7] as { v: number }).v}`
+    const e = "Luz: 1/1/0/0/0/0 ✓ completo · Seguro Chalet: 2/1/1/0/0/0 revisar ‖ MSA CTA MA: cuotas 100 (fórmula) banco 100 ✓ directo 30 total 130"
     chequear("Libro H para auditar", "🔍 Al pie, un renglón por template (cuotas · pagadas · sin pagar…, ¿completo?); y los retiros desde Efecto cierran contra el banco, con lo directo al lado",
       e, v, v === e, "A-FEAT-1579")
   }
@@ -13604,9 +13604,9 @@ export function correrCasos(): Resultado[] {
     const txt2 = (x: unknown) => String(x && typeof x === "object" ? (x as { v: unknown }).v : x ?? "")
     const iP = h.findIndex(f => /^DE UN TOTAL AL OTRO/.test(txt2(f[0])))
     const pasos = h.slice(iP + 2, iP + 6).map(f => `${txt2(f[0]).slice(0, 18)}=${txt2(f[2])}`).join(" ; ")
-    const vP = pasos, eP = "Control: «Desde la=0 ; + las OTRAS PUNTAS=4000000 ; = TOTAL de arriba =4000000 ; =undefined"
+    const vP = pasos, eP = "Control: «Desde la=0 ; + las OTRAS PUNTAS=4000000 ; = suma de los paso=4000000 ; =undefined"
     chequear("Libro H para auditar", "🧮 Retiros: el TOTAL de arriba y el «Total del banco» miden cosas distintas, y el paso de uno al otro cierra al peso (control + otras puntas + lo sin código)",
-      eP.replace("=undefined", "="), vP, vP === eP.replace("=undefined", "=") && /cierra al peso/.test(txt2(h[iP + 4]?.[0])), "A-FEAT-1579")
+      eP.replace("=undefined", "="), vP, vP === eP.replace("=undefined", "=") && /cierra al peso/.test(txt2(h[iP + 4]?.[3])) && !!(h[iP + 2]?.[2] as { f?: string })?.f, "A-FEAT-1579")
   }
 
   // ══ 🔍 Subtotal por establecimiento en el resumen: Nazarenas con 2 partidas lleva subtotal, Lima (1) no; el TOTAL no suma doble (JMS 09/11) ══

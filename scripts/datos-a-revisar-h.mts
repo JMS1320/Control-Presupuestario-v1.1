@@ -73,9 +73,17 @@ export async function armarDatosARevisar(sb: any, cuotas: CuotaTemplate[], solap
   for (const p of PUNTOS) {
     h.push([], [`${p.id} · ${p.titulo}`], ["", `❓ ${p.decidir}`])
     h.push(["Punto", "Fecha", "Cuenta / quién pagó", "Importe", "Concepto", "Proveedor", "Comprobante", "Detalle", "Código", "Descripción del banco", "Beneficiario / CUIT", "Ir a", "Tu respuesta"].map(x => CENTRADO(x)))
-    if (!p.filas.length) h.push([p.id, "(sin movimientos en el sistema)"])
+    if (!p.filas.length) h.push(["", `${p.id}: sin movimientos en el sistema`])
     for (const f of p.filas) h.push([p.id, f.fecha, f.cuenta, f.importe, f.concepto, f.proveedor, f.comprobante, f.detalle, f.codigo, f.descripcion, f.beneficiario,
       f.ir ? { t: "s", v: f.ir, l: { Target: `#'${f.ir.replace(/'/g, "''")}'!A1`, Tooltip: `Ir a «${f.ir}»` } } : "", ""])
+  }
+  // 🧮 JMS 09/11 (C3): «Movimientos» e «Importe» del resumen con FÓRMULAS sobre los bloques de abajo (Punto en A, Importe en D)
+  const ini = h.findIndex(r => typeof r[0] === "string" && /^DR\d+ · /.test(r[0] as string)) + 1
+  if (ini > 0) for (const p of PUNTOS) {
+    const k = h.findIndex(r => r[0] === p.id && r[1] === p.decidir)
+    if (k < 0) continue
+    h[k][2] = { t: "n", f: `COUNTIF($A$${ini}:$A$${h.length},"${p.id}")`, v: p.filas.length, z: "0" }
+    h[k][3] = { t: "n", f: `SUMIF($A$${ini}:$A$${h.length},"${p.id}",$D$${ini}:$D$${h.length})`, v: Math.round(p.filas.reduce((s, f) => s + f.importe, 0) * 100) / 100 }
   }
   // 🔗 JMS 09/11: «siempre un link desde los índices de cosas a definir»: cada DR del resumen lleva a su bloque
   for (const p of PUNTOS) {

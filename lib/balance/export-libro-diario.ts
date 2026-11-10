@@ -3543,7 +3543,7 @@ export function agregarIndiceH(wb: XLSX.WorkBook): void {
     const hi = rows.findIndex(r => Array.isArray(r) && r[0] === "Nro" && r.includes("Marca") && r.includes("Débito"))
     if (hi < 0) return null
     const H = rows[hi], iD = H.indexOf("Débito"), iC = H.indexOf("Crédito"), iM = H.indexOf("Marca")
-    let total = 0, rojo = 0, amarillo = 0, codigo = 0, impago = 0
+    let total = 0, rojo = 0, amarillo = 0, codigo = 0, impago = 0, fin = hi
     for (const r of rows.slice(hi + 1)) {
       if (!Array.isArray(r) || typeof r[0] !== "number") break
       total += (Number(r[iD]) || 0) - (Number(r[iC]) || 0)
@@ -3551,11 +3551,19 @@ export function agregarIndiceH(wb: XLSX.WorkBook): void {
       if (m.startsWith("🔴")) { rojo++; impago += (Number(r[iD]) || 0) - (Number(r[iC]) || 0) }
       if (m.startsWith("🟡")) amarillo++
       if (m.includes("código esperado")) codigo++
+      fin++
     }
-    return { total: Math.round((total - impago) * 100) / 100, impago: Math.round(impago * 100) / 100, rojo, amarillo, codigo }
+    // 🧮 JMS 09/11 (C3): las fórmulas que dan cada número, sobre el detalle de la solapa (Marca, Débito, Crédito)
+    const q = `'${n.replace(/'/g, "''")}'!`, rg = (i: number) => `${q}$${XLSX.utils.encode_col(i)}$${hi + 2}:$${XLSX.utils.encode_col(i)}$${fin + 1}`
+    const M = rg(iM), D = rg(iD), C = rg(iC)
+    const f = {
+      total: `SUMIF(${M},"<>🔴*",${D})-SUMIF(${M},"<>🔴*",${C})`, impago: `SUMIF(${M},"🔴*",${D})-SUMIF(${M},"🔴*",${C})`,
+      rojo: `COUNTIF(${M},"🔴*")`, amarillo: `COUNTIF(${M},"🟡*")`, codigo: `COUNTIF(${M},"*código esperado*")`,
+    }
+    return { total: Math.round((total - impago) * 100) / 100, impago: Math.round(impago * 100) / 100, rojo, amarillo, codigo, f }
   }
   const link = (n: string) => ({ t: "s", v: n.replace(PREFIJO, ""), l: { Target: `#'${n.replace(/'/g, "''")}'!A1`, Tooltip: `Ir a «${n}»` } })
-  const cuenta = (x: number) => (x ? { t: "n", v: x, z: "0" } : "")
+  const cuenta = (x: number, f?: string) => (f ? { t: "n", f, v: x, z: "0;-0;\"\"" } : x ? { t: "n", v: x, z: "0" } : "")
   const filas: unknown[][] = [["ÍNDICE — el [+] de la izquierda abre cada responsable; tocá una solapa para ir. En cada solapa, el título («⬅ Índice») trae de vuelta acá."],
     ["Marcas: ✓ pagada y respaldada por el banco · 🔴 sin pagar · 🟡 a revisar (pagada sin movimiento, o el banco movió otro importe) · ⚪ en $ 0 · ⚠️ el código contable no es el esperado"],
     [], ["", "Solapa", "Pagado (débito − crédito)", "Sin pagar", "🔴 sin pagar", "🟡 a revisar", "⚠️ código"]]
@@ -3567,7 +3575,8 @@ export function agregarIndiceH(wb: XLSX.WorkBook): void {
     filas.push([`${g === "General" ? "GENERAL (retiros y aportes, Libertad)" : g} — ${ns.length} solapa${ns.length === 1 ? "" : "s"}`]); niveles.push(0)
     for (const n of agrup) {
       const r = resumenDe(n)
-      filas.push(["", link(n), r ? { t: "n", v: r.total, z: MONEDA } : "", r?.impago ? { t: "n", v: r.impago, z: MONEDA } : "", cuenta(r?.rojo ?? 0), cuenta(r?.amarillo ?? 0), cuenta(r?.codigo ?? 0)]); niveles.push(1)
+      filas.push(["", link(n), r ? { t: "n", f: r.f.total, v: r.total, z: MONEDA } : "", r ? { t: "n", f: r.f.impago, v: r.impago, z: MONEDA } : "",
+        cuenta(r?.rojo ?? 0, r?.f.rojo), cuenta(r?.amarillo ?? 0, r?.f.amarillo), cuenta(r?.codigo ?? 0, r?.f.codigo)]); niveles.push(1)
     }
     if (base.length) {
       filas.push(["", "— datos de base y papeles —"]); niveles.push(1)

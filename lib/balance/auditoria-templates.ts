@@ -273,14 +273,29 @@ export function hojaRetirosYAportes(cuotas: CuotaTemplate[], extracto: { movimie
   h.push([], ["OTRAS PUNTAS — NO SUMAN: cada una es la entrada de una transferencia que ya suma arriba por su salida"])
   const filaOtras = h.length
   h.push([`✓ ${otras.length} entrada(s) encontraron su salida en la otra cuenta · ${entradasSinSalida} entrada(s) con código sin salida en el sistema (esas sí suman arriba)`])
+  // 🧮 JMS 09/11 (C2/C3): los controles con FÓRMULAS — cada número apunta a lo que suma. Para eso, dónde quedó cada cosa en la hoja.
+  const txt = (x: unknown) => String(x && typeof x === "object" ? (x as { v?: unknown }).v ?? "" : x ?? "")
+  const col = (i: number) => { let s = ""; for (let n = i + 1; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s; return s }
+  const encDet = iDet >= 0 ? h[iDet].map(txt) : []
+  const cNro = col(0), cQuien = col(encDet.indexOf("Quién pagó")), cCod = col(encDet.indexOf("Código contable")), cDeb = col(encDet.indexOf("Débito")), cCre = col(encDet.indexOf("Crédito"))
+  let finDet = iDet
+  while (finDet + 1 < h.length && h[finDet + 1] && /^\d+$/.test(txt(h[finDet + 1][0]))) finDet++
+  const det = (c: string) => `$${c}$${iDet + 2}:$${c}$${finDet + 1}`                    // un rango del detalle (filas 1-based)
+  const hayDet = iDet >= 0 && finDet > iDet && ["Quién pagó", "Código contable", "Débito", "Crédito"].every(x => encDet.includes(x))
+  const nroDe = new Map<string, string>()                                                 // categoría del resumen → su Nro
+  for (let i = iEnc + 1; i < (iTot > 0 ? iTot : h.length); i++) if (h[i]) nroDe.set(txt(h[i][4]), txt(h[i][3]))
+  let otrasDesde = 0, otrasHasta = -1, filaTotOtras = 0
   if (otras.length) {
     h.push(["Fecha", "Concepto", "Entró a", "Código", "Importe", "Es la otra punta de (salida)", "Código de la salida", ""].map(x => x ? CENTRADO(x) : x))
+    otrasDesde = h.length + 1
     for (const { c, a } of otras) {
       const s = puntaDe.get(c)!
       h.push([dmy(c.fecha), c.concepto, a.quienPago.replace(/^entró a /, ""), a.codigo, r2(-c.monto),
         `${dmy(s.fecha)} · ${s.cuenta} · ${r2(s.debitos - s.creditos).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`, s.contable, CENTRADO("✓")])
     }
-    h.push(["", "TOTAL de las otras puntas (no suma)", "", "", r2(otras.reduce((t, x) => t - x.c.monto, 0))])
+    otrasHasta = h.length
+    filaTotOtras = h.length + 1
+    h.push(["", "TOTAL de las otras puntas (no suma)", "", "", { t: "n", f: `SUM(E${otrasDesde}:E${otrasHasta})`, v: r2(otras.reduce((t, x) => t - x.c.monto, 0)) }])
   }
 
   // ── el control contra el banco: por cuenta (empresa) y código — las DOS puntas, cada una en su cuenta (como la 14.1)
@@ -301,44 +316,74 @@ export function hojaRetirosYAportes(cuotas: CuotaTemplate[], extracto: { movimie
   ponerLink(0, filaTotalPorQuien); ponerLink(1, filaOtras); ponerLink(2, h.length)
   if (!extracto) { h.push(["⚠️ No se leyó el extracto del ejercicio: el control no se hizo."]); return h }
   h.push(["Cuenta de (empresa)", "Código", "Desde las cuotas", "Banco, atado a una cuota", "Diferencia", "", "Banco SIN template (retiros directos)", "Total del banco con ese código"])
+  /**
+   * «Desde las cuotas» con FÓRMULA sobre el detalle de arriba: lo que pagó (o le entró a) esa empresa con ese código, menos las otras puntas
+   * que entraron a esa empresa con ese código (están en su tabla, no en el detalle). Se arma el mismo número acá para verificar que la
+   * fórmula es la buena; si no da (un pago desde dos cuentas, «MSA + PAM»), queda el número fijo.
+   */
+  const simulado = (tit: string, cod: string) => r2(
+    suman.filter(x => (x.a.quienPago.toUpperCase().startsWith(`${tit} ·`) || x.a.quienPago.toUpperCase().startsWith(`ENTRÓ A ${tit} ·`)) && x.a.codigo.toUpperCase() === cod).reduce((t, x) => t + x.c.monto, 0)
+    - otras.filter(x => x.a.quienPago.replace(/^entró a /, "").toUpperCase().startsWith(`${tit} ·`) && x.a.codigo.toUpperCase() === cod).reduce((t, x) => t - x.c.monto, 0))
+  const formulaCuotas = (tit: string, cod: string) => {
+    const q = (crit: string) => `SUMIFS(${det(cDeb)},${det(cQuien)},"${crit}",${det(cCod)},"${cod}")-SUMIFS(${det(cCre)},${det(cQuien)},"${crit}",${det(cCod)},"${cod}")`
+    const o = otras.length ? `-SUMIFS($E$${otrasDesde}:$E$${otrasHasta},$C$${otrasDesde}:$C$${otrasHasta},"${tit} ·*",$D$${otrasDesde}:$D$${otrasHasta},"${cod}")` : ""
+    return `${q(`${tit} ·*`)}+${q(`entró a ${tit} ·*`)}${o}`
+  }
+  const filaCtrl1 = h.length + 1
+  let conFormula = 0
   for (const k of claves) {
     const [tit, cod] = k.split("|"), n = h.length + 1
     const cu = desdeCuotas.get(k) ?? 0, ba = conTpl.get(k) ?? 0, si = sinTpl.get(k) ?? 0
-    h.push([tit, cod, cu, ba, { t: "n", f: `C${n}-D${n}`, v: r2(cu - ba) },
+    const ok = hayDet && Math.abs(simulado(tit, cod) - cu) < 0.01
+    if (ok) conFormula++
+    h.push([tit, cod, ok ? { t: "n", f: formulaCuotas(tit, cod), v: cu } : cu, ba, { t: "n", f: `C${n}-D${n}`, v: r2(cu - ba) },
       { t: "s", f: `IF(ABS(E${n})<1,"✓","⚠️ no da")`, v: Math.abs(cu - ba) < 1 ? "✓" : "⚠️ no da" }, si, { t: "n", f: `D${n}+G${n}`, v: r2(ba + si) }])
   }
-  h.push([], ["«Total del banco con ese código» es lo que ven las cuentas de los socios (14.1) para esa cuenta: lo de templates + lo directo."])
+  const filaCtrlN = h.length
+  h.push([], [`«Desde las cuotas» es una fórmula sobre el detalle de arriba y las otras puntas (${conFormula} de ${claves.length} renglones); «Banco» y «Banco SIN template» son los movimientos del extracto. «Total del banco con ese código» es lo que ven las cuentas de los socios (14.1): lo de templates + lo directo.`])
 
   // 🧮 JMS 09/11 (A2): «¿hay algo que no cuadra?» — el TOTAL de arriba y el «Total del banco» NO miden lo mismo, y la diferencia se explica
   // al peso: el control resta las entradas (las otras puntas) y suma lo directo; el resumen suma lo que no tiene código de cuenta corriente.
-  // Se muestra el paso de uno al otro, renglón por renglón, para que ninguna diferencia quede sin explicar a la vista.
-  const IMP = (v: number) => ({ t: "n", v, z: MONEDA_AR }), IMP_TOT = (v: number) => ({ t: "n", v, z: MONEDA_AR, s: ESTILO_TOT })
+  // Con FÓRMULAS (C2): cada paso apunta a lo que suma, y el cierre se compara contra el TOTAL de arriba.
+  const F = (f: string, v: number) => ({ t: "n", f, v, z: MONEDA_AR }), F_TOT = (f: string, v: number) => ({ t: "n", f, v, z: MONEDA_AR, s: ESTILO_TOT })
   const enClaves = new Set(claves)
   const totalArriba = r2(suman.reduce((t, x) => t + x.c.monto, 0))
   const ctrlCuotas = r2(claves.reduce((t, k) => t + (desdeCuotas.get(k) ?? 0), 0))
   const totOtras = r2(otras.reduce((t, x) => t - x.c.monto, 0))
-  const fuera = new Map<string, number>()
+  const fuera = new Map<string, { efecto: string; codigo: string; v: number }>()
   for (const { c, a } of suman) {
     const tit = c.banco?.titular ?? ""
     if (a.codigo && tit && !tit.includes(" + ") && enClaves.has(clave(tit, a.codigo))) continue
-    const k = `${a.efecto}${a.codigo ? ` (código «${a.codigo}»)` : " (sin código)"}`
-    fuera.set(k, r2((fuera.get(k) ?? 0) + c.monto))
+    const k = `${a.efecto}|${a.codigo}`, ant = fuera.get(k)
+    fuera.set(k, { efecto: a.efecto, codigo: a.codigo, v: r2((ant?.v ?? 0) + c.monto) })
   }
-  const totFuera = r2([...fuera.values()].reduce((t, v) => t + v, 0))
+  const totFuera = r2([...fuera.values()].reduce((t, x) => t + x.v, 0))
   const bancoAtado = r2(claves.reduce((t, k) => t + (conTpl.get(k) ?? 0), 0)), directos = r2(claves.reduce((t, k) => t + (sinTpl.get(k) ?? 0), 0))
   const resto = r2(totalArriba - ctrlCuotas - totOtras - totFuera)
   h.push([], [TITULO_TABLA("DE UN TOTAL AL OTRO — el TOTAL de arriba y el «Total del banco» miden cosas distintas; así se pasa de uno al otro")])
-  h.push([ENCABEZADO_TABLA("Paso"), ENCABEZADO_TABLA(""), ENCABEZADO_TABLA("Importe")])
-  h.push(["Control: «Desde las cuotas» (suma de la columna)", "", IMP(ctrlCuotas)])
-  h.push(["+ las OTRAS PUNTAS: el control las resta (entraron a otra cuenta); arriba no suman", "", IMP(totOtras)])
-  for (const [k, v] of [...fuera.entries()].sort((x, y) => Math.abs(y[1]) - Math.abs(x[1])))
-    h.push([`+ arriba sin renglón en el control: ${k}`, "", IMP(v)])
-  if (Math.abs(resto) >= 0.01) h.push(["⚠️ sin explicar", "", IMP(resto)])
-  h.push([TOTAL_TEXTO(`= TOTAL de arriba (Retiros y aportes) ${Math.abs(resto) < 0.01 ? "✓ cierra al peso" : "⚠️ no cierra"}`), TOTAL_TEXTO(""), IMP_TOT(totalArriba)])
+  h.push([ENCABEZADO_TABLA("Paso"), ENCABEZADO_TABLA(""), ENCABEZADO_TABLA("Importe"), ENCABEZADO_TABLA("¿Cierra?")])
+  const pasoDesde = h.length + 1
+  h.push(["Control: «Desde las cuotas» (suma de la columna)", "", F(`SUM(C${filaCtrl1}:C${filaCtrlN})`, ctrlCuotas)])
+  h.push(["+ las OTRAS PUNTAS: el control las resta (entraron a otra cuenta); arriba no suman", "", filaTotOtras ? F(`E${filaTotOtras}`, totOtras) : F("0", 0)])
+  for (const x of [...fuera.values()].sort((p, q) => Math.abs(q.v) - Math.abs(p.v))) {
+    const nro = nroDe.get(categoria(x.efecto)) ?? ""
+    const crit = x.codigo ? `"${x.codigo}"` : `"="`
+    const f = hayDet && nro ? `SUMIFS(${det(cDeb)},${det(cNro)},${nro},${det(cCod)},${crit})-SUMIFS(${det(cCre)},${det(cNro)},${nro},${det(cCod)},${crit})` : ""
+    h.push([`+ arriba sin renglón en el control: ${x.efecto} ${x.codigo ? `(código «${x.codigo}»)` : "(sin código)"} — Nro ${nro} del resumen`, "", f ? F(f, x.v) : { t: "n", v: x.v, z: MONEDA_AR }])
+  }
+  const pasoHasta = h.length
+  const filaTotArriba = iTot >= 0 ? iTot + 1 : 0
+  const nCierre = h.length + 1
+  h.push([TOTAL_TEXTO("= suma de los pasos  ·  contra el TOTAL de arriba (Retiros y aportes)"), TOTAL_TEXTO(""), F_TOT(`SUM(C${pasoDesde}:C${pasoHasta})`, r2(ctrlCuotas + totOtras + totFuera)),
+    filaTotArriba ? { t: "s", f: `IF(ABS(C${nCierre}-C${filaTotArriba})<0.01,"✓ cierra al peso con el TOTAL de arriba","⚠️ no cierra: "&TEXT(C${nCierre}-C${filaTotArriba},"#,##0.00"))`,
+      v: Math.abs(resto) < 0.01 ? "✓ cierra al peso con el TOTAL de arriba" : "⚠️ no cierra" } : ""])
   h.push([])
-  h.push(["Control: «Banco, atado a una cuota» (= «Desde las cuotas», renglón por renglón ✓)", "", IMP(bancoAtado)])
-  h.push(["+ «Banco SIN template» (retiros directos: van a la cuenta del socio, 14.1, y no a este resumen de cuotas)", "", IMP(directos)])
-  h.push([TOTAL_TEXTO("= «Total del banco con ese código»"), TOTAL_TEXTO(""), IMP_TOT(r2(bancoAtado + directos))])
+  const nB = h.length + 1
+  h.push(["Control: «Banco, atado a una cuota» (= «Desde las cuotas», renglón por renglón ✓)", "", F(`SUM(D${filaCtrl1}:D${filaCtrlN})`, bancoAtado)])
+  h.push(["+ «Banco SIN template» (retiros directos: van a la cuenta del socio, 14.1, y no a este resumen de cuotas)", "", F(`SUM(G${filaCtrl1}:G${filaCtrlN})`, directos)])
+  const nBT = h.length + 1
+  h.push([TOTAL_TEXTO("= «Total del banco con ese código»"), TOTAL_TEXTO(""), F_TOT(`C${nB}+C${nB + 1}`, r2(bancoAtado + directos)),
+    { t: "s", f: `IF(ABS(C${nBT}-SUM(H${filaCtrl1}:H${filaCtrlN}))<0.01,"✓ = la columna «Total del banco»","⚠️ no da")`, v: "✓ = la columna «Total del banco»" }])
   return h
 }
 
@@ -430,9 +475,17 @@ export function hojaInconsistencias(cuotas: CuotaTemplate[], etiqueta: string, s
   }
   // 🔗 JMS 09/11: cada tipo del resumen lleva a su primer renglón del detalle
   const iDet = h.findIndex(r => r[0] && typeof r[0] === "object" && (r[0] as { v?: unknown }).v === "Tipo" && h.indexOf(r) > 4)
+  // 🧮 JMS 09/11 (C3): el resumen por tipo con FÓRMULAS sobre el detalle de abajo (Tipo en A, Importe en F)
+  const nombresTipo = new Set(TIPOS.map(([t]) => t))
+  const rangoA = `$A$${iDet + 2}:$A$${h.length}`, rangoF = `$F$${iDet + 2}:$F$${h.length}`
   for (let k = 4; k < h.length && k < iDet; k++) {
     const t = h[k][0]
     if (typeof t !== "string") continue
+    if (nombresTipo.has(t) && iDet >= 0) {
+      const crit = t.replace(/~/g, "~~").replace(/\*/g, "~*").replace(/\?/g, "~?").replace(/"/g, '""')
+      h[k][1] = { t: "n", f: `COUNTIF(${rangoA},"${crit}")`, v: (h[k][1] as { v: number }).v, z: "0" }
+      h[k][2] = { t: "n", f: `SUMIF(${rangoA},"${crit}",${rangoF})`, v: h[k][2] as number }
+    }
     const d = h.findIndex((r, n) => n > iDet && r[0] === t)
     if (d >= 0) h[k][0] = { t: "s", v: `${t} ➜`, l: { Target: `#'Inconsistencias'!A${d + 1}`, Tooltip: "Ir al primer renglón de este tipo" } }
   }
