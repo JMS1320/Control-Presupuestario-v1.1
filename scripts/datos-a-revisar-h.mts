@@ -110,6 +110,13 @@ export async function armarDatosARevisar(sb: any, cuotas: CuotaTemplate[], solap
     const b = h.findIndex(r => typeof r[0] === "string" && (r[0] as string).startsWith(`${p.id} · `))
     if (k >= 0 && b >= 0) h[k][0] = { t: "s", v: `${p.id} ➜`, l: { Target: `#'${SOLAPA_DATOS}'!A${b + 1}`, Tooltip: `Ir a ${p.id}` } }
   }
+  // 👁️ JMS 10/11: «estos la verdad que no sé qué son, pero podrían estar presentes así los veo» — los pendientes abiertos que NO cambian los
+  // números del balance quedan a la vista acá (su detalle vive en PENDIENTES.md, con su ID).
+  h.push([], ["PENDIENTES ABIERTOS QUE NO CAMBIAN LOS NÚMEROS DEL BALANCE (para que estén a la vista; el detalle está en PENDIENTES.md)"],
+    ["A-BUG-1588", "Un pago de Sueldos llegó a tener DOS transferencias vinculadas (el de Alondra Olivo y el reintegro a Vulcano, los dos de $ 84.000). El dato ya se corrigió (script 250); falta encontrar por qué la conciliación de Sueldos lo dejó pasar y un control que lo avise."],
+    ["A-BUG-1589", "La subcuenta puesta en el MOVIMIENTO del banco no llegó a su CUOTA (9 cuotas de Otros Gastos que decían INFORMATICA sólo en el movimiento). El dato ya se corrigió (script 249); falta que no vuelva a pasar."],
+    ["A-FEAT-1586", "Toda transferencia de MA con alguien de la familia tiene que aparecer para auditar: ¿es contra una factura o es FLIA? (tu regla del 10/11). Falta construir el control."],
+    ["A-FEAT-1590", "Cierre semestral conjunto de MSA, PAM y MA: armar los cortes al 31/12 y al 30/06 de las tres, con aviso antes y control después. Para después del balance."])
   return h
 }
 
