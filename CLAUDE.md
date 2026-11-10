@@ -1316,6 +1316,14 @@ ese lugar afecte a todo lo que lo usa.
   hacerlo aparecer en la 📎 de ese renglón**: la factura por `estadoArchivoDigital`, las cuotas de template por
   `documentosDeCuotas` + `documentosDelRenglon` (`lib/documentos/del-renglon.ts`). Vincularlo y que no se vea es no haberlo
   vinculado. → [A-FEAT-1576](PENDIENTES.md#a-feat-1576).
+- 🔍 **Todo lo que JMS tiene que AUDITAR o DECIDIR lleva la FICHA COMPLETA de cada renglón** *(regla del usuario 2026-11-10,
+  después de pedirlo varias veces: «yo pretendo esto siempre cuando tengo que auditar cosas. Sin esto nunca voy a poder auditar
+  nada… son todos los datos donde puede haber información que uno precisa, como un detective»)*. La ficha es: **fecha · quién
+  pagó (la cuenta) · importe (y US$ con su TC si fue en dólares) · a quién (proveedor / beneficiario + CUIT) · detalle · template y
+  su responsable · cuenta contable · comprobante que dice que pagó · código contable e interno de hoy · descripción del banco**. Vale
+  para Excels de auditoría, propuestas, «Datos a revisar», inconsistencias y respuestas en el chat. *Motivo, el caso: el pago del
+  18/06/26 de la caja de ahorro de PAM no se podía decidir con «PAGO CON TRANSFERENCIA»; con «FARMACITY SA» se decidió en un
+  segundo (gasto médico de MA → DIST MA).* Un renglón sin ficha obliga a salir a buscar, y ahí se traba la auditoría.
 - Si la vista tiene **export (Excel/PDF)**, al sumarle un campo se actualiza también el export.
   Motivo: el usuario usa las descargas como registro fuera de la app; si el export queda viejo,
   pierde datos que sí ve en pantalla.
