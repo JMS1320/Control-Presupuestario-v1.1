@@ -58,7 +58,19 @@ agregarLibroH(wb as any, templates, ej.etiqueta, meses, { cuotas: cuotasImp, ...
 // 📋 --revisar: la solapa «Datos a revisar» (cada punto de la revisión de datos con su contexto), antes del Índice
 if (process.argv.includes("--revisar")) {
   const solapaDe = (c: any) => { const r = String(c.responsable ?? "").split("/")[0].trim().toUpperCase(); const n = nombreSolapaGrupo({ responsable: r, agrupadora: (c.agrupadoraTemplate ?? "").trim() || SIN_GRUPO }, "H"); return wb.SheetNames.includes(n) ? n : "" }
-  agregarHoja(wb as any, SOLAPA_DATOS, await armarDatosARevisar(sb, [...templates.detalle, ...(templates.aCuentaSocio ?? [])] as any, solapaDe), ANCHOS_DATOS.map((ancho, i) => (i === 3 ? { ancho, z: "#,##0.00" } : { ancho })) as any)
+  // 🔗 la primera fila de una solapa cuyo detalle cumple la condición (por los nombres del encabezado del detalle)
+  const filaDe = (solapa: string, cumple: (f: Record<string, string>) => boolean) => {
+    const ws = (wb as any).Sheets[solapa]; if (!ws) return 0
+    const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, blankrows: true })
+    const hi = rows.findIndex(r => Array.isArray(r) && r[0] === "Nro" && r.includes("Marca")); if (hi < 0) return 0
+    const H = rows[hi].map((x: unknown) => String(x ?? ""))
+    for (let i = hi + 1; i < rows.length; i++) {
+      const r = rows[i]; if (!Array.isArray(r) || r[0] == null || r[0] === "") break
+      if (cumple(Object.fromEntries(H.map((k: string, j: number) => [k, String(r[j] ?? "")])))) return i + 1
+    }
+    return 0
+  }
+  agregarHoja(wb as any, SOLAPA_DATOS, await armarDatosARevisar(sb, [...templates.detalle, ...(templates.aCuentaSocio ?? [])] as any, solapaDe, filaDe), ANCHOS_DATOS.map((ancho, i) => (i === 3 ? { ancho, z: "#,##0.00" } : { ancho })) as any)
   reordenarSolapas(wb as any, [SOLAPA_DATOS, ...wb.SheetNames.filter(n => n !== SOLAPA_DATOS)])
 }
 // 📝 --cambios: la solapa «Cambios de presentación» al final, con un link desde el Índice

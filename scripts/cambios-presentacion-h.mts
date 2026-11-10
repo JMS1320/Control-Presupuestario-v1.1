@@ -109,6 +109,8 @@ export const CAMBIOS: unknown[][] = [
     "Otros Gastos sin decir qué", "Otros Gastos · MANTENIMIENTO EDILICIO (Victor, chalet) · MAIZ · ROLLOS…"],
   [47, "Datos (script 238): los 2 pagos a Victor (albañil del chalet, Caja Sigot 16 y 19/05) vinculados a sus cuotas de Otros Gastos, con CTA MA X / DIST MA, cuenta nueva MANTENIMIENTO EDILICIO y centro de costo Chalet.", "(sin agrupadora), Inconsistencias, Retiros",
     "2 × $ 400.000 conciliadas sin pago (🔴)", "✓ vinculadas a la Caja Sigot; ya no son inconsistencia"],
+  [48, "Datos a revisar · DR1 «¿Qué estás viendo?»: un renglón por cada caso (DR1.A1 a A5) que lleva a la PRIMERA cuota de ese template en su solapa y explica qué pasa y qué se propone, con lugar para la respuesta.", "«Datos a revisar»",
+    "Sólo la lista de 96 cuotas", "DR1.A1 Consumos MA 2025 a nombre de PAM ➜ fila 11 · … · DR1.A3 Gastos Médicos sin año en «Fijos BA MA»"],
   [22, "Nueva solapa «INCONSISTENCIAS»: todo lo que hay que mirar de todas las solapas, por tipo, con link a la solapa de la cuota.", "Solapa «Inconsistencias» (después de Gastos Libertad)",
     "Había que recorrer las 51 solapas buscando 🔴 / 🟡 / ⚠️", "🔴 sin pagar · 🟡 sin movimiento · 🟡 el banco movió otro importe · 🟡 en dólares · ⚠️ código · ⚪ en $ 0 (al final): cada renglón con «Ir a» su solapa"],
   [],
