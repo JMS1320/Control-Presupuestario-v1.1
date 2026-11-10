@@ -11,6 +11,7 @@ import { aplicarVistas } from "../lib/balance/formato-excel"
 import { agregarHoja, vistasDe } from "../lib/balance/export-libro-diario"
 import { cargarProblemasDeModalidad } from "../lib/templates/modalidad"
 import { leerMovimientosDeCuotas } from "../lib/balance/movimientos-de-cuotas"
+import { TABLAS_CON_VINCULO_ARCA } from "../lib/conciliacion/tablas-con-vinculo-arca"
 import { fechasReales } from "../lib/excel/fechas-reales"
 
 const env = Object.fromEntries(readFileSync(".env.local", "utf8").split(/\r?\n/).filter(l => l.includes("=") && !l.trim().startsWith("#"))
@@ -44,12 +45,28 @@ const SUBT = (v: string) => ({ t: "s", v, s: { font: { bold: true, color: { rgb:
 /** Alto (en puntos) para que un texto entre entero en un ancho de `ancho` caracteres: Excel no autoajusta celdas unidas. */
 const altoTexto = (txt: string, ancho: number) => Math.max(20, Math.ceil(txt.length / Math.max(20, ancho * 0.95) + 0.3) * 15 + 6)
 const resumen: Array<{ id: string; solapa: string; que: string; cuantos: number; importe: number; hacer: string }> = []
-interface OpcionesHoja { resuelto?: string; tituloVa?: string; notaVa?: string; sinIndice?: boolean; filasSubtitulo?: Set<number> }
+type TipoFila = "resp" | "tmpl" | "det" | "total"
+interface OpcionesHoja { respuestaDe?: (i: number) => string | undefined; resuelto?: string; tituloVa?: string; notaVa?: string; sinIndice?: boolean; filasSubtitulo?: Set<number>; tipoFila?: (i: number) => TipoFila | undefined; cuantos?: number }
+const ESTILO_FILA: Record<string, Record<string, unknown>> = {
+  resp: { font: { bold: true, color: { rgb: "FFFFFFFF" } }, fill: { patternType: "solid", fgColor: { rgb: "FF1F4E3D" } } },
+  total: { font: { bold: true, color: { rgb: "FFFFFFFF" } }, fill: { patternType: "solid", fgColor: { rgb: "FF0B2E24" } } },
+  tmpl: { font: { bold: true, color: { rgb: "FF1F4E3D" } }, fill: { patternType: "solid", fgColor: { rgb: "FFDDEBF7" } }, alignment: { wrapText: true, vertical: "top" } },
+}
+/** Le pone el estilo del tipo de renglón a cada celda, sin perder el valor, la fórmula ni el formato de número. */
+const conEstiloFila = (f: unknown[], tipo: TipoFila) => f.map(v => {
+  const s = ESTILO_FILA[tipo]; if (!s) return v
+  if (v && typeof v === "object" && "t" in (v as object)) return { ...(v as object), s: { ...((v as { s?: object }).s ?? {}), ...s } }
+  return { t: typeof v === "number" ? "n" : "s", v: v ?? "", s }
+})
 function hoja(id: string, solapa: string, titulo: string, que: string, hacer: string, porque: string, enc: string[], filas: unknown[][], importe: number, anchos: number[], o: OpcionesHoja = {}) {
   const h: unknown[][] = [[{ t: "s", v: "⬅ Resumen", l: { Target: "#'Resumen'!A1" } }], [T(`${id} · ${titulo}`)], [], [C("Qué pasa"), N(que)], [C("Qué se haría"), N(hacer)], [C("Por qué"), N(porque)],
     [C(o.resuelto ? "Estado" : "¿Va todo?"), o.resuelto ? VERDE(o.resuelto) : VA(), N(o.resuelto ? "Ya está aplicado: los renglones de abajo quedan como registro de lo que se hizo." : (o.notaVa ?? "← escribí «sí», «no» o «sí salvo…». Si querés decidir renglón por renglón, usá la columna «¿Va?» de abajo."))],
     [], [...enc.map(C), C(o.tituloVa ?? "¿Va?"), C("Comentario")]]
-  filas.forEach((f, i) => h.push(o.filasSubtitulo?.has(i) ? [SUBT(String(f[0])), ...f.slice(1).map(() => ""), VA(), ""] : [...f, o.resuelto ? "" : VA(), ""]))
+  filas.forEach((f, i) => {
+    const tipo = o.tipoFila?.(i)
+    if (tipo) h.push([...conEstiloFila(f, tipo), tipo === "tmpl" ? { ...VA(), v: o.respuestaDe?.(i) ?? "" } : conEstiloFila([""], tipo)[0], tipo === "tmpl" ? "" : conEstiloFila([""], tipo)[0]])
+    else h.push(o.filasSubtitulo?.has(i) ? [SUBT(String(f[0])), ...f.slice(1).map(() => ""), VA(), ""] : [...f, o.resuelto ? "" : VA(), ""])
+  })
   // 📐 JMS 10/11: «está raro de formatos, no lo puedo leer». Las explicaciones iban en UNA celda angosta (la columna B de la tabla) y
   // Excel estiraba el renglón para abajo. Ahora ocupan todo el ancho de la tabla (celdas unidas) con el alto calculado.
   const ultima = XLSX.utils.encode_col(enc.length + 1)
@@ -57,7 +74,7 @@ function hoja(id: string, solapa: string, titulo: string, que: string, hacer: st
   unirCeldas(h, ["A2:" + ultima + "2", ...[4, 5, 6].map(r => `B${r}:${ultima}${r}`), `C7:${ultima}7`])
   for (const [r, txt] of [[4, que], [5, hacer], [6, porque]] as const) altoDeFila(h, r, altoTexto(txt, anchoTexto))
   agregar(solapa, h, anchos, `A9:${ultima}${h.length}`, [3, 8])
-  if (!o.sinIndice) resumen.push({ id, solapa, que: titulo, cuantos: filas.length - (o.filasSubtitulo?.size ?? 0), importe, hacer: o.resuelto ? `${o.resuelto} — ${hacer}` : hacer })
+  if (!o.sinIndice) resumen.push({ id, solapa, que: titulo, cuantos: o.cuantos ?? filas.length - (o.filasSubtitulo?.size ?? 0), importe, hacer: o.resuelto ? `${o.resuelto} — ${hacer}` : hacer })
 }
 
 // 🔍 LA FICHA (regla CLAUDE.md 10/11, «FICHA COMPLETA»): cada renglón trae todo lo que puede servir para decidir, como un detective.
@@ -100,50 +117,154 @@ hoja("P1", "P1 DIST MA", "Lo que pagó PAM de gastos de MA: falta el código «D
   p1.reduce((t: number, m: any) => t + Number(cuotaDe.get(m.template_cuota_id).monto), 0), [...ANCHOS_FICHA, 22, 10, 30],
   { resuelto: hechos1 === p1.length ? "✅ RESUELTO (script 246, 10/11)" : undefined })
 
-// ── P2 · Cuotas en $ 0 «conciliado» sin pago. JMS 10/11: «no es algo que puedo decirte para todos lo mismo» → una respuesta POR TEMPLATE
-// (solapa P2), y el detalle cuota por cuota aparte (P2 detalle). La respuesta nueva para «correctamente no hubo nada que pagar» es el
-// estado «Nada a pagar» (JMS 10/11; a construir: A-FEAT-1587).
+// 🧭 JMS 10/11: «sin hacer más de una solapa, hacé una segmentación: MSA todo junto, MA abajo, PAM abajo, con subtotales; después por template y
+// por fecha… lo mismo para deudas». Una solapa por tema: renglón del RESPONSABLE (subtotal) → renglón del TEMPLATE (ahí se contesta) → sus cuotas.
+// Y la columna «Posible pago sin vincular»: una cuota en $ 0 o sin pagar no tiene comprobante ni beneficiario propio — lo que sirve para decidir
+// es si en alguna cuenta hay un pago suelto que sea suyo (como el anticipo de PAM de agosto, que apareció así).
+const SEG = [...FICHA, "Posible pago sin vincular (busqué en todas las cuentas)", "Mi propuesta", "Por qué"]
+const ANCHOS_SEG = [...ANCHOS_FICHA, 62, 16, 54, 28, 30]
+const ORDEN_RESP = ["MSA", "MA", "PAM"]
+const ordenResp = (r: string) => { const i = ORDEN_RESP.indexOf(r.toUpperCase().split(" ")[0]); return i < 0 ? 9 : i }
+// los movimientos SIN vincular de todas las cuentas (sin cuota, sin factura, sin sueldo, sin anticipo), una sola lectura
+const sueltos: Array<{ fecha: string; imp: number; cuenta: string; txt: string; ver: string }> = []
+for (const t of TABLAS_CON_VINCULO_ARCA) {
+  const q = () => (t.schema === "public" ? sb.from(t.tabla) : sb.schema(t.schema).from(t.tabla)).select("*").gte("fecha", "2025-06-01").lte("fecha", "2026-08-31").order("id")
+  let data: any[] = []
+  try { data = await todas(q) } catch { continue }
+  for (const m of data) {
+    if (m.template_cuota_id || m.comprobante_arca_id || m.sueldo_pago_id || m.anticipo_id || m.comprobante_venta_id) continue
+    const imp = Number(m.debitos) || 0; if (imp <= 0) continue
+    const partes = [m.descripcion, m.detalle, m.leyendas_adicionales_1, m.leyendas_adicionales_2, m.concepto, m.categ].map(limpio).filter(Boolean)
+    sueltos.push({ fecha: String(m.fecha).slice(0, 10), imp, cuenta: t.cuenta ?? t.tabla, txt: partes.join(" ").toLowerCase(),
+      ver: `${dmy(m.fecha)} · ${t.cuenta ?? t.tabla} · $ ${imp.toLocaleString("es-AR", { minimumFractionDigits: 2 })} · «${[m.descripcion, m.detalle, m.leyendas_adicionales_1].map(limpio).filter(Boolean).join(" · ").slice(0, 90)}»` })
+  }
+}
+/** Palabras con que el banco suele nombrar el pago de este template. */
+function palabrasDe(nombre: string, extra: string[] = []): string[] {
+  const n = nombre.toLowerCase(), w: string[] = []
+  if (/anticipo|sicore|autonom|aportes|uatre|ganancias/.test(n)) w.push("afip", "arca", "vep")
+  if (/iibb/.test(n)) w.push("arba", "iibb")
+  if (/metrogas/.test(n)) w.push("metrogas")
+  if (/expensas/.test(n)) w.push("consorcio", "expensa")
+  if (/^aca/.test(n)) w.push("automovil", "automóvil", " aca")
+  if (/internet nz/.test(n)) w.push("orbith")
+  if (/automotores|red vial/.test(n)) w.push("municipalidad", "san pedro", "red vial", "automotor")
+  if (/abl/.test(n)) w.push("abl", "gcba", "agip")
+  if (/tarjeta visa/.test(n)) w.push("pago tarjeta visa", "visa")
+  if (/uatre/.test(n)) w.push("uatre")
+  for (const nom of ["andres", "jose", "manuel", "mechi", "soledad"]) if (n.includes(nom)) w.push(nom)
+  return [...w, ...extra.map(x => x.toLowerCase()).filter(x => x.length >= 4)]
+}
+/** Hasta 2 pagos sueltos que podrían ser de esta cuota: por importe (el de la cuota, o el típico del template) y/o por palabras, cerca de la fecha. */
+function candidatos(fecha: string, monto: number, tipico: number, palabras: string[], ya: Set<string>): string[] {
+  const ref = monto > 0 ? monto : tipico
+  const out: Array<[number, string]> = []
+  for (const m of sueltos) {
+    const dias = Math.abs((Date.parse(m.fecha) - Date.parse(fecha)) / 864e5); if (dias > 40) continue
+    // estricto a propósito: un candidato flojo confunde más de lo que ayuda (en la 1ª prueba salía el Estudio Contable para los retiros).
+    // Por PALABRAS del banco siempre; por IMPORTE solo, únicamente si la cuota tiene importe, casi exacto y cercano.
+    const porTexto = palabras.some(p => m.txt.includes(p)) && (ref <= 0 || Math.abs(m.imp - ref) <= 0.6 * ref)
+    const porImporte = monto > 0 && Math.abs(m.imp - monto) <= Math.max(1, 0.005 * monto) && dias <= 10
+    const puntos = (porImporte ? 2 : 0) + (porTexto ? 2 : 0) - dias / 40
+    if (porTexto || porImporte) out.push([puntos, m.ver])
+  }
+  return out.sort((a, b) => b[0] - a[0]).map(x => x[1]).filter(v => !ya.has(v)).slice(0, 2)
+}
+/** Si un pago suelto NOMBRA al template (ej. «Sicore 09 - 1ra»), la propuesta no puede ser «Nada a pagar»: pasa a «Revisar» y se dice por qué. */
+function ojo(t: { nombre: string; propuesta: string; porque: string; cand: string[] }) {
+  const clave = t.nombre.toLowerCase().replace(/\(.*$/, "").split(/[^a-záéíóúñ0-9]+/).find(w => w.length >= 4 && !/^(mensual|cuota|anual|semestral|retiro|tarjeta|aportes|libertad)$/.test(w))
+  if (!clave) return
+  const nombra = t.cand.filter(c => c.toLowerCase().includes(clave))
+  if (nombra.length && t.propuesta !== "Ya decidido") { t.propuesta = "Revisar"; t.porque = `OJO: hay ${nombra.length === 1 ? "un pago sin vincular que nombra" : "pagos sin vincular que nombran"} «${clave}» (columna de al lado): puede que se haya pagado y falte vincular. ${t.porque}` }
+}
+interface Tmpl { respuesta?: string; resp: string; nombre: string; cuenta: string; aQuien: string; propuesta: string; porque: string; cuotas: Array<{ fecha: string; fila: unknown[] }>; cand: string[] }
+/** Arma los renglones segmentados (responsable → template → cuotas por fecha) con subtotales en FÓRMULA (el control se ve). */
+function segmentar(tmpls: Tmpl[]) {
+  const filas: unknown[][] = [], tipos: TipoFila[] = [], respuestas: Array<string | undefined> = []
+  const fila = (i: number) => 10 + i  // el encabezado de la tabla está en la fila 9
+  const vacio = (n: number) => Array.from({ length: n }, () => "")
+  const respTotales: Array<{ f: number; v: number }> = []
+  for (const r of [...new Set(tmpls.map(t => t.resp))].sort((a, b) => ordenResp(a) - ordenResp(b) || a.localeCompare(b))) {
+    const ts = tmpls.filter(t => t.resp === r).sort((a, b) => a.nombre.localeCompare(b.nombre))
+    const iResp = filas.length; filas.push([]); tipos.push("resp")
+    const tTot: Array<{ f: number; v: number }> = []
+    for (const t of ts) {
+      const iT = filas.length; filas.push([]); tipos.push("tmpl"); respuestas[iT] = t.respuesta
+      const cs = [...t.cuotas].sort((a, b) => a.fecha.localeCompare(b.fecha))
+      for (const c of cs) { filas.push([...c.fila, ...vacio(SEG.length - c.fila.length)]); tipos.push("det") }
+      const v = cs.reduce((s, c) => s + Number((c.fila[2] as { v?: number })?.v ?? 0), 0)
+      filas[iT] = [`${t.nombre}  (${cs.length} cuota${cs.length === 1 ? "" : "s"})`, "", { t: "n", f: cs.length ? `SUM(C${fila(iT + 1)}:C${fila(iT + cs.length)})` : "0", v, z: MON }, "", t.aQuien, "", t.nombre, t.resp, t.cuenta,
+        ...vacio(5), t.cand.join("\n") || "(no encontré ninguno)", t.propuesta, t.porque]
+      tTot.push({ f: fila(iT), v })
+    }
+    const v = tTot.reduce((s, x) => s + x.v, 0)
+    const nCuotas = ts.reduce((s, t) => s + t.cuotas.length, 0)
+    filas[iResp] = [`${r} — ${ts.length} template${ts.length === 1 ? "" : "s"} · ${nCuotas} cuota${nCuotas === 1 ? "" : "s"}`, "", { t: "n", f: tTot.map(x => `C${x.f}`).join("+") || "0", v, z: MON }, ...vacio(SEG.length - 3)]
+    respTotales.push({ f: fila(iResp), v })
+  }
+  filas.push([`TOTAL — ${tmpls.length} templates · ${tmpls.reduce((s, t) => s + t.cuotas.length, 0)} cuotas`, "", { t: "n", f: respTotales.map(x => `C${x.f}`).join("+") || "0", v: respTotales.reduce((s, x) => s + x.v, 0), z: MON }, ...vacio(SEG.length - 3)]); tipos.push("total")
+  return { filas, tipos, respuestas }
+}
+
+// ── P2 · Cuotas en $ 0 «conciliado» sin pago — por responsable, template y fecha
 const anio = Number(new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).slice(0, 4))
 const { problemas } = await cargarProblemasDeModalidad(sb, anio)
-const ceros = problemas.filter(p => p.tipo === "conciliada_en_cero").sort((a, b) => a.template.localeCompare(b.template))
+const ceros = problemas.filter(p => p.tipo === "conciliada_en_cero")
 const c2 = await cuotasPorId(ceros.flatMap(p => p.cuotas.map(c => c.id)))
-const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
-const mesCorto = (f: string | null) => (f ? `${MESES[Number(f.slice(5, 7)) - 1]}-${f.slice(2, 4)}` : "")
 /** Mi lectura de cada template (a confirmar por JMS), con lo que se sabe. */
 function lectura(nombre: string, conImporte: number): [string, string] {
-  if (/Anticipo Ganancias MSA/.test(nombre)) return ["Nada a pagar", "Lo confirmaste: MSA no tuvo anticipos (todos cubiertos)."]
-  if (/Anticipo Ganancias \/ Bs Pers PAM/.test(nombre)) return ["Revisar", "Agosto SÍ se pagó: $ 86.000,71 el 14/08/25 desde Galicia PAM a «IMPAFIP» («Anticipos PAM 1/5 - para 2025»), sin vincular. Octubre y diciembre: no encontré pago en las cuentas de PAM → A-DAT-100."]
+  if (/Anticipo Ganancias MSA/.test(nombre)) return ["Nada a pagar", "Lo confirmaste: MSA no tuvo anticipos (todos cubiertos). Se aplica cuando exista el estado «Nada a pagar» (A-FEAT-1587)."]
   if (/SICORE/.test(nombre)) return ["Nada a pagar", "Probable: quincenas sin retenciones que depositar (las quincenas con importe sí se pagaron)."]
   if (/IIBB/.test(nombre)) return ["Nada a pagar", conImporte ? "Probable: meses con saldo a favor (los meses con importe sí se pagaron)." : "Probable: en todo el ejercicio no hubo importe a pagar (saldo a favor)."]
   if (/^Retiro/.test(nombre)) return ["Nada a pagar", conImporte ? "Probable: ese mes no hubo retiro (los otros sí)." : "Probable: en todo el ejercicio no hubo retiro."]
-  if (/UATRE/.test(nombre)) return ["Revisar", "Los otros meses se pagaron: ¿estos meses no hubo nada que pagar, o falta vincular el pago?"]
-  if (/^Caja/.test(nombre)) return ["Revisar", "7 meses del tramo jul-25 → ene-26 en $ 0 y el resto con importe: puede ser que el movimiento a caja esté en otra cuota."]
-  return ["Revisar", "Los otros meses se pagaron: puede faltar vincular el pago de este mes (o no hubo que pagar)."]
+  if (/UATRE/.test(nombre)) return ["Revisar", "Los otros meses se pagaron: ¿estos meses no hubo nada que pagar, o falta vincular el pago? Mirá «Posible pago sin vincular»."]
+  return ["Revisar", "Los otros meses se pagaron: puede faltar vincular el pago de este mes (o no hubo que pagar). Mirá «Posible pago sin vincular»."]
 }
-const filasT: unknown[][] = []
+// lo que JMS ya contestó en la versión anterior de este archivo (P2) viaja a la nueva: no se le vuelve a preguntar
+const carpetaP = "- Comunicacion JMS Claude - Archivos/Balance/Excels trabajando con claude"
+const { readdirSync: rdP } = await import("node:fs")
+const numV = (f: string) => Number(f.match(/ v(\d+)\.xlsx$/)?.[1] ?? 1)
+const previa = rdP(carpetaP).filter(f => f.startsWith("Propuestas para aprobar - H para auditar (2026-11-10)") && f.endsWith(".xlsx")).sort((a, b) => numV(a) - numV(b)).pop()
+const yaContestado = new Map<string, string>()
+if (previa) {
+  const hp = XLSX.readFile(join(carpetaP, previa)).Sheets["P2 Ceros por template"]
+  if (hp) {
+    const a = XLSX.utils.sheet_to_json(hp, { header: 1, raw: false, defval: "" }) as string[][]
+    const enc = a[8] ?? [], iR = enc.findIndex(x => /^Tu respuesta/.test(x)), iC = enc.indexOf("Comentario")
+    for (const r of a.slice(9)) {
+      const nom = String(r[0] ?? "").replace(/\s*\(\d+ cuotas?\)\s*$/, "").replace(/\s*\([^)]*\)\s*$/, "").trim()
+      const txt = [r[iR], r[iC]].map(x => String(x ?? "").trim()).filter(Boolean).join(" · ")
+      if (nom && txt) yaContestado.set(nom, `(tu respuesta en la v${numV(previa)}) ${txt}`)
+    }
+  }
+}
+const tmplsP2: Tmpl[] = []
 for (const p of ceros) {
-  const cuotasDelEj = await todas(() => sb.from("cuotas_egresos_sin_factura").select("id, monto, fecha_estimada").eq("egreso_id", p.templateId).gte("fecha_estimada", "2025-07-01").lte("fecha_estimada", "2026-06-30").order("id"))
-  const conPlata = cuotasDelEj.filter((c: any) => Number(c.monto) > 0)
+  const cuotasDelEj = await todas(() => sb.from("cuotas_egresos_sin_factura").select("id, monto, fecha_estimada, estado").eq("egreso_id", p.templateId).gte("fecha_estimada", "2025-07-01").lte("fecha_estimada", "2026-06-30").order("id"))
+  const conPlata = cuotasDelEj.filter((c: any) => Number(c.monto) > 0 && c.estado !== "desactivado").map((c: any) => Number(c.monto)).sort((a: number, b: number) => a - b)
+  const tipico = conPlata.length ? conPlata[Math.floor(conPlata.length / 2)] : 0
   const una = c2.get(p.cuotas[0].id)
   const [propuesta, porQue] = lectura(p.template, conPlata.length)
-  filasT.push([p.template, una?.egreso?.responsable ?? "", p.anio ?? "", una?.categ || una?.egreso?.categ || "(sin cuenta)",
-    [una?.egreso?.nombre_quien_cobra, una?.egreso?.cuit_quien_cobra].filter(Boolean).join(" · "),
-    [...p.cuotas].sort((a, b) => String(a.fecha).localeCompare(String(b.fecha))).map(c => mesCorto(c.fecha)).join(", "), { t: "n", v: p.cuotas.length, z: "0" },
-    { t: "n", v: conPlata.length, z: "0" }, IMP(conPlata.reduce((t: number, c: any) => t + Number(c.monto), 0)), propuesta, porQue])
+  const quien = [una?.egreso?.nombre_quien_cobra, una?.egreso?.cuit_quien_cobra].filter(Boolean)
+  const palabras = palabrasDe(p.template, quien.map(String))
+  const ya = new Set<string>()
+  const cuotas = p.cuotas.map(c => {
+    const cand = /Anticipo Ganancias MSA/.test(p.template) ? [] : candidatos(String(c.fecha ?? ""), 0, tipico, palabras, ya)
+    cand.forEach(x => ya.add(x))
+    const f = ficha(null, "", c2.get(c.id), c.monto); f[13] = `${limpio(f[13])}${f[13] ? " · " : ""}año del template: ${p.anio ?? "—"} · cuotas con importe en el ejercicio: ${conPlata.length}${tipico ? ` (típico $ ${tipico.toLocaleString("es-AR", { minimumFractionDigits: 2 })})` : ""}`
+    return { fecha: String(c.fecha ?? ""), fila: [...f, cand.join("\n")] }
+  })
+  tmplsP2.push({ respuesta: yaContestado.get(p.template), resp: String(una?.egreso?.responsable ?? "?"), nombre: `${p.template}${p.anio ? ` (${p.anio})` : ""}`, cuenta: una?.categ || una?.egreso?.categ || "(sin cuenta)", aQuien: quien.join(" · "),
+    propuesta, porque: porQue, cuotas, cand: [...new Set(cuotas.flatMap(c => String(c.fila[FICHA.length] ?? "").split("\n").filter(Boolean)))].slice(0, 3) })
 }
+tmplsP2.forEach(ojo)
+const s2 = segmentar(tmplsP2)
 hoja("P2", "P2 Ceros por template", "Cuotas en $ 0 «conciliado» sin ningún pago: ¿qué pasó en cada template?",
-  `${ceros.reduce((t, p) => t + p.cuotas.length, 0)} cuotas en $ 0 de ${ceros.length} templates dicen «conciliado» pero no tienen ningún pago. No es lo mismo para todos (tu respuesta de la v2): hay meses donde correctamente no hubo nada que pagar, y otros donde se pagó y falta vincular (ej.: el anticipo de PAM de agosto).`,
-  "Por cada template, una de tres: «Nada a pagar» (correctamente en $ 0: la cuota pasa a ese estado nuevo, que el control acepta) · «Se pagó, falta vincular» (busco el pago y lo vinculo) · «Revisar» (queda como pendiente). Abajo, mi lectura de cada uno.",
-  "Tu regla: «si hay algo conciliado pero sin ningún tipo de pago vinculado, tiene que ir a inconsistencias». «Desactivado» no sirve (tu respuesta): significa la modalidad que no se usa. El estado «Nada a pagar» es el que pediste (A-FEAT-1587, a construir).",
-  ["Template", "Responsable", "Año", "Cuenta contable", "A quién (CUIT)", "Meses en $ 0", "Cuotas en $ 0", "Cuotas con importe en el ejercicio", "$ con importe en el ejercicio", "Mi propuesta", "Por qué"],
-  filasT, 0, [32, 12, 8, 22, 16, 44, 9, 11, 16, 16, 60, 26, 30],
-  { tituloVa: "Tu respuesta (Nada a pagar / Se pagó, falta vincular / Revisar)", notaVa: "← si estás de acuerdo con «Mi propuesta» en todos, escribí «sí». Si no, contestá template por template en la columna «Tu respuesta» de abajo. El detalle de cada cuota está en «P2 detalle»." })
-const filasP2 = ceros.flatMap(p => p.cuotas.map(c => ({ orden: `${p.template} ${c.fecha ?? ""}`, fila: [...ficha(null, "", c2.get(c.id), c.monto), p.anio ?? "", c.estado, "ninguno"] })))
-  .sort((a, b) => a.orden.localeCompare(b.orden)).map(x => x.fila)
-hoja("P2", "P2 detalle", "El detalle de cada cuota en $ 0 (para mirar; se contesta en «P2 Ceros por template»)",
-  `Las ${filasP2.length} cuotas, ordenadas por template y fecha, con su ficha completa.`, "Lo que contestes por template en la solapa «P2 Ceros por template».", "Si un mes de un template es distinto de los otros, anotalo en «Comentario».",
-  [...FICHA, "Año del template", "Estado hoy", "Pagos vinculados"], filasP2, 0, [...ANCHOS_FICHA, 10, 12, 12, 10, 30],
-  { sinIndice: true, notaVa: "← no hace falta contestar acá: se contesta por template en «P2 Ceros por template»." })
+  `${ceros.reduce((t, p) => t + p.cuotas.length, 0)} cuotas en $ 0 de ${ceros.length} templates dicen «conciliado» pero no tienen ningún pago. Ordenadas por responsable (MSA, MA, PAM, con su subtotal), después por template y por fecha. Ya resueltos y fuera de la lista: anticipos de PAM (5 de 5), Caja (7 proyecciones), Expensas Libertad (enero).`,
+  "Contestás en la celda amarilla del renglón celeste de cada template, una de tres: «Nada a pagar» (correctamente en $ 0: estado nuevo, A-FEAT-1587) · «Se pagó, falta vincular» (lo busco y lo vinculo) · «Revisar». Los renglones blancos de abajo de cada template son sus cuotas, con la ficha completa.",
+  "Una cuota en $ 0 no tiene pago, así que no tiene comprobante ni beneficiario propio: por eso la columna «Posible pago sin vincular» muestra, si existe, un pago suelto de cualquier cuenta que podría ser suyo (por importe típico del template, por palabras del banco y por fecha). Si no aparece ninguno, es más probable que no hubo nada que pagar.",
+  SEG, s2.filas, 0, ANCHOS_SEG,
+  { tipoFila: i => s2.tipos[i], respuestaDe: i => s2.respuestas[i], cuantos: tmplsP2.length, tituloVa: "Tu respuesta (Nada a pagar / Se pagó, falta vincular / Revisar)", notaVa: "← si estás de acuerdo con «Mi propuesta» en todos, escribí «sí». Si no, contestá en la celda amarilla de cada template (renglones celestes)." })
 
 // ── P3 · Otros Gastos sin subcuenta → INFORMATICA (✅ script 249: las 9 cuotas, por id)
 const ids249 = (JSON.parse(readFileSync("scripts/249-foto-antes.json", "utf8")) as Array<{ id: string }>).map(x => x.id)
@@ -188,26 +309,45 @@ const filaDR = (x: unknown[]) => [typeof x[1] === "number" ? { t: "n", v: x[1], 
 const ANCHOS_DR = [11, 22, 14, 24, 22, 14, 36, 14, 30, 34, 26, 12, 30]
 const sumaDR = (fs: unknown[][]) => fs.reduce((t, f) => t + Number((f[2] as { v?: number })?.v || 0), 0)
 
-// A1 · DR7 partido en grupos (JMS 10/11: «después nos va a quedar una sola con 8 renglones que vamos a resolver rápido»)
-const GRUPOS_A1: Array<[RegExp, string]> = [
-  [/Automotores/, "A1.1 · Automotores Gol, Tiguan y Toyota (en $ 0) — YA DECIDIDO: esperan la reliquidación de la Municipalidad SP (A-FEAT-1581). No hace falta contestar."],
-  [/^ACA/, "A1.2 · ACA (Automóvil Club), cuotas mensuales de $ 28.600 — ¿se pagaron (por otra cuenta o tarjeta) o son deuda al 30/06/26?"],
-  [/Tarjeta VISA PAM/, "A1.3 · Tarjeta VISA PAM y VISA PAM USS — ¿son resúmenes ya pagados que falta vincular, o deuda al cierre?"],
-  [/Internet NZ/, "A1.4 · Internet NZ (Orbith), $ 75.508,01 — ¿deuda o se pagaron?"],
-  [/Aportes Domesticas/, "A1.5 · Aportes de domésticas (en $ 0) — ¿«Nada a pagar»?"],
-  [/ABL Cochera/, "A1.6 · ABL de la cochera Libertad — el detalle dice «pagó JMS desde su CA el 30/01»: NO es deuda, falta cargar ese pago (¿como pago de JMS, CTA JMS?)."],
-  [/Red Vial/, "A1.7 · Red Vial de la quinta Roselló (cuotas 1 y 2, jun-26) — ¿deuda al cierre?"],
-]
+// A1 · DR7 (sin pagar al 30/06/26) — misma lógica que P2 (JMS 10/11: «lo mismo para deudas»): responsable → template → fecha, con subtotales.
+// Las filas salen de «Datos a revisar» del último H (así coinciden con la auditoría) y se completan con la cuota de la base (la ficha).
 const dr7 = dr.filter(x => x && x[0] === "DR7")
-const filasA1: unknown[][] = [], subt = new Set<number>()
-for (const [re, tit] of GRUPOS_A1) { const g = dr7.filter(x => re.test(String(x[4] ?? ""))); if (!g.length) continue; subt.add(filasA1.length); filasA1.push([tit, ...encDR.slice(1).map(() => "")]); for (const x of g) filasA1.push(filaDR(x)) }
-const sueltos = dr7.filter(x => !GRUPOS_A1.some(([re]) => re.test(String(x[4] ?? ""))))
-if (sueltos.length) { subt.add(filasA1.length); filasA1.push(["A1.8 · Otros", ...encDR.slice(1).map(() => "")]); for (const x of sueltos) filasA1.push(filaDR(x)) }
+const serialAIso = (v: unknown) => typeof v === "number" ? new Date(Math.round((v - 25569) * 864e5)).toISOString().slice(0, 10) : String(v ?? "").split("/").reverse().join("-")
+const pend = await todas(() => sb.from("cuotas_egresos_sin_factura").select(SEL_CUOTA).gte("fecha_estimada", "2025-07-01").lte("fecha_estimada", "2026-06-30").not("estado", "in", "(conciliado,desactivado,anterior,pagado)").order("id"))
+const clave = (f: string, m: number, n: string) => `${f}|${Math.round(m)}|${n}`
+const pendDe = new Map<string, any[]>(); for (const c of pend) { const k = clave(c.fecha_estimada, Number(c.monto), c.egreso.nombre_referencia); pendDe.set(k, [...(pendDe.get(k) ?? []), c]) }
+const LECTURA_A1: Array<[RegExp, string, string]> = [
+  [/Automotores/, "Ya decidido", "Esperan la reliquidación de la Municipalidad SP (A-FEAT-1581). No hace falta contestar."],
+  [/ABL Cochera/, "Se pagó, falta vincular", "El detalle dice «pagó JMS desde su CA el 30/01»: NO es deuda, falta cargar ese pago (¿como pago de JMS, CTA JMS?)."],
+  [/Aportes Domesticas/, "Nada a pagar", "En $ 0: probable que no hubo nada que pagar."],
+  [/Tarjeta VISA PAM/, "Revisar", "¿Son resúmenes ya pagados que falta vincular, o deuda al cierre? Mirá «Posible pago sin vincular»."],
+]
+const tmA1 = new Map<string, Tmpl>()
+for (const x of dr7) {
+  const fecha = serialAIso(x[1]), monto = Number(x[3]) || 0, nombre = String(x[4] ?? "")
+  const lista = pendDe.get(clave(fecha, monto, nombre)) ?? []; const c = lista.shift()
+  const esta = String((x[11] as { v?: string })?.v ?? x[11] ?? "")
+  const resp = String(c?.egreso?.responsable ?? esta.split("·")[1] ?? "?").trim()
+  const f = c ? ficha(null, "", c, monto) : [dmy(fecha), x[2], IMP(monto), "", [x[5], x[10]].filter(Boolean).join(" · "), x[7] ?? "", nombre, resp, "", x[6] ?? "", x[8] ?? "", "", x[9] ?? "", ""]
+  f[13] = `${limpio(f[13])}${f[13] ? " · " : ""}está en «${esta}»`
+  const k = `${resp}|${nombre}`
+  if (!tmA1.has(k)) {
+    const [, prop, porq] = LECTURA_A1.find(([re]) => re.test(nombre)) ?? [null, "Revisar", "¿Deuda al 30/06/26 (se iba a pagar) o se pagó y falta vincular? Mirá «Posible pago sin vincular»."]
+    tmA1.set(k, { resp, nombre, cuenta: c?.categ || c?.egreso?.categ || "", aQuien: [c?.egreso?.nombre_quien_cobra, c?.egreso?.cuit_quien_cobra, x[5]].filter(Boolean).join(" · "), propuesta: prop as string, porque: porq as string, cuotas: [], cand: [] })
+  }
+  const t = tmA1.get(k)!
+  const cand = /Automotores/.test(nombre) ? [] : candidatos(fecha, monto, 0, palabrasDe(nombre, [String(x[5] ?? "")]), new Set(t.cand))
+  t.cand.push(...cand)
+  t.cuotas.push({ fecha, fila: [...f, cand.join("\n")] })
+}
+for (const t of tmA1.values()) { t.cand = [...new Set(t.cand)].slice(0, 3); ojo(t) }
+const sA1 = segmentar([...tmA1.values()])
 hoja("DR7", "A1 DR7 Deuda", "Cuotas SIN PAGAR al cierre (30/06/26): ¿van como DEUDA?",
-  "Las cuotas del ejercicio que al 30/06/26 seguían pendientes, partidas en grupos (cada grupo es una sola respuesta). Si se iban a pagar, son deuda al cierre (van al papel de cuentas a pagar); si no, «Nada a pagar»; si se pagaron, falta vincular el pago.",
-  "Contestás en la celda amarilla de cada renglón azul (el título del grupo). Los renglones de abajo de cada título son su detalle.", `Copiado de «${ultimaH}», solapa «Datos a revisar».`,
-  encDR, filasA1, sumaDR(filasA1.filter((_, i) => !subt.has(i))), ANCHOS_DR,
-  { filasSubtitulo: subt, tituloVa: "Tu respuesta (por grupo)", notaVa: "← no hace falta: contestá en la celda amarilla de cada grupo (renglones azules de abajo)." })
+  `Las ${dr7.length} cuotas del ejercicio que al 30/06/26 seguían pendientes, ordenadas por responsable (MSA, MA, PAM, con su subtotal), después por template y por fecha. Si se iban a pagar, son deuda al cierre (van al papel de cuentas a pagar); si no, «Nada a pagar»; si se pagaron, falta vincular el pago.`,
+  "Contestás en la celda amarilla del renglón celeste de cada template: «Deuda» · «Nada a pagar» · «Se pagó, falta vincular» · «Revisar». Los renglones blancos son sus cuotas con la ficha completa.",
+  `Una cuota sin pagar no tiene comprobante ni beneficiario propio: la columna «Posible pago sin vincular» muestra, si existe, un pago suelto de cualquier cuenta que podría ser suyo (por importe, palabras del banco y fecha). Copiado de «${ultimaH}», solapa «Datos a revisar», y completado con la cuota de la base.`,
+  SEG, sA1.filas, sumaDR(dr7.map(filaDR)), ANCHOS_SEG,
+  { tipoFila: i => sA1.tipos[i], respuestaDe: i => sA1.respuestas[i], cuantos: dr7.length, tituloVa: "Tu respuesta (Deuda / Nada a pagar / Se pagó, falta vincular / Revisar)", notaVa: "← no hace falta: contestá en la celda amarilla de cada template (renglones celestes)." })
 
 const filas8 = dr.filter(x => x && x[0] === "DR8").map(filaDR)
 hoja("DR8", "A2 DR8 Extracto MA", "La transferencia de PAM a MA del 06/08/25 ($ 4.000.000) sin su otra punta",
