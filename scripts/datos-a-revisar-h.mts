@@ -134,6 +134,8 @@ function guiaDR1(cuotas: CuotaTemplate[], solapaDe: (c: CuotaTemplate) => string
   const h: unknown[][] = [["", "", CENTRADO("¿Qué estás viendo? — DR1 desglosado (tocá «Ir a» en cada renglón)"), CENTRADO("Importe en DR1"),
     CENTRADO("Qué pasa y qué se propone"), "", "", "", "", "", "", CENTRADO("Ir a"), CENTRADO("Tu respuesta")]]
   const parte = (id: string, titulo: string, enDr: CuotaTemplate[], texto: string, ir: unknown) => {
+    // ✅ ya corregido (el template dejó de ser de PAM): se dice, no se borra el renglón
+    if (!enDr.length) { h.push([id, "", `${titulo} — ✅ RESUELTO`, { t: "n", v: 0, z: "#,##0.00" }, "✅ Resuelto con el script 239 (10/11/26): el template pasó a responsable MA. Lo que pagó MA ya es «pagó el dueño (MA)»; lo que pagó PAM quedó como «distribución PAM → MA» (en Retiros).", "", "", "", "", "", "", "", ""]); return }
     h.push([id, "", `${titulo} — ${enDr.length} cuotas en DR1`, { t: "n", v: total(enDr), z: "#,##0.00" }, texto, "", "", "", "", "", "", ir, ""])
   }
   const desde = base + h.length + 1
@@ -153,7 +155,8 @@ function guiaDR1(cuotas: CuotaTemplate[], solapaDe: (c: CuotaTemplate) => string
       v: Math.abs(total([...consumos25.filter(enDR1), ...medicos25.filter(enDR1), ...otras]) - vDR1) < 0.01 ? `✓ da lo mismo que DR1 (${vDR1.toLocaleString("es-AR", { minimumFractionDigits: 2 })})` : "⚠️ no da DR1" }])
   // aparte, NO suman: contexto para decidir
   h.push(["", "", CENTRADO("Aparte — NO suman a DR1, son para comparar"), CENTRADO("Importe en el ejercicio"), "", "", "", "", "", "", "", "", ""])
-  h.push(["DR1.B1", "", `Gastos Médicos · SIN AÑO · a nombre de PAM — ${medicosSin.length} cuota`, { t: "n", v: total(medicosSin), z: "#,##0.00" },
+  if (!medicosSin.length) h.push(["DR1.B1", "", "Gastos Médicos · SIN AÑO · a nombre de PAM — ✅ RESUELTO", { t: "n", v: 0, z: "#,##0.00" }, "✅ Resuelto con el script 239 (10/11/26): año 2026, responsable MA y agrupadora «Gastos Personales MA»; como lo pagó PAM, quedó como «distribución PAM → MA».", "", "", "", "", "", "", "", ""])
+  else h.push(["DR1.B1", "", `Gastos Médicos · SIN AÑO · a nombre de PAM — ${medicosSin.length} cuota`, { t: "n", v: total(medicosSin), z: "#,##0.00" },
     `No está en DR1 porque lo pagó PAM (${porCuenta(medicosSin)}), pero es del mismo problema: template sin año, de PAM y en OTRA agrupadora («${medicosSin[0]?.agrupadoraTemplate ?? "?"}»). PROPUESTA: año 2026, responsable MA y agrupadora «Gastos Personales MA» → queda como «distribución PAM → MA».`,
     "", "", "", "", "", "", link(medicosSin[0], f => f["Concepto"] === "Gastos Medicos" && /PAM/i.test(f["Banco / cuenta"] ?? "")), ""])
   h.push(["DR1.B2", "", `Los de 2026, ya a nombre de MA (Consumos ${consumos26.length} + Médicos ${medicos26.length} cuotas)`, { t: "n", v: total([...consumos26, ...medicos26]), z: "#,##0.00" },

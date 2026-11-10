@@ -1,0 +1,6 @@
+{"tomada":"2026-11-10","respaldo_excel":"Balance/respaldos/H para auditar MSA 25-26 - ANTES script 239 (2026-11-10).xlsx",
+ "templates":{
+  "d2c1fbbe-8e85-4445-824e-eb590abf4fe2":{"nombre":"Consumos MA","año":"2025","responsable":"PAM","responsable_interno":"MA","codigo_interno":"DIST MA","cuenta_agrupadora":"Gastos Personales MA"},
+  "0dacc6ab-515c-4651-a685-39a037fc8a83":{"nombre":"Gastos Medicos","año":"2025","responsable":"PAM","responsable_interno":"MA","codigo_interno":"DIST MA","cuenta_agrupadora":"Gastos Personales MA"},
+  "11c9f9a1-5a27-4657-959e-6c94ea4ea4d4":{"nombre":"Gastos Medicos","año":null,"responsable":"PAM","responsable_interno":"MA","codigo_interno":"DIST MA","cuenta_agrupadora":"Fijos Buenos Aires MA"}},
+ "nota":"No se toca ninguna cuota ni el código interno (D3 pendiente). Medido 09/11 en el Excel v28: DR1 5.560.660,50 (96 mov.); Retiros TOTAL 159.271.202,42."}

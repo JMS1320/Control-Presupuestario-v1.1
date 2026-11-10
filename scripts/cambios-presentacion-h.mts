@@ -111,6 +111,8 @@ export const CAMBIOS: unknown[][] = [
     "2 × $ 400.000 conciliadas sin pago (🔴)", "✓ vinculadas a la Caja Sigot; ya no son inconsistencia"],
   [48, "Datos a revisar · DR1 «¿Qué estás viendo?»: DR1 DESGLOSADO — A1 Consumos MA 2025, A2 Gastos Médicos 2025, A3 suscripciones de MA a nombre de PAM; su TOTAL da lo mismo que DR1 (control ✓). Aparte, sin sumar, para comparar: B1 Gastos Médicos sin año, B2 los de 2026 a nombre de MA, B3 oct–dic 2025 dentro de B2. Cada renglón lleva a la PRIMERA cuota en su solapa y explica qué pasa y qué se propone.", "«Datos a revisar»",
     "Sólo la lista de 96 cuotas", "A1 4.580.123,30 + A2 653.027,36 + A3 327.509,84 = DR1 5.560.660,50 ✓"],
+  [49, "Datos (script 239): Consumos MA 2025, Gastos Médicos 2025 y Gastos Médicos sin año pasan de responsable PAM a MA (el de sin año, año 2026 y agrupadora «Gastos Personales MA»). No se tocó ninguna cuota.", "Gastos Personales MA (PAM → MA), Retiros, DR1",
+    "DR1 «MA pagó por PAM» 5.560.660,50 (96 mov.)", "DR1 sólo las suscripciones (A3, pendiente); lo que pagó PAM pasa a «distribución PAM → MA»"],
   [22, "Nueva solapa «INCONSISTENCIAS»: todo lo que hay que mirar de todas las solapas, por tipo, con link a la solapa de la cuota.", "Solapa «Inconsistencias» (después de Gastos Libertad)",
     "Había que recorrer las 51 solapas buscando 🔴 / 🟡 / ⚠️", "🔴 sin pagar · 🟡 sin movimiento · 🟡 el banco movió otro importe · 🟡 en dólares · ⚠️ código · ⚪ en $ 0 (al final): cada renglón con «Ir a» su solapa"],
   [],
