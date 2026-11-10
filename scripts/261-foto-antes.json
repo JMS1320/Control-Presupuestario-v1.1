@@ -1,0 +1,185 @@
+{
+ "aportes": [
+  {
+   "id": "9e76f1b7-7df0-4934-acfe-2b3489aa67af",
+   "estado": "conciliado",
+   "monto": 0,
+   "descripcion": null
+  },
+  {
+   "id": "e2cccb60-b5f3-4889-9452-8844af31fdb6",
+   "estado": "conciliado",
+   "monto": 0,
+   "descripcion": null
+  }
+ ],
+ "orbith": [
+  {
+   "id": "70a7eaa5-713d-4a7b-bd64-0a412cb96ae3",
+   "estado": "pendiente",
+   "descripcion": null
+  },
+  {
+   "id": "322a0908-b443-4811-91c9-2d483be72f38",
+   "estado": "pendiente",
+   "descripcion": null
+  }
+ ],
+ "aca": {
+  "template": "808a21d3-367d-456b-9ac4-d576179d5999",
+  "activo": true,
+  "observaciones_template": "Creado en el histórico PAM (18/10): cuota del ACA, débito automático",
+  "cuotas": [
+   {
+    "id": "92071230-6074-4df3-b7b5-344f98830640",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "0edf41bc-693a-432e-8a95-2f9bee7f9674",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "f960592c-c448-4cf8-8d07-a6425c10cd71",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "b0e911b6-9d1a-4ee5-8fe0-b4cbca3de63f",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "ed0ac7bb-6d5f-4fb6-8226-5ca078f70e31",
+    "estado": "pendiente",
+    "descripcion": null
+   }
+  ]
+ },
+ "visa": {
+  "template": "486d2a68-32eb-4c42-84c4-356204078eb7",
+  "activo": true,
+  "cuotas": [
+   {
+    "id": "b41525a1-dd19-4a75-bde6-3851d420ba28",
+    "estado": "pagar",
+    "descripcion": null
+   },
+   {
+    "id": "c346b7b6-dfbf-43ec-88c4-5de520eb2375",
+    "estado": "pagar",
+    "descripcion": null
+   },
+   {
+    "id": "70310824-5258-4f0b-bbf6-d1f3e84cb2df",
+    "estado": "pagar",
+    "descripcion": null
+   },
+   {
+    "id": "4dc8cc2f-40a1-4324-8b28-f4af24f98a86",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "129c177c-5811-4c74-9bb0-a916c46a2435",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "df110c17-44d3-4bdb-bc4c-409f0f5dbccb",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "903f66c7-2de8-46d2-b3b4-301954ac0086",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "c064dd8e-539b-4ae5-a1df-417b414a7a64",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "dbb42e2e-1568-4882-83bf-7b20526ef7f8",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "c2a0c0c0-6ce2-40c5-9db2-5ced86722e00",
+    "estado": "pendiente",
+    "descripcion": null
+   }
+  ],
+  "observaciones_template": null
+ },
+ "uss": {
+  "template": "b59464f8-b1ba-4061-a30a-05001fcd343a",
+  "activo": false,
+  "cuotas": [
+   {
+    "id": "5816a7f0-c0cd-4bbf-8d0c-259221fdf907",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "25243978-2920-4d06-91c7-d3ee1e0983dc",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "6bf0ed17-f540-4955-92f6-19c2c4c04148",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "22fde67c-83e3-4ff9-aa02-e6f9daea66db",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "91cfba37-0626-4261-8855-8bb52029c369",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "2f415349-8d4e-4f0d-b4cd-2af7a355c13f",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "8e8fe1a5-aed4-4883-b3ff-380d2723f185",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "3218fcf8-edf9-46a0-bf2a-569bbc47ff83",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "c3deec48-3fe3-4c19-9f76-f91963700b46",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "43daf597-1967-4462-b358-3b0091dc03a9",
+    "estado": "pendiente",
+    "descripcion": null
+   },
+   {
+    "id": "dd6b801d-b04a-407e-b868-bc2852392e76",
+    "estado": "pendiente",
+    "descripcion": null
+   }
+  ]
+ },
+ "abl": {
+  "id": "d36595b1-4c46-4a00-b89a-b9b74520c2ff",
+  "estado": "pagar",
+  "fecha_pago": null,
+  "descripcion": null,
+  "detalle": "ABL Cochera Libertad Anual - Pago JMS desde su CA el 30/01"
+ }
+}
