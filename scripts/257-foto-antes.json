@@ -1,0 +1,184 @@
+{
+ "sicore": [
+  {
+   "cuota": "50a11ebd-65e6-4677-8149-aa312f1c749a",
+   "cuota_monto": 0,
+   "cuota_estado": "conciliado",
+   "movimiento": "ef4c7cd5-89c8-416b-a95c-743695d320ad",
+   "mov_categ": null,
+   "mov_template": null,
+   "nota": "📜 Histórico jul25-ene26 — tu planilla: CATEG IMP"
+  },
+  {
+   "cuota": "da17caaf-3cc9-4c8a-aff4-1b8b184cf2ac",
+   "cuota_monto": 0,
+   "cuota_estado": "conciliado",
+   "movimiento": "c18429fa-e88a-42e9-ab7d-f68cda2e4e55",
+   "mov_categ": null,
+   "mov_template": null,
+   "nota": "📜 Histórico jul25-ene26 — tu planilla: CATEG IMP"
+  },
+  {
+   "cuota": "4aa7322c-568c-4814-9bf9-fa189204d560",
+   "cuota_monto": 0,
+   "cuota_estado": "conciliado",
+   "movimiento": "099bb4f2-5887-41bf-a2b9-cd34ae35af9c",
+   "mov_categ": null,
+   "mov_template": null,
+   "nota": "📜 Histórico jul25-ene26 — tu planilla: CATEG IMP"
+  }
+ ],
+ "sicoreFeb": {
+  "id": "4130e7d8-acaf-4924-ae43-1119c7083de2",
+  "estado": "conciliado",
+  "descripcion": null,
+  "detalle": "No hubo"
+ },
+ "uatre": [
+  {
+   "id": "aedd6c32-7262-4752-b3d0-d8ae0ce0da4f",
+   "estado": "conciliado",
+   "monto": 0,
+   "descripcion": null
+  },
+  {
+   "id": "94c512e6-a63f-4678-bfe7-e2b5739b1b8b",
+   "estado": "conciliado",
+   "monto": 0,
+   "descripcion": null
+  },
+  {
+   "id": "0236daa3-2908-4d05-a699-36cf185d6818",
+   "estado": "conciliado",
+   "monto": 0,
+   "descripcion": null
+  }
+ ],
+ "iibbMA": [
+  {
+   "id": "60a2f6cb-009a-4435-b071-a270fe8777f3",
+   "estado": "conciliado",
+   "monto": 0,
+   "descripcion": null
+  },
+  {
+   "id": "d7673250-c989-4e4e-9189-8d82996daf6c",
+   "estado": "conciliado",
+   "monto": 0,
+   "descripcion": null
+  },
+  {
+   "id": "34702290-37d9-484a-ac56-920e899bc744",
+   "estado": "conciliado",
+   "monto": 0,
+   "descripcion": null
+  },
+  {
+   "id": "dded867a-12f7-44e5-819e-dcebae3d4587",
+   "estado": "conciliado",
+   "monto": 0,
+   "descripcion": null
+  },
+  {
+   "id": "ab629d9e-aeff-4ffd-80a0-ca533386111a",
+   "estado": "conciliado",
+   "monto": 0,
+   "descripcion": null
+  },
+  {
+   "id": "abecc269-8366-4ed5-9734-297076183a35",
+   "estado": "conciliado",
+   "monto": 0,
+   "descripcion": null
+  },
+  {
+   "id": "dd3260a4-cb4b-418c-9cdc-a04ad0447dfb",
+   "estado": "conciliado",
+   "monto": 0,
+   "descripcion": null
+  },
+  {
+   "id": "f88907f2-3499-4dea-ba70-27d1c1ab049d",
+   "estado": "conciliado",
+   "monto": 0,
+   "descripcion": null
+  }
+ ],
+ "pam": [
+  {
+   "tabla": "public.pam_galicia",
+   "id": "832568bf-7ba0-407c-8161-5350339ead61",
+   "template_cuota_id": null,
+   "categ": null,
+   "nota": "📜 Histórico PAM ene25-ene26 — tu planilla: CATEG IMP"
+  },
+  {
+   "tabla": "public.pam_galicia",
+   "id": "e814994e-79b6-401e-ab71-731e2a94889d",
+   "template_cuota_id": null,
+   "categ": null,
+   "nota": "📜 Histórico PAM ene25-ene26 — tu planilla: CATEG IMP"
+  },
+  {
+   "tabla": "public.pam_galicia_cc",
+   "id": "be22d74e-714f-4918-a2b8-9be18a91f860",
+   "template_cuota_id": null,
+   "categ": null,
+   "nota": "📜 Histórico PAM ene25-ene26 — tu planilla: CATEG IMP"
+  },
+  {
+   "tabla": "public.pam_galicia_cc",
+   "id": "a8b431b8-01bc-4216-a5b5-9c56462ef7d8",
+   "template_cuota_id": null,
+   "categ": null,
+   "nota": "📜 Histórico PAM ene25-ene26 — tu planilla: CATEG IMP"
+  }
+ ],
+ "retiros": [
+  {
+   "id": "fc11e675-d35d-4eab-97f9-456bc739d6ba",
+   "estado": "conciliado",
+   "monto": 0,
+   "descripcion": null
+  },
+  {
+   "id": "e9be53dc-c9fa-4ee0-838b-6a7c28b646d0",
+   "estado": "conciliado",
+   "monto": 0,
+   "descripcion": null
+  },
+  {
+   "id": "9b02e46b-76f2-49ff-932a-2bdfd74a6f69",
+   "estado": "conciliado",
+   "monto": 0,
+   "descripcion": null
+  },
+  {
+   "id": "52d8ad8d-7f9d-4a9b-a624-ef8c8d955f21",
+   "estado": "conciliado",
+   "monto": 0,
+   "descripcion": null
+  },
+  {
+   "id": "68349e72-41cb-48a5-8ddc-c2fbda785250",
+   "estado": "conciliado",
+   "monto": 0,
+   "descripcion": null
+  },
+  {
+   "id": "b288c5f5-894d-4f25-95af-143c95c7b993",
+   "estado": "conciliado",
+   "monto": 0,
+   "descripcion": null
+  }
+ ],
+ "creados": [
+  "7a2c1e0e-257a-4c0b-9b1a-c07170000257",
+  "7a2c1e0e-2571-4c0b-9b1a-c07170000257",
+  "7a2c1e0e-2572-4c0b-9b1a-c07170000257",
+  "7a2c1e0e-2573-4c0b-9b1a-c07170000257",
+  "7a2c1e0e-2574-4c0b-9b1a-c07170000257",
+  "7a2c1e0e-2575-4c0b-9b1a-c07170000257",
+  "7a2c1e0e-2576-4c0b-9b1a-c07170000257"
+ ]
+}
