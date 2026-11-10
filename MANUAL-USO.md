@@ -6779,8 +6779,13 @@ Cada vehículo o partida se paga de **una** manera por año: el template **Anual
 - una cuota **desactivada** que tiene un pago vinculado;
 - una cuota **conciliada con importe** que no tiene ningún pago vinculado.
 
-Plegado abajo, en gris: las cuotas **en $ 0 marcadas «conciliado»** sin movimiento (un mes en que no hubo nada que
-pagar). Lo correcto es pasarlas a **desactivadas**.
+Plegado abajo, en gris: las cuotas **en $ 0 marcadas «conciliado»** sin movimiento. Si ese mes **correctamente no hubo
+nada que pagar** (IIBB con saldo a favor, una quincena de SICORE sin retenciones, un anticipo cubierto), pasala al estado
+**«Nada a pagar»** en *Egresos → Templates* (el selector de estado lo ofrece). Si en realidad se pagó, vinculá el pago.
+⚠️ *Cambió el 10/11: acá decía «pasarlas a desactivadas»; «desactivado» queda para la modalidad o la cuota que no se usa.*
+
+Una cuota **«Nada a pagar»** no aparece en el Cash Flow (está cerrada, como una conciliada) y en el H para auditar se
+ve «✓ nada a pagar (confirmado)», no como inconsistencia. → A-TEST-1355
 
 Se corrige en *Egresos → Templates*. El mismo control sale en la solapa «Inconsistencias» del H para auditar. Una
 cuota **pendiente en $ 0** de la modalidad activa cuenta como **deuda** (falta el importe), no como «$ 0».

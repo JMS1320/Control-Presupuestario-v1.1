@@ -13526,6 +13526,12 @@ export function correrCasos(): Resultado[] {
     const v2 = [q0("pendiente"), q0("pagar"), q0("conciliado")].join(" | ")
     const e2 = "🔴 SIN PAGAR (en $ 0: falta el importe) | 🔴 SIN PAGAR (en $ 0: falta el importe) | ⚪ en $ 0 (no se pagó nada)"
     chequear("Templates", "Una cuota pendiente en $ 0 de la modalidad activa va a «sin pagar → deuda» (falta el importe), no a «en $ 0»", e2, v2, v2 === e2, "A-FEAT-1582")
+    // ✔️ A-FEAT-1587: «Nada a pagar» = confirmado en $ 0 → cerrada (✓), ni ⚪ ni 🔴, y su efecto no es un retiro ni un aporte
+    {
+      const a = auditarCuota({ id: "n", fecha: "2026-01-10", concepto: "Anticipo Ganancias MSA", proveedor: "", categ: "Impuestos ARCA", cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable: "MSA", estado: "nada_a_pagar", monto: 0 } as never)
+      const vN = `${a.marca} | ${a.efecto}`, eN = "✓ nada a pagar (confirmado) | nada a pagar"
+      chequear("Templates", "Una cuota «Nada a pagar» (correctamente en $ 0) se ve cerrada en el H para auditar: ✓, no «⚪ no se pagó nada» ni «🔴 sin pagar»", eN, vN, vN === eN, "A-FEAT-1587")
+    }
     // 🟡 una cuota en $ 0 CON su movimiento, y el banco movió plata (vthebestpdf): no es «⚪ no se pagó nada»
     const q1 = auditarCuota({ id: "x", fecha: "2025-08-13", concepto: "Otros Gastos", proveedor: "", categ: "", cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable: "MSA", estado: "conciliado", monto: 0,
       banco: { cuenta: "VISA MSA", titular: "MSA", contable: "", comprobante: "", respaldo: 1250, motivo: "el banco movió $ 1.250,00 y la cuota dice $ 0,00" } } as never).marca

@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### ✔️ Estado nuevo `nada_a_pagar` en `public.cuotas_egresos_sin_factura.estado` (2026-11-10) — ⏳ AVISO PREVIO (se corre a continuación con OK de JMS)
+### ✔️ Estado nuevo `nada_a_pagar` en `public.cuotas_egresos_sin_factura.estado` (2026-11-10) — ✅ APLICADA el 10/11 con OK de JMS (aviso previo): CHECK rehecho con la misma lista + el valor nuevo, verificado con EXPLAIN UPDATE; 10 cuotas de Anticipo Ganancias MSA en el estado nuevo (script 256)
 - A-FEAT-1587, JMS 10/11: *«cómo dejamos registrado que correctamente no hubo nada que pagar… desactivado no es una referencia de lo que sucedió»* · nombre elegido: **«Nada a pagar»**. Se agrega `'nada_a_pagar'` al CHECK de `estado` (drop + add del constraint con la misma lista + el valor nuevo). En la app: el Cash Flow lo oculta como a `conciliado`, el control de modalidad no lo marca, el H para auditar lo muestra «✓ nada a pagar», y el selector de estado de Templates lo ofrece. `scripts/255-…` con su deshacer (vuelve el CHECK original; sólo si ninguna cuota quedó en el estado nuevo). **No toca RLS, roles ni permisos.**
 
 ### 📎 1 columna nueva `pdf_drive_url` en `msa.comprobantes_venta`, `pam.comprobantes_venta` y `ma.comprobantes_venta` (2026-11-07) — ✅ APLICADA el 07/11 con OK de JMS (aviso previo): 3 columnas vacías, verificado con EXPLAIN UPDATE

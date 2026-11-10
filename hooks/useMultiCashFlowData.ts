@@ -951,6 +951,8 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
         .neq('estado', 'desactivado')
         .neq('estado', 'credito')
         .neq('estado', 'anterior')
+        // ✔️ A-FEAT-1587: «Nada a pagar» = la cuota correctamente en $ 0 — cerrada como una conciliada, no se proyecta
+        .neq('estado', 'nada_a_pagar')
         .eq('egreso.activo', true)
         .order('fecha_estimada', { ascending: true })
 

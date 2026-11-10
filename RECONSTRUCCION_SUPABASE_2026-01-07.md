@@ -13381,3 +13381,12 @@ lote. Verificado: `stock_ventas` 29 → **30** columnas; escritura probada con `
 
 ### 2026-11-06 · Red Vial San Pedro cuota 3/2026: vencimiento real 11/09 y boleta vinculada en 15 cuotas (script 227, DATOS) — A-FEAT-1214 — ✅ CORRIDO con OK de JMS («sí aplicá las 15»)
 `public.cuotas_egresos_sin_factura`: `fecha_vencimiento`/`fecha_estimada` 05/09 → 11/09 (montos sin tocar: igualan las boletas). `public.mails_registro` (mail de Solana Font del 27/08): 15 vínculos a las cuotas, marca `[script 227]` → el 📎 de cada cuota muestra la boleta. Deshacer: `scripts/227-red-vial-sp-cuota3-boletas-deshacer.sql`.
+
+### 2026-11-10 · Estado nuevo «nada_a_pagar» en las cuotas de templates (script 255, ESTRUCTURA) — A-FEAT-1587 — ✅ APLICADO con OK de JMS (aviso previo en ENTRE-DESARROLLADORES)
+La cuota que **correctamente** quedó en $ 0 (no hubo nada que pagar) deja de ser «conciliado» sin pago o «desactivado».
+```sql
+ALTER TABLE public.cuotas_egresos_sin_factura DROP CONSTRAINT cuotas_egresos_sin_factura_estado_check;
+ALTER TABLE public.cuotas_egresos_sin_factura ADD CONSTRAINT cuotas_egresos_sin_factura_estado_check
+CHECK (estado::text = ANY (ARRAY['pendiente','debito','pagar','preparado','pagado','credito','conciliado','desactivado','anterior','programado','nada_a_pagar']::text[]));
+```
+Deshacer: `scripts/255-estado-nada-a-pagar-deshacer.sql` (sólo si ninguna cuota quedó en el estado). Datos: `scripts/256` (10 cuotas de Anticipo Ganancias MSA).

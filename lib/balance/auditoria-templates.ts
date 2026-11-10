@@ -180,7 +180,11 @@ export function auditarCuota(c: CuotaTemplate): AuditoriaDeCuota {
   // 🔍 JMS 09/11 (vthebestpdf): una cuota en $ 0 que SÍ tiene su movimiento, y el banco movió plata (o en dólares), no es «no se pagó nada»:
   // el gasto no está sumando en pesos → 🟡 con el motivo del banco
   const ceroConBanco = Math.abs(c.monto) < 0.005 && !pendiente && !!b?.cuenta && !!b?.motivo
-  if (sinPago && ceroConBanco) marca = `🟡 en $ 0 pero ${b!.motivo}`
+  // ✔️ A-FEAT-1587 (JMS 10/11): «Nada a pagar» es la confirmación de que ese mes correctamente no hubo nada que pagar → no es
+  // inconsistencia ni «no se pagó nada»: se ve como cerrada.
+  const nadaAPagar = (c.estado || "").toLowerCase() === "nada_a_pagar"
+  if (nadaAPagar) { marca = "✓ nada a pagar (confirmado)"; if (efecto === "sin pago") efecto = "nada a pagar" }
+  else if (sinPago && ceroConBanco) marca = `🟡 en $ 0 pero ${b!.motivo}`
   else if (sinPago) marca = Math.abs(c.monto) >= 0.005 ? "🔴 SIN PAGAR" : pendiente ? "🔴 SIN PAGAR (en $ 0: falta el importe)" : "⚪ en $ 0 (no se pagó nada)"
   else if (b && !b.cuenta) marca = "🟡 marcada pagada, sin movimiento en el banco"
   else if (b?.motivo) marca = `🟡 ${b.motivo}`
@@ -189,7 +193,7 @@ export function auditarCuota(c: CuotaTemplate): AuditoriaDeCuota {
 }
 
 /** ¿El efecto es un retiro / aporte / distribución entre partes? («pagó el dueño», «sin pago» y «sin movimiento» no lo son.) */
-export const esEfectoEntrePartes = (efecto: string) => !!efecto && !/^(pagó el dueño|sin pago|sin movimiento)/.test(efecto)
+export const esEfectoEntrePartes = (efecto: string) => !!efecto && !/^(pagó el dueño|sin pago|sin movimiento|nada a pagar)/.test(efecto)
 
 /** Quién RECIBE en un efecto: el destino de la flecha, la empresa del aporte o del retiro, Libertad o FLIA. */
 export function receptorDe(efecto: string): string {

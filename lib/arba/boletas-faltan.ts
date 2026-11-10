@@ -14,7 +14,7 @@ export interface TemplateFalta { id: string; nombre: string; responsable: string
 export interface CuotaFalta { egresoId: string; estado: string; vencimiento: string | null }
 
 /** Una cuota que ya no se espera (pagada, conciliada, desactivada, de un año anterior) no cuenta como faltante. */
-const YA_NO_SE_ESPERA = new Set(["pagado", "conciliado", "desactivado", "anterior"])
+const YA_NO_SE_ESPERA = new Set(["pagado", "conciliado", "desactivado", "anterior", "nada_a_pagar"])
 
 /** Días de margen antes del vencimiento: una alerta el día del vencimiento no es una alerta, es un acta. */
 export const MARGEN_DIAS = 3

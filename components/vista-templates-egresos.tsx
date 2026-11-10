@@ -1111,6 +1111,7 @@ export function VistaTemplatesEgresos() {
       conciliado:  'bg-gray-100 text-gray-600 border-gray-200',
       desactivado: 'bg-gray-100 text-gray-400 border-gray-200',
       anterior:    'bg-gray-100 text-gray-600 border-gray-200',
+      nada_a_pagar: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     }
     return mapa[estado] ?? 'bg-gray-100 text-gray-600 border-gray-200'
   }
@@ -1209,6 +1210,7 @@ export function VistaTemplatesEgresos() {
                 <SelectItem value="conciliado">Conciliado</SelectItem>
                 <SelectItem value="desactivado">Desactivado</SelectItem>
                 <SelectItem value="anterior">Anterior</SelectItem>
+                <SelectItem value="nada_a_pagar">Nada a pagar</SelectItem>
               </SelectContent>
             </Select>
             <Button
@@ -2048,6 +2050,7 @@ export function VistaTemplatesEgresos() {
                         <SelectItem value="conciliado">Conciliado</SelectItem>
                         <SelectItem value="desactivado">Desactivado</SelectItem>
                         <SelectItem value="anterior">Anterior</SelectItem>
+                        <SelectItem value="nada_a_pagar">Nada a pagar</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

@@ -44,8 +44,10 @@ export const TITULOS_MODALIDAD: Record<TipoProblemaModalidad, { titulo: string; 
   desactivada_con_pago: { titulo: "cuota DESACTIVADA con pago vinculado", accion: "revisar: si se pagó, la cuota no puede estar desactivada" },
   conciliada_sin_pago: { titulo: "cuota CONCILIADA con importe y sin ningún pago vinculado", accion: "revisar: conciliarla con su movimiento, o volverla a pendiente si no se pagó" },
   // ⚪ el mes en que no hubo nada que pagar (IIBB, SICORE, un retiro): se cerró «conciliado» en $ 0. No es plata, pero tampoco es
-  // conciliado (no hay movimiento): lo correcto es «desactivado». Se lista aparte para que no tape a lo que tiene importe.
-  conciliada_en_cero: { titulo: "cuota en $ 0 marcada CONCILIADA sin pago (debería ser desactivada)", accion: "pasarla a desactivada: ese mes no hubo nada que pagar" },
+  // conciliado (no hay movimiento). ⚠️ cambió 10/11 (A-FEAT-1587): lo correcto ya no es «desactivado» (JMS: «desactivado no es una
+  // referencia de lo que sucedió») sino el estado «Nada a pagar» — o, si se pagó, vincular el pago. Se lista aparte para que no tape a lo
+  // que tiene importe.
+  conciliada_en_cero: { titulo: "cuota en $ 0 marcada CONCILIADA sin pago", accion: "si ese mes correctamente no hubo nada que pagar, pasarla a «Nada a pagar»; si se pagó, vincular el pago" },
 }
 
 /** La modalidad por el nombre: «Imp Automotores Gol 2012 Anual» → anual. */

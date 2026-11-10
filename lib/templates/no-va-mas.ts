@@ -24,7 +24,7 @@ export type AlcanceNoVaMas = 'esta' | 'siguientes'
 export interface CuotaNoVaMas { id: string; fecha_estimada: string; estado: string; monto?: number | null }
 
 /** Estados que siguen a la vista en el Cash Flow (los demás ya no cuentan ahí). */
-const OCULTOS_EN_CASH_FLOW = new Set(['conciliado', 'desactivado', 'credito', 'anterior'])
+const OCULTOS_EN_CASH_FLOW = new Set(['conciliado', 'desactivado', 'credito', 'anterior', 'nada_a_pagar'])
 
 export interface PlanNoVaMas {
   /** Las cuotas que pasan a «desactivado». */
