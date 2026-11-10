@@ -108,7 +108,7 @@ export async function leerCuentasConSaldo(cliente: ClienteMinimo, titular: strin
 export function hojaControlPlata(rs: ResumenDeCuenta[], titular: string, etiqueta: string, fechas: { desde: string; corte: string; hasta: string },
   tablasQueFallaron: string[] = [], etapa2?: { e: Etapa2; hojaDetalle: string }, etapa3?: FilaEtapa3[],
   etapa4?: { compras: ReturnType<typeof puenteDeComprobantes>; ventas: ReturnType<typeof puenteDeComprobantes>;
-    otros?: Array<{ titulo: string; nroE: string; codD: CodigoDestino; lado: "F" | "G" | "neto"; que: string; p: ReturnType<typeof puenteDeComprobantes> }> }): unknown[][] {
+    otros?: Array<{ titulo: string; nroE: string; codD: CodigoDestino; lado: "F" | "G" | "neto"; que: string; p: ReturnType<typeof puenteDeComprobantes> }>; extra?: unknown[][] }): unknown[][] {
   const h: unknown[][] = []
   const num = (v: number) => ({ t: "n", v: r2(v), z: MONEDA })
   const f = (formula: string, v: number) => ({ t: "n", f: formula, v: r2(v), z: MONEDA })
@@ -187,7 +187,8 @@ export function hojaControlPlata(rs: ResumenDeCuenta[], titular: string, etiquet
         h.push(...bloquePuente(o.titulo, o.p, h.length + 1, filasE.get(o.nroE) ?? null, filaD, o.lado === "neto" ? "G" : o.lado,
           { libro: ok(o.p.totalLibro, reg(o.nroE)), banco: ok(o.p.enBanco, vD), que: o.que }))
       }
-      h.push(["ⓘ La lista de los comprobantes de E2.5 / E2.6 y E1.5 / E1.6, con su ficha, en «Plata · facturas». Próximo, a validar con JMS: la deuda al cierre contra el papel de deudas (dos caminos)."])
+      if (etapa4.extra?.length) h.push(...etapa4.extra)
+      h.push(["ⓘ La lista de los comprobantes de E2.5 / E2.6 y E1.5 / E1.6, con su ficha y su situación, en «Plata · facturas»."])
     }
   }
   return h

@@ -20,6 +20,8 @@ import { SOLAPA_DATOS, ANCHOS_DATOS, armarDatosARevisar } from "./datos-a-revisa
 import { nombreSolapaGrupo, SIN_GRUPO, cuotaSinPago } from "../lib/balance/grupos-templates"
 import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta } from "../lib/balance/libro-diario"
 import { PRESENTADO_ARCA_COMPRAS } from "../lib/balance/presentado-arca"
+import { cuitsConCuentaCorriente } from "../lib/balance/fuera-por-cuenta-corriente"
+import { buscarFechasDePagoBancarias, buscarFechasDeCobroBancarias, completarConGrupoDeCobro } from "../lib/balance/fechas-de-pago"
 import { aplicarVistas } from "../lib/balance/formato-excel"
 import { fechasReales } from "../lib/excel/fechas-reales"
 import { cargarCuotasImpuestos, cargarAuxiliaresPapel } from "../lib/impuestos/datos-papel"
@@ -182,6 +184,52 @@ agregarLibroH(wb as any, templates, ej.etiqueta, meses, { cuotas: cuotasImp, ...
     { titulo: "E7 · TARJETA: de los consumos a los pagos", nroE: "E7", codD: "D8", lado: "G", que: "lo registrado", p: e7 },
   ]
   ;(etapa4 as any).otros = otrosPuentes
+  // 💰 etapa 4 (cont.): lo SIN pago / cobro atado, separado por su situación y contra LO PRESENTADO al contador (papel 04 y 03, 04/11)
+  const PRESENTADO = { deudaProveedores: 6486568.02, deudores: 0, cuando: "04/11/2026" }
+  const enTandas = async (schema: string, tabla: string, cols: string, ids: string[]) => {
+    const out: any[] = []
+    for (let i = 0; i < ids.length; i += 150) { const { data } = await sb.schema(schema).from(tabla).select(cols).in("id", ids.slice(i, i + 150)); out.push(...(data ?? [])) }
+    return new Map(out.map((x: any) => [String(x.id), x]))
+  }
+  const sinPagoC = etapa4.compras.casos.filter(x => x.nro === "E2.5"), sinCobroV = etapa4.ventas.casos.filter(x => x.nro === "E1.5")
+  const datC = await enTandas("msa", "comprobantes_arca", "id, fecha_pago, estado, grupo_pago_id, cuit", sinPagoC.map(x => x.c.id))
+  // lo mismo que el papel 04: los proveedores con CUENTA CORRIENTE van al 14 / 14.1, las dadas por pagadas por un ajuste y los estados ajenos no son deuda
+  const conCC = cuitsConCuentaCorriente(EMPRESA)
+  const { data: ajPag } = await sb.from("ajustes_balance").select("registro_id, motivo").eq("empresa", EMPRESA).eq("anio_cierre", ANIO).eq("accion", "pagado_al_cierre").is("anulado_at", null)
+  const dadaPorPagada = new Set((ajPag ?? []).map((a: any) => String(a.registro_id)))
+  // la FECHA del pago como la toma el papel 04: la del comprobante o la del movimiento del banco más temprano (aunque sea después del cierre)
+  const fBanco = (await buscarFechasDePagoBancarias(sb as any, sinPagoC.map(x => x.c.id))).porComprobante
+  const datV = await enTandas("msa", "comprobantes_venta", "id, estado, grupo_cobro_id", sinCobroV.map(x => x.c.id))
+  const fCobro = completarConGrupoDeCobro(sinCobroV.map(x => ({ id: x.c.id, grupo_cobro_id: datV.get(x.c.id)?.grupo_cobro_id ?? null })), (await buscarFechasDeCobroBancarias(sb as any, sinCobroV.map(x => x.c.id))).porComprobante)
+  const sitC = (id: string) => { const d = datC.get(id); if (!d) return "otra fuente (histórico)"
+    const cc = conCC.get(String(d.cuit ?? "")); if (cc) return `va a la CUENTA CORRIENTE de ${cc} (papel 14 / 14.1), no al 04`
+    if (dadaPorPagada.has(id)) return "dada por pagada al cierre (ajuste del balance)"
+    if (/^(anterior|credito|debito|anulado)$/i.test(String(d.estado ?? ""))) return `estado «${d.estado}»: no es deuda de este ejercicio`
+    const fp = d.fecha_pago ? String(d.fecha_pago).slice(0, 10) : fBanco.get(id) ?? null
+    if (fp && fp > ej.fechaCierre) return "pagada DESPUÉS del cierre: deuda al cierre"
+    if (d.grupo_pago_id) return "pagada en un PAGO AGRUPADO (el movimiento está atado al grupo)"
+    if (fp) return "pagada en el ejercicio, con fecha de pago, sin movimiento de MSA atado"
+    return /pagad|concili/i.test(String(d.estado ?? "")) ? "marcada PAGADA sin fecha ni movimiento" : "SIN PAGAR: deuda al cierre" }
+  const sitV = (id: string) => { const d = datV.get(id); if (!d) return "otra fuente"
+    const fc = fCobro.get(id); if (fc && fc > ej.fechaCierre) return "cobrada DESPUÉS del cierre: deudor al cierre"; if (fc) return "cobrada en el ejercicio, con fecha de cobro"
+    if (d.grupo_cobro_id) return "cobrada en un COBRO AGRUPADO (el movimiento está atado al grupo)"
+    return /cobrad|concili/i.test(String(d.estado ?? "")) ? "marcada COBRADA sin movimiento atado" : "SIN COBRAR: deudor al cierre" }
+  for (const x of sinPagoC) x.donde = sitC(x.c.id)
+  for (const x of sinCobroV) x.donde = sitV(x.c.id)
+  const porSit = (xs: typeof sinPagoC) => { const m = new Map<string, { n: number; t: number }>(); for (const x of xs) { const k = x.donde; const y = m.get(k) ?? { n: 0, t: 0 }; y.n++; y.t = r2(y.t + x.c.total); m.set(k, y) } return m }
+  const MON = "#,##0.00;[Red]-#,##0.00;\"-\""
+  const N = (v: number) => ({ t: "n", v: r2(v), z: MON })
+  const extra: unknown[][] = [[], [{ t: "s", v: "LO SIN PAGO / COBRO ATADO (E2.5 y E1.5), POR SU SITUACIÓN — y contra lo PRESENTADO al contador", s: { font: { bold: true, color: { rgb: "FF1F4E3D" } }, fill: { patternType: "solid", fgColor: { rgb: "FFE3EFEC" } } } }]]
+  for (const [titulo, xs, deudaKey, presentado, rotulo] of [["E2.5 · compras", sinPagoC, /deuda al cierre/, PRESENTADO.deudaProveedores, "deuda con proveedores al cierre (papel 04)"],
+    ["E1.5 · ventas", sinCobroV, /deudor al cierre/, PRESENTADO.deudores, "deudores al cierre (papel 03: «no hubo»)"]] as const) {
+    extra.push([], [{ t: "s", v: titulo, s: { font: { bold: true } } }])
+    let deuda = 0
+    for (const [k, y] of [...porSit(xs as any)].sort((a, b) => b[1].t - a[1].t)) { extra.push([`   ${k} (${y.n})`, N(y.t)]); if ((deudaKey as RegExp).test(k)) deuda = r2(deuda + y.t) }
+    extra.push([`   = lo que da como ${rotulo}`, N(deuda)], [`   presentado al contador el ${PRESENTADO.cuando}`, N(presentado as number)],
+      [`   diferencia`, N(deuda - (presentado as number)), "", "", "", "", "", "", "", "", "", "", Math.abs(deuda - (presentado as number)) < 0.01 ? "✓ coincide con lo presentado" : "⚠️ no coincide: ver las facturas en «Plata · facturas» (columna «Dónde se pagó / cobró»)"])
+  }
+  ;(etapa4 as any).extra = extra
+  for (const l of extra) if (Array.isArray(l) && l.length) console.log("deudas · " + l.map((x: any) => (x && typeof x === "object" ? x.v : x)).filter((x: any) => x !== "" && x != null).join(" | "))
   for (const o of otrosPuentes) console.log(`etapa 4 · ${o.nroE}: ${o.p.renglones.map((x: any) => `${x.nro} ${x.valor}`).join(" · ")}`)
   for (const k of ["compras", "ventas"] as const) console.log(`etapa 4 · ${k}: ${etapa4[k].renglones.map(x => `${x.nro} ${x.valor}`).join(" · ")} · banco ${etapa4[k].enBanco}`)
   agregarHoja(wb as any, SOLAPA_PLATA, hojaControlPlata(rs, EMPRESA, ej.etiqueta, { desde: primerDiaDelEjercicio(ej), corte, hasta: ej.fechaCierre }, leidas.tablasQueFallaron, { e: etapa2, hojaDetalle: SOLAPA_PLATA_DET }, etapa3, etapa4),

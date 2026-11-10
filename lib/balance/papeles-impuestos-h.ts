@@ -152,16 +152,19 @@ function bloqueSaldoAnterior(saldos: SaldoAnteriorH[], resp: string, tipo: TipoP
   // explicación como subtítulo, y una tablita SIN colores (negrita y bordes finos) — «así no funciona… se ve raro y feo»
   const fino = { style: "thin", color: { rgb: "FFA6A6A6" } }
   const borde = { top: fino, bottom: fino, left: fino, right: fino }
-  const txt = (v: string, extra: Record<string, unknown> = {}) => ({ t: "s", v, s: { font: { name: "Calibri", sz: 10, ...((extra.font as object) ?? {}) }, border: borde } })
-  const mon = (f: string, v: number, negrita = false) => ({ t: "n", f, v: r2(v), z: MONEDA_H, s: { font: { name: "Calibri", sz: 10, bold: negrita }, numFmt: MONEDA_H, border: borde } })
+  // 🎨 JMS 11/11 (lo pintó así en el v12): encabezado salmón claro, conceptos en negrita, el TOTAL salmón fuerte con «A tomar en este Balance como gasto»
+  const SALMON = { patternType: "solid", fgColor: { rgb: "FFFCE4D6" } }, SALMON_F = { patternType: "solid", fgColor: { rgb: "FFF8CBAD" } }
+  const txt = (v: string, extra: Record<string, unknown> = {}, fill?: object) => ({ t: "s", v, s: { font: { name: "Calibri", sz: 10, ...((extra.font as object) ?? {}) }, border: borde, ...(fill ? { fill } : {}) } })
+  const mon = (f: string, v: number, negrita = false, fill?: object) => ({ t: "n", f, v: r2(v), z: MONEDA_H, s: { font: { name: "Calibri", sz: 10, bold: negrita }, numFmt: MONEDA_H, border: borde, ...(fill ? { fill } : {}) } })
   const f: unknown[][] = [[null, { t: "s", v: "SALDO DEL EJERCICIO ANTERIOR", s: { font: { name: "Calibri", bold: true, sz: tipo === "inmobiliario" ? 20 : 18 } } }],
     [null, { t: "s", v: `${resp} — gasto que viene del balance anterior (pago anual adelantado) y se toma en ESTE ejercicio`, s: { font: { name: "Calibri", italic: true, sz: 11 } } }], []]
   if (!saldos.length) { f.push([null, "No hay saldo del ejercicio anterior para este impuesto."], [], []); return { filas: f, filaTotal: null } }
-  f.push([null, txt("Concepto", { font: { bold: true } }), txt(""), txt(""), txt(""), txt(""), txt("Saldo anterior", { font: { bold: true } }), txt(""), txt("De dónde sale", { font: { bold: true } })])
+  f.push([null, txt("Concepto", { font: { bold: true } }, SALMON), txt("", {}, SALMON), txt("", {}, SALMON), txt("", {}, SALMON), txt("", {}, SALMON), txt("Saldo anterior", { font: { bold: true } }, SALMON), txt("", {}, SALMON), txt("De dónde sale", { font: { bold: true } }, SALMON)])
   const s0 = f.length + 1
-  for (const sa of saldos) f.push([null, txt(sa.concepto), txt(""), txt(""), txt(""), txt(""), { t: "n", v: r2(sa.monto), z: MONEDA_H, s: { font: { name: "Calibri", sz: 10 }, numFmt: MONEDA_H, border: borde } }, txt(""), txt(`${sa.motivo} — cargado en el sistema (ajustes del balance)`, { font: { italic: true, sz: 9 } })])
+  for (const sa of saldos) f.push([null, txt(sa.concepto, { font: { bold: true } }), txt(""), txt(""), txt(""), txt(""), { t: "n", v: r2(sa.monto), z: MONEDA_H, s: { font: { name: "Calibri", sz: 10, bold: true }, numFmt: MONEDA_H, border: borde } }, txt(""), txt(`${sa.motivo} — cargado en el sistema (ajustes del balance)`, { font: { italic: true, sz: 9 } })])
   const filaTotal = f.length + 1
-  f.push([null, txt("TOTAL saldo del ejercicio anterior", { font: { bold: true } }), txt(""), txt(""), txt(""), txt(""), mon(`SUM(G${s0}:G${filaTotal - 1})`, saldos.reduce((a, x) => a + x.monto, 0), true), txt(""), txt("")])
+  f.push([null, txt("TOTAL saldo del ejercicio anterior", { font: { bold: true } }, SALMON_F), txt("", {}, SALMON_F), txt("", {}, SALMON_F), txt("", {}, SALMON_F), txt("", {}, SALMON_F),
+    mon(`SUM(G${s0}:G${filaTotal - 1})`, saldos.reduce((a, x) => a + x.monto, 0), true, SALMON_F), txt("", {}, SALMON_F), { t: "s", v: "A tomar en este Balance como gasto", s: { font: { name: "Calibri", sz: 10 } } }])
   f.push([], [])
   return { filas: f, filaTotal }
 }
