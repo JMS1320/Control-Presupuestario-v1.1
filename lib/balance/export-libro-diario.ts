@@ -51,7 +51,7 @@ import type { CuentasSinCuentaCorriente } from "./fuera-por-cuenta-corriente"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
 import { armarStocksUnificados, hojaDeStocks } from "./stocks-unificado"
-import { solapasPapelesH, anexoSaldosAnteriores, type DatosPapelesH } from "./papeles-impuestos-h"
+import { solapasPapelesH, type DatosPapelesH } from "./papeles-impuestos-h"
 import { DETALLES, hojaDetalleHacienda, hojaStockHacienda, hojaStockValorizado, hojaPreciosTomados, hojaCalculoKilos, hojaAumentoRodeo, type MovimientoPapel } from "./stock-hacienda-papel"
 import type { PesoCategoria } from "./pesos-hacienda"
 import { APERTURA_MSA_2025 } from "./apertura-contador"
@@ -3467,23 +3467,24 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
     const usados = new Set([...wb.SheetNames, `H · ${resp} · Templates`, `H · ${resp} · Cuotas`, hojaPorMes])
     const tablasSinLeer = t.entrada?.opciones.bancoSinLeer
     // Las solapas de agrupadora se arman antes, para que «Por mes» pueda apuntar a sus totales (control del todo a las partes).
-    const grupos = gruposDelResponsable(t.detalle, resp).map(g => {
+    // ✍️ JMS 11/11: los pagos adelantados del balance anterior que son gasto de este ejercicio — cada saldo en UNA sola solapa: la que más
+    // cuotas tiene de su cuenta (el inmobiliario rural va a Imp Rurales, no también a Imp Urbanos). Van ARRIBA de la tabla (A-FEAT-1207).
+    const norm = (x: string) => (x ?? "").trim().toLowerCase()
+    const gruposR = gruposDelResponsable(t.detalle, resp)
+    const saldosDe = new Map<(typeof gruposR)[number], NonNullable<DatosPapelesH["saldosAnteriores"]>>()
+    for (const sa of (papeles?.saldosAnteriores ?? []).filter(x => responsablePrincipal(x.empresa) === resp)) {
+      const peso = (g: (typeof gruposR)[number]) => g.cuotas.filter(c => norm(c.categ ?? "") === norm(sa.categ)).reduce((a, c) => a + Math.abs(c.monto), 0)
+      const mejor = gruposR.filter(g => peso(g) > 0).sort((a, b) => peso(b) - peso(a))[0]
+      if (mejor) saldosDe.set(mejor, [...(saldosDe.get(mejor) ?? []), sa])
+    }
+    const grupos = gruposR.map(g => {
       let nombre = nombreSolapaGrupo(g, "H"), n = 2
       while (usados.has(nombre)) nombre = `${nombreSolapaGrupo(g, "H").slice(0, 28)} ${n++}`
       usados.add(nombre)
       const armada = armarHojaGrupo(g, etiqueta, meses, { hojaPorMes, tablasSinLeer, extracto: t.entrada?.opciones.extracto, auditoria: aud,
-        establecimientoDe: (partida: string) => papeles?.ubicacion?.[`campo:${partida.toLowerCase()}`]?.establecimiento ?? partida })
+        establecimientoDe: (partida: string) => papeles?.ubicacion?.[`campo:${partida.toLowerCase()}`]?.establecimiento ?? partida, saldosAnteriores: saldosDe.get(g) })
       return { g, nombre, ...armada }
     })
-    // ✍️ JMS 11/11: los pagos adelantados del balance anterior que son gasto de este ejercicio, como información ANEXA — cada saldo en UNA
-    // sola solapa: la que más cuotas tiene de su cuenta (el inmobiliario rural va a Imp Rurales, no también a Imp Urbanos)
-    const norm = (x: string) => (x ?? "").trim().toLowerCase()
-    for (const sa of (papeles?.saldosAnteriores ?? []).filter(x => responsablePrincipal(x.empresa) === resp)) {
-      const peso = (x: (typeof grupos)[number]) => x.g.cuotas.filter(c => norm(c.categ ?? "") === norm(sa.categ)).reduce((a, c) => a + Math.abs(c.monto), 0)
-      const mejor = grupos.filter(x => peso(x) > 0).sort((a, b) => peso(b) - peso(a))[0]
-      if (mejor) (mejor as { saldos?: typeof sa[] }).saldos = [...((mejor as { saldos?: typeof sa[] }).saldos ?? []), sa]
-    }
-    for (const x of grupos) { const ss = (x as { saldos?: NonNullable<DatosPapelesH["saldosAnteriores"]> }).saldos; if (ss?.length) x.filas.push(...anexoSaldosAnteriores(x.g.cuotas, ss, resp)) }
     hoja(wb, `H · ${resp} · Templates`, hojaListadoTemplates(t, resp, etiqueta), COLS_LISTADO_TEMPLATES)
     hoja(wb, `H · ${resp} · Cuotas`, hojaDeTemplates(t), COLS_TEMPLATES)
     // 🔎 A-FEAT-1518 (02/11): lo del extracto de este responsable sin categoría ni vínculo — no lo ve ningún control de abajo.

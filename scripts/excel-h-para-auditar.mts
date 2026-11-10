@@ -11,7 +11,7 @@ import { readFileSync, existsSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { armarEjercicio, primerDiaDelEjercicio } from "../lib/balance/ejercicio"
 import { desdeCuota, armarTemplatesDelEjercicio } from "../lib/balance/templates-libro"
-import { leerCuentasConSaldo, resumirCuenta, hojaControlPlata, armarEtapa2, hojaDetalleEtapa2 } from "../lib/balance/control-plata"
+import { leerCuentasConSaldo, resumirCuenta, hojaControlPlata, armarEtapa2, hojaDetalleEtapa2, puenteDeComprobantes } from "../lib/balance/control-plata"
 const SOLAPA_PLATA = "Control de la plata", SOLAPA_PLATA_DET = "Plata · adónde fue"
 import { leerMovimientosDeCuotas, vincularBanco, leerExtractoDelEjercicio, indiceDeDestinos, conFacturas } from "../lib/balance/movimientos-de-cuotas"
 import { agregarLibroH, vistasDe, agregarHoja, reordenarSolapas } from "../lib/balance/export-libro-diario"
@@ -117,7 +117,17 @@ agregarLibroH(wb as any, templates, ej.etiqueta, meses, { cuotas: cuotasImp, ...
     { nro: "E7", concepto: "Consumos de la tarjeta (resumen VISA MSA)", registrado: consumosVisa, deDondeRegistrado: "movimientos del resumen de la VISA MSA (sin el pago ni el total)", banco: { codigos: ["D8"], lado: "egr" },
       explica: "el saldo de la tarjeta al inicio y al cierre (se paga el mes siguiente)" },
   ] as any[]
-  agregarHoja(wb as any, SOLAPA_PLATA, hojaControlPlata(rs, EMPRESA, ej.etiqueta, { desde: primerDiaDelEjercicio(ej), corte, hasta: ej.fechaCierre }, leidas.tablasQueFallaron, { e: etapa2, hojaDetalle: SOLAPA_PLATA_DET }, etapa3),
+  // 💰 etapa 4: por dónde se pagó / cobró cada comprobante del ejercicio (todas las cuentas de las tres empresas, la tarjeta incluida)
+  const delEj = (xs: any[]) => xs.filter(x => mesesEj.has(x.subdiario)).map(x => ({ id: String(x.id), fuente: String(x.fuente), total: conSigno(x) }))
+  const plata = new Set(rs.map(r => r.cuenta)), esTarjeta = (c: string) => /visa|tarjeta/i.test(c)
+  const movsCompra = (ex.movimientos as any[]).filter(m => m.comprobanteArcaId).map(m => ({ id: String(m.comprobanteArcaId), cuenta: m.cuenta, titular: m.titular, importe: r2(m.debitos - m.creditos) }))
+  const movsVenta = (ex.movimientos as any[]).filter(m => m.comprobanteVentaId).map(m => ({ id: String(m.comprobanteVentaId), cuenta: m.cuenta, titular: m.titular, importe: r2(m.creditos - m.debitos) }))
+  const etapa4 = {
+    compras: puenteDeComprobantes(delEj(libro.compras), movsCompra, EMPRESA, plata, esTarjeta, "E2", { hecho: "Pagado", sin: "pago" }),
+    ventas: puenteDeComprobantes(delEj(libro.ventas), movsVenta, EMPRESA, plata, esTarjeta, "E1", { hecho: "Cobrado", sin: "cobro" }),
+  }
+  for (const k of ["compras", "ventas"] as const) console.log(`etapa 4 · ${k}: ${etapa4[k].renglones.map(x => `${x.nro} ${x.valor}`).join(" · ")} · banco ${etapa4[k].enBanco}`)
+  agregarHoja(wb as any, SOLAPA_PLATA, hojaControlPlata(rs, EMPRESA, ej.etiqueta, { desde: primerDiaDelEjercicio(ej), corte, hasta: ej.fechaCierre }, leidas.tablasQueFallaron, { e: etapa2, hojaDetalle: SOLAPA_PLATA_DET }, etapa3, etapa4),
     [28, 16, 16, 16, 16, 16, 14, 16, 16, 16, 16, 14, 34, 11, 50].map((ancho, i) => (i >= 1 && i <= 11 ? { ancho, z: "#,##0.00" } : { ancho })) as any)
   agregarHoja(wb as any, SOLAPA_PLATA_DET, hojaDetalleEtapa2(etapa2, EMPRESA, ej.etiqueta),
     [7, 34, 18, 11, 40, 15, 15, 7, 44, 60, 26, 14, 12].map((ancho, i) => (i === 5 || i === 6 ? { ancho, z: "#,##0.00" } : { ancho })) as any)

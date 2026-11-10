@@ -29,7 +29,8 @@ export interface ItemDetalle {
 
 export interface OpcionesResumen {
   titulo: string
-  notas?: string[]
+  /** Renglones arriba del resumen: un texto, o una fila entera de celdas (JMS 11/11: el saldo del ejercicio anterior va arriba). */
+  notas?: Array<string | unknown[]>
   /** Los meses del ejercicio en orden (`AAAA-MM`) y cómo se rotulan (`jul-25`). */
   meses: { clave: string; rotulo: string }[]
   /** Encabezados de `columnas` del detalle (sin Nro, Mes ni Importe, que se agregan). */
@@ -169,7 +170,7 @@ export function armarResumenPorMes(items: ItemDetalle[], o: OpcionesResumen): { 
   ]
   const vacias = (): unknown[] => Array.from({ length: S }, () => "")
 
-  const h: unknown[][] = [[o.titulo], ...(o.notas ?? []).map(n => [n]), []]
+  const h: unknown[][] = [[o.titulo], ...(o.notas ?? []).map(n => (Array.isArray(n) ? n : [n])), []]
   monedas.forEach((m, k) => {
     h.push([...vacias(), m === "USD" ? "EN DÓLARES (US$) — no se suman a los pesos" : m === "ARS" ? "EN PESOS" : "RESUMEN POR CATEGORÍA Y POR MES"])
     h.push([...(S ? ["1er sem", "2do sem", "total"] : []), "Nro", "Categoría", ...o.meses.map(x => x.rotulo), "TOTAL"])

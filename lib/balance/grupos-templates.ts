@@ -117,6 +117,8 @@ export interface OpcionesHojaGrupo {
   auditoria?: boolean
   /** 🔍 JMS 09/11: el ESTABLECIMIENTO de cada partida (Nazarenas, Rojas, Lima…) — de `public.partidas`; sin dato, la partida misma. */
   establecimientoDe?: (partida: string) => string
+  /** ✍️ JMS 11/11: los saldos del ejercicio anterior de las cuentas de ESTA solapa (van arriba, y el costo del balance abajo del resumen). */
+  saldosAnteriores?: Array<{ concepto: string; categ: string; monto: number; motivo: string }>
 }
 
 /** Las columnas de «Por mes» (ver `hojaTemplatesPorMes`): B = agrupadora, C = categoría, P = TOTAL (12 meses desde la D). */
@@ -165,6 +167,64 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
     : renglonAuditoria(c.concepto, opciones.establecimientoDe)
   const primeraFecha = new Map<string, string>()
   if (opciones.auditoria) for (const c of g.cuotas) { const k = renglonDe(c), f = c.fecha ?? ""; if (!primeraFecha.has(k) || f < primeraFecha.get(k)!) primeraFecha.set(k, f) }
+  /**
+   * ✍️ JMS 11/11 (nota en «Imp Rurales»: «este recuadro debe ir ARRIBA de la primer tabla como costo aplicable al balance que viene de
+   * antes. Son sólo 3 renglones pero resaltados y con total… luego la tabla de este ejercicio con su subtotal… y luego el total general de
+   * cada uno: el costo para este balance»). Arriba: el SALDO DEL EJERCICIO ANTERIOR (pago anual adelantado), resaltado y con su total.
+   * Después del resumen del ejercicio: el COSTO PARA ESTE BALANCE por cuenta = saldo anterior + cuotas del ejercicio, con fórmulas.
+   */
+  const saldos = opciones.saldosAnteriores ?? []
+  const RESALTE = { font: { bold: true }, fill: { patternType: "solid", fgColor: { rgb: "FFFFE699" } } }
+  const MON = "#,##0.00;[Red]-#,##0.00;\"-\""
+  const notasArriba: Array<string | unknown[]> = []
+  if (sinGrupo && g.cuotas.some(enDolares)) notasArriba.push("💲 Lo «pagado en US$» se pagó en DÓLARES y acá figura en PESOS, al TC del día del pago (el Detalle dice cuál y de dónde sale).")
+  const filaSaldo = new Map<string, number>()   // cuenta → fila de su saldo anterior (base 1)
+  let filaTotalSaldo = 0
+  if (saldos.length) {
+    const fila = () => 1 + notasArriba.length + 1      // la fila que va a ocupar el próximo renglón (el título es la 1)
+    notasArriba.push(["", TITULO_TABLA("SALDO DEL EJERCICIO ANTERIOR — gasto que viene del balance anterior (pago anual adelantado): se toma en ESTE ejercicio")])
+    notasArriba.push(["", ENCABEZADO_TABLA("Cuenta · concepto"), ENCABEZADO_TABLA("Saldo anterior"), ENCABEZADO_TABLA("De dónde sale")])
+    const s0 = fila()
+    for (const s of saldos) {
+      filaSaldo.set(s.categ.trim().toLowerCase(), fila())
+      notasArriba.push(["", { t: "s", v: `${s.categ} — ${s.concepto}`, s: RESALTE }, { t: "n", v: Math.round(s.monto * 100) / 100, z: MON, s: { ...RESALTE, numFmt: MON } },
+        { t: "s", v: `${s.motivo} (cargado en el sistema: ajustes del balance)`, s: { font: { italic: true } } }])
+    }
+    filaTotalSaldo = fila()
+    notasArriba.push(["", TOTAL_TEXTO("TOTAL saldo del ejercicio anterior"), { t: "n", f: `SUM(C${s0}:C${filaTotalSaldo - 1})`, v: Math.round(saldos.reduce((a, s) => a + s.monto, 0) * 100) / 100, z: MON, s: { ...RESALTE, numFmt: MON } }])
+  }
+  /** Las cuentas del saldo anterior y los conceptos (templates) de esta solapa que llevan esa cuenta. */
+  const cuentasSaldo = [...new Set(saldos.map(s => s.categ.trim().toLowerCase()))]
+  const conceptosDe = (cat: string) => [...new Set(g.cuotas.filter(c => (c.categ ?? "").trim().toLowerCase() === cat).map(c => c.concepto))]
+  const bloqueCosto = saldos.length ? {
+    alto: cuentasSaldo.length + 4,
+    armar: (ub: { fila: number; rng: (c: string) => string; colDebito: string; colCredito: string | null; colDetalle: (i: number) => string }) => {
+      const out: unknown[][] = []
+      const fila = () => ub.fila + out.length
+      out.push(["", TITULO_TABLA("COSTO PARA ESTE BALANCE — saldo del ejercicio anterior + cuotas de este ejercicio, por cuenta")])
+      out.push(["", ENCABEZADO_TABLA("Cuenta"), ENCABEZADO_TABLA("Saldo anterior"), ENCABEZADO_TABLA("Cuotas del ejercicio"), ENCABEZADO_TABLA("= Costo del balance")])
+      const c0 = fila()
+      const lit = (x: string) => x.replace(/[~*?]/g, m => `~${m}`).replace(/"/g, "\"\"")
+      for (const cat of cuentasSaldo) {
+        const n = fila(), nombre = saldos.find(s => s.categ.trim().toLowerCase() === cat)!.categ
+        const conc = conceptosDe(cat)
+        const vCuotas = Math.round(g.cuotas.filter(c => (c.categ ?? "").trim().toLowerCase() === cat).reduce((a, c) => a + c.monto, 0) * 100) / 100
+        const vSaldo = Math.round(saldos.filter(s => s.categ.trim().toLowerCase() === cat).reduce((a, s) => a + s.monto, 0) * 100) / 100
+        const fCuotas = conc.length ? conc.map(k => `SUMIFS(${ub.rng(ub.colDebito)},${ub.rng(ub.colDetalle(1))},"${lit(k)}")${ub.colCredito ? `-SUMIFS(${ub.rng(ub.colCredito)},${ub.rng(ub.colDetalle(1))},"${lit(k)}")` : ""}`).join("+") : "0"
+        out.push(["", nombre, { t: "n", f: `C${filaSaldo.get(cat)}`, v: vSaldo, z: MON }, { t: "n", f: fCuotas, v: vCuotas, z: MON }, { t: "n", f: `C${n}+D${n}`, v: Math.round((vSaldo + vCuotas) * 100) / 100, z: MON, s: { font: { bold: true }, numFmt: MON } }])
+      }
+      const cN = fila() - 1, nT = fila()
+      const tot = (c: string) => ({ t: "n", f: `SUM(${c}${c0}:${c}${cN})`, v: 0, z: MON, s: { ...RESALTE, numFmt: MON } })
+      out.push(["", TOTAL_TEXTO("TOTAL — costo para este balance"), tot("C"), tot("D"), { ...tot("E"), f: `C${nT}+D${nT}` }])
+      // los valores ya calculados del total
+      const vs = out.slice(2, 2 + cuentasSaldo.length).map(r => [r[2], r[3], r[4]].map(x => Number((x as { v?: number }).v ?? 0)))
+      ;(out[out.length - 1][2] as { v: number }).v = Math.round(vs.reduce((a, x) => a + x[0], 0) * 100) / 100
+      ;(out[out.length - 1][3] as { v: number }).v = Math.round(vs.reduce((a, x) => a + x[1], 0) * 100) / 100
+      ;(out[out.length - 1][4] as { v: number }).v = Math.round(vs.reduce((a, x) => a + x[2], 0) * 100) / 100
+      out.push([])
+      return out
+    },
+  } : undefined
   const { filas: h, ubicacion: u } = armarResumenPorMes(g.cuotas.map(c => ({
     categoria: opciones.auditoria ? renglonDe(c) : `${c.categ || "(sin categoría)"} — ${bancoDe(c) || "sin pago"}`, mes: (c.fecha ?? "").slice(0, 7), importe: c.monto,
     // 🔍 JMS 09/11 (auditar): por IMPUESTO → PARTIDA → FECHA (Inmobiliario partida por partida, Complementario aparte, Red Vial partida por
@@ -176,7 +236,8 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
       ...(opciones.auditoria ? (a => [a.quienPago, a.codigo, a.efecto, CENTRADO(a.marca), a.descripcion, a.beneficiario, a.factura, a.interno])(auditarCuota(c)) : [])],
   })), {
     titulo: `${g.agrupadora.toUpperCase()} — ${g.responsable} — ejercicio ${etiqueta}`,
-    ...(sinGrupo && g.cuotas.some(enDolares) ? { notas: ["💲 Lo «pagado en US$» se pagó en DÓLARES y acá figura en PESOS, al TC del día del pago (el Detalle dice cuál y de dónde sale)."] } : {}),
+    ...(notasArriba.length ? { notas: notasArriba } : {}),
+    ...(bloqueCosto ? { bloqueExtra: bloqueCosto } : {}),
     meses, encabezadoDetalle: ["Fecha", "Concepto", ...(opciones.auditoria ? ["Cuenta de la cuota"] : []), "Banco / cuenta", "Comprobante", "Proveedor", "Detalle", "Estado",
       ...(opciones.auditoria ? ["Quién pagó", "Código contable", "Efecto", "Marca", "Descripción del banco", "Beneficiario / CUIT", "Factura vinculada", "Interno"] : [])],
     // 📅 JMS 11/11 (nota en «MSA · Retiros-Distrib soc»: «acá preciso con el formato semestral también») — regla del 03/11: lo que sea retiros

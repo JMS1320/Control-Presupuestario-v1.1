@@ -50,7 +50,18 @@ export function campoDeTemplate(nombre: string | null | undefined): string {
 const esAnual = (nombre: string | null | undefined) => /\banual\b/i.test(nombre ?? "")
 
 /** `adicional`: la cuota ADICIONAL de ARBA (2025: la 5ª, aparte de las 4/4 o del pago anual) — JMS 11/11: «es una excepción». */
-export interface CuotaDelPapel { vencimiento: string; monto: number; estado: string; adicional?: boolean }
+export interface CuotaDelPapel {
+  vencimiento: string; monto: number; estado: string; adicional?: boolean
+  /** 🔢 JMS 11/11 («estas son las cuotas 3 y 4»): el número de la cuota y de cuántas, de la cuota misma («Cuota 3 de 4») o de `numero_cuota`. */
+  numero?: number | null; de?: number | null
+  id?: string
+}
+/** Pura. «Cuota 3 de 4» / «CUOTA 4/4» → 3 y 4 (de la descripción); si no dice, el `numero_cuota`. */
+export function numeroDeCuota(texto: string, numeroCuota?: number | null): { numero: number | null; de: number | null } {
+  const m = /cuota\s*(\d+)\s*(?:de|\/)\s*(\d+)/i.exec(texto)
+  if (m) return { numero: Number(m[1]), de: Number(m[2]) }
+  return { numero: numeroCuota ?? null, de: null }
+}
 
 export interface FilaPapel {
   campo: string
@@ -70,6 +81,8 @@ export interface FilaPapel {
   costoAnual: number
   aumento: number | null
   cuotas: CuotaDelPapel[]
+  /** 🗓️ JMS 11/11: los PAGOS ANUALES con su vencimiento y estado (en el papel del H van en su columna, porque ahí no está «Pago anual»). */
+  anuales?: CuotaDelPapel[]
   costoUsd: number | null
   costoHa: number | null
   costoHaUsd: number | null
@@ -114,7 +127,7 @@ export function armarPapel(
    */
   cuentasRedVial: Record<string, string> = {},
 ): Papel {
-  type Acum = { empresa: string; campo: string; complementario: boolean; partida: string | null; anterior: number; nAnterior: number; anual: number | null; enCuotas: number; cuotas: CuotaDelPapel[] }
+  type Acum = { empresa: string; campo: string; complementario: boolean; partida: string | null; anterior: number; nAnterior: number; anual: number | null; enCuotas: number; cuotas: CuotaDelPapel[]; anuales: CuotaDelPapel[] }
   const filas = new Map<string, Acum>()
   const mesesDelAnio: Array<{ anio: number; mes: number }> = []
 
@@ -128,12 +141,12 @@ export function armarPapel(
     const empresa = c.template.responsable ?? "—"
     const campo = p.complementario ? "Complementario" : campoDeTemplate(c.template.nombre_referencia)
     const clave = `${empresa}|${p.complementario ? "~comp" : campo.toLowerCase()}`
-    const f = filas.get(clave) ?? { empresa, campo, complementario: p.complementario, partida: null, anterior: 0, nAnterior: 0, anual: null, enCuotas: 0, cuotas: [] }
+    const f = filas.get(clave) ?? { empresa, campo, complementario: p.complementario, partida: null, anterior: 0, nAnterior: 0, anual: null, enCuotas: 0, cuotas: [], anuales: [] }
     f.partida = f.partida ?? c.template.partida_arba ?? null
     const monto = Number(c.monto ?? 0)
     if (a === anio - 1) { f.anterior += monto; f.nAnterior++ }
-    else if (esAnual(c.template.nombre_referencia)) { f.anual = (f.anual ?? 0) + monto; mesesDelAnio.push({ anio: a, mes: Number(venc.slice(5, 7)) }) }
-    else { f.enCuotas += monto; f.cuotas.push({ vencimiento: venc, monto, estado: c.estado, adicional: /adic/i.test(`${(c as { descripcion?: string | null }).descripcion ?? ""} ${c.detalle ?? ""}`) }); mesesDelAnio.push({ anio: a, mes: Number(venc.slice(5, 7)) }) }
+    else if (esAnual(c.template.nombre_referencia)) { f.anual = (f.anual ?? 0) + monto; f.anuales.push({ vencimiento: venc, monto, estado: c.estado, id: c.id }); mesesDelAnio.push({ anio: a, mes: Number(venc.slice(5, 7)) }) }
+    else { f.enCuotas += monto; { const txt = `${(c as { descripcion?: string | null }).descripcion ?? ""} ${c.detalle ?? ""}`; f.cuotas.push({ vencimiento: venc, monto, estado: c.estado, adicional: /adic/i.test(txt), ...numeroDeCuota(txt, c.numero_cuota), id: c.id }) }; mesesDelAnio.push({ anio: a, mes: Number(venc.slice(5, 7)) }) }
     filas.set(clave, f)
   }
 
@@ -154,7 +167,7 @@ export function armarPapel(
       campo: f.campo, partida, complementario: f.complementario, has,
       totalAnterior: redondear(f.anterior), pagoAnual: f.anual === null ? null : redondear(f.anual), totalCuotas: redondear(f.enCuotas),
       anteriorIncompleto, costoAnual, aumento: f.anterior > 0 && !anteriorIncompleto ? costoAnual / f.anterior - 1 : null,
-      cuotas: f.cuotas.sort((x, y) => x.vencimiento.localeCompare(y.vencimiento)),
+      cuotas: f.cuotas.sort((x, y) => x.vencimiento.localeCompare(y.vencimiento)), anuales: f.anuales,
       costoUsd, costoHa: has ? redondear(costoAnual / has) : null, costoHaUsd: has && costoUsd ? redondear(costoUsd / has) : null,
     }
     porEmpresa.set(f.empresa, [...(porEmpresa.get(f.empresa) ?? []), fila])
