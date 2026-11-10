@@ -69,6 +69,18 @@ export async function armarDatosARevisar(sb: any, cuotas: CuotaTemplate[], solap
         return [...g.values()].filter(cs => new Set(cs.map(c => baseYModalidad(c.concepto).modalidad)).size === 2).flat().sort((x, y) => x.concepto.localeCompare(y.concepto) || (x.fecha ?? "").localeCompare(y.fecha ?? "")).map(desdeCuota) })() },
   ]
 
+  // ✅ JMS 10/11: lo ya RESUELTO se dice en el mismo renglón (no se borra: queda la pregunta original y qué se hizo)
+  const RESUELTO: Record<string, string> = {
+    DR1: "RESUELTO (scripts 239–240): Consumos MA, Gastos Médicos y suscripciones 2025 pasaron a responsable MA.",
+    DR2: "RESUELTO (script 244): las medialunas de la Quinta Rosello → «CTA QUINTA X», cuenta Gastos de representación (sigue en Otros Gastos).",
+    DR3: "RESUELTO (script 243): la extracción de MA era para su propia caja → sin código; el adelanto de Wilson va a la Caja Sigot.",
+    DR4: "RESUELTO (script 245): la extracción va a la caja AMS sin código; el retiro de cotitulares es el ITGB de $ 1.756.595 pagado de la caja (template «Retiros Cotitulares»).",
+    DR5: "Pasajes: QUEDAN con «CTA JMS» — es un pago a JMS que él factura como reintegro (saldo a facturar; JMS 10/11). Amestoy: reintegro de gastos médicos a Fabián Vulcano, gasto de MSA → «Propuestas para aprobar» P5.",
+    DR6: "PROPUESTA: template «FLIA» sin código (no son consumos) → «Propuestas para aprobar» P4.",
+    DR9: "RESUELTO (scripts 243–244): el adelanto está atado a la Caja Sigot del 21/02 y en Sueldos tiene esa fecha.",
+    DR11: "RESUELTO (scripts 235–237): una sola modalidad activa por vehículo / partida.",
+  }
+  for (const p of PUNTOS) if (RESUELTO[p.id]) { p.titulo = `✅ ${p.titulo}`; p.decidir = `✅ ${RESUELTO[p.id]} (era: ${p.decidir})` }
   const h: unknown[][] = [["DATOS A REVISAR — cada punto con sus movimientos y todo su contexto · escribí tu respuesta en la última columna"],
     ["Los números de punto (DR1…) son los que usamos para hablar. Nada de esto se cambió todavía: se corrige con tu OK, con un script con foto previa y deshacer."], [],
     ["Punto", "Qué hay que decidir", "Movimientos", "Importe"].map(x => CENTRADO(x))]

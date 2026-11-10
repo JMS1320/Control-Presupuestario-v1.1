@@ -55,6 +55,7 @@ const QUE: Record<number, [string, string, string]> = {  // [tipo, qué cambió,
   30: ["Presentación", "DR1 marca lo resuelto.", ""],
   32: ["Descartada", "❌ Salió MAL: las compras en dólares pasadas a pesos (script 241) restaban, porque 53 cuotas estaban marcadas «ingreso». NO USAR: corregido en la v33.", "241"],
   33: ["DATOS", "Compras en DÓLARES con tarjeta pasadas a PESOS con el TC que usó la tarjeta (60 cuotas, $ 1.932.079,75); corregido el sentido de 54 cuotas (las compras eran «ingreso»; 2 devoluciones con importe negativo) y la regla que lo causaba (Extracto y motor). El control contra el banco toma lo pasado a pesos.", "241, 242"],
+  35: ["Presentación", "«Datos a revisar» marca lo resuelto en el mismo renglón (DR1–DR4, DR9, DR11 resueltos; DR5 pasajes quedan con CTA JMS; DR5 Amestoy y DR6 → Propuestas). Quedan abiertos DR7, DR8 y DR10.", ""],
   34: ["DATOS", "Wilson (adelanto atado a la Caja Sigot 21/02; la extracción de MA del 19/02 suelta y sin CTA MSA); medialunas de la Quinta → CTA QUINTA X (los grupos que no son empresa: manda el código); ITGB de la sucesión pagado de la caja AMS como retiro de los cotitulares (template nuevo «Retiros Cotitulares»), la extracción del Galicia de 1,8 M sin código.", "243, 244, 245"],
   31: ["DATOS", "Suscripciones 2025 (Netflix, Paquete TV MA, Club La Nación, Jockey Club) pasan a MA; código interno «DIST MA» vacío. + Las compras en dólares con tarjeta en $ 0 saltan en Inconsistencias (61 cuotas).", "240"],
 }
