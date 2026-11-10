@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Fragment } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
@@ -8,6 +8,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Loader2, ChevronRight, ChevronDown, FolderOpen, Folder, FileText, Calendar } from "lucide-react"
 import { supabase } from "@/lib/supabase"
+import { leerContextoDeCuotas, type ContextoDeCuota } from "@/lib/documentos/de-cuotas"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 
@@ -18,6 +19,12 @@ interface Cuota {
   fecha_vencimiento: string | null
   monto: number
   estado: string
+  // 🔎 A-FEAT-1583: el contexto de la cuota (en «Otros Gastos» la cuenta es la que dice QUÉ fue)
+  categ?: string | null
+  centro_costo?: string | null
+  detalle?: string | null
+  descripcion?: string | null
+  grupo_pago_id?: string | null
 }
 
 interface Template {
@@ -26,6 +33,7 @@ interface Template {
   categ: string
   cuenta_agrupadora: string
   activo: boolean
+  proveedor?: string | null
   cuotas: number
   monto_total: number
   cuotas_detalle: Cuota[]
@@ -57,6 +65,11 @@ export function VistaTemplatesAgrupada() {
   const [cuentasExpandidas, setCuentasExpandidas] = useState<Set<string>>(new Set())
   const [categoriasExpandidas, setCategoriasExpandidas] = useState<Set<string>>(new Set())
   const [templatesExpandidos, setTemplatesExpandidos] = useState<Set<string>>(new Set())
+  // 🔎 A-FEAT-1583 (JMS 09/11): al abrir un template se lee el contexto de sus cuotas — dónde se pagó (cuenta, fecha, comprobante,
+  // códigos, descripción del banco) y sus documentos 📎. Se lee al abrir, no al cargar la pantalla (son muchas cuotas).
+  const [contexto, setContexto] = useState<Record<string, ContextoDeCuota>>({})
+  const [cargandoCtx, setCargandoCtx] = useState<Set<string>>(new Set())
+  const [cuentasSinLeer, setCuentasSinLeer] = useState<string[]>([])
 
   // Cargar datos
   useEffect(() => {
@@ -77,13 +90,19 @@ export function VistaTemplatesAgrupada() {
           categ,
           cuenta_agrupadora,
           activo,
+          proveedor,
           cuotas_egresos_sin_factura (
             id,
             numero_cuota,
             fecha_estimada,
             fecha_vencimiento,
             monto,
-            estado
+            estado,
+            categ,
+            centro_costo,
+            detalle,
+            descripcion,
+            grupo_pago_id
           )
         `)
         .order('cuenta_agrupadora')
@@ -137,6 +156,7 @@ export function VistaTemplatesAgrupada() {
         categ: t.categ,
         cuenta_agrupadora: t.cuenta_agrupadora,
         activo: t.activo,
+        proveedor: t.proveedor,
         cuotas: cuotasDetalle.length,
         monto_total: cuotasDetalle.reduce((sum: number, c: Cuota) => sum + (c.monto || 0), 0),
         cuotas_detalle: cuotasDetalle
@@ -193,7 +213,26 @@ export function VistaTemplatesAgrupada() {
     })
   }
 
+  const cargarContexto = async (t: Template) => {
+    const faltan = t.cuotas_detalle.filter(c => !contexto[c.id])
+    if (!faltan.length || cargandoCtx.has(t.id)) return
+    setCargandoCtx(prev => new Set(prev).add(t.id))
+    try {
+      const r = await leerContextoDeCuotas(supabase as never, faltan.map(c => ({ id: c.id, grupoPagoId: c.grupo_pago_id })))
+      setContexto(prev => ({ ...prev, ...r.porCuota }))
+      if (r.cuentasQueFallaron.length) setCuentasSinLeer(prev => [...new Set([...prev, ...r.cuentasQueFallaron])])
+    } catch (e) {
+      console.error("No se pudo leer el contexto de las cuotas", e)
+    } finally {
+      setCargandoCtx(prev => { const n = new Set(prev); n.delete(t.id); return n })
+    }
+  }
+
   const toggleTemplate = (id: string) => {
+    if (!templatesExpandidos.has(id)) {
+      const t = datos.flatMap(c => c.categorias.flatMap(k => k.templates)).find(x => x.id === id)
+      if (t) cargarContexto(t)
+    }
     setTemplatesExpandidos(prev => {
       const nuevo = new Set(prev)
       if (nuevo.has(id)) {
@@ -285,6 +324,9 @@ export function VistaTemplatesAgrupada() {
       {/* Vista jerárquica */}
       <Card>
         <CardContent className="pt-4">
+          {cuentasSinLeer.length > 0 && (
+            <p className="mb-2 text-xs text-amber-800">⚠️ No se pudieron leer: {cuentasSinLeer.join(", ")} — un pago ahí no se ve.</p>
+          )}
           <ScrollArea className="h-[600px]">
             <div className="space-y-1">
               {datos.map(cuenta => (
@@ -353,6 +395,7 @@ export function VistaTemplatesAgrupada() {
                                       )}
                                       <FileText className="h-4 w-4 text-green-500" />
                                       <span className="text-slate-700">{template.nombre_referencia}</span>
+                                      {template.proveedor && <span className="text-xs text-slate-400">· {template.proveedor}</span>}
                                       {!template.activo && (
                                         <Badge variant="destructive" className="text-xs">Desactivado</Badge>
                                       )}
@@ -379,8 +422,8 @@ export function VistaTemplatesAgrupada() {
                                               </tr>
                                             </thead>
                                             <tbody>
-                                              {template.cuotas_detalle.map(cuota => (
-                                                <tr key={cuota.id} className="border-t border-slate-200">
+                                              {template.cuotas_detalle.map(cuota => (<Fragment key={cuota.id}>
+                                                <tr className="border-t border-slate-200">
                                                   <td className="py-1 text-slate-600">
                                                     Cuota {cuota.numero_cuota}
                                                   </td>
@@ -402,7 +445,12 @@ export function VistaTemplatesAgrupada() {
                                                     </Badge>
                                                   </td>
                                                 </tr>
-                                              ))}
+                                                <tr>
+                                                  <td colSpan={5} className="pb-1.5 pl-2 text-[11px] leading-4 text-slate-500">
+                                                    <ContextoCuota cuota={cuota} ctx={contexto[cuota.id]} cargando={cargandoCtx.has(template.id)} />
+                                                  </td>
+                                                </tr>
+                                              </Fragment>))}
                                             </tbody>
                                           </table>
                                         </div>
@@ -425,4 +473,39 @@ export function VistaTemplatesAgrupada() {
       </Card>
     </div>
   )
+}
+
+const fechaCorta = (f: string) => (f ? f.slice(0, 10).split("-").reverse().join("/") : "")
+const pesos = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+/**
+ * 🔎 A-FEAT-1583: la línea de contexto debajo de cada cuota — qué fue (cuenta, centro de costo, detalle), dónde se pagó (cuenta,
+ * fecha, comprobante, códigos, lo que dice el banco) y sus documentos 📎. Lo que falta se DICE (§ nada se descarta en silencio):
+ * «sin cuenta», y una conciliada sin movimiento vinculado en ámbar (es lo que marca el control de Principal).
+ */
+function ContextoCuota({ cuota, ctx, cargando }: { cuota: Cuota; ctx?: ContextoDeCuota; cargando: boolean }) {
+  const partes: React.ReactNode[] = []
+  partes.push(cuota.categ ? <span key="c">Cuenta: <b className="text-slate-700">{cuota.categ}</b></span> : <span key="c" className="text-amber-700">sin cuenta</span>)
+  if (cuota.centro_costo) partes.push(<span key="cc">Centro de costo: {cuota.centro_costo}</span>)
+  const det = cuota.detalle || cuota.descripcion
+  if (det) partes.push(<span key="d">«{det}»</span>)
+  if (!ctx) partes.push(<span key="p" className="text-slate-400">{cargando ? "leyendo el pago…" : ""}</span>)
+  else if (ctx.pagos.length) {
+    for (const [i, m] of ctx.pagos.entries()) {
+      const importe = m.debitos - m.creditos
+      partes.push(
+        <span key={`p${i}`}>
+          Pagó: <b className="text-slate-700">{m.cuenta}</b> {fechaCorta(m.fecha)} · $ {pesos(importe)}
+          {m.comprobante ? ` · comp. ${m.comprobante}` : ""}
+          {m.contable || m.interno ? ` · ${[m.contable, m.interno].filter(Boolean).join(" / ")}` : ""}
+          {m.descripcion ? ` · «${m.descripcion}»` : ""}
+          {m.comprobanteArcaId ? " · factura vinculada" : ""}
+          {cuota.grupo_pago_id && m.vinculo === cuota.grupo_pago_id ? " · (pago agrupado)" : ""}
+        </span>)
+    }
+  } else if (/^conciliad/i.test(cuota.estado)) partes.push(<span key="p" className="text-amber-700">⚠️ conciliada sin ningún pago vinculado</span>)
+  else if (/^(pagado|anterior)$/i.test(cuota.estado)) partes.push(<span key="p" className="text-slate-400">sin movimiento del banco vinculado</span>)
+  if (ctx?.documentos.length) partes.push(
+    <span key="docs">📎 {ctx.documentos.map((d, i) => <a key={i} href={d.url} target="_blank" rel="noreferrer" className="mr-1.5 text-blue-600 underline">{d.titulo}</a>)}</span>)
+  return <div className="flex flex-wrap gap-x-3 gap-y-0.5">{partes}</div>
 }

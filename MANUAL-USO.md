@@ -6787,6 +6787,19 @@ cuota **pendiente en $ 0** de la modalidad activa cuenta como **deuda** (falta e
 
 → A-TEST-1353
 
+### 🔎 Vista agrupada de templates: el contexto de cada cuota *(2026-11-09)*
+
+En *Egresos → Templates → Vista agrupada*, al abrir un template aparece debajo de cada cuota una línea gris con:
+- **Cuenta** de la cuota (en «Otros Gastos» es la que dice qué fue) y el **centro de costo**;
+- el **detalle**;
+- **Pagó:** la cuenta donde está el movimiento vinculado, la fecha, el importe, el comprobante, los códigos contable / interno
+  y lo que dice el banco (o «pago agrupado» si se pagó junto con otras cuotas);
+- el **📎** con los documentos de la cuota (boleta de ARBA, VEP o boleta pasada desde un mail, comprobante adjuntado).
+
+Si falta algo se dice: «sin cuenta», o «⚠️ conciliada sin ningún pago vinculado».
+
+→ A-TEST-1354
+
 ### 💱 NC esperadas por diferencia de cambio (Principal)
 
 Cuando pagás una factura en dólares a un TC distinto del suyo, el proveedor te debe una **NC** (pagaste a menos) o vos le debés una **ND**. La tarjeta **«NC esperadas por diferencia de cambio»** de Principal muestra cuánto se espera de cada proveedor (total USD × diferencia de TC) hasta que llega; cuando la importás de ARCA la reconoce sola y pasa a «ya llegaron». Si tu inicio está configurado, agregala desde el configurador.

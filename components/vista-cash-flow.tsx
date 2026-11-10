@@ -20,7 +20,8 @@ import { calcularSubtotales } from "@/lib/pagos/subtotales"
 import { generarPDFDetallePago } from "@/lib/pagos/pdf-detalle-pago"
 import { facturasDelGrupo } from "@/lib/pagos/facturas-del-grupo"
 import { estadoArchivoDigital, PRESENTACION_ARCHIVO } from "@/lib/facturas/archivo-digital"
-import { documentosDeCuotas, type DocumentoDeCuota } from "@/lib/vencimientos/de-la-persona"
+import { type DocumentoDeCuota } from "@/lib/vencimientos/de-la-persona"
+import { leerDocumentosDeCuotas } from "@/lib/documentos/de-cuotas"
 import { cuotasDelRenglon, documentosDelRenglon } from "@/lib/documentos/del-renglon"
 import { cuentaDeFila, COLOR_CUENTA } from "@/lib/pagos/cuenta-de-fila"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -496,18 +497,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     let vigente = true
     ;(async () => {
       try {
-        const trozos: string[][] = []
-        for (let i = 0; i < ids.length; i += 200) trozos.push(ids.slice(i, i + 200))
-        const [{ data: mails }, boletas, propuestas] = await Promise.all([
-          supabase.from('mails_registro').select('asunto, vinculos').contains('vinculos', [{ tabla: 'cuotas_egresos_sin_factura' }]),
-          Promise.all(trozos.map(t => supabase.from('boletas_arba').select('cuota_id, archivo_url, archivo_nombre, impuesto').in('cuota_id', t))),
-          Promise.all(trozos.map(t => supabase.from('propuestas_cambio').select('id, registro_id, estado, nombre:cambios->comprobante->>nombre')
-            .eq('tabla', 'cuotas_egresos_sin_factura').in('registro_id', t))),
-        ])
+        // 📎 la misma lectura que la vista agrupada de templates (lib/documentos/de-cuotas.ts, A-FEAT-1583)
+        const docs = await leerDocumentosDeCuotas(supabase as never, ids)
         if (!vigente) return
-        const conComprobante = propuestas.flatMap(r => (r.data ?? []) as unknown as { id: string; registro_id: string; estado: string; nombre: string | null }[])
-          .map(p => ({ id: p.id, registro_id: p.registro_id, estado: p.estado, con_comprobante: p.nombre }))
-        setDocsPorCuota(documentosDeCuotas(ids, (mails ?? []) as Parameters<typeof documentosDeCuotas>[1], boletas.flatMap(r => r.data ?? []), conComprobante))
+        setDocsPorCuota(docs)
       } catch (e) { console.error('No se pudieron leer los documentos de las cuotas', e) }
     })()
     return () => { vigente = false }
