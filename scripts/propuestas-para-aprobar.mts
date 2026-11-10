@@ -5,11 +5,12 @@
  */
 import { createClient } from "@supabase/supabase-js"
 import XLSX from "xlsx-js-style"
-import { readFileSync, writeFileSync } from "node:fs"
+import { readFileSync, writeFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
 import { aplicarVistas } from "../lib/balance/formato-excel"
 import { agregarHoja, vistasDe } from "../lib/balance/export-libro-diario"
 import { cargarProblemasDeModalidad } from "../lib/templates/modalidad"
+import { fechasReales } from "../lib/excel/fechas-reales"
 
 const env = Object.fromEntries(readFileSync(".env.local", "utf8").split(/\r?\n/).filter(l => l.includes("=") && !l.trim().startsWith("#"))
   .map(l => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, "")] }))
@@ -53,13 +54,13 @@ function hoja(id: string, solapa: string, titulo: string, que: string, hacer: st
 }
 
 // ── P1 · «DIST MA» en lo que pagó PAM de gastos de MA
-const tpm = await todas(() => sb.schema("pam").from("tarjeta_visa").select("id, fecha, descripcion, debitos, creditos, debitos_usd, contable, template_cuota_id").not("template_cuota_id", "is", null).order("id"))
-const gpm = await todas(() => sb.from("pam_galicia").select("id, fecha, descripcion, debitos, creditos, contable, template_cuota_id").not("template_cuota_id", "is", null).order("id"))
+const tpm = await todas(() => sb.schema("pam").from("tarjeta_visa").select("id, fecha, descripcion, debitos, creditos, debitos_usd, contable, interno, detalle, comprobantes_pagados, template_cuota_id").not("template_cuota_id", "is", null).order("id"))
+const gpm = await todas(() => sb.from("pam_galicia").select("id, fecha, descripcion, debitos, creditos, contable, interno, detalle, comprobantes_pagados, leyendas_adicionales_1, leyendas_adicionales_2, template_cuota_id").not("template_cuota_id", "is", null).order("id"))
 const movsPAM = [...(tpm ?? []).map((m: any) => ({ ...m, cuenta: "VISA PAM" })), ...(gpm ?? []).map((m: any) => ({ ...m, cuenta: "Galicia PAM CA" }))].filter((m: any) => !String(m.contable ?? "").trim())
 const ids = [...new Set(movsPAM.map((m: any) => m.template_cuota_id))]
 const cuotasMA: any[] = []
 for (let i = 0; i < ids.length; i += 200) {
-  const { data } = await sb.from("cuotas_egresos_sin_factura").select("id, monto, fecha_estimada, egreso:egresos_sin_factura!inner(nombre_referencia, responsable)").in("id", ids.slice(i, i + 200))
+  const { data } = await sb.from("cuotas_egresos_sin_factura").select("id, monto, fecha_estimada, detalle, descripcion, egreso:egresos_sin_factura!inner(nombre_referencia, responsable)").in("id", ids.slice(i, i + 200))
   cuotasMA.push(...(data ?? []).filter((c: any) => String(c.egreso?.responsable ?? "").toUpperCase().startsWith("MA")))
 }
 const cuotaDe = new Map(cuotasMA.map(c => [c.id, c]))
@@ -68,9 +69,12 @@ hoja("P1", "P1 DIST MA", "Lo que pagó PAM de gastos de MA: falta el código «D
   `${p1.length} pagos de la VISA PAM y del Galicia PAM CA que pagaron templates de MA (Consumos MA, suscripciones, Gastos Médicos) no tienen código. En «Inconsistencias» salen como «⚠️ el código contable no es el esperado».`,
   "Ponerles contable «DIST MA» a esos movimientos (no se toca ninguna cuota ni importe). Es tu regla: «si PAM paga algo de MA, entonces DIST MA».",
   "Aparecieron al pasar Consumos, Médicos y suscripciones 2025 a MA (scripts 239–240): lo que antes era «PAM pagó lo suyo» ahora es «PAM pagó lo de MA».",
-  ["Fecha", "Cuenta", "Template (de MA)", "Descripción del banco", "Importe de la cuota", "Código hoy"],
-  p1.map((m: any) => [dmy(m.fecha), m.cuenta, cuotaDe.get(m.template_cuota_id).egreso.nombre_referencia, m.descripcion, IMP(Number(cuotaDe.get(m.template_cuota_id).monto)), "(vacío)"]),
-  p1.reduce((t: number, m: any) => t + Number(cuotaDe.get(m.template_cuota_id).monto), 0), [12, 16, 24, 46, 16, 12, 10, 30])
+  // JMS 10/11: «no estoy viendo el detalle, el proveedor, el comprobante». Va todo lo que hay del movimiento y de la cuota.
+  ["Fecha", "Cuenta", "Template (de MA)", "Descripción del banco", "Importe de la cuota", "US$ (si fue en dólares)", "Cómo se pasó a pesos", "Detalle", "Proveedor / CUIT", "Comprobante pagado", "Código hoy", "Interno hoy"],
+  p1.map((m: any) => { const c = cuotaDe.get(m.template_cuota_id); return [dmy(m.fecha), m.cuenta, c.egreso.nombre_referencia, m.descripcion, IMP(Number(c.monto)),
+    Number(m.debitos_usd) ? { t: "n", v: Number(m.debitos_usd), z: MON } : "", String(c.descripcion ?? "").replace(/\s*\[script[^\]]*\]/g, ""), m.detalle || c.detalle || "",
+    [m.leyendas_adicionales_1, m.leyendas_adicionales_2].filter(Boolean).join(" · "), m.comprobantes_pagados ?? "", m.contable || "(vacío)", m.interno || "(vacío)"] }),
+  p1.reduce((t: number, m: any) => t + Number(cuotaDe.get(m.template_cuota_id).monto), 0), [12, 14, 18, 36, 14, 12, 40, 26, 30, 30, 11, 11, 10, 30])
 
 // ── P2 · Cuotas en $ 0 marcadas «conciliado» sin pago → desactivadas
 const anio = Number(new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).slice(0, 4))
@@ -157,7 +161,12 @@ r.forEach((fila, i) => {
 unirCeldas(r, uR)
 agregar("Resumen", r, anchosR)
 wb.SheetNames = ["Resumen", ...wb.SheetNames.filter(n => n !== "Resumen")]
-const destino = join("- Comunicacion JMS Claude - Archivos/Balance/Excels trabajando con claude", "Propuestas para aprobar - H para auditar (2026-11-10).xlsx")
+// JMS 10/11: «no los pises… si cambia, le hacés una versión nueva». La primera (sin número) es la v1.
+const base = "Propuestas para aprobar - H para auditar (2026-11-10)"
+const vs0 = readdirSync(carpeta).filter(f => f.startsWith(base) && f.endsWith(".xlsx")).map(f => Number(f.match(/ v(\d+)\.xlsx$/)?.[1] ?? 1))
+const destino = join(carpeta, `${base} v${Math.max(0, ...vs0) + 1}.xlsx`)
+if (existsSync(destino)) throw new Error("ya existe " + destino)
+fechasReales(wb as any)
 const vs = vistasDe(wb as any); const orden = wb.SheetNames; const vistas = [vs[vs.length - 1], ...vs.slice(0, -1)]
 writeFileSync(destino, Buffer.from(await aplicarVistas(XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistas)))
 console.log("📄", destino); for (const p of resumen) console.log(` ${p.id} · ${p.cuantos} renglones · ${p.importe.toFixed(2)}`); void orden
