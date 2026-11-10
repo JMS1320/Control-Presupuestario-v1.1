@@ -272,3 +272,31 @@ function controlLib(cs: CuotaTemplate[], meses: { clave: string; rotulo: string 
   if (lista.length) f.push([], ["", "Caso", "Fecha", "Cuenta", "Descripción del banco", "Importe", "Qué es"], ...lista)
   return f
 }
+
+/**
+ * 👥 A-FEAT-1595 (JMS 11/11: «avanzá con Libertad en el 14.1»): las cuentas entre socios del libro B llevan el renglón POR LIBERTAD, tomado
+ * del CUADRO FINAL de «Gastos Libertad» (el mismo número que «H · Retiros y aportes»): un asiento por semestre en la cuenta con MA y otro en la
+ * de PAM. Signo de la cuenta del 14.1: + = le debemos · − = nos debe. Libertad + = el socio retiró (nos debe) → resta; − = aportó → suma.
+ * La de PAM ↔ MA no es de MSA: no va al 14.1. Pura: devuelve las cuentas con los asientos agregados y el saldo recalculado.
+ */
+export function conLibertadEnSocios<T extends { contraparte: { clave: string }; saldoInicio: number; saldoAlCierre: number; ajusteCierre?: { importe: number; motivo: string };
+  resumen: { asientos: Array<{ id: string; fecha: string; tipo: "compra" | "pago" | "venta"; concepto: string; importe: number; saldo: number; cuenta?: string; grupo?: string }>; saldo: number } }>(
+  socios: T[], cuentas: CuentaDeLibertad[], fechas: { corte: string; cierre: string }): T[] {
+  const deQuien = (etiqueta: string) => (/^MSA ↔ PAM/.test(etiqueta) ? "PAM" : /^MSA ↔ MA/.test(etiqueta) ? "MA" : null)
+  return socios.map(c => {
+    const l = cuentas.find(x => deQuien(x.etiqueta) === c.contraparte.clave)
+    if (!l) return c
+    const nuevos = ([["1er semestre", fechas.corte, l.s1], ["2do semestre", fechas.cierre, l.s2]] as const)
+      .filter(([, , v]) => Math.abs(v) >= 0.005)
+      .map(([sem, fecha, v]) => ({ id: `libertad:${c.contraparte.clave}:${sem}`, fecha, tipo: (v > 0 ? "pago" : "compra") as "pago" | "compra",
+        concepto: `Libertad ${sem}: ${v > 0 ? "retiró" : "aportó"} ${c.contraparte.clave} — sale de «Gastos Libertad», cuadro final (libro H)`, importe: -v, saldo: 0,
+        cuenta: "Gastos Libertad (cuadro final)", grupo: "Libertad" }))
+    if (!nuevos.length) return c
+    const asientos = [...c.resumen.asientos.map(a => ({ ...a })), ...nuevos].sort((a, b) => a.fecha.localeCompare(b.fecha))
+    let s = 0
+    for (const a of asientos) { s = Math.round((s + a.importe) * 100) / 100; a.saldo = s }
+    // con un saldo al cierre DECIDIDO por el usuario, el saldo no se toca: Libertad mueve el ajuste (y queda a la vista)
+    if (c.ajusteCierre) return { ...c, resumen: { ...c.resumen, asientos, saldo: s }, ajusteCierre: { ...c.ajusteCierre, importe: Math.round((c.ajusteCierre.importe - (s - c.resumen.saldo)) * 100) / 100 } }
+    return { ...c, resumen: { ...c.resumen, asientos, saldo: s }, saldoAlCierre: Math.round((c.saldoInicio + s) * 100) / 100 }
+  })
+}

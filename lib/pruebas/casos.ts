@@ -44,7 +44,7 @@ import { auditarCuota, hojaRetirosYAportes } from "@/lib/balance/auditoria-templ
 import { armarResumenPorMes } from "@/lib/balance/resumen-por-mes"
 import { filasNivel2De } from "@/lib/balance/formato-excel"
 import { solapasPapelesH } from "@/lib/balance/papeles-impuestos-h"
-import { hojaLibertad } from "@/lib/balance/libertad"
+import { hojaLibertad, conLibertadEnSocios } from "@/lib/balance/libertad"
 import { fechasReales, serieDeFecha } from "@/lib/excel/fechas-reales"
 import { filtroDe } from "@/lib/balance/formato-excel"
 import { hojaResumenPorMes } from "@/lib/balance/resumen-por-mes"
@@ -13704,6 +13704,18 @@ export function correrCasos(): Resultado[] {
     const v = `${enc.join("|")} ‖ 1/1=${f[6]} adicional=${f[8]} ‖ TC ${h.filas.some(r => r?.some(x => txt(x) === "TC promedio"))}`
     const e = "ZONA|CAMPO|#|HAS|PARTIDA|PARCELA|CUOTA 1/1|Vto.|CUOTA ADICIONAL|Vto. ‖ 1/1=50 adicional=100 ‖ TC false"
     chequear("Libro H para auditar", "🧾 Papel del H: sin total anterior / pago anual / aumento / costo ni TC, y la cuota ADICIONAL de 2025 en su columna", e, v, v === e, "A-FEAT-1516")
+  }
+
+  // ══ 👥 14.1 con Libertad (A-FEAT-1595): un asiento por semestre del cuadro final, con el signo del 14.1 (+ le debemos · − nos debe) ══
+  {
+    const cta = (clave: string, aj?: number) => ({ contraparte: { clave }, saldoInicio: 100, saldoAlCierre: 150, ...(aj != null ? { ajusteCierre: { importe: aj, motivo: "x" } } : {}),
+      resumen: { saldo: 50, asientos: [{ id: "a", fecha: "2025-10-01", tipo: "compra" as const, concepto: "x", importe: 50, saldo: 50 }] } })
+    const lib = [{ etiqueta: "MSA ↔ PAM — PAM retiró (+) / aportó (−)", fila: 1, s1: 30, s2: -10, anual: 20 }, { etiqueta: "MSA ↔ MA — MA retiró (+) / aportó (−)", fila: 2, s1: 0, s2: 5, anual: 5 },
+      { etiqueta: "PAM ↔ MA (no toca a MSA) — el socio le debe al tercero", fila: 3, s1: 7, s2: 7, anual: 14 }]
+    const out = conLibertadEnSocios([cta("PAM"), cta("MA", 3), cta("JMS")], lib, { corte: "2025-12-31", cierre: "2026-06-30" })
+    const v = out.map(c => `${c.contraparte.clave}: ${c.resumen.asientos.map(a => `${a.fecha.slice(5)} ${a.importe}→${a.saldo}`).join(" ")} · cierre ${c.saldoAlCierre}${c.ajusteCierre ? ` (ajuste ${c.ajusteCierre.importe})` : ""}`).join(" ‖ ")
+    const e = "PAM: 10-01 50→50 12-31 -30→20 06-30 10→30 · cierre 130 ‖ MA: 10-01 50→50 06-30 -5→45 · cierre 150 (ajuste 8) ‖ JMS: 10-01 50→50 · cierre 150"
+    chequear("Libro B", "👥 14.1 con Libertad: PAM retiró en el 1er sem (resta) y aportó en el 2do (suma); con saldo al cierre decidido, Libertad mueve el ajuste; JMS no cambia; PAM ↔ MA no entra", e, v, v === e, "A-FEAT-1595")
   }
 
   // ══ 💰 Control de la plata, etapa 2: cada movimiento en UN solo destino, sólo por lo que tiene cargado ══

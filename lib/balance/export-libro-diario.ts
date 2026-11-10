@@ -57,7 +57,7 @@ import type { PesoCategoria } from "./pesos-hacienda"
 import { APERTURA_MSA_2025 } from "./apertura-contador"
 type TablasPreciosPapel = { mag: PrecioMag[]; hembra: PrecioMercado[]; macho: PrecioMercado[]; vientres: PrecioCabeza[]; toros: PrecioCabeza[] }
 import type { HojaConEstilo } from "@/lib/impuestos/papel-formato-jms"
-import { hojaLibertad, cuentasDeLibertad } from "./libertad"
+import { hojaLibertad, cuentasDeLibertad, conLibertadEnSocios } from "./libertad"
 import { armarGruposTemplates, cuotaSinPago, armarHojaGrupo, gruposDelResponsable, hojaExtractoSinCategoria, hojaGrupo, hojaIndiceGrupos, hojaLib, nombreSolapaGrupo, SIN_GRUPO, type GrupoTemplates, type MovimientoLib } from "./grupos-templates"
 import { sinCategoriaNiVinculo, type MovimientoExtractoH } from "./movimientos-de-cuotas"
 import { filasBalanceEnLinea, hojaBalanceEnLinea, hojaCajaYBancos, hojaFci, hojaDeudasYCreditos, hojaSoja, hojaVacasDeCria, type EntradaBalanceEnLinea } from "./balance-en-linea"
@@ -3171,7 +3171,10 @@ export function armarWorkbook(
    * 👥 A-FEAT-1537 (JMS 04/11): el papel 14 y los totales de 03/04 sólo con clientes y proveedores; los socios, aparte
    * (solapa 14.1) hasta que se vean sus cuentas.
    */
-  const cc = cuentasCorrientes ? separarSocios(cuentasCorrientes) : null
+  const ccBase = cuentasCorrientes ? separarSocios(cuentasCorrientes) : null
+  // 👥 A-FEAT-1595: las cuentas con MA y con PAM llevan el renglón POR LIBERTAD del cuadro final de «Gastos Libertad» (por semestre)
+  const cc = ccBase && templates ? { ...ccBase, socios: conLibertadEnSocios(ccBase.socios, cuentasDeLibertad(hojaLibertad(templates.detalle, libro.ejercicio.etiqueta, mesesDelLibro(libro), templates.entrada?.opciones.extracto)),
+    { corte: `${Number(libro.ejercicio.fechaCierre.slice(0, 4)) - 1}-12-31`, cierre: libro.ejercicio.fechaCierre }) } : ccBase
   if (cuentas?.pagar) {
     hoja(wb, "04 Cuentas a pagar",
       hojaDeCuentas(cuentas.pagar, `CUENTAS A PAGAR — ejercicio ${libro.ejercicio.etiqueta}`,
