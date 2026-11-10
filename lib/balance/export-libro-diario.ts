@@ -3373,6 +3373,10 @@ const COLS_DETALLE_BANCARIO: Columna[] = [
  */
 export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>, entradaF?: EntradaBalanceEnLinea | null, lib?: MovimientoLib[] | null, papeles?: DatosPapelesH | null, estructura?: ProblemaModalidad[]): Promise<void> {
   const [libro, empresa, templates, , , , , bancarios] = a
+  // ✍️ JMS 11/11: el saldo del ejercicio anterior (ajustes del balance, que ya se leen para «Saldos ej. anterior») va también a los papeles de
+  // impuestos y a la solapa de su template en el libro H — arriba de todo, como pidió JMS
+  const sa = a[11] as SaldosAnteriores | undefined
+  if (papeles && sa && !papeles.saldosAnteriores) papeles = { ...papeles, saldosAnteriores: sa.vigentes.map(v => ({ empresa: v.empresa, concepto: v.concepto, categ: v.categ ?? "", monto: Number(v.monto) || 0, motivo: v.motivo })) }
   const wb = armarWorkbook(...a)
   const meses = mesesDelLibro(libro)
   agregarLibroC(wb, empresa, libro.ejercicio.etiqueta, templates ?? null, bancarios?.detalleBancario ?? null, meses)
