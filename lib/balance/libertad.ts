@@ -280,7 +280,7 @@ function controlLib(cs: CuotaTemplate[], meses: { clave: string; rotulo: string 
  * La de PAM ↔ MA no es de MSA: no va al 14.1. Pura: devuelve las cuentas con los asientos agregados y el saldo recalculado.
  */
 export function conLibertadEnSocios<T extends { contraparte: { clave: string }; saldoInicio: number; saldoAlCierre: number; ajusteCierre?: { importe: number; motivo: string };
-  resumen: { asientos: Array<{ id: string; fecha: string; tipo: "compra" | "pago" | "venta"; concepto: string; importe: number; saldo: number; cuenta?: string; grupo?: string }>; saldo: number } }>(
+  resumen: { asientos: Array<{ id: string; fecha: string; tipo: "compra" | "pago" | "venta"; concepto: string; importe: number; saldo: number; cuenta?: string; grupo?: string }>; saldo: number; totalComprado?: number; totalPagado?: number; totalVendido?: number } }>(
   socios: T[], cuentas: CuentaDeLibertad[], fechas: { corte: string; cierre: string }): T[] {
   const deQuien = (etiqueta: string) => (/^MSA ↔ PAM/.test(etiqueta) ? "PAM" : /^MSA ↔ MA/.test(etiqueta) ? "MA" : null)
   return socios.map(c => {
@@ -296,7 +296,9 @@ export function conLibertadEnSocios<T extends { contraparte: { clave: string }; 
     let s = 0
     for (const a of asientos) { s = Math.round((s + a.importe) * 100) / 100; a.saldo = s }
     // con un saldo al cierre DECIDIDO por el usuario, el saldo no se toca: Libertad mueve el ajuste (y queda a la vista)
-    if (c.ajusteCierre) return { ...c, resumen: { ...c.resumen, asientos, saldo: s }, ajusteCierre: { ...c.ajusteCierre, importe: Math.round((c.ajusteCierre.importe - (s - c.resumen.saldo)) * 100) / 100 } }
-    return { ...c, resumen: { ...c.resumen, asientos, saldo: s }, saldoAlCierre: Math.round((c.saldoInicio + s) * 100) / 100 }
+    const tot = (t: "compra" | "pago" | "venta") => Math.round(asientos.filter(a => a.tipo === t).reduce((x, a) => x + a.importe, 0) * 100) / 100
+    const totales = { totalComprado: tot("compra"), totalPagado: Math.round(-tot("pago") * 100) / 100, totalVendido: Math.round(-tot("venta") * 100) / 100 }
+    if (c.ajusteCierre) return { ...c, resumen: { ...c.resumen, ...totales, asientos, saldo: s }, ajusteCierre: { ...c.ajusteCierre, importe: Math.round((c.ajusteCierre.importe - (s - c.resumen.saldo)) * 100) / 100 } }
+    return { ...c, resumen: { ...c.resumen, ...totales, asientos, saldo: s }, saldoAlCierre: Math.round((c.saldoInicio + s) * 100) / 100 }
   })
 }

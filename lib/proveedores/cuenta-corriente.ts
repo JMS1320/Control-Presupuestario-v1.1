@@ -141,15 +141,25 @@ export function armarCuentaCorriente(facturas: FacturaCC[], pagos: PagoCC[]): Re
     f.saldo = Math.round(acum * 100) / 100
   }
 
-  const suma = (t: AsientoCC['tipo']) =>
-    Math.round(filas.filter(f => f.tipo === t).reduce((s, f) => s + Math.abs(f.importe), 0) * 100) / 100
+  return totalesDeAsientos(filas)
+}
+
+/**
+ * Los totales de una cuenta corriente CON SU SIGNO, para que «comprado − vendido − pagado = saldo» cierre siempre.
+ * ⚠️ cambió 11/11 (JMS en el 14.1: «movimiento del ejercicio debe ser una cuenta… si le aplico la fórmula cambia el resultado»): se sumaba
+ * el valor absoluto, y un pago al revés (el socio le paga algo a MSA desde su cuenta, una devolución) sumaba como si fuera un pago.
+ */
+export function totalesDeAsientos(filas: AsientoCC[]): ResumenCC {
+  const r = (x: number) => Math.round(x * 100) / 100
+  const suma = (t: AsientoCC['tipo']) => r(filas.filter(f => f.tipo === t).reduce((s, f) => s + f.importe, 0))
+  const acum = filas.reduce((s, f) => s + f.importe, 0)
 
   return {
     asientos: filas,
     totalComprado: suma('compra'),
-    totalPagado: suma('pago'),
-    totalVendido: suma('venta'),
-    saldo: Math.round(acum * 100) / 100,
+    totalPagado: r(-suma('pago')),
+    totalVendido: r(-suma('venta')),
+    saldo: r(acum),
     pagosSinReferencia: filas.filter(f => f.sinReferencia).length,
   }
 }

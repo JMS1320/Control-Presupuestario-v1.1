@@ -1663,7 +1663,8 @@ export function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierr
       money(c.resumen.totalComprado),
       money(c.resumen.totalVendido),
       money(c.resumen.totalPagado),
-      money(c.resumen.saldo),
+      // 🧮 JMS 11/11: «movimiento del ejercicio debe ser una cuenta» → fórmula sobre las columnas (los totales van con su signo)
+      conFormula(`D${n}-E${n}-F${n}`, money(c.resumen.saldo)),
       // ✍️ A-FEAT-1537: si el usuario decidió el saldo al cierre, el ajuste va en la fórmula y su motivo en «Cómo se lee».
       conFormula(c.ajusteCierre ? `C${n}+G${n}+(${money(c.ajusteCierre.importe)})` : `C${n}+G${n}`, money(c.saldoAlCierre)),
       // 🎚️ El 0 de un inicio sin cargar es un default, no un dato: se dice (y sale en ámbar).

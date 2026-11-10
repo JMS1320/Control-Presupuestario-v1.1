@@ -107,7 +107,8 @@ export async function leerCuentasConSaldo(cliente: ClienteMinimo, titular: strin
 /** Pura. La solapa «Control de la plata» (etapa 1). */
 export function hojaControlPlata(rs: ResumenDeCuenta[], titular: string, etiqueta: string, fechas: { desde: string; corte: string; hasta: string },
   tablasQueFallaron: string[] = [], etapa2?: { e: Etapa2; hojaDetalle: string }, etapa3?: FilaEtapa3[],
-  etapa4?: { compras: ReturnType<typeof puenteDeComprobantes>; ventas: ReturnType<typeof puenteDeComprobantes> }): unknown[][] {
+  etapa4?: { compras: ReturnType<typeof puenteDeComprobantes>; ventas: ReturnType<typeof puenteDeComprobantes>;
+    otros?: Array<{ titulo: string; nroE: string; codD: CodigoDestino; lado: "F" | "G" | "neto"; que: string; p: ReturnType<typeof puenteDeComprobantes> }> }): unknown[][] {
   const h: unknown[][] = []
   const num = (v: number) => ({ t: "n", v: r2(v), z: MONEDA })
   const f = (formula: string, v: number) => ({ t: "n", f: formula, v: r2(v), z: MONEDA })
@@ -179,7 +180,14 @@ export function hojaControlPlata(rs: ResumenDeCuenta[], titular: string, etiquet
         { libro: ok(etapa4.compras.totalLibro, reg("E2")), banco: ok(etapa4.compras.enBanco, banco("D1", "egr")) }))
       h.push(...bloquePuente("E1 · VENTAS: por dónde se cobró cada factura del ejercicio", etapa4.ventas, h.length + 1, filasE.get("E1") ?? null, filasDe.get("D2") ?? null, "F",
         { libro: ok(etapa4.ventas.totalLibro, reg("E1")), banco: ok(etapa4.ventas.enBanco, banco("D2", "ing")) }))
-      h.push(["ⓘ La lista de los comprobantes de E2.5 / E2.6 y E1.5 / E1.6, con su ficha, en «Plata · facturas». Próximo, a validar con JMS: la deuda al cierre contra el papel de deudas (dos caminos) y el puente de templates, sueldos y tarjeta (E3, E5, E7)."])
+      for (const o of etapa4.otros ?? []) {
+        const y = etapa2.e.pesos.get(o.codD), vD = y ? (o.lado === "F" ? y.ing1 + y.ing2 : o.lado === "G" ? y.egr1 + y.egr2 : y.egr1 + y.egr2 - y.ing1 - y.ing2) : 0
+        // el neto (egresos − ingresos) se compara contra la etapa 3, que ya lo tiene en su columna C
+        const filaD = o.lado === "neto" ? null : filasDe.get(o.codD) ?? null
+        h.push(...bloquePuente(o.titulo, o.p, h.length + 1, filasE.get(o.nroE) ?? null, filaD, o.lado === "neto" ? "G" : o.lado,
+          { libro: ok(o.p.totalLibro, reg(o.nroE)), banco: ok(o.p.enBanco, vD), que: o.que }))
+      }
+      h.push(["ⓘ La lista de los comprobantes de E2.5 / E2.6 y E1.5 / E1.6, con su ficha, en «Plata · facturas». Próximo, a validar con JMS: la deuda al cierre contra el papel de deudas (dos caminos)."])
     }
   }
   return h
@@ -444,7 +452,7 @@ export function puenteDeComprobantes(compr: ComprobanteDelLibro[], movs: Movimie
 
 /** El bloque de la etapa 4 de un puente: los renglones, la suma contra lo facturado (E1/E2) y lo del banco contra D1/D2, por fórmula. */
 export function bloquePuente(titulo: string, p: ReturnType<typeof puenteDeComprobantes>, filaInicial: number, filaE3: number | null, filaD: number | null, ladoD: "F" | "G",
-  cierra: { libro: boolean; banco: boolean } = { libro: true, banco: true }): unknown[][] {
+  cierra: { libro: boolean; banco: boolean; que?: string } = { libro: true, banco: true }): unknown[][] {
   const h: unknown[][] = []
   const r = () => filaInicial + h.length
   const num = (v: number) => ({ t: "n", v: r2(v), z: MONEDA })
@@ -453,8 +461,8 @@ export function bloquePuente(titulo: string, p: ReturnType<typeof puenteDeCompro
   for (const x of p.renglones.slice(0, -1)) h.push([`${x.nro} · ${x.concepto}`, num(x.valor), "", "", "", "", "", "", "", "", "", "", "", "", x.como])
   const n = r()
   const ctrl = (f: string, ok: string, mal: string, v: boolean) => ({ t: "s", f: `IF(ABS(${f})<0.01,"${ok}","${mal}")`, v: v ? ok : mal })
-  h.push([TOTAL_TEXTO("= suma (tiene que dar lo facturado)"), { t: "n", f: `SUM(B${d0}:B${n - 1})`, v: p.totalLibro, z: MONEDA }, filaE3 ? { t: "n", f: `B${n}-B${filaE3}`, v: 0, z: MONEDA } : "", "", "", "", "", "", "", "", "", "",
-    filaE3 ? ctrl(`C${n}`, "✓ = lo facturado de la etapa 3", "⚠️ no da con la etapa 3", cierra.libro) : ""])
+  h.push([TOTAL_TEXTO(`= suma (tiene que dar ${cierra.que ?? "lo facturado"})`), { t: "n", f: `SUM(B${d0}:B${n - 1})`, v: p.totalLibro, z: MONEDA }, filaE3 ? { t: "n", f: `B${n}-B${filaE3}`, v: 0, z: MONEDA } : "", "", "", "", "", "", "", "", "", "",
+    filaE3 ? ctrl(`C${n}`, "✓ = lo registrado de la etapa 3", "⚠️ no da con la etapa 3", cierra.libro) : ""])
   const o = p.renglones[p.renglones.length - 1], nO = r()
   h.push([`${o.nro} · ${o.concepto}`, num(o.valor), "", "", "", "", "", "", "", "", "", "", "", "", o.como])
   const nB = r()

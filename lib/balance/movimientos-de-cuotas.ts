@@ -184,6 +184,7 @@ export interface MovimientoExtractoH {
   otroTipo?: "sueldo" | "venta" | "anticipo" | null
   /** Los ids del vínculo, para la ficha del movimiento (la factura o la venta que pagó / cobró). */
   comprobanteVentaId?: string | null
+  sueldoPagoId?: string | null
   estado: string
   /** La marca contable del movimiento (`LIB`, `CTA MA`…). */
   contable: string
@@ -215,6 +216,7 @@ export async function leerExtractoDelEjercicio(cliente: ClienteMinimo, desde: st
           otroVinculo: !!(m.sueldo_pago_id || m.comprobante_venta_id || m.anticipo_id),
           otroTipo: m.sueldo_pago_id ? "sueldo" : m.comprobante_venta_id ? "venta" : m.anticipo_id ? "anticipo" : null,
           comprobanteVentaId: m.comprobante_venta_id ? String(m.comprobante_venta_id) : null,
+          sueldoPagoId: m.sueldo_pago_id ? String(m.sueldo_pago_id) : null,
           estado: String(m.estado ?? ""),
           contable: String(m.contable ?? ""),
           enDolares: !!t.enDolares,

@@ -127,6 +127,62 @@ agregarLibroH(wb as any, templates, ej.etiqueta, meses, { cuotas: cuotasImp, ...
     compras: puenteDeComprobantes(delEj(libro.compras), movsCompra, EMPRESA, plata, esTarjeta, "E2", { hecho: "Pagado", sin: "pago" }),
     ventas: puenteDeComprobantes(delEj(libro.ventas), movsVenta, EMPRESA, plata, esTarjeta, "E1", { hecho: "Cobrado", sin: "cobro" }),
   }
+  // 💰 etapa 4 (cont.): templates de gasto (E3), sueldos (E5) y tarjeta (E7) — por dónde se pagó cada cosa registrada
+  const destinosQ = indiceDeDestinos(cuotas) as any
+  const respDe = (id: string | null) => (id ? String(destinosQ.get(id)?.responsable ?? "") : "")
+  const det = (cod: string) => (etapa2.detalle as any[]).filter(m => m.codigo === cod && !m.enDolares)
+  const P = (renglones: any[], totalLibro: number, enBanco: number) => ({ renglones, totalLibro: r2(totalLibro), enBanco: r2(enBanco), casos: [] })
+  // E3 · templates de gasto de MSA
+  const d3 = det("D3"), d3Propio = r2(d3.filter(m => respDe(m.templateCuotaId) === EMPRESA).reduce((t, m) => t + m.debitos - m.creditos, 0))
+  const d3Otros = r2(d3.filter(m => respDe(m.templateCuotaId) !== EMPRESA).reduce((t, m) => t + m.debitos - m.creditos, 0))
+  const gastoMSA = deMSA.filter(c => c.tipo === "egreso")
+  // las cuotas de MSA que el banco pagó pero que NO suman en lo registrado (en $ 0, sin tipo gasto, de otro ejercicio)
+  const idsGasto = new Set(gastoMSA.map(c => c.id))
+  const enReg = (m: any) => (destinosQ.get(m.templateCuotaId)?.cuotaIds ?? []).some((id: string) => idsGasto.has(id))
+  const d3PropioReg = r2(d3.filter(m => respDe(m.templateCuotaId) === EMPRESA && enReg(m)).reduce((t, m) => t + m.debitos - m.creditos, 0))
+  const d3PropioNoReg = r2(d3Propio - d3PropioReg)
+  const tit = (c: any) => String(c.banco?.titular ?? "").toUpperCase()
+  const e3Tarjeta = r2(gastoMSA.filter(c => c.banco?.cuenta && tit(c) === EMPRESA && esTarjeta(c.banco.cuenta)).reduce((t, c) => t + c.monto, 0))
+  const e3Otra = r2(gastoMSA.filter(c => c.banco?.cuenta && tit(c) && tit(c) !== EMPRESA).reduce((t, c) => t + c.monto, 0))
+  const e3SinMov = r2(gastoMSA.filter(c => !c.banco?.cuenta).reduce((t, c) => t + c.monto, 0))
+  const e3Reg = tplTipo("egreso")
+  const e3 = P([
+    { nro: "E3.1", concepto: "Pagado por las cuentas de MSA (cuotas de MSA)", valor: d3PropioReg, como: "movimientos de la etapa 2 (D3) atados a cuotas de MSA" },
+    { nro: "E3.2", concepto: "Pagado con la tarjeta de MSA", valor: e3Tarjeta, como: "cuotas de MSA cuyo pago es un renglón de la tarjeta" },
+    { nro: "E3.3", concepto: "Pagado por OTRA empresa (va a la cuenta con ese socio)", valor: e3Otra, como: "cuotas de MSA pagadas desde una cuenta de MA, PAM o Cotitulares" },
+    { nro: "E3.4", concepto: "Pagado sin movimiento del banco (caja o sin vincular)", valor: e3SinMov, como: "cuotas de MSA pagadas que no tienen movimiento atado" },
+    { nro: "E3.5", concepto: "resto: el banco movió otro importe que la cuota (pagos agrupados, redondeos)", valor: r2(e3Reg - d3PropioReg - e3Tarjeta - e3Otra - e3SinMov), como: "lo registrado menos todo lo de arriba" },
+    { nro: "E3.6", concepto: `aparte: MSA pagó cuotas de OTRAS empresas o de Libertad ($ ${d3Otros.toLocaleString("es-AR", { minimumFractionDigits: 2 })}) y cuotas de MSA que no suman en lo registrado — en $ 0, sin tipo gasto o de otro ejercicio ($ ${d3PropioNoReg.toLocaleString("es-AR", { minimumFractionDigits: 2 })})`, valor: r2(d3Otros + d3PropioNoReg), como: "movimientos de D3 — lo de otras empresas va a las cuentas con los socios; lo de MSA en $ 0 está en «Inconsistencias»" },
+  ], e3Reg, d3Propio + d3Otros)
+  // E5 · sueldos
+  const pagoEmp = new Map(pagosSueldo.map((p: any) => [String(p.id), String((empleados.get(p.empleado_id) as any)?.empresa ?? "").split("/")[0].trim().toUpperCase()]))
+  const d5 = det("D5"), d5Propio = r2(d5.filter(m => pagoEmp.get(String(m.sueldoPagoId ?? "")) === EMPRESA).reduce((t, m) => t + m.debitos - m.creditos, 0))
+  const d5Otros = r2(d5.reduce((t, m) => t + m.debitos - m.creditos, 0) - d5Propio)
+  const e5 = P([
+    { nro: "E5.1", concepto: "Pagado por las cuentas de MSA a empleados de MSA", valor: d5Propio, como: "movimientos de la etapa 2 (D5) atados a un pago de sueldo de un empleado de MSA" },
+    { nro: "E5.2", concepto: "resto: pagado por otra vía (caja, otra cuenta) o sin movimiento atado", valor: r2(sueldosMSA - d5Propio), como: "lo registrado en Sueldos menos E5.1" },
+    { nro: "E5.3", concepto: "aparte: MSA pagó sueldos de empleados de OTRA empresa (o sin empresa)", valor: d5Otros, como: "movimientos de D5 de empleados de MA o PAM — van a la cuenta con ese socio" },
+  ], sueldosMSA, d5Propio + d5Otros)
+  // E7 · tarjeta: consumos = pagos del ejercicio − la deuda que venía + la deuda que queda (el TOTAL del resumen, otro camino)
+  const resumenes = await todo((d, h) => sb.schema("msa").from("tarjeta_visa_business").select("fecha, descripcion, debitos").ilike("descripcion", "RESUMEN%").order("fecha").range(d, h))
+  const ini = [...resumenes].reverse().find((x: any) => String(x.fecha) < primerDiaDelEjercicio(ej)), fin = resumenes.find((x: any) => String(x.fecha) > ej.fechaCierre)
+  const d8 = det("D8"), pagosTarjeta = r2(d8.reduce((t, m) => t + m.debitos - m.creditos, 0))
+  const deudaIni = r2(Number(ini?.debitos ?? 0)), deudaFin = r2(Number(fin?.debitos ?? 0))
+  const fmtF = (f: any) => (f ? String(f.fecha).slice(0, 10).split("-").reverse().join("/") : "—")
+  const e7 = P([
+    { nro: "E7.1", concepto: "Pagado en el ejercicio (los pagos del resumen, D8)", valor: pagosTarjeta, como: "movimientos de la etapa 2 (D8)" },
+    { nro: "E7.2", concepto: `− lo que se debía al inicio (resumen del ${fmtF(ini)}, pagado en el ejercicio)`, valor: -deudaIni, como: "el total del resumen anterior al ejercicio" },
+    { nro: "E7.3", concepto: `+ lo que se debe al cierre (resumen del ${fmtF(fin)}, se paga después; incluye los consumos de los primeros días de julio)`, valor: deudaFin, como: "el total del primer resumen después del cierre" },
+    { nro: "E7.4", concepto: "resto: consumos en dólares (en $ 0 en el resumen), intereses, impuestos y cargos del resumen", valor: r2(consumosVisa - pagosTarjeta + deudaIni - deudaFin), como: "lo registrado menos todo lo de arriba" },
+    { nro: "E7.5", concepto: "aparte: (no aplica — la tarjeta de MSA es sólo de MSA)", valor: 0, como: "" },
+  ], consumosVisa, pagosTarjeta)
+  const otrosPuentes = [
+    { titulo: "E3 · TEMPLATES DE GASTO: por dónde se pagó cada cuota de MSA", nroE: "E3", codD: "D3", lado: "neto", que: "lo registrado", p: e3 },
+    { titulo: "E5 · SUELDOS: por dónde se pagó", nroE: "E5", codD: "D5", lado: "G", que: "lo registrado", p: e5 },
+    { titulo: "E7 · TARJETA: de los consumos a los pagos", nroE: "E7", codD: "D8", lado: "G", que: "lo registrado", p: e7 },
+  ]
+  ;(etapa4 as any).otros = otrosPuentes
+  for (const o of otrosPuentes) console.log(`etapa 4 · ${o.nroE}: ${o.p.renglones.map((x: any) => `${x.nro} ${x.valor}`).join(" · ")}`)
   for (const k of ["compras", "ventas"] as const) console.log(`etapa 4 · ${k}: ${etapa4[k].renglones.map(x => `${x.nro} ${x.valor}`).join(" · ")} · banco ${etapa4[k].enBanco}`)
   agregarHoja(wb as any, SOLAPA_PLATA, hojaControlPlata(rs, EMPRESA, ej.etiqueta, { desde: primerDiaDelEjercicio(ej), corte, hasta: ej.fechaCierre }, leidas.tablasQueFallaron, { e: etapa2, hojaDetalle: SOLAPA_PLATA_DET }, etapa3, etapa4),
     [28, 16, 16, 16, 16, 16, 14, 16, 16, 16, 16, 14, 34, 11, 50].map((ancho, i) => (i >= 1 && i <= 11 ? { ancho, z: "#,##0.00" } : { ancho })) as any)
