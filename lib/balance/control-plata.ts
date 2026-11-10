@@ -106,7 +106,7 @@ export async function leerCuentasConSaldo(cliente: ClienteMinimo, titular: strin
 
 /** Pura. La solapa «Control de la plata» (etapa 1). */
 export function hojaControlPlata(rs: ResumenDeCuenta[], titular: string, etiqueta: string, fechas: { desde: string; corte: string; hasta: string },
-  tablasQueFallaron: string[] = [], etapa2?: { e: Etapa2; hojaDetalle: string }): unknown[][] {
+  tablasQueFallaron: string[] = [], etapa2?: { e: Etapa2; hojaDetalle: string }, etapa3?: FilaEtapa3[]): unknown[][] {
   const h: unknown[][] = []
   const num = (v: number) => ({ t: "n", v: r2(v), z: MONEDA })
   const f = (formula: string, v: number) => ({ t: "n", f: formula, v: r2(v), z: MONEDA })
@@ -163,8 +163,11 @@ export function hojaControlPlata(rs: ResumenDeCuenta[], titular: string, etiquet
   if (etapa2) {
     h.push([], [], [TITULO_TABLA("ETAPA 2 — ADÓNDE FUE CADA MOVIMIENTO de estas cuentas: cada uno en un solo destino, sólo por lo que ya tiene cargado. Sumados tienen que dar la etapa 1.")])
     h.push([`El detalle, movimiento por movimiento con su ficha, en «${etapa2.hojaDetalle}» (filtrá por Nro). Los destinos D11 (entre cuentas propias) no son gasto: la plata sigue en la empresa.`], [])
-    h.push(...bloqueEtapa2(etapa2.e.pesos, "EN PESOS", h.length + 1, totPesos, etapa2.hojaDetalle))
+    const filasDe = new Map<string, number>()
+    h.push(...bloqueEtapa2(etapa2.e.pesos, "EN PESOS", h.length + 1, totPesos, etapa2.hojaDetalle, filasDe))
     if (etapa2.e.dolares.size) h.push(...bloqueEtapa2(etapa2.e.dolares, "EN DÓLARES (US$)", h.length + 1, totUsd, etapa2.hojaDetalle))
+    h.push(...bloqueDosPuntas(etapa2.e, h.length + 1))
+    if (etapa3?.length) h.push(...bloqueEtapa3(etapa3, filasDe, h.length + 1, etapa2.e.pesos))
   }
   return h
 }
@@ -201,7 +204,7 @@ export interface MovimientoParaDestino {
 export interface DestinoDeCuota { responsable: string; agrupadora: string; concepto: string; tipo?: string }
 
 /** Pura. El destino de UN movimiento, sólo por lo que ya tiene cargado (no se adivina). */
-export function destinoDeMovimiento(m: MovimientoParaDestino, destinos: Map<string, DestinoDeCuota>): { codigo: CodigoDestino; atadoA: string } {
+export function destinoDeMovimiento(m: MovimientoParaDestino, destinos: Map<string, DestinoDeCuota>): { codigo: CodigoDestino; atadoA: string; concepto?: string } {
   if (m.comprobanteArcaId) return { codigo: "D1", atadoA: "factura de compra" }
   if (m.otroTipo === "venta") return { codigo: "D2", atadoA: "venta" }
   if (m.otroTipo === "sueldo") return { codigo: "D5", atadoA: "sueldo" }
@@ -210,15 +213,16 @@ export function destinoDeMovimiento(m: MovimientoParaDestino, destinos: Map<stri
     const d = destinos.get(m.templateCuotaId)
     if (!d) return { codigo: "D13", atadoA: "cuota fuera del libro" }
     const que = `${d.concepto} (${d.responsable}${d.agrupadora ? ` · ${d.agrupadora}` : ""})`
+    const con = (codigo: CodigoDestino) => ({ codigo, atadoA: que, concepto: d.concepto })
     const ag = d.agrupadora.toLowerCase(), tipo = (d.tipo ?? "").toLowerCase()
-    if (tipo === "distribucion") return { codigo: "D7", atadoA: que }
-    if (/tarjeta/.test(ag)) return { codigo: "D8", atadoA: que }
-    if (/inversi/.test(ag)) return { codigo: "D9", atadoA: que }
-    if (/cr[eé]dito/.test(ag)) return { codigo: "D10", atadoA: que }
-    if (/movimientos internos/.test(ag)) return { codigo: "D11", atadoA: que }
-    if (tipo === "financiero") return { codigo: "D12", atadoA: que }
-    if (tipo === "ingreso") return { codigo: "D4", atadoA: que }
-    return { codigo: "D3", atadoA: que }
+    if (tipo === "distribucion") return con("D7")
+    if (/tarjeta/.test(ag)) return con("D8")
+    if (/inversi/.test(ag)) return con("D9")
+    if (/cr[eé]dito/.test(ag)) return con("D10")
+    if (/movimientos internos/.test(ag)) return con("D11")
+    if (tipo === "financiero") return con("D12")
+    if (tipo === "ingreso") return con("D4")
+    return con("D3")
   }
   if (m.categ.trim()) return { codigo: "D14", atadoA: `categoría «${m.categ}»` }
   return { codigo: "D15", atadoA: "" }
@@ -228,7 +232,7 @@ export interface Etapa2 {
   /** Por moneda: código → ingresos y egresos por semestre y cantidad. */
   pesos: Map<CodigoDestino, { ing1: number; egr1: number; ing2: number; egr2: number; n: number }>
   dolares: Map<CodigoDestino, { ing1: number; egr1: number; ing2: number; egr2: number; n: number }>
-  detalle: Array<MovimientoParaDestino & { codigo: CodigoDestino; atadoA: string; ficha: string }>
+  detalle: Array<MovimientoParaDestino & { codigo: CodigoDestino; atadoA: string; concepto?: string; ficha: string }>
 }
 
 /** Pura. Arma la etapa 2 con los movimientos de las cuentas de PLATA del titular (las de la etapa 1: la tarjeta no). */
@@ -239,13 +243,13 @@ export function armarEtapa2(movs: MovimientoParaDestino[], titular: string, cuen
   for (const m of movs) {
     if (m.titular !== titular || !cuentasDePlata.has(m.cuenta) || m.fecha < fechas.desde || m.fecha > fechas.hasta) continue
     if (m.estado.toLowerCase() === "total" || (Math.abs(m.debitos) < 0.005 && Math.abs(m.creditos) < 0.005)) continue
-    const { codigo, atadoA } = destinoDeMovimiento(m, destinos)
+    const { codigo, atadoA, concepto } = destinoDeMovimiento(m, destinos)
     const t = m.enDolares ? out.dolares : out.pesos
     const x = t.get(codigo) ?? { ing1: 0, egr1: 0, ing2: 0, egr2: 0, n: 0 }
     if (m.fecha <= fechas.corte) { x.ing1 = r2(x.ing1 + m.creditos); x.egr1 = r2(x.egr1 + m.debitos) } else { x.ing2 = r2(x.ing2 + m.creditos); x.egr2 = r2(x.egr2 + m.debitos) }
     x.n++
     t.set(codigo, x)
-    out.detalle.push({ ...m, codigo, atadoA, ficha: fichaDe(m) })
+    out.detalle.push({ ...m, codigo, atadoA, concepto, ficha: fichaDe(m) })
   }
   out.detalle.sort((a, b) => Number(a.codigo.slice(1)) - Number(b.codigo.slice(1)) || a.cuenta.localeCompare(b.cuenta) || a.fecha.localeCompare(b.fecha))
   return out
@@ -255,7 +259,7 @@ export function armarEtapa2(movs: MovimientoParaDestino[], titular: string, cuen
  * El bloque de la etapa 2 en la solapa «Control de la plata»: por destino, ingresos y egresos por semestre, y el CONTROL contra la etapa 1
  * (los totales del bloque de la plata de arriba, por fórmula). `filaTotalE1` es la fila del TOTAL de la etapa 1 de esa moneda.
  */
-export function bloqueEtapa2(t: Etapa2["pesos"], titulo: string, filaInicial: number, filaTotalE1: number | null, hojaDetalle: string): unknown[][] {
+export function bloqueEtapa2(t: Etapa2["pesos"], titulo: string, filaInicial: number, filaTotalE1: number | null, hojaDetalle: string, filasDe?: Map<string, number>): unknown[][] {
   const h: unknown[][] = []
   const f = (formula: string, v: number) => ({ t: "n", f: formula, v: r2(v), z: MONEDA })
   const num = (v: number) => ({ t: "n", v: r2(v), z: MONEDA })
@@ -266,6 +270,7 @@ export function bloqueEtapa2(t: Etapa2["pesos"], titulo: string, filaInicial: nu
   for (const [cod, nombre, como] of DESTINOS) {
     const x = t.get(cod); if (!x) continue
     const n = r()
+    filasDe?.set(cod, n)
     h.push([{ t: "s", v: `${cod} · ${nombre}`, l: { Target: `#'${hojaDetalle}'!A1`, Tooltip: `Filtrá «Nro» = ${cod} en «${hojaDetalle}»` } },
       num(x.ing1), num(x.egr1), num(x.ing2), num(x.egr2), f(`B${n}+D${n}`, x.ing1 + x.ing2), f(`C${n}+E${n}`, x.egr1 + x.egr2), { t: "n", v: x.n, z: "0" }, como])
   }
@@ -291,5 +296,71 @@ export function hojaDetalleEtapa2(e: Etapa2, titular: string, etiqueta: string):
   const nombre = new Map(DESTINOS.map(([c, n]) => [c, n]))
   for (const m of e.detalle) h.push([m.codigo, nombre.get(m.codigo) ?? "", m.cuenta, dmy(m.fecha), m.descripcion,
     m.debitos ? { t: "n", v: r2(m.debitos), z: MONEDA } : "", m.creditos ? { t: "n", v: r2(m.creditos), z: MONEDA } : "", m.enDolares ? "US$" : "$", m.atadoA, m.ficha, m.categ, m.contable, m.estado])
+  return h
+}
+
+/**
+ * 🔁 Las DOS PUNTAS de lo que se movió entre cuentas propias (D11): por concepto, lo que SALIÓ de una cuenta y lo que ENTRÓ a otra. Tiene
+ * que dar lo mismo; lo que va a la Caja General (las extracciones) no tiene la otra punta porque la caja general no tiene planilla.
+ */
+export function bloqueDosPuntas(e: Etapa2, filaInicial: number): unknown[][] {
+  const xs = e.detalle.filter(m => m.codigo === "D11" && !m.enDolares)
+  if (!xs.length) return []
+  const h: unknown[][] = []
+  const num = (v: number) => ({ t: "n", v: r2(v), z: MONEDA })
+  const r = () => filaInicial + h.length
+  const porConcepto = new Map<string, { sale: Map<string, number>; entra: Map<string, number> }>()
+  for (const m of xs) {
+    const k = m.concepto ?? m.atadoA
+    const x = porConcepto.get(k) ?? { sale: new Map(), entra: new Map() }
+    if (m.debitos) x.sale.set(m.cuenta, r2((x.sale.get(m.cuenta) ?? 0) + m.debitos))
+    if (m.creditos) x.entra.set(m.cuenta, r2((x.entra.get(m.cuenta) ?? 0) + m.creditos))
+    porConcepto.set(k, x)
+  }
+  const lista = (mp: Map<string, number>) => [...mp].map(([c, v]) => `${c} ${v.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`).join(" · ")
+  const suma = (mp: Map<string, number>) => r2([...mp.values()].reduce((a, b) => a + b, 0))
+  h.push([TITULO_TABLA("LAS DOS PUNTAS de lo que se movió entre cuentas propias (D11): lo que salió de una cuenta tiene que entrar a otra")])
+  h.push(["Concepto (template)", "Salió", "Entró", "Diferencia", "", "", "", "", "", "", "", "", "Control", "", "De qué cuenta salió · a cuál entró"].map(x => x ? ENCABEZADO_TABLA(x) : x))
+  for (const [k, x] of [...porConcepto].sort((a, b) => suma(b[1].sale) - suma(a[1].sale))) {
+    const n = r(), sale = suma(x.sale), entra = suma(x.entra)
+    const caja = /^caja$/i.test(k.trim())
+    const veredicto = caja ? "va a la CAJA GENERAL: no tiene planilla, no hay otra punta (A-DAT-101)" : Math.abs(sale - entra) < 0.01 ? "✓ las dos puntas coinciden" : "⚠️ una punta no está (o es de otro concepto)"
+    h.push([k, num(sale), num(entra), { t: "n", f: `B${n}-C${n}`, v: r2(sale - entra), z: MONEDA }, "", "", "", "", "", "", "", "",
+      caja ? veredicto : { t: "s", f: `IF(ABS(D${n})<0.01,"✓ las dos puntas coinciden","⚠️ una punta no está (o es de otro concepto)")`, v: veredicto },
+      "", `salió: ${lista(x.sale) || "—"} ‖ entró: ${lista(x.entra) || "—"}`])
+  }
+  h.push([])
+  return h
+}
+
+/** Un renglón de la etapa 3: lo REGISTRADO (subdiario, templates, sueldos) contra lo que movió el banco según la etapa 2. */
+export interface FilaEtapa3 {
+  nro: string
+  concepto: string
+  registrado: number
+  deDondeRegistrado: string
+  /** Qué destinos de la etapa 2 lo pagan o lo cobran, y de qué lado: ingresos, egresos o egresos − ingresos. */
+  banco: { codigos: CodigoDestino[]; lado: "ing" | "egr" | "neto" }
+  /** Qué suele explicar la diferencia (es lo que mide la etapa 4). */
+  explica: string
+}
+
+/** ETAPA 3: lo registrado al lado de lo que movió el banco, con la diferencia que la etapa 4 tiene que explicar. Fórmulas sobre la etapa 2. */
+export function bloqueEtapa3(filas: FilaEtapa3[], filasDe: Map<string, number>, filaInicial: number, t: Etapa2["pesos"]): unknown[][] {
+  const h: unknown[][] = []
+  const r = () => filaInicial + h.length
+  const num = (v: number) => ({ t: "n", v: r2(v), z: MONEDA })
+  h.push([], [TITULO_TABLA("ETAPA 3 — LO REGISTRADO (subdiarios, templates, sueldos) contra lo que movió el banco (etapa 2). La diferencia es lo que explica la etapa 4.")])
+  h.push(["Concepto", "Lo registrado", "Lo que movió el banco", "Diferencia", "", "", "", "", "", "", "", "", "Qué suele explicarla", "", "De dónde sale lo registrado · y lo del banco"].map(x => x ? ENCABEZADO_TABLA(x) : x))
+  for (const x of filas) {
+    const n = r()
+    const celdas = x.banco.codigos.filter(c => filasDe.has(c)).map(c => filasDe.get(c)!)
+    const fBanco = celdas.length ? celdas.map(f => (x.banco.lado === "ing" ? `F${f}` : x.banco.lado === "egr" ? `G${f}` : `(G${f}-F${f})`)).join("+") : "0"
+    const vBanco = r2(x.banco.codigos.reduce((a, c) => { const y = t.get(c); if (!y) return a; const ing = y.ing1 + y.ing2, egr = y.egr1 + y.egr2; return a + (x.banco.lado === "ing" ? ing : x.banco.lado === "egr" ? egr : egr - ing) }, 0))
+    h.push([`${x.nro} · ${x.concepto}`, num(x.registrado), { t: "n", f: fBanco, v: vBanco, z: MONEDA }, { t: "n", f: `B${n}-C${n}`, v: r2(x.registrado - vBanco), z: MONEDA }, "", "", "", "", "", "", "", "",
+      x.explica, "", `${x.deDondeRegistrado} · banco: ${x.banco.codigos.join(" + ")} (${x.banco.lado === "ing" ? "ingresos" : x.banco.lado === "egr" ? "egresos" : "egresos − ingresos"})`])
+  }
+  h.push(["ⓘ Lo del banco es por fórmula sobre la etapa 2. Las diferencias NO son errores: son lo que pasa por otro lado (tarjeta, caja, otra empresa, deuda al inicio o al cierre, el histórico sin vincular) y es lo que mide la etapa 4."])
+  h.push([])
   return h
 }

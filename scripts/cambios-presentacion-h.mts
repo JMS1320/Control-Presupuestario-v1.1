@@ -147,6 +147,8 @@ export const CAMBIOS: unknown[][] = [
     "Rojas 2025: 1.511.909,80 en «CUOTA 1/4»", "Rojas 2025: 1.511.909,80 en «CUOTA ADICIONAL»"],
   [66, "Control de la plata, ETAPA 2: adónde fue cada movimiento de las cuentas de la etapa 1 — un solo destino por movimiento (D1 proveedores … D15 sin vincular), sólo por lo que ya tiene cargado, por semestre, con el CONTROL contra la etapa 1; y la solapa «Plata · adónde fue» con cada movimiento y su ficha (proveedor o cliente con CUIT y comprobante) para filtrar por Nro.", "Control de la plata · Plata · adónde fue",
     "sólo la etapa 1 (la plata)", "cuadro por destino ✓ = etapa 1 y el detalle"],
+  [67, "Control de la plata: LAS DOS PUNTAS de lo movido entre cuentas propias (lo que salió de una cuenta y entró a otra, por concepto) y la ETAPA 3: lo registrado (ventas y compras del libro diario, templates de gasto, ingreso y distribución de MSA, sueldos, consumos de la tarjeta) contra lo que movió el banco, con la diferencia que explica la etapa 4.", "Control de la plata",
+    "etapas 1 y 2", "+ dos puntas y etapa 3 (E1…E7)"],
   [22, "Nueva solapa «INCONSISTENCIAS»: todo lo que hay que mirar de todas las solapas, por tipo, con link a la solapa de la cuota.", "Solapa «Inconsistencias» (después de Gastos Libertad)",
     "Había que recorrer las 51 solapas buscando 🔴 / 🟡 / ⚠️", "🔴 sin pagar · 🟡 sin movimiento · 🟡 el banco movió otro importe · 🟡 en dólares · ⚠️ código · ⚪ en $ 0 (al final): cada renglón con «Ir a» su solapa"],
   [],

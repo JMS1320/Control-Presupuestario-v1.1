@@ -17,7 +17,9 @@ import { leerMovimientosDeCuotas, vincularBanco, leerExtractoDelEjercicio, indic
 import { agregarLibroH, vistasDe, agregarHoja, reordenarSolapas } from "../lib/balance/export-libro-diario"
 import { SOLAPA_CAMBIOS, CAMBIOS, ANCHOS_CAMBIOS } from "./cambios-presentacion-h.mts"
 import { SOLAPA_DATOS, ANCHOS_DATOS, armarDatosARevisar } from "./datos-a-revisar-h.mts"
-import { nombreSolapaGrupo, SIN_GRUPO } from "../lib/balance/grupos-templates"
+import { nombreSolapaGrupo, SIN_GRUPO, cuotaSinPago } from "../lib/balance/grupos-templates"
+import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta } from "../lib/balance/libro-diario"
+import { PRESENTADO_ARCA_COMPRAS } from "../lib/balance/presentado-arca"
 import { aplicarVistas } from "../lib/balance/formato-excel"
 import { fechasReales } from "../lib/excel/fechas-reales"
 import { cargarCuotasImpuestos, cargarAuxiliaresPapel } from "../lib/impuestos/datos-papel"
@@ -81,11 +83,46 @@ agregarLibroH(wb as any, templates, ej.etiqueta, meses, { cuotas: cuotasImp, ...
   const etapa2 = armarEtapa2(ex.movimientos as any, EMPRESA, new Set(rs.map(r => r.cuenta)), indiceDeDestinos(cuotas) as any,
     { desde: primerDiaDelEjercicio(ej), corte, hasta: ej.fechaCierre },
     (m: any) => (m.comprobanteArcaId ? fichas.get(`a:${m.comprobanteArcaId}`) ?? "factura fuera de MSA" : m.comprobanteVentaId ? fichas.get(`v:${m.comprobanteVentaId}`) ?? "" : ""))
-  agregarHoja(wb as any, SOLAPA_PLATA, hojaControlPlata(rs, EMPRESA, ej.etiqueta, { desde: primerDiaDelEjercicio(ej), corte, hasta: ej.fechaCierre }, leidas.tablasQueFallaron, { e: etapa2, hojaDetalle: SOLAPA_PLATA_DET }),
+  // 💰 etapa 3: lo REGISTRADO (libro diario, templates, sueldos, consumos de la tarjeta) contra lo que movió el banco (etapa 2)
+  const anios = [ANIO - 1, ANIO, ANIO + 1]
+  const [arca, historico, ventasRaw] = await Promise.all([
+    todo((d, h) => sb.schema("msa").from("comprobantes_arca").select("*").in("año_contable", anios).order("id").range(d, h)),
+    todo((d, h) => sb.schema("msa").from("comprobantes_historico").select("*").in("anio_contable", anios).order("id").range(d, h)),
+    todo((d, h) => sb.schema("msa").from("comprobantes_venta").select("*").in("año_contable", anios).order("id").range(d, h)),
+  ])
+  const libro = armarLibroDiario([...arca.map(desdeArca), ...historico.map(desdeHistorico)], ventasRaw.map(desdeVenta), ej, PRESENTADO_ARCA_COMPRAS.MSA)
+  const NC = new Set([3, 8, 13, 53, 113, 203, 208, 213])
+  const mesesEj = new Set(meses.map(m => m.clave))
+  const conSigno = (a: any) => (a.tipo != null && NC.has(a.tipo) ? -Math.abs(a.total) : a.total)
+  const sumaLibro = (xs: any[]) => r2(xs.filter(a => mesesEj.has(a.subdiario)).reduce((t, a) => t + conSigno(a), 0))
+  const deMSA = (templates.detalle as any[]).filter(c => String(c.responsable ?? "").split("/")[0].trim().toUpperCase() === EMPRESA && !cuotaSinPago(c) && mesesEj.has(String(c.fecha ?? "").slice(0, 7)))
+  const tplTipo = (tipo: string) => r2(deMSA.filter(c => c.tipo === tipo).reduce((t, c) => t + c.monto, 0))
+  const empleados = new Map((await todo((d, h) => sb.from("sueldos_empleados").select("id, empresa").order("id").range(d, h))).map((e: any) => [e.id, e]))
+  const pagosSueldo = await todo((d, h) => sb.from("sueldos_pagos").select("id, empleado_id, fecha, monto, estado").gte("fecha", primerDiaDelEjercicio(ej)).lte("fecha", ej.fechaCierre).order("id").range(d, h))
+  const sueldosMSA = r2(pagosSueldo.filter((p: any) => String((empleados.get(p.empleado_id) as any)?.empresa ?? "").split("/")[0].trim().toUpperCase() === EMPRESA && String(p.estado) !== "programado").reduce((t: number, p: any) => t + (Number(p.monto) || 0), 0))
+  const consumosVisa = r2((ex.movimientos as any[]).filter(m => m.titular === EMPRESA && /tarjeta|visa/i.test(m.cuenta) && !/^SU PAGO/i.test(m.descripcion) && String(m.estado).toLowerCase() !== "total")
+    .reduce((t, m) => t + m.debitos - m.creditos, 0))
+  const etapa3 = [
+    { nro: "E1", concepto: "Ventas facturadas (libro diario, total; las NC restan)", registrado: sumaLibro(libro.ventas), deDondeRegistrado: "libro diario de ventas del ejercicio", banco: { codigos: ["D2"], lado: "ing" },
+      explica: "lo facturado y no cobrado al cierre (deudores), lo cobrado de ventas del ejercicio anterior, las retenciones que nos hicieron" },
+    { nro: "E2", concepto: "Compras facturadas (libro diario, total; las NC restan)", registrado: sumaLibro(libro.compras), deDondeRegistrado: "libro diario de compras del ejercicio", banco: { codigos: ["D1"], lado: "egr" },
+      explica: "lo no pagado al cierre (proveedores), lo pagado de compras anteriores, lo pagado con tarjeta, caja, echeq u otra empresa, y el histórico jul–ene sin vincular" },
+    { nro: "E3", concepto: "Templates de GASTO de MSA pagados", registrado: tplTipo("egreso"), deDondeRegistrado: "cuotas de MSA de tipo gasto pagadas en el ejercicio (libro H)", banco: { codigos: ["D3"], lado: "neto" },
+      explica: "lo que pagó la tarjeta, la caja u otra empresa por MSA, y lo que MSA pagó de otras empresas" },
+    { nro: "E4", concepto: "Templates de INGRESO de MSA cobrados", registrado: tplTipo("ingreso"), deDondeRegistrado: "cuotas de MSA de tipo ingreso", banco: { codigos: ["D4"], lado: "ing" }, explica: "lo cobrado por otra cuenta" },
+    { nro: "E5", concepto: "Sueldos de empleados de MSA pagados", registrado: sueldosMSA, deDondeRegistrado: "pagos de sueldo (Sueldos) de empleados de MSA (los compartidos «MSA/PAM/MA» los paga MSA)", banco: { codigos: ["D5"], lado: "egr" },
+      explica: "los sueldos de otras empresas pagados por MSA (van a la cuenta con el socio) y lo pagado por caja" },
+    { nro: "E6", concepto: "Retiros y aportes de socios (templates de distribución de MSA)", registrado: tplTipo("distribucion"), deDondeRegistrado: "cuotas de MSA de tipo distribución", banco: { codigos: ["D7"], lado: "neto" },
+      explica: "lo pagado desde otra cuenta o caja; los retiros directos sin template están en D15" },
+    { nro: "E7", concepto: "Consumos de la tarjeta (resumen VISA MSA)", registrado: consumosVisa, deDondeRegistrado: "movimientos del resumen de la VISA MSA (sin el pago ni el total)", banco: { codigos: ["D8"], lado: "egr" },
+      explica: "el saldo de la tarjeta al inicio y al cierre (se paga el mes siguiente)" },
+  ] as any[]
+  agregarHoja(wb as any, SOLAPA_PLATA, hojaControlPlata(rs, EMPRESA, ej.etiqueta, { desde: primerDiaDelEjercicio(ej), corte, hasta: ej.fechaCierre }, leidas.tablasQueFallaron, { e: etapa2, hojaDetalle: SOLAPA_PLATA_DET }, etapa3),
     [28, 16, 16, 16, 16, 16, 14, 16, 16, 16, 16, 14, 34, 11, 50].map((ancho, i) => (i >= 1 && i <= 11 ? { ancho, z: "#,##0.00" } : { ancho })) as any)
   agregarHoja(wb as any, SOLAPA_PLATA_DET, hojaDetalleEtapa2(etapa2, EMPRESA, ej.etiqueta),
     [7, 34, 18, 11, 40, 15, 15, 7, 44, 60, 26, 14, 12].map((ancho, i) => (i === 5 || i === 6 ? { ancho, z: "#,##0.00" } : { ancho })) as any)
   for (const [k, x] of etapa2.pesos) console.log(`etapa 2 · ${k}: ing ${r2(x.ing1 + x.ing2)} egr ${r2(x.egr1 + x.egr2)} (${x.n})`)
+  for (const x of etapa3) console.log(`etapa 3 · ${x.nro}: registrado ${x.registrado}`)
   for (const r of rs) console.log(`plata · ${r.cuenta}: ${r.inicio} + ${r2(r.ing1 + r.ing2)} − ${r2(r.egr1 + r.egr2)} = ${r2(r.inicio + r.ing1 + r.ing2 - r.egr1 - r.egr2)} · planilla ${r.extractoFin} · saltos ${r.saltos.length} (${r.ordenadoPor})`)
 }
 // 📋 --revisar: la solapa «Datos a revisar» (cada punto de la revisión de datos con su contexto), antes del Índice
