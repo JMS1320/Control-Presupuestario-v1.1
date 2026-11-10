@@ -100,52 +100,68 @@ export async function armarDatosARevisar(sb: any, cuotas: CuotaTemplate[], solap
 }
 
 /**
- * 🔗 DR1 punto por punto (JMS 09/11): cada template de «Gastos Personales MA» a nombre de PAM, y los de 2026 a nombre de MA, con un link
- * a la PRIMERA fila de ese template en su solapa y la explicación de qué se ve y qué se propone. Los números salen de las cuotas del libro
- * (el ejercicio); lo de ene–jun 2025 (ejercicio anterior) va como texto, medido en la base el 09/11.
+ * 🔗 DR1 punto por punto (JMS 09/11: «un link para cada uno, que me lleve y me explique»). La tabla DESGLOSA el DR1: cada renglón es
+ * una parte de los movimientos de DR1 («MA pagó por PAM»), con su link a la primera cuota y la explicación; el TOTAL tiene que dar lo
+ * mismo que DR1 (control). Al final, aparte y SIN sumar, los de 2026 a nombre de MA, como comparación.
  */
 function guiaDR1(cuotas: CuotaTemplate[], solapaDe: (c: CuotaTemplate) => string, filaDe?: FilaDe): unknown[][] {
   const fmt = (n: number) => `$ ${n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   const resp = (c: CuotaTemplate) => String(c.responsable ?? "").split("/")[0].trim().toUpperCase()
-  const gpm = cuotas.filter(c => (c.agrupadoraTemplate ?? "").trim() === "Gastos Personales MA")
+  const enDR1 = (c: CuotaTemplate) => auditarCuota(c).efecto === "MA pagó por PAM"
   const link = (c: CuotaTemplate | undefined, cumple: (f: Record<string, string>) => boolean) => {
     if (!c) return "(no está en este libro)"
     const sol = solapaDe(c), fila = sol && filaDe ? filaDe(sol, cumple) : 0
     return sol ? { t: "s", v: `➜ ${sol}${fila ? ` (fila ${fila})` : ""}`, l: { Target: `#'${sol.replace(/'/g, "''")}'!A${fila || 1}`, Tooltip: "Ir a la primera cuota" } } : "(sin solapa)"
   }
+  const total = (cs: CuotaTemplate[]) => Math.round(cs.reduce((t, c) => t + c.monto, 0) * 100) / 100
   const porCuenta = (cs: CuotaTemplate[]) => {
     const m = new Map<string, { n: number; v: number }>()
     for (const c of cs) { const k = c.banco?.cuenta || "sin movimiento"; const x = m.get(k) ?? { n: 0, v: 0 }; m.set(k, { n: x.n + 1, v: x.v + c.monto }) }
-    return [...m.entries()].sort((a, b) => b[1].v - a[1].v).map(([k, x]) => `${k}: ${x.n} cuotas ${fmt(x.v)}`).join(" · ")
+    return [...m.entries()].sort((a, b) => b[1].v - a[1].v).map(([k, x]) => `${k} ${x.n} cuotas ${fmt(x.v)}`).join(" · ")
   }
-  const de = (concepto: string, r: string, anio: number | "sin") => gpm.filter(c => c.concepto === concepto && resp(c) === r && (anio === "sin" ? !c.anioTemplate : c.anioTemplate === anio))
-  const total = (cs: CuotaTemplate[]) => Math.round(cs.reduce((t, c) => t + c.monto, 0) * 100) / 100
-  const pagoPAM = (cs: CuotaTemplate[]) => total(cs.filter(c => /PAM/i.test(c.banco?.cuenta ?? "")))
-  const consumos25 = de("Consumos MA", "PAM", 2025), medicos25 = de("Gastos Medicos", "PAM", 2025)
-  // el de A3 NO está en «Gastos Personales MA»: quedó en «Fijos Buenos Aires MA» (se busca en todo el libro)
-  const medicosSin = cuotas.filter(c => c.concepto === "Gastos Medicos" && resp(c) === "PAM" && !c.anioTemplate)
-  const consumos26 = de("Consumos MA", "MA", 2026), medicos26 = de("Gastos Medicos", "MA", 2026)
+  const del = (concepto: string, anio: number | "sin") => cuotas.filter(c => c.concepto === concepto && resp(c) === "PAM" && (anio === "sin" ? !c.anioTemplate : c.anioTemplate === anio))
+  const consumos25 = del("Consumos MA", 2025), medicos25 = del("Gastos Medicos", 2025), medicosSin = del("Gastos Medicos", "sin")
+  const dr1 = cuotas.filter(enDR1)
+  const yaVistas = new Set([...consumos25, ...medicos25, ...medicosSin])
+  const otras = dr1.filter(c => !yaVistas.has(c))
+  const nombresOtras = [...new Set(otras.map(c => c.concepto))].join(", ")
+  const consumos26 = cuotas.filter(c => c.concepto === "Consumos MA" && resp(c) === "MA" && c.anioTemplate === 2026)
+  const medicos26 = cuotas.filter(c => c.concepto === "Gastos Medicos" && resp(c) === "MA" && c.anioTemplate === 2026)
   const oct25 = consumos26.filter(c => (c.fecha ?? "") < "2026-01-01")
-  const fila = (id: string, titulo: string, cs: CuotaTemplate[], texto: string, ir: unknown) =>
-    [id, "", titulo, { t: "n", v: total(cs), z: "#,##0.00" }, texto, "", "", "", "", "", "", ir, ""]
-  return [
-    ["", "", CENTRADO("¿Qué estás viendo? — tocá «Ir a» en cada renglón"), CENTRADO("Importe en el ejercicio"), CENTRADO("Qué pasa y qué se propone"), "", "", "", "", "", "", CENTRADO("Ir a"), CENTRADO("Tu respuesta")],
-    fila("DR1.A1", `Consumos MA · año 2025 · a nombre de PAM (${consumos25.length} cuotas)`, consumos25,
-      `El template dice que el dueño es PAM, así que para la app es GASTO DE PAM. Pero son consumos de MA. En el ejercicio lo pagaron: ${porCuenta(consumos25)}. (Además ene–jun 2025, ejercicio anterior: 80 cuotas $ 3.399.589,35 por VISA PAM.) Como lo pagó MA y el dueño es PAM, cada cuota marca «⚠️ código esperado: CTA PAM» y en Retiros suma como «MA pagó por PAM». PROPUESTA: pasar el template a MA (script 239) → se va la marca y la línea de Retiros; lo que pagó PAM (${fmt(pagoPAM(consumos25))}) pasa a «distribución PAM → MA».`,
-      link(consumos25[0], f => f["Concepto"] === "Consumos MA")),
-    fila("DR1.A2", `Gastos Médicos · año 2025 · a nombre de PAM (${medicos25.length} cuotas)`, medicos25,
-      `Igual que A1: dueño PAM en el template, gasto de MA. En el ejercicio lo pagaron: ${porCuenta(medicos25)}. (Además ene–jun 2025: 13 cuotas $ 237.934,00 por VISA PAM.) PROPUESTA: pasar el template a MA (script 239).`,
-      link(medicos25[0], f => f["Concepto"] === "Gastos Medicos")),
-    fila("DR1.A3", `Gastos Médicos · SIN AÑO · a nombre de PAM (${medicosSin.length} cuota)`, medicosSin,
-      `Un template «Gastos Medicos» SIN AÑO, a nombre de PAM y en OTRA agrupadora («${medicosSin[0]?.agrupadoraTemplate ?? "?"}», no «Gastos Personales MA»), con una sola cuota de 2026: ${porCuenta(medicosSin)}. PROPUESTA: año 2026, responsable MA y agrupadora «Gastos Personales MA»; como lo pagó PAM, queda como «distribución PAM → MA».`,
-      link(medicosSin[0], f => f["Concepto"] === "Gastos Medicos" && /PAM/i.test(f["Banco / cuenta"] ?? ""))),
-    fila("DR1.A4", `Los de 2026 · ya a nombre de MA (Consumos ${consumos26.length} + Médicos ${medicos26.length} cuotas)`, [...consumos26, ...medicos26],
-      `Así tienen que quedar los de 2025: dueño MA, pagado por MA → «pagó el dueño (MA)», sin marca. Sirve de comparación con A1 y A2.`,
-      link(consumos26[0], f => f["Concepto"] === "Consumos MA" && (f["Mes"] ?? "") >= "2026-01")),
-    fila("DR1.A5", `Consumos MA 2026 · con cuotas de oct–dic 2025 (${oct25.length} cuotas)`, oct25,
-      `El template 2026 arrancó en oct-25: oct–dic 2025 está repartido entre el de 2025 (PAM, A1) y el de 2026 (MA). No es doble conteo (cada pago está vinculado a una sola cuota). Con la propuesta de A1 los dos quedan de MA y deja de importar.`,
-      link(oct25[0], f => f["Concepto"] === "Consumos MA" && (f["Mes"] ?? "") < "2026-01")),
-  ]
+  const pagoPAM = (cs: CuotaTemplate[]) => cs.filter(c => !enDR1(c) && /PAM/i.test(c.banco?.cuenta ?? ""))
+
+  const h: unknown[][] = [["", "", CENTRADO("¿Qué estás viendo? — DR1 desglosado (tocá «Ir a» en cada renglón)"), CENTRADO("Importe en DR1"),
+    CENTRADO("Qué pasa y qué se propone"), "", "", "", "", "", "", CENTRADO("Ir a"), CENTRADO("Tu respuesta")]]
+  const parte = (id: string, titulo: string, enDr: CuotaTemplate[], texto: string, ir: unknown) => {
+    h.push([id, "", `${titulo} — ${enDr.length} cuotas en DR1`, { t: "n", v: total(enDr), z: "#,##0.00" }, texto, "", "", "", "", "", "", ir, ""])
+  }
+  const desde = h.length + 1
+  parte("DR1.A1", "Consumos MA · año 2025 · a nombre de PAM", consumos25.filter(enDR1),
+    `El template dice que el dueño es PAM → para la app es GASTO DE PAM, pero son consumos de MA. DR1 = lo que pagó MA: ${porCuenta(consumos25.filter(enDR1))}. Fuera de DR1: lo que pagó PAM en el ejercicio (${fmt(total(pagoPAM(consumos25)))}) y ene–jun 2025 (ejercicio anterior, 80 cuotas $ 3.399.589,35 por VISA PAM). PROPUESTA (script 239): el template pasa a MA → sale de DR1 y de Retiros; lo que pagó PAM queda como «distribución PAM → MA».`,
+    link(consumos25[0], f => f["Concepto"] === "Consumos MA"))
+  parte("DR1.A2", "Gastos Médicos · año 2025 · a nombre de PAM", medicos25.filter(enDR1),
+    `Igual que A1: dueño PAM en el template, gasto de MA, pagado por MA: ${porCuenta(medicos25.filter(enDR1))}. (Ene–jun 2025, ejercicio anterior: 13 cuotas $ 237.934,00 por VISA PAM.) PROPUESTA (script 239): el template pasa a MA.`,
+    link(medicos25[0], f => f["Concepto"] === "Gastos Medicos"))
+  if (otras.length) parte("DR1.A3", `Suscripciones de MA a nombre de PAM (${nombresOtras})`, otras,
+    `Templates de PAM con suscripciones de MA, pagados con la VISA MA: ${porCuenta(otras)}. Mismo caso que A1: PROPUESTA pasar esos templates a MA (se suman al script 239 si estás de acuerdo).`,
+    link(otras[0], f => f["Concepto"] === otras[0].concepto))
+  const hasta = h.length
+  const vDR1 = total(dr1)
+  h.push(["", "", "TOTAL de los renglones = DR1", { t: "n", f: `SUM(D${desde}:D${hasta})`, v: total([...consumos25.filter(enDR1), ...medicos25.filter(enDR1), ...otras]), z: "#,##0.00" },
+    { t: "s", f: `IF(ABS(D${hasta + 1}-${vDR1})<0.01,"✓ da lo mismo que DR1 (${vDR1.toLocaleString("es-AR", { minimumFractionDigits: 2 })})","⚠️ no da DR1")`,
+      v: Math.abs(total([...consumos25.filter(enDR1), ...medicos25.filter(enDR1), ...otras]) - vDR1) < 0.01 ? `✓ da lo mismo que DR1 (${vDR1.toLocaleString("es-AR", { minimumFractionDigits: 2 })})` : "⚠️ no da DR1" }])
+  // aparte, NO suman: contexto para decidir
+  h.push(["", "", CENTRADO("Aparte — NO suman a DR1, son para comparar"), CENTRADO("Importe en el ejercicio"), "", "", "", "", "", "", "", "", ""])
+  h.push(["DR1.B1", "", `Gastos Médicos · SIN AÑO · a nombre de PAM — ${medicosSin.length} cuota`, { t: "n", v: total(medicosSin), z: "#,##0.00" },
+    `No está en DR1 porque lo pagó PAM (${porCuenta(medicosSin)}), pero es del mismo problema: template sin año, de PAM y en OTRA agrupadora («${medicosSin[0]?.agrupadoraTemplate ?? "?"}»). PROPUESTA: año 2026, responsable MA y agrupadora «Gastos Personales MA» → queda como «distribución PAM → MA».`,
+    "", "", "", "", "", "", link(medicosSin[0], f => f["Concepto"] === "Gastos Medicos" && /PAM/i.test(f["Banco / cuenta"] ?? "")), ""])
+  h.push(["DR1.B2", "", `Los de 2026, ya a nombre de MA (Consumos ${consumos26.length} + Médicos ${medicos26.length} cuotas)`, { t: "n", v: total([...consumos26, ...medicos26]), z: "#,##0.00" },
+    `Así tienen que quedar los de 2025: dueño MA, pagado por MA → «pagó el dueño (MA)», sin marca.`,
+    "", "", "", "", "", "", link(consumos26[0], f => f["Concepto"] === "Consumos MA" && (f["Mes"] ?? "") >= "2026-01"), ""])
+  h.push(["DR1.B3", "", `Consumos MA 2026 con cuotas de oct–dic 2025 — ${oct25.length} cuotas (están DENTRO de B2)`, { t: "n", v: total(oct25), z: "#,##0.00" },
+    `El template 2026 arrancó en oct-25: oct–dic 2025 está repartido entre el de 2025 (PAM, A1) y el de 2026 (MA). No es doble conteo (cada pago está vinculado a una sola cuota). Con la propuesta de A1 los dos quedan de MA y deja de importar.`,
+    "", "", "", "", "", "", link(oct25[0], f => f["Concepto"] === "Consumos MA" && (f["Mes"] ?? "") < "2026-01"), ""])
+  return h
 }
 
 export const ANCHOS_DATOS = [8, 14, 30, 16, 30, 24, 16, 30, 13, 32, 40, 26, 30]
