@@ -1,0 +1,9 @@
+{"cuota":{"id":"fcce0466-0168-4fe2-b8aa-1067274949e6","plantilla":"SICORE 2da Quincena","fecha":"2026-01-09","monto":0,"estado":"conciliado","descripcion":null},
+ "sicore_pago":{"id":"b5ebe508-dc7c-4ed6-a86a-affe6a0f7a0f","template_id":null,"template_cuota_id":null,"categ":null,"nota_operador":"📜 Histórico jul25-ene26 — tu planilla: CATEG IMP"},
+ "devoluciones":[
+  {"id":"c472c3f5-5011-4c9c-92eb-8b10f110ae45","estado":"historico","nota_operador":"📜 Histórico jul25-ene26 — tu planilla: CATEG VET"},
+  {"id":"f70e5994-a67e-4fdd-b25e-efc1e08ff20b","estado":"historico","nota_operador":"📜 Histórico jul25-ene26 — tu planilla: CATEG ALIM"},
+  {"id":"d6ab924b-4d1d-4db7-889d-3c8613da8d16","estado":"historico","nota_operador":"📜 Histórico jul25-ene26 — tu planilla: CATEG AUTO"},
+  {"id":"1da54875-0c2e-4203-8da3-14c0838dbeb4","estado":"historico","nota_operador":"📜 Histórico jul25-ene26 — tu planilla: CATEG INSTAL"},
+  {"id":"2a4276b4-8711-4924-9b8c-5ea8b0fa72d6","estado":"historico","nota_operador":"📜 Histórico jul25-ene26 — tu planilla: CATEG FIJOS GRAL"},
+  {"id":"32a827e9-989c-46b3-9878-7d35c4e244f6","estado":"historico","nota_operador":"📜 Histórico jul25-ene26 — tu planilla: CATEG ASES"}]}
