@@ -55,6 +55,7 @@ const QUE: Record<number, [string, string, string]> = {  // [tipo, qué cambió,
   30: ["Presentación", "DR1 marca lo resuelto.", ""],
   32: ["Descartada", "❌ Salió MAL: las compras en dólares pasadas a pesos (script 241) restaban, porque 53 cuotas estaban marcadas «ingreso». NO USAR: corregido en la v33.", "241"],
   33: ["DATOS", "Compras en DÓLARES con tarjeta pasadas a PESOS con el TC que usó la tarjeta (60 cuotas, $ 1.932.079,75); corregido el sentido de 54 cuotas (las compras eran «ingreso»; 2 devoluciones con importe negativo) y la regla que lo causaba (Extracto y motor). El control contra el banco toma lo pasado a pesos.", "241, 242"],
+  34: ["DATOS", "Wilson (adelanto atado a la Caja Sigot 21/02; la extracción de MA del 19/02 suelta y sin CTA MSA); medialunas de la Quinta → CTA QUINTA X (los grupos que no son empresa: manda el código); ITGB de la sucesión pagado de la caja AMS como retiro de los cotitulares (template nuevo «Retiros Cotitulares»), la extracción del Galicia de 1,8 M sin código.", "243, 244, 245"],
   31: ["DATOS", "Suscripciones 2025 (Netflix, Paquete TV MA, Club La Nación, Jockey Club) pasan a MA; código interno «DIST MA» vacío. + Las compras en dólares con tarjeta en $ 0 saltan en Inconsistencias (61 cuotas).", "240"],
 }
 
@@ -108,6 +109,9 @@ salto("v29", "Retiros y aportes", -5159951.86, [["Sale «MA pagó por PAM»: Con
 salto("v33", "Total de las cuotas", 1932079.75, [["Compras en US$ con tarjeta pasadas a pesos (58 compras)", 1998697.75], ["Devoluciones en US$ pasadas a pesos (Skool US$ 45 y vthebestpdf US$ 0,95), restan", -66618.00]])
 salto("v33", "Retiros y aportes", 455942.00, [["«distribución PAM → MA»: compras en US$ de MA pagadas con la VISA PAM, ahora con su importe en pesos", 455942.00]])
 salto("v33", "Total del banco", 13132.90, [["Compras en US$ de la VISA PAM con código DIST MA: el control toma su valor en pesos (el de la cuota) en vez de $ 0", 13132.90]])
+salto("v34", "Total de las cuotas", 1756595, [["Cuota nueva: ITGB Suc PAM 1, pagado de la caja AMS (template «Retiros Cotitulares»)", 1756595]])
+salto("v34", "Retiros y aportes", -243405, [["Sale el «aporte de MA a MSA» de $ 200.000: era la extracción de MA para su propia caja (estaba atada a Wilson)", -200000], ["Retiro de cotitulares: de la extracción de 1.800.000 al ITGB pagado, 1.756.595", -43405], ["Medialunas: dejan de ser «retiro de PAM pagado por MSA»", -9000], ["…y pasan a «retiro de QUINTA X pagado por MSA»", 9000]])
+salto("v34", "Total del banco", -234405, [["MA · CTA MSA: la extracción de MA del 19/02 ya no lleva código", -200000], ["MSA · CTA COTITULARES: ahora es el pago de la caja AMS (1.756.595) y no la extracción (1.800.000)", -43405], ["MSA · CTA QUINTA X: renglón nuevo (las medialunas)", 9000]])
 salto("v31", "Retiros y aportes", 194169.64, [["Sale «MA pagó por PAM»: suscripciones 2025 pagadas por MA, ahora de MA", -327509.84], ["Entra «distribución PAM → MA»: suscripciones 2025 pagadas con la VISA PAM", 521679.48]])
 
 // ── 3 · Scripts de datos
@@ -121,6 +125,9 @@ const d: unknown[][] = [["SCRIPTS DE DATOS — lo que se cambió en la base (con
   ["240", "10/11/2026", "Suscripciones 2025 (Netflix, Paquete TV MA, Club La Nación, Jockey Club) → MA; código interno «DIST MA» vacío en esos 4 y en los 3 del 239.", "«C1 también son de MA» · «C ok»", "240-suscripciones-ma-y-codigo-interno-deshacer.sql", "v31"],
   ["241", "10/11/2026", "60 compras en DÓLARES con tarjeta (cuotas en $ 0) pasadas a PESOS: US$ × el TC que usó la tarjeta (débito del Galicia ÷ «SU PAGO EN USD», o el TC del PDF del resumen de PAM). Falta 1 (VISA PAM cierre 30/04/26, sin el PDF 26-05).", "«D1 sí, dale con las 45 y vos no tenés esos extractos?»", "241-tarjetas-usd-a-pesos-deshacer.sql", "v33"],
   ["242", "10/11/2026", "Sentido de esas cuotas: 52 compras estaban «ingreso» → egreso; 2 devoluciones con importe negativo → positivo e «ingreso». Bug de forma (la regla `debitos > 0` de la conciliación), corregido también en el código.", "bug de forma: se corrige por default (CLAUDE.md § Datos)", "242-sentido-cuotas-usd-deshacer.sql", "v33"],
+  ["243", "10/11/2026", "Wilson: el adelanto de $ 200.000 se vincula a la Caja Sigot del 21/02 y se suelta de la extracción de MA del 19/02, que queda sin código (MA a su propia caja).", "«B ok»", "243-wilson-adelanto-caja-sigot-deshacer.sql", "v34"],
+  ["244", "10/11/2026", "Medialunas de la reunión Benicasa: código X → CTA QUINTA X y cuenta Gastos de representación (sigue en Otros Gastos); el adelanto de Wilson en Sueldos con la fecha del pago de la caja (21/02).", "«ok todo» · «deben ser el mismo día»", "244-quinta-y-wilson-deshacer.sql", "v34"],
+  ["245", "10/11/2026", "ITGB de la sucesión ($ 1.756.595) pagado de la caja AMS como retiro de los cotitulares: template nuevo «Retiros Cotitulares»; en la caja AMS la entrada de 1.800.000 (de caja General) y la salida del ITGB; la extracción del Galicia de 1,8 M sin código, con nota de correspondencia.", "«creá cotitulares… el detalle es ITGB Suc PAM 1»", "245-cotitulares-itgb-caja-ams-deshacer.sql", "v34"],
   [], ["Respaldos del Excel: Balance/respaldos («ANTES script 239», «ANTES script 240», «DESPUES 2», «FOTO ANTES…»). Los scripts y sus fotos previas están en la carpeta scripts/ del repo."]]
 
 const wb = XLSX.utils.book_new()

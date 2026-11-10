@@ -149,7 +149,11 @@ export function auditarCuota(c: CuotaTemplate): AuditoriaDeCuota {
     efecto = efectoEntre(pagadores[0], dueno)
     // una TRANSFERENCIA a la otra parte se rotula como transferencia aunque el template sea de otro (la frase de las dos puntas)
     const transferencia = !entrada && !!codigo && esTransferenciaA(otraParteDelCodigo(codigo), b?.beneficiario, b?.descripcion)
+    // 👥 JMS 10/11: un GRUPO que no es empresa (la Quinta Rosello —los 5 hermanos—, los Cotitulares) se nombra con su código, y el código MANDA
+    // sobre el dueño del template: «los gastos que se hagan de una cuenta o de MA, de MSA o de PAM deben marcarse que es a la cuenta Quinta»
+    const grupo = /^(QUINTA|COTITULARES)\b/.test(otraParteDelCodigo(codigo))
     if (transferencia && !/^LIB\b/i.test(codigo)) efecto = efectoDelCodigo(pagadores[0], codigo, false, true)
+    else if (grupo && !entrada) efecto = efectoDelCodigo(pagadores[0], codigo, false, false)
     else if (/^LIB\b/i.test(codigo)) efecto = "Libertad (LIB): reparto propio"
     // una ENTRADA con código: lo dice el código, mirado desde quien recibió (sin aviso: el código esperado es el de quien paga)
     // …salvo que entre a quien PAGÓ el gasto de otro, con el código de ese otro: es un REINTEGRO de ese gasto (la VISA de PAM devuelve

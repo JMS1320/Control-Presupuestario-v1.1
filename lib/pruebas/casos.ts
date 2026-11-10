@@ -13541,6 +13541,11 @@ export function correrCasos(): Resultado[] {
     const cu2 = { ...(cu as object), monto: 7285.4 } as never
     const [vb2] = vincularBanco([cu2], [cu2], [{ vinculo: "apple", cuenta: "VISA PAM", titular: "PAM", fecha: "2025-07-05", comprobante: "032937", debitos: 0, creditos: 0, enDolares: false, usd: 4.99 }])
     const m5 = auditarCuota(vb2).marca
+    // 👥 la Quinta (grupo, no empresa): el código manda sobre el dueño del template — medialunas de un template de PAM pagadas por MSA con «CTA QUINTA X»
+    const aq = auditarCuota({ id: "q", fecha: "2026-06-02", concepto: "Otros Gastos", proveedor: "", categ: "GASTOS DE REPRESENTACION", cuenta_contable: "", nro_cuenta: "", centro_costo: "", responsable: "PAM", estado: "conciliado", monto: 9000,
+      banco: { cuenta: "Galicia MSA CC", titular: "MSA", contable: "CTA QUINTA X", comprobante: "", respaldo: 9000, motivo: null } } as never)
+    const vq = `${aq.efecto} | ${aq.marca}`, eq = "retiro de QUINTA X pagado por MSA | ✓"
+    chequear("Libro H para auditar", "👥 Un grupo que no es empresa (Quinta, Cotitulares): su código manda sobre el dueño del template, sin aviso de «código esperado»", eq, vq, vq === eq, "A-FEAT-1579")
     const sv = [sentidoDelMovimiento({ debitos: 100 }), sentidoDelMovimiento({ creditos: 100 }), sentidoDelMovimiento({ debitos: 0, creditos: 0, debitos_usd: 4.99 }), sentidoDelMovimiento({ debitos: 0, creditos: 0, creditos_usd: 45 })].join(",")
     chequear("Conciliación", "💳 El sentido de la cuota que se crea al conciliar: débito → egreso, crédito → ingreso, y una compra en US$ con tarjeta ($ 0 en pesos) → EGRESO (antes caía como ingreso); una devolución en US$ → ingreso", "egreso,ingreso,egreso,ingreso", sv, sv === "egreso,ingreso,egreso,ingreso", "A-BUG-1584")
     chequear("Libro H para auditar", "💳 La compra en dólares ya pasada a pesos (US$ × TC de la tarjeta) queda ✓: no salta «el banco movió otro importe»", "✓ (sin aviso de banco)", m5, m5.startsWith("✓") && !m5.includes("banco"), "A-BUG-1584")
