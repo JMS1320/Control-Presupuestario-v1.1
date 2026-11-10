@@ -13600,6 +13600,13 @@ export function correrCasos(): Resultado[] {
     const e = "entró a MA · Galicia MA CA · distribución PAM → MA · entró a MA ‖ resumen: PARA MA · distribución PAM → MA · salió de PAM ‖ otra punta: 4000000"
     chequear("Libro H para auditar", "🔁 Una transferencia PAM → MA: la entrada en MA se lee «entró a MA» (no «de MA a PAM»), queda como otra punta y no suma: el resumen tiene una sola línea",
       e, v, v === e, "A-FEAT-1579")
+    // 🧮 A2 (JMS 09/11): «de un total al otro» — control 0 (la salida 4 M menos la entrada 4 M) + otras puntas 4 M = TOTAL de arriba 4 M, al peso
+    const txt2 = (x: unknown) => String(x && typeof x === "object" ? (x as { v: unknown }).v : x ?? "")
+    const iP = h.findIndex(f => /^DE UN TOTAL AL OTRO/.test(txt2(f[0])))
+    const pasos = h.slice(iP + 2, iP + 6).map(f => `${txt2(f[0]).slice(0, 18)}=${txt2(f[2])}`).join(" ; ")
+    const vP = pasos, eP = "Control: «Desde la=0 ; + las OTRAS PUNTAS=4000000 ; = TOTAL de arriba =4000000 ; =undefined"
+    chequear("Libro H para auditar", "🧮 Retiros: el TOTAL de arriba y el «Total del banco» miden cosas distintas, y el paso de uno al otro cierra al peso (control + otras puntas + lo sin código)",
+      eP.replace("=undefined", "="), vP, vP === eP.replace("=undefined", "=") && /cierra al peso/.test(txt2(h[iP + 4]?.[0])), "A-FEAT-1579")
   }
 
   // ══ 🔍 Subtotal por establecimiento en el resumen: Nazarenas con 2 partidas lleva subtotal, Lima (1) no; el TOTAL no suma doble (JMS 09/11) ══

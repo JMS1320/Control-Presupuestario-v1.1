@@ -308,6 +308,37 @@ export function hojaRetirosYAportes(cuotas: CuotaTemplate[], extracto: { movimie
       { t: "s", f: `IF(ABS(E${n})<1,"✓","⚠️ no da")`, v: Math.abs(cu - ba) < 1 ? "✓" : "⚠️ no da" }, si, { t: "n", f: `D${n}+G${n}`, v: r2(ba + si) }])
   }
   h.push([], ["«Total del banco con ese código» es lo que ven las cuentas de los socios (14.1) para esa cuenta: lo de templates + lo directo."])
+
+  // 🧮 JMS 09/11 (A2): «¿hay algo que no cuadra?» — el TOTAL de arriba y el «Total del banco» NO miden lo mismo, y la diferencia se explica
+  // al peso: el control resta las entradas (las otras puntas) y suma lo directo; el resumen suma lo que no tiene código de cuenta corriente.
+  // Se muestra el paso de uno al otro, renglón por renglón, para que ninguna diferencia quede sin explicar a la vista.
+  const IMP = (v: number) => ({ t: "n", v, z: MONEDA_AR }), IMP_TOT = (v: number) => ({ t: "n", v, z: MONEDA_AR, s: ESTILO_TOT })
+  const enClaves = new Set(claves)
+  const totalArriba = r2(suman.reduce((t, x) => t + x.c.monto, 0))
+  const ctrlCuotas = r2(claves.reduce((t, k) => t + (desdeCuotas.get(k) ?? 0), 0))
+  const totOtras = r2(otras.reduce((t, x) => t - x.c.monto, 0))
+  const fuera = new Map<string, number>()
+  for (const { c, a } of suman) {
+    const tit = c.banco?.titular ?? ""
+    if (a.codigo && tit && !tit.includes(" + ") && enClaves.has(clave(tit, a.codigo))) continue
+    const k = `${a.efecto}${a.codigo ? ` (código «${a.codigo}»)` : " (sin código)"}`
+    fuera.set(k, r2((fuera.get(k) ?? 0) + c.monto))
+  }
+  const totFuera = r2([...fuera.values()].reduce((t, v) => t + v, 0))
+  const bancoAtado = r2(claves.reduce((t, k) => t + (conTpl.get(k) ?? 0), 0)), directos = r2(claves.reduce((t, k) => t + (sinTpl.get(k) ?? 0), 0))
+  const resto = r2(totalArriba - ctrlCuotas - totOtras - totFuera)
+  h.push([], [TITULO_TABLA("DE UN TOTAL AL OTRO — el TOTAL de arriba y el «Total del banco» miden cosas distintas; así se pasa de uno al otro")])
+  h.push([ENCABEZADO_TABLA("Paso"), ENCABEZADO_TABLA(""), ENCABEZADO_TABLA("Importe")])
+  h.push(["Control: «Desde las cuotas» (suma de la columna)", "", IMP(ctrlCuotas)])
+  h.push(["+ las OTRAS PUNTAS: el control las resta (entraron a otra cuenta); arriba no suman", "", IMP(totOtras)])
+  for (const [k, v] of [...fuera.entries()].sort((x, y) => Math.abs(y[1]) - Math.abs(x[1])))
+    h.push([`+ arriba sin renglón en el control: ${k}`, "", IMP(v)])
+  if (Math.abs(resto) >= 0.01) h.push(["⚠️ sin explicar", "", IMP(resto)])
+  h.push([TOTAL_TEXTO(`= TOTAL de arriba (Retiros y aportes) ${Math.abs(resto) < 0.01 ? "✓ cierra al peso" : "⚠️ no cierra"}`), TOTAL_TEXTO(""), IMP_TOT(totalArriba)])
+  h.push([])
+  h.push(["Control: «Banco, atado a una cuota» (= «Desde las cuotas», renglón por renglón ✓)", "", IMP(bancoAtado)])
+  h.push(["+ «Banco SIN template» (retiros directos: van a la cuenta del socio, 14.1, y no a este resumen de cuotas)", "", IMP(directos)])
+  h.push([TOTAL_TEXTO("= «Total del banco con ese código»"), TOTAL_TEXTO(""), IMP_TOT(r2(bancoAtado + directos))])
   return h
 }
 
@@ -374,9 +405,20 @@ export function hojaInconsistencias(cuotas: CuotaTemplate[], etiqueta: string, s
   if (estructura) {
     h.push([], [`ESTRUCTURA DE LOS TEMPLATES — anual o cuotas y pagos (el mismo control que Principal) · ${estructura.length ? `${estructura.length} a corregir` : "✓ sin errores"}`])
     if (estructura.length) {
-      h.push(["Qué pasa", "Template", "Año", "Cuotas", "Importe", "Qué hacer", "Fechas"].map(CENTRADO))
-      for (const p of estructura) h.push([`${p.tipo === "conciliada_en_cero" ? "⚪" : "🔴"} ${p.titulo}`, p.template, p.anio ?? "", { t: "n", v: p.cuotas.length, z: "0" },
-        Math.round(p.cuotas.reduce((x, c) => x + c.monto, 0) * 100) / 100, p.accion, p.cuotas.map(c => dmy(c.fecha)).join(" · ")])
+      // 🔗 JMS 09/11 (A1): cada renglón lleva a la solapa donde está el template (por una de sus cuotas, o por el nombre); si el
+      // template no tiene cuotas en este libro, se dice
+      const porId = new Map(cuotas.map(c => [c.id, c]))
+      const solapaDel = (p: ProblemaModalidad) => {
+        const c = p.cuotas.map(x => porId.get(x.id)).find(Boolean) ?? cuotas.find(x => x.concepto === p.template)
+        return c ? solapaDe(c) : ""
+      }
+      h.push(["Qué pasa", "Template", "Año", "Cuotas", "Importe", "Qué hacer", "Fechas", "Ir a"].map(CENTRADO))
+      for (const p of estructura) {
+        const sol = solapaDel(p)
+        h.push([`${p.tipo === "conciliada_en_cero" ? "⚪" : "🔴"} ${p.titulo}`, p.template, p.anio ?? "", { t: "n", v: p.cuotas.length, z: "0" },
+          Math.round(p.cuotas.reduce((x, c) => x + c.monto, 0) * 100) / 100, p.accion, p.cuotas.map(c => dmy(c.fecha)).join(" · "),
+          sol ? { t: "s", v: sol, l: { Target: `#'${sol.replace(/'/g, "''")}'!A1`, Tooltip: `Ir a «${sol}»` } } : "(no está en este libro: fuera del ejercicio)"])
+      }
     }
   }
   h.push([], ["Tipo", "Responsable", "Agrupadora", "Concepto", "Fecha", "Importe", "Estado", "Quién pagó", "Código", "Marca", "Descripción del banco", "Ir a"].map(CENTRADO))
