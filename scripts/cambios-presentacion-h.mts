@@ -101,6 +101,8 @@ export const CAMBIOS: unknown[][] = [
     "Diferencia de 2,1 M sin explicar", "control 74,98 M + otras puntas 79,6 M + MA pagó por PAM 5,56 M + FLIA −1,68 M + código X 9.000 = 158,47 M ✓ · banco atado 74,98 M + directos 85,61 M = 160,59 M"],
   [43, "Los CONTROLES con fórmulas: «De un total al otro» (cada paso apunta a lo que suma, y el cierre se compara con el TOTAL de arriba), «Desde las cuotas» del control contra el banco (SUMAR.SI.CONJUNTO sobre el detalle y las otras puntas), el total de las otras puntas, el resumen por tipo de «Inconsistencias», el resumen por punto de «Datos a revisar» y los números del Índice (sobre cada solapa).", "Retiros, Inconsistencias, Datos a revisar, Índice",
     "Importes fijos", "Fórmulas: tocás la celda y ves de dónde sale; si cambiás algo, se recalcula. Lo que viene del banco sigue siendo dato"],
+  [44, "Agrupadoras: el mismo vehículo / partida va JUNTO y POR FECHA, sea Anual o Cuota (antes se ordenaba por el nombre y «Anual» iba antes que «Cuota»).", "Solapas de agrupadora",
+    "Voyage Anual (ene-26) antes que Voyage Cuota (ago a dic-25)", "Voyage Cuota 11/08, 06/10, 15/12/25 → Voyage Anual 30/01/26"],
   [22, "Nueva solapa «INCONSISTENCIAS»: todo lo que hay que mirar de todas las solapas, por tipo, con link a la solapa de la cuota.", "Solapa «Inconsistencias» (después de Gastos Libertad)",
     "Había que recorrer las 51 solapas buscando 🔴 / 🟡 / ⚠️", "🔴 sin pagar · 🟡 sin movimiento · 🟡 el banco movió otro importe · 🟡 en dólares · ⚠️ código · ⚪ en $ 0 (al final): cada renglón con «Ir a» su solapa"],
   [],

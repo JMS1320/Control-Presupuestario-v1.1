@@ -13638,5 +13638,21 @@ export function correrCasos(): Resultado[] {
     const e = "Inmobiliario — Nazarenas → Inmobiliario — Rojas → Red Vial — Rojas → Fondo Educativo → Inmobiliario Complementario — MSA"
     chequear("Libro H para auditar", "🔍 Orden de los impuestos: Inmobiliario → Red Vial → Fondo Educativo → Complementario al final", e, v, v === e, "A-FEAT-1579")
   }
+
+  // ══ 🔁 El mismo vehículo junto y por fecha, sea Anual o Cuota (JMS 09/11: «¿no están ordenados raros?») ══
+  {
+    const q = (id: string, concepto: string, fecha: string) => ({ id, fecha, concepto, proveedor: "", categ: "X", cuenta_contable: "", nro_cuenta: "", centro_costo: "",
+      responsable: "MSA", estado: "conciliado", monto: 10, agrupadoraTemplate: "Impuestos Automotores", banco: { cuenta: "Galicia MSA", titular: "MSA", contable: "", comprobante: "", respaldo: 10, motivo: null } }) as never
+    const cs = [q("a", "Imp Automotores Voyage Anual", "2026-01-30"), q("b", "Imp Automotores Voyage Cuota", "2025-08-11"), q("c", "Imp Automotores Voyage Cuota", "2025-12-15"), q("d", "Imp Automotores Amarok Cuota", "2025-07-15")]
+    const { filas } = armarHojaGrupo({ responsable: "MSA", agrupadora: "Impuestos Automotores", total: 40, cuotas: cs } as never, "25/26", [{ clave: "2025-07", rotulo: "jul-25" }], { auditoria: true })
+    const F = filas as unknown[][]
+    const iE = F.findIndex(f => f[0] === "Nro" && f[1] === "Categoría"), iD = F.findIndex(f => f[0] === "Nro" && f[1] === "Mes")
+    const res: string[] = []
+    for (const f of F.slice(iE + 1)) { if (f[1] === "TOTAL") break; if (typeof f[1] === "string") res.push(f[1].replace("Imp Automotores ", "")) }
+    const det = F.slice(iD + 1).filter(f => typeof f[3] === "string" && /Imp Automotores/.test(f[3] as string)).map(f => `${String(f[3]).replace("Imp Automotores ", "")} ${f[2]}`)
+    const v = `${res.join(" → ")} ‖ ${det.join(" → ")}`
+    const e = "Amarok Cuota → Voyage Cuota → Voyage Anual ‖ Amarok Cuota 15/07/2025 → Voyage Cuota 11/08/2025 → Voyage Cuota 15/12/2025 → Voyage Anual 30/01/2026"
+    chequear("Libro H para auditar", "🔁 El mismo vehículo / partida va junto y por fecha, sea Anual o Cuota (Voyage Cuota 2025 antes que Voyage Anual 2026)", e, v, v === e, "A-FEAT-1579")
+  }
   return r
 }
