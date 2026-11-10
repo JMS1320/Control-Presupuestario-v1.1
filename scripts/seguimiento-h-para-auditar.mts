@@ -135,7 +135,10 @@ const wb = XLSX.utils.book_new()
 agregarHoja(wb as any, "Versiones", h, [8, 9, 18, 20, 11, 16, 12, 18, 9, 14, 16, 14, 13, 90, 12].map((ancho, i) => ({ ancho, ...(i >= 2 && i <= 11 && i !== 4 && i !== 6 && i !== 8 ? { z: MON } : {}) })) as any)
 agregarHoja(wb as any, "Los saltos", s, [9, 20, 16, 110, 18, 14].map(ancho => ({ ancho })) as any)
 agregarHoja(wb as any, "Scripts de datos", d, [8, 12, 90, 55, 50, 12].map(ancho => ({ ancho })) as any)
-const destino = join("- Comunicacion JMS Claude - Archivos/Balance/Excels trabajando con claude", "Seguimiento H para auditar - versiones (2026-11-10).xlsx")
+// 🗂️ JMS 10/11 («¿se está pisando? hagamos copias por las dudas»): el nombre lleva la última versión medida → cada corrida es un archivo nuevo
+const ultima = filas[filas.length - 1]?.v ?? 0
+const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" })
+const destino = join("- Comunicacion JMS Claude - Archivos/Balance/Excels trabajando con claude", `Seguimiento H para auditar - hasta v${ultima} (${hoy}).xlsx`)
 const { writeFileSync } = await import("node:fs")
 writeFileSync(destino, Buffer.from(await aplicarVistas(XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(wb as any))))
 console.log("📄", destino, "·", filas.length, "versiones")

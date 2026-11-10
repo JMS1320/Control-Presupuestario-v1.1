@@ -101,6 +101,10 @@ const r: unknown[][] = [[T("PROPUESTAS PARA APROBAR — H para auditar MSA 25/26
   [N("Cada propuesta tiene su solapa con los renglones exactos. Escribí «sí» / «no» en «¿Va todo?» (o renglón por renglón). Nada está hecho todavía: cada una se aplica con un script con foto previa y deshacer.")], [],
   ["Nº", "Propuesta", "Renglones", "Importe", "Qué se haría", "Ir a"].map(C)]
 for (const p of resumen) r.push([p.id, N(p.que), { t: "n", v: p.cuantos, z: "0" }, IMP(p.importe), N(p.hacer), { t: "s", v: `➜ ${p.solapa}`, l: { Target: `#'${p.solapa}'!A1` } }])
+r.push([], [C("Abiertos que decidís vos (no tengo propuesta segura): están en el H para auditar v35, solapa «Datos a revisar», con todo su contexto y la columna «Tu respuesta»")],
+  ["DR7", N("25 cuotas SIN PAGAR al cierre (30/06/26), $ 1.629.456,87: ¿cuáles van como deuda y cuáles se desactivan porque no se iban a pagar? (incluye Gol, Tiguan y Toyota 2026, que van a la reliquidación)")],
+  ["DR8", N("El extracto del Galicia MA empieza el 07/10/2025: ¿cargamos jul–sep 2025? (la transferencia de PAM a MA del 06/08/25 por $ 4.000.000 no tiene su otra punta)")],
+  ["DR10", N("Leguizamón ($ 57.400, 09/04/26) y Aduriz ($ 60.000, 04/12/25): transferencias de MA con «CTA MSA» sin factura que coincida — ¿son gastos de MSA pagados por MA?")])
 r.push([], [C("Ya resuelto en la charla (no hace falta aprobar)")],
   ["DR5", N("Pasajes de JMS con «CTA JMS»: quedan así — es un pago a JMS que genera saldo a facturar (él lo factura como reintegro).")])
 agregarHoja(wb as any, "Resumen", r, [6, 50, 11, 16, 70, 22].map(ancho => ({ ancho })) as any)
