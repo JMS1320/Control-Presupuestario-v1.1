@@ -1,0 +1,4 @@
+{"movimiento":{"tabla":"public.msa_galicia","id":"48f5813b-7e7e-4fda-ae85-d55f9dee4eee","categ":"GASTOS VARIOS GANADERIA","contable":"CTA MA","interno":"","template_cuota_id":"d056f415-20f1-4a0d-aae0-203c93701c54","sueldo_pago_id":"8fd083cf-7c4e-447b-8e99-7d0d8672f00d","nota_operador":null},
+ "cuota":{"id":"d056f415-20f1-4a0d-aae0-203c93701c54","estado":"conciliado","descripcion":null},
+ "periodo":{"id":"ee33a972-3541-4aa2-beb1-81be25bee30d","empleado":"Fabian Vulcano","anio":2026,"mes":4,"varios":0,"bruto_calculado":1760000,"saldo_pendiente":1760000,"observaciones":null},
+ "pago_alondra_no_se_toca":{"id":"8fd083cf-7c4e-447b-8e99-7d0d8672f00d","sigue_con":"msa_galicia dc5bdadb-aed6-421c-b662-b3b8be1ba987 (08/04/26 Alondra Aylin Olivo)"}}
