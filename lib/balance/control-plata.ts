@@ -179,7 +179,7 @@ export function hojaControlPlata(rs: ResumenDeCuenta[], titular: string, etiquet
         { libro: ok(etapa4.compras.totalLibro, reg("E2")), banco: ok(etapa4.compras.enBanco, banco("D1", "egr")) }))
       h.push(...bloquePuente("E1 · VENTAS: por dónde se cobró cada factura del ejercicio", etapa4.ventas, h.length + 1, filasE.get("E1") ?? null, filasDe.get("D2") ?? null, "F",
         { libro: ok(etapa4.ventas.totalLibro, reg("E1")), banco: ok(etapa4.ventas.enBanco, banco("D2", "ing")) }))
-      h.push(["ⓘ Próximo, a validar con JMS: separar el «resto» en deuda al cierre (proveedores / deudores) y diferencias de importe (retenciones, pagos parciales), y el puente de templates, sueldos y tarjeta (E3, E5, E7)."])
+      h.push(["ⓘ La lista de los comprobantes de E2.5 / E2.6 y E1.5 / E1.6, con su ficha, en «Plata · facturas». Próximo, a validar con JMS: la deuda al cierre contra el papel de deudas (dos caminos) y el puente de templates, sueldos y tarjeta (E3, E5, E7)."])
     }
   }
   return h
@@ -384,7 +384,9 @@ export function bloqueEtapa3(filas: FilaEtapa3[], filasDe: Map<string, number>, 
 // ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 /** Un comprobante del libro diario del ejercicio: su id, de dónde viene y su total con signo (las NC restan). */
-export interface ComprobanteDelLibro { id: string; fuente: string; total: number }
+export interface ComprobanteDelLibro { id: string; fuente: string; total: number; ficha?: string; fecha?: string | null }
+/** Un comprobante que explica el «resto»: sin pago en el ejercicio, o pagado por otro importe (con dónde se pagó). */
+export interface CasoPuente { nro: string; c: ComprobanteDelLibro; pagado: number; donde: string }
 /** Un movimiento de CUALQUIER cuenta (de las tres empresas, la tarjeta incluida) con el comprobante que paga o cobra. */
 export interface MovimientoConComprobante { id: string; cuenta: string; titular: string; importe: number }
 
@@ -398,14 +400,17 @@ export interface RenglonPuente { nro: string; concepto: string; valor: number; c
  *   lo del banco (D1 / D2) = lo facturado del ejercicio que pasó por las cuentas de la empresa + lo de comprobantes de OTROS ejercicios
  */
 export function puenteDeComprobantes(compr: ComprobanteDelLibro[], movs: MovimientoConComprobante[], titular: string, cuentasDePlata: Set<string>,
-  esTarjeta: (cuenta: string) => boolean, prefijo: string, verbo: { hecho: string; sin: string }): { renglones: RenglonPuente[]; totalLibro: number; enBanco: number } {
+  esTarjeta: (cuenta: string) => boolean, prefijo: string, verbo: { hecho: string; sin: string }): { renglones: RenglonPuente[]; totalLibro: number; enBanco: number; casos: CasoPuente[] } {
   const ids = new Set(compr.map(c => c.id))
   let propias = 0, tarjeta = 0, otra = 0, deOtrosEjercicios = 0, nOtros = 0
   const atados = new Set<string>()
+  const pagadoDe = new Map<string, number>(), dondeDe = new Map<string, Set<string>>()
   for (const m of movs) {
     const enPlata = m.titular === titular && cuentasDePlata.has(m.cuenta)
     if (!ids.has(m.id)) { if (enPlata) { deOtrosEjercicios = r2(deOtrosEjercicios + m.importe); nOtros++ } continue }
     atados.add(m.id)
+    pagadoDe.set(m.id, r2((pagadoDe.get(m.id) ?? 0) + m.importe))
+    dondeDe.set(m.id, new Set([...(dondeDe.get(m.id) ?? []), m.titular === titular ? m.cuenta : `${m.cuenta} (${m.titular})`]))
     if (enPlata) propias = r2(propias + m.importe)
     else if (m.titular === titular && esTarjeta(m.cuenta)) tarjeta = r2(tarjeta + m.importe)
     else otra = r2(otra + m.importe)
@@ -415,14 +420,25 @@ export function puenteDeComprobantes(compr: ComprobanteDelLibro[], movs: Movimie
   const nHist = compr.filter(c => c.fuente === "historico" && !atados.has(c.id)).length
   const nSin = compr.filter(c => c.fuente !== "historico" && !atados.has(c.id)).length
   const resto = r2(totalLibro - propias - tarjeta - otra - historico)
+  // 🔎 el resto, separado: lo que NO tiene ningún pago atado (deuda al cierre, o se pagó después) y lo pagado por OTRO importe
+  const casos: CasoPuente[] = []
+  for (const c of compr) {
+    if (c.fuente === "historico" && !atados.has(c.id)) continue
+    if (!atados.has(c.id)) { casos.push({ nro: `${prefijo}.5`, c, pagado: 0, donde: "" }); continue }
+    const pg = pagadoDe.get(c.id) ?? 0
+    if (Math.abs(c.total - pg) >= 0.01) casos.push({ nro: `${prefijo}.6`, c, pagado: pg, donde: [...(dondeDe.get(c.id) ?? [])].join(", ") })
+  }
+  const sinPago = r2(casos.filter(x => x.pagado === 0 && x.nro.endsWith(".5")).reduce((t, x) => t + x.c.total, 0))
+  const nDif = casos.filter(x => x.nro.endsWith(".6")).length
   const renglones: RenglonPuente[] = [
     { nro: `${prefijo}.1`, concepto: `${verbo.hecho} por las cuentas de ${titular} en el ejercicio`, valor: propias, como: "movimientos de las cuentas de plata (etapa 1) atados al comprobante" },
     { nro: `${prefijo}.2`, concepto: `${verbo.hecho} con la tarjeta de ${titular}`, valor: tarjeta, como: "renglón del resumen de la tarjeta atado al comprobante" },
     { nro: `${prefijo}.3`, concepto: `${verbo.hecho} por OTRA empresa (PAM, MA, Cotitulares)`, valor: otra, como: "movimiento de una cuenta de otro titular atado al comprobante — va a la cuenta con ese socio" },
     { nro: `${prefijo}.4`, concepto: `del histórico jul–dic sin ${verbo.sin} atado (${nHist} comprobantes)`, valor: historico, como: "comprobantes del histórico: el pago no se vinculó (A-DEC-1028)" },
-    { nro: `${prefijo}.5`, concepto: `resto: sin ${verbo.sin} en el ejercicio (deuda al cierre o después) o por otro importe (${nSin} comprobantes sin vínculo)`, valor: resto, como: "lo facturado menos todo lo de arriba" },
+    { nro: `${prefijo}.5`, concepto: `SIN ${verbo.sin} atado en el ejercicio (${nSin} comprobantes): deuda al cierre, o se ${verbo.hecho.toLowerCase()} después`, valor: sinPago, como: "ningún movimiento atado; ver la lista en «Plata · facturas»" },
+    { nro: `${prefijo}.6`, concepto: `${verbo.hecho} por OTRO importe que el del comprobante (${nDif} comprobantes): retenciones, pagos parciales, redondeos`, valor: r2(resto - sinPago), como: "lo facturado menos lo atado, en los comprobantes que sí tienen pago; ver la lista en «Plata · facturas»" },
   ]
-  return { renglones: [...renglones, { nro: `${prefijo}.6`, concepto: `aparte: el banco ${verbo.hecho.toLowerCase()} comprobantes de OTROS ejercicios o de otra empresa (${nOtros} movimientos)`, valor: deOtrosEjercicios, como: "movimientos de las cuentas de plata atados a un comprobante que no es de este ejercicio" }],
+  return { casos, renglones: [...renglones, { nro: `${prefijo}.7`, concepto: `aparte: el banco ${verbo.hecho.toLowerCase()} comprobantes de OTROS ejercicios o de otra empresa (${nOtros} movimientos)`, valor: deOtrosEjercicios, como: "movimientos de las cuentas de plata atados a un comprobante que no es de este ejercicio" }],
     totalLibro, enBanco: r2(propias + deOtrosEjercicios) }
 }
 
@@ -434,16 +450,29 @@ export function bloquePuente(titulo: string, p: ReturnType<typeof puenteDeCompro
   const num = (v: number) => ({ t: "n", v: r2(v), z: MONEDA })
   h.push([TITULO_TABLA(titulo)])
   const d0 = r()
-  for (const x of p.renglones.slice(0, 5)) h.push([`${x.nro} · ${x.concepto}`, num(x.valor), "", "", "", "", "", "", "", "", "", "", "", "", x.como])
+  for (const x of p.renglones.slice(0, -1)) h.push([`${x.nro} · ${x.concepto}`, num(x.valor), "", "", "", "", "", "", "", "", "", "", "", "", x.como])
   const n = r()
   const ctrl = (f: string, ok: string, mal: string, v: boolean) => ({ t: "s", f: `IF(ABS(${f})<0.01,"${ok}","${mal}")`, v: v ? ok : mal })
   h.push([TOTAL_TEXTO("= suma (tiene que dar lo facturado)"), { t: "n", f: `SUM(B${d0}:B${n - 1})`, v: p.totalLibro, z: MONEDA }, filaE3 ? { t: "n", f: `B${n}-B${filaE3}`, v: 0, z: MONEDA } : "", "", "", "", "", "", "", "", "", "",
     filaE3 ? ctrl(`C${n}`, "✓ = lo facturado de la etapa 3", "⚠️ no da con la etapa 3", cierra.libro) : ""])
-  const o = p.renglones[5], nO = r()
+  const o = p.renglones[p.renglones.length - 1], nO = r()
   h.push([`${o.nro} · ${o.concepto}`, num(o.valor), "", "", "", "", "", "", "", "", "", "", "", "", o.como])
   const nB = r()
   h.push([TOTAL_TEXTO(`= lo que movió el banco (${p.renglones[0].nro} + ${o.nro})`), { t: "n", f: `B${d0}+B${nO}`, v: p.enBanco, z: MONEDA }, filaD ? { t: "n", f: `B${nB}-${ladoD}${filaD}`, v: 0, z: MONEDA } : "", "", "", "", "", "", "", "", "", "",
     filaD ? ctrl(`C${nB}`, "✓ = lo del banco de la etapa 2", "⚠️ no da con la etapa 2: hay movimientos atados a un comprobante que no es factura de compra / venta", cierra.banco) : ""])
   h.push([])
+  return h
+}
+
+/** La solapa «Plata · facturas»: los comprobantes del ejercicio que explican el resto (sin pago atado, o por otro importe), con su ficha. */
+export function hojaFacturasPuente(compras: CasoPuente[], ventas: CasoPuente[], titular: string, etiqueta: string): unknown[][] {
+  const h: unknown[][] = [[{ t: "s", v: `⬅ Control de la plata  ·  FACTURAS QUE EXPLICAN LA DIFERENCIA (etapa 4) — ${titular} — ejercicio ${etiqueta}`, l: { Target: "#'Control de la plata'!A1" } }],
+    ["Las compras y ventas del ejercicio sin pago / cobro atado (E2.5 / E1.5) o pagadas por otro importe (E2.6 / E1.6). Filtrá por «Nro»."], []]
+  h.push(["Nro", "Compra o venta", "Proveedor / cliente · comprobante", "Fecha", "Total del comprobante", "Pagado / cobrado (atado)", "Diferencia", "Dónde se pagó / cobró"].map(ENCABEZADO_TABLA))
+  const num = (v: number) => ({ t: "n", v: r2(v), z: MONEDA })
+  for (const [tipo, xs] of [["compra", compras], ["venta", ventas]] as const) for (const x of [...xs].sort((a, b) => a.nro.localeCompare(b.nro) || Math.abs(b.c.total - b.pagado) - Math.abs(a.c.total - a.pagado))) {
+    const n = h.length + 1
+    h.push([x.nro, tipo, x.c.ficha ?? x.c.id, x.c.fecha ? dmy(x.c.fecha) : "", num(x.c.total), num(x.pagado), { t: "n", f: `E${n}-F${n}`, v: r2(x.c.total - x.pagado), z: MONEDA }, x.donde])
+  }
   return h
 }

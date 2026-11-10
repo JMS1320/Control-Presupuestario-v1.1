@@ -73,6 +73,8 @@ export interface OpcionesPapelJms {
   paraH?: boolean
   /** ✍️ JMS 11/11 («antes mencionar lo anterior, luego va el cuadro y luego va la totalización»): filas que van ARRIBA de los años. */
   antes?: unknown[][]
+  /** 🧾 JMS 11/11: el ejercicio — en el H la tabla se parte: a la derecha las cuotas que vencen fuera (no entran en el balance). */
+  ejercicio?: { desde: string; hasta: string }
 }
 
 /** Dónde quedó cada cuota en la hoja (para que la totalización del H le apunte con fórmulas). */
@@ -88,7 +90,7 @@ const serial = (f: string) => Math.round((Date.UTC(+f.slice(0, 4), +f.slice(5, 7
 type FilaDelPapel = Papel["bloques"][number]["filas"][number]
 type CuotaDeFila = FilaDelPapel["cuotas"][number]
 /** Cuántas cuotas regulares tiene el año: lo que dicen las cuotas («de 4»), su número más alto o cuántas hay. */
-const cuotasDelAnio = (p: Papel) => Math.max(1, ...p.bloques.flatMap(b => b.filas.flatMap(x => {
+const cuotasDelAnio = (p: Papel) => Math.max(0, ...p.bloques.flatMap(b => b.filas.flatMap(x => {
   const reg = x.cuotas.filter(q => !esAdicional(q))
   return [reg.length, ...reg.map(q => q.de ?? 0), ...reg.map(q => q.numero ?? 0)]
 })))
@@ -109,34 +111,55 @@ function enSuLugar(reg: CuotaDeFila[], n: number): Array<CuotaDeFila | undefined
  * [(hueco) · Costo anual $ · x ha $ · u$s · x ha u$s]. Lo de corchetes no va en el libro H (`paraH`); la ADICIONAL, sólo si ese año la tiene.
  */
 function anioJms(p: Papel, ubic: UbicacionPartidas, hoy: string, filaInicial: number, nReg: number, nAdIn: number, uniones: HojaConEstilo["uniones"], H: boolean,
-  celdas: CeldaCuotaPapel[], rangos: RangoCuotasPapel[]): unknown[][] {
+  celdas: CeldaCuotaPapel[], rangos: RangoCuotasPapel[], ejercicio?: { desde: string; hasta: string }): { filas: unknown[][]; columnas: number } {
   const f: unknown[][] = []
   const fila = () => filaInicial + f.length
-  const n = Math.max(1, nReg)
-  // 🗓️ en el H (sin la columna «Pago anual»), el pago anual va en su columna, DESPUÉS de la adicional — sólo si ese año tiene alguno
-  const nAn = H ? anualesDelAnio(p) : 0, nAd = nAdIn + nAn
-  const C_CUOTA = H ? 6 : 10, C_ADIC = C_CUOTA + 2 * n, C_GAP = C_ADIC + 2 * nAd, C_COSTO = C_GAP + 1
+  // JMS 11/11: en el H, un año SIN cuotas regulares (el inmobiliario 2025 de MSA sólo tiene la adicional) no muestra «CUOTA 1/1» vacía
+  const n = H ? Math.max(0, nReg) : Math.max(1, nReg)
+  // 🗓️ en el H (sin la columna «Pago anual»), el pago anual va en su columna, después de la adicional — sólo si ese año tiene alguno
+  const nAn = H ? anualesDelAnio(p) : 0
+  const filasTodas = p.bloques.flatMap(b => b.filas)
+  /** Una columna de cuota (importe + vencimiento): de qué sale cada fila. */
+  type Col = { rotulo: string; de: (x: FilaDelPapel) => CuotaDeFila | undefined; fuera?: boolean }
+  let plan: Col[] = [
+    ...Array.from({ length: n }, (_, k): Col => ({ rotulo: `CUOTA ${k + 1}/${n}`, de: x => enSuLugar(x.cuotas.filter(q => !esAdicional(q)), n)[k] })),
+    ...Array.from({ length: nAdIn }, (_, k): Col => ({ rotulo: nAdIn > 1 ? `CUOTA ADICIONAL ${k + 1}` : "CUOTA ADICIONAL", de: x => x.cuotas.filter(esAdicional)[k] })),
+    ...Array.from({ length: nAn }, (_, k): Col => ({ rotulo: "PAGO ANUAL", de: x => x.anuales?.[k] })),
+  ]
+  if (H) {
+    // JMS 11/11: «si no está la cuota no mostrar» → fuera las columnas sin ninguna cuota; y «partir la tabla: a la derecha las cuotas que
+    // no entran en el balance… todo el estudio se basa en la parte izquierda»
+    plan = plan.filter(cl => filasTodas.some(x => cl.de(x)))
+    if (ejercicio) for (const cl of plan) cl.fuera = filasTodas.some(x => { const q = cl.de(x); return !!q && (q.vencimiento < ejercicio.desde || q.vencimiento > ejercicio.hasta) })
+    plan = [...plan.filter(cl => !cl.fuera), ...plan.filter(cl => cl.fuera)]
+  }
+  const C_CUOTA = H ? 6 : 10
+  const nDentro = plan.filter(cl => !cl.fuera).length, hayFuera = plan.some(cl => cl.fuera)
+  /** La columna (índice) del importe de la cuota j del plan: las de afuera, después de un par de columnas vacías que separa. */
+  const colDe = (j: number) => C_CUOTA + 2 * j + (H && hayFuera && j >= nDentro ? 2 : 0)
+  const C_GAP = colDe(plan.length - 1) + 2, C_COSTO = C_GAP + 1
   const ident = p.tipo === "red-vial" ? "CUENTA (Municipalidad)" : p.tipo === "automotores" ? "PATENTE" : "PARTIDA"
   const campo = p.tipo === "automotores" ? "VEHÍCULO" : "CAMPO"
   f.push([null, c(TITULO[p.tipo](p.anio), { b: true, sz: p.tipo === "inmobiliario" ? 20 : 18, borde: false })])
   const rTc = fila()
   if (!H) f.push([null, c("TC promedio", { rgb: COLOR_JMS.manual, b: true }), c(p.tcPromedio ?? "", { rgb: COLOR_JMS.manual, z: "#,##0.00" })])
-  f.push([])
-  const enc: Array<[string, string]> = [["ZONA", COLOR_JMS.encabezado], [campo, COLOR_JMS.encabezado], ["#", COLOR_JMS.encabezado], ["HAS", COLOR_JMS.encabezado],
-    [ident, COLOR_JMS.ident], ["PARCELA", COLOR_JMS.ident]]
-  if (!H) enc.push([`TOTAL ${p.anio - 1}`, COLOR_JMS.anterior], [`Pago anual ${p.anio}`, COLOR_JMS.pagada], [`TOTAL ${p.anio} en cuotas`, COLOR_JMS.pagada], ["AUMENTO %", COLOR_JMS.anterior])
-  for (let k = 0; k < n; k++) enc.push([`CUOTA ${k + 1}/${n}`, COLOR_JMS.pagada], ["Vto.", COLOR_JMS.vto])
-  for (let k = 0; k < nAdIn; k++) enc.push([nAdIn > 1 ? `CUOTA ADICIONAL ${k + 1}` : "CUOTA ADICIONAL", COLOR_JMS.pagada], ["Vto.", COLOR_JMS.vto])
-  for (let k = 0; k < nAn; k++) enc.push(["PAGO ANUAL", COLOR_JMS.pagada], ["Vto.", COLOR_JMS.vto])
-  const estEnc = (rgb: string) => ({ font: { name: "Calibri", sz: 9, bold: true }, ...fondo(rgb), border: { ...BORDE, bottom: medio }, alignment: { wrapText: true, horizontal: "center", vertical: "center" } })
-  const fEnc: unknown[] = enc.map(([t, rgb]) => ({ t: "s", v: t, s: estEnc(rgb) }))
-  if (!H) {
-    fEnc[C_GAP] = null
-    for (const [k, t] of ["Costo anual $", "Costo anual x ha $", "Costo anual u$s", "Costo anual x ha u$s"].entries()) fEnc[C_COSTO + k] = { t: "s", v: t, s: estEnc(COLOR_JMS.encabezado) }
+  // el rótulo de las dos partes, arriba del encabezado (sólo si la tabla se parte)
+  const rotulos: unknown[] = []
+  if (H && hayFuera) {
+    if (nDentro) rotulos[colDe(0)] = { t: "s", v: "ENTRAN EN EL BALANCE", s: { font: { name: "Calibri", bold: true, sz: 10 } } }
+    rotulos[colDe(nDentro)] = { t: "s", v: "NO ENTRAN EN EL BALANCE (vencen fuera del ejercicio) — informativo", s: { font: { name: "Calibri", bold: true, sz: 10, color: { rgb: "FF7F7F7F" } } } }
   }
+  f.push(rotulos)
+  const estEnc = (rgb: string) => ({ font: { name: "Calibri", sz: 9, bold: true }, ...fondo(rgb), border: { ...BORDE, bottom: medio }, alignment: { wrapText: true, horizontal: "center", vertical: "center" } })
+  const fEnc: unknown[] = ([["ZONA", COLOR_JMS.encabezado], [campo, COLOR_JMS.encabezado], ["#", COLOR_JMS.encabezado], ["HAS", COLOR_JMS.encabezado],
+    [ident, COLOR_JMS.ident], ["PARCELA", COLOR_JMS.ident]] as Array<[string, string]>).map(([t, rgb]) => ({ t: "s", v: t, s: estEnc(rgb) }))
+  if (!H) for (const [t, rgb] of [[`TOTAL ${p.anio - 1}`, COLOR_JMS.anterior], [`Pago anual ${p.anio}`, COLOR_JMS.pagada], [`TOTAL ${p.anio} en cuotas`, COLOR_JMS.pagada], ["AUMENTO %", COLOR_JMS.anterior]])
+    fEnc.push({ t: "s", v: t, s: estEnc(rgb) })
+  plan.forEach((cl, j) => { fEnc[colDe(j)] = { t: "s", v: cl.rotulo, s: estEnc(COLOR_JMS.pagada) }; fEnc[colDe(j) + 1] = { t: "s", v: "Vto.", s: estEnc(COLOR_JMS.vto) } })
+  if (!H) for (const [k, t] of ["Costo anual $", "Costo anual x ha $", "Costo anual u$s", "Costo anual x ha u$s"].entries()) fEnc[C_COSTO + k] = { t: "s", v: t, s: estEnc(COLOR_JMS.encabezado) }
   f.push(fEnc)
   const L = (i: number) => col(i)
-  const pares: Array<[string, string]> = Array.from({ length: n + nAd }, (_, k) => [L(C_CUOTA + 2 * k), L(C_CUOTA + 2 * k + 1)])
+  const pares: Array<[string, string]> = plan.map((_, j) => [L(colDe(j)), L(colDe(j) + 1)])
   for (const b of p.bloques) {
     f.push([null, c(b.empresa === "MSA" ? "SAN MANUEL (MSA)" : b.empresa, { b: true, sz: 14, borde: false })])
     const desde = fila()
@@ -150,11 +173,11 @@ function anioJms(p: Papel, ubic: UbicacionPartidas, hoy: string, filaInicial: nu
     const pesoZona = (x: FilaDelPapel) => { const z = ubicDe(x).establecimiento; return z ? (/^rojas$/i.test(z.trim()) ? -1 : ordenZona.get(z)!) : 1000 }
     const filasOrdenadas = b.filas.map((x, i) => ({ x, i })).sort((a, b2) =>
       Number(a.x.complementario) - Number(b2.x.complementario) || pesoZona(a.x) - pesoZona(b2.x) || a.i - b2.i).map(y => y.x)
-    const celdaCuota = (q: CuotaDeFila | undefined, r: number, k: number): unknown[] => {
+    const celdaCuota = (q: CuotaDeFila | undefined, r: number, ci: number): [unknown, unknown] => {
       if (!q) return [c("", {}), c("", {})]
       const est = estadoDePlanilla(q.estado)
       const rgb = est === "conciliada" || est === "pagada" ? COLOR_JMS.pagada : q.vencimiento < hoy ? COLOR_JMS.vencida : COLOR_JMS.futura
-      celdas.push({ id: q.id, anio: p.anio, vencimiento: q.vencimiento, monto: q.monto, estado: q.estado, monto_dir: `${L(C_CUOTA + 2 * k)}${r}` })
+      celdas.push({ id: q.id, anio: p.anio, vencimiento: q.vencimiento, monto: q.monto, estado: q.estado, monto_dir: `${L(ci)}${r}` })
       return [c(q.monto, { rgb, z: PESOS }), c(serial(q.vencimiento), { rgb: COLOR_JMS.vto, z: "dd/mm/yyyy" })]
     }
     for (const x of filasOrdenadas) {
@@ -162,12 +185,7 @@ function anioJms(p: Papel, ubic: UbicacionPartidas, hoy: string, filaInicial: nu
       const u = ubicDe(x)
       const zona = x.complementario ? null : u.establecimiento
       if (zona !== zonaActual) { cerrarZona(r - 1); zonaActual = zona; zonaDesde = zona ? r : -1 }
-      const regulares = enSuLugar(x.cuotas.filter(q => !esAdicional(q)), n), adicionales = x.cuotas.filter(esAdicional)
-      const cuotas: unknown[] = []
-      for (let k = 0; k < n; k++) cuotas.push(...celdaCuota(regulares[k], r, k))
-      for (let k = 0; k < nAdIn; k++) cuotas.push(...celdaCuota(adicionales[k], r, n + k))
-      for (let k = 0; k < nAn; k++) cuotas.push(...celdaCuota(x.anuales?.[k], r, n + nAdIn + k))
-      const rangoCuotas = Array.from({ length: n + nAd }, (_, k) => `${L(C_CUOTA + 2 * k)}${r}`).join(",")
+      const rangoCuotas = plan.map((_, j) => `${L(colDe(j))}${r}`).join(",")
       const filaX: unknown[] = [
         c(zona === zonaActual && zonaDesde === r ? zona : "", { b: true, al: { vertical: "center", wrapText: true } }),
         c(x.complementario ? "COMPLEMENTARIO" : x.campo.toUpperCase(), { b: x.complementario }), c(x.complementario ? "" : ++nro),
@@ -176,13 +194,15 @@ function anioJms(p: Papel, ubic: UbicacionPartidas, hoy: string, filaInicial: nu
           c(x.totalAnterior, { rgb: COLOR_JMS.anterior, z: PESOS }), c(x.pagoAnual ?? 0, { rgb: COLOR_JMS.pagada, z: PESOS }),
           c(x.totalCuotas, { rgb: COLOR_JMS.pagada, z: PESOS, f: `SUM(${rangoCuotas})` }),
           c(x.aumento ?? "", { rgb: COLOR_JMS.anterior, z: "0%", f: `IF(G${r}>0,(H${r}+I${r})/G${r}-1,"")` })]),
-        ...cuotas,
-        ...(H ? [] : [null,
-          c(x.costoAnual, { rgb: COLOR_JMS.costo, z: PESOS, f: `H${r}+I${r}` }),
-          c(x.costoHa ?? "", { rgb: COLOR_JMS.costo, z: PESOS0, f: `IF(N(D${r})>0,${L(C_COSTO)}${r}/D${r},"")` }),
-          c(x.costoUsd ?? "", { rgb: COLOR_JMS.costo, z: "#,##0.00", f: `IF(N($C$${rTc})>0,${L(C_COSTO)}${r}/$C$${rTc},"")` }),
-          c(x.costoHaUsd ?? "", { rgb: COLOR_JMS.costo, z: "#,##0.00", f: `IF(AND(N(D${r})>0,N($C$${rTc})>0),${L(C_COSTO + 2)}${r}/D${r},"")` })]),
       ]
+      plan.forEach((cl, j) => { const [a, v] = celdaCuota(cl.de(x), r, colDe(j)); filaX[colDe(j)] = a; filaX[colDe(j) + 1] = v })
+      if (!H) {
+        filaX[C_GAP] = null
+        filaX[C_COSTO] = c(x.costoAnual, { rgb: COLOR_JMS.costo, z: PESOS, f: `H${r}+I${r}` })
+        filaX[C_COSTO + 1] = c(x.costoHa ?? "", { rgb: COLOR_JMS.costo, z: PESOS0, f: `IF(N(D${r})>0,${L(C_COSTO)}${r}/D${r},"")` })
+        filaX[C_COSTO + 2] = c(x.costoUsd ?? "", { rgb: COLOR_JMS.costo, z: "#,##0.00", f: `IF(N($C$${rTc})>0,${L(C_COSTO)}${r}/$C$${rTc},"")` })
+        filaX[C_COSTO + 3] = c(x.costoHaUsd ?? "", { rgb: COLOR_JMS.costo, z: "#,##0.00", f: `IF(AND(N(D${r})>0,N($C$${rTc})>0),${L(C_COSTO + 2)}${r}/D${r},"")` })
+      }
       f.push(filaX)
     }
     cerrarZona(fila() - 1)
@@ -192,11 +212,11 @@ function anioJms(p: Papel, ubic: UbicacionPartidas, hoy: string, filaInicial: nu
     const tot = (i: number, z: string, v?: number) => ({ t: "n", f: `SUM(${L(i)}${desde}:${L(i)}${hasta})`, v, s: { font: { name: "Calibri", sz: 10, bold: true }, numFmt: z, border: { ...BORDE, top: medio, bottom: { style: "double", color: { rgb: "FF000000" } } } } })
     const filaT: unknown[] = [null, c(`TOTAL ${b.empresa}`, { b: true }), null, tot(3, "0.00"), null, null]
     if (!H) filaT.push(tot(6, PESOS, b.totalAnterior), tot(7, PESOS), tot(8, PESOS), c("", { rgb: COLOR_JMS.anterior, z: "0%", f: `IF(G${r}>0,(H${r}+I${r})/G${r}-1,"")` }))
-    for (let k = 0; k < n + nAd; k++) filaT.push(tot(C_CUOTA + 2 * k, PESOS), null)
-    if (!H) filaT.push(null, tot(C_COSTO, PESOS, b.total), null, tot(C_COSTO + 2, "#,##0.00"))
+    plan.forEach((_, j) => { filaT[colDe(j)] = tot(colDe(j), PESOS) })
+    if (!H) { filaT[C_COSTO] = tot(C_COSTO, PESOS, b.total); filaT[C_COSTO + 2] = tot(C_COSTO + 2, "#,##0.00") }
     f.push(filaT, [])
   }
-  return f
+  return { filas: f, columnas: H ? (plan.length ? colDe(plan.length - 1) + 2 : C_CUOTA) : C_COSTO + 4 }
 }
 
 /** Los anchos de la planilla de JMS para `maxCuotas` cuotas (+ las adicionales). En el H, sin las columnas de estudio y con sus anchos (11/11). */
@@ -215,18 +235,21 @@ export function hojaPapelJms(papeles: Papel[], ubic: UbicacionPartidas, hoy: str
   const uniones: HojaConEstilo["uniones"] = []
   const filas: unknown[][] = [...(o.antes ?? [])]
   const celdas: CeldaCuotaPapel[] = [], rangos: RangoCuotasPapel[] = []
-  let anchoMax = 1, adicMax = 0
+  let anchoMax = 1, adicMax = 0, columnasH = 6
   for (const p of papeles) {
     if (p.bloques.length === 0) { filas.push([null, c(`${TITULO_PAPEL[p.tipo]} ${p.anio}: sin cuotas`, { b: true, borde: false })], []); continue }
-    const nReg = cuotasDelAnio(p), nAd = adicionalesDelAnio(p), nAn = o.paraH ? anualesDelAnio(p) : 0
+    const nReg = o.paraH ? cuotasDelAnio(p) : Math.max(1, cuotasDelAnio(p)), nAd = adicionalesDelAnio(p), nAn = o.paraH ? anualesDelAnio(p) : 0
     anchoMax = Math.max(anchoMax, nReg + nAd + nAn); adicMax = Math.max(adicMax, nAd + nAn)
-    filas.push(...anioJms(p, ubic, hoy, filas.length + 1, nReg, nAd, uniones, !!o.paraH, celdas, rangos), [])
+    const a = anioJms(p, ubic, hoy, filas.length + 1, nReg, nAd, uniones, !!o.paraH, celdas, rangos, o.ejercicio)
+    columnasH = Math.max(columnasH, a.columnas)
+    filas.push(...a.filas, [])
   }
   // El pie (control cruzado): texto en negrita la primera fila, montos con formato de pesos.
   pie.forEach((r, i) => filas.push(r.map(v => (v && typeof v === "object") ? v
     : typeof v === "number" ? { t: "n", v, z: PESOS, s: { numFmt: PESOS } }
     : v == null || v === "" ? v : { t: "s", v: String(v), s: { font: { bold: i === 0, sz: i === 0 ? 11 : 10 } } })))
-  return { filas, uniones, anchos: anchosJms(anchoMax - adicMax, adicMax, !!o.paraH), congelarFilas: o.paraH ? 0 : 4, celdas, rangos }
+  const anchos = o.paraH ? [18, 26, 8, 9, 13, 8.6, ...Array.from({ length: Math.max(0, columnasH - 6) }, (_, i) => (i % 2 ? 11 : 14))] : anchosJms(anchoMax - adicMax, adicMax, false)
+  return { filas, uniones, anchos, congelarFilas: o.paraH ? 0 : 4, celdas, rangos }
 }
 
 /** Para un solo papel (el botón «Excel» de la pantalla): misma estética. */

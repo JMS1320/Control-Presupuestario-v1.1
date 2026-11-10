@@ -76,14 +76,16 @@ export function solapasPapelesH(d: DatosPapelesH, resp: string, mesesEjercicio: 
     // 🎨 02/11: con la estética de la planilla de JMS («la estética está perfecta»), los años apilados y al pie el control cruzado.
     // ✍️ JMS 11/11: arriba el saldo del ejercicio anterior, después la planilla, después la totalización (con fórmulas) y al final el control
     const saldos = saldosDelPapel(d, tipo, resp)
-    const arriba = bloqueSaldoAnterior(saldos, resp)
-    const hoja = hojaPapelJms(papeles, d.ubicacion ?? {}, hoyArgentina(), [], { paraH: true, antes: arriba.filas })
-    const rec = recuadroDelEjercicio(d, resp, mesesEjercicio, hoja.filas.length + 1, hoja.celdas, hoja.rangos, arriba.filaTotal, r2(saldos.reduce((a, x) => a + x.monto, 0)))
+    const arriba = bloqueSaldoAnterior(saldos, resp, tipo)
+    const ultimoMes = mesesEjercicio[mesesEjercicio.length - 1]
+    const finEj = new Date(Date.UTC(+ultimoMes.slice(0, 4), +ultimoMes.slice(5, 7), 0)).toISOString().slice(0, 10)
+    const hoja = hojaPapelJms(papeles, d.ubicacion ?? {}, hoyArgentina(), [], { paraH: true, antes: arriba.filas, ejercicio: { desde: `${mesesEjercicio[0]}-01`, hasta: finEj } })
+    const rec = recuadroDelEjercicio(d, resp, tipo, mesesEjercicio, hoja.filas.length + 1, hoja.celdas, hoja.rangos, arriba.filaTotal, r2(saldos.reduce((a, x) => a + x.monto, 0)))
     hoja.filas.push(...rec.filas)
     const filaControl = hoja.filas.length + 1
     hoja.filas.push(...controlCruzado(d.cuotas, tipo, resp, enEjercicio, cuotasH, filaControl))
     // el recuadro se compara con la fila «Papel» del control (filaControl + 1, valor en D)
-    rec.chequeo[12] = { t: "s", f: `IF(ABS(${rec.celdaCuotas}-D${filaControl + 1})<0.005,"✓ = «Papel» del control de abajo","⚠️ no da con el control de abajo")`, v: "✓ = «Papel» del control de abajo" }
+    rec.chequeo[12] = { t: "s", f: `IF(ABS(${rec.celdaCuotas}-G${filaControl + 1})<0.005,"✓ = «Papel» del control de abajo","⚠️ no da con el control de abajo")`, v: "✓ = «Papel» del control de abajo" }
     out.push({ nombre: `H · ${resp} · Papel ${CORTO[tipo]}`.slice(0, 31), hoja })
   }
   return out
@@ -123,11 +125,11 @@ function controlCruzado(cuotas: CuotaPlanilla[], tipo: TipoPapel, resp: string, 
   const r = filaInicial + 1
   const veredicto = Math.abs(dif) < 0.005 ? "✓ cierra" : "⚠️ no cierra: ver los casos abajo (se explican por las fechas)"
   const f: unknown[][] = [
-    [`CONTROL — el papel contra las solapas de templates, para los meses del ejercicio (${resp})`],
-    ["", "Papel: cuotas que VENCEN en el ejercicio", "", totalPapel],
-    ["", "Solapas de templates: las mismas categorías, por fecha de PAGO", "", totalTemplates],
-    ["", "Diferencia (tiene que dar 0)", "", { t: "n", f: `D${r}-D${r + 1}`, v: dif },
-      { t: "s", f: `IF(ABS(D${r + 2})<0.005,"✓ cierra","⚠️ no cierra: ver los casos abajo (se explican por las fechas)")`, v: veredicto }],
+    ["", { t: "s", v: `CONTROL — el papel contra las solapas de templates, para los meses del ejercicio (${resp})`, s: { font: { bold: true, sz: 11 } } }],
+    ["", "Papel: cuotas que VENCEN en el ejercicio", "", "", "", "", N(totalPapel)],
+    ["", "Solapas de templates: las mismas categorías, por fecha de PAGO", "", "", "", "", N(totalTemplates)],
+    ["", "Diferencia (tiene que dar 0)", "", "", "", "", { t: "n", f: `G${r}-G${r + 1}`, v: dif, z: MONEDA_H }, "",
+      { t: "s", f: `IF(ABS(G${r + 2})<0.005,"✓ cierra","⚠️ no cierra: ver los casos abajo (se explican por las fechas)")`, v: veredicto }],
   ]
   if (casos.length) f.push([], ["", "Casos", "Vencimiento", "Template", "En el papel", "En templates", "Por qué"], ...casos)
   return f
@@ -145,15 +147,21 @@ const ENC = (v: string) => ({ t: "s", v, s: { font: { bold: true }, fill: { patt
  * ✍️ JMS 11/11 («antes mencionar lo anterior, luego va el cuadro y luego va la totalización»): ARRIBA del papel, el saldo que dejó el
  * balance anterior (pago anual adelantado) — resaltado y con su total. Valores en G. Devuelve las filas y dónde quedó el total.
  */
-function bloqueSaldoAnterior(saldos: SaldoAnteriorH[], resp: string): { filas: unknown[][]; filaTotal: number | null } {
-  const f: unknown[][] = [[null, TIT(`SALDO DEL EJERCICIO ANTERIOR — ${resp}: gasto que viene del balance anterior (pago anual adelantado) y se toma en ESTE ejercicio`)]]
-  if (!saldos.length) { f.push([null, "No hay saldo del ejercicio anterior para este impuesto."], []); return { filas: f, filaTotal: null } }
-  f.push([null, ENC("Concepto"), "", "", "", "", ENC("Saldo anterior"), "", { t: "s", v: "De dónde sale", s: { font: { bold: true } } }])
+function bloqueSaldoAnterior(saldos: SaldoAnteriorH[], resp: string, tipo: TipoPapel): { filas: unknown[][]; filaTotal: number | null } {
+  // 🎨 JMS 11/11: tres secciones de IGUAL peso (saldo anterior · año 1 · año 2): el título del mismo tamaño que «INMOBILIARIO 2025», la
+  // explicación como subtítulo, y una tablita SIN colores (negrita y bordes finos) — «así no funciona… se ve raro y feo»
+  const fino = { style: "thin", color: { rgb: "FFA6A6A6" } }
+  const borde = { top: fino, bottom: fino, left: fino, right: fino }
+  const txt = (v: string, extra: Record<string, unknown> = {}) => ({ t: "s", v, s: { font: { name: "Calibri", sz: 10, ...((extra.font as object) ?? {}) }, border: borde } })
+  const mon = (f: string, v: number, negrita = false) => ({ t: "n", f, v: r2(v), z: MONEDA_H, s: { font: { name: "Calibri", sz: 10, bold: negrita }, numFmt: MONEDA_H, border: borde } })
+  const f: unknown[][] = [[null, { t: "s", v: "SALDO DEL EJERCICIO ANTERIOR", s: { font: { name: "Calibri", bold: true, sz: tipo === "inmobiliario" ? 20 : 18 } } }],
+    [null, { t: "s", v: `${resp} — gasto que viene del balance anterior (pago anual adelantado) y se toma en ESTE ejercicio`, s: { font: { name: "Calibri", italic: true, sz: 11 } } }], []]
+  if (!saldos.length) { f.push([null, "No hay saldo del ejercicio anterior para este impuesto."], [], []); return { filas: f, filaTotal: null } }
+  f.push([null, txt("Concepto", { font: { bold: true } }), txt(""), txt(""), txt(""), txt(""), txt("Saldo anterior", { font: { bold: true } }), txt(""), txt("De dónde sale", { font: { bold: true } })])
   const s0 = f.length + 1
-  for (const s of saldos) f.push([null, { t: "s", v: s.concepto, s: RESALTE }, "", "", "", "", { ...N(s.monto), s: { ...RESALTE, numFmt: MONEDA_H } },
-    "", { t: "s", v: `${s.motivo} — cargado en el sistema (ajustes del balance)`, s: { font: { italic: true, sz: 9 } } }])
+  for (const sa of saldos) f.push([null, txt(sa.concepto), txt(""), txt(""), txt(""), txt(""), { t: "n", v: r2(sa.monto), z: MONEDA_H, s: { font: { name: "Calibri", sz: 10 }, numFmt: MONEDA_H, border: borde } }, txt(""), txt(`${sa.motivo} — cargado en el sistema (ajustes del balance)`, { font: { italic: true, sz: 9 } })])
   const filaTotal = f.length + 1
-  f.push([null, B("TOTAL saldo del ejercicio anterior"), "", "", "", "", { ...F(`SUM(G${s0}:G${filaTotal - 1})`, saldos.reduce((a, s) => a + s.monto, 0)), s: { ...RESALTE, numFmt: MONEDA_H } }])
+  f.push([null, txt("TOTAL saldo del ejercicio anterior", { font: { bold: true } }), txt(""), txt(""), txt(""), txt(""), mon(`SUM(G${s0}:G${filaTotal - 1})`, saldos.reduce((a, x) => a + x.monto, 0), true), txt(""), txt("")])
   f.push([], [])
   return { filas: f, filaTotal }
 }
@@ -166,7 +174,7 @@ function bloqueSaldoAnterior(saldos: SaldoAnteriorH[], resp: string): { filas: u
  * de arriba: el total de cada semestre con SUMAR.SI.CONJUNTO por la fecha de vencimiento, lo sin pagar apuntando a cada cuota y lo pagado
  * como la resta. Después el saldo anterior (el bloque de arriba) y el COSTO PARA ESTE BALANCE. Valores en G (pagado) · I (sin pagar) · K (total).
  */
-function recuadroDelEjercicio(d: DatosPapelesH, resp: string, meses: string[], filaInicial: number, celdas: CeldaCuotaPapel[], rangos: RangoCuotasPapel[],
+function recuadroDelEjercicio(d: DatosPapelesH, resp: string, tipo: TipoPapel, meses: string[], filaInicial: number, celdas: CeldaCuotaPapel[], rangos: RangoCuotasPapel[],
   filaTotalSaldo: number | null, totalSaldo: number): { filas: unknown[][]; celdaCuotas: string; chequeo: unknown[] } {
   const primero = meses[0], ultimo = meses[meses.length - 1]
   const finDeMes = (m: string) => { const [a, mm] = m.split("-").map(Number); return new Date(Date.UTC(a, mm, 0)).toISOString().slice(0, 10) }
@@ -188,9 +196,20 @@ function recuadroDelEjercicio(d: DatosPapelesH, resp: string, meses: string[], f
   }
   const out: unknown[][] = []
   const r = () => filaInicial + out.length
-  const fila = (etiqueta: unknown, g: unknown, i: unknown, k: unknown, nota: unknown = "") => out.push(["", etiqueta, "", "", "", "", g, "", i, "", k, "", nota])
-  out.push([], ["", TIT(`LO QUE VA AL EJERCICIO — ${resp} (por vencimiento, como el papel). El resto de la planilla es INFORMATIVO.`)])
-  fila("", ENC("Pagado"), ENC("Sin pagar"), ENC("Total"))
+  // 🎨 JMS 11/11 («quedó medio feo»): una sección más, como el saldo anterior y los años — título del mismo tamaño, subtítulo, y una
+  // tablita sin colores: negrita y bordes finos; el costo del balance con la doble raya de los totales del papel.
+  const fino = { style: "thin", color: { rgb: "FFA6A6A6" } }, borde = { top: fino, bottom: fino, left: fino, right: fino }
+  const conBorde = (x: unknown, negrita = false, extra: Record<string, unknown> = {}) => {
+    if (x === "" || x == null) return { t: "s", v: "", s: { border: borde, ...extra } }
+    if (typeof x === "string") return { t: "s", v: x, s: { font: { name: "Calibri", sz: 10, bold: negrita }, border: borde, ...extra } }
+    const o = x as { s?: Record<string, unknown>; z?: string }
+    return { ...o, s: { ...(o.s ?? {}), font: { name: "Calibri", sz: 10, bold: negrita || !!(o.s?.font as { bold?: boolean } | undefined)?.bold }, border: borde, ...(o.z ? { numFmt: o.z } : {}), ...extra } }
+  }
+  const fila = (etiqueta: unknown, g: unknown, i: unknown, k: unknown, nota: unknown = "", negrita = false) =>
+    out.push(["", conBorde(etiqueta, negrita), conBorde(""), conBorde(""), conBorde(""), conBorde(""), conBorde(g, negrita), conBorde(""), conBorde(i, negrita), conBorde(""), conBorde(k, negrita), "", nota])
+  out.push([], [], ["", { t: "s", v: "LO QUE VA AL EJERCICIO", s: { font: { name: "Calibri", bold: true, sz: tipo === "inmobiliario" ? 20 : 18 } } }],
+    ["", { t: "s", v: `${resp} — por vencimiento, como el papel: lo que entra en este balance. El resto de la planilla es informativo.`, s: { font: { name: "Calibri", italic: true, sz: 11 } } }], [])
+  fila("", "Pagado", "Sin pagar", "Total", "", true)
   const s0 = r()
   for (const s of sems) {
     const n = r()
@@ -202,22 +221,23 @@ function recuadroDelEjercicio(d: DatosPapelesH, resp: string, meses: string[], f
   const sN = r() - 1, nC = r()
   const tot = (c: string) => celdas.filter(x => entre(x, `${primero}-01`, finDeMes(ultimo)))
   const vT = r2(tot("").reduce((a, x) => a + x.monto, 0)), vS = r2(tot("").filter(impaga).reduce((a, x) => a + x.monto, 0))
-  fila(B("= Cuotas del ejercicio"), F(`SUM(G${s0}:G${sN})`, vT - vS), F(`SUM(I${s0}:I${sN})`, vS), F(`SUM(K${s0}:K${sN})`, vT))
+  fila("= Cuotas del ejercicio", F(`SUM(G${s0}:G${sN})`, vT - vS), F(`SUM(I${s0}:I${sN})`, vS), F(`SUM(K${s0}:K${sN})`, vT), "", true)
   const chequeo = out[out.length - 1]
   const nS = r()
   fila("+ Saldo del ejercicio anterior (el bloque de arriba)", filaTotalSaldo ? F(`G${filaTotalSaldo}`, totalSaldo) : N(0), "", F(`G${nS}+I${nS}`, totalSaldo),
     filaTotalSaldo ? "" : "no hay saldo del ejercicio anterior para este impuesto")
   const nB = r()
-  out.push(["", { t: "s", v: "= COSTO PARA ESTE BALANCE (saldo anterior + cuotas del ejercicio)", s: RESALTE }, "", "", "", "",
-    { ...F(`G${nC}+G${nS}`, vT - vS + totalSaldo), s: { ...RESALTE, numFmt: MONEDA_H } }, "", { ...F(`I${nC}`, vS), s: { ...RESALTE, numFmt: MONEDA_H } }, "",
-    { ...F(`K${nC}+K${nS}`, vT + totalSaldo), s: { ...RESALTE, numFmt: MONEDA_H } }])
+  const medio = { style: "medium", color: { rgb: "FF000000" } }, doble = { style: "double", color: { rgb: "FF000000" } }
+  const totC = (x: Record<string, unknown>) => ({ ...x, s: { font: { name: "Calibri", sz: 10, bold: true }, numFmt: MONEDA_H, border: { ...borde, top: medio, bottom: doble } } })
+  out.push(["", { t: "s", v: "= COSTO PARA ESTE BALANCE (saldo anterior + cuotas del ejercicio)", s: { font: { name: "Calibri", sz: 10, bold: true }, border: { ...borde, top: medio, bottom: doble } } },
+    "", "", "", "", totC(F(`G${nC}+G${nS}`, vT - vS + totalSaldo)), "", totC(F(`I${nC}`, vS)), "", totC(F(`K${nC}+K${nS}`, vT + totalSaldo))])
   void nB
   const sinPagar = celdas.filter(x => entre(x, `${primero}-01`, finDeMes(ultimo)) && impaga(x)).sort((a, b) => a.vencimiento.localeCompare(b.vencimiento))
   if (sinPagar.length) {
     out.push(["", `🔴 Sin pagar al cierre (${sinPagar.length}): están en el total del ejercicio pero todavía no se pagaron — son deuda.`])
     for (const x of sinPagar) out.push(["", `   ${dmy(x.vencimiento)} · ${x.id ? nombre.get(x.id) ?? "" : ""}`, "", "", "", "", "", "", F(x.monto_dir, x.monto)])
   }
-  out.push([], ["", B("INFORMATIVO — NO va al ejercicio")])
+  out.push([], ["", { t: "s", v: "INFORMATIVO — NO va al ejercicio", s: { font: { name: "Calibri", bold: true, sz: 11 } } }])
   const antes = celdas.filter(x => x.vencimiento < `${primero}-01`), despues = celdas.filter(x => x.vencimiento > finDeMes(ultimo))
   const diaAntes = new Date(Date.parse(`${primero}-01`) - 86_400_000).toISOString().slice(0, 10), diaDespues = new Date(Date.parse(finDeMes(ultimo)) + 86_400_000).toISOString().slice(0, 10)
   fila(`Cuotas que vencen ANTES del ejercicio (${antes.length})`, "", "", F(sumaEntre(null, diaAntes), antes.reduce((a, x) => a + x.monto, 0)))

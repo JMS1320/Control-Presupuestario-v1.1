@@ -13391,7 +13391,7 @@ export function correrCasos(): Resultado[] {
     const dif = h.find(r => (r as any[])[1] === "Diferencia (tiene que dar 0)") as any[]
     const porque = h.filter(r => typeof (r as any[])[6] === "string" && /ejercicio/.test((r as any[])[6])).map(r => String((r as any[])[6]).slice(0, 26))
     const sinTc = !h.some(r => (r as any[])[1]?.v === "TC promedio"), enG = String(((h[filaTango26] as any[])[6] as any)?.v ?? "")
-    const v = `${sol.map(x => x.nombre).join(",")} · sin TC ${sinTc} · 1ª cuota 2026 en G ${enG} · dif ${dif[3].v} · ${porque.join(" | ")}`
+    const v = `${sol.map(x => x.nombre).join(",")} · sin TC ${sinTc} · 1ª cuota 2026 en G ${enG} · dif ${dif[6].v} · ${porque.join(" | ")}`
     const e = `H · MSA · Papel Inmobiliario · sin TC true · 1ª cuota 2026 en G 50 · dif 33 · vence en el ejercicio y se | se pagó el 02/07/2025 (en `
     chequear("Libro H", "El papel de inmobiliario en el libro H: los dos años en la misma solapa con sus fórmulas corridas; control contra las solapas de templates para el ejercicio, con los casos que se explican por vencimiento vs. pago",
       e, v, v === e, "A-FEAT-1516")

@@ -11,8 +11,8 @@ import { readFileSync, existsSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { armarEjercicio, primerDiaDelEjercicio } from "../lib/balance/ejercicio"
 import { desdeCuota, armarTemplatesDelEjercicio } from "../lib/balance/templates-libro"
-import { leerCuentasConSaldo, resumirCuenta, hojaControlPlata, armarEtapa2, hojaDetalleEtapa2, puenteDeComprobantes } from "../lib/balance/control-plata"
-const SOLAPA_PLATA = "Control de la plata", SOLAPA_PLATA_DET = "Plata · adónde fue"
+import { leerCuentasConSaldo, resumirCuenta, hojaControlPlata, armarEtapa2, hojaDetalleEtapa2, puenteDeComprobantes, hojaFacturasPuente } from "../lib/balance/control-plata"
+const SOLAPA_PLATA = "Control de la plata", SOLAPA_PLATA_DET = "Plata · adónde fue", SOLAPA_PLATA_FAC = "Plata · facturas"
 import { leerMovimientosDeCuotas, vincularBanco, leerExtractoDelEjercicio, indiceDeDestinos, conFacturas } from "../lib/balance/movimientos-de-cuotas"
 import { agregarLibroH, vistasDe, agregarHoja, reordenarSolapas } from "../lib/balance/export-libro-diario"
 import { SOLAPA_CAMBIOS, CAMBIOS, ANCHOS_CAMBIOS } from "./cambios-presentacion-h.mts"
@@ -118,7 +118,8 @@ agregarLibroH(wb as any, templates, ej.etiqueta, meses, { cuotas: cuotasImp, ...
       explica: "el saldo de la tarjeta al inicio y al cierre (se paga el mes siguiente)" },
   ] as any[]
   // 💰 etapa 4: por dónde se pagó / cobró cada comprobante del ejercicio (todas las cuentas de las tres empresas, la tarjeta incluida)
-  const delEj = (xs: any[]) => xs.filter(x => mesesEj.has(x.subdiario)).map(x => ({ id: String(x.id), fuente: String(x.fuente), total: conSigno(x) }))
+  const delEj = (xs: any[]) => xs.filter(x => mesesEj.has(x.subdiario)).map(x => ({ id: String(x.id), fuente: String(x.fuente), total: conSigno(x), fecha: x.fecha,
+    ficha: `${x.denominacion} (CUIT ${x.cuit}) · tipo ${x.tipo ?? ""} ${x.punto_venta ?? ""}-${x.numero ?? ""} · ${x.fuente}` }))
   const plata = new Set(rs.map(r => r.cuenta)), esTarjeta = (c: string) => /visa|tarjeta/i.test(c)
   const movsCompra = (ex.movimientos as any[]).filter(m => m.comprobanteArcaId).map(m => ({ id: String(m.comprobanteArcaId), cuenta: m.cuenta, titular: m.titular, importe: r2(m.debitos - m.creditos) }))
   const movsVenta = (ex.movimientos as any[]).filter(m => m.comprobanteVentaId).map(m => ({ id: String(m.comprobanteVentaId), cuenta: m.cuenta, titular: m.titular, importe: r2(m.creditos - m.debitos) }))
@@ -129,6 +130,8 @@ agregarLibroH(wb as any, templates, ej.etiqueta, meses, { cuotas: cuotasImp, ...
   for (const k of ["compras", "ventas"] as const) console.log(`etapa 4 · ${k}: ${etapa4[k].renglones.map(x => `${x.nro} ${x.valor}`).join(" · ")} · banco ${etapa4[k].enBanco}`)
   agregarHoja(wb as any, SOLAPA_PLATA, hojaControlPlata(rs, EMPRESA, ej.etiqueta, { desde: primerDiaDelEjercicio(ej), corte, hasta: ej.fechaCierre }, leidas.tablasQueFallaron, { e: etapa2, hojaDetalle: SOLAPA_PLATA_DET }, etapa3, etapa4),
     [28, 16, 16, 16, 16, 16, 14, 16, 16, 16, 16, 14, 34, 11, 50].map((ancho, i) => (i >= 1 && i <= 11 ? { ancho, z: "#,##0.00" } : { ancho })) as any)
+  agregarHoja(wb as any, SOLAPA_PLATA_FAC, hojaFacturasPuente(etapa4.compras.casos, etapa4.ventas.casos, EMPRESA, ej.etiqueta),
+    [7, 12, 70, 11, 18, 18, 16, 50].map((ancho, i) => (i >= 4 && i <= 6 ? { ancho, z: "#,##0.00" } : { ancho })) as any)
   agregarHoja(wb as any, SOLAPA_PLATA_DET, hojaDetalleEtapa2(etapa2, EMPRESA, ej.etiqueta),
     [7, 34, 18, 11, 40, 15, 15, 7, 44, 60, 26, 14, 12].map((ancho, i) => (i === 5 || i === 6 ? { ancho, z: "#,##0.00" } : { ancho })) as any)
   for (const [k, x] of etapa2.pesos) console.log(`etapa 2 · ${k}: ing ${r2(x.ing1 + x.ing2)} egr ${r2(x.egr1 + x.egr2)} (${x.n})`)
@@ -161,7 +164,7 @@ if (process.argv.includes("--cambios")) {
   if (ix) ix.B3 = { t: "s", v: "📝 Qué cambió en la presentación (con ejemplos): tocá acá", l: { Target: `#'${SOLAPA_CAMBIOS}'!A1` } }
   if (ix && wb.SheetNames.includes(SOLAPA_DATOS)) ix.A3 = { t: "s", v: "📋 DATOS A REVISAR (DR1…DR10): tocá acá", l: { Target: `#'${SOLAPA_DATOS}'!A1` } }
   // JMS 09/11: las solapas del desarrollo en curso (que después se sacan) van ANTES del índice
-  reordenarSolapas(wb as any, [...(wb.SheetNames.includes(SOLAPA_DATOS) ? [SOLAPA_DATOS] : []), SOLAPA_CAMBIOS, "Índice", SOLAPA_PLATA, SOLAPA_PLATA_DET, "H · Retiros y aportes", "Gastos Libertad", "Inconsistencias"])
+  reordenarSolapas(wb as any, [...(wb.SheetNames.includes(SOLAPA_DATOS) ? [SOLAPA_DATOS] : []), SOLAPA_CAMBIOS, "Índice", SOLAPA_PLATA, SOLAPA_PLATA_DET, SOLAPA_PLATA_FAC, "H · Retiros y aportes", "Gastos Libertad", "Inconsistencias"])
 }
 fechasReales(wb as any)
 let p = join(CARPETA, `H para auditar ${EMPRESA} ${ej.etiqueta.replace("/", "-")} (2026-11-07).xlsx`), v = 2
