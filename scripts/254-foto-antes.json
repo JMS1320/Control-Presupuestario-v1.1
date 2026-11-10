@@ -1,0 +1,3 @@
+{"movimiento":{"tabla":"public.pam_galicia_cc","id":"f88fab39-a92f-481d-8eb1-fbc72a96ceb4","template_id":"68d7b742-962e-456b-8b76-2e235924b61a","template_cuota_id":"244a6f92-75cd-4b17-9d4d-20e0b954a70e","contable":"LIB","interno":"DIST MA","nota_operador":"📜 Histórico PAM ene25-ene26 — tu planilla: CATEG FIJOS BS AS · Contable LIB · Interno DIST MA"},
+ "cuota_PAM_2025_ene":{"id":"244a6f92-75cd-4b17-9d4d-20e0b954a70e","estado":"anterior","monto":1560843.11,"descripcion":"Expensas Libertad — Expensas Libertad — histórico PAM"},
+ "cuota_MA_2026_ene":{"id":"cad7ee44-8f87-4332-990c-26649bda332e","estado":"conciliado","monto":0,"descripcion":null}}

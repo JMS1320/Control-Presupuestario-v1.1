@@ -1,0 +1,2 @@
+{"movimiento":{"tabla":"public.pam_galicia_cc","id":"6464d5d4-fb4a-46fd-842a-8ca0590a5572","template_cuota_id":"6c83e281-7899-4035-a116-24412c8a86e8","nota_operador":"[script 187] JMS 03/11 (Excel CC PAM): «anulación de otro anticipo» → devolución del anticipo debitado el 13/02"},
+ "cuota":{"id":"6c83e281-7899-4035-a116-24412c8a86e8","estado":"conciliado","descripcion":null}}
