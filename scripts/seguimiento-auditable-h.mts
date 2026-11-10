@@ -178,6 +178,8 @@ const iS = 11, fS = 10 + resumenSaltos.length
 r.push(["", "", "SUMA DE LOS SALTOS", F(`SUM(D${iS}:D${fS})`, resumenSaltos.reduce((t, s) => t + s.salto, 0)), "", "", { t: "s", f: `IF(ABS(D${fS + 1}-D5)<0.01,"✓ = la diferencia de punta a punta","⚠️ no da la diferencia")`, v: Math.abs(resumenSaltos.reduce((t, s) => t + s.salto, 0) - (tot(cadena[cadena.length - 1].cuotas) - tot(cadena[0].cuotas))) < 0.01 ? "✓ = la diferencia de punta a punta" : "⚠️ no da la diferencia" }])
 r.push([], [N(`Las versiones que no aparecen como salto no movieron ningún número (fueron de presentación). La v32 se descartó (salió con las compras en dólares restando) y no entra en la cadena. Todas las versiones con su descripción, en «Versiones»; los scripts de datos, en «Scripts de datos».`)])
 agregarHoja(wb as any, "Resumen", r, [20, 30, 70, 18, 16, 14, 26].map(ancho => ({ ancho })) as any)
+// 📐 JMS 11/11 (lo dejó así a mano en la v1): la explicación de la fila 2 ocupa A:F, con el alto para leerla entera
+{ const ws = wb.Sheets["Resumen"]; ws["!merges"] = [...(ws["!merges"] ?? []), XLSX.utils.decode_range("A2:F2")]; const rs: any[] = (ws["!rows"] ??= []); rs[1] = { ...(rs[1] ?? {}), hpt: 61.5 } }
 agregarHoja(wb as any, "Versiones", filasVers.map(row => row.map(x => (typeof x === "number" ? IMP(x) : x))) as unknown[][], [8, 9, 18, 20, 11, 16, 12, 18, 9, 14, 16, 14, 13, 90, 12].map(ancho => ({ ancho })) as any)
 agregarHoja(wb as any, "Scripts de datos", filasScripts as unknown[][], [8, 12, 90, 55, 50, 12].map(ancho => ({ ancho })) as any)
 wb.SheetNames = ["Resumen", "De punta a punta", ...wb.SheetNames.filter(n => !["Resumen", "De punta a punta", "Versiones", "Scripts de datos"].includes(n)), "Versiones", "Scripts de datos"]

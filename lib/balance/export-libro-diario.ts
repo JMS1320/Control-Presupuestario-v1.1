@@ -3543,7 +3543,7 @@ export function agregarIndiceH(wb: XLSX.WorkBook): void {
     const hi = rows.findIndex(r => Array.isArray(r) && r[0] === "Nro" && r.includes("Marca") && r.includes("Débito"))
     if (hi < 0) return null
     const H = rows[hi], iD = H.indexOf("Débito"), iC = H.indexOf("Crédito"), iM = H.indexOf("Marca")
-    let total = 0, rojo = 0, amarillo = 0, codigo = 0, impago = 0, fin = hi
+    let total = 0, rojo = 0, amarillo = 0, codigo = 0, impago = 0, fin = hi, cuotas = 0
     for (const r of rows.slice(hi + 1)) {
       if (!Array.isArray(r) || typeof r[0] !== "number") break
       total += (Number(r[iD]) || 0) - (Number(r[iC]) || 0)
@@ -3551,7 +3551,7 @@ export function agregarIndiceH(wb: XLSX.WorkBook): void {
       if (m.startsWith("🔴")) { rojo++; impago += (Number(r[iD]) || 0) - (Number(r[iC]) || 0) }
       if (m.startsWith("🟡")) amarillo++
       if (m.includes("código esperado")) codigo++
-      fin++
+      fin++; cuotas++
     }
     // 🧮 JMS 09/11 (C3): las fórmulas que dan cada número, sobre el detalle de la solapa (Marca, Débito, Crédito)
     const q = `'${n.replace(/'/g, "''")}'!`, rg = (i: number) => `${q}$${XLSX.utils.encode_col(i)}$${hi + 2}:$${XLSX.utils.encode_col(i)}$${fin + 1}`
@@ -3559,32 +3559,50 @@ export function agregarIndiceH(wb: XLSX.WorkBook): void {
     const f = {
       total: `SUMIF(${M},"<>🔴*",${D})-SUMIF(${M},"<>🔴*",${C})`, impago: `SUMIF(${M},"🔴*",${D})-SUMIF(${M},"🔴*",${C})`,
       rojo: `COUNTIF(${M},"🔴*")`, amarillo: `COUNTIF(${M},"🟡*")`, codigo: `COUNTIF(${M},"*código esperado*")`,
+      cuotas: `COUNT(${rg(0)})`, todo: `SUM(${D})-SUM(${C})`,
     }
-    return { total: Math.round((total - impago) * 100) / 100, impago: Math.round(impago * 100) / 100, rojo, amarillo, codigo, f }
+    return { total: Math.round((total - impago) * 100) / 100, impago: Math.round(impago * 100) / 100, todo: Math.round(total * 100) / 100, cuotas, rojo, amarillo, codigo, f }
   }
   const link = (n: string) => ({ t: "s", v: n.replace(PREFIJO, ""), l: { Target: `#'${n.replace(/'/g, "''")}'!A1`, Tooltip: `Ir a «${n}»` } })
   const cuenta = (x: number, f?: string) => (f ? { t: "n", f, v: x, z: "0;-0;\"\"" } : x ? { t: "n", v: x, z: "0" } : "")
   const filas: unknown[][] = [["ÍNDICE — el [+] de la izquierda abre cada responsable; tocá una solapa para ir. En cada solapa, el título («⬅ Índice») trae de vuelta acá."],
     ["Marcas: ✓ pagada y respaldada por el banco · 🔴 sin pagar · 🟡 a revisar (pagada sin movimiento, o el banco movió otro importe) · ⚪ en $ 0 · ⚠️ el código contable no es el esperado"],
-    [], ["", "Solapa", "Pagado (débito − crédito)", "Sin pagar", "🔴 sin pagar", "🟡 a revisar", "⚠️ código"]]
+    [], ["", "Solapa", "Pagado (débito − crédito)", "Sin pagar", "🔴 sin pagar", "🟡 a revisar", "⚠️ código", "Cuotas", "Total de las cuotas (pagado + sin pagar)"]]
   const niveles = [0, 0, 0, 0]
+  // 🧮 JMS 11/11: «no veo los totales por empresa y el total general… debería coincidir con las 2.629 cuotas y los 48.598.613 de suma de cuotas».
+  // Cada renglón de empresa suma sus solapas (fórmula) y al pie va el TOTAL GENERAL, que es el mismo número de la foto del seguimiento.
+  const filasGrupo: number[] = []
+  const SUMAS = ["C", "D", "E", "F", "G", "H", "I"]
+  const tot = { pagado: 0, impago: 0, rojo: 0, amarillo: 0, codigo: 0, cuotas: 0, todo: 0 }
   for (const g of ["MSA", "MA", "PAM", "General"]) {
     const ns = grupos.get(g)
     if (!ns?.length) continue
     const agrup = ns.filter(n => !BASE.test(n)), base = ns.filter(n => BASE.test(n))
-    filas.push([`${g === "General" ? "GENERAL (retiros y aportes, Libertad)" : g} — ${ns.length} solapa${ns.length === 1 ? "" : "s"}`]); niveles.push(0)
+    const iG = filas.length; filas.push([`${g === "General" ? "GENERAL (retiros y aportes, Libertad)" : g} — ${ns.length} solapa${ns.length === 1 ? "" : "s"}`]); niveles.push(0)
+    const sub = { pagado: 0, impago: 0, rojo: 0, amarillo: 0, codigo: 0, cuotas: 0, todo: 0 }
     for (const n of agrup) {
       const r = resumenDe(n)
+      if (r) { sub.pagado += r.total; sub.impago += r.impago; sub.rojo += r.rojo; sub.amarillo += r.amarillo; sub.codigo += r.codigo; sub.cuotas += r.cuotas; sub.todo += r.todo }
       filas.push(["", link(n), r ? { t: "n", f: r.f.total, v: r.total, z: MONEDA } : "", r ? { t: "n", f: r.f.impago, v: r.impago, z: MONEDA } : "",
-        cuenta(r?.rojo ?? 0, r?.f.rojo), cuenta(r?.amarillo ?? 0, r?.f.amarillo), cuenta(r?.codigo ?? 0, r?.f.codigo)]); niveles.push(1)
+        cuenta(r?.rojo ?? 0, r?.f.rojo), cuenta(r?.amarillo ?? 0, r?.f.amarillo), cuenta(r?.codigo ?? 0, r?.f.codigo),
+        r ? { t: "n", f: r.f.cuotas, v: r.cuotas, z: "0" } : "", r ? { t: "n", f: r.f.todo, v: r.todo, z: MONEDA } : ""]); niveles.push(1)
     }
+    const desde = iG + 2, hasta = iG + 1 + agrup.length
+    const vals = [sub.pagado, sub.impago, sub.rojo, sub.amarillo, sub.codigo, sub.cuotas, sub.todo]
+    if (agrup.length) SUMAS.forEach((c, k) => { (filas[iG] as unknown[])[k + 2] = { t: "n", f: `SUM(${c}${desde}:${c}${hasta})`, v: Math.round(vals[k] * 100) / 100, z: k < 2 || k === 6 ? MONEDA : "0" } })
+    // «GENERAL» (retiros y aportes, Libertad) NO son cuotas de templates: se muestra pero no entra al total de las cuotas
+    if (g === "General") continue
+    filasGrupo.push(iG + 1)
+    for (const k of Object.keys(tot) as Array<keyof typeof tot>) tot[k] += sub[k]
     if (base.length) {
       filas.push(["", "— datos de base y papeles —"]); niveles.push(1)
       for (const n of base) { filas.push(["", link(n)]); niveles.push(1) }
     }
   }
+  const vt = [tot.pagado, tot.impago, tot.rojo, tot.amarillo, tot.codigo, tot.cuotas, tot.todo]
+  filas.push([], ["TOTAL DE LAS CUOTAS (MSA + MA + PAM) — «General» no suma: retiros y aportes no son cuotas", "", ...SUMAS.map((c, k) => ({ t: "n", f: filasGrupo.map(r => `${c}${r}`).join("+") || "0", v: Math.round(vt[k] * 100) / 100, z: k < 2 || k === 6 ? MONEDA : "0" }))]); niveles.push(0, 0)
   plegar(filas, niveles, true)
-  hoja(wb, NOMBRE, filas, [{ ancho: 40 }, { ancho: 44 }, { ancho: 22, z: MONEDA }, { ancho: 18, z: MONEDA }, { ancho: 13 }, { ancho: 13 }, { ancho: 12 }])
+  hoja(wb, NOMBRE, filas, [{ ancho: 40 }, { ancho: 44 }, { ancho: 22, z: MONEDA }, { ancho: 18, z: MONEDA }, { ancho: 13 }, { ancho: 13 }, { ancho: 12 }, { ancho: 10 }, { ancho: 24, z: MONEDA }])
   // la vista del índice: el [+] arriba de cada grupo y sin filas fijas
   const vs = vistasDe(wb)
   if (vs.length) VISTAS.set(wb, [...vs.slice(0, -1), { ...vs[vs.length - 1], resumenArriba: true, congelarFilas: undefined }])
