@@ -38,7 +38,7 @@ import { separarPorCuentaCorriente } from "@/lib/proveedores/opera-cuenta-corrie
 import { operacionesEnDolares, comprasVentasDeDolares } from "@/lib/balance/operaciones-en-dolares"
 import { armarGruposTemplates, armarHojaGrupo, nombreSolapaGrupo, hojaGrupo, gruposDelResponsable } from "@/lib/balance/grupos-templates"
 import { indiceDeDestinos, sinCategoriaNiVinculo, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
-import { resumirCuenta } from "@/lib/balance/control-plata"
+import { resumirCuenta, armarEtapa2, destinoDeMovimiento } from "@/lib/balance/control-plata"
 import { hojaPapelJms } from "@/lib/impuestos/papel-formato-jms"
 import { auditarCuota, hojaRetirosYAportes } from "@/lib/balance/auditoria-templates"
 import { armarResumenPorMes } from "@/lib/balance/resumen-por-mes"
@@ -13704,6 +13704,23 @@ export function correrCasos(): Resultado[] {
     const v = `${enc.join("|")} ‖ 1/1=${f[6]} adicional=${f[8]} ‖ TC ${h.filas.some(r => r?.some(x => txt(x) === "TC promedio"))}`
     const e = "ZONA|CAMPO|#|HAS|PARTIDA|PARCELA|CUOTA 1/1|Vto.|CUOTA ADICIONAL|Vto. ‖ 1/1=50 adicional=100 ‖ TC false"
     chequear("Libro H para auditar", "🧾 Papel del H: sin total anterior / pago anual / aumento / costo ni TC, y la cuota ADICIONAL de 2025 en su columna", e, v, v === e, "A-FEAT-1516")
+  }
+
+  // ══ 💰 Control de la plata, etapa 2: cada movimiento en UN solo destino, sólo por lo que tiene cargado ══
+  {
+    const m = (id: string, x: Partial<Parameters<typeof destinoDeMovimiento>[0]>) => ({ cuenta: "Galicia MSA CC", titular: "MSA", fecha: "2025-08-01", descripcion: id, categ: "", contable: "", estado: "conciliado",
+      debitos: 10, creditos: 0, enDolares: false, templateCuotaId: null, comprobanteArcaId: null, otroTipo: null, ...x })
+    const destinos = new Map([["q1", { responsable: "MSA", agrupadora: "Movimientos Internos empresa", concepto: "Caja", tipo: "financiero" }],
+      ["q2", { responsable: "MSA", agrupadora: "Retiros / Distribucion Socios", concepto: "Retiro MA", tipo: "distribucion" }],
+      ["q3", { responsable: "MSA", agrupadora: "Tarjetas", concepto: "Visa", tipo: "financiero" }], ["q4", { responsable: "MSA", agrupadora: "Impuestos Bancarios", concepto: "Sellos", tipo: "egreso" }]])
+    const movs = [m("fc", { comprobanteArcaId: "f1", templateCuotaId: "q4" }), m("caja", { templateCuotaId: "q1" }), m("ret", { templateCuotaId: "q2" }), m("visa", { templateCuotaId: "q3" }),
+      m("sellos", { templateCuotaId: "q4" }), m("viejo", { templateCuotaId: "zz" }), m("cat", { categ: "Varios" }), m("nada", { creditos: 5, debitos: 0, fecha: "2026-03-01" }), m("otra", { titular: "MA" })]
+    const e = armarEtapa2(movs as never, "MSA", new Set(["Galicia MSA CC"]), destinos, { desde: "2025-07-01", corte: "2025-12-31", hasta: "2026-06-30" })
+    const cods = e.detalle.map(x => `${x.descripcion}:${x.codigo}`).sort().join(" ")
+    const tot = [...e.pesos.values()].reduce((a, x) => ({ ing: a.ing + x.ing1 + x.ing2, egr: a.egr + x.egr1 + x.egr2 }), { ing: 0, egr: 0 })
+    const v = `${cods} · ing ${tot.ing} egr ${tot.egr}`
+    const esp = "caja:D11 cat:D14 fc:D1 nada:D15 ret:D7 sellos:D3 viejo:D13 visa:D8 · ing 5 egr 70"
+    chequear("Control de la plata", "💰 Etapa 2: la factura manda sobre la cuota, cada movimiento en un solo destino (caja D11, retiro D7, tarjeta D8, gasto D3, cuota fuera del libro D13, sólo categoría D14, nada D15) y otra empresa no entra", esp, v, v === esp, "A-FEAT-1533")
   }
 
   // ══ 💰 Control de la plata, etapa 1 (JMS 11/11): inicio + ingresos − egresos = saldo final, y DÓNDE se rompe el saldo de la planilla ══

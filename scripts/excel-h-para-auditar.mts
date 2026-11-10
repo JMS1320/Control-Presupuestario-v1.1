@@ -11,8 +11,8 @@ import { readFileSync, existsSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { armarEjercicio, primerDiaDelEjercicio } from "../lib/balance/ejercicio"
 import { desdeCuota, armarTemplatesDelEjercicio } from "../lib/balance/templates-libro"
-import { leerCuentasConSaldo, resumirCuenta, hojaControlPlata } from "../lib/balance/control-plata"
-const SOLAPA_PLATA = "Control de la plata"
+import { leerCuentasConSaldo, resumirCuenta, hojaControlPlata, armarEtapa2, hojaDetalleEtapa2 } from "../lib/balance/control-plata"
+const SOLAPA_PLATA = "Control de la plata", SOLAPA_PLATA_DET = "Plata · adónde fue"
 import { leerMovimientosDeCuotas, vincularBanco, leerExtractoDelEjercicio, indiceDeDestinos, conFacturas } from "../lib/balance/movimientos-de-cuotas"
 import { agregarLibroH, vistasDe, agregarHoja, reordenarSolapas } from "../lib/balance/export-libro-diario"
 import { SOLAPA_CAMBIOS, CAMBIOS, ANCHOS_CAMBIOS } from "./cambios-presentacion-h.mts"
@@ -65,8 +65,27 @@ agregarLibroH(wb as any, templates, ej.etiqueta, meses, { cuotas: cuotasImp, ...
   const corte = `${ANIO - 1}-12-31`, r2 = (n: number) => Math.round(n * 100) / 100
   const leidas = await leerCuentasConSaldo(sb, EMPRESA, ej.fechaCierre)
   const rs = leidas.cuentas.map(c => resumirCuenta(c, primerDiaDelEjercicio(ej), corte, ej.fechaCierre))
-  agregarHoja(wb as any, SOLAPA_PLATA, hojaControlPlata(rs, EMPRESA, ej.etiqueta, { desde: primerDiaDelEjercicio(ej), corte, hasta: ej.fechaCierre }, leidas.tablasQueFallaron),
+  // 💰 etapa 2: adónde fue cada movimiento de esas mismas cuentas, con la ficha de la factura o la venta que pagó / cobró
+  const idsArca = [...new Set(ex.movimientos.filter((m: any) => m.titular === EMPRESA && m.comprobanteArcaId).map((m: any) => m.comprobanteArcaId))]
+  const idsVenta = [...new Set(ex.movimientos.filter((m: any) => m.titular === EMPRESA && m.comprobanteVentaId).map((m: any) => m.comprobanteVentaId))]
+  const fichas = new Map<string, string>()
+  const money = (x: number) => Number(x || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  for (let i = 0; i < idsArca.length; i += 150) {
+    const { data } = await sb.schema("msa").from("comprobantes_arca").select("id, denominacion_emisor, cuit, tipo_comprobante_desc, punto_venta, numero_desde, imp_total").in("id", idsArca.slice(i, i + 150))
+    for (const c of data ?? []) fichas.set(`a:${c.id}`, `${c.denominacion_emisor} (CUIT ${c.cuit}) · ${c.tipo_comprobante_desc ?? "FC"} ${c.punto_venta}-${c.numero_desde} · $ ${money(c.imp_total)}`)
+  }
+  for (let i = 0; i < idsVenta.length; i += 150) {
+    const { data } = await sb.schema("msa").from("comprobantes_venta").select("id, denominacion_cliente, cuit_cliente, punto_venta, numero_desde, imp_total").in("id", idsVenta.slice(i, i + 150))
+    for (const c of data ?? []) fichas.set(`v:${c.id}`, `${c.denominacion_cliente} (CUIT ${c.cuit_cliente}) · venta ${c.punto_venta}-${c.numero_desde} · $ ${money(c.imp_total)}`)
+  }
+  const etapa2 = armarEtapa2(ex.movimientos as any, EMPRESA, new Set(rs.map(r => r.cuenta)), indiceDeDestinos(cuotas) as any,
+    { desde: primerDiaDelEjercicio(ej), corte, hasta: ej.fechaCierre },
+    (m: any) => (m.comprobanteArcaId ? fichas.get(`a:${m.comprobanteArcaId}`) ?? "factura fuera de MSA" : m.comprobanteVentaId ? fichas.get(`v:${m.comprobanteVentaId}`) ?? "" : ""))
+  agregarHoja(wb as any, SOLAPA_PLATA, hojaControlPlata(rs, EMPRESA, ej.etiqueta, { desde: primerDiaDelEjercicio(ej), corte, hasta: ej.fechaCierre }, leidas.tablasQueFallaron, { e: etapa2, hojaDetalle: SOLAPA_PLATA_DET }),
     [28, 16, 16, 16, 16, 16, 14, 16, 16, 16, 16, 14, 34, 11, 50].map((ancho, i) => (i >= 1 && i <= 11 ? { ancho, z: "#,##0.00" } : { ancho })) as any)
+  agregarHoja(wb as any, SOLAPA_PLATA_DET, hojaDetalleEtapa2(etapa2, EMPRESA, ej.etiqueta),
+    [7, 34, 18, 11, 40, 15, 15, 7, 44, 60, 26, 14, 12].map((ancho, i) => (i === 5 || i === 6 ? { ancho, z: "#,##0.00" } : { ancho })) as any)
+  for (const [k, x] of etapa2.pesos) console.log(`etapa 2 · ${k}: ing ${r2(x.ing1 + x.ing2)} egr ${r2(x.egr1 + x.egr2)} (${x.n})`)
   for (const r of rs) console.log(`plata · ${r.cuenta}: ${r.inicio} + ${r2(r.ing1 + r.ing2)} − ${r2(r.egr1 + r.egr2)} = ${r2(r.inicio + r.ing1 + r.ing2 - r.egr1 - r.egr2)} · planilla ${r.extractoFin} · saltos ${r.saltos.length} (${r.ordenadoPor})`)
 }
 // 📋 --revisar: la solapa «Datos a revisar» (cada punto de la revisión de datos con su contexto), antes del Índice
@@ -95,7 +114,7 @@ if (process.argv.includes("--cambios")) {
   if (ix) ix.B3 = { t: "s", v: "📝 Qué cambió en la presentación (con ejemplos): tocá acá", l: { Target: `#'${SOLAPA_CAMBIOS}'!A1` } }
   if (ix && wb.SheetNames.includes(SOLAPA_DATOS)) ix.A3 = { t: "s", v: "📋 DATOS A REVISAR (DR1…DR10): tocá acá", l: { Target: `#'${SOLAPA_DATOS}'!A1` } }
   // JMS 09/11: las solapas del desarrollo en curso (que después se sacan) van ANTES del índice
-  reordenarSolapas(wb as any, [...(wb.SheetNames.includes(SOLAPA_DATOS) ? [SOLAPA_DATOS] : []), SOLAPA_CAMBIOS, "Índice", SOLAPA_PLATA, "H · Retiros y aportes", "Gastos Libertad", "Inconsistencias"])
+  reordenarSolapas(wb as any, [...(wb.SheetNames.includes(SOLAPA_DATOS) ? [SOLAPA_DATOS] : []), SOLAPA_CAMBIOS, "Índice", SOLAPA_PLATA, SOLAPA_PLATA_DET, "H · Retiros y aportes", "Gastos Libertad", "Inconsistencias"])
 }
 fechasReales(wb as any)
 let p = join(CARPETA, `H para auditar ${EMPRESA} ${ej.etiqueta.replace("/", "-")} (2026-11-07).xlsx`), v = 2

@@ -180,6 +180,10 @@ export interface MovimientoExtractoH {
   comprobanteArcaId: string | null
   /** Atado a un sueldo, una venta (cobro) o un anticipo: ya figura en su papel. */
   otroVinculo: boolean
+  /** 💰 A-FEAT-1533: CUÁL es ese otro vínculo (para el control de la plata, que separa sueldos, cobros y anticipos). */
+  otroTipo?: "sueldo" | "venta" | "anticipo" | null
+  /** Los ids del vínculo, para la ficha del movimiento (la factura o la venta que pagó / cobró). */
+  comprobanteVentaId?: string | null
   estado: string
   /** La marca contable del movimiento (`LIB`, `CTA MA`…). */
   contable: string
@@ -209,6 +213,8 @@ export async function leerExtractoDelEjercicio(cliente: ClienteMinimo, desde: st
           templateCuotaId: m.template_cuota_id ? String(m.template_cuota_id) : null,
           comprobanteArcaId: m.comprobante_arca_id ? String(m.comprobante_arca_id) : null,
           otroVinculo: !!(m.sueldo_pago_id || m.comprobante_venta_id || m.anticipo_id),
+          otroTipo: m.sueldo_pago_id ? "sueldo" : m.comprobante_venta_id ? "venta" : m.anticipo_id ? "anticipo" : null,
+          comprobanteVentaId: m.comprobante_venta_id ? String(m.comprobante_venta_id) : null,
           estado: String(m.estado ?? ""),
           contable: String(m.contable ?? ""),
           enDolares: !!t.enDolares,
@@ -221,14 +227,14 @@ export async function leerExtractoDelEjercicio(cliente: ClienteMinimo, desde: st
 }
 
 /** A qué quedó atado un movimiento: la cuota (o el grupo de pago) resuelta contra todas las cuotas leídas. */
-export interface DestinoMovimiento { responsable: string; agrupadora: string; concepto: string; cuotaIds: string[] }
+export interface DestinoMovimiento { responsable: string; agrupadora: string; concepto: string; cuotaIds: string[]; tipo?: string }
 
 /** Pura. El índice de destinos: id de cuota o de grupo → a qué responsable / agrupadora / template pertenece. */
 export function indiceDeDestinos(todas: CuotaTemplate[]): Map<string, DestinoMovimiento> {
   const resp1 = (r: string) => (r || "").split("/")[0].trim().toUpperCase()
   const m = new Map<string, DestinoMovimiento>()
   for (const c of todas) {
-    const d = { responsable: resp1(c.responsable), agrupadora: (c.agrupadoraTemplate ?? "").trim(), concepto: c.concepto, cuotaIds: [c.id] }
+    const d = { responsable: resp1(c.responsable), agrupadora: (c.agrupadoraTemplate ?? "").trim(), concepto: c.concepto, cuotaIds: [c.id], tipo: String(c.tipo ?? "") }
     m.set(c.id, d)
     if (c.grupoPagoId) {
       const g = m.get(c.grupoPagoId)
@@ -238,6 +244,7 @@ export function indiceDeDestinos(todas: CuotaTemplate[]): Map<string, DestinoMov
         if (g.responsable !== d.responsable) g.responsable = "varios"
         if (g.agrupadora !== d.agrupadora) g.agrupadora = "varias"
         if (g.concepto !== d.concepto) g.concepto = `pago agrupado (${g.cuotaIds.length} cuotas)`
+        if (g.tipo !== d.tipo) g.tipo = "varios"
       }
     }
   }

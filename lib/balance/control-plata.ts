@@ -106,7 +106,7 @@ export async function leerCuentasConSaldo(cliente: ClienteMinimo, titular: strin
 
 /** Pura. La solapa «Control de la plata» (etapa 1). */
 export function hojaControlPlata(rs: ResumenDeCuenta[], titular: string, etiqueta: string, fechas: { desde: string; corte: string; hasta: string },
-  tablasQueFallaron: string[] = []): unknown[][] {
+  tablasQueFallaron: string[] = [], etapa2?: { e: Etapa2; hojaDetalle: string }): unknown[][] {
   const h: unknown[][] = []
   const num = (v: number) => ({ t: "n", v: r2(v), z: MONEDA })
   const f = (formula: string, v: number) => ({ t: "n", f: formula, v: r2(v), z: MONEDA })
@@ -117,7 +117,7 @@ export function hojaControlPlata(rs: ResumenDeCuenta[], titular: string, etiquet
   h.push([])
   const ENC = ["Cuenta", `Saldo al ${ini}`, "+ Ingresos 1er sem", "− Egresos 1er sem", `= Saldo al ${cor}`, `Planilla al ${cor}`, "Diferencia",
     "+ Ingresos 2do sem", "− Egresos 2do sem", `= Saldo al ${fin}`, `Planilla al ${fin}`, "Diferencia", "Control", "Movimientos", "De dónde sale el saldo de inicio"]
-  const bloque = (titulo: string, xs: ResumenDeCuenta[]) => {
+  const bloque = (titulo: string, xs: ResumenDeCuenta[]): number => {
     h.push([TITULO_TABLA(titulo)])
     h.push(ENC.map(ENCABEZADO_TABLA))
     const d0 = h.length + 1
@@ -142,10 +142,11 @@ export function hojaControlPlata(rs: ResumenDeCuenta[], titular: string, etiquet
     h.push([TOTAL_TEXTO("TOTAL"), f(S("B"), sum(r => r.inicio)), f(S("C"), sum(r => r.ing1)), f(S("D"), sum(r => r.egr1)), f(`B${n}+C${n}-D${n}`, sum(medio)), "", "",
       f(S("H"), sum(r => r.ing2)), f(S("I"), sum(r => r.egr2)), f(`E${n}+H${n}-I${n}`, sum(fn)), "", "", "", { t: "n", f: S("N"), v: sum(r => r.n), z: "0" }])
     h.push([])
+    return n
   }
   const pesos = rs.filter(r => !r.enDolares), usd = rs.filter(r => r.enDolares)
-  bloque("EN PESOS", pesos)
-  if (usd.length) bloque("EN DÓLARES (US$) — no se suman a los pesos", usd)
+  const totPesos = bloque("EN PESOS", pesos)
+  const totUsd = usd.length ? bloque("EN DÓLARES (US$) — no se suman a los pesos", usd) : null
   if (tablasQueFallaron.length) h.push([`⚠️ No se pudieron leer: ${tablasQueFallaron.join(", ")} — el cuadro está incompleto.`], [])
   // dónde se rompe el saldo de la planilla
   const saltos = rs.flatMap(r => r.saltos.map(s => ({ ...s, cuenta: r.cuenta, ordenadoPor: r.ordenadoPor })))
@@ -159,5 +160,136 @@ export function hojaControlPlata(rs: ResumenDeCuenta[], titular: string, etiquet
   }
   h.push([])
   h.push(["ⓘ La tarjeta no está acá porque no es plata, es deuda: su pago sale del banco y se ve en la etapa 2 («adónde fue cada movimiento»)."])
+  if (etapa2) {
+    h.push([], [], [TITULO_TABLA("ETAPA 2 — ADÓNDE FUE CADA MOVIMIENTO de estas cuentas: cada uno en un solo destino, sólo por lo que ya tiene cargado. Sumados tienen que dar la etapa 1.")])
+    h.push([`El detalle, movimiento por movimiento con su ficha, en «${etapa2.hojaDetalle}» (filtrá por Nro). Los destinos D11 (entre cuentas propias) no son gasto: la plata sigue en la empresa.`], [])
+    h.push(...bloqueEtapa2(etapa2.e.pesos, "EN PESOS", h.length + 1, totPesos, etapa2.hojaDetalle))
+    if (etapa2.e.dolares.size) h.push(...bloqueEtapa2(etapa2.e.dolares, "EN DÓLARES (US$)", h.length + 1, totUsd, etapa2.hojaDetalle))
+  }
+  return h
+}
+
+// ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// ETAPA 2 — ADÓNDE FUE CADA MOVIMIENTO (JMS 11/11: «podés avanzar con la etapa 2»)
+// ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+/** Los destinos, en el orden del cuadro. El código (D1…) es el Nro para filtrar el detalle. */
+export const DESTINOS = [
+  ["D1", "Pago a proveedores (factura de compra)", "el movimiento tiene una factura de compra atada"],
+  ["D2", "Cobro de clientes (venta)", "el movimiento tiene una venta atada"],
+  ["D3", "Gastos por template", "atado a una cuota de un template de GASTO"],
+  ["D4", "Ingresos por template", "atado a una cuota de un template de INGRESO"],
+  ["D5", "Sueldos", "atado a un pago de sueldo"],
+  ["D6", "Anticipos", "atado a un anticipo"],
+  ["D7", "Socios: retiros y aportes (templates de distribución)", "atado a una cuota de un template de DISTRIBUCIÓN"],
+  ["D8", "Pago de la tarjeta", "atado a una cuota de un template de la agrupadora «Tarjetas»"],
+  ["D9", "Inversiones: FCI, plazo fijo, compra y venta de dólares", "atado a una cuota de la agrupadora «Inversiones»"],
+  ["D10", "Créditos bancarios", "atado a una cuota de la agrupadora «Créditos Bancarios»"],
+  ["D11", "Entre cuentas propias y extracciones a caja", "atado a una cuota de «Movimientos Internos empresa» (no sale plata de la empresa)"],
+  ["D12", "Otros financieros", "atado a una cuota de otro template FINANCIERO"],
+  ["D13", "Atado a una cuota de otro ejercicio o desactivada", "la cuota no está entre las del libro"],
+  ["D14", "Con categoría, sin vínculo", "tiene categoría pero ninguna cuota, factura, sueldo, venta ni anticipo"],
+  ["D15", "Sin vincular", "ni categoría ni vínculo (el histórico jul-25 → ene-26 y lo que falte)"],
+] as const
+export type CodigoDestino = (typeof DESTINOS)[number][0]
+
+export interface MovimientoParaDestino {
+  cuenta: string; titular: string; fecha: string; descripcion: string; categ: string; contable: string; estado: string
+  debitos: number; creditos: number; enDolares: boolean
+  templateCuotaId: string | null; comprobanteArcaId: string | null; otroTipo?: "sueldo" | "venta" | "anticipo" | null; comprobanteVentaId?: string | null
+}
+export interface DestinoDeCuota { responsable: string; agrupadora: string; concepto: string; tipo?: string }
+
+/** Pura. El destino de UN movimiento, sólo por lo que ya tiene cargado (no se adivina). */
+export function destinoDeMovimiento(m: MovimientoParaDestino, destinos: Map<string, DestinoDeCuota>): { codigo: CodigoDestino; atadoA: string } {
+  if (m.comprobanteArcaId) return { codigo: "D1", atadoA: "factura de compra" }
+  if (m.otroTipo === "venta") return { codigo: "D2", atadoA: "venta" }
+  if (m.otroTipo === "sueldo") return { codigo: "D5", atadoA: "sueldo" }
+  if (m.otroTipo === "anticipo") return { codigo: "D6", atadoA: "anticipo" }
+  if (m.templateCuotaId) {
+    const d = destinos.get(m.templateCuotaId)
+    if (!d) return { codigo: "D13", atadoA: "cuota fuera del libro" }
+    const que = `${d.concepto} (${d.responsable}${d.agrupadora ? ` · ${d.agrupadora}` : ""})`
+    const ag = d.agrupadora.toLowerCase(), tipo = (d.tipo ?? "").toLowerCase()
+    if (tipo === "distribucion") return { codigo: "D7", atadoA: que }
+    if (/tarjeta/.test(ag)) return { codigo: "D8", atadoA: que }
+    if (/inversi/.test(ag)) return { codigo: "D9", atadoA: que }
+    if (/cr[eé]dito/.test(ag)) return { codigo: "D10", atadoA: que }
+    if (/movimientos internos/.test(ag)) return { codigo: "D11", atadoA: que }
+    if (tipo === "financiero") return { codigo: "D12", atadoA: que }
+    if (tipo === "ingreso") return { codigo: "D4", atadoA: que }
+    return { codigo: "D3", atadoA: que }
+  }
+  if (m.categ.trim()) return { codigo: "D14", atadoA: `categoría «${m.categ}»` }
+  return { codigo: "D15", atadoA: "" }
+}
+
+export interface Etapa2 {
+  /** Por moneda: código → ingresos y egresos por semestre y cantidad. */
+  pesos: Map<CodigoDestino, { ing1: number; egr1: number; ing2: number; egr2: number; n: number }>
+  dolares: Map<CodigoDestino, { ing1: number; egr1: number; ing2: number; egr2: number; n: number }>
+  detalle: Array<MovimientoParaDestino & { codigo: CodigoDestino; atadoA: string; ficha: string }>
+}
+
+/** Pura. Arma la etapa 2 con los movimientos de las cuentas de PLATA del titular (las de la etapa 1: la tarjeta no). */
+export function armarEtapa2(movs: MovimientoParaDestino[], titular: string, cuentasDePlata: Set<string>, destinos: Map<string, DestinoDeCuota>,
+  fechas: { desde: string; corte: string; hasta: string }, fichaDe: (m: MovimientoParaDestino) => string = () => ""): Etapa2 {
+  const vacio = () => new Map<CodigoDestino, { ing1: number; egr1: number; ing2: number; egr2: number; n: number }>()
+  const out: Etapa2 = { pesos: vacio(), dolares: vacio(), detalle: [] }
+  for (const m of movs) {
+    if (m.titular !== titular || !cuentasDePlata.has(m.cuenta) || m.fecha < fechas.desde || m.fecha > fechas.hasta) continue
+    if (m.estado.toLowerCase() === "total" || (Math.abs(m.debitos) < 0.005 && Math.abs(m.creditos) < 0.005)) continue
+    const { codigo, atadoA } = destinoDeMovimiento(m, destinos)
+    const t = m.enDolares ? out.dolares : out.pesos
+    const x = t.get(codigo) ?? { ing1: 0, egr1: 0, ing2: 0, egr2: 0, n: 0 }
+    if (m.fecha <= fechas.corte) { x.ing1 = r2(x.ing1 + m.creditos); x.egr1 = r2(x.egr1 + m.debitos) } else { x.ing2 = r2(x.ing2 + m.creditos); x.egr2 = r2(x.egr2 + m.debitos) }
+    x.n++
+    t.set(codigo, x)
+    out.detalle.push({ ...m, codigo, atadoA, ficha: fichaDe(m) })
+  }
+  out.detalle.sort((a, b) => Number(a.codigo.slice(1)) - Number(b.codigo.slice(1)) || a.cuenta.localeCompare(b.cuenta) || a.fecha.localeCompare(b.fecha))
+  return out
+}
+
+/**
+ * El bloque de la etapa 2 en la solapa «Control de la plata»: por destino, ingresos y egresos por semestre, y el CONTROL contra la etapa 1
+ * (los totales del bloque de la plata de arriba, por fórmula). `filaTotalE1` es la fila del TOTAL de la etapa 1 de esa moneda.
+ */
+export function bloqueEtapa2(t: Etapa2["pesos"], titulo: string, filaInicial: number, filaTotalE1: number | null, hojaDetalle: string): unknown[][] {
+  const h: unknown[][] = []
+  const f = (formula: string, v: number) => ({ t: "n", f: formula, v: r2(v), z: MONEDA })
+  const num = (v: number) => ({ t: "n", v: r2(v), z: MONEDA })
+  const r = () => filaInicial + h.length
+  h.push([TITULO_TABLA(titulo)])
+  h.push(["Destino (Nro para filtrar el detalle)", "+ Ingresos 1er sem", "− Egresos 1er sem", "+ Ingresos 2do sem", "− Egresos 2do sem", "+ Ingresos del ejercicio", "− Egresos del ejercicio", "Movimientos", "Cómo se sabe"].map(ENCABEZADO_TABLA))
+  const d0 = r()
+  for (const [cod, nombre, como] of DESTINOS) {
+    const x = t.get(cod); if (!x) continue
+    const n = r()
+    h.push([{ t: "s", v: `${cod} · ${nombre}`, l: { Target: `#'${hojaDetalle}'!A1`, Tooltip: `Filtrá «Nro» = ${cod} en «${hojaDetalle}»` } },
+      num(x.ing1), num(x.egr1), num(x.ing2), num(x.egr2), f(`B${n}+D${n}`, x.ing1 + x.ing2), f(`C${n}+E${n}`, x.egr1 + x.egr2), { t: "n", v: x.n, z: "0" }, como])
+  }
+  const dN = r() - 1, nT = r()
+  const S = (c: string) => `SUM(${c}${d0}:${c}${dN})`
+  const sum = (k: "ing1" | "egr1" | "ing2" | "egr2") => r2([...t.values()].reduce((a, x) => a + x[k], 0))
+  h.push([TOTAL_TEXTO("TOTAL"), f(S("B"), sum("ing1")), f(S("C"), sum("egr1")), f(S("D"), sum("ing2")), f(S("E"), sum("egr2")), f(S("F"), sum("ing1") + sum("ing2")), f(S("G"), sum("egr1") + sum("egr2")), { t: "n", f: S("H"), v: [...t.values()].reduce((a, x) => a + x.n, 0), z: "0" }])
+  if (filaTotalE1) {
+    // etapa 1: C = ingresos 1er sem · D = egresos 1er sem · H = ingresos 2do sem · I = egresos 2do sem
+    const nC = r()
+    h.push(["Control: etapa 2 − etapa 1 (tiene que dar 0)", f(`B${nT}-C${filaTotalE1}`, 0), f(`C${nT}-D${filaTotalE1}`, 0), f(`D${nT}-H${filaTotalE1}`, 0), f(`E${nT}-I${filaTotalE1}`, 0), "", "", "",
+      { t: "s", f: `IF(AND(ABS(B${nC})<0.01,ABS(C${nC})<0.01,ABS(D${nC})<0.01,ABS(E${nC})<0.01),"✓ cada movimiento está en un solo destino y suman lo de la etapa 1","⚠️ no da con la etapa 1")`, v: "✓ cada movimiento está en un solo destino y suman lo de la etapa 1" }])
+  }
+  h.push([])
+  return h
+}
+
+/** La solapa del DETALLE de la etapa 2: cada movimiento con su destino y su ficha, para filtrar por Nro. */
+export function hojaDetalleEtapa2(e: Etapa2, titular: string, etiqueta: string): unknown[][] {
+  const h: unknown[][] = [[{ t: "s", v: `⬅ Control de la plata  ·  ADÓNDE FUE CADA MOVIMIENTO — detalle — ${titular} — ejercicio ${etiqueta}`, l: { Target: "#'Control de la plata'!A1" } }],
+    ["Cada movimiento de las cuentas de plata en un solo destino (Nro D1…D15 del cuadro). Filtrá por «Nro» para ver qué forma cada línea."], []]
+  h.push(["Nro", "Destino", "Cuenta", "Fecha", "Descripción del banco", "Débito", "Crédito", "Moneda", "Atado a", "Ficha (proveedor / cliente / comprobante)", "Categoría", "Código contable", "Estado"].map(ENCABEZADO_TABLA))
+  const nombre = new Map(DESTINOS.map(([c, n]) => [c, n]))
+  for (const m of e.detalle) h.push([m.codigo, nombre.get(m.codigo) ?? "", m.cuenta, dmy(m.fecha), m.descripcion,
+    m.debitos ? { t: "n", v: r2(m.debitos), z: MONEDA } : "", m.creditos ? { t: "n", v: r2(m.creditos), z: MONEDA } : "", m.enDolares ? "US$" : "$", m.atadoA, m.ficha, m.categ, m.contable, m.estado])
   return h
 }
