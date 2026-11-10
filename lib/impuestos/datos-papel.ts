@@ -10,7 +10,7 @@ import type { UbicacionPartidas } from "./papel-formato-jms"
 import type { TipoCambio } from "@/lib/arrendamientos/calculo"
 
 /** Las columnas de la cuota y su template que usan la planilla y el papel. */
-export const SELECT_CUOTAS_IMPUESTOS = "id,estado,fecha_vencimiento,fecha_estimada,fecha_pago,monto,numero_cuota,detalle,template:egresos_sin_factura!inner(id,nombre_referencia,responsable,cuenta_agrupadora,categ,solo_conciliacion,activo,partida_arba)"
+export const SELECT_CUOTAS_IMPUESTOS = "id,estado,fecha_vencimiento,fecha_estimada,fecha_pago,monto,numero_cuota,detalle,descripcion,template:egresos_sin_factura!inner(id,nombre_referencia,responsable,cuenta_agrupadora,categ,solo_conciliacion,activo,partida_arba)"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Cliente = { from: (tabla: string) => any }

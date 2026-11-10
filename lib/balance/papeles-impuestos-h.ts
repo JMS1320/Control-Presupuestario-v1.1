@@ -29,7 +29,19 @@ import { hoyArgentina } from "@/lib/fechas"
 
 export interface DatosPapelesH extends AuxiliaresPapel {
   cuotas: CuotaPlanilla[]
+  /** ✍️ A-FEAT-1207: lo que el balance anterior dejó para tomar como gasto de éste (pagos anuales adelantados), de `public.ajustes_balance`. */
+  saldosAnteriores?: SaldoAnteriorH[]
 }
+
+/** Un saldo del ejercicio anterior (accion = saldo_anterior, vigente). */
+export interface SaldoAnteriorH { empresa: string; concepto: string; categ: string; monto: number; motivo: string }
+
+const IMPAGOS = new Set(["pendiente", "pagar", "preparado", "programado"])
+const MONEDA_H = "#,##0.00;[Red]-#,##0.00;\"-\""
+const N = (v: number) => ({ t: "n", v: r2(v), z: MONEDA_H })
+const F = (f: string, v: number) => ({ t: "n", f, v: r2(v), z: MONEDA_H })
+const NEGRITA = { font: { bold: true } }
+const B = (v: string) => ({ t: "s", v, s: NEGRITA })
 
 export interface SolapaPapelH { nombre: string; hoja: HojaConEstilo }
 
@@ -62,8 +74,11 @@ export function solapasPapelesH(d: DatosPapelesH, resp: string, mesesEjercicio: 
     const papeles = anios.map(a => delResponsable(armarPapel(tipo, d.cuotas as never, a, d.tcs, d.hectareas, d.cuentasRedVial), resp))
     if (papeles.every(p => p.bloques.length === 0)) continue
     // 🎨 02/11: con la estética de la planilla de JMS («la estética está perfecta»), los años apilados y al pie el control cruzado.
-    const hoja = hojaPapelJms(papeles, d.ubicacion ?? {}, hoyArgentina())
-    hoja.filas.push(...controlCruzado(d.cuotas, tipo, resp, enEjercicio, cuotasH, hoja.filas.length + 1))
+    const hoja = hojaPapelJms(papeles, d.ubicacion ?? {}, hoyArgentina(), [], { paraH: true })
+    const filaControl = hoja.filas.length + 1
+    hoja.filas.push(...controlCruzado(d.cuotas, tipo, resp, enEjercicio, cuotasH, filaControl))
+    // 🧾 JMS 11/11: el recuadro de lo que va al ejercicio (la fila «Papel» del control es filaControl + 1, valor en D)
+    hoja.filas.push(...recuadroDelEjercicio(d, tipo, resp, mesesEjercicio, hoja.filas.length + 1, filaControl + 1))
     out.push({ nombre: `H · ${resp} · Papel ${CORTO[tipo]}`.slice(0, 31), hoja })
   }
   return out
@@ -111,4 +126,82 @@ function controlCruzado(cuotas: CuotaPlanilla[], tipo: TipoPapel, resp: string, 
   ]
   if (casos.length) f.push([], ["", "Casos", "Vencimiento", "Template", "En el papel", "En templates", "Por qué"], ...casos)
   return f
+}
+
+/** Los saldos del ejercicio anterior que van con este papel (por la cuenta del ajuste). */
+const saldosDelPapel = (d: DatosPapelesH, tipo: TipoPapel, resp: string) =>
+  (d.saldosAnteriores ?? []).filter(s => responsablePrincipal(s.empresa) === resp && papelDeTemplate(s.categ)?.papel === tipo)
+
+/**
+ * 🧾 JMS 11/11 (sobre el papel del inmobiliario: «hay que hacer una distinción de lo que es la planilla entera a lo que se manda al
+ * ejercicio… un recuadro debajo: MSA 2do sem 2025 tanto, 1er sem 2026 tanto, total tanto, dejando afuera las cuotas post cierre, que
+ * quedarían sólo de forma informativa. Pero ojo con lo que no está pago aún»). Por VENCIMIENTO (el criterio del papel): lo pagado y lo
+ * sin pagar en columnas separadas; después, lo que el balance anterior dejó para este ejercicio (pago anual adelantado) y el GASTO DEL
+ * EJERCICIO. Lo que vence fuera del ejercicio va aparte, informativo. Valores en G (pagado) · H (sin pagar) · I (total).
+ */
+function recuadroDelEjercicio(d: DatosPapelesH, tipo: TipoPapel, resp: string, meses: string[], filaInicial: number, filaPapel: number): unknown[][] {
+  const primero = meses[0], ultimo = meses[meses.length - 1]
+  const sem = (m: string) => (Number(m.slice(5, 7)) >= 7 ? `2do sem ${m.slice(0, 4)} (jul–dic)` : `1er sem ${m.slice(0, 4)} (ene–jun)`)
+  const semestres = [...new Set(meses.map(sem))]
+  const tot = new Map(semestres.map(x => [x, { pag: 0, sin: 0 }]))
+  const sinPagar: { venc: string; nombre: string; monto: number }[] = []
+  let antes = 0, despues = 0, nAntes = 0, nDespues = 0
+  for (const c of d.cuotas) {
+    if (papelDeTemplate(c.template.categ)?.papel !== tipo || responsablePrincipal(c.template.responsable ?? "") !== resp) continue
+    const venc = vencimientoEnPapel(c); if (!venc) continue
+    const m = venc.slice(0, 7), monto = Number(c.monto ?? 0)
+    if (m < primero) { antes += monto; nAntes++; continue }
+    if (m > ultimo) { despues += monto; nDespues++; continue }
+    const x = tot.get(sem(m))!
+    if (IMPAGOS.has(String(c.estado).toLowerCase())) { x.sin += monto; sinPagar.push({ venc, nombre: c.template.nombre_referencia ?? "", monto }) } else x.pag += monto
+  }
+  const out: unknown[][] = []
+  const fila = (etiqueta: unknown, g: unknown, h: unknown, i: unknown, nota = "") => out.push(["", etiqueta, "", "", "", "", g, "", h, "", i, "", nota])
+  const r = () => filaInicial + out.length   // la fila (1-based) del renglón que se va a agregar
+  out.push([])
+  out.push(["", B(`LO QUE VA AL EJERCICIO — ${resp} (por vencimiento, como el papel). El resto de la planilla es INFORMATIVO.`)])
+  fila("", B("Pagado"), B("Sin pagar"), B("Total"))
+  const s0 = r()
+  for (const x of semestres) { const n = r(), t = tot.get(x)!; fila(x, N(t.pag), N(t.sin), F(`G${n}+I${n}`, t.pag + t.sin)) }
+  const sN = r() - 1, nC = r()
+  const pag = semestres.reduce((a, x) => a + tot.get(x)!.pag, 0), sin = semestres.reduce((a, x) => a + tot.get(x)!.sin, 0)
+  fila(B("= Cuotas del ejercicio"), F(`SUM(G${s0}:G${sN})`, pag), F(`SUM(I${s0}:I${sN})`, sin), F(`SUM(K${s0}:K${sN})`, pag + sin))
+  out[out.length - 1][12] = { t: "s", f: `IF(ABS(K${nC}-D${filaPapel})<0.005,"✓ = «Papel» del control de arriba","⚠️ no da con el control de arriba")`, v: "✓ = «Papel» del control de arriba" }
+  const saldos = saldosDelPapel(d, tipo, resp)
+  const k0 = r()
+  for (const sa of saldos) fila(`+ Saldo del ejercicio anterior: ${sa.concepto}`, N(sa.monto), "", F(`G${r()}+I${r()}`, sa.monto), sa.motivo)
+  const kN = r() - 1
+  const totSaldos = saldos.reduce((a, x) => a + x.monto, 0)
+  fila(B("= GASTO DEL EJERCICIO (cuotas + saldo anterior)"), F(saldos.length ? `G${nC}+SUM(G${k0}:G${kN})` : `G${nC}`, pag + totSaldos),
+    F(`I${nC}`, sin), F(saldos.length ? `K${nC}+SUM(K${k0}:K${kN})` : `K${nC}`, pag + sin + totSaldos),
+    saldos.length ? "" : "sin saldos del ejercicio anterior para este impuesto")
+  if (sinPagar.length) {
+    out.push(["", `🔴 Sin pagar al cierre (${sinPagar.length}): están en el total del ejercicio pero todavía no se pagaron — son deuda.`])
+    for (const x of sinPagar.sort((a, b) => a.venc.localeCompare(b.venc))) out.push(["", `   ${dmy(x.venc)} · ${x.nombre}`, "", "", "", "", "", "", N(x.monto)])
+  }
+  out.push([])
+  out.push(["", B("INFORMATIVO — NO va al ejercicio")])
+  fila(`Cuotas que vencen ANTES del ejercicio (${nAntes})`, "", "", N(antes))
+  fila(`Cuotas que vencen DESPUÉS del cierre (${nDespues})`, "", "", N(despues))
+  return out
+}
+
+/**
+ * ✍️ JMS 11/11 (*«y otros anticipos que figuren en las pestañas de sus templates»*): en la solapa de agrupadora, la información ANEXA de lo
+ * que el balance anterior dejó para este ejercicio en las cuentas de esa solapa — así se entiende por qué un impuesto casi no tiene pagos
+ * (se pagó anual el ejercicio anterior). No suma a las cuotas: se muestra al lado, con el gasto del ejercicio de esa cuenta.
+ */
+export function anexoSaldosAnteriores(cuotas: CuotaTemplate[], saldos: SaldoAnteriorH[], resp: string): unknown[][] {
+  const norm = (x: string) => x.trim().toLowerCase()
+  const cats = new Set(cuotas.map(c => norm(c.categ ?? "")))
+  const xs = saldos.filter(s => responsablePrincipal(s.empresa) === resp && cats.has(norm(s.categ)))
+  if (!xs.length) return []
+  const out: unknown[][] = [[], [B("INFORMACIÓN ANEXA — saldo del ejercicio anterior (pagado por adelantado en el balance anterior, es gasto de ESTE ejercicio)")],
+    [B("Cuenta"), B("Concepto"), B("Saldo anterior"), B("Cuotas de esta solapa"), B("= Gasto del ejercicio"), B("De dónde sale")]]
+  for (const s of xs) {
+    const deCuotas = r2(cuotas.filter(c => norm(c.categ ?? "") === norm(s.categ)).reduce((a, c) => a + c.monto, 0))
+    out.push([s.categ, s.concepto, N(s.monto), N(deCuotas), N(s.monto + deCuotas), s.motivo])
+  }
+  out.push(["ⓘ No suma al total de la solapa: las cuotas son lo pagado en el ejercicio; el saldo anterior es un pago del ejercicio pasado que se toma ahora."])
+  return out
 }

@@ -49,7 +49,8 @@ export function campoDeTemplate(nombre: string | null | undefined): string {
 
 const esAnual = (nombre: string | null | undefined) => /\banual\b/i.test(nombre ?? "")
 
-export interface CuotaDelPapel { vencimiento: string; monto: number; estado: string }
+/** `adicional`: la cuota ADICIONAL de ARBA (2025: la 5ª, aparte de las 4/4 o del pago anual) — JMS 11/11: «es una excepción». */
+export interface CuotaDelPapel { vencimiento: string; monto: number; estado: string; adicional?: boolean }
 
 export interface FilaPapel {
   campo: string
@@ -132,7 +133,7 @@ export function armarPapel(
     const monto = Number(c.monto ?? 0)
     if (a === anio - 1) { f.anterior += monto; f.nAnterior++ }
     else if (esAnual(c.template.nombre_referencia)) { f.anual = (f.anual ?? 0) + monto; mesesDelAnio.push({ anio: a, mes: Number(venc.slice(5, 7)) }) }
-    else { f.enCuotas += monto; f.cuotas.push({ vencimiento: venc, monto, estado: c.estado }); mesesDelAnio.push({ anio: a, mes: Number(venc.slice(5, 7)) }) }
+    else { f.enCuotas += monto; f.cuotas.push({ vencimiento: venc, monto, estado: c.estado, adicional: /adic/i.test(`${(c as { descripcion?: string | null }).descripcion ?? ""} ${c.detalle ?? ""}`) }); mesesDelAnio.push({ anio: a, mes: Number(venc.slice(5, 7)) }) }
     filas.set(clave, f)
   }
 

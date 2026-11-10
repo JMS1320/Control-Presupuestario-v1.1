@@ -51,7 +51,7 @@ import type { CuentasSinCuentaCorriente } from "./fuera-por-cuenta-corriente"
 import { armarIndice, type IndiceDelBalance, type EstadoParte, type DatosDelIndice } from "./indice-papeles"
 import { hojaDePendientes, type PendienteBalance } from "./pendientes-balance"
 import { armarStocksUnificados, hojaDeStocks } from "./stocks-unificado"
-import { solapasPapelesH, type DatosPapelesH } from "./papeles-impuestos-h"
+import { solapasPapelesH, anexoSaldosAnteriores, type DatosPapelesH } from "./papeles-impuestos-h"
 import { DETALLES, hojaDetalleHacienda, hojaStockHacienda, hojaStockValorizado, hojaPreciosTomados, hojaCalculoKilos, hojaAumentoRodeo, type MovimientoPapel } from "./stock-hacienda-papel"
 import type { PesoCategoria } from "./pesos-hacienda"
 import { APERTURA_MSA_2025 } from "./apertura-contador"
@@ -3471,9 +3471,19 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
       let nombre = nombreSolapaGrupo(g, "H"), n = 2
       while (usados.has(nombre)) nombre = `${nombreSolapaGrupo(g, "H").slice(0, 28)} ${n++}`
       usados.add(nombre)
-      return { g, nombre, ...armarHojaGrupo(g, etiqueta, meses, { hojaPorMes, tablasSinLeer, extracto: t.entrada?.opciones.extracto, auditoria: aud,
-        establecimientoDe: (partida: string) => papeles?.ubicacion?.[`campo:${partida.toLowerCase()}`]?.establecimiento ?? partida }) }
+      const armada = armarHojaGrupo(g, etiqueta, meses, { hojaPorMes, tablasSinLeer, extracto: t.entrada?.opciones.extracto, auditoria: aud,
+        establecimientoDe: (partida: string) => papeles?.ubicacion?.[`campo:${partida.toLowerCase()}`]?.establecimiento ?? partida })
+      return { g, nombre, ...armada }
     })
+    // ✍️ JMS 11/11: los pagos adelantados del balance anterior que son gasto de este ejercicio, como información ANEXA — cada saldo en UNA
+    // sola solapa: la que más cuotas tiene de su cuenta (el inmobiliario rural va a Imp Rurales, no también a Imp Urbanos)
+    const norm = (x: string) => (x ?? "").trim().toLowerCase()
+    for (const sa of (papeles?.saldosAnteriores ?? []).filter(x => responsablePrincipal(x.empresa) === resp)) {
+      const peso = (x: (typeof grupos)[number]) => x.g.cuotas.filter(c => norm(c.categ ?? "") === norm(sa.categ)).reduce((a, c) => a + Math.abs(c.monto), 0)
+      const mejor = grupos.filter(x => peso(x) > 0).sort((a, b) => peso(b) - peso(a))[0]
+      if (mejor) (mejor as { saldos?: typeof sa[] }).saldos = [...((mejor as { saldos?: typeof sa[] }).saldos ?? []), sa]
+    }
+    for (const x of grupos) { const ss = (x as { saldos?: NonNullable<DatosPapelesH["saldosAnteriores"]> }).saldos; if (ss?.length) x.filas.push(...anexoSaldosAnteriores(x.g.cuotas, ss, resp)) }
     hoja(wb, `H · ${resp} · Templates`, hojaListadoTemplates(t, resp, etiqueta), COLS_LISTADO_TEMPLATES)
     hoja(wb, `H · ${resp} · Cuotas`, hojaDeTemplates(t), COLS_TEMPLATES)
     // 🔎 A-FEAT-1518 (02/11): lo del extracto de este responsable sin categoría ni vínculo — no lo ve ningún control de abajo.
@@ -3586,6 +3596,8 @@ export function agregarIndiceH(wb: XLSX.WorkBook): void {
     const igual = Math.abs(hoy - e.importe) < 0.005
     return { ...celda, s: igual ? VERDE : ROJO, c: [{ a: "Balance", t: igual ? `Enviado al contador el ${e.cuando}: ${fmt(e.importe)} — coincide.` : `Enviado al contador el ${e.cuando}: ${fmt(e.importe)} — HOY DA OTRA COSA (diferencia ${fmt(hoy - e.importe)}): hay que avisarle.` }] }
   }
+  // 🔴 JMS 11/11 («esa deuda al cierre quisiera que aparezca como montos en cero… que estén ahí»): con cuotas sin pagar, el «Sin pagar» muestra 0,00 y no un guion
+  const CERO_VISIBLE = "#,##0.00;(#,##0.00);0.00"
   const link = (n: string) => ({ t: "s", v: n.replace(PREFIJO, ""), l: { Target: `#'${n.replace(/'/g, "''")}'!A1`, Tooltip: `Ir a «${n}»` } })
   const cuenta = (x: number, f?: string) => (f ? { t: "n", f, v: x, z: "0;-0;\"\"" } : x ? { t: "n", v: x, z: "0" } : "")
   const filas: unknown[][] = [["ÍNDICE — el [+] de la izquierda abre cada responsable; tocá una solapa para ir. En cada solapa, el título («⬅ Índice») trae de vuelta acá."],
@@ -3606,13 +3618,13 @@ export function agregarIndiceH(wb: XLSX.WorkBook): void {
     for (const n of agrup) {
       const r = resumenDe(n)
       if (r) { sub.pagado += r.total; sub.impago += r.impago; sub.rojo += r.rojo; sub.amarillo += r.amarillo; sub.codigo += r.codigo; sub.cuotas += r.cuotas; sub.todo += r.todo }
-      filas.push(["", link(n), r ? marcarEnviado(n, { t: "n", f: r.f.total, v: r.total, z: MONEDA }, r.total) : "", r ? { t: "n", f: r.f.impago, v: r.impago, z: MONEDA } : "",
+      filas.push(["", link(n), r ? marcarEnviado(n, { t: "n", f: r.f.total, v: r.total, z: MONEDA }, r.total) : "", r ? { t: "n", f: r.f.impago, v: r.impago, z: r.rojo ? CERO_VISIBLE : MONEDA } : "",
         cuenta(r?.rojo ?? 0, r?.f.rojo), cuenta(r?.amarillo ?? 0, r?.f.amarillo), cuenta(r?.codigo ?? 0, r?.f.codigo),
         r ? { t: "n", f: r.f.cuotas, v: r.cuotas, z: "0" } : "", r ? { t: "n", f: r.f.todo, v: r.todo, z: MONEDA } : ""]); niveles.push(1)
     }
     const desde = iG + 2, hasta = iG + 1 + agrup.length
     const vals = [sub.pagado, sub.impago, sub.rojo, sub.amarillo, sub.codigo, sub.cuotas, sub.todo]
-    if (agrup.length) SUMAS.forEach((c, k) => { (filas[iG] as unknown[])[k + 2] = { t: "n", f: `SUM(${c}${desde}:${c}${hasta})`, v: Math.round(vals[k] * 100) / 100, z: k < 2 || k === 6 ? MONEDA : "0" } })
+    if (agrup.length) SUMAS.forEach((c, k) => { (filas[iG] as unknown[])[k + 2] = { t: "n", f: `SUM(${c}${desde}:${c}${hasta})`, v: Math.round(vals[k] * 100) / 100, z: k === 1 && sub.rojo ? CERO_VISIBLE : k < 2 || k === 6 ? MONEDA : "0" } })
     // «GENERAL» (retiros y aportes, Libertad) NO son cuotas de templates: se muestra pero no entra al total de las cuotas
     if (g === "General") continue
     filasGrupo.push(iG + 1)
@@ -3623,7 +3635,7 @@ export function agregarIndiceH(wb: XLSX.WorkBook): void {
     }
   }
   const vt = [tot.pagado, tot.impago, tot.rojo, tot.amarillo, tot.codigo, tot.cuotas, tot.todo]
-  filas.push([], ["TOTAL DE LAS CUOTAS (MSA + MA + PAM) — «General» no suma: retiros y aportes no son cuotas", "", ...SUMAS.map((c, k) => ({ t: "n", f: filasGrupo.map(r => `${c}${r}`).join("+") || "0", v: Math.round(vt[k] * 100) / 100, z: k < 2 || k === 6 ? MONEDA : "0" }))]); niveles.push(0, 0)
+  filas.push([], ["TOTAL DE LAS CUOTAS (MSA + MA + PAM) — «General» no suma: retiros y aportes no son cuotas", "", ...SUMAS.map((c, k) => ({ t: "n", f: filasGrupo.map(r => `${c}${r}`).join("+") || "0", v: Math.round(vt[k] * 100) / 100, z: k === 1 && tot.rojo ? CERO_VISIBLE : k < 2 || k === 6 ? MONEDA : "0" }))]); niveles.push(0, 0)
   plegar(filas, niveles, true)
   hoja(wb, NOMBRE, filas, [{ ancho: 40 }, { ancho: 44 }, { ancho: 22, z: MONEDA }, { ancho: 18, z: MONEDA }, { ancho: 13 }, { ancho: 13 }, { ancho: 12 }, { ancho: 10 }, { ancho: 24, z: MONEDA }])
   // la vista del índice: el [+] arriba de cada grupo y sin filas fijas

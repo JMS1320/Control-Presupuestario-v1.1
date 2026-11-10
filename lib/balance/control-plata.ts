@@ -98,8 +98,8 @@ export async function leerCuentasConSaldo(cliente: ClienteMinimo, titular: strin
       }
       if (!data || data.length < 1000) break
     }
-    if (fallo) tablasQueFallaron.push(t.cuenta)
-    else cuentas.push({ cuenta: t.cuenta, enDolares: !!t.enDolares, movimientos })
+    if (fallo) tablasQueFallaron.push(t.cuenta ?? t.tabla)
+    else cuentas.push({ cuenta: t.cuenta ?? t.tabla, enDolares: !!t.enDolares, movimientos })
   }
   return { cuentas, tablasQueFallaron }
 }

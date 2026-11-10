@@ -39,6 +39,7 @@ import { operacionesEnDolares, comprasVentasDeDolares } from "@/lib/balance/oper
 import { armarGruposTemplates, armarHojaGrupo, nombreSolapaGrupo, hojaGrupo, gruposDelResponsable } from "@/lib/balance/grupos-templates"
 import { indiceDeDestinos, sinCategoriaNiVinculo, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
 import { resumirCuenta } from "@/lib/balance/control-plata"
+import { hojaPapelJms } from "@/lib/impuestos/papel-formato-jms"
 import { auditarCuota, hojaRetirosYAportes } from "@/lib/balance/auditoria-templates"
 import { armarResumenPorMes } from "@/lib/balance/resumen-por-mes"
 import { filasNivel2De } from "@/lib/balance/formato-excel"
@@ -13386,12 +13387,12 @@ export function correrCasos(): Resultado[] {
     const h = sol[0]?.hoja.filas ?? []
     const t2026 = h.findIndex(r => (r as any[])[1]?.v === "INMOBILIARIO 2026")
     const filaTango26 = h.findIndex((r, i) => i > t2026 && (r as any[])[1]?.v === "TANGO PARRA 1")
-    const usd = String(((h[filaTango26] as any[]).at(-2) as any).f)
+    // ⚠️ cambió 11/11 (JMS): el papel del H va SIN el TC ni las columnas de año anterior / costo — la 1ª cuota queda en la columna G
     const dif = h.find(r => (r as any[])[1] === "Diferencia (tiene que dar 0)") as any[]
     const porque = h.filter(r => typeof (r as any[])[6] === "string" && /ejercicio/.test((r as any[])[6])).map(r => String((r as any[])[6]).slice(0, 26))
-    const color = ((h[filaTango26] as any[])[6] as any).s.fill.fgColor.rgb
-    const v = `${sol.map(x => x.nombre).join(",")} · TC del 2026 en C${t2026 + 2}: ${usd.includes(`$C$${t2026 + 2}`)} · año anterior salmón ${color === "FFFBD5B5"} · dif ${dif[3].v} · ${porque.join(" | ")}`
-    const e = `H · MSA · Papel Inmobiliario · TC del 2026 en C${t2026 + 2}: true · año anterior salmón true · dif 33 · vence en el ejercicio y se | se pagó el 02/07/2025 (en `
+    const sinTc = !h.some(r => (r as any[])[1]?.v === "TC promedio"), enG = String(((h[filaTango26] as any[])[6] as any)?.v ?? "")
+    const v = `${sol.map(x => x.nombre).join(",")} · sin TC ${sinTc} · 1ª cuota 2026 en G ${enG} · dif ${dif[3].v} · ${porque.join(" | ")}`
+    const e = `H · MSA · Papel Inmobiliario · sin TC true · 1ª cuota 2026 en G 50 · dif 33 · vence en el ejercicio y se | se pagó el 02/07/2025 (en `
     chequear("Libro H", "El papel de inmobiliario en el libro H: los dos años en la misma solapa con sus fórmulas corridas; control contra las solapas de templates para el ejercicio, con los casos que se explican por vencimiento vs. pago",
       e, v, v === e, "A-FEAT-1516")
   }
@@ -13689,6 +13690,20 @@ export function correrCasos(): Resultado[] {
     const v = `${res.join(" → ")} ‖ ${det.join(" → ")}`
     const e = "Amarok Cuota → Voyage Cuota → Voyage Anual ‖ Amarok Cuota 15/07/2025 → Voyage Cuota 11/08/2025 → Voyage Cuota 15/12/2025 → Voyage Anual 30/01/2026"
     chequear("Libro H para auditar", "🔁 El mismo vehículo / partida va junto y por fecha, sea Anual o Cuota (Voyage Cuota 2025 antes que Voyage Anual 2026)", e, v, v === e, "A-FEAT-1579")
+  }
+
+  // ══ 🧾 Papel del H (JMS 11/11): sin las columnas de estudio, y la cuota ADICIONAL de 2025 en su columna (no en la 1/4) ══
+  {
+    const fila = { campo: "Rojas", partida: "090", complementario: false, has: 1, totalAnterior: 0, anteriorIncompleto: false, pagoAnual: null, totalCuotas: 150, costoAnual: 150, aumento: null,
+      cuotas: [{ vencimiento: "2025-03-10", monto: 50, estado: "conciliado" }, { vencimiento: "2025-12-18", monto: 100, estado: "conciliado", adicional: true }], costoUsd: null, costoHa: null, costoHaUsd: null, templates: [] }
+    const papel = { tipo: "inmobiliario", anio: 2025, bloques: [{ empresa: "MSA", filas: [fila], total: 150, totalAnterior: 0 }], total: 150, totalAnterior: 0, tcPromedio: 1450, maxCuotas: 2 } as never
+    const h = hojaPapelJms([papel], {}, "2026-01-01", [], { paraH: true })
+    const txt = (x: unknown) => String(x && typeof x === "object" ? (x as { v?: unknown }).v ?? "" : x ?? "")
+    const enc = h.filas.find(r => r?.some(x => txt(x) === "ZONA"))!.map(txt).filter(Boolean)
+    const f = h.filas.find(r => r?.some(x => txt(x) === "ROJAS"))!.map(txt)
+    const v = `${enc.join("|")} ‖ 1/1=${f[6]} adicional=${f[8]} ‖ TC ${h.filas.some(r => r?.some(x => txt(x) === "TC promedio"))}`
+    const e = "ZONA|CAMPO|#|HAS|PARTIDA|PARCELA|CUOTA 1/1|Vto.|CUOTA ADICIONAL|Vto. ‖ 1/1=50 adicional=100 ‖ TC false"
+    chequear("Libro H para auditar", "🧾 Papel del H: sin total anterior / pago anual / aumento / costo ni TC, y la cuota ADICIONAL de 2025 en su columna", e, v, v === e, "A-FEAT-1516")
   }
 
   // ══ 💰 Control de la plata, etapa 1 (JMS 11/11): inicio + ingresos − egresos = saldo final, y DÓNDE se rompe el saldo de la planilla ══

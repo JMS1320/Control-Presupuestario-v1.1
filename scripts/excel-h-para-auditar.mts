@@ -56,7 +56,10 @@ const wb = XLSX.utils.book_new()
 const [cuotasImp, aux] = await Promise.all([cargarCuotasImpuestos(sb), cargarAuxiliaresPapel(sb)])
 const { problemas: estructura } = await cargarProblemasDeModalidad(sb, Number(new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }).slice(0, 4)))
 console.log(`estructura de templates (anual o cuotas, pagos): ${estructura.length} a corregir`)
-agregarLibroH(wb as any, templates, ej.etiqueta, meses, { cuotas: cuotasImp, ...aux } as any, { auditoria: true, estructura })
+// ✍️ A-FEAT-1207: lo que el balance anterior dejó para tomar como gasto de éste (pagos anuales adelantados)
+const { data: ajSaldos } = await sb.from("ajustes_balance").select("empresa, concepto, categ, monto, motivo").eq("accion", "saldo_anterior").eq("anio_cierre", ANIO).is("anulado_at", null)
+const saldosAnteriores = (ajSaldos ?? []).map((a: any) => ({ empresa: a.empresa, concepto: a.concepto, categ: a.categ ?? "", monto: Number(a.monto) || 0, motivo: a.motivo ?? "" }))
+agregarLibroH(wb as any, templates, ej.etiqueta, meses, { cuotas: cuotasImp, ...aux, saldosAnteriores } as any, { auditoria: true, estructura })
 // 💰 A-FEAT-1533 (JMS 11/11): el CONTROL DE LA PLATA, etapa 1 — cada cuenta de la empresa, inicio + ingresos − egresos = saldo final, contra la planilla
 {
   const corte = `${ANIO - 1}-12-31`, r2 = (n: number) => Math.round(n * 100) / 100
