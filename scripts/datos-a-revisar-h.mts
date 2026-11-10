@@ -76,7 +76,7 @@ export async function armarDatosARevisar(sb: any, cuotas: CuotaTemplate[], solap
   for (const p of PUNTOS) {
     h.push([], [`${p.id} · ${p.titulo}`], ["", `❓ ${p.decidir}`])
     // 🔗 JMS 09/11 (DR1, «hagámoslo más artesanal: un link para cada uno, que me lleve y me explique»): qué estás viendo, punto por punto
-    if (p.id === "DR1") h.push(...guiaDR1(cuotas, solapaDe, filaDe))
+    if (p.id === "DR1") h.push(...guiaDR1(cuotas, solapaDe, filaDe, h.length, h.findIndex(r => r[0] === "DR1" && r[1] === p.decidir) + 1))
     h.push(["Punto", "Fecha", "Cuenta / quién pagó", "Importe", "Concepto", "Proveedor", "Comprobante", "Detalle", "Código", "Descripción del banco", "Beneficiario / CUIT", "Ir a", "Tu respuesta"].map(x => CENTRADO(x)))
     if (!p.filas.length) h.push(["", `${p.id}: sin movimientos en el sistema`])
     for (const f of p.filas) h.push([p.id, f.fecha, f.cuenta, f.importe, f.concepto, f.proveedor, f.comprobante, f.detalle, f.codigo, f.descripcion, f.beneficiario,
@@ -104,7 +104,8 @@ export async function armarDatosARevisar(sb: any, cuotas: CuotaTemplate[], solap
  * una parte de los movimientos de DR1 («MA pagó por PAM»), con su link a la primera cuota y la explicación; el TOTAL tiene que dar lo
  * mismo que DR1 (control). Al final, aparte y SIN sumar, los de 2026 a nombre de MA, como comparación.
  */
-function guiaDR1(cuotas: CuotaTemplate[], solapaDe: (c: CuotaTemplate) => string, filaDe?: FilaDe): unknown[][] {
+function guiaDR1(cuotas: CuotaTemplate[], solapaDe: (c: CuotaTemplate) => string, filaDe?: FilaDe, base = 0, filaResumen = 0): unknown[][] {
+  // ⚠️ las fórmulas apuntan a filas de la HOJA: `base` = cuántas filas hay antes de esta tabla (la fila de h[i] es base + i + 1)
   const fmt = (n: number) => `$ ${n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   const resp = (c: CuotaTemplate) => String(c.responsable ?? "").split("/")[0].trim().toUpperCase()
   const enDR1 = (c: CuotaTemplate) => auditarCuota(c).efecto === "MA pagó por PAM"
@@ -135,7 +136,7 @@ function guiaDR1(cuotas: CuotaTemplate[], solapaDe: (c: CuotaTemplate) => string
   const parte = (id: string, titulo: string, enDr: CuotaTemplate[], texto: string, ir: unknown) => {
     h.push([id, "", `${titulo} — ${enDr.length} cuotas en DR1`, { t: "n", v: total(enDr), z: "#,##0.00" }, texto, "", "", "", "", "", "", ir, ""])
   }
-  const desde = h.length + 1
+  const desde = base + h.length + 1
   parte("DR1.A1", "Consumos MA · año 2025 · a nombre de PAM", consumos25.filter(enDR1),
     `El template dice que el dueño es PAM → para la app es GASTO DE PAM, pero son consumos de MA. DR1 = lo que pagó MA: ${porCuenta(consumos25.filter(enDR1))}. Fuera de DR1: lo que pagó PAM en el ejercicio (${fmt(total(pagoPAM(consumos25)))}) y ene–jun 2025 (ejercicio anterior, 80 cuotas $ 3.399.589,35 por VISA PAM). PROPUESTA (script 239): el template pasa a MA → sale de DR1 y de Retiros; lo que pagó PAM queda como «distribución PAM → MA».`,
     link(consumos25[0], f => f["Concepto"] === "Consumos MA"))
@@ -145,10 +146,10 @@ function guiaDR1(cuotas: CuotaTemplate[], solapaDe: (c: CuotaTemplate) => string
   if (otras.length) parte("DR1.A3", `Suscripciones de MA a nombre de PAM (${nombresOtras})`, otras,
     `Templates de PAM con suscripciones de MA, pagados con la VISA MA: ${porCuenta(otras)}. Mismo caso que A1: PROPUESTA pasar esos templates a MA (se suman al script 239 si estás de acuerdo).`,
     link(otras[0], f => f["Concepto"] === otras[0].concepto))
-  const hasta = h.length
+  const hasta = base + h.length
   const vDR1 = total(dr1)
   h.push(["", "", "TOTAL de los renglones = DR1", { t: "n", f: `SUM(D${desde}:D${hasta})`, v: total([...consumos25.filter(enDR1), ...medicos25.filter(enDR1), ...otras]), z: "#,##0.00" },
-    { t: "s", f: `IF(ABS(D${hasta + 1}-${vDR1})<0.01,"✓ da lo mismo que DR1 (${vDR1.toLocaleString("es-AR", { minimumFractionDigits: 2 })})","⚠️ no da DR1")`,
+    { t: "s", f: `IF(ABS(D${hasta + 1}-${filaResumen ? `D${filaResumen}` : vDR1})<0.01,"✓ da lo mismo que DR1 (${vDR1.toLocaleString("es-AR", { minimumFractionDigits: 2 })})","⚠️ no da DR1")`,
       v: Math.abs(total([...consumos25.filter(enDR1), ...medicos25.filter(enDR1), ...otras]) - vDR1) < 0.01 ? `✓ da lo mismo que DR1 (${vDR1.toLocaleString("es-AR", { minimumFractionDigits: 2 })})` : "⚠️ no da DR1" }])
   // aparte, NO suman: contexto para decidir
   h.push(["", "", CENTRADO("Aparte — NO suman a DR1, son para comparar"), CENTRADO("Importe en el ejercicio"), "", "", "", "", "", "", "", "", ""])
