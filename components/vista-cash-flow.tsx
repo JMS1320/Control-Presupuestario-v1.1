@@ -329,6 +329,9 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const [cambiarFechaVenc, setCambiarFechaVenc] = useState(false)
   // ✏️ A-FEAT-1570 (nota 🌙 de JMS 05/11: «agregar editar detalle» en la barra de PAGOS)
   const [cambiarDetalleLote, setCambiarDetalleLote] = useState(false)
+  // 💲 nota 🌙 JMS 11/11: «sería bueno que esto permita editar también el monto a pagar» — de a UNA fila
+  const [cambiarMontoLote, setCambiarMontoLote] = useState(false)
+  const [valorMontoLote, setValorMontoLote] = useState('')
   const [valorDetalleLote, setValorDetalleLote] = useState('')
   const [cambiarEstadoLote, setCambiarEstadoLote] = useState(true)
   const [valorFechaLote, setValorFechaLote] = useState('')
@@ -1759,6 +1762,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     setValorFechaLote('')
     setValorEstadoLote('pagado')
     setPagadoDesdeLote('')
+    setCambiarMontoLote(false)
+    setValorMontoLote('')
     setFiltroOrigenPagos({ arca: true, template: true, anticipo: true })
   }
 
@@ -2188,9 +2193,33 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       return
     }
 
-    if (!cambiarFechaVenc && !cambiarEstadoLote && !cambiarDetalleLote) {
-      toast.error("Selecciona al menos una opción: fecha vencimiento, estado o detalle")
+    if (!cambiarFechaVenc && !cambiarEstadoLote && !cambiarDetalleLote && !cambiarMontoLote) {
+      toast.error("Selecciona al menos una opción: fecha vencimiento, estado, detalle o monto")
       return
+    }
+
+    /**
+     * 💲 nota 🌙 JMS 11/11 — el MONTO A PAGAR desde la barra, con UNA fila tildada. Va por el MISMO camino que editar la
+     * celda Débitos: una cuota de template pregunta si propagar a las futuras, un grupo pregunta cómo repartir, una
+     * factura cambia su «monto a abonar» (lo que se paga, no el total de la factura). Con varias filas no se ofrece: el
+     * mismo monto para todas casi nunca es lo que se quiere, y el reparto de un grupo ya tiene su pantalla.
+     */
+    if (cambiarMontoLote) {
+      if (filasSeleccionadas.size !== 1) { toast.error('El monto se cambia de a una fila: dejá tildada sólo la que querés cambiar'); return }
+      const nuevo = parseFloat(String(valorMontoLote).replace(/\./g, '').replace(',', '.'))
+      if (!(nuevo > 0)) { toast.error('Escribí el monto a pagar (ej. 1.234,56)'); return }
+      const fila = data.find(f => f.id === Array.from(filasSeleccionadas)[0])
+      if (!fila) return
+      if (fila.ids_grupo && fila.ids_grupo.length > 1) setRepartoGrupo({ fila, nuevoTotal: nuevo })
+      else if (fila.origen === 'TEMPLATE') setPropagacionCF({ cuotaId: fila.id, nuevoMonto: nuevo })
+      else if (fila.origen === 'ARCA' || fila.origen === 'SUELDO' || fila.origen === 'ANTICIPO') {
+        const ok = await actualizarRegistro(fila.id, fila.origen === 'ARCA' ? 'monto_a_abonar' : 'debitos', nuevo, fila.origen, fila.egreso_id)
+        if (!ok) return
+        actualizarLocal(fila.id, 'debitos', nuevo)
+        toast.success(`Monto a pagar: $ ${nuevo.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+      } else { toast.error('El monto de esta fila se cambia donde se carga (ventas y compras sin factura)'); return }
+      setCambiarMontoLote(false); setValorMontoLote('')
+      if (!cambiarFechaVenc && !cambiarEstadoLote && !cambiarDetalleLote) return
     }
 
     if (cambiarFechaVenc && !valorFechaLote) {
@@ -4570,6 +4599,22 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                     />
                     <Label htmlFor={`cambiar-detalle-${sufijo}`}>Cambiar detalle</Label>
                   </div>
+
+                  <div className="flex items-center gap-2" title={filasSeleccionadas.size === 1 ? 'Cambia el monto a pagar de la fila tildada (como editar la celda Débitos)' : 'Se cambia de a una fila: tildá sólo una'}>
+                    <Checkbox
+                      id={`cambiar-monto-${sufijo}`}
+                      checked={cambiarMontoLote}
+                      disabled={filasSeleccionadas.size !== 1}
+                      onCheckedChange={v => {
+                        setCambiarMontoLote(v === true)
+                        if (v === true && !valorMontoLote) {
+                          const f = data.find(x => x.id === Array.from(filasSeleccionadas)[0])
+                          if (f) setValorMontoLote((Number(f.debitos) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+                        }
+                      }}
+                    />
+                    <Label htmlFor={`cambiar-monto-${sufijo}`} className={filasSeleccionadas.size !== 1 ? 'text-gray-400' : ''}>Cambiar monto a pagar</Label>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-4">
@@ -4605,6 +4650,13 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                     </div>
                   )}
 
+                  {cambiarMontoLote && filasSeleccionadas.size === 1 && (
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm">Monto:</Label>
+                      <Input type="text" placeholder="0,00" value={valorMontoLote} onChange={e => setValorMontoLote(e.target.value)} className="w-40 text-right" />
+                    </div>
+                  )}
+
                   {cambiarDetalleLote && (
                     <div className="flex items-center gap-2" title="Reemplaza el detalle de las filas elegidas. Si alguna ya tiene otro, te pregunta antes.">
                       <Label className="text-sm">Detalle:</Label>
@@ -4632,7 +4684,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
                   <Permisable recurso="cashflow.cambio-lote"><Button
                     onClick={aplicarCambiosLote}
-                    disabled={filasSeleccionadas.size === 0 || procesandoLote || (!cambiarFechaVenc && !cambiarEstadoLote && !cambiarDetalleLote)}
+                    disabled={filasSeleccionadas.size === 0 || procesandoLote || (!cambiarFechaVenc && !cambiarEstadoLote && !cambiarDetalleLote && !(cambiarMontoLote && filasSeleccionadas.size === 1))}
                     className="bg-blue-600 hover:bg-blue-700"
                   >
                     {procesandoLote ? (
