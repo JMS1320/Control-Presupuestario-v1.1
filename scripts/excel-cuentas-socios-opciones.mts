@@ -127,8 +127,8 @@ const dmy = (f: string) => f.slice(0, 10).split("-").reverse().join("/")
 
 // Detalle (primero: las fórmulas de B apuntan acá)
 const det: unknown[][] = [[TIT("DETALLE — cada asiento de las cuentas con los socios, con su bloque de la propuesta")],
-  ["Los mismos asientos del 14.1 (y Libertad). Filtrá por Socio y Bloque. Importe con el signo del 14.1: + = le debemos · − = nos debe."], [],
-  ["Socio", "Bloque", "Por qué ese bloque", "Cuenta", "Fecha", "Qué es", "Importe", "Debe", "Haber", "Grupo (template / categ)", "Concepto", "CUIT del destino", "Otra punta"].map(B)]
+  ["Los mismos asientos del 14.1 (y Libertad). Filtrá por «Nro» (ej. JMS-B3) para ver cómo se compone cada renglón de la propuesta. Importe con el signo del 14.1: + = le debemos · − = nos debe."], [],
+  ["Nro", "Socio", "Bloque", "Por qué ese bloque", "Cuenta", "Fecha", "Qué es", "Importe", "Debe", "Haber", "Grupo (template / categ)", "Concepto", "CUIT del destino", "Otra punta"].map(B)]
 const d1 = det.length + 1
 const sumas = new Map<string, number>()
 for (const c of cuentas) {
@@ -136,12 +136,13 @@ for (const c of cuentas) {
     const { b, porque } = bloqueDe(a, c.contraparte.cuit)
     const m = movPorId.get(String(a.id))
     sumas.set(`${c.contraparte.clave}|${b}`, r2((sumas.get(`${c.contraparte.clave}|${b}`) ?? 0) + a.importe))
-    det.push([c.contraparte.clave, b, porque, a.cuenta ?? "MSA Galicia cta cte", dmy(a.fecha), a.tipo === "compra" ? "nos factura / sueldo" : a.tipo === "venta" ? "le facturamos" : a.importe > 0 ? "pagó por MSA / aportó" : "MSA le pagó / por su cuenta",
+    // 🔢 JMS 11/11: «una columna con cada bloque, cosa de que yo pueda poner José bloque 1… y ver cómo se compone ese número»
+    det.push([`${c.contraparte.clave}-${b}`, c.contraparte.clave, b, porque, a.cuenta ?? "MSA Galicia cta cte", dmy(a.fecha), a.tipo === "compra" ? "nos factura / sueldo" : a.tipo === "venta" ? "le facturamos" : a.importe > 0 ? "pagó por MSA / aportó" : "MSA le pagó / por su cuenta",
       n(a.importe), a.importe < 0 ? n(-a.importe) : "", a.importe > 0 ? n(a.importe) : "", a.grupo ?? "", a.concepto, String(m?.cuit ?? "").replace(/\D/g, ""), (a as any).otraPunta ?? ""])
   }
 }
 const dN = det.length
-const R = (col: string) => `'Detalle'!$${col}$${d1}:$${col}$${dN}`
+const R = (col: string) => `'Detalle'!$${col}$${d1}:$${col}$${dN}`   // A = Nro · H = Importe
 
 // A · Cómo está hoy
 const a: unknown[][] = [[TIT("A · CÓMO ESTÁ HOY — el resumen del 14.1 (con Libertad), tal cual")],
@@ -155,19 +156,21 @@ for (const c of cuentas) {
 
 // B · Propuesta
 const b: unknown[][] = [[TIT("B · PROPUESTA — cada socio por BLOQUES (los mismos asientos, agrupados por QUÉ son)")],
-  ["Cada bloque es una fórmula sobre «Detalle» (Socio + Bloque). Saldo: + = le debemos · − = nos debe. Retiros y aportes del libro H alimenta B5, B6 y B7."], []]
+  ["Cada bloque es una fórmula sobre «Detalle»: el «Nro» de cada renglón (ej. JMS-B3) es la primera columna del detalle — filtralo ahí y ves de qué se compone. Saldo: + = le debemos · − = nos debe. Retiros y aportes del libro H alimenta B5, B6 y B7."], []]
 const filaCierreB = new Map<string, number>()
 for (const c of cuentas) {
-  b.push([B(`${c.contraparte.clave} · ${c.contraparte.nombre}`)], ["Bloque", "", "Importe"].map(x => (x ? B(x) : x)))
+  b.push([B(`${c.contraparte.clave} · ${c.contraparte.nombre}`)], ["Nro", "Bloque", "Importe", "Asientos"].map(x => (x ? B(x) : x)))
   const k0 = b.length + 1
-  b.push(["B1 · Saldo al inicio", "", F(`'A · Cómo está hoy'!B${filaA.get(c.contraparte.clave)}`, c.saldoInicio)])
+  b.push([`${c.contraparte.clave}-B1`, "B1 · Saldo al inicio (del balance anterior: no tiene asientos en el detalle)", F(`'A · Cómo está hoy'!B${filaA.get(c.contraparte.clave)}`, c.saldoInicio), ""])
   for (const [cod, nombre] of BLOQUES) {
     const v = sumas.get(`${c.contraparte.clave}|${cod}`) ?? 0
-    b.push([`${cod} · ${nombre}`, "", F(`SUMIFS(${R("G")},${R("A")},"${c.contraparte.clave}",${R("B")},"${cod}")`, v)])
+    const nro = `${c.contraparte.clave}-${cod}`
+    const kk = b.length + 1
+    b.push([nro, `${cod} · ${nombre}`, F(`SUMIFS(${R("H")},${R("A")},A${kk})`, v), { t: "n", f: `COUNTIF(${R("A")},A${kk})`, v: c.resumen.asientos.filter(x => bloqueDe(x, c.contraparte.cuit).b === cod).length, z: "0" }])
   }
   const kN = b.length, kc = b.length + 1
   filaCierreB.set(c.contraparte.clave, kc)
-  b.push([B("= SALDO AL CIERRE"), "", { ...F(`SUM(C${k0}:C${kN})`, c.saldoAlCierre), s: { font: { bold: true }, numFmt: MONEDA } }], [])
+  b.push(["", B("= SALDO AL CIERRE"), { ...F(`SUM(C${k0}:C${kN})`, c.saldoAlCierre), s: { font: { bold: true }, numFmt: MONEDA } }, ""], [])
 }
 
 // Control
@@ -185,8 +188,8 @@ const wb = XLSX.utils.book_new()
 const MON = { z: MONEDA }
 agregarHoja(wb, "Control", ctl, [{ ancho: 40 }, { ancho: 20, ...MON }, { ancho: 22, ...MON }, { ancho: 14, ...MON }, { ancho: 14 }, { ancho: 10 }, { ancho: 18 }] as any)
 agregarHoja(wb, "A · Cómo está hoy", a, [{ ancho: 40 }, { ancho: 18, ...MON }, { ancho: 18, ...MON }, { ancho: 14, ...MON }, { ancho: 18, ...MON }, { ancho: 20, ...MON }, { ancho: 18, ...MON }] as any)
-agregarHoja(wb, "B · Propuesta", b, [{ ancho: 70 }, { ancho: 2 }, { ancho: 20, ...MON }] as any)
-agregarHoja(wb, "Detalle", det, [{ ancho: 8 }, { ancho: 7 }, { ancho: 44 }, { ancho: 22 }, { ancho: 11 }, { ancho: 22 }, { ancho: 16, ...MON }, { ancho: 15, ...MON }, { ancho: 15, ...MON }, { ancho: 30 }, { ancho: 60 }, { ancho: 14 }, { ancho: 24 }] as any)
+agregarHoja(wb, "B · Propuesta", b, [{ ancho: 10 }, { ancho: 78 }, { ancho: 20, ...MON }, { ancho: 10 }] as any)
+agregarHoja(wb, "Detalle", det, [{ ancho: 9 }, { ancho: 8 }, { ancho: 7 }, { ancho: 44 }, { ancho: 22 }, { ancho: 11 }, { ancho: 22 }, { ancho: 16, ...MON }, { ancho: 15, ...MON }, { ancho: 15, ...MON }, { ancho: 30 }, { ancho: 60 }, { ancho: 14 }, { ancho: 24 }] as any)
 fechasReales(wb as any)
 let p = join(CARPETA, "Cuentas con socios - opciones (2026-11-11).xlsx"), v = 2
 while (existsSync(p)) p = join(CARPETA, `Cuentas con socios - opciones (2026-11-11) v${v++}.xlsx`)
