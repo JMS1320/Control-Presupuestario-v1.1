@@ -895,7 +895,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [origenFactura, setOrigenFactura] = useState<string>('')  // 'ARCA' | 'No Informada'
   const [pasoImportacion, setPasoImportacion] = useState<'origen' | 'archivo' | 'imputacion'>('origen')
   // buscar_pdf (A-FEAT-1287): al terminar la importación se busca el PDF de las tildadas — todas por default
-  const [imputacionData, setImputacionData] = useState<Array<{ fila: number, fc: string, cuenta_contable: string | null, buscar_pdf: boolean, detalle?: string }>>([])
+  const [imputacionData, setImputacionData] = useState<Array<{ fila: number, fc: string, cuenta_contable: string | null, buscar_pdf: boolean, detalle?: string, fecha_estimada?: string, siempre_portal?: boolean }>>([])
   const [cuentasContablesImport, setCuentasContablesImport] = useState<any[]>([])
   
   // Estados para edición inline
@@ -2314,9 +2314,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     const nuevas = (previewData.facturas as any[]).filter((f: any) => f.estado === 'nueva')
     setImputacionData(nuevas.map((f: any) => ({
       fila: f.fila,
-      fc: '',   // Sin valor por defecto
+      // 🌐 nota JMS 11/11 (A-BUG-1243): el FC arranca con lo que va a quedar — la regla del CUIT o el proveedor marcado
+      //    Portal —, así la pantalla no dice «—» cuando se va a guardar Portal. «Buscar» se muestra como «— (Buscar)».
+      fc: f.fc_sugerido && f.fc_sugerido !== 'Buscar' ? f.fc_sugerido : '',
       cuenta_contable: f.cuenta_contable_sugerida || null,
-      buscar_pdf: true,  // A-FEAT-1287: por default se buscan todas (usuario 2026-10-16)
+      // Lo que no se busca por mail (Portal / No) arranca destildado, como cuando se elige a mano
+      buscar_pdf: !(f.fc_sugerido === 'Portal' || f.fc_sugerido === 'No'),  // A-FEAT-1287: el resto, se buscan todas
+      // 📅 nota JMS 11/11: la fecha estimada se ve y se corrige acá (default: emisión + 15, o emisión si es débito)
+      fecha_estimada: f.fecha_estimada_sugerida || '',
       detalle: '',       // A-FEAT-1434: el detalle se pone acá mismo, al importar
     })))
     // El mail de cada proveedor, para ofrecer cargar el que falta en la misma pantalla
@@ -2379,6 +2384,27 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
    * DESPUÉS de importar porque un proveedor nuevo recién existe entonces. Mismo criterio que el
    * buscador: si no tenía mail, se lo habilita para búsqueda. Nada en silencio: si uno falla, se dice.
    */
+  /**
+   * 🌐 nota JMS 11/11: «se debe poder fijar que algo es portal para las próximas». Los proveedores tildados «siempre
+   * Portal» en el paso 3 quedan como Portal en su ficha (después de importar, porque uno nuevo recién existe entonces).
+   */
+  const guardarPortalDeImportacion = async (imp: typeof imputacionData, filas: any[]) => {
+    const cuits = Array.from(new Set(imp.filter(d => d.siempre_portal)
+      .map(d => cuitLimpio(filas.find((f: any) => f.fila === d.fila)?.cuit)).filter(Boolean)))
+    if (cuits.length === 0) return
+    const fallas: string[] = []
+    for (const cuit of cuits) {
+      try {
+        const r = await fetch('/api/gas/config-proveedor', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cuit, fc_modo: 'portal' }) })
+        const d = await r.json()
+        if (!d.ok) fallas.push(`${cuit} (${d.error || 'error'})`)
+      } catch (e) { fallas.push(`${cuit} (${(e as Error).message})`) }
+    }
+    if (fallas.length) toast.error('No quedó como Portal: ' + fallas.join(' · '), { duration: 20000 })
+    else toast.success(`${cuits.length} proveedor(es) quedaron como Portal para las próximas`)
+  }
+
   const guardarMailsDeImportacion = async (mails: Record<string, string>) => {
     const conMail = Object.entries(mails).map(([c, m]) => [cuitLimpio(c), m.trim()] as const).filter(([, m]) => m)
     if (conMail.length === 0) return
@@ -2473,6 +2499,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         if (!esContable) {
           const tildadas = idsParaBuscarTrasImportar(imputacionData, resultado.idsPorFila)
           await guardarMailsDeImportacion({ ...provEditMail })
+          await guardarPortalDeImportacion(imputacionData, (previewData?.facturas as any[]) || [])
           if (tildadas.length > 0) dispararBusquedaPostImport(tildadas)
         }
       }
@@ -8847,7 +8874,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
       }}>
         {/* A-FEAT-1434: Escape o un click afuera (p. ej. al dejar una nota con captura) NO cierran el asistente:
             se perdía la imputación. Se cierra con Cancelar o la ✕. */}
-        <DialogContent className={`${pasoImportacion === 'imputacion' ? 'max-w-5xl' : 'max-w-3xl'} max-h-[85vh] flex flex-col`}
+        <DialogContent className={`${pasoImportacion === 'imputacion' ? 'max-w-[1400px] w-[96vw]' : 'max-w-3xl'} max-h-[85vh] flex flex-col`}
           onEscapeKeyDown={(e) => e.preventDefault()} onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -9024,6 +9051,11 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                         onClick={() => setImputacionData(prev => prev.map(d => ({ ...d, buscar_pdf: false })))}>Ninguna</button>
                     </div>
                   )}
+                  <div className="flex items-center gap-1 ml-4" title="Pone la misma fecha estimada de pago a todas (después se corrige una por una)">
+                    <span>Fecha estimada:</span>
+                    <input type="date" className="border rounded px-1 py-0.5 text-xs"
+                      onChange={(e) => { const v = e.target.value; if (v) setImputacionData(prev => prev.map(d => ({ ...d, fecha_estimada: v }))) }} />
+                  </div>
                   <div className="flex items-center gap-1 ml-4">
                     <span>Cuenta:</span>
                     <select
@@ -9064,8 +9096,9 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                         <th className="text-left p-2 font-medium text-gray-600">Proveedor</th>
                         <th className="text-left p-2 font-medium text-gray-600 w-[100px]">CUIT</th>
                         <th className="text-right p-2 font-medium text-gray-600 w-[100px]">Monto</th>
-                        <th className="text-center p-2 font-medium text-gray-600 w-[90px]">FC</th>
-                        <th className="text-left p-2 font-medium text-gray-600 w-[250px]">Cuenta Contable</th>
+                        <th className="text-left p-2 font-medium text-gray-600 w-[150px]" title="Cómo llega el PDF. 🌐 = de Portal (por la regla del CUIT o porque el proveedor está marcado Portal)">FC</th>
+                        <th className="text-left p-2 font-medium text-gray-600 w-[130px]" title="Cuándo se estima pagarla (aparece así en el Cash Flow). Default: emisión + 15 días">Fecha estimada</th>
+                        <th className="text-left p-2 font-medium text-gray-600 w-[300px]">Cuenta Contable</th>
                         <th className="text-left p-2 font-medium text-gray-600 w-[180px]">Detalle</th>
                         {!esContable && (
                           <th className="text-left p-2 font-medium text-gray-600 w-[230px]" title="Tildada = al importar se busca su PDF (carpeta del mes y después el mail). Sin mail del proveedor sólo se busca en la carpeta y en los reenvíos">
@@ -9089,18 +9122,34 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                               </td>
                               <td className="p-2">
                                 <select
-                                  className="border rounded px-1 py-0.5 text-xs w-full"
+                                  className={`border rounded px-1 py-0.5 text-xs w-full ${imp?.fc === 'Portal' ? 'bg-gray-100 font-medium' : ''}`}
                                   value={imp?.fc || ''}
                                   onChange={(e) => {
                                     const v = e.target.value
                                     setImputacionData(prev => prev.map(d =>
-                                      d.fila === f.fila ? { ...d, fc: v, buscar_pdf: v === 'No' || v === 'Portal' ? false : d.buscar_pdf } : d
+                                      d.fila === f.fila ? { ...d, fc: v, buscar_pdf: v === 'No' || v === 'Portal' ? false : d.buscar_pdf, siempre_portal: v === 'Portal' ? d.siempre_portal : false } : d
                                     ))
                                   }}
                                 >
                                   <option value="">— (Buscar)</option>
-                                  {opcionesFcManual(null, !esContable).filter(o => o.valor !== 'Buscar').map(o => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
+                                  {opcionesFcManual(null, !esContable).filter(o => o.valor !== 'Buscar').map(o => <option key={o.valor} value={o.valor}>{o.valor === 'Portal' ? '🌐 Portal' : o.rotulo}</option>)}
                                 </select>
+                                {/* 🌐 de dónde sale, y fijarlo para las próximas (nota JMS 11/11) */}
+                                {imp?.fc === 'Portal' && f.fc_origen && imp.fc === f.fc_sugerido ? (
+                                  <div className="text-[10px] text-gray-500 mt-0.5">🌐 {f.fc_origen === 'regla' ? 'por la regla del CUIT' : 'proveedor de Portal'}</div>
+                                ) : imp?.fc === 'Portal' && !esContable ? (
+                                  <label className="flex items-center gap-1 text-[10px] text-gray-600 mt-0.5 cursor-pointer" title="El proveedor queda marcado Portal: sus próximas facturas entran solas en Portal y no se buscan por mail">
+                                    <input type="checkbox" className="h-3 w-3" checked={!!imp?.siempre_portal}
+                                      onChange={(e) => setImputacionData(prev => prev.map(d => d.fila === f.fila ? { ...d, siempre_portal: e.target.checked } : d))} />
+                                    siempre Portal
+                                  </label>
+                                ) : null}
+                              </td>
+                              <td className="p-2">
+                                <input type="date" className="border rounded px-1 py-0.5 text-xs w-full"
+                                  value={imp?.fecha_estimada ?? ''}
+                                  onChange={(e) => { const v = e.target.value; setImputacionData(prev => prev.map(d =>
+                                    d.fila === f.fila ? { ...d, fecha_estimada: v } : d)) }} />
                               </td>
                               <td className="p-2">
                                 {/* A-FEAT-1434: la cuenta se busca escribiendo, como en el resto de la app */}

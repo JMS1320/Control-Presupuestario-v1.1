@@ -283,7 +283,7 @@ export function SelectorCuentaContable({
 
       {/* Lista de opciones — colapsada en modo dropdown hasta hacer click */}
       {listaVisible && (
-      <div className={`${maxHeight} overflow-y-auto border rounded mt-0.5 bg-white ${dropdownMode ? 'absolute z-50 w-full shadow-lg' : ''}`}>
+      <div className={`${maxHeight} overflow-y-auto border rounded mt-0.5 bg-white ${dropdownMode ? 'absolute z-50 min-w-full w-max max-w-[480px] shadow-lg' : ''}`}>
         {/* Opción sin asignar */}
         {mostrarSinAsignar && (
           <button

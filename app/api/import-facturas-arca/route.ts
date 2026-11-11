@@ -4,7 +4,7 @@ import * as Papa from "papaparse"
 import * as XLSX from "xlsx"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 import { nroDeCuenta } from "@/lib/facturas/nro-de-cuenta"
-import { calcularFechaEstimada, buscarReglaCuit, obtenerTipoComprobante, aNegativoSiNC, asegurarProveedores } from "@/lib/facturas/alta-factura"
+import { calcularFechaEstimada, buscarReglaCuit, obtenerTipoComprobante, aNegativoSiNC, asegurarProveedores, fcSugeridoImport, fechaManualValida } from "@/lib/facturas/alta-factura"
 
 // Abreviatura tipo comprobante AFIP → FC/ND/NC
 const tipoComprobanteAbrev = (tipo: number | null | undefined): string => {
@@ -297,12 +297,12 @@ export async function POST(req: Request) {
 
     const origenFactura = formData.get("origen_factura") as string | null  // 'ARCA' | 'No Informada'
     const imputacionRaw = formData.get("imputacion") as string | null
-    const imputacionMap = new Map<number, { fc: string | null, cuenta_contable: string | null, detalle?: string | null }>()
+    const imputacionMap = new Map<number, { fc: string | null, cuenta_contable: string | null, detalle?: string | null, fecha_estimada?: string | null }>()
     if (imputacionRaw) {
       try {
-        const arr = JSON.parse(imputacionRaw) as Array<{ fila: number, fc: string, cuenta_contable: string | null, detalle?: string | null }>
+        const arr = JSON.parse(imputacionRaw) as Array<{ fila: number, fc: string, cuenta_contable: string | null, detalle?: string | null, fecha_estimada?: string | null }>
         // A-FEAT-1434: el detalle se puede poner en la imputación, al importar
-        arr.forEach(item => imputacionMap.set(item.fila, { fc: item.fc || null, cuenta_contable: item.cuenta_contable, detalle: item.detalle?.trim() || null }))
+        arr.forEach(item => imputacionMap.set(item.fila, { fc: item.fc || null, cuenta_contable: item.cuenta_contable, detalle: item.detalle?.trim() || null, fecha_estimada: fechaManualValida(item.fecha_estimada) }))
       } catch { /* ignore parse errors */ }
     }
 
@@ -415,6 +415,17 @@ export async function POST(req: Request) {
       }, { status: 500 })
     }
 
+    // 🌐 Los proveedores marcados como Portal (nota JMS 11/11): la vista previa lo muestra y la importación lo aplica igual,
+    //    para que la pantalla no diga una cosa y se guarde otra (A-BUG-1243).
+    const fcModoPorCuit = new Map<string, string | null>()
+    {
+      const cuits = Array.from(new Set(filasCSV.map((x: any) => String(x?.["Nro. Doc. Emisor"] ?? '').replace(/\D/g, '')).filter(Boolean)))
+      for (let i = 0; i < cuits.length; i += 200) {
+        const { data: provs } = await supabase.from('proveedores').select('cuit, fc_modo').in('cuit', cuits.slice(i, i + 200))
+        for (const p of provs ?? []) fcModoPorCuit.set(String(p.cuit).replace(/\D/g, ''), p.fc_modo ?? null)
+      }
+    }
+
     // ── MODO PREVIEW ─────────────────────────────────────────────────────────
     if (modoPreview) {
       // Traer claves de todos los comprobantes existentes para check de duplicados
@@ -443,6 +454,10 @@ export async function POST(req: Request) {
               cuit: f.cuit || '',
               imp_total: f.imp_total,
               cuenta_contable_sugerida: f.cuenta_contable || null,
+              // 🌐📅 nota JMS 11/11: el paso 3 muestra con qué FC y qué fecha estimada va a entrar, y de dónde salen
+              fc_sugerido: fcSugeridoImport(f.fc, fcModoPorCuit.get(String(f.cuit).replace(/\D/g, ''))).fc,
+              fc_origen: fcSugeridoImport(f.fc, fcModoPorCuit.get(String(f.cuit).replace(/\D/g, ''))).origen,
+              fecha_estimada_sugerida: f.fecha_estimada || null,
               estado: sinDatos ? 'error' : duplicado ? 'duplicado' : 'nueva',
             }
           } catch {
@@ -529,8 +544,12 @@ export async function POST(req: Request) {
         // Aplicar datos de imputación del frontend (fc + cuenta_contable + origen_factura)
         const filaNum = indice + 2
         const imputacion = imputacionMap.get(filaNum)
+        // 🌐 el proveedor marcado como Portal entra en Portal si la regla no dijo otra cosa (lo mismo que mostró la vista previa)
+        filaParaBBDD.fc = fcSugeridoImport(filaParaBBDD.fc, fcModoPorCuit.get(String(filaParaBBDD.cuit).replace(/\D/g, ''))).fc
         if (imputacion) {
           if (imputacion.fc) filaParaBBDD.fc = imputacion.fc
+          // 📅 la fecha estimada puesta a mano en el paso 3 pisa la calculada (emisión + 15, o emisión si es débito)
+          if (imputacion.fecha_estimada) (filaParaBBDD as any).fecha_estimada = imputacion.fecha_estimada
           if (imputacion.cuenta_contable) filaParaBBDD.cuenta_contable = imputacion.cuenta_contable
           if (imputacion.detalle) (filaParaBBDD as any).detalle = imputacion.detalle
         }

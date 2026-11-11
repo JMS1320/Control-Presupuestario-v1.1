@@ -184,3 +184,22 @@ export function huellaDeLaCarga(
     .filter(k => !igual(leido[k], cargado[k]))
     .map(k => ({ campo: k, leido: leido[k] ?? null, cargado: cargado[k] ?? null }))
 }
+
+/**
+ * 🌐 El FC con el que arranca una factura importada, y de dónde sale (nota 🌙 JMS 11/11: «no se ve si están en portal…
+ * se debe poder fijar que algo es portal para las próximas»; A-BUG-1243). Manda la regla de importación del CUIT; si no
+ * dice nada, el proveedor marcado como Portal. Sin ninguno de los dos, «Buscar» (se busca el PDF).
+ */
+export function fcSugeridoImport(fcDeRegla: string | null | undefined, fcModoProveedor: string | null | undefined): { fc: string; origen: 'regla' | 'proveedor' | null } {
+  if (fcDeRegla && fcDeRegla !== 'Buscar') return { fc: fcDeRegla, origen: 'regla' }
+  if (fcModoProveedor === 'portal') return { fc: 'Portal', origen: 'proveedor' }
+  return { fc: 'Buscar', origen: null }
+}
+
+/** Una fecha puesta a mano en la importación: sólo vale si es un día real `AAAA-MM-DD`; si no, se ignora. */
+export function fechaManualValida(v: unknown): string | null {
+  const s = String(v ?? '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null
+  const d = new Date(s + 'T12:00:00Z')
+  return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s ? s : null
+}

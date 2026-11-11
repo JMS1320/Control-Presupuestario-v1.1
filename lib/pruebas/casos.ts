@@ -389,7 +389,7 @@ import { armarSaldosProductivos, sistemaProductivoAlCierre, diaAnterior } from "
 import { armarFilaDato, leerNumero, textoEstadoGuardado, MARCA_TENTATIVO, esTentativo, fuenteTentativo, confirmarFila, leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
 import { leerFacturaDelTexto, precargaDesdeLectura, cuitValido, parsearImporte } from "@/lib/gas-pdf/leer-factura"
-import { controlDeLaCarga, camposDeLaCarga, huellaDeLaCarga, aNegativoSiNC } from "@/lib/facturas/alta-factura"
+import { controlDeLaCarga, camposDeLaCarga, huellaDeLaCarga, aNegativoSiNC, fcSugeridoImport, fechaManualValida } from "@/lib/facturas/alta-factura"
 import { faltantesDelSubdiario } from "@/lib/gas-pdf/faltantes"
 import { parsearLineaMovimiento, parsearResumen as parsearResumenTarjeta } from "@/lib/tarjetas/parseo-resumen-pdf"
 import {
@@ -4409,6 +4409,16 @@ export function correrCasos(): Resultado[] {
     const sinDoble = armarLibroDiario([autoYManual], [], ej, undefined, { esteEjercicio: [{ ...autoYManual, provision_motivo: "x" }], anterior: [] })
     chequear("Balance · provisión", "Si una ya entraba por la regla y además se marcó a mano, no se cuenta dos veces",
       "1", String(sinDoble.provisiones.length), sinDoble.provisiones.length === 1, "A-FEAT-1331")
+
+    // 🌐📅 nota JMS 11/11 (importar facturas): el FC con que arranca — manda la regla, si no el proveedor Portal — y la fecha a mano
+    {
+      const v = [fcSugeridoImport("No", "portal"), fcSugeridoImport("Buscar", "portal"), fcSugeridoImport(null, "mail"), fcSugeridoImport(null, null)]
+        .map(x => `${x.fc}/${x.origen ?? "-"}`).join(" · ")
+      chequear("Facturas · importar", "🌐 El FC sugerido: la regla manda; si no dice nada, el proveedor de Portal; si no, Buscar",
+        "No/regla · Portal/proveedor · Buscar/- · Buscar/-", v, v === "No/regla · Portal/proveedor · Buscar/- · Buscar/-", "A-BUG-1243")
+      const f = [fechaManualValida("2026-11-30"), fechaManualValida("2026-02-30"), fechaManualValida(""), fechaManualValida("30/11/2026")].map(x => x ?? "nada").join(" · ")
+      chequear("Facturas · importar", "📅 La fecha estimada puesta a mano sólo se usa si es un día real", "2026-11-30 · nada · nada · nada", f, f === "2026-11-30 · nada · nada · nada", "A-BUG-1243")
+    }
 
     // 🧾 A-FEAT-1564 — una VENTA puesta a mano: entra a la provisión como venta (→ 03.1 cobros), no a las compras ni a la lista
     //    del ejercicio anterior (que es del papel 05).
