@@ -149,3 +149,13 @@ export function cuitsDiscrepan(
 export function motivoCuitDistinto(cuitDelBanco: string, cuitDelOrigen: string): string {
   return `El banco informa CUIT ${cuitDelBanco} y el origen tiene ${cuitDelOrigen}`
 }
+
+/**
+ * 🧹 nota JMS 11/11 — ¿el movimiento estaba vinculado a algo (sueldo, template, factura, venta, anticipo)? Si estaba, el
+ * proveedor que muestra salió de ese vínculo; al pasarlo a mano a un template SIN proveedor (Caja), ese nombre queda viejo.
+ */
+export function teniaVinculoPrevio(m: Record<string, unknown> | null | undefined): boolean {
+  if (!m) return false
+  return ["sueldo_pago_id", "template_id", "template_cuota_id", "comprobante_arca_id", "comprobante_venta_id", "anticipo_id"]
+    .some(k => m[k] != null && m[k] !== "")
+}

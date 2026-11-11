@@ -361,7 +361,7 @@ import {
   armarCandidatos, dondeSeCargaElCuit,
   type VentaEsperando, type FacturaVenta, type Vinculo,
 } from "@/lib/ventas/candidatos-factura"
-import { heredarDelOrigen, bancoDeLaCuenta, proveedorDelTemplate, cuitsDiscrepan } from "@/lib/conciliacion/datos-del-origen"
+import { heredarDelOrigen, bancoDeLaCuenta, proveedorDelTemplate, cuitsDiscrepan, teniaVinculoPrevio } from "@/lib/conciliacion/datos-del-origen"
 import { esHistorico, estadoCuotaAlDesvincular, contarEstadisticasExtracto } from "@/lib/conciliacion/estado-historico"
 import { buscarConDobleAudit, type VinculoEnAuditar } from "@/lib/conciliacion/doble-audit"
 import { firmaDeMovimiento, parsearMovimiento, proponerMapeo, splitMovimiento, auditarSubtipo, resolverFilaExistente, contenidoDeCampo, grupoParaGuardar, grupoSugeridoParaTipo, GRUPOS_GALICIA, claveDedupMovimiento, claveDeTipo, tipoDeMovimiento, tieneReglaPropia, columnasRepetidas, reglasDeLaPropuesta, estaSinParsear, tieneGrupoPrevisto } from "@/lib/extractos/parseo-movimiento"
@@ -373,7 +373,7 @@ import { duenoDelBien, codigoEsperado } from "@/lib/balance/dueno-de-bienes"
 import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCuentasCorrientes, bloqueDeLecturas, hojaPorCuenta, hojaResumenMensual, hojaDeAsientos, conTotalAlPie, hojaDeGastosBancarios, hojaDeCuentas, hojaRespaldoDeCuentas } from "@/lib/balance/export-libro-diario"
 import type { LibroDiario as LibroDiarioT } from "@/lib/balance/libro-diario"
 import { juntarTandas, lecturaIncompleta, juntarHasta, mensajeLecturaIncompleta } from "@/lib/supabase-paginado"
-import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
+import { evaluarReglaConciliacion, esExtraccionDeEfectivo } from "@/lib/conciliacion/evaluar-regla"
 import * as XLSXcasos from "xlsx"
 import { botonesOrden, alMarcarHecha, alRechazar, PENDIENTE_DE_CONSUMO } from "@/lib/productivo/confirmacion-ordenes"
 import { ocurrenciasDeCampania, sugerirAgrupar, fechasIatf, chequearIatf, chequearEntore, fechaEnCampania, campaniaDe, fechaCorta,
@@ -11031,6 +11031,16 @@ export function correrCasos(): Resultado[] {
         evaluarReglaConciliacion(movRes, { columna_busqueda: "nombre", tipo_match: "contiene", texto_buscar: "RESLIBERTAD" })].map(String).join(" · ")
       chequear("Conciliación", "Una regla de texto no falla por espacios de más (ni en el banco ni en la regla); sin espacio sigue sin coincidir",
         "true · true · false", vEsp, vEsp === "true · true · false", "A-FEAT-1606")
+      // 💵 nota JMS 11/11: sólo la extracción de efectivo se saltea el Cash Flow (no su impuesto ni su comisión)
+      const vEx = ["EXTRACCION EN AUTOSERVICIO", "Extraccion Cajero", "Impuesto Deb.ley 25413 Extrac. Efect.", "Comision Extraccion En Efectivo", "TRANSFERENCIA A TERCEROS"]
+        .map(d => String(esExtraccionDeEfectivo(d))).join(" · ")
+      chequear("Conciliación", "💵 La extracción de efectivo no se busca en el Cash Flow; su impuesto, su comisión y una transferencia sí",
+        "true · true · false · false · false", vEx, vEx === "true · true · false · false · false", "A-BUG-1608")
+      // 🧹 nota JMS 11/11: pasado a Caja a mano, el proveedor de un vínculo viejo (el sueldo de Wilson) se limpia
+      const vVin = [teniaVinculoPrevio({ sueldo_pago_id: "x" }), teniaVinculoPrevio({ template_id: "t" }), teniaVinculoPrevio({ sueldo_pago_id: null, template_id: "" }), teniaVinculoPrevio(null)]
+        .map(String).join(" · ")
+      chequear("Conciliación", "🧹 ¿Tenía un vínculo previo? (sueldo o template sí; vacíos no) — decide si se limpia el proveedor al pasar a un template sin proveedor",
+        "true · true · false · false", vVin, vVin === "true · true · false · false", "A-BUG-1608")
     }
 
     // ── Tipos de parseo: sin puntos y sin número de cheque son el mismo tipo (A-FEAT-1347) ──

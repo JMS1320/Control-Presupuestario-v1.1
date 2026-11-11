@@ -106,6 +106,7 @@ import { extractoDelLink } from "@/lib/extracto/link"
 import { FiltroColumna } from "@/components/ui/filtro-columna"
 import { opcionesDeColumna, filtrarPorColumnas, seleccionConBusqueda } from "@/lib/ui/filtro-columna"
 import { esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
+import { teniaVinculoPrevio } from "@/lib/conciliacion/datos-del-origen"
 import { pegadaSigueVisible } from "@/lib/extracto/alcance-filtros"
 import { BarraResumen } from "@/components/ui/barra-resumen"
 
@@ -2730,6 +2731,12 @@ Pasan a conciliado junto con su factura o cuota. El motivo queda en la nota.`)) 
         // pisa con null cuando el CUIT no está en el maestro (punto 4).
         const nombreProvTpl = provTemplate?.razon_social || templateElegido.denominacion_emisor || null
         if (nombreProvTpl) updateTemplate.proveedor_nombre = nombreProvTpl
+        /**
+         * 🧹 nota JMS 11/11 («lo cambié a caja y quedó Wilson Barreto en proveedor, ojo»): si el template nuevo no tiene
+         * proveedor (Caja) y el movimiento ESTABA vinculado a otra cosa (un sueldo, otro template, una factura), el proveedor
+         * que tenía venía de ese vínculo viejo: se limpia. Sin vínculo previo se deja (puede ser lo que escribiste vos).
+         */
+        else if (teniaVinculoPrevio(movimientoAsignando)) updateTemplate.proveedor_nombre = null
         // 📝 A-DAT-51 — ídem ARCA: el nombre del template ya va al comprobante y el proveedor a su
         //    columna. Inventar un detalle con los dos era copiar las dos celdas de al lado.
         //    ⚠️ Lo escrito a mano se sigue respetando (eso era A-BUG-05).

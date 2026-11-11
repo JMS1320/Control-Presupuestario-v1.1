@@ -94,3 +94,13 @@ export function evaluarReglaConciliacion(mov: Record<string, unknown>, regla: Re
   if (!texto) return false
   return valoresDeColumna(mov, regla.columna_busqueda).some(v => coincide(v, texto, regla.tipo_match))
 }
+
+/**
+ * 💵 nota JMS 11/11 — una EXTRACCIÓN DE EFECTIVO no le paga a nadie: pasa plata del banco a la caja. El motor no la busca en
+ * el Cash Flow (el 14/10 una extracción de $ 200.000 de MA se tomó como el anticipo de sueldo de Wilson Barreto, del mismo
+ * monto) y va directo a su regla de Caja. Sólo la extracción («Extracción en autoservicio», «Extracción cajero»): el
+ * impuesto y la comisión de la extracción siguen buscando su par como siempre (JMS: «en principio no a los demás»).
+ */
+export function esExtraccionDeEfectivo(descripcion: unknown): boolean {
+  return /^\s*extracci[oó]n\b/i.test(String(descripcion ?? ""))
+}

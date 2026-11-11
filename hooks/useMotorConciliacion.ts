@@ -16,7 +16,7 @@ import {
 } from "@/lib/conciliacion/proveedor-del-movimiento"
 import { ReglaConciliacion, MovimientoBancario, ResultadoConciliacion } from "@/types/conciliacion"
 import { schemaDeFila } from "@/lib/empresas"
-import { evaluarReglaConciliacion } from "@/lib/conciliacion/evaluar-regla"
+import { evaluarReglaConciliacion, esExtraccionDeEfectivo } from "@/lib/conciliacion/evaluar-regla"
 import { puedeVincularseSola, buscarFacturaDeOtraEmpresa } from "@/lib/conciliacion/cruce-empresa"
 import { columnasDelExtracto } from "@/lib/conciliacion/columnas-extracto"
 import { heredarDelOrigen, bancoDeLaCuenta, cuitsDiscrepan, motivoCuitDistinto, type TemplateOrigen } from "@/lib/conciliacion/datos-del-origen"
@@ -589,10 +589,12 @@ export function useMotorConciliacion() {
           }
 
           // PASO 1: Intentar match con Cash Flow
-          let matchCF: any = forzada ? { match: false } : (poolTarjeta.length ? buscar(movimiento, poolTarjeta) : { match: false })
-          if (!forzada && !matchCF.match) matchCF = buscar(movimiento, datosCF)
+          // 💵 nota JMS 11/11: una extracción de efectivo no se busca en el Cash Flow — va a su regla de Caja
+          const sinCashFlow = !!forzada || esExtraccionDeEfectivo(movimiento.descripcion)
+          let matchCF: any = sinCashFlow ? { match: false } : (poolTarjeta.length ? buscar(movimiento, poolTarjeta) : { match: false })
+          if (!sinCashFlow && !matchCF.match) matchCF = buscar(movimiento, datosCF)
           // 🔀 A-FEAT-1370 — nada de la propia empresa: ¿una factura de OTRA? Sólo a auditar, nunca sola.
-          if (!forzada && !matchCF.match) {
+          if (!sinCashFlow && !matchCF.match) {
             const ajena = buscarFacturaDeOtraEmpresa(movimiento as any,
               sinUsar([...poolTarjetaAjeno, ...datosCF]).filter(f => !enAuditar.has(String(f.id))) as any[],
               cuenta.empresa, extraerCuitBancario(movimiento))
