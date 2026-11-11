@@ -2702,6 +2702,27 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
    * registro del archivo digital; si el PDF todavía no se leyó (salió de «Contar»), se registra ahí
    * mismo como «sin leer». `null` = sacar el veredicto.
    */
+  /**
+   * 🗑️ A-FEAT-1619 (JMS 11/11: «poder borrar el archivo con un por qué. Sólo para JMS… el PDF duplicado»). Sólo admin y
+   * sólo con veredicto Duplicado / No es factura. NO se borra (regla del proyecto): el GAS lo MUEVE a «_descartados»
+   * dentro de la misma carpeta, con el motivo en su descripción, y sale de la lista. Se recupera moviéndolo de vuelta.
+   */
+  const sacarDeLaCarpeta = async (h: { archivo: string; url: string }, sugerido: string) => {
+    const motivo = window.prompt(`Sacar «${h.archivo}» de la carpeta del mes.
+
+No se borra: va a la subcarpeta «_descartados» (se puede recuperar).
+
+¿Por qué?`, sugerido)
+    if (!motivo || !motivo.trim()) return
+    try {
+      const r = await fetch('/api/gas/descartar-pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ file_url: h.url, motivo: motivo.trim() }) })
+      const d = await r.json()
+      if (!d.ok) { toast.error('No se pudo sacar: ' + (d.error || '')); return }
+      setHuerfanosSupervision(prev => prev.filter(x => x.url !== h.url))
+      toast.success(`«${h.archivo}» pasó a «_descartados»`)
+    } catch (e) { toast.error('Error de red: ' + (e as Error).message) }
+  }
+
   const guardarVeredicto = async (h: { archivo: string; url: string }, v: Veredicto | null) => {
     const fid = fileIdDeUrl(h.url)
     if (!fid) { toast.error('No se pudo sacar el identificador del archivo de su link.'); return }
@@ -7627,7 +7648,8 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                           onChange={e => guardarVeredicto(h, (e.target.value || null) as Veredicto | null)}
                           className={`text-xs border rounded px-1 py-0.5 ${reg?.veredicto ? 'bg-amber-50 border-amber-300' : ''}`}>
                           <option value="">— sin veredicto —</option>
-                          {VEREDICTOS.map(v => <option key={v.valor} value={v.valor} title={v.ayuda}>{v.etiqueta}</option>)}
+                          {/* A-DEC-1031: «No informada» es de la FACTURA, no del PDF — sólo se ve si ya estaba puesto */}
+                          {VEREDICTOS.filter(v => v.valor !== 'no_informada' || reg?.veredicto === 'no_informada').map(v => <option key={v.valor} value={v.valor} title={v.ayuda}>{v.etiqueta}</option>)}
                         </select>
                         <input value={notaVeredicto[h.url] ?? reg?.veredicto_nota ?? ''}
                           onChange={e => setNotaVeredicto(prev => ({ ...prev, [h.url]: e.target.value }))}
@@ -7636,15 +7658,26 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                         {reg?.veredicto_at && (
                           <span className="text-[11px] text-gray-400">{reg.veredicto_por ? `${String(reg.veredicto_por).split('@')[0]} · ` : ''}{formatearFecha(diaArgentino(new Date(reg.veredicto_at)))}</span>
                         )}
+                        {/* 🗑️ A-FEAT-1619: sólo JMS, sólo duplicados y lo que no es factura — se mueve, no se borra */}
+                        {userRole === 'admin' && (reg?.veredicto === 'duplicado' || reg?.veredicto === 'no_es_factura') && (
+                          <Button size="sm" variant="outline" className="h-6 text-xs px-2 border-red-300 text-red-700 hover:bg-red-50"
+                            title="Lo mueve a la subcarpeta «_descartados» del mes con el motivo (no se borra; se puede recuperar)"
+                            onClick={() => sacarDeLaCarpeta(h, `${reg.veredicto === 'duplicado' ? 'Duplicado' : 'No es factura'}${reg.veredicto_nota ? ': ' + reg.veredicto_nota : ''}`)}>
+                            🗑️ Sacar de la carpeta
+                          </Button>
+                        )}
                       </span>
                     )}
                     {/* 📄➡️🧾 Cargarlo como factura No Informada (A-FEAT-1318): para los que no están en ARCA */}
-                    <Permisable recurso="egresos.cargar-desde-pdf"><Button size="sm" variant="outline"
+                    {/* 📄 A-DEC-1031 (JMS 11/11: «creo que este cargar factura acá no va… precisamos saberlo de las facturas, no
+                        de los PDF»): ya no se ofrece en la lista de PDFs sin factura. Una factura no informada se carga desde
+                        Facturas ARCA → Importar (origen «No Informada»). */}
+                    {false && <Permisable recurso="egresos.cargar-desde-pdf"><Button size="sm" variant="outline"
                       className={`h-6 text-xs px-2 ${reg?.veredicto === 'no_informada' ? 'border-amber-400 bg-amber-50' : ''}`}
                       title="Cargarlo como factura No Informada con los datos que la app leyó del PDF (sin armar un Excel)"
                       onClick={() => setCargarPdf({ nombre: h.archivo, url: h.url, file_id: fileIdDeUrl(h.url), texto: reg?.texto ?? null })}>
                       📄 Cargar como factura
-                    </Button></Permisable>
+                    </Button></Permisable>}
                     {reg?.veredicto && (
                       <p className="w-full text-[11px] text-amber-800">{VEREDICTOS.find(v => v.valor === reg.veredicto)?.ayuda}</p>
                     )}
