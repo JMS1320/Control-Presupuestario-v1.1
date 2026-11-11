@@ -158,6 +158,12 @@ export function PanelFacturasSinPdf({ filas: filasTodas, rotuloDe, dondeBusca, b
         </Button>
         {buscando && <span className="text-xs text-blue-700">Hay una búsqueda corriendo: el avance está en el cartel de arriba a la derecha.</span>}
       </div>
+      {/* ℹ️ nota JMS 11/11 («¿por qué me pinta de negro algunas y otras de gris?»): lo dice la pantalla */}
+      {filas.some(f => !f.buscable) && (
+        <p className="text-[11px] text-gray-500 mb-1">
+          <span className="text-gray-400 font-medium">En gris</span>: la factura tiene el FC en <b>No</b>, <b>OK</b> o <b>VER</b> (o es del histórico): no se pide ni se busca, por eso no viene tildada. Si hay que conseguir su PDF, cambiale el FC a «Buscar» y se pone en negro.
+        </p>
+      )}
       <div className="overflow-auto max-h-96">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-white border-b text-xs text-muted-foreground">
@@ -180,7 +186,8 @@ export function PanelFacturasSinPdf({ filas: filasTodas, rotuloDe, dondeBusca, b
           </thead>
           <tbody>
             {filas.map(f => (
-              <tr key={f.id} className={`border-b align-top ${f.buscable ? '' : 'text-gray-400'}`}>
+              <tr key={f.id} className={`border-b align-top ${f.buscable ? '' : 'text-gray-400'}`}
+                title={f.buscable ? undefined : 'En gris: FC en No / OK / VER (o histórico) — no se pide ni se busca. Para pedirla, cambiale el FC a «Buscar».'}>
                 <td className="p-1"><input type="checkbox" checked={tildadas.has(f.id)} onChange={() => alternar(f.id)} /></td>
                 <td className="p-1 whitespace-nowrap">{fechaAR(f.fecha_emision)}</td>
                 <td className="p-1">

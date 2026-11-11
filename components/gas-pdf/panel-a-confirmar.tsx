@@ -39,6 +39,9 @@ export function PanelAConfirmar({ facturas, onElegir, onDescartar, onConfirmarAp
   const [hechas, setHechas] = useState<Map<string, string>>(new Map())       // factura → «Confirmada» / «sin candidatos»
   const [descartados, setDescartados] = useState<Set<string>>(new Set())    // factura|url
   const [ocupado, setOcupado] = useState<string | null>(null)
+  // ✅ nota 🌙 JMS 11/11 («posibilidad de confirmarlos todos juntos o varios seleccionados»): tildar y confirmar en tanda
+  const [tildadas, setTildadas] = useState<Set<string>>(new Set())
+  const [progreso, setProgreso] = useState<string | null>(null)
   const ver = facturas.filter(f => f.fc === 'VER' && !f.pdf_drive_url)
   const app = facturas.filter(f => f.fc === 'APP' && f.pdf_drive_url)
   const clave = ver.map(f => f.id).join(',')
@@ -65,6 +68,23 @@ export function PanelAConfirmar({ facturas, onElegir, onDescartar, onConfirmarAp
   const hacer = async (facturaId: string, fn: () => Promise<void>) => {
     setOcupado(facturaId)
     try { await fn() } finally { setOcupado(null) }
+  }
+
+  /** Confirma de a una (por el mismo camino que el botón de cada fila) y dice cuántas salieron. */
+  const confirmarTildadas = async (ids: string[]) => {
+    const lista = app.filter(f => ids.includes(f.id) && !hechas.get(f.id))
+    if (!lista.length) return
+    setOcupado('lote')
+    let ok = 0
+    try {
+      for (const [i, f] of lista.entries()) {
+        setProgreso(`Confirmando ${i + 1} de ${lista.length}…`)
+        if (await onConfirmarApp(f.id, f.pdf_drive_url!)) { ok++; setHechas(p => new Map(p).set(f.id, 'Confirmada ✓')) }
+      }
+    } finally {
+      setOcupado(null); setTildadas(new Set())
+      setProgreso(ok === lista.length ? `${ok} confirmada(s) ✓` : `${ok} de ${lista.length} confirmadas — las otras no se pudieron`)
+    }
   }
 
   if (ver.length === 0 && app.length === 0) {
@@ -125,11 +145,34 @@ export function PanelAConfirmar({ facturas, onElegir, onDescartar, onConfirmarAp
       {app.length > 0 && (
         <section>
           <h3 className="text-sm font-semibold">✅ APP — la app ya vinculó un archivo <span className="text-gray-400 font-normal">({app.length})</span></h3>
-          <p className="text-[11px] text-gray-500 mb-1">Abrí el PDF: si es ésa, <b>Confirmar</b> la deja Confirmada con el mismo archivo.</p>
+          <p className="text-[11px] text-gray-500 mb-1">Abrí el PDF: si es ésa, <b>Confirmar</b> la deja Confirmada con el mismo archivo. Para varias: tildalas y «Confirmar las tildadas».</p>
+          {(() => {
+            const pendientes = app.filter(f => !hechas.get(f.id))
+            const todas = pendientes.length > 0 && pendientes.every(f => tildadas.has(f.id))
+            return (
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input type="checkbox" checked={todas} disabled={!pendientes.length || !!ocupado}
+                    onChange={e => setTildadas(e.target.checked ? new Set(pendientes.map(f => f.id)) : new Set())} />
+                  tildar todas
+                </label>
+                <button type="button" disabled={!tildadas.size || !!ocupado}
+                  className="text-emerald-700 border border-emerald-300 rounded px-2 py-0.5 hover:bg-emerald-50 disabled:opacity-40"
+                  onClick={() => confirmarTildadas([...tildadas])}>✓ Confirmar las {tildadas.size} tildadas</button>
+                {progreso && <span className="text-gray-600">{progreso}</span>}
+              </div>
+            )
+          })()}
           <table className="w-full">
             <tbody>
               {app.map(f => (
                 <tr key={f.id} className="border-b align-top">
+                  <td className="p-1 w-5">
+                    {!hechas.get(f.id) && (
+                      <input type="checkbox" checked={tildadas.has(f.id)} disabled={!!ocupado}
+                        onChange={e => setTildadas(p => { const n = new Set(p); e.target.checked ? n.add(f.id) : n.delete(f.id); return n })} />
+                    )}
+                  </td>
                   <td className="p-1 whitespace-nowrap">{f.rotulo}</td>
                   <td className="p-1 max-w-[200px] truncate" title={f.proveedor}>{f.proveedor}</td>
                   <td className="p-1 whitespace-nowrap text-gray-500">ARCA: {fechaAR(f.fecha_emision)} · {pesos(f.imp_total)}</td>
