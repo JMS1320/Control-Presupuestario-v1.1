@@ -105,6 +105,7 @@ import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 import { extractoDelLink } from "@/lib/extracto/link"
 import { FiltroColumna } from "@/components/ui/filtro-columna"
 import { opcionesDeColumna, filtrarPorColumnas, seleccionConBusqueda } from "@/lib/ui/filtro-columna"
+import { esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { pegadaSigueVisible } from "@/lib/extracto/alcance-filtros"
 import { BarraResumen } from "@/components/ui/barra-resumen"
 
@@ -310,7 +311,23 @@ export function VistaExtractoBancario() {
     }
   }, [configuradorAbierto]) // eslint-disable-line react-hooks/exhaustive-deps
   const [selectorAbierto, setSelectorAbierto] = useState(false)
-  const [filtroEstado, setFiltroEstado] = useState<'Todos' | 'conciliado' | 'pendiente' | 'auditar' | 'historico'>('Todos')
+  /** Un estado, 'Todos', o varios separados por coma (los chips se combinan: nota 🌙 JMS 11/11). */
+  const [filtroEstado, setFiltroEstado] = useState<string>('Todos')
+  /**
+   * 🖱️ nota 🌙 JMS 11/11 («acá debería poder elegir los 2, pendientes y auditar»): los chips de ESTADO con el gesto común
+   * (`lib/ui/chips.ts`): click prende o apaga ése, Ctrl+click deja sólo ése; todos apagados = todos los estados.
+   */
+  const estadosElegidos = new Set(filtroEstado === 'Todos' ? [] : filtroEstado.split(','))
+  const clickChipEstado = (e: { ctrlKey?: boolean; metaKey?: boolean }, est: string) => {
+    let n = new Set(filtroCategEspecial ? [] : estadosElegidos)
+    if (esSoloEste(e)) n = new Set([est])
+    else n.has(est) ? n.delete(est) : n.add(est)
+    const valor = n.size === 0 ? 'Todos' : [...n].join(',')
+    setFiltroEstado(valor)
+    setFiltroCategEspecial(null)
+    cargarMovimientos(construirFiltros({ estado: valor }))
+  }
+  const chipEstadoPrendido = (est: string) => !filtroCategEspecial && estadosElegidos.has(est)
   const [modoEdicion, setModoEdicion] = useState(false)
   /** ✓ A-FEAT-1300 — OK masivo: deja a la vista sólo lo «auditar» de lo filtrado, con casillas. */
   const [modoOkAuditar, setModoOkAuditar] = useState(false)
@@ -1240,6 +1257,40 @@ ${texto.trim()}` : texto.trim()
       await recargar()
       await capturarCorrida(cuenta, antes as any)
     }
+  }
+
+  /**
+   * 🛒 nota 🌙 JMS 11/11 — «para conciliar MA sería bueno poder adjudicar el resto de lo que esté en "pendiente" (sólo
+   * pendiente) en pantalla, poder pasarlo a consumo». Toma los PENDIENTES que se ven y les aplica la regla de la categoría
+   * elegida (la de orden más bajo de esa cuenta), por el mismo camino del motor: categ, códigos y cuota en su template.
+   * Sin el detalle de la regla (es el de UN comercio: «Supermercado Dia»): cada movimiento queda con el suyo.
+   */
+  const [reglasDeLaCuenta, setReglasDeLaCuenta] = useState<any[]>([])
+  const [categPasarA, setCategPasarA] = useState('')
+  useEffect(() => {
+    if (!cuentaSeleccionada) { setReglasDeLaCuenta([]); return }
+    supabase.from('reglas_conciliacion').select('*').eq('cuenta_bancaria_id', cuentaSeleccionada).eq('activo', true).order('orden')
+      .then(({ data }) => {
+        const porCateg = new Map<string, any>()
+        for (const r of data ?? []) if (r.categ && !porCateg.has(r.categ)) porCateg.set(r.categ, r)
+        const lista = [...porCateg.values()]
+        setReglasDeLaCuenta(lista)
+        setCategPasarA(prev => lista.some(r => r.categ === prev) ? prev : (lista.find(r => /^consumo/i.test(r.categ))?.categ ?? ''))
+      })
+  }, [cuentaSeleccionada])
+  const pendientesEnPantalla = movimientosVisibles.filter(m => (m as any).estado === 'pendiente' && esFilaConciliable(m as any))
+  const pasarPendientesA = async () => {
+    const cuenta = cuentasDisponibles.find(c => c.id === cuentaSeleccionada)
+    const regla = reglasDeLaCuenta.find(r => r.categ === categPasarA)
+    if (!cuenta || !regla || pendientesEnPantalla.length === 0) return
+    const total = pendientesEnPantalla.reduce((t, m: any) => t + (Number(m.debitos) || 0) - (Number(m.creditos) || 0), 0)
+    if (!window.confirm(`Se pasan a «${regla.categ}» los ${pendientesEnPantalla.length} movimiento(s) PENDIENTES que se ven ` +
+      `(neto $ ${total.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}), con su cuota en el template de esa regla.\n\n` +
+      `Los que están en otro estado no se tocan. ¿Seguir?`)) return
+    setInfoLote({ scope: 'filtrado', cuenta: cuenta.nombre, solicitados: pendientesEnPantalla.length })
+    await ejecutarConciliacion(cuenta, pendientesEnPantalla as any, { reglaForzada: { ...regla, detalle: null } })
+    await recargar()
+    await capturarCorrida(cuenta, pendientesEnPantalla as any)
   }
 
   /**
@@ -3663,6 +3714,20 @@ ${marca}` : marca
             )}
           </Button>
           </Permisable>
+          {/* 🛒 nota JMS 11/11: lo PENDIENTE que se ve, a una categoría (ej. Consumos) de una vez */}
+          {cuentaSeleccionada && reglasDeLaCuenta.length > 0 && pendientesEnPantalla.length > 0 && (
+            <Permisable recurso="extracto.conciliar">
+            <div className="flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs"
+              title="Les aplica a los pendientes que se ven la regla de esa categoría (como si el motor la hubiera encontrado): categoría, códigos y cuota en su template">
+              <span>Pasar los {pendientesEnPantalla.length} pendientes en pantalla a</span>
+              <select className="border rounded px-1 py-0.5 text-xs bg-white" value={categPasarA} onChange={e => setCategPasarA(e.target.value)}>
+                <option value="">— elegí —</option>
+                {reglasDeLaCuenta.map(r => <option key={r.categ} value={r.categ}>{r.categ}</option>)}
+              </select>
+              <Button size="sm" className="h-6 text-xs px-2" disabled={!categPasarA || procesoEnCurso} onClick={pasarPendientesA}>Pasar</Button>
+            </div>
+            </Permisable>
+          )}
         </div>
       </div>
 
@@ -3974,6 +4039,7 @@ ${marca}` : marca
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Todos">Todos los estados</SelectItem>
+                    {filtroEstado.includes(',') && <SelectItem value={filtroEstado}>{filtroEstado.split(',').join(' + ')}</SelectItem>}
                     <SelectItem value="conciliado">Conciliados</SelectItem>
                     <SelectItem value="pendiente">Pendientes</SelectItem>
                     <SelectItem value="auditar">Para Auditar</SelectItem>
@@ -4060,26 +4126,20 @@ ${marca}` : marca
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs text-gray-500 mr-1">Filtros rápidos:</span>
                 <Button
-                  variant={filtroEstado === 'pendiente' && !filtroCategEspecial ? "default" : "outline"}
+                  variant={chipEstadoPrendido('pendiente') ? "default" : "outline"}
                   size="sm"
                   className="h-7 text-xs px-2"
-                  onClick={() => {
-                    setFiltroEstado('pendiente')
-                    setFiltroCategEspecial(null)
-                    cargarMovimientos(construirFiltros({ estado: 'pendiente' }))
-                  }}
+                  title={tituloChip('Pendientes')}
+                  onClick={(e) => clickChipEstado(e, 'pendiente')}
                 >
                   Pendientes ({estadisticas.pendientes})
                 </Button>
                 <Button
-                  variant={filtroEstado === 'auditar' && !filtroCategEspecial ? "default" : "outline"}
+                  variant={chipEstadoPrendido('auditar') ? "default" : "outline"}
                   size="sm"
                   className="h-7 text-xs px-2"
-                  onClick={() => {
-                    setFiltroEstado('auditar')
-                    setFiltroCategEspecial(null)
-                    cargarMovimientos(construirFiltros({ estado: 'auditar' }))
-                  }}
+                  title={tituloChip('Auditar')}
+                  onClick={(e) => clickChipEstado(e, 'auditar')}
                 >
                   Auditar ({estadisticas.auditar})
                 </Button>
@@ -4098,15 +4158,11 @@ ${marca}` : marca
                 {/* 📜 A-DEC-1009 — el extracto histórico (jul-25 → ene-26), cargado sin clasificar. Sólo aparece si hay. */}
                 {estadisticas.historicos > 0 && (
                   <Button
-                    variant={filtroEstado === ESTADO_HISTORICO && !filtroCategEspecial ? "default" : "outline"}
+                    variant={chipEstadoPrendido(ESTADO_HISTORICO) ? "default" : "outline"}
                     size="sm"
                     className="h-7 text-xs px-2"
-                    title="Movimientos del extracto histórico cargados sin clasificar: no entran en ningún número hasta que se revisa su lote"
-                    onClick={() => {
-                      setFiltroEstado(ESTADO_HISTORICO)
-                      setFiltroCategEspecial(null)
-                      cargarMovimientos(construirFiltros({ estado: ESTADO_HISTORICO }))
-                    }}
+                    title={"Movimientos del extracto histórico cargados sin clasificar: no entran en ningún número hasta que se revisa su lote · " + tituloChip('Históricos')}
+                    onClick={(e) => clickChipEstado(e, ESTADO_HISTORICO)}
                   >
                     Históricos ({estadisticas.historicos})
                   </Button>
@@ -4136,17 +4192,15 @@ ${marca}` : marca
                   Sin CATEG ({estadisticas.sin_categ})
                 </Button>
                 <Button
-                  variant={filtroEstado === 'conciliado' && !filtroCategEspecial ? "default" : "outline"}
+                  variant={chipEstadoPrendido('conciliado') ? "default" : "outline"}
                   size="sm"
                   className="h-7 text-xs px-2"
-                  onClick={() => {
-                    setFiltroEstado('conciliado')
-                    setFiltroCategEspecial(null)
-                    cargarMovimientos(construirFiltros({ estado: 'conciliado' }))
-                  }}
+                  title={tituloChip('Conciliados')}
+                  onClick={(e) => clickChipEstado(e, 'conciliado')}
                 >
                   Conciliados ({estadisticas.conciliados})
                 </Button>
+                <span className="text-[10px] text-gray-400" title="Los chips de estado se combinan: click prende o apaga, Ctrl+click deja sólo ése">{PISTA_CTRL_CLICK}</span>
                 {/* 🧷 A-FEAT-1464 — sólo la tanda recién conciliada, para ir chequeándola (con las columnas, la barra de abajo…). */}
                 {filasCorrida.length > 0 && (
                   <Button variant={soloCorrida ? 'default' : 'outline'} size="sm" className="h-7 text-xs px-2" aria-pressed={soloCorrida}

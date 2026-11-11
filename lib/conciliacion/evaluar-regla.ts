@@ -71,9 +71,15 @@ export function valoresDeColumna(mov: Record<string, unknown>, columna: string):
   }
 }
 
+/**
+ * 🧹 nota 🌙 JMS 11/11 (conciliar MA): el banco manda «RES   LIBERTAD» con varios espacios y la regla dice «RES LIBERTAD»:
+ * no coincidía. Se comparan sin mayúsculas y con los espacios repetidos (y los de las puntas) reducidos a uno.
+ */
+const normalizarTexto = (s: string): string => s.toLowerCase().replace(/\s+/g, " ").trim()
+
 function coincide(valor: string, texto: string, tipoMatch: string): boolean {
-  const v = valor.toLowerCase()
-  const t = texto.toLowerCase()
+  const v = normalizarTexto(valor)
+  const t = normalizarTexto(texto)
   switch (tipoMatch) {
     case "exacto": return v === t
     case "contiene": return v.includes(t)

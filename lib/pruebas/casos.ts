@@ -11023,6 +11023,15 @@ export function correrCasos(): Resultado[] {
       evaluarReglaConciliacion(movPam, { columna_busqueda: "descripcion", tipo_match: "contiene", texto_buscar: "" })].map(String).join(" · ")
     chequear("Conciliación", "Reglas por descripción y por monto siguen igual; una regla con el texto vacío no coincide con todo",
       "true · true · false", vdesc, vdesc === "true · true · false", "A-BUG-1344")
+    // 🧹 nota 🌙 JMS 11/11 (conciliar MA): el banco manda «RES   LIBERTAD» con varios espacios; la regla «RES LIBERTAD» coincide igual
+    {
+      const movRes = { descripcion: "COMPRA DEBITO", leyendas_adicionales_1: "RES   LIBERTAD", debitos: 31620.15, creditos: 0 }
+      const vEsp = [evaluarReglaConciliacion(movRes, { columna_busqueda: "nombre", tipo_match: "contiene", texto_buscar: "RES LIBERTAD" }),
+        evaluarReglaConciliacion(movRes, { columna_busqueda: "nombre", tipo_match: "exacto", texto_buscar: " res libertad " }),
+        evaluarReglaConciliacion(movRes, { columna_busqueda: "nombre", tipo_match: "contiene", texto_buscar: "RESLIBERTAD" })].map(String).join(" · ")
+      chequear("Conciliación", "Una regla de texto no falla por espacios de más (ni en el banco ni en la regla); sin espacio sigue sin coincidir",
+        "true · true · false", vEsp, vEsp === "true · true · false", "A-FEAT-1606")
+    }
 
     // ── Tipos de parseo: sin puntos y sin número de cheque son el mismo tipo (A-FEAT-1347) ──
     // Tipos reales de la caja de ahorro de PAM, como los manda el banco.

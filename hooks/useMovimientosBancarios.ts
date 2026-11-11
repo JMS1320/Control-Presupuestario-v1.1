@@ -84,7 +84,8 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
 
   // Cargar movimientos bancarios
   const cargarMovimientos = async (filtros?: {
-    estado?: 'conciliado' | 'pendiente' | 'auditar' | 'historico' | 'Todos'
+    /** Un estado, 'Todos', o VARIOS separados por coma (nota 🌙 JMS 11/11: «pendientes y auditar» a la vez) */
+    estado?: string
     limite?: number
     busqueda?: string
     fechaDesde?: string
@@ -129,7 +130,8 @@ export function useMovimientosBancarios(tabla: string = 'msa_galicia', schema: s
 
       // Aplicar filtro de estado
       if (filtros?.estado && filtros.estado !== 'Todos') {
-        query = query.eq('estado', filtros.estado)
+        const estados = filtros.estado.split(',').map(x => x.trim()).filter(Boolean)
+        query = estados.length > 1 ? query.in('estado', estados) : query.eq('estado', estados[0])
       }
 
       // NOTA: la búsqueda de texto se aplica client-side en la vista (insensible a tildes),

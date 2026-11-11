@@ -465,7 +465,14 @@ export function useMotorConciliacion() {
   // Función principal de conciliación
   // movimientosOverride: si se pasa, el motor corre SOLO sobre esa lista (ej. lo filtrado/visible
   // en la vista). Si no se pasa, carga todos los pendientes de la cuenta (comportamiento por defecto).
-  const ejecutarConciliacion = async (cuenta: CuentaBancaria, movimientosOverride?: MovimientoBancario[]) => {
+  /**
+   * `opciones.reglaForzada` — 🛒 nota 🌙 JMS 11/11 («poder adjudicar el resto de lo que esté en pendiente en pantalla y
+   * pasarlo a consumo»): aplica ESA regla a los movimientos dados, sin buscar en el Cash Flow ni en las demás reglas. Es el
+   * mismo camino que cuando la regla coincide sola (categ, detalle, códigos, cuota en su template, controles de CUIT y
+   * monto), así que lo pasado a mano queda igual que lo conciliado por el motor.
+   */
+  const ejecutarConciliacion = async (cuenta: CuentaBancaria, movimientosOverride?: MovimientoBancario[], opciones?: { reglaForzada?: any }) => {
+    const forzada = opciones?.reglaForzada ?? null
     try {
       setProcesoEnCurso(true)
       setError(null)
@@ -566,7 +573,7 @@ export function useMotorConciliacion() {
           }
 
           // PASO 0 — 🧾 A-FEAT-1476: un débito de echeq contra su echeq (por número seguro; por importe, a auditar)
-          if (chequesVigentes.length && esDebitoDeCheque(movimiento.descripcion)) {
+          if (!forzada && chequesVigentes.length && esDebitoDeCheque(movimiento.descripcion)) {
             const ech = echeqDelDebito(movimiento as any, chequesVigentes.filter(c => !chequesUsados.has(c.id)))
             if (ech) {
               chequesUsados.add(ech.cheque.id)
@@ -582,10 +589,10 @@ export function useMotorConciliacion() {
           }
 
           // PASO 1: Intentar match con Cash Flow
-          let matchCF = poolTarjeta.length ? buscar(movimiento, poolTarjeta) : { match: false }
-          if (!matchCF.match) matchCF = buscar(movimiento, datosCF)
+          let matchCF: any = forzada ? { match: false } : (poolTarjeta.length ? buscar(movimiento, poolTarjeta) : { match: false })
+          if (!forzada && !matchCF.match) matchCF = buscar(movimiento, datosCF)
           // 🔀 A-FEAT-1370 — nada de la propia empresa: ¿una factura de OTRA? Sólo a auditar, nunca sola.
-          if (!matchCF.match) {
+          if (!forzada && !matchCF.match) {
             const ajena = buscarFacturaDeOtraEmpresa(movimiento as any,
               sinUsar([...poolTarjetaAjeno, ...datosCF]).filter(f => !enAuditar.has(String(f.id))) as any[],
               cuenta.empresa, extraerCuitBancario(movimiento))
@@ -857,7 +864,7 @@ export function useMotorConciliacion() {
           // PASO 1b — 🔁 A-FEAT-140: un movimiento con el CUIT de una contraparte que opera en cuenta corriente y que no paga
           // un comprobante abierto se concilia contra SU CUENTA («CTA AFA»): no se le busca factura. JMS 03/11: «¿y las cosas
           // se concilien contra cuenta corriente?». Suma solo al saldo (la cuenta corriente toma todo lo de su CUIT).
-          const ccDelMov = enCuentaCorriente.get(String(extraerCuitBancario(movimiento) ?? '').replace(/\D/g, ''))
+          const ccDelMov = forzada ? undefined : enCuentaCorriente.get(String(extraerCuitBancario(movimiento) ?? '').replace(/\D/g, ''))
           if (ccDelMov) {
             await actualizarMovimientoBD(cuenta, movimiento.id, {
               estado: 'conciliado', contable: ccDelMov.etiqueta, motivo_revision: null, proveedor_nombre: ccDelMov.nombre,
@@ -871,8 +878,8 @@ export function useMotorConciliacion() {
 
           // PASO 2-5: Aplicar reglas configurables
           let reglaAplicada = false
-          for (const regla of reglas.sort((a, b) => a.orden - b.orden)) {
-            if (evaluarRegla(movimiento, regla)) {
+          for (const regla of (forzada ? [forzada] : reglas.sort((a, b) => a.orden - b.orden))) {
+            if (forzada || evaluarRegla(movimiento, regla)) {
               resultado = {
                 movimiento_id: movimiento.id,
                 regla_aplicada: regla,
