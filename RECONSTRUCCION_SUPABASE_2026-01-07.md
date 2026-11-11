@@ -13400,3 +13400,11 @@ ALTER TABLE public.proveedores ADD COLUMN pago_dias_emision integer CHECK (pago_
 ```
 Deshacer: `scripts/264-dia-de-pago-proveedores-deshacer.sql` (las columnas no existían antes).
 
+### 2026-11-11 · `productivo.lineas_orden_agricola.unidad_dosis`: CHECK «no vacía» y varchar(20) (script 268, ESTRUCTURA) — A-BUG-1613 — ✅ APLICADO con OK de JMS (aviso previo en ENTRE-DESARROLLADORES)
+La orden agrícola ofrece dosis en L, cc, kg, g o la unidad del insumo (A-BUG-1238); el CHECK seguía en 'L','cc'.
+```sql
+ALTER TABLE productivo.lineas_orden_agricola DROP CONSTRAINT lineas_orden_agricola_unidad_dosis_check;
+ALTER TABLE productivo.lineas_orden_agricola ALTER COLUMN unidad_dosis TYPE varchar(20);
+ALTER TABLE productivo.lineas_orden_agricola ADD CONSTRAINT lineas_orden_agricola_unidad_dosis_check CHECK (btrim(unidad_dosis) <> '');
+```
+

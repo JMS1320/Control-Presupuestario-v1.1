@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 🌱 `productivo.lineas_orden_agricola.unidad_dosis`: CHECK más amplio y `varchar(20)` (2026-11-11) — ⏳ AVISO PREVIO (se corre a continuación con OK de JMS: «sí, corré el 268»)
+### 🌱 `productivo.lineas_orden_agricola.unidad_dosis`: CHECK más amplio y `varchar(20)` (2026-11-11) — ✅ APLICADA el 11/11 con OK de JMS (aviso previo): CHECK «no vacía» y varchar(20), verificado con EXPLAIN INSERT
 - A-BUG-1613: la pantalla ya ofrece kg/g/unidad desde el 05/11 y el CHECK seguía en `'L','cc'` → no guardaba la orden. Se reemplaza el CHECK por «no vacía» y la columna pasa de `varchar(5)` a `varchar(20)` (no hay vistas que dependan). `scripts/268-…` con su deshacer (vuelve el CHECK y el largo; sólo si no quedaron filas que no entren). No cambia datos. **No toca RLS, roles ni permisos.**
 
 ### 📆 2 columnas nuevas en `public.proveedores`: `pago_dia_mes` (int 1–31) y `pago_dias_emision` (int) (2026-11-11) — ✅ APLICADA el 11/11 con OK de JMS (aviso previo): 2 columnas + 5 proveedores en día 10, verificado con EXPLAIN UPDATE
