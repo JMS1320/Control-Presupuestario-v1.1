@@ -91,6 +91,25 @@ export const partidaDe = (concepto: string) => concepto.replace(/inmobiliario|co
  * 🔍 JMS 09/11 (D1.2 «siempre mostrar agrupadas»): el renglón del RESUMEN del H para auditar — impuesto → establecimiento → partida
  * («Inmobiliario — Nazarenas — Casco», «Inmobiliario — Lima», «Red Vial — Rojas»); fuera de los impuestos, el template.
  */
+/**
+ * 🏦 JMS 11/11 («preciso que se separe el imp débitos y créditos: por un lado créditos y por el otro débitos. Me lo pidió el
+ * contador»): el impuesto de la ley 25413 viene en UNA categoría («Debitos / Creditos»). Se separa por la descripción del
+ * banco: «Imp. Cre. Ley 25413» = sobre los CRÉDITOS; «Imp. Deb. …», «… Extrac. Efect.» y su devolución = sobre los DÉBITOS.
+ * `null` = no es ese impuesto (o no se sabe de qué lado es: queda como estaba).
+ */
+export function ladoImpuestoLey25413(categ: string | null | undefined, descripcionBanco: string | null | undefined): "débitos" | "créditos" | null {
+  const c = String(categ ?? "").toLowerCase(), d = String(descripcionBanco ?? "").toLowerCase()
+  if (!/d[eé]bitos?\s*\/\s*cr[eé]ditos?/.test(c) && !/25413/.test(d)) return null
+  if (/\bcre\b|\bcre\.|cr[eé]dito/.test(d) && !/\bdeb\b|\bdeb\.|d[eé]bito/.test(d)) return "créditos"
+  if (/\bdeb\b|\bdeb\.|d[eé]bito|extrac/.test(d)) return "débitos"
+  return null
+}
+/** La categoría con la que se muestra una cuota en el libro H: la del impuesto 25413 partida en débitos / créditos. */
+export function categoriaParaMostrar(c: Pick<CuotaTemplate, "categ"> & { banco?: { descripcion?: string } | null }): string {
+  const lado = ladoImpuestoLey25413(c.categ, c.banco?.descripcion)
+  return lado ? `Impuesto ley 25413 sobre los ${lado}` : (c.categ || "")
+}
+
 export function renglonAuditoria(concepto: string, establecimientoDe?: (partida: string) => string): string {
   const fam = familiaDe(concepto)
   if (fam.startsWith("9 ")) return concepto
@@ -162,7 +181,7 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
   const sinGrupo = opciones.auditoria && g.agrupadora === SIN_GRUPO
   const titulo = (x: string) => x.toLowerCase().replace(/(^|[\s,(])(\p{L})/gu, (_m, a: string, b: string) => a + b.toUpperCase())
   const enDolares = (c: CuotaTemplate) => /\bUSD\b/i.test(c.concepto)
-  const renglonDe = (c: CuotaTemplate) => sinGrupo
+  const renglonDe = (c: CuotaTemplate) => ladoImpuestoLey25413(c.categ, c.banco?.descripcion) ? categoriaParaMostrar(c) : sinGrupo
     ? `${c.categ ? titulo(c.categ) : "— sin cuenta"}${enDolares(c) ? " — pagado en US$ (importe en PESOS, al TC del día del pago)" : ""}`
     : renglonAuditoria(c.concepto, opciones.establecimientoDe)
   const primeraFecha = new Map<string, string>()
@@ -226,7 +245,7 @@ export function armarHojaGrupo(g: GrupoTemplates, etiqueta: string, meses: { cla
     },
   } : undefined
   const { filas: h, ubicacion: u } = armarResumenPorMes(g.cuotas.map(c => ({
-    categoria: opciones.auditoria ? renglonDe(c) : `${c.categ || "(sin categoría)"} — ${bancoDe(c) || "sin pago"}`, mes: (c.fecha ?? "").slice(0, 7), importe: c.monto,
+    categoria: opciones.auditoria ? renglonDe(c) : `${categoriaParaMostrar(c) || "(sin categoría)"} — ${bancoDe(c) || "sin pago"}`, mes: (c.fecha ?? "").slice(0, 7), importe: c.monto,
     // 🔍 JMS 09/11 (auditar): por IMPUESTO → PARTIDA → FECHA (Inmobiliario partida por partida, Complementario aparte, Red Vial partida por
     // partida); fuera de los impuestos, por template y fecha. El H del contador sigue por banco y fecha (04/11).
     orden: opciones.auditoria ? `${rangoAuditoria(c.concepto)}|${sinModalidad(renglonDe(c))}|${c.fecha ?? ""}|${c.concepto}` : `${bancoDe(c) ? "0" + bancoDe(c) : "1"}|${c.fecha ?? ""}|${c.concepto}`,

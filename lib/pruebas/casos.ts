@@ -36,7 +36,7 @@
 import { armarCuentaCorrienteAHoy, comprobantesQueExplicanElSaldo } from "@/lib/proveedores/cuenta-corriente-a-hoy"
 import { separarPorCuentaCorriente } from "@/lib/proveedores/opera-cuenta-corriente"
 import { operacionesEnDolares, comprasVentasDeDolares } from "@/lib/balance/operaciones-en-dolares"
-import { armarGruposTemplates, armarHojaGrupo, nombreSolapaGrupo, hojaGrupo, gruposDelResponsable } from "@/lib/balance/grupos-templates"
+import { armarGruposTemplates, armarHojaGrupo, nombreSolapaGrupo, hojaGrupo, gruposDelResponsable, ladoImpuestoLey25413, categoriaParaMostrar } from "@/lib/balance/grupos-templates"
 import { indiceDeDestinos, sinCategoriaNiVinculo, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
 import { resumirCuenta, armarEtapa2, destinoDeMovimiento } from "@/lib/balance/control-plata"
 import { hojaPapelJms } from "@/lib/impuestos/papel-formato-jms"
@@ -8990,6 +8990,14 @@ export function correrCasos(): Resultado[] {
       const vBC = filasSinCreditoPorLetra(sc).map(r => `${r.concepto}${r.cantidad != null ? `(${r.cantidad})` : ''}=${r.total}`).join(" · ")
       const espBC = "Facturas B(1)=1000 · Facturas C(2)=500 · Notas de crédito C(1)=50 · Total Neto (FC − NC)=1450"
       chequear("Subdiarios", "🅱️🅲 Sin crédito fiscal: las B separadas de las C, el total igual que antes", espBC, vBC, vBC === espBC, "A-FEAT-1616")
+    }
+    {
+      // 🏦 JMS 11/11 (pedido del contador): el impuesto ley 25413 separado en débitos y créditos, por la descripción del banco
+      const L = (d: string, categ = "Debitos / Creditos") => String(ladoImpuestoLey25413(categ, d))
+      const vL = [L("Imp. Deb. Ley 25413 Gral."), L("Impuesto Deb.ley 25413 Extrac. Efect."), L("Imp. Cre. Ley 25413"), L("Dev.imp.deb.ley 25413-alic.general"),
+        L("Comision Extraccion En Efectivo", "Gastos bancarios"), categoriaParaMostrar({ categ: "Debitos / Creditos", banco: { descripcion: "Imp. Cre. Ley 25413" } })].join(" · ")
+      const espL = "débitos · débitos · créditos · débitos · null · Impuesto ley 25413 sobre los créditos"
+      chequear("Balance · libro H", "🏦 Impuesto ley 25413: débitos (general, extracción, devolución) y créditos por separado; otra categoría no se toca", espL, vL, vL === espL, "A-FEAT-1620")
     }
   }
 
