@@ -324,7 +324,7 @@ import { leerResumenSantander, controlarResumenSantander } from "@/lib/extractos
 import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla, linkGmail, procesadoDeMail, cambiosAlReaplicar, type MailRegistrado,
   claveDeTipoMail, problemaDeTipoNuevo, contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarPendientesArriba,
   juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves, ordenarParaLista, rangoDelDia, ordenarCronologico, leerBusqueda, coincideBusquedaMail, textoBuscable } from "@/lib/mails/registro"
-import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
+import { opcionesDeColumna, filtrarPorColumnas, seleccionConBusqueda } from "@/lib/ui/filtro-columna"
 import { partesDeRuta, problemaDeRuta, estadoDestino, idDeLinkDrive } from "@/lib/archivo/destinos"
 import { mailsParaArchivar, mailsParaCuota, agruparPorRegla, anioDeMail, vinculosConArchivos, controlArchivado, agruparPorTema, estadoSeleccion } from "@/lib/mails/lotes"
 import { leerDocumento, templateSugerido, cuotaSugerida, huellaCuota, diferenciaCuota, numeroDeCuota, cuotaParaCierre } from "@/lib/mails/leer-documento"
@@ -11444,6 +11444,17 @@ export function correrCasos(): Resultado[] {
          filtrarPorColumnas(filasX, { de: new Set() }, { de: f => f.de }).length, filtrarPorColumnas(filasX, { de: new Set(["(vacío)"]) }, { de: f => f.de }).length].join(" ")
       chequear("Filtro por columna", "🔽 Lista sin repetir con su cantidad (ordenada, el vacío como «(vacío)»); sin filtro = todas, «ninguna» = 0, se puede elegir el vacío",
         "(vacío)=1 a@x.com=1 b@x.com=2 | 2 4 0 1", vX, vX === "(vacío)=1 a@x.com=1 b@x.com=2 | 2 4 0 1", "A-FEAT-1441")
+      // 🔎 nota JMS 10/11: con texto en el buscador, como Excel — queda SÓLO lo que coincide y está tildado
+      {
+        const todas = ["Impuesto Automotores", "Impuesto Inmobiliario", "Sueldos", "Honorarios"]
+        const vis = ["Impuesto Automotores", "Impuesto Inmobiliario"]
+        const f = (s: Set<string> | null) => s === null ? "todas" : [...s].sort().join("+") || "ninguna"
+        const vB = [f(seleccionConBusqueda(todas, vis, null)), f(seleccionConBusqueda(todas, vis, new Set(["Impuesto Automotores"]))),
+          f(seleccionConBusqueda(todas, vis, new Set())), f(seleccionConBusqueda(todas, todas, null))].join(" · ")
+        chequear("Filtro por columna", "🔎 Con búsqueda se filtra sólo lo que coincide y está tildado (lo elegido antes que no coincide sale)",
+          "Impuesto Automotores+Impuesto Inmobiliario · Impuesto Automotores · ninguna · todas", vB,
+          vB === "Impuesto Automotores+Impuesto Inmobiliario · Impuesto Automotores · ninguna · todas", "A-FEAT-1598")
+      }
       const vCl = [claseDeProcesado("factura archivada MSA 3-1520 (+1)"), claseDeProcesado("reenvío leído: 2 adjuntos, 1 ilegible"), claseDeProcesado("boletas_arba")].join(" | ")
       // 🚨 A-FEAT-1438: mails graves agrupados para el aviso de Principal
       const G = (o: Partial<MailRegistrado>): MailRegistrado => M({ accion: "avisar", ...o })

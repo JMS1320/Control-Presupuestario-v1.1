@@ -8,13 +8,17 @@
  * ⚠️ cambió 31/10 (A-BUG-1460, JMS: «puse "Ninguna" para después elegir cuál quería y me lo tomó definitivo y quedó
  * mostrando nada; debe funcionar como Excel: pongo Ninguna, después selecciono y le doy OK»): las casillas, «Todas» y
  * «Ninguna» cambian un BORRADOR; recién **Aceptar** filtra. Cancelar (o cerrar) lo descarta.
+ *
+ * ⚠️ cambió 11/11 (nota JMS 10/11): CON TEXTO EN EL BUSCADOR se trabaja como Excel — la lista arranca con todo lo que
+ * coincide tildado, y al aceptar el filtro queda SÓLO con lo que coincide y está tildado (`seleccionConBusqueda`). Antes
+ * se sumaba a lo que ya estaba elegido y no se veía.
  */
 
 import { useMemo, useState } from "react"
 import { Filter } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Input } from "@/components/ui/input"
-import type { OpcionColumna } from "@/lib/ui/filtro-columna"
+import { seleccionConBusqueda, type OpcionColumna } from "@/lib/ui/filtro-columna"
 
 export function FiltroColumna({ titulo, opciones, seleccion, onChange }: {
   titulo: string
@@ -31,8 +35,17 @@ export function FiltroColumna({ titulo, opciones, seleccion, onChange }: {
     return q ? opciones.filter(o => o.etiqueta.toLowerCase().includes(q) || o.valor.toLowerCase().includes(q)) : opciones
   }, [opciones, busqueda])
   const activo = seleccion !== null
-  const marcado = (v: string) => !borrador || borrador.has(v)
+  /** Con búsqueda: lo tildado entre lo que coincide (null = todo lo que coincide). Se reinicia al cambiar el texto. */
+  const [marcadasBusqueda, setMarcadasBusqueda] = useState<Set<string> | null>(null)
+  const buscando = busqueda.trim() !== ""
+  const marcado = (v: string) => buscando ? (!marcadasBusqueda || marcadasBusqueda.has(v)) : (!borrador || borrador.has(v))
   const alternar = (v: string) => {
+    if (buscando) {
+      const s = new Set(marcadasBusqueda ?? visibles.map(o => o.valor))
+      if (s.has(v)) s.delete(v); else s.add(v)
+      setMarcadasBusqueda(s)
+      return
+    }
     const s = new Set(borrador ?? opciones.map(o => o.valor))
     if (s.has(v)) s.delete(v); else s.add(v)
     setBorrador(s.size === opciones.length ? null : s)
@@ -40,13 +53,16 @@ export function FiltroColumna({ titulo, opciones, seleccion, onChange }: {
   const abrirOCerrar = (a: boolean) => {
     setAbierto(a)
     if (a) setBorrador(seleccion)
-    else setBusqueda("")
+    else { setBusqueda(""); setMarcadasBusqueda(null) }
   }
   const aceptar = () => {
-    onChange(borrador && borrador.size === opciones.length ? null : borrador)
+    if (buscando) onChange(seleccionConBusqueda(opciones.map(o => o.valor), visibles.map(o => o.valor), marcadasBusqueda))
+    else onChange(borrador && borrador.size === opciones.length ? null : borrador)
     abrirOCerrar(false)
   }
-  const elegidos = borrador ? borrador.size : opciones.length
+  const elegidos = buscando
+    ? visibles.filter(o => !marcadasBusqueda || marcadasBusqueda.has(o.valor)).length
+    : (borrador ? borrador.size : opciones.length)
 
   return (
     <Popover open={abierto} onOpenChange={abrirOCerrar}>
@@ -59,17 +75,13 @@ export function FiltroColumna({ titulo, opciones, seleccion, onChange }: {
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 p-0">
         <div className="border-b p-2">
-          <Input autoFocus placeholder={`Buscar en ${titulo.toLowerCase()}…`} value={busqueda} onChange={e => setBusqueda(e.target.value)}
+          <Input autoFocus placeholder={`Buscar en ${titulo.toLowerCase()}…`} value={busqueda} onChange={e => { setBusqueda(e.target.value); setMarcadasBusqueda(null) }}
             onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); aceptar() } }} className="h-7 text-xs" />
         </div>
         <div className="flex gap-1 border-b p-2 text-[11px]">
-          <button type="button" className="rounded bg-muted px-2 py-0.5 hover:bg-muted/70" onClick={() => setBorrador(null)}>Todas</button>
-          <button type="button" className="rounded bg-muted px-2 py-0.5 hover:bg-muted/70" onClick={() => setBorrador(new Set())}>Ninguna</button>
-          {busqueda && visibles.length > 0 && (
-            <button type="button" className="rounded bg-muted px-2 py-0.5 hover:bg-muted/70" onClick={() => setBorrador(new Set(visibles.map(o => o.valor)))}>
-              Sólo las {visibles.length} que coinciden
-            </button>
-          )}
+          <button type="button" className="rounded bg-muted px-2 py-0.5 hover:bg-muted/70" onClick={() => buscando ? setMarcadasBusqueda(null) : setBorrador(null)}>Todas</button>
+          <button type="button" className="rounded bg-muted px-2 py-0.5 hover:bg-muted/70" onClick={() => buscando ? setMarcadasBusqueda(new Set()) : setBorrador(new Set())}>Ninguna</button>
+          {buscando && <span className="self-center text-muted-foreground">se filtra sólo lo que coincide</span>}
           <span className="ml-auto self-center text-muted-foreground">{opciones.length} distintos</span>
         </div>
         <div className="max-h-72 overflow-y-auto p-1">
@@ -83,7 +95,7 @@ export function FiltroColumna({ titulo, opciones, seleccion, onChange }: {
           {visibles.length === 0 && <p className="p-2 text-xs text-muted-foreground">Nada coincide con «{busqueda}».</p>}
         </div>
         <div className="flex items-center gap-2 border-t p-2 text-xs">
-          <span className="text-muted-foreground">{elegidos} de {opciones.length} elegidos</span>
+          <span className="text-muted-foreground">{elegidos} de {buscando ? visibles.length : opciones.length} elegidos</span>
           <button type="button" className="ml-auto rounded border px-2 py-1 hover:bg-muted" onClick={() => abrirOCerrar(false)}>Cancelar</button>
           <button type="button" className="rounded bg-primary px-3 py-1 text-primary-foreground hover:opacity-90 disabled:opacity-50"
             disabled={elegidos === 0} title={elegidos === 0 ? "Elegí al menos uno" : "Aplicar el filtro"} onClick={aceptar}>Aceptar</button>

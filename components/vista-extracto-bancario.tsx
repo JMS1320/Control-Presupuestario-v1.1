@@ -104,7 +104,7 @@ import { avisarSiIncompleta } from "@/lib/ui/avisar-lectura"
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 import { extractoDelLink } from "@/lib/extracto/link"
 import { FiltroColumna } from "@/components/ui/filtro-columna"
-import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
+import { opcionesDeColumna, filtrarPorColumnas, seleccionConBusqueda } from "@/lib/ui/filtro-columna"
 import { pegadaSigueVisible } from "@/lib/extracto/alcance-filtros"
 import { BarraResumen } from "@/components/ui/barra-resumen"
 
@@ -402,6 +402,8 @@ export function VistaExtractoBancario() {
   const [categsFiltro, setCategsFiltro] = useState<Set<string> | null>(null) // null = sin filtro (mostrar todas)
   const [categFiltroAbierto, setCategFiltroAbierto] = useState(false)
   const [categFiltroBusqueda, setCategFiltroBusqueda] = useState('')
+  /** 🔎 Con texto en el buscador: lo tildado entre lo que coincide (null = todo lo que coincide), como Excel (nota JMS 10/11). */
+  const [categMarcadasBusqueda, setCategMarcadasBusqueda] = useState<Set<string> | null>(null)
   const [filtroRevisado, setFiltroRevisado] = useState<'todas' | 'revisadas' | 'no_revisadas'>('todas')
   /**
    * 📝 Filtro por NOTA DEL USUARIO — A-FEAT-130.
@@ -3482,6 +3484,7 @@ ${marca}` : marca
     setSoloSinRevisar(false)
     setCategsFiltro(null)
     setCategFiltroBusqueda('')
+    setCategMarcadasBusqueda(null)
     /**
      * ⚠️ Estos dos faltaban (A-BUG-155). Limpiaba doce filtros y dejaba los dos chips puestos:
      * el chip se veía **activo** y la consulta ya no lo aplicaba. Es el mismo desacuerdo entre lo
@@ -4386,7 +4389,7 @@ ${marca}` : marca
                             autoFocus
                             placeholder="Buscar categoría..."
                             value={categFiltroBusqueda}
-                            onChange={e => setCategFiltroBusqueda(e.target.value)}
+                            onChange={e => { setCategFiltroBusqueda(e.target.value); setCategMarcadasBusqueda(null) }}
                             className="h-7 text-xs"
                           />
                         </div>
@@ -4394,23 +4397,25 @@ ${marca}` : marca
                         <div className="flex gap-1 p-2 border-b text-[10px]">
                           <button
                             className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100"
-                            onClick={() => { setCategsFiltro(null); setCategFiltroAbierto(false) }}
+                            onClick={() => { setCategsFiltro(null); setCategFiltroBusqueda(''); setCategMarcadasBusqueda(null); setCategFiltroAbierto(false) }}
                           >Todas</button>
                           <button
                             className="px-2 py-0.5 rounded bg-gray-50 text-gray-700 hover:bg-gray-100"
-                            onClick={() => setCategsFiltro(new Set(categsUnicas))}
+                            onClick={() => categFiltroBusqueda.trim() ? setCategMarcadasBusqueda(null) : setCategsFiltro(new Set(categsUnicas))}
                           >Seleccionar todas</button>
                           <button
                             className="px-2 py-0.5 rounded bg-gray-50 text-gray-700 hover:bg-gray-100"
-                            onClick={() => setCategsFiltro(new Set())}
+                            onClick={() => categFiltroBusqueda.trim() ? setCategMarcadasBusqueda(new Set()) : setCategsFiltro(new Set())}
                           >Ninguna</button>
+                          {categFiltroBusqueda.trim() && <span className="self-center text-gray-500">se filtra sólo lo que coincide</span>}
                         </div>
                         {/* Lista con checkboxes */}
                         <div className="overflow-y-auto flex-1 p-1">
                           {categsUnicas
                             .filter(c => !categFiltroBusqueda || c.toLowerCase().includes(categFiltroBusqueda.toLowerCase()))
                             .map(cat => {
-                              const checked = !categsFiltro || categsFiltro.has(cat)
+                              const buscando = categFiltroBusqueda.trim() !== ''
+                              const checked = buscando ? (!categMarcadasBusqueda || categMarcadasBusqueda.has(cat)) : (!categsFiltro || categsFiltro.has(cat))
                               const count = movimientos.filter(m => (m.categ || '(sin categ)') === cat).length
                               return (
                                 <label key={cat} className="flex items-center gap-2 px-2 py-1 hover:bg-gray-50 rounded cursor-pointer text-xs">
@@ -4418,6 +4423,13 @@ ${marca}` : marca
                                     type="checkbox"
                                     checked={checked}
                                     onChange={() => {
+                                      if (buscando) {
+                                        const visibles = categsUnicas.filter(c => c.toLowerCase().includes(categFiltroBusqueda.toLowerCase()))
+                                        const s2 = new Set(categMarcadasBusqueda ?? visibles)
+                                        if (s2.has(cat)) s2.delete(cat); else s2.add(cat)
+                                        setCategMarcadasBusqueda(s2)
+                                        return
+                                      }
                                       const nuevo = new Set(categsFiltro ?? categsUnicas)
                                       if (nuevo.has(cat)) nuevo.delete(cat)
                                       else nuevo.add(cat)
@@ -4436,9 +4448,12 @@ ${marca}` : marca
                         <div className="p-2 border-t">
                           <Button size="sm" className="w-full h-7 text-xs" onClick={() => {
                             if (categFiltroBusqueda.trim()) {
+                              // Como Excel: queda sólo lo que coincide y está tildado (antes tomaba todo lo que coincidía,
+                              // y un tilde puesto mientras se buscaba se sumaba a lo ya elegido)
                               const visibles = categsUnicas.filter(c => c.toLowerCase().includes(categFiltroBusqueda.toLowerCase()))
-                              setCategsFiltro(visibles.length === categsUnicas.length ? null : new Set(visibles))
+                              setCategsFiltro(seleccionConBusqueda(categsUnicas, visibles, categMarcadasBusqueda))
                               setCategFiltroBusqueda('')
+                              setCategMarcadasBusqueda(null)
                             }
                             setCategFiltroAbierto(false)
                           }}>

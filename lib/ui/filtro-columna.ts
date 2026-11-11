@@ -36,3 +36,14 @@ export function filtrarPorColumnas<T>(filas: T[], filtros: Record<string, Set<st
   if (!activos.length) return filas
   return filas.filter(f => activos.every(([col, s]) => pasaColumna(valores[col]?.(f), s)))
 }
+
+/**
+ * Pura: lo que queda filtrado al aceptar CON TEXTO EN EL BUSCADOR, como Excel (nota 🌙 JMS 10/11 en el Extracto: «acá si
+ * filtro por nombre por default desselecciona lo que no coincide; acá me dejó lo anterior más lo que seleccioné»).
+ * Sólo cuentan los valores que coinciden con la búsqueda y están tildados; lo que no coincide sale del filtro.
+ * `marcadas` null = todas las que coinciden (así arranca la lista al escribir).
+ */
+export function seleccionConBusqueda(todas: string[], visibles: string[], marcadas: Set<string> | null): Set<string> | null {
+  const elegidas = visibles.filter(v => !marcadas || marcadas.has(v))
+  return elegidas.length === todas.length ? null : new Set(elegidas)
+}
