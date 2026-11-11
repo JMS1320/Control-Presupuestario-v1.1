@@ -3732,11 +3732,11 @@ ${marca}` : marca
           {/* 🛒 nota JMS 11/11: lo PENDIENTE que se ve, a una categoría (ej. Consumos) de una vez */}
           {cuentaSeleccionada && reglasDeLaCuenta.length > 0 && pendientesEnPantalla.length > 0 && (
             <Permisable recurso="extracto.conciliar">
-            <div className="flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs"
+            <div className="flex items-center gap-1 whitespace-nowrap rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs"
               title="Les aplica a los pendientes que se ven la regla de esa categoría (como si el motor la hubiera encontrado): categoría, códigos y cuota en su template">
-              <span>Pasar los {pendientesEnPantalla.length} pendientes en pantalla a</span>
-              <select className="border rounded px-1 py-0.5 text-xs bg-white" value={categPasarA} onChange={e => setCategPasarA(e.target.value)}>
-                <option value="">— elegí —</option>
+              <span>Pasar {pendientesEnPantalla.length} pendientes a</span>
+              <select className="border rounded px-1 py-0.5 text-xs bg-white max-w-[160px]" value={categPasarA} onChange={e => setCategPasarA(e.target.value)}>
+                <option value="">— categoría —</option>
                 {reglasDeLaCuenta.map(r => <option key={r.categ} value={r.categ}>{r.categ}</option>)}
               </select>
               <Button size="sm" className="h-6 text-xs px-2" disabled={!categPasarA || procesoEnCurso} onClick={pasarPendientesA}>Pasar</Button>
