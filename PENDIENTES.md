@@ -12,6 +12,16 @@
 
 ## 🧪 <a id="guia-pruebas-2026-10-05"></a>GUÍA DE PRUEBAS — vigente al 1 de noviembre (todo en `desarrollo` salvo lo marcado)
 
+> 🆕 **11/11 tarde — las notas 🌙 de la app (≈35, todas resueltas o anotadas).** Todo en `desarrollo` (antes, que Vercel haya publicado `70fdf061` o posterior). Se prueba **usando la app**, en cada pantalla; el cartel de cada proceso lo recuerda.
+> 0. 🔴 **ANTES**: publicar el **GAS 0.26.0** (`gas-buscar-pdf/Main.gs` entero → Implementar → Gestionar implementaciones → Nueva versión). Sin eso no anda «🗑️ Sacar de la carpeta».
+> 1. 📥 **Importar facturas** (Egresos → Facturas → Importar): FC precargado y «siempre Portal», fecha estimada con su origen y «guardar como pago usual» (día 10 para Alcorta, Massaglia, Miceli, ICT, Coop. Río Tala) → [A-TEST-1356](#a-test-1356), [A-TEST-1363](#a-test-1363).
+> 2. 💸 **Cash Flow**: CATEG con buscador y teclado en los selectores ([A-TEST-1359](#a-test-1359)), sin «Cargando…» al editar ([A-TEST-1360](#a-test-1360)), monto a pagar en Modo PAGOS ([A-TEST-1361](#a-test-1361)), «± días» ([A-TEST-1370](#a-test-1370)).
+> 3. 🏦 **Extracto**: filtro CATEG con búsqueda ([A-TEST-1357](#a-test-1357)), pasar pendientes a una categoría ([A-TEST-1364](#a-test-1364)), chips Pendientes + Auditar ([A-TEST-1365](#a-test-1365)), extracciones a Caja ([A-TEST-1366](#a-test-1366)), **🔎 Buscar en todas las cuentas** ([A-TEST-1369](#a-test-1369)).
+> 4. 📋 **Egresos → Cuotas**: filtros por columna ([A-TEST-1358](#a-test-1358)) y sin recarga entera ([A-TEST-1368](#a-test-1368)).
+> 5. 🧾 **Subdiarios de compras**: B / C separadas, filtros, Actualizar ([A-TEST-1371](#a-test-1371)); confirmar en tanda ([A-TEST-1372](#a-test-1372)); sacar de la carpeta ([A-TEST-1373](#a-test-1373)).
+> 6. 🧾 **SICORE**: un pago sin retención no emite certificado ([A-TEST-1367](#a-test-1367)). 🌾 **Arrendamientos**: fechas de fijación y pesificación ([A-TEST-1362](#a-test-1362)).
+> Ya en la base (sólo saberlo): scripts 264 (día de pago), 265 (7 reglas Galicia MA), 266 (extracción MA sin Wilson), 267 (3 certificados $0 anulados), 268 (la orden agrícola acepta kg/ha), 269 (tipo 190 + 2 ventas de toros).
+
 > 🆕 **10/11 — Camino 1: REVISIÓN DE TEMPLATES TERMINADA (H para auditar v39)** (todo en `desarrollo`; antes, que Vercel haya publicado `21a74d43` o posterior).
 > 1. ✔️ **El estado «Nada a pagar»**: en *Egresos → Templates* abrí «Anticipo Ganancias MSA» (dic-25 a sep-26 en verde, «Nada a pagar»), mirá que no aparezcan en el Cash Flow y probá elegir «Nada a pagar» en otra cuota en $ 0 → [A-TEST-1355](#a-test-1355).
 > 2. 🔁 **El aviso de Principal (anual o cuotas)** y **la vista agrupada de templates con su contexto** → [A-TEST-1353](#a-test-1353) y [A-TEST-1354](#a-test-1354).
