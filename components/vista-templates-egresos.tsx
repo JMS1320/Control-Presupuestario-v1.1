@@ -6,8 +6,11 @@ import { templatesDelLink } from "@/lib/impuestos/planilla"
 import { traerTodo } from "@/lib/supabase-paginado"
 import { ModalPropagarMontoCuota } from "@/components/modal-propagar-monto-cuota"
 import { BarraResumen } from "@/components/ui/barra-resumen"
+import { FiltroColumna } from "@/components/ui/filtro-columna"
+import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
+import { valorFiltroCuota } from "@/lib/templates/filtro-cuotas"
 import { hoyArgentina } from "@/lib/fechas"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -1117,6 +1120,21 @@ export function VistaTemplatesEgresos() {
   }
 
   // Renderizar valor de celda según el tipo de columna con soporte para edición
+  /**
+   * 🔽 Filtros por columna tipo Excel en la tabla de cuotas (nota 🌙 JMS 10/11: «no tiene filtros. dijimos aplicar siempre
+   * filtros verdad?»). Trabajan sobre lo que dejaron los filtros de arriba; las opciones de cada columna salen de lo
+   * filtrado por las DEMÁS columnas, como en el Extracto (A-FEAT-1456).
+   */
+  const [filtrosCol, setFiltrosCol] = useState<Record<string, Set<string> | null>>({})
+  const valoresCol = useMemo(() => Object.fromEntries(Object.keys(COLUMNAS_CONFIG).map(col =>
+    [col, (c: CuotaEgresoSinFactura) => col === 'descripcion'
+      ? ((c as any).descripcion || identificadorDeCuota(c as any, (c.egreso ?? {}) as any) || '')  // la que se ve: generada
+      : valorFiltroCuota(c as any, col)])) as Record<string, (c: CuotaEgresoSinFactura) => string>, [])
+  const cuotasVista = useMemo(() => filtrarPorColumnas(cuotas, filtrosCol, valoresCol), [cuotas, filtrosCol, valoresCol])
+  const opcionesCol = (col: string) => opcionesDeColumna(
+    filtrarPorColumnas(cuotas, { ...filtrosCol, [col]: null }, valoresCol), valoresCol[col])
+  const hayFiltroCol = Object.values(filtrosCol).some(Boolean)
+
   const renderizarCelda = (cuota: CuotaEgresoSinFactura, columna: string) => {
     let valor: any
 
@@ -1921,7 +1939,11 @@ export function VistaTemplatesEgresos() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
-              {cuotas.length} Cuotas Encontradas
+              {cuotasVista.length} Cuotas Encontradas
+              {hayFiltroCol && (
+                <button type="button" className="ml-2 text-xs font-normal text-blue-600 hover:underline"
+                  onClick={() => setFiltrosCol({})}>de {cuotas.length} · quitar filtros de columna</button>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -1933,10 +1955,10 @@ export function VistaTemplatesEgresos() {
                       {modoEdicionMasiva && (
                         <TableHead style={{ width: '50px', minWidth: '50px' }}>
                           <Checkbox
-                            checked={cuotasSeleccionadasMasiva.size === cuotas.length && cuotas.length > 0}
+                            checked={cuotasSeleccionadasMasiva.size === cuotasVista.length && cuotasVista.length > 0}
                             onCheckedChange={(checked) => {
                               if (checked) {
-                                setCuotasSeleccionadasMasiva(new Set(cuotas.map(c => c.id)))
+                                setCuotasSeleccionadasMasiva(new Set(cuotasVista.map(c => c.id)))
                               } else {
                                 setCuotasSeleccionadasMasiva(new Set())
                               }
@@ -1955,14 +1977,15 @@ export function VistaTemplatesEgresos() {
                               minWidth: anchosColumnas[columna] || config.width
                             }}
                           >
-                            {config.label}
+                            <FiltroColumna titulo={config.label} opciones={opcionesCol(columna)} seleccion={filtrosCol[columna] ?? null}
+                              onChange={sel => setFiltrosCol(prev => ({ ...prev, [columna]: sel }))} />
                           </TableHead>
                         )
                       })}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {cuotas.length === 0 ? (
+                    {cuotasVista.length === 0 ? (
                       <TableRow>
                         <TableCell
                           colSpan={columnasVisiblesArray.length + (modoEdicionMasiva ? 1 : 0)}
@@ -1972,7 +1995,7 @@ export function VistaTemplatesEgresos() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      cuotas.map(cuota => (
+                      cuotasVista.map(cuota => (
                         <TableRow key={cuota.id} className={cuotasSeleccionadasMasiva.has(cuota.id) ? 'bg-purple-50' : ''}>
                           {modoEdicionMasiva && (
                             <TableCell style={{ width: '50px', minWidth: '50px' }}>
@@ -2012,7 +2035,7 @@ export function VistaTemplatesEgresos() {
                 </Table>
             </div>
                 {/* 📊 A-FEAT-1464 — la barra de abajo, como Excel. */}
-                <BarraResumen filas={cuotas} elegidas={cuotas.filter(c => cuotasSeleccionadasMasiva.has(c.id))}
+                <BarraResumen filas={cuotasVista} elegidas={cuotasVista.filter(c => cuotasSeleccionadasMasiva.has(c.id))}
                   fecha={c => c.fecha_estimada} columnas={[{ rotulo: "monto", valor: c => c.monto }]} />
 
             {/* Panel de control edición masiva */}

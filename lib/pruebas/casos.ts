@@ -325,6 +325,7 @@ import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla,
   claveDeTipoMail, problemaDeTipoNuevo, contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarPendientesArriba,
   juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves, ordenarParaLista, rangoDelDia, ordenarCronologico, leerBusqueda, coincideBusquedaMail, textoBuscable } from "@/lib/mails/registro"
 import { opcionesDeColumna, filtrarPorColumnas, seleccionConBusqueda } from "@/lib/ui/filtro-columna"
+import { valorFiltroCuota } from "@/lib/templates/filtro-cuotas"
 import { partesDeRuta, problemaDeRuta, estadoDestino, idDeLinkDrive } from "@/lib/archivo/destinos"
 import { mailsParaArchivar, mailsParaCuota, agruparPorRegla, anioDeMail, vinculosConArchivos, controlArchivado, agruparPorTema, estadoSeleccion } from "@/lib/mails/lotes"
 import { leerDocumento, templateSugerido, cuotaSugerida, huellaCuota, diferenciaCuota, numeroDeCuota, cuotaParaCierre } from "@/lib/mails/leer-documento"
@@ -11454,6 +11455,13 @@ export function correrCasos(): Resultado[] {
         chequear("Filtro por columna", "🔎 Con búsqueda se filtra sólo lo que coincide y está tildado (lo elegido antes que no coincide sale)",
           "Impuesto Automotores+Impuesto Inmobiliario · Impuesto Automotores · ninguna · todas", vB,
           vB === "Impuesto Automotores+Impuesto Inmobiliario · Impuesto Automotores · ninguna · todas", "A-FEAT-1598")
+      }
+      // 🔽 nota JMS 10/11: la tabla de Cuotas con filtro por columna — fechas por mes, monto es-AR, la CATEG de la cuota manda
+      {
+        const cu = { fecha_estimada: "2026-05-20", monto: 1234567.8, estado: "pendiente", categ: null, egreso: { categ: "Impuestos ARCA", activo: true, centro_costo: null } }
+        const vC = ["fecha_estimada", "monto", "categ", "activo", "centro_costo", "estado"].map(c => valorFiltroCuota(cu, c) || "(vacío)").join(" · ")
+        chequear("Filtro por columna", "🔽 Cuotas: el valor de cada columna para filtrar (fecha por mes, monto es-AR, CATEG del template si la cuota no tiene)",
+          "2026-05 · 1.234.567,80 · Impuestos ARCA · Sí · (vacío) · pendiente", vC, vC === "2026-05 · 1.234.567,80 · Impuestos ARCA · Sí · (vacío) · pendiente", "A-FEAT-1600")
       }
       const vCl = [claseDeProcesado("factura archivada MSA 3-1520 (+1)"), claseDeProcesado("reenvío leído: 2 adjuntos, 1 ilegible"), claseDeProcesado("boletas_arba")].join(" | ")
       // 🚨 A-FEAT-1438: mails graves agrupados para el aviso de Principal
