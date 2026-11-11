@@ -8995,8 +8995,8 @@ export function correrCasos(): Resultado[] {
       // 🏦 JMS 11/11 (pedido del contador): el impuesto ley 25413 separado en débitos y créditos, por la descripción del banco
       const L = (d: string, categ = "Debitos / Creditos") => String(ladoImpuestoLey25413(categ, d))
       const vL = [L("Imp. Deb. Ley 25413 Gral."), L("Impuesto Deb.ley 25413 Extrac. Efect."), L("Imp. Cre. Ley 25413"), L("Dev.imp.deb.ley 25413-alic.general"),
-        L("Comision Extraccion En Efectivo", "Gastos bancarios"), categoriaParaMostrar({ categ: "Debitos / Creditos", banco: { descripcion: "Imp. Cre. Ley 25413" } })].join(" · ")
-      const espL = "débitos · débitos · créditos · débitos · null · Impuesto ley 25413 sobre los créditos"
+        L("BAPRO: IMPUESTO LEY 25413"), L("Comision Extraccion En Efectivo", "Gastos bancarios"), categoriaParaMostrar({ categ: "Debitos / Creditos", banco: { descripcion: "Imp. Cre. Ley 25413" } })].join(" · ")
+      const espL = "débitos · débitos · créditos · débitos · débitos · null · Impuesto ley 25413 sobre los créditos"
       chequear("Balance · libro H", "🏦 Impuesto ley 25413: débitos (general, extracción, devolución) y créditos por separado; otra categoría no se toca", espL, vL, vL === espL, "A-FEAT-1620")
     }
   }

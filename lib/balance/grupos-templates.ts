@@ -102,6 +102,9 @@ export function ladoImpuestoLey25413(categ: string | null | undefined, descripci
   if (!/d[eé]bitos?\s*\/\s*cr[eé]ditos?/.test(c) && !/25413/.test(d)) return null
   if (/\bcre\b|\bcre\.|cr[eé]dito/.test(d) && !/\bdeb\b|\bdeb\.|d[eé]bito/.test(d)) return "créditos"
   if (/\bdeb\b|\bdeb\.|d[eé]bito|extrac/.test(d)) return "débitos"
+  // El Provincia a veces dice sólo «IMPUESTO LEY 25413» (dic-25 y feb-26), con los mismos importes que los meses que dice «DEBITO»:
+  // sin «crédito» escrito, es el de los débitos (el de los créditos siempre lo dice).
+  if (/25413/.test(d)) return "débitos"
   return null
 }
 /** La categoría con la que se muestra una cuota en el libro H: la del impuesto 25413 partida en débitos / créditos. */

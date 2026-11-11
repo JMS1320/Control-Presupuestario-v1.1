@@ -157,6 +157,8 @@ export const CAMBIOS: unknown[][] = [
     "etapa 4 sólo de compras y ventas", "E1, E2, E3, E5 y E7 con su puente y sus controles"],
   [71, "Papel de impuestos: el saldo del ejercicio anterior con el formato que le dio JMS (encabezado salmón, conceptos en negrita, total salmón fuerte y «A tomar en este Balance como gasto»). Control de la plata: lo SIN pago / cobro atado separado por su situación (estado anterior, cuenta corriente, pago agrupado, ajuste, después del cierre) y contra LO PRESENTADO al contador: deuda con proveedores = papel 04 ($ 6.486.568,02) y deudores = papel 03 («no hubo»), las dos al peso.", "Papel Inmobiliario · Papel Red Vial · Control de la plata",
     "saldo anterior sin formato; lo sin pago sin explicar", "✓ deuda y deudores = lo presentado"],
+  [72, "Impuestos bancarios: el impuesto ley 25413 separado en «sobre los débitos» (general, extracción de efectivo y su devolución) y «sobre los créditos», por la descripción del banco (pedido del contador). Las cuentas con banco · CC / CA · moneda · titular (Galicia CC $ MSA, Galicia CA US$ MSA, Santander CC $ MSA, VISA Business MSA…).", "Imp Bancarios · todas las solapas con cuenta",
+    "«Debitos / Creditos» en un renglón; cuentas sin tipo ni banco", "✓ débitos y créditos por separado"],
   [22, "Nueva solapa «INCONSISTENCIAS»: todo lo que hay que mirar de todas las solapas, por tipo, con link a la solapa de la cuota.", "Solapa «Inconsistencias» (después de Gastos Libertad)",
     "Había que recorrer las 51 solapas buscando 🔴 / 🟡 / ⚠️", "🔴 sin pagar · 🟡 sin movimiento · 🟡 el banco movió otro importe · 🟡 en dólares · ⚠️ código · ⚪ en $ 0 (al final): cada renglón con «Ir a» su solapa"],
   [],
