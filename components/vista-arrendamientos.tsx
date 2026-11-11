@@ -343,6 +343,14 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
                                   {v.modo === "pizarra"
                                     ? `$${fmtAR(v.precio_pesos)}/tn`
                                     : `USD ${fmtAR(v.precio_usd)} × TC ${v.tc ? fmtAR(v.tc) : "sin fijar"}`}
+                                  {/* 📅 nota 🌙 JMS 11/11: «acá es importante las fechas: fecha de fijación del precio en dólares,
+                                      fecha de pesificación» */}
+                                  <span className="block text-[10px] text-gray-500">
+                                    {v.fecha_fijacion_precio && <>precio fijado el {fechaCorta(v.fecha_fijacion_precio)}</>}
+                                    {v.modo !== "pizarra" && (v.tc && v.fecha_fijacion_tc
+                                      ? <> · pesificado el {fechaCorta(v.fecha_fijacion_tc)}</>
+                                      : <> · sin pesificar</>)}
+                                  </span>
                                 </td>
                                 <td className="px-3 py-1.5 text-right font-medium" colSpan={2}>
                                   {fmtPesos(m.monto)}{m.estimado && <span className="text-amber-500">*</span>}
@@ -1066,6 +1074,12 @@ function ModalFijar({ datos, ventas, precios, tcs, onCerrar, onListo }: {
 
 // ── Modal fijar TC de una venta ya hecha ──────────────────────────────────────
 
+/** `AAAA-MM-DD` → `dd/mm/aaaa` (el día tal cual, sin pasar por zona horaria). */
+function fechaCorta(f: string): string {
+  const [a, m, d] = f.slice(0, 10).split("-")
+  return d && m && a ? `${d}/${m}/${a}` : f
+}
+
 function ModalFijarTC({ venta, tcs, onCerrar, onListo }: {
   venta: Venta | null
   tcs: TipoCambio[]
@@ -1073,10 +1087,13 @@ function ModalFijarTC({ venta, tcs, onCerrar, onListo }: {
   onListo: () => Promise<void>
 }) {
   const [tc, setTc] = useState("")
+  // 📅 nota 🌙 JMS 11/11: la fecha de PESIFICACIÓN se elige (antes se guardaba siempre «hoy»)
+  const [fechaTc, setFechaTc] = useState("")
   const [guardando, setGuardando] = useState(false)
 
   useEffect(() => {
     if (!venta) return
+    setFechaTc(venta.fecha_fijacion_tc || hoyArgentina())
     const [anio, mes] = (venta.fecha_cobro ?? "").split("-").map(Number)
     const sug = anio && mes ? resolverTC(tcs, anio, mes) : { tc: 0 }
     setTc(sug.tc ? fmtAR(sug.tc) : "")
@@ -1092,7 +1109,7 @@ function ModalFijarTC({ venta, tcs, onCerrar, onListo }: {
     setGuardando(true)
     const { error } = await supabase.from("ventas_arrendamiento").update({
       tc: valor,
-      fecha_fijacion_tc: hoyArgentina(),
+      fecha_fijacion_tc: /^\d{4}-\d{2}-\d{2}$/.test(fechaTc) ? fechaTc : hoyArgentina(),
       monto_pesos: monto,
     }).eq("id", venta.id)
     setGuardando(false)
@@ -1114,6 +1131,10 @@ function ModalFijarTC({ venta, tcs, onCerrar, onListo }: {
             <label className="text-xs text-gray-500">Tipo de cambio</label>
             <Input className="h-8 text-right" placeholder="0,00" value={tc}
               onChange={e => setTc(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Fecha de pesificación (el día del tipo de cambio)</label>
+            <Input type="date" className="h-8" value={fechaTc} onChange={e => setFechaTc(e.target.value)} />
           </div>
           <div className="rounded bg-gray-50 px-3 py-2 text-sm">
             Monto final: <strong>{fmtPesos(monto)}</strong>
