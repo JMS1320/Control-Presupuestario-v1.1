@@ -105,6 +105,7 @@ import { contarMovimientosDeFactura, type ClienteParaPropagar } from "@/lib/conc
 import { ESPERA_ANTES_DE_LIBERAR_MS } from "@/lib/descargar-archivo"
 import { subFacturasDelLink, facturasDelLink } from "@/lib/egresos/link-facturas"
 import { fechasReales } from "@/lib/excel/fechas-reales"
+import { numeroDeLaFila, completarNumerosDelPago } from "@/lib/sicore/registrar-retencion"
 
 interface FacturaArca {
   id: string
@@ -4287,13 +4288,18 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
             .maybeSingle()
         : { data: null }
 
-      let nroComp: number
-      let nroCert: string
+      let nroComp: number | null
+      let nroCert: string | null
+      // 🧾 nota JMS 11/11: un pago que no retiene nada no lleva certificado (misma regla que lib/sicore/registrar-retencion)
+      const decision = numeroDeLaFila(params.retencion, !!mismoGrupo?.nro_comprobante)
 
-      if (mismoGrupo?.nro_comprobante) {
+      if (decision === 'compartir') {
         // Reutilizar números del grupo existente
-        nroComp = mismoGrupo.nro_comprobante as number
-        nroCert = mismoGrupo.nro_certificado as string
+        nroComp = mismoGrupo!.nro_comprobante as number
+        nroCert = mismoGrupo!.nro_certificado as string
+      } else if (decision === 'sin_numero') {
+        nroComp = null
+        nroCert = null
       } else {
         // Nuevo grupo — asignar siguiente número perpetuo
         // (incluye anulados para preservar cronología: el cert anulado conserva su nro)
@@ -4332,7 +4338,10 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
           estado_quincena: nuevoEstadoQ,
         })
       if (error) console.error('⚠️ sicore_retenciones insert error (no interrumpe flujo):', error)
-      else console.log('✅ sicore_retenciones registrado:', params.quincena, params.denominacion_emisor, `comp=${nroComp} cert=${nroCert} estado=${nuevoEstadoQ}`)
+      else {
+        console.log('✅ sicore_retenciones registrado:', params.quincena, params.denominacion_emisor, `comp=${nroComp} cert=${nroCert} estado=${nuevoEstadoQ}`)
+        if (decision === 'nuevo' && nroComp != null && nroCert) await completarNumerosDelPago(schemaName, params, nroComp, nroCert)
+      }
     } catch (err) {
       console.error('⚠️ sicore_retenciones excepción (no interrumpe flujo):', err)
     }

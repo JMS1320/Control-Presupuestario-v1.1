@@ -174,3 +174,16 @@ export function destinoDeNotaDeCredito(
   const candidatas = delGrupo.length > 0 ? delGrupo : alcanzan
   return [...candidatas].sort((a, b) => b.retencion - a.retencion)[0]
 }
+
+/**
+ * 🧾 nota JMS 11/11 («sicore registró una retención de cero, eso es un error»): ¿qué número lleva una fila?
+ * - Si su pago (grupo) ya tiene certificado → lo comparte.
+ * - Si retiene → certificado nuevo.
+ * - Si NO retiene (sólo consume mínimo) y su pago todavía no tiene certificado → **sin número**: queda registrado el
+ *   consumo del mínimo (lo necesita el renglón del certificado si después otra factura del mismo pago retiene), pero no
+ *   se emite un certificado de $ 0. Si después retiene otra del mismo pago, se le pone ese número (`completarNumerosDelPago`).
+ */
+export function numeroDeLaFila(retencion: number, grupoTieneNumero: boolean): 'compartir' | 'nuevo' | 'sin_numero' {
+  if (grupoTieneNumero) return 'compartir'
+  return (Number(retencion) || 0) !== 0 ? 'nuevo' : 'sin_numero'
+}

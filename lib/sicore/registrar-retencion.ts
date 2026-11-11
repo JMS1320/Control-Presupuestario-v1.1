@@ -13,6 +13,8 @@
 // Ver MANUAL-USO § Pagos. Cuando se deprece el Modal (E5) también usará esta función.
 
 import { supabase } from "@/lib/supabase"
+import { numeroDeLaFila } from "@/lib/sicore/minimo"
+export { numeroDeLaFila }
 
 export interface RegistrarRetencionParams {
   origen: 'directo' | 'anticipo' | 'agrupacion'
@@ -55,6 +57,16 @@ export interface RegistrarRetencionParams {
  *   certificado del primero, así que el PDF salía con las dos retenciones.
  * No interrumpe el flujo si falla (loguea).
  */
+/** Al nacer el certificado de un pago agrupado, las filas de ese pago que quedaron sin número (consumo de mínimo) lo toman. */
+export async function completarNumerosDelPago(schema: string, params: Pick<RegistrarRetencionParams, 'grupo_pago_id' | 'cuit_emisor' | 'tipo_sicore' | 'quincena'>, nroComp: number, nroCert: string) {
+  if (!params.grupo_pago_id) return
+  const { error } = await supabase.schema(schema).from('sicore_retenciones')
+    .update({ nro_comprobante: nroComp, nro_certificado: nroCert })
+    .eq('cuit_emisor', params.cuit_emisor ?? '').eq('tipo_sicore', params.tipo_sicore).eq('quincena', params.quincena)
+    .eq('grupo_pago_id', params.grupo_pago_id).eq('anulado', false).is('nro_certificado', null)
+  if (error) console.error('⚠️ sicore_retenciones: no se pudo completar el número de las filas del pago', error)
+}
+
 export async function registrarEnSicoreRetenciones(schema: string, params: RegistrarRetencionParams) {
   try {
     const anoActual = new Date().getFullYear()
@@ -162,12 +174,17 @@ export async function registrarEnSicoreRetenciones(schema: string, params: Regis
       // Pago directo: no hay con quién compartir. Se pide número nuevo.
       : { data: null }
 
-    let nroComp: number
-    let nroCert: string
+    let nroComp: number | null
+    let nroCert: string | null
+    const decision = numeroDeLaFila(params.retencion, !!mismoGrupo?.nro_comprobante)
 
-    if (mismoGrupo?.nro_comprobante) {
-      nroComp = mismoGrupo.nro_comprobante as number
-      nroCert = mismoGrupo.nro_certificado as string
+    if (decision === 'compartir') {
+      nroComp = mismoGrupo!.nro_comprobante as number
+      nroCert = mismoGrupo!.nro_certificado as string
+    } else if (decision === 'sin_numero') {
+      // 🧾 consumo de mínimo sin retención en un pago que (todavía) no tiene certificado: no se emite uno de $ 0
+      nroComp = null
+      nroCert = null
     } else {
       // Nuevo grupo — asignar siguiente número perpetuo (incluye anulados para preservar cronología)
       const { data: maxComp } = await supabase
@@ -205,7 +222,10 @@ export async function registrarEnSicoreRetenciones(schema: string, params: Regis
         estado_quincena: nuevoEstadoQ,
       })
     if (error) console.error('⚠️ sicore_retenciones insert error (no interrumpe flujo):', error)
-    else console.log('✅ sicore_retenciones registrado:', params.quincena, params.denominacion_emisor, `comp=${nroComp} cert=${nroCert} estado=${nuevoEstadoQ}`)
+    else {
+      console.log('✅ sicore_retenciones registrado:', params.quincena, params.denominacion_emisor, `comp=${nroComp} cert=${nroCert} estado=${nuevoEstadoQ}`)
+      if (decision === 'nuevo' && nroComp != null && nroCert) await completarNumerosDelPago(schema, params, nroComp, nroCert)
+    }
   } catch (err) {
     console.error('⚠️ sicore_retenciones excepción (no interrumpe flujo):', err)
   }

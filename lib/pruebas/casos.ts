@@ -149,7 +149,7 @@ import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
 import { etiquetaTipoComprobante, desdeVentana, pasaVentana, coincideNumeroComprobante } from "@/lib/pagos/filtros-cash-flow"
 import { armarImpuestoCheque, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { resultadosDeVersion, enDolares, gananciaDelEjercicio, parsearMonto, propuestaDelSistema, valoresEfectivos, cambiosContraLoGuardado, deudaDeTarjeta, ivaConSigno, type ValorFoto } from "@/lib/balance/balance-propio"
-import { simularSecuencia, retencionDelGrupo, calcularRetencion, baseTrasDescuento, destinoDeNotaDeCredito } from "@/lib/sicore/minimo"
+import { simularSecuencia, retencionDelGrupo, calcularRetencion, baseTrasDescuento, destinoDeNotaDeCredito, numeroDeLaFila } from "@/lib/sicore/minimo"
 import { quincenasDelMes, mismoPeriodoDelMinimo } from "@/lib/sicore/quincena"
 import { deduplicarFilasSicore } from "@/lib/sicore/dedup"
 import { parsePendientes, esDelProceso } from "@/lib/pendientes/parse"
@@ -610,6 +610,12 @@ export function correrCasos(): Resultado[] {
     chequear("SICORE", "Lo que resta la nota de crédito se descuenta de la factura del MISMO grupo con mayor retención",
       "6377", destinoDeNotaDeCredito(vigentes, -2093.70, "g")?.id ?? "null",
       destinoDeNotaDeCredito(vigentes, -2093.70, "g")?.id === "6377", "A-BUG-1251")
+    // 🧾 nota JMS 11/11: un pago que no retiene nada no emite certificado de $ 0; si retiene otra del mismo pago, comparte
+    {
+      const vN = [numeroDeLaFila(0, false), numeroDeLaFila(0, true), numeroDeLaFila(158.26, false), numeroDeLaFila(1408.67, true)].join(" · ")
+      chequear("SICORE", "🧾 Número de certificado: consumo de mínimo solo → sin número; dentro de un pago con certificado → lo comparte; retiene → nuevo",
+        "sin_numero · compartir · nuevo · compartir", vN, vN === "sin_numero · compartir · nuevo · compartir", "A-BUG-1609")
+    }
 
     chequear("SICORE", "Si ninguna retención alcanza a absorberla, no se netea (y la pantalla avisa)",
       "null", String(destinoDeNotaDeCredito([{ id: "x", retencion: 500 }], -2093.70, "g")),
