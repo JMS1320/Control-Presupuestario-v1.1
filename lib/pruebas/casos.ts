@@ -374,6 +374,7 @@ import { hojaDeAsientosContables, hojaDeTemplates, hojaTemplatesPorMes, hojaDeCu
 import type { LibroDiario as LibroDiarioT } from "@/lib/balance/libro-diario"
 import { juntarTandas, lecturaIncompleta, juntarHasta, mensajeLecturaIncompleta } from "@/lib/supabase-paginado"
 import { evaluarReglaConciliacion, esExtraccionDeEfectivo } from "@/lib/conciliacion/evaluar-regla"
+import { palabrasDeBusqueda, palabraParaLaBase, coincideConTodas } from "@/lib/extracto/buscador-global"
 import * as XLSXcasos from "xlsx"
 import { botonesOrden, alMarcarHecha, alRechazar, PENDIENTE_DE_CONSUMO } from "@/lib/productivo/confirmacion-ordenes"
 import { ocurrenciasDeCampania, sugerirAgrupar, fechasIatf, chequearIatf, chequearEntore, fechaEnCampania, campaniaDe, fechaCorta,
@@ -11047,6 +11048,16 @@ export function correrCasos(): Resultado[] {
         .map(String).join(" · ")
       chequear("Conciliación", "🧹 ¿Tenía un vínculo previo? (sueldo o template sí; vacíos no) — decide si se limpia el proveedor al pasar a un template sin proveedor",
         "true · true · false · false", vVin, vVin === "true · true · false · false", "A-BUG-1608")
+      // 🔎 A-FEAT-1594: buscar en todas las cuentas — todas las palabras, en cualquier campo; «débito» elige el lado; importes
+      {
+        const movLima = { descripcion: "PAGO DE SERVICIOS", leyendas_adicionales_1: "ARBA INMOBILIARIO", detalle: "Inmobiliario Lima cuota 4", debitos: 123456.5, creditos: 0 }
+        const pal = (t: string) => coincideConTodas(movLima, palabrasDeBusqueda(t))
+        const vB = [pal("inmobiliario lima"), pal("Lima + Inmobiliário"), pal("inmobiliario débito"), pal("inmobiliario crédito"), pal("lima 123.456,50"), pal("lima alcorta"),
+          palabraParaLaBase(palabrasDeBusqueda("débito 1.234 lima inmobiliario")), String(palabraParaLaBase(palabrasDeBusqueda("débito 1234")))].map(String).join(" · ")
+        const espB = "true · true · true · false · true · false · inmobiliario · null"
+        chequear("Extracto · buscar en todas", "🔎 Todas las palabras en cualquier campo (sin acentos), «débito/crédito» = el lado, importes es-AR; a la base va la palabra de texto más larga",
+          espB, vB, vB === espB, "A-FEAT-1594")
+      }
     }
 
     // ── Tipos de parseo: sin puntos y sin número de cheque son el mismo tipo (A-FEAT-1347) ──

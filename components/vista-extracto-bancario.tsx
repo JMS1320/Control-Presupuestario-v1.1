@@ -107,6 +107,7 @@ import { FiltroColumna } from "@/components/ui/filtro-columna"
 import { opcionesDeColumna, filtrarPorColumnas, seleccionConBusqueda } from "@/lib/ui/filtro-columna"
 import { esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { teniaVinculoPrevio } from "@/lib/conciliacion/datos-del-origen"
+import { BuscadorTodasLasCuentas } from "@/components/buscador-todas-las-cuentas"
 import { pegadaSigueVisible } from "@/lib/extracto/alcance-filtros"
 import { BarraResumen } from "@/components/ui/barra-resumen"
 
@@ -1266,6 +1267,7 @@ ${texto.trim()}` : texto.trim()
    * elegida (la de orden más bajo de esa cuenta), por el mismo camino del motor: categ, códigos y cuota en su template.
    * Sin el detalle de la regla (es el de UN comercio: «Supermercado Dia»): cada movimiento queda con el suyo.
    */
+  const [buscadorGlobalAbierto, setBuscadorGlobalAbierto] = useState(false)   // 🔎 A-FEAT-1594
   const [reglasDeLaCuenta, setReglasDeLaCuenta] = useState<any[]>([])
   const [categPasarA, setCategPasarA] = useState('')
   useEffect(() => {
@@ -3721,6 +3723,12 @@ ${marca}` : marca
             )}
           </Button>
           </Permisable>
+          {/* 🔎 A-FEAT-1594: buscar en TODAS las cuentas a la vez (para auditar: lo pagado a Alcorta desde cualquier cuenta) */}
+          <Button variant="outline" onClick={() => setBuscadorGlobalAbierto(true)} title="Buscar un texto en todas las cuentas de MSA, PAM, MA y Cotitulares a la vez">
+            🔎 Buscar en todas las cuentas
+          </Button>
+          <BuscadorTodasLasCuentas open={buscadorGlobalAbierto} onClose={() => setBuscadorGlobalAbierto(false)}
+            cuentas={CUENTAS_BANCARIAS.filter(c => cuentaPermitida(c.id))} />
           {/* 🛒 nota JMS 11/11: lo PENDIENTE que se ve, a una categoría (ej. Consumos) de una vez */}
           {cuentaSeleccionada && reglasDeLaCuenta.length > 0 && pendientesEnPantalla.length > 0 && (
             <Permisable recurso="extracto.conciliar">
