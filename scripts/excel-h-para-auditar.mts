@@ -199,7 +199,7 @@ agregarLibroH(wb as any, templates, ej.etiqueta, meses, { cuotas: cuotasImp, ...
   const dadaPorPagada = new Set((ajPag ?? []).map((a: any) => String(a.registro_id)))
   // la FECHA del pago como la toma el papel 04: la del comprobante o la del movimiento del banco más temprano (aunque sea después del cierre)
   const fBanco = (await buscarFechasDePagoBancarias(sb as any, sinPagoC.map(x => x.c.id))).porComprobante
-  const datV = await enTandas("msa", "comprobantes_venta", "id, estado, grupo_cobro_id", sinCobroV.map(x => x.c.id))
+  const datV = await enTandas("msa", "comprobantes_venta", "id, estado, grupo_cobro_id, cuit_cliente", sinCobroV.map(x => x.c.id))
   const fCobro = completarConGrupoDeCobro(sinCobroV.map(x => ({ id: x.c.id, grupo_cobro_id: datV.get(x.c.id)?.grupo_cobro_id ?? null })), (await buscarFechasDeCobroBancarias(sb as any, sinCobroV.map(x => x.c.id))).porComprobante)
   const sitC = (id: string) => { const d = datC.get(id); if (!d) return "otra fuente (histórico)"
     const cc = conCC.get(String(d.cuit ?? "")); if (cc) return `va a la CUENTA CORRIENTE de ${cc} (papel 14 / 14.1), no al 04`
@@ -211,6 +211,7 @@ agregarLibroH(wb as any, templates, ej.etiqueta, meses, { cuotas: cuotasImp, ...
     if (fp) return "pagada en el ejercicio, con fecha de pago, sin movimiento de MSA atado"
     return /pagad|concili/i.test(String(d.estado ?? "")) ? "marcada PAGADA sin fecha ni movimiento" : "SIN PAGAR: deuda al cierre" }
   const sitV = (id: string) => { const d = datV.get(id); if (!d) return "otra fuente"
+    const ccV = conCC.get(String(d.cuit_cliente ?? "")); if (ccV) return `va a la CUENTA CORRIENTE de ${ccV} (papel 14), no al 03`
     const fc = fCobro.get(id); if (fc && fc > ej.fechaCierre) return "cobrada DESPUÉS del cierre: deudor al cierre"; if (fc) return "cobrada en el ejercicio, con fecha de cobro"
     if (d.grupo_cobro_id) return "cobrada en un COBRO AGRUPADO (el movimiento está atado al grupo)"
     return /cobrad|concili/i.test(String(d.estado ?? "")) ? "marcada COBRADA sin movimiento atado" : "SIN COBRAR: deudor al cierre" }
