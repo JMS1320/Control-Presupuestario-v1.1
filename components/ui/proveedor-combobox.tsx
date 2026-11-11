@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { supabase } from "@/lib/supabase"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -55,6 +55,7 @@ export function ProveedorCombobox({ value, onChange, label = "Proveedor", requir
   const [busqueda, setBusqueda] = useState("")
   const [abierto, setAbierto] = useState(false)
   const [modoNuevo, setModoNuevo] = useState(false)
+  const [activoProv, setActivoProv] = useState(-1)
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -187,6 +188,29 @@ export function ProveedorCombobox({ value, onChange, label = "Proveedor", requir
   }
 
   // Modo búsqueda
+  // ⌨️ nota 🌙 JMS 11/11 («no puedo bajar ni con abajo ni con tab… hacerlo para todos»): ↓/↑ y Tab/Shift+Tab recorren la
+  //    lista, Enter elige la marcada (o la única), Escape cierra.
+  const lista = [...resultados, ...otros]
+  const marcar = (i: number) => {
+    setActivoProv(i)
+    containerRef.current?.querySelector(`[data-idx="${i}"]`)?.scrollIntoView({ block: "nearest" })
+  }
+  const teclas = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") { setAbierto(false); return }
+    const bajar = e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey && abierto)
+    const subir = e.key === "ArrowUp" || (e.key === "Tab" && e.shiftKey && abierto)
+    if ((bajar || subir) && lista.length > 0) {
+      e.preventDefault()
+      if (!abierto) { setAbierto(true); return }
+      marcar(bajar ? Math.min(lista.length - 1, activoProv + 1) : Math.max(0, activoProv - 1))
+      return
+    }
+    if (e.key === "Enter" && abierto) {
+      const p = activoProv >= 0 ? lista[activoProv] : (lista.length === 1 ? lista[0] : undefined)
+      if (p) { e.preventDefault(); seleccionar(p) }
+    }
+  }
+
   return (
     <div className="space-y-2" ref={containerRef}>
       <Label>{label}{required ? " *" : ""}</Label>
@@ -197,8 +221,9 @@ export function ProveedorCombobox({ value, onChange, label = "Proveedor", requir
           type="text"
           placeholder={loading ? "Cargando proveedores..." : `Buscar ${labelLower} por nombre o CUIT...`}
           value={busqueda}
-          onChange={(e) => { setBusqueda(e.target.value); setAbierto(true) }}
+          onChange={(e) => { setBusqueda(e.target.value); setAbierto(true); setActivoProv(-1) }}
           onFocus={() => setAbierto(true)}
+          onKeyDown={teclas}
           className="pl-8"
           disabled={disabled || loading}
         />
@@ -229,8 +254,9 @@ export function ProveedorCombobox({ value, onChange, label = "Proveedor", requir
                     // Un empleado puede no tener CUIT cargado, así que el CUIT solo no alcanza como key.
                     key={`${p.origen ?? 'p'}-${p.cuit || p.razon_social}-${i}`}
                     type="button"
+                    data-idx={lista.indexOf(p)}
                     onClick={() => seleccionar(p)}
-                    className="w-full text-left px-3 py-2 hover:bg-gray-100 border-b last:border-b-0"
+                    className={`w-full text-left px-3 py-2 hover:bg-gray-100 border-b last:border-b-0 ${lista.indexOf(p) === activoProv ? "bg-blue-100" : ""}`}
                   >
                     <div className="text-sm font-medium truncate flex items-center gap-2">
                       {p.razon_social}

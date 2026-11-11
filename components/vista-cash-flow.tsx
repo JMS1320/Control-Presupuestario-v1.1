@@ -4227,26 +4227,20 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 disabled={hookEditor.guardandoCambio}
               />
             ) : columna.key === 'categ' ? (
-              <>
-                <Input
-                  ref={hookEditor.inputRef}
-                  type="text"
-                  list="cuentas-contables-list-cf"
-                  value={String(hookEditor.celdaEnEdicion?.valor || '')}
-                  onChange={(e) => hookEditor.setCeldaEnEdicion(prev => prev ? { ...prev, valor: e.target.value } : null)}
-                  onKeyDown={hookEditor.manejarKeyDown}
-                  className="h-6 text-xs p-1 w-full"
-                  disabled={hookEditor.guardandoCambio}
-                  placeholder="Escribí para buscar..."
-                />
-                <datalist id="cuentas-contables-list-cf">
-                  {cuentas.map(cuenta => (
-                    <option key={cuenta.categ} value={cuenta.categ}>
-                      {cuenta.cuenta_contable}
-                    </option>
-                  ))}
-                </datalist>
-              </>
+              // 🔎 nota 🌙 JMS 11/11: «acá categ no propone, debería funcionar como el resto» — era un datalist del navegador
+              //    (sin jerarquía ni sugerencias). Ahora es el selector de cuentas de toda la app: busca escribiendo, muestra la
+              //    ruta y propone las cuentas que ya usó ese proveedor. Elegir guarda; Escape cancela.
+              <SelectorCuentaContable
+                value={String(hookEditor.celdaEnEdicion?.valor || '') || null}
+                onSelect={(cuenta) => { if (cuenta) hookEditor.guardarCambio(cuenta.categ) }}
+                onCancel={() => hookEditor.cancelarEdicion()}
+                cuitProveedor={fila.cuit_proveedor || null}
+                modo="dropdown"
+                autoFocus
+                mostrarSinAsignar={false}
+                placeholder="Escribí para buscar..."
+                className="min-w-[200px] text-xs"
+              />
             ) : columna.key === 'centro_costo' ? (
               <CentroCostoCombobox
                 value={String(hookEditor.celdaEnEdicion?.valor || '')}

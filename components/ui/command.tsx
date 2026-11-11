@@ -8,16 +8,29 @@ import { Search } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 
+/**
+ * ⌨️ nota 🌙 JMS 11/11 («no puedo bajar ni con abajo ni con tab a ir a seleccionar… hacerlo para todos»): en TODA lista de
+ * este tipo, Tab baja a la opción siguiente y Shift+Tab sube (como las flechas), y la opción marcada se ve en azul. Antes
+ * las flechas andaban pero la marca era un gris casi blanco, y Tab sacaba el foco de la lista.
+ */
 const Command = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive>
->(({ className, ...props }, ref) => (
+>(({ className, onKeyDown, ...props }, ref) => (
   <CommandPrimitive
     ref={ref}
     className={cn(
       "flex h-full w-full flex-col overflow-hidden rounded-md bg-popover text-popover-foreground",
       className
     )}
+    onKeyDown={(e) => {
+      onKeyDown?.(e)
+      if (e.defaultPrevented || e.key !== "Tab" || e.ctrlKey || e.altKey || e.metaKey) return
+      const root = e.currentTarget as HTMLElement
+      if (!root.querySelector("[cmdk-item]")) return
+      e.preventDefault()
+      e.target.dispatchEvent(new KeyboardEvent("keydown", { key: e.shiftKey ? "ArrowUp" : "ArrowDown", bubbles: true, cancelable: true }))
+    }}
     {...props}
   />
 ))
@@ -115,7 +128,7 @@ const CommandItem = React.forwardRef<
   <CommandPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex cursor-default gap-2 select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled=true]:pointer-events-none data-[selected='true']:bg-accent data-[selected=true]:text-accent-foreground data-[disabled=true]:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+      "relative flex cursor-default gap-2 select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled=true]:pointer-events-none data-[selected='true']:bg-blue-100 data-[selected=true]:text-blue-900 data-[disabled=true]:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
       className
     )}
     {...props}

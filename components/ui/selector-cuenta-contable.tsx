@@ -253,6 +253,26 @@ export function SelectorCuentaContable({
     if (dropdownMode) { setIsOpen(false); setBusqueda('') } // cierra al elegir
   }
 
+  /**
+   * ⌨️ nota 🌙 JMS 11/11 («no puedo bajar ni con abajo ni con tab… hacerlo para todos»): la lista se recorre con ↓/↑ y
+   * Tab/Shift+Tab, Enter elige la marcada (o la única que quedó). El orden es el de la pantalla: «Sin asignar», las
+   * usadas para este proveedor, y después las agrupadas.
+   */
+  const orden = useMemo(() => [
+    ...(mostrarSinAsignar ? [null] : []),
+    ...sugeridas,
+    ...Array.from(agrupadas.values()).flat(),
+  ] as (CuentaContableItem | null)[], [mostrarSinAsignar, sugeridas, agrupadas])
+  const [activo, setActivo] = useState(-1)
+  const listaRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { setActivo(-1) }, [busqueda, isOpen])
+  useEffect(() => {
+    if (activo < 0) return
+    listaRef.current?.querySelector(`[data-idx="${activo}"]`)?.scrollIntoView({ block: 'nearest' })
+  }, [activo])
+  const idxDe = (c: CuentaContableItem | null) => orden.indexOf(c)
+  const marca = (c: CuentaContableItem | null) => idxDe(c) === activo ? 'bg-blue-100 ring-1 ring-blue-300' : ''
+
   const maxHeight = modo === 'modal-list' ? 'max-h-[400px]' : 'max-h-[300px]'
 
   return (
@@ -270,7 +290,20 @@ export function SelectorCuentaContable({
           onClick={() => { if (dropdownMode && !isOpen) { setIsOpen(true); setBusqueda('') } }}
           onBlur={() => { if (dropdownMode) setTimeout(() => setIsOpen(false), 150) }}
           onKeyDown={(e) => {
-            if (e.key === 'Escape') { setIsOpen(false); onCancel?.() }
+            if (e.key === 'Escape') { setIsOpen(false); onCancel?.(); return }
+            const bajar = e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey)
+            const subir = e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey)
+            if ((bajar || subir) && orden.length > 0) {
+              e.preventDefault()
+              if (dropdownMode && !isOpen) { setIsOpen(true); return }
+              setActivo(a => bajar ? Math.min(orden.length - 1, a + 1) : Math.max(0, a - 1))
+              return
+            }
+            if (e.key === 'Enter') {
+              const real = orden.filter(c => c !== null)
+              const elegida = activo >= 0 ? orden[activo] : (real.length === 1 ? real[0] : undefined)
+              if (elegida !== undefined) { e.preventDefault(); handleSelect(elegida) }
+            }
           }}
         />
         {busqueda && (
@@ -283,11 +316,12 @@ export function SelectorCuentaContable({
 
       {/* Lista de opciones — colapsada en modo dropdown hasta hacer click */}
       {listaVisible && (
-      <div className={`${maxHeight} overflow-y-auto border rounded mt-0.5 bg-white ${dropdownMode ? 'absolute z-50 min-w-full w-max max-w-[480px] shadow-lg' : ''}`}>
+      <div ref={listaRef} className={`${maxHeight} overflow-y-auto border rounded mt-0.5 bg-white ${dropdownMode ? 'absolute z-50 min-w-full w-max max-w-[480px] shadow-lg' : ''}`}>
         {/* Opción sin asignar */}
         {mostrarSinAsignar && (
           <button
-            className="w-full text-left px-2 py-1.5 hover:bg-gray-100 text-gray-400 italic text-xs border-b"
+            data-idx={idxDe(null)}
+            className={`w-full text-left px-2 py-1.5 hover:bg-gray-100 text-gray-400 italic text-xs border-b ${marca(null)}`}
             onMouseDown={(e) => { e.preventDefault(); handleSelect(null) }}
           >
             — Sin asignar —
@@ -305,8 +339,9 @@ export function SelectorCuentaContable({
               return (
                 <button
                   key={`sug-${c.categ}`}
+                  data-idx={idxDe(c)}
                   className={`w-full text-left px-2 py-1.5 hover:bg-green-50 text-xs flex items-center gap-2
-                    ${value === c.categ ? 'bg-blue-50 font-semibold' : ''}`}
+                    ${value === c.categ ? 'bg-blue-50 font-semibold' : ''} ${marca(c)}`}
                   onMouseDown={(e) => { e.preventDefault(); handleSelect(c) }}
                 >
                   <span className="flex-1 min-w-0">
@@ -336,8 +371,9 @@ export function SelectorCuentaContable({
               {cuentasGrupo.map(c => (
                 <button
                   key={c.nro_cuenta}
+                  data-idx={idxDe(c)}
                   className={`w-full text-left px-2 py-1.5 hover:bg-blue-50 text-xs
-                    ${value === c.categ ? 'bg-blue-50 font-semibold' : ''}`}
+                    ${value === c.categ ? 'bg-blue-50 font-semibold' : ''} ${marca(c)}`}
                   onMouseDown={(e) => { e.preventDefault(); handleSelect(c) }}
                 >
                   <span className="font-medium">{c.categ}</span>
