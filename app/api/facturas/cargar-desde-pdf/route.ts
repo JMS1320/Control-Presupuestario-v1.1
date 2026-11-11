@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 import { nroDeCuenta } from "@/lib/facturas/nro-de-cuenta"
 import {
-  calcularFechaEstimada, buscarReglaCuit, obtenerTipoComprobante, aNegativoSiNC, asegurarProveedores,
+  fechaEstimadaDeProveedor, feriadosEntre, buscarReglaCuit, obtenerTipoComprobante, aNegativoSiNC, asegurarProveedores,
   controlDeLaCarga, camposDeLaCarga, huellaDeLaCarga, type DatosCargaManual,
 } from "@/lib/facturas/alta-factura"
 import { TIPOS_CARGABLES, discriminaIva, cuitValido } from "@/lib/gas-pdf/leer-factura"
@@ -80,10 +80,15 @@ export async function POST(req: Request) {
     const textoHuella = `Cargada desde el PDF «${archivo.nombre || "?"}» (${sesion.user.email || "?"}).` +
       (huella.length ? ` Corregido a mano: ${huella.map(h => `${ROTULOS[h.campo] || h.campo} ${fmt(h.leido)} → ${fmt(h.cargado)}`).join("; ")}.` : " Todo como lo leyó la app.")
 
+    // 📆 A-FEAT-1605: la fecha estimada según cómo se le paga al proveedor (día del mes / N días; si no, emisión + 15)
+    const { data: provPago } = await supabase.from("proveedores").select("pago_dia_mes, pago_dias_emision").eq("cuit", cuit).maybeSingle()
+    const anioEm = Number(String(d.fecha).slice(0, 4)) || new Date().getFullYear()
+    const fechaEstimada = fechaEstimadaDeProveedor(d.fecha, provPago, await feriadosEntre(supabase, `${anioEm}-01-01`, `${anioEm + 1}-12-31`)).fecha
+
     const fila: Record<string, unknown> = {
       ...campos,
       tipo_comprobante_desc: tipoInfo.descripcion,
-      fecha_estimada: regla.estado === "debito" ? d.fecha : calcularFechaEstimada(d.fecha),
+      fecha_estimada: regla.estado === "debito" ? d.fecha : fechaEstimada,
       monto_a_abonar: campos.imp_total,
       campana: null,
       "año_contable": null,

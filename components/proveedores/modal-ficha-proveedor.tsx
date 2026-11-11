@@ -133,6 +133,15 @@ const SECCIONES: Array<{
       { campo: 'facturas_por_mes', label: 'Facturas por mes', tipo: 'numero' },
     ],
   },
+  {
+    // 📆 A-FEAT-1605 (scripts/264) — la fecha estimada de sus facturas nuevas. Vacío = emisión + 15. Si están los dos,
+    //    manda el día del mes. Sábado, domingo o feriado → el hábil siguiente.
+    titulo: 'Pago usual',
+    campos: [
+      { campo: 'pago_dia_mes', label: 'Se le paga el día (del mes)', tipo: 'numero' },
+      { campo: 'pago_dias_emision', label: 'Se le paga a N días de la emisión', tipo: 'numero' },
+    ],
+  },
 ]
 
 export function ModalFichaProveedor({ open, onClose, cuitInicial }: Props) {
@@ -718,7 +727,7 @@ function CampoEditable({ tipo, valor, onChange }: {
   }
   if (tipo === 'numero') {
     return (
-      <Input type="text" inputMode="numeric" className="h-7 w-20 text-xs" placeholder="no es fijo"
+      <Input type="text" inputMode="numeric" className="h-7 w-20 text-xs" placeholder="vacío"
         value={valor ?? ''}
         onChange={e => {
           const d = e.target.value.replace(/\D/g, '')

@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 📆 2 columnas nuevas en `public.proveedores`: `pago_dia_mes` (int 1–31) y `pago_dias_emision` (int) (2026-11-11) — ⏳ AVISO PREVIO (se corre a continuación con OK de JMS)
+### 📆 2 columnas nuevas en `public.proveedores`: `pago_dia_mes` (int 1–31) y `pago_dias_emision` (int) (2026-11-11) — ✅ APLICADA el 11/11 con OK de JMS (aviso previo): 2 columnas + 5 proveedores en día 10, verificado con EXPLAIN UPDATE
 - A-FEAT-1605, JMS 11/11: proveedores que se pagan siempre el mismo día del mes (ej. el 10) o a N días de la emisión. Vacías = como hoy (emisión + 15). Las usa la importación de facturas para la fecha estimada y se cargan desde el paso 3 («guardar como pago usual»). `scripts/264-…` con su deshacer (borra las columnas sólo si las creó el script; verificado antes). Carga inicial: 5 proveedores con día 10 (Alcorta, I.C.T. Net, Miceli, Massaglia, Coop. Río Tala). Se suman a la lista del endpoint `/api/gas/config-proveedor`. **No toca RLS, roles ni permisos.**
 
 ### ✔️ Estado nuevo `nada_a_pagar` en `public.cuotas_egresos_sin_factura.estado` (2026-11-10) — ✅ APLICADA el 10/11 con OK de JMS (aviso previo): CHECK rehecho con la misma lista + el valor nuevo, verificado con EXPLAIN UPDATE; 10 cuotas de Anticipo Ganancias MSA en el estado nuevo (script 256)

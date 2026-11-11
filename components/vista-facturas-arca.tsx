@@ -383,6 +383,18 @@ function TablaRegistrosV2({ registros, onCertificado, mostrarAnulados = false }:
 const calcularSubtotalesSubdiario = (facturas: any[]) =>
   calcularSubtotalesSubdiarioLib(facturas, TIPOS_SIN_CREDITO_COMPRAS)
 
+/** 📆 Días entre dos fechas `AAAA-MM-DD`. */
+function diasEntre(desde: string, hasta: string): number {
+  return Math.round((Date.parse(hasta.slice(0, 10) + 'T12:00:00Z') - Date.parse(desde.slice(0, 10) + 'T12:00:00Z')) / 86400000)
+}
+/** 📆 A-FEAT-1605: lo que se guarda en el proveedor al elegir «siempre el día N» / «siempre a N días». */
+function reglaDePagoDesde(emision: string | null | undefined, fecha: string, modo: 'dia' | 'dias'): Record<string, number | null> | null {
+  if (modo === 'dia') return { pago_dia_mes: Number(fecha.slice(8, 10)), pago_dias_emision: null }
+  if (!emision) return null
+  const n = diasEntre(emision, fecha)
+  return n >= 0 ? { pago_dia_mes: null, pago_dias_emision: n } : null
+}
+
 export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { empresa?: 'MSA' | 'PAM' | 'MA'; userRole?: UserRole } = {}) {
   // Modo restringido (lo que ve Ulises). Sólo admin tiene el modo completo — ver `facturasRestringidas`.
   const esContable = facturasRestringidas(userRole)
@@ -895,7 +907,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [origenFactura, setOrigenFactura] = useState<string>('')  // 'ARCA' | 'No Informada'
   const [pasoImportacion, setPasoImportacion] = useState<'origen' | 'archivo' | 'imputacion'>('origen')
   // buscar_pdf (A-FEAT-1287): al terminar la importación se busca el PDF de las tildadas — todas por default
-  const [imputacionData, setImputacionData] = useState<Array<{ fila: number, fc: string, cuenta_contable: string | null, buscar_pdf: boolean, detalle?: string, fecha_estimada?: string, siempre_portal?: boolean }>>([])
+  const [imputacionData, setImputacionData] = useState<Array<{ fila: number, fc: string, cuenta_contable: string | null, buscar_pdf: boolean, detalle?: string, fecha_estimada?: string, siempre_portal?: boolean, guardar_pago?: '' | 'dia' | 'dias' }>>([])
   const [cuentasContablesImport, setCuentasContablesImport] = useState<any[]>([])
   
   // Estados para edición inline
@@ -2405,6 +2417,34 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
     else toast.success(`${cuits.length} proveedor(es) quedaron como Portal para las próximas`)
   }
 
+  /**
+   * 📆 A-FEAT-1605 (JMS 11/11): «si yo cambio la fecha, que tenga la posibilidad de tildar guardar como fecha de pago
+   * usual». Lo elegido en el paso 3 queda en la ficha del proveedor: «siempre el día N» o «siempre a N días de la emisión».
+   */
+  const guardarPagoUsualDeImportacion = async (imp: typeof imputacionData, filas: any[]) => {
+    const porCuit = new Map<string, Record<string, number | null>>()
+    for (const d of imp) {
+      if (!d.guardar_pago || !d.fecha_estimada) continue
+      const f = filas.find((x: any) => x.fila === d.fila)
+      const cuit = cuitLimpio(f?.cuit)
+      if (!cuit) continue
+      const regla = reglaDePagoDesde(f?.fecha_emision, d.fecha_estimada, d.guardar_pago)
+      if (regla) porCuit.set(cuit, regla)
+    }
+    if (porCuit.size === 0) return
+    const fallas: string[] = []
+    for (const [cuit, regla] of porCuit) {
+      try {
+        const r = await fetch('/api/gas/config-proveedor', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cuit, ...regla }) })
+        const d = await r.json()
+        if (!d.ok) fallas.push(`${cuit} (${d.error || 'error'})`)
+      } catch (e) { fallas.push(`${cuit} (${(e as Error).message})`) }
+    }
+    if (fallas.length) toast.error('No se guardó el pago usual de: ' + fallas.join(' · '), { duration: 20000 })
+    else toast.success(`Pago usual guardado en ${porCuit.size} proveedor(es): sus próximas facturas ya toman esa fecha`)
+  }
+
   const guardarMailsDeImportacion = async (mails: Record<string, string>) => {
     const conMail = Object.entries(mails).map(([c, m]) => [cuitLimpio(c), m.trim()] as const).filter(([, m]) => m)
     if (conMail.length === 0) return
@@ -2500,6 +2540,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           const tildadas = idsParaBuscarTrasImportar(imputacionData, resultado.idsPorFila)
           await guardarMailsDeImportacion({ ...provEditMail })
           await guardarPortalDeImportacion(imputacionData, (previewData?.facturas as any[]) || [])
+          await guardarPagoUsualDeImportacion(imputacionData, (previewData?.facturas as any[]) || [])
           if (tildadas.length > 0) dispararBusquedaPostImport(tildadas)
         }
       }
@@ -9149,7 +9190,20 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                                 <input type="date" className="border rounded px-1 py-0.5 text-xs w-full"
                                   value={imp?.fecha_estimada ?? ''}
                                   onChange={(e) => { const v = e.target.value; setImputacionData(prev => prev.map(d =>
-                                    d.fila === f.fila ? { ...d, fecha_estimada: v } : d)) }} />
+                                    d.fila === f.fila ? { ...d, fecha_estimada: v, guardar_pago: v === f.fecha_estimada_sugerida ? '' : d.guardar_pago } : d)) }} />
+                                {/* 📆 A-FEAT-1605: de dónde sale, y guardarla como el pago usual del proveedor */}
+                                {imp?.fecha_estimada && imp.fecha_estimada !== f.fecha_estimada_sugerida && !esContable ? (
+                                  <select className="mt-0.5 w-full border rounded px-0.5 text-[10px] text-gray-700"
+                                    value={imp.guardar_pago || ''}
+                                    title="Queda en la ficha del proveedor: sus próximas facturas toman esta fecha solas (sábado, domingo o feriado → el hábil siguiente)"
+                                    onChange={(e) => { const v = e.target.value as '' | 'dia' | 'dias'; setImputacionData(prev => prev.map(d => d.fila === f.fila ? { ...d, guardar_pago: v } : d)) }}>
+                                    <option value="">sólo esta factura</option>
+                                    <option value="dia">siempre el día {Number(imp.fecha_estimada.slice(8, 10))} del mes</option>
+                                    {f.fecha_emision && <option value="dias">siempre a {diasEntre(f.fecha_emision, imp.fecha_estimada)} días de la emisión</option>}
+                                  </select>
+                                ) : f.fecha_origen ? (
+                                  <div className="text-[10px] text-gray-500 mt-0.5">{f.fecha_origen}</div>
+                                ) : null}
                               </td>
                               <td className="p-2">
                                 {/* A-FEAT-1434: la cuenta se busca escribiendo, como en el resto de la app */}

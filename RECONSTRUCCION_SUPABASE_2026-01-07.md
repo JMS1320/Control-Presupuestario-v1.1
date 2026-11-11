@@ -13390,3 +13390,13 @@ ALTER TABLE public.cuotas_egresos_sin_factura ADD CONSTRAINT cuotas_egresos_sin_
 CHECK (estado::text = ANY (ARRAY['pendiente','debito','pagar','preparado','pagado','credito','conciliado','desactivado','anterior','programado','nada_a_pagar']::text[]));
 ```
 Deshacer: `scripts/255-estado-nada-a-pagar-deshacer.sql` (sólo si ninguna cuota quedó en el estado). Datos: `scripts/256` (10 cuotas de Anticipo Ganancias MSA).
+
+### 2026-11-11 · Día de pago usual de cada proveedor (script 264, ESTRUCTURA + DATOS) — A-FEAT-1605 — ✅ APLICADO con OK de JMS (aviso previo en ENTRE-DESARROLLADORES)
+La fecha estimada de una factura nueva sale de cómo se le paga a su proveedor: el día N del mes, o a N días de la emisión. Vacías = emisión + 15.
+```sql
+ALTER TABLE public.proveedores ADD COLUMN pago_dia_mes integer CHECK (pago_dia_mes BETWEEN 1 AND 31);
+ALTER TABLE public.proveedores ADD COLUMN pago_dias_emision integer CHECK (pago_dias_emision BETWEEN 0 AND 365);
+-- datos (OK de JMS): día 10 a Alcorta, I.C.T. Net, Miceli, Massaglia y Coop. agua Río Tala (por id, en scripts/264)
+```
+Deshacer: `scripts/264-dia-de-pago-proveedores-deshacer.sql` (las columnas no existían antes).
+

@@ -4,7 +4,7 @@ import * as Papa from "papaparse"
 import * as XLSX from "xlsx"
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 import { nroDeCuenta } from "@/lib/facturas/nro-de-cuenta"
-import { calcularFechaEstimada, buscarReglaCuit, obtenerTipoComprobante, aNegativoSiNC, asegurarProveedores, fcSugeridoImport, fechaManualValida } from "@/lib/facturas/alta-factura"
+import { calcularFechaEstimada, buscarReglaCuit, obtenerTipoComprobante, aNegativoSiNC, asegurarProveedores, fcSugeridoImport, fechaManualValida, fechaEstimadaDeProveedor, feriadosEntre, type PagoUsual } from "@/lib/facturas/alta-factura"
 
 // Abreviatura tipo comprobante AFIP → FC/ND/NC
 const tipoComprobanteAbrev = (tipo: number | null | undefined): string => {
@@ -418,11 +418,19 @@ export async function POST(req: Request) {
     // 🌐 Los proveedores marcados como Portal (nota JMS 11/11): la vista previa lo muestra y la importación lo aplica igual,
     //    para que la pantalla no diga una cosa y se guarde otra (A-BUG-1243).
     const fcModoPorCuit = new Map<string, string | null>()
+    // 📆 A-FEAT-1605: cómo se le paga a cada proveedor (día del mes / a N días de la emisión) y los feriados
+    const pagoPorCuit = new Map<string, PagoUsual>()
+    const hoyF = new Date().toISOString().slice(0, 10)
+    const feriados = await feriadosEntre(supabase, `${Number(hoyF.slice(0, 4)) - 2}-01-01`, `${Number(hoyF.slice(0, 4)) + 2}-12-31`)
     {
       const cuits = Array.from(new Set(filasCSV.map((x: any) => String(x?.["Nro. Doc. Emisor"] ?? '').replace(/\D/g, '')).filter(Boolean)))
       for (let i = 0; i < cuits.length; i += 200) {
-        const { data: provs } = await supabase.from('proveedores').select('cuit, fc_modo').in('cuit', cuits.slice(i, i + 200))
-        for (const p of provs ?? []) fcModoPorCuit.set(String(p.cuit).replace(/\D/g, ''), p.fc_modo ?? null)
+        const { data: provs } = await supabase.from('proveedores').select('cuit, fc_modo, pago_dia_mes, pago_dias_emision').in('cuit', cuits.slice(i, i + 200))
+        for (const p of provs ?? []) {
+          const c = String(p.cuit).replace(/\D/g, '')
+          fcModoPorCuit.set(c, p.fc_modo ?? null)
+          pagoPorCuit.set(c, { pago_dia_mes: p.pago_dia_mes, pago_dias_emision: p.pago_dias_emision })
+        }
       }
     }
 
@@ -457,7 +465,12 @@ export async function POST(req: Request) {
               // 🌐📅 nota JMS 11/11: el paso 3 muestra con qué FC y qué fecha estimada va a entrar, y de dónde salen
               fc_sugerido: fcSugeridoImport(f.fc, fcModoPorCuit.get(String(f.cuit).replace(/\D/g, ''))).fc,
               fc_origen: fcSugeridoImport(f.fc, fcModoPorCuit.get(String(f.cuit).replace(/\D/g, ''))).origen,
-              fecha_estimada_sugerida: f.fecha_estimada || null,
+              // 📆 A-FEAT-1605: la del proveedor (día del mes / N días) salvo que la regla diga débito (= la emisión)
+              ...(() => {
+                if (f.estado === 'debito') return { fecha_estimada_sugerida: f.fecha_estimada || null, fecha_origen: 'débito (regla del CUIT)' }
+                const r = fechaEstimadaDeProveedor(f.fecha_emision, pagoPorCuit.get(String(f.cuit).replace(/\D/g, '')), feriados)
+                return { fecha_estimada_sugerida: r.fecha, fecha_origen: r.texto }
+              })(),
               estado: sinDatos ? 'error' : duplicado ? 'duplicado' : 'nueva',
             }
           } catch {
@@ -546,6 +559,11 @@ export async function POST(req: Request) {
         const imputacion = imputacionMap.get(filaNum)
         // 🌐 el proveedor marcado como Portal entra en Portal si la regla no dijo otra cosa (lo mismo que mostró la vista previa)
         filaParaBBDD.fc = fcSugeridoImport(filaParaBBDD.fc, fcModoPorCuit.get(String(filaParaBBDD.cuit).replace(/\D/g, ''))).fc
+        // 📆 A-FEAT-1605: la fecha estimada sale de cómo se le paga al proveedor (lo mismo que mostró la vista previa)
+        if (filaParaBBDD.estado !== 'debito') {
+          const r = fechaEstimadaDeProveedor(filaParaBBDD.fecha_emision, pagoPorCuit.get(String(filaParaBBDD.cuit).replace(/\D/g, '')), feriados)
+          if (r.fecha) (filaParaBBDD as any).fecha_estimada = r.fecha
+        }
         if (imputacion) {
           if (imputacion.fc) filaParaBBDD.fc = imputacion.fc
           // 📅 la fecha estimada puesta a mano en el paso 3 pisa la calculada (emisión + 15, o emisión si es débito)

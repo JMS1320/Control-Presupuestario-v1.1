@@ -40,6 +40,8 @@ const CAMPOS_PERMITIDOS = [
   'facturas_por_mes',
   // 🔁 A-FEAT-140: sus compras y ventas se cancelan por cuenta corriente (scripts/197).
   'opera_cuenta_corriente',
+  // 📆 A-FEAT-1605: el día de pago usual (día del mes, o a N días de la emisión) — scripts/264
+  'pago_dia_mes', 'pago_dias_emision',
 ]
 
 export async function GET(request: Request) {

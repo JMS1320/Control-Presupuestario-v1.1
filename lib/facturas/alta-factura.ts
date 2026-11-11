@@ -203,3 +203,51 @@ export function fechaManualValida(v: unknown): string | null {
   const d = new Date(s + 'T12:00:00Z')
   return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s ? s : null
 }
+
+/** 📆 A-FEAT-1605 — cómo se le paga a un proveedor (columnas de `public.proveedores`, scripts/264). */
+export interface PagoUsual { pago_dia_mes?: number | null; pago_dias_emision?: number | null }
+
+const sumarDias = (iso: string, n: number) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10) }
+const ultimoDiaDelMes = (anio: number, mes: number) => new Date(Date.UTC(anio, mes, 0)).getUTCDate()
+
+/** El día hábil a partir de `iso`: sábado, domingo o feriado pasan al siguiente. */
+export function diaHabilDesde(iso: string, feriados: Set<string>): string {
+  let f = iso
+  for (let i = 0; i < 15; i++) {
+    const dow = new Date(f + 'T12:00:00Z').getUTCDay()
+    if (dow !== 0 && dow !== 6 && !feriados.has(f)) return f
+    f = sumarDias(f, 1)
+  }
+  return f
+}
+
+/**
+ * 📆 A-FEAT-1605 (JMS 11/11) — la FECHA ESTIMADA de una factura nueva según cómo se le paga a su proveedor:
+ * - **día del mes** (`pago_dia_mes` = N): el próximo día N desde la emisión — si se emite ese mismo día, ese día; si el
+ *   mes no tiene ese día (31), el último —;
+ * - **a N días de la emisión** (`pago_dias_emision`): emisión + N;
+ * - sin ninguno de los dos: emisión + 15, como siempre.
+ * En los dos primeros, si cae sábado, domingo o feriado pasa al día hábil siguiente. Si están los dos, manda el día del mes.
+ */
+export function fechaEstimadaDeProveedor(fechaEmision: string | null, pago: PagoUsual | null | undefined, feriados: Set<string> = new Set()):
+  { fecha: string | null; origen: 'dia_mes' | 'dias_emision' | 'default'; texto: string } {
+  if (!fechaEmision || !/^\d{4}-\d{2}-\d{2}/.test(fechaEmision)) return { fecha: calcularFechaEstimada(fechaEmision), origen: 'default', texto: 'emisión + 15' }
+  const em = fechaEmision.slice(0, 10)
+  const n = pago?.pago_dia_mes
+  if (n && n >= 1 && n <= 31) {
+    let [a, m, d] = em.split('-').map(Number)
+    if (d > Math.min(n, ultimoDiaDelMes(a, m))) { m++; if (m > 12) { m = 1; a++ } }
+    const dia = Math.min(n, ultimoDiaDelMes(a, m))
+    const base = `${a}-${String(m).padStart(2, '0')}-${String(dia).padStart(2, '0')}`
+    return { fecha: diaHabilDesde(base, feriados), origen: 'dia_mes', texto: `día ${n} (proveedor)` }
+  }
+  const k = pago?.pago_dias_emision
+  if (k != null && k >= 0) return { fecha: diaHabilDesde(sumarDias(em, k), feriados), origen: 'dias_emision', texto: `${k} días de la emisión (proveedor)` }
+  return { fecha: calcularFechaEstimada(em), origen: 'default', texto: 'emisión + 15' }
+}
+
+/** Los feriados (`public.feriados`, los que usa Sueldos) de un rango, como un Set de `AAAA-MM-DD`. */
+export async function feriadosEntre(sb: SupabaseClient, desde: string, hasta: string): Promise<Set<string>> {
+  const { data } = await sb.from('feriados').select('fecha').gte('fecha', desde).lte('fecha', hasta)
+  return new Set((data ?? []).map((f: any) => String(f.fecha).slice(0, 10)))
+}

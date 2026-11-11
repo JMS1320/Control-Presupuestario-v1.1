@@ -390,7 +390,7 @@ import { armarSaldosProductivos, sistemaProductivoAlCierre, diaAnterior } from "
 import { armarFilaDato, leerNumero, textoEstadoGuardado, MARCA_TENTATIVO, esTentativo, fuenteTentativo, confirmarFila, leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
 import { leerFacturaDelTexto, precargaDesdeLectura, cuitValido, parsearImporte } from "@/lib/gas-pdf/leer-factura"
-import { controlDeLaCarga, camposDeLaCarga, huellaDeLaCarga, aNegativoSiNC, fcSugeridoImport, fechaManualValida } from "@/lib/facturas/alta-factura"
+import { controlDeLaCarga, camposDeLaCarga, huellaDeLaCarga, aNegativoSiNC, fcSugeridoImport, fechaManualValida, fechaEstimadaDeProveedor } from "@/lib/facturas/alta-factura"
 import { faltantesDelSubdiario } from "@/lib/gas-pdf/faltantes"
 import { parsearLineaMovimiento, parsearResumen as parsearResumenTarjeta } from "@/lib/tarjetas/parseo-resumen-pdf"
 import {
@@ -4419,6 +4419,17 @@ export function correrCasos(): Resultado[] {
         "No/regla · Portal/proveedor · Buscar/- · Buscar/-", v, v === "No/regla · Portal/proveedor · Buscar/- · Buscar/-", "A-BUG-1243")
       const f = [fechaManualValida("2026-11-30"), fechaManualValida("2026-02-30"), fechaManualValida(""), fechaManualValida("30/11/2026")].map(x => x ?? "nada").join(" · ")
       chequear("Facturas · importar", "📅 La fecha estimada puesta a mano sólo se usa si es un día real", "2026-11-30 · nada · nada · nada", f, f === "2026-11-30 · nada · nada · nada", "A-BUG-1243")
+      // 📆 A-FEAT-1605 (JMS 11/11): el pago usual del proveedor — próximo día N (el mismo día si se emite ese día), hábil
+      //    siguiente si cae fin de semana o feriado, último día si el mes no lo tiene; o a N días; o emisión + 15.
+      const fe = (em: string, p: any, fer: string[] = []) => fechaEstimadaDeProveedor(em, p, new Set(fer)).fecha
+      const vP = [
+        fe("2026-11-03", { pago_dia_mes: 10 }), fe("2026-11-10", { pago_dia_mes: 10 }), fe("2026-11-12", { pago_dia_mes: 10 }),
+        fe("2026-11-12", { pago_dia_mes: 10 }, ["2026-12-10"]), fe("2026-12-15", { pago_dia_mes: 10 }), fe("2027-02-05", { pago_dia_mes: 31 }),
+        fe("2026-11-10", { pago_dias_emision: 30 }), fe("2026-11-10", null),
+      ].join(" · ")
+      const espP = "2026-11-10 · 2026-11-10 · 2026-12-10 · 2026-12-11 · 2027-01-11 · 2027-03-01 · 2026-12-10 · 2026-11-25"
+      chequear("Facturas · importar", "📆 Fecha estimada por el pago usual del proveedor (día 10, emitida el 10, feriado, domingo, mes sin el 31, a 30 días, sin regla)",
+        espP, vP, vP === espP, "A-FEAT-1605")
     }
 
     // 🧾 A-FEAT-1564 — una VENTA puesta a mano: entra a la provisión como venta (→ 03.1 cobros), no a las compras ni a la lista
