@@ -5,7 +5,7 @@ import { Check, ChevronsUpDown, Plus, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { supabase } from "@/lib/supabase"
@@ -142,6 +142,8 @@ export function InsumoCombobox({
         ) : (
           <Command shouldFilter={false}>
             <CommandInput placeholder="Buscar insumo..." value={busqueda} onValueChange={setBusqueda} />
+            <CommandList className="max-h-none overflow-visible">
+            {/* ⌨️ nota JMS 11/11: sin CommandList el buscador no encuentra las opciones y las flechas / Tab no se mueven */}
             <CommandEmpty>Sin resultados</CommandEmpty>
             <CommandGroup className="max-h-56 overflow-auto">
               {filtrados.map(i => (
@@ -152,6 +154,7 @@ export function InsumoCombobox({
                 </CommandItem>
               ))}
             </CommandGroup>
+            </CommandList>
             <div className="border-t p-1">
               <Button size="sm" variant="ghost" className="w-full justify-start h-7 text-xs text-green-700"
                 onClick={() => setCreando(true)}>

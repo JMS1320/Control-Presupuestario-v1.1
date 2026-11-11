@@ -5,7 +5,7 @@ import { Check, ChevronsUpDown, Plus, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { supabase } from "@/lib/supabase"
 import { normalizarBusqueda } from "@/lib/normalizar-texto"
@@ -120,6 +120,8 @@ export function CentroCostoCombobox({
         ) : (
           <Command shouldFilter={false}>
             <CommandInput placeholder="Buscar centro de costo..." value={busqueda} onValueChange={setBusqueda} />
+            <CommandList className="max-h-none overflow-visible">
+            {/* ⌨️ nota JMS 11/11: sin CommandList el buscador no encuentra las opciones y las flechas / Tab no se mueven */}
             <CommandEmpty>Sin resultados</CommandEmpty>
             <CommandGroup className="max-h-56 overflow-auto">
               {value && (
@@ -135,6 +137,7 @@ export function CentroCostoCombobox({
                 </CommandItem>
               ))}
             </CommandGroup>
+            </CommandList>
             <div className="border-t p-1">
               <Button
                 size="sm" variant="ghost"

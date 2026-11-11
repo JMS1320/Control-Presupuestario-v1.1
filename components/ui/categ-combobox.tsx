@@ -9,8 +9,7 @@ import {
   CommandEmpty,
   CommandGroup,
   CommandInput,
-  CommandItem,
-} from "@/components/ui/command"
+  CommandItem, CommandList } from "@/components/ui/command"
 import {
   Popover,
   PopoverContent,
@@ -118,7 +117,9 @@ export function CategCombobox({
             value={value}
             onValueChange={onValueChange}
           />
-          <CommandEmpty>
+          <CommandList className="max-h-none overflow-visible">
+            {/* ⌨️ nota JMS 11/11: sin CommandList el buscador no encuentra las opciones y las flechas / Tab no se mueven */}
+            <CommandEmpty>
             {loading ? "Cargando categorías..." : "No se encontraron categorías"}
           </CommandEmpty>
           <CommandGroup className="max-h-64 overflow-auto">
@@ -174,6 +175,7 @@ export function CategCombobox({
               </CommandItem>
             )}
           </CommandGroup>
+            </CommandList>
         </Command>
       </PopoverContent>
     </Popover>
