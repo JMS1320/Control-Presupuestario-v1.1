@@ -146,7 +146,7 @@ import { filtrarOrdenesAgricolas, chipsDe, resumenOrdenes, FILTRO_ORDENES_VACIO,
 import { armarLibroComprasArca, controlarArchivo, leerCbte, texto as textoArca, type FilaCompraArca } from "@/lib/subdiarios/libro-iva-arca"
 import { evaluarCambioDDJJ, estadoDelPeriodo, mesesEnviadosSinPresentar, estadoDeLosMeses } from "@/lib/subdiarios/estado-ddjj"
 import { completarFechaPago } from "@/lib/conciliacion/fecha-pago"
-import { etiquetaTipoComprobante, desdeVentana, pasaVentana, coincideNumeroComprobante } from "@/lib/pagos/filtros-cash-flow"
+import { etiquetaTipoComprobante, desdeVentana, pasaVentana, coincideNumeroComprobante, rangoAlrededorDeHoy, pasaRango } from "@/lib/pagos/filtros-cash-flow"
 import { armarImpuestoCheque, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { resultadosDeVersion, enDolares, gananciaDelEjercicio, parsearMonto, propuestaDelSistema, valoresEfectivos, cambiosContraLoGuardado, deudaDeTarjeta, ivaConSigno, type ValorFoto } from "@/lib/balance/balance-propio"
 import { simularSecuencia, retencionDelGrupo, calcularRetencion, baseTrasDescuento, destinoDeNotaDeCredito, numeroDeLaFila } from "@/lib/sicore/minimo"
@@ -338,7 +338,7 @@ import { parsearComprasCsv, parsearTotalesXml, compararSubdiarioConLibro } from 
 import { mesesARectificar, queCambio, efectoEnElMes, leyendaRectificacion, esColumnaFiscal, type CambioSubdiario } from "@/lib/subdiarios/rectificacion"
 import { ivaDelLibroVenta } from "@/lib/ventas/libro-iva"
 import { CONTADOR, asuntoSubdiario, periodoDelAsunto, cuerpoSubdiario } from "@/lib/subdiarios/contador"
-import { calcularSubtotalesSubdiario } from "@/lib/subdiarios/subtotales"
+import { calcularSubtotalesSubdiario, filasSinCreditoPorLetra } from "@/lib/subdiarios/subtotales"
 import { TABLAS_CON_VINCULO_VENTA, completarConGrupoDeCobro } from "@/lib/balance/fechas-de-pago"
 import { TIPOS_SIN_CREDITO_COMPRAS, verificarCuadratura } from "@/lib/subdiarios/cuadratura"
 import { controlarPoliza, cotejarConComprobante, repartoDeLaPoliza, repartoDeLasCuotas, repartirImporte, responsableDe } from "@/lib/polizas/controlar-poliza"
@@ -8976,6 +8976,21 @@ export function correrCasos(): Resultado[] {
     chequear("Cash Flow — filtros", "La ventana: 2 semanas antes del 04/10 es el 20/09; 1 mes, el 04/09; lo de antes se esconde, lo sin fecha no",
       "2026-09-20 · 2026-09-04 · fuera · adentro · sin fecha adentro", `${d2s} · ${d1m} · ${pasaVentana("2026-09-01", d1m) ? "adentro" : "fuera"} · ${pasaVentana("2026-11-15", d1m) ? "adentro" : "fuera"} · sin fecha ${pasaVentana(null, d1m) ? "adentro" : "fuera"}`,
       d2s === "2026-09-20" && d1m === "2026-09-04" && !pasaVentana("2026-09-01", d1m) && pasaVentana("2026-11-15", d1m) && pasaVentana(null, d1m) && d3m === "2025-12-31", "A-FEAT-1237")
+    {
+      // 📅 nota JMS 11/11: «0 es hoy; 1 es ayer, hoy y mañana»
+      const r0 = rangoAlrededorDeHoy("2026-11-11", 0), r1 = rangoAlrededorDeHoy("2026-11-11", 1), rM = rangoAlrededorDeHoy("2026-12-31", 1)
+      const vR = [`${r0.desde}/${r0.hasta}`, `${r1.desde}/${r1.hasta}`, `${rM.desde}/${rM.hasta}`, pasaRango("2026-11-12", r1), pasaRango("2026-11-13", r1), pasaRango(null, r1)].map(String).join(" · ")
+      const espR = "2026-11-11/2026-11-11 · 2026-11-10/2026-11-12 · 2026-12-30/2027-01-01 · true · false · true"
+      chequear("Cash Flow · filtros", "📅 ± días alrededor de hoy: 0 = hoy, 1 = ayer/hoy/mañana (cruza el año), sin fecha se sigue viendo", espR, vR, vR === espR, "A-FEAT-1615")
+    }
+    {
+      // 🅱️🅲 nota JMS 11/11: el bloque «no generan crédito fiscal» separa las B de las C (y el total no cambia)
+      const filasBC = [{ tipo_comprobante: 6, imp_total: 1000 }, { tipo_comprobante: 11, imp_total: 300 }, { tipo_comprobante: 11, imp_total: 200 }, { tipo_comprobante: 13, imp_total: -50 }] as any[]
+      const sc = calcularSubtotalesSubdiario(filasBC, [6, 7, 8, 11, 12, 13]).sinCredito
+      const vBC = filasSinCreditoPorLetra(sc).map(r => `${r.concepto}${r.cantidad != null ? `(${r.cantidad})` : ''}=${r.total}`).join(" · ")
+      const espBC = "Facturas B(1)=1000 · Facturas C(2)=500 · Notas de crédito C(1)=50 · Total Neto (FC − NC)=1450"
+      chequear("Subdiarios", "🅱️🅲 Sin crédito fiscal: las B separadas de las C, el total igual que antes", espBC, vBC, vBC === espBC, "A-FEAT-1616")
+    }
   }
 
 

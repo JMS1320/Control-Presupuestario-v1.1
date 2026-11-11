@@ -60,3 +60,21 @@ export function coincideNumeroComprobante(
   ]
   return textos.some(t => t.replace(/\D/g, "").replace(/^0+/, "").includes(q) || t.replace(/\D/g, "").includes(q))
 }
+
+/**
+ * 📅 nota 🌙 JMS 11/11 (Cash Flow): «agregar una cantidad de días. Si pongo 0 es hoy. Si es 1 es ayer, hoy y mañana».
+ * El rango de N días alrededor de hoy, en hora argentina (`hoy` ya viene en AAAA-MM-DD).
+ */
+export function rangoAlrededorDeHoy(hoy: string, n: number): { desde: string; hasta: string } {
+  const [a, m, d] = hoy.split("-").map(Number)
+  const k = Math.max(0, Math.floor(n))
+  const f = (delta: number) => new Date(Date.UTC(a, m - 1, d + delta)).toISOString().slice(0, 10)
+  return { desde: f(-k), hasta: f(k) }
+}
+
+/** ¿La fecha entra en el rango? Sin fecha, como en la ventana: se muestra (no se esconde en silencio). */
+export function pasaRango(fecha: string | null | undefined, rango: { desde: string; hasta: string } | null): boolean {
+  if (!rango || !fecha) return true
+  const x = fecha.slice(0, 10)
+  return x >= rango.desde && x <= rango.hasta
+}

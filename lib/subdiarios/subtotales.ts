@@ -39,6 +39,8 @@ export interface SubtotalesSubdiario {
     fc: { total: number; cantidad: number }
     nc: { total: number; cantidad: number }
     neto: number
+    /** 🅱️🅲 nota JMS 11/11 («en subdiarios debería mostrar separado las B de las C»): el mismo bloque, por letra. */
+    porLetra: Record<LetraSinCredito, { fc: { total: number; cantidad: number }; nc: { total: number; cantidad: number }; neto: number }>
   }
 
   // ── Alias de compatibilidad ──────────────────────────────────────────────
@@ -53,6 +55,32 @@ export interface SubtotalesSubdiario {
   facturas_c: number
   /** @deprecated */
   cantidad_facturas_c: number
+}
+
+export type LetraSinCredito = 'B' | 'C' | 'otros'
+/** La letra de un comprobante sin crédito fiscal por su código de ARCA: 6–10 = B, 11–16 = C; el resto, «otros». */
+export function letraSinCredito(tipo: unknown): LetraSinCredito {
+  const t = Number(tipo)
+  if (t >= 6 && t <= 10) return 'B'
+  if (t >= 11 && t <= 16) return 'C'
+  return 'otros'
+}
+
+/**
+ * Las filas del bloque «no generan crédito fiscal» separadas por letra (sólo las letras que tienen algo), más el total.
+ * La usan la pantalla, el Excel y el PDF del subdiario: así las tres muestran lo mismo.
+ */
+export function filasSinCreditoPorLetra(sc: SubtotalesSubdiario['sinCredito']): Array<{ concepto: string; cantidad: number | null; total: number; esTotal?: boolean }> {
+  const nombre: Record<LetraSinCredito, string> = { B: 'B', C: 'C', otros: 'de otros tipos' }
+  const filas: Array<{ concepto: string; cantidad: number | null; total: number; esTotal?: boolean }> = []
+  for (const l of ['B', 'C', 'otros'] as const) {
+    const x = sc.porLetra[l]
+    if (!x.fc.cantidad && !x.nc.cantidad) continue
+    filas.push({ concepto: `Facturas ${nombre[l]}`, cantidad: x.fc.cantidad, total: x.fc.total })
+    if (x.nc.cantidad) filas.push({ concepto: `Notas de crédito ${nombre[l]}`, cantidad: x.nc.cantidad, total: x.nc.total })
+  }
+  filas.push({ concepto: 'Total Neto (FC − NC)', cantidad: null, total: sc.neto, esTotal: true })
+  return filas
 }
 
 const n = (v: any): number => {
@@ -109,10 +137,19 @@ export function calcularSubtotalesSubdiario(
     nc: { ...sumNC, cantidad: ncList.length },
     neto: sumNeto,
   }
+  const porLetra = {} as SubtotalesSubdiario['sinCredito']['porLetra']
+  for (const l of ['B', 'C', 'otros'] as const) {
+    const fcL = sinCredComprob.filter(f => letraSinCredito(f.tipo_comprobante) === l)
+    const ncL = sinCredNC.filter(f => letraSinCredito(f.tipo_comprobante) === l)
+    const tF = fcL.reduce((s, f) => s + n(f.imp_total) * tcDe(f), 0)
+    const tN = ncL.reduce((s, f) => s + Math.abs(n(f.imp_total)) * tcDe(f), 0)
+    porLetra[l] = { fc: { total: tF, cantidad: fcL.length }, nc: { total: tN, cantidad: ncL.length }, neto: tF - tN }
+  }
   const sinCredito = {
     fc: { total: totalComprob, cantidad: sinCredComprob.length },
     nc: { total: totalNC, cantidad: sinCredNC.length },
     neto: totalComprob - totalNC,
+    porLetra,
   }
 
   return {

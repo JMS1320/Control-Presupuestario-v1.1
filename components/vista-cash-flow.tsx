@@ -5,7 +5,7 @@ import { esMonedaExtranjera, aPagarEnPesos, totalEnPesos, conversionDe } from "@
 import { hoyArgentina } from "@/lib/fechas"
 import { Permisable, useSeMuestra } from "@/components/modo-permisos"
 import { ANTICIPOS_CASHFLOW, primeraPermitida, hayAlguna } from "@/lib/auth/ventanas"
-import { etiquetaTipoComprobante, desdeVentana, pasaVentana, coincideNumeroComprobante, type UnidadVentana } from "@/lib/pagos/filtros-cash-flow"
+import { etiquetaTipoComprobante, desdeVentana, pasaVentana, rangoAlrededorDeHoy, pasaRango, coincideNumeroComprobante, type UnidadVentana } from "@/lib/pagos/filtros-cash-flow"
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { pasaSentido, type Columna } from "@/lib/movimientos/sentido"
 import { CarteraChequesTerceros } from "@/components/cartera-cheques-terceros"
@@ -760,6 +760,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   }
   /** ⏪ A-FEAT-1237 — ventana hacia atrás: desde hace N semanas o meses. `null` = sin límite (como siempre). */
   const [ventana, setVentana] = useState<{ unidad: UnidadVentana; n: number } | null>(null)
+  /** 📅 nota JMS 11/11: «N días alrededor de hoy» (0 = hoy; 1 = ayer, hoy y mañana). Vacío = no filtra. */
+  const [diasAlrededor, setDiasAlrededor] = useState('')
   const [modalExportarLote, setModalExportarLote] = useState<{ open: boolean; items: ItemSeleccionado[] }>({ open: false, items: [] })
   /**
    * 📐 A-FEAT-1277 — columnas con el ancho y el orden que dejó el usuario, guardados en su cuenta.
@@ -1812,12 +1814,14 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const tiposDisponibles = Array.from(new Set(data.map(f => etiquetaTipoComprobante(f)))).sort()
   const tiposActivos = chipsTipo ?? new Set(tiposDisponibles)
   const desdeV = ventana ? desdeVentana(hoyArgentina(), ventana.unidad, ventana.n) : null
+  const rangoDias = diasAlrededor.trim() !== '' && Number.isFinite(Number(diasAlrededor)) ? rangoAlrededorDeHoy(hoyArgentina(), Number(diasAlrededor)) : null
   const datosOperativos = !chipsInit
     ? datosConBusqueda
     : datosConBusqueda.filter(fila => {
         if (!chipsOrigenes.has(fila.origen) || !chipsEstados.has(fila.estado)) return false
         if (!tiposActivos.has(etiquetaTipoComprobante(fila))) return false   // A-FEAT-170
         if (!pasaVentana(fila.fecha_estimada, desdeV)) return false          // A-FEAT-1237
+        if (!pasaRango(fila.fecha_estimada, rangoDias)) return false         // 📅 nota JMS 11/11
         if (!pasaSentido(fila, chipsSentido)) return false   // A-FEAT-1224
         if (!verDebitosVencidos && fila.estado === 'debito' && (fila.fecha_estimada || '') < corteDebitoStr) return false
         return true
@@ -1836,6 +1840,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     setChipsSentido(new Set<Columna>(['debitos', 'creditos']))   // A-FEAT-1224
     setChipsTipo(null)                                           // A-FEAT-170
     setVentana(null)                                             // A-FEAT-1237
+    setDiasAlrededor('')                                         // 📅 nota JMS 11/11
   }
   // E2.1: subtotales de lo que se está viendo (respeta chips/búsqueda) — usa lib/pagos/subtotales
   const subtotales = calcularSubtotales(datosOperativos)
@@ -5247,6 +5252,11 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 </button>
               )))}
               {desdeV && <span className="text-[10px] text-gray-500">desde el {desdeV.split('-').reverse().join('/')}</span>}
+              {/* 📅 nota 🌙 JMS 11/11: N días alrededor de hoy */}
+              <span className="ml-3 text-xs font-semibold text-gray-600" title="0 = sólo hoy · 1 = ayer, hoy y mañana · 3 = de hace 3 días a dentro de 3. Vacío = no filtra">± días:</span>
+              <input type="text" inputMode="numeric" value={diasAlrededor} onChange={e => setDiasAlrededor(e.target.value.replace(/[^0-9]/g, ''))}
+                placeholder="—" className="w-10 rounded border px-1 py-0.5 text-xs text-center" />
+              {rangoDias && <span className="text-[10px] text-gray-500">del {rangoDias.desde.split('-').reverse().join('/')} al {rangoDias.hasta.split('-').reverse().join('/')} <button type="button" className="underline" onClick={() => setDiasAlrededor('')}>quitar</button></span>}
             </div>
             <label className="flex items-center gap-1 text-xs text-gray-500 ml-auto cursor-pointer" title="Los débitos automáticos anteriores a hoy se asumen pagados y se ocultan">
               <input type="checkbox" checked={verDebitosVencidos} onChange={e => setVerDebitosVencidos(e.target.checked)} />

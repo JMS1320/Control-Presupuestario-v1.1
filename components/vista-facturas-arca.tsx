@@ -75,7 +75,9 @@ import { historicoAFactura, filasDelSubdiario } from "@/lib/facturas/historico-c
 import { CONTADOR, asuntoSubdiario, cuerpoSubdiario, carpetaEnMemoria, aBase64, MIME } from "@/lib/subdiarios/contador"
 import { ControlContraPresentado } from "@/components/control-contra-presentado"
 import { verificarCuadratura, TIPOS_SIN_CREDITO_COMPRAS } from "@/lib/subdiarios/cuadratura"
-import { calcularSubtotalesSubdiario as calcularSubtotalesSubdiarioLib } from "@/lib/subdiarios/subtotales"
+import { calcularSubtotalesSubdiario as calcularSubtotalesSubdiarioLib, filasSinCreditoPorLetra } from "@/lib/subdiarios/subtotales"
+import { FiltroColumna } from "@/components/ui/filtro-columna"
+import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
 import { elegirCarpetaDestino, generarNombreUnico as generarNombreUnicoLib, guardarEnCarpeta, LS_CARPETA_POR_DEFECTO } from "@/lib/subdiarios/carpeta-destino"
 import { DATOS_FISCALES, cuitFormateado } from "@/lib/empresas"
 import { ControlCuadraturaSubdiario } from "@/components/control-cuadratura-subdiario"
@@ -384,6 +386,27 @@ function TablaRegistrosV2({ registros, onCertificado, mostrarAnulados = false }:
 const calcularSubtotalesSubdiario = (facturas: any[]) =>
   calcularSubtotalesSubdiarioLib(facturas, TIPOS_SIN_CREDITO_COMPRAS)
 
+/**
+ * 🔽 nota 🌙 JMS 11/11 («acá faltan los filtros en las columnas», Subdiarios): el valor de cada columna de la tabla de
+ * facturas del período para el filtro tipo Excel. Los importes en pesos (al TC de la factura), como se ven.
+ */
+const pesosSub = (f: any, v: any) => ((Number(v) || 0) * (Number(f.tipo_cambio) || 1)).toLocaleString('es-AR')
+const VALORES_SUBDIARIO: Record<string, (f: any) => string> = {
+  archivo: f => f.fc || '',
+  fecha: f => String(f.fecha_emision ?? '').slice(0, 10).split('-').reverse().join('/'),
+  proveedor: f => f.denominacion_emisor || '',
+  cuit: f => String(f.cuit ?? ''),
+  tipo: f => String(f.tipo_comprobante ?? ''),
+  comprobante: f => `${f.punto_venta}-${f.numero_desde}`,
+  neto_gravado: f => pesosSub(f, f.imp_neto_gravado),
+  neto_no_gravado: f => pesosSub(f, f.imp_neto_no_gravado),
+  exentas: f => pesosSub(f, f.imp_op_exentas),
+  otros: f => pesosSub(f, f.otros_tributos),
+  iva: f => pesosSub(f, f.iva),
+  total: f => pesosSub(f, f.imp_total),
+  ddjj: f => f.ddjj_iva || '',
+}
+
 /** 📆 Días entre dos fechas `AAAA-MM-DD`. */
 function diasEntre(desde: string, hasta: string): number {
   return Math.round((Date.parse(hasta.slice(0, 10) + 'T12:00:00Z') - Date.parse(desde.slice(0, 10) + 'T12:00:00Z')) / 86400000)
@@ -530,6 +553,14 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
    * período y los PDF sin vincular — en éstos busca también en lo que dice el PDF, si ya se leyó.
    */
   const [buscarSubdiario, setBuscarSubdiario] = useState('')
+  const [filtrosColSub, setFiltrosColSub] = useState<Record<string, Set<string> | null>>({})   // 🔽 nota JMS 11/11
+  /** El encabezado con su filtro tipo Excel; las opciones salen de lo filtrado por las DEMÁS columnas. */
+  const hSub = (clave: string, titulo: string) => (
+    <FiltroColumna titulo={titulo}
+      opciones={opcionesDeColumna(filtrarPorColumnas(facturasPeriodo, { ...filtrosColSub, [clave]: null }, VALORES_SUBDIARIO), VALORES_SUBDIARIO[clave])}
+      seleccion={filtrosColSub[clave] ?? null}
+      onChange={sel => setFiltrosColSub(prev => ({ ...prev, [clave]: sel }))} />
+  )
   /**
    * 🗂️ Lo que el registro del archivo digital sabe de cada PDF sin vincular (clave = file_id): lo leído
    * y el VEREDICTO a mano (A-FEAT-1287, script 93). Sin el script 93 no hay veredicto, y el panel lo dice.
@@ -3340,10 +3371,9 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
         { 'Fecha': `Notas de Crédito (${bIva.nc.cantidad})`, 'Neto Gravado': formatearNumeroExcel(bIva.nc.imp_neto_gravado), 'Neto No Gravado': formatearNumeroExcel(bIva.nc.exento_no_gravado), 'Total IVA': formatearNumeroExcel(bIva.nc.iva), 'Otros Tributos': formatearNumeroExcel(bIva.nc.otros_tributos), 'Imp. Total': formatearNumeroExcel(bIva.nc.imp_total) },
         { 'Fecha': 'Total Neto (FC − NC)', 'Neto Gravado': formatearNumeroExcel(bIva.neto.imp_neto_gravado), 'Neto No Gravado': formatearNumeroExcel(bIva.neto.exento_no_gravado), 'Total IVA': formatearNumeroExcel(bIva.neto.iva), 'Otros Tributos': formatearNumeroExcel(bIva.neto.otros_tributos), 'Imp. Total': formatearNumeroExcel(bIva.neto.imp_total) },
         {},
-        { 'Fecha': '📋 Comprobantes que no generan crédito fiscal (Fac C y B)', 'Imp. Total': 'Total' },
-        { 'Fecha': `Comprobantes Fac B y C (${bMono.fc.cantidad})`, 'Imp. Total': formatearNumeroExcel(bMono.fc.total) },
-        { 'Fecha': `Notas de crédito B y C (${bMono.nc.cantidad})`, 'Imp. Total': formatearNumeroExcel(bMono.nc.total) },
-        { 'Fecha': 'Total Neto (FC − NC)', 'Imp. Total': formatearNumeroExcel(bMono.neto) },
+        { 'Fecha': '📋 Comprobantes que no generan crédito fiscal (Fac B y C)', 'Imp. Total': 'Total' },
+        // 🅱️🅲 nota JMS 11/11: las B separadas de las C (misma función que la pantalla y el PDF)
+        ...filasSinCreditoPorLetra(bMono).map(r => ({ 'Fecha': r.cantidad != null ? `${r.concepto} (${r.cantidad})` : r.concepto, 'Imp. Total': formatearNumeroExcel(r.total) })),
         {},
         { 'Fecha': 'Detalle por Alícuotas', 'Tipo-N° Comp.': 'Neto $', 'Razón Social': 'Alíc.', 'C.U.I.T.': 'IVA $' },
         { 'Fecha': 'Al 0%', 'Tipo-N° Comp.': formatearNumeroExcel(totales.neto_0), 'Razón Social': '0.00', 'C.U.I.T.': formatearNumeroExcel(0) },
@@ -3634,14 +3664,10 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
       })
       const yMono = doc.lastAutoTable.finalY + 10
       doc.setFont(undefined, 'bold')
-      doc.text('Comprobantes que no generan crédito fiscal (Fac C y B):', 20, yMono)
+      doc.text('Comprobantes que no generan crédito fiscal (Fac B y C):', 20, yMono)
       autoTable(doc, {
         head: [['Concepto', 'Total']],
-        body: [
-          [`Comprobantes Fac B y C (${pMono.fc.cantidad})`, formatearNumeroPDF(pMono.fc.total).trim()],
-          [`Notas de crédito B y C (${pMono.nc.cantidad})`, formatearNumeroPDF(pMono.nc.total).trim()],
-          ['Total Neto (FC - NC)', formatearNumeroPDF(pMono.neto).trim()],
-        ],
+        body: filasSinCreditoPorLetra(pMono).map(r => [r.cantidad != null ? `${r.concepto} (${r.cantidad})` : r.concepto.replace('−', '-'), formatearNumeroPDF(r.total).trim()]),
         startY: yMono + 5,
         styles: { fontSize: 9 },
         headStyles: { fillColor: [66, 139, 202] },
@@ -6937,7 +6963,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
               const mneto = subtotales.monotributo.neto
               return (
               <div>
-                <h4 className="font-medium mb-2 text-sm">📋 Comprobantes que no generan crédito fiscal (Fac C y B)</h4>
+                <h4 className="font-medium mb-2 text-sm">📋 Comprobantes que no generan crédito fiscal (Fac B y C)</h4>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm border">
                     <thead className="bg-gray-50">
@@ -6947,18 +6973,13 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                       </tr>
                     </thead>
                     <tbody>
-                      <tr className="border-t">
-                        <td className="px-3 py-2">Comprobantes (Fac B y C){mfc.cantidad > 0 && <span className="text-gray-500 text-xs ml-1">({mfc.cantidad})</span>}</td>
-                        <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(mfc.total || 0)}</td>
-                      </tr>
-                      <tr className="border-t">
-                        <td className="px-3 py-2">Notas de crédito (B y C){mnc.cantidad > 0 && <span className="text-gray-500 text-xs ml-1">({mnc.cantidad})</span>}</td>
-                        <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(mnc.total || 0)}</td>
-                      </tr>
-                      <tr className="border-t bg-red-50 font-semibold">
-                        <td className="px-3 py-2">Total Neto (FC − NC)</td>
-                        <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(mneto || 0)}</td>
-                      </tr>
+                      {/* 🅱️🅲 nota JMS 11/11: las B separadas de las C */}
+                      {filasSinCreditoPorLetra(subtotales.monotributo).map(r => (
+                        <tr key={r.concepto} className={`border-t ${r.esTotal ? 'bg-red-50 font-semibold' : ''}`}>
+                          <td className="px-3 py-2">{r.concepto}{r.cantidad ? <span className="text-gray-500 text-xs ml-1">({r.cantidad})</span> : null}</td>
+                          <td className="px-3 py-2 text-right whitespace-nowrap">{fmt(r.total || 0)}</td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
@@ -7004,6 +7025,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                 <CardTitle>📋 Facturas del Período {periodoConsulta}</CardTitle>
                 <p className="text-sm text-muted-foreground">
                   {facturasPeriodo.length} facturas encontradas
+                  {Object.values(filtrosColSub).some(Boolean) && <> · <b>{filtrarPorColumnas(facturasPeriodo, filtrosColSub, VALORES_SUBDIARIO).length}</b> con los filtros de columna · <button type="button" className="text-blue-600 underline" onClick={() => setFiltrosColSub({})}>quitarlos</button></>}
                 </p>
                 {periodoHistorico && (
                   <p className="mt-1 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
@@ -7068,6 +7090,11 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                 </span></Permisable>
                 <QueBotonUso />
                 </>}
+                {/* 🔄 nota 🌙 JMS 11/11: «agregar botón de refrescar a subdiarios» */}
+                <Button variant="outline" size="sm" onClick={() => cargarFacturasPeriodo(periodoConsulta)} disabled={cargandoSubdiarios}
+                  title="Vuelve a leer las facturas del período (los filtros quedan puestos)" className="flex items-center gap-2">
+                  <RefreshCw className={`h-4 w-4 ${cargandoSubdiarios ? 'animate-spin' : ''}`} /> Actualizar
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -7170,12 +7197,12 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                         />
                       </TableHead>
                     )}
-                    <TableHead className="w-28 text-center">Archivo / FC</TableHead>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Proveedor</TableHead>
-                    <TableHead>CUIT</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Nº Comp.</TableHead>
+                    <TableHead className="w-28 text-center">{hSub('archivo', 'Archivo / FC')}</TableHead>
+                    <TableHead>{hSub('fecha', 'Fecha')}</TableHead>
+                    <TableHead>{hSub('proveedor', 'Proveedor')}</TableHead>
+                    <TableHead>{hSub('cuit', 'CUIT')}</TableHead>
+                    <TableHead>{hSub('tipo', 'Tipo')}</TableHead>
+                    <TableHead>{hSub('comprobante', 'Nº Comp.')}</TableHead>
                     {mostrarColumnasDetalladas ? (
                       <>
                         {/* Columnas detalladas de Netos por Alícuota */}
@@ -7199,15 +7226,15 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                     ) : (
                       <>
                         {/* Columnas básicas (actuales) */}
-                        <TableHead>Neto Gravado</TableHead>
-                        <TableHead>Neto No Gravado</TableHead>
-                        <TableHead>Op. Exentas</TableHead>
-                        <TableHead>Otros Tributos</TableHead>
+                        <TableHead>{hSub('neto_gravado', 'Neto Gravado')}</TableHead>
+                        <TableHead>{hSub('neto_no_gravado', 'Neto No Gravado')}</TableHead>
+                        <TableHead>{hSub('exentas', 'Op. Exentas')}</TableHead>
+                        <TableHead>{hSub('otros', 'Otros Tributos')}</TableHead>
                       </>
                     )}
-                    <TableHead>Total IVA</TableHead>
-                    <TableHead>Imp. Total</TableHead>
-                    <TableHead>Estado DDJJ</TableHead>
+                    <TableHead>{hSub('iva', 'Total IVA')}</TableHead>
+                    <TableHead>{hSub('total', 'Imp. Total')}</TableHead>
+                    <TableHead>{hSub('ddjj', 'Estado DDJJ')}</TableHead>
                     {/* 🚩 Al final y PEGADA al borde derecho.
                         Va a la derecha porque el usuario pidió no cargar la parte izquierda, que es
                         la que se lee. Pero va **fija** (`sticky`) porque esta tabla scrollea
@@ -7220,7 +7247,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {facturasPeriodo
+                  {filtrarPorColumnas(facturasPeriodo, filtrosColSub, VALORES_SUBDIARIO)
                     .filter(factura => filtroArchivoPdf.size === 0 || filtroArchivoPdf.has(categoriaArchivo(factura)))
                     .filter(factura => coincideBusqueda(buscarSubdiario, textosDeFactura(factura)))
                     .map(factura => {
