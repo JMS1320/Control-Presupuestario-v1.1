@@ -1324,6 +1324,13 @@ ese lugar afecte a todo lo que lo usa.
   para Excels de auditoría, propuestas, «Datos a revisar», inconsistencias y respuestas en el chat. *Motivo, el caso: el pago del
   18/06/26 de la caja de ahorro de PAM no se podía decidir con «PAGO CON TRANSFERENCIA»; con «FARMACITY SA» se decidió en un
   segundo (gasto médico de MA → DIST MA).* Un renglón sin ficha obliga a salir a buscar, y ahí se traba la auditoría.
+- 🔄 **Después de un cambio, la pantalla NO se recarga entera: se queda donde estaba, con sus filtros** *(regla del usuario
+  2026-11-11, en Egresos sin Factura: «cuando hago cambios me recarga toda la pág. debería funcionar como Cash Flow. **Todo en
+  general así por protocolo**» · «cuando tengo algo filtrado por texto y aplico algún cambio, cuando regresa no me lo deja
+  filtrado»)*. El cartel «Cargando…» es sólo para la **primera** carga (o un cambio de filtros que trae otros datos); toda
+  recarga posterior a guardar es **silenciosa** — la tabla sigue a la vista con su scroll y su selección y se reemplaza de una
+  — y **los filtros puestos (texto incluido) se vuelven a aplicar** sobre lo recargado. Cash Flow (`cargarDatos({ silencioso })`,
+  A-FEAT-1602) y Egresos → Cuotas (A-FEAT-1612) ya lo cumplen; las demás → [A-FEAT-1612](PENDIENTES.md#a-feat-1612).
 - Si la vista tiene **export (Excel/PDF)**, al sumarle un campo se actualiza también el export.
   Motivo: el usuario usa las descargas como registro fuera de la app; si el export queda viejo,
   pierde datos que sí ve en pantalla.

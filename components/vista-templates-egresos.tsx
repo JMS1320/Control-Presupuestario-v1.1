@@ -10,7 +10,7 @@ import { FiltroColumna } from "@/components/ui/filtro-columna"
 import { opcionesDeColumna, filtrarPorColumnas } from "@/lib/ui/filtro-columna"
 import { valorFiltroCuota } from "@/lib/templates/filtro-cuotas"
 import { hoyArgentina } from "@/lib/fechas"
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -273,9 +273,15 @@ export function VistaTemplatesEgresos() {
   }, [anchosColumnas])
 
   // Cargar cuotas de egresos sin factura desde Supabase
+  /**
+   * 🔄 nota 🌙 JMS 11/11 («cuando hago cambios me recarga toda la pág. debería funcionar como Cash Flow. Todo en general así
+   * por protocolo»): sólo la PRIMERA carga muestra el cartel; las recargas después de un cambio son silenciosas — la tabla
+   * sigue a la vista, con su scroll y sus filtros, y se reemplaza de una cuando llegan los datos.
+   */
+  const yaCargoUnaVez = useRef(false)
   const cargarCuotas = async () => {
     try {
-      setLoading(true)
+      if (!yaCargoUnaVez.current) setLoading(true)
       setError(null)
       
       // 🐛 A-BUG-1356: la base devuelve como máximo 1000 filas por consulta. Con más de 2000 cuotas, una
@@ -302,8 +308,10 @@ export function VistaTemplatesEgresos() {
         return
       }
 
-      setCuotas(cuotasCargadas)
+      // 🔎 nota 🌙 JMS 11/11 («cuando tengo algo filtrado por texto y aplico algún cambio, cuando regresa no me lo deja
+      //    filtrado»): no se pisa la vista con todo — el efecto de abajo vuelve a aplicar los filtros sobre lo recargado.
       setCuotasOriginales(cuotasCargadas)
+      yaCargoUnaVez.current = true
     } catch (error) {
       console.error('Error inesperado:', error)
       setError('Error inesperado al cargar las cuotas')
@@ -622,8 +630,10 @@ export function VistaTemplatesEgresos() {
   }, [busquedaRapida])
 
   // 🔗 Con filtro del link: se reaplica cada vez que se recargan las cuotas (Actualizar no lo pierde).
+  // 🔎 Y con cualquier filtro (texto, fechas, CATEG…): cada recarga vuelve a mostrar lo filtrado, no todo (nota JMS 11/11).
   useEffect(() => {
-    if (templatesLink.length && cuotasOriginales.length > 0) aplicarFiltros()
+    if (cuotasOriginales.length > 0) aplicarFiltros()
+    else setCuotas([])
   }, [cuotasOriginales, templatesLink, filtroActivacion])
 
   // 🔄 Al volver a esta pestaña (ej. después de tocar algo en la planilla), recarga sola — salvo que
