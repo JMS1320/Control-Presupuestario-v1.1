@@ -900,8 +900,14 @@ export function useMultiCashFlowData(filtros?: CashFlowFilters) {
   }
 
   // Función principal para cargar datos
-  const cargarDatos = async () => {
-    setLoading(true)
+  /**
+   * `silencioso`: recarga SIN tapar la pantalla con «Cargando…» (nota 🌙 JMS 11/11: «cuando cambio monto de template se
+   * recarga toda la página… cuando agrupo también… cuando cambio el estado a pagar también»). La grilla sigue a la vista con
+   * su scroll y su selección mientras llegan los datos nuevos, y se reemplazan de una. La carga inicial y el cambio de
+   * filtros siguen con el cartel (ahí no hay nada que mostrar todavía).
+   */
+  const cargarDatos = async (opciones?: { silencioso?: boolean }) => {
+    if (!opciones?.silencioso) setLoading(true)
     setError(null)
 
     try {

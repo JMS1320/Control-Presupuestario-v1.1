@@ -394,7 +394,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   // Wizard de vinculación anticipo → factura (lógica compartida con Vista Principal)
   const vincAnticipo = useVinculacionAnticipo(async () => {
     await cargarAnticiposExistentes()
-    await cargarDatos()
+    await cargarDatos({ silencioso: true })
   })
 
   // Estados modal SICORE - facturas ARCA
@@ -825,7 +825,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       }
       toast.success(`Detalle guardado en ${cambios.length} factura(s)`)
       setDetalleGrupo(null)
-      await cargarDatos()
+      await cargarDatos({ silencioso: true })
     } catch (e) {
       toast.error('No se pudo guardar el detalle: ' + (e as Error).message)
     } finally {
@@ -1357,7 +1357,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         setFilaParaCambioEstado(null)
         setGuardandoCambio(false)
         if (ok) {
-          cargarDatos()
+          cargarDatos({ silencioso: true })
           toast.success(`Factura de ${empresa} marcada para pagar (sin SICORE)`)
         }
         return
@@ -1407,7 +1407,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           await actualizarRegistro(filaParaCambioEstado.id, 'estado', nuevoEstado, 'ARCA')
           setFilaParaCambioEstado(null)
           setGuardandoCambio(false)
-          cargarDatos()
+          cargarDatos({ silencioso: true })
           return
         }
       }
@@ -1487,7 +1487,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         setFilaParaCambioEstado(null)
         setGuardandoCambio(false)
         await cargarAnticiposExistentes()
-        await cargarDatos()
+        await cargarDatos({ silencioso: true })
         return
       }
 
@@ -2144,7 +2144,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       })
       toast.success(`${filas.length} pagos agrupados`)
       setFilasSeleccionadas(new Set())
-      await cargarDatos()
+      await cargarDatos({ silencioso: true })
     } catch (e: any) {
       toast.error(e?.message || 'Error al agrupar')
     }
@@ -2161,7 +2161,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       await desagruparPago(origen === 'ARCA' ? schemaDeFila(fila) : 'msa', origen, fila.grupo_pago_id)
       toast.success('Grupo deshecho')
       setFilasSeleccionadas(new Set())
-      await cargarDatos()
+      await cargarDatos({ silencioso: true })
     } catch (e: any) {
       toast.error(e?.message || 'Error al desagrupar')
     }
@@ -2664,7 +2664,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       setTipoMovimiento('egreso')
       setNuevaCuota({ fecha: '', monto: '', descripcion: '', categ: '', estado: 'pendiente', medio: 'banco' })
       setBusquedaTemplatesPM('')
-      await cargarDatos()
+      await cargarDatos({ silencioso: true })
     } catch (error) {
       console.error('Error guardando pago manual:', error)
       toast.error(`Error: ${error instanceof Error ? error.message : 'Error desconocido'}`)
@@ -3379,7 +3379,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       } else {
         // Fin de cola: limpiar refs del echeq lote
         if (echeqLoteActivo.current) { echeqLoteActivo.current = false; echeqLoteFacturas.current = []; echeqPendienteCF.current = null }
-        cargarDatos()
+        cargarDatos({ silencioso: true })
       }
     } catch (error) {
       toast.error('Error finalizando SICORE: ' + (error as Error).message)
@@ -3473,7 +3473,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     } else {
       // Fin de cola: limpiar refs del echeq lote
       if (echeqLoteActivo.current) { echeqLoteActivo.current = false; echeqLoteFacturas.current = []; echeqPendienteCF.current = null }
-      cargarDatos()
+      cargarDatos({ silencioso: true })
     }
   }
 
@@ -3521,7 +3521,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       if (sinSicore.length === 0) {
         echeqLoteActivo.current = false; echeqLoteFacturas.current = []; echeqPendienteCF.current = null
         toast.success('ECHEQ registrado')
-        await cargarDatos()
+        await cargarDatos({ silencioso: true })
         return
       }
       // fecha_pago = emisión del echeq (define la quincena) para las que sí necesitan SICORE
@@ -3543,7 +3543,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
         await registrarEcheqDirecto(fila.id, datos)
         echeqPendienteCF.current = null; echeqFilaCF.current = null
         toast.success('ECHEQ registrado')
-        await cargarDatos()
+        await cargarDatos({ silencioso: true })
         return
       }
       // Sin SICORE: la quincena sale de la fecha de emisión del echeq → setear fecha_pago = fechaEmisión
@@ -3700,7 +3700,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     toast.success(`Retención SICORE aplicada: $${montoSicoreAnticipo.toLocaleString('es-AR', { minimumFractionDigits: 2 })} — Quincena ${quincena}${esEcheq ? ' (echeq)' : ''}`)
     cerrarModalSicoreAnticipo()
     await cargarAnticiposExistentes()
-    await cargarDatos()
+    await cargarDatos({ silencioso: true })
   }
 
   // Cerrar y limpiar modal SICORE anticipo
@@ -3730,7 +3730,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       cerrarModalSicoreAnticipo()
     }
     await cargarAnticiposExistentes()
-    await cargarDatos()
+    await cargarDatos({ silencioso: true })
   }
 
   const cerrarModalSicoreAnticipo = () => {
@@ -3853,7 +3853,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       toast.success(`${tipoLabel} registrado con estado "${nuevoAnticipo.estado_pago}".`)
 
       setNuevoAnticipo({ tipo: 'pago', cuit: '', nombre: '', monto: '', fecha: '', descripcion: '', estado_pago: 'pagado', nro_cuenta: null, categ: null, empresa: null })
-      await cargarDatos()
+      await cargarDatos({ silencioso: true })
       await cargarAnticiposExistentes()
 
       // Auto-ofrecer vinculación si hay facturas pendientes del mismo CUIT.
@@ -4073,7 +4073,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       toast.success(`Anticipo → ${nuevoEstado}`)
     }
     await cargarAnticiposExistentes()
-    await cargarDatos()
+    await cargarDatos({ silencioso: true })
   }
 
   // Renderizar celda según tipo (con soporte para edición inline) - HOOK UNIFICADO
@@ -4424,7 +4424,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           <div className="text-center">
             <div className="text-red-600 mb-4">Error al cargar Cash Flow</div>
             <div className="text-sm text-gray-600 mb-4">{error}</div>
-            <Button onClick={cargarDatos} variant="outline">
+            <Button onClick={() => cargarDatos()} variant="outline">
               Reintentar
             </Button>
           </div>
@@ -4809,7 +4809,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               <Dialog open={mostrarPrecios} onOpenChange={abierto => {
                 setMostrarPrecios(abierto)
                 // Lo estimado (cobros de arrendamiento sin pesos, cuotas no fijadas) depende de esta tabla.
-                if (!abierto && preciosCambiaron.current) { preciosCambiaron.current = false; void cargarDatos() }
+                if (!abierto && preciosCambiaron.current) { preciosCambiaron.current = false; void cargarDatos({ silencioso: true }) }
               }}>
                 <DialogContent className="max-w-[96vw] w-[96vw] max-h-[92vh] overflow-y-auto">
                   <DialogHeader>
@@ -4826,7 +4826,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={cargarDatos}
+                onClick={() => cargarDatos()}
               >
                 Actualizar
               </Button>
@@ -4848,7 +4848,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               fila={repartoGrupo.fila}
               nuevoTotal={repartoGrupo.nuevoTotal}
               onCancelar={() => { setRepartoGrupo(null); hookEditorRef.current?.setCeldaEnEdicion(null) }}
-              onGuardado={async () => { setRepartoGrupo(null); hookEditorRef.current?.setCeldaEnEdicion(null); await cargarDatos() }}
+              onGuardado={async () => { setRepartoGrupo(null); hookEditorRef.current?.setCeldaEnEdicion(null); await cargarDatos({ silencioso: true }) }}
             />
           )}
           {propagacionCF && (
@@ -4861,7 +4861,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                 setPropagacionCF(null)
                 setCeldaEnEdicion(null)
                 hookEditorRef.current?.setCeldaEnEdicion(null)
-                await cargarDatos()
+                await cargarDatos({ silencioso: true })
                 toast.success(r.tipo === 'propagado'
                   ? (r.cuotasModificadas > 0
                       ? `Monto actualizado y propagado a ${r.cuotasModificadas} cuota(s) futura(s)${r.montoPropagado !== r.nuevoMonto ? ` con $${r.montoPropagado.toLocaleString('es-AR')}` : ''}`
@@ -4875,7 +4875,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               inicial={cancelacionNC.datos}
               schemaName={cancelacionNC.schema}
               onCerrar={() => setCancelacionNC(null)}
-              onAplicado={() => { setCancelacionNC(null); cargarDatos() }}
+              onAplicado={() => { setCancelacionNC(null); cargarDatos({ silencioso: true }) }}
             />
           )}
 
@@ -5620,7 +5620,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
           </div>
         </div>
       )}
-      {noVaMas && <ModalNoVaMas cuotaId={noVaMas.cuotaId} egresoId={noVaMas.egresoId} onCerrar={() => setNoVaMas(null)} onHecho={() => { void cargarDatos() }} />}
+      {noVaMas && <ModalNoVaMas cuotaId={noVaMas.cuotaId} egresoId={noVaMas.egresoId} onCerrar={() => setNoVaMas(null)} onHecho={() => { void cargarDatos({ silencioso: true }) }} />}
 
       {/* Modal validación de categ */}
       <ModalValidarCateg
@@ -6844,7 +6844,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                     .eq('id', confirmCambioQuincena.filaId)
                   toast.success(`Quincena actualizada a ${confirmCambioQuincena.quincenahNueva}`)
                   setConfirmCambioQuincena(null)
-                  cargarDatos()
+                  cargarDatos({ silencioso: true })
                 }}>
                   Sí, actualizar
                 </Button>
