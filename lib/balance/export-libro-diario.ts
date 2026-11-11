@@ -106,6 +106,15 @@ export const marcaDescuadre = (d: Descuadre) =>
  * @param descuadres  los del Control (el MISMO criterio, `verificarCuadratura`): si vienen, se agrega la columna
  *                    «Control de partes» y los renglones con error van en rojo con su marca.
  */
+/**
+ * El orden de las tablas de comprobantes (subdiario → fecha → tipo → punto de venta → número). Exportado para que quien le
+ * pegue columnas a una tabla de `hojaDeAsientos` lo haga en el MISMO orden (⚠️ 11/11: la 05 y la 03.1 pegaban el respaldo y
+ * «cómo entró» en el orden original y quedaban corridos de renglón).
+ */
+export function ordenAsientos(asientos: AsientoLibroDiario[]): AsientoLibroDiario[] {
+  return [...asientos].sort((x, y) => (x.subdiario || "").localeCompare(y.subdiario || "") || (x.fecha || "").localeCompare(y.fecha || "")
+    || (x.tipo ?? 0) - (y.tipo ?? 0) || (x.punto_venta ?? 0) - (y.punto_venta ?? 0) || (x.numero ?? 0) - (y.numero ?? 0))
+}
 export function hojaDeAsientos(asientos: AsientoLibroDiario[], descuadres?: Descuadre[]): unknown[][] {
   const malos = new Map((descuadres ?? []).filter(d => d.id).map(d => [d.id!, d]))
   const conCantidades = asientos.some(a => a.cantidades && (a.cantidades.producto || a.cantidades.toneladas || a.cantidades.cabezas || a.cantidades.kilos))
@@ -125,8 +134,7 @@ export function hojaDeAsientos(asientos: AsientoLibroDiario[], descuadres?: Desc
   ]]
   // 📅 JMS 03/11: «lo que exporté de la app no está ordenado por fecha, por lo menos ventas… como ordena ARCA, el cálculo debe ser
   // por fecha; nosotros lo ponemos también por fecha y debería quedar igual». Subdiario → fecha → tipo → punto de venta → número.
-  const orden = [...asientos].sort((x, y) => (x.subdiario || "").localeCompare(y.subdiario || "") || (x.fecha || "").localeCompare(y.fecha || "")
-    || (x.tipo ?? 0) - (y.tipo ?? 0) || (x.punto_venta ?? 0) - (y.punto_venta ?? 0) || (x.numero ?? 0) - (y.numero ?? 0))
+  const orden = ordenAsientos(asientos)
   for (const a of orden) {
     const enOtraMoneda = !!a.moneda && a.moneda !== "PES"
     const es11 = a.tipo === 11
@@ -201,7 +209,8 @@ export function filaTotalComprobantes(filas: unknown[][], desde: number, hasta: 
 }
 
 function hojaDeProvision(este: AsientoLibroDiario[], anterior: AsientoLibroDiario[], etiqueta: string, etiquetaAnterior: string, control?: ControlProvisionAnterior): unknown[][] {
-  const conMotivo = (lista: AsientoLibroDiario[]) => {
+  const conMotivo = (sinOrden: AsientoLibroDiario[]) => {
+    const lista = ordenAsientos(sinOrden)
     const t = hojaDeAsientos(lista)
     t[0] = [...t[0], "Cómo entró a provisión", "Motivo", "Respaldo"]
     lista.forEach((a, i) => {
@@ -1916,6 +1925,7 @@ export function hojaDeProvisionCobros(ventas: AsientoLibroDiario[], etiqueta: st
   f.push(["Ventas de cosas que pasaron ANTES del cierre y se facturaron DESPUES:"])
   f.push(["fecha del comprobante anterior al cierre, pero entro en un subdiario posterior."])
   f.push([])
+  ventas = ordenAsientos(ventas)
   const tabla = hojaDeAsientos(ventas)
   // 📎 A-FEAT-1571: la factura que respalda cada venta provisionada
   if (ventas.length) { tabla[0] = [...tabla[0], "Respaldo"]; ventas.forEach((a, i) => { tabla[i + 1] = [...tabla[i + 1], celdaRespaldo(respaldoDeComprobante(a))] }) }

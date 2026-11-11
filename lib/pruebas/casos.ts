@@ -4427,6 +4427,14 @@ export function correrCasos(): Resultado[] {
       const tot = h31.find(r => (r as any[])[6] === "TOTAL") as any[]
       const vt = tot ? `N ${tot[13].f}=${tot[13].v} · H ${tot[7].f}` : "sin total"
       chequear("Balance · provisión", "➕ La 03.1 suma TODAS las columnas de importes (no sólo la M)", "N SUM(N6:N6)=900 · H SUM(H6:H6)", vt, vt === "N SUM(N6:N6)=900 · H SUM(H6:H6)", "A-FEAT-1564")
+      // ⚠️ 11/11: la tabla se ordena por subdiario y el respaldo se pegaba en el orden original → quedaba en otro renglón.
+      const vOct = comp({ id: "v2", fuente: "venta", subdiario: "2026-10", numero: 88, fecha: "2026-06-20", total: 100 })
+      const vJul = comp({ id: "v3", fuente: "venta", subdiario: "2026-07", numero: 99, fecha: "2026-06-25", total: 200 })
+      const hOrd = hojaDeProvisionCobros([vOct, vJul] as any, "25/26")
+      const filasOrd = hOrd.filter(r => typeof (r as any[])[4] === "number") as any[][]
+      const vo = filasOrd.map(r => `${r[4]}:${String((r[r.length - 1] as any)?.v ?? "").includes(`-${r[4]} `)}`).join(" · ")
+      chequear("Balance · provisión", "🔗 En la 03.1 el respaldo queda en el renglón de SU factura aunque la lista llegue desordenada",
+        "99:true · 88:true", vo, vo === "99:true · 88:true", "A-FEAT-1571")
     }
     // 🌾 A-FEAT-1574 (JMS 06/11): los arrendamientos cobrados en soja NO son grano vendido; con la cosecha de la certificación de
     //    AFA (15,12 t) el cuadre de MSA 25/26 da 0, como dijo JMS («el saldo a 30/6 es cero»).
