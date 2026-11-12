@@ -88,7 +88,8 @@ const sumif = (colSuma: string, nro: string, mes?: string) => `SUMIFS(${DET}!$${
 // ── 6 · Resumen: pesos por cuenta; abajo, la cuenta en dólares en US$
 const res: any[][] = [[T(`IMPUESTOS BANCARIOS POR CUENTA — MSA — ejercicio 25/26 (copia de trabajo, desde ${ultimo})`)],
   [S("Débitos y créditos separados, agrupado por banco y tipo de cuenta. Cada celda es una fórmula sobre la solapa «Detalle»: filtrá ahí por Nro para ver cómo se compone.")], []]
-const ENC = ["Nro", "Cuenta", "Categoría", "1er sem", "2do sem", ...ROT, "Total"]
+// JMS 12/11: en esta copia NO van los semestres (en general sí, y separados de los meses)
+const ENC = ["Nro", "Cuenta", "Categoría", ...ROT, "Total"]
 const bloque = (titulo: string, cuentasB: string[], colSuma: string, valor: (f: Fila) => number) => {
   res.push([SUB(titulo)]); res.push(ENC.map(C))
   const filasTotalCuenta: number[] = []
@@ -96,17 +97,16 @@ const bloque = (titulo: string, cuentasB: string[], colSuma: string, valor: (f: 
     const propios = renglones.filter(x => x.cuenta === c), ini = res.length
     for (const x of propios) {
       const r = res.length, de = filas.filter(f => nroDe(f) === x.nro), val = (m?: string) => de.filter(f => !m || f.mes === m).reduce((t, f) => t + valor(f), 0)
-      res.push([{ t: "n", v: x.nro }, S(c), S(x.categoria), F(`SUM(${L(5, r)}:${L(10, r)})`, MESES.slice(0, 6).reduce((t, m) => t + val(m), 0)),
-        F(`SUM(${L(11, r)}:${L(16, r)})`, MESES.slice(6).reduce((t, m) => t + val(m), 0)),
-        ...MESES.map(m => F(sumif(colSuma, L(0, r), m), val(m))), F(`SUM(${L(5, r)}:${L(16, r)})`, val())])
+      res.push([{ t: "n", v: x.nro }, S(c), S(x.categoria),
+        ...MESES.map(m => F(sumif(colSuma, L(0, r), m), val(m))), F(`SUM(${L(3, r)}:${L(14, r)})`, val())])
     }
     const r = res.length; filasTotalCuenta.push(r)
     const tot = (j: number) => res.slice(ini, r).reduce((t, f) => t + Number(f[j].v), 0)
-    res.push([S(""), S(`Total ${c}`, true), S(TIPO_CTA[c] ?? "", true), ...Array.from({ length: 15 }, (_, j) => F(`SUM(${L(j + 3, ini)}:${L(j + 3, r - 1)})`, tot(j + 3), true))])
+    res.push([S(""), S(`Total ${c}`, true), S(TIPO_CTA[c] ?? "", true), ...Array.from({ length: 13 }, (_, j) => F(`SUM(${L(j + 3, ini)}:${L(j + 3, r - 1)})`, tot(j + 3), true))])
     res.push([])
   }
   const r = res.length
-  res.push([S(""), S("TOTAL", true), S(""), ...Array.from({ length: 15 }, (_, j) => F(filasTotalCuenta.map(k => L(j + 3, k)).join("+"), filasTotalCuenta.reduce((t, k) => t + Number(res[k][j + 3].v), 0), true))])
+  res.push([S(""), S("TOTAL", true), S(""), ...Array.from({ length: 13 }, (_, j) => F(filasTotalCuenta.map(k => L(j + 3, k)).join("+"), filasTotalCuenta.reduce((t, k) => t + Number(res[k][j + 3].v), 0), true))])
   res.push([]); return r
 }
 const rTotal = bloque("EN PESOS — todas las cuentas (lo pagado en dólares, pasado a pesos al BNA divisas vendedor del día del pago)", cuentas, "G", f => f.pesos)
@@ -116,7 +116,7 @@ if (ctasUsd.length) bloque("EN DÓLARES — lo pagado desde la cuenta en dólare
 // control
 const totalArchivo = r2(filas.reduce((t, f) => t + f.pesos, 0)), ok = Math.abs(totalArchivo - totalH) < 0.01
 res.push([SUB("CONTROL")])
-res.push([S(""), S(`Total de este archivo`), S(""), F(`${L(17, rTotal)}`, totalArchivo)])
+res.push([S(""), S(`Total de este archivo`), S(""), F(`${L(15, rTotal)}`, totalArchivo)])
 res.push([S(""), S(`TOTAL de la solapa «H · MSA · Imp Bancarios» de ${ultimo}`), S(""), { t: "n", v: totalH, z: MON }])
 res.push([S(""), S("Diferencia"), S(""), F(`${L(3, res.length - 2)}-${L(3, res.length - 1)}`, r2(totalArchivo - totalH)), S(ok ? "✓ cierra" : "⚠️ NO cierra", true)])
 if (sinUsd) res.push([S(""), S(`⚠️ ${sinUsd} renglón(es) de la cuenta en dólares sin US$ encontrado en la cuota: figuran en pesos y no en el bloque en dólares`)])
@@ -130,7 +130,7 @@ const hoja = (aoa: any[][], anchos: number[], congelar: number, filtro?: string)
   if (filtro) ws["!autofilter"] = { ref: filtro }
   return ws
 }
-XLSX.utils.book_append_sheet(wb, hoja(res, [6, 24, 40, 14, 14, ...MESES.map(() => 13), 15], 5), "Por cuenta")
+XLSX.utils.book_append_sheet(wb, hoja(res, [6, 24, 40, ...MESES.map(() => 13), 15], 5), "Por cuenta")
 XLSX.utils.book_append_sheet(wb, hoja(det, [6, 22, 38, 36, 9, 11, 14, 12, 12, 30, 40, 50, 12, 6], 1, `A1:N${NDET}`), DET)
 let v = 1; const nombre = () => `${CARPETA}Imp Bancarios por cuenta MSA 25-26 (2026-11-11) v${v}.xlsx`
 while (existsSync(nombre())) v++

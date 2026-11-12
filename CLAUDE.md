@@ -1304,7 +1304,7 @@ ese lugar afecte a todo lo que lo usa.
   *(regla del usuario 2026-11-01, en el libro C: «por categ y por mes siempre. Y que cada línea del resumen tenga un Nro que
   referencia a la tabla de abajo, para filtrar por número y ver cómo se componen. Esto como línea general»)*. Arriba: Nro ·
   categoría · los 12 meses · total, cada celda **fórmula** sobre el detalle; abajo (o en la solapa del detalle) cada fila con
-  su Nro. Se arma con `hojaResumenPorMes` (`lib/balance/resumen-por-mes.ts`) — no se escribe otro. 📅 **Y con los 2 SEMESTRES** *(JMS 03/11: «cuando hay tabla por mes, siempre los 2 semestres… va para Libertad y para todo lo que sea retiros»)*: opción `semestres: true` → «1er sem · 2do sem · total» a la izquierda, con fórmulas. *Motivo: un total anual no
+  su Nro. Se arma con `hojaResumenPorMes` (`lib/balance/resumen-por-mes.ts`) — no se escribe otro. 📅 **Y con los 2 SEMESTRES** *(JMS 03/11: «cuando hay tabla por mes, siempre los 2 semestres… va para Libertad y para todo lo que sea retiros»)*: opción `semestres: true` → «1er sem · 2do sem · total» a la izquierda, con fórmulas. ↔️ **Y SEPARADOS de los meses** *(JMS 12/11: «haceme siempre una separación entre los semestres y los meses»)*: una columna angosta vacía (o un borde marcado) entre el bloque de semestres y el de meses → [A-FEAT-1621](PENDIENTES.md#a-feat-1621). *Motivo: un total anual no
   dice cuándo pasó ni de qué se compone; con el Nro se filtra el detalle y se ve.* → [A-FEAT-1513](PENDIENTES.md#a-feat-1513).
 - 📅 **Toda fecha de un export es FECHA, no texto** *(regla del usuario 2026-11-01: «parámetro para todos los exports»; con
   texto, el filtro de Excel lista «01/04/2026» como una palabra y no agrupa por año y mes)*. Antes de escribir un libro se llama
