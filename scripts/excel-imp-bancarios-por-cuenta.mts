@@ -73,7 +73,9 @@ const T = (v: string) => ({ t: "s", v, s: { font: { bold: true, sz: 13, color: {
 const C = (v: string) => ({ t: "s", v, s: { font: { bold: true }, alignment: { horizontal: "center", vertical: "center", wrapText: true }, fill: { patternType: "solid", fgColor: { rgb: GRIS } } } })
 const S = (v: string, b = false) => ({ t: "s", v, s: b ? { font: { bold: true } } : {} })
 const SUB = (v: string) => ({ t: "s", v, s: { font: { bold: true, color: { rgb: AZUL } }, fill: { patternType: "solid", fgColor: { rgb: CELESTE } } } })
-const F = (f: string, v: number, b = false) => ({ t: "n", f, v: r2(v), z: MON, s: b ? { font: { bold: true }, border: BORDE } : {} })
+const USD = '"US$" #,##0.00'
+const F = (f: string, v: number, b = false, z = MON) => ({ t: "n", f, v: r2(v), z, s: b ? { font: { bold: true }, border: BORDE } : {} })
+const GRANDE = (v: string) => ({ t: "s", v, s: { font: { bold: true, sz: 12, color: { rgb: "FFFFFFFF" } }, fill: { patternType: "solid", fgColor: { rgb: AZUL } } } })
 const L = (c: number, r: number) => XLSX.utils.encode_cell({ c, r })
 
 // ── 5 · Detalle (solapa propia) — columnas fijas para las fórmulas
@@ -81,16 +83,16 @@ const DET = "Detalle", NDET = filas.length + 1
 const det: any[][] = [["Nro", "Cuenta", "Tipo de cuenta", "Categoría", "Mes", "Fecha", "Importe $", "Importe US$", "TC (BNA divisas vendedor)", "Concepto (template)", "Descripción del banco", "Detalle", "Estado", "Marca"].map(C)]
 const ordenadas = [...filas].sort((a, b) => nroDe(a) - nroDe(b) || a.fecha - b.fecha)
 for (const f of ordenadas) det.push([{ t: "n", v: nroDe(f) }, S(f.cuenta), S(TIPO_CTA[f.cuenta] ?? ""), S(f.categoria), S(f.mes), { t: "n", v: f.fecha, z: "dd/mm/yyyy" },
-  { t: "n", v: f.pesos, z: MON }, f.usd == null ? S("") : { t: "n", v: f.usd, z: MON }, f.tc == null ? S("") : { t: "n", v: f.tc, z: MON },
+  { t: "n", v: f.pesos, z: MON }, f.usd == null ? S("") : { t: "n", v: f.usd, z: USD }, f.tc == null ? S("") : { t: "n", v: f.tc, z: MON },
   S(f.concepto), S(f.desc), S(f.detalle), S(f.estado), S(f.marca)])
 const sumif = (colSuma: string, nro: string, mes?: string) => `SUMIFS(${DET}!$${colSuma}$2:$${colSuma}$${NDET},${DET}!$A$2:$A$${NDET},${nro}${mes ? `,${DET}!$E$2:$E$${NDET},"${mes}"` : ""})`
 
 // ── 6 · Resumen: pesos por cuenta; abajo, la cuenta en dólares en US$
 const res: any[][] = [[T(`IMPUESTOS BANCARIOS POR CUENTA — MSA — ejercicio 25/26 (copia de trabajo, desde ${ultimo})`)],
-  [S("Débitos y créditos separados, agrupado por banco y tipo de cuenta. Cada celda es una fórmula sobre la solapa «Detalle»: filtrá ahí por Nro para ver cómo se compone.")], []]
+  [S("Débitos y créditos separados, agrupado por banco y tipo de cuenta. PESOS y DÓLARES NO SE MEZCLAN: 1 = cuentas en pesos · 2 = cuentas en dólares (en US$ y en $) · 3 = total en pesos. Cada celda es una fórmula sobre la solapa «Detalle»: filtrá ahí por Nro.")], []]
 // JMS 12/11: en esta copia NO van los semestres (en general sí, y separados de los meses)
 const ENC = ["Nro", "Cuenta", "Categoría", ...ROT, "Total"]
-const bloque = (titulo: string, cuentasB: string[], colSuma: string, valor: (f: Fila) => number) => {
+const bloque = (titulo: string, cuentasB: string[], colSuma: string, valor: (f: Fila) => number, z = MON, rotTotal = "TOTAL") => {
   res.push([SUB(titulo)]); res.push(ENC.map(C))
   const filasTotalCuenta: number[] = []
   for (const c of cuentasB) {
@@ -98,20 +100,49 @@ const bloque = (titulo: string, cuentasB: string[], colSuma: string, valor: (f: 
     for (const x of propios) {
       const r = res.length, de = filas.filter(f => nroDe(f) === x.nro), val = (m?: string) => de.filter(f => !m || f.mes === m).reduce((t, f) => t + valor(f), 0)
       res.push([{ t: "n", v: x.nro }, S(c), S(x.categoria),
-        ...MESES.map(m => F(sumif(colSuma, L(0, r), m), val(m))), F(`SUM(${L(3, r)}:${L(14, r)})`, val())])
+        ...MESES.map(m => F(sumif(colSuma, L(0, r), m), val(m), false, z)), F(`SUM(${L(3, r)}:${L(14, r)})`, val(), false, z)])
     }
     const r = res.length; filasTotalCuenta.push(r)
     const tot = (j: number) => res.slice(ini, r).reduce((t, f) => t + Number(f[j].v), 0)
-    res.push([S(""), S(`Total ${c}`, true), S(TIPO_CTA[c] ?? "", true), ...Array.from({ length: 13 }, (_, j) => F(`SUM(${L(j + 3, ini)}:${L(j + 3, r - 1)})`, tot(j + 3), true))])
-    res.push([])
+    if (cuentasB.length > 1) { res.push([S(""), S(`Total ${c}`, true), S(TIPO_CTA[c] ?? "", true), ...Array.from({ length: 13 }, (_, j) => F(`SUM(${L(j + 3, ini)}:${L(j + 3, r - 1)})`, tot(j + 3), true, z))]); res.push([]) }
+    else filasTotalCuenta.pop()
   }
   const r = res.length
-  res.push([S(""), S("TOTAL", true), S(""), ...Array.from({ length: 13 }, (_, j) => F(filasTotalCuenta.map(k => L(j + 3, k)).join("+"), filasTotalCuenta.reduce((t, k) => t + Number(res[k][j + 3].v), 0), true))])
+  if (cuentasB.length > 1) res.push([S(""), S(rotTotal, true), S(""), ...Array.from({ length: 13 }, (_, j) => F(filasTotalCuenta.map(k => L(j + 3, k)).join("+"), filasTotalCuenta.reduce((t, k) => t + Number(res[k][j + 3].v), 0), true, z))])
+  else { const a = r - renglones.filter(x => x.cuenta === cuentasB[0]).length
+    res.push([S(""), S(rotTotal, true), S(TIPO_CTA[cuentasB[0]] ?? "", true), ...Array.from({ length: 13 }, (_, j) => F(`SUM(${L(j + 3, a)}:${L(j + 3, r - 1)})`, res.slice(a, r).reduce((t, f) => t + Number(f[j + 3].v), 0), true, z))]) }
   res.push([]); return r
 }
-const rTotal = bloque("EN PESOS — todas las cuentas (lo pagado en dólares, pasado a pesos al BNA divisas vendedor del día del pago)", cuentas, "G", f => f.pesos)
-const ctasUsd = cuentas.filter(c => /US\$/.test(c))
-if (ctasUsd.length) bloque("EN DÓLARES — lo pagado desde la cuenta en dólares, en US$ (los mismos renglones de arriba)", ctasUsd, "H", f => f.usd ?? 0)
+const ctasUsd = cuentas.filter(c => /US\$/.test(c)), ctasPesos = cuentas.filter(c => !ctasUsd.includes(c))
+
+// 1 · CUENTAS EN PESOS
+res.push([GRANDE("1 · CUENTAS EN PESOS — importes en pesos")]); res.push([])
+const rPesos = bloque("Cuentas corrientes y tarjeta, en pesos", ctasPesos, "G", f => f.pesos, MON, "TOTAL CUENTAS EN PESOS ($)")
+
+// 2 · CUENTAS EN DÓLARES
+let rUsdPesos = -1
+if (ctasUsd.length) {
+  const du = filas.filter(f => ctasUsd.includes(f.cuenta)), tcs = du.map(f => f.tc!).filter(Boolean)
+  const totU = r2(du.reduce((t, f) => t + (f.usd ?? 0), 0)), totP = r2(du.reduce((t, f) => t + f.pesos, 0))
+  res.push([GRANDE(`2 · CUENTAS EN DÓLARES — ${ctasUsd.join(", ")} (${ctasUsd.map(c => TIPO_CTA[c]).join(", ")})`)])
+  res.push([S("CÓMO SE DOLARIZÓ / PESIFICÓ:", true)])
+  res.push([S("· El banco debita estos impuestos EN DÓLARES (el extracto de la caja de ahorro en US$). Ése es el dato original: tabla 2.a.")])
+  res.push([S("· Para llevarlos a pesos, cada débito se multiplica por el dólar BNA divisas, tipo VENDEDOR, del DÍA del débito (cotización del Banco Nación; queda guardada en cada cuota junto con los US$). Resultado: tabla 2.b.")])
+  res.push([S(`· ${du.length} débitos · US$ ${totU.toLocaleString("es-AR", { minimumFractionDigits: 2 })} → $ ${totP.toLocaleString("es-AR", { minimumFractionDigits: 2 })} · TC usados entre ${Math.min(...tcs).toLocaleString("es-AR")} y ${Math.max(...tcs).toLocaleString("es-AR")} · cada TC está en la solapa «Detalle», columna I. La fila «TC implícito» de abajo es pesos ÷ US$ del mes.`)])
+  res.push([])
+  const rU = bloque("2.a · EN DÓLARES (US$) — moneda de la cuenta", ctasUsd, "H", f => f.usd ?? 0, USD, "TOTAL EN US$")
+  rUsdPesos = bloque("2.b · EN PESOS ($) — los mismos débitos × TC BNA divisas vendedor del día", ctasUsd, "G", f => f.pesos, MON, "TOTAL EN PESOS ($)")
+  res.push([S(""), S("TC implícito del mes ($ ÷ US$)"), S(""), ...Array.from({ length: 13 }, (_, j) => { const u = Number(res[rU][j + 3].v), p = Number(res[rUsdPesos][j + 3].v)
+    return F(`IF(${L(j + 3, rU)}=0,"",${L(j + 3, rUsdPesos)}/${L(j + 3, rU)})`, u ? p / u : 0) })])
+  res.push([])
+}
+
+// 3 · TOTAL GENERAL EN PESOS
+res.push([GRANDE("3 · TOTAL GENERAL EN PESOS = 1 (cuentas en pesos) + 2.b (cuentas en dólares, pasadas a pesos)")])
+const rTotal = res.length
+res.push([S(""), S("TOTAL GENERAL ($)", true), S(""), ...Array.from({ length: 13 }, (_, j) => F(rUsdPesos >= 0 ? `${L(j + 3, rPesos)}+${L(j + 3, rUsdPesos)}` : `${L(j + 3, rPesos)}`,
+  Number(res[rPesos][j + 3].v) + (rUsdPesos >= 0 ? Number(res[rUsdPesos][j + 3].v) : 0), true))])
+res.push([])
 
 // control
 const totalArchivo = r2(filas.reduce((t, f) => t + f.pesos, 0)), ok = Math.abs(totalArchivo - totalH) < 0.01
