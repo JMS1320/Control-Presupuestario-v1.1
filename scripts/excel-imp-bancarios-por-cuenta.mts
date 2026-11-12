@@ -9,6 +9,7 @@
  *
  *   npx tsx scripts/excel-imp-bancarios-por-cuenta.mts              → dólares al TC comprador
  *   npx tsx scripts/excel-imp-bancarios-por-cuenta.mts --vendedor  → dólares al TC vendedor (JMS 12/11: «haceme en comprador y otra copia en vendedor»)
+ *   … --gastos  → lo mismo con la solapa «H · MSA · Gastos Bancarios» (JMS 12/11: «hacé lo mismo con gastos bancarios»)
  */
 import XLSX from "xlsx-js-style"
 import { readdirSync, readFileSync, existsSync } from "node:fs"
@@ -16,6 +17,7 @@ import { createClient } from "@supabase/supabase-js"
 import { ladoImpuestoLey25413 } from "../lib/balance/grupos-templates"
 
 const MODO: "comprador" | "vendedor" = process.argv.includes("--vendedor") ? "vendedor" : "comprador", OTRO = MODO === "comprador" ? "vendedor" : "comprador"
+const GASTOS = process.argv.includes("--gastos"), SOLAPA = GASTOS ? "H · MSA · Gastos Bancarios" : "H · MSA · Imp Bancarios", QUE = GASTOS ? "GASTOS BANCARIOS" : "IMPUESTOS BANCARIOS", ARCH = GASTOS ? "Gastos Bancarios" : "Imp Bancarios"
 const CARPETA = "- Comunicacion JMS Claude - Archivos/Balance/Excels trabajando con claude/"
 const env = Object.fromEntries(readFileSync(".env.local", "utf8").split(/\r?\n/).filter(l => l.includes("=") && !l.trim().startsWith("#")).map(l => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, "")] }))
 const sb: any = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
@@ -29,7 +31,7 @@ const TIPO_CTA: Record<string, string> = { "Galicia CC $ MSA": "Banco Galicia ·
 // ── 1 · El último H para auditar
 const vDe = (f: string) => Number(f.match(/ v(\d+)\.xlsx$/)?.[1] ?? 1)
 const ultimo = readdirSync(CARPETA).filter(f => /^H para auditar MSA 25-26 \(2026-11-07\) v\d+\.xlsx$/.test(f)).sort((a, b) => vDe(a) - vDe(b)).at(-1)!
-const rows: any[][] = XLSX.utils.sheet_to_json(XLSX.readFile(CARPETA + ultimo).Sheets["H · MSA · Imp Bancarios"], { header: 1 })
+const rows: any[][] = XLSX.utils.sheet_to_json(XLSX.readFile(CARPETA + ultimo).Sheets[SOLAPA], { header: 1 })
 const hi = rows.findIndex(r => r && r[0] === "Nro" && r.includes("Marca")), H = rows[hi]
 const col = (n: string) => { const i = H.indexOf(n); if (i < 0) throw new Error(`falta la columna ${n}`); return i }
 const filaTotal = rows.find(r => r && r[1] === "TOTAL")!
@@ -116,8 +118,8 @@ for (const d of dias) { const c = (cot as any[]).find(x => x.fecha === d), r = t
 const sumif = (colSuma: string, nro: string, mes?: string) => `SUMIFS(${DET}!$${colSuma}$2:$${colSuma}$${NDET},${DET}!$A$2:$A$${NDET},${nro}${mes ? `,${DET}!$E$2:$E$${NDET},"${mes}"` : ""})`
 
 // ── 6 · Resumen: pesos por cuenta; abajo, la cuenta en dólares en US$
-const res: any[][] = [[T(`IMPUESTOS BANCARIOS POR CUENTA — MSA — ejercicio 25/26 — cuentas en dólares al TC BNA divisas ${MODO.toUpperCase()}`)],
-  [S("Débitos y créditos separados, agrupado por banco y tipo de cuenta. PESOS y DÓLARES NO SE MEZCLAN: 1 = cuentas en pesos · 2 = cuentas en dólares (en US$ y en $) · 3 = total en pesos. Cada celda es una fórmula sobre la solapa «Detalle»: filtrá ahí por Nro.")], []]
+const res: any[][] = [[T(`${QUE} POR CUENTA — MSA — ejercicio 25/26 — cuentas en dólares al TC BNA divisas ${MODO.toUpperCase()}`)],
+  [S((GASTOS ? "A" : "Débitos y créditos separados, a") + "grupado por banco y tipo de cuenta. PESOS y DÓLARES NO SE MEZCLAN: 1 = cuentas en pesos · 2 = cuentas en dólares (en US$ y en $) · 3 = total en pesos. Cada celda es una fórmula sobre la solapa «Detalle»: filtrá ahí por Nro.")], []]
 // JMS 12/11: en esta copia NO van los semestres (en general sí, y separados de los meses)
 const ENC = ["Nro", "Cuenta", "Categoría", ...ROT, "Total"]
 const bloque = (titulo: string, cuentasB: string[], colSuma: string, valor: (f: Fila) => number, z = MON, rotTotal = "TOTAL") => {
@@ -157,7 +159,7 @@ if (ctasUsd.length) {
   const n2 = (x: number) => x.toLocaleString("es-AR", { minimumFractionDigits: 2 })
   res.push([S("CÓMO SE PASÓ A PESOS:", true)])
   res.push([S("· Cuenta: Banco Galicia, caja de ahorro en dólares de MSA. Cada débito se cruza con su extracto en US$ del ejercicio (jul-25 a jun-26).")])
-  res.push([S("· El banco debita estos impuestos EN DÓLARES: ése es el dato original → cuadro 2.a, abajo.")])
+  res.push([S(`· El banco debita estos ${GASTOS ? "gastos" : "impuestos"} EN DÓLARES: ése es el dato original → cuadro 2.a, abajo.`)])
   res.push([S(`· Pasaje a pesos: cada débito × dólar BNA divisas ${MODO.toUpperCase()} del día del débito (sin cotización ese día —fin de semana o feriado— se toma la del último día hábil anterior) → cuadro 2.b, abajo.`)])
   res.push([S("· Para auditar: la solapa «Tipos de cambio» tiene la cotización BNA de cada día usado (comprador y vendedor); en «Detalle» cada débito trae la fecha de la cotización, los dos TC y los pesos como fórmula US$ × TC.")])
   res.push([S(`· ${du.length} débitos · US$ ${n2(totU)} → $ ${n2(totP)} al ${MODO} (al ${OTRO} serían $ ${n2(totPO)}) · TC ${MODO} usados entre ${Math.min(...cps).toLocaleString("es-AR")} y ${Math.max(...cps).toLocaleString("es-AR")}. La fila «TC implícito» es pesos ÷ US$ del mes.`)])
@@ -182,7 +184,7 @@ res.push([SUB("CONTROL")])
 const c0 = res.length
 res.push([S(""), S(`Total de este archivo (dólares al TC ${MODO})`), S(""), F(`${L(15, rTotal)}`, totalArchivo)])
 res.push([S(""), S(`Lo mismo con los dólares al TC ${OTRO} (columna L del Detalle)`), S(""), F(`SUM(${DET}!L2:L${NDET})`, MODO === "comprador" ? totalVend : totalComp)])
-res.push([S(""), S(`TOTAL de la solapa «H · MSA · Imp Bancarios» de ${ultimo} (usa el vendedor)`), S(""), { t: "n", v: totalH, z: MON }])
+res.push([S(""), S(`TOTAL de la solapa «${SOLAPA}» de ${ultimo} (usa el vendedor)`), S(""), { t: "n", v: totalH, z: MON }])
 const fV = MODO === "comprador" ? c0 + 1 : c0, fC = MODO === "comprador" ? c0 : c0 + 1
 res.push([S(""), S("Diferencia al vendedor contra el libro H"), S(""), F(`${L(3, fV)}-${L(3, c0 + 2)}`, r2(totalVend - totalH)), S(ok ? "✓ cierra" : "⚠️ NO cierra", true)])
 res.push([S(""), S("Efecto de usar el comprador en vez del vendedor"), S(""), F(`${L(3, fC)}-${L(3, fV)}`, r2(totalComp - totalVend))])
@@ -201,7 +203,7 @@ const hoja = (aoa: any[][], anchos: number[], congelar: number, filtro?: string)
 XLSX.utils.book_append_sheet(wb, hoja(res, [6, 24, 40, ...MESES.map(() => 13), 15], 5), "Por cuenta")
 XLSX.utils.book_append_sheet(wb, hoja(det, [6, 22, 38, 36, 9, 11, 16, 12, 12, 12, 12, 16, 30, 40, 50, 12, 6], 1, `A1:Q${NDET}`), DET)
 XLSX.utils.book_append_sheet(wb, hoja(tch, [12, 12, 12, 12, 12], 4, `A4:E${tch.length}`), TCH)
-let v = 1; const nombre = () => `${CARPETA}Imp Bancarios por cuenta MSA 25-26 al TC ${MODO} (2026-11-12) v${v}.xlsx`
+let v = 1; const nombre = () => `${CARPETA}${ARCH} por cuenta MSA 25-26 al TC ${MODO} (2026-11-12) v${v}.xlsx`
 while (existsSync(nombre())) v++
 XLSX.writeFile(wb, nombre())
 console.log(`📄 ${nombre()}\n   ${filas.length} renglones · ${renglones.length} líneas de resumen · cuentas: ${cuentas.join(" | ")}`)
