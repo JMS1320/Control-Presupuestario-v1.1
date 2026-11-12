@@ -1,0 +1,41 @@
+-- 270 · Control cruzado de socios (T-control-cruzado, 11/11). Aprobado por JMS el 11/11:
+--   «podés correr el script 270 siempre y cuando lo que haga es crear las 8 cuotas de otros gastos que faltan con la subcuenta según los casos
+--    que ya hablamos y ponerle a Andrés, o sea, cuenta AMS, en esos pagos del Santander para que entre […] impacta en su cuenta socio».
+-- A · 8 movimientos del Galicia MSA con código «X» (no es ninguna cuenta; quedaban sin vincular y sin llegar a ningún papel del balance):
+--     6 de potrancas (Villalba y Flores, jul-dic 2025, $ 853.000) → cuotas del template «Otros Gastos» de MSA (995537c7…), igual que los casos
+--       de 2026: alimento / fardos / rollos → categ ROLLOS (4230506); doma (Flores) → categ «Caballos», como «Saldo Doma Potrancas - Fabricio Flores».
+--     2 «Multas Amarok» del 01/12/2025 ($ 1.167.757) → cuotas de «Otros Gastos» con AUTOMOTORES REP Y MANTENIMIENTO (422135), la única subcuenta
+--       de automotores del plan de cuentas.
+--     A cada movimiento: se ata a su cuota y el código «X» pasa a vacío (como los casos de 2026). NO se toca el «detalle» (es del usuario) ni el estado.
+-- B · 2 pagos de sueldo del Santander MSA a AMS sin código (01/08/2025 $ 389.920 · 01/09/2025 $ 238.994) → CTA AMS. El del 08/07/2025
+--     ($ 1.064.403, sueldo de junio 2025) NO se toca: JMS 11/11 «si se pagó en julio ya era parte del saldo de inicio».
+-- Foto: 270-foto-antes.json · Deshacer: 270-codigo-x-a-otros-gastos-y-santander-ams-deshacer.sql (sólo borra lo que crea este script).
+begin;
+-- A · cuotas nuevas (ids fijos …-c07170000270)
+insert into public.cuotas_egresos_sin_factura (id, egreso_id, fecha_estimada, fecha_vencimiento, monto, estado, descripcion, detalle, categ, tipo_movimiento, medio_pago, visible_contable) values
+ ('7a2c1e0e-2701-4c0b-9b1a-c07170000270', '995537c7-91c0-4c7c-8fe3-3df0d5469944', '2025-07-01', '2025-07-01', 117000, 'conciliado', 'Otros Gastos — potrancas (Villalba): venía con código X [script 270]', 'Villalba Fardos y Avena potrancas en doma', 'ROLLOS', 'egreso', 'banco', false),
+ ('7a2c1e0e-2702-4c0b-9b1a-c07170000270', '995537c7-91c0-4c7c-8fe3-3df0d5469944', '2025-08-07', '2025-08-07', 134000, 'conciliado', 'Otros Gastos — potrancas (Villalba): venía con código X [script 270]', 'Villalba Alimento Potrancas', 'ROLLOS', 'egreso', 'banco', false),
+ ('7a2c1e0e-2703-4c0b-9b1a-c07170000270', '995537c7-91c0-4c7c-8fe3-3df0d5469944', '2025-09-08', '2025-09-08', 134000, 'conciliado', 'Otros Gastos — potrancas (Villalba): venía con código X [script 270]', 'Villalba Alimento Potrancas en doma', 'ROLLOS', 'egreso', 'banco', false),
+ ('7a2c1e0e-2704-4c0b-9b1a-c07170000270', '995537c7-91c0-4c7c-8fe3-3df0d5469944', '2025-10-06', '2025-10-06', 134000, 'conciliado', 'Otros Gastos — potrancas (Villalba): venía con código X [script 270]', 'Villalba Alimento Potrancas en doma', 'ROLLOS', 'egreso', 'banco', false),
+ ('7a2c1e0e-2705-4c0b-9b1a-c07170000270', '995537c7-91c0-4c7c-8fe3-3df0d5469944', '2025-11-12', '2025-11-12', 134000, 'conciliado', 'Otros Gastos — potrancas (Villalba): venía con código X [script 270]', 'Avena y Rollo Caballos en doma - Villalba', 'ROLLOS', 'egreso', 'banco', false),
+ ('7a2c1e0e-2706-4c0b-9b1a-c07170000270', '995537c7-91c0-4c7c-8fe3-3df0d5469944', '2025-12-26', '2025-12-26', 200000, 'conciliado', 'Otros Gastos — doma de potrancas (Flores): venía con código X [script 270]', 'Adelanto 2da parte doma potrancas', 'Caballos', 'egreso', 'banco', false),
+ ('7a2c1e0e-2707-4c0b-9b1a-c07170000270', '995537c7-91c0-4c7c-8fe3-3df0d5469944', '2025-12-01', '2025-12-01', 531059, 'conciliado', 'Otros Gastos — multas de la Amarok (Valdez): venía con código X [script 270]', 'Multas Amarok', 'AUTOMOTORES REP Y MANTENIMIENTO', 'egreso', 'banco', false),
+ ('7a2c1e0e-2708-4c0b-9b1a-c07170000270', '995537c7-91c0-4c7c-8fe3-3df0d5469944', '2025-12-01', '2025-12-01', 636698, 'conciliado', 'Otros Gastos — multas de la Amarok (Lippa): venía con código X [script 270]', 'Multas Amarok', 'AUTOMOTORES REP Y MANTENIMIENTO', 'egreso', 'banco', false);
+-- A · los 8 movimientos, atados a su cuota
+update public.msa_galicia set template_id = '995537c7-91c0-4c7c-8fe3-3df0d5469944', template_cuota_id = '7a2c1e0e-2701-4c0b-9b1a-c07170000270', categ = 'ROLLOS', nro_cuenta = '4230506', contable = '', nota_operador = concat_ws(' · ', nullif(nota_operador, ''), 'vinculado a Otros Gastos MSA [script 270]') where id = '11df178a-53fa-49ca-8574-66924b4926c3' and contable = 'X' and template_cuota_id is null;
+update public.msa_galicia set template_id = '995537c7-91c0-4c7c-8fe3-3df0d5469944', template_cuota_id = '7a2c1e0e-2702-4c0b-9b1a-c07170000270', categ = 'ROLLOS', nro_cuenta = '4230506', contable = '', nota_operador = concat_ws(' · ', nullif(nota_operador, ''), 'vinculado a Otros Gastos MSA [script 270]') where id = '9afcb13e-d2d2-4445-acaf-eb25c00f6ab0' and contable = 'X' and template_cuota_id is null;
+update public.msa_galicia set template_id = '995537c7-91c0-4c7c-8fe3-3df0d5469944', template_cuota_id = '7a2c1e0e-2703-4c0b-9b1a-c07170000270', categ = 'ROLLOS', nro_cuenta = '4230506', contable = '', nota_operador = concat_ws(' · ', nullif(nota_operador, ''), 'vinculado a Otros Gastos MSA [script 270]') where id = 'dad6e1cc-8761-46cf-8446-c123b6c455ac' and contable = 'X' and template_cuota_id is null;
+update public.msa_galicia set template_id = '995537c7-91c0-4c7c-8fe3-3df0d5469944', template_cuota_id = '7a2c1e0e-2704-4c0b-9b1a-c07170000270', categ = 'ROLLOS', nro_cuenta = '4230506', contable = '', nota_operador = concat_ws(' · ', nullif(nota_operador, ''), 'vinculado a Otros Gastos MSA [script 270]') where id = '9b65f7b8-0d61-4e98-a752-7063751796ec' and contable = 'X' and template_cuota_id is null;
+update public.msa_galicia set template_id = '995537c7-91c0-4c7c-8fe3-3df0d5469944', template_cuota_id = '7a2c1e0e-2705-4c0b-9b1a-c07170000270', categ = 'ROLLOS', nro_cuenta = '4230506', contable = '', nota_operador = concat_ws(' · ', nullif(nota_operador, ''), 'vinculado a Otros Gastos MSA [script 270]') where id = '2f52f40e-43f4-42af-87ac-f76e429abd17' and contable = 'X' and template_cuota_id is null;
+update public.msa_galicia set template_id = '995537c7-91c0-4c7c-8fe3-3df0d5469944', template_cuota_id = '7a2c1e0e-2706-4c0b-9b1a-c07170000270', categ = 'Caballos', contable = '', nota_operador = concat_ws(' · ', nullif(nota_operador, ''), 'vinculado a Otros Gastos MSA [script 270]') where id = '6a0b5350-4782-4797-94f9-6070acb91479' and contable = 'X' and template_cuota_id is null;
+update public.msa_galicia set template_id = '995537c7-91c0-4c7c-8fe3-3df0d5469944', template_cuota_id = '7a2c1e0e-2707-4c0b-9b1a-c07170000270', categ = 'AUTOMOTORES REP Y MANTENIMIENTO', nro_cuenta = '422135', contable = '', nota_operador = concat_ws(' · ', nullif(nota_operador, ''), 'vinculado a Otros Gastos MSA [script 270]') where id = 'c355ad03-2d4e-4a6f-9369-aed42f272385' and contable = 'X' and template_cuota_id is null;
+update public.msa_galicia set template_id = '995537c7-91c0-4c7c-8fe3-3df0d5469944', template_cuota_id = '7a2c1e0e-2708-4c0b-9b1a-c07170000270', categ = 'AUTOMOTORES REP Y MANTENIMIENTO', nro_cuenta = '422135', contable = '', nota_operador = concat_ws(' · ', nullif(nota_operador, ''), 'vinculado a Otros Gastos MSA [script 270]') where id = '5eb1fe04-448c-4e5b-ada7-60c7cc5ee48d' and contable = 'X' and template_cuota_id is null;
+-- B · Santander → CTA AMS
+update msa.santander set contable = 'CTA AMS', nota_operador = concat_ws(' · ', nullif(nota_operador, ''), 'pago de sueldo a AMS: va a su cuenta con socio [script 270]') where id in ('7d5fae13-6d72-4451-ade4-02f72ee2eca5', 'a394d55b-9938-4cc4-946b-1ae07bb3c709') and contable is null;
+-- control: tiene que haber exactamente 8 cuotas nuevas, 8 movimientos atados y 2 pagos con CTA AMS
+do $$ begin
+  if (select count(*) from public.cuotas_egresos_sin_factura where id::text like '7a2c1e0e-27%-c07170000270') <> 8 then raise exception '270: no son 8 cuotas'; end if;
+  if (select count(*) from public.msa_galicia where nota_operador like '%[script 270]') <> 8 then raise exception '270: no son 8 movimientos atados'; end if;
+  if (select count(*) from msa.santander where nota_operador like '%[script 270]' and contable = 'CTA AMS') <> 2 then raise exception '270: no son 2 pagos del Santander'; end if;
+end $$;
+commit;

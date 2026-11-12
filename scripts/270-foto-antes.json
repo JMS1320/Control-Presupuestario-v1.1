@@ -1,0 +1,18 @@
+{
+ "tomada": "2026-11-11 (antes de correr el 270, base del sistema, sólo lectura)",
+ "msa_galicia": [
+  {"id": "11df178a-53fa-49ca-8574-66924b4926c3", "fecha": "2025-07-01", "debitos": 117000, "contable": "X", "categ": null, "template_id": null, "template_cuota_id": null, "nro_cuenta": null, "estado": "historico", "nota_operador": "📜 Histórico jul25-ene26 — tu planilla: CATEG CAB · Contable X"},
+  {"id": "9afcb13e-d2d2-4445-acaf-eb25c00f6ab0", "fecha": "2025-08-07", "debitos": 134000, "contable": "X", "categ": null, "template_id": null, "template_cuota_id": null, "nro_cuenta": null, "estado": "historico", "nota_operador": "📜 Histórico jul25-ene26 — tu planilla: CATEG CAB · Contable X"},
+  {"id": "dad6e1cc-8761-46cf-8446-c123b6c455ac", "fecha": "2025-09-08", "debitos": 134000, "contable": "X", "categ": null, "template_id": null, "template_cuota_id": null, "nro_cuenta": null, "estado": "historico", "nota_operador": "📜 Histórico jul25-ene26 — tu planilla: CATEG CAB · Contable X"},
+  {"id": "9b65f7b8-0d61-4e98-a752-7063751796ec", "fecha": "2025-10-06", "debitos": 134000, "contable": "X", "categ": null, "template_id": null, "template_cuota_id": null, "nro_cuenta": null, "estado": "historico", "nota_operador": "📜 Histórico jul25-ene26 — tu planilla: CATEG CAB · Contable X"},
+  {"id": "2f52f40e-43f4-42af-87ac-f76e429abd17", "fecha": "2025-11-12", "debitos": 134000, "contable": "X", "categ": null, "template_id": null, "template_cuota_id": null, "nro_cuenta": null, "estado": "historico", "nota_operador": "📜 Histórico jul25-ene26 — tu planilla: CATEG CAB · Contable X"},
+  {"id": "6a0b5350-4782-4797-94f9-6070acb91479", "fecha": "2025-12-26", "debitos": 200000, "contable": "X", "categ": null, "template_id": null, "template_cuota_id": null, "nro_cuenta": null, "estado": "historico", "nota_operador": "📜 Histórico jul25-ene26 — tu planilla: CATEG CAB · Contable X"},
+  {"id": "c355ad03-2d4e-4a6f-9369-aed42f272385", "fecha": "2025-12-01", "debitos": 531059, "contable": "X", "categ": null, "template_id": null, "template_cuota_id": null, "nro_cuenta": null, "estado": "historico", "nota_operador": "📜 Histórico jul25-ene26 — tu planilla: CATEG AUTO · Contable x"},
+  {"id": "5eb1fe04-448c-4e5b-ada7-60c7cc5ee48d", "fecha": "2025-12-01", "debitos": 636698, "contable": "X", "categ": null, "template_id": null, "template_cuota_id": null, "nro_cuenta": null, "estado": "historico", "nota_operador": "📜 Histórico jul25-ene26 — tu planilla: CATEG AUTO · Contable x"}
+ ],
+ "msa.santander": [
+  {"id": "7d5fae13-6d72-4451-ade4-02f72ee2eca5", "fecha": "2025-08-01", "debitos": 389920, "contable": null, "categ": "Sueldos", "nota_operador": null},
+  {"id": "a394d55b-9938-4cc4-946b-1ae07bb3c709", "fecha": "2025-09-01", "debitos": 238994, "contable": null, "categ": "Sueldos", "nota_operador": null}
+ ],
+ "cuotas_creadas": "ninguna existía con ids 7a2c1e0e-27…-c07170000270"
+}
