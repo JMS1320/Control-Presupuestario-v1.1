@@ -38,10 +38,16 @@ const { data: usd, error } = await sb.from("cuotas_egresos_sin_factura").select(
   .not("monto_usd", "is", null).gte("fecha_pago", "2025-07-01").lte("fecha_pago", "2026-06-30")
 if (error) throw error
 const fechaIso = (x: number) => new Date(Math.round((x - 25569) * 864e5)).toISOString().slice(0, 10)
+const serial = (iso: string) => Math.round(Date.parse(iso + "T00:00:00Z") / 864e5) + 25569
+// JMS 12/11: pesos al BNA divisas COMPRADOR (la app guarda el vendedor; se muestran los dos). Mismo criterio de fecha que el script 194:
+// la cotización del día del débito o, si ese día no hubo, la del último día hábil anterior.
+const { data: cot, error: eCot } = await sb.from("cotizaciones").select("fecha, compra, venta").eq("serie", "dolar_bna_divisas").lte("fecha", "2026-06-30").order("fecha")
+if (eCot) throw eCot
+const tcDe = (f: string) => { let tc: any = null; for (const c of cot as any[]) { if (c.fecha <= f) { if (c.compra != null && c.venta != null) tc = c } else break } return tc }
 
-interface Fila { cuenta: string; categoria: string; mes: string; fecha: number; pesos: number; usd: number | null; tc: number | null; concepto: string; desc: string; detalle: string; estado: string; marca: string }
+interface Fila { cuenta: string; categoria: string; mes: string; fecha: number; pesos: number; pesosVend: number; usd: number | null; tc: number | null; fechaTc: string | null; compra: number | null; venta: number | null; concepto: string; desc: string; detalle: string; estado: string; marca: string }
 const filas: Fila[] = []
-let sinUsd = 0
+let sinUsd = 0, tcDistinto = 0
 for (const r of rows.slice(hi + 1)) {
   if (!r || typeof r[0] !== "number") continue
   const quien = String(r[col("Quién pagó")] ?? ""), cuenta = quien.includes("·") ? quien.split("·").at(-1)!.trim() : String(r[col("Banco / cuenta")] ?? "")
@@ -50,13 +56,15 @@ for (const r of rows.slice(hi + 1)) {
   const categoria = lado ? `Impuesto ley 25413 sobre los ${lado}` : base
   const pesos = r2((Number(r[col("Débito")]) || 0) - (Number(r[col("Crédito")]) || 0))
   const fecha = Number(r[col("Fecha")]), detalle = String(r[col("Detalle")] ?? "")
-  let u: number | null = null, tc: number | null = null
+  let u: number | null = null, tc: number | null = null, fechaTc: string | null = null, compra: number | null = null, venta: number | null = null, pesosC = pesos
   if (/US\$/.test(cuenta)) {
     const m = (usd as any[]).find(q => q.fecha_pago === fechaIso(fecha) && Math.abs(Number(q.monto) - Math.abs(pesos)) < 0.01 && String(q.detalle).slice(0, 40) === detalle.slice(0, 40))
       ?? (usd as any[]).find(q => q.fecha_pago === fechaIso(fecha) && Math.abs(Number(q.monto) - Math.abs(pesos)) < 0.01)
     if (m) { u = r2(Math.sign(pesos) * Number(m.monto_usd)); tc = Number(m.tipo_cambio) } else sinUsd++
+    const q = tcDe(fechaIso(fecha))
+    if (q && u != null) { fechaTc = q.fecha; compra = Number(q.compra); venta = Number(q.venta); pesosC = r2(u * compra); if (Math.abs(venta - (tc ?? 0)) > 0.0001) tcDistinto++ }
   }
-  filas.push({ cuenta, categoria, mes: String(r[col("Mes")]), fecha, pesos, usd: u, tc, concepto: String(r[col("Concepto")] ?? ""), desc, detalle, estado: String(r[col("Estado")] ?? ""), marca: String(r[col("Marca")] ?? "") })
+  filas.push({ cuenta, categoria, mes: String(r[col("Mes")]), fecha, pesos: pesosC, pesosVend: pesos, usd: u, tc, fechaTc, compra, venta, concepto: String(r[col("Concepto")] ?? ""), desc, detalle, estado: String(r[col("Estado")] ?? ""), marca: String(r[col("Marca")] ?? "") })
 }
 
 // ── 3 · Renglones del resumen: cuenta → categoría (débitos y créditos primero)
@@ -80,11 +88,29 @@ const L = (c: number, r: number) => XLSX.utils.encode_cell({ c, r })
 
 // ── 5 · Detalle (solapa propia) — columnas fijas para las fórmulas
 const DET = "Detalle", NDET = filas.length + 1
-const det: any[][] = [["Nro", "Cuenta", "Tipo de cuenta", "Categoría", "Mes", "Fecha", "Importe $", "Importe US$", "TC (BNA divisas vendedor)", "Concepto (template)", "Descripción del banco", "Detalle", "Estado", "Marca"].map(C)]
+const TCH = "Tipos de cambio"
+const det: any[][] = [["Nro", "Cuenta", "Tipo de cuenta", "Categoría", "Mes", "Fecha", "Importe $ (dólares al TC comprador)", "Importe US$", "Fecha de la cotización", "TC BNA divisas comprador", "TC BNA divisas vendedor",
+  "$ al TC vendedor (como el libro H)", "Concepto (template)", "Descripción del banco", "Detalle", "Estado", "Marca"].map(C)]
 const ordenadas = [...filas].sort((a, b) => nroDe(a) - nroDe(b) || a.fecha - b.fecha)
-for (const f of ordenadas) det.push([{ t: "n", v: nroDe(f) }, S(f.cuenta), S(TIPO_CTA[f.cuenta] ?? ""), S(f.categoria), S(f.mes), { t: "n", v: f.fecha, z: "dd/mm/yyyy" },
-  { t: "n", v: f.pesos, z: MON }, f.usd == null ? S("") : { t: "n", v: f.usd, z: USD }, f.tc == null ? S("") : { t: "n", v: f.tc, z: MON },
-  S(f.concepto), S(f.desc), S(f.detalle), S(f.estado), S(f.marca)])
+for (const f of ordenadas) {
+  const r = det.length + 1, enUsd = f.usd != null && f.compra != null
+  det.push([{ t: "n", v: nroDe(f) }, S(f.cuenta), S(TIPO_CTA[f.cuenta] ?? ""), S(f.categoria), S(f.mes), { t: "n", v: f.fecha, z: "dd/mm/yyyy" },
+    enUsd ? { t: "n", f: `ROUND(H${r}*J${r},2)`, v: f.pesos, z: MON } : { t: "n", v: f.pesos, z: MON },
+    f.usd == null ? S("") : { t: "n", v: f.usd, z: USD },
+    enUsd ? { t: "n", v: serial(f.fechaTc!), z: "dd/mm/yyyy" } : S(""),
+    enUsd ? { t: "n", f: `VLOOKUP(I${r},'${TCH}'!$A:$C,2,FALSE)`, v: f.compra, z: MON } : S(""),
+    enUsd ? { t: "n", f: `VLOOKUP(I${r},'${TCH}'!$A:$C,3,FALSE)`, v: f.venta, z: MON } : S(""),
+    enUsd ? { t: "n", f: `ROUND(H${r}*K${r},2)`, v: f.pesosVend, z: MON } : { t: "n", f: `G${r}`, v: f.pesosVend, z: MON },
+    S(f.concepto), S(f.desc), S(f.detalle), S(f.estado), S(f.marca)])
+}
+// la solapa de cotizaciones: sólo los días usados
+const dias = [...new Set(filas.filter(f => f.fechaTc).map(f => f.fechaTc!))].sort()
+const tch: any[][] = [[T("TIPOS DE CAMBIO usados — dólar BNA divisas (Banco Nación), comprador y vendedor")],
+  [S("Para cotejar con las cotizaciones históricas que publica el Banco Nación. Si el día del débito no hubo cotización (fin de semana o feriado), se usa la del último día hábil anterior.")], [],
+  ["Fecha", "Comprador", "Vendedor", "Diferencia", "Débitos que la usan"].map(C)]
+for (const d of dias) { const c = (cot as any[]).find(x => x.fecha === d), r = tch.length + 1
+  tch.push([{ t: "n", v: serial(d), z: "dd/mm/yyyy" }, { t: "n", v: Number(c.compra), z: MON }, { t: "n", v: Number(c.venta), z: MON }, { t: "n", f: `C${r}-B${r}`, v: Number(c.venta) - Number(c.compra), z: MON },
+    { t: "n", f: `COUNTIF(${DET}!$I:$I,A${r})`, v: filas.filter(f => f.fechaTc === d).length }]) }
 const sumif = (colSuma: string, nro: string, mes?: string) => `SUMIFS(${DET}!$${colSuma}$2:$${colSuma}$${NDET},${DET}!$A$2:$A$${NDET},${nro}${mes ? `,${DET}!$E$2:$E$${NDET},"${mes}"` : ""})`
 
 // ── 6 · Resumen: pesos por cuenta; abajo, la cuenta en dólares en US$
@@ -125,13 +151,17 @@ if (ctasUsd.length) {
   const du = filas.filter(f => ctasUsd.includes(f.cuenta)), tcs = du.map(f => f.tc!).filter(Boolean)
   const totU = r2(du.reduce((t, f) => t + (f.usd ?? 0), 0)), totP = r2(du.reduce((t, f) => t + f.pesos, 0))
   res.push([GRANDE(`2 · CUENTAS EN DÓLARES — ${ctasUsd.join(", ")} (${ctasUsd.map(c => TIPO_CTA[c]).join(", ")})`)])
-  res.push([S("CÓMO SE DOLARIZÓ / PESIFICÓ:", true)])
-  res.push([S("· El banco debita estos impuestos EN DÓLARES (el extracto de la caja de ahorro en US$). Ése es el dato original: tabla 2.a.")])
-  res.push([S("· Para llevarlos a pesos, cada débito se multiplica por el dólar BNA divisas, tipo VENDEDOR, del DÍA del débito (cotización del Banco Nación; queda guardada en cada cuota junto con los US$). Resultado: tabla 2.b.")])
-  res.push([S(`· ${du.length} débitos · US$ ${totU.toLocaleString("es-AR", { minimumFractionDigits: 2 })} → $ ${totP.toLocaleString("es-AR", { minimumFractionDigits: 2 })} · TC usados entre ${Math.min(...tcs).toLocaleString("es-AR")} y ${Math.max(...tcs).toLocaleString("es-AR")} · cada TC está en la solapa «Detalle», columna I. La fila «TC implícito» de abajo es pesos ÷ US$ del mes.`)])
+  const cps = du.map(f => f.compra!).filter(Boolean), totPV = r2(du.reduce((t, f) => t + f.pesosVend, 0))
+  const n2 = (x: number) => x.toLocaleString("es-AR", { minimumFractionDigits: 2 })
+  res.push([S("CÓMO SE PASÓ A PESOS:", true)])
+  res.push([S("· Cuenta: Banco Galicia, caja de ahorro en dólares de MSA. Cada débito se cruza con su extracto en US$ del ejercicio (jul-25 a jun-26).")])
+  res.push([S("· El banco debita estos impuestos EN DÓLARES: ése es el dato original → cuadro 2.a, abajo.")])
+  res.push([S("· Pasaje a pesos: cada débito × dólar BNA divisas COMPRADOR del día del débito (sin cotización ese día —fin de semana o feriado— se toma la del último día hábil anterior) → cuadro 2.b, abajo.")])
+  res.push([S("· Para auditar: la solapa «Tipos de cambio» tiene la cotización BNA de cada día usado (comprador y vendedor); en «Detalle» cada débito trae la fecha de la cotización, los dos TC y los pesos como fórmula US$ × TC.")])
+  res.push([S(`· ${du.length} débitos · US$ ${n2(totU)} → $ ${n2(totP)} al comprador (al vendedor serían $ ${n2(totPV)}) · TC comprador usados entre ${Math.min(...cps).toLocaleString("es-AR")} y ${Math.max(...cps).toLocaleString("es-AR")}. La fila «TC implícito» es pesos ÷ US$ del mes.`)])
   res.push([])
   const rU = bloque("2.a · EN DÓLARES (US$) — moneda de la cuenta", ctasUsd, "H", f => f.usd ?? 0, USD, "TOTAL EN US$")
-  rUsdPesos = bloque("2.b · EN PESOS ($) — los mismos débitos × TC BNA divisas vendedor del día", ctasUsd, "G", f => f.pesos, MON, "TOTAL EN PESOS ($)")
+  rUsdPesos = bloque("2.b · EN PESOS ($) — los mismos débitos × TC BNA divisas COMPRADOR del día", ctasUsd, "G", f => f.pesos, MON, "TOTAL EN PESOS ($)")
   res.push([S(""), S("TC implícito del mes ($ ÷ US$)"), S(""), ...Array.from({ length: 13 }, (_, j) => { const u = Number(res[rU][j + 3].v), p = Number(res[rUsdPesos][j + 3].v)
     return F(`IF(${L(j + 3, rU)}=0,"",${L(j + 3, rUsdPesos)}/${L(j + 3, rU)})`, u ? p / u : 0) })])
   res.push([])
@@ -145,12 +175,16 @@ res.push([S(""), S("TOTAL GENERAL ($)", true), S(""), ...Array.from({ length: 13
 res.push([])
 
 // control
-const totalArchivo = r2(filas.reduce((t, f) => t + f.pesos, 0)), ok = Math.abs(totalArchivo - totalH) < 0.01
+const totalArchivo = r2(filas.reduce((t, f) => t + f.pesos, 0)), totalVend = r2(filas.reduce((t, f) => t + f.pesosVend, 0)), ok = Math.abs(totalVend - totalH) < 0.01
 res.push([SUB("CONTROL")])
-res.push([S(""), S(`Total de este archivo`), S(""), F(`${L(15, rTotal)}`, totalArchivo)])
-res.push([S(""), S(`TOTAL de la solapa «H · MSA · Imp Bancarios» de ${ultimo}`), S(""), { t: "n", v: totalH, z: MON }])
-res.push([S(""), S("Diferencia"), S(""), F(`${L(3, res.length - 2)}-${L(3, res.length - 1)}`, r2(totalArchivo - totalH)), S(ok ? "✓ cierra" : "⚠️ NO cierra", true)])
-if (sinUsd) res.push([S(""), S(`⚠️ ${sinUsd} renglón(es) de la cuenta en dólares sin US$ encontrado en la cuota: figuran en pesos y no en el bloque en dólares`)])
+const c0 = res.length
+res.push([S(""), S("Total de este archivo (dólares al TC comprador)"), S(""), F(`${L(15, rTotal)}`, totalArchivo)])
+res.push([S(""), S("Lo mismo con los dólares al TC vendedor (columna L del Detalle)"), S(""), F(`SUM(${DET}!L2:L${NDET})`, totalVend)])
+res.push([S(""), S(`TOTAL de la solapa «H · MSA · Imp Bancarios» de ${ultimo} (usa el vendedor)`), S(""), { t: "n", v: totalH, z: MON }])
+res.push([S(""), S("Diferencia al vendedor contra el libro H"), S(""), F(`${L(3, c0 + 1)}-${L(3, c0 + 2)}`, r2(totalVend - totalH)), S(ok ? "✓ cierra" : "⚠️ NO cierra", true)])
+res.push([S(""), S("Efecto de usar el comprador en vez del vendedor"), S(""), F(`${L(3, c0)}-${L(3, c0 + 1)}`, r2(totalArchivo - totalVend))])
+res.push([S(""), S("TC vendedor de la solapa «Tipos de cambio» = el usado en el libro H para cada débito (cantidad distintos)"), S(""), { t: "n", v: tcDistinto }, S(tcDistinto ? `⚠️ ${tcDistinto} distintos` : "✓ todos iguales", true)])
+if (sinUsd) res.push([S(""), S(`⚠️ ${sinUsd} renglón(es) de la cuenta en dólares sin US$ encontrado: figuran en pesos y no en el cuadro en dólares`)])
 
 // ── 7 · Libro
 const wb = XLSX.utils.book_new()
@@ -162,11 +196,12 @@ const hoja = (aoa: any[][], anchos: number[], congelar: number, filtro?: string)
   return ws
 }
 XLSX.utils.book_append_sheet(wb, hoja(res, [6, 24, 40, ...MESES.map(() => 13), 15], 5), "Por cuenta")
-XLSX.utils.book_append_sheet(wb, hoja(det, [6, 22, 38, 36, 9, 11, 14, 12, 12, 30, 40, 50, 12, 6], 1, `A1:N${NDET}`), DET)
+XLSX.utils.book_append_sheet(wb, hoja(det, [6, 22, 38, 36, 9, 11, 16, 12, 12, 12, 12, 16, 30, 40, 50, 12, 6], 1, `A1:Q${NDET}`), DET)
+XLSX.utils.book_append_sheet(wb, hoja(tch, [12, 12, 12, 12, 12], 4, `A4:E${tch.length}`), TCH)
 let v = 1; const nombre = () => `${CARPETA}Imp Bancarios por cuenta MSA 25-26 (2026-11-11) v${v}.xlsx`
 while (existsSync(nombre())) v++
 XLSX.writeFile(wb, nombre())
 console.log(`📄 ${nombre()}\n   ${filas.length} renglones · ${renglones.length} líneas de resumen · cuentas: ${cuentas.join(" | ")}`)
-console.log(`   total ${totalArchivo} vs H ${totalH} → ${ok ? "✓" : "⚠️ NO cierra"} · USD sin TC: ${sinUsd}`)
+console.log(`   total comprador ${totalArchivo} · vendedor ${totalVend} vs H ${totalH} → ${ok ? "✓" : "⚠️ NO cierra"} · USD sin TC: ${sinUsd} · TC distintos: ${tcDistinto} · días de cotización ${dias.length}`)
 for (const c of cuentas) console.log(`   ${c}: ${r2(filas.filter(f => f.cuenta === c).reduce((t, f) => t + f.pesos, 0))}${/US\$/.test(c) ? ` · US$ ${r2(filas.filter(f => f.cuenta === c).reduce((t, f) => t + (f.usd ?? 0), 0))}` : ""}`)
 for (const x of renglones.filter(x => /25413/.test(x.categoria))) console.log(`   ${x.nro} ${x.cuenta} · ${x.categoria}: ${r2(filas.filter(f => nroDe(f) === x.nro).reduce((t, f) => t + f.pesos, 0))}`)
