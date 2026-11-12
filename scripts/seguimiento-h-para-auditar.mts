@@ -62,6 +62,11 @@ const QUE: Record<number, [string, string, string]> = {  // [tipo, qué cambió,
   39: ["Presentación", "La cochera que pagó JMS es la de DUHAU (template renombrado «ABL Cochera Duhau Anual», lo reintegra MA; script 262) y «Datos a revisar» muestra al pie los pendientes abiertos que no cambian el balance (A-BUG-1588, 1589, A-FEAT-1586, 1590).", "262"],
   34: ["DATOS", "Wilson (adelanto atado a la Caja Sigot 21/02; la extracción de MA del 19/02 suelta y sin CTA MSA); medialunas de la Quinta → CTA QUINTA X (los grupos que no son empresa: manda el código); ITGB de la sucesión pagado de la caja AMS como retiro de los cotitulares (template nuevo «Retiros Cotitulares»), la extracción del Galicia de 1,8 M sin código.", "243, 244, 245"],
   31: ["DATOS", "Suscripciones 2025 (Netflix, Paquete TV MA, Club La Nación, Jockey Club) pasan a MA; código interno «DIST MA» vacío. + Las compras en dólares con tarjeta en $ 0 saltan en Inconsistencias (61 cuotas).", "240"],
+  // v40 → v55: cortes del 10 y 11/11 sólo de presentación (verificado por la foto de números: v39 = v56, 0 solapas y 0 renglones distintos)
+  ...Object.fromEntries(Array.from({ length: 16 }, (_, i) => [40 + i, ["Presentación", "Corte del 10–11/11 sólo de presentación: sin cambio de números (foto v39 = v56). El detalle, en la solapa «Cambios de presentación» del libro.", ""]])),
+  56: ["Presentación", "Impuesto ley 25.413 separado en débitos y créditos y los nombres nuevos de las cuentas; sin cambio de números. Punto de partida del control cruzado de socios (11/11).", ""],
+  57: ["DATOS", "Control cruzado de socios (11/11): los 8 movimientos del Galicia MSA con código «X» (no es ninguna cuenta) pasan a cuotas de «Otros Gastos» MSA como los casos de 2026 — 6 de potrancas (Villalba ROLLOS, Flores «Caballos») $ 853.000 y 2 multas de la Amarok (AUTOMOTORES REP Y MANTENIMIENTO) $ 1.167.757 → +2.020.757 y +8 cuotas; 2 pagos de sueldo del Santander a AMS (ago y sep-25, $ 628.914) con CTA AMS (no son cuotas: no mueven el total).", "270"],
+  58: ["DATOS", "Control cruzado de socios (11/11): «Pasaje JMS ida y vuelta» del 19/05/26 ($ 261.545, Otros Gastos MSA) con CTA JMS, como los de feb-26 → «Retiros y aportes» +261.545 (retiro de JMS pagado por MSA); cuotas sin cambio.", "271"],
 }
 
 const filas = fotos.map(f => {
