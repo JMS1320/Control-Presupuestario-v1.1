@@ -1371,6 +1371,10 @@ ese lugar afecte a todo lo que lo usa.
   recarga posterior a guardar es **silenciosa** — la tabla sigue a la vista con su scroll y su selección y se reemplaza de una
   — y **los filtros puestos (texto incluido) se vuelven a aplicar** sobre lo recargado. Cash Flow (`cargarDatos({ silencioso })`,
   A-FEAT-1602) y Egresos → Cuotas (A-FEAT-1612) ya lo cumplen; las demás → [A-FEAT-1612](PENDIENTES.md#a-feat-1612).
+- 🧩 **Todo libro de export se baja ENTERO y también por SUS PARTES** *(regla del usuario 2026-11-13, sobre los papeles del
+  balance: «exacto, para todo poder bajar los subs» · «siempre posible de hacerlo por subs, o sea sólo hacienda»)*: un libro que
+  junta varios temas (Stocks = hacienda + granos + insumos + sementeras; Templates = grupos → cada template) ofrece bajar el todo
+  o cada sub, del mismo cálculo. → [A-FEAT-1624](PENDIENTES.md#a-feat-1624).
 - Si la vista tiene **export (Excel/PDF)**, al sumarle un campo se actualiza también el export.
   Motivo: el usuario usa las descargas como registro fuera de la app; si el export queda viejo,
   pierde datos que sí ve en pantalla.
