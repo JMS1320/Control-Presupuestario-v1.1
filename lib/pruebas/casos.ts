@@ -51,7 +51,7 @@ import { hojaResumenPorMes } from "@/lib/balance/resumen-por-mes"
 import { filasBalanceEnLinea, hojaCajaYBancos } from "@/lib/balance/balance-en-linea"
 import { APERTURA_MSA_2025 } from "@/lib/balance/apertura-contador"
 import { libroDeSolapa, repartirEnLibros, templatesDeResponsable, detalleBancarioDelLibroC, canalDePago, hojaDeDetalle } from "@/lib/balance/libros-del-balance"
-import { PAPELES, controlDeCobertura, solapasDeFormula, recortarPapel, papelPorId } from "@/lib/balance/papeles-del-balance"
+import { todasLasUnidades, librosConSubs, controlDeCobertura, solapasDeFormula, recortarPapel, papelPorId } from "@/lib/balance/papeles-del-balance"
 import { armarStocksUnificados, hojaDeStocks } from "@/lib/balance/stocks-unificado"
 import { temasDeCuentaCorriente } from "@/lib/balance/recorrido-conciliacion"
 import { contrapartesDelRecorrido } from "@/lib/balance/fuera-por-cuenta-corriente"
@@ -13857,25 +13857,32 @@ export function correrCasos(): Resultado[] {
 
   // ══ 🗂️ Los papeles del balance como unidades (A-FEAT-1624 etapa 2) ══
   {
-    const solapas = ["Ventas", "Compras", "05 Provision", "03.1 Provision cobros", "07 Bancos", "H · MSA · Por mes", "H · MSA · Gastos Bancarios",
-      "H · MSA · Imp Bancarios", "H · MSA · (sin agrupadora)", "H · MSA · Papel Inmobiliario", "H · MSA · Automotores", "02 Stock hacienda",
-      "02.10 Aumento del rodeo U$S", "02 Hacienda", "I · MSA · Retiros por mes", "G · LIB (paralelo)", "G · Indice de grupos", "Saldos raros"]
+    const solapas = ["Ventas", "Compras", "Resumen 12 meses", "05 Provision", "03.1 Provision cobros", "07 Bancos", "07.2 Operaciones en dólares",
+      "H · MSA · Egresos", "H · MSA · Por mes", "H · MSA · Gastos Bancarios", "H · MSA · Inversiones", "H · MSA · Papel Inmobiliario", "02 Stock hacienda",
+      "02.10 Aumento del rodeo U$S", "02 Hacienda", "1 Granos", "I · MSA · Retiros por mes", "Gastos Libertad", "G · LIB (paralelo)", "G · Indice de grupos",
+      "C · MSA · Templates", "00 Cobertura", "Saldos ej. anterior"]
     const cob = controlDeCobertura(solapas)
-    const dondeVa = (n: string) => PAPELES.filter(p => p.solapas(n)).map(p => p.id).join("+") || "—"
+    const unidades = todasLasUnidades(solapas)
+    const dondeVa = (n: string) => unidades.filter(p => p.solapas(n)).map(p => p.id).join("+") || "—"
     const v1 = solapas.map(n => `${n}=${dondeVa(n)}`).join(" · ")
-    const e1 = "Ventas=ventas · Compras=compras · 05 Provision=provisiones · 03.1 Provision cobros=provisiones · 07 Bancos=bancos · H · MSA · Por mes=egresos · "
-      + "H · MSA · Gastos Bancarios=— · H · MSA · Imp Bancarios=— · H · MSA · (sin agrupadora)=egresos+otros-gastos · H · MSA · Papel Inmobiliario=impuestos · "
-      + "H · MSA · Automotores=impuestos · 02 Stock hacienda=hacienda · 02.10 Aumento del rodeo U$S=hacienda · 02 Hacienda=— · I · MSA · Retiros por mes=socios · "
-      + "G · LIB (paralelo)=libertad · G · Indice de grupos=— · Saldos raros=—"
-    chequear("Papeles del balance", "🗂️ Cada solapa del set va a su papel según las marcas de JMS del inventario: el H sin los bancarios (A9), el papel de impuestos aparte (A10), Otros gastos también suelto (B1), el retiro por mes a socios y LIB a Libertad (lo rescatado de I y G)",
+    const e1 = "Ventas=diario+diario-ventas · Compras=diario+diario-compras · Resumen 12 meses=diario+diario-control · 05 Provision=saldos+saldos-provisiones · "
+      + "03.1 Provision cobros=saldos+saldos-provisiones · 07 Bancos=saldos+saldos-bancos · 07.2 Operaciones en dólares=— · H · MSA · Egresos=templates+templates-base · "
+      + "H · MSA · Por mes=templates+templates-base · H · MSA · Gastos Bancarios=templates+tpl:H · MSA · Gastos Bancarios · H · MSA · Inversiones=templates+tpl:H · MSA · Inversiones · "
+      + "H · MSA · Papel Inmobiliario=templates+tpl:H · MSA · Papel Inmobiliario · 02 Stock hacienda=stocks+stocks-hacienda · 02.10 Aumento del rodeo U$S=stocks+stocks-hacienda · "
+      + "02 Hacienda=— · 1 Granos=stocks+stocks-granos · I · MSA · Retiros por mes=socios+socios-cuentas · Gastos Libertad=socios+socios-libertad · "
+      + "G · LIB (paralelo)=socios+socios-libertad · G · Indice de grupos=— · C · MSA · Templates=— · 00 Cobertura=— · Saldos ej. anterior=—"
+    chequear("Libros del balance", "🗂️ La estructura de JMS (13/11): Saldos sólo con saldos y provisiones, las OPERACIONES (gastos bancarios, inversiones) como grupos de Templates, Libro Diario con su control, Stocks con hacienda, y C/G/Control/lo viejo sólo en el set viejo",
       e1, v1, v1 === e1, "A-FEAT-1624")
-    const v2 = `sin papel: ${cob.sinPapel.join(" | ")}`
-    const e2 = "sin papel: H · MSA · Gastos Bancarios | H · MSA · Imp Bancarios | 02 Hacienda | G · Indice de grupos | Saldos raros"
-    chequear("Papeles del balance", "🧮 El control lista las solapas que no van a ningún papel (no se descartan en silencio)", e2, v2, v2 === e2, "A-FEAT-1624")
+    const v2 = `sólo en el set viejo: ${cob.sinPapel.join(" | ")} · sub fuera de su libro: ${cob.subFueraDelLibro.length}`
+    const e2 = "sólo en el set viejo: 07.2 Operaciones en dólares | 02 Hacienda | G · Indice de grupos | C · MSA · Templates | 00 Cobertura | Saldos ej. anterior · sub fuera de su libro: 0"
+    chequear("Libros del balance", "🧮 El control lista lo que no va a ningún libro nuevo (sigue en el set viejo) y verifica que cada sub esté dentro de su libro entero (integridad del catálogo)", e2, v2, v2 === e2, "A-FEAT-1624")
+    const v2b = librosConSubs(solapas).map(x => `${x.libro.nombre}(${x.subs.length})`).join(" · ")
+    const e2b = "Saldos(4) · Libro Diario(3) · Templates(4) · Sueldos(0) · Proveedores (deudas y créditos al cierre)(0) · Stocks(5) · Balance en línea(0) · Socios y Libertad(2)"
+    chequear("Libros del balance", "Cada libro con sus subs; los grupos de Templates salen de las solapas del armado (acá: base + Gastos Bancarios + Inversiones + Papel Inmobiliario)", e2b, v2b, v2b === e2b, "A-FEAT-1624")
 
     const v3 = solapasDeFormula("SUM('H · MSA · Gastos'!B5:B9)+Compras!C3+'O''Neil'!A1+B2").sort().join(" | ")
     const e3 = "Compras | H · MSA · Gastos | O'Neil"
-    chequear("Papeles del balance", "Las solapas a las que apunta una fórmula (con y sin comillas, con apóstrofe adentro)", e3, v3, v3 === e3, "A-FEAT-1624")
+    chequear("Libros del balance", "Las solapas a las que apunta una fórmula (con y sin comillas, con apóstrofe adentro)", e3, v3, v3 === e3, "A-FEAT-1624")
 
     const wb = XLSXcasos.utils.book_new()
     const porMes = XLSXcasos.utils.aoa_to_sheet([["x"]]); porMes["B2"] = { t: "n", v: 30, f: "'H · MSA · (sin agrupadora)'!C9+'H · MSA · Gastos Bancarios'!C9" }
@@ -13884,13 +13891,15 @@ export function correrCasos(): Resultado[] {
     XLSXcasos.utils.book_append_sheet(wb, porMes, "H · MSA · Por mes")
     XLSXcasos.utils.book_append_sheet(wb, sinAg, "H · MSA · (sin agrupadora)")
     XLSXcasos.utils.book_append_sheet(wb, XLSXcasos.utils.aoa_to_sheet([["z"]]), "H · MSA · Gastos Bancarios")
-    const eg = recortarPapel(wb, ["v0", "v1", "v2"], papelPorId("egresos")!)
-    const og = recortarPapel(wb, ["v0", "v1", "v2"], papelPorId("otros-gastos")!)
+    const entero = recortarPapel(wb, ["v0", "v1", "v2"], papelPorId("templates")!)
+    const base = recortarPapel(wb, ["v0", "v1", "v2"], papelPorId("templates-base")!)
+    const grupo = recortarPapel(wb, ["v0", "v1", "v2"], papelPorId("tpl:H · MSA · (sin agrupadora)", wb.SheetNames)!)
     const celda = (w: typeof wb, s: string, c: string) => { const x = w.Sheets[s][c] as { v: number; f?: string }; return `${x.v}${x.f ? "ƒ" : ""}` }
-    const v4 = `egresos ${eg.solapas.length} sol [${eg.vistas.join(",")}] B2=${celda(eg.wb, "H · MSA · Por mes", "B2")} B3=${celda(eg.wb, "H · MSA · Por mes", "B3")} a valor ${eg.formulasAValor.length}`
-      + ` · otros ${og.solapas.length} sol C9=${celda(og.wb, "H · MSA · (sin agrupadora)", "C9")} · completo intacto B2=${celda(wb, "H · MSA · Por mes", "B2")} C9=${celda(wb, "H · MSA · (sin agrupadora)", "C9")}`
-    const e4 = "egresos 2 sol [v0,v1] B2=30 B3=7ƒ a valor 1 · otros 1 sol C9=20 · completo intacto B2=30ƒ C9=20ƒ"
-    chequear("Papeles del balance", "✂️ Al recortar un papel, la fórmula que apunta a una solapa de OTRO papel queda con su valor (no #REF), la de adentro sigue viva, cada solapa viaja con su formato y el libro completo no se toca",
+    const v4 = `entero ${entero.solapas.length} sol a valor ${entero.formulasAValor.length}`
+      + ` · base ${base.solapas.length} sol [${base.vistas.join(",")}] B2=${celda(base.wb, "H · MSA · Por mes", "B2")} B3=${celda(base.wb, "H · MSA · Por mes", "B3")} a valor ${base.formulasAValor.length}`
+      + ` · grupo ${grupo.solapas.length} sol [${grupo.vistas.join(",")}] C9=${celda(grupo.wb, "H · MSA · (sin agrupadora)", "C9")} · completo intacto B2=${celda(wb, "H · MSA · Por mes", "B2")} C9=${celda(wb, "H · MSA · (sin agrupadora)", "C9")}`
+    const e4 = "entero 3 sol a valor 0 · base 1 sol [v0] B2=30 B3=7ƒ a valor 1 · grupo 1 sol [v1] C9=20 · completo intacto B2=30ƒ C9=20ƒ"
+    chequear("Libros del balance", "✂️ El libro entero conserva todas sus fórmulas; al bajar un sub, la fórmula que apunta a una solapa que quedó afuera queda con su valor (no #REF), la de adentro sigue viva, cada solapa viaja con su formato y el libro completo no se toca",
       e4, v4, v4 === e4, "A-FEAT-1624")
   }
   return r

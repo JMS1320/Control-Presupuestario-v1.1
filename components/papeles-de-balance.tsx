@@ -54,7 +54,7 @@ import { respaldoDeSaldo, respaldoDeFci, PAPEL_COPIAS, urlDeArchivoDrive, renglo
 import { ivaConSigno, RENGLONES, type DatosDeLosPapeles, type ValorPropuesto } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { armarWorkbook, coberturaDeArgs, descargarLibroDiario, descargarSetDelBalance, descargarPapelesDelBalance } from "@/lib/balance/export-libro-diario"
-import { PAPELES, sePuedeBajar, papelPorId, type ControlDeCobertura } from "@/lib/balance/papeles-del-balance"
+import { librosConSubs, sePuedeBajar, papelPorId, type ControlDeCobertura } from "@/lib/balance/papeles-del-balance"
 import { armarTemas, subdiariosContraArca, temaDelLink, type Tema } from "@/lib/balance/recorrido"
 import { temasVentasVsArca, temasComprasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
 import { leerDatosConciliacion, proponerConciliaciones, CUENTAS_CONCILIABLES, type ConteoCuenta } from "@/lib/conciliacion/propuestas-ejercicio"
@@ -457,16 +457,17 @@ export function PapelesDeBalance() {
     await descargarSetDelBalance(e.args, e.entradaF, e.lib, e.papeles, e.estructura)
   }
   /** 🗂️ A-FEAT-1624 etapa 2: los papeles tildados, cada uno en su archivo (del mismo cálculo que el set). */
-  const bajarPapeles = async (lib: LibroDiario) => {
-    if (!tildados.size) { toast.info("Tildá al menos un papel."); return }
+  const bajarPapeles = async (lib: LibroDiario, soloListar = false) => {
+    if (!soloListar && !tildados.size) { toast.info("Tildá al menos un libro o una parte."); return }
     setBajandoPapeles(true)
     try {
       const e = await entradasDelSet(lib)
-      const r = await descargarPapelesDelBalance(e.args, [...tildados], e.entradaF, e.lib, e.papeles)
+      const r = await descargarPapelesDelBalance(e.args, soloListar ? [] : [...tildados], e.entradaF, e.lib, e.papeles)
       setResultadoPapeles(r)
       const aValor = r.archivos.reduce((s, x) => s + x.formulasAValor, 0)
-      if (!r.archivos.length) toast.warning("Ninguno de los papeles tildados trajo solapas en este armado.")
-      else toast.success(`✓ ${r.archivos.length} papel(es) bajado(s)${aValor ? ` · ${aValor} fórmula(s) que apuntaban a otro papel quedaron con su valor (ver «Control del papel»)` : ""}`)
+      if (soloListar) toast.success("✓ Grupos de Templates listados: ya los podés tildar.")
+      else if (!r.archivos.length) toast.warning("Nada de lo tildado trajo solapas en este armado.")
+      else toast.success(`✓ ${r.archivos.length} archivo(s) bajado(s)${aValor ? ` · ${aValor} fórmula(s) que apuntaban afuera del archivo quedaron con su valor (ver «Control del papel»)` : ""}`)
     } finally { setBajandoPapeles(false) }
   }
   /** Lo que necesita el armado completo (set o papeles): stock, impuestos, estructura y LIB. */
@@ -1497,7 +1498,7 @@ export function PapelesDeBalance() {
           {libro && (
             <Button variant={verPapeles ? "default" : "outline"} onClick={() => setVerPapeles(v => !v)}
               title="Cada papel del balance en su archivo: tildás los que querés y se bajan sueltos (A-FEAT-1624)">
-              🗂️ Papeles sueltos{tildados.size ? ` (${tildados.size})` : ""}
+              🗂️ Libros por partes{tildados.size ? ` (${tildados.size})` : ""}
             </Button>
           )}
           {/* 📗 El Libro Diario consensuado con el contador (compras, ventas, por cuenta y retenciones), solo. */}
@@ -1547,56 +1548,63 @@ export function PapelesDeBalance() {
         {verPapeles && libro && (
           <div className="rounded-md border p-3 space-y-3" data-test="papeles-sueltos">
             <div className="flex flex-wrap items-center gap-2">
-              <strong className="text-sm">🗂️ Papeles del balance</strong>
-              <span className="text-xs text-muted-foreground">Cada uno sale en su Excel, del mismo cálculo que el set. Uno solo baja el .xlsx; varios, un .zip.</span>
-              <div className="ml-auto flex gap-2">
-                <Button size="sm" variant="ghost" onClick={() => setTildados(new Set(PAPELES.filter(p => sePuedeBajar(p) && p.destino === "contador").map(p => p.id)))}>Todos los del contador</Button>
+              <strong className="text-sm">🗂️ Libros del balance</strong>
+              <span className="text-xs text-muted-foreground">Cada libro se baja entero o por sus partes, del mismo cálculo que el set. Uno solo baja el .xlsx; varios, un .zip. El set A–H de siempre sigue arriba.</span>
+              <div className="ml-auto flex flex-wrap gap-2">
+                <Button size="sm" variant="ghost" onClick={() => setTildados(new Set(librosConSubs().map(x => x.libro).filter(sePuedeBajar).map(p => p.id)))}>Todos los libros enteros</Button>
                 <Button size="sm" variant="ghost" onClick={() => setTildados(new Set())}>Ninguno</Button>
+                {!resultadoPapeles && (
+                  <Button size="sm" variant="outline" disabled={bajandoPapeles || !!cargandoConciliacion} onClick={() => void bajarPapeles(libro, true)}
+                    title="Arma el set sin bajar nada, para listar los grupos de Templates (uno por agrupadora y responsable)">
+                    🔄 Traer los grupos de Templates
+                  </Button>
+                )}
                 <Button size="sm" disabled={bajandoPapeles || !tildados.size || !!cargandoConciliacion} onClick={() => void bajarPapeles(libro)}>
                   {bajandoPapeles ? "Armando…" : `⬇️ Bajar ${tildados.size || ""} tildado(s)`}
                 </Button>
               </div>
             </div>
-            {(["contador", "interno"] as const).map(destino => (
-              <div key={destino}>
-                <div className="text-xs font-semibold uppercase text-muted-foreground mb-1">{destino === "contador" ? "Van al contador" : "Tuyos (no van al contador)"}</div>
-                <table className="w-full text-sm">
-                  <tbody>
-                    {PAPELES.filter(p => p.destino === destino).map(p => {
-                      const bajable = sePuedeBajar(p)
-                      const n = resultadoPapeles?.cobertura.porPapel[p.id]?.length
-                      return (
-                        <tr key={p.id} className={`border-t ${bajable ? "" : "text-muted-foreground"}`}>
-                          <td className="w-6 py-1">
-                            <input type="checkbox" disabled={!bajable} checked={tildados.has(p.id)}
-                              onChange={() => setTildados(s => { const x = new Set(s); if (x.has(p.id)) x.delete(p.id); else x.add(p.id); return x })} />
-                          </td>
-                          <td className="py-1 pr-2 text-xs text-muted-foreground whitespace-nowrap">{p.grupo}</td>
-                          <td className="py-1 pr-2 font-medium">{p.nombre}</td>
-                          <td className="py-1 pr-2 text-xs whitespace-nowrap">
-                            {p.origen === "sistema" ? "✓ la app" : p.origen === "sistema-distinto" ? "≈ la app (lo enviado salió aparte)" : p.origen === "fuera" ? "fuera de la app" : "falta definir"}
-                            {n != null && bajable ? ` · ${n} solapa(s)` : ""}
-                          </td>
-                          <td className="py-1 text-xs text-muted-foreground">{p.nota ?? ""}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ))}
+            <table className="w-full text-sm">
+              <tbody>
+                {librosConSubs(resultadoPapeles?.cobertura.solapas ?? []).flatMap(({ libro: l, subs }) => [l, ...subs].map(p => {
+                  const bajable = sePuedeBajar(p)
+                  const n = resultadoPapeles?.cobertura.porPapel[p.id]?.length
+                  const esLibro = p.nivel === "libro"
+                  return (
+                    <tr key={p.id} className={`${esLibro ? "border-t-2" : "border-t"} ${bajable ? "" : "text-muted-foreground"}`}>
+                      <td className={`w-6 py-1 ${esLibro ? "" : "pl-5"}`}>
+                        <input type="checkbox" disabled={!bajable} checked={tildados.has(p.id)} aria-label={`${esLibro ? "Libro entero" : "Sub"}: ${p.nombre}`}
+                          onChange={() => setTildados(s => { const x = new Set(s); if (x.has(p.id)) x.delete(p.id); else x.add(p.id); return x })} />
+                      </td>
+                      <td className={`py-1 pr-2 ${esLibro ? "font-semibold" : "pl-5"}`}>{esLibro ? `${p.nombre} — entero` : `↳ ${p.nombre}`}</td>
+                      <td className="py-1 pr-2 text-xs whitespace-nowrap">
+                        {p.origen === "sistema" ? "✓ la app" : p.origen === "sistema-distinto" ? "≈ la app (lo enviado salió aparte)" : "falta definir"}
+                        {n != null && bajable ? ` · ${n} solapa(s)` : ""}
+                      </td>
+                      <td className="py-1 text-xs text-muted-foreground">{p.nota ?? ""}</td>
+                    </tr>
+                  )
+                }).concat(l.id === "templates" && !resultadoPapeles ? [
+                  <tr key="templates-grupos" className="border-t"><td /><td colSpan={3} className="py-1 pl-5 text-xs text-muted-foreground">↳ Los grupos (CZ Ganadera, Imp Rurales, Gastos Bancarios, Inversiones…) aparecen acá con «🔄 Traer los grupos de Templates». Cada template suelto dentro del grupo: próximo.</td></tr>,
+                ] : []))}
+              </tbody>
+            </table>
             {/* 🧮 El control: dónde cayó cada solapa del set completo en el último armado. Nada se descarta en silencio. */}
             {resultadoPapeles && (
               <div className="text-xs space-y-1" data-test="papeles-control">
                 {resultadoPapeles.archivos.map(a => (
-                  <div key={a.papel}>✓ {a.papel}: {a.solapas} solapa(s){a.formulasAValor ? ` · ${a.formulasAValor} fórmula(s) a valor (apuntaban a otro papel)` : " · fórmulas vivas"}</div>
+                  <div key={a.papel}>✓ {a.papel}: {a.solapas} solapa(s){a.formulasAValor ? ` · ${a.formulasAValor} fórmula(s) a valor (apuntaban afuera del archivo)` : " · fórmulas vivas"}</div>
                 ))}
                 {resultadoPapeles.cobertura.vacios.length > 0 && (
-                  <div className="text-amber-700">⚠️ Sin solapas en este armado: {resultadoPapeles.cobertura.vacios.map(id => papelPorId(id)?.nombre ?? id).join(" · ")}</div>
+                  <div className="text-amber-700">⚠️ Sin solapas en este armado: {resultadoPapeles.cobertura.vacios.map(id => papelPorId(id, resultadoPapeles.cobertura.solapas)?.nombre ?? id).join(" · ")}</div>
+                )}
+                {/* 🛑 integridad: un sub con solapas que su libro entero no lleva es un error del catálogo, no del dato */}
+                {resultadoPapeles.cobertura.subFueraDelLibro.length > 0 && (
+                  <div className="text-red-700 font-semibold">🛑 Error de la app: partes con solapas que su libro entero no lleva — {resultadoPapeles.cobertura.subFueraDelLibro.join(" · ")}</div>
                 )}
                 {resultadoPapeles.cobertura.sinPapel.length > 0
-                  ? <div className="text-amber-700">⚠️ {resultadoPapeles.cobertura.sinPapel.length} solapa(s) del set no van a ningún papel (siguen en el set A–H): {resultadoPapeles.cobertura.sinPapel.join(" · ")}</div>
-                  : <div className="text-green-700">✓ Todas las solapas del set caen en algún papel.</div>}
+                  ? <div className="text-amber-700">⚠️ {resultadoPapeles.cobertura.sinPapel.length} solapa(s) del set no van a ningún libro nuevo (siguen sólo en el set A–H): {resultadoPapeles.cobertura.sinPapel.join(" · ")}</div>
+                  : <div className="text-green-700">✓ Todas las solapas del set caen en algún libro.</div>}
               </div>
             )}
           </div>

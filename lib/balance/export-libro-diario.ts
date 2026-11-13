@@ -3433,22 +3433,25 @@ export async function descargarPapelesDelBalance(a: Parameters<typeof armarWorkb
   const etiqueta = libro.ejercicio.etiqueta
   const archivos: { nombre: string; datos: Uint8Array; papel: string; solapas: number; formulasAValor: number }[] = []
   for (const id of ids) {
-    const p = papelPorId(id)
+    // 🧩 los grupos de Templates se resuelven por las solapas de ESTE armado
+    const p = papelPorId(id, wb.SheetNames)
     if (!p || !sePuedeBajar(p)) continue
+    const deLibro = papelPorId(p.libro)
     const armado = recortarPapel(wb, vistasDe(wb), p)
     if (!armado.solapas.length) continue
     VISTAS.set(armado.wb, armado.vistas)
-    hoja(armado.wb, "Control del papel", hojaControlDelPapel(p, armado, empresa, etiqueta, generado), [{ ancho: 34 }, { ancho: 60 }, { ancho: 60 }])
+    hoja(armado.wb, "Control del papel", hojaControlDelPapel(p, armado, empresa, etiqueta, generado, deLibro), [{ ancho: 34 }, { ancho: 60 }, { ancho: 60 }])
     fechasReales(armado.wb)
     const datos = await aplicarVistas(XLSX.write(armado.wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(armado.wb))
-    archivos.push({ nombre: nombreDelPapel(p, empresa, etiqueta, fecha), datos, papel: p.nombre, solapas: armado.solapas.length, formulasAValor: armado.formulasAValor.length })
+    archivos.push({ nombre: nombreDelPapel(p, empresa, etiqueta, fecha, deLibro), datos, papel: p.nivel === "libro" ? p.nombre : `${deLibro?.nombre ?? p.libro} → ${p.nombre}`,
+      solapas: armado.solapas.length, formulasAValor: armado.formulasAValor.length })
   }
   if (archivos.length === 1) bajarBlob(new Blob([archivos[0].datos as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), archivos[0].nombre)
   else if (archivos.length > 1) {
     const { default: JSZip } = await import("jszip")
     const zip = new JSZip()
     for (const x of archivos) zip.file(x.nombre, x.datos)
-    bajarBlob(await zip.generateAsync({ type: "blob" }), `Papeles del balance - ${empresa} ${etiqueta.replace("/", "-")} (${fecha}).zip`)
+    bajarBlob(await zip.generateAsync({ type: "blob" }), `Libros del balance - ${empresa} ${etiqueta.replace("/", "-")} (${fecha}).zip`)
   }
   return { archivos: archivos.map(({ papel, solapas, formulasAValor }) => ({ papel, solapas, formulasAValor })), cobertura: controlDeCobertura(wb.SheetNames) }
 }

@@ -1,144 +1,184 @@
 /**
- * 🗂️ **LOS PAPELES DEL BALANCE COMO UNIDADES** — A-FEAT-1624 etapa 2 (JMS 12/11: *«el balance tenga la posibilidad de exportar
- * individualmente estos papeles… yo tengo que poder ir tildando lo que yo ya envié»*).
+ * 🗂️ **LOS LIBROS DEL BALANCE, ENTEROS Y POR SUBS** — A-FEAT-1624 etapa 2 (JMS 12–13/11).
  *
- * Hasta acá el balance se bajaba como un set de libros por LETRA (A–I, `libros-del-balance.ts`): la letra era un cajón, no un
- * papel. Lo que JMS manda al contador es otra cosa: **un archivo por tema** («Provision», «Bancos y Saldos», «Cuentas de socios»).
- * Este catálogo es esa lista, sacada del «Inventario de papeles del balance 25-26» con las marcas de JMS del 13/11 (columna H).
+ * JMS 12/11: *«el balance tenga la posibilidad de exportar individualmente estos papeles… yo tengo que poder ir tildando lo que
+ * yo ya envié»*. JMS 13/11 (página «Libros y papeles del balance», respuestas en su colección `respuestas`) fijó la estructura:
  *
- * 🔑 **Se arma UNA vez y se recorta**: el mismo libro completo de siempre (`armarSetCompleto`) y cada papel se queda con sus
- * solapas. Así un papel suelto no puede dar un número distinto del set.
+ * | Libro | Subs |
+ * |---|---|
+ * | **Saldos** | bancos y caja · inversiones · provisiones — SÓLO saldos; las operaciones salen del maestro de Templates |
+ * | **Libro Diario** (ex A) | compras · ventas · su control (resumen 12 meses, sin subdiario, asientos) |
+ * | **Templates** (ex H, el maestro) | cada grupo (CZ Ganadera, Imp Rurales, Gastos Bancarios, Inversiones…) — cada ítem: próximo |
+ * | **Sueldos** | — |
+ * | **Proveedores** (ex B, deudas y créditos al cierre) | — |
+ * | **Stocks** (ex E) | hacienda · granos · insumos · sementeras · inicio y cierre |
+ * | **Balance en línea** (ex F, la simulación) | — |
+ * | **Socios y Libertad** (ex I) | cuentas con socios · Libertad |
  *
- * 🧮 **El control** (§ CLAUDE.md «todo desarrollo termina con su control»):
- * - cada solapa del set cae en algún papel, o se lista como «sin papel» (nada se descarta en silencio);
- * - una fórmula que apunta a una solapa que quedó en OTRO papel se pasa a su valor (si no, Excel la rompe con #REF) y se cuenta;
- * - cada archivo lleva al final una solapa «Control del papel» con sus solapas, de dónde sale y qué fórmulas se pasaron a valor.
+ * Regla de JMS (CLAUDE.md § ♻️): **todo libro se baja entero y también por sus subs**. El set A–H viejo se conserva aparte; lo
+ * que no entra acá (Control del balance, C, G, lo viejo del D) sigue sólo en el set viejo.
+ *
+ * 🔑 **Se arma UNA vez y se recorta**: el mismo libro completo de siempre (`armarSetCompleto`) y cada unidad se queda con sus
+ * solapas. Así un sub suelto no puede dar un número distinto del set.
+ *
+ * 🧮 **El control**: cada solapa del set cae en algún libro, o se lista como «sólo en el set viejo»; una fórmula que apunta a una
+ * solapa que quedó afuera se pasa a su valor (si no, Excel la rompe con #REF) y se cuenta; cada archivo termina en «Control del
+ * papel» con sus solapas, de dónde sale y qué fórmulas se pasaron a valor.
  *
  * Pura: no lee la base.
  */
 import XLSX from "xlsx-js-style"
-
-export type DestinoPapel = "contador" | "interno"
+import { libroDeSolapa } from "./libros-del-balance"
 
 /**
  * - `sistema`: la app lo arma entero, igual que lo que se mandó.
- * - `sistema-distinto`: la app arma una versión, pero lo que se mandó salió de un programa aparte (Copias o un script del repo)
- *   con otro formato o más datos: igualarlo es la etapa 4.
- * - `fuera`: hoy no lo arma la app (sólo un script o un programa de Copias). Se lista para que se vea; no se puede bajar desde acá.
- * - `falta-definir`: el papel no existe todavía (ej. Caja).
+ * - `sistema-distinto`: la app arma una versión, pero lo que se mandó salió de un programa aparte (Copias o un script): igualarlo es
+ *   la etapa 4.
+ * - `falta-definir`: el papel no existe todavía (ej. Caja). Se lista para que se vea; no se puede bajar.
  */
-export type OrigenPapel = "sistema" | "sistema-distinto" | "fuera" | "falta-definir"
+export type OrigenPapel = "sistema" | "sistema-distinto" | "falta-definir"
 
 export interface PapelDelBalance {
   /** Código estable (no cambia aunque cambie el nombre): se usará para el tilde de «enviado» (etapa 3). */
   id: string
-  /** Orden y agrupación, en palabras de la app. */
-  grupo: string
+  /** El libro al que pertenece (su `id`); un libro entero se apunta a sí mismo. */
+  libro: string
+  /** `libro` = el libro entero; `sub` = una parte. */
+  nivel: "libro" | "sub"
   nombre: string
-  destino: DestinoPapel
   origen: OrigenPapel
   /** Qué solapas del set completo lleva. */
   solapas: (nombre: string) => boolean
-  /** El renglón del inventario de JMS del que sale (A1, B2…), para la trazabilidad. */
-  inventario: string
   /** Lo que conviene saber al bajarlo (de dónde salió lo enviado, qué falta). */
   nota?: string
 }
 
 const en = (...xs: string[]) => { const s = new Set(xs); return (n: string) => s.has(n) }
-/** Las solapas del H que son el papel de impuestos (inmobiliario, Red Vial, automotores) — A10. */
-const esPapelImpuestos = (n: string) => /^H · [A-Z]+ · (Papel |Automotores$)/.test(n)
-/** Lo que se sacó del H porque tiene papel propio (JMS A9: «de acá sacar gastos bancarios que ya fueron en su propio export»). */
-const esBancarioEnH = (n: string) => /^H · [A-Z]+ · (Gastos|Imp) Bancarios/i.test(n)
+const alguno = (...fs: ((n: string) => boolean)[]) => (n: string) => fs.some(f => f(n))
+
+// ── Los subs con solapas fijas ─────────────────────────────────────────────────────────────────────────────────────
+const BANCOS = en("07 Bancos", "07.1 Cadena de saldos")
+const PROVISIONES = en("05 Provision", "03.1 Provision cobros")
+const COMPRAS = en("Compras", "Compras por cuenta")
+const VENTAS = en("Ventas", "Ventas por cuenta")
+const CONTROL_DIARIO = en("Resumen 12 meses", "Sin subdiario", "Asientos Contables")
+const PROVEEDORES = en("04 Cuentas a pagar", "04.1 Cheques dados", "04.2 Anticipos", "04.3 Respaldo cuentas a pagar", "03 Cuentas a cobrar", "14 Cuentas corrientes")
+const HACIENDA = (n: string) => /^02(\.\d+)? /.test(n) && n !== "02 Hacienda"
+const GRANOS = en("1 Granos"), INSUMOS = en("Stock insumos"), SEMENTERAS = en("3 Sementeras"), INICIO_CIERRE = en("00 Stocks inicio y cierre")
+const SOCIOS = (n: string) => n === "14.1 Cuentas con socios" || n.startsWith("I · ")
+const LIBERTAD = en("Gastos Libertad", "G · LIB (paralelo)")
+/** El maestro de Templates = lo que el set manda al libro H (el H para el contador). */
+const TEMPLATES = (n: string) => libroDeSolapa(n) === "H"
+/** Las solapas del H que no son un grupo: el listado, las cuotas, el por mes y lo del extracto sin categoría. */
+const BASE_TEMPLATES = (n: string) => /^H · [A-Z]+ · (Egresos|Templates|Cuotas|Por mes|Extracto sin categ)$/.test(n)
 
 /**
- * 📋 EL CATÁLOGO. El orden es el de la lista que ve JMS. Cada renglón dice de qué fila del inventario sale.
- * Cambiar un papel (juntar, separar, renombrar) es tocar acá y nada más.
+ * 📋 EL CATÁLOGO FIJO. Orden = el de la lista que ve JMS (sección N de su página). Cambiar un libro o un sub es tocar acá.
+ * Los subs de Templates (uno por grupo) no son fijos: salen de las solapas del armado (`subsDeTemplates`).
  */
 export const PAPELES: PapelDelBalance[] = [
-  // ── A · Subdiarios ──────────────────────────────────────────────────────────────────────────────────────────────
-  { id: "ventas", grupo: "Subdiarios", nombre: "Subdiario de ventas", destino: "contador", origen: "sistema", inventario: "A1",
-    solapas: en("Ventas", "Ventas por cuenta") },
-  { id: "compras", grupo: "Subdiarios", nombre: "Subdiario de compras", destino: "contador", origen: "sistema", inventario: "B3",
-    solapas: en("Compras", "Compras por cuenta"), nota: "Se mandó el 04/11 y quedó cerrado." },
-  // ── B · Deudas y créditos ───────────────────────────────────────────────────────────────────────────────────────
-  { id: "deudas", grupo: "Deudas y créditos", nombre: "Deudas, créditos y cuentas corrientes", destino: "contador", origen: "sistema", inventario: "A2",
-    solapas: en("04 Cuentas a pagar", "04.1 Cheques dados", "04.2 Anticipos", "04.3 Respaldo cuentas a pagar", "03 Cuentas a cobrar", "14 Cuentas corrientes") },
-  { id: "provisiones", grupo: "Deudas y créditos", nombre: "Provisiones al cierre", destino: "contador", origen: "sistema", inventario: "A3",
-    solapas: en("05 Provision", "03.1 Provision cobros") },
-  // ── C · Bancos e inversiones ────────────────────────────────────────────────────────────────────────────────────
-  { id: "bancos", grupo: "Bancos e inversiones", nombre: "Bancos y saldos", destino: "contador", origen: "sistema", inventario: "A4",
-    solapas: en("07 Bancos", "07.1 Cadena de saldos") },
-  { id: "caja", grupo: "Bancos e inversiones", nombre: "Caja", destino: "contador", origen: "falta-definir", inventario: "B4",
-    solapas: () => false, nota: "Falta definir el papel. Apertura del contador: caja $ 9.903.617,62 y US$ 932.000." },
-  { id: "extractos", grupo: "Bancos e inversiones", nombre: "Índice de extractos", destino: "contador", origen: "fuera", inventario: "A5",
-    solapas: () => false, nota: "Hoy sale del script excel-indice-extractos (etapa 4: pasarlo a la app)." },
-  { id: "imp-bancarios", grupo: "Bancos e inversiones", nombre: "Impuestos bancarios", destino: "contador", origen: "sistema-distinto", inventario: "A6",
-    solapas: en("C · Impuestos bancarios", "08.1 Impuesto al cheque"),
-    nota: "Lo enviado es «por cuenta», con TC comprador y vendedor (script excel-imp-bancarios-por-cuenta). Acá sale el resumen por concepto y mes." },
-  { id: "gastos-bancarios", grupo: "Bancos e inversiones", nombre: "Gastos bancarios", destino: "contador", origen: "sistema-distinto", inventario: "A7",
-    solapas: en("C · Gastos bancarios", "08 Gastos bancarios"),
-    nota: "Lo enviado es «por cuenta», con TC comprador y vendedor (script con --gastos). Acá sale el resumen por concepto y mes." },
-  { id: "inversiones", grupo: "Bancos e inversiones", nombre: "Inversiones y créditos", destino: "contador", origen: "sistema-distinto", inventario: "A8",
-    solapas: en("C · Inversiones", "C · Intereses", "07.2 Operaciones en dólares"),
-    nota: "Lo enviado salió de Copias (una solapa por inversión: dólares, FIMA, plazo fijo). Igualarlo es la etapa 4." },
-  // ── H · Gastos ──────────────────────────────────────────────────────────────────────────────────────────────────
-  { id: "egresos", grupo: "Gastos", nombre: "Egresos por agrupadora", destino: "contador", origen: "sistema", inventario: "A9",
-    solapas: n => n.startsWith("H · ") && !esPapelImpuestos(n) && !esBancarioEnH(n),
-    nota: "Sin gastos ni impuestos bancarios (tienen su papel). Partirlo en más papeles por rubro queda para la 2ª pasada (tu «ver»)." },
-  { id: "otros-gastos", grupo: "Gastos", nombre: "Otros gastos", destino: "contador", origen: "sistema", inventario: "B1",
-    solapas: n => /^H · MSA · \(sin agrupadora\)/.test(n),
-    nota: "También está adentro de «Egresos por agrupadora». No fue al contador: ¿lo tiene ya en el libro de compras?" },
-  { id: "impuestos", grupo: "Gastos", nombre: "Inmobiliario, Red Vial y Automotores", destino: "contador", origen: "sistema", inventario: "A10",
-    solapas: esPapelImpuestos, nota: "Partirlo por impuesto queda para la 2ª pasada (tu «ver»)." },
-  // ── I · Socios ──────────────────────────────────────────────────────────────────────────────────────────────────
-  { id: "socios", grupo: "Socios", nombre: "Cuentas con socios", destino: "contador", origen: "sistema-distinto", inventario: "A11",
-    solapas: n => n === "14.1 Cuentas con socios" || n.startsWith("I · "),
-    nota: "Lo enviado salió de Copias (build_envio_contador). Acá va además el «Retiros por mes» de cada socio (lo que se rescata del libro I)." },
-  { id: "libertad", grupo: "Socios", nombre: "Libertad 50/50", destino: "contador", origen: "sistema-distinto", inventario: "B2",
-    solapas: en("Gastos Libertad", "G · LIB (paralelo)"),
-    nota: "La versión 50/50 salió de Copias (build_libertad); igualarla es la etapa 4. Va con lo marcado LIB en los bancos (se rescata del libro G)." },
-  // ── E · Stocks ──────────────────────────────────────────────────────────────────────────────────────────────────
-  { id: "hacienda", grupo: "Stocks", nombre: "Stock de hacienda", destino: "contador", origen: "sistema", inventario: "A12",
-    solapas: n => /^02(\.\d+)? /.test(n) && n !== "02 Hacienda", nota: "El respaldo de SENASA va en el Excel de documentación de respaldo (A13)." },
-  { id: "stocks", grupo: "Stocks", nombre: "Stocks de granos e insumos", destino: "contador", origen: "sistema", inventario: "C6",
-    solapas: en("00 Stocks inicio y cierre", "1 Granos", "3 Sementeras", "Stock insumos"), nota: "Este año lo informaste de palabra." },
-  // ── Papeles TUYOS (no van al contador) ──────────────────────────────────────────────────────────────────────────
-  { id: "maestro-templates", grupo: "Libros maestros (para auditar)", nombre: "Templates", destino: "interno", origen: "sistema", inventario: "C1",
-    solapas: n => /^C · (MSA|MA|PAM) · /.test(n) || n === "Templates" || n === "Templates por mes" || n === "Control cuotas templates",
-    nota: "Todos los templates de las tres empresas, completos: listado, cuotas y por mes." },
-  { id: "maestro-diario", grupo: "Libros maestros (para auditar)", nombre: "Libro diario", destino: "interno", origen: "sistema", inventario: "C2",
-    solapas: en("Asientos Contables", "Resumen 12 meses", "Sin subdiario", "Saldos ej. anterior") },
-  { id: "maestro-sueldos", grupo: "Libros maestros (para auditar)", nombre: "Sueldos", destino: "interno", origen: "sistema", inventario: "C2",
-    solapas: en("13 Sueldos") },
-  { id: "balance-en-linea", grupo: "Tuyos", nombre: "Balance en línea", destino: "interno", origen: "sistema", inventario: "C3",
-    solapas: n => n.startsWith("F · ") },
-  { id: "control", grupo: "Tuyos", nombre: "Control del balance", destino: "interno", origen: "sistema", inventario: "C7",
-    solapas: n => /^00 (Indice|Cobertura|Inicio y cierre|Pendientes a revisar|Recorrido|Respaldos)$/.test(n) || n === "Control",
-    nota: "Índice, cobertura, pendientes y recorrido. El H para auditar y el control de la plata siguen bajando con el set." },
+  // ── Saldos — sólo saldos (JMS R2: «acá sólo bancos, caja, inversiones, sus saldos, no sus operaciones; agregar acá provisión») ──
+  { id: "saldos", libro: "saldos", nivel: "libro", nombre: "Saldos", origen: "sistema", solapas: alguno(BANCOS, PROVISIONES),
+    nota: "Bancos, caja e inversiones (sus saldos) y provisiones. Las operaciones (dólares, FCI, intereses, gastos e impuestos bancarios) salen de Templates." },
+  { id: "saldos-bancos", libro: "saldos", nivel: "sub", nombre: "Bancos", origen: "sistema", solapas: BANCOS,
+    nota: "Saldo de cada cuenta al inicio y al cierre, y la cadena de saldos." },
+  { id: "saldos-caja", libro: "saldos", nivel: "sub", nombre: "Caja", origen: "falta-definir", solapas: () => false,
+    nota: "Falta definir el papel. Apertura del contador: caja $ 9.903.617,62 y US$ 932.000." },
+  { id: "saldos-inversiones", libro: "saldos", nivel: "sub", nombre: "Inversiones", origen: "falta-definir", solapas: () => false,
+    nota: "Falta el papel de SALDOS de inversiones (lo que hay hoy son sus operaciones, que van en Templates)." },
+  { id: "saldos-provisiones", libro: "saldos", nivel: "sub", nombre: "Provisiones", origen: "sistema", solapas: PROVISIONES,
+    nota: "05 provisión de gastos y 03.1 provisión de cobros, al cierre." },
+  // ── Libro Diario (ex A) ──
+  { id: "diario", libro: "diario", nivel: "libro", nombre: "Libro Diario", origen: "sistema", solapas: alguno(COMPRAS, VENTAS, CONTROL_DIARIO) },
+  { id: "diario-compras", libro: "diario", nivel: "sub", nombre: "Compras", origen: "sistema", solapas: COMPRAS, nota: "Se mandó el 04/11 y quedó cerrado." },
+  { id: "diario-ventas", libro: "diario", nivel: "sub", nombre: "Ventas", origen: "sistema", solapas: VENTAS },
+  { id: "diario-control", libro: "diario", nivel: "sub", nombre: "Control del diario", origen: "sistema", solapas: CONTROL_DIARIO,
+    nota: "Resumen 12 meses (lo cargado contra lo presentado a ARCA), Sin subdiario y Asientos Contables." },
+  // ── Templates (ex H, el maestro) ──
+  { id: "templates", libro: "templates", nivel: "libro", nombre: "Templates", origen: "sistema", solapas: TEMPLATES,
+    nota: "El H para el contador, entero. Cada grupo se baja suelto abajo. La versión para auditar se define después de comparar las dos (S3)." },
+  { id: "templates-base", libro: "templates", nivel: "sub", nombre: "Listado, cuotas y por mes", origen: "sistema", solapas: BASE_TEMPLATES,
+    nota: "Las solapas de cada responsable que no son un grupo." },
+  // ── Sueldos ──
+  { id: "sueldos", libro: "sueldos", nivel: "libro", nombre: "Sueldos", origen: "sistema", solapas: en("13 Sueldos") },
+  // ── Proveedores (ex B) ──
+  { id: "proveedores", libro: "proveedores", nivel: "libro", nombre: "Proveedores (deudas y créditos al cierre)", origen: "sistema", solapas: PROVEEDORES },
+  // ── Stocks (ex E) ──
+  { id: "stocks", libro: "stocks", nivel: "libro", nombre: "Stocks", origen: "sistema", solapas: alguno(HACIENDA, GRANOS, INSUMOS, SEMENTERAS, INICIO_CIERRE) },
+  { id: "stocks-hacienda", libro: "stocks", nivel: "sub", nombre: "Hacienda", origen: "sistema", solapas: HACIENDA,
+    nota: "02 a 02.10. El respaldo de SENASA va en el Excel de documentación de respaldo." },
+  { id: "stocks-granos", libro: "stocks", nivel: "sub", nombre: "Granos", origen: "sistema", solapas: GRANOS },
+  { id: "stocks-insumos", libro: "stocks", nivel: "sub", nombre: "Insumos", origen: "sistema", solapas: INSUMOS },
+  { id: "stocks-sementeras", libro: "stocks", nivel: "sub", nombre: "Sementeras", origen: "sistema", solapas: SEMENTERAS },
+  { id: "stocks-inicio-cierre", libro: "stocks", nivel: "sub", nombre: "Inicio y cierre", origen: "sistema", solapas: INICIO_CIERRE },
+  // ── Balance en línea (ex F) ──
+  { id: "balance-en-linea", libro: "balance-en-linea", nivel: "libro", nombre: "Balance en línea", origen: "sistema", solapas: n => n.startsWith("F · "),
+    nota: "La simulación del balance en proceso." },
+  // ── Socios y Libertad (ex I) ──
+  { id: "socios", libro: "socios", nivel: "libro", nombre: "Socios y Libertad", origen: "sistema-distinto", solapas: alguno(SOCIOS, LIBERTAD) },
+  { id: "socios-cuentas", libro: "socios", nivel: "sub", nombre: "Cuentas con socios", origen: "sistema-distinto", solapas: SOCIOS,
+    nota: "Lo enviado salió de Copias (build_envio_contador). Lleva además el retiro de cada socio por mes." },
+  { id: "socios-libertad", libro: "socios", nivel: "sub", nombre: "Libertad", origen: "sistema-distinto", solapas: LIBERTAD,
+    nota: "La versión 50/50 enviada salió de Copias (build_libertad); igualarla es la etapa 4. Va con lo marcado LIB en los bancos." },
 ]
 
-export const papelPorId = (id: string) => PAPELES.find(p => p.id === id)
+/** El nombre de un grupo a partir de su solapa: «H · MSA · Imp Rurales» → «MSA · Imp Rurales». */
+const nombreDeGrupo = (solapa: string) => solapa.replace(/^H · /, "")
 
-/** Se puede bajar desde la app (la app lo arma, igual o con otra forma que lo enviado). */
-export const sePuedeBajar = (p: PapelDelBalance) => p.origen === "sistema" || p.origen === "sistema-distinto"
-
-export interface ControlDeCobertura {
-  /** Cuántas solapas lleva cada papel, en este set. */
-  porPapel: Record<string, string[]>
-  /** Solapas del set que no van a ningún papel: se listan (C2 — «lo que el libro D tenía y nadie usa»). */
-  sinPapel: string[]
-  /** Papeles bajables que en este set no trajeron ninguna solapa (por ej. sin stock): se avisan. */
-  vacios: string[]
+/**
+ * Los subs de Templates: uno por solapa de grupo del H (responsable + agrupadora), con su id estable `tpl:<solapa>`. Salen de las
+ * solapas del armado, porque los grupos dependen de los templates de la campaña.
+ */
+export function subsDeTemplates(solapas: string[]): PapelDelBalance[] {
+  return solapas.filter(n => TEMPLATES(n) && n.startsWith("H · ") && !BASE_TEMPLATES(n)).map(n => ({
+    id: `tpl:${n}`, libro: "templates", nivel: "sub" as const, nombre: nombreDeGrupo(n), origen: "sistema" as const, solapas: en(n),
+  }))
 }
 
-/** 🧮 El control de cobertura: dónde cae cada solapa del set completo. */
-export function controlDeCobertura(solapas: string[], papeles: PapelDelBalance[] = PAPELES): ControlDeCobertura {
+/** Todas las unidades: las fijas y, si ya se armó el set, los grupos de Templates. */
+export const todasLasUnidades = (solapas: string[] = []) => [...PAPELES, ...subsDeTemplates(solapas)]
+
+/** Busca una unidad por id (las de Templates se resuelven por su solapa). */
+export function papelPorId(id: string, solapas: string[] = []): PapelDelBalance | undefined {
+  if (id.startsWith("tpl:")) return subsDeTemplates(solapas.length ? solapas : [id.slice(4)]).find(p => p.id === id)
+  return PAPELES.find(p => p.id === id)
+}
+
+/** Se puede bajar desde la app. */
+export const sePuedeBajar = (p: PapelDelBalance) => p.origen === "sistema" || p.origen === "sistema-distinto"
+
+/** Los libros, en orden, con sus subs. */
+export function librosConSubs(solapas: string[] = []): { libro: PapelDelBalance; subs: PapelDelBalance[] }[] {
+  const us = todasLasUnidades(solapas)
+  return us.filter(p => p.nivel === "libro").map(libro => ({ libro, subs: us.filter(p => p.nivel === "sub" && p.libro === libro.id) }))
+}
+
+export interface ControlDeCobertura {
+  /** Solapas de cada unidad, en este set. */
+  porPapel: Record<string, string[]>
+  /** Solapas del set que no van a ningún libro nuevo: siguen sólo en el set viejo (se listan, no se descartan en silencio). */
+  sinPapel: string[]
+  /** Unidades bajables que en este set no trajeron ninguna solapa (por ej. sin stock): se avisan. */
+  vacios: string[]
+  /** Subs de un libro que traen solapas que el libro entero NO lleva (sería un error del catálogo). */
+  subFueraDelLibro: string[]
+  /** Solapas del set, para armar la lista de grupos de Templates. */
+  solapas: string[]
+}
+
+/** 🧮 El control de cobertura: dónde cae cada solapa del set completo. Sólo cuentan los LIBROS (los subs son partes de ellos). */
+export function controlDeCobertura(solapas: string[]): ControlDeCobertura {
+  const us = todasLasUnidades(solapas)
   const porPapel: Record<string, string[]> = {}
-  for (const p of papeles) porPapel[p.id] = solapas.filter(n => p.solapas(n))
-  const sinPapel = solapas.filter(n => !papeles.some(p => p.solapas(n)))
-  const vacios = papeles.filter(p => sePuedeBajar(p) && porPapel[p.id].length === 0).map(p => p.id)
-  return { porPapel, sinPapel, vacios }
+  for (const p of us) porPapel[p.id] = solapas.filter(n => p.solapas(n))
+  const libros = us.filter(p => p.nivel === "libro")
+  const sinPapel = solapas.filter(n => !libros.some(p => p.solapas(n)))
+  const vacios = us.filter(p => sePuedeBajar(p) && porPapel[p.id].length === 0).map(p => p.id)
+  const subFueraDelLibro = us.filter(p => p.nivel === "sub").flatMap(p => {
+    const libro = libros.find(l => l.id === p.libro)
+    return porPapel[p.id].filter(n => !libro?.solapas(n)).map(n => `${p.id}:${n}`)
+  })
+  return { porPapel, sinPapel, vacios, subFueraDelLibro, solapas }
 }
 
 /** Las solapas a las que apunta una fórmula (`'H · MSA · Por mes'!B5`, `Compras!C3`). */
@@ -153,13 +193,13 @@ export interface PapelArmado<V> {
   wb: XLSX.WorkBook
   vistas: V[]
   solapas: string[]
-  /** Fórmulas que apuntaban a una solapa de otro papel y quedaron con su valor. */
+  /** Fórmulas que apuntaban a una solapa que quedó afuera y quedaron con su valor. */
   formulasAValor: { solapa: string; celda: string; apuntaba: string[] }[]
 }
 
 /**
- * Recorta del libro completo las solapas de un papel. Las hojas se COPIAN (celda por celda donde hace falta) para no tocar el
- * libro completo, que se usa para los demás papeles.
+ * Recorta del libro completo las solapas de una unidad. Las hojas se COPIAN (celda por celda donde hace falta) para no tocar el
+ * libro completo, que se usa para las demás.
  */
 export function recortarPapel<V>(wb: XLSX.WorkBook, vistas: V[], papel: PapelDelBalance): PapelArmado<V> {
   const nuevo = XLSX.utils.book_new()
@@ -188,37 +228,37 @@ export function recortarPapel<V>(wb: XLSX.WorkBook, vistas: V[], papel: PapelDel
 const ORIGEN_EN_PALABRAS: Record<OrigenPapel, string> = {
   sistema: "La app lo arma entero, igual que lo enviado.",
   "sistema-distinto": "La app arma esta versión; lo enviado salió de un programa aparte (se iguala en la etapa 4).",
-  fuera: "Hoy no lo arma la app.",
   "falta-definir": "Falta definir el papel.",
 }
 
 /** La solapa «Control del papel», al final de cada archivo: qué lleva, de dónde sale y qué se pasó a valor. */
 export function hojaControlDelPapel(papel: PapelDelBalance, armado: { solapas: string[]; formulasAValor: PapelArmado<unknown>["formulasAValor"] },
-  empresa: string, etiqueta: string, generado: string): unknown[][] {
+  empresa: string, etiqueta: string, generado: string, libro?: PapelDelBalance): unknown[][] {
   const f: unknown[][] = [
-    [`CONTROL DEL PAPEL — ${papel.nombre} — ${empresa} ${etiqueta}`],
+    [`CONTROL DEL PAPEL — ${libro && libro.id !== papel.id ? `${libro.nombre} → ` : ""}${papel.nombre} — ${empresa} ${etiqueta}`],
     [`Generado ${generado} desde la app (Reportes → Balance). Sale del mismo cálculo que el set completo: los números son los mismos.`],
     [],
+    ["Qué es", papel.nivel === "libro" ? "El libro entero" : `Una parte del libro «${libro?.nombre ?? papel.libro}»`],
     ["De dónde sale", ORIGEN_EN_PALABRAS[papel.origen]],
     ...(papel.nota ? [["Nota", papel.nota]] : []),
-    ["Renglón del inventario", papel.inventario],
     [],
     ["SOLAPAS QUE LLEVA"],
     ...armado.solapas.map((s, i) => [i + 1, s]),
     [],
   ]
   if (armado.formulasAValor.length) {
-    f.push(["FÓRMULAS PASADAS A VALOR"], [`${armado.formulasAValor.length} celdas apuntaban a solapas que están en otro papel; quedaron con su valor (el número no cambia, sólo deja de recalcularse).`],
+    f.push(["FÓRMULAS PASADAS A VALOR"], [`${armado.formulasAValor.length} celdas apuntaban a solapas que no están en este archivo; quedaron con su valor (el número no cambia, sólo deja de recalcularse).`],
       ["Solapa", "Celda", "Apuntaba a"],
       ...armado.formulasAValor.map(x => [x.solapa, x.celda, x.apuntaba.join(" · ")]))
   } else {
-    f.push(["✓ Todas las fórmulas siguen vivas: ninguna apunta afuera del papel."])
+    f.push(["✓ Todas las fórmulas siguen vivas: ninguna apunta afuera del archivo."])
   }
   return f
 }
 
-/** El nombre del archivo de un papel: «Papel - Provisiones al cierre - MSA 25-26 (2026-11-13).xlsx». */
-export function nombreDelPapel(papel: PapelDelBalance, empresa: string, etiqueta: string, fecha: string): string {
+/** El nombre del archivo: «Saldos - Provisiones - MSA 25-26 (2026-11-13).xlsx» o «Saldos - MSA 25-26 (…).xlsx» para el libro entero. */
+export function nombreDelPapel(papel: PapelDelBalance, empresa: string, etiqueta: string, fecha: string, libro?: PapelDelBalance): string {
   const limpio = (s: string) => s.replace(/[\\/:*?"<>|]/g, "-")
-  return `Papel - ${limpio(papel.nombre)} - ${empresa} ${etiqueta.replace("/", "-")} (${fecha}).xlsx`
+  const titulo = papel.nivel === "libro" ? papel.nombre : `${libro?.nombre ?? papel.libro} - ${papel.nombre}`
+  return `${limpio(titulo)} - ${empresa} ${etiqueta.replace("/", "-")} (${fecha}).xlsx`
 }
