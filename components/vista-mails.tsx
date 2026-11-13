@@ -40,7 +40,7 @@ import {
   TIPOS_MAIL, NOMBRE_GRUPO_MAIL, NOMBRE_SEGUIMIENTO, linkGmail, tipoDeMail, grupoDeMail, filtrarMails, contarMails,
   contarPorTipo, problemaDeRegla, procesadoDeMail, cambiosAlReaplicar, nombresDeTipos, claveDeTipoMail, problemaDeTipoNuevo,
   contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarParaLista, rangoDelDia,
-  juntarConPendientes, problemaDeSeguimiento, claseDeProcesado, gravedadDeMail,
+  juntarConPendientes, problemaDeSeguimiento, claseDeProcesado, gravedadDeMail, cambioSoloEste, ACCIONES_MAIL, NOMBRE_ACCION_MAIL,
   type BusquedaConMail, type InventarioConMail, type MailRegistrado, type ReglaMail, type GrupoMail, type AccionMail,
   type TipoMailFila, type AlcanceTipo, type EstadoSeguimiento, type SeguimientoMail,
 } from "@/lib/mails/registro"
@@ -49,7 +49,7 @@ const COLUMNAS = "id, regla_id, casilla, mensaje_id, sentido, fecha, remitente, 
 const GRUPOS: GrupoMail[] = ["mirar", "sin_regla", "guardado", "archivado", "enviado"]
 const SEGUIMIENTOS: EstadoSeguimiento[] = ["vencido", "pendiente", "terminado", "sin_marcar"]
 const PERIODOS = [{ dias: 1, nombre: "Último día" }, { dias: 7, nombre: "7 días" }, { dias: 30, nombre: "30 días" }, { dias: 90, nombre: "90 días" }]
-const NOMBRE_ACCION: Record<AccionMail, string> = { avisar: "Avisar", guardar: "Guardar", archivar: "Archivar" }
+const NOMBRE_ACCION = NOMBRE_ACCION_MAIL
 const NUEVO = "__nuevo__"
 
 const fmtFecha = (iso: string) => new Intl.DateTimeFormat("es-AR", {
@@ -145,26 +145,32 @@ function DialogoTipoNuevo({ abierto, onCerrar, onCrear }: { abierto: boolean; on
 // Reasignar el tipo con ALCANCE (A-FEAT-1440)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function DialogoAlcance({ mail, tipo, nombres, onCerrar, onHecho }: {
-  mail: MailRegistrado | null; tipo: string; nombres: Record<string, string>
-  onCerrar: () => void; onHecho: (cambios: { ids: string[]; tipo: string; manualDe?: string }) => void
+function DialogoAlcance({ mail, tipo: tipoInicial, accion: accionInicial, tipos, nombres, onCerrar, onHecho }: {
+  mail: MailRegistrado | null; tipo: string; accion?: AccionMail; tipos: TipoMailFila[]; nombres: Record<string, string>
+  onCerrar: () => void; onHecho: (cambios: { ids: string[]; tipo: string; accion: AccionMail; manual?: Partial<MailRegistrado> }) => void
 }) {
   const [alcance, setAlcance] = useState<AlcanceTipo>("este")
   const [asunto, setAsunto] = useState("")
+  const [tipo, setTipo] = useState(tipoInicial)
+  const [accion, setAccion] = useState<AccionMail>("guardar")
   const [trabajando, setTrabajando] = useState(false)
-  useEffect(() => { if (mail) { setAlcance("este"); setAsunto(asuntoBase(mail.asunto)) } }, [mail])
+  useEffect(() => {
+    if (mail) { setAlcance("este"); setAsunto(asuntoBase(mail.asunto)); setTipo(tipoInicial || tipoDeMail(mail) || ""); setAccion(accionInicial ?? mail.accion ?? "guardar") }
+  }, [mail, tipoInicial, accionInicial])
   if (!mail) return null
   const quien = contraparteDeMail(mail)
+  const destino = `«${nombres[tipo] ?? tipo}» · ${NOMBRE_ACCION_MAIL[accion]}`
 
   const aplicar = async () => {
+    if (!tipo) { toast.error("Elegí el bloque."); return }
     setTrabajando(true)
     try {
       if (alcance === "este") {
-        const valor = tipo === mail.tipo ? null : tipo
-        const { error } = await supabase.from("mails_registro").update({ tipo_manual: valor, updated_at: ahoraISO() }).eq("id", mail.id)
+        const cambio = cambioSoloEste(mail, tipo, accion)
+        const { error } = await supabase.from("mails_registro").update({ ...cambio, updated_at: ahoraISO() }).eq("id", mail.id)
         if (error) throw error
-        onHecho({ ids: [mail.id], tipo, manualDe: mail.id })
-        toast.success(`Sólo este mail pasa a «${nombres[tipo] ?? tipo}»`)
+        onHecho({ ids: [mail.id], tipo, accion, manual: cambio })
+        toast.success(`Sólo este mail pasa a ${destino}`)
         return
       }
       if (alcance === "remitente_asunto" && !asunto.trim()) { toast.error("Escribí qué tiene que decir el asunto."); return }
@@ -172,11 +178,11 @@ function DialogoAlcance({ mail, tipo, nombres, onCerrar, onHecho }: {
       const { data: rs, error: eR } = await supabase.from("mails_reglas").select("id, orden, activa, remitente_patron, asunto_patron, tipo, accion, nota")
       if (eR) throw eR
       const reglas = (rs ?? []) as ReglaMail[]
-      const { existente, regla } = reglaParaAlcance(reglas, mail, alcance, tipo, asunto)
+      const { existente, regla } = reglaParaAlcance(reglas, mail, alcance, tipo, asunto, accion)
       if (problemaDeRegla(regla, Object.keys(nombres))) throw new Error(problemaDeRegla(regla, Object.keys(nombres))!)
       let reglaId: string
       if (existente) {
-        const { error } = await supabase.from("mails_reglas").update({ tipo, orden: regla.orden, activa: true, updated_at: ahoraISO() }).eq("id", existente.id)
+        const { error } = await supabase.from("mails_reglas").update({ tipo, accion, orden: regla.orden, activa: true, updated_at: ahoraISO() }).eq("id", existente.id)
         if (error) throw error
         reglaId = existente.id
       } else {
@@ -185,7 +191,7 @@ function DialogoAlcance({ mail, tipo, nombres, onCerrar, onHecho }: {
         reglaId = data.id
       }
       const reglasDespues: ReglaMail[] = existente
-        ? reglas.map(r => r.id === reglaId ? { ...r, tipo, orden: regla.orden, activa: true } : r)
+        ? reglas.map(r => r.id === reglaId ? { ...r, tipo, accion, orden: regla.orden, activa: true } : r)
         : [...reglas, { id: reglaId, activa: true, nota: null, ...regla }]
       // 2 · Hacia atrás: todos los mails de esa contraparte (recibidos de él o enviados a él)
       const { data: cand, error: eC } = await supabase.from("mails_registro").select("id, sentido, remitente, destinatarios, asunto, tipo_manual")
@@ -194,11 +200,11 @@ function DialogoAlcance({ mail, tipo, nombres, onCerrar, onHecho }: {
       const { alcanza, ganaOtra } = mailsQueAlcanza(cand ?? [], regla, reglasDespues, tipo, mail.id)
       for (let i = 0; i < alcanza.length; i += 100) {
         const { error } = await supabase.from("mails_registro")
-          .update({ tipo, regla_id: reglaId, tipo_manual: null, updated_at: ahoraISO() }).in("id", alcanza.slice(i, i + 100))
+          .update({ tipo, accion, regla_id: reglaId, tipo_manual: null, updated_at: ahoraISO() }).in("id", alcanza.slice(i, i + 100))
         if (error) throw error
       }
-      onHecho({ ids: alcanza, tipo })
-      toast.success(`Regla ${existente ? "actualizada" : "creada"}: ${alcanza.length} mail${alcanza.length === 1 ? "" : "s"} pasan a «${nombres[tipo] ?? tipo}», y los que lleguen también`)
+      onHecho({ ids: alcanza, tipo, accion })
+      toast.success(`Regla ${existente ? "actualizada" : "creada"}: ${alcanza.length} mail${alcanza.length === 1 ? "" : "s"} pasan a ${destino}, y los que lleguen también`)
       // Control: si otra regla anterior le gana a ésta en algunos, se dice (no se pisa en silencio)
       if (ganaOtra.length) toast.warning(`${ganaOtra.length} mail${ganaOtra.length === 1 ? "" : "s"} de ${quien} siguen con otra regla que va antes. Revisalas en «Reglas».`)
       const manuales = (cand ?? []).filter(c => c.tipo_manual && c.id !== mail.id).length
@@ -213,8 +219,25 @@ function DialogoAlcance({ mail, tipo, nombres, onCerrar, onHecho }: {
   return (
     <Dialog open={!!mail} onOpenChange={a => { if (!a) onCerrar() }}>
       <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>Pasar a «{nombres[tipo] ?? tipo}»</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>Bloque y acción</DialogTitle></DialogHeader>
         <p className="text-xs text-muted-foreground">{mail.asunto || "(sin asunto)"} · {quien}</p>
+        <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 text-sm">
+          <span className="font-medium">Bloque</span>
+          <select value={tipo} onChange={e => setTipo(e.target.value)} className="h-8 rounded border bg-background px-2 text-sm">
+            {!tipo && <option value="">— elegí —</option>}
+            {[...tipos].sort((a, b) => a.orden - b.orden).map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}
+          </select>
+          <span className="font-medium">Acción</span>
+          <div className="flex gap-1">
+            {ACCIONES_MAIL.map(a => (
+              <Button key={a} type="button" size="sm" variant={accion === a ? "default" : "outline"} className="h-8 flex-1" onClick={() => setAccion(a)}
+                title={a === "archivar" ? "Sale de Recibidos a su carpeta (figura igual en el reporte)" : a === "avisar" ? "Hay algo que hacer: queda abierta hasta que la atendés" : "Figura en el reporte y queda en Recibidos"}>
+                {NOMBRE_ACCION_MAIL[a]}
+              </Button>
+            ))}
+          </div>
+        </div>
+        <p className="text-xs font-medium">¿A cuáles?</p>
         <div className="space-y-2 text-sm">
           <label className="flex items-start gap-2"><input type="radio" checked={alcance === "este"} onChange={() => setAlcance("este")} className="mt-1" />
             <span><b>Sólo este mail</b><br /><span className="text-xs text-muted-foreground">Queda marcado ✎ y ninguna regla lo vuelve a cambiar.</span></span></label>
@@ -327,7 +350,7 @@ function RegistroMails() {
   const [busquedas, setBusquedas] = useState<BusquedaConMail[]>([])
   const [inventario, setInventario] = useState<InventarioConMail[]>([])
   // Reasignar: el mail y el tipo elegido abren el diálogo de alcance; «nuevo» abre antes el de crear tipo
-  const [reasignar, setReasignar] = useState<{ mail: MailRegistrado; tipo: string } | null>(null)
+  const [reasignar, setReasignar] = useState<{ mail: MailRegistrado; tipo: string; accion?: AccionMail } | null>(null)
   const [nuevoPara, setNuevoPara] = useState<MailRegistrado | null>(null)
   const hoy = hoyArgentina()
 
@@ -409,11 +432,14 @@ function RegistroMails() {
     setMails(prev => prev.map(x => s.has(x.id) ? { ...x, ...cambio } : x))
   }
   const elegirTipo = (m: MailRegistrado, v: string) => {
-    if (v === "") {  // volver al tipo de la regla: sólo este mail
-      supabase.from("mails_registro").update({ tipo_manual: null, updated_at: ahoraISO() }).eq("id", m.id).then(({ error: e }) => {
+    if (v === "") {  // volver a lo de la regla: sólo este mail (el bloque y también la acción, que pudo ponerse a mano)
+      (async () => {
+        const { data: r } = m.regla_id ? await supabase.from("mails_reglas").select("accion").eq("id", m.regla_id).maybeSingle() : { data: null }
+        const cambio: Partial<MailRegistrado> = { tipo_manual: null, ...(r?.accion ? { accion: r.accion as AccionMail } : {}) }
+        const { error: e } = await supabase.from("mails_registro").update({ ...cambio, updated_at: ahoraISO() }).eq("id", m.id)
         if (e) { toast.error("No se pudo: " + e.message); return }
-        actualizar([m.id], { tipo_manual: null }); toast.success("Vuelve al tipo de la regla")
-      })
+        actualizar([m.id], cambio); toast.success("Vuelve a lo que dice la regla")
+      })()
       return
     }
     if (v === tipoDeMail(m)) return
@@ -568,6 +594,13 @@ function RegistroMails() {
                         className="h-7 w-full rounded border bg-background px-1 text-xs"
                         title={m.tipo_manual ? `Puesto a mano (la regla decía: ${m.tipo ? nombres[m.tipo] ?? m.tipo : "sin tipo"})` : "Según la regla"}
                         onElegir={v => elegirTipo(m, v)} onNuevo={() => setNuevoPara(m)} />
+                      {/* A-FEAT-1625: la acción también se edita acá (abre el mismo diálogo, con el alcance) */}
+                      <select value={m.accion ?? ""} onChange={e => { if (e.target.value) setReasignar({ mail: m, tipo: tipoDeMail(m) ?? "", accion: e.target.value as AccionMail }) }}
+                        className={`mt-0.5 h-6 w-full rounded border bg-background px-1 text-[11px] ${m.accion === "avisar" ? "font-semibold text-red-600" : "text-muted-foreground"}`}
+                        title="Qué se hace con este mail: Archivar (sale de Recibidos) · Reporte · Tarea">
+                        {!m.accion && <option value="">— acción —</option>}
+                        {ACCIONES_MAIL.map(a => <option key={a} value={a}>{NOMBRE_ACCION_MAIL[a]}</option>)}
+                      </select>
                     </TableCell>
                     <TableCell className="text-xs">
                       {(() => {
@@ -600,12 +633,10 @@ function RegistroMails() {
         const id = await crear(nombre)
         if (id && nuevoPara) { const m = nuevoPara; setNuevoPara(null); setReasignar({ mail: m, tipo: id }) }
       }} />
-      <DialogoAlcance mail={reasignar?.mail ?? null} tipo={reasignar?.tipo ?? ""} nombres={nombres} onCerrar={() => setReasignar(null)}
-        onHecho={({ ids, tipo, manualDe }) => {
-          if (manualDe) {
-            const m = mails.find(x => x.id === manualDe)
-            actualizar([manualDe], { tipo_manual: m && tipo === m.tipo ? null : tipo })
-          } else actualizar(ids, { tipo, tipo_manual: null })
+      <DialogoAlcance mail={reasignar?.mail ?? null} tipo={reasignar?.tipo ?? ""} accion={reasignar?.accion} tipos={tipos} nombres={nombres} onCerrar={() => setReasignar(null)}
+        onHecho={({ ids, tipo, accion, manual }) => {
+          if (manual) actualizar(ids, manual)
+          else actualizar(ids, { tipo, accion, tipo_manual: null })
           setReasignar(null)
         }} />
     </div>

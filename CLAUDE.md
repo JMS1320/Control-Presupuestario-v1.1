@@ -232,6 +232,46 @@ de enterarse de si tiene que hacer algo.
 lo obliga a traducir antes de poder pensar — y es el único que no puede delegar la decisión. La
 precisión técnica no se pierde: se **mueve abajo**, donde no bloquea.
 
+#### 📝 Cuando JMS enuncia un PROTOCOLO, se escribe en las reglas en el momento (REGLA)
+*Pedida por el usuario 2026-11-13: **«cuando yo te digo algo de los protocolos, lo tenés que documentar en las reglas de
+funcionamiento que tenemos. Muchas veces yo te hablo como de cierto protocolo y pretendo que vayas entendiendo esto»**.*
+
+> **Si JMS dice «siempre», «para todo», «por protocolo», o pide por segunda vez algo que ya había pedido, eso es una regla: se
+> escribe en este archivo (o en su dimensión) en ese mismo paso, con su motivo, y se le dice dónde quedó.**
+
+- No hace falta que diga «registralo»: el tono de norma alcanza. Ante la duda, se escribe y se le avisa.
+- Una regla que queda sólo en `memory/` **no obliga** (§ 🌿: «una decisión que no está en su dimensión es un recuerdo»).
+- 🔎 **Si JMS dice «según el protocolo» y ese protocolo NO está escrito**, no se hace como si existiera ni se adivina en
+  silencio: se le dice en una línea *«ese protocolo no lo tengo escrito»*, se arma con lo que él dice (y lo que se ve de cómo
+  trabaja), se escribe acá y se le muestra para que lo confirme. *(JMS 13/11: «cuando yo te diga de acuerdo al protocolo y vos
+  no tenés ese protocolo, hay que ir creándolo».)* Primero se busca: puede estar en una dimensión o en la memoria con otro
+  nombre, y entonces se sube acá.
+
+*Motivo: el caso que la originó es la regla de abajo — la pedía en cada página y no estaba escrita. Y JMS habla por
+protocolos: si cada vez que nombra uno Claude lo reconstruye de memoria, cada sesión lo reconstruye distinto.*
+
+#### 💬 Toda página (artifact) se responde AHÍ MISMO — opciones + «otra cosa» + texto libre (REGLA)
+*Pedida por el usuario 2026-11-13: **«siempre que hemos hecho un artifact, yo siempre te termino pidiendo que me des la
+posibilidad de responderte ahí mismo… no solamente con un multiple choice, sino también con la posibilidad de poner algo
+diferente. Esto es para siempre»**.*
+
+> **Toda página que se le arma a JMS y tenga algo para decidir o comentar trae, en la misma página, dónde contestar: las
+> opciones (con la recomendada marcada), «Otra cosa», un campo de texto libre, y un lugar para comentar cada sección. Lo que
+> escribe se GUARDA y Claude lo lee.**
+
+- 📍 **Acá:** la página se publica con la capacidad `db` y guarda cada respuesta en la colección **`respuestas`** (un documento
+  por pregunta o sección, con `opcion`, `texto` y fecha). Claude la lee con `ArtifactData` al volver — JMS no tiene que copiar
+  nada al chat.
+- Las preguntas llevan **índice único** (P1, P2…; § memoria «índices únicos») y cada opción, su consecuencia en una línea.
+- 💬 **Y cada FILA de una tabla se comenta por separado** *(JMS 13/11, sobre la tabla de los libros: «sería bueno poder tener
+  comentarios a las filas, así te podría dejar un comentario específico para, en este caso, sólo el libro D»)*: un 💬 al final
+  de cada renglón abre su campo, y se guarda con el número de la fila (`F-<tabla>-<fila>`). El comentario de la sección queda
+  para lo general.
+- Si la página no puede guardar (sin sesión), lo dice y deja copiar el texto: nada se pierde en silencio.
+
+*Motivo: sin esto, JMS lee la página en un lado y contesta en el chat en otro, traduciendo a qué se refiere cada cosa. Ya lo
+pedía en cada página (memoria del 05/11, «siempre lugar para otra cosa») y no estaba en las reglas.*
+
 #### 🔄 Un HITO se documenta corrigiendo lo viejo, no agregando al lado (REGLA)
 *Pedida por el usuario 2026-09-12: **«cuando se documentan este tipo de hitos, ¿se mira que no haya
 info histórica contradictoria que pueda confundir en próximas tomas de contexto?»**. No se miraba —
@@ -1331,6 +1371,10 @@ ese lugar afecte a todo lo que lo usa.
   recarga posterior a guardar es **silenciosa** — la tabla sigue a la vista con su scroll y su selección y se reemplaza de una
   — y **los filtros puestos (texto incluido) se vuelven a aplicar** sobre lo recargado. Cash Flow (`cargarDatos({ silencioso })`,
   A-FEAT-1602) y Egresos → Cuotas (A-FEAT-1612) ya lo cumplen; las demás → [A-FEAT-1612](PENDIENTES.md#a-feat-1612).
+- 🧩 **Todo libro de export se baja ENTERO y también por SUS PARTES** *(regla del usuario 2026-11-13, sobre los papeles del
+  balance: «exacto, para todo poder bajar los subs» · «siempre posible de hacerlo por subs, o sea sólo hacienda»)*: un libro que
+  junta varios temas (Stocks = hacienda + granos + insumos + sementeras; Templates = grupos → cada template) ofrece bajar el todo
+  o cada sub, del mismo cálculo. → [A-FEAT-1624](PENDIENTES.md#a-feat-1624).
 - Si la vista tiene **export (Excel/PDF)**, al sumarle un campo se actualiza también el export.
   Motivo: el usuario usa las descargas como registro fuera de la app; si el export queda viejo,
   pierde datos que sí ve en pantalla.

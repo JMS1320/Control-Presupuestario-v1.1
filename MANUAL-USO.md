@@ -3907,6 +3907,16 @@ Todo lo que entra y sale de la casilla **sanmanuel.sp**, registrado y con link a
 - Al elegir otro tipo en el renglón de un mail, la app pregunta: **sólo este mail**, **todos los de ese remitente** o **los de ese remitente cuyo asunto dice…** (el asunto viene escrito y se puede cambiar). Los dos últimos crean la regla y cambian también los mails que ya llegaron. Los que corregiste a mano uno por uno no se tocan.
 - Si el tipo no existe, elegí **«＋ Nuevo tipo…»** al final de la lista: lo creás ahí y queda elegido. En **Reglas → Tipos de mail** se renombran.
 
+**Bloque y acción de cada mail** *(2026-11-13)*
+- Cada mail tiene un **bloque** (de quién o de qué tema es: Bancos e inversiones, Impuestos y organismos, Proveedores y clientes, Contadores, Socios y familia, Sistema, Productivo · informes, Propaganda, Proveedores inactivos) y una **acción** (qué se hace con ese mail):
+  - **Archivar**: sale de Recibidos a la carpeta de su bloque (igual figura en el reporte).
+  - **Reporte**: figura en el reporte y queda en Recibidos.
+  - **Tarea**: hay algo que hacer; queda 📌 pendiente hasta que la das por terminada. Nunca se archiva.
+- En el renglón, debajo del bloque, está la **acción**. Al cambiar cualquiera de las dos se abre **«Bloque y acción»**: ahí podés corregir las dos y elegir a cuáles alcanza (**sólo este mail**, **todos los de ese remitente** o **los de ese remitente cuyo asunto dice…**).
+- **Sólo este mail** lo deja marcado ✎: ninguna regla le vuelve a cambiar ni el bloque ni la acción. Para que vuelva a lo que dice la regla, elegí «—» en el bloque.
+- ⚠️ Mientras el robot del mail esté en ensayo, «Archivar» todavía **no mueve** el mail en Gmail: sólo queda decidido.
+⚠️ Sin probar todavía → A-TEST-1377
+
 **Filtros por columna, como en Excel** *(2026-10-31)*
 - En los títulos **De / Para**, **Tipo** y **Qué se hizo** hay un embudo: abre la lista de valores sin repetir, con cuántos mails tiene cada uno, un buscador y casillas. Sirve para ver de un vistazo si llegó algo de alguien.
 - El **📎** abre el archivo ya archivado (en verde) si el sistema lo guardó; si no, abre el mail, donde están los adjuntos.

@@ -324,6 +324,7 @@ import { leerResumenCajaAhorro, controlarResumen, armarConocido, resumenComoExce
 import { leerResumenSantander, controlarResumenSantander } from "@/lib/extractos/pdf-santander"
 import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla, linkGmail, procesadoDeMail, cambiosAlReaplicar, type MailRegistrado,
   claveDeTipoMail, problemaDeTipoNuevo, contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarPendientesArriba,
+  cambioSoloEste, ACCIONES_MAIL, NOMBRE_ACCION_MAIL,
   juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves, ordenarParaLista, rangoDelDia, ordenarCronologico, leerBusqueda, coincideBusquedaMail, textoBuscable } from "@/lib/mails/registro"
 import { opcionesDeColumna, filtrarPorColumnas, seleccionConBusqueda } from "@/lib/ui/filtro-columna"
 import { valorFiltroCuota } from "@/lib/templates/filtro-cuotas"
@@ -11471,6 +11472,25 @@ export function correrCasos(): Resultado[] {
       const vM = `alcanza ${alc.alcanza.join(",")} · gana otra ${alc.ganaOtra.join(",")}`
       chequear("Mails", "🧩 Hacia atrás: alcanza recibidos y enviados de ese remitente; NO toca los corregidos a mano (salvo el que se reasigna) ni otro remitente; avisa los que otra regla le gana",
         "alcanza 1,4,6 · gana otra 2", vM, vM === "alcanza 1,4,6 · gana otra 2", "A-FEAT-1440")
+
+      // 📬 A-FEAT-1625 paso 2: al reasignar se elige también la ACCIÓN (JMS: «debo poder editar cada cosa»)
+      const pC = reglaParaAlcance(reglasA, mA, "remitente", "propaganda", undefined, "archivar")
+      const pD = reglaParaAlcance(reglasA, mA, "remitente_asunto", "contador", "comprobantes")   // sin elegir: conserva la de la regla
+      const vAcc = `${pC.regla.tipo}/${pC.regla.accion} ${pD.existente?.id}:${pD.regla.accion}`
+      chequear("Mails", "📬 Alcance con ACCIÓN: la elegida va a la regla; si no se elige, se conserva la que tenía",
+        "propaganda/archivar x:guardar", vAcc, vAcc === "propaganda/archivar x:guardar", "A-FEAT-1625")
+      const base = { tipo: "factura", tipo_manual: null, accion: "guardar" as const, seguimiento: null }
+      const e1 = cambioSoloEste(base, "factura", "avisar")             // misma bloque, pasa a Tarea → se protege y nace pendiente
+      const e2 = cambioSoloEste(base, "factura", "guardar")            // nada cambia → no se marca
+      // venía a mano (propaganda/archivar) y elige factura/guardar: QUEDA protegido — no se sabe qué acción dice la regla;
+      // volver a la regla es la opción «—» del bloque (lee la acción de la regla)
+      const e3 = cambioSoloEste({ ...base, tipo_manual: "propaganda", accion: "archivar" as const }, "factura", "guardar")
+      const e4 = cambioSoloEste({ ...base, seguimiento: "terminado" as any }, "banco", "avisar")  // ya atendido: no se reabre
+      const vSE = [e1, e2, e3, e4].map(e => `${e.tipo_manual ?? "-"}/${e.accion}/${e.seguimiento ?? "-"}`).join(" ")
+      chequear("Mails", "📬 Sólo este mail: cambiar la acción lo protege (✎) de las reglas; Tarea nace pendiente salvo que ya estuviera atendido; elegir lo mismo no marca",
+        "factura/avisar/pendiente -/guardar/- factura/guardar/- banco/avisar/-", vSE, vSE === "factura/avisar/pendiente -/guardar/- factura/guardar/- banco/avisar/-", "A-FEAT-1625")
+      const vN = ACCIONES_MAIL.map(a => NOMBRE_ACCION_MAIL[a]).join(" · ")
+      chequear("Mails", "📬 Las acciones con el nombre de JMS (en la base siguen archivar/guardar/avisar)", "Archivar · Reporte · Tarea", vN, vN === "Archivar · Reporte · Tarea", "A-FEAT-1625")
 
       // 📌 A-FEAT-1437: seguimiento pendiente / terminado
       const S = (id: string, fecha: string, seguimiento: any, seguimiento_fecha: string | null) => ({ id, fecha, seguimiento, seguimiento_fecha })
