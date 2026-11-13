@@ -51,6 +51,7 @@ import { hojaResumenPorMes } from "@/lib/balance/resumen-por-mes"
 import { filasBalanceEnLinea, hojaCajaYBancos } from "@/lib/balance/balance-en-linea"
 import { APERTURA_MSA_2025 } from "@/lib/balance/apertura-contador"
 import { libroDeSolapa, repartirEnLibros, templatesDeResponsable, detalleBancarioDelLibroC, canalDePago, hojaDeDetalle } from "@/lib/balance/libros-del-balance"
+import { PAPELES, controlDeCobertura, solapasDeFormula, recortarPapel, papelPorId } from "@/lib/balance/papeles-del-balance"
 import { armarStocksUnificados, hojaDeStocks } from "@/lib/balance/stocks-unificado"
 import { temasDeCuentaCorriente } from "@/lib/balance/recorrido-conciliacion"
 import { contrapartesDelRecorrido } from "@/lib/balance/fuera-por-cuenta-corriente"
@@ -13852,6 +13853,45 @@ export function correrCasos(): Resultado[] {
     const v = `por ${r.ordenadoPor} · inicio ${r.inicio} · calc ${calc} · planilla ${r.extractoFin} · saltos ${r.saltos.map(s => `${s.orden}:${-s.salto}`).join(",")}`
     const e = "por orden · inicio 0 · calc 1000 · planilla 950 · saltos 4:-50"
     chequear("Control de la plata", "💰 Etapa 1: la cuenta (inicio + ingresos − egresos) contra la planilla, seguida por su ORDEN cuando está cargada fuera de fecha, y el salto donde se rompe", e, v, v === e, "A-FEAT-1533")
+  }
+
+  // ══ 🗂️ Los papeles del balance como unidades (A-FEAT-1624 etapa 2) ══
+  {
+    const solapas = ["Ventas", "Compras", "05 Provision", "03.1 Provision cobros", "07 Bancos", "H · MSA · Por mes", "H · MSA · Gastos Bancarios",
+      "H · MSA · Imp Bancarios", "H · MSA · (sin agrupadora)", "H · MSA · Papel Inmobiliario", "H · MSA · Automotores", "02 Stock hacienda",
+      "02.10 Aumento del rodeo U$S", "02 Hacienda", "I · MSA · Retiros por mes", "G · LIB (paralelo)", "G · Indice de grupos", "Saldos raros"]
+    const cob = controlDeCobertura(solapas)
+    const dondeVa = (n: string) => PAPELES.filter(p => p.solapas(n)).map(p => p.id).join("+") || "—"
+    const v1 = solapas.map(n => `${n}=${dondeVa(n)}`).join(" · ")
+    const e1 = "Ventas=ventas · Compras=compras · 05 Provision=provisiones · 03.1 Provision cobros=provisiones · 07 Bancos=bancos · H · MSA · Por mes=egresos · "
+      + "H · MSA · Gastos Bancarios=— · H · MSA · Imp Bancarios=— · H · MSA · (sin agrupadora)=egresos+otros-gastos · H · MSA · Papel Inmobiliario=impuestos · "
+      + "H · MSA · Automotores=impuestos · 02 Stock hacienda=hacienda · 02.10 Aumento del rodeo U$S=hacienda · 02 Hacienda=— · I · MSA · Retiros por mes=socios · "
+      + "G · LIB (paralelo)=libertad · G · Indice de grupos=— · Saldos raros=—"
+    chequear("Papeles del balance", "🗂️ Cada solapa del set va a su papel según las marcas de JMS del inventario: el H sin los bancarios (A9), el papel de impuestos aparte (A10), Otros gastos también suelto (B1), el retiro por mes a socios y LIB a Libertad (lo rescatado de I y G)",
+      e1, v1, v1 === e1, "A-FEAT-1624")
+    const v2 = `sin papel: ${cob.sinPapel.join(" | ")}`
+    const e2 = "sin papel: H · MSA · Gastos Bancarios | H · MSA · Imp Bancarios | 02 Hacienda | G · Indice de grupos | Saldos raros"
+    chequear("Papeles del balance", "🧮 El control lista las solapas que no van a ningún papel (no se descartan en silencio)", e2, v2, v2 === e2, "A-FEAT-1624")
+
+    const v3 = solapasDeFormula("SUM('H · MSA · Gastos'!B5:B9)+Compras!C3+'O''Neil'!A1+B2").sort().join(" | ")
+    const e3 = "Compras | H · MSA · Gastos | O'Neil"
+    chequear("Papeles del balance", "Las solapas a las que apunta una fórmula (con y sin comillas, con apóstrofe adentro)", e3, v3, v3 === e3, "A-FEAT-1624")
+
+    const wb = XLSXcasos.utils.book_new()
+    const porMes = XLSXcasos.utils.aoa_to_sheet([["x"]]); porMes["B2"] = { t: "n", v: 30, f: "'H · MSA · (sin agrupadora)'!C9+'H · MSA · Gastos Bancarios'!C9" }
+    porMes["B3"] = { t: "n", v: 7, f: "SUM(A1:A3)" }
+    const sinAg = XLSXcasos.utils.aoa_to_sheet([["y"]]); sinAg["C9"] = { t: "n", v: 20, f: "'H · MSA · Por mes'!B3*2" }
+    XLSXcasos.utils.book_append_sheet(wb, porMes, "H · MSA · Por mes")
+    XLSXcasos.utils.book_append_sheet(wb, sinAg, "H · MSA · (sin agrupadora)")
+    XLSXcasos.utils.book_append_sheet(wb, XLSXcasos.utils.aoa_to_sheet([["z"]]), "H · MSA · Gastos Bancarios")
+    const eg = recortarPapel(wb, ["v0", "v1", "v2"], papelPorId("egresos")!)
+    const og = recortarPapel(wb, ["v0", "v1", "v2"], papelPorId("otros-gastos")!)
+    const celda = (w: typeof wb, s: string, c: string) => { const x = w.Sheets[s][c] as { v: number; f?: string }; return `${x.v}${x.f ? "ƒ" : ""}` }
+    const v4 = `egresos ${eg.solapas.length} sol [${eg.vistas.join(",")}] B2=${celda(eg.wb, "H · MSA · Por mes", "B2")} B3=${celda(eg.wb, "H · MSA · Por mes", "B3")} a valor ${eg.formulasAValor.length}`
+      + ` · otros ${og.solapas.length} sol C9=${celda(og.wb, "H · MSA · (sin agrupadora)", "C9")} · completo intacto B2=${celda(wb, "H · MSA · Por mes", "B2")} C9=${celda(wb, "H · MSA · (sin agrupadora)", "C9")}`
+    const e4 = "egresos 2 sol [v0,v1] B2=30 B3=7ƒ a valor 1 · otros 1 sol C9=20 · completo intacto B2=30ƒ C9=20ƒ"
+    chequear("Papeles del balance", "✂️ Al recortar un papel, la fórmula que apunta a una solapa de OTRO papel queda con su valor (no #REF), la de adentro sigue viva, cada solapa viaja con su formato y el libro completo no se toca",
+      e4, v4, v4 === e4, "A-FEAT-1624")
   }
   return r
 }

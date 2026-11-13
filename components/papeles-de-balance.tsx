@@ -53,7 +53,8 @@ import { ProponerFotoBalance } from "./proponer-foto-balance"
 import { respaldoDeSaldo, respaldoDeFci, PAPEL_COPIAS, urlDeArchivoDrive, renglonesDeRespaldo, itemsDelRespaldo, carpetasDelRespaldo, type ItemDeRespaldo } from "@/lib/balance/respaldos"
 import { ivaConSigno, RENGLONES, type DatosDeLosPapeles, type ValorPropuesto } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
-import { armarWorkbook, coberturaDeArgs, descargarLibroDiario, descargarSetDelBalance } from "@/lib/balance/export-libro-diario"
+import { armarWorkbook, coberturaDeArgs, descargarLibroDiario, descargarSetDelBalance, descargarPapelesDelBalance } from "@/lib/balance/export-libro-diario"
+import { PAPELES, sePuedeBajar, papelPorId, type ControlDeCobertura } from "@/lib/balance/papeles-del-balance"
 import { armarTemas, subdiariosContraArca, temaDelLink, type Tema } from "@/lib/balance/recorrido"
 import { temasVentasVsArca, temasComprasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
 import { leerDatosConciliacion, proponerConciliaciones, CUENTAS_CONCILIABLES, type ConteoCuenta } from "@/lib/conciliacion/propuestas-ejercicio"
@@ -163,6 +164,11 @@ export function PapelesDeBalance() {
    * 🏦 Papeles 07, 08 y 09. Salen del **extracto** ya parseado y categorizado, así que se traen
    * junto con el libro: es una consulta más por cuenta bancaria.
    */
+  // 🗂️ A-FEAT-1624: los papeles sueltos — cuáles están tildados y qué salió del último armado
+  const [verPapeles, setVerPapeles] = useState(false)
+  const [tildados, setTildados] = useState<Set<string>>(new Set())
+  const [bajandoPapeles, setBajandoPapeles] = useState(false)
+  const [resultadoPapeles, setResultadoPapeles] = useState<{ archivos: { papel: string; solapas: number; formulasAValor: number }[]; cobertura: ControlDeCobertura } | null>(null)
   const [bancarios, setBancarios] = useState<Parameters<typeof descargarLibroDiario>[7] | null>(null)
   /** 📦 A-FEAT-1571 paso 2: lo que pasó al copiar el respaldo o armar los zip (se muestra en el recuadro). */
   const [respaldoEstado, setRespaldoEstado] = useState<{ trabajando: boolean; lineas: Array<{ texto: string; url?: string; error?: boolean }> }>({ trabajando: false, lineas: [] })
@@ -447,6 +453,24 @@ export function PapelesDeBalance() {
   const ultimo = useRef({ argsConRecorrido, entradaBalanceEnLinea })
   ultimo.current = { argsConRecorrido, entradaBalanceEnLinea }
   const bajarSet = async (lib: LibroDiario) => {
+    const e = await entradasDelSet(lib)
+    await descargarSetDelBalance(e.args, e.entradaF, e.lib, e.papeles, e.estructura)
+  }
+  /** 🗂️ A-FEAT-1624 etapa 2: los papeles tildados, cada uno en su archivo (del mismo cálculo que el set). */
+  const bajarPapeles = async (lib: LibroDiario) => {
+    if (!tildados.size) { toast.info("Tildá al menos un papel."); return }
+    setBajandoPapeles(true)
+    try {
+      const e = await entradasDelSet(lib)
+      const r = await descargarPapelesDelBalance(e.args, [...tildados], e.entradaF, e.lib, e.papeles)
+      setResultadoPapeles(r)
+      const aValor = r.archivos.reduce((s, x) => s + x.formulasAValor, 0)
+      if (!r.archivos.length) toast.warning("Ninguno de los papeles tildados trajo solapas en este armado.")
+      else toast.success(`✓ ${r.archivos.length} papel(es) bajado(s)${aValor ? ` · ${aValor} fórmula(s) que apuntaban a otro papel quedaron con su valor (ver «Control del papel»)` : ""}`)
+    } finally { setBajandoPapeles(false) }
+  }
+  /** Lo que necesita el armado completo (set o papeles): stock, impuestos, estructura y LIB. */
+  const entradasDelSet = async (lib: LibroDiario) => {
     // 🛑 A-BUG-1508: sin stock y precios, el libro E y la hacienda del F salían vacíos. Si no se trajeron, se traen primero.
     if (!haciendaRef.current) {
       toast.info("Trayendo stock y precios antes de bajar el set…")
@@ -471,7 +495,7 @@ export function PapelesDeBalance() {
     try { estructura = (await cargarProblemasDeModalidad(supabase as any, Number(hoyArgentina().slice(0, 4)))).problemas } catch {
       toast.warning("No se pudo correr el control de estructura de los templates: «Inconsistencias» sale sin ese bloque.")
     }
-    await descargarSetDelBalance(args, entradaF, await leerMovimientosLib(lib), papeles, estructura)
+    return { args, entradaF, lib: await leerMovimientosLib(lib), papeles, estructura }
   }
   const sinResponder = temasRecorrido.filter(t => !t.respondido).length
   /** Lo que todavía no llegó, para que la vista previa lo diga en vez de parecer completa. */
@@ -1470,6 +1494,12 @@ export function PapelesDeBalance() {
               📚 Bajar el set A–H (.zip)
             </Button>
           )}
+          {libro && (
+            <Button variant={verPapeles ? "default" : "outline"} onClick={() => setVerPapeles(v => !v)}
+              title="Cada papel del balance en su archivo: tildás los que querés y se bajan sueltos (A-FEAT-1624)">
+              🗂️ Papeles sueltos{tildados.size ? ` (${tildados.size})` : ""}
+            </Button>
+          )}
           {/* 📗 El Libro Diario consensuado con el contador (compras, ventas, por cuenta y retenciones), solo. */}
           {libro && (
             <Button variant="outline" onClick={() =>
@@ -1512,6 +1542,65 @@ export function PapelesDeBalance() {
             </label>
           )}
         </div>
+
+        {/* 🗂️ A-FEAT-1624 etapa 2 — los papeles del balance como unidades: se tildan y se bajan sueltos. */}
+        {verPapeles && libro && (
+          <div className="rounded-md border p-3 space-y-3" data-test="papeles-sueltos">
+            <div className="flex flex-wrap items-center gap-2">
+              <strong className="text-sm">🗂️ Papeles del balance</strong>
+              <span className="text-xs text-muted-foreground">Cada uno sale en su Excel, del mismo cálculo que el set. Uno solo baja el .xlsx; varios, un .zip.</span>
+              <div className="ml-auto flex gap-2">
+                <Button size="sm" variant="ghost" onClick={() => setTildados(new Set(PAPELES.filter(p => sePuedeBajar(p) && p.destino === "contador").map(p => p.id)))}>Todos los del contador</Button>
+                <Button size="sm" variant="ghost" onClick={() => setTildados(new Set())}>Ninguno</Button>
+                <Button size="sm" disabled={bajandoPapeles || !tildados.size || !!cargandoConciliacion} onClick={() => void bajarPapeles(libro)}>
+                  {bajandoPapeles ? "Armando…" : `⬇️ Bajar ${tildados.size || ""} tildado(s)`}
+                </Button>
+              </div>
+            </div>
+            {(["contador", "interno"] as const).map(destino => (
+              <div key={destino}>
+                <div className="text-xs font-semibold uppercase text-muted-foreground mb-1">{destino === "contador" ? "Van al contador" : "Tuyos (no van al contador)"}</div>
+                <table className="w-full text-sm">
+                  <tbody>
+                    {PAPELES.filter(p => p.destino === destino).map(p => {
+                      const bajable = sePuedeBajar(p)
+                      const n = resultadoPapeles?.cobertura.porPapel[p.id]?.length
+                      return (
+                        <tr key={p.id} className={`border-t ${bajable ? "" : "text-muted-foreground"}`}>
+                          <td className="w-6 py-1">
+                            <input type="checkbox" disabled={!bajable} checked={tildados.has(p.id)}
+                              onChange={() => setTildados(s => { const x = new Set(s); if (x.has(p.id)) x.delete(p.id); else x.add(p.id); return x })} />
+                          </td>
+                          <td className="py-1 pr-2 text-xs text-muted-foreground whitespace-nowrap">{p.grupo}</td>
+                          <td className="py-1 pr-2 font-medium">{p.nombre}</td>
+                          <td className="py-1 pr-2 text-xs whitespace-nowrap">
+                            {p.origen === "sistema" ? "✓ la app" : p.origen === "sistema-distinto" ? "≈ la app (lo enviado salió aparte)" : p.origen === "fuera" ? "fuera de la app" : "falta definir"}
+                            {n != null && bajable ? ` · ${n} solapa(s)` : ""}
+                          </td>
+                          <td className="py-1 text-xs text-muted-foreground">{p.nota ?? ""}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+            {/* 🧮 El control: dónde cayó cada solapa del set completo en el último armado. Nada se descarta en silencio. */}
+            {resultadoPapeles && (
+              <div className="text-xs space-y-1" data-test="papeles-control">
+                {resultadoPapeles.archivos.map(a => (
+                  <div key={a.papel}>✓ {a.papel}: {a.solapas} solapa(s){a.formulasAValor ? ` · ${a.formulasAValor} fórmula(s) a valor (apuntaban a otro papel)` : " · fórmulas vivas"}</div>
+                ))}
+                {resultadoPapeles.cobertura.vacios.length > 0 && (
+                  <div className="text-amber-700">⚠️ Sin solapas en este armado: {resultadoPapeles.cobertura.vacios.map(id => papelPorId(id)?.nombre ?? id).join(" · ")}</div>
+                )}
+                {resultadoPapeles.cobertura.sinPapel.length > 0
+                  ? <div className="text-amber-700">⚠️ {resultadoPapeles.cobertura.sinPapel.length} solapa(s) del set no van a ningún papel (siguen en el set A–H): {resultadoPapeles.cobertura.sinPapel.join(" · ")}</div>
+                  : <div className="text-green-700">✓ Todas las solapas del set caen en algún papel.</div>}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 👁️ A-FEAT-1427 — el Excel antes de bajarlo; las preguntas siguen acá abajo, donde se contestan. */}
         {previa?.error && <div className="text-sm text-red-700">No se pudo armar la vista previa: {previa.error}</div>}

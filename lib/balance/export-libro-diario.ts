@@ -62,6 +62,8 @@ import { armarGruposTemplates, cuotaSinPago, armarHojaGrupo, gruposDelResponsabl
 import { sinCategoriaNiVinculo, type MovimientoExtractoH } from "./movimientos-de-cuotas"
 import { filasBalanceEnLinea, hojaBalanceEnLinea, hojaCajaYBancos, hojaFci, hojaDeudasYCreditos, hojaSoja, hojaVacasDeCria, type EntradaBalanceEnLinea } from "./balance-en-linea"
 import { LIBROS, repartirEnLibros, templatesDeResponsable, responsablePrincipal, hojaListadoTemplates, hojaDeDetalle, type GrupoDetalle, type MovimientoDelDetalle } from "./libros-del-balance"
+import { papelPorId, sePuedeBajar, recortarPapel, hojaControlDelPapel, nombreDelPapel, controlDeCobertura, type ControlDeCobertura } from "./papeles-del-balance"
+import { hoyArgentina } from "@/lib/fechas"
 import { hojaDelRecorrido, sincronizarPendientes, type RecorridoParaExcel } from "./recorrido-excel"
 import { hojaDeSaldosAnteriores, type SaldosAnteriores } from "./ajustes-balance"
 import {
@@ -3385,18 +3387,10 @@ const COLS_DETALLE_BANCARIO: Columna[] = [
  * 📚 A-FEAT-1505 — baja el SET: los libros A a E en un .zip (JMS: «así tengo siempre todo el set parejo»). Se arma el libro
  * completo una sola vez (más el C) y se reparte: los cinco salen del mismo cálculo que el Excel de siempre.
  */
-export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>, entradaF?: EntradaBalanceEnLinea | null, lib?: MovimientoLib[] | null, papeles?: DatosPapelesH | null, estructura?: ProblemaModalidad[]): Promise<void> {
-  const [libro, empresa, templates, , , , , bancarios] = a
-  // ✍️ JMS 11/11: el saldo del ejercicio anterior (ajustes del balance, que ya se leen para «Saldos ej. anterior») va también a los papeles de
-  // impuestos y a la solapa de su template en el libro H — arriba de todo, como pidió JMS
-  const sa = a[11] as SaldosAnteriores | undefined
-  if (papeles && sa && !papeles.saldosAnteriores) papeles = { ...papeles, saldosAnteriores: sa.vigentes.map(v => ({ empresa: v.empresa, concepto: v.concepto, categ: v.categ ?? "", monto: Number(v.monto) || 0, motivo: v.motivo })) }
-  const wb = armarWorkbook(...a)
+export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>, entradaF?: EntradaBalanceEnLinea | null, lib?: MovimientoLib[] | null, papelesIn?: DatosPapelesH | null, estructura?: ProblemaModalidad[]): Promise<void> {
+  const [libro, empresa, templates] = a
+  const { wb, papeles } = armarSetCompleto(a, entradaF, lib, papelesIn)
   const meses = mesesDelLibro(libro)
-  agregarLibroC(wb, empresa, libro.ejercicio.etiqueta, templates ?? null, bancarios?.detalleBancario ?? null, meses)
-  if (entradaF) agregarLibroF(wb, entradaF)
-  if (templates) agregarLibroG(wb, templates.detalle, libro.ejercicio.etiqueta, lib ?? null, meses)
-  if (templates) agregarLibroH(wb, templates, libro.ejercicio.etiqueta, meses, papeles)
   const { default: JSZip } = await import("jszip")
   const zip = new JSZip()
   const base = nombreArchivo(libro, empresa).replace(/\.xlsx$/, "")
@@ -3412,14 +3406,72 @@ export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>
     fechasReales(wbA)
     zip.file(`${base} - H para auditar (no va al contador).xlsx`, await aplicarVistas(XLSX.write(wbA, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(wbA)))
   }
-  const blob = await zip.generateAsync({ type: "blob" })
+  bajarBlob(await zip.generateAsync({ type: "blob" }), `${base} - set A-I.zip`)
+}
+
+/** Baja un archivo armado en memoria. */
+function bajarBlob(blob: Blob, nombre: string): void {
   const url = URL.createObjectURL(blob)
   const el = document.createElement("a")
   el.href = url
-  el.download = `${base} - set A-I.zip`
+  el.download = nombre
   document.body.appendChild(el)
   el.click()
   setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(el) }, ESPERA_ANTES_DE_LIBERAR_MS)
+}
+
+/**
+ * 🗂️ A-FEAT-1624 etapa 2 — baja los PAPELES tildados, cada uno en su archivo (uno solo → el .xlsx; varios → un .zip), con la
+ * solapa «Control del papel» al final. Salen del mismo libro completo que el set.
+ */
+export async function descargarPapelesDelBalance(a: Parameters<typeof armarWorkbook>, ids: string[], entradaF?: EntradaBalanceEnLinea | null,
+  lib?: MovimientoLib[] | null, papelesIn?: DatosPapelesH | null): Promise<{ archivos: { papel: string; solapas: number; formulasAValor: number }[]; cobertura: ControlDeCobertura }> {
+  const [libro, empresa] = a
+  const { wb } = armarSetCompleto(a, entradaF, lib, papelesIn)
+  const fecha = hoyArgentina()
+  const generado = new Date().toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })
+  const etiqueta = libro.ejercicio.etiqueta
+  const archivos: { nombre: string; datos: Uint8Array; papel: string; solapas: number; formulasAValor: number }[] = []
+  for (const id of ids) {
+    const p = papelPorId(id)
+    if (!p || !sePuedeBajar(p)) continue
+    const armado = recortarPapel(wb, vistasDe(wb), p)
+    if (!armado.solapas.length) continue
+    VISTAS.set(armado.wb, armado.vistas)
+    hoja(armado.wb, "Control del papel", hojaControlDelPapel(p, armado, empresa, etiqueta, generado), [{ ancho: 34 }, { ancho: 60 }, { ancho: 60 }])
+    fechasReales(armado.wb)
+    const datos = await aplicarVistas(XLSX.write(armado.wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(armado.wb))
+    archivos.push({ nombre: nombreDelPapel(p, empresa, etiqueta, fecha), datos, papel: p.nombre, solapas: armado.solapas.length, formulasAValor: armado.formulasAValor.length })
+  }
+  if (archivos.length === 1) bajarBlob(new Blob([archivos[0].datos as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), archivos[0].nombre)
+  else if (archivos.length > 1) {
+    const { default: JSZip } = await import("jszip")
+    const zip = new JSZip()
+    for (const x of archivos) zip.file(x.nombre, x.datos)
+    bajarBlob(await zip.generateAsync({ type: "blob" }), `Papeles del balance - ${empresa} ${etiqueta.replace("/", "-")} (${fecha}).zip`)
+  }
+  return { archivos: archivos.map(({ papel, solapas, formulasAValor }) => ({ papel, solapas, formulasAValor })), cobertura: controlDeCobertura(wb.SheetNames) }
+}
+
+/**
+ * 🗂️ A-FEAT-1624: el libro COMPLETO que se reparte, armado una sola vez: lo usan el set A–I y los papeles sueltos, así los dos
+ * no pueden dar números distintos.
+ */
+export function armarSetCompleto(a: Parameters<typeof armarWorkbook>, entradaF?: EntradaBalanceEnLinea | null, lib?: MovimientoLib[] | null,
+  papelesIn?: DatosPapelesH | null): { wb: XLSX.WorkBook; papeles: DatosPapelesH | null | undefined } {
+  const [libro, empresa, templates, , , , , bancarios] = a
+  let papeles = papelesIn
+  // ✍️ JMS 11/11: el saldo del ejercicio anterior (ajustes del balance, que ya se leen para «Saldos ej. anterior») va también a los papeles de
+  // impuestos y a la solapa de su template en el libro H — arriba de todo, como pidió JMS
+  const sa = a[11] as SaldosAnteriores | undefined
+  if (papeles && sa && !papeles.saldosAnteriores) papeles = { ...papeles, saldosAnteriores: sa.vigentes.map(v => ({ empresa: v.empresa, concepto: v.concepto, categ: v.categ ?? "", monto: Number(v.monto) || 0, motivo: v.motivo })) }
+  const wb = armarWorkbook(...a)
+  const meses = mesesDelLibro(libro)
+  agregarLibroC(wb, empresa, libro.ejercicio.etiqueta, templates ?? null, bancarios?.detalleBancario ?? null, meses)
+  if (entradaF) agregarLibroF(wb, entradaF)
+  if (templates) agregarLibroG(wb, templates.detalle, libro.ejercicio.etiqueta, lib ?? null, meses)
+  if (templates) agregarLibroH(wb, templates, libro.ejercicio.etiqueta, meses, papeles)
+  return { wb, papeles }
 }
 
 /** 📚 A-FEAT-1512 — el LIBRO G: los grupos de templates (propuesta) y lo marcado LIB, con el formato de «impuestos bancarios». */
