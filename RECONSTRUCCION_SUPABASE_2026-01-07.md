@@ -13408,3 +13408,7 @@ ALTER TABLE productivo.lineas_orden_agricola ALTER COLUMN unidad_dosis TYPE varc
 ALTER TABLE productivo.lineas_orden_agricola ADD CONSTRAINT lineas_orden_agricola_unidad_dosis_check CHECK (btrim(unidad_dosis) <> '');
 ```
 
+
+### 2026-11-13 · Mails: los grupos pasan a ser los BLOQUES y reglas nuevas (script 272, DATOS) — A-FEAT-1625 AL1 — ✅ CORRIDO con OK de JMS («ok, corré el 272»)
+Sin cambios de estructura (las acciones siguen siendo `guardar` / `avisar` / `archivar`). `public.mails_tipos`: renombra y reordena banco «Bancos e inversiones» 10 · impuestos «Impuestos y organismos» 20 · factura «Proveedores y clientes» 30 · contador 40 · interno «Socios y familia» 50 · notificacion «Sistema» 60 · propaganda 80; crea `informes` «Productivo · informes» 70 e `inactivos` «Proveedores inactivos» 90 (nota `[script 272]`); legal, productivo, seguros, servicios, otro y vencimientos quedan al fondo (orden 900+, nota «[script 272] en desuso»), sin borrar. `public.mails_reglas`: 172 reglas nuevas (orden 10, nota `[script 272] …`; 16 por dominio, 138 por remitente, 18 por asunto) y las 71 activas de antes pasan a `activa = false`. `public.mails_registro`: 1.774 mails con tipo / acción / regla recalculados (ningún `tipo_manual`). Control: 1.573 recibidos antes y después, 0 sin regla.
+Las decisiones (remitente → bloque) y la foto del antes están FUERA DE GIT, en la carpeta de comunicación → Mails (`272 decisiones…`, `272 foto antes…`). Deshacer exacto: `npx tsx scripts/272-bloques-y-reglas-mails-deshacer.mts --aplicar`.
