@@ -241,8 +241,14 @@ funcionamiento que tenemos. Muchas veces yo te hablo como de cierto protocolo y 
 
 - No hace falta que diga «registralo»: el tono de norma alcanza. Ante la duda, se escribe y se le avisa.
 - Una regla que queda sólo en `memory/` **no obliga** (§ 🌿: «una decisión que no está en su dimensión es un recuerdo»).
+- 🔎 **Si JMS dice «según el protocolo» y ese protocolo NO está escrito**, no se hace como si existiera ni se adivina en
+  silencio: se le dice en una línea *«ese protocolo no lo tengo escrito»*, se arma con lo que él dice (y lo que se ve de cómo
+  trabaja), se escribe acá y se le muestra para que lo confirme. *(JMS 13/11: «cuando yo te diga de acuerdo al protocolo y vos
+  no tenés ese protocolo, hay que ir creándolo».)* Primero se busca: puede estar en una dimensión o en la memoria con otro
+  nombre, y entonces se sube acá.
 
-*Motivo: el caso que la originó es la regla de abajo — la pedía en cada página y no estaba escrita.*
+*Motivo: el caso que la originó es la regla de abajo — la pedía en cada página y no estaba escrita. Y JMS habla por
+protocolos: si cada vez que nombra uno Claude lo reconstruye de memoria, cada sesión lo reconstruye distinto.*
 
 #### 💬 Toda página (artifact) se responde AHÍ MISMO — opciones + «otra cosa» + texto libre (REGLA)
 *Pedida por el usuario 2026-11-13: **«siempre que hemos hecho un artifact, yo siempre te termino pidiendo que me des la
