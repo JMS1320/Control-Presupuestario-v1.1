@@ -263,6 +263,10 @@ diferente. Esto es para siempre»**.*
   por pregunta o sección, con `opcion`, `texto` y fecha). Claude la lee con `ArtifactData` al volver — JMS no tiene que copiar
   nada al chat.
 - Las preguntas llevan **índice único** (P1, P2…; § memoria «índices únicos») y cada opción, su consecuencia en una línea.
+- 💬 **Y cada FILA de una tabla se comenta por separado** *(JMS 13/11, sobre la tabla de los libros: «sería bueno poder tener
+  comentarios a las filas, así te podría dejar un comentario específico para, en este caso, sólo el libro D»)*: un 💬 al final
+  de cada renglón abre su campo, y se guarda con el número de la fila (`F-<tabla>-<fila>`). El comentario de la sección queda
+  para lo general.
 - Si la página no puede guardar (sin sesión), lo dice y deja copiar el texto: nada se pierde en silencio.
 
 *Motivo: sin esto, JMS lee la página en un lado y contesta en el chat en otro, traduciendo a qué se refiere cada cosa. Ya lo
