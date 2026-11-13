@@ -232,6 +232,36 @@ de enterarse de si tiene que hacer algo.
 lo obliga a traducir antes de poder pensar — y es el único que no puede delegar la decisión. La
 precisión técnica no se pierde: se **mueve abajo**, donde no bloquea.
 
+#### 📝 Cuando JMS enuncia un PROTOCOLO, se escribe en las reglas en el momento (REGLA)
+*Pedida por el usuario 2026-11-13: **«cuando yo te digo algo de los protocolos, lo tenés que documentar en las reglas de
+funcionamiento que tenemos. Muchas veces yo te hablo como de cierto protocolo y pretendo que vayas entendiendo esto»**.*
+
+> **Si JMS dice «siempre», «para todo», «por protocolo», o pide por segunda vez algo que ya había pedido, eso es una regla: se
+> escribe en este archivo (o en su dimensión) en ese mismo paso, con su motivo, y se le dice dónde quedó.**
+
+- No hace falta que diga «registralo»: el tono de norma alcanza. Ante la duda, se escribe y se le avisa.
+- Una regla que queda sólo en `memory/` **no obliga** (§ 🌿: «una decisión que no está en su dimensión es un recuerdo»).
+
+*Motivo: el caso que la originó es la regla de abajo — la pedía en cada página y no estaba escrita.*
+
+#### 💬 Toda página (artifact) se responde AHÍ MISMO — opciones + «otra cosa» + texto libre (REGLA)
+*Pedida por el usuario 2026-11-13: **«siempre que hemos hecho un artifact, yo siempre te termino pidiendo que me des la
+posibilidad de responderte ahí mismo… no solamente con un multiple choice, sino también con la posibilidad de poner algo
+diferente. Esto es para siempre»**.*
+
+> **Toda página que se le arma a JMS y tenga algo para decidir o comentar trae, en la misma página, dónde contestar: las
+> opciones (con la recomendada marcada), «Otra cosa», un campo de texto libre, y un lugar para comentar cada sección. Lo que
+> escribe se GUARDA y Claude lo lee.**
+
+- 📍 **Acá:** la página se publica con la capacidad `db` y guarda cada respuesta en la colección **`respuestas`** (un documento
+  por pregunta o sección, con `opcion`, `texto` y fecha). Claude la lee con `ArtifactData` al volver — JMS no tiene que copiar
+  nada al chat.
+- Las preguntas llevan **índice único** (P1, P2…; § memoria «índices únicos») y cada opción, su consecuencia en una línea.
+- Si la página no puede guardar (sin sesión), lo dice y deja copiar el texto: nada se pierde en silencio.
+
+*Motivo: sin esto, JMS lee la página en un lado y contesta en el chat en otro, traduciendo a qué se refiere cada cosa. Ya lo
+pedía en cada página (memoria del 05/11, «siempre lugar para otra cosa») y no estaba en las reglas.*
+
 #### 🔄 Un HITO se documenta corrigiendo lo viejo, no agregando al lado (REGLA)
 *Pedida por el usuario 2026-09-12: **«cuando se documentan este tipo de hitos, ¿se mira que no haya
 info histórica contradictoria que pueda confundir en próximas tomas de contexto?»**. No se miraba —
