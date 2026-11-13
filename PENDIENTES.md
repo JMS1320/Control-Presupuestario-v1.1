@@ -486,6 +486,8 @@ Lo que no hay que recordarle: las 7 preguntas del control de cuotas. Lo que hay 
 ### 🛤️ Camino 2 — GAS: todo lo que pasa por el mail, y antes los resúmenes que faltan para conciliar
 
 > 🔀 **Desde el 06/11 es parte del camino 2+3 · ADMINISTRACIÓN** (ver § FOCO ACTUAL). Lo pendiente del 31/10 sigue valiendo, más la nota 📮 «Bug link desde principal» (b244349a) que el camino 1 dejó para esta terminal en el tablero el 01/11.
+>
+> 📍 **Cierre del 12/11 (camino 2+3, mails) — LEER PRIMERO:** el registro corre solo (1.841 mails) y el reporte sale 7:48 todos los días, pero **nada se procesa ni se mueve solo**. Plan de acción entregado y registrado → [A-FEAT-1625](#a-feat-1625) (orden de JMS: paso 0 auditar la clasificación → propaganda fuera de la bandeja, en ensayo primero → avisos agrupados sin cajonear → facturas guardadas siempre → contador → ARBA → Red Vial/ABL). **Espera**: el OK de JMS al plan; si lo da, arrancar por el paso 0 (propuesta por remitente, incluidos los 50 sin regla). Nada tocado en la base, la casilla ni el GAS (sigue 0.26.0).
 
 > 📍 **Estado al cierre del 31/10 (terminal GAS) — LEER PRIMERO:**
 > - **Punto 1 (resúmenes) TERMINADO**: con marzo de Cotitulares $ intercalado (script 150). Sólo queda decidir la cuenta corriente vieja de PAM (0000862-2).
