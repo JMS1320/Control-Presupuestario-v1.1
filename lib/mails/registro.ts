@@ -26,8 +26,16 @@ export const TIPOS_MAIL: { id: TipoMail; nombre: string }[] = [
 ]
 export const NOMBRE_TIPO_MAIL: Record<string, string> = Object.fromEntries(TIPOS_MAIL.map(t => [t.id, t.nombre]))
 
+/**
+ * Las ACCIONES con el nombre que usa JMS (A-FEAT-1625, 13/11): «Archivar» = sale de Recibidos a su carpeta · «Reporte» =
+ * figura en el reporte (todo figura) · «Tarea» = hay algo que hacer, queda abierta hasta que se atiende. En la base siguen
+ * siendo `archivar` / `guardar` / `avisar` (el GAS y el trigger del script 147 las leen así).
+ */
+export const ACCIONES_MAIL: AccionMail[] = ["archivar", "guardar", "avisar"]
+export const NOMBRE_ACCION_MAIL: Record<AccionMail, string> = { archivar: "Archivar", guardar: "Reporte", avisar: "Tarea" }
+
 export const NOMBRE_GRUPO_MAIL: Record<GrupoMail, string> = {
-  mirar: "Para mirar", sin_regla: "Sin regla", guardado: "Guardados", archivado: "Archivados", enviado: "Enviados",
+  mirar: "Tareas", sin_regla: "Sin regla", guardado: "Reporte", archivado: "Archivados", enviado: "Enviados",
 }
 
 export interface MailRegistrado {
@@ -321,14 +329,29 @@ export type AlcanceTipo = "este" | "remitente" | "remitente_asunto"
 export function reglaParaAlcance(
   reglas: ReglaMail[],
   m: Pick<MailRegistrado, "sentido" | "remitente" | "destinatarios" | "accion">,
-  alcance: Exclude<AlcanceTipo, "este">, tipo: string, asuntoContiene?: string,
+  alcance: Exclude<AlcanceTipo, "este">, tipo: string, asuntoContiene?: string, accionElegida?: AccionMail,
 ): { existente: ReglaMail | null; regla: { remitente_patron: string; asunto_patron: string | null; tipo: string; accion: AccionMail; orden: number } } {
   const remitente_patron = contraparteDeMail(m)
   const asunto_patron = alcance === "remitente_asunto" ? (asuntoContiene ?? "").trim() || null : null
   const existente = reglas.find(r => r.remitente_patron.trim().toLowerCase() === remitente_patron &&
     sinTildes(r.asunto_patron ?? "") === sinTildes(asunto_patron ?? "")) ?? null
-  const accion = (existente?.accion ?? m.accion ?? "guardar") as AccionMail
+  // La acción elegida manda (A-FEAT-1625: «debo poder editar cada cosa»); si no se eligió, la que ya tenía
+  const accion = (accionElegida ?? existente?.accion ?? m.accion ?? "guardar") as AccionMail
   return { existente, regla: { remitente_patron, asunto_patron, tipo, accion, orden: existente ? Math.min(existente.orden, 5) : 5 } }
+}
+
+/**
+ * Pura: qué se escribe al cambiar bloque y/o acción de SÓLO ESTE mail (A-FEAT-1625).
+ * No hay columna «acción a mano»: el mail queda protegido con `tipo_manual` (reaplicar las reglas saltea los ✎), así la
+ * acción elegida tampoco la pisa ninguna regla. Si se elige lo mismo que ya tiene y no estaba marcado, no se marca.
+ * Si pasa a Tarea y nadie lo había marcado, nace pendiente (como lo que entra «avisar», trigger del script 147).
+ */
+export function cambioSoloEste(
+  m: Pick<MailRegistrado, "tipo" | "tipo_manual" | "accion" | "seguimiento">, tipo: string, accion: AccionMail,
+): { tipo_manual: string | null; accion: AccionMail; seguimiento?: "pendiente" } {
+  const igual = tipo === (m.tipo_manual || m.tipo) && accion === m.accion
+  const tipo_manual = igual ? (m.tipo_manual ?? null) : (tipo === m.tipo && accion === m.accion ? null : tipo)
+  return { tipo_manual, accion, ...(accion === "avisar" && !m.seguimiento ? { seguimiento: "pendiente" as const } : {}) }
 }
 
 /**
