@@ -2960,9 +2960,11 @@ function hojaDeGranos(c: CuadreGranos, v: ValuacionGranos, fechaCierre: string, 
   }
   if (c.certificaciones) {
     f.push(["COSECHA — certificaciones electrónicas de granos del ejercicio (el depósito en acopio; son el respaldo de la cosecha)"])
-    f.push(["Fecha", "Depositario", "Comprobante", "Certificación (PDF)"])
+    f.push(["Fecha", "Depositario", "Comprobante", "Certificación (PDF)", "Toneladas"])
     if (!c.certificaciones.length) f.push(["(no hay certificaciones cargadas en el ejercicio)"])
-    c.certificaciones.forEach(x => f.push([x.fecha, x.depositario, x.comprobante, x.url ? conLink("ver la certificación", x.url) : "sin PDF vinculado"]))
+    // 🌾 A-FEAT-1627: con las toneladas de cada una (la cosecha sale de la suma cuando no se la escribe a mano)
+    c.certificaciones.forEach(x => f.push([x.fecha, x.depositario, x.comprobante, x.url ? conLink("ver la certificación", x.url) : "sin PDF vinculado", x.toneladas ?? "falta"]))
+    if (c.certificaciones.length) f.push(["Total certificado", "", "", "", c.certificaciones.every(x => x.toneladas != null) ? c.certificaciones.reduce((t, x) => t + (x.toneladas ?? 0), 0) : "falta alguna"])
     f.push([])
   }
   f.push(["VALUACIÓN"])

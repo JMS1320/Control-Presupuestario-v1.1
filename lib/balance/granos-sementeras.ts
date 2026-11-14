@@ -55,7 +55,37 @@ export interface EntradasGranos {
 export interface VentaGrano { fecha: string; quien: string; grano: string | null; toneladas: number; cuenta: string | null; comprobante: string }
 
 /** 📎 Una certificación electrónica de granos (el depósito en acopio: el respaldo de la cosecha). */
-export interface CertificacionGrano { fecha: string; depositario: string; comprobante: string; url: string | null }
+export interface CertificacionGrano {
+  fecha: string; depositario: string; comprobante: string; url: string | null
+  /** 🌾 A-FEAT-1627: el id del comprobante (para guardarle las toneladas) y las toneladas que certifica (peso neto, del PDF). */
+  id?: string
+  toneladas?: number | null
+}
+
+/**
+ * 🌾 A-FEAT-1627 (JMS 14/11: «cosecha = tantas toneladas, que figure en el stock y figure vendido con las liquidaciones… pronto tendremos
+ * otra cosecha, sería bueno tener listo el sistema»): las entradas del cuadre con su DEFAULT DEL DATO REAL (§ 🎚️ de CLAUDE.md):
+ * - **inicio**: lo escrito; si está vacío, la existencia al CIERRE del ejercicio anterior (el cierre de un año es el inicio del siguiente);
+ * - **cosecha**: lo escrito; si está vacío, la SUMA de las toneladas de las certificaciones del ejercicio (si a alguna le faltan las
+ *   toneladas, no se suma a medias: se dice cuántas faltan).
+ * Y el control por dos caminos: si la cosecha está escrita y las certificaciones también suman, la diferencia se muestra.
+ */
+export function entradasDeGranos(e: { inicio: number | null; cosecha: number | null; cierreAnterior: number | null; certificaciones: CertificacionGrano[] }): {
+  inicio: { tn: number | null; origen: "escrito" | "cierre anterior" | "falta" }
+  cosecha: { tn: number | null; origen: "escrita" | "certificaciones" | "falta"; certificadoTn: number | null; sinToneladas: number; diferenciaTn: number | null }
+} {
+  const conTn = e.certificaciones.filter(c => c.toneladas != null && Number.isFinite(c.toneladas))
+  const sinToneladas = e.certificaciones.length - conTn.length
+  const certificadoTn = e.certificaciones.length && !sinToneladas ? redondear(conTn.reduce((t, c) => t + (c.toneladas ?? 0), 0), 3) : null
+  const cosechaTn = e.cosecha ?? certificadoTn
+  return {
+    inicio: e.inicio != null ? { tn: e.inicio, origen: "escrito" } : e.cierreAnterior != null ? { tn: e.cierreAnterior, origen: "cierre anterior" } : { tn: null, origen: "falta" },
+    cosecha: {
+      tn: cosechaTn, origen: e.cosecha != null ? "escrita" : certificadoTn != null ? "certificaciones" : "falta", certificadoTn, sinToneladas,
+      diferenciaTn: e.cosecha != null && certificadoTn != null ? redondear(e.cosecha - certificadoTn, 3) : null,
+    },
+  }
+}
 
 /**
  * 🌾 A-FEAT-1574 (JMS 06/11): las toneladas que de verdad SALIERON como grano. ⚠️ Cambió 06/11: hasta acá se sumaban todas las

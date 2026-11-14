@@ -41,7 +41,7 @@ import {
   armarStockInsumos, desdeStockInsumo, existenciaAlCierre, PAPELES_SIN_ORIGEN, type StockInsumos,
 } from "@/lib/balance/stock-insumos"
 import {
-  cuadrarGranos, ventasDeGrano, type CertificacionGrano, valuarGranos, armarSementeras,
+  cuadrarGranos, ventasDeGrano, entradasDeGranos, type CertificacionGrano, valuarGranos, armarSementeras,
   type CuadreGranos, type ValuacionGranos, type Sementeras,
 } from "@/lib/balance/granos-sementeras"
 import { MarcaTentativo } from "@/components/marca-tentativo"
@@ -142,6 +142,20 @@ export function HaciendaAlCierre({
   const precios = useDatosDelBalance(empresa, ejercicio.anioCierre, "hacienda.precio")
   const manuales = precios.valores
   const cuadre = useDatosDelBalance(empresa, ejercicio.anioCierre, "granos")
+  /** 🌾 A-FEAT-1627: las toneladas de cada certificación electrónica de granos (clave = id del comprobante), y el cierre del año anterior. */
+  const tnCert = useDatosDelBalance(empresa, ejercicio.anioCierre, "granos.certificaciones")
+  const [cierreAnteriorGranos, setCierreAnteriorGranos] = useState<number | null>(null)
+  useEffect(() => {
+    let vivo = true
+    supabase.from("balance_datos_usuario").select("valor").eq("empresa", empresa).eq("anio_cierre", ejercicio.anioCierre - 1).eq("papel", "granos").eq("clave", "cierre").maybeSingle()
+      .then(({ data }) => { if (vivo) setCierreAnteriorGranos(data?.valor != null ? Number(data.valor) : null) })
+    return () => { vivo = false }
+  }, [empresa, ejercicio.anioCierre])
+  /** Las entradas del cuadre con su default (inicio = cierre anterior · cosecha = las certificaciones). */
+  const entradasGranos = (certs: CertificacionGrano[]) => entradasDeGranos({
+    inicio: tn(cuadre.valores.inicio ?? ""), cosecha: tn(cuadre.valores.cosecha ?? ""), cierreAnterior: cierreAnteriorGranos,
+    certificaciones: certs.map(c => ({ ...c, toneladas: c.id ? tn(tnCert.valores[c.id] ?? "") : null })),
+  })
   /**
    * 🐄🌾 A-FEAT-1386: los saldos Sistema · SENASA · Campo · Balance. Viven ACÁ (no en cada tabla) para que lo que se
    * ve y lo que va al Excel salga del mismo lugar. Campo y Balance de insumos: la foto del Balance propio.
@@ -256,7 +270,7 @@ export function HaciendaAlCierre({
       // 📎 A-FEAT-1574: las certificaciones electrónicas de granos del ejercicio (el depósito en acopio = la cosecha), con su PDF
       const { data: certs } = await supabase
         .schema("msa").from("comprobantes_arca")
-        .select("fecha_emision, denominacion_emisor, punto_venta, numero_desde, pdf_drive_url, tipo_comprobante_desc")
+        .select("id, fecha_emision, denominacion_emisor, punto_venta, numero_desde, pdf_drive_url, tipo_comprobante_desc")
         .eq("tipo_comprobante", 332)
         .gte("fecha_emision", `${Number(ejercicio.fechaCierre.slice(0, 4)) - 1}-07-01`)
         .lte("fecha_emision", ejercicio.fechaCierre)
@@ -398,7 +412,7 @@ export function HaciendaAlCierre({
       const ventasGranosTn = ventasGrano.tn
       const certificacionesGrano: CertificacionGrano[] = ((certs ?? []) as Array<Record<string, unknown>>).map(c => ({
         fecha: String(c.fecha_emision ?? "").slice(0, 10), depositario: String(c.denominacion_emisor ?? ""),
-        comprobante: `${c.punto_venta ?? ""}-${c.numero_desde ?? ""}`.replace(/^-/, ""), url: (c.pdf_drive_url as string) ?? null,
+        comprobante: `${c.punto_venta ?? ""}-${c.numero_desde ?? ""}`.replace(/^-/, ""), url: (c.pdf_drive_url as string) ?? null, id: String(c.id ?? ""),
       }))
 
       /**
@@ -475,10 +489,10 @@ export function HaciendaAlCierre({
         campo: {
           granos: {
             ...cuadrarGranos({
-              stockInicioTn: tn(granos.inicio), cosechaTn: tn(granos.cosecha),
+              stockInicioTn: entradasGranos(certificacionesGrano).inicio.tn, cosechaTn: entradasGranos(certificacionesGrano).cosecha.tn,
               ventasTn: ventasGranosTn, stockEmpresaTn: tn(granos.cierre),
             }),
-            ventas: ventasGrano, certificaciones: certificacionesGrano,
+            ventas: ventasGrano, certificaciones: certificacionesGrano.map(c => ({ ...c, toneladas: c.id ? tn(tnCert.valores[c.id] ?? "") : null })),
             // 🤖 A-FEAT-1386: el stock al inicio que puso Claude sale TENTATIVO en el Excel hasta el OK
             notaInicio: leyendaTentativo(cuadre.tentativos.inicio) || undefined,
           },
@@ -534,9 +548,11 @@ export function HaciendaAlCierre({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saldos])
 
+  const certsGranos = datos?.campo?.granos?.certificaciones ?? []
+  const entGranos = entradasGranos(certsGranos)
   const cuadreGranos: CuadreGranos = cuadrarGranos({
-    stockInicioTn: tn(granos.inicio),
-    cosechaTn: tn(granos.cosecha),
+    stockInicioTn: entGranos.inicio.tn,
+    cosechaTn: entGranos.cosecha.tn,
     ventasTn: datos?.ventasGranosTn ?? 0,
     stockEmpresaTn: tn(granos.cierre),
   })
@@ -733,14 +749,18 @@ export function HaciendaAlCierre({
               <div className="flex flex-wrap items-end gap-2 text-xs">
                 <label className="block">
                   <span className="block text-muted-foreground">Stock al inicio</span>
-                  <Input type="text" placeholder="0,00" className="h-6 w-24 text-xs"
+                  {/* 🌾 A-FEAT-1627: vacío = el cierre del ejercicio anterior (se ve de dónde viene); escrito = manda el tuyo */}
+                  <Input type="text" placeholder={cierreAnteriorGranos != null ? fmt(cierreAnteriorGranos) : "0,00"} className="h-6 w-24 text-xs"
                     value={granos.inicio} onChange={e => cuadre.cambiar("inicio", e.target.value)} />
+                  {!String(granos.inicio).trim() && cierreAnteriorGranos != null && <span className="block text-[11px] text-muted-foreground">del cierre {ejercicio.anioCierre - 1}</span>}
                   <MarcaTentativo fuente={cuadre.tentativos.inicio} onOk={() => cuadre.confirmar("inicio")} />
                 </label>
                 <label className="block">
                   <span className="block text-muted-foreground">Cosecha</span>
-                  <Input type="text" placeholder="0,00" className="h-6 w-24 text-xs"
+                  {/* 🌾 A-FEAT-1627: vacío = la suma de las certificaciones de abajo; escrito = manda el tuyo (y se controla contra ellas) */}
+                  <Input type="text" placeholder={entGranos.cosecha.certificadoTn != null ? fmt(entGranos.cosecha.certificadoTn) : "0,00"} className="h-6 w-24 text-xs"
                     value={granos.cosecha} onChange={e => cuadre.cambiar("cosecha", e.target.value)} />
+                  {!String(granos.cosecha).trim() && entGranos.cosecha.certificadoTn != null && <span className="block text-[11px] text-muted-foreground">de las certificaciones</span>}
                 </label>
                 <div>
                   <span className="block text-muted-foreground">Ventas (de la app)</span>
@@ -763,6 +783,32 @@ export function HaciendaAlCierre({
                     </span>
                   )}
                 </label>
+              </div>
+              {/* 🌾 A-FEAT-1627: las certificaciones electrónicas del ejercicio (la cosecha depositada en acopio), cada una con sus toneladas.
+                  Las toneladas se escriben UNA vez (peso neto de la certificación) y la cosecha sale sola de la suma. */}
+              <div className="rounded border p-2 text-xs space-y-1" data-test="granos-certificaciones">
+                <div className="font-medium">Cosecha — certificaciones electrónicas del ejercicio</div>
+                {certsGranos.length === 0 && <div className="text-muted-foreground">No hay certificaciones cargadas en el ejercicio (se importan como comprobante tipo 332, «Certificación Electrónica de Granos»).</div>}
+                {certsGranos.map(c => (
+                  <div key={c.id || c.comprobante} className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono">{c.fecha.split("-").reverse().join("/")}</span>
+                    <span>{c.depositario}</span>
+                    <span className="text-muted-foreground">N° {c.comprobante}</span>
+                    {c.url && <a className="underline" href={c.url} target="_blank" rel="noreferrer">ver la certificación</a>}
+                    {c.id && (
+                      <label className="flex items-center gap-1">
+                        <span className="text-muted-foreground">toneladas (peso neto)</span>
+                        <Input type="text" placeholder="0,000" className={`h-6 w-24 text-xs ${tnCert.valores[c.id] ? "" : "border-amber-400"}`}
+                          value={tnCert.valores[c.id] ?? ""} onChange={e => tnCert.cambiar(c.id!, e.target.value)} />
+                      </label>
+                    )}
+                  </div>
+                ))}
+                {entGranos.cosecha.sinToneladas > 0 && <div className="text-amber-700">⚠️ {entGranos.cosecha.sinToneladas} certificación(es) sin las toneladas: la cosecha no se suma a medias. Escribilas (están en el PDF, «peso neto»).</div>}
+                {entGranos.cosecha.diferenciaTn != null && Math.abs(entGranos.cosecha.diferenciaTn) > 0.001 && (
+                  <div className="text-amber-700">⚠️ La cosecha escrita ({fmt(tn(granos.cosecha) ?? 0)} t) no coincide con las certificaciones ({fmt(entGranos.cosecha.certificadoTn ?? 0)} t): diferencia {fmt(entGranos.cosecha.diferenciaTn)} t.</div>
+                )}
+                {entGranos.cosecha.diferenciaTn != null && Math.abs(entGranos.cosecha.diferenciaTn) <= 0.001 && <div className="text-emerald-700">✓ La cosecha escrita coincide con las certificaciones.</div>}
               </div>
               <p className="text-xs text-muted-foreground">
                 Cargá lo que falte y apretá <strong>Recalcular</strong> para que entre al Excel.

@@ -274,7 +274,7 @@ import { echeqDelDebito } from "@/lib/conciliacion/echeq-del-debito"
 import { agregarAlHilo, hiloDelTema } from "@/lib/balance/hilo-tema"
 import { RENGLONES as RENGLONES_BALANCE } from "@/lib/balance/balance-propio"
 import {
-  cuadrarGranos, ventasDeGrano, valuarGranos, armarSementeras, type OrdenAgricola,
+  cuadrarGranos, ventasDeGrano, valuarGranos, armarSementeras, entradasDeGranos, type OrdenAgricola,
 } from "@/lib/balance/granos-sementeras"
 import {
   armarLibroDiario, detectarChoques, detectarSubdiariosDuplicados, tipoDesdeTexto, desdeArca, desdeHistorico, cargadaAMano,
@@ -13965,6 +13965,20 @@ export function correrCasos(): Resultado[] {
     // corriente = ((3000+1000+600−200)/20 − (1000+400−100)/10) = 220 − 130 = 90 · recría US$ 1000/20 − 400/10 = 10 → sin recría 80
     const e2 = "líquida − corriente 0 · revalúo + reinvertido − variación cría 0 · sin recría 80"
     chequear("Balance propio", "📸 El desglose cierra por los dos caminos: la ganancia líquida = la corriente, y revalúo + reinvertido = la variación de la cría", e2, v2, v2 === e2, "A-FEAT-1190")
+  }
+
+  // ══ 🌾 Granos: la próxima cosecha se registra sola (A-FEAT-1627) ══
+  {
+    const cert = (id: string, t: number | null) => ({ fecha: "2027-04-20", depositario: "AFA", comprobante: id, url: null, id, toneladas: t })
+    // año que viene: nada escrito → inicio = el cierre 25/26 (0) y cosecha = la suma de las certificaciones
+    const a = entradasDeGranos({ inicio: null, cosecha: null, cierreAnterior: 0, certificaciones: [cert("1", 10.5), cert("2", 4.62)] })
+    // una certificación sin toneladas: la cosecha NO se suma a medias
+    const b = entradasDeGranos({ inicio: null, cosecha: null, cierreAnterior: 0, certificaciones: [cert("1", 10.5), cert("2", null)] })
+    // escrita a mano: manda la escrita, y se controla contra las certificaciones
+    const c = entradasDeGranos({ inicio: 6.926, cosecha: 15.2, cierreAnterior: null, certificaciones: [cert("42191", 15.12)] })
+    const v = `a: inicio ${a.inicio.tn} (${a.inicio.origen}) · cosecha ${a.cosecha.tn} (${a.cosecha.origen}) | b: cosecha ${b.cosecha.tn} · faltan ${b.cosecha.sinToneladas} | c: inicio ${c.inicio.tn} (${c.inicio.origen}) · cosecha ${c.cosecha.tn} (${c.cosecha.origen}) · dif ${c.cosecha.diferenciaTn}`
+    const e = "a: inicio 0 (cierre anterior) · cosecha 15.12 (certificaciones) | b: cosecha null · faltan 1 | c: inicio 6.926 (escrito) · cosecha 15.2 (escrita) · dif 0.08"
+    chequear("Granos", "🌾 El inicio toma el cierre del año anterior y la cosecha la suma de las certificaciones (sin sumar a medias); lo escrito manda y se controla contra las certificaciones", e, v, v === e, "A-FEAT-1627")
   }
   return r
 }

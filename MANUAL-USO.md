@@ -3450,6 +3450,15 @@ saldo − existencia al cierre = DIFERENCIA
 **La app ya pone las ventas** (de los comprobantes de venta). Las otras tres las cargás vos, más el
 precio por tonelada para la valuación.
 
+**Desde el 14/11 dos de ellas se completan solas** (si las dejás vacías; si escribís, manda lo tuyo):
+- **Stock al inicio**: toma la **existencia al cierre del ejercicio anterior** (abajo dice «del cierre 2026»).
+- **Cosecha**: la **suma de las certificaciones electrónicas** del ejercicio. Debajo del cuadro está la lista
+  «Cosecha — certificaciones electrónicas», cada una con el link al PDF y una casilla **«toneladas (peso neto)»**:
+  escribís las toneladas **una vez** al llegar cada certificación, y la cosecha sale sola. Si a alguna le faltan,
+  no suma a medias y lo avisa. Si escribís la cosecha a mano, te dice si coincide con las certificaciones.
+
+→ A-TEST-1379
+
 🔑 **La diferencia se muestra aunque no dé cero** — como vos la dejabas escrita. Si no cierra, lo
 dice; no la maquilla. Y si dejás campos vacíos, **no dice que cierra**: lista qué falta, porque
 vacío significa *«no lo sé»*, no cero.
