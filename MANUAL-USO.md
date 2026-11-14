@@ -3611,6 +3611,22 @@ con el dólar BNA importado a esa fecha.
 
 ⚠️ Sin probar todavía → A-TEST-1182
 
+**Con el modelo de tu planilla (BAPU)** *(2026-11-14)*. Abajo de los resultados, en verde, la ganancia como la sacás vos: los
+flujos del año (dólares MEP y distribución de fondos) van sólo en el cierre, cada punta con su dólar, y la **ganancia corriente
+sin las vacas** (son la fábrica) al lado de la total, en US$ y en $. **«⬇️ Bajar el Excel (modelo de tu planilla)»** baja el libro
+con las dos columnas en pesos y las dos en dólares, subtotal y control por rubro.
+
+**El mismo Excel con el desglose**: en **Papeles de balance → «🗂️ Libros por partes» → «📸 Balance propio (Excel)»**. Si antes
+apretaste «Traer stock y precios», trae además la **ganancia desglosada** (total − suba del precio de las vacas = del ejercicio −
+lo reinvertido en vacas = líquida − la recría = líquida sin la recría, con sus controles) y la hacienda a **promedio de junio** de
+cada año.
+
+**La hacienda interna (promedio de junio)**: en el papel **02.1 Stock valorizado**, abajo de todo, «VALUACIÓN INTERNA — PROMEDIO DE
+JUNIO»: las mismas cabezas y kilos que la del contador, pero cada categoría al **promedio de todo junio** de cada año (Entre Surcos
+y Cañuelas), y al final contador contra interna. Es tu análisis propio: lo de arriba es lo que va al contador.
+
+→ A-TEST-1378
+
 ## 👁️ Papeles de balance → vista previa antes de bajar el Excel *(2026-10-30)*
 
 En **Reportes → Papeles de balance**, el botón **«⚡ Armar todo»** hace los tres pasos de una: arma el libro, trae stock

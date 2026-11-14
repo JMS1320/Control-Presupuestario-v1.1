@@ -90,6 +90,8 @@ export interface CriterioValuacion {
   segunPeso?: boolean
   /** 📗 A-FEAT-1541: si la categoría por cabeza no se operó, estas otras, en orden (toro colorado → negro). */
   alternativasPorCabeza?: string[]
+  /** 🐄 A-FEAT-1568: Entresurcos por kilo al PROMEDIO del rango (no al máximo) — lo pone `valuarHacienda` con `soloPromedio`. */
+  usarPromedioKilo?: boolean
   /** El castigo o la prima: 0,9 · 0,8 · 0,7 · 1,5 · 1,1. */
   factor: number
   /**
@@ -395,13 +397,14 @@ function precioDeMercado(c: CriterioValuacion, filas: PrecioMercado[], pesoKg?: 
   const exacto = conPeso ? filas.filter(f => f.pesoLo <= pesoKg! && (f.pesoHi == null || pesoKg! < f.pesoHi)) : []
   const candidatas = exacto.length ? exacto : filas.filter(f => f.pesoLo <= hasta && (f.pesoHi ?? Infinity) >= desde)
   if (candidatas.length === 0) return null
-  const valores = candidatas.map(f => f.kiloMax || f.promKilo).filter(v => v > 0)
+  const valores = candidatas.map(f => (c.usarPromedioKilo ? f.promKilo : f.kiloMax || f.promKilo)).filter(v => v > 0)
   if (valores.length === 0) return null
+  const campo = c.usarPromedioKilo ? "promedio" : "máximo"
   return {
     precio: valores.reduce((a, b) => a + b, 0) / valores.length,
     origen: conPeso
-      ? `Entresurcos · ${c.sexo === "hembra" ? "terneras" : "terneros"} ${candidatas.map(f => `${f.pesoLo}-${f.pesoHi ?? "+"}`).join(" / ")} kg (pesan ${Math.round(pesoKg! * 10) / 10}) · máximo${fechaDe(candidatas)}`
-      : `Entresurcos · ${c.sexo === "hembra" ? "terneras" : "terneros"} ${desde}-${hasta === Infinity ? "+" : hasta} kg · máximo${fechaDe(candidatas)}`,
+      ? `Entresurcos · ${c.sexo === "hembra" ? "terneras" : "terneros"} ${candidatas.map(f => `${f.pesoLo}-${f.pesoHi ?? "+"}`).join(" / ")} kg (pesan ${Math.round(pesoKg! * 10) / 10}) · ${campo}${fechaDe(candidatas)}`
+      : `Entresurcos · ${c.sexo === "hembra" ? "terneras" : "terneros"} ${desde}-${hasta === Infinity ? "+" : hasta} kg · ${campo}${fechaDe(candidatas)}`,
   }
 }
 
@@ -429,8 +432,16 @@ export function valuarHacienda(
   pesos: PesoCategoria[] = [],
   /** Entresurcos por cabeza: vientres y toros. Vacío = esas categorías quedan como hueco. */
   porCabeza: Record<"vientres" | "toros", PrecioCabeza[]> = { vientres: [], toros: [] },
+  /**
+   * 🐄 A-FEAT-1568 (JMS 14/11: «podemos tomar el promedio para todo»): la valuación INTERNA del balance propio. Con `soloPromedio`
+   * cada criterio toma el PROMEDIO de su fuente (no el máximo ni el mínimo): se usa con las tablas del MES (rango 01→30/06), que es lo
+   * que suaviza un remate raro. La del contador sigue igual (último dato publicado, con su criterio).
+   */
+  opciones: { soloPromedio?: boolean } = {},
 ): ValuacionHacienda {
-  const porCategoria = new Map(CRITERIOS.map(c => [c.categoria, c]))
+  const aPromedio = (c: CriterioValuacion): CriterioValuacion =>
+    opciones.soloPromedio ? { ...c, magCampo: "promedio", campoPorCabeza: "promedio", usarPromedioKilo: true } : c
+  const porCategoria = new Map(CRITERIOS.map(c => [c.categoria, aPromedio(c)]))
   const sinCriterio = existencias
     .filter(e => e.cabezas > 0 && !porCategoria.has(e.categoria))
     .map(e => e.categoria)

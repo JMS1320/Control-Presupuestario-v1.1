@@ -2684,6 +2684,9 @@ export type DatosPapelHacienda = {
   valuacion: ValuacionHacienda
   movimientosPapel: MovimientoPapel[]
   valuacionInicio?: ValuacionHacienda | null
+  /** 🐄 A-FEAT-1568: la valuación INTERNA (promedio de junio, todo a promedio) del cierre y del inicio. */
+  internaCierre?: ValuacionHacienda | null
+  internaInicio?: ValuacionHacienda | null
   tablasInicio?: TablasPreciosPapel | null
   tablasCierre?: TablasPreciosPapel | null
   tcCierre?: number | null
@@ -2711,6 +2714,7 @@ export function agregarPapelHacienda(wb: XLSX.WorkBook, hacienda: DatosPapelHaci
     fechaInicio: new Date(Date.parse(`${primerDia}T12:00:00Z`) - 86400000).toISOString().slice(0, 10), tcCierre: hacienda.tcCierre ?? null,
     ddjjInicio: ddjj ? { cuenta: ddjj.cuenta, denominacion: ddjj.denominacion, valor: ddjj.hist } : null,
     tablasCierre: hacienda.tablasCierre ?? null, tablasInicio: hacienda.tablasInicio ?? null,
+    internaCierre: hacienda.internaCierre ?? null, internaInicio: hacienda.internaInicio ?? null,
   }
   hoja(wb, "02.1 Stock valorizado", hojaStockValorizado(valorizado), COLS_STOCK_VALORIZADO)
   hoja(wb, "02.2 Precios tomados", hojaPreciosTomados([

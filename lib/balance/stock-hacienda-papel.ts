@@ -344,6 +344,9 @@ export interface DatosValorizado {
   /** 💵 Las tablas de precios (para el ternero liviano 180–200 kg de referencia). */
   tablasCierre?: { macho: PrecioMercado[]; hembra: PrecioMercado[] } | null
   tablasInicio?: { macho: PrecioMercado[]; hembra: PrecioMercado[] } | null
+  /** 🐄 A-FEAT-1568: la valuación INTERNA del balance propio (promedio de junio, todo a promedio) del cierre y del inicio. */
+  internaCierre?: ValuacionHacienda | null
+  internaInicio?: ValuacionHacienda | null
 }
 
 /** 💰 La solapa «02.1 Stock valorizado». */
@@ -380,7 +383,29 @@ export function hojaStockValorizado(d: DatosValorizado): unknown[][] {
     f.push([fila[0], "", "", "", "", { t: "n", f: `F${r}`, v: 0 }, p.valor[cat] ?? 0, "", { t: "n", f: `F${rr}-G${rr}`, v: 0 }])
   }
   variacionDePrecios(f, d, cie, ini)
+  valuacionInterna(f, d)
   return f
+}
+
+/**
+ * 🐄 A-FEAT-1568 (JMS 14/11: «para lo interno, el promedio de junio del 25 y el de junio del 26… que esté marcado que difiere de cómo
+ * se le presenta al contador»): la valuación del BALANCE PROPIO, abajo de todo y separada. Mismas cabezas y kilos que la de arriba; el
+ * precio es el PROMEDIO DEL MES de junio de cada año (rango 01→30/06, todas las categorías a promedio), con el 10 % de comercialización.
+ */
+function valuacionInterna(f: unknown[][], d: DatosValorizado) {
+  if (!d.internaCierre && !d.internaInicio) return
+  f.push([], [], [conEstilo("VALUACIÓN INTERNA — PROMEDIO DE JUNIO (balance propio)", { font: { bold: true, sz: 12 } })])
+  f.push(["⚠️ Análisis económico propio: DISTINTO de lo que se presenta al contador (arriba). Precio = promedio de todo junio de cada año en Entre Surcos y Cañuelas (todas las categorías a promedio), para que un remate raro no mueva el resultado. Mismas cabezas y kilos que arriba."])
+  const tc = d.tcCierre ?? 1
+  const bc = d.internaCierre ? bloque22(f, `INTERNA — PROMEDIO DE JUNIO ${d.fechaCierre.slice(0, 4)}`, d.internaCierre, tc, "el del cierre (los US$ del balance propio usan el promedio de divisas)") : null
+  const bi = d.internaInicio ? bloque22(f, `INTERNA — PROMEDIO DE JUNIO ${d.fechaInicio.slice(0, 4)}`, d.internaInicio, PAPELES_JMS_INICIO_2025.tc, "el de los papeles de JMS 2025 (TC prom div)") : null
+  f.push([]); f.push(["CONTADOR CONTRA INTERNA (neto del 10 %)", "", "", "", "", pesos("Contador"), pesos("Interna"), "", pesos("Diferencia")])
+  const fila = (nombre: string, contador: number | null | undefined, interna: number | null | undefined, ref: string | null) => {
+    const r = f.length + 1
+    f.push([nombre, "", "", "", "", pesos(contador ?? 0), pesos(ref ? { t: "n", f: ref, v: interna ?? 0 } : interna ?? 0), "", pesos({ t: "n", f: `G${r}-F${r}`, v: (interna ?? 0) - (contador ?? 0) })])
+  }
+  fila(`Cierre ${dmy(d.fechaCierre)}`, d.cierre.neto ?? d.cierre.valuado, d.internaCierre?.neto ?? null, bc ? `F${bc.rt}` : null)
+  if (d.inicio) fila(`Inicio ${dmy(d.fechaInicio)}`, d.inicio.neto ?? d.inicio.valuado, d.internaInicio?.neto ?? null, bi ? `F${bi.rt}` : null)
 }
 
 /**

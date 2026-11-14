@@ -125,6 +125,13 @@ import { esDeLaAseguradora } from "@/lib/polizas/control-debitos"
 //    (A-OP-23); es genérica y conviene moverla, pero duplicarla sería peor.
 import { hoyArgentina } from "@/lib/cotizaciones/parsers"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
+import XLSX from "xlsx-js-style"
+import { armarLibroBalancePropio, gananciaBapu, type PuntaBalancePropio, type CategoriaHacienda } from "@/lib/balance/balance-propio-excel"
+import { valoresEfectivos } from "@/lib/balance/balance-propio"
+import { GRUPO_RODEO } from "@/lib/balance/stock-hacienda-papel"
+import { vistasDe } from "@/lib/balance/export-libro-diario"
+import { aplicarVistas } from "@/lib/balance/formato-excel"
+import { descargarBlob } from "@/lib/descargar-archivo"
 
 const fmt = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
@@ -469,6 +476,40 @@ export function PapelesDeBalance() {
       else if (!r.archivos.length) toast.warning("Nada de lo tildado trajo solapas en este armado.")
       else toast.success(`✓ ${r.archivos.length} archivo(s) bajado(s)${aValor ? ` · ${aValor} fórmula(s) que apuntaban afuera del archivo quedaron con su valor (ver «Control del papel»)` : ""}`)
     } finally { setBajandoPapeles(false) }
+  }
+  /**
+   * 📸 A-FEAT-1190 (JMS 14/11: «tiene que ser un exportable»): el BALANCE PROPIO en Excel desde la app — las fotos guardadas (versión JMS)
+   * del 30/06 de inicio y de cierre, con el modelo de su planilla; el desglose (revalúo de las vacas, lo reinvertido, la recría) con la
+   * hacienda INTERNA (promedio de junio) por categoría, que se trae con «Traer stock y precios». Mismo libro que el script.
+   */
+  const bajarBalancePropio = async (lib: LibroDiario) => {
+    try {
+      const fc = lib.ejercicio.fechaCierre, fi = `${Number(fc.slice(0, 4)) - 1}${fc.slice(4)}`
+      const { data: fotos, error } = await supabase.from("balance_fotos").select("id, fecha_cierre, tc, tc_fuente").eq("empresa", empresa.id).in("fecha_cierre", [fi, fc]).order("fecha_cierre")
+      if (error) throw new Error(error.message)
+      if ((fotos ?? []).length !== 2) { toast.warning(`Faltan las fotos del balance propio al ${fi.split("-").reverse().join("/")} y al ${fc.split("-").reverse().join("/")} (Reportes → 📸 Balance propio).`); return }
+      const punta = async (f: { id: string; fecha_cierre: string; tc: number | null; tc_fuente: string | null }): Promise<PuntaBalancePropio> => {
+        const { data } = await supabase.from("balance_foto_valores").select("renglon, version, importe, detalle").eq("foto_id", f.id)
+        const vs = (data ?? []) as Array<{ renglon: string; version: string; importe: number; detalle: string | null }>
+        return { fecha: f.fecha_cierre, tc: Number(f.tc ?? 0), tcFuente: f.tc_fuente,
+          valores: new Map(valoresEfectivos(vs as never, "jms").map(x => [x.renglon, { importe: Number(x.importe), detalle: vs.find(v => v.renglon === x.renglon && v.version === "jms")?.detalle ?? null }])) }
+      }
+      const [pi, pc] = await Promise.all([punta(fotos![0]), punta(fotos![1])])
+      // la hacienda interna por categoría (inicio y cierre), si ya se trajo el stock
+      const hi = haciendaRef.current?.internaInicio, hc = haciendaRef.current?.internaCierre
+      const cats = [...new Set([...(hi?.filas ?? []), ...(hc?.filas ?? [])].map(x => x.categoria))]
+      const categorias: CategoriaHacienda[] = hi && hc ? cats.filter(c => GRUPO_RODEO[c]).map(c => {
+        const a = hi.filas.find(x => x.categoria === c), b = hc.filas.find(x => x.categoria === c)
+        return { nombre: c, rodeo: GRUPO_RODEO[c] === "Cría" ? "cría" : "recría", c0: a?.cabezas ?? 0, p0: a?.valorPorCabeza ?? null, c1: b?.cabezas ?? 0, p1: b?.valorPorCabeza ?? null, fuente: b?.origenPrecio }
+      }) : []
+      if (!categorias.length) toast.info("Sin la hacienda por categoría (falta «Traer stock y precios»): el Excel sale sin el desglose.")
+      const wb = armarLibroBalancePropio({ empresa: empresa.id, inicio: pi, cierre: pc, hacienda: categorias })
+      const datos = await aplicarVistas(XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(wb as never))
+      descargarBlob(new Blob([datos as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        `Balance propio ${empresa.id} ${fi.slice(2, 4)}-${fc.slice(2, 4)} (${hoyArgentina()}).xlsx`)
+      const g = gananciaBapu(pi, pc)
+      toast.success(`✓ Balance propio bajado · ganancia total US$ ${Math.round(g.totalUsd).toLocaleString("es-AR")} · corriente US$ ${Math.round(g.corrienteUsd).toLocaleString("es-AR")}`)
+    } catch (e) { toast.error("No se pudo armar el balance propio: " + (e as Error).message) }
   }
   /** Lo que necesita el armado completo (set o papeles): stock, impuestos, estructura y LIB. */
   const entradasDelSet = async (lib: LibroDiario) => {
@@ -1561,6 +1602,10 @@ export function PapelesDeBalance() {
                 )}
                 <Button size="sm" disabled={bajandoPapeles || !tildados.size || !!cargandoConciliacion} onClick={() => void bajarPapeles(libro)}>
                   {bajandoPapeles ? "Armando…" : `⬇️ Bajar ${tildados.size || ""} tildado(s)`}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => void bajarBalancePropio(libro)}
+                  title="Tu balance propio (las fotos guardadas al 30/06) con el modelo de tu planilla, el desglose de la ganancia y la hacienda a promedio de junio">
+                  📸 Balance propio (Excel)
                 </Button>
               </div>
             </div>

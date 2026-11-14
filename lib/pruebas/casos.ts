@@ -243,6 +243,7 @@ import { hojaStockHacienda, hojaDetalleHacienda, hojaStockValorizado, hojaAument
 import { repartoDeLaFlota } from "@/lib/balance/reparto-flota"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda, precioDeCriterio, CRITERIOS } from "@/lib/balance/hacienda-stock"
+import { gananciaBapu, armarLibroBalancePropio, recalcularFormulas as recalcularFormulasBP } from "@/lib/balance/balance-propio-excel"
 import { pesosAlCierre, pesoParaValuar } from "@/lib/balance/pesos-hacienda"
 import { armarStockInsumos, existenciaAlCierre, PAPELES_SIN_ORIGEN, type LineaInsumo } from "@/lib/balance/stock-insumos"
 import { elegirTcAl } from "@/lib/dolares/tc-cierre"
@@ -13921,6 +13922,49 @@ export function correrCasos(): Resultado[] {
     const e4 = "entero 3 sol a valor 0 · base 1 sol [v0] B2=30 B3=7ƒ a valor 1 · grupo 1 sol [v1] C9=20 · completo intacto B2=30ƒ C9=20ƒ"
     chequear("Libros del balance", "✂️ El libro entero conserva todas sus fórmulas; al bajar un sub, la fórmula que apunta a una solapa que quedó afuera queda con su valor (no #REF), la de adentro sigue viva, cada solapa viaja con su formato y el libro completo no se toca",
       e4, v4, v4 === e4, "A-FEAT-1624")
+  }
+
+  // ══ 🐄 Hacienda interna: PROMEDIO de junio en todas las categorías (A-FEAT-1568, JMS 14/11: «el promedio para todo») ══
+  {
+    const toros = [{ categoria: "A.ANGUS GRAL. COLORADO", cantidad: 4, promedio: 7000, maximo: 9000, minimo: 5000 }]
+    const ternera = [{ categoria: "Vaquillonas 210-250 Kg.", pesoLo: 210, pesoHi: 250, promKilo: 50, kiloMax: 70, kiloMin: 40 }]
+    const pesos = [{ categoria: "Ternera Recria", animales: 10, pesoUltimaPesada: 237, fechaUltimaPesada: "2026-06-20", gananciaMedida: null, gananciaConfigurada: null,
+      diasHastaCierre: 0, pesoProyectado: 237, origen: "pesada", difiereDeLaConfigurada: false }]
+    const exist = [{ categoria: "Toro", cabezas: 2 }, { categoria: "Ternera Recria", cabezas: 10 }]
+    const contador = valuarHacienda(exist, [], { macho: [], hembra: ternera }, {}, pesos as never, { vientres: [], toros })
+    const interna = valuarHacienda(exist, [], { macho: [], hembra: ternera }, {}, pesos as never, { vientres: [], toros }, { soloPromedio: true })
+    const vpc = (v: typeof contador, c: string) => v.filas.find(x => x.categoria === c)?.valorPorCabeza
+    const v = `contador: toro ${vpc(contador, "Toro")} (mínimo) · ternera ${vpc(contador, "Ternera Recria")} (máx × 237) | interna: toro ${vpc(interna, "Toro")} · ternera ${vpc(interna, "Ternera Recria")}`
+    const e = "contador: toro 5000 (mínimo) · ternera 16590 (máx × 237) | interna: toro 7000 · ternera 11850"
+    chequear("Balance propio", "🐄 La valuación interna toma el PROMEDIO en todas las categorías (el toro no va al mínimo ni la ternera al máximo); la del contador no cambia", e, v, v === e, "A-FEAT-1568")
+  }
+
+  // ══ 📸 Balance propio con el modelo de la planilla de JMS (BAPU) — A-FEAT-1190 ══
+  {
+    const P = (fecha: string, tc: number, o: Record<string, number>) => ({ fecha, tc, valores: new Map(Object.entries(o).map(([k, v]) => [k, { importe: v }])) })
+    // inicio: caja 1.000, vacas 2.000, distribución del año anterior 500 (flujo: NO va en el inicio) · cierre: caja 1.500, vacas 2.600, distribución 300
+    const ini = P("2025-06-30", 10, { caja: 1000, stock_cria: 2000, stock_recria: 400, distribucion_fondos: 500, proveedores: 100 })
+    const cie = P("2026-06-30", 20, { caja: 3000, stock_cria: 5000, stock_recria: 1000, distribucion_fondos: 600, proveedores: 200 })
+    const g = gananciaBapu(ini, cie)
+    // total: (3000+5000+1000+600−200)/20 − (1000+2000+400−100)/10 = 470 − 330 = 140 · corriente (sin vacas): (3000+1000+600−200)/20 − (1000+400−100)/10 = 220 − 130 = 90
+    const v = `total US$ ${g.totalUsd} · corriente US$ ${g.corrienteUsd}`
+    const e = "total US$ 140 · corriente US$ 90"
+    chequear("Balance propio", "📸 Modelo de su planilla: los flujos del año (distribución) NO van en el inicio, cada punta con su dólar, y la corriente sin las vacas (son la fábrica)", e, v, v === e, "A-FEAT-1190")
+
+    // el desglose con la cría por categoría: vacas 2 → 3 cab., $ 1.000 → $ 1.666,67 por cabeza (sin 10 %)
+    const hac = [{ nombre: "Vacas", rodeo: "cría" as const, c0: 2, p0: 1000, c1: 3, p1: 5000 / 3 / 0.9 * 0.9 / 0.9 * 0.9, fuente: "" },
+      { nombre: "Novillitos", rodeo: "recría" as const, c0: 1, p0: 400 / 0.9, c1: 1, p1: 1000 / 0.9, fuente: "" }]
+    const cie2 = P("2026-06-30", 20, { caja: 3000, stock_cria: 5000 * 0.9 / 0.9, stock_recria: 1000, distribucion_fondos: 600, proveedores: 200 })
+    const ini2 = P("2025-06-30", 10, { caja: 1000, stock_cria: 2 * 1000 * 0.9, stock_recria: 400, distribucion_fondos: 500, proveedores: 100 })
+    hac[0].p1 = 5000 / 3 / 0.9
+    const wb = armarLibroBalancePropio({ empresa: "MSA", inicio: ini2, cierre: cie2, hacienda: hac, comercializacion: 0.1 })
+    const val = recalcularFormulasBP(wb)
+    const fila = (texto: string) => { const s = wb.Sheets["Ganancia desglosada"]; for (let i = 1; i <= 20; i++) { const c = (s as Record<string, { v?: unknown }>)["A" + i]; if (c && String(c.v).startsWith(texto)) return i } return 0 }
+    const B = (t: string) => Math.round(val("Ganancia desglosada", "B" + fila(t)) * 100) / 100
+    const v2 = `líquida − corriente ${B("   control")} · revalúo + reinvertido − variación cría ${B("Control de la cría")} · sin recría ${B("= Ganancia líquida sin")}`
+    // corriente = ((3000+1000+600−200)/20 − (1000+400−100)/10) = 220 − 130 = 90 · recría US$ 1000/20 − 400/10 = 10 → sin recría 80
+    const e2 = "líquida − corriente 0 · revalúo + reinvertido − variación cría 0 · sin recría 80"
+    chequear("Balance propio", "📸 El desglose cierra por los dos caminos: la ganancia líquida = la corriente, y revalúo + reinvertido = la variación de la cría", e2, v2, v2 === e2, "A-FEAT-1190")
   }
   return r
 }

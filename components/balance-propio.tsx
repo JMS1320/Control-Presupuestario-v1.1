@@ -19,8 +19,14 @@ import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { tcDolarAl } from "@/lib/dolares/tc-cierre"
 import {
   RUBROS, RENGLONES, VERSIONES, resultadosDeVersion, enDolares, gananciaDelEjercicio,
-  totalDelRubro, parsearMonto, type Version, type ValorFoto,
+  totalDelRubro, parsearMonto, valoresEfectivos, type Version, type ValorFoto,
 } from "@/lib/balance/balance-propio"
+import XLSX from "xlsx-js-style"
+import { armarLibroBalancePropio, gananciaBapu, type PuntaBalancePropio } from "@/lib/balance/balance-propio-excel"
+import { vistasDe } from "@/lib/balance/export-libro-diario"
+import { aplicarVistas } from "@/lib/balance/formato-excel"
+import { descargarBlob } from "@/lib/descargar-archivo"
+import { hoyArgentina } from "@/lib/fechas"
 
 const fmt = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtFecha = (f: string) => f.split("-").reverse().join("/")
@@ -256,6 +262,32 @@ export function BalancePropio() {
                   )
                 })}
               </div>
+              {/* 📗 A-FEAT-1190 (JMS 14/11): la ganancia con el MODELO DE SU PLANILLA (BAPU) y el Excel — los flujos del año sólo en el cierre,
+                  las vacas como activo no corriente. El desglose por hacienda sale del Excel bajado desde los papeles (necesita la hacienda). */}
+              {anterior && valoresAnterior.some(x => x.version === "jms") && valoresFoto.some(x => x.version === "jms") && (() => {
+                const punta = (f: Foto, vs: FilaValor[]): PuntaBalancePropio => ({ fecha: f.fecha_cierre, tc: Number(f.tc ?? 0), tcFuente: f.tc_fuente,
+                  valores: new Map(valoresEfectivos(vs, "jms").map(x => [x.renglon, { importe: Number(x.importe), detalle: (x as FilaValor).detalle ?? null }])) })
+                const pi = punta(anterior, valoresAnterior), pc = punta(foto, valoresFoto)
+                if (!pi.tc || !pc.tc) return <div className="text-xs text-amber-700">⚠️ Para la ganancia con el modelo de tu planilla, las dos fotos necesitan su tipo de cambio.</div>
+                const g = gananciaBapu(pi, pc)
+                const bajar = async () => {
+                  try {
+                    const wb = armarLibroBalancePropio({ empresa, inicio: pi, cierre: pc })
+                    const datos = await aplicarVistas(XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(wb as any))
+                    descargarBlob(new Blob([datos as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+                      `Balance propio ${empresa} ${pi.fecha.slice(2, 4)}-${pc.fecha.slice(2, 4)} (${hoyArgentina()}).xlsx`)
+                  } catch (e) { toast.error("No se pudo armar el Excel: " + (e as Error).message) }
+                }
+                return (
+                  <div className="rounded border border-emerald-300 bg-emerald-50 p-3 text-xs space-y-1" data-test="balance-propio-bapu">
+                    <div className="font-semibold text-sm">Con el modelo de tu planilla (JMS) — {fmtFecha(anterior.fecha_cierre)} → {fmtFecha(foto.fecha_cierre)}</div>
+                    <div className="flex justify-between"><span>Ganancia corriente (sin las vacas: son la fábrica)</span><span>US$ {fmt(g.corrienteUsd)} · $ {fmt(g.corrientePesos)}</span></div>
+                    <div className="flex justify-between font-medium"><span>Ganancia total</span><span>US$ {fmt(g.totalUsd)} · $ {fmt(g.totalPesos)}</span></div>
+                    <div className="text-gray-500">Los flujos del año (dólares MEP y distribución de fondos) van sólo en el cierre, como en tu planilla. El desglose (revalúo de las vacas, lo reinvertido, la recría) sale en el Excel que se baja desde los papeles de trabajo, con «Traer stock y precios».</div>
+                    <Button size="sm" variant="outline" onClick={() => void bajar()}>⬇️ Bajar el Excel (modelo de tu planilla)</Button>
+                  </div>
+                )
+              })()}
               <p className="text-xs text-gray-500">
                 En la columna JMS, lo que está en celeste e itálica es el valor del sistema: se usa mientras
                 la celda esté vacía; escribí un número para pisarlo. Los retiros de socios todavía no se suman al cierre: se agregan cuando se defina el sistema de retiros.

@@ -88,6 +88,12 @@ export interface DatosHacienda {
   /** 🐄 A-FEAT-1541: los movimientos tal cual (para las solapas de detalle) y el valorizado del inicio con sus precios. */
   movimientosPapel?: MovimientoPapel[]
   valuacionInicio?: ValuacionHacienda | null
+  /**
+   * 🐄 A-FEAT-1568 (JMS 14/11): la valuación INTERNA del balance propio — PROMEDIO DE JUNIO de cada año (rango 01→30/06 en Entre Surcos y
+   * Cañuelas), TODAS las categorías a promedio. Distinta de la del contador (último dato publicado), que no cambia.
+   */
+  internaCierre?: ValuacionHacienda | null
+  internaInicio?: ValuacionHacienda | null
   tablasInicio?: TablasPrecios | null
   tablasCierre?: TablasPrecios | null
   tcCierre?: number | null
@@ -417,9 +423,29 @@ export function HaciendaAlCierre({
       }
       const tcCierre = await leerTcCierre(supabase, ejercicio.fechaCierre).catch(() => null)
 
+      /**
+       * 🐄 A-FEAT-1568 (JMS 14/11: «el promedio de junio del 25 y de junio del 26… el mismo scraping en las dos puntas… el promedio
+       * para todo»): cada fuente se pide UNA vez con el rango del mes (como en la web: ya devuelve el promedio) y se valúa con
+       * `soloPromedio`. Mismas existencias y mismos kilos que la valuación del contador: sólo cambia el precio.
+       */
+      const junio = async (anio: number, exist: ExistenciaHacienda[], pesosDe: PesoCategoria[]): Promise<ValuacionHacienda | null> => {
+        if (!exist.length) return null
+        const d = `${anio}-06-01`, h = `${anio}-06-30`
+        const [jm, jh, jma, jv, jt] = await Promise.all([
+          pedir<PrecioMag>(`/api/precios-mag?desde=${d}&hasta=${h}`), pedir<PrecioMercado>(`/api/precios-mercado?desde=${d}&hasta=${h}&sexo=hembra`),
+          pedir<PrecioMercado>(`/api/precios-mercado?desde=${d}&hasta=${h}&sexo=macho`), pedir<PrecioCabeza>(`/api/precios-por-cabeza?desde=${d}&hasta=${h}&tipo=vientres`),
+          pedir<PrecioCabeza>(`/api/precios-por-cabeza?desde=${d}&hasta=${h}&tipo=toros`)])
+        return valuarHacienda(exist, jm, { macho: jma, hembra: jh }, {}, pesosDe, { vientres: jv, toros: jt }, { soloPromedio: true })
+      }
+      const anioCierre = Number(ejercicio.fechaCierre.slice(0, 4))
+      const [internaCierre, internaInicio] = await Promise.all([
+        junio(anioCierre, existencias, pesos).catch(e => { toast.warning("No se pudo armar la valuación interna (promedio de junio) del cierre: " + (e as Error).message); return null }),
+        junio(anioCierre - 1, existenciasInicio, pesosInicio).catch(e => { toast.warning("No se pudo armar la valuación interna (promedio de junio) del inicio: " + (e as Error).message); return null }),
+      ])
+
       const d: DatosHacienda = {
         existencias, mag, mercado, porCabeza,
-        movimientosPapel, valuacionInicio, tablasInicio,
+        movimientosPapel, valuacionInicio, tablasInicio, internaCierre, internaInicio,
         tablasCierre: { mag, hembra: hembras, macho: machos, vientres, toros },
         tcCierre: tcCierre?.tc ?? null, saldosGuardados: saldosH.valores,
         valuacion: valuarHacienda(existencias, mag, mercado, numericos, pesos, porCabeza),
