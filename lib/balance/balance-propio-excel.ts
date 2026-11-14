@@ -24,6 +24,14 @@ export interface PuntaBalancePropio { fecha: string; tc: number; tcFuente?: stri
 export interface CategoriaHacienda { nombre: string; rodeo: "cría" | "recría"; c0: number; p0: number | null; c1: number; p1: number | null; fuente?: string }
 export interface SocioBalancePropio { s: string; ini: number; cie: number; pagado?: number }
 
+/**
+ * 👥 A-FEAT-1190 C1: los socios del balance propio salen de las MISMAS cuentas que el papel 14.1 (cuentas con socios):
+ * saldo al inicio, al cierre y lo pagado al socio en el año. Se pasa sólo lo que hace falta para no atarse al tipo entero.
+ */
+export function sociosDelBalancePropio(cuentas: Array<{ contraparte: { nombre: string }; saldoInicio: number; saldoAlCierre: number; resumen?: { totalPagado?: number } }>): SocioBalancePropio[] {
+  return cuentas.map(c => ({ s: c.contraparte.nombre, ini: c.saldoInicio, cie: c.saldoAlCierre, pagado: c.resumen?.totalPagado }))
+}
+
 /** 🧮 La ganancia con el modelo de su planilla (US$): corriente (sin las vacas) y total. Pura, para la pantalla y los casos. */
 export function gananciaBapu(inicio: PuntaBalancePropio, cierre: PuntaBalancePropio) {
   const lado = Object.fromEntries(RUBROS.map(r => [r.id, r]))

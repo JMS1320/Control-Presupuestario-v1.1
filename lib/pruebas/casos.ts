@@ -243,7 +243,7 @@ import { hojaStockHacienda, hojaDetalleHacienda, hojaStockValorizado, hojaAument
 import { repartoDeLaFlota } from "@/lib/balance/reparto-flota"
 import { saldosDelEjercicioAnterior } from "@/lib/balance/ajustes-balance"
 import { valuarHacienda, precioDeCriterio, CRITERIOS } from "@/lib/balance/hacienda-stock"
-import { gananciaBapu, armarLibroBalancePropio, recalcularFormulas as recalcularFormulasBP } from "@/lib/balance/balance-propio-excel"
+import { gananciaBapu, armarLibroBalancePropio, sociosDelBalancePropio, recalcularFormulas as recalcularFormulasBP } from "@/lib/balance/balance-propio-excel"
 import { pesosAlCierre, pesoParaValuar } from "@/lib/balance/pesos-hacienda"
 import { armarStockInsumos, existenciaAlCierre, PAPELES_SIN_ORIGEN, type LineaInsumo } from "@/lib/balance/stock-insumos"
 import { elegirTcAl } from "@/lib/dolares/tc-cierre"
@@ -13965,6 +13965,18 @@ export function correrCasos(): Resultado[] {
     // corriente = ((3000+1000+600−200)/20 − (1000+400−100)/10) = 220 − 130 = 90 · recría US$ 1000/20 − 400/10 = 10 → sin recría 80
     const e2 = "líquida − corriente 0 · revalúo + reinvertido − variación cría 0 · sin recría 80"
     chequear("Balance propio", "📸 El desglose cierra por los dos caminos: la ganancia líquida = la corriente, y revalúo + reinvertido = la variación de la cría", e2, v2, v2 === e2, "A-FEAT-1190")
+
+    // 👥 C1: los socios salen de las cuentas del 14.1 (saldo inicio / cierre / pagado) y su total cuadra con la distribución del balance
+    const socios = sociosDelBalancePropio([
+      { contraparte: { nombre: "JMS" }, saldoInicio: -150, saldoAlCierre: -400, resumen: { totalPagado: 450 } },
+      { contraparte: { nombre: "MA" }, saldoInicio: 0, saldoAlCierre: -350, resumen: { totalPagado: 500 } }])
+    const wb3 = armarLibroBalancePropio({ empresa: "MSA", inicio: ini, cierre: P("2026-06-30", 20, { caja: 3000, distribucion_fondos: 600 }), socios })
+    const val3 = recalcularFormulasBP(wb3)
+    const s3 = wb3.Sheets["Socios"] as Record<string, { v?: unknown }>
+    let fT = 0, fC = 0; for (let i = 1; i <= 30; i++) { const x = String(s3["A" + i]?.v ?? ""); if (x === "Total") fT = i; if (x.startsWith("Control")) fC = i }
+    const v3 = `${socios.map(x => `${x.s} ${x.ini}→${x.cie} pagado ${x.pagado}`).join(" · ")} | total ${val3("Socios", "D" + fT)} · control ${val3("Socios", "D" + fC)}`
+    const e3 = "JMS -150→-400 pagado 450 · MA 0→-350 pagado 500 | total 600 · control 0"
+    chequear("Balance propio", "👥 Los retiros socio por socio salen de las cuentas con socios (inicio, cierre, pagado) y su total cuadra con la distribución de fondos", e3, v3, v3 === e3, "A-FEAT-1190")
   }
 
   // ══ 🌾 Granos: la próxima cosecha se registra sola (A-FEAT-1627) ══

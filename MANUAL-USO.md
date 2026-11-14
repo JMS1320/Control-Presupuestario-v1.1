@@ -3628,7 +3628,8 @@ con las dos columnas en pesos y las dos en dólares, subtotal y control por rubr
 **El mismo Excel con el desglose**: en **Papeles de balance → «🗂️ Libros por partes» → «📸 Balance propio (Excel)»**. Si antes
 apretaste «Traer stock y precios», trae además la **ganancia desglosada** (total − suba del precio de las vacas = del ejercicio −
 lo reinvertido en vacas = líquida − la recría = líquida sin la recría, con sus controles) y la hacienda a **promedio de junio** de
-cada año.
+cada año. La solapa **Socios** trae lo que se llevó cada socio en el año (saldo con MSA al inicio y al cierre, neto y lo pagado), de
+las mismas cuentas que el papel 14.1, con un control contra la «Distribución de fondos» del balance.
 
 **La hacienda interna (promedio de junio)**: en el papel **02.1 Stock valorizado**, abajo de todo, «VALUACIÓN INTERNA — PROMEDIO DE
 JUNIO»: las mismas cabezas y kilos que la del contador, pero cada categoría al **promedio de todo junio** de cada año (Entre Surcos

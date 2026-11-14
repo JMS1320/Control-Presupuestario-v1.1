@@ -3037,6 +3037,16 @@ const COLS_CONTROL_CUOTAS: Columna[] = [
   { ancho: 10, z: ENTERO }, { ancho: 11, z: ENTERO }, { ancho: 80 }, { ancho: 50 },
 ]
 
+/**
+ * 👥 Las cuentas corrientes separadas en terceros y SOCIOS, con el renglón «por Libertad» en las de MA y PAM (A-FEAT-1595).
+ * Una sola cuenta para el papel 14.1 y para la solapa «Socios» del balance propio (A-FEAT-1190 C1): los dos dicen lo mismo.
+ */
+export function cuentasConLosSocios(libro: LibroDiario, templates?: TemplatesDelEjercicio, cuentasCorrientes?: PapelDeCuentasCorrientes) {
+  const ccBase = cuentasCorrientes ? separarSocios(cuentasCorrientes) : null
+  return ccBase && templates ? { ...ccBase, socios: conLibertadEnSocios(ccBase.socios, cuentasDeLibertad(hojaLibertad(templates.detalle, libro.ejercicio.etiqueta, mesesDelLibro(libro), templates.entrada?.opciones.extracto)),
+    { corte: `${Number(libro.ejercicio.fechaCierre.slice(0, 4)) - 1}-12-31`, cierre: libro.ejercicio.fechaCierre }) } : ccBase
+}
+
 export function armarWorkbook(
   libro: LibroDiario,
   /** Para el encabezado del índice. */
@@ -3190,10 +3200,7 @@ export function armarWorkbook(
    * 👥 A-FEAT-1537 (JMS 04/11): el papel 14 y los totales de 03/04 sólo con clientes y proveedores; los socios, aparte
    * (solapa 14.1) hasta que se vean sus cuentas.
    */
-  const ccBase = cuentasCorrientes ? separarSocios(cuentasCorrientes) : null
-  // 👥 A-FEAT-1595: las cuentas con MA y con PAM llevan el renglón POR LIBERTAD del cuadro final de «Gastos Libertad» (por semestre)
-  const cc = ccBase && templates ? { ...ccBase, socios: conLibertadEnSocios(ccBase.socios, cuentasDeLibertad(hojaLibertad(templates.detalle, libro.ejercicio.etiqueta, mesesDelLibro(libro), templates.entrada?.opciones.extracto)),
-    { corte: `${Number(libro.ejercicio.fechaCierre.slice(0, 4)) - 1}-12-31`, cierre: libro.ejercicio.fechaCierre }) } : ccBase
+  const cc = cuentasConLosSocios(libro, templates, cuentasCorrientes)
   if (cuentas?.pagar) {
     hoja(wb, "04 Cuentas a pagar",
       hojaDeCuentas(cuentas.pagar, `CUENTAS A PAGAR — ejercicio ${libro.ejercicio.etiqueta}`,

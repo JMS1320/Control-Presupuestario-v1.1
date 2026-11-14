@@ -53,7 +53,7 @@ import { ProponerFotoBalance } from "./proponer-foto-balance"
 import { respaldoDeSaldo, respaldoDeFci, PAPEL_COPIAS, urlDeArchivoDrive, renglonesDeRespaldo, itemsDelRespaldo, carpetasDelRespaldo, type ItemDeRespaldo } from "@/lib/balance/respaldos"
 import { ivaConSigno, RENGLONES, type DatosDeLosPapeles, type ValorPropuesto } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
-import { armarWorkbook, coberturaDeArgs, descargarLibroDiario, descargarSetDelBalance, descargarPapelesDelBalance } from "@/lib/balance/export-libro-diario"
+import { armarWorkbook, coberturaDeArgs, descargarLibroDiario, descargarSetDelBalance, descargarPapelesDelBalance, cuentasConLosSocios } from "@/lib/balance/export-libro-diario"
 import { librosConSubs, sePuedeBajar, papelPorId, type ControlDeCobertura } from "@/lib/balance/papeles-del-balance"
 import { armarTemas, subdiariosContraArca, temaDelLink, type Tema } from "@/lib/balance/recorrido"
 import { temasVentasVsArca, temasComprasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
@@ -126,7 +126,7 @@ import { esDeLaAseguradora } from "@/lib/polizas/control-debitos"
 import { hoyArgentina } from "@/lib/cotizaciones/parsers"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import XLSX from "xlsx-js-style"
-import { armarLibroBalancePropio, gananciaBapu, type PuntaBalancePropio, type CategoriaHacienda } from "@/lib/balance/balance-propio-excel"
+import { armarLibroBalancePropio, gananciaBapu, sociosDelBalancePropio, type PuntaBalancePropio, type CategoriaHacienda, type SocioBalancePropio } from "@/lib/balance/balance-propio-excel"
 import { valoresEfectivos } from "@/lib/balance/balance-propio"
 import { GRUPO_RODEO } from "@/lib/balance/stock-hacienda-papel"
 import { vistasDe } from "@/lib/balance/export-libro-diario"
@@ -503,7 +503,13 @@ export function PapelesDeBalance() {
         return { nombre: c, rodeo: GRUPO_RODEO[c] === "Cría" ? "cría" : "recría", c0: a?.cabezas ?? 0, p0: a?.valorPorCabeza ?? null, c1: b?.cabezas ?? 0, p1: b?.valorPorCabeza ?? null, fuente: b?.origenPrecio }
       }) : []
       if (!categorias.length) toast.info("Sin la hacienda por categoría (falta «Traer stock y precios»): el Excel sale sin el desglose.")
-      const wb = armarLibroBalancePropio({ empresa: empresa.id, inicio: pi, cierre: pc, hacienda: categorias })
+      // 👥 A-FEAT-1190 C1: los retiros socio por socio, de las mismas cuentas que el papel 14.1
+      let socios: SocioBalancePropio[] = []
+      try {
+        const a = await ultimo.current.argsConRecorrido(lib)
+        socios = sociosDelBalancePropio(cuentasConLosSocios(a[0], a[2], a[9])?.socios ?? [])
+      } catch (e) { toast.warning(`No se pudieron leer las cuentas de los socios (${(e as Error).message}): la solapa «Socios» sale vacía.`) }
+      const wb = armarLibroBalancePropio({ empresa: empresa.id, inicio: pi, cierre: pc, hacienda: categorias, socios })
       const datos = await aplicarVistas(XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(wb as never))
       descargarBlob(new Blob([datos as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
         `Balance propio ${empresa.id} ${fi.slice(2, 4)}-${fc.slice(2, 4)} (${hoyArgentina()}).xlsx`)
