@@ -1,0 +1,27 @@
+{
+ "foto_2025": {
+  "id": "99013f8a-62f2-4358-b2ed-0a4b299788de",
+  "tc": 1215,
+  "tc_fuente": "planilla JMS — billete venta",
+  "notas": "Cierre 24/25 = inicio 25/26. Contador: borrador hist. 2025. JMS: solapa NOTAS sin PAM (Galicia PAM y FCI PAM)."
+ },
+ "valores_2025_jms": {
+  "stock_cria": {
+   "importe": 308090000,
+   "origen": "planilla",
+   "detalle": null
+  },
+  "stock_recria": {
+   "importe": 97470000,
+   "origen": "planilla",
+   "detalle": null
+  },
+  "otros_creditos_comerciales": {
+   "importe": 92655408.78,
+   "origen": "planilla",
+   "detalle": "«Sanpa» — caso particular (planilla JMS)"
+  },
+  "provision_gastos": null
+ },
+ "foto_2026": "no existía"
+}
