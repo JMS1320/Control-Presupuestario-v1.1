@@ -267,6 +267,12 @@ diferente. Esto es para siempre»**.*
   comentarios a las filas, así te podría dejar un comentario específico para, en este caso, sólo el libro D»)*: un 💬 al final
   de cada renglón abre su campo, y se guarda con el número de la fila (`F-<tabla>-<fila>`). El comentario de la sección queda
   para lo general.
+- 📥 **Al leer las respuestas: la colección ENTERA, sin filtro, y se informa el CONTEO** *(JMS 14/11: «la vez pasada no llegaste
+  a leer todo, ¿cómo hacemos para asegurarnos?»)*. Nunca filtrar por fecha u hora (así se perdieron R2 y R4 el 13/11): `list`
+  completo, siguiendo el cursor hasta el final. Y la página muestra **cuántas respuestas tiene guardadas y la hora de la última**:
+  Claude abre su informe con ese número, y si no coincide con el de la página, falta leer algo.
+- 🎙️ **Y se puede DICTAR** *(JMS 14/11: «¿me podés dejar la posibilidad de grabar mensaje y que se transcriba?»)*: cada campo de
+  texto lleva un 🎙️ (capacidad `dictation`) que escribe lo que se dice; donde el navegador no lo permite, el botón no aparece.
 - Si la página no puede guardar (sin sesión), lo dice y deja copiar el texto: nada se pierde en silencio.
 
 *Motivo: sin esto, JMS lee la página en un lado y contesta en el chat en otro, traduciendo a qué se refiere cada cosa. Ya lo
