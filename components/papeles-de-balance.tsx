@@ -54,7 +54,7 @@ import { respaldoDeSaldo, respaldoDeFci, PAPEL_COPIAS, urlDeArchivoDrive, renglo
 import { ivaConSigno, RENGLONES, type DatosDeLosPapeles, type ValorPropuesto } from "@/lib/balance/balance-propio"
 import { armarImpuestoCheque, ETIQUETA_CONCEPTO, pctComputable } from "@/lib/balance/impuesto-cheque"
 import { armarWorkbook, coberturaDeArgs, descargarLibroDiario, descargarSetDelBalance, descargarPapelesDelBalance, cuentasConLosSocios } from "@/lib/balance/export-libro-diario"
-import { librosConSubs, sePuedeBajar, papelPorId, type ControlDeCobertura } from "@/lib/balance/papeles-del-balance"
+import { librosConSubs, sePuedeBajar, papelPorId, papelDelLink, EVENTO_ABRIR_PAPEL, linkPapelBalance, type ControlDeCobertura } from "@/lib/balance/papeles-del-balance"
 import { armarTemas, subdiariosContraArca, temaDelLink, type Tema } from "@/lib/balance/recorrido"
 import { temasVentasVsArca, temasComprasVsArca, type DdjjGuardada } from "@/lib/balance/recorrido-ventas-arca"
 import { leerDatosConciliacion, proponerConciliaciones, CUENTAS_CONCILIABLES, type ConteoCuenta } from "@/lib/conciliacion/propuestas-ejercicio"
@@ -225,6 +225,7 @@ export function PapelesDeBalance() {
   const [verRecorrido, setVerRecorrido] = useState(false)
   /** 🔗 A-FEAT-1466 — el tema que pidió un link (desde una tarea en Principal); se abre cuando el libro está armado. */
   const [temaPedido, setTemaPedido] = useState<{ empresa: string; anioCierre: number; clave: string; armando: boolean } | null>(null)
+  const [papelPedido, setPapelPedido] = useState<{ empresa: string; anioCierre: number; papel: string; armando: boolean } | null>(null)
   const [claveRecorrido, setClaveRecorrido] = useState<string | null>(null)
   /** 🏦 A-FEAT-1430 paso 4: las propuestas de conciliación del ejercicio (se calculan al abrir el recorrido). */
   const [conciliacion, setConciliacion] = useState<{ movimientos: Tema[]; deudas: Tema[]; cheques: Tema[]; controles: Tema[]; visto?: { tareas: TareaPorConfirmar[]; rearmados: Tema[] }; tareasRecorrido?: TareaDelRecorrido[]; historicos: number; avisos: string[]; calculado: string; porCuenta?: Record<string, ConteoCuenta> } | null>(null)
@@ -509,7 +510,7 @@ export function PapelesDeBalance() {
         const a = await ultimo.current.argsConRecorrido(lib)
         socios = sociosDelBalancePropio(cuentasConLosSocios(a[0], a[2], a[9])?.socios ?? [])
       } catch (e) { toast.warning(`No se pudieron leer las cuentas de los socios (${(e as Error).message}): la solapa «Socios» sale vacía.`) }
-      const wb = armarLibroBalancePropio({ empresa: empresa.id, inicio: pi, cierre: pc, hacienda: categorias, socios })
+      const wb = armarLibroBalancePropio({ empresa: empresa.id, inicio: pi, cierre: pc, hacienda: categorias, socios, linkPapel: id => window.location.origin + linkPapelBalance(empresa.id, Number(fc.slice(0, 4)), id) })
       const datos = await aplicarVistas(XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(wb as never))
       descargarBlob(new Blob([datos as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
         `Balance propio ${empresa.id} ${fi.slice(2, 4)}-${fc.slice(2, 4)} (${hoyArgentina()}).xlsx`)
@@ -574,6 +575,36 @@ export function PapelesDeBalance() {
     if (!temaPedido?.armando || !libro) return
     setClaveRecorrido(temaPedido.clave); setVerRecorrido(true); setTemaPedido(null)
   }, [temaPedido, libro])
+  /**
+   * 🔗 A-DEC-1034 D2 — el papel de un renglón del balance propio: por el link (`?papel=EMPRESA:AÑO:id`, el del Excel) o
+   * por el evento `EVENTO_ABRIR_PAPEL` (el 📄 de la pantalla del balance propio, que está en esta misma solapa). Elige
+   * empresa y año, arma el libro si hace falta, abre «Libros por partes» con ese papel tildado y lo trae a la vista.
+   * No baja nada solo: el ⬇️ lo aprieta JMS.
+   */
+  useEffect(() => {
+    const pedir = (p: { empresa: string; anioCierre: number; papel: string } | null) => {
+      const e = p && EMPRESAS.find(x => x.id === p.empresa)
+      if (!p || !e) return
+      setEmpresa(e); setAnioCierre(p.anioCierre); setPapelPedido({ ...p, armando: false })
+    }
+    pedir(papelDelLink(window.location.search))
+    const oir = (ev: Event) => pedir((ev as CustomEvent).detail ?? null)
+    window.addEventListener(EVENTO_ABRIR_PAPEL, oir)
+    return () => window.removeEventListener(EVENTO_ABRIR_PAPEL, oir)
+  }, [])
+  useEffect(() => {
+    if (!papelPedido || papelPedido.armando || empresa.id !== papelPedido.empresa || anioCierre !== papelPedido.anioCierre) return
+    setPapelPedido({ ...papelPedido, armando: true })
+    if (!(libro && libro.ejercicio.fechaCierre.startsWith(String(papelPedido.anioCierre)))) void armarTodo()
+  }, [papelPedido, empresa, anioCierre]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!papelPedido?.armando || !libro) return
+    setTildados(new Set([papelPedido.papel])); setVerPapeles(true)
+    const p = papelPorId(papelPedido.papel)
+    toast.info(`🗂️ Tildado «${p?.nombre ?? papelPedido.papel}» en Libros por partes: apretá ⬇️ Bajar para el Excel.`)
+    setTimeout(() => document.getElementById("libros-por-partes")?.scrollIntoView({ behavior: "smooth", block: "start" }), 300)
+    setPapelPedido(null)
+  }, [papelPedido, libro])
   /**
    * ⚡ Nota 🌙 JMS 01/11: *«abro otro link y tarda lo mismo en cargar cuando tiene prácticamente todo recién cargado»*.
    * La pestaña del recorrido se llama «recorrido-balance» y deja un atajo: si el link del Principal la encuentra con
@@ -1593,7 +1624,7 @@ export function PapelesDeBalance() {
 
         {/* 🗂️ A-FEAT-1624 etapa 2 — los papeles del balance como unidades: se tildan y se bajan sueltos. */}
         {verPapeles && libro && (
-          <div className="rounded-md border p-3 space-y-3" data-test="papeles-sueltos">
+          <div id="libros-por-partes" className="rounded-md border p-3 space-y-3" data-test="papeles-sueltos">
             <div className="flex flex-wrap items-center gap-2">
               <strong className="text-sm">🗂️ Libros del balance</strong>
               <span className="text-xs text-muted-foreground">Cada libro se baja entero o por sus partes, del mismo cálculo que el set. Uno solo baja el .xlsx; varios, un .zip. El set A–H de siempre sigue arriba.</span>

@@ -12,6 +12,7 @@
  */
 import XLSX from "xlsx-js-style"
 import { RENGLONES, RUBROS } from "./balance-propio"
+import { papelDelRenglon } from "./papeles-del-balance"
 import { agregarHoja } from "./export-libro-diario"
 import { MONEDA } from "./formato-excel"
 
@@ -46,12 +47,19 @@ export function gananciaBapu(inicio: PuntaBalancePropio, cierre: PuntaBalancePro
   return { corrienteUsd: usd(T.ac, T.pc), totalUsd: usd(T.a, T.pt), corrientePesos: (T.ac[1] - T.pc[1]) - (T.ac[0] - T.pc[0]), totalPesos: (T.a[1] - T.pt[1]) - (T.a[0] - T.pt[0]) }
 }
 
-export function armarLibroBalancePropio(d: { empresa: string; inicio: PuntaBalancePropio; cierre: PuntaBalancePropio; hacienda?: CategoriaHacienda[]; socios?: SocioBalancePropio[]; comercializacion?: number }): XLSX.WorkBook {
+export function armarLibroBalancePropio(d: { empresa: string; inicio: PuntaBalancePropio; cierre: PuntaBalancePropio; hacienda?: CategoriaHacienda[]; socios?: SocioBalancePropio[]; comercializacion?: number
+  /** 🔗 A-DEC-1034 D2: el link (absoluto) que abre el papel de un renglón en la app; sin él, la columna dice sólo el nombre. */
+  linkPapel?: (papelId: string) => string }): XLSX.WorkBook {
   const { empresa, inicio: fi, cierre: fc } = d
   const n = (v: number | null | undefined) => (v == null ? null : Math.round(v * 100) / 100)
   const dmy = (s: string) => s.split("-").reverse().join("/")
   const anioI = fi.fecha.slice(0, 4), anioC = fc.fecha.slice(0, 4)
 
+  const celdaPapel = (renglon: string) => {
+    const p = papelDelRenglon(renglon)
+    if (p.id === null) return `— ${p.motivo}`
+    return d.linkPapel ? { t: "s", v: `📄 ${p.nombre}`, l: { Target: d.linkPapel(p.id), Tooltip: "Abre Papeles de balance con este papel tildado" } } : p.nombre
+  }
   // ── 1 · Balance propio — A concepto · B $ inicio · C $ cierre · D dif $ · E US$ inicio · F US$ cierre · G dif US$ · H de dónde sale
   const f1: unknown[][] = []
   f1.push([`BALANCE PROPIO — ${empresa} — determinación de ganancia según activo menos pasivo — ${dmy(fi.fecha)} → ${dmy(fc.fecha)}`])
@@ -59,7 +67,7 @@ export function armarLibroBalancePropio(d: { empresa: string; inicio: PuntaBalan
   f1.push(["Dólar de cada punta (promedio de divisas BNA)", fi.tc, fc.tc, "", fi.tcFuente ?? "", fc.tcFuente ?? ""])
   const FILA_TC = f1.length
   f1.push([])
-  f1.push(["Concepto", `$ ${anioI}`, `$ ${anioC}`, "Diferencia $", `US$ ${anioI}`, `US$ ${anioC}`, "Diferencia US$", "De dónde sale el cierre"])
+  f1.push(["Concepto", `$ ${anioI}`, `$ ${anioC}`, "Diferencia $", `US$ ${anioI}`, `US$ ${anioC}`, "Diferencia US$", "De dónde sale el cierre", "Papel de trabajo"])
   const subtot: Record<string, number> = {}, filaDe: Record<string, number> = {}
   const filasAC: number[] = []
   for (const rb of RUBROS) {
@@ -70,7 +78,7 @@ export function armarLibroBalancePropio(d: { empresa: string; inicio: PuntaBalan
       if (a == null && b == null) continue
       const fila = f1.length + 1; filaDe[r.id] = fila
       f1.push([r.etiqueta, n(a ?? 0), n(b ?? 0), { t: "n", f: `C${fila}-B${fila}` }, { t: "n", f: `B${fila}/$B$${FILA_TC}` }, { t: "n", f: `C${fila}/$C$${FILA_TC}` }, { t: "n", f: `F${fila}-E${fila}` },
-        (FLUJOS_DEL_ANIO.has(r.id) && fi.valores.get(r.id) ? `flujo del año: en el inicio va 0 (tu foto decía ${fi.valores.get(r.id)!.importe.toLocaleString("es-AR")}) · ` : "") + String(fc.valores.get(r.id)?.detalle ?? "").replace(/^\[script \d+\] /, "")])
+        (FLUJOS_DEL_ANIO.has(r.id) && fi.valores.get(r.id) ? `flujo del año: en el inicio va 0 (tu foto decía ${fi.valores.get(r.id)!.importe.toLocaleString("es-AR")}) · ` : "") + String(fc.valores.get(r.id)?.detalle ?? "").replace(/^\[script \d+\] /, ""), celdaPapel(r.id)])
       if (rb.lado === "activo" && !ACTIVO_NO_CORRIENTE.has(r.id)) filasAC.push(fila)
     }
     const hasta = f1.length, fila = f1.length + 1
@@ -95,7 +103,7 @@ export function armarLibroBalancePropio(d: { empresa: string; inicio: PuntaBalan
   const FILA_GC = f1.length
   f1.push(["GANANCIA TOTAL (diferencia en US$ de activo − pasivo total)", "", "", "", "", "", { t: "n", f: `G${tot.apt}` }])
   const FILA_GT = f1.length
-  const COLS1 = [{ ancho: 52 }, { ancho: 17, z: MONEDA }, { ancho: 17, z: MONEDA }, { ancho: 17, z: MONEDA }, { ancho: 14, z: MONEDA }, { ancho: 14, z: MONEDA }, { ancho: 14, z: MONEDA }, { ancho: 70 }]
+  const COLS1 = [{ ancho: 52 }, { ancho: 17, z: MONEDA }, { ancho: 17, z: MONEDA }, { ancho: 17, z: MONEDA }, { ancho: 14, z: MONEDA }, { ancho: 14, z: MONEDA }, { ancho: 14, z: MONEDA }, { ancho: 70 }, { ancho: 34 }]
 
   // ── 4 · Hacienda (se arma antes: el desglose la referencia)
   const cz = d.comercializacion ?? 0.1

@@ -26,6 +26,7 @@ import { armarLibroBalancePropio, gananciaBapu, type PuntaBalancePropio } from "
 import { vistasDe } from "@/lib/balance/export-libro-diario"
 import { aplicarVistas } from "@/lib/balance/formato-excel"
 import { descargarBlob } from "@/lib/descargar-archivo"
+import { papelDelRenglon, EVENTO_ABRIR_PAPEL, linkPapelBalance } from "@/lib/balance/papeles-del-balance"
 import { hoyArgentina } from "@/lib/fechas"
 
 const fmt = (n: number) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -206,7 +207,16 @@ export function BalancePropio() {
                           const dif = (j?.importe ?? 0) - (c?.importe ?? 0)
                           return (
                             <tr key={r.id} className="border-b border-gray-100">
-                              <td className="py-0.5 pl-3">{r.etiqueta}{r.nota && <span className="text-gray-400"> — {r.nota}</span>}</td>
+                              <td className="py-0.5 pl-3">{r.etiqueta}{r.nota && <span className="text-gray-400"> — {r.nota}</span>}
+                                {(() => {
+                                  // 🔗 A-DEC-1034 D2: el papel de trabajo que respalda el renglón
+                                  const p = papelDelRenglon(r.id)
+                                  return p.id !== null
+                                    ? <button type="button" className="ml-1 text-sky-700 hover:underline" title={`Abrir el papel «${p.nombre}» en Papeles de balance (arriba), tildado en Libros por partes`}
+                                        onClick={() => window.dispatchEvent(new CustomEvent(EVENTO_ABRIR_PAPEL, { detail: { empresa, anioCierre: Number(foto.fecha_cierre.slice(0, 4)), papel: p.id } }))}>📄</button>
+                                    : <span className="ml-1 text-gray-300" title={`Sin papel: ${p.motivo}`}>·</span>
+                                })()}
+                              </td>
                               {versiones.map(v => {
                                 const val = valoresFoto.find(x => x.renglon === r.id && x.version === v.id)
                                 const heredado = v.id === "jms" && !val && sis
@@ -272,7 +282,7 @@ export function BalancePropio() {
                 const g = gananciaBapu(pi, pc)
                 const bajar = async () => {
                   try {
-                    const wb = armarLibroBalancePropio({ empresa, inicio: pi, cierre: pc })
+                    const wb = armarLibroBalancePropio({ empresa, inicio: pi, cierre: pc, linkPapel: id => window.location.origin + linkPapelBalance(empresa, Number(pc.fecha.slice(0, 4)), id) })
                     const datos = await aplicarVistas(XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(wb as any))
                     descargarBlob(new Blob([datos as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
                       `Balance propio ${empresa} ${pi.fecha.slice(2, 4)}-${pc.fecha.slice(2, 4)} (${hoyArgentina()}).xlsx`)

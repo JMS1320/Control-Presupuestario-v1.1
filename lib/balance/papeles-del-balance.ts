@@ -262,3 +262,56 @@ export function nombreDelPapel(papel: PapelDelBalance, empresa: string, etiqueta
   const titulo = papel.nivel === "libro" ? papel.nombre : `${libro?.nombre ?? papel.libro} - ${papel.nombre}`
   return `${limpio(titulo)} - ${empresa} ${etiqueta.replace("/", "-")} (${fecha}).xlsx`
 }
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+// 🔗 A-DEC-1034 D2 — de cada renglón del BALANCE PROPIO a su papel de trabajo (JMS 14/11: «links a los papeles»)
+// ══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * El papel de «Libros por partes» que respalda cada renglón del balance propio. `null` = no sale de un papel del sistema,
+ * con el motivo (los impuestos los da el contador; lo que JMS no pone). Un renglón nuevo del catálogo que no esté acá
+ * lo agarra el control de los casos: no queda sin papel en silencio.
+ */
+export const PAPEL_DEL_RENGLON: Record<string, string | { sinPapel: string }> = {
+  caja: "balance-en-linea", caja_dolares: "balance-en-linea", valores_depositar: "saldos-provisiones", echeqs_cartera: "saldos-provisiones",
+  dolares_mep: "templates", distribucion_fondos: "socios-cuentas",
+  banco_galicia: "saldos-bancos", fci: "saldos-bancos", banco_galicia_usd: "saldos-bancos", banco_nacion: "saldos-bancos",
+  banco_santander: "saldos-bancos", banco_provincia: "saldos-bancos",
+  deudores_ventas: "saldos-provisiones", anticipos_proveedores: "proveedores", otros_creditos_comerciales: "diario-ventas", cuenta_socios: "socios-cuentas",
+  cereales: "stocks-granos", sementeras_agricolas: "stocks-sementeras", sementeras_ganaderas: "stocks-sementeras",
+  insumos_agricolas: "stocks-insumos", insumos_ganaderos: "stocks-insumos", insumos_otros: "stocks-insumos",
+  stock_cria: "stocks-hacienda", stock_recria: "stocks-hacienda",
+  proveedores: "proveedores", tarjetas: "proveedores", provision_gastos: "saldos-provisiones", otras_deudas_comerciales: "proveedores",
+  anticipos_clientes: "proveedores", cheques_pendientes: "proveedores",
+  sueldos_a_pagar: "sueldos", cargas_sociales: "sueldos", cuota_solidaria: "sueldos",
+  ...Object.fromEntries(["ret_ganancias", "perc_ganancias", "saldo_favor_ganancias", "saldo_favor_iibb", "ret_iibb", "ret_iva", "anticipos_ganancias",
+    "iva_libre_disponibilidad", "iva_saldo_tecnico", "impuesto_cheque", "ganancias_a_pagar", "iibb_a_pagar", "iva_a_pagar", "retenciones_a_depositar",
+    "impuesto_diferido"].map(k => [k, { sinPapel: "lo da el contador (impuestos)" }])),
+  equinos: { sinPapel: "no va en tu balance (lo pone el contador)" },
+  bienes_uso_neto: { sinPapel: "bienes de uso: todavía sin papel (A-DEC-1034 D3)" },
+  prestamos: { sinPapel: "no hay préstamos cargados en el sistema" }, prestamos_nc: { sinPapel: "no hay préstamos cargados en el sistema" },
+}
+
+/** El papel de un renglón, con su nombre para mostrar («Stocks → Hacienda»), o el motivo de por qué no tiene. */
+export function papelDelRenglon(renglon: string): { id: string; nombre: string } | { id: null; motivo: string } {
+  const p = PAPEL_DEL_RENGLON[renglon]
+  if (p == null) return { id: null, motivo: "sin papel asignado" }
+  if (typeof p !== "string") return { id: null, motivo: p.sinPapel }
+  const papel = papelPorId(p)
+  if (!papel) return { id: null, motivo: `papel «${p}» no existe en el catálogo` }
+  const libro = papel.nivel === "sub" ? papelPorId(papel.libro) : undefined
+  return { id: p, nombre: libro ? `${libro.nombre} → ${papel.nombre}` : papel.nombre }
+}
+
+/** El link que abre Reportes → Papeles de balance con ese papel tildado en «Libros por partes» (arma el libro solo). */
+export const linkPapelBalance = (empresa: string, anioCierre: number, papelId: string) =>
+  `/?seccion=reporte&papel=${encodeURIComponent(`${empresa}:${anioCierre}:${papelId}`)}`
+
+export function papelDelLink(search: string): { empresa: string; anioCierre: number; papel: string } | null {
+  const v = new URLSearchParams(search).get("papel")
+  const m = v?.match(/^([A-Z]+):(\d{4}):([a-z-]+)$/)
+  return m ? { empresa: m[1], anioCierre: Number(m[2]), papel: m[3] } : null
+}
+
+/** El aviso entre las dos pantallas de Reportes: «📸 Balance propio» le pide a «Papeles de balance» que abra un papel. */
+export const EVENTO_ABRIR_PAPEL = "balance:abrir-papel"

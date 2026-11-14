@@ -3631,6 +3631,11 @@ lo reinvertido en vacas = líquida − la recría = líquida sin la recría, con
 cada año. La solapa **Socios** trae lo que se llevó cada socio en el año (saldo con MSA al inicio y al cierre, neto y lo pagado), de
 las mismas cuentas que el papel 14.1, con un control contra la «Distribución de fondos» del balance.
 
+**Ver el papel de un renglón.** En la pantalla, el **📄** al lado de cada renglón abre arriba **Papeles de balance** con ese papel
+tildado en «🗂️ Libros por partes» (arma el libro si hace falta); se baja con ⬇️. Un «·» gris dice por qué el renglón no sale de un
+papel (los impuestos los da el contador). En el Excel, la columna **«Papel de trabajo»** trae el mismo link.
+→ A-TEST-1380
+
 **La hacienda interna (promedio de junio)**: en el papel **02.1 Stock valorizado**, abajo de todo, «VALUACIÓN INTERNA — PROMEDIO DE
 JUNIO»: las mismas cabezas y kilos que la del contador, pero cada categoría al **promedio de todo junio** de cada año (Entre Surcos
 y Cañuelas), y al final contador contra interna. Es tu análisis propio: lo de arriba es lo que va al contador.

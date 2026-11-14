@@ -51,7 +51,7 @@ import { hojaResumenPorMes } from "@/lib/balance/resumen-por-mes"
 import { filasBalanceEnLinea, hojaCajaYBancos } from "@/lib/balance/balance-en-linea"
 import { APERTURA_MSA_2025 } from "@/lib/balance/apertura-contador"
 import { libroDeSolapa, repartirEnLibros, templatesDeResponsable, detalleBancarioDelLibroC, canalDePago, hojaDeDetalle } from "@/lib/balance/libros-del-balance"
-import { todasLasUnidades, librosConSubs, controlDeCobertura, solapasDeFormula, recortarPapel, papelPorId } from "@/lib/balance/papeles-del-balance"
+import { todasLasUnidades, librosConSubs, controlDeCobertura, solapasDeFormula, recortarPapel, papelPorId, papelDelRenglon, PAPEL_DEL_RENGLON, linkPapelBalance, papelDelLink } from "@/lib/balance/papeles-del-balance"
 import { armarStocksUnificados, hojaDeStocks } from "@/lib/balance/stocks-unificado"
 import { temasDeCuentaCorriente } from "@/lib/balance/recorrido-conciliacion"
 import { contrapartesDelRecorrido } from "@/lib/balance/fuera-por-cuenta-corriente"
@@ -13977,6 +13977,22 @@ export function correrCasos(): Resultado[] {
     const v3 = `${socios.map(x => `${x.s} ${x.ini}→${x.cie} pagado ${x.pagado}`).join(" · ")} | total ${val3("Socios", "D" + fT)} · control ${val3("Socios", "D" + fC)}`
     const e3 = "JMS -150→-400 pagado 450 · MA 0→-350 pagado 500 | total 600 · control 0"
     chequear("Balance propio", "👥 Los retiros socio por socio salen de las cuentas con socios (inicio, cierre, pagado) y su total cuadra con la distribución de fondos", e3, v3, v3 === e3, "A-FEAT-1190")
+  }
+
+  // ══ 🔗 Balance propio → su papel de trabajo (A-DEC-1034 D2) ══
+  {
+    const sinMapa = RENGLONES_BALANCE.filter(r => !(r.id in PAPEL_DEL_RENGLON)).map(r => r.id)
+    const rotos = Object.entries(PAPEL_DEL_RENGLON).filter(([, p]) => typeof p === "string" && !papelPorId(p)).map(([k]) => k)
+    const h = papelDelRenglon("stock_cria"), i = papelDelRenglon("ret_ganancias")
+    const ida = papelDelLink(linkPapelBalance("MSA", 2026, "stocks-hacienda").slice(linkPapelBalance("MSA", 2026, "stocks-hacienda").indexOf("?")))
+    const wb = armarLibroBalancePropio({ empresa: "MSA", inicio: { fecha: "2025-06-30", tc: 10, valores: new Map([["stock_cria", { importe: 100 }]]) },
+      cierre: { fecha: "2026-06-30", tc: 20, valores: new Map([["stock_cria", { importe: 300 }]]) }, linkPapel: id => "https://app/x?" + id })
+    const s = wb.Sheets["Balance propio"] as Record<string, { v?: unknown; l?: { Target?: string } }>
+    const fila = Object.keys(s).find(k => /^A[0-9]+$/.test(k) && s[k].v === "Stock de cría")?.slice(1)
+    const celda = fila ? s["I" + fila] : undefined
+    const v = `sin mapa: ${sinMapa.join(",") || "ninguno"} · rotos: ${rotos.join(",") || "ninguno"} · cría → ${h.id ? h.nombre : "-"} · ret → ${i.id ?? (i as { motivo: string }).motivo} · link → ${ida?.empresa}/${ida?.anioCierre}/${ida?.papel} · Excel: ${celda?.v} (${celda?.l?.Target})`
+    const e = "sin mapa: ninguno · rotos: ninguno · cría → Stocks → Hacienda · ret → lo da el contador (impuestos) · link → MSA/2026/stocks-hacienda · Excel: 📄 Stocks → Hacienda (https://app/x?stocks-hacienda)"
+    chequear("Balance propio", "🔗 Cada renglón del balance propio tiene su papel de trabajo (o dice por qué no): el link abre ese papel y el Excel lo trae en la columna «Papel de trabajo»", e, v, v === e, "A-DEC-1034")
   }
 
   // ══ 🌾 Granos: la próxima cosecha se registra sola (A-FEAT-1627) ══
