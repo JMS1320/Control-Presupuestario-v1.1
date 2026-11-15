@@ -4450,8 +4450,14 @@ Te va a seguir preguntando si:
 
 ## 💵 El pase de caja — protocolo para AMS (cajas General, AMS y Sigot de MSA)
 
-*Acordado con JMS el 15/11/2026. Es lo que hay que pedirle a AMS y lo que JMS controla. 🚧 La pantalla todavía se está
-construyendo → [A-FEAT-1585](PENDIENTES.md#a-feat-1585); este protocolo ya vale para el Excel.*
+*Acordado con JMS el 15/11/2026. Es lo que hay que pedirle a AMS y lo que JMS controla. **Se ve en la app**, arriba de los
+movimientos de cada caja y en su solapa Importar («📋 Protocolo del pase de caja»): si cambia acá, cambia allá. La conciliación
+«a confirmar por JMS» todavía se está construyendo → [A-FEAT-1585](PENDIENTES.md#a-feat-1585).*
+
+**Cómo se sube el Excel:** Extracto bancario → cualquier caja → **Importar** → el archivo → «Todas las cajas del archivo» (o
+sólo esa) → **👁 Revisar** (no guarda nada: muestra nuevos, ya cargados, posibles repetidos, anotados tarde, cambiados, y el saldo
+de cada caja por fecha contra el del Excel) → **Cargar**. La primera vez de cada caja se tilda «Carga inicial (histórico)» con la
+fecha del saldo de arranque. → ⚠️ Sin probar todavía → A-TEST-1382
 
 **Quién:** AMS lleva las tres cajas en su Excel (una hoja por caja). Una vez por mes como máximo, «pasa caja» con Sigot:
 renglón por renglón, con las facturas a la vista.

@@ -57,6 +57,7 @@ import { temasDeCuentaCorriente } from "@/lib/balance/recorrido-conciliacion"
 import { capaInterna, partesDeLaPoliza, marcaDeLaNota, type MovCapa } from "@/lib/balance/capa-interna"
 import { entradaDesde141, hojaInternoPorSocio } from "@/lib/balance/interno-por-socio"
 import { esPagoDeTarjeta } from "@/lib/balance/capa-interna-datos"
+import { analizarCaja, cajaDeHoja, descripcionDeCaja, leerHojaCaja } from "@/lib/extractos/caja-excel"
 import { contrapartesDelRecorrido } from "@/lib/balance/fuera-por-cuenta-corriente"
 import { unirPorClave, sincronizarPendientes, hojaDelRecorrido } from "@/lib/balance/recorrido-excel"
 import { idsDelUltimoLote } from "@/lib/facturas/ultimo-lote"
@@ -14059,6 +14060,43 @@ export function correrCasos(): Resultado[] {
     // 💳 «Tarjetas MSA» en la cuenta del banco = pago de tarjeta (el papel de research tenía la regla rota y no lo veía)
     const v4 = [esPagoDeTarjeta("msa_galicia", "Tarjetas MSA", ""), esPagoDeTarjeta("msa_galicia", "Tarjeta", ""), esPagoDeTarjeta("msa_tarjeta_visa", "Tarjetas MSA", ""), esPagoDeTarjeta("msa_galicia", "Tarjetero", "x"), esPagoDeTarjeta("pam_galicia", "", "PAGO DE TARJETA VISA")].join(",")
     chequear("Cuenta interna", "💳 Un pago de tarjeta se reconoce en la cuenta del banco por la categoría «Tarjeta(s)…» o el texto «pago de tarjeta»; dentro de la tabla de la tarjeta, no", "true,true,false,false,true", v4, v4 === "true,true,false,false,true", "A-FEAT-1288")
+  }
+
+  // ══ 💵 Cajas de AMS: el Excel es como existe (A-FEAT-1585, JMS 15/11) ══
+  {
+    const hoja = leerHojaCaja([
+      ["CAJA SIGOT"],
+      ["FECHA", "Comp", "Cat", "CONCEPTO", "DEBE", "HABER", "SALDO"],
+      ["20/06/2025", "", "", "Saldo", "", "", 1000],
+      ["24/12/2025", "", "Ret 1", "Pan", 10, "", 990],                 // año mal escrito, ANTES del arranque
+      ["25/06/2025", "", "VARIOS", "Llave", 90, "", 900],              // ← el saldo al 30/06/25
+      ["01/07/2025", "", "SUELD", "Elvio", 100, "", 800],
+      ["01/07/2025", "", "SUELD", "Elvio", 100, "", 700],              // igual al anterior: se cargan los dos
+      ["10/07/2025", "FC Gomeria", "GOMERIA", "Goma", 50, "", 650],    // ya cargada antes con otro texto
+      ["05/07/2025", "X", "VARIOS", "Olvidado", 20, "", 630],          // anotado tarde
+      ["15/07/2025", "", "CAJA", "Caja gral a caja Sigot", "", 500, 1100], // AMS escribió 1100 (era 1130)
+      ["28/06/2025", "", "VARIOS", "Factura vieja", 40, "", 1060],     // cruza el cierre
+      ["", "", "", "cálculo", 5, "", ""],                              // sin fecha: no se carga
+    ])
+    const ex = [
+      { id: "a", fecha: "2025-07-01", descripcion: "Elvio", detalle: null, debitos: 100, creditos: 0 },
+      { id: "b", fecha: "2025-07-10", descripcion: "Gomería — a mano", detalle: null, debitos: 50, creditos: 0 },
+      { id: "c", fecha: "2025-07-12", descripcion: "Algo que AMS borró", detalle: null, debitos: 7, creditos: 0 },
+      { id: "s", fecha: "2025-06-30", descripcion: "Saldo al 30/06/2025", detalle: null, debitos: 0, creditos: 0 },
+    ]
+    const a = analizarCaja("caja_sigot", hoja.filas, ex, { desde: "2025-06-30" })
+    const v = [`corte fila ${a.corte?.fila} ${a.corte?.saldo}`, `nuevos ${a.aCargar.map(f => f.concepto).join(",")}`, `ya ${a.yaEstaban} (otro texto: ${a.filas.filter(f => f.textoDistinto).map(f => f.existenteId).join(",")})`,
+      `repetidos ${a.posiblesRepetidos.length}`, `tarde ${a.anotadosTarde.map(f => f.concepto).join(",")}`, `cruzan ${a.cruzanCierre.map(f => f.concepto).join(",")}`,
+      `antes del arranque ${a.antesDelCorteConFechaPosterior.map(f => f.concepto).join(",")}`, `cadena ${a.difsCadena.map(f => f.fila + ":" + f.difCadena).join(",")}`,
+      `borrados ${a.cambiadosOBorrados.map(e => e.id).join(",")}`, `sin fecha ${hoja.sinFecha.length}`,
+      `saldos ${a.saldosPorFecha.map(s => `${s.fecha} ${s.porFecha}/${s.porRenglon}`).join(" · ")}`].join(" | ")
+    const e = "corte fila 5 900 | nuevos Elvio,Olvidado,Caja gral a caja Sigot,Factura vieja | ya 2 (otro texto: b) | repetidos 2 | tarde Olvidado,Factura vieja | cruzan Factura vieja | antes del arranque Pan | cadena 10:-30 | borrados c | sin fecha 1 | saldos 2025-06-30 870/900 · 2025-07-15 1100/1060"
+    chequear("Cajas", "💵 Caja de AMS: dos renglones iguales se cargan los dos, lo ya cargado se reconoce (también con otro texto), anotado tarde y cruza el cierre marcados, la cadena del Excel controlada y el saldo por fecha distinto del renglón cuando hay fechas fuera de lugar", e, v, v === e, "A-FEAT-1585")
+    const v2 = [cajaDeHoja("CAJA gral"), cajaDeHoja("Caja Sigot"), cajaDeHoja("Caja Andres"), String(cajaDeHoja("cuentas contables")),
+      descripcionDeCaja({ concepto: "Galicia a caja (extraccion AMS)", comp: "", salida: 0, entrada: 40000 }), descripcionDeCaja({ concepto: "a caja AMS", comp: "", salida: 5, entrada: 0 }),
+      descripcionDeCaja({ concepto: "goma", comp: "FC", salida: 5, entrada: 0 }), descripcionDeCaja({ concepto: "taxi", comp: "X", salida: 5, entrada: 0 })].join(" · ")
+    const e2 = "caja_general · caja_sigot · caja_ams · null · Pase desde el banco · Pase a otra caja · Salida de caja · con factura · Salida de caja · sin factura"
+    chequear("Cajas", "💵 Cada hoja del Excel de AMS va a su caja por el nombre, y la app escribe una descripción pareja (pase, con o sin factura)", e2, v2, v2 === e2, "A-FEAT-1585")
   }
   return r
 }

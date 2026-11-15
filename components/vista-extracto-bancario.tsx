@@ -38,6 +38,8 @@ import { SelectorCuentaContable } from "@/components/ui/selector-cuenta-contable
 import { WizardTemplatesEgresos } from "@/components/wizard-templates-egresos"
 import { cuotaDelMovimiento } from "@/lib/templates/cuotas-del-template"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
+import { ImportarCajas } from "@/components/importar-cajas"
+import { ProtocoloPaseDeCaja, CAJAS_DE_AMS } from "@/components/protocolo-pase-de-caja"
 import { AvisoNcTarjeta } from "@/components/aviso-nc-tarjeta"
 import { ResultadoPdfCajaAhorro } from "@/components/resultado-pdf-caja-ahorro"
 import { PanelDolares, ModalMovimientoManual } from "@/components/panel-dolares"
@@ -3952,6 +3954,8 @@ ${marca}` : marca
 
         <TabsContent value="movimientos" className="space-y-4">
 <SoloLectura recurso="extracto.movimientos">
+          {/* 📋 A-FEAT-1585 (JMS 15/11): el protocolo del pase de caja, a mano en la pantalla de cada caja */}
+          {CAJAS_DE_AMS.has(cuentaId) && <ProtocoloPaseDeCaja />}
           {/* Estadísticas */}
           <div className="grid grid-cols-5 gap-4">
             <Card>
@@ -5432,9 +5436,6 @@ ${marca}` : marca
               pam_galicia_cc:  { modo: 'excel', endpoint: '/api/import-excel',      formato: 'Excel PAM Galicia CC (.xlsx)',  accept: '.xlsx,.xls' },
               pam_galicia:     { modo: 'excel', endpoint: '/api/import-excel-ca',   formato: 'Excel PAM Galicia CA (.xlsx)',  accept: '.xlsx,.xls', boton: '📊 Excel del banco', alt: PDF_CA('PAM') },
               ma_galicia:      { modo: 'excel', endpoint: '/api/import-excel-ca',   formato: 'Excel MA Galicia CA (.xlsx)',   accept: '.xlsx,.xls', boton: '📊 Excel del banco', alt: PDF_CA('MA') },
-              caja_general:    { modo: 'excel', endpoint: '/api/import-excel-caja', formato: 'Excel Caja General (.xlsx) — columnas: FECHA / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO', accept: '.xlsx,.xls' },
-              caja_ams:        { modo: 'excel', endpoint: '/api/import-excel-caja', formato: 'Excel Caja AMS (.xlsx) — columnas: FECHA / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO',     accept: '.xlsx,.xls' },
-              caja_sigot:      { modo: 'excel', endpoint: '/api/import-excel-caja', formato: 'Excel Caja Sigot (.xlsx) — columnas: FECHA / Cat / CONCEPTO / SALIDA / ENTRADA / SALDO',   accept: '.xlsx,.xls' },
               tarjeta_visa_business_msa: {
                 modo: 'pdf', endpoint: '/api/import-pdf-tarjeta', formato: 'PDF VISA Business MSA — resumen oficial Galicia (.pdf)', accept: '.pdf',
                 alt: { modo: 'excel', endpoint: '/api/import-excel-tarjeta', formato: 'Excel manual VISA Business MSA (.xlsx) — columnas: FECHA / CONCEPTO / PESOS / DÓLARES (+ opcionales).', accept: '.xlsx,.xls' }
@@ -5455,6 +5456,9 @@ ${marca}` : marca
             const config: ImpCfg | undefined = cfgBase
               ? (cfgBase.alt && importTipoArchivo === 'alt' ? cfgBase.alt : cfgBase)
               : undefined
+
+            // 💵 A-FEAT-1585 — las cajas de AMS: un Excel con una hoja por caja, «Revisar» y después «Cargar»
+            if (CAJAS_DE_AMS.has(cuentaId)) return <ImportarCajas cuentaId={cuentaId} onCargado={recargar} />
 
             // 🏦 A-FEAT-1230 — los echeqs de terceros no se importan: se arman desde los cheques.
             if (cuentaId === 'echeqs_terceros') {
