@@ -18130,3 +18130,19 @@ ventas en efectivo de mayo ($ 4,33 M), las deudas entre socios (MA, PAM: ¿divid
 5. Sin mergear sin el OK de JMS. Si JMS lo pide en esa terminal, puede repartir el trabajo entre varios agentes.
 
 **7 · La PC**: 8 GB de RAM — esta terminal más la principal es el máximo.
+
+**8 · Plan entregado por la terminal de Fable (15/11/2026, noche) — espera las respuestas de JMS**
+- La página del plan, con 16 preguntas (P1–P16) que JMS responde ahí mismo: https://claude.ai/artifact/HojCkDtrhBXv29ENpzBvi5
+  (las respuestas se guardan en la colección `respuestas` de esa página).
+- **Dato nuevo de JMS: hay reunión el 16/11.** Propuesta: llevar el reporte de MSA (número final = ganancia del balance propio,
+  US$ 260.893,17; índice de 12 ítems = los rubros del balance propio; hoja de resultado hasta la ganancia líquida; cuentas por
+  socio; pendientes) y MA/PAM como página de estado.
+- Insumos: los tres exports que JMS bajó el 15/11 (`- Comunicacion JMS Claude - Archivos/Balance/Excels trabajando con claude/Export
+  Balance App/Papeles v14`, en la carpeta principal): set A–I, libros por partes y balance propio.
+- Hallazgos al revisar esos exports, sin resolver:
+  1. En el Excel del balance propio, solapa «Socios», el control no cierra: los socios suman $ 61.094.765,00 contra
+     $ 64.623.846,86 del renglón «Distribución de fondos» (diferencia $ 3.529.082).
+  2. Los libros por partes arman muchos totales con fórmulas que filtran el detalle (≈ 2.700, casi todas en Templates y en Socios
+     y Libertad) y ninguna hoja tiene configuración de impresión: sirven como base de datos, no como detalle del reporte tal cual.
+  3. Vercel: producción figura en el commit `6a728bf` (main del 30/10), no en el `b61d0c22` publicado el 14/11; los despliegues
+     que se ven son todos de vista previa de `desarrollo`. Revisar en la terminal de administración.
