@@ -4448,6 +4448,38 @@ Te va a seguir preguntando si:
 
 ⚠️ Sin probar por vos todavía → `A-TEST-115`.
 
+## 💵 El pase de caja — protocolo para AMS (cajas General, AMS y Sigot de MSA)
+
+*Acordado con JMS el 15/11/2026. Es lo que hay que pedirle a AMS y lo que JMS controla. 🚧 La pantalla todavía se está
+construyendo → [A-FEAT-1585](PENDIENTES.md#a-feat-1585); este protocolo ya vale para el Excel.*
+
+**Quién:** AMS lleva las tres cajas en su Excel (una hoja por caja). Una vez por mes como máximo, «pasa caja» con Sigot:
+renglón por renglón, con las facturas a la vista.
+
+**En el Excel, al pasar caja:**
+1. **Cada movimiento con su fecha real** (la del día que salió o entró la plata).
+2. **La columna «Comp» en las tres hojas**, con uno de estos valores:
+   - **FC + proveedor** → tiene factura (por ejemplo «FC Gomería Tala»). Es el dato que más ayuda: con eso la app busca la factura sola.
+   - **X** → no tiene factura.
+   - **F fijo** → gasto del fondo fijo.
+   - **DIST + socio** → es por cuenta de un socio (por ejemplo «DIST MA»).
+3. **Un gasto olvidado** (la factura que aparece después): se anota **al final**, con la fecha real del pago, y en el concepto
+   «(anotado tarde)». No se reordena el Excel. ⚠️ Si la fecha es de **antes del 30/06** y se anota después del cierre, avisar a
+   JMS: cambia el saldo del ejercicio que ya cerró.
+4. **Un renglón viejo no se corrige ni se borra**: se agrega un renglón «ajuste» con la diferencia. Así el Excel subido antes y el
+   nuevo siguen coincidiendo.
+5. **Los pases entre cajas**, como ya se hace: «a caja AMS» / «a Sigot» en la General y «de caja gral» en la que recibe, mismo importe.
+6. **El arqueo**: al pasar caja se cuenta la plata; si no da, un renglón «ajuste» por la diferencia.
+
+**En la app, al terminar el pase** *(cuando esté la pantalla)*:
+7. **Subir el Excel entero** en Extracto → Cajas → Importar (todas las hojas o una sola). La app suma sólo lo nuevo y muestra el
+   control: nuevos, anotados tarde, posibles repetidos, cambiados, y si el saldo de cada caja da el del Excel.
+8. **Conciliar**: cada movimiento contra su factura, su template de caja, su sueldo o el pase de la otra caja. Queda
+   **«a confirmar por JMS»**.
+
+**JMS:** confirma lo que concilió AMS (o lo devuelve con un comentario), y mira las alertas: un mes sin subir las cajas, un
+gasto que entró en un mes ya confirmado, un renglón que **cruza el cierre** (fecha de un ejercicio y posición en el otro).
+
 ## 📄 Extracto → cargar la Caja de Ahorro desde el resumen PDF
 
 > **Para qué sirve**: el Galicia no deja bajar movimientos viejos. Si el Excel no se descargó a
