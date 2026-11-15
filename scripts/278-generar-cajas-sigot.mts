@@ -21,20 +21,20 @@ const MARCA = "[script 278]"
 let up = "", des = ""
 for (const { f, e } of pares) {
   const nota = [e.nota_operador, notaDeCaja("caja_sigot", f), MARCA].filter(Boolean).join(" · ")
-  up += `update msa.caja_sigot set descripcion = ${q(descripcionDeCaja(f))}, detalle = ${q(detalleDeCaja(f))}, orden = ${f.fila}, nota_operador = ${q(nota)} where id = '${e.id}' and descripcion is not distinct from ${q(e.descripcion)} and detalle is not distinct from ${q(e.detalle)};\n`
+  up += `update msa.caja_sigot set descripcion = ${q(descripcionDeCaja(f, "caja_sigot"))}, detalle = ${q(detalleDeCaja(f))}, orden = ${f.fila}, nota_operador = ${q(nota)} where id = '${e.id}' and descripcion is not distinct from ${q(e.descripcion)} and detalle is not distinct from ${q(e.detalle)};\n`
   des += `update msa.caja_sigot set descripcion = ${q(e.descripcion)}, detalle = ${q(e.detalle)}, orden = ${e.orden ?? "null"}, nota_operador = ${q(e.nota_operador)} where id = '${e.id}' and nota_operador like '%${MARCA}%';\n`
 }
 const cab = (t: string) => `-- 278 · A-FEAT-1585 (JMS 15/11: «R1 ok y podés cambiar los datos previos en caja Sigot»). ${t}\n-- Los ${pares.length} movimientos de la Caja Sigot ya cargados (05/02–19/05/26) quedan igual que los que carga el importador nuevo: el texto de AMS\n-- a Detalle, la Descripción pareja de la app, el orden = fila del Excel de AMS («- CAJA 25-26.xlsx», hoja «Caja Sigot») y la nota con su Cat/Comp.\n-- No cambia importes, fechas, estado ni conciliación. Foto de antes: 278-foto-antes.json · generado por 278-generar-cajas-sigot.mts\n`
 writeFileSync("scripts/278-cajas-sigot-detalle.sql", cab("") + `begin;\n${up}do $$ begin if (select count(*) from msa.caja_sigot where nota_operador like '%${MARCA}%') <> ${pares.length} then raise exception '278: no quedaron los ${pares.length}'; end if; end $$;\ncommit;\n`)
 writeFileSync("scripts/278-cajas-sigot-detalle-deshacer.sql", cab("DESHACER: vuelve cada uno, por id, a su valor de antes.") + `begin;\n${des}commit;\n`)
 writeFileSync("scripts/278-foto-antes.json", JSON.stringify(ex, null, 1))
-console.log("generado:", pares.length, "· ejemplo:", descripcionDeCaja(pares[0].f), "|", detalleDeCaja(pares[0].f), "| orden", pares[0].f.fila)
+console.log("generado:", pares.length, "· ejemplo:", descripcionDeCaja(pares[0].f, "caja_sigot"), "|", detalleDeCaja(pares[0].f), "| orden", pares[0].f.fila)
 
 // Con «--aplicar» hace los mismos cambios del .sql (por id, y sólo si el texto sigue siendo el de antes) y verifica los 79.
 if (process.argv.includes("--aplicar")) {
   let n = 0
   for (const { f, e } of pares) {
-    let qb = sb.schema("msa").from("caja_sigot").update({ descripcion: descripcionDeCaja(f), detalle: detalleDeCaja(f), orden: f.fila,
+    let qb = sb.schema("msa").from("caja_sigot").update({ descripcion: descripcionDeCaja(f, "caja_sigot"), detalle: detalleDeCaja(f), orden: f.fila,
       nota_operador: [e.nota_operador, notaDeCaja("caja_sigot", f), MARCA].filter(Boolean).join(" · ") }).eq("id", e.id)
     qb = e.descripcion == null ? qb.is("descripcion", null) : qb.eq("descripcion", e.descripcion)
     qb = e.detalle == null ? qb.is("detalle", null) : qb.eq("detalle", e.detalle)

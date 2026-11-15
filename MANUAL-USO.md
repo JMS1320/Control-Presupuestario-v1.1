@@ -4459,6 +4459,11 @@ sólo esa) → **👁 Revisar** (no guarda nada: muestra nuevos, ya cargados, po
 de cada caja por fecha contra el del Excel) → **Cargar**. La primera vez de cada caja se tilda «Carga inicial (histórico)» con la
 fecha del saldo de arranque. → ⚠️ Sin probar todavía → A-TEST-1382
 
+**Control de pases:** en cada caja, «🔁 Pases entre cajas y con el banco» une cada extracción del Galicia con su entrada a una
+caja y cada pase de una caja con su entrada en la otra (mismo importe, pocos días; también las extracciones partidas por el tope
+del cajero). Lo que queda **sin pareja** se lista con su ficha: es lo que hay que preguntarle a AMS. Sólo mira, no cambia nada.
+→ ⚠️ Sin probar todavía → A-TEST-1383
+
 **Quién:** AMS lleva las tres cajas en su Excel (una hoja por caja). Una vez por mes como máximo, «pasa caja» con Sigot:
 renglón por renglón, con las facturas a la vista.
 

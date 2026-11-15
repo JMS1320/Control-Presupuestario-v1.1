@@ -58,6 +58,7 @@ import { capaInterna, partesDeLaPoliza, marcaDeLaNota, type MovCapa } from "@/li
 import { entradaDesde141, hojaInternoPorSocio } from "@/lib/balance/interno-por-socio"
 import { esPagoDeTarjeta } from "@/lib/balance/capa-interna-datos"
 import { analizarCaja, cajaDeHoja, descripcionDeCaja, leerHojaCaja } from "@/lib/extractos/caja-excel"
+import { controlarPases, type MovPase } from "@/lib/extractos/pases-entre-cajas"
 import { contrapartesDelRecorrido } from "@/lib/balance/fuera-por-cuenta-corriente"
 import { unirPorClave, sincronizarPendientes, hojaDelRecorrido } from "@/lib/balance/recorrido-excel"
 import { idsDelUltimoLote } from "@/lib/facturas/ultimo-lote"
@@ -14097,6 +14098,25 @@ export function correrCasos(): Resultado[] {
       descripcionDeCaja({ concepto: "goma", comp: "FC", salida: 5, entrada: 0 }), descripcionDeCaja({ concepto: "taxi", comp: "X", salida: 5, entrada: 0 })].join(" · ")
     const e2 = "caja_general · caja_sigot · caja_ams · null · Pase desde el banco · Pase a otra caja · Salida de caja · con factura · Salida de caja · sin factura"
     chequear("Cajas", "💵 Cada hoja del Excel de AMS va a su caja por el nombre, y la app escribe una descripción pareja (pase, con o sin factura)", e2, v2, v2 === e2, "A-FEAT-1585")
+  }
+
+  // ══ 🔁 Pases entre cajas: cada salida con su entrada (A-FEAT-1585) ══
+  {
+    const mv = (id: string, cuenta: MovPase["cuenta"], fecha: string, deb: number, cred: number, texto: string, descripcion: string): MovPase => ({ id, cuenta, fecha, texto, descripcion, debitos: deb, creditos: cred })
+    const c = controlarPases([
+      mv("b1", "banco", "2025-07-28", 300000, 0, "Caja AMS", "Extraccion En Autoservicio"), mv("b2", "banco", "2025-07-28", 300000, 0, "Caja AMS", "Extraccion En Autoservicio"),
+      mv("g1", "caja_general", "2025-07-29", 0, 600000, "Galicia a caja (extraccion AMS)", "Pase desde el banco"),            // 2 extracciones = 1 entrada
+      mv("b3", "banco", "2026-05-15", 900000, 0, "400 albañil + 500 caja", "Extraccion En Autoservicio"),
+      mv("g2", "caja_general", "2026-05-15", 0, 500000, "Galicia a caja", "Pase desde el banco"), mv("g3", "caja_general", "2026-05-16", 0, 400000, "Galicia a caja", "Pase desde el banco"), // 1 = 2
+      mv("g4", "caja_general", "2025-07-01", 80000, 0, "a Sigot", "Pase a otra caja"), mv("s1", "caja_sigot", "2025-07-01", 0, 80000, "Caja gral a caja Sigot (da andres)", "Pase desde otra caja"),
+      mv("g5", "caja_general", "2025-09-07", 50000, 0, "a caja AMS", "Pase a otra caja"), mv("a1", "caja_ams", "2025-07-19", 0, 130000, "DE CAJA GRAL", "Pase desde otra caja"), // sin pareja
+      mv("b4", "banco", "2026-02-23", 1020000, 0, "Extraccion a Caja", "Extraccion En Autoservicio"), mv("s2", "caja_sigot", "2026-02-21", 0, 1020000, "orden extraccion jose", "Pase desde otra caja"), // directo
+      mv("g6", "caja_general", "2026-03-01", 200000, 0, "a caja AMS", "Pase a otra caja"), mv("s3", "caja_sigot", "2026-03-01", 0, 200000, "Caja gral a caja Sigot", "Pase desde otra caja"), // dice AMS, entró a Sigot
+    ])
+    const v = [...c.resumen.map(r => `${r.tipo} ${r.pares} ${r.importe} · salen ${r.salenSinPar} ${r.importeSalen} · entran ${r.entranSinPar} ${r.importeEntran}`),
+      `directos ${c.pares.filter(p => p.directo).map(p => p.entra.id).join(",")}`, `sin pareja ${[...c.salenSinPar, ...c.entranSinPar].map(m => m.id).join(",")}`].join(" | ")
+    const e = "banco→caja 4 2520000 · salen 0 0 · entran 0 0 | caja→caja 1 80000 · salen 2 250000 · entran 2 330000 | directos s2 | sin pareja g5,g6,a1,s3"
+    chequear("Cajas", "🔁 Pases: extracciones partidas por el tope del cajero (en los dos sentidos), pase General → Sigot aunque el texto nombre las dos cajas, el directo del banco a Sigot marcado, y lo que no tiene pareja (o va a otra caja que la que dice) listado", e, v, v === e, "A-FEAT-1585")
   }
   return r
 }

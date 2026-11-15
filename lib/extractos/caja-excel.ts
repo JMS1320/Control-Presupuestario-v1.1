@@ -260,10 +260,11 @@ export function analizarCaja(tabla: TablaCaja, hoja: FilaCaja[], existentes: Exi
 export const detalleDeCaja = (x: Pick<FilaCaja, "concepto" | "cat">) => x.concepto || x.cat
 
 /** Qué fue el movimiento, en una palabra pareja (para filtrar y para que las reglas aprendan). El texto de AMS va a Detalle. */
-export function descripcionDeCaja(x: Pick<FilaCaja, "concepto" | "comp" | "salida" | "entrada">): string {
+export function descripcionDeCaja(x: Pick<FilaCaja, "concepto" | "comp" | "salida" | "entrada">, tabla?: TablaCaja): string {
   const t = textoClave(x.concepto), comp = textoClave(x.comp)
   if (/caja gral|caja general|de caja|a caja|a sigot|galicia a caja|extracc/.test(t)) {
-    if (/galicia|extracc/.test(t)) return x.entrada ? "Pase desde el banco" : "Pase al banco"
+    // 📌 JMS 15/11 (P4): la extracción va SIEMPRE primero a la Caja General → en AMS o Sigot, «orden extracción andrés» viene de la General
+    if (/galicia|extracc/.test(t) && (tabla === undefined || tabla === "caja_general" || /galicia/.test(t))) return x.entrada ? "Pase desde el banco" : "Pase al banco"
     return x.entrada ? "Pase desde otra caja" : "Pase a otra caja"
   }
   if (/^ajuste\b/.test(t)) return "Ajuste de arqueo"

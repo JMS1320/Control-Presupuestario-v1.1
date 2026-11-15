@@ -39,7 +39,7 @@ function resumen(hoja: string, a: AnalisisCaja, sinFecha: { fila: number; concep
     difsCadena: a.difsCadena.slice(0, LISTA).map(fichaCorta), nDifsCadena: a.difsCadena.length,
     cambiadosOBorrados: a.cambiadosOBorrados.slice(0, LISTA), nCambiadosOBorrados: a.cambiadosOBorrados.length,
     sinFecha, saldoFinalExcel: a.saldoFinalExcel, saldosPorFecha: a.saldosPorFecha,
-    muestra: a.aCargar.slice(0, 5).map(f => ({ ...fichaCorta(f), descripcion: descripcionDeCaja(f), detalle: detalleDeCaja(f) })),
+    muestra: a.aCargar.slice(0, 5).map(f => ({ ...fichaCorta(f), descripcion: descripcionDeCaja(f, a.tabla), detalle: detalleDeCaja(f) })),
   }
 }
 
@@ -115,7 +115,7 @@ export async function POST(req: Request) {
           nota_operador: `💵 ${NOMBRE_CAJA[a.tabla]} (Excel de AMS, fila ${a.corte.fila}) — saldo inicial · ${MARCA_INICIAL}` })
       }
       for (const f of a.aCargar) {
-        filas.push({ fecha: f.fecha, descripcion: descripcionDeCaja(f), detalle: detalleDeCaja(f) || null, debitos: f.salida, creditos: f.entrada,
+        filas.push({ fecha: f.fecha, descripcion: descripcionDeCaja(f, a.tabla), detalle: detalleDeCaja(f) || null, debitos: f.salida, creditos: f.entrada,
           saldo: f.saldo, control: f.difCadena, categ: null, contable: null, interno: null, centro_de_costo: null, cuenta: a.tabla,
           // carga inicial: el orden es la fila del Excel (el de AMS); después, a continuación de lo que hay
           orden: historico ? f.fila : ++orden, estado, nota_operador: notaDeCaja(a.tabla, f, marca) })
