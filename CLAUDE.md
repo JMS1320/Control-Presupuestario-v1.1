@@ -1091,9 +1091,12 @@ resuelto o contradecir una decisión vieja sin enterarse.*
 - **4 vs 7** — Manual es *cómo lo opera el usuario*; Módulo es *cómo está pensado por dentro*.
 - **5 vs 7** — Knowledge es *transversal*; Módulo es *de un módulo solo*.
 
-**Fuera de las 8, sólo TRES archivos declarados:** `CLAUDE.md` (las reglas), **`README.md`**
-(cara pública del repo) y **`ENTRE-DESARROLLADORES.md`** (el canal con el otro clon — autorizado
-por el usuario 2026-09-24; ver § 🤝). La **memoria** (`memory/`) **no es dimensión**: es continuidad de Claude.
+**Fuera de las 8, sólo CUATRO archivos declarados:** `CLAUDE.md` (las reglas), **`README.md`**
+(cara pública del repo), **`ENTRE-DESARROLLADORES.md`** (el canal con el otro clon — autorizado
+por el usuario 2026-09-24; ver § 🤝) y **`Protocolo de generación de reportes.md`** (autorizado por JMS 2026-11-15: *«la estructura
+del reporte en un sistema contable tiene que ser ésta… dejarlo en la raíz para siempre que se hace un reporte»*). **Todo reporte
+(para socios, contador u otro) sigue ese protocolo; el producto final es el PDF.** Las tablas maestras con filtros (libro diario,
+maestro de templates, papeles) son otra cosa y siguen existiendo. La **memoria** (`memory/`) **no es dimensión**: es continuidad de Claude.
 
 #### ➡️ Dirección única: la doc no cita a la memoria (REGLA)
 > **La memoria puede citar a la documentación. La documentación NO puede citar a la memoria.**
