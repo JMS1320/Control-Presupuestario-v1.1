@@ -330,6 +330,12 @@ pieza que aquella no tenía: **la huella**. Cuatro condiciones, y las cuatro obl
 
 **1 · Nunca rechaza.** Un importador que se planta el día que el emisor mueve una columna deja al
 usuario **sin herramienta** justo cuando la necesita. Devuelve lo que pudo leer y marca qué falló.
+- 🪞 **Y tampoco descarta un renglón del documento** *(JMS 2026-11-15, sobre el pago a Elvio repetido en la caja Sigot: «el Excel
+  tal cual está es como existe. No deberíamos borrarle un movimiento; eventualmente, que figure la inconsistencia»)*. Un renglón
+  igual a otro (mismo día, concepto e importe) **se carga y se marca «posible repetido»**; nunca se saltea por parecerse. Lo que
+  evita duplicar al volver a subir el mismo archivo es la **posición del renglón en el documento**, no su contenido. *Caso: el
+  importador de cajas salteó el 2º «Pago Elvio jornales» del 11/04/26 y la caja Sigot quedó $ 205.000 abajo del Excel* →
+  [A-FEAT-1585](PENDIENTES.md#a-feat-1585).
 
 **2 · Todo lo que se lee se puede corregir** — y en particular **lo que alimenta la plata**. Que la
 cabecera sea editable y los importes no es exactamente al revés de lo que hace falta.
