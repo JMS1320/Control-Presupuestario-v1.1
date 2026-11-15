@@ -1445,6 +1445,10 @@ ese lugar afecte a todo lo que lo usa.
   número de conclusión es el que **nadie puede verificar a ojo** y el que más caro sale si está mal.
 - **El mejor control es el camino inverso.** Recalcular al revés y comparar. Ej.: el presupuesto se
   arma del pasado ± costos variables → **de atrás para adelante tiene que dar lo mismo**.
+- 📑 **En un export, el control va SIEMPRE, no a veces** *(JMS 2026-11-15, sobre la solapa que unifique Inmobiliario, Red Vial y
+  Automotor: «una solapa unificadora bien concisa y con control siempre — protocolo, el control siempre, no a veces»)*. Toda solapa
+  que resume o junta otras (un unificado, un resumen, un total del papel) lleva su control a la vista: lo que muestra contra la suma
+  de lo que junta, con ✓ o ⚠️. Una solapa de resumen sin control se considera sin terminar. → [A-FEAT-1628](PENDIENTES.md#a-feat-1628).
 - **Visible y proporcional**: si cierra, un ✓ discreto; si no, una alerta grande. Un control que
   nadie ve no es un control.
 - **Tolerancia explícita** cuando el dominio la tiene (los emisores redondean), y **listando los
