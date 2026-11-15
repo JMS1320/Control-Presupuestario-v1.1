@@ -18,6 +18,7 @@ import { join } from "node:path"
 import { fechasReales } from "../lib/excel/fechas-reales"
 import { TABLAS_CON_VINCULO_ARCA } from "../lib/conciliacion/tablas-con-vinculo-arca"
 import { agregarHoja } from "../lib/balance/export-libro-diario"
+import { capaInterna, destinoDeCodigo, marcaDeLaNota, normalizarCodigo, partesDeLaPoliza, PROPIO, type MovCapa } from "../lib/balance/capa-interna"
 
 const env = Object.fromEntries(readFileSync(".env.local", "utf8").split(/\r?\n/).filter(l => l.includes("=") && !l.trim().startsWith("#")).map(l => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, "")] }))
 const sb: any = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
@@ -31,32 +32,20 @@ async function todo(q: (d: number, h: number) => any): Promise<any[]> {
   return out
 }
 
-// ── La marca efectiva: la columna; si está vacía, lo que dice la nota del histórico («tu planilla: CATEG X · Contable Y · Interno Z»)
-const deNota = (nota: string, campo: "Contable" | "Interno") => {
-  const m = nota.match(/tu planilla:[^\n]*/i)?.[0] ?? ""
-  return (m.match(new RegExp(`${campo} ([^·\\n»]+)`, "i"))?.[1] ?? "").trim()
-}
-const norm = (x: string) => x.toUpperCase().replace(/\s+/g, " ").replace(/^DI?STRI? /, "DIST ").replace(/^(\w+) CTA$/, "CTA $1").replace(/^CUENTA /, "CTA ").trim()
-
-// ── De un código, a quién apunta y de qué tipo es
-type Destino = { tipo: "CTA" | "DIST" | "RET" | "AP" | "LIB" | "GASTO" | "DESGLOSAR" | "VER" | "OTRO"; quien: string } | null
-const QUIENES: Record<string, string> = { MA: "MA", MAMA: "MA", PAM: "PAM", JMS: "JMS", JOSE: "JMS", AMS: "AMS", ANDRES: "AMS", MSA: "MSA", COTITULARES: "COTITULARES", COTIT: "COTITULARES", MECHI: "MECHI", FLIA: "FLIA" }
-function destino(codigo: string): Destino {
-  const x = norm(codigo); if (!x) return null
-  let r: RegExpMatchArray | null
-  if ((r = x.match(/^(CTA|DIST|RET\s*[0-9I]*)\s+(\w+)/))) { const q = QUIENES[r[2]] ?? r[2]; return { tipo: r[1].startsWith("RET") ? "RET" : (r[1] as "CTA" | "DIST"), quien: q } }
-  if (/^AP\b/.test(x)) return { tipo: "AP", quien: x.split(" ").at(-1)! }
-  if (/^LIB/.test(x)) return { tipo: "LIB", quien: "LIB" }
-  if (/^GASTO (\w+)/.test(x)) return { tipo: "GASTO", quien: x.split(" ")[1] }
-  if (/^DESGLOS/.test(x)) return { tipo: "DESGLOSAR", quien: "a repartir" }
-  if (/^(X|VER)$/.test(x)) return { tipo: "VER", quien: "?" }
-  return { tipo: "OTRO", quien: x }
-}
+// ── La marca efectiva, el código y su destino: de la lib común (lib/balance/capa-interna.ts), la misma que usan los casos
+const deNota = marcaDeLaNota, norm = normalizarCodigo
+type Destino = ReturnType<typeof destinoDeCodigo>
+const destino = (c: string): Destino => { const d = destinoDeCodigo(c); return !d ? null : d.tipo === "DESGLOSAR" ? { ...d, quien: "a repartir" } : d.tipo === "VER" ? { ...d, quien: "?" } : d }
 // MSA > PAM > MA > Cotitulares: una transferencia entre dos cuentas de la app se cuenta UNA vez, del lado de más arriba (esquema 06/11, punto 4)
 const RANGO: Record<string, number> = { MSA: 1, PAM: 2, MA: 3, COTITULARES: 4 }
 const esEspejo = (titular: string, d: Destino) => !!d && (d.tipo === "CTA" || d.tipo === "DIST") && (RANGO[d.quien] ?? 99) < (RANGO[titular.toUpperCase()] ?? 99)
 
-type Mov = { tabla: string; cuenta: string; titular: string; usd: boolean; fecha: string; desc: string; detalle: string; deb: number; cred: number; categ: string
+const cuotaEgreso = new Map((await todo((d, h) => sb.from("cuotas_egresos_sin_factura").select("id, egreso_id").order("id").range(d, h))).map((c: any) => [c.id, c.egreso_id]))
+const polizas = await todo((d, h) => sb.from("polizas_seguro").select("id, poliza, template_id").order("id").range(d, h))
+const endosos = await todo((d, h) => sb.from("polizas_endosos").select("id, poliza_id, endoso, periodo_desde, es_nota_credito").order("id").range(d, h))
+const bienes = await todo((d, h) => sb.from("polizas_bienes").select("endoso_id, clave, descripcion, prima").order("id").range(d, h))
+const respInterno = new Map((await todo((d, h) => sb.from("polizas_responsables").select("clave, responsable_interno").order("clave").range(d, h))).map((r: any) => [r.clave, r.responsable_interno]))
+type Mov = { egreso?: string; esTarjeta?: boolean; tabla: string; cuenta: string; titular: string; usd: boolean; fecha: string; desc: string; detalle: string; deb: number; cred: number; categ: string
   cCol: string; iCol: string; cNota: string; iNota: string; c: string; i: string; nota: string; id: string }
 const movs: Mov[] = []
 const control: unknown[][] = [["Cuenta", "Tabla", "Titular", "Movimientos 25/26 (conteo directo)", "Leídos", "Con contable o interno (columna o nota)", "Estado"]]
@@ -74,7 +63,9 @@ for (const t of TABLAS_CON_VINCULO_ARCA) {
     marcados++
     movs.push({ tabla: `${t.schema}.${t.tabla}`, cuenta: String(t.cuenta), titular: String(t.titular), usd: !!t.enDolares, fecha: String(m.fecha).slice(0, 10),
       desc: String(m.descripcion ?? "").slice(0, 70), detalle: String(m.detalle ?? "").trim().slice(0, 120), deb: r2(Number(m.debitos) || 0), cred: r2(Number(m.creditos) || 0),
-      categ: String(m.categ ?? ""), cCol, iCol, cNota, iNota, c, i, nota: nota.slice(0, 200), id: String(m.id) })
+      categ: String(m.categ ?? ""), cCol, iCol, cNota, iNota, c, i, nota: nota.slice(0, 200), id: String(m.id),
+      egreso: m.template_cuota_id ? cuotaEgreso.get(m.template_cuota_id) : undefined,
+      esTarjeta: !/tarjeta|visa/i.test(t.tabla) && (/^tarjetas?/i.test(String(m.categ ?? "")) || /pago (de )?(la )?(tarjeta|visa)|visa (business|empresa)/i.test(`${m.descripcion ?? ""} ${m.detalle ?? ""}`)) })
   }
   control.push([t.cuenta, `${t.schema}.${t.tabla}`, t.titular, c1.count, filas.length, marcados, c1.count === filas.length ? "✅ leídos todos" : "🔴 no coinciden"])
 }
@@ -184,9 +175,38 @@ const fAlt: unknown[][] = [["ALTERNATIVAS — qué códigos quedan en el INTERNO
   ["B · espejo del contable", "El interno usa el mismo vocabulario que el contable («CTA + quién»), y DIST sólo para la distribución decidida.", "Una sola lógica para los dos estudios; el mismo código de la app arma las dos cuentas.", "Pierde la diferencia entre «es de MA» y «es cuenta con MA», que es justo lo que separa lo real."],
   ["C · el sistema lo deduce", "No se escribe interno: el sistema lo saca de reglas (el bien es de MA → MA; Libertad → MA; sueldo de MA → dividendo) y sólo se marca a mano la excepción.", "Casi cero carga manual hacia adelante; usa el «dueño del bien» que ya existe.", "Hay que escribir y mantener las reglas; lo que no tenga regla queda igual al contable sin avisar si nadie lo marca."]]
 
+// ── 6 · LA CAPA INTERNA con los datos reales (misma función que los casos)
+const SALDOS_141: Record<string, number> = { JMS: -36220720.53, AMS: -5463334.73, MA: -44459338.17, PAM: -189826.57 }  // 14.1 de MSA 25/26 al 30/06/26 (Papeles v13, 11/11) — + = MSA le debe al socio
+const movsCapa: MovCapa[] = movs.filter(m => !m.usd).map(m => ({ id: m.id, fecha: m.fecha, cuenta: m.cuenta, titular: m.titular as MovCapa["titular"], deb: m.deb, cred: m.cred,
+  contable: m.c, interno: m.i, detalle: m.detalle, desc: m.desc, esPagoTarjeta: m.esTarjeta,
+  partesPoliza: /^DESGLOS/i.test(norm(m.i)) ? partesDeLaPoliza(m.egreso, m.fecha, polizas, endosos, bienes, c => respInterno.get(c)) ?? undefined : undefined }))
+const capa = capaInterna(movsCapa, [{ empresa: "MSA", socio: "MA", importe: SUELDO_MA, porque: "sueldo de MA (13 sueldos, 14.1): sólo contable; en lo real es dividendo" }])
+const movDe = new Map(movs.map(m => [m.id, m]))
+const fCapa: unknown[][] = [["LA CAPA INTERNA — cuánto mueve lo real por cuenta (+ = el socio se llevó MÁS en lo real que en lo contable)"],
+  ["Es una capa ENCIMA de la contable: no cambia ningún código. Cada movimiento con un interno que va a otro lado le saca a una cuenta y le pone a otra; el sueldo de MA va aparte (ajuste fijo)."],
+  [`Control: lo que la capa saca de unas cuentas = lo que pone en otras → ${capa.control === 0 ? "✅ 0" : "🔴 " + capa.control}. Ajustes: ${capa.ajustes.length} · sin resolver: ${capa.sinResolver.length} · contados del otro lado (espejo): ${capa.espejos}.`], [],
+  ["Empresa", "Cuenta (socio o pozo)", "Ajuste de la capa"]]
+for (const [k, x] of [...capa.porCuenta].sort((a, b) => a[0].localeCompare(b[0]))) { const [e, q] = k.split("→"); fCapa.push([e, q, x]) }
+const f141: unknown[][] = [["14.1 INTERNA — las cuentas de MSA con cada socio: la CONTABLE (la 14.1 que se presenta) más la CAPA = la REAL"],
+  ["Saldo: + = MSA le debe al socio · − = el socio le debe a MSA (se llevó de más). Real = contable − lo que la capa le suma al socio."], [],
+  ["Socio", "Saldo CONTABLE al 30/06/26 (14.1)", "Capa interna (movimientos)", "Ajuste fijo", "Saldo REAL al 30/06/26", "Qué cambia"]]
+for (const q of ["JMS", "AMS", "MA", "PAM"]) {
+  const tot = capa.porCuenta.get(`MSA→${q}`) ?? 0, fijo = q === "MA" ? SUELDO_MA : 0, mov = r2(tot - fijo)
+  f141.push([q, SALDOS_141[q], -mov, -fijo, r2(SALDOS_141[q] - tot), q === "MA" ? "sin el sueldo (dividendo) y con lo que en lo real es suyo" : mov ? "lo que el interno le saca o le pone" : "igual"])
+}
+const otros = [...capa.porCuenta].filter(([k]) => !k.startsWith("MSA→") || !["JMS", "AMS", "MA", "PAM"].includes(k.split("→")[1]))
+f141.push([], ["OTRAS CUENTAS QUE MUEVE LA CAPA (a compensar internamente)"], ["Empresa → cuenta", "Ajuste", "Lectura"])
+for (const [k, x] of otros) f141.push([k, x, k.endsWith(PROPIO) ? "gasto propio de la empresa que en lo real es de un socio (o al revés)" : k.includes("LIB") ? "Libertad: en lo real 100 % MA" : "cuenta entre empresas del grupo"])
+const fAj: unknown[][] = [["AJUSTES DE LA CAPA — movimiento por movimiento (ficha completa)"], [],
+  ["Fecha", "Cuenta", "Empresa", "Descripción del banco", "Detalle", "CATEG", "Importe (+ salió)", "Contable", "Interno", "Sale de la cuenta", "Va a la cuenta", "Por qué", "De dónde salió la marca"]]
+for (const a of capa.ajustes) { const m = movDe.get(a.mov!.id)!; fAj.push([m.fecha, m.cuenta, m.titular, m.desc, m.detalle, m.categ, a.importe, m.c, m.i, a.de, a.a, a.porque, m.iCol ? "columna" : "nota del histórico"]) }
+const fSR: unknown[][] = [["SIN RESOLVER — la capa no los mueve (quedan como el contable) hasta que se decida"], [],
+  ["Fecha", "Cuenta", "Empresa", "Descripción del banco", "Detalle", "CATEG", "Débito", "Crédito", "Contable", "Interno", "Por qué"]]
+for (const x of capa.sinResolver) { const m = movDe.get(x.mov.id)!; fSR.push([m.fecha, m.cuenta, m.titular, m.desc, m.detalle, m.categ, m.deb, m.cred, m.c, m.i, x.porque]) }
+
 // ── El libro
 const wb = XLSX.utils.book_new()
-agregarHoja(wb, "Qué entendí", fQue); agregarHoja(wb, "Hallazgos y propuesta", fHal); agregarHoja(wb, "Simulación por socio", fSim); agregarHoja(wb, "Diferencias", fDif)
+agregarHoja(wb, "Qué entendí", fQue); agregarHoja(wb, "14.1 interna", f141); agregarHoja(wb, "Capa interna", fCapa); agregarHoja(wb, "Ajustes de la capa", fAj); agregarHoja(wb, "Sin resolver", fSR); agregarHoja(wb, "Hallazgos y propuesta", fHal); agregarHoja(wb, "Simulación por socio", fSim); agregarHoja(wb, "Diferencias", fDif)
 agregarHoja(wb, "Inventario interno", fInv); agregarHoja(wb, "Columna vs nota", fCN); agregarHoja(wb, "Alternativas", fAlt); agregarHoja(wb, "Control", control)
 fechasReales(wb)
 let nombre = `Cuenta interna - research 25-26 (${HOY}).xlsx`; for (let v = 2; existsSync(join(CARPETA, nombre)); v++) nombre = `Cuenta interna - research 25-26 (${HOY}) v${v}.xlsx`
@@ -194,5 +214,8 @@ XLSX.writeFile(wb, join(CARPETA, nombre))
 console.log("Escrito:", nombre)
 console.log("movs", movs.length, "con interno", movs.filter(m => m.i).length, "difs", difs.length, "espejos", espejos, "control dif", r2(totDif))
 console.log("nota interno", cnI, "nota contable", cnC)
+console.log("CAPA control", capa.control, "ajustes", capa.ajustes.length, "sin resolver", capa.sinResolver.length, "espejos", capa.espejos)
+for (const r of f141.slice(4)) console.log(JSON.stringify(r))
+for (const r of fSR.slice(3)) console.log(JSON.stringify(r).slice(0, 220))
 for (const r of fSim.slice(5)) console.log(JSON.stringify(r))
 for (const r of fInv.slice(3, 40)) console.log(JSON.stringify(r).slice(0, 260))

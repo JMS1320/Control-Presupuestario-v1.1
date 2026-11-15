@@ -54,6 +54,7 @@ import { libroDeSolapa, repartirEnLibros, templatesDeResponsable, detalleBancari
 import { todasLasUnidades, librosConSubs, controlDeCobertura, solapasDeFormula, recortarPapel, papelPorId, papelDelRenglon, PAPEL_DEL_RENGLON, linkPapelBalance, papelDelLink } from "@/lib/balance/papeles-del-balance"
 import { armarStocksUnificados, hojaDeStocks } from "@/lib/balance/stocks-unificado"
 import { temasDeCuentaCorriente } from "@/lib/balance/recorrido-conciliacion"
+import { capaInterna, partesDeLaPoliza, marcaDeLaNota, type MovCapa } from "@/lib/balance/capa-interna"
 import { contrapartesDelRecorrido } from "@/lib/balance/fuera-por-cuenta-corriente"
 import { unirPorClave, sincronizarPendientes, hojaDelRecorrido } from "@/lib/balance/recorrido-excel"
 import { idsDelUltimoLote } from "@/lib/facturas/ultimo-lote"
@@ -14007,6 +14008,37 @@ export function correrCasos(): Resultado[] {
     const v = `a: inicio ${a.inicio.tn} (${a.inicio.origen}) · cosecha ${a.cosecha.tn} (${a.cosecha.origen}) | b: cosecha ${b.cosecha.tn} · faltan ${b.cosecha.sinToneladas} | c: inicio ${c.inicio.tn} (${c.inicio.origen}) · cosecha ${c.cosecha.tn} (${c.cosecha.origen}) · dif ${c.cosecha.diferenciaTn}`
     const e = "a: inicio 0 (cierre anterior) · cosecha 15.12 (certificaciones) | b: cosecha null · faltan 1 | c: inicio 6.926 (escrito) · cosecha 15.2 (escrita) · dif 0.08"
     chequear("Granos", "🌾 El inicio toma el cierre del año anterior y la cosecha la suma de las certificaciones (sin sumar a medias); lo escrito manda y se controla contra las certificaciones", e, v, v === e, "A-FEAT-1627")
+  }
+
+  // ══ 🧱 La capa interna: lo real encima de lo contable, sin tocar un código (A-FEAT-1288) ══
+  {
+    const m = (id: string, titular: MovCapa["titular"], deb: number, contable: string, interno: string, extra: Partial<MovCapa> = {}): MovCapa =>
+      ({ id, fecha: "2026-03-10", cuenta: titular, titular, deb, cred: 0, contable, interno, ...extra })
+    const movs: MovCapa[] = [
+      m("tiguan", "MSA", 100, "", "DIST MA"),                    // gasto de MSA en los papeles, de MA en lo real
+      m("jms-ma", "MSA", 50, "CTA JMS", "DIST MA"),              // contable a JMS, real a MA
+      m("orbith", "MSA", 30, "CTA MA", "Gasto MSA"),             // contable a MA, real lo absorbe MSA
+      m("igual", "MSA", 999, "CTA AMS", ""),                     // interno vacío: nada
+      m("tarjeta", "MA", 70, "CTA MSA", "DESGLOSAR"),             // espejo (MA < MSA): lo cuenta MSA → no entra
+      m("visa", "MSA", 80, "CTA MA", "DESGLOSAR", { esPagoTarjeta: true }),   // se abre con su resumen
+      m("flota", "MSA", 200, "", "DESGLOSAR", { partesPoliza: [{ quien: "MSA", parte: 0.75 }, { quien: "MA", parte: 0.25 }] }),
+      m("preocup", "MSA", 40, "", "DESGLOSAR"),                  // sin dato que lo abra
+      m("iatf", "MSA", 60, "", "IATF"),                          // no dice de quién
+      // a mano: propio −100 (tiguan) +30 (orbith) +80 (visa) −50 (flota 25 %) = −40 · MA +100 +50 −30 −80 +50 +1500 (sueldo) = 1590
+      m("hist", "PAM", 10, marcaDeLaNota("tu planilla: CATEG X · Contable LIB · Interno DIST MA", "Contable"), marcaDeLaNota("tu planilla: CATEG X · Contable LIB · Interno DIST MA", "Interno")),
+    ]
+    const res = capaInterna(movs, [{ empresa: "MSA", socio: "MA", importe: 1500, porque: "sueldo de MA: sólo contable" }])
+    const cuentas = [...res.porCuenta].sort(([a], [b]) => a.localeCompare(b)).map(([k, x]) => `${k} ${x}`).join(" · ")
+    const v = `${cuentas} | sin resolver: ${res.sinResolver.map(s => s.mov.id).join(",")} | espejos ${res.espejos} | control ${res.control}`
+    const e = "MSA→(propio) -40 · MSA→JMS -50 · MSA→MA 1590 · PAM→LIB (50/50) -10 · PAM→MA 10 | sin resolver: preocup,iatf | espejos 1 | control 0"
+    chequear("Cuenta interna", "🧱 La capa interna mueve la plata del contable a lo real sin crearla: DIST / Gasto, tarjeta abierta por su resumen, seguro por bien, espejo contado una vez, lo dudoso listado, sueldo de MA como ajuste", e, v, v === e, "A-FEAT-1288")
+    // el reparto de la póliza: la prima de cada bien del endoso vigente × su responsable
+    const pol = partesDeLaPoliza("tpl", "2026-02-01", [{ id: "p", poliza: "34160783", template_id: "tpl" }],
+      [{ id: "e1", poliza_id: "p", endoso: "1", periodo_desde: "2025-08-01", es_nota_credito: false }, { id: "e2", poliza_id: "p", endoso: "2", periodo_desde: "2026-03-01", es_nota_credito: false }],
+      [{ endoso_id: "e1", clave: "AAA111", descripcion: "Hilux", prima: 300 }, { endoso_id: "e1", clave: "TIG222", descripcion: "Tiguan", prima: 100 }, { endoso_id: "e2", clave: "AAA111", descripcion: "Hilux", prima: 999 }],
+      c => (c === "TIG222" ? "MA" : null))
+    const v2 = (pol ?? []).map(p => `${p.quien} ${p.parte}`).join(" · ")
+    chequear("Cuenta interna", "🧩 Un seguro «Desglosar» se reparte por la prima de cada bien del endoso VIGENTE a la fecha × su responsable interno (sin responsable = MSA)", "MSA 0.75 · MA 0.25", v2, v2 === "MSA 0.75 · MA 0.25", "A-FEAT-1288")
   }
   return r
 }
