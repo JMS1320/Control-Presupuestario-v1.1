@@ -952,6 +952,18 @@ funcione no me debés preguntar cosas mientras… trabajar en una sub rama por p
 si avanza sin reglas, lo que vuelve no se puede revisar. Las dos cosas se resuelven separando lo
 reversible (se hace y se anota) de lo irreversible (se salta).*
 
+#### 🧱 Qué es «SEGURO» para avanzar sin él — una CAPA NUEVA sí, tocar lo LOGRADO no *(JMS 2026-11-14)*
+*Textual: **«considero seguro realizar un trabajo con errores o algunas alternativas. no considero seguro cambiar datos logrados. lo que
+desarrollaríamos sería una capa de datos nueva y si se hace mal simplemente se corrige o hace de nuevo. si precisás de mí tienen que ser
+preguntas cortas»**.*
+
+> **Sin él se puede construir todo lo que se APOYA encima de lo existente (una capa derivada, un cálculo, un papel, una alternativa),
+> aunque salga con errores: se corrige o se rehace. Lo que NO se toca sin él es el dato ya logrado (lo cargado, conciliado, marcado).**
+
+- Caso que la originó: la **cuenta interna** ([A-FEAT-1288](PENDIENTES.md#a-feat-1288)) como **capa sobre la contable** que sólo arroja
+  nuevos saldos entre cuentas a compensar internamente — no reescribe ni un código contable.
+- Una duda se pregunta **corta** (una línea, con opciones) y no frena el resto; mientras, se elige lo conservador y se anota.
+
 #### 🌙 La marca en la NOTA — el permiso viaja con el pedido *(2026-10-13)*
 *Pedido del usuario: **«todo lo que tiene (\*) significa que podés empezar a trabajar sobre eso sin mi
 supervisión. Pero mejor agregá a notas la marca… eso me relaja a mí para poder darte mejoras y que
