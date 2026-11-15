@@ -232,6 +232,23 @@ de enterarse de si tiene que hacer algo.
 lo obliga a traducir antes de poder pensar — y es el único que no puede delegar la decisión. La
 precisión técnica no se pierde: se **mueve abajo**, donde no bloquea.
 
+#### 🏷️ Nombrar las cosas COMPLETAS: qué es y dónde está — sintético pero explícito (REGLA)
+*Pedida por JMS 2026-11-15, después de que le pidiera comentar «el borrador» y tuviera que preguntar: **«¿es el borrador de qué?
+Tenés que ser más explícito además de sintético, para yo poder ubicar lo que estamos hablando (protocolo de comunicación conmigo)»**.*
+
+> **Toda referencia a algo que no está en la misma línea dice QUÉ ES y DÓNDE ESTÁ.** Nunca «el borrador», «la lista», «lo de
+> arriba», «H2» a secas.
+
+- Mal: *«terminás de leer el borrador (H2)»*. Bien: *«el mensaje para Fable — el texto que le explica qué reporte armar y con qué
+  reglas — está en `PENDIENTES.md` → A-FEAT-1629»*.
+- Un índice (H2, Q9) **se acompaña del nombre de la cosa** — JMS lee de a pedazos y vuelve horas después: el índice solo no le dice
+  nada.
+- Si algo vive sólo en el chat, **se pasa a su dimensión antes de pedirle que lo lea**, y se da la ruta: el chat se pierde de vista.
+- Sintético sigue valiendo: una frase que nombra la cosa, no un párrafo.
+
+*Motivo: JMS trabaja con varias terminales y temas a la vez; una referencia ambigua lo obliga a buscar hacia atrás antes de poder
+contestar, que es el mismo costo que esta § 🗣️ quiere evitar.*
+
 #### 📝 Cuando JMS enuncia un PROTOCOLO, se escribe en las reglas en el momento (REGLA)
 *Pedida por el usuario 2026-11-13: **«cuando yo te digo algo de los protocolos, lo tenés que documentar en las reglas de
 funcionamiento que tenemos. Muchas veces yo te hablo como de cierto protocolo y pretendo que vayas entendiendo esto»**.*
