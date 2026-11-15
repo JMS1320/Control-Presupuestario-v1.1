@@ -1372,6 +1372,14 @@ ese lugar afecte a todo lo que lo usa.
   ése · un «todos» para volver**, con `toggleChip` / `esSoloEste` / `tituloChip` / `PISTA_CTRL_CLICK` de
   `lib/ui/chips.ts`. El número de cada chip cuenta sobre lo filtrado por lo demás. Una barra de chips nueva **no** se
   escribe a mano. Las que todavía no lo usan → [A-FEAT-1376](PENDIENTES.md#a-feat-1376).
+- 🔗 **Todo TOTAL de un export apunta a las celdas que lo forman — nunca un SUMIFS que filtra el detalle** *(JMS 2026-11-15,
+  después de la reunión con el contador: «cuando hago doble clic para ver la fórmula, en vez de traer el total de julio y el de
+  diciembre, hay una fórmula que busca en todos los pagos y filtra sólo las fechas. La fórmula funciona bien, pero no me permite
+  auditar… es bueno cuando la fórmula del total llama a sus datos y apunta a los datos que lo conforman»)*. El semestre suma los
+  subtotales de sus meses o bloques (`=G16`, `=G36+I36`), el total suma los semestres, y así hasta el renglón: con doble clic se
+  baja un nivel y se ve de qué se compone. Un `SUMIFS`/`SUMPRODUCT` por fechas o categorías sólo como **control** al costado (✓ si
+  da lo mismo), nunca como el número. Tampoco columnas con un `0` fijo que no suman nada. *Caso: papel del Inmobiliario,
+  «Lo que va al ejercicio» (K45/K46) — anotado por JMS en el Excel enviado* → [A-FEAT-1628](PENDIENTES.md#a-feat-1628).
 - 🧮 **Toda tabla RESUMEN de un Excel va por categoría Y POR MES, y cada línea lleva un Nro que la une con su detalle**
   *(regla del usuario 2026-11-01, en el libro C: «por categ y por mes siempre. Y que cada línea del resumen tenga un Nro que
   referencia a la tabla de abajo, para filtrar por número y ver cómo se componen. Esto como línea general»)*. Arriba: Nro ·
