@@ -4126,6 +4126,12 @@ Los **retiros** ya no están en el libro H: van al libro I. Los **sueldos a paga
 ⚠️ **Cambió 04/11 (noche) — el set trae un libro I, «Socios y Libertad (próximo)»**: las cuentas con los socios (14.1) y «Gastos
 Libertad» salen de los libros B y H y se mandan después. La provisión de cobros (03.1) pasó al libro D, junto a «05 Provisión».
 
+**«I · Interno por socio»** *(sólo MSA)* — la cuenta INTERNA de cada socio: arriba una tabla con lo que va al **balance** (el
+saldo de la 14.1), la **compensación interna** (lo que en la realidad es de otro: los movimientos con código interno de MSA, PAM
+y MA, y el sueldo de MA, que es sólo contable) y la **realidad** (balance − compensación). Abajo, el detalle de cada socio con su
+subtotal, y al pie lo que todavía **no se puede resolver** (queda como en el balance). Sale con el libro de Socios y Libertad
+(entero o «Cuentas con socios»). → ⚠️ Sin probar todavía → A-TEST-1381
+
 ⚠️ **Cambió 04/11 — tres solapas en el libro B:**
 - **«04 Cuentas a pagar»** lleva **sólo lo que es deuda**: facturas sin pagar al cierre y las cuentas corrientes de
   proveedores. Los **sueldos** van en su export aparte (en el 04.3 se listan los pagados después del cierre). Abajo, el **total al cierre** con

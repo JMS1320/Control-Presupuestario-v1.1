@@ -37,6 +37,7 @@ export interface MovCapa {
   interno: string
   detalle?: string
   desc?: string
+  categ?: string
   /** El pago del resumen de una tarjeta (su detalle son los consumos, que ya están con su propia marca). */
   esPagoTarjeta?: boolean
   /** El reparto de un seguro por bien: quién (responsable interno) y qué parte de la prima (0..1). */

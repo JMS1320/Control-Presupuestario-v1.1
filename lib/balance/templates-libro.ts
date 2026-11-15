@@ -111,6 +111,8 @@ export interface OpcionesTemplates {
   bancoSinLeer?: string[]
   /** 🔎 A-FEAT-1518: el extracto del ejercicio y a qué quedó atado cada movimiento (control 4 del libro H). */
   extracto?: ExtractoParaH
+  /** 🧱 A-FEAT-1288: los movimientos marcados de todas las cuentas, para la solapa «I · Interno por socio» (sólo MSA). */
+  capa?: import("./capa-interna-datos").MovimientosDeLaCapa
 }
 
 /** 🔎 A-FEAT-1518 — lo que necesita el control «desde el extracto» del libro H. */

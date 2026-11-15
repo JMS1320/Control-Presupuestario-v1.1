@@ -18,6 +18,7 @@ import { join } from "node:path"
 import { fechasReales } from "../lib/excel/fechas-reales"
 import { TABLAS_CON_VINCULO_ARCA } from "../lib/conciliacion/tablas-con-vinculo-arca"
 import { agregarHoja } from "../lib/balance/export-libro-diario"
+import { hojaInternoPorSocio } from "../lib/balance/interno-por-socio"
 import { capaInterna, destinoDeCodigo, marcaDeLaNota, normalizarCodigo, partesDeLaPoliza, PROPIO, type MovCapa } from "../lib/balance/capa-interna"
 
 const env = Object.fromEntries(readFileSync(".env.local", "utf8").split(/\r?\n/).filter(l => l.includes("=") && !l.trim().startsWith("#")).map(l => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, "")] }))
@@ -65,7 +66,7 @@ for (const t of TABLAS_CON_VINCULO_ARCA) {
       desc: String(m.descripcion ?? "").slice(0, 70), detalle: String(m.detalle ?? "").trim().slice(0, 120), deb: r2(Number(m.debitos) || 0), cred: r2(Number(m.creditos) || 0),
       categ: String(m.categ ?? ""), cCol, iCol, cNota, iNota, c, i, nota: nota.slice(0, 200), id: String(m.id),
       egreso: m.template_cuota_id ? cuotaEgreso.get(m.template_cuota_id) : undefined,
-      esTarjeta: !/tarjeta|visa/i.test(t.tabla) && (/^tarjetas?/i.test(String(m.categ ?? "")) || /pago (de )?(la )?(tarjeta|visa)|visa (business|empresa)/i.test(`${m.descripcion ?? ""} ${m.detalle ?? ""}`)) })
+      esTarjeta: !/tarjeta|visa/i.test(t.tabla) && (/^tarjetas?\b/i.test(String(m.categ ?? "")) || /pago (de )?(la )?(tarjeta|visa)|visa (business|empresa)/i.test(`${m.descripcion ?? ""} ${m.detalle ?? ""}`)) })
   }
   control.push([t.cuenta, `${t.schema}.${t.tabla}`, t.titular, c1.count, filas.length, marcados, c1.count === filas.length ? "✅ leídos todos" : "🔴 no coinciden"])
 }
@@ -178,9 +179,10 @@ const fAlt: unknown[][] = [["ALTERNATIVAS — qué códigos quedan en el INTERNO
 // ── 6 · LA CAPA INTERNA con los datos reales (misma función que los casos)
 const SALDOS_141: Record<string, number> = { JMS: -36220720.53, AMS: -5463334.73, MA: -44459338.17, PAM: -189826.57 }  // 14.1 de MSA 25/26 al 30/06/26 (Papeles v13, 11/11) — + = MSA le debe al socio
 const movsCapa: MovCapa[] = movs.filter(m => !m.usd).map(m => ({ id: m.id, fecha: m.fecha, cuenta: m.cuenta, titular: m.titular as MovCapa["titular"], deb: m.deb, cred: m.cred,
-  contable: m.c, interno: m.i, detalle: m.detalle, desc: m.desc, esPagoTarjeta: m.esTarjeta,
+  contable: m.c, interno: m.i, detalle: m.detalle, desc: m.desc, categ: m.categ, esPagoTarjeta: m.esTarjeta,
   partesPoliza: /^DESGLOS/i.test(norm(m.i)) ? partesDeLaPoliza(m.egreso, m.fecha, polizas, endosos, bienes, c => respInterno.get(c)) ?? undefined : undefined }))
-const capa = capaInterna(movsCapa, [{ empresa: "MSA", socio: "MA", importe: SUELDO_MA, porque: "sueldo de MA (13 sueldos, 14.1): sólo contable; en lo real es dividendo" }])
+const FIJOS = [{ empresa: "MSA", socio: "MA", importe: SUELDO_MA, porque: "sueldo de MA (13 sueldos, 14.1): sólo contable; en lo real es dividendo" }]
+const capa = capaInterna(movsCapa, FIJOS)
 const movDe = new Map(movs.map(m => [m.id, m]))
 const fCapa: unknown[][] = [["LA CAPA INTERNA — cuánto mueve lo real por cuenta (+ = el socio se llevó MÁS en lo real que en lo contable)"],
   ["Es una capa ENCIMA de la contable: no cambia ningún código. Cada movimiento con un interno que va a otro lado le saca a una cuenta y le pone a otra; el sueldo de MA va aparte (ajuste fijo)."],
@@ -206,27 +208,7 @@ for (const x of capa.sinResolver) { const m = movDe.get(x.mov.id)!; fSR.push([m.
 
 // ── 7 · EL REPORTE INTERNO POR SOCIO (JMS 14/11: «como siempre, una tabla y debajo el detalle… en el balance va esto, pero ésta es
 //    nuestra compensación interna, entonces la realidad da esto. Interno es un reporte muy importante»)
-const SOCIOS = ["MA", "JMS", "AMS", "PAM"]
-const compDe = (q: string) => r2([...capa.porCuenta].filter(([k]) => k.split("→")[1] === q).reduce((t, [, x]) => t + x, 0))
-const fRep: unknown[][] = [["INTERNO — lo que va al BALANCE, la COMPENSACIÓN INTERNA y lo que da la REALIDAD, socio por socio · ejercicio 25/26 · al 30/06/2026"],
-  ["Saldo con MSA: + = MSA le debe al socio · − = el socio se llevó de más. Compensación interna: + = en lo real el socio se llevó MÁS (de MSA, PAM o MA). Real = balance − compensación."],
-  [`Control: lo que la compensación le pone a unos se lo saca a otros o a la empresa → ${capa.control === 0 ? "✅ 0" : "🔴 " + capa.control}. Sin resolver (quedan como en el balance): ${capa.sinResolver.length}, en la solapa «Sin resolver».`], [],
-  ["Socio", "En el BALANCE (14.1, saldo con MSA)", "Compensación interna (movimientos)", "Ajustes fijos", "Compensación total", "La REALIDAD", "Movimientos"]]
-for (const q of SOCIOS) {
-  const fijo = q === "MA" ? SUELDO_MA : 0, tot = compDe(q)
-  fRep.push([q, SALDOS_141[q], r2(tot - fijo), fijo, tot, r2(SALDOS_141[q] - tot), capa.ajustes.filter(a => a.a === q || a.de === q).length])
-}
-fRep.push(["Empresas (gasto propio) y Libertad", "", compDe(PROPIO) + compDe("LIB (50/50)"), "", "", "", "lo que sale de la empresa o de LIB y va a un socio"])
-for (const q of SOCIOS) {
-  fRep.push([], [`DETALLE — ${q}`], ["Fecha", "Empresa / cuenta", "Detalle", "CATEG", "Contable", "Interno", "En lo real (+ se llevó · − se le saca)", "Viene de / va a", "Por qué"])
-  let sub = 0
-  for (const a of capa.ajustes.filter(a => a.a === q || a.de === q)) {
-    const m = movDe.get(a.mov!.id)!, imp = a.a === q ? a.importe : -a.importe; sub += imp
-    fRep.push([m.fecha, `${m.titular} · ${m.cuenta}`, m.detalle || m.desc, m.categ, m.c, m.i, imp, a.a === q ? `viene de ${a.de}` : `va a ${a.a}`, a.porque])
-  }
-  if (q === "MA") { sub += SUELDO_MA; fRep.push(["30/06/2026", "MSA · 14.1", "Sueldo de MA (13 sueldos, jul-25 → jun-26)", "", "haber de la 14.1", "", SUELDO_MA, "ajuste fijo", "en lo real no es sueldo: es dividendo (JMS 14/11)"]) }
-  fRep.push(["", "", `Subtotal ${q}`, "", "", "", r2(sub), r2(sub) === compDe(q) ? "✓ = la tabla de arriba" : "🔴 no cuadra con la tabla", ""])
-}
+const fRep = hojaInternoPorSocio({ capa, saldos: SALDOS_141, fijos: FIJOS, empresa: "MSA", etiqueta: "25/26", cierre: HASTA })   // la MISMA función que la solapa de la app
 
 // ── El libro
 const wb = XLSX.utils.book_new()

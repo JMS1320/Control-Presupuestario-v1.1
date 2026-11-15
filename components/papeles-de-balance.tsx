@@ -41,6 +41,7 @@ import { PRESENTADO_ARCA_COMPRAS } from "@/lib/balance/presentado-arca"
 import { explicarFila, type ProveedorFijo } from "@/lib/balance/facturas-fijas"
 import { armarTemplatesDelEjercicio, desdeCuota, type ExtractoParaH, type TemplatesDelEjercicio } from "@/lib/balance/templates-libro"
 import { conFacturas, indiceDeDestinos, leerExtractoDelEjercicio, leerMovimientosDeCuotas, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
+import { leerMovimientosDeLaCapa, type MovimientosDeLaCapa } from "@/lib/balance/capa-interna-datos"
 import { cargarAuxiliaresPapel, cargarCuotasImpuestos } from "@/lib/impuestos/datos-papel"
 import type { DatosPapelesH } from "@/lib/balance/papeles-impuestos-h"
 import {
@@ -1424,12 +1425,19 @@ export function PapelesDeBalance() {
       } catch {
         toast.warning("No se pudo leer el extracto del ejercicio: el libro H sale sin el control desde el extracto.")
       }
+      // 🧱 A-FEAT-1288: los movimientos marcados de TODAS las cuentas, para «I · Interno por socio» (la 14.1 interna es la de MSA).
+      let capa: MovimientosDeLaCapa | undefined
+      if (empresa.id === "MSA") {
+        try { capa = await leerMovimientosDeLaCapa(supabase, primerDiaDelEjercicio(ej), ej.fechaCierre) }
+        catch { toast.warning("No se pudieron leer los movimientos para el reporte interno: el libro I sale sin «Interno por socio».") }
+      }
       setTemplates(armarTemplatesDelEjercicio(cuotasLibro, ej, {
         empresa: empresa.id,
         plan,
         templatesConPoliza: ((conPoliza ?? []) as Array<{ template_id: string | null }>).map(p => p.template_id!).filter(Boolean),
         bancoSinLeer,
         extracto,
+        capa,
       }))
 
       /**

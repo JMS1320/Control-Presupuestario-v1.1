@@ -83,6 +83,8 @@ import type { ControlesInicio, ControlProvisionAnterior } from "./control-inicio
 import { textoEstado, type InicioYCierre } from "./inicio-y-cierre"
 import { armarCobertura, ICONO, TEXTO_ESTADO, type CoberturaPapeles, type EstadoCobertura } from "./cobertura-papeles"
 import { fechasReales } from "@/lib/excel/fechas-reales"
+import { capaInterna } from "./capa-interna"
+import { entradaDesde141, hojaInternoPorSocio } from "./interno-por-socio"
 
 const money = (n: number) => Math.round(n * 100) / 100
 /** 📗 A-FEAT-1539: AAAA-MM-DD → DD/MM/AAAA. */
@@ -1867,6 +1869,11 @@ export function hojaDeCuentasCorrientes(cc: PapelDeCuentasCorrientes, fechaCierr
   return f
 }
 
+/** 🧱 A-FEAT-1288: «I · Interno por socio» — la tabla (socio + 5 importes + movimientos) y el detalle (fecha … por qué). */
+const COLS_INTERNO: Columna[] = [
+  { ancho: 14 }, { ancho: 30, z: MONEDA }, { ancho: 44, z: MONEDA }, { ancho: 18, z: MONEDA }, { ancho: 18, z: MONEDA },
+  { ancho: 18, z: MONEDA }, { ancho: 20, z: MONEDA }, { ancho: 20, z: MONEDA }, { ancho: 60 },
+]
 const COLS_CUENTAS_CORRIENTES: Columna[] = [
   { ancho: 34 },                    // Contraparte / Fecha
   { ancho: 14 },                    // CUIT / Qué es
@@ -3260,6 +3267,13 @@ export function armarWorkbook(
           libro.ejercicio.fechaCierre, "CUENTAS CORRIENTES CON LOS SOCIOS — se ven después (JMS 04/11)",
           "No suman a las cuentas a pagar ni a cobrar. Abajo, las marcas del extracto todavía sin tratar y los pagos de la tarjeta a desglosar."),
         COLS_CUENTAS_CORRIENTES)
+    }
+    // 🧱 A-FEAT-1288 (JMS 14/11): el reporte INTERNO — balance (esta 14.1) · compensación interna · realidad, tabla + detalle.
+    const capaIn = templates?.entrada?.opciones.capa
+    if (capaIn && empresa === "MSA" && cc.socios.length > 0) {
+      const { saldos, fijos } = entradaDesde141(cc.socios, empresa)
+      hoja(wb, "I · Interno por socio", hojaInternoPorSocio({ capa: capaInterna(capaIn.movs, fijos), saldos, fijos, empresa,
+        etiqueta: libro.ejercicio.etiqueta, cierre: libro.ejercicio.fechaCierre, tablasQueFallaron: capaIn.tablasQueFallaron }), COLS_INTERNO)
     }
   }
   if (templates) {

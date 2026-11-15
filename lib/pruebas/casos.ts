@@ -55,6 +55,8 @@ import { todasLasUnidades, librosConSubs, controlDeCobertura, solapasDeFormula, 
 import { armarStocksUnificados, hojaDeStocks } from "@/lib/balance/stocks-unificado"
 import { temasDeCuentaCorriente } from "@/lib/balance/recorrido-conciliacion"
 import { capaInterna, partesDeLaPoliza, marcaDeLaNota, type MovCapa } from "@/lib/balance/capa-interna"
+import { entradaDesde141, hojaInternoPorSocio } from "@/lib/balance/interno-por-socio"
+import { esPagoDeTarjeta } from "@/lib/balance/capa-interna-datos"
 import { contrapartesDelRecorrido } from "@/lib/balance/fuera-por-cuenta-corriente"
 import { unirPorClave, sincronizarPendientes, hojaDelRecorrido } from "@/lib/balance/recorrido-excel"
 import { idsDelUltimoLote } from "@/lib/facturas/ultimo-lote"
@@ -14039,6 +14041,24 @@ export function correrCasos(): Resultado[] {
       c => (c === "TIG222" ? "MA" : null))
     const v2 = (pol ?? []).map(p => `${p.quien} ${p.parte}`).join(" · ")
     chequear("Cuenta interna", "🧩 Un seguro «Desglosar» se reparte por la prima de cada bien del endoso VIGENTE a la fecha × su responsable interno (sin responsable = MSA)", "MSA 0.75 · MA 0.25", v2, v2 === "MSA 0.75 · MA 0.25", "A-FEAT-1288")
+
+    // 👥 El reporte por socio: saldo de la 14.1 − compensación = realidad; el sueldo de MA (renglones «sueldo-…» de su cuenta) es
+    // ajuste fijo; el de JMS NO (es real); cada detalle suma lo mismo que su renglón de la tabla.
+    const socios141 = [
+      { contraparte: { clave: "MA" }, saldoAlCierre: -1000, resumen: { asientos: [{ id: "sueldo-7", importe: 1000 }, { id: "sueldo-8", importe: 500 }, { id: "fac-1", importe: 800 }] } },
+      { contraparte: { clave: "JMS" }, saldoAlCierre: 200, resumen: { asientos: [{ id: "sueldo-9", importe: 300 }] } },
+    ]
+    const ent = entradaDesde141(socios141, "MSA")
+    const capa2 = capaInterna(movs, ent.fijos)
+    const hojaI = hojaInternoPorSocio({ capa: capa2, ...ent, empresa: "MSA", etiqueta: "25/26", cierre: "2026-06-30" })
+    const fila = (q: string) => hojaI.find(r => r[0] === q)!
+    const subt = hojaI.filter(r => String(r[2] ?? "").startsWith("Subtotal")).map(r => `${r[6]}${String(r[7]).startsWith("✓") ? "✓" : "🔴"}`).join(" ")
+    const v3 = `fijos ${ent.fijos.map(f => `${f.socio} ${f.importe}`).join(",")} | MA ${fila("MA").slice(1, 6).join(" ")} | JMS ${fila("JMS").slice(1, 6).join(" ")} | subtotales ${subt}`
+    const e3 = "fijos MA 1500 | MA -1000 100 1500 1600 -2600 | JMS 200 -50 0 -50 250 | subtotales 1600✓ -50✓ 0✓ 0✓"   // MA: MSA→MA 1590 + PAM→MA 10
+    chequear("Cuenta interna", "👥 Interno por socio: balance (14.1) − compensación = realidad; sólo el sueldo de MA es ajuste fijo (el de JMS es real); cada detalle suma su renglón", e3, v3, v3 === e3, "A-FEAT-1288")
+    // 💳 «Tarjetas MSA» en la cuenta del banco = pago de tarjeta (el papel de research tenía la regla rota y no lo veía)
+    const v4 = [esPagoDeTarjeta("msa_galicia", "Tarjetas MSA", ""), esPagoDeTarjeta("msa_galicia", "Tarjeta", ""), esPagoDeTarjeta("msa_tarjeta_visa", "Tarjetas MSA", ""), esPagoDeTarjeta("msa_galicia", "Tarjetero", "x"), esPagoDeTarjeta("pam_galicia", "", "PAGO DE TARJETA VISA")].join(",")
+    chequear("Cuenta interna", "💳 Un pago de tarjeta se reconoce en la cuenta del banco por la categoría «Tarjeta(s)…» o el texto «pago de tarjeta»; dentro de la tabla de la tarjeta, no", "true,true,false,false,true", v4, v4 === "true,true,false,false,true", "A-FEAT-1288")
   }
   return r
 }
