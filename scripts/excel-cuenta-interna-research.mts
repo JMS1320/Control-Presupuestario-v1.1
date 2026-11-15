@@ -204,9 +204,33 @@ const fSR: unknown[][] = [["SIN RESOLVER — la capa no los mueve (quedan como e
   ["Fecha", "Cuenta", "Empresa", "Descripción del banco", "Detalle", "CATEG", "Débito", "Crédito", "Contable", "Interno", "Por qué"]]
 for (const x of capa.sinResolver) { const m = movDe.get(x.mov.id)!; fSR.push([m.fecha, m.cuenta, m.titular, m.desc, m.detalle, m.categ, m.deb, m.cred, m.c, m.i, x.porque]) }
 
+// ── 7 · EL REPORTE INTERNO POR SOCIO (JMS 14/11: «como siempre, una tabla y debajo el detalle… en el balance va esto, pero ésta es
+//    nuestra compensación interna, entonces la realidad da esto. Interno es un reporte muy importante»)
+const SOCIOS = ["MA", "JMS", "AMS", "PAM"]
+const compDe = (q: string) => r2([...capa.porCuenta].filter(([k]) => k.split("→")[1] === q).reduce((t, [, x]) => t + x, 0))
+const fRep: unknown[][] = [["INTERNO — lo que va al BALANCE, la COMPENSACIÓN INTERNA y lo que da la REALIDAD, socio por socio · ejercicio 25/26 · al 30/06/2026"],
+  ["Saldo con MSA: + = MSA le debe al socio · − = el socio se llevó de más. Compensación interna: + = en lo real el socio se llevó MÁS (de MSA, PAM o MA). Real = balance − compensación."],
+  [`Control: lo que la compensación le pone a unos se lo saca a otros o a la empresa → ${capa.control === 0 ? "✅ 0" : "🔴 " + capa.control}. Sin resolver (quedan como en el balance): ${capa.sinResolver.length}, en la solapa «Sin resolver».`], [],
+  ["Socio", "En el BALANCE (14.1, saldo con MSA)", "Compensación interna (movimientos)", "Ajustes fijos", "Compensación total", "La REALIDAD", "Movimientos"]]
+for (const q of SOCIOS) {
+  const fijo = q === "MA" ? SUELDO_MA : 0, tot = compDe(q)
+  fRep.push([q, SALDOS_141[q], r2(tot - fijo), fijo, tot, r2(SALDOS_141[q] - tot), capa.ajustes.filter(a => a.a === q || a.de === q).length])
+}
+fRep.push(["Empresas (gasto propio) y Libertad", "", compDe(PROPIO) + compDe("LIB (50/50)"), "", "", "", "lo que sale de la empresa o de LIB y va a un socio"])
+for (const q of SOCIOS) {
+  fRep.push([], [`DETALLE — ${q}`], ["Fecha", "Empresa / cuenta", "Detalle", "CATEG", "Contable", "Interno", "En lo real (+ se llevó · − se le saca)", "Viene de / va a", "Por qué"])
+  let sub = 0
+  for (const a of capa.ajustes.filter(a => a.a === q || a.de === q)) {
+    const m = movDe.get(a.mov!.id)!, imp = a.a === q ? a.importe : -a.importe; sub += imp
+    fRep.push([m.fecha, `${m.titular} · ${m.cuenta}`, m.detalle || m.desc, m.categ, m.c, m.i, imp, a.a === q ? `viene de ${a.de}` : `va a ${a.a}`, a.porque])
+  }
+  if (q === "MA") { sub += SUELDO_MA; fRep.push(["30/06/2026", "MSA · 14.1", "Sueldo de MA (13 sueldos, jul-25 → jun-26)", "", "haber de la 14.1", "", SUELDO_MA, "ajuste fijo", "en lo real no es sueldo: es dividendo (JMS 14/11)"]) }
+  fRep.push(["", "", `Subtotal ${q}`, "", "", "", r2(sub), r2(sub) === compDe(q) ? "✓ = la tabla de arriba" : "🔴 no cuadra con la tabla", ""])
+}
+
 // ── El libro
 const wb = XLSX.utils.book_new()
-agregarHoja(wb, "Qué entendí", fQue); agregarHoja(wb, "14.1 interna", f141); agregarHoja(wb, "Capa interna", fCapa); agregarHoja(wb, "Ajustes de la capa", fAj); agregarHoja(wb, "Sin resolver", fSR); agregarHoja(wb, "Hallazgos y propuesta", fHal); agregarHoja(wb, "Simulación por socio", fSim); agregarHoja(wb, "Diferencias", fDif)
+agregarHoja(wb, "Interno por socio", fRep); agregarHoja(wb, "Qué entendí", fQue); agregarHoja(wb, "14.1 interna", f141); agregarHoja(wb, "Capa interna", fCapa); agregarHoja(wb, "Ajustes de la capa", fAj); agregarHoja(wb, "Sin resolver", fSR); agregarHoja(wb, "Hallazgos y propuesta", fHal); agregarHoja(wb, "Simulación por socio", fSim); agregarHoja(wb, "Diferencias", fDif)
 agregarHoja(wb, "Inventario interno", fInv); agregarHoja(wb, "Columna vs nota", fCN); agregarHoja(wb, "Alternativas", fAlt); agregarHoja(wb, "Control", control)
 fechasReales(wb)
 let nombre = `Cuenta interna - research 25-26 (${HOY}).xlsx`; for (let v = 2; existsSync(join(CARPETA, nombre)); v++) nombre = `Cuenta interna - research 25-26 (${HOY}) v${v}.xlsx`
@@ -215,7 +239,8 @@ console.log("Escrito:", nombre)
 console.log("movs", movs.length, "con interno", movs.filter(m => m.i).length, "difs", difs.length, "espejos", espejos, "control dif", r2(totDif))
 console.log("nota interno", cnI, "nota contable", cnC)
 console.log("CAPA control", capa.control, "ajustes", capa.ajustes.length, "sin resolver", capa.sinResolver.length, "espejos", capa.espejos)
-for (const r of f141.slice(4)) console.log(JSON.stringify(r))
+for (const r of fRep.slice(4, 10)) console.log(JSON.stringify(r))
+console.log(fRep.filter(r => String(r[2] ?? "").startsWith("Subtotal")).map(r => r[2] + " " + r[6] + " " + r[7]).join(" | "))
 for (const r of fSR.slice(3)) console.log(JSON.stringify(r).slice(0, 220))
 for (const r of fSim.slice(5)) console.log(JSON.stringify(r))
 for (const r of fInv.slice(3, 40)) console.log(JSON.stringify(r).slice(0, 260))

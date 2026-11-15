@@ -15,7 +15,8 @@
  *  3. «DESGLOSAR» = se reparte: un PAGO DE TARJETA se abre con su resumen (los consumos traen su propia marca → el pago no mueve
  *     nada), un SEGURO por la prima de cada bien × su responsable interno (`polizas_responsables`); lo que no se pueda abrir queda
  *     «sin resolver» y se lista (no se adivina).
- *  4. «VER», «X» o un código que no es de nadie (p. ej. una actividad: «IATF») → sin resolver: queda como el contable y se lista.
+ *  4. «VER» o «X» → sin resolver: queda como el contable y se lista. Un código que no es de nadie es una ACTIVIDAD (p. ej. «IATF»):
+ *     queda en la empresa de la cuenta (JMS 14/11: «IATF es de MSA»).
  *  5. Una transferencia entre dos cuentas de la app se cuenta UNA vez, del lado de más arriba (MSA > PAM > MA > Cotitulares).
  *  6. Lo que va a nombre de la misma empresa de la cuenta es «propio» (no es cuenta con nadie).
  */
@@ -128,7 +129,8 @@ export function capaInterna(movs: MovCapa[], fijos: AjusteFijo[] = []): Resultad
       }
       sinResolver.push({ mov: m, porque: partes.length ? `el reparto de la póliza suma ${(suma * 100).toFixed(1)} %, no 100 %` : "«Desglosar» sin un dato que lo abra (no es tarjeta ni póliza)" }); continue
     }
-    if (di.tipo === "VER" || di.tipo === "OTRO" || di.tipo === "AP") { sinResolver.push({ mov: m, porque: `interno «${m.interno}»: no dice de quién es` }); continue }
+    if (di.tipo === "OTRO") { if (de !== PROPIO) ajustes.push({ mov: m, empresa: m.titular, de, a: PROPIO, importe: neto, porque: `interno «${m.interno}»: es una actividad, queda en ${m.titular}` }); continue }
+    if (di.tipo === "VER" || di.tipo === "AP") { sinResolver.push({ mov: m, porque: `interno «${m.interno}»: no dice de quién es` }); continue }
     const a = cuentaDe(m.titular, di)
     if (a !== de) ajustes.push({ mov: m, empresa: m.titular, de, a, importe: neto, porque: `interno «${normalizarCodigo(m.interno)}»` })
   }

@@ -14023,15 +14023,15 @@ export function correrCasos(): Resultado[] {
       m("visa", "MSA", 80, "CTA MA", "DESGLOSAR", { esPagoTarjeta: true }),   // se abre con su resumen
       m("flota", "MSA", 200, "", "DESGLOSAR", { partesPoliza: [{ quien: "MSA", parte: 0.75 }, { quien: "MA", parte: 0.25 }] }),
       m("preocup", "MSA", 40, "", "DESGLOSAR"),                  // sin dato que lo abra
-      m("iatf", "MSA", 60, "", "IATF"),                          // no dice de quién
+      m("iatf", "MSA", 60, "", "IATF"),                          // una actividad: queda en MSA (JMS 14/11)
       // a mano: propio −100 (tiguan) +30 (orbith) +80 (visa) −50 (flota 25 %) = −40 · MA +100 +50 −30 −80 +50 +1500 (sueldo) = 1590
       m("hist", "PAM", 10, marcaDeLaNota("tu planilla: CATEG X · Contable LIB · Interno DIST MA", "Contable"), marcaDeLaNota("tu planilla: CATEG X · Contable LIB · Interno DIST MA", "Interno")),
     ]
     const res = capaInterna(movs, [{ empresa: "MSA", socio: "MA", importe: 1500, porque: "sueldo de MA: sólo contable" }])
     const cuentas = [...res.porCuenta].sort(([a], [b]) => a.localeCompare(b)).map(([k, x]) => `${k} ${x}`).join(" · ")
     const v = `${cuentas} | sin resolver: ${res.sinResolver.map(s => s.mov.id).join(",")} | espejos ${res.espejos} | control ${res.control}`
-    const e = "MSA→(propio) -40 · MSA→JMS -50 · MSA→MA 1590 · PAM→LIB (50/50) -10 · PAM→MA 10 | sin resolver: preocup,iatf | espejos 1 | control 0"
-    chequear("Cuenta interna", "🧱 La capa interna mueve la plata del contable a lo real sin crearla: DIST / Gasto, tarjeta abierta por su resumen, seguro por bien, espejo contado una vez, lo dudoso listado, sueldo de MA como ajuste", e, v, v === e, "A-FEAT-1288")
+    const e = "MSA→(propio) -40 · MSA→JMS -50 · MSA→MA 1590 · PAM→LIB (50/50) -10 · PAM→MA 10 | sin resolver: preocup | espejos 1 | control 0"
+    chequear("Cuenta interna", "🧱 La capa interna mueve la plata del contable a lo real sin crearla: DIST / Gasto, tarjeta abierta por su resumen, seguro por bien, espejo contado una vez, una actividad queda en la empresa, lo dudoso listado, sueldo de MA como ajuste", e, v, v === e, "A-FEAT-1288")
     // el reparto de la póliza: la prima de cada bien del endoso vigente × su responsable
     const pol = partesDeLaPoliza("tpl", "2026-02-01", [{ id: "p", poliza: "34160783", template_id: "tpl" }],
       [{ id: "e1", poliza_id: "p", endoso: "1", periodo_desde: "2025-08-01", es_nota_credito: false }, { id: "e2", poliza_id: "p", endoso: "2", periodo_desde: "2026-03-01", es_nota_credito: false }],
