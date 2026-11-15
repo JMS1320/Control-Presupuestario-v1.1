@@ -4,6 +4,7 @@
 -- retiro · la factura Provinvest del 30/09/26 va como a cobrar al 30/06/26 · bienes (Libertad, campos) afuera · todo lo de MA, pagado.
 -- Sólo INSERTA (no hay nada que pisar). Deshacer: 277-balance-propio-ma-semestre-deshacer.sql (borra sólo lo marcado [script 277]).
 -- Control (abajo): A − P = −14.113.767,80 (US$ −9.730,28) → 40.789.515,52 (US$ 27.607,12) · ganancia del semestre US$ 37.337,39.
+-- ✅ CORRIDO 15/11/2026 con OK de JMS («Ok b1»), por el MCP de Supabase (correr-sql no tiene clave). Control en la base: 7 renglones, A − P y ganancia US$ 37.337,39 ✓.
 begin;
 insert into public.balance_fotos (empresa, fecha_cierre, tc, tc_fuente, notas)
 select 'MA', v.fecha::date, v.tc, v.fuente, v.notas from (values
