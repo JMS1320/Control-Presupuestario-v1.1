@@ -291,6 +291,13 @@ diferente. Esto es para siempre»**.*
 - 🎙️ **Y se puede DICTAR** *(JMS 14/11: «¿me podés dejar la posibilidad de grabar mensaje y que se transcriba?»)*: cada campo de
   texto lleva un 🎙️ (capacidad `dictation`) que escribe lo que se dice; donde el navegador no lo permite, el botón no aparece.
 - Si la página no puede guardar (sin sesión), lo dice y deja copiar el texto: nada se pierde en silencio.
+- 🔎 **Una pregunta sobre un CASO CONCRETO (un pago, un template, una inconsistencia) se hace SIEMPRE en una página, con las
+  tablas a la vista** *(JMS 15/11/2026: «esas cosas me las tenés que siempre preguntar por artifact, porque yo tengo que poder ver
+  las tablas, los movimientos, como si fuera en la aplicación… Cuando es una cosa entre dos puntas, me tenés que mostrar las dos
+  puntas»)*. La página muestra los renglones como se ven en la app, con la ficha completa (§ ♻️ «la ficha completa»), y **si el
+  caso tiene dos puntas (el pago y su movimiento, la factura y su cobro, lo enviado y lo de hoy) van las dos, una al lado de la
+  otra**. En el chat queda sólo el aviso de que hay una pregunta y el link. Las preguntas de rumbo (qué entra, en qué orden) sí
+  pueden ir por el chat. *Motivo: sin ver el movimiento JMS no puede decidir, y una sola punta no le dice si la otra existe.*
 
 *Motivo: sin esto, JMS lee la página en un lado y contesta en el chat en otro, traduciendo a qué se refiere cada cosa. Ya lo
 pedía en cada página (memoria del 05/11, «siempre lugar para otra cosa») y no estaba en las reglas.*
