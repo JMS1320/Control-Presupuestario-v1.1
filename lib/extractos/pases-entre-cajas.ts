@@ -22,11 +22,16 @@ export interface MovPase {
   descripcion: string
   debitos: number
   creditos: number
+  /** Sólo del banco: cómo quedó conciliada la extracción. Si va a un gasto (no a CAJA), el efectivo fue directo a pagar algo. */
+  categ?: string | null
+  estado?: string | null
 }
 export type TipoPase = "banco→caja" | "caja→caja"
 export interface ParPase { tipo: TipoPase; sale: MovPase[]; entra: MovPase; dias: number; /** Del banco directo a AMS o Sigot, sin pasar por la General. */ directo?: boolean }
 export interface ResumenTipo { tipo: TipoPase; pares: number; importe: number; salenSinPar: number; importeSalen: number; entranSinPar: number; importeEntran: number }
-export interface ControlPases { pares: ParPase[]; salenSinPar: (MovPase & { tipo: TipoPase })[]; entranSinPar: (MovPase & { tipo: TipoPase })[]; resumen: ResumenTipo[] }
+export interface ControlPases { pares: ParPase[]; salenSinPar: (MovPase & { tipo: TipoPase })[]; entranSinPar: (MovPase & { tipo: TipoPase })[]; resumen: ResumenTipo[]
+  /** Extracciones que no entraron a ninguna caja pero ya están conciliadas a un pago (24/04/26: $ 1 M en efectivo a Penino, FC 223 de MA): tienen destino, no son «sin pareja». */
+  aUnPago: MovPase[] }
 
 const r2 = (x: number) => Math.round(x * 100) / 100
 const dias = (a: string, b: string) => Math.round(Math.abs(Date.parse(a) - Date.parse(b)) / 864e5)
@@ -46,6 +51,12 @@ export function cajasQueNombra(texto: string): Set<TablaCaja> {
   if (/caja ams|caja andres|\bams\b/.test(x)) out.add("caja_ams")
   if (/gral|general/.test(x)) out.add("caja_general")
   return out
+}
+
+/** Una extracción ya conciliada a un gasto (categoría que no es CAJA): el efectivo fue a pagar algo, no a una caja. */
+export function esExtraccionAUnPago(m: Pick<MovPase, "categ" | "estado">): boolean {
+  const c = t(m.categ ?? "").trim()
+  return t(m.estado ?? "") === "conciliado" && !!c && c !== "caja"
 }
 
 export function controlarPases(movs: MovPase[], tolerancia = 7): ControlPases {
@@ -102,6 +113,10 @@ export function controlarPases(movs: MovPase[], tolerancia = 7): ControlPases {
   cand3.sort((a, b) => a.d - b.d)
   for (const c of cand3) if (!usados.has(c.s.id) && !usados.has(c.e.id)) { usados.add(c.s.id); usados.add(c.e.id); pares.push({ tipo: "banco→caja", sale: [c.s], entra: c.e, dias: c.d, directo: true }) }
 
+  // 4 · la extracción que no entró a ninguna caja pero ya está conciliada a un gasto: fue directo a pagar algo (JMS 15/11, Penino)
+  const aUnPago = salidasBanco.filter(s => !usados.has(s.id) && esExtraccionAUnPago(s))
+  aUnPago.forEach(s => usados.add(s.id))
+
   const sin = (xs: MovPase[], tipo: TipoPase) => xs.filter(m => !usados.has(m.id)).map(m => ({ ...m, tipo }))
   const salenSinPar = [...sin(salidasBanco, "banco→caja"), ...sin(salidasCaja, "caja→caja")].sort((a, b) => a.fecha.localeCompare(b.fecha))
   const entranSinPar = [...sin(entradasDesdeBanco, "banco→caja"), ...sin(entradasCaja, "caja→caja")].sort((a, b) => a.fecha.localeCompare(b.fecha))
@@ -110,5 +125,5 @@ export function controlarPases(movs: MovPase[], tolerancia = 7): ControlPases {
     return { tipo, pares: p.length, importe: r2(p.reduce((a, x) => a + x.entra.creditos, 0)), salenSinPar: s.length, importeSalen: r2(s.reduce((a, x) => a + x.debitos, 0)),
       entranSinPar: e.length, importeEntran: r2(e.reduce((a, x) => a + x.creditos, 0)) }
   })
-  return { pares, salenSinPar, entranSinPar, resumen }
+  return { pares, salenSinPar, entranSinPar, resumen, aUnPago }
 }

@@ -28,7 +28,17 @@ function cuando(iso: string): string {
     " " + d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false })
 }
 
-export function PanelRevisiones() {
+/**
+ * 🧭 Filtrado por pantalla (JMS 15/11: «si hay tareas para hacer en caja, está bueno cuando uno abra caja, ahí uno las tenga… y así en
+ * las pantallas también aparezca»). Es el MISMO panel —abrir, agregar, cerrar— con un filtro: no hay un segundo panel que se desfase.
+ */
+export function PanelRevisiones({ titulo = "Para revisar", filtro, ocultarSiVacio = false }: {
+  titulo?: string
+  /** Si viene, muestra sólo las que pasan (las de esta pantalla, las de esta caja). */
+  filtro?: (v: RevisionAbierta) => boolean
+  /** En una pantalla de trabajo: si no hay ninguna, no ocupa lugar. */
+  ocultarSiVacio?: boolean
+} = {}) {
   const [revisiones, setRevisiones] = useState<RevisionAbierta[]>([])
   const [cargando, setCargando] = useState(true)
   /**
@@ -54,6 +64,7 @@ export function PanelRevisiones() {
    * Ahora un fallo se muestra como fallo. Es la § 🧮 de `CLAUDE.md`: nada se descarta en silencio.
    */
   const [error, setError] = useState<string | null>(null)
+  const visibles = filtro ? revisiones.filter(filtro) : revisiones
 
   const cargar = useCallback(async () => {
     setCargando(true)
@@ -128,16 +139,18 @@ export function PanelRevisiones() {
     }
   }
 
+  if (ocultarSiVacio && !cargando && !error && visibles.length === 0) return null
+
   return (
     <>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Flag className="h-5 w-5 text-amber-600" />
-            Para revisar
-            {revisiones.length > 0 && (
+            {titulo}
+            {visibles.length > 0 && (
               <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
-                {revisiones.length}
+                {visibles.length}
               </span>
             )}
           </CardTitle>
@@ -168,7 +181,7 @@ export function PanelRevisiones() {
                 Reintentar
               </button>
             </div>
-          ) : revisiones.length === 0 ? (
+          ) : visibles.length === 0 ? (
             <div className="py-10 text-center text-gray-500">
               <CheckCircle2 className="mx-auto mb-3 h-12 w-12 text-green-300" />
               <p className="text-sm">Nada marcado para revisar</p>
@@ -178,7 +191,7 @@ export function PanelRevisiones() {
             </div>
           ) : (
             <ul className="space-y-2">
-              {revisiones.map(v => (
+              {visibles.map(v => (
                 <li key={v.id} className="rounded border border-amber-200 bg-amber-50/50 px-3 py-2">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <button
@@ -193,6 +206,7 @@ export function PanelRevisiones() {
                       <p className="mt-0.5 text-[11px] text-gray-400">
                         {v.pantalla ? `${v.pantalla} · ` : ""}{cuando(v.created_at)}
                         {v.creado_por ? ` · ${v.creado_por}` : ""}
+                        {v.asignado_a ? ` · 👤 para ${v.asignado_a === "claude" ? "Claude" : v.asignado_a}` : ""}
                         {(v.seguimiento?.length ?? 0) > 0 && (
                           <span className="ml-1 text-amber-700">· 📝 {v.seguimiento!.length} agregado(s)</span>
                         )}

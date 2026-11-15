@@ -14112,11 +14112,13 @@ export function correrCasos(): Resultado[] {
       mv("g5", "caja_general", "2025-09-07", 50000, 0, "a caja AMS", "Pase a otra caja"), mv("a1", "caja_ams", "2025-07-19", 0, 130000, "DE CAJA GRAL", "Pase desde otra caja"), // sin pareja
       mv("b4", "banco", "2026-02-23", 1020000, 0, "Extraccion a Caja", "Extraccion En Autoservicio"), mv("s2", "caja_sigot", "2026-02-21", 0, 1020000, "orden extraccion jose", "Pase desde otra caja"), // directo
       mv("g6", "caja_general", "2026-03-01", 200000, 0, "a caja AMS", "Pase a otra caja"), mv("s3", "caja_sigot", "2026-03-01", 0, 200000, "Caja gral a caja Sigot", "Pase desde otra caja"), // dice AMS, entró a Sigot
+      { ...mv("b5", "banco", "2026-04-24", 1000000, 0, "1 Millon Justo para pagar a Pintor", "Extraccion En Autoservicio"), categ: "Pintura, materiales y herramientas", estado: "conciliado" }, // fue directo a Penino
+      { ...mv("b6", "banco", "2026-04-28", 70000, 0, "a caja", "Extraccion En Autoservicio"), categ: "CAJA", estado: "conciliado" }, // conciliada a CAJA y sin entrada: sigue sin pareja
     ])
     const v = [...c.resumen.map(r => `${r.tipo} ${r.pares} ${r.importe} · salen ${r.salenSinPar} ${r.importeSalen} · entran ${r.entranSinPar} ${r.importeEntran}`),
-      `directos ${c.pares.filter(p => p.directo).map(p => p.entra.id).join(",")}`, `sin pareja ${[...c.salenSinPar, ...c.entranSinPar].map(m => m.id).join(",")}`].join(" | ")
-    const e = "banco→caja 4 2520000 · salen 0 0 · entran 0 0 | caja→caja 1 80000 · salen 2 250000 · entran 2 330000 | directos s2 | sin pareja g5,g6,a1,s3"
-    chequear("Cajas", "🔁 Pases: extracciones partidas por el tope del cajero (en los dos sentidos), pase General → Sigot aunque el texto nombre las dos cajas, el directo del banco a Sigot marcado, y lo que no tiene pareja (o va a otra caja que la que dice) listado", e, v, v === e, "A-FEAT-1585")
+      `directos ${c.pares.filter(p => p.directo).map(p => p.entra.id).join(",")}`, `sin pareja ${[...c.salenSinPar, ...c.entranSinPar].map(m => m.id).join(",")}`, `a un pago ${c.aUnPago.map(m => m.id).join(",")}`].join(" | ")
+    const e = "banco→caja 4 2520000 · salen 1 70000 · entran 0 0 | caja→caja 1 80000 · salen 2 250000 · entran 2 330000 | directos s2 | sin pareja g5,g6,b6,a1,s3 | a un pago b5"
+    chequear("Cajas", "🔁 Pases: extracciones partidas por el tope del cajero (en los dos sentidos), pase General → Sigot aunque el texto nombre las dos cajas, el directo del banco a Sigot marcado, y lo que no tiene pareja (o va a otra caja que la que dice) listado; y la extracción ya conciliada a un pago (Penino 24/04) aparte, no como sin pareja", e, v, v === e, "A-FEAT-1585")
   }
   return r
 }

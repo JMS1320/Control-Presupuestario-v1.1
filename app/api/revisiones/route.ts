@@ -63,7 +63,7 @@ export async function GET(request: Request) {
 
     let q = supabaseAdmin
       .from('revisiones')
-      .select('id, schema_ref, tabla_ref, registro_id, descripcion_ref, motivo, tipo, pantalla, estado, creado_por, asignado_a, seguimiento, resolucion, resuelto_por, resuelto_at, created_at, confirma')
+      .select('id, schema_ref, tabla_ref, registro_id, descripcion_ref, motivo, tipo, pantalla, subpantalla, estado, creado_por, asignado_a, seguimiento, resolucion, resuelto_por, resuelto_at, created_at, confirma')
       .order('created_at', { ascending: false })
       .limit(200)
     // A-FEAT-1449: las que esperan confirmación siguen abiertas para todos los fines (no están resueltas)

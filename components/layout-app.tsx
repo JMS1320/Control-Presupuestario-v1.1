@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { BarraSesion } from "@/components/barra-sesion"
 import { Campanita } from "@/components/campanita"
+import { TareasDeLaPantalla } from "@/components/tareas-de-la-pantalla"
 import { Toaster } from "@/components/ui/sonner"
 import { usePendientesPorPantalla } from "@/hooks/usePendientesPorPantalla"
 import { useModoPermisos } from "@/components/contexto-permisos"
@@ -322,6 +323,8 @@ export function LayoutApp({
             <div className="min-w-0 flex-1">
               <BarraSesion userRole={userRole} confirmarSalida={prefs.confirmarSalida} />
             </div>
+            {/* 🚩 Las tareas abiertas de la pantalla en la que estás (JMS 15/11). */}
+            <TareasDeLaPantalla pantalla={SOLAPAS.find(s => s.id === seccionActiva)?.label} />
             {/* 🔔 Los mensajes anclados a una cosa (A-FEAT-1364). */}
             <Campanita />
           </div>

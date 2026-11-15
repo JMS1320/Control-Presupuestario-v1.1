@@ -52,10 +52,10 @@ export function PanelPasesEntreCajas() {
         if (r.error) throw new Error(`${NOMBRE_CAJA[c]}: ${r.error.message}`)
         for (const m of r.data) movs.push({ id: m.id, cuenta: c, fecha: String(m.fecha).slice(0, 10), texto: m.detalle || m.descripcion || "", descripcion: m.descripcion ?? "", debitos: Number(m.debitos) || 0, creditos: Number(m.creditos) || 0 })
       }
-      const b = await traerTodo<any>((a, z) => supabase.from("msa_galicia").select("id, fecha, descripcion, detalle, categ, debitos").gte("fecha", desde).lte("fecha", hasta).gt("debitos", 0)
+      const b = await traerTodo<any>((a, z) => supabase.from("msa_galicia").select("id, fecha, descripcion, detalle, categ, estado, debitos").gte("fecha", desde).lte("fecha", hasta).gt("debitos", 0)
         .or("descripcion.ilike.extrac%,categ.eq.CAJA").order("id").range(a, z))
       if (b.error) throw new Error(`Galicia: ${b.error.message}`)
-      for (const m of b.data) if (esExtraccionDelBanco(m.descripcion ?? "", m.categ)) movs.push({ id: m.id, cuenta: "banco", fecha: String(m.fecha).slice(0, 10), texto: m.detalle ?? "", descripcion: m.descripcion ?? "", debitos: Number(m.debitos) || 0, creditos: 0 })
+      for (const m of b.data) if (esExtraccionDelBanco(m.descripcion ?? "", m.categ)) movs.push({ id: m.id, cuenta: "banco", fecha: String(m.fecha).slice(0, 10), texto: m.detalle ?? "", descripcion: m.descripcion ?? "", debitos: Number(m.debitos) || 0, creditos: 0, categ: m.categ ?? null, estado: m.estado ?? null })
       setRes(controlarPases(movs))
     } catch (e) { setError((e as Error).message) } finally { setCargando(false) }
   }
@@ -106,6 +106,9 @@ export function PanelPasesEntreCajas() {
               {directos.length > 0 && (
                 <details><summary className="cursor-pointer text-xs font-medium text-amber-800">Del banco directo a AMS o Sigot, sin pasar por la General: {directos.length}</summary>
                   <ul className="text-xs pl-4 list-disc">{directos.map((p, i) => <li key={i}>{fmtF(p.sale[0].fecha)} extracción $ {fmt(p.sale[0].debitos)} → {CUENTA(p.entra.cuenta)} {fmtF(p.entra.fecha)} «{p.entra.texto}»</li>)}</ul></details>)}
+              {(res.aUnPago?.length ?? 0) > 0 && (
+                <details><summary className="cursor-pointer text-xs">Extracciones que fueron directo a pagar algo (ya conciliadas, no pasaron por una caja): {res.aUnPago.length}</summary>
+                  <ul className="text-xs pl-4 list-disc">{res.aUnPago.map(m => <li key={m.id}>{fmtF(m.fecha)} $ {fmt(m.debitos)} → {m.categ} «{m.texto}»</li>)}</ul></details>)}
               {partidos.length > 0 && (
                 <details><summary className="cursor-pointer text-xs">Entradas que son varias extracciones juntas (tope del cajero): {partidos.length}</summary>
                   <ul className="text-xs pl-4 list-disc">{partidos.map((p, i) => <li key={i}>{CUENTA(p.entra.cuenta)} {fmtF(p.entra.fecha)} $ {fmt(p.entra.creditos)} = {p.sale.map(s => `${fmtF(s.fecha)} $ ${fmt(s.debitos)}`).join(" + ")}</li>)}</ul></details>)}

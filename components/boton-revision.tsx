@@ -53,6 +53,8 @@ export interface RevisionAbierta {
   subpantalla?: string | null
   estado: string
   creado_por: string | null
+  /** A quién se le pasó (mail o «claude»); vacío = marca sin destinatario. */
+  asignado_a?: string | null
   created_at: string
   imagen?: string | null
   /** Lo que se fue aprendiendo DESPUÉS de dejar la marca. Se agrega, nunca se pisa. */

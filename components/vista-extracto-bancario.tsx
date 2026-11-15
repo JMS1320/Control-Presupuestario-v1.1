@@ -41,6 +41,7 @@ import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { ImportarCajas } from "@/components/importar-cajas"
 import { ProtocoloPaseDeCaja, CAJAS_DE_AMS } from "@/components/protocolo-pase-de-caja"
 import { PanelPasesEntreCajas } from "@/components/panel-pases-entre-cajas"
+import { PanelRevisiones } from "@/components/panel-revisiones"
 import { AvisoNcTarjeta } from "@/components/aviso-nc-tarjeta"
 import { ResultadoPdfCajaAhorro } from "@/components/resultado-pdf-caja-ahorro"
 import { PanelDolares, ModalMovimientoManual } from "@/components/panel-dolares"
@@ -3958,6 +3959,7 @@ ${marca}` : marca
           {/* 📋 A-FEAT-1585 (JMS 15/11): el protocolo del pase de caja, a mano en la pantalla de cada caja */}
           {CAJAS_DE_AMS.has(cuentaId) && <ProtocoloPaseDeCaja />}
           {/* 🔁 A-FEAT-1585: cada pase con su otra punta (banco → caja → caja), sólo mira */}
+          {CAJAS_DE_AMS.has(cuentaId) && <PanelRevisiones titulo="🚩 Tareas de esta caja" filtro={v => v.tabla_ref === cuentaId} ocultarSiVacio />}
           {CAJAS_DE_AMS.has(cuentaId) && <PanelPasesEntreCajas />}
           {/* Estadísticas */}
           <div className="grid grid-cols-5 gap-4">

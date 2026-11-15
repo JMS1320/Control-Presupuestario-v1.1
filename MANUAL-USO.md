@@ -4461,8 +4461,15 @@ fecha del saldo de arranque. → ⚠️ Sin probar todavía → A-TEST-1382
 
 **Control de pases:** en cada caja, «🔁 Pases entre cajas y con el banco» une cada extracción del Galicia con su entrada a una
 caja y cada pase de una caja con su entrada en la otra (mismo importe, pocos días; también las extracciones partidas por el tope
-del cajero). Lo que queda **sin pareja** se lista con su ficha: es lo que hay que preguntarle a AMS. Sólo mira, no cambia nada.
+del cajero). Lo que queda **sin pareja** se lista con su ficha: es lo que hay que preguntarle a AMS. Una extracción que no entró a
+ninguna caja pero **ya está conciliada a un gasto** (p. ej. el efectivo que se le dio directo al pintor) va aparte, en «fueron directo
+a pagar algo». Sólo mira, no cambia nada.
 → ⚠️ Sin probar todavía → A-TEST-1383
+
+**🚩 Tareas de esta caja / de esta pantalla:** arriba de los movimientos de cada caja aparece «🚩 Tareas de esta caja» cuando hay
+marcas abiertas pegadas a sus movimientos (si no hay, no ocupa lugar). Y en **cualquier** pantalla, arriba al lado de la campanita,
+«🚩 N de esta pantalla» abre las marcas abiertas que se dejaron ahí — las mismas de Principal → Para revisar, filtradas.
+→ ⚠️ Sin probar todavía → A-TEST-1384
 
 **Quién:** AMS lleva las tres cajas en su Excel (una hoja por caja). Una vez por mes como máximo, «pasa caja» con Sigot:
 renglón por renglón, con las facturas a la vista.
