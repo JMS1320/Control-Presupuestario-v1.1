@@ -18102,7 +18102,7 @@ semestres separados de los meses · fechas reales · notas largas en celdas comb
 el último nivel con la **ficha completa** del renglón · el libro entero y por partes · un Excel entregado no se pisa: versión nueva ·
 lo que falta, «Pendiente de informar».
 
-**4 · Ejemplo de forma**: `- Comunicacion JMS Claude - Archivos/Ejemplo Reportes/` — un reporte de **otra empresa** (leer su LEEME):
+**4 · Ejemplo de forma**: `D:UsersjosemDocumentsJoseAutomatizarrClaudeControl-Presupuestario-v1.1- Comunicacion JMS Claude - ArchivosEjemplo Reportes` (en la carpeta PRINCIPAL del proyecto: la carpeta de comunicación no está en git, así que no aparece en tu árbol; lo mismo para los papeles enviados al contador, en `…- Comunicacion JMS Claude - ArchivosBalance- Enviados6Enviar`) — un reporte de **otra empresa** (leer su LEEME):
 se copia la estructura (Ítems · D1…Dn · Resumen · TC; con controles: + Controles · Modificaciones · Pendientes), **nunca el contenido**.
 
 **5 · Lo que NO se decide** — va a la hoja de Pendientes, sin resolver: la distribución en efectivo del 17/01/26 ($ 31,75 M), las
