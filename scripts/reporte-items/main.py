@@ -19,7 +19,7 @@ from core import (CAJA, ENTERO, F_B, F_LINK, F_NOTA, MONEDA, R_CLAVE, R_GRUPO, F
 
 sys.stdout.reconfigure(encoding="utf-8")
 MODULOS = ["d_ventas", "d_compras", "d_templates", "d_sueldos", "d_caja_bancos", "d_a_cobrar", "d_hacienda",
-           "d_granos_insumos", "d_a_pagar", "d_socios"]
+           "d_granos_insumos", "d_a_pagar", "d_socios", "d_socios_interno", "d_socios_falta"]
 GRUPO_REF = "D · Referencia (no interviene)"
 
 # Renglón del balance del contador -> ítem nuestro que le corresponde (sólo donde es claro).
