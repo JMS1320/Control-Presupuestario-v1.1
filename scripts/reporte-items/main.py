@@ -227,6 +227,57 @@ def hoja_controles(lib):
     return h
 
 
+# Versión corta para imprimir (JMS 16/11: «¿a cuánto se podría achicar? ¿20/30 hojas?»): las mismas hojas, pero de cada una se
+# imprime sólo el resumen (hasta la sección que se nombra, sin incluirla). El renglón por renglón queda en el PDF completo.
+# Valor: lista de (desde, hasta) donde cada punta es None (principio / fin de la hoja) o el comienzo del título de una sección.
+RESUMEN_IMPRESION = {
+    "Items": [(None, None)],
+    "D1 Ventas": [(None, "DETALLE")],
+    "D2 Compras": [(None, "Compras por mes — 1er semestre")],
+    "D3 Templates": [(None, "Fuera de estos totales")],
+    "D4 Sueldos": [(None, "2 · DEVENGADO")],
+    "D5 Caja y bancos": [(None, "5a · Banco Galicia")],
+    "D7 Hacienda": [(None, "1.1 ·"), ("2 · Valorizado", "2.1 ·")],
+    "D8 Granos insumos": [(None, "8a.1 ·")],
+    "D9 A pagar": [(None, "9a.2.1 ·"), ("Resumen del ítem 9", None)],
+    "D10 Socios": [(None, "4 · Detalle")],
+    "D11 Balance contador": [(None, None)],
+    "Enviado vs hoy": [(None, None)],
+    "No informado": [(None, "1 · ")],
+}
+
+
+def version_corta(lib):
+    """Deja en cada hoja de RESUMEN_IMPRESION el área de impresión del resumen. Devuelve las hojas que se imprimen, en orden."""
+    from openpyxl.utils import get_column_letter as _L
+    hojas = []
+    for ws in lib.wb.worksheets:
+        tramos = RESUMEN_IMPRESION.get(ws.title)
+        if not tramos:
+            continue
+        titulos = {}
+        for r in range(1, ws.max_row + 1):
+            v = ws.cell(row=r, column=2).value
+            if isinstance(v, str) and ws.cell(row=r, column=2).font.underline:
+                titulos[r] = v
+        ultima = _L(ws.max_column)
+        areas = []
+        for desde, hasta in tramos:
+            r1 = 1 if desde is None else next((r for r, t in titulos.items() if t.startswith(desde)), None)
+            r2 = ws.max_row if hasta is None else next((r - 1 for r, t in titulos.items() if t.startswith(hasta) and r > (r1 or 0)), None)
+            if r1 is None or r2 is None:
+                print(f"  versión corta: no encontré el tramo {desde!r} → {hasta!r} en «{ws.title}»: se imprime entera")
+                areas = [f"A1:{ultima}{ws.max_row}"]
+                break
+            while r2 > r1 and all(ws.cell(row=r2, column=c).value is None for c in range(1, ws.max_column + 1)):
+                r2 -= 1
+            areas.append(f"A{r1}:{ultima}{r2}")
+        ws.print_area = ",".join(areas)
+        ws.row_breaks.brk = []
+        hojas.append(ws.title)
+    return hojas
+
+
 def pulir(lib):
     """Pulido de impresión, igual para todas las hojas:
     · un número que no entra en su columna se achica en vez de salir como #####;
@@ -304,6 +355,10 @@ def main():
     lib.wb.save(base + " - con controles.xlsx")
     lib.wb.remove(lib.wb["Controles"])
     lib.wb.save(base + ".xlsx")
+    hojas_cortas = version_corta(lib)
+    lib.wb.save(base + " - resumen para imprimir.xlsx")
+    with open(base + " - resumen para imprimir.hojas.txt", "w", encoding="utf-8") as f:
+        f.write("\n".join(hojas_cortas))
     print("ítems:", len(lib.items), "· controles:", len(lib.controles), "· pendientes:", len(lib.pendientes))
     print("guardado:", base + ".xlsx")
 

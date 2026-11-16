@@ -18216,3 +18216,28 @@ una ganancia: **«el número final es cada ítem bien presentado»**, para poder
 - **O4 y O5 no se construyeron**: la cuenta por socio por mes de MSA quedó dentro de D10 Socios del reporte de MSA (contable); el lado
   interno y el reporte de las tres empresas dependen de las definiciones de arriba (qué es retiro y qué es deuda, saldos de inicio,
   período de MA, si PAM lleva balance).
+
+**11 · Versión corta para imprimir (16/11, pedido de JMS: «¿a cuánto se podría achicar? ¿20/30 hojas?… hacelo lo mejor posible y
+dejá documentadas las decisiones»)**
+
+- **Entregado**: en la misma carpeta de la v2, `MSA 25-26 - Items del balance v2 - resumen para imprimir.pdf` (**33 páginas**) y su
+  Excel. El PDF completo (219 pág.) y los dos Excel quedan igual: son el respaldo cuando haya que bajar al renglón.
+- **Decisiones que tomé solo** (todas reversibles: es una lista en `scripts/reporte-items/main.py` → `RESUMEN_IMPRESION`):
+  1. **No es otro reporte**: son las mismas hojas y los mismos números, pero de cada hoja se imprime sólo el resumen. Así no puede
+     haber una diferencia entre el corto y el completo.
+  2. **Qué entra**: índice (3 pág.) · Ventas: resumen por cuenta y por mes (2) · Compras: resumen por cuenta contable (2) ·
+     Templates: resumen por grupo y categoría con el anexo de bancarios (4) · Sueldos: el cuadro de lo pagado por persona y por
+     mes (4) · Caja y bancos: como se envió, anexo de la caja y puente (2) · Hacienda: cuadro de cabezas y valorizado (2) · Granos
+     e insumos: resumen y cuadre de granos (2) · A pagar: las 11 facturas y el resumen (3) · Socios: como se envió, anexo y los
+     informativos (3) · Balance del contador 24/25 renglón por renglón, con la casilla para anotar (4) · Enviado contra hoy (1) ·
+     No informado: el resumen (1).
+  3. **Qué queda afuera** (está en el PDF completo): cada factura de compras y su apertura por mes; cada cuota de templates y los
+     meses por semestre; el sueldo devengado y el mes por mes; el detalle de cada banco y del fondo común; los movimientos de
+     hacienda uno por uno; insumos producto por producto; cuentas corrientes de AFA y Agro Centros, cheques, anticipos y provisión;
+     cada socio mes por mes; el detalle de lo no informado; A cobrar (su total está en el índice); el balance propio; los 76
+     pendientes.
+  4. **No bajé de 33 a 30**: lo que habría que sacar es el balance del contador (4 pág.), y es la hoja donde JMS anota lo que el
+     contador le dice. Si se quiere en 29, se saca esa hoja o los informativos de socios.
+  5. **La letra no se achicó** para ganar páginas: va de 6,6 a 9,2 puntos según la hoja, igual que en el completo.
+- **Cómo se regenera**: `main.py` guarda además «… - resumen para imprimir.xlsx» con las áreas de impresión, y `pdf-resumen.ps1`
+  imprime sólo esas hojas.
