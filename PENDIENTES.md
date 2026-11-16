@@ -18274,3 +18274,15 @@ dejá documentadas las decisiones»)**
   en «afecta un número del reporte» y «tarea del sistema»; (4) la marca del índice, más notoria; (5) una tabla única de movimientos
   sin registrar; (6) **Excel no abre archivos cuya ruta completa pasa de 218 caracteres**: los nombres de carpeta y archivo de los
   reportes tienen que ser cortos (pasó con el libro del grupo).
+
+**13 · 16/11 tarde — página «Socios, MA y PAM: casos a definir» entregada, espera las respuestas de JMS**
+
+- https://claude.ai/artifact/4o3oZtsVZ8WwpgmVk2dMPG (guarda en la colección `respuestas`; al leer: `list` completo y contar).
+  Bloques: **A** 6 firmes que no están en la cuenta del socio (1.974.606,70) · **B** 5 de criterio, interna «DIST MA» y contable vacía
+  (6.398.778,85) · **C** lo que PAM pagó a JMS y a AMS (12.591.786,19) contra las facturas 1-69 y 2-61 a PAM · **D** 65 dudosos en 36
+  renglones (22.649.310,51: chalet 4.821.554,86, Medicus 3.782.181,31, Manuel Martínez 3.730.559,75, seguros 6.922.250,20, caballos y
+  multas 2.413.757,00, sueltos 979.007,39) · **E** definiciones de MA (período, retiro o deuda, sueldo de 19.500.000, efectivo y
+  jubilación) · **F** definiciones de PAM (balance o posición, saldo de inicio 45.905.575,52, Sucesiones y herederos, los 33.180.000).
+- **No se cargó nada en el sistema**: lo que JMS apruebe en A y B necesita su OK aparte antes de escribir un dato.
+- **Queda para la noche del 16/11**: reporte de MSA v9 con las correcciones de arriba más lo que salga definitivo de la reunión con
+  el contador (una sola versión nueva, no dos).
