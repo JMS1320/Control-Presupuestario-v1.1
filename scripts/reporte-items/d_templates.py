@@ -15,7 +15,13 @@ import re
 
 from openpyxl.styles import Alignment
 
-from core import F_LINK, num
+if __name__ == "__main__":  # corrido suelto con «python -P», la carpeta del script no entra sola
+    import os
+    import sys
+
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from core import F_LINK, num  # noqa: E402
 
 GRUPO = "A · Resultado del ejercicio"
 LIBRO = "Templates"
@@ -25,7 +31,10 @@ MESES = [(2025, 7, "jul-25"), (2025, 8, "ago-25"), (2025, 9, "sep-25"), (2025, 1
 ETI = {(a, m): t for a, m, t in MESES}
 SEM = [MESES[:6], MESES[6:]]
 ESTADO = {"conciliado": "conciliado", "anterior": "pagado (anterior)", "pendiente": "pendiente",
-          "nada_a_pagar": "nada a pagar"}
+          "nada_a_pagar": "nada a pagar", "pagado": "pagado", "pagar": "a pagar (impaga al cierre)"}
+GRUPO_EMPRESA = "A · Movimientos del ejercicio"   # MA y PAM: no hay balance del contador
+RETIRO = re.compile(r"retiro|distrib|flia", re.I)  # agrupadoras que van como ítem 3r (se cruzan con las cuentas entre empresas)
+EMPRESAS = ("MSA", "PAM", "MA")
 MAX_DETALLE = 250  # una agrupadora con más cuotas que esto va por concepto y por mes
 TOL = 0.005
 
@@ -81,9 +90,12 @@ def _leer_por_mes(ws):
         nro = ws.cell(r, 18).value
         if isinstance(nro, int) and c:
             cat = dict(nro=nro, agr=str(b), cat=str(c), meses=[num(ws.cell(r, k).value) for k in range(4, 16)],
-                       total=num(ws.cell(r, 16).value))
-            if not tipo["agrs"] or tipo["agrs"][-1]["nombre"] != cat["agr"]:
-                tipo["agrs"].append(dict(nombre=cat["agr"], cats=[]))
+                       total=num(ws.cell(r, 16).value), resp=str(a))
+            if not tipo["agrs"] or tipo["agrs"][-1]["base"] != cat["agr"] or tipo["agrs"][-1]["resp"] != cat["resp"]:
+                usados = [x["nombre"] for x in tipo["agrs"]]
+                # la misma agrupadora puede repetirse en el tipo con otro responsable: se distingue en el nombre
+                nombre = cat["agr"] if cat["agr"] not in usados else f"{cat['agr']} (responsable {cat['resp']})"
+                tipo["agrs"].append(dict(nombre=nombre, base=cat["agr"], resp=cat["resp"], cats=[]))
             tipo["agrs"][-1]["cats"].append(cat)
         elif isinstance(a, str) and a.startswith("TOTAL DEL EJERCICIO"):
             totales["__todo__"] = dict(meses=[num(ws.cell(r, k).value) for k in range(4, 16)],
@@ -93,7 +105,9 @@ def _leer_por_mes(ws):
         elif isinstance(a, str) and a.startswith("TOTAL ") and tipo:
             totales[tipo["corto"]] = dict(meses=[num(ws.cell(r, k).value) for k in range(4, 16)],
                                           total=num(ws.cell(r, 16).value))
-        elif isinstance(a, str) and "—" in a and c is None and not a.lower().startswith(("subtotal", "total")):
+        elif (isinstance(a, str) and b is None and c is None and a.strip() not in ("", ".")
+              and not a.lower().startswith(("subtotal", "total"))
+              and all(ws.cell(r, k).value is None for k in range(4, 17))):
             corto = a.split("—")[0].strip().capitalize()
             tipo = dict(titulo=a.strip(), corto=corto, agrs=[])
             tipos.append(tipo)
@@ -119,12 +133,12 @@ def _leer_por_mes(ws):
     return tipos, totales, extras, solapa_de, pagado
 
 
-def _leer_cuotas(src):
+def _leer_cuotas(src, emp="MSA"):
     """Las cuotas del export, con la ficha que traen las solapas por agrupadora (banco, comprobante, detalle)."""
-    ws = src.hoja(LIBRO, "MSA · Cuotas")
+    ws = src.hoja(LIBRO, f"H · {emp} · Cuotas")
     ficha = collections.defaultdict(list)
     for w in src.libro(LIBRO).worksheets:
-        if not w.title.startswith("H · MSA ·"):
+        if not w.title.startswith(f"H · {emp} ·"):
             continue
         hr = next((r for r in range(1, w.max_row + 1)
                    if w.cell(r, 1).value == "Nro" and w.cell(r, 4).value == "Concepto"), None)
@@ -140,7 +154,7 @@ def _leer_cuotas(src):
     sin_ficha = 0
     for r in range(2, ws.max_row + 1):
         v = [ws.cell(r, k).value for k in range(1, 13)]
-        if isinstance(v[0], str) and v[0].startswith("NO INCLUIDAS"):
+        if isinstance(v[0], str) and v[0].startswith(("NO INCLUIDAS", "IMPAGAS AL CIERRE")):
             no_incluidas.append(v[0])
         if not isinstance(v[11], int):
             continue
@@ -170,9 +184,22 @@ def _rotulo(h, texto, col=1):
 
 
 def construir(lib, src):
+    """MSA (el reporte original): mismas hojas, celdas, ítems y números de siempre."""
+    _construir(lib, src, "MSA", GRUPO)
+
+
+def construir_empresa(lib, src, empresa):
+    """MA o PAM: mismas hojas y misma lógica, leyendo las solapas «H · <empresa> · …» del mismo libro."""
+    if empresa not in ("MA", "PAM"):
+        raise SystemExit(f"construir_empresa: empresa «{empresa}» (va 'MA' o 'PAM')")
+    _construir(lib, src, empresa, GRUPO_EMPRESA)
+
+
+def _construir(lib, src, emp, grupo):
+    es_msa = emp == "MSA"
     arch = src.nombre(LIBRO)
-    tipos, totales, extras, solapa_de, pagado = _leer_por_mes(src.hoja(LIBRO, "MSA · Por mes"))
-    cuotas, no_incluidas, sin_ficha = _leer_cuotas(src)
+    tipos, totales, extras, solapa_de, pagado = _leer_por_mes(src.hoja(LIBRO, f"H · {emp} · Por mes"))
+    cuotas, no_incluidas, sin_ficha = _leer_cuotas(src, emp)
 
     # ---- hojas, en el orden de presentación ----
     hR = lib.hoja("D3 Templates", [36, 16, 1.5, 16, 16, 24, 16, 13, 9], horizontal=True)
@@ -184,8 +211,20 @@ def construir(lib, src):
 
     # letras de sub-ítem: sólo las agrupadoras del gasto (el primer tipo: EGRESOS)
     letra = {}
-    for i, a in enumerate(tipos[0]["agrs"]):
-        letra[(tipos[0]["corto"], a["nombre"])] = "3" + "abcdefghijklmnopqrstuvwxyz"[i]
+    if es_msa:
+        for i, a in enumerate(tipos[0]["agrs"]):
+            letra[(tipos[0]["corto"], a["nombre"])] = "3" + "abcdefghijklmnopqrstuvwxyz"[i]
+    else:
+        # MA / PAM: los retiros y distribuciones (en cualquier tipo) van como 3r; el resto del gasto, 3a, 3b…
+        libres = iter("abcdefghijklmnopqstuvwxyz")
+        n_ret = 0
+        for t in tipos:
+            for a in t["agrs"]:
+                if RETIRO.search(a["nombre"]) or RETIRO.search(t["titulo"]):
+                    n_ret += 1
+                    letra[(t["corto"], a["nombre"])] = "3r" + (str(n_ret) if n_ret > 1 else "")
+                elif t is tipos[0]:
+                    letra[(t["corto"], a["nombre"])] = "3" + next(libres)
 
     # =============== 1 · DETALLE (se escribe primero: el resumen apunta a sus celdas) ===============
     mcel = {}   # (nro, (año, mes)) -> referencia a la celda del mes en el detalle
@@ -196,7 +235,7 @@ def construir(lib, src):
         h = hD[t["corto"]]
         n_hoja = h.nombre.split(" ")[0]
         h.titulo(f"Detalle {n_hoja[1:]} — Templates · {t['corto']}, cuota por cuota (ítem 3)")
-        h.nota(f"Fuente: {arch} → «H · MSA · Cuotas» (+ banco, comprobante y detalle de las solapas por agrupadora). "
+        h.nota(f"Fuente: {arch} → «H · {emp} · Cuotas» (+ banco, comprobante y detalle de las solapas por agrupadora). "
                f"{t['titulo']}. Cada categoría lista sus cuotas por fecha; cuando un mes tiene más de una, lleva su "
                "«Total <mes>». Ese importe del mes es el que toma el resumen por mes (D3.1 / D3.2), y el «Total "
                "<categoría>» es el que figura en «D3 Templates». Importe = débito − crédito: las devoluciones, "
@@ -212,7 +251,7 @@ def construir(lib, src):
             pref = letra.get((t["corto"], a["nombre"]))
             h.seccion((f"{pref} · " if pref else "") + a["nombre"] + f" — {n_cuotas} cuotas / movimientos")
             if resumir:
-                solapa = solapa_de.get(a["nombre"], "la solapa de la agrupadora")
+                solapa = solapa_de.get(a["base"], "la solapa de la agrupadora")
                 h.nota(f"Son {n_cuotas} movimientos del extracto: acá va el subtotal por concepto y por mes. El "
                        f"movimiento por movimiento está en el libro Templates → «{solapa}».")
                 resumidas.append((a["nombre"], n_cuotas, solapa, h.nombre))
@@ -263,7 +302,7 @@ def construir(lib, src):
         rT = h.total(f"TOTAL {t['corto'].upper()} — suma de los totales de categoría", {8: h.suma_de(8, filas_cat_tipo)},
                      clave=True)
         h.control(f"total {t['corto']} del detalle", h.cel(8, rT), totales[t["corto"]]["total"],
-                  f"«H · MSA · Por mes», TOTAL {t['corto'].upper()}")
+                  f"«H · {emp} · Por mes», TOTAL {t['corto'].upper()}")
 
     # =============== 2 · RESUMEN POR MES (dos hojas, una por semestre) ===============
     fila_sem = [dict(), dict()]  # por semestre: clave -> fila   (clave = ('c', nro) | ('a', tipo, agr) | ('t', tipo))
@@ -271,7 +310,7 @@ def construir(lib, src):
         meses = SEM[s]
         nom = ["1er semestre (jul-25 a dic-25)", "2do semestre (ene-26 a jun-26)"][s]
         h.titulo(f"Detalle 3.{s + 1} — Templates por mes · {nom} (ítem 3)")
-        h.nota(f"Fuente: {arch} → «H · MSA · Por mes» y «H · MSA · Cuotas». Las mismas filas de «D3 Templates», "
+        h.nota(f"Fuente: {arch} → «H · {emp} · Por mes» y «H · {emp} · Cuotas». Las mismas filas de «D3 Templates», "
                "abiertas mes por mes. Cada importe de un mes apunta a la celda del detalle (hojas D3.3 en adelante) "
                "donde están sus cuotas; el total del semestre suma sus 6 meses; cada subtotal suma sus renglones.")
         h.blanco()
@@ -303,20 +342,22 @@ def construir(lib, src):
             i0 = 0 if s == 0 else 6
             h.control(f"{t['corto']} del semestre", h.cel(2, fila_sem[s][("t", t["corto"])]),
                       round(sum(totales[t["corto"]]["meses"][i0:i0 + 6]), 2),
-                      f"«H · MSA · Por mes», TOTAL {t['corto'].upper()}, suma de {meses[0][2]} a {meses[5][2]}")
+                      f"«H · {emp} · Por mes», TOTAL {t['corto'].upper()}, suma de {meses[0][2]} a {meses[5][2]}")
 
     # =============== 3 · RESUMEN DEL EJERCICIO ===============
     h = hR
-    h.titulo("Detalle 3 — Templates de MSA: lo que no entra por factura (ítem 3)")
+    h.titulo(f"Detalle 3 — Templates de {emp}: lo que no entra por factura (ítem 3)")
     pag = " · ".join(f"{k}: pagado {_ar(v[0])}; pendiente al cierre {_ar(v[1])}" for k, v in pagado.items())
-    h.nota(f"Fuente: {arch} → «H · MSA · Por mes». Los templates son los egresos que no vienen por factura de "
+    h.nota(f"Fuente: {arch} → «H · {emp} · Por mes». Los templates son los egresos que no vienen por factura de "
            "compra (impuestos, gastos e impuestos del banco, tasas) y los movimientos financieros (inversiones, caja, "
            "pago de tarjeta), que NO son gasto y se muestran aparte. Cómo se lee: cada total del ejercicio = 1er "
            "semestre + 2do semestre; cada semestre viene de su hoja por mes (D3.1 / D3.2), y cada mes baja a sus "
            "cuotas en el detalle (columna «Detalle en»). La columna «Total en el detalle» trae el «Total "
-           f"<categoría>» de esa hoja: tiene que coincidir. Gastos e impuestos bancarios están acá al tipo de cambio vendedor (como "
-           "los trae el detalle); al contador se enviaron al comprador: ver el ANEXO al pie de esta hoja. "
-           f"Según el export — {pag}.")
+           "<categoría>» de esa hoja: tiene que coincidir. "
+           + ("Gastos e impuestos bancarios están acá al tipo de cambio vendedor (como "
+              "los trae el detalle); al contador se enviaron al comprador: ver el ANEXO al pie de esta hoja. " if es_msa
+              else "Los retiros y distribuciones llevan el índice 3r: se cruzan con las cuentas entre empresas. ")
+           + f"Según el export — {pag}.")
     h.blanco()
     h.encabezado(["Tipo · agrupadora · categoría", "Total ejercicio 25/26", "", "1er semestre (jul–dic 25)",
                   "2do semestre (ene–jun 26)", "Detalle en", "Total en el detalle", "Diferencia", "¿Coincide?"],
@@ -350,13 +391,14 @@ def construir(lib, src):
             f = {k: h.suma(k, r1, r) for k in cols}
             f.update(cierre(rs))
             h.total((f"{pref} · " if pref else "") + f"Total {a['nombre']}"
-                    + (" (TC vendedor — ver anexo al pie)" if a["nombre"] in ENVIADO else ""), f)
+                    + (" (TC vendedor — ver anexo al pie)" if es_msa and a["nombre"] in ENVIADO else ""), f)
             fila_agr[(t["corto"], a["nombre"])] = rs
             subs.append(rs)
         rt = h.r + 1
         f = {k: h.suma_de(k, subs) for k in cols}
         f.update(cierre(rt))
-        h.total(f"TOTAL {t['corto'].upper()}" + (" — ítem 3" if t is tipos[0] else " — no es gasto, no interviene en el resultado"),
+        h.total(f"TOTAL {t['corto'].upper()}" + (" — ítem 3" if t is tipos[0] else " — no es gasto, no interviene en el resultado"
+                                                if es_msa or t["corto"] == "Financiero" else ""),
                 f, clave=True)
         fila_tipo[t["corto"]] = rt
         h.blanco()
@@ -365,12 +407,12 @@ def construir(lib, src):
     h.blanco()
     for t in tipos:
         h.control(f"total {t['corto']} del ejercicio", h.cel(2, fila_tipo[t["corto"]]), totales[t["corto"]]["total"],
-                  f"«H · MSA · Por mes», TOTAL {t['corto'].upper()}")
+                  f"«H · {emp} · Por mes», TOTAL {t['corto'].upper()}")
     if "__todo__" in totales:
         h.control("todos los tipos", h.cel(2, rtodo), totales["__todo__"]["total"],
-                  "«H · MSA · Por mes», TOTAL DEL EJERCICIO (= «H · MSA · Egresos», TOTAL)")
+                  f"«H · {emp} · Por mes», TOTAL DEL EJERCICIO (= «H · {emp} · Egresos», TOTAL)")
     # controles por agrupadora del gasto, contra el subtotal del export
-    ws_pm = src.hoja(LIBRO, "MSA · Por mes")
+    ws_pm = src.hoja(LIBRO, f"H · {emp} · Por mes")
     sub_export = {}
     for r in range(1, ws_pm.max_row + 1):
         a_ = ws_pm.cell(r, 1).value
@@ -379,27 +421,28 @@ def construir(lib, src):
     for t in tipos:
         for a in t["agrs"]:
             if len(a["cats"]) > 1:
-                cand = [v for v in sub_export.get(a["nombre"], [])
+                cand = [v for v in sub_export.get(a["base"], [])
                         if abs(v - sum(c["total"] for c in a["cats"])) <= TOL]
-                fuente_v = cand[0] if cand else (sub_export.get(a["nombre"]) or [0.0])[0]
-                txt = f"«H · MSA · Por mes», Subtotal {a['nombre']}"
+                fuente_v = cand[0] if cand else (sub_export.get(a["base"]) or [0.0])[0]
+                txt = f"«H · {emp} · Por mes», Subtotal {a['nombre']}"
             else:
                 fuente_v = a["cats"][0]["total"]
-                txt = f"«H · MSA · Por mes», renglón {a['cats'][0]['cat']}"
+                txt = f"«H · {emp} · Por mes», renglón {a['cats'][0]['cat']}"
             h.control(f"{a['nombre']} ({t['corto']})", h.cel(2, fila_agr[(t["corto"], a["nombre"])]), fuente_v, txt)
 
     # anexo: gastos e impuestos bancarios como se enviaron (TC comprador) + diferencia por tipo de cambio
-    h.blanco()
-    h.seccion("ANEXO — Gastos e impuestos bancarios: como se enviaron (TC comprador) y la diferencia por tipo de cambio")
-    h.nota("Al contador se le enviaron al tipo de cambio comprador. El detalle de este reporte (el export de la app) "
-           "está al vendedor. Enviado + diferencia por tipo de cambio = al vendedor, y ese importe tiene que coincidir "
-           "con el del resumen de arriba (columna «En este resumen»). Lo enviado y la diferencia van como valor.")
-    h.encabezado(["Concepto", "Enviado al contador (TC comprador)", "", "Diferencia por tipo de cambio",
-                  "Al TC vendedor (enviado + diferencia)", "De dónde sale", "En este resumen (TC vendedor)",
-                  "Diferencia", "¿Coincide?"])
+    if es_msa:  # sólo MSA: lo de MA y PAM no se envió al contador
+        h.blanco()
+        h.seccion("ANEXO — Gastos e impuestos bancarios: como se enviaron (TC comprador) y la diferencia por tipo de cambio")
+        h.nota("Al contador se le enviaron al tipo de cambio comprador. El detalle de este reporte (el export de la app) "
+               "está al vendedor. Enviado + diferencia por tipo de cambio = al vendedor, y ese importe tiene que coincidir "
+               "con el del resumen de arriba (columna «En este resumen»). Lo enviado y la diferencia van como valor.")
+        h.encabezado(["Concepto", "Enviado al contador (TC comprador)", "", "Diferencia por tipo de cambio",
+                      "Al TC vendedor (enviado + diferencia)", "De dónde sale", "En este resumen (TC vendedor)",
+                      "Diferencia", "¿Coincide?"])
     anexo_env = {}
     filas_anexo = []
-    for nombre, (enviado, dif_tc, explica) in ENVIADO.items():
+    for nombre, (enviado, dif_tc, explica) in (ENVIADO if es_msa else {}).items():
         partes = [(t, a) for t in tipos for a in t["agrs"] if a["nombre"] == nombre]
         if not partes:
             continue
@@ -421,7 +464,7 @@ def construir(lib, src):
         h.total("Total gastos e impuestos bancarios", f)
         for nombre, (enviado, dif_tc, en_resumen, r) in anexo_env.items():
             h.control(f"{nombre}: enviado + diferencia por TC", h.cel(5, r), en_resumen,
-                      f"«H · MSA · Por mes», {nombre} (todos los tipos)")
+                      f"«H · {emp} · Por mes», {nombre} (todos los tipos)")
             if abs(enviado + dif_tc - en_resumen) > TOL:
                 lib.pendiente("Templates · anexo de tipo de cambio no cierra",
                               f"{nombre}: enviado {_ar(enviado)} + diferencia {_ar(dif_tc)} = {_ar(enviado + dif_tc)} y el "
@@ -432,7 +475,7 @@ def construir(lib, src):
     h.seccion("Fuera de estos totales — lo avisa el export (informativo, no suma arriba)")
     for tipo_x, texto, valor in extras:
         r = h.fila([texto, float(valor),
-                    "no entra en ningún control del libro Templates: ver «H · MSA · Extracto sin categ»"
+                    f"no entra en ningún control del libro Templates: ver «H · {emp} · Extracto sin categ»"
                     if tipo_x == "extracto" else "no es gasto: va por la cuenta corriente del socio"])
         h.ws.merge_cells(start_row=r, start_column=4, end_row=r, end_column=10)
     for texto in no_incluidas:
@@ -442,13 +485,23 @@ def construir(lib, src):
 
     # =============== 4 · ÍTEMS ===============
     t0 = tipos[0]
+    en_t0_3r = [a["nombre"] for a in t0["agrs"] if letra.get((t0["corto"], a["nombre"]), "").startswith("3r")]
     lib.item("3", "Templates — egresos que no entran por factura (impuestos, gastos bancarios y otros)", hR,
-             h.cel(2, fila_tipo[t0["corto"]]), GRUPO,
+             h.cel(2, fila_tipo[t0["corto"]]), grupo,
              "Suma de las agrupadoras 3a, 3b… (D3 Templates); cada una baja a sus categorías, por mes "
-             "(D3.1 / D3.2) y a sus cuotas (D3.3).", None)
-    for a in t0["agrs"]:
-        n = letra[(t0["corto"], a["nombre"])]
+             "(D3.1 / D3.2) y a sus cuotas (D3.3)."
+             + (f" Incluye «{', '.join(en_t0_3r)}», que además va como 3r." if en_t0_3r else ""), None)
+    for t_i, a in [(t, a) for t in tipos for a in t["agrs"] if (t["corto"], a["nombre"]) in letra]:
+        n = letra[(t_i["corto"], a["nombre"])]
         comp = "Categorías: " + ", ".join(c["cat"] for c in a["cats"])
+        if not es_msa:
+            nom = a["nombre"]
+            if n.startswith("3r"):
+                nom = f"Retiros y distribuciones por templates — {a['nombre']}"
+                comp += f". En el export figura en «{t_i['titulo']}»" + (
+                    "; está sumado dentro del ítem 3." if t_i is t0 else "; NO está dentro del ítem 3.")
+            lib.item(n, nom, hR, h.cel(2, fila_agr[(t_i["corto"], a["nombre"])]), grupo, comp, None)
+            continue
         if a["nombre"] in anexo_env:
             env, dtc, enres, _r = anexo_env[a["nombre"]]
             propio = sum(c["total"] for c in a["cats"])
@@ -460,14 +513,14 @@ def construir(lib, src):
         if a["nombre"] in COMP_EXTRA:
             comp += ". " + COMP_EXTRA[a["nombre"]]
         cont = _contador(src, CONTADOR_AGRUP[a["nombre"]]) if a["nombre"] in CONTADOR_AGRUP else None
-        lib.item(n, NOMBRE_ITEM.get(a["nombre"], a["nombre"]), hR, h.cel(2, fila_agr[(t0["corto"], a["nombre"])]), GRUPO,
+        lib.item(n, NOMBRE_ITEM.get(a["nombre"], a["nombre"]), hR, h.cel(2, fila_agr[(t0["corto"], a["nombre"])]), grupo,
                  comp, cont)
         k = 0
         for c in a["cats"]:
             frag = CONTADOR_CATEG.get((a["nombre"], c["cat"]))
             if frag:
                 k += 1
-                lib.item(f"{n}{k}", f"{a['nombre']} · {c['cat']}", hR, h.cel(2, fila_cat[c["nro"]]), GRUPO,
+                lib.item(f"{n}{k}", f"{a['nombre']} · {c['cat']}", hR, h.cel(2, fila_cat[c["nro"]]), grupo,
                          "Renglón de categoría; comparable con el balance del contador: " + " + ".join(frag),
                          _contador(src, frag))
 
@@ -483,7 +536,7 @@ def construir(lib, src):
                       "El último nivel de esa agrupadora no está a la vista en el reporte.", hoja)
     if sin_ficha:
         lib.pendiente("Templates · cuotas sin ficha completa",
-                      f"{sin_ficha} cuota(s) de «H · MSA · Cuotas» no se encontraron en las solapas por agrupadora: "
+                      f"{sin_ficha} cuota(s) de «H · {emp} · Cuotas» no se encontraron en las solapas por agrupadora: "
                       "van sin banco, comprobante ni detalle.", "Sólo de forma: el importe está.", "D3.3 en adelante")
     for tipo_x, texto, valor in extras:
         if tipo_x == "extracto":
@@ -492,15 +545,75 @@ def construir(lib, src):
                           "gasto sin registrar.", "D3 Templates (sección «Fuera de estos totales»)")
         else:
             lib.pendiente("Templates · pagos que van por la cuenta de un socio", f"{texto}: {_ar(valor)}",
-                          "No son gasto de MSA: revisar que estén en la cuenta del socio.",
+                          f"No son gasto de {emp}: revisar que estén en la cuenta del socio.",
                           "D3 Templates (sección «Fuera de estos totales»)")
     ceros = [f"{c['cat']} ({a['nombre']})" for t in tipos for a in t["agrs"] for c in a["cats"]
-             if any(q["estado"] == "pendiente" for q in cuotas.get(c["nro"], []))]
+             if any(q["estado"] in ("pendiente", ESTADO["pagar"]) for q in cuotas.get(c["nro"], []))]
     if ceros:
         lib.pendiente("Templates · cuotas en estado «pendiente» dentro del ejercicio",
                       "Categorías con cuotas todavía pendientes (el export las trae con su importe, en general 0): "
                       + "; ".join(sorted(set(ceros))),
                       "Si alguna se pagó y no se cargó, falta gasto.", "D3.3 Egresos / D3.4 Financiero")
+    if not es_msa:
+        # pagado desde una cuenta de OTRA empresa (lo dice «Pagado desde» de cada cuota)
+        ajenas = collections.defaultdict(lambda: [0, 0.0])
+        for t in tipos:
+            for a in t["agrs"]:
+                for c in a["cats"]:
+                    for q in cuotas.get(c["nro"], []):
+                        tk = set(re.findall(r"[A-Za-z]+", str(q["banco"] or "")))
+                        otras = (tk & set(EMPRESAS)) - {emp}
+                        if otras and emp not in tk:
+                            k = (t["corto"], a["nombre"], c["cat"], str(q["banco"]))
+                            ajenas[k][0] += 1
+                            ajenas[k][1] += q["importe"]
+        if ajenas:
+            lib.pendiente(f"Templates · categorías de {emp} pagadas desde una cuenta de otra empresa",
+                          "; ".join(f"{k[2]} ({k[1]}, {k[0]}) desde {k[3]}: {v[0]} cuota(s), {_ar(v[1])}"
+                                    for k, v in sorted(ajenas.items(), key=lambda x: -abs(x[1][1]))),
+                          f"Total {_ar(sum(v[1] for v in ajenas.values()))} en {sum(v[0] for v in ajenas.values())} "
+                          "cuota(s): genera cuenta entre empresas.", "detalle D3.3 en adelante, columna «Pagado desde»")
+        if any(c["resp"] != emp for t in tipos for a in t["agrs"] for c in a["cats"]):
+            lib.pendiente(f"Templates · renglones de {emp} con otro responsable",
+                          "; ".join(f"{c['cat']} ({a['nombre']}): responsable {c['resp']}, {_ar(c['total'])}"
+                                    for t in tipos for a in t["agrs"] for c in a["cats"] if c["resp"] != emp),
+                          "El gasto está en el libro de esta empresa pero el responsable es compartido u otro.",
+                          "D3 Templates")
 
-    print(f"[d_templates] cuotas {sum(len(v) for v in cuotas.values())} · diferencias contra «Por mes»: {len(difs)} · "
+    print(f"[d_templates {emp}] cuotas {sum(len(v) for v in cuotas.values())} · diferencias contra «Por mes»: {len(difs)} · "
           f"sin ficha: {sin_ficha} · " + " · ".join(f"{k}: {v['total']:,.2f}" for k, v in totales.items()))
+
+
+if __name__ == "__main__":
+    # Prueba MA o PAM:  python -P d_templates.py MA <carpeta_fuentes> [salida.xlsx]
+    # (misma lógica que probar.py, que sigue probando MSA con `construir`)
+    import os
+    import sys
+
+    from core import Fuentes, Libro
+
+    sys.stdout.reconfigure(encoding="utf-8")
+    empresa_, carpeta_ = sys.argv[1], sys.argv[2]
+    salida_ = sys.argv[3] if len(sys.argv) > 3 else os.path.join(carpeta_, "out", f"d_templates_{empresa_}.xlsx")
+    lib_ = Libro()
+    construir_empresa(lib_, Fuentes(carpeta_), empresa_)
+    lib_.wb.save(salida_)
+    malas_ = 0
+    for h_ in lib_.hojas:
+        n_ = 0
+        for row_ in h_.ws.iter_rows():
+            for c_ in row_:
+                if isinstance(c_.value, str) and c_.value.startswith("="):
+                    n_ += 1
+                    if re.search(r"SUMIFS?|SUMPRODUCT|COUNTIFS?|SUBTOTAL|VLOOKUP|INDEX|MATCH", c_.value, re.I):
+                        malas_ += 1
+                        print("  FORMULA QUE FILTRA:", h_.nombre, c_.coordinate, c_.value[:80])
+        print(f"hoja «{h_.nombre}»: {h_.r} renglones, {n_} fórmulas, {h_.ncols} columnas")
+    for i_ in lib_.items:
+        print("ítem", i_["n"], "|", i_["nombre"], "|", i_["hoja"], i_["celda"], "|", i_["grupo"],
+              "| contador 24/25:", i_["contador"])
+    for c_ in lib_.controles:
+        print("control:", c_[0], "→", c_[2])
+    for p_ in lib_.pendientes:
+        print("pendiente:", p_[0], "—", p_[1][:100])
+    print("fórmulas que filtran:", malas_, "· guardado en", salida_)
