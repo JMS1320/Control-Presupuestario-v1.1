@@ -9,6 +9,7 @@
 Lo pagado (1) NO sale de un libro exportado por la app: es `sueldos/pagos_por_mes.json` (pagos por banco del
 sistema, extracto del Galicia para jul–dic 25 y planilla de la Caja Sigot). Va como valor, con su control.
 """
+from openpyxl.styles import Border as _Border, Side as _Side
 import collections
 import json
 import os
@@ -152,7 +153,9 @@ def _tabla(h, s, periodos, personas, lineas_de, prev, rotulo_total):
             filas_l = []
             for j, (medio, vals) in enumerate(lin):
                 r = h.r + 1
-                h.fila([p["label"] if j == 0 else None, None if p["largo"] else medio, None]
+                # el nombre va en TODOS los renglones de la persona (JMS 16/11: con el nombre sólo en el primero, el «por caja»
+                # y el «total» parecían de la persona siguiente)
+                h.fila([p["label"], None if p["largo"] else medio, None]
                        + [float(x) for x in vals[s * 6:s * 6 + 6]] + cola(r, prev["lin"][(p["key"], j)] if prev else None),
                        sangria=0)
                 if p["largo"]:
@@ -163,9 +166,11 @@ def _tabla(h, s, periodos, personas, lineas_de, prev, rotulo_total):
                 filas_l.append(r)
             if len(filas_l) > 1:
                 r = h.r + 1
-                h.fila([None, "total", None] + [f"={h.cel(c, filas_l[0])}+{h.cel(c, filas_l[1])}" for c in range(4, 10)]
+                h.fila([p["label"], "total", None] + [f"={h.cel(c, filas_l[0])}+{h.cel(c, filas_l[1])}" for c in range(4, 10)]
                        + cola(r, prev["p"][p["key"]] if prev else None), negrita=True)
             out["p"][p["key"]] = r
+            for c in range(1, h.ncols + 1):  # una línea marcada cierra el bloque de cada persona
+                h.celda(c, r).border = _Border(bottom=_Side(style="thin", color="1F3864"))
             tot_rows.append(r)
         out["g"][gk] = h.total(f"Subtotal {gtitulo}", {c: h.suma_de(c, tot_rows) for c in cols})
         if gk == "g2" and "g1" in out["g"]:
