@@ -3131,3 +3131,29 @@ De armar las cuentas MSA↔MA y MSA↔PAM ([A-FEAT-1532](PENDIENTES.md#a-feat-15
 
 ### 🐞 Un lector de PDF que anda en Node puede fallar en el navegador (2026-11-05, A-FEAT-1565)
 `DecompressionStream("deflate")` es **estricto en Chrome**: si después de los datos comprimidos queda algo (el salto de línea antes de `endstream`), tira el stream entero; Node lo tolera. Por eso las pruebas en Node daban verde y en la app las 26 boletas de ARBA de la cuota 4 salían mudas. Regla: un lector que corre en el navegador se prueba **en un navegador** (`scripts/probar-boletas-navegador.mts`, Chromium de Playwright).
+
+## «Descargar de ARCA» corta con «unable to verify the first certificate» — al servidor le falta el certificado intermedio `#arca #certificado #tls #troubleshooting #2026-11-16`
+
+**Síntoma:** en Egresos → Facturas → «Descargar de ARCA» (y en la descarga de emitidos), cartel rojo *«unable to verify the first
+certificate; if the root CA is installed locally, try running Node.js with --use-system-ca»*. No es la clave fiscal ni la app.
+
+**Causa:** un servidor de ARCA renovó su certificado y lo instaló sin el intermedio. El navegador lo baja solo; Node no. El
+16/11/2026 fue `portalcf.cloud.afip.gob.ar` (certificado `*.cloud.afip.gob.ar` del 30/10/2026, emitido por «Sectigo Public Server
+Authentication CA OV R36»); `auth.afip.gob.ar` y `fes.afip.gob.ar` estaban bien.
+
+**Cómo se diagnostica en un minuto** (sin clave, no manda ningún dato): un `https.get` de Node a cada uno de los tres servidores
+dice cuál falla; `tls.connect` con `rejectUnauthorized: false` **sólo para leer** el certificado muestra quién lo emitió y la URL
+«CA Issuers» de donde se baja el intermedio.
+
+**Arreglo:** el intermedio (público) se agrega a `lib/arca/certificados.ts` y `lib/arca/http.ts` lo suma a los certificados de
+confianza de esa conexión. Se comprueba que una raíz que Node ya trae lo firma, y que un sitio con certificado vencido o de raíz
+desconocida sigue rechazado.
+
+**Descartado, y por qué:**
+- ❌ `rejectUnauthorized: false` / `NODE_TLS_REJECT_UNAUTHORIZED=0`: deja de verificar a quién se le manda la clave fiscal.
+- ❌ Pasarle un `httpsAgent` propio al cliente: `axios-cookiejar-support` lo rechaza («does not support for use with other
+  http(s).Agent») porque crea el suyo en cada pedido. Por eso el arreglo es un interceptor registrado **antes** de `wrapper`
+  (los de pedido corren del último al primero) que le pone `options.ca` al agente ya creado.
+- ❌ `--use-system-ca` o `NODE_EXTRA_CA_CERTS`: dependen de cómo arranca el proceso, y en Vercel no se controla.
+
+**Mientras tanto:** bajar el archivo a mano de Mis Comprobantes e importarlo por archivo. → [A-BUG-1630](PENDIENTES.md#a-bug-1630).
