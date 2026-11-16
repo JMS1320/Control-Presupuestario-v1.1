@@ -38,7 +38,7 @@ def indice(lib, h, empresa):
         if it["celda"]:
             h.celda(4, r).fill = core.R_CLAVE
         x = h._pon(8, r, it["hoja"], core.F_LINK)
-        x.hyperlink = f"#'{it['hoja']}'!A1"
+        x.hyperlink = f"#'{it['hoja']}'!{it['celda'] or 'A1'}"
         h.ws.row_dimensions[r].height = 30 if (it["composicion"] and len(it["composicion"]) > 48) else 16
 
 
@@ -95,6 +95,7 @@ def main():
     indice(lib, h_items, empresa)
     base.hoja_pendientes(lib)
     base.hoja_controles(lib)
+    base.volver_al_indice(lib)
     base.pulir(lib)
     os.makedirs(salida, exist_ok=True)
     ruta = os.path.join(salida, f"{empresa} 25-26 - Items (borrador) {version}")
