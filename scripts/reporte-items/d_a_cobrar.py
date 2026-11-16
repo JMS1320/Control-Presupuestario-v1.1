@@ -7,6 +7,8 @@ Balance propio → «Deudores por ventas» (control del total).
 import datetime
 import re
 
+from openpyxl.styles import Alignment
+
 from core import num
 
 GRUPO = 'B · Patrimonio al cierre (30/06/2026)'
@@ -39,6 +41,18 @@ def _fch(v):
 def _pesos(x):
     s = f'{abs(x):,.2f}'.replace(',', '#').replace('.', ',').replace('#', '.')
     return ('−' if x < 0 else '') + s
+
+
+def _control(h, descripcion, celda, valor, fuente):
+    """h.control + el texto combinado a lo ancho con ajuste: no se desborda sobre los importes."""
+    r = h.control(descripcion, celda, valor, fuente)
+    fin = h.ncols - 3
+    h.ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=fin + 1)
+    x = h.celda(1, r)
+    x.alignment = Alignment(wrap_text=True, vertical='top')
+    ancho = sum(ANCHOS[:fin])
+    h.ws.row_dimensions[r].height = 12.5 * max(1, -(-len(_txt(x.value)) // int(ancho * 1.15)))
+    return r
 
 
 def _fila_de(ws, etiqueta, col=1, desde=1):
@@ -120,10 +134,10 @@ def construir(lib, src):
     total_fuente = num(w_cc.cell(r_tot, col['Total']).value)
 
     h.seccion('6a · Cuentas a cobrar — comprobantes de venta sin cobrar al 30/06/2026')
-    h.encabezado(ENC, repetir=True)
+    h.encabezado(ENC)
     rt_a, s_a = _tabla(h, principales, 'Total 6a — Cuentas a cobrar', clave=True,
                        vacio='Ningún comprobante de venta quedó sin cobrar al 30/06/2026')
-    h.control('6a Cuentas a cobrar', h.cel(C_TOT, rt_a), total_fuente, '«03 Cuentas a cobrar» → TOTAL')
+    _control(h, '6a Cuentas a cobrar', h.cel(C_TOT, rt_a), total_fuente, '«03 Cuentas a cobrar» → TOTAL')
     miro = [_txt(w_cc.cell(r, 1).value) for r in range(r_tot, w_cc.max_row + 1) if _txt(w_cc.cell(r, 1).value).startswith('Se miraron')]
     if miro:
         h.nota(miro[0] + ' Los de abajo están en la fuente pero NO suman a 6a: cada bloque dice por qué.')
@@ -155,7 +169,7 @@ def construir(lib, src):
         h.encabezado(ENC)
         rt, s = _tabla(h, b['filas'], 'Subtotal (no suma al ítem)')
         if declarado is not None:
-            h.control(f'6a informativo {n}: {titulo[:40]}', h.cel(C_TOT, rt), declarado, '«03 Cuentas a cobrar» → total del bloque')
+            _control(h, f'6a informativo {n}: {titulo[:40]}', h.cel(C_TOT, rt), declarado, '«03 Cuentas a cobrar» → total del bloque')
         if len(b['titulos']) > 1:
             h.nota(' '.join(b['titulos'][1:]))
         h.blanco()
@@ -175,7 +189,7 @@ def construir(lib, src):
     h.seccion('6b · Provisión de cobros — ventas del ejercicio facturadas después del cierre')
     h.encabezado(ENC)
     rt_b, s_b = _tabla(h, prov, 'Total 6b — Provisión de cobros', clave=True)
-    h.control('6b Provisión de cobros', h.cel(C_TOT, rt_b), tot_prov_f, '«03.1 Provision cobros» → TOTAL')
+    _control(h, '6b Provisión de cobros', h.cel(C_TOT, rt_b), tot_prov_f, '«03.1 Provision cobros» → TOTAL')
     otras = [_txt(w_pc.cell(r, 1).value) for r in range(r_tot + 1, w_pc.max_row + 1) if _txt(w_pc.cell(r, 1).value)]
     motivo = [t for t in otras if t.startswith('*')]
     if motivo:
@@ -202,7 +216,7 @@ def construir(lib, src):
     rt6 = h.total('Total ítem 6 — A cobrar', {C_TOT: h.suma(C_TOT, r1, r2)}, clave=True)
     r_bp = _fila_de(w_bp, 'Deudores por ventas')
     bp = num(w_bp.cell(r_bp, 3).value)
-    h.control('Total ítem 6 contra el Balance propio', h.cel(C_TOT, rt6), bp, 'Balance propio → «Deudores por ventas», $ 2026')
+    _control(h, 'Total ítem 6 contra el Balance propio', h.cel(C_TOT, rt6), bp, 'Balance propio → «Deudores por ventas», $ 2026')
     h.nota('El balance del contador al 30/06/2025 no traía un renglón de deudores por ventas: no hay importe del año anterior para comparar.')
 
     lib.item('6', 'A cobrar', h, h.cel(C_TOT, rt6), GRUPO, '6a cuentas a cobrar + 6b provisión de cobros', None)

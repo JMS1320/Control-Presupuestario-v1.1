@@ -18,13 +18,15 @@ FILAS = [
     ("Impuesto inmobiliario, cuotas", 9311023.80, 9311023.80, "igual (sólo cambian notas)"),
     ("Red vial, cuotas", 4137813.07, 4137813.07, "igual (sólo cambian notas)"),
     ("Créditos bancarios", 235091.41, 235091.41, "31 renglones iguales"),
-    ("Bancos y saldos, total en pesos al cierre", -2231608.58, -465522.66,
-     "Hoy se suman las cajas: General 457.212,92 + AMS 0,00 + Sigot 1.308.873,00 = 1.766.085,92. En lo enviado la caja iba «Pendiente de informar»."),
+    ("Bancos y saldos, total en pesos al cierre", -2231608.58, -1603394.90,
+     "Los bancos coinciden. La diferencia es la caja, que en lo enviado iba «Pendiente de informar»: según la planilla de cajas al "
+     "30/06/2026 son 628.213,68 (General 0,00 + AMS 197.340,68 + Sigot 430.873,00). El export de la app muestra otra cifra "
+     "(1.766.085,92) que no es el saldo real: ver D5."),
     ("Cuentas con socios, saldo total", -90123846.86, -86594765.00,
      "Andrés +628.914,00 (2 pagos por Santander del 01/08 y 01/09/2025 que hoy no están en su cuenta); Mercedes Areco +1.134.572,86 "
      "(albañil del chalet por Caja Sigot 800.000,00; 2 consumos de seguro del chalet 243.272,86 y 1 de internet 91.300,00 que la tarjeta cobra "
      "después del cierre); Cotitulares 1.756.595,00 y Hermanos 9.000,00 figuran sólo en lo enviado."),
-    ("Automotores (Inmobiliario, Red Vial y Automotor)", 1087669.69, 2255426.69,
+    ("Automotores (papel del export; en este reporte el ítem 3d sigue en 1.087.669,69)", 1087669.69, 2255426.69,
      "Hoy entra «Multas Amarok»: dos transferencias del 01/12/2025 por 531.059,00 y 636.698,00 (cuenta Automotores rep. y mantenimiento). "
      "Amarok y Voyage, iguales."),
     ("Gastos bancarios por cuenta (al TC comprador, el elegido)", 3629838.20, 3630918.20,

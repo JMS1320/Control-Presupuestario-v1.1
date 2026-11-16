@@ -307,8 +307,8 @@ def _construir(lib, src):
                       'falta valuar', donde)
     v = _tabla_valorizado(h, cierre, refs)
     h.control('valor bruto a precio de mercado', h.cel(8, v['bruto']), cierre['bruto'],
-              '02.1 Stock valorizado, TOTAL HACIENDA (a precio de mercado)', tolerancia=TOLERANCIA_VALOR)
-    h.control('valor neto (ítem 7)', h.cel(8, v['neto']), cierre['neto'], '02.1 Stock valorizado, TOTAL NETO — valor del balance',
+              '02.1 Stock valorizado, TOTAL HACIENDA', tolerancia=TOLERANCIA_VALOR)
+    h.control('valor neto (ítem 7)', h.cel(8, v['neto']), cierre['neto'], '02.1 Stock valorizado, TOTAL NETO',
               tolerancia=TOLERANCIA_VALOR)
     h.control('cabezas valorizadas contra el cierre del cuadro', h.cel(2, v['bruto']), tot_cierre,
               '02 Stock hacienda, TOTAL CIERRE NZ')
@@ -351,7 +351,7 @@ def _construir(lib, src):
                'no mueva el resultado. No interviene en el ítem 7: se muestra para explicar por qué el balance propio da otro número.')
         vi = _tabla_valorizado(h, interna, refs if len(interna['filas']) == len(refs) else None)
         h.control('valor neto interno (promedio de junio)', h.cel(8, vi['neto']), interna['neto'],
-                  '02.1 Stock valorizado, bloque INTERNA — PROMEDIO DE JUNIO 2026, TOTAL NETO', tolerancia=15)  # el papel trae el valor por cabeza ya redondeado (−10,80)
+                  '02.1, bloque INTERNA junio 2026, TOTAL NETO', tolerancia=15)  # el papel trae el valor por cabeza ya redondeado (−10,80)
         rd = _fila(h, ['Papeles − interna', None, None, None, None, None, None,
                        f"={h.cel(8, v['neto'])}-{h.cel(8, vi['neto'])}",
                        'TOTAL NETO de la tabla 2 menos TOTAL NETO de la tabla 3'], {9: 12}, negrita=True)

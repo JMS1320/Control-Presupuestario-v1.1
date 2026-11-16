@@ -34,6 +34,17 @@ def _ar(v):
     return f"{v:,.2f}".replace(",", "§").replace(".", ",").replace("§", ".")
 
 
+# Lo ENVIADO al contador (al tipo de cambio comprador) y la diferencia contra el detalle del export (al vendedor).
+# JMS 15/11: la tabla principal queda como está; la diferencia va en un anexo al pie con su subtotal.
+ENVIADO = {
+    "Gastos Bancarios": (3629838.20, 1080.00, "12 débitos de US$ 10 de la cuenta en dólares, $ 9 por dólar"),
+    "Impuestos Bancarios": (7502758.61, 2177.46, "impuestos debitados en la cuenta en dólares, pesificados al comprador "
+                                                 "en lo enviado y al vendedor en este detalle"),
+}
+NOMBRE_ITEM = {"(sin agrupadora en el concepto)": "Otros gastos (sin agrupadora) — NO enviado al contador"}
+COMP_EXTRA = {"Impuestos Automotores": "Igual a lo enviado; las multas de la Amarok (1.167.757,00) están en 3i Otros gastos."}
+
+
 # Renglones comparables del balance del contador 24/25 (se leen de «Balance en línea»; fragmento del nombre)
 CONTADOR_AGRUP = {"Gastos Bancarios": ["Gastos Bancarios"], "Impuestos Automotores": ["Patente automotor"]}
 CONTADOR_CATEG = {
@@ -303,7 +314,9 @@ def construir(lib, src):
            "pago de tarjeta), que NO son gasto y se muestran aparte. Cómo se lee: cada total del ejercicio = 1er "
            "semestre + 2do semestre; cada semestre viene de su hoja por mes (D3.1 / D3.2), y cada mes baja a sus "
            "cuotas en el detalle (columna «Detalle en»). La columna «Total en el detalle» trae el «Total "
-           f"<categoría>» de esa hoja: tiene que coincidir. Según el export — {pag}.")
+           f"<categoría>» de esa hoja: tiene que coincidir. Gastos e impuestos bancarios están acá al tipo de cambio vendedor (como "
+           "los trae el detalle); al contador se enviaron al comprador: ver el ANEXO al pie de esta hoja. "
+           f"Según el export — {pag}.")
     h.blanco()
     h.encabezado(["Tipo · agrupadora · categoría", "Total ejercicio 25/26", "", "1er semestre (jul–dic 25)",
                   "2do semestre (ene–jun 26)", "Detalle en", "Total en el detalle", "Diferencia", "¿Coincide?"],
@@ -336,7 +349,8 @@ def construir(lib, src):
             rs = h.r + 1
             f = {k: h.suma(k, r1, r) for k in cols}
             f.update(cierre(rs))
-            h.total((f"{pref} · " if pref else "") + f"Total {a['nombre']}", f)
+            h.total((f"{pref} · " if pref else "") + f"Total {a['nombre']}"
+                    + (" (TC vendedor — ver anexo al pie)" if a["nombre"] in ENVIADO else ""), f)
             fila_agr[(t["corto"], a["nombre"])] = rs
             subs.append(rs)
         rt = h.r + 1
@@ -374,6 +388,45 @@ def construir(lib, src):
                 txt = f"«H · MSA · Por mes», renglón {a['cats'][0]['cat']}"
             h.control(f"{a['nombre']} ({t['corto']})", h.cel(2, fila_agr[(t["corto"], a["nombre"])]), fuente_v, txt)
 
+    # anexo: gastos e impuestos bancarios como se enviaron (TC comprador) + diferencia por tipo de cambio
+    h.blanco()
+    h.seccion("ANEXO — Gastos e impuestos bancarios: como se enviaron (TC comprador) y la diferencia por tipo de cambio")
+    h.nota("Al contador se le enviaron al tipo de cambio comprador. El detalle de este reporte (el export de la app) "
+           "está al vendedor. Enviado + diferencia por tipo de cambio = al vendedor, y ese importe tiene que coincidir "
+           "con el del resumen de arriba (columna «En este resumen»). Lo enviado y la diferencia van como valor.")
+    h.encabezado(["Concepto", "Enviado al contador (TC comprador)", "", "Diferencia por tipo de cambio",
+                  "Al TC vendedor (enviado + diferencia)", "De dónde sale", "En este resumen (TC vendedor)",
+                  "Diferencia", "¿Coincide?"])
+    anexo_env = {}
+    filas_anexo = []
+    for nombre, (enviado, dif_tc, explica) in ENVIADO.items():
+        partes = [(t, a) for t in tipos for a in t["agrs"] if a["nombre"] == nombre]
+        if not partes:
+            continue
+        filas_res = [fila_agr[(t["corto"], a["nombre"])] for t, a in partes]
+        en_resumen = round(sum(c["total"] for _t, a in partes for c in a["cats"]), 2)
+        donde = " + ".join((letra.get((t["corto"], nombre)) or ", ".join(c["cat"] for c in a["cats"]) + f" (en {t['corto']})")
+                           + " " + _ar(sum(c["total"] for c in a["cats"])) for t, a in partes)
+        r = h.r + 1
+        h.fila([nombre, float(enviado), None, float(dif_tc), f"={h.cel(2, r)}+{h.cel(4, r)}",
+                f"{explica}. En el resumen: {donde}", h.suma_de(2, filas_res),
+                f"={h.cel(5, r)}-{h.cel(7, r)}", f'=IF(ABS({h.cel(8, r)})<=0.01,"OK","REVISAR")'])
+        filas_anexo.append(r)
+        anexo_env[nombre] = (enviado, dif_tc, en_resumen, r)
+    if filas_anexo:
+        rta = h.r + 1
+        f = {k: h.suma(k, filas_anexo[0], filas_anexo[-1]) for k in (2, 4, 5, 7)}
+        f.update(cierre(rta))
+        f[8] = f"={h.cel(5, rta)}-{h.cel(7, rta)}"
+        h.total("Total gastos e impuestos bancarios", f)
+        for nombre, (enviado, dif_tc, en_resumen, r) in anexo_env.items():
+            h.control(f"{nombre}: enviado + diferencia por TC", h.cel(5, r), en_resumen,
+                      f"«H · MSA · Por mes», {nombre} (todos los tipos)")
+            if abs(enviado + dif_tc - en_resumen) > TOL:
+                lib.pendiente("Templates · anexo de tipo de cambio no cierra",
+                              f"{nombre}: enviado {_ar(enviado)} + diferencia {_ar(dif_tc)} = {_ar(enviado + dif_tc)} y el "
+                              f"resumen da {_ar(en_resumen)}", "El control del anexo lo marca REVISAR.", "D3 Templates, anexo")
+
     # lo que el export deja afuera de estos totales (informativo)
     h.blanco()
     h.seccion("Fuera de estos totales — lo avisa el export (informativo, no suma arriba)")
@@ -396,8 +449,19 @@ def construir(lib, src):
     for a in t0["agrs"]:
         n = letra[(t0["corto"], a["nombre"])]
         comp = "Categorías: " + ", ".join(c["cat"] for c in a["cats"])
+        if a["nombre"] in anexo_env:
+            env, dtc, enres, _r = anexo_env[a["nombre"]]
+            propio = sum(c["total"] for c in a["cats"])
+            comp += (f". Al TC vendedor; enviado al comprador: {_ar(env)} (diferencia por TC {_ar(dtc)}"
+                     + (f"; lo enviado incluye {_ar(enres - propio)} de «"
+                        + ", ".join(c["cat"] for t in tipos[1:] for x in t["agrs"] if x["nombre"] == a["nombre"]
+                                    for c in x["cats"]) + "», que acá va en otro grupo (Financiero)"
+                        if abs(enres - propio) > TOL else "") + "). Ver anexo al pie de D3 Templates.")
+        if a["nombre"] in COMP_EXTRA:
+            comp += ". " + COMP_EXTRA[a["nombre"]]
         cont = _contador(src, CONTADOR_AGRUP[a["nombre"]]) if a["nombre"] in CONTADOR_AGRUP else None
-        lib.item(n, a["nombre"], hR, h.cel(2, fila_agr[(t0["corto"], a["nombre"])]), GRUPO, comp, cont)
+        lib.item(n, NOMBRE_ITEM.get(a["nombre"], a["nombre"]), hR, h.cel(2, fila_agr[(t0["corto"], a["nombre"])]), GRUPO,
+                 comp, cont)
         k = 0
         for c in a["cats"]:
             frag = CONTADOR_CATEG.get((a["nombre"], c["cat"]))

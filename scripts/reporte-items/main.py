@@ -24,12 +24,12 @@ GRUPO_REF = "D · Referencia (no interviene)"
 
 # Renglón del balance del contador -> ítem nuestro que le corresponde (sólo donde es claro).
 ITEM_DE_LA_CUENTA = {
-    "1.1.1/01/01": "5", "1.1.1/01/03": "5", "1.1.1/02/01": "5", "1.1.1/02/02": "5", "1.1.1/02/03": "9b",
-    "1.1.1/02/06": "5", "1.1.1/02/07": "5", "1.1.1/02/09": "5", "1.1.4/02/02": "9c", "1.1.4/02/05": "10d",
+    "1.1.1/01/01": "5f", "1.1.1/02/01": "5b", "1.1.1/02/02": "5c", "1.1.1/02/03": "9b",
+    "1.1.1/02/06": "5e", "1.1.1/02/07": "5a", "1.1.1/02/09": "5d", "1.1.4/02/02": "9c", "1.1.4/02/05": "10d",
     "1.1.5/02/00": "8a", "1.2.2/05/01": "7", "1.2.5/01/04": "8c", "2.1.1/01/01": "9a", "2.1.1/01/04": "9d",
     "2.1.1/01/10": "9e", "2.1.2/02/01": "9f", "4.1.1/01/01": "1a", "4.1.1/01/02": "1b", "4.1.1/01/03": "1c",
-    "4.2.1/03/01": "4", "4.2.1/03/02": "3", "4.2.1/03/18": "3", "4.2.1/03/22": "2", "4.2.1/03/23": "2",
-    "4.2.1/06/04": "3", "4.2.1/06/05": "3", "4.2.1/06/09": "3",
+    "4.2.1/03/01": "4", "4.2.1/03/02": "3f1", "4.2.1/03/18": "3b", "4.2.1/03/22": "2", "4.2.1/03/23": "2",
+    "4.2.1/06/02": "3f2", "4.2.1/06/04": "3g1", "4.2.1/06/05": "3g2", "4.2.1/06/09": "3d",
 }
 
 
@@ -227,6 +227,39 @@ def hoja_controles(lib):
     return h
 
 
+def pulir(lib):
+    """Pulido de impresión, igual para todas las hojas:
+    · un número que no entra en su columna se achica en vez de salir como #####;
+    · los encabezados de tabla toman el alto que necesita su texto."""
+    from openpyxl.utils import get_column_letter as _L
+    for ws in lib.wb.worksheets:
+        combinadas = set()
+        for rango in ws.merged_cells.ranges:
+            for fila in ws.iter_rows(min_row=rango.min_row, max_row=rango.max_row, min_col=rango.min_col, max_col=rango.max_col):
+                for c in fila:
+                    combinadas.add(c.coordinate)
+        for fila in ws.iter_rows():
+            alto = 0
+            for c in fila:
+                v = c.value
+                if v is None:
+                    continue
+                es_num = isinstance(v, (int, float)) and not isinstance(v, bool)
+                es_formula = isinstance(v, str) and v.startswith("=")
+                if (es_num or es_formula) and not c.alignment.wrap_text:
+                    al = copy.copy(c.alignment)
+                    al.shrink_to_fit = True
+                    c.alignment = al
+                if isinstance(v, str) and not es_formula and c.fill is not None and c.fill.fgColor is not None \
+                        and str(c.fill.fgColor.rgb).endswith("DCE6F1") and c.coordinate not in combinadas:
+                    ancho = ws.column_dimensions[_L(c.column)].width or 10
+                    lineas = max(len(parte) for parte in [v]) / max(4.0, ancho * 0.95)
+                    alto = max(alto, 14 * (int(lineas) + 1) + 4)
+            if alto:
+                actual = ws.row_dimensions[fila[0].row].height or 0
+                ws.row_dimensions[fila[0].row].height = max(actual, min(alto, 74))
+
+
 def main():
     carpeta, salida, version = sys.argv[1], sys.argv[2], sys.argv[3]
     src = Fuentes(carpeta)
@@ -252,6 +285,7 @@ def main():
     balance_contador(lib, src)
     balance_propio(lib, src)
     importlib.import_module("d_enviado").construir(lib, src)
+    importlib.import_module("d_no_informado").construir(lib, src)
 
     def orden(it):
         n = it["n"]
@@ -264,6 +298,7 @@ def main():
     indice(lib, h_items)
     hoja_pendientes(lib)
     hoja_controles(lib)
+    pulir(lib)
     os.makedirs(salida, exist_ok=True)
     base = os.path.join(salida, f"MSA 25-26 - Items del balance {version}")
     lib.wb.save(base + " - con controles.xlsx")

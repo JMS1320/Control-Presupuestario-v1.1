@@ -116,7 +116,7 @@ def _granos(lib, src, h):
                   {7: 11}, fmt={6: TN})
     f_ven = _fila(h, ['− Ventas del ejercicio', None, None, None, None, 0.0,
                       'total de las ventas en que salió grano (tabla 8a.1)'], {7: 11}, fmt={6: TN})
-    f_sal = h.total('= Saldo al cierre (30/06/2026)',
+    f_sal = h.total('Saldo al cierre (30/06/2026) = inicio + cosecha − ventas',
                     {6: f"=ROUND({h.cel(6, f_ini)}+{h.cel(6, f_cos)}-{h.cel(6, f_ven)},3)"}, fmt={6: TN})
     h.control('saldo de granos en toneladas', h.cel(6, f_sal), saldo_f, '1 Granos, «= Saldo»', tolerancia=0.001)
     f_ex = _fila(h, ['Existencia declarada al cierre', None, None, None, None, float(exist),
@@ -261,7 +261,7 @@ def _insumos(lib, src, h):
     tv = num(wsi.cell(r_tv, 2).value) if r_tv else 0.0
     h.control('insumos valuados al cierre (8b)', h.cel(8, f_tot), tv, 'Stock insumos, «TOTAL VALUADO»')
     h.control('insumos valuados al inicio', h.cel(5, f_tot), ini_f,
-              '00 Stocks inicio y cierre, subtotales Insumos + Forrajes + Combustible (valor económico de inicio)')
+              '00 Stocks inicio y cierre, subtotales de inicio')
 
     # pendientes de 8b
     if sin_precio_c:
@@ -327,7 +327,7 @@ def _insumos(lib, src, h):
             s_cc += num(cc[1])
         rc = h.total('Total declarado en el campo', {5: h.suma(5, a, h.r), 8: h.suma(8, a, h.r)})
         tc_f = num(bloques['cierre'].get('TOTAL', (0, 0, 0))[1])
-        h.control('total declarado en el campo al cierre', h.cel(8, rc), tc_f, 'Stock insumos, saldos al cierre, TOTAL Campo')
+        h.control('total declarado en el campo al cierre', h.cel(8, rc), tc_f, 'Stock insumos, TOTAL Campo al cierre')
         _fila(h, ['Sistema: insumos valuados (tabla 8b)', None, None, None, None, None, None, f"={h.cel(8, f_tot)}",
                   'no incluye sementeras (8c)'], {9: 11})
         _fila(h, ['Campo − sistema', None, None, None, None, None, None, f"={h.cel(8, rc)}-{h.cel(8, h.r)}",
@@ -476,7 +476,7 @@ def construir(lib, src):
     lib.item('8', 'Granos, insumos y sementeras', h, h.cel(8, f_res), GRUPO, '8a granos + 8b insumos + 8c sementeras', None)
     lib.item('8a', 'Granos (soja)', h, h.cel(8, ta), GRUPO,
              'inicio + cosecha − ventas = toneladas al cierre × precio de pizarra', 2045386.32)
-    lib.item('8b', 'Insumos, forrajes y combustible', h, h.cel(8, tb), GRUPO,
+    lib.item('8b', 'Insumos, forrajes y combustible (valuado del sistema: incompleto, ver pendientes)', h, h.cel(8, tb), GRUPO,
              'cantidad × precio por producto (sólo los que tienen precio)', None)
     lib.item('8c', 'Sementeras', h, h.cel(8, tc), GRUPO,
              'insumos aplicados en órdenes ejecutadas × precio', 4738332.10)

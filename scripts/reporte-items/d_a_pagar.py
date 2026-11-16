@@ -9,6 +9,8 @@ Templates → «H · MSA · Imp Gral» y «H · MSA · Tarjetas» (pagos del eje
 import datetime
 import re
 
+from openpyxl.styles import Alignment
+
 from core import num
 
 GRUPO = 'B · Patrimonio al cierre (30/06/2026)'
@@ -41,6 +43,18 @@ def _fch(v):
 def _pesos(x):
     s = f'{abs(x):,.2f}'.replace(',', '#').replace('.', ',').replace('#', '.')
     return ('−' if x < 0 else '') + s
+
+
+def _control(h, descripcion, celda, valor, fuente):
+    """h.control + el texto combinado a lo ancho con ajuste: no se desborda sobre los importes."""
+    r = h.control(descripcion, celda, valor, fuente)
+    fin = h.ncols - 3
+    h.ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=fin + 1)
+    x = h.celda(1, r)
+    x.alignment = Alignment(wrap_text=True, vertical='top')
+    ancho = sum(ANCHOS[:fin])
+    h.ws.row_dimensions[r].height = 12.5 * max(1, -(-len(_txt(x.value)) // int(ancho * 1.15)))
+    return r
 
 
 def _fila_de(ws, etiqueta, col=1, desde=1, falta_ok=False):
@@ -153,9 +167,9 @@ def construir(lib, src):
     facturas = [_renglon(w_cp, r, col) for r in range(r_enc + 1, r_tot) if _es_dato(w_cp, r, col)]
     tot_fac_f = num(w_cp.cell(r_tot, col['Total']).value)
     h.seccion(f'9a.1 · Cuentas a pagar — {len(facturas)} facturas de proveedores sin pagar al 30/06/2026')
-    h.encabezado(ENC, repetir=True)
+    h.encabezado(ENC)
     rt_fac, s_fac = _tabla(h, facturas, 'Total 9a.1 — Facturas sin pagar al cierre')
-    h.control('9a.1 Facturas sin pagar al cierre', h.cel(C_TOT, rt_fac), tot_fac_f, '«04 Cuentas a pagar» → TOTAL')
+    _control(h, '9a.1 Facturas sin pagar al cierre', h.cel(C_TOT, rt_fac), tot_fac_f, '«04 Cuentas a pagar» → TOTAL')
     pie = [_txt(w_cp.cell(r, 1).value) for r in range(r_tot + 1, w_cp.max_row + 1) if _txt(w_cp.cell(r, 1).value)]
     if pie:
         h.nota(' '.join(pie))
@@ -206,7 +220,7 @@ def construir(lib, src):
                 lib.pendiente(f'Cuenta corriente {c["nombre"]}: ajuste sin explicar',
                               f'Los movimientos dan {_pesos(calc)} y la fuente cierra en {_pesos(c["cierre"])}.', _pesos(ajuste), HOJA)
         rt = h.total(f'Saldo al cierre — {c["nombre"]}', {C_TOT: h.suma(C_TOT, r1, r2)})
-        h.control(f'9a.2.{k} Cuenta corriente {c["nombre"]}', h.cel(C_TOT, rt), c['cierre'], '«14 Cuentas corrientes» → SALDO AL CIERRE')
+        _control(h, f'9a.2.{k} Cuenta corriente {c["nombre"]}', h.cel(C_TOT, rt), c['cierre'], '«14 Cuentas corrientes» → SALDO AL CIERRE')
         h.nota(f'En el ejercicio: nos facturó {_pesos(c["facturado"])} · le vendimos {_pesos(c["vendido"])} · pagado/cobrado '
                f'{_pesos(c["pagado"])}. {c["lectura"]}. {pie_det}')
         h.blanco()
@@ -225,7 +239,7 @@ def construir(lib, src):
         r2 = h.fila([None, None, f'9a.2 · Cuenta corriente — {c["nombre"]}', None, None, None, f'={h.cel(C_TOT, rt)}'])
     rt_a = h.total('Total 9a — Cuentas a pagar (proveedores)', {C_TOT: h.suma(C_TOT, r1, r2)}, clave=True)
     tot['9a'] = rt_a
-    h.control('9a Cuentas a pagar', h.cel(C_TOT, rt_a), ci_prov, 'Balance en línea → «Proveedores en Cta.Cte.», Cierre (la app)')
+    _control(h, '9a Cuentas a pagar', h.cel(C_TOT, rt_a), ci_prov, 'Balance en línea → «Proveedores en Cta.Cte.», Cierre (la app)')
     otros = [_txt(w_cc.cell(r, 1).value) for r in range(r_tcc + 1, r_tcc + 4) if _txt(w_cc.cell(r, 1).value)]
     if otros:
         h.nota(' '.join(otros))
@@ -254,7 +268,7 @@ def construir(lib, src):
         h.seccion('9a · Informativo, NO suma — ' + _txt(w_cc.cell(r_as, 1).value))
         h.encabezado(['', 'Póliza', 'Qué hay que reclamar', '', '', '', 'Importe $', '', 'Qué es'])
         rt, s = _tabla(h, filas, 'Saldo de documentación con la aseguradora (no suma al ítem)')
-        h.control('9a informativo: saldo con la aseguradora', h.cel(C_TOT, rt), saldo_as, '«14 Cuentas corrientes» → aseguradora, SALDO AL CIERRE')
+        _control(h, '9a informativo: saldo con la aseguradora', h.cel(C_TOT, rt), saldo_as, '«14 Cuentas corrientes» → aseguradora, SALDO AL CIERRE')
         h.nota(' '.join(_txt(w_cc.cell(r, 1).value) for r in range(r_as + 1, r_sal)) + ' ' + _txt(w_cc.cell(r_sal, 4).value) +
                ' El movimiento por movimiento (cuotas, notas de crédito y débitos del banco) está en la solapa «14 Cuentas corrientes».')
         h.blanco()
@@ -324,7 +338,7 @@ def construir(lib, src):
     rt_b, s_b = _tabla(h, cheques, 'Total 9b — Cheques dados sin debitar', clave=True,
                        vacio='Ningún cheque emitido antes del cierre quedó sin debitar al 30/06/2026')
     tot['9b'] = rt_b
-    h.control('9b Cheques dados sin debitar', h.cel(C_TOT, rt_b), tot_ch_f, '«04.1 Cheques dados» → TOTAL')
+    _control(h, '9b Cheques dados sin debitar', h.cel(C_TOT, rt_b), tot_ch_f, '«04.1 Cheques dados» → TOTAL')
     notas = [_txt(w_ch.cell(r, 1).value) for r in range(r_tot + 1, w_ch.max_row + 1) if _txt(w_ch.cell(r, 1).value)]
     if notas:
         h.nota(' '.join(notas))
@@ -361,7 +375,7 @@ def construir(lib, src):
     rt_c, s_c = _tabla(h, ant_p, 'Total 9c — Anticipos a proveedores', clave=True,
                        vacio='Ningún anticipo a proveedores con saldo al 30/06/2026')
     tot['9c'] = rt_c
-    h.control('9c Anticipos a proveedores', h.cel(C_TOT, rt_c), tot_ap_f, '«04.2 Anticipos» → TOTAL anticipo a proveedores')
+    _control(h, '9c Anticipos a proveedores', h.cel(C_TOT, rt_c), tot_ap_f, '«04.2 Anticipos» → TOTAL anticipo a proveedores')
     notas = []
     for r in range(1, w_an.max_row + 1):
         a = _txt(w_an.cell(r, 1).value)
@@ -377,7 +391,7 @@ def construir(lib, src):
     h.encabezado(enc_an)
     rt_ac, s_ac = _tabla(h, ant_c, 'Anticipos de clientes al cierre (no suma al ítem)',
                          vacio='Ningún anticipo de clientes con saldo al 30/06/2026')
-    h.control('9c informativo: anticipos de clientes', h.cel(C_TOT, rt_ac), tot_ac_f, '«04.2 Anticipos» → TOTAL anticipos de clientes')
+    _control(h, '9c informativo: anticipos de clientes', h.cel(C_TOT, rt_ac), tot_ac_f, '«04.2 Anticipos» → TOTAL anticipos de clientes')
     h.blanco()
     if abs(s_c - tot_ap_f) > 0.01 or abs(s_c - ci_ant) > 0.01:
         lib.pendiente('Anticipos a proveedores: no da', f'Listado {_pesos(s_c)}; fuente {_pesos(tot_ap_f)}; Balance en línea {_pesos(ci_ant)}.',
@@ -396,8 +410,8 @@ def construir(lib, src):
     h.encabezado(ENC)
     rt_d, s_d = _tabla(h, prov, 'Total 9d — Provisión para gastos', clave=True)
     tot['9d'] = rt_d
-    h.control('9d Provisión para gastos (contra el papel)', h.cel(C_TOT, rt_d), tot_pr_f, '«05 Provision» → TOTAL')
-    h.control('9d Provisión para gastos (contra el Balance en línea)', h.cel(C_TOT, rt_d), ci_pg,
+    _control(h, '9d Provisión para gastos (contra el papel)', h.cel(C_TOT, rt_d), tot_pr_f, '«05 Provision» → TOTAL')
+    _control(h, '9d Provisión para gastos (contra el Balance en línea)', h.cel(C_TOT, rt_d), ci_pg,
               'Balance en línea → «Provision para gastos», Cierre (la app)')
     h.blanco()
     if abs(s_d - tot_pr_f) > 0.01 or abs(s_d - ci_pg) > 0.01:
@@ -413,7 +427,7 @@ def construir(lib, src):
         h.seccion('9d · Informativo, NO suma — ' + _txt(w_pr.cell(r_ant, 1).value))
         h.encabezado(ENC)
         rt, s = _tabla(h, prev, 'Provisión al cierre de 24/25 (no suma al ítem)')
-        h.control('9d informativo: provisión 24/25 contra el balance del contador', h.cel(C_TOT, rt), ap_pg,
+        _control(h, '9d informativo: provisión 24/25 contra el balance del contador', h.cel(C_TOT, rt), ap_pg,
                   'Balance en línea → «Provision para gastos», Apertura (contador)')
         h.nota('Son las dos facturas que formaban la provisión del balance anterior: se facturaron en 25/26 y por eso están en las '
                'compras de este ejercicio. La fuente las muestra para que se vea que la apertura del contador está reconocida.')
@@ -435,7 +449,7 @@ def construir(lib, src):
                                 total=imp_v, cuenta='Tarjetas', nota=f'{det_v} · {de_donde_v}')],
                        'Total 9e — Tarjeta Visa a pagar', clave=True)
     tot['9e'] = rt_e
-    h.control('9e Tarjeta Visa a pagar', h.cel(C_TOT, rt_e), ci_visa, 'Balance en línea → «TARJETA VISA BUSSINES GALICIA», Cierre (la app)')
+    _control(h, '9e Tarjeta Visa a pagar', h.cel(C_TOT, rt_e), ci_visa, 'Balance en línea → «TARJETA VISA BUSSINES GALICIA», Cierre (la app)')
     h.nota('La app toma como deuda los consumos de la tarjeta posteriores al último resumen pagado' +
            (f' (el último pago del ejercicio fue el {ultimo[0].strftime("%d/%m/%Y")} por $ {_pesos(ultimo[1])})' if ultimo else '') +
            '. Los libros exportados traen sólo el total: la lista de esos consumos, uno por uno, no está en ninguna solapa. '
@@ -460,10 +474,10 @@ def construir(lib, src):
                                 cuenta='Impuestos Laborales ARCA', nota=f'{det_s} · {de_donde_s}')],
                        'Total 9f — Cargas sociales a pagar', clave=True)
     tot['9f'] = rt_f
-    h.control('9f Cargas sociales (contra el Balance en línea)', h.cel(C_TOT, rt_f), ci_suss,
+    _control(h, '9f Cargas sociales (contra el Balance en línea)', h.cel(C_TOT, rt_f), ci_suss,
               'Balance en línea → «SUSS a pagar», Cierre (la app)')
     r_bp = _fila_de(w_bp, 'Cargas sociales a pagar')
-    h.control('9f Cargas sociales (contra el Balance propio)', h.cel(C_TOT, rt_f), num(w_bp.cell(r_bp, 3).value),
+    _control(h, '9f Cargas sociales (contra el Balance propio)', h.cel(C_TOT, rt_f), num(w_bp.cell(r_bp, 3).value),
               'Balance propio → «Cargas sociales a pagar», $ 2026')
     h.nota('Es el período junio 2026, que se paga en julio: al cierre era deuda. Esa cuota no figura en los libros exportados '
            '(sólo llegan hasta el 30/06): el importe sale del renglón del Balance en línea. Abajo, como referencia, lo pagado en el '
@@ -488,7 +502,7 @@ def construir(lib, src):
         h.seccion('9f · Informativo, NO suma — pagos de cargas sociales hechos en el ejercicio')
         h.encabezado(['Fecha de pago', 'Comprobante', 'A quién', '', '', '', 'Importe $', 'Cuenta que pagó', 'Detalle y estado'])
         rt, s = _tabla(h, pagos, 'Pagado en el ejercicio (no suma al ítem)')
-        h.control('9f informativo: pagos de cargas sociales del ejercicio', h.cel(C_TOT, rt), tot_eg,
+        _control(h, '9f informativo: pagos de cargas sociales del ejercicio', h.cel(C_TOT, rt), tot_eg,
                   '«H · MSA · Egresos» → «Cargas Sociales», total del ejercicio')
         if abs(pagos[0]['total'] - ap_suss) <= 0.01:
             h.nota(f'El primer pago ({pagos[0]["fecha"].strftime("%d/%m/%Y")}, $ {_pesos(pagos[0]["total"])}) es exactamente el «SUSS a pagar» '
@@ -507,7 +521,7 @@ def construir(lib, src):
                      f'={h.cel(C_TOT, h.r + 1)}-{h.cel(6, h.r + 1)}'])
         r1 = r1 or r2
     rt9 = h.total('Total ítem 9 — A pagar', {6: h.suma(6, r1, r2), C_TOT: h.suma(C_TOT, r1, r2), 8: h.suma(8, r1, r2)}, clave=True)
-    h.control('Total ítem 9 contra el Balance en línea', h.cel(C_TOT, rt9), sum(f[3] for f in filas),
+    _control(h, 'Total ítem 9 contra el Balance en línea', h.cel(C_TOT, rt9), sum(f[3] for f in filas),
               'Balance en línea → suma del Cierre (la app) de los 5 renglones')
     h.fila([None, None, '9c · Anticipos a proveedores — activo, NO suma al total de arriba', None, None, float(ap_ant),
             f'={h.cel(C_TOT, tot["9c"])}', f'={h.cel(C_TOT, h.r + 1)}-{h.cel(6, h.r + 1)}'])
