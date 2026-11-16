@@ -18286,3 +18286,12 @@ dejá documentadas las decisiones»)**
 - **No se cargó nada en el sistema**: lo que JMS apruebe en A y B necesita su OK aparte antes de escribir un dato.
 - **Queda para la noche del 16/11**: reporte de MSA v9 con las correcciones de arriba más lo que salga definitivo de la reunión con
   el contador (una sola versión nueva, no dos).
+- **Generador ya corregido (16/11 tarde, sin versión entregada; prueba en la carpeta de trabajo: 85 ítems, 200 de 200 controles OK,
+  mismos totales que la v8)**: la marca del índice va en columna propia · los pendientes salen en dos tablas («pueden cambiar un
+  número» 53 · «tareas del sistema, respaldo o presentación» 28; la regla está en `no_cambia_numero` de `main.py`) · en D2 Compras,
+  bloque «De qué se compone Al gasto» con la diferencia de 40.392,11 en renglón propio y dos controles · el rótulo «todavía sin
+  tratar» pasó a «marcas que el sistema muestra aparte» · las notas de D10.2 ya no se cortan a 260 caracteres · un rótulo que no
+  entra combina las celdas vacías y baja de renglón · el encabezado sólo se repite arriba de cada página si la hoja es de una sola
+  tabla (o casi) · las flechas del cuerpo usan otra letra. **Sin hacer**: títulos huérfanos al pie de página, la cantidad de cuotas
+  con formato de importe en G4 del libro del grupo, y la tabla única de movimientos sin registrar (depende de las respuestas de
+  la página de casos). Los libros del grupo, MA y PAM se generan bien con el pulido nuevo, pero no se recalcularon ni se miraron.

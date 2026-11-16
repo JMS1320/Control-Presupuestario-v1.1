@@ -408,6 +408,7 @@ def pulir(lib):
     for ws in lib.wb.worksheets:
         combinadas = set()
         encabezados = []
+        a_combinar = []
         for rango in ws.merged_cells.ranges:
             for fila in ws.iter_rows(min_row=rango.min_row, max_row=rango.max_row, min_col=rango.min_col, max_col=rango.max_col):
                 for c in fila:
@@ -435,6 +436,7 @@ def pulir(lib):
             # --- revisión visual del 16/11 ---
             necesita = 0
             firma = []
+            forzar = False
             for i, c in enumerate(fila):
                 v = c.value
                 es_enc = c.fill is not None and c.fill.fgColor is not None and str(c.fill.fgColor.rgb).endswith("DCE6F1")
@@ -447,20 +449,35 @@ def pulir(lib):
                     f.name = "Segoe UI"
                     c.font = f
                 ancho = ws.column_dimensions[_L(c.column)].width or 10
-                vecina = fila[i + 1].value if i + 1 < len(fila) else None
-                if not c.alignment.wrap_text and vecina is not None and len(v) > ancho * 1.15 and not c.hyperlink:
-                    al = copy.copy(c.alignment)  # un rótulo que no entra y tiene un número al lado: baja de renglón, no se corta
+                # Un rótulo sin ajuste de texto se extiende sobre las celdas vacías de su derecha y se corta en la primera
+                # ocupada. Si no entra en ese espacio: se combinan esas celdas, baja de renglón y la fila toma el alto justo.
+                j = i + 1
+                while j < len(fila) and fila[j].value is None and fila[j].coordinate not in combinadas:
+                    ancho += ws.column_dimensions[_L(fila[j].column)].width or 10
+                    j += 1
+                if not c.alignment.wrap_text and j < len(fila) and len(v) > ancho * (0.85 if c.font.bold else 1.0)                         and not c.hyperlink:
+                    al = copy.copy(c.alignment)
                     al.wrap_text = True
                     al.vertical = al.vertical or "top"
                     c.alignment = al
+                    if j - 1 > i:
+                        a_combinar.append((c.row, c.column, fila[j - 1].column))
+                    forzar = True
+                elif not c.alignment.wrap_text:
+                    continue
+                else:
+                    ancho = ws.column_dimensions[_L(c.column)].width or 10
                 if c.alignment.wrap_text:
-                    por_linea = max(4, int(ancho * 1.1))
+                    por_linea = max(4, int(ancho * (0.9 if c.font.bold else 1.1)))
                     necesita = max(necesita, sum(max(1, -(-len(parte) // por_linea)) for parte in v.split("\n")))
             actual = ws.row_dimensions[fila[0].row].height
-            if actual and necesita and 12.5 * necesita > actual:  # alto fijo que quedó corto para el texto (CUIT tapado)
-                ws.row_dimensions[fila[0].row].height = min(12.5 * necesita, 400)
+            # alto fijo que quedó corto para el texto (CUIT tapado), o fila con celdas recién combinadas (Excel no la ajusta sola)
+            if necesita and (actual or forzar) and 12.5 * necesita + 2 > (actual or 0):
+                ws.row_dimensions[fila[0].row].height = min(12.5 * necesita + 2, 400)
             if firma:
                 encabezados.append((fila[0].row, tuple(firma)))
+        for r, c1, c2 in a_combinar:
+            ws.merge_cells(start_row=r, start_column=c1, end_row=r, end_column=c2)
         titulos_que_se_repiten(ws, encabezados)
 
 
