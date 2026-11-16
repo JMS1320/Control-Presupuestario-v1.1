@@ -18292,6 +18292,4 @@ dejá documentadas las decisiones»)**
   bloque «De qué se compone Al gasto» con la diferencia de 40.392,11 en renglón propio y dos controles · el rótulo «todavía sin
   tratar» pasó a «marcas que el sistema muestra aparte» · las notas de D10.2 ya no se cortan a 260 caracteres · un rótulo que no
   entra combina las celdas vacías y baja de renglón · el encabezado sólo se repite arriba de cada página si la hoja es de una sola
-  tabla (o casi) · las flechas del cuerpo usan otra letra. **Sin hacer**: títulos huérfanos al pie de página, la cantidad de cuotas
-  con formato de importe en G4 del libro del grupo, y la tabla única de movimientos sin registrar (depende de las respuestas de
-  la página de casos). Los libros del grupo, MA y PAM se generan bien con el pulido nuevo, pero no se recalcularon ni se miraron.
+  tabla (o casi) · las flechas del cuerpo usan otra letra. **Segunda pasada (16/11, más tarde)**: el alto de las filas con texto se calcula cortando por palabras (el CUIT de G1 del libro del grupo ya se ve); la cantidad de cuotas de G4 sale como entero; el índice y la columna de cuenta de compras se ensancharon para que la versión de imprimir siga en 30 páginas (la completa de prueba: 261). Libro del grupo de prueba: 50 de 50 controles OK, 47 páginas. **Sin hacer**: títulos huérfanos al pie de página, el encabezado «Tipo de movimiento» partido en G1/G2, y la tabla única de movimientos sin registrar (depende de las respuestas de la página de casos). MA y PAM se generan bien con el pulido nuevo, sin recalcular ni mirar.

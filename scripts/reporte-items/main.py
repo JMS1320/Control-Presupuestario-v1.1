@@ -242,7 +242,7 @@ def indice(lib, h):
         x.hyperlink = f"#'{it['hoja']}'!{it['celda'] or 'A1'}"
         x.alignment = Alignment(vertical="top")
         largo = len(it["composicion"] or "")
-        h.ws.row_dimensions[r].height = 16 if largo <= 44 else (30 if largo <= 92 else (44 if largo <= 138 else 58))
+        h.ws.row_dimensions[r].height = 16 if largo <= 52 else (30 if largo <= 108 else (44 if largo <= 160 else 58))
 
 
 SIN_EFECTO = ("sólo presentación", "sólo de presentación", "sólo informativo", "no cambia el total", "no cambia el importe",
@@ -407,12 +407,16 @@ def pulir(lib):
     from openpyxl.utils import get_column_letter as _L
     for ws in lib.wb.worksheets:
         combinadas = set()
+        ancho_comb = {}  # celda de arriba a la izquierda de cada combinación de un solo renglón -> ancho total
         encabezados = []
         a_combinar = []
         for rango in ws.merged_cells.ranges:
             for fila in ws.iter_rows(min_row=rango.min_row, max_row=rango.max_row, min_col=rango.min_col, max_col=rango.max_col):
                 for c in fila:
                     combinadas.add(c.coordinate)
+            if rango.min_row == rango.max_row:
+                ancho_comb[f"{_L(rango.min_col)}{rango.min_row}"] = sum(
+                    (ws.column_dimensions[_L(k)].width or 10) for k in range(rango.min_col, rango.max_col + 1))
         for fila in ws.iter_rows():
             alto = 0
             for c in fila:
@@ -442,7 +446,11 @@ def pulir(lib):
                 es_enc = c.fill is not None and c.fill.fgColor is not None and str(c.fill.fgColor.rgb).endswith("DCE6F1")
                 if es_enc:
                     firma.append(v)
-                if not isinstance(v, str) or v.startswith("=") or c.coordinate in combinadas:
+                if not isinstance(v, str) or v.startswith("="):
+                    continue
+                if c.coordinate in combinadas:
+                    if c.coordinate in ancho_comb and c.alignment.wrap_text:
+                        necesita = max(necesita, renglones(v, ancho_comb[c.coordinate], c.font.bold))
                     continue
                 if ("↔" in v or "→" in v) and not c.font.bold:  # en Arial normal el PDF las dibuja como « ‹ › »
                     f = copy.copy(c.font)
@@ -468,17 +476,37 @@ def pulir(lib):
                 else:
                     ancho = ws.column_dimensions[_L(c.column)].width or 10
                 if c.alignment.wrap_text:
-                    por_linea = max(4, int(ancho * (0.9 if c.font.bold else 1.1)))
-                    necesita = max(necesita, sum(max(1, -(-len(parte) // por_linea)) for parte in v.split("\n")))
+                    necesita = max(necesita, renglones(v, ancho, c.font.bold))
             actual = ws.row_dimensions[fila[0].row].height
             # alto fijo que quedó corto para el texto (CUIT tapado), o fila con celdas recién combinadas (Excel no la ajusta sola)
-            if necesita and (actual or forzar) and 12.5 * necesita + 2 > (actual or 0):
-                ws.row_dimensions[fila[0].row].height = min(12.5 * necesita + 2, 400)
+            if necesita > 1 and (actual or forzar) and 12.75 * necesita + 2 > (actual or 0):
+                ws.row_dimensions[fila[0].row].height = min(12.75 * necesita + 2, 400)
             if firma:
                 encabezados.append((fila[0].row, tuple(firma)))
         for r, c1, c2 in a_combinar:
             ws.merge_cells(start_row=r, start_column=c1, end_row=r, end_column=c2)
         titulos_que_se_repiten(ws, encabezados)
+
+
+def renglones(texto, ancho, negrita=False):
+    """Cuántos renglones ocupa un texto con ajuste en una celda de ese ancho: corta por palabras, como Excel (contar letras
+    sobre ancho se queda corto y la última línea sale tapada: el CUIT de G1 del libro del grupo, 16/11)."""
+    mayus = sum(1 for ch in texto if ch.isupper()) > 0.5 * max(1, sum(1 for ch in texto if ch.isalpha()))
+    cap = max(4, ancho * (0.92 if negrita or mayus else 1.08))
+    total = 0
+    for parte in texto.split(chr(10)):
+        n, largo = 1, 0
+        for palabra in parte.split(" "):
+            pl = len(palabra)
+            if largo and largo + 1 + pl > cap:
+                n += 1
+                largo = 0
+            while pl > cap:  # una palabra más larga que la celda se parte
+                n += 1
+                pl -= int(cap)
+            largo += pl + (1 if largo else 0)
+        total += n
+    return total
 
 
 def titulos_que_se_repiten(ws, encabezados):
@@ -511,7 +539,7 @@ def main():
     carpeta, salida, version = sys.argv[1], sys.argv[2], sys.argv[3]
     src = Fuentes(carpeta)
     lib = Libro()
-    h_items = lib.hoja("Items", [6, 7, 42, 48, 19, 19, 19, 17, 22], horizontal=True)
+    h_items = lib.hoja("Items", [6, 7, 50, 56, 19, 19, 19, 17, 22], horizontal=True)
     for m in MODULOS:
         antes = len(lib.hojas)
         try:

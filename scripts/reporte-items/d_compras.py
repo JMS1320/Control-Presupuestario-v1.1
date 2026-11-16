@@ -125,7 +125,7 @@ def construir(lib, src):
     fuera_ej = sorted({c["sub"] for c in comps} - set(EJERCICIO))
 
     # --- hoja ---
-    h = lib.hoja("D2 Compras", [10, 17, 32, 14, 14, 13, 13, 11, 13, 14, 14])
+    h = lib.hoja("D2 Compras", [10, 17, 40, 14, 14, 13, 13, 11, 13, 14, 14])
     NUM = range(5, 12)  # columnas numéricas del detalle
     h.titulo("D2 · Compras del ejercicio 25/26 — por cuenta contable y por mes")
     h.nota(f"Fuente: «{fuente}», solapa «Compras» ({len(comps)} comprobantes, por mes de subdiario = el mes en que "

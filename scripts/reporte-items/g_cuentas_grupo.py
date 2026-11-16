@@ -370,7 +370,7 @@ def _g4(lib, h, X):
     for emp in ('MA', 'PAM'):
         bl = [(p, e) for p, e, _ in BLOQUES if e == emp]
         r_de[emp] = fila(h, [None, f'Control: cuotas de {emp} pagadas desde cuentas de otra empresa', None, None,
-                             '=' + '+'.join(h.cel(5, res[b]) for b in bl), '=' + '+'.join(h.cel(6, res[b]) for b in bl)], comb={2: 4})
+                             '=' + '+'.join(h.cel(5, res[b]) for b in bl), '=' + '+'.join(h.cel(6, res[b]) for b in bl)], comb={2: 4}, fmt={5: '#,##0'})
     R['g4_res_fin'] = h.r
 
     enc = ['Fecha', 'Concepto (template)', 'A quién · detalle y comprobante', 'Agrupadora', 'Pagado desde', 'Importe', 'Tratamiento',
