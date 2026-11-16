@@ -353,6 +353,17 @@ def volver_al_indice(lib):
             c.alignment = Alignment(horizontal="right", vertical="center")
             c.hyperlink = "#'Items'!A1"
         ws.freeze_panes = "A2"
+        # Una hoja que es detalle de OTRA hoja (D3.3 es detalle de D3) lleva además el link para volver a su hoja madre
+        # (JMS 16/11: «tiene que tener un link que vuelva a templates, y así para cada caso del estilo»).
+        nombre = ws.title.split(" ")[0]
+        if nombre.startswith("D") and "." in nombre:
+            madre = next((w.title for w in lib.wb.worksheets if w.title.split(" ")[0] == nombre.split(".")[0]), None)
+            c2 = ws.cell(row=1, column=ws.max_column - 1)
+            if madre and c2.value is None:
+                c2.value = "← Volver a " + madre
+                c2.font = F_LINK
+                c2.alignment = Alignment(horizontal="right", vertical="center")
+                c2.hyperlink = f"#'{madre}'!A1"
 
 
 def pulir(lib):
