@@ -4,8 +4,11 @@
 Arma un libro sólo con ese módulo, lo guarda y lista los ítems, controles y pendientes que registró.
 Además revisa que ninguna fórmula filtre (SUMIFS, SUMPRODUCT, COUNTIF…): el protocolo lo prohíbe."""
 import importlib
+import os
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # con «python -P» la carpeta del script no entra sola
 
 from core import Fuentes, Libro
 

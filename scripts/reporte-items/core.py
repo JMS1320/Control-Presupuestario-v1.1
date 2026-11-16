@@ -123,6 +123,9 @@ class Hoja:
     def _pon(self, c, r, v, fuente=F_BASE, fmt=None):
         x = self.celda(c, r)
         x.value = v
+        if isinstance(v, str) and v.startswith("= "):
+            x.data_type = "s"  # un rótulo que empieza con «= » es texto, no una fórmula
+            v = v[1:]
         x.font = fuente
         if fmt:
             x.number_format = fmt
@@ -133,6 +136,8 @@ class Hoja:
             x.number_format = MONEDA
         elif isinstance(v, int) and not isinstance(v, bool):
             x.number_format = ENTERO
+        if isinstance(v, (int, float)) or (isinstance(v, str) and v.startswith("=")):
+            x.alignment = Alignment(vertical="top")  # el número arriba, a la altura de la primera línea del texto
         return x
 
     def titulo(self, texto):
