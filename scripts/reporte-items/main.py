@@ -189,7 +189,7 @@ def indice(lib, h):
             caja_para_anotar(h, 6, r)
             h._pon(7, r, f'=IF({h.cel(6, r)}="","",{h.cel(6, r)}-{h.cel(4, r)})', fmt=MONEDA)
         x = h._pon(8, r, it["hoja"], F_LINK)
-        x.hyperlink = f"#'{it['hoja']}'!A1"
+        x.hyperlink = f"#'{it['hoja']}'!{it['celda'] or 'A1'}"
         h.ws.row_dimensions[r].height = 30 if (it["composicion"] and len(it["composicion"]) > 48) else 16
 
 
@@ -278,6 +278,21 @@ def version_corta(lib):
     return hojas
 
 
+def volver_al_indice(lib):
+    """En cada hoja que no es el índice: link «← Volver al índice» en la fila del título (última columna) y esa fila inmovilizada,
+    para que el link quede a la vista aunque se esté al fondo de un detalle largo (JMS 16/11: «faltaría el link para volver»)."""
+    for ws in lib.wb.worksheets:
+        if ws.title == "Items":
+            continue
+        c = ws.cell(row=1, column=ws.max_column)
+        if c.value is None:
+            c.value = "← Volver al índice"
+            c.font = F_LINK
+            c.alignment = Alignment(horizontal="right", vertical="center")
+            c.hyperlink = "#'Items'!A1"
+        ws.freeze_panes = "A2"
+
+
 def pulir(lib):
     """Pulido de impresión, igual para todas las hojas:
     · un número que no entra en su columna se achica en vez de salir como #####;
@@ -349,6 +364,7 @@ def main():
     indice(lib, h_items)
     hoja_pendientes(lib)
     hoja_controles(lib)
+    volver_al_indice(lib)
     pulir(lib)
     os.makedirs(salida, exist_ok=True)
     base = os.path.join(salida, f"MSA 25-26 - Items del balance {version}")
