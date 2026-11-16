@@ -319,6 +319,27 @@ def version_corta(lib):
     return hojas
 
 
+def netos_de_iva(lib):
+    """En el índice, ventas y compras van NETAS de IVA (JMS 16/11: «para el contador hay que mostrarle todo sin el IVA… en el
+    detalle podés poner cuánto es el total con IVA, que sirve como referencia»). No cambia ninguna hoja: sólo a qué celda de la
+    hoja apunta cada ítem. El total con IVA queda como sub-ítem de referencia."""
+    d = {i["n"]: i for i in lib.items}
+    if "1" in d and d["1"]["celda"]:
+        col, fila = coordinate_from_string(d["1"]["celda"])          # total con IVA; la columna siguiente es «Sin IVA»
+        con_iva = d["1"]["celda"]
+        d["1"]["celda"] = f"{get_column_letter(column_index_from_string(col) + 1)}{fila}"
+        d["1"]["nombre"] = "Ventas — netas de IVA"
+        d["1"]["composicion"] = "Neto gravado + exento; suma de 1a a 1d. " + (d["1"]["composicion"] or "")
+        lib.items.append(dict(n="1f", nombre="Ventas — total con IVA (referencia: es el total del subdiario)", hoja=d["1"]["hoja"],
+                              celda=con_iva, grupo=d["1"]["grupo"], composicion="Neto + IVA débito fiscal (1e)", contador=None))
+    if "2" in d and "2a" in d:
+        d["2"]["celda"], d["2a"]["celda"] = d["2a"]["celda"], d["2"]["celda"]
+        d["2"]["nombre"] = "Compras — netas de IVA (lo que va al gasto)"
+        d["2"]["composicion"] = "Total − IVA: neto gravado + no gravado + exento + monotributo + otros tributos. " + (d["2"]["composicion"] or "")
+        d["2a"]["nombre"] = "Compras — total con IVA (referencia: es el total del subdiario)"
+        d["2a"]["composicion"] = "Netas + IVA crédito fiscal (2b)"
+
+
 def volver_al_indice(lib):
     """En cada hoja que no es el índice: link «← Volver al índice» en la fila del título (última columna) y esa fila inmovilizada,
     para que el link quede a la vista aunque se esté al fondo de un detalle largo (JMS 16/11: «faltaría el link para volver»)."""
@@ -389,6 +410,7 @@ def main():
             lib.items = [i for i in lib.items if i["hoja"] in [x.nombre for x in lib.hojas]]
             lib.controles = [c for c in lib.controles if c[1] in [x.nombre for x in lib.hojas]]
             lib.pendiente(f"Detalle que falló al armarse: {m}", str(e)[:200], "", "")
+    netos_de_iva(lib)
     balance_contador(lib, src)
     balance_propio(lib, src)
     importlib.import_module("d_enviado").construir(lib, src)
