@@ -163,11 +163,46 @@ def balance_propio(lib, src):
                   "$ 3.529.082,00 de diferencia", "D12 Balance propio · D10 Socios")
 
 
+# Marca de cada ítem contra lo que YA SE LE ENVIÓ al contador (JMS 16/11: «en ítems va lo enviado, pero con una marca: algún
+# asterisco que signifique que encontramos movimientos nuevos y que esa cuenta podría ser alterada»). Sale de la auditoría del
+# 15/11/2026 (hoja «Enviado vs hoy»). Sin marca = coincide con lo enviado.
+#   "*" = hay diferencia con lo enviado o un anexo con algo nuevo: mirar la hoja      "N" = no se le envió papel de este ítem
+#   "?" = no se pudo comparar
+MARCA_ENVIADO = {
+    "2": ("?", "No se pudo comparar: el libro de compras enviado no estaba en la carpeta de enviados"),
+    "2a": ("?", ""), "2b": ("?", ""),
+    "3": ("N", "El total no se envió como tal: se enviaron algunos grupos (ver cada renglón)"),
+    "3b": ("*", "Enviado «por cuenta» al TC comprador 3.629.838,20; el detalle va al vendedor (anexo en D3)"),
+    "3e": ("*", "Enviado «por cuenta» al TC comprador 7.502.758,61; el detalle va al vendedor (anexo en D3)"),
+    "3f": ("N", "Grupo no enviado (cargas sociales, IIBB, retenciones: los arma el contador)"),
+    "3f1": ("N", ""), "3f2": ("N", ""),
+    "3i": ("N", "NO enviado: incluye las multas de la Amarok (1.167.757,00)"),
+    "4": ("N", "No se envió papel de sueldos"), "4a": ("N", ""), "4b": ("N", ""), "4c": ("N", ""), "4d": ("N", ""),
+    "4e": ("N", "Figura dentro de Cuentas de socios enviado"),
+    "5": ("*", "Los bancos coinciden; la Caja iba «pendiente de informar»: anexo con la caja (ver 5f y 5g)"),
+    "5f": ("*", "NUEVO: no se había informado"), "5g": ("*", "NUEVO: total enviado + la caja"),
+    "8": ("N", "No se envió papel de granos, insumos ni sementeras"), "8a": ("N", ""), "8b": ("N", ""), "8c": ("N", ""),
+    "9e": ("N", "No se envió papel de la tarjeta"), "9f": ("N", "No se envió papel de cargas sociales a pagar"),
+    "10": ("*", "Va lo enviado. Anexo: 9 renglones que están en lo enviado y todavía no en el sistema (3.529.081,86)"),
+    "10b": ("*", "Va lo enviado; el sistema no tiene 2 pagos por Santander (628.914,00)"),
+    "10c": ("*", "Va lo enviado; el sistema no tiene albañil y 3 consumos de tarjeta (1.134.572,86)"),
+    "10e": ("*", "Va lo enviado; en el sistema no figura como cuenta de socio"),
+    "10f": ("*", "Va lo enviado; en el sistema figura «sin tratar»"),
+    "13": ("N", "Nada de esto se le informó"), "13a": ("N", ""), "13b": ("N", ""), "13c": ("N", ""), "13d": ("N", ""),
+    "13e": ("N", ""), "13f": ("N", ""), "13g": ("N", ""), "14": ("N", ""), "15": ("N", ""), "16": ("*", "Está en ventas; falta saber dónde puso el cobro"),
+    "17": ("N", ""), "18": ("?", "Confirmar si recibió el papel de Libertad"),
+}
+SIN_MARCA = {"11", "12"}  # referencia: no aplica
+
+
 def indice(lib, h):
     h.titulo("MSA — Ítems del balance 25/26 (01/07/2025 al 30/06/2026)")
     h.nota("Cada ítem tiene su hoja de detalle, donde el total se forma con los renglones que están a la vista debajo. "
            "«Contador 24/25» es el renglón comparable del balance del año anterior (referencia). «Contador 25/26» es para anotar a "
            "mano el número que dé el contador; la diferencia se calcula sola. Importes en pesos, salvo el ítem 12 (US$).")
+    h.nota("MARCA al lado del número de cada ítem, contra lo que ya se le envió al contador:   sin marca = coincide con lo enviado   ·   "
+           "* = hay diferencia o un anexo con algo nuevo (esa cuenta puede cambiar: mirar su hoja)   ·   N = no se le envió papel de "
+           "este ítem   ·   ? = no se pudo comparar. El detalle de cada diferencia está en la hoja «Enviado vs hoy».")
     h.blanco()
     h.encabezado(["N°", "Ítem", "Composición / criterio", "Importe 25/26 (nuestro)", "Contador 24/25 (referencia)",
                   "Contador 25/26 (anotar)", "Diferencia", "Hoja de detalle"], repetir=True)
@@ -181,7 +216,10 @@ def indice(lib, h):
             x = h._pon(1, h.r, grupo, F_B)
             x.font = copy.copy(F_B)
         sub = not it["n"].isdigit()
-        r = h.fila([it["n"], it["nombre"], it["composicion"] or None,
+        marca, motivo = MARCA_ENVIADO.get(it["n"], ("", ""))
+        if motivo:
+            it = dict(it, composicion=(motivo + (" · " + it["composicion"] if it["composicion"] else "")))
+        r = h.fila([(it["n"] + "  " + marca) if marca else it["n"], it["nombre"], it["composicion"] or None,
                     (f"='{it['hoja']}'!{it['celda']}" if it["celda"] else None),
                     float(it["contador"]) if it["contador"] is not None else None], negrita=not sub, sangria=1 if sub else 0)
         if it["celda"]:
@@ -190,7 +228,10 @@ def indice(lib, h):
             h._pon(7, r, f'=IF({h.cel(6, r)}="","",{h.cel(6, r)}-{h.cel(4, r)})', fmt=MONEDA)
         x = h._pon(8, r, it["hoja"], F_LINK)
         x.hyperlink = f"#'{it['hoja']}'!{it['celda'] or 'A1'}"
-        h.ws.row_dimensions[r].height = 30 if (it["composicion"] and len(it["composicion"]) > 48) else 16
+        largo = len(it["composicion"] or "")
+        h.ws.row_dimensions[r].height = 16 if largo <= 48 else (30 if largo <= 100 else (44 if largo <= 150 else 58))
+        if marca:
+            h.celda(1, r).font = F_B
 
 
 def hoja_pendientes(lib):
@@ -330,7 +371,7 @@ def main():
     carpeta, salida, version = sys.argv[1], sys.argv[2], sys.argv[3]
     src = Fuentes(carpeta)
     lib = Libro()
-    h_items = lib.hoja("Items", [6, 44, 50, 19, 19, 19, 17, 22], horizontal=True)
+    h_items = lib.hoja("Items", [8, 42, 52, 19, 19, 19, 17, 22], horizontal=True)
     for m in MODULOS:
         antes = len(lib.hojas)
         try:
