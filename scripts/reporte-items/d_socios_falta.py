@@ -25,7 +25,7 @@ def _tabla(h, filas, titulo_total):
     for x in filas:
         det = " · ".join(t for t in (x.get("descripcion"), x.get("detalle")) if t)
         motivo = (x.get("motivo") or "").replace("[FIRME] ", "").replace("[CRITERIO] ", "")
-        h.fila([_f(x.get("fecha") or ""), x.get("socio"), x.get("cuenta"), x.get("a_quien"), det, motivo[:260], x.get("codigos"),
+        h.fila([_f(x.get("fecha") or ""), x.get("socio"), x.get("cuenta"), x.get("a_quien"), det, motivo, x.get("codigos"),
                 float(x.get("importe") or 0)])
     return h.total(titulo_total, {8: h.suma(8, ini, h.r)})
 

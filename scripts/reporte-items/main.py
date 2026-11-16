@@ -15,7 +15,11 @@ from openpyxl.utils.cell import coordinate_from_string
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # con «python -P» la carpeta del script no entra sola
 
+from openpyxl.styles import Font
+
 from core import (CAJA, ENTERO, F_B, F_LINK, F_NOTA, MONEDA, R_CLAVE, R_GRUPO, Fuentes, Libro, num)
+
+F_MARCA = Font(name="Arial", size=13, bold=True)
 
 sys.stdout.reconfigure(encoding="utf-8")
 MODULOS = ["d_ventas", "d_compras", "d_templates", "d_sueldos", "d_caja_bancos", "d_a_cobrar", "d_hacienda",
@@ -187,7 +191,7 @@ MARCA_ENVIADO = {
     "10b": ("*", "Va lo enviado; el sistema no tiene 2 pagos por Santander (628.914,00)"),
     "10c": ("*", "Va lo enviado; el sistema no tiene albañil y 3 consumos de tarjeta (1.134.572,86)"),
     "10e": ("*", "Va lo enviado; en el sistema no figura como cuenta de socio"),
-    "10f": ("*", "Va lo enviado; en el sistema figura «sin tratar»"),
+    "10f": ("*", "Va lo enviado; el sistema lo muestra aparte de las cuentas de socios"),
     "13": ("N", "Nada de esto se le informó"), "13a": ("N", ""), "13b": ("N", ""), "13c": ("N", ""), "13d": ("N", ""),
     "13e": ("N", ""), "13f": ("N", ""), "13g": ("N", ""), "14": ("N", ""), "15": ("N", ""), "16": ("*", "Está en ventas; falta saber dónde puso el cobro"),
     "17": ("N", ""), "18": ("?", "Confirmar si recibió el papel de Libertad"),
@@ -200,11 +204,11 @@ def indice(lib, h):
     h.nota("Cada ítem tiene su hoja de detalle, donde el total se forma con los renglones que están a la vista debajo. "
            "«Contador 24/25» es el renglón comparable del balance del año anterior (referencia). «Contador 25/26» es para anotar a "
            "mano el número que dé el contador; la diferencia se calcula sola. Importes en pesos, salvo el ítem 12 (US$).")
-    h.nota("MARCA al lado del número de cada ítem, contra lo que ya se le envió al contador:   sin marca = coincide con lo enviado   ·   "
+    h.nota("Columna MARCA de cada ítem, contra lo que ya se le envió al contador:   sin marca = coincide con lo enviado   ·   "
            "* = hay diferencia o un anexo con algo nuevo (esa cuenta puede cambiar: mirar su hoja)   ·   N = no se le envió papel de "
            "este ítem   ·   ? = no se pudo comparar. El detalle de cada diferencia está en la hoja «Enviado vs hoy».")
     h.blanco()
-    h.encabezado(["N°", "Ítem", "Composición / criterio", "Importe 25/26 (nuestro)", "Contador 24/25 (referencia)",
+    h.encabezado(["N°", "Marca", "Ítem", "Composición / criterio", "Importe 25/26 (nuestro)", "Contador 24/25 (referencia)",
                   "Contador 25/26 (anotar)", "Diferencia", "Hoja de detalle"], repetir=True)
     grupo = None
     for it in lib.items:
@@ -219,19 +223,38 @@ def indice(lib, h):
         marca, motivo = MARCA_ENVIADO.get(it["n"], ("", ""))
         if motivo:
             it = dict(it, composicion=(motivo + (" · " + it["composicion"] if it["composicion"] else "")))
-        r = h.fila([(it["n"] + "  " + marca) if marca else it["n"], it["nombre"], it["composicion"] or None,
+        # la marca va en columna propia, grande y centrada (JMS 16/11: que se note más que pegada al número)
+        r = h.fila([it["n"], marca or None, it["nombre"], it["composicion"] or None,
                     (f"='{it['hoja']}'!{it['celda']}" if it["celda"] else None),
-                    float(it["contador"]) if it["contador"] is not None else None], negrita=not sub, sangria=1 if sub else 0)
-        if it["celda"]:
-            h.celda(4, r).fill = R_CLAVE
-            caja_para_anotar(h, 6, r)
-            h._pon(7, r, f'=IF({h.cel(6, r)}="","",{h.cel(6, r)}-{h.cel(4, r)})', fmt=MONEDA)
-        x = h._pon(8, r, it["hoja"], F_LINK)
-        x.hyperlink = f"#'{it['hoja']}'!{it['celda'] or 'A1'}"
-        largo = len(it["composicion"] or "")
-        h.ws.row_dimensions[r].height = 16 if largo <= 48 else (30 if largo <= 100 else (44 if largo <= 150 else 58))
+                    float(it["contador"]) if it["contador"] is not None else None], negrita=not sub, sangria=0)
+        if sub:
+            h.celda(3, r).alignment = Alignment(wrap_text=True, vertical="top", indent=1)
         if marca:
-            h.celda(1, r).font = F_B
+            x = h.celda(2, r)
+            x.font = F_MARCA
+            x.alignment = Alignment(horizontal="center", vertical="top")
+            x.border = Border(left=CAJA, right=CAJA, top=CAJA, bottom=CAJA)
+        if it["celda"]:
+            h.celda(5, r).fill = R_CLAVE
+            caja_para_anotar(h, 7, r)
+            h._pon(8, r, f'=IF({h.cel(7, r)}="","",{h.cel(7, r)}-{h.cel(5, r)})', fmt=MONEDA)
+        x = h._pon(9, r, it["hoja"], F_LINK)
+        x.hyperlink = f"#'{it['hoja']}'!{it['celda'] or 'A1'}"
+        x.alignment = Alignment(vertical="top")
+        largo = len(it["composicion"] or "")
+        h.ws.row_dimensions[r].height = 16 if largo <= 44 else (30 if largo <= 92 else (44 if largo <= 138 else 58))
+
+
+SIN_EFECTO = ("sólo presentación", "sólo de presentación", "sólo informativo", "no cambia el total", "no cambia el importe",
+              "falta el respaldo", "no se pueden identificar", "cantidades", "las tablas por mes", "el último nivel",
+              "no toca el ítem")
+
+
+def no_cambia_numero(p):
+    """Un pendiente que no puede mover un número del reporte: sin impacto escrito, o con un impacto que dice que es de
+    presentación, de respaldo o informativo. Ante la duda queda en «puede cambiar un número»."""
+    impacto = (p[2] or "").strip().lower()
+    return not impacto or any(t in impacto for t in SIN_EFECTO)
 
 
 def hoja_pendientes(lib):
@@ -239,9 +262,20 @@ def hoja_pendientes(lib):
     h.titulo("Pendientes — lo que no cierra, falta definir o hay que revisar")
     h.nota("Nada se descartó en silencio: lo que un detalle no pudo verificar o encontró raro está acá, con la hoja donde se ve.")
     h.blanco()
-    h.encabezado(["N°", "Tema", "Detalle", "Impacto", "Dónde se ve"], repetir=True)
-    for i, p in enumerate(lib.pendientes, 1):
-        h.fila([i, p[0], p[1], p[2] or None, p[3] or None])
+    # Dos tablas (JMS 16/11: «los pendientes me confunden; quiero estar seguro de que el reporte está bien»): primero lo que puede
+    # mover un número del reporte; después lo que es tarea del sistema o de presentación y no mueve ninguno.
+    mueve = [p for p in lib.pendientes if not no_cambia_numero(p)]
+    tarea = [p for p in lib.pendientes if no_cambia_numero(p)]
+    i = 0
+    for titulo, lista in ((f"1 · Pueden cambiar un número del reporte ({len(mueve)})", mueve),
+                          (f"2 · Tareas del sistema, respaldo o presentación: no cambian ningún número del reporte ({len(tarea)})",
+                           tarea)):
+        h.seccion(titulo)
+        h.encabezado(["N°", "Tema", "Detalle", "Impacto", "Dónde se ve"], repetir=True)
+        for p in lista:
+            i += 1
+            h.fila([i, p[0], p[1], p[2] or None, p[3] or None])
+        h.blanco()
     return h
 
 
@@ -373,6 +407,7 @@ def pulir(lib):
     from openpyxl.utils import get_column_letter as _L
     for ws in lib.wb.worksheets:
         combinadas = set()
+        encabezados = []
         for rango in ws.merged_cells.ranges:
             for fila in ws.iter_rows(min_row=rango.min_row, max_row=rango.max_row, min_col=rango.min_col, max_col=rango.max_col):
                 for c in fila:
@@ -397,13 +432,69 @@ def pulir(lib):
             if alto:
                 actual = ws.row_dimensions[fila[0].row].height or 0
                 ws.row_dimensions[fila[0].row].height = max(actual, min(alto, 74))
+            # --- revisión visual del 16/11 ---
+            necesita = 0
+            firma = []
+            for i, c in enumerate(fila):
+                v = c.value
+                es_enc = c.fill is not None and c.fill.fgColor is not None and str(c.fill.fgColor.rgb).endswith("DCE6F1")
+                if es_enc:
+                    firma.append(v)
+                if not isinstance(v, str) or v.startswith("=") or c.coordinate in combinadas:
+                    continue
+                if ("↔" in v or "→" in v) and not c.font.bold:  # en Arial normal el PDF las dibuja como « ‹ › »
+                    f = copy.copy(c.font)
+                    f.name = "Segoe UI"
+                    c.font = f
+                ancho = ws.column_dimensions[_L(c.column)].width or 10
+                vecina = fila[i + 1].value if i + 1 < len(fila) else None
+                if not c.alignment.wrap_text and vecina is not None and len(v) > ancho * 1.15 and not c.hyperlink:
+                    al = copy.copy(c.alignment)  # un rótulo que no entra y tiene un número al lado: baja de renglón, no se corta
+                    al.wrap_text = True
+                    al.vertical = al.vertical or "top"
+                    c.alignment = al
+                if c.alignment.wrap_text:
+                    por_linea = max(4, int(ancho * 1.1))
+                    necesita = max(necesita, sum(max(1, -(-len(parte) // por_linea)) for parte in v.split("\n")))
+            actual = ws.row_dimensions[fila[0].row].height
+            if actual and necesita and 12.5 * necesita > actual:  # alto fijo que quedó corto para el texto (CUIT tapado)
+                ws.row_dimensions[fila[0].row].height = min(12.5 * necesita, 400)
+            if firma:
+                encabezados.append((fila[0].row, tuple(firma)))
+        titulos_que_se_repiten(ws, encabezados)
+
+
+def titulos_que_se_repiten(ws, encabezados):
+    """Qué encabezado se repite arriba de cada página impresa. Excel repite UNO solo por hoja: si la hoja tiene tablas con
+    columnas distintas, las de abajo salen bajo nombres ajenos (revisión del 16/11: «induce a leer mal»). Se repite el encabezado
+    de la tabla que ocupa la hoja sólo si después de él casi no hay renglones de otra tabla; si no, ninguno."""
+    if not encabezados:
+        return
+    bloques = []  # (fila_desde, fila_hasta, firma)
+    for r, firma in encabezados:
+        if bloques and bloques[-1][1] == r - 1:
+            bloques[-1] = (bloques[-1][0], r, bloques[-1][2] + firma)
+        else:
+            bloques.append((r, r, firma))
+    largo = {}
+    for i, (a, b, firma) in enumerate(bloques):
+        fin = bloques[i + 1][0] - 1 if i + 1 < len(bloques) else ws.max_row
+        largo[firma] = largo.get(firma, 0) + (fin - b)
+    principal = max(largo, key=lambda k: largo[k])
+    primero = next(b for b in bloques if b[2] == principal)
+    ajenos = sum((bloques[i + 1][0] - 1 if i + 1 < len(bloques) else ws.max_row) - b
+                 for i, (a, b, firma) in enumerate(bloques) if firma != principal and a > primero[0])
+    if largo[principal] >= 25 and ajenos <= 0.05 * largo[principal]:
+        ws.print_title_rows = f"{primero[0]}:{primero[1]}"
+    else:
+        ws.print_title_rows = None
 
 
 def main():
     carpeta, salida, version = sys.argv[1], sys.argv[2], sys.argv[3]
     src = Fuentes(carpeta)
     lib = Libro()
-    h_items = lib.hoja("Items", [8, 42, 52, 19, 19, 19, 17, 22], horizontal=True)
+    h_items = lib.hoja("Items", [6, 7, 42, 48, 19, 19, 19, 17, 22], horizontal=True)
     for m in MODULOS:
         antes = len(lib.hojas)
         try:

@@ -199,7 +199,7 @@ def _motivo(f):
         return ('Salió por la Caja AMS. El sistema lo tiene en la solapa de retiros («Retiro Cotitulares»), pero no tiene una '
                 'cuenta «Cotitulares» entre las cuentas con socios.')
     if f['socio'] == 'Hermanos':
-        return ('El sistema lo tiene en «todavía sin tratar» bajo la marca ' + (f['codigo'] or 'CTA QUINTA X') +
+        return ('El sistema lo muestra aparte de las cuentas de socios, bajo la marca ' + (f['codigo'] or 'CTA QUINTA X') +
                 ': no tiene una cuenta «Hermanos» entre las cuentas con socios.')
     return 'Está en lo enviado y no en la cuenta del socio del export.'
 
@@ -362,8 +362,10 @@ def construir(lib, src):
                                       0.0, float(por.get(clave, 0.0)), f"={h.cel(7, r)}-{h.cel(8, r)}"], {3: 6})
     if sin_tratar:
         h.blanco()
-        h.seccion('3.1 · Informativo — TODAVÍA SIN TRATAR en el sistema: marcas del extracto que no son ninguna de estas cuentas')
-        h.nota('Según la solapa 14.1 se muestran enteras y no se reparten entre los socios. No están en el saldo del sistema. '
+        h.seccion('3.1 · Informativo — marcas del extracto que el sistema muestra aparte de estas cuentas')
+        h.nota('El export las rotula «todavía sin tratar», pero ESTÁN tratadas (JMS 16/11): Libertad tiene su propio reparto y '
+               'CTA QUINTA X es «Hermanos» en lo enviado. Lo que falta es que el sistema las muestre en su cuenta. '
+               'Según la solapa 14.1 se muestran enteras y no se reparten entre los socios. No están en el saldo del sistema. '
                'La marca CTA QUINTA X es el renglón de «Hermanos» del anexo (tabla 2).')
         _enc(h, ['', 'Marca en la columna Contable', None, None, None, None, None, 'Movimientos', 'Total $'], {2: 7})
         a = None
@@ -372,13 +374,13 @@ def construir(lib, src):
             r = _fila(h, [None, marca, None, None, None, None, None, n, float(imp)], {2: 7}, fmt={8: '#,##0'})
             a = a or r
             s += imp
-        rt = h.total('Total sin tratar', {8: h.suma(8, a, h.r), 9: h.suma(9, a, h.r)}, fmt={8: '#,##0'}, col_etiqueta=2)
+        rt = h.total('Total de las marcas que van aparte', {8: h.suma(8, a, h.r), 9: h.suma(9, a, h.r)}, fmt={8: '#,##0'}, col_etiqueta=2)
         if st_total is not None:
-            h.control('total sin tratar', h.cel(9, rt), st_total, '14.1, TOTAL SIN TRATAR')
-        lib.pendiente('Socios — todavía sin tratar', 'Marcas del extracto sin repartir entre los socios: ' +
+            h.control('total de las marcas que van aparte', h.cel(9, rt), st_total, '14.1, TOTAL SIN TRATAR')
+        lib.pendiente('Socios — marcas que el sistema muestra aparte de las cuentas', 'Marcas del extracto que el export rotula «sin tratar» (están tratadas: Libertad y Quinta X): ' +
                       '; '.join(f'{m}: {n} movimiento(s) por {_ar(i)}' for m, n, i in sin_tratar) +
                       f'. Total {_ar(s)}. No están en el saldo del sistema; CTA QUINTA X (9.000,00) es «Hermanos» en lo enviado.',
-                      f'{_ar(s)} a definir a qué cuenta va', DONDE)
+                      'sólo presentación: falta que el sistema las muestre en su cuenta', DONDE)
 
     # ---------- (4) detalle del sistema, por socio y por mes ----------
     h.blanco()

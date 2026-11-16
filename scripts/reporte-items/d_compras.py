@@ -153,6 +153,25 @@ def construir(lib, src):
     h.control("Cantidad de comprobantes contra el Resumen 12 meses", h.cel(4, r_total), float(len(comps)),
               "Libro Diario · Resumen 12 meses · TOTAL comprobantes", tolerancia=0)
 
+    # 1.1) de qué se compone «Al gasto»: la diferencia entre el Total y la suma de sus columnas va en renglón propio
+    # (JMS 16/11, sobre los ~40.000 de «diferencia de algo más»: que se vea aparte y no adentro de «al gasto»).
+    h.blanco()
+    h.seccion("De qué se compone «Al gasto» (Total − IVA)")
+    h.encabezado(["", "", "Componente", "", "", "", "", "", "", "", "Importe"])
+    partes = []
+    for etiqueta, col in (("Neto gravado", 5), ("No gravado + Exento", 6), ("Monotributo (sin crédito fiscal)", 7),
+                          ("Otros tributos", 8)):
+        partes.append(h.fila([None, None, etiqueta] + [None] * 7 + [f"={h.cel(col, r_total)}"]))
+    r_dif = h.fila([None, None, "Diferencia entre el Total y la suma de sus columnas («Dif. de algo más» en el libro diario)"]
+                   + [None] * 7 + [f"={h.cel(10, r_total)}-{h.cel(9, r_total)}-{h.cel(5, r_total)}-{h.cel(6, r_total)}"
+                                   f"-{h.cel(7, r_total)}-{h.cel(8, r_total)}"])
+    partes.append(r_dif)
+    r_comp = h.total("Total al gasto", {11: h.suma(11, partes[0], partes[-1])}, col_etiqueta=3)
+    h.control("la composición da el «Al gasto» del resumen (Total − IVA de todos los comprobantes)", h.cel(11, r_comp),
+              sum(c["total"] - c["iva"] for c in comps), "Libro Diario · Compras · suma de los comprobantes", tolerancia=0.05)
+    h.control("diferencia entre el Total y sus columnas contra la columna «Dif. de algo más» de la fuente", h.cel(11, r_dif),
+              f0(tot[14]), "Libro Diario · Compras · TOTAL", tolerancia=0.05)
+
     # 2) por mes, dos semestres
     sems = [("1er semestre", EJERCICIO[:6]), ("2do semestre", EJERCICIO[6:])]
     r_mes = [{}, {}]
