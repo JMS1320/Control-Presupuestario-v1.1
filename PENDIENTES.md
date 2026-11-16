@@ -18241,3 +18241,36 @@ dejá documentadas las decisiones»)**
   5. **La letra no se achicó** para ganar páginas: va de 6,6 a 9,2 puntos según la hoja, igual que en el completo.
 - **Cómo se regenera**: `main.py` guarda además «… - resumen para imprimir.xlsx» con las áreas de impresión, y `pdf-resumen.ps1`
   imprime sólo esas hojas.
+
+**12 · 16/11 — durante y después de la reunión con el contador (pedidos de JMS en vivo, y avance de O4 y O5 sin supervisión)**
+
+- **Versiones del reporte de MSA** (ninguna pisa a la anterior; carpeta `Reporte MSA 25-26 (items)/vN`): v3 link «← Volver al
+  índice» en cada hoja (fila del título fija) y el link del índice va a la celda del total · v4 **marca en el índice contra lo
+  enviado** (`*` difiere o tiene anexo · `N` no se envió · `?` sin comparar; con su motivo) · v5 **ventas y compras netas de IVA en
+  el índice** (447.820.687,80 y 262.054.876,43; el total con IVA queda como referencia) · v6 link a la hoja madre en las hojas que son
+  detalle de otra (D3.x → D3) · v7 en sueldos el nombre va en todos los renglones de la persona · **v8** suma `D10.1 Socios interno`
+  y `D10.2 Socios falta` (198 de 198 controles OK). La versión de imprimir tiene 30 páginas. JMS usó en la reunión la v5–v7.
+- **O4 (parte MSA) — `D10.1 Socios interno`**: cada socio, contable e interno lado a lado y por mes. Según el sistema: contable
+  −86.594.765,00; interno −136.931.950,89 (JMS −37.055.297,36 · AMS −6.802.618,10 · MA −92.875.208,86 · PAM −198.826,57). A definir:
+  20 movimientos «Desglosar»/«VER» sin resolver (35.873.262,44); la lectura interna mezcla movimientos de cuentas de las tres empresas;
+  el sueldo de MA (19.500.000) no tiene destino en lo interno; el interno de JMS difiere en 261.545,00 de la cifra anotada antes.
+- **Auditoría de socios movimiento por movimiento — `D10.2 Socios falta`**: recorridos los 2.127 movimientos de MSA. Lo del papel
+  enviado coincide con el banco (144 movimientos). **No está completa**: 11 movimientos por 8.373.385,55 no están en el papel ni en
+  el sistema (firmes: «Sueldo AMS junio 2025» por Santander 1.064.403,00 del 08/07/2025, electricista del chalet 400.000,00, seguro de
+  Alondra 33.537,00, estados parcelarios 476.666,70; de criterio, con la interna «DIST MA» y la contable vacía: Tiguan 5.782.078,85,
+  eléctricos del chalet 522.000,00, alimento 94.700,00), 65 dudosos por 22.649.310,51 (seguro de flota, chalet sin marca, Medicus,
+  Manuel Martínez, caballos, multas) y **lo que PAM pagó a JMS (10.591.786,19) y a AMS (2.000.000,00)**, que no está en ninguna
+  cuenta de socios de MSA: ¿cancela sus facturas a PAM o era sueldo de MSA? Cerrado en la misma pasada: los 8 movimientos sin
+  categoría con código de socio y el reintegro a JMS de 2.137.884,27 SÍ están en el papel; Libertad y «Quinta X» están tratados (el
+  rótulo «todavía sin tratar» del export es engañoso → cambiarlo en el reporte).
+- **O5 (primer paso) — libro «Grupo 25-26 — Cuentas entre MSA, MA y PAM»** (`Reporte Grupo 25-26 (borrador)/v1`, 42 pág., 50 de 50
+  controles OK; se arma con `main_grupo.py`): matriz de lo que cada empresa dice de las otras. Lo que pasa por banco coincide entre
+  las dos puntas. Hallazgos: 166 cuotas de una pagadas por otra (36.997.208,36; ninguna de MSA pagada por las otras); PAM pagó
+  6.090.236,26 de gastos de MA que nadie lleva como cuenta; los 33.180.000 «a cuenta Cotitulares» no entraron a la caja de ahorro
+  Galicia de MA; 2 cuotas de PAM cargadas a la cuenta de MA (40.161,90); 601.000,00 de Alondra por Caja Sigot sin cargar a MA.
+- **Borradores de MA y PAM v2**: con los links de vuelta al índice.
+- **Para corregir después (anotado por JMS o por mí durante la reunión)**: (1) darle renglón propio en D2 Compras a la «diferencia
+  de algo más» (40.392,11), hoy incluida en «al gasto»; (2) cambiar el título «todavía sin tratar» de D10; (3) separar los pendientes
+  en «afecta un número del reporte» y «tarea del sistema»; (4) la marca del índice, más notoria; (5) una tabla única de movimientos
+  sin registrar; (6) **Excel no abre archivos cuya ruta completa pasa de 218 caracteres**: los nombres de carpeta y archivo de los
+  reportes tienen que ser cortos (pasó con el libro del grupo).
