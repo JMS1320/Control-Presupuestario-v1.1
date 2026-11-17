@@ -18350,3 +18350,11 @@ dejá documentadas las decisiones»)**
   (`iva_credito_a_computar`, `rollos_fardos`) y el script 283 están en la rama **`jms/balance-contador-renglones`** (sale de
   `desarrollo`; probar 1568/1568, type-check sin empeorar, build no corrido), **falta sumarla a `desarrollo` con OK de JMS**: hasta
   entonces la pantalla no reconoce esos dos renglones (12.937.765,76). Próximo script 284.
+- **17/11, más tarde — sumado a `desarrollo` con OK de JMS** (rama `jms/balance-contador-renglones`): los dos renglones nuevos del balance
+  propio y el script 283. ⚠️ **Cambió el mismo día**: el renglón `rollos_fardos` pasó a **`otros_activados` «Otras compras activadas»**
+  (JMS: «son cosas que se activan y puede entrar a activarse cualquier otra cuenta… una agrupación de cosas que se activaron… pero
+  deberemos ver el detalle de qué se agrupó… lo que nosotros activamos normalmente son insumos o sementeras»). El detalle de qué
+  junta va en el `detalle` del valor (hoy se ve al pasar el mouse por la celda). La fila ya cargada se renombró en la base.
+  **Pendiente**: que el detalle de lo activado se vea a la vista y baje hasta las facturas de compra que se activaron.
+  **En curso**: dos agentes de sólo lectura — auditoría del balance del contador, y mapa + planilla con fórmulas para el balance en
+  línea; dejan sus Excel en `- Comunicacion JMS Claude - Archivos/Balance/Balance contador 25-26 - trabajo/`.
