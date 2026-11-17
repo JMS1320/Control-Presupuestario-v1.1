@@ -106,7 +106,7 @@ export const RENGLONES: Renglon[] = [
   { id: "insumos_agricolas", rubro: "insumos", etiqueta: "Insumos agrícolas", nota: "JMS: valor real" },
   { id: "insumos_ganaderos", rubro: "insumos", etiqueta: "Insumos ganaderos", nota: "JMS: valor real" },
   { id: "insumos_otros", rubro: "insumos", etiqueta: "Gas oil y otros (ambos ámbitos)" },
-  { id: "rollos_fardos", rubro: "insumos", etiqueta: "Rollos y fardos", nota: "cuenta del contador (balance 25/26): bien activado al cierre" },
+  { id: "otros_activados", rubro: "insumos", etiqueta: "Otras compras activadas", nota: "agrupa lo que se activó al cierre y no es insumo ni sementera; el detalle dice qué cuentas junta (25/26: Rollos y fardos)" },
 
   { id: "stock_cria", rubro: "stock_ganadero", etiqueta: "Stock de cría", nota: "JMS: valuación propia" },
   { id: "stock_recria", rubro: "stock_ganadero", etiqueta: "Stock de recría", nota: "JMS: valuación propia" },

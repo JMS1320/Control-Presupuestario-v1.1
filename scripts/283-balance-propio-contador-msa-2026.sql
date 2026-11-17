@@ -5,7 +5,9 @@
 -- Este script NO copia importes a mano: suma esas cuentas por renglón del balance propio (el mapa está abajo, por `orden`).
 -- Sólo activo y pasivo (45 cuentas → 27 renglones); el patrimonio neto y los resultados no tienen renglón en el balance propio.
 -- El pasivo va en positivo, como en la foto del 30/06/2025 (en la planilla del contador viene en negativo).
--- Dos renglones nuevos del catálogo (lib/balance/balance-propio.ts): `iva_credito_a_computar` y `rollos_fardos`.
+-- Dos renglones nuevos del catálogo (lib/balance/balance-propio.ts): `iva_credito_a_computar` y `otros_activados`
+-- (JMS 17/11: lo que se activa puede venir de cualquier cuenta → un renglón que AGRUPA lo activado, con el detalle de qué junta;
+-- en 25/26 es «Rollos y fardos». Al correrlo el 17/11 el renglón se llamó `rollos_fardos` y se renombró en el mismo día).
 -- Control (se verifica después de correr): activo 1.323.911.258,57 · pasivo 149.784.622,08 = los totales de la planilla.
 --
 -- Qué escribe: public.balance_foto_valores, 27 filas nuevas (foto MSA 2026-06-30, versión 'contador', origen 'planilla',
@@ -31,7 +33,7 @@ select f.id, m.renglon, 'contador',
     (24, 'bienes_uso_neto'), (25, 'bienes_uso_neto'), (26, 'bienes_uso_neto'), (27, 'bienes_uso_neto'), (28, 'bienes_uso_neto'),
     (29, 'bienes_uso_neto'), (30, 'bienes_uso_neto'), (31, 'bienes_uso_neto'), (32, 'bienes_uso_neto'), (33, 'bienes_uso_neto'),
     (34, 'bienes_uso_neto'), (35, 'bienes_uso_neto'),
-    (36, 'stock_cria'), (37, 'insumos_ganaderos'), (38, 'rollos_fardos'),
+    (36, 'stock_cria'), (37, 'insumos_ganaderos'), (38, 'otros_activados'),
     (39, 'proveedores'), (40, 'tarjetas'), (41, 'tarjetas'), (42, 'cargas_sociales'), (43, 'cuota_solidaria'),
     (44, 'ganancias_a_pagar'), (45, 'impuesto_diferido')
   ) as m(orden, renglon) on m.orden = c.orden

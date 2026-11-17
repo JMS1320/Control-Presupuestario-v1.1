@@ -279,7 +279,7 @@ export const PAPEL_DEL_RENGLON: Record<string, string | { sinPapel: string }> = 
   banco_santander: "saldos-bancos", banco_provincia: "saldos-bancos",
   deudores_ventas: "saldos-provisiones", anticipos_proveedores: "proveedores", otros_creditos_comerciales: "diario-ventas", cuenta_socios: "socios-cuentas",
   cereales: "stocks-granos", sementeras_agricolas: "stocks-sementeras", sementeras_ganaderas: "stocks-sementeras",
-  insumos_agricolas: "stocks-insumos", insumos_ganaderos: "stocks-insumos", insumos_otros: "stocks-insumos", rollos_fardos: "stocks-insumos",
+  insumos_agricolas: "stocks-insumos", insumos_ganaderos: "stocks-insumos", insumos_otros: "stocks-insumos", otros_activados: { sinPapel: "compras activadas al cierre: qué se activó está en el detalle del renglón" },
   stock_cria: "stocks-hacienda", stock_recria: "stocks-hacienda",
   proveedores: "proveedores", tarjetas: "proveedores", provision_gastos: "saldos-provisiones", otras_deudas_comerciales: "proveedores",
   anticipos_clientes: "proveedores", cheques_pendientes: "proveedores",
