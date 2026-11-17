@@ -18343,3 +18343,10 @@ dejá documentadas las decisiones»)**
 - **Diferencias ya a la vista para la auditoría** (sin analizar): Caja 4.672.164,87 (nuestra 1.766.085,92) · Banco Galicia
   −2.261.370,27 (nuestro −2.261.369,97) · Anticipos a proveedores 23.414.265,26 (nuestro 0) · Proveedores 6.486.568,02 (nuestro
   8.826.113,42) · Ganancias a pagar 18.072.967,28 (JMS 15.123.214,62) · Santander, Provincia y Cargas sociales coinciden.
+- **Asentado el 17/11 (OK de JMS: «ok las 107 cuentas registrar sí» · «sí ok con los dos renglones para E2»)**: **script 282 CORRIDO**
+  — `public.balance_contador_cuentas` con las 107 cuentas de MSA al 30/06/2026 (suma 0,00; huella igual a la planilla; RLS con 2
+  políticas, `anon` sin acceso). **Script 283 CORRIDO** — versión «contador» del balance propio de MSA al 30/06/2026: 27 renglones
+  sumados desde esas cuentas (activo 1.323.911.258,57 · pasivo 149.784.622,08). Los dos renglones nuevos del catálogo
+  (`iva_credito_a_computar`, `rollos_fardos`) y el script 283 están en la rama **`jms/balance-contador-renglones`** (sale de
+  `desarrollo`; probar 1568/1568, type-check sin empeorar, build no corrido), **falta sumarla a `desarrollo` con OK de JMS**: hasta
+  entonces la pantalla no reconoce esos dos renglones (12.937.765,76). Próximo script 284.
