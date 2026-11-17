@@ -18358,3 +18358,20 @@ dejá documentadas las decisiones»)**
   **Pendiente**: que el detalle de lo activado se vea a la vista y baje hasta las facturas de compra que se activaron.
   **En curso**: dos agentes de sólo lectura — auditoría del balance del contador, y mapa + planilla con fórmulas para el balance en
   línea; dejan sus Excel en `- Comunicacion JMS Claude - Archivos/Balance/Balance contador 25-26 - trabajo/`.
+- **17/11 noche — página «Balance interno MSA» entregada, espera las respuestas de JMS**: https://claude.ai/artifact/4o9qkjgFkATtg85KwNXeKP
+  (guarda en la colección `respuestas`; leer con `list` completo y contar). Bloques: **A** el resultado hoy (tu versión: activo menos
+  pasivo 380.053.022,56 → 803.971.706,04, diferencia 423.918.683,48 / US$ 227.564,34; contador: ganancia 234.089.419,91) · **B** los 43
+  renglones del balance propio, inicio y cierre de JMS contra el cierre del contador, con 💬 por fila (`F-B-n`) · **C** 8 definiciones
+  (créditos fiscales, Ganancias y diferido, hacienda, bienes de uso, insumos y sementeras, caja/anticipos/proveedores, arrendamiento
+  MA→MSA, dólar MEP y distribución) · **D** cuentas de socios (D1–D4: cómo se trataron en la reunión, las seis cuentas nuevas por
+  90.000.000,27, Plácido, qué saldo lleva cada socio en el interno).
+- **Los dos agentes terminaron (17/11), SIN revisar todavía por Claude ni recalcular con Excel**. En
+  `- Comunicacion JMS Claude - Archivos/Balance/Balance contador 25-26 - trabajo/`: `Auditoria balance contador MSA 25-26 v1.xlsx` (44
+  cuentas ✓, 27 con diferencia, 36 sin contraparte; preguntas AU1–AU10) y `Balance contador MSA 25-26 - con formulas y mapa v1.xlsx`
+  (56 cuentas salen de movimientos, 5 al cierre, 39 del contador, 7 de socios a definir; 47 saldos como fórmula; 13 puntos «qué falta
+  construir»; preguntas BL1–BL7). Los dos trabajaron sobre el reporte v8 y los papeles enviados, no sobre la base en vivo.
+  Relaciones que informan como verificadas al centavo: diferencia de inventario = Vacas de cría 2026 − 2025 · costo de venta de cereal =
+  cereales + sementeras del 30/06/2025 · pasivo diferido = el de 2025 + el cargo del año · crédito de impuesto al cheque = 33 % de lo
+  pagado (la app tiene 100 % para MSA) · la provisión de ventas entera (FCE 10-9 a Provinvest, 50.000.850,00) fue a Arrendamientos ·
+  el contador usó dólar 1.450 al cierre · tarjeta: tomó el resumen que cierra el 02/07. Sin explicar: anticipos a proveedores
+  23.414.265,26, caja (+2.906.078,95), IVA a favor (+7.656.444,20), Red Vial (−222.597,08 contra el papel enviado).
