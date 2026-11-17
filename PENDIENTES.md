@@ -18293,3 +18293,53 @@ dejá documentadas las decisiones»)**
   tratar» pasó a «marcas que el sistema muestra aparte» · las notas de D10.2 ya no se cortan a 260 caracteres · un rótulo que no
   entra combina las celdas vacías y baja de renglón · el encabezado sólo se repite arriba de cada página si la hoja es de una sola
   tabla (o casi) · las flechas del cuerpo usan otra letra. **Segunda pasada (16/11, más tarde)**: el alto de las filas con texto se calcula cortando por palabras (el CUIT de G1 del libro del grupo ya se ve); la cantidad de cuotas de G4 sale como entero; el índice y la columna de cuenta de compras se ensancharon para que la versión de imprimir siga en 30 páginas (la completa de prueba: 261). Libro del grupo de prueba: 50 de 50 controles OK, 47 páginas. **Sin hacer**: títulos huérfanos al pie de página, el encabezado «Tipo de movimiento» partido en G1/G2, y la tabla única de movimientos sin registrar (depende de las respuestas de la página de casos). MA y PAM se generan bien con el pulido nuevo, sin recalcular ni mirar.
+
+**14 · 17/11 — llegó el balance PRESENTADO por el contador (MSA): punto de partida de los cuatro frentes**
+
+- **El archivo**: `- Comunicacion JMS Claude - Archivos/Balance/- Enviados/2026/Balance Presentado/Balance MS AGRO SRL 2026 .xlsx`
+  (ojo: el nombre lleva un espacio antes de `.xlsx`). JMS: **«es el definitivo»**. Es un balance de sumas y saldos: una hoja, 107
+  cuentas con el código del contador, sólo valores (ninguna fórmula). Cierra: Activo 1.323.911.258,57 · Pasivo −149.784.622,08 ·
+  PN −940.037.216,58 · Resultados −234.089.419,91 (ganancia) · suma 0,00. Resultado antes del impuesto del año: 252.162.387,19.
+- **JMS usó en la reunión la v7 del reporte de MSA** (no la v8; la v8 sólo agrega D10.1 y D10.2). Su `…v7.xlsx` figura modificado el
+  17/11 17:19: puede tener anotaciones; no pisarlo.
+- **El plan acordado (JMS 17/11), sólo MSA por ahora**: (1) Claude solo asienta en el sistema el balance presentado y los saldos
+  fiscales; (2) agentes dejan el **balance en línea** (resultado a hoy; 2ª instancia: prebalance al 30/06/27 con ventas y gastos
+  presupuestados); (3) otro agente audita el balance del contador contra lo nuestro; (4) JMS y Claude arman el **balance interno**;
+  (5) presentación, al final. JMS sumó: recrear en un Excel las fórmulas intrínsecas de la planilla del contador.
+- **Lo que explicó JMS de cada cuenta (17/11)** — es la base del mapa «cuenta del contador → de dónde sale»:
+  1. **Ventas** = libro diario + **provisión de ventas**. Verificado: Arrendamientos + Cereal + Ganado + Bienes de uso =
+     497.821.537,80 = nuestro neto de IVA 447.820.687,80 + «Deudores por Ventas» 50.000.850,00, al centavo.
+  2. **Resultado por diferencia de inventario** (240.958.804,10): valorización del stock ganadero, diferencia de un balance contra
+     el otro (a su entender). **Vacas de cría** (496.437.859,00): valor contable del contador, con lógica propia, distinto de
+     nuestra valorización.
+  3. **Impuesto diferido** (cargo 53.366.150,52 · pasivo 120.168.309,48): cálculo contable impositivo fino, sin incidencia; en
+     principio no vale la pena calcularlo. Hay varios renglones así.
+  4. **Amortizaciones** (9.318.754,75): sí afectan Ganancias; **a decidir** si las calculamos nosotros en el balance en línea.
+  5. **Datos fiscales que nos faltaban**: Retenciones (18.872.189,78) y Percepciones (259.692,28) de Ganancias · IVA saldo técnico
+     (18.657.003,88) · IVA libre disponibilidad (337.160,55) · IVA crédito fiscal a computar (137.765,76) · Saldo a favor de
+     Ganancias (27.790.561,65). **Impuesto al cheque** (1.931.152,86) es débitos y créditos: lo tenemos, con diferencias que JMS no
+     entiende → auditar.
+  6. **Bienes de uso** (Equinos, Inmuebles, Herramientas, Maquinarias, Instalaciones, Rodados, Muebles y sus amortizaciones
+     acumuladas): a priori no los tenemos en cuenta.
+  7. **Bienes activados** (Insumos para la producción ganadera 5.209.368,81 · Rollos y fardos 12.800.000,00): compras facturadas
+     que se activan, juegan como activo y suman impuesto a pagar; **lo determinamos nosotros al cierre**.
+  8. **Ganancias a pagar** (18.072.967,28) y **pasivo por impuesto diferido**: el impuesto del año y el diferido. **Patrimonio
+     neto** (6 cuentas): no hay que calcularlo.
+  9. **Costo de venta de cereal** (6.783.718,42): mandar a gasto lo activado el año anterior más el stock de granos del año
+     anterior (a su entender).
+  10. **Alquiler campo** (25.789.518,68): **se determinó en la reunión** — un arrendamiento que MA le factura ahora a MSA; esa
+      factura se provisiona como gasto de este balance y se da por paga contra el saldo de MA.
+  11. **Impuesto a las Ganancias** (18.072.967,28) e **Ingresos Brutos** (14.666.712,91) del resultado: los da el contador.
+      **Pérdida por venta de bienes de uso** (42.953.283,74): cálculo del contador.
+  12. **Cuentas de socios** (7 cuentas, 135.905.575,79): JMS todavía tiene que explicar cómo se trataron. Dato: «Socio Plácido
+      Martínez» 45.905.575,52 es igual a la «Cuenta socios» del contador al 30/06/2025; las otras seis suman 90.000.000,27.
+- **Dónde se asienta**: tabla nueva `public.balance_contador_cuentas` (las 107 cuentas tal cual, con su signo y, donde JMS explicó,
+  el tratamiento tentativo `sistema` / `cierre` / `contador`) → `scripts/282-balance-contador-msa-2026.sql` y su deshacer.
+  **Preparado, SIN correr al escribir esto**: espera el OK de JMS. Segundo paso (script aparte): la versión «contador» del balance
+  propio al 30/06/2026 (`balance_foto_valores`, hoy sólo tiene la versión JMS con 33 renglones). Dos cuentas no tienen renglón en
+  el catálogo de `lib/balance/balance-propio.ts`: «IVA crédito fiscal a computar» y «Rollos y fardos» → a definir con JMS.
+- **Pedidos al contador** (lo que falta para saber cómo armó cada número): 13 pedidos con prioridad en
+  `- Comunicacion JMS Claude - Archivos/Balance/Pedidos al contador - balance MSA 25-26 v1.xlsx`.
+- **Diferencias ya a la vista para la auditoría** (sin analizar): Caja 4.672.164,87 (nuestra 1.766.085,92) · Banco Galicia
+  −2.261.370,27 (nuestro −2.261.369,97) · Anticipos a proveedores 23.414.265,26 (nuestro 0) · Proveedores 6.486.568,02 (nuestro
+  8.826.113,42) · Ganancias a pagar 18.072.967,28 (JMS 15.123.214,62) · Santander, Provincia y Cargas sociales coinciden.
