@@ -92,6 +92,7 @@ export const RENGLONES: Renglon[] = [
   { id: "iva_libre_disponibilidad", rubro: "creditos_impositivos", etiqueta: "IVA saldo de libre disponibilidad" },
   { id: "iva_saldo_tecnico", rubro: "creditos_impositivos", etiqueta: "IVA saldo técnico" },
   { id: "impuesto_cheque", rubro: "creditos_impositivos", etiqueta: "Crédito Impuesto Ley 25.413 (cheque)" },
+  { id: "iva_credito_a_computar", rubro: "creditos_impositivos", etiqueta: "IVA crédito fiscal a computar", nota: "cuenta del contador (balance 25/26)" },
 
   { id: "deudores_ventas", rubro: "otros_creditos", etiqueta: "Deudores por ventas" },
   { id: "anticipos_proveedores", rubro: "otros_creditos", etiqueta: "Anticipos a proveedores" },
@@ -105,6 +106,7 @@ export const RENGLONES: Renglon[] = [
   { id: "insumos_agricolas", rubro: "insumos", etiqueta: "Insumos agrícolas", nota: "JMS: valor real" },
   { id: "insumos_ganaderos", rubro: "insumos", etiqueta: "Insumos ganaderos", nota: "JMS: valor real" },
   { id: "insumos_otros", rubro: "insumos", etiqueta: "Gas oil y otros (ambos ámbitos)" },
+  { id: "rollos_fardos", rubro: "insumos", etiqueta: "Rollos y fardos", nota: "cuenta del contador (balance 25/26): bien activado al cierre" },
 
   { id: "stock_cria", rubro: "stock_ganadero", etiqueta: "Stock de cría", nota: "JMS: valuación propia" },
   { id: "stock_recria", rubro: "stock_ganadero", etiqueta: "Stock de recría", nota: "JMS: valuación propia" },
