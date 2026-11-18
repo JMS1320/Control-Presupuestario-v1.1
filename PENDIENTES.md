@@ -93,3 +93,21 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   Claude ya procesó»**: Claude marca `procesada: true` en cada respuesta que procesó y JMS las borra con el botón. Las 23 respuestas
   del 17/11 (ya asentadas en el punto 15) se movieron a la colección `respuestas_procesadas`.
 - Generadores guardados en `- Comunicacion JMS Claude - Archivos/Balance/Excels trabajando con claude/Copias/programas/balance-interno-msa-pagina/`.
+
+**21 · 18/11 — pedidos de JMS sobre la página del balance interno (v7) y tres verificaciones**
+
+- **Página**: tipo de cambio arriba y en el encabezado, encabezado fijo al bajar, y **la ganancia abajo y simple** (Ganancia corriente
+  US$ 140.545,09 · Ganancia total US$ 255.250,42) seguida del desglose «de dónde sale y dónde está», que **separa lo fiscal para dejar
+  sola la líquida** (JMS): cría (revalúo 119.866,78 + reinvertido 20.525,46) · fiscal no corriente (impuesto diferido −25.686,91) →
+  corriente 140.545,09 = recría 86.341,33 + fiscal corriente 1.750,93 + stocks −1.703,78 + **líquido 54.156,61** (controles ✓).
+  Reemplaza al desglose del punto 20. Generador: `arma_interno3.py` en la carpeta de programas.
+- **Saldo a favor Ganancias anteriores (27.790.561,65)**: en el 30/06/2025 no había ese renglón en ninguna versión (ni JMS ni
+  contador). El crédito de Ganancias estaba en anticipos 14.474.434,24 + retenciones 13.577.503,78 + percepciones 61.910,75 =
+  28.113.848,77 (diferencia contra el saldo a favor: 323.287,12, **sin explicar → preguntarle al contador**).
+- **Provisión para gastos — JMS: «creo que esto no va»**: es una factura de otro ejercicio que entra por haberse originado ahí el
+  gasto; si las provisionadas se pagaron, para este análisis no cuenta. **A conversar con la composición a la vista** (queda en la
+  página, pregunta PV1): 2025 = 2 facturas de arrendamiento de 6.228.000,07 (Sucesión PAM 19/08/25 y María Magdalena Martínez
+  17/10/25); 2026 = 10 facturas por 778.144,76 (2 de junio 2026 y 8 de diciembre 2025 que entraron al libro IVA en 10/2026). Hoy
+  suma US$ 9.849,01 a la ganancia.
+- **Sueldos a pagar (1.066.310,00)**: sí, son los pagos posteriores al 30/06 de períodos del ejercicio, tal cual el sistema (papel 13
+  Sueldos): Sigot mayo 512.000 y junio 434.200 (pagados 24/07) · Barreto junio 120.110 (31/07).
