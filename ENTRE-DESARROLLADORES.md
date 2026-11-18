@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 📗 Tabla nueva `public.balance_contador_cuentas` (2026-11-17) — ⏳ AVISO PREVIO (se corre con el OK de JMS)
+### 📗 Tabla nueva `public.balance_contador_cuentas` (2026-11-17) — ✅ APLICADA el 17/11 (script 282, con el OK de JMS)
 - A-FEAT-1629: el balance presentado por el contador, cuenta por cuenta (107 filas de MSA al 30/06/2026). `scripts/282-…` con su deshacer. Tabla nueva y aislada: RLS con las 2 políticas de siempre (`puede_ver` / `puede_escribir`), `anon` sin acceso, 1 fila en `recurso_tablas` (recurso `extracto`, lectura restringida) — el mismo esquema que `balance_fotos` (scripts/75). **No toca ninguna tabla existente, ni roles ni permisos.**
 
 ### 🌱 `productivo.lineas_orden_agricola.unidad_dosis`: CHECK más amplio y `varchar(20)` (2026-11-11) — ✅ APLICADA el 11/11 con OK de JMS (aviso previo): CHECK «no vacía» y varchar(20), verificado con EXPLAIN INSERT

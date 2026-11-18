@@ -134,3 +134,46 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   fijo), subtotales que suman sus filas y control contra los 92.875.208,86 cargados. Fuente: export «Socios y Libertad» del 15/11.
   Generador `detalle_ma.py` en la carpeta de programas. **Sin abrir ni recalcular con Excel** (el total se verificó al generarlo).
 - **Ídem para PAM** (pedido de JMS 18/11: ver los movimientos del ejercicio más allá del saldo): `…/Balance contador 25-26 - trabajo/Cuenta interna Sucesion Placido Martinez (PAM) - detalle 25-26 v1.xlsx` — 24 movimientos de la 14.1 (se llevó 9.858.160,16 · aportó o nos facturó 9.668.333,59 → saldo 189.826,57) + 1 de compensación interna (9.000,00) = 198.826,57 a favor de MSA. Generador único para los dos socios: `detalle_socio.py <fuentes> <salida> <MA|PAM>`.
+
+**24 · 18/11 — la cuenta de MA separada por CON QUIÉN es la deuda (script 287) · control · CIERRE DE SESIÓN**
+
+- **JMS 18/11**: «en el interno de MA se mezcla MA con PAM y MA con MSA en una misma cuenta. El interno es para ver cuánta plata le
+  debe MA a MSA; entre MA y PAM sería otra». Y: «la cuenta Libertad, que es 50/50, en la realidad es interno de MA: se rastrean todos
+  los pagos de Libertad que le pagó MSA a MA o PAM a MA». **Verificado en la base**: cada pago de Libertad tiene contable «LIB» e
+  interno «DIST MA» por el importe ENTERO (el 50/50 es sólo contable).
+- **Excel v2** (los v1 quedan), en `…/Balance/Balance contador 25-26 - trabajo/`: «Cuenta interna Mercedes Areco - detalle 25-26
+  v2.xlsx» y «Cuenta interna Sucesion Placido Martinez (PAM) - detalle 25-26 v2.xlsx». Recalculados con Excel: 0 celdas con error.
+  - **MA le debe a MSA: 85.905.662,09** = saldo con MSA 44.459.338,17 + interno pagado por MSA 21.946.323,92 + ajuste fijo 19.500.000.
+  - **MA le debe a PAM: 6.969.546,77** (Libertad pagada por PAM 6.233.331,84 + gastos propios pagados por PAM 736.214,93).
+  - **Control pedido por JMS («en el total no debería haber diferencias, sólo se desglosa»)**: 85.905.662,09 + 6.969.546,77 =
+    92.875.208,86 ✓ (PAM: 198.826,57 ✓, no tenía nada pagado por otra empresa).
+- **Script 287 CORRIDO** (`scripts/287-balance-propio-jms-cuenta-ma-solo-con-msa.sql` y su deshacer): «Cuenta socios» de la versión
+  JMS al 30/06/26 pasó de 92.875.208,86 a **85.905.662,09**. Con el modelo: ganancia total **US$ 240.684,29** · corriente **US$
+  125.978,95** = recría 86.341,33 + fiscal corriente 1.750,93 + stocks −1.703,78 + **líquido 39.590,47**. Página v10.
+- ⚠️ **A CONFIRMAR POR JMS — posible doble conteo de Libertad (NO aplicado)**: de lo que MSA pagó de Libertad (14.317.100,99) la
+  contabilidad deja 13.455.558,69 como gasto de MSA (= «Gastos Oficina Libertad» del contador) y carga el resto a los socios por el
+  «cuadro final» (MA 730.000,14 · PAM 131.542,13, renglones de la 14.1). El interno además le carga a MA los 14.317.100,99 enteros →
+  el cuadro final quedaría contado dos veces. Si se saca: MA con MSA 85.175.661,95 · PAM con MSA 67.284,44. Pregunta **AB7** de la página.
+- **Revisado el otro sentido** (¿MSA pagó algo por cuenta de PAM dentro de lo de MA?): no; lo propio de MA pagado por MSA es Tiguan
+  (seguro y arreglos), arreglos del chalet, seguro de Alondra y alimento de Tigra. **AMS**: su compensación interna (1.339.283,37, Omint)
+  la pagó PAM entera → con MSA le queda 5.463.334,73 (en el balance está en cero). **JMS**: todo pagado por MSA.
+- **Para el balance interno de PAM y de MA (cuando se armen)**: la cuenta entre ellas — MA le debe a PAM 6.969.546,77 (activo de PAM,
+  deuda de MA) — y AMS le debe a PAM 1.339.283,37.
+
+**ESTADO AL CIERRE (18/11) — balance interno de MSA**
+- Versión JMS en la base (scripts 284 a 287): lo fiscal del contador · caja real 628.213,68 · distribución de fondos en cero ·
+  cuota solidaria · provisión para gastos en cero · cuenta de MA con MSA 85.905.662,09 (tentativa) · Plácido como nota.
+- Página para seguir: https://claude.ai/artifact/4o9qkjgFkATtg85KwNXeKP (v10). Abiertas: **AB1** dólares (MEP o caja dólares, datos de
+  la caja en dólares) · **AB2** stocks de insumos y sementeras (neutros) · **AB3** arrendamiento de MA a MSA · **AB4** camioneta vendida ·
+  **AB5** cuenta de MA · **AB7** doble conteo de Libertad. Al volver: leer la colección `respuestas` ENTERA, marcar `procesada: true` lo
+  procesado (JMS las borra con el botón).
+- **Falta en la app** (no se tocó código): (1) el desglose de la ganancia de `lib/balance/balance-propio-excel.ts` no contempla el
+  impuesto diferido no neutro ni el desglose «fiscal separada / líquido» que pidió JMS (hoy sólo está en la página); (2) el papel
+  «pendientes de cobro» no toma la venta provisionada sin cobrar; (3) el detalle visible de «Otras compras activadas»; (4) la carga
+  inicial de las cajas (A-TEST-1382) — la app da 1.766.085,92 y lo real es 628.213,68; (5) la cuenta interna de la app
+  (`capa-interna.ts`, solapa «I · Interno por socio») junta lo pagado por MSA y por PAM en una sola cuenta por socio: separar por
+  contraparte, y revisar el cuadro final de Libertad.
+- **Sin hacer de antes**: revisar y recalcular los 2 Excel de los agentes (auditoría y mapa con fórmulas) · balance en línea (interno y
+  contable; SUSS + cuota solidaria = lo que se carga en el template) · preguntarle al contador por el saldo a favor de Ganancias
+  (diferencia de 323.287,12 contra anticipos + retenciones + percepciones 2025) · presentación · MA y PAM.
+- Scripts corridos en la sesión: 282 a 287. **Próximo script 288.** Rama `jms/reporte-socios` (sin sumar a `desarrollo`).
