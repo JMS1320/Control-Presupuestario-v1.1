@@ -125,3 +125,4 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   4.500 + 3.900 = 14.700) se pagaron con la VISA el 01 y 02/07: consumos posteriores al cierre, fuera de la deuda de tarjeta.
 - **Página v8**: todo el ancho, líneas de tabla, sin el bloque de la provisión; AB6 ahora pregunta sólo si la tarjeta queda dentro de
   proveedores o en su renglón. Generador: `arma_interno4.py`.
+- **JMS 18/11: «AB6 queda así, tarjeta dentro de proveedores»** — decidido; la pregunta AB6 se retiró de la página (v9).
