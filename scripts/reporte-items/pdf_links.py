@@ -122,7 +122,7 @@ def paso_paginas(xlsx, ruta_pdf):
 
 def paso_links(xlsx, entrada, salida):
     from PyPDF2 import PdfReader, PdfWriter
-    from PyPDF2.generic import AnnotationBuilder
+    from PyPDF2.generic import ArrayObject, DictionaryObject, FloatObject, NameObject, NumberObject
     wb = openpyxl.load_workbook(xlsx)
     pdf = Pdf(entrada, wb.sheetnames)
     lector = PdfReader(entrada)
@@ -151,9 +151,20 @@ def paso_links(xlsx, entrada, salida):
                 for grupo in renglones.values():
                     x0, x1 = min(w["x0"] for w in grupo) - 1, max(w["x1"] for w in grupo) + 1
                     arriba, abajo = min(w["top"] for w in grupo) - 1, max(w["bottom"] for w in grupo) + 1
-                    escritor.add_annotation(page_number=i, annotation=AnnotationBuilder.link(
-                        rect=(x0, pdf.alto[i] - abajo, x1, pdf.alto[i] - arriba),
-                        target_page_index=paginas[0] if unico else paginas[n]))
+                    # El destino tiene que ser la PÁGINA (referencia al objeto), no su número: con el número, Acrobat y los
+                    # navegadores ignoran el link (así salieron las v11 a v13 al principio).
+                    destino_pg = escritor.pages[paginas[0] if unico else paginas[n]]
+                    link = DictionaryObject({
+                        NameObject("/Type"): NameObject("/Annot"), NameObject("/Subtype"): NameObject("/Link"),
+                        NameObject("/Rect"): ArrayObject([FloatObject(round(v, 2)) for v in
+                                                          (x0, pdf.alto[i] - abajo, x1, pdf.alto[i] - arriba)]),
+                        NameObject("/Border"): ArrayObject([NumberObject(0), NumberObject(0), NumberObject(0)]),
+                        NameObject("/Dest"): ArrayObject([destino_pg.indirect_reference, NameObject("/Fit")]),
+                    })
+                    pagina = escritor.pages[i]
+                    if "/Annots" not in pagina:
+                        pagina[NameObject("/Annots")] = ArrayObject()
+                    pagina["/Annots"].append(escritor._add_object(link))
                 puestos += 1
     with open(salida, "wb") as fh:
         escritor.write(fh)
