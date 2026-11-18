@@ -18375,3 +18375,37 @@ dejá documentadas las decisiones»)**
   pagado (la app tiene 100 % para MSA) · la provisión de ventas entera (FCE 10-9 a Provinvest, 50.000.850,00) fue a Arrendamientos ·
   el contador usó dólar 1.450 al cierre · tarjeta: tomó el resumen que cierra el 02/07. Sin explicar: anticipos a proveedores
   23.414.265,26, caja (+2.906.078,95), IVA a favor (+7.656.444,20), Red Vial (−222.597,08 contra el papel enviado).
+
+**15 · 17/11 noche — JMS respondió la página «Balance interno MSA» (23 respuestas leídas; colección entera)**
+
+Página: https://claude.ai/artifact/4o9qkjgFkATtg85KwNXeKP (v2: las columnas del contador quedan ocultas, con un botón para verlas —
+pedido de JMS: «sacar los saldos del contador y que se hagan visibles en caso de yo precisarlo»). **Nada se cambió en la base**: lo
+que sigue son decisiones a aplicar con su OK.
+
+- **Decidido**
+  1. **Caja** (fila 2): van **nuestros saldos de caja**, no los del contador.
+  2. **Créditos impositivos** (filas 13 a 21: retenciones y percepciones de Ganancias, saldo a favor de Ganancias, IIBB, anticipos
+     de Ganancias, IVA libre disponibilidad, IVA saldo técnico, impuesto al cheque, IVA a computar): **va lo del contador**. Lo
+     nuestro al 30/06/26 eran **valores neutros** (script 273: los mismos US$ que al 30/06/25, × 1.477,50 / 1.200,50), puestos
+     para que no dieran resultado mientras no se conocían — verificado en `balance_foto_valores.detalle`. JMS lo sospechó (C1).
+  3. **Ganancias a pagar e impuesto diferido** (C2): los dos **del contador** (18.072.967,28 y 120.168.309,48). Los nuestros
+     (15.123.214,62 y 82.215.901,59) eran también neutros del script 273 — responde a su pregunta de la fila 47.
+  4. **Hacienda** (C3, filas 36 y 37): **nuestra valuación** = promedio del mes de junio entero − 10 % de comercialización. Ya es
+     la que está cargada (cría 505.105.670,70 · recría 232.306.875,75) y el 30/06/25 se recalculó igual (cría 241.868.150,82, antes
+     308.090.000 · recría 85.101.485,18, antes 97.470.000).
+  5. **Insumos, sementeras y lo activado** (C5, fila 34): **nuestros stocks**; no tomar la referencia del contador («luego veremos
+     los stocks»). Ojo: insumos y sementeras al 30/06/26 hoy son neutros a la espera de su conteo.
+  6. **Equinos** (C4): **no van**. **Bienes de uso: no sabe todavía.** Fila 40: no iría nada, **pero hay que descontar la camioneta
+     vendida como menor valor en el activo** → falta definir cómo (no hay renglón hoy).
+  7. **Dólares** (filas 3 y 4): va «Dólar MEP comprados en el ejercicio» **o** «Caja dólares», **no los dos**; y si va el MEP, sólo
+     lo comprado **en este ejercicio**, sin arrastrar el anterior. Hoy: inicio 28.811.048,46 (planilla: US$ 23.712,80 × 1.215) y
+     cierre −50.235.000,00 (venta de US$ 34.000 en el ejercicio, script 273). Caja dólares: **pendiente de que JMS dé los datos**.
+  8. **Distribución de fondos** (fila 5): sólo lo de **este ejercicio** (hoy 64.623.846,86 = saldo con socios al cierre
+     −90.123.846,86 menos el del inicio −25.500.000). C8: **«lo determinaré yo»**.
+  9. **Arrendamiento MA → MSA** (C7): va a **pendientes visibles del trabajo de balance JMS** (no se resuelve ahora).
+  10. **«Socio Plácido Martínez»** (D3): **queda ese saldo** (45.905.575,52).
+  11. **Anticipos a proveedores y Cuenta socios** (filas 24 y 26): «esto veremos en detalle».
+- **Sin responder**: A1 (punto de partida), C6 (caja / anticipos / proveedores: buscar la diferencia o dejarla), D1 y D2 (cómo se
+  trataron las cuentas de socios y las seis cuentas nuevas), D4 (qué saldo lleva cada socio).
+- **Pidió además**: que la fila 14 (percepciones de Ganancias) también se marque como diferencia (el corte de un millón la dejaba
+  sin color).
