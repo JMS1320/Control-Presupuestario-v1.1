@@ -236,8 +236,8 @@ def _construir(lib, src, emp, grupo):
         n_hoja = h.nombre.split(" ")[0]
         h.titulo(f"Detalle {n_hoja[1:]} — Templates · {t['corto']}, cuota por cuota (ítem 3)")
         h.nota(f"Fuente: {arch} → «H · {emp} · Cuotas» (+ banco, comprobante y detalle de las solapas por agrupadora). "
-               f"{t['titulo']}. Cada categoría lista sus cuotas por fecha; las categorías donde casi todos los meses tienen varias cuotas llevan su "
-               "«Total <mes>»; las demás van como lista. Ese importe del mes es el que toma el resumen por mes (D3.1 / D3.2), y el «Total "
+               f"{t['titulo']}. Cada categoría lista sus cuotas por fecha; un mes con varias cuotas lleva su «Total <mes>»; la cuota única de un "
+               "mes va resaltada igual que un total. Ese importe del mes es el que toma el resumen por mes (D3.1 / D3.2), y el «Total "
                "<categoría>» es el que figura en «D3 Templates». Importe = débito − crédito: las devoluciones, "
                "rescates y acreditaciones van entre paréntesis. Estado «pagado (anterior)» = pagado, registrado "
                "antes de que la app conciliara contra el banco; «conciliado» = atado a su movimiento del banco.")
@@ -273,9 +273,12 @@ def _construir(lib, src, emp, grupo):
                                   "No entran en el resumen por mes; el control de la hoja lo va a marcar.", h.nombre)
                 _rotulo(h, f"{c['cat']}  ({len(cs)})")
                 filas_mes = []
-                # JMS 18/11: «Total <mes>» sólo si la mayoría de los meses de la categoría (2 de cada 3) tiene más de una cuota
+                # JMS 18/11: cada mes con varias cuotas lleva su «Total <mes>»; la cuota única de un mes se pinta como un total
+                # de mes. Si todos los meses tienen una sola, la categoría va como lista simple.
                 varios = sum(1 for qs_ in por_mes.values() if len(qs_) > 1)
-                con_subtotales = varios * 3 >= len(por_mes) * 2
+                con_subtotales = varios > 0
+                if con_subtotales and varios < len(por_mes) and not resumir:
+                    lib.bloques_mixtos.append((h.nombre, f"{a['nombre']} · {c['cat']}", varios, len(por_mes) - varios))
                 for k, qs in por_mes.items():
                     eti = ETI.get(k, f"{k[1]:02d}/{k[0]}")
                     if resumir:
@@ -296,6 +299,10 @@ def _construir(lib, src, emp, grupo):
                             filas_mes += list(range(r1, r + 1))
                             mcel[(c["nro"], k)] = "+".join(h.ref(8, x) for x in range(r1, r + 1))
                             continue
+                    if not resumir and len(qs) == 1 and con_subtotales:
+                        h.como_subtotal(r)
+                    elif not resumir and len(qs) > 1:
+                        h.como_subtotal(r)
                     filas_mes.append(r)
                     mcel[(c["nro"], k)] = h.ref(8, r)
                 rt = h.total(f"Total {c['cat']}", {8: h.suma_de(8, filas_mes)})

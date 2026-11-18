@@ -6,6 +6,7 @@ total DEBAJO, cada total suma las celdas que lo forman (nunca SUMIFS), controles
 hojas listas para imprimir en A4. Prototipo fuera de la app: lee los Excel exportados por la app
 (sólo lectura) y escribe archivos nuevos. No toca la base.
 """
+import copy
 import datetime
 import glob
 import os
@@ -238,6 +239,17 @@ class Hoja:
         self.filas_control.append(self.r)
         return self.r
 
+    def como_subtotal(self, r):
+        """Pinta un renglón de detalle igual que un subtotal (JMS 18/11: el único movimiento de un mes tiene que verse como el
+        subtotal de los meses que tienen varios)."""
+        for c in range(1, self.ncols + 1):
+            x = self.celda(c, r)
+            x.fill = R_TOT
+            x.border = Border(top=FINO, bottom=FINO)
+            f = copy.copy(x.font)
+            f.bold = True
+            x.font = f
+
     def ocultar_controles(self):
         """JMS 18/11: los controles van sólo en el libro «con controles»; en los de presentación sus renglones se ocultan
         (no se borran: las fórmulas que apuntan a otras celdas siguen en su lugar)."""
@@ -252,6 +264,7 @@ class Libro:
         self.items = []
         self.controles = []
         self.pendientes = []
+        self.bloques_mixtos = []   # (hoja, bloque, meses con subtotal, meses de un solo renglón)
         self.hojas = []
 
     def hoja(self, nombre, anchos, horizontal=True):

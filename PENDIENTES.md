@@ -207,6 +207,16 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
      no se tocan por ahora**): cuadro 1 cuenta/tarjeta × tipo de gasto (mantenimiento, caja de seguridad, transferencias, extracción,
      cheques, tarjeta; total y promedio por mes) y cuadro 2 concepto y cuenta mes por mes; en D3.3 los renglones mes a mes de gastos
      bancarios quedan ocultos. El movimiento por movimiento está en el libro Templates. Entra en la v12.
+  11. **Subtotales de mes, regla VISUAL (reemplaza a los puntos 6 y 9)** — JMS: «si algo es lo único de su mes debe visualizarse igual
+     que un subtotal… si no, parece que todo cae dentro del subtotal. Debe funcionar a nivel visual sobre todo». Cada mes con varios
+     renglones lleva su subtotal; el renglón único de un mes se pinta como subtotal (`Hoja.como_subtotal`); un bloque donde todos los meses
+     tienen un solo renglón va como lista simple. El generador deja la lista de bloques mixtos en «… - bloques con subtotales y meses
+     unicos.txt» (27 en la **v13**, 241 páginas): JMS los quiere mirar caso por caso.
+  12. **Propuesta entregada, espera que JMS elija** (para llegar a un intermedio de ~100–120 páginas): una tabla de una hoja para FIMA /
+     inversiones (por mes: saldo, suscripciones, rescates, resultado), movimientos internos (matriz de cuenta a cuenta), caja (por caja y
+     por destino), tarjeta VISA Business (por resumen y por cuenta), **sueldos en una sola tabla persona × 12 meses, sin semestres y sin
+     separar caja de banco**; y recortes en Compras (cuentas chicas sólo con total), No informado, Socios interno, Socios / Socios falta,
+     A pagar, Pendientes e impuestos generales y rurales. Páginas por hoja medidas en la v12.
 - JMS sobre las dudas: las columnas «Control» de tablas, a ver cuáles son; el «intermedio» es lo que se está armando ahora con sus comentarios.
 - Pendiente de forma ya conocido y todavía sin resolver: títulos huérfanos al pie de página (se vio en D1: «BIENES DE USO»).
 - **Página «Auditoría gastos contador»** (pedido de JMS): https://claude.ai/artifact/Gq49pggjpH4zH4Rd1r3wcV — el contador **agrupó** (28

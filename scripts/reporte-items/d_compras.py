@@ -131,7 +131,7 @@ def construir(lib, src):
     h.nota(f"Fuente: «{fuente}», solapa «Compras» ({len(comps)} comprobantes, por mes de subdiario = el mes en que "
            "entró cada comprobante). Importes en pesos. «Al gasto» = Total − IVA (el IVA es crédito fiscal, no gasto).")
     h.nota("Cómo se lee: el «Total compras» del resumen suma el total de cada cuenta; el total de cada cuenta está más "
-           "abajo, en su bloque, y suma los subtotales de sus meses (sólo llevan subtotal de mes las cuentas donde casi todos los meses tienen varios comprobantes; las demás van como lista); cada subtotal suma los comprobantes que tiene "
+           "abajo, en su bloque, y suma los subtotales de sus meses (un mes con un solo comprobante no lleva subtotal: ese comprobante va resaltado igual que un subtotal); cada subtotal suma los comprobantes que tiene "
            "arriba. Las tablas por mes muestran el mismo subtotal mensual de cada bloque. Nada se obtiene filtrando.")
 
     # 1) resumen por cuenta
@@ -216,10 +216,12 @@ def construir(lib, src):
         solo_sub = []      # sólo los subtotales (para no contarlos como comprobantes)
         a_blk = h.r + 1
         meses_k = sorted({c["sub"] for c in por_cta[k]})
-        # JMS 18/11: subtotales de mes sólo si la mayoría de los meses del bloque (2 de cada 3) tiene más de un comprobante;
-        # si no, la cuenta va como lista simple (un subtotal suelto entre meses sin subtotal parece un error).
+        # JMS 18/11: cada mes con varios comprobantes lleva su subtotal; el comprobante único de un mes se pinta como un
+        # subtotal (el ojo va igual a uno que a otro). Si todos los meses tienen uno solo, la cuenta va como lista simple.
         n_varios = sum(1 for m in meses_k if sum(1 for c in por_cta[k] if c["sub"] == m) > 1)
-        con_subtotales = n_varios * 3 >= len(meses_k) * 2
+        con_subtotales = n_varios > 0
+        if con_subtotales and n_varios < len(meses_k):
+            lib.bloques_mixtos.append(("D2 Compras", f"{k} · {nombre[k]}", n_varios, len(meses_k) - n_varios))
         for m in meses_k:
             del_mes = sorted((c for c in por_cta[k] if c["sub"] == m),
                              key=lambda c: (c["fecha"], c["pv"] or 0, c["nro"] or 0))
@@ -235,6 +237,8 @@ def construir(lib, src):
                         c["mono"], c["otros"], c["iva"], c["total"], f"={h.cel(10, r)}-{h.cel(9, r)}"])
             b = h.r
             if b == a or not con_subtotales:     # sin subtotal: el total y la tabla por mes apuntan a los comprobantes
+                if con_subtotales:
+                    h.como_subtotal(b)
                 filas_m = list(range(a, b + 1))
                 subs += filas_m
                 r_sub[(k, m)] = h.suma_de(10, filas_m)

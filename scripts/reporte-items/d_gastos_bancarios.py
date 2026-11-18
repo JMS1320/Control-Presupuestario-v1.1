@@ -14,8 +14,8 @@ from core import ENTERO, num
 HOJA = "D3.5 Gastos bancarios"
 MESES = ["jul-25", "ago-25", "sep-25", "oct-25", "nov-25", "dic-25", "ene-26", "feb-26", "mar-26", "abr-26", "may-26", "jun-26"]
 # comienzo del nombre de la categoría -> columna del cuadro 1
-TIPOS = [("Comision Cuenta Bancaria", "Mantenimiento de cuenta"), ("Comision Caja de Seguridad", "Caja de seguridad"),
-         ("Comision Transferencias", "Comisiones por transferencias"), ("Comision Extraccion Efectivo", "Extracción de efectivo"),
+TIPOS = [("Comision Cuenta Bancaria", "Manteni-miento"), ("Comision Caja de Seguridad", "Caja de seguridad"),
+         ("Comision Transferencias", "Transfe-rencias"), ("Comision Extraccion Efectivo", "Extracción efectivo"),
          ("Comision Cheques", "Cheques"), ("Tarjetas", "Tarjeta")]
 
 

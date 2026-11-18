@@ -591,7 +591,10 @@ def main():
     lib.wb.save(base + " - resumen para imprimir.xlsx")
     with open(base + " - resumen para imprimir.hojas.txt", "w", encoding="utf-8") as f:
         f.write("\n".join(hojas_cortas))
-    print("ítems:", len(lib.items), "· controles:", len(lib.controles), "· pendientes:", len(lib.pendientes))
+    with open(base + " - bloques con subtotales y meses unicos.txt", "w", encoding="utf-8") as f:
+        f.write("\n".join("\t".join(str(x) for x in b) for b in lib.bloques_mixtos))
+    print("ítems:", len(lib.items), "· controles:", len(lib.controles), "· pendientes:", len(lib.pendientes),
+          "· bloques mixtos:", len(lib.bloques_mixtos))
     print("guardado:", base + ".xlsx")
 
 
