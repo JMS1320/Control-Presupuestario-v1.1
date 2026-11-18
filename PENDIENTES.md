@@ -111,3 +111,17 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   suma US$ 9.849,01 a la ganancia.
 - **Sueldos a pagar (1.066.310,00)**: sí, son los pagos posteriores al 30/06 de períodos del ejercicio, tal cual el sistema (papel 13
   Sueldos): Sigot mayo 512.000 y junio 434.200 (pagados 24/07) · Barreto junio 120.110 (31/07).
+
+**22 · 18/11 — script 286 CORRIDO (JMS: «provisión sacalas a las 2») · tarjeta sin duplicar · página v8**
+
+- **Script 286** (`scripts/286-balance-propio-jms-sin-provision-gastos-msa.sql` y su deshacer): «Provisión para gastos» en 0 en las
+  dos fotos de la versión JMS (antes 12.456.000,14 al 30/06/25 y 778.144,76 al 30/06/26). Motivo (JMS): es una factura de otro
+  ejercicio que entra por haberse originado ahí el gasto; las provisionadas se pagaron, para este análisis no cuenta.
+- **Cómo queda** (modelo, controles ✓): ganancia total **US$ 245.401,41** · corriente **US$ 130.696,07** = recría 86.341,33 + fiscal
+  corriente 1.750,93 + stocks −1.703,78 + **líquido 44.307,60**. Pasivo total 93.002.415,63 → 150.714.480,75.
+- **Tarjeta (JMS: «no duplicar la tarjeta como deuda en dos lugares»)** — verificado, no está duplicada: «Proveedores» 8.826.113,42 =
+  11 facturas de junio pagadas en julio (6.486.568,02) + deuda de tarjeta al cierre (2.339.545,40 = resúmenes que vencen después del
+  cierre + consumos hasta el 30/06). El renglón «Tarjetas» no se usa en la versión JMS. De las 11 facturas, tres peajes (6.300 +
+  4.500 + 3.900 = 14.700) se pagaron con la VISA el 01 y 02/07: consumos posteriores al cierre, fuera de la deuda de tarjeta.
+- **Página v8**: todo el ancho, líneas de tabla, sin el bloque de la provisión; AB6 ahora pregunta sólo si la tarjeta queda dentro de
+  proveedores o en su renglón. Generador: `arma_interno4.py`.
