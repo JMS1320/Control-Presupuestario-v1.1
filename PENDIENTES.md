@@ -133,3 +133,4 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   Resumen (38 grupos con Nro) + 3 hojas de detalle, movimiento por movimiento (96 de la 14.1 · 171 de compensación interna · 1 ajuste
   fijo), subtotales que suman sus filas y control contra los 92.875.208,86 cargados. Fuente: export «Socios y Libertad» del 15/11.
   Generador `detalle_ma.py` en la carpeta de programas. **Sin abrir ni recalcular con Excel** (el total se verificó al generarlo).
+- **Ídem para PAM** (pedido de JMS 18/11: ver los movimientos del ejercicio más allá del saldo): `…/Balance contador 25-26 - trabajo/Cuenta interna Sucesion Placido Martinez (PAM) - detalle 25-26 v1.xlsx` — 24 movimientos de la 14.1 (se llevó 9.858.160,16 · aportó o nos facturó 9.668.333,59 → saldo 189.826,57) + 1 de compensación interna (9.000,00) = 198.826,57 a favor de MSA. Generador único para los dos socios: `detalle_socio.py <fuentes> <salida> <MA|PAM>`.
