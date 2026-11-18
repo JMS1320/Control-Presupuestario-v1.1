@@ -59,3 +59,18 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
 8. **Cuenta interna de Mercedes Areco (92.875.208,86 a favor de MSA), por agrupados** (export «Socios y Libertad» del 15/11):
    saldo con MSA 44.459.338,17 + compensación interna 28.915.870,69 + ajuste fijo 19.500.000,00 (lo facturado/sueldo que en lo
    real no se cuenta). El detalle por agrupado se le dio a JMS en el chat el 17/11 para que elija qué saldo va.
+
+**19 · 17/11 noche — script 285 CORRIDO (OK de JMS en la terminal): caja real, distribución en cero, cuota solidaria y cuenta de MA**
+
+- `scripts/285-balance-propio-jms-caja-socios-msa-2026.sql` y su deshacer. Versión JMS del balance propio de MSA:
+  1. **Caja al cierre = 628.213,68** (lo real, JMS: General 0,00 · AMS 197.340,68 · Sigot 430.873,00). Antes 1.766.085,92.
+  2. **Distribución de fondos en cero en las dos puntas** (antes 11.200.207,00 al 30/06/25 y 64.623.846,86 al 30/06/26).
+  3. **Cuota solidaria a pagar 85.233,06** (nueva, como el contador).
+  4. **Cuenta socios = 92.875.208,86, TENTATIVO**: sólo Mercedes Areco por su cuenta interna; JMS: «se tomaría como un activo en MSA
+     porque es un anticipo de algo, ya sea arrendamiento o distribución». Los demás socios en cero. **Al 30/06/25 no se cargó nada
+     de MA** (el export no tiene dato de inicio): a confirmar con JMS.
+  5. **Socio Plácido Martínez** (45.905.575,52 en las dos puntas): queda como **nota de balance**, fuera del cálculo (está escrita en
+     el detalle del renglón «Cuenta socios»).
+- **Cómo queda la versión JMS**: inicio activo 474.311.231,33 − pasivo 105.458.415,77 = 368.852.815,56 (US$ 307.249,33) · cierre
+  activo 947.127.174,39 − pasivo 151.492.625,51 = 795.634.548,88 (US$ 538.500,54) · diferencia 426.781.733,32 (US$ 231.251,21).
+- Página «Balance interno MSA» actualizada (v5).
