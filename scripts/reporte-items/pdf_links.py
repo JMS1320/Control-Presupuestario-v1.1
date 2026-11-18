@@ -154,12 +154,18 @@ def paso_links(xlsx, entrada, salida):
                     # El destino tiene que ser la PÁGINA (referencia al objeto), no su número: con el número, Acrobat y los
                     # navegadores ignoran el link (así salieron las v11 a v13 al principio).
                     destino_pg = escritor.pages[paginas[0] if unico else paginas[n]]
+                    pagina_ref = escritor.pages[i].indirect_reference
                     link = DictionaryObject({
                         NameObject("/Type"): NameObject("/Annot"), NameObject("/Subtype"): NameObject("/Link"),
-                        NameObject("/Rect"): ArrayObject([FloatObject(round(v, 2)) for v in
+                        # números cortos (dos decimales, como texto): con 40 decimales algunos visores descartan el link
+                        NameObject("/Rect"): ArrayObject([FloatObject(f"{v:.2f}") for v in
                                                           (x0, pdf.alto[i] - abajo, x1, pdf.alto[i] - arriba)]),
                         NameObject("/Border"): ArrayObject([NumberObject(0), NumberObject(0), NumberObject(0)]),
-                        NameObject("/Dest"): ArrayObject([destino_pg.indirect_reference, NameObject("/Fit")]),
+                        NameObject("/F"): NumberObject(4), NameObject("/H"): NameObject("/I"),
+                        NameObject("/P"): pagina_ref,
+                        NameObject("/A"): DictionaryObject({
+                            NameObject("/Type"): NameObject("/Action"), NameObject("/S"): NameObject("/GoTo"),
+                            NameObject("/D"): ArrayObject([destino_pg.indirect_reference, NameObject("/Fit")])}),
                     })
                     pagina = escritor.pages[i]
                     if "/Annots" not in pagina:
