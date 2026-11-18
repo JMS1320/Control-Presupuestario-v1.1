@@ -199,7 +199,13 @@ def construir(lib, src):
     h.control("suma de los 12 meses contra la fila TOTAL del subdiario", h.cel(4, r_mes_tot[1]), f0(tot[13]),
               "Libro Diario · Compras · TOTAL")
 
-    # 3) detalle: un bloque por cuenta
+    # 3) detalle: un bloque por cuenta, en su propia hoja (JMS 18/11: así el PDF del detalle arranca limpio)
+    h.nota("El detalle factura por factura de cada cuenta está en la hoja «D2.1 Compras detalle».")
+    h_res = h
+    h = lib.hoja("D2.1 Compras detalle", [10, 17, 40, 14, 14, 13, 13, 11, 13, 14, 14])
+    h.titulo("D2.1 · Compras del ejercicio 25/26 — detalle factura por factura, por cuenta contable")
+    h.nota("Un bloque por cuenta contable, ordenados por N° de cuenta; adentro, por mes de subdiario. El total de cada cuenta es "
+           "el que toma el resumen de «D2 Compras», y cada mes es el que toman sus tablas por mes.")
     h.blanco()
     h.seccion("DETALLE — un bloque por cuenta contable, ordenados por N° de cuenta; adentro, por mes de subdiario")
     enc = ["Fecha", "Comprobante", "Proveedor", "CUIT", "Neto gravado", "No grav. + Exento", "Monotributo",
@@ -221,7 +227,7 @@ def construir(lib, src):
         n_varios = sum(1 for m in meses_k if sum(1 for c in por_cta[k] if c["sub"] == m) > 1)
         con_subtotales = n_varios > 0
         if con_subtotales and n_varios < len(meses_k):
-            lib.bloques_mixtos.append(("D2 Compras", f"{k} · {nombre[k]}", n_varios, len(meses_k) - n_varios))
+            lib.bloques_mixtos.append(("D2.1 Compras detalle", f"{k} · {nombre[k]}", n_varios, len(meses_k) - n_varios))
         for m in meses_k:
             del_mes = sorted((c for c in por_cta[k] if c["sub"] == m),
                              key=lambda c: (c["fecha"], c["pv"] or 0, c["nro"] or 0))
@@ -241,7 +247,7 @@ def construir(lib, src):
                     h.como_subtotal(b)
                 filas_m = list(range(a, b + 1))
                 subs += filas_m
-                r_sub[(k, m)] = h.suma_de(10, filas_m)
+                r_sub[(k, m)] = "=" + "+".join(h.ref(10, x) for x in filas_m)
                 continue
             f = {c: h.suma(c, a, b) for c in NUM}
             f[4] = f"=COUNT({h.cel(10, a)}:{h.cel(10, b)})"
@@ -252,16 +258,17 @@ def construir(lib, src):
             x.alignment = Alignment(horizontal="right")
             subs.append(rs)
             solo_sub.append(rs)
-            r_sub[(k, m)] = f"={h.cel(10, rs)}"
+            r_sub[(k, m)] = f"={h.ref(10, rs)}"
         f = {c: h.suma_de(c, subs) for c in NUM}
         f[4] = f"=COUNT({h.cel(10, a_blk)}:{h.cel(10, h.r)})" + (
             "-COUNT(" + ",".join(h.cel(10, r) for r in solo_sub) + ")" if solo_sub else "")
         r_tot[k] = h.total(f"Total {k} · {nombre[k]}", f, clave=True, fmt={4: ENTERO})
 
     # 4) los vínculos del resumen y de las tablas por mes (ahora que se sabe dónde quedó cada bloque)
+    h_det, h = h, h_res
     for k in cuentas:
         for c in range(4, 12):
-            pon(h, c, r_res[k], f"={h.cel(c, r_tot[k])}")
+            pon(h, c, r_res[k], f"={h_det.ref(c, r_tot[k])}")
         for s, (_, meses) in enumerate(sems):
             for j, m in enumerate(meses):
                 rs = r_sub.get((k, m))

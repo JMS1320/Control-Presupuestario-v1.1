@@ -106,7 +106,8 @@ class Hoja:
         ws.page_margins.bottom = 0.6
         ws.page_margins.header = ws.page_margins.footer = 0.25
         ws.print_options.horizontalCentered = True
-        ws.oddHeader.right.text = '&"Arial,Italic"&8' + TITULO_REPORTE
+        # JMS 18/11: «Volver al índice» en TODAS las páginas: va en el encabezado y pdf_links.py lo convierte en link
+        ws.oddHeader.right.text = '&"Arial,Italic"&8' + TITULO_REPORTE + '   ·   Volver al índice'
         ws.oddFooter.left.text = '&"Arial"&8&A'
         ws.oddFooter.right.text = '&"Arial"&8Página &P de &N'
 

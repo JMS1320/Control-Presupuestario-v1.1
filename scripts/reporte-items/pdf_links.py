@@ -33,7 +33,7 @@ def fichas(texto):
 class Pdf:
     def __init__(self, ruta, hojas):
         self.pdf = pdfplumber.open(ruta)
-        self.hoja_de, self.palabras, self.alto = [], [], []
+        self.hoja_de, self.palabras, self.alto, self.cabecera = [], [], [], []
         nombres = sorted(hojas, key=len, reverse=True)
         self.primera = {}
         for i, p in enumerate(self.pdf.pages):
@@ -42,6 +42,7 @@ class Pdf:
             n = next((s for s in nombres if pie == s or pie.startswith(s)), None)
             self.hoja_de.append(n)
             self.palabras.append([w for w in ws if 25 < w["top"] < p.height - 30 and re.search(r"\w", w["text"])])
+            self.cabecera.append([w for w in ws if w["top"] <= 25 and re.search(r"\w", w["text"])])
             self.alto.append(float(p.height))
             if n and n not in self.primera:
                 self.primera[n] = i
@@ -172,6 +173,34 @@ def paso_links(xlsx, entrada, salida):
                         pagina[NameObject("/Annots")] = ArrayObject()
                     pagina["/Annots"].append(escritor._add_object(link))
                 puestos += 1
+    # «Volver al índice» del encabezado de cada página → primera página del índice
+    volver = 0
+    if "Items" in pdf.primera:
+        for i, ws_ in enumerate(pdf.cabecera):
+            for k in range(len(ws_) - 2):
+                if [w["text"] for w in ws_[k:k + 3]] == ["Volver", "al", "índice"]:
+                    g = ws_[k:k + 3]
+                    x0, x1 = min(w["x0"] for w in g) - 2, max(w["x1"] for w in g) + 2
+                    arriba, abajo = min(w["top"] for w in g) - 2, max(w["bottom"] for w in g) + 2
+                    pagina = escritor.pages[i]
+                    link = DictionaryObject({
+                        NameObject("/Type"): NameObject("/Annot"), NameObject("/Subtype"): NameObject("/Link"),
+                        NameObject("/Rect"): ArrayObject([FloatObject(f"{v:.2f}") for v in
+                                                          (x0, pdf.alto[i] - abajo, x1, pdf.alto[i] - arriba)]),
+                        NameObject("/Border"): ArrayObject([NumberObject(0), NumberObject(0), NumberObject(0)]),
+                        NameObject("/F"): NumberObject(4), NameObject("/H"): NameObject("/I"),
+                        NameObject("/P"): pagina.indirect_reference,
+                        NameObject("/A"): DictionaryObject({
+                            NameObject("/Type"): NameObject("/Action"), NameObject("/S"): NameObject("/GoTo"),
+                            NameObject("/D"): ArrayObject([escritor.pages[pdf.primera["Items"]].indirect_reference,
+                                                           NameObject("/Fit")])}),
+                    })
+                    if "/Annots" not in pagina:
+                        pagina[NameObject("/Annots")] = ArrayObject()
+                    pagina["/Annots"].append(escritor._add_object(link))
+                    volver += 1
+                    break
+    print(f"«Volver al índice» del encabezado: {volver} páginas de {len(lector.pages)}")
     with open(salida, "wb") as fh:
         escritor.write(fh)
     print(f"links puestos en el PDF: {puestos} · links del Excel sin poner: {faltan} · páginas: {len(lector.pages)}")

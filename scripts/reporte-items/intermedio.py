@@ -82,7 +82,7 @@ def aplicar(lib):
         tot = sum(float(ws.cell(x, 11).value) for x in range(r + 1, fin + 1)
                   if isinstance(ws.cell(x, 11).value, (int, float)) and not isinstance(ws.cell(x, 11).value, bool))
         return abs(tot) < UMBRAL_COMPRAS
-    regla("D2 Compras", chica, " — cuenta de menos de 500.000 en el año: sólo el total (las facturas están en el Excel)")
+    regla("D2.1 Compras detalle", chica, " — cuenta de menos de 500.000 en el año: sólo el total (las facturas están en el Excel)")
 
     # B7 · Impuestos generales y rurales (Templates, egresos): la cuota por cuota
     regla("D3.3 Egresos", lambda t, *_: bool(re.match(r"^3[a-z]\d? · Impuestos (General|Rurales)", t)))

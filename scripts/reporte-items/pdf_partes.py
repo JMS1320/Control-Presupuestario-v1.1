@@ -23,8 +23,8 @@ xlsx, completo, salida = sys.argv[1], sys.argv[2], sys.argv[3]
 PARTES = [
     ("01 - Indice", [("Items", None, None)]),
     ("02 - Ventas", [("D1 Ventas", None, None)]),
-    ("03 - Compras - tablas anuales y por mes", [("D2 Compras", None, "DETALLE")]),
-    ("04 - Compras - detalle completo, factura por factura", [("D2 Compras", "DETALLE", None)]),
+    ("03 - Compras - tablas anuales y por mes", [("D2 Compras", None, None)]),
+    ("04 - Compras - detalle completo, factura por factura", [("D2.1 Compras detalle", None, None)]),
     ("05 - Templates - tablas anuales, por mes y gastos bancarios",
      [("D3 Templates", None, None), ("D3.1 Meses jul-dic", None, None), ("D3.2 Meses ene-jun", None, None),
       ("D3.5 Gastos bancarios", None, None)]),

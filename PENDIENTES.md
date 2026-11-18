@@ -237,6 +237,13 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
      índice valga. Entregados en `…/v14/Por partes/`. Pedido además: **«Volver al índice» en todas las páginas** (sin hacer; en los
      PDF separados un link al índice no puede funcionar porque es otro archivo). Los links del PDF completo se prueban con pdf.js
      antes de entregar (`scratchpad/pdfjs/probar.js`): 163 de 163 en la v14.
+  16. **v15 entregada** (222 páginas, 201 de 201 controles OK): el detalle factura por factura de Compras pasó a su propia hoja
+     «D2.1 Compras detalle» (al partir el PDF, la primera página del detalle traía el final de las tablas por mes; Excel ignora los saltos
+     de página manuales cuando la hoja se ajusta a un ancho); **«Volver al índice» en el encabezado de TODAS las páginas** (lo convierte en
+     link `pdf_links.py`: 222 de 222); links probados con pdf.js (386 de 386 resuelven); los 14 PDF en `…/v15/Por partes/`.
+     ⚠️ **La hoja «D12 Balance propio» del reporte es VIEJA**: sale del export del 15/11 (ganancia US$ 260.893), anterior a los scripts
+     284 a 287 (hoy US$ 240.684). Hay que bajar de nuevo el Excel del balance propio desde la app y sumar al Excel de la app el renglón
+     del impuesto diferido y el desglose con lo fiscal separado (JMS preguntó si está preparado: se le contestó que no del todo).
 - JMS sobre las dudas: las columnas «Control» de tablas, a ver cuáles son; el «intermedio» es lo que se está armando ahora con sus comentarios.
 - Pendiente de forma ya conocido y todavía sin resolver: títulos huérfanos al pie de página (se vio en D1: «BIENES DE USO»).
 - **Página «Auditoría gastos contador»** (pedido de JMS): https://claude.ai/artifact/Gq49pggjpH4zH4Rd1r3wcV — el contador **agrupó** (28
