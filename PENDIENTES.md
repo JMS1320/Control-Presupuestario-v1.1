@@ -37,3 +37,25 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
    incluida en el total de SUSS.
 10. **Patrimonio neto** (6 cuentas): no va. **Todas las cuentas de resultado** (ventas, gastos, impuestos, amortizaciones): no van,
     «porque nosotros tomamos la diferencia de punta a punta».
+
+**18 · 17/11 noche — respuestas de JMS a las preguntas sobre sus anotaciones (nada aplicado todavía en la base)**
+
+1. **Socios José y Andrés / distribución de fondos**: «en principio cero en las dos puntas».
+2. **Socio Plácido Martínez**: el mismo saldo (45.905.575,52) al inicio y al cierre, **sin influencia en la ganancia** (convertido a
+   dólares en cada punta daría un resultado que no es). Falta definir cómo se carga para que no pese en el resultado en dólares.
+3. **Cuota solidaria**: por ahora como el contador (SUSS 2.495.547,51 y cuota solidaria 85.233,06 aparte). **Para el balance en
+   línea** (que será dos: interno y contable): el total que JMS carga en el template de cargas sociales es **la suma de las dos**.
+4. **Camioneta vendida** y **arrendamiento de MA a MSA**: siguen como pendientes visibles (punto 16).
+5. **Deudores por ventas**: el papel «pendientes de cobro» del sistema da cero, pero en este balance va el monto actual
+   (50.000.850,00 — ya está en la versión JMS). El cambio del papel queda como desarrollo.
+6. **«Poner también lo que tenemos» en lo fiscal**: es para cuando lo calculemos nosotros: si tenemos el dato se usa; si no, neutro
+   o se le pide al contador.
+7. **Caja — hallazgo**: el balance propio tiene 1.766.085,92 = «Caja General 457.212,92» (en realidad la suma de las tres cajas al
+   30/06/2025, que la app nunca movió) + Caja Sigot 1.308.873,00 (saldo de la app al último movimiento cargado, 19/05/2026) + AMS 0.
+   El Anexo A del reporte (hoja «D5 Caja y bancos») usa la planilla de cajas de AMS «- CAJA 25-26.xlsx»: General 0,00 + AMS
+   197.340,68 + Sigot 430.873,00 = **628.213,68** al cierre (inicio 40.000,00 + 110.550,92 + 306.662,00 = 457.212,92). La caja de la
+   app no tiene la carga inicial completa (A-TEST-1382): General 0 movimientos, AMS 2, Sigot 79 (05/02 a 19/05/2026).
+   **Propuesto a JMS**: caja al cierre = 628.213,68 (baja 1.137.872,24).
+8. **Cuenta interna de Mercedes Areco (92.875.208,86 a favor de MSA), por agrupados** (export «Socios y Libertad» del 15/11):
+   saldo con MSA 44.459.338,17 + compensación interna 28.915.870,69 + ajuste fijo 19.500.000,00 (lo facturado/sueldo que en lo
+   real no se cuenta). El detalle por agrupado se le dio a JMS en el chat el 17/11 para que elija qué saldo va.
