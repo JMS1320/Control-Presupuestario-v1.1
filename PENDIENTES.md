@@ -126,3 +126,10 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
 - **Página v8**: todo el ancho, líneas de tabla, sin el bloque de la provisión; AB6 ahora pregunta sólo si la tarjeta queda dentro de
   proveedores o en su renglón. Generador: `arma_interno4.py`.
 - **JMS 18/11: «AB6 queda así, tarjeta dentro de proveedores»** — decidido; la pregunta AB6 se retiró de la página (v9).
+
+**23 · 18/11 — detalle de la cuenta interna de Mercedes Areco (pedido de JMS)**
+
+- Excel `- Comunicacion JMS Claude - Archivos/Balance/Balance contador 25-26 - trabajo/Cuenta interna Mercedes Areco - detalle 25-26 v1.xlsx`:
+  Resumen (38 grupos con Nro) + 3 hojas de detalle, movimiento por movimiento (96 de la 14.1 · 171 de compensación interna · 1 ajuste
+  fijo), subtotales que suman sus filas y control contra los 92.875.208,86 cargados. Fuente: export «Socios y Libertad» del 15/11.
+  Generador `detalle_ma.py` en la carpeta de programas. **Sin abrir ni recalcular con Excel** (el total se verificó al generarlo).
