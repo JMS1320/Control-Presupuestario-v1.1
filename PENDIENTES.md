@@ -74,3 +74,22 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
 - **Cómo queda la versión JMS**: inicio activo 474.311.231,33 − pasivo 105.458.415,77 = 368.852.815,56 (US$ 307.249,33) · cierre
   activo 947.127.174,39 − pasivo 151.492.625,51 = 795.634.548,88 (US$ 538.500,54) · diferencia 426.781.733,32 (US$ 231.251,21).
 - Página «Balance interno MSA» actualizada (v5).
+
+**20 · 17/11 noche — la página «Balance interno MSA» pasó al FORMATO ACORDADO del balance propio (v6)**
+
+- JMS: «¿le podrías dar el formato mío al interno?… tenemos todo lo consensuado de cómo mostrarlo, separado de corriente, no
+  corriente, con los detalles de la ganancia que proviene de lo ganadero». Es el de `lib/balance/balance-propio-excel.ts`
+  (A-FEAT-1190, 14/11): $ y US$ de cada punta, flujos del año (MEP, distribución) sólo en el cierre, las vacas como activo no
+  corriente, ganancia desglosada y hacienda a promedio de junio. La página lo replica; los renglones salen de la base (17/11).
+- **Números con el modelo** (controles ✓): ganancia total US$ 255.250,42 · − revalúo de vacas y toros 119.866,78 = del ejercicio
+  135.383,64 · − reinvertido en vacas 20.525,46 · **+ aumento del pasivo por impuesto diferido 25.686,91** = líquida 140.545,09
+  (= corriente) · − recría 86.341,33 = líquida sin recría 54.203,76. ⚠️ **Renglón nuevo en el desglose**: el impuesto diferido dejó
+  de ser neutro (ahora es el del contador) y, como es no corriente, hace falta para que la líquida cierre contra la corriente.
+  **Falta llevarlo a `balance-propio-excel.ts` (hoja «Ganancia desglosada»)**: hoy el Excel de la app daría un control distinto de 0.
+  Los «activo menos pasivo» de los puntos 16 y 19 eran sumas simples (con el MEP del inicio adentro), no el modelo.
+- Dentro de la líquida hay US$ 62.859,70 de la cuenta de Mercedes Areco (tentativa) y cuatro stocks neutros.
+- **Página**: preguntas viejas (A1, C1–C8, D1–D4) retiradas; quedan AB1–AB6 (dólares, stocks, arrendamiento MA, camioneta, cuenta de
+  MA, proveedores/tarjetas). El 💬 de cada renglón ahora se guarda como `F-B-<renglón>`. **Botón nuevo «Borrar las respuestas que
+  Claude ya procesó»**: Claude marca `procesada: true` en cada respuesta que procesó y JMS las borra con el botón. Las 23 respuestas
+  del 17/11 (ya asentadas en el punto 15) se movieron a la colección `respuestas_procesadas`.
+- Generadores guardados en `- Comunicacion JMS Claude - Archivos/Balance/Excels trabajando con claude/Copias/programas/balance-interno-msa-pagina/`.
