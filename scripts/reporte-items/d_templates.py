@@ -35,6 +35,7 @@ ESTADO = {"conciliado": "conciliado", "anterior": "pagado (anterior)", "pendient
 GRUPO_EMPRESA = "A · Movimientos del ejercicio"   # MA y PAM: no hay balance del contador
 RETIRO = re.compile(r"retiro|distrib|flia", re.I)  # agrupadoras que van como ítem 3r (se cruzan con las cuentas entre empresas)
 EMPRESAS = ("MSA", "PAM", "MA")
+EN_SINTESIS = ("Gastos Bancarios", "Inversiones", "Movimientos Internos empresa", "Tarjetas")
 MAX_DETALLE = 250  # una agrupadora con más cuotas que esto va por concepto y por mes
 TOL = 0.005
 
@@ -247,7 +248,8 @@ def _construir(lib, src, emp, grupo):
         filas_cat_tipo = []
         for a in t["agrs"]:
             n_cuotas = sum(len(cuotas.get(c["nro"], [])) for c in a["cats"])
-            resumir = n_cuotas > MAX_DETALLE or (emp == "MSA" and a["nombre"] == "Gastos Bancarios")
+            # JMS 18/11: estas agrupadoras se leen por concepto y por mes, no cuota por cuota (FIMA, caja, interbancarias, tarjeta)
+            resumir = n_cuotas > MAX_DETALLE or (emp == "MSA" and a["nombre"] in EN_SINTESIS)
             pref = letra.get((t["corto"], a["nombre"]))
             h.seccion((f"{pref} · " if pref else "") + a["nombre"] + f" — {n_cuotas} cuotas / movimientos")
             if resumir:

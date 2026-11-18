@@ -429,23 +429,35 @@ def construir(lib, src):
                       _pesos(q0 * p0 - v0), HOJA)
     h.blanco()
 
-    enc_mov = ['Movimiento del extracto (concepto · detalle · estado)', 'Fecha', 'Cuenta', '', 'Importe $', 'Según la fuente',
-               'Diferencia', 'Control']
-    h.seccion(f'5e · Suscripciones del ejercicio — {len(suscripciones)} movimientos')
+    # JMS 18/11: el fondo se lee por MES (cuánto se suscribió y cuánto se rescató), no movimiento por movimiento.
+    MESES_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+
+    def por_mes(movs):
+        """[(etiqueta del mes, cantidad, importe)] en orden de fecha."""
+        acc = {}
+        for f, _t, _cta, imp in movs:
+            k = (f.year, f.month)
+            n, s = acc.get(k, (0, 0.0))
+            acc[k] = (n + 1, s + float(imp))
+        return [(f'{MESES_ES[m - 1]}-{str(y)[2:]}', n, round(s, 2)) for (y, m), (n, s) in sorted(acc.items())]
+
+    enc_mov = ['Mes', '', '', 'Movim.', 'Importe $', 'Según la fuente', 'Diferencia', 'Control']
+    h.seccion(f'5e · Suscripciones del ejercicio, por mes — {len(suscripciones)} movimientos')
     h.encabezado(enc_mov)
     r1 = r2 = None
-    for f, t, cta, imp in suscripciones:
-        r2 = h.fila([t, f, cta, None, float(imp)])
+    for eti, n_m, imp in por_mes(suscripciones):
+        r2 = h.fila([eti, None, None, n_m, float(imp)])
         r1 = r1 or r2
     rs_tot = h.total('Total suscripciones', {C_IMP: h.suma(C_IMP, r1, r2) if r1 else '=0'})
     _control(h, '5e: suscripciones del fondo', h.cel(C_IMP, rs_tot), susc_f, '«F · FCI» → Suscripciones del ejercicio (banco)')
     h.blanco()
-    h.seccion(f'5e · Rescates del ejercicio — {len(rescates)} movimientos (en negativo: bajan el fondo)')
+    h.seccion(f'5e · Rescates del ejercicio, por mes — {len(rescates)} movimientos (en negativo: bajan el fondo)')
     h.encabezado(enc_mov)
     r1 = r2 = None
-    for f, t, cta, imp in rescates:
-        r2 = h.fila([t, f, cta, None, float(imp)])
+    for eti, n_m, imp in por_mes(rescates):
+        r2 = h.fila([eti, None, None, n_m, float(imp)])
         r1 = r1 or r2
+    h.nota('El movimiento por movimiento del fondo está en el libro «Balance en línea», solapa «F · FCI».')
     rr_tot = h.total('Total rescates', {C_IMP: h.suma(C_IMP, r1, r2) if r1 else '=0'})
     _control(h, '5e: rescates del fondo', h.cel(C_IMP, rr_tot), -resc_f, '«F · FCI» → Rescates del ejercicio (banco), en negativo')
     h.celda(C_IMP, r_s).value = f'={h.cel(C_IMP, rs_tot)}'

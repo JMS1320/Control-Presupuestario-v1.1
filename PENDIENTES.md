@@ -217,6 +217,14 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
      por destino), tarjeta VISA Business (por resumen y por cuenta), **sueldos en una sola tabla persona × 12 meses, sin semestres y sin
      separar caja de banco**; y recortes en Compras (cuentas chicas sólo con total), No informado, Socios interno, Socios / Socios falta,
      A pagar, Pendientes e impuestos generales y rurales. Páginas por hoja medidas en la v12.
+  13. **Síntesis pedidas por JMS (A1 a A4 y C), en la v14**: el fondo FIMA por mes en «D5 Caja y bancos» (suscripciones y rescates:
+     antes 125 renglones, uno por movimiento); en «D3.4 Financiero», Inversiones, Movimientos internos (caja e interbancarias) y Tarjetas
+     por concepto y por mes (`EN_SINTESIS` en `d_templates.py`; la hoja pasa de 328 a 128 renglones); **sueldos: lo pagado y lo devengado,
+     cada uno en una tabla persona × 12 meses, sin semestres y sin separar caja de banco** (`d_sueldos.py`, hoja de 16 columnas). El
+     movimiento por movimiento queda en los libros de la app. Los links del PDF se corrigieron (apuntaban al número de página y los
+     visores los ignoraban: ahora apuntan a la página).
+  14. **Para los recortes B (Compras chicas, No informado, Socios interno, Socios / falta, A pagar, Pendientes, impuestos)** JMS pidió
+     **dos PDF sólo de esas hojas, el antes y el después**, para corregir sobre eso antes de pasarlo al archivo completo. Sin hacer.
 - JMS sobre las dudas: las columnas «Control» de tablas, a ver cuáles son; el «intermedio» es lo que se está armando ahora con sus comentarios.
 - Pendiente de forma ya conocido y todavía sin resolver: títulos huérfanos al pie de página (se vio en D1: «BIENES DE USO»).
 - **Página «Auditoría gastos contador»** (pedido de JMS): https://claude.ai/artifact/Gq49pggjpH4zH4Rd1r3wcV — el contador **agrupó** (28

@@ -127,20 +127,17 @@ def _personas(src, filas, periodos):
     return personas, datos is not None, ruta
 
 
-def _tabla(h, s, periodos, personas, lineas_de, prev, rotulo_total):
-    """Una tabla persona × 6 meses de un semestre. Devuelve las filas (por persona, por grupo, por línea)."""
-    meses = periodos[s * 6:s * 6 + 6]
-    h.encabezado(["Persona", "", ""] + [_eti(p) for p in meses]
-                 + [f"Total {'1er' if s == 0 else '2do'} semestre", "Total ejercicio" if s == 1 else "", ""])
-    cols = list(range(4, 11)) + ([11] if s == 1 else [])
+def _tabla(h, periodos, personas, lineas_de, rotulo_total):
+    """Una tabla persona × los 12 meses del ejercicio (JMS 18/11: sin partir por semestre). Devuelve las filas (por persona,
+    por grupo, por línea). Meses en las columnas 4 a 15; total del ejercicio en la 16."""
+    h.encabezado(["Persona", "", ""] + [_eti(p) for p in periodos[:12]] + ["Total ejercicio"])
+    cols = list(range(4, 17))
     out = dict(p={}, g={}, lin={}, medio=collections.defaultdict(list))
 
-    def cola(r, clave_prev):
-        v = [f"=SUM({h.cel(4, r)}:{h.cel(9, r)})"]
-        if s == 1:
-            v.append(f"={h.cel(10, clave_prev)}+{h.cel(10, r)}")
-        return v
+    def cola(r, _prev=None):
+        return [f"=SUM({h.cel(4, r)}:{h.cel(15, r)})"]
 
+    s, prev = 0, None
     for gk, gtitulo in GRUPOS:
         ps = [p for p in personas if p["grupo"] == gk]
         if not ps:
@@ -156,7 +153,7 @@ def _tabla(h, s, periodos, personas, lineas_de, prev, rotulo_total):
                 # el nombre va en TODOS los renglones de la persona (JMS 16/11: con el nombre sólo en el primero, el «por caja»
                 # y el «total» parecían de la persona siguiente)
                 h.fila([p["label"], None if p["largo"] else medio, None]
-                       + [float(x) for x in vals[s * 6:s * 6 + 6]] + cola(r, prev["lin"][(p["key"], j)] if prev else None),
+                       + [float(x) for x in vals[:12]] + cola(r),
                        sangria=0)
                 if p["largo"]:
                     h.ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=4)
@@ -166,8 +163,8 @@ def _tabla(h, s, periodos, personas, lineas_de, prev, rotulo_total):
                 filas_l.append(r)
             if len(filas_l) > 1:
                 r = h.r + 1
-                h.fila([p["label"], "total", None] + [f"={h.cel(c, filas_l[0])}+{h.cel(c, filas_l[1])}" for c in range(4, 10)]
-                       + cola(r, prev["p"][p["key"]] if prev else None), negrita=True)
+                h.fila([p["label"], "total", None] + [f"={h.cel(c, filas_l[0])}+{h.cel(c, filas_l[1])}" for c in range(4, 16)]
+                       + cola(r), negrita=True)
             out["p"][p["key"]] = r
             for c in range(1, h.ncols + 1):  # una línea marcada cierra el bloque de cada persona
                 h.celda(c, r).border = _Border(bottom=_Side(style="thin", color="1F3864"))
@@ -194,19 +191,19 @@ def construir(lib, src):
         dev[(f["emp"], f["nombre"])] += f["bruto"]
         pag_sis[(f["emp"], f["nombre"])] += f["pagado"]
 
-    h = lib.hoja("D4 Sueldos", [17, 8, 10, 13, 13, 13, 13, 13, 14.5, 13, 14.5, 8], horizontal=True)
+    h = lib.hoja("D4 Sueldos", [17, 8, 10] + [11.5] * 12 + [14], horizontal=True)
     h.titulo("Detalle 4 — Sueldos: lo pagado y lo devengado, por persona y por mes (ítem 4)")
-    h.nota("Qué muestra: (1) lo PAGADO a cada persona, por mes de pago, separado en banco y caja; (2) lo DEVENGADO "
+    h.nota("Qué muestra: (1) lo PAGADO a cada persona, por mes de pago (banco y caja juntos); (2) lo DEVENGADO "
            "según el sistema, por mes de sueldo; (3) el detalle mes por mes de cómo se compone cada bruto; (4) los "
-           "sueldos a pagar al cierre. Cada total suma las celdas que tiene arriba; el total del ejercicio es 1er "
-           "semestre + 2do semestre.")
+           "sueldos a pagar al cierre. Cada total suma las celdas que tiene arriba; el total del ejercicio suma "
+           "los doce meses.")
 
     # ================= 1 · PAGADO, por fecha de pago =================
     t1 = None
     if hay_pagos:
         def lineas_pagado(p):
-            lin = [(m, p[k]) for m, k in (("por banco", "banco"), ("por caja", "caja")) if any(abs(x) > TOL for x in p[k])]
-            return lin or [("—", [0.0] * 12)]
+            # JMS 18/11: sin diferenciar lo que fue por caja de lo que fue por banco
+            return [("", [round(float(a_) + float(b_), 2) for a_, b_ in zip(p["banco"], p["caja"])])]
 
         h.blanco()
         h.seccion("1 · PAGADO, por fecha de pago — por persona y por mes (ítem 4)")
@@ -215,17 +212,10 @@ def construir(lib, src):
                "a diciembre de 2025; y la planilla de la Caja Sigot para el efectivo (por la fecha de la planilla). "
                "Los 23 pagos por caja que estaban en el sistema y en la planilla se cuentan una sola vez. No es un "
                "libro exportado por la app: los importes de cada mes van como valor y abajo está el control de la "
-               "suma. Por persona: un renglón «por banco», otro «por caja» y su total.")
-        h.nota("1er semestre — pagado de julio a diciembre de 2025")
-        t1a = _tabla(h, 0, periodos, personas, lineas_pagado, None, "TOTAL PAGADO — 1er semestre")
-        h.blanco()
-        h.nota("2do semestre — pagado de enero a junio de 2026, y total del ejercicio (1er + 2do semestre)")
-        t1 = _tabla(h, 1, periodos, personas, lineas_pagado, t1a, "TOTAL PAGADO EN EL EJERCICIO (ítem 4)")
-        rb = h.total("  de lo cual por banco", {c: h.suma_de(c, t1["medio"]["por banco"]) for c in t1["cols"]})
-        rc = h.total("  de lo cual por caja", {c: h.suma_de(c, t1["medio"]["por caja"]) for c in t1["cols"]})
-        h.control("total pagado en el ejercicio", h.cel(11, t1["total"]), PAGADO_TOTAL, "informe de sueldos pagados, total")
-        h.control("pagado por banco", h.cel(11, rb), PAGADO_BANCO, "informe de sueldos pagados, banco")
-        h.control("pagado por caja", h.cel(11, rc), PAGADO_CAJA, "informe de sueldos pagados, caja")
+               "suma. Por persona: lo pagado en cada mes, por banco y por caja juntos.")
+        t1 = _tabla(h, periodos, personas, lineas_pagado, "TOTAL PAGADO EN EL EJERCICIO (ítem 4)")
+        h.control("total pagado en el ejercicio", h.cel(16, t1["total"]), PAGADO_TOTAL, "informe de sueldos pagados, total")
+        h.nota(f"De lo pagado, por banco {_ar(PAGADO_BANCO)} y por caja {_ar(PAGADO_CAJA)} (informe de sueldos pagados).")
         msa_pag = sum(sum(p["banco"]) + sum(p["caja"]) for p in personas if p["grupo"] in ("g1", "g2"))
         msa_dev = sum(dev[p["det"]] for p in personas if p["grupo"] in ("g1", "g2") and p["det"] and p["key"] != "ma")
         h.nota(f"Por qué lo pagado a empleados de MSA ({_ar(msa_pag)}) supera a lo devengado en el sistema "
@@ -239,12 +229,8 @@ def construir(lib, src):
     h.seccion("2 · DEVENGADO según el sistema, por mes de sueldo — cada importe apunta a su renglón del detalle (punto 3)")
     h.nota(f"Fuente: {arch} → «13 Sueldos» (el bruto guardado de cada período). Mismas personas y grupos que el "
            "cuadro de pagos. Una celda vacía = ese mes no tiene sueldo cargado para esa persona.")
-    h.nota("1er semestre — sueldos de julio a diciembre de 2025")
-    t2a = _tabla(h, 0, periodos, personas, lambda p: [("", [0.0] * 12)], None, "TOTAL DEVENGADO — 1er semestre")
-    h.blanco()
-    h.nota("2do semestre — sueldos de enero a junio de 2026, y total del ejercicio")
-    t2 = _tabla(h, 1, periodos, personas, lambda p: [("", [0.0] * 12)], t2a, "TOTAL DEVENGADO EN EL EJERCICIO")
-    r_ctrl_dev = h.control("total devengado por persona", h.cel(11, t2["total"]), num(tot_src[12]),
+    t2 = _tabla(h, periodos, personas, lambda p: [("", [0.0] * 12)], "TOTAL DEVENGADO EN EL EJERCICIO")
+    r_ctrl_dev = h.control("total devengado por persona", h.cel(16, t2["total"]), num(tot_src[12]),
                            "«13 Sueldos», renglón TOTAL, BRUTO")
     h.blanco()
     h.nota("Devengado contra lo que el sistema tiene como pagado (según el export; no incluye los pagos que sólo "
@@ -254,7 +240,7 @@ def construir(lib, src):
     r1 = None
     for p in personas:
         r = h.r + 1
-        h.fila([p["label"], None, None, f"={h.cel(11, t2['p'][p['key']])}", float(round(pag_sis[p["det"]], 2)) if p["det"] else 0.0,
+        h.fila([p["label"], None, None, f"={h.cel(16, t2['p'][p['key']])}", float(round(pag_sis[p["det"]], 2)) if p["det"] else 0.0,
                 f"={h.cel(4, r)}-{h.cel(5, r)}"])
         if p["largo"]:
             h.ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=4)
@@ -313,11 +299,10 @@ def construir(lib, src):
 
     # ---- ahora sí: las celdas del cuadro 2 apuntan a los renglones del detalle ----
     for p in personas:
-        for s_i, t in enumerate((t2a, t2)):
-            r = t["lin"][(p["key"], 0)]
-            for i, per in enumerate(periodos[s_i * 6:s_i * 6 + 6]):
-                rd = celda_bruto.get((per,) + p["det"]) if p["det"] else None
-                h.celda(4 + i, r).value = f"={h.cel(9, rd)}" if rd else None
+        r = t2["lin"][(p["key"], 0)]
+        for i, per in enumerate(periodos[:12]):
+            rd = celda_bruto.get((per,) + p["det"]) if p["det"] else None
+            h.celda(4 + i, r).value = f"={h.cel(9, rd)}" if rd else None
     sin_cuadro = [k for k in celda_bruto if (k[1], k[2]) not in [p["det"] for p in personas]]
     if sin_cuadro:
         lib.pendiente("Sueldos · renglones del detalle que no entraron al cuadro por persona", str(sin_cuadro),
@@ -342,18 +327,18 @@ def construir(lib, src):
 
     # ================= ítems =================
     cont = _contador(src, "Sueldos")
-    ma_dev_cel = h.cel(11, t2["p"]["ma"])
+    ma_dev_cel = h.cel(16, t2["p"]["ma"])
     if t1:
-        lib.item("4", "Sueldos — pagado en el ejercicio (por fecha de pago)", h, h.cel(11, t1["total"]), GRUPO,
+        lib.item("4", "Sueldos — pagado en el ejercicio (por fecha de pago)", h, h.cel(16, t1["total"]), GRUPO,
                  "Empleados de MSA (4a) + aparte de otras empresas (4b) + José y Andrés (4c); cada persona = por banco "
-                 "+ por caja, mes por mes. Fuente: pagos del sistema, extracto del Galicia (jul–dic 25) y Caja Sigot.",
+                 "+ por caja juntos, mes por mes. Fuente: pagos del sistema, extracto del Galicia (jul–dic 25) y Caja Sigot.",
                  cont)
-        lib.item("4a", "Sueldos pagados · Empleados de MSA", h, h.cel(11, t1["g"]["msa"]), GRUPO,
+        lib.item("4a", "Sueldos pagados · Empleados de MSA", h, h.cel(16, t1["g"]["msa"]), GRUPO,
                  "Sigot, Barreto y Coria + aparte de MSA (Elvio Paz, Fabián Vulcano, Manuel Martínez, Pucheta, Cejas "
                  "y el pago sin repartir). Mercedes Areco figura con pagado 0.", None)
         lib.item("4b", "Sueldos pagados · Aparte, de otras empresas (Alondra Olivo de MA, Celia Mabel Rojas de PAM)",
-                 h, h.cel(11, t1["g"]["g3"]), GRUPO, "Por banco + por caja.", None)
-        lib.item("4c", "Sueldos pagados · José y Andrés (honorarios)", h, h.cel(11, t1["g"]["g4"]), GRUPO,
+                 h, h.cel(16, t1["g"]["g3"]), GRUPO, "Por banco + por caja.", None)
+        lib.item("4c", "Sueldos pagados · José y Andrés (honorarios)", h, h.cel(16, t1["g"]["g4"]), GRUPO,
                  "Pagos por banco del sistema, por fecha de pago (incluye lo que pagó PAM y el Santander).", None)
         lib.item("4d", "Sueldos — bruto devengado según el sistema", h, h.cel(9, rT), GRUPO,
                  "Suma de los 12 totales de mes del detalle (categoría A + B + francos + jornal + extras). Incluye el "
