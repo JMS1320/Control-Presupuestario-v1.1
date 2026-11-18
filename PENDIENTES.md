@@ -244,6 +244,14 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
      ⚠️ **La hoja «D12 Balance propio» del reporte es VIEJA**: sale del export del 15/11 (ganancia US$ 260.893), anterior a los scripts
      284 a 287 (hoy US$ 240.684). Hay que bajar de nuevo el Excel del balance propio desde la app y sumar al Excel de la app el renglón
      del impuesto diferido y el desglose con lo fiscal separado (JMS preguntó si está preparado: se le contestó que no del todo).
+  17. **Balance interno de MSA en Excel y PDF, listo para imprimir** (pedido de JMS 18/11, «como está aunque no actualice todo bien»):
+     `- Comunicacion JMS Claude - Archivos/Balance/Balance interno MSA 25-26/Balance interno MSA 25-26 (2026-11-18) v1.xlsx` y `.pdf`
+     (5 páginas). Hojas: «Balance interno» ($ y US$ de cada punta, corriente / no corriente, ganancia corriente y total) · «Ganancia» (de
+     dónde sale y dónde está, con lo fiscal separado) · «Hacienda junio» · **«Cuenta de MA»** (JMS: «le ponemos la cuenta de MA real con
+     el interno adentro»: lo contable + lo interno pagado por MSA + ajuste fijo = 85.905.662,09; el renglón «Cuenta socios» del balance
+     toma ese total; aparte, lo que MA le debe a PAM). Todo con fórmulas: cambiar un importe recalcula subtotales, totales y ganancia.
+     Recalculado con Excel: 0 errores, ganancia total US$ 240.684,29, corriente 125.978,95, líquido 39.590,47, controles en 0. Los
+     importes son los de la base al 18/11 escritos en el generador (`excel_interno.py`, carpeta de programas): **no lee la base en vivo**.
 - JMS sobre las dudas: las columnas «Control» de tablas, a ver cuáles son; el «intermedio» es lo que se está armando ahora con sus comentarios.
 - Pendiente de forma ya conocido y todavía sin resolver: títulos huérfanos al pie de página (se vio en D1: «BIENES DE USO»).
 - **Página «Auditoría gastos contador»** (pedido de JMS): https://claude.ai/artifact/Gq49pggjpH4zH4Rd1r3wcV — el contador **agrupó** (28
