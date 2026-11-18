@@ -131,7 +131,7 @@ def construir(lib, src):
     h.nota(f"Fuente: «{fuente}», solapa «Compras» ({len(comps)} comprobantes, por mes de subdiario = el mes en que "
            "entró cada comprobante). Importes en pesos. «Al gasto» = Total − IVA (el IVA es crédito fiscal, no gasto).")
     h.nota("Cómo se lee: el «Total compras» del resumen suma el total de cada cuenta; el total de cada cuenta está más "
-           "abajo, en su bloque, y suma los subtotales de sus meses; cada subtotal suma los comprobantes que tiene "
+           "abajo, en su bloque, y suma los subtotales de sus meses (un mes con un solo comprobante no lleva subtotal: es el comprobante); cada subtotal suma los comprobantes que tiene "
            "arriba. Las tablas por mes muestran el mismo subtotal mensual de cada bloque. Nada se obtiene filtrando.")
 
     # 1) resumen por cuenta
@@ -212,7 +212,9 @@ def construir(lib, src):
         h.seccion(f"{k} · {nombre[k]}")
         h.encabezado(enc, repetir=primero)
         primero = False
-        subs = []
+        subs = []          # lo que suma el total de la cuenta: subtotales de mes y comprobantes sueltos
+        solo_sub = []      # sólo los subtotales (para no contarlos como comprobantes)
+        a_blk = h.r + 1
         meses_k = sorted({c["sub"] for c in por_cta[k]})
         for m in meses_k:
             del_mes = sorted((c for c in por_cta[k] if c["sub"] == m),
@@ -228,6 +230,10 @@ def construir(lib, src):
                 h.fila([c["fecha"], comprobante(c["tipo"], c["pv"], c["nro"]), prov, c["cuit"], c["neto"], c["ngex"],
                         c["mono"], c["otros"], c["iva"], c["total"], f"={h.cel(10, r)}-{h.cel(9, r)}"])
             b = h.r
+            if b == a:     # JMS 18/11: un mes con un solo comprobante no lleva subtotal (sería el mismo renglón dos veces)
+                subs.append(b)
+                r_sub[(k, m)] = b
+                continue
             f = {c: h.suma(c, a, b) for c in NUM}
             f[4] = f"=COUNT({h.cel(10, a)}:{h.cel(10, b)})"
             rs = h.total(f"Subtotal {mes_lbl(m)}", f, fmt={4: ENTERO})
@@ -236,9 +242,11 @@ def construir(lib, src):
             x.font = F_NOTA
             x.alignment = Alignment(horizontal="right")
             subs.append(rs)
+            solo_sub.append(rs)
             r_sub[(k, m)] = rs
         f = {c: h.suma_de(c, subs) for c in NUM}
-        f[4] = h.suma_de(4, subs)
+        f[4] = f"=COUNT({h.cel(10, a_blk)}:{h.cel(10, h.r)})" + (
+            "-COUNT(" + ",".join(h.cel(10, r) for r in solo_sub) + ")" if solo_sub else "")
         r_tot[k] = h.total(f"Total {k} · {nombre[k]}", f, clave=True, fmt={4: ENTERO})
 
     # 4) los vínculos del resumen y de las tablas por mes (ahora que se sabe dónde quedó cada bloque)

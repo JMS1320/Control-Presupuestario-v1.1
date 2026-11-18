@@ -191,6 +191,12 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   4. **Hacienda**: «Kg prom.» en cada venta y en los totales (kilos sobre las cabezas que tienen kilos) — pedido puntual.
   5. **Toneladas de la factura de Sanpa del 11/05/2026: 212,96 t** (dato de JMS): cargadas en el generador con su nota; **falta cargarlas
      en el sistema** (el arrendamiento pasa de 428,138 a 641,098 t).
+  6. **Compras (D2), detalle por cuenta — el subtotal del mes sólo cuando el mes tiene 2 o más comprobantes** (JMS: con una factura por
+     mes «son 2 renglones iguales… genera dificultad de ver y agrega páginas»; en cuentas como Combustibles el subtotal por mes sí sirve).
+     La tabla por mes apunta al comprobante cuando no hay subtotal. Entra en la **v10** (la v9 ya se entregó). Falta mirar lo mismo en Templates.
+  7. **Script 288 CORRIDO** (OK de JMS): la factura de Sanpa del 11/05/2026 quedó en el sistema con SOJA y 212,96 t (`msa.comprobantes_venta`).
+     El generador conserva el dato a mano mientras los exports sean los del 15/11.
+- JMS sobre las dudas: las columnas «Control» de tablas, a ver cuáles son; el «intermedio» es lo que se está armando ahora con sus comentarios.
 - Pendiente de forma ya conocido y todavía sin resolver: títulos huérfanos al pie de página (se vio en D1: «BIENES DE USO»).
 - **Página «Auditoría gastos contador»** (pedido de JMS): https://claude.ai/artifact/Gq49pggjpH4zH4Rd1r3wcV — el contador **agrupó** (28
   cuentas suyas de gasto ← 53 nuestras); 18 dan igual al centavo y 10 tienen diferencia (grupos por suposición); **total contra total:
