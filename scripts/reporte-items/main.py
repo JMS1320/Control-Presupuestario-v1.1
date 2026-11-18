@@ -22,7 +22,7 @@ from core import (CAJA, ENTERO, F_B, F_LINK, F_NOTA, MONEDA, R_CLAVE, R_GRUPO, F
 F_MARCA = Font(name="Arial", size=13, bold=True)
 
 sys.stdout.reconfigure(encoding="utf-8")
-MODULOS = ["d_ventas", "d_compras", "d_templates", "d_sueldos", "d_caja_bancos", "d_a_cobrar", "d_hacienda",
+MODULOS = ["d_ventas", "d_compras", "d_templates", "d_gastos_bancarios", "d_sueldos", "d_caja_bancos", "d_a_cobrar", "d_hacienda",
            "d_granos_insumos", "d_a_pagar", "d_socios", "d_socios_interno", "d_socios_falta"]
 GRUPO_REF = "D · Referencia (no interviene)"
 
@@ -209,7 +209,7 @@ def indice(lib, h):
            "este ítem   ·   ? = no se pudo comparar. El detalle de cada diferencia está en la hoja «Enviado vs hoy».")
     h.blanco()
     h.encabezado(["N°", "Marca", "Ítem", "Composición / criterio", "Importe 25/26 (nuestro)", "Contador 24/25 (referencia)",
-                  "Contador 25/26 (anotar)", "Diferencia", "Hoja de detalle"], repetir=True)
+                  "Contador 25/26 (anotar)", "Diferencia", "Hoja de detalle", "Pág."], repetir=True)
     grupo = None
     for it in lib.items:
         if it["grupo"] != grupo:
@@ -241,6 +241,10 @@ def indice(lib, h):
         x = h._pon(9, r, it["hoja"], F_LINK)
         x.hyperlink = f"#'{it['hoja']}'!{it['celda'] or 'A1'}"
         x.alignment = Alignment(vertical="top")
+        # JMS 18/11 («súper importante»): el índice dice en qué PÁGINA del PDF empieza la hoja de cada ítem. El número lo pone
+        # pdf_paginas.py después de exportar el PDF (recién ahí se sabe); acá queda la celda lista.
+        x = h._pon(10, r, "", F_B)
+        x.alignment = Alignment(horizontal="center", vertical="top")
         largo = len(it["composicion"] or "")
         h.ws.row_dimensions[r].height = 16 if largo <= 52 else (30 if largo <= 108 else (44 if largo <= 160 else 58))
 
@@ -539,7 +543,7 @@ def main():
     carpeta, salida, version = sys.argv[1], sys.argv[2], sys.argv[3]
     src = Fuentes(carpeta)
     lib = Libro()
-    h_items = lib.hoja("Items", [6, 7, 50, 56, 19, 19, 19, 17, 22], horizontal=True)
+    h_items = lib.hoja("Items", [6, 7, 50, 56, 19, 19, 19, 17, 22, 7], horizontal=True)
     for m in MODULOS:
         antes = len(lib.hojas)
         try:

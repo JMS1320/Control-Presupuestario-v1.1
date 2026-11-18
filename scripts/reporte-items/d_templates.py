@@ -236,8 +236,8 @@ def _construir(lib, src, emp, grupo):
         n_hoja = h.nombre.split(" ")[0]
         h.titulo(f"Detalle {n_hoja[1:]} — Templates · {t['corto']}, cuota por cuota (ítem 3)")
         h.nota(f"Fuente: {arch} → «H · {emp} · Cuotas» (+ banco, comprobante y detalle de las solapas por agrupadora). "
-               f"{t['titulo']}. Cada categoría lista sus cuotas por fecha; cuando un mes tiene más de una, lleva su "
-               "«Total <mes>». Ese importe del mes es el que toma el resumen por mes (D3.1 / D3.2), y el «Total "
+               f"{t['titulo']}. Cada categoría lista sus cuotas por fecha; las categorías donde casi todos los meses tienen varias cuotas llevan su "
+               "«Total <mes>»; las demás van como lista. Ese importe del mes es el que toma el resumen por mes (D3.1 / D3.2), y el «Total "
                "<categoría>» es el que figura en «D3 Templates». Importe = débito − crédito: las devoluciones, "
                "rescates y acreditaciones van entre paréntesis. Estado «pagado (anterior)» = pagado, registrado "
                "antes de que la app conciliara contra el banco; «conciliado» = atado a su movimiento del banco.")
@@ -247,7 +247,7 @@ def _construir(lib, src, emp, grupo):
         filas_cat_tipo = []
         for a in t["agrs"]:
             n_cuotas = sum(len(cuotas.get(c["nro"], [])) for c in a["cats"])
-            resumir = n_cuotas > MAX_DETALLE
+            resumir = n_cuotas > MAX_DETALLE or (emp == "MSA" and a["nombre"] == "Gastos Bancarios")
             pref = letra.get((t["corto"], a["nombre"]))
             h.seccion((f"{pref} · " if pref else "") + a["nombre"] + f" — {n_cuotas} cuotas / movimientos")
             if resumir:
@@ -255,6 +255,11 @@ def _construir(lib, src, emp, grupo):
                 h.nota(f"Son {n_cuotas} movimientos del extracto: acá va el subtotal por concepto y por mes. El "
                        f"movimiento por movimiento está en el libro Templates → «{solapa}».")
                 resumidas.append((a["nombre"], n_cuotas, solapa, h.nombre))
+            # JMS 18/11: gastos bancarios se lee en su hoja propia (D3.5: por cuenta, por tipo de gasto y por mes). Acá queda
+            # sólo el total de cada categoría; el mes a mes sigue en la hoja, oculto, porque el resumen por mes apunta a él.
+            en_d35 = resumir and emp == "MSA" and a["nombre"] == "Gastos Bancarios"
+            if en_d35:
+                h.nota("El detalle por cuenta, por tipo de gasto y por mes está en la hoja «D3.5 Gastos bancarios».")
             filas_cat = []
             for c in a["cats"]:
                 cs = sorted(cuotas.get(c["nro"], []), key=lambda x: (x["fecha"], str(x["concepto"])))
@@ -268,20 +273,29 @@ def _construir(lib, src, emp, grupo):
                                   "No entran en el resumen por mes; el control de la hoja lo va a marcar.", h.nombre)
                 _rotulo(h, f"{c['cat']}  ({len(cs)})")
                 filas_mes = []
+                # JMS 18/11: «Total <mes>» sólo si la mayoría de los meses de la categoría (2 de cada 3) tiene más de una cuota
+                varios = sum(1 for qs_ in por_mes.values() if len(qs_) > 1)
+                con_subtotales = varios * 3 >= len(por_mes) * 2
                 for k, qs in por_mes.items():
                     eti = ETI.get(k, f"{k[1]:02d}/{k[0]}")
                     if resumir:
                         r = h.fila([None, eti, None, f"{len(qs)} movimientos", None, None, None,
                                     round(sum(q["importe"] for q in qs), 2)])
+                        if en_d35:
+                            h.ws.row_dimensions[r].hidden = True
                     else:
                         r1 = None
                         for q in qs:
                             r = h.fila([q["fecha"], q["concepto"], q["prov"], q["detalle"], q["banco"], q["cc"],
                                         q["estado"], float(q["importe"])])
                             r1 = r1 or r
-                        if len(qs) > 1:
+                        if len(qs) > 1 and con_subtotales:
                             r = h.fila([None, f"Total {eti}", None, None, None, None, None, h.suma(8, r1, r)],
                                        negrita=True)
+                        elif len(qs) > 1:      # sin subtotal: el total y el resumen por mes apuntan a las cuotas del mes
+                            filas_mes += list(range(r1, r + 1))
+                            mcel[(c["nro"], k)] = "+".join(h.ref(8, x) for x in range(r1, r + 1))
+                            continue
                     filas_mes.append(r)
                     mcel[(c["nro"], k)] = h.ref(8, r)
                 rt = h.total(f"Total {c['cat']}", {8: h.suma_de(8, filas_mes)})

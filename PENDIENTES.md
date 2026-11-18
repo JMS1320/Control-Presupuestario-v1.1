@@ -196,6 +196,17 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
      La tabla por mes apunta al comprobante cuando no hay subtotal. Entra en la **v10** (la v9 ya se entregó). Falta mirar lo mismo en Templates.
   7. **Script 288 CORRIDO** (OK de JMS): la factura de Sanpa del 11/05/2026 quedó en el sistema con SOJA y 212,96 t (`msa.comprobantes_venta`).
      El generador conserva el dato a mano mientras los exports sean los del 15/11.
+  8. **Índice con número de página y links que andan en el PDF** (JMS: «el índice debe apuntar a un nro de hoja también (súper importante)» ·
+     «¿podríamos hacer que los links anden en el pdf?»): columna «Pág.» en «Items» y `scripts/reporte-items/pdf_links.py` (pasos `paginas` y
+     `links`). **Receta de una versión**: `main.py` → `pdf.ps1` → `pdf_links.py paginas` → `pdf.ps1` → `pdf_links.py paginas` (tiene que decir
+     «cambiaron: 0») → `pdf_links.py links`. **v11 entregada** (250 páginas, 85 ítems con página, 161 links activos, 1 sin poner).
+  9. **Subtotales de mes: todo o nada por bloque** (JMS, sobre «3d · Impuestos Automotores»: «hace subtotal enero pero antes hubo varios
+     meses que no puso subtotal»): un bloque (cuenta de Compras o categoría de Templates) lleva subtotales sólo si 2 de cada 3 de sus
+     meses tienen más de un renglón; si no, lista simple. Reemplaza la regla del punto 6. Entra en la v12.
+  10. **Gastos bancarios en una hoja** (`d_gastos_bancarios.py`, «D3.5 Gastos bancarios», propuesta aprobada por JMS; **impuestos bancarios
+     no se tocan por ahora**): cuadro 1 cuenta/tarjeta × tipo de gasto (mantenimiento, caja de seguridad, transferencias, extracción,
+     cheques, tarjeta; total y promedio por mes) y cuadro 2 concepto y cuenta mes por mes; en D3.3 los renglones mes a mes de gastos
+     bancarios quedan ocultos. El movimiento por movimiento está en el libro Templates. Entra en la v12.
 - JMS sobre las dudas: las columnas «Control» de tablas, a ver cuáles son; el «intermedio» es lo que se está armando ahora con sus comentarios.
 - Pendiente de forma ya conocido y todavía sin resolver: títulos huérfanos al pie de página (se vio en D1: «BIENES DE USO»).
 - **Página «Auditoría gastos contador»** (pedido de JMS): https://claude.ai/artifact/Gq49pggjpH4zH4Rd1r3wcV — el contador **agrupó** (28
