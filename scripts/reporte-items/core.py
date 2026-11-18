@@ -89,6 +89,7 @@ class Hoja:
         self.r = 0
         self.ncols = len(anchos)
         self._repite = None
+        self.filas_control = []
         ws = self.ws
         ws.sheet_view.showGridLines = False
         ws.column_dimensions["A"].width = 2
@@ -183,6 +184,10 @@ class Hoja:
     def fila(self, valores, negrita=False, fmt=None, sangria=0):
         """Un renglón. `valores` empieza en la columna 1 (None = celda vacía). fmt = {col: formato}."""
         self.r += 1
+        # JMS 18/11: «las líneas cortadas molestan… aplica para toda tabla»: la línea del renglón va de punta a punta,
+        # también bajo las celdas vacías.
+        for c in range(1, self.ncols + 1):
+            self.celda(c, self.r).border = Border(bottom=PELO)
         for i, v in enumerate(valores):
             if v is None:
                 continue
@@ -230,7 +235,14 @@ class Hoja:
         self._pon(c - 1, self.r, f"={celda_nuestra}-{self.cel(c - 2, self.r)}", F_NOTA, MONEDA)
         self._pon(c, self.r, f'=IF(ABS({self.cel(c - 1, self.r)})<={tolerancia},"OK","REVISAR")', F_B)
         self.libro.controles.append((descripcion, self.nombre, self.ref(c - 1, self.r), fuente_txt))
+        self.filas_control.append(self.r)
         return self.r
+
+    def ocultar_controles(self):
+        """JMS 18/11: los controles van sólo en el libro «con controles»; en los de presentación sus renglones se ocultan
+        (no se borran: las fórmulas que apuntan a otras celdas siguen en su lugar)."""
+        for r in self.filas_control:
+            self.ws.row_dimensions[r].hidden = True
 
 
 class Libro:

@@ -580,6 +580,8 @@ def main():
     base = os.path.join(salida, f"MSA 25-26 - Items del balance {version}")
     lib.wb.save(base + " - con controles.xlsx")
     lib.wb.remove(lib.wb["Controles"])
+    for hx in lib.hojas:
+        hx.ocultar_controles()
     lib.wb.save(base + ".xlsx")
     hojas_cortas = version_corta(lib)
     lib.wb.save(base + " - resumen para imprimir.xlsx")

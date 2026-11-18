@@ -177,3 +177,23 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   contable; SUSS + cuota solidaria = lo que se carga en el template) · preguntarle al contador por el saldo a favor de Ganancias
   (diferencia de 323.287,12 contra anticipos + retenciones + percepciones 2025) · presentación · MA y PAM.
 - Scripts corridos en la sesión: 282 a 287. **Próximo script 288.** Rama `jms/reporte-socios` (sin sumar a `desarrollo`).
+
+**25 · 18/11 — reunión presencial con el contador y los socios HOY: se pule la presentación (reporte de MSA v9) + página de la auditoría**
+
+- JMS comenta sobre el v8 y los cambios se aplican en el generador (`scripts/reporte-items/`), para TODO el documento; sale como **v9**,
+  que apunta a ser «un intermedio entre el grande y el chico». Pedidos del 18/11, ya aplicados:
+  1. **Los controles van sólo en el libro «con controles»**: en los de presentación sus renglones quedan ocultos (`Hoja.ocultar_controles`,
+     también en los reportes de empresa y de grupo). Quedan a la vista las columnas «Control» de tablas (hacienda, sueldos, templates): a definir.
+  2. **Líneas de renglón continuas** en toda tabla (`Hoja.fila` bordea todas las columnas).
+  3. **Ventas (D1) por AGRUPADORA**: Agricultura (4101) · Ganadería (4108) · Arrendamientos (4109) · Bienes de uso (4102). Resumen por
+     agrupadora; tabla por mes **sin IVA**, una columna por agrupadora, **sin semestres** (pedido puntual de JMS para esta tabla), con
+     total sin IVA y total con IVA; detalle por agrupadora → cuenta contable → factura.
+  4. **Hacienda**: «Kg prom.» en cada venta y en los totales (kilos sobre las cabezas que tienen kilos) — pedido puntual.
+  5. **Toneladas de la factura de Sanpa del 11/05/2026: 212,96 t** (dato de JMS): cargadas en el generador con su nota; **falta cargarlas
+     en el sistema** (el arrendamiento pasa de 428,138 a 641,098 t).
+- Pendiente de forma ya conocido y todavía sin resolver: títulos huérfanos al pie de página (se vio en D1: «BIENES DE USO»).
+- **Página «Auditoría gastos contador»** (pedido de JMS): https://claude.ai/artifact/Gq49pggjpH4zH4Rd1r3wcV — el contador **agrupó** (28
+  cuentas suyas de gasto ← 53 nuestras); 18 dan igual al centavo y 10 tienen diferencia (grupos por suposición); **total contra total:
+  contador 275.970.709,67 · nuestro 276.020.426,92 · diferencia −49.717,25**, suponiendo el arrendamiento de MA en 13.333.518,54. Lo
+  nuestro es Total − IVA **con las percepciones y otros tributos adentro** (2.701.548,35): con ellas cierra; si se sacan, queda
+  2.651.831,10 abajo → o las mandó al gasto, o hay otra diferencia que compensa. La auditoría del agente se recalculó con Excel (0 errores).

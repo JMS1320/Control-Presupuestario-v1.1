@@ -93,6 +93,8 @@ def main():
     ruta = os.path.join(salida, f'{ARCHIVO} {version}')
     lib.wb.save(ruta + ' - con controles.xlsx')
     lib.wb.remove(lib.wb['Controles'])
+    for hx in lib.hojas:
+        hx.ocultar_controles()
     lib.wb.save(ruta + '.xlsx')
     print('ítems:', len(lib.items), '· controles:', len(lib.controles), '· pendientes:', len(lib.pendientes))
     print('guardado:', ruta + '.xlsx')
