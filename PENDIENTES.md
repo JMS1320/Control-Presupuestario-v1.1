@@ -197,3 +197,10 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   contador 275.970.709,67 · nuestro 276.020.426,92 · diferencia −49.717,25**, suponiendo el arrendamiento de MA en 13.333.518,54. Lo
   nuestro es Total − IVA **con las percepciones y otros tributos adentro** (2.701.548,35): con ellas cierra; si se sacan, queda
   2.651.831,10 abajo → o las mandó al gasto, o hay otra diferencia que compensa. La auditoría del agente se recalculó con Excel (0 errores).
+  - ⚠️ **Corregido el 18/11 (página v2)** — JMS: «Alquiler campo» (25.789.518,68) es la factura de MA todavía no hecha que se provisiona:
+    **no está en nuestro sistema y no se compara**; partirla en «12.456.000,14 nuestros + 13.333.518,54 supuestos» estaba mal. Nuestras dos
+    facturas de arrendamiento por 12.456.000,14 son la provisión 24/25 (el contador las mandó al gasto el año pasado): tampoco se comparan.
+    JMS clasificó cada cuenta de resultado en la planilla del contador (columna G: Venta · Libro diario/template · lo tenemos pero puede
+    diferir · no). **Con esa clasificación**: 35 cuentas de gasto «Libro diario/template» → contador 271.522.633,40 · nuestro
+    271.794.947,73 (incluye 1.182.230,00 de «Tosca destape» sin cuenta suya) · **diferencia −272.314,33 (0,10 %)**, de los cuales
+    −222.597,08 son Red Vial; 24 cuentas iguales al centavo y 11 con diferencia. Sin supuestos. Generador `arma_auditoria2.py`.
