@@ -68,7 +68,7 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   3. **Cuota solidaria a pagar 85.233,06** (nueva, como el contador).
   4. **Cuenta socios = 92.875.208,86, TENTATIVO**: sólo Mercedes Areco por su cuenta interna; JMS: «se tomaría como un activo en MSA
      porque es un anticipo de algo, ya sea arrendamiento o distribución». Los demás socios en cero. **Al 30/06/25 no se cargó nada
-     de MA** (el export no tiene dato de inicio): a confirmar con JMS.
+     de MA** (el export no tiene dato de inicio). **JMS 17/11: «sí, arranca en cero»** — confirmado.
   5. **Socio Plácido Martínez** (45.905.575,52 en las dos puntas): queda como **nota de balance**, fuera del cálculo (está escrita en
      el detalle del renglón «Cuenta socios»).
 - **Cómo queda la versión JMS**: inicio activo 474.311.231,33 − pasivo 105.458.415,77 = 368.852.815,56 (US$ 307.249,33) · cierre
