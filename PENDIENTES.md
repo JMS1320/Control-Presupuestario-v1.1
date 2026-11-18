@@ -230,6 +230,13 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
      Mecanismo: `scripts/reporte-items/intermedio.py` (pliega cada sección a su título y su total; se activa con la variable de entorno
      `REPORTE_INTERMEDIO=1`; las reglas por hoja están en `aplicar`) y `pdf-hojas.ps1` (PDF de algunas hojas). **Todavía NO está en el
      archivo completo**: espera las correcciones de JMS. **v14 entregada**: 221 páginas, 201 de 201 controles OK.
+  15. **JMS 18/11: la propuesta de recortes B «no me convence»** (irá punto por punto) → en su lugar, **dividir en varios PDF**:
+     `scripts/reporte-items/pdf_partes.py` corta el PDF completo en 14 PDF por tema (índice · ventas · compras tablas / compras
+     detalle · templates tablas / templates detalle · sueldos · caja y bancos · a cobrar y a pagar · hacienda · granos e insumos ·
+     socios · para revisar con el contador · balance interno y anterior), conservando el número de página del completo para que el
+     índice valga. Entregados en `…/v14/Por partes/`. Pedido además: **«Volver al índice» en todas las páginas** (sin hacer; en los
+     PDF separados un link al índice no puede funcionar porque es otro archivo). Los links del PDF completo se prueban con pdf.js
+     antes de entregar (`scratchpad/pdfjs/probar.js`): 163 de 163 en la v14.
 - JMS sobre las dudas: las columnas «Control» de tablas, a ver cuáles son; el «intermedio» es lo que se está armando ahora con sus comentarios.
 - Pendiente de forma ya conocido y todavía sin resolver: títulos huérfanos al pie de página (se vio en D1: «BIENES DE USO»).
 - **Página «Auditoría gastos contador»** (pedido de JMS): https://claude.ai/artifact/Gq49pggjpH4zH4Rd1r3wcV — el contador **agrupó** (28
