@@ -224,7 +224,12 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
      movimiento por movimiento queda en los libros de la app. Los links del PDF se corrigieron (apuntaban al número de página y los
      visores los ignoraban: ahora apuntan a la página).
   14. **Para los recortes B (Compras chicas, No informado, Socios interno, Socios / falta, A pagar, Pendientes, impuestos)** JMS pidió
-     **dos PDF sólo de esas hojas, el antes y el después**, para corregir sobre eso antes de pasarlo al archivo completo. Sin hacer.
+     **dos PDF sólo de esas hojas, el antes y el después**, para corregir sobre eso antes de pasarlo al archivo completo. **Entregados
+     el 18/11** en `…/Reporte MSA 25-26 (items)/v14/Recortes B - antes y despues/`: antes 165 páginas → después 70 (Compras 39→36 ·
+     Templates egresos 13→8 · A pagar 12→1 · Socios 17→4 · Socios interno 26→8 · Socios falta 13→5 · No informado 35→2 · Pendientes 10→6).
+     Mecanismo: `scripts/reporte-items/intermedio.py` (pliega cada sección a su título y su total; se activa con la variable de entorno
+     `REPORTE_INTERMEDIO=1`; las reglas por hoja están en `aplicar`) y `pdf-hojas.ps1` (PDF de algunas hojas). **Todavía NO está en el
+     archivo completo**: espera las correcciones de JMS. **v14 entregada**: 221 páginas, 201 de 201 controles OK.
 - JMS sobre las dudas: las columnas «Control» de tablas, a ver cuáles son; el «intermedio» es lo que se está armando ahora con sus comentarios.
 - Pendiente de forma ya conocido y todavía sin resolver: títulos huérfanos al pie de página (se vio en D1: «BIENES DE USO»).
 - **Página «Auditoría gastos contador»** (pedido de JMS): https://claude.ai/artifact/Gq49pggjpH4zH4Rd1r3wcV — el contador **agrupó** (28

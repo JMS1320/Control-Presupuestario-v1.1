@@ -586,6 +586,10 @@ def main():
     lib.wb.remove(lib.wb["Controles"])
     for hx in lib.hojas:
         hx.ocultar_controles()
+    if os.environ.get("REPORTE_INTERMEDIO") == "1":      # JMS 18/11: versión intermedia, con el renglón por renglón plegado
+        import intermedio
+        for hoja_, k_, n_ in intermedio.aplicar(lib):
+            print(f"intermedio · {hoja_}: {k_} secciones plegadas, {n_} renglones ocultos")
     lib.wb.save(base + ".xlsx")
     hojas_cortas = version_corta(lib)
     lib.wb.save(base + " - resumen para imprimir.xlsx")
