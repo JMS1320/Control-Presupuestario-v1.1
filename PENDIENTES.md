@@ -18955,3 +18955,19 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   se ve. Cada subtotal es `SUM` de sus renglones y el TOTAL suma los cuatro subtotales.
 - ✓ MA y PAM con los mismos bloques (MA total 22.286.966,76 en 788 cuotas; PAM −61.325.677,46 en 405). Socios y Sueldos, igual que en el v17.
 - **Sigue abierto**: la diferencia de AMS (628.914,00) y de MA (1.134.572,86) entre la 14.1 de la app y lo enviado al contador.
+
+**39 · 19/11 — auditoría ANTES (v16) contra DESPUÉS (v18): cada diferencia se explica por un cambio hecho, y nada más se movió**
+
+- **Templates MSA**: suman 1.446 / 90.458.081,42 → 1.445 / 91.795.965,69. Diferencia +1.337.884,27 y −1 cuota = + monotributo (1 cuota,
+  2.137.884,27, antes fuera de las cuotas) − albañil (2 cuotas, 800.000,00, pasó a MA). Template por template, sólo cambiaron 4 de 75:
+  «Otros Gastos» 27 / 4.398.949,70 → 24 / 3.337.404,70 (−2 albañil −1 pasaje 261.545) · «Pasajes» 2 / 219.717,50 → «Viáticos JMS» 3 /
+  481.262,50 (+ ese pasaje) · «Gastos Reintegro JMS» nuevo en las cuotas. Egresos −1.281.262,50 (5 cuotas) = las 2 del albañil + los 3
+  pasajes que pasaron a Reintegros. Financiero y Socios, iguales.
+- **Templates MA**: 786 / 21.486.966,76 → 788 / 22.286.966,76: sólo «Otros Gastos» nuevo (2 / 800.000,00, el albañil). **PAM**: sin cambios (0 de 63).
+- **Contra la base**: MSA 1.445 + 19 + 72 = 1.536 · MA 788 + 5 + 25 = 818 · PAM 405 + 12 + 19 = 436 ✓ las tres.
+- **Socios (14.1 de la app)**: JMS −36.482.265,53 → −47.074.051,72 (−10.591.786,19) · AMS −5.463.334,73 → −7.463.334,73 (−2.000.000) · PAM
+  −189.826,57 → +12.401.959,62 (+12.591.786,19) · MA sin cambio. Lo que entra a PAM es lo que sale de JMS y AMS: el total de las cuentas
+  (−86.594.765,00) no se movió ✓.
+- **La diferencia de AMS y MA con lo enviado es VIEJA, no de este cambio**: ya en el v16 la app daba AMS −5.463.334,73 y MA −44.459.338,17
+  contra −6.092.248,73 y −45.593.911,03 del archivo enviado (628.914,00 y 1.134.572,86). JMS y PAM coincidían. Sigue abierto.
+- **Sueldos**: total 144.020.113,03 igual antes y después; sólo se partió en dos bloques.
