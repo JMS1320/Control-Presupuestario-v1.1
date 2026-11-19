@@ -18840,3 +18840,19 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
 - **Pendiente, con OK de JMS (datos, script 289)**: pasar las 2 cuotas del albañil Víctor (19/05/26, 2 × 400.000, Caja Sigot) de
   «Otros Gastos» de MSA a un template de MA → quedan como gasto de MA con código de la cuenta de MA; MSA egresos baja 800.000.
   Los 3 pasajes con código CTA JMS (481.262,50) se ven después.
+
+**33 · 19/11 — script 289 CORRIDO: los 2 pagos al albañil Víctor pasan a «Otros Gastos» de MA**
+
+- Decisión de JMS: *«deberían estar en un template de MA y no de MSA; como lo pagó MSA le queda CTA MA en contable»* · *«está bien
+  Mantenimiento edilicio y crear el template Otros Gastos de MA… debe tener la misma fecha que caja»*.
+- **Hecho y verificado en la base** (`scripts/289-albanil-chalet-a-otros-gastos-ma.sql`, con su deshacer por id): template nuevo
+  «Otros Gastos» de MA (`d8d312ba…`, copia del de MSA, marcado [script 289]) · las 2 cuotas de 400.000,00 cuelgan de él, con
+  categoría MANTENIMIENTO EDILICIO y centro de costo Chalet sin cambios · la cuota `10033407…` tomó la fecha de su salida de caja
+  (19/05 → 16/05/2026) · las 2 salidas de Caja Sigot apuntan al template nuevo y su contable pasó de «CTA MA X» a «CTA MA»
+  (interno DIST MA y la conciliación, intactos).
+- **Lo que tiene que dar el libro de MSA al bajarlo de nuevo**: egresos 67.395.748,97 · financiero −32.644.262,55 · socios
+  54.906.595,00 · total **89.658.081,42** (1.444 cuotas). En MA aparecen 800.000,00 más de egreso.
+- Sin resolver: los 3 pasajes con código CTA JMS (481.262,50) siguen en templates de MSA (JMS: «los vemos luego») · en Caja Sigot
+  los demás movimientos de MA siguen con «CTA MA X» (no se tocaron; falta saber qué marca la X) · no revisé si
+  `templates_master.total_renglones` (237) se mantiene solo al crear un template.
+- Próximo script **290**.
