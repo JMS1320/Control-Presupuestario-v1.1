@@ -18929,3 +18929,21 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   hay que revisarlo antes de generar otra versión del reporte. MA también figura en Sueldos como empleada de MSA y quedó en EMPLEADOS (JMS nombró sólo a AMS y JMS).
 - **6 · Los tres saldos de socios que cambian** (PAM, JMS, AMS): JMS «ok»; falta avisarle al contador cuando se vean en el libro.
 - `npm run probar` 1570/1570, type-check sin empeorar, build en verde. Próximo script **292**.
+
+**37 · 19/11 — PRIMER LIBRO BAJADO con los cambios (carpeta `Export Balance App/v17`, generado 02:17): qué cerró y qué no**
+
+- ✓ **Templates · «H · MSA · Egresos»**: egresos **66.914.486,47** · financiero −32.644.262,55 · total **91.795.965,69** en **1.445**
+  cuotas · no suman: 19 seguros con póliza (7.223.246,55) y 72 desactivadas (35.336.537,00) → 1.445 + 19 + 72 = 1.536 = la base ✓.
+  El TOTAL es fórmula sobre los cuatro subtotales. «Viáticos JMS» (3 cuotas, 481.262,50) y «Gastos Reintegro JMS» (2.137.884,27)
+  salen en Reintegros. En MA, «Otros Gastos» con las 2 cuotas del albañil (800.000,00) ✓.
+- 🧨 **Error de Claude, visto ahí y corregido**: el bloque Socios mostraba 13 cuotas / 5.311.595,00 y Reintegros 19 / 52.214.146,77.
+  Los 15 «Retiro MA mensual» (49.595.000,00) cayeron en Reintegros porque ese template también tiene la regla «CTA MA». Arreglo: la
+  regla sólo convierte en reintegro lo que era **egreso**; un retiro sigue siendo distribución (caso de prueba ampliado). Tiene que
+  dar socios 28 / 54.906.595,00 y reintegros 4 / 2.619.146,77. El total no cambiaba. 🟡 Falta verlo en un libro nuevo.
+- ✓ **Socios y Libertad · 14.1**: JMS **−47.074.051,72** y PAM **+12.401.959,62**, como se esperaba; los 4 pagos de PAM figuran en
+  las dos puntas («PAM cta cte (pagó PAM por MSA)» en el que cobró, «Sueldo de … pagado por PAM» en PAM).
+- ⚠️ **AMS da −7.463.334,73 y no los −8.092.248,73 calculados**: los 2.000.000 de PAM sí entraron; la diferencia de **628.914,00**
+  ya estaba antes entre la 14.1 de la app (AMS pagado 23.803.334,73) y el archivo enviado al contador (24.432.248,73, «modelo m1»,
+  armado fuera de la app). **MA tampoco coincide** (app −44.459.338,17 · enviado −45.593.911,03, dif. 1.134.572,86). Sin investigar:
+  son dos armados distintos de la misma cuenta y hay que conciliarlos antes de avisarle al contador.
+- ✓ **Sueldos**: dos bloques — empleados bruto 62.865.712,75 · socios que facturan (JMS, AMS) 81.154.400,28 · total 144.020.113,03.

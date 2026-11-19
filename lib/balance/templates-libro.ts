@@ -424,7 +424,9 @@ export function armarTemplatesDelEjercicio(
     // ✍️ A-FEAT-1539: va por la cuenta del socio (papel 14.1), no es gasto. Fuera del total, pero se lista.
     // 👥 ⚠️ cambió 19/11 (punto 35): lo destinado a la cuenta de un socio NO sale del libro («todo es todo»): queda en el detalle con
     // tipo «reintegro» y su propia agrupadora, así suma en su bloque y no en el gasto. `aCuentaSocio` queda para la lista vieja (vacía).
-    if (c.egresoId && opciones.aCuentaDe?.[c.egresoId]) { detalle.push({ ...c, tipo: "reintegro", agrupadoraTemplate: AGRUPADORA_REINTEGROS }); continue }
+    // 🧨 Sólo lo que era EGRESO: un retiro («Retiro MA mensual», distribución) también lleva la regla «CTA MA», y es una transferencia
+    // directa al socio, no un reintegro. Visto en el primer libro bajado (19/11): 15 retiros de MA por 49.595.000 cayeron acá.
+    if (c.tipo === "egreso" && c.egresoId && opciones.aCuentaDe?.[c.egresoId]) { detalle.push({ ...c, tipo: "reintegro", agrupadoraTemplate: AGRUPADORA_REINTEGROS }); continue }
     const socio = socioDe.get(normalizar(c.categ))
     if (socio) { aCuentaSocio.push({ ...c, socio }); continue }
     detalle.push(c)

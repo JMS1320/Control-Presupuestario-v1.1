@@ -13385,16 +13385,17 @@ export function correrCasos(): Resultado[] {
       { template_id: "tPam", codigo_contable: "CTA PAM", activo: true },                        // template de PAM que paga MSA: gasto de PAM, no reintegro
       { template_id: "tViejo", codigo_contable: "CTA JMS", activo: false },                     // regla apagada: no cuenta
       { template_id: "tIIBB", codigo_contable: "OTRO", activo: true },
+      { template_id: "tRetiro", codigo_contable: "CTA JMS", activo: true },                     // un RETIRO con la regla: sigue siendo distribución
     ]
     const aCuentaDe = templatesACuentaDeSocio(reglasT,
-      [{ id: "tMono", responsable: "MSA" }, { id: "tViat", responsable: "MSA" }, { id: "tPam", responsable: "PAM" }, { id: "tViejo", responsable: "MSA" }, { id: "tIIBB", responsable: "MSA" }],
+      [{ id: "tMono", responsable: "MSA" }, { id: "tViat", responsable: "MSA" }, { id: "tPam", responsable: "PAM" }, { id: "tViejo", responsable: "MSA" }, { id: "tIIBB", responsable: "MSA" }, { id: "tRetiro", responsable: "MSA" }],
       { "CTA JMS": "JMS", "CTA PAM": "PAM" })
     const tr = armarTemplatesDelEjercicio([ct("tMono", "Gastos Reintegro JMS", 2137884.27), ct("tViat", "Viaticos", 116830), ct("tIIBB", "Impuesto IIBB", 100),
-      ct("tViejo", "Honorarios", 50), ct("tPam", "Otros", 9000, "PAM")] as never, ej, { aCuentaDe })
+      ct("tViejo", "Honorarios", 50), ct("tPam", "Otros", 9000, "PAM"), { ...ct("tRetiro", "Distribucion", 3500000), tipo: "distribucion" }] as never, ej, { aCuentaDe })
     const porTipo = (t: string) => tr.detalle.filter(c => c.tipo === t)
     const v4 = `marcados ${Object.entries(aCuentaDe).map(([k, s]) => `${k}:${s}`).join(",")} · cuotas ${tr.detalle.length} · egreso ${porTipo("egreso").map(c => c.categ).join(",")} `
-      + `· reintegro ${porTipo("reintegro").map(c => `${c.categ} ${c.monto}`).join(",")} · agrupadora ${[...new Set(porTipo("reintegro").map(c => c.agrupadoraTemplate))].join(",")} · lista vieja ${tr.aCuentaSocio?.length}`
-    const e4 = "marcados tMono:JMS,tViat:JMS · cuotas 5 · egreso Honorarios,Impuesto IIBB,Otros · reintegro Gastos Reintegro JMS 2137884.27,Viaticos 116830 · agrupadora Reintegros a socios · lista vieja 0"
+      + `· reintegro ${porTipo("reintegro").map(c => `${c.categ} ${c.monto}`).join(",")} · agrupadora ${[...new Set(porTipo("reintegro").map(c => c.agrupadoraTemplate))].join(",")} · distribución ${porTipo("distribucion").map(c => c.monto).join(",")} · lista vieja ${tr.aCuentaSocio?.length}`
+    const e4 = "marcados tMono:JMS,tViat:JMS,tRetiro:JMS · cuotas 6 · egreso Honorarios,Impuesto IIBB,Otros · reintegro Gastos Reintegro JMS 2137884.27,Viaticos 116830 · agrupadora Reintegros a socios · distribución 3500000 · lista vieja 0"
     chequear("Libro H", "👥 Un template destinado a la cuenta de un socio (su regla de código dice «CTA JMS») no es gasto: sus cuotas quedan en el libro, en el bloque «Reintegros», y no en egresos; un template de PAM pagado por MSA con «CTA PAM» sigue siendo gasto de PAM",
       e4, v4, v4 === e4, "A-FEAT-1629")
   }
