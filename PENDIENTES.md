@@ -388,7 +388,7 @@ es un error de la guía y hay que corregirla, no ignorarla.
 >
 > | Paso | Qué es | Requisitos de JMS | Estado | Dado por bueno |
 > |---|---|---|---|---|
-> | 1 | Exportar los libros del sistema | a definir por JMS al empezar | 🔵 sin empezar | — |
+> | 1 | Exportar los libros del sistema | a definir por JMS al empezar | 🟡 **En curso (19/11)**: JMS bajó los tres exports; cruce hecho (dossier A-FEAT-1629, punto 28). Falta que diga con cuál se trabaja y qué pasa con las 69 solapas que están sólo en el set A–H | — |
 > | 2 | Auditar | a definir | 🔵 | — |
 > | 3 | Envío al contador | a definir | 🔵 | — |
 > | 4 | Presentación a socios | a definir | 🔵 | — |
@@ -18763,3 +18763,20 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   trabajo (lo carga Claude con script y su OK), y de ahí salen el Excel, el PDF y la hoja del reporte, con el mismo cálculo.
 - **P2 (títulos huérfanos)**: espera — es estético y la presentación se va a rever entera. **P3 (MA, PAM, Grupo)**: espera a que MSA
   esté cerrado. **P1 (hoja de balance propio del reporte con números viejos)**: sí, junto con lo anterior.
+
+**28 · 19/11 — PASO 1 (exportar los libros): los exports nuevos y el cruce entre los dos sets**
+
+- **Los exports de JMS** (bajados el 18–19/11, ya con todo lo cargado hasta hoy):
+  `- Comunicacion JMS Claude - Archivos/Balance/Excels trabajando con claude/Export Balance App/Papeles v15 - Post Balance empieza proceso de definicion de formato/`
+  → `1er desarrollo/` (set A–H: 10 libros, 254 solapas) · `2do desarrollo/` (Libros por partes: 8 libros, 126 solapas) ·
+  `balance propio/`. ⚠️ La ruta supera los 260 caracteres: para leerlos por programa hay que copiarlos a una carpeta corta.
+- **Cruce solapa por solapa, celda por celda** (`cruce_exports.py`; resultado en `…/Excels trabajando con claude/Copias/Paso 1 - cruce de
+  exports (2026-11-19).txt`): de las 126 solapas de «Libros por partes», **118 tienen su par en el set A–H y en las 118 todos los
+  números son iguales** (117 idénticas; «Gastos Libertad» difiere sólo en 6 celdas de texto, título y notas). Las otras 8 son los
+  «Control del papel» propios de cada libro. → **Los datos coinciden: es el mismo cálculo.**
+- **Lo que NO está en «Libros por partes»: 69 solapas del set A–H** — libro C «Templates y detalle bancario» (13) · libro G «Grupos de
+  templates» (30) · libro «H para auditar» (8: retiros y aportes, inconsistencias, templates por empresa, índice) · libro D «El resto»
+  (18: índice, cobertura, recorrido, pendientes a revisar, respaldos, inicio y cierre, saldos del ejercicio anterior, stock al inicio,
+  07.2 operaciones en dólares, 08 gastos bancarios, 08.1 impuesto al cheque, 09 retiros y aportes, impuestos y otros con sus «por mes»,
+  control, control de cuotas de templates). No se revisó si su contenido está en otra solapa con otro nombre: **a ver con JMS**.
+- El reporte v15 se armó con los exports del 15/11; con éstos hay que regenerarlo cuando llegue ese paso.
