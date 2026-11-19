@@ -388,7 +388,7 @@ es un error de la guía y hay que corregirla, no ignorarla.
 >
 > | Paso | Qué es | Requisitos de JMS | Estado | Dado por bueno |
 > |---|---|---|---|---|
-> | 1 | Exportar los libros del sistema | a definir por JMS al empezar | 🟡 **En curso (19/11)**: JMS bajó los tres exports; cruce hecho (dossier A-FEAT-1629, punto 28). Falta que diga con cuál se trabaja y qué pasa con las 69 solapas que están sólo en el set A–H | — |
+> | 1 | Exportar los libros del sistema y auditarlos libro por libro | «todo es todo»: el libro tiene que traer TODO y cerrar contra la base (CLAUDE.md) · nombres cortos · bloques que suman / no suman | 🟡 **En curso. Hito 19/11: el libro de TEMPLATES cerrado** (dossier A-FEAT-1629, puntos 29–40). ▶️ **SE SIGUE DESDE ACÁ**: libro «Templates», solapa «H · MSA · Egresos» ya auditada → seguir con lo que JMS vaya encontrando al revisar ese libro (las demás solapas: «Cuotas», «Por mes», las de cada agrupadora; después MA y PAM). Último libro bajado y auditado: `Export Balance App/v18`. | 19/11: «hasta acá hemos cumplido con un hito» |
 > | 2 | Auditar | a definir | 🔵 | — |
 > | 3 | Envío al contador | a definir | 🔵 | — |
 > | 4 | Presentación a socios | a definir | 🔵 | — |
@@ -18820,7 +18820,7 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   1.281.262,50 (verificados renglón por renglón contra «H para auditar» y contra el envío v5 del 12/11): 19/05/26 albañil chalet 2 ×
   400.000 (Caja Sigot, CTA MA X) · 19/05/26 pasaje JMS 261.545 · 09/02/26 116.830 y 11/02/26 102.887,50 pasajes JMS (CTA JMS). Por eso
   egresos da 68.195.748,97 y el gasto enviado 66.914.486,47. Los socios del envío (56.187.857,50) = 54.906.595,00 + 1.281.262,50 ✓.
-  El libro «por partes» además no trae la columna del código (sólo está en «H para auditar»). **Espera decisión de JMS**: propuesta =
+  El libro «por partes» además no trae la columna del código (sólo está en «H para auditar»). ⚠️ *cambió 19/11 → punto 35: se resolvió por la regla de código del TEMPLATE y un bloque propio «Reintegros»; el albañil pasó a MA (punto 33).* ~~**Espera decisión de JMS**: propuesta =
   que el libro reste esos pagos del gasto y los liste en «Van por la cuenta de un socio».
 - **H2 · Un template con varias categorías muestra una sola** («Otros Gastos» figura como ROLLOS y tiene 8). Sin corregir.
 - **H3 · Egresos y financiero iban mezclados bajo un solo total** (JMS: «listar primero el grupo de egresos y luego el de financiero,
@@ -18852,7 +18852,7 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   (19/05 → 16/05/2026) · las 2 salidas de Caja Sigot apuntan al template nuevo y su contable pasó de «CTA MA X» a «CTA MA»
   (interno DIST MA y la conciliación, intactos).
 - **Lo que tiene que dar el libro de MSA al bajarlo de nuevo**: egresos 67.395.748,97 · financiero −32.644.262,55 · socios
-  54.906.595,00 · total **89.658.081,42** (1.444 cuotas). En MA aparecen 800.000,00 más de egreso.
+  54.906.595,00 · total **89.658.081,42** (1.444 cuotas) ⚠️ *cambió 19/11: con el bloque de Reintegros el total quedó en 91.795.965,69 (1.445 cuotas), verificado en el libro v18 (puntos 38–39)*. En MA aparecen 800.000,00 más de egreso.
 - Sin resolver: los 3 pasajes con código CTA JMS (481.262,50) siguen en templates de MSA (JMS: «los vemos luego») · en Caja Sigot
   los demás movimientos de MA siguen con «CTA MA X» (no se tocaron; falta saber qué marca la X) · no revisé si
   `templates_master.total_renglones` (237) se mantiene solo al crear un template.
@@ -18971,3 +18971,34 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
 - **La diferencia de AMS y MA con lo enviado es VIEJA, no de este cambio**: ya en el v16 la app daba AMS −5.463.334,73 y MA −44.459.338,17
   contra −6.092.248,73 y −45.593.911,03 del archivo enviado (628.914,00 y 1.134.572,86). JMS y PAM coincidían. Sigue abierto.
 - **Sueldos**: total 144.020.113,03 igual antes y después; sólo se partió en dos bloques.
+
+**40 · 19/11 — 🏁 HITO: EL LIBRO DE TEMPLATES ESTÁ COMPLETO Y AUDITADO (paso 1 del camino 1). Desde acá se sigue.**
+
+- **Qué quedó** (verificado en el libro bajado `Export Balance App/v18`, generado 19/11 02:33, contra el de antes `v16`):
+  1. El libro «Templates» trae **todas** las cuotas del ejercicio de MSA, MA y PAM, cada responsable en su solapa «H · X · Egresos».
+  2. Cada solapa va en bloques: **Egresos** (lo único que es gasto) · **Financiero** · **Socios de pago directo** (retiros y aportes)
+     · **Reintegros a la cuenta de un socio** (el gasto va por su factura) · y donde los hay, Ingresos y «NO»; el **TOTAL** suma los
+     subtotales con fórmula. Abajo, sin sumar: **seguros con póliza** (ya son gasto por la factura) y **desactivadas**.
+  3. MSA: egresos 66.914.486,47 · financiero −32.644.262,55 · socios 54.906.595,00 · reintegros 2.619.146,77 · **total 91.795.965,69**
+     (1.445) · no suman 19 + 72. MA: total 22.286.966,76 (788) · no suman 5 + 25. PAM: −61.325.677,46 (405) · no suman 12 + 19.
+     **Contra la base: 1.536 / 818 / 436 cuotas ✓**. Antes contra después: cada diferencia sale de un cambio hecho (punto 39).
+- **Decisiones de JMS de esta sesión** (con su frase en los puntos 32–36):
+  - «Todo es todo»: un libro total no deja nada afuera; lo que no suma se muestra en su bloque (regla en CLAUDE.md).
+  - Un pago a un socio que factura (JMS, AMS) **nunca es gasto**: va a su cuenta y el gasto entra por su factura.
+  - Esos pagos se marcan **por el TEMPLATE** (su regla de código pone «CTA JMS» al conciliar), no por lo que se escriba en cada pago.
+  - Los reintegros siguen por **templates**, no por Sueldos. En Sueldos, JMS y AMS van en un bloque aparte.
+  - Un sueldo de MSA que paga un socio desde su cuenta (PAM → JMS/AMS) es un aporte de ese socio a MSA: entra a las dos cuentas.
+  - **No recordarle las diferencias con lo ya enviado al contador**: «todo lo que cambiemos va a ser una diferencia; está descontado».
+- **Datos cambiados (scripts con deshacer)**: 289 albañil del chalet → «Otros Gastos» de MA, contable CTA MA · 290 «Pasajes» →
+  «Viáticos JMS», reglas CTA JMS en Galicia MSA, pasaje del 19/05 a ese template · 291 pasaje del 15/07/2026 con CTA JMS, reglas en
+  la VISA de MSA. **Próximo script 292 · próximo FEAT/BUG 1632.**
+- **App (en `desarrollo`, commit 4d1609dc)**: nombres cortos de los exports · el libro total en bloques · reintegros por regla del
+  template · sueldos entre socios en la 14.1 · Sueldos en dos bloques. `npm run probar` 1570/1570.
+- **▶️ CÓMO SE RETOMA**: JMS revisa el libro «Templates» (v18) y dice qué encuentra; se sigue **desde esa misma solapa** y libro por
+  libro. Herramientas para auditar un libro bajado (carpeta del programa, `Balance/Excels trabajando con claude/Copias/programas/
+  reporte-msa-tanda-18-11/`): `consistencia_templates.py` (el libro contra sí mismo) y `cuotas_por_responsable.py` (Excel de todas
+  las cuotas por responsable → agrupadora → template). La comparación antes/después se hizo con `antes_despues.py` (misma carpeta).
+- **Abierto, sin apuro**: [A-FEAT-1631](#a-feat-1631) (regla del template pague por donde se pague) · solapas «Cuotas» y «Por mes»
+  con el orden de bloques viejo · «Viaticos» y «Gastos Reintegro JMS» no están en el plan de cuentas · el sueldo de JMS sigue como
+  gasto en el libro de Sueldos (mismo criterio que los reintegros, a definir con el contador) · el generador del reporte
+  (`scripts/reporte-items/d_sueldos.py`) lee la solapa de Sueldos, que cambió: revisarlo antes de otra versión del reporte.
