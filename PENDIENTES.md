@@ -18825,3 +18825,18 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
 - **H3 · Egresos y financiero iban mezclados bajo un solo total** (JMS: «listar primero el grupo de egresos y luego el de financiero,
   tal como está en Cuotas»). 🟡 **Escrito, sin probar con un export real**: `hojaListadoTemplates` arma un bloque por tipo con su
   subtotal y el TOTAL suma los subtotales. `npm run probar` 1569/1569 y type-check sin empeorar; falta bajar el libro y mirarlo.
+
+**32 · 19/11 — PASO 1: el libro de Templates es el TOTAL (decisión de JMS) · ⚠️ cambia lo del 05/11**
+
+- JMS: *«lo que me interesa siempre es tener un libro total antes que nada, para saber que eso es todo y poder hacer los chequeos
+  de consistencia… todo es todo. Templates debe tener el total: egresos, financiero y socios (de pago directo). H · MSA · Egresos
+  da la suma de 3 subtotales, 90.458.081,42»*.
+- **Hecho (🟡 escrito, sin ver con un libro bajado; rama `jms/reporte-socios`)**: el libro H / «Templates» por partes lleva TODAS las
+  cuotas, también las distribuciones (antes salían al libro I por el «nada de retiros» del 05/11); el libro I sigue armando sus
+  solapas de retiros. La lista (`hojaListadoTemplates`) va en tres bloques con subtotal: Egresos · Financiero · Socios. Qué se saca
+  al mandarlo al contador se decide en el paso del envío. `npm run probar` 1569/1569, type-check sin empeorar. Falta un caso propio.
+- **Lo que debe dar MSA**: 68.195.748,97 + (−32.644.262,55) + 54.906.595,00 = 90.458.081,42 (1.446 cuotas), igual al Excel
+  «Cuotas de templates por responsable (19-11) v1» de `Export Balance App/v15 corto/`.
+- **Pendiente, con OK de JMS (datos, script 289)**: pasar las 2 cuotas del albañil Víctor (19/05/26, 2 × 400.000, Caja Sigot) de
+  «Otros Gastos» de MSA a un template de MA → quedan como gasto de MA con código de la cuenta de MA; MSA egresos baja 800.000.
+  Los 3 pasajes con código CTA JMS (481.262,50) se ven después.

@@ -3556,7 +3556,13 @@ export function agregarLibroH(wb: XLSX.WorkBook, templates: TemplatesDelEjercici
     const idsDist = new Set(aud ? [] : tTodo.detalle.filter(c => c.tipo === "distribucion").map(c => c.id))
     const rearmar = (quedan: (c: CuotaTemplate) => boolean) => tTodo.entrada
       ? armarTemplatesDelEjercicio(tTodo.entrada.cuotas.filter(quedan), tTodo.entrada.ej, tTodo.entrada.opciones) : tTodo
-    const t = idsDist.size ? rearmar(c => !idsDist.has(c.id)) : tTodo
+    /**
+     * ⚠️ cambió 19/11 (JMS, paso 1 del balance): *«lo que me interesa siempre es tener un libro total antes que nada… todo es todo.
+     * Templates debe tener el total: egresos, financiero y socios [de pago directo]»*. El libro H lleva TODAS las cuotas, también las
+     * distribuciones; el libro I sigue armando sus solapas de retiros con las mismas cuotas. Qué se le saca al mandarlo al contador
+     * («nada de retiros», 05/11) se decide en el paso del envío, no acá: sin el total no se puede controlar la consistencia.
+     */
+    const t = tTodo
     const tDist = idsDist.size ? rearmar(c => idsDist.has(c.id)) : null
     if (tDist && tDist.detalle.length) {
       const porMesI = `I · ${resp} · Retiros por mes`
