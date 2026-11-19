@@ -266,3 +266,25 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
     diferir · no). **Con esa clasificación**: 35 cuentas de gasto «Libro diario/template» → contador 271.522.633,40 · nuestro
     271.794.947,73 (incluye 1.182.230,00 de «Tosca destape» sin cuenta suya) · **diferencia −272.314,33 (0,10 %)**, de los cuales
     −222.597,08 son Red Vial; 24 cuentas iguales al centavo y 11 con diferencia. Sin supuestos. Generador `arma_auditoria2.py`.
+
+**26 · 18/11 — CIERRE DE SESIÓN (tarde): estado del reporte de MSA y lo que queda**
+
+- **Última versión entregada: v15** (`- Comunicacion JMS Claude - Archivos/Balance/Reporte MSA 25-26 (items)/v15/`): 222 páginas, 201
+  de 201 controles OK, índice con página, links probados con pdf.js (386 de 386), y los 14 PDF en `Por partes/`. Las v9 a v14 quedan
+  como historia de la tanda. Las reglas de presentación que fijó JMS quedaron en `Protocolo de generación de reportes.md` § «Reglas de
+  presentación del 18/11/2026»; lo técnico del PDF, en `KNOWLEDGE.md`.
+- **Balance interno**: Excel y PDF en `…/Balance/Balance interno MSA 25-26/` (v1, 18/11) — punto 25.17.
+- **Decisiones de JMS que quedan abiertas**
+  1. **Recortes B**: «no me convence»; va a ir punto por punto. Material: `…/v14/Recortes B - antes y despues/` (antes 165 páginas,
+     después 70). No se aplicó nada al completo.
+  2. **PDF «13 - Para revisar con el contador»**: preguntó si hacía falta; se le contestó que «No informado» sí (lo de las cajas AMS y
+     Sigot, retiros y cobros en efectivo sólo está ahí), «Enviado vs hoy» conviene y «Pendientes» se puede dejar afuera. Sin respuesta.
+  3. **Columnas «Control» dentro de tablas** (hacienda, sueldos, templates): siguen a la vista en la presentación; JMS: «no sé cuáles
+     serán exactamente».
+  4. **Movimientos internos**: quedó por concepto y por mes; la matriz «de qué cuenta a qué cuenta» que se propuso no se hizo.
+- **Sin hacer (generador)**: títulos huérfanos al pie de página · 2 links del Excel que no quedan en el PDF (sin identificar) · la hoja
+  «D12 Balance propio» sigue con el export del 15/11 (falta bajar de nuevo el Excel del balance propio y llevar al Excel de la app el
+  impuesto diferido y el desglose con lo fiscal separado) · aplicar las reglas del 18/11 a los reportes de MA, PAM y Grupo (sólo
+  heredaron lo que está en `core.py`: líneas continuas, controles ocultos, encabezado) · el PDF corto «PARA IMPRIMIR» no se regeneró
+  desde la v8 · las toneladas de Sanpa se leen del sistema recién cuando se bajen exports nuevos.
+- **Scripts de la sesión**: 282 a 288 corridos. **Próximo script 289.** Rama `jms/reporte-socios`, pusheada, sin sumar a `desarrollo`.

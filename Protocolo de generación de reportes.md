@@ -92,6 +92,32 @@ Un reporte de capitalización y honorarios entre socios, presentado en reunión,
 
 Los criterios de negocio de cada reporte (partes, porcentajes, tratamiento impositivo) no forman parte del protocolo. Cada proyecto define los suyos.
 
+## Reglas de presentación del 18/11/2026 (JMS, al pulir el reporte de MSA para la reunión con el contador y los socios)
+
+Cada una vale para **todo** reporte. El generador de referencia es `scripts/reporte-items/`.
+
+1. **Los controles van sólo en el libro «con controles».** En los libros y PDF de presentación sus renglones no se ven (quedan
+   ocultos, no se borran). *Motivo: en la presentación distraen; el que audita abre el libro con controles.*
+2. **Las líneas de renglón van de punta a punta** de la tabla, también bajo las celdas vacías. *Motivo (JMS): «con líneas cortadas
+   molesta».*
+3. **Un resumen se agrupa por su cuenta agrupadora** (en ventas: Agricultura, Ganadería, Arrendamientos, Bienes de uso) y el detalle
+   baja agrupadora → cuenta contable → comprobante. La tabla por mes va **sin IVA**; en ventas, sin semestres (pedido puntual).
+4. **Subtotales de mes — manda lo visual.** Un mes con varios renglones lleva su subtotal; **el renglón único de un mes se pinta igual
+   que un subtotal**; un bloque donde todos los meses tienen un solo renglón va como lista simple. *Motivo (JMS): «si algo es lo único
+   de su mes debe visualizarse igual que un subtotal… si no, parece que todo cae dentro del subtotal».* El generador deja la lista de
+   bloques mixtos para mirarlos caso por caso.
+5. **Una tabla larga que no aporta renglón por renglón se sintetiza en una hoja**: por cuenta y por tipo (gastos bancarios), por mes
+   (fondo común, caja, interbancarias, tarjeta), por persona y los doce meses seguidos sin separar caja de banco (sueldos). El
+   movimiento por movimiento queda en el Excel de la app.
+6. **El índice dice la PÁGINA del PDF de cada ítem**, y **los links andan en el PDF** (los del índice, los de cada hoja y un «Volver al
+   índice» en el encabezado de TODAS las páginas). Los links **se prueban con un motor de visor antes de entregar**.
+7. **El reporte se entrega también partido en PDF por tema** (índice, ventas, compras en tablas / compras en detalle, templates en
+   tablas / templates en detalle, sueldos, caja y bancos, a cobrar y a pagar, hacienda, granos e insumos, socios, para revisar con el
+   contador, balances), conservando el número de página del completo para que el índice valga. **Lo que se parte en dos PDF vive en
+   dos hojas**: si comparten hoja, el corte cae a mitad de página.
+8. **Antes de recortar contenido, JMS mira un «antes» y un «después» sólo de esas hojas.** Plegar secciones a título y total
+   (`intermedio.py`) **no lo convenció** (18/11): no se aplica al archivo completo sin su punto por punto.
+
 ## A confirmar
 
 Dos notas tuyas admitían más de una lectura. Las dejé fuera de las reglas obligatorias hasta que las confirmes.

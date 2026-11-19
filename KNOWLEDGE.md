@@ -3131,3 +3131,22 @@ De armar las cuentas MSA↔MA y MSA↔PAM ([A-FEAT-1532](PENDIENTES.md#a-feat-15
 
 ### 🐞 Un lector de PDF que anda en Node puede fallar en el navegador (2026-11-05, A-FEAT-1565)
 `DecompressionStream("deflate")` es **estricto en Chrome**: si después de los datos comprimidos queda algo (el salto de línea antes de `endstream`), tira el stream entero; Node lo tolera. Por eso las pruebas en Node daban verde y en la app las 26 boletas de ARBA de la cuota 4 salían mudas. Regla: un lector que corre en el navegador se prueba **en un navegador** (`scripts/probar-boletas-navegador.mts`, Chromium de Playwright).
+
+## PDF del reporte: páginas, links y cortes — lo que se aprendió el 18/11 `#reportes #pdf #excel #balance #2026-11-18`
+
+- **Excel pierde los links internos al exportar a PDF.** Los que van a otra hoja del libro salen como texto azul sin link. Se reponen
+  después con `scripts/reporte-items/pdf_links.py links` (busca el texto de cada link en las páginas de su hoja).
+- **Un link de PDF tiene que apuntar al OBJETO página, no a su número.** Con `/Dest [4 /Fit]` (lo que escribe
+  `PyPDF2.AnnotationBuilder.link`) Acrobat y los navegadores lo ignoran sin avisar. Sirve `/A << /S /GoTo /D [<ref de la página> /Fit] >>`,
+  con el rectángulo en números cortos. **Que el archivo «tenga» las anotaciones no prueba nada**: se prueba con pdf.js
+  (`getAnnotations` + `getPageIndex`). ❌ Se entregó tres veces como «links activos» sin esa prueba.
+- **El número de página del índice sale en dos pasadas**: exportar, leer en qué página cae cada hoja (por el pie «&A»), escribirlo en
+  el índice, exportar de nuevo y confirmar que no se movió nada (`pdf_links.py paginas` → «cambiaron: 0»).
+- **Excel ignora los saltos de página manuales cuando la hoja está «ajustada a 1 página de ancho».** Para que algo empiece en página
+  nueva tiene que ir en otra hoja (por eso existe «D2.1 Compras detalle»).
+- **Partir un PDF por páginas conserva el pie «Página N de M» del completo** (sirve: el índice sigue valiendo), pero los links entre
+  partes dejan de tener destino: se sacan (`pdf_partes.py`).
+- **Ocultar renglones es más seguro que borrarlos**: las fórmulas que apuntan a ellos siguen andando y Excel no los imprime. Así se
+  sacan los controles de la presentación y el mes a mes de gastos bancarios.
+- **`python -P probar.py <módulo> <fuentes> <salida>`** prueba un detalle suelto en segundos; el reporte entero con sus dos PDF tarda
+  unos diez minutos y usa el Excel de la máquina (de a uno).
