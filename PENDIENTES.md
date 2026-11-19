@@ -18856,3 +18856,31 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   los demás movimientos de MA siguen con «CTA MA X» (no se tocaron; falta saber qué marca la X) · no revisé si
   `templates_master.total_renglones` (237) se mantiene solo al crear un template.
 - Próximo script **290**.
+
+**34 · 19/11 — la cuenta de JMS auditada, y los sueldos que un socio le pagó a otro por MSA entran a las cuentas con socios**
+
+- **La cuenta de JMS con MSA enviada al contador (−36.482.265,53, 24 asientos), verificada renglón por renglón** (`- Enviados/2026/
+  Enviar/Cuentas de socios.xlsx` contra la base): saldo inicio −15.000.000 · factura Fac C 1-63 del 25/10/2025 +19.320.000 (compras,
+  origen «sistema anterior», cuenta Honorarios JMS) · 16 pagos de sueldo −37.834.647,76 · reintegro monotributo −2.137.884,27 · 3
+  pasajes de templates −481.262,50 · 3 compras con débito sin template −348.471,00. En Galicia MSA: 23 movimientos CTA JMS por
+  40.802.265,53 ✓. JMS 19/11: a nivel de cuenta corriente está bien.
+- **Los extras del sueldo de JMS tienen anotación de JMS** (sueldos, observaciones): nov-25 premio US$ 5.000 = 7.250.000 (lo pagó
+  PAM) · abr-26 retroactivo ene-25 a ene-26 = 11.720.816,55 (lo pagó MSA, está en la cuenta) · jun-26 aguinaldo 1.775.444 (pagado
+  con el sueldo de junio el 01/07/2026: ejercicio siguiente, JMS: «está bien»).
+- **Decisión de JMS: los reintegros (monotributo, viáticos) siguen por TEMPLATES, no por Sueldos** (propuesta de Claude aceptada
+  para seguir conversando: Sueldos no tiene renglón «reintegro» con nombre y los sumaría al bruto). Falta acordar la regla del
+  libro: «cuota de template de MSA cuyo pago tiene código de un socio → bloque 4». Hoy el monotributo sale por la lista
+  `CATEGORIAS_A_CUENTA_SOCIO` y los pasajes no.
+- **Hueco encontrado y corregido en la app (JMS: «sí, hacé esa corrección»)**: un sueldo de MSA pagado desde la cuenta de un socio a
+  otro socio no entraba a ninguna cuenta (no es «CTA MSA» y no pasa por los bancos de MSA). Ahora `movimientosDeLosSocios` arma dos
+  asientos con la misma plata: MSA le debe al que pagó, y el que cobró lo recibió. Sólo lo atado a un pago de sueldo. Caso nuevo en
+  `npm run probar` (1570/1570), type-check sin empeorar, build en verde. 🟡 **Sin ver todavía en un libro bajado.**
+- **Lo que toma con los datos reales del ejercicio** (PAM cta cte): 28/11/25 premio JMS 7.250.000 · 30/12/25 sueldo dic JMS
+  2.341.786,19 + 1.000.000 · **30/12/25 2.000.000 con código CTA AMS** (éste no lo había visto antes de correr la regla). Efecto
+  esperado sobre lo enviado: PAM −189.826,57 → +12.401.959,62 · JMS −36.482.265,53 → −47.074.051,72 · AMS −6.092.248,73 →
+  −8.092.248,73. **Cambia tres saldos ya enviados al contador: avisarle cuando JMS lo confirme en el libro.**
+- **Sin resolver, para JMS**: 7 sueldos de empleados pagados desde cuentas de PAM y de MA **sin código contable** (PAM: 31/07/25
+  429.000 · 01/09/25 360.000 · 30/09/25 380.000 · 09/10/25 219.892; MA: 20/03/26 900.000 · 31/03/26 900.000 · 05/06/26 1.500.000 =
+  4.688.892,00). No entran a ninguna cuenta: falta saber si son sueldos de MSA pagados por el socio (MSA les debe) o gasto propio.
+  · El libro de Sueldos rotula a JMS y AMS como empresa «MSA/PAM/MA»: se trató todo como de MSA, a confirmar.
+  · JMS figura como gasto dos veces por su trabajo (bruto en Sueldos + factura en compras): para ver con el contador.

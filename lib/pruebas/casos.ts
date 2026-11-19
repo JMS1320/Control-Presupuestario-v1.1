@@ -8599,6 +8599,24 @@ export function correrCasos(): Resultado[] {
       chequear("Cuentas corrientes", "👥 La 14.1 suma lo que el socio pagó por MSA desde su cuenta, no lista el espejo (dice si la otra punta está o falta) y el detalle es una tabla por cuenta con Debe / Haber que cierra",
         eS, vS, vS === eS, "A-FEAT-1577")
     }
+    // 👥 A-FEAT-1629 punto 34 (JMS 19/11): un sueldo de MSA que PAM le pagó a JMS desde su cuenta entra a las DOS cuentas — MSA le debe a
+    //    PAM y JMS lo cobró —; un pago de PAM a JMS que no es sueldo no entra (es cosa de ellos).
+    {
+      const ccPAM = { clave: "PAM", nombre: "PAM cta cte", movimientos: [
+        { id: "s1", fecha: "2025-11-28", debitos: 7250000, contable: "CTA JMS", sueldo_pago_id: "pg1", descripcion: "Trf Inmed Proveed" },
+        { id: "s2", fecha: "2025-12-30", debitos: 3341786.19, contable: "CTA JMS", sueldo_pago_id: "pg2" },
+        { id: "s3", fecha: "2026-01-10", debitos: 500000, contable: "CTA JMS" },                                  // sin sueldo: no es de MSA
+        { id: "s4", fecha: "2026-01-11", debitos: 900, contable: "CTA PAM", sueldo_pago_id: "pg3" },              // a sí mismo: no entra
+      ] }
+      const msaG = [{ id: "g1", fecha: "2026-04-17", debitos: 1000000, contable: "CTA JMS", cuenta: "MSA Galicia cta cte" }]
+      const r = movimientosDeLosSocios(msaG, [ccPAM])
+      const papelE = armarCuentasCorrientes([], [], [...r.msa, ...r.delSocio])
+      const sal = (k: string) => n2(papelE.cuentas.find(c => c.contraparte.clave === k)?.saldoAlCierre ?? NaN)
+      const vE = `PAM ${sal("PAM")} · JMS ${sal("JMS")} · asientos ${r.delSocio.length}+${r.msa.length - msaG.length} · ${r.msa.filter(m => m.id !== "g1").map(m => m.cuenta).join(" | ")}`
+      const eE = "PAM 10.591.786,19 · JMS -11.591.786,19 · asientos 2+2 · PAM cta cte (pagó PAM por MSA) | PAM cta cte (pagó PAM por MSA)"
+      chequear("Cuentas corrientes", "👥 Un sueldo de MSA que un socio le pagó a otro desde su cuenta (PAM → JMS) entra a las dos cuentas: MSA le debe al que pagó y el que cobró lo recibió; un pago entre socios sin sueldo no entra",
+        eE, vE, vE === eE, "A-FEAT-1629")
+    }
     chequear("Cuentas corrientes", "🏷️ «CTA PAM» ya es la cuenta de PAM (antes quedaba sin tratar): retiro y aporte con su signo (el saldo es lo que MSA le debe: un retiro lo baja)",
       "PAM -4.000.000,00 · sin tratar 0", vP, vP === "PAM -4.000.000,00 · sin tratar 0", "A-FEAT-1577")
 

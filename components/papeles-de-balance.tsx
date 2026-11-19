@@ -1301,7 +1301,8 @@ export function PapelesDeBalance() {
             for (const x of CUENTAS_SOCIOS) {
               const base = () => (x.schema === "public" ? supabase.from(x.tabla) : supabase.schema(x.schema).from(x.tabla))
               const leido = await traerTodo((d, h) => {
-                let q = base().select("id, fecha, debitos, creditos, descripcion, detalle, contable, comprobantes_pagados, estado, categ", { count: "exact" })
+                // sueldo_pago_id (A-FEAT-1629 punto 34): lo que un socio le pagó a otro por un sueldo de MSA. Las tarjetas no llevan esa columna.
+                let q = base().select(`id, fecha, debitos, creditos, descripcion, detalle, contable, comprobantes_pagados, estado, categ${x.tarjeta ? "" : ", sueldo_pago_id"}`, { count: "exact" })
                   .gte("fecha", `${meses[0]}-01`).lte("fecha", finEj)
                 if (x.tarjeta) q = q.eq("tipo_fila", "movimiento")
                 return q.order("id").range(d, h)
@@ -1309,7 +1310,7 @@ export function PapelesDeBalance() {
               anotar(`Cuentas de los socios: ${x.nombre}`, leido)
               if (leido.error) throw new Error(leido.error.message)
               cuentasSocios.push({ clave: x.clave, nombre: x.nombre,
-                movimientos: ((leido.data ?? []) as Array<Record<string, unknown>>).map(r => ({ ...(r as unknown as MovimientoParaCC), grupo: String(r.categ ?? "") || undefined })) })
+                movimientos: ((leido.data ?? []) as unknown as Array<Record<string, unknown>>).map(r => ({ ...(r as unknown as MovimientoParaCC), grupo: String(r.categ ?? "") || undefined })) })
             }
             const conSocios = movimientosDeLosSocios(movsConSocios, cuentasSocios)
             movsConSocios = conSocios.msa

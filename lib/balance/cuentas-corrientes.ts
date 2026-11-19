@@ -187,6 +187,8 @@ export interface MovimientoParaCC {
    * factura de MSA desde su caja de ahorro, MSA le debe más.
    */
   delSocio?: boolean
+  /** 👥 A-FEAT-1629 punto 34: el pago de sueldo al que está atado el movimiento (para lo que un socio le pagó a otro por MSA). */
+  sueldo_pago_id?: string | null
 }
 
 export interface CuentaCorrienteDelBalance {
@@ -520,7 +522,25 @@ export function movimientosDeLosSocios(
     delSocio.push({ ...y, id: `${x.nombre}:${y.id}`, contable: (contrapartes.find(c => c.clave === x.clave)?.etiquetasContable[0]) ?? y.contable,
       cuenta: x.nombre, delSocio: true })
   }
-  return { delSocio, msa }
+  /**
+   * 3. 👥 A-FEAT-1629 punto 34 (JMS 19/11: *«lo que quiero ver es cómo está reflejándose en PAM los pagos que le hizo a JMS»* → *«sí, hacé esa
+   *    corrección»*). Un SUELDO de MSA pagado desde la cuenta de un socio a OTRO socio (PAM le paga el premio a JMS: en el banco de PAM
+   *    queda atado al sueldo y marcado «CTA JMS») no tenía por dónde entrar: no es «CTA MSA» y no pasa por los bancos de MSA. Son DOS
+   *    asientos con la misma plata: el que pagó lo hizo por MSA (MSA le debe más) y el que cobró recibió ese importe (como si se lo hubiera
+   *    pagado MSA). Sólo lo atado a un pago de sueldo: un pago entre socios sin sueldo es cosa de ellos, no de MSA.
+   */
+  const entreSocios: MovimientoParaCC[] = []
+  for (const x of cuentasSocios) for (const y of x.movimientos) {
+    const cobra = porEtiqueta.get(normalizar(y.contable))
+    if (usados.has(y.id) || !y.sueldo_pago_id || !cobra || cobra.clave === x.clave) continue
+    const paga = contrapartes.find(c => c.clave === x.clave)
+    if (!paga) continue
+    delSocio.push({ ...y, id: `${x.nombre}:${y.id}:pago`, contable: paga.etiquetasContable[0], cuenta: x.nombre, delSocio: true,
+      grupo: `Sueldo de ${cobra.clave} pagado por ${paga.clave}` })
+    entreSocios.push({ ...y, id: `${x.nombre}:${y.id}:cobro`, cuenta: `${x.nombre} (pagó ${paga.clave} por MSA)`,
+      grupo: `Sueldo pagado por ${paga.clave}` })
+  }
+  return { delSocio, msa: [...msa, ...entreSocios] }
 }
 
 /**
