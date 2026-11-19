@@ -18947,3 +18947,11 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   armado fuera de la app). **MA tampoco coincide** (app −44.459.338,17 · enviado −45.593.911,03, dif. 1.134.572,86). Sin investigar:
   son dos armados distintos de la misma cuenta y hay que conciliarlos antes de avisarle al contador.
 - ✓ **Sueldos**: dos bloques — empleados bruto 62.865.712,75 · socios que facturan (JMS, AMS) 81.154.400,28 · total 144.020.113,03.
+
+**38 · 19/11 — SEGUNDO LIBRO BAJADO (`Export Balance App/v18`, generado 02:33): «H · MSA · Egresos» cierra entero**
+
+- ✓ Los cuatro bloques: egresos 66.914.486,47 (1.170 cuotas) · financiero −32.644.262,55 (243) · socios de pago directo
+  **54.906.595,00 (28)** · reintegros **2.619.146,77 (4)** · total 91.795.965,69 (1.445). No suman: 19 y 72. El arreglo del punto 37
+  se ve. Cada subtotal es `SUM` de sus renglones y el TOTAL suma los cuatro subtotales.
+- ✓ MA y PAM con los mismos bloques (MA total 22.286.966,76 en 788 cuotas; PAM −61.325.677,46 en 405). Socios y Sueldos, igual que en el v17.
+- **Sigue abierto**: la diferencia de AMS (628.914,00) y de MA (1.134.572,86) entre la 14.1 de la app y lo enviado al contador.
