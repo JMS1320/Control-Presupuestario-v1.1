@@ -19002,3 +19002,22 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   con el orden de bloques viejo · «Viaticos» y «Gastos Reintegro JMS» no están en el plan de cuentas · el sueldo de JMS sigue como
   gasto en el libro de Sueldos (mismo criterio que los reintegros, a definir con el contador) · el generador del reporte
   (`scripts/reporte-items/d_sueldos.py`) lee la solapa de Sueldos, que cambió: revisarlo antes de otra versión del reporte.
+
+**41 · 19/11 — auditoría de las cuentas de AMS y MA en la 14.1 de la app (libro v18), asiento por asiento**
+
+- JMS: *«la app debería exportar lo correcto… dale, hacela»*. Cruce asiento por asiento de la 14.1 (v18) contra el detalle del archivo
+  del 12/11 y contra la base (`cruce_socios.py`). AMS: 23 de 24 asientos empatan · MA: 79 de 96. **Lo que no empata, todo explicado:**
+- 🧨 **Hueco de la app: la 14.1 sólo lee la cuenta corriente Galicia de MSA** (más la VISA y las cuentas de los socios). Los movimientos con
+  código de un socio en **otras cuentas de MSA** no entran. En la base, del ejercicio, son tres:
+  · Santander MSA, 01/08/25 389.920 y 01/09/25 238.994, «Sueldo AMS julio / agosto», **CTA AMS** → faltan 628.914,00 en AMS.
+  · Caja Sigot, 16/05/26 y 19/05/26, 2 × 400.000 «Pago Víctor albañil chalet», **CTA MA** (script 289) → faltan 800.000,00 en MA.
+  · Caja AMS, 20/08/25 1.756.595 «ITGB Suc PAM 1», **CTA COTITULARES** → la app no tiene la contraparte «Cotitulares»: no figura.
+  Provincia, Caja General y las de dólares no tienen ninguno. **Propuesta**: que la 14.1 lea todas las cuentas de MSA (las mismas que
+  usa el extracto del libro H), y sumar «Cotitulares» como contraparte. Espera OK de JMS.
+- ⚖️ **Criterio de la tarjeta, a decidir por JMS**: la app toma el consumo de la VISA de MSA en la fecha en que se PAGA el resumen; el
+  archivo del 12/11 lo tomó en la fecha del CONSUMO. Los consumos de junio 2026 que se pagaron en julio quedan afuera en la app:
+  Internet NZ 02/06/26 91.300,00 + Seguro Chalet 26/06/26 2 × 121.636,43 = **334.572,86 en MA**. Mismos importes en todo lo demás.
+  Recomendación de Claude: **fecha del consumo** (lo devengado — feedback 12/11), coherente con que la deuda de la tarjeta al 30/06 va
+  dentro de proveedores en el balance propio. Sin decidir.
+- ✓ **El resto de AMS y MA empata asiento por asiento**; la única diferencia nueva es la de hoy (2.000.000 de PAM a AMS, punto 34).
+  Si se corrige el hueco y se toma la fecha del consumo, la app daría AMS −8.092.248,73 y MA −45.593.911,03 (calculado).
