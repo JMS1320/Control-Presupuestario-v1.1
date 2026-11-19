@@ -1538,6 +1538,9 @@ const COLS_CADENA: Columna[] = [
  * 🧮 Cada fila trae **el bruto recompuesto desde sus partes** contra **el guardado**, y su diferencia.
  * Es el camino inverso: si no dan lo mismo, el papel lo dice antes de que lo vea el contador.
  */
+/** Los socios que cobran por Sueldos y le FACTURAN a MSA (su gasto entra por compras). Como figuran en `sueldos.empleados`. */
+export const SOCIOS_QUE_FACTURAN = ["JMS", "AMS"]
+
 function hojaDeSueldos(s: SueldosDelEjercicio, etiqueta: string): unknown[][] {
   const f: unknown[][] = []
   f.push([`SUELDOS — ejercicio ${etiqueta}`])
@@ -1558,25 +1561,43 @@ function hojaDeSueldos(s: SueldosDelEjercicio, etiqueta: string): unknown[][] {
     money(x.pagado), money(x.saldo),
   ]
 
-  const desde = f.length + 1
-  s.filas.forEach(x => f.push(fila(x)))
-  const hasta = f.length
-
+  /**
+   * 👥 A-FEAT-1629 punto 36 (JMS 19/11: *«si no está diferenciado hacelo como un bloque aparte, AMS y JMS»*). Los socios que le FACTURAN
+   * a MSA cobran por Sueldos, pero su pago va a su cuenta corriente y el gasto entra por su factura (compras): van en un bloque
+   * propio con su subtotal, separados de los empleados. El TOTAL suma los dos subtotales (apunta a las celdas que lo forman).
+   */
+  const esSocio = (x: FilaSueldo) => SOCIOS_QUE_FACTURAN.includes(String(x.empleado).trim().toUpperCase())
+  const COLS_SUMA = ["E", "F", "G", "J", "K", "L", "M", "P", "Q"] as const
+  const valores = (xs: FilaSueldo[]) => [xs.reduce((a, x) => a + x.montoA, 0), xs.reduce((a, x) => a + x.montoB, 0), xs.reduce((a, x) => a + x.cuotaAlimentaria, 0),
+    xs.reduce((a, x) => a + x.porFrancos, 0), xs.reduce((a, x) => a + x.porJornal, 0), xs.reduce((a, x) => a + x.extras, 0),
+    xs.reduce((a, x) => a + x.brutoGuardado, 0), xs.reduce((a, x) => a + x.pagado, 0), xs.reduce((a, x) => a + x.saldo, 0)].map(v => Math.round(v * 100) / 100)
+  const renglonTotal = (rotulo: string, celda: (col: string, i: number) => unknown) => {
+    const c = (col: (typeof COLS_SUMA)[number]) => celda(col, COLS_SUMA.indexOf(col))
+    return [rotulo, "", "", "", c("E"), c("F"), c("G"), "", "", c("J"), c("K"), c("L"), c("M"), "", "", c("P"), c("Q")]
+  }
+  const bloques: Array<[string, string, FilaSueldo[]]> = [
+    ["EMPLEADOS", "Subtotal empleados", s.filas.filter(x => !esSocio(x))],
+    [`SOCIOS QUE FACTURAN (${SOCIOS_QUE_FACTURAN.join(", ")}) — el pago va a su cuenta corriente; el gasto entra por su factura`, "Subtotal socios que facturan", s.filas.filter(esSocio)],
+  ]
+  const haySocios = bloques[1][2].length > 0
+  const filasSub: number[] = []
+  for (const [titulo, rotuloSub, xs] of bloques) {
+    if (!xs.length) continue
+    if (haySocios) f.push([titulo])
+    const desde = f.length + 1
+    xs.forEach(x => f.push(fila(x)))
+    const hasta = f.length
+    if (haySocios) {
+      const v = valores(xs)
+      f.push(renglonTotal(rotuloSub, (col, i) => conFormula(`SUM(${col}${desde}:${col}${hasta})`, v[i])))
+      filasSub.push(f.length)
+      f.push([])
+    } else filasSub.push(-desde, -hasta)
+  }
   // 🔑 Los totales que él pidió, con fórmula para que sigan al filtro.
-  f.push([
-    "TOTAL", "", "", "",
-    ...(["E", "F", "G"] as const).map((col, i) =>
-      conFormula(`SUM(${col}${desde}:${col}${hasta})`,
-        [s.total.montoA, s.total.montoB, s.total.cuotaAlimentaria][i])),
-    "", "",
-    conFormula(`SUM(J${desde}:J${hasta})`, s.total.porFrancos),
-    conFormula(`SUM(K${desde}:K${hasta})`, s.total.porJornal),
-    conFormula(`SUM(L${desde}:L${hasta})`, s.total.extras),
-    conFormula(`SUM(M${desde}:M${hasta})`, s.total.bruto),
-    "", "",
-    conFormula(`SUM(P${desde}:P${hasta})`, s.total.pagado),
-    conFormula(`SUM(Q${desde}:Q${hasta})`, s.total.saldo),
-  ])
+  const vT = [s.total.montoA, s.total.montoB, s.total.cuotaAlimentaria, s.total.porFrancos, s.total.porJornal, s.total.extras, s.total.bruto, s.total.pagado, s.total.saldo]
+  f.push(renglonTotal("TOTAL", (col, i) => conFormula(
+    haySocios ? filasSub.map(r => `${col}${r}`).join("+") : `SUM(${col}${-filasSub[0]}:${col}${-filasSub[1]})`, vT[i])))
 
   f.push([])
   f.push([])
