@@ -251,6 +251,17 @@ Tenés que ser más explícito además de sintético, para yo poder ubicar lo qu
 *Motivo: JMS trabaja con varias terminales y temas a la vez; una referencia ambigua lo obliga a buscar hacia atrás antes de poder
 contestar, que es el mismo costo que esta § 🗣️ quiere evitar.*
 
+#### 🧾 Al auditar el balance, NO recordarle las diferencias con lo ya enviado al contador (REGLA)
+*Pedida por JMS 2026-11-19, auditando el libro de templates: **«yo ya sé que va a haber diferencias con lo enviado al contador y no quiero
+que me lo recuerdes haciéndome confundir con cosas que vayamos encontrando. Todo lo que cambiemos ahora va a ser una diferencia; está
+descontado»**.*
+
+> **Se audita contra la base y contra el libro anterior (antes / después), no contra lo enviado.** Lo enviado se menciona sólo si JMS lo
+> pide o si se está armando un envío nuevo.
+
+*Motivo: cada hallazgo que se cierra con «y esto difiere de lo que tiene el contador» le agrega una cuenta que no puede resolver ahora y
+lo obliga a separar qué diferencia es nueva y cuál es vieja.*
+
 #### 📝 Cuando JMS enuncia un PROTOCOLO, se escribe en las reglas en el momento (REGLA)
 *Pedida por el usuario 2026-11-13: **«cuando yo te digo algo de los protocolos, lo tenés que documentar en las reglas de
 funcionamiento que tenemos. Muchas veces yo te hablo como de cierto protocolo y pretendo que vayas entendiendo esto»**.*
