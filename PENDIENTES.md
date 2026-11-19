@@ -378,7 +378,7 @@ es un error de la guía y hay que corregirla, no ignorarla.
 > 3. **Cada decisión de JMS**: al dossier en el momento, con su frase textual. Si es una regla de presentación, también al `Protocolo de generación de reportes.md`.
 > 4. **Al cerrar**: actualizar en este mapa «Última entrega», «Estado» y «Qué falta» del objetivo tocado; commit y push.
 > 5. **Antes de guardar `PENDIENTES.md` por programa**: leer todo primero y verificar que lo que se va a escribir no sea más chico que lo que había *(el 17/11 un script lo dejó vacío y se commiteó así; se restauró el 18/11 desde el historial — commit `5953c135`)*.
-> 6. **La rama**: hoy todo esto vive en `jms/reporte-socios`, sin sumar a `desarrollo`. Mientras no se sume, **las otras terminales no ven ni este mapa ni los puntos 14–26 del dossier**.
+> 6. **La rama**: el mapa, el dossier y el generador del reporte **están en `desarrollo` desde el 18/11** (merge `b537c32a`, con OK de JMS; pruebas 1568/1568, type-check sin empeorar y build en verde). Lo que se trabaje después en una rama aparte se suma a `desarrollo` al cerrar: si no, las otras terminales no lo ven.
 
 
 *(Lo escribió la sesión que armó el Libro Diario consensuado, «Estanco», el 30/10. La historia completa está en `D:\Users\josem\Documents\Jose\- Desarrollo de Software\Sesion Claude Estanco\ESTADO - cierre sesion 2026-10-28.md` §1-12 y en `TRASPASO-T1-2026-10-30.md`, parte A. Es solo archivo: ya no se trabaja ahí.)*
