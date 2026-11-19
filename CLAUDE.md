@@ -44,6 +44,8 @@ presentaciones). Cuando se acerca un evento, lo que ese evento necesita **pasa a
 > Evento en curso — **balance 25/26**: corte **30/06/2026** · al contador **01/10/2026** · a ARCA
 > **01/11/2026**. Objetivo: que los **papeles de trabajo sean un export del sistema**.
 > → [A-FEAT-09](PENDIENTES.md#a-feat-09)
+>
+> 🧭 **El balance son SEIS objetivos y ninguno se termina en una sesión** *(JMS 2026-11-18)*: papeles para auditar · envío al contador · export para socios · balance propio · balance en línea (a la fecha) · previsión al cierre con el presupuesto. Su estado, dónde vive cada uno y el **protocolo de trazabilidad** (qué se lee al abrir y qué se actualiza al cerrar) están en `PENDIENTES.md` → 🎯 FOCO ACTUAL → Camino 1 → **«MAPA DEL BALANCE»**. Una sesión que toca el balance y no actualiza ese mapa al cerrar deja a la siguiente sin punto de partida.
 
 #### 🤖 El norte ADMINISTRATIVO — automatizar
 *Enunciado por el usuario 2026-08-31: **"es el norte en términos administrativos"**.*
