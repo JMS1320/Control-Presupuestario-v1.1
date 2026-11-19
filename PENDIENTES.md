@@ -372,6 +372,27 @@ es un error de la guía y hay que corregirla, no ignorarla.
 >
 > **Cómo se relacionan:** M1 es la base → M2 la incluye → M3 es M1 presentado. M4 es otro balance, con otro criterio. M5 es M1/M4 «a hoy». M6 es M5 más el presupuesto.
 >
+>
+> 🔁 **MÉTODO DE TRABAJO — desde el principio, paso por paso, y cada paso lo da por bueno JMS** *(JMS 18/11/2026: «la idea es empezar
+> desde el principio. Yo dando por buenas las primeras páginas avanzamos a las siguientes. Empezaríamos como si recién empezáramos a
+> trabajar con los papeles de balance: exportando los libros del sistema, auditando las cosas, pasando a la parte de enviar al
+> contador y así en adelante. Yo te iré diciendo los requisitos de cada cosa… **no empezaremos por el final (presentación) sino por el
+> principio**»)*.
+> - **El orden es el del trabajo real**: (1) exportar los libros del sistema → (2) auditarlos → (3) armar lo que se envía al contador →
+>   (4) recién al final, la presentación a socios. Ahora que el balance está presentado se hace con calma y de forma consistente.
+> - **Los requisitos de cada paso los dice JMS** al llegar a ese paso. Claude no se adelanta a diseñar los pasos siguientes ni arranca
+>   por la presentación.
+> - **No se avanza al paso siguiente sin su «dado por bueno»**, y ese visto bueno se anota abajo con fecha. Lo que ya existe (reporte
+>   v15, generador, balance interno v1) es material del proceso: se reusa lo que sirva en cada paso, no se da por terminado.
+> - **Avance** (se completa a medida que JMS da por bueno cada paso):
+>
+> | Paso | Qué es | Requisitos de JMS | Estado | Dado por bueno |
+> |---|---|---|---|---|
+> | 1 | Exportar los libros del sistema | a definir por JMS al empezar | 🔵 sin empezar | — |
+> | 2 | Auditar | a definir | 🔵 | — |
+> | 3 | Envío al contador | a definir | 🔵 | — |
+> | 4 | Presentación a socios | a definir | 🔵 | — |
+>
 > **Protocolo de trazabilidad** (obliga a toda sesión que toque el balance):
 > 1. **Al abrir**: leer este mapa y el último punto del dossier del objetivo que se va a tocar. No preguntar lo que ya está decidido ahí.
 > 2. **Al entregar un archivo**: versión nueva, nunca pisar; anotar en el dossier la ruta, qué cambió y qué se verificó (y qué no).
