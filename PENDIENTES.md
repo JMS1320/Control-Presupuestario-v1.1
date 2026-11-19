@@ -18780,3 +18780,18 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   07.2 operaciones en dólares, 08 gastos bancarios, 08.1 impuesto al cheque, 09 retiros y aportes, impuestos y otros con sus «por mes»,
   control, control de cuotas de templates). No se revisó si su contenido está en otra solapa con otro nombre: **a ver con JMS**.
 - El reporte v15 se armó con los exports del 15/11; con éstos hay que regenerarlo cuando llegue ese paso.
+
+**29 · 19/11 — nombres cortos en todos los archivos que baja el balance (pedido de JMS en el paso 1)**
+
+- JMS: «me sale en todos los Excel [no se puede abrir: la ruta es mayor que 259] y les tengo que recortar los nombres». Dos causas:
+  los nombres que armaba la app llegaban a 104 caracteres, y **la carpeta donde los guardó ya ocupa 254** (hasta `…/Export Balance
+  App/` son 172; el nombre de la carpeta de la versión suma 66). Con esa carpeta no hay nombre que alcance.
+- **Hecho en la app** (`lib/balance/nombres-de-export.ts`, usado por el set A–I, «Libros por partes» y el balance propio): forma única
+  «<Título> - MSA 25-26 (dd-mm).xlsx», título sin paréntesis y recortado por palabra, **tope de 60 caracteres**; «_REVISAR» pasa a
+  « REV» junto a la fecha; la fecha es la de Argentina (antes el set usaba UTC y salía con el día siguiente). Ejemplos: «A Subdiarios -
+  MSA 25-26 (19-11 REV).xlsx» · «Proveedores - MSA 25-26 (18-11).xlsx» · «Set A-I - MSA 25-26 (19-11).zip». Dos partes con el mismo
+  nombre recortado no se pisan en el .zip. Caso nuevo en `npm run probar` (1569 de 1569); type-check sin empeorar; build en verde.
+  **Commiteado en `jms/reporte-socios`; falta el OK de JMS para subirlo a `desarrollo`** (ahí lo toma la app).
+- **Regla para las carpetas**: el nombre de la carpeta de una versión de exports va corto (ej. `v15 corto/1 set A-I`).
+- Copias de los exports del 18–19/11 con nombre corto, para que JMS las abra ya: `…/Export Balance App/v15 corto/` (19 archivos; ruta
+  más larga, 243 caracteres). Los originales no se tocaron.

@@ -23,6 +23,7 @@ import {
 } from "@/lib/balance/balance-propio"
 import XLSX from "xlsx-js-style"
 import { armarLibroBalancePropio, gananciaBapu, type PuntaBalancePropio } from "@/lib/balance/balance-propio-excel"
+import { nombreDeExport } from "@/lib/balance/nombres-de-export"
 import { vistasDe } from "@/lib/balance/export-libro-diario"
 import { aplicarVistas } from "@/lib/balance/formato-excel"
 import { descargarBlob } from "@/lib/descargar-archivo"
@@ -285,7 +286,7 @@ export function BalancePropio() {
                     const wb = armarLibroBalancePropio({ empresa, inicio: pi, cierre: pc, linkPapel: id => window.location.origin + linkPapelBalance(empresa, Number(pc.fecha.slice(0, 4)), id) })
                     const datos = await aplicarVistas(XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(wb as any))
                     descargarBlob(new Blob([datos as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-                      `Balance propio ${empresa} ${pi.fecha.slice(2, 4)}-${pc.fecha.slice(2, 4)} (${hoyArgentina()}).xlsx`)
+                      nombreDeExport("Balance propio", empresa, `${pi.fecha.slice(2, 4)}-${pc.fecha.slice(2, 4)}`, hoyArgentina()))
                   } catch (e) { toast.error("No se pudo armar el Excel: " + (e as Error).message) }
                 }
                 return (

@@ -39,6 +39,12 @@ export const LIBROS: Record<LetraLibro, string> = {
   I: "I - Socios y Libertad (próximo)",
 }
 
+/** El nombre CORTO de cada libro, para el archivo (JMS 19/11: los largos no dejaban abrir el Excel) → `nombres-de-export.ts`. */
+export const LIBROS_CORTO: Record<LetraLibro, string> = {
+  A: "A Subdiarios", B: "B Deudas y creditos", C: "C Templates y bancos", D: "D El resto", E: "E Stocks",
+  F: "F Balance en linea", G: "G Grupos templates", H: "H Egresos", I: "I Socios y Libertad",
+}
+
 const DE_A = new Set(["Compras", "Ventas", "Compras por cuenta", "Ventas por cuenta"])
 const DE_B = new Set(["04 Cuentas a pagar", "04.1 Cheques dados", "04.2 Anticipos", "04.3 Respaldo cuentas a pagar", "03 Cuentas a cobrar", "14 Cuentas corrientes"])
 const DE_E = new Set(["00 Stocks inicio y cierre"])

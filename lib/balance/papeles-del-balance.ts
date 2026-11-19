@@ -29,6 +29,7 @@
  */
 import XLSX from "xlsx-js-style"
 import { libroDeSolapa } from "./libros-del-balance"
+import { nombreDeExport } from "./nombres-de-export"
 
 /**
  * - `sistema`: la app lo arma entero, igual que lo que se mandó.
@@ -256,11 +257,10 @@ export function hojaControlDelPapel(papel: PapelDelBalance, armado: { solapas: s
   return f
 }
 
-/** El nombre del archivo: «Saldos - Provisiones - MSA 25-26 (2026-11-13).xlsx» o «Saldos - MSA 25-26 (…).xlsx» para el libro entero. */
+/** El nombre del archivo, corto (JMS 19/11): «Saldos - Provisiones - MSA 25-26 (13-11).xlsx» o «Saldos - MSA 25-26 (13-11).xlsx». */
 export function nombreDelPapel(papel: PapelDelBalance, empresa: string, etiqueta: string, fecha: string, libro?: PapelDelBalance): string {
-  const limpio = (s: string) => s.replace(/[\\/:*?"<>|]/g, "-")
   const titulo = papel.nivel === "libro" ? papel.nombre : `${libro?.nombre ?? papel.libro} - ${papel.nombre}`
-  return `${limpio(titulo)} - ${empresa} ${etiqueta.replace("/", "-")} (${fecha}).xlsx`
+  return nombreDeExport(titulo, empresa, etiqueta, fecha)
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════════════════════════

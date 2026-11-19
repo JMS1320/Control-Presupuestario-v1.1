@@ -128,6 +128,7 @@ import { hoyArgentina } from "@/lib/cotizaciones/parsers"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import XLSX from "xlsx-js-style"
 import { armarLibroBalancePropio, gananciaBapu, sociosDelBalancePropio, type PuntaBalancePropio, type CategoriaHacienda, type SocioBalancePropio } from "@/lib/balance/balance-propio-excel"
+import { nombreDeExport } from "@/lib/balance/nombres-de-export"
 import { valoresEfectivos } from "@/lib/balance/balance-propio"
 import { GRUPO_RODEO } from "@/lib/balance/stock-hacienda-papel"
 import { vistasDe } from "@/lib/balance/export-libro-diario"
@@ -514,7 +515,7 @@ export function PapelesDeBalance() {
       const wb = armarLibroBalancePropio({ empresa: empresa.id, inicio: pi, cierre: pc, hacienda: categorias, socios, linkPapel: id => window.location.origin + linkPapelBalance(empresa.id, Number(fc.slice(0, 4)), id) })
       const datos = await aplicarVistas(XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(wb as never))
       descargarBlob(new Blob([datos as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-        `Balance propio ${empresa.id} ${fi.slice(2, 4)}-${fc.slice(2, 4)} (${hoyArgentina()}).xlsx`)
+        nombreDeExport("Balance propio", empresa.id, `${fi.slice(2, 4)}-${fc.slice(2, 4)}`, hoyArgentina()))
       const g = gananciaBapu(pi, pc)
       toast.success(`✓ Balance propio bajado · ganancia total US$ ${Math.round(g.totalUsd).toLocaleString("es-AR")} · corriente US$ ${Math.round(g.corrienteUsd).toLocaleString("es-AR")}`)
     } catch (e) { toast.error("No se pudo armar el balance propio: " + (e as Error).message) }

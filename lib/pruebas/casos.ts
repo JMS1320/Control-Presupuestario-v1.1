@@ -209,6 +209,8 @@ import {
   type RenglonPago,
 } from "@/lib/sueldos/pago-repartido"
 import { hojaDePagos, nombreArchivoPagos } from "@/lib/sueldos/export-pagos"
+import { nombreDeExport, LARGO_MAXIMO_NOMBRE } from "@/lib/balance/nombres-de-export"
+import { LIBROS_CORTO } from "@/lib/balance/libros-del-balance"
 import {
   leerIpc, controlarIpc, acumuladaDelAnio, urlIpc, mesAnteriorISO,
 } from "@/lib/indices/ipc-indec"
@@ -14119,6 +14121,21 @@ export function correrCasos(): Resultado[] {
       `directos ${c.pares.filter(p => p.directo).map(p => p.entra.id).join(",")}`, `sin pareja ${[...c.salenSinPar, ...c.entranSinPar].map(m => m.id).join(",")}`, `a un pago ${c.aUnPago.map(m => m.id).join(",")}`].join(" | ")
     const e = "banco→caja 4 2520000 · salen 1 70000 · entran 0 0 | caja→caja 1 80000 · salen 2 250000 · entran 2 330000 | directos s2 | sin pareja g5,g6,b6,a1,s3 | a un pago b5"
     chequear("Cajas", "🔁 Pases: extracciones partidas por el tope del cajero (en los dos sentidos), pase General → Sigot aunque el texto nombre las dos cajas, el directo del banco a Sigot marcado, y lo que no tiene pareja (o va a otra caja que la que dice) listado; y la extracción ya conciliada a un pago (Penino 24/04) aparte, no como sin pareja", e, v, v === e, "A-FEAT-1585")
+  }
+  // ══ 📁 Nombres cortos de los exports del balance (A-FEAT-1629 punto 29, JMS 19/11: Excel no abre rutas de más de 259) ══
+  {
+    const nombres = [
+      nombreDeExport("A Subdiarios", "MSA", "25/26", "2026-11-19", { revisar: true }),
+      nombreDeExport("H - Egresos con boleta, extracto y demás liquidaciones", "MSA", "25/26", "2026-11-19", { revisar: true }),
+      nombreDeExport("Proveedores (deudas y créditos al cierre)", "MSA", "25/26", "2026-11-18"),
+      nombreDeExport("Templates - Impuestos Rurales y Municipales del campo", "PAM", "25/26", "2026-11-18"),
+      nombreDeExport("Set A-I", "MSA", "25/26", "2026-11-19", { ext: "zip" }),
+      ...Object.values(LIBROS_CORTO).map(x => nombreDeExport(x, "MSA", "25/26", "2026-11-19", { revisar: true })),
+    ]
+    const v = `${nombres.slice(0, 5).join(" | ")} · máximo ${Math.max(...nombres.map(x => x.length))} · tope ${LARGO_MAXIMO_NOMBRE}`
+    const e = "A Subdiarios - MSA 25-26 (19-11 REV).xlsx | H - Egresos con boleta - MSA 25-26 (19-11 REV).xlsx | Proveedores - MSA 25-26 (18-11).xlsx | Templates - Impuestos Rurales y - PAM 25-26 (18-11).xlsx | Set A-I - MSA 25-26 (19-11).zip"
+    chequear("Balance", "📁 Los archivos que baja el balance tienen nombre corto: sin paréntesis, fecha día-mes, recortado por palabra, y ninguno pasa del tope (Excel no abre rutas de más de 259 caracteres)",
+      `${e} · máximo ≤ ${LARGO_MAXIMO_NOMBRE}`, v, v.startsWith(e) && nombres.every(x => x.length <= LARGO_MAXIMO_NOMBRE), "A-FEAT-1629")
   }
   return r
 }

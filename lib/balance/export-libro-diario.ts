@@ -61,7 +61,8 @@ import { hojaLibertad, cuentasDeLibertad, conLibertadEnSocios } from "./libertad
 import { armarGruposTemplates, cuotaSinPago, armarHojaGrupo, gruposDelResponsable, hojaExtractoSinCategoria, hojaGrupo, hojaIndiceGrupos, hojaLib, nombreSolapaGrupo, SIN_GRUPO, type GrupoTemplates, type MovimientoLib } from "./grupos-templates"
 import { sinCategoriaNiVinculo, type MovimientoExtractoH } from "./movimientos-de-cuotas"
 import { filasBalanceEnLinea, hojaBalanceEnLinea, hojaCajaYBancos, hojaFci, hojaDeudasYCreditos, hojaSoja, hojaVacasDeCria, type EntradaBalanceEnLinea } from "./balance-en-linea"
-import { LIBROS, repartirEnLibros, templatesDeResponsable, responsablePrincipal, hojaListadoTemplates, hojaDeDetalle, type GrupoDetalle, type MovimientoDelDetalle } from "./libros-del-balance"
+import { LIBROS, LIBROS_CORTO, repartirEnLibros, templatesDeResponsable, responsablePrincipal, hojaListadoTemplates, hojaDeDetalle, type GrupoDetalle, type MovimientoDelDetalle } from "./libros-del-balance"
+import { nombreDeExport } from "./nombres-de-export"
 import { papelPorId, sePuedeBajar, recortarPapel, hojaControlDelPapel, nombreDelPapel, controlDeCobertura, type ControlDeCobertura } from "./papeles-del-balance"
 import { hoyArgentina } from "@/lib/fechas"
 import { hojaDelRecorrido, sincronizarPendientes, type RecorridoParaExcel } from "./recorrido-excel"
@@ -3372,10 +3373,9 @@ export function armarWorkbook(
   return wb
 }
 
-export function nombreArchivo(libro: LibroDiario, empresa: string): string {
-  const hoy = new Date().toISOString().slice(0, 10)
-  const estado = libro.controles.sePuedeEntregar ? "" : "_REVISAR"
-  return `Papeles_balance_${empresa}_${libro.ejercicio.etiqueta.replace("/", "-")}_${hoy}${estado}.xlsx`
+/** Nombre corto (JMS 19/11, `nombres-de-export.ts`): «Papeles balance - MSA 25-26 (19-11 REV).xlsx». La fecha es la de Argentina. */
+export function nombreArchivo(libro: LibroDiario, empresa: string, titulo = "Papeles balance", ext: "xlsx" | "zip" = "xlsx"): string {
+  return nombreDeExport(titulo, empresa, libro.ejercicio.etiqueta, hoyArgentina(), { revisar: !libro.controles.sePuedeEntregar, ext })
 }
 
 /**
@@ -3420,20 +3420,19 @@ export async function descargarSetDelBalance(a: Parameters<typeof armarWorkbook>
   const meses = mesesDelLibro(libro)
   const { default: JSZip } = await import("jszip")
   const zip = new JSZip()
-  const base = nombreArchivo(libro, empresa).replace(/\.xlsx$/, "")
   for (const l of repartirEnLibros(wb, vistasDe(wb))) {
     fechasReales(l.wb) // 📅 fechas como fecha: el filtro agrupa por año y mes (lib/excel/fechas-reales.ts)
     const datos = await aplicarVistas(XLSX.write(l.wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, l.vistas)
-    zip.file(`${base} - ${LIBROS[l.letra]}.xlsx`, datos)
+    zip.file(nombreArchivo(libro, empresa, LIBROS_CORTO[l.letra]), datos)
   }
   // 🔍 A-FEAT-1579: el H PARA AUDITAR, aparte (no va al contador): misma base, con quién pagó, código, efecto y marca por cuota.
   if (templates) {
     const wbA = XLSX.utils.book_new()
     agregarLibroH(wbA, templates, libro.ejercicio.etiqueta, meses, papeles, { auditoria: true, estructura })
     fechasReales(wbA)
-    zip.file(`${base} - H para auditar (no va al contador).xlsx`, await aplicarVistas(XLSX.write(wbA, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(wbA)))
+    zip.file(nombreArchivo(libro, empresa, "H para auditar"), await aplicarVistas(XLSX.write(wbA, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(wbA)))
   }
-  bajarBlob(await zip.generateAsync({ type: "blob" }), `${base} - set A-I.zip`)
+  bajarBlob(await zip.generateAsync({ type: "blob" }), nombreArchivo(libro, empresa, "Set A-I", "zip"))
 }
 
 /** Baja un archivo armado en memoria. */
@@ -3470,7 +3469,10 @@ export async function descargarPapelesDelBalance(a: Parameters<typeof armarWorkb
     hoja(armado.wb, "Control del papel", hojaControlDelPapel(p, armado, empresa, etiqueta, generado, deLibro), [{ ancho: 34 }, { ancho: 60 }, { ancho: 60 }])
     fechasReales(armado.wb)
     const datos = await aplicarVistas(XLSX.write(armado.wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(armado.wb))
-    archivos.push({ nombre: nombreDelPapel(p, empresa, etiqueta, fecha, deLibro), datos, papel: p.nivel === "libro" ? p.nombre : `${deLibro?.nombre ?? p.libro} → ${p.nombre}`,
+    // dos partes cuyo nombre recortado coincide no se pisan dentro del .zip: la segunda lleva « 2», la tercera « 3»…
+    let nombre = nombreDelPapel(p, empresa, etiqueta, fecha, deLibro)
+    for (let k = 2; archivos.some(x => x.nombre === nombre); k++) nombre = nombreDelPapel(p, empresa, etiqueta, fecha, deLibro).replace(/( - [^-]+ \d\d-\d\d \([^)]*\)\.xlsx)$/, ` ${k}$1`)
+    archivos.push({ nombre, datos, papel: p.nivel === "libro" ? p.nombre : `${deLibro?.nombre ?? p.libro} → ${p.nombre}`,
       solapas: armado.solapas.length, formulasAValor: armado.formulasAValor.length })
   }
   if (archivos.length === 1) bajarBlob(new Blob([archivos[0].datos as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), archivos[0].nombre)
@@ -3478,7 +3480,7 @@ export async function descargarPapelesDelBalance(a: Parameters<typeof armarWorkb
     const { default: JSZip } = await import("jszip")
     const zip = new JSZip()
     for (const x of archivos) zip.file(x.nombre, x.datos)
-    bajarBlob(await zip.generateAsync({ type: "blob" }), `Libros del balance - ${empresa} ${etiqueta.replace("/", "-")} (${fecha}).zip`)
+    bajarBlob(await zip.generateAsync({ type: "blob" }), nombreDeExport("Libros del balance", empresa, etiqueta, fecha, { ext: "zip" }))
   }
   return { archivos: archivos.map(({ papel, solapas, formulasAValor }) => ({ papel, solapas, formulasAValor })), cobertura: controlDeCobertura(wb.SheetNames) }
 }
