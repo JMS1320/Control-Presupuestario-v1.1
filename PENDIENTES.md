@@ -18795,3 +18795,18 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
 - **Regla para las carpetas**: el nombre de la carpeta de una versión de exports va corto (ej. `v15 corto/1 set A-I`).
 - Copias de los exports del 18–19/11 con nombre corto, para que JMS las abra ya: `…/Export Balance App/v15 corto/` (19 archivos; ruta
   más larga, 243 caracteres). Los originales no se tocaron.
+
+**30 · 19/11 — PASO 1: consistencia interna del libro «Templates - MSA 25-26 (18-11)» (sólo MSA)**
+
+- **208 controles, los 208 cierran** (`consistencia_templates.py`, carpeta de programas): (1) en «Por mes», cada una de las 41
+  categorías suma sus 12 meses, cada subtotal suma sus renglones y egresos + financiero = total del ejercicio; (2) en «Cuotas», las
+  1.418 cuotas suman por categoría lo mismo que «Por mes»; (3) cada una de las 13 solapas de agrupadora: sus renglones suman su total,
+  su total es el de «Por mes» y su detalle movimiento por movimiento da ese mismo total.
+- **Totales**: egresos 68.195.748,97 · financiero −32.644.262,55 · todo 35.551.486,42 (débitos 552.980.340,80 − créditos 517.428.854,38).
+- **Contra lo documentado el 12/11** (A-FEAT-1623): coinciden al centavo Impuestos General 37.254.678,62 · Inversiones −77.770.176,32 ·
+  Créditos 235.091,41 · tarjeta y caja 44.890.822,36 · gasto enviado 26.268.370,18. **La única diferencia está explicada**: egresos
+  68.195.748,97 contra el renglón T 66.914.486,47 = 1.281.262,50, que es exactamente «(sin agrupadora)» de hoy (4.672.700,17) menos
+  «Otros gastos» del envío (3.391.437,67) = Peajes y viáticos 261.545,00 + Viáticos 219.717,50 + Mantenimiento edilicio 800.000,00:
+  los renglones con código de socio, que en el envío se pasaron a las cuentas de socios. **A confirmar con JMS que son ésos.**
+- **Aviso del propio libro**: 305 movimientos del extracto sin categoría ni vínculo, neto 121.934.168,45, que no entran en ningún
+  control de este libro (solapa «H · MSA · Extracto sin categ»). No se revisaron MA ni PAM.
