@@ -169,8 +169,9 @@ export function hojaListadoTemplates(t: TemplatesDelEjercicio, responsable: stri
   const ROTULO: Record<string, string> = {
     egreso: "EGRESOS — gasto del ejercicio",
     financiero: "FINANCIERO — no es gasto: FCI, plazo fijo, caja, pago de tarjeta, transferencias",
+    distribucion: "SOCIOS — retiros y aportes: no es gasto, va a la cuenta de cada socio",
   }
-  const orden = (tipo: string) => (tipo === "egreso" ? 0 : tipo === "financiero" ? 1 : 2)
+  const orden = (tipo: string) => (tipo === "egreso" ? 0 : tipo === "financiero" ? 1 : tipo === "distribucion" ? 2 : 3)
   const tipos = [...new Set(filas.map(x => String(x[2])))].sort((a, b) => orden(a) - orden(b) || a.localeCompare(b))
   const redondo = (xs: unknown[][]) => Math.round(xs.reduce((s, x) => s + Number(x[10]), 0) * 100) / 100
   const subtotales: number[] = []
