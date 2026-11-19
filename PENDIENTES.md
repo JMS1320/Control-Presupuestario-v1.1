@@ -388,7 +388,7 @@ es un error de la guía y hay que corregirla, no ignorarla.
 >
 > | Paso | Qué es | Requisitos de JMS | Estado | Dado por bueno |
 > |---|---|---|---|---|
-> | 1 | Exportar los libros del sistema y auditarlos libro por libro | «todo es todo»: el libro tiene que traer TODO y cerrar contra la base (CLAUDE.md) · nombres cortos · bloques que suman / no suman | 🟡 **En curso. Hito 19/11: el libro de TEMPLATES cerrado** (dossier A-FEAT-1629, puntos 29–40). ▶️ **SE SIGUE DESDE ACÁ**: libro «Templates», solapa «H · MSA · Egresos» ya auditada → seguir con lo que JMS vaya encontrando al revisar ese libro (las demás solapas: «Cuotas», «Por mes», las de cada agrupadora; después MA y PAM). Último libro bajado y auditado: `Export Balance App/v18`. | 19/11: «hasta acá hemos cumplido con un hito» |
+> | 1 | Exportar los libros del sistema y auditarlos libro por libro | «todo es todo»: el libro tiene que traer TODO y cerrar contra la base (CLAUDE.md) · nombres cortos · bloques que suman / no suman | 🟡 **En curso. Hito 19/11: el libro de TEMPLATES cerrado** (dossier A-FEAT-1629, puntos 29–40). ▶️ **AL RETOMAR, PRIMERO**: bajar el set de libros de nuevo (en `desarrollo` desde el commit 59eaff55) y verificarlo contra la lista del **punto 43** (Templates igual que el v18; «Socios y Libertad» con AMS, MA y Cotitulares nuevos). **Después**: seguir auditando desde el libro «Templates» con lo que JMS encuentre (solapa «H · MSA · Egresos» ya auditada; siguen «Cuotas», «Por mes», las de cada agrupadora, MA y PAM). Último libro bajado y auditado: `Export Balance App/v18`. | 19/11: «hasta acá hemos cumplido con un hito» |
 > | 2 | Auditar | a definir | 🔵 | — |
 > | 3 | Envío al contador | a definir | 🔵 | — |
 > | 4 | Presentación a socios | a definir | 🔵 | — |
@@ -19037,3 +19037,40 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
 - **Lo que tiene que dar la 14.1 al bajarla** (calculado): JMS −47.074.051,72 y PAM +12.401.959,62 sin cambio · **AMS −8.092.248,73**
   (+ Santander 628.914,00) · **MA −45.593.911,03** (+ albañil 800.000,00 + consumos de junio pagados en julio 334.572,86) ·
   **Cotitulares −1.756.595,00** · total −90.114.846,86.
+
+**43 · 19/11 — CIERRE DE SESIÓN: qué hay que verificar al retomar, con los números que tienen que dar**
+
+- **Estado**: todo en `desarrollo` (commit **59eaff55**) y en `jms/reporte-socios`. Datos cambiados: scripts 289, 290 y 291 (con deshacer).
+  **Próximo script 292 · próximo FEAT/BUG 1632.** Lo último (punto 42: la 14.1 lee todas las cuentas en pesos de MSA, «Cotitulares»,
+  tarjeta por fecha del consumo) **no se vio todavía en un libro bajado**.
+- **Paso 1 al retomar — bajar el set y verificar**: desde la vista previa de `desarrollo` (Reportes → Balance), bajar «Libros del balance»
+  (zip) a una carpeta de nombre corto (`Export Balance App/v19`). Claude lo extrae y lo compara:
+  - **«Socios y Libertad», solapa «14.1 Cuentas con socios»** (es lo nuevo):
+
+    | Cuenta | v18 | Tiene que dar | Por qué |
+    |---|---|---|---|
+    | JMS | −47.074.051,72 | −47.074.051,72 | sin cambio |
+    | PAM | +12.401.959,62 | +12.401.959,62 | sin cambio |
+    | AMS | −7.463.334,73 | **−8.092.248,73** | 2 sueldos por Santander: 01/08/25 389.920 + 01/09/25 238.994 |
+    | MA | −44.459.338,17 | **−45.593.911,03** | albañil Caja Sigot 16/05 y 19/05/26 2 × 400.000 + consumos de junio pagados en julio: Internet NZ 02/06/26 91.300 + Seguro Chalet 26/06/26 2 × 121.636,43 |
+    | Cotitulares | no figuraba | **−1.756.595,00** | Caja AMS 20/08/25 «ITGB Suc PAM 1» |
+    | Total | −86.594.765,00 | **−90.114.846,86** | |
+
+    Además: en la cuenta de MA los consumos de la VISA tienen que figurar con la fecha del CONSUMO (antes, la del pago del resumen),
+    y ningún aviso de «movimientos en dólares con marca de socio» al armar el libro.
+  - **«Templates», solapa «H · MSA · Egresos»** (no tiene que haber cambiado respecto del v18): egresos 66.914.486,47 (1.170) ·
+    financiero −32.644.262,55 (243) · socios 54.906.595,00 (28) · reintegros 2.619.146,77 (4) · **total 91.795.965,69 (1.445)** · no suman
+    19 (7.223.246,55) y 72 (35.336.537,00). MA total 22.286.966,76 (788); PAM −61.325.677,46 (405). Contra la base: 1.536 / 818 / 436.
+  - **«Sueldos»**: empleados bruto 62.865.712,75 · socios que facturan (JMS, AMS) 81.154.400,28 · total 144.020.113,03.
+- **Herramientas** (copias en `Balance/Excels trabajando con claude/Copias/programas/reporte-msa-tanda-18-11/`; se corren con
+  `python -X utf8 <programa> …` sobre copias de los Excel en una carpeta corta): `chequeo_v17.py <carpeta>` (Templates, 14.1 y Sueldos de
+  un set) · `antes_despues.py <Templates viejo> <Templates nuevo>` (template por template) · `cruce_socios.py <Socios y Libertad>
+  <archivo de socios> <AMS|MA|JMS|PAM>` (asiento por asiento contra otra versión de la cuenta: para el v19, contra el v18) ·
+  `consistencia_templates.py` · `cuotas_por_responsable.py`. Las copias del v16, v17 y v18 extraídas están en el scratchpad de la sesión
+  (pueden no estar más): si hace falta, se vuelven a extraer de `Export Balance App/v16..v18`.
+- **Paso 2 — seguir el audit**: desde el libro «Templates» con lo que JMS vaya encontrando (método del mapa: no se avanza sin su visto
+  bueno). Al auditar se compara contra la base y contra el libro anterior, **no contra lo enviado al contador** (regla de CLAUDE.md, 19/11).
+- **Abierto, sin apuro**: A-FEAT-1631 (regla del template para cualquier cuenta) · orden de bloques en «Cuotas» y «Por mes» · «Viaticos» y
+  «Gastos Reintegro JMS» fuera del plan de cuentas · el sueldo de JMS sigue como gasto en Sueldos · `scripts/reporte-items/d_sueldos.py`
+  lee la solapa de Sueldos que cambió · «CTA QUINTA X» (9.000, Hermanos) sigue en «sin tratar» de la 14.1 · 3 compras con débito de la
+  cuenta de JMS sin template (14/07/25, 12/01/26, 16/01/26).
