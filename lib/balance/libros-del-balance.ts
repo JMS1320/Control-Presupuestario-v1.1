@@ -164,9 +164,35 @@ export function hojaListadoTemplates(t: TemplatesDelEjercicio, responsable: stri
     return [c.concepto, c.proveedor, c.tipo ?? "", c.agrupadoraTemplate ?? "", c.categ, c.cuenta_contable, c.responsable,
       cs.length, pagadas, cs.length - pagadas, Math.round(cs.reduce((s, x) => s + x.monto, 0) * 100) / 100]
   }).sort((a, b) => String(a[3]).localeCompare(String(b[3])) || String(a[0]).localeCompare(String(b[0])))
-  const desde = f.length + 1
-  f.push(...filas)
-  f.push(["TOTAL", "", "", "", "", "", "", "", "", "", { t: "n", f: `SUM(K${desde}:K${f.length})`, v: Math.round(filas.reduce((s, x) => s + Number(x[10]), 0) * 100) / 100 }])
+  // JMS 19/11: «listar primero el grupo de egresos y luego el de financiero, tal como está en Cuotas» — un bloque por tipo con su
+  // subtotal, y el TOTAL suma los subtotales (apunta a las celdas que lo forman). Antes iba todo mezclado bajo un solo total.
+  const ROTULO: Record<string, string> = {
+    egreso: "EGRESOS — gasto del ejercicio",
+    financiero: "FINANCIERO — no es gasto: FCI, plazo fijo, caja, pago de tarjeta, transferencias",
+  }
+  const orden = (tipo: string) => (tipo === "egreso" ? 0 : tipo === "financiero" ? 1 : 2)
+  const tipos = [...new Set(filas.map(x => String(x[2])))].sort((a, b) => orden(a) - orden(b) || a.localeCompare(b))
+  const redondo = (xs: unknown[][]) => Math.round(xs.reduce((s, x) => s + Number(x[10]), 0) * 100) / 100
+  const subtotales: number[] = []
+  for (const tipo of tipos) {
+    const suyas = filas.filter(x => String(x[2]) === tipo)
+    f.push([ROTULO[tipo] ?? (tipo ? tipo.toUpperCase() : "(SIN TIPO)")])
+    const desde = f.length + 1
+    f.push(...suyas)
+    f.push([`Subtotal ${tipo || "(sin tipo)"}`, "", "", "", "", "", "",
+      { t: "n", f: `SUM(H${desde}:H${f.length})`, v: suyas.reduce((s, x) => s + Number(x[7]), 0) },
+      { t: "n", f: `SUM(I${desde}:I${f.length})`, v: suyas.reduce((s, x) => s + Number(x[8]), 0) },
+      { t: "n", f: `SUM(J${desde}:J${f.length})`, v: suyas.reduce((s, x) => s + Number(x[9]), 0) },
+      { t: "n", f: `SUM(K${desde}:K${f.length})`, v: redondo(suyas) }])
+    subtotales.push(f.length)
+    f.push([])
+  }
+  const suma = (col: string) => subtotales.map(r => `${col}${r}`).join("+") || "0"
+  f.push(["TOTAL", "", "", "", "", "", "",
+    { t: "n", f: suma("H"), v: filas.reduce((s, x) => s + Number(x[7]), 0) },
+    { t: "n", f: suma("I"), v: filas.reduce((s, x) => s + Number(x[8]), 0) },
+    { t: "n", f: suma("J"), v: filas.reduce((s, x) => s + Number(x[9]), 0) },
+    { t: "n", f: suma("K"), v: redondo(filas) }])
   return f
 }
 

@@ -18810,3 +18810,18 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   los renglones con código de socio, que en el envío se pasaron a las cuentas de socios. **A confirmar con JMS que son ésos.**
 - **Aviso del propio libro**: 305 movimientos del extracto sin categoría ni vínculo, neto 121.934.168,45, que no entran en ningún
   control de este libro (solapa «H · MSA · Extracto sin categ»). No se revisaron MA ni PAM.
+
+**31 · 19/11 — PASO 1: hallazgos en el libro Templates de MSA (solapa «H · MSA · Egresos»)**
+
+- **H1 · Pagos que van por la cuenta de un socio: el libro saca sólo una parte.** Saca los templates ENTEROS de un socio (retiros y
+  distribuciones: 27 pagos, 54.906.595,00 = CTA MA 49.595.000 + CTA PAM 3.555.000 + cotitulares 1.756.595; y el monotributo de JMS
+  2.137.884,27, que lista aparte). **No saca los pagos sueltos con código de socio dentro de un template de MSA**: 5 pagos por
+  1.281.262,50 (verificados renglón por renglón contra «H para auditar» y contra el envío v5 del 12/11): 19/05/26 albañil chalet 2 ×
+  400.000 (Caja Sigot, CTA MA X) · 19/05/26 pasaje JMS 261.545 · 09/02/26 116.830 y 11/02/26 102.887,50 pasajes JMS (CTA JMS). Por eso
+  egresos da 68.195.748,97 y el gasto enviado 66.914.486,47. Los socios del envío (56.187.857,50) = 54.906.595,00 + 1.281.262,50 ✓.
+  El libro «por partes» además no trae la columna del código (sólo está en «H para auditar»). **Espera decisión de JMS**: propuesta =
+  que el libro reste esos pagos del gasto y los liste en «Van por la cuenta de un socio».
+- **H2 · Un template con varias categorías muestra una sola** («Otros Gastos» figura como ROLLOS y tiene 8). Sin corregir.
+- **H3 · Egresos y financiero iban mezclados bajo un solo total** (JMS: «listar primero el grupo de egresos y luego el de financiero,
+  tal como está en Cuotas»). 🟡 **Escrito, sin probar con un export real**: `hojaListadoTemplates` arma un bloque por tipo con su
+  subtotal y el TOTAL suma los subtotales. `npm run probar` 1569/1569 y type-check sin empeorar; falta bajar el libro y mirarlo.
