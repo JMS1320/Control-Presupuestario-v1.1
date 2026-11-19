@@ -117,6 +117,16 @@ export const CONTRAPARTES_DEL_BALANCE: ContraparteDelBalance[] = [
     etiquetasContable: ["CTA PAM"],
     socio: true,
   },
+  {
+    /**
+     * 👥 A-FEAT-1629 punto 42 (JMS 19/11: «sí, hacelo»): la marca «CTA COTITULARES» existía en la base (Caja AMS, 20/08/2025, «ITGB Suc PAM
+     * 1», 1.756.595) pero no era ninguna cuenta: el pago no figuraba en ningún lado. No tiene CUIT propio: «—» no coincide con ninguno.
+     */
+    clave: "COTITULARES", nombre: "Cotitulares", cuit: "—",
+    aliasHistorico: [],
+    etiquetasContable: ["CTA COTITULARES"],
+    socio: true,
+  },
   // ⚠️ cambió 01/11 (A-FEAT-1499): hasta acá no tenían marca y sus pagos «salían del vínculo con la factura» — pero el
   // papel sólo toma pagos marcados, así que les daba CERO cobrado y pagado (AFA «le debo $ 2.745.698,32» sin serlo).
   // Ahora: marca CTA AFA / CTA ACREN para lo que no va contra una factura, y además todo lo del banco con su CUIT.
@@ -276,6 +286,8 @@ export const DESTINO_PROPIO = "Gasto propio de MSA (sin marca de otra persona)"
 export interface ConsumoTarjeta {
   /** El vencimiento del resumen: el día en que el banco lo paga. */
   vencimiento: string | null
+  /** 💳 A-FEAT-1629 punto 42: el día del CONSUMO (fila del resumen). La cuenta de un socio toma ésta (JMS 19/11: «la tarjeta por fecha del consumo»). */
+  fecha?: string | null
   descripcion?: string | null
   categ?: string | null
   /** La marca del usuario en la tarjeta (`RET 3 MA`, `CTA JMS`…). Vacía = de MSA. */
@@ -371,6 +383,12 @@ export function consumosDeTarjetaComoMovimientos(
   movimientos: MovimientoParaCC[],
   consumos: ConsumoTarjeta[],
   contrapartes: ContraparteDelBalance[] = CONTRAPARTES_DEL_BALANCE,
+  /**
+   * 💳 A-FEAT-1629 punto 42 (JMS 19/11: *«la tarjeta por fecha del consumo»*). Con el ejercicio, cada consumo entra en la fecha en que se
+   * CONSUMIÓ y sólo si cae adentro: un consumo de junio que se paga en julio es del ejercicio (hay que pasarle también ese pago de julio
+   * para valuarlo), y el de junio del año anterior que se paga en julio, no. Sin el ejercicio, como antes: la fecha del pago.
+   */
+  porConsumo?: { desde: string; hasta: string },
 ): MovimientoParaCC[] {
   const etiquetas = new Set(contrapartes.flatMap(c => c.etiquetasContable.map(normalizar)))
   const out: MovimientoParaCC[] = []
@@ -381,7 +399,9 @@ export function consumosDeTarjetaComoMovimientos(
     if (!delResumen.length || Math.abs(r2(importe - r2(valores.reduce((s, x) => s + x, 0)))) >= 0.01) continue
     delResumen.forEach((c, i) => {
       if (!etiquetas.has(normalizar(c.contable))) return
-      out.push({ id: `tarjeta-${fecha}-${i}`, fecha, debitos: valores[i] > 0 ? valores[i] : 0, creditos: valores[i] < 0 ? -valores[i] : 0,
+      const dia = porConsumo ? String(c.fecha ?? fecha).slice(0, 10) : fecha
+      if (porConsumo && (dia < porConsumo.desde || dia > porConsumo.hasta)) return
+      out.push({ id: `tarjeta-${fecha}-${i}`, fecha: dia, debitos: valores[i] > 0 ? valores[i] : 0, creditos: valores[i] < 0 ? -valores[i] : 0,
         descripcion: `Tarjeta: ${c.descripcion ?? ""}`.trim(), detalle: c.categ ?? null, contable: c.contable ?? null, estado: "conciliado",
         comprobantes_pagados: `Por la tarjeta (pago del ${fecha})`, cuenta: "MSA VISA", grupo: c.categ ?? undefined })
     })

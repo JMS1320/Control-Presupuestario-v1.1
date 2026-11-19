@@ -19021,3 +19021,19 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   dentro de proveedores en el balance propio. Sin decidir.
 - ✓ **El resto de AMS y MA empata asiento por asiento**; la única diferencia nueva es la de hoy (2.000.000 de PAM a AMS, punto 34).
   Si se corrige el hueco y se toma la fecha del consumo, la app daría AMS −8.092.248,73 y MA −45.593.911,03 (calculado).
+
+**42 · 19/11 — corregido el hueco de la 14.1 y la tarjeta por fecha del consumo (decisión de JMS)**
+
+- JMS: *«el problema es que los pagos por Santander a AMS no entraron… me habías asegurado que sí»* → verificado: estaban en la base
+  (conciliados contra su sueldo, CTA AMS desde el script 270 del 11/11), en Sueldos y en el archivo del 12/11 (armado leyendo todas las
+  cuentas), pero **nunca en la 14.1 de la app**, que leía sólo Galicia. Lo que se le había asegurado valía para el archivo, no para la app.
+- **Hecho (JMS: «sí, hacelo y la tarjeta por fecha del consumo»)**, 🟡 sin ver en un libro bajado:
+  1. La 14.1 lee además Santander, Provincia, Caja General, Caja AMS y Caja Sigot de MSA — sólo los movimientos con marca de un socio.
+     Las cuentas en dólares no entran: si alguna trae una marca de socio, la pantalla avisa (hoy no hay ninguna).
+  2. Nueva cuenta **«Cotitulares»** (marca CTA COTITULARES, sin CUIT): el ITGB de la sucesión del 20/08/2025 (1.756.595,00, Caja AMS).
+  3. **Tarjeta por fecha del CONSUMO**: los consumos de MSA marcados para un socio entran en la fecha en que se consumieron y sólo si caen
+     en el ejercicio; para valuar los de junio se leen también los pagos de la tarjeta de hasta 62 días después del cierre (no entran a
+     ninguna cuenta). Caso nuevo en `npm run probar` (1571/1571), type-check sin empeorar, build en verde.
+- **Lo que tiene que dar la 14.1 al bajarla** (calculado): JMS −47.074.051,72 y PAM +12.401.959,62 sin cambio · **AMS −8.092.248,73**
+  (+ Santander 628.914,00) · **MA −45.593.911,03** (+ albañil 800.000,00 + consumos de junio pagados en julio 334.572,86) ·
+  **Cotitulares −1.756.595,00** · total −90.114.846,86.

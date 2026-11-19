@@ -1210,6 +1210,7 @@ export function PapelesDeBalance() {
           const meses = mesesDelEjercicio(anioCierre, empresa.mesCierre)
           const [aaF2, mmF2] = meses[11].split("-").map(Number)
           const finEj = new Date(Date.UTC(aaF2, mmF2, 0)).toISOString().slice(0, 10)
+          const despuesDelCierre = new Date(Date.UTC(aaF2, mmF2, 62)).toISOString().slice(0, 10)
           const colsCC = "id, fecha, debitos, creditos, descripcion, detalle, contable, comprobantes_pagados, estado, cuit:leyendas_adicionales_2, template_cuota_id"
           const leidoCC = await traerTodo((d, h) => supabase.from("msa_galicia")
             .select(colsCC, { count: "exact" })
@@ -1234,15 +1235,44 @@ export function PapelesDeBalance() {
             .filter((m, i, todos) => todos.findIndex(x => (x as { id: string }).id === (m as { id: string }).id) === i)
 
           /**
+           * 👥 A-FEAT-1629 punto 42 (JMS 19/11: *«sí, hacelo»*). Hasta acá la 14.1 leía SÓLO la cuenta corriente Galicia de MSA: lo que se le
+           * pagó a un socio desde Santander o desde una caja no entraba (2 sueldos de AMS por Santander, el albañil del chalet por Caja Sigot,
+           * el ITGB de los cotitulares por Caja AMS). Ahora entran las demás cuentas en pesos de MSA — sólo los movimientos con la marca de
+           * un SOCIO, para no llenar «sin tratar» con marcas internas de las cajas. Las de dólares no: si alguna trae una marca de socio, se avisa.
+           */
+          const etiquetasSocio = CONTRAPARTES_DEL_BALANCE.filter(c => c.socio).flatMap(c => c.etiquetasContable)
+          const OTRAS_CUENTAS_MSA: Array<{ tabla: string; nombre: string; dolares?: boolean }> = [
+            { tabla: "santander", nombre: "MSA Santander" }, { tabla: "provincia", nombre: "MSA Provincia" },
+            { tabla: "caja_general", nombre: "MSA Caja General" }, { tabla: "caja_ams", nombre: "MSA Caja AMS" },
+            { tabla: "caja_sigot", nombre: "MSA Caja Sigot" },
+            { tabla: "cc_usd", nombre: "MSA cta cte US$", dolares: true }, { tabla: "caja_usd", nombre: "MSA Caja US$", dolares: true },
+          ]
+          const deOtrasCuentas: MovimientoParaCC[] = []
+          for (const x of OTRAS_CUENTAS_MSA) {
+            const leido = await traerTodo((d, h) => supabase.schema("msa").from(x.tabla)
+              .select(`${colsCC}, sueldo_pago_id`, { count: "exact" })
+              .gte("fecha", `${meses[0]}-01`).lte("fecha", finEj).in("contable", etiquetasSocio).order("id").range(d, h))
+            anotar(`Cuentas con socios: ${x.nombre}`, leido)
+            if (leido.error) { toast.warning(`14.1: no se pudo leer ${x.nombre} (${leido.error.message}): lo pagado a un socio desde ahí no entra.`); continue }
+            const filas = (leido.data ?? []) as unknown as MovimientoParaCC[]
+            if (x.dolares) {
+              if (filas.length) toast.warning(`14.1: ${x.nombre} tiene ${filas.length} movimiento(s) con la marca de un socio y no entran (están en dólares): revisarlos a mano.`)
+              continue
+            }
+            deOtrasCuentas.push(...filas.map(m => ({ ...m, id: `${x.tabla}:${m.id}`, cuenta: x.nombre })))
+          }
+
+          /**
            * 💳 Los consumos de la tarjeta de MSA, ANTES de armar las cuentas: los marcados para un socio («CTA MA») entran a su cuenta
            * corriente (A-FEAT-1577), y con los mismos se abre el pago de la tarjeta más abajo. Si fallan, el papel sale igual y avisa.
            */
           let consumos: ConsumoTarjeta[] = []
           try {
             const [leidoTj, polTj] = await Promise.all([
+              // 💳 punto 42: hasta 62 días después del cierre, para los consumos de junio que se pagan en julio (van por fecha de consumo).
               traerTodo((d, h) => supabase.schema("msa").from("tarjeta_visa_business")
-                .select("fecha_vencimiento, descripcion, categ, contable, debitos, creditos, debitos_usd, template_id", { count: "exact" })
-                .eq("tipo_fila", "movimiento").gte("fecha_vencimiento", `${meses[0]}-01`).lte("fecha_vencimiento", finEj)
+                .select("fecha, fecha_vencimiento, descripcion, categ, contable, debitos, creditos, debitos_usd, template_id", { count: "exact" })
+                .eq("tipo_fila", "movimiento").gte("fecha_vencimiento", `${meses[0]}-01`).lte("fecha_vencimiento", despuesDelCierre)
                 .order("id").range(d, h)),
               supabase.from("polizas_seguro").select("template_id").not("template_id", "is", null),
             ])
@@ -1251,6 +1281,7 @@ export function PapelesDeBalance() {
             const tplConPoliza = new Set(((polTj.data ?? []) as Array<{ template_id: string | null }>).map(p => p.template_id))
             consumos = ((leidoTj.data ?? []) as Array<Record<string, unknown>>).map(x => ({
               vencimiento: (x.fecha_vencimiento as string | null) ?? null,
+              fecha: (x.fecha as string | null) ?? null,
               descripcion: x.descripcion as string | null, categ: x.categ as string | null, contable: x.contable as string | null,
               debitos: Number(x.debitos ?? 0), creditos: Number(x.creditos ?? 0), debitosUsd: Number(x.debitos_usd ?? 0),
               conPoliza: !!x.template_id && tplConPoliza.has(x.template_id as string),
@@ -1258,7 +1289,15 @@ export function PapelesDeBalance() {
           } catch {
             toast.warning("No se pudieron leer los consumos de la tarjeta: su pago queda sin abrir y lo de los socios por la tarjeta no entra a sus cuentas.")
           }
-          const porLaTarjeta = consumosDeTarjetaComoMovimientos(movsCC as unknown as MovimientoParaCC[], consumos)
+          // 💳 punto 42: los pagos de la tarjeta de después del cierre sólo sirven para valuar los consumos de junio; no entran a ninguna cuenta.
+          const leidoPagoTjDespues = await traerTodo((d, h) => supabase.from("msa_galicia")
+            .select(colsCC, { count: "exact" })
+            .gt("fecha", finEj).lte("fecha", despuesDelCierre)
+            .ilike("descripcion", "%visa%").order("id").range(d, h))
+          anotar("Pagos de la tarjeta después del cierre (para los consumos de junio)", leidoPagoTjDespues)
+          const porLaTarjeta = consumosDeTarjetaComoMovimientos(
+            [...(movsCC as unknown as MovimientoParaCC[]), ...((leidoPagoTjDespues.data ?? []) as unknown as MovimientoParaCC[])],
+            consumos, undefined, { desde: `${meses[0]}-01`, hasta: finEj })
 
           /**
            * 👷 A-FEAT-1422 (8) — el sueldo pendiente de un socio (MA) entra a SU cuenta corriente como deuda
@@ -1271,10 +1310,10 @@ export function PapelesDeBalance() {
            * para ordenar el detalle; (2) las cuentas de MA y PAM: lo que pagaron POR MSA («CTA MSA») entra a su cuenta, y la otra punta de cada
            * transferencia se marca (sin listarla). Si algo falla, el papel sale como antes y avisa.
            */
-          let movsConSocios = [...(movsCC as unknown as MovimientoParaCC[]).map(m => ({ ...m, cuenta: "MSA Galicia cta cte" })), ...porLaTarjeta]
+          let movsConSocios = [...(movsCC as unknown as MovimientoParaCC[]).map(m => ({ ...m, cuenta: "MSA Galicia cta cte" })), ...deOtrasCuentas, ...porLaTarjeta]
           let delSocio: MovimientoParaCC[] = []
           try {
-            const idsTpl = [...new Set((movsCC as Array<{ template_cuota_id?: string | null }>).map(m => m.template_cuota_id).filter(Boolean))] as string[]
+            const idsTpl = [...new Set((movsConSocios as Array<{ template_cuota_id?: string | null }>).map(m => m.template_cuota_id).filter(Boolean))] as string[]
             const grupoDe = new Map<string, string>()
             for (let i = 0; i < idsTpl.length; i += 100) {
               const lote = idsTpl.slice(i, i + 100)

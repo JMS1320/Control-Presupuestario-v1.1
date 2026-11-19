@@ -8561,6 +8561,26 @@ export function correrCasos(): Resultado[] {
     const PAGOS_N = PAGOS_D.map(p => ({ ...p, contable: null, descripcion: "Pago Visa Empresa" }))
     const CONSUMOS_N = CONSUMOS_D.map(c => ("contable" in c && c.contable === "RET 3 MA" ? { ...c, contable: "CTA MA" } : c))
     const porTj = consumosDeTarjetaComoMovimientos([...MOVS, ...PAGOS_N], CONSUMOS_N)
+    // 💳 A-FEAT-1629 punto 42 (JMS 19/11: «la tarjeta por fecha del consumo»): con el ejercicio, cada consumo va en la fecha en que se
+    //    consumió; el de junio pagado en julio entra (con su pago de julio para valuarlo) y el de junio del año anterior pagado en julio, no.
+    {
+      const pagos = [{ id: "pj1", fecha: "2025-07-07", debitos: 100, contable: null, descripcion: "Pago Visa Empresa" },
+        { id: "pj2", fecha: "2026-03-09", debitos: 300, contable: null, descripcion: "Pago Visa Empresa" },
+        { id: "pj3", fecha: "2026-07-06", debitos: 200, contable: null, descripcion: "Pago Visa Empresa" }]
+      const cons = [{ vencimiento: "2025-07-07", fecha: "2025-06-02", descripcion: "Internet NZ", contable: "CTA MA", debitos: 100 },
+        { vencimiento: "2026-03-09", fecha: "2026-02-03", descripcion: "Internet NZ", contable: "CTA MA", debitos: 120 },
+        { vencimiento: "2026-03-09", fecha: "2026-02-10", descripcion: "propio", contable: null, debitos: 180 },
+        { vencimiento: "2026-07-06", fecha: "2026-06-02", descripcion: "Internet NZ", contable: "CTA MA", debitos: 200 }]
+      const ej = { desde: "2025-07-01", hasta: "2026-06-30" }
+      const viejo = consumosDeTarjetaComoMovimientos(pagos.filter(p => p.fecha <= ej.hasta), cons)
+      const nuevo = consumosDeTarjetaComoMovimientos(pagos, cons, undefined, ej)
+      const cot = armarCuentasCorrientes([], [{ id: "v1", fecha: "2026-01-01", numero: "1", total: 5, cuit: "" }] as never,
+        [{ id: "c1", fecha: "2025-08-20", debitos: 1756595, contable: "CTA COTITULARES" }]).cuentas.find(c => c.contraparte.clave === "COTITULARES")
+      const vC = `por pago ${viejo.map(m => `${m.fecha} ${m.debitos}`).join(",")} · por consumo ${nuevo.map(m => `${m.fecha} ${m.debitos}`).join(",")} · cotitulares ${n2(cot?.saldoAlCierre ?? NaN)} sin ventas ${cot?.resumen.totalVendido ?? "?"}`
+      const eC = "por pago 2025-07-07 100,2026-03-09 120 · por consumo 2026-02-03 120,2026-06-02 200 · cotitulares -1.756.595,00 sin ventas 0"
+      chequear("Cuentas corrientes", "💳 La tarjeta va a la cuenta del socio por FECHA DEL CONSUMO (el de junio pagado en julio entra, el del año anterior no) y «CTA COTITULARES» es una cuenta (antes no figuraba en ningún lado)",
+        eC, vC, vC === eC, "A-FEAT-1629")
+    }
     const sinTj = armarCuentasCorrientes(COMPRAS, VENTAS, [...MOVS, ...PAGOS_N])
     const conTj = abrirDesglosar(armarCuentasCorrientes(COMPRAS, VENTAS, [...MOVS, ...PAGOS_N, ...porTj]), [...MOVS, ...PAGOS_N], CONSUMOS_N)
     const maDe = (p: typeof sinTj) => p.cuentas.find(c => c.contraparte.clave === "MA")?.saldoAlCierre ?? NaN
@@ -8654,10 +8674,11 @@ export function correrCasos(): Resultado[] {
       normalizar("Suc. de  Plácido Martinez") === normalizar("SUC. DE PLACIDO MARTINEZ")
       && normalizar("Mercedes Martinez") !== normalizar("Mercedes Areco"), "A-FEAT-1218")
 
-    chequear("Cuentas corrientes", "La lista tiene las 6 contrapartes y sólo etiquetas CTA",
-      "6 · sin RET",
+    // ⚠️ cambió 19/11 (A-FEAT-1629 punto 42): 7 — se sumó «Cotitulares» (la marca CTA COTITULARES existía y no era ninguna cuenta).
+    chequear("Cuentas corrientes", "La lista tiene las 7 contrapartes y sólo etiquetas CTA",
+      "7 · sin RET",
       `${CONTRAPARTES_DEL_BALANCE.length} · ${CONTRAPARTES_DEL_BALANCE.some(c => c.etiquetasContable.some(e => e.includes("RET"))) ? "con RET" : "sin RET"}`,
-      CONTRAPARTES_DEL_BALANCE.length === 6
+      CONTRAPARTES_DEL_BALANCE.length === 7
       && !CONTRAPARTES_DEL_BALANCE.some(c => c.etiquetasContable.some(e => e.includes("RET"))),
       "A-FEAT-1218")
   }
