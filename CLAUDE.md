@@ -1483,6 +1483,14 @@ ese lugar afecte a todo lo que lo usa.
 - **Tolerancia explícita** cuando el dominio la tiene (los emisores redondean), y **listando los
   casos que la causan**: el número global avisa que algo pasa, **la lista es la que deja arreglarlo**.
 - ⚠️ **Nada se descarta en silencio.** Si algo no se pudo verificar, se muestra que no se pudo.
+- 📚 **«Todo es todo»: un libro o planilla TOTAL no deja nada afuera** *(JMS 2026-11-19, auditando el export de templates: «cuando
+  yo te digo todas las cuotas no podés dejar nada afuera. La idea de esta planilla macro es ver todo y asegurarse de contemplar todo»
+  · «lo que me interesa siempre es tener un libro total antes que nada, para saber que eso es todo; sabiendo que es todo puedo hacer
+  los chequeos de consistencia»)*. Lo que no suma (pagado por otro camino, desactivado, a la cuenta de un socio) **se muestra en su
+  bloque, con subtotal y motivo**, debajo del total. Y el control de cantidad es **contra la base**, no contra otro export: los
+  renglones del libro tienen que ser los registros del sistema. *Caso: el Excel «todas las cuotas» traía 1.446 de 1.538 — faltaban
+  el monotributo de JMS (sacado por una excepción), 19 seguros con póliza y 72 desactivadas, porque se copió el libro en vez de
+  contar la base* → [A-FEAT-1629](PENDIENTES.md#a-feat-1629) punto 35.
 
 #### 🚦 Un control que FRENA vs. uno que AVISA — no son lo mismo (REGLA)
 *Precisión del usuario 2026-09-13, sobre el PDF del Detalle de Pago. Yo proponía no generar el

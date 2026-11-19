@@ -18884,3 +18884,32 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   4.688.892,00). No entran a ninguna cuenta: falta saber si son sueldos de MSA pagados por el socio (MSA les debe) o gasto propio.
   · El libro de Sueldos rotula a JMS y AMS como empresa «MSA/PAM/MA»: se trató todo como de MSA, a confirmar.
   · JMS figura como gasto dos veces por su trabajo (bruto en Sueldos + factura en compras): para ver con el contador.
+
+**35 · 19/11 — templates destinados a la cuenta de un socio: bloque «Reintegros» (script 290 corrido) · el libro de templates en 4 bloques que suman + 2 que no**
+
+- **Regla acordada con JMS** (reemplaza la lista de categorías escrita a mano): *«nunca un pago a JMS va al gasto, sino que va como
+  pago contra sus facturas… evitar las excepciones»* · *«si el template ya está destinado a trabajarse de esa manera es más fácil:
+  llevan contable JMS automáticamente y se registran como un pago de sueldo»* · *«no en el mismo punto que las transferencias
+  directas: un punto aparte, se anota que no va al gasto»*. Los reintegros siguen por TEMPLATES, no por Sueldos.
+- **Cómo quedó**: la marca es la **regla de código del template** (`reglas_contable_interno`: al conciliar contra ese template el
+  movimiento lleva «CTA JMS» solo). Con esa misma regla el libro pone sus cuotas en el tipo nuevo «reintegro», con agrupadora propia
+  «Reintegros a socios» (`templatesACuentaDeSocio` en `lib/balance/templates-libro.ts`). Vale sólo si el código es la cuenta de
+  OTRO que el responsable del template (un template de PAM que MSA paga con «CTA PAM» sigue siendo gasto de PAM).
+  `CATEGORIAS_A_CUENTA_SOCIO` quedó vacía: el monotributo ya no sale del libro, vuelve como cuota en su bloque.
+- **Script 290 corrido y verificado** (con deshacer por id): template «Pasajes» de MSA → **«Viáticos JMS»** · 2 reglas de código
+  «CTA JMS» en Galicia MSA (para «Viáticos JMS» y «Gastos Reintegro JMS», marcadas [script 290]) · la cuota del pasaje del
+  19/05/2026 (261.545,00) pasó de «Otros Gastos» a «Viáticos JMS» (categoría sin cambios) y su movimiento apunta al template nuevo.
+- **La solapa de lista («H · MSA · Egresos») ahora**: 1 Egresos · 2 Financiero · 3 Socios de pago directo · 4 Reintegros a la cuenta
+  de un socio, cada uno con subtotal, y TOTAL = suma de los cuatro. Abajo, sin sumar: 5 seguros con póliza · 6 desactivadas.
+- **Lo que tiene que dar MSA al bajar el libro** (calculado, 🟡 sin ver en un libro bajado): egresos **66.914.486,47** (= el renglón
+  T del envío del 12/11) · financiero −32.644.262,55 · socios 54.906.595,00 · reintegros 2.619.146,77 (monotributo 2.137.884,27 +
+  3 pasajes 481.262,50) · **total 91.795.965,69** en 1.445 cuotas · no suman: 19 seguros con póliza (7.223.246,55) y 72
+  desactivadas. 1.445 + 19 + 72 = 1.536 = las cuotas de MSA del ejercicio en la base ✓.
+- `npm run probar` 1570/1570 (casos nuevos: sueldo entre socios, reintegros por regla del template), type-check sin empeorar, build
+  en verde. Próximo script **291**.
+- **Sin resolver**: el pasaje del 15/07/2026 (188.615,00, ejercicio siguiente) quedó en «Viáticos JMS» con el movimiento sin código
+  (se concilió antes de la regla) · «Viaticos» y «Gastos Reintegro JMS» no existen como categoría en el plan de cuentas
+  (hueco de § Templates) · la regla sólo cubre pagos por Galicia MSA (si se paga por caja o tarjeta, hay que sumar la regla de esa
+  cuenta) · las solapas «Cuotas» y «Por mes» muestran el bloque de reintegros con el orden viejo (egresos, ingresos,
+  distribuciones, reintegros, financiero) · el sueldo de JMS es el mismo caso (pago a su cuenta, el gasto va por factura) y hoy
+  sale como gasto en Sueldos: para tratar con la misma regla y con el contador (la factura de 19.320.000 ya está en compras).

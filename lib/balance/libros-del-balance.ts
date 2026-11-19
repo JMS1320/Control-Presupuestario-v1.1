@@ -158,20 +158,24 @@ export function hojaListadoTemplates(t: TemplatesDelEjercicio, responsable: stri
     const k = c.egresoId || `${c.concepto}|${c.proveedor}`
     porTemplate.set(k, [...(porTemplate.get(k) ?? []), c])
   }
-  const filas = [...porTemplate.values()].map(cs => {
+  const renglones = (grupos: CuotaTemplate[][]) => grupos.map(cs => {
     const c = cs[0]
     const pagadas = cs.filter(x => /pagad|conciliad/i.test(x.estado || "")).length
     return [c.concepto, c.proveedor, c.tipo ?? "", c.agrupadoraTemplate ?? "", c.categ, c.cuenta_contable, c.responsable,
       cs.length, pagadas, cs.length - pagadas, Math.round(cs.reduce((s, x) => s + x.monto, 0) * 100) / 100]
   }).sort((a, b) => String(a[3]).localeCompare(String(b[3])) || String(a[0]).localeCompare(String(b[0])))
+  const filas = renglones([...porTemplate.values()])
   // JMS 19/11: «listar primero el grupo de egresos y luego el de financiero, tal como está en Cuotas» — un bloque por tipo con su
   // subtotal, y el TOTAL suma los subtotales (apunta a las celdas que lo forman). Antes iba todo mezclado bajo un solo total.
   const ROTULO: Record<string, string> = {
     egreso: "EGRESOS — gasto del ejercicio",
     financiero: "FINANCIERO — no es gasto: FCI, plazo fijo, caja, pago de tarjeta, transferencias",
-    distribucion: "SOCIOS — retiros y aportes: no es gasto, va a la cuenta de cada socio",
+    distribucion: "SOCIOS — retiros y aportes (pago directo): no es gasto, va a la cuenta de cada socio",
+    reintegro: "REINTEGROS A LA CUENTA DE UN SOCIO — no es gasto: el gasto va por su factura",
+    ingreso: "INGRESOS",
+    NO: "NO — fuera del resultado",
   }
-  const orden = (tipo: string) => (tipo === "egreso" ? 0 : tipo === "financiero" ? 1 : tipo === "distribucion" ? 2 : 3)
+  const orden = (tipo: string) => (tipo === "egreso" ? 0 : tipo === "financiero" ? 1 : tipo === "distribucion" ? 2 : tipo === "reintegro" ? 3 : 4)
   const tipos = [...new Set(filas.map(x => String(x[2])))].sort((a, b) => orden(a) - orden(b) || a.localeCompare(b))
   const redondo = (xs: unknown[][]) => Math.round(xs.reduce((s, x) => s + Number(x[10]), 0) * 100) / 100
   const subtotales: number[] = []
@@ -194,6 +198,26 @@ export function hojaListadoTemplates(t: TemplatesDelEjercicio, responsable: stri
     { t: "n", f: suma("I"), v: filas.reduce((s, x) => s + Number(x[8]), 0) },
     { t: "n", f: suma("J"), v: filas.reduce((s, x) => s + Number(x[9]), 0) },
     { t: "n", f: suma("K"), v: redondo(filas) }])
+  // JMS 19/11: «todo es todo» — lo que NO suma también se lista, abajo del total y con su subtotal, para que la cantidad de cuotas
+  // del libro sea la de la base. No entran en el TOTAL de arriba.
+  const aparte: Array<[string, CuotaTemplate[]]> = [
+    ["NO SUMAN — seguros con póliza: ya son gasto por la factura de la aseguradora (compras)", t.enFacturas ?? []],
+    ["NO SUMAN — cuotas desactivadas: se eligió la otra forma de pago, no se pagaron", t.noIncluidas ?? []],
+  ]
+  for (const [rotulo, cuotas] of aparte) {
+    if (!cuotas.length) continue
+    const porT = new Map<string, CuotaTemplate[]>()
+    for (const c of cuotas) { const k = c.egresoId || `${c.concepto}|${c.proveedor}`; porT.set(k, [...(porT.get(k) ?? []), c]) }
+    const suyas = renglones([...porT.values()])
+    f.push([], [rotulo])
+    const desde = f.length + 1
+    f.push(...suyas)
+    f.push(["Subtotal (no suma)", "", "", "", "", "", "",
+      { t: "n", f: `SUM(H${desde}:H${f.length})`, v: suyas.reduce((s, x) => s + Number(x[7]), 0) },
+      { t: "n", f: `SUM(I${desde}:I${f.length})`, v: suyas.reduce((s, x) => s + Number(x[8]), 0) },
+      { t: "n", f: `SUM(J${desde}:J${f.length})`, v: suyas.reduce((s, x) => s + Number(x[9]), 0) },
+      { t: "n", f: `SUM(K${desde}:K${f.length})`, v: redondo(suyas) }])
+  }
   return f
 }
 

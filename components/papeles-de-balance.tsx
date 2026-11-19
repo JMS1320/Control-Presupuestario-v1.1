@@ -39,7 +39,8 @@ import { armarEjercicio, nombreSubdiario, primerDiaDelEjercicio } from "@/lib/ba
 import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta, ULTIMO_SUBDIARIO_HISTORICO, type LibroDiario } from "@/lib/balance/libro-diario"
 import { PRESENTADO_ARCA_COMPRAS } from "@/lib/balance/presentado-arca"
 import { explicarFila, type ProveedorFijo } from "@/lib/balance/facturas-fijas"
-import { armarTemplatesDelEjercicio, desdeCuota, type ExtractoParaH, type TemplatesDelEjercicio } from "@/lib/balance/templates-libro"
+import { armarTemplatesDelEjercicio, desdeCuota, templatesACuentaDeSocio, type ExtractoParaH, type TemplatesDelEjercicio } from "@/lib/balance/templates-libro"
+import { normalizar as normalizarCC } from "@/lib/balance/cuentas-corrientes"
 import { conFacturas, indiceDeDestinos, leerExtractoDelEjercicio, leerMovimientosDeCuotas, vincularBanco } from "@/lib/balance/movimientos-de-cuotas"
 import { leerMovimientosDeLaCapa, type MovimientosDeLaCapa } from "@/lib/balance/capa-interna-datos"
 import { cargarAuxiliaresPapel, cargarCuotasImpuestos } from "@/lib/impuestos/datos-papel"
@@ -1433,9 +1434,23 @@ export function PapelesDeBalance() {
         try { capa = await leerMovimientosDeLaCapa(supabase, primerDiaDelEjercicio(ej), ej.fechaCierre) }
         catch { toast.warning("No se pudieron leer los movimientos para el reporte interno: el libro I sale sin «Interno por socio».") }
       }
+      // 👥 A-FEAT-1629 punto 35: los templates destinados a la cuenta de un socio (la regla de código del template lo dice).
+      let aCuentaDe: Record<string, string> = {}
+      try {
+        const { data: reglasCod, error: errCod } = await supabase.from("reglas_contable_interno").select("template_id, codigo_contable, activo").not("template_id", "is", null)
+        if (errCod) throw new Error(errCod.message)
+        const socioDeCodigo: Record<string, string> = {}
+        for (const c of CONTRAPARTES_DEL_BALANCE) if (c.socio) for (const e of c.etiquetasContable) socioDeCodigo[normalizarCC(e)] = c.clave
+        const tpls = new Map<string, { id: string; responsable?: string | null }>()
+        for (const c of cuotasLibro) if (c.egresoId && !tpls.has(c.egresoId)) tpls.set(c.egresoId, { id: c.egresoId, responsable: c.responsable })
+        aCuentaDe = templatesACuentaDeSocio((reglasCod ?? []) as Array<{ template_id: string | null; codigo_contable: string | null; activo: boolean | null }>, [...tpls.values()], socioDeCodigo)
+      } catch (e) {
+        toast.warning(`No se pudieron leer las reglas de código de los templates (${(e as Error).message}): los reintegros a socios salen dentro de egresos.`)
+      }
       setTemplates(armarTemplatesDelEjercicio(cuotasLibro, ej, {
         empresa: empresa.id,
         plan,
+        aCuentaDe,
         templatesConPoliza: ((conPoliza ?? []) as Array<{ template_id: string | null }>).map(p => p.template_id!).filter(Boolean),
         bancoSinLeer,
         extracto,

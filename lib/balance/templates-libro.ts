@@ -44,13 +44,14 @@ import { normalizar } from "./cuentas-corrientes"
  * Por ahora se muestran **todos los responsables** (usuario: *«ayudará a ver tema de aportes y
  * retiros… más adelante sólo reportaremos el responsable en cuestión»*).
  */
-export type TipoTemplate = TipoCuenta | "sin clasificar"
+export type TipoTemplate = TipoCuenta | "reintegro" | "sin clasificar"
 /** El orden en que se presentan los grupos. */
-export const ORDEN_TIPOS: TipoTemplate[] = ["egreso", "ingreso", "distribucion", "financiero", "NO", "sin clasificar"]
+export const ORDEN_TIPOS: TipoTemplate[] = ["egreso", "ingreso", "distribucion", "reintegro", "financiero", "NO", "sin clasificar"]
 export const NOMBRE_TIPO: Record<TipoTemplate, string> = {
   egreso: "EGRESOS — gasto del ejercicio",
   ingreso: "INGRESOS",
   distribucion: "DISTRIBUCIONES — retiros y aportes de socios",
+  reintegro: "REINTEGROS A LA CUENTA DE UN SOCIO — no es gasto: el gasto va por su factura",
   financiero: "FINANCIERO — no es gasto: FCI, plazo fijo, caja, pago de tarjeta, transferencias",
   NO: "NO — fuera del resultado",
   "sin clasificar": "SIN CLASIFICAR — el template no tiene tipo y su categoría no está en el plan",
@@ -89,6 +90,11 @@ export function ordenDeResponsables(empresa?: string): (r: string) => number {
 export interface OpcionesTemplates {
   /** La empresa del balance: sus cuotas van primero. */
   empresa?: string
+  /**
+   * 👥 A-FEAT-1629 punto 35 (JMS 19/11): los templates DESTINADOS a la cuenta de un socio — id del template → socio («JMS»). Sale de
+   * `templatesACuentaDeSocio` (las reglas de código contable del template). Sus cuotas no son gasto: van al bloque «Reintegros».
+   */
+  aCuentaDe?: Record<string, string>
   /**
    * 🗂️ El plan de cuentas, para **agrupar por totalizadora** (usuario 27/10: *«mejorar orden,
    * agrupadoras»*) y para **unir la misma cuenta escrita distinto** (`SEGUROS ESTRUCTURA` y
@@ -275,9 +281,38 @@ export interface TemplatesDelEjercicio {
  * (Impuestos General): *«Gastos Reintegro JMS — este ponelo en la cta de JMS, así lo facturo»*. El movimiento del banco ya lleva la
  * marca «CUENTA JMS» y suma en la cuenta con JMS (papel 14.1): contarlo además como gasto era contarlo dos veces.
  */
-export const CATEGORIAS_A_CUENTA_SOCIO: Array<{ categ: string; socio: string }> = [
-  { categ: "Gastos Reintegro JMS", socio: "JMS" },
-]
+export const CATEGORIAS_A_CUENTA_SOCIO: Array<{ categ: string; socio: string }> = []
+
+/**
+ * 👥 **Templates destinados a la cuenta de un socio** — A-FEAT-1629 punto 35. ⚠️ cambió 19/11: hasta acá era una lista de categorías
+ * escrita a mano con un solo renglón («Gastos Reintegro JMS»), y los viáticos de JMS —el mismo caso— salían como gasto.
+ *
+ * JMS 19/11: *«nunca un pago a JMS va al gasto, sino que va como pago contra sus facturas… tenemos que evitar las excepciones»* ·
+ * *«si el template ya está destinado a trabajarse de esa manera es más fácil: llevan contable JMS automáticamente, no hace falta que
+ * yo lo ponga, y se registran de la misma manera que un pago de sueldo»* · *«no tendría que ir en el mismo punto que las transferencias
+ * directas… si va en un punto aparte se anota que no va al gasto»*.
+ *
+ * La marca es la REGLA DE CÓDIGO del template (`reglas_contable_interno`: «al conciliar contra este template, el movimiento lleva CTA
+ * JMS») — la misma que le pone el código al pago, así no hay dos lugares que decir lo mismo. Vale sólo si el código es la cuenta de
+ * OTRO que el responsable del template: un template de PAM que MSA paga con «CTA PAM» es gasto de PAM, no un reintegro.
+ */
+export const AGRUPADORA_REINTEGROS = "Reintegros a socios"
+export function templatesACuentaDeSocio(
+  reglas: Array<{ template_id?: string | null; codigo_contable?: string | null; activo?: boolean | null }>,
+  templates: Array<{ id: string; responsable?: string | null }>,
+  /** código normalizado («CTA JMS») → clave del socio («JMS»). Sale de `CONTRAPARTES_DEL_BALANCE` (los que son socio). */
+  socioDeCodigo: Record<string, string>,
+): Record<string, string> {
+  const respDe = new Map(templates.map(t => [t.id, (t.responsable || "").split("/")[0].trim().toUpperCase()]))
+  const out: Record<string, string> = {}
+  for (const r of reglas) {
+    if (!r.template_id || r.activo === false) continue
+    const socio = socioDeCodigo[normalizar(r.codigo_contable)]
+    if (!socio || !respDe.has(r.template_id) || respDe.get(r.template_id) === socio) continue
+    out[r.template_id] = socio
+  }
+  return out
+}
 
 /** Donde van los templates sin agrupadora cargada (⚠️ cambió 01/11: antes era «sin agrupadora en el plan de cuentas»). */
 export const SIN_AGRUPADORA = "(sin agrupadora en el template)"
@@ -387,6 +422,9 @@ export function armarTemplatesDelEjercicio(
     // 🛡️ A-FEAT-1388: ya es gasto por la factura de la aseguradora. Fuera del total, pero se lista.
     if (c.egresoId && conPoliza.has(c.egresoId)) { enFacturas.push(c); continue }
     // ✍️ A-FEAT-1539: va por la cuenta del socio (papel 14.1), no es gasto. Fuera del total, pero se lista.
+    // 👥 ⚠️ cambió 19/11 (punto 35): lo destinado a la cuenta de un socio NO sale del libro («todo es todo»): queda en el detalle con
+    // tipo «reintegro» y su propia agrupadora, así suma en su bloque y no en el gasto. `aCuentaSocio` queda para la lista vieja (vacía).
+    if (c.egresoId && opciones.aCuentaDe?.[c.egresoId]) { detalle.push({ ...c, tipo: "reintegro", agrupadoraTemplate: AGRUPADORA_REINTEGROS }); continue }
     const socio = socioDe.get(normalizar(c.categ))
     if (socio) { aCuentaSocio.push({ ...c, socio }); continue }
     detalle.push(c)
