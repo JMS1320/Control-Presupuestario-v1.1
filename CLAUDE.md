@@ -158,8 +158,30 @@ queremos: llenar en un Excel todos los proveedores con todos los mails y todos l
   pendiente. Los 2 deberíamos poder interactuar… las cosas no se dan por terminadas sino que esperan los 2 OK para entrar como firmes»)*.
   La página es el canal con JMS; lo que tiene que contestar o aprobar otro va a **su pantalla principal** como tarea, y lo que se decide
   entre dos queda **propuesto hasta los dos OK** (el modelo es [A-FEAT-1203](PENDIENTES.md#a-feat-1203), la cadena de checks).
+- 📄 **El informe de lo hecho sin él va EN LA PÁGINA, no en el chat** *(JMS 21/11: «dejame luego todo el reporte con estas respuestas en
+  los artifact, porque acá me quedará mucho sin leer»)*. Cuando JMS no está mirando, el chat lleva sólo una línea con el link; lo que hice,
+  lo que encontré y lo que necesito de él va arriba de la página del tema, con dónde contestar.
 - 📥 **Y Claude detecta solo cuándo algo de la charla es REGLA** *(JMS 21/11: «vos date cuenta cuando algo debería ir a regla»)* — es la
   § 📝 de abajo: no espera a que se lo recuerden.
+
+#### 📧 El MAIL QUE PIDE UNA RESPUESTA se contesta desde la TAREA, con un clic — y siempre «borrador» o «envío firme» (protocolo)
+*JMS 2026-11-21, sobre el mail de sueldos del contador: **«el sistema me dice llegó el mail, estamos en fecha de liquidar. Yo con 1 clic le
+confirmo y envía respuesta automática OK para liquidar, con algo de formalidad… y siempre desde la tarea. Y customizable si le quiero
+mandar otra cosa. Con opción borrador o respuesta firme (protocolo siempre opción borrador o envío/respuesta firme). Este proceso es
+bastante ideal también usarlo como protocolo»**.*
+
+> **Cuando llega un mail que espera una respuesta de alguien, se crea la tarea de esa persona; la tarea trae la respuesta ya escrita, en
+> el tono que esa persona usa habitualmente, y se manda con un clic. El texto se puede cambiar, y SIEMPRE se elige: dejar en borrador o
+> enviar firme.**
+
+- **Borrador o firme vale para TODO lo que la app manda o responde por mail** — pedidos de factura, detalles de pago, subdiarios. Nunca
+  sólo una de las dos (ya era así en A-FEAT-1313; acá se vuelve protocolo).
+- **El texto sale de cómo se responde de verdad** (los mails ya registrados), no de una plantilla inventada.
+- **La respuesta cierra la tarea y deja la huella** (cuándo y quién), y lo que viene después (los recibos, el VEP) queda esperado con su
+  fecha — es la § 🗓️ *Todo se fecha* aplicada al mail.
+- Es **una rama** de los protocolos del mail; va a haber otras (JMS: «habrá 2 o 3 o más ramas de protocolos con el mail, pero es una fase
+  muy importante»). Caso testigo: sueldos con el contador → [A-AUTO-11](PENDIENTES.md#a-auto-11) · el procesamiento del mail →
+  [A-FEAT-1625](PENDIENTES.md#a-feat-1625).
 
 #### 🔑 La quinta pieza: el PERMISO — automatizar también es poder delegar
 Automatizar no es sólo *que el sistema haga más*: también es **que la tarea pueda pasar a otra
