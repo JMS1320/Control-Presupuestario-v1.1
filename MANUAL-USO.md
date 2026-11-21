@@ -816,6 +816,19 @@ Usuarios. El Principal se ve siempre, aunque el rol no tenga secciones.
 
 ⚠️ Sin probar todavía → [A-TEST-1326](PENDIENTES.md#a-test-1326)
 
+## 👤 La pantalla de MA: sus impuestos, sus arrendamientos y lo que viene *(nuevo 2026-11-21)*
+
+Tres bloques del Principal, **sólo para mirar** (ninguno tiene botones que cambien algo). Se ven únicamente donde el rol los tiene prendidos; hoy son para el rol **«ma»** (Mercedes).
+
+1. **Prenderlos (JMS)**: Configuración → Roles → «ma» → **🖱️ Editar sobre la pantalla** → en Principal, apretá el candado de cada bloque → Guardar. Con **Ver como lo ve ella** se comprueba qué le queda. También están en la lista de casillas del rol, bajo *Principal*.
+2. **🧾 Mis impuestos del año**: los meses del año con sus impuestos — un renglón por impuesto (las partidas del inmobiliario o de Red Vial juntas; tocando el renglón se ven una por una), con la fecha, el importe y el estado (**Pagado** · **Vencido** · **A vencer** · *Parte pagado*). Arriba, lo pagado, lo vencido y lo que falta del año. Los botones **MA / MSA / PAM** cambian de empresa y las flechas, de año. Son los mismos números que la Planilla de impuestos de Egresos sin Factura.
+3. **🌾 Mis arrendamientos**: cada contrato (campaña y arrendatario) con sus hectáreas y qq/ha, las cuotas con su fecha de cobro e importe (≈ = estimado hasta que se fija la venta), lo **facturado**, lo **cobrado** (con las retenciones) y **lo que falta cobrar**, con sus fechas. Abajo, los comprobantes de la campaña.
+4. **📈 Lo que viene**: los próximos 12 meses — lo que entra de los arrendamientos, lo que sale en impuestos, lo que queda y el acumulado. Tocando un mes se ve el detalle. Lo que ya tendría que haber pasado aparece como **Atrasado**.
+
+Abajo de cada bloque, «✓ los números cierran» (o un aviso rojo si no).
+
+⚠️ Sin probar todavía → [A-TEST-1387](PENDIENTES.md#a-test-1387)
+
 ## 🔓 Habilitar a alguien para que corrija una factura *(nuevo 2026-10-28)*
 
 Para que Ulises (u otra persona) corrija una factura **cargada por Excel** sin darle permiso sobre todas:
