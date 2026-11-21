@@ -313,6 +313,17 @@ de enterarse de si tiene que hacer algo.
 lo obliga a traducir antes de poder pensar — y es el único que no puede delegar la decisión. La
 precisión técnica no se pierde: se **mueve abajo**, donde no bloquea.
 
+#### 🔀 Ante «¿se puede…?», PENSAMIENTO LATERAL (REGLA)
+*JMS 2026-11-21, al preguntar si podía grabar desde la página y recibir sólo «en el celular no anda»: **«pensamiento lateral (protocolo ante
+preguntas como ésta)»**.*
+
+> **La pregunta «¿se puede X?» es en realidad «¿cómo logro lo que X me daría?». Se contesta el camino directo y, si tiene un límite, las
+> otras formas de llegar al mismo fin — ordenadas por lo prácticas que son para él, con la recomendada primero.**
+
+- No alcanza con «sí» o «no anda»: se dice **qué quiere lograr** (acá: contestar hablando, sin tipear) y todo lo que lo consigue,
+  incluido lo que Claude puede hacer de su lado (por ejemplo, pasar a la página lo que él dicta en el chat).
+- Lo que no se puede, se dice en una línea y sin vueltas; lo que sí, con el paso a paso corto.
+
 #### 🏷️ Nombrar las cosas COMPLETAS: qué es y dónde está — sintético pero explícito (REGLA)
 *Pedida por JMS 2026-11-15, después de que le pidiera comentar «el borrador» y tuviera que preguntar: **«¿es el borrador de qué?
 Tenés que ser más explícito además de sintético, para yo poder ubicar lo que estamos hablando (protocolo de comunicación conmigo)»**.*
