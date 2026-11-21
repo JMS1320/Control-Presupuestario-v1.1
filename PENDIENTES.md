@@ -1228,7 +1228,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-FEAT-1183 | ⏸️ | ⬇️ **Baja — ya NO bloquea** | 🗺️ **EL MAPA DE CUENTAS app → balance.** ❌ **CORREGIDO EL MISMO DÍA (2026-09-28): nació como *«el cuello de botella real de todo A-FEAT-09»* y NO LO ES.** Lo cortó el usuario, con razón: *«¿qué sería? ¿es indispensable? nosotros no podemos mandar nuestro libro diario y él hacer el suyo como hasta ahora? el sistema que tenía antes exportaba un libro diario»*. **Sale del camino crítico** → el entregable es [A-FEAT-1184](#a-feat-1184) (export del libro diario) y el contador reagrupa, como venía haciendo. 📌 **Lo que sigue siendo cierto y por eso la fila no se borra**: el contador usa **93 cuentas** con su numeración (`4.1.1/01/03`) y la app **143** con la suya (`410801`); si alguna vez se quiere que la app produzca el balance armado —y no sólo los papeles— **ese mapa hace falta**. También sigue en pie que **no sería un agrupamiento limpio**: *«a veces puede llegar a tomar del libro diario cosas parciales»*, así que la equivalencia **no siempre es «cuenta del balance = A + B + C»** y el mapa tendría que construirse **como propuesta, no como verdad** (§ 🎚️). 🧨 **Y la lección de método, que es lo más valioso de esta fila**: declaré un cuello de botella **sin preguntar si el circuito manual ya lo evitaba**. El usuario venía mandando el libro diario desde siempre; la pregunta *«¿cómo lo resolvés hoy?»* habría ahorrado el ítem entero | → [A-FEAT-1184](#a-feat-1184) [A-FEAT-09](#a-feat-09) [C-24](#c-24) `@reporte` |
 | A-FEAT-10 | 🔴 | Alta | **Resultado del período en curso** = lo registrado a la fecha **+ presupuesto** de lo que falta | → [A-FEAT-10](#a-feat-10) `@reporte` |
 | A-FEAT-11 | 🔴 | Media | **Presupuesto a 2 años constante** (siempre 2 años por delante, no un ejercicio que se arma una vez) | → [A-FEAT-11](#a-feat-11) `@presupuesto` |
-| A-FEAT-12 | 🔴 | Media | **Resultado por actividad**, período por período, **+ proyección** | → [A-FEAT-12](#a-feat-12) `@reporte` |
+| A-FEAT-12 | 🔴 | Media — ⚠️ cambió 21/11: es el **objetivo siguiente** del camino 1, después de [A-FEAT-1632](#a-feat-1632) | **Resultado por actividad**, período por período, **+ proyección** — JMS 21/11 fijó la estructura: arrendamiento · agrícola · ganadero (cría, recría, engorde), estructura por hectáreas, Rojas y Nazarenas (ver dossier) | → [A-FEAT-12](#a-feat-12) `@reporte` |
 | A-FEAT-13 | 🔴 | **Alta** | **Cash Flow multi-empresa: las facturas de PAM y MA no se pueden pagar** — hoy el Cash Flow lee sólo `msa`, así que las 4 FC de PAM y las 92 de MA no tienen dónde registrarse. Plan acordado con el usuario 2026-08-07, 7 pasos | → [A-FEAT-13](#a-feat-13) `@cashflow` |
 
 <details><summary>🟢 Hecho, esperando tu prueba (35)</summary>
@@ -4573,6 +4573,27 @@ que cruce eso con la contabilidad y la proyección.
 
 **A definir:** la lista canónica de actividades y cómo se imputa lo que sirve a más de una
 (estructura, administración) — si se prorratea o queda aparte.
+
+**⚠️ cambió 2026-11-21 — JMS fijó la estructura y lo puso como OBJETIVO SIGUIENTE** (después de las tres capas del balance,
+[A-FEAT-1632](#a-feat-1632)). Textual: *«hay que dividir las cuentas de resultado en lo que tiene que ver con arrendamiento, lo que tiene
+que ver con agrícola y lo que tiene que ver con ganadero. Dentro de ganadero, idealmente, cría, recría y engorde. No sé si lo lograremos,
+pero por lo menos ganadero entero, separado de agrícola y de arrendamiento, sí»*.
+
+1. **Las actividades**: **Arrendamiento** · **Agrícola** · **Ganadero** (ideal: **cría · recría · engorde**; mínimo: ganadero entero).
+2. **Qué se divide**: seguro las cuentas de **resultado**. Las de activo y pasivo, a ver (*«no estoy seguro si pueden tener que ver»*).
+3. **No sale sólo de la cuenta contable**: un insumo (agroquímico, semilla) puede usarse en agrícola o en ganadero más allá de cómo se
+   imputó (*«trato de poner semilla forrajera, ganadería, diferenciado, pero hay insumos que se pueden usar para las dos cosas»*) →
+   **ajustes que salen de PRODUCTIVO** (lo aplicado en cada lote / actividad).
+4. **Gastos de estructura**: se reparten **por hectáreas** entre las actividades.
+5. **Por campo**: diferenciar lo que va a **Rojas** y lo que va a **Nazarenas**.
+6. **De dónde sale**: *«la información está casi toda… si uno piensa en cómo se adjudica el complementario que agrupa todas las partidas,
+   ya hay información en mis planillas de Excel del inmobiliario… se puede entender la forma de la fórmula para entender lo que quise
+   hacer, tal vez lo logré en un 90%»*. → Empezar por leer esas planillas (el reparto del complementario por partida) y el módulo
+   productivo (lotes, hectáreas, aplicaciones), antes de proponer nada.
+7. **Cómo se trabaja** (JMS): *«mirar con atención, pausado, profundo, con responsabilidad, con controles de chequeo»*. El control natural:
+   la suma de las actividades (+ estructura) = el resultado total de [A-FEAT-1632](#a-feat-1632).
+8. Ya existe base para reusar: el módulo **Margen por actividad** (M-01: arrendamiento Rojas / Nazarenas, cría, recría) y el costeo por
+   actividad del productivo (FASE C). Buscarlos antes de escribir nada (CLAUDE.md § 🔎).
 
 ---
 
