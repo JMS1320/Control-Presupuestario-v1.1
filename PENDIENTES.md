@@ -388,7 +388,7 @@ es un error de la guía y hay que corregirla, no ignorarla.
 >
 > | Paso | Qué es | Requisitos de JMS | Estado | Dado por bueno |
 > |---|---|---|---|---|
-> | 1 | Exportar los libros del sistema y auditarlos libro por libro | «todo es todo»: el libro tiene que traer TODO y cerrar contra la base (CLAUDE.md) · nombres cortos · bloques que suman / no suman | 🟡 **En curso. Hito 19/11: el libro de TEMPLATES cerrado** (dossier A-FEAT-1629, puntos 29–40). ▶️ **AL RETOMAR, PRIMERO**: bajar el set de libros de nuevo (en `desarrollo` desde el commit 59eaff55) y verificarlo contra la lista del **punto 43** (Templates igual que el v18; «Socios y Libertad» con AMS, MA y Cotitulares nuevos). **Después**: seguir auditando desde el libro «Templates» con lo que JMS encuentre (solapa «H · MSA · Egresos» ya auditada; siguen «Cuotas», «Por mes», las de cada agrupadora, MA y PAM). Último libro bajado y auditado: `Export Balance App/v18`. | 19/11: «hasta acá hemos cumplido con un hito» |
+> | 1 | Exportar los libros del sistema y auditarlos libro por libro | «todo es todo»: el libro tiene que traer TODO y cerrar contra la base (CLAUDE.md) · nombres cortos · bloques que suman / no suman | 🟡 **En curso.** ⚠️ **cambió 21/11 — el libro de Templates NO está cerrado**: el hito del 19/11 fue *corregir los errores encontrados*; JMS tiene que volver a recorrerlo y recién ahí lo da por terminado (puntos 29–40 y 44 del dossier A-FEAT-1629). ▶️▶️ **AL RETOMAR EL TRABAJO SOBRE EL CRUDO, PRIMERO (recordárselo a JMS)**: bajar el set de libros de nuevo (en `desarrollo` desde el commit 59eaff55) y verificarlo contra la lista del **punto 43** (Templates igual que el v18; «Socios y Libertad» con AMS, MA y Cotitulares nuevos). **Después**: seguir auditando desde el libro «Templates» con lo que JMS encuentre (solapa «H · MSA · Egresos» ya auditada; siguen «Cuotas», «Por mes», las de cada agrupadora, MA y PAM). Último libro bajado y auditado: `Export Balance App/v18`. | ⏳ sin dar por bueno (19/11 se corrigieron errores; falta su recorrida) |
 > | 2 | Auditar | a definir | 🔵 | — |
 > | 3 | Envío al contador | a definir | 🔵 | — |
 > | 4 | Presentación a socios | a definir | 🔵 | — |
@@ -1152,6 +1152,7 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-TEST-1369 | 🟢 | 🟡 Media | 🔎 **Probar «Buscar en todas las cuentas»** ([A-FEAT-1594](#a-feat-1594)). **Qué probar vos:** en Extracto, botón «🔎 Buscar en todas las cuentas»: escribí «alcorta» y Buscar → tienen que aparecer los pagos a Alcorta de las cuentas de MSA (unos 20 en el Galicia), con la cuenta en la primera columna; probá «inmobiliario» (MSA y MA juntos), «metrogas débito» y una búsqueda con fechas. «abrir» tiene que llevarte al movimiento en su cuenta, en una pestaña nueva. | `@extracto` |
 | A-BUG-1630 | ✅ | 🔴 Alta — bloquea importar de ARCA | ✅ *16/11: JMS descargó de ARCA desde `desarrollo` y funcionó. Falta publicarlo a `main` (con su OK) para los demás usuarios.* 🔐 **«Descargar de ARCA» falla con «unable to verify the first certificate»** (JMS 16/11, captura al importar facturas). **Causa (verificada 16/11 desde esta máquina):** ARCA renovó el 30/10/2026 el certificado de `portalcf.cloud.afip.gob.ar` (`*.cloud.afip.gob.ar`, emitido por «Sectigo Public Server Authentication CA OV R36») y el servidor manda sólo su certificado, sin el intermedio; el navegador lo completa solo, Node no. `auth.afip.gob.ar` y `fes.afip.gob.ar` responden bien. Afecta recibidos y emitidos, las tres empresas. **Fix de fondo:** la conexión de `lib/arca/http.ts` suma ese intermedio público (válido hasta 21/03/2036, firmado por la raíz Sectigo R46 que Node ya trae) a los certificados de confianza — sigue verificando todo, NO se desactiva la verificación. **Mitigación mientras tanto:** bajar el archivo a mano de Mis Comprobantes e importarlo por archivo. Rama `jms/arca-certificado`. **Probado 16/11 (sin clave):** con el cliente corregido el portal responde 200 y los otros dos servidores igual que antes; un sitio con certificado vencido y otro con raíz desconocida siguen rechazados; `type-check:diff` sin empeorar. Falta la descarga real con clave (JMS). **Qué probar vos:** Egresos → Facturas → «Descargar de ARCA» con tu clave: tiene que llegar al asistente de imputación como antes. **Lo que no tiene que pasar:** el cartel rojo del certificado. Si ARCA cambia de proveedor de certificado y vuelve a instalarlo incompleto, el error reaparece: se suma el intermedio nuevo en `lib/arca/certificados.ts`. |
 | A-FEAT-1631 | 🔵 | 🟠 Alta — camino 1 (nace del paso 1 del balance) | 🏷️ **La regla de código de un template vale PAGUE POR DONDE SE PAGUE** (JMS 19/11: *«¿la regla no puede ser del template, pague por donde se pague? ¿no estaba previsto eso?»*). Hoy no: `reglas_contable_interno` es por **cuenta + template** (nació así porque el código depende de quién paga: un template de PAM pagado por MSA lleva «CTA PAM», pagado por PAM no lleva nada), y hay que cargar la regla cuenta por cuenta. Para los templates destinados a la cuenta de un socio («Viáticos JMS», «Gastos Reintegro JMS») hoy está cargada para Galicia MSA y la VISA de MSA (scripts 290 y 291); por caja, dólares u otro banco sale sin código. **Propuesta**: una regla «para cualquier cuenta» que se use cuando no hay una de la cuenta que paga (lo específico manda), buscada por UNA sola función compartida — hoy la búsqueda está copiada en el motor (`useMotorConciliacion.ts` × 2) y en la asignación a mano del extracto (`vista-extracto-bancario.tsx` × 3): es el modo de falla «se arregló un camino de los dos». Se hace con su caso en `npm run probar` y se prueba conciliando un pago real. **Motivo**: si JMS paga un viático por caja y la regla no está, el pago no toma el código, no va a la cuenta de JMS y —peor— el libro lo sigue mostrando como reintegro porque mira el template: las dos mitades dejan de coincidir. | `@extracto/conciliar` |
+| A-FEAT-1632 | 🔵 | 🔴 Alta — camino 1 (balance) | 🧱 **Las TRES CAPAS del balance: crudo → desglose → esquema del contador**. JMS 21/11 (hoja manuscrita Activo / Pasivo / Resultado): llenar **la planilla del contador tal como él la da, con nuestras cuentas**; cada renglón abre su hoja de cómo se forma; debajo, los **tres maestros crudos** (libro diario, templates, sueldos), filtrables con pocos botones por código **contable** e **interno**, ordenados en escalones, con control en cada nivel. Se avanza de a un paso con su visto bueno. **Estado: propuesta entregada 21/11, espera el OK de JMS al orden de los pasos.** | `@reportes/balance` |
 | A-BUG-1613 | 🟢 | 🔴 Alta — bloquea guardar órdenes | ✅ *11/11: script 268 corrido con OK de JMS — CHECK «no vacía» y `varchar(20)`; JMS vuelve a «Actualizar Orden».* 🧱 **La orden agrícola no guarda con dosis en kg/ha o g/ha: la base sólo acepta L y cc** (JMS 11/11, captura: *«new row for relation lineas_orden_agricola violates check constraint lineas_orden_agricola_unidad_dosis_check»* — siembra con Soja DM60K60 y Mezcla Sojera en kg/ha). **Causa**: [A-BUG-1238](#a-bug-1238) (05/11) amplió las unidades en la pantalla (L, cc, kg, g y la del insumo) pero no se tocó el CHECK de `productivo.lineas_orden_agricola.unidad_dosis` (`'L','cc'`), y la columna es `varchar(5)` (una unidad como «unidad» tampoco entraría). **Propuesto (script 268, estructura → aviso a Javier y OK de JMS)**: CHECK = no vacía, y la columna a `varchar(20)`. No cambia datos. Espera el OK. | `@productivo/insumos` |
 | A-FEAT-1614 | 🧊 | 🟠 Alta — productivo, a diseñar con JMS | 🌱 **Orden agrícola: la DOSIS a calibrar y la CANTIDAD a entregar son dos datos distintos** (JMS 11/11: *«uno quiere sembrar 65 kg por ha pero se da más insumo por el gasto de más por las cabeceras. Entonces pongo 1500 kg de ferti en vez de 65 kg × 19,5 ha. Pero eso en la orden puede generar que calibren para 1500 kg y terminen usando 1600. Por ahora preciso que entiendas el problema»*). **El problema**: hoy la línea tiene un solo número; si se pone lo entregado (1.500 kg), la dosis que se lee es 1.500 ÷ 19,5 = 77 kg/ha y el margen se vuelve dosis. **Idea a charlar**: (1) dosis a calibrar (kg/ha) — lo que se le dice a la máquina; (2) cantidad a entregar (kg) — lo que sale del stock, con margen; la diferencia = margen esperado; (3) al cerrar la orden, lo que sobró vuelve al stock (o lo que faltó se registra), así el stock y el costo por ha salen de lo **usado**, no de lo entregado. Sin arrancar: JMS pidió por ahora que se entienda. | `@productivo/insumos` |
 | A-FEAT-1615 | 🟢 | 🟡 Media | 📅 **Cash Flow: «± días» alrededor de hoy** (nota 🌙 JMS 11/11: *«agregar una cantidad de días. Si pongo 0 es hoy. Si es 1 es ayer, hoy y mañana»*). **Hecho**: en la fila «Desde:», un campo «± días»: 0 = sólo hoy, 1 = de ayer a mañana, 3 = de hace 3 días a dentro de 3; muestra el rango y «quitar»; lo sin fecha se sigue viendo (como la ventana); «Ver todo» lo borra. Se combina con los demás chips. `rangoAlrededorDeHoy` / `pasaRango` (`lib/pagos/filtros-cash-flow.ts`), 1 caso. → [A-TEST-1370](#a-test-1370) | `@cashflow` |
@@ -18973,7 +18974,9 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   contra −6.092.248,73 y −45.593.911,03 del archivo enviado (628.914,00 y 1.134.572,86). JMS y PAM coincidían. Sigue abierto.
 - **Sueldos**: total 144.020.113,03 igual antes y después; sólo se partió en dos bloques.
 
-**40 · 19/11 — 🏁 HITO: EL LIBRO DE TEMPLATES ESTÁ COMPLETO Y AUDITADO (paso 1 del camino 1). Desde acá se sigue.**
+**40 · 19/11 — 🏁 HITO: SE CORRIGIERON LOS ERRORES ENCONTRADOS EN EL LIBRO DE TEMPLATES (paso 1 del camino 1). Desde acá se sigue.**
+
+> ⚠️ **cambió 21/11 (JMS)**: el título decía «el libro de Templates está completo y auditado» y **no es así**. JMS: *«habíamos completado un hito de que habíamos corregido unos errores, pero yo tenía que volver a empezar por ahí a ver si encontraba algo más o lo daba por terminado»*. Lo de abajo vale como lo que se corrigió y se verificó; **el visto bueno del libro está pendiente** → punto 44.
 
 - **Qué quedó** (verificado en el libro bajado `Export Balance App/v18`, generado 19/11 02:33, contra el de antes `v16`):
   1. El libro «Templates» trae **todas** las cuotas del ejercicio de MSA, MA y PAM, cada responsable en su solapa «H · X · Egresos».
@@ -19075,3 +19078,56 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   «Gastos Reintegro JMS» fuera del plan de cuentas · el sueldo de JMS sigue como gasto en Sueldos · `scripts/reporte-items/d_sueldos.py`
   lee la solapa de Sueldos que cambió · «CTA QUINTA X» (9.000, Hermanos) sigue en «sin tratar» de la 14.1 · 3 compras con débito de la
   cuenta de JMS sin template (14/07/25, 12/01/26, 16/01/26).
+
+**44 · 21/11 — CORRECCIÓN DEL HITO + EL PRIMER PASO AL RETOMAR (que no se pierda)**
+
+- ⚠️ **El libro de Templates NO está dado por bueno.** El 19/11 se corrigieron los errores encontrados (punto 40); JMS tiene que volver a
+  recorrerlo y decidir si aparece algo más o lo da por terminado. Corregido en el mapa del balance y en el punto 40.
+- ▶️ **Al retomar el trabajo sobre el crudo (no la sesión del 21/11: la siguiente de ese tema), Claude se lo RECUERDA a JMS como primer paso**:
+  bajar «Libros del balance» (zip) desde la vista previa de `desarrollo` a `Export Balance App/v19` y compararlo contra la tabla del
+  **punto 43** (14.1: AMS −8.092.248,73 · MA −45.593.911,03 · Cotitulares −1.756.595,00 · total −90.114.846,86; Templates igual al v18,
+  total MSA 91.795.965,69; Sueldos 144.020.113,03). Después, JMS recorre de nuevo el libro de Templates.
+- Ese paso **es el paso 1 del plan nuevo** de [A-FEAT-1632](#a-feat-1632) (el crudo completo): no se reemplaza, se encadena.
+
+## <a id="a-feat-1632"></a>A-FEAT-1632 — Las TRES CAPAS del balance: crudo → desglose → esquema del contador 🧱
+
+**1 · 21/11 — lo que planteó JMS** (hoja manuscrita: *Activo* — saldos en cuentas, granos, hacienda, insumos, ARCA, ¿otros? · *Pasivo* —
+saldos · *Resultado* — cada cuenta contable (ventas, compras), cada template, sueldos):
+
+- *«Nosotros podríamos tener la misma presentación del contador, pero tendríamos diferentes cuentas, porque ya vimos que él reagrupa lo que
+  nosotros le mandamos… esta planilla nosotros la tenemos que llenar así como él nos la da. Nosotros se la deberíamos dar a él.»* Lo que hoy
+  sólo tiene él (amortizaciones, diferido, patrimonio neto, valor contable de la cría) **se copia de sus datos**; el resto, de los nuestros.
+- *«La parte mía siempre va a ser auditar el libro diario y auditar el maestro de templates. Vamos a agregarle auditar el maestro de sueldos.
+  Auditando esos tres maestros debería poder auditar todo esto.»* El desglose (la capa del medio) **es un reporte**: el total ya lo auditó
+  en el crudo.
+- *«En cada jerarquía… siempre deberíamos contar con un control que yo debería tener a la vista»*: activo / pasivo / resultado lo más
+  macro; cada renglón con su hoja de cómo se conforma y **el mismo total**; detrás, los tres maestros, que entre los tres **suman lo mismo**.
+- *«Desde los maestros debería poder filtrar contable y filtrar interno… con pocos botones… si filtro la cuenta de MA debería ver todas las
+  afectaciones, ya ordenadas… el ordenamiento escalonado tiene que ser muy bueno.»*
+- *«La única forma en que yo puedo confiar que los datos están bien es que yo pueda, desde el crudo que es total, hacer con pocos botones los
+  filtrados correspondientes… Si hay un error de agrupación posterior, nunca va a ser tan peligroso.»*
+- *«No te voy a pedir que lo hagas todo de una, porque eso no ha funcionado bien en el pasado. Paso por paso.»*
+
+**2 · Qué existe hoy** (verificado 21/11, sólo lectura):
+- La planilla del contador **ya está en la base**: `public.balance_contador_cuentas`, 107 cuentas de MSA con su saldo presentado y una
+  columna «tratamiento» (sistema / cierre / contador). **64 de las 107 no tienen tratamiento**, 45 de ellas de RESULTADOS.
+- El **libro F «Balance en línea»** (`lib/balance/balance-en-linea.ts`, A-FEAT-1509) ya arma esa planilla con la apertura y completa el
+  cierre sólo en los renglones de saldos (bancos, dólares, FCI, hacienda…). **Los de resultado quedan en blanco a propósito.**
+- Los tres maestros se exportan (libro diario, libro «Templates», «Sueldos»), pero **no hay un mapa «nuestra cuenta / template → renglón
+  del contador»**, ni el filtro por código contable e interno con orden escalonado en los tres, ni el control «los tres maestros suman el
+  resultado».
+- ⇒ **Lo nuevo**: el esquema del contador lleno con nuestras cuentas, el desglose por renglón y el crudo preparado para auditar.
+
+**3 · Plan propuesto — un paso por vez, cada uno con el visto bueno de JMS** *(espera su OK al orden)*:
+
+| Paso | Qué | Qué audita JMS | Control |
+|---|---|---|---|
+| **1** | **Crudo COMPLETO**: los tres maestros traen todo. Arranca con el v19 (punto 44 de A-FEAT-1629) y la recorrida de Templates; después libro diario y Sueldos con el mismo criterio («todo es todo») | que no falte nada | cada maestro contra la base (cantidad e importe) |
+| **2** | **Crudo ORDENADO y FILTRABLE**: código contable e interno en los tres maestros; pocos filtros; orden escalonado. **Piloto: la cuenta de MA** (la más difícil), después JMS, AMS, PAM | filtrando «CTA MA» ve todas sus afectaciones en escalones y dice «está bien» | subtotal por escalón, y total del filtro = saldo de la cuenta en la 14.1 |
+| **3** | **El MAPA** cuenta contable / template / sueldos → renglón del contador (completar las 64 sin tratamiento). Se le muestra a JMS antes de construir | que cada cosa vaya al renglón que corresponde | nada queda sin renglón; lo que no va, a la vista |
+| **4** | **El DESGLOSE** (capa del medio): una hoja por renglón, generada del crudo | — (es reporte: el total ya está auditado) | total de la hoja = renglón |
+| **5** | **El ESQUEMA DEL CONTADOR** con nuestras cuentas (completa el libro F): activo y pasivo de nuestros saldos, resultado desde los maestros, lo que sólo tiene él copiado de su planilla y marcado | la comparación renglón por renglón con lo que él presentó | activo − pasivo − PN − resultado = 0 · resultado = suma de los tres maestros |
+
+**4 · Cómo encaja con lo que ya estaba**: son los pasos 1 y 2 del método del mapa (exportar → auditar) bajados a detalle, y el **M5 (balance
+en línea)** construido desde abajo. Cerrado para MSA, se repite para MA y PAM.
+

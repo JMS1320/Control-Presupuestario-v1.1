@@ -1505,6 +1505,11 @@ ese lugar afecte a todo lo que lo usa.
   Automotor: «una solapa unificadora bien concisa y con control siempre — protocolo, el control siempre, no a veces»)*. Toda solapa
   que resume o junta otras (un unificado, un resumen, un total del papel) lleva su control a la vista: lo que muestra contra la suma
   de lo que junta, con ✓ o ⚠️. Una solapa de resumen sin control se considera sin terminar. → [A-FEAT-1628](PENDIENTES.md#a-feat-1628).
+- 🧱 **Se audita desde el CRUDO; lo agrupado es reporte** *(JMS 2026-11-21: «la única forma en que yo puedo confiar que los datos están bien es
+  que yo pueda, desde el crudo que es total, hacer con pocos botones los filtrados correspondientes… si hay un error de agrupación posterior,
+  nunca va a ser tan peligroso»)*. Los maestros crudos (📍 acá: libro diario, templates, sueldos) traen TODO, se filtran con pocos botones
+  por código contable e interno y vienen ordenados en escalones; cada nivel de arriba (desglose, esquema del contador) da el mismo total que
+  su crudo, con el control a la vista. → [A-FEAT-1632](PENDIENTES.md#a-feat-1632).
 - **Visible y proporcional**: si cierra, un ✓ discreto; si no, una alerta grande. Un control que
   nadie ve no es un control.
 - **Tolerancia explícita** cuando el dominio la tiene (los emisores redondean), y **listando los
