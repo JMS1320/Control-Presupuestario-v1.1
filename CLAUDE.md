@@ -139,9 +139,15 @@ queremos: llenar en un Excel todos los proveedores con todos los mails y todos l
   diciendo por qué no alcanza con pedirlo en el momento.
 - **Mejorar el proceso mientras se trabaja**: al pasar por un circuito se simplifica, se comunica lo que faltaba y se marca lo
   automatizable (§ 🔍 la auditoría al pasar). No se prevé todo por adelantado.
-- 💬 **Y lo que se le muestra a JMS para revisar va en una PÁGINA (artifact), no en un Excel** *(misma charla)*: tablas, ejemplos y
-  dónde contestar ahí mismo (§ 💬 *Toda página se responde ahí mismo*). Los Excel quedan para lo que se entrega afuera (contador,
-  banco, papeles).
+- 🌾 **Excepción — lo ESTACIONAL de productivo sí se carga de antemano** *(JMS 21/11, 2ª charla: «sí me parece interesante que yo haga
+  una carga de base de datos de cosas que yo ya sé… muchas cosas son estacionales, nada se va a volver a repetir hasta dentro de un año»)*:
+  esperar al uso costaría un año. Se carga lo que JMS ya sabe (labores, siembras, seguros de granizo, destete…), en una página.
+- 💬 **El canal POR DEFAULT con JMS es la PÁGINA (artifact), no el Excel** *(JMS 21/11: «siempre nos vamos a comunicar con Artifact…
+  siempre que vos me tengas que dejar algo para yo llenar»)*: todo lo que él tenga que **llenar, contestar o revisar** va en una página
+  con tablas, ejemplos y dónde contestar ahí mismo (§ 💬 *Toda página se responde ahí mismo*). Nunca un Excel para que lo cambie y lo
+  devuelva. Los Excel quedan para lo que se **entrega afuera** (contador, banco, papeles) y para los exports de la app.
+- 📥 **Y Claude detecta solo cuándo algo de la charla es REGLA** *(JMS 21/11: «vos date cuenta cuando algo debería ir a regla»)* — es la
+  § 📝 de abajo: no espera a que se lo recuerden.
 
 #### 🔑 La quinta pieza: el PERMISO — automatizar también es poder delegar
 Automatizar no es sólo *que el sistema haga más*: también es **que la tarea pueda pasar a otra
