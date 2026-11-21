@@ -153,6 +153,11 @@ queremos: llenar en un Excel todos los proveedores con todos los mails y todos l
   siempre que vos me tengas que dejar algo para yo llenar»)*: todo lo que él tenga que **llenar, contestar o revisar** va en una página
   con tablas, ejemplos y dónde contestar ahí mismo (§ 💬 *Toda página se responde ahí mismo*). Nunca un Excel para que lo cambie y lo
   devuelva. Los Excel quedan para lo que se **entrega afuera** (contador, banco, papeles) y para los exports de la app.
+- 👥 **Con las OTRAS personas (Enrique, Ulises, AMS) se trabaja ADENTRO DE LA APP, no en una página** *(JMS 21/11, sobre revisar el
+  plan ganadero con Enrique Massaglia: «artifact podría ser un buen medio pero él no es suscriptor, sino vía la app misma como una tarea
+  pendiente. Los 2 deberíamos poder interactuar… las cosas no se dan por terminadas sino que esperan los 2 OK para entrar como firmes»)*.
+  La página es el canal con JMS; lo que tiene que contestar o aprobar otro va a **su pantalla principal** como tarea, y lo que se decide
+  entre dos queda **propuesto hasta los dos OK** (el modelo es [A-FEAT-1203](PENDIENTES.md#a-feat-1203), la cadena de checks).
 - 📥 **Y Claude detecta solo cuándo algo de la charla es REGLA** *(JMS 21/11: «vos date cuenta cuando algo debería ir a regla»)* — es la
   § 📝 de abajo: no espera a que se lo recuerden.
 
