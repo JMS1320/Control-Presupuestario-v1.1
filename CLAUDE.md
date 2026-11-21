@@ -104,6 +104,22 @@ su control).
 Al revisar un circuito, buscar esos pares: son los controles más baratos y los más confiables,
 porque **las dos fuentes son independientes**.
 
+#### 🗓️ TODO SE FECHA — lo que se registra genera su propia automatización (forma de trabajo permanente)
+*JMS 2026-11-21: **«es bastante fundamental poder fechar todo para que la propia información que uno registra vaya previendo el futuro.
+Siempre con la información de lo que se hace se debe utilizar para generar su propia automatización. Esto lo podemos reforzar como la
+forma de trabajo permanente que tenemos»**.*
+
+> **Cada acción guarda cuándo se hizo y quién la hizo, y esa historia es la materia prima de los avisos, los cronogramas y la
+> asignación de tareas.** Un dato sin fecha no sirve para anticipar nada.
+
+- **Al construir cualquier circuito, la pregunta es: ¿queda registrado cuándo se hizo cada paso y quién?** Si no, es un hueco (§ 🧭: se
+  registra en `PENDIENTES.md` aunque no se resuelva ahora).
+- **El registro lo hace la app, no el usuario** *(JMS 21/11: «¿debería hacer algo extra en mi día a día?» → no)*: lo que pasa por la app
+  se anota solo; lo de afuera (presentar en ARCA, mandar un mail) a lo sumo con un clic de «hecho» en el mismo aviso, o tomado del mail
+  de confirmación. Si el diseño le pide anotar a mano, el diseño está mal.
+- Es la pieza 1 de arriba (el disparador) mirada al revés: además de aprovechar lo que llega solo, **dejar rastro de lo que se hace** para
+  que la próxima vez llegue solo. → [A-AUTO-11](PENDIENTES.md#a-auto-11) (el calendario de procesos).
+
 #### 🔑 La quinta pieza: el PERMISO — automatizar también es poder delegar
 Automatizar no es sólo *que el sistema haga más*: también es **que la tarea pueda pasar a otra
 persona**. Y eso lo bloquea algo que no se ve en el diseño: **quién tiene acceso**.
