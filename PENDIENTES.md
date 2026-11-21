@@ -19181,3 +19181,27 @@ en línea)** construido desde abajo. Cerrado para MSA, se repite para MA y PAM.
 2. **Balance en línea formato contador** con nuestros renglones, desde ese crudo. Control: todo el crudo entra a un renglón o a «no va».
 3. Informe de lo que no cerró, con su lista, y la guía de qué mirar.
 
+**4 · 21/11 — TANDA SIN SUPERVISIÓN: entregada la v1 (rama `jms/tanda-2026-11-21-balance-en-linea`, SIN MERGEAR — espera la revisión de JMS)**
+
+- **Qué se hizo**: `scripts/balance-tres-capas.mts` (sólo LEE la base; usa las mismas funciones que Reportes → Balance) arma un Excel con
+  «Balance» (estructura del contador, renglones nuestros, filas agrupadas +/−), «Control» y los tres crudos («Crudo · Diario / Templates /
+  Sueldos», un renglón por comprobante / cuota / sueldo, con el **Nro balance** al que va o «NO VA» + motivo).
+  - Excel: `- Comunicacion JMS Claude - Archivos/Balance/Excels trabajando con claude/Balance formato contador/v1/Balance formato contador MSA 25-26 v1.xlsx`
+  - Página para revisar y contestar (respuestas en la colección `respuestas`, con dictado): https://claude.ai/artifact/SaFj1SiA1pj1733yv98Uju
+- **Criterios aplicados** (los del punto 3): libro diario total − IVA (otros tributos al gasto), provisiones del ejercicio en renglones propios;
+  templates de MSA por agrupadora → template (egresos); financiero sólo ganancia/pérdida (intereses; inversiones = rescates − suscripciones +
+  saldo final − inicial; movimientos entre cuentas propias a la vista); sueldos de empleados por empleado → partes según el tipo de empleado
+  (bruto guardado); stocks inicio − cierre (balance propio, versión jms); fiscal, bienes de uso y PN del contador, marcados. Signo del contador.
+- **Controles (todos ✓)**: contra el v18 — compras 563 / 294.180.363,99 / IVA 32.125.487,56 · ventas 13 / 466.959.423,73 · templates MSA
+  1.445 cuotas, egresos 66.914.486,47, financiero −32.644.262,55, socios 54.906.595,00, reintegros 2.619.146,77, total 91.795.965,69 · sueldos
+  62.865.712,75 + 81.154.400,28 = 144.020.113,03. Integridad: diario, templates (2.790 cuotas del ejercicio = 2.790 en el crudo) y sueldos
+  entran enteros a un renglón o a «NO VA».
+- **Resultado v1**: activo 1.467.845.305,08 · pasivo −150.714.480,75 · PN (contador) −940.037.216,58 · resultado −392.203.893,74 (ganancia) ·
+  **ecuación −15.110.285,99** (a la vista, no forzada). Coincidencias con el contador: intereses del plazo fijo −2.111.472,89 al centavo; sueldos
+  58.598.487,75 vs 58.588.081,43.
+- **Preguntas en la página** (P1–P6): caja $ 29,0 M sumada como gasto (riesgo de doble con sus templates) · FCI da 30,2 M de ganancia vs ~13,2 M del
+  contador · compra/venta de dólares ($ 45,4 M) fuera del resultado, falta la diferencia de cambio · restar la provisión del 24/25 (2 facturas) ·
+  sueldo «MA» $ 19,5 M dentro de empleados · el signo.
+- **Lo que NO se hizo**: nada en la app ni en los libros actuales (capa aparte); cuentas con socios sin trabajar (cuenta socios del balance propio,
+  tentativa); contable/interno en el diario (sólo en templates, por el pago).
+
