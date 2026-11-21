@@ -124,6 +124,13 @@ forma de trabajo permanente que tenemos»**.*
   puede dejar el aprendizaje de que había que hacerlo un mes antes. Ahí el protocolo **muta y mejora**, y el aprendizaje se anota al
   registrar el hecho, no aparte. Y vale para **todas las partes de la app** (productivo, vehículos, seguros, hacienda…): cada una tiene
   plazos implícitos en sus acciones.
+- 📥 **De cada documento que está en la app se pregunta: ¿cómo llegó acá, quién lo trajo y cada cuánto?** *(JMS 21/11: «el extracto lo
+  descarga Ulises… y cada cuánto se carga… las preguntas se dejan alojadas dentro de los procesos; va a llegar un momento que algo me lo
+  va a preguntar y yo le voy a decir: esto es tarea de este»)*. Lo que llega solo (ARBA por mail) se aprovecha; lo que alguien baja o
+  busca es una **tarea con dueño y periodicidad**. Las que no se saben quedan como pregunta dentro del proceso, y se contestan cuando
+  el proceso las pide.
+- 👤 **Cada uno ve SUS vencimientos en SU pantalla principal** *(mismo día, sobre Ulises: «le aparecería a él en su pantalla principal
+  solamente, no en la mía, porque son sus vencimientos»)*. JMS ve lo suyo y lo que tiene que confirmar, no la lista de todos.
 
 #### 🧲 EL DATO SE PIDE CUANDO HACE FALTA — nunca un proceso extra (forma de trabajo permanente)
 *JMS 2026-11-21: **«nunca generemos procesos extras. Siempre simplificar procesos… las cosas se registran mientras se trabajan… La
@@ -1035,6 +1042,16 @@ funcione no me debés preguntar cosas mientras… trabajar en una sub rama por p
 5. **Cada pendiente termina igual**: casos en `npm run probar`, `type-check:diff` y build en verde,
    commit propio, y su `A-TEST` con *«Qué probar vos»*.
 6. **Al volver**: resumen de lo hecho, lo saltado con su motivo, y la guía de pruebas actualizada.
+7. 🔍 **Sin supervisión = Claude se supervisa solo: 2 o 3 pasadas desde ÓPTICAS DISTINTAS** *(JMS 2026-11-21: «cuando termines,
+   mirá el trabajo, preguntate qué hay que mejorar… dale 2 o 3 pasadas… desde un prisma diferente: si yo fuera el usuario, ¿dónde
+   podría hacerlo más orgánico, más práctico, más dentro del flujo de trabajo? Cuando te digo trabajar sin mi supervisión, a eso me
+   refiero»)*. Al terminar, antes de entregar: **1ª pasada, la propia** (¿está completo y correcto, cierra el control?) · **2ª, la del
+   usuario que lo va a usar** (JMS, Ulises, AMS: ¿entra en su flujo de trabajo, le ahorra pasos, lo entiende sin preguntar?) · **3ª, otra
+   óptica** que corresponda (la del contador o el auditor, la de quien recibe la tarea delegada, la del norte: ¿alimenta al presupuesto?).
+   Cada pasada que cambia algo se corrige; si ya está bien, se dice en una línea y no se inventan mejoras.
+8. 🔄 **Mientras JMS contesta, se sigue trabajando por detrás** *(mismo día: «siempre que quieras interactuar conmigo tenés que seguir
+   trabajando por detrás… en algún momento te voy a dejar de responder y vos seguís»)*: una pregunta no frena lo que no depende de ella,
+   y si deja de contestar se sigue con lo conservador (punto 4).
 
 *Motivo: el cuello de botella es el tiempo del usuario. Si cada duda lo espera, la tanda no avanza;
 si avanza sin reglas, lo que vuelve no se puede revisar. Las dos cosas se resuelven separando lo
