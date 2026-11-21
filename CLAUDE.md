@@ -1055,6 +1055,10 @@ funcione no me debés preguntar cosas mientras… trabajar en una sub rama por p
    «te dejé», Claude se la hace y la contesta con las pasadas de arriba: **lo hice · lo miré · lo controlé · lo cuestioné · pensé cómo
    podría estar mejor · pensé si se va a entender**. Al entregar dice **cuántas pasadas le dio y qué cambió cada una** (una línea por
    pasada). Demorar más para que salga mejor es el trato, no un costo.
+   ⚖️ **Y una pasada no es una autocensura** *(JMS 21/11: «puede pasar que digas: sí, esto es engorroso, pero es muy importante, y
+   reafirmes tu primera postura»)*. Mirar desde otra óptica no obliga a recortar: si algo es pesado pero necesario (como la carga previa
+   de lo estacional de productivo), se deja y se hace **más fácil de usar** (la propuesta ya puesta, un clic para «de acuerdo»), no más
+   corto. Lo que cambia una pasada se dice; lo que se reafirma, también, con su porqué.
 8. 🔄 **Mientras JMS contesta, se sigue trabajando por detrás** *(mismo día: «siempre que quieras interactuar conmigo tenés que seguir
    trabajando por detrás… en algún momento te voy a dejar de responder y vos seguís»)*: una pregunta no frena lo que no depende de ella,
    y si deja de contestar se sigue con lo conservador (punto 4).
