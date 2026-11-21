@@ -65,6 +65,9 @@ const RANGO: Record<string, number> = { MSA: 1, PAM: 2, MA: 3, COTITULARES: 4 }
 type Asiento = { m: MovCapa; de: string; a: string; importe: number; marca: string; porque: string; parte?: string }
 const asientos: Asiento[] = [], sinResolver: Array<{ m: MovCapa; porque: string }> = [], propios: Array<{ m: MovCapa; porque: string }> = [], espejos: Array<{ m: MovCapa; porque: string }> = []
 const par = (x: string, y: string) => [x, y].sort().join(" ↔ ")
+const terceros: Array<{ m: MovCapa; porque: string }> = []
+/** Quiénes forman la matriz: las empresas, los socios, Libertad y los herederos que recibieron distribuciones de PAM (a confirmar). */
+const SOCIOS_Y_EMPRESAS = new Set(["MSA", "PAM", "MA", "COTITULARES", "JMS", "AMS", "LIB", "MANU", "MECHI", "SOLE"])
 for (const m of movs) {
   const marca = (m.interno || m.contable || "").trim()
   const origenMarca = m.interno ? "interno" : "contable (interno vacío)"
@@ -90,15 +93,21 @@ for (const m of movs) {
     sinResolver.push({ m, porque: partes.length ? `el reparto de la póliza suma ${(suma * 100).toFixed(1)} %` : "«Desglosar» sin dato que lo abra" }); continue
   }
   if (d.tipo === "OTRO") { propios.push({ m, porque: `«${marca}»: actividad, queda en ${m.titular}` }); continue }
-  const quien = d.tipo === "LIB" ? "LIB" : d.quien.toUpperCase()
+  /** Los números de las marcas viejas: «RET 1» / «AP 1» en la cuenta de PAM dicen «Retiro de MSA a PAM» / «Aporte PAM a MSA» → 1 = MSA
+   *  (inferido de las descripciones; 2 = PAM y 3 = MA por el mismo orden — a confirmar con JMS). */
+  const NUMERO: Record<string, string> = { "1": "MSA", "2": "PAM", "3": "MA" }
+  const crudo = d.tipo === "LIB" ? "LIB" : d.quien.toUpperCase()
+  const quien = NUMERO[crudo] ?? crudo
+  if (!SOCIOS_Y_EMPRESAS.has(quien)) { terceros.push({ m, porque: `«${marca}»: ${quien} no es una empresa ni un socio — cuenta con un tercero, no va a esta matriz` }); continue }
   if (quien === titular) { propios.push({ m, porque: `«${marca}»: es del mismo titular` }); continue }
   // espejo: la transferencia entre dos cuentas de la app se cuenta del lado de más arriba, si ese lado tiene extracto a esa fecha
-  if ((d.tipo === "CTA" || d.tipo === "DIST") && (RANGO[quien] ?? 99) < (RANGO[titular] ?? 99) && m.fecha >= desdeDe(quien)) {
+  // (vale también para RET / AP: un retiro o aporte entre dos cuentas de la app es la misma transferencia vista de los dos lados)
+  if (d.tipo !== "LIB" && d.tipo !== "GASTO" && (RANGO[quien] ?? 99) < (RANGO[titular] ?? 99) && m.fecha >= desdeDe(quien)) {
     espejos.push({ m, porque: `se cuenta desde la cuenta de ${quien}` }); continue
   }
   asientos.push({ m, de: titular, a: quien, importe: neto, marca, porque: `${origenMarca} «${normalizarCodigo(marca)}»` })
 }
-etapa(`asientos: ${asientos.length} · propios ${propios.length} · espejos ${espejos.length} · sin resolver ${sinResolver.length}`)
+etapa(`asientos: ${asientos.length} · propios ${propios.length} · espejos ${espejos.length} · terceros ${terceros.length} · sin resolver ${sinResolver.length}`)
 
 // ── 4 · los saldos por par, al corte y a hoy. Signo: desde el PRIMERO del par (orden alfabético): + = el segundo le debe al primero ──
 type Saldo = { par: string; primero: string; segundo: string; alCorte: number; aHoy: number; n: number; nro: string }
@@ -133,7 +142,7 @@ for (const s of lista) {
 }
 void desdeFilaDet
 filasR.push([], ["Lo que NO se pudo leer como cuenta (a la vista, no se adivina)"], ["", "Sin resolver", sinResolver.length, "", n(r2(sinResolver.reduce((t, x) => t + x.m.deb - x.m.cred, 0)))],
-  ["", "Propios / pagos de tarjeta / actividades", propios.length], ["", "Transferencias contadas del otro lado (espejos)", espejos.length])
+  ["", "Propios / pagos de tarjeta / actividades", propios.length], ["", "Transferencias contadas del otro lado (espejos)", espejos.length], ["", "Cuentas con terceros (no van)", terceros.length])
 if (tablasQueFallaron.length) filasR.push([], [`⚠️ No se pudieron leer: ${tablasQueFallaron.join(", ")}`])
 const wsR = XLSX.utils.aoa_to_sheet(filasR); wsR["!cols"] = [{ wch: 6 }, { wch: 26 }, { wch: 18 }, { wch: 30 }, { wch: 18 }, { wch: 30 }, { wch: 12 }, { wch: 18 }, { wch: 4 }]
 XLSX.utils.book_append_sheet(wb, wsR, "Saldos")
@@ -154,6 +163,7 @@ const otra = (rot: string, xs: Array<{ m: MovCapa; porque: string }>) => {
 }
 XLSX.utils.book_append_sheet(wb, otra("SIN RESOLVER — la marca no dice de quién es: hay que decidirlo", sinResolver), "Sin resolver")
 XLSX.utils.book_append_sheet(wb, otra("ESPEJOS — transferencias entre cuentas de la app, contadas desde el otro lado", espejos), "Espejos")
+XLSX.utils.book_append_sheet(wb, otra("TERCEROS — marcas de una cuenta con alguien que no es empresa ni socio (no van a la matriz)", terceros), "Terceros")
 XLSX.utils.book_append_sheet(wb, otra("PROPIOS — no son cuenta con nadie (del mismo titular, actividades, pagos de tarjeta)", propios), "Propios")
 const wsC = XLSX.utils.aoa_to_sheet([["COBERTURA — desde y hasta qué fecha hay extracto de cada cuenta (en pesos) desde el 01/01/2025"], ["Si una cuenta arranca después del 01/01/2025, lo de antes NO está en la base: el saldo de sus pares queda incompleto en ese tramo."], [],
   ["Cuenta", "Titular", "Desde", "Hasta", "Movimientos", "¿Completa desde 01/01/2025?"],
@@ -161,7 +171,7 @@ const wsC = XLSX.utils.aoa_to_sheet([["COBERTURA — desde y hasta qué fecha ha
 wsC["!cols"] = [28, 12, 12, 12, 12, 44].map(w => ({ wch: w }))
 XLSX.utils.book_append_sheet(wb, wsC, "Cobertura")
 // control: todo movimiento marcado está en un lugar
-const total = movs.length, ubicados = new Set([...asientos.map(a => a.m), ...sinResolver.map(x => x.m), ...propios.map(x => x.m), ...espejos.map(x => x.m)]).size
+const total = movs.length, ubicados = new Set([...asientos.map(a => a.m), ...sinResolver.map(x => x.m), ...propios.map(x => x.m), ...espejos.map(x => x.m), ...terceros.map(x => x.m)]).size
 const wsK = XLSX.utils.aoa_to_sheet([["CONTROL"], [], ["Qué", "Valor", "✓"],
   ["Movimientos marcados leídos", total, ""], ["Ubicados (en un par, sin resolver, propio o espejo)", ubicados, ubicados === total ? "✓" : "⚠️"],
   ["Cada par: saldo = suma de su detalle", "ver solapa Saldos, columna ✓", ""]])
@@ -173,7 +183,7 @@ XLSX.writeFile(wb, archivo, { cellStyles: true })
 etapa(`Excel: ${archivo}`)
 const JSON_OUT = arg("json", "")
 if (JSON_OUT) writeFileSync(JSON_OUT, JSON.stringify({ desde: DESDE, corte: CORTE, hasta: HASTA, saldos: lista.map(s => ({ ...s, leeCorte: lee(s, s.alCorte), leeHoy: lee(s, s.aHoy) })),
-  sinResolver: sinResolver.length, propios: propios.length, espejos: espejos.length, total, ubicados, cobertura, tablasQueFallaron,
+  sinResolver: sinResolver.length, propios: propios.length, espejos: espejos.length, terceros: terceros.length, total, ubicados, cobertura, tablasQueFallaron,
   detalle: Object.fromEntries(lista.map(s => [s.nro, det.filter(r => r[0] === s.nro).map(r => [r[2], `${r[4]} · ${r[6]}`, r[9], `${r[7]} · ${r[12]}`])])),
   sinResolverDet: sinResolver.map(x => [x.m.fecha, `${x.m.cuenta} · ${x.m.detalle || x.m.desc || ""}`, r2(x.m.deb - x.m.cred), `${x.m.contable} / ${x.m.interno} · ${x.porque}`]) }))
 console.log(JSON.stringify(lista.map(s => [s.nro, s.par, s.alCorte, s.aHoy, s.n])))

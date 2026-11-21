@@ -19221,3 +19221,23 @@ en línea)** construido desde abajo. Cerrado para MSA, se repite para MA y PAM.
 - Programa: avisa cada etapa con su hora (JMS: *«chequeá cada tanto si se traba o avanza por etapas»*); tarda ~10 min, casi todo en leer el banco
   de cada cuota.
 
+## <a id="a-feat-1635"></a>A-FEAT-1635 — Saldos INTERNOS entre las cuentas desde el 31/12/2024 en cero 🤝
+
+**1 · 21/11 — v1 entregada (tanda sin supervisión, rama `jms/tanda-2026-11-21-balance-en-linea`, sin mergear)**
+
+- **Pedido** (JMS 21/11): ante todo PAM ↔ MSA, y también PAM y MSA con cada socio y los socios entre sí, todo en cero al 31/12/2024; saldos
+  al **28/02/2026** y a **hoy**; lo que importa es el INTERNO. (Donde dictó «MCA» es MSA.)
+- **Cómo**: `scripts/cuentas-internas-desde-2025.mts` (sólo lee; ~1 min) — la marca interna de cada movimiento (vacía → la contable; la del
+  histórico, de la nota), con las reglas de la capa interna (`lib/balance/capa-interna.ts`): CTA/DIST/RET/GASTO X → X le debe al titular; LIB a su
+  pozo; Desglosar abre tarjeta y pólizas; una transferencia entre cuentas de la app se cuenta UNA vez (del lado de más arriba, salvo que ese lado no
+  tenga extracto a esa fecha). Sólo PLATA (banco, caja, tarjeta), no facturas ni sueldos devengados.
+- **Resultado** (1.168 movimientos marcados, todos ubicados: 712 en pares, 31 espejos, 393 propios, 2 terceros, 42 sin resolver). PAM ↔ MSA: al
+  28/02/26 MSA le debe a PAM 13.718.815,49; a hoy 5.965.205,09. Otros: MA ↔ MSA a hoy MA le debe 97,1 M · MA ↔ PAM MA le debe 47,4 M · JMS ↔ MSA 16,7 M ·
+  AMS ↔ MSA 17,4 M · Cotitulares ↔ PAM 33,2 M (todo en el Excel y la página).
+- **Encontrado en la 1ª pasada**: «RET 1 / AP 1» en la CA de PAM = MSA (descripciones «Retiro de MSA a PAM» / «Aporte PAM a MSA»; neto: PAM le aportó
+  a MSA 14.300.100,00 en 2025) · 6 retiros/aportes entre cuentas de la app se contaban de los dos lados (corregido) · «Trabucco» es un proveedor (aparte).
+- **Huecos de extracto** (Q1): Galicia CC MSA ene–jun 2025; CA MA hasta 07/10/25; CC PAM hasta 24/09/25; VISA MA hasta 29/09/25; y para «hoy», VISA PAM
+  hasta 30/04/26, CA PAM hasta 22/07/26, CC PAM hasta 07/08/26.
+- **Entregables**: Excel `…/Cuentas internas desde 2025/v1/` · página https://claude.ai/artifact/479mSTYBEw1Szstw7iVpUt (Q1 extractos · Q2 «1» = MSA ·
+  Q3 distribuciones a Manuel, Mechi, Soledad · Q4 Libertad · Q5 los 42 sin resolver · Q6 sólo plata o también facturas y sueldos).
+
