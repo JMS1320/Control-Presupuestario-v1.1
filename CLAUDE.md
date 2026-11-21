@@ -119,6 +119,29 @@ forma de trabajo permanente que tenemos»**.*
   de confirmación. Si el diseño le pide anotar a mano, el diseño está mal.
 - Es la pieza 1 de arriba (el disparador) mirada al revés: además de aprovechar lo que llega solo, **dejar rastro de lo que se hace** para
   que la próxima vez llegue solo. → [A-AUTO-11](PENDIENTES.md#a-auto-11) (el calendario de procesos).
+- 🌾 **Contable y productivo no se fechan igual** *(JMS 21/11)*: en lo contable la fecha es un **vencimiento** — el sistema ya sabe si
+  algo se hizo tarde, no hay ambigüedad. En lo productivo la fecha registrada **no siempre es la correcta**: «fumigamos cardos» el 15/10
+  puede dejar el aprendizaje de que había que hacerlo un mes antes. Ahí el protocolo **muta y mejora**, y el aprendizaje se anota al
+  registrar el hecho, no aparte. Y vale para **todas las partes de la app** (productivo, vehículos, seguros, hacienda…): cada una tiene
+  plazos implícitos en sus acciones.
+
+#### 🧲 EL DATO SE PIDE CUANDO HACE FALTA — nunca un proceso extra (forma de trabajo permanente)
+*JMS 2026-11-21: **«nunca generemos procesos extras. Siempre simplificar procesos… las cosas se registran mientras se trabajan… La
+dinámica que queremos: cuando hago una transferencia y no tengo el CBU, ahí me dice "ingresar el CBU" y se guarda en la base. La que no
+queremos: llenar en un Excel todos los proveedores con todos los mails y todos los CBU. Esto es muy importante como forma de trabajo»**.*
+
+> **Lo que falta se pide en el momento del trabajo en que hace falta, y queda guardado para siempre. No se le arma al usuario una carga
+> masiva ni una planilla para completar.**
+
+- Al proponer un desarrollo, **no** «vamos a relevar todo esto»: **«cuando hagas X, la app te va a pedir Y y lo guarda»**. El
+  relevamiento sale solo del uso.
+- Lo que Claude ya puede sacar de la base, lo saca él. Si algo parece **indispensable** cargarlo de antemano, se propone igual,
+  diciendo por qué no alcanza con pedirlo en el momento.
+- **Mejorar el proceso mientras se trabaja**: al pasar por un circuito se simplifica, se comunica lo que faltaba y se marca lo
+  automatizable (§ 🔍 la auditoría al pasar). No se prevé todo por adelantado.
+- 💬 **Y lo que se le muestra a JMS para revisar va en una PÁGINA (artifact), no en un Excel** *(misma charla)*: tablas, ejemplos y
+  dónde contestar ahí mismo (§ 💬 *Toda página se responde ahí mismo*). Los Excel quedan para lo que se entrega afuera (contador,
+  banco, papeles).
 
 #### 🔑 La quinta pieza: el PERMISO — automatizar también es poder delegar
 Automatizar no es sólo *que el sistema haga más*: también es **que la tarea pueda pasar a otra
