@@ -320,6 +320,10 @@ diferente. Esto es para siempre»**.*
 - 🎙️ **Y se puede DICTAR** *(JMS 14/11: «¿me podés dejar la posibilidad de grabar mensaje y que se transcriba?»)*: cada campo de
   texto lleva un 🎙️ (capacidad `dictation`) que escribe lo que se dice; donde el navegador no lo permite, el botón no aparece.
 - Si la página no puede guardar (sin sesión), lo dice y deja copiar el texto: nada se pierde en silencio.
+- 📄 **Y la página es el canal POR DEFAULT** *(JMS 2026-11-21: «nuestro protocolo de comunicación va a tener que empezar a hacer por default el
+  artifact… para mí es mucho más fácil comunicarme directamente así»)*: toda entrega que tenga algo para mirar o decidir —un Excel, un plan,
+  preguntas— va en una página (si es un Excel, la página muestra la planilla) y se contesta ahí. El chat lleva sólo el link y lo mínimo. ←
+  caso: el balance formato contador de la tanda del 21/11 (A-FEAT-1632).
 - 🔎 **Una pregunta sobre un CASO CONCRETO (un pago, un template, una inconsistencia) se hace SIEMPRE en una página, con las
   tablas a la vista** *(JMS 15/11/2026: «esas cosas me las tenés que siempre preguntar por artifact, porque yo tengo que poder ver
   las tablas, los movimientos, como si fuera en la aplicación… Cuando es una cosa entre dos puntas, me tenés que mostrar las dos
