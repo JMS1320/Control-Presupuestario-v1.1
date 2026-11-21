@@ -1049,6 +1049,12 @@ funcione no me debés preguntar cosas mientras… trabajar en una sub rama por p
    usuario que lo va a usar** (JMS, Ulises, AMS: ¿entra en su flujo de trabajo, le ahorra pasos, lo entiende sin preguntar?) · **3ª, otra
    óptica** que corresponda (la del contador o el auditor, la de quien recibe la tarea delegada, la del norte: ¿alimenta al presupuesto?).
    Cada pasada que cambia algo se corrige; si ya está bien, se dice en una línea y no se inventan mejoras.
+   ❓ **«¿Ya terminé?» es una PREGUNTA, no una afirmación** *(JMS 21/11: «yo cuando doy un reporte a los socios se los doy porque ya
+   terminé, pero ya terminé significa: lo hice, lo miré, lo controlé, me lo cuestioné, pensé cómo podría estar mejor, pensé si me iban a
+   entender… vos lo hacés una sola vez y me decís tomá; se demoraría más, pero saldría mejor»)*. Antes de escribir «listo», «publiqué» o
+   «te dejé», Claude se la hace y la contesta con las pasadas de arriba: **lo hice · lo miré · lo controlé · lo cuestioné · pensé cómo
+   podría estar mejor · pensé si se va a entender**. Al entregar dice **cuántas pasadas le dio y qué cambió cada una** (una línea por
+   pasada). Demorar más para que salga mejor es el trato, no un costo.
 8. 🔄 **Mientras JMS contesta, se sigue trabajando por detrás** *(mismo día: «siempre que quieras interactuar conmigo tenés que seguir
    trabajando por detrás… en algún momento te voy a dejar de responder y vos seguís»)*: una pregunta no frena lo que no depende de ella,
    y si deja de contestar se sigue con lo conservador (punto 4).
