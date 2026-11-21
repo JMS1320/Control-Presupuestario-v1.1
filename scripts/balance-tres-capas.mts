@@ -20,13 +20,20 @@ import { armarEjercicio, primerDiaDelEjercicio } from "../lib/balance/ejercicio"
 import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta, type AsientoLibroDiario } from "../lib/balance/libro-diario"
 import { PRESENTADO_ARCA_COMPRAS } from "../lib/balance/presentado-arca"
 import { desdeCuota, armarTemplatesDelEjercicio, templatesACuentaDeSocio, type CuotaTemplate } from "../lib/balance/templates-libro"
-import { leerMovimientosDeCuotas, vincularBanco } from "../lib/balance/movimientos-de-cuotas"
+import { leerMovimientosDeCuotas, vincularBanco, leerExtractoDelEjercicio, indiceDeDestinos } from "../lib/balance/movimientos-de-cuotas"
 import { CONTRAPARTES_DEL_BALANCE, normalizar as normalizarCC } from "../lib/balance/cuentas-corrientes"
 import { responsablePrincipal } from "../lib/balance/libros-del-balance"
-import { SOCIOS_QUE_FACTURAN } from "../lib/balance/export-libro-diario"
+import { SOCIOS_QUE_FACTURAN, cuentasConLosSocios } from "../lib/balance/export-libro-diario"
 import { armarSueldosDelEjercicio, type PeriodoDeSueldo, type FilaSueldo } from "../lib/balance/sueldos-balance"
 import { mesesDelEjercicio } from "../lib/balance/papeles-bancarios"
 import { RENGLONES, RUBROS } from "../lib/balance/balance-propio"
+import { armarCuentasCorrientes, aplicarSaldosInicio, abrirDesglosar, consumosDeTarjetaComoMovimientos, movimientosDeLosSocios, aplicarCierresDecididos, separarSocios, sueldosPendientesComoCompras } from "../lib/balance/cuentas-corrientes"
+import { leerNumero } from "../lib/balance/datos-usuario-puro"
+import { leerCobrosYRetenciones } from "../lib/balance/cobros-de-ventas"
+import { retencionesDeVenta } from "../lib/balance/libro-diario-consensuado"
+import { leerMovimientosDeLaCapa } from "../lib/balance/capa-interna-datos"
+import { capaInterna } from "../lib/balance/capa-interna"
+import { entradaDesde141, compensacionDe, SOCIOS_INTERNO } from "../lib/balance/interno-por-socio"
 /** Igual que `components/provision-manual.tsx` (no se importa un componente desde un script). */
 const tablaFacturas = (schema: string) => `${schema}.comprobantes_arca`
 const tablaVentas = (schema: string) => `${schema}.comprobantes_venta`
@@ -37,6 +44,10 @@ const EMPRESA = "MSA", SCHEMA = "msa", ANIO = 2026, MES_CIERRE = 6
 const VERSION = process.argv.find(a => a.startsWith("--v="))?.slice(4) ?? "v1"
 const CARPETA = join("..", "Control-Presupuestario-v1.1", "- Comunicacion JMS Claude - Archivos", "Balance", "Excels trabajando con claude", "Balance formato contador", VERSION)
 const r2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100
+/** ⏱️ JMS 21/11: «chequeá cada tanto si se traba o avanza por etapas» — cada etapa se anota con la hora y los segundos desde el arranque. */
+const T0 = Date.now()
+const etapa = (q: string) => console.log(`[${new Date().toLocaleTimeString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })} · +${Math.round((Date.now() - T0) / 1000)} s] ${q}`)
+etapa("arranque")
 async function todo(q: (d: number, h: number) => any): Promise<any[]> { const out: any[] = []; for (let d = 0; ; d += 1000) { const { data, error } = await q(d, d + 999); if (error) throw new Error(error.message); out.push(...(data ?? [])); if (!data || data.length < 1000) break } return out }
 
 const ej = armarEjercicio(ANIO, MES_CIERRE)
@@ -44,6 +55,7 @@ const INICIO = primerDiaDelEjercicio(ej), CIERRE = ej.fechaCierre, CIERRE_ANT = 
 const anios = [ANIO - 1, ANIO, ANIO + 1]
 
 // ═══════════════════════════════ LECTURA (igual que Reportes → Balance) ═══════════════════════════════
+etapa("leyendo compras, ventas, cuotas y plan")
 const [arca, historico, ventasCrudas, cuotasCrudas, plan] = await Promise.all([
   todo((d, h) => sb.schema(SCHEMA).from("comprobantes_arca").select("*").in("año_contable", anios).order("id").range(d, h)),
   todo((d, h) => sb.schema("msa").from("comprobantes_historico").select("*").in("anio_contable", anios).order("id").range(d, h)),
@@ -67,6 +79,7 @@ const manuales = { esteEjercicio: [] as AsientoLibroDiario[], anterior: [] as As
 }
 const libro = armarLibroDiario([...arca.map(desdeArca), ...historico.map(desdeHistorico)], ventasCrudas.map(desdeVenta), ej, PRESENTADO_ARCA_COMPRAS[EMPRESA], manuales)
 
+etapa("libro diario armado; templates: banco de cada cuota")
 // templates — mismas opciones que la pantalla
 const tipoDeCateg = Object.fromEntries(plan.map((x: any) => [x.categ, x.tipo]))
 let cuotas: CuotaTemplate[] = cuotasCrudas.map((f: any) => desdeCuota(f, tipoDeCateg as any))
@@ -81,6 +94,7 @@ for (const c of cuotas) if (c.egresoId && !tpls.has(c.egresoId)) tpls.set(c.egre
 const aCuentaDe = templatesACuentaDeSocio((reglasCod ?? []) as any, [...tpls.values()], socioDeCodigo)
 const opciones = { empresa: EMPRESA, plan, aCuentaDe, templatesConPoliza: (conPoliza ?? []).map((p: any) => p.template_id).filter(Boolean) } as any
 
+etapa("templates listos; sueldos")
 // sueldos
 const meses = mesesDelEjercicio(ANIO, MES_CIERRE)
 const [a0] = meses[0].split("-").map(Number), [aN] = meses[11].split("-").map(Number)
@@ -264,6 +278,115 @@ const resContador = grupo("Del contador (fiscal, sin interpretar)", 1, (contador
 hoja.push(grupo("RESULTADOS DEL EJERCICIO (signo del contador: ganancia en negativo, gasto en positivo)", 0,
   [resVentas, ...(resProvVentas ? [resProvVentas] : []), resCompras, ...(resProvCompras ? [resProvCompras] : []), resTplEgresos, resFinanciero, resSueldos, resStocks, resContador], { titulo: true }))
 
+// ═══════════════════════════════ CUENTAS CON SOCIOS (14.1 contable + interno) ═══════════════════════════════
+// Igual que Reportes → Balance arma la 14.1 (components/papeles-de-balance.tsx), y la capa interna como «I · Interno por socio».
+etapa("cuentas con socios: leyendo movimientos")
+const crudoSocios: FilaCrudo[] = []
+type SocioRes = { clave: string; contable: number; interno: number | null; compensacion: number | null; inicio: number; nroC: string; nroI: string }
+const sociosRes: SocioRes[] = []
+let socios141Total: number | null = null, capaControl: number | null = null, capaSinResolver = 0
+{
+  const finEj = CIERRE
+  const [aaF2, mmF2] = meses[11].split("-").map(Number)
+  const despuesDelCierre = new Date(Date.UTC(aaF2, mmF2, 62)).toISOString().slice(0, 10)
+  const comprasCC = libro.compras.map(a2 => ({ id: a2.id, fecha: a2.fecha, numero: `${a2.punto_venta ?? ""}-${a2.numero ?? ""}`, total: a2.total, cuit: a2.fuente === "historico" ? null : a2.cuit, denominacion: a2.denominacion }))
+  const leidoRet = await leerCobrosYRetenciones(sb, EMPRESA, SCHEMA)
+  const ventasCC = libro.ventas.map(v => { const r = retencionesDeVenta({ asiento: v, retIva: v.detalleVenta?.ret_iva ?? 0, retIibb: v.detalleVenta?.ret_iibb ?? 0 } as any, leidoRet.retenciones ?? [])
+    return { id: v.id, fecha: v.fecha, numero: `${v.punto_venta ?? ""}-${v.numero ?? ""}`, total: v.total, cuit: v.cuit, retenciones: r2(r.iva + r.iibb + r.gan) } })
+  const colsCC = "id, fecha, debitos, creditos, descripcion, detalle, contable, interno, comprobantes_pagados, estado, cuit:leyendas_adicionales_2, template_cuota_id"
+  const leidoCC = await todo((d, h) => sb.from("msa_galicia").select(colsCC).gte("fecha", `${meses[0]}-01`).lte("fecha", finEj).not("contable", "is", null).order("id").range(d, h))
+  const cuitsCC = CONTRAPARTES_DEL_BALANCE.filter((c: any) => c.porCuit).map((c: any) => `leyendas_adicionales_2.ilike.*${c.cuit}*`).join(",")
+  const leidoCuit = cuitsCC ? await todo((d, h) => sb.from("msa_galicia").select(colsCC).gte("fecha", `${meses[0]}-01`).lte("fecha", finEj).or(cuitsCC).order("id").range(d, h)) : []
+  const leidoPagoTj = await todo((d, h) => sb.from("msa_galicia").select(colsCC).gte("fecha", `${meses[0]}-01`).lte("fecha", finEj).is("contable", null).ilike("descripcion", "%visa%").order("id").range(d, h))
+  const movsCC = [...leidoCC, ...leidoCuit, ...leidoPagoTj].filter((m, i, t) => t.findIndex(x => x.id === m.id) === i)
+  const etiquetasSocio = CONTRAPARTES_DEL_BALANCE.filter((c: any) => c.socio).flatMap((c: any) => c.etiquetasContable)
+  const OTRAS = [{ tabla: "santander", nombre: "MSA Santander" }, { tabla: "provincia", nombre: "MSA Provincia" }, { tabla: "caja_general", nombre: "MSA Caja General" },
+    { tabla: "caja_ams", nombre: "MSA Caja AMS" }, { tabla: "caja_sigot", nombre: "MSA Caja Sigot" }]
+  const deOtras: any[] = []
+  for (const x of OTRAS) {
+    const fs = await todo((d, h) => sb.schema("msa").from(x.tabla).select(`${colsCC}, sueldo_pago_id`).gte("fecha", `${meses[0]}-01`).lte("fecha", finEj).in("contable", etiquetasSocio).order("id").range(d, h))
+    deOtras.push(...fs.map((m: any) => ({ ...m, id: `${x.tabla}:${m.id}`, cuenta: x.nombre })))
+  }
+  etapa("cuentas con socios: tarjeta")
+  const tj = await todo((d, h) => sb.schema("msa").from("tarjeta_visa_business").select("fecha, fecha_vencimiento, descripcion, categ, contable, debitos, creditos, debitos_usd, template_id")
+    .eq("tipo_fila", "movimiento").gte("fecha_vencimiento", `${meses[0]}-01`).lte("fecha_vencimiento", despuesDelCierre).order("id").range(d, h))
+  const tplConPoliza = new Set((conPoliza ?? []).map((p: any) => p.template_id))
+  const consumos = tj.map((x: any) => ({ vencimiento: x.fecha_vencimiento ?? null, fecha: x.fecha ?? null, descripcion: x.descripcion, categ: x.categ, contable: x.contable,
+    debitos: Number(x.debitos ?? 0), creditos: Number(x.creditos ?? 0), debitosUsd: Number(x.debitos_usd ?? 0), conPoliza: !!x.template_id && tplConPoliza.has(x.template_id) }))
+  const pagoTjDespues = await todo((d, h) => sb.from("msa_galicia").select(colsCC).gt("fecha", finEj).lte("fecha", despuesDelCierre).ilike("descripcion", "%visa%").order("id").range(d, h))
+  const porLaTarjeta = consumosDeTarjetaComoMovimientos([...movsCC, ...pagoTjDespues] as any, consumos as any, undefined, { desde: `${meses[0]}-01`, hasta: finEj })
+  comprasCC.push(...(sueldosPendientesComoCompras(periodos as any, meses) as any))
+  let movsConSocios: any[] = [...movsCC.map((m: any) => ({ ...m, cuenta: "MSA Galicia cta cte" })), ...deOtras, ...porLaTarjeta]
+  // la agrupadora o template de cada movimiento (para ordenar el detalle, como la app)
+  const idsTpl = [...new Set(movsConSocios.map(m => m.template_cuota_id).filter(Boolean))] as string[]
+  const grupoDe = new Map<string, string>()
+  for (let i = 0; i < idsTpl.length; i += 100) {
+    const lote = idsTpl.slice(i, i + 100)
+    const { data } = await sb.from("cuotas_egresos_sin_factura").select("id, grupo_pago_id, egreso:egresos_sin_factura(nombre_referencia, cuenta_agrupadora)").or(`id.in.(${lote.join(",")}),grupo_pago_id.in.(${lote.join(",")})`)
+    for (const c of data ?? []) { const g = String(c.egreso?.cuenta_agrupadora || c.egreso?.nombre_referencia || "").trim(); if (!g) continue; grupoDe.set(c.id, g); if (c.grupo_pago_id && !grupoDe.has(c.grupo_pago_id)) grupoDe.set(c.grupo_pago_id, g) }
+  }
+  movsConSocios = movsConSocios.map(m => m.grupo ? m : { ...m, grupo: (m.template_cuota_id && grupoDe.get(m.template_cuota_id)) || (/^Factura|^FC/i.test(String(m.comprobantes_pagados ?? "")) ? "Facturas" : "Transferencias y otros (sin template)") })
+  etapa("cuentas con socios: cuentas de MA y PAM")
+  const CUENTAS_SOCIOS = [{ clave: "MA", nombre: "MA caja de ahorro", schema: "ma", tabla: "ma_galicia" }, { clave: "MA", nombre: "MA VISA", schema: "ma", tabla: "tarjeta_visa", tarjeta: true },
+    { clave: "PAM", nombre: "PAM caja de ahorro", schema: "public", tabla: "pam_galicia" }, { clave: "PAM", nombre: "PAM cta cte", schema: "public", tabla: "pam_galicia_cc" },
+    { clave: "PAM", nombre: "PAM VISA", schema: "pam", tabla: "tarjeta_visa", tarjeta: true }]
+  const cuentasSocios: any[] = []
+  for (const x of CUENTAS_SOCIOS) {
+    const base = () => (x.schema === "public" ? sb.from(x.tabla) : sb.schema(x.schema).from(x.tabla))
+    const fs = await todo((d, h) => { let q = base().select(`id, fecha, debitos, creditos, descripcion, detalle, contable, interno, comprobantes_pagados, estado, categ${x.tarjeta ? "" : ", sueldo_pago_id"}`).gte("fecha", `${meses[0]}-01`).lte("fecha", finEj); if (x.tarjeta) q = q.eq("tipo_fila", "movimiento"); return q.order("id").range(d, h) })
+    cuentasSocios.push({ clave: x.clave, nombre: x.nombre, movimientos: fs.map((r: any) => ({ ...r, grupo: String(r.categ ?? "") || undefined })) })
+  }
+  const conSocios = movimientosDeLosSocios(movsConSocios as any, cuentasSocios)
+  let armadoCC = armarCuentasCorrientes(comprasCC as any, ventasCC as any, [...conSocios.msa, ...conSocios.delSocio] as any)
+  armadoCC = abrirDesglosar(armadoCC, movsCC as any, consumos as any)
+  const { data: inicioCC } = await sb.from("balance_datos_usuario").select("clave, texto").eq("empresa", EMPRESA).eq("anio_cierre", ANIO).eq("papel", "cc.saldo-inicio")
+  const saldosIni = Object.fromEntries(CONTRAPARTES_DEL_BALANCE.map((c: any) => [c.clave, leerNumero((inicioCC ?? []).find((x: any) => x.clave === c.clave)?.texto)]))
+  const conInicio = aplicarCierresDecididos(aplicarSaldosInicio(armadoCC, saldosIni), ANIO)
+  // 🔺 con el renglón «por Libertad» de cada semestre en las cuentas de MA y PAM, como el export (A-FEAT-1595): sale del cuadro final de
+  // «Gastos Libertad», que se arma con TODOS los templates (los de MSA, MA y PAM), igual que en la app.
+  // el extracto del ejercicio: Libertad suma también las facturas pagadas con la marca LIB (Prosegur), como en la app
+  etapa("cuentas con socios: extracto para Libertad")
+  const ex = await leerExtractoDelEjercicio(sb, INICIO, CIERRE)
+  const tAll = armarTemplatesDelEjercicio(cuotas, ej, { ...opciones, extracto: { movimientos: ex.movimientos, destinos: indiceDeDestinos(cuotas), tablasQueFallaron: ex.tablasQueFallaron } })
+  const socios = (cuentasConLosSocios(libro, tAll, conInicio) ?? separarSocios(conInicio)).socios
+  socios141Total = r2(socios.reduce((t: number, c: any) => t + c.saldoAlCierre, 0))
+  // el movimiento de origen de cada asiento (para su código contable e interno)
+  const origen = new Map<string, any>()
+  for (const m of [...movsConSocios, ...conSocios.delSocio]) origen.set(String(m.id), m)
+  etapa("cuentas con socios: capa interna")
+  let capa: any = null
+  try {
+    const capaIn = await leerMovimientosDeLaCapa(sb, INICIO, CIERRE)
+    const { fijos } = entradaDesde141(socios as any, EMPRESA)
+    capa = capaInterna(capaIn.movs, fijos)
+    capaControl = capa.control; capaSinResolver = capa.sinResolver.length
+  } catch (e) { console.log("⚠️ capa interna no se pudo leer:", (e as Error).message) }
+  for (const c of socios as any[]) {
+    const q = String(c.contraparte.clave)
+    const nroC = nuevoNro(), nroI = nuevoNro()
+    if (c.saldoInicio) crudoSocios.push({ "Nro balance": nroC, Vista: "Contable (14.1)", Socio: q, Fecha: INICIO, Cuenta: "", Grupo: "Saldo de inicio", Concepto: c.inicioSinDato ? "sin dato (0)" : "saldo de inicio cargado", "Código contable": "", "Código interno": "", Importe: r2(c.saldoInicio), Motivo: c.inicioTentativo ?? "" })
+    for (const a of c.resumen.asientos) { const m = origen.get(String(a.id))
+      crudoSocios.push({ "Nro balance": nroC, Vista: "Contable (14.1)", Socio: q, Fecha: a.fecha, Cuenta: a.cuenta ?? m?.cuenta ?? "", Grupo: a.grupo ?? a.tipo, Concepto: a.concepto, "Código contable": m?.contable ?? "", "Código interno": m?.interno ?? "", Importe: r2(a.importe), Motivo: a.otraPunta ?? "" }) }
+    if (c.ajusteCierre) crudoSocios.push({ "Nro balance": nroC, Vista: "Contable (14.1)", Socio: q, Fecha: CIERRE, Cuenta: "", Grupo: "Cierre decidido", Concepto: c.ajusteCierre.motivo, "Código contable": "", "Código interno": "", Importe: r2(c.ajusteCierre.importe), Motivo: "" })
+    let comp: number | null = null
+    if (capa && (SOCIOS_INTERNO as readonly string[]).includes(q)) {
+      comp = compensacionDe(capa, q)
+      crudoSocios.push({ "Nro balance": nroI, Vista: "Interno", Socio: q, Fecha: CIERRE, Cuenta: "", Grupo: "Punto de partida", Concepto: "saldo contable de la 14.1", "Código contable": "", "Código interno": "", Importe: r2(c.saldoAlCierre), Motivo: "" })
+      for (const a of capa.ajustes.filter((a: any) => a.a === q || a.de === q)) { const m = a.mov
+        crudoSocios.push({ "Nro balance": nroI, Vista: "Interno", Socio: q, Fecha: m.fecha, Cuenta: `${m.titular} · ${m.cuenta}`, Grupo: a.a === q ? `viene de ${a.de}` : `va a ${a.a}`, Concepto: m.detalle || m.desc || "", "Código contable": m.contable, "Código interno": m.interno, Importe: -r2(a.a === q ? a.importe : -a.importe), Motivo: a.porque }) }
+      for (const x of capa.ajustes.length >= 0 ? (entradaDesde141(socios as any, EMPRESA).fijos.filter(f => f.socio === q)) : []) crudoSocios.push({ "Nro balance": nroI, Vista: "Interno", Socio: q, Fecha: CIERRE, Cuenta: "14.1", Grupo: "ajuste fijo", Concepto: x.porque, "Código contable": "", "Código interno": "", Importe: -r2(x.importe), Motivo: "en lo real no es sueldo: es dividendo (JMS 14/11)" })
+    }
+    sociosRes.push({ clave: q, contable: r2(c.saldoAlCierre), compensacion: comp, interno: comp == null ? null : r2(c.saldoAlCierre - comp), inicio: r2(c.saldoInicio ?? 0), nroC, nroI })
+  }
+  for (const s0 of conInicio.sinTratar ?? []) crudoSocios.push({ "Nro balance": "NO VA", Vista: "Sin tratar", Socio: "", Fecha: "", Cuenta: "", Grupo: "marca sin encuadrar", Concepto: s0.etiqueta, "Código contable": s0.etiqueta, "Código interno": "", Importe: r2(s0.total), Motivo: `${s0.movimientos} movimiento(s): marca del extracto que todavía no es de nadie` })
+}
+const resSocios: Fila[] = [
+  grupo("CUENTAS CON SOCIOS · CONTABLE — la 14.1 (fuera de la ecuación · + = MSA le debe al socio · − = el socio se llevó de más)", 0, sociosRes.map(s => ({ nro: s.nroC, nivel: 1, texto: s.clave, origen: "14.1 (como Reportes → Balance)", inicio: s.inicio || null, cierre: s.contable } as Fila)), { titulo: true }),
+  grupo("CUENTAS CON SOCIOS · INTERNO — la realidad (14.1 − compensación interna)", 0, sociosRes.filter(s => s.interno != null).map(s => ({ nro: s.nroI, nivel: 1, texto: s.clave, origen: "Capa interna", cierre: s.interno, nota: `compensación ${(s.compensacion ?? 0).toLocaleString("es-AR")}` } as Fila)), { titulo: true }),
+]
+etapa("cuentas con socios: listas; armando el Excel")
+hoja.push(...resSocios)
+
 // ═══════════════════════════════ EXCEL ═══════════════════════════════
 const MONEDA = '#,##0.00;[Red]-#,##0.00;"-"'
 const borde = { top: { style: "thin", color: { rgb: "BFBFBF" } } }
@@ -279,6 +402,7 @@ const crudoDe = (nroB: string): string | null => {
   if (crudoDiario.some(x => x["Nro balance"] === nroB)) return "Crudo · Diario"
   if (crudoTemplates.some(x => x["Nro balance"] === nroB)) return "Crudo · Templates"
   if (crudoSueldos.some(x => String(x["Nro balance"]).split(" ").includes(nroB))) return "Crudo · Sueldos"
+  if (crudoSocios.some(x => x["Nro balance"] === nroB)) return "Crudo · Socios"
   return null
 }
 const COLCTRL: Record<string, string> = { "Crudo · Diario": "R", "Crudo · Templates": "K", "Crudo · Sueldos": "" }
@@ -296,11 +420,12 @@ function escribir(f: Fila) {
   }
   const fuente = f.nro ? crudoDe(f.nro) : null
   let ctrl: unknown = "", ok: unknown = ""
-  if (fuente === "Crudo · Diario" || fuente === "Crudo · Templates") {
-    const col = fuente === "Crudo · Diario" ? "R" : "K"
+  if (fuente === "Crudo · Diario" || fuente === "Crudo · Templates" || fuente === "Crudo · Socios") {
+    const col = fuente === "Crudo · Diario" ? "R" : fuente === "Crudo · Templates" ? "K" : "J"
+    const contra = fuente === "Crudo · Socios" ? "E" : "F"   // los socios son saldo al cierre, no resultado
     const fila = filas.length + 1
     ctrl = { t: "n", f: `SUMIFS('${fuente}'!${col}:${col},'${fuente}'!A:A,A${fila})`, z: MONEDA }
-    ok = { t: "s", f: `IF(ROUND(G${fila}-F${fila},2)=0,"✓","⚠️")` }
+    ok = { t: "s", f: `IF(ROUND(G${fila}-${contra}${fila},2)=0,"✓","⚠️")` }
   }
   filas.push([f.nro ?? "", f.texto, f.origen ?? "", f.inicio == null ? "" : { t: "n", v: f.inicio, z: MONEDA }, f.cierre == null ? "" : { t: "n", v: f.cierre, z: MONEDA },
     f.resultado == null ? "" : { t: "n", v: f.resultado, z: MONEDA }, ctrl, ok, f.nota ?? ""])
@@ -344,6 +469,8 @@ hojaCrudo("Crudo · Diario", crudoDiario, ["Va al resultado", "Bloque", "Totaliz
   ["Un renglón por comprobante. «Al resultado» = total − IVA (otros tributos van al gasto), con el signo del contador. Filtrá «Nro balance» para ver cómo se forma un renglón de la hoja Balance."])
 hojaCrudo("Crudo · Templates", crudoTemplates, ["Va al resultado", "Bloque", "Responsable", "Agrupadora", "Template", "Fecha"], `CRUDO · TEMPLATES — todas las cuotas del ejercicio (${INICIO} a ${CIERRE}), todos los responsables`,
   ["Todo es todo: las que van al resultado de MSA tienen su Nro; las que no, «NO VA» con el motivo. Código contable e interno = los del pago conciliado."])
+hojaCrudo("Crudo · Socios", crudoSocios, ["Vista", "Socio", "Fecha"], `CRUDO · CUENTAS CON SOCIOS — contable (14.1) e interno (capa) — ${EMPRESA} ${ej.etiqueta}`,
+  ["Contable: cada asiento de la 14.1 (con el código contable e interno de su movimiento). Interno: el saldo contable y lo que la compensación interna le suma o le saca. Filtrá «Socio» y «Vista», o «Nro balance»."])
 hojaCrudo("Crudo · Sueldos", crudoSueldos, ["Va al resultado", "Bloque", "Empleado", "Período"], `CRUDO · SUELDOS — ${EMPRESA} ${ej.etiqueta}`,
   ["Un renglón por empleado y mes. «Nro balance» lista los renglones (A, B, francos, jornal, extras) a los que suma."])
 
@@ -368,6 +495,9 @@ const control: Array<[string, number | string, number | string, string]> = [
   ["Sueldos: bruto empleados (todas las empresas)", r2(sueldos.filas.filter(x => !esSocio(x)).reduce((s, x) => s + x.brutoGuardado, 0)), v18.sueldos.empleados, ""],
   ["Sueldos: bruto socios que facturan", r2(sueldos.filas.filter(esSocio).reduce((s, x) => s + x.brutoGuardado, 0)), v18.sueldos.socios, ""],
   ["Sueldos: total", r2(sueldos.total.bruto), v18.sueldos.total, ""],
+  ...(["JMS", "PAM", "AMS", "MA", "COTITULARES"].map(k => { const esp: Record<string, number> = { JMS: -47074051.72, PAM: 12401959.62, AMS: -8092248.73, MA: -45593911.03, COTITULARES: -1756595.00 }
+    const s0 = sociosRes.find(x => x.clave.toUpperCase().startsWith(k.slice(0, 5))); return [`Socios 14.1: ${k} (lo esperado en el v19, A-FEAT-1629 punto 43)`, s0 ? s0.contable : "no salió", esp[k], ""] as [string, number | string, number, string] })),
+  ["Socios 14.1: total (esperado en el v19)", socios141Total ?? "no salió", -90114846.86, ""],
 ]
 const todasLasCuotasEj = cuotas.filter(c => (c.fecha ?? "") >= INICIO && (c.fecha ?? "") <= CIERRE).length
 const enCrudoTpl = crudoTemplates.length
@@ -375,6 +505,9 @@ const integridad: Array<[string, number, number]> = [
   ["Diario: lo que entró al balance (Ventas + Compras + provisiones) = crudo con Nro", r2(suma([resVentas, resCompras, ...(resProvVentas ? [resProvVentas] : []), ...(resProvCompras ? [resProvCompras] : [])], "resultado")), sumaCrudo(crudoDiario, "Al resultado (sin IVA)", r => r["Nro balance"] !== "NO VA")],
   ["Templates: lo que entró al balance (egresos + intereses + movimientos internos, sin ajuste FCI) = crudo con Nro", r2(suma([resTplEgresos], "resultado") + (hijosFin.length ? suma(hijosFin.filter(h => !/Inversiones/.test(h.texto)), "resultado") : 0) + r2(finInversion.reduce((s, c) => s + c.monto, 0))), sumaCrudo(crudoTemplates, "Importe", r => r["Nro balance"] !== "NO VA")],
   ["Templates: cuotas del ejercicio en la base (todos los responsables, con fecha en el ejercicio) — cuotas en el crudo", todasLasCuotasEj, enCrudoTpl],
+  ...sociosRes.map(s0 => [`Socios: ${s0.clave} contable = su crudo (Nro ${s0.nroC})`, s0.contable, sumaCrudo(crudoSocios, "Importe", r => r["Nro balance"] === s0.nroC)] as [string, number, number]),
+  ...sociosRes.filter(s0 => s0.interno != null).map(s0 => [`Socios: ${s0.clave} interno = su crudo (Nro ${s0.nroI})`, s0.interno as number, sumaCrudo(crudoSocios, "Importe", r => r["Nro balance"] === s0.nroI)] as [string, number, number]),
+  ["Capa interna: lo que se le pone a uno se le saca a otro (tiene que dar 0)", capaControl ?? 0, 0],
   ["Sueldos: empleados de MSA en el balance = crudo con Nro (bruto guardado)", suma([resSueldos], "resultado"), sumaCrudo(crudoSueldos, "Bruto guardado", r => r["Nro balance"] !== "NO VA")],
 ]
 const ctrl: unknown[][] = [[`CONTROL — ${EMPRESA} ${ej.etiqueta} — ${VERSION}`], [],
@@ -388,21 +521,35 @@ const ctrl: unknown[][] = [[`CONTROL — ${EMPRESA} ${ej.etiqueta} — ${VERSION
 const wc = XLSX.utils.aoa_to_sheet(ctrl)
 wc["!cols"] = [{ wch: 95 }, { wch: 20 }, { wch: 20 }, { wch: 18 }, { wch: 5 }]
 XLSX.utils.book_append_sheet(wb, wc, "Control")
-wb.SheetNames = ["Balance", "Control", "Crudo · Diario", "Crudo · Templates", "Crudo · Sueldos"]
+wb.SheetNames = ["Balance", "Control", "Crudo · Diario", "Crudo · Templates", "Crudo · Sueldos", "Crudo · Socios"]
 
-mkdirSync(CARPETA, { recursive: true })
-const archivo = join(CARPETA, `Balance formato contador ${EMPRESA} 25-26 ${VERSION}.xlsx`)
-XLSX.writeFile(wb, archivo, { cellStyles: true })
-console.log("Excel:", archivo)
+if (!process.argv.includes("--sin-excel")) {
+  mkdirSync(CARPETA, { recursive: true })
+  const archivo = join(CARPETA, `Balance formato contador ${EMPRESA} 25-26 ${VERSION}.xlsx`)
+  XLSX.writeFile(wb, archivo, { cellStyles: true })
+  console.log("Excel:", archivo)
+}
 
 // para la página: el árbol y los controles
+const provAnteriorTotal = r2(libro.provisionesEjercicioAnterior.reduce((s, a) => s + (a.total - a.iva), 0))
 const plano = (fs: Fila[]): any[] => fs.map(f => ({ nro: f.nro ?? null, texto: f.texto, nivel: f.nivel, origen: f.origen ?? null, inicio: f.hijos ? suma(f.hijos, "inicio") : f.inicio ?? null,
   cierre: f.hijos ? suma(f.hijos, "cierre") : f.cierre ?? null, resultado: f.hijos ? suma(f.hijos, "resultado") : f.resultado ?? null, nota: f.nota ?? null, hijos: f.hijos ? plano(f.hijos) : null }))
 const salida = { version: VERSION, generado: new Date().toISOString(), empresa: EMPRESA, ejercicio: ej.etiqueta, arbol: plano(hoja),
   ecuacion: { activo: totA, pasivo: totP, pn: totN, resultado: totR, diferencia: r2(totA + totP + totN + totR) },
   control: control.map(([q, a, b]) => ({ q, a, b })), integridad: integridad.map(([q, a, b]) => ({ q, a, b })),
-  financieroNoVa: finNoVa.length, dolares: r2(finDolares.reduce((s, c) => s + c.monto, 0)), inversiones: [...new Set(finInversion.map(c => c.concepto))], provAnterior: libro.provisionesEjercicioAnterior.length,
-  crudos: { diario: crudoDiario.length, templates: crudoTemplates.length, sueldos: crudoSueldos.length } }
+  financieroNoVa: finNoVa.length, dolares: r2(finDolares.reduce((s, c) => s + c.monto, 0)), inversiones: [...new Set(finInversion.map(c => c.concepto))], provAnterior: libro.provisionesEjercicioAnterior.length, provAnteriorTotal, provAnteriorDetalle: libro.provisionesEjercicioAnterior.map(a => `${a.denominacion} ${a.fecha} $ ${r2(a.total - a.iva).toLocaleString("es-AR")}`),
+  crudos: { diario: crudoDiario.length, templates: crudoTemplates.length, sueldos: crudoSueldos.length, socios: crudoSocios.length }, socios: sociosRes, capaSinResolver }
+// 🔎 el detalle de cada renglón, para la página (el crudo por Nro): [fecha, quién / qué, importe, bloque]
+const CRUDO_OUT = process.argv.find(a => a.startsWith("--crudo="))?.slice(8)
+if (CRUDO_OUT) {
+  const porNro: Record<string, unknown[][]> = {}
+  const push = (k: string, fila: unknown[]) => { (porNro[k] ??= []).push(fila) }
+  for (const r of crudoDiario) push(String(r["Nro balance"]) === "NO VA" ? "NO VA · " + r.Bloque : String(r["Nro balance"]), [r.Fecha, `${r.Contraparte} · ${r.Comprobante}`, r["Al resultado (sin IVA)"] || r.Total, r.Motivo || ""])
+  for (const r of crudoTemplates) push(String(r["Nro balance"]) === "NO VA" ? "NO VA · " + r.Bloque : String(r["Nro balance"]), [r.Fecha, `${r.Template} · ${r["Quién pagó"] || "sin pago"}${r["Código contable"] ? " · " + r["Código contable"] : ""}`, r.Importe, r.Motivo || r.Estado || ""])
+  for (const r of crudoSocios) push(String(r["Nro balance"]) === "NO VA" ? "NO VA · " + r.Grupo : String(r["Nro balance"]), [r.Fecha, `${r.Concepto}${r["Código contable"] ? " · " + r["Código contable"] : ""}${r["Código interno"] ? " / " + r["Código interno"] : ""}`, r.Importe, r.Grupo || ""])
+  for (const r of crudoSueldos) for (const k of String(r["Nro balance"]).split(" ")) push(k === "NO VA" ? "NO VA · " + r.Bloque : k, [r["Período"], `${r.Empleado} (${r.Tipo})`, r["Bruto guardado"], r.Motivo || ""])
+  writeFileSync(CRUDO_OUT, JSON.stringify(porNro))
+}
 const JSON_OUT = process.argv.find(a => a.startsWith("--json="))?.slice(7)
 if (JSON_OUT) writeFileSync(JSON_OUT, JSON.stringify(salida, null, 1))
 console.log(JSON.stringify({ ecuacion: salida.ecuacion, control: salida.control, integridad: salida.integridad, inversiones: salida.inversiones, crudos: salida.crudos, provAnterior: salida.provAnterior }, null, 1))

@@ -19205,3 +19205,19 @@ en línea)** construido desde abajo. Cerrado para MSA, se repite para MA y PAM.
 - **Lo que NO se hizo**: nada en la app ni en los libros actuales (capa aparte); cuentas con socios sin trabajar (cuenta socios del balance propio,
   tentativa); contable/interno en el diario (sólo en templates, por el pago).
 
+**5 · 21/11 — v2 de la tanda: SOCIOS sumados (contable e interno) y protocolo «¿terminé?» aplicado** (rama `jms/tanda-2026-11-21-balance-en-linea`, sin mergear)
+
+- **Socios** (JMS: *«incorporalo de la manera ya consensuada… el control es que dé contra los filtrados de las tablas raw… afectación por
+  contable y por interno, los paralelos»*): la 14.1 replicada fuera de la app (mismas funciones, + Libertad por semestre con el extracto) y la
+  capa interna. Solapa «Crudo · Socios» con contable e interno. **Contra lo esperado para el v19 (punto 43 de A-FEAT-1629), los cinco al
+  centavo**: JMS −47.074.051,72 · AMS −8.092.248,73 · MA −45.593.911,03 · PAM +12.401.959,62 · Cotitulares −1.756.595,00. Interno: MA
+  −94.009.781,72 (compensación 48.415.870,69) · JMS −47.647.083,55 · AMS −9.431.532,10 · PAM +12.392.959,62; control de la capa 0; 20 sin resolver.
+- Dos causas encontradas en la 1ª pasada (y corregidas): la 14.1 sin el renglón de Libertad daba MA −44.863.910,89 y PAM +12.533.501,75; sin el
+  extracto, el cuadro de Libertad daba MA −45.830.947,77 (le faltaban las facturas pagadas con LIB).
+- **34 controles, todos ✓**. Excel `…/Balance formato contador/v2/` (la v1 queda). Página v2 (misma URL) con «ver» = el crudo de cada renglón y
+  el bloque «lo que NO va». Preguntas: P1 caja · P2 FCI (el extracto sugiere ~52,4 M de ganancia vs 30,2 M de templates vs 13,2 M del contador)
+  · P3 dólares · P4 provisión 24/25 $ 12.456.000,14 (= la provisión para gastos del contador al 30/06/25) · P6 signo · P7 cómo entran los socios.
+  El sueldo de MA se sacó de las preguntas: es gerente general (script 133) → gasto de MSA; en lo interno, dividendo.
+- Programa: avisa cada etapa con su hora (JMS: *«chequeá cada tanto si se traba o avanza por etapas»*); tarda ~10 min, casi todo en leer el banco
+  de cada cuota.
+
