@@ -22,6 +22,7 @@ const VISTAS: Record<string, string> = {
   cashflow:   "components/vista-cash-flow.tsx",
   ingresos:   "components/vista-ingresos.tsx",
   sueldos:    "components/tab-sueldos.tsx",   // A-BUG-1401: desde el 28/10 tiene botones con casilla
+  principal:  "components/vista-inicio.tsx",  // A-FEAT-1634: los bloques de MA y los widgets de Principal tienen casilla
 }
 
 /**
@@ -102,6 +103,8 @@ for (const { id: seccion, etiqueta } of SECCIONES) {
     // Desde A-FEAT-1334 también vale `<Permisable recurso="<id>">`, que pregunta lo mismo y además
     // pone el candado del modo permisos.
     if (r.tipo === "accion") return src.includes(`puedeVer('${r.id}')`) || src.includes(`puedeVer("${r.id}")`) || src.includes(`recurso="${r.id}"`) || src.includes(`seMuestra('${r.id}')`) || src.includes(`seMuestra("${r.id}")`)
+      // A-FEAT-1634: un widget declara su casilla en el registro (`recurso: "<id>"`) y el Principal la pregunta por él.
+      || src.includes(`recurso: "${r.id}"`)
     return pestanasEnCodigo(r.archivo).includes(sub)
   }
   const fantasmas = declarados.filter((r) => !existe(r)).map((r) => r.id.split(".").slice(1).join("."))

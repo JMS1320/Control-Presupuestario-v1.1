@@ -74,6 +74,20 @@ const CASHFLOW = "components/vista-cash-flow.tsx"
 const FACTURAS = "components/vista-facturas-arca.tsx"
 
 export const RECURSOS: Recurso[] = [
+  // ── Principal (A-FEAT-1634) ──────────────────────────────────────────────────────────────
+  // Los bloques de MA (Mercedes Areco): sólo lectura, servidos por `/api/mi-pantalla`. Nacen apagados para TODOS (también
+  // para admin fuera del modo permisos): se ven sólo donde el rol los tiene DADOS. JMS los prende con el candado en
+  // «Ver como lo ve él», y la ruta del servidor pregunta por el mismo id.
+  { id: "principal.ma-impuestos",      seccion: "principal", etiqueta: "Principal → 🧾 Mis impuestos del año (MA, con MSA y PAM para mirar)", tipo: "accion", archivo: "components/vista-inicio.tsx" },
+  { id: "principal.ma-arrendamientos", seccion: "principal", etiqueta: "Principal → 🌾 Mis arrendamientos (MA)", tipo: "accion", archivo: "components/vista-inicio.tsx" },
+  { id: "principal.ma-lo-que-viene",   seccion: "principal", etiqueta: "Principal → 📈 Lo que viene: próximos 12 meses (MA)", tipo: "accion", archivo: "components/vista-inicio.tsx" },
+  // Los widgets de la sección Principal también tienen casilla: sin esto, prenderle a un rol CERRADO un bloque de arriba
+  // (que le suma la sección Principal) le abría de paso la Ficha de proveedor y los demás widgets generales. En un rol
+  // abierto (admin, socio) siguen como siempre: heredan.
+  { id: "principal.widget-pendientes",      seccion: "principal", etiqueta: "Principal → widget Pendientes por pantalla", tipo: "accion", archivo: "lib/widgets/registro.ts" },
+  { id: "principal.widget-ipc",             seccion: "principal", etiqueta: "Principal → widget Último IPC", tipo: "accion", archivo: "lib/widgets/registro.ts" },
+  { id: "principal.widget-ficha-proveedor", seccion: "principal", etiqueta: "Principal → widget Ficha de proveedor", tipo: "accion", archivo: "lib/widgets/registro.ts" },
+  { id: "principal.widget-revisiones",      seccion: "principal", etiqueta: "Principal → widget Para revisar (Alt+R)", tipo: "accion", archivo: "lib/widgets/registro.ts" },
   // ── Egresos ──────────────────────────────────────────────────────────────────────────────
   { id: "egresos.facturas-msa", seccion: "egresos", etiqueta: "Facturas MSA",        tipo: "pestana", archivo: EGRESOS },
   { id: "egresos.facturas-pam", seccion: "egresos", etiqueta: "Facturas PAM",        tipo: "pestana", archivo: EGRESOS },
@@ -289,7 +303,6 @@ export const RECURSOS: Recurso[] = [
  * si alguien la lee y ve un hueco, tiene que saber si es un olvido o una decisión.
  */
 export const SIN_RECURSOS: Record<string, string> = {
-  principal:    "Es la pantalla de inicio: lo que muestra ya lo elige cada persona con sus widgets, y cada widget respeta el permiso de SU sección.",
   dashboard:    "Una sola vista con filtros. No tiene partes separables.",
   distribucion: "Una sola vista con filtros.",
   reporte:      "Una sola vista con filtros.",

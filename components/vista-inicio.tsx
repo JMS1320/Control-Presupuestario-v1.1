@@ -12,13 +12,31 @@ import { WIDGETS, WIDGETS_POR_DEFECTO, widgetsVisibles, type Widget } from "@/li
 import { PanelParaVos } from "@/components/panel-para-vos"
 import { MisVencimientos } from "@/components/mis-vencimientos"
 import { PagosPorConfirmar } from "@/components/pagos-por-confirmar"
-import { useModoPermisos } from "@/components/contexto-permisos"
+import { useModoPermisos, useNivelDeclarado } from "@/components/contexto-permisos"
+import { Permisable, useSeMuestra } from "@/components/modo-permisos"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
+import { MisImpuestosMA, MisArrendamientosMA, LoQueVieneMA } from "@/components/mi-pantalla-ma"
 import { AlertaMailsGraves } from "@/components/alerta-mails-graves"
 import { AlertaImpuestos } from "@/components/alerta-impuestos"
 import { TableroFaltantes } from "@/components/no-se-consigue"
 import type { Preferencias } from "@/lib/auth/preferencias"
 
 type Tamano = { ancho: 1 | 2; alto: number }
+
+/**
+ * 👤 Un bloque del Principal que se ve SÓLO donde el rol lo tiene DADO (A-FEAT-1634, la pantalla de MA).
+ *   · Fuera del modo permisos: nivel declarado en el rol (no el heredado) → un admin no lo ve en su propio Principal.
+ *   · En el modo permisos: el candado de siempre (`<Permisable>`), para que JMS lo prenda; en «Ver como lo ve él», lo
+ *     que el borrador tenga prendido.
+ * El servidor (`/api/mi-pantalla`) pregunta por el mismo recurso: esto acomoda, aquello protege.
+ */
+function BloqueDado({ recurso, children }: { recurso: string; children: React.ReactNode }) {
+  const modo = useModoPermisos()
+  const declarado = useNivelDeclarado()
+  if (modo) return <div className="w-full"><Permisable recurso={recurso}>{children}</Permisable></div>
+  const n = declarado(recurso)
+  return n === "lectura" || n === "escritura" ? <>{children}</> : null
+}
 
 /** Mientras se arrastra un borde: qué widget, en qué eje, y desde dónde. */
 type Redimension = {
@@ -65,9 +83,12 @@ export function VistaInicio({
   const [anchoVivo, setAnchoVivo] = useState<{ id: string; cols: 1 | 2 | null } | null>(null)
   const cajas = useRef<Record<string, HTMLDivElement | null>>({})
 
-  const visibles = widgetsVisibles(elegidos, secciones)
+  // 🔒 A-FEAT-1634: los widgets de Principal con casilla propia (en un rol cerrado nacen apagados).
+  const seMuestra = useSeMuestra()
+  const conCasilla = (w: Widget) => !w.recurso || seMuestra(w.recurso)
+  const visibles = widgetsVisibles(elegidos, secciones).filter(conCasilla)
   const disponibles = WIDGETS.filter(
-    (w) => secciones.includes(w.seccion) && !elegidos.includes(w.id)
+    (w) => secciones.includes(w.seccion) && !elegidos.includes(w.id) && conCasilla(w)
   )
 
   const tamanoDe = (w: Widget): Tamano =>
@@ -182,6 +203,12 @@ export function VistaInicio({
       <PanelParaVos />
       {/* 💸 A-FEAT-1543: lo que le vence a esta persona (templates con su mail en «avisar a»); se oculta si no tiene nada asignado */}
       <MisVencimientos />
+      {/* 👤 A-FEAT-1634: la pantalla de MA — sólo lectura, cada bloque con su casilla en el rol (Principal → …) */}
+      <BloqueDado recurso="principal.ma-impuestos"><MisImpuestosMA /></BloqueDado>
+      <BloqueDado recurso="principal.ma-arrendamientos"><MisArrendamientosMA /></BloqueDado>
+      <BloqueDado recurso="principal.ma-lo-que-viene"><LoQueVieneMA /></BloqueDado>
+      {/* 🧪 El cartel de A-TEST-1387: sólo en el modo permisos (es donde JMS mira estos bloques) */}
+      {modo && <TestsDelProceso proceso="principal/mi-pantalla-ma" pantalla="principal" />}
       {/* ✔ A-FEAT-1543: lo que informaron pagar y espera que confirmes (sólo admin; se oculta si no hay nada) */}
       {!vistaPrevia && <PagosPorConfirmar />}
       {/* 🧾 A-FEAT-1451: las facturas sin comprobante — la tarea principal de Ulises (y lo que JMS tiene que confirmar) */}
@@ -388,7 +415,7 @@ export function VistaInicio({
                   className={alto > 0 ? "min-h-0 flex-1 overflow-y-auto" : "flex-1"}
                   style={alto > 0 ? { height: alto } : undefined}
                 >
-                  <w.Componente />
+                  {w.recurso ? <Permisable recurso={w.recurso}><w.Componente /></Permisable> : <w.Componente />}
                 </div>
               </div>
             )

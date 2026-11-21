@@ -21,6 +21,7 @@ const PERMITIDAS: Record<string, string> = {
   "mis-vencimientos/comprobante": "A-FEAT-1560: sirve el comprobante adjunto a un pago informado; sólo a quien lo informó o a un admin (exigirSesion).",
   "mis-vencimientos/confirmar": "A-FEAT-1543: sólo admin con 2FA (`exigirAdmin`); aplica a la cuota el pago que JMS confirma y deja la huella en la propuesta.",
   "mis-vencimientos": "A-FEAT-1543: la persona (MA) tiene un rol SIN secciones y no tiene que necesitar permisos sobre los templates; la ruta filtra por el mail de la sesión (`avisar_a`) y sólo marca pagado una cuota de lo suyo. Exige sesión con rol.",
+  "mi-pantalla": "A-FEAT-1634: la pantalla de MA, SÓLO LECTURA. El rol `ma` no tiene secciones; la ruta exige sesión con rol y el bloque dado en el rol (o admin), y devuelve sólo lo armado (renglones por mes, contratos), nunca las filas crudas.",
   "sesion/personas": "auth.admin.listUsers — a quién se le puede mandar un mensaje 🚩 (A-FEAT-1364). Devuelve sólo nombre y mail de cuentas con rol; exige sesión con rol.",
   "admin/usuarios": "auth.admin — crear e invitar cuentas. No hay otra forma.",
   "admin/usuarios/[id]": "auth.admin — cambiar rol, revocar. Y lee `public.roles`.",

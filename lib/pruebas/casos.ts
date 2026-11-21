@@ -97,6 +97,7 @@ import { facturasRestringidas } from "@/lib/auth/roles"
 import { etiquetaPersona } from "@/lib/auth/identidad"
 import { armarRolNuevo, normalizarIdRol } from "@/lib/auth/crear-rol"
 import { nivelesEfectivos, excepcionesParaEditar, permisosAGuardar } from "@/lib/auth/rol-cerrado"
+import { misImpuestosDelAnio, misArrendamientos, loQueViene, puedeVerBloque } from "@/lib/ma/mi-pantalla"
 import { RECURSOS as RECURSOS_PERMISABLES } from "@/lib/auth/recursos"
 import { borradorDe, alternarRecurso, alternarSeccion, nivelEnBorrador, contarCambios, cuerpoGuardar } from "@/lib/auth/modo-permisos"
 import { motivoCuentaBloqueada } from "@/lib/auth/cuentas-extracto"
@@ -14191,6 +14192,69 @@ export function correrCasos(): Resultado[] {
     const e = "A Subdiarios - MSA 25-26 (19-11 REV).xlsx | H - Egresos con boleta - MSA 25-26 (19-11 REV).xlsx | Proveedores - MSA 25-26 (18-11).xlsx | Templates - Impuestos Rurales y - PAM 25-26 (18-11).xlsx | Set A-I - MSA 25-26 (19-11).zip"
     chequear("Balance", "📁 Los archivos que baja el balance tienen nombre corto: sin paréntesis, fecha día-mes, recortado por palabra, y ninguno pasa del tope (Excel no abre rutas de más de 259 caracteres)",
       `${e} · máximo ≤ ${LARGO_MAXIMO_NOMBRE}`, v, v.startsWith(e) && nombres.every(x => x.length <= LARGO_MAXIMO_NOMBRE), "A-FEAT-1629")
+  }
+  // ══ 👤 La pantalla de MA (A-FEAT-1634): impuestos del año, arrendamientos, lo que viene, y quién los ve ══
+  {
+    const T = (nombre: string, responsable: string, categ: string, activo = true) => ({ id: nombre, nombre_referencia: nombre, responsable, cuenta_agrupadora: "Impuestos", categ, solo_conciliacion: false, activo })
+    const cuotasMA = [
+      { id: "q1", estado: "pagado", fecha_vencimiento: "2026-03-17", fecha_estimada: null, monto: 1000, template: T("Inmobiliario Cuota Lima", "MA", "Impuesto inmobiliario") },
+      { id: "q2", estado: "pendiente", fecha_vencimiento: "2026-03-18", fecha_estimada: null, monto: 500, template: T("Inmobiliario Cuota Ombu", "MA", "Impuesto inmobiliario") },
+      { id: "q3", estado: "pendiente", fecha_vencimiento: "2026-12-09", fecha_estimada: null, monto: 300, template: T("Autonomos MA", "MA", "Impuestos ARCA") },
+      { id: "q4", estado: "conciliado", fecha_vencimiento: "2026-05-30", fecha_estimada: null, monto: 200, template: T("ABL Cochera Duhau Anual", "PAM/MA/Duhau", "ABL Libertad Cochera") },
+      { id: "q5", estado: "pendiente", fecha_vencimiento: "2026-03-17", fecha_estimada: null, monto: 9999, template: T("IIBB Mensual MSA", "MSA", "Impuesto IIBB") },
+      { id: "q6", estado: "pendiente", fecha_vencimiento: "2026-04-05", fecha_estimada: null, monto: 7777, template: T("Red Vial Anual Casco", "MA", "Impuesto Red Vial", false) },
+      { id: "q7", estado: "echeq", fecha_vencimiento: "2026-12-05", fecha_estimada: null, monto: 50, template: T("Red Vial Cuota Casco", "MA", "Impuesto Red Vial") },
+    ]
+    const im = misImpuestosDelAnio(cuotasMA as any, "MA", 2026, "2026-11-21")
+    const v1 = `${im.meses.map(m => `${m.nombre}: ${m.renglones.map(r => `${r.impuesto}(${r.cuotas.length}) ${r.monto} ${r.estado}`).join(", ")}`).join(" | ")} · ${JSON.stringify(im.totales)} ${im.control.cierra}`
+    const e1 = `Marzo: Inmobiliario(2) 1500 vencido | Mayo: ABL(1) 200 pagado | Diciembre: Red Vial(1) 50 revisar, Autonomos MA(1) 300 a-vencer · {"pagado":1250,"vencido":500,"aVencer":300,"total":2050} true`
+    chequear("MA", "🧾 Mis impuestos del año: por mes, un renglón por impuesto (las partidas del inmobiliario juntas), el ABL compartido va a MA, lo de MSA y los templates dados de baja no entran, echeq se marca «revisar», y pagado + vencido + a vencer = total", e1, v1, v1 === e1, "A-FEAT-1634")
+
+    const ar = misArrendamientos({
+      contratos: [
+        { id: "k1", campania: "25/26", cliente_nombre: "PROVINVEST", cliente_cuit: "33-71034693-9", has: 100, qq_ha_total: 10, grano: "soja" },
+        { id: "k2", campania: "26/27", cliente_nombre: "PROVINVEST", cliente_cuit: "33710346939", has: 100, qq_ha_total: 10, grano: "soja" },
+      ],
+      cuotas: [
+        { id: "c1", contrato_id: "k1", numero_cuota: 1, qq_ha_cuota: 10, fecha_cobro_estimada: "2026-04-20", posicion_anio: 2026, posicion_mes: 5, precio_usd_override: null, precio_pesos_override: null },
+        { id: "c2", contrato_id: "k2", numero_cuota: 1, qq_ha_cuota: 5, fecha_cobro_estimada: "2026-11-20", posicion_anio: 2026, posicion_mes: 11, precio_usd_override: null, precio_pesos_override: null },
+        { id: "c3", contrato_id: "k2", numero_cuota: 2, qq_ha_cuota: 5, fecha_cobro_estimada: "2027-04-20", posicion_anio: 2027, posicion_mes: 5, precio_usd_override: null, precio_pesos_override: null },
+      ],
+      ventas: [{ cuota_id: "c2", tons: 50, modo: "matba", precio_usd: 350, tc: 1100, precio_pesos: null, fecha_cobro: "2026-11-20" }],
+      precios: [{ grano: "soja", anio: 2026, mes: 5, precio_usd: 300 }],
+      tcs: [{ anio: 2026, mes: 4, tc_presupuestado: 1000, tc_real: null }],
+      comprobantes: [
+        { id: "f1", fecha: "2026-06-17", tipo: 211, numero: "1-1", cliente_cuit: "33710346939", total: 30000000, cobradoBanco: 27000000, retenciones: 3000000 },
+        { id: "f2", fecha: "2026-09-30", tipo: 211, numero: "1-2", cliente_cuit: "33710346939", total: 40000000, cobradoBanco: 30000000, retenciones: 0 },
+        { id: "f3", fecha: "2026-10-05", tipo: 13, numero: "1-3", cliente_cuit: "33710346939", total: 1000000, cobradoBanco: 0, retenciones: 0 },
+        { id: "f4", fecha: "2026-10-05", tipo: 11, numero: "1-4", cliente_cuit: "20111111112", total: 5, cobradoBanco: 0, retenciones: 0 },
+      ],
+    }, "2026-11-21")
+    const v2 = `${ar.contratos.map(k => `${k.campania}: esp ${k.esperado} fac ${k.facturado} cob ${k.cobrado} falta ${k.faltaCobrar} [${k.cuotas.map(c => `${c.numero} ${c.monto} ${c.estado} ${c.restante}`).join("; ")}] porCobrar ${k.porCobrar.map(p => `${p.concepto} ${p.monto}`).join("; ")}`).join(" | ")} · sin contrato ${ar.sinContrato.map(c => c.id).join(",")} ${ar.control.cierra}`
+    const e2 = "25/26: esp 30000000 fac 30000000 cob 30000000 falta 0 [1 30000000 cobrada 0] porCobrar  | 26/27: esp 34250000 fac 39000000 cob 30000000 falta 9000000 [1 19250000 cobrada 0; 2 15000000 parcial 4250000] porCobrar Cuota 2 4250000; Facturado por encima de lo estimado 4750000 · sin contrato f4 true"
+    chequear("MA", "🌾 Mis arrendamientos: cada comprobante va a la campaña de su fecha (mismo CUIT), la NC resta, lo cobrado (banco + retenciones) se aplica a las cuotas por fecha, lo facturado de más también se espera cobrar, y el comprobante de otro cliente queda aparte", e2, v2, v2 === e2, "A-FEAT-1634")
+
+    const lv = loQueViene(
+      [{ fecha: "2026-11-20", concepto: "a", monto: 100 }, { fecha: "2026-12-10", concepto: "b", monto: 200 }, { fecha: "2027-12-01", concepto: "c", monto: 999 }],
+      [{ fecha: "2026-11-25", concepto: "d", monto: 50 }, { fecha: "2027-10-31", concepto: "e", monto: 30 }], "2026-11-21")
+    const v3 = `${JSON.stringify(lv.atrasado)} ${lv.meses.filter(m => m.ingresos || m.egresos).map(m => `${m.mes} +${m.ingresos} -${m.egresos} =${m.acumulado}`).join(" ")} ${JSON.stringify(lv.totales)} ${lv.meses.length} ${lv.hasta} ${lv.control.cierra}`
+    const e3 = `{"ingresos":100,"egresos":0} 2026-11 +0 -50 =50 2026-12 +200 -0 =250 2027-10 +0 -30 =220 {"ingresos":300,"egresos":80,"neto":220} 12 2027-10 true`
+    chequear("MA", "📈 Lo que viene: 12 meses desde el mes de hoy, lo anterior a hoy va a «atrasado», lo posterior al mes 12 no entra, y el acumulado final = neto total", e3, v3, v3 === e3, "A-FEAT-1634")
+
+    const v4 = [
+      puedeVerBloque("admin", [], {}, "impuestos"),
+      puedeVerBloque("ma", ["principal"], { "principal.ma-impuestos": "escritura" }, "impuestos"),
+      puedeVerBloque("ma", ["principal"], { "principal.ma-impuestos": "escritura" }, "arrendamientos"),
+      puedeVerBloque("ma", [], { "principal.ma-impuestos": "escritura" }, "impuestos"),
+      puedeVerBloque("socio", ["principal"], { "principal.ma-impuestos": "escritura" }, "impuestos"),
+    ].join(",")
+    const e4 = "true,true,false,false,false"
+    chequear("MA", "🔒 Quién ve un bloque de MA: admin sí; el rol ma sólo con la sección Principal y ESE bloque dado; otro rol (socio) no aunque lo tenga", e4, v4, v4 === e4, "A-FEAT-1634")
+
+    const ef = nivelesEfectivos({ secciones: ["principal"], permisos: { "principal.ma-impuestos": "escritura" }, cerrado: true })
+    const v5 = `${ef["principal.ma-impuestos"]} ${ef["principal.widget-ficha-proveedor"]} ${ef["principal.ma-arrendamientos"]}`
+    const e5 = "escritura ninguno ninguno"
+    chequear("MA", "🔒 En un rol CERRADO, prender un bloque de MA (que suma la sección Principal) NO prende de paso la Ficha de proveedor ni los otros widgets ni los otros bloques", e5, v5, v5 === e5, "A-FEAT-1634")
   }
   return r
 }

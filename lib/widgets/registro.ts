@@ -50,12 +50,18 @@ export type Widget = {
    * configurable y sólo habría dado más formas de que la pantalla quede mal.
    */
   ancho: "medio" | "completo"
+  /**
+   * 🔒 La casilla propia del widget (A-FEAT-1634), para los de la sección Principal: en un rol CERRADO nace apagado
+   * aunque el rol tenga Principal; en uno abierto hereda (se ve, como siempre). Se registra en `lib/auth/recursos.ts`.
+   */
+  recurso?: string
   Componente: ComponentType
 }
 
 export const WIDGETS: Widget[] = [
   {
     id: "pendientes",
+    recurso: "principal.widget-pendientes",
     titulo: "Pendientes por pantalla",
     descripcion: "Cuántos ítems sin resolver tiene cada sección del sistema.",
     seccion: "principal",
@@ -64,6 +70,7 @@ export const WIDGETS: Widget[] = [
   },
   {
     id: "ipc",
+    recurso: "principal.widget-ipc",
     titulo: "Último IPC",
     descripcion: "El último índice cargado, con su mes y su fuente.",
     seccion: "principal",
@@ -72,6 +79,7 @@ export const WIDGETS: Widget[] = [
   },
   {
     id: "ficha-proveedor",
+    recurso: "principal.widget-ficha-proveedor",
     titulo: "Ficha de proveedor",
     descripcion: "Acceso rápido para buscar un proveedor y ver su cuenta corriente.",
     seccion: "principal",
@@ -125,6 +133,7 @@ export const WIDGETS: Widget[] = [
    */
   {
     id: "revisiones",
+    recurso: "principal.widget-revisiones",
     titulo: "Para revisar (Alt+R)",
     descripcion: "Lo que marcaste a mano desde cualquier pantalla para revisar.",
     seccion: "principal",
