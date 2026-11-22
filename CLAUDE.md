@@ -319,6 +319,10 @@ diferente. Esto es para siempre»**.*
   Claude abre su informe con ese número, y si no coincide con el de la página, falta leer algo.
 - 🎙️ **Y se puede DICTAR** *(JMS 14/11: «¿me podés dejar la posibilidad de grabar mensaje y que se transcriba?»)*: cada campo de
   texto lleva un 🎙️ (capacidad `dictation`) que escribe lo que se dice; donde el navegador no lo permite, el botón no aparece.
+- 📷 **Y se pueden PEGAR FOTOS** *(JMS 22/11: «te quise pegar la foto de screenshot pero no me pega. Eso debemos mejorarlo y a protocolo de
+  comunicación vía artifact»)*: cada campo acepta una captura con Ctrl+V, con un 📎 o arrastrándola (capacidad `assets`); el id de la
+  imagen queda en el documento de la respuesta (`fotos`), y Claude la abre con `Artifact read` + `path` = ese id. Al leer las respuestas,
+  **se miran también las fotos** y se dice cuántas había.
 - Si la página no puede guardar (sin sesión), lo dice y deja copiar el texto: nada se pierde en silencio.
 - 🔎 **Una pregunta sobre un CASO CONCRETO (un pago, un template, una inconsistencia) se hace SIEMPRE en una página, con las
   tablas a la vista** *(JMS 15/11/2026: «esas cosas me las tenés que siempre preguntar por artifact, porque yo tengo que poder ver
