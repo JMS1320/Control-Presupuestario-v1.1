@@ -42,6 +42,11 @@ import { resumirCuenta, armarEtapa2, destinoDeMovimiento } from "@/lib/balance/c
 import { hojaPapelJms } from "@/lib/impuestos/papel-formato-jms"
 import { auditarCuota, hojaRetirosYAportes } from "@/lib/balance/auditoria-templates"
 import { armarResumenPorMes } from "@/lib/balance/resumen-por-mes"
+import { canalesDelDashboard, canalesFueraDelDashboard, type CuentaDelRegistro } from "@/lib/dashboard/canales"
+import { armarResumenFinanciero, clasificadorDashboard } from "@/lib/dashboard/resumen"
+import { controlDelDashboard } from "@/lib/dashboard/control"
+import { libroDelDashboard, mesesDelPeriodo } from "@/lib/dashboard/export-excel"
+import { CUENTAS_DOLARES_Y_COTITULARES } from "@/lib/dolares/cuentas"
 import { filasNivel2De } from "@/lib/balance/formato-excel"
 import { solapasPapelesH } from "@/lib/balance/papeles-impuestos-h"
 import { hojaLibertad, conLibertadEnSocios } from "@/lib/balance/libertad"
@@ -461,6 +466,65 @@ export function correrCasos(): Resultado[] {
   const r: Resultado[] = []
   const chequear = (grupo: string, caso: string, esperado: string, obtenido: string, ok: boolean, cubre?: string) =>
     r.push({ grupo, caso, esperado, obtenido, ok, cubre })
+
+  // ══ 📊 Dashboard por empresa (A-FEAT-1637) ══════════════════════════════════════════════════
+  {
+    // El registro, como está en CUENTAS_BANCARIAS (fijo acá: la lista real vive en un hook de cliente) + las de dólares REALES.
+    const registro: CuentaDelRegistro[] = [
+      { id: "msa_galicia", nombre: "MSA Galicia CC Pesos", tabla_bd: "msa_galicia", empresa: "MSA", activa: true, tipo: "banco" },
+      { id: "pam_galicia", nombre: "PAM Galicia CA Pesos", tabla_bd: "pam_galicia", empresa: "PAM", activa: true, tipo: "banco" },
+      { id: "pam_galicia_cc", nombre: "PAM Galicia CC Pesos", tabla_bd: "pam_galicia_cc", empresa: "PAM", activa: true, tipo: "banco" },
+      { id: "ma_galicia", nombre: "MA Galicia CA Pesos", tabla_bd: "ma_galicia", schema_bd: "ma", empresa: "MA", activa: true, tipo: "banco" },
+      { id: "caja_general", nombre: "Caja General MSA", tabla_bd: "caja_general", schema_bd: "msa", empresa: "MSA", activa: true, tipo: "caja" },
+      { id: "echeqs_terceros", nombre: "Echeqs de terceros MSA", tabla_bd: "echeqs_terceros", schema_bd: "msa", empresa: "MSA", activa: true, tipo: "caja" },
+      { id: "tarjeta_visa_ma", nombre: "VISA MA", tabla_bd: "tarjeta_visa", schema_bd: "ma", empresa: "MA", activa: true, tipo: "tarjeta" },
+      { id: "vieja", nombre: "Cuenta dada de baja MA", tabla_bd: "x", empresa: "MA", activa: false },
+      ...CUENTAS_DOLARES_Y_COTITULARES.map(c => ({ ...c, activa: true })),
+    ]
+    const ids = (e: string[]) => canalesDelDashboard(registro, e).map(c => `${c.schema}.${c.tabla}`).join(",")
+    const v1 = `MSA[${ids(["MSA"])}] PAM[${ids(["PAM"])}] MA[${ids(["MA"])}] MA+PAM[${ids(["MA", "PAM"])}] Cotitulares[${ids(["Cotitulares"])}] usd-MA[${canalesFueraDelDashboard(registro, ["MA"]).length > 0}]`
+    // (Santander y Provincia de MSA y la CA ANSES de MA vienen de la lista real de cuentas manuales: son PESOS, entran.)
+    const e1 = "MSA[public.msa_galicia,msa.caja_general,msa.echeqs_terceros,msa.santander,msa.provincia] PAM[public.pam_galicia,public.pam_galicia_cc] MA[ma.ma_galicia,ma.tarjeta_visa,ma.anses_ca_pesos] MA+PAM[public.pam_galicia,public.pam_galicia_cc,ma.ma_galicia,ma.tarjeta_visa,ma.anses_ca_pesos] Cotitulares[] usd-MA[true]"
+    chequear("Dashboard", "🏦 Cada empresa suma TODOS sus canales en pesos (bancos, cajas, tarjeta, echeqs); varias = la suma; sin dólares, sin Cotitulares, sin cuentas dadas de baja", e1, v1, v1 === e1, "A-FEAT-1637")
+
+    // El control: total de la tabla = créditos − débitos de los movimientos; lo de una cuenta con tipo «NO» queda afuera y se muestra.
+    const cuentasD = [
+      { categ: "VTA", tipo: "ingreso", nombre_totalizadora: "Ventas", cuenta_contable: "Ventas hacienda" },
+      { categ: "GAS", tipo: "egreso", nombre_totalizadora: "Gastos", cuenta_contable: "Gasoil" },
+      { categ: "PASE", tipo: "financiero", nombre_totalizadora: "Pases", cuenta_contable: "Pase entre cuentas" },
+      { categ: "RAR", tipo: "NO", nombre_totalizadora: "Raro", cuenta_contable: "Cuenta sin sección" },
+    ] as any[]
+    const tplD = new Map([["t1", { nombre: "Retiro socio", agrupadora: "Retiros", esMulti: false, tipo: "distribucion" as const }]])
+    const movsD = [
+      { fecha: "2026-07-03", categ: "VTA", creditos: 1000, debitos: 0 },
+      { fecha: "2026-07-10", categ: "GAS", creditos: 0, debitos: 300.5 },
+      { fecha: "2026-08-01", categ: "PASE", creditos: 0, debitos: 200 },
+      { fecha: "2026-08-01", categ: "PASE", creditos: 200, debitos: 0 },
+      { fecha: "2026-08-15", categ: "GAS", creditos: 0, debitos: 100, template_id: "t1" },
+      { fecha: "2026-08-20", categ: "RAR", creditos: 0, debitos: 50 },
+    ]
+    const arm = armarResumenFinanciero(movsD, cuentasD, tplD)
+    const ctl = controlDelDashboard(arm.resumen, [
+      { nombre: "Banco", empresa: "MA", movimientos: movsD.slice(0, 4), sinCateg: 2 },
+      { nombre: "Caja", empresa: "MA", movimientos: movsD.slice(4), sinCateg: 0 },
+    ], arm.fuera.map(f => f.clasificacion.monto))
+    const sinRaro = armarResumenFinanciero(movsD.slice(0, 5), cuentasD, tplD)
+    const ctl2 = controlDelDashboard(sinRaro.resumen, [{ nombre: "Banco", empresa: "MA", movimientos: movsD.slice(0, 5), sinCateg: 0 }])
+    const v2 = `tabla ${ctl.totalTabla} movs ${ctl.totalMovimientos} dif ${ctl.diferencia} cierra ${ctl.cierra} fuera ${arm.fuera.length}/${ctl.fueraTotal} explicada ${ctl.explicada} sinCateg ${ctl.sinCategTotal} distrib ${arm.resumen[1]?.distribuciones["Retiros"]} | sin el raro: cierra ${ctl2.cierra} dif ${ctl2.diferencia}`
+    const e2 = "tabla 599.5 movs 549.5 dif 50 cierra false fuera 1/-50 explicada true sinCateg 2 distrib -100 | sin el raro: cierra true dif 0"
+    chequear("Dashboard", "🧮 Control: total de la tabla = créditos − débitos de los canales; el pase entre cuentas se anula en Financieros, el template manda la sección (Retiros = distribución), y lo de una cuenta con tipo «NO» NO desaparece en silencio: queda afuera, el control no cierra y la diferencia es exactamente eso", e2, v2, v2 === e2, "A-FEAT-1637")
+
+    // El Excel: el TOTAL del resumen (fórmula) vale lo mismo que la tabla, y el control de la hoja Control cierra.
+    const clasD = clasificadorDashboard(cuentasD, tplD)
+    const wbD = libroDelDashboard({ empresas: ["MA"], año: 2026, semestre: 2, control: ctl, fueraDelDashboard: [],
+      movimientos: movsD.map(m => ({ mov: { ...m, _canal: "Banco", _empresa: "MA" }, c: clasD(m) })) })
+    const hojaR = wbD.Sheets["Resumen"] as Record<string, any>, hojaC = wbD.Sheets["Control"] as Record<string, any>
+    const celdaTot = Object.keys(hojaR).find(k => hojaR[k]?.f && /^SUBTOTAL\(9,I\d+:I\d+\)$/.test(hojaR[k].f) && Object.keys(hojaR).some(j => j === `B${k.slice(1)}` && hojaR[j]?.v === "TOTAL"))
+    const estado = Object.values(hojaC).find((c: any) => typeof c?.f === "string" && c.f.startsWith("IF(ABS(")) as any
+    const v3 = `meses ${mesesDelPeriodo(2026, 2).map(m => m.rotulo).join(" ")} · total ${celdaTot ? hojaR[celdaTot].v : "?"} · estado ${estado?.v}`
+    const e3 = "meses jul-26 ago-26 sep-26 oct-26 nov-26 dic-26 · total 599.5 · estado ✓ cierra"
+    chequear("Dashboard", "📥 Excel: los meses del semestre, el TOTAL del resumen por categoría y mes = el total de la tabla, y la hoja Control cierra (tabla + fuera = canales)", e3, v3, v3 === e3, "A-FEAT-1637")
+  }
 
   // ══ El factor de la balanza ═══════════════════════════════════════════════════════════════
   const todas = [...VACAS, ...TOROS]

@@ -90,6 +90,13 @@ export const RECURSOS: Recurso[] = [
   { id: "principal.widget-ipc",             seccion: "principal", etiqueta: "Principal → widget Último IPC", tipo: "accion", archivo: "lib/widgets/registro.ts" },
   { id: "principal.widget-ficha-proveedor", seccion: "principal", etiqueta: "Principal → widget Ficha de proveedor", tipo: "accion", archivo: "lib/widgets/registro.ts" },
   { id: "principal.widget-revisiones",      seccion: "principal", etiqueta: "Principal → widget Para revisar (Alt+R)", tipo: "accion", archivo: "lib/widgets/registro.ts" },
+  // ── Dashboard (A-FEAT-1637) ──────────────────────────────────────────────────────────────
+  // Un candado por chip de empresa (en un rol abierto vienen prendidos; en uno cerrado nacen apagados) y otro para «Corregir
+  // categorías», que ESCRIBE: así a un rol de sólo mirar (MA) se le da el Dashboard sin ese botón.
+  { id: "dashboard.empresa-msa",         seccion: "dashboard", etiqueta: "Dashboard → chip MSA (todos los canales en pesos de MSA)", tipo: "accion", archivo: "components/dashboard-por-empresa.tsx" },
+  { id: "dashboard.empresa-pam",         seccion: "dashboard", etiqueta: "Dashboard → chip PAM (todos los canales en pesos de PAM)", tipo: "accion", archivo: "components/dashboard-por-empresa.tsx" },
+  { id: "dashboard.empresa-ma",          seccion: "dashboard", etiqueta: "Dashboard → chip MA (todos los canales en pesos de MA)", tipo: "accion", archivo: "components/dashboard-por-empresa.tsx" },
+  { id: "dashboard.corregir-categorias", seccion: "dashboard", etiqueta: "Dashboard → Corregir categorías (escribe)", tipo: "accion", archivo: "components/dashboard-por-empresa.tsx" },
   // ── Egresos ──────────────────────────────────────────────────────────────────────────────
   { id: "egresos.facturas-msa", seccion: "egresos", etiqueta: "Facturas MSA",        tipo: "pestana", archivo: EGRESOS },
   { id: "egresos.facturas-pam", seccion: "egresos", etiqueta: "Facturas PAM",        tipo: "pestana", archivo: EGRESOS },
@@ -305,7 +312,6 @@ export const RECURSOS: Recurso[] = [
  * si alguien la lee y ve un hueco, tiene que saber si es un olvido o una decisión.
  */
 export const SIN_RECURSOS: Record<string, string> = {
-  dashboard:    "Una sola vista con filtros. No tiene partes separables.",
   distribucion: "Una sola vista con filtros.",
   reporte:      "Una sola vista con filtros.",
   ingresos:     "⚠️ Sus pestañas se GENERAN por empresa y por vista, así que no se pueden listar acá. Permisarlas pide resolverlas en tiempo de ejecución — pendiente.",

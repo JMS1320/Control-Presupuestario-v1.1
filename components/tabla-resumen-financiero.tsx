@@ -226,7 +226,7 @@ export function TablaResumenFinanciero({ resumen, mostrarDecimales }: TablaResum
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Resumen Financiero Mensual</CardTitle>
         {todasLasClavesExpandibles.size > 0 && (
-          <div className="flex gap-2">
+          <div className="flex gap-2 print:hidden">
             <Button size="sm" variant="outline" onClick={expandirTodo}>Expandir todo</Button>
             <Button size="sm" variant="outline" onClick={colapsarTodo}>Colapsar todo</Button>
           </div>

@@ -1,62 +1,54 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { supabase, type CuentaContable, type MovimientoMSA } from "@/lib/supabase"
-import { resolverTipo, type TipoCuenta } from "@/lib/presupuesto/templates"
+import { supabase, type CuentaContable } from "@/lib/supabase"
 import { traerTodo } from "@/lib/supabase-paginado"
 import { avisarSiIncompleta } from "@/lib/ui/avisar-lectura"
+import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
+import { canalesDelDashboard, type CanalDashboard } from "@/lib/dashboard/canales"
+import { armarResumenFinanciero, type InfoTemplate, type ResumenFinanciero, type Clasificacion } from "@/lib/dashboard/resumen"
+import { controlDelDashboard, type CanalLeido, type ControlDashboard } from "@/lib/dashboard/control"
 
-export type ResumenFinanciero = {
-  mes: number
-  año: number
-  /** Totales por agrupadora — claves son nombres de agrupadora (cuenta_agrupadora de template o nombre_totalizadora de cuenta contable). */
-  ingresos: { [agrupadora: string]: number }
-  egresos: { [agrupadora: string]: number }
-  financieros: { [agrupadora: string]: number }
-  distribuciones: { [agrupadora: string]: number }
-  /** Desglose por detalle dentro de cada agrupadora. Para templates normales: nombre del template. Para cuentas contables: nombre de la cuenta. Para templates multi-cuenta: nombre de la cuenta de cada sub-movimiento. */
-  subCategorias: { [agrupadora: string]: { [detalle: string]: number } }
-  totalIngresos: number
-  totalEgresos: number
-  totalFinancieros: number
-  totalDistribuciones: number
-  saldoMensual: number
-}
+// El tipo y el cálculo viven en `lib/dashboard/resumen.ts` (A-FEAT-1637); se re-exporta para quien lo importaba de acá.
+export type { ResumenFinanciero } from "@/lib/dashboard/resumen"
 
-const AGRUPADORA_SIN_AGRUPAR = "(Sin agrupar)"
-const AGRUPADORA_SIN_CLASIFICAR = "(Sin clasificar)"
+/** Un movimiento leído, con de qué canal y empresa vino (para el detalle del Excel). */
+export type MovimientoDashboard = Record<string, any> & { _canal: string; _empresa: string }
 
-export function useFinancialData(año: number, semestre?: number) {
+/**
+ * Los datos del Dashboard.
+ *
+ * 📊 A-FEAT-1637 (JMS 22/11): `empresas` = las empresas de los chips. Cada una suma **todos sus canales en pesos** del registro
+ * único (`CUENTAS_BANCARIAS`): bancos, cajas, tarjetas y echeqs — ver `lib/dashboard/canales.ts`. Sin el parámetro = MSA, que
+ * era lo que mostraba antes (ahora con todos sus canales, no sólo el banco).
+ */
+export function useFinancialData(año: number, semestre?: number, empresas: readonly string[] = ["MSA"]) {
   const [cuentas, setCuentas] = useState<CuentaContable[]>([])
-  const [movimientos, setMovimientos] = useState<MovimientoMSA[]>([])
+  const [movimientos, setMovimientos] = useState<MovimientoDashboard[]>([])
   const [resumen, setResumen] = useState<ResumenFinanciero[]>([])
+  const [fuera, setFuera] = useState<Array<{ mov: MovimientoDashboard; clasificacion: Clasificacion }>>([])
+  const [control, setControl] = useState<ControlDashboard | null>(null)
+  const [canales, setCanales] = useState<CanalDashboard[]>([])
+  const [templates, setTemplates] = useState<Map<string, InfoTemplate>>(new Map())
   const [loading, setLoading] = useState(true)
+  const claveEmpresas = [...empresas].sort().join(",")
 
   useEffect(() => {
+    let vigente = true
     async function fetchData() {
       setLoading(true)
 
       try {
-        // Obtener cuentas contables
         const { data: cuentasData, error: cuentasError } = await supabase.from("cuentas_contables").select("*")
-
         if (cuentasError) {
           console.error("Error al obtener cuentas contables:", cuentasError)
-          setLoading(false)
           return
         }
 
-        if (cuentasData) setCuentas(cuentasData)
-
-        // Construir filtro de fechas
         let fechaInicio = `${año}-01-01`
         let fechaFin = `${año}-12-31`
-
-        if (semestre === 1) {
-          fechaFin = `${año}-06-30`
-        } else if (semestre === 2) {
-          fechaInicio = `${año}-07-01`
-        }
+        if (semestre === 1) fechaFin = `${año}-06-30`
+        else if (semestre === 2) fechaInicio = `${año}-07-01`
 
         // Templates con su agrupadora, tipo y flag multi-cuenta.
         // Sin filtrar por `activo`: un movimiento histórico de un template dado de baja igual
@@ -64,10 +56,9 @@ export function useFinancialData(año: number, semestre?: number) {
         const { data: allTemplates, error: templatesError } = await supabase
           .from("egresos_sin_factura")
           .select("id, nombre_referencia, cuenta_agrupadora, es_multi_cuenta, tipo")
-
         if (templatesError) console.error("Error al obtener templates:", templatesError)
 
-        const templateMap = new Map<string, { nombre: string, agrupadora: string | null, esMulti: boolean, tipo: TipoCuenta | null }>()
+        const templateMap = new Map<string, InfoTemplate>()
         ;(allTemplates || []).forEach((t: any) => templateMap.set(t.id, {
           nombre: t.nombre_referencia,
           agrupadora: t.cuenta_agrupadora || null,
@@ -75,197 +66,54 @@ export function useFinancialData(año: number, semestre?: number) {
           tipo: t.tipo || null,
         }))
 
-        // Movimientos del período
-        // ✂️ A-BUG-1379: de a tandas — 2026 ya tiene 1.136 movimientos y la base corta en 1.000.
-        const rMov = await traerTodo<any>((d, h) => supabase
-          .from("msa_galicia")
-          .select("*", { count: "exact" })
-          .gte("fecha", fechaInicio)
-          .lte("fecha", fechaFin)
-          .not("categ", "is", null)
-          .order("id").range(d, h))
-        const movimientosData = rMov.data
-        const movimientosError = rMov.error
-        avisarSiIncompleta("Dashboard · movimientos del banco", rMov)
+        // 🏦 Todos los canales en pesos de las empresas elegidas. Cada uno se lee de a tandas (A-BUG-1379: la base corta en
+        // 1.000) y, si no llega entero o falla, se avisa y se marca en el control: el resto sigue.
+        const elegidos = canalesDelDashboard(CUENTAS_BANCARIAS, claveEmpresas ? claveEmpresas.split(",") : [])
+        const leidos = await Promise.all(elegidos.map(async (canal): Promise<{ canal: CanalDashboard; movs: MovimientoDashboard[]; leido: CanalLeido }> => {
+          const cli = () => (canal.schema !== "public" ? supabase.schema(canal.schema) : supabase)
+          const r = await traerTodo<any>((d, h) => cli()
+            .from(canal.tabla)
+            .select("*", { count: "exact" })
+            .gte("fecha", fechaInicio)
+            .lte("fecha", fechaFin)
+            .not("categ", "is", null)
+            .order("id").range(d, h))
+          avisarSiIncompleta(`Dashboard · ${canal.nombre}`, r)
+          // Los del período SIN categoría: no entran en la tabla, pero se cuentan (nada se descarta en silencio).
+          const sc = await cli().from(canal.tabla).select("id", { count: "exact", head: true })
+            .gte("fecha", fechaInicio).lte("fecha", fechaFin).is("categ", null)
+          if (sc.error) console.error(`Dashboard · ${canal.nombre} (sin categoría):`, sc.error.message)
+          const movs = (r.data || []).map((m: any) => ({ ...m, _canal: canal.nombre, _empresa: canal.empresa }))
+          return {
+            canal, movs,
+            leido: {
+              nombre: canal.nombre, empresa: canal.empresa, movimientos: movs,
+              sinCateg: sc.error ? null : (sc.count ?? 0),
+              incompleta: !!r.error || (r.esperadas != null && r.esperadas !== r.data.length),
+            },
+          }
+        }))
+        if (!vigente) return
 
-        if (movimientosError) {
-          console.error("Error al obtener movimientos:", movimientosError)
-          setLoading(false)
-          return
-        }
-
-        /**
-         * 🏦 A-FEAT-1230 — los echeqs de clientes que se endosan no pasan por el banco, así que ni el
-         * ingreso de la venta ni el egreso del pago aparecían. Su «extracto» (`msa.echeqs_terceros`)
-         * tiene la misma forma: se suma acá. Si falla, se avisa y el resto sigue.
-         */
-        const { data: echeqsData, error: echeqsError } = await supabase.schema("msa")
-          .from("echeqs_terceros")
-          .select("*")
-          .gte("fecha", fechaInicio)
-          .lte("fecha", fechaFin)
-          .not("categ", "is", null)
-        if (echeqsError) console.error("⚠️ No se pudo leer el extracto de echeqs de terceros:", echeqsError)
-
-        if (movimientosData) {
-          const todos = [...movimientosData, ...((echeqsData || []) as any[])]
-          setMovimientos(todos)
-          const resumenPorMes = procesarResumenFinanciero(todos, cuentasData || [], templateMap)
-          setResumen(resumenPorMes)
-        }
+        const todos = leidos.flatMap(l => l.movs)
+        const armado = armarResumenFinanciero(todos, cuentasData || [], templateMap)
+        setCuentas(cuentasData || [])
+        setTemplates(templateMap)
+        setCanales(elegidos)
+        setMovimientos(todos)
+        setResumen(armado.resumen)
+        setFuera(armado.fuera as Array<{ mov: MovimientoDashboard; clasificacion: Clasificacion }>)
+        setControl(controlDelDashboard(armado.resumen, leidos.map(l => l.leido), armado.fuera.map(f => f.clasificacion.monto)))
       } catch (error) {
         console.error("Error general en fetchData:", error)
       } finally {
-        setLoading(false)
+        if (vigente) setLoading(false)
       }
     }
 
     fetchData()
-  }, [año, semestre])
+    return () => { vigente = false }
+  }, [año, semestre, claveEmpresas])
 
-  return { cuentas, movimientos, resumen, loading }
-}
-
-/**
- * Normaliza un nombre de totalizadora a su forma canónica para evitar duplicados
- * por diferencias de mayúsculas (ej: "EGRESOS POR GANADERIA" vs "Egresos Por Ganaderia").
- */
-function construirMapaCanonizacionTotalizadoras(cuentas: CuentaContable[]): Map<string, string> {
-  // Agrupar por key normalizada (lowercase trim) → tomar la versión más usada (la primera que aparezca con más cuentas)
-  const conteo = new Map<string, Map<string, number>>()
-  cuentas.forEach(c => {
-    if (!c.nombre_totalizadora) return
-    const key = c.nombre_totalizadora.toLowerCase().trim()
-    if (!conteo.has(key)) conteo.set(key, new Map())
-    const inner = conteo.get(key)!
-    inner.set(c.nombre_totalizadora, (inner.get(c.nombre_totalizadora) || 0) + 1)
-  })
-
-  const canonical = new Map<string, string>()
-  conteo.forEach((variantes, key) => {
-    // Elegir la variante con mayor cuenta, o la "más limpia" (más mayúsculas) en empate
-    let mejor = ''
-    let mejorScore = -1
-    variantes.forEach((cant, variante) => {
-      const upperCount = (variante.match(/[A-ZÁÉÍÓÚÑ]/g) || []).length
-      const score = cant * 1000 + upperCount
-      if (score > mejorScore) {
-        mejorScore = score
-        mejor = variante
-      }
-    })
-    canonical.set(key, mejor)
-  })
-
-  return canonical
-}
-
-function procesarResumenFinanciero(
-  movimientos: any[],
-  cuentas: CuentaContable[],
-  templateMap: Map<string, { nombre: string, agrupadora: string | null, esMulti: boolean, tipo: TipoCuenta | null }>
-): ResumenFinanciero[] {
-  const cuentasMap = new Map(cuentas.map((c) => [c.categ, c]))
-  const canonicalTotalizadoras = construirMapaCanonizacionTotalizadoras(cuentas)
-
-  const canonicalizar = (nombre: string | null | undefined): string | null => {
-    if (!nombre) return null
-    return canonicalTotalizadoras.get(nombre.toLowerCase().trim()) || nombre
-  }
-
-  const resumenPorMes = new Map<string, ResumenFinanciero>()
-
-  movimientos.forEach((mov) => {
-    const fechaParts = mov.fecha.split("-")
-    const año = Number.parseInt(fechaParts[0])
-    const mes = Number.parseInt(fechaParts[1])
-    const key = `${año}-${mes}`
-
-    const cuentaInfo = cuentasMap.get(mov.categ)
-    const templateInfo = mov.template_id ? templateMap.get(mov.template_id) : null
-    const monto = (mov.creditos || 0) - (mov.debitos || 0)
-
-    // ---- Determinar agrupadora, detalle y tipo ----
-    let agrupadora: string
-    let detalle: string
-    let tipo: string | undefined
-
-    if (templateInfo && !templateInfo.esMulti) {
-      // Template normal: la agrupadora viene del template, el detalle es el nombre del template.
-      // El tipo lo declara el propio template; el plan de cuentas y el signo son sólo fallback
-      // para templates nuevos sin clasificar (ver `resolverTipo`).
-      agrupadora = canonicalizar(templateInfo.agrupadora) || AGRUPADORA_SIN_AGRUPAR
-      detalle = templateInfo.nombre
-      tipo = resolverTipo(templateInfo.tipo, cuentaInfo?.tipo as TipoCuenta | undefined, monto).tipo
-    } else if (cuentaInfo) {
-      // Sin template normal (multi-cuenta o sin template): usar la cuenta contable
-      agrupadora = canonicalizar(cuentaInfo.nombre_totalizadora) || AGRUPADORA_SIN_AGRUPAR
-      detalle = cuentaInfo.cuenta_contable || cuentaInfo.categ
-      tipo = cuentaInfo.tipo
-    } else {
-      // Sin cuenta válida — pendiente de adjudicar
-      agrupadora = AGRUPADORA_SIN_CLASIFICAR
-      detalle = mov.categ || "(sin categ)"
-      tipo = monto >= 0 ? "ingreso" : "egreso"
-    }
-
-    if (!tipo) return // Sin tipo válido, no sabemos en qué sección ponerlo
-
-    // ---- Inicializar mes si no existe ----
-    if (!resumenPorMes.has(key)) {
-      resumenPorMes.set(key, {
-        mes,
-        año,
-        ingresos: {},
-        egresos: {},
-        financieros: {},
-        distribuciones: {},
-        subCategorias: {},
-        totalIngresos: 0,
-        totalEgresos: 0,
-        totalFinancieros: 0,
-        totalDistribuciones: 0,
-        saldoMensual: 0,
-      })
-    }
-
-    const resumen = resumenPorMes.get(key)!
-
-    // ---- Acumular en sección + subcategoría ----
-    const sumarSubCateg = () => {
-      if (!resumen.subCategorias[agrupadora]) resumen.subCategorias[agrupadora] = {}
-      resumen.subCategorias[agrupadora][detalle] = (resumen.subCategorias[agrupadora][detalle] || 0) + monto
-    }
-
-    switch (tipo) {
-      case "ingreso":
-        resumen.ingresos[agrupadora] = (resumen.ingresos[agrupadora] || 0) + monto
-        resumen.totalIngresos += monto
-        sumarSubCateg()
-        break
-      case "egreso":
-        resumen.egresos[agrupadora] = (resumen.egresos[agrupadora] || 0) + monto
-        resumen.totalEgresos += monto
-        sumarSubCateg()
-        break
-      case "financiero":
-        resumen.financieros[agrupadora] = (resumen.financieros[agrupadora] || 0) + monto
-        resumen.totalFinancieros += monto
-        sumarSubCateg()
-        break
-      case "distribucion":
-        resumen.distribuciones[agrupadora] = (resumen.distribuciones[agrupadora] || 0) + monto
-        resumen.totalDistribuciones += monto
-        sumarSubCateg()
-        break
-    }
-
-    resumen.saldoMensual =
-      resumen.totalIngresos + resumen.totalEgresos + resumen.totalFinancieros + resumen.totalDistribuciones
-  })
-
-  return Array.from(resumenPorMes.values()).sort((a, b) => {
-    if (a.año !== b.año) return a.año - b.año
-    return a.mes - b.mes
-  })
+  return { cuentas, movimientos, resumen, fuera, control, canales, templates, loading }
 }

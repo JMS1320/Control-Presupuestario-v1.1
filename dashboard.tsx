@@ -5,13 +5,11 @@ import { ProveedorPermisos } from "./components/contexto-permisos"
 import { ProveedorModoPermisos, type RolEnModo } from "./components/modo-permisos"
 import type { UserRole } from "@/lib/auth/roles"
 import { FiltrosFinancieros } from "./components/filtros-financieros"
-import { TablaResumenFinanciero } from "./components/tabla-resumen-financiero"
+import { DashboardPorEmpresa } from "./components/dashboard-por-empresa"
 import { ImportadorExcel } from "./components/importador-excel"
 import { ImportadorHistorico } from "./components/importador-historico"
-import { CorrectorCategorias } from "./components/corrector-categorias"
 import { CorrectorInterno } from "./components/corrector-interno"
 import { ReporteDetallado } from "./components/reporte-detallado"
-import { useFinancialData } from "./hooks/useFinancialData"
 import { useDistribucionSociosData } from "./hooks/useDistribucionSociosData"
 import { TablaDistribucionSocios } from "./components/tabla-distribucion-socios"
 import { VistaEgresos } from "./components/vista-egresos"
@@ -50,7 +48,7 @@ import { Toaster } from "@/components/ui/sonner"
 import { EVENTO_IR } from "@/lib/recorrido/recorrido"
 import { BarraRecorrido } from "@/components/barra-recorrido"
 import { MarcaFlotante } from "@/components/boton-revision"
-import { Menu, Loader2, BarChart3, Upload, Users, Settings, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon, Mail } from "lucide-react"
+import { Menu, Loader2, BarChart3, Upload, Users, UserCheck, FileText, Receipt, Calendar, TrendingUp, Banknote, Home, Tractor, Landmark, PieChart, ArrowUpRight, DollarSign, Sprout, BookOpen, MapPin, Calculator, Hammer, PieChart as PieIcon, Scale as ScaleIcon, Mail } from "lucide-react"
 
 interface ControlPresupuestarioProps {
   userRole?: UserRole
@@ -107,7 +105,6 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
   const [semestre, setSemestre] = useState<number | undefined>(undefined)
   const [mostrarDecimales, setMostrarDecimales] = useState(true)
 
-  const [showCategorias, setShowCategorias] = useState(false)
   const [showInterno, setShowInterno] = useState(false)
   const [showPreciosTC, setShowPreciosTC] = useState(false)
   const [showActividades, setShowActividades] = useState(false)
@@ -123,7 +120,6 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
   const [tokenPresupuesto, setTokenPresupuesto] = useState(0)
   const [showProveedores, setShowProveedores] = useState(false)
 
-  const { resumen, loading } = useFinancialData(año, semestre)
   const { resumenPorSeccion, estadisticas, loading: loadingDistribucion } = useDistribucionSociosData(año, semestre)
 
   /**
@@ -300,35 +296,16 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
 
           {/* DASHBOARD */}
           <TabsContentVivo value="dashboard" className="space-y-6">
-            <div className="flex items-center justify-between">
-              <FiltrosFinancieros
-                año={año}
-                semestre={semestre}
-                mostrarDecimales={mostrarDecimales}
-                onAñoChange={setAño}
-                onSemestreChange={setSemestre}
-                onMostrarDecimalesChange={setMostrarDecimales}
-              />
-
-              {/* Botón para mostrar/ocultar Corrector Categorías */}
-              <Button variant="secondary" className="shrink-0" onClick={() => setShowCategorias(!showCategorias)}>
-                <Settings className="mr-2 h-4 w-4" />
-                {showCategorias ? "Ocultar" : "Corregir categorías"}
-              </Button>
-            </div>
-
-            {loading ? (
-              <Card>
-                <CardContent className="flex items-center justify-center py-12">
-                  <Loader2 className="mr-2 h-8 w-8 animate-spin" />
-                  <span>Cargando datos financieros…</span>
-                </CardContent>
-              </Card>
-            ) : (
-              <TablaResumenFinanciero resumen={resumen} mostrarDecimales={mostrarDecimales} />
-            )}
-
-            {showCategorias && <div className="entrada-suave"><CorrectorCategorias /></div>}
+            {/* 📊 A-FEAT-1637: por empresa (chips MSA · PAM · MA con candado), todos sus canales en pesos, control a la vista,
+                Excel / PDF / Imprimir, y «Corregir categorías» con su propio candado. */}
+            <DashboardPorEmpresa
+              año={año}
+              semestre={semestre}
+              mostrarDecimales={mostrarDecimales}
+              onAñoChange={setAño}
+              onSemestreChange={setSemestre}
+              onMostrarDecimalesChange={setMostrarDecimales}
+            />
           </TabsContentVivo>
 
           {/* DISTRIBUCIÓN */}
