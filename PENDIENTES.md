@@ -19221,6 +19221,29 @@ en línea)** construido desde abajo. Cerrado para MSA, se repite para MA y PAM.
 - Programa: avisa cada etapa con su hora (JMS: *«chequeá cada tanto si se traba o avanza por etapas»*); tarda ~10 min, casi todo en leer el banco
   de cada cuota.
 
+**6 · 22/11 — RESPUESTAS de JMS en la página (21 comentarios por renglón/sección, 4 con captura; P1–P7 sin contestar como tales) y lo que se le propuso**
+
+- **Errores de la página (míos)**: el «ver» de los renglones de SUELDOS muestra el bruto del empleado en cada parte (B185–B188 iguales) → corregir
+  a la parte; y la «Diferencia» de Ruben Sigot (2.770.200) son sus FRANCOS: tiene cantidad (6,5/6/8/8/8/6,5) pero no `valor_franco` (implícito
+  64.000 y 66.800 en junio) → renglón «Francos» como Extras. Los 835.000 de «Extras» son el aguinaldo A+B de junio.
+- **No van al gasto (propuesta, espera OK)**: B105 retenciones IIBB 8.347,05 (crédito fiscal); B140/B141 SICORE 2.480.336,09 (retenciones a
+  proveedores, se pagan por cuenta de ellos); y candidatos del mismo tipo: anticipo de Ganancias 2.338.842,70, percepción Ganancias 194.388,99,
+  percepción IVA 134.462,27, IVA bancario 647.767,95.
+- **B063** (arrendamientos agrícolas 12.456.000,14 = 2 × 6.228.000,07): son las 2 facturas provisionadas el 24/25; HOY NO se neutralizan (= P4).
+- **B172 caja 29 M**: en templates sólo está la punta del banco; la entrada a caja vive en las cajas → sumar esa punta (= P1).
+- **Socios (sección «no van»)**: «LIB» 14.317.100,99 = expensas + AYSA de Libertad pagadas por MSA (13 movimientos); ya entran a socios por la
+  regla del semestre → cambiar el rótulo «sin encuadrar». «CTA QUINTA X» 9.000 (02/06/26, medialunas reunión Benicasa, interno DIST PAM): el
+  código no existe → decidir a qué cuenta va (dato, con su OK). Los 400.000 del 16/05/26 (albañil chalet) ya están en el template de MA; aparece
+  porque lo pagó una cuenta de MSA.
+- **Presentación**: Ingresos siempre con Arrendamientos · Cereales · Hacienda (en cero si no hubo) + los que tengan movimiento; % sobre el total
+  del bloque (compras y ventas); ganancia sin rojo y gasto entre paréntesis (A-FEAT-1628 A5); PN = el del contador al 30/06/25; Inmobiliario y
+  Red Vial agrupados con el lote como renglón (complementario como una partida más); B173 netos en 0 con el número; Comisión cuenta bancaria
+  (B115) por cuenta → detalle; B053 seguros cultivo cuelga de «42» solo (ubicarlo con lo agrícola, va con A-FEAT-1633).
+- **Del «ver» (protocolo de páginas, a confirmar)**: el detalle como un nivel más del desplegable de la izquierda; cerrar un grupo cierra sus
+  detalles. Datos de origen de a poco: venta de hacienda (cabezas, kg promedio, precio), link a la factura (B089), y dónde más sirve.
+- **Impuestos rurales**: hoy van por FECHA de pago de la cuota (mezcla cuotas 2025 y 2026); el papel del Inmobiliario ya tiene «lo que va al
+  ejercicio» → alinear.
+
 ## <a id="a-feat-1635"></a>A-FEAT-1635 — Saldos INTERNOS entre las cuentas desde el 31/12/2024 en cero 🤝
 
 **1 · 21/11 — v1 entregada (tanda sin supervisión, rama `jms/tanda-2026-11-21-balance-en-linea`, sin mergear)**
