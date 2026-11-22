@@ -1853,7 +1853,9 @@ npm run build                        # build
 - **Schemas BD:** `public`, `msa`, `pam`, `ma`, `productivo`, `sueldos`. Detalle → `ARQUITECTURA-BD.md`.
 - **Env vars:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
 - **Branches:** `main` (prod, auto-deploy Vercel) · `desarrollo` (trabajo). Testing por preview de Vercel.
-- **MCP Supabase:** mantener en `--read-only`; pasar a write solo para cambios de BD acordados + revertir después (ver A-OP-01).
+- **MCP Supabase:** ⚠️ cambió 22/11/2026 (JMS: «sí, cambiala así») — **puede quedar en escritura**. Claude **nunca** escribe sin el OK de
+  JMS en esa misma conversación; cada escritura va como **script numerado con su deshacer por id**, y se anota en el tablero. *(Hasta
+  el 22/11 decía «mantener en `--read-only`; pasar a write sólo para cambios acordados + revertir después», ver A-OP-01.)*
 
 ---
 
