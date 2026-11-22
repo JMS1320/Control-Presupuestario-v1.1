@@ -15,7 +15,8 @@
 import { createClient } from "@supabase/supabase-js"
 import XLSX from "xlsx-js-style"
 import { readFileSync, mkdirSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { join, dirname } from "node:path"
+import { fileURLToPath } from "node:url"
 import { armarEjercicio, primerDiaDelEjercicio } from "../lib/balance/ejercicio"
 import { armarLibroDiario, desdeArca, desdeHistorico, desdeVenta, type AsientoLibroDiario } from "../lib/balance/libro-diario"
 import { PRESENTADO_ARCA_COMPRAS } from "../lib/balance/presentado-arca"
@@ -600,6 +601,34 @@ const integridad: Array<[string, number, number]> = [
   ["Capa interna: lo que se le pone a uno se le saca a otro (tiene que dar 0)", capaControl ?? 0, 0],
   ["Sueldos: empleados de MSA en el balance = crudo con Nro (bruto guardado)", suma([resSueldos], "resultado"), sumaCrudo(crudoSueldos, "Bruto guardado", r => r["Nro balance"] !== "NO VA")],
 ]
+// 🔗 CADENA DE LA DIFERENCIA (JMS 22/11: «llevar una cadena de saldos y controles para ir teniendo la trazabilidad de cómo va cambiando la
+// diferencia hasta llegar a terminado, trazado y auditable»). Los pasos viven en scripts/balance-tres-capas-cadena.json (uno por cambio, con
+// quién lo decidió); acá se controla que partida + Σ efectos = la diferencia de hoy, y se descompone lo que queda.
+const cadena = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "balance-tres-capas-cadena.json"), "utf8"))
+const difHoy = r2(totA + totP + totN + totR)
+let acum = Number(cadena.partida.diferencia)
+const pasosCadena = (cadena.pasos as any[]).map(p => { const ef = r2(Number(p.efectoResultado) + Number(p.efectoPatrimonial)); acum = r2(acum + ef); return { ...p, efecto: ef, acumulado: acum } })
+const netoIni = r2(suma(hoja[0].hijos!, "inicio") + suma(hoja[1].hijos!, "inicio")), netoFin = r2(totA + totP)
+const brechaArranque = r2(netoIni + suma(hoja[2].hijos!, "inicio"))
+const noExplicada = r2(netoFin - netoIni + totR)
+integridad.push(["Cadena de la diferencia: partida (v1) + Σ cambios registrados = la diferencia de hoy", acum, difHoy])
+integridad.push(["La diferencia de hoy = brecha de arranque (activo + pasivo al inicio vs PN del contador) + variación patrimonial que el resultado no explica", r2(brechaArranque + noExplicada), difHoy])
+const wcad = XLSX.utils.aoa_to_sheet([
+  [`CADENA DE LA DIFERENCIA DE LA ECUACIÓN — ${EMPRESA} ${ej.etiqueta} — ${VERSION}`],
+  ["Cada cambio con su efecto en la diferencia (signo del contador). La última fila tiene que dar la diferencia de la hoja Balance."], [],
+  ["Versión", "Fecha", "Cambio", "Quién lo decidió", "Motivo", "Efecto en el resultado", "Efecto patrimonial", "Efecto en la diferencia", "Diferencia acumulada"],
+  [cadena.partida.version, cadena.partida.fecha, `Punto de partida: ${cadena.partida.nota}`, "", "", "", "", "", { t: "n", v: Number(cadena.partida.diferencia), z: MONEDA }],
+  ...pasosCadena.map((p, i) => [p.version, p.fecha, p.cambio, p.quien, p.motivo, { t: "n", v: Number(p.efectoResultado), z: MONEDA }, { t: "n", v: Number(p.efectoPatrimonial), z: MONEDA },
+    { t: "n", f: `F${6 + i}+G${6 + i}`, v: p.efecto, z: MONEDA }, { t: "n", f: `I${5 + i}+H${6 + i}`, v: p.acumulado, z: MONEDA }]),
+  ["", "", "Diferencia de la hoja Balance (hoy)", "", "", "", "", "", { t: "n", v: difHoy, z: MONEDA }],
+  ["", "", "Control: la cadena llega a la diferencia de hoy", "", "", "", "", "", { t: "s", f: `IF(ROUND(I${5 + pasosCadena.length}-I${6 + pasosCadena.length},2)=0,"✓","⚠️ falta registrar un cambio")` }],
+  [], ["DE QUÉ SE COMPONE LA DIFERENCIA DE HOY"],
+  ["", "", "Brecha de arranque: nuestro activo + pasivo al 30/06/25 contra el patrimonio neto del contador", "", "", "", "", "", { t: "n", v: brechaArranque, z: MONEDA }],
+  ["", "", "Variación patrimonial que el resultado no explica: (activo + pasivo al cierre − al inicio) + resultado", "", "", "", "", "", { t: "n", v: noExplicada, z: MONEDA }],
+  ["", "", "Suma", "", "", "", "", "", { t: "n", v: r2(brechaArranque + noExplicada), z: MONEDA }],
+])
+wcad["!cols"] = [{ wch: 8 }, { wch: 11 }, { wch: 70 }, { wch: 22 }, { wch: 50 }, { wch: 18 }, { wch: 16 }, { wch: 18 }, { wch: 20 }]
+XLSX.utils.book_append_sheet(wb, wcad, "Cadena")
 const ctrl: unknown[][] = [[`CONTROL — ${EMPRESA} ${ej.etiqueta} — ${VERSION}`], [],
   ["1 · Los crudos contra el libro bajado v18 (19/11 02:33). Una diferencia puede venir de un cambio en la base después de esa descarga: se explica abajo."], [],
   ["Qué", "Este crudo", "Libro v18", "Diferencia", "✓"],
@@ -611,7 +640,7 @@ const ctrl: unknown[][] = [[`CONTROL — ${EMPRESA} ${ej.etiqueta} — ${VERSION
 const wc = XLSX.utils.aoa_to_sheet(ctrl)
 wc["!cols"] = [{ wch: 95 }, { wch: 20 }, { wch: 20 }, { wch: 18 }, { wch: 5 }]
 XLSX.utils.book_append_sheet(wb, wc, "Control")
-wb.SheetNames = ["Balance", "Control", "Crudo · Diario", "Crudo · Templates", "Crudo · Sueldos", "Crudo · Socios"]
+wb.SheetNames = ["Balance", "Cadena", "Control", "Crudo · Diario", "Crudo · Templates", "Crudo · Sueldos", "Crudo · Socios"]
 
 if (!process.argv.includes("--sin-excel")) {
   mkdirSync(CARPETA, { recursive: true })
@@ -628,6 +657,7 @@ const salida = { version: VERSION, generado: new Date().toISOString(), empresa: 
   ecuacion: { activo: totA, pasivo: totP, pn: totN, resultado: totR, diferencia: r2(totA + totP + totN + totR) },
   control: control.map(([q, a, b]) => ({ q, a, b })), integridad: integridad.map(([q, a, b]) => ({ q, a, b })),
   financieroNoVa: finNoVa.length, dolares: r2(finDolares.reduce((s, c) => s + c.monto, 0)), inversiones: [...new Set(finInversion.map(c => c.concepto))], provAnterior: libro.provisionesEjercicioAnterior.length, provAnteriorTotal, provAnteriorDetalle: libro.provisionesEjercicioAnterior.map(a => `${a.denominacion} ${a.fecha} $ ${r2(a.total - a.iva).toLocaleString("es-AR")}`),
+  cadena: { partida: cadena.partida, pasos: pasosCadena, difHoy, brechaArranque, noExplicada },
   crudos: { diario: crudoDiario.length, templates: crudoTemplates.length, sueldos: crudoSueldos.length, socios: crudoSocios.length }, socios: sociosRes, capaSinResolver }
 // 🔎 el detalle de cada renglón, para la página (el crudo por Nro): [fecha, quién / qué, importe, bloque]
 const CRUDO_OUT = process.argv.find(a => a.startsWith("--crudo="))?.slice(8)

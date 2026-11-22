@@ -1,0 +1,10 @@
+{
+  "_que_es": "Cadena de la diferencia de la ecuación del balance en línea (A-FEAT-1632). JMS 22/11: «llevar una cadena de saldos y controles para tener la trazabilidad de cómo va cambiando la diferencia hasta llegar a terminado, trazado y auditable». Cada versión agrega sus pasos; el programa controla que punto de partida + Σ efectos = la diferencia que calcula hoy. Signo del contador (ganancia negativa).",
+  "partida": { "version": "v1", "fecha": "2026-11-21", "resultado": -392203893.74, "diferencia": -15110285.99, "nota": "primera versión: estructura del contador con nuestros renglones" },
+  "pasos": [
+    { "version": "v2", "fecha": "2026-11-21", "cambio": "Cuentas con socios (14.1 contable e interno) agregadas FUERA de la ecuación", "efectoResultado": 0, "efectoPatrimonial": 0, "quien": "Claude (tanda sin supervisión)", "motivo": "JMS 21/11: incorporar socios «de la manera ya consensuada»; cómo entran a la ecuación queda para decidir (Q4)" },
+    { "version": "v3", "fecha": "2026-11-22", "cambio": "Provisión del 24/25 revertida (2 facturas de arrendamiento, ya fueron gasto del ejercicio pasado)", "efectoResultado": -12456000.14, "efectoPatrimonial": 0, "quien": "JMS", "motivo": "«ya quedamos que se revertiría»" },
+    { "version": "v3", "fecha": "2026-11-22", "cambio": "Movimientos entre cuentas propias (caja) fuera del resultado, a un control de dos puntas", "efectoResultado": -29036135.56, "efectoPatrimonial": 0, "quien": "JMS", "motivo": "«no llevar al gasto nada vía interbancarias»" },
+    { "version": "v3", "fecha": "2026-11-22", "cambio": "Saldo del ejercicio anterior de Inmobiliario y Red Vial al gasto (pago anual adelantado)", "efectoResultado": 7115206.05, "efectoPatrimonial": 0, "quien": "JMS", "motivo": "«lo que importa es que entre al gasto… dentro de inmobiliario y red vial»" }
+  ]
+}
