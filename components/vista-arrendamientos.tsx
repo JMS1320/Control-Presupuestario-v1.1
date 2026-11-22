@@ -31,6 +31,7 @@ import {
   type FilaCuota, type CuotaGuardada,
 } from "@/lib/arrendamientos/cuotas"
 import { altaContraparte } from "@/lib/proveedores/alta"
+import { numerarCuotas, posicionDe, type Posicion } from "@/lib/arrendamientos/numeracion-y-posicion"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { Permisable } from "@/components/modo-permisos"
 
@@ -63,6 +64,41 @@ interface Venta {
 }
 
 /**
+ * 🌾 A-FEAT-1642 (nota 🌙 JMS 12/11: «ver rápidamente cuánto ya vendí, cuánto no vendí, qué tan expuesto estoy»):
+ * la posición en una barra — verde = vendido en pesos (precio cerrado) · azul = vendido en dólares sin pesificar ·
+ * ámbar = sin vender. Las tres suman el total (control a la vista).
+ */
+function BarraPosicion({ p, grande = false }: { p: Posicion; grande?: boolean }) {
+  if (p.total <= 0) return null
+  const pct = (n: number) => Math.max(0, Math.min(100, (n / p.total) * 100))
+  const vendido = p.enPesos + p.enDolaresSinPesificar
+  const cierra = Math.abs(p.enPesos + p.enDolaresSinPesificar + p.sinVender - p.total) < 0.01
+  return (
+    <div className={grande ? "space-y-1" : "space-y-0.5"}>
+      <div className={`flex w-full overflow-hidden rounded ${grande ? "h-5" : "h-2.5"} bg-gray-100`}>
+        <div className="bg-emerald-500" style={{ width: `${pct(p.enPesos)}%` }} title={`Vendido en pesos: ${fmtAR(p.enPesos, 1)} tn`} />
+        <div className="bg-sky-500" style={{ width: `${pct(p.enDolaresSinPesificar)}%` }} title={`Vendido en U$S sin pesificar: ${fmtAR(p.enDolaresSinPesificar, 1)} tn`} />
+        <div className="bg-amber-300" style={{ width: `${pct(p.sinVender)}%` }} title={`Sin vender: ${fmtAR(p.sinVender, 1)} tn`} />
+      </div>
+      <div className={`flex flex-wrap gap-x-3 ${grande ? "text-xs" : "text-[10px]"} text-gray-600`}>
+        <span><b className="text-gray-800">{fmtAR(vendido / p.total * 100, 0)}%</b> vendido ({fmtAR(vendido, 1)} de {fmtAR(p.total, 1)} tn)</span>
+        <span className="text-emerald-700">■ $ cerrado {fmtAR(p.enPesos, 1)}</span>
+        <span className="text-sky-700">■ U$S sin pesificar {fmtAR(p.enDolaresSinPesificar, 1)}</span>
+        <span className="text-amber-700">■ sin vender {fmtAR(p.sinVender, 1)}</span>
+        {!cierra && <span className="text-red-600">⚠ no cierra con el total</span>}
+      </div>
+    </div>
+  )
+}
+
+/** El chip de MONEDA de una venta: lo que JMS pidió ver a simple vista. */
+function ChipMoneda({ v }: { v: Venta }) {
+  if (v.modo === "pizarra") return <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800">$ pizarra</span>
+  if (v.tc) return <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-800" title="Precio en dólares ya pesificado">U$S → $</span>
+  return <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[11px] font-semibold text-sky-800" title="Precio en dólares todavía sin pesificar: el monto en pesos es estimado">U$S sin pesificar</span>
+}
+
+/**
  * @param empresa filtra los contratos de esa empresa. Los contratos viven en `public` con una
  *   columna `empresa` (no hay una tabla por schema), así que acá es un filtro, no un cambio de
  *   schema. Sin `empresa` se muestran todos — que es como venía funcionando.
@@ -75,6 +111,10 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
   const [precios, setPrecios] = useState<PrecioGrano[]>([])
   const [tcs, setTcs] = useState<TipoCambio[]>([])
   const [abiertos, setAbiertos] = useState<Record<string, boolean>>({})
+  // 🌾 A-FEAT-1642: dos vistas que JMS prueba con un switch («yo hago switch, las pruebo y te digo cuál queda»)
+  const [vista, setVista] = useState<"tabla" | "posicion">("tabla")
+  useEffect(() => { const v = typeof window !== "undefined" ? window.localStorage.getItem("arrendamientos.vista") : null; if (v === "tabla" || v === "posicion") setVista(v) }, [])
+  const cambiarVista = (v: "tabla" | "posicion") => { setVista(v); try { window.localStorage.setItem("arrendamientos.vista", v) } catch { /* sin storage */ } }
 
   const [modalContrato, setModalContrato] = useState<DatosModalContrato | null>(null)
   // Con `venta` es EDITAR una venta ya hecha (A-BUG-100); sin ella, fijar una nueva.
@@ -205,6 +245,35 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
         </Button></Permisable>
       </div>
 
+      {/* 🌾 A-FEAT-1642: el switch de vistas y la posición de todo lo que se ve, por campaña y grano */}
+      {!cargando && contratos.length > 0 && (() => {
+        const grupos = new Map<string, Contrato[]>()
+        for (const c of contratos) grupos.set(`${c.campania} · ${c.grano}`, [...(grupos.get(`${c.campania} · ${c.grano}`) ?? []), c])
+        return (
+          <Card className="border-slate-300">
+            <CardContent className="space-y-3 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold text-gray-600">Vista:</span>
+                {([["tabla", "📋 Tabla (cuotas y ventas)"], ["posicion", "📊 Posición (cuánto vendí)"]] as const).map(([v, txt]) => (
+                  <button key={v} type="button" onClick={() => cambiarVista(v)}
+                    className={`rounded border px-2 py-0.5 text-xs ${vista === v ? "border-slate-700 bg-slate-700 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}>{txt}</button>
+                ))}
+                <span className="text-[10px] text-gray-400">probalas y elegí cuál queda</span>
+              </div>
+              {[...grupos.entries()].map(([k, cs]) => {
+                const p = posicionDe(cs.flatMap(c => cuotasDe(c.id).map(q => ({ tons: tonsCuota(Number(c.has), Number(q.qq_ha_cuota)), ventas: ventasDe(q.id) }))))
+                return (
+                  <div key={k}>
+                    <div className="mb-0.5 text-xs font-semibold text-gray-700">Campaña {k} <span className="font-normal text-gray-400">· {cs.length} contrato{cs.length === 1 ? "" : "s"}</span></div>
+                    <BarraPosicion p={p} grande />
+                  </div>
+                )
+              })}
+            </CardContent>
+          </Card>
+        )
+      })()}
+
       {cargando ? (
         <div className="flex items-center justify-center py-16 text-gray-400">
           <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Cargando…
@@ -217,6 +286,8 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
         const qs = cuotasDe(c.id)
         const abierto = abiertos[c.id] ?? true
         const guard = validarGuardarrailQq(Number(c.qq_ha_total), qs)
+        const nros = numerarCuotas(qs)   // 🔢 A-FEAT-1643: la cuota es la fecha de cobro; lo demás son partes
+        const posC = posicionDe(qs.map(q => ({ tons: tonsCuota(Number(c.has), Number(q.qq_ha_cuota)), ventas: ventasDe(q.id) })))
 
         return (
           <Card key={c.id}>
@@ -260,9 +331,44 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
                   {" "}(diferencia {fmtAR(guard.diferencia)}). Es sólo un aviso.
                 </p>
               )}
+              {qs.length > 0 && <div className="pt-1"><BarraPosicion p={posC} grande={vista === "posicion"} /></div>}
             </CardHeader>
 
-            {abierto && (
+            {abierto && vista === "posicion" && qs.length > 0 && (
+              <CardContent className="space-y-2 pt-0">
+                {[...new Set(qs.map(q => nros[q.id]?.nro))].sort((a, b) => (a ?? 0) - (b ?? 0)).map(n => {
+                  const partes = qs.filter(q => nros[q.id]?.nro === n)
+                  const pq = posicionDe(partes.map(q => ({ tons: tonsCuota(Number(c.has), Number(q.qq_ha_cuota)), ventas: ventasDe(q.id) })))
+                  const vs = partes.flatMap(q => ventasDe(q.id))
+                  return (
+                    <div key={n} className="rounded border bg-white p-2">
+                      <div className="mb-1 flex flex-wrap items-center gap-2 text-sm">
+                        <b>Cuota {n} de {nros[partes[0].id]?.de}</b>
+                        <span className="text-xs text-gray-500">cobro {new Date(partes[0].fecha_cobro_estimada + "T00:00:00").toLocaleDateString("es-AR")}</span>
+                        {partes.length > 1 && <span className="text-[10px] text-gray-400">{partes.length} partes</span>}
+                        {partes.some(q => q.en_dolares) && <span className="rounded bg-emerald-50 px-1 text-[10px] text-emerald-800">💵 se cobra en dólares</span>}
+                      </div>
+                      <BarraPosicion p={pq} />
+                      {vs.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {vs.map(v => {
+                            const m = montoVenta(v, tcs)
+                            return (
+                              <span key={v.id} className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px]">
+                                <ChipMoneda v={v} /> {fmtAR(Number(v.tons), 1)} tn ·{" "}
+                                <b>{v.modo === "pizarra" ? `${fmtAR(v.precio_pesos)}/tn` : `U$S ${fmtAR(v.precio_usd)}/tn`}</b>
+                                {" "}= {fmtPesos(m.monto)}{m.estimado && <span className="text-amber-500" title="Estimado: el TC no está fijado">*</span>}
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </CardContent>
+            )}
+            {abierto && vista === "tabla" && (
               <CardContent className="p-0">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 text-xs text-gray-600">
@@ -291,9 +397,12 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
                         <>
                           <tr key={q.id} className="border-b hover:bg-gray-50">
                             <td className="px-3 py-2">
-                              #{q.numero_cuota}
-                              {q.cuota_padre_id && (
-                                <span className="ml-1 text-[10px] text-gray-400">(saldo)</span>
+                              <span title={`Fila #${q.numero_cuota} de la base. La cuota es la fecha de cobro; las filas con la misma fecha son sus partes (A, B…)`}>
+                                <b>Cuota {nros[q.id]?.etiqueta ?? q.numero_cuota}</b>
+                                <span className="text-[10px] text-gray-400"> de {nros[q.id]?.de}</span>
+                              </span>
+                              {nros[q.id]?.parte && (
+                                <span className="ml-1 text-[10px] text-gray-400">(parte {nros[q.id]?.parte})</span>
                               )}
                               {q.en_dolares && (
                                 <span className="ml-1 rounded bg-emerald-50 px-1 text-[10px] text-emerald-800"
@@ -339,10 +448,13 @@ export function VistaArrendamientos({ empresa }: { empresa?: 'MSA' | 'PAM' | 'MA
                                 <td className="px-3 py-1.5 pl-8 text-gray-500" colSpan={3}>
                                   Venta · {fmtAR(Number(v.tons), 2)} tn · {v.modo}
                                 </td>
-                                <td className="px-3 py-1.5 text-gray-600" colSpan={3}>
+                                <td className="px-3 py-1.5 text-gray-700" colSpan={3}>
+                                  <ChipMoneda v={v} />{" "}
+                                  <span className="text-sm font-semibold">
                                   {v.modo === "pizarra"
-                                    ? `$${fmtAR(v.precio_pesos)}/tn`
-                                    : `USD ${fmtAR(v.precio_usd)} × TC ${v.tc ? fmtAR(v.tc) : "sin fijar"}`}
+                                    ? `${fmtAR(v.precio_pesos)}/tn`
+                                    : `U$S ${fmtAR(v.precio_usd)}/tn × TC ${v.tc ? fmtAR(v.tc) : "sin fijar"}`}
+                                  </span>
                                   {/* 📅 nota 🌙 JMS 11/11: «acá es importante las fechas: fecha de fijación del precio en dólares,
                                       fecha de pesificación» */}
                                   <span className="block text-[10px] text-gray-500">

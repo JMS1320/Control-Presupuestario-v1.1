@@ -34,7 +34,7 @@ interface Props {
   /** El pie de cada fila: «sin imputar», «03/2026»… (opcional) */
   rotuloDe?: (id: string) => string | null
   /** Qué hace «Buscar»: sólo mail (Subdiarios: la carpeta es «Vincular PDFs») o carpeta y mail */
-  dondeBusca: 'mail' | 'ambos'
+  dondeBusca: 'mail' | 'ambos' | 'carpeta'
   buscando: boolean
   proveedores: Record<string, ProveedorMail>
   onGuardarMail: (cuit: string, mail: string) => Promise<boolean>
@@ -42,6 +42,8 @@ interface Props {
   onPedir: (ids: string[]) => void
   onLlegaron: (ids: string[]) => void
   onBuscar: (ids: string[]) => void
+  /** 📂 A-FEAT-1648: con dondeBusca='carpeta', el segundo botón para buscar también en el mail */
+  onBuscarMail?: (ids: string[]) => void
   /** Algo más en cada fila (en «sin comprobante»: pegar el link o elegir el candidato) */
   accionFila?: (id: string) => ReactNode
 }
@@ -49,7 +51,7 @@ interface Props {
 const fechaAR = (iso?: string | null) => iso ? iso.slice(0, 10).split('-').reverse().join('/') : '—'
 const pesos = (n?: number | null) => (Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-export function PanelFacturasSinPdf({ filas: filasTodas, rotuloDe, dondeBusca, buscando, proveedores, onGuardarMail, onPortal, onPedir, onLlegaron, onBuscar, accionFila }: Props) {
+export function PanelFacturasSinPdf({ filas: filasTodas, rotuloDe, dondeBusca, buscando, proveedores, onGuardarMail, onPortal, onPedir, onLlegaron, onBuscar, onBuscarMail, accionFila }: Props) {
   // A-FEAT-1399 (notas 🌙 de JMS 27/10): ordenada por FECHA y con filtro de PROVEEDOR.
   // «Siempre que haya datos se debe pensar el orden lógico en que lo quiere ver el usuario.»
   const [filtroProv, setFiltroProv] = useState('')
@@ -152,10 +154,18 @@ export function PanelFacturasSinPdf({ filas: filasTodas, rotuloDe, dondeBusca, b
         <Button size="sm" disabled={buscables.length === 0 || buscando} onClick={() => onBuscar(buscables)}
           title={dondeBusca === 'mail'
             ? 'Buscar el PDF en el mail (del proveedor y en los reenvíos). La carpeta la mira «🔗 Vincular PDFs»'
-            : 'Buscar el PDF: primero la carpeta de su subdiario (sin imputar: su mes de emisión y el siguiente), después el mail'}>
+            : dondeBusca === 'carpeta'
+              ? 'Buscar el PDF sólo en la carpeta de su subdiario (sin imputar: su mes de emisión y el siguiente). Para el mail, el botón de al lado'
+              : 'Buscar el PDF: primero la carpeta de su subdiario (sin imputar: su mes de emisión y el siguiente), después el mail'}>
           {buscando ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Search className="h-4 w-4 mr-1" />}
-          {dondeBusca === 'mail' ? '📧 Buscar en el mail' : '🔎 Buscar (carpeta y mail)'} ({buscables.length})
+          {dondeBusca === 'mail' ? '📧 Buscar en el mail' : dondeBusca === 'carpeta' ? '📂 Buscar en su carpeta' : '🔎 Buscar (carpeta y mail)'} ({buscables.length})
         </Button>
+        {dondeBusca === 'carpeta' && onBuscarMail && (
+          <Button variant="outline" size="sm" disabled={buscables.length === 0 || buscando} onClick={() => onBuscarMail(buscables)}
+            title="Primero la carpeta y, lo que no aparezca, en el mail (del proveedor y los reenvíos)">
+            📧 Carpeta y también el mail ({buscables.length})
+          </Button>
+        )}
         {buscando && <span className="text-xs text-blue-700">Hay una búsqueda corriendo: el avance está en el cartel de arriba a la derecha.</span>}
       </div>
       {/* ℹ️ nota JMS 11/11 («¿por qué me pinta de negro algunas y otras de gris?»): lo dice la pantalla */}

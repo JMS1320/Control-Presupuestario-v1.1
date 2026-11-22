@@ -377,7 +377,8 @@ function RegistroMails() {
     const { data: ult } = await supabase.from("mails_registro").select("created_at").order("created_at", { ascending: false }).limit(1)
     const u = (ult?.[0] as { created_at?: string } | undefined)?.created_at ?? null
     setUltimoRegistro(u)
-    return { cantidad: todos.length, ultimo: u }
+    // ⚠️ Tanda 22/11: acá había un `return` que cortaba antes de leer el historial del buscador y el
+    // inventario → la columna «Qué hizo» nunca recibía esos datos. El return va al final.
     // Qué hizo el sistema con cada mail: el historial del buscador de facturas y el inventario de reenvíos, por id
     const ids = todos.map(m => m.mensaje_id)
     const bs: BusquedaConMail[] = [], inv: InventarioConMail[] = []
@@ -390,6 +391,7 @@ function RegistroMails() {
       bs.push(...((b ?? []) as BusquedaConMail[])); inv.push(...((v ?? []) as InventarioConMail[]))
     }
     setBusquedas(bs); setInventario(inv)
+    return { cantidad: todos.length, ultimo: u }
   }, [dias, dia])
   useEffect(() => { cargar() }, [cargar])
 
@@ -467,12 +469,14 @@ function RegistroMails() {
         <Input placeholder="Buscar… (varias palabras, «frase exacta», -sin esto)" value={texto} onChange={e => setTexto(e.target.value)} className="h-8 max-w-xs"
           title={"Busca en asunto, de/para, el texto del mail, los adjuntos, el tipo, lo que se hizo y la nota.\nSin acentos ni mayúsculas. Varias palabras: tienen que estar todas.\n\"cuota 11\" = frase exacta · -mora = que no diga mora · 61126 encuentra 61.126,50"} />
         {/* 🔄 A-BUG-1550: gira mientras lee y avisa al terminar. Lee lo que registró el robot del mail (pasa cada ~15 min). */}
-        <Button size="sm" variant="ghost" disabled={cargando} title="Volver a leer lo que registró el robot del mail (pasa cada ~15 min; no trae de Gmail lo que todavía no registró)"
+        {/* 🏷️ Nota JMS 13/11 («el botón de reciclar pensé que era para otra cosa, que sea más claro»): con texto, no sólo el ícono. */}
+        <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" disabled={cargando} title="Volver a leer lo que registró el robot del mail (pasa cada ~15 min; no trae de Gmail lo que todavía no registró)"
           onClick={async () => {
             const r = await cargar()
             if (r) toast.success(`Leído de nuevo: ${r.cantidad} mails${r.ultimo ? ` · el último lo registró el robot ${fmtFecha(r.ultimo)}` : ""}`)
           }}>
           <RefreshCw className={`h-4 w-4 ${cargando ? "animate-spin" : ""}`} />
+          {cargando ? "Leyendo…" : "Releer la lista"}
         </Button>
         {ultimoRegistro && <span className="text-xs text-muted-foreground" title="El robot del mail registra los mails nuevos cada ~15 minutos">último registrado {fmtFecha(ultimoRegistro)}</span>}
         {filtrosActivos > 0 && (

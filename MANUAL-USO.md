@@ -2425,6 +2425,13 @@ después en el panel de **métodos de templates** del Presupuesto, que muestra e
 > Presupuesto lo lee. **Fijar = vender.**
 > Arquitectura y fórmulas → `MODULO_PRESUPUESTO.md` § INGRESOS — Arrendamientos agrícolas.
 
+### Cuánto vendí, a simple vista *(22/11)*
+- Arriba, el switch **📋 Tabla / 📊 Posición** (queda recordado). En las dos, una **barra por campaña y grano** y otra en cada contrato: **verde** = vendido con el precio en pesos cerrado (pizarra o dólar ya pesificado) · **azul** = vendido en dólares todavía sin pesificar · **ámbar** = sin vender. Al lado, el % vendido y las toneladas de cada parte (suman el total).
+- **Tabla**: las cuotas y sus ventas como siempre; cada venta con su **chip de moneda** ($ pizarra · U$S → $ · U$S sin pesificar) y el precio en grande.
+- **Posición**: sin tabla — una tarjeta por cuota con su barra y sus ventas.
+- **Número de cuota**: la cuota es la **fecha de cobro**; si una cuota se vendió o se cargó en partes, dice **«Cuota 2A / 2B de 3»**.
+  ⚠️ Sin probar todavía → A-TEST-1390
+
 ### Dónde está cada cosa
 
 | Necesito… | Voy a… |
@@ -3967,6 +3974,7 @@ solo, y al pie dice cuántos pagos se exportaron para que lo cruces con la panta
 Todo lo que entra y sale de la casilla **sanmanuel.sp**, registrado y con link a cada mail.
 
 - **Registro**: elegí el período (último día, 7, 30 o 90 días). Los chips de arriba agrupan: **Para mirar** (en rojo: mora, vencimientos, saldo negativo, firmas), **Sin regla** (nadie dijo todavía qué son), **Guardados**, **Archivados** (propaganda y avisos sin importancia) y **Enviados**. Los de abajo filtran por tipo (Impuestos, Contadores, Facturas…). Click prende o apaga un chip; Ctrl+click deja sólo ése.
+- **Releer la lista** vuelve a leer lo que registró el robot del mail (pasa cada ~15 min); no trae de Gmail lo que el robot todavía no registró.
 - El **asunto** abre el mail en Gmail (con la sesión de sanmanuel.sp abierta). El 📎 dice cuántos adjuntos tiene.
 - Si un mail está mal clasificado, cambiale el **tipo** en su renglón: queda puesto a mano (✎) y manda sobre la regla. Para volver al de la regla, elegí el mismo que decía la regla.
 - Abajo de los chips, una línea suma los grupos: tiene que dar el total. Si no da, aparece en rojo.
