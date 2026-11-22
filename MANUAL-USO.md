@@ -849,7 +849,7 @@ Abajo de cada bloque, «✓ los números cierran» (o un aviso rojo si no).
 4. **Cuenta con socios**: el saldo con cada socio al cierre del período (+ el socio le debe · − le debe al socio) y **Ver la cuenta**: cada par (MSA↔MA, PAM↔MA, MSA↔PAM, y JMS / AMS / Cotitulares cuando aparecen), desde el **31/12/2024 en 0**, mes por mes, en retiros directos · pagos por su cuenta · Libertad · aportes; cada mes se abre hasta el movimiento. Dice desde cuándo tiene datos cada cuenta: los meses anteriores llevan ⚠️.
 5. **El control**: que la empresa cierre (secciones + financiado + pagado por cuenta = lo que se movió en sus cuentas), que las tres empresas den lo mismo que «Por caja», y los pares — lo que uno pagó por el otro, y las transferencias vistas de los dos lados (⚠️ con el mes si no son espejo).
 6. **Excel / PDF / Imprimir**: los mismos que «Por caja», con las dos secciones de socios abiertas; el Excel suma la hoja **Cuenta entre socios** (saldo mes por mes con fórmulas y el detalle).
-7. **Permiso**: candado «Dashboard → vista Por responsable». Hoy es para admin: lee las cuentas de las tres empresas.
+7. **Permiso**: candado «Dashboard → vista Por responsable». Para que **MA** la vea: en su rol, la sección Dashboard con los candados «vista Por responsable» y «chip MA». Ella ve sólo lo suyo (sus cuentas, lo que otros pagaron por ella y sus cuentas con cada socio); a ella el Dashboard le abre en «Por responsable», y puede pasar a «Por caja». Cada uno abre en la vista que eligió la última vez.
 
 ⚠️ Sin probar todavía → [A-TEST-1391](PENDIENTES.md#a-test-1391)
 
