@@ -83,6 +83,7 @@ import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
 import { cuentaDeFila } from "@/lib/pagos/cuenta-de-fila"
 import { estadoSugeridoParaLote } from "@/lib/pagos/estado-sugerido-lote"
 import { cabezasHoy } from "@/lib/productivo/cabezas-hoy"
+import { numerarCuotas, posicionDe } from "@/lib/arrendamientos/numeracion-y-posicion"
 import { seccionDePeso, cortesUniformes, corteDelMedio, gananciaRealDelGrupo, asignarSecciones, textoSeccion } from "@/lib/productivo/segmentos-peso"
 import { nroDeCuenta } from "@/lib/facturas/nro-de-cuenta"
 import { hojaDePendientes } from "@/lib/balance/pendientes-balance"
@@ -14383,6 +14384,28 @@ export function correrCasos(): Resultado[] {
     const as = asignarSecciones([{ id: "x", peso: 175 }, { id: "y", peso: 205 }], [180, 200], "A", 0)
     const v5 = `${textoSeccion([as.x])} | ${textoSeccion([as.y])} | ${textoSeccion([])}`
     chequear("Pesadas — secciones", "Cada animal lleva su código (letra del segmentador + sección desde la más liviana) y su rango", "A1 · < 180 | A3 · > 200 | null", v5, v5 === "A1 · < 180 | A3 · > 200 | null", "A-FEAT-1636")
+  }
+  {
+    // A-FEAT-1643 — la cuota es la FECHA de cobro; las filas que la comparten son sus partes (dato real 22/11).
+    const rojas = numerarCuotas([
+      { id: "r1", numero_cuota: 1, fecha_cobro_estimada: "2026-07-10" }, { id: "r2", numero_cuota: 2, fecha_cobro_estimada: "2026-11-10" },
+      { id: "r3", numero_cuota: 3, fecha_cobro_estimada: "2026-11-10" }, { id: "r4", numero_cuota: 4, fecha_cobro_estimada: "2027-05-10" },
+      { id: "r5", numero_cuota: 5, fecha_cobro_estimada: "2027-05-10" },
+    ])
+    const v1 = ["r1", "r2", "r3", "r4", "r5"].map(k => rojas[k].etiqueta).join(",") + " de " + rojas.r1.de
+    chequear("Arrendamientos — cuotas", "🔑 Rojas (Sanpa): 5 filas en 3 fechas = 3 cuotas; las de la misma fecha son partes A/B", "1,2A,2B,3A,3B de 3", v1, v1 === "1,2A,2B,3A,3B de 3", "A-FEAT-1643")
+    const naz = numerarCuotas([
+      { id: "n1", numero_cuota: 1, fecha_cobro_estimada: "2026-11-20" }, { id: "n2", numero_cuota: 2, fecha_cobro_estimada: "2026-11-20" },
+      { id: "n3", numero_cuota: 3, fecha_cobro_estimada: "2027-04-20" },
+    ])
+    const v2 = ["n1", "n2", "n3"].map(k => naz[k].etiqueta).join(",") + " de " + naz.n1.de
+    chequear("Arrendamientos — cuotas", "Nazarenas (Provinvest): 3 filas en 2 fechas = 2 cuotas", "1A,1B,2 de 2", v2, v2 === "1A,1B,2 de 2", "A-FEAT-1643")
+    const p = posicionDe([
+      { tons: 100, ventas: [{ tons: 30, modo: "pizarra", tc: null }, { tons: 20, modo: "matba", tc: 1200 }, { tons: 10, modo: "matba", tc: null }] },
+      { tons: 50, ventas: [] },
+    ])
+    const v3 = `${p.total} = ${p.enPesos} + ${p.enDolaresSinPesificar} + ${p.sinVender}`
+    chequear("Arrendamientos — posición", "🔑 Vendido en pesos (pizarra o pesificado) + en dólares sin pesificar + sin vender = total", "150 = 50 + 10 + 90", v3, v3 === "150 = 50 + 10 + 90", "A-FEAT-1642")
   }
   return r
 }
