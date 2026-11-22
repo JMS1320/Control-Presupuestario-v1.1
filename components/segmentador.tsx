@@ -8,9 +8,12 @@ import { hoyArgentina } from "@/lib/fechas"
 
 import { useState, useEffect, useRef, Fragment } from "react"
 import type { SegConfig, SegSnapshot } from "./analisis-productivo"
+import { esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
+import { cortesUniformes, corteDelMedio, gananciaRealDelGrupo, asignarSecciones, etiquetaRango, type AsignacionSeccion } from "@/lib/productivo/segmentos-peso"
 
 
 interface AnimalSeg {
+  id?: string
   sexo: string | null
   es_torito: boolean
   activo: boolean
@@ -33,6 +36,10 @@ interface Props {
   initialConfig?: SegConfig
   // frozen: modo foto → mostrar/reportar la foto congelada, sin tocar el rodeo
   frozen?: SegSnapshot | null
+  /** 🐄 A-FEAT-1636: en qué sección cae cada animal (id → «A2 · 180 / 200»), para la tabla de caravanas. */
+  onAsignaciones?: (m: Record<string, AsignacionSeccion>) => void
+  /** Posición del segmentador (0 = A): ordena las secciones en la tabla de caravanas. */
+  nSegmentador?: number
 }
 
 function getUltima(pesadas: { fecha: string; peso_kg: number }[]) {
@@ -99,11 +106,18 @@ export function poblacionLabel(grupos: string[]): string {
   return parts.join(" + ")
 }
 
-export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, onSections, onConfig, onRemove, initialConfig, frozen }: Props) {
+export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, onSections, onConfig, onRemove, initialConfig, frozen, onAsignaciones, nSegmentador = 0 }: Props) {
   const [segColapsado, setSegColapsado] = useState(false)
   const [segGrupos, setSegGrupos] = useState<Set<string>>(new Set(initialConfig?.grupos ?? GRUPOS_ALL))
   const [segOrigen, setSegOrigen] = useState<"estimado" | "pesada">(initialConfig?.origen === "pesada" ? "pesada" : "estimado")
-  const [segGanancia, setSegGanancia] = useState(initialConfig?.ganancia ?? gananciaDefault)
+  // 🐄 A-FEAT-1636 (JMS 22/11: «¿podría aplicarse la ganancia que viene habiendo entre las dos últimas
+  // pesadas?»): campo VACÍO = la ganancia real del grupo; con un número = manda el usuario. Un estudio
+  // guardado antes de esto trae su ganancia y se respeta (era manual por construcción).
+  const [segGananciaManual, setSegGananciaManual] = useState<number | null>(
+    initialConfig ? (initialConfig.gananciaManual === false ? null : initialConfig.ganancia) : null)
+  const [segGananciaTxt, setSegGananciaTxt] = useState(segGananciaManual != null ? String(segGananciaManual).replace(".", ",") : "")
+  // Cuántas secciones arma por default (antes, 5 fijas). JMS 22/11: «tener para poner cuántos segmentadores por default».
+  const [segNSecciones, setSegNSecciones] = useState<number>(initialConfig?.nSecciones ?? 5)
   const [segCada, setSegCada] = useState(initialConfig?.cada ?? 20)
   const [segDesde, setSegDesde] = useState<number | null>(initialConfig?.desde ?? null)
   const [segFecha, setSegFecha] = useState(initialConfig?.fecha ?? "")
@@ -125,6 +139,15 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
   const asOf = segPesadaBase || null
   const hastaMs = segHasta ? new Date(segHasta + "T00:00:00").getTime() : undefined
   const grupoDe = (t: AnimalSeg) => t.es_torito ? (t.sexo === "Macho" ? "torito" : "ternera_rep") : (t.sexo === "Macho" ? "macho" : "hembra")
+  // El número de cada chip: animales activos con pesada de ese grupo.
+  const cuentaGrupo: Record<string, number> = {}
+  for (const t of animales) if (t.activo && t.pesadas_terneros.length > 0) cuentaGrupo[grupoDe(t)] = (cuentaGrupo[grupoDe(t)] ?? 0) + 1
+  // Ganancia real del grupo elegido: promedio de cada animal entre sus 2 últimas pesadas (hasta la pesada base).
+  const gReal = gananciaRealDelGrupo(
+    animales.filter(t => t.activo && t.pesadas_terneros.length > 0 && segGrupos.has(grupoDe(t))).map(t => ({ pesadas: t.pesadas_terneros })),
+    asOf)
+  const segGanancia = segGananciaManual ?? (gReal.promedio != null ? Math.round(gReal.promedio * 100) / 100 : gananciaDefault)
+  const gananciaEsReal = segGananciaManual == null && gReal.promedio != null
   // Animales con su peso (conserva identidad → para el panel de individuos / sub-segmentar).
   const segAnimalesPeso: { a: AnimalSeg; peso: number }[] = animales
     .filter(t => t.activo && t.pesadas_terneros.length > 0 && segGrupos.has(grupoDe(t)))
@@ -132,22 +155,10 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
     .filter((x): x is { a: AnimalSeg; peso: number } => x.peso != null)
   const segPesos: number[] = segAnimalesPeso.map(x => x.peso)
 
-  const SEG_SECCIONES_DEFAULT = 5
-  const segNCortesDefault = SEG_SECCIONES_DEFAULT - 1
-  const segDesdeAuto = (() => {
-    if (!segPesos.length) return 0
-    const prom = segPesos.reduce((s, p) => s + p, 0) / segPesos.length
-    const centro = Math.round(prom / 10) * 10
-    return centro - ((segNCortesDefault - 1) / 2) * segCada
-  })()
-  const segDesdeEff = segDesde ?? segDesdeAuto
-  const cortesAuto = (() => {
-    if (!segPesos.length) return [] as number[]
-    const cortes: number[] = []
-    for (let i = 0; i < segNCortesDefault; i++) cortes.push(Math.round(segDesdeEff + i * segCada))
-    return cortes
-  })()
-  const cortesEff = (segCortes && segCortes.length >= 1) ? [...segCortes].sort((a, b) => a - b) : cortesAuto
+  const cortesAuto = cortesUniformes(segPesos, segNSecciones, segCada, segDesde)
+  const segDesdeEff = segDesde ?? cortesAuto[0] ?? 0
+  // segCortes = [] es válido (una sola sección); null = los automáticos.
+  const cortesEff = segCortes != null ? [...segCortes].sort((a, b) => a - b) : cortesAuto
   const segMinPeso = segPesos.length ? Math.min(...segPesos) : 0
   const segMaxPeso = segPesos.length ? Math.max(...segPesos) : 1
   const segAxisMin = segMinPeso
@@ -167,7 +178,7 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
   })()
   const segDensMax = Math.max(1, ...segDensidad.map(b => b.n))
   const segReporte = (() => {
-    if (!segPesos.length || cortesEff.length < 1) return { filas: [] as { lo: number; hi: number; cantidad: number; promedio: number; pct: number }[], total: null as null | { cantidad: number; promedio: number } }
+    if (!segPesos.length) return { filas: [] as { lo: number; hi: number; cantidad: number; promedio: number; pct: number }[], total: null as null | { cantidad: number; promedio: number } }
     const bounds = [-Infinity, ...cortesEff, Infinity]
     const filas: { lo: number; hi: number; cantidad: number; promedio: number; pct: number }[] = []
     for (let i = 0; i < bounds.length - 1; i++) {
@@ -225,7 +236,7 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
   const livePayload: SegPayload = {
     poblacion,
     secciones: segReporte.filas.map(r => ({
-      label: r.lo === -Infinity ? `< ${Math.round(r.hi)}` : r.hi === Infinity ? `> ${Math.round(r.lo)}` : `${Math.round(r.lo)} / ${Math.round(r.hi)}`,
+      label: etiquetaRango(r.lo, r.hi),
       cantidad: r.cantidad, promedio: r.promedio,
     })),
     total: segReporte.total,
@@ -247,14 +258,23 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
   const fechaCalculo = frozen
     ? (initialConfig?.fechaCalculo ?? hoyISO)
     : (segHasta || hoyISO)
-  const cfg: SegConfig = { origen: segOrigen, grupos: [...segGrupos], ganancia: segGanancia, cada: segCada, desde: segDesde, fecha: segFecha, cortes: segCortes, pesadaBaseFecha, fechaCalculo, snapshot: frozen ?? livePayload }
+  const cfg: SegConfig = { origen: segOrigen, grupos: [...segGrupos], ganancia: segGanancia, cada: segCada, desde: segDesde, fecha: segFecha, cortes: segCortes, pesadaBaseFecha, fechaCalculo, snapshot: frozen ?? livePayload, nSecciones: segNSecciones, gananciaManual: segGananciaManual != null }
   const cfgKey = JSON.stringify(cfg)
   useEffect(() => { onConfig?.(cfg) }, [cfgKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 🐄 A-FEAT-1636: la sección de cada animal, para la tabla de caravanas. En modo foto no hay animales.
+  const asignaciones: Record<string, AsignacionSeccion> = frozen ? {} : asignarSecciones(
+    segAnimalesPeso.filter(x => !!x.a.id).map(x => ({ id: x.a.id as string, peso: x.peso })), cortesEff, titulo, nSegmentador)
+  const asigKey = JSON.stringify(asignaciones)
+  useEffect(() => { onAsignaciones?.(asignaciones) }, [asigKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // El sexo es "maestro": al sacar/poner Machos arrastra Toritos; Hembras arrastra Terneras rep.
   // La reposición sí se puede togglear sola (ej. Machos SIN toritos = solo venta).
   const parRep: Record<string, string> = { macho: "torito", hembra: "ternera_rep" }
-  const toggleGrupo = (k: string) => setSegGrupos(prev => {
+  // Chips según protocolo (lib/ui/chips.ts): Ctrl+click deja sólo ése (el sexo arrastra su reposición).
+  const toggleGrupo = (k: string, soloEste = false) => soloEste
+    ? setSegGrupos(new Set(k === "macho" || k === "hembra" ? [k, parRep[k]] : [k]))
+    : setSegGrupos(prev => {
     const n = new Set(prev)
     const prender = !n.has(k)
     if (k === "macho" || k === "hembra") {
@@ -302,23 +322,33 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
             <span className="text-gray-500">Reposición:</span>
             {([["torito", "🐂 Toritos"], ["ternera_rep", "♀ Terneras rep"]] as const).map(([k, lbl]) => {
               const on = segGrupos.has(k)
-              return <button key={k} type="button" onClick={() => toggleGrupo(k)}
-                className={`px-2 py-0.5 rounded-full border text-xs ${on ? "bg-amber-100 border-amber-400 text-amber-800" : "bg-white border-gray-300 text-gray-400 line-through"}`}>{lbl}</button>
+              return <button key={k} type="button" onClick={e => toggleGrupo(k, esSoloEste(e))} title={tituloChip(lbl)}
+                className={`px-2 py-0.5 rounded-full border text-xs ${on ? "bg-amber-100 border-amber-400 text-amber-800" : "bg-white border-gray-300 text-gray-400"}`}>{lbl} <span className="opacity-70">{cuentaGrupo[k] ?? 0}</span></button>
             })}
             <span className="text-gray-500 ml-2">Venta:</span>
             {([["macho", "♂ Machos"], ["hembra", "♀ Hembras"]] as const).map(([k, lbl]) => {
               const on = segGrupos.has(k)
-              return <button key={k} type="button" onClick={() => toggleGrupo(k)}
-                className={`px-2 py-0.5 rounded-full border text-xs ${on ? "bg-sky-100 border-sky-400 text-sky-800" : "bg-white border-gray-300 text-gray-400 line-through"}`}>{lbl}</button>
+              return <button key={k} type="button" onClick={e => toggleGrupo(k, esSoloEste(e))} title={tituloChip(lbl)}
+                className={`px-2 py-0.5 rounded-full border text-xs ${on ? "bg-sky-100 border-sky-400 text-sky-800" : "bg-white border-gray-300 text-gray-400"}`}>{lbl} <span className="opacity-70">{cuentaGrupo[k] ?? 0}</span></button>
             })}
-            <button type="button" onClick={() => setSegGrupos(new Set(GRUPOS_ALL))} className="text-xs text-blue-600 hover:underline ml-1">Todos</button>
-            <button type="button" onClick={() => setSegGrupos(new Set())} className="text-xs text-blue-600 hover:underline">Ninguno</button>
+            <button type="button" onClick={() => setSegGrupos(new Set(GRUPOS_ALL))} className="text-xs text-blue-600 hover:underline ml-1">todos</button>
+            <span className="text-[10px] text-gray-400">{PISTA_CTRL_CLICK}</span>
           </span>
           <label className="flex items-center gap-1 cursor-pointer flex-wrap">
             <input type="radio" checked={segOrigen === "estimado"} onChange={() => setSegOrigen("estimado")} />
             Estimado
-            <input type="number" step="0.1" value={segGanancia} onChange={e => setSegGanancia(parseFloat(e.target.value) || 0)} disabled={segOrigen !== "estimado"} className="w-16 border rounded px-1 py-1" />
+            <input type="text" inputMode="decimal" value={segGananciaTxt} placeholder={String(segGanancia).replace(".", ",")}
+              onChange={e => { const v = e.target.value; setSegGananciaTxt(v); const n = parseFloat(v.replace(",", ".")); setSegGananciaManual(v.trim() === "" || isNaN(n) ? null : n); setSegCortes(null) }}
+              disabled={segOrigen !== "estimado"} title="Vacío = la ganancia real del grupo entre sus 2 últimas pesadas. Escribí un número para usar otra." className="w-16 border rounded px-1 py-1" />
             kg/día
+            {segOrigen === "estimado" && (gananciaEsReal
+              ? <span className={`text-[11px] ${gReal.cabezas < gReal.delGrupo * 0.5 ? "text-amber-700" : "text-emerald-700"}`} title="Promedio de la ganancia de cada animal entre sus 2 últimas pesadas">
+                  real · sobre {gReal.cabezas} de {gReal.delGrupo} cab.{gReal.cabezas < gReal.delGrupo * 0.5 ? " ⚠️ pocas" : ""}
+                </span>
+              : segGananciaManual != null
+                ? <button type="button" onClick={() => { setSegGananciaManual(null); setSegGananciaTxt(""); setSegCortes(null) }} className="text-[11px] text-blue-600 hover:underline"
+                    title={gReal.promedio != null ? `Real: ${gReal.promedio.toFixed(2).replace(".", ",")} kg/día sobre ${gReal.cabezas} cab.` : "Sin 2 pesadas para calcularla"}>✎ a mano · usar la real</button>
+                : <span className="text-[11px] text-gray-400">sin 2 pesadas: uso {String(gananciaDefault).replace(".", ",")}</span>)}
             <span className="text-gray-500">desde</span>
             <select value={segPesadaBase} onChange={e => { setSegPesadaBase(e.target.value); setSegCortes(null) }} disabled={segOrigen !== "estimado"} title="Pesada base de la proyección" className="border rounded px-1 py-1">
               <option value="">última</option>
@@ -336,9 +366,12 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
             </select>
           </label>
           <span className="flex items-center gap-1">
+            <input type="number" min={1} max={15} value={segNSecciones} title="Cuántas secciones arma por default"
+              onChange={e => { setSegNSecciones(Math.min(15, Math.max(1, parseInt(e.target.value) || 1))); setSegCortes(null) }} className="w-12 border rounded px-1 py-1" /> secciones ·
             cada <input type="number" value={segCada} onChange={e => { setSegCada(parseInt(e.target.value) || 20); setSegCortes(null) }} className="w-16 border rounded px-1 py-1" /> kg
             desde <input type="number" value={segDesdeEff} onChange={e => { setSegDesde(parseInt(e.target.value)); setSegCortes(null) }} className="w-16 border rounded px-1 py-1" />
             <button onClick={() => { setSegDesde(null); setSegCortes(null) }} className="underline text-gray-500" title="Volver a rangos uniformes centrados en el promedio">auto</button>
+            <button type="button" onClick={() => setSegCortes(corteDelMedio(segPesos))} className="ml-1 rounded border px-1.5 py-0.5 text-xs text-gray-600 hover:bg-white" title="Borrar los cortes y dejar uno solo, en el promedio (dos mitades)">↺ dejar 1 al medio</button>
           </span>
           <span className="text-gray-400 text-xs">↕ arrastrá los divisores del eje para mover los cortes</span>
         </div>
@@ -360,6 +393,9 @@ export function Segmentador({ titulo, animales, todasFechas, gananciaDefault, on
                     onMouseDown={(e) => { e.preventDefault(); if (segCortes == null) { const c0 = [...cortesEff]; setSegCortes(c0); segCortesRef.current = c0 } setSegDragIdx(i) }}>
                     <div className={`h-[2px] w-full ${enBorrado ? "bg-red-500" : "bg-blue-500 group-hover:bg-blue-700"}`} />
                     <span className={`absolute -left-6 -top-2 text-[9px] font-medium px-0.5 rounded ${enBorrado ? "text-red-600 bg-red-50" : "text-blue-600 bg-white/90"}`}>{enBorrado ? "✕ borrar" : Math.round(c)}</span>
+                    <button type="button" title="Quitar este corte" onMouseDown={e => e.stopPropagation()}
+                      onClick={e => { e.stopPropagation(); const arr = cortesEff.filter((_, j) => j !== i); segCortesRef.current = arr; setSegCortes(arr) }}
+                      className="absolute -right-1 -top-2 text-[10px] leading-none px-0.5 rounded text-gray-300 hover:text-red-600 hover:bg-red-50">✕</button>
                   </div>
                 )
               })}

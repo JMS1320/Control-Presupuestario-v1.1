@@ -83,6 +83,7 @@ import { pagosParaElBanco } from "@/lib/sueldos/pagos-para-banco"
 import { cuentaDeFila } from "@/lib/pagos/cuenta-de-fila"
 import { estadoSugeridoParaLote } from "@/lib/pagos/estado-sugerido-lote"
 import { cabezasHoy } from "@/lib/productivo/cabezas-hoy"
+import { seccionDePeso, cortesUniformes, corteDelMedio, gananciaRealDelGrupo, asignarSecciones, textoSeccion } from "@/lib/productivo/segmentos-peso"
 import { nroDeCuenta } from "@/lib/facturas/nro-de-cuenta"
 import { hojaDePendientes } from "@/lib/balance/pendientes-balance"
 import { resumirMes, llenarConPresente, llenarCon, diasDelMes, tipoDia, type Marca } from "@/lib/sueldos/asistencia"
@@ -14343,6 +14344,25 @@ export function correrCasos(): Resultado[] {
     const v8 = ag.map(g => `${g.entra ? "+" : "-"}${g.grupo}=${g.total}[${g.lugares.map(l => `${l.lugar ?? ""}:${l.total}:${l.renglones.length}`).join(",")}]`).join(" ")
     const e8 = "+Arrendamiento 26/27 · Cuota 2=1000[:1000:1] -Red Vial=350.5[Lima:50:1,Nazarenas:300.5:2]"
     chequear("MA", "📈 Lo que viene agrupado: los ingresos primero; Red Vial con su total = la suma de Lima y Nazarenas, cada una con sus renglones", e8, v8, v8 === e8, "A-FEAT-1634")
+  }
+  {
+    // A-FEAT-1636 — las secciones de peso del segmentador como dato de cada animal (historial de pesadas).
+    const v1 = [seccionDePeso(179, [180, 200]), seccionDePeso(180, [180, 200]), seccionDePeso(250, [200, 180])].join(",")
+    chequear("Pesadas — secciones", "El corte es de la sección de ARRIBA (igual que la tabla del segmentador) y no importa el orden de los cortes", "0,1,2", v1, v1 === "0,1,2", "A-FEAT-1636")
+    const v2 = `${cortesUniformes([200, 200], 5, 20).join("/")} · ${cortesUniformes([200], 1, 20).length} · ${corteDelMedio([183, 197]).join("/")}`
+    chequear("Pesadas — secciones", "5 secciones = 4 cortes centrados en el promedio (como antes); 1 sección = sin cortes; «dejar 1 al medio» = el promedio redondeado a 10", "170/190/210/230 · 0 · 190", v2, v2 === "170/190/210/230 · 0 · 190", "A-FEAT-1636")
+    const g = gananciaRealDelGrupo([
+      { pesadas: [{ fecha: "2026-10-01", peso_kg: 150 }, { fecha: "2026-10-11", peso_kg: 160 }, { fecha: "2026-10-21", peso_kg: 175 }] },
+      { pesadas: [{ fecha: "2026-10-11", peso_kg: 200 }, { fecha: "2026-10-21", peso_kg: 205 }] },
+      { pesadas: [{ fecha: "2026-10-21", peso_kg: 190 }] },
+    ])
+    const v3 = `${g.promedio?.toFixed(2)} sobre ${g.cabezas} de ${g.delGrupo}`
+    chequear("Pesadas — ganancia real", "🔑 Promedio de cada animal entre SUS 2 últimas pesadas (1,5 y 0,5 → 1,00); el que tiene una sola no cuenta, pero se informa sobre cuántas", "1.00 sobre 2 de 3", v3, v3 === "1.00 sobre 2 de 3", "A-FEAT-1636")
+    const g2 = gananciaRealDelGrupo([{ pesadas: [{ fecha: "2026-10-01", peso_kg: 150 }, { fecha: "2026-10-11", peso_kg: 160 }, { fecha: "2026-10-21", peso_kg: 175 }] }], "2026-10-11")
+    chequear("Pesadas — ganancia real", "Con pesada base anterior, toma las 2 últimas HASTA esa fecha (reproduce un estudio)", "1.00", g2.promedio?.toFixed(2) ?? "null", g2.promedio?.toFixed(2) === "1.00", "A-FEAT-1636")
+    const as = asignarSecciones([{ id: "x", peso: 175 }, { id: "y", peso: 205 }], [180, 200], "A", 0)
+    const v5 = `${textoSeccion([as.x])} | ${textoSeccion([as.y])} | ${textoSeccion([])}`
+    chequear("Pesadas — secciones", "Cada animal lleva su código (letra del segmentador + sección desde la más liviana) y su rango", "A1 · < 180 | A3 · > 200 | null", v5, v5 === "A1 · < 180 | A3 · > 200 | null", "A-FEAT-1636")
   }
   return r
 }

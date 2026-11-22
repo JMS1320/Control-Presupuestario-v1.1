@@ -1092,6 +1092,11 @@ Ese fue el caso real: 2 toritos marcados que el stock nunca vio.
   - Al guardar el estudio, *desde/hasta* se **resuelven a fechas concretas** → el estudio reproduce el kilaje exacto aunque después importes pesadas nuevas.
 - Así conviven **Machos y Hembras a la vez** sin mezclarse.
 - **Panel de sección (▶ desplegar una fila de la tabla):** clickeás un rango y se abre debajo: **(1) Sub-segmentar** — "cada X kg" divide ese rango en sub-rangos (cant/prom/%) para informar al comprador cómo viene el lote; **(2) Individuos e índices históricos** — tabla con caravana + peso + **ganancia diaria punta a punta** (1ª → última pesada) + **ganancia diaria últimas pesadas** (entre las 2 últimas fechas), más el **promedio del grupo** arriba. Usa el **mismo peso estimado** que la segmentación. Solo lectura (no re-hace el proceso).
+- **Chips de población**: click prende/apaga · **Ctrl+click deja sólo ése** (Machos o Hembras con su reposición) · cada chip muestra cuántos animales tiene · «todos» vuelve.
+- **Cuántas secciones**: el campo «N secciones» (arranca en 5) arma los cortes parejos alrededor del promedio. **↺ dejar 1 al medio** deja un solo corte en el promedio (dos mitades); la **✕** al lado de cada corte lo quita.
+- **Ganancia del estimado**: con el campo **vacío** usa la **ganancia real** del grupo —el promedio de cada animal entre sus 2 últimas pesadas— y dice «real · sobre N de M cab.» (en ámbar «⚠️ pocas» si se pesó menos de la mitad). Si escribís un número manda el tuyo; «usar la real» vuelve. Los estudios guardados antes conservan su ganancia.
+- **Las secciones llegan a la tabla de caravanas** (abajo, «Ir a → Caravanas»): columna **Sección** (ej. «A2» = segmentador A, 2ª sección desde la más liviana) con su filtro, y con **«Agrupar por sección de peso»** cada sección aparece con su título, sus caravanas y la fila **«Prom. de la sección»** en cada pesada — su evolución. La tabla de ganancia diaria suma una fila por sección. Si movés un corte, la tabla se reacomoda.
+  ⚠️ Sin probar todavía → A-TEST-1388
 
 ### Análisis por segmento (columnas) 🟡
 - Cada columna es un **Segmento** (＋ Segmento). **Fuente** = elegís una sección de cualquier segmentador (etiqueta "A·Machos: 230/250"). Copia Cantidad + Peso inicio (editables).
