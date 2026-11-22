@@ -19243,6 +19243,10 @@ en línea)** construido desde abajo. Cerrado para MSA, se repite para MA y PAM.
   (B115) por cuenta → detalle; B053 seguros cultivo cuelga de «42» solo (ubicarlo con lo agrícola, va con A-FEAT-1633).
 - **Del «ver» (protocolo de páginas, a confirmar)**: el detalle como un nivel más del desplegable de la izquierda; cerrar un grupo cierra sus
   detalles. Datos de origen de a poco: venta de hacienda (cabezas, kg promedio, precio), link a la factura (B089), y dónde más sirve.
+  ✅ **Hecho v3.2 (22/11, JMS «esto sí tratá de hacerlo»)**: el crudo del diario trae en cada VENTA cabezas · kilos · kg promedio · precio ($/kg o
+  $/cabeza) · categoría, línea por línea de la liquidación (granos: toneladas y precio), y en cada FACTURA de compra el 📎 a su PDF (249 de 345:
+  las cargadas sin PDF y las del histórico no lo tienen; las ventas todavía no guardan PDF — `pdf_drive_url` vacío en las 13). Mismos números
+  que la v3.1 (37 ✓, sin paso en la cadena: no mueve resultado). Falta «dónde más sirve»: se suma de a poco a pedido.
 - **Impuestos rurales**: hoy van por FECHA de pago de la cuota (mezcla cuotas 2025 y 2026); el papel del Inmobiliario ya tiene «lo que va al
   ejercicio» → alinear.
 

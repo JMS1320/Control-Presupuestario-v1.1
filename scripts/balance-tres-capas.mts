@@ -157,6 +157,28 @@ const totalizadoraDe = (nroC: string, txt: string) => { const p: any = planPorNr
 /** 🌾 v3 (JMS 22/11): las ventas SIEMPRE en estos grupos (en cero si no hubo), por la cuenta: no por la totalizadora del plan. */
 const GRUPOS_VENTA: Array<[string, RegExp]> = [["Arrendamientos", /^4109/], ["Cereales", /^4101/], ["Hacienda", /^4108/], ["Bienes de uso", /^4102/], ["Ventas varias", /^4103/]]
 const grupoVenta = (nroC: string, txt: string) => { const p: any = planPorNro.get(nroC) ?? planPorCateg.get(txt.trim().toUpperCase()); const n = String(p?.nro_cuenta ?? nroC ?? ""); return GRUPOS_VENTA.find(([, re]) => re.test(n))?.[0] ?? "Otras (fuera de las cuentas de venta)" }
+/** 🧾 v3.2 (JMS 22/11, «datos de origen en el detalle»): lo que dice el comprobante además del importe — en una venta, cuánto se vendió
+ *  y a qué precio (hacienda: cabezas, kg, kg promedio, precio y categoría, renglón por renglón de la liquidación; granos: toneladas y
+ *  precio); en una factura, el link a su PDF en el Drive. Sale de la misma fila que el importe: no es otro cálculo. */
+const ventaPorId = new Map(ventasCrudas.map((v: any) => [String(v.id), v]))
+const fmtN = (v: number, d = 0) => v.toLocaleString("es-AR", { minimumFractionDigits: d, maximumFractionDigits: d })
+function origenDe(a: AsientoLibroDiario): { cols: FilaCrudo; texto: string; url: string } {
+  const url = a.pdf_url ? String(a.pdf_url) : ""
+  if (a.fuente !== "venta") return { cols: { "📎 Factura": url }, texto: "", url }
+  const v: any = ventaPorId.get(String(a.id)) ?? {}
+  const cab = v.cabezas == null ? null : Number(v.cabezas), kg = v.peso_kg == null ? null : Number(v.peso_kg), tn = v.toneladas == null ? null : Number(v.toneladas)
+  const lineas: any[] = Array.isArray(v.hacienda_lineas) ? v.hacienda_lineas : []
+  const partes: string[] = []
+  if (lineas.length) for (const l of lineas) {
+    const c = Number(l.cabezas) || 0, k = l.kilos == null ? null : Number(l.kilos), pr = Number(l.precio) || 0
+    partes.push([`${fmtN(c)} cab`, k ? `${fmtN(k)} kg (${fmtN(k / (c || 1))} kg prom.)` : "", pr ? `$ ${fmtN(pr, 2)}${k ? "/kg" : "/cab"}` : "", l.clasificacion ?? ""].filter(Boolean).join(" · "))
+  } else if (cab != null) partes.push([`${fmtN(cab)} cab`, kg ? `${fmtN(kg)} kg (${fmtN(kg / (cab || 1))} kg prom.)` : "", v.precio_pesos ? `$ ${fmtN(Number(v.precio_pesos), 2)}` : ""].filter(Boolean).join(" · "))
+  else if (tn != null) partes.push([`${fmtN(tn, 2)} tn${v.grano ? " " + v.grano : ""}`, v.precio_usd ? `US$ ${fmtN(Number(v.precio_usd), 2)}/tn (TC ${fmtN(Number(v.tc) || 0, 2)})` : "", v.precio_final_pesos || v.precio_pesos ? `$ ${fmtN(Number(v.precio_final_pesos || v.precio_pesos), 2)}/tn` : ""].filter(Boolean).join(" · "))
+  const precio = lineas.length === 1 ? Number(lineas[0].precio) || null : (cab != null ? Number(v.precio_pesos) || null : Number(v.precio_final_pesos || v.precio_pesos) || null)
+  const unidad = lineas.length === 1 ? (lineas[0].kilos ? "$/kg" : "$/cabeza") : (tn != null ? "$/tn" : cab != null ? "$/kg" : "")
+  return { texto: partes.join(" | "), url, cols: { Cabezas: cab, Kilos: kg, "Kg promedio": cab && kg ? Math.round(kg / cab) : null, Toneladas: tn, Producto: a.cantidades?.producto || "",
+    Precio: precio, "Unidad del precio": precio ? unidad : "", "Categoría / detalle": lineas.length ? lineas.map(l => `${l.cabezas} ${l.clasificacion ?? ""}`).join(" + ") : "", "📎 Factura": url } }
+}
 function bloqueDiario(rotulo: string, asientos: AsientoLibroDiario[], signo: 1 | -1, origenCrudo: string, porGrupoVenta = false): Fila {
   const porTot = new Map<string, Map<string, AsientoLibroDiario[]>>()
   if (porGrupoVenta) for (const [g] of GRUPOS_VENTA) porTot.set(g, new Map())
@@ -172,7 +194,8 @@ function bloqueDiario(rotulo: string, asientos: AsientoLibroDiario[], signo: 1 |
     const f: Fila = { nro: nuevoNro(), nivel: 3, texto: cta, origen: `Libro diario · ${rotulo.toLowerCase()}`, resultado: r2(signo * as.reduce((s, a) => s + (a.total - a.iva), 0)) }
     for (const a of as) crudoDiario.push({ "Nro balance": f.nro, "Va al resultado": "sí", Bloque: rotulo, Totalizadora: tot, Cuenta: cta, Fecha: a.fecha, Subdiario: a.subdiario, Tipo: a.tipo,
       Comprobante: `${a.punto_venta ?? ""}-${a.numero ?? ""}`, CUIT: a.cuit, Contraparte: a.denominacion, "Neto gravado": r2(a.neto_gravado), "No gravado": r2(a.no_gravado), Exento: r2(a.exento),
-      "Otros tributos": r2(a.otros_tributos), IVA: r2(a.iva), Total: r2(a.total), "Al resultado (sin IVA)": r2(signo * (a.total - a.iva)), Origen: origenCrudo, Motivo: a.provision_motivo ?? "" })
+      "Otros tributos": r2(a.otros_tributos), IVA: r2(a.iva), Total: r2(a.total), "Al resultado (sin IVA)": r2(signo * (a.total - a.iva)), Origen: origenCrudo, Motivo: a.provision_motivo ?? "",
+      ...(() => { const o = origenDe(a); return { ...o.cols, "_origen": o.texto, "_url": o.url } })() })
     return f
   })))
   return grupo(rotulo, 1, grupos)
@@ -544,7 +567,10 @@ XLSX.utils.book_append_sheet(wb, ws, "Balance")
 function hojaCrudo(nombre: string, rows: FilaCrudo[], orden: string[], titulo: string, notas: string[]) {
   rows.sort((a, b) => { for (const k of orden) { const x = String(a[k] ?? ""), y = String(b[k] ?? ""); if (x !== y) return x.localeCompare(y) } return 0 })
   const cols = [...new Set(rows.flatMap(r => Object.keys(r)))].filter(k => !k.startsWith("_"))
-  const aoa: unknown[][] = [[titulo], ...notas.map(n => [n]), [], cols, ...rows.map(r => cols.map(k => { const v = r[k]; return typeof v === "number" ? { t: "n", v, z: MONEDA } : (v ?? "") }))]
+  const CANT = new Set(["Cabezas", "Kilos", "Kg promedio", "Toneladas"])
+  const aoa: unknown[][] = [[titulo], ...notas.map(n => [n]), [], cols, ...rows.map(r => cols.map(k => { const v = r[k]
+    if (k === "📎 Factura" && typeof v === "string" && v.startsWith("http")) return { t: "s", v: "ver PDF", l: { Target: v } }
+    return typeof v === "number" ? { t: "n", v, z: CANT.has(k) ? "#,##0.##" : MONEDA } : (v ?? "") }))]
   const w = XLSX.utils.aoa_to_sheet(aoa)
   const hdr = notas.length + 2
   w["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: hdr, c: 0 }, e: { r: aoa.length - 1, c: cols.length - 1 } }) }
@@ -664,7 +690,7 @@ const CRUDO_OUT = process.argv.find(a => a.startsWith("--crudo="))?.slice(8)
 if (CRUDO_OUT) {
   const porNro: Record<string, unknown[][]> = {}
   const push = (k: string, fila: unknown[]) => { (porNro[k] ??= []).push(fila) }
-  for (const r of crudoDiario) push(String(r["Nro balance"]) === "NO VA" ? "NO VA · " + r.Bloque : String(r["Nro balance"]), [r.Fecha, `${r.Contraparte} · ${r.Comprobante}`, r["Al resultado (sin IVA)"] || r.Total, r.Motivo || ""])
+  for (const r of crudoDiario) push(String(r["Nro balance"]) === "NO VA" ? "NO VA · " + r.Bloque : String(r["Nro balance"]), [r.Fecha, `${r.Contraparte} · ${r.Comprobante}${r._origen ? " · " + r._origen : ""}`, r["Al resultado (sin IVA)"] || r.Total, r.Motivo || "", r._url || ""])
   for (const r of crudoTemplates) push(String(r["Nro balance"]) === "NO VA" ? "NO VA · " + r.Bloque : String(r["Nro balance"]), [r.Fecha, `${r.Template} · ${r["Quién pagó"] || "sin pago"}${r["Código contable"] ? " · " + r["Código contable"] : ""}`, r.Importe, r.Motivo || r.Estado || ""])
   for (const r of crudoSocios) push(String(r["Nro balance"]) === "NO VA" ? "NO VA · " + r.Grupo : String(r["Nro balance"]), [r.Fecha, `${r.Concepto}${r["Código contable"] ? " · " + r["Código contable"] : ""}${r["Código interno"] ? " / " + r["Código interno"] : ""}`, r.Importe, r.Grupo || ""])
   // 🐛 v3 (JMS 22/11): cada parte muestra SU importe del mes, no el bruto entero
