@@ -42,6 +42,9 @@ export interface SegConfig {
   pesadaBaseFecha?: string | null   // fecha de la pesada base usada (la "última" al guardar, modo estimado)
   fechaCalculo?: string             // "hoy" (ISO) usado para el +ganancia×días — congela el drift de días
   snapshot?: SegSnapshot            // foto de los cortes/pesos calculados al guardar (no depende de la BD)
+  // ── A-FEAT-1636 (opcional → estudios viejos no lo tienen) ──
+  nSecciones?: number               // cuántas secciones arma por default (antes, 5 fijas)
+  gananciaManual?: boolean          // true = la ganancia la puso el usuario; false = la real del grupo (2 últimas pesadas)
 }
 // Modo de carga del segmentado de un estudio: 'foto' = usar snapshot congelado · 'relink' = re-derivar anclado
 export type ModoCarga = "foto" | "relink"

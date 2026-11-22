@@ -1,7 +1,7 @@
 "use client"
 
 import { TestsDelProceso } from "@/components/tests-del-proceso"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, Fragment } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -20,6 +20,7 @@ import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { AnalisisProductivo, type SegConfig, type SegSnapshot, type ModoCarga } from "./analisis-productivo"
 import { Segmentador, type SegPayload } from "./segmentador"
+import { textoSeccion, type AsignacionSeccion } from "@/lib/productivo/segmentos-peso"
 import { traerTodo } from "@/lib/supabase-paginado"
 import { Permisable } from "@/components/modo-permisos"
 import { fechasReales } from "@/lib/excel/fechas-reales"
@@ -287,6 +288,13 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   // El re-link no necesita estado extra: el SegConfig ya trae pesadaBaseFecha + fechaCalculo
   // y el Segmentador reproduce desde ahí (initialConfig).
   const [segFrozen, setSegFrozen] = useState<Record<number, SegSnapshot | null>>({})
+  /**
+   * 🐄 A-FEAT-1636 — en qué sección de peso cae cada animal, por segmentador. JMS 22/11: *«historial de
+   * pesadas no me muestra lo segmentado»* · *«ideal que me muestre también según las segmentaciones de
+   * peso»*. Con esto la tabla de caravanas lleva la columna Sección y se agrupa por ella.
+   */
+  const [segAsign, setSegAsign] = useState<Record<number, Record<string, AsignacionSeccion>>>({})
+  const [agruparPorSeccion, setAgruparPorSeccion] = useState(true)
 
   // Descarga Excel
   const [modalDescarga, setModalDescarga] = useState(false)
@@ -825,11 +833,13 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   // ── Segmentadores: recolectar secciones de todos (etiquetadas por población) ──
   const setPayload = (id: number, p: SegPayload) => setSegPayloads(prev => JSON.stringify(prev[id]) === JSON.stringify(p) ? prev : { ...prev, [id]: p })
   const setConfig = (id: number, c: SegConfig) => { segConfigsRef.current[id] = c }
+  const setAsign = (id: number, m: Record<string, AsignacionSeccion>) => setSegAsign(prev => JSON.stringify(prev[id] ?? {}) === JSON.stringify(m) ? prev : { ...prev, [id]: m })
   const addSegmentador = () => setSegmentadorIds(p => [...p, segNextId.current++])
   const removeSegmentador = (id: number) => {
     setSegmentadorIds(p => p.filter(x => x !== id))
     setSegPayloads(prev => { const n = { ...prev }; delete n[id]; return n })
     setSegFrozen(prev => { const n = { ...prev }; delete n[id]; return n })
+    setSegAsign(prev => { const n = { ...prev }; delete n[id]; return n })
     delete segConfigsRef.current[id]
   }
   // Secciones combinadas de todos los segmentadores (para el análisis). Etiqueta: "Letra·Población: rango"
@@ -856,6 +866,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
     setSegInitials(ini)
     setSegFrozen(frozen)
     setSegPayloads({})
+    setSegAsign({})
     setSegmentadorIds(ids)
   }
 
@@ -908,6 +919,8 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   const hayConflictos = analisis && (analisis.no_encontradas.length > 0 || analisis.duplicadas.length > 0)
   const duplicadasSinResolver = analisis?.duplicadas.filter(d => !decisionesDuplicadas[d.idv]) ?? []
 
+  /** 🐄 A-FEAT-1636: las secciones de un animal en todos los segmentadores. */
+  const seccionesDe = (id: string): AsignacionSeccion[] => segmentadorIds.map(sid => segAsign[sid]?.[id]).filter((a): a is AsignacionSeccion => !!a)
   // 🔽 A-FEAT-1555: el historial con filtro tipo Excel en cada columna (caravanas, sexo y cada fecha de pesada)
   const conPesadasHist = terneros.filter(t => t.pesadas_terneros.length > 0)
     .filter(t => !buscaCaravana.trim() || `${t.caravana_oficial ?? ''} ${t.caravana_interna ?? ''}`.toLowerCase().includes(buscaCaravana.trim().toLowerCase()))
@@ -916,12 +929,41 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
     oficial: t => t.caravana_oficial ?? null,
     interna: t => t.caravana_interna ?? null,
     sexo: t => t.sexo ?? null,
+    seccion: t => textoSeccion(seccionesDe(t.id)),
     ...Object.fromEntries(todasFechas.map(f => [`f:${f}`, (t: TerneroHist) => {
       const p = t.pesadas_terneros.find(x => x.fecha === f)
       return p ? p.peso_kg.toFixed(1).replace('.', ',') : null
     }])),
   }
   const filasHist = filtrarPorColumnas(conPesadasHist, filtrosHist, valoresHist)
+  // 🐄 A-FEAT-1636: bloques por sección de peso (el orden de los segmentadores, de la más liviana a la
+  // más pesada). Los que no entraron en ningún segmentador (otra población, sin peso) van al final.
+  const hayAsignaciones = Object.values(segAsign).some(m => Object.keys(m).length > 0)
+  const ordenSeccion = (id: string) => { const a = seccionesDe(id); return a.length ? Math.min(...a.map(x => x.orden)) : Infinity }
+  const bloquesHist: { clave: string | null; filas: TerneroHist[] }[] = (() => {
+    if (!hayAsignaciones || !agruparPorSeccion) return [{ clave: null, filas: filasHist }]
+    const orden = [...filasHist].sort((a, b) => ordenSeccion(a.id) - ordenSeccion(b.id))
+    const out: { clave: string | null; filas: TerneroHist[] }[] = []
+    for (const t of orden) {
+      const k = textoSeccion(seccionesDe(t.id)) ?? 'Sin sección (fuera de los segmentadores)'
+      const ult = out[out.length - 1]
+      if (ult && ult.clave === k) ult.filas.push(t); else out.push({ clave: k, filas: [t] })
+    }
+    return out
+  })()
+  /** Promedio de peso en una fecha, sobre los que tienen pesada ese día. */
+  const promPesoEn = (lista: Ternero[], f: string) => {
+    const ps = lista.map(t => t.pesadas_terneros.find(p => p.fecha === f)?.peso_kg).filter((v): v is number => v != null)
+    return ps.length ? { prom: ps.reduce((a, b) => a + b, 0) / ps.length, n: ps.length } : null
+  }
+  /** Lo mismo para la tabla de ganancias: las secciones sobre todo el rodeo con pesadas. */
+  const bloquesSeccionGan: { clave: string; lista: Ternero[] }[] = (() => {
+    const m = new Map<string, { orden: number; lista: Ternero[] }>()
+    for (const t of terneros) { const a = seccionesDe(t.id); const k = textoSeccion(a); if (!k) continue
+      const e = m.get(k) ?? { orden: Math.min(...a.map(x => x.orden)), lista: [] }; e.lista.push(t); m.set(k, e) }
+    return [...m.entries()].sort((x, y) => x[1].orden - y[1].orden).map(([clave, e]) => ({ clave, lista: e.lista }))
+  })()
+  }
   /** Cada lista cuenta sobre lo filtrado por las DEMÁS columnas (como en Excel y en Mails). */
   const opcionesHist: Record<string, ReturnType<typeof opcionesDeColumna>> = Object.fromEntries(Object.keys(valoresHist).map(col => [col,
     opcionesDeColumna(filtrarPorColumnas(conPesadasHist, { ...filtrosHist, [col]: null }, valoresHist), valoresHist[col])]))
@@ -2138,6 +2180,8 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
               frozen={segFrozen[id]}
               onSections={p => setPayload(id, p)}
               onConfig={c => setConfig(id, c)}
+              onAsignaciones={m => setAsign(id, m)}
+              nSegmentador={i}
               onRemove={segmentadorIds.length > 1 ? () => removeSegmentador(id) : undefined}
             />
           ))}
@@ -2161,12 +2205,21 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             <p className="text-gray-400 text-sm text-center py-8">Sin pesadas registradas</p>
           ) : (
             <div className="overflow-x-auto">
+              {hayAsignaciones ? (
+                <label className="mb-1 flex items-center gap-2 pl-1 text-xs text-emerald-800">
+                  <input type="checkbox" checked={agruparPorSeccion} onChange={e => setAgruparPorSeccion(e.target.checked)} />
+                  Agrupar por sección de peso (la de los segmentadores de arriba, con su promedio en cada pesada)
+                </label>
+              ) : (
+                <p className="mb-1 pl-1 text-[11px] text-gray-400">Armá un segmentador arriba para ver acá en qué sección de peso está cada caravana.</p>
+              )}
               <Table>
                 <TableHeader>
                   <TableRow className="bg-gray-50">
                     <TableHead className="text-xs whitespace-nowrap"><FiltroColumna titulo="Carav. Oficial" opciones={opcionesHist.oficial} seleccion={filtrosHist.oficial ?? null} onChange={s => setFiltrosHist(x => ({ ...x, oficial: s }))} /></TableHead>
                     <TableHead className="text-xs whitespace-nowrap"><FiltroColumna titulo="Carav. Int." opciones={opcionesHist.interna} seleccion={filtrosHist.interna ?? null} onChange={s => setFiltrosHist(x => ({ ...x, interna: s }))} /></TableHead>
                     <TableHead className="text-xs"><FiltroColumna titulo="Sexo" opciones={opcionesHist.sexo} seleccion={filtrosHist.sexo ?? null} onChange={s => setFiltrosHist(x => ({ ...x, sexo: s }))} /></TableHead>
+                    {hayAsignaciones && <TableHead className="text-xs whitespace-nowrap text-emerald-800"><FiltroColumna titulo="Sección" opciones={opcionesHist.seccion} seleccion={filtrosHist.seccion ?? null} onChange={s => setFiltrosHist(x => ({ ...x, seccion: s }))} /></TableHead>}
                     {todasFechas.map(f => (
                       <TableHead key={f} className="text-xs text-center whitespace-nowrap text-green-700">
                         <FiltroColumna titulo={formatFecha(f)} opciones={opcionesHist[`f:${f}`] ?? []} seleccion={filtrosHist[`f:${f}`] ?? null} onChange={s => setFiltrosHist(x => ({ ...x, [`f:${f}`]: s }))} />
@@ -2175,13 +2228,23 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filasHist.map(t => (
+                  {bloquesHist.map(b => (
+                    <Fragment key={b.clave ?? '__todos'}>
+                    {b.clave && (
+                      <TableRow className="bg-emerald-50/70">
+                        <TableCell colSpan={4 + todasFechas.length} className="py-1 text-xs font-semibold text-emerald-900">
+                          {b.clave} <span className="font-normal text-emerald-700">— {b.filas.length} cab.</span>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  {b.filas.map(t => (
                       <TableRow key={t.id} className="text-sm">
                         <TableCell className="font-mono text-xs">{t.caravana_oficial ?? '—'}</TableCell>
                         <TableCell className="font-mono text-xs">{t.caravana_interna ?? '—'}</TableCell>
                         <TableCell className="text-xs">
                           {t.sexo === 'Macho' ? '♂' : t.sexo === 'Hembra' ? '♀' : '—'}
                         </TableCell>
+                        {hayAsignaciones && <TableCell className="text-xs whitespace-nowrap text-emerald-800">{seccionesDe(t.id).map(a => a.codigo).join(' · ') || '—'}</TableCell>}
                         {todasFechas.map(f => {
                           const pesada = t.pesadas_terneros.find(p => p.fecha === f)
                           // En «Cabeza por cabeza», al lado del peso: cuánto cambió contra SU pesada anterior.
@@ -2203,6 +2266,21 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                       </TableRow>
                     ))
                   }
+                    {/* Promedio de la sección en cada pesada: su evolución */}
+                    {b.clave && (
+                      <TableRow className="bg-emerald-50/40 border-b-2 border-emerald-200">
+                        <TableCell colSpan={hayAsignaciones ? 4 : 3} className="py-1 text-xs font-medium text-emerald-800">Prom. de la sección</TableCell>
+                        {todasFechas.map(f => {
+                          const r = promPesoEn(b.filas, f)
+                          return <TableCell key={f} className="text-center text-xs py-1 font-medium text-emerald-800" title={r ? `sobre ${r.n} de ${b.filas.length} cab.` : ''}>
+                            {r ? r.prom.toFixed(1).replace('.', ',') : <span className="text-gray-300">—</span>}
+                            {r && r.n < b.filas.length && <span className="ml-0.5 text-[9px] text-gray-400">({r.n})</span>}
+                          </TableCell>
+                        })}
+                      </TableRow>
+                    )}
+                    </Fragment>
+                  ))}
 
                   {/* ── Filas de totales por grupo ── */}
                   {todasFechas.length > 0 && (() => {
@@ -2224,13 +2302,13 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                       <>
                         {/* Separador */}
                         <TableRow>
-                          <TableCell colSpan={3 + todasFechas.length} className="p-0 h-0">
+                          <TableCell colSpan={(hayAsignaciones ? 4 : 3) + todasFechas.length} className="p-0 h-0">
                             <div className="border-t-2 border-gray-300" />
                           </TableCell>
                         </TableRow>
                         {grupos.map(({ label, lista, cls, bold }) => (
                           <TableRow key={label} className="bg-gray-50">
-                            <TableCell colSpan={3} className={`text-xs font-semibold py-1 ${cls}`}>
+                            <TableCell colSpan={hayAsignaciones ? 4 : 3} className={`text-xs font-semibold py-1 ${cls}`}>
                               {label}
                             </TableCell>
                             {todasFechas.map(f => {
@@ -2326,6 +2404,8 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                           { label: '♂ Prom.', lista: machos,   cls: 'text-sky-600'   },
                           { label: '♀ Prom.', lista: hembras,  cls: 'text-pink-600'  },
                           { label: '🐄 Prom.', lista: terneros, cls: 'text-green-600' },
+                          // 🐄 A-FEAT-1636: la ganancia de cada sección de peso, período a período
+                          ...(hayAsignaciones ? bloquesSeccionGan.map(b => ({ label: `${b.clave} (${b.lista.length})`, lista: b.lista, cls: 'text-emerald-700' })) : []),
                         ]
                         return (
                           <>
