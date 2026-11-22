@@ -9,14 +9,15 @@
  * Cada uno lee de `/api/mi-pantalla` (servidor, filtrado a MA) y dibuja lo que arma `lib/ma/mi-pantalla.ts`. Ninguno
  * escribe nada. Se muestran donde el rol los tiene prendidos (`vista-inicio.tsx`, con el candado del modo permisos).
  */
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { ChevronDown, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { hoyArgentina } from "@/lib/fechas"
 import { Permisable, useSeMuestra } from "@/components/modo-permisos"
+import { PlanillaImpuestos } from "@/components/planilla-impuestos"
 import {
-  EMPRESAS_MI_PANTALLA, type BloqueMiPantalla, type ContratoMA, type EmpresaMiPantalla, type EstadoCuotaMA, type EstadoImpuesto,
+  EMPRESAS_MI_PANTALLA, agruparDetalle, type BloqueMiPantalla, type GrupoDetalle, type ContratoMA, type EmpresaMiPantalla, type EstadoCuotaMA, type EstadoImpuesto,
   type LoQueViene, type MesDeImpuestos, type MisArrendamientos, type MisImpuestos,
 } from "@/lib/ma/mi-pantalla"
 
@@ -156,6 +157,34 @@ function MesImpuestos({ mes, abiertoInicial }: { mes: MesDeImpuestos; abiertoIni
         </ul>
       )}
     </div>
+  )
+}
+
+/**
+ * 🧾 El acceso directo a la PLANILLA DE IMPUESTOS de siempre (la de Egresos sin Factura → «🧾 Planilla de impuestos»), JMS
+ * 22/11: «yo pensaba que fuera la misma planilla… que ella tenga un acceso directo a ese modal ya existente». Se abre con
+ * sólo las empresas que tiene dadas: MA siempre; MSA y PAM con los mismos candados que los chips de «Mis impuestos». Sin
+ * los links a Egresos (no tiene esa sección).
+ */
+export function AccesoPlanillaImpuestosMA() {
+  const [abierta, setAbierta] = useState(false)
+  const seMuestra = useSeMuestra()
+  const empresas = useMemo(() => [
+    "MA",
+    ...(seMuestra("principal.ma-impuestos-msa") ? ["MSA"] : []),
+    ...(seMuestra("principal.ma-impuestos-pam") ? ["PAM"] : []),
+  ], [seMuestra])
+  return (
+    <Card>
+      <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <div>
+          <p className="font-semibold">🧾 Planilla de impuestos</p>
+          <p className="text-xs text-muted-foreground">El año entero, impuesto por impuesto y mes por mes: lo pagado, lo vencido y lo que viene ({empresas.join(", ")}).</p>
+        </div>
+        <Button variant="outline" className="border-red-500 text-red-700 hover:bg-red-50" onClick={() => setAbierta(true)}>Abrir la planilla</Button>
+      </CardContent>
+      {abierta && <PlanillaImpuestos open={abierta} onOpenChange={setAbierta} empresas={empresas} soloLectura />}
+    </Card>
   )
 }
 
@@ -431,18 +460,70 @@ function FilaMes({ m, ve, hay, maximo, alternar }: { m: LoQueViene["meses"][numb
       {ve && (
         <tr className="border-b bg-muted/20">
           <td colSpan={5} className="px-3 py-2 text-xs">
-            {[...m.detalleIngresos.map(d => ({ ...d, entra: true })), ...m.detalleEgresos.map(d => ({ ...d, entra: false }))]
-              .sort((a, b) => a.fecha.localeCompare(b.fecha))
-              .map((d, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <span className="w-12 tabular-nums text-muted-foreground">{diaMes(d.fecha)}</span>
-                  <span className="min-w-0 flex-1">{d.concepto}</span>
-                  <span className={`tabular-nums ${d.entra ? "text-green-800" : "text-red-800"}`}>{d.entra ? "+" : "−"} $ {plata(d.monto)}</span>
-                </div>
-              ))}
+            {agruparDetalle(m.detalleIngresos, m.detalleEgresos).map(g => <GrupoDelMes key={`${g.entra}-${g.grupo}`} g={g} />)}
+            <div className="mt-1 flex justify-end gap-4 border-t pt-1 font-medium tabular-nums">
+              {m.ingresos > 0 && <span className="text-green-800">Entra $ {plata(m.ingresos)}</span>}
+              {m.egresos > 0 && <span className="text-red-800">Sale $ {plata(m.egresos)}</span>}
+            </div>
           </td>
         </tr>
       )}
+    </>
+  )
+}
+
+/** Un renglón del detalle: fecha · texto · importe. */
+function RenglonDetalle({ fecha, texto, monto, entra, fuerte = false, sangria = 0, abre }: { fecha?: string; texto: ReactNode; monto: number; entra: boolean; fuerte?: boolean; sangria?: number; abre?: { abierto: boolean; alternar: () => void } }) {
+  return (
+    <div className={`flex items-center gap-2 py-0.5 ${abre ? "cursor-pointer hover:bg-muted/50" : ""}`} onClick={abre?.alternar} style={{ paddingLeft: sangria * 16 }}>
+      <span className="w-12 shrink-0 tabular-nums text-muted-foreground">{fecha ? diaMes(fecha) : ""}</span>
+      <span className={`flex min-w-0 flex-1 items-center gap-1 ${fuerte ? "font-medium" : ""}`}>
+        {abre && <ChevronDown className={`h-3 w-3 shrink-0 text-muted-foreground transition-transform ${abre.abierto ? "" : "-rotate-90"}`} />}
+        {texto}
+      </span>
+      <span className={`tabular-nums ${fuerte ? "font-medium" : ""} ${entra ? "text-green-800" : "text-red-800"}`}>{entra ? "+" : "−"} $ {plata(monto)}</span>
+    </div>
+  )
+}
+
+/** 🏷️ El texto prolijo de un renglón (CLAUDE.md § ♻️): la partida y su cuota; sin partida, el lugar o el concepto. */
+const textoRenglon = (r: GrupoDetalle["lugares"][number]["renglones"][number], conLugar: boolean) => {
+  const base = r.grupo ? [conLugar ? r.lugar : null, r.partida].filter(Boolean).join(" · ") || r.grupo : r.concepto
+  return r.cuota ? <>{base} <span className="text-muted-foreground">· {r.cuota}</span></> : base
+}
+
+/**
+ * Un impuesto dentro del mes (JMS 22/11: «se debe agrupar por Red Vial y poder abrir dentro Lima, Nazarenas, y dentro de
+ * Nazarenas estarán las suyas»). Con un solo renglón va directo; con varios, plegado con su total, y adentro cada lugar.
+ */
+function GrupoDelMes({ g }: { g: GrupoDetalle }) {
+  const [abierto, setAbierto] = useState(false)
+  const [lugaresAbiertos, setLugaresAbiertos] = useState<Set<string>>(new Set())
+  const renglones = g.lugares.flatMap(l => l.renglones)
+  if (renglones.length === 1) {
+    const r = renglones[0]
+    return <RenglonDetalle fecha={r.fecha} entra={g.entra} monto={r.monto} texto={r.grupo ? <>{g.grupo} <span className="text-muted-foreground">·</span> {textoRenglon(r, true)}</> : r.concepto} />
+  }
+  return (
+    <>
+      <RenglonDetalle fecha={g.fecha} entra={g.entra} monto={g.total} fuerte
+        texto={<>{g.grupo} <span className="font-normal text-muted-foreground">({renglones.length})</span></>}
+        abre={{ abierto, alternar: () => setAbierto(a => !a) }} />
+      {abierto && g.lugares.map(l => {
+        const clave = l.lugar ?? "—"
+        if (l.renglones.length === 1 || g.lugares.length === 1) {
+          return l.renglones.map((r, i) => <RenglonDetalle key={`${clave}-${i}`} fecha={r.fecha} entra={g.entra} monto={r.monto} sangria={1} texto={textoRenglon(r, true)} />)
+        }
+        const ve = lugaresAbiertos.has(clave)
+        return (
+          <div key={clave}>
+            <RenglonDetalle entra={g.entra} monto={l.total} sangria={1} fuerte
+              texto={<>{l.lugar ?? "Otros"} <span className="font-normal text-muted-foreground">({l.renglones.length})</span></>}
+              abre={{ abierto: ve, alternar: () => setLugaresAbiertos(s => { const n = new Set(s); if (n.has(clave)) n.delete(clave); else n.add(clave); return n }) }} />
+            {ve && l.renglones.map((r, i) => <RenglonDetalle key={i} fecha={r.fecha} entra={g.entra} monto={r.monto} sangria={2} texto={textoRenglon(r, false)} />)}
+          </div>
+        )
+      })}
     </>
   )
 }

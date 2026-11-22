@@ -353,8 +353,8 @@ export interface MesQueViene {
   egresos: number
   neto: number
   acumulado: number
-  detalleIngresos: Array<{ concepto: string; fecha: string; monto: number }>
-  detalleEgresos: Array<{ concepto: string; fecha: string; monto: number }>
+  detalleIngresos: MovimientoQueViene[]
+  detalleEgresos: MovimientoQueViene[]
 }
 
 export interface LoQueViene {
@@ -367,7 +367,64 @@ export interface LoQueViene {
   control: { cierra: boolean; diferencias: string[] }
 }
 
-export interface MovimientoQueViene { fecha: string; concepto: string; monto: number }
+/**
+ * Un renglón de «Lo que viene». Además del `concepto` (el texto entero), lo que hace falta para mostrarlo PROLIJO (CLAUDE.md
+ * § ♻️, JMS 22/11): el `grupo` (el impuesto: «Red Vial»), el `lugar` (el establecimiento: «Nazarenas», «Lima»), la `partida`
+ * («Tapera 2») y la `cuota` («cuota 4 de 4»). Los arrendamientos no los llevan (van por su concepto).
+ */
+export interface MovimientoQueViene { fecha: string; concepto: string; monto: number; grupo?: string; lugar?: string | null; partida?: string | null; cuota?: string | null }
+
+/** Los nombres como se escriben (las partidas vienen sin tildes en los templates). */
+const TILDES: Record<string, string> = { "entre rios": "Entre Ríos", "ombu": "Ombú", "porteria nuevo": "Portería Nuevo", "porteria viejo": "Portería Viejo", "sanchez": "Sánchez", "domesticas": "Domésticas", "autonomos": "Autónomos" }
+export const prolijo = (s: string) => s.split(/\s+/).filter(Boolean).join(" ")
+  .replace(/\b(entre rios|ombu|domesticas|autonomos|sanchez|porteria nuevo|porteria viejo)\b/gi, w => TILDES[w.toLowerCase()] ?? w)
+
+/**
+ * 🏷️ Cómo se muestra la cuota de un impuesto: impuesto → lugar → partida, y «cuota N de M» (M = las cuotas de ese template
+ * con vencimiento en el mismo año). `establecimientoDe` sale de la tabla de partidas (campo → establecimiento); si la partida
+ * no está ahí (Lima), el lugar es la partida misma.
+ */
+export function partidaDeCuota(impuesto: string, template: string, numero: number | null, deCuantas: number, establecimientoDe?: (partida: string) => string | null | undefined) {
+  const sinPalabras = template
+    .replace(new RegExp(impuesto.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), " ")
+    .replace(/\b(inmobiliario|complementario|red vial|cuota|anual|mensual)\b/gi, " ")
+    .replace(/\bMA\b/g, " ").replace(/\s+/g, " ").trim()
+  const partida = sinPalabras ? prolijo(sinPalabras) : null
+  const est = partida ? (establecimientoDe?.(partida) ?? null) : null
+  const lugar = est ? prolijo(est) : partida
+  return {
+    grupo: prolijo(impuesto),
+    lugar,
+    partida: partida && lugar !== partida ? partida : null,
+    cuota: deCuantas > 1 && numero ? `cuota ${numero} de ${deCuantas}` : null,
+  }
+}
+
+/** El detalle de un mes agrupado: impuesto → lugar → renglones, con sus totales (los arrendamientos quedan sueltos, cada uno su grupo). */
+export interface GrupoDetalle { grupo: string; entra: boolean; fecha: string; total: number; lugares: Array<{ lugar: string | null; total: number; renglones: MovimientoQueViene[] }> }
+export function agruparDetalle(ingresos: MovimientoQueViene[], egresos: MovimientoQueViene[]): GrupoDetalle[] {
+  const grupos = new Map<string, GrupoDetalle>()
+  const meter = (x: MovimientoQueViene, entra: boolean) => {
+    const g = x.grupo ?? x.concepto
+    const k = `${entra ? "+" : "-"}${g}`
+    let G = grupos.get(k)
+    if (!G) { G = { grupo: g, entra, fecha: x.fecha, total: 0, lugares: [] }; grupos.set(k, G) }
+    G.total = redondear(G.total + x.monto)
+    if (x.fecha < G.fecha) G.fecha = x.fecha
+    let L = G.lugares.find(l => l.lugar === (x.lugar ?? null))
+    if (!L) { L = { lugar: x.lugar ?? null, total: 0, renglones: [] }; G.lugares.push(L) }
+    L.total = redondear(L.total + x.monto)
+    L.renglones.push(x)
+  }
+  ingresos.forEach(x => meter(x, true))
+  egresos.forEach(x => meter(x, false))
+  const out = [...grupos.values()]
+  for (const G of out) {
+    G.lugares.sort((a, b) => String(a.lugar ?? "").localeCompare(String(b.lugar ?? "")))
+    for (const L of G.lugares) L.renglones.sort((a, b) => a.fecha.localeCompare(b.fecha) || String(a.partida ?? "").localeCompare(String(b.partida ?? "")))
+  }
+  return out.sort((a, b) => Number(b.entra) - Number(a.entra) || a.fecha.localeCompare(b.fecha) || a.grupo.localeCompare(b.grupo))
+}
 
 const sumarMes = (ym: string, n: number) => {
   const [a, m] = ym.split("-").map(Number)
@@ -376,10 +433,25 @@ const sumarMes = (ym: string, n: number) => {
 }
 
 /** Los impuestos SIN PAGAR de las cuotas, con el mismo criterio que la Planilla (sin los de templates dados de baja). */
-export function impuestosSinPagar(cuotas: CuotaPlanilla[], anios: number[], hoy: string): MovimientoQueViene[] {
-  return anios.flatMap(a => armarPlanilla(cuotas, a, hoy).filas.flatMap(f => f.meses.flat()
-    .filter(c => c.estado === "sin-pagar")
-    .map(c => ({ fecha: c.vencimiento, concepto: f.impuesto === c.template ? f.impuesto : `${f.impuesto} · ${c.template}`, monto: redondear(c.monto) }))))
+export function impuestosSinPagar(cuotas: CuotaPlanilla[], anios: number[], hoy: string, establecimientoDe?: (partida: string) => string | null | undefined): MovimientoQueViene[] {
+  return anios.flatMap(a => armarPlanilla(cuotas, a, hoy).filas.flatMap(f => {
+    // «de cuántas»: las cuotas de cada template que vencen en el año (pagadas o no)
+    const todas = f.meses.flat()
+    const deCuantas = new Map<string, number>()
+    for (const c of todas) deCuantas.set(c.template, (deCuantas.get(c.template) ?? 0) + 1)
+    const orden = new Map<string, number>()
+    ;[...todas].sort((x, y) => x.vencimiento.localeCompare(y.vencimiento)).forEach(c => {
+      const n = (orden.get(`#${c.template}`) ?? 0) + 1
+      orden.set(`#${c.template}`, n); orden.set(c.id, n)
+    })
+    return todas
+      .filter(c => c.estado === "sin-pagar")
+      .map(c => {
+        const p = partidaDeCuota(f.impuesto, c.template, c.numero_cuota ?? orden.get(c.id) ?? null, deCuantas.get(c.template) ?? 1, establecimientoDe)
+        const concepto = [p.grupo, p.lugar, p.partida].filter(Boolean).join(" · ") + (p.cuota ? ` · ${p.cuota}` : "")
+        return { fecha: c.vencimiento, concepto, monto: redondear(c.monto), ...p }
+      })
+  }))
 }
 
 /** Los próximos 12 meses, desde el mes de `hoy`. Lo anterior a hoy va a «atrasado»; lo posterior al mes 12 no entra. */
@@ -400,7 +472,7 @@ export function loQueViene(ingresos: MovimientoQueViene[], egresos: MovimientoQu
       const m = meses.find(k => k.mes === ym)
       if (!m) continue
       m[lado] = redondear(m[lado] + x.monto)
-      ;(lado === "ingresos" ? m.detalleIngresos : m.detalleEgresos).push({ concepto: x.concepto, fecha: x.fecha, monto: x.monto })
+      ;(lado === "ingresos" ? m.detalleIngresos : m.detalleEgresos).push({ ...x })
       dentro += x.monto
     }
   }

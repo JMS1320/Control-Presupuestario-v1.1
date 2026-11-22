@@ -15,7 +15,7 @@ import { PagosPorConfirmar } from "@/components/pagos-por-confirmar"
 import { useModoPermisos, useNivelDeclarado } from "@/components/contexto-permisos"
 import { Permisable, useSeMuestra } from "@/components/modo-permisos"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
-import { MisImpuestosMA, MisArrendamientosMA, LoQueVieneMA } from "@/components/mi-pantalla-ma"
+import { AccesoPlanillaImpuestosMA, MisImpuestosMA, MisArrendamientosMA, LoQueVieneMA } from "@/components/mi-pantalla-ma"
 import { AlertaMailsGraves } from "@/components/alerta-mails-graves"
 import { AlertaImpuestos } from "@/components/alerta-impuestos"
 import { TableroFaltantes } from "@/components/no-se-consigue"
@@ -204,6 +204,7 @@ export function VistaInicio({
       {/* 💸 A-FEAT-1543: lo que le vence a esta persona (templates con su mail en «avisar a»); se oculta si no tiene nada asignado */}
       <MisVencimientos />
       {/* 👤 A-FEAT-1634: la pantalla de MA — sólo lectura, cada bloque con su casilla en el rol (Principal → …) */}
+      <BloqueDado recurso="principal.ma-planilla-impuestos"><AccesoPlanillaImpuestosMA /></BloqueDado>
       <BloqueDado recurso="principal.ma-impuestos"><MisImpuestosMA /></BloqueDado>
       <BloqueDado recurso="principal.ma-arrendamientos"><MisArrendamientosMA /></BloqueDado>
       <BloqueDado recurso="principal.ma-lo-que-viene"><LoQueVieneMA /></BloqueDado>

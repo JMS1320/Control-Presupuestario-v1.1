@@ -102,7 +102,7 @@ import { facturasRestringidas } from "@/lib/auth/roles"
 import { etiquetaPersona } from "@/lib/auth/identidad"
 import { armarRolNuevo, normalizarIdRol } from "@/lib/auth/crear-rol"
 import { nivelesEfectivos, excepcionesParaEditar, permisosAGuardar } from "@/lib/auth/rol-cerrado"
-import { misImpuestosDelAnio, misArrendamientos, loQueViene, puedeVerBloque, puedeVerEmpresa } from "@/lib/ma/mi-pantalla"
+import { misImpuestosDelAnio, misArrendamientos, loQueViene, puedeVerBloque, puedeVerEmpresa, partidaDeCuota, agruparDetalle } from "@/lib/ma/mi-pantalla"
 import { RECURSOS as RECURSOS_PERMISABLES } from "@/lib/auth/recursos"
 import { borradorDe, alternarRecurso, alternarSeccion, nivelEnBorrador, contarCambios, cuerpoGuardar } from "@/lib/auth/modo-permisos"
 import { motivoCuentaBloqueada } from "@/lib/auth/cuentas-extracto"
@@ -14327,6 +14327,22 @@ export function correrCasos(): Resultado[] {
     ].join(",")
     const e6 = "true,false,true,true,ninguno"
     chequear("MA", "🔒 Chips de empresa en «Mis impuestos»: MA siempre; MSA y PAM sólo con su candado (en un rol cerrado nacen apagados); admin ve todo", e6, v6, v6 === e6, "A-FEAT-1634")
+
+    const est = (p: string) => ({ "tapera 2": "Nazarenas", "entre rios": "Nazarenas", "casco": "Nazarenas" } as Record<string, string>)[p.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()] ?? null
+    const p1 = partidaDeCuota("Red Vial", "Red Vial Cuota Tapera 2", 4, 4, est)
+    const p2 = partidaDeCuota("Red Vial", "Red Vial Cuota Entre Rios", 1, 4, est)
+    const p3 = partidaDeCuota("Red Vial", "Red Vial Lima Cuota", 12, 13, est)
+    const p4 = partidaDeCuota("IIBB", "IIBB Mensual MA", null, 12, est)
+    const v7 = [p1, p2, p3, p4].map(p => [p.grupo, p.lugar ?? "", p.partida ?? "", p.cuota ?? ""].join("/")).join(" | ")
+    const e7 = "Red Vial/Nazarenas/Tapera 2/cuota 4 de 4 | Red Vial/Nazarenas/Entre Ríos/cuota 1 de 4 | Red Vial/Lima//cuota 12 de 13 | IIBB///"
+    chequear("MA", "🏷️ Partida prolija: Red Vial → Nazarenas → Tapera 2 · cuota 4 de 4; Lima sin establecimiento queda como lugar; sin nombre propio no inventa partida", e7, v7, v7 === e7, "A-FEAT-1634")
+
+    const mov = (fecha: string, partida: string, lugar: string, monto: number) => ({ fecha, concepto: partida, monto, grupo: "Red Vial", lugar, partida: lugar === partida ? null : partida, cuota: null })
+    const ag = agruparDetalle([{ fecha: "2026-12-20", concepto: "Arrendamiento 26/27 · Cuota 2", monto: 1000 }],
+      [mov("2026-12-05", "Tapera 2", "Nazarenas", 100), mov("2026-12-05", "Casco", "Nazarenas", 200.5), mov("2026-12-30", "Lima", "Lima", 50)])
+    const v8 = ag.map(g => `${g.entra ? "+" : "-"}${g.grupo}=${g.total}[${g.lugares.map(l => `${l.lugar ?? ""}:${l.total}:${l.renglones.length}`).join(",")}]`).join(" ")
+    const e8 = "+Arrendamiento 26/27 · Cuota 2=1000[:1000:1] -Red Vial=350.5[Lima:50:1,Nazarenas:300.5:2]"
+    chequear("MA", "📈 Lo que viene agrupado: los ingresos primero; Red Vial con su total = la suma de Lima y Nazarenas, cada una con sus renglones", e8, v8, v8 === e8, "A-FEAT-1634")
   }
   return r
 }

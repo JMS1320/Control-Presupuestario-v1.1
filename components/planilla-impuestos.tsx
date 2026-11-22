@@ -14,14 +14,14 @@
  * La lógica vive en `lib/impuestos/planilla.ts` (con sus casos). Sólo lectura: no escribe ninguna
  * cuota — salvo el orden de las filas, que es una preferencia personal.
  */
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 import * as XLSX from "xlsx"
 import { supabase } from "@/lib/supabase"
 import { hoyArgentina } from "@/lib/fechas"
 import { leerPreferencias } from "@/lib/auth/preferencias"
 import { guardarPreferencias } from "@/lib/auth/guardar-preferencias"
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
-import { armarPlanilla, ordenarFilas, moverFilaPlanilla, resumenMes, linkTemplates, type EstadoCelda, type CuotaPlanilla, type CeldaCuota, type FilaPlanilla } from "@/lib/impuestos/planilla"
+import { armarPlanilla, empresaDePlanilla, impuestoDeTemplate, ordenarFilas, moverFilaPlanilla, resumenMes, linkTemplates, type EstadoCelda, type CuotaPlanilla, type CeldaCuota, type FilaPlanilla } from "@/lib/impuestos/planilla"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { AlertaImpuestos } from "@/components/alerta-impuestos"
@@ -56,7 +56,17 @@ const rotulo = (c: CeldaCuota) => c.rara ? `pagada, pero en ${c.estadoOriginal} 
 /** La lectura vive en `lib/impuestos/datos-papel.ts`: el libro H del balance lee igual (A-FEAT-1516). */
 const cargarCuotas = () => cargarCuotasImpuestos(supabase)
 
-export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+/** 👤 A-FEAT-1634: abierta desde la pantalla de MA — sin los links a Egresos sin Factura (ella no tiene esa sección). */
+const SoloLectura = createContext(false)
+
+/**
+ * `empresas` (A-FEAT-1634, JMS 22/11: «que ella tenga un acceso directo a ese modal ya existente»): si viene, la planilla
+ * trae SÓLO las cuotas de esas empresas (con el mismo criterio de empresa que la planilla: el ABL compartido va a MA), así
+ * los totales, el control, el Excel y el detalle inmobiliario son los de lo que ella puede ver. Sin `empresas`, todas.
+ */
+export function PlanillaImpuestos({ open, onOpenChange, empresas: empresasPermitidas, soloLectura = false }: {
+  open: boolean; onOpenChange: (v: boolean) => void; empresas?: string[]; soloLectura?: boolean
+}) {
   const hoy = hoyArgentina()
   const [anio, setAnio] = useState(Number(hoy.slice(0, 4)))
   const [cuotas, setCuotas] = useState<CuotaPlanilla[] | null>(null)
@@ -75,8 +85,11 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
 
   const cargar = useCallback(async () => {
     setError(null)
-    try { setCuotas(await cargarCuotas()) } catch (e) { setError((e as Error).message) }
-  }, [])
+    try {
+      const todas = await cargarCuotas()
+      setCuotas(empresasPermitidas ? todas.filter(c => empresasPermitidas.includes(empresaDePlanilla(c.template, impuestoDeTemplate(c.template)))) : todas)
+    } catch (e) { setError((e as Error).message) }
+  }, [empresasPermitidas?.join(",")]) // eslint-disable-line react-hooks/exhaustive-deps
   // 🔄 Al volver a esta pestaña (ej. después de editar en Egresos sin Factura), recarga sola.
   useEffect(() => {
     if (!open) return
@@ -168,6 +181,7 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
   const sinDatos = planilla && planilla.filas.length === 0
 
   return (
+    <SoloLectura.Provider value={soloLectura}>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-w-[99vw] w-[99vw] h-[96vh] max-h-[96vh] flex-col gap-2 overflow-hidden p-3">
         <DialogHeader>
@@ -190,7 +204,8 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
           </DialogDescription>
         </DialogHeader>
 
-        <AlertaImpuestos compacta />
+        {/* Los avisos son de TODAS las empresas: abierta con empresas recortadas (la pantalla de MA) no van */}
+        {!empresasPermitidas && <AlertaImpuestos compacta />}
 
         {error && <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">No se pudo leer las cuotas de impuestos: {error}</div>}
         {!planilla && !error && <p className="flex items-center gap-2 py-8 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" />Leyendo las cuotas…</p>}
@@ -312,6 +327,7 @@ export function PlanillaImpuestos({ open, onOpenChange }: { open: boolean; onOpe
           anioInicial={anio} cuotas={cuotas} tcs={tcs} hectareas={hectareas} cuentasRedVial={cuentasRedVial} ubicacion={ubicacion} totalEnPlanilla={totalEnPlanilla} />
       )}
     </Dialog>
+    </SoloLectura.Provider>
   )
 }
 
@@ -321,7 +337,8 @@ const PAPEL_DE_IMPUESTO: Record<string, TipoPapel> = {
 
 /** 🔗 Abre Egresos sin Factura en una pestaña NUEVA, filtrado por esos templates (la planilla queda a la vista). */
 function AbrirTemplates({ ids }: { ids: string[] }) {
-  if (!ids.length) return null
+  const soloLectura = useContext(SoloLectura)
+  if (!ids.length || soloLectura) return null
   return (
     <button className="ml-1 inline-flex align-middle text-blue-700 hover:text-blue-900" title={`Abrir ${ids.length > 1 ? `sus ${ids.length} templates` : "el template"} en Egresos sin Factura (pestaña nueva)`}
       onClick={e => { e.stopPropagation(); window.open(linkTemplates(ids), "_blank", "noopener") }}>
