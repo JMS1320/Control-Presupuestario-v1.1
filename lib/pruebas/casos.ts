@@ -414,6 +414,7 @@ import { armarSaldosProductivos, sistemaProductivoAlCierre, diaAnterior } from "
 import { armarFilaDato, leerNumero, textoEstadoGuardado, MARCA_TENTATIVO, esTentativo, fuenteTentativo, confirmarFila, leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
 import { leerFacturaDelTexto, precargaDesdeLectura, cuitValido, parsearImporte } from "@/lib/gas-pdf/leer-factura"
+import { leerDetalleFactura } from "@/lib/facturas-detalle/leer-detalle"
 import { controlDeLaCarga, camposDeLaCarga, huellaDeLaCarga, aNegativoSiNC, fcSugeridoImport, fechaManualValida, fechaEstimadaDeProveedor } from "@/lib/facturas/alta-factura"
 import { faltantesDelSubdiario } from "@/lib/gas-pdf/faltantes"
 import { parsearLineaMovimiento, parsearResumen as parsearResumenTarjeta } from "@/lib/tarjetas/parseo-resumen-pdf"
@@ -14542,6 +14543,89 @@ export function correrCasos(): Resultado[] {
     ])
     const v3 = `${p.total} = ${p.enPesos} + ${p.enDolaresSinPesificar} + ${p.sinVender}`
     chequear("Arrendamientos — posición", "🔑 Vendido en pesos (pizarra o pesificado) + en dólares sin pesificar + sin vender = total", "150 = 50 + 10 + 90", v3, v3 === "150 = 50 + 10 + 90", "A-FEAT-1642")
+  }
+  {
+    // 🧾 A-FEAT-1651 — el DETALLE de la factura, artículo por artículo. Textos REALES: los del registro del archivo
+    // digital (Alcorta, García, Pais, AFA, Acren — lo que guardó el GAS) y Biofarma tal como lo devuelve Drive
+    // (todavía no está en el registro). Recortados a encabezado de tabla, renglones y pie.
+    const ENC_A = "Código \r\n\tProducto / Servicio \r\n\tCantidad \r\n\tU. medida \r\n\tPrecio Unit. \r\n\t% Bonif \r\n\tSubtotal \r\n\tAlicuotaIVA \r\n\tSubtotal c/IVA\r\n\t\r\n\r\n\r\n\r\n"
+    const PIE_A = (otros: string, gravado: string, iva21: string, iva105: string, total: string) =>
+      `\r\nImporte Otros Tributos: $ ${otros}\r\nImporte Neto Gravado: $ ${gravado} \r\nIVA 27%: $ 0,00 \r\nIVA 21%: $ ${iva21} \r\nIVA 10.5%: $ ${iva105} \r\nIVA 5%: $ 0,00 \r\nIVA 2.5%: $ 0,00 \r\nIVA 0%: $ 0,00 \r\nImporte Otros Tributos: $ 0,00 \r\nImporte Total: $ ${total} \r\nCAE N°:     \r\nFecha de Vto. de CAE: \r\nComprobante Autorizado \r\nPág. 1/1\r\n75495467964590 14/12/2025 \r\nEsta Agencia no se responsabiliza por los datos ingresados en el detalle de la operación \r\n`
+    const ALCORTA_1204_COPIA = "ALCORTA EDMUNDO ERNESTO \r\nORIGINAL \r\nA \r\nCOD. 01\r\nFACTURA \r\nPunto de Venta: 00010 Comp. Nro: 00005857 \r\nCUIT: \r\n20103619115 \r\n" + ENC_A
+      + "VACUNA AFTOSA 297,00 unidades 1800,00 0,00 534600,00 Exento 534600,00 CARBUNCLO 318,00 unidades 60,00 0,00 19080,00 21% 23086,80 "
+      + PIE_A("0,00Importe Exento: $ 534600,00 ", "19080,00", "4006,80", "0,00", "557686,80")
+    // El PDF trae ORIGINAL + DUPLICADO + TRIPLICADO: los renglones de las copias NO se suman.
+    const ALCORTA_1204 = ALCORTA_1204_COPIA + ALCORTA_1204_COPIA.replace("ORIGINAL", "DUPLICADO") + ALCORTA_1204_COPIA.replace("ORIGINAL", "TRIPLICADO")
+    const a = leerDetalleFactura(ALCORTA_1204, { cuit: "20103619115", totalConocido: 557686.80 })
+    const [a1, a2] = a.renglones
+    const vA = `${a.formato} · ${a.renglones.length} renglones · ${a1?.descripcion} ${a1?.cantidad}×${a1?.precioUnitario} al ${a1?.alicuotaIva} · ${a2?.descripcion} al ${a2?.alicuotaIva} · suma ${a.control.sumaRenglones} = neto ${a.netoPie} · total ${a.totalPie} · ${a.control.estado}`
+    const eA = "arca-en-linea · 2 renglones · VACUNA AFTOSA 297×1800 al 0 · CARBUNCLO al 21 · suma 553680 = neto 553680 · total 557686.8 · cierra"
+    chequear("Detalle de facturas — Alcorta", "🔑 Formato ARCA en línea: renglón exento + renglón al 21 %; los renglones suman gravado + exento; la copia DUPLICADO/TRIPLICADO no se cuenta", eA, vA, vA === eA, "A-FEAT-1651")
+
+    const RENG_1027 = "BACTROVET PLATA 1,00 unidades 11145,00 0,00 11145,00 21% 13485,45 OXILEN AD X 250 ML 1,00 unidades 35371,40 0,00 35371,40 21% 42799,39 KETOXILEN X 250 ML 1,00 unidades 64417,16 0,00 64417,16 21% 77944,76 CARRETEL VACIO 2,00 unidades 30849,00 0,00 61698,00 21% 74654,58 SUDADERA SIMPLE 1,00 unidades 27000,00 0,00 27000,00 21% 32670,00 EQUEST 11,00 unidades 13652,60 0,00 150178,60 21% 181716,11 "
+    const ALCORTA_1027 = "ALCORTA EDMUNDO ERNESTO \r\nORIGINAL \r\nA \r\nCOD. 01\r\n Remito: 00012-00003366 \r\n" + ENC_A + RENG_1027 + PIE_A("0,00 ", "349810,16", "73460,13", "0,00", "423270,29")
+    const b = leerDetalleFactura(ALCORTA_1027, { cuit: "20103619115", totalConocido: 423270.29 })
+    const eq = b.renglones[5]
+    const vB = `${b.renglones.length} · ${b.renglones[1]?.descripcion} · ${eq?.descripcion} ${eq?.cantidad}×${eq?.precioUnitario} · suma ${b.control.sumaRenglones} · ${b.control.estado}`
+    const eB = "6 · OXILEN AD X 250 ML · EQUEST 11×13652.6 · suma 349810.16 · cierra"
+    chequear("Detalle de facturas — Alcorta", "Seis renglones con números dentro de la descripción («X 250 ML») sin confundirlos con la cantidad", eB, vB, vB === eB, "A-FEAT-1651")
+
+    // Adversario: un importe de renglón leído mal → los renglones ya no suman el neto del papel → NO se usa (integridad).
+    const mal = leerDetalleFactura(ALCORTA_1027.replace("150178,60 21%", "150178,00 21%"), { cuit: "20103619115", totalConocido: 423270.29 })
+    // Adversario: el PDF es de otra factura (el total del papel no es el del sistema).
+    const otra = leerDetalleFactura(ALCORTA_1027, { cuit: "20103619115", totalConocido: 557686.80 })
+    const vM = `${mal.control.estado} dif ${mal.control.difNeto} | ${otra.control.estado} dif ${otra.control.difTotal}`
+    const eM = "no-cierra dif -0.6 | no-cierra dif -134416.51"
+    chequear("Detalle de facturas — control", "🛑 Si los renglones no suman el neto del papel, o el total del papel no es el de la factura del sistema, el detalle queda «no cierra»", eM, vM, vM === eM, "A-FEAT-1651")
+
+    const GARCIA = "GARCIA EUGENIO LUIS \r\nORIGINAL \r\nA \r\nCOD. 01\r\n" + ENC_A + "Ha de fumigación 30,00 unidades 11500,00 0,00 345000,00 10,5% 381225,00 " + PIE_A("0,00 ", "345000,00", "0,00", "36225,00", "381225,00")
+    const g = leerDetalleFactura(GARCIA, { cuit: "20234377273", totalConocido: 381225 })
+    const PAIS = "PAIS DIEGO LUIS \r\nORIGINAL \r\nC \r\nCOD. 011\r\nFACTURA \r\nCódigo \r\n\tProducto / Servicio \r\n\tCantidad \r\n\tU. Medida \r\n\tPrecio Unit. \r\n\t% Bonif \r\n\tImp. Bonif. \r\n\tSubtotal\r\n\t\r\n\r\n\r\n\r\nEcografia miositis supurativa lumbar \r\nen yegua1,00 unidades 150000,00 0,00 0,00 150000,00 \r\nSubtotal: $ \r\nImporte Otros Tributos: $ Importe Total: $ \r\n150000,00 0,00 \r\n150000,00 \r\nPág. 1/1 86439763583207CAE N°: \r\n  \r\nFecha de Vto. de CAE: Comprobante Autorizado   \r\nEsta Agencia no se responsabiliza por los datos ingresados en el detalle de la operación \r\n07/11/2026 \r\nPAIS DIEGO LUIS \r\nDUPLICADO \r\nC \r\n"
+    const p = leerDetalleFactura(PAIS, { cuit: "20287940387", totalConocido: 150000 })
+    const vG = `${g.renglones[0]?.descripcion} ${g.renglones[0]?.cantidad}×${g.renglones[0]?.precioUnitario} al ${g.renglones[0]?.alicuotaIva} · ${g.control.estado} | ${p.renglones.length} · ${p.renglones[0]?.descripcion} ${p.renglones[0]?.cantidad}×${p.renglones[0]?.precioUnitario} · total ${p.totalPie} · ${p.control.estado}`
+    const eG = "Ha de fumigación 30×11500 al 10.5 · cierra | 1 · Ecografia miositis supurativa lumbar en yegua 1×150000 · total 150000 · cierra"
+    chequear("Detalle de facturas — contratistas", "Labor (García, 30 ha de fumigación al 10,5 %) y factura C de monotributista (Pais: sin IVA, pie desordenado, descripción pegada a la cantidad)", eG, vG, vG === eG, "A-FEAT-1651")
+
+    const AFA_1230 = "A \r\nCódigo N° \r\n01 \r\nAgricultores Federados Argentinos Factura \r\nSociedad Cooperativa Limitada 1772-00006271 \r\nCuenta Corriente 00035928 SAN PEDRO \r\n\tN° Remito 141100017514 de Fecha 18/12/2025\r\n\tCódigo Descripción Cantidad UM Impt Uni Impte\r\n\t000000000000035182 Glifosato 66,2 % Fideplus X 20 5,00 20B $ 113.296,32 $ 566.481,60 000000000000043759 ENLIST 2-4 D X 20 LTS 60,00 LTS $ 7.343,28 $ 440.596,80  \r\n IMPORTANTE: La aplicación de este producto debe ajustarse a las restricciones de marbete \r\nSubtotal $ 1.007.078,40 IVA: \r\nImpt Neto: $ 1.007.078,40 IvaBienes 21,00 % $ 211.486,46 \r\nImporte Total $ 1.218.564,86 \r\nNúmero de CAE 75526004147059"
+    const f1 = leerDetalleFactura(AFA_1230, { cuit: "30525718626", totalConocido: 1218564.86 })
+    const vF = `${f1.formato} · ${f1.renglones.length} · ${f1.renglones[0]?.descripcion} (cód ${f1.renglones[0]?.codigo}) ${f1.renglones[0]?.cantidad}×${f1.renglones[0]?.precioUnitario} · ${f1.renglones[1]?.descripcion} ${f1.renglones[1]?.cantidad} ${f1.renglones[1]?.unidad} · al ${f1.renglones[1]?.alicuotaIva} · suma ${f1.control.sumaRenglones} · iva ${f1.iva} · otros ${f1.otros} · ${f1.control.estado}`
+    const eF = "afa · 2 · Glifosato 66,2 % Fideplus X 20 (cód 35182) 5×113296.32 · ENLIST 2-4 D X 20 LTS 60 LTS · al 21 · suma 1007078.4 · iva 211486.46 · otros 0 · cierra"
+    chequear("Detalle de facturas — AFA", "🔑 Formato AFA: código de artículo, «66,2 %» dentro de la descripción no se toma como cantidad, la alícuota única del pie va a cada renglón; el remito y la cuenta NO son renglones", eF, vF, vF === eF, "A-FEAT-1651")
+
+    const AFA_1026 = "Agricultores Federados Argentinos Factura \r\n\tCódigo Descripción Cantidad UM Impt Uni Impte\r\n\t000000000000004939 Map Granel. 1.500,00 KGS $ 1.631,36 $ 2.447.047,05 \r\n IMPORTANTE: La aplicación \r\nSubtotal $ 2.447.047,05 Dtos Netos: $ -16656,26 IVA: \r\nImpt Neto: $ 2.430.390,80 IvaBienes 10,50 % $ 255.191,03 Vtas/Uso De: \r\nIBBA Bs As General DN 1/04 BA Gral LI CMI G24X $ 121.519,54 \r\nImporte Total $ 2.807.101,36 \r\n"
+    const f2 = leerDetalleFactura(AFA_1026, { cuit: "30525718626", totalConocido: 2807101.37 })
+    const vF2 = `${f2.renglones.length} · ${f2.renglones[0]?.descripcion} ${f2.renglones[0]?.cantidad} ${f2.renglones[0]?.unidad} al ${f2.renglones[0]?.alicuotaIva} · desc ${f2.descuentos} · iva ${f2.iva} · otros ${f2.otros} · dif total ${f2.control.difTotal} · ${f2.control.estado}`
+    const eF2 = "1 · Map Granel. 1500 KGS al 10.5 · desc -16656.26 · iva 255191.03 · otros 121519.54 · dif total -0.01 · cierra"
+    chequear("Detalle de facturas — AFA", "Descuento general del pie y percepción de IIBB por diferencia (= los $ 121.519,54 del papel); el centavo contra el sistema está dentro de la tolerancia", eF2, vF2, vF2 === eF2, "A-FEAT-1651")
+
+    const BIOFARMA = "Biofarma S.A.\n\nFACTURA BIOFARMA S.A. BV DE LOS POLACOS 6446\n\nCOD: 01 5000\n\nARGENTINA +54 3543 422540\n\nDIVISA: $ - PESO 004800036837 FORMA DE PAGO:\n\nPres.\n\n1,500.00 KG CONCENTRADO NOVILLO 35-10 S-BO25 $ 769.03 $ 1,153,552.50 3,000.00 KG CONCENTRADO TERNERO RECRIA-BO25 $ 1,519.65 $ 4,558,950.00 12/09/2026 CUIT:\n\nMARTINEZ SOBRADO AGRO SRL\n\n30617786016\n\nCantidad UM Descripción Precio Unit. Importe\n\nEl monto de la presente factura corresponde a USD 4689.09.\n\nSUBTOTAL: $5,712,502.50 dólar vendedor al día anterior a la acreditación de los valores o efectivo pago.\n\n$IVA 21%: $ 1,199,625.53 $$$$$$$Perc. IIBB SL. $ 0.00\n\nIVA 10,5%: 0.00\n\nPerc. IIBB BsAs.\n\n0.00\n\nTipo de Cambio: USD 1 = $ 1535.00\n\n285,625.13 Perc. IIBB Tuc. Perc. IIBB SF 0.00\n\nCAE: 86351192497948 Vencimiento:\n\nTOTAL:\n\nA\n\nC.U.I.T.: 30-57143824-7\n\n0.00 PERC. IVA RG.3337\n\n7,197,753.16\n\n0104-00005696\n\n02/09/2026"
+    const bf = leerDetalleFactura(BIOFARMA, { cuit: "30571438247", totalConocido: 7197753.16 })
+    const vBf = `${bf.formato} · ${bf.renglones.length} · ${bf.renglones[0]?.descripcion} ${bf.renglones[0]?.cantidad} ${bf.renglones[0]?.unidad} a ${bf.renglones[0]?.precioUnitario} · ${bf.renglones[1]?.descripcion} ${bf.renglones[1]?.cantidad} · suma ${bf.control.sumaRenglones} · iva ${bf.iva} · otros ${bf.otros} · tc ${bf.tipoCambio} · ${bf.control.estado}`
+    const eBf = "biofarma · 2 · CONCENTRADO NOVILLO 35-10 S-BO25 1500 KG a 769.03 · CONCENTRADO TERNERO RECRIA-BO25 3000 · suma 5712502.5 · iva 1199625.53 · otros 285625.13 · tc 1535 · cierra"
+    chequear("Detalle de facturas — Biofarma", "🔑 Números en formato 1,500.00; dos renglones en la misma línea; percepción de IIBB por diferencia (= los $ 285.625,13 del papel)", eBf, vBf, vBf === eBf, "A-FEAT-1651")
+
+    const ACREN = "A Codigo No 1 FACTURA \r\nNo 00003-00006654 12/11/2026 \r\nAGRO CENTROS REGIÓN NÚCLEO S.A. \r\nConcepto Cantidad Un Precio Importe % IVA IVA Total Inoculante BACTIUM BLINDAX (Bradyrhizobium japonicum E109 +Metalaxil-M 1g + Fludioxonil 2.5 gr) \r\n1,00 pack U$S 215,00 U$S 215,00 21,00 U$S 45,15 U$S 260,15 \r\nImporte Neto gravado U$S 215,00 I.V.A. U$S 45,15 IIBB Percepciónes Ventas U$S 10,75 # factura por cuenta y orden de BIOACKER SA 30-71894608-1 Importe Total U$S 270,90 \r\nAl sólo efecto del cómputo del IVA y Percepciones, el tipo de cambio utilizado es $/U$S: 1.544 \r\n"
+    const ac = leerDetalleFactura(ACREN, { cuit: "33716360429", totalConocido: 270.90 })
+    const vAc = `${ac.formato} · ${ac.moneda} · ${ac.renglones.length} · ${ac.renglones[0]?.cantidad} ${ac.renglones[0]?.unidad} a ${ac.renglones[0]?.precioUnitario} al ${ac.renglones[0]?.alicuotaIva} · ${ac.renglones[0]?.descripcion.slice(0, 26)} · otros ${ac.otros} · tc ${ac.tipoCambio} · ${ac.control.estado}`
+    const eAc = "acren · USD · 1 · 1 pack a 215 al 21 · Inoculante BACTIUM BLINDAX · otros 10.75 · tc 1544 · cierra"
+    chequear("Detalle de facturas — Acren", "Factura en dólares: el renglón en U$S, la percepción aparte y el tipo de cambio «1.544» leído como 1544", eAc, vAc, vAc === eAc, "A-FEAT-1651")
+
+    const HERNANDEZ_1015 = "VETERINARIA HERNANDEZ \r\nCUIT:20224765658 \r\nA \r\nFactura \r\nNº 0101-00000185 \r\n0000-00000000 \r\nCódigo Cantidad Descripción PrecioU. Descuento SubTotal \r\n226 1,00 paradiarreasoralx1lt 45000,00 0,00 37190,084 5,00 trifect 25000,00 0,00 103305,79115 1,00 jeringadescx20ml 1000,00 0,00 826,45116 1,00 jeringadescx60ml 1500,00 0,00 1239,67\r\nSubtotal 142561,99 Impuestos 29938,02 Descuento 0,00 TOTAL 172500,00 \r\nIIBB:0,00-Percep.IVA:0,00-IVA:29938,02-Imp.Internos:0,00 \r\n"
+    const hz = leerDetalleFactura(HERNANDEZ_1015, { cuit: "20224765658", totalConocido: 172500.01 })
+    const CASAMU = "Cód. Artículo Observaciones Cantidad Precio % Dto. Importe Alíc. IVA Impt. c/IVA \r\n4 - Venta Semen Particular \r\n4 - Venta Semen Particular \r\nKilka 169.00 13,000.00 0.00 2,197,000.00 21.00% 2,658,370.00 Biguá 75.00 13,000.00 0.00 975,000.00 21.00% 1,179,750.00 \r\nIVA 2.5: 0.00 IVA 5: 0.00 IVA 10.5: 0.00 IVA 21: 666,120.00 IVA 27: 0.00 Bruto: 3,172,000.00 Impuestos:666,120.00 Total: $ 3,838,120.00 \r\n"
+    const cs = leerDetalleFactura(CASAMU, { cuit: "30639615401", totalConocido: 3838120 })
+    const CLINICA = "CODIGO DESCRIPCION PRECIO IMPORTE CANT \r\nVTO %IVA \r\n 63680 1,00 21,00 ENROFLOXACINA 10% X 1 LT. RUMINAL (GRNDE) 40106,53 40106,53  1084 1,00 21,00 CEFTIOFARMA I X 4 GR. 41343,57 41343,57 \r\nSUBTOTAL\r\n 81450,10\r\n DTO % 0,00 \r\n\tSUBTOTAL \r\n\tI.V.A.% 21.00\r\n\tI.V.A.% 10.50\r\n\t81450,10 0,00\r\n\t\r\n\r\n\t17104,52\r\n\t 0,00\r\n\r\nNO GRABADO  0,00 \r\nC.A.E.: \r\n86439244377043 \r\nTOTAL: \r\n 98554,62 \r\n"
+    const cl = leerDetalleFactura(CLINICA, { cuit: "30593744880", totalConocido: 98554.62 })
+    const vV = `${hz.renglones.length} · ${hz.renglones[1]?.descripcion} ${hz.renglones[1]?.cantidad}× neto ${hz.renglones[1]?.precioUnitario} al ${hz.renglones[1]?.alicuotaIva} · suma ${hz.control.sumaRenglones} · ${hz.control.estado} | ${cs.renglones.map(x => `${x.descripcion} ${x.cantidad}`).join(" + ")} · ${cs.control.estado} | ${cl.renglones[0]?.codigo} ${cl.renglones[0]?.descripcion} · iva ${cl.iva} · ${cl.control.estado}`
+    const eV = "4 · trifect 5× neto 20661.16 al 21 · suma 142561.99 · cierra | Semen Kilka 169 + Semen Biguá 75 · cierra | 63680 ENROFLOXACINA 10% X 1 LT. RUMINAL (GRNDE) · iva 17104.52 · cierra"
+    chequear("Detalle de facturas — veterinarias", "🩺 Hernández (subtotal pegado al código del renglón siguiente; precio de lista con IVA → unitario neto), Casamú (semen por toro, IATF) y Clínica Integral (pie en columnas)", eV, vV, vV === eV, "A-FEAT-1651 · A-FEAT-1249")
+
+    const RIGO = "NOTA DE CRÉDITO   \r\nN° 0004 - 00000401\r\nRIGO MATIAS Y RIGO RAUL S.H \r\nP. NETO BONIF. P. UNIT TOTAL \r\n1,00 descuento 5% por pago transferencia 17.717,38 0,00 % 17.717,38 17.717,38 \r\nSUBTOTAL 17.717,38 IVA 21,0 3.720,65 IVA 10,5 0,00 \r\nTOTAL $21.438,03 \r\n"
+    const rg = leerDetalleFactura(RIGO, { cuit: "30710679556", totalConocido: 21438.03 })
+    const vac = leerDetalleFactura(null)
+    const vRg = `${rg.formato} · ${rg.renglones.length} · ${rg.renglones[0]?.descripcion} ${rg.renglones[0]?.cantidad}×${rg.renglones[0]?.precioUnitario} · neto ${rg.netoPie} · ${rg.control.estado} | vacío: ${vac.renglones.length} · ${vac.control.estado} · ${vac.noLeido.join("/")}`
+    const eRg = "generico · 1 · descuento 5% por pago transferencia 1×17717.38 · neto 17717.38 · cierra | vacío: 0 · sin-renglones · renglones/neto del pie/total del pie"
+    chequear("Detalle de facturas — genérico", "Formato desconocido: sólo toma el renglón donde cantidad × precio da el importe; sin texto no rompe, dice qué no leyó", eRg, vRg, vRg === eRg, "A-FEAT-1651")
   }
   return r
 }
