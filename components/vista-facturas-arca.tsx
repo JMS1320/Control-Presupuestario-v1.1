@@ -246,6 +246,21 @@ const COLUMNAS_CONFIG = {
   created_at: { label: "Created At", visible: false, width: "150px" }
 } as const
 
+/**
+ * 🔽 A-FEAT-1644 (nota 🌙 JMS 12/11 en Facturas MSA → Facturas: «faltan los filtros»): el valor de cada columna de la
+ * tabla principal para el filtro tipo Excel, como se ve (fechas dd/mm/aaaa, importes es-AR). Mismo patrón que Subdiarios.
+ */
+const valorColumnaFactura = (f: any, col: string): string => {
+  const v = f?.[col]
+  if (v == null || v === '') return ''
+  if (/^(fecha_|created_at)/.test(col)) return String(v).slice(0, 10).split('-').reverse().join('/')
+  if (typeof v === 'number' || (/^(imp_|iva$|otros_tributos|monto_|tipo_cambio)/.test(col) && !isNaN(Number(v))))
+    return Number(v).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return String(v)
+}
+const VALORES_FACTURAS: Record<string, (f: any) => string> = Object.fromEntries(
+  Object.keys(COLUMNAS_CONFIG).map(k => [k, (f: any) => valorColumnaFactura(f, k)]))
+
 function TablaRegistrosV2({ registros, onCertificado, mostrarAnulados = false }: { registros: any[], onCertificado?: (registros: any[]) => void, mostrarAnulados?: boolean }) {
   const fmt = (n: any) => `$${(Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
   const fmtFecha = (f: string | null) => {
@@ -788,7 +803,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
    * 📋 Las facturas que muestra la tabla principal (búsqueda rápida y filtro del link). Una sola definición: la usan la
    * tabla y la barra de abajo (A-FEAT-1464), para que la barra cuente exactamente lo que se ve.
    */
-  const facturasEnPantalla = () => {
+  const [filtrosColFact, setFiltrosColFact] = useState<Record<string, Set<string> | null>>({})   // 🔽 A-FEAT-1644
+  const facturasEnPantalla = () => filtrarPorColumnas(facturasSinFiltroColumna(), filtrosColFact, VALORES_FACTURAS)
+  const facturasSinFiltroColumna = () => {
     const q = normalizarBusqueda(busquedaRapida.trim())
     const base = facturasLink ? facturas.filter(f => facturasLink.has(String(f.id))) : facturas
     return q
@@ -1842,9 +1859,11 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
    * PDFs»); desde «sin comprobante», CARPETA Y MAIL (la sin imputar: su mes de emisión y el siguiente).
    * Corre en 2do plano: el avance y el informe, en el cartel flotante.
    */
-  const buscarSinPdf = async (ids: string[], donde: 'mail' | 'ambos') => {
+  const buscarSinPdf = async (ids: string[], donde: 'mail' | 'ambos' | 'carpeta') => {
     if (ids.length === 0) return
-    const comoBusca = donde === 'mail'
+    const comoBusca = donde === 'carpeta'
+      ? 'Sólo en la carpeta de su subdiario en Drive (sin imputar: su mes de emisión y el siguiente). El mail no se mira.'
+      : donde === 'mail'
       ? 'La carpeta no se mira (eso es «🔗 Vincular PDFs»): primero lo ya leído de los reenvíos, después el mail de cada proveedor, y al final los reenvíos y los mails con «factura / FC / fac» en el asunto que todavía no se leyeron.'
       : 'Primero la carpeta de su subdiario en Drive (sin imputar: su mes de emisión y el siguiente); después lo ya leído de los reenvíos, el mail de cada proveedor, y al final los reenvíos y los mails con «factura / FC / fac» en el asunto que todavía no se leyeron.'
     if (!window.confirm(`Vas a buscar el PDF de ${ids.length} factura(s).\n${comoBusca}\nCorre en segundo plano: el avance y el informe quedan en el cartel de arriba a la derecha.\n\n¿Continuar?`)) return
@@ -8441,6 +8460,11 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
             <CardTitle className="flex items-center gap-2">
               <Receipt className="h-5 w-5" />
               {facturas.length} Facturas Encontradas
+              {Object.values(filtrosColFact).some(Boolean) && (
+                <span className="text-sm font-normal text-muted-foreground">
+                  · <b>{facturasEnPantalla().length}</b> con los filtros de columna · <button type="button" className="text-blue-600 underline" onClick={() => setFiltrosColFact({})}>quitarlos</button>
+                </span>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -8452,10 +8476,11 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                       {(modoEdicionMasiva || modoEdicionAdmin) && (
                         <TableHead style={{ width: '50px', minWidth: '50px' }}>
                           <Checkbox
-                            checked={facturasSeleccionadasMasiva.size === facturas.length && facturas.length > 0}
+                            // 🔽 A-FEAT-1644: «todas» = las que se VEN (con búsqueda y filtros de columna), nunca las ocultas
+                            checked={(() => { const v = facturasEnPantalla(); return v.length > 0 && v.every(f => facturasSeleccionadasMasiva.has(f.id)) })()}
                             onCheckedChange={(checked) => {
                               if (checked) {
-                                setFacturasSeleccionadasMasiva(new Set(facturas.map(f => f.id)))
+                                setFacturasSeleccionadasMasiva(new Set(facturasEnPantalla().map(f => f.id)))
                               } else {
                                 setFacturasSeleccionadasMasiva(new Set())
                               }
@@ -8471,7 +8496,10 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                             minWidth: anchosColumnas[columna] || COLUMNAS_CONFIG[columna].width
                           }}
                         >
-                          {COLUMNAS_CONFIG[columna].label}
+                          <FiltroColumna titulo={COLUMNAS_CONFIG[columna].label}
+                            opciones={opcionesDeColumna(filtrarPorColumnas(facturasSinFiltroColumna(), { ...filtrosColFact, [columna]: null }, VALORES_FACTURAS), VALORES_FACTURAS[columna])}
+                            seleccion={filtrosColFact[columna] ?? null}
+                            onChange={sel => setFiltrosColFact(prev => ({ ...prev, [columna]: sel }))} />
                         </TableHead>
                       ))}
                       <TableHead style={{ width: '40px', minWidth: '40px' }}></TableHead>
@@ -9426,12 +9454,14 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
               const { filas } = faltantesDelSubdiario(pendientes, ultimasSinPdf, hoyArgentina())
               const porId = new Map(pendientes.map(f => [f.id, f]))
               return (
-                <PanelFacturasSinPdf filas={filas} dondeBusca="ambos" buscando={buscandoPdfs} proveedores={provPorCuit}
+                // 📂 A-FEAT-1648 (nota JMS 16/11: «mejor busque sólo en su carpeta por default»): carpeta primero; el mail, botón aparte
+                <PanelFacturasSinPdf filas={filas} dondeBusca="carpeta" buscando={buscandoPdfs} proveedores={provPorCuit}
                   rotuloDe={id => { const f = porId.get(id); return f ? subdiarioDe(f).rotulo : null }}
                   onGuardarMail={guardarMailProveedor} onPortal={marcarProveedorPortal}
                   onPedir={ids => setPedirFacturas(ids)}
                   onLlegaron={ids => { setMostrarModalMarcarFC(false); buscarRespuestasSinPdf(ids) }}
-                  onBuscar={ids => { setMostrarModalMarcarFC(false); buscarSinPdf(ids, 'ambos') }}
+                  onBuscar={ids => { setMostrarModalMarcarFC(false); buscarSinPdf(ids, 'carpeta') }}
+                  onBuscarMail={ids => { setMostrarModalMarcarFC(false); buscarSinPdf(ids, 'ambos') }}
                   accionFila={id => {
                     const f = porId.get(id)
                     if (!f) return null
