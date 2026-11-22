@@ -25,6 +25,7 @@ import { formatNumber, getMonthName } from "@/lib/format"
 import { hoyArgentina } from "@/lib/fechas"
 import { completarMeses, saldoCon, RAZON, SOCIOS_RESPONSABLES, type ControlVisible, type NodoSocios, type VistaResponsable } from "@/lib/dashboard/responsable"
 import type { ResumenFinanciero } from "@/lib/dashboard/resumen"
+import type { ControlBancos } from "@/lib/dashboard/control-bancos"
 
 interface Props {
   año: number
@@ -121,14 +122,14 @@ export function DashboardPorResponsable(p: Props) {
     setExportando("excel")
     try {
       const { descargarExcelPorResponsable } = await import("@/lib/dashboard/export-responsable")
-      await descargarExcelPorResponsable({ empresas, año: p.año, semestre: p.semestre, vista, control: ctl, cuentas }, nombreArchivo("xlsx"))
+      await descargarExcelPorResponsable({ empresas, año: p.año, semestre: p.semestre, vista, control: ctl, cuentas, bancos: resultado.bancos }, nombreArchivo("xlsx"))
     } catch (e) { console.error(e); toast.error(`No se pudo armar el Excel: ${e instanceof Error ? e.message : String(e)}`) } finally { setExportando("") }
   }
   const bajarPdf = async () => {
     setExportando("pdf")
     try {
       const { descargarPdfPorResponsable } = await import("@/lib/dashboard/pdf-responsable")
-      descargarPdfPorResponsable({ titulo, nota, resumen: meses, vista, control: ctl, decimales: p.mostrarDecimales, orden: p.orden }, nombreArchivo("pdf"))
+      descargarPdfPorResponsable({ titulo, nota, resumen: meses, vista, control: ctl, bancos: resultado.bancos, decimales: p.mostrarDecimales, orden: p.orden }, nombreArchivo("pdf"))
     } catch (e) { console.error(e); toast.error(`No se pudo armar el PDF: ${e instanceof Error ? e.message : String(e)}`) } finally { setExportando("") }
   }
 
@@ -136,19 +137,34 @@ export function DashboardPorResponsable(p: Props) {
   const socios = SOCIOS_RESPONSABLES.filter(s => !empresas.includes(s))
   const saldos = empresas.flatMap(e => socios.map(s => ({ e, s, v: saldoCon(cuentas, e, s) }))).filter(x => Math.abs(x.v) >= 0.005)
 
+  const filaTotal = (rotulo: string, valores: number[], clase: string) => {
+    const tot = valores.reduce((a, b) => a + b, 0)
+    return (
+      <tr className={`border-t ${clase}`}>
+        <td className="py-1 pl-4">{rotulo}</td>
+        {valores.map((x, i) => <td key={i} className="text-center"><span className={color(x)}>{x ? formatNumber(x, p.mostrarDecimales) : "-"}</span></td>)}
+        <td className="bg-blue-50 text-center"><span className={color(tot)}>{formatNumber(tot, p.mostrarDecimales)}</span></td>
+        <td className="bg-green-50 text-center">{formatNumber(tot / (valores.length || 1), p.mostrarDecimales)}</td>
+      </tr>
+    )
+  }
   const tablaSocios = (todoAbierto: boolean) => (
     <div className="overflow-x-auto rounded-md border">
       <table className="w-full text-xs">
         <thead><tr className="bg-muted">
-          <th className="py-1 pl-2 text-left">Socios</th>
+          <th className="py-1 pl-2 text-left">Lectura por responsable</th>
           {meses.map(m => <th key={claveMes(m)} className="text-center">{getMonthName(m.mes).slice(0, 3)} {String(m.año).slice(2)}</th>)}
           <th className="bg-blue-50 text-center">Total</th><th className="bg-green-50 text-center">Promedio</th>
         </tr></thead>
         <tbody>
-          <TablaSocios raiz={vista.financiado} meses={meses} decimales={p.mostrarDecimales} todoAbierto={todoAbierto} claseTitulo="bg-sky-50 text-sky-900"
-            explicacion="lo que otro socio pagó por esta empresa o le transfirió (ni ingreso ni gasto)" />
-          <TablaSocios raiz={vista.porCuenta} meses={meses} decimales={p.mostrarDecimales} todoAbierto={todoAbierto} claseTitulo="bg-orange-50 text-orange-900"
-            explicacion="lo que esta empresa pagó o transfirió por otro socio (ni ingreso ni gasto)" />
+          {/* 💰 JMS 22/11: los ingresos en dos subtotales — los propios y lo recibido de cada socio (neto), abrible por canal → template */}
+          <tr className="bg-green-50 text-green-900"><td colSpan={meses.length + 3} className="py-1.5 pl-2 font-semibold">INGRESOS — LO PROPIO Y LO DE LOS SOCIOS</td></tr>
+          {filaTotal("Ingresos propios (arrendamientos, ventas…)", meses.map(m => m.totalIngresos), "")}
+          <TablaSocios raiz={vista.recibidoNeto} meses={meses} decimales={p.mostrarDecimales} todoAbierto={todoAbierto} claseTitulo="bg-sky-50 text-sky-900"
+            explicacion="por socio: lo que transfirió + lo que pagó por esta empresa − lo que esta empresa pagó o le transfirió" />
+          {filaTotal("= Ingresos totales", meses.map(m => m.totalIngresos + (vista.recibidoNeto.porMes[claveMes(m)] ?? 0)), "border-t-2 font-semibold")}
+          {filaTotal("Egresos (todos los suyos: con lo que pagó otro y los retiros a caja)", meses.map(m => m.totalEgresos), "")}
+          {filaTotal("Financieros y distribuciones propios (FCI, pagos de tarjeta, entre cuentas)", meses.map(m => m.totalFinancieros + m.totalDistribuciones), "text-gray-600")}
           <tr className="border-t-2 bg-gray-100 font-semibold">
             <td className="py-1 pl-2">Total (= lo que se movió en sus canales)</td>
             {meses.map(m => { const x = m.saldoMensual + (vista.financiado.porMes[claveMes(m)] ?? 0) + (vista.porCuenta.porMes[claveMes(m)] ?? 0); return <td key={claveMes(m)} className="text-center"><span className={color(x)}>{formatNumber(x, p.mostrarDecimales)}</span></td> })}
@@ -210,6 +226,7 @@ export function DashboardPorResponsable(p: Props) {
           <p className="mt-1 text-gray-500">+ = el socio le debe a la empresa · − = la empresa le debe al socio. Desde el 31/12/2024 (saldo 0), con todo lo que cada uno pagó o transfirió por el otro; Libertad entera de MA.</p>
         </div>
 
+        {resultado.bancos && <ControlContraBancos c={resultado.bancos} decimales={p.mostrarDecimales} />}
         <ControlPorResponsable vista={vista} control={ctl} decimales={p.mostrarDecimales} nota={nota} />
       </div>
 
@@ -266,6 +283,61 @@ function ControlPorResponsable({ vista: v, control: c, decimales, nota }: {
       )}
       {c.fuera.length > 0 && <p className="text-amber-700">⚠️ {c.fuera.length} movimiento{c.fuera.length === 1 ? "" : "s"} con tipo «NO» o vacío no entra{c.fuera.length === 1 ? "" : "n"} en ninguna vista (igual que en «Por caja»): {c.fuera.slice(0, 5).map(f => `${String(f.mov.fecha).split("-").reverse().join("/")} ${f.mov._canal} ${formatNumber(f.clasificacion.monto, decimales)} (tipo ${f.clasificacion.tipo ?? "vacío"}${f.clasificacion.origenTipo ? `, de ${f.clasificacion.origenTipo}` : ""})`).join(" · ")}</p>}
       <p className="text-gray-500">{nota}</p>
+    </div>
+  )
+}
+
+/** 🏦 El control contra los bancos, renglón por renglón (§ 🧮: visible, y alerta grande si no cierra). */
+function ControlContraBancos({ c, decimales }: { c: ControlBancos; decimales: boolean }) {
+  const n = (x: number) => formatNumber(x, decimales)
+  const renglones: Array<[string, number, string?]> = [
+    ["Saldo inicial de sus cuentas en pesos", c.saldoInicial],
+    ["+ Ingresos propios", c.ingresosPropios],
+    ["+ Recibido de los socios (neto)", c.recibidoSocios],
+    ["+ Egresos (todos los suyos, con los retiros a caja y lo que pagó otro)", c.egresos],
+    ["+ Financieros propios (FCI, pagos de la tarjeta, entre cuentas, intereses)", c.financieros],
+    ["+ Distribuciones", c.distribuciones],
+    ["+ Movimientos sin categoría (no entran al Dashboard)", c.sinCategoria, "text-amber-700"],
+    ["+ Movimientos con tipo «NO» (no entran a la vista)", c.fuera, "text-amber-700"],
+  ]
+  return (
+    <div className={`rounded-md border p-2 text-xs ${c.cierra ? "" : "border-2 border-red-400 bg-red-50"}`}>
+      <p className={`mb-1 font-semibold ${c.cierra ? "text-emerald-700" : "text-red-900"}`}>
+        {c.cierra ? "✓ Control contra los bancos: cierra" : `⚠️ Control contra los bancos: NO cierra — diferencia ${n(c.diferencia)}`}
+      </p>
+      <table className="w-auto border-collapse">
+        <tbody>
+          {renglones.map(([r, v, cl]) => (
+            <tr key={r} className="border-t"><td className={`pr-6 ${cl ?? ""}`}>{r}</td><td className="text-right tabular-nums">{n(v)}</td></tr>
+          ))}
+          <tr className="border-t-2 font-semibold"><td className="pr-6">= Saldo final calculado</td><td className="text-right tabular-nums">{n(c.saldoFinalCalculado)}</td></tr>
+          <tr className="font-semibold"><td className="pr-6">Saldo final de los bancos</td><td className="text-right tabular-nums">{n(c.saldoFinalBancos)}</td></tr>
+          <tr className={c.cierra ? "text-emerald-700" : "font-semibold text-red-800"}><td className="pr-6">Diferencia</td><td className="text-right tabular-nums">{n(c.diferencia)}</td></tr>
+        </tbody>
+      </table>
+      <table className="mt-2 w-auto border-collapse">
+        <thead><tr className="text-left text-gray-500"><th className="pr-4 font-medium">Cuenta</th><th className="pr-4 text-right font-medium">Saldo inicial</th><th className="pr-4 text-right font-medium">Movimientos</th><th className="pr-4 text-right font-medium">Saldo final</th><th className="pr-4 font-medium">De dónde sale el saldo</th></tr></thead>
+        <tbody>
+          {c.canales.map(k => (
+            <tr key={k.canal} className="border-t">
+              <td className="pr-4">{k.canal}</td>
+              <td className="pr-4 text-right tabular-nums">{n(k.inicial)}{k.inicialEstimado && <span className="ml-1 text-amber-700" title={k.nota}>⚠️</span>}</td>
+              <td className="pr-4 text-right tabular-nums">{n(k.netoMovimientos)}</td>
+              <td className="pr-4 text-right tabular-nums">{n(k.final)}</td>
+              <td className="pr-4 text-gray-600">{k.nota}{Math.abs(k.diferenciaCanal) >= 0.005 ? ` · ⚠️ el saldo del banco no coincide con sus movimientos por ${n(k.diferenciaCanal)}` : ""}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {c.avisos.length > 0 && <ul className="mt-1 list-disc pl-5 text-gray-700">{c.avisos.map(a => <li key={a}>{a}</li>)}</ul>}
+      {c.sinCategoria !== 0 && (
+        <details className="mt-1 text-gray-700"><summary className="cursor-pointer">Ver los movimientos sin categoría</summary>
+          <ul className="max-h-40 list-disc overflow-y-auto pl-5">
+            {c.canales.flatMap(k => k.sinCategoria.map((x, i) => <li key={`${k.canal}-${i}`}>{x.fecha.split("-").reverse().join("/")} · {k.canal} · {x.descripcion} · {n(x.importe)}</li>))}
+          </ul>
+        </details>
+      )}
+      <p className="mt-1 text-gray-500">Las cuentas en dólares no entran (pesos y dólares nunca mezclados): un pase pesos ↔ dólares se ve en «Financieros propios».</p>
     </div>
   )
 }

@@ -4,7 +4,7 @@ import { nivelesDe, seccionesDelRol } from "@/lib/auth/permisos"
 import { supabaseAdmin, faltaConfiguracionAdmin } from "@/lib/supabase-admin"
 import { CUENTAS_BANCARIAS } from "@/lib/conciliacion/cuentas-bancarias"
 import { EMPRESAS_DASHBOARD } from "@/lib/dashboard/canales"
-import { leerDatosPorResponsable } from "@/lib/dashboard/leer-responsable"
+import { leerDatosPorResponsable, leerSaldosDeCanales } from "@/lib/dashboard/leer-responsable"
 import { atribuirTodo, resultadoParaRuta, CUENTA_DESDE } from "@/lib/dashboard/responsable"
 import { puedeVerPorResponsable } from "@/lib/dashboard/permiso-responsable"
 
@@ -53,10 +53,14 @@ export async function GET(req: Request) {
   const desde = semestre === 2 ? `${anio}-07-01` : `${anio}-01-01`
   const hasta = semestre === 1 ? `${anio}-06-30` : `${anio}-12-31`
   try {
-    const d = await leerDatosPorResponsable(supabaseAdmin, CUENTAS_BANCARIAS, desde < CUENTA_DESDE ? desde : CUENTA_DESDE, hasta)
-    const at = atribuirTodo(d.movs, d.cuentas, d.templates, d.ctx)
-    const datos = resultadoParaRuta(at, pedidas, soloMA, desde, hasta, d.cuentas, d.templates, d.desdeCanal)
-    return NextResponse.json({ ok: true, datos, problemas: d.problemas })
+    const [d, sal] = await Promise.all([
+      leerDatosPorResponsable(supabaseAdmin, CUENTAS_BANCARIAS, desde < CUENTA_DESDE ? desde : CUENTA_DESDE, hasta),
+      // 🏦 Los saldos de SUS cuentas (o de las empresas pedidas), para el control contra bancos.
+      leerSaldosDeCanales(supabaseAdmin, CUENTAS_BANCARIAS, soloMA ? ["MA"] : pedidas, desde, hasta),
+    ])
+    const at = atribuirTodo(d.movs, d.cuentas, d.templates, d.ctx, { sinCaja: d.sinCaja })
+    const datos = resultadoParaRuta(at, pedidas, soloMA, desde, hasta, d.cuentas, d.templates, d.desdeCanal, sal.saldos)
+    return NextResponse.json({ ok: true, datos, problemas: [...d.problemas, ...sal.problemas] })
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 })
   }

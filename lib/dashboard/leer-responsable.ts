@@ -13,6 +13,7 @@ import { traerTodo } from "@/lib/supabase-paginado"
 import { EMPRESAS_DASHBOARD, canalesDelDashboard, type CanalDashboard, type CuentaDelRegistro } from "./canales"
 import type { InfoTemplate } from "./resumen"
 import type { CanalDesde, ContextoResponsable } from "./responsable"
+import { saldoDeCanal, type FilaCanalCrudo, type SaldoCanal } from "./control-bancos"
 
 export interface DatosPorResponsable {
   canales: CanalDashboard[]
@@ -21,6 +22,8 @@ export interface DatosPorResponsable {
   templates: Map<string, InfoTemplate>
   ctx: ContextoResponsable
   desdeCanal: CanalDesde[]
+  /** 💵 Las empresas sin caja propia en el registro (para ellas, un retiro de efectivo es gasto: `OpcionesAtribucion.sinCaja`). */
+  sinCaja: Set<string>
   /** Lo que no se pudo leer (o no llegó entero): se dice arriba de la vista. */
   problemas: string[]
 }
@@ -83,5 +86,22 @@ export async function leerDatosPorResponsable(cliente: any, registro: CuentaDelR
     }
   }
 
-  return { canales, movs, cuentas: cuentasR.data ?? [], templates, ctx: { responsableTemplate, empresaFactura, empresaSueldo }, desdeCanal, problemas }
+  const sinCaja = new Set<string>(EMPRESAS_DASHBOARD.filter(e => !canales.some(c => c.empresa === e && c.tipo === "caja")))
+  return { canales, movs, cuentas: cuentasR.data ?? [], templates, ctx: { responsableTemplate, empresaFactura, empresaSueldo }, desdeCanal, sinCaja, problemas }
+}
+
+/**
+ * 🏦 Para el control contra bancos (A-FEAT-1637): TODAS las filas (con y sin categoría) de los canales en pesos de `empresas`, desde el
+ * principio hasta `hasta` — el saldo inicial de una tarjeta o de un canal sin saldo se arma acumulando desde el primer dato. SÓLO LEE.
+ */
+export async function leerSaldosDeCanales(cliente: any, registro: CuentaDelRegistro[], empresas: readonly string[], desde: string, hasta: string): Promise<{ saldos: SaldoCanal[]; problemas: string[] }> {
+  const de = (schema: string, tabla: string) => (schema === "public" ? cliente.from(tabla) : cliente.schema(schema).from(tabla))
+  const problemas: string[] = []
+  const saldos = await Promise.all(canalesDelDashboard(registro, empresas).map(async canal => {
+    const r = await traerTodo<any>((d, h) => de(canal.schema, canal.tabla).select("*", { count: "exact" }).lte("fecha", hasta).order("id").range(d, h))
+    if (r.error) problemas.push(`${canal.nombre} (saldos): ${r.error.message}`)
+    else if (r.esperadas != null && r.esperadas !== r.data.length) problemas.push(`${canal.nombre} (saldos): llegaron ${r.data.length} de ${r.esperadas}`)
+    return saldoDeCanal(canal.nombre, canal.empresa, canal.tipo, r.data as FilaCanalCrudo[], desde, hasta)
+  }))
+  return { saldos, problemas }
 }

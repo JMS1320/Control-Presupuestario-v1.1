@@ -15,6 +15,7 @@ import { aplicarVistas, MONEDA } from "@/lib/balance/formato-excel"
 import { fechasReales } from "@/lib/excel/fechas-reales"
 import { descargarBlob } from "@/lib/descargar-archivo"
 import { mesesDelPeriodo } from "./export-excel"
+import type { ControlBancos } from "./control-bancos"
 import { CATEGORIAS_CUENTA, RAZON, SALDO_INICIAL_FECHA, SECCIONES_VISTA, type ControlResponsable, type CuentaPar, type NodoSocios, type VistaResponsable } from "./responsable"
 
 const fechaAR = (iso: string) => { const [a, m, d] = String(iso).slice(0, 10).split("-"); return `${d}/${m}/${a}` }
@@ -27,6 +28,7 @@ export interface DatosExcelResponsable {
   vista: VistaResponsable
   control: ControlResponsable
   cuentas: CuentaPar[]
+  bancos?: ControlBancos | null
 }
 
 export function itemsDeLaVista(v: VistaResponsable): ItemDetalle[] {
@@ -93,6 +95,28 @@ export function libroPorResponsable(d: DatosExcelResponsable): XLSX.WorkBook {
   h.push([], ["5 · FUERA DE LA TABLA — cuenta con tipo «NO» o vacío (igual que en «Por caja»)"], ["Fecha", "Canal", "Descripción", "Categ", "Importe", "Tipo y de dónde sale"])
   if (!c.fuera.length) h.push(["(ninguno)"])
   for (const f of c.fuera) h.push([fechaAR(f.mov.fecha), f.mov._canal ?? "", f.mov.descripcion ?? "", f.mov.categ ?? "", n(f.clasificacion.monto), `${f.clasificacion.tipo ?? "vacío"}${f.clasificacion.origenTipo ? ` (de ${f.clasificacion.origenTipo})` : ""}`])
+  // 🏦 6 · Contra los bancos (con fórmulas: el calculado suma sus renglones y la diferencia se ve)
+  const b = d.bancos
+  if (b) {
+    h.push([], ["6 · CONTROL CONTRA LOS BANCOS — saldo inicial + ingresos totales − egresos ± lo demás = saldo final de los bancos"])
+    const f0 = h.length + 1
+    const rs: Array<[string, number]> = [["Saldo inicial de sus cuentas en pesos", b.saldoInicial], ["+ Ingresos propios", b.ingresosPropios], ["+ Recibido de los socios (neto)", b.recibidoSocios],
+      ["+ Egresos (con los retiros a caja y lo que pagó otro)", b.egresos], ["+ Financieros propios (FCI, pagos de tarjeta, entre cuentas)", b.financieros], ["+ Distribuciones", b.distribuciones],
+      ["+ Movimientos sin categoría (no entran al Dashboard)", b.sinCategoria], ["+ Movimientos con tipo «NO»", b.fuera]]
+    for (const [r, v0] of rs) h.push([r, "", "", n(v0)])
+    const fN2 = h.length
+    h.push(["= Saldo final calculado", "", "", { t: "n", f: `SUM(D${f0}:D${fN2})`, v: b.saldoFinalCalculado, z: MONEDA }])
+    const fCalc = h.length
+    h.push(["Saldo final de los bancos", "", "", n(b.saldoFinalBancos)])
+    const fBan = h.length
+    h.push(["Diferencia", "", "", { t: "n", f: `D${fBan}-D${fCalc}`, v: b.diferencia, z: MONEDA }, { t: "s", f: `IF(ABS(D${fBan + 1})<0.01,"✓ cierra contra los bancos","⚠️ NO CIERRA")`, v: b.cierra ? "✓ cierra contra los bancos" : "⚠️ NO CIERRA" }])
+    h.push([], ["Cuenta", "Saldo inicial", "Movimientos", "Saldo final", "De dónde sale el saldo", "Diferencia del extracto"])
+    for (const k of b.canales) h.push([k.canal, n(k.inicial), n(k.netoMovimientos), n(k.final), k.nota, n(k.diferenciaCanal)])
+    for (const a of b.avisos) h.push([`⚠️ ${a}`])
+    h.push([], ["Movimientos sin categoría de sus cuentas"], ["Fecha", "Cuenta", "Descripción", "Importe"])
+    for (const k of b.canales) for (const x of k.sinCategoria) h.push([fechaAR(x.fecha), k.canal, x.descripcion, n(x.importe)])
+    h.push(["Las cuentas en dólares no entran (pesos y dólares nunca mezclados)."])
+  }
   agregarHoja(wb, "Control", h)
 
   // 🤝 Cuenta entre socios

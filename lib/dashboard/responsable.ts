@@ -38,6 +38,7 @@ import { destinoDeCodigo, marcaDeLaNota } from "@/lib/balance/capa-interna"
 import type { CuentaContable } from "@/lib/supabase"
 import { EMPRESAS_DASHBOARD } from "./canales"
 import { armarResumenFinanciero, clasificadorDashboard, type Clasificacion, type InfoTemplate, type ResumenFinanciero } from "./resumen"
+import { controlContraBancos, type ControlBancos, type SaldoCanal } from "./control-bancos"
 
 /** Los socios que pueden ser responsables, en el orden del grupo (el de más arriba es el «acreedor» de la cuenta del par). */
 export const SOCIOS_RESPONSABLES = ["MSA", "PAM", "MA", "JMS", "AMS", "COTITULARES"] as const
@@ -165,14 +166,28 @@ export interface Atribuidos {
 const esPlata = (s: Clasificacion["seccion"]) => s === "financieros" || s === "distribuciones"
 
 /** Atribuye y clasifica TODOS los movimientos una vez. */
-export function atribuirTodo(movs: any[], cuentas: CuentaContable[], templates: Map<string, InfoTemplate>, ctx: ContextoResponsable): Atribuidos {
+/** 💵 Un retiro de efectivo (template o categoría «Caja»). */
+export const esRetiroACaja = (mov: any, tpl: string) => /^caja$/i.test(String(tpl ?? "").trim()) || /^caja$/i.test(String(mov.categ ?? "").trim())
+export const RETIROS_A_CAJA = "Retiros a caja (efectivo)"
+
+export interface OpcionesAtribucion {
+  /**
+   * 💵 Las empresas SIN caja propia en la app (JMS 22/11: «retiros a caja = gasto»). Para ellas, un retiro de efectivo es un GASTO
+   * («Retiros a caja»), no un pase entre cuentas: la plata no vuelve a ninguna cuenta del sistema. En una empresa con caja (MSA) el
+   * retiro llega a su caja y sigue siendo financiero. Caso: MA retira del cajero, y el millón del pintor que MSA retiró para MA.
+   */
+  sinCaja?: ReadonlySet<string>
+}
+
+export function atribuirTodo(movs: any[], cuentas: CuentaContable[], templates: Map<string, InfoTemplate>, ctx: ContextoResponsable, op: OpcionesAtribucion = {}): Atribuidos {
   const clasificar = clasificadorDashboard(cuentas, templates)
   const out: MovSocio[] = [], fuera: Atribuidos["fuera"] = []
   for (const mov of movs) {
-    const c = clasificar(mov)
+    let c = clasificar(mov)
     if (!c.seccion) { fuera.push({ mov, clasificacion: c }); continue }
     const tpl = mov.template_id ? templates.get(String(mov.template_id))?.nombre ?? "" : ""
     const a = atribuir(mov, ctx, tpl)
+    if (c.seccion === "financieros" && op.sinCaja?.has(a.responsable) && esRetiroACaja(mov, tpl)) c = { ...c, seccion: "egresos", agrupadora: RETIROS_A_CAJA }
     let tipo: MovSocio["tipo"] = "propio", socio: string | null = null
     if (a.responsable !== a.pagador) { tipo = esPlata(c.seccion) ? "transferencia" : "porCuenta"; socio = a.responsable }
     else if (esPlata(c.seccion) && a.contraparte) { tipo = "transferencia"; socio = a.contraparte }
@@ -248,6 +263,11 @@ export interface VistaResponsable {
   cierra: boolean
   /** Cada renglón de la vista, con su sección y su grupo (para el Excel: el mismo armado que la pantalla). */
   renglones: RenglonVista[]
+  /**
+   * 🤝 «Recibido de los socios (neto)» (JMS 22/11): por socio, lo que transfirió + lo que pagó por esta empresa − lo que esta empresa
+   * pagó o le transfirió. Socio → canal → grupo → template, con los movimientos: es lo financiado y lo pagado por cuenta JUNTOS.
+   */
+  recibidoNeto: NodoSocios
 }
 
 export type SeccionVista = "Ingresos" | "Egresos" | "Financieros" | "Distribuciones" | "Financiado por los socios" | "Pagado por cuenta de socios"
@@ -265,11 +285,15 @@ export function vistaPorResponsable(at: Atribuidos, empresas: readonly string[],
   const propios: any[] = []
   const financiado = nodoVacio("Financiado por los socios"), porCuenta = nodoVacio("Pagado por cuenta de socios")
   const renglones: RenglonVista[] = []
+  const recibidoNeto = nodoVacio("Recibido de los socios (neto)")
+  // La sección y el grupo son los de la atribución (así «Retiros a caja» queda en Egresos); el tipo, el de siempre.
   const rotular = (mov: any): Clasificacion => {
-    const c = base(mov)
-    return mov._responsableVista && mov._empresa !== mov._responsableVista ? { ...c, detalle: `${c.detalle} (pagó ${mov._empresa})` } : c
+    const c = base(mov), m: MovSocio | undefined = mov._ms
+    const d = m ? { ...c, seccion: m.seccion, agrupadora: m.agrupadora, detalle: m.cuenta } : c
+    return mov._responsableVista && mov._empresa !== mov._responsableVista ? { ...d, detalle: `${d.detalle} (pagó ${mov._empresa})` } : d
   }
   const propio = (m: MovSocio, mov: any) => {
+    mov = { ...mov, _ms: m }
     propios.push(mov)
     const c = rotular(mov)
     if (c.seccion) renglones.push({ seccion: TITULO_SECCION[c.seccion], grupo: c.agrupadora, detalle: c.detalle, importe: c.monto, m })
@@ -286,27 +310,32 @@ export function vistaPorResponsable(at: Atribuidos, empresas: readonly string[],
       if (S.has(m.responsable)) {
         propio(m, { ...m.mov, _responsableVista: m.responsable })
         arbol(financiado, "Financiado por los socios", [m.pagador, m.canal, m.esLibertad ? LIBERTAD : m.agrupadora, m.template || m.cuenta], m, r2(-m.importe))
+        if (!S.has(m.pagador)) agregarAlArbol(recibidoNeto, [m.pagador, `${m.canal} (pagó ${m.pagador} por ${m.responsable})`, m.esLibertad ? LIBERTAD : m.agrupadora, m.template || m.cuenta], m, r2(-m.importe))
       }
-      if (S.has(m.pagador)) arbol(porCuenta, "Pagado por cuenta de socios", [m.responsable, m.esLibertad ? LIBERTAD : m.agrupadora, m.template || m.cuenta], m, m.importe)
+      if (S.has(m.pagador)) {
+        arbol(porCuenta, "Pagado por cuenta de socios", [m.responsable, m.esLibertad ? LIBERTAD : m.agrupadora, m.template || m.cuenta], m, m.importe)
+        if (!S.has(m.responsable)) agregarAlArbol(recibidoNeto, [m.responsable, `${m.canal} (pagó ${m.pagador} por ${m.responsable})`, m.esLibertad ? LIBERTAD : m.agrupadora, m.template || m.cuenta], m, m.importe)
+      }
       continue
     }
     // transferencia: sólo del lado del canal
     if (!S.has(m.pagador)) continue
     if (m.importe < 0) arbol(porCuenta, "Pagado por cuenta de socios", [m.socio!, RETIROS_DIRECTOS, m.canal], m, m.importe)
     else arbol(financiado, "Financiado por los socios", [m.socio!, m.canal, TRANSFERENCIAS_RECIBIDAS], m, m.importe)
+    if (!S.has(m.socio!)) agregarAlArbol(recibidoNeto, [m.socio!, `${m.canal} (${m.importe < 0 ? "transferido a" : "transferido por"} ${m.socio})`, m.importe < 0 ? RETIROS_DIRECTOS : TRANSFERENCIAS_RECIBIDAS], m, m.importe)
   }
   const resumen = armarResumenFinanciero(propios, cuentas, templates, rotular).resumen
   const totalSecciones = r2(resumen.reduce((t, x) => t + x.totalIngresos + x.totalEgresos + x.totalFinancieros + x.totalDistribuciones, 0))
-  ordenarArbol(financiado); ordenarArbol(porCuenta)
+  ordenarArbol(financiado); ordenarArbol(porCuenta); ordenarArbol(recibidoNeto)
   const suma = r2(totalSecciones + financiado.total + porCuenta.total)
   return { empresas: [...S], resumen, financiado, porCuenta, totalSecciones, totalFinanciado: financiado.total, totalPorCuenta: porCuenta.total,
-    totalCaja, cierra: Math.abs(suma - totalCaja) < 0.005, renglones }
+    totalCaja, cierra: Math.abs(suma - totalCaja) < 0.005, renglones, recibidoNeto }
 }
 
 /** Los meses que tienen algo (en las secciones o en los socios), completos: la tabla y los socios van con las mismas columnas. */
 export function completarMeses(v: VistaResponsable): ResumenFinanciero[] {
   const claves = new Set(v.resumen.map(m => `${m.año}-${String(m.mes).padStart(2, "0")}`))
-  for (const n of [v.financiado, v.porCuenta]) Object.keys(n.porMes).forEach(k => claves.add(k))
+  for (const n of [v.financiado, v.porCuenta, v.recibidoNeto]) Object.keys(n.porMes).forEach(k => claves.add(k))
   const de = new Map(v.resumen.map(m => [`${m.año}-${String(m.mes).padStart(2, "0")}`, m]))
   return [...claves].sort().map(k => de.get(k) ?? { mes: Number(k.slice(5, 7)), año: Number(k.slice(0, 4)), ingresos: {}, egresos: {}, financieros: {}, distribuciones: {},
     subCategorias: {}, totalIngresos: 0, totalEgresos: 0, totalFinancieros: 0, totalDistribuciones: 0, saldoMensual: 0 })
@@ -513,6 +542,8 @@ export interface ResultadoPorResponsable {
   cuentas: CuentaPar[]
   desdeCanal: CanalDesde[]
   soloMA: boolean
+  /** 🏦 El control contra los saldos de los bancos (null si no se leyeron los saldos). */
+  bancos: ControlBancos | null
 }
 
 /** Un movimiento sin su fila cruda (la ficha alcanza). */
@@ -524,7 +555,7 @@ function limpiarArbol(n: NodoSocios): NodoSocios {
 export const tocaA = (m: MovSocio, q: string) => m.pagador === q || m.responsable === q || m.socio === q
 
 export function resultadoParaRuta(at: Atribuidos, empresasPedidas: readonly string[], soloMA: boolean, desde: string, hasta: string,
-  cuentasPlan: CuentaContable[], templates: Map<string, InfoTemplate>, desdeCanal: CanalDesde[]): ResultadoPorResponsable {
+  cuentasPlan: CuentaContable[], templates: Map<string, InfoTemplate>, desdeCanal: CanalDesde[], saldos?: SaldoCanal[]): ResultadoPorResponsable {
   const empresas = soloMA ? ["MA"] : empresasPedidas.filter(e => esEmpresa(e))
   const crudosDelPeriodo = at.movs.filter(m => enPeriodo(m, desde, hasta)).map(m => m.mov)
     .concat(at.fuera.filter(f => { const x = String(f.mov.fecha).slice(0, 10); return x >= desde && x <= hasta }).map(f => f.mov))
@@ -542,6 +573,10 @@ export function resultadoParaRuta(at: Atribuidos, empresasPedidas: readonly stri
   const todas = cuentaEntreSocios(at, hasta, desdeCanal)
   const cuentas = (soloMA ? todas.filter(x => x.a === "MA" || x.b === "MA") : todas)
     .map(x => ({ ...x, meses: x.meses.map(m => ({ ...m, arbol: limpiarArbol(m.arbol) })) }))
-  const vista: VistaResponsable = { ...v, financiado: limpiarArbol(v.financiado), porCuenta: limpiarArbol(v.porCuenta), renglones: v.renglones.map(r => ({ ...r, m: sinCrudo(r.m) })) }
-  return { empresas, desde, hasta, vista, control, cuentas, desdeCanal, soloMA }
+  const vista: VistaResponsable = { ...v, financiado: limpiarArbol(v.financiado), porCuenta: limpiarArbol(v.porCuenta), recibidoNeto: limpiarArbol(v.recibidoNeto),
+    renglones: v.renglones.map(r => ({ ...r, m: sinCrudo(r.m) })) }
+  const S = new Set(empresas)
+  const fueraSuyo = r2(c.fuera.filter(f => S.has(String(f.mov._empresa))).reduce((t, f) => t + f.clasificacion.monto, 0))
+  const bancos = saldos ? controlContraBancos(v, saldos.filter(x => S.has(x.empresa)), fueraSuyo) : null
+  return { empresas, desde, hasta, vista, control, cuentas, desdeCanal, soloMA, bancos }
 }

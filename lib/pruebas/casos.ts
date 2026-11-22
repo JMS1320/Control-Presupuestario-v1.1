@@ -43,10 +43,11 @@ import { hojaPapelJms } from "@/lib/impuestos/papel-formato-jms"
 import { auditarCuota, hojaRetirosYAportes } from "@/lib/balance/auditoria-templates"
 import { armarResumenPorMes } from "@/lib/balance/resumen-por-mes"
 import { canalesDelDashboard, canalesFueraDelDashboard, type CuentaDelRegistro } from "@/lib/dashboard/canales"
-import { armarResumenFinanciero, clasificadorDashboard } from "@/lib/dashboard/resumen"
+import { armarResumenFinanciero, clasificadorDashboard, type InfoTemplate } from "@/lib/dashboard/resumen"
 import { controlDelDashboard } from "@/lib/dashboard/control"
 import { atribuirTodo, vistaPorResponsable, controlPorResponsable, cuentaEntreSocios, saldoCon, resultadoParaRuta } from "@/lib/dashboard/responsable"
 import { puedeVerPorResponsable, vistaInicialDashboard } from "@/lib/dashboard/permiso-responsable"
+import { saldoDeCanal, controlContraBancos } from "@/lib/dashboard/control-bancos"
 import { libroDelDashboard, mesesDelPeriodo } from "@/lib/dashboard/export-excel"
 import { CUENTAS_DOLARES_Y_COTITULARES } from "@/lib/dolares/cuentas"
 import { filasNivel2De } from "@/lib/balance/formato-excel"
@@ -620,6 +621,49 @@ export function correrCasos(): Resultado[] {
     const v10 = `${a5.seccion} · ${a5.tipo} · ${a5.origenTipo} | ${a5b.seccion} · ${a5b.origenTipo}`
     const e10 = "null · NO · el template «FLIA» | egresos · la cuenta «Consumos»"
     chequear("Dashboard", "🏷️ Lo que queda afuera dice de dónde sale el tipo «NO»: del TEMPLATE (FLIA) o de la cuenta — antes decía siempre «su cuenta contable»", e10, v10, v10 === e10, "A-FEAT-1637")
+
+    // 🏦 Control contra bancos (JMS 22/11): saldo inicial + ingresos propios + recibido de los socios (neto) + egresos + financieros +
+    // distribuciones + lo sin categoría = saldo final del banco. Con los datos del caso de arriba: MA Galicia arranca en 100, en el período
+    // entran 1000 (de MSA) y 500 (cobro), sale la factura de PAM (70) y un débito sin categoría (30) → 1500.
+    const galMA = [
+      { id: "a", fecha: "2025-12-31", orden: 1, creditos: 100, debitos: 0, saldo: 100, categ: "VTA" },
+      { id: "4", fecha: "2026-03-08", orden: 2, creditos: 0, debitos: 70, saldo: 30, categ: "SERV" },
+      { id: "6", fecha: "2026-03-10", orden: 3, creditos: 1000, debitos: 0, saldo: 1030, categ: "RET" },
+      { id: "7", fecha: "2026-03-12", orden: 4, creditos: 500, debitos: 0, saldo: 1530, categ: "VTA" },
+      { id: "x", fecha: "2026-03-20", orden: 5, creditos: 0, debitos: 30, saldo: 1500, categ: null },
+    ]
+    const sGal = saldoDeCanal("MA Galicia CA", "MA", "banco", galMA, D1, D2)
+    const cb = controlContraBancos(vMA, [sGal], 0)
+    const sinSocios = controlContraBancos({ ...vMA, financiado: { ...vMA.financiado, total: 0 }, porCuenta: { ...vMA.porCuenta, total: 0 } }, [sGal], 0)
+    const v12 = `banco ${sGal.inicial}→${sGal.final} (movs ${sGal.netoMovimientos}, sin categ ${sGal.sinCategoria.length}) · ingresos ${cb.ingresosPropios} + socios ${cb.recibidoSocios} + egresos ${cb.egresos} + sin categ ${cb.sinCategoria} = ${cb.saldoFinalCalculado} vs banco ${cb.saldoFinalBancos} cierra ${cb.cierra} | sin la plata de los socios: dif ${sinSocios.diferencia} cierra ${sinSocios.cierra}`
+    const e12 = "banco 100→1500 (movs 1400, sin categ 1) · ingresos 500 + socios 1530 + egresos -600 + sin categ -30 = 1500 vs banco 1500 cierra true | sin la plata de los socios: dif 1530 cierra false"
+    chequear("Dashboard", "🏦 Control contra bancos: saldo inicial + ingresos propios + recibido de los socios (neto) + egresos (con lo que pagó otro) + lo sin categoría = saldo final del banco; si se deja afuera la plata de los socios, NO cierra", e12, v12, v12 === e12, "A-FEAT-1637")
+
+    // 💳 La tarjeta no trae saldo: su saldo es −(consumos − pagos) desde el primer dato; el renglón «resumen» no se suma; lo consumido y no
+    // pagado al cierre queda como deuda y el control cierra igual.
+    const visa = [
+      { id: "c1", fecha: "2026-02-10", tipo_fila: "movimiento", debitos: 200, creditos: 0, saldo: null, categ: "SERV" },
+      { id: "r1", fecha: "2026-02-15", tipo_fila: "resumen", debitos: 200, creditos: 150, saldo: null, categ: null },
+      { id: "p1", fecha: "2026-02-20", tipo_fila: "pago", debitos: 0, creditos: 150, saldo: null, categ: "TAR" },
+      { id: "c2", fecha: "2026-03-25", tipo_fila: "movimiento", debitos: 80, creditos: 0, saldo: null, categ: "SERV" },
+    ]
+    const galT = [{ id: "g0", fecha: "2025-12-31", orden: 1, creditos: 1000, debitos: 0, saldo: 1000, categ: "VTA" }, { id: "g1", fecha: "2026-02-20", orden: 2, creditos: 0, debitos: 150, saldo: 850, categ: "TAR" }]
+    const sVisa = saldoDeCanal("VISA MA", "MA", "tarjeta", visa, D1, "2026-03-31"), sGalT = saldoDeCanal("MA Galicia CA", "MA", "banco", galT, D1, "2026-03-31")
+    const vistaT = { resumen: [{ mes: 2, año: 2026, totalIngresos: 0, totalEgresos: -200, totalFinancieros: 0, totalDistribuciones: 0 }, { mes: 3, año: 2026, totalIngresos: 0, totalEgresos: -80, totalFinancieros: 0, totalDistribuciones: 0 }],
+      financiado: { total: 0 }, porCuenta: { total: 0 } } as unknown as Parameters<typeof controlContraBancos>[0]
+    const cT = controlContraBancos(vistaT, [sGalT, sVisa], 0), cSinTarjeta = controlContraBancos(vistaT, [sGalT], 0)
+    const v13 = `tarjeta ${sVisa.fuente} ${sVisa.inicial}→${sVisa.final} · total bancos ${cT.saldoFinalBancos} = calculado ${cT.saldoFinalCalculado} cierra ${cT.cierra} | sin la deuda de la tarjeta: dif ${cSinTarjeta.diferencia}`
+    const e13 = "tarjeta movimientos 0→-130 · total bancos 720 = calculado 720 cierra true | sin la deuda de la tarjeta: dif 130"
+    chequear("Dashboard", "💳 Control contra bancos con la tarjeta: sin saldo propio, es −(consumos − pagos); el «resumen» no se suma; 80 consumidos y no pagados al cierre quedan como deuda y el control cierra (sin la tarjeta no cerraría)", e13, v13, v13 === e13, "A-FEAT-1637")
+
+    // 💵 Retiros a caja: para una empresa SIN caja (MA), un retiro de efectivo es gasto; con caja (MSA), sigue siendo pase.
+    const tplC = new Map<string, InfoTemplate>([...tplR, ["t_caja", { nombre: "Caja", agrupadora: "Caja", esMulti: false, tipo: "financiero" }]])
+    const movC = [mv("c", "MA", "MA Galicia CA", "2026-03-20", { categ: "CAJA", debitos: 300, template_id: "t_caja" }), mv("d", "MSA", "MSA Galicia CC", "2026-03-20", { categ: "CAJA", debitos: 400, template_id: "t_caja" }),
+      mv("e", "MSA", "MSA Galicia CC", "2026-04-24", { categ: "CAJA", debitos: 1000, template_id: "t_caja", contable: "CTA MA" })]
+    const atC = atribuirTodo(movC, cuentasR, tplC, ctxR, { sinCaja: new Set(["MA", "PAM"]) })
+    const v14 = atC.movs.map(m => `${m.id}:${m.responsable}/${m.seccion}/${m.tipo}/${m.agrupadora}`).join(" ")
+    const e14 = "c:MA/egresos/propio/Retiros a caja (efectivo) d:MSA/financieros/propio/Caja e:MA/egresos/porCuenta/Retiros a caja (efectivo)"
+    chequear("Dashboard", "💵 Retiros a caja = gasto para quien no tiene caja (MA): el suyo y el millón que MSA retiró para MA (pintor) son egresos de MA; el de MSA (tiene caja) sigue siendo financiero", e14, v14, v14 === e14, "A-FEAT-1637")
   }
 
   // ══ El factor de la balanza ═══════════════════════════════════════════════════════════════
