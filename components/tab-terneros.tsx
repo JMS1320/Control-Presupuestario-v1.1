@@ -963,7 +963,6 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
       const e = m.get(k) ?? { orden: Math.min(...a.map(x => x.orden)), lista: [] }; e.lista.push(t); m.set(k, e) }
     return [...m.entries()].sort((x, y) => x[1].orden - y[1].orden).map(([clave, e]) => ({ clave, lista: e.lista }))
   })()
-  }
   /** Cada lista cuenta sobre lo filtrado por las DEMÁS columnas (como en Excel y en Mails). */
   const opcionesHist: Record<string, ReturnType<typeof opcionesDeColumna>> = Object.fromEntries(Object.keys(valoresHist).map(col => [col,
     opcionesDeColumna(filtrarPorColumnas(conPesadasHist, { ...filtrosHist, [col]: null }, valoresHist), valoresHist[col])]))
