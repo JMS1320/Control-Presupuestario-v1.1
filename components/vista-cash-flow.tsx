@@ -1815,17 +1815,26 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   const tiposActivos = chipsTipo ?? new Set(tiposDisponibles)
   const desdeV = ventana ? desdeVentana(hoyArgentina(), ventana.unidad, ventana.n) : null
   const rangoDias = diasAlrededor.trim() !== '' && Number.isFinite(Number(diasAlrededor)) ? rangoAlrededorDeHoy(hoyArgentina(), Number(diasAlrededor)) : null
-  const datosOperativos = !chipsInit
-    ? datosConBusqueda
-    : datosConBusqueda.filter(fila => {
-        if (!chipsOrigenes.has(fila.origen) || !chipsEstados.has(fila.estado)) return false
-        if (!tiposActivos.has(etiquetaTipoComprobante(fila))) return false   // A-FEAT-170
+  /**
+   * 🖱️ A-FEAT-1649 (nota JMS 16/11: «estos chips no están funcionando como deberían»): todos los filtros en una
+   * función con «excepto», para que el NÚMERO de cada chip cuente sobre lo que dejan los DEMÁS filtros (protocolo de
+   * chips, CLAUDE.md § ♻️) — antes contaba sobre todo el Cash Flow y no coincidía con lo que se veía.
+   */
+  type BarraChips = 'estado' | 'origen' | 'tipo' | 'sentido' | null
+  const pasaFiltros = (fila: any, excepto: BarraChips): boolean => {
+        if (excepto !== 'origen' && !chipsOrigenes.has(fila.origen)) return false
+        if (excepto !== 'estado' && !chipsEstados.has(fila.estado)) return false
+        if (excepto !== 'tipo' && !tiposActivos.has(etiquetaTipoComprobante(fila))) return false   // A-FEAT-170
         if (!pasaVentana(fila.fecha_estimada, desdeV)) return false          // A-FEAT-1237
         if (!pasaRango(fila.fecha_estimada, rangoDias)) return false         // 📅 nota JMS 11/11
-        if (!pasaSentido(fila, chipsSentido)) return false   // A-FEAT-1224
+        if (excepto !== 'sentido' && !pasaSentido(fila, chipsSentido)) return false   // A-FEAT-1224
         if (!verDebitosVencidos && fila.estado === 'debito' && (fila.fecha_estimada || '') < corteDebitoStr) return false
         return true
-      })
+  }
+  const datosOperativos = !chipsInit ? datosConBusqueda : datosConBusqueda.filter(fila => pasaFiltros(fila, null))
+  /** Cuántas filas tiene un chip, con los demás filtros puestos. */
+  const cuentaChip = (barra: Exclude<BarraChips, null>, cumple: (f: any) => boolean) =>
+    datosConBusqueda.filter(f => (!chipsInit || pasaFiltros(f, barra)) && cumple(f)).length
   /**
    * Click normal = prende/apaga ese chip.
    * **Ctrl+click (o ⌘+click) = dejar SÓLO ése.**
@@ -5188,12 +5197,12 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                   title={tituloChip(e)}
                   className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${chipsEstados.has(e) ? 'bg-blue-600 text-white border-blue-600' : 'bg-gray-50 text-gray-400 border-gray-300'}`}
                 >
-                  {e} ({data.filter(f => f.estado === e).length})
+                  {e} ({cuentaChip('estado', f => f.estado === e)})
                 </button>
               ))}
               <button onClick={() => setChipsEstados(new Set(estadosDisponibles))} className="text-[10px] underline text-gray-400 ml-1">todos</button>
               <button onClick={() => setChipsEstados(new Set())} className="text-[10px] underline text-gray-400">ninguno</button>
-              <span className="ml-1 text-[10px] text-gray-400" title="Sirve en los chips de Estado y de Origen">{PISTA_CTRL_CLICK}</span>
+              <span className="ml-1 text-[10px] text-gray-400" title="Sirve en todos los chips de esta barra (Estado, Origen, Columna, Comprobante). El número de cada chip cuenta con los demás filtros puestos">{PISTA_CTRL_CLICK} · el número cuenta con los demás filtros</span>
             </div>
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-xs font-semibold text-gray-600 mr-1">Origen:</span>
@@ -5204,7 +5213,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                   title={tituloChip(o)}
                   className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${chipsOrigenes.has(o) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-gray-50 text-gray-400 border-gray-300'}`}
                 >
-                  {o} ({data.filter(f => f.origen === o).length})
+                  {o} ({cuentaChip('origen', f => f.origen === o)})
                 </button>
               ))}
               <button onClick={() => setChipsOrigenes(new Set(origenesDisponibles))} className="text-[10px] underline text-gray-400 ml-1">todos</button>
@@ -5220,10 +5229,10 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                   title={tituloChip(etiqueta)}
                   className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${chipsSentido.has(col) ? `${color} text-white` : 'bg-gray-50 text-gray-400 border-gray-300'}`}
                 >
-                  {etiqueta} ({data.filter(f => (Number(f[col]) || 0) > 0).length})
+                  {etiqueta} ({cuentaChip('sentido', f => (Number(f[col]) || 0) > 0)})
                 </button>
               ))}
-              <button onClick={() => setChipsSentido(new Set<Columna>(['debitos', 'creditos']))} className="text-[10px] underline text-gray-400 ml-1">ambos</button>
+              <button onClick={() => setChipsSentido(new Set<Columna>(['debitos', 'creditos']))} className="text-[10px] underline text-gray-400 ml-1">todos</button>
             </div>
             {/* 🔎 A-FEAT-170 — por tipo de comprobante, con el mismo gesto (ctrl+click = sólo ése). */}
             <div className="flex flex-wrap items-center gap-1.5">
@@ -5235,7 +5244,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                   title={tituloChip(t)}
                   className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${tiposActivos.has(t) ? 'bg-violet-600 text-white border-violet-600' : 'bg-gray-50 text-gray-400 border-gray-300'}`}
                 >
-                  {t} ({data.filter(f => etiquetaTipoComprobante(f) === t).length})
+                  {t} ({cuentaChip('tipo', f => etiquetaTipoComprobante(f) === t)})
                 </button>
               ))}
               <button onClick={() => setChipsTipo(null)} className="text-[10px] underline text-gray-400 ml-1">todos</button>
