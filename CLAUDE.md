@@ -323,6 +323,11 @@ diferente. Esto es para siempre»**.*
   comunicación vía artifact»)*: cada campo acepta una captura con Ctrl+V, con un 📎 o arrastrándola (capacidad `assets`); el id de la
   imagen queda en el documento de la respuesta (`fotos`), y Claude la abre con `Artifact read` + `path` = ese id. Al leer las respuestas,
   **se miran también las fotos** y se dice cuántas había.
+- 🗂️ **Las tablas de una página se abren en ESCALONES, y lo largo va AGRUPADO** *(JMS 22/11 en el balance formato contador: «el link "ver"
+  tal vez debería ser simplemente otro desplegable en la izquierda» · «si colapso la cuenta se debe colapsar el detalle» · «E ok» · y sobre
+  un detalle de 173 renglones: «acá falta agrupación, fijate dónde más puede faltar»)*: el detalle de un renglón se abre con un clic, como
+  un nivel más del desplegable (no con un link a la derecha), y al cerrar el grupo se cierra también. Un detalle de **15 renglones o más**
+  se muestra agrupado —por su grupo si lo tiene, si no por quién (proveedor / template), si no por mes—, cada grupo con cantidad y subtotal.
 - Si la página no puede guardar (sin sesión), lo dice y deja copiar el texto: nada se pierde en silencio.
 - 🔎 **Una pregunta sobre un CASO CONCRETO (un pago, un template, una inconsistencia) se hace SIEMPRE en una página, con las
   tablas a la vista** *(JMS 15/11/2026: «esas cosas me las tenés que siempre preguntar por artifact, porque yo tengo que poder ver
@@ -1519,6 +1524,15 @@ ese lugar afecte a todo lo que lo usa.
   nunca va a ser tan peligroso»)*. Los maestros crudos (📍 acá: libro diario, templates, sueldos) traen TODO, se filtran con pocos botones
   por código contable e interno y vienen ordenados en escalones; cada nivel de arriba (desglose, esquema del contador) da el mismo total que
   su crudo, con el control a la vista. → [A-FEAT-1632](PENDIENTES.md#a-feat-1632).
+- 🔗 **Una diferencia que hay que cerrar se lleva en CADENA, paso por paso, hasta llegar a cero** *(JMS 22/11, sobre la ecuación del balance
+  en línea: «sería bueno llevar una cadena de saldos y controles para ir teniendo la trazabilidad de cómo va cambiando la diferencia hasta
+  llegar a terminado, pero trazado y auditable» · «sí, pasala a las reglas»)*. Toda diferencia que se va achicando a lo largo de varias
+  versiones (la ecuación de un balance, un control que no cierra, un saldo contra el banco) tiene su **cadena**: el punto de partida y cada
+  cambio con fecha, **quién lo decidió**, motivo y **efecto** en la diferencia. El control es que **partida + Σ cambios = la diferencia de
+  hoy**: si no da, se cambió algo sin registrarlo. Y lo que queda sin explicar se descompone en sus partes, cada una con su número.
+  📍 **Acá:** `scripts/balance-tres-capas-cadena.json` + solapa «Cadena» del Excel y bloque «1b» de la página → [A-FEAT-1632](PENDIENTES.md#a-feat-1632) punto 8.
+  *Motivo: sin la cadena, cada versión muestra una diferencia nueva y nadie puede decir si bajó por un arreglo o porque algo se compensó con otra
+  cosa; con la cadena, «terminado» es demostrable.*
 - 🤝 **La cuenta ENTRE SOCIOS se muestra agrupada como en el balance, mes por mes** *(JMS 22/11: «agrupados tipo formato balance los
   retiros o aportes que corresponden, ya que tiene que entenderse. ¿Hay protocolo de esto? Debería haberlo. Se trató mucho en balance:
   los pagos directos, los pagos para impuestos, para servicios, etc.»; el formato salió de A-FEAT-1532, 03/11)*. Toda vista de lo que
