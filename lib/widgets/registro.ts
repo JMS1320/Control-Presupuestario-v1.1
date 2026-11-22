@@ -10,6 +10,7 @@ import { WidgetAlertasPagos } from "@/components/widgets/widget-alertas-pagos"
 import { WidgetAlertasVentas } from "@/components/widgets/widget-alertas-ventas"
 import { WidgetPendientes } from "@/components/widgets/widget-pendientes"
 import { WidgetFichaProveedor } from "@/components/widgets/widget-ficha-proveedor"
+import { AccesoPlanillaImpuestosMA, MisImpuestosMA, MisArrendamientosMA, LoQueVieneMA } from "@/components/mi-pantalla-ma"
 
 /**
  * EL REGISTRO DE WIDGETS (A-FEAT-88).
@@ -55,10 +56,57 @@ export type Widget = {
    * aunque el rol tenga Principal; en uno abierto hereda (se ve, como siempre). Se registra en `lib/auth/recursos.ts`.
    */
   recurso?: string
+  /**
+   * 👤 A-FEAT-1634 — tarjeta DADA POR EL ROL (los bloques de MA): se ve sólo si el rol la tiene dada de forma explícita
+   * (no por herencia: un rol abierto como admin no la ve fuera del modo permisos), y entra SOLA al inicio de quien la
+   * tiene aunque ya haya configurado el suyo (`lib/widgets/dados.ts`). Requiere `recurso`.
+   */
+  soloSiDado?: boolean
   Componente: ComponentType
 }
 
 export const WIDGETS: Widget[] = [
+  // 👤 A-FEAT-1634 — la pantalla de MA (Mercedes). Sólo lectura; sus datos los arma el servidor (`/api/mi-pantalla`).
+  {
+    id: "ma-planilla-impuestos",
+    recurso: "principal.ma-planilla-impuestos",
+    soloSiDado: true,
+    titulo: "🧾 Planilla de impuestos",
+    descripcion: "Acceso directo a la planilla de impuestos de siempre, con sus empresas.",
+    seccion: "principal",
+    ancho: "completo",
+    Componente: AccesoPlanillaImpuestosMA,
+  },
+  {
+    id: "ma-impuestos",
+    recurso: "principal.ma-impuestos",
+    soloSiDado: true,
+    titulo: "🧾 Mis impuestos del año",
+    descripcion: "Los impuestos de MA mes por mes: pagado, vencido y lo que viene.",
+    seccion: "principal",
+    ancho: "completo",
+    Componente: MisImpuestosMA,
+  },
+  {
+    id: "ma-arrendamientos",
+    recurso: "principal.ma-arrendamientos",
+    soloSiDado: true,
+    titulo: "🌾 Mis arrendamientos",
+    descripcion: "Los contratos de MA: esperado, facturado, cobrado y lo que falta cobrar.",
+    seccion: "principal",
+    ancho: "completo",
+    Componente: MisArrendamientosMA,
+  },
+  {
+    id: "ma-lo-que-viene",
+    recurso: "principal.ma-lo-que-viene",
+    soloSiDado: true,
+    titulo: "📈 Lo que viene",
+    descripcion: "Los próximos 12 meses de MA: lo que entra y lo que sale.",
+    seccion: "principal",
+    ancho: "completo",
+    Componente: LoQueVieneMA,
+  },
   {
     id: "pendientes",
     recurso: "principal.widget-pendientes",

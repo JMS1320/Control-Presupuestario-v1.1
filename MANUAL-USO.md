@@ -1363,6 +1363,11 @@ en el rol, **🖱️ Editar sobre la pantalla**. Se abre la app con una barra vi
 - **Ver como lo ve él** esconde lo atenuado: es su pantalla tal cual.
 - **Nada se aplica hasta Guardar.** La barra cuenta los cambios; **Descartar** vuelve a lo guardado y
   **Salir** te lleva a Roles (si quedó algo sin guardar, pregunta).
+- En **Principal**, mientras editás se ve sólo lo que se le puede dar a ese rol: tus avisos de admin (pagos por
+  confirmar, facturas faltantes, mails graves) no aparecen, para que no tapen lo que estás prendiendo.
+- **✋ Pedir candado**: si algo que querés dar o sacar no tiene candado, apretá el botón de la barra y hacé clic
+  sobre eso. El clic no hace lo suyo: queda anotado como tarea para Claude, con qué es y en qué pantalla. Esc cancela.
+  ⚠️ Sin probar todavía → A-TEST-1387
 
 **Las cuentas del Extracto** también se prenden de a una: abrí el selector de cuenta (arriba en Extracto) y
 cada cuenta, caja y tarjeta tiene su candado. Quien tiene Extracto ve sólo las cuentas que le prendiste, en

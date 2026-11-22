@@ -21,6 +21,7 @@ import {
   type Borrador,
 } from "@/lib/auth/modo-permisos"
 import { RECURSOS } from "@/lib/auth/recursos"
+import { BotonPedirCandado } from "@/components/pedir-candado"
 
 /**
  * 🖱️ MODO PERMISOS — prender sobre la pantalla lo que ve un rol (A-FEAT-1334).
@@ -141,6 +142,7 @@ function BarraModoPermisos({
   return (
     <div
       data-nota-ignorar
+      data-pedir-candado-barra
       className="fixed inset-x-0 bottom-3 z-50 mx-auto w-[calc(100%-2rem)] max-w-4xl rounded-xl border-2 border-violet-400 bg-white/95 px-3 py-2 shadow-xl backdrop-blur"
     >
       {/* Una sola fila de controles; las explicaciones van abajo en chico (JMS 05/11: «se ve muy grande el cartel»). */}
@@ -170,6 +172,8 @@ function BarraModoPermisos({
           {cambios === 0 ? "Sin cambios" : `${cambios} cambio(s)`}
         </span>
         <div className="flex gap-1.5">
+          {/* ✋ JMS 22/11: marcar algo SIN candado para pedírmelo (tarea 🚩 a Claude) */}
+          {!modo.soloLoQueVe && <BotonPedirCandado rolId={modo.rolId} />}
           <Button size="sm" disabled={cambios === 0 || guardando} onClick={guardar}>
             {guardando ? "Guardando…" : "Guardar"}
           </Button>
@@ -184,7 +188,7 @@ function BarraModoPermisos({
       <p className="mt-1 text-[11px] text-muted-foreground">
         {modo.soloLoQueVe
           ? "Así lo ve. Destildá «Ver como lo ve él» para seguir prendiendo."
-          : "Lo atenuado no lo ve: apretá su candado para dárselo. Nada se aplica hasta Guardar."}
+          : "Lo atenuado no lo ve: apretá su candado para dárselo. Nada se aplica hasta Guardar. ¿Algo sin candado? «✋ Pedir candado» y clic encima."}
         {modo.soloLoQueVe && personas && personas.length === 0 && (
           <span className="text-amber-700"> · Ninguna cuenta tiene este rol todavía: «Para vos» y «Lo que te vence» se ven cuando se lo asignes a alguien.</span>
         )}

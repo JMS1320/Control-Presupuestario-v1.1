@@ -512,37 +512,6 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
           </TabsContentVivo>
         </TabsVivos>
 
-          {/* Información general del sistema */}
-          <Card>
-          <CardHeader>
-            <CardTitle>Información del Sistema</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 gap-4 text-sm text-gray-600 md:grid-cols-2">
-              <div>
-                <h4 className="mb-2 font-semibold">Funcionalidades:</h4>
-                <ul className="space-y-1">
-                  <li>• Resumen financiero mensual agrupado por tipo</li>
-                  <li>• Filtros por año y semestre</li>
-                  <li>• Formato numérico argentino</li>
-                  <li>• Importación automática desde Excel</li>
-                  <li>• Corrección de categorías inválidas</li>
-                  <li>• Corrección de valores internos</li>
-                  <li>• Reportes detallados línea por línea</li>
-                </ul>
-              </div>
-              <div>
-                <h4 className="mb-2 font-semibold">Próximas mejoras:</h4>
-                <ul className="space-y-1">
-                  <li>• Exportación de reportes</li>
-                  <li>• Gráficos interactivos</li>
-                  <li>• Comparativas entre períodos</li>
-                  <li>• Validaciones avanzadas</li>
-                </ul>
-              </div>
-            </div>
-          </CardContent>
-          </Card>
     </LayoutApp>
     </ProveedorModoPermisos>
     </ProveedorPermisos>

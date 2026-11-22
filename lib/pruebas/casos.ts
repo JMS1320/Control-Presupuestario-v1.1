@@ -104,6 +104,7 @@ import { etiquetaPersona } from "@/lib/auth/identidad"
 import { armarRolNuevo, normalizarIdRol } from "@/lib/auth/crear-rol"
 import { nivelesEfectivos, excepcionesParaEditar, permisosAGuardar } from "@/lib/auth/rol-cerrado"
 import { misImpuestosDelAnio, misArrendamientos, loQueViene, puedeVerBloque, puedeVerEmpresa, partidaDeCuota, agruparDetalle } from "@/lib/ma/mi-pantalla"
+import { conLasDadas } from "@/lib/widgets/dados"
 import { RECURSOS as RECURSOS_PERMISABLES } from "@/lib/auth/recursos"
 import { borradorDe, alternarRecurso, alternarSeccion, nivelEnBorrador, contarCambios, cuerpoGuardar } from "@/lib/auth/modo-permisos"
 import { motivoCuentaBloqueada } from "@/lib/auth/cuentas-extracto"
@@ -14344,6 +14345,15 @@ export function correrCasos(): Resultado[] {
     const v8 = ag.map(g => `${g.entra ? "+" : "-"}${g.grupo}=${g.total}[${g.lugares.map(l => `${l.lugar ?? ""}:${l.total}:${l.renglones.length}`).join(",")}]`).join(" ")
     const e8 = "+Arrendamiento 26/27 · Cuota 2=1000[:1000:1] -Red Vial=350.5[Lima:50:1,Nazarenas:300.5:2]"
     chequear("MA", "📈 Lo que viene agrupado: los ingresos primero; Red Vial con su total = la suma de Lima y Nazarenas, cada una con sus renglones", e8, v8, v8 === e8, "A-FEAT-1634")
+
+    const v9 = [
+      conLasDadas(null, ["ipc"], [], ["ma-impuestos", "ma-lo-que-viene"]).join(","),
+      conLasDadas(["ipc", "ma-impuestos"], ["x"], [], ["ma-impuestos", "ma-lo-que-viene"]).join(","),
+      conLasDadas(["ipc"], ["x"], ["ma-lo-que-viene"], ["ma-impuestos", "ma-lo-que-viene"]).join(","),
+      conLasDadas(["ipc"], ["x"], [], []).join(","),
+    ].join(" | ")
+    const e9 = "ma-impuestos,ma-lo-que-viene,ipc | ma-lo-que-viene,ipc,ma-impuestos | ma-impuestos,ipc | ipc"
+    chequear("MA", "🧩 Tarjetas dadas por el rol: entran solas aunque la persona ya haya configurado su inicio, respetan el orden que ella les dio y no vuelven si las sacó", e9, v9, v9 === e9, "A-FEAT-1634")
   }
   {
     // A-FEAT-1636 — las secciones de peso del segmentador como dato de cada animal (historial de pesadas).

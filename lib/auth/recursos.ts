@@ -78,12 +78,12 @@ export const RECURSOS: Recurso[] = [
   // Los bloques de MA (Mercedes Areco): sólo lectura, servidos por `/api/mi-pantalla`. Nacen apagados para TODOS (también
   // para admin fuera del modo permisos): se ven sólo donde el rol los tiene DADOS. JMS los prende con el candado en
   // «Ver como lo ve él», y la ruta del servidor pregunta por el mismo id.
-  { id: "principal.ma-impuestos",      seccion: "principal", etiqueta: "Principal → 🧾 Mis impuestos del año (MA, con MSA y PAM para mirar)", tipo: "accion", archivo: "components/vista-inicio.tsx" },
-  { id: "principal.ma-planilla-impuestos", seccion: "principal", etiqueta: "Principal → 🧾 Planilla de impuestos (acceso directo, sólo sus empresas)", tipo: "accion", archivo: "components/vista-inicio.tsx" },
+  { id: "principal.ma-impuestos",      seccion: "principal", etiqueta: "Principal → 🧾 Mis impuestos del año (MA, con MSA y PAM para mirar)", tipo: "accion", archivo: "lib/widgets/registro.ts" },
+  { id: "principal.ma-planilla-impuestos", seccion: "principal", etiqueta: "Principal → 🧾 Planilla de impuestos (acceso directo, sólo sus empresas)", tipo: "accion", archivo: "lib/widgets/registro.ts" },
   { id: "principal.ma-impuestos-msa",  seccion: "principal", etiqueta: "Principal → 🧾 impuestos de MSA (chip en «Mis impuestos» y en la Planilla)", tipo: "accion", archivo: "components/mi-pantalla-ma.tsx" },
   { id: "principal.ma-impuestos-pam",  seccion: "principal", etiqueta: "Principal → 🧾 impuestos de PAM (chip en «Mis impuestos» y en la Planilla)", tipo: "accion", archivo: "components/mi-pantalla-ma.tsx" },
-  { id: "principal.ma-arrendamientos", seccion: "principal", etiqueta: "Principal → 🌾 Mis arrendamientos (MA)", tipo: "accion", archivo: "components/vista-inicio.tsx" },
-  { id: "principal.ma-lo-que-viene",   seccion: "principal", etiqueta: "Principal → 📈 Lo que viene: próximos 12 meses (MA)", tipo: "accion", archivo: "components/vista-inicio.tsx" },
+  { id: "principal.ma-arrendamientos", seccion: "principal", etiqueta: "Principal → 🌾 Mis arrendamientos (MA)", tipo: "accion", archivo: "lib/widgets/registro.ts" },
+  { id: "principal.ma-lo-que-viene",   seccion: "principal", etiqueta: "Principal → 📈 Lo que viene: próximos 12 meses (MA)", tipo: "accion", archivo: "lib/widgets/registro.ts" },
   // Los widgets de la sección Principal también tienen casilla: sin esto, prenderle a un rol CERRADO un bloque de arriba
   // (que le suma la sección Principal) le abría de paso la Ficha de proveedor y los demás widgets generales. En un rol
   // abierto (admin, socio) siguen como siempre: heredan.

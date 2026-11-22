@@ -9,34 +9,19 @@ import { Ayuda } from "@/components/ayuda"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { WIDGETS, WIDGETS_POR_DEFECTO, widgetsVisibles, type Widget } from "@/lib/widgets/registro"
+import { conLasDadas } from "@/lib/widgets/dados"
 import { PanelParaVos } from "@/components/panel-para-vos"
 import { MisVencimientos } from "@/components/mis-vencimientos"
 import { PagosPorConfirmar } from "@/components/pagos-por-confirmar"
 import { useModoPermisos, useNivelDeclarado } from "@/components/contexto-permisos"
 import { Permisable, useSeMuestra } from "@/components/modo-permisos"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
-import { AccesoPlanillaImpuestosMA, MisImpuestosMA, MisArrendamientosMA, LoQueVieneMA } from "@/components/mi-pantalla-ma"
 import { AlertaMailsGraves } from "@/components/alerta-mails-graves"
 import { AlertaImpuestos } from "@/components/alerta-impuestos"
 import { TableroFaltantes } from "@/components/no-se-consigue"
 import type { Preferencias } from "@/lib/auth/preferencias"
 
 type Tamano = { ancho: 1 | 2; alto: number }
-
-/**
- * 👤 Un bloque del Principal que se ve SÓLO donde el rol lo tiene DADO (A-FEAT-1634, la pantalla de MA).
- *   · Fuera del modo permisos: nivel declarado en el rol (no el heredado) → un admin no lo ve en su propio Principal.
- *   · En el modo permisos: el candado de siempre (`<Permisable>`), para que JMS lo prenda; en «Ver como lo ve él», lo
- *     que el borrador tenga prendido.
- * El servidor (`/api/mi-pantalla`) pregunta por el mismo recurso: esto acomoda, aquello protege.
- */
-function BloqueDado({ recurso, children }: { recurso: string; children: React.ReactNode }) {
-  const modo = useModoPermisos()
-  const declarado = useNivelDeclarado()
-  if (modo) return <div className="w-full"><Permisable recurso={recurso}>{children}</Permisable></div>
-  const n = declarado(recurso)
-  return n === "lectura" || n === "escritura" ? <>{children}</> : null
-}
 
 /** Mientras se arrastra un borde: qué widget, en qué eje, y desde dónde. */
 type Redimension = {
@@ -70,8 +55,15 @@ export function VistaInicio({
    */
   const modo = useModoPermisos()
   const vistaPrevia = !!modo?.soloLoQueVe
-  const secciones = vistaPrevia ? modo!.borrador.secciones : seccionesSesion
+  /**
+   * 🖱️ JMS 22/11: mientras se EDITA el rol de otro, Principal muestra lo que se le puede dar a ese rol (sus secciones +
+   * Principal, para prender sus tarjetas), no las del admin: los avisos de JMS tapaban los bloques a prender.
+   */
+  const secciones = vistaPrevia ? modo!.borrador.secciones
+    : modo ? [...new Set([...modo.borrador.secciones, "principal"])]
+    : seccionesSesion
   const [elegidos, setElegidos] = useState<string[]>(preferencias.widgets ?? WIDGETS_POR_DEFECTO)
+  const [quitados, setQuitados] = useState<string[]>(preferencias.widgetsQuitados ?? [])
   const [tamanos, setTamanos] = useState<Record<string, Tamano>>(preferencias.widgetsTamano)
   const [configurando, setConfigurando] = useState(false)
 
@@ -85,34 +77,45 @@ export function VistaInicio({
 
   // 🔒 A-FEAT-1634: los widgets de Principal con casilla propia (en un rol cerrado nacen apagados).
   const seMuestra = useSeMuestra()
-  const conCasilla = (w: Widget) => !w.recurso || seMuestra(w.recurso)
-  const visibles = widgetsVisibles(elegidos, secciones).filter(conCasilla)
+  // 👤 Las tarjetas DADAS (las de MA): fuera del modo, sólo si el rol las tiene declaradas (un admin no las ve en su
+  // Principal); en el modo, con su candado como cualquier recurso. El servidor (`/api/mi-pantalla`) pregunta lo mismo.
+  const declarado = useNivelDeclarado()
+  const esDada = (w: Widget) => !!w.recurso && (modo ? seMuestra(w.recurso) : ["lectura", "escritura"].includes(declarado(w.recurso) ?? ""))
+  const conCasilla = (w: Widget) => w.soloSiDado ? esDada(w) : (!w.recurso || seMuestra(w.recurso))
+  const dadas = WIDGETS.filter(w => w.soloSiDado && secciones.includes(w.seccion) && esDada(w)).map(w => w.id)
+  // Lo elegido + las dadas que el rol tiene hoy y la persona no sacó (entran solas, primero).
+  const lista = conLasDadas(elegidos, WIDGETS_POR_DEFECTO, quitados, dadas)
+  const visibles = widgetsVisibles(lista, secciones).filter(conCasilla)
   const disponibles = WIDGETS.filter(
-    (w) => secciones.includes(w.seccion) && !elegidos.includes(w.id) && conCasilla(w)
+    (w) => secciones.includes(w.seccion) && !lista.includes(w.id) && conCasilla(w)
   )
 
   const tamanoDe = (w: Widget): Tamano =>
     tamanos[w.id] ?? { ancho: w.ancho === "completo" ? 2 : 1, alto: 0 }
 
   /** Una sola escritura para todo: orden y tamaños viajan juntos siempre. */
-  async function persistir(nuevosIds: string[], nuevosTamanos: Record<string, Tamano>) {
+  async function persistir(nuevosIds: string[], nuevosTamanos: Record<string, Tamano>, nuevosQuitados: string[] = quitados) {
     const antesIds = elegidos
     const antesTam = tamanos
+    const antesQuitados = quitados
     setElegidos(nuevosIds)
     setTamanos(nuevosTamanos)
+    setQuitados(nuevosQuitados)
     // Sobre las preferencias VIGENTES de la cuenta, no sobre las de cuando se cargó la página:
     // si no, mover un widget borraba las columnas del Cash Flow acomodadas después (A-FEAT-1277).
-    const { error } = await guardarPreferencias({ widgets: nuevosIds, widgetsTamano: nuevosTamanos })
+    const { error } = await guardarPreferencias({ widgets: nuevosIds, widgetsTamano: nuevosTamanos, widgetsQuitados: nuevosQuitados })
     if (error) {
       setElegidos(antesIds)
       setTamanos(antesTam)
+      setQuitados(antesQuitados)
       toast.error("No se pudo guardar. Probá de nuevo.")
     }
   }
 
   const guardarOrden = (ids: string[]) => persistir(ids, tamanos)
-  const quitar = (id: string) => guardarOrden(elegidos.filter((w) => w !== id))
-  const agregar = (id: string) => guardarOrden([...elegidos, id])
+  // Sacar una tarjeta DADA la anota en «quitados» (si no, volvería a entrar sola); agregarla la saca de ahí.
+  const quitar = (id: string) => persistir(lista.filter((w) => w !== id), tamanos, dadas.includes(id) ? [...new Set([...quitados, id])] : quitados)
+  const agregar = (id: string) => persistir([...lista, id], tamanos, quitados.filter((q) => q !== id))
 
   function soltarEn(destino: string, lado: "antes" | "despues") {
     const origen = arrastrando
@@ -123,7 +126,7 @@ export function VistaInicio({
     // ⚠️ El índice se calcula sobre la lista YA SIN el que se arrastra. Sobre la original daba un
     // corrimiento de uno al mover hacia adelante, y la tarjeta caía del otro lado del destino:
     // el resultado dependía de la DIRECCIÓN del arrastre en vez de dónde soltabas.
-    const sinOrigen = elegidos.filter((w) => w !== origen)
+    const sinOrigen = lista.filter((w) => w !== origen)
     const i = sinOrigen.indexOf(destino)
     if (i < 0) return
     sinOrigen.splice(lado === "antes" ? i : i + 1, 0, origen)
@@ -203,18 +206,14 @@ export function VistaInicio({
       <PanelParaVos />
       {/* 💸 A-FEAT-1543: lo que le vence a esta persona (templates con su mail en «avisar a»); se oculta si no tiene nada asignado */}
       <MisVencimientos />
-      {/* 👤 A-FEAT-1634: la pantalla de MA — sólo lectura, cada bloque con su casilla en el rol (Principal → …) */}
-      <BloqueDado recurso="principal.ma-planilla-impuestos"><AccesoPlanillaImpuestosMA /></BloqueDado>
-      <BloqueDado recurso="principal.ma-impuestos"><MisImpuestosMA /></BloqueDado>
-      <BloqueDado recurso="principal.ma-arrendamientos"><MisArrendamientosMA /></BloqueDado>
-      <BloqueDado recurso="principal.ma-lo-que-viene"><LoQueVieneMA /></BloqueDado>
+      {/* 👤 A-FEAT-1634: los bloques de MA son tarjetas de la grilla (`lib/widgets/registro.ts`, «dadas por el rol») */}
       {/* 🧪 El cartel de A-TEST-1387: sólo en el modo permisos (es donde JMS mira estos bloques) */}
       {modo && <TestsDelProceso proceso="principal/mi-pantalla-ma" pantalla="principal" />}
       {/* ✔ A-FEAT-1543: lo que informaron pagar y espera que confirmes (sólo admin; se oculta si no hay nada) */}
-      {!vistaPrevia && <PagosPorConfirmar />}
+      {!modo && <PagosPorConfirmar />}
       {/* 🧾 A-FEAT-1451: las facturas sin comprobante — la tarea principal de Ulises (y lo que JMS tiene que confirmar) */}
       {/* En vista previa no: lee las marcas de la sesión (admin), no las de la persona. */}
-      {!vistaPrevia && <TableroFaltantes />}
+      {!modo && <TableroFaltantes />}
 
       {/*
         🚨 Los avisos que no se pueden perder, fijos arriba (no son widgets que se puedan sacar). A-BUG-1450 (31/10): los
@@ -222,7 +221,8 @@ export function VistaInicio({
         · Mails graves: sólo si la sesión ve los mails (admin); el componente se oculta solo para el resto.
         · Impuestos vencidos / por vencer: sólo para quien tiene Egresos (sus datos son las cuotas de los templates).
       */}
-      {!vistaPrevia && <AlertaMailsGraves />}
+      {/* Ni en el modo permisos: son avisos del admin, sin candado, y tapaban lo que se edita (JMS 22/11) */}
+      {!modo && <AlertaMailsGraves />}
       {secciones.includes("egresos") && <AlertaImpuestos />}
 
       {configurando && (
@@ -264,7 +264,7 @@ export function VistaInicio({
               variant="ghost"
               size="sm"
               className="gap-1.5 text-muted-foreground"
-              onClick={() => persistir(WIDGETS_POR_DEFECTO, {})}
+              onClick={() => persistir(WIDGETS_POR_DEFECTO, {}, [])}
             >
               <RotateCcw className="h-3.5 w-3.5" />
               Volver a la pantalla original
