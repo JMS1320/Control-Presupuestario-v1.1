@@ -519,6 +519,15 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
 
   const descargarExcel = () => {
     const fechasOrdenadas = [...fechasSeleccionadas].sort()
+    // 🐄 A-FEAT-1636 (JMS 22/11: «sí, sumala»): la sección de peso de cada animal, con lo armado en los
+    // segmentadores del historial. No vive en la base: el encabezado dice con qué cortes se armó.
+    const hayAsig = Object.values(segAsign).some(m => Object.keys(m).length > 0)
+    const colSeccion = hayAsig
+      ? `Sección (${segmentadorIds.map((id, i) => {
+          const p = segPayloads[id]
+          return p ? `${String.fromCharCode(65 + i)} ${p.poblacion}: ${p.secciones.map(s => s.label).join(' · ')}` : null
+        }).filter(Boolean).join(' | ')})`
+      : null
 
     const filas = terneros.map(t => {
       const fila: Record<string, any> = {
@@ -534,6 +543,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
         'Fecha Baja': t.fecha_baja ? formatFecha(t.fecha_baja) : '',
         'Motivo Baja': t.motivo_baja ?? '',
       }
+      if (colSeccion) fila[colSeccion] = textoSeccion(seccionesDe(t.id)) ?? ''
       for (const fecha of fechasOrdenadas) {
         const pesada = t.pesadas_terneros.find(p => p.fecha === fecha)
         const label = `Pesada ${formatFecha(fecha)} (kg)`
