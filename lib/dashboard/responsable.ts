@@ -246,7 +246,14 @@ export interface VistaResponsable {
   totalCaja: number
   /** secciones + financiado + pagado por cuenta = su «Por caja». */
   cierra: boolean
+  /** Cada renglón de la vista, con su sección y su grupo (para el Excel: el mismo armado que la pantalla). */
+  renglones: RenglonVista[]
 }
+
+export type SeccionVista = "Ingresos" | "Egresos" | "Financieros" | "Distribuciones" | "Financiado por los socios" | "Pagado por cuenta de socios"
+export const SECCIONES_VISTA: SeccionVista[] = ["Ingresos", "Egresos", "Financieros", "Distribuciones", "Financiado por los socios", "Pagado por cuenta de socios"]
+export interface RenglonVista { seccion: SeccionVista; grupo: string; detalle: string; importe: number; m: MovSocio }
+const TITULO_SECCION: Record<string, SeccionVista> = { ingresos: "Ingresos", egresos: "Egresos", financieros: "Financieros", distribuciones: "Distribuciones" }
 
 const enPeriodo = (m: MovSocio, desde: string, hasta: string) => m.fecha >= desde && m.fecha <= hasta
 
@@ -257,33 +264,52 @@ export function vistaPorResponsable(at: Atribuidos, empresas: readonly string[],
   const base = clasificadorDashboard(cuentas, templates)
   const propios: any[] = []
   const financiado = nodoVacio("Financiado por los socios"), porCuenta = nodoVacio("Pagado por cuenta de socios")
+  const renglones: RenglonVista[] = []
+  const rotular = (mov: any): Clasificacion => {
+    const c = base(mov)
+    return mov._responsableVista && mov._empresa !== mov._responsableVista ? { ...c, detalle: `${c.detalle} (pagó ${mov._empresa})` } : c
+  }
+  const propio = (m: MovSocio, mov: any) => {
+    propios.push(mov)
+    const c = rotular(mov)
+    if (c.seccion) renglones.push({ seccion: TITULO_SECCION[c.seccion], grupo: c.agrupadora, detalle: c.detalle, importe: c.monto, m })
+  }
+  const arbol = (raiz: NodoSocios, sec: SeccionVista, camino: string[], m: MovSocio, imp: number) => {
+    agregarAlArbol(raiz, camino, m, imp)
+    renglones.push({ seccion: sec, grupo: camino.slice(0, 2).join(" ▸ "), detalle: camino.slice(2).join(" ▸ "), importe: imp, m })
+  }
   let totalCaja = 0
   for (const m of movs) {
     if (S.has(m.pagador)) totalCaja = r2(totalCaja + m.importe)
-    if (m.tipo === "propio") { if (S.has(m.pagador)) propios.push(m.mov); continue }
+    if (m.tipo === "propio") { if (S.has(m.pagador)) propio(m, m.mov); continue }
     if (m.tipo === "porCuenta") {
       if (S.has(m.responsable)) {
-        propios.push({ ...m.mov, _responsableVista: m.responsable })
-        agregarAlArbol(financiado, [m.pagador, m.canal, m.esLibertad ? LIBERTAD : m.agrupadora, m.template || m.cuenta], m, r2(-m.importe))
+        propio(m, { ...m.mov, _responsableVista: m.responsable })
+        arbol(financiado, "Financiado por los socios", [m.pagador, m.canal, m.esLibertad ? LIBERTAD : m.agrupadora, m.template || m.cuenta], m, r2(-m.importe))
       }
-      if (S.has(m.pagador)) agregarAlArbol(porCuenta, [m.responsable, m.esLibertad ? LIBERTAD : m.agrupadora, m.template || m.cuenta], m, m.importe)
+      if (S.has(m.pagador)) arbol(porCuenta, "Pagado por cuenta de socios", [m.responsable, m.esLibertad ? LIBERTAD : m.agrupadora, m.template || m.cuenta], m, m.importe)
       continue
     }
     // transferencia: sólo del lado del canal
     if (!S.has(m.pagador)) continue
-    if (m.importe < 0) agregarAlArbol(porCuenta, [m.socio!, RETIROS_DIRECTOS, m.canal], m, m.importe)
-    else agregarAlArbol(financiado, [m.socio!, m.canal, TRANSFERENCIAS_RECIBIDAS], m, m.importe)
-  }
-  const rotular = (mov: any): Clasificacion => {
-    const c = base(mov)
-    return mov._responsableVista && mov._empresa !== mov._responsableVista ? { ...c, detalle: `${c.detalle} (pagó ${mov._empresa})` } : c
+    if (m.importe < 0) arbol(porCuenta, "Pagado por cuenta de socios", [m.socio!, RETIROS_DIRECTOS, m.canal], m, m.importe)
+    else arbol(financiado, "Financiado por los socios", [m.socio!, m.canal, TRANSFERENCIAS_RECIBIDAS], m, m.importe)
   }
   const resumen = armarResumenFinanciero(propios, cuentas, templates, rotular).resumen
   const totalSecciones = r2(resumen.reduce((t, x) => t + x.totalIngresos + x.totalEgresos + x.totalFinancieros + x.totalDistribuciones, 0))
   ordenarArbol(financiado); ordenarArbol(porCuenta)
   const suma = r2(totalSecciones + financiado.total + porCuenta.total)
   return { empresas: [...S], resumen, financiado, porCuenta, totalSecciones, totalFinanciado: financiado.total, totalPorCuenta: porCuenta.total,
-    totalCaja, cierra: Math.abs(suma - totalCaja) < 0.005 }
+    totalCaja, cierra: Math.abs(suma - totalCaja) < 0.005, renglones }
+}
+
+/** Los meses que tienen algo (en las secciones o en los socios), completos: la tabla y los socios van con las mismas columnas. */
+export function completarMeses(v: VistaResponsable): ResumenFinanciero[] {
+  const claves = new Set(v.resumen.map(m => `${m.año}-${String(m.mes).padStart(2, "0")}`))
+  for (const n of [v.financiado, v.porCuenta]) Object.keys(n.porMes).forEach(k => claves.add(k))
+  const de = new Map(v.resumen.map(m => [`${m.año}-${String(m.mes).padStart(2, "0")}`, m]))
+  return [...claves].sort().map(k => de.get(k) ?? { mes: Number(k.slice(5, 7)), año: Number(k.slice(0, 4)), ingresos: {}, egresos: {}, financieros: {}, distribuciones: {},
+    subCategorias: {}, totalIngresos: 0, totalEgresos: 0, totalFinancieros: 0, totalDistribuciones: 0, saldoMensual: 0 })
 }
 
 // ── El control ────────────────────────────────────────────────────────────────────────────────────────────────────────────

@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button"
 import { FiltrosFinancieros } from "@/components/filtros-financieros"
 import { TablaResumenFinanciero } from "@/components/tabla-resumen-financiero"
 import { CorrectorCategorias } from "@/components/corrector-categorias"
+import { DashboardPorResponsable } from "@/components/dashboard-por-responsable"
 import { Permisable, useSeMuestra } from "@/components/modo-permisos"
 import { useFinancialData } from "@/hooks/useFinancialData"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
@@ -54,6 +55,9 @@ export function DashboardPorEmpresa(p: Props) {
   const visibles = useMemo(() => EMPRESAS_DASHBOARD.filter(e => seMuestra(RECURSO_EMPRESA[e])), [seMuestra])
   const [elegidas, setElegidas] = useState<Set<EmpresaDashboard>>(new Set(["MSA"]))
   const [showCategorias, setShowCategorias] = useState(false)
+  // 👥 A-FEAT-1637 (JMS 22/11, en evaluación): «Por caja» (lo de siempre) / «Por responsable» (de quién es cada peso). Con candado.
+  const [vista, setVista] = useState<"caja" | "responsable">("caja")
+  const verResponsable = vista === "responsable" && seMuestra("dashboard.por-responsable")
   // 🔀 El orden de los grupos que dejó la persona (JMS 22/11: «reubicar dentro del dashboard y que se quede guardado»).
   const [orden, setOrden] = useState<string[] | null>(null)
   useEffect(() => { void supabase.auth.getUser().then(({ data }) => setOrden(leerPreferencias(data.user).ordenDashboard)) }, [])
@@ -174,7 +178,17 @@ export function DashboardPorEmpresa(p: Props) {
               <span className="ml-1 text-[10px] text-gray-400">{PISTA_CTRL_CLICK}</span>
             </>
           )}
-          <div className="ml-auto flex gap-2">
+          <Permisable recurso="dashboard.por-responsable">
+            <div className="ml-3 flex overflow-hidden rounded-md border text-xs" title="Por caja: lo que se movió en los canales de cada empresa · Por responsable: de quién es cada peso y cuánto se deben los socios">
+              {(["caja", "responsable"] as const).map(k => (
+                <button key={k} type="button" onClick={() => setVista(k)}
+                  className={`px-3 py-1 ${vista === k ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>
+                  {k === "caja" ? "Por caja" : "Por responsable"}
+                </button>
+              ))}
+            </div>
+          </Permisable>
+          <div className={`ml-auto flex gap-2 ${verResponsable ? "hidden" : ""}`}>
             <Button size="sm" variant="outline" disabled={loading || !control || !!exportando} onClick={bajarExcel}>
               {exportando === "excel" ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-1 h-4 w-4" />}Excel
             </Button>
@@ -192,6 +206,8 @@ export function DashboardPorEmpresa(p: Props) {
         <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">
           {visibles.length ? "Elegí al menos una empresa." : "No tenés ninguna empresa habilitada en el Dashboard."}
         </CardContent></Card>
+      ) : verResponsable ? (
+        <DashboardPorResponsable año={p.año} semestre={p.semestre} empresas={empresas} mostrarDecimales={p.mostrarDecimales} orden={orden} onReordenar={(o) => void reordenar(o)} />
       ) : loading ? (
         <Card>
           <CardContent className="flex items-center justify-center py-12">
