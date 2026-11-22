@@ -2,7 +2,9 @@
 
 > **Última actualización**: 2026-06-01
 > **Estado**: Paso 0 ejecutado. Decisión arquitectural pendiente antes de Paso 1.
-> **Origen**: El dashboard hoy solo lee MSA, descarta movimientos sin categ en cuentas_contables, y no maneja multi-empresa ni distribuciones cruzadas (DIST MA).
+> ⚠️ **cambió 2026-11-22 (A-FEAT-1637)** — el **selector multi-empresa** (objetivo 1) y el **Paso 1** (el hook lee las 3 empresas) están HECHOS: chips MSA · PAM · MA (candado por chip), cada empresa suma **todos sus canales en pesos** del registro `CUENTAS_BANCARIAS` (bancos, cajas, tarjetas, echeqs, Santander/Provincia de MSA, ANSES de MA; sin dólares ni Cotitulares), control a la vista por canal, y Excel / PDF / Imprimir. El cálculo vive en `lib/dashboard/` (`resumen.ts`, `canales.ts`, `control.ts`, `export-excel.ts`, `export-pdf.ts`); la pantalla es `components/dashboard-por-empresa.tsx`. Lo que sigue abajo es el plan de 06/2026: lo de «hoy solo lee MSA» es historia.
+>
+> **Origen** (06/2026): El dashboard hoy solo lee MSA, descarta movimientos sin categ en cuentas_contables, y no maneja multi-empresa ni distribuciones cruzadas (DIST MA).
 
 ---
 
@@ -61,7 +63,7 @@ Que el dashboard de Resumen Financiero permita:
   - `contable` y `interno` (texto libre) — códigos de imputación (CTA MA, DIST MA, etc.).
 
 ### Hook actual `useFinancialData.ts`
-- Solo lee `msa_galicia`.
+- ⚠️ cambió 2026-11-22 (A-FEAT-1637): lee todos los canales en pesos de las empresas de los chips (`lib/dashboard/canales.ts`); el cálculo se mudó a `lib/dashboard/resumen.ts` y además devuelve lo que queda afuera (cuenta con tipo «NO» o vacío), que el control muestra. ~~Solo lee `msa_galicia`.~~
 - Agrupa por `cuenta_agrupadora` (templates) o `nombre_totalizadora` (cuentas).
 - Si el `movimiento.categ` no está en `cuentas_contables`, usa el `nombre_referencia` del template como fallback.
 - No clasifica como `financiero` ni `distribucion` (los datos no estaban tipados así).
@@ -224,7 +226,7 @@ Un template y una cuenta contable **no son lo mismo**:
 
 ## 📅 Siguientes pasos del rediseño dashboard (cuando se cierre la decisión arquitectural)
 
-### Paso 1: Hook lee de las 3 empresas
+### Paso 1: Hook lee de las 3 empresas — ✅ HECHO 2026-11-22 (A-FEAT-1637), con chips por empresa y todos sus canales en pesos
 Modificar `useFinancialData.ts` para consultar las 10 tablas (4 bancos + 3 cajas + 3 tarjetas). Procesar todo unificado con metadata `empresa` por movimiento.
 
 ### Paso 2: Subtotales jerárquicos

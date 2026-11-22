@@ -829,6 +829,18 @@ Abajo de cada bloque, «✓ los números cierran» (o un aviso rojo si no).
 
 ⚠️ Sin probar todavía → [A-TEST-1387](PENDIENTES.md#a-test-1387)
 
+## 📊 Dashboard por empresa, exportar e imprimir *(nuevo 2026-11-22)*
+
+1. **Elegir la empresa**: arriba de la tabla, los botones **MSA · PAM · MA**. Click prende o apaga una; **Ctrl+click** deja sólo ésa; «todas» las prende todas. Con varias prendidas, la tabla es la **suma**. Arranca en MSA.
+2. **Qué suma cada empresa**: **todas sus cuentas en pesos** — bancos, cajas, tarjetas y echeqs (MSA: Galicia, las 3 cajas, echeqs de terceros, VISA, Santander y Provincia · PAM: Galicia CA y CC, VISA · MA: Galicia CA, VISA, ANSES). **No** suma las cuentas en dólares ni las de Cotitulares (lo dice la nota de abajo). Un pase entre dos cuentas propias se anula en *Financieros*.
+3. **El control, debajo de la tabla**: cada cuenta con sus movimientos, su neto y cuántos del período **no tienen categoría** (ésos no entran en la tabla: se categorizan en Extracto bancario). Si el total de la tabla es la suma de los movimientos, un ✓ verde; si no, un aviso rojo con la lista de lo que quedó afuera (una cuenta contable sin sección: tipo «NO» o vacío).
+4. **Excel**: el resumen por sección y agrupadora, mes por mes (con los dos semestres si es el año entero), cada línea con su Nro; debajo, cada movimiento con su fecha, empresa, cuenta, descripción, categoría y template — filtrá por Nro para ver qué forma una línea. La hoja **Control** repite el control con fórmulas.
+5. **PDF**: la tabla completa (con los detalles abiertos), el control al pie y «Página X de N» en cada hoja (A4 apaisado).
+6. **Imprimir**: imprime sólo el título, la tabla (como está en pantalla: lo que tengas abierto) y el control.
+7. **Permisos (JMS)**: en Configuración → Roles → el rol → 🖱️ Editar sobre la pantalla → Dashboard, cada botón de empresa y «Corregir categorías» tienen su candado. Para un rol de sólo mirar (MA), prendé la sección Dashboard y sólo las empresas que tiene que ver, **sin** «Corregir categorías» (ése cambia datos).
+
+⚠️ Sin probar todavía → [A-TEST-1389](PENDIENTES.md#a-test-1389)
+
 ## 🔓 Habilitar a alguien para que corrija una factura *(nuevo 2026-10-28)*
 
 Para que Ulises (u otra persona) corrija una factura **cargada por Excel** sin darle permiso sobre todas:
