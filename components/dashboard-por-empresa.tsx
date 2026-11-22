@@ -29,6 +29,9 @@ import { clasificadorDashboard } from "@/lib/dashboard/resumen"
 import { toggleChip, esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
 import { formatNumber } from "@/lib/format"
 import { hoyArgentina } from "@/lib/fechas"
+import { supabase } from "@/lib/supabase"
+import { leerPreferencias } from "@/lib/auth/preferencias"
+import { guardarPreferencias } from "@/lib/auth/guardar-preferencias"
 
 interface Props {
   año: number
@@ -51,6 +54,15 @@ export function DashboardPorEmpresa(p: Props) {
   const visibles = useMemo(() => EMPRESAS_DASHBOARD.filter(e => seMuestra(RECURSO_EMPRESA[e])), [seMuestra])
   const [elegidas, setElegidas] = useState<Set<EmpresaDashboard>>(new Set(["MSA"]))
   const [showCategorias, setShowCategorias] = useState(false)
+  // 🔀 El orden de los grupos que dejó la persona (JMS 22/11: «reubicar dentro del dashboard y que se quede guardado»).
+  const [orden, setOrden] = useState<string[] | null>(null)
+  useEffect(() => { void supabase.auth.getUser().then(({ data }) => setOrden(leerPreferencias(data.user).ordenDashboard)) }, [])
+  const reordenar = async (nuevo: string[] | null) => {
+    const antes = orden
+    setOrden(nuevo)
+    const { error } = await guardarPreferencias({ ordenDashboard: nuevo })
+    if (error) { setOrden(antes); toast.error("No se pudo guardar el orden. Probá de nuevo.") }
+  }
   const [exportando, setExportando] = useState<"" | "excel" | "pdf">("")
   // 🖨️ Las reglas de impresión se ponen SÓLO mientras imprime este botón: la solapa queda montada aunque se mire otra, y con
   // las reglas siempre puestas un Ctrl+P en otra pantalla imprimiría el Dashboard.
@@ -98,7 +110,7 @@ export function DashboardPorEmpresa(p: Props) {
     setExportando("pdf")
     try {
       const { descargarPdfDashboard } = await import("@/lib/dashboard/export-pdf")
-      descargarPdfDashboard({ titulo, nota, resumen, control, decimales: p.mostrarDecimales }, nombreArchivo("pdf"))
+      descargarPdfDashboard({ titulo, nota, resumen, control, decimales: p.mostrarDecimales, orden }, nombreArchivo("pdf"))
     } catch (e) {
       console.error(e); toast.error(`No se pudo armar el PDF: ${e instanceof Error ? e.message : String(e)}`)
     } finally { setExportando("") }
@@ -137,6 +149,9 @@ export function DashboardPorEmpresa(p: Props) {
           onMostrarDecimalesChange={p.onMostrarDecimalesChange}
         />
         <div className="flex shrink-0 flex-col items-end gap-2">
+          {orden && orden.length > 0 && (
+            <Button variant="ghost" size="sm" onClick={() => void reordenar(null)} title="Vuelve al orden por nombre">Orden de siempre</Button>
+          )}
           <Permisable recurso="dashboard.corregir-categorias">
             <Button variant="secondary" onClick={() => setShowCategorias(!showCategorias)}>
               <Settings className="mr-2 h-4 w-4" />
@@ -187,7 +202,9 @@ export function DashboardPorEmpresa(p: Props) {
       ) : (
         <div id="dashboard-imprimible" className="space-y-3">
           <h2 className="hidden text-base font-semibold print:block">{titulo}</h2>
-          <TablaResumenFinanciero resumen={resumen} mostrarDecimales={p.mostrarDecimales} />
+          {/* En pantalla, como la dejaste; al imprimir, SIEMPRE todo abierto (formato fijo: el grupo y cada cuenta) */}
+          <div className="print:hidden"><TablaResumenFinanciero resumen={resumen} mostrarDecimales={p.mostrarDecimales} orden={orden} onReordenar={(o) => void reordenar(o)} /></div>
+          {imprimiendo && <div className="hidden print:block"><TablaResumenFinanciero resumen={resumen} mostrarDecimales={p.mostrarDecimales} todoAbierto orden={orden} /></div>}
           {control && <ControlDelDashboard control={control} fuera={fuera} nota={nota} decimales={p.mostrarDecimales} />}
         </div>
       )}

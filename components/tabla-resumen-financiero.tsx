@@ -6,10 +6,20 @@ import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatNumber, getMonthName } from "@/lib/format"
 import type { ResumenFinanciero } from "@/hooks/useFinancialData"
+import { moverAgrupadora, ordenarAgrupadoras, rotuloAgrupadora } from "@/lib/dashboard/orden"
 
 interface TablaResumenFinancieroProps {
   resumen?: ResumenFinanciero[]
   mostrarDecimales: boolean
+  /**
+   * 🖨️ JMS 22/11: «el print debe salir con un formato preestablecido y no depender de lo que tengo colapsado o abierto…
+   * poder ver cada cuenta que integra ventas y compras». Con esto, todo abierto: cada grupo con su total y debajo sus cuentas.
+   */
+  todoAbierto?: boolean
+  /** 🔀 El orden de los grupos que dejó el usuario (`seccion:agrupadora`). */
+  orden?: string[] | null
+  /** Si viene, los grupos se reordenan arrastrándolos y esto recibe el orden nuevo (lo guarda quien llama). */
+  onReordenar?: (orden: string[]) => void
 }
 
 type SeccionKey = "ingresos" | "egresos" | "financieros" | "distribuciones"
@@ -28,7 +38,10 @@ const SECCIONES: Array<{
   { key: "distribuciones", titulo: "DISTRIBUCIONES", totalKey: "totalDistribuciones", claseTitulo: "bg-purple-50", claseTextoTitulo: "text-purple-800", claseSubtotal: "bg-purple-100" },
 ]
 
-export function TablaResumenFinanciero({ resumen, mostrarDecimales }: TablaResumenFinancieroProps) {
+export function TablaResumenFinanciero({ resumen, mostrarDecimales, todoAbierto = false, orden = null, onReordenar }: TablaResumenFinancieroProps) {
+  const [arrastrando, setArrastrando] = useState<{ seccion: SeccionKey; agrupadora: string } | null>(null)
+  const [encima, setEncima] = useState<{ clave: string; lado: "antes" | "despues" } | null>(null)
+  const reordenable = !!onReordenar && !todoAbierto
   const [expandidos, setExpandidos] = useState<Set<string>>(new Set())
 
   // Para cada sección, calcular las agrupadoras presentes (orden alfabético, con "(Sin agrupar)" y "(Sin clasificar)" al final)
@@ -40,16 +53,11 @@ export function TablaResumenFinanciero({ resumen, mostrarDecimales }: TablaResum
       resumen.forEach(mes => {
         Object.keys(mes[s.key]).forEach(a => set.add(a))
       })
-      const arr = Array.from(set).sort((a, b) => {
-        const aEspecial = a.startsWith("(")
-        const bEspecial = b.startsWith("(")
-        if (aEspecial !== bEspecial) return aEspecial ? 1 : -1
-        return a.localeCompare(b, "es")
-      })
-      out[s.key] = arr
+      // 🔀 El orden del usuario (lo que no ordenó, por nombre; «(Sin agrupar)» / «(Sin clasificar)» al final)
+      out[s.key] = ordenarAgrupadoras(s.key, set, orden)
     })
     return out
-  }, [resumen])
+  }, [resumen, orden])
 
   // Todas las claves expandibles (para botón "Expandir todo")
   const todasLasClavesExpandibles = useMemo(() => {
@@ -60,7 +68,8 @@ export function TablaResumenFinanciero({ resumen, mostrarDecimales }: TablaResum
         // Solo expandible si tiene >1 sub-categoría o la sub-categoría no coincide con el nombre
         const subsSet = new Set<string>()
         resumen.forEach(mes => Object.keys(mes.subCategorias?.[agrup] || {}).forEach(d => subsSet.add(d)))
-        if (subsSet.size > 1 || (subsSet.size === 1 && !subsSet.has(agrup))) {
+        // Sólo se despliega con más de una cuenta: con una sola, va «Agrupadora (cuenta)» en un renglón (JMS 22/11)
+        if (subsSet.size > 1) {
           set.add(`${s.key}:${agrup}`)
         }
       })
@@ -121,7 +130,7 @@ export function TablaResumenFinanciero({ resumen, mostrarDecimales }: TablaResum
   const renderAgrupadora = (seccion: SeccionKey, agrupadora: string) => {
     const clave = `${seccion}:${agrupadora}`
     const expandible = todasLasClavesExpandibles.has(clave)
-    const expandido = expandidos.has(clave)
+    const expandido = todoAbierto || expandidos.has(clave)
 
     // Calcular sub-categorías para esta agrupadora
     const subsSet = new Set<string>()
@@ -130,18 +139,42 @@ export function TablaResumenFinanciero({ resumen, mostrarDecimales }: TablaResum
 
     const totalPeriodo = resumen.reduce((s, mes) => s + (mes[seccion][agrupadora] || 0), 0)
     const promPeriodo = totalPeriodo / resumen.length
+    const rotulo = rotuloAgrupadora(agrupadora, subs)
+    const movible = reordenable && !agrupadora.startsWith("(")
+    const marca = encima?.clave === clave && arrastrando?.agrupadora !== agrupadora ? encima.lado : null
 
     return (
       <React.Fragment key={`${seccion}-${agrupadora}`}>
-        <TableRow suppressHydrationWarning>
+        <TableRow suppressHydrationWarning
+          draggable={movible}
+          onDragStart={movible ? (e) => { e.dataTransfer.setData("text/plain", clave); e.dataTransfer.effectAllowed = "move"; setArrastrando({ seccion, agrupadora }) } : undefined}
+          onDragEnd={() => { setArrastrando(null); setEncima(null) }}
+          onDragOver={(e) => {
+            if (!arrastrando || arrastrando.seccion !== seccion || !movible) return // sólo dentro de la misma sección
+            e.preventDefault()
+            const r = e.currentTarget.getBoundingClientRect()
+            const lado = e.clientY < r.top + r.height / 2 ? "antes" : "despues"
+            if (encima?.clave !== clave || encima.lado !== lado) setEncima({ clave, lado })
+          }}
+          onDrop={(e) => {
+            e.preventDefault()
+            if (arrastrando && arrastrando.seccion === seccion && onReordenar && arrastrando.agrupadora !== agrupadora) {
+              onReordenar(moverAgrupadora(orden, seccion, agrupadorasPorSeccion[seccion], arrastrando.agrupadora, agrupadora, encima?.clave === clave ? encima.lado : "despues"))
+            }
+            setArrastrando(null); setEncima(null)
+          }}
+          className={[arrastrando?.agrupadora === agrupadora && arrastrando.seccion === seccion ? "opacity-40" : "",
+            marca === "antes" ? "border-t-2 border-t-primary" : marca === "despues" ? "border-b-2 border-b-primary" : ""].join(" ")}
+        >
           <TableCell
             className={`pl-4 ${expandible ? "cursor-pointer select-none" : ""}`}
             onClick={expandible ? () => toggleExpand(clave) : undefined}
           >
+            {movible && <span className="mr-1 cursor-grab text-gray-300 print:hidden" title="Arrastrá para cambiar el orden (se guarda)">⠿</span>}
             {expandible && (
               <span className="mr-1 text-gray-400 text-[10px]">{expandido ? "▼" : "▶"}</span>
             )}
-            <span className={agrupadora.startsWith("(") ? "italic text-gray-500" : ""}>{agrupadora}</span>
+            <span className={agrupadora.startsWith("(") ? "italic text-gray-500" : ""}>{rotulo.texto}</span>
             {expandible && (
               <span className="ml-1 text-[10px] text-gray-400">({subs.length})</span>
             )}
@@ -225,7 +258,7 @@ export function TablaResumenFinanciero({ resumen, mostrarDecimales }: TablaResum
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Resumen Financiero Mensual</CardTitle>
-        {todasLasClavesExpandibles.size > 0 && (
+        {todasLasClavesExpandibles.size > 0 && !todoAbierto && (
           <div className="flex gap-2 print:hidden">
             <Button size="sm" variant="outline" onClick={expandirTodo}>Expandir todo</Button>
             <Button size="sm" variant="outline" onClick={colapsarTodo}>Colapsar todo</Button>

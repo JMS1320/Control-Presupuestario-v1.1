@@ -9,6 +9,7 @@ import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import { SECCIONES_DASHBOARD, type ResumenFinanciero, type SeccionDashboard } from "./resumen"
 import type { ControlDashboard } from "./control"
+import { ordenarAgrupadoras, rotuloAgrupadora } from "./orden"
 
 const NOMBRES_MES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
 const fmt = (n: number, dec: boolean) => (Math.abs(n) < 0.005 ? "-" : n < 0
@@ -23,23 +24,23 @@ export type FilaReporte = { nivel: "seccion" | "agrupadora" | "detalle" | "subto
 const TOTAL_KEY: Record<SeccionDashboard, "totalIngresos" | "totalEgresos" | "totalFinancieros" | "totalDistribuciones"> = {
   ingresos: "totalIngresos", egresos: "totalEgresos", financieros: "totalFinancieros", distribuciones: "totalDistribuciones",
 }
-const ordenAgrup = (a: string, b: string) => (a.startsWith("(") !== b.startsWith("(") ? (a.startsWith("(") ? 1 : -1) : a.localeCompare(b, "es"))
 
 /** Los renglones del reporte, en el orden de la pantalla, con todos los detalles abiertos. Pura. */
-export function filasDelReporte(resumen: ResumenFinanciero[]): FilaReporte[] {
+export function filasDelReporte(resumen: ResumenFinanciero[], orden: readonly string[] | null = null): FilaReporte[] {
   const out: FilaReporte[] = []
   const suma = (v: number[]) => v.reduce((a, b) => a + b, 0)
   for (const s of SECCIONES_DASHBOARD) {
-    const agrups = [...new Set(resumen.flatMap(m => Object.keys(m[s.key])))].sort(ordenAgrup)
+    const agrups = ordenarAgrupadoras(s.key, resumen.flatMap(m => Object.keys(m[s.key])), orden)
     if (!agrups.length) continue
     out.push({ nivel: "seccion", concepto: s.titulo.toUpperCase(), valores: [], total: 0 })
     for (const a of agrups) {
       const v = resumen.map(m => m[s.key][a] || 0)
-      out.push({ nivel: "agrupadora", concepto: a, valores: v, total: suma(v) })
       const subs = [...new Set(resumen.flatMap(m => Object.keys(m.subCategorias?.[a] || {})))].sort((x, y) => x.localeCompare(y, "es"))
+      const rot = rotuloAgrupadora(a, subs)
+      out.push({ nivel: "agrupadora", concepto: rot.texto, valores: v, total: suma(v) })
       // ⚠️ `subCategorias` es por agrupadora (no por sección): si la misma agrupadora está en dos secciones, el detalle las junta —
       // igual que la pantalla. Sólo se abre cuando aporta (más de un detalle, o uno con otro nombre).
-      if (subs.length > 1 || (subs.length === 1 && subs[0] !== a)) {
+      if (rot.desplegable) {
         for (const d of subs) {
           const vd = resumen.map(m => m.subCategorias?.[a]?.[d] || 0)
           out.push({ nivel: "detalle", concepto: d, valores: vd, total: suma(vd) })
@@ -65,11 +66,13 @@ export interface DatosPdfDashboard {
   resumen: ResumenFinanciero[]
   control: ControlDashboard
   decimales: boolean
+  /** 🔀 El orden de los grupos que dejó el usuario (el mismo de la pantalla). */
+  orden?: string[] | null
 }
 
 export function descargarPdfDashboard(d: DatosPdfDashboard, nombre: string): void {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
-  const filas = filasDelReporte(d.resumen)
+  const filas = filasDelReporte(d.resumen, d.orden ?? null)
   const head = [["Concepto", ...d.resumen.map(m => `${NOMBRES_MES[m.mes - 1]} ${String(m.año).slice(2)}`), "Total"]]
   const body = filas.map(f => f.nivel === "seccion"
     ? [{ content: f.concepto, colSpan: d.resumen.length + 2, styles: { fontStyle: "bold" as const, fillColor: [235, 240, 247] as [number, number, number] } }]

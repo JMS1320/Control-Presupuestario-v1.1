@@ -105,6 +105,7 @@ import { armarRolNuevo, normalizarIdRol } from "@/lib/auth/crear-rol"
 import { nivelesEfectivos, excepcionesParaEditar, permisosAGuardar } from "@/lib/auth/rol-cerrado"
 import { misImpuestosDelAnio, misArrendamientos, loQueViene, puedeVerBloque, puedeVerEmpresa, partidaDeCuota, agruparDetalle } from "@/lib/ma/mi-pantalla"
 import { conLasDadas } from "@/lib/widgets/dados"
+import { ordenarAgrupadoras, moverAgrupadora, rotuloAgrupadora } from "@/lib/dashboard/orden"
 import { RECURSOS as RECURSOS_PERMISABLES } from "@/lib/auth/recursos"
 import { borradorDe, alternarRecurso, alternarSeccion, nivelEnBorrador, contarCambios, cuerpoGuardar } from "@/lib/auth/modo-permisos"
 import { motivoCuentaBloqueada } from "@/lib/auth/cuentas-extracto"
@@ -14353,6 +14354,15 @@ export function correrCasos(): Resultado[] {
       conLasDadas(["ipc"], ["x"], [], []).join(","),
     ].join(" | ")
     const e9 = "ma-impuestos,ma-lo-que-viene,ipc | ma-lo-que-viene,ipc,ma-impuestos | ma-impuestos,ipc | ipc"
+    const agD = ["Sueldos", "(Sin clasificar)", "Hacienda", "Impuestos"]
+    const o1 = ordenarAgrupadoras("egresos", agD, null).join(",")
+    const o2 = ordenarAgrupadoras("egresos", agD, ["egresos:Sueldos", "ingresos:Hacienda"]).join(",")
+    const mv = moverAgrupadora(["ingresos:Ventas"], "egresos", ["Hacienda", "Impuestos", "Sueldos", "(Sin clasificar)"], "Sueldos", "Hacienda", "antes").join(",")
+    const r1 = rotuloAgrupadora("Impuestos Buenos Aires MA", ["ABL Libertad Cuota"]), r2 = rotuloAgrupadora("Hacienda", ["Descarte", "Invernada"]), r3 = rotuloAgrupadora("Sueldos", ["Sueldos"])
+    const v10 = [o1, o2, mv, `${r1.texto}/${r1.desplegable}`, `${r2.texto}/${r2.desplegable}`, `${r3.texto}/${r3.desplegable}`].join(" | ")
+    const e10 = "Hacienda,Impuestos,Sueldos,(Sin clasificar) | Sueldos,Hacienda,Impuestos,(Sin clasificar) | egresos:Sueldos,egresos:Hacienda,egresos:Impuestos,ingresos:Ventas | Impuestos Buenos Aires MA (ABL Libertad Cuota)/false | Hacienda/true | Sueldos/false"
+    chequear("Dashboard", "🔀 Orden guardado de los grupos (por sección, los especiales al final, lo de otras secciones se conserva) y un grupo de UNA cuenta va «Agrupadora (cuenta)» sin desplegable", e10, v10, v10 === e10, "A-FEAT-1637")
+
     chequear("MA", "🧩 Tarjetas dadas por el rol: entran solas aunque la persona ya haya configurado su inicio, respetan el orden que ella les dio y no vuelven si las sacó", e9, v9, v9 === e9, "A-FEAT-1634")
   }
   {

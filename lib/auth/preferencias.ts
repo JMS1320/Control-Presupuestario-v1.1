@@ -77,6 +77,8 @@ export type Preferencias = {
    * las mismas partidas (usuario 2026-10-24). Clave = el campo en minúsculas. `null` = alfabético.
    */
   ordenPartidas: string[] | null
+  /** 🔀 A-FEAT-1637: el orden de los grupos del Dashboard que dejó el usuario arrastrando (`seccion:agrupadora`). `null` = por nombre. */
+  ordenDashboard: string[] | null
   /**
    * 🧠 Mantener abiertas (escondidas) las pantallas ya visitadas al cambiar de pestaña (A-FEAT-1378).
    * **Apagado por defecto** (usuario 26/10, indeciso: *«no se actualizan solas, es un tema… no sé si será
@@ -110,6 +112,7 @@ export const PREFERENCIAS_DEFAULT: Preferencias = {
   columnasCashFlow: null,
   ordenImpuestos: null,
   ordenPartidas: null,
+  ordenDashboard: null,
   pantallasVivas: false,
   cartelesPrueba: true,
 }
@@ -174,6 +177,9 @@ export function leerPreferencias(user: User | null | undefined): Preferencias {
       : null,
     ordenPartidas: Array.isArray(p.ordenPartidas)
       ? (p.ordenPartidas as unknown[]).filter((k): k is string => typeof k === "string")
+      : null,
+    ordenDashboard: Array.isArray(p.ordenDashboard)
+      ? (p.ordenDashboard as unknown[]).filter((k): k is string => typeof k === "string")
       : null,
   }
 }
