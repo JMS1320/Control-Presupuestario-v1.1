@@ -136,8 +136,10 @@ export function armarResumenFinanciero(
   movimientos: any[],
   cuentas: CuentaContable[],
   templateMap: Map<string, InfoTemplate>,
+  /** Opcional (A-FEAT-1637, vista «Por responsable»): otro clasificador encima del de siempre — p. ej. para rotular «(pagó MSA)». */
+  clasificarOtro?: (mov: any) => Clasificacion,
 ): { resumen: ResumenFinanciero[]; fuera: Array<{ mov: any; clasificacion: Clasificacion }> } {
-  const clasificar = clasificadorDashboard(cuentas, templateMap)
+  const clasificar = clasificarOtro ?? clasificadorDashboard(cuentas, templateMap)
   const resumenPorMes = new Map<string, ResumenFinanciero>()
   const fuera: Array<{ mov: any; clasificacion: Clasificacion }> = []
 

@@ -45,6 +45,7 @@ import { armarResumenPorMes } from "@/lib/balance/resumen-por-mes"
 import { canalesDelDashboard, canalesFueraDelDashboard, type CuentaDelRegistro } from "@/lib/dashboard/canales"
 import { armarResumenFinanciero, clasificadorDashboard } from "@/lib/dashboard/resumen"
 import { controlDelDashboard } from "@/lib/dashboard/control"
+import { atribuirTodo, vistaPorResponsable, controlPorResponsable, cuentaEntreSocios, saldoCon } from "@/lib/dashboard/responsable"
 import { libroDelDashboard, mesesDelPeriodo } from "@/lib/dashboard/export-excel"
 import { CUENTAS_DOLARES_Y_COTITULARES } from "@/lib/dolares/cuentas"
 import { filasNivel2De } from "@/lib/balance/formato-excel"
@@ -527,6 +528,64 @@ export function correrCasos(): Resultado[] {
     const v3 = `meses ${mesesDelPeriodo(2026, 2).map(m => m.rotulo).join(" ")} · total ${celdaTot ? hojaR[celdaTot].v : "?"} · estado ${estado?.v}`
     const e3 = "meses jul-26 ago-26 sep-26 oct-26 nov-26 dic-26 · total 599.5 · estado ✓ cierra"
     chequear("Dashboard", "📥 Excel: los meses del semestre, el TOTAL del resumen por categoría y mes = el total de la tabla, y la hoja Control cierra (tabla + fuera = canales)", e3, v3, v3 === e3, "A-FEAT-1637")
+
+    // 👥 «Por responsable» (A-FEAT-1637, JMS 22/11): de quién es cada peso. Datos fijos: MSA le paga a MA servicios con la tarjeta (100,
+    // por el template de MA) e impuestos desde la cuenta corriente (300, interno DIST MA aunque el template diga MSA), Libertad (200,
+    // template de PAM: Libertad es entera de MA), y le transfiere 1000 (que MA ve llegar con contable CTA MSA); MA paga una factura de
+    // PAM (70); MA cobra 500; MSA paga 50 propios y 20 con «DIST MECHI» (no es socio → de quien pagó).
+    const cuentasR = [
+      { categ: "SERV", tipo: "egreso", nombre_totalizadora: "Servicios", cuenta_contable: "Servicios" },
+      { categ: "IMP", tipo: "egreso", nombre_totalizadora: "Impuestos", cuenta_contable: "Impuestos" },
+      { categ: "RET", tipo: "distribucion", nombre_totalizadora: "Retiros", cuenta_contable: "Retiros" },
+      { categ: "VTA", tipo: "ingreso", nombre_totalizadora: "Ventas", cuenta_contable: "Ventas" },
+    ] as any[]
+    const tplR = new Map([
+      ["t_ma", { nombre: "Servicios MA", agrupadora: "Servicios", esMulti: false, tipo: "egreso" as const }],
+      ["t_msa", { nombre: "Impuestos MSA", agrupadora: "Impuestos", esMulti: false, tipo: "egreso" as const }],
+      ["t_lib", { nombre: "Expensas Libertad", agrupadora: "Servicios", esMulti: false, tipo: "egreso" as const }],
+    ])
+    const ctxR = {
+      responsableTemplate: new Map([["t_ma", "MA"], ["t_msa", "MSA"], ["t_lib", "PAM"]]),
+      empresaFactura: new Map([["fc-pam", "PAM"]]),
+      empresaSueldo: new Map<string, string>(),
+    }
+    const mv = (id: string, emp: string, canal: string, fecha: string, x: Record<string, unknown>) => ({ id, _empresa: emp, _canal: canal, fecha, creditos: 0, debitos: 0, ...x })
+    const movsR = [
+      mv("1", "MSA", "VISA Business MSA", "2026-03-05", { categ: "SERV", debitos: 100, template_id: "t_ma" }),
+      mv("2", "MSA", "MSA Galicia CC", "2026-03-06", { categ: "IMP", debitos: 300, template_id: "t_msa", interno: "DIST MA" }),
+      mv("3", "MSA", "MSA Galicia CC", "2026-03-07", { categ: "IMP", debitos: 50, template_id: "t_msa" }),
+      mv("4", "MA", "MA Galicia CA", "2026-03-08", { categ: "SERV", debitos: 70, comprobante_arca_id: "fc-pam" }),
+      mv("5", "MSA", "MSA Galicia CC", "2026-03-10", { categ: "RET", debitos: 1000, interno: "Dist MA" }),
+      mv("6", "MA", "MA Galicia CA", "2026-03-10", { categ: "RET", creditos: 1000, contable: "CTA MSA", interno: "DIST MA" }),
+      mv("7", "MA", "MA Galicia CA", "2026-03-12", { categ: "VTA", creditos: 500 }),
+      mv("8", "MSA", "MSA Galicia CC", "2026-03-13", { categ: "IMP", debitos: 20, contable: "DIST MECHI" }),
+      mv("9", "MSA", "MSA Galicia CC", "2026-03-14", { categ: "SERV", debitos: 200, template_id: "t_lib" }),
+    ]
+    const atR = atribuirTodo(movsR, cuentasR, tplR, ctxR)
+    const v4 = atR.movs.map(m => `${m.id}:${m.responsable}/${m.por}/${m.tipo}`).join(" ")
+    const e4 = "1:MA/template/porCuenta 2:MA/interno/porCuenta 3:MSA/template/propio 4:PAM/factura/porCuenta 5:MA/interno/transferencia 6:MA/interno/transferencia 7:MA/pagador/propio 8:MSA/pagador/propio 9:MA/libertad/porCuenta"
+    chequear("Dashboard", "👥 Por responsable: de quién es cada movimiento — el interno manda sobre el template; Libertad entera a MA; la factura de PAM pagada por MA es de PAM; «DIST MECHI» no es socio (queda en quien pagó); las dos puntas de la transferencia MSA→MA son transferencia", e4, v4, v4 === e4, "A-FEAT-1637")
+
+    const D1 = "2026-01-01", D2 = "2026-12-31"
+    const vMA = vistaPorResponsable(atR, ["MA"], D1, D2, cuentasR, tplR), vPAM = vistaPorResponsable(atR, ["PAM"], D1, D2, cuentasR, tplR), vMSA = vistaPorResponsable(atR, ["MSA"], D1, D2, cuentasR, tplR)
+    const fMSA = vMA.financiado.hijos.find(h => h.nombre === "MSA")
+    const subsMA = Object.keys(vMA.resumen[0]?.subCategorias["Servicios"] ?? {}).join("|")
+    const v5 = `MA egresos ${vMA.resumen[0]?.totalEgresos} [${subsMA}] · financiado por MSA ${fMSA?.total} = ${fMSA?.hijos.map(h => `${h.nombre} ${h.total}`).join(" + ")} · pagado por cuenta de PAM ${vMA.porCuenta.hijos.find(h => h.nombre === "PAM")?.total} · PAM egresos ${vPAM.resumen[0]?.totalEgresos} financiado por MA ${vPAM.financiado.total} · MSA pagado por cuenta ${vMSA.porCuenta.total} (retiros ${vMSA.porCuenta.hijos[0]?.hijos.find(h => h.nombre.startsWith("Retiros"))?.total}) · cierran ${vMA.cierra}/${vPAM.cierra}/${vMSA.cierra}`
+    const e5 = "MA egresos -600 [Servicios MA (pagó MSA)|Expensas Libertad (pagó MSA)] · financiado por MSA 1600 = MA Galicia CA 1000 + MSA Galicia CC 500 + VISA Business MSA 100 · pagado por cuenta de PAM -70 · PAM egresos -70 financiado por MA 70 · MSA pagado por cuenta -1600 (retiros -1000) · cierran true/true/true"
+    chequear("Dashboard", "👥 Por responsable: MA ve como suyo lo que pagó MSA «(pagó MSA)» y en «Financiado por los socios ▸ MSA» el desglose por canal (100 tarjeta + 300 y 200 de la cuenta corriente + la transferencia que llegó a su banco); la factura de PAM que pagó MA es gasto de PAM y en MA va a «pagado por cuenta de PAM»; cada empresa: secciones + financiado + pagado por cuenta = su caja", e5, v5, v5 === e5, "A-FEAT-1637")
+
+    const cR = controlPorResponsable(atR, movsR, D1, D2, cuentasR, tplR)
+    const pMA = cR.pares.find(p => p.a === "MSA" && p.b === "MA")
+    const v6 = `por caja ${cR.porCaja} · por responsable ${cR.porResponsable} · cierra ${cR.cierra} · transferencias MSA ${pMA?.transfLadoA} / MA ${pMA?.transfLadoB} dif ${pMA?.diferenciaTransf} · MSA pagó por MA ${pMA?.pagosAporB} = MA financiado ${pMA?.financiadoEnB}`
+    const e6 = "por caja -240 · por responsable -240 · cierra true · transferencias MSA -1000 / MA 1000 dif 0 · MSA pagó por MA -600 = MA financiado 600"
+    chequear("Dashboard", "🧮 Por responsable — el control: sumando las tres empresas da lo mismo que «Por caja» (sólo cambia quién se lleva cada peso); la transferencia MSA→MA se cuenta una vez de cada lado y los dos lados son espejo", e6, v6, v6 === e6, "A-FEAT-1637")
+
+    const csR = cuentaEntreSocios(atR, "2026-03-31")
+    const cMSA = csR.find(c => c.a === "MSA" && c.b === "MA"), marzo = cMSA?.meses.find(m => m.mes === "2026-03")
+    const contar = (n: { movs: unknown[]; hijos: any[] }): number => n.movs.length + n.hijos.reduce((t: number, h: any) => t + contar(h), 0)
+    const v7 = `meses ${cMSA?.meses.length} (desde ${cMSA?.meses[0]?.mes}) · marzo ${JSON.stringify(marzo?.porCategoria)} saldo ${marzo?.saldo} · MA con MSA ${saldoCon(csR, "MA", "MSA")} · MA con PAM ${saldoCon(csR, "MA", "PAM")} · mov. en marzo ${marzo ? contar(marzo.arbol) : "?"}`
+    const e7 = 'meses 15 (desde 2025-01) · marzo {"Retiros directos":1000,"Pagos por su cuenta":400,"Libertad":200,"Aportes (pagó por la otra punta)":0} saldo 1600 · MA con MSA -1600 · MA con PAM 70 · mov. en marzo 4'
+    chequear("Dashboard", "🤝 Cuenta entre socios: arranca el 31/12/2024 en 0, mes por mes; marzo MSA↔MA = retiros directos 1000 + pagos por su cuenta 400 + Libertad 200 (la transferencia se cuenta UNA vez, del lado que paga); MA le debe 1600 a MSA y PAM le debe 70 a MA", e7, v7, v7 === e7, "A-FEAT-1637")
   }
 
   // ══ El factor de la balanza ═══════════════════════════════════════════════════════════════
