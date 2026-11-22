@@ -57,6 +57,11 @@ export type Preferencias = {
    */
   widgetsTamano: Record<string, { ancho: 1 | 2; alto: number }>
   /**
+   * 👤 A-FEAT-1634: las tarjetas «dadas por el rol» (las de MA) entran SOLAS al inicio cuando el rol las tiene; si la
+   * persona saca una, queda acá y no vuelve a aparecer sola (la puede volver a agregar desde «Configurar mi inicio»).
+   */
+  widgetsQuitados: string[]
+  /**
    * 📐 El ancho y el orden de las columnas del Cash Flow que dejó el usuario (A-FEAT-1277).
    * `null` = las de siempre. Disperso: sólo lo que tocó (ver `lib/cashflow/columnas-usuario.ts`).
    */
@@ -72,6 +77,8 @@ export type Preferencias = {
    * las mismas partidas (usuario 2026-10-24). Clave = el campo en minúsculas. `null` = alfabético.
    */
   ordenPartidas: string[] | null
+  /** 🔀 A-FEAT-1637: el orden de los grupos del Dashboard que dejó el usuario arrastrando (`seccion:agrupadora`). `null` = por nombre. */
+  ordenDashboard: string[] | null
   /**
    * 🧠 Mantener abiertas (escondidas) las pantallas ya visitadas al cambiar de pestaña (A-FEAT-1378).
    * **Apagado por defecto** (usuario 26/10, indeciso: *«no se actualizan solas, es un tema… no sé si será
@@ -101,9 +108,11 @@ export const PREFERENCIAS_DEFAULT: Preferencias = {
   explicaciones: true,
   widgets: null,
   widgetsTamano: {},
+  widgetsQuitados: [],
   columnasCashFlow: null,
   ordenImpuestos: null,
   ordenPartidas: null,
+  ordenDashboard: null,
   pantallasVivas: false,
   cartelesPrueba: true,
 }
@@ -159,12 +168,18 @@ export function leerPreferencias(user: User | null | undefined): Preferencias {
       ? (p.widgets as unknown[]).filter((w): w is string => typeof w === "string")
       : null,
     widgetsTamano: leerTamanos(p.widgetsTamano),
+    widgetsQuitados: Array.isArray(p.widgetsQuitados)
+      ? (p.widgetsQuitados as unknown[]).filter((w): w is string => typeof w === "string")
+      : [],
     columnasCashFlow: leerColumnasUsuario(p.columnasCashFlow),
     ordenImpuestos: Array.isArray(p.ordenImpuestos)
       ? (p.ordenImpuestos as unknown[]).filter((k): k is string => typeof k === "string")
       : null,
     ordenPartidas: Array.isArray(p.ordenPartidas)
       ? (p.ordenPartidas as unknown[]).filter((k): k is string => typeof k === "string")
+      : null,
+    ordenDashboard: Array.isArray(p.ordenDashboard)
+      ? (p.ordenDashboard as unknown[]).filter((k): k is string => typeof k === "string")
       : null,
   }
 }

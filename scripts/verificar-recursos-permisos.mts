@@ -23,6 +23,7 @@ const VISTAS: Record<string, string> = {
   ingresos:   "components/vista-ingresos.tsx",
   sueldos:    "components/tab-sueldos.tsx",   // A-BUG-1401: desde el 28/10 tiene botones con casilla
   principal:  "components/vista-inicio.tsx",  // A-FEAT-1634: los bloques de MA y los widgets de Principal tienen casilla
+  dashboard:  "components/dashboard-por-empresa.tsx", // A-FEAT-1637: chips de empresa y «Corregir categorías» con casilla
 }
 
 /**

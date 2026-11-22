@@ -3,7 +3,7 @@ import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
 import { nivelesDe, seccionesDelRol } from "@/lib/auth/permisos"
 import { supabaseAdmin, faltaConfiguracionAdmin } from "@/lib/supabase-admin"
 import { hoyArgentina } from "@/lib/fechas"
-import { cargarCuotasImpuestos } from "@/lib/impuestos/datos-papel"
+import { cargarAuxiliaresPapel, cargarCuotasImpuestos } from "@/lib/impuestos/datos-papel"
 import {
   cuotasDeEmpresa, esEmpresaMiPantalla, impuestosSinPagar, loQueViene, misArrendamientos, misImpuestosDelAnio, puedeVerBloque, puedeVerEmpresa,
   RECURSO_BLOQUE, type BloqueMiPantalla,
@@ -57,11 +57,14 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: true, hoy, datos: misArrendamientos(await leerArrendamientos(), hoy) })
     }
     // 📈 Lo que viene: lo que falta cobrar de los arrendamientos contra los impuestos de MA sin pagar.
-    const [entrada, cuotas] = await Promise.all([leerArrendamientos(), cargarCuotasImpuestos(supabaseAdmin)])
+    const [entrada, cuotas, aux] = await Promise.all([leerArrendamientos(), cargarCuotasImpuestos(supabaseAdmin), cargarAuxiliaresPapel(supabaseAdmin)])
+    // 🏷️ El lugar de cada partida (Tapera 2 → Nazarenas), de la tabla de partidas; sin tildes para buscar.
+    const sinTildes = (x: string) => x.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    const establecimientoDe = (partida: string) => aux.ubicacion[`campo:${sinTildes(partida)}`]?.establecimiento ?? null
     const arr = misArrendamientos(entrada, hoy)
     const ingresos = arr.contratos.flatMap(k => k.porCobrar.map(p => ({ fecha: p.fecha, concepto: `Arrendamiento ${k.campania} · ${p.concepto}`, monto: p.monto })))
     const anio = Number(hoy.slice(0, 4))
-    const egresos = impuestosSinPagar(cuotasDeEmpresa(cuotas, EMPRESA), [anio - 1, anio, anio + 1], hoy)
+    const egresos = impuestosSinPagar(cuotasDeEmpresa(cuotas, EMPRESA), [anio - 1, anio, anio + 1], hoy, establecimientoDe)
     return NextResponse.json({ ok: true, hoy, datos: loQueViene(ingresos, egresos, hoy) })
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 })

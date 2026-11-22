@@ -78,11 +78,12 @@ export const RECURSOS: Recurso[] = [
   // Los bloques de MA (Mercedes Areco): sólo lectura, servidos por `/api/mi-pantalla`. Nacen apagados para TODOS (también
   // para admin fuera del modo permisos): se ven sólo donde el rol los tiene DADOS. JMS los prende con el candado en
   // «Ver como lo ve él», y la ruta del servidor pregunta por el mismo id.
-  { id: "principal.ma-impuestos",      seccion: "principal", etiqueta: "Principal → 🧾 Mis impuestos del año (MA, con MSA y PAM para mirar)", tipo: "accion", archivo: "components/vista-inicio.tsx" },
-  { id: "principal.ma-impuestos-msa",  seccion: "principal", etiqueta: "Principal → 🧾 Mis impuestos → chip MSA (ver los impuestos de MSA)", tipo: "accion", archivo: "components/mi-pantalla-ma.tsx" },
-  { id: "principal.ma-impuestos-pam",  seccion: "principal", etiqueta: "Principal → 🧾 Mis impuestos → chip PAM (ver los impuestos de PAM)", tipo: "accion", archivo: "components/mi-pantalla-ma.tsx" },
-  { id: "principal.ma-arrendamientos", seccion: "principal", etiqueta: "Principal → 🌾 Mis arrendamientos (MA)", tipo: "accion", archivo: "components/vista-inicio.tsx" },
-  { id: "principal.ma-lo-que-viene",   seccion: "principal", etiqueta: "Principal → 📈 Lo que viene: próximos 12 meses (MA)", tipo: "accion", archivo: "components/vista-inicio.tsx" },
+  { id: "principal.ma-impuestos",      seccion: "principal", etiqueta: "Principal → 🧾 Mis impuestos del año (MA, con MSA y PAM para mirar)", tipo: "accion", archivo: "lib/widgets/registro.ts" },
+  { id: "principal.ma-planilla-impuestos", seccion: "principal", etiqueta: "Principal → 🧾 Planilla de impuestos (acceso directo, sólo sus empresas)", tipo: "accion", archivo: "lib/widgets/registro.ts" },
+  { id: "principal.ma-impuestos-msa",  seccion: "principal", etiqueta: "Principal → 🧾 impuestos de MSA (chip en «Mis impuestos» y en la Planilla)", tipo: "accion", archivo: "components/mi-pantalla-ma.tsx" },
+  { id: "principal.ma-impuestos-pam",  seccion: "principal", etiqueta: "Principal → 🧾 impuestos de PAM (chip en «Mis impuestos» y en la Planilla)", tipo: "accion", archivo: "components/mi-pantalla-ma.tsx" },
+  { id: "principal.ma-arrendamientos", seccion: "principal", etiqueta: "Principal → 🌾 Mis arrendamientos (MA)", tipo: "accion", archivo: "lib/widgets/registro.ts" },
+  { id: "principal.ma-lo-que-viene",   seccion: "principal", etiqueta: "Principal → 📈 Lo que viene: próximos 12 meses (MA)", tipo: "accion", archivo: "lib/widgets/registro.ts" },
   // Los widgets de la sección Principal también tienen casilla: sin esto, prenderle a un rol CERRADO un bloque de arriba
   // (que le suma la sección Principal) le abría de paso la Ficha de proveedor y los demás widgets generales. En un rol
   // abierto (admin, socio) siguen como siempre: heredan.
@@ -90,6 +91,13 @@ export const RECURSOS: Recurso[] = [
   { id: "principal.widget-ipc",             seccion: "principal", etiqueta: "Principal → widget Último IPC", tipo: "accion", archivo: "lib/widgets/registro.ts" },
   { id: "principal.widget-ficha-proveedor", seccion: "principal", etiqueta: "Principal → widget Ficha de proveedor", tipo: "accion", archivo: "lib/widgets/registro.ts" },
   { id: "principal.widget-revisiones",      seccion: "principal", etiqueta: "Principal → widget Para revisar (Alt+R)", tipo: "accion", archivo: "lib/widgets/registro.ts" },
+  // ── Dashboard (A-FEAT-1637) ──────────────────────────────────────────────────────────────
+  // Un candado por chip de empresa (en un rol abierto vienen prendidos; en uno cerrado nacen apagados) y otro para «Corregir
+  // categorías», que ESCRIBE: así a un rol de sólo mirar (MA) se le da el Dashboard sin ese botón.
+  { id: "dashboard.empresa-msa",         seccion: "dashboard", etiqueta: "Dashboard → chip MSA (todos los canales en pesos de MSA)", tipo: "accion", archivo: "components/dashboard-por-empresa.tsx" },
+  { id: "dashboard.empresa-pam",         seccion: "dashboard", etiqueta: "Dashboard → chip PAM (todos los canales en pesos de PAM)", tipo: "accion", archivo: "components/dashboard-por-empresa.tsx" },
+  { id: "dashboard.empresa-ma",          seccion: "dashboard", etiqueta: "Dashboard → chip MA (todos los canales en pesos de MA)", tipo: "accion", archivo: "components/dashboard-por-empresa.tsx" },
+  { id: "dashboard.corregir-categorias", seccion: "dashboard", etiqueta: "Dashboard → Corregir categorías (escribe)", tipo: "accion", archivo: "components/dashboard-por-empresa.tsx" },
   // ── Egresos ──────────────────────────────────────────────────────────────────────────────
   { id: "egresos.facturas-msa", seccion: "egresos", etiqueta: "Facturas MSA",        tipo: "pestana", archivo: EGRESOS },
   { id: "egresos.facturas-pam", seccion: "egresos", etiqueta: "Facturas PAM",        tipo: "pestana", archivo: EGRESOS },
@@ -305,7 +313,6 @@ export const RECURSOS: Recurso[] = [
  * si alguien la lee y ve un hueco, tiene que saber si es un olvido o una decisión.
  */
 export const SIN_RECURSOS: Record<string, string> = {
-  dashboard:    "Una sola vista con filtros. No tiene partes separables.",
   distribucion: "Una sola vista con filtros.",
   reporte:      "Una sola vista con filtros.",
   ingresos:     "⚠️ Sus pestañas se GENERAN por empresa y por vista, así que no se pueden listar acá. Permisarlas pide resolverlas en tiempo de ejecución — pendiente.",
