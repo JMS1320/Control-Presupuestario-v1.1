@@ -97,7 +97,7 @@ import { facturasRestringidas } from "@/lib/auth/roles"
 import { etiquetaPersona } from "@/lib/auth/identidad"
 import { armarRolNuevo, normalizarIdRol } from "@/lib/auth/crear-rol"
 import { nivelesEfectivos, excepcionesParaEditar, permisosAGuardar } from "@/lib/auth/rol-cerrado"
-import { misImpuestosDelAnio, misArrendamientos, loQueViene, puedeVerBloque } from "@/lib/ma/mi-pantalla"
+import { misImpuestosDelAnio, misArrendamientos, loQueViene, puedeVerBloque, puedeVerEmpresa } from "@/lib/ma/mi-pantalla"
 import { RECURSOS as RECURSOS_PERMISABLES } from "@/lib/auth/recursos"
 import { borradorDe, alternarRecurso, alternarSeccion, nivelEnBorrador, contarCambios, cuerpoGuardar } from "@/lib/auth/modo-permisos"
 import { motivoCuentaBloqueada } from "@/lib/auth/cuentas-extracto"
@@ -14255,6 +14255,14 @@ export function correrCasos(): Resultado[] {
     const v5 = `${ef["principal.ma-impuestos"]} ${ef["principal.widget-ficha-proveedor"]} ${ef["principal.ma-arrendamientos"]}`
     const e5 = "escritura ninguno ninguno"
     chequear("MA", "🔒 En un rol CERRADO, prender un bloque de MA (que suma la sección Principal) NO prende de paso la Ficha de proveedor ni los otros widgets ni los otros bloques", e5, v5, v5 === e5, "A-FEAT-1634")
+
+    const ef6 = nivelesEfectivos({ secciones: ["principal"], permisos: { "principal.ma-impuestos": "lectura", "principal.ma-impuestos-pam": "lectura" }, cerrado: true })
+    const v6 = [
+      puedeVerEmpresa("ma", ef6, "MA"), puedeVerEmpresa("ma", ef6, "MSA"), puedeVerEmpresa("ma", ef6, "PAM"),
+      puedeVerEmpresa("admin", {}, "MSA"), ef6["principal.ma-impuestos-msa"],
+    ].join(",")
+    const e6 = "true,false,true,true,ninguno"
+    chequear("MA", "🔒 Chips de empresa en «Mis impuestos»: MA siempre; MSA y PAM sólo con su candado (en un rol cerrado nacen apagados); admin ve todo", e6, v6, v6 === e6, "A-FEAT-1634")
   }
   return r
 }

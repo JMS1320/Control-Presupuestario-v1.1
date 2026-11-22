@@ -5,7 +5,7 @@ import { supabaseAdmin, faltaConfiguracionAdmin } from "@/lib/supabase-admin"
 import { hoyArgentina } from "@/lib/fechas"
 import { cargarCuotasImpuestos } from "@/lib/impuestos/datos-papel"
 import {
-  cuotasDeEmpresa, esEmpresaMiPantalla, impuestosSinPagar, loQueViene, misArrendamientos, misImpuestosDelAnio, puedeVerBloque,
+  cuotasDeEmpresa, esEmpresaMiPantalla, impuestosSinPagar, loQueViene, misArrendamientos, misImpuestosDelAnio, puedeVerBloque, puedeVerEmpresa,
   RECURSO_BLOQUE, type BloqueMiPantalla,
 } from "@/lib/ma/mi-pantalla"
 import { leerArrendamientos } from "@/lib/ma/mi-pantalla-datos"
@@ -45,6 +45,9 @@ export async function GET(req: Request) {
     if (que === "impuestos") {
       const empresa = url.searchParams.get("empresa") ?? EMPRESA
       if (!esEmpresaMiPantalla(empresa)) return NextResponse.json({ ok: false, error: "Empresa desconocida." }, { status: 400 })
+      if (!puedeVerEmpresa(g.rol, niveles as Record<string, string>, empresa)) {
+        return NextResponse.json({ ok: false, error: `Los impuestos de ${empresa} no están habilitados para tu cuenta.` }, { status: 403 })
+      }
       const anio = Number(url.searchParams.get("anio") ?? hoy.slice(0, 4))
       if (!Number.isInteger(anio) || anio < 2020 || anio > 2100) return NextResponse.json({ ok: false, error: "Año inválido." }, { status: 400 })
       const cuotas = await cargarCuotasImpuestos(supabaseAdmin)

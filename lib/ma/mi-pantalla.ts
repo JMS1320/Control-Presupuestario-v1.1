@@ -40,6 +40,22 @@ export const RECURSO_BLOQUE = {
 } as const
 export type BloqueMiPantalla = keyof typeof RECURSO_BLOQUE
 
+/**
+ * 🔒 Los chips de empresa del bloque de impuestos (JMS 22/11: «ok con los candados a los chips»): MA va siempre (es lo
+ * suyo); MSA y PAM tienen candado propio. En un rol cerrado nacen apagados. La ruta del servidor pregunta lo mismo.
+ */
+export const RECURSO_EMPRESA: Partial<Record<EmpresaMiPantalla, string>> = {
+  MSA: "principal.ma-impuestos-msa",
+  PAM: "principal.ma-impuestos-pam",
+}
+export function puedeVerEmpresa(rol: string | null, niveles: Record<string, string>, empresa: EmpresaMiPantalla): boolean {
+  if (rol === "admin") return true
+  const r = RECURSO_EMPRESA[empresa]
+  if (!r) return true
+  const n = niveles[r]
+  return n === "lectura" || n === "escritura"
+}
+
 /** Roles (además de admin) que pueden pedir estos datos, siempre que tengan el bloque prendido. */
 export const ROLES_MI_PANTALLA = ["ma"] as const
 

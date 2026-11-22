@@ -79,6 +79,8 @@ export const RECURSOS: Recurso[] = [
   // para admin fuera del modo permisos): se ven sólo donde el rol los tiene DADOS. JMS los prende con el candado en
   // «Ver como lo ve él», y la ruta del servidor pregunta por el mismo id.
   { id: "principal.ma-impuestos",      seccion: "principal", etiqueta: "Principal → 🧾 Mis impuestos del año (MA, con MSA y PAM para mirar)", tipo: "accion", archivo: "components/vista-inicio.tsx" },
+  { id: "principal.ma-impuestos-msa",  seccion: "principal", etiqueta: "Principal → 🧾 Mis impuestos → chip MSA (ver los impuestos de MSA)", tipo: "accion", archivo: "components/mi-pantalla-ma.tsx" },
+  { id: "principal.ma-impuestos-pam",  seccion: "principal", etiqueta: "Principal → 🧾 Mis impuestos → chip PAM (ver los impuestos de PAM)", tipo: "accion", archivo: "components/mi-pantalla-ma.tsx" },
   { id: "principal.ma-arrendamientos", seccion: "principal", etiqueta: "Principal → 🌾 Mis arrendamientos (MA)", tipo: "accion", archivo: "components/vista-inicio.tsx" },
   { id: "principal.ma-lo-que-viene",   seccion: "principal", etiqueta: "Principal → 📈 Lo que viene: próximos 12 meses (MA)", tipo: "accion", archivo: "components/vista-inicio.tsx" },
   // Los widgets de la sección Principal también tienen casilla: sin esto, prenderle a un rol CERRADO un bloque de arriba

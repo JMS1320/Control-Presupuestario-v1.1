@@ -14,6 +14,7 @@ import { ChevronDown, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { hoyArgentina } from "@/lib/fechas"
+import { Permisable, useSeMuestra } from "@/components/modo-permisos"
 import {
   EMPRESAS_MI_PANTALLA, type BloqueMiPantalla, type ContratoMA, type EmpresaMiPantalla, type EstadoCuotaMA, type EstadoImpuesto,
   type LoQueViene, type MesDeImpuestos, type MisArrendamientos, type MisImpuestos,
@@ -161,6 +162,11 @@ function MesImpuestos({ mes, abiertoInicial }: { mes: MesDeImpuestos; abiertoIni
 export function MisImpuestosMA() {
   const hoy = hoyArgentina()
   const [empresa, setEmpresa] = useState<EmpresaMiPantalla>("MA")
+  // 🔒 MSA y PAM con candado propio: si se apaga el chip elegido, vuelve a MA.
+  const seMuestra = useSeMuestra()
+  const verMSA = seMuestra("principal.ma-impuestos-msa"), verPAM = seMuestra("principal.ma-impuestos-pam")
+  const empresaVisible = empresa === "MA" || (empresa === "MSA" ? verMSA : verPAM)
+  useEffect(() => { if (!empresaVisible) setEmpresa("MA") }, [empresaVisible])
   const [anio, setAnio] = useState(Number(hoy.slice(0, 4)))
   const { datos, error, cargando } = useBloque<MisImpuestos>("impuestos", { empresa, anio: String(anio) })
   const mesHoy = Number(hoy.slice(5, 7))
@@ -170,11 +176,17 @@ export function MisImpuestosMA() {
       <CardContent className="space-y-3 p-4">
         <Cabecera titulo="🧾 Mis impuestos del año" subtitulo={empresa === "MA" ? "Lo tuyo, mes por mes: lo pagado, lo vencido y lo que viene." : `Los de ${empresa}, sólo para mirar.`}>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex overflow-hidden rounded-md border">
-              {EMPRESAS_MI_PANTALLA.map(e => (
-                <button key={e} type="button" onClick={() => setEmpresa(e)}
-                  className={`px-3 py-1 text-xs font-medium ${empresa === e ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>{e}</button>
-              ))}
+            <div className="flex rounded-md border">{/* sin overflow-hidden: el candado del modo permisos va por fuera del chip */}
+              {EMPRESAS_MI_PANTALLA.map(e => {
+                const chip = (
+                  <button key={e} type="button" onClick={() => setEmpresa(e)}
+                    className={`px-3 py-1 text-xs font-medium ${e === "MA" ? "rounded-l-md" : ""} ${e === "PAM" ? "rounded-r-md" : ""} ${empresa === e ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>{e}</button>
+                )
+                // 🔒 Un candado por chip (MA va siempre). El id va escrito acá: lo busca `verificar-recursos-permisos`.
+                if (e === "MSA") return <Permisable key={e} recurso="principal.ma-impuestos-msa">{chip}</Permisable>
+                if (e === "PAM") return <Permisable key={e} recurso="principal.ma-impuestos-pam">{chip}</Permisable>
+                return chip
+              })}
             </div>
             <div className="flex items-center gap-1">
               <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setAnio(a => a - 1)} aria-label="Año anterior"><ChevronLeft className="h-4 w-4" /></Button>
