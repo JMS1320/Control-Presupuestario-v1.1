@@ -1475,6 +1475,11 @@ ese lugar afecte a todo lo que lo usa.
   balance: «exacto, para todo poder bajar los subs» · «siempre posible de hacerlo por subs, o sea sólo hacienda»)*: un libro que
   junta varios temas (Stocks = hacienda + granos + insumos + sementeras; Templates = grupos → cada template) ofrece bajar el todo
   o cada sub, del mismo cálculo. → [A-FEAT-1624](PENDIENTES.md#a-feat-1624).
+- 🏷️ **Una partida que se le MUESTRA a alguien va con nombre prolijo, no con el nombre crudo del template** *(JMS 22/11, en la
+  pantalla de MA: «siempre debemos emprolijar cuando se muestren las partidas… y no el nombre crudo del template. Por ej. sería bueno
+  que ahí muestre que el vencimiento que viene es la cuota 4»)*. Se agrupa por lo que la persona reconoce (impuesto → campo →
+  partida: Red Vial → Nazarenas → Tapera 2), se dice **qué cuota es y de cuántas**, y el nombre del template queda como detalle. Un
+  listado de «Red Vial · Red Vial Cuota Tapera 2» repetido no se lee. → [A-FEAT-1634](PENDIENTES.md#a-feat-1634).
 - Si la vista tiene **export (Excel/PDF)**, al sumarle un campo se actualiza también el export.
   Motivo: el usuario usa las descargas como registro fuera de la app; si el export queda viejo,
   pierde datos que sí ve en pantalla.
