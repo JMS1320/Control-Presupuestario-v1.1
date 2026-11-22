@@ -1,4 +1,5 @@
 -- 293 · El cobro de Provinvest del 01/10/2026 en MA Galicia ($ 82.617.301, conciliado con la FCE 00001-00000002) no tiene
+-- ✅ CORRIDO 22/11/2026 por el MCP de Supabase, con OK de JMS («sí, está bien, arrendamientos venta»).
 -- cuenta contable ni detalle: queda «sin categoría» en el Dashboard de MA y el control contra bancos lo suma como comodín.
 -- Se le pone lo mismo que al cobro de junio (FCE 00001-00000001): «ARRENDAMIENTOS Venta» + «Cobro Provinvest FCE …».
 -- Página de MA, P5. ⚠️ SÓLO con OK de JMS. Una fila, por id, sólo si sigue vacía.

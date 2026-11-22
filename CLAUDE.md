@@ -429,6 +429,14 @@ el de las DDJJ (`public.ddjj_presentadas.archivo`).
 *Motivo, el caso: los 12 zips del libro IVA y el Excel con PDF del contador se procesaron el 27/10 pero
 quedaron sin vínculo como el de las tarjetas* → [A-FEAT-1382](PENDIENTES.md#a-feat-1382).
 
+**6 · Lo que llega de un origen CONOCIDO se procesa SOLO, sin pedir autorización** *(JMS 22/11/2026, sobre leer el detalle de
+las facturas de insumos: «respecto de procesar las facturas automáticamente, no me debería pedir autorización porque eso ya debería
+ser un procedimiento automático protocolar»)*. Cuando el documento es de un tipo y un emisor que la app ya sabe leer (la factura de
+Alcorta, Biofarma, el resumen de la tarjeta), **la app lo procesa al entrar**, deja la huella (punto 4) y su control, y avisa sólo
+lo que no cierra. **Se pregunta únicamente lo nuevo**: un emisor o un formato que todavía no se sabe leer, o un resultado que no pasa
+su control. Esto es la APP procesando lo que entra; no cambia § 🛑 Datos: Claude, a mano, sigue sin tocar datos logrados sin OK.
+→ [A-FEAT-1651](PENDIENTES.md#a-feat-1651).
+
 ---
 
 ### 🌐 PROTOCOLARES — comunes a TODOS los proyectos
