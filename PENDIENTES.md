@@ -19244,6 +19244,22 @@ en línea)** construido desde abajo. Cerrado para MSA, se repite para MA y PAM.
 - **Impuestos rurales**: hoy van por FECHA de pago de la cuota (mezcla cuotas 2025 y 2026); el papel del Inmobiliario ya tiene «lo que va al
   ejercicio» → alinear.
 
+**7 · 22/11 (2ª) — v3 hecha con lo que JMS confirmó** (Excel `…/Balance formato contador/v3/`, misma página; preguntas abiertas en una página
+aparte que muestra sólo lo vigente: https://claude.ai/artifact/UXvNbq99jzeXxSmFqkudtG)
+
+- **Hecho**: provisión 24/25 revertida en bloque propio (JMS: «ya quedamos que se revertiría») · movimientos entre cuentas propias FUERA del
+  resultado, en un control con las dos puntas (JMS: «no llevar al gasto nada vía interbancarias»; la caja da 14.082.135,56 porque de las cajas de
+  la app sólo hay Sigot feb–may 26 y 1 de AMS) · Inmobiliario / Red Vial por lote + los saldos del ejercicio anterior de `ajustes_balance`
+  (7.115.206,05; JMS: «lo que importa es que entre al gasto… dentro de inmobiliario y red vial») · ventas en 5 grupos fijos · sueldos: detalle
+  por parte y francos de Sigot (sin `valor_franco`) · PN del contador al inicio y al cierre (es el saldo de arranque) · bancario por cuenta ·
+  «LIB» = Libertad · página: ganancia +, gasto entre paréntesis, % del bloque, el detalle se abre como un nivel más y se cierra con su grupo.
+- **Control**: 35 ✓. Resultado −392,2 M → −426,6 M = −12.456.000,14 − 29.036.135,56 + 7.115.206,05. Ecuación −15,1 M → −49,5 M por lo mismo; se
+  explica en el ARRANQUE (nuestro activo + pasivo al 30/06/25 no da el PN del contador: −141,0 M) y en los socios fuera (Q4).
+- **Abierto (en la página de preguntas)**: Q1 los templates de impuestos a cuenta (SICORE, anticipo de Ganancias, percepciones, IVA bancario)
+  tienen tipo «egreso»: el tipo decide a la vez resultado y presupuesto → propuesta de un tipo nuevo «a cuenta de impuestos» · Q2 FCI · Q3
+  diferencia de cambio · Q4 socios · Q5 protocolo de páginas. Provisión de ESTE ejercicio (10 facturas): 3 pagadas en el ejercicio, 6 en estado
+  «anterior» sin pago vinculado, 1 pendiente (Penduzzu 16.000) → falta ver si las no pagadas están en Proveedores.
+
 ## <a id="a-feat-1635"></a>A-FEAT-1635 — Saldos INTERNOS entre las cuentas desde el 31/12/2024 en cero 🤝
 
 **1 · 21/11 — v1 entregada (tanda sin supervisión, rama `jms/tanda-2026-11-21-balance-en-linea`, sin mergear)**

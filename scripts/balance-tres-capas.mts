@@ -137,11 +137,15 @@ const capituloPatrimonial = (lado: "activo" | "pasivo") => RUBROS.filter(r => r.
 const activo = capituloPatrimonial("activo"), pasivo = capituloPatrimonial("pasivo")
 hoja.push(grupo("ACTIVO", 0, activo, { titulo: true }))
 hoja.push(grupo("PASIVO", 0, pasivo, { titulo: true }))
-const pn = (contador ?? []).filter((c: any) => c.capitulo === "PATRIMONIO NETO").map((c: any) => ({ nro: nuevoNro(), nivel: 1, texto: c.denominacion, origen: "Contador (sin interpretar)", cierre: r2(Number(c.saldo)), nota: c.cuenta } as Fila))
+// 🧾 v3 (JMS 22/11: «llenar con los datos del año pasado según contador, al igual que esté»): en la planilla del contador el patrimonio neto
+// todavía no tiene el resultado de este ejercicio (va aparte, en RESULTADOS): es el saldo de ARRANQUE. Va igual al inicio y al cierre.
+const pn = (contador ?? []).filter((c: any) => c.capitulo === "PATRIMONIO NETO").map((c: any) => ({ nro: nuevoNro(), nivel: 1, texto: c.denominacion, origen: "Contador (sin interpretar)", inicio: r2(Number(c.saldo)), cierre: r2(Number(c.saldo)), nota: `${c.cuenta} · saldo de arranque (sin el resultado del ejercicio)` } as Fila))
 hoja.push(grupo("PATRIMONIO NETO (del contador, sin interpretar)", 0, pn, { titulo: true }))
 
 // ── RESULTADOS ──
 type FilaCrudo = Record<string, unknown>
+/** v3: detalle para la página de renglones que no salen de un crudo (saldos anteriores, entradas a caja). */
+const detalleExtra: Record<string, unknown[][]> = {}
 const crudoDiario: FilaCrudo[] = [], crudoTemplates: FilaCrudo[] = [], crudoSueldos: FilaCrudo[] = []
 const planPorNro = new Map(plan.map((p: any) => [String(p.nro_cuenta ?? ""), p]))
 const planPorCateg = new Map(plan.map((p: any) => [String(p.categ ?? "").trim().toUpperCase(), p]))
@@ -149,14 +153,21 @@ const nombreCuenta = (nroC: string, txt: string) => { const p: any = planPorNro.
 const totalizadoraDe = (nroC: string, txt: string) => { const p: any = planPorNro.get(nroC) ?? planPorCateg.get(txt.trim().toUpperCase()); if (!p?.cta_totalizadora) return "(sin totalizadora en el plan)"; const t: any = planPorNro.get(String(p.cta_totalizadora)); return t ? `${t.nro_cuenta} ${t.categ}` : String(p.nombre_totalizadora ?? p.cta_totalizadora) }
 
 /** Libro diario: un bloque (ventas, compras o provisión) → totalizadora → cuenta. Importe = total − IVA (otros tributos van al gasto). */
-function bloqueDiario(rotulo: string, asientos: AsientoLibroDiario[], signo: 1 | -1, origenCrudo: string): Fila {
+/** 🌾 v3 (JMS 22/11): las ventas SIEMPRE en estos grupos (en cero si no hubo), por la cuenta: no por la totalizadora del plan. */
+const GRUPOS_VENTA: Array<[string, RegExp]> = [["Arrendamientos", /^4109/], ["Cereales", /^4101/], ["Hacienda", /^4108/], ["Bienes de uso", /^4102/], ["Ventas varias", /^4103/]]
+const grupoVenta = (nroC: string, txt: string) => { const p: any = planPorNro.get(nroC) ?? planPorCateg.get(txt.trim().toUpperCase()); const n = String(p?.nro_cuenta ?? nroC ?? ""); return GRUPOS_VENTA.find(([, re]) => re.test(n))?.[0] ?? "Otras (fuera de las cuentas de venta)" }
+function bloqueDiario(rotulo: string, asientos: AsientoLibroDiario[], signo: 1 | -1, origenCrudo: string, porGrupoVenta = false): Fila {
   const porTot = new Map<string, Map<string, AsientoLibroDiario[]>>()
+  if (porGrupoVenta) for (const [g] of GRUPOS_VENTA) porTot.set(g, new Map())
   for (const a of asientos) {
-    const tot = totalizadoraDe(a.nro_cuenta, a.cuenta_contable), cta = nombreCuenta(a.nro_cuenta, a.cuenta_contable)
+    const tot = porGrupoVenta ? grupoVenta(a.nro_cuenta, a.cuenta_contable) : totalizadoraDe(a.nro_cuenta, a.cuenta_contable), cta = nombreCuenta(a.nro_cuenta, a.cuenta_contable)
     if (!porTot.has(tot)) porTot.set(tot, new Map())
     const m = porTot.get(tot)!; m.set(cta, [...(m.get(cta) ?? []), a])
   }
-  const grupos = [...porTot.entries()].sort((x, y) => x[0].localeCompare(y[0])).map(([tot, ctas]) => grupo(tot, 2, [...ctas.entries()].sort((x, y) => x[0].localeCompare(y[0])).map(([cta, as]) => {
+  const ordenG = (g: string) => porGrupoVenta ? String(GRUPOS_VENTA.findIndex(([x]) => x === g) + 10) : g
+  const grupos = [...porTot.entries()].sort((x, y) => ordenG(x[0]).localeCompare(ordenG(y[0]))).map(([tot, ctas]) => ctas.size === 0
+    ? { nivel: 2, texto: `${tot} (sin movimiento en el ejercicio)`, origen: `Libro diario · ${rotulo.toLowerCase()}`, resultado: 0 } as Fila
+    : grupo(tot, 2, [...ctas.entries()].sort((x, y) => x[0].localeCompare(y[0])).map(([cta, as]) => {
     const f: Fila = { nro: nuevoNro(), nivel: 3, texto: cta, origen: `Libro diario · ${rotulo.toLowerCase()}`, resultado: r2(signo * as.reduce((s, a) => s + (a.total - a.iva), 0)) }
     for (const a of as) crudoDiario.push({ "Nro balance": f.nro, "Va al resultado": "sí", Bloque: rotulo, Totalizadora: tot, Cuenta: cta, Fecha: a.fecha, Subdiario: a.subdiario, Tipo: a.tipo,
       Comprobante: `${a.punto_venta ?? ""}-${a.numero ?? ""}`, CUIT: a.cuit, Contraparte: a.denominacion, "Neto gravado": r2(a.neto_gravado), "No gravado": r2(a.no_gravado), Exento: r2(a.exento),
@@ -166,14 +177,17 @@ function bloqueDiario(rotulo: string, asientos: AsientoLibroDiario[], signo: 1 |
   return grupo(rotulo, 1, grupos)
 }
 const provComp = libro.provisiones.filter(a => a.fuente !== "venta"), provVent = libro.provisiones.filter(a => a.fuente === "venta")
-const resVentas = bloqueDiario("Ventas", libro.ventas, -1, "subdiario de ventas")
+const resVentas = bloqueDiario("Ventas", libro.ventas, -1, "subdiario de ventas", true)
 const resProvVentas = provVent.length ? bloqueDiario("Provisión de ventas del ejercicio", provVent, -1, "provisión (papel 03.1)") : null
 const resCompras = bloqueDiario("Compras", libro.compras, 1, "subdiario de compras")
 const resProvCompras = provComp.length ? bloqueDiario("Provisión de compras del ejercicio", provComp, 1, "provisión (papel 05)") : null
-for (const a of libro.provisionesEjercicioAnterior) crudoDiario.push({ "Nro balance": "NO VA", "Va al resultado": "no (a definir)", Bloque: "Provisión del ejercicio ANTERIOR", Totalizadora: totalizadoraDe(a.nro_cuenta, a.cuenta_contable),
-  Cuenta: nombreCuenta(a.nro_cuenta, a.cuenta_contable), Fecha: a.fecha, Subdiario: a.subdiario, Tipo: a.tipo, Comprobante: `${a.punto_venta ?? ""}-${a.numero ?? ""}`, CUIT: a.cuit, Contraparte: a.denominacion,
-  "Neto gravado": r2(a.neto_gravado), "No gravado": r2(a.no_gravado), Exento: r2(a.exento), "Otros tributos": r2(a.otros_tributos), IVA: r2(a.iva), Total: r2(a.total), "Al resultado (sin IVA)": 0,
-  Origen: "provisión 24/25 (ya está dentro de Compras de este ejercicio)", Motivo: "Hoy el libro la lista y no la resta: ¿se resta del resultado?" })
+// ↩️ v3 (JMS 22/11, «ya quedamos que se revertiría»): la provisión del 24/25 ya fue gasto de ese ejercicio; sus facturas entraron en Compras
+// de éste, así que se REVIERTEN en un bloque propio (en negativo) — el gasto de este ejercicio baja lo mismo.
+const resProvAnt = libro.provisionesEjercicioAnterior.length ? (() => {
+  const b = bloqueDiario("Provisión del ejercicio ANTERIOR — se revierte (ya fue gasto del 24/25)", libro.provisionesEjercicioAnterior, -1, "provisión 24/25 (sus facturas están en Compras de este ejercicio)")
+  for (const r of crudoDiario) if (String(r.Bloque).startsWith("Provisión del ejercicio ANTERIOR")) r.Motivo = "Se revierte: fue gasto del 24/25 (provisión para gastos del contador al 30/06/25)"
+  return b
+})() : null
 
 // Templates de MSA
 const deMSA = cuotas.filter(c => responsablePrincipal(c.responsable) === EMPRESA)
@@ -183,16 +197,57 @@ const agrupadoraDe = (c: CuotaTemplate) => (c.agrupadoraTemplate ?? "").trim() |
 const filaCuota = (c: CuotaTemplate, nroB: string, va: string, bloque: string, motivo = "") => crudoTemplates.push({ "Nro balance": nroB, "Va al resultado": va, Bloque: bloque, Responsable: c.responsable,
   Agrupadora: agrupadoraDe(c), Template: c.concepto, Proveedor: c.proveedor, "Cuenta contable del template": c.categ, Fecha: c.fecha, Estado: c.estado, Importe: r2(c.monto),
   "Quién pagó": c.banco?.titular ?? "", "Cuenta de pago": c.banco?.cuenta ?? "", "Código contable": c.banco?.contable ?? "", "Código interno": c.banco?.interno ?? "", Detalle: c.detalle ?? c.descripcionCuota ?? "", Motivo: motivo })
+// 🏡 v3 (JMS 22/11): los saldos del ejercicio anterior (pago anual adelantado, «ajustes del balance») van al gasto DENTRO de Inmobiliario /
+// Red Vial — es lo mismo que hace el papel del Inmobiliario («+ saldo del ejercicio anterior»).
+const { data: saldosAntRaw } = await sb.from("ajustes_balance").select("concepto, categ, monto, motivo").eq("empresa", EMPRESA).eq("anio_cierre", ANIO).eq("accion", "saldo_anterior").is("anulado_at", null)
+const saldosAnt = (saldosAntRaw ?? []).map((s: any) => ({ ...s, monto: Number(s.monto) || 0, impuesto: /vial/i.test(`${s.categ} ${s.concepto}`) ? "Red Vial" : /inmobiliario/i.test(`${s.categ} ${s.concepto}`) ? "Inmobiliario" : "Otros" }))
+/** Inmobiliario / Red Vial → un renglón por lote (el complementario es una partida más) + el saldo del ejercicio anterior. */
+function renglonesRurales(ts: Map<string, CuotaTemplate[]>, nivel: number, rotulo: string, valorDe?: (cs: CuotaTemplate[]) => number, motivoCrudo = ""): Fila[] {
+  const imp = (t: string) => /vial/i.test(t) ? "Red Vial" : /inmobiliario/i.test(t) ? "Inmobiliario" : null
+  const lote = (t: string) => /complementario/i.test(t) ? "Complementario" : t.replace(/^(inmobiliario|red vial)\s*(cuota|anual)?\s*/i, "").trim() || t
+  const out: Fila[] = []
+  for (const nombre of ["Inmobiliario", "Red Vial"]) {
+    const hijos: Fila[] = []
+    for (const [t, cc] of [...ts.entries()].filter(([t]) => imp(t) === nombre).sort((x, y) => lote(x[0]).localeCompare(lote(y[0])))) {
+      const f: Fila = { nro: nuevoNro(), nivel: nivel + 1, texto: lote(t), origen: `Templates · ${t}`, resultado: r2(valorDe ? valorDe(cc) : cc.reduce((s, c) => s + c.monto, 0)) }
+      for (const c of cc) filaCuota(c, f.nro!, "sí", rotulo, motivoCrudo)
+      hijos.push(f)
+    }
+    for (const s of saldosAnt.filter(s => s.impuesto === nombre)) {
+      const f: Fila = { nro: nuevoNro(), nivel: nivel + 1, texto: `Saldo del ejercicio anterior · ${s.concepto}`, origen: "Ajustes del balance (saldo anterior)", resultado: r2(s.monto), nota: s.motivo }
+      detalleExtra[f.nro!] = [["30/06/2025", s.concepto, r2(s.monto), s.motivo]]
+      hijos.push(f)
+    }
+    if (hijos.length) out.push(grupo(nombre, nivel, hijos))
+  }
+  for (const [t, cc] of [...ts.entries()].filter(([t]) => !imp(t)).sort((x, y) => x[0].localeCompare(y[0]))) {
+    const f: Fila = { nro: nuevoNro(), nivel, texto: t, origen: "Templates", resultado: r2(valorDe ? valorDe(cc) : cc.reduce((s, c) => s + c.monto, 0)) }
+    for (const c of cc) filaCuota(c, f.nro!, "sí", rotulo, motivoCrudo); out.push(f)
+  }
+  return out
+}
+/** 🏦 v3 (JMS 22/11, comisiones: «¿podría haber agrupado por cuentas acá?»): en lo bancario, el template abre por la cuenta que pagó. */
+const ES_BANCARIO = /gastos bancarios|impuestos bancarios/i
 /** agrupadora → template, con cada cuota en el crudo. */
 function bloqueTemplates(rotulo: string, cs: CuotaTemplate[], nivelBase = 1, valorDe?: (cs: CuotaTemplate[]) => number, motivoCrudo = ""): Fila {
   const porAgr = new Map<string, Map<string, CuotaTemplate[]>>()
   for (const c of cs) { const a = agrupadoraDe(c), k = c.concepto || "(sin nombre)"; if (!porAgr.has(a)) porAgr.set(a, new Map()); const m = porAgr.get(a)!; m.set(k, [...(m.get(k) ?? []), c]) }
   const orden = (a: string) => (a === SIN ? "zzz" : a)
-  return grupo(rotulo, nivelBase, [...porAgr.entries()].sort((x, y) => orden(x[0]).localeCompare(orden(y[0]))).map(([agr, ts]) => grupo(agr, nivelBase + 1, [...ts.entries()].sort((x, y) => x[0].localeCompare(y[0])).map(([t, cc]) => {
-    const f: Fila = { nro: nuevoNro(), nivel: nivelBase + 2, texto: t, origen: "Templates", resultado: r2(valorDe ? valorDe(cc) : cc.reduce((s, c) => s + c.monto, 0)) }
-    for (const c of cc) filaCuota(c, f.nro!, "sí", rotulo, motivoCrudo)
-    return f
-  }))))
+  return grupo(rotulo, nivelBase, [...porAgr.entries()].sort((x, y) => orden(x[0]).localeCompare(orden(y[0]))).map(([agr, ts]) => {
+    if (/impuestos rurales/i.test(agr)) return grupo(agr, nivelBase + 1, renglonesRurales(ts, nivelBase + 2, rotulo, valorDe, motivoCrudo))
+    return grupo(agr, nivelBase + 1, [...ts.entries()].sort((x, y) => x[0].localeCompare(y[0])).map(([t, cc]) => {
+      const porCuenta = new Map<string, CuotaTemplate[]>()
+      for (const c of cc) { const k = c.banco ? `${c.banco.titular ?? ""} · ${c.banco.cuenta ?? ""}`.trim() : "sin pago vinculado"; porCuenta.set(k, [...(porCuenta.get(k) ?? []), c]) }
+      if (ES_BANCARIO.test(agr) && porCuenta.size > 1) return grupo(t, nivelBase + 2, [...porCuenta.entries()].sort((x, y) => x[0].localeCompare(y[0])).map(([cta, c2]) => {
+        const f: Fila = { nro: nuevoNro(), nivel: nivelBase + 3, texto: cta, origen: `Templates · ${t}`, resultado: r2(c2.reduce((s, c) => s + c.monto, 0)) }
+        for (const c of c2) filaCuota(c, f.nro!, "sí", rotulo, motivoCrudo)
+        return f
+      }))
+      const f: Fila = { nro: nuevoNro(), nivel: nivelBase + 2, texto: t, origen: "Templates", resultado: r2(valorDe ? valorDe(cc) : cc.reduce((s, c) => s + c.monto, 0)) }
+      for (const c of cc) filaCuota(c, f.nro!, "sí", rotulo, motivoCrudo)
+      return f
+    }))
+  }))
 }
 const det = tMSA.detalle
 const porTipo = (t: string) => det.filter(c => (c.tipo ?? "sin clasificar") === t)
@@ -216,7 +271,21 @@ if (finInversion.length) {
     cc => r2(cc.reduce((s, c) => s + c.monto, 0) - (cc.some(esFCI) ? (fciFin - fciIni) : 0)),
     `FCI: saldo inicial ${fciIni.toLocaleString("es-AR")} y final ${fciFin.toLocaleString("es-AR")} (balance propio)`))
 }
-if (finMovInternos.length) hijosFin.push(bloqueTemplates("Movimientos entre cuentas propias (tiene que dar 0; si no, revisar)", finMovInternos, 2))
+// 🔁 v3 (JMS 22/11: «con sólo poner la diferencia entre las puntas se ve si es cero… no llevar al gasto nada vía interbancarias»): los
+// movimientos entre cuentas propias salen del resultado y van a un CONTROL aparte, con la otra punta al lado. Para la caja, la otra punta son
+// las entradas cargadas en las cajas de la app (General, AMS, Sigot).
+const resMovInternos = finMovInternos.length ? bloqueTemplates("Movimientos entre cuentas propias — salidas del banco (templates)", finMovInternos, 1) : null
+const entradasCaja: any[] = []
+for (const [t, nombre] of [["caja_general", "Caja General"], ["caja_ams", "Caja AMS"], ["caja_sigot", "Caja Sigot"]] as const) {
+  const { data } = await sb.schema("msa").from(t).select("fecha, descripcion, detalle, creditos, contable, interno").gte("fecha", INICIO).lte("fecha", CIERRE).gt("creditos", 0)
+  for (const m of data ?? []) entradasCaja.push({ ...m, caja: nombre })
+}
+const filaEntradas: Fila = { nro: nuevoNro(), nivel: 1, texto: "Entradas a las cajas de la app (la otra punta de «Caja»)", origen: "Cajas (General · AMS · Sigot)",
+  resultado: r2(-entradasCaja.reduce((s, m) => s + Number(m.creditos), 0)),
+  nota: "cargadas hoy: " + ["Caja General", "Caja AMS", "Caja Sigot"].map(n => { const xs = entradasCaja.filter(m => m.caja === n); return `${n} ${xs.length}` }).join(" · ") + " movimientos — la carga de las cajas está incompleta" }
+detalleExtra[filaEntradas.nro!] = entradasCaja.sort((a, b) => String(a.fecha).localeCompare(String(b.fecha))).map(m => [m.fecha, `${m.caja} · ${m.detalle || m.descripcion || ""}${m.contable ? " · " + m.contable : ""}`, -r2(Number(m.creditos)), ""])
+const resControlInternos = resMovInternos ? grupo("CONTROL · MOVIMIENTOS ENTRE CUENTAS PROPIAS — no van al resultado: la suma de las dos puntas tiene que dar 0 (si no, se investiga)", 0,
+  [resMovInternos, filaEntradas], { titulo: true }) : null
 const resFinanciero = grupo("Financiero — sólo la ganancia o pérdida", 1, hijosFin)
 for (const c of finDolares) filaCuota(c, "NO VA", "no (a revisar)", "Compra / venta de dólares", "Los pesos que salen quedan como dólares (activo): el resultado es la diferencia de cambio, que falta calcular")
 for (const c of finNoVa) filaCuota(c, "NO VA", "no", "Financiero que no es resultado", "Pago de tarjeta / otro movimiento de plata: la plata no sale de la empresa")
@@ -244,17 +313,28 @@ function partes(x: FilaSueldo): Array<[string, number]> {
     : t === "plano_ipc" ? [["Categoría A", x.montoA], ["Extras (vacaciones, premios, aguinaldo, varios)", x.extras]]
     : [["Bruto (tipo de empleado sin desglose)", x.brutoGuardado]]
   const suma = ps.reduce((a, [, v]) => a + v, 0)
-  if (Math.abs(suma - x.brutoGuardado) >= 0.005) ps.push(["Diferencia entre las partes y el bruto guardado (revisar)", r2(x.brutoGuardado - suma)])
+  // 🗓️ v3 (JMS 22/11, Ruben Sigot: «francos sería una sección igual que extras»): con cantidad de francos pero sin el valor del franco cargado,
+  // la parte de francos es lo que falta para llegar al bruto guardado — se muestra como «Francos», no como diferencia.
+  const dif = r2(x.brutoGuardado - suma)
+  if (t === "ab_francos" && !x.porFrancos && dif > 0 && x.francos > 0) {
+    const i = ps.findIndex(([r]) => r === "Francos"); ps[i] = ["Francos", dif]
+  } else if (Math.abs(dif) >= 0.005) ps.push(["Diferencia entre las partes y el bruto guardado (revisar)", dif])
   return ps
 }
 const resSueldos = grupo("Sueldos (bruto guardado de empleados)", 1, [...porEmp.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([emp, xs]) => {
   const acum = new Map<string, number>()
   for (const x of xs) for (const [rot, v] of partes(x)) acum.set(rot, r2((acum.get(rot) ?? 0) + v))
   const hijos = [...acum.entries()].filter(([, v]) => v !== 0).map(([rot, v]) => ({ nro: nuevoNro(), nivel: 3, texto: rot, origen: "Sueldos", resultado: v } as Fila))
+  const nroDe = new Map(hijos.map(h => [h.texto, h.nro!]))
   const g = grupo(emp, 2, hijos)
-  for (const x of xs) crudoSueldos.push({ "Nro balance": hijos.map(h => h.nro).join(" "), "Va al resultado": "sí", Bloque: "Empleados", Empleado: x.empleado, Empresa: x.empresa, Período: x.periodo, Tipo: x.tipo,
-    "Categoría A": r2(x.montoA), "Categoría B": r2(x.montoB), "de la cual, cuota alim.": r2(x.cuotaAlimentaria), Francos: r2(x.porFrancos), Jornal: r2(x.porJornal), Extras: r2(x.extras),
-    "Bruto (partes)": r2(x.brutoCalculado), "Bruto guardado": r2(x.brutoGuardado), Diferencia: r2(x.diferencia), Pagado: r2(x.pagado), Motivo: "" })
+  for (const x of xs) {
+    const ps = partes(x), fr = ps.find(([r]) => r === "Francos")?.[1] ?? 0
+    crudoSueldos.push({ "Nro balance": hijos.map(h => h.nro).join(" "), "Va al resultado": "sí", Bloque: "Empleados", Empleado: x.empleado, Empresa: x.empresa, Período: x.periodo, Tipo: x.tipo,
+      "Categoría A": r2(x.montoA), "Categoría B": r2(x.montoB), "de la cual, cuota alim.": r2(x.cuotaAlimentaria), "Francos (cantidad)": x.francos, Francos: r2(fr), Jornal: r2(x.porJornal), Extras: r2(x.extras),
+      "Bruto (partes)": r2(x.brutoCalculado), "Bruto guardado": r2(x.brutoGuardado), Diferencia: r2(x.diferencia), Pagado: r2(x.pagado),
+      Motivo: fr && !x.porFrancos ? "francos sin valor por franco cargado: bruto guardado − A − B − extras" : "",
+      _partes: ps.filter(([, v]) => v !== 0).map(([r, v]) => [nroDe.get(r), r2(v)]) })
+  }
   return g
 }))
 for (const x of sueldos.filas.filter(x => esSocio(x) || !delMSA(x))) crudoSueldos.push({ "Nro balance": "NO VA", "Va al resultado": "no", Bloque: esSocio(x) ? "Socios que facturan" : "Otra empresa",
@@ -276,7 +356,8 @@ const resContador = grupo("Del contador (fiscal, sin interpretar)", 1, (contador
   .map((c: any) => ({ nro: nuevoNro(), nivel: 2, texto: c.denominacion, origen: "Contador", resultado: r2(Number(c.saldo)), nota: c.cuenta } as Fila)))
 
 hoja.push(grupo("RESULTADOS DEL EJERCICIO (signo del contador: ganancia en negativo, gasto en positivo)", 0,
-  [resVentas, ...(resProvVentas ? [resProvVentas] : []), resCompras, ...(resProvCompras ? [resProvCompras] : []), resTplEgresos, resFinanciero, resSueldos, resStocks, resContador], { titulo: true }))
+  [resVentas, ...(resProvVentas ? [resProvVentas] : []), resCompras, ...(resProvCompras ? [resProvCompras] : []), ...(resProvAnt ? [resProvAnt] : []), resTplEgresos, resFinanciero, resSueldos, resStocks, resContador], { titulo: true }))
+if (resControlInternos) hoja.push(resControlInternos)
 
 // ═══════════════════════════════ CUENTAS CON SOCIOS (14.1 contable + interno) ═══════════════════════════════
 // Igual que Reportes → Balance arma la 14.1 (components/papeles-de-balance.tsx), y la capa interna como «I · Interno por socio».
@@ -378,7 +459,13 @@ let socios141Total: number | null = null, capaControl: number | null = null, cap
     }
     sociosRes.push({ clave: q, contable: r2(c.saldoAlCierre), compensacion: comp, interno: comp == null ? null : r2(c.saldoAlCierre - comp), inicio: r2(c.saldoInicio ?? 0), nroC, nroI })
   }
-  for (const s0 of conInicio.sinTratar ?? []) crudoSocios.push({ "Nro balance": "NO VA", Vista: "Sin tratar", Socio: "", Fecha: "", Cuenta: "", Grupo: "marca sin encuadrar", Concepto: s0.etiqueta, "Código contable": s0.etiqueta, "Código interno": "", Importe: r2(s0.total), Motivo: `${s0.movimientos} movimiento(s): marca del extracto que todavía no es de nadie` })
+  // v3 (JMS 22/11 preguntó qué era «LIB»): son las expensas / AYSA / ABL de Libertad pagadas por MSA; entran a los socios por la regla del
+  // semestre (cuentasConLosSocios), así que no son «sin encuadrar».
+  for (const s0 of conInicio.sinTratar ?? []) {
+    const lib = String(s0.etiqueta).trim().toUpperCase() === "LIB"
+    crudoSocios.push({ "Nro balance": "NO VA", Vista: "Sin tratar", Socio: "", Fecha: "", Cuenta: "", Grupo: lib ? "Libertad (ya entra a los socios por semestre)" : "marca sin encuadrar", Concepto: s0.etiqueta, "Código contable": s0.etiqueta, "Código interno": "", Importe: r2(s0.total),
+      Motivo: lib ? `${s0.movimientos} pago(s) de Libertad hechos por MSA (expensas, AYSA): se reparten a los socios con la regla del semestre` : `${s0.movimientos} movimiento(s): marca del extracto que todavía no es de nadie` })
+  }
 }
 const resSocios: Fila[] = [
   grupo("CUENTAS CON SOCIOS · CONTABLE — la 14.1 (fuera de la ecuación · + = MSA le debe al socio · − = el socio se llevó de más)", 0, sociosRes.map(s => ({ nro: s.nroC, nivel: 1, texto: s.clave, origen: "14.1 (como Reportes → Balance)", inicio: s.inicio || null, cierre: s.contable } as Fila)), { titulo: true }),
@@ -455,7 +542,7 @@ XLSX.utils.book_append_sheet(wb, ws, "Balance")
 // los crudos
 function hojaCrudo(nombre: string, rows: FilaCrudo[], orden: string[], titulo: string, notas: string[]) {
   rows.sort((a, b) => { for (const k of orden) { const x = String(a[k] ?? ""), y = String(b[k] ?? ""); if (x !== y) return x.localeCompare(y) } return 0 })
-  const cols = Object.keys(rows[0] ?? {})
+  const cols = [...new Set(rows.flatMap(r => Object.keys(r)))].filter(k => !k.startsWith("_"))
   const aoa: unknown[][] = [[titulo], ...notas.map(n => [n]), [], cols, ...rows.map(r => cols.map(k => { const v = r[k]; return typeof v === "number" ? { t: "n", v, z: MONEDA } : (v ?? "") }))]
   const w = XLSX.utils.aoa_to_sheet(aoa)
   const hdr = notas.length + 2
@@ -502,8 +589,11 @@ const control: Array<[string, number | string, number | string, string]> = [
 const todasLasCuotasEj = cuotas.filter(c => (c.fecha ?? "") >= INICIO && (c.fecha ?? "") <= CIERRE).length
 const enCrudoTpl = crudoTemplates.length
 const integridad: Array<[string, number, number]> = [
-  ["Diario: lo que entró al balance (Ventas + Compras + provisiones) = crudo con Nro", r2(suma([resVentas, resCompras, ...(resProvVentas ? [resProvVentas] : []), ...(resProvCompras ? [resProvCompras] : [])], "resultado")), sumaCrudo(crudoDiario, "Al resultado (sin IVA)", r => r["Nro balance"] !== "NO VA")],
-  ["Templates: lo que entró al balance (egresos + intereses + movimientos internos, sin ajuste FCI) = crudo con Nro", r2(suma([resTplEgresos], "resultado") + (hijosFin.length ? suma(hijosFin.filter(h => !/Inversiones/.test(h.texto)), "resultado") : 0) + r2(finInversion.reduce((s, c) => s + c.monto, 0))), sumaCrudo(crudoTemplates, "Importe", r => r["Nro balance"] !== "NO VA")],
+  ["Diario: lo que entró al balance (Ventas + Compras + provisiones + reversión de la del 24/25) = crudo con Nro", r2(suma([resVentas, resCompras, ...(resProvVentas ? [resProvVentas] : []), ...(resProvCompras ? [resProvCompras] : []), ...(resProvAnt ? [resProvAnt] : [])], "resultado")), sumaCrudo(crudoDiario, "Al resultado (sin IVA)", r => r["Nro balance"] !== "NO VA")],
+  ["Templates: lo que entró al balance (egresos sin los saldos anteriores + intereses + inversiones sin ajuste FCI + salidas a cuentas propias del control) = crudo con Nro",
+    r2(suma([resTplEgresos], "resultado") - saldosAnt.reduce((s, x) => s + x.monto, 0) + (hijosFin.length ? suma(hijosFin.filter(h => !/Inversiones/.test(h.texto)), "resultado") : 0) + r2(finInversion.reduce((s, c) => s + c.monto, 0)) + (resMovInternos ? suma([resMovInternos], "resultado") : 0)),
+    sumaCrudo(crudoTemplates, "Importe", r => r["Nro balance"] !== "NO VA")],
+  ["Provisión 24/25: lo revertido = lo que el libro lista como provisión del ejercicio anterior (sin IVA)", resProvAnt ? -suma([resProvAnt], "resultado") : 0, r2(libro.provisionesEjercicioAnterior.reduce((s, a) => s + (a.total - a.iva), 0))],
   ["Templates: cuotas del ejercicio en la base (todos los responsables, con fecha en el ejercicio) — cuotas en el crudo", todasLasCuotasEj, enCrudoTpl],
   ...sociosRes.map(s0 => [`Socios: ${s0.clave} contable = su crudo (Nro ${s0.nroC})`, s0.contable, sumaCrudo(crudoSocios, "Importe", r => r["Nro balance"] === s0.nroC)] as [string, number, number]),
   ...sociosRes.filter(s0 => s0.interno != null).map(s0 => [`Socios: ${s0.clave} interno = su crudo (Nro ${s0.nroI})`, s0.interno as number, sumaCrudo(crudoSocios, "Importe", r => r["Nro balance"] === s0.nroI)] as [string, number, number]),
@@ -547,7 +637,12 @@ if (CRUDO_OUT) {
   for (const r of crudoDiario) push(String(r["Nro balance"]) === "NO VA" ? "NO VA · " + r.Bloque : String(r["Nro balance"]), [r.Fecha, `${r.Contraparte} · ${r.Comprobante}`, r["Al resultado (sin IVA)"] || r.Total, r.Motivo || ""])
   for (const r of crudoTemplates) push(String(r["Nro balance"]) === "NO VA" ? "NO VA · " + r.Bloque : String(r["Nro balance"]), [r.Fecha, `${r.Template} · ${r["Quién pagó"] || "sin pago"}${r["Código contable"] ? " · " + r["Código contable"] : ""}`, r.Importe, r.Motivo || r.Estado || ""])
   for (const r of crudoSocios) push(String(r["Nro balance"]) === "NO VA" ? "NO VA · " + r.Grupo : String(r["Nro balance"]), [r.Fecha, `${r.Concepto}${r["Código contable"] ? " · " + r["Código contable"] : ""}${r["Código interno"] ? " / " + r["Código interno"] : ""}`, r.Importe, r.Grupo || ""])
-  for (const r of crudoSueldos) for (const k of String(r["Nro balance"]).split(" ")) push(k === "NO VA" ? "NO VA · " + r.Bloque : k, [r["Período"], `${r.Empleado} (${r.Tipo})`, r["Bruto guardado"], r.Motivo || ""])
+  // 🐛 v3 (JMS 22/11): cada parte muestra SU importe del mes, no el bruto entero
+  for (const r of crudoSueldos) {
+    if (String(r["Nro balance"]) === "NO VA") { push("NO VA · " + r.Bloque, [r["Período"], `${r.Empleado} (${r.Tipo})`, r["Bruto guardado"], r.Motivo || ""]); continue }
+    for (const [k, v] of (r._partes as [string, number][])) push(k, [r["Período"], `${r.Empleado} (${r.Tipo})`, v, r.Motivo || ""])
+  }
+  for (const [k, filasC] of Object.entries(detalleExtra)) for (const f of filasC) push(k, f)
   writeFileSync(CRUDO_OUT, JSON.stringify(porNro))
 }
 const JSON_OUT = process.argv.find(a => a.startsWith("--json="))?.slice(7)
