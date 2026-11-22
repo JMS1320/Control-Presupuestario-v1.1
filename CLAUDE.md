@@ -1519,6 +1519,15 @@ ese lugar afecte a todo lo que lo usa.
   nunca va a ser tan peligroso»)*. Los maestros crudos (📍 acá: libro diario, templates, sueldos) traen TODO, se filtran con pocos botones
   por código contable e interno y vienen ordenados en escalones; cada nivel de arriba (desglose, esquema del contador) da el mismo total que
   su crudo, con el control a la vista. → [A-FEAT-1632](PENDIENTES.md#a-feat-1632).
+- 🤝 **La cuenta ENTRE SOCIOS se muestra agrupada como en el balance, mes por mes** *(JMS 22/11: «agrupados tipo formato balance los
+  retiros o aportes que corresponden, ya que tiene que entenderse. ¿Hay protocolo de esto? Debería haberlo. Se trató mucho en balance:
+  los pagos directos, los pagos para impuestos, para servicios, etc.»; el formato salió de A-FEAT-1532, 03/11)*. Toda vista de lo que
+  un socio (MSA, PAM, MA, JMS, AMS) le debe a otro: **saldo de arranque** (entre socios, **31/12/2024 = 0**) → por mes, en renglones
+  desplegables: **retiros directos** (transferencias) · **pagos por su cuenta** agrupados por agrupadora (impuestos, servicios, seguros,
+  sueldos…) y adentro cada template o factura · **Libertad en un solo renglón** con su detalle · **aportes** (lo que el socio pagó por la
+  empresa) → **saldo acumulado**. Quién es de quién: **el código interno manda; si no hay, el responsable del template**. Lo que se le
+  paga o transfiere a un socio **suma a lo que debe** y se compensa después (como el balance interno). Control: lo que uno figura
+  debiendo es lo que el otro figura a cobrar. → [A-FEAT-1637](PENDIENTES.md#a-feat-1637).
 - **Visible y proporcional**: si cierra, un ✓ discreto; si no, una alerta grande. Un control que
   nadie ve no es un control.
 - **Tolerancia explícita** cuando el dominio la tiene (los emisores redondean), y **listando los
