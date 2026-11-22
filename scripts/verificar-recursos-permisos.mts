@@ -47,7 +47,7 @@ let problemas = 0
  * importa: el hook arrastra el cliente de Supabase y React, que este control no necesita.
  */
 const CUENTAS_EN_CODIGO = (() => {
-  const src = readFileSync("hooks/useMotorConciliacion.ts", "utf8")
+  const src = readFileSync("lib/conciliacion/cuentas-bancarias.ts", "utf8") // ⚠️ 22/11: el registro se mudó del hook a lib (A-FEAT-1637)
   const desde = src.indexOf("export const CUENTAS_BANCARIAS")
   const hasta = src.indexOf("\n]", desde)
   const ids = [...src.slice(desde, hasta).matchAll(/\bid:\s*['"]([^'"]+)['"]/g)].map((m) => m[1])

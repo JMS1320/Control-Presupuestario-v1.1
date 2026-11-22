@@ -90,9 +90,9 @@ export function libroPorResponsable(d: DatosExcelResponsable): XLSX.WorkBook {
     ["Fecha", "Canal", "Descripción", "Interno", "Contable", "Importe", "Quedó de", "Por qué"])
   if (!c.sinResolver.length) h.push(["(ninguno)"])
   for (const m of c.sinResolver) h.push([fechaAR(m.fecha), m.canal, m.descripcion, m.interno, m.contable, n(m.importe), m.responsable, RAZON[m.por]])
-  h.push([], ["5 · FUERA DE LA TABLA — cuenta con tipo «NO» o vacío (igual que en «Por caja»)"], ["Fecha", "Canal", "Descripción", "Categ", "Importe"])
+  h.push([], ["5 · FUERA DE LA TABLA — cuenta con tipo «NO» o vacío (igual que en «Por caja»)"], ["Fecha", "Canal", "Descripción", "Categ", "Importe", "Tipo y de dónde sale"])
   if (!c.fuera.length) h.push(["(ninguno)"])
-  for (const f of c.fuera) h.push([fechaAR(f.mov.fecha), f.mov._canal ?? "", f.mov.descripcion ?? "", f.mov.categ ?? "", n(f.clasificacion.monto)])
+  for (const f of c.fuera) h.push([fechaAR(f.mov.fecha), f.mov._canal ?? "", f.mov.descripcion ?? "", f.mov.categ ?? "", n(f.clasificacion.monto), `${f.clasificacion.tipo ?? "vacío"}${f.clasificacion.origenTipo ? ` (de ${f.clasificacion.origenTipo})` : ""}`])
   agregarHoja(wb, "Control", h)
 
   // 🤝 Cuenta entre socios

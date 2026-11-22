@@ -105,7 +105,7 @@ export function descargarPdfDashboard(d: DatosPdfDashboard, nombre: string): voi
   const c = d.control!
   const lineas = d.lineasControl ? [...d.lineasControl, d.nota] : [
     `${c.cierra ? "✓" : "⚠"} Control: total de la tabla ${fmt(c.totalTabla, true)} — suma de los movimientos de los canales ${fmt(c.totalMovimientos, true)} — diferencia ${fmt(c.diferencia, true)}${c.cierra ? " (cierra)" : ""}`,
-    ...(c.fueraTotal ? [`⚠ Quedaron fuera de la tabla ${fmt(c.fueraTotal, true)} (movimientos con cuenta de tipo «NO» o vacío)${c.explicada ? ": explican toda la diferencia" : ""}.`] : []),
+    ...(c.fueraTotal ? [`⚠ Quedaron fuera de la tabla ${fmt(c.fueraTotal, true)} (movimientos con tipo «NO» o vacío, del template o de la cuenta; el detalle en el Excel)${c.explicada ? ": explican toda la diferencia" : ""}.`] : []),
     `Canales: ${c.canales.map(k => `${k.nombre} ${k.movimientos} mov. ${fmt(k.neto, true)}${k.sinCateg ? ` (+${k.sinCateg} sin categoría)` : ""}${k.incompleta ? " ⚠ lectura incompleta" : ""}`).join(" · ")}`,
     d.nota,
   ]

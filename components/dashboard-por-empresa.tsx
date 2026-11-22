@@ -23,6 +23,8 @@ import { TablaResumenFinanciero } from "@/components/tabla-resumen-financiero"
 import { CorrectorCategorias } from "@/components/corrector-categorias"
 import { DashboardPorResponsable } from "@/components/dashboard-por-responsable"
 import { Permisable, useSeMuestra } from "@/components/modo-permisos"
+import { useModoPermisos } from "@/components/contexto-permisos"
+import { vistaInicialDashboard } from "@/lib/dashboard/permiso-responsable"
 import { useFinancialData } from "@/hooks/useFinancialData"
 import { CUENTAS_BANCARIAS } from "@/hooks/useMotorConciliacion"
 import { EMPRESAS_DASHBOARD, canalesFueraDelDashboard, type EmpresaDashboard } from "@/lib/dashboard/canales"
@@ -56,11 +58,29 @@ export function DashboardPorEmpresa(p: Props) {
   const [elegidas, setElegidas] = useState<Set<EmpresaDashboard>>(new Set(["MSA"]))
   const [showCategorias, setShowCategorias] = useState(false)
   // 👥 A-FEAT-1637 (JMS 22/11, en evaluación): «Por caja» (lo de siempre) / «Por responsable» (de quién es cada peso). Con candado.
+  //    JMS 22/11: para MA (cualquier rol que no es admin) ABRE en «Por responsable»; admin, en «Por caja». Se recuerda la última
+  //    elección de cada persona (preferencias, `vistaDashboard`). En «Ver como lo ve ella» se usa el rol que se mira.
+  const modo = useModoPermisos()
+  const puedeResponsable = seMuestra("dashboard.por-responsable")
   const [vista, setVista] = useState<"caja" | "responsable">("caja")
-  const verResponsable = vista === "responsable" && seMuestra("dashboard.por-responsable")
+  const [prefs, setPrefs] = useState<{ rol: string | null; vista: "caja" | "responsable" | null } | null>(null)
+  const verResponsable = vista === "responsable" && puedeResponsable
   // 🔀 El orden de los grupos que dejó la persona (JMS 22/11: «reubicar dentro del dashboard y que se quede guardado»).
   const [orden, setOrden] = useState<string[] | null>(null)
-  useEffect(() => { void supabase.auth.getUser().then(({ data }) => setOrden(leerPreferencias(data.user).ordenDashboard)) }, [])
+  useEffect(() => { void supabase.auth.getUser().then(({ data }) => {
+    const pr = leerPreferencias(data.user)
+    setOrden(pr.ordenDashboard)
+    setPrefs({ rol: String(data.user?.app_metadata?.role ?? "") || null, vista: pr.vistaDashboard })
+  }) }, [])
+  const enModo = !!modo, comoRol = modo?.soloLoQueVe ? modo.rolId : null
+  useEffect(() => {
+    if (!prefs) return
+    setVista(vistaInicialDashboard(comoRol ?? prefs.rol, enModo ? null : prefs.vista, puedeResponsable))
+  }, [prefs, enModo, comoRol, puedeResponsable])
+  const elegirVista = (k: "caja" | "responsable") => {
+    setVista(k)
+    if (!modo) void guardarPreferencias({ vistaDashboard: k }) // en el modo permisos no se toca la preferencia del admin
+  }
   const reordenar = async (nuevo: string[] | null) => {
     const antes = orden
     setOrden(nuevo)
@@ -181,7 +201,7 @@ export function DashboardPorEmpresa(p: Props) {
           <Permisable recurso="dashboard.por-responsable">
             <div className="ml-3 flex overflow-hidden rounded-md border text-xs" title="Por caja: lo que se movió en los canales de cada empresa · Por responsable: de quién es cada peso y cuánto se deben los socios">
               {(["caja", "responsable"] as const).map(k => (
-                <button key={k} type="button" onClick={() => setVista(k)}
+                <button key={k} type="button" onClick={() => elegirVista(k)}
                   className={`px-3 py-1 ${vista === k ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}>
                   {k === "caja" ? "Por caja" : "Por responsable"}
                 </button>
@@ -246,14 +266,14 @@ function ControlDelDashboard({ control: c, fuera, nota, decimales }: {
           <p className="font-semibold">⚠️ El total de la tabla ({n(c.totalTabla)}) no es la suma de los movimientos de los canales ({n(c.totalMovimientos)}): diferencia {n(c.diferencia)}.</p>
           {c.fueraTotal !== 0 && (
             <p className="mt-1">
-              {fuera.length} movimiento{fuera.length === 1 ? "" : "s"} por {n(c.fueraTotal)} no entra{fuera.length === 1 ? "" : "n"} en ninguna sección: su cuenta contable tiene tipo «NO» o vacío.
+              {fuera.length} movimiento{fuera.length === 1 ? "" : "s"} por {n(c.fueraTotal)} no entra{fuera.length === 1 ? "" : "n"} en ninguna sección: el tipo que les toca es «NO» o vacío (en cada renglón dice si viene del template o de la cuenta: ahí se corrige).
               {c.explicada ? " Explican toda la diferencia." : " ⚠️ Y aun así no explican toda la diferencia: es un error de la app."}
             </p>
           )}
           {fuera.length > 0 && (
             <ul className="mt-1 max-h-40 list-disc overflow-y-auto pl-5">
               {fuera.slice(0, 50).map((x, i) => (
-                <li key={i}>{x.mov.fecha?.split("-").reverse().join("/")} · {x.mov._canal} · {x.mov.descripcion} · categ «{x.mov.categ}» (tipo {x.clasificacion.tipo ?? "vacío"}) · {n(x.clasificacion.monto)}</li>
+                <li key={i}>{x.mov.fecha?.split("-").reverse().join("/")} · {x.mov._canal} · {x.mov.descripcion} · categ «{x.mov.categ}» (tipo {x.clasificacion.tipo ?? "vacío"}{x.clasificacion.origenTipo ? `, de ${x.clasificacion.origenTipo}` : ""}) · {n(x.clasificacion.monto)}</li>
               ))}
               {fuera.length > 50 && <li>… y {fuera.length - 50} más (están todos en el Excel, hoja Control).</li>}
             </ul>

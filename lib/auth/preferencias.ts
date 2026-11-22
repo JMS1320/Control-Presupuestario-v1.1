@@ -80,6 +80,11 @@ export type Preferencias = {
   /** 🔀 A-FEAT-1637: el orden de los grupos del Dashboard que dejó el usuario arrastrando (`seccion:agrupadora`). `null` = por nombre. */
   ordenDashboard: string[] | null
   /**
+   * 👥 A-FEAT-1637 (JMS 22/11): la última vista del Dashboard que eligió la persona. `null` = la de su rol: «Por caja» para admin,
+   * «Por responsable» para los demás (MA: «que se abra por default en Por responsable»). Ver `vistaInicialDashboard`.
+   */
+  vistaDashboard: "caja" | "responsable" | null
+  /**
    * 🧠 Mantener abiertas (escondidas) las pantallas ya visitadas al cambiar de pestaña (A-FEAT-1378).
    * **Apagado por defecto** (usuario 26/10, indeciso: *«no se actualizan solas, es un tema… no sé si será
    * peligroso»*): una pantalla escondida no se refresca sola. Encendido, volver a una pestaña es instantáneo.
@@ -113,6 +118,7 @@ export const PREFERENCIAS_DEFAULT: Preferencias = {
   ordenImpuestos: null,
   ordenPartidas: null,
   ordenDashboard: null,
+  vistaDashboard: null,
   pantallasVivas: false,
   cartelesPrueba: true,
 }
@@ -181,5 +187,6 @@ export function leerPreferencias(user: User | null | undefined): Preferencias {
     ordenDashboard: Array.isArray(p.ordenDashboard)
       ? (p.ordenDashboard as unknown[]).filter((k): k is string => typeof k === "string")
       : null,
+    vistaDashboard: p.vistaDashboard === "caja" || p.vistaDashboard === "responsable" ? p.vistaDashboard : null,
   }
 }

@@ -19,10 +19,11 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { TablaResumenFinanciero } from "@/components/tabla-resumen-financiero"
 import { CuentaEntreSocios, FichaMovimiento } from "@/components/cuenta-entre-socios"
-import { useDashboardPorResponsable } from "@/hooks/useDashboardPorResponsable"
+import { useDashboardPorResponsable, periodoDashboard } from "@/hooks/useDashboardPorResponsable"
+import { useModoPermisos } from "@/components/contexto-permisos"
 import { formatNumber, getMonthName } from "@/lib/format"
 import { hoyArgentina } from "@/lib/fechas"
-import { completarMeses, saldoCon, vistaPorResponsable, RAZON, SOCIOS_RESPONSABLES, type NodoSocios } from "@/lib/dashboard/responsable"
+import { completarMeses, saldoCon, RAZON, SOCIOS_RESPONSABLES, type ControlVisible, type NodoSocios, type VistaResponsable } from "@/lib/dashboard/responsable"
 import type { ResumenFinanciero } from "@/lib/dashboard/resumen"
 
 interface Props {
@@ -86,7 +87,11 @@ function TablaSocios({ raiz, meses, decimales, todoAbierto, claseTitulo, explica
 }
 
 export function DashboardPorResponsable(p: Props) {
-  const { datos, calculo, loading, error, desde, hasta } = useDashboardPorResponsable(p.año, p.semestre, true)
+  // 👁️ En «Ver como lo ve ella» (modo permisos) se pide lo mismo que recibe un rol que no es admin: sólo lo de MA.
+  const modo = useModoPermisos()
+  const comoMA = !!modo?.soloLoQueVe
+  const { resultado, problemas, loading, error } = useDashboardPorResponsable(p.año, p.semestre, p.empresas, comoMA)
+  const { hasta } = periodoDashboard(p.año, p.semestre)
   const [verCuenta, setVerCuenta] = useState<string | null>(null)
   const [exportando, setExportando] = useState<"" | "excel" | "pdf">("")
   const [imprimiendo, setImprimiendo] = useState(false)
@@ -96,25 +101,27 @@ export function DashboardPorResponsable(p: Props) {
     return () => clearTimeout(t)
   }, [imprimiendo])
 
-  const vista = useMemo(() => (calculo && datos ? vistaPorResponsable(calculo.at, p.empresas, desde, hasta, datos.cuentas, datos.templates) : null), [calculo, datos, p.empresas, desde, hasta])
+  const vista = resultado?.vista ?? null
+  const empresas = resultado?.empresas ?? p.empresas
   const meses = useMemo(() => (vista ? completarMeses(vista) : []), [vista])
 
   const periodo = p.semestre === 1 ? "1er semestre" : p.semestre === 2 ? "2do semestre" : "año entero"
-  const titulo = `Dashboard por responsable — ${p.empresas.join(" + ")} — ${p.año} (${periodo})`
+  const titulo = `Dashboard por responsable — ${empresas.join(" + ")} — ${p.año} (${periodo})`
   const nota = "Cada peso va a quien le corresponde: código interno (o el contable si el interno está vacío) → Libertad (MA) → responsable del template → factura → empleado → quien pagó. Sumando las tres empresas da lo mismo que «Por caja». Importe = créditos − débitos."
-  const nombreArchivo = (ext: string) => `Dashboard por responsable ${p.empresas.join("+")} ${p.año}${p.semestre ? ` S${p.semestre}` : ""} (${hoyArgentina()}).${ext}`
+  const nombreArchivo = (ext: string) => `Dashboard por responsable ${empresas.join("+")} ${p.año}${p.semestre ? ` S${p.semestre}` : ""} (${hoyArgentina()}).${ext}`
 
   if (error) return <Card><CardContent className="py-6 text-sm text-red-700">No se pudo leer: {error}</CardContent></Card>
-  if (loading || !vista || !calculo || !datos) return (
+  if (loading || !vista || !resultado) return (
     <Card><CardContent className="flex items-center justify-center py-12"><Loader2 className="mr-2 h-8 w-8 animate-spin" />Leyendo los canales de las tres empresas…</CardContent></Card>
   )
-  const ctl = calculo.control
+  const ctl = resultado.control
+  const cuentas = resultado.cuentas
 
   const bajarExcel = async () => {
     setExportando("excel")
     try {
       const { descargarExcelPorResponsable } = await import("@/lib/dashboard/export-responsable")
-      await descargarExcelPorResponsable({ empresas: p.empresas, año: p.año, semestre: p.semestre, vista, control: ctl, cuentas: calculo.cuentas }, nombreArchivo("xlsx"))
+      await descargarExcelPorResponsable({ empresas, año: p.año, semestre: p.semestre, vista, control: ctl, cuentas }, nombreArchivo("xlsx"))
     } catch (e) { console.error(e); toast.error(`No se pudo armar el Excel: ${e instanceof Error ? e.message : String(e)}`) } finally { setExportando("") }
   }
   const bajarPdf = async () => {
@@ -126,8 +133,8 @@ export function DashboardPorResponsable(p: Props) {
   }
 
   // 🤝 El saldo con cada socio al cierre del período (+ me debe / − le debo)
-  const socios = SOCIOS_RESPONSABLES.filter(s => !p.empresas.includes(s))
-  const saldos = p.empresas.flatMap(e => socios.map(s => ({ e, s, v: saldoCon(calculo.cuentas, e, s) }))).filter(x => Math.abs(x.v) >= 0.005)
+  const socios = SOCIOS_RESPONSABLES.filter(s => !empresas.includes(s))
+  const saldos = empresas.flatMap(e => socios.map(s => ({ e, s, v: saldoCon(cuentas, e, s) }))).filter(x => Math.abs(x.v) >= 0.005)
 
   const tablaSocios = (todoAbierto: boolean) => (
     <div className="overflow-x-auto rounded-md border">
@@ -173,7 +180,8 @@ export function DashboardPorResponsable(p: Props) {
         </Button>
         <Button size="sm" variant="outline" onClick={() => setImprimiendo(true)}><Printer className="mr-1 h-4 w-4" />Imprimir</Button>
       </div>
-      {datos.problemas.length > 0 && <p className="rounded border border-amber-400 bg-amber-50 p-2 text-xs text-amber-900">⚠️ No se leyó todo: {datos.problemas.join(" · ")}. Los números pueden quedar cortos.</p>}
+      {comoMA && <p className="text-xs text-sky-800 print:hidden">👁️ Como lo ve un rol que no es admin: sólo lo de MA (sus cuentas, lo que otros pagaron por ella y sus cuentas con cada socio).</p>}
+      {problemas.length > 0 && <p className="rounded border border-amber-400 bg-amber-50 p-2 text-xs text-amber-900">⚠️ No se leyó todo: {problemas.join(" · ")}. Los números pueden quedar cortos.</p>}
 
       <div id="dashboard-responsable-imprimible" className="space-y-3">
         <h2 className="hidden text-base font-semibold print:block">{titulo}</h2>
@@ -189,13 +197,13 @@ export function DashboardPorResponsable(p: Props) {
             {saldos.length === 0 && <span className="text-gray-500">sin saldo con nadie</span>}
             {saldos.map(x => (
               <span key={`${x.e}-${x.s}`} className="tabular-nums">
-                {p.empresas.length > 1 ? `${x.e} con ` : ""}{x.s}: <b className={color(x.v)}>{formatNumber(x.v, p.mostrarDecimales)}</b>
+                {empresas.length > 1 ? `${x.e} con ` : ""}{x.s}: <b className={color(x.v)}>{formatNumber(x.v, p.mostrarDecimales)}</b>
                 <span className="ml-1 text-gray-500">({x.v > 0 ? `${x.s} le debe` : `le debe a ${x.s}`})</span>
               </span>
             ))}
             <Button size="sm" variant="secondary" className="ml-auto print:hidden" onClick={() => {
               const x = saldos[0]
-              const c = x ? calculo.cuentas.find(k => (k.a === x.e && k.b === x.s) || (k.a === x.s && k.b === x.e)) : undefined
+              const c = x ? cuentas.find(k => (k.a === x.e && k.b === x.s) || (k.a === x.s && k.b === x.e)) : undefined
               setVerCuenta(c ? `${c.a}|${c.b}` : "")
             }}><BookOpen className="mr-1 h-4 w-4" />Ver la cuenta</Button>
           </div>
@@ -208,7 +216,7 @@ export function DashboardPorResponsable(p: Props) {
       <Dialog open={verCuenta !== null} onOpenChange={(o) => { if (!o) setVerCuenta(null) }}>
         <DialogContent className="max-w-6xl">
           <DialogHeader><DialogTitle>Cuenta entre socios — al {hasta.split("-").reverse().join("/")}</DialogTitle></DialogHeader>
-          {verCuenta !== null && <CuentaEntreSocios cuentas={calculo.cuentas} desdeCanal={datos.desdeCanal} decimales={p.mostrarDecimales} parInicial={verCuenta || undefined} />}
+          {verCuenta !== null && <CuentaEntreSocios cuentas={cuentas} desdeCanal={resultado.desdeCanal} decimales={p.mostrarDecimales} parInicial={verCuenta || undefined} />}
         </DialogContent>
       </Dialog>
     </div>
@@ -216,7 +224,7 @@ export function DashboardPorResponsable(p: Props) {
 }
 
 function ControlPorResponsable({ vista: v, control: c, decimales, nota }: {
-  vista: NonNullable<ReturnType<typeof vistaPorResponsable>>; control: NonNullable<ReturnType<typeof useDashboardPorResponsable>["calculo"]>["control"]; decimales: boolean; nota: string
+  vista: VistaResponsable; control: ControlVisible; decimales: boolean; nota: string
 }) {
   const n = (x: number) => formatNumber(x, decimales)
   const paresMal = c.pares.filter(p => p.diferenciaTransf !== null && Math.abs(p.diferenciaTransf) >= 0.005)
@@ -225,7 +233,7 @@ function ControlPorResponsable({ vista: v, control: c, decimales, nota }: {
       {v.cierra
         ? <p className="text-emerald-700">✓ Secciones ({n(v.totalSecciones)}) + financiado ({n(v.totalFinanciado)}) + pagado por cuenta ({n(v.totalPorCuenta)}) = lo que se movió en sus canales ({n(v.totalCaja)}).</p>
         : <p className="rounded border-2 border-red-400 bg-red-50 p-2 font-semibold text-red-900">⚠️ Secciones + financiado + pagado por cuenta ({n(v.totalSecciones + v.totalFinanciado + v.totalPorCuenta)}) no da lo que se movió en sus canales ({n(v.totalCaja)}): es un error de la app.</p>}
-      {c.cierra
+      {c.alcance === "MA" ? null : c.cierra
         ? <p className="text-emerald-700">✓ Las tres empresas por responsable ({n(c.porResponsable)}) = por caja ({n(c.porCaja)}): sólo cambia quién se lleva cada peso.</p>
         : <p className="rounded border-2 border-red-400 bg-red-50 p-2 font-semibold text-red-900">⚠️ Por responsable ({n(c.porResponsable)}) ≠ por caja ({n(c.porCaja)}): diferencia {n(c.diferencia)}.</p>}
       <table className="w-auto border-collapse">
@@ -256,7 +264,7 @@ function ControlPorResponsable({ vista: v, control: c, decimales, nota }: {
           </ul>
         </details>
       )}
-      {c.fuera.length > 0 && <p className="text-amber-700">⚠️ {c.fuera.length} movimiento{c.fuera.length === 1 ? "" : "s"} con cuenta de tipo «NO» o vacío no entra{c.fuera.length === 1 ? "" : "n"} en ninguna vista (igual que en «Por caja»).</p>}
+      {c.fuera.length > 0 && <p className="text-amber-700">⚠️ {c.fuera.length} movimiento{c.fuera.length === 1 ? "" : "s"} con tipo «NO» o vacío no entra{c.fuera.length === 1 ? "" : "n"} en ninguna vista (igual que en «Por caja»): {c.fuera.slice(0, 5).map(f => `${String(f.mov.fecha).split("-").reverse().join("/")} ${f.mov._canal} ${formatNumber(f.clasificacion.monto, decimales)} (tipo ${f.clasificacion.tipo ?? "vacío"}${f.clasificacion.origenTipo ? `, de ${f.clasificacion.origenTipo}` : ""})`).join(" · ")}</p>}
       <p className="text-gray-500">{nota}</p>
     </div>
   )

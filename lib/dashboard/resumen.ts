@@ -48,6 +48,11 @@ export interface Clasificacion {
   /** El tipo que salió (`NO`, vacío…) cuando no entra. */
   tipo: string | undefined
   monto: number
+  /**
+   * De dónde salió el tipo, en palabras (A-FEAT-1637, A5): «el template «FLIA»» / «la cuenta «Consumos»». Para que el aviso de lo que
+   * quedó afuera diga dónde corregirlo — antes decía siempre «su cuenta contable», y el caso real (MA 06/01/2026) era el TEMPLATE.
+   */
+  origenTipo?: string
 }
 
 /**
@@ -105,6 +110,7 @@ export function clasificadorDashboard(cuentas: CuentaContable[], templateMap: Ma
     let agrupadora: string
     let detalle: string
     let tipo: string | undefined
+    let origenTipo: string | undefined
 
     if (templateInfo && !templateInfo.esMulti) {
       // Template normal: la agrupadora viene del template, el detalle es el nombre del template.
@@ -112,19 +118,22 @@ export function clasificadorDashboard(cuentas: CuentaContable[], templateMap: Ma
       // para templates nuevos sin clasificar (ver `resolverTipo`).
       agrupadora = canonicalizar(templateInfo.agrupadora) || AGRUPADORA_SIN_AGRUPAR
       detalle = templateInfo.nombre
-      tipo = resolverTipo(templateInfo.tipo, cuentaInfo?.tipo as TipoCuenta | undefined, monto).tipo
+      const r = resolverTipo(templateInfo.tipo, cuentaInfo?.tipo as TipoCuenta | undefined, monto)
+      tipo = r.tipo
+      origenTipo = r.origen === "template" ? `el template «${templateInfo.nombre}»` : r.origen === "plan" ? `la cuenta «${cuentaInfo?.cuenta_contable || mov.categ}»` : "el signo del importe"
     } else if (cuentaInfo) {
       // Sin template normal (multi-cuenta o sin template): usar la cuenta contable
       agrupadora = canonicalizar(cuentaInfo.nombre_totalizadora) || AGRUPADORA_SIN_AGRUPAR
       detalle = cuentaInfo.cuenta_contable || cuentaInfo.categ
       tipo = cuentaInfo.tipo
+      origenTipo = `la cuenta «${cuentaInfo.cuenta_contable || cuentaInfo.categ}»`
     } else {
       // Sin cuenta válida — pendiente de adjudicar
       agrupadora = AGRUPADORA_SIN_CLASIFICAR
       detalle = mov.categ || "(sin categ)"
       tipo = monto >= 0 ? "ingreso" : "egreso"
     }
-    return { seccion: (tipo && SECCION_DE_TIPO[tipo]) || null, agrupadora, detalle, tipo, monto }
+    return { seccion: (tipo && SECCION_DE_TIPO[tipo]) || null, agrupadora, detalle, tipo, monto, origenTipo }
   }
 }
 

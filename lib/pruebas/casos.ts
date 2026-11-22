@@ -45,7 +45,8 @@ import { armarResumenPorMes } from "@/lib/balance/resumen-por-mes"
 import { canalesDelDashboard, canalesFueraDelDashboard, type CuentaDelRegistro } from "@/lib/dashboard/canales"
 import { armarResumenFinanciero, clasificadorDashboard } from "@/lib/dashboard/resumen"
 import { controlDelDashboard } from "@/lib/dashboard/control"
-import { atribuirTodo, vistaPorResponsable, controlPorResponsable, cuentaEntreSocios, saldoCon } from "@/lib/dashboard/responsable"
+import { atribuirTodo, vistaPorResponsable, controlPorResponsable, cuentaEntreSocios, saldoCon, resultadoParaRuta } from "@/lib/dashboard/responsable"
+import { puedeVerPorResponsable, vistaInicialDashboard } from "@/lib/dashboard/permiso-responsable"
 import { libroDelDashboard, mesesDelPeriodo } from "@/lib/dashboard/export-excel"
 import { CUENTAS_DOLARES_Y_COTITULARES } from "@/lib/dolares/cuentas"
 import { filasNivel2De } from "@/lib/balance/formato-excel"
@@ -586,6 +587,38 @@ export function correrCasos(): Resultado[] {
     const v7 = `meses ${cMSA?.meses.length} (desde ${cMSA?.meses[0]?.mes}) · marzo ${JSON.stringify(marzo?.porCategoria)} saldo ${marzo?.saldo} · MA con MSA ${saldoCon(csR, "MA", "MSA")} · MA con PAM ${saldoCon(csR, "MA", "PAM")} · mov. en marzo ${marzo ? contar(marzo.arbol) : "?"}`
     const e7 = 'meses 15 (desde 2025-01) · marzo {"Retiros directos":1000,"Pagos por su cuenta":400,"Libertad":200,"Aportes (pagó por la otra punta)":0} saldo 1600 · MA con MSA -1600 · MA con PAM 70 · mov. en marzo 4'
     chequear("Dashboard", "🤝 Cuenta entre socios: arranca el 31/12/2024 en 0, mes por mes; marzo MSA↔MA = retiros directos 1000 + pagos por su cuenta 400 + Libertad 200 (la transferencia se cuenta UNA vez, del lado que paga); MA le debe 1600 a MSA y PAM le debe 70 a MA", e7, v7, v7 === e7, "A-FEAT-1637")
+
+    // 🔒 B3 — lo que la ruta le manda a MA (`resultadoParaRuta`, soloMA): sólo lo suyo. Se suma un pago de MSA por PAM (40, «RET 3 PAM»).
+    const movsR2 = [...movsR, mv("10", "MSA", "MSA Galicia CC", "2026-03-15", { categ: "IMP", debitos: 40, contable: "RET 3 PAM" })]
+    const atR2 = atribuirTodo(movsR2, cuentasR, tplR, ctxR)
+    const paraMA = resultadoParaRuta(atR2, ["MSA", "PAM", "MA"], true, D1, D2, cuentasR, tplR, [])
+    const paraAdmin = resultadoParaRuta(atR2, ["MSA", "PAM", "MA"], false, D1, D2, cuentasR, tplR, [])
+    const jMA = JSON.stringify(paraMA)
+    const idsDe = (j: string) => [...new Set([...j.matchAll(/"id":"(\d+)"/g)].map(x => x[1]))].sort((a, b) => Number(a) - Number(b)).join(",")
+    const v8 = `MA ve movimientos ${idsDe(jMA)} · pares ${paraMA.cuentas.map(c => `${c.a}↔${c.b}`).join(",")} / control ${paraMA.control.pares.map(p => `${p.a}↔${p.b}`).join(",")} · empresas ${paraMA.empresas} · alcance ${paraMA.control.alcance} caja ${paraMA.control.porCaja} cierra ${paraMA.control.cierra} · fila cruda ${jMA.includes('"mov":')} | admin pares ${paraAdmin.cuentas.map(c => `${c.a}↔${c.b}`).join(",")}`
+    const e8 = "MA ve movimientos 1,2,4,5,6,7,9 · pares MSA↔MA,PAM↔MA / control MSA↔MA,PAM↔MA · empresas MA · alcance MA caja 1430 cierra true · fila cruda false | admin pares MSA↔PAM,MSA↔MA,PAM↔MA"
+    chequear("Dashboard", "🔒 Por responsable para MA (ruta del servidor): le llega lo pagado POR ella o PARA ella y las transferencias con ella; NO el gasto propio de MSA (50), ni el «DIST MECHI» (20), ni lo que MSA pagó por PAM (40), ni el par MSA↔PAM; nunca la fila cruda del banco; su control cierra sobre lo suyo", e8, v8, v8 === e8, "A-FEAT-1637")
+
+    const v9 = [
+      puedeVerPorResponsable("admin", [], {}),
+      puedeVerPorResponsable("ma", ["dashboard"], { "dashboard.por-responsable": "lectura", "dashboard.empresa-ma": "lectura" }),
+      puedeVerPorResponsable("ma", ["dashboard"], { "dashboard.por-responsable": "lectura", "dashboard.empresa-ma": "ninguno" }),
+      puedeVerPorResponsable("ma", ["principal"], { "dashboard.por-responsable": "lectura", "dashboard.empresa-ma": "lectura" }),
+      puedeVerPorResponsable(null, ["dashboard"], {}),
+    ].join(",")
+    chequear("Dashboard", "🔒 El permiso de la ruta: admin siempre; otro rol, con la sección Dashboard y los DOS candados (vista Por responsable + chip MA)", "true,true,false,false,false", v9, v9 === "true,true,false,false,false", "A-FEAT-1637")
+    const v11 = [vistaInicialDashboard("admin", null, true), vistaInicialDashboard("ma", null, true), vistaInicialDashboard("ma", "caja", true),
+      vistaInicialDashboard("admin", "responsable", true), vistaInicialDashboard("ma", null, false)].join(",")
+    chequear("Dashboard", "👥 Con qué vista abre el Dashboard: admin «Por caja», MA «Por responsable» (JMS 22/11); manda la última elección de cada uno; sin el candado, siempre «Por caja»", "caja,responsable,caja,responsable,caja", v11, v11 === "caja,responsable,caja,responsable,caja", "A-FEAT-1637")
+
+    // A5 — el aviso de lo que queda afuera dice DE DÓNDE sale el tipo (caso real: MA 06/01/2026, template FLIA tipo NO, cuenta Consumos = egreso)
+    const clasA5 = clasificadorDashboard([{ categ: "CONS", tipo: "egreso", nombre_totalizadora: "Gastos", cuenta_contable: "Consumos" }] as any[],
+      new Map([["flia", { nombre: "FLIA", agrupadora: "Familia", esMulti: false, tipo: "NO" as any }]]))
+    const a5 = clasA5({ fecha: "2026-01-06", categ: "CONS", debitos: 150000, creditos: 0, template_id: "flia" })
+    const a5b = clasA5({ fecha: "2026-01-06", categ: "CONS", debitos: 10, creditos: 0 })
+    const v10 = `${a5.seccion} · ${a5.tipo} · ${a5.origenTipo} | ${a5b.seccion} · ${a5b.origenTipo}`
+    const e10 = "null · NO · el template «FLIA» | egresos · la cuenta «Consumos»"
+    chequear("Dashboard", "🏷️ Lo que queda afuera dice de dónde sale el tipo «NO»: del TEMPLATE (FLIA) o de la cuenta — antes decía siempre «su cuenta contable»", e10, v10, v10 === e10, "A-FEAT-1637")
   }
 
   // ══ El factor de la balanza ═══════════════════════════════════════════════════════════════

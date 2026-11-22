@@ -147,7 +147,8 @@ export function CuentaEntreSocios({ cuentas, desdeCanal, decimales, parInicial }
 
 /** La misma cuenta, leyendo sola (para montarla en Reportes). */
 export function CuentaEntreSociosConDatos({ año, semestre, decimales = false }: { año: number; semestre?: number; decimales?: boolean }) {
-  const { datos, calculo, loading, error } = useDashboardPorResponsable(año, semestre, true)
-  if (loading || !calculo || !datos) return <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{error ? `No se pudo leer: ${error}` : "Armando la cuenta…"}</p>
-  return <CuentaEntreSocios cuentas={calculo.cuentas} desdeCanal={datos.desdeCanal} decimales={decimales} />
+  // La ruta del servidor decide qué pares ve quien mira (admin: todos; otro rol: los de MA).
+  const { resultado, loading, error } = useDashboardPorResponsable(año, semestre, ["MSA", "PAM", "MA"], false)
+  if (loading || !resultado) return <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{error ? `No se pudo leer: ${error}` : "Armando la cuenta…"}</p>
+  return <CuentaEntreSocios cuentas={resultado.cuentas} desdeCanal={resultado.desdeCanal} decimales={decimales} />
 }

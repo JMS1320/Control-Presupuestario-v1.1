@@ -152,8 +152,8 @@ export interface MovSocio {
   interno: string
   esLibertad: boolean
   sinResolver: boolean
-  /** El movimiento crudo (para la clasificación del responsable). */
-  mov: any
+  /** El movimiento crudo (para la clasificación del responsable). NO viaja al navegador: la ruta lo saca (`resultadoParaRuta`). */
+  mov?: any
 }
 
 export interface Atribuidos {
@@ -490,4 +490,58 @@ export function saldoCon(cuentas: CuentaPar[], empresa: string, socio: string): 
 export function saldoAl(c: CuentaPar, mes: string): number {
   const ms = c.meses.filter(x => x.mes <= mes)
   return ms.length ? ms[ms.length - 1].saldo : 0
+}
+
+// ── Lo que devuelve la ruta del servidor (`/api/dashboard-responsable`) — A-FEAT-1637 etapa B3 ──────────────────────────────
+//
+// JMS 22/11: «ella debería ver todas sus cuentas». El rol de MA no puede leer los canales de MSA ni de PAM, así que la vista se arma
+// en el servidor y viaja ARMADA, nunca las filas crudas. Para ella (`soloMA`): sus 4 secciones (con lo que pagó otro), lo financiado
+// y lo pagado por cuenta de socios, las cuentas de los pares en los que ELLA es una punta, y el control de lo suyo. Nunca un gasto
+// propio de MSA o de PAM, ni un par en el que no está.
+
+/** Lo que el control dice para quien mira: las tres empresas (admin) o sólo MA. */
+export interface ControlVisible extends ControlResponsable {
+  alcance: "tres" | "MA"
+}
+
+export interface ResultadoPorResponsable {
+  empresas: string[]
+  desde: string
+  hasta: string
+  vista: VistaResponsable
+  control: ControlVisible
+  cuentas: CuentaPar[]
+  desdeCanal: CanalDesde[]
+  soloMA: boolean
+}
+
+/** Un movimiento sin su fila cruda (la ficha alcanza). */
+const sinCrudo = (m: MovSocio): MovSocio => { const { mov: _m, ...resto } = m; return resto }
+function limpiarArbol(n: NodoSocios): NodoSocios {
+  return { nombre: n.nombre, porMes: n.porMes, total: n.total, hijos: n.hijos.map(limpiarArbol), movs: n.movs.map(x => ({ m: sinCrudo(x.m), importe: x.importe })) }
+}
+/** ¿El movimiento es de MA o la toca? (lo pagó ella, es suyo, o ella es la otra punta). */
+export const tocaA = (m: MovSocio, q: string) => m.pagador === q || m.responsable === q || m.socio === q
+
+export function resultadoParaRuta(at: Atribuidos, empresasPedidas: readonly string[], soloMA: boolean, desde: string, hasta: string,
+  cuentasPlan: CuentaContable[], templates: Map<string, InfoTemplate>, desdeCanal: CanalDesde[]): ResultadoPorResponsable {
+  const empresas = soloMA ? ["MA"] : empresasPedidas.filter(e => esEmpresa(e))
+  const crudosDelPeriodo = at.movs.filter(m => enPeriodo(m, desde, hasta)).map(m => m.mov)
+    .concat(at.fuera.filter(f => { const x = String(f.mov.fecha).slice(0, 10); return x >= desde && x <= hasta }).map(f => f.mov))
+  const v = vistaPorResponsable(at, empresas, desde, hasta, cuentasPlan, templates)
+  const c = controlPorResponsable(at, crudosDelPeriodo, desde, hasta, cuentasPlan, templates)
+  const fuera = c.fuera.map(f => ({ mov: { fecha: f.mov.fecha, _canal: f.mov._canal, _empresa: f.mov._empresa, descripcion: f.mov.descripcion, categ: f.mov.categ }, clasificacion: f.clasificacion }))
+  let control: ControlVisible
+  if (soloMA) {
+    const suya = c.porEmpresa.find(e => e.empresa === "MA")!
+    const porResp = r2(suya.secciones + suya.financiado + suya.porCuenta)
+    control = { alcance: "MA", porCaja: suya.caja, porResponsable: porResp, diferencia: r2(porResp - suya.caja), cierra: Math.abs(porResp - suya.caja) < 0.005,
+      porEmpresa: [suya], pares: c.pares.filter(p => p.a === "MA" || p.b === "MA"),
+      sinResolver: c.sinResolver.filter(m => tocaA(m, "MA")).map(sinCrudo), fuera: fuera.filter(f => f.mov._empresa === "MA") }
+  } else control = { ...c, alcance: "tres", sinResolver: c.sinResolver.map(sinCrudo), fuera }
+  const todas = cuentaEntreSocios(at, hasta, desdeCanal)
+  const cuentas = (soloMA ? todas.filter(x => x.a === "MA" || x.b === "MA") : todas)
+    .map(x => ({ ...x, meses: x.meses.map(m => ({ ...m, arbol: limpiarArbol(m.arbol) })) }))
+  const vista: VistaResponsable = { ...v, financiado: limpiarArbol(v.financiado), porCuenta: limpiarArbol(v.porCuenta), renglones: v.renglones.map(r => ({ ...r, m: sinCrudo(r.m) })) }
+  return { empresas, desde, hasta, vista, control, cuentas, desdeCanal, soloMA }
 }
