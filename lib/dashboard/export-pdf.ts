@@ -64,15 +64,19 @@ export interface DatosPdfDashboard {
   titulo: string
   nota: string
   resumen: ResumenFinanciero[]
-  control: ControlDashboard
+  /** Obligatorio salvo que vengan `lineasControl`. */
+  control?: ControlDashboard
   decimales: boolean
   /** 🔀 El orden de los grupos que dejó el usuario (el mismo de la pantalla). */
   orden?: string[] | null
+  /** 👥 A-FEAT-1637 «Por responsable»: los renglones ya armados (secciones + socios) y el control en palabras, en vez de los de «Por caja». */
+  filas?: FilaReporte[]
+  lineasControl?: string[]
 }
 
 export function descargarPdfDashboard(d: DatosPdfDashboard, nombre: string): void {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
-  const filas = filasDelReporte(d.resumen, d.orden ?? null)
+  const filas = d.filas ?? filasDelReporte(d.resumen, d.orden ?? null)
   const head = [["Concepto", ...d.resumen.map(m => `${NOMBRES_MES[m.mes - 1]} ${String(m.año).slice(2)}`), "Total"]]
   const body = filas.map(f => f.nivel === "seccion"
     ? [{ content: f.concepto, colSpan: d.resumen.length + 2, styles: { fontStyle: "bold" as const, fillColor: [235, 240, 247] as [number, number, number] } }]
@@ -98,10 +102,10 @@ export function descargarPdfDashboard(d: DatosPdfDashboard, nombre: string): voi
   // 🧮 El control, al pie (G9 / G20)
   let y = ((doc as any).lastAutoTable?.finalY ?? 30) + 6
   if (y > 185) { doc.addPage(); y = 26 }
-  const c = d.control
-  const lineas = [
+  const c = d.control!
+  const lineas = d.lineasControl ? [...d.lineasControl, d.nota] : [
     `${c.cierra ? "✓" : "⚠"} Control: total de la tabla ${fmt(c.totalTabla, true)} — suma de los movimientos de los canales ${fmt(c.totalMovimientos, true)} — diferencia ${fmt(c.diferencia, true)}${c.cierra ? " (cierra)" : ""}`,
-    ...(c.fueraTotal ? [`⚠ Quedaron fuera de la tabla ${fmt(c.fueraTotal, true)} (movimientos con cuenta de tipo «NO» o vacío)${c.explicada ? ": explican toda la diferencia" : ""}.`] : []),
+    ...(c.fueraTotal ? [`⚠ Quedaron fuera de la tabla ${fmt(c.fueraTotal, true)} (movimientos con tipo «NO» o vacío, del template o de la cuenta; el detalle en el Excel)${c.explicada ? ": explican toda la diferencia" : ""}.`] : []),
     `Canales: ${c.canales.map(k => `${k.nombre} ${k.movimientos} mov. ${fmt(k.neto, true)}${k.sinCateg ? ` (+${k.sinCateg} sin categoría)` : ""}${k.incompleta ? " ⚠ lectura incompleta" : ""}`).join(" · ")}`,
     d.nota,
   ]

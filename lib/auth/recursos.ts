@@ -98,6 +98,8 @@ export const RECURSOS: Recurso[] = [
   { id: "dashboard.empresa-pam",         seccion: "dashboard", etiqueta: "Dashboard → chip PAM (todos los canales en pesos de PAM)", tipo: "accion", archivo: "components/dashboard-por-empresa.tsx" },
   { id: "dashboard.empresa-ma",          seccion: "dashboard", etiqueta: "Dashboard → chip MA (todos los canales en pesos de MA)", tipo: "accion", archivo: "components/dashboard-por-empresa.tsx" },
   { id: "dashboard.corregir-categorias", seccion: "dashboard", etiqueta: "Dashboard → Corregir categorías (escribe)", tipo: "accion", archivo: "components/dashboard-por-empresa.tsx" },
+  // 👥 A-FEAT-1637 (22/11): la vista «Por responsable» lee los canales de las TRES empresas desde el navegador → hoy para admin (JMS la evalúa).
+  { id: "dashboard.por-responsable",     seccion: "dashboard", etiqueta: "Dashboard → vista «Por responsable» y cuenta entre socios (lee las 3 empresas)", tipo: "accion", archivo: "components/dashboard-por-empresa.tsx" },
   // ── Egresos ──────────────────────────────────────────────────────────────────────────────
   { id: "egresos.facturas-msa", seccion: "egresos", etiqueta: "Facturas MSA",        tipo: "pestana", archivo: EGRESOS },
   { id: "egresos.facturas-pam", seccion: "egresos", etiqueta: "Facturas PAM",        tipo: "pestana", archivo: EGRESOS },

@@ -114,16 +114,16 @@ export function libroDelDashboard(d: DatosExcelDashboard): XLSX.WorkBook {
   h.push(["Total de la tabla (hoja Resumen)", "", "", celdaTotal ? { t: "n", f: `Resumen!${celdaTotal}`, v: c.totalTabla, z: MONEDA } : { t: "n", v: c.totalTabla, z: MONEDA }])
   const filaFuera = h.length + 1
   const iniFuera = filaFuera + 7, finFuera = iniFuera + fuera.length - 1
-  h.push(["Movimientos que no entran en ninguna sección (cuenta con tipo «NO» o vacío)", "", "", fuera.length ? { t: "n", f: `SUM(F${iniFuera}:F${finFuera})`, v: c.fueraTotal, z: MONEDA } : { t: "n", v: 0, z: MONEDA }])
+  h.push(["Movimientos que no entran en ninguna sección (tipo «NO» o vacío, del template o de la cuenta)", "", "", fuera.length ? { t: "n", f: `SUM(F${iniFuera}:F${finFuera})`, v: c.fueraTotal, z: MONEDA } : { t: "n", v: 0, z: MONEDA }])
   const filaDif = h.length + 1
   h.push(["Diferencia: tabla + fuera − suma de los canales", "", "", { t: "n", f: `D${filaTabla}+D${filaFuera}-D${filaSuma}`, v: Math.round((c.totalTabla + c.fueraTotal - c.totalMovimientos) * 100) / 100, z: MONEDA }])
   h.push(["Estado", "", "", { t: "s", f: `IF(ABS(D${filaDif})<0.01,"✓ cierra","⚠️ REVISAR")`, v: c.explicada ? "✓ cierra" : "⚠️ REVISAR" }])
-  h.push([c.fueraTotal ? "⚠️ La tabla no muestra los movimientos de abajo: su cuenta contable no tiene sección (tipo «NO» o vacío)." : "✓ Todo movimiento con categoría está en la tabla."])
+  h.push([c.fueraTotal ? "⚠️ La tabla no muestra los movimientos de abajo: el tipo que les toca (del template o de la cuenta, dice cuál) es «NO» o vacío." : "✓ Todo movimiento con categoría está en la tabla."])
   h.push([])
   h.push(["MOVIMIENTOS FUERA DE LA TABLA"])
   h.push(["Fecha", "Empresa", "Canal", "Descripción", "Categ / tipo", "Importe"])
   if (!fuera.length) h.push(["(ninguno)"])
-  for (const x of fuera) h.push([fechaAR(x.mov.fecha), x.mov._empresa ?? "", x.mov._canal ?? "", x.mov.descripcion ?? "", `${x.mov.categ ?? ""} (tipo ${x.c.tipo ?? "vacío"})`, { t: "n", v: x.c.monto, z: MONEDA }])
+  for (const x of fuera) h.push([fechaAR(x.mov.fecha), x.mov._empresa ?? "", x.mov._canal ?? "", x.mov.descripcion ?? "", `${x.mov.categ ?? ""} (tipo ${x.c.tipo ?? "vacío"}${x.c.origenTipo ? `, de ${x.c.origenTipo}` : ""})`, { t: "n", v: x.c.monto, z: MONEDA }])
   agregarHoja(wb, "Control", h)
   return wb
 }

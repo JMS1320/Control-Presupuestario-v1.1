@@ -841,6 +841,18 @@ Abajo de cada bloque, «✓ los números cierran» (o un aviso rojo si no).
 
 ⚠️ Sin probar todavía → [A-TEST-1389](PENDIENTES.md#a-test-1389)
 
+### 👥 Dashboard «Por responsable» y la cuenta entre socios *(nuevo 2026-11-22, en evaluación)*
+
+1. **Elegir la vista**: al lado de los botones de empresa, **Por caja** (lo de siempre: lo que se movió en las cuentas de cada empresa) / **Por responsable** (de quién es cada peso).
+2. **De quién es cada movimiento**: lo dice el **código interno** («DIST MA», «CTA PAM», «LIB»…; si el interno está vacío, el contable); si no hay código, **Libertad** es de MA, después el **responsable del template**, la **factura** (una factura de PAM es de PAM, la pague quien la pague), el **empleado** (sueldos) y, si nada lo dice, quien pagó.
+3. **Qué ve cada empresa**: en Ingresos / Egresos / Financieros / Distribuciones, **todo lo suyo**, aunque lo haya pagado otro — con «(pagó MSA)» en el renglón. Debajo, dos secciones que no son ni ingreso ni gasto: **Financiado por los socios** (socio → cuenta → grupo → template: lo que otro pagó por ella o le transfirió) y **Pagado por cuenta de socios** (socio → grupo → template, las transferencias como «Retiros directos» y Libertad en un renglón). Click en un renglón lo abre hasta el movimiento, con su ficha.
+4. **Cuenta con socios**: el saldo con cada socio al cierre del período (+ el socio le debe · − le debe al socio) y **Ver la cuenta**: cada par (MSA↔MA, PAM↔MA, MSA↔PAM, y JMS / AMS / Cotitulares cuando aparecen), desde el **31/12/2024 en 0**, mes por mes, en retiros directos · pagos por su cuenta · Libertad · aportes; cada mes se abre hasta el movimiento. Dice desde cuándo tiene datos cada cuenta: los meses anteriores llevan ⚠️.
+5. **El control**: que la empresa cierre (secciones + financiado + pagado por cuenta = lo que se movió en sus cuentas), que las tres empresas den lo mismo que «Por caja», y los pares — lo que uno pagó por el otro, y las transferencias vistas de los dos lados (⚠️ con el mes si no son espejo).
+6. **Excel / PDF / Imprimir**: los mismos que «Por caja», con las dos secciones de socios abiertas; el Excel suma la hoja **Cuenta entre socios** (saldo mes por mes con fórmulas y el detalle).
+7. **Permiso**: candado «Dashboard → vista Por responsable». Para que **MA** la vea: en su rol, la sección Dashboard con los candados «vista Por responsable» y «chip MA». Ella ve sólo lo suyo (sus cuentas, lo que otros pagaron por ella y sus cuentas con cada socio); a ella el Dashboard le abre en «Por responsable», y puede pasar a «Por caja». Cada uno abre en la vista que eligió la última vez.
+
+⚠️ Sin probar todavía → [A-TEST-1391](PENDIENTES.md#a-test-1391)
+
 ## 🔓 Habilitar a alguien para que corrija una factura *(nuevo 2026-10-28)*
 
 Para que Ulises (u otra persona) corrija una factura **cargada por Excel** sin darle permiso sobre todas:
