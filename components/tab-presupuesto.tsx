@@ -15,7 +15,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ChevronRight, ChevronDown, Loader2, TrendingDown, TrendingUp, Scale, Wallet, AlertTriangle, Download, FileText, RefreshCw } from "lucide-react"
 import { Input } from "@/components/ui/input"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { ConfiguradorActividades } from "@/components/configurador-actividades"
 import {
   tonsCuota,
   tonsFijadas,
@@ -345,7 +346,14 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   const [inversiones, setInversiones] = useState<
     { id: string; nombre: string; montos: Record<string, number>; sinJustificar: boolean }[]>([])
   /** Costo de los tramos de actividad de cada lote, por mes. */
-  const [costoProd, setCostoProd] = useState<{ nombre: string; montos: Record<string, number> }[]>([])
+  /**
+   * Costo de los tramos de actividad, por mes. 🔍 A-FEAT-1661 paso 3: con su DESGLOSE — cada lote y, dentro, cada insumo —,
+   * que el cálculo ya armaba y se descartaba (JMS 25/11: «montos que yo no sé cómo están conformados por dentro»).
+   */
+  const [costoProd, setCostoProd] = useState<{ nombre: string; montos: Record<string, number>
+    lotes: { id: string; nombre: string; montos: Record<string, number>; insumos: { concepto: string; montos: Record<string, number>; detalle: Record<string, string> }[] }[] }[]>([])
+  /** El editor completo de las recetas (Actividades y costos), abierto desde la fila. */
+  const [editorActividades, setEditorActividades] = useState(false)
   const [ipcSerie, setIpcSerie] = useState<PuntoSerie[]>([])
   const [avisoGen, setAvisoGen] = useState<{ templates: number; meses: string[]; monto: number; nombres: string[] } | null>(null)
   /** Celda de hacienda disponible sobre la que se está presupuestando una venta. */
@@ -709,20 +717,35 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     // Una fila por ACTIVIDAD, no por lote: en el presupuesto interesa "cuánto cuesta la
     // recría", no cuánto cuesta cada lote por separado.
     const porActividad: Record<string, Record<string, number>> = {}
+    // 🔍 Paso 3 — el desglose: actividad → lote → insumo, mes por mes (con la explicación de cada número)
+    type Ins = { concepto: string; montos: Record<string, number>; detalle: Record<string, string> }
+    const desglose: Record<string, Record<string, { nombre: string; montos: Record<string, number>; insumos: Record<string, Ins> }>> = {}
+    const fmtN = (n: number, d = 0) => n.toLocaleString("es-AR", { maximumFractionDigits: d })
     for (const l of ((lotes || []) as LoteStock[])) {
       const mios = listaTramos.filter(t => t.lote_id === l.id)
       if (mios.length === 0) continue
+      const nombreLote = `${l.categoria} · ${fmtN(Number(l.cantidad) || 0)} cab · desde ${String(l.fecha_disponible || "").split("-").reverse().join("/")}`
       for (const t of tramosParaCosto(l as unknown as LoteCurva, mios, listaActs, listaIns)) {
         const nombre = t.actividad.nombre
+        const lote = ((desglose[nombre] ??= {})[l.id] ??= { nombre: nombreLote, montos: {}, insumos: {} })
         for (const m of consumoMensual({ ...t, tiposCambio: tcs })) {
           ;(porActividad[nombre] ??= {})[m.mes] = (porActividad[nombre]?.[m.mes] || 0) + m.costo_total
+          lote.montos[m.mes] = (lote.montos[m.mes] || 0) + m.costo_total
+          for (const it of m.items) {
+            const ins = (lote.insumos[it.concepto] ??= { concepto: it.concepto, montos: {}, detalle: {} })
+            ins.montos[m.mes] = (ins.montos[m.mes] || 0) + it.costo
+            ins.detalle[m.mes] = `${fmtN(it.cantidad, 2)} ${it.unidad || ""} · ${it.moneda === "USD" ? `US$ ${fmtN(it.monto_origen, 2)} × TC ${fmtN(it.tc || 0, 2)}` : `$ ${fmtN(it.monto_origen, 2)}`} · ${m.dias} días · peso prom. ${fmtN(m.peso_prom_kg)} kg`
+          }
         }
       }
     }
+    const total = (m: Record<string, number>) => Object.values(m).reduce((x, y) => x + y, 0)
     setCostoProd(Object.entries(porActividad)
-      .map(([nombre, montos]) => ({ nombre, montos }))
-      .sort((a, b) => Object.values(b.montos).reduce((x, y) => x + y, 0)
-        - Object.values(a.montos).reduce((x, y) => x + y, 0)))
+      .map(([nombre, montos]) => ({ nombre, montos,
+        lotes: Object.entries(desglose[nombre] || {}).map(([id, v]) => ({ id, nombre: v.nombre, montos: v.montos,
+          insumos: Object.values(v.insumos).sort((a, b) => total(b.montos) - total(a.montos)) }))
+          .sort((a, b) => total(b.montos) - total(a.montos)) }))
+      .sort((a, b) => total(b.montos) - total(a.montos)))
   }
 
   /**
@@ -2260,6 +2283,18 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         </div>
       </div>
 
+      {/* 🔍 A-FEAT-1661 paso 3 — el editor COMPLETO de las actividades (el mismo de «Actividades y costos»), abierto desde la fila
+          de costos de producción. Al cerrarlo, el presupuesto se recalcula. */}
+      <Dialog open={editorActividades} onOpenChange={o => { setEditorActividades(o); if (!o) void cargarDatos() }}>
+        <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Actividades y costos — recetas</DialogTitle>
+            <DialogDescription>El editor completo. Al cerrar, el presupuesto se recalcula con lo que cambiaste.</DialogDescription>
+          </DialogHeader>
+          <ConfiguradorActividades />
+        </DialogContent>
+      </Dialog>
+
       {/* 📍 A-FEAT-1660 — de qué saldo arranca, el puente hasta hoy y lo impago vencido */}
       <PresupuestoArranque
         modo={arranqueModo}
@@ -2869,23 +2904,53 @@ Clic para presupuestar la venta`}
                           )
                         })}
                       </tr>
-                      {abierto && costoProd.map(c => (
-                        <tr key={`cp-${c.nombre}`} className="border-b hover:bg-gray-50">
-                          <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-8 text-xs text-gray-600">
-                            {c.nombre}
-                          </td>
-                          {meses.map(m => {
-                            const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
-                            return (
-                              <td key={clave}
-                                className={`px-3 py-1.5 text-right text-xs text-gray-600 ${
-                                  clave === mesActualClave ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
-                                {fmt(c.montos[clave] || 0)}
+                      {abierto && costoProd.map(c => {
+                        // 🔍 Paso 3 — cada actividad se abre en sus lotes, y cada lote en sus insumos (pasando el mouse por una
+                        // celda de insumo: cantidad, precio, TC, días y peso). «✏️ editar» abre el editor COMPLETO de las recetas.
+                        const kAct = `__cp_${c.nombre}__`, abiertaAct = expandidos[kAct] ?? false
+                        const celdas = (montos: Record<string, number>, clase: string, detalle?: Record<string, string>) => meses.map(m => {
+                          const clave = `${m.anio}-${String(m.mes).padStart(2, "0")}`
+                          return (
+                            <td key={clave} title={detalle?.[clave]}
+                              className={`px-3 py-1.5 text-right text-xs ${clase} ${clave === mesActualClave ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
+                              {fmt(montos[clave] || 0)}
+                            </td>
+                          )
+                        })
+                        return (
+                          <Fragment key={`cp-${c.nombre}`}>
+                            <tr className="border-b hover:bg-gray-50 cursor-pointer" onClick={() => toggleAgrupador(kAct)}>
+                              <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-6 text-xs text-gray-700">
+                                {abiertaAct ? "▾" : "▸"} {c.nombre}
+                                <span className="ml-1 text-[10px] text-gray-400">{c.lotes.length} lote(s)</span>
+                                <button type="button" className="ml-2 rounded border border-gray-300 px-1 text-[10px] text-gray-600 hover:bg-gray-100"
+                                  title="Abrir el editor completo de las actividades y sus recetas (insumos, cantidades, precios)"
+                                  onClick={e => { e.stopPropagation(); setEditorActividades(true) }}>✏️ editar receta</button>
                               </td>
-                            )
-                          })}
-                        </tr>
-                      ))}
+                              {celdas(c.montos, "text-gray-600")}
+                            </tr>
+                            {abiertaAct && c.lotes.map(l => {
+                              const kLote = `__cpl_${c.nombre}_${l.id}__`, abiertoLote = expandidos[kLote] ?? false
+                              return (
+                                <Fragment key={kLote}>
+                                  <tr className="border-b bg-violet-50/30 cursor-pointer" onClick={() => toggleAgrupador(kLote)}>
+                                    <td className="sticky left-0 z-10 bg-violet-50/30 px-4 py-1 pl-10 text-[11px] text-gray-600">
+                                      {abiertoLote ? "▾" : "▸"} {l.nombre}
+                                    </td>
+                                    {celdas(l.montos, "text-gray-500")}
+                                  </tr>
+                                  {abiertoLote && l.insumos.map(i => (
+                                    <tr key={`${kLote}-${i.concepto}`} className="border-b">
+                                      <td className="sticky left-0 z-10 bg-white px-4 py-1 pl-14 text-[11px] text-gray-500">{i.concepto}</td>
+                                      {celdas(i.montos, "text-gray-400", i.detalle)}
+                                    </tr>
+                                  ))}
+                                </Fragment>
+                              )
+                            })}
+                          </Fragment>
+                        )
+                      })}
                     </>
                   )
                 })()}

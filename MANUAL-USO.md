@@ -5724,6 +5724,9 @@ y cuál es el **saldo de hoy**. Se abre con un clic.
 - **⚙️ configuración** (botón en el encabezado «Concepto»): en cada fila, **cómo se presupuesta** — el método de cada template y
   el modo de cada cuenta contable (con el monto si es «a mano») —, y se cambia ahí mismo. Las cuentas que **no se presupuestan
   por cuenta** (excluidas, o que van por productivo o por template) están abajo en un grupo plegado, con su motivo.
+- **🌾 Costos de producción**: cada actividad (cría, recría, engorde…) se abre en sus **lotes**, y cada lote en sus **insumos**;
+  pasando el mouse por la celda de un insumo dice cantidad, precio, TC, días y peso. **✏️ editar receta** abre el editor completo
+  de Actividades y costos; al cerrarlo, el presupuesto se recalcula.
 - **Control**: si cargaste el saldo a mano con la fecha de hoy, compara contra el extracto llevado a hoy. La
   diferencia es lo que el banco movió y el sistema no tiene registrado — lo que falta conciliar.
 
