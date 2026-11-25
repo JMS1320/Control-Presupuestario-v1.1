@@ -329,6 +329,7 @@ import { totalAnticipo } from "@/lib/pagos/total-anticipo"
 import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
 import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
+import { vinculoDelMail } from "@/lib/pagos/vinculo-mail-pago"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
@@ -8965,6 +8966,19 @@ export function correrCasos(): Resultado[] {
   chequear("Dólares", "El TC: el del pago si está; si no, el de la factura; en pesos, 1",
     "1405 · 1390 · 1", `${tcDeFactura({ moneda: "USD", tc_pago: 1405, tipo_cambio: 1390 })} · ${tcDeFactura({ moneda: "USD", tc_pago: null, tipo_cambio: 1390 })} · ${tcDeFactura({ moneda: "PES", tipo_cambio: 1390 })}`,
     tcDeFactura({ moneda: "USD", tc_pago: 1405, tipo_cambio: 1390 }) === 1405 && tcDeFactura({ moneda: "USD", tc_pago: null, tipo_cambio: 1390 }) === 1390 && tcDeFactura({ moneda: "PES", tipo_cambio: 1390 }) === 1, "A-BUG-1236")
+
+  // ══ 🔗 A-BUG-1657 — el mail de pago queda atado a su factura o a su grupo ══
+  {
+    const una = vinculoDelMail([{ id: "fc6654", grupo_pago_id: null }])
+    const grupo = vinculoDelMail([{ id: "a", grupo_pago_id: "g1" }, { id: "b", grupo_pago_id: "g1" }])
+    const sueltas = vinculoDelMail([{ id: "a", grupo_pago_id: null }, { id: "b", grupo_pago_id: null }])
+    const mezcla = vinculoDelMail([{ id: "a", grupo_pago_id: "g1" }, { id: "b", grupo_pago_id: "g2" }])
+    const ninguna = vinculoDelMail([])
+    const repetida = vinculoDelMail([{ id: "a", grupo_pago_id: "g1" }, { id: "a", grupo_pago_id: "g1" }])
+    const r = [una, grupo, sueltas, mezcla, ninguna, repetida].map(v => `${v.comprobante_arca_id ?? "-"}/${v.grupo_pago_id ?? "-"}`).join(" ")
+    chequear("Mails de pago", "🔗 Una FC → la factura · varias del mismo grupo → el grupo · sueltas o de grupos distintos → nada (no se inventa) · repetida cuenta una",
+      "fc6654/- -/g1 -/- -/- -/- a/g1", r, r === "fc6654/- -/g1 -/- -/- -/- a/g1", "A-BUG-1657")
+  }
 
   // ══ 💵 A-BUG-1655 — los dos accesos (Shift+clic y modo PAGOS) piden el TC con la MISMA regla ══
   {

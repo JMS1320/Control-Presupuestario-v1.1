@@ -12,6 +12,7 @@ import { obtenerMediosPagoFactura, obtenerMediosPagoAnticipo, type MedioPago } f
 import { calcularCuenta, armarDesglose, textoDesvio, textoCierre, type ItemPago } from './cuenta-detalle-pago'
 import { textoConversion } from './moneda-factura'
 import { facturasCortas } from './lineas-detalle-pago'
+import { vinculoDelMail, type VinculoMailPago, type FacturaDelMail } from './vinculo-mail-pago'
 import { NOMBRE_PARA_TERCEROS, empresaDeSchema } from '@/lib/empresas'
 
 const abToBase64 = (buf: ArrayBuffer): string => {
@@ -163,7 +164,16 @@ export async function encolarMailDetalle(p: EncolarMailParams): Promise<EncolarM
     const textoConv = conv.length ? `\nImportes en pesos. Conversión:\n${conv.map(l => '· ' + l).join('\n')}\n` : ''
     const cuerpo = `Estimados,\n\nAdjuntamos el detalle del pago de: ${fcs}.\n${textoConv}${cuenta}${retB64 ? '\n\nSe practicó retención de Ganancias; el certificado va adjunto.' : ''}${cierre}\n\nSaludos.`
 
+    // 🔗 A-BUG-1657 — el mail queda atado a su factura (o a su grupo de pago), no sólo al texto del asunto
+    let vinculo: VinculoMailPago = { comprobante_arca_id: null, grupo_pago_id: null }
+    if (tipo === 'arca' && ids.length) {
+      const { data: fcsDelMail } = await supabase.schema(schemaName).from('comprobantes_arca')
+        .select('id, grupo_pago_id').in('id', ids)
+      vinculo = vinculoDelMail((fcsDelMail || []) as FacturaDelMail[])
+    }
+
     const { error } = await supabase.from('mails_pago').insert({
+      ...vinculo,
       proveedor, cuit: cuitClean, email_destino: email, asunto, cuerpo,
       detalle_pdf: detalleB64, retencion_pdf: retB64, tiene_sicore: !!retB64, adjuntar_retencion: !!retB64,
       adjuntar_detalle: (c.descuento > 0), // auto SOLO si hay descuento (editable en el panel)
