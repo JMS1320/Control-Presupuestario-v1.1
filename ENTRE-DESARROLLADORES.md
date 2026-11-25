@@ -40,6 +40,9 @@
 
 ## 📨 PARA JAVIER
 
+### 💵 2 vistas del presupuesto pasan las facturas en dólares a pesos: `public.presupuesto_historia_cuentas` y `public.presupuesto_historia_cuenta_proveedor` (2026-11-25) — ⏳ AVISO PREVIO (se corre a continuación con OK de JMS)
+- A-BUG-1659 / P-06: sumaban `comprobantes_arca.imp_total` de una factura en dólares como si fuera pesos. `scripts/294-…` con su deshacer: `create or replace view` (conserva GRANTs), **mismas columnas y tipos**; sólo cambia la expresión del importe de la rama ARCA (× `tipo_cambio` si la moneda no es pesos). No toca tablas, RLS, roles ni permisos.
+
 ### 📗 Tabla nueva `public.balance_contador_cuentas` (2026-11-17) — ✅ APLICADA el 17/11 (script 282, con el OK de JMS)
 - A-FEAT-1629: el balance presentado por el contador, cuenta por cuenta (107 filas de MSA al 30/06/2026). `scripts/282-…` con su deshacer. Tabla nueva y aislada: RLS con las 2 políticas de siempre (`puede_ver` / `puede_escribir`), `anon` sin acceso, 1 fila en `recurso_tablas` (recurso `extracto`, lectura restringida) — el mismo esquema que `balance_fotos` (scripts/75). **No toca ninguna tabla existente, ni roles ni permisos.**
 
