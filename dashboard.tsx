@@ -399,7 +399,8 @@ export default function ControlPresupuestario({ userRole = 'admin', seccionInici
 
           {/* PRESUPUESTO */}
           <TabsContentVivo value="presupuesto" className="space-y-6">
-            <div className="flex justify-end gap-2">
+            {/* Las herramientas del presupuesto entran en dos filas si hace falta (JMS 25/11: «que entren de última en dos filas»): antes se cortaban a la derecha. */}
+            <div className="flex flex-wrap justify-end gap-2">
               <Button variant="secondary" className="shrink-0" onClick={() => setShowProveedores(!showProveedores)}>
                 <TrendingUp className="mr-2 h-4 w-4" />
                 {showProveedores ? "Ocultar proveedores" : "Subas de proveedores"}
