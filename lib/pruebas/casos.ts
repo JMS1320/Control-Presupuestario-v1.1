@@ -87,7 +87,7 @@ import { cuentaDeFila } from "@/lib/pagos/cuenta-de-fila"
 import { estadoSugeridoParaLote } from "@/lib/pagos/estado-sugerido-lote"
 import { cabezasHoy } from "@/lib/productivo/cabezas-hoy"
 import { numerarCuotas, posicionDe } from "@/lib/arrendamientos/numeracion-y-posicion"
-import { seccionDePeso, cortesUniformes, corteDelMedio, gananciaRealDelGrupo, asignarSecciones, textoSeccion } from "@/lib/productivo/segmentos-peso"
+import { seccionDePeso, cortesUniformes, corteDelMedio, gananciaRealDelGrupo, asignarSecciones, textoSeccion, gananciaEntre, pesoEstimadoA } from "@/lib/productivo/segmentos-peso"
 import { nroDeCuenta } from "@/lib/facturas/nro-de-cuenta"
 import { hojaDePendientes } from "@/lib/balance/pendientes-balance"
 import { resumirMes, llenarConPresente, llenarCon, diasDelMes, tipoDia, type Marca } from "@/lib/sueldos/asistencia"
@@ -14520,6 +14520,17 @@ export function correrCasos(): Resultado[] {
     const as = asignarSecciones([{ id: "x", peso: 175 }, { id: "y", peso: 205 }], [180, 200], "A", 0)
     const v5 = `${textoSeccion([as.x])} | ${textoSeccion([as.y])} | ${textoSeccion([])}`
     chequear("Pesadas — secciones", "Cada animal lleva su código (letra del segmentador + sección desde la más liviana) y su rango", "A1 · < 180 | A3 · > 200 | null", v5, v5 === "A1 · < 180 | A3 · > 200 | null", "A-FEAT-1636")
+  }
+  {
+    // A-FEAT-1654 — columnas «Estimado hoy» y «Ganancia diaria» del historial de pesadas (caso 032 010012326528: faltó el 31/08).
+    const ps = [{ fecha: "2026-07-06", peso_kg: 214 }, { fecha: "2026-08-03", peso_kg: 216 }, { fecha: "2026-09-19", peso_kg: 282 }, { fecha: "2026-11-04", peso_kg: 349 }]
+    const f = (g: ReturnType<typeof gananciaEntre>) => g ? `${g.kgDia.toFixed(3)}/${g.dias}` : "null"
+    const v1 = [f(gananciaEntre(ps)), f(gananciaEntre(ps, "2026-08-31", "2026-11-04")), f(gananciaEntre(ps, "2026-11-04", "2026-07-06")), f(gananciaEntre(ps.slice(0, 1)))].join(" | ")
+    const e1 = "1.457/46 | null | 1.116/121 | null"
+    chequear("Pesadas — ganancia entre dos", "🔑 Default = las 2 últimas DEL ANIMAL (67 kg en 46 días); con una fecha en la que no se pesó → vacío (no se inventa); fechas al revés dan lo mismo; con una sola pesada → vacío", e1, v1, v1 === e1, "A-FEAT-1654")
+    const v2 = [pesoEstimadoA(ps, 0.8, "2026-11-25"), pesoEstimadoA(ps, 0.8, "2026-11-04"), pesoEstimadoA(ps, 0.8, "2026-08-10"), pesoEstimadoA(ps, 0.8, "2026-01-01")].map(x => x == null ? "null" : x.toFixed(1)).join(" | ")
+    const e2 = "365.8 | 349.0 | 221.6 | null"
+    chequear("Pesadas — estimado hoy", "Última pesada + ganancia × días (349 + 0,8 × 21); el día de la pesada = el peso; a una fecha pasada parte de la pesada anterior a ella; sin pesada previa → vacío", e2, v2, v2 === e2, "A-FEAT-1654")
   }
   {
     // A-FEAT-1643 — la cuota es la FECHA de cobro; las filas que la comparten son sus partes (dato real 22/11).

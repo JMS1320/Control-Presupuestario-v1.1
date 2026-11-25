@@ -20,7 +20,8 @@ import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { AnalisisProductivo, type SegConfig, type SegSnapshot, type ModoCarga } from "./analisis-productivo"
 import { Segmentador, type SegPayload } from "./segmentador"
-import { textoSeccion, type AsignacionSeccion } from "@/lib/productivo/segmentos-peso"
+import { textoSeccion, gananciaEntre, pesoEstimadoA, type AsignacionSeccion } from "@/lib/productivo/segmentos-peso"
+import { hoyArgentina } from "@/lib/fechas"
 import { traerTodo } from "@/lib/supabase-paginado"
 import { Permisable } from "@/components/modo-permisos"
 import { fechasReales } from "@/lib/excel/fechas-reales"
@@ -161,11 +162,10 @@ function getUltimaPesada(pesadas: Pesada[]): Pesada | null {
   return [...pesadas].sort((a, b) => b.fecha.localeCompare(a.fecha))[0]
 }
 
+// 🐄 A-FEAT-1654: una sola cuenta para la lista principal («Peso hoy») y el historial («Estimado hoy»),
+// con el día en hora argentina (antes, después de las 21 h sumaba un día de más).
 function getPesoEstimadoHoy(pesadas: Pesada[], gananciaDiaria: number): number | null {
-  const ultima = getUltimaPesada(pesadas)
-  if (!ultima) return null
-  const diasDesde = Math.floor((Date.now() - new Date(ultima.fecha).getTime()) / 86400000)
-  return ultima.peso_kg + gananciaDiaria * diasDesde
+  return pesoEstimadoA(pesadas, gananciaDiaria, hoyArgentina())
 }
 
 function formatFecha(iso: string): string {
@@ -275,6 +275,9 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
    * (se ocultan): así no se pierde lo que estaba armado.
    */
   const [vistaHist, setVistaHist] = useState<'todo' | 'cabezas'>('todo')
+  // 🐄 A-FEAT-1654: entre qué dos pesadas se mide la «Ganancia diaria» del historial (null = las 2 últimas de cada caravana)
+  const [ganDesde, setGanDesde] = useState<string | null>(null)
+  const [ganHasta, setGanHasta] = useState<string | null>(null)
   const [buscaCaravana, setBuscaCaravana] = useState('')
   /** 🔽 A-FEAT-1555 (JMS 05/11: «prefiero que todo tenga filtro»): filtro tipo Excel por columna del historial. */
   const [filtrosHist, setFiltrosHist] = useState<Record<string, Set<string> | null>>({})
@@ -549,6 +552,11 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
         const label = `Pesada ${formatFecha(fecha)} (kg)`
         fila[label] = pesada ? pesada.peso_kg : ''
       }
+      // 🐄 A-FEAT-1654: las dos columnas del final del historial, con lo elegido ahí
+      const est = estimadoHoyDe(t)
+      fila[`Estimado hoy ${formatFecha(hoyArgentina())} (kg, a ${String(gananciaDiaria).replace('.', ',')} kg/día)`] = est != null ? Math.round(est * 10) / 10 : ''
+      const g = ganHistDe(t)
+      fila[`Ganancia kg/día (${textoGanHist})`] = g ? Math.round(g.kgDia * 1000) / 1000 : ''
       return fila
     })
 
@@ -966,6 +974,16 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
     const ps = lista.map(t => t.pesadas_terneros.find(p => p.fecha === f)?.peso_kg).filter((v): v is number => v != null)
     return ps.length ? { prom: ps.reduce((a, b) => a + b, 0) / ps.length, n: ps.length } : null
   }
+  /** 🐄 A-FEAT-1654: estimado de hoy y ganancia entre las dos pesadas elegidas, por caravana (las bajas no se estiman). */
+  const ganHastaEf = ganDesde ? (ganHasta ?? todasFechas[todasFechas.length - 1] ?? null) : null
+  const estimadoHoyDe = (t: Ternero) => t.activo ? getPesoEstimadoHoy(t.pesadas_terneros, gananciaDiaria) : null
+  const ganHistDe = (t: Ternero) => gananciaEntre(t.pesadas_terneros, ganDesde, ganHastaEf)
+  const promDe = (vals: (number | null | undefined)[]) => { const v = vals.filter((x): x is number => x != null); return v.length ? { prom: v.reduce((a, b) => a + b, 0) / v.length, n: v.length } : null }
+  const fmt1 = (n: number) => n.toFixed(1).replace('.', ',')
+  const fmtGan = (n: number) => (n >= 0 ? '+' : '') + n.toFixed(3).replace('.', ',')
+  const textoGanHist = ganDesde && ganHastaEf
+    ? `entre ${formatFecha(ganDesde < ganHastaEf ? ganDesde : ganHastaEf)} y ${formatFecha(ganDesde < ganHastaEf ? ganHastaEf : ganDesde)}`
+    : 'entre las 2 últimas de cada caravana'
   /** Lo mismo para la tabla de ganancias: las secciones sobre todo el rodeo con pesadas. */
   const bloquesSeccionGan: { clave: string; lista: Ternero[] }[] = (() => {
     const m = new Map<string, { orden: number; lista: Ternero[] }>()
@@ -2234,6 +2252,27 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                         <FiltroColumna titulo={formatFecha(f)} opciones={opcionesHist[`f:${f}`] ?? []} seleccion={filtrosHist[`f:${f}`] ?? null} onChange={s => setFiltrosHist(x => ({ ...x, [`f:${f}`]: s }))} />
                       </TableHead>
                     ))}
+                    {/* 🐄 A-FEAT-1654 (JMS 25/11): al final, el estimado de hoy y la ganancia diaria entre dos pesadas a elegir */}
+                    <TableHead className="text-xs text-center whitespace-nowrap text-amber-700 border-l" title={`Última pesada + ${String(gananciaDiaria).replace('.', ',')} kg/día (la «Ganancia diaria estimada» de la pantalla) × los días desde esa pesada. Las bajas no se estiman.`}>
+                      Estimado hoy<div className="text-[9px] font-normal text-amber-600">a {String(gananciaDiaria).replace('.', ',')} kg/día</div>
+                    </TableHead>
+                    <TableHead className="text-xs text-center whitespace-nowrap text-indigo-700">
+                      Ganancia kg/día
+                      <div className="mt-0.5 flex items-center justify-center gap-1 text-[10px] font-normal">
+                        <select className="rounded border px-1 py-0 text-[10px]" value={ganDesde ?? ''}
+                          title="Desde qué pesada se mide. «Sus 2 últimas»: cada caravana entre sus dos últimas pesadas (si faltó a una, toma las suyas)."
+                          onChange={e => { const v = e.target.value || null; setGanDesde(v); setGanHasta(null) }}>
+                          <option value="">sus 2 últimas</option>
+                          {todasFechas.slice(0, -1).map(f => <option key={f} value={f}>desde {formatFecha(f)}</option>)}
+                        </select>
+                        {ganDesde && (
+                          <select className="rounded border px-1 py-0 text-[10px]" value={ganHastaEf ?? ''}
+                            onChange={e => setGanHasta(e.target.value || null)}>
+                            {todasFechas.filter(f => f > ganDesde).map(f => <option key={f} value={f}>hasta {formatFecha(f)}</option>)}
+                          </select>
+                        )}
+                      </div>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -2241,7 +2280,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                     <Fragment key={b.clave ?? '__todos'}>
                     {b.clave && (
                       <TableRow className="bg-emerald-50/70">
-                        <TableCell colSpan={4 + todasFechas.length} className="py-1 text-xs font-semibold text-emerald-900">
+                        <TableCell colSpan={4 + todasFechas.length + 2} className="py-1 text-xs font-semibold text-emerald-900">
                           {b.clave} <span className="font-normal text-emerald-700">— {b.filas.length} cab.</span>
                         </TableCell>
                       </TableRow>
@@ -2272,6 +2311,17 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                             </TableCell>
                           )
                         })}
+                        {(() => {
+                          const est = estimadoHoyDe(t)
+                          const g = ganHistDe(t)
+                          return (<>
+                            <TableCell className="text-center text-xs border-l font-medium text-amber-700">{est != null ? fmt1(est) : <span className="text-gray-300" title={t.activo ? 'Sin pesadas' : 'Baja: no se estima'}>—</span>}</TableCell>
+                            <TableCell className={`text-center text-xs font-medium ${g == null ? '' : g.kgDia >= 0 ? 'text-indigo-700' : 'text-red-600'}`}
+                              title={g ? `${formatFecha(g.desde)} → ${formatFecha(g.hasta)}: ${g.dias} días` : (ganDesde ? 'No tiene pesada en alguna de las dos fechas elegidas' : 'Tiene menos de 2 pesadas')}>
+                              {g ? fmtGan(g.kgDia) : <span className="text-gray-300">—</span>}
+                            </TableCell>
+                          </>)
+                        })()}
                       </TableRow>
                     ))
                   }
@@ -2286,6 +2336,13 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                             {r && r.n < b.filas.length && <span className="ml-0.5 text-[9px] text-gray-400">({r.n})</span>}
                           </TableCell>
                         })}
+                        {(() => {
+                          const e = promDe(b.filas.map(estimadoHoyDe)), g = promDe(b.filas.map(t => ganHistDe(t)?.kgDia))
+                          return (<>
+                            <TableCell className="text-center text-xs py-1 border-l font-medium text-amber-700" title={e ? `sobre ${e.n} de ${b.filas.length} cab.` : ''}>{e ? fmt1(e.prom) : '—'}{e && e.n < b.filas.length && <span className="ml-0.5 text-[9px] text-gray-400">({e.n})</span>}</TableCell>
+                            <TableCell className="text-center text-xs py-1 font-medium text-indigo-700" title={g ? `sobre ${g.n} de ${b.filas.length} cab., ${textoGanHist}` : ''}>{g ? fmtGan(g.prom) : '—'}{g && g.n < b.filas.length && <span className="ml-0.5 text-[9px] text-gray-400">({g.n})</span>}</TableCell>
+                          </>)
+                        })()}
                       </TableRow>
                     )}
                     </Fragment>
@@ -2311,7 +2368,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                       <>
                         {/* Separador */}
                         <TableRow>
-                          <TableCell colSpan={(hayAsignaciones ? 4 : 3) + todasFechas.length} className="p-0 h-0">
+                          <TableCell colSpan={(hayAsignaciones ? 4 : 3) + todasFechas.length + 2} className="p-0 h-0">
                             <div className="border-t-2 border-gray-300" />
                           </TableCell>
                         </TableRow>
@@ -2341,6 +2398,18 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                                 </TableCell>
                               )
                             })}
+                            {(() => {
+                              // Estimado: el total se extrapola a las activas del grupo, como las demás columnas; la ganancia sólo tiene promedio.
+                              const e = promDe(lista.map(estimadoHoyDe)), g = promDe(lista.map(t => ganHistDe(t)?.kgDia))
+                              return (<>
+                                <TableCell className={`text-center text-xs py-1 border-l ${bold ? 'font-bold' : 'font-medium'} ${cls}`} title={e ? `sobre ${e.n} cab. activas con pesada` : ''}>
+                                  {e ? (bold ? (e.prom * lista.filter(t => t.activo).length).toLocaleString('es-AR', { maximumFractionDigits: 0 }) : fmt1(e.prom)) : '—'}
+                                </TableCell>
+                                <TableCell className={`text-center text-xs py-1 font-medium ${cls}`} title={g ? `sobre ${g.n} cab., ${textoGanHist}` : ''}>
+                                  {!bold && g ? fmtGan(g.prom) : ''}
+                                </TableCell>
+                              </>)
+                            })()}
                           </TableRow>
                         ))}
                       </>

@@ -115,3 +115,41 @@ export function textoSeccion(asigs: AsignacionSeccion[]): string | null {
   if (!asigs.length) return null
   return [...asigs].sort((a, b) => a.orden - b.orden).map(a => `${a.codigo} · ${a.rango}`).join(" | ")
 }
+
+/** Días entre dos fechas ISO (YYYY-MM-DD), contados como días del calendario. */
+function diasEntre(a: string, b: string): number {
+  const ms = (f: string) => { const [y, m, d] = f.slice(0, 10).split("-").map(Number); return Date.UTC(y, m - 1, d) }
+  return Math.round((ms(b) - ms(a)) / 86400000)
+}
+
+/**
+ * 🐄 A-FEAT-1654 (JMS 25/11): *«una última [columna] con la ganancia diaria entre las últimas dos pesadas
+ * (configurable para mostrar ganancia diaria entre cualquiera dos pesadas)»*.
+ * Sin fechas → las 2 últimas de ESE animal (si faltó a una pesada, toma sus dos propias).
+ * Con fechas → tiene que tener pesada en las dos; si no, null (no se inventa). El orden de las fechas no importa.
+ */
+export function gananciaEntre(
+  pesadas: PesadaSimple[], desde: string | null = null, hasta: string | null = null,
+): { kgDia: number; desde: string; hasta: string; dias: number } | null {
+  let a: PesadaSimple | undefined, b: PesadaSimple | undefined
+  if (!desde || !hasta) {
+    const ps = pesadas.slice().sort((x, y) => x.fecha.localeCompare(y.fecha))
+    if (ps.length < 2) return null
+    a = ps[ps.length - 2]; b = ps[ps.length - 1]
+  } else {
+    const [d, h] = desde <= hasta ? [desde, hasta] : [hasta, desde]
+    a = pesadas.find(p => p.fecha === d); b = pesadas.find(p => p.fecha === h)
+  }
+  if (!a || !b) return null
+  const dias = diasEntre(a.fecha, b.fecha)
+  if (dias <= 0) return null
+  return { kgDia: (b.peso_kg - a.peso_kg) / dias, desde: a.fecha, hasta: b.fecha, dias }
+}
+
+/** Peso estimado a una fecha: la última pesada (hasta esa fecha) + ganancia × días desde ella. */
+export function pesoEstimadoA(pesadas: PesadaSimple[], gananciaKgDia: number, fecha: string): number | null {
+  const ps = pesadas.filter(p => p.fecha <= fecha).sort((x, y) => x.fecha.localeCompare(y.fecha))
+  const u = ps[ps.length - 1]
+  if (!u) return null
+  return u.peso_kg + gananciaKgDia * diasEntre(u.fecha, fecha)
+}
