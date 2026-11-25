@@ -3,7 +3,7 @@
 
 import { mesArgentina, hoyArgentina } from "@/lib/fechas"
 import { useMultiCashFlowData, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
-import { calcularArranque, lineaDeSaldo, controlDosFuentes, totalComposicion, fechaDeCaja, yaSeMovio, mesDe, claveMarca, estaEnLaGrilla, type FilaReal, type MarcaPresupuesto } from "@/lib/presupuesto/arranque"
+import { calcularArranque, lineaDeSaldo, controlDosFuentes, totalComposicion, fechaDeCaja, yaSeMovio, mesDe, claveMarca, estaEnLaGrilla, esLiquidacionHacienda, type FilaReal, type MarcaPresupuesto } from "@/lib/presupuesto/arranque"
 import { PresupuestoArranque, type ComposicionItem } from "@/components/presupuesto-arranque"
 import { useState, useEffect, useMemo, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
@@ -167,6 +167,8 @@ interface FilaCampo {
   fijado: Record<string, number>
   presupuestado: Record<string, number>
   disponible: Record<string, number>
+  /** 🏷️ C2: lo disponible a fijar que se MUESTRA (todo). `disponible` queda sólo con lo que JMS marcó que impacta. */
+  disponibleVisible?: Record<string, number>
   /** Tons sin fijar por mes — para el badge del "disponible a fijar". */
   tonsDisponibles: Record<string, number>
   /** Meses cuyo precio o TC se arrastró de otro mes (celda estimada). */
@@ -268,7 +270,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   const [cargando, setCargando] = useState(true)
   const [agrupadores, setAgrupadores] = useState<Agrupador[]>([])
   const [sueldoFilas, setSueldoFilas] = useState<FilaSueldo[]>([])
-  const [campos, setCampos] = useState<FilaCampo[]>([])
+  const [camposBase, setCampos] = useState<FilaCampo[]>([])
   // Ganadería: una fila por proyección, con su IIBB derivado el mes siguiente al cobro
   const [ganaderia, setGanaderia] = useState<{
     nombre: string; montos: Record<string, number>; iibb: Record<string, number>; estimado: boolean
@@ -344,6 +346,22 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
 
   // 24 meses: las cuotas de arrendamiento llegan hasta may-2028 (campaña 27/28)
   const meses = useMemo(() => getMeses(24), [])
+
+  /**
+   * 🏷️ A-FEAT-1660 C2 — lo DISPONIBLE A FIJAR no suma (JMS 25/11: «lo disponible pero no ejecutado o vendido o cobrado no
+   * debe sumar. Solo se debe mostrar… poner que impacte o que no impacte»). Se muestra entero (`disponibleVisible`); en
+   * `disponible` —que es lo que suman el total, el IIBB y el saldo— queda sólo lo de las cuotas marcadas «impacta».
+   */
+  const campos = useMemo<FilaCampo[]>(() => camposBase.map(c => {
+    const suma: Record<string, number> = {}
+    for (const k of Object.keys(c.disponible)) {
+      const s = (detalleCeldas[`${c.campo}|${k}|disponible`] || [])
+        .filter(q => marcas[`cuotas_arrendamiento|${q.id}`] === "impacta")
+        .reduce((a, q) => a + (Number(q.monto) || 0), 0)
+      if (s) suma[k] = s
+    }
+    return { ...c, disponible: suma, disponibleVisible: c.disponible }
+  }), [camposBase, detalleCeldas, marcas])
 
   /**
    * 📍 A-FEAT-1660 — lo REAL (facturas, cuotas, sueldos, anticipos, ventas sin conciliar, ya en pesos) sale del
@@ -661,6 +679,23 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    * Marca (o desmarca, con `null`) renglones. Guarda la huella: cuándo, quién, y el monto/detalle/fecha que tenían.
    * Nada del dato real cambia: al conciliar, manda la conciliación.
    */
+  /** 🏷️ C2 — ¿lo disponible de este campo y mes suma? (todas sus cuotas marcadas «impacta»). */
+  const impactaCelda = (campo: string, mes: string) => {
+    const cuotas = detalleCeldas[`${campo}|${mes}|disponible`] || []
+    return cuotas.length > 0 && cuotas.every(q => marcas[`cuotas_arrendamiento|${q.id}`] === "impacta")
+  }
+  /** Cambia si lo disponible de la celda suma o no (marca o desmarca todas sus cuotas). */
+  const alternarImpacta = async (campo: string, mes: string) => {
+    const cuotas = detalleCeldas[`${campo}|${mes}|disponible`] || []
+    if (cuotas.length === 0) return
+    const filas: FilaReal[] = cuotas.map(q => ({
+      id: q.id, origen: "ARRENDAMIENTO", origen_tabla: "cuotas_arrendamiento", estado: "disponible",
+      fecha_estimada: `${mes}-01`, debitos: 0, creditos: Number(q.monto) || 0,
+      nombre_proveedor: campo, detalle: `Disponible a fijar ${campo} · ${q.campania} · cuota ${q.numeroCuota} · ${q.tonsPend.toLocaleString("es-AR", { maximumFractionDigits: 1 })} tn`,
+    }))
+    await marcarFilas(filas, impactaCelda(campo, mes) ? null : "impacta")
+  }
+
   const marcarFilas = async (filas: FilaReal[], marca: MarcaPresupuesto | null) => {
     if (filas.length === 0) return
     if (marca === null) {
@@ -1476,8 +1511,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         filasCampos.push({ concepto: "presupuestado", montos: c.presupuestado, nivel: 1,
           regla: "Toneladas sin fijar × Matba de la posición × tipo de cambio",
           confianza: Object.values(c.estimado).some(Boolean) ? "media" : "alta" })
-        filasCampos.push({ concepto: "disponible a fijar", montos: c.disponible, nivel: 1,
-          regla: "Toneladas cuya fecha de cobro ya pasó sin fijar" })
+        filasCampos.push({ concepto: "disponible a fijar", montos: c.disponibleVisible || c.disponible, nivel: 1,
+          regla: "Toneladas cuya fecha de cobro ya pasó sin fijar — sólo suma lo marcado «suma» (A-FEAT-1660 C2)" })
       }
       contar("fijo:arrendamiento")
       ingresos.push(bloque("Arrendamientos agrícolas", filasCampos))
@@ -1706,6 +1741,33 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     return totales
   }, [sueldoFilas, meses])
 
+  /**
+   * 🐄 A-FEAT-1660 punto 3 — las VENTAS DE HACIENDA YA HECHAS que faltan cobrar, cada cuota en su mes (JMS 25/11: «las
+   * ventas que se ponen en cuotas deben impactar en presupuesto en cuotas»). La proyección de hacienda trabaja sobre el
+   * stock que queda, así que lo ya vendido no estaba en ningún lado. Salen del MISMO lugar que el Cash Flow (las ventas
+   * registradas, cuota por cuota), sin las ya cobradas ni las que JMS marcó cobradas / no concretadas. Desde el mes
+   * actual: lo de meses anteriores sin cobrar ya entra como «cobro vencido» en el arranque.
+   */
+  const ventasRegistradas = useMemo(() => {
+    const hoy = hoyArgentina(), mesHoy = hoy.slice(0, 7)
+    const porMes: Record<string, number> = {}
+    const filas: { id: string; mes: string; monto: number; detalle: string }[] = []
+    for (const f of filasCashFlow || []) {
+      // Sólo liquidaciones de hacienda: la factura del arrendamiento ya está en lo «fijado» del campo (no contarla dos veces).
+      if (!esLiquidacionHacienda({ origen: f.origen, origen_tabla: f.origen_tabla, detalle: f.detalle })) continue
+      const fr: FilaReal = { id: f.id, origen: f.origen, fecha_estimada: f.fecha_estimada, fecha_pago: f.fecha_pago ?? null,
+        estado: f.estado, debitos: Number(f.debitos) || 0, creditos: Number(f.creditos) || 0 }
+      if (yaSeMovio(fr, hoy)) continue
+      const m = marcas[claveMarca({ id: f.id, origen_tabla: f.origen_tabla })]
+      if (m === "cobrado" || m === "no_concretado") continue
+      const mes = mesDe(f.fecha_estimada || "")
+      if (!mes || mes < mesHoy || !fr.creditos) continue
+      porMes[mes] = (porMes[mes] || 0) + fr.creditos
+      filas.push({ id: f.id, mes, monto: fr.creditos, detalle: `${f.nombre_proveedor || ""} · ${f.detalle || ""}` })
+    }
+    return { porMes, filas }
+  }, [filasCashFlow, marcas])
+
   const totalIngresosPorMes = useMemo(() => {
     const totales: Record<string, number> = {}
     for (const m of meses) {
@@ -1715,9 +1777,10 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         0,
       ) + ganaderia.reduce((s, g) => s + (g.montos[clave] || 0), 0)
         + (haciendaTotal[clave] || 0)
+        + (ventasRegistradas.porMes[clave] || 0)
     }
     return totales
-  }, [campos, ganaderia, hacienda, meses])
+  }, [campos, ganaderia, hacienda, meses, ventasRegistradas])
 
   // IIBB de ganadería: egreso derivado, se suma al total de egresos
   const totalIibbGanaderiaPorMes = useMemo(() => {
@@ -1826,8 +1889,9 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       const proyectado = c.celdas.find(x => x.mes === mesHoy)?.monto || 0
       deCuentas += Math.min(pagado, Math.max(0, proyectado))
     }
-    // Lo del mes que la grilla no trae y sigue sin cobrar/pagar (ventas de hacienda registradas): se suma al mes.
-    const fuera = arranque?.mesEnCurso.fueraDeGrillaNeto || 0
+    // Las ventas de hacienda registradas sin cobrar del mes ya están en la fila «Ventas de hacienda ya hechas» de la grilla
+    // (punto 3): no se suman acá otra vez. Marcadas cobradas, la fila ya no las trae: tampoco se restan.
+    const fuera = 0
     return { total: Math.round((tplPagadoMesActual.total + deCuentas + directo + fuera) * 100) / 100, cuotas: tplPagadoMesActual.cuotas, facturas, marcados }
   }, [filasCashFlow, cuentas, tplPagadoMesActual, arranque])
 
@@ -2174,6 +2238,25 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
                       })}
                     </tr>
 
+                    {/* 🐄 Punto 3 — ventas de hacienda ya hechas, cuota por cuota, en el mes en que se cobran */}
+                    {Object.keys(ventasRegistradas.porMes).length > 0 && (
+                      <tr className="border-b bg-emerald-50/40" title={ventasRegistradas.filas.map(v => `${v.mes} · $ ${Math.round(v.monto).toLocaleString("es-AR")} · ${v.detalle}`).join("\n")}>
+                        <td className="sticky left-0 z-10 bg-emerald-50/40 px-4 py-1.5 pl-6 text-xs font-medium text-gray-700">
+                          Ventas de hacienda ya hechas (cuotas a cobrar)
+                          <span className="ml-2 text-[10px] text-gray-500">{ventasRegistradas.filas.length} cuota(s)</span>
+                        </td>
+                        {meses.map(m => {
+                          const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
+                          const v = ventasRegistradas.porMes[clave] || 0
+                          return (
+                            <td key={clave} className={`px-3 py-1.5 text-right text-xs text-emerald-700 ${clave === mesActualClave ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
+                              {v ? fmt(v) : <span className="text-gray-300">—</span>}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )}
+
                     {campos.map(c => {
                       const claveCampo = `__campo_${c.campo}__`
                       const expandido = expandidos[claveCampo] ?? true
@@ -2188,7 +2271,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
                       const subFilas: { label: string; tipo: string | null; datos: Record<string, number>; clase: string }[] = [
                         { label: "Fijado",             tipo: null,             datos: c.fijado,        clase: "text-emerald-700 font-medium" },
                         { label: "Presupuestado",      tipo: "presupuestado",  datos: c.presupuestado, clase: "text-gray-600" },
-                        { label: "Disponible a fijar", tipo: "disponible",     datos: c.disponible,    clase: "text-amber-700" },
+                        { label: "Disponible a fijar", tipo: "disponible",     datos: c.disponibleVisible || c.disponible, clase: "text-amber-700" },
                       ]
 
                       return (
@@ -2259,8 +2342,17 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
                                         el disponible no quede invisible. */}
                                     {valor === 0 && tons
                                       ? <span className="text-amber-600">{tons.toLocaleString("es-AR", { maximumFractionDigits: 1 })} tn</span>
-                                      : fmt(valor)}
+                                      : <span className={sf.tipo === "disponible" ? (impactaCelda(c.campo, clave) ? "font-semibold text-emerald-700" : "text-gray-400 line-through decoration-gray-300") : ""}>{fmt(valor)}</span>}
                                     {estimado && <span className="ml-0.5 text-amber-500">*</span>}
+                                    {/* 🏷️ C2: lo disponible NO suma salvo que se marque. Un clic cambia; el color dice qué hace. */}
+                                    {sf.tipo === "disponible" && valor > 0 && (
+                                      <button type="button"
+                                        onClick={e => { e.stopPropagation(); void alternarImpacta(c.campo, clave) }}
+                                        title={impactaCelda(c.campo, clave) ? "Suma al presupuesto. Clic: que no sume" : "No suma (no se fijó ni se cobró). Clic: que sume"}
+                                        className={`ml-1 rounded border px-1 text-[9px] ${impactaCelda(c.campo, clave) ? "border-emerald-400 bg-emerald-50 text-emerald-800" : "border-gray-300 bg-white text-gray-500"}`}>
+                                        {impactaCelda(c.campo, clave) ? "suma" : "no suma"}
+                                      </button>
+                                    )}
                                   </td>
                                 )
                               })}

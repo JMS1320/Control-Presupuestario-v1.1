@@ -33,7 +33,7 @@ export interface FilaReal {
 }
 
 /** 🏷️ Etapa 2 — lo que JMS dice de un renglón no conciliado (tabla `presupuesto_marcas`). */
-export type MarcaPresupuesto = 'pagado' | 'cobrado' | 'impago' | 'no_concretado'
+export type MarcaPresupuesto = 'pagado' | 'cobrado' | 'impago' | 'no_concretado' | 'impacta'
 /** La clave de una marca: tabla de origen + id. */
 export const claveMarca = (f: Pick<FilaReal, 'id' | 'origen_tabla'>) => `${f.origen_tabla || ''}|${f.id}`
 /** Marcas que dicen «esto ya no se mueve»: el renglón sale de lo impago. */
@@ -45,8 +45,17 @@ export const MARCAS_QUE_SACAN: ReadonlySet<string> = new Set(['pagado', 'cobrado
  * (cuotas, sueldos, arrendamientos; las facturas, por la proyección de su cuenta).
  * 🐞 25/11: marcar «cobrada» la cuota 3 de Genta ($ 32,3 M) la restaba del mes aunque el mes nunca la había sumado.
  */
-export function estaEnLaGrilla(f: Pick<FilaReal, 'origen' | 'origen_tabla'>): boolean {
-  return !(f.origen === 'VENTA' && String(f.origen_tabla || '').endsWith('comprobantes_venta'))
+export function estaEnLaGrilla(f: Pick<FilaReal, 'origen' | 'origen_tabla' | 'detalle'>): boolean {
+  return !esLiquidacionHacienda(f)
+}
+
+/**
+ * Una liquidación de hacienda registrada (el Cash Flow la arma con detalle «Liquidación hacienda…», cuota por cuota).
+ * Las demás ventas registradas (p. ej. la factura del arrendamiento) ya están en la grilla, en lo «fijado» del campo.
+ */
+export function esLiquidacionHacienda(f: Pick<FilaReal, 'origen' | 'origen_tabla' | 'detalle'>): boolean {
+  return f.origen === 'VENTA' && String(f.origen_tabla || '').endsWith('comprobantes_venta')
+    && String(f.detalle || '').startsWith('Liquidación hacienda')
 }
 
 export type ClaseArranque =

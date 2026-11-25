@@ -330,7 +330,7 @@ import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
 import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { vinculoDelMail } from "@/lib/pagos/vinculo-mail-pago"
-import { calcularArranque, clasificarFila, lineaDeSaldo, controlDosFuentes, totalComposicion, type FilaReal } from "@/lib/presupuesto/arranque"
+import { calcularArranque, clasificarFila, lineaDeSaldo, controlDosFuentes, totalComposicion, estaEnLaGrilla, type FilaReal } from "@/lib/presupuesto/arranque"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
@@ -9045,13 +9045,18 @@ export function correrCasos(): Resultado[] {
         "venc v2v3 -250 · marcVenc v1c1 · curso n2 · marcCurso n1 · nov -70", txt,
         txt === "venc v2v3 -250 · marcVenc v1c1 · curso n2 · marcCurso n1 · nov -70", "A-FEAT-1660")
       // 🐞 La venta de hacienda registrada no está en la grilla: sin marcar, se suma en el mes; marcada, no toca el mes
-      const hac: FilaReal = { id: "h", origen: "VENTA", origen_tabla: "msa.comprobantes_venta", estado: "a cobrar", fecha_estimada: "2026-11-02", debitos: 0, creditos: 500, medio_pago: null }
+      const hac: FilaReal = { id: "h", origen: "VENTA", origen_tabla: "msa.comprobantes_venta", estado: "a cobrar", fecha_estimada: "2026-11-02", debitos: 0, creditos: 500, medio_pago: null, detalle: "Liquidación hacienda 11-86270 - GENTA — cuota 3 de 3" }
       const arr: FilaReal = { id: "a", origen: "VENTA", origen_tabla: "public.ventas_unificadas", estado: "a cobrar", fecha_estimada: "2026-11-10", debitos: 0, creditos: 900, medio_pago: null }
       const sinMarca = calcularArranque({ fuente: "declarado", fechaArranque: "2026-11-25", saldoArranque: 0, hoy: "2026-11-25", filas: [hac, arr] })
       const conMarca = calcularArranque({ fuente: "declarado", fechaArranque: "2026-11-25", saldoArranque: 0, hoy: "2026-11-25", filas: [hac, arr], marcas: { "msa.comprobantes_venta|h": "cobrado" } })
       chequear("Presupuesto", "🐞 Hacienda registrada (no está en la grilla): sin cobrar suma 500 en el mes; marcada cobrada, ya no (y no se resta); el arrendamiento sí está en la grilla",
         "500 · 0 · 1", `${sinMarca.mesEnCurso.fueraDeGrillaNeto} · ${conMarca.mesEnCurso.fueraDeGrillaNeto} · ${conMarca.marcados.mesEnCurso.length}`,
         sinMarca.mesEnCurso.fueraDeGrillaNeto === 500 && conMarca.mesEnCurso.fueraDeGrillaNeto === 0 && conMarca.marcados.mesEnCurso.length === 1, "A-FEAT-1660")
+      // La factura del arrendamiento también es una venta registrada, pero YA está en la grilla (lo «fijado» del campo)
+      const factArr: FilaReal = { ...hac, id: "fa", detalle: "FC 0003-00000123 - Sanpa Semillas SA" }
+      chequear("Presupuesto", "🐄 Sólo la liquidación de hacienda queda fuera de la grilla; la factura del arrendamiento no (ya está en «fijado»: no se cuenta dos veces)",
+        "fuera · dentro", `${estaEnLaGrilla(hac) ? "dentro" : "fuera"} · ${estaEnLaGrilla(factArr) ? "dentro" : "fuera"}`,
+        !estaEnLaGrilla(hac) && estaEnLaGrilla(factArr), "A-FEAT-1660")
     }
     // Impago del mes ACTUAL con el día ya pasado: no es vencido (ya está en la columna de noviembre)
     chequear("Presupuesto", "📍 Una impaga del 05/11 (mes actual) no es «vencida»: ya la trae la columna de noviembre; la del 15/10 sí",
