@@ -136,7 +136,7 @@ Por eso el permiso se revisa **al diseñar**, no al final: es la pieza que decid
 descarga a alguien o sólo se ve mejor.
 
 > 🛤️ **«Camino 1» / «camino 2»** *(JMS 2026-10-30)*: si al abrir una terminal JMS dice sólo **«camino 1»** (BALANCE) o
-> **«camino 2»** (GAS) o **«camino 3»** (ULISES: accesos y publicación a `main`, sumado el mismo 30/10) — ⚠️ **desde el 06/11 el 2 y el 3 son UNO, «camino 2+3 · ADMINISTRACIÓN»** (mails, impuestos, accesos, `main` y productivo) —, leer **`PENDIENTES.md` § 🎯 FOCO ACTUAL** → la subsección de ese camino: ahí está el objetivo, el orden y
+> **«camino 2»** (GAS) o **«camino 3»** (ULISES: accesos y publicación a `main`, sumado el mismo 30/10) — ⚠️ **desde el 06/11 el 2 y el 3 son UNO, «camino 2+3 · ADMINISTRACIÓN»** (mails, impuestos, accesos, `main` y productivo) · **«camino 4» = CAMPO Y CELULAR** (pesadas y hacienda + pagos desde el celular, sumado 25/11) —, leer **`PENDIENTES.md` § 🎯 FOCO ACTUAL** → la subsección de ese camino: ahí está el objetivo, el orden y
 > dónde se trabaja. Es la única instrucción que va a recibir.
 
 > 🚧 **En construcción**: el usuario lo va completando. Última ampliación 2026-08-31 (norte
@@ -329,6 +329,7 @@ diferente. Esto es para siempre»**.*
   un nivel más del desplegable (no con un link a la derecha), y al cerrar el grupo se cierra también. Un detalle de **15 renglones o más**
   se muestra agrupado —por su grupo si lo tiene, si no por quién (proveedor / template), si no por mes—, cada grupo con cantidad y subtotal.
 - Si la página no puede guardar (sin sesión), lo dice y deja copiar el texto: nada se pierde en silencio.
+- 🛤️ **Toda página queda VINCULADA a su camino** *(JMS 25/11: «identificar este proceso para que luego digamos seguimos camino tal y podamos seguir, y ese camino tenga vinculados estos artifact así los abrís solo automáticamente»)*. Al publicarla, se anota en la tabla **🔗 Páginas vinculadas** de su camino (`PENDIENTES.md` § 🎯 FOCO ACTUAL), con link, para qué y estado, **y esa fila se sube a `desarrollo` en el momento** (no sólo en la rama del tema: si no, desde otra sesión no se ve). Al decir JMS «camino N», Claude **abre esas páginas** (`Artifact open`) y **lee sus respuestas** antes de proponer. *Caso: la página del celular quedó tres días sólo en `jms/celular-transferencias` y la memoria; desde `desarrollo` no existía.*
 - 🔎 **Una pregunta sobre un CASO CONCRETO (un pago, un template, una inconsistencia) se hace SIEMPRE en una página, con las
   tablas a la vista** *(JMS 15/11/2026: «esas cosas me las tenés que siempre preguntar por artifact, porque yo tengo que poder ver
   las tablas, los movimientos, como si fuera en la aplicación… Cuando es una cosa entre dos puntas, me tenés que mostrar las dos
