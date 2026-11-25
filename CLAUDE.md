@@ -341,6 +341,21 @@ diferente. Esto es para siempre»**.*
 *Motivo: sin esto, JMS lee la página en un lado y contesta en el chat en otro, traduciendo a qué se refiere cada cosa. Ya lo
 pedía en cada página (memoria del 05/11, «siempre lugar para otra cosa») y no estaba en las reglas.*
 
+#### 🏷️ Al subir algo para probar, se le da a JMS el CÓDIGO DE VERSIÓN que tiene que ver en la app (REGLA)
+*Pedida por JMS 2026-11-25: **«yo ahora siempre tengo esto, así que por favor pongamos regla de que vos me des ese nro para yo poder
+controlar que está ya cargado»**.*
+
+> **Cada vez que se sube a `desarrollo` algo que JMS va a probar, la respuesta dice «versión `xxxxxxxx`»: el código que aparece arriba a
+> la derecha de la app (A-FEAT-1656) cuando esa versión ya está publicada.** Si ve otro código, todavía no cargó: recarga en unos minutos.
+
+- 📍 **El código es el del último commit que cambió la APP, no el último commit.** Vercel no publica un push de sólo documentación o
+  scripts de la base (`scripts/vercel-ignorar.sh`), así que el código de un commit de `PENDIENTES.md` **nunca** aparece arriba. Se saca con
+  `git log -1 --format=%h -- . ':(exclude)*.md' ':(exclude)scripts/*.sql'`.
+- Al lado va la **hora** de ese commit: el texto de arriba también muestra la hora en que se publicó, y sirve de segunda señal.
+
+*Motivo: el 25/11 se le pasó `c68e410d` (un commit sólo de PENDIENTES) y arriba seguía `35989346`: el código no podía coincidir nunca, y
+JMS no tenía cómo saber si lo nuevo estaba cargado.*
+
 #### 🔄 Un HITO se documenta corrigiendo lo viejo, no agregando al lado (REGLA)
 *Pedida por el usuario 2026-09-12: **«cuando se documentan este tipo de hitos, ¿se mira que no haya
 info histórica contradictoria que pueda confundir en próximas tomas de contexto?»**. No se miraba —
