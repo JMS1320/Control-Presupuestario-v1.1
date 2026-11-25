@@ -331,6 +331,7 @@ import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/v
 import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { vinculoDelMail } from "@/lib/pagos/vinculo-mail-pago"
 import { calcularArranque, clasificarFila, lineaDeSaldo, controlDosFuentes, totalComposicion, estaEnLaGrilla, type FilaReal } from "@/lib/presupuesto/arranque"
+import { recortarPorFamilia } from "@/lib/presupuesto/templates"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
@@ -9066,6 +9067,25 @@ export function correrCasos(): Resultado[] {
     chequear("Presupuesto", "📍 Registrado «pagado» con fecha de pago futura → impago de su mes, no puente",
       "impago", clasificarFila(f("z", "pagado", "2026-12-01", 1, { fecha_pago: "2026-12-01" }), "2026-09-23", "2026-11-25"),
       clasificarFila(f("z", "pagado", "2026-12-01", 1, { fecha_pago: "2026-12-01" }), "2026-09-23", "2026-11-25") === "impago", "A-FEAT-1660")
+  }
+
+  // ══ 👪 A-BUG-1662 — templates de una familia (uno por campaña): cada uno proyecta sólo en su campaña ══
+  {
+    const p = (mes: string, monto: number, origen: "cuota" | "proyectado" = "proyectado") => ({ mes, monto, origen, explicacion: "", faltaGenerar: false })
+    // Los datos reales del 25/11: Ganancias 2026 (cuota real nov-26) y 2027 (su cuota es nov-27, pero proyectaba nov-26);
+    // Anticipo viejo (jul-25, promedio todos los meses) y el de la campaña 25/26 (desde dic-25)
+    const r = recortarPorFamilia([
+      { id: "g26", familia: "ganancias", primeraCuota: "2026-11", celdas: [p("2026-11", 5000, "cuota"), p("2027-11", 5000)] },
+      { id: "g27", familia: "ganancias", primeraCuota: "2027-11", celdas: [p("2026-11", 5000), p("2027-11", 5000, "cuota")] },
+      { id: "aViejo", familia: "anticipo", primeraCuota: "2025-07", celdas: [p("2025-10", 1071), p("2026-11", 1071)] },
+      { id: "a2526", familia: "anticipo", primeraCuota: "2025-12", celdas: [p("2026-11", 0), p("2026-10", 900)] },
+      { id: "solo", familia: "otro", primeraCuota: "2026-01", celdas: [p("2026-11", 300)] },
+    ])
+    const m = (id: string, mes: string) => r[id].find(c => c.mes === mes)?.monto
+    const txt = `g26 nov26 ${m("g26", "2026-11")} nov27 ${m("g26", "2027-11")} · g27 nov26 ${m("g27", "2026-11")} nov27 ${m("g27", "2027-11")} · viejo oct25 ${m("aViejo", "2025-10")} nov26 ${m("aViejo", "2026-11")} · 2526 oct26 ${m("a2526", "2026-10")} · solo ${m("solo", "2026-11")}`
+    chequear("Presupuesto", "👪 Familia de templates: el de 2027 no proyecta en nov-26 (había doble conteo); el anticipo viejo deja de proyectar cuando empieza la campaña siguiente; un template sin familia no cambia; las cuotas reales nunca se tocan",
+      "g26 nov26 5000 nov27 0 · g27 nov26 0 nov27 5000 · viejo oct25 1071 nov26 0 · 2526 oct26 900 · solo 300", txt,
+      txt === "g26 nov26 5000 nov27 0 · g27 nov26 0 nov27 5000 · viejo oct25 1071 nov26 0 · 2526 oct26 900 · solo 300", "A-BUG-1662")
   }
 
   // ══ 🔢 A-FEAT-1658 — los Excel de echeqs del mismo día también se numeran (contador del navegador) ══

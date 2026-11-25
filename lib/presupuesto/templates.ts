@@ -497,3 +497,35 @@ export function avisoFaltaGenerar(
   }
   return { templates: nombres.length, meses: [...meses].sort(), monto, nombres }
 }
+
+/**
+ * 👪 **Templates de una misma FAMILIA (uno por campaña): cada uno proyecta sólo en su campaña** — A-BUG-1662 (2026-11-25).
+ *
+ * JMS vio en noviembre «Imp. Ganancias MSA» dos veces: la cuota real del template 2026 y, en cursiva, el template **2027**
+ * proyectando HACIA ATRÁS sobre nov-26 (contado dos veces); y un «Anticipo Ganancias» viejo (jul–sep 2025, promedio) que seguía
+ * proyectando todos los meses aunque después vinieron los de cada campaña. Los templates con el mismo nombre y responsable son
+ * una familia: ordenados por su primera cuota, cada uno proyecta sólo desde su primera cuota hasta la primera del siguiente.
+ * Sólo se apagan celdas PROYECTADAS; una cuota real nunca se toca. Sin cuotas no hay campaña: ese miembro no se recorta.
+ */
+export function recortarPorFamilia<T extends { id: string; familia: string; primeraCuota: string | null; celdas: CeldaTemplate[] }>(
+  miembros: T[],
+): Record<string, CeldaTemplate[]> {
+  const out: Record<string, CeldaTemplate[]> = {}
+  const porFamilia: Record<string, T[]> = {}
+  for (const m of miembros) (porFamilia[m.familia] ??= []).push(m)
+  for (const fam of Object.values(porFamilia)) {
+    const conCuota = fam.filter(m => m.primeraCuota).sort((a, b) => a.primeraCuota!.localeCompare(b.primeraCuota!))
+    for (const m of fam) {
+      if (fam.length < 2 || !m.primeraCuota) { out[m.id] = m.celdas; continue }
+      const i = conCuota.indexOf(m)
+      const desde = i > 0 ? m.primeraCuota.slice(0, 7) : null            // el primero de la familia puede proyectar hacia atrás
+      const hasta = conCuota[i + 1]?.primeraCuota?.slice(0, 7) ?? null   // hasta que empieza el siguiente (exclusivo)
+      out[m.id] = m.celdas.map(c => {
+        if (c.origen !== 'proyectado' || !c.monto) return c
+        const fuera = (desde && c.mes < desde) || (hasta && c.mes >= hasta)
+        return fuera ? { ...c, monto: 0, explicacion: `${c.explicacion} · no se proyecta: este mes es de otro template de la misma familia (otra campaña)` } : c
+      })
+    }
+  }
+  return out
+}

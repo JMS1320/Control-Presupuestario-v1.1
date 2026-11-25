@@ -73,7 +73,7 @@ import { padronHacienda, padronTemplates } from "@/lib/presupuesto/padron"
 import { PanelHuecosPresupuesto } from "@/components/panel-huecos-presupuesto"
 import { EVENTO_VOLVI } from "@/lib/recorrido/recorrido"
 import {
-  proyectarTemplate, avisoFaltaGenerar,
+  proyectarTemplate, avisoFaltaGenerar, recortarPorFamilia,
   ETIQUETA_METODO,
   type TemplateInfo, type CuotaMes, type CeldaTemplate, type ConfigTemplate,
   type MetodoResuelto, type TipoCuenta,
@@ -1000,6 +1000,21 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       for (const c of r.celdas) {
         mapaMontos[t.id]![c.mes] = c.monto
         mapaCeldas[t.id]![c.mes] = c
+      }
+    }
+
+    // 👪 A-BUG-1662 — templates de la misma familia (uno por campaña): cada uno proyecta sólo en su campaña
+    {
+      const fam = (t: any) => `${String(t.nombre_referencia || "").trim().toLowerCase().replace(/\s+/g, " ")}|${String(t.responsable || "").trim().toLowerCase()}`
+      const recortadas = recortarPorFamilia(templates.map(t => ({
+        id: t.id, familia: fam(t), celdas: proyeccion[t.id]?.celdas || [],
+        primeraCuota: (historiaCuotas[t.id] || []).map(c => c.mes).sort()[0] ?? null,
+      })))
+      for (const t of templates) {
+        const cs = recortadas[t.id]
+        if (!cs || !proyeccion[t.id]) continue
+        proyeccion[t.id].celdas = cs
+        for (const c of cs) { mapaMontos[t.id]![c.mes] = c.monto; mapaCeldas[t.id]![c.mes] = c }
       }
     }
 
