@@ -3,7 +3,7 @@
 
 import { mesArgentina, hoyArgentina } from "@/lib/fechas"
 import { useMultiCashFlowData, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
-import { calcularArranque, lineaDeSaldo, controlDosFuentes, totalComposicion, fechaDeCaja, yaSeMovio, mesDe, claveMarca, type FilaReal, type MarcaPresupuesto } from "@/lib/presupuesto/arranque"
+import { calcularArranque, lineaDeSaldo, controlDosFuentes, totalComposicion, fechaDeCaja, yaSeMovio, mesDe, claveMarca, estaEnLaGrilla, type FilaReal, type MarcaPresupuesto } from "@/lib/presupuesto/arranque"
 import { PresupuestoArranque, type ComposicionItem } from "@/components/presupuesto-arranque"
 import { useState, useEffect, useMemo, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
@@ -1815,6 +1815,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     let directo = 0, marcados = 0
     for (const f of arranque?.marcados.mesEnCurso || []) {
       marcados++
+      if (!estaEnLaGrilla(f)) continue   // la grilla nunca la sumó: marcarla no le saca nada al mes
       if (f.origen === "ARCA" && f.nro_cuenta) { pagadoPorCuenta[f.nro_cuenta] = (pagadoPorCuenta[f.nro_cuenta] || 0) + (Number(f.debitos) || 0); continue }
       directo += (Number(f.debitos) || 0) - (Number(f.creditos) || 0)
     }
@@ -1825,7 +1826,9 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       const proyectado = c.celdas.find(x => x.mes === mesHoy)?.monto || 0
       deCuentas += Math.min(pagado, Math.max(0, proyectado))
     }
-    return { total: Math.round((tplPagadoMesActual.total + deCuentas + directo) * 100) / 100, cuotas: tplPagadoMesActual.cuotas, facturas, marcados }
+    // Lo del mes que la grilla no trae y sigue sin cobrar/pagar (ventas de hacienda registradas): se suma al mes.
+    const fuera = arranque?.mesEnCurso.fueraDeGrillaNeto || 0
+    return { total: Math.round((tplPagadoMesActual.total + deCuentas + directo + fuera) * 100) / 100, cuotas: tplPagadoMesActual.cuotas, facturas, marcados }
   }, [filasCashFlow, cuentas, tplPagadoMesActual, arranque])
 
   /** Con las dos fuentes (extracto y lo declarado a hoy): el extracto llevado a hoy contra lo declarado. */

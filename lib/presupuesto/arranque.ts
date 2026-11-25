@@ -39,6 +39,16 @@ export const claveMarca = (f: Pick<FilaReal, 'id' | 'origen_tabla'>) => `${f.ori
 /** Marcas que dicen «esto ya no se mueve»: el renglón sale de lo impago. */
 export const MARCAS_QUE_SACAN: ReadonlySet<string> = new Set(['pagado', 'cobrado', 'no_concretado'])
 
+/**
+ * ¿La grilla del presupuesto ya trae este renglón en su mes? Una venta registrada de **hacienda** (liquidación en
+ * `comprobantes_venta`) NO: la grilla proyecta hacienda sobre el stock que queda, no las ventas ya hechas. El resto sí
+ * (cuotas, sueldos, arrendamientos; las facturas, por la proyección de su cuenta).
+ * 🐞 25/11: marcar «cobrada» la cuota 3 de Genta ($ 32,3 M) la restaba del mes aunque el mes nunca la había sumado.
+ */
+export function estaEnLaGrilla(f: Pick<FilaReal, 'origen' | 'origen_tabla'>): boolean {
+  return !(f.origen === 'VENTA' && String(f.origen_tabla || '').endsWith('comprobantes_venta'))
+}
+
 export type ClaseArranque =
   | 'en_saldo'      // ya está adentro del saldo de arranque: no se resta
   | 'puente'        // pagado/cobrado entre el arranque y hoy: se resta/suma para llegar al saldo de hoy
@@ -93,7 +103,7 @@ export interface ResultadoArranque {
   saldoHoy: number
   vencidos: { filas: FilaReal[]; egresos: number; ingresos: number; neto: number }
   /** Lo impago del mes en curso con fecha de hoy o anterior: sigue en la columna del mes, pero se puede marcar. */
-  mesEnCurso: { filas: FilaReal[]; egresos: number; ingresos: number; neto: number }
+  mesEnCurso: { filas: FilaReal[]; egresos: number; ingresos: number; neto: number; fueraDeGrillaNeto: number }
   /** Lo dado por pagado/cobrado/no concretado (marcas): de vencidos (sale) y del mes en curso (se devuelve al mes). */
   marcados: { vencidos: FilaReal[]; mesEnCurso: FilaReal[] }
   /** Impagos de hoy en adelante, por mes (neto: ingresos − egresos). Informativo: el mes los trae del presupuesto. */
@@ -139,7 +149,8 @@ export function calcularArranque(p: {
   const ordenar = (fs: FilaReal[]) => fs.slice().sort((a, b) => fechaDeCaja(a).localeCompare(fechaDeCaja(b)))
   const pu = { filas: ordenar(puente), ...sumar(puente) }
   const ve = { filas: ordenar(vencidos), ...sumar(vencidos) }
-  const mc = { filas: ordenar(enCurso), ...sumar(enCurso) }
+  // Lo del mes en curso sin marcar que la grilla NO trae (ventas de hacienda registradas): se suma en el mes, como un vencido.
+  const mc = { filas: ordenar(enCurso), ...sumar(enCurso), fueraDeGrillaNeto: r2(enCurso.filter(f => !estaEnLaGrilla(f)).reduce((s, f) => s + efecto(f), 0)) }
   return {
     fuente: p.fuente, fechaArranque: p.fechaArranque, saldoArranque: r2(p.saldoArranque),
     puente: pu, saldoHoy: r2(p.saldoArranque + pu.neto),
