@@ -40,6 +40,9 @@
 
 ## 📨 PARA JAVIER
 
+### 📍 2 columnas nuevas en `public.presupuesto_config`: `fecha_arranque` (date) y `composicion_saldo` (jsonb) (2026-11-25) — ⏳ AVISO PREVIO (se corre a continuación con OK de JMS)
+- A-FEAT-1660: el presupuesto arranca de un saldo A UNA FECHA, con su composición (cuenta corriente + FCI + otros). `scripts/295-…` con su deshacer. Columnas vacías; no toca RLS, roles ni permisos.
+
 ### 💵 2 vistas del presupuesto pasan las facturas en dólares a pesos: `public.presupuesto_historia_cuentas` y `public.presupuesto_historia_cuenta_proveedor` (2026-11-25) — ✅ APLICADA el 25/11 con OK de JMS (aviso previo): las 2 vistas, mismo total en las dos, 323 filas, GRANTs conservados
 - A-BUG-1659 / P-06: sumaban `comprobantes_arca.imp_total` de una factura en dólares como si fuera pesos. `scripts/294-…` con su deshacer: `create or replace view` (conserva GRANTs), **mismas columnas y tipos**; sólo cambia la expresión del importe de la rama ARCA (× `tipo_cambio` si la moneda no es pesos). No toca tablas, RLS, roles ni permisos.
 
