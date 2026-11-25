@@ -339,7 +339,18 @@ es un error de la guía y hay que corregirla, no ignorarla.
 
 ## 🎯 FOCO ACTUAL (rota — el norte permanente está en `CLAUDE.md`)
 
-> ⚠️ **sumado 2026-11-25 — «camino 4 · CAMPO Y CELULAR»** (JMS: *«debemos identificar este proceso de alguna manera para que luego digamos seguimos camino tal y podamos seguir, y ese camino tenga vinculados estos artifact»*): las pesadas y la hacienda (historial, segmentadores, estimados) y registrar pagos desde el celular. Ver [la subsección](#camino-4). Cada camino tiene ahora su tabla **🔗 Páginas vinculadas** (CLAUDE.md § 💬).
+> 🛤️ **LOS CAMINOS — numeración acordada 25/11/2026** (JMS: *«quiero que se pongan de acuerdo con la otra terminal… que los artifacts queden vinculados a este camino así cuando decimos seguir adelante con camino X las tengamos a mano»*; acordado entre la terminal de la carpeta principal y la de pesadas). **Una terminal = un camino**; cada camino tiene su subsección con la tabla **🔗 Páginas vinculadas**, y esas páginas quedan **fijadas en la barra de claude.ai** (CLAUDE.md § 💬). Al decir JMS «camino N»: leer su subsección, abrir sus páginas y leer sus respuestas enteras.
+>
+> | Nro | Camino | Qué abarca | Subsección |
+> |---|---|---|---|
+> | **1** | BALANCE | papeles del balance 25/26, las tres capas, la cadena de la diferencia | [Camino 1](#camino-1) |
+> | **2** | ADMINISTRACIÓN | mails y GAS, impuestos y boletas (ARBA, Red Vial), Ulises (lo que era «2+3») | [Camino 2](#camino-2) · [ex 3](#camino-3-ulises) |
+> | **3** | MA Y SOCIOS | la pantalla de Mercedes, el Dashboard «Por responsable», la cuenta entre socios | [Camino 3](#camino-3) |
+> | **4** | CAMPO Y CELULAR | pesadas y hacienda + registrar pagos desde el celular | [Camino 4](#camino-4) |
+> | **5** | CALENDARIO DE PROCESOS | «fechar para prever» (A-AUTO-11): obligaciones, sueldos, plan sanitario y plan con Enrique | [Camino 5](#camino-5) |
+> | **6** | DETALLE DE FACTURAS DE INSUMOS | insumos y labores artículo por artículo, precios para el presupuesto, imputar labores | [Camino 6](#camino-6) |
+>
+> ⚠️ **El «camino 3» cambió de significado el 25/11**: hasta acá era ULISES (unido al 2 desde el 06/11). Ahora 3 = MA Y SOCIOS; lo de Ulises es el 2.
 
 > ⚠️ **cambió 2026-11-06 — los caminos 2 y 3 son UNO: «camino 2+3 · ADMINISTRACIÓN»** (JMS: *«entramos por roles y terminamos ocupando también lo de mail. ¿tal vez deberíamos mergear los 2 caminos en 1?»* → sí, con productivo adentro). Abarca: mails y GAS, impuestos y boletas (ARBA, Red Vial), accesos de Ulises y de MA, la publicación a `main`, y productivo (compras, contratistas). Si JMS dice «camino 2» o «camino 3», es éste: se leen las dos subsecciones de abajo. El balance sigue siendo el camino 1.
 >
@@ -355,7 +366,7 @@ es un error de la guía y hay que corregirla, no ignorarla.
 >   `.claude/SESION-PARALELA.md` y **todas** las ramas.
 > - Nunca dos tareas pesadas a la vez (PC de 8 GB, CLAUDE global). Nada a `main` sin OK de JMS.
 
-### 🛤️ Camino 1 — BALANCE: papeles de trabajo del balance MSA 25/26 al contador, por módulos terminados
+### <a id="camino-1"></a>🛤️ Camino 1 — BALANCE: papeles de trabajo del balance MSA 25/26 al contador, por módulos terminados
 
 > 🧭🧭🧭 **MAPA DEL BALANCE — los objetivos totales, dónde vive cada uno y cómo se sigue entre sesiones** *(JMS 18/11/2026: «esto no se
 > logrará en una sola sesión: tiene que haber trazabilidad para no empezar a fallar entre sesiones»)*
@@ -534,7 +545,7 @@ Lo que no hay que recordarle: las 7 preguntas del control de cuotas. Lo que hay 
 
 **Comparte con el Camino 2:** `arca_pdf_archivo_digital`, `comprobantes_arca` de cada schema, `*.tarjeta_visa` y las cajas de ahorro de Cotitulares.
 
-### 🛤️ Camino 2 — GAS: todo lo que pasa por el mail, y antes los resúmenes que faltan para conciliar
+### <a id="camino-2"></a>🛤️ Camino 2 — GAS: todo lo que pasa por el mail, y antes los resúmenes que faltan para conciliar
 
 > 🔀 **Desde el 06/11 es parte del camino 2+3 · ADMINISTRACIÓN** (ver § FOCO ACTUAL). Lo pendiente del 31/10 sigue valiendo, más la nota 📮 «Bug link desde principal» (b244349a) que el camino 1 dejó para esta terminal en el tablero el 01/11.
 >
@@ -613,7 +624,7 @@ Lo que no hay que recordarle: las 7 preguntas del control de cuotas. Lo que hay 
 - Método en KNOWLEDGE § Backup TOTAL.
 - La frecuencia no está decidida.
 
-### 🛤️ Camino 3 — ULISES (rol `contable`): accesos en `main`, y después sus funciones en Subdiarios
+### <a id="camino-3-ulises"></a>🛤️ (ex camino 3, hoy parte del 2) — ULISES (rol `contable`): accesos en `main`, y después sus funciones en Subdiarios
 
 > 🔀 **Desde el 06/11 es parte del camino 2+3 · ADMINISTRACIÓN** (ver § FOCO ACTUAL).
 >
@@ -688,6 +699,51 @@ El usuario avisó que puede no llegarse para el 01/10 — hay que **decidir con 
 3. 🔵 [A-FEAT-1652](#a-feat-1652) / [A-FEAT-1653](#a-feat-1653) celular → espera las respuestas de G1; después, etapa 2 (sin tocar la base en su primer paso). Estructura o permisos = OK de JMS + aviso a Javier antes.
 
 **También dejó esta terminal** (tanda 22/11, temas para charlar, cada uno en su fila; prueba [A-TEST-1390](#a-test-1390)): orden de partidas Inmobiliario ([A-FEAT-1639](#a-feat-1639)) · qué es «comprobante» ([A-FEAT-1640](#a-feat-1640)) · índice de precios MATba/BCR ([A-FEAT-1641](#a-feat-1641)) · anticipos: CUIT y Desvincular ([A-FEAT-1645](#a-feat-1645)) · buscar en todo el registro de Mails ([A-FEAT-1647](#a-feat-1647)) · chips «todos»/«ninguno» del Cash Flow ([A-FEAT-1649](#a-feat-1649)) · numeración de cuotas de arrendamientos en el Cash Flow ([A-FEAT-1643](#a-feat-1643)) · dato del echeq 102 (pide OK) y 3 🚩 abiertas.
+
+### <a id="camino-3"></a>🛤️ Camino 3 — MA Y SOCIOS: la pantalla de Mercedes, el Dashboard «Por responsable» y la cuenta entre socios
+
+> Terminal de la carpeta principal (trabaja en `desarrollo`). Si JMS dice **«camino 3»**: leer esta subsección, abrir las páginas de abajo y leer sus respuestas enteras (con conteo y fotos) antes de proponer.
+
+**Objetivo:** que cada socio (empezando por MA) vea lo suyo —impuestos, arrendamientos, lo que viene, su dashboard y lo que debe o le deben— sin ver lo de los demás. Estado al 25/11: **publicado en `main` (707f9218)**.
+
+**🔗 Páginas vinculadas:**
+
+| # | Página | Para qué | Estado al 25/11 |
+|---|---|---|---|
+| M1 | [👤 Usuario de MA](https://claude.ai/artifact/8zERdKE1dzo5CAv3VtAf3C) | su pantalla (H), bloques, plan «Por responsable» (D), Provinvest (P1–P5), cuenta de socia (C1) | espera P1–P4 y C1. Fijada en claude.ai |
+
+**Orden y estado:**
+1. 🟢 [A-FEAT-1634](#a-feat-1634) pantalla de MA → espera [A-TEST-1387](#a-test-1387).
+2. 🟢 [A-FEAT-1637](#a-feat-1637) Dashboard por empresa + «Por responsable» + control contra bancos → esperan [A-TEST-1389](#a-test-1389) y [A-TEST-1391](#a-test-1391); y de JMS: candados del rol «ma», si el rol socio ve «Por responsable», el millón del pintor, el comodín «sin categoría» (verificar tras el script 293).
+
+### <a id="camino-5"></a>🛤️ Camino 5 — CALENDARIO DE PROCESOS: fechar para prever (A-AUTO-11)
+
+> Terminal de la carpeta principal. Si JMS dice **«camino 5»**: leer esta subsección y [A-AUTO-11](#a-auto-11), abrir las páginas y leer sus respuestas enteras antes de proponer.
+
+**Objetivo:** que lo que se registra (vencimientos, presentaciones, sueldos, sanidad) genere solo sus avisos antes y sus controles después, sin trabajo extra de JMS (CLAUDE.md § 🗓️ y § 🧲).
+
+**🔗 Páginas vinculadas:**
+
+| # | Página | Para qué | Estado al 25/11 |
+|---|---|---|---|
+| K1 | [🗓️ Calendario de obligaciones](https://claude.ai/artifact/WebDhExcPePYncb8CWvfGA) | obligaciones contables, Ulises (U/R), cómo llega cada documento (O), sueldos (S, P12–P16) | espera respuestas. Fijada en claude.ai |
+| K2 | [🐄 Calendario productivo](https://claude.ai/artifact/UbgcZqJeXe9fpXVzS3iAB8) | plan sanitario, estacional de productivo, plan con Enrique (E1–E4) | espera E1–E4 (aprobar el plan es un permiso: sin OK no se toca). Fijada en claude.ai |
+
+**Orden:** leer las dos páginas → proponer el diseño (probable: sobre las tareas 🚩 + templates con etiqueta 🗓️ Obligación; vehículos desde las pólizas; cerrar el registro del plan sanitario al cargar órdenes). Plan con Enrique → [A-FEAT-1380](#a-feat-1380).
+
+### <a id="camino-6"></a>🛤️ Camino 6 — DETALLE DE FACTURAS DE INSUMOS Y LABORES (A-FEAT-1651)
+
+> Terminal de la carpeta principal; código en la rama `jms/detalle-facturas` (sin mergear). Si JMS dice **«camino 6»**: leer esta subsección y [A-FEAT-1651](#a-feat-1651), abrir la página y leer sus respuestas enteras antes de proponer.
+
+**Objetivo:** cada factura de insumos y labores leída artículo por artículo (cantidad, precio, IVA) con su control, hacia atrás y automática al llegar (CLAUDE.md § 📄 punto 6), para el precio de los insumos en el presupuesto, el costo por actividad y el reporte veterinario. Incluye el recordatorio «imputar las labores».
+
+**🔗 Páginas vinculadas:**
+
+| # | Página | Para qué | Estado al 25/11 |
+|---|---|---|---|
+| D1 | [🧾 Detalle de facturas](https://claude.ai/artifact/AA9KVzMAvKbiUdYKX2wpMk) | proveedores del rubro (F), dónde se guarda (D), etapas E1–E7, preguntas P1–P6 | espera P1–P6 (P3 = tabla nueva: OK + aviso a Javier antes). Fijada en claude.ai |
+
+**Orden:** E1 lector ✅ (39/88 cierran, 0 falsos) → E2 tabla (P3) → E3 leer los 114 PDFs → E4 corregir con huella → E5 automático → E6 unir con el stock → E7 precios y reporte veterinario.
 
 ## 🧪 <a id="guia-pruebas-2026-10-02"></a>GUÍA DE PRUEBAS — tanda del 1 y 2 de octubre (hacienda: venta, liquidación y cobro)
 
