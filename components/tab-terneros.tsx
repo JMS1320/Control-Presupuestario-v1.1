@@ -557,6 +557,8 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
       fila[`Estimado hoy ${formatFecha(hoyArgentina())} (kg, a ${String(gananciaDiaria).replace('.', ',')} kg/día)`] = est != null ? Math.round(est * 10) / 10 : ''
       const g = ganHistDe(t)
       fila[`Ganancia kg/día (${textoGanHist})`] = g ? Math.round(g.kgDia * 1000) / 1000 : ''
+      const pp = ganPaPDe(t)
+      fila['Ganancia kg/día punta a punta (1ª → última)'] = pp != null ? Math.round(pp * 1000) / 1000 : ''
       return fila
     })
 
@@ -980,6 +982,15 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   const ganHistDe = (t: Ternero) => gananciaEntre(t.pesadas_terneros, ganDesde, ganHastaEf)
   const promDe = (vals: (number | null | undefined)[]) => { const v = vals.filter((x): x is number => x != null); return v.length ? { prom: v.reduce((a, b) => a + b, 0) / v.length, n: v.length } : null }
   const fmt1 = (n: number) => n.toFixed(1).replace('.', ',')
+  /** Ganancia de punta a punta (1ª → última pesada) y la del escalón: de SU pesada anterior a la de la fecha f. */
+  const ganPaPDe = (t: Ternero) => getGananciaPuntaAPunta(t.pesadas_terneros)
+  const ganEscalonDe = (t: Ternero, f: string) => {
+    if (!t.pesadas_terneros.some(p => p.fecha === f)) return null
+    const ant = t.pesadas_terneros.filter(p => p.fecha < f).sort((a, b) => b.fecha.localeCompare(a.fecha))[0]
+    return ant ? gananciaEntre(t.pesadas_terneros, ant.fecha, f)?.kgDia ?? null : null
+  }
+  /** Días desde la pesada anterior del rodeo (para el encabezado). */
+  const diasDesdeAnterior = (f: string) => { const i = todasFechas.indexOf(f); return i > 0 ? Math.round((Date.parse(f) - Date.parse(todasFechas[i - 1])) / 86400000) : null }
   const fmtGan = (n: number) => (n >= 0 ? '+' : '') + n.toFixed(3).replace('.', ',')
   const textoGanHist = ganDesde && ganHastaEf
     ? `entre ${formatFecha(ganDesde < ganHastaEf ? ganDesde : ganHastaEf)} y ${formatFecha(ganDesde < ganHastaEf ? ganHastaEf : ganDesde)}`
@@ -2231,7 +2242,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
           {todasFechas.length === 0 ? (
             <p className="text-gray-400 text-sm text-center py-8">Sin pesadas registradas</p>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-auto max-h-[78vh] rounded border">
               {hayAsignaciones ? (
                 <label className="mb-1 flex items-center gap-2 pl-1 text-xs text-emerald-800">
                   <input type="checkbox" checked={agruparPorSeccion} onChange={e => setAgruparPorSeccion(e.target.checked)} />
@@ -2241,7 +2252,8 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                 <p className="mb-1 pl-1 text-[11px] text-gray-400">Armá un segmentador arriba para ver acá en qué sección de peso está cada caravana.</p>
               )}
               <Table>
-                <TableHeader>
+                {/* 🐄 A-FEAT-1654 (JMS 25/11): encabezado fijo — queda a la vista al bajar por las caravanas */}
+                <TableHeader className="sticky top-0 z-10 bg-gray-50 shadow-[0_1px_0_#e5e7eb]">
                   <TableRow className="bg-gray-50">
                     <TableHead className="text-xs whitespace-nowrap"><FiltroColumna titulo="Carav. Oficial" opciones={opcionesHist.oficial} seleccion={filtrosHist.oficial ?? null} onChange={s => setFiltrosHist(x => ({ ...x, oficial: s }))} /></TableHead>
                     <TableHead className="text-xs whitespace-nowrap"><FiltroColumna titulo="Carav. Int." opciones={opcionesHist.interna} seleccion={filtrosHist.interna ?? null} onChange={s => setFiltrosHist(x => ({ ...x, interna: s }))} /></TableHead>
@@ -2250,6 +2262,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                     {todasFechas.map(f => (
                       <TableHead key={f} className="text-xs text-center whitespace-nowrap text-green-700">
                         <FiltroColumna titulo={formatFecha(f)} opciones={opcionesHist[`f:${f}`] ?? []} seleccion={filtrosHist[`f:${f}`] ?? null} onChange={s => setFiltrosHist(x => ({ ...x, [`f:${f}`]: s }))} />
+                        <div className="text-[9px] font-normal text-gray-500">{diasDesdeAnterior(f) != null ? `+${diasDesdeAnterior(f)} días` : 'inicio'}</div>
                       </TableHead>
                     ))}
                     {/* 🐄 A-FEAT-1654 (JMS 25/11): al final, el estimado de hoy y la ganancia diaria entre dos pesadas a elegir */}
@@ -2273,6 +2286,9 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                         )}
                       </div>
                     </TableHead>
+                    <TableHead className="text-xs text-center whitespace-nowrap text-violet-700" title="Ganancia diaria de la 1ª a la última pesada de cada caravana">
+                      Punta a punta<div className="text-[9px] font-normal text-violet-600">kg/día, 1ª → última</div>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -2280,7 +2296,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                     <Fragment key={b.clave ?? '__todos'}>
                     {b.clave && (
                       <TableRow className="bg-emerald-50/70">
-                        <TableCell colSpan={4 + todasFechas.length + 2} className="py-1 text-xs font-semibold text-emerald-900">
+                        <TableCell colSpan={4 + todasFechas.length + 3} className="py-1 text-xs font-semibold text-emerald-900">
                           {b.clave} <span className="font-normal text-emerald-700">— {b.filas.length} cab.</span>
                         </TableCell>
                       </TableRow>
@@ -2320,6 +2336,9 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                               title={g ? `${formatFecha(g.desde)} → ${formatFecha(g.hasta)}: ${g.dias} días` : (ganDesde ? 'No tiene pesada en alguna de las dos fechas elegidas' : 'Tiene menos de 2 pesadas')}>
                               {g ? fmtGan(g.kgDia) : <span className="text-gray-300">—</span>}
                             </TableCell>
+                            {(() => { const pp = ganPaPDe(t); return (
+                              <TableCell className={`text-center text-xs font-medium ${pp == null ? '' : pp >= 0 ? 'text-violet-700' : 'text-red-600'}`}>{pp != null ? fmtGan(pp) : <span className="text-gray-300">—</span>}</TableCell>
+                            ) })()}
                           </>)
                         })()}
                       </TableRow>
@@ -2327,7 +2346,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                   }
                     {/* Promedio de la sección en cada pesada: su evolución */}
                     {b.clave && (
-                      <TableRow className="bg-emerald-50/40 border-b-2 border-emerald-200">
+                      <TableRow className="bg-emerald-50/40">
                         <TableCell colSpan={hayAsignaciones ? 4 : 3} className="py-1 text-xs font-medium text-emerald-800">Prom. de la sección</TableCell>
                         {todasFechas.map(f => {
                           const r = promPesoEn(b.filas, f)
@@ -2341,8 +2360,23 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                           return (<>
                             <TableCell className="text-center text-xs py-1 border-l font-medium text-amber-700" title={e ? `sobre ${e.n} de ${b.filas.length} cab.` : ''}>{e ? fmt1(e.prom) : '—'}{e && e.n < b.filas.length && <span className="ml-0.5 text-[9px] text-gray-400">({e.n})</span>}</TableCell>
                             <TableCell className="text-center text-xs py-1 font-medium text-indigo-700" title={g ? `sobre ${g.n} de ${b.filas.length} cab., ${textoGanHist}` : ''}>{g ? fmtGan(g.prom) : '—'}{g && g.n < b.filas.length && <span className="ml-0.5 text-[9px] text-gray-400">({g.n})</span>}</TableCell>
+                            {(() => { const pp = promDe(b.filas.map(ganPaPDe)); return <TableCell className="text-center text-xs py-1 font-medium text-violet-700" title={pp ? `sobre ${pp.n} de ${b.filas.length} cab.` : ''}>{pp ? fmtGan(pp.prom) : '—'}</TableCell> })()}
                           </>)
                         })()}
+                      </TableRow>
+                    )}
+                    {/* 🐄 A-FEAT-1654 (JMS 25/11): la ganancia diaria promedio de la sección, escalón por escalón (cada caravana desde SU pesada anterior) */}
+                    {b.clave && (
+                      <TableRow className="bg-emerald-50/40 border-b-2 border-emerald-200">
+                        <TableCell colSpan={hayAsignaciones ? 4 : 3} className="py-1 text-xs font-medium text-indigo-700">Gan. diaria prom. (escalón)</TableCell>
+                        {todasFechas.map(f => {
+                          const r = promDe(b.filas.map(t => ganEscalonDe(t, f)))
+                          return <TableCell key={f} className={`text-center text-xs py-1 font-medium ${r && r.prom < 0 ? 'text-red-600' : 'text-indigo-700'}`} title={r ? `kg/día desde la pesada anterior, sobre ${r.n} de ${b.filas.length} cab.` : ''}>
+                            {r ? fmtGan(r.prom) : <span className="text-gray-300">—</span>}
+                            {r && r.n < b.filas.length && <span className="ml-0.5 text-[9px] text-gray-400">({r.n})</span>}
+                          </TableCell>
+                        })}
+                        <TableCell colSpan={3} className="border-l" />
                       </TableRow>
                     )}
                     </Fragment>
@@ -2368,7 +2402,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                       <>
                         {/* Separador */}
                         <TableRow>
-                          <TableCell colSpan={(hayAsignaciones ? 4 : 3) + todasFechas.length + 2} className="p-0 h-0">
+                          <TableCell colSpan={(hayAsignaciones ? 4 : 3) + todasFechas.length + 3} className="p-0 h-0">
                             <div className="border-t-2 border-gray-300" />
                           </TableCell>
                         </TableRow>
@@ -2408,8 +2442,20 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                                 <TableCell className={`text-center text-xs py-1 font-medium ${cls}`} title={g ? `sobre ${g.n} cab., ${textoGanHist}` : ''}>
                                   {!bold && g ? fmtGan(g.prom) : ''}
                                 </TableCell>
+                                {(() => { const pp = promDe(lista.map(ganPaPDe)); return <TableCell className={`text-center text-xs py-1 font-medium ${cls}`} title={pp ? `sobre ${pp.n} cab.` : ''}>{!bold && pp ? fmtGan(pp.prom) : ''}</TableCell> })()}
                               </>)
                             })()}
+                          </TableRow>
+                        ))}
+                        {/* 🐄 A-FEAT-1654: la ganancia diaria promedio escalón por escalón, también para ♂ / ♀ / 🐄 */}
+                        {grupos.filter(g => !g.bold).map(({ label, lista, cls }) => (
+                          <TableRow key={'gan' + label} className="bg-gray-50">
+                            <TableCell colSpan={hayAsignaciones ? 4 : 3} className={`text-xs font-medium py-1 ${cls}`}>{label.replace(/Prom(edio|\.)/, 'Gan. diaria prom.')}</TableCell>
+                            {todasFechas.map(f => {
+                              const r = promDe(lista.map(t => ganEscalonDe(t, f)))
+                              return <TableCell key={f} className={`text-center text-xs py-1 font-medium ${r && r.prom < 0 ? 'text-red-600' : cls}`} title={r ? `kg/día desde la pesada anterior, sobre ${r.n} cab.` : ''}>{r ? fmtGan(r.prom) : <span className="text-gray-300">—</span>}</TableCell>
+                            })}
+                            <TableCell colSpan={3} className="border-l" />
                           </TableRow>
                         ))}
                       </>
