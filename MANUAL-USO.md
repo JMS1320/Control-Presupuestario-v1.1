@@ -3271,6 +3271,13 @@ cerrar, el Cash Flow se recalcula solo. → A-TEST-1231
 Seleccionás las filas, elegís el estado y tocás **Aplicar**. A partir de ahí son **dos preguntas**,
 en este orden, y **hasta contestarlas no se guarda nada**.
 
+### 0 · Si hay facturas en dólares sin TC del pago
+Al pasar a **pagar**, antes de las dos preguntas aparece el cartel **💵 TC de Pago** —el mismo que con
+Shift+clic en una fila—, una vez por cada factura en dólares que todavía no tenga el TC del pago.
+Escribís el TC como se escribe acá (**1.475** o **1.475,50**) y Enter; cuando cargás el último, el pago
+sigue solo con la fecha y el SICORE. **Cancelar** frena todo el pago: no cambia el estado de ninguna
+factura, y los TC que ya guardaste quedan cargados. → [A-TEST-1393](PENDIENTES.md#a-test-1393)
+
 ### 1 · ¿Con qué fecha se pagaron?
 Aparece sólo cuando el estado elegido significa que la plata sale (*pagar, preparado, programado,
 pagado, débito*). Viene propuesta la fecha de **hoy**, editable.

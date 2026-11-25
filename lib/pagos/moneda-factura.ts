@@ -35,6 +35,50 @@ export function tcDeFactura(f: { moneda?: string | null; tc_pago?: number | stri
   return Number(f.tc_pago) || Number(f.tipo_cambio) || 1
 }
 
+/**
+ * 💵 **A-BUG-1655 — ¿hay que pedir el TC del pago antes de pasar esta factura a pagar?**
+ *
+ * Es la regla de los DOS accesos del Cash Flow (Shift+clic en una fila y el modo PAGOS con tildes):
+ * JMS 25/11, *«deberían llevar al mismo circuito los 2 accesos»*. Antes el modo PAGOS no preguntaba y
+ * calculaba el SICORE y los pesos con el TC de EMISIÓN, sin avisar.
+ *
+ * Factura de ARCA, en moneda extranjera (o con TC > 1, por si la moneda vino vacía), sin TC de pago.
+ */
+export function necesitaTcDePago(
+  f: { origen?: string | null; moneda?: string | null; tc_pago?: number | string | null; tipo_cambio?: number | string | null },
+  nuevoEstado: string,
+): boolean {
+  if (f.origen !== 'ARCA' || nuevoEstado !== 'pagar') return false
+  if (Number(f.tc_pago) > 0) return false
+  return esMonedaExtranjera(f.moneda) || (Number(f.tipo_cambio) || 1) > 1.01
+}
+
+/**
+ * 💵 **A-BUG-1655 — leer el TC que escribe el usuario, en formato argentino.**
+ *
+ * Antes era `parseFloat`: «1.475» daba **1,475** y «1475,50» daba 1475. Regla:
+ *   · con coma → es-AR: los puntos son miles y la coma es decimal («1.475,50» → 1475.5);
+ *   · sin coma, un punto seguido de exactamente 3 dígitos → miles («1.475» → 1475);
+ *   · sin coma, un punto con 1, 2 o 4+ dígitos → decimal («1475.5» → 1475.5, el «1544.00» que viene de la base).
+ * Devuelve null si no es un número mayor que cero.
+ */
+export function parsearTcPago(texto: string | null | undefined): number | null {
+  const s = String(texto ?? '').trim().replace(/\s|\$/g, '')
+  if (!s) return null
+  let n: number
+  if (s.includes(',')) n = Number(s.replace(/\./g, '').replace(',', '.'))
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) n = Number(s.replace(/\./g, ''))
+  else n = Number(s)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+/** El TC para mostrar en el cartel, en es-AR (1544 → «1.544», 1475.5 → «1.475,5»). */
+export function tcParaEditar(tc: number | string | null | undefined): string {
+  const n = Number(tc)
+  if (!Number.isFinite(n) || n <= 0) return ''
+  return n.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 4 })
+}
+
 export interface EntradaVinculacionPago {
   /** El pago a cuenta, en pesos. */
   anticipoMonto: number

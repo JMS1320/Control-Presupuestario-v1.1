@@ -1,7 +1,7 @@
 "use client"
 
 
-import { esMonedaExtranjera, aPagarEnPesos, totalEnPesos, conversionDe } from "@/lib/pagos/moneda-factura"
+import { esMonedaExtranjera, aPagarEnPesos, totalEnPesos, conversionDe, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
 import { hoyArgentina } from "@/lib/fechas"
 import { Permisable, useSeMuestra } from "@/components/modo-permisos"
 import { ANTICIPOS_CASHFLOW, primeraPermitida, hayAlguna } from "@/lib/auth/ventanas"
@@ -484,6 +484,12 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
   }>({ open: false, filaId: '', tcOriginal: 1, tcPagoActual: null, inputVal: '', guardando: false })
   // Flag: si el modal TC de pago fue abierto desde cambio estado → 'pagar', continuar con SICORE al guardar
   const [tcPagoOrigenPagar, setTcPagoOrigenPagar] = useState(false)
+  /**
+   * 💵 A-BUG-1655 — el mismo cartel, abierto desde el modo PAGOS: las facturas en dólares del lote que
+   * faltan después de la que se está cargando, y la señal para retomar el lote (con `data` ya al día).
+   */
+  const colaTcLote = useRef<string[] | null>(null)
+  const [reanudarLoteTc, setReanudarLoteTc] = useState(false)
 
   const { data, loading, error, estadisticas, cargarDatos, actualizarRegistro, actualizarBatch, actualizarLocal } = useMultiCashFlowData(filtros)
 
@@ -1027,14 +1033,25 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       filaId: fila.id,
       tcOriginal: fila.tipo_cambio ?? 1,
       tcPagoActual: fila.tc_pago ?? null,
-      inputVal: String(fila.tc_pago ?? fila.tipo_cambio ?? ''),
+      inputVal: tcParaEditar(fila.tc_pago ?? fila.tipo_cambio),
       guardando: false
     })
   }
 
+  /** Cerrar el cartel sin guardar. Si venía del modo PAGOS, el lote se frena entero (no se cambió ningún estado). */
+  const cerrarModalTcPago = () => {
+    setModalTcPago(prev => ({ ...prev, open: false }))
+    setTcPagoOrigenPagar(false)
+    if (colaTcLote.current) {
+      colaTcLote.current = null
+      toast.info('Pago frenado: no se cambió el estado de ninguna factura del lote.',
+        { description: 'Los TC que ya habías guardado quedan cargados.' })
+    }
+  }
+
   const guardarTcPago = async () => {
-    const tc = parseFloat(modalTcPago.inputVal)
-    if (!tc || tc <= 0) { toast.error('Ingresá un TC de pago válido'); return }
+    const tc = parsearTcPago(modalTcPago.inputVal)
+    if (!tc) { toast.error('Ingresá un TC de pago válido (ej. 1.475,50)'); return }
     // Capturar fila ANTES de las actualizaciones de estado (que son async)
     const filaCapturada = data.find(f => f.id === modalTcPago.filaId)
     const esParaContinuarPagar = tcPagoOrigenPagar
@@ -1055,6 +1072,19 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       toast.success(`TC de pago actualizado: $${tc.toLocaleString('es-AR')}`)
       setModalTcPago(prev => ({ ...prev, open: false }))
       setTcPagoOrigenPagar(false)
+      // 💵 A-BUG-1655 — desde el modo PAGOS: la siguiente factura en dólares, o retomar el lote
+      if (colaTcLote.current) {
+        const [siguienteId, ...resto] = colaTcLote.current
+        const siguiente = siguienteId ? data.find(f => f.id === siguienteId) : undefined
+        if (siguiente) {
+          colaTcLote.current = resto
+          abrirModalTcPago(siguiente)
+        } else {
+          colaTcLote.current = null
+          setReanudarLoteTc(true)
+        }
+        return
+      }
       // Si el TC fue pedido para continuar con cambio a 'pagar', seguir automáticamente con SICORE
       if (esParaContinuarPagar && filaCapturada) {
         const filaConTc: CashFlowRow = { ...filaCapturada, tc_pago: tc }
@@ -1338,12 +1368,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
       }
 
       // HOOK TC PAGO USD - Preguntar TC de pago si es factura USD sin tc_pago
-      if (
-        filaParaCambioEstado.origen === 'ARCA' &&
-        nuevoEstado === 'pagar' &&
-        (filaParaCambioEstado.moneda === 'USD' || (filaParaCambioEstado.tipo_cambio ?? 1) > 1.01) &&
-        !filaParaCambioEstado.tc_pago
-      ) {
+      // (la regla es la misma que usa el modo PAGOS: `necesitaTcDePago`, A-BUG-1655)
+      if (necesitaTcDePago(filaParaCambioEstado, nuevoEstado)) {
         setFilaParaCambioEstado(null)
         setGuardandoCambio(false)
         // Abrir modal de TC de pago; al guardar, continuar automáticamente con SICORE
@@ -2213,6 +2239,30 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
     }
 
     /**
+     * 💵 A-BUG-1655 — **el mismo circuito que el Shift+clic**: las facturas en dólares sin TC del pago
+     * frenan el lote ANTES de escribir nada, se pide el TC de cada una con el mismo cartel, y recién
+     * después el lote sigue solo (fecha de pago → SICORE). Antes se usaba el TC de emisión sin avisar.
+     */
+    if (cambiarEstadoLote && valorEstadoLote === 'pagar') {
+      const sinTc = Array.from(filasSeleccionadas).map(id => data.find(f => f.id === id))
+        .filter((f): f is CashFlowRow => !!f && f.origen_tabla !== 'msa.cheques' && necesitaTcDePago(f, 'pagar'))
+      const grupos = sinTc.filter(f => (f.ids_grupo?.length ?? 0) > 1)
+      if (grupos.length) {
+        toast.error(`Hay ${grupos.length} grupo(s) de facturas en dólares sin TC del pago`,
+          { description: 'Cargá el TC en cada factura del grupo (💵 de la fila) y volvé a aplicar. No se cambió nada.' })
+        return
+      }
+      if (sinTc.length) {
+        colaTcLote.current = sinTc.slice(1).map(f => f.id)
+        abrirModalTcPago(sinTc[0])
+        toast.info(sinTc.length === 1
+          ? 'La factura en dólares necesita el TC del pago: cargalo y el pago sigue solo.'
+          : `${sinTc.length} facturas en dólares necesitan el TC del pago: cargalos de a uno y el pago sigue solo.`)
+        return
+      }
+    }
+
+    /**
      * 💲 nota 🌙 JMS 11/11 — el MONTO A PAGAR desde la barra, con UNA fila tildada. Va por el MISMO camino que editar la
      * celda Débitos: una cuota de template pregunta si propagar a las futuras, un grupo pregunta cómo repartir, una
      * factura cambia su «monto a abonar» (lo que se paga, no el total de la factura). Con varias filas no se ofrece: el
@@ -2284,6 +2334,15 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
 
     await ejecutarLote('ninguna', '')
   }
+
+  // 💵 A-BUG-1655 — con los TC ya guardados (y `data` al día), el lote se retoma desde el principio:
+  // la verificación de arriba ya no encuentra facturas sin TC y sigue por fecha de pago → SICORE.
+  useEffect(() => {
+    if (!reanudarLoteTc) return
+    setReanudarLoteTc(false)
+    void aplicarCambiosLote()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reanudarLoteTc])
 
   /**
    * Fase 2 del lote, ya con la fecha de pago decidida.
@@ -5723,8 +5782,8 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
                   type="text"
                   value={modalTcPago.inputVal}
                   onChange={e => setModalTcPago(prev => ({ ...prev, inputVal: e.target.value }))}
-                  onKeyDown={e => { if (e.key === 'Enter') guardarTcPago(); if (e.key === 'Escape') setModalTcPago(prev => ({ ...prev, open: false })) }}
-                  placeholder={String(modalTcPago.tcOriginal).replace('.', ',')}
+                  onKeyDown={e => { if (e.key === 'Enter') guardarTcPago(); if (e.key === 'Escape') cerrarModalTcPago() }}
+                  placeholder={tcParaEditar(modalTcPago.tcOriginal)}
                   autoFocus
                   className="text-right"
                 />
@@ -5737,7 +5796,7 @@ export function VistaCashFlow({ userRole }: { userRole?: string } = {}) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setModalTcPago(prev => ({ ...prev, open: false }))}
+                onClick={cerrarModalTcPago}
                 disabled={modalTcPago.guardando}
                 className="flex-1"
               >

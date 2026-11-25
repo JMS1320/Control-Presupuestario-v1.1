@@ -329,7 +329,7 @@ import { totalAnticipo } from "@/lib/pagos/total-anticipo"
 import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
 import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
-import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera } from "@/lib/pagos/moneda-factura"
+import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
 import { templateParaFecha, campanaNuevaPrimero, unoPorFamilia, detalleDeRegla, motivoFaltaCampana, faltaCampanaDelMotivo } from "@/lib/conciliacion/template-de-regla"
@@ -8965,6 +8965,30 @@ export function correrCasos(): Resultado[] {
   chequear("Dólares", "El TC: el del pago si está; si no, el de la factura; en pesos, 1",
     "1405 · 1390 · 1", `${tcDeFactura({ moneda: "USD", tc_pago: 1405, tipo_cambio: 1390 })} · ${tcDeFactura({ moneda: "USD", tc_pago: null, tipo_cambio: 1390 })} · ${tcDeFactura({ moneda: "PES", tipo_cambio: 1390 })}`,
     tcDeFactura({ moneda: "USD", tc_pago: 1405, tipo_cambio: 1390 }) === 1405 && tcDeFactura({ moneda: "USD", tc_pago: null, tipo_cambio: 1390 }) === 1390 && tcDeFactura({ moneda: "PES", tipo_cambio: 1390 }) === 1, "A-BUG-1236")
+
+  // ══ 💵 A-BUG-1655 — los dos accesos (Shift+clic y modo PAGOS) piden el TC con la MISMA regla ══
+  {
+    // La FC 6654 de Agro Centros (25/11): US$ 270,90, TC de emisión 1.544, sin TC de pago
+    const acren = { origen: "ARCA", moneda: "USD", tipo_cambio: "1544.00", tc_pago: null }
+    const casos = [
+      necesitaTcDePago(acren, "pagar"),                                   // true: hay que pedirlo
+      necesitaTcDePago({ ...acren, tc_pago: 1475 }, "pagar"),             // false: ya lo tiene
+      necesitaTcDePago(acren, "pagado"),                                  // false: sólo al pasar a pagar
+      necesitaTcDePago({ ...acren, origen: "TEMPLATE" }, "pagar"),        // false: no es factura
+      necesitaTcDePago({ origen: "ARCA", moneda: "$", tipo_cambio: 1, tc_pago: null }, "pagar"),   // false: pesos
+      necesitaTcDePago({ origen: "ARCA", moneda: null, tipo_cambio: 1390, tc_pago: null }, "pagar"), // true: moneda vacía con TC
+    ]
+    chequear("Dólares", "💵 ¿Pedir el TC del pago? ACREN sin TC sí · con TC no · otro estado no · template no · pesos no · moneda vacía con TC 1390 sí",
+      "true,false,false,false,false,true", casos.join(","),
+      casos.join(",") === "true,false,false,false,false,true", "A-BUG-1655")
+    const leidos = ["1.475", "1.475,50", "1475,5", "1475.5", "1544.00", "1475", "$ 1.475", "", "abc", "0"].map(parsearTcPago)
+    chequear("Dólares", "💵 El TC se lee en formato argentino: «1.475» es mil cuatrocientos setenta y cinco (antes daba 1,475)",
+      "1475,1475.5,1475.5,1475.5,1544,1475,1475,null,null,null", leidos.map(String).join(","),
+      leidos.map(String).join(",") === "1475,1475.5,1475.5,1475.5,1544,1475,1475,null,null,null", "A-BUG-1655")
+    chequear("Dólares", "💵 El cartel muestra el TC en es-AR y vuelve a leerse igual (1544 → «1.544» → 1544)",
+      "1.544 · 1544 · 1.475,5 · 1475.5", `${tcParaEditar("1544.00")} · ${parsearTcPago(tcParaEditar("1544.00"))} · ${tcParaEditar(1475.5)} · ${parsearTcPago(tcParaEditar(1475.5))}`,
+      parsearTcPago(tcParaEditar("1544.00")) === 1544 && parsearTcPago(tcParaEditar(1475.5)) === 1475.5 && tcParaEditar("1544.00") === "1.544", "A-BUG-1655")
+  }
 
 
   // ══ 🔁 COMPENSAR una venta con una factura del cliente (A-FEAT-1231) ═════════════════════════
