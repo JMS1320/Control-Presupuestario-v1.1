@@ -40,6 +40,9 @@
 
 ## 📨 PARA JAVIER
 
+### ✅ `public.presupuesto_marcas`: el CHECK de `marca` suma el valor `fuera` (2026-11-25) — ⏳ AVISO PREVIO (se corre a continuación con OK de JMS)
+- A-FEAT-1661 capa 1: sacar del presupuesto un template o un mes, sin tocar el template. `scripts/298-…` con su deshacer. Sólo el CHECK; no toca RLS, roles ni permisos.
+
 ### ✅ `public.presupuesto_marcas`: el CHECK de `marca` suma el valor `impacta` (2026-11-25) — ✅ APLICADA el 25/11 (aviso previo; JMS: «elegir que impacte o no sería suficiente, ya se puede hacer»)
 - A-FEAT-1660 C2: lo disponible a fijar no suma salvo que JMS lo marque. `scripts/297-…` con su deshacer. Sólo el CHECK de una tabla nueva de hoy; no toca RLS, roles ni permisos.
 
