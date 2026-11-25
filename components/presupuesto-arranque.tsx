@@ -13,7 +13,7 @@ import { hoyArgentina } from "@/lib/fechas"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { fechaDeCaja, mesDe, type FilaReal, type ResultadoArranque } from "@/lib/presupuesto/arranque"
+import { fechaDeCaja, mesDe, claveMarca, type FilaReal, type ResultadoArranque, type MarcaPresupuesto } from "@/lib/presupuesto/arranque"
 
 const $ = (n: number) => `$ ${Math.round(n).toLocaleString("es-AR")}`
 const fecha = (f: string) => f ? f.split("-").reverse().join("/") : "—"
@@ -30,10 +30,13 @@ export function PresupuestoArranque(p: {
   /** Con modo manual: lo declarado. */
   declarado: { saldo: number; fecha: string | null; composicion: ComposicionItem[] | null }
   /** Lo que se devuelve al mes actual (ya pagado y contado en el saldo). */
-  ajusteMesActual: { total: number; cuotas: number; facturas: number }
+  ajusteMesActual: { total: number; cuotas: number; facturas: number; marcados: number }
   /** Control: el extracto llevado a hoy contra lo declarado (sólo si hay las dos fuentes y lo declarado es de hoy). */
   control: { diferencia: number; cierra: boolean; desdeExtracto: number; puenteNeto: number } | null
   onGuardarDeclarado: (d: { fecha: string; composicion: ComposicionItem[] }) => Promise<void>
+  /** 🏷️ Etapa 2 — las marcas del presupuesto y cómo guardarlas. */
+  marcas: Record<string, MarcaPresupuesto>
+  onMarcar: AccionMarca
 }) {
   const [abierto, setAbierto] = useState(false)
   const [editando, setEditando] = useState(false)
@@ -141,7 +144,7 @@ export function PresupuestoArranque(p: {
                   <tr className="font-semibold"><td className="pr-4">= Saldo estimado de hoy</td><td className="text-right">{$(r.saldoHoy)}</td></tr>
                   <tr><td className="pr-4">− Pagos vencidos de meses anteriores, impagos ({r.vencidos.filas.filter(f => f.debitos).length}) — se restan en el mes actual</td><td className="text-right text-amber-700">− {$(r.vencidos.egresos)}</td></tr>
                   <tr><td className="pr-4">+ Cobros vencidos de meses anteriores, sin cobrar ({r.vencidos.filas.filter(f => f.creditos).length}) — se suman en el mes actual</td><td className="text-right text-emerald-700">+ {$(r.vencidos.ingresos)}</td></tr>
-                  <tr><td className="pr-4">+ Ya pagado este mes que el presupuesto igual restaba ({p.ajusteMesActual.cuotas} cuotas, {p.ajusteMesActual.facturas} facturas)</td><td className="text-right">+ {$(p.ajusteMesActual.total)}</td></tr>
+                  <tr><td className="pr-4">± Ya pagado/cobrado este mes que el presupuesto igual contaba ({p.ajusteMesActual.cuotas} cuotas, {p.ajusteMesActual.facturas} facturas, {p.ajusteMesActual.marcados} marcados)</td><td className="text-right">{p.ajusteMesActual.total < 0 ? "−" : "+"} {$(Math.abs(p.ajusteMesActual.total))}</td></tr>
                 </tbody>
               </table>
               {p.control && (
@@ -160,8 +163,12 @@ export function PresupuestoArranque(p: {
                 <p className="text-xs text-gray-500">{r.otraCuenta.cantidad} renglones se pagan desde otra cuenta (cajas, cotitulares): no mueven este saldo ({$(r.otraCuenta.neto)}).</p>
               )}
               <Detalle titulo="Puente: lo pagado y cobrado desde el arranque" filas={r.puente.filas} />
-              <Detalle titulo="Pagos vencidos de meses anteriores (impagos)" filas={r.vencidos.filas.filter(f => Number(f.debitos) > 0)} />
-              <Detalle titulo="Cobros vencidos de meses anteriores (sin cobrar)" filas={r.vencidos.filas.filter(f => Number(f.creditos) > 0)} />
+              <p className="text-xs text-gray-600">🏷️ Lo que no está conciliado pero ya se pagó o cobró se marca acá (no cambia la factura ni la cuota: es un supuesto del presupuesto). Abrí un mes: «todo el mes pagado», o tildá las que de verdad están impagas y «el resto, pagado».</p>
+              <Detalle titulo="Pagos vencidos de meses anteriores (impagos)" filas={r.vencidos.filas.filter(f => Number(f.debitos) > 0)} marcable="pago" marcas={p.marcas} onMarcar={p.onMarcar} />
+              <Detalle titulo="Cobros vencidos de meses anteriores (sin cobrar)" filas={r.vencidos.filas.filter(f => Number(f.creditos) > 0)} marcable="cobro" marcas={p.marcas} onMarcar={p.onMarcar} />
+              <Detalle titulo="Pagos del mes en curso con fecha hasta hoy, sin marcar (siguen restando en el mes)" filas={r.mesEnCurso.filas.filter(f => Number(f.debitos) > 0)} marcable="pago" marcas={p.marcas} onMarcar={p.onMarcar} />
+              <Detalle titulo="Cobros del mes en curso con fecha hasta hoy, sin marcar (siguen sumando en el mes)" filas={r.mesEnCurso.filas.filter(f => Number(f.creditos) > 0)} marcable="cobro" marcas={p.marcas} onMarcar={p.onMarcar} />
+              <Detalle titulo="Dados por pagados / cobrados (marcas del presupuesto)" filas={[...r.marcados.vencidos, ...r.marcados.mesEnCurso]} marcas={p.marcas} onMarcar={p.onMarcar} deshacer />
             </>
           )}
         </div>
@@ -170,46 +177,105 @@ export function PresupuestoArranque(p: {
   )
 }
 
-/** Detalle de renglones; con 15 o más, agrupado por mes, cada grupo con cantidad y subtotal. */
-function Detalle({ titulo, filas }: { titulo: string; filas: FilaReal[] }) {
+/** Qué se puede marcar en un detalle: pagos (pagado / impago) o cobros (cobrado / sin cobrar / no se concretó). */
+type Marcable = "pago" | "cobro"
+export type AccionMarca = (filas: FilaReal[], marca: MarcaPresupuesto | null) => Promise<void>
+
+/**
+ * Detalle de renglones. Con 15 o más (o si se puede marcar), agrupado por mes, cada grupo con cantidad y subtotal.
+ * 🏷️ Etapa 2 (JMS 25/11): con `marcable`, cada mes tiene «todo el mes pagado/cobrado», y adentro se tildan las que
+ * de verdad están impagas para marcar «el resto, pagado». Las confirmadas impagas llevan la etiqueta.
+ */
+function Detalle({ titulo, filas, marcable, marcas, onMarcar, deshacer }: {
+  titulo: string; filas: FilaReal[]; marcable?: Marcable
+  marcas?: Record<string, MarcaPresupuesto>; onMarcar?: AccionMarca
+  /** Lista de lo ya marcado: cada renglón y cada mes con «deshacer». */
+  deshacer?: boolean
+}) {
   const [abierto, setAbierto] = useState(false)
   const [grupos, setGrupos] = useState<Record<string, boolean>>({})
+  const [sel, setSel] = useState<Record<string, boolean>>({})
+  const [ocupado, setOcupado] = useState(false)
   if (filas.length === 0) return null
-  const total = filas.reduce((s, f) => s + (Number(f.creditos) || 0) - (Number(f.debitos) || 0), 0)
+  const neto = (fs: FilaReal[]) => fs.reduce((s, f) => s + (Number(f.creditos) || 0) - (Number(f.debitos) || 0), 0)
   const porMes: Record<string, FilaReal[]> = {}
   for (const f of filas) (porMes[mesDe(fechaDeCaja(f))] ??= []).push(f)
-  const agrupar = filas.length >= 15
-  const Renglon = ({ f }: { f: FilaReal }) => (
-    <tr className="border-t border-slate-100">
+  const agrupar = filas.length >= 15 || !!marcable || !!deshacer
+  const hecho: MarcaPresupuesto = marcable === "cobro" ? "cobrado" : "pagado"
+  const correr = async (fs: FilaReal[], m: MarcaPresupuesto | null) => {
+    if (!onMarcar || fs.length === 0) return
+    setOcupado(true)
+    try { await onMarcar(fs, m); setSel({}) } finally { setOcupado(false) }
+  }
+  const etiqueta = (f: FilaReal) => {
+    const m = marcas?.[claveMarca(f)]
+    if (!m) return null
+    const txt = m === "impago" ? (marcable === "cobro" ? "sin cobrar ✔" : "impaga ✔") : m === "no_concretado" ? "no se concretó" : m
+    return <span className={`ml-1 rounded px-1 ${m === "impago" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>{txt}</span>
+  }
+  const conCheck = !!(marcable || deshacer)
+  const renglon = (f: FilaReal) => (
+    <tr key={claveMarca(f)} className="border-t border-slate-100">
+      {conCheck && (
+        <td className="pr-1">
+          {marcable
+            ? <input type="checkbox" checked={!!sel[claveMarca(f)]} onChange={e => setSel(x => ({ ...x, [claveMarca(f)]: e.target.checked }))} />
+            : <button type="button" disabled={ocupado} className="text-[10px] text-blue-700 underline" onClick={() => correr([f], null)}>deshacer</button>}
+        </td>
+      )}
       <td className="pr-3">{fecha(fechaDeCaja(f))}</td>
       <td className="pr-3">{f.origen}</td>
       <td className="pr-3">{f.nombre_proveedor || "—"}</td>
       <td className="max-w-[28rem] truncate pr-3" title={f.detalle}>{f.detalle}</td>
-      <td className="pr-3">{f.estado}</td>
+      <td className="pr-3">{f.estado}{etiqueta(f)}</td>
       <td className="text-right">{$((Number(f.creditos) || 0) - (Number(f.debitos) || 0))}</td>
     </tr>
   )
+  const cols = conCheck ? 6 : 5
   return (
     <div>
       <button type="button" className="flex items-center gap-1 text-xs font-medium" onClick={() => setAbierto(a => !a)}>
         {abierto ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-        {titulo}: {filas.length} · {$(total)}
+        {titulo}: {filas.length} · {$(neto(filas))}
       </button>
       {abierto && (
         <table className="mt-1 w-full text-xs">
-          <thead><tr className="text-left text-gray-500"><th>Fecha</th><th>Origen</th><th>Proveedor</th><th>Detalle</th><th>Estado</th><th className="text-right">Importe</th></tr></thead>
+          <thead><tr className="text-left text-gray-500">{conCheck && <th></th>}<th>Fecha</th><th>Origen</th><th>Proveedor</th><th>Detalle</th><th>Estado</th><th className="text-right">Importe</th></tr></thead>
           <tbody>
             {agrupar
-              ? Object.entries(porMes).sort(([a], [b]) => a.localeCompare(b)).map(([mes, fs]) => (
-                  <Fragment key={mes}>
-                    <tr className="cursor-pointer bg-slate-100 font-medium" onClick={() => setGrupos(g => ({ ...g, [mes]: !g[mes] }))}>
-                      <td colSpan={5}>{grupos[mes] ? "▾" : "▸"} {mes.split("-").reverse().join("/")} · {fs.length}</td>
-                      <td className="text-right">{$(fs.reduce((s, f) => s + (Number(f.creditos) || 0) - (Number(f.debitos) || 0), 0))}</td>
-                    </tr>
-                    {grupos[mes] && fs.map(f => <Renglon key={f.id} f={f} />)}
-                  </Fragment>
-                ))
-              : filas.map(f => <Renglon key={f.id} f={f} />)}
+              ? Object.entries(porMes).sort(([a], [b]) => a.localeCompare(b)).map(([mes, fs]) => {
+                  const tildadas = fs.filter(f => sel[claveMarca(f)])
+                  return (
+                    <Fragment key={mes}>
+                      <tr className="bg-slate-100 font-medium">
+                        <td colSpan={cols} className="cursor-pointer" onClick={() => setGrupos(g => ({ ...g, [mes]: !g[mes] }))}>
+                          {grupos[mes] ? "▾" : "▸"} {mes.split("-").reverse().join("/")} · {fs.length}
+                          {marcable && (
+                            <span className="ml-3 inline-flex flex-wrap gap-2 font-normal" onClick={e => e.stopPropagation()}>
+                              <button type="button" disabled={ocupado} className="rounded border border-emerald-400 bg-white px-1.5 text-emerald-800"
+                                onClick={() => correr(fs.filter(f => marcas?.[claveMarca(f)] !== "impago"), hecho)}>✓ todo el mes {hecho}</button>
+                              {grupos[mes] && <>
+                                <button type="button" disabled={ocupado || tildadas.length === 0} className="rounded border border-amber-400 bg-white px-1.5 text-amber-800 disabled:opacity-40"
+                                  onClick={async () => { await correr(tildadas, "impago"); await correr(fs.filter(f => !sel[claveMarca(f)] && marcas?.[claveMarca(f)] !== "impago"), hecho) }}>
+                                  las tildadas ({tildadas.length}) {marcable === "cobro" ? "sin cobrar" : "impagas"} → el resto, {hecho}</button>
+                                <button type="button" disabled={ocupado || tildadas.length === 0} className="rounded border border-emerald-400 bg-white px-1.5 text-emerald-800 disabled:opacity-40"
+                                  onClick={() => correr(tildadas, hecho)}>sólo las tildadas, {hecho}</button>
+                                {marcable === "cobro" && <button type="button" disabled={ocupado || tildadas.length === 0} className="rounded border border-slate-400 bg-white px-1.5 text-slate-700 disabled:opacity-40"
+                                  onClick={() => correr(tildadas, "no_concretado")}>las tildadas: no se concretó (no se fijó)</button>}
+                              </>}
+                            </span>
+                          )}
+                          {deshacer && (
+                            <button type="button" disabled={ocupado} className="ml-3 font-normal text-blue-700 underline" onClick={e => { e.stopPropagation(); void correr(fs, null) }}>deshacer el mes</button>
+                          )}
+                        </td>
+                        <td className="text-right">{$(neto(fs))}</td>
+                      </tr>
+                      {grupos[mes] && fs.map(renglon)}
+                    </Fragment>
+                  )
+                })
+              : filas.map(renglon)}
           </tbody>
         </table>
       )}

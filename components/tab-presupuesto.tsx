@@ -3,7 +3,7 @@
 
 import { mesArgentina, hoyArgentina } from "@/lib/fechas"
 import { useMultiCashFlowData, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
-import { calcularArranque, lineaDeSaldo, controlDosFuentes, totalComposicion, fechaDeCaja, yaSeMovio, mesDe, type FilaReal } from "@/lib/presupuesto/arranque"
+import { calcularArranque, lineaDeSaldo, controlDosFuentes, totalComposicion, fechaDeCaja, yaSeMovio, mesDe, claveMarca, type FilaReal, type MarcaPresupuesto } from "@/lib/presupuesto/arranque"
 import { PresupuestoArranque, type ComposicionItem } from "@/components/presupuesto-arranque"
 import { useState, useEffect, useMemo, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
@@ -320,6 +320,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   const [extractoUlt, setExtractoUlt] = useState<{ saldo: number; fecha: string } | null>(null)
   /** Cuotas de template del mes actual que ya salieron (están en el saldo) y el presupuesto igual las resta. */
   const [tplPagadoMesActual, setTplPagadoMesActual] = useState({ total: 0, cuotas: 0 })
+  /** 🏷️ A-FEAT-1660 etapa 2 — lo que JMS dio por pagado/cobrado (o confirmó impago), por `claveMarca`. */
+  const [marcas, setMarcas] = useState<Record<string, MarcaPresupuesto>>({})
   const [editandoSaldo, setEditandoSaldo] = useState(false)
   const [saldoTxt, setSaldoTxt] = useState("")
   /** Presupuesto de cuentas contables — se configura en su panel, acá sólo se muestra y suma. */
@@ -642,6 +644,44 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         { onConflict: "empresa" })
     if (error) { alert("Error: " + error.message); return }
     setSaldoInicial(monto); setMesInicial(mes); setEditandoSaldo(false)
+  }
+
+  /** 🏷️ A-FEAT-1660 etapa 2 — las marcas del presupuesto (supuestos: no cambian la factura ni la cuota). */
+  const cargarMarcas = async () => {
+    const { data, error } = await supabase.from("presupuesto_marcas").select("origen_tabla, fila_id, marca").eq("empresa", "MSA")
+    if (error) { console.error("presupuesto_marcas", error); return }
+    const m: Record<string, MarcaPresupuesto> = {}
+    for (const r of (data || []) as any[]) m[`${r.origen_tabla}|${r.fila_id}`] = r.marca
+    setMarcas(m)
+  }
+  useEffect(() => { void cargarMarcas() // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recargarToken])
+
+  /**
+   * Marca (o desmarca, con `null`) renglones. Guarda la huella: cuándo, quién, y el monto/detalle/fecha que tenían.
+   * Nada del dato real cambia: al conciliar, manda la conciliación.
+   */
+  const marcarFilas = async (filas: FilaReal[], marca: MarcaPresupuesto | null) => {
+    if (filas.length === 0) return
+    if (marca === null) {
+      for (const f of filas) {
+        const { error } = await supabase.from("presupuesto_marcas").delete()
+          .eq("empresa", "MSA").eq("origen_tabla", f.origen_tabla || "").eq("fila_id", f.id)
+        if (error) { alert("No se pudo deshacer: " + error.message); break }
+      }
+    } else {
+      const { data: u } = await supabase.auth.getUser()
+      const quien = u?.user?.email ?? null
+      const filasMarca = filas.map(f => ({
+        empresa: "MSA", origen_tabla: f.origen_tabla || "", fila_id: f.id, origen: f.origen, marca,
+        fecha_fila: fechaDeCaja(f) || null, monto: Math.round(((Number(f.creditos) || 0) - (Number(f.debitos) || 0)) * 100) / 100,
+        detalle: [f.nombre_proveedor, f.detalle].filter(Boolean).join(" · ").slice(0, 500),
+        marcado_at: new Date().toISOString(), marcado_por: quien,
+      }))
+      const { error } = await supabase.from("presupuesto_marcas").upsert(filasMarca, { onConflict: "empresa,origen_tabla,fila_id" })
+      if (error) alert("No se pudo guardar la marca: " + error.message)
+    }
+    await cargarMarcas()
   }
 
   /** 📍 A-FEAT-1660 — guarda el saldo declarado CON FECHA y composición; el saldo es la suma. */
@@ -1740,15 +1780,15 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     const filas: FilaReal[] = (filasCashFlow || []).map(f => ({
       id: f.id, origen: f.origen, fecha_estimada: f.fecha_estimada, fecha_pago: f.fecha_pago ?? null, estado: f.estado,
       medio_pago: (f as any).medio_pago ?? null, debitos: Number(f.debitos) || 0, creditos: Number(f.creditos) || 0,
-      nombre_proveedor: f.nombre_proveedor, detalle: f.detalle, nro_cuenta: f.nro_cuenta ?? null,
+      nombre_proveedor: f.nombre_proveedor, detalle: f.detalle, nro_cuenta: f.nro_cuenta ?? null, origen_tabla: f.origen_tabla,
     }))
     return calcularArranque({
       fuente,
       fechaArranque: fuente === "extracto" ? extractoUlt!.fecha : fechaArranqueDecl!,
       saldoArranque: fuente === "extracto" ? extractoUlt!.saldo : saldoDeclarado,
-      hoy, filas,
+      hoy, filas, marcas,
     })
-  }, [arranqueModo, extractoUlt, fechaArranqueDecl, saldoDeclarado, filasCashFlow])
+  }, [arranqueModo, extractoUlt, fechaArranqueDecl, saldoDeclarado, filasCashFlow, marcas])
 
   /**
    * Lo que la columna del mes actual resta pero YA salió y está en el saldo de hoy: las cuotas del mes ya pagadas,
@@ -1770,6 +1810,14 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       pagadoPorCuenta[f.nro_cuenta] = (pagadoPorCuenta[f.nro_cuenta] || 0) + fr.debitos
       facturas++
     }
+    // 🏷️ Lo del mes en curso que JMS marcó pagado/cobrado: también está en el saldo de hoy. Las facturas van contra la
+    // proyección de su cuenta (como las pagadas); cuotas, sueldos y anticipos se devuelven enteros; un cobro se saca.
+    let directo = 0, marcados = 0
+    for (const f of arranque?.marcados.mesEnCurso || []) {
+      marcados++
+      if (f.origen === "ARCA" && f.nro_cuenta) { pagadoPorCuenta[f.nro_cuenta] = (pagadoPorCuenta[f.nro_cuenta] || 0) + (Number(f.debitos) || 0); continue }
+      directo += (Number(f.debitos) || 0) - (Number(f.creditos) || 0)
+    }
     let deCuentas = 0
     for (const c of cuentas) {
       const pagado = pagadoPorCuenta[c.nro] || 0
@@ -1777,8 +1825,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       const proyectado = c.celdas.find(x => x.mes === mesHoy)?.monto || 0
       deCuentas += Math.min(pagado, Math.max(0, proyectado))
     }
-    return { total: Math.round((tplPagadoMesActual.total + deCuentas) * 100) / 100, cuotas: tplPagadoMesActual.cuotas, facturas }
-  }, [filasCashFlow, cuentas, tplPagadoMesActual])
+    return { total: Math.round((tplPagadoMesActual.total + deCuentas + directo) * 100) / 100, cuotas: tplPagadoMesActual.cuotas, facturas, marcados }
+  }, [filasCashFlow, cuentas, tplPagadoMesActual, arranque])
 
   /** Con las dos fuentes (extracto y lo declarado a hoy): el extracto llevado a hoy contra lo declarado. */
   const controlArranque = useMemo(() => {
@@ -2001,6 +2049,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         ajusteMesActual={ajusteMesActual}
         control={controlArranque}
         onGuardarDeclarado={guardarDeclarado}
+        marcas={marcas}
+        onMarcar={marcarFilas}
       />
 
       {/* ── Control de cobertura (P-32) ──

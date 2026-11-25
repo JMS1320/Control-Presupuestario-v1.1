@@ -28,7 +28,16 @@ export interface FilaReal {
   nombre_proveedor?: string
   detalle?: string
   nro_cuenta?: string | null
+  /** La tabla de origen (como en el Cash Flow): con el id, identifica la marca del presupuesto. */
+  origen_tabla?: string
 }
+
+/** 🏷️ Etapa 2 — lo que JMS dice de un renglón no conciliado (tabla `presupuesto_marcas`). */
+export type MarcaPresupuesto = 'pagado' | 'cobrado' | 'impago' | 'no_concretado'
+/** La clave de una marca: tabla de origen + id. */
+export const claveMarca = (f: Pick<FilaReal, 'id' | 'origen_tabla'>) => `${f.origen_tabla || ''}|${f.id}`
+/** Marcas que dicen «esto ya no se mueve»: el renglón sale de lo impago. */
+export const MARCAS_QUE_SACAN: ReadonlySet<string> = new Set(['pagado', 'cobrado', 'no_concretado'])
 
 export type ClaseArranque =
   | 'en_saldo'      // ya está adentro del saldo de arranque: no se resta
@@ -83,6 +92,10 @@ export interface ResultadoArranque {
   /** Saldo de arranque + neto del puente. Con fuente «declarado» y fecha = hoy, es el mismo saldo. */
   saldoHoy: number
   vencidos: { filas: FilaReal[]; egresos: number; ingresos: number; neto: number }
+  /** Lo impago del mes en curso con fecha de hoy o anterior: sigue en la columna del mes, pero se puede marcar. */
+  mesEnCurso: { filas: FilaReal[]; egresos: number; ingresos: number; neto: number }
+  /** Lo dado por pagado/cobrado/no concretado (marcas): de vencidos (sale) y del mes en curso (se devuelve al mes). */
+  marcados: { vencidos: FilaReal[]; mesEnCurso: FilaReal[] }
   /** Impagos de hoy en adelante, por mes (neto: ingresos − egresos). Informativo: el mes los trae del presupuesto. */
   impagosPorMes: Record<string, number>
   otraCuenta: { cantidad: number; neto: number }
@@ -95,16 +108,26 @@ export function calcularArranque(p: {
   saldoArranque: number
   hoy: string
   filas: FilaReal[]
+  /** Marcas del presupuesto por `claveMarca`. Sin marcas, se comporta como la etapa 1. */
+  marcas?: Record<string, MarcaPresupuesto>
 }): ResultadoArranque {
   const puente: FilaReal[] = []
   const vencidos: FilaReal[] = []
+  const enCurso: FilaReal[] = []
+  const marcVenc: FilaReal[] = [], marcCurso: FilaReal[] = []
+  const mesHoy = p.hoy.slice(0, 7)
+  const saca = (f: FilaReal) => MARCAS_QUE_SACAN.has(String(p.marcas?.[claveMarca(f)] ?? ''))
   const impagosPorMes: Record<string, number> = {}
   let otraCant = 0, otraNeto = 0, enSaldo = 0
   for (const f of p.filas) {
     const c = clasificarFila(f, p.fechaArranque, p.hoy)
     if (c === 'puente') puente.push(f)
-    else if (c === 'vencido') vencidos.push(f)
-    else if (c === 'impago') { const m = mesDe(fechaDeCaja(f)); impagosPorMes[m] = r2((impagosPorMes[m] || 0) + efecto(f)) }
+    else if (c === 'vencido') (saca(f) ? marcVenc : vencidos).push(f)
+    else if (c === 'impago') {
+      const fc = fechaDeCaja(f), m = mesDe(fc)
+      if (m === mesHoy && fc <= p.hoy) { (saca(f) ? marcCurso : enCurso).push(f); if (saca(f)) continue }
+      impagosPorMes[m] = r2((impagosPorMes[m] || 0) + efecto(f))
+    }
     else if (c === 'otra_cuenta') { otraCant++; otraNeto += efecto(f) }
     else enSaldo++
   }
@@ -116,10 +139,11 @@ export function calcularArranque(p: {
   const ordenar = (fs: FilaReal[]) => fs.slice().sort((a, b) => fechaDeCaja(a).localeCompare(fechaDeCaja(b)))
   const pu = { filas: ordenar(puente), ...sumar(puente) }
   const ve = { filas: ordenar(vencidos), ...sumar(vencidos) }
+  const mc = { filas: ordenar(enCurso), ...sumar(enCurso) }
   return {
     fuente: p.fuente, fechaArranque: p.fechaArranque, saldoArranque: r2(p.saldoArranque),
     puente: pu, saldoHoy: r2(p.saldoArranque + pu.neto),
-    vencidos: ve, impagosPorMes, otraCuenta: { cantidad: otraCant, neto: r2(otraNeto) }, enSaldo,
+    vencidos: ve, mesEnCurso: mc, marcados: { vencidos: ordenar(marcVenc), mesEnCurso: ordenar(marcCurso) }, impagosPorMes, otraCuenta: { cantidad: otraCant, neto: r2(otraNeto) }, enSaldo,
   }
 }
 

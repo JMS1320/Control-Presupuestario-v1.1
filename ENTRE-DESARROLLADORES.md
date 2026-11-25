@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### ✅ Tabla nueva `public.presupuesto_marcas` (2026-11-25) — ⏳ AVISO PREVIO (se corre a continuación con OK de JMS)
+### ✅ Tabla nueva `public.presupuesto_marcas` (2026-11-25) — ✅ APLICADA el 25/11 (aviso previo; JMS: «primero con lo de los checks para dar por pago o cobrado»): tabla vacía, RLS con 2 políticas, 1 fila en recurso_tablas, verificado con EXPLAIN INSERT
 - A-FEAT-1660 etapa 2: renglones que JMS da por pagados/cobrados en el presupuesto sin tocar el dato real. `scripts/296-…` con su deshacer. Tabla nueva y aislada: RLS con las 2 políticas de siempre (`puede_ver` / `puede_escribir`), `anon` sin acceso, 1 fila en `recurso_tablas` (recurso `presupuesto`). **No toca ninguna tabla existente, ni roles ni permisos.**
 
 ### 📍 2 columnas nuevas en `public.presupuesto_config`: `fecha_arranque` (date) y `composicion_saldo` (jsonb) (2026-11-25) — ✅ APLICADA el 25/11 (aviso previo; JMS: «lo podés desarrollar así»): 2 columnas vacías, verificado con EXPLAIN UPDATE

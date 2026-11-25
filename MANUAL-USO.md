@@ -5716,6 +5716,13 @@ y cuál es el **saldo de hoy**. Se abre con un clic.
 - **Control**: si cargaste el saldo a mano con la fecha de hoy, compara contra el extracto llevado a hoy. La
   diferencia es lo que el banco movió y el sistema no tiene registrado — lo que falta conciliar.
 
+- **🏷️ Dar por pagado o cobrado lo que no está conciliado** (no cambia la factura ni la cuota: es un supuesto del
+  presupuesto, y cuando concilies manda la conciliación). En **Pagos vencidos**, **Cobros vencidos** y en los del
+  **mes en curso** (los que tienen fecha hasta hoy), cada mes tiene **✓ todo el mes pagado** (o cobrado). Abriendo el
+  mes: tildá las que **de verdad** están impagas y tocá **«las tildadas impagas → el resto, pagado»**; o **«sólo las
+  tildadas, pagado»**. En cobros, además, **«no se concretó (no se fijó)»**. Lo marcado va a **«Dados por pagados /
+  cobrados»**, con **deshacer** por renglón o por mes.
+
 → [A-FEAT-1660](PENDIENTES.md#a-feat-1660)
 
 ## 📊 Presupuesto → leer la grilla

@@ -9029,6 +9029,22 @@ export function correrCasos(): Resultado[] {
     const l = `${linea["2026-10"]} · ${linea["2026-11"]} · ${linea["2026-12"]}`
     chequear("Presupuesto", "📍 Línea de saldo: octubre vacío (ya está en el saldo de hoy); nov = 10.680 − 300 + 150 − 2.000; dic + 500",
       "null · 8530 · 9030", l, l === "null · 8530 · 9030", "A-FEAT-1660")
+    // 🏷️ Etapa 2 — las MARCAS: lo dado por pagado sale; lo confirmado impago queda; noviembre vencido-del-mes se puede marcar
+    {
+      const g = (id: string, estado: string, fecha: string, debitos: number, creditos = 0): FilaReal =>
+        ({ id, origen: creditos ? "VENTA" : "ARCA", origen_tabla: "t", estado, fecha_estimada: fecha, debitos, creditos, medio_pago: "banco" })
+      const fs: FilaReal[] = [
+        g("v1", "pendiente", "2026-08-10", 100), g("v2", "pendiente", "2026-10-10", 200), g("v3", "pendiente", "2026-10-12", 50),
+        g("c1", "a cobrar", "2026-09-30", 0, 1000),
+        g("n1", "pendiente", "2026-11-05", 70), g("n2", "pendiente", "2026-11-20", 30), g("n3", "pendiente", "2026-11-28", 40),
+      ]
+      const marcas = { "t|v1": "pagado", "t|v2": "impago", "t|c1": "no_concretado", "t|n1": "pagado" } as const
+      const rm = calcularArranque({ fuente: "declarado", fechaArranque: "2026-11-25", saldoArranque: 0, hoy: "2026-11-25", filas: fs, marcas: { ...marcas } })
+      const txt = `venc ${rm.vencidos.filas.map(x => x.id).join("")} ${rm.vencidos.neto} · marcVenc ${rm.marcados.vencidos.map(x => x.id).join("")} · curso ${rm.mesEnCurso.filas.map(x => x.id).join("")} · marcCurso ${rm.marcados.mesEnCurso.map(x => x.id).join("")} · nov ${rm.impagosPorMes["2026-11"]}`
+      chequear("Presupuesto", "🏷️ Marcas: v1 pagada sale; v2 confirmada impaga queda; el cobro no concretado sale; de noviembre, la del 05 marcada sale y la del 20 queda «en curso»; la del 28 sigue proyectada",
+        "venc v2v3 -250 · marcVenc v1c1 · curso n2 · marcCurso n1 · nov -70", txt,
+        txt === "venc v2v3 -250 · marcVenc v1c1 · curso n2 · marcCurso n1 · nov -70", "A-FEAT-1660")
+    }
     // Impago del mes ACTUAL con el día ya pasado: no es vencido (ya está en la columna de noviembre)
     chequear("Presupuesto", "📍 Una impaga del 05/11 (mes actual) no es «vencida»: ya la trae la columna de noviembre; la del 15/10 sí",
       "impago · vencido", `${clasificarFila(f("n", "pendiente", "2026-11-05", 1), "2026-09-23", "2026-11-25")} · ${clasificarFila(f("o", "pendiente", "2026-10-15", 1), "2026-09-23", "2026-11-25")}`,
