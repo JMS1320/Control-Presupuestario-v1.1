@@ -154,6 +154,16 @@ y eso se decide con el usuario — ver `PENDIENTES.md`. Mientras tanto, la secci
 
 ---
 
+## 🏷️ Qué versión estoy viendo *(nuevo 2026-11-25)*
+
+En la versión de **desarrollo** (no en la que usan los demás), arriba de todo a la derecha hay un texto
+chico y gris, por ejemplo **`69cdd0f1 · 25/11, 16:29`**: el código de la versión y la hora en que se
+publicó. Cuando Claude dice «subido, commit 69cdd0f1», **si ese código es el que ves arriba, ya está
+publicado**. Si ves otro, recargá la página en un par de minutos. Pasando el mouse muestra la rama y
+el título del cambio. En la app local dice «local». → [A-FEAT-1656](PENDIENTES.md#a-feat-1656)
+
+---
+
 ## 🔐 Módulo: Entrar al sistema (login) 🟡
 
 > **Estado 2026-09-03: implementado pero TODAVÍA NO ACTIVO** — faltan crear las cuentas y correr

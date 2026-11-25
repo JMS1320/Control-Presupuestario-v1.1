@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import { CierreInactividad } from '@/components/cierre-inactividad'
 import { VigiaPausa } from '@/components/vigia-pausa'
+import { VersionPublicada } from '@/components/version-publicada'
 
 export const metadata: Metadata = {
   title: 'v0 App',
@@ -22,6 +23,8 @@ export default function RootLayout({
         <CierreInactividad />
         {/* 👁️ La pausa por persona también para una pestaña que ya estaba abierta (A-BUG-1542). */}
         <VigiaPausa />
+        {/* 🏷️ Qué versión se está viendo, arriba a la derecha; no aparece en producción (A-FEAT-1656). */}
+        <VersionPublicada />
         {/*
           ⚠️ **Acá NO va un `<Toaster />`.** Ya hay uno en `dashboard.tsx`, montado a nivel app y
           fuera de las pestañas.
