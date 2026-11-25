@@ -19,6 +19,7 @@ import {
 } from "lucide-react"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import { SeccionMetodosTemplates } from "@/components/seccion-metodos-templates"
+import { guardarConfigCuenta, quitarConfigCuenta } from "@/lib/presupuesto/guardar-config"
 // La muestra vive aparte: la usan esta pantalla Y el margen. Ver `muestra-del-calculo.tsx`.
 import { MuestraDelCalculo, etiquetaClave } from "@/components/muestra-del-calculo"
 import {
@@ -206,25 +207,14 @@ export function PanelPresupuestoCuentas({ onCambio }: { onCambio?: () => void } 
     const base = cfgDe(nro)
     const v = { ...base, ...cambios }
     setCfgs(prev => ({ ...prev, [nro]: v }))
-    const { error } = await supabase.from("presupuesto_cuenta_config").upsert({
-      empresa: "MSA", nro_cuenta: nro, modo: v.modo,
-      meses_promedio: v.meses_promedio ?? null,
-      monto_manual: v.monto_manual ?? null,
-      cabezas_referencia: v.cabezas_referencia ?? null,
-      cabezas_proyectadas: v.cabezas_proyectadas ?? null,
-      inflacion_mensual: v.inflacion_mensual ?? null,
-      cuits_excluidos: v.cuits_excluidos ?? [],
-      motivo_exclusion: v.motivo_exclusion ?? null,
-      notas: v.notas ?? null,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "empresa,nro_cuenta" })
+    const error = await guardarConfigCuenta({ ...v, nro_cuenta: nro })
     if (error) { alert("Error: " + error.message); await cargar(); return }
     onCambio?.()
   }
 
   const volverASugerido = async (nro: string) => {
     setCfgs(prev => { const n = { ...prev }; delete n[nro]; return n })
-    await supabase.from("presupuesto_cuenta_config").delete().eq("empresa", "MSA").eq("nro_cuenta", nro)
+    await quitarConfigCuenta(nro)
     onCambio?.()
   }
 

@@ -24,6 +24,7 @@ import {
   tipoEfectivo, origenTipo,
 } from "@/lib/presupuesto/templates"
 import { traerTodo } from "@/lib/supabase-paginado"
+import { guardarMetodoTemplate, quitarMetodoTemplate } from "@/lib/presupuesto/guardar-config"
 import { avisarSiIncompleta } from "@/lib/ui/avisar-lectura"
 
 const METODOS = Object.keys(ETIQUETA_METODO) as MetodoTemplate[]
@@ -142,17 +143,13 @@ export function SeccionMetodosTemplates({ meses, ipc }: {
     const base = cfgs[id] ?? { metodo: filas.find(f => f.info.id === id)!.metodo.metodo }
     const v = { ...base, ...cambios }
     setCfgs(prev => ({ ...prev, [id]: v }))
-    const { error } = await supabase.from("presupuesto_template_config").upsert({
-      empresa: "MSA", template_id: id, metodo: v.metodo,
-      monto_manual: v.monto_manual ?? null, updated_at: new Date().toISOString(),
-    }, { onConflict: "empresa,template_id" })
+    const error = await guardarMetodoTemplate(id, { metodo: v.metodo, monto_manual: v.monto_manual ?? null })
     if (error) { alert("Error: " + error.message); await cargar() }
   }
 
   const volverAuto = async (id: string) => {
     setCfgs(prev => { const n = { ...prev }; delete n[id]; return n })
-    await supabase.from("presupuesto_template_config")
-      .delete().eq("empresa", "MSA").eq("template_id", id)
+    await quitarMetodoTemplate(id)
   }
 
   if (cargando) {

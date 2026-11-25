@@ -6,6 +6,7 @@ import { useMultiCashFlowData, type CashFlowFilters } from "@/hooks/useMultiCash
 import { calcularArranque, lineaDeSaldo, controlDosFuentes, totalComposicion, fechaDeCaja, yaSeMovio, mesDe, claveMarca, estaEnLaGrilla, esLiquidacionHacienda, type FilaReal, type MarcaPresupuesto } from "@/lib/presupuesto/arranque"
 import { PresupuestoArranque, type ComposicionItem } from "@/components/presupuesto-arranque"
 import { MenuFilaTemplate } from "@/components/presupuesto-menu-template"
+import { guardarMetodoTemplate, quitarMetodoTemplate, guardarConfigCuenta } from "@/lib/presupuesto/guardar-config"
 import { useState, useEffect, useMemo, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
@@ -106,6 +107,8 @@ function getMeses(cantidad: number): { anio: number; mes: number; label: string 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface FilaTemplate {
+  /** ⚙️ El monto del método «manual», si se eligió a mano (para la columna de configuración). */
+  montoManual?: number | null
   id: string
   nombre: string                       // nombre_referencia
   agrupador: string                    // cuenta_agrupadora
@@ -328,7 +331,11 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   const [editandoSaldo, setEditandoSaldo] = useState(false)
   const [saldoTxt, setSaldoTxt] = useState("")
   /** Presupuesto de cuentas contables — se configura en su panel, acá sólo se muestra y suma. */
-  const [cuentasBase, setCuentas] = useState<{ nro: string; nombre: string; celdas: CeldaPresupuesto[]; modo: ModoPresupuesto }[]>([])
+  const [cuentasBase, setCuentas] = useState<{ nro: string; nombre: string; celdas: CeldaPresupuesto[]; modo: ModoPresupuesto; cfg?: ConfigCuenta }[]>([])
+  /** ⚙️ A-FEAT-1661 paso 2 — las cuentas que NO se presupuestan por cuenta (excluidas o sin monto): grupo aparte, plegado. */
+  const [cuentasSinPres, setCuentasSinPres] = useState<{ nro: string; nombre: string; cfg: ConfigCuenta }[]>([])
+  /** ⚙️ La columna de configuración: el método de cada template y el modo de cada cuenta, en su fila. */
+  const [verConfig, setVerConfig] = useState(false)
   /** Variables de costo (P-37) — cantidad × precio × ajustes, repartido en los meses. */
   const [variables, setVariables] = useState<
     { id: string; concepto: string; nroCuenta: string | null; montos: Record<string, number>;
@@ -668,10 +675,14 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       // de `esProduccion()`: la cuenta queda afuera PORQUE tiene variable, no porque alguien la
       // escribió en el código. Sólo cuentan las variables completas: una a medias no tapa nada.
       .filter(nro => !cubiertasPorVariable.has(nro))
-      .map(nro => ({ nro, nombre: nombres[nro] || nro, modo: cfgDe(nro).modo, celdas: calcularCuenta(cfgDe(nro), neta, ctx) }))
+      .map(nro => ({ nro, nombre: nombres[nro] || nro, modo: cfgDe(nro).modo, cfg: cfgDe(nro), celdas: calcularCuenta(cfgDe(nro), neta, ctx) }))
+    // ⚙️ Las que no suman (excluidas a propósito o sin monto) no desaparecen: van al grupo de abajo, con su motivo.
+    setCuentasSinPres(filas.filter(f => !f.celdas.some(c => c.monto > 0)).map(f => ({ nro: f.nro, nombre: f.nombre, cfg: f.cfg }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre)))
+    const filasConMonto = filas
       .filter(f => f.celdas.some(c => c.monto > 0))
       .sort((a, b) => b.celdas.reduce((s, c) => s + c.monto, 0) - a.celdas.reduce((s, c) => s + c.monto, 0))
-    setCuentas(filas)
+    setCuentas(filasConMonto)
   }
 
   /**
@@ -997,6 +1008,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         metodo: metodos[t.id]!,
         avisoCuotas: avisos[t.id] ?? null,
         cuotasDeclaradas: t.cuotas != null ? Number(t.cuotas) : null,
+        montoManual: cfgPorTemplate[t.id]?.monto_manual ?? null,
       })
     }
 
@@ -2111,6 +2123,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
                       {t.nombre}
                       <EtiquetaMetodo t={t} />
                       {menuTpl(t)}
+                      {configTpl(t)}
                     </td>
                     {meses.map(m => {
                       const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
@@ -2128,6 +2141,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
                 <span className="ml-2 text-gray-400">{t.categ}</span>
                 <EtiquetaMetodo t={t} />
                 {menuTpl(t)}
+                {configTpl(t)}
               </td>
               {meses.map(m => {
                 const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
@@ -2142,6 +2156,59 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
 
   /** ⋯ El menú de una fila de template (A-FEAT-1661): meses desde el actual. */
   const mesesDesdeHoy = meses.map(m => `${m.anio}-${String(m.mes).padStart(2, "0")}`).filter(k => k >= mesArgentina())
+  /**
+   * ⚙️ A-FEAT-1661 paso 2 — la COLUMNA DE CONFIGURACIÓN, en la propia fila (JMS 25/11: «la línea que presupuesta podría ser donde
+   * se configura cómo se presupuesta»). Guarda con las MISMAS funciones que los bloques de abajo (`lib/presupuesto/guardar-config`).
+   * Es una prueba que se agrega: los bloques «Cómo se completan los templates» y «Cuentas contables» siguen.
+   */
+  const configTpl = (t: FilaTemplate) => !verConfig ? null : (
+    <div className="mt-1 flex flex-wrap items-center gap-1" onClick={e => e.stopPropagation()}>
+      <select className="h-6 rounded border border-gray-300 bg-white px-1 text-[10px] text-gray-700"
+        value={t.metodo.manual ? t.metodo.metodo : "__auto__"}
+        onChange={async e => {
+          const v = e.target.value
+          const err = v === "__auto__" ? await quitarMetodoTemplate(t.id)
+            : await guardarMetodoTemplate(t.id, { metodo: v as any, monto_manual: v === "manual" ? (t.montoManual ?? null) : null })
+          if (err) alert("Error: " + err.message); else await cargarDatos()
+        }}>
+        <option value="__auto__">Automático ({ETIQUETA_METODO[t.metodo.metodo]})</option>
+        {Object.entries(ETIQUETA_METODO).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+      </select>
+      {t.metodo.manual && t.metodo.metodo === "manual" && (
+        <input type="text" placeholder="monto/mes" defaultValue={t.montoManual != null ? fmtNumeroAR(t.montoManual) : ""}
+          className="h-6 w-24 rounded border border-gray-300 px-1 text-right text-[10px]"
+          onBlur={async e => {
+            const n = parseNumeroAR(e.target.value)
+            if (n === (t.montoManual ?? 0)) return
+            const err = await guardarMetodoTemplate(t.id, { metodo: "manual", monto_manual: n })
+            if (err) alert("Error: " + err.message); else await cargarDatos()
+          }} />
+      )}
+    </div>
+  )
+  const configCuenta = (nro: string, cfg: ConfigCuenta | undefined) => !verConfig || !cfg ? null : (
+    <div className="mt-1 flex flex-wrap items-center gap-1" onClick={e => e.stopPropagation()}>
+      <select className="h-6 rounded border border-gray-300 bg-white px-1 text-[10px] text-gray-700" value={cfg.modo}
+        onChange={async e => {
+          const err = await guardarConfigCuenta({ ...cfg, nro_cuenta: nro, modo: e.target.value as ModoPresupuesto })
+          if (err) alert("Error: " + err.message); else await cargarDatos()
+        }}>
+        {Object.entries(ETIQUETA_MODO).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+      </select>
+      {cfg.modo === "manual" && (
+        <input type="text" placeholder="monto/mes" defaultValue={cfg.monto_manual != null ? fmtNumeroAR(cfg.monto_manual) : ""}
+          className="h-6 w-24 rounded border border-gray-300 px-1 text-right text-[10px]"
+          onBlur={async e => {
+            const n = parseNumeroAR(e.target.value)
+            if (n === (cfg.monto_manual ?? 0)) return
+            const err = await guardarConfigCuenta({ ...cfg, nro_cuenta: nro, monto_manual: n })
+            if (err) alert("Error: " + err.message); else await cargarDatos()
+          }} />
+      )}
+      {cfg.modo === "promedio_n" && <span className="text-[10px] text-gray-400">{cfg.meses_promedio ?? 3} meses · el resto, en «Cuentas contables»</span>}
+    </div>
+  )
+
   // Función (no componente): así React conserva el estado del modal entre recargas de la grilla.
   const menuTpl = (t: FilaTemplate) => (
     <MenuFilaTemplate key={`menu-${t.id}`} templateId={t.id} nombre={t.nombre} meses={mesesDesdeHoy}
@@ -2278,8 +2345,14 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
                   La esquina (Concepto) se pega arriba Y a la izquierda, por eso lleva z mayor. */}
               <thead>
                 <tr className="border-b bg-gray-50">
-                  <th className="sticky left-0 top-0 z-30 bg-gray-50 px-4 py-2 text-left font-semibold text-gray-700 min-w-[220px]">
+                  <th className={`sticky left-0 top-0 z-30 bg-gray-50 px-4 py-2 text-left font-semibold text-gray-700 ${verConfig ? "min-w-[340px]" : "min-w-[220px]"}`}>
                     Concepto
+                    {/* ⚙️ A-FEAT-1661: abre/cierra la columna de configuración (método de cada template, modo de cada cuenta) */}
+                    <button type="button" onClick={() => setVerConfig(v => !v)}
+                      className={`ml-2 rounded border px-1.5 py-0.5 text-[10px] font-normal ${verConfig ? "border-blue-400 bg-blue-50 text-blue-800" : "border-gray-300 text-gray-500 hover:text-gray-800"}`}
+                      title="Mostrar en cada fila cómo se presupuesta, y cambiarlo ahí">
+                      ⚙️ {verConfig ? "ocultar configuración" : "configuración"}
+                    </button>
                   </th>
                   {meses.map(m => {
                     const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
@@ -2659,6 +2732,7 @@ Clic para presupuestar la venta`}
                         <tr key={`cta-${c.nro}`} className="border-b hover:bg-gray-50">
                           <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-8 text-xs text-gray-600">
                             {c.nombre}
+                            {configCuenta(c.nro, c.cfg)}
                           </td>
                           {meses.map(m => {
                             const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
@@ -2671,6 +2745,37 @@ Clic para presupuestar la venta`}
                               </td>
                             )
                           })}
+                        </tr>
+                      ))}
+                    </>
+                  )
+                })()}
+
+                {/* ── ⚙️ Cuentas que NO se presupuestan por cuenta (A-FEAT-1661, JMS 25/11: «las que se decide que no actúen deben
+                    quedar abajo en un grupo aparte plegadas»; ej. fertilizantes, que van por productivo). No suman: se ven y se
+                    les puede cambiar el modo para que vuelvan. ── */}
+                {cuentasSinPres.length > 0 && (() => {
+                  const abierto = expandidos["__cuentas_sin__"] ?? false
+                  return (
+                    <>
+                      <tr className="border-b bg-gray-50 cursor-pointer hover:bg-gray-100" onClick={() => toggleAgrupador("__cuentas_sin__")}>
+                        <td className="sticky left-0 z-10 bg-gray-50 px-4 py-1.5 text-xs font-medium text-gray-500 flex items-center gap-1">
+                          {abierto ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
+                          Cuentas que no se presupuestan por cuenta
+                          <span className="ml-1 font-normal text-gray-400">{cuentasSinPres.length} · no suman</span>
+                        </td>
+                        {meses.map(m => { const k = `${m.anio}-${String(m.mes).padStart(2, "0")}`; return <td key={k} className={k === mesActualClave ? "border-l-2 border-blue-300" : ""} /> })}
+                      </tr>
+                      {abierto && cuentasSinPres.map(c => (
+                        <tr key={`cta-sin-${c.nro}`} className="border-b bg-white">
+                          <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-8 text-xs text-gray-500">
+                            {c.nombre}
+                            <span className="ml-2 text-[10px] text-gray-400">
+                              {c.cfg.modo === "excluida" ? (c.cfg.motivo_exclusion || "excluida") : "sin monto con su modo"}
+                            </span>
+                            {configCuenta(c.nro, c.cfg)}
+                          </td>
+                          {meses.map(m => { const k = `${m.anio}-${String(m.mes).padStart(2, "0")}`; return <td key={k} className={`px-3 text-right text-xs text-gray-300 ${k === mesActualClave ? "border-l-2 border-blue-300" : ""}`}>—</td> })}
                         </tr>
                       ))}
                     </>
