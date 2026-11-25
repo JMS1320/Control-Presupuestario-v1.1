@@ -3312,6 +3312,12 @@ decidir. Dice *"Todavía no se guardó nada"* porque es literal.
 | **Pagar sin retener** | guarda el estado, sin retención |
 | **Cancelar — no tocar nada** | 🔑 **aborta todo**, incluidas las que no llevan SICORE |
 
+### El Excel para Galicia: un nombre por export
+El archivo se llama **«Galicia MSA Pagos 20261125.xlsx»** (empresa, pagos o sueldos, fecha de pago). Si ese
+mismo día ya se exportó otro lote de la misma empresa y tipo, el siguiente sale **«… 20261125 - 2.xlsx»**,
+después **«- 3»**, y así: dos lotes nunca tienen el mismo nombre, y guardar uno no reemplaza al otro.
+→ [A-FEAT-1658](PENDIENTES.md#a-feat-1658)
+
 ### 🏦 Pagado desde — cuando pagaste desde otra cuenta *(2026-10-23)*
 Al lado del estado aparece **Pagado desde**. Si no lo tocás (*— como está —*) cada fila queda como
 estaba. Si pagaste desde otra cuenta —por ejemplo, **MA pagó algo de MSA**— elegí la cuenta antes de

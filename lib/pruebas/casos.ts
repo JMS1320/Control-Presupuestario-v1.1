@@ -123,7 +123,7 @@ import { marcarAnticiposSinVincular } from "@/lib/cashflow/anticipo-sin-vincular
 import { pedidoDeOrden } from "@/lib/arba/ordenar-archivo"
 import { renglonesDeOrden, estadoSinFactura } from "@/lib/productivo/pedido-compra"
 import { detalleEditableDe, detalleSeEditaEnLote } from "@/lib/cashflow/detalle-lote"
-import { aplicarDestinoPuntual, pideDestinoPuntual, esCuitComodin } from "@/lib/lotes-galicia/helpers"
+import { aplicarDestinoPuntual, pideDestinoPuntual, esCuitComodin, nombreArchivoLote, numeroDeExport } from "@/lib/lotes-galicia/helpers"
 import { boletasQueFaltan, tareaBoletasFaltan } from "@/lib/arba/boletas-faltan"
 import { ordenarPorPlanilla } from "@/lib/arba/planilla-boletas"
 import { pideOtraVentana, linkSeccion } from "@/lib/ui/links"
@@ -8966,6 +8966,30 @@ export function correrCasos(): Resultado[] {
   chequear("Dólares", "El TC: el del pago si está; si no, el de la factura; en pesos, 1",
     "1405 · 1390 · 1", `${tcDeFactura({ moneda: "USD", tc_pago: 1405, tipo_cambio: 1390 })} · ${tcDeFactura({ moneda: "USD", tc_pago: null, tipo_cambio: 1390 })} · ${tcDeFactura({ moneda: "PES", tipo_cambio: 1390 })}`,
     tcDeFactura({ moneda: "USD", tc_pago: 1405, tipo_cambio: 1390 }) === 1405 && tcDeFactura({ moneda: "USD", tc_pago: null, tipo_cambio: 1390 }) === 1390 && tcDeFactura({ moneda: "PES", tipo_cambio: 1390 }) === 1, "A-BUG-1236")
+
+  // ══ 🔢 A-FEAT-1658 — los Excel del lote de Galicia del mismo día se numeran ══
+  {
+    // El caso real del 25/11: dos exports de MSA con fecha de pago 25/11 salieron con el MISMO nombre
+    const hoy = [
+      { empresa: "MSA", tipo: "pagos", fecha_pago: "2026-11-25" },   // 15:31 · 3 pagos · $ 5.949.118,52
+      { empresa: "MSA", tipo: "pagos", fecha_pago: "2026-11-25" },   // 16:57 · ACREN · $ 432.106,40
+      { empresa: "MSA", tipo: "pagos", fecha_pago: "2026-11-24" },
+      { empresa: "MSA", tipo: "sueldos", fecha_pago: "2026-11-25" },
+      { empresa: "PAM", tipo: "pagos", fecha_pago: "2026-11-25" },
+    ]
+    const n = numeroDeExport(hoy, { empresa: "MSA", tipo: "pagos", fecha_pago: "2026-11-25" })
+    const nombres = [
+      nombreArchivoLote({ empresa: "MSA", fechaPago: "2026-11-25", tipo: "pagos", numero: 1 }),
+      nombreArchivoLote({ empresa: "MSA", fechaPago: "2026-11-25", tipo: "pagos", numero: n }),
+      nombreArchivoLote({ empresa: "MSA", fechaPago: "2026-11-25", tipo: "pagos", numero: 2, parteN: 1, parteTotal: 2 }),
+      nombreArchivoLote({ empresa: "MSA", fechaPago: "2026-11-25", tipo: "pagos", numero: 4, hora: "1712" }),
+    ]
+    chequear("Lote Galicia", "🔢 El 1º del día queda como siempre; el siguiente de MSA pagos del 25/11 es el 3º («- 3»); las partes se respetan; sin registro, la hora",
+      "3 | Galicia MSA Pagos 20261125.xlsx | Galicia MSA Pagos 20261125 - 3.xlsx | Galicia MSA Pagos 20261125 (1-2) - 2.xlsx | Galicia MSA Pagos 20261125 - 1712.xlsx",
+      `${n} | ${nombres.join(" | ")}`,
+      n === 3 && nombres[0] === "Galicia MSA Pagos 20261125.xlsx" && nombres[1] === "Galicia MSA Pagos 20261125 - 3.xlsx"
+        && nombres[2] === "Galicia MSA Pagos 20261125 (1-2) - 2.xlsx" && nombres[3] === "Galicia MSA Pagos 20261125 - 1712.xlsx", "A-FEAT-1658")
+  }
 
   // ══ 🔗 A-BUG-1657 — el mail de pago queda atado a su factura o a su grupo ══
   {

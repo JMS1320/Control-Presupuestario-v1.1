@@ -24,7 +24,7 @@ import type {
 import { pideDestinoPuntual, aplicarDestinoPuntual,
   validarCBU, validarAlias, obtenerDestinatarioValido,
   formatearImporteGalicia, motivoSugerido, abreviarDescripcion,
-  nombreArchivoLote, empresaToSchema,
+  nombreArchivoLote, empresaToSchema, numeroDeExport,
 } from '@/lib/lotes-galicia/helpers'
 import { computarPreview } from '@/lib/lotes-galicia/preview-core'
 import { exigirSesion, respuestaSinAcceso } from "@/lib/auth/guard-sesion"
@@ -116,7 +116,13 @@ export async function POST(request: Request) {
     }
 
     // ── 3. Generar Excel(s) ──
-    const archivosPagos = generarArchivos(pagosValidos, { empresa, fechaPago: fecha_pago, tipo: 'pagos' })
+    // 🔢 A-FEAT-1658 — el 2º export del día con la misma empresa/tipo/fecha va « - 2» (no pisa al 1º).
+    // Si no se puede leer el registro, va la hora: nunca el mismo nombre en silencio.
+    const { data: anteriores, error: errAnt } = await supabase.from('lotes_transferencias')
+      .select('empresa, tipo, fecha_pago').eq('empresa', empresa).eq('fecha_pago', fecha_pago)
+    const horaAR = errAnt ? new Date().toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', hour12: false }).replace(':', '') : undefined
+    const nro = (tipo: 'pagos' | 'sueldos') => errAnt ? undefined : numeroDeExport(anteriores || [], { empresa, tipo, fecha_pago })
+    const archivosPagos = generarArchivos(pagosValidos, { empresa, fechaPago: fecha_pago, tipo: 'pagos', numero: nro('pagos'), hora: horaAR })
     // Sueldos: un archivo (o más, por límite de 50) POR grupo_export → distintos grupos = distintos Excel.
     const sueldosPorGrupo = new Map<string, ItemPreview[]>()
     for (const s of sueldosValidos) {
@@ -126,7 +132,7 @@ export async function POST(request: Request) {
       sueldosPorGrupo.set(g, arr)
     }
     const archivosSueldos = [...sueldosPorGrupo.entries()].flatMap(([grupo, items]) =>
-      generarArchivos(items, { empresa, fechaPago: fecha_pago, tipo: 'sueldos', grupo })
+      generarArchivos(items, { empresa, fechaPago: fecha_pago, tipo: 'sueldos', grupo, numero: nro('sueldos'), hora: horaAR })
     )
 
     // ── 4. UPDATE proveedores.ultimo_uso_bancario ──
@@ -196,7 +202,7 @@ export async function POST(request: Request) {
 // Generación del Excel formato Galicia
 // ─────────────────────────────────────────────────────────────────
 
-function generarArchivos(items: ItemPreview[], opts: { empresa: string; fechaPago: string; tipo: 'pagos' | 'sueldos'; grupo?: string }) {
+function generarArchivos(items: ItemPreview[], opts: { empresa: string; fechaPago: string; tipo: 'pagos' | 'sueldos'; grupo?: string; numero?: number; hora?: string }) {
   if (items.length === 0) return []
 
   // Partir en chunks de MAX_FILAS_POR_ARCHIVO
@@ -213,6 +219,8 @@ function generarArchivos(items: ItemPreview[], opts: { empresa: string; fechaPag
       grupo: opts.grupo,
       parteN: idx + 1,
       parteTotal: chunks.length,
+      numero: opts.numero,
+      hora: opts.hora,
     })
     const buffer = generarExcelBuffer(chunk)
     return {

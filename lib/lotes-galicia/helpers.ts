@@ -94,6 +94,10 @@ export function nombreArchivoLote(opts: {
   grupo?: string            // grupo_export de sueldos (va al nombre para distinguir archivos)
   parteN?: number           // si se parte por límite 50
   parteTotal?: number
+  /** 🔢 A-FEAT-1658 — el número de export de esa empresa/tipo/fecha: el 1º no lleva nada, el 2º « - 2»… */
+  numero?: number
+  /** Si no se pudo saber el número: la hora (HHMM) para que igual no pise otro archivo. */
+  hora?: string
 }): string {
   const fechaCorta = opts.fechaPago.replace(/-/g, '')
   const tipoTxt = opts.tipo === 'sueldos' ? 'Sueldos' : 'Pagos'
@@ -104,7 +108,23 @@ export function nombreArchivoLote(opts: {
   const parte = opts.parteTotal && opts.parteTotal > 1
     ? ` (${opts.parteN}-${opts.parteTotal})`
     : ''
-  return `Galicia ${opts.empresa} ${tipoTxt}${grupoTxt} ${fechaCorta}${parte}.xlsx`
+  const numero = opts.hora ? ` - ${opts.hora}` : (opts.numero && opts.numero > 1 ? ` - ${opts.numero}` : '')
+  return `Galicia ${opts.empresa} ${tipoTxt}${grupoTxt} ${fechaCorta}${parte}${numero}.xlsx`
+}
+
+/**
+ * 🔢 **A-FEAT-1658 — qué número de export es éste**, para no pisar el Excel de otro lote del mismo día.
+ *
+ * JMS 25/11: *«si se exportan más de un Excel en el día los debe ir numerando así no hay riesgo de pisar
+ * archivos»*. Cada export queda registrado en `lotes_transferencias` (empresa, tipo, fecha de pago), así
+ * que el número es **los exports anteriores con esa misma empresa, tipo y fecha de pago, + 1**.
+ * Recibe esos registros ya traídos (sin base de datos: se prueba con números).
+ */
+export function numeroDeExport(
+  anteriores: Array<{ empresa?: string | null; tipo?: string | null; fecha_pago?: string | null }>,
+  esto: { empresa: string; tipo: 'pagos' | 'sueldos'; fecha_pago: string },
+): number {
+  return 1 + anteriores.filter(a => a.empresa === esto.empresa && a.tipo === esto.tipo && a.fecha_pago === esto.fecha_pago).length
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
