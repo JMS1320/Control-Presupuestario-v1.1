@@ -355,6 +355,12 @@ es un error de la guía y hay que corregirla, no ignorarla.
 
 ### 🛤️ Camino 1 — BALANCE: papeles de trabajo del balance MSA 25/26 al contador, por módulos terminados
 
+> ▶️▶️▶️ **AL RETOMAR «CAMINO 1» — el contexto mínimo, antes de cualquier otra cosa** *(JMS 25/11: «quiero que al retomar camino 1 ya las tengas en cuenta como parte del contexto. Y además recuerdes el paso a paso que ideamos, desde donde nos hemos desviado un poco pero queda asentado»)*:
+> 1. **Las 3 páginas** (protocolo punto 7, abajo): leer sus `respuestas` ENTERAS, comparar con el conteo de la tabla y atender lo nuevo primero — preguntas abiertas del balance · balance formato contador · cuentas internas desde 2025. Están fijadas en la barra lateral de claude.ai de JMS.
+> 2. **El paso a paso** (🔁 MÉTODO DE TRABAJO, abajo): el balance se trabaja en el orden del trabajo real —(1) exportar los libros y auditarlos → (2) auditar → (3) envío al contador → (4) presentación— y no se avanza sin el «dado por bueno» de JMS. **Seguimos en el paso 1**, y el libro de Templates NO está dado por bueno.
+> 3. **El desvío, asentado**: del 21 al 25/11 se trabajó el balance EN LÍNEA formato contador (A-FEAT-1632, capa nueva en la rama `jms/tanda-2026-11-21-balance-en-linea`, sin mergear) con la cadena de la diferencia. Sirve al paso 1 —se audita desde el crudo— pero no lo reemplaza. Al volver al paso 1, lo primero sigue siendo recordarle a JMS bajar el set de libros (v19) y verificarlo contra el punto 43 de A-FEAT-1629.
+> 4. **Qué sigue lo elige JMS** (§ 🚦): ofrecerle la lista —volver al paso 1, o seguir con lo que esperan las 3 páginas— y no arrancar solo.
+>
 > 🧭🧭🧭 **MAPA DEL BALANCE — los objetivos totales, dónde vive cada uno y cómo se sigue entre sesiones** *(JMS 18/11/2026: «esto no se
 > logrará en una sola sesión: tiene que haber trazabilidad para no empezar a fallar entre sesiones»)*
 >
@@ -407,7 +413,7 @@ es un error de la guía y hay que corregirla, no ignorarla.
 > | https://claude.ai/artifact/UXvNbq99jzeXxSmFqkudtG | Balance · **preguntas abiertas** (Q1 tipo «a cuenta de impuestos», Q2 FCI, Q3 diferencia de cambio, Q4 socios en la ecuación, Q5 protocolo de páginas) | A-FEAT-1632 · A-DEC-1036 | 🟢 espera a JMS | 0 (25/11) |
 > | https://claude.ai/artifact/SaFj1SiA1pj1733yv98Uju | **Balance formato contador** MSA 25/26 v3.2 (el reporte; comentarios por renglón `v3-F-<Nro>`) | A-FEAT-1632 | 🟢 JMS revisa | 22 (25/11) — 21 de la v2 y 1 de la v3 (B228), todos procesados |
 > | https://claude.ai/artifact/479mSTYBEw1Szstw7iVpUt | **Cuentas internas** entre PAM, MSA, MA y socios desde 2025 (Q1–Q6) | A-FEAT-1635 | 🟢 espera a JMS | 0 (25/11) |
-> | Balance interno MSA `4o9qkjgFkATtg85KwNXeKP` · Auditoría gastos contador `Gq49pggjpH4zH4Rd1r3wcV` · Socios MA PAM: definir `4o3oZtsVZ8WwpgmVk2dMPG` · Casos Enviado vs Hoy `UE2bZnMSz5vjWdfHU4sBLG` · Balance propio MSA `28UoBPnV239pu5gCe6YPNp` · Libros y papeles del balance `9VMkb4a8hY8PQmwfRPgrym` · Control de la plata MSA 25/26 `2f6v68zebmtnk1fviCYjF9` · Balance 25/26 respuestas `JufiZ2hz5HjBFERmk4dB18` · Preguntas del balance 25/26 `F5dqACj17tSZPEPC8PNRjD` (todas `https://claude.ai/artifact/<id>`) | páginas anteriores del balance (01/11–18/11) | A-FEAT-1629 y otros | ⚪? **sin revisar** si les quedó algo abierto | — |
+> | 9 páginas anteriores del balance (01/11–18/11: Balance interno MSA, Auditoría gastos contador, Socios MA PAM: definir, Casos Enviado vs Hoy, Balance propio MSA, Libros y papeles, Control de la plata, Balance 25/26 respuestas, Preguntas del balance 25/26) | historia | — | ⚪ **fuera de seguimiento** (JMS 25/11: «son estas 3 las que me interesan») | — |
 
 
 *(Lo escribió la sesión que armó el Libro Diario consensuado, «Estanco», el 30/10. La historia completa está en `D:\Users\josem\Documents\Jose\- Desarrollo de Software\Sesion Claude Estanco\ESTADO - cierre sesion 2026-10-28.md` §1-12 y en `TRASPASO-T1-2026-10-30.md`, parte A. Es solo archivo: ya no se trabaja ahí.)*
