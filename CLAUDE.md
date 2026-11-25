@@ -341,6 +341,20 @@ diferente. Esto es para siempre»**.*
 *Motivo: sin esto, JMS lee la página en un lado y contesta en el chat en otro, traduciendo a qué se refiere cada cosa. Ya lo
 pedía en cada página (memoria del 05/11, «siempre lugar para otra cosa») y no estaba en las reglas.*
 
+#### ❓ Cada pregunta va EN SU LUGAR, y se repite igual en la síntesis del final (REGLA)
+*Pedida por JMS 2026-11-25: **«vos me ponés IATF, la información, pregunta Q1 abajo. Yo empiezo a leer lo primero que vos me mandás y esa
+pregunta mejor es que me la pongas en el lugar, así ya la veo con el mismo contexto. Si querés me repetís las preguntas abajo de todo… que
+esté presente en el detalle y en la síntesis del final… arriba y abajo, que no sea diferente. Entonces yo ya te voy respondiendo mientras
+leo»**.*
+
+> **Una pregunta se escribe donde está su tema (en el renglón, en la fila de la tabla, en el párrafo), con su índice; y al final se
+> repite en la síntesis con el MISMO texto y el MISMO índice.**
+
+- No una pregunta distinta arriba y otra abajo: la misma, copiada.
+- La síntesis del final sigue (le sirve), pero no reemplaza a la pregunta en su lugar.
+
+*Motivo: JMS contesta mientras lee; si la pregunta está sólo al final, tiene que volver a buscar el contexto.*
+
 #### 🏷️ Al subir algo para probar, se le da a JMS el CÓDIGO DE VERSIÓN que tiene que ver en la app (REGLA)
 *Pedida por JMS 2026-11-25: **«yo ahora siempre tengo esto, así que por favor pongamos regla de que vos me des ese nro para yo poder
 controlar que está ya cargado»**.*
