@@ -32,7 +32,7 @@ export function PresupuestoArranque(p: {
   /** Lo que se devuelve al mes actual (ya pagado y contado en el saldo). */
   ajusteMesActual: { total: number; cuotas: number; facturas: number }
   /** Control: el extracto llevado a hoy contra lo declarado (sólo si hay las dos fuentes y lo declarado es de hoy). */
-  control: { diferencia: number; cierra: boolean } | null
+  control: { diferencia: number; cierra: boolean; desdeExtracto: number; puenteNeto: number } | null
   onGuardarDeclarado: (d: { fecha: string; composicion: ComposicionItem[] }) => Promise<void>
 }) {
   const [abierto, setAbierto] = useState(false)
@@ -52,6 +52,10 @@ export function PresupuestoArranque(p: {
   const totalEdicion = filas.reduce((s, f) => s + parseAR(f.monto), 0)
 
   const r = p.resultado
+  // Con el extracto atrasado, el control de las dos fuentes es información, no alarma (JMS 25/11: la diferencia de
+  // $ 173,8 M era casi toda FCI y transferencias propias que el sistema no registra).
+  const diasAtraso = p.extracto ? Math.floor((Date.parse(hoyArgentina() + "T00:00:00") - Date.parse(p.extracto.fecha + "T00:00:00")) / 86400000) : 0
+  const extractoAtrasado = diasAtraso > 7
   return (
     <div className="mb-3 rounded-lg border border-slate-300 bg-slate-50 text-sm">
       <button type="button" onClick={() => setAbierto(a => !a)}
@@ -63,8 +67,9 @@ export function PresupuestoArranque(p: {
             {r.fuente === "extracto" ? "del extracto" : "declarado"} · {$(r.saldoArranque)} al {fecha(r.fechaArranque)}
             {r.puente.filas.length > 0 && <> · puente {$(r.puente.neto)}</>}
             {" "}→ <strong>saldo de hoy {$(r.saldoHoy)}</strong>
-            {r.vencidos.filas.length > 0 && <span className="text-amber-700"> · {r.vencidos.filas.length} impagos vencidos {$(r.vencidos.neto)}</span>}
-            {p.control && !p.control.cierra && <span className="text-red-700"> · ⚠️ las dos fuentes difieren {$(p.control.diferencia)}</span>}
+            {r.vencidos.egresos > 0 && <span className="text-amber-700"> · pagos vencidos {$(r.vencidos.egresos)}</span>}
+            {r.vencidos.ingresos > 0 && <span className="text-emerald-700"> · cobros vencidos {$(r.vencidos.ingresos)}</span>}
+            {p.control && !p.control.cierra && !extractoAtrasado && <span className="text-red-700"> · ⚠️ las dos fuentes difieren {$(p.control.diferencia)}</span>}
             {p.control?.cierra && <span className="text-emerald-700"> · ✓ las dos fuentes coinciden</span>}
           </span>
         ) : (
@@ -134,22 +139,29 @@ export function PresupuestoArranque(p: {
                     <tr><td className="pr-4">+ Cobrado según el sistema ({r.puente.filas.filter(f => f.creditos).length})</td><td className="text-right text-emerald-700">+ {$(r.puente.ingresos)}</td></tr>
                   </>}
                   <tr className="font-semibold"><td className="pr-4">= Saldo estimado de hoy</td><td className="text-right">{$(r.saldoHoy)}</td></tr>
-                  <tr><td className="pr-4">− Impagos de meses anteriores (vencidos, van al mes actual)</td><td className="text-right text-amber-700">{$(r.vencidos.neto)}</td></tr>
+                  <tr><td className="pr-4">− Pagos vencidos de meses anteriores, impagos ({r.vencidos.filas.filter(f => f.debitos).length}) — se restan en el mes actual</td><td className="text-right text-amber-700">− {$(r.vencidos.egresos)}</td></tr>
+                  <tr><td className="pr-4">+ Cobros vencidos de meses anteriores, sin cobrar ({r.vencidos.filas.filter(f => f.creditos).length}) — se suman en el mes actual</td><td className="text-right text-emerald-700">+ {$(r.vencidos.ingresos)}</td></tr>
                   <tr><td className="pr-4">+ Ya pagado este mes que el presupuesto igual restaba ({p.ajusteMesActual.cuotas} cuotas, {p.ajusteMesActual.facturas} facturas)</td><td className="text-right">+ {$(p.ajusteMesActual.total)}</td></tr>
                 </tbody>
               </table>
               {p.control && (
-                <div className={`rounded px-2 py-1 text-xs ${p.control.cierra ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800"}`}>
-                  {p.control.cierra
-                    ? "✓ El extracto llevado a hoy coincide con el saldo declarado."
-                    : <>⚠️ El extracto llevado a hoy da {$(p.extracto ? p.extracto.saldo : 0)} ± puente, y lo declarado difiere en <strong>{$(p.control.diferencia)}</strong>: es lo que el banco movió y el sistema no tiene (comisiones, impuestos al débito, débitos automáticos) — lo que falta conciliar.</>}
+                <div className={`rounded px-2 py-1 text-xs ${p.control.cierra ? "bg-emerald-50 text-emerald-800" : extractoAtrasado ? "bg-slate-100 text-slate-700" : "bg-red-50 text-red-800"}`}>
+                  {p.control.cierra ? "✓ El extracto llevado a hoy coincide con el saldo declarado." : <>
+                    {extractoAtrasado ? "ℹ️" : "⚠️"} Control de las dos fuentes: extracto {$(p.extracto ? p.extracto.saldo : 0)} al {fecha(p.extracto ? p.extracto.fecha : "")}
+                    {" "}{p.control.puenteNeto < 0 ? "−" : "+"} {$(Math.abs(p.control.puenteNeto))} de puente (lo pagado y cobrado según el sistema) = {$(p.control.desdeExtracto)} estimado hoy,
+                    {" "}contra {$(p.declarado.saldo)} declarado → diferencia <strong>{$(p.control.diferencia)}</strong>.
+                    {extractoAtrasado
+                      ? <> Con el extracto atrasado {diasAtraso} días no sirve como alarma: la diferencia es sobre todo plata que entró desde el FCI y transferencias entre cuentas propias, que el sistema no registra. Se vuelve un control cuando el extracto esté al día.</>
+                      : <> Es lo que el banco movió y el sistema no tiene (comisiones, impuestos al débito, débitos automáticos, movimientos con el FCI) — lo que falta conciliar.</>}
+                  </>}
                 </div>
               )}
               {r.otraCuenta.cantidad > 0 && (
                 <p className="text-xs text-gray-500">{r.otraCuenta.cantidad} renglones se pagan desde otra cuenta (cajas, cotitulares): no mueven este saldo ({$(r.otraCuenta.neto)}).</p>
               )}
               <Detalle titulo="Puente: lo pagado y cobrado desde el arranque" filas={r.puente.filas} />
-              <Detalle titulo="Impagos vencidos (meses anteriores)" filas={r.vencidos.filas} />
+              <Detalle titulo="Pagos vencidos de meses anteriores (impagos)" filas={r.vencidos.filas.filter(f => Number(f.debitos) > 0)} />
+              <Detalle titulo="Cobros vencidos de meses anteriores (sin cobrar)" filas={r.vencidos.filas.filter(f => Number(f.creditos) > 0)} />
             </>
           )}
         </div>

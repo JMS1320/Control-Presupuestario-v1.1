@@ -1784,11 +1784,11 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   const controlArranque = useMemo(() => {
     if (!extractoUlt || !fechaArranqueDecl || fechaArranqueDecl !== hoyArgentina()) return null
     const hoy = hoyArgentina()
-    const desdeExtracto = arranque?.fuente === "extracto" ? arranque.saldoHoy
+    const delExtracto = arranque?.fuente === "extracto" ? arranque
       : calcularArranque({ fuente: "extracto", fechaArranque: extractoUlt.fecha, saldoArranque: extractoUlt.saldo, hoy,
           filas: (filasCashFlow || []).map(f => ({ id: f.id, origen: f.origen, fecha_estimada: f.fecha_estimada, fecha_pago: f.fecha_pago ?? null,
-            estado: f.estado, medio_pago: (f as any).medio_pago ?? null, debitos: Number(f.debitos) || 0, creditos: Number(f.creditos) || 0 })) }).saldoHoy
-    return controlDosFuentes(desdeExtracto, saldoDeclarado)
+            estado: f.estado, medio_pago: (f as any).medio_pago ?? null, debitos: Number(f.debitos) || 0, creditos: Number(f.creditos) || 0 })) })
+    return { ...controlDosFuentes(delExtracto.saldoHoy, saldoDeclarado), desdeExtracto: delExtracto.saldoHoy, puenteNeto: delExtracto.puente.neto }
   }, [extractoUlt, fechaArranqueDecl, saldoDeclarado, arranque, filasCashFlow])
 
   const saldoAcumuladoPorMes = useMemo(() => {
