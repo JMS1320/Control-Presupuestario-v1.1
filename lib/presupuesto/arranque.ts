@@ -36,7 +36,7 @@ export interface FilaReal {
 }
 
 /** 🏷️ Etapa 2 — lo que JMS dice de un renglón no conciliado (tabla `presupuesto_marcas`). */
-export type MarcaPresupuesto = 'pagado' | 'cobrado' | 'impago' | 'no_concretado' | 'impacta'
+export type MarcaPresupuesto = 'pagado' | 'cobrado' | 'impago' | 'no_concretado' | 'impacta' | 'fuera'
 /** La clave de una marca: tabla de origen + id. */
 export const claveMarca = (f: Pick<FilaReal, 'id' | 'origen_tabla'>) => `${f.origen_tabla || ''}|${f.id}`
 /** Marcas que dicen «esto ya no se mueve»: el renglón sale de lo impago. */

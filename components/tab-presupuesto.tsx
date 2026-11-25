@@ -5,6 +5,7 @@ import { mesArgentina, hoyArgentina } from "@/lib/fechas"
 import { useMultiCashFlowData, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
 import { calcularArranque, lineaDeSaldo, controlDosFuentes, totalComposicion, fechaDeCaja, yaSeMovio, mesDe, claveMarca, estaEnLaGrilla, esLiquidacionHacienda, type FilaReal, type MarcaPresupuesto } from "@/lib/presupuesto/arranque"
 import { PresupuestoArranque, type ComposicionItem } from "@/components/presupuesto-arranque"
+import { MenuFilaTemplate } from "@/components/presupuesto-menu-template"
 import { useState, useEffect, useMemo, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
@@ -414,17 +415,39 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
 
   /** C1 — las filas de la grilla, sin lo ya pagado en el mes en curso (con la explicación en la celda). */
   const nota = (v: number) => ` · − $ ${Math.round(v).toLocaleString("es-AR")} ya pagado este mes (está en el saldo de hoy)`
+  /** ⋯ A-FEAT-1661 capa 1 — lo sacado del presupuesto: el template entero o un mes (marca `fuera`, no toca el template). */
+  const fuera = useMemo(() => {
+    const templates = new Set<string>(), meses: Record<string, Set<string>> = {}
+    for (const [k, m] of Object.entries(marcas)) {
+      if (m !== "fuera" || !k.startsWith("egresos_sin_factura|")) continue
+      const [, id, mes] = k.split("|")
+      if (mes) (meses[id] ??= new Set()).add(mes); else templates.add(id)
+    }
+    return { templates, meses }
+  }, [marcas])
   const agrupadores = useMemo<Agrupador[]>(() => agrupadoresBase.map(ag => ({
     ...ag,
-    templates: ag.templates.map(t => {
+    templates: ag.templates.map(t0 => {
+      let t = t0
       const p = pagadoMes.porTemplate[t.id] || 0
       const v = t.montos[pagadoMes.mes] || 0
-      if (!p || !v) return t
-      const celda: any = t.celdas[pagadoMes.mes]
-      return { ...t, montos: { ...t.montos, [pagadoMes.mes]: Math.max(0, v - p) },
-        celdas: { ...t.celdas, [pagadoMes.mes]: { ...(celda || {}), explicacion: `${celda?.explicacion || ""}${nota(Math.min(p, v))}` } } }
+      if (p && v) {
+        const celda: any = t.celdas[pagadoMes.mes]
+        t = { ...t, montos: { ...t.montos, [pagadoMes.mes]: Math.max(0, v - p) },
+          celdas: { ...t.celdas, [pagadoMes.mes]: { ...(celda || {}), explicacion: `${celda?.explicacion || ""}${nota(Math.min(p, v))}` } } }
+      }
+      const todo = fuera.templates.has(t.id), algunos = fuera.meses[t.id]
+      if (!todo && !algunos) return t
+      const montosAntes = t.montos
+      const montos: Record<string, number> = {}, celdas: any = { ...t.celdas }
+      for (const [mes, monto] of Object.entries(t.montos)) {
+        const sale = todo || algunos?.has(mes)
+        montos[mes] = sale ? 0 : monto
+        if (sale && monto) celdas[mes] = { ...(celdas[mes] || {}), explicacion: `${celdas[mes]?.explicacion || ""} · fuera del presupuesto (${todo ? "todo el template" : "este mes"}): no suma $ ${Math.round(monto).toLocaleString("es-AR")}` }
+      }
+      return { ...t, montos, celdas, montosAntesDeFuera: montosAntes, fueraTodo: todo } as any
     }),
-  })), [agrupadoresBase, pagadoMes])
+  })), [agrupadoresBase, pagadoMes, fuera])
   const cuentas = useMemo(() => cuentasBase.map(c => {
     const p = pagadoMes.porCuenta[c.nro] || 0
     if (!p) return c
@@ -781,6 +804,15 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       nombre_proveedor: campo, detalle: `Disponible a fijar ${campo} · ${q.campania} · cuota ${q.numeroCuota} · ${q.tonsPend.toLocaleString("es-AR", { maximumFractionDigits: 1 })} tn`,
     }))
     await marcarFilas(filas, impactaCelda(campo, mes) ? null : "impacta")
+  }
+
+  /** ⋯ Saca (o vuelve a poner) un template entero —`mes` null— o un mes, sólo del presupuesto. */
+  const alternarFuera = async (templateId: string, nombre: string, mes: string | null) => {
+    const filaId = mes ? `${templateId}|${mes}` : templateId
+    const esta = marcas[`egresos_sin_factura|${filaId}`] === "fuera"
+    await marcarFilas([{ id: filaId, origen: "TEMPLATE", origen_tabla: "egresos_sin_factura", estado: "", fecha_estimada: mes ? `${mes}-01` : "",
+      debitos: 0, creditos: 0, nombre_proveedor: nombre, detalle: mes ? `Fuera del presupuesto: ${nombre} · ${mes}` : `Fuera del presupuesto: ${nombre} (todo)` }],
+      esta ? null : "fuera")
   }
 
   const marcarFilas = async (filas: FilaReal[], marca: MarcaPresupuesto | null) => {
@@ -2078,6 +2110,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
                     <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-14 text-gray-600 text-xs">
                       {t.nombre}
                       <EtiquetaMetodo t={t} />
+                      {menuTpl(t)}
                     </td>
                     {meses.map(m => {
                       const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
@@ -2094,6 +2127,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
                 {t.nombre}
                 <span className="ml-2 text-gray-400">{t.categ}</span>
                 <EtiquetaMetodo t={t} />
+                {menuTpl(t)}
               </td>
               {meses.map(m => {
                 const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
@@ -2105,6 +2139,17 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       </Fragment>
     )
   }
+
+  /** ⋯ El menú de una fila de template (A-FEAT-1661): meses desde el actual. */
+  const mesesDesdeHoy = meses.map(m => `${m.anio}-${String(m.mes).padStart(2, "0")}`).filter(k => k >= mesArgentina())
+  // Función (no componente): así React conserva el estado del modal entre recargas de la grilla.
+  const menuTpl = (t: FilaTemplate) => (
+    <MenuFilaTemplate key={`menu-${t.id}`} templateId={t.id} nombre={t.nombre} meses={mesesDesdeHoy}
+      montos={(t as any).montosAntesDeFuera || t.montos}
+      fueraTemplate={fuera.templates.has(t.id)} mesesFuera={fuera.meses[t.id] || new Set()}
+      onAlternarFuera={mes => alternarFuera(t.id, t.nombre, mes)}
+      onRecargar={() => cargarDatos()} />
+  )
 
   return (
     <div className="space-y-4">
