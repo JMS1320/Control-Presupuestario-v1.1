@@ -40,6 +40,9 @@
 
 ## 📨 PARA JAVIER
 
+### ✅ `public.presupuesto_marcas`: el CHECK de `marca` suma el valor `impacta` (2026-11-25) — ⏳ AVISO PREVIO (se corre a continuación con OK de JMS)
+- A-FEAT-1660 C2: lo disponible a fijar no suma salvo que JMS lo marque. `scripts/297-…` con su deshacer. Sólo el CHECK de una tabla nueva de hoy; no toca RLS, roles ni permisos.
+
 ### ✅ Tabla nueva `public.presupuesto_marcas` (2026-11-25) — ✅ APLICADA el 25/11 (aviso previo; JMS: «primero con lo de los checks para dar por pago o cobrado»): tabla vacía, RLS con 2 políticas, 1 fila en recurso_tablas, verificado con EXPLAIN INSERT
 - A-FEAT-1660 etapa 2: renglones que JMS da por pagados/cobrados en el presupuesto sin tocar el dato real. `scripts/296-…` con su deshacer. Tabla nueva y aislada: RLS con las 2 políticas de siempre (`puede_ver` / `puede_escribir`), `anon` sin acceso, 1 fila en `recurso_tablas` (recurso `presupuesto`). **No toca ninguna tabla existente, ni roles ni permisos.**
 
