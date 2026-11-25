@@ -1,7 +1,10 @@
 "use client"
 
 
-import { mesArgentina } from "@/lib/fechas"
+import { mesArgentina, hoyArgentina } from "@/lib/fechas"
+import { useMultiCashFlowData, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
+import { calcularArranque, lineaDeSaldo, controlDosFuentes, totalComposicion, fechaDeCaja, yaSeMovio, mesDe, type FilaReal } from "@/lib/presupuesto/arranque"
+import { PresupuestoArranque, type ComposicionItem } from "@/components/presupuesto-arranque"
 import { useState, useEffect, useMemo, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
@@ -309,6 +312,14 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   /** Fecha del movimiento del que salió el saldo, cuando el modo es `ultimo_conciliado`. */
   const [arranqueFecha, setArranqueFecha] = useState<string | null>(null)
   const [mesInicial, setMesInicial] = useState<string | null>(null)
+  /** 📍 A-FEAT-1660 — lo declarado a mano: saldo, FECHA y composición (cuenta corriente + FCI + otros). */
+  const [saldoDeclarado, setSaldoDeclarado] = useState(0)
+  const [fechaArranqueDecl, setFechaArranqueDecl] = useState<string | null>(null)
+  const [composicionSaldo, setComposicionSaldo] = useState<ComposicionItem[] | null>(null)
+  /** El último saldo conciliado del extracto, se use o no: hace falta para el control de las dos fuentes. */
+  const [extractoUlt, setExtractoUlt] = useState<{ saldo: number; fecha: string } | null>(null)
+  /** Cuotas de template del mes actual que ya salieron (están en el saldo) y el presupuesto igual las resta. */
+  const [tplPagadoMesActual, setTplPagadoMesActual] = useState({ total: 0, cuotas: 0 })
   const [editandoSaldo, setEditandoSaldo] = useState(false)
   const [saldoTxt, setSaldoTxt] = useState("")
   /** Presupuesto de cuentas contables — se configura en su panel, acá sólo se muestra y suma. */
@@ -331,6 +342,16 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
 
   // 24 meses: las cuotas de arrendamiento llegan hasta may-2028 (campaña 27/28)
   const meses = useMemo(() => getMeses(24), [])
+
+  /**
+   * 📍 A-FEAT-1660 — lo REAL (facturas, cuotas, sueldos, anticipos, ventas sin conciliar, ya en pesos) sale del
+   * MISMO lugar que el Cash Flow, para que los dos digan lo mismo. Sólo MSA: es la empresa del presupuesto.
+   * El objeto de filtros es fijo (useMemo): el hook vuelve a cargar cada vez que cambia.
+   */
+  const filtrosReales = useMemo<CashFlowFilters>(() => ({ empresasFacturas: ["MSA"], empresasTemplates: ["MSA"] }), [])
+  const { data: filasCashFlow, cargarDatos: recargarReales } = useMultiCashFlowData(filtrosReales)
+  useEffect(() => { if (recargarToken) void recargarReales({ silencioso: true }) // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recargarToken])
 
   // ── Carga de datos ──────────────────────────────────────────────────────────
 
@@ -576,16 +597,22 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    */
   const cargarConfig = async () => {
     const { data } = await supabase.from("presupuesto_config")
-      .select("saldo_inicial, mes_inicial, arranque_modo").eq("empresa", "MSA").maybeSingle()
+      .select("saldo_inicial, mes_inicial, arranque_modo, fecha_arranque, composicion_saldo").eq("empresa", "MSA").maybeSingle()
     const modo = (data?.arranque_modo ?? "manual") as "manual" | "ultimo_conciliado"
     setArranqueModo(modo)
+    // 📍 A-FEAT-1660 — lo declarado (se guarda aunque el modo sea el extracto) y el último conciliado (siempre:
+    // con las dos fuentes sale el control).
+    setSaldoDeclarado(Number(data?.saldo_inicial) || 0)
+    setFechaArranqueDecl((data as any)?.fecha_arranque ?? null)
+    setComposicionSaldo(Array.isArray((data as any)?.composicion_saldo) ? (data as any).composicion_saldo : null)
+    const { data: ult } = await supabase.from("msa_galicia")
+      .select("fecha, saldo")
+      .eq("estado", "conciliado").not("saldo", "is", null)
+      .order("fecha", { ascending: false }).order("orden", { ascending: false })
+      .limit(1).maybeSingle()
+    setExtractoUlt(ult?.saldo != null ? { saldo: Number(ult.saldo), fecha: String(ult.fecha) } : null)
 
     if (modo === "ultimo_conciliado") {
-      const { data: ult } = await supabase.from("msa_galicia")
-        .select("fecha, saldo")
-        .eq("estado", "conciliado").not("saldo", "is", null)
-        .order("fecha", { ascending: false }).order("orden", { ascending: false })
-        .limit(1).maybeSingle()
       if (ult?.saldo != null) {
         const f = new Date(String(ult.fecha) + "T00:00:00")
         setSaldoInicial(Number(ult.saldo))
@@ -615,6 +642,16 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         { onConflict: "empresa" })
     if (error) { alert("Error: " + error.message); return }
     setSaldoInicial(monto); setMesInicial(mes); setEditandoSaldo(false)
+  }
+
+  /** 📍 A-FEAT-1660 — guarda el saldo declarado CON FECHA y composición; el saldo es la suma. */
+  const guardarDeclarado = async (d: { fecha: string; composicion: ComposicionItem[] }) => {
+    const monto = totalComposicion(d.composicion)
+    const { error } = await supabase.from("presupuesto_config")
+      .upsert({ empresa: "MSA", saldo_inicial: monto, mes_inicial: d.fecha.slice(0, 7), fecha_arranque: d.fecha,
+        composicion_saldo: d.composicion, updated_at: new Date().toISOString() }, { onConflict: "empresa" })
+    if (error) { alert("Error: " + error.message); return }
+    await cargarConfig()
   }
 
   const cargarTemplates = async (ipc: PuntoSerie[]) => {
@@ -648,7 +685,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     // ✂️ A-BUG-1379: de a tandas — la base entrega como máximo 1.000 filas y acá hay más (1.462 al 26/10).
     const rCuotas = await traerTodo<any>((d, h) => supabase
       .from("cuotas_egresos_sin_factura")
-      .select("egreso_id, fecha_estimada, fecha_vencimiento, monto, estado", { count: "exact" })
+      .select("egreso_id, fecha_estimada, fecha_vencimiento, monto, estado, fecha_pago, medio_pago", { count: "exact" })
       .in("egreso_id", templateIds)
       .gte("fecha_estimada", fechaDesde)
       .lt("fecha_estimada", fechaHasta)
@@ -656,6 +693,22 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       .order("id").range(d, h))
     const cuotas = rCuotas.data
     avisarSiIncompleta("Presupuesto · cuotas de templates", rCuotas)
+
+    // 📍 A-FEAT-1660 — cuotas del mes actual que YA salieron de la cuenta: están en el saldo de hoy, pero la
+    // columna del mes actual las sigue restando (la grilla toma las cuotas en cualquier estado).
+    {
+      const hoy = hoyArgentina(), mesHoy = hoy.slice(0, 7)
+      let total = 0, n = 0
+      for (const c of (cuotas || []) as any[]) {
+        const f: FilaReal = { id: "", origen: "TEMPLATE", fecha_estimada: c.fecha_estimada || c.fecha_vencimiento || "",
+          fecha_pago: c.fecha_pago, estado: c.estado || "", medio_pago: c.medio_pago, debitos: Number(c.monto) || 0, creditos: 0 }
+        if (!f.fecha_estimada || mesDe(f.fecha_estimada) !== mesHoy) continue
+        if (!["", "banco", "msa_galicia"].includes(String(f.medio_pago ?? "").trim().toLowerCase())) continue
+        if (!yaSeMovio(f, hoy) || fechaDeCaja(f) > hoy) continue
+        total += f.debitos; n++
+      }
+      setTplPagadoMesActual({ total: Math.round(total * 100) / 100, cuotas: n })
+    }
 
     // Toda la historia de cuotas por template: la pasada sirve para proyectar, la futura
     // es el dato firme que manda donde existe.
@@ -1675,21 +1728,92 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    * Los meses ANTERIORES a `mesInicial` quedan vacíos — no se puede acumular hacia atrás
    * desde un saldo que corresponde a otro momento.
    */
+  /**
+   * 📍 A-FEAT-1660 — el arranque A UNA FECHA: del extracto (último conciliado) o lo declarado con su fecha.
+   * Sin fecha declarada (modo manual viejo) no hay arranque con fecha: queda la cuenta de antes, con aviso.
+   */
+  const arranque = useMemo(() => {
+    const hoy = hoyArgentina()
+    const fuente = arranqueModo === "ultimo_conciliado" && extractoUlt ? "extracto" as const
+      : (arranqueModo === "manual" && fechaArranqueDecl ? "declarado" as const : null)
+    if (!fuente) return null
+    const filas: FilaReal[] = (filasCashFlow || []).map(f => ({
+      id: f.id, origen: f.origen, fecha_estimada: f.fecha_estimada, fecha_pago: f.fecha_pago ?? null, estado: f.estado,
+      medio_pago: (f as any).medio_pago ?? null, debitos: Number(f.debitos) || 0, creditos: Number(f.creditos) || 0,
+      nombre_proveedor: f.nombre_proveedor, detalle: f.detalle, nro_cuenta: f.nro_cuenta ?? null,
+    }))
+    return calcularArranque({
+      fuente,
+      fechaArranque: fuente === "extracto" ? extractoUlt!.fecha : fechaArranqueDecl!,
+      saldoArranque: fuente === "extracto" ? extractoUlt!.saldo : saldoDeclarado,
+      hoy, filas,
+    })
+  }, [arranqueModo, extractoUlt, fechaArranqueDecl, saldoDeclarado, filasCashFlow])
+
+  /**
+   * Lo que la columna del mes actual resta pero YA salió y está en el saldo de hoy: las cuotas del mes ya pagadas,
+   * y las facturas del mes ya pagadas contra la proyección de su cuenta (hasta lo proyectado, para no dar vuelta
+   * el signo). Se devuelve al mes actual.
+   */
+  const ajusteMesActual = useMemo(() => {
+    const hoy = hoyArgentina(), mesHoy = hoy.slice(0, 7)
+    const pagadoPorCuenta: Record<string, number> = {}
+    let facturas = 0
+    for (const f of filasCashFlow || []) {
+      if (f.origen !== "ARCA" || !f.nro_cuenta) continue
+      const fr: FilaReal = { id: f.id, origen: f.origen, fecha_estimada: f.fecha_estimada, fecha_pago: f.fecha_pago ?? null,
+        estado: f.estado, medio_pago: (f as any).medio_pago ?? null, debitos: Number(f.debitos) || 0, creditos: 0 }
+      if (!["", "banco", "msa_galicia"].includes(String(fr.medio_pago ?? "").trim().toLowerCase())) continue
+      if (!yaSeMovio(fr, hoy)) continue
+      const fc = fechaDeCaja(fr)
+      if (mesDe(fc) !== mesHoy || fc > hoy) continue
+      pagadoPorCuenta[f.nro_cuenta] = (pagadoPorCuenta[f.nro_cuenta] || 0) + fr.debitos
+      facturas++
+    }
+    let deCuentas = 0
+    for (const c of cuentas) {
+      const pagado = pagadoPorCuenta[c.nro] || 0
+      if (!pagado) continue
+      const proyectado = c.celdas.find(x => x.mes === mesHoy)?.monto || 0
+      deCuentas += Math.min(pagado, Math.max(0, proyectado))
+    }
+    return { total: Math.round((tplPagadoMesActual.total + deCuentas) * 100) / 100, cuotas: tplPagadoMesActual.cuotas, facturas }
+  }, [filasCashFlow, cuentas, tplPagadoMesActual])
+
+  /** Con las dos fuentes (extracto y lo declarado a hoy): el extracto llevado a hoy contra lo declarado. */
+  const controlArranque = useMemo(() => {
+    if (!extractoUlt || !fechaArranqueDecl || fechaArranqueDecl !== hoyArgentina()) return null
+    const hoy = hoyArgentina()
+    const desdeExtracto = arranque?.fuente === "extracto" ? arranque.saldoHoy
+      : calcularArranque({ fuente: "extracto", fechaArranque: extractoUlt.fecha, saldoArranque: extractoUlt.saldo, hoy,
+          filas: (filasCashFlow || []).map(f => ({ id: f.id, origen: f.origen, fecha_estimada: f.fecha_estimada, fecha_pago: f.fecha_pago ?? null,
+            estado: f.estado, medio_pago: (f as any).medio_pago ?? null, debitos: Number(f.debitos) || 0, creditos: Number(f.creditos) || 0 })) }).saldoHoy
+    return controlDosFuentes(desdeExtracto, saldoDeclarado)
+  }, [extractoUlt, fechaArranqueDecl, saldoDeclarado, arranque, filasCashFlow])
+
   const saldoAcumuladoPorMes = useMemo(() => {
+    if (arranque) {
+      const claves = meses.map(m => `${m.anio}-${String(m.mes).padStart(2, "0")}`)
+      const flujo: Record<string, number> = {}
+      for (const k of claves) flujo[k] = (totalIngresosPorMes[k] || 0) - (totalesPorMes[k] || 0)
+      return lineaDeSaldo({ meses: claves, mesActual: mesArgentina(), saldoHoy: arranque.saldoHoy,
+        vencidosNeto: arranque.vencidos.neto, flujoPorMes: flujo, ajusteMesActual: ajusteMesActual.total })
+    }
+    // Sin arranque con fecha: la cuenta de antes (desde el mes inicial, sin día).
     const primero = meses[0] ? `${meses[0].anio}-${String(meses[0].mes).padStart(2,"0")}` : ""
-    const arranque = mesInicial || primero
+    const mesArranqueViejo = mesInicial || primero
     const salida: Record<string, number | null> = {}
     let acum = saldoInicial
     let empezo = false
     for (const m of meses) {
       const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
-      if (!empezo && clave < arranque) { salida[clave] = null; continue }
+      if (!empezo && clave < mesArranqueViejo) { salida[clave] = null; continue }
       empezo = true
       acum += (totalIngresosPorMes[clave] || 0) - (totalesPorMes[clave] || 0)
       salida[clave] = acum
     }
     return salida
-  }, [meses, saldoInicial, mesInicial, totalIngresosPorMes, totalesPorMes])
+  }, [meses, saldoInicial, mesInicial, totalIngresosPorMes, totalesPorMes, arranque, ajusteMesActual])
 
   const hayIngresos = campos.length > 0 || ganaderia.length > 0
     || hacienda.categorias.length > 0
@@ -1867,6 +1991,17 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
           </Button>
         </div>
       </div>
+
+      {/* 📍 A-FEAT-1660 — de qué saldo arranca, el puente hasta hoy y lo impago vencido */}
+      <PresupuestoArranque
+        modo={arranqueModo}
+        resultado={arranque}
+        extracto={extractoUlt}
+        declarado={{ saldo: saldoDeclarado, fecha: fechaArranqueDecl, composicion: composicionSaldo }}
+        ajusteMesActual={ajusteMesActual}
+        control={controlArranque}
+        onGuardarDeclarado={guardarDeclarado}
+      />
 
       {/* ── Control de cobertura (P-32) ──
           "Todo debe estar en algún lugar, si no, advertencia."

@@ -5697,6 +5697,27 @@ mensual) y conviene guardar sin que ensucie las proyecciones.
 
 ---
 
+## 📍 Presupuesto → de qué saldo arranca *(nuevo 2026-11-25)*
+
+Arriba de la grilla, la barra **📍 Arranque del saldo** dice de qué saldo parte el presupuesto, a qué fecha,
+y cuál es el **saldo de hoy**. Se abre con un clic.
+
+- **Dos fuentes, siempre con fecha** (los botones «Saldo a mano» / «Último conciliado» de la fila SALDO ACUMULADO):
+  - **Saldo a mano**: tocá **Editar fecha y composición**, poné la **fecha** y lo que hay en cada cuenta
+    (cuenta corriente, **FCI**, otras). El saldo es la suma. Los FCI van sumados: es plata disponible (si alguno
+    es en dólares, cargalo en pesos).
+  - **Último conciliado**: el saldo del último movimiento conciliado del extracto, con su fecha.
+- **El puente** (sólo con «Último conciliado»): lo que el sistema dice que se pagó y se cobró entre esa fecha y hoy,
+  renglón por renglón. Saldo del extracto − pagado + cobrado = **saldo estimado de hoy**.
+- **Impagos vencidos**: lo impago de meses anteriores (facturas, cuotas, sueldos). Se restan en el mes actual.
+- **Ya pagado este mes**: lo que la columna del mes igual restaba pero ya salió de la cuenta; se devuelve.
+- **La fila SALDO ACUMULADO** arranca en el mes actual desde el saldo de hoy (los meses anteriores quedan vacíos:
+  ya están adentro del saldo).
+- **Control**: si cargaste el saldo a mano con la fecha de hoy, compara contra el extracto llevado a hoy. La
+  diferencia es lo que el banco movió y el sistema no tiene registrado — lo que falta conciliar.
+
+→ [A-FEAT-1660](PENDIENTES.md#a-feat-1660)
+
 ## 📊 Presupuesto → leer la grilla
 
 ### Cómo está ordenada *(cambió 2026-07-31, sin testear)*

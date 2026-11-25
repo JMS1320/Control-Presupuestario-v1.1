@@ -330,6 +330,7 @@ import { detalleSinAnticipo } from "@/lib/ventas/detalle-cobro-db"
 import { estadoCheque, chequePendienteDeEndoso, candidatosEndoso } from "@/lib/ventas/cheques-terceros"
 import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { vinculoDelMail } from "@/lib/pagos/vinculo-mail-pago"
+import { calcularArranque, clasificarFila, lineaDeSaldo, controlDosFuentes, totalComposicion, type FilaReal } from "@/lib/presupuesto/arranque"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
@@ -8989,6 +8990,53 @@ export function correrCasos(): Resultado[] {
       `${n} | ${nombres.join(" | ")}`,
       n === 3 && nombres[0] === "Galicia MSA Pagos 20261125.xlsx" && nombres[1] === "Galicia MSA Pagos 20261125 - 3.xlsx"
         && nombres[2] === "Galicia MSA Pagos 20261125 (1-2) - 2.xlsx" && nombres[3] === "Galicia MSA Pagos 20261125 - 1712.xlsx", "A-FEAT-1658")
+  }
+
+  // ══ 📍 A-FEAT-1660 — presupuesto con la conciliación atrasada: arranque a una fecha, puente, impagos ══
+  {
+    const f = (id: string, estado: string, fecha: string, debitos: number, extra: Partial<FilaReal> = {}): FilaReal =>
+      ({ id, origen: "ARCA", estado, fecha_estimada: fecha, debitos, creditos: 0, medio_pago: "banco", ...extra })
+    // Arranque del EXTRACTO el 23/09; hoy 25/11
+    const filas: FilaReal[] = [
+      f("a", "pagado", "2026-09-10", 100, { fecha_pago: "2026-09-20" }),      // pagado antes del 23/09 → en el saldo
+      f("b", "pagado", "2026-10-05", 200, { fecha_pago: "2026-10-06" }),      // pagado después → puente
+      f("c", "debito", "2026-11-03", 50),                                       // débito del 03/11 → puente
+      f("d", "pendiente", "2026-10-15", 300),                                   // impaga vencida
+      f("e", "pendiente", "2026-12-10", 400),                                   // impaga futura → diciembre
+      f("g", "echeq", "2026-12-20", 500),                                       // echeq que se cobra en diciembre → impago dic
+      f("h", "echeq", "2026-10-20", 70),                                        // echeq ya cobrado → puente
+      f("i", "pagado", "2026-10-01", 900, { fecha_pago: "2026-10-01", medio_pago: "caja_general" }),  // otra cuenta
+      { id: "v", origen: "VENTA", estado: "cobrado", fecha_estimada: "2026-10-30", debitos: 0, creditos: 1000, medio_pago: null }, // cobro → puente
+    ]
+    const r = calcularArranque({ fuente: "extracto", fechaArranque: "2026-09-23", saldoArranque: 10000, hoy: "2026-11-25", filas })
+    const res = `puente ${r.puente.filas.map(x => x.id).join("")} egr ${r.puente.egresos} ing ${r.puente.ingresos} · hoy ${r.saldoHoy} · venc ${r.vencidos.filas.map(x => x.id).join("")} ${r.vencidos.neto} · dic ${r.impagosPorMes["2026-12"]} · otra ${r.otraCuenta.cantidad} · enSaldo ${r.enSaldo}`
+    chequear("Presupuesto", "📍 Extracto al 23/09: lo pagado antes queda en el saldo; lo pagado/cobrado después es el puente; la impaga vieja es vencida; el echeq va cuando se cobra; la caja no mueve este saldo",
+      "puente bhvc egr 320 ing 1000 · hoy 10680 · venc d -300 · dic -900 · otra 1 · enSaldo 1", res,
+      res === "puente bhvc egr 320 ing 1000 · hoy 10680 · venc d -300 · dic -900 · otra 1 · enSaldo 1", "A-FEAT-1660")
+    // Arranque DECLARADO hoy: lo pagado ya está en el saldo → el puente queda vacío
+    const d = calcularArranque({ fuente: "declarado", fechaArranque: "2026-11-25", saldoArranque: 10680, hoy: "2026-11-25", filas })
+    chequear("Presupuesto", "📍 Saldo declarado hoy: nada de puente (lo pagado ya está adentro) y los vencidos son los mismos",
+      "0 · 10680 · -300", `${d.puente.filas.length} · ${d.saldoHoy} · ${d.vencidos.neto}`,
+      d.puente.filas.length === 0 && d.saldoHoy === 10680 && d.vencidos.neto === -300, "A-FEAT-1660")
+    // Control de las dos fuentes y la composición
+    const ctl = controlDosFuentes(r.saldoHoy, 10500)
+    const comp = totalComposicion([{ cuenta: "Cuenta corriente", monto: 6000 }, { cuenta: "FCI", monto: 4500.5 }])
+    chequear("Presupuesto", "📍 Control: el extracto llevado a hoy (10.680) contra lo declarado (10.500) → −180 sin explicar · la composición CC + FCI suma",
+      "-180 no · 10500.5", `${ctl.diferencia} ${ctl.cierra ? "sí" : "no"} · ${comp}`, ctl.diferencia === -180 && !ctl.cierra && comp === 10500.5, "A-FEAT-1660")
+    // La línea de saldo: vacía antes del mes actual; el mes actual lleva vencidos y el ajuste
+    const linea = lineaDeSaldo({ meses: ["2026-10", "2026-11", "2026-12"], mesActual: "2026-11", saldoHoy: 10680, vencidosNeto: -300,
+      flujoPorMes: { "2026-10": -999, "2026-11": -2000, "2026-12": 500 }, ajusteMesActual: 150 })
+    const l = `${linea["2026-10"]} · ${linea["2026-11"]} · ${linea["2026-12"]}`
+    chequear("Presupuesto", "📍 Línea de saldo: octubre vacío (ya está en el saldo de hoy); nov = 10.680 − 300 + 150 − 2.000; dic + 500",
+      "null · 8530 · 9030", l, l === "null · 8530 · 9030", "A-FEAT-1660")
+    // Impago del mes ACTUAL con el día ya pasado: no es vencido (ya está en la columna de noviembre)
+    chequear("Presupuesto", "📍 Una impaga del 05/11 (mes actual) no es «vencida»: ya la trae la columna de noviembre; la del 15/10 sí",
+      "impago · vencido", `${clasificarFila(f("n", "pendiente", "2026-11-05", 1), "2026-09-23", "2026-11-25")} · ${clasificarFila(f("o", "pendiente", "2026-10-15", 1), "2026-09-23", "2026-11-25")}`,
+      clasificarFila(f("n", "pendiente", "2026-11-05", 1), "2026-09-23", "2026-11-25") === "impago" && clasificarFila(f("o", "pendiente", "2026-10-15", 1), "2026-09-23", "2026-11-25") === "vencido", "A-FEAT-1660")
+    // Un pagado con fecha futura todavía no salió
+    chequear("Presupuesto", "📍 Registrado «pagado» con fecha de pago futura → impago de su mes, no puente",
+      "impago", clasificarFila(f("z", "pagado", "2026-12-01", 1, { fecha_pago: "2026-12-01" }), "2026-09-23", "2026-11-25"),
+      clasificarFila(f("z", "pagado", "2026-12-01", 1, { fecha_pago: "2026-12-01" }), "2026-09-23", "2026-11-25") === "impago", "A-FEAT-1660")
   }
 
   // ══ 🔢 A-FEAT-1658 — los Excel de echeqs del mismo día también se numeran (contador del navegador) ══
