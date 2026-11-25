@@ -5711,8 +5711,13 @@ y cuál es el **saldo de hoy**. Se abre con un clic.
   renglón por renglón. Saldo del extracto − pagado + cobrado = **saldo estimado de hoy**.
 - **Impagos vencidos**: lo impago de meses anteriores (facturas, cuotas, sueldos). Se restan en el mes actual.
 - **Ya pagado este mes**: lo que la columna del mes igual restaba pero ya salió de la cuenta; se devuelve.
-- **La fila SALDO ACUMULADO** arranca en el mes actual desde el saldo de hoy (los meses anteriores quedan vacíos:
-  ya están adentro del saldo).
+- **La columna del mes en curso muestra sólo lo que falta del mes**: lo ya pagado o cobrado (por estado o porque lo
+  marcaste) se descuenta de su fila, y la celda lo dice al pasar el mouse.
+- **Abajo de la grilla**: **SALDO DE INICIO** (en el mes en curso, el saldo de hoy; después, el final del mes anterior),
+  **+ Vencidos de meses anteriores** (sólo el mes en curso) y **SALDO ACUMULADO** (el final de cada mes). Pasando el mouse
+  por el saldo de inicio: inicio + vencidos + resultado = final, con ✓ (o ⚠️ si no cierra).
+- **Disponible a fijar** (arrendamientos) **no suma** salvo que marques la celda **«suma»** (verde); gris tachado = no suma.
+- **Ventas de hacienda ya hechas**: fila propia en INGRESOS, cada cuota en su mes.
 - **Control**: si cargaste el saldo a mano con la fecha de hoy, compara contra el extracto llevado a hoy. La
   diferencia es lo que el banco movió y el sistema no tiene registrado — lo que falta conciliar.
 

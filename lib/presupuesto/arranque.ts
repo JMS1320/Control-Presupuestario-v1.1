@@ -30,6 +30,9 @@ export interface FilaReal {
   nro_cuenta?: string | null
   /** La tabla de origen (como en el Cash Flow): con el id, identifica la marca del presupuesto. */
   origen_tabla?: string
+  /** C1 — para descontar lo ya pagado de SU fila de la grilla: el template (cuotas) y el campo (arrendamiento). */
+  egreso_id?: string | null
+  centro_costo?: string | null
 }
 
 /** 🏷️ Etapa 2 — lo que JMS dice de un renglón no conciliado (tabla `presupuesto_marcas`). */

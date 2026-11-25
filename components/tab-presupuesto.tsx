@@ -268,8 +268,8 @@ function subAgrupa(ag: Agrupador): boolean {
  */
 export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number } = {}) {
   const [cargando, setCargando] = useState(true)
-  const [agrupadores, setAgrupadores] = useState<Agrupador[]>([])
-  const [sueldoFilas, setSueldoFilas] = useState<FilaSueldo[]>([])
+  const [agrupadoresBase, setAgrupadores] = useState<Agrupador[]>([])
+  const [sueldoFilasBase, setSueldoFilas] = useState<FilaSueldo[]>([])
   const [camposBase, setCampos] = useState<FilaCampo[]>([])
   // Ganadería: una fila por proyección, con su IIBB derivado el mes siguiente al cobro
   const [ganaderia, setGanaderia] = useState<{
@@ -321,13 +321,13 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   /** El último saldo conciliado del extracto, se use o no: hace falta para el control de las dos fuentes. */
   const [extractoUlt, setExtractoUlt] = useState<{ saldo: number; fecha: string } | null>(null)
   /** Cuotas de template del mes actual que ya salieron (están en el saldo) y el presupuesto igual las resta. */
-  const [tplPagadoMesActual, setTplPagadoMesActual] = useState({ total: 0, cuotas: 0 })
+  const [tplPagadoMesActual, setTplPagadoMesActual] = useState<{ total: number; cuotas: number; porTemplate: Record<string, number> }>({ total: 0, cuotas: 0, porTemplate: {} })
   /** 🏷️ A-FEAT-1660 etapa 2 — lo que JMS dio por pagado/cobrado (o confirmó impago), por `claveMarca`. */
   const [marcas, setMarcas] = useState<Record<string, MarcaPresupuesto>>({})
   const [editandoSaldo, setEditandoSaldo] = useState(false)
   const [saldoTxt, setSaldoTxt] = useState("")
   /** Presupuesto de cuentas contables — se configura en su panel, acá sólo se muestra y suma. */
-  const [cuentas, setCuentas] = useState<{ nro: string; nombre: string; celdas: CeldaPresupuesto[]; modo: ModoPresupuesto }[]>([])
+  const [cuentasBase, setCuentas] = useState<{ nro: string; nombre: string; celdas: CeldaPresupuesto[]; modo: ModoPresupuesto }[]>([])
   /** Variables de costo (P-37) — cantidad × precio × ajustes, repartido en los meses. */
   const [variables, setVariables] = useState<
     { id: string; concepto: string; nroCuenta: string | null; montos: Record<string, number>;
@@ -347,6 +347,96 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   // 24 meses: las cuotas de arrendamiento llegan hasta may-2028 (campaña 27/28)
   const meses = useMemo(() => getMeses(24), [])
 
+
+  /**
+   * 📍 A-FEAT-1660 — lo REAL (facturas, cuotas, sueldos, anticipos, ventas sin conciliar, ya en pesos) sale del
+   * MISMO lugar que el Cash Flow, para que los dos digan lo mismo. Sólo MSA: es la empresa del presupuesto.
+   * El objeto de filtros es fijo (useMemo): el hook vuelve a cargar cada vez que cambia.
+   */
+  const filtrosReales = useMemo<CashFlowFilters>(() => ({ empresasFacturas: ["MSA"], empresasTemplates: ["MSA"] }), [])
+  const { data: filasCashFlow, cargarDatos: recargarReales } = useMultiCashFlowData(filtrosReales)
+  useEffect(() => { if (recargarToken) void recargarReales({ silencioso: true }) // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recargarToken])
+
+  /**
+   * 📍 A-FEAT-1660 — el arranque A UNA FECHA: del extracto (último conciliado) o lo declarado con su fecha.
+   * Sin fecha declarada (modo manual viejo) no hay arranque con fecha: queda la cuenta de antes, con aviso.
+   */
+  const arranque = useMemo(() => {
+    const hoy = hoyArgentina()
+    const fuente = arranqueModo === "ultimo_conciliado" && extractoUlt ? "extracto" as const
+      : (arranqueModo === "manual" && fechaArranqueDecl ? "declarado" as const : null)
+    if (!fuente) return null
+    const filas: FilaReal[] = (filasCashFlow || []).map(f => ({
+      id: f.id, origen: f.origen, fecha_estimada: f.fecha_estimada, fecha_pago: f.fecha_pago ?? null, estado: f.estado,
+      medio_pago: (f as any).medio_pago ?? null, debitos: Number(f.debitos) || 0, creditos: Number(f.creditos) || 0,
+      nombre_proveedor: f.nombre_proveedor, detalle: f.detalle, nro_cuenta: f.nro_cuenta ?? null, origen_tabla: f.origen_tabla,
+      egreso_id: f.egreso_id ?? null, centro_costo: f.centro_costo ?? null,
+    }))
+    return calcularArranque({
+      fuente,
+      fechaArranque: fuente === "extracto" ? extractoUlt!.fecha : fechaArranqueDecl!,
+      saldoArranque: fuente === "extracto" ? extractoUlt!.saldo : saldoDeclarado,
+      hoy, filas, marcas,
+    })
+  }, [arranqueModo, extractoUlt, fechaArranqueDecl, saldoDeclarado, filasCashFlow, marcas])
+
+  /**
+   * 📍 A-FEAT-1660 C1 — lo YA PAGADO / COBRADO en el mes en curso, por fila de la grilla (JMS 25/11: «sería ideal que la
+   * columna de noviembre no muestre lo que dijimos que está pagado, porque sino sería confuso»). Está en el saldo de hoy,
+   * así que se descuenta de SU fila: cuotas por template, facturas contra la proyección de su cuenta, sueldos marcados por
+   * empleado, cobros del arrendamiento por campo. Lo que no encuentra fila no se descuenta (la grilla no lo tenía).
+   */
+  const pagadoMes = useMemo(() => {
+    const hoy = hoyArgentina(), mes = hoy.slice(0, 7)
+    const porTemplate: Record<string, number> = { ...tplPagadoMesActual.porTemplate }
+    const porCuenta: Record<string, number> = {}, porSueldo: Record<string, number> = {}, porCampo: Record<string, number> = {}
+    let renglones = tplPagadoMesActual.cuotas
+    const sumar = (m: Record<string, number>, k: string | null | undefined, v: number) => { if (k && v) { m[k] = (m[k] || 0) + v; renglones++ } }
+    for (const f of filasCashFlow || []) {
+      const fr: FilaReal = { id: f.id, origen: f.origen, fecha_estimada: f.fecha_estimada, fecha_pago: f.fecha_pago ?? null,
+        estado: f.estado, medio_pago: (f as any).medio_pago ?? null, debitos: Number(f.debitos) || 0, creditos: Number(f.creditos) || 0 }
+      if (!["", "banco", "msa_galicia"].includes(String(fr.medio_pago ?? "").trim().toLowerCase())) continue
+      if (!yaSeMovio(fr, hoy)) continue
+      const fc = fechaDeCaja(fr)
+      if (mesDe(fc) !== mes || fc > hoy) continue
+      if (f.origen === "ARCA") sumar(porCuenta, f.nro_cuenta, fr.debitos)
+      else if (f.origen === "VENTA" && String(f.origen_tabla || "").endsWith("ventas_unificadas")) sumar(porCampo, f.centro_costo, fr.creditos)
+    }
+    for (const f of arranque?.marcados.mesEnCurso || []) {
+      if (f.origen === "TEMPLATE") sumar(porTemplate, f.egreso_id, Number(f.debitos) || 0)
+      else if (f.origen === "ARCA") sumar(porCuenta, f.nro_cuenta, Number(f.debitos) || 0)
+      else if (f.origen === "SUELDO") sumar(porSueldo, f.nombre_proveedor, Number(f.debitos) || 0)
+      else if (f.origen === "VENTA" && String(f.origen_tabla || "").endsWith("ventas_unificadas")) sumar(porCampo, f.centro_costo, Number(f.creditos) || 0)
+    }
+    return { mes, porTemplate, porCuenta, porSueldo, porCampo, renglones }
+  }, [filasCashFlow, arranque, tplPagadoMesActual])
+
+  /** C1 — las filas de la grilla, sin lo ya pagado en el mes en curso (con la explicación en la celda). */
+  const nota = (v: number) => ` · − $ ${Math.round(v).toLocaleString("es-AR")} ya pagado este mes (está en el saldo de hoy)`
+  const agrupadores = useMemo<Agrupador[]>(() => agrupadoresBase.map(ag => ({
+    ...ag,
+    templates: ag.templates.map(t => {
+      const p = pagadoMes.porTemplate[t.id] || 0
+      const v = t.montos[pagadoMes.mes] || 0
+      if (!p || !v) return t
+      const celda: any = t.celdas[pagadoMes.mes]
+      return { ...t, montos: { ...t.montos, [pagadoMes.mes]: Math.max(0, v - p) },
+        celdas: { ...t.celdas, [pagadoMes.mes]: { ...(celda || {}), explicacion: `${celda?.explicacion || ""}${nota(Math.min(p, v))}` } } }
+    }),
+  })), [agrupadoresBase, pagadoMes])
+  const cuentas = useMemo(() => cuentasBase.map(c => {
+    const p = pagadoMes.porCuenta[c.nro] || 0
+    if (!p) return c
+    return { ...c, celdas: c.celdas.map(x => x.mes !== pagadoMes.mes || !x.monto ? x
+      : { ...x, monto: Math.max(0, x.monto - p), explicacion: `${x.explicacion || ""}${nota(Math.min(p, x.monto))}` }) }
+  }), [cuentasBase, pagadoMes])
+  const sueldoFilas = useMemo<FilaSueldo[]>(() => sueldoFilasBase.map(sf => {
+    const p = pagadoMes.porSueldo[sf.nombre] || 0
+    const v = sf.montos[pagadoMes.mes] || 0
+    if (!p || !v) return sf
+    return { ...sf, montos: { ...sf.montos, [pagadoMes.mes]: Math.max(0, v - p) } }
+  }), [sueldoFilasBase, pagadoMes])
   /**
    * 🏷️ A-FEAT-1660 C2 — lo DISPONIBLE A FIJAR no suma (JMS 25/11: «lo disponible pero no ejecutado o vendido o cobrado no
    * debe sumar. Solo se debe mostrar… poner que impacte o que no impacte»). Se muestra entero (`disponibleVisible`); en
@@ -360,18 +450,15 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         .reduce((a, q) => a + (Number(q.monto) || 0), 0)
       if (s) suma[k] = s
     }
-    return { ...c, disponible: suma, disponibleVisible: c.disponible }
-  }), [camposBase, detalleCeldas, marcas])
-
-  /**
-   * 📍 A-FEAT-1660 — lo REAL (facturas, cuotas, sueldos, anticipos, ventas sin conciliar, ya en pesos) sale del
-   * MISMO lugar que el Cash Flow, para que los dos digan lo mismo. Sólo MSA: es la empresa del presupuesto.
-   * El objeto de filtros es fijo (useMemo): el hook vuelve a cargar cada vez que cambia.
-   */
-  const filtrosReales = useMemo<CashFlowFilters>(() => ({ empresasFacturas: ["MSA"], empresasTemplates: ["MSA"] }), [])
-  const { data: filasCashFlow, cargarDatos: recargarReales } = useMultiCashFlowData(filtrosReales)
-  useEffect(() => { if (recargarToken) void recargarReales({ silencioso: true }) // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recargarToken])
+    // C1 — lo ya cobrado este mes de este campo (está en el saldo de hoy) no figura en la columna del mes
+    const cobrado = pagadoMes.porCampo[c.campo] || 0
+    if (!cobrado) return { ...c, disponible: suma, disponibleVisible: c.disponible }
+    const fijado = { ...c.fijado }, presupuestado = { ...c.presupuestado }
+    let resto = cobrado
+    const q1 = Math.min(resto, fijado[pagadoMes.mes] || 0); fijado[pagadoMes.mes] = (fijado[pagadoMes.mes] || 0) - q1; resto -= q1
+    const q2 = Math.min(resto, presupuestado[pagadoMes.mes] || 0); presupuestado[pagadoMes.mes] = (presupuestado[pagadoMes.mes] || 0) - q2
+    return { ...c, fijado, presupuestado, disponible: suma, disponibleVisible: c.disponible }
+  }), [camposBase, detalleCeldas, marcas, pagadoMes])
 
   // ── Carga de datos ──────────────────────────────────────────────────────────
 
@@ -774,6 +861,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     {
       const hoy = hoyArgentina(), mesHoy = hoy.slice(0, 7)
       let total = 0, n = 0
+      const porTemplate: Record<string, number> = {}
       for (const c of (cuotas || []) as any[]) {
         const f: FilaReal = { id: "", origen: "TEMPLATE", fecha_estimada: c.fecha_estimada || c.fecha_vencimiento || "",
           fecha_pago: c.fecha_pago, estado: c.estado || "", medio_pago: c.medio_pago, debitos: Number(c.monto) || 0, creditos: 0 }
@@ -781,8 +869,9 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         if (!["", "banco", "msa_galicia"].includes(String(f.medio_pago ?? "").trim().toLowerCase())) continue
         if (!yaSeMovio(f, hoy) || fechaDeCaja(f) > hoy) continue
         total += f.debitos; n++
+        porTemplate[c.egreso_id] = (porTemplate[c.egreso_id] || 0) + f.debitos
       }
-      setTplPagadoMesActual({ total: Math.round(total * 100) / 100, cuotas: n })
+      setTplPagadoMesActual({ total: Math.round(total * 100) / 100, cuotas: n, porTemplate })
     }
 
     // Toda la historia de cuotas por template: la pasada sirve para proyectar, la futura
@@ -1831,27 +1920,6 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    * Los meses ANTERIORES a `mesInicial` quedan vacíos — no se puede acumular hacia atrás
    * desde un saldo que corresponde a otro momento.
    */
-  /**
-   * 📍 A-FEAT-1660 — el arranque A UNA FECHA: del extracto (último conciliado) o lo declarado con su fecha.
-   * Sin fecha declarada (modo manual viejo) no hay arranque con fecha: queda la cuenta de antes, con aviso.
-   */
-  const arranque = useMemo(() => {
-    const hoy = hoyArgentina()
-    const fuente = arranqueModo === "ultimo_conciliado" && extractoUlt ? "extracto" as const
-      : (arranqueModo === "manual" && fechaArranqueDecl ? "declarado" as const : null)
-    if (!fuente) return null
-    const filas: FilaReal[] = (filasCashFlow || []).map(f => ({
-      id: f.id, origen: f.origen, fecha_estimada: f.fecha_estimada, fecha_pago: f.fecha_pago ?? null, estado: f.estado,
-      medio_pago: (f as any).medio_pago ?? null, debitos: Number(f.debitos) || 0, creditos: Number(f.creditos) || 0,
-      nombre_proveedor: f.nombre_proveedor, detalle: f.detalle, nro_cuenta: f.nro_cuenta ?? null, origen_tabla: f.origen_tabla,
-    }))
-    return calcularArranque({
-      fuente,
-      fechaArranque: fuente === "extracto" ? extractoUlt!.fecha : fechaArranqueDecl!,
-      saldoArranque: fuente === "extracto" ? extractoUlt!.saldo : saldoDeclarado,
-      hoy, filas, marcas,
-    })
-  }, [arranqueModo, extractoUlt, fechaArranqueDecl, saldoDeclarado, filasCashFlow, marcas])
 
   /**
    * Lo que la columna del mes actual resta pero YA salió y está en el saldo de hoy: las cuotas del mes ya pagadas,
@@ -1859,41 +1927,14 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    * el signo). Se devuelve al mes actual.
    */
   const ajusteMesActual = useMemo(() => {
-    const hoy = hoyArgentina(), mesHoy = hoy.slice(0, 7)
-    const pagadoPorCuenta: Record<string, number> = {}
-    let facturas = 0
-    for (const f of filasCashFlow || []) {
-      if (f.origen !== "ARCA" || !f.nro_cuenta) continue
-      const fr: FilaReal = { id: f.id, origen: f.origen, fecha_estimada: f.fecha_estimada, fecha_pago: f.fecha_pago ?? null,
-        estado: f.estado, medio_pago: (f as any).medio_pago ?? null, debitos: Number(f.debitos) || 0, creditos: 0 }
-      if (!["", "banco", "msa_galicia"].includes(String(fr.medio_pago ?? "").trim().toLowerCase())) continue
-      if (!yaSeMovio(fr, hoy)) continue
-      const fc = fechaDeCaja(fr)
-      if (mesDe(fc) !== mesHoy || fc > hoy) continue
-      pagadoPorCuenta[f.nro_cuenta] = (pagadoPorCuenta[f.nro_cuenta] || 0) + fr.debitos
-      facturas++
-    }
-    // 🏷️ Lo del mes en curso que JMS marcó pagado/cobrado: también está en el saldo de hoy. Las facturas van contra la
-    // proyección de su cuenta (como las pagadas); cuotas, sueldos y anticipos se devuelven enteros; un cobro se saca.
-    let directo = 0, marcados = 0
-    for (const f of arranque?.marcados.mesEnCurso || []) {
-      marcados++
-      if (!estaEnLaGrilla(f)) continue   // la grilla nunca la sumó: marcarla no le saca nada al mes
-      if (f.origen === "ARCA" && f.nro_cuenta) { pagadoPorCuenta[f.nro_cuenta] = (pagadoPorCuenta[f.nro_cuenta] || 0) + (Number(f.debitos) || 0); continue }
-      directo += (Number(f.debitos) || 0) - (Number(f.creditos) || 0)
-    }
-    let deCuentas = 0
-    for (const c of cuentas) {
-      const pagado = pagadoPorCuenta[c.nro] || 0
-      if (!pagado) continue
-      const proyectado = c.celdas.find(x => x.mes === mesHoy)?.monto || 0
-      deCuentas += Math.min(pagado, Math.max(0, proyectado))
-    }
-    // Las ventas de hacienda registradas sin cobrar del mes ya están en la fila «Ventas de hacienda ya hechas» de la grilla
-    // (punto 3): no se suman acá otra vez. Marcadas cobradas, la fila ya no las trae: tampoco se restan.
-    const fuera = 0
-    return { total: Math.round((tplPagadoMesActual.total + deCuentas + directo + fuera) * 100) / 100, cuotas: tplPagadoMesActual.cuotas, facturas, marcados }
-  }, [filasCashFlow, cuentas, tplPagadoMesActual, arranque])
+    // C1 — ya NO ajusta la línea de saldo: lo pagado/cobrado del mes se saca de cada fila (`pagadoMes`). Queda como dato
+    // para la barra: cuánto se sacó de la columna del mes en curso.
+    const sum = (m: Record<string, number>) => Object.values(m).reduce((a, b) => a + b, 0)
+    const egresos = sum(pagadoMes.porTemplate) + sum(pagadoMes.porCuenta) + sum(pagadoMes.porSueldo)
+    const ingresos = sum(pagadoMes.porCampo)
+    return { total: Math.round((egresos - ingresos) * 100) / 100, egresos, ingresos, cuotas: tplPagadoMesActual.cuotas,
+      facturas: Object.keys(pagadoMes.porCuenta).length, marcados: arranque?.marcados.mesEnCurso.length || 0, renglones: pagadoMes.renglones }
+  }, [pagadoMes, tplPagadoMesActual, arranque])
 
   /** Con las dos fuentes (extracto y lo declarado a hoy): el extracto llevado a hoy contra lo declarado. */
   const controlArranque = useMemo(() => {
@@ -1912,7 +1953,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       const flujo: Record<string, number> = {}
       for (const k of claves) flujo[k] = (totalIngresosPorMes[k] || 0) - (totalesPorMes[k] || 0)
       return lineaDeSaldo({ meses: claves, mesActual: mesArgentina(), saldoHoy: arranque.saldoHoy,
-        vencidosNeto: arranque.vencidos.neto, flujoPorMes: flujo, ajusteMesActual: ajusteMesActual.total })
+        vencidosNeto: arranque.vencidos.neto, flujoPorMes: flujo, ajusteMesActual: 0 })
     }
     // Sin arranque con fecha: la cuenta de antes (desde el mes inicial, sin día).
     const primero = meses[0] ? `${meses[0].anio}-${String(meses[0].mes).padStart(2,"0")}` : ""
@@ -2914,6 +2955,59 @@ Clic para presupuestar la venta`}
                     })}
                   </tr>
                 )}
+
+                {/* ── 📍 A-FEAT-1660 C1 — SALDO DE INICIO y VENCIDOS (JMS 25/11: «agregaría la fila saldo de inicio, que es igual
+                    al saldo final del mes anterior, y ahí pondría el saldo que yo declaro»). Cada mes cierra solo:
+                    inicio + vencidos (sólo el mes en curso) + resultado = saldo final. El control va en cada celda. ── */}
+                {hayIngresos && arranque && (() => {
+                  const claves = meses.map(m => `${m.anio}-${String(m.mes).padStart(2, "0")}`)
+                  const mesHoy = mesArgentina()
+                  const inicio: Record<string, number | null> = {}
+                  let anterior: number | null = null
+                  for (const k of claves) {
+                    if (k < mesHoy) { inicio[k] = null; continue }
+                    inicio[k] = anterior === null ? arranque.saldoHoy : anterior
+                    anterior = saldoAcumuladoPorMes[k] ?? null
+                  }
+                  const fmt$ = (n: number) => `$${Math.round(n).toLocaleString("es-AR")}`
+                  return (
+                    <>
+                      <tr className="border-t-2 border-gray-400 bg-slate-800">
+                        <td className="sticky left-0 z-10 bg-slate-800 px-4 py-2 text-xs font-semibold text-white">
+                          SALDO DE INICIO
+                          <span className="block text-[10px] font-normal text-gray-400">
+                            {arranque.fuente === "declarado" ? "el declarado" : "el del extracto ± puente"} en el mes en curso · después, el final del mes anterior
+                          </span>
+                        </td>
+                        {claves.map(k => {
+                          const v = inicio[k]
+                          const fin = saldoAcumuladoPorMes[k]
+                          const venc = k === mesHoy ? arranque.vencidos.neto : 0
+                          const res = (totalIngresosPorMes[k] || 0) - (totalesPorMes[k] || 0)
+                          const cierra = v != null && fin != null && Math.abs(v + venc + res - fin) < 1
+                          return (
+                            <td key={k} className={`px-3 py-2 text-right text-xs font-semibold ${v == null ? "text-gray-600" : "text-gray-100"} ${k === mesActualClave ? "border-l-2 border-blue-400" : ""}`}
+                              title={v == null ? "Ya está adentro del saldo de hoy" : `Control: inicio ${fmt$(v)}${venc ? ` + vencidos ${fmt$(venc)}` : ""} + resultado ${fmt$(res)} = final ${fmt$(fin ?? 0)} ${cierra ? "✓" : "⚠️ no cierra"}`}>
+                              {v == null ? "—" : <>{fmt$(v)}{!cierra && <span className="ml-1 text-amber-400">⚠️</span>}</>}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                      {arranque.vencidos.filas.length > 0 && (
+                        <tr className="bg-slate-800">
+                          <td className="sticky left-0 z-10 bg-slate-800 px-4 py-1.5 text-xs text-gray-300">
+                            + Vencidos de meses anteriores (cobros − pagos sin marcar)
+                          </td>
+                          {claves.map(k => (
+                            <td key={k} className={`px-3 py-1.5 text-right text-xs ${k === mesActualClave ? "border-l-2 border-blue-400" : ""} ${k === mesHoy ? (arranque.vencidos.neto < 0 ? "text-red-300" : "text-emerald-300") : "text-gray-600"}`}>
+                              {k === mesHoy ? fmt$(arranque.vencidos.neto) : "—"}
+                            </td>
+                          ))}
+                        </tr>
+                      )}
+                    </>
+                  )
+                })()}
 
                 {/* ── SALDO ACUMULADO ──
                     El resultado mes a mes no dice si la caja alcanza: un mes malo después

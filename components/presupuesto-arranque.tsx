@@ -30,7 +30,7 @@ export function PresupuestoArranque(p: {
   /** Con modo manual: lo declarado. */
   declarado: { saldo: number; fecha: string | null; composicion: ComposicionItem[] | null }
   /** Lo que se devuelve al mes actual (ya pagado y contado en el saldo). */
-  ajusteMesActual: { total: number; cuotas: number; facturas: number; marcados: number }
+  ajusteMesActual: { total: number; egresos: number; ingresos: number; cuotas: number; facturas: number; marcados: number; renglones: number }
   /** Control: el extracto llevado a hoy contra lo declarado (sólo si hay las dos fuentes y lo declarado es de hoy). */
   control: { diferencia: number; cierra: boolean; desdeExtracto: number; puenteNeto: number } | null
   onGuardarDeclarado: (d: { fecha: string; composicion: ComposicionItem[] }) => Promise<void>
@@ -144,7 +144,7 @@ export function PresupuestoArranque(p: {
                   <tr className="font-semibold"><td className="pr-4">= Saldo estimado de hoy</td><td className="text-right">{$(r.saldoHoy)}</td></tr>
                   <tr><td className="pr-4">− Pagos vencidos de meses anteriores, impagos ({r.vencidos.filas.filter(f => f.debitos).length}) — se restan en el mes actual</td><td className="text-right text-amber-700">− {$(r.vencidos.egresos)}</td></tr>
                   <tr><td className="pr-4">+ Cobros vencidos de meses anteriores, sin cobrar ({r.vencidos.filas.filter(f => f.creditos).length}) — se suman en el mes actual</td><td className="text-right text-emerald-700">+ {$(r.vencidos.ingresos)}</td></tr>
-                  <tr><td className="pr-4">± Ya pagado/cobrado este mes que el presupuesto igual contaba ({p.ajusteMesActual.cuotas} cuotas, {p.ajusteMesActual.facturas} facturas, {p.ajusteMesActual.marcados} marcados)</td><td className="text-right">{p.ajusteMesActual.total < 0 ? "−" : "+"} {$(Math.abs(p.ajusteMesActual.total))}</td></tr>
+                  <tr><td className="pr-4 text-gray-500">Ya pagado / cobrado en el mes en curso ({p.ajusteMesActual.renglones} renglones): no figura en la columna del mes de la grilla — pagado {$(p.ajusteMesActual.egresos)} · cobrado {$(p.ajusteMesActual.ingresos)}</td><td></td></tr>
                 </tbody>
               </table>
               {p.control && (
