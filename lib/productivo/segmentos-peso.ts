@@ -153,3 +153,20 @@ export function pesoEstimadoA(pesadas: PesadaSimple[], gananciaKgDia: number, fe
   if (!u) return null
   return u.peso_kg + gananciaKgDia * diasEntre(u.fecha, fecha)
 }
+
+/**
+ * 🐄 A-FEAT-1654 (JMS 25/11): *«poder editar la ganancia diaria estimada que nos lleva al peso estimado de hoy… puede que un
+ * segmento esté aumentando X y otro Y. Selector: el aumento de todo el rodeo, el del segmento, cabeza por cabeza o manual»*.
+ * Qué ganancia se usa para estimar a un animal, y de dónde salió. Si falta la elegida, baja al siguiente nivel
+ * (propia → sección → rodeo → manual), y la fuente lo dice: nunca queda un animal sin estimar en silencio.
+ */
+export type ModoGananciaEstimado = "rodeo" | "seccion" | "cabeza" | "manual"
+export type FuenteGanancia = "propia" | "seccion" | "rodeo" | "manual"
+export function gananciaParaEstimar(
+  modo: ModoGananciaEstimado,
+  v: { propia: number | null; seccion: number | null; rodeo: number | null; manual: number },
+): { kgDia: number; fuente: FuenteGanancia } {
+  const orden: FuenteGanancia[] = modo === "cabeza" ? ["propia", "seccion", "rodeo"] : modo === "seccion" ? ["seccion", "rodeo"] : modo === "rodeo" ? ["rodeo"] : []
+  for (const f of orden) { const x = v[f as "propia" | "seccion" | "rodeo"]; if (x != null && Number.isFinite(x)) return { kgDia: x, fuente: f } }
+  return { kgDia: v.manual, fuente: "manual" }
+}

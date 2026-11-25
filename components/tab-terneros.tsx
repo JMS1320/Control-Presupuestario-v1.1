@@ -20,7 +20,7 @@ import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
 import { AnalisisProductivo, type SegConfig, type SegSnapshot, type ModoCarga } from "./analisis-productivo"
 import { Segmentador, type SegPayload } from "./segmentador"
-import { textoSeccion, gananciaEntre, pesoEstimadoA, type AsignacionSeccion } from "@/lib/productivo/segmentos-peso"
+import { textoSeccion, gananciaEntre, pesoEstimadoA, gananciaParaEstimar, type AsignacionSeccion, type ModoGananciaEstimado } from "@/lib/productivo/segmentos-peso"
 import { hoyArgentina } from "@/lib/fechas"
 import { traerTodo } from "@/lib/supabase-paginado"
 import { Permisable } from "@/components/modo-permisos"
@@ -278,6 +278,10 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   // 🐄 A-FEAT-1654: entre qué dos pesadas se mide la «Ganancia diaria» del historial (null = las 2 últimas de cada caravana)
   const [ganDesde, setGanDesde] = useState<string | null>(null)
   const [ganHasta, setGanHasta] = useState<string | null>(null)
+  // 🐄 A-FEAT-1654: con qué ganancia se estima el peso de hoy en el historial (default: la de la pantalla, como antes)
+  const [modoEst, setModoEst] = useState<ModoGananciaEstimado>('manual')
+  const [ganManual, setGanManual] = useState('')                                   // vacío = la «Ganancia diaria estimada» de la pantalla
+  const [ganSeccionMan, setGanSeccionMan] = useState<Record<string, string>>({})   // por sección: vacío = la real de la sección
   const [buscaCaravana, setBuscaCaravana] = useState('')
   /** 🔽 A-FEAT-1555 (JMS 05/11: «prefiero que todo tenga filtro»): filtro tipo Excel por columna del historial. */
   const [filtrosHist, setFiltrosHist] = useState<Record<string, Set<string> | null>>({})
@@ -554,7 +558,8 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
       }
       // 🐄 A-FEAT-1654: las dos columnas del final del historial, con lo elegido ahí
       const est = estimadoHoyDe(t)
-      fila[`Estimado hoy ${formatFecha(hoyArgentina())} (kg, a ${String(gananciaDiaria).replace('.', ',')} kg/día)`] = est != null ? Math.round(est * 10) / 10 : ''
+      fila[`Estimado hoy ${formatFecha(hoyArgentina())} (kg, ${textoModoEst})`] = est != null ? Math.round(est * 10) / 10 : ''
+      if (est != null) { const r = ganEstimadoDe(t); fila['Ganancia usada en el estimado (kg/día)'] = Math.round(r.kgDia * 1000) / 1000; fila['De dónde sale esa ganancia'] = NOMBRE_FUENTE[r.fuente] }
       const g = ganHistDe(t)
       fila[`Ganancia kg/día (${textoGanHist})`] = g ? Math.round(g.kgDia * 1000) / 1000 : ''
       const pp = ganPaPDe(t)
@@ -978,7 +983,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   }
   /** 🐄 A-FEAT-1654: estimado de hoy y ganancia entre las dos pesadas elegidas, por caravana (las bajas no se estiman). */
   const ganHastaEf = ganDesde ? (ganHasta ?? todasFechas[todasFechas.length - 1] ?? null) : null
-  const estimadoHoyDe = (t: Ternero) => t.activo ? getPesoEstimadoHoy(t.pesadas_terneros, gananciaDiaria) : null
+  const estimadoHoyDe = (t: Ternero) => t.activo && t.pesadas_terneros.length ? pesoEstimadoA(t.pesadas_terneros, ganEstimadoDe(t).kgDia, hoyArgentina()) : null
   const ganHistDe = (t: Ternero) => gananciaEntre(t.pesadas_terneros, ganDesde, ganHastaEf)
   const promDe = (vals: (number | null | undefined)[]) => { const v = vals.filter((x): x is number => x != null); return v.length ? { prom: v.reduce((a, b) => a + b, 0) / v.length, n: v.length } : null }
   const fmt1 = (n: number) => n.toFixed(1).replace('.', ',')
@@ -1002,6 +1007,19 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
       const e = m.get(k) ?? { orden: Math.min(...a.map(x => x.orden)), lista: [] }; e.lista.push(t); m.set(k, e) }
     return [...m.entries()].sort((x, y) => x[1].orden - y[1].orden).map(([clave, e]) => ({ clave, lista: e.lista }))
   })()
+  // 🐄 A-FEAT-1654: las ganancias con que se puede estimar — real del rodeo, real (o puesta a mano) de cada sección, la manual
+  const numAR = (x: string | undefined) => { const n = x && x.trim() ? parseFloat(x.trim().replace(',', '.')) : NaN; return Number.isFinite(n) ? n : null }
+  const ganManualNum = numAR(ganManual) ?? gananciaDiaria
+  const ganRodeoReal = promDe(terneros.filter(t => t.activo).map(t => ganHistDe(t)?.kgDia))
+  const ganSeccionReal = new Map(bloquesSeccionGan.map(b => [b.clave, promDe(b.lista.filter(t => t.activo).map(t => ganHistDe(t)?.kgDia))]))
+  const ganSeccionDe = (clave: string | null) => clave ? (numAR(ganSeccionMan[clave]) ?? ganSeccionReal.get(clave)?.prom ?? null) : null
+  const ganEstimadoDe = (t: Ternero) => gananciaParaEstimar(modoEst, {
+    propia: ganHistDe(t)?.kgDia ?? null, seccion: ganSeccionDe(textoSeccion(seccionesDe(t.id))), rodeo: ganRodeoReal?.prom ?? null, manual: ganManualNum,
+  })
+  const NOMBRE_FUENTE = { propia: 'la suya', seccion: 'la de su sección', rodeo: 'la del rodeo', manual: 'la manual' } as const
+  const textoModoEst = modoEst === 'manual' ? `a ${fmtGan(ganManualNum)} kg/día (manual)`
+    : modoEst === 'rodeo' ? `a ${ganRodeoReal ? fmtGan(ganRodeoReal.prom) : fmtGan(ganManualNum)} kg/día (rodeo, ${textoGanHist})`
+    : modoEst === 'seccion' ? `con la ganancia de cada sección (${textoGanHist})` : `cabeza por cabeza (${textoGanHist})`
   /** Cada lista cuenta sobre lo filtrado por las DEMÁS columnas (como en Excel y en Mails). */
   const opcionesHist: Record<string, ReturnType<typeof opcionesDeColumna>> = Object.fromEntries(Object.keys(valoresHist).map(col => [col,
     opcionesDeColumna(filtrarPorColumnas(conPesadasHist, { ...filtrosHist, [col]: null }, valoresHist), valoresHist[col])]))
@@ -2255,7 +2273,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                 {/* 🐄 A-FEAT-1654 (JMS 25/11): encabezado fijo — queda a la vista al bajar por las caravanas */}
                 <TableHeader className="sticky top-0 z-10 bg-gray-50 shadow-[0_1px_0_#e5e7eb]">
                   <TableRow className="bg-gray-50">
-                    <TableHead className="text-xs whitespace-nowrap"><FiltroColumna titulo="Carav. Oficial" opciones={opcionesHist.oficial} seleccion={filtrosHist.oficial ?? null} onChange={s => setFiltrosHist(x => ({ ...x, oficial: s }))} /></TableHead>
+                    <TableHead className="text-xs whitespace-nowrap sticky left-0 z-20 bg-gray-50"><FiltroColumna titulo="Carav. Oficial" opciones={opcionesHist.oficial} seleccion={filtrosHist.oficial ?? null} onChange={s => setFiltrosHist(x => ({ ...x, oficial: s }))} /></TableHead>
                     <TableHead className="text-xs whitespace-nowrap"><FiltroColumna titulo="Carav. Int." opciones={opcionesHist.interna} seleccion={filtrosHist.interna ?? null} onChange={s => setFiltrosHist(x => ({ ...x, interna: s }))} /></TableHead>
                     <TableHead className="text-xs"><FiltroColumna titulo="Sexo" opciones={opcionesHist.sexo} seleccion={filtrosHist.sexo ?? null} onChange={s => setFiltrosHist(x => ({ ...x, sexo: s }))} /></TableHead>
                     {hayAsignaciones && <TableHead className="text-xs whitespace-nowrap text-emerald-800"><FiltroColumna titulo="Sección" opciones={opcionesHist.seccion} seleccion={filtrosHist.seccion ?? null} onChange={s => setFiltrosHist(x => ({ ...x, seccion: s }))} /></TableHead>}
@@ -2266,8 +2284,22 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                       </TableHead>
                     ))}
                     {/* 🐄 A-FEAT-1654 (JMS 25/11): al final, el estimado de hoy y la ganancia diaria entre dos pesadas a elegir */}
-                    <TableHead className="text-xs text-center whitespace-nowrap text-amber-700 border-l" title={`Última pesada + ${String(gananciaDiaria).replace('.', ',')} kg/día (la «Ganancia diaria estimada» de la pantalla) × los días desde esa pesada. Las bajas no se estiman.`}>
-                      Estimado hoy<div className="text-[9px] font-normal text-amber-600">a {String(gananciaDiaria).replace('.', ',')} kg/día</div>
+                    <TableHead className="text-xs text-center whitespace-nowrap text-amber-700 border-l" title="Última pesada + ganancia diaria × los días desde esa pesada. Las bajas no se estiman. Si a una caravana le falta la ganancia elegida, usa la de su sección, después la del rodeo y por último la manual (pasá el mouse por el número).">
+                      Estimado hoy
+                      <div className="mt-0.5 flex items-center justify-center gap-1 text-[10px] font-normal">
+                        <select className="rounded border px-1 py-0 text-[10px]" value={modoEst} onChange={e => setModoEst(e.target.value as ModoGananciaEstimado)}>
+                          <option value="manual">ganancia manual</option>
+                          <option value="rodeo">la del rodeo</option>
+                          <option value="seccion">la de cada sección</option>
+                          <option value="cabeza">cabeza por cabeza</option>
+                        </select>
+                        {modoEst === 'manual' && (
+                          <input type="text" inputMode="decimal" className="w-12 rounded border px-1 py-0 text-[10px]" value={ganManual}
+                            placeholder={String(gananciaDiaria).replace('.', ',')} title="kg/día. Vacío = la «Ganancia diaria estimada» de la pantalla"
+                            onChange={e => setGanManual(e.target.value)} />
+                        )}
+                      </div>
+                      <div className="text-[9px] font-normal text-amber-600">{textoModoEst}{modoEst === 'rodeo' && ganRodeoReal ? ` · sobre ${ganRodeoReal.n} cab.` : ''}</div>
                     </TableHead>
                     <TableHead className="text-xs text-center whitespace-nowrap text-indigo-700">
                       Ganancia kg/día
@@ -2298,12 +2330,26 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                       <TableRow className="bg-emerald-50/70">
                         <TableCell colSpan={4 + todasFechas.length + 3} className="py-1 text-xs font-semibold text-emerald-900">
                           {b.clave} <span className="font-normal text-emerald-700">— {b.filas.length} cab.</span>
+                          {(modoEst === 'seccion' || modoEst === 'cabeza') && ganSeccionReal.has(b.clave) && (() => {
+                            const real = ganSeccionReal.get(b.clave)
+                            return (
+                              <span className="ml-3 font-normal text-amber-800">
+                                ganancia del estimado{modoEst === 'cabeza' ? ' (para las que no tienen la suya)' : ''}:{' '}
+                                <input type="text" inputMode="decimal" className="w-14 rounded border bg-white px-1 py-0 text-[11px]"
+                                  value={ganSeccionMan[b.clave] ?? ''} placeholder={real ? fmtGan(real.prom).replace('+', '') : '—'}
+                                  title="kg/día. Vacío = la real de la sección (promedio de sus caravanas)"
+                                  onChange={e => setGanSeccionMan(m => ({ ...m, [b.clave as string]: e.target.value }))} /> kg/día
+                                <span className="ml-1 text-[10px] text-amber-700">{numAR(ganSeccionMan[b.clave]) != null ? '✎ puesta a mano' : real ? `real · sobre ${real.n} cab.` : 'sin datos: usa la del rodeo'}</span>
+                                {numAR(ganSeccionMan[b.clave]) != null && <button type="button" className="ml-1 text-[10px] underline" onClick={() => setGanSeccionMan(m => { const x = { ...m }; delete x[b.clave as string]; return x })}>usar la real</button>}
+                              </span>
+                            )
+                          })()}
                         </TableCell>
                       </TableRow>
                     )}
                   {b.filas.map(t => (
                       <TableRow key={t.id} className="text-sm">
-                        <TableCell className="font-mono text-xs">{t.caravana_oficial ?? '—'}</TableCell>
+                        <TableCell className="font-mono text-xs sticky left-0 z-[1] bg-white">{t.caravana_oficial ?? '—'}</TableCell>
                         <TableCell className="font-mono text-xs">{t.caravana_interna ?? '—'}</TableCell>
                         <TableCell className="text-xs">
                           {t.sexo === 'Macho' ? '♂' : t.sexo === 'Hembra' ? '♀' : '—'}
@@ -2331,7 +2377,10 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                           const est = estimadoHoyDe(t)
                           const g = ganHistDe(t)
                           return (<>
-                            <TableCell className="text-center text-xs border-l font-medium text-amber-700">{est != null ? fmt1(est) : <span className="text-gray-300" title={t.activo ? 'Sin pesadas' : 'Baja: no se estima'}>—</span>}</TableCell>
+                            <TableCell className="text-center text-xs border-l font-medium text-amber-700" title={est != null ? (() => { const r = ganEstimadoDe(t); return `a ${fmtGan(r.kgDia)} kg/día — ${NOMBRE_FUENTE[r.fuente]}` })() : ''}>
+                              {est != null ? fmt1(est) : <span className="text-gray-300" title={t.activo ? 'Sin pesadas' : 'Baja: no se estima'}>—</span>}
+                              {est != null && modoEst !== 'manual' && ganEstimadoDe(t).fuente !== (modoEst === 'cabeza' ? 'propia' : modoEst) && <span className="ml-0.5 text-[9px] text-gray-400">*</span>}
+                            </TableCell>
                             <TableCell className={`text-center text-xs font-medium ${g == null ? '' : g.kgDia >= 0 ? 'text-indigo-700' : 'text-red-600'}`}
                               title={g ? `${formatFecha(g.desde)} → ${formatFecha(g.hasta)}: ${g.dias} días` : (ganDesde ? 'No tiene pesada en alguna de las dos fechas elegidas' : 'Tiene menos de 2 pesadas')}>
                               {g ? fmtGan(g.kgDia) : <span className="text-gray-300">—</span>}

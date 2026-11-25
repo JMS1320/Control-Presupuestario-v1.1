@@ -87,7 +87,7 @@ import { cuentaDeFila } from "@/lib/pagos/cuenta-de-fila"
 import { estadoSugeridoParaLote } from "@/lib/pagos/estado-sugerido-lote"
 import { cabezasHoy } from "@/lib/productivo/cabezas-hoy"
 import { numerarCuotas, posicionDe } from "@/lib/arrendamientos/numeracion-y-posicion"
-import { seccionDePeso, cortesUniformes, corteDelMedio, gananciaRealDelGrupo, asignarSecciones, textoSeccion, gananciaEntre, pesoEstimadoA } from "@/lib/productivo/segmentos-peso"
+import { seccionDePeso, cortesUniformes, corteDelMedio, gananciaRealDelGrupo, asignarSecciones, textoSeccion, gananciaEntre, pesoEstimadoA, gananciaParaEstimar } from "@/lib/productivo/segmentos-peso"
 import { nroDeCuenta } from "@/lib/facturas/nro-de-cuenta"
 import { hojaDePendientes } from "@/lib/balance/pendientes-balance"
 import { resumirMes, llenarConPresente, llenarCon, diasDelMes, tipoDia, type Marca } from "@/lib/sueldos/asistencia"
@@ -14531,6 +14531,11 @@ export function correrCasos(): Resultado[] {
     const v2 = [pesoEstimadoA(ps, 0.8, "2026-11-25"), pesoEstimadoA(ps, 0.8, "2026-11-04"), pesoEstimadoA(ps, 0.8, "2026-08-10"), pesoEstimadoA(ps, 0.8, "2026-01-01")].map(x => x == null ? "null" : x.toFixed(1)).join(" | ")
     const e2 = "365.8 | 349.0 | 221.6 | null"
     chequear("Pesadas — estimado hoy", "Última pesada + ganancia × días (349 + 0,8 × 21); el día de la pesada = el peso; a una fecha pasada parte de la pesada anterior a ella; sin pesada previa → vacío", e2, v2, v2 === e2, "A-FEAT-1654")
+    const q = (m: Parameters<typeof gananciaParaEstimar>[0], v: Parameters<typeof gananciaParaEstimar>[1]) => { const r = gananciaParaEstimar(m, v); return `${r.kgDia}:${r.fuente}` }
+    const full = { propia: 1.4, seccion: 1.1, rodeo: 0.9, manual: 0.8 }
+    const v3 = [q("cabeza", full), q("seccion", full), q("rodeo", full), q("manual", full), q("cabeza", { ...full, propia: null }), q("cabeza", { propia: null, seccion: null, rodeo: null, manual: 0.8 }), q("seccion", { ...full, seccion: null })].join(" | ")
+    const e3 = "1.4:propia | 1.1:seccion | 0.9:rodeo | 0.8:manual | 1.1:seccion | 0.8:manual | 0.9:rodeo"
+    chequear("Pesadas — estimado hoy", "🔑 Selector de ganancia: cabeza por cabeza usa la del animal; si no la tiene, la de su sección, después la del rodeo, y por último la manual — y dice de dónde salió", e3, v3, v3 === e3, "A-FEAT-1654")
   }
   {
     // A-FEAT-1643 — la cuota es la FECHA de cobro; las filas que la comparten son sus partes (dato real 22/11).
