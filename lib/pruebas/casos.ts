@@ -322,7 +322,7 @@ import { armarDetalleCobro, imputacionesDeCobro } from "@/lib/ventas/detalle-cob
 import { detalleDelGrupo, repartirSaldoDelGrupo, unidadesDeCobro, controlDosCaminos, validarAgrupacion, faltaCobrarDelGrupo, nombreDelGrupo, cuotasAlCerrarGrupo, cuotasAlReabrirGrupo } from "@/lib/ventas/grupo-cobro"
 import { armarRetencionesSubdiario, fechaDelCertificado, hojaRetenciones, tablaRetencionesPdf } from "@/lib/ventas/retenciones-export"
 import { extractosDelSchema, extractoEsDe, TODOS_LOS_EXTRACTOS } from "@/lib/ventas/extractos-empresa"
-import { calcularEcheqs, problemasDelPlan, avisosDelPlan, ultimaFechaCobro, filasEmision, motivoPorDefecto, ENCABEZADO_EMISION, clasificarLoteEcheq, fechaMasDias } from "@/lib/pagos/echeqs-multiples"
+import { calcularEcheqs, problemasDelPlan, avisosDelPlan, ultimaFechaCobro, filasEmision, motivoPorDefecto, ENCABEZADO_EMISION, clasificarLoteEcheq, fechaMasDias, nombreArchivoEmision, siguienteNumeroExport } from "@/lib/pagos/echeqs-multiples"
 import { partirFilasEnEcheqs } from "@/lib/cashflow/echeqs-en-filas"
 import { baseDesdeRetencion } from "@/lib/sicore/base-desde-retencion"
 import { totalAnticipo } from "@/lib/pagos/total-anticipo"
@@ -8989,6 +8989,20 @@ export function correrCasos(): Resultado[] {
       `${n} | ${nombres.join(" | ")}`,
       n === 3 && nombres[0] === "Galicia MSA Pagos 20261125.xlsx" && nombres[1] === "Galicia MSA Pagos 20261125 - 3.xlsx"
         && nombres[2] === "Galicia MSA Pagos 20261125 (1-2) - 2.xlsx" && nombres[3] === "Galicia MSA Pagos 20261125 - 1712.xlsx", "A-FEAT-1658")
+  }
+
+  // ══ 🔢 A-FEAT-1658 — los Excel de echeqs del mismo día también se numeran (contador del navegador) ══
+  {
+    const memoria = new Map<string, string>()
+    const alm = { getItem: (k: string) => memoria.get(k) ?? null, setItem: (k: string, v: string) => { memoria.set(k, v) } }
+    const a = siguienteNumeroExport(alm, "export-echeqs:MSA:2026-11-25")
+    const b = siguienteNumeroExport(alm, "export-echeqs:MSA:2026-11-25")
+    const otraEmpresa = siguienteNumeroExport(alm, "export-echeqs:PAM:2026-11-25")
+    const sinAlmacen = siguienteNumeroExport(null, "x")
+    const r = `${nombreArchivoEmision("MSA", "2026-11-25", a)} | ${nombreArchivoEmision("MSA", "2026-11-25", b)} | ${otraEmpresa} | ${sinAlmacen}`
+    chequear("Lote Galicia", "🔢 Echeqs: el 1º del día sin número, el 2º «- 2»; otra empresa arranca en 1; sin almacenamiento, 1 (como antes)",
+      "Galicia MSA Echeqs 20261125.xlsx | Galicia MSA Echeqs 20261125 - 2.xlsx | 1 | 1", r,
+      r === "Galicia MSA Echeqs 20261125.xlsx | Galicia MSA Echeqs 20261125 - 2.xlsx | 1 | 1", "A-FEAT-1658")
   }
 
   // ══ 🔗 A-BUG-1657 — el mail de pago queda atado a su factura o a su grupo ══

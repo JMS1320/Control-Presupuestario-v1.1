@@ -184,9 +184,30 @@ export function filasEmision(echeqs: EcheqAEmitir[]): { filas: (string | number)
   return { filas: [ENCABEZADO_EMISION, ...filas], problemas }
 }
 
-/** Nombre del archivo: `Galicia MSA Echeqs 20261014.xlsx` (mismo criterio que el lote de transferencias). */
-export const nombreArchivoEmision = (empresa: string, fechaISO: string) =>
-  `Galicia ${empresa} Echeqs ${fechaISO.replace(/-/g, '')}.xlsx`
+/**
+ * Nombre del archivo: `Galicia MSA Echeqs 20261014.xlsx` (mismo criterio que el lote de transferencias).
+ * 🔢 A-FEAT-1658 — el 2º export del mismo día va `… 20261014 - 2.xlsx`, para no pisar el 1º.
+ */
+export const nombreArchivoEmision = (empresa: string, fechaISO: string, numero = 1) =>
+  `Galicia ${empresa} Echeqs ${fechaISO.replace(/-/g, '')}${numero > 1 ? ` - ${numero}` : ''}.xlsx`
+
+/**
+ * 🔢 A-FEAT-1658 — el número de export de echeqs del día. Los echeqs se arman en el navegador y NO
+ * quedan en `lotes_transferencias` (su `tipo` sólo admite pagos/sueldos: sumarlo es cambio de estructura,
+ * pendiente). Mientras tanto se cuenta en el navegador, que es donde estaba el riesgo: dos archivos
+ * con el mismo nombre en la misma carpeta de Descargas. Devuelve el número y deja anotado el uso.
+ */
+export function siguienteNumeroExport(
+  almacen: { getItem(k: string): string | null; setItem(k: string, v: string): void } | null | undefined,
+  clave: string,
+): number {
+  let n = 1
+  try {
+    n = (parseInt(almacen?.getItem(clave) || '0', 10) || 0) + 1
+    almacen?.setItem(clave, String(n))
+  } catch { /* sin almacenamiento: queda 1, como antes */ }
+  return n
+}
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // 🧭 Qué hace la barra de PAGOS con cada fila al elegir ECHEQ — A-BUG-1283 (2026-10-14)

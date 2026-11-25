@@ -3315,7 +3315,7 @@ decidir. Dice *"Todavía no se guardó nada"* porque es literal.
 ### El Excel para Galicia: un nombre por export
 El archivo se llama **«Galicia MSA Pagos 20261125.xlsx»** (empresa, pagos o sueldos, fecha de pago). Si ese
 mismo día ya se exportó otro lote de la misma empresa y tipo, el siguiente sale **«… 20261125 - 2.xlsx»**,
-después **«- 3»**, y así: dos lotes nunca tienen el mismo nombre, y guardar uno no reemplaza al otro.
+después **«- 3»**, y así: dos lotes nunca tienen el mismo nombre, y guardar uno no reemplaza al otro. Vale igual para los de **sueldos** y los de **echeqs** («Galicia MSA Echeqs 20261125 - 2.xlsx»; los de echeqs se cuentan en tu navegador).
 → [A-FEAT-1658](PENDIENTES.md#a-feat-1658)
 
 ### 🏦 Pagado desde — cuando pagaste desde otra cuenta *(2026-10-23)*

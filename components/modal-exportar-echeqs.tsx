@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { supabase } from "@/lib/supabase"
 import { toast } from "sonner"
-import { CLAUSULAS, MOTIVOS_ECHEQ, motivoPorDefecto, filasEmision, nombreArchivoEmision } from "@/lib/pagos/echeqs-multiples"
+import { CLAUSULAS, MOTIVOS_ECHEQ, motivoPorDefecto, filasEmision, nombreArchivoEmision, siguienteNumeroExport } from "@/lib/pagos/echeqs-multiples"
 import { hoyArgentina } from "@/lib/fechas"
 
 export interface ChequeAExportar {
@@ -85,7 +85,10 @@ export function ModalExportarEcheqs({ open, onClose, cheques, empresa = 'MSA' }:
     ws['!cols'] = Array.from({ length: 10 }, () => ({ wch: 20 }))
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Plantilla para emision')
-    XLSX.writeFile(wb, nombreArchivoEmision(empresa, hoyArgentina()))
+    // 🔢 A-FEAT-1658 — el 2º del día con la misma empresa sale «- 2» (no pisa al 1º)
+    const hoy = hoyArgentina()
+    const nro = siguienteNumeroExport(typeof window !== 'undefined' ? window.localStorage : null, `export-echeqs:${empresa}:${hoy}`)
+    XLSX.writeFile(wb, nombreArchivoEmision(empresa, hoy, nro))
     toast.success(`Excel de emisión generado: ${cheques.length} echeq(s) por $${fmt(total)}`)
     onClose()
   }
