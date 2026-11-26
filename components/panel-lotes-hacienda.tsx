@@ -164,6 +164,10 @@ export function PanelLotesHacienda({ linea, onCambio }: {
       fecha_disponible: f.fecha_disponible,
       peso_base_kg: parseNum(String(f.peso_base_kg)),
       fecha_peso: f.fecha_peso || f.fecha_disponible || null,
+      // 🐣 Cuándo y con cuánto nació (script 304; JMS 25/11: «si quiero cambiar los kg lo cambio para el lote y eso afecte al gasto»).
+      // Vacío = no se sabe (la curva del ternero al pie no se arma desde el nacimiento).
+      fecha_nacimiento: f.fecha_nacimiento || null,
+      peso_nacimiento_kg: String(f.peso_nacimiento_kg ?? "").trim() === "" ? null : parseNum(String(f.peso_nacimiento_kg)),
       ganancia_diaria_kg: parseNum(String(f.ganancia_diaria_kg)),
       ganancia_override: Boolean(f.ganancia_override),
       fecha_venta_estimada: f.fecha_venta_estimada || null,
@@ -529,6 +533,7 @@ export function PanelLotesHacienda({ linea, onCambio }: {
                               ...l,
                               cantidad: String(l.cantidad),
                               peso_base_kg: String(l.peso_base_kg),
+                              peso_nacimiento_kg: (l as any).peso_nacimiento_kg == null ? "" : fmtAR(Number((l as any).peso_nacimiento_kg)),
                               ganancia_diaria_kg: String(l.ganancia_diaria_kg),
                               precio_kg_override: l.precio_kg_override ?? "",
                               plazo_cobro: String(l.plazo_cobro ?? "0"),
@@ -683,6 +688,8 @@ function ModalLote({ datos, onCerrar, onGuardar, tramos, actividades, insumos, c
     fecha_disponible: String(f.fecha_disponible ?? ""),
     fecha_peso: f.fecha_peso ?? null,
     ganancia_override: Boolean(f.ganancia_override),
+    fecha_nacimiento: f.fecha_nacimiento || null,
+    peso_nacimiento_kg: String(f.peso_nacimiento_kg ?? "").trim() === "" ? null : parseNum(String(f.peso_nacimiento_kg)),
   }
   // La curva se dibuja con el BORRADOR: mover un tramo tiene que verse antes de guardar.
   const misTramos = tramosDraft
@@ -761,6 +768,13 @@ function ModalLote({ datos, onCerrar, onGuardar, tramos, actividades, insumos, c
               </p>
             </div>
             {campo("ganancia_diaria_kg", "Ganancia diaria (kg/día)", "0 = se vende sin engordar")}
+            <div>
+              <label className="text-xs text-gray-500">Nacieron el</label>
+              <Input type="date" className="h-8" value={f.fecha_nacimiento || ""}
+                onChange={e => setF({ ...f, fecha_nacimiento: e.target.value })} />
+              <p className="mt-1 text-[10px] text-gray-400">terneros al pie: la curva va del nacimiento al peso del lote</p>
+            </div>
+            {campo("peso_nacimiento_kg", "Peso al nacer (kg)", "vacío = no se sabe")}
           </div>
 
           <SeccionTramos loteId={f.id ?? null} lote={{ ...loteCurva, fecha_venta_estimada: fv } as LoteCurva}
