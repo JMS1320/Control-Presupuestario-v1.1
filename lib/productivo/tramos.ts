@@ -48,6 +48,9 @@ export interface LoteCurva {
   fecha_disponible: string
   fecha_peso?: string | null
   ganancia_override?: boolean | null
+  /** Lotes de cría: cuándo nacieron y con cuánto (script 304). Con el peso del lote arman la curva del ternero al pie. */
+  fecha_nacimiento?: string | null
+  peso_nacimiento_kg?: number | string | null
 }
 
 const dias = (desde: string, hasta: string) => {
@@ -193,7 +196,9 @@ export function tramosParaCosto(
       // no, el peso de la curva y el que usa el consumo describirían dos animales distintos.
       actividad: t.ganancia_diaria_kg != null
         ? { ...act, ganancia_diaria_kg: Number(t.ganancia_diaria_kg) }
-        : act,
+        : gananciaDesdeNacimiento(lote, t) != null
+          ? { ...act, ganancia_diaria_kg: gananciaDesdeNacimiento(lote, t)! }
+          : act,
       insumos: insumos.filter(i => i.actividad_id === act.id),
       cabezas: cab,
       desde: t.fecha_desde,
@@ -213,12 +218,31 @@ export function tramosParaCosto(
  */
 export function pesoInicialTramo(lote: LoteCurva, tramos: TramoLote[], actividades: Actividad[], t: TramoLote): number {
   const base = lote.fecha_peso || lote.fecha_disponible
+  // 🐣 Con el nacimiento del lote: la curva va de «nacimiento» a «peso del lote» (JMS 25/11: «el peso promedio es el promedio entre el
+  // nacimiento y el destete»; si cambia los kg del lote, cambia el gasto). La ganancia sale de ahí, no se guarda.
+  const gNac = gananciaDesdeNacimiento(lote, t)
+  if (gNac != null && lote.fecha_nacimiento) {
+    const d = Math.max(0, Math.round((Date.parse(t.fecha_desde) - Date.parse(lote.fecha_nacimiento)) / 86400000))
+    return Number(lote.peso_nacimiento_kg) + gNac * d
+  }
   const g = t.ganancia_diaria_kg != null ? Number(t.ganancia_diaria_kg) : null
   if (base && t.fecha_desde < base && g) {
     const dias = Math.round((Date.parse(base) - Date.parse(t.fecha_desde)) / 86400000)
     return Math.max(0, (Number(lote.peso_base_kg) || 0) - g * dias)
   }
   return pesoEnFecha(lote, tramos, actividades, t.fecha_desde)
+}
+
+/**
+ * La ganancia diaria de un tramo ANTERIOR a la pesada del lote, cuando el lote dice cuándo y con cuánto nació:
+ * (peso del lote − peso al nacer) / días entre el nacimiento y la pesada. null si no aplica (o si el tramo trae su propia ganancia).
+ */
+export function gananciaDesdeNacimiento(lote: LoteCurva, t: TramoLote): number | null {
+  const base = lote.fecha_peso || lote.fecha_disponible
+  if (t.ganancia_diaria_kg != null || !lote.fecha_nacimiento || lote.peso_nacimiento_kg == null || !base || t.fecha_desde >= base) return null
+  const d = Math.round((Date.parse(base) - Date.parse(lote.fecha_nacimiento)) / 86400000)
+  if (d <= 0) return null
+  return ((Number(lote.peso_base_kg) || 0) - Number(lote.peso_nacimiento_kg)) / d
 }
 
 /** Los tramos se pisan entre sí — la UI lo avisa en vez de calcular cualquier cosa. */

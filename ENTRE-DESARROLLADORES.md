@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### ✅ Columnas `fecha_nacimiento` (date) y `peso_nacimiento_kg` (numeric) en `productivo.stock_lotes` (2026-11-25) — aviso previo; se aplica a continuación (OK de JMS). `scripts/304` con deshacer. Sólo las lee el costo de la ración; nada de RLS ni permisos.
+### ✅ Columnas `fecha_nacimiento` (date) y `peso_nacimiento_kg` (numeric) en `productivo.stock_lotes` (2026-11-25) — ✅ APLICADA el 25/11 (OK de JMS). `scripts/304` con deshacer. Sólo las lee el costo de la ración; nada de RLS ni permisos.
 
 ### ✅ Columna `iva_pct` (numeric) en `productivo.actividad_insumos` y en `public.presupuesto_variables` (2026-11-25) — ✅ APLICADA el 25/11 (JMS: «yo tendría que poner el IVA de cada cosa»). `scripts/302` con deshacer. Sólo la lee la caja del presupuesto; nada de RLS ni permisos.
 

@@ -332,7 +332,7 @@ import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { vinculoDelMail } from "@/lib/pagos/vinculo-mail-pago"
 import { calcularArranque, clasificarFila, lineaDeSaldo, controlDosFuentes, totalComposicion, estaEnLaGrilla, type FilaReal } from "@/lib/presupuesto/arranque"
 import { recortarPorFamilia } from "@/lib/presupuesto/templates"
-import { pesoInicialTramo } from "@/lib/productivo/tramos"
+import { pesoInicialTramo, gananciaDesdeNacimiento } from "@/lib/productivo/tramos"
 import { costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
@@ -9116,6 +9116,14 @@ export function correrCasos(): Resultado[] {
       { id: "t", lote_id: "l", actividad_id: "a", orden: 1, fecha_desde: "2026-11-01", fecha_hasta: "2027-02-28", hectareas: null, ganancia_diaria_kg: 0.7025 } as any)
     chequear("Productivo", "🐮 Un tramo ANTERIOR a la pesada del lote arranca con el peso hacia atrás (220 − 0,7025 × 120 días), no con el peso final",
       "135.7", pIni.toFixed(1), pIni.toFixed(1) === "135.7", "A-FEAT-1663")
+    // 🐣 Con el nacimiento en el lote (30 kg el 01/07/26) y el peso del lote (220 kg el 01/03/27): 190 kg en 243 días; el 01/11 pesa ~126,3
+    const loteNac: any = { id: "l", cantidad: 94, peso_base_kg: 220, fecha_peso: "2027-03-01", fecha_disponible: "2027-03-01", fecha_nacimiento: "2026-07-01", peso_nacimiento_kg: 30 }
+    const trNac: any = { id: "t", lote_id: "l", actividad_id: "a", orden: 1, fecha_desde: "2026-11-01", fecha_hasta: "2027-02-28", hectareas: null, ganancia_diaria_kg: null }
+    const pNac = pesoInicialTramo(loteNac, [], [], trNac), gNac = gananciaDesdeNacimiento(loteNac, trNac)
+    const pNac250 = pesoInicialTramo({ ...loteNac, peso_base_kg: 250 }, [], [], trNac)
+    chequear("Productivo", "🐣 La curva del ternero al pie sale del lote: nacimiento 30 kg → peso del lote; si se cambian los kg del lote, cambia (vinculado)",
+      "g 0.782 · nov 126.2 · con 250 kg 141.4", `g ${gNac?.toFixed(3)} · nov ${pNac.toFixed(1)} · con 250 kg ${pNac250.toFixed(1)}`,
+      `g ${gNac?.toFixed(3)} · nov ${pNac.toFixed(1)} · con 250 kg ${pNac250.toFixed(1)}` === "g 0.782 · nov 126.2 · con 250 kg 141.4", "A-FEAT-1663")
     // 🧾 IVA aparte (JMS 25/11): implantación neta US$ 750 × 15 ha × 1.500 + 21 % · plan 34 ha × US$ 750 × TC 1.000 + 21 % en 4 meses
     const implIva = costoRecetaCampana(fila({ concepto: "Implantación", modo: "monto_ha", valor: 750, moneda: "USD", has_aplicacion: 15, iva_pct: 21, meses_pct: { 2: 25, 3: 25, 4: 25, 5: 25 } }), ctx, "26/27", "2026-11")
     const tc1000 = { "2027-02": 1000, "2027-03": 1000, "2027-04": 1000, "2027-05": 1000 }
