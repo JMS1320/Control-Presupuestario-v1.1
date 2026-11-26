@@ -42,6 +42,7 @@ import {
   type PrecioHacienda,
 } from "@/lib/ganaderia/calculo"
 import { ModalPresupuestarVenta, type DatosPresupuestar } from "@/components/modal-presupuestar-venta"
+import { PresupuestoVentaLote, type VentaLoteCelda } from "@/components/presupuesto-venta-lote"
 import {
   valuarLoteConPrecios, calcularLineaTiempo, fechaDestete, pesoDestete,
   type LoteStock, type VentaStock, type CicloStock,
@@ -303,6 +304,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       montos: Record<string, number>
       estimado: Record<string, boolean>
       disponible: Record<string, DisponibleCategoria>
+      /** 🐂 Qué lotes forman la plata de cada mes (para abrir la venta y editarla en el lote). */
+      lotes?: Record<string, VentaLoteCelda[]>
     }[]
     iibb: Record<string, number>
   }>({ categorias: [], iibb: {} })
@@ -383,6 +386,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   const [avisoGen, setAvisoGen] = useState<{ templates: number; meses: string[]; monto: number; nombres: string[] } | null>(null)
   /** Celda de hacienda disponible sobre la que se está presupuestando una venta. */
   const [presupuestando, setPresupuestando] = useState<DatosPresupuestar | null>(null)
+  /** 🐂 A-FEAT-1667 — la venta presupuestada abierta desde la celda (se edita en el lote). */
+  const [ventaAbierta, setVentaAbierta] = useState<{ titulo: string; lotes: VentaLoteCelda[] } | null>(null)
   const [preciosHac, setPreciosHac] = useState<PrecioHacienda[]>([])
 
   // 24 meses: las cuotas de arrendamiento llegan hasta may-2028 (campaña 27/28)
@@ -1509,8 +1514,9 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       montos: Record<string, number>
       estimado: Record<string, boolean>
       disponible: Record<string, DisponibleCategoria>
+      lotes: Record<string, VentaLoteCelda[]>
     }> = {}
-    const fila = (cat: string) => (porCat[cat] ??= { montos: {}, estimado: {}, disponible: {} })
+    const fila = (cat: string) => (porCat[cat] ??= { montos: {}, estimado: {}, disponible: {}, lotes: {} })
     const iibbPorMes: Record<string, number> = {}
 
     for (const l of listaLotes) {
@@ -1525,6 +1531,11 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       for (const q of v.cuotas) {
         f.montos[q.mes] = (f.montos[q.mes] || 0) + q.monto
         if (v.estimado) f.estimado[q.mes] = true
+        const lv = (f.lotes[q.mes] ??= [])
+        const ya = lv.find(x => x.id === l.id)
+        if (ya) ya.monto += q.monto
+        else lv.push({ id: l.id, categoria: l.categoria, cantidad: Number(l.cantidad) || 0, fecha_venta: (l as any).fecha_venta_estimada ?? null,
+          precio_kg_override: (l as any).precio_kg_override == null ? null : Number((l as any).precio_kg_override), plazo_cobro: (l as any).plazo_cobro ?? null, monto: q.monto })
       }
       // El IIBB de la venta se paga el mes SIGUIENTE al cobro
       if (v.mes_iibb) iibbPorMes[v.mes_iibb] = (iibbPorMes[v.mes_iibb] || 0) + v.iibb
@@ -2906,10 +2917,11 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
                               className={`px-3 py-1.5 text-right text-xs ${
                                 esActual ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
                               {valor > 0 ? (
-                                <>
+                                <button type="button" className="hover:underline" title="Clic: abrir la venta y editarla (se guarda en el lote; si corrés la fecha, la ración se corre con ella)"
+                                  onClick={() => setVentaAbierta({ titulo: `${c.categoria} — venta de ${MESES[m.mes - 1]} ${m.anio}`, lotes: c.lotes?.[clave] ?? [] })}>
                                   {fmt(valor)}
                                   {c.estimado[clave] && <span className="ml-0.5 text-amber-500">*</span>}
-                                </>
+                                </button>
                               ) : disp ? (
                                 /* Sin venta no hay plata: se informan cabezas y peso promedio,
                                    igual que las toneladas de soja disponibles a fijar.
@@ -3711,6 +3723,9 @@ Clic para presupuestar la venta`}
           </div>
         </CardContent>
       </Card>
+
+      <PresupuestoVentaLote abierto={!!ventaAbierta} titulo={ventaAbierta?.titulo ?? ""} lotes={ventaAbierta?.lotes ?? []}
+        onCerrar={() => setVentaAbierta(null)} onGuardado={() => { void cargarHacienda(); void cargarDatos() }} />
 
       {/* Presupuestar una venta de hacienda desde la celda de disponible */}
       <ModalPresupuestarVenta

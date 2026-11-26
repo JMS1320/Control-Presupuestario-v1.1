@@ -254,3 +254,24 @@ export function solapamientos(tramos: TramoLote[]): [TramoLote, TramoLote][] {
   }
   return pares
 }
+
+/**
+ * 🐂 A-FEAT-1667 — Si la VENTA de un lote se corre, la ración sigue hasta la nueva fecha (JMS 26/11: «si eso implica seguir dando
+ * ración, entonces se debe actualizar sólo el plan productivo del año: más días, más ración»). Devuelve qué tramo mover y a qué fecha:
+ * el ÚLTIMO del lote, si terminaba cerca de la venta vieja (hasta 31 días antes o después) — es el que «llega a la venta». Si el
+ * último terminaba mucho antes (ej. pasó a pastura sin ración), no se toca. null si no hay nada que mover o la fecha nueva cae antes
+ * de que empiece el tramo (no se puede acortar a menos de un día).
+ */
+export function tramoHastaLaVenta(
+  tramos: { id: string; fecha_desde: string; fecha_hasta: string }[],
+  ventaVieja: string | null, ventaNueva: string,
+): { id: string; hastaVieja: string; hastaNueva: string } | null {
+  if (!tramos.length || !ventaNueva || ventaVieja === ventaNueva) return null
+  const ult = [...tramos].sort((a, b) => b.fecha_hasta.localeCompare(a.fecha_hasta))[0]!
+  if (ventaVieja) {
+    const dif = Math.abs(Date.parse(ult.fecha_hasta) - Date.parse(ventaVieja)) / 86400000
+    if (dif > 31) return null
+  }
+  if (ventaNueva <= ult.fecha_desde || ventaNueva === ult.fecha_hasta) return null
+  return { id: ult.id, hastaVieja: ult.fecha_hasta, hastaNueva: ventaNueva }
+}

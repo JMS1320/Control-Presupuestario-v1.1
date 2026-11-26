@@ -332,7 +332,7 @@ import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { vinculoDelMail } from "@/lib/pagos/vinculo-mail-pago"
 import { calcularArranque, clasificarFila, lineaDeSaldo, controlDosFuentes, totalComposicion, estaEnLaGrilla, type FilaReal } from "@/lib/presupuesto/arranque"
 import { recortarPorFamilia } from "@/lib/presupuesto/templates"
-import { pesoInicialTramo, gananciaDesdeNacimiento } from "@/lib/productivo/tramos"
+import { pesoInicialTramo, gananciaDesdeNacimiento, tramoHastaLaVenta } from "@/lib/productivo/tramos"
 import { insumosDeDieta, dietasDe } from "@/lib/productivo/actividades"
 import { costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
@@ -9125,6 +9125,12 @@ export function correrCasos(): Resultado[] {
     chequear("Productivo", "🐣 La curva del ternero al pie sale del lote: nacimiento 30 kg → peso del lote; si se cambian los kg del lote, cambia (vinculado)",
       "g 0.782 · nov 126.2 · con 250 kg 141.4", `g ${gNac?.toFixed(3)} · nov ${pNac.toFixed(1)} · con 250 kg ${pNac250.toFixed(1)}`,
       `g ${gNac?.toFixed(3)} · nov ${pNac.toFixed(1)} · con 250 kg ${pNac250.toFixed(1)}` === "g 0.782 · nov 126.2 · con 250 kg 141.4", "A-FEAT-1663")
+    // 🐂 A-FEAT-1667: la venta se corre → el último tramo (el que llega a la venta) se estira o se acorta; si terminaba lejos, no se toca
+    const trV = [{ id: "r", fecha_desde: "2027-03-01", fecha_hasta: "2027-03-31" }, { id: "c", fecha_desde: "2026-11-01", fecha_hasta: "2027-02-28" }]
+    const v1 = tramoHastaLaVenta(trV, "2027-03-31", "2027-04-30"), v2 = tramoHastaLaVenta(trV, "2027-06-30", "2027-07-31"), v3 = tramoHastaLaVenta(trV, "2027-03-31", "2027-02-15")
+    const vRes = `${v1?.id}→${v1?.hastaNueva} · ${v2 ? "movió" : "nada"} · ${v3 ? "movió" : "nada"}`
+    chequear("Productivo", "🐂 Si la venta se corre, el plan del año que llega a la venta se estira (más días de ración); si terminaba lejos o la fecha cae antes, no se toca",
+      "r→2027-04-30 · nada · nada", vRes, vRes === "r→2027-04-30 · nada · nada", "A-FEAT-1667")
     // 🥣 Dietas (script 305): sin dieta = va en todas; con dieta = sólo en la suya; la elegida manda (si no, la de default)
     const insD = [{ c: "Maíz", dieta: "Maíz y concentrado" }, { c: "Conc", dieta: "Maíz y concentrado" }, { c: "Maíz", dieta: "Con silo" }, { c: "Silo", dieta: "Con silo" }, { c: "Sal", dieta: null }]
     const dRes = `${insumosDeDieta(insD, "Con silo").map(i => i.c).join("+")} · ${insumosDeDieta(insD, "Maíz y concentrado").map(i => i.c).join("+")} · ${insumosDeDieta(insD, null).map(i => i.c).join("+")} · ${dietasDe(insD).join("/")}`
