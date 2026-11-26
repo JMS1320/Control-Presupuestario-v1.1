@@ -140,3 +140,37 @@ export function elegirPlanOReceta(plan: RenglonPlan | undefined, receta: () => C
   if (plan) return { ...costoPlanCampana(plan, tcPorMes, desdeMes), origen: 'plan' }
   return { ...receta(), origen: 'receta' }
 }
+
+/**
+ * 🥣 A-FEAT-1665 (c) — El plan del año pisa la RACIÓN de una campaña (JMS 26/11: «cada cosa de la receta tiene que poder ser editada
+ * para el plan productivo del año»). Vacío = receta (override, nunca copia):
+ *  · actividad: `racion_pct_pv` (fila con `actividad_id` + `campana` + `racion_pct_pv`);
+ *  · renglón (fila con `receta_insumo_id` + `campana`): `cantidad` pisa el valor (% de la mezcla o kg por cabeza y día), `precio` el
+ *    precio, `moneda` y `iva_pct`. «Este año: 0» = cantidad 0 → el renglón no va ese año.
+ * El «cuándo» NO va acá: es el tramo del lote (que también es plan del año).
+ */
+export interface PlanRacionFila {
+  actividad_id: string | null; receta_insumo_id: string | null; campana: string
+  racion_pct_pv: number | null; cantidad: number | null; precio: number | null; moneda: string | null; iva_pct: number | null
+}
+export function aplicarPlanRacion<A extends { id: string; racion_pct_pv: number }, I extends { id: string; valor: number; precio_unitario: number | null; moneda: string; iva_pct?: number | null }>(
+  actividad: A, insumos: I[], campana: string, plan: PlanRacionFila[],
+): { actividad: A; insumos: I[]; cambios: string[] } {
+  const cambios: string[] = []
+  const pAct = plan.find(p => p.actividad_id === actividad.id && p.campana === campana && p.racion_pct_pv != null)
+  const act = pAct ? { ...actividad, racion_pct_pv: Number(pAct.racion_pct_pv) } : actividad
+  if (pAct) cambios.push(`ración ${(Number(pAct.racion_pct_pv) * 100).toLocaleString("es-AR", { maximumFractionDigits: 2 })} % del peso vivo (plan ${campana})`)
+  const ins: I[] = []
+  for (const i of insumos) {
+    const p = plan.find(x => x.receta_insumo_id === i.id && x.campana === campana)
+    if (!p) { ins.push(i); continue }
+    if (p.cantidad === 0) { cambios.push(`${(i as any).concepto ?? "renglón"}: este año 0`); continue }
+    ins.push({ ...i,
+      valor: p.cantidad != null ? Number(p.cantidad) : i.valor,
+      precio_unitario: p.precio != null ? Number(p.precio) : i.precio_unitario,
+      moneda: (p.moneda || i.moneda) as any,
+      iva_pct: p.iva_pct != null ? Number(p.iva_pct) : i.iva_pct })
+    cambios.push(`${(i as any).concepto ?? "renglón"}: plan ${campana}`)
+  }
+  return { actividad: act, insumos: ins, cambios }
+}

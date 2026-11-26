@@ -334,7 +334,7 @@ import { calcularArranque, clasificarFila, lineaDeSaldo, controlDosFuentes, tota
 import { recortarPorFamilia } from "@/lib/presupuesto/templates"
 import { pesoInicialTramo, gananciaDesdeNacimiento, tramoHastaLaVenta } from "@/lib/productivo/tramos"
 import { insumosDeDieta, dietasDe } from "@/lib/productivo/actividades"
-import { costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
+import { costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, aplicarPlanRacion, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
@@ -9125,6 +9125,16 @@ export function correrCasos(): Resultado[] {
     chequear("Productivo", "🐣 La curva del ternero al pie sale del lote: nacimiento 30 kg → peso del lote; si se cambian los kg del lote, cambia (vinculado)",
       "g 0.782 · nov 126.2 · con 250 kg 141.4", `g ${gNac?.toFixed(3)} · nov ${pNac.toFixed(1)} · con 250 kg ${pNac250.toFixed(1)}`,
       `g ${gNac?.toFixed(3)} · nov ${pNac.toFixed(1)} · con 250 kg ${pNac250.toFixed(1)}` === "g 0.782 · nov 126.2 · con 250 kg 141.4", "A-FEAT-1663")
+    // 🥣 A-FEAT-1665 (c): el plan del año pisa la ración sólo en su campaña; vacío = receta; «0» saca el renglón
+    const actR = { id: "cria", racion_pct_pv: 0.01 }
+    const insR = [{ id: "m", concepto: "Maíz", valor: 0.85, precio_unitario: 270, moneda: "ARS", iva_pct: 10.5 }, { id: "c", concepto: "Conc", valor: 0.15, precio_unitario: 1500, moneda: "ARS", iva_pct: 21 }]
+    const planR = [{ actividad_id: "cria", receta_insumo_id: null, campana: "26/27", racion_pct_pv: 0.008, cantidad: null, precio: null, moneda: null, iva_pct: null },
+      { actividad_id: null, receta_insumo_id: "m", campana: "26/27", racion_pct_pv: null, cantidad: null, precio: 300, moneda: null, iva_pct: null },
+      { actividad_id: null, receta_insumo_id: "c", campana: "26/27", racion_pct_pv: null, cantidad: 0, precio: null, moneda: null, iva_pct: null }]
+    const r26 = aplicarPlanRacion(actR, insR, "26/27", planR), r27 = aplicarPlanRacion(actR, insR, "27/28", planR)
+    const pRes = `${r26.actividad.racion_pct_pv} · ${r26.insumos.map(i => `${i.concepto}@${i.precio_unitario}`).join("+")} · ${r27.actividad.racion_pct_pv} · ${r27.insumos.map(i => `${i.concepto}@${i.precio_unitario}`).join("+")}`
+    chequear("Productivo", "🥣 Plan del año de la ración: 26/27 pisa % del peso vivo y precio y saca el renglón en 0; 27/28 sigue la receta",
+      "0.008 · Maíz@300 · 0.01 · Maíz@270+Conc@1500", pRes, pRes === "0.008 · Maíz@300 · 0.01 · Maíz@270+Conc@1500", "A-FEAT-1665")
     // 🐂 A-FEAT-1667: la venta se corre → el último tramo (el que llega a la venta) se estira o se acorta; si terminaba lejos, no se toca
     const trV = [{ id: "r", fecha_desde: "2027-03-01", fecha_hasta: "2027-03-31" }, { id: "c", fecha_desde: "2026-11-01", fecha_hasta: "2027-02-28" }]
     const v1 = tramoHastaLaVenta(trV, "2027-03-31", "2027-04-30"), v2 = tramoHastaLaVenta(trV, "2027-06-30", "2027-07-31"), v3 = tramoHastaLaVenta(trV, "2027-03-31", "2027-02-15")

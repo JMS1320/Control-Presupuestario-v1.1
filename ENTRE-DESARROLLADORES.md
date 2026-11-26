@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 📍 Columna `racion_pct_pv` (numeric) en `public.presupuesto_variables` (2026-11-26) — aviso previo; se aplica a continuación (JMS: «avanzá tranquilo con todos los pasos»). `scripts/308` con deshacer. Es el «% del peso vivo» de la ración que el plan del año pisa para una campaña. Sin RLS ni permisos.
+### ✅ Columna `racion_pct_pv` (numeric) en `public.presupuesto_variables` (2026-11-26) — ✅ APLICADA el 26/11 (aviso previo) (JMS: «avanzá tranquilo con todos los pasos»). `scripts/308` con deshacer. Es el «% del peso vivo» de la ración que el plan del año pisa para una campaña. Sin RLS ni permisos.
 
 ### ✅ Columnas `dieta` (text) en `productivo.actividad_insumos` y `public.presupuesto_variables`, y `dieta_default` (text) en `productivo.actividades` (2026-11-26) — aviso previo; se aplica a continuación (JMS lo pidió). `scripts/305` con deshacer. Sin RLS ni permisos.
 
