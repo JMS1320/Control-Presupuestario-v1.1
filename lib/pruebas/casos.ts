@@ -332,7 +332,7 @@ import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { vinculoDelMail } from "@/lib/pagos/vinculo-mail-pago"
 import { calcularArranque, clasificarFila, lineaDeSaldo, controlDosFuentes, totalComposicion, estaEnLaGrilla, type FilaReal } from "@/lib/presupuesto/arranque"
 import { recortarPorFamilia } from "@/lib/presupuesto/templates"
-import { pesoInicialTramo, gananciaDesdeNacimiento, tramoHastaLaVenta } from "@/lib/productivo/tramos"
+import { pesoInicialTramo, gananciaDesdeNacimiento, tramoHastaLaVenta, planPorDefecto } from "@/lib/productivo/tramos"
 import { insumosDeDieta, dietasDe } from "@/lib/productivo/actividades"
 import { costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, aplicarPlanRacion, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
@@ -9135,6 +9135,15 @@ export function correrCasos(): Resultado[] {
     const pRes = `${r26.actividad.racion_pct_pv} · ${r26.insumos.map(i => `${i.concepto}@${i.precio_unitario}`).join("+")} · ${r27.actividad.racion_pct_pv} · ${r27.insumos.map(i => `${i.concepto}@${i.precio_unitario}`).join("+")}`
     chequear("Productivo", "🥣 Plan del año de la ración: 26/27 pisa % del peso vivo y precio y saca el renglón en 0; 27/28 sigue la receta",
       "0.008 · Maíz@300 · 0.01 · Maíz@270+Conc@1500", pRes, pRes === "0.008 · Maíz@300 · 0.01 · Maíz@270+Conc@1500", "A-FEAT-1665")
+    // 🧭 A-FEAT-1665 (b): plan por defecto de un lote sin plan — al pie: creep nov→día antes del destete (+ nacimiento 01/07 · 30 kg);
+    // recría: del destete a la venta; vendido al destete → sin recría
+    const d1 = planPorDefecto({ categoria: "Ternero al Pie", fecha_disponible: "2028-03-01" }) as any
+    const d2 = planPorDefecto({ categoria: "Ternero Recria", fecha_disponible: "2027-03-01", fecha_venta_estimada: "2027-06-30" }) as any
+    const d3 = planPorDefecto({ categoria: "Ternero Recria", fecha_disponible: "2027-03-01", fecha_venta_estimada: "2027-03-01" }) as any
+    const dDef = `${d1.actividad} ${d1.desde}→${d1.hasta} nac ${d1.nacimiento?.fecha} · ${d2.actividad} ${d2.desde}→${d2.hasta} · ${d3.motivo}`
+    chequear("Productivo", "🧭 Plan por defecto: al pie = creep de la receta hasta el destete; recría = destete → venta; vendido al destete = sin recría",
+      "Cría 2027-11-01→2028-02-29 nac 2027-07-01 · Recría 2027-03-01→2027-06-30 · se vende al destete: no hay recría", dDef,
+      dDef === "Cría 2027-11-01→2028-02-29 nac 2027-07-01 · Recría 2027-03-01→2027-06-30 · se vende al destete: no hay recría", "A-FEAT-1665")
     // 🐂 A-FEAT-1667: la venta se corre → el último tramo (el que llega a la venta) se estira o se acorta; si terminaba lejos, no se toca
     const trV = [{ id: "r", fecha_desde: "2027-03-01", fecha_hasta: "2027-03-31" }, { id: "c", fecha_desde: "2026-11-01", fecha_hasta: "2027-02-28" }]
     const v1 = tramoHastaLaVenta(trV, "2027-03-31", "2027-04-30"), v2 = tramoHastaLaVenta(trV, "2027-06-30", "2027-07-31"), v3 = tramoHastaLaVenta(trV, "2027-03-31", "2027-02-15")

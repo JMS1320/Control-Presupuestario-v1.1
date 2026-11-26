@@ -275,3 +275,39 @@ export function tramoHastaLaVenta(
   if (ventaNueva <= ult.fecha_desde || ventaNueva === ult.fecha_hasta) return null
   return { id: ult.id, hastaVieja: ult.fecha_hasta, hastaNueva: ventaNueva }
 }
+
+/** Meses del creep feeding por receta (JMS 25/11, C11: «nov→feb»). Se usan si el renglón de la receta no trae sus meses. */
+export const MESES_CREEP_RECETA = [11, 12, 1, 2]
+
+/**
+ * 🧭 A-FEAT-1665 (b) — El plan del año POR DEFECTO de un lote que no tiene ninguno, sacado de la receta (JMS 26/11: «cuando un lote
+ * no tiene un período, la app se lo crea por default… si yo pongo que los terneros se venden a fin de febrero, significa que no hay
+ * recría»). No escribe nada: propone; lo crea JMS con un clic.
+ *  · Al pie → Cría (creep) desde el primer mes del creep antes del destete hasta el día anterior al destete; si no sabe cuándo nació,
+ *    propone el 01/07 del año anterior al destete con 30 kg (como el lote 26/27).
+ *  · Recría → desde que está disponible (destete) hasta la venta. Si se vende al destete (o no tiene venta posterior), no hay recría.
+ */
+export function planPorDefecto(
+  lote: { categoria: string; fecha_disponible: string; fecha_venta_estimada?: string | null; fecha_nacimiento?: string | null },
+  mesesCreep: number[] = MESES_CREEP_RECETA,
+): { actividad: 'Cría' | 'Recría'; desde: string; hasta: string; nacimiento?: { fecha: string; kg: number } } | { motivo: string } | null {
+  const cat = String(lote.categoria || '').toLowerCase()
+  const disp = String(lote.fecha_disponible || '')
+  if (!disp) return null
+  const menosUnDia = (f: string) => new Date(Date.parse(f + 'T12:00:00') - 86400000).toISOString().slice(0, 10)
+  if (/al pie/.test(cat)) {
+    const [y, m] = disp.split('-').map(Number) as [number, number]
+    const m0 = mesesCreep[0] ?? 11
+    const anio = m0 >= m ? y - 1 : y
+    const desde = `${anio}-${String(m0).padStart(2, '0')}-01`
+    if (desde >= disp) return { motivo: 'el creep de la receta no cae antes del destete' }
+    return { actividad: 'Cría', desde, hasta: menosUnDia(disp),
+      ...(lote.fecha_nacimiento ? {} : { nacimiento: { fecha: `${y - 1}-07-01`, kg: 30 } }) }
+  }
+  if (/recr/.test(cat)) {
+    const fv = lote.fecha_venta_estimada ? String(lote.fecha_venta_estimada) : null
+    if (!fv || fv <= disp) return { motivo: 'se vende al destete: no hay recría' }
+    return { actividad: 'Recría', desde: disp, hasta: fv }
+  }
+  return null
+}

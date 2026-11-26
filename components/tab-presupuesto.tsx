@@ -44,6 +44,7 @@ import {
 } from "@/lib/ganaderia/calculo"
 import { ModalPresupuestarVenta, type DatosPresupuestar } from "@/components/modal-presupuestar-venta"
 import { PresupuestoVentaLote, type VentaLoteCelda } from "@/components/presupuesto-venta-lote"
+import { planPorDefecto } from "@/lib/productivo/tramos"
 import {
   valuarLoteConPrecios, calcularLineaTiempo, fechaDestete, pesoDestete,
   type LoteStock, type VentaStock, type CicloStock,
@@ -383,6 +384,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    *  mediciones de stock, Margen, ventas por lote y lotes: no es una copia (JMS 26/11). */
   const [editorTramos, setEditorTramos] = useState<{ lote: string; tramos: { id: string; actividad: string; desde: string; hasta: string }[] } | null>(null)
   const [guardandoTramos, setGuardandoTramos] = useState(false)
+  /** 🧭 Lotes sin plan del año, con lo que propone la receta (A-FEAT-1665 b). Se crean con un clic de JMS, no solos. */
+  const [sinPlan, setSinPlan] = useState<{ loteId: string; nombre: string; actividadId: string | null; propuesta: ReturnType<typeof planPorDefecto> }[]>([])
   /** 🥣 El plan del año de la ración de una actividad, para una campaña. */
   const [planRacionAbierto, setPlanRacionAbierto] = useState<DatosPlanRacion | null>(null)
   /** ✎ El plan del año de un renglón (A-FEAT-1663), abierto desde la grilla. */
@@ -830,8 +833,14 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     // hasta el destete, así que en los períodos ANTERIORES al destete se suman al lote de hembras al pie (JMS 26/11).
     const retenidasDe = new Map(calcularLineaTiempo(((ciclos || []) as any[])).map(c => [String((c.ciclo as any).id), Number(c.retenidas) || 0]))
     const extraAlPie = (l: LoteStock) => /ternera.*al pie/i.test(String(l.categoria)) && (l as any).ciclo_id ? (retenidasDe.get(String((l as any).ciclo_id)) || 0) : 0
+    const sinPlanAcc: typeof sinPlan = []
     for (const l of ((lotes || []) as LoteStock[])) {
       const mios = listaTramos.filter(t => t.lote_id === l.id)
+      if (mios.length === 0 && !(l as any).destino_actividad_id && String(l.fecha_disponible || "") >= `${mesArgentina()}-01`) {
+        const pr = planPorDefecto(l as any)
+        if (pr) sinPlanAcc.push({ loteId: l.id, nombre: `${l.categoria} · ${fmtN(Number(l.cantidad) || 0)} cab · disponible ${String(l.fecha_disponible).split("-").reverse().join("/")}`,
+          actividadId: "actividad" in pr ? (listaActs.find(a => a.nombre === pr.actividad)?.id ?? null) : null, propuesta: pr })
+      }
       if (mios.length === 0 || deRacion.length === 0) continue
       const dmy = (f: any) => String(f || "").split("-").reverse().join("/")
       const rango = mios.map((t: any) => `${dmy(t.fecha_desde)}–${dmy(t.fecha_hasta)}`).join(", ")
@@ -941,6 +950,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       ;(renglones[act.nombre] ??= []).push(r)
     }
 
+    setSinPlan(sinPlanAcc)
     const nombresAct = Array.from(new Set([...Object.keys(porActividad), ...Object.keys(renglones), ...Object.keys(fueraPorActividad)]))
     setCostoProd(nombresAct
       .map(nombre => ({ nombre, montos: porActividad[nombre] || {}, fuera: fueraPorActividad[nombre] || [],
@@ -2485,6 +2495,18 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   // Función (no componente): así React conserva el estado del modal entre recargas de la grilla.
   /** Las campañas que se pueden planificar: la de hoy en adelante, dentro de la grilla. */
   const campanasPlan = Array.from(new Set(meses.map(m => campanaDeMes(`${m.anio}-${String(m.mes).padStart(2, "0")}`)))).filter(c => c >= campanaDeMes(mesArgentina()))
+  /** 🧭 Crea el plan del año por defecto de un lote (tramo + nacimiento si falta). Lo dispara JMS con un clic. */
+  const crearPlanPorDefecto = async (x: (typeof sinPlan)[number]) => {
+    const pr = x.propuesta
+    if (!pr || !("actividad" in pr) || !x.actividadId) return
+    const { error } = await supabase.schema("productivo").from("lote_tramos").insert({ lote_id: x.loteId, actividad_id: x.actividadId, orden: 1,
+      fecha_desde: pr.desde, fecha_hasta: pr.hasta, notas: "[plan por defecto] creado desde el presupuesto con la receta" })
+    if (error) { alert("No se pudo crear el plan del año: " + error.message); return }
+    if (pr.nacimiento) await supabase.schema("productivo").from("stock_lotes")
+      .update({ fecha_nacimiento: pr.nacimiento.fecha, peso_nacimiento_kg: pr.nacimiento.kg, updated_at: new Date().toISOString() })
+      .eq("id", x.loteId).is("fecha_nacimiento", null)
+    await cargarDatos()
+  }
   /** 🥣 Guarda (o quita) la dieta del año de una actividad: una fila del plan con actividad_id + dieta. */
   const elegirDieta = async (actividadId: string, campana: string, dieta: string | null, filaId?: string) => {
     const r = filaId
@@ -3241,6 +3263,29 @@ Clic para presupuestar la venta`}
                 {/* ── Costos de producción (derivados de las actividades del lote) ── */}
                 {costoProd.length > 0 && (() => {
                   const abierto = expandidos["__costoprod__"] ?? false
+                  const dmyP = (f: string) => f.split("-").reverse().join("/")
+                  const filaSinPlan = abierto && sinPlan.length > 0 && (
+                    <tr className="border-b bg-amber-50/60">
+                      <td colSpan={meses.length + 1} className="px-4 py-1.5 pl-8 text-[11px] text-amber-900">
+                        🧭 <strong>{sinPlan.length} lote(s) sin plan del año</strong> — no suman ración. Lo que propone la receta:
+                        <ul className="mt-1 space-y-0.5">
+                          {sinPlan.map(x => (
+                            <li key={x.loteId}>
+                              {x.nombre} →{" "}
+                              {x.propuesta && "actividad" in x.propuesta ? (
+                                <>
+                                  {x.propuesta.actividad} {dmyP(x.propuesta.desde)} → {dmyP(x.propuesta.hasta)}
+                                  {x.propuesta.nacimiento && ` (nacidos ${dmyP(x.propuesta.nacimiento.fecha)}, ${x.propuesta.nacimiento.kg} kg)`}
+                                  <button type="button" className="ml-2 rounded border border-amber-400 bg-white px-1 text-[10px] hover:bg-amber-100"
+                                    title="Crear este plan del año en el lote (después se cambia con 📅)" onClick={() => void crearPlanPorDefecto(x)}>＋ crear</button>
+                                </>
+                              ) : <span className="text-gray-500">{x.propuesta && "motivo" in x.propuesta ? x.propuesta.motivo : "—"}</span>}
+                            </li>
+                          ))}
+                        </ul>
+                      </td>
+                    </tr>
+                  )
                   return (
                     <>
                       <tr className="border-b bg-violet-50 cursor-pointer hover:bg-violet-100 transition-colors"
@@ -3265,6 +3310,7 @@ Clic para presupuestar la venta`}
                           )
                         })}
                       </tr>
+                      {filaSinPlan}
                       {abierto && costoProd.map(c => {
                         // 🔍 Paso 3 — cada actividad se abre en sus lotes, y cada lote en sus insumos (pasando el mouse por una
                         // celda de insumo: cantidad, precio, TC, días y peso). «✏️ editar» abre el editor COMPLETO de las recetas.
