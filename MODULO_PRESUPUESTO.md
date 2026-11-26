@@ -37,6 +37,19 @@
 
 ---
 
+## 🏢 Cada empresa con SU estructura — el presupuesto no se clona de MSA (JMS 26/11/2026)
+
+> *«Cuando hagas el presupuesto tengas en cuenta su propia estructura de datos, más allá de la de MSA.»* (sobre MA: no vende hacienda,
+> no tiene tramos ni plan productivo; tiene un arrendamiento).
+
+- El presupuesto de otra empresa (MA, PAM) se arma con **los bloques que esa empresa tiene de verdad** en sus datos, no con la pantalla
+  de MSA filtrada: lo que no tiene (venta de hacienda, costos de producción, plan del año productivo) **no aparece**, en vez de aparecer
+  vacío.
+- Y cada bloque lee **su** fuente: MA factura arrendamiento con Fac C (no está inscripta en IVA), tiene sus templates, su consumo y sus
+  cuentas. → A-FEAT-1666.
+
+---
+
 ## 🎯 Objetivo
 
 Una vista (o par de sub-vistas) que muestre:
