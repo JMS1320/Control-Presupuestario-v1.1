@@ -469,7 +469,35 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       }
       return { ...t, montos, celdas, montosAntesDeFuera: montosAntes, fueraTodo: todo } as any
     }),
-  })), [agrupadoresBase, pagadoMes, fuera])
+  })).map(ag => {
+    /**
+     * 👪 A-BUG-1662 (2) — JMS 25/11: «sigo viendo templates repetidos». Los templates de una misma familia (uno por campaña:
+     * Ganancias 2026, 2027…) se muestran en UN renglón, con los montos de todas sus campañas. El ⋯ abre las cuotas de todos.
+     * El que da nombre al renglón es el de la campaña en curso (o el más nuevo).
+     */
+    const porFam = new Map<string, FilaTemplate[]>()
+    for (const t of ag.templates) {
+      if ((t as any).fueraTodo) continue
+      const k = t.nombre.trim().toLowerCase().replace(/\s+/g, " ")
+      porFam.set(k, [...(porFam.get(k) || []), t])
+    }
+    const juntos: FilaTemplate[] = []
+    for (const fam of porFam.values()) {
+      if (fam.length === 1) { juntos.push(fam[0]); continue }
+      const mesHoy = mesArgentina()
+      const principal = fam.find(t => Object.entries(t.montos).some(([m, v]) => m >= mesHoy && v > 0)) ?? fam[fam.length - 1]
+      const montos: Record<string, number> = {}, celdas: any = {}, antes: Record<string, number> = {}
+      for (const t of fam) for (const [m, v] of Object.entries(t.montos)) {
+        montos[m] = (montos[m] || 0) + v
+        antes[m] = (antes[m] || 0) + (((t as any).montosAntesDeFuera || t.montos)[m] || 0)
+        if (v > 0 || !celdas[m]) celdas[m] = t.celdas[m]
+      }
+      juntos.push({ ...principal, montos, celdas, montosAntesDeFuera: antes, familiaIds: fam.map(t => t.id) } as any)
+    }
+    return { ...ag, templates: juntos }
+  }), [agrupadoresBase, pagadoMes, fuera])
+  /** ⋯ Los templates sacados ENTEROS del presupuesto: abajo, en un grupo plegado (como las cuentas), para volver a ponerlos. */
+  const templatesFuera = useMemo(() => agrupadoresBase.flatMap(ag => ag.templates.filter(t => fuera.templates.has(t.id)).map(t => ({ ...t, agrupador: ag.nombre }))), [agrupadoresBase, fuera])
   const cuentas = useMemo(() => cuentasBase.map(c => {
     const p = pagadoMes.porCuenta[c.nro] || 0
     if (!p) return c
@@ -939,7 +967,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   }
 
   /** ⋯ Saca (o vuelve a poner) un template entero —`mes` null— o un mes, sólo del presupuesto. */
-  const alternarFuera = async (templateId: string, nombre: string, mes: string | null) => {
+  const alternarFuera = async (templateId: string, nombre: string, mes: string | null, familiaIds?: string[]) => {
+    if (familiaIds && familiaIds.length > 1) { for (const id of familiaIds) await alternarFuera(id, nombre, mes); return }
     const filaId = mes ? `${templateId}|${mes}` : templateId
     const esta = marcas[`egresos_sin_factura|${filaId}`] === "fuera"
     await marcarFilas([{ id: filaId, origen: "TEMPLATE", origen_tabla: "egresos_sin_factura", estado: "", fecha_estimada: mes ? `${mes}-01` : "",
@@ -2347,10 +2376,10 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
 
   // Función (no componente): así React conserva el estado del modal entre recargas de la grilla.
   const menuTpl = (t: FilaTemplate) => (
-    <MenuFilaTemplate key={`menu-${t.id}`} templateId={t.id} nombre={t.nombre} meses={mesesDesdeHoy}
+    <MenuFilaTemplate key={`menu-${t.id}`} templateId={t.id} familiaIds={(t as any).familiaIds} nombre={t.nombre} meses={mesesDesdeHoy}
       montos={(t as any).montosAntesDeFuera || t.montos}
       fueraTemplate={fuera.templates.has(t.id)} mesesFuera={fuera.meses[t.id] || new Set()}
-      onAlternarFuera={mes => alternarFuera(t.id, t.nombre, mes)}
+      onAlternarFuera={mes => alternarFuera(t.id, t.nombre, mes, (t as any).familiaIds)}
       onRecargar={() => cargarDatos()} />
   )
 
@@ -2897,6 +2926,32 @@ Clic para presupuestar la venta`}
                               </td>
                             )
                           })}
+                        </tr>
+                      ))}
+                    </>
+                  )
+                })()}
+
+                {/* ── ⋯ Templates sacados ENTEROS del presupuesto (A-FEAT-1661): no suman; el ⋯ los vuelve a poner. ── */}
+                {templatesFuera.length > 0 && (() => {
+                  const abierto = expandidos["__tpl_fuera__"] ?? false
+                  return (
+                    <>
+                      <tr className="border-b bg-gray-50 cursor-pointer hover:bg-gray-100" onClick={() => toggleAgrupador("__tpl_fuera__")}>
+                        <td className="sticky left-0 z-10 bg-gray-50 px-4 py-1.5 text-xs font-medium text-gray-500 flex items-center gap-1">
+                          {abierto ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
+                          Templates fuera del presupuesto
+                          <span className="ml-1 font-normal text-gray-400">{templatesFuera.length} · no suman (el template no cambió)</span>
+                        </td>
+                        {meses.map(m => { const k = `${m.anio}-${String(m.mes).padStart(2, "0")}`; return <td key={k} className={k === mesActualClave ? "border-l-2 border-blue-300" : ""} /> })}
+                      </tr>
+                      {abierto && templatesFuera.map(t => (
+                        <tr key={`tpl-fuera-${t.id}`} className="border-b bg-white">
+                          <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-8 text-xs text-gray-500">
+                            {t.nombre}<span className="ml-2 text-[10px] text-gray-400">{t.agrupador}</span>
+                            {menuTpl(t)}
+                          </td>
+                          {meses.map(m => { const k = `${m.anio}-${String(m.mes).padStart(2, "0")}`; return <td key={k} className={`px-3 text-right text-xs text-gray-300 line-through ${k === mesActualClave ? "border-l-2 border-blue-300" : ""}`}>{t.montos[k] ? fmt(t.montos[k]) : "—"}</td> })}
                         </tr>
                       ))}
                     </>

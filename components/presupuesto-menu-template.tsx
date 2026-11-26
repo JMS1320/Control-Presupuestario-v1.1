@@ -26,8 +26,13 @@ const nombreMes = (k: string) => { const [a, m] = k.split("-"); return `${["ene"
 
 interface Cuota { id: string; fecha_estimada: string | null; monto: number; estado: string | null }
 
+/** Estados que se pueden elegir desde el presupuesto. «conciliado» no: lo pone la conciliación (con su movimiento del banco). */
+const ESTADOS: [string, string][] = [["pendiente", "pendiente"], ["pagar", "a pagar"], ["pagado", "pagado"], ["nada_a_pagar", "nada a pagar (dio cero)"]]
+
 export function MenuFilaTemplate(p: {
   templateId: string
+  /** 👪 Los templates de la familia (uno por campaña) que se muestran juntos en el renglón. */
+  familiaIds?: string[]
   nombre: string
   /** Los meses de la grilla, desde el actual (claves YYYY-MM). */
   meses: string[]
@@ -45,13 +50,14 @@ export function MenuFilaTemplate(p: {
   const [textos, setTextos] = useState<Record<string, string>>({})
   const [propagar, setPropagar] = useState<{ cuotaId: string; nuevoMonto: number } | null>(null)
   const [ocupado, setOcupado] = useState(false)
+  const [aviso, setAviso] = useState("")
 
   const cargar = async () => {
     const desde = `${p.meses[0]}-01`
     const ult = p.meses[p.meses.length - 1].split("-").map(Number)
     const hasta = `${new Date(ult[0], ult[1], 1).toISOString().slice(0, 10)}`
     const { data } = await supabase.from("cuotas_egresos_sin_factura")
-      .select("id, fecha_estimada, monto, estado").eq("egreso_id", p.templateId)
+      .select("id, fecha_estimada, monto, estado").in("egreso_id", p.familiaIds?.length ? p.familiaIds : [p.templateId])
       .gte("fecha_estimada", desde).lt("fecha_estimada", hasta).neq("estado", "desactivado").order("fecha_estimada")
     const cs = ((data || []) as any[]).map(c => ({ id: String(c.id), fecha_estimada: c.fecha_estimada, monto: Number(c.monto) || 0, estado: c.estado }))
     setCuotas(cs)
@@ -92,10 +98,11 @@ export function MenuFilaTemplate(p: {
               Sacar todo el template del presupuesto
             </label>
             <Button size="sm" variant="outline" className="h-7 gap-1"
-              onClick={() => window.open(linkTemplates([p.templateId]), "_blank", "noopener")}>
+              onClick={() => window.open(linkTemplates(p.familiaIds?.length ? p.familiaIds : [p.templateId]), "_blank", "noopener")}>
               <ExternalLink className="h-3.5 w-3.5" /> Ir al template (desactivar, fechas, responsable…)
             </Button>
           </div>
+          {aviso && <p className="text-xs text-red-700">{aviso}</p>}
           {cuotas === null ? <p className="text-xs text-gray-500">Cargando cuotas…</p> : (
             <table className="mt-2 w-full text-xs">
               <thead><tr className="text-left text-gray-500">
@@ -116,7 +123,23 @@ export function MenuFilaTemplate(p: {
                             onBlur={() => guardarMonto(c)} onKeyDown={e => { if (e.key === "Enter") guardarMonto(c) }} />
                         )) : <span className="text-gray-400" title="No hay cuota cargada: el presupuesto proyecta este mes. Para cargar una cuota, ir al template.">proyectado</span>}
                       </td>
-                      <td className="pr-2 text-gray-500">{cs.map(c => c.estado).join(", ") || "—"}</td>
+                      <td className="pr-2 text-gray-500">
+                        {cs.length ? cs.map(c => (
+                          // El estado se cambia acá mismo (JMS 25/11: «aquí no puedo cambiar el estado»). Ej.: Ganancias que dio 0 → «nada a pagar».
+                          <select key={c.id} className="my-0.5 block h-6 rounded border border-gray-300 bg-white px-1 text-xs" value={c.estado || "pendiente"}
+                            title={c.estado === "conciliado" ? "Está conciliada: si tiene un movimiento del banco, desvinculalo desde el extracto antes de cambiarla" : "Cambiar el estado de esta cuota"}
+                            onChange={async e => {
+                              const nuevo = e.target.value
+                              const { error } = await supabase.from("cuotas_egresos_sin_factura").update({ estado: nuevo }).eq("id", c.id)
+                              if (error) { setAviso("No se pudo cambiar el estado: " + error.message); return }
+                              await cargar(); await p.onRecargar()
+                            }}>
+                            {c.estado === "conciliado" && <option value="conciliado">conciliado</option>}
+                            {!ESTADOS.some(([v]) => v === c.estado) && c.estado && c.estado !== "conciliado" && <option value={c.estado}>{c.estado}</option>}
+                            {ESTADOS.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+                          </select>
+                        )) : "—"}
+                      </td>
                       <td className="text-right">{p.fueraTemplate || p.mesesFuera.has(k) ? <span className="text-gray-400 line-through">{$(enPres)}</span> : $(enPres)}</td>
                       <td className="text-center">
                         <input type="checkbox" disabled={ocupado || p.fueraTemplate} checked={p.mesesFuera.has(k)} onChange={() => void alternar(k)} />
