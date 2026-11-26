@@ -7,6 +7,29 @@
 
 ---
 
+## 🌾 RECETA y PLAN PRODUCTIVO DEL AÑO — la regla (JMS 25 y 26/11/2026)
+
+> **El plan productivo del año es la MISMA receta, específica para ese año. Todo lo que está en la receta tiene que poder editarse en
+> el plan del año. Lo que el plan no modifica, lo pone la receta.** *(JMS 26/11: «es lo mismo que la receta pero específico para el año.
+> Todo lo que está en la receta tiene que estar en el plan productivo. Si no está… actúa la receta, pero cada cosa de la receta tiene que
+> poder ser editada para el plan productivo del año».)*
+
+- **Receta** (Actividades y costos) = el default de TODOS los años; corregirla mueve también el Margen. *«Si ajusto una receta es para siempre.»*
+- **Plan productivo del año** (por campaña) = override renglón por renglón (§ 🎚️ Default del dato real: vacío = receta, nunca copia).
+  «Este año: 0» apaga el renglón; los renglones propios del año se suman. El Margen NO lo lee.
+- **Sin excepción por tipo de renglón**: los de ración (creep, Recría, Engorde: % del peso vivo, mezcla, precio, cuándo empieza) también
+  se pisan en el plan. *(Al 26/11 sólo los renglones «por campaña» tenían ✎ plan → hueco A-FEAT-1665.)* Y la dieta elegida del año
+  (script 305) es parte del plan.
+- **Se accede desde los dos lados**: desde el presupuesto (🌾 Costos de producción → actividad → ✎ plan / ＋ renglón del plan) y desde la
+  pantalla de recetas (pendiente, A-FEAT-1663).
+- 📍 **Dónde vive**: `public.presupuesto_variables` con `campana` + vínculo al renglón (`receta_insumo_id`) o a la actividad
+  (`actividad_id`); scripts 300 y 305. Lógica: `lib/presupuesto/costo-campana.ts` (`elegirPlanOReceta`).
+- 🐮 **Terneros al pie, por default desde el CICLO** (JMS 26/11, Q4): lo que pasa del nacimiento al destete vale para TODOS los terneros
+  del ciclo (machos, hembras de venta y retenidas), sin asignar períodos a mano lote por lote. Los períodos por lote quedan para después
+  del destete (Recría, Engorde). → A-FEAT-1665.
+
+---
+
 ## 🎯 Objetivo
 
 Una vista (o par de sub-vistas) que muestre:
