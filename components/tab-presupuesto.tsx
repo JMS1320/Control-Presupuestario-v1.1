@@ -6,6 +6,9 @@ import { useMultiCashFlowData, type CashFlowFilters } from "@/hooks/useMultiCash
 import { calcularArranque, lineaDeSaldo, controlDosFuentes, totalComposicion, fechaDeCaja, yaSeMovio, mesDe, claveMarca, estaEnLaGrilla, esLiquidacionHacienda, type FilaReal, type MarcaPresupuesto } from "@/lib/presupuesto/arranque"
 import { PresupuestoArranque, type ComposicionItem } from "@/components/presupuesto-arranque"
 import { MenuFilaTemplate } from "@/components/presupuesto-menu-template"
+import { EditorPlanRenglon, type RenglonParaPlan } from "@/components/presupuesto-plan-renglon"
+import { esModoRacion, campanaDeMes, tcPorMesConArrastre, costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
+import { claveActividad } from "@/lib/presupuesto/margen"
 import { guardarMetodoTemplate, quitarMetodoTemplate, guardarConfigCuenta } from "@/lib/presupuesto/guardar-config"
 import { useState, useEffect, useMemo, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
@@ -350,10 +353,14 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    * Costo de los tramos de actividad, por mes. 🔍 A-FEAT-1661 paso 3: con su DESGLOSE — cada lote y, dentro, cada insumo —,
    * que el cálculo ya armaba y se descartaba (JMS 25/11: «montos que yo no sé cómo están conformados por dentro»).
    */
-  const [costoProd, setCostoProd] = useState<{ nombre: string; montos: Record<string, number>; fuera?: string[]
+  const [costoProd, setCostoProd] = useState<{ nombre: string; montos: Record<string, number>; fuera?: string[]; actividadId?: string | null
+    renglones?: { insumoId: string | null; actividadId: string; concepto: string; montos: Record<string, number>; detalle: Record<string, string>
+      origen: Record<string, "plan" | "receta">; plan: Record<string, RenglonPlan>; falta: string[] }[]
     lotes: { id: string; nombre: string; montos: Record<string, number>; insumos: { concepto: string; montos: Record<string, number>; detalle: Record<string, string> }[] }[] }[]>([])
   /** El editor completo de las recetas (Actividades y costos), abierto desde la fila. */
   const [editorActividades, setEditorActividades] = useState(false)
+  /** ✎ El plan del año de un renglón (A-FEAT-1663), abierto desde la grilla. */
+  const [editorPlan, setEditorPlan] = useState<RenglonParaPlan | null>(null)
   const [ipcSerie, setIpcSerie] = useState<PuntoSerie[]>([])
   const [avisoGen, setAvisoGen] = useState<{ templates: number; meses: string[]; monto: number; nombres: string[] } | null>(null)
   /** Celda de hacienda disponible sobre la que se está presupuestando una venta. */
@@ -544,12 +551,15 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    * variable: ésas NO se proyectan además por historia, o se contarían dos veces.
    */
   const cargarVariables = async (ipc: PuntoSerie[]): Promise<Set<string>> => {
-    const [{ data: vs }, { data: ajs }, { data: hist }] = await Promise.all([
+    const [{ data: vsTodas }, { data: ajs }, { data: hist }] = await Promise.all([
       supabase.from("presupuesto_variables").select("*")
         .eq("empresa", "MSA").eq("escenario", "base").eq("activo", true),
       supabase.from("presupuesto_variable_ajustes").select("*").order("orden"),
       supabase.from("presupuesto_historia_cuentas").select("nro_cuenta, anio, mes, monto"),
     ])
+    // 🌾 A-FEAT-1663 — las filas del PLAN PRODUCTIVO DEL AÑO (atadas a un renglón de receta o a una actividad) no son
+    // «variables de costo»: las suma «Costos de producción». Acá se dejan afuera para no contarlas dos veces.
+    const vs = ((vsTodas || []) as any[]).filter(v => !v.receta_insumo_id && !v.actividad_id)
 
     // Lo EJECUTADO de cada cuenta en la campaña en curso (1/7 → 30/6). Es lo que permite que el
     // cupo anual se cierre contra la realidad y no contra el calendario: si ya se compró el
@@ -699,48 +709,59 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    * nada que leer más que la actividad y el tramo.
    */
   const cargarCostosProduccion = async () => {
-    const [{ data: lotes }, { data: tra }, { data: acts }, { data: ins }, { data: tc }] = await Promise.all([
+    const [{ data: lotes }, { data: tra }, { data: acts }, { data: ins }, { data: tc }, { data: ciclos }, { data: asig }, { data: centros }, { data: planRaw }, { data: ipcRaw }, { data: ajRaw }] = await Promise.all([
       supabase.schema("productivo").from("stock_lotes").select("*").eq("empresa", "MSA"),
       supabase.schema("productivo").from("lote_tramos").select("*").order("orden"),
       supabase.schema("productivo").from("actividades").select("*"),
       supabase.schema("productivo").from("actividad_insumos").select("*").order("orden"),
-      supabase.from("tipos_cambio").select("anio, mes, tc_presupuestado"),
+      supabase.from("tipos_cambio").select("anio, mes, tc_presupuestado, tc_real"),
+      supabase.schema("productivo").from("stock_ciclos").select("*"),
+      supabase.from("campo_campana_actividad").select("campana, centro_costo_id, has_netas"),
+      supabase.from("centros_costo").select("id, nombre").eq("tipo", "actividad"),
+      supabase.from("presupuesto_variables").select("*").eq("empresa", "MSA").eq("activo", true),
+      supabase.from("indices_ipc").select("anio, mes, valor_ipc"),
+      supabase.schema("productivo").from("actividad_insumo_ajustes").select("*").order("orden"),
     ])
     const listaTramos = (tra || []) as TramoLote[]
-    if (listaTramos.length === 0) { setCostoProd([]); return }
-    const listaActs = (acts || []) as Actividad[]
+    const listaActs = ((acts || []) as Actividad[]).filter(a => (a as any).activo !== false)
     // 🏷️ A-FEAT-1663 C1/Q7 — los renglones de receta marcados «fuera del presupuesto» (ej. sanidad e IATF, que van por su cuenta
     // contable) no suman en la grilla. La receta no cambia y el Margen no se toca: es una marca del presupuesto (script 299).
     const { data: fueraRec } = await supabase.from("presupuesto_marcas").select("fila_id, detalle")
       .eq("empresa", "MSA").eq("origen_tabla", "actividad_insumos").eq("marca", "fuera")
     const idsFuera = new Map(((fueraRec || []) as any[]).map(r => [String(r.fila_id), String(r.detalle || "").replace(/^\[script \d+\]\s*/, "")]))
-    const todosIns = (ins || []) as InsumoActividad[]
-    const listaIns = todosIns.filter(i => !idsFuera.has(String((i as any).id)))
+    const todosIns = ((ins || []) as InsumoActividad[]).filter(i => listaActs.some(a => a.id === (i as any).actividad_id))
     const fueraPorActividad: Record<string, string[]> = {}
     for (const i of todosIns) if (idsFuera.has(String((i as any).id))) {
       const act = listaActs.find(a => a.id === (i as any).actividad_id)
       if (act) (fueraPorActividad[act.nombre] ??= []).push(idsFuera.get(String((i as any).id)) || (i as any).concepto)
     }
+    const vivos = todosIns.filter(i => !idsFuera.has(String((i as any).id)))
+    // Los de RACIÓN siguen por los tramos y la curva de peso; el resto, por campaña con la función del Margen.
+    const deRacion = vivos.filter(i => esModoRacion((i as any).modo))
+    const porCampanaIns = vivos.filter(i => !esModoRacion((i as any).modo))
     const tcs: PuntoSerie[] = ((tc || []) as any[]).map(r => ({
       anio: Number(r.anio), mes: Number(r.mes), valor: Number(r.tc_presupuestado) || 0,
     }))
+    const total = (m: Record<string, number>) => Object.values(m).reduce((x, y) => x + y, 0)
+    const fmtN = (n: number, d = 0) => n.toLocaleString("es-AR", { maximumFractionDigits: d })
 
     // Una fila por ACTIVIDAD, no por lote: en el presupuesto interesa "cuánto cuesta la
     // recría", no cuánto cuesta cada lote por separado.
     const porActividad: Record<string, Record<string, number>> = {}
-    // 🔍 Paso 3 — el desglose: actividad → lote → insumo, mes por mes (con la explicación de cada número)
+    const sumar = (act: string, mes: string, v: number) => { (porActividad[act] ??= {})[mes] = (porActividad[act]?.[mes] || 0) + v }
+
+    // ── 1) RACIÓN: lote → tramo → curva de peso (como siempre) ──
     type Ins = { concepto: string; montos: Record<string, number>; detalle: Record<string, string> }
     const desglose: Record<string, Record<string, { nombre: string; montos: Record<string, number>; insumos: Record<string, Ins> }>> = {}
-    const fmtN = (n: number, d = 0) => n.toLocaleString("es-AR", { maximumFractionDigits: d })
     for (const l of ((lotes || []) as LoteStock[])) {
       const mios = listaTramos.filter(t => t.lote_id === l.id)
-      if (mios.length === 0) continue
+      if (mios.length === 0 || deRacion.length === 0) continue
       const nombreLote = `${l.categoria} · ${fmtN(Number(l.cantidad) || 0)} cab · desde ${String(l.fecha_disponible || "").split("-").reverse().join("/")}`
-      for (const t of tramosParaCosto(l as unknown as LoteCurva, mios, listaActs, listaIns)) {
+      for (const t of tramosParaCosto(l as unknown as LoteCurva, mios, listaActs, deRacion)) {
         const nombre = t.actividad.nombre
         const lote = ((desglose[nombre] ??= {})[l.id] ??= { nombre: nombreLote, montos: {}, insumos: {} })
         for (const m of consumoMensual({ ...t, tiposCambio: tcs })) {
-          ;(porActividad[nombre] ??= {})[m.mes] = (porActividad[nombre]?.[m.mes] || 0) + m.costo_total
+          sumar(nombre, m.mes, m.costo_total)
           lote.montos[m.mes] = (lote.montos[m.mes] || 0) + m.costo_total
           for (const it of m.items) {
             const ins = (lote.insumos[it.concepto] ??= { concepto: it.concepto, montos: {}, detalle: {} })
@@ -750,9 +771,75 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         }
       }
     }
-    const total = (m: Record<string, number>) => Object.values(m).reduce((x, y) => x + y, 0)
-    setCostoProd(Object.entries(porActividad)
-      .map(([nombre, montos]) => ({ nombre, montos, fuera: fueraPorActividad[nombre] || [],
+
+    // ── 2) RECETA POR CAMPAÑA + PLAN DEL AÑO (A-FEAT-1663) — cabezas del rodeo de cada campaña, hectáreas de la campaña ──
+    const claves = meses.map(m => `${m.anio}-${String(m.mes).padStart(2, "0")}`)
+    const campanas = Array.from(new Set(claves.map(campanaDeMes)))
+    const desdeMes = mesArgentina()
+    const tcPorMes = tcPorMesConArrastre(((tc || []) as any[]).map(r => ({ anio: Number(r.anio), mes: Number(r.mes), valor: Number(r.tc_real ?? r.tc_presupuestado) || null })), claves)
+    const linea = calcularLineaTiempo(((ciclos || []) as any[]))
+    const nombreCentro = new Map(((centros || []) as any[]).map(c => [String(c.id), String(c.nombre)]))
+    const hasDe: Record<string, number> = {}   // `${claveActividad}|${campana}`
+    for (const a of ((asig || []) as any[])) {
+      const n = nombreCentro.get(String(a.centro_costo_id)); if (!n) continue
+      const k = `${claveActividad(n)}|${a.campana}`; hasDe[k] = (hasDe[k] || 0) + (Number(a.has_netas) || 0)
+    }
+    const serieIpc = ((ipcRaw || []) as any[]).sort((x, y) => (x.anio * 12 + x.mes) - (y.anio * 12 + y.mes)).slice(-12)
+    const ipcAcumulado = serieIpc.length ? serieIpc.reduce((f, p) => f * (1 + (Number(p.valor_ipc) || 0) / 100), 1) - 1 : null
+    const ajustesDe: Record<string, any[]> = {}
+    for (const a of ((ajRaw || []) as any[])) (ajustesDe[a.insumo_id] ||= []).push({ id: a.id, orden: Number(a.orden) || 0, tipo: a.tipo, valor: a.valor == null ? null : Number(a.valor), referencia: a.referencia, nota: a.nota })
+    const ctxDe = (act: Actividad, camp: string): any => {
+      const c = linea.find(x => String(x.ciclo.campania) === camp)
+      return {
+        has: hasDe[`${claveActividad(act.nombre)}|${camp}`] ?? null, cabezas: c ? c.rodeo : null,
+        cabezasCiclo: c ? { rodeo: c.rodeo, vacas: c.vacas, vaquillonas: c.vaquillonas, destetados: c.destetados, terneros: c.terneros, terneras: c.terneras, retenidas: c.retenidas, toritos: c.toritos } : null,
+        tc: null, tcPorMes, ipcAcumulado,
+      }
+    }
+    // El plan del año: filas de presupuesto_variables atadas a un renglón de receta (o propias de una actividad)
+    const plan: RenglonPlan[] = ((planRaw || []) as any[]).filter(p => p.receta_insumo_id || p.actividad_id).map(p => ({
+      id: String(p.id), receta_insumo_id: p.receta_insumo_id ? String(p.receta_insumo_id) : null, actividad_id: p.actividad_id ? String(p.actividad_id) : null,
+      concepto: String(p.concepto), campana: String(p.campana), cantidad: p.cantidad == null ? null : Number(p.cantidad), unidad: p.unidad,
+      precio: p.precio == null ? null : Number(p.precio), moneda: p.moneda || "ARS", meses: Array.isArray(p.meses) ? p.meses.map(Number) : null,
+    }))
+    const planDe = new Map(plan.filter(p => p.receta_insumo_id).map(p => [`${p.receta_insumo_id}|${p.campana}`, p]))
+    type Renglon = { insumoId: string | null; actividadId: string; concepto: string; montos: Record<string, number>; detalle: Record<string, string>
+      origen: Record<string, "plan" | "receta">; plan: Record<string, RenglonPlan>; falta: string[] }
+    const renglones: Record<string, Renglon[]> = {}
+    for (const i of porCampanaIns) {
+      const act = listaActs.find(a => a.id === (i as any).actividad_id)!
+      const r: Renglon = { insumoId: String((i as any).id), actividadId: act.id, concepto: String((i as any).concepto), montos: {}, detalle: {}, origen: {}, plan: {}, falta: [] }
+      const fila: any = { ...(i as any), actividad: act.nombre, valor: Number((i as any).valor) || 0, ajustes: ajustesDe[(i as any).id] ?? [],
+        has_aplicacion: (i as any).has_aplicacion == null ? null : Number((i as any).has_aplicacion),
+        cabezas_aplicacion: (i as any).cabezas_aplicacion == null ? null : Number((i as any).cabezas_aplicacion),
+        cantidad_aplicacion: (i as any).cantidad_aplicacion == null ? null : Number((i as any).cantidad_aplicacion) }
+      for (const camp of campanas) {
+        const p = planDe.get(`${r.insumoId}|${camp}`)
+        const c = elegirPlanOReceta(p, () => costoRecetaCampana(fila, ctxDe(act, camp), camp, desdeMes), tcPorMes, desdeMes)
+        r.origen[camp] = c.origen; if (p) r.plan[camp] = p
+        if (c.falta) r.falta.push(`${camp}: ${c.falta}`)
+        for (const [k, v] of Object.entries(c.porMes)) {
+          if (!claves.includes(k)) continue
+          r.montos[k] = (r.montos[k] || 0) + v; r.detalle[k] = c.explicacion; sumar(act.nombre, k, v)
+        }
+        for (const k of claves) if (campanaDeMes(k) === camp && !r.detalle[k]) r.detalle[k] = c.explicacion
+      }
+      ;(renglones[act.nombre] ??= []).push(r)
+    }
+    // Renglones PROPIOS del plan (no están en la receta): se suman en su actividad
+    for (const p of plan.filter(x => !x.receta_insumo_id && x.actividad_id)) {
+      const act = listaActs.find(a => a.id === p.actividad_id); if (!act) continue
+      const c = costoPlanCampana(p, tcPorMes, desdeMes)
+      const r: Renglon = { insumoId: null, actividadId: act.id, concepto: p.concepto, montos: {}, detalle: {}, origen: { [p.campana]: "plan" }, plan: { [p.campana]: p }, falta: c.falta ? [c.falta] : [] }
+      for (const [k, v] of Object.entries(c.porMes)) { if (!claves.includes(k)) continue; r.montos[k] = v; r.detalle[k] = c.explicacion; sumar(act.nombre, k, v) }
+      ;(renglones[act.nombre] ??= []).push(r)
+    }
+
+    const nombresAct = Array.from(new Set([...Object.keys(porActividad), ...Object.keys(renglones), ...Object.keys(fueraPorActividad)]))
+    setCostoProd(nombresAct
+      .map(nombre => ({ nombre, montos: porActividad[nombre] || {}, fuera: fueraPorActividad[nombre] || [],
+        actividadId: listaActs.find(a => a.nombre === nombre)?.id ?? null,
+        renglones: (renglones[nombre] || []).sort((a, b) => total(b.montos) - total(a.montos)),
         lotes: Object.entries(desglose[nombre] || {}).map(([id, v]) => ({ id, nombre: v.nombre, montos: v.montos,
           insumos: Object.values(v.insumos).sort((a, b) => total(b.montos) - total(a.montos)) }))
           .sort((a, b) => total(b.montos) - total(a.montos)) }))
@@ -2321,6 +2408,10 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         </DialogContent>
       </Dialog>
 
+      <EditorPlanRenglon abierto={!!editorPlan} renglon={editorPlan}
+        campanas={Array.from(new Set(meses.map(m => campanaDeMes(`${m.anio}-${String(m.mes).padStart(2, "0")}`)))).filter(c => c >= campanaDeMes(mesArgentina()))}
+        onCerrar={() => setEditorPlan(null)} onGuardado={() => cargarDatos()} />
+
       {/* 📍 A-FEAT-1660 — de qué saldo arranca, el puente hasta hoy y lo impago vencido */}
       <PresupuestoArranque
         modo={arranqueModo}
@@ -2957,9 +3048,35 @@ Clic para presupuestar la venta`}
                                 <button type="button" className="ml-2 rounded border border-gray-300 px-1 text-[10px] text-gray-600 hover:bg-gray-100"
                                   title="Abrir el editor completo de las actividades y sus recetas (insumos, cantidades, precios)"
                                   onClick={e => { e.stopPropagation(); setEditorActividades(true) }}>✏️ editar receta</button>
+                                {c.actividadId && (
+                                  <button type="button" className="ml-1 rounded border border-emerald-300 px-1 text-[10px] text-emerald-700 hover:bg-emerald-50"
+                                    title="Agregar un renglón propio del plan de este año (que no está en la receta)"
+                                    onClick={e => { e.stopPropagation(); setEditorPlan({ actividadId: c.actividadId!, insumoId: null, concepto: "Renglón nuevo", plan: {}, explicacion: {} }) }}>＋ renglón del plan</button>
+                                )}
                               </td>
                               {celdas(c.montos, "text-gray-600")}
                             </tr>
+                            {/* 🌾 A-FEAT-1663 — los renglones que se calculan por campaña: RECETA o PLAN DEL AÑO (✎ para editar el plan) */}
+                            {abiertaAct && (c.renglones || []).map(r => {
+                              const campHoy = campanaDeMes(mesActualClave)
+                              const esPlan = r.origen[campHoy] === "plan"
+                              const explic: Record<string, string> = {}
+                              for (const [k, v] of Object.entries(r.detalle)) explic[campanaDeMes(k)] ??= v
+                              return (
+                                <tr key={`cpr-${c.nombre}-${r.insumoId ?? r.concepto}`} className="border-b">
+                                  <td className="sticky left-0 z-10 bg-white px-4 py-1 pl-10 text-[11px] text-gray-600">
+                                    {r.concepto}
+                                    <span className={`ml-1 rounded px-1 text-[9px] ${esPlan ? "bg-emerald-100 text-emerald-800" : "bg-gray-100 text-gray-500"}`}
+                                      title={esPlan ? "Este año manda el plan del año" : "Sin plan del año: manda la receta"}>{esPlan ? `plan ${campHoy}` : "receta"}</span>
+                                    {r.falta.length > 0 && <span className="ml-1 text-[9px] text-amber-700" title={r.falta.join("\n")}>⚠ falta un dato</span>}
+                                    <button type="button" className="ml-1 rounded px-1 text-[10px] text-blue-700 hover:bg-blue-50"
+                                      title="Editar el plan del año de este renglón (cantidad, precio, moneda, meses)"
+                                      onClick={() => setEditorPlan({ actividadId: r.actividadId, insumoId: r.insumoId, concepto: r.concepto, plan: r.plan, explicacion: explic })}>✎ plan</button>
+                                  </td>
+                                  {celdas(r.montos, esPlan ? "text-emerald-700" : "text-gray-500", r.detalle)}
+                                </tr>
+                              )
+                            })}
                             {abiertaAct && c.lotes.map(l => {
                               const kLote = `__cpl_${c.nombre}_${l.id}__`, abiertoLote = expandidos[kLote] ?? false
                               return (
