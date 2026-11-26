@@ -30,3 +30,6 @@ update public.presupuesto_variables p set iva_pct = case
   when receta_insumo_id in ('bd16dd79-41ca-4d26-9ca1-64651bc70023','91fb4601-7912-41cd-b31e-9298a3c1ce04','0957e99f-a05f-4e3a-877b-50bcf9572a26') then 10.5
   else 21 end
 where fundamento like '[script 301]%' and iva_pct is null;
+
+-- Agregado el 25/11 (JMS: «no dice dentro que son 20 lts de gas oil»): la unidad del plan de Rollos lo dice. Deshacer: volver a 'rollos'.
+update public.presupuesto_variables set unidad = 'rollos (c/u = 20 l gasoil × $ 2.500)' where fundamento like '[script 301]%' and receta_insumo_id = 'bd16dd79-41ca-4d26-9ca1-64651bc70023';

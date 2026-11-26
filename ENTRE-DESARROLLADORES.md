@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### ✅ Columna `iva_pct` (numeric) en `productivo.actividad_insumos` y en `public.presupuesto_variables` (2026-11-25) — aviso previo; se aplica a continuación (JMS: «yo tendría que poner el IVA de cada cosa»). `scripts/302` con deshacer. Sólo la lee la caja del presupuesto; nada de RLS ni permisos.
+### ✅ Columna `iva_pct` (numeric) en `productivo.actividad_insumos` y en `public.presupuesto_variables` (2026-11-25) — ✅ APLICADA el 25/11 (JMS: «yo tendría que poner el IVA de cada cosa»). `scripts/302` con deshacer. Sólo la lee la caja del presupuesto; nada de RLS ni permisos.
 
 ### ✅ 3 columnas nuevas en `public.presupuesto_variables`: `receta_insumo_id`, `actividad_id` (uuid) y `moneda` (text) (2026-11-25) — ✅ APLICADA el 25/11 (aviso previo; JMS: «se puede construir el plan del año»)
 - A-FEAT-1663: el plan productivo del año. `scripts/300-…` con su deshacer. Columnas vacías; no toca RLS, roles ni permisos.

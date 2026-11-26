@@ -355,7 +355,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    */
   const [costoProd, setCostoProd] = useState<{ nombre: string; montos: Record<string, number>; fuera?: string[]; actividadId?: string | null
     renglones?: { insumoId: string | null; actividadId: string; concepto: string; montos: Record<string, number>; detalle: Record<string, string>
-      origen: Record<string, "plan" | "receta">; plan: Record<string, RenglonPlan>; falta: string[] }[]
+      origen: Record<string, "plan" | "receta">; plan: Record<string, RenglonPlan>; falta: string[]; iva?: number | null }[]
     lotes: { id: string; nombre: string; montos: Record<string, number>; insumos: { concepto: string; montos: Record<string, number>; detalle: Record<string, string> }[] }[] }[]>([])
   /** El editor completo de las recetas (Actividades y costos), abierto desde la fila. */
   const [editorActividades, setEditorActividades] = useState(false)
@@ -779,22 +779,35 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     const sumar = (act: string, mes: string, v: number) => { (porActividad[act] ??= {})[mes] = (porActividad[act]?.[mes] || 0) + v }
 
     // ── 1) RACIÓN: lote → tramo → curva de peso (como siempre) ──
-    type Ins = { concepto: string; montos: Record<string, number>; detalle: Record<string, string> }
+    type Ins = { concepto: string; montos: Record<string, number>; detalle: Record<string, string>; resumen?: string }
     const desglose: Record<string, Record<string, { nombre: string; montos: Record<string, number>; insumos: Record<string, Ins> }>> = {}
     for (const l of ((lotes || []) as LoteStock[])) {
       const mios = listaTramos.filter(t => t.lote_id === l.id)
       if (mios.length === 0 || deRacion.length === 0) continue
-      const nombreLote = `${l.categoria} · ${fmtN(Number(l.cantidad) || 0)} cab · desde ${String(l.fecha_disponible || "").split("-").reverse().join("/")}`
+      const dmy = (f: any) => String(f || "").split("-").reverse().join("/")
+      const rango = mios.map((t: any) => `${dmy(t.fecha_desde)}–${dmy(t.fecha_hasta)}`).join(", ")
+      const nombreLote = `${l.categoria} · ${fmtN(Number(l.cantidad) || 0)} cab · tramo ${rango} · disponible ${dmy(l.fecha_disponible)}`
       for (const t of tramosParaCosto(l as unknown as LoteCurva, mios, listaActs, deRacion)) {
         const nombre = t.actividad.nombre
         const lote = ((desglose[nombre] ??= {})[l.id] ??= { nombre: nombreLote, montos: {}, insumos: {} })
         for (const m of consumoMensual({ ...t, tiposCambio: tcs })) {
-          sumar(nombre, m.mes, m.costo_total)
-          lote.montos[m.mes] = (lote.montos[m.mes] || 0) + m.costo_total
           for (const it of m.items) {
+            // 🧾 IVA del renglón de la ración (la receta va neta; la caja lo suma)
+            const dRac: any = deRacion.find(d => (d as any).actividad_id === t.actividad.id && d.concepto === it.concepto)
+            const iva = Number(dRac?.iva_pct) || 0
+            const costo = it.costo * (1 + iva / 100)
+            sumar(nombre, m.mes, costo)
+            lote.montos[m.mes] = (lote.montos[m.mes] || 0) + costo
             const ins = (lote.insumos[it.concepto] ??= { concepto: it.concepto, montos: {}, detalle: {} })
-            ins.montos[m.mes] = (ins.montos[m.mes] || 0) + it.costo
-            ins.detalle[m.mes] = `${fmtN(it.cantidad, 2)} ${it.unidad || ""} · ${it.moneda === "USD" ? `US$ ${fmtN(it.monto_origen, 2)} × TC ${fmtN(it.tc || 0, 2)}` : `$ ${fmtN(it.monto_origen, 2)}`} · ${m.dias} días · peso prom. ${fmtN(m.peso_prom_kg)} kg`
+            // La regla a la vista (JMS 25/11: «acá no estoy pudiendo editar ni ver»)
+            ins.resumen ??= dRac ? [
+              dRac.modo === "pct_racion" ? `${fmtN(Number(dRac.valor) * 100, 1)} % de la ración · ración ${fmtN(Number((t.actividad as any).racion_pct_pv) * 100, 2)} % del peso vivo` : `${fmtN(Number(dRac.valor), 2)} ${dRac.unidad || ""}`,
+              dRac.precio_unitario != null ? `${dRac.moneda === "USD" ? "US$" : "$"} ${fmtN(Number(dRac.precio_unitario), 2)}/${dRac.unidad || "u"}` : "sin precio",
+              iva ? `+ IVA ${fmtN(iva, 1)} %` : "sin IVA",
+              `peso prom. ${fmtN(m.peso_prom_kg)} kg · ${fmtN(t.cabezas)} cab`,
+            ].join(" · ") : undefined
+            ins.montos[m.mes] = (ins.montos[m.mes] || 0) + costo
+            ins.detalle[m.mes] = `${fmtN(it.cantidad, 2)} ${it.unidad || ""} · ${it.moneda === "USD" ? `US$ ${fmtN(it.monto_origen, 2)} × TC ${fmtN(it.tc || 0, 2)}` : `$ ${fmtN(it.monto_origen, 2)}`}${iva ? ` + IVA ${fmtN(iva, 1)} %` : ""} · ${m.dias} días · peso prom. ${fmtN(m.peso_prom_kg)} kg`
           }
         }
       }
@@ -817,8 +830,12 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     const ajustesDe: Record<string, any[]> = {}
     for (const a of ((ajRaw || []) as any[])) (ajustesDe[a.insumo_id] ||= []).push({ id: a.id, orden: Number(a.orden) || 0, tipo: a.tipo, valor: a.valor == null ? null : Number(a.valor), referencia: a.referencia, nota: a.nota })
     const ctxDe = (act: Actividad, camp: string): any => {
-      const c = linea.find(x => String(x.ciclo.campania) === camp)
+      // Si la línea de tiempo del rodeo no llega a esta campaña, se repiten las cabezas de la última que tiene (y se dice).
+      const exacto = linea.find(x => String(x.ciclo.campania) === camp)
+      const previas = linea.filter(x => String(x.ciclo.campania) < camp)
+      const c = exacto ?? previas[previas.length - 1]
       return {
+        _arrastre: !exacto && c ? String(c.ciclo.campania) : null,
         has: hasDe[`${claveActividad(act.nombre)}|${camp}`] ?? null, cabezas: c ? c.rodeo : null,
         cabezasCiclo: c ? { rodeo: c.rodeo, vacas: c.vacas, vaquillonas: c.vaquillonas, destetados: c.destetados, terneros: c.terneros, terneras: c.terneras, retenidas: c.retenidas, toritos: c.toritos } : null,
         tc: null, tcPorMes, ipcAcumulado,
@@ -829,21 +846,26 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       id: String(p.id), receta_insumo_id: p.receta_insumo_id ? String(p.receta_insumo_id) : null, actividad_id: p.actividad_id ? String(p.actividad_id) : null,
       concepto: String(p.concepto), campana: String(p.campana), cantidad: p.cantidad == null ? null : Number(p.cantidad), unidad: p.unidad,
       precio: p.precio == null ? null : Number(p.precio), moneda: p.moneda || "ARS", meses: Array.isArray(p.meses) ? p.meses.map(Number) : null,
+      iva_pct: p.iva_pct == null ? null : Number(p.iva_pct),
     }))
     const planDe = new Map(plan.filter(p => p.receta_insumo_id).map(p => [`${p.receta_insumo_id}|${p.campana}`, p]))
     type Renglon = { insumoId: string | null; actividadId: string; concepto: string; montos: Record<string, number>; detalle: Record<string, string>
-      origen: Record<string, "plan" | "receta">; plan: Record<string, RenglonPlan>; falta: string[] }
+      origen: Record<string, "plan" | "receta">; plan: Record<string, RenglonPlan>; falta: string[]; iva?: number | null }
     const renglones: Record<string, Renglon[]> = {}
     for (const i of porCampanaIns) {
       const act = listaActs.find(a => a.id === (i as any).actividad_id)!
-      const r: Renglon = { insumoId: String((i as any).id), actividadId: act.id, concepto: String((i as any).concepto), montos: {}, detalle: {}, origen: {}, plan: {}, falta: [] }
+      const r: Renglon = { insumoId: String((i as any).id), actividadId: act.id, concepto: String((i as any).concepto), montos: {}, detalle: {}, origen: {}, plan: {}, falta: [],
+        iva: (i as any).iva_pct == null ? null : Number((i as any).iva_pct) }
       const fila: any = { ...(i as any), actividad: act.nombre, valor: Number((i as any).valor) || 0, ajustes: ajustesDe[(i as any).id] ?? [],
+        iva_pct: (i as any).iva_pct == null ? null : Number((i as any).iva_pct),
         has_aplicacion: (i as any).has_aplicacion == null ? null : Number((i as any).has_aplicacion),
         cabezas_aplicacion: (i as any).cabezas_aplicacion == null ? null : Number((i as any).cabezas_aplicacion),
         cantidad_aplicacion: (i as any).cantidad_aplicacion == null ? null : Number((i as any).cantidad_aplicacion) }
       for (const camp of campanas) {
         const p = planDe.get(`${r.insumoId}|${camp}`)
-        const c = elegirPlanOReceta(p, () => costoRecetaCampana(fila, ctxDe(act, camp), camp, desdeMes), tcPorMes, desdeMes)
+        const ctx = ctxDe(act, camp)
+        const c = elegirPlanOReceta(p, () => costoRecetaCampana(fila, ctx, camp, desdeMes), tcPorMes, desdeMes)
+        if (c.origen === "receta" && ctx._arrastre) c.explicacion += ` · cabezas de ${ctx._arrastre} (la línea de tiempo del rodeo no llega a ${camp})`
         r.origen[camp] = c.origen; if (p) r.plan[camp] = p
         if (c.falta) r.falta.push(`${camp}: ${c.falta}`)
         for (const [k, v] of Object.entries(c.porMes)) {
@@ -3123,10 +3145,10 @@ Clic para presupuestar la venta`}
                                     {r.concepto}
                                     <span className={`ml-1 rounded px-1 text-[9px] ${esPlan ? "bg-emerald-100 text-emerald-800" : "bg-gray-100 text-gray-500"}`}
                                       title={esPlan ? "Este año manda el plan del año" : "Sin plan del año: manda la receta"}>{esPlan ? `plan ${campHoy}` : "receta"}</span>
-                                    {r.falta.length > 0 && <span className="ml-1 text-[9px] text-amber-700" title={r.falta.join("\n")}>⚠ falta un dato</span>}
+                                    {r.falta.length > 0 && <span className="ml-1 text-[9px] text-amber-700" title={r.falta.join("\n")}>⚠ falta un dato ({Array.from(new Set(r.falta.map(f => f.split(":")[0]))).join(", ")})</span>}
                                     <button type="button" className="ml-1 rounded px-1 text-[10px] text-blue-700 hover:bg-blue-50"
                                       title="Editar el plan del año de este renglón (cantidad, precio, moneda, meses)"
-                                      onClick={() => setEditorPlan({ actividadId: r.actividadId, insumoId: r.insumoId, concepto: r.concepto, plan: r.plan, explicacion: explic })}>✎ plan</button>
+                                      onClick={() => setEditorPlan({ actividadId: r.actividadId, insumoId: r.insumoId, concepto: r.concepto, plan: r.plan, explicacion: explic, iva: r.iva })}>✎ plan</button>
                                   </td>
                                   {celdas(r.montos, esPlan ? "text-emerald-700" : "text-gray-500", r.detalle)}
                                 </tr>
@@ -3144,7 +3166,12 @@ Clic para presupuestar la venta`}
                                   </tr>
                                   {abiertoLote && l.insumos.map(i => (
                                     <tr key={`${kLote}-${i.concepto}`} className="border-b">
-                                      <td className="sticky left-0 z-10 bg-white px-4 py-1 pl-14 text-[11px] text-gray-500">{i.concepto}</td>
+                                      <td className="sticky left-0 z-10 bg-white px-4 py-1 pl-14 text-[11px] text-gray-500">
+                                        {i.concepto}
+                                        <button type="button" className="ml-1 text-[10px] text-blue-700 hover:underline" title="Abrir la receta de la actividad (ración, % del peso vivo, precio, IVA)"
+                                          onClick={e => { e.stopPropagation(); setEditorActividades(true) }}>✏️ receta</button>
+                                        {(i as any).resumen && <div className="text-[10px] text-gray-400">{(i as any).resumen}</div>}
+                                      </td>
                                       {celdas(i.montos, "text-gray-400", i.detalle)}
                                     </tr>
                                   ))}

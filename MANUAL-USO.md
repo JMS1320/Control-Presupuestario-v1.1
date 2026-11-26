@@ -5731,6 +5731,8 @@ y cuál es el **saldo de hoy**. Se abre con un clic.
   abre cantidad × precio (en $ o US$ × TC del mes) y los meses en que se paga, para la campaña elegida; **Este año: 0** apaga el
   renglón esa campaña; **Quitar el plan** vuelve a la receta. **＋ renglón del plan** agrega algo que no está en la receta (ej. cosecha
   de soja). La receta es la de todos los años; el plan es lo de este año, y no cambia la receta ni el Margen.
+- **IVA**: los precios de la receta y del plan se cargan **sin IVA**; la columna **IVA %** (en la receta y en ✎ plan) dice cuánto le
+  suma la caja. El Margen no lo usa. Las cuentas contables no lo necesitan: su historia ya es el total de la factura.
 - **Control**: si cargaste el saldo a mano con la fecha de hoy, compara contra el extracto llevado a hoy. La
   diferencia es lo que el banco movió y el sistema no tiene registrado — lo que falta conciliar.
 

@@ -62,7 +62,20 @@ export interface CostoRenglon {
  * Reparto: los meses del renglón (`meses_pct`) si los tiene; si no, por su «cuándo»: al empezar = julio, al terminar = junio,
  * en el ciclo = parejo en los 12. Los meses anteriores a `desdeMes` (ya pasados) no se presupuestan.
  */
-export function costoRecetaCampana(fila: InsumoActividadMargen & { momento?: string | null }, ctx: ContextoCosto, campana: string, desdeMes: string): CostoRenglon {
+/**
+ * 🧾 IVA (JMS 25/11: «cuando te digo 750 US$ por ha es a agregarle el IVA aparte»). La receta y el plan se cargan NETOS; la caja
+ * suma el IVA del renglón (`iva_pct`). El Margen no lo usa: el IVA no es costo, es crédito fiscal. Sin IVA cargado = 0.
+ */
+export const conIva = (monto: number, ivaPct: number | null | undefined) => monto * (1 + (Number(ivaPct) || 0) / 100)
+const textoIva = (ivaPct: number | null | undefined) => Number(ivaPct) ? ` + IVA ${String(ivaPct).replace('.', ',')} %` : ''
+
+export function costoRecetaCampana(fila: InsumoActividadMargen & { momento?: string | null; iva_pct?: number | null }, ctx: ContextoCosto, campana: string, desdeMes: string): CostoRenglon {
+  const r0 = costoRecetaNeto(fila, ctx, campana, desdeMes)
+  const iva = fila.iva_pct
+  if (!Number(iva)) return r0
+  return { ...r0, porMes: Object.fromEntries(Object.entries(r0.porMes).map(([k, v]) => [k, conIva(v, iva)])), explicacion: r0.explicacion + textoIva(iva) }
+}
+function costoRecetaNeto(fila: InsumoActividadMargen & { momento?: string | null }, ctx: ContextoCosto, campana: string, desdeMes: string): CostoRenglon {
   const caja = { ...fila, amortiza_anios: null }   // caja: la pastura se paga entera el año que se hace
   const meses = mesesDeCampana(campana)
   // El TC de referencia (para los renglones clásicos): el primero de la campaña que tenga TC; si ninguno, el último conocido.
@@ -98,6 +111,8 @@ export interface RenglonPlan {
   moneda: 'ARS' | 'USD' | string | null
   /** Números de mes (1–12) en que se paga. Vacío = los 12. */
   meses: number[] | null
+  /** IVA % que se suma (el precio se carga neto). null = sin IVA. */
+  iva_pct?: number | null
 }
 export function costoPlanCampana(p: RenglonPlan, tcPorMes: Record<string, number>, desdeMes: string): CostoRenglon {
   const porMes: Record<string, number> = {}
@@ -108,12 +123,12 @@ export function costoPlanCampana(p: RenglonPlan, tcPorMes: Record<string, number
   for (const k of meses) {
     const tc = usd ? tcPorMes[k] : 1
     if (usd && !tc) { falta = 'falta el tipo de cambio'; continue }
-    if (k >= desdeMes && cant * precio) porMes[k] = (porMes[k] || 0) + (cant * precio * tc) / meses.length
+    if (k >= desdeMes && cant * precio) porMes[k] = (porMes[k] || 0) + conIva((cant * precio * tc) / meses.length, p.iva_pct)
   }
   const fmt = (n: number) => n.toLocaleString('es-AR', { maximumFractionDigits: 2 })
   const explicacion = cant === 0
     ? `Plan ${p.campana}: este año no se gasta (0)`
-    : `Plan ${p.campana}: ${fmt(cant)} ${p.unidad || ''} × ${usd ? 'US$' : '$'} ${fmt(precio)}${usd ? ' × TC del mes' : ''} · en ${meses.length === 12 ? 'los 12 meses' : meses.map(k => k.slice(5)).join(', ')}`
+    : `Plan ${p.campana}: ${fmt(cant)} ${p.unidad || ''} × ${usd ? 'US$' : '$'} ${fmt(precio)}${usd ? ' × TC del mes' : ''}${textoIva(p.iva_pct)} · en ${meses.length === 12 ? 'los 12 meses' : meses.map(k => k.slice(5)).join(', ')}`
   return { porMes, explicacion, falta }
 }
 

@@ -125,7 +125,7 @@ export function ConfiguradorActividades() {
     const { error } = await supabase.schema("productivo").from("actividad_insumos")
       .update({
         concepto: v.concepto, modo: v.modo, valor: v.valor, unidad: v.unidad,
-        momento: v.momento, moneda: v.moneda, precio_unitario: v.precio_unitario,
+        momento: v.momento, moneda: v.moneda, precio_unitario: v.precio_unitario, iva_pct: (v as any).iva_pct ?? null,
         producto: v.producto, notas: v.notas, orden: v.orden,
         updated_at: new Date().toISOString(),
       }).eq("id", v.id)
@@ -307,6 +307,7 @@ export function ConfiguradorActividades() {
                               <th className="py-1 text-right font-medium">Valor</th>
                               <th className="py-1 text-left font-medium">Unidad</th>
                               <th className="py-1 text-left font-medium">Moneda</th>
+                              <th className="py-1 text-right font-medium" title="El valor se carga SIN IVA; el presupuesto (caja) le suma este %. El Margen no lo usa.">IVA %</th>
                               <th className="py-1 text-left font-medium">Cuándo</th>
                               <th className="py-1 text-right font-medium">$/unidad</th>
                               <th className="py-1" />
@@ -362,6 +363,13 @@ export function ConfiguradorActividades() {
                                       <option value="ARS">$</option>
                                       <option value="USD">US$</option>
                                     </select>
+                                  </td>
+                                  <td className="py-1 pr-2">
+                                    {/* 🧾 IVA % (A-FEAT-1663, JMS 25/11): se suma en la caja del presupuesto; el Margen no lo usa */}
+                                    <Input type="text" className="h-7 w-14 text-right text-xs" placeholder="0"
+                                      value={(i as any).iva_texto ?? ((i as any).iva_pct == null ? "" : String((i as any).iva_pct).replace(".", ","))}
+                                      onChange={e => setInsumos(prev => prev.map(x => x.id === i.id ? ({ ...x, iva_texto: e.target.value } as any) : x))}
+                                      onBlur={e => { const t = e.target.value.trim(); const n = t === "" ? null : parseFloat(t.replace(",", ".")); guardarInsumo(i, { iva_pct: n == null || isNaN(n) ? null : n, iva_texto: undefined } as any) }} />
                                   </td>
                                   <td className="py-1 pr-2">
                                     <select className="h-7 w-full min-w-[8rem] rounded border border-gray-200 px-1 text-xs"

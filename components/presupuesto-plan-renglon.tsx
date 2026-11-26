@@ -29,6 +29,8 @@ export interface RenglonParaPlan {
   plan: Record<string, RenglonPlan>
   /** Qué dice la receta (o el plan) en cada campaña, para tenerlo a la vista. */
   explicacion: Record<string, string>
+  /** IVA % de la receta: default del plan nuevo. */
+  iva?: number | null
 }
 
 export function EditorPlanRenglon(p: {
@@ -44,6 +46,7 @@ export function EditorPlanRenglon(p: {
   const [unidad, setUnidad] = useState("")
   const [precio, setPrecio] = useState("")
   const [moneda, setMoneda] = useState("ARS")
+  const [iva, setIva] = useState("")
   const [meses, setMeses] = useState<number[]>([])
   const [nota, setNota] = useState("")
   const [estado, setEstado] = useState("")
@@ -55,6 +58,7 @@ export function EditorPlanRenglon(p: {
     setConcepto(pl?.concepto ?? p.renglon.concepto)
     setCantidad(fmtAR(pl?.cantidad)); setUnidad(pl?.unidad ?? ""); setPrecio(fmtAR(pl?.precio))
     setMoneda(String(pl?.moneda ?? "ARS")); setMeses(pl?.meses ?? []); setEstado("")
+    setIva(fmtAR(pl ? (pl.iva_pct ?? null) : (p.renglon.iva ?? 21)))
   }, [p.renglon, campana])
   useEffect(() => { if (p.abierto) setCampana(p.campanas[0] ?? "") }, [p.abierto])
 
@@ -66,7 +70,7 @@ export function EditorPlanRenglon(p: {
       empresa: "MSA", escenario: "base", campana, concepto: concepto.trim() || r.concepto,
       receta_insumo_id: r.insumoId, actividad_id: r.insumoId ? null : r.actividadId,
       cantidad: cero ? 0 : parseAR(cantidad), unidad: unidad.trim() || null, precio: cero ? 0 : parseAR(precio), moneda,
-      meses: meses.length ? meses : null, distribucion: "calendario", fuente_cantidad: "manual", fuente_precio: "manual",
+      meses: meses.length ? meses : null, iva_pct: parseAR(iva), distribucion: "calendario", fuente_cantidad: "manual", fuente_precio: "manual",
       fundamento: nota.trim() || null, activo: true, updated_at: new Date().toISOString(),
     }
     const { error } = plan
@@ -82,7 +86,7 @@ export function EditorPlanRenglon(p: {
     if (error) { setEstado("no se pudo quitar: " + error.message); return }
     await p.onGuardado(); p.onCerrar()
   }
-  const total = (parseAR(cantidad) ?? 0) * (parseAR(precio) ?? 0)
+  const total = (parseAR(cantidad) ?? 0) * (parseAR(precio) ?? 0) * (1 + (parseAR(iva) ?? 0) / 100)
 
   return (
     <Dialog open={p.abierto} onOpenChange={o => { if (!o) p.onCerrar() }}>
@@ -109,7 +113,7 @@ export function EditorPlanRenglon(p: {
           {!r.insumoId && (
             <label className="grid gap-1 text-xs">Concepto<Input id="plan-concepto" value={concepto} onChange={e => setConcepto(e.target.value)} /></label>
           )}
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
             <label className="grid gap-1 text-xs">Cantidad<Input id="plan-cantidad" type="text" className="text-right" value={cantidad} placeholder="0" onChange={e => setCantidad(e.target.value)} /></label>
             <label className="grid gap-1 text-xs">Unidad<Input id="plan-unidad" value={unidad} placeholder="rollos, ha, litros…" onChange={e => setUnidad(e.target.value)} /></label>
             <label className="grid gap-1 text-xs">Precio por unidad<Input id="plan-precio" type="text" className="text-right" value={precio} placeholder="0,00" onChange={e => setPrecio(e.target.value)} /></label>
@@ -118,6 +122,8 @@ export function EditorPlanRenglon(p: {
                 <option value="ARS">$</option><option value="USD">US$ (× TC del mes)</option>
               </select>
             </label>
+            <label className="grid gap-1 text-xs" title="El precio se carga SIN IVA; la caja le suma este %. Vacío = sin IVA.">IVA %
+              <Input id="plan-iva" type="text" className="text-right" value={iva} placeholder="21" onChange={e => setIva(e.target.value)} /></label>
           </div>
           <div className="grid gap-1 text-xs">
             <span>Meses en que se paga (vacío = los 12, parejo)</span>
@@ -131,7 +137,7 @@ export function EditorPlanRenglon(p: {
             </div>
           </div>
           <label className="grid gap-1 text-xs">Fundamento (opcional)<Input id="plan-nota" value={nota} onChange={e => setNota(e.target.value)} /></label>
-          <p className="text-xs text-gray-600">Total de la campaña: <strong>{moneda === "USD" ? "US$" : "$"} {total.toLocaleString("es-AR", { maximumFractionDigits: 2 })}</strong>{moneda === "USD" ? " (en pesos, por el TC de cada mes)" : ""}</p>
+          <p className="text-xs text-gray-600">Total de la campaña{parseAR(iva) ? ` (con IVA ${iva} %)` : " (sin IVA)"}: <strong>{moneda === "USD" ? "US$" : "$"} {total.toLocaleString("es-AR", { maximumFractionDigits: 2 })}</strong>{moneda === "USD" ? " (en pesos, por el TC de cada mes)" : ""}</p>
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" onClick={() => guardar(false)}>Guardar el plan {campana}</Button>
             {r.insumoId && <Button size="sm" variant="outline" onClick={() => guardar(true)} title="Este año ese renglón no se gasta">Este año: 0</Button>}

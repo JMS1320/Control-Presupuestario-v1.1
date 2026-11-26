@@ -332,7 +332,7 @@ import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { vinculoDelMail } from "@/lib/pagos/vinculo-mail-pago"
 import { calcularArranque, clasificarFila, lineaDeSaldo, controlDosFuentes, totalComposicion, estaEnLaGrilla, type FilaReal } from "@/lib/presupuesto/arranque"
 import { recortarPorFamilia } from "@/lib/presupuesto/templates"
-import { costoRecetaCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
+import { costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
@@ -9110,6 +9110,13 @@ export function correrCasos(): Resultado[] {
     chequear("Presupuesto", "🌾 Caja por campaña: rollos 1/vaca (200 vacas × $ 50.000), implantación entera sin amortizar (15 ha × US$ 750 × 1.500), gasoil sólo marzo; el plan (170 rollos en dic) manda, «0» apaga, sin plan va la receta",
       'rollos 10000000 nov 3333000 · impl 16875000 abr 4218750 · gas ["2027-03"] 10000000 · plan plan dic 8500000 · 0 nada · sin plan receta', res,
       res === 'rollos 10000000 nov 3333000 · impl 16875000 abr 4218750 · gas ["2027-03"] 10000000 · plan plan dic 8500000 · 0 nada · sin plan receta', "A-FEAT-1663")
+    // 🧾 IVA aparte (JMS 25/11): implantación neta US$ 750 × 15 ha × 1.500 + 21 % · plan 34 ha × US$ 750 × TC 1.000 + 21 % en 4 meses
+    const implIva = costoRecetaCampana(fila({ concepto: "Implantación", modo: "monto_ha", valor: 750, moneda: "USD", has_aplicacion: 15, iva_pct: 21, meses_pct: { 2: 25, 3: 25, 4: 25, 5: 25 } }), ctx, "26/27", "2026-11")
+    const tc1000 = { "2027-02": 1000, "2027-03": 1000, "2027-04": 1000, "2027-05": 1000 }
+    const planIva = costoPlanCampana(plan({ cantidad: 34, precio: 750, moneda: "USD", meses: [2, 3, 4, 5], iva_pct: 21 }), tc1000, "2026-11")
+    const ivaRes = `receta ${Math.round(Object.values(implIva.porMes).reduce((a, b) => a + b, 0))} · plan ${Math.round(Object.values(planIva.porMes).reduce((a, b) => a + b, 0))} · ${implIva.explicacion.includes("IVA 21") && planIva.explicacion.includes("IVA 21") ? "lo dice" : "no lo dice"}`
+    chequear("Presupuesto", "🧾 IVA aparte: la receta y el plan se cargan netos y la caja suma el IVA del renglón (y lo dice en la cuenta)",
+      "receta 20418750 · plan 30855000 · lo dice", ivaRes, ivaRes === "receta 20418750 · plan 30855000 · lo dice", "A-FEAT-1663")
     chequear("Presupuesto", "🌾 Campañas: nov-26 es 26/27, jun-27 también, jul-27 ya es 27/28; el mes 3 de 26/27 es marzo de 2027",
       "26/27 26/27 27/28 2027-03", `${campanaDeMes("2026-11")} ${campanaDeMes("2027-06")} ${campanaDeMes("2027-07")} ${mesEnCampana("26/27", 3)}`,
       `${campanaDeMes("2026-11")} ${campanaDeMes("2027-06")} ${campanaDeMes("2027-07")} ${mesEnCampana("26/27", 3)}` === "26/27 26/27 27/28 2027-03", "A-FEAT-1663")
