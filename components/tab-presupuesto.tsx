@@ -350,7 +350,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    * Costo de los tramos de actividad, por mes. 🔍 A-FEAT-1661 paso 3: con su DESGLOSE — cada lote y, dentro, cada insumo —,
    * que el cálculo ya armaba y se descartaba (JMS 25/11: «montos que yo no sé cómo están conformados por dentro»).
    */
-  const [costoProd, setCostoProd] = useState<{ nombre: string; montos: Record<string, number>
+  const [costoProd, setCostoProd] = useState<{ nombre: string; montos: Record<string, number>; fuera?: string[]
     lotes: { id: string; nombre: string; montos: Record<string, number>; insumos: { concepto: string; montos: Record<string, number>; detalle: Record<string, string> }[] }[] }[]>([])
   /** El editor completo de las recetas (Actividades y costos), abierto desde la fila. */
   const [editorActividades, setEditorActividades] = useState(false)
@@ -709,7 +709,18 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     const listaTramos = (tra || []) as TramoLote[]
     if (listaTramos.length === 0) { setCostoProd([]); return }
     const listaActs = (acts || []) as Actividad[]
-    const listaIns = (ins || []) as InsumoActividad[]
+    // 🏷️ A-FEAT-1663 C1/Q7 — los renglones de receta marcados «fuera del presupuesto» (ej. sanidad e IATF, que van por su cuenta
+    // contable) no suman en la grilla. La receta no cambia y el Margen no se toca: es una marca del presupuesto (script 299).
+    const { data: fueraRec } = await supabase.from("presupuesto_marcas").select("fila_id, detalle")
+      .eq("empresa", "MSA").eq("origen_tabla", "actividad_insumos").eq("marca", "fuera")
+    const idsFuera = new Map(((fueraRec || []) as any[]).map(r => [String(r.fila_id), String(r.detalle || "").replace(/^\[script \d+\]\s*/, "")]))
+    const todosIns = (ins || []) as InsumoActividad[]
+    const listaIns = todosIns.filter(i => !idsFuera.has(String((i as any).id)))
+    const fueraPorActividad: Record<string, string[]> = {}
+    for (const i of todosIns) if (idsFuera.has(String((i as any).id))) {
+      const act = listaActs.find(a => a.id === (i as any).actividad_id)
+      if (act) (fueraPorActividad[act.nombre] ??= []).push(idsFuera.get(String((i as any).id)) || (i as any).concepto)
+    }
     const tcs: PuntoSerie[] = ((tc || []) as any[]).map(r => ({
       anio: Number(r.anio), mes: Number(r.mes), valor: Number(r.tc_presupuestado) || 0,
     }))
@@ -741,7 +752,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     }
     const total = (m: Record<string, number>) => Object.values(m).reduce((x, y) => x + y, 0)
     setCostoProd(Object.entries(porActividad)
-      .map(([nombre, montos]) => ({ nombre, montos,
+      .map(([nombre, montos]) => ({ nombre, montos, fuera: fueraPorActividad[nombre] || [],
         lotes: Object.entries(desglose[nombre] || {}).map(([id, v]) => ({ id, nombre: v.nombre, montos: v.montos,
           insumos: Object.values(v.insumos).sort((a, b) => total(b.montos) - total(a.montos)) }))
           .sort((a, b) => total(b.montos) - total(a.montos)) }))
@@ -2938,6 +2949,11 @@ Clic para presupuestar la venta`}
                               <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-6 text-xs text-gray-700">
                                 {abiertaAct ? "▾" : "▸"} {c.nombre}
                                 <span className="ml-1 text-[10px] text-gray-400">{c.lotes.length} lote(s)</span>
+                                {!!c.fuera?.length && (
+                                  <span className="ml-1 text-[10px] text-amber-700" title={c.fuera.join("\n")}>
+                                    · {c.fuera.length} renglón(es) fuera del presupuesto (van por su cuenta)
+                                  </span>
+                                )}
                                 <button type="button" className="ml-2 rounded border border-gray-300 px-1 text-[10px] text-gray-600 hover:bg-gray-100"
                                   title="Abrir el editor completo de las actividades y sus recetas (insumos, cantidades, precios)"
                                   onClick={e => { e.stopPropagation(); setEditorActividades(true) }}>✏️ editar receta</button>
