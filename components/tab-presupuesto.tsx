@@ -316,6 +316,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   }, [hacienda])
   // Cuotas detrás de cada celda: clave `${campo}|${YYYY-MM}|${presupuestado|disponible}`
   const [detalleCeldas, setDetalleCeldas] = useState<Record<string, CuotaDetalle[]>>({})
+  /** 🏷️ Qué fijaciones hay detrás de cada celda «Fijado» (`campo|mes`), para ver cuál ya se cobró (JMS 26/11). */
+  const [fijadoDetalle, setFijadoDetalle] = useState<Record<string, string[]>>({})
   const [modalCuotas, setModalCuotas] = useState<{ titulo: string; cuotas: CuotaDetalle[] } | null>(null)
   const [expandidos, setExpandidos] = useState<Record<string, boolean>>({})
   /**
@@ -533,20 +535,21 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         .reduce((a, q) => a + (Number(q.monto) || 0), 0)
       if (s) suma[k] = s
     }
-    // 🏷️ Lo FIJADO suma salvo que ese mes se saque a mano (JMS 26/11, Rojas: «esos fondos se usarían de otra manera, no quiero que
-    // impacte, pero ese en particular»). Marca «fuera» en presupuesto_marcas, por campo y mes. Se sigue viendo, tachado.
-    const fijadoSuma: Record<string, number> = {}
-    for (const [k, v] of Object.entries(c.fijado)) if (marcas[`arrendamiento_fijado|${c.campo}|${k}`] !== "fuera") fijadoSuma[k] = v
-    const presSuma: Record<string, number> = {}
-    for (const [k, v] of Object.entries(c.presupuestado)) if (marcas[`arrendamiento_presupuestado|${c.campo}|${k}`] !== "fuera") presSuma[k] = v
-    // C1 — lo ya cobrado este mes de este campo (está en el saldo de hoy) no figura en la columna del mes
+    // C1 — lo ya cobrado este mes de este campo (está en el saldo de hoy) no figura en la columna del mes. Va PRIMERO: lo que se ve
+    // (y lo que se puede sacar a mano) es lo que queda por cobrar, no el bruto (26/11: se veía $ 116,5 M en Rojas con $ 90 M ya cobrados).
+    const fijadoNeto = { ...c.fijado }, presNeto = { ...c.presupuestado }
     const cobrado = pagadoMes.porCampo[c.campo] || 0
-    if (!cobrado) return { ...c, fijado: fijadoSuma, fijadoVisible: c.fijado, presupuestado: presSuma, presupuestadoVisible: c.presupuestado, disponible: suma, disponibleVisible: c.disponible }
-    const fijado = { ...fijadoSuma }, presupuestado = { ...presSuma }
-    let resto = cobrado
-    const q1 = Math.min(resto, fijado[pagadoMes.mes] || 0); fijado[pagadoMes.mes] = (fijado[pagadoMes.mes] || 0) - q1; resto -= q1
-    const q2 = Math.min(resto, presupuestado[pagadoMes.mes] || 0); presupuestado[pagadoMes.mes] = (presupuestado[pagadoMes.mes] || 0) - q2
-    return { ...c, fijado, fijadoVisible: c.fijado, presupuestado, presupuestadoVisible: c.presupuestado, disponible: suma, disponibleVisible: c.disponible }
+    if (cobrado) {
+      let resto = cobrado
+      const q1 = Math.min(resto, fijadoNeto[pagadoMes.mes] || 0); fijadoNeto[pagadoMes.mes] = (fijadoNeto[pagadoMes.mes] || 0) - q1; resto -= q1
+      const q2 = Math.min(resto, presNeto[pagadoMes.mes] || 0); presNeto[pagadoMes.mes] = (presNeto[pagadoMes.mes] || 0) - q2
+    }
+    // 🏷️ Lo FIJADO y lo PRESUPUESTADO suman salvo que ese mes se saque a mano (JMS 26/11, Rojas: «esos fondos se usarían de otra manera,
+    // no quiero que impacte, pero ese en particular»). Marca «fuera» en presupuesto_marcas, por campo y mes. Se sigue viendo, tachado.
+    const fijado: Record<string, number> = {}, presupuestado: Record<string, number> = {}
+    for (const [k, v] of Object.entries(fijadoNeto)) if (marcas[`arrendamiento_fijado|${c.campo}|${k}`] !== "fuera") fijado[k] = v
+    for (const [k, v] of Object.entries(presNeto)) if (marcas[`arrendamiento_presupuestado|${c.campo}|${k}`] !== "fuera") presupuestado[k] = v
+    return { ...c, fijado, fijadoVisible: fijadoNeto, presupuestado, presupuestadoVisible: presNeto, disponible: suma, disponibleVisible: c.disponible }
   }), [camposBase, detalleCeldas, marcas, pagadoMes])
 
   // ── Carga de datos ──────────────────────────────────────────────────────────
@@ -1295,6 +1298,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
 
     const mapaCampos: Record<string, FilaCampo> = {}
     const mapaDetalle: Record<string, CuotaDetalle[]> = {}
+    const mapaFijado: Record<string, string[]> = {}
     const hoy = new Date()
     const claveMesActual = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`
 
@@ -1313,6 +1317,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
           const m = montoVenta(f as any, listaTC)
           fila.fijado[k] = (fila.fijado[k] || 0) + m.monto
           if (m.estimado) fila.estimado[k] = true
+          ;(mapaFijado[`${clave}|${k}`] ??= []).push(`Cuota ${cuota.numero_cuota} (${contrato.campania}) · ${Number(f.tons).toLocaleString("es-AR", { maximumFractionDigits: 2 })} tn · cobro ${String(f.fecha_cobro ?? cuota.fecha_cobro_estimada).split("-").reverse().join("/")} · $ ${Math.round(m.monto).toLocaleString("es-AR")}${m.estimado ? " (TC estimado)" : ""}`)
         }
 
         // 2) Lo que queda sin fijar
@@ -1372,6 +1377,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
 
     setCampos(Object.values(mapaCampos).sort((a, b) => a.campo.localeCompare(b.campo)))
     setDetalleCeldas(mapaDetalle)
+    setFijadoDetalle(mapaFijado)
   }
 
   // ── Guardar cambios de una cuota (mover fecha / poner precio) ────────────────
@@ -2750,7 +2756,12 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
                                         })
                                       : undefined}
                                     title={
-                                      clickeable
+                                      sf.tipo === "fijado" && fijadoDetalle[`${c.campo}|${clave}`]
+                                        ? [`Fijaciones de ${MESES[m.mes-1]} ${m.anio}:`, ...fijadoDetalle[`${c.campo}|${clave}`],
+                                            ...(clave === pagadoMes.mes && pagadoMes.porCampo[c.campo]
+                                              ? [`− $ ${Math.round(pagadoMes.porCampo[c.campo]).toLocaleString("es-AR")} ya cobrado este mes (conciliado o marcado «cobrado»): está en el saldo de hoy`] : []),
+                                            `= $ ${Math.round(valor).toLocaleString("es-AR")} por cobrar`].join(String.fromCharCode(10))
+                                      : clickeable
                                         ? `${tons ? `${tons.toLocaleString("es-AR", { maximumFractionDigits: 2 })} tn sin fijar · ` : ""}Click para mover la cuota o ponerle precio`
                                         : estimado
                                           ? "Precio o TC arrastrado de otro mes (estimado)"
