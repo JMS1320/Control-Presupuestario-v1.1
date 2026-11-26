@@ -18,6 +18,10 @@ import { Badge } from "@/components/ui/badge"
 import { Loader2, Plus, Trash2, ChevronDown, ChevronRight, FlaskConical } from "lucide-react"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import type { PuntoSerie } from "@/lib/precios/serie"
+import { EditorPlanRenglon, type RenglonParaPlan } from "@/components/presupuesto-plan-renglon"
+import { PresupuestoPlanRacion, type DatosPlanRacion } from "@/components/presupuesto-plan-racion"
+import { esModoRacion, campanaDeMes, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
+import { mesArgentina } from "@/lib/fechas"
 import {
   consumoMensual, ETIQUETA_MODO, ETIQUETA_MOMENTO, MOMENTO_POR_DEFECTO, esMontoDirecto, usaRacion,
   type Actividad, type InsumoActividad, type ModoCosto, type MomentoCosto, type Tramo, type TipoActividad,
@@ -73,15 +77,25 @@ export function ConfiguradorActividades() {
   const [tiposCambio, setTiposCambio] = useState<PuntoSerie[]>([])
   const [abierta, setAbierta] = useState<string | null>(null)
   const [guardando, setGuardando] = useState(false)
+  /** 📅 El PLAN DEL AÑO visto desde la receta (JMS 25/11: «el plan completo se ve dentro de la receta… todo junto»; 26/11: «es lo
+   *  mismo que la receta, pero específico para el año»). Mismas filas de `presupuesto_variables` que edita el presupuesto. */
+  const [planFilas, setPlanFilas] = useState<any[]>([])
+  const [editorPlan, setEditorPlan] = useState<RenglonParaPlan | null>(null)
+  const [planRacion, setPlanRacion] = useState<DatosPlanRacion | null>(null)
+  const campHoy = campanaDeMes(mesArgentina())
+  const campSig = (() => { const [a, b] = campHoy.split("/").map(Number); return `${String((a! + 1) % 100).padStart(2, "0")}/${String((b! + 1) % 100).padStart(2, "0")}` })()
+  const campanasPlan = [campHoy, campSig]
 
   const cargar = useCallback(async () => {
     setCargando(true)
     try {
-      const [{ data: acts, error: e1 }, { data: ins, error: e2 }, { data: tc }] = await Promise.all([
+      const [{ data: acts, error: e1 }, { data: ins, error: e2 }, { data: tc }, { data: pl }] = await Promise.all([
         supabase.schema("productivo").from("actividades").select("*").order("tipo").order("nombre"),
         supabase.schema("productivo").from("actividad_insumos").select("*").order("orden"),
         supabase.from("tipos_cambio").select("anio, mes, tc_presupuestado"),
+        supabase.from("presupuesto_variables").select("*").eq("empresa", "MSA").eq("activo", true),
       ])
+      setPlanFilas(((pl || []) as any[]).filter(r => r.actividad_id || r.receta_insumo_id))
       // Sin chequear el error un data null se ve igual que "no hay nada" y la pantalla
       // queda vacía sin decir por qué.
       if (e1 || e2) { alert("Error cargando actividades: " + (e1 || e2)!.message); return }
@@ -96,6 +110,25 @@ export function ConfiguradorActividades() {
   useEffect(() => { cargar() }, [cargar])
 
   const insumosDe = (id: string) => insumos.filter(i => i.actividad_id === id)
+  /** El plan del año de un renglón de la receta, por campaña (las filas que no son de ración). */
+  const planDeRenglon = (insumoId: string): Record<string, RenglonPlan> => {
+    const r: Record<string, RenglonPlan> = {}
+    for (const p of planFilas) if (String(p.receta_insumo_id) === insumoId) r[String(p.campana)] = {
+      id: String(p.id), receta_insumo_id: insumoId, actividad_id: null, concepto: String(p.concepto), campana: String(p.campana),
+      cantidad: p.cantidad == null ? null : Number(p.cantidad), unidad: p.unidad, precio: p.precio == null ? null : Number(p.precio),
+      moneda: p.moneda || "ARS", meses: Array.isArray(p.meses) ? p.meses.map(Number) : null, iva_pct: p.iva_pct == null ? null : Number(p.iva_pct) } as RenglonPlan
+    return r
+  }
+  const abrirPlanRacion = (a: Actividad, camp: string) => {
+    const rac = insumosDe(a.id).filter(i => esModoRacion(i.modo))
+    setPlanRacion({ actividadId: a.id, nombre: a.nombre, campana: camp, pctPv: Number(a.racion_pct_pv) || 0,
+      insumos: rac.map(i => ({ id: i.id, concepto: i.concepto, modo: i.modo, valor: Number(i.valor) || 0, precio: i.precio_unitario == null ? null : Number(i.precio_unitario),
+        moneda: i.moneda, iva: (i as any).iva_pct == null ? null : Number((i as any).iva_pct), dieta: (i as any).dieta ?? null })),
+      plan: planFilas.filter(p => String(p.campana) === camp && ((String(p.actividad_id) === a.id && p.racion_pct_pv != null) || rac.some(i => i.id === String(p.receta_insumo_id))))
+        .map(p => ({ id: String(p.id), actividad_id: p.actividad_id ? String(p.actividad_id) : null, receta_insumo_id: p.receta_insumo_id ? String(p.receta_insumo_id) : null,
+          campana: String(p.campana), racion_pct_pv: p.racion_pct_pv == null ? null : Number(p.racion_pct_pv), cantidad: p.cantidad == null ? null : Number(p.cantidad),
+          precio: p.precio == null ? null : Number(p.precio), iva_pct: p.iva_pct == null ? null : Number(p.iva_pct) })) })
+  }
 
   // ── Guardado ────────────────────────────────────────────────────────────────
 
@@ -338,6 +371,19 @@ export function ConfiguradorActividades() {
                                     <Input className="h-7 min-w-[7rem] text-xs" value={i.concepto}
                                       onChange={e => setInsumos(prev => prev.map(x => x.id === i.id ? { ...x, concepto: e.target.value } : x))}
                                       onBlur={() => guardarInsumo(i)} />
+                                    {/* 📅 ¿Este año manda el plan o la receta? Clic: editar el plan del año de este renglón. */}
+                                    {campanasPlan.map(camp => {
+                                      const rac = esModoRacion(i.modo)
+                                      const tiene = rac ? planFilas.some(p => String(p.receta_insumo_id) === i.id && String(p.campana) === camp) : !!planDeRenglon(i.id)[camp]
+                                      return (
+                                        <button key={camp} type="button" className={`mr-1 mt-0.5 rounded px-1 text-[9px] ${tiene ? "bg-emerald-100 text-emerald-800" : "bg-gray-100 text-gray-500"} hover:underline`}
+                                          title={tiene ? `En ${camp} manda el plan del año. Clic: editarlo` : `En ${camp} manda la receta. Clic: pisarlo sólo para ${camp}`}
+                                          onClick={() => rac ? abrirPlanRacion(a, camp)
+                                            : setEditorPlan({ actividadId: a.id, insumoId: i.id, concepto: i.concepto, plan: planDeRenglon(i.id), explicacion: {}, iva: (i as any).iva_pct ?? null })}>
+                                          {tiene ? `plan ${camp} ✎` : `receta ${camp}`}
+                                        </button>
+                                      )
+                                    })}
                                   </td>
                                   <td className="py-1 pr-2">
                                     {/* 🥣 Dieta del renglón (vacío = todas) */}
@@ -446,6 +492,30 @@ export function ConfiguradorActividades() {
                     </button>
                   </div>
 
+                  {/* 📅 PLAN DEL AÑO de esta actividad, visto desde la receta: lo que pisa en cada campaña */}
+                  <div className="rounded border border-emerald-200 bg-emerald-50/40 p-2 text-[11px]">
+                    <p className="font-medium text-emerald-900">📅 Plan del año — lo que este año cambia respecto de la receta (vacío = manda la receta)</p>
+                    {campanasPlan.map(camp => {
+                      const filas = planFilas.filter(p => String(p.campana) === camp && (String(p.actividad_id) === a.id || items.some(i => i.id === String(p.receta_insumo_id))))
+                      const conc = (p: any) => p.dieta ? `dieta: ${p.dieta}` : p.racion_pct_pv != null ? `ración ${(Number(p.racion_pct_pv) * 100).toLocaleString("es-AR")} % del peso vivo`
+                        : `${p.concepto}${p.cantidad === 0 ? ": este año 0" : `${p.cantidad != null ? ` · cant. ${Number(p.cantidad).toLocaleString("es-AR")}` : ""}${p.precio != null ? ` · precio ${Number(p.precio).toLocaleString("es-AR")} ${p.moneda || ""}` : ""}${Array.isArray(p.meses) && p.meses.length ? ` · meses ${p.meses.join(",")}` : ""}`}`
+                      return (
+                        <div key={camp} className="mt-1">
+                          <span className="font-medium">{camp}:</span>{" "}
+                          {filas.length ? filas.map(conc).join(" · ") : <span className="text-gray-500">sin cambios (manda la receta)</span>}
+                          {items.some(i => esModoRacion(i.modo)) && (
+                            <button type="button" className="ml-2 rounded border border-emerald-300 px-1 text-[10px] text-emerald-800 hover:bg-emerald-100"
+                              onClick={() => abrirPlanRacion(a, camp)}>🥣 ración {camp}</button>
+                          )}
+                          <button type="button" className="ml-1 rounded border border-emerald-300 px-1 text-[10px] text-emerald-800 hover:bg-emerald-100"
+                            title="Agregar un renglón propio del plan de este año (que no está en la receta)"
+                            onClick={() => setEditorPlan({ actividadId: a.id, insumoId: null, concepto: "Renglón nuevo", plan: {}, explicacion: {} })}>＋ renglón del plan</button>
+                        </div>
+                      )
+                    })}
+                    <p className="mt-1 text-[10px] text-gray-500">Desde / hasta de cada lote: Presupuesto → Costos de producción → 📅 en el lote. Lo mismo se edita desde el presupuesto.</p>
+                  </div>
+
                   <Simulador actividad={a} insumos={items} tiposCambio={tiposCambio} />
                 </div>
               )}
@@ -453,6 +523,9 @@ export function ConfiguradorActividades() {
           )
         })}
       </CardContent>
+      <EditorPlanRenglon abierto={!!editorPlan} renglon={editorPlan} campanas={campanasPlan}
+        onCerrar={() => setEditorPlan(null)} onGuardado={() => cargar()} />
+      <PresupuestoPlanRacion datos={planRacion} onCerrar={() => setPlanRacion(null)} onGuardado={() => void cargar()} />
     </Card>
   )
 }
