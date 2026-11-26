@@ -366,11 +366,17 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     dietas?: string[]; dietaDefault?: string | null; dietaPlan?: Record<string, { id: string; dieta: string }>
     renglones?: { insumoId: string | null; actividadId: string; concepto: string; montos: Record<string, number>; detalle: Record<string, string>
       origen: Record<string, "plan" | "receta">; plan: Record<string, RenglonPlan>; falta: string[]; iva?: number | null }[]
-    lotes: { id: string; nombre: string; montos: Record<string, number>; insumos: { concepto: string; montos: Record<string, number>; detalle: Record<string, string> }[] }[] }[]>([])
+    lotes: { id: string; nombre: string; montos: Record<string, number>; insumos: { concepto: string; montos: Record<string, number>; detalle: Record<string, string> }[]
+      /** 📅 Los tramos del lote (el plan del año: qué actividad, desde y hasta), para editarlos desde acá. */
+      tramos?: { id: string; actividad: string; desde: string; hasta: string }[] }[] }[]>([])
   /** El editor completo de las recetas (Actividades y costos), abierto desde la fila. */
   const [editorActividades, setEditorActividades] = useState(false)
   /** 🏗️ El editor de inversiones abierto desde la grilla (JMS 26/11: «acá no me permite editar»). */
   const [editorInversiones, setEditorInversiones] = useState(false)
+  /** 📅 Editar desde el presupuesto los tramos de un lote (el «desde / hasta» del plan del año). Edita el MISMO tramo que leen
+   *  mediciones de stock, Margen, ventas por lote y lotes: no es una copia (JMS 26/11). */
+  const [editorTramos, setEditorTramos] = useState<{ lote: string; tramos: { id: string; actividad: string; desde: string; hasta: string }[] } | null>(null)
+  const [guardandoTramos, setGuardandoTramos] = useState(false)
   /** ✎ El plan del año de un renglón (A-FEAT-1663), abierto desde la grilla. */
   const [editorPlan, setEditorPlan] = useState<RenglonParaPlan | null>(null)
   const [ipcSerie, setIpcSerie] = useState<PuntoSerie[]>([])
@@ -802,7 +808,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     for (const p of ((planRaw || []) as any[])) if (p.actividad_id && p.dieta) dietaPlan[`${p.actividad_id}|${p.campana}`] = { id: String(p.id), dieta: String(p.dieta) }
     // ── 1) RACIÓN: lote → tramo → curva de peso (como siempre) ──
     type Ins = { concepto: string; montos: Record<string, number>; detalle: Record<string, string>; resumen?: string }
-    const desglose: Record<string, Record<string, { nombre: string; montos: Record<string, number>; insumos: Record<string, Ins> }>> = {}
+    const desglose: Record<string, Record<string, { nombre: string; montos: Record<string, number>; insumos: Record<string, Ins>; tramos: { id: string; actividad: string; desde: string; hasta: string }[] }>> = {}
     // 🐮 A-FEAT-1665 — al pie comen TODOS los terneros del ciclo: las hembras que se retienen para reposición no tienen lote propio
     // hasta el destete, así que en los períodos ANTERIORES al destete se suman al lote de hembras al pie (JMS 26/11).
     const retenidasDe = new Map(calcularLineaTiempo(((ciclos || []) as any[])).map(c => [String((c.ciclo as any).id), Number(c.retenidas) || 0]))
@@ -818,7 +824,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         const t0 = extra && tA.hasta <= String(l.fecha_disponible) ? { ...tA, cabezas: tA.cabezas + extra } : tA
         const t = { ...t0, dieta: dietaPlan[`${t0.actividad.id}|${campanaDeMes(t0.desde.slice(0, 7))}`]?.dieta ?? null }
         const nombre = t.actividad.nombre
-        const lote = ((desglose[nombre] ??= {})[l.id] ??= { nombre: nombreLote, montos: {}, insumos: {} })
+        const lote = ((desglose[nombre] ??= {})[l.id] ??= { nombre: nombreLote, montos: {}, insumos: {},
+          tramos: (mios as any[]).map(x => ({ id: String(x.id), actividad: listaActs.find(a => a.id === x.actividad_id)?.nombre ?? "—", desde: String(x.fecha_desde), hasta: String(x.fecha_hasta) })) })
         for (const m of consumoMensual({ ...t, tiposCambio: tcs })) {
           for (const it of m.items) {
             // 🧾 IVA del renglón de la ración (la receta va neta; la caja lo suma)
@@ -926,7 +933,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
           return { dietas: dietasDe(deRacion.filter(i => (i as any).actividad_id === a.id) as any[]), dietaDefault: (a as any).dieta_default ?? null, dietaPlan: dp }
         })(),
         renglones: (renglones[nombre] || []).sort((a, b) => total(b.montos) - total(a.montos)),
-        lotes: Object.entries(desglose[nombre] || {}).map(([id, v]) => ({ id, nombre: v.nombre, montos: v.montos,
+        lotes: Object.entries(desglose[nombre] || {}).map(([id, v]) => ({ id, nombre: v.nombre, montos: v.montos, tramos: v.tramos,
           insumos: Object.values(v.insumos).sort((a, b) => total(b.montos) - total(a.montos)) }))
           .sort((a, b) => total(b.montos) - total(a.montos)) }))
       .sort((a, b) => total(b.montos) - total(a.montos)))
@@ -2510,6 +2517,45 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
 
       {/* 🔍 A-FEAT-1661 paso 3 — el editor COMPLETO de las actividades (el mismo de «Actividades y costos»), abierto desde la fila
           de costos de producción. Al cerrarlo, el presupuesto se recalcula. */}
+      {/* 📅 Tramos del lote = plan del año (desde / hasta). Guarda en productivo.lote_tramos. */}
+      <Dialog open={!!editorTramos} onOpenChange={o => { if (!o) setEditorTramos(null) }}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>📅 Plan del año — {editorTramos?.lote}</DialogTitle>
+            <DialogDescription>Desde y hasta de cada actividad de este lote, este año. La receta no cambia. Es el mismo dato que usan las mediciones de stock, el Margen y la pantalla de lotes: el cambio se ve en todas.</DialogDescription>
+          </DialogHeader>
+          {editorTramos && (
+            <div className="space-y-2">
+              {editorTramos.tramos.map((t, idx) => (
+                <div key={t.id} className="flex items-center gap-2 text-sm">
+                  <span className="w-28 text-gray-700">{t.actividad}</span>
+                  <label className="text-xs text-gray-500">desde</label>
+                  <input type="date" className="h-8 rounded border px-1 text-xs" value={t.desde}
+                    onChange={e => setEditorTramos(p => p && ({ ...p, tramos: p.tramos.map((x, j) => j === idx ? { ...x, desde: e.target.value } : x) }))} />
+                  <label className="text-xs text-gray-500">hasta</label>
+                  <input type="date" className="h-8 rounded border px-1 text-xs" value={t.hasta}
+                    onChange={e => setEditorTramos(p => p && ({ ...p, tramos: p.tramos.map((x, j) => j === idx ? { ...x, hasta: e.target.value } : x) }))} />
+                  {t.desde > t.hasta && <span className="text-xs text-red-600">⚠ «desde» después de «hasta»</span>}
+                </div>
+              ))}
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" size="sm" onClick={() => setEditorTramos(null)}>Cancelar</Button>
+                <Button size="sm" disabled={guardandoTramos || editorTramos.tramos.some(t => !t.desde || !t.hasta || t.desde > t.hasta)}
+                  onClick={async () => {
+                    setGuardandoTramos(true)
+                    for (const t of editorTramos.tramos) {
+                      const { error } = await supabase.schema("productivo").from("lote_tramos")
+                        .update({ fecha_desde: t.desde, fecha_hasta: t.hasta, updated_at: new Date().toISOString() }).eq("id", t.id)
+                      if (error) { alert("No se pudo guardar el tramo: " + error.message); break }
+                    }
+                    setGuardandoTramos(false); setEditorTramos(null); void cargarDatos()
+                  }}>{guardandoTramos ? "Guardando…" : "Guardar"}</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* 🏗️ Inversiones: el mismo editor del botón «Inversiones» de arriba, abierto desde el renglón. */}
       <Dialog open={editorInversiones} onOpenChange={o => { setEditorInversiones(o); if (!o) void cargarInversiones() }}>
         <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
@@ -3261,6 +3307,11 @@ Clic para presupuestar la venta`}
                                   <tr className="border-b bg-violet-50/30 cursor-pointer" onClick={() => toggleAgrupador(kLote)}>
                                     <td className="sticky left-0 z-10 bg-violet-50/30 px-4 py-1 pl-10 text-[11px] text-gray-600">
                                       {abiertoLote ? "▾" : "▸"} {l.nombre}
+                                      {!!l.tramos?.length && (
+                                        <button type="button" className="ml-2 rounded border border-violet-300 px-1 text-[10px] text-violet-800 hover:bg-violet-100"
+                                          title="Cambiar desde / hasta de este lote este año (plan del año). La receta no cambia."
+                                          onClick={e => { e.stopPropagation(); setEditorTramos({ lote: l.nombre.split(" · ")[0], tramos: l.tramos!.map(t => ({ ...t })) }) }}>📅 plan del año</button>
+                                      )}
                                     </td>
                                     {celdas(l.montos, "text-gray-500")}
                                   </tr>
