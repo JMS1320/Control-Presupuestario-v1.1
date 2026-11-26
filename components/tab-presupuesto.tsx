@@ -819,7 +819,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       const dmy = (f: any) => String(f || "").split("-").reverse().join("/")
       const rango = mios.map((t: any) => `${dmy(t.fecha_desde)}–${dmy(t.fecha_hasta)}`).join(", ")
       const extra = extraAlPie(l)
-      const nombreLote = `${l.categoria} · ${fmtN(Number(l.cantidad) || 0)} cab${extra ? ` (+ ${fmtN(extra, 1)} retenidas al pie)` : ""} · tramo ${rango} · disponible ${dmy(l.fecha_disponible)}`
+      const nombreLote = `${l.categoria} · ${fmtN(Number(l.cantidad) || 0)} cab${extra ? ` (+ ${fmtN(extra, 1)} retenidas al pie)` : ""} · plan del año ${rango} · disponible ${dmy(l.fecha_disponible)}`
       for (const tA of tramosParaCosto(l as unknown as LoteCurva, mios, listaActs, deRacion)) {
         const t0 = extra && tA.hasta <= String(l.fecha_disponible) ? { ...tA, cabezas: tA.cabezas + extra } : tA
         const t = { ...t0, dieta: dietaPlan[`${t0.actividad.id}|${campanaDeMes(t0.desde.slice(0, 7))}`]?.dieta ?? null }
