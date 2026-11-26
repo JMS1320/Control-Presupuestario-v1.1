@@ -3161,7 +3161,7 @@ Clic para presupuestar la venta`}
                                       value={c.dietaPlan?.[camp]?.dieta ?? ""}
                                       onChange={e => void elegirDieta(c.actividadId!, camp, e.target.value || null, c.dietaPlan?.[camp]?.id)}>
                                       <option value="">default ({c.dietaDefault || "sin elegir"})</option>
-                                      {c.dietas.map(d => <option key={d} value={d}>{d}</option>)}
+                                      {(c.dietas || []).map(d => <option key={d} value={d}>{d}</option>)}
                                     </select>
                                   </label>
                                 ))}
