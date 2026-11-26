@@ -65,7 +65,10 @@ export interface CostoRenglon {
 export function costoRecetaCampana(fila: InsumoActividadMargen & { momento?: string | null }, ctx: ContextoCosto, campana: string, desdeMes: string): CostoRenglon {
   const caja = { ...fila, amortiza_anios: null }   // caja: la pastura se paga entera el año que se hace
   const meses = mesesDeCampana(campana)
-  const r = resolverCostoDirecto(caja, { ...ctx, meses, tc: ctx.tc ?? ctx.tcPorMes?.[claveMes(meses[0].anio, meses[0].mes)] ?? null })
+  // El TC de referencia (para los renglones clásicos): el primero de la campaña que tenga TC; si ninguno, el último conocido.
+  const tcCamp = meses.map(m => ctx.tcPorMes?.[claveMes(m.anio, m.mes)]).find(v => v != null)
+  const tcUltimo = Object.entries(ctx.tcPorMes ?? {}).sort(([a], [b]) => a.localeCompare(b)).pop()?.[1]
+  const r = resolverCostoDirecto(caja, { ...ctx, meses, tc: ctx.tc ?? tcCamp ?? tcUltimo ?? null })
   const porMes: Record<string, number> = {}
   if (r.monto == null) return { porMes, explicacion: r.motivo, falta: r.motivo }
   if (r.porMes) {

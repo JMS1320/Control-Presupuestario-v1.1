@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### ✅ 3 columnas nuevas en `public.presupuesto_variables`: `receta_insumo_id`, `actividad_id` (uuid) y `moneda` (text) (2026-11-25) — ⏳ AVISO PREVIO (se corre a continuación con OK de JMS)
+### ✅ 3 columnas nuevas en `public.presupuesto_variables`: `receta_insumo_id`, `actividad_id` (uuid) y `moneda` (text) (2026-11-25) — ✅ APLICADA el 25/11 (aviso previo; JMS: «se puede construir el plan del año»)
 - A-FEAT-1663: el plan productivo del año. `scripts/300-…` con su deshacer. Columnas vacías; no toca RLS, roles ni permisos.
 
 ### ✅ `public.presupuesto_marcas`: el CHECK de `marca` suma el valor `fuera` (2026-11-25) — ✅ APLICADA el 25/11 (aviso previo; JMS: «podés avanzar»)

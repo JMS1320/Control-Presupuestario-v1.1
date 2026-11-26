@@ -31,7 +31,8 @@ update productivo.actividad_insumos set modo = 'monto_unidad', cantidad_aplicaci
   fundamento = '[script 301] JMS 25/11: 8.000 litros por año, 2 compras de 4.000 (una por semestre); ~$ 2.500/litro.', updated_at = now()
 where id = '2df8656c-331a-493e-b67e-487cb32dcec0';
 -- C11 Creep feeding: la ración de Cría es el 1 % del peso vivo (85 % maíz / 15 % concentrado ya estaban). Se da en el tramo nov→feb.
-update productivo.actividades set racion_pct_pv = 1, updated_at = now() where id = '7dbf0185-5e25-4980-8dc4-0d3941c12fc6';
+-- ⚠️ La ración se guarda como FRACCIÓN (0,01 = 1 %), igual que Recría 0,015 y Engorde 0,03. Corregido el 25/11: primero se cargó «1» (= 100 %).
+update productivo.actividades set racion_pct_pv = 0.01, updated_at = now() where id = '7dbf0185-5e25-4980-8dc4-0d3941c12fc6';
 
 -- C6 Promoción de rye grass y lotus: queda el renglón, PENDIENTE (no todos los años) → fuera del presupuesto por ahora.
 insert into public.presupuesto_marcas (empresa, origen_tabla, fila_id, origen, marca, detalle, marcado_por)
