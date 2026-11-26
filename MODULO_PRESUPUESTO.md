@@ -24,6 +24,13 @@
   pantalla de recetas (pendiente, A-FEAT-1663).
 - 📍 **Dónde vive**: `public.presupuesto_variables` con `campana` + vínculo al renglón (`receta_insumo_id`) o a la actividad
   (`actividad_id`); scripts 300 y 305. Lógica: `lib/presupuesto/costo-campana.ts` (`elegirPlanOReceta`).
+- 🗣️ **Un solo nombre: «plan del año»** *(JMS 26/11: «el período del lote ES el plan del año… quisiera que hablemos siempre de lo mismo,
+  no de dos cosas diferentes, porque ahí es donde siento que se descompagina todo»)*. Los **períodos del lote** (antes «tramos») son la
+  parte del plan del año que dice **qué lote, desde cuándo y hasta cuándo**; las filas de `presupuesto_variables` son la parte que dice
+  **cuánto / a qué precio / qué dieta**. Son dos tablas, pero UN concepto: en pantalla y en las respuestas se habla de «plan del año» y,
+  si hace falta, de su parte «período». La receta trae los mismos datos (qué, cuánto, cuándo) como default.
+  ⚠️ Los períodos los leen también las mediciones de stock, el Margen, las ventas por lote y la pantalla de lotes: **no se borran** para
+  reemplazarlos por otra cosa (26/11: se descartó sacar el período manual de los machos por eso).
 - 🐮 **Terneros al pie, por default desde el CICLO** (JMS 26/11, Q4): lo que pasa del nacimiento al destete vale para TODOS los terneros
   del ciclo (machos, hembras de venta y retenidas), sin asignar períodos a mano lote por lote. Los períodos por lote quedan para después
   del destete (Recría, Engorde). → A-FEAT-1665.
