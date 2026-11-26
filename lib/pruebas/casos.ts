@@ -332,6 +332,7 @@ import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { vinculoDelMail } from "@/lib/pagos/vinculo-mail-pago"
 import { calcularArranque, clasificarFila, lineaDeSaldo, controlDosFuentes, totalComposicion, estaEnLaGrilla, type FilaReal } from "@/lib/presupuesto/arranque"
 import { recortarPorFamilia } from "@/lib/presupuesto/templates"
+import { pesoInicialTramo } from "@/lib/productivo/tramos"
 import { costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
@@ -9110,6 +9111,11 @@ export function correrCasos(): Resultado[] {
     chequear("Presupuesto", "🌾 Caja por campaña: rollos 1/vaca (200 vacas × $ 50.000), implantación entera sin amortizar (15 ha × US$ 750 × 1.500), gasoil sólo marzo; el plan (170 rollos en dic) manda, «0» apaga, sin plan va la receta",
       'rollos 10000000 nov 3333000 · impl 16875000 abr 4218750 · gas ["2027-03"] 10000000 · plan plan dic 8500000 · 0 nada · sin plan receta', res,
       res === 'rollos 10000000 nov 3333000 · impl 16875000 abr 4218750 · gas ["2027-03"] 10000000 · plan plan dic 8500000 · 0 nada · sin plan receta', "A-FEAT-1663")
+    // 🐮 Tramo anterior a la pesada: terneros al pie, «220 kg el 01/03/27», creep nov→feb con 0,7025 kg/día → arranca en ~135,7 kg, no en 220
+    const pIni = pesoInicialTramo({ id: "l", cantidad: 94, peso_base_kg: 220, fecha_peso: "2027-03-01", fecha_disponible: "2027-03-01" } as any, [], [],
+      { id: "t", lote_id: "l", actividad_id: "a", orden: 1, fecha_desde: "2026-11-01", fecha_hasta: "2027-02-28", hectareas: null, ganancia_diaria_kg: 0.7025 } as any)
+    chequear("Productivo", "🐮 Un tramo ANTERIOR a la pesada del lote arranca con el peso hacia atrás (220 − 0,7025 × 120 días), no con el peso final",
+      "135.7", pIni.toFixed(1), pIni.toFixed(1) === "135.7", "A-FEAT-1663")
     // 🧾 IVA aparte (JMS 25/11): implantación neta US$ 750 × 15 ha × 1.500 + 21 % · plan 34 ha × US$ 750 × TC 1.000 + 21 % en 4 meses
     const implIva = costoRecetaCampana(fila({ concepto: "Implantación", modo: "monto_ha", valor: 750, moneda: "USD", has_aplicacion: 15, iva_pct: 21, meses_pct: { 2: 25, 3: 25, 4: 25, 5: 25 } }), ctx, "26/27", "2026-11")
     const tc1000 = { "2027-02": 1000, "2027-03": 1000, "2027-04": 1000, "2027-05": 1000 }

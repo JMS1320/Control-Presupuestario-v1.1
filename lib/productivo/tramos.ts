@@ -198,11 +198,27 @@ export function tramosParaCosto(
       cabezas: cab,
       desde: t.fecha_desde,
       hasta: t.fecha_hasta,
-      peso_inicial_kg: pesoEnFecha(lote, tramos, actividades, t.fecha_desde),
+      peso_inicial_kg: pesoInicialTramo(lote, tramos, actividades, t),
       hectareas: Number(t.hectareas ?? 0),
     })
   }
   return salida
+}
+
+/**
+ * El peso con que arranca un tramo. Si el tramo es ANTERIOR a la pesada del lote (ej. el creep feeding de los terneros al pie,
+ * nov→feb, cuando el lote dice «220 kg el 01/03»), la curva hacia adelante no sirve: devolvía el peso final para todo el tramo
+ * y el creep salía calculado sobre 220 kg desde noviembre. Con la ganancia del tramo se va HACIA ATRÁS desde la pesada.
+ * (JMS 25/11: «nacen con 30 kilos el 1/7 y se destetan con 200 el 28/2; el promedio da mucho menos».)
+ */
+export function pesoInicialTramo(lote: LoteCurva, tramos: TramoLote[], actividades: Actividad[], t: TramoLote): number {
+  const base = lote.fecha_peso || lote.fecha_disponible
+  const g = t.ganancia_diaria_kg != null ? Number(t.ganancia_diaria_kg) : null
+  if (base && t.fecha_desde < base && g) {
+    const dias = Math.round((Date.parse(base) - Date.parse(t.fecha_desde)) / 86400000)
+    return Math.max(0, (Number(lote.peso_base_kg) || 0) - g * dias)
+  }
+  return pesoEnFecha(lote, tramos, actividades, t.fecha_desde)
 }
 
 /** Los tramos se pisan entre sí — la UI lo avisa en vez de calcular cualquier cosa. */
