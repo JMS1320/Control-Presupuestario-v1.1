@@ -168,7 +168,9 @@ export function PresupuestoArranque(p: {
               <Detalle titulo="Cobros vencidos de meses anteriores (sin cobrar)" filas={r.vencidos.filas.filter(f => Number(f.creditos) > 0)} marcable="cobro" marcas={p.marcas} onMarcar={p.onMarcar} />
               <Detalle titulo="Pagos del mes en curso con fecha hasta hoy, sin marcar (siguen restando en el mes)" filas={r.mesEnCurso.filas.filter(f => Number(f.debitos) > 0)} marcable="pago" marcas={p.marcas} onMarcar={p.onMarcar} />
               <Detalle titulo="Cobros del mes en curso con fecha hasta hoy, sin marcar (siguen sumando en el mes)" filas={r.mesEnCurso.filas.filter(f => Number(f.creditos) > 0)} marcable="cobro" marcas={p.marcas} onMarcar={p.onMarcar} />
-              <Detalle titulo="Dados por pagados / cobrados (marcas del presupuesto)" filas={[...r.marcados.vencidos, ...r.marcados.mesEnCurso]} marcas={p.marcas} onMarcar={p.onMarcar} deshacer />
+              {/* JMS 26/11: «antes estaba separado en compras y ventas… se junta en una cosa… habría que separarlo para trabajar mejor». */}
+              <Detalle titulo="Dados por PAGADOS (marcas del presupuesto)" filas={[...r.marcados.vencidos, ...r.marcados.mesEnCurso].filter(f => Number(f.debitos) > 0)} marcas={p.marcas} onMarcar={p.onMarcar} deshacer />
+              <Detalle titulo="Dados por COBRADOS (marcas del presupuesto)" filas={[...r.marcados.vencidos, ...r.marcados.mesEnCurso].filter(f => !(Number(f.debitos) > 0))} marcas={p.marcas} onMarcar={p.onMarcar} deshacer />
             </>
           )}
         </div>
