@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ChevronRight, ChevronDown, Loader2, TrendingDown, TrendingUp, Scale, Wallet, AlertTriangle, Download, FileText, RefreshCw } from "lucide-react"
 import { Input } from "@/components/ui/input"
+import { ConfiguradorInversiones } from "@/components/configurador-inversiones"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ConfiguradorActividades } from "@/components/configurador-actividades"
 import {
@@ -362,6 +363,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     lotes: { id: string; nombre: string; montos: Record<string, number>; insumos: { concepto: string; montos: Record<string, number>; detalle: Record<string, string> }[] }[] }[]>([])
   /** El editor completo de las recetas (Actividades y costos), abierto desde la fila. */
   const [editorActividades, setEditorActividades] = useState(false)
+  /** 🏗️ El editor de inversiones abierto desde la grilla (JMS 26/11: «acá no me permite editar»). */
+  const [editorInversiones, setEditorInversiones] = useState(false)
   /** ✎ El plan del año de un renglón (A-FEAT-1663), abierto desde la grilla. */
   const [editorPlan, setEditorPlan] = useState<RenglonParaPlan | null>(null)
   const [ipcSerie, setIpcSerie] = useState<PuntoSerie[]>([])
@@ -2476,6 +2479,17 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
 
       {/* 🔍 A-FEAT-1661 paso 3 — el editor COMPLETO de las actividades (el mismo de «Actividades y costos»), abierto desde la fila
           de costos de producción. Al cerrarlo, el presupuesto se recalcula. */}
+      {/* 🏗️ Inversiones: el mismo editor del botón «Inversiones» de arriba, abierto desde el renglón. */}
+      <Dialog open={editorInversiones} onOpenChange={o => { setEditorInversiones(o); if (!o) void cargarInversiones() }}>
+        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Inversiones</DialogTitle>
+            <DialogDescription>Nombre, monto, mes de arranque, plazo y por qué se invierte. Al cerrar, la grilla se actualiza.</DialogDescription>
+          </DialogHeader>
+          <ConfiguradorInversiones onCambio={() => void cargarInversiones()} />
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={editorActividades} onOpenChange={o => { setEditorActividades(o); if (!o) void cargarDatos() }}>
         <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
           <DialogHeader>
@@ -3350,6 +3364,9 @@ Clic para presupuestar la venta`}
                               : `${inversiones.length} · fuera del total de egresos`}
                             {sinJust > 0 && <span className="ml-1 text-amber-700">· {sinJust} sin justificar</span>}
                           </span>
+                          <button type="button" className="ml-2 rounded border border-orange-300 px-1 text-[10px] font-normal text-orange-800 hover:bg-orange-100"
+                            title="Cargar o editar inversiones (monto, mes, plazo, justificación)"
+                            onClick={e => { e.stopPropagation(); setEditorInversiones(true) }}>✏️ editar</button>
                         </td>
                         {meses.map(m => {
                           const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
@@ -3363,7 +3380,8 @@ Clic para presupuestar la venta`}
                         })}
                       </tr>
                       {abierto && inversiones.map(i => (
-                        <tr key={`inv-${i.id}`} className="border-b hover:bg-gray-50">
+                        <tr key={`inv-${i.id}`} className="border-b hover:bg-gray-50 cursor-pointer" title="Clic para editar esta inversión"
+                          onClick={() => setEditorInversiones(true)}>
                           <td className="sticky left-0 z-10 bg-white px-4 py-1.5 pl-8 text-xs text-gray-600">
                             {i.nombre}
                             {i.sinJustificar && (
