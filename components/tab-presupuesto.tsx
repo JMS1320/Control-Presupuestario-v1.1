@@ -181,6 +181,8 @@ interface FilaCampo {
   disponibleVisible?: Record<string, number>
   /** 🏷️ Lo fijado entero, para mostrar; en `fijado` queda sólo lo que suma (un mes se puede sacar con «no suma», JMS 26/11). */
   fijadoVisible?: Record<string, number>
+  /** Lo mismo para lo presupuestado (JMS 26/11: «los presupuestados sin precio también quiero que se puedan poner para no sumar»). */
+  presupuestadoVisible?: Record<string, number>
   /** Tons sin fijar por mes — para el badge del "disponible a fijar". */
   tonsDisponibles: Record<string, number>
   /** Meses cuyo precio o TC se arrastró de otro mes (celda estimada). */
@@ -535,14 +537,16 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     // impacte, pero ese en particular»). Marca «fuera» en presupuesto_marcas, por campo y mes. Se sigue viendo, tachado.
     const fijadoSuma: Record<string, number> = {}
     for (const [k, v] of Object.entries(c.fijado)) if (marcas[`arrendamiento_fijado|${c.campo}|${k}`] !== "fuera") fijadoSuma[k] = v
+    const presSuma: Record<string, number> = {}
+    for (const [k, v] of Object.entries(c.presupuestado)) if (marcas[`arrendamiento_presupuestado|${c.campo}|${k}`] !== "fuera") presSuma[k] = v
     // C1 — lo ya cobrado este mes de este campo (está en el saldo de hoy) no figura en la columna del mes
     const cobrado = pagadoMes.porCampo[c.campo] || 0
-    if (!cobrado) return { ...c, fijado: fijadoSuma, fijadoVisible: c.fijado, disponible: suma, disponibleVisible: c.disponible }
-    const fijado = { ...fijadoSuma }, presupuestado = { ...c.presupuestado }
+    if (!cobrado) return { ...c, fijado: fijadoSuma, fijadoVisible: c.fijado, presupuestado: presSuma, presupuestadoVisible: c.presupuestado, disponible: suma, disponibleVisible: c.disponible }
+    const fijado = { ...fijadoSuma }, presupuestado = { ...presSuma }
     let resto = cobrado
     const q1 = Math.min(resto, fijado[pagadoMes.mes] || 0); fijado[pagadoMes.mes] = (fijado[pagadoMes.mes] || 0) - q1; resto -= q1
     const q2 = Math.min(resto, presupuestado[pagadoMes.mes] || 0); presupuestado[pagadoMes.mes] = (presupuestado[pagadoMes.mes] || 0) - q2
-    return { ...c, fijado, fijadoVisible: c.fijado, presupuestado, disponible: suma, disponibleVisible: c.disponible }
+    return { ...c, fijado, fijadoVisible: c.fijado, presupuestado, presupuestadoVisible: c.presupuestado, disponible: suma, disponibleVisible: c.disponible }
   }), [camposBase, detalleCeldas, marcas, pagadoMes])
 
   // ── Carga de datos ──────────────────────────────────────────────────────────
@@ -1012,12 +1016,12 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   }
 
   /** 🏷️ ¿Lo fijado de este campo y mes suma? (sí, salvo que se lo haya sacado). */
-  const fijadoSuma = (campo: string, mes: string) => marcas[`arrendamiento_fijado|${campo}|${mes}`] !== "fuera"
-  /** Saca (o vuelve a poner) lo fijado de un campo en un mes. Guarda la huella (quién, cuándo, cuánto). */
-  const alternarFijado = async (campo: string, mes: string, monto: number) => {
-    await marcarFilas([{ id: `${campo}|${mes}`, origen: "ARRENDAMIENTO", origen_tabla: "arrendamiento_fijado", estado: "fijado",
-      fecha_estimada: `${mes}-01`, debitos: 0, creditos: monto, nombre_proveedor: campo, detalle: `Fijado ${campo} · ${mes}` } as FilaReal],
-      fijadoSuma(campo, mes) ? "fuera" : null)
+  const fijadoSuma = (campo: string, mes: string, tipo: "fijado" | "presupuestado" = "fijado") => marcas[`arrendamiento_${tipo}|${campo}|${mes}`] !== "fuera"
+  /** Saca (o vuelve a poner) lo fijado o lo presupuestado de un campo en un mes. Guarda la huella (quién, cuándo, cuánto). */
+  const alternarFijado = async (campo: string, mes: string, monto: number, tipo: "fijado" | "presupuestado" = "fijado") => {
+    await marcarFilas([{ id: `${campo}|${mes}`, origen: "ARRENDAMIENTO", origen_tabla: `arrendamiento_${tipo}`, estado: tipo,
+      fecha_estimada: `${mes}-01`, debitos: 0, creditos: monto, nombre_proveedor: campo, detalle: `${tipo === "fijado" ? "Fijado" : "Presupuestado"} ${campo} · ${mes}` } as FilaReal],
+      fijadoSuma(campo, mes, tipo) ? "fuera" : null)
   }
 
   /** ⋯ Saca (o vuelve a poner) un template entero —`mes` null— o un mes, sólo del presupuesto. */
@@ -2688,7 +2692,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
                       // Las 3 filas del campo: fijado / presupuestado / disponible
                       const subFilas: { label: string; tipo: string | null; datos: Record<string, number>; clase: string }[] = [
                         { label: "Fijado",             tipo: "fijado",         datos: c.fijadoVisible || c.fijado,        clase: "text-emerald-700 font-medium" },
-                        { label: "Presupuestado",      tipo: "presupuestado",  datos: c.presupuestado, clase: "text-gray-600" },
+                        { label: "Presupuestado",      tipo: "presupuestado",  datos: c.presupuestadoVisible || c.presupuestado, clase: "text-gray-600" },
                         { label: "Disponible a fijar", tipo: "disponible",     datos: c.disponibleVisible || c.disponible, clase: "text-amber-700" },
                       ]
 
@@ -2761,16 +2765,16 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
                                     {valor === 0 && tons
                                       ? <span className="text-amber-600">{tons.toLocaleString("es-AR", { maximumFractionDigits: 1 })} tn</span>
                                       : <span className={sf.tipo === "disponible" ? (impactaCelda(c.campo, clave) ? "font-semibold text-emerald-700" : "text-gray-400 line-through decoration-gray-300")
-                                          : sf.tipo === "fijado" && !fijadoSuma(c.campo, clave) ? "text-gray-400 line-through decoration-gray-300" : ""}>{fmt(valor)}</span>}
+                                          : (sf.tipo === "fijado" || sf.tipo === "presupuestado") && !fijadoSuma(c.campo, clave, sf.tipo) ? "text-gray-400 line-through decoration-gray-300" : ""}>{fmt(valor)}</span>}
                                     {/* 🏷️ Lo fijado suma; un clic lo saca del presupuesto (sólo ese campo y mes). */}
-                                    {sf.tipo === "fijado" && valor > 0 && (
+                                    {(sf.tipo === "fijado" || sf.tipo === "presupuestado") && valor > 0 && (() => { const tp = sf.tipo as "fijado" | "presupuestado"; return (
                                       <button type="button"
-                                        onClick={e => { e.stopPropagation(); void alternarFijado(c.campo, clave, valor) }}
-                                        title={fijadoSuma(c.campo, clave) ? "Suma al presupuesto. Clic: que no sume (sólo este mes de este campo)" : "Sacado del presupuesto a mano. Clic: que vuelva a sumar"}
-                                        className={`ml-1 rounded border px-1 text-[9px] ${fijadoSuma(c.campo, clave) ? "border-emerald-400 bg-emerald-50 text-emerald-800" : "border-gray-300 bg-white text-gray-500"}`}>
-                                        {fijadoSuma(c.campo, clave) ? "suma" : "no suma"}
+                                        onClick={e => { e.stopPropagation(); void alternarFijado(c.campo, clave, valor, tp) }}
+                                        title={fijadoSuma(c.campo, clave, tp) ? "Suma al presupuesto. Clic: que no sume (sólo este mes de este campo)" : "Sacado del presupuesto a mano. Clic: que vuelva a sumar"}
+                                        className={`ml-1 rounded border px-1 text-[9px] ${fijadoSuma(c.campo, clave, tp) ? "border-emerald-400 bg-emerald-50 text-emerald-800" : "border-gray-300 bg-white text-gray-500"}`}>
+                                        {fijadoSuma(c.campo, clave, tp) ? "suma" : "no suma"}
                                       </button>
-                                    )}
+                                    ) })()}
                                     {estimado && <span className="ml-0.5 text-amber-500">*</span>}
                                     {/* 🏷️ C2: lo disponible NO suma salvo que se marque. Un clic cambia; el color dice qué hace. */}
                                     {sf.tipo === "disponible" && valor > 0 && (
