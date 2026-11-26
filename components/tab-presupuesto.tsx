@@ -7,6 +7,7 @@ import { calcularArranque, lineaDeSaldo, controlDosFuentes, totalComposicion, fe
 import { PresupuestoArranque, type ComposicionItem } from "@/components/presupuesto-arranque"
 import { MenuFilaTemplate } from "@/components/presupuesto-menu-template"
 import { EditorPlanRenglon, type RenglonParaPlan } from "@/components/presupuesto-plan-renglon"
+import { dietasDe } from "@/lib/productivo/actividades"
 import { esModoRacion, campanaDeMes, tcPorMesConArrastre, costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
 import { claveActividad } from "@/lib/presupuesto/margen"
 import { guardarMetodoTemplate, quitarMetodoTemplate, guardarConfigCuenta } from "@/lib/presupuesto/guardar-config"
@@ -354,6 +355,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    * que el cálculo ya armaba y se descartaba (JMS 25/11: «montos que yo no sé cómo están conformados por dentro»).
    */
   const [costoProd, setCostoProd] = useState<{ nombre: string; montos: Record<string, number>; fuera?: string[]; actividadId?: string | null
+    /** 🥣 Dietas de la receta, la de default y la que eligió el plan en cada campaña (script 305). */
+    dietas?: string[]; dietaDefault?: string | null; dietaPlan?: Record<string, { id: string; dieta: string }>
     renglones?: { insumoId: string | null; actividadId: string; concepto: string; montos: Record<string, number>; detalle: Record<string, string>
       origen: Record<string, "plan" | "receta">; plan: Record<string, RenglonPlan>; falta: string[]; iva?: number | null }[]
     lotes: { id: string; nombre: string; montos: Record<string, number>; insumos: { concepto: string; montos: Record<string, number>; detalle: Record<string, string> }[] }[] }[]>([])
@@ -778,6 +781,9 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     const porActividad: Record<string, Record<string, number>> = {}
     const sumar = (act: string, mes: string, v: number) => { (porActividad[act] ??= {})[mes] = (porActividad[act]?.[mes] || 0) + v }
 
+    // 🥣 La dieta de cada actividad en cada campaña: la que eligió el plan del año (fila con actividad_id + dieta); si no, la de default.
+    const dietaPlan: Record<string, { id: string; dieta: string }> = {}   // `${actividadId}|${campana}`
+    for (const p of ((planRaw || []) as any[])) if (p.actividad_id && p.dieta) dietaPlan[`${p.actividad_id}|${p.campana}`] = { id: String(p.id), dieta: String(p.dieta) }
     // ── 1) RACIÓN: lote → tramo → curva de peso (como siempre) ──
     type Ins = { concepto: string; montos: Record<string, number>; detalle: Record<string, string>; resumen?: string }
     const desglose: Record<string, Record<string, { nombre: string; montos: Record<string, number>; insumos: Record<string, Ins> }>> = {}
@@ -787,7 +793,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       const dmy = (f: any) => String(f || "").split("-").reverse().join("/")
       const rango = mios.map((t: any) => `${dmy(t.fecha_desde)}–${dmy(t.fecha_hasta)}`).join(", ")
       const nombreLote = `${l.categoria} · ${fmtN(Number(l.cantidad) || 0)} cab · tramo ${rango} · disponible ${dmy(l.fecha_disponible)}`
-      for (const t of tramosParaCosto(l as unknown as LoteCurva, mios, listaActs, deRacion)) {
+      for (const t0 of tramosParaCosto(l as unknown as LoteCurva, mios, listaActs, deRacion)) {
+        const t = { ...t0, dieta: dietaPlan[`${t0.actividad.id}|${campanaDeMes(t0.desde.slice(0, 7))}`]?.dieta ?? null }
         const nombre = t.actividad.nombre
         const lote = ((desglose[nombre] ??= {})[l.id] ??= { nombre: nombreLote, montos: {}, insumos: {} })
         for (const m of consumoMensual({ ...t, tiposCambio: tcs })) {
@@ -842,7 +849,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       }
     }
     // El plan del año: filas de presupuesto_variables atadas a un renglón de receta (o propias de una actividad)
-    const plan: RenglonPlan[] = ((planRaw || []) as any[]).filter(p => p.receta_insumo_id || p.actividad_id).map(p => ({
+    const plan: RenglonPlan[] = ((planRaw || []) as any[]).filter(p => (p.receta_insumo_id || p.actividad_id) && !p.dieta).map(p => ({
       id: String(p.id), receta_insumo_id: p.receta_insumo_id ? String(p.receta_insumo_id) : null, actividad_id: p.actividad_id ? String(p.actividad_id) : null,
       concepto: String(p.concepto), campana: String(p.campana), cantidad: p.cantidad == null ? null : Number(p.cantidad), unidad: p.unidad,
       precio: p.precio == null ? null : Number(p.precio), moneda: p.moneda || "ARS", meses: Array.isArray(p.meses) ? p.meses.map(Number) : null,
@@ -889,6 +896,13 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     setCostoProd(nombresAct
       .map(nombre => ({ nombre, montos: porActividad[nombre] || {}, fuera: fueraPorActividad[nombre] || [],
         actividadId: listaActs.find(a => a.nombre === nombre)?.id ?? null,
+        ...(() => {
+          const a = listaActs.find(x => x.nombre === nombre)
+          if (!a) return {}
+          const dp: Record<string, { id: string; dieta: string }> = {}
+          for (const [k, v] of Object.entries(dietaPlan)) if (k.startsWith(`${a.id}|`)) dp[k.split("|")[1]] = v
+          return { dietas: dietasDe(deRacion.filter(i => (i as any).actividad_id === a.id) as any[]), dietaDefault: (a as any).dieta_default ?? null, dietaPlan: dp }
+        })(),
         renglones: (renglones[nombre] || []).sort((a, b) => total(b.montos) - total(a.montos)),
         lotes: Object.entries(desglose[nombre] || {}).map(([id, v]) => ({ id, nombre: v.nombre, montos: v.montos,
           insumos: Object.values(v.insumos).sort((a, b) => total(b.montos) - total(a.montos)) }))
@@ -2397,6 +2411,19 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   )
 
   // Función (no componente): así React conserva el estado del modal entre recargas de la grilla.
+  /** Las campañas que se pueden planificar: la de hoy en adelante, dentro de la grilla. */
+  const campanasPlan = Array.from(new Set(meses.map(m => campanaDeMes(`${m.anio}-${String(m.mes).padStart(2, "0")}`)))).filter(c => c >= campanaDeMes(mesArgentina()))
+  /** 🥣 Guarda (o quita) la dieta del año de una actividad: una fila del plan con actividad_id + dieta. */
+  const elegirDieta = async (actividadId: string, campana: string, dieta: string | null, filaId?: string) => {
+    const r = filaId
+      ? (dieta ? await supabase.from("presupuesto_variables").update({ dieta, updated_at: new Date().toISOString() }).eq("id", filaId)
+               : await supabase.from("presupuesto_variables").delete().eq("id", filaId))
+      : dieta ? await supabase.from("presupuesto_variables").insert({ empresa: "MSA", escenario: "base", campana, concepto: `Dieta ${campana}`,
+          actividad_id: actividadId, dieta, cantidad: 0, precio: 0, distribucion: "calendario", fuente_cantidad: "manual", fuente_precio: "manual",
+          fundamento: "Dieta del año elegida desde el presupuesto", activo: true }) : { error: null }
+    if (r.error) { alert("No se pudo guardar la dieta: " + r.error.message); return }
+    await cargarDatos()
+  }
   const menuTpl = (t: FilaTemplate) => (
     <MenuFilaTemplate key={`menu-${t.id}`} templateId={t.id} familiaIds={(t as any).familiaIds} nombre={t.nombre} meses={mesesDesdeHoy}
       montos={(t as any).montosAntesDeFuera || t.montos}
@@ -2460,7 +2487,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       </Dialog>
 
       <EditorPlanRenglon abierto={!!editorPlan} renglon={editorPlan}
-        campanas={Array.from(new Set(meses.map(m => campanaDeMes(`${m.anio}-${String(m.mes).padStart(2, "0")}`)))).filter(c => c >= campanaDeMes(mesArgentina()))}
+        campanas={campanasPlan}
         onCerrar={() => setEditorPlan(null)} onGuardado={() => cargarDatos()} />
 
       {/* 📍 A-FEAT-1660 — de qué saldo arranca, el puente hasta hoy y lo impago vencido */}
@@ -3125,6 +3152,19 @@ Clic para presupuestar la venta`}
                                 <button type="button" className="ml-2 rounded border border-gray-300 px-1 text-[10px] text-gray-600 hover:bg-gray-100"
                                   title="Abrir el editor completo de las actividades y sus recetas (insumos, cantidades, precios)"
                                   onClick={e => { e.stopPropagation(); setEditorActividades(true) }}>✏️ editar receta</button>
+                                {c.actividadId && !!c.dietas?.length && campanasPlan.map(camp => (
+                                  // 🥣 La dieta de esta campaña (plan del año). «La de la receta» = la de default. (JMS 26/11)
+                                  <label key={`dieta-${camp}`} className="ml-2 text-[10px] text-gray-500" onClick={e => e.stopPropagation()}
+                                    title="Qué dieta se usa en esta campaña. «Default» = la que marcaste en la receta.">
+                                    dieta {camp}:
+                                    <select className={`ml-1 h-5 rounded border px-0.5 text-[10px] ${c.dietaPlan?.[camp] ? "border-emerald-400 text-emerald-800" : "border-gray-300"}`}
+                                      value={c.dietaPlan?.[camp]?.dieta ?? ""}
+                                      onChange={e => void elegirDieta(c.actividadId!, camp, e.target.value || null, c.dietaPlan?.[camp]?.id)}>
+                                      <option value="">default ({c.dietaDefault || "sin elegir"})</option>
+                                      {c.dietas.map(d => <option key={d} value={d}>{d}</option>)}
+                                    </select>
+                                  </label>
+                                ))}
                                 {c.actividadId && (
                                   <button type="button" className="ml-1 rounded border border-emerald-300 px-1 text-[10px] text-emerald-700 hover:bg-emerald-50"
                                     title="Agregar un renglón propio del plan de este año (que no está en la receta)"

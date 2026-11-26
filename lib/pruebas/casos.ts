@@ -333,6 +333,7 @@ import { vinculoDelMail } from "@/lib/pagos/vinculo-mail-pago"
 import { calcularArranque, clasificarFila, lineaDeSaldo, controlDosFuentes, totalComposicion, estaEnLaGrilla, type FilaReal } from "@/lib/presupuesto/arranque"
 import { recortarPorFamilia } from "@/lib/presupuesto/templates"
 import { pesoInicialTramo, gananciaDesdeNacimiento } from "@/lib/productivo/tramos"
+import { insumosDeDieta, dietasDe } from "@/lib/productivo/actividades"
 import { costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
@@ -9124,6 +9125,11 @@ export function correrCasos(): Resultado[] {
     chequear("Productivo", "🐣 La curva del ternero al pie sale del lote: nacimiento 30 kg → peso del lote; si se cambian los kg del lote, cambia (vinculado)",
       "g 0.782 · nov 126.2 · con 250 kg 141.4", `g ${gNac?.toFixed(3)} · nov ${pNac.toFixed(1)} · con 250 kg ${pNac250.toFixed(1)}`,
       `g ${gNac?.toFixed(3)} · nov ${pNac.toFixed(1)} · con 250 kg ${pNac250.toFixed(1)}` === "g 0.782 · nov 126.2 · con 250 kg 141.4", "A-FEAT-1663")
+    // 🥣 Dietas (script 305): sin dieta = va en todas; con dieta = sólo en la suya; la elegida manda (si no, la de default)
+    const insD = [{ c: "Maíz", dieta: "Maíz y concentrado" }, { c: "Conc", dieta: "Maíz y concentrado" }, { c: "Maíz", dieta: "Con silo" }, { c: "Silo", dieta: "Con silo" }, { c: "Sal", dieta: null }]
+    const dRes = `${insumosDeDieta(insD, "Con silo").map(i => i.c).join("+")} · ${insumosDeDieta(insD, "Maíz y concentrado").map(i => i.c).join("+")} · ${insumosDeDieta(insD, null).map(i => i.c).join("+")} · ${dietasDe(insD).join("/")}`
+    chequear("Productivo", "🥣 Dietas alternativas: la elegida suma sólo sus renglones + los que van en todas (nunca dos dietas juntas)",
+      "Maíz+Silo+Sal · Maíz+Conc+Sal · Sal · Con silo/Maíz y concentrado", dRes, dRes === "Maíz+Silo+Sal · Maíz+Conc+Sal · Sal · Con silo/Maíz y concentrado", "A-FEAT-1663")
     // 🧾 IVA aparte (JMS 25/11): implantación neta US$ 750 × 15 ha × 1.500 + 21 % · plan 34 ha × US$ 750 × TC 1.000 + 21 % en 4 meses
     const implIva = costoRecetaCampana(fila({ concepto: "Implantación", modo: "monto_ha", valor: 750, moneda: "USD", has_aplicacion: 15, iva_pct: 21, meses_pct: { 2: 25, 3: 25, 4: 25, 5: 25 } }), ctx, "26/27", "2026-11")
     const tc1000 = { "2027-02": 1000, "2027-03": 1000, "2027-04": 1000, "2027-05": 1000 }

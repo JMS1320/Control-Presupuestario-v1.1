@@ -47,6 +47,8 @@ export interface Actividad {
   pct_mortandad: number
   notas: string | null
   activo: boolean
+  /** La dieta que se usa si el plan del año no elige otra (script 305). */
+  dieta_default?: string | null
 }
 
 /**
@@ -108,6 +110,10 @@ export interface InsumoActividad {
   categoria_insumo_id: string | null
   producto: string | null
   notas: string | null
+  /** La dieta a la que pertenece (script 305). NULL = va en todas. */
+  dieta?: string | null
+  /** IVA % que suma la caja del presupuesto (script 302). */
+  iva_pct?: number | null
 
   // ── La base propia del costo ────────────────────────────────────────────────
   // Un costo no se aplica sobre "lo que haya": se aplica sobre LO SUYO. El mantenimiento de
@@ -185,6 +191,8 @@ export interface Tramo {
   hasta: string
   /** Peso por cabeza al arrancar el tramo. */
   peso_inicial_kg: number
+  /** La dieta de este tramo (la del plan del año). Sin dato: la `dieta_default` de la actividad. */
+  dieta?: string | null
   /** Sólo para los costos por hectárea. */
   hectareas?: number
   /**
@@ -216,6 +224,19 @@ export interface ConsumoMes {
     producto: string | null
   }[]
   costo_total: number
+}
+
+/**
+ * 🥣 DIETAS (A-FEAT-1663, script 305 — JMS 26/11: «para engorde hay muchas dietas diferentes… alternativas dentro de la receta y una
+ * por default; en el plan del año pongo cuál uso»). Un renglón con `dieta` va sólo en esa dieta; sin `dieta`, en todas.
+ * Se filtra ACÁ, en `consumoMensual`, para que la grilla, el simulador y los tramos sumen lo mismo (si no, dos dietas se sumarían).
+ */
+export function insumosDeDieta<T extends { dieta?: string | null }>(insumos: T[], dieta: string | null): T[] {
+  return insumos.filter(i => !i.dieta || i.dieta === dieta)
+}
+/** Las dietas que tiene cargadas una actividad (para elegir). */
+export function dietasDe(insumos: { dieta?: string | null }[]): string[] {
+  return Array.from(new Set(insumos.map(i => i.dieta).filter((d): d is string => !!d))).sort()
 }
 
 const diasDelMes = (anio: number, mes: number) => new Date(anio, mes, 0).getDate()
@@ -275,7 +296,7 @@ export function consumoMensual(t: Tramo): ConsumoMes[] {
     const esUltimo = idx === buckets.length - 1
 
     const items: ConsumoMes['items'] = []
-    for (const ins of t.insumos) {
+    for (const ins of insumosDeDieta(t.insumos, t.dieta ?? t.actividad.dieta_default ?? null)) {
       const { cantidad, aplica } = cantidadDelItem(ins, {
         racKgDia, dias, diasTotales, cabezas: t.cabezas, pesoProm: pProm,
         hectareas: t.hectareas ?? 0, valorProduccion: t.valor_produccion ?? 0,

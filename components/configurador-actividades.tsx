@@ -21,6 +21,7 @@ import type { PuntoSerie } from "@/lib/precios/serie"
 import {
   consumoMensual, ETIQUETA_MODO, ETIQUETA_MOMENTO, MOMENTO_POR_DEFECTO, esMontoDirecto, usaRacion,
   type Actividad, type InsumoActividad, type ModoCosto, type MomentoCosto, type Tramo, type TipoActividad,
+  dietasDe,
 } from "@/lib/productivo/actividades"
 
 const MODOS = Object.keys(ETIQUETA_MODO) as ModoCosto[]
@@ -106,7 +107,7 @@ export function ConfiguradorActividades() {
         ganancia_diaria_kg: a.ganancia_diaria_kg,
         racion_pct_pv: a.racion_pct_pv,
         pct_mortandad: a.pct_mortandad,
-        notas: a.notas, activo: a.activo,
+        notas: a.notas, activo: a.activo, dieta_default: (a as any).dieta_default ?? null,
         updated_at: new Date().toISOString(),
       }).eq("id", a.id)
     setGuardando(false)
@@ -126,6 +127,7 @@ export function ConfiguradorActividades() {
       .update({
         concepto: v.concepto, modo: v.modo, valor: v.valor, unidad: v.unidad,
         momento: v.momento, moneda: v.moneda, precio_unitario: v.precio_unitario, iva_pct: (v as any).iva_pct ?? null,
+        dieta: ((v as any).dieta ?? "").trim() || null,
         producto: v.producto, notas: v.notas, orden: v.orden,
         updated_at: new Date().toISOString(),
       }).eq("id", v.id)
@@ -274,6 +276,18 @@ export function ConfiguradorActividades() {
                             valor={a.pct_mortandad * 100}
                             onCommit={n => guardarActividad({ ...a, pct_mortandad: n / 100 })} />
                         </div>
+                        {dietasDe(items).length > 0 && (
+                          // 🥣 La dieta por default (script 305): la que va si el plan del año no elige otra.
+                          <div>
+                            <label className="text-[11px] text-gray-500">Dieta por default</label>
+                            <select className="h-8 w-full rounded border border-gray-200 px-1 text-xs" value={(a as any).dieta_default ?? ""}
+                              onChange={e => guardarActividad({ ...a, dieta_default: e.target.value || null } as any)}>
+                              <option value="">— sin elegir (sólo los renglones sin dieta) —</option>
+                              {dietasDe(items).map(d => <option key={d} value={d}>{d}</option>)}
+                            </select>
+                            <p className="mt-0.5 text-[10px] text-gray-400">el plan del año puede elegir otra</p>
+                          </div>
+                        )}
                       </>
                     ) : (
                       <p className="col-span-3 self-end text-[11px] text-gray-400">
@@ -303,6 +317,7 @@ export function ConfiguradorActividades() {
                           <thead>
                             <tr className="border-b text-[10px] text-gray-500">
                               <th className="py-1 text-left font-medium">Concepto</th>
+                              <th className="py-1 text-left font-medium" title="Dietas alternativas: el renglón va sólo en esa dieta. Vacío = va en todas. Ej.: «Con silo de sorgo».">Dieta</th>
                               <th className="py-1 text-left font-medium">Cómo escala</th>
                               <th className="py-1 text-right font-medium">Valor</th>
                               <th className="py-1 text-left font-medium">Unidad</th>
@@ -323,6 +338,13 @@ export function ConfiguradorActividades() {
                                     <Input className="h-7 min-w-[7rem] text-xs" value={i.concepto}
                                       onChange={e => setInsumos(prev => prev.map(x => x.id === i.id ? { ...x, concepto: e.target.value } : x))}
                                       onBlur={() => guardarInsumo(i)} />
+                                  </td>
+                                  <td className="py-1 pr-2">
+                                    {/* 🥣 Dieta del renglón (vacío = todas) */}
+                                    <Input className="h-7 w-28 text-xs" placeholder="todas" list={`dietas-${a.id}`} value={(i as any).dieta ?? ""}
+                                      onChange={e => setInsumos(prev => prev.map(x => x.id === i.id ? ({ ...x, dieta: e.target.value } as any) : x))}
+                                      onBlur={() => guardarInsumo(i)} />
+                                    <datalist id={`dietas-${a.id}`}>{dietasDe(items).map(d => <option key={d} value={d} />)}</datalist>
                                   </td>
                                   <td className="py-1 pr-2">
                                     <select className="h-7 w-full min-w-[9rem] rounded border border-gray-200 px-1 text-xs"
