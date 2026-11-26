@@ -803,13 +803,19 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     // ── 1) RACIÓN: lote → tramo → curva de peso (como siempre) ──
     type Ins = { concepto: string; montos: Record<string, number>; detalle: Record<string, string>; resumen?: string }
     const desglose: Record<string, Record<string, { nombre: string; montos: Record<string, number>; insumos: Record<string, Ins> }>> = {}
+    // 🐮 A-FEAT-1665 — al pie comen TODOS los terneros del ciclo: las hembras que se retienen para reposición no tienen lote propio
+    // hasta el destete, así que en los períodos ANTERIORES al destete se suman al lote de hembras al pie (JMS 26/11).
+    const retenidasDe = new Map(calcularLineaTiempo(((ciclos || []) as any[])).map(c => [String((c.ciclo as any).id), Number(c.retenidas) || 0]))
+    const extraAlPie = (l: LoteStock) => /ternera.*al pie/i.test(String(l.categoria)) && (l as any).ciclo_id ? (retenidasDe.get(String((l as any).ciclo_id)) || 0) : 0
     for (const l of ((lotes || []) as LoteStock[])) {
       const mios = listaTramos.filter(t => t.lote_id === l.id)
       if (mios.length === 0 || deRacion.length === 0) continue
       const dmy = (f: any) => String(f || "").split("-").reverse().join("/")
       const rango = mios.map((t: any) => `${dmy(t.fecha_desde)}–${dmy(t.fecha_hasta)}`).join(", ")
-      const nombreLote = `${l.categoria} · ${fmtN(Number(l.cantidad) || 0)} cab · tramo ${rango} · disponible ${dmy(l.fecha_disponible)}`
-      for (const t0 of tramosParaCosto(l as unknown as LoteCurva, mios, listaActs, deRacion)) {
+      const extra = extraAlPie(l)
+      const nombreLote = `${l.categoria} · ${fmtN(Number(l.cantidad) || 0)} cab${extra ? ` (+ ${fmtN(extra, 1)} retenidas al pie)` : ""} · tramo ${rango} · disponible ${dmy(l.fecha_disponible)}`
+      for (const tA of tramosParaCosto(l as unknown as LoteCurva, mios, listaActs, deRacion)) {
+        const t0 = extra && tA.hasta <= String(l.fecha_disponible) ? { ...tA, cabezas: tA.cabezas + extra } : tA
         const t = { ...t0, dieta: dietaPlan[`${t0.actividad.id}|${campanaDeMes(t0.desde.slice(0, 7))}`]?.dieta ?? null }
         const nombre = t.actividad.nombre
         const lote = ((desglose[nombre] ??= {})[l.id] ??= { nombre: nombreLote, montos: {}, insumos: {} })
