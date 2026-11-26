@@ -332,6 +332,7 @@ import { filasExtractoEcheqs } from "@/lib/ventas/extracto-echeqs"
 import { vinculoDelMail } from "@/lib/pagos/vinculo-mail-pago"
 import { calcularArranque, clasificarFila, lineaDeSaldo, controlDosFuentes, totalComposicion, estaEnLaGrilla, type FilaReal } from "@/lib/presupuesto/arranque"
 import { recortarPorFamilia } from "@/lib/presupuesto/templates"
+import { costoRecetaCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
@@ -9086,6 +9087,32 @@ export function correrCasos(): Resultado[] {
     chequear("Presupuesto", "👪 Familia de templates: el de 2027 no proyecta en nov-26 (había doble conteo); el anticipo viejo deja de proyectar cuando empieza la campaña siguiente; un template sin familia no cambia; las cuotas reales nunca se tocan",
       "g26 nov26 5000 nov27 0 · g27 nov26 0 nov27 5000 · viejo oct25 1071 nov26 0 · 2526 oct26 900 · solo 300", txt,
       txt === "g26 nov26 5000 nov27 0 · g27 nov26 0 nov27 5000 · viejo oct25 1071 nov26 0 · 2526 oct26 900 · solo 300", "A-BUG-1662")
+  }
+
+  // ══ 🌾 A-FEAT-1663 — costo de producción en caja: receta por campaña + plan del año ══
+  {
+    const fila = (o: Partial<any>): any => ({ actividad: "Cría", concepto: "x", modo: "monto_cabeza", valor: 0, unidad: null, moneda: "ARS",
+      has_aplicacion: null, amortiza_anios: null, base_cabezas: null, cabezas_aplicacion: null, cantidad_aplicacion: null, fundamento: null, notas: null, ...o })
+    const ctx: any = { has: 100, cabezas: 260, cabezasCiclo: { rodeo: 260, vacas: 200, vaquillonas: 40, destetados: 0, terneros: 90, terneras: 90, retenidas: 0, toritos: 0 }, tc: 1500, tcPorMes: {} }
+    // Rollos — receta: 1 rollo por vaca × 20 l × $ 2.500 = $ 50.000 por vaca; nov/dic/ene
+    const rollos = costoRecetaCampana(fila({ concepto: "Rollos", valor: 50000, base_cabezas: "vacas", meses_pct: { 11: 33.33, 12: 33.33, 1: 33.34 } }), ctx, "26/27", "2026-11")
+    const rTot = Math.round(Object.values(rollos.porMes).reduce((a, b) => a + b, 0))
+    // Implantación — US$ 750/ha × 15 ha, amortiza 4 años en el Margen → en CAJA va entera; feb–may
+    const impl = costoRecetaCampana(fila({ concepto: "Implantación", modo: "monto_ha", valor: 750, moneda: "USD", has_aplicacion: 15, amortiza_anios: 4, meses_pct: { 2: 25, 3: 25, 4: 25, 5: 25 } }), ctx, "26/27", "2026-11")
+    const iTot = Math.round(Object.values(impl.porMes).reduce((a, b) => a + b, 0))
+    // Gasoil — 8.000 l × $ 2.500, 2 compras (sep y mar): desde nov-26 sólo queda marzo
+    const gas = costoRecetaCampana(fila({ concepto: "Gasoil", modo: "monto_unidad", valor: 2500, cantidad_aplicacion: 8000, meses_pct: { 9: 50, 3: 50 } }), ctx, "26/27", "2026-11")
+    const plan = (o: Partial<RenglonPlan>): RenglonPlan => ({ id: "p", receta_insumo_id: "r", actividad_id: null, concepto: "x", campana: "26/27", cantidad: 0, unidad: null, precio: 0, moneda: "ARS", meses: null, ...o })
+    const pRollos = elegirPlanOReceta(plan({ cantidad: 170, unidad: "rollos", precio: 50000, meses: [12] }), () => rollos, {}, "2026-11")
+    const pApaga = elegirPlanOReceta(plan({ cantidad: 0 }), () => rollos, {}, "2026-11")
+    const sinPlan = elegirPlanOReceta(undefined, () => rollos, {}, "2026-11")
+    const res = `rollos ${rTot} nov ${Math.round(rollos.porMes["2026-11"])} · impl ${iTot} abr ${Math.round(impl.porMes["2027-04"])} · gas ${JSON.stringify(Object.keys(gas.porMes))} ${Math.round(gas.porMes["2027-03"])} · plan ${pRollos.origen} dic ${pRollos.porMes["2026-12"]} · 0 ${Object.keys(pApaga.porMes).length ? "suma" : "nada"} · sin plan ${sinPlan.origen}`
+    chequear("Presupuesto", "🌾 Caja por campaña: rollos 1/vaca (200 vacas × $ 50.000), implantación entera sin amortizar (15 ha × US$ 750 × 1.500), gasoil sólo marzo; el plan (170 rollos en dic) manda, «0» apaga, sin plan va la receta",
+      'rollos 10000000 nov 3333000 · impl 16875000 abr 4218750 · gas ["2027-03"] 10000000 · plan plan dic 8500000 · 0 nada · sin plan receta', res,
+      res === 'rollos 10000000 nov 3333000 · impl 16875000 abr 4218750 · gas ["2027-03"] 10000000 · plan plan dic 8500000 · 0 nada · sin plan receta', "A-FEAT-1663")
+    chequear("Presupuesto", "🌾 Campañas: nov-26 es 26/27, jun-27 también, jul-27 ya es 27/28; el mes 3 de 26/27 es marzo de 2027",
+      "26/27 26/27 27/28 2027-03", `${campanaDeMes("2026-11")} ${campanaDeMes("2027-06")} ${campanaDeMes("2027-07")} ${mesEnCampana("26/27", 3)}`,
+      `${campanaDeMes("2026-11")} ${campanaDeMes("2027-06")} ${campanaDeMes("2027-07")} ${mesEnCampana("26/27", 3)}` === "26/27 26/27 27/28 2027-03", "A-FEAT-1663")
   }
 
   // ══ 🔢 A-FEAT-1658 — los Excel de echeqs del mismo día también se numeran (contador del navegador) ══
