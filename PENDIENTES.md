@@ -19496,6 +19496,26 @@ va cambiando la diferencia hasta llegar a terminado, pero trazado y auditable»*
 - Lo que sigue para achicarla, cuando JMS lo elija: la brecha de arranque (qué tenía el contador al 30/06/25 que nuestro balance propio no:
   anticipos 31,7 M, provisión 12,46 M, cuenta socio 45,9 M…) y las cuentas con socios (Q4).
 
+**9 · 27/11 — EL MAESTRO DE TEMPLATES COMO CRUDO FILTRABLE: plan propuesto (espera el OK de JMS a S1–S3)**
+
+- JMS: *«agregá las columnas contable e interno en Cuotas, pero pensemos qué más habría que hacer: el orden escalonado y alguna columna para
+  diferenciar los tipos de retiros… que el número que se vea en el detalle de socios se pueda ver desglosado desde el crudo… un plan
+  consistente»*.
+- ✅ **Hecho (versión `1f68117f`)**: «Cuotas» del libro Templates trae **Contable** e **Interno** al final (el código del MOVIMIENTO que pagó la
+  cuota; vacío si no tiene). Caso nuevo en `npm run probar` (1666/1666), type-check sin empeorar.
+- 🔎 **Lo que se vio al pensarlo**: la 14.1 agrupa por CUENTA (Galicia, Santander, PAM cta cte…), no por tipo; y buena parte de lo de JMS y
+  AMS **no está en Templates** (sueldos pagados por transferencia «sin template», facturas del libro diario). Desde Templates solo no se llega al
+  número del socio. La capa nueva (`scripts/balance-tres-capas.mts`) ya tiene «Crudo · Templates» con quién pagó y los códigos, y «Crudo ·
+  Socios» con cada asiento de la 14.1: **se reusa esa lógica, no se escribe otra**.
+- **Plan** (un paso por vez, con su visto bueno): (1) códigos en Cuotas ✅ · (2) columnas **Socio** y **Efecto en el socio** (retiro directo ·
+  pago por su cuenta · reintegro · Libertad · aporte · factura/sueldo · no toca), calculadas por la MISMA función que arma la 14.1 · (3) las mismas
+  columnas en Libro Diario y Sueldos, y un lugar para los movimientos con código de socio sin template ni sueldo · (4) orden escalonado
+  colapsable (tipo → responsable → agrupadora → template → cuota) con subtotal por escalón y filtros · (5) control por socio: suma del crudo por
+  socio y tipo = saldo de la 14.1, ✓/⚠️ a la vista · piloto la cuenta de MA, después JMS, AMS, PAM.
+- **Preguntas a JMS**: S1 el código, ¿del movimiento (hecho) o de la regla del template (21/11 punto 2: «en templates se toma del template»)? ·
+  S2 ¿los tipos del punto (2) son los del protocolo de socios (CLAUDE.md § 🤝, 22/11)? · S3 ¿dónde viven en el crudo los pagos a socios sin
+  template ni sueldo?
+
 ## <a id="a-feat-1635"></a>A-FEAT-1635 — Saldos INTERNOS entre las cuentas desde el 31/12/2024 en cero 🤝
 
 **1 · 21/11 — v1 entregada (tanda sin supervisión, rama `jms/tanda-2026-11-21-balance-en-linea`, sin mergear)**
