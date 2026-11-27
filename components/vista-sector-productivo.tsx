@@ -1178,6 +1178,14 @@ function TabHacienda() {
   /** 💵 A-FEAT-1676: plazo de cobro (días) y fecha de cobro — la fecha escrita manda; si no, fecha de venta + plazo (como «Completar venta»). */
   const [plazoVenta, setPlazoVenta] = useState('')
   const [fechaCobroVenta, setFechaCobroVenta] = useState('')
+  /** ✂️ A-FEAT-1675 D — de qué LOTE del presupuesto sale la venta (si no, el presupuesto la cuenta dos veces: la venta y el lote). */
+  const [loteVenta, setLoteVenta] = useState('')
+  const [lotesVenta, setLotesVenta] = useState<{ id: string; categoria: string; cantidad: number; fecha_venta_estimada: string | null }[]>([])
+  useEffect(() => {
+    supabase.schema('productivo').from('stock_lotes').select('id, categoria, cantidad, fecha_venta_estimada, destino_actividad_id').eq('empresa', 'MSA')
+      .then(({ data }) => setLotesVenta(((data || []) as any[]).filter(l => !l.destino_actividad_id && Number(l.cantidad) > 0)
+        .map(l => ({ id: String(l.id), categoria: String(l.categoria), cantidad: Number(l.cantidad), fecha_venta_estimada: l.fecha_venta_estimada ?? null }))))
+  }, [])
   const [caravanasSeleccionadas, setCaravanasSeleccionadas] = useState<string[]>([])
   // Mortandad terneros — selector caravanas múltiples
   const [ternerosParaBaja, setTernerosParaBaja] = useState<{ id: string, caravana_interna: string | null, caravana_oficial: string | null, sexo: string | null, pelo: string | null }[]>([])
@@ -1432,7 +1440,7 @@ function TabHacienda() {
     setFilasAnimales([])   // que la próxima carga no arrastre los animales de la anterior
     setCaravanasActivasCUT([])
     setCaravanasSeleccionadas([])
-    setRenglonesVenta([renglonVacio()]); setSinCaravanaVenta([]); setBuscarCaravanaVenta(''); setPlazoVenta(''); setFechaCobroVenta('')
+    setRenglonesVenta([renglonVacio()]); setSinCaravanaVenta([]); setBuscarCaravanaVenta(''); setPlazoVenta(''); setFechaCobroVenta(''); setLoteVenta('')
     setTernerosParaBaja([])
     setTernerosSeleccionadosBaja(new Set())
     setMotivoBajaTernero('')
@@ -1670,7 +1678,7 @@ function TabHacienda() {
       const cobro = condicionesVenta({ netoCalculado: null, netoEscrito: '', alicuotaIva: '', fechaVenta: nuevoMov.fecha, plazoDias: plazoVenta, fechaCobroEscrita: fechaCobroVenta })
       const { data: sv, error: eVenta } = await supabase.schema('productivo').from('stock_ventas')
         .insert({
-          lote_id: null,                     // venta directa desde el stock, no desde un lote
+          lote_id: loteVenta || null,        // ✂️ A-FEAT-1675 D — el lote del presupuesto del que sale (vacío = no estaba presupuestada)
           categoria_id: nuevoMov.categoria_id,
           fecha_venta: nuevoMov.fecha,
           cantidad: N,
@@ -1695,6 +1703,13 @@ function TabHacienda() {
       }
       ventaCreadaId = sv.id
       datos.stock_venta_id = sv.id          // el movimiento queda colgado de SU venta
+      // ✂️ A-FEAT-1675 — si el lote tenía una venta PARCIAL presupuestada con estas cabezas, queda confirmada con esta venta
+      if (loteVenta) {
+        const { data: pars } = await supabase.schema('productivo').from('lote_ventas_plan').select('id, cabezas, fecha_venta').eq('lote_id', loteVenta).is('venta_id', null)
+        const par = ((pars || []) as any[]).filter(x => Math.abs(Number(x.cabezas) - N) < 0.01)
+          .sort((a, b) => Math.abs(Date.parse(a.fecha_venta) - Date.parse(nuevoMov.fecha)) - Math.abs(Date.parse(b.fecha_venta) - Date.parse(nuevoMov.fecha)))[0]
+        if (par) await supabase.schema('productivo').from('lote_ventas_plan').update({ venta_id: sv.id, updated_at: new Date().toISOString() }).eq('id', par.id)
+      }
 
       // § Contrapartes: el comprador queda en el maestro, marcado como cliente (find-or-create).
       // Faltaba acá; con el buscador que separa «otros del maestro» (A-FEAT-165) se hacía visible.
@@ -3442,6 +3457,23 @@ function TabHacienda() {
                             <span className="ml-auto text-muted-foreground">
                               Al Cash Flow entra a cobrar el <b>{(cobro.fechaCobro || nuevoMov.fecha).split('-').reverse().join('/')}</b>{cobro.fechaCobro ? '' : ' (sin plazo: la fecha de la venta)'}
                             </span>
+                          </div>
+                        )
+                      })()}
+                      {(() => {
+                        // ✂️ A-FEAT-1675 D — el lote del presupuesto del que sale (sólo los de esta categoría)
+                        const norm = (x: string) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+                        const cat = norm(categorias.find(c => c.id === nuevoMov.categoria_id)?.nombre ?? '')
+                        const deCat = lotesVenta.filter(l => cat && norm(l.categoria) === cat)
+                        if (!deCat.length) return null
+                        return (
+                          <div className="flex flex-wrap items-center gap-1.5 border-t pt-1.5 text-xs">
+                            <span>Lote del presupuesto</span>
+                            <select className="h-7 rounded border px-1 text-xs" value={loteVenta} onChange={e => setLoteVenta(e.target.value)}>
+                              <option value="">— ninguno (no estaba presupuestada) —</option>
+                              {deCat.map(l => <option key={l.id} value={l.id}>{l.categoria} · {l.cantidad} cab{l.fecha_venta_estimada ? ` · venta ${l.fecha_venta_estimada.split('-').reverse().join('/')}` : ''}</option>)}
+                            </select>
+                            {!loteVenta && <span className="text-amber-700">⚠ si estos animales estaban presupuestados en un lote, elegilo: si no, el presupuesto cuenta la venta dos veces</span>}
                           </div>
                         )
                       })()}
