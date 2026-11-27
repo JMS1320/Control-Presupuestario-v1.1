@@ -385,6 +385,12 @@ controlar que está ya cargado»**.*
   scripts de la base (`scripts/vercel-ignorar.sh`), así que el código de un commit de `PENDIENTES.md` **nunca** aparece arriba. Se saca con
   `git log -1 --format=%h -- . ':(exclude)*.md' ':(exclude)scripts/*.sql'`.
 - Al lado va la **hora** de ese commit: el texto de arriba también muestra la hora en que se publicó, y sirve de segunda señal.
+- 🎯 **El código se saca con ESE comando, tal cual, nunca a mano ni con exclusiones de más** *(JMS 27/11: «debemos trabajar con el mismo
+  dato, si no yo no podré ver — protocolo de comunicación entre nos»)*. El comando copia el criterio de `scripts/vercel-ignorar.sh`: lo
+  que ese archivo NO excluye (los `.mts`, `.json` de `scripts/`) **sí publica**. Y si el último push trajo código con un commit de
+  documentación arriba, Vercel publica la **punta** de ese push: el código es el de la punta. Ante la duda, se lee el criterio en
+  `vercel-ignorar.sh` antes de pasarle el número. *Caso: el 27/11 se le pasó `9e7966e2` sacando a mano los scripts `.mts`; el merge
+  `36496790` los traía y fue lo que se publicó.*
 
 *Motivo: el 25/11 se le pasó `c68e410d` (un commit sólo de PENDIENTES) y arriba seguía `35989346`: el código no podía coincidir nunca, y
 JMS no tenía cómo saber si lo nuevo estaba cargado.*
