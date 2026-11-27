@@ -361,7 +361,7 @@ import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla,
   juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves, ordenarParaLista, rangoDelDia, ordenarCronologico, leerBusqueda, coincideBusquedaMail, textoBuscable } from "@/lib/mails/registro"
 import { pasaGrupos, clickChipGrupo, chipPrendido, sexoDeCategoria, sexoACorregir, hojaDe } from "@/lib/productivo/grupos-terneros"
 import { deOtraCategoria } from "@/lib/ganaderia/confirmar-venta"
-import { precioDeVenta, controlCaravanas } from "@/lib/ganaderia/venta-movimiento"
+import { totalRenglones, controlCaravanas } from "@/lib/ganaderia/venta-movimiento"
 import { CATS_PLANILLA as CATS_PLANILLA_HAC, totalVientres as totalVientresPlanilla } from "@/lib/productivo/planilla-hacienda"
 import { opcionesDeColumna, filtrarPorColumnas, seleccionConBusqueda, listaPegada, cruzarPegadas, restoDePegadas, coincideBusqueda as coincideBusquedaColumna } from "@/lib/ui/filtro-columna"
 import { valorFiltroCuota } from "@/lib/templates/filtro-cuotas"
@@ -12286,12 +12286,14 @@ Importe Neto Gravado: $ 7338020,40
       }
       // 🐄 A-FEAT-1671 (JMS 27/11): la venta desde Productivo, por kg o por cabeza, y el control caravanas = cabezas
       {
-        const c1 = precioDeVenta({ modo: "cabeza", cabezas: 2, precioCabeza: "1.500.000,00", kg: "1.600" })
-        const c2 = precioDeVenta({ modo: "kg", cabezas: 2, precioKg: "2.000", kg: "1.600" })
-        const c3 = precioDeVenta({ modo: "kg", cabezas: 2, precioKg: "2.000", kg: "1.600", montoEscrito: "3.100.000" })
-        const vPV = `${c1.precio_kg}/${c1.monto} · ${c2.precio_kg}/${c2.monto} · ${c3.monto} | ${controlCaravanas(2, 2).ok} ${controlCaravanas(1, 2).texto} · ${controlCaravanas(3, 2).texto}`
-        const espPV = "null/3000000 · 2000/3200000 · 3100000 | true faltan 1 caravana(s): tildaste 1 de 2 cabezas · sobran 1 caravana(s): tildaste 3 para 2 cabezas"
-        chequear("Productivo", "🐄 Venta: por cabeza el importe = precio × cabezas sin $/kg inventado; por kg kg × precio salvo importe escrito; control caravanas = cabezas",
+        // «2 toros a tanto y 1 toro a tanto»: 2 × $ 1.500.000 por cabeza + 1 de 800 kg a $ 2.000/kg
+        const t1 = totalRenglones([{ cabezas: "2", modo: "cabeza", precio: "1.500.000", kg: "" }, { cabezas: "1", modo: "kg", precio: "2.000", kg: "800" }])
+        const t2 = totalRenglones([{ cabezas: "3", modo: "kg", precio: "2.000", kg: "1.600" }])
+        const t3 = totalRenglones([{ cabezas: "2", modo: "kg", precio: "2.000", kg: "900" }, { cabezas: "1", modo: "kg", precio: "2.100", kg: "" }])
+        const vPV = `${t1.cabezas}/${t1.kg}/${t1.monto}/${t1.precio_kg}/${t1.completo} · ${t2.monto}/${t2.precio_kg}/${t2.nota} · ${t3.monto}/${t3.precio_kg}/${t3.completo}`
+          + ` | ${controlCaravanas(2, 3, 1).texto} · ${controlCaravanas(2, 3).texto}`
+        const espPV = "3/null/4600000/null/true · 3200000/2000/null · 1800000/null/false | ✓ 2 con caravana + 1 sin caravana = 3 cabezas · faltan 1: 2 caravanas de 3 cabezas"
+        chequear("Productivo", "🐄 Venta en renglones: 2 por cabeza + 1 por kg suman cabezas e importe sin $/kg inventado; un solo precio por kg da su $/kg; kilos totales sólo si todos los tienen; caravanas + sin caravana = cabezas",
           espPV, vPV, vPV === espPV, "A-FEAT-1671")
       }
       // 🔽 nota JMS 10/11: la tabla de Cuotas con filtro por columna — fechas por mes, monto es-AR, la CATEG de la cuota manda
