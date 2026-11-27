@@ -19515,6 +19515,13 @@ va cambiando la diferencia hasta llegar a terminado, pero trazado y auditable»*
 - **Preguntas a JMS**: S1 el código, ¿del movimiento (hecho) o de la regla del template (21/11 punto 2: «en templates se toma del template»)? ·
   S2 ¿los tipos del punto (2) son los del protocolo de socios (CLAUDE.md § 🤝, 22/11)? · S3 ¿dónde viven en el crudo los pagos a socios sin
   template ni sueldo?
+- ✅ **Respuestas de JMS (27/11)**: S1 **del pago** · S2 **sí** · S3 *«¿deberían estar en detalle de sueldos, como un crudo de sueldos?»* → sí. Visto
+  en la base (Galicia MSA, ejercicio): los «JMS SUELDO ← sin referencia» de la 14.1 **ya están atados a su sueldo** (CTA JMS 16 movimientos
+  37.834.647,76 · CTA AMS 21 · 23.803.334,73): son del crudo de Sueldos; la 14.1 sólo los rotula «sin template». **Huérfanos de verdad** (sin
+  sueldo ni template, sólo Galicia MSA): CTA JMS 3 · 348.471,00 (las 3 compras ya conocidas) · CTA MA 3 · 3.048.290,18 · CTA PAM 4 · 1.942.368,00 —
+  falta mirar las otras cuentas de MSA.
+- ✅ **Orden (JMS 27/11, regla nueva en CLAUDE.md § 🧮)**: las cuotas van tipo → responsable → agrupadora → template → **fecha al final** (antes
+  tipo → responsable → fecha). Versión `2f96b1d6`; caso nuevo (1667/1667).
 
 ## <a id="a-feat-1635"></a>A-FEAT-1635 — Saldos INTERNOS entre las cuentas desde el 31/12/2024 en cero 🤝
 
