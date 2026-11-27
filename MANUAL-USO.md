@@ -1040,6 +1040,11 @@ pesada— y el cruce que da la certeza:
 > Balanza de venta **276,0 kg**/cab · última pesada **278,6 kg** · diferencia **−2,6 kg**
 > — *la venta pesa MENOS que la última pesada. O perdieron peso, o la tropa no es ésta.*
 
+⚠️ **Si una caravana pegada no es de la categoría del lote** (ej. una hembra en la venta de Ternero Recría), su fila queda en ámbar y
+arriba aparece «N caravanas no son …». Avisa, no frena: revisalo antes de confirmar. Si se venden juntos machos y hembras, se confirma
+cada lote con sus caravanas.
+⚠️ Sin probar todavía → A-TEST-1405
+
 **Los kg NO se reparten entre los animales.** La pesada de venta es grupal; prorratearla supondría
 que todos ganaron lo mismo por día. Lo que sí se calcula es la **ganancia diaria real del grupo**.
 

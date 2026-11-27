@@ -22,6 +22,7 @@ import { hoyArgentina } from "@/lib/fechas"
 import { useState, useEffect, useMemo, useCallback } from "react"
 import { supabase } from "@/lib/supabase"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { ProveedorCombobox } from "@/components/ui/proveedor-combobox"
 import { altaContraparte } from "@/lib/proveedores/alta"
 import { Button } from "@/components/ui/button"
@@ -30,7 +31,7 @@ import { Loader2, AlertTriangle, CheckCircle2, Upload, ClipboardPaste } from "lu
 import * as XLSX from "xlsx"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import {
-  parsearPegado, matchearCaravanas, gananciaRealDelGrupo, netoDeVenta,
+  parsearPegado, matchearCaravanas, gananciaRealDelGrupo, netoDeVenta, deOtraCategoria,
   type TerneroRef, type MatchCaravana,
 } from "@/lib/ganaderia/confirmar-venta"
 import {
@@ -247,6 +248,10 @@ export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirma
 
   /** ⚠️ Las caravanas y las cabezas tienen que coincidir: si no, uno de los dos está mal. */
   const desfase = entradas.length > 0 ? ok.length - nCab : 0
+  /** ⚠️ A-FEAT-1669: caravanas pegadas que no son de la categoría del lote (avisa, no frena). */
+  const otraCategoria = useMemo(() => deOtraCategoria(
+    ok.map(m => fichas[m.ternero!.id]).filter(Boolean) as FichaAnimal[], lote?.categoria), [ok, fichas, lote?.categoria])
+  const idsOtraCategoria = new Set(otraCategoria.map(f => f.id))
 
   // ── El preview de la tropa elegida ─────────────────────────────────────────
   //
@@ -401,6 +406,7 @@ export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirma
             </Badge>
           </DialogTitle>
         </DialogHeader>
+        <TestsDelProceso proceso="ingresos/confirmar-venta-hacienda" pantalla="ingresos" />
 
         <div className="space-y-3">
           {modoEdicion ? (
@@ -599,6 +605,15 @@ export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirma
                 que pusiste arriba.
               </p>
             )}
+            {otraCategoria.length > 0 && (
+              <p className="mt-1 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] text-amber-900">
+                <AlertTriangle className="mr-1 inline h-3 w-3" />
+                <strong>{otraCategoria.length} {otraCategoria.length === 1 ? "caravana no es" : "caravanas no son"} {lote?.categoria}:</strong>{" "}
+                {otraCategoria.map(f => `${f.caravana} (${f.categoria ?? "sin categoría"}${f.sexo ? ", " + f.sexo.toLowerCase() : ""})`).join(" · ")}.
+                {" "}La venta descuenta {lote?.categoria} del stock y da de baja estas caravanas: si son de otra categoría, el stock y las
+                caravanas dejan de coincidir. Revisalo antes de confirmar (si se venden juntos machos y hembras, se confirma cada lote con sus caravanas).
+              </p>
+            )}
             {desfase !== 0 && entradas.length > 0 && (
               <p className="mt-1 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] text-amber-900">
                 <AlertTriangle className="mr-1 inline h-3 w-3" />
@@ -669,9 +684,12 @@ export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirma
                   </thead>
                   <tbody>
                     {tropa.fichas.map(f => (
-                      <tr key={f.id} className="border-b last:border-0">
+                      <tr key={f.id} className={`border-b last:border-0 ${idsOtraCategoria.has(f.id) ? "bg-amber-50" : ""}`}>
                         <td className="px-2 py-0.5 font-mono text-gray-700">{f.caravana}</td>
-                        <td className="px-2 py-0.5 text-gray-600">{f.categoria ?? "—"}</td>
+                        <td className={`px-2 py-0.5 ${idsOtraCategoria.has(f.id) ? "font-semibold text-amber-800" : "text-gray-600"}`}
+                          title={idsOtraCategoria.has(f.id) ? `No es ${lote?.categoria}` : undefined}>
+                          {idsOtraCategoria.has(f.id) && "⚠️ "}{f.categoria ?? "—"}
+                        </td>
                         <td className="px-2 py-0.5 text-center">
                           {f.sexo === "Macho" ? "♂" : f.sexo === "Hembra" ? "♀" : "—"}
                         </td>
