@@ -939,7 +939,6 @@ de descarte"*. No hace falta que salgan de un lote.
      **$/kg** (con sus kilos) o **$/cabeza**; **＋ agregar renglón** suma otro. La **Cantidad** es la suma de los renglones y el
      total muestra cabezas, kilos e importe. Es una sola venta (un cliente, una factura). Si todos los renglones son por kg al
      mismo precio, ése es el $/kg de la venta; si no, queda el importe y el detalle de los renglones en sus notas.
-   ⚠️ Sin probar todavía → A-TEST-1406
 3. En la grilla, cada venta muestra su estado a la derecha:
    - **⚠ sin venta** (ámbar) — dio de baja animales pero **no entra al circuito comercial**
    - **💰 venta** — ya la tiene
