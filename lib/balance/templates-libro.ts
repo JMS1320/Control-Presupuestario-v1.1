@@ -49,7 +49,10 @@ export function efectoEnSocio(c: Pick<CuotaTemplate, "tipo" | "monto" | "banco">
     // Visto con los datos reales 27/11: los 15 «Retiro MA mensual» (49.595.000) figuraban también como aporte desde la caja de ahorro de MA.
     const deQuien = CONTRAPARTES_DEL_BALANCE.find(x => x.socio && x.clave === titular)
     if (cod !== `CTA ${empresa}` || !deQuien || titular === empresa) return { socio: "", efecto: "" }
-    return { socio: deQuien.clave, efecto: c.monto >= 0 ? "Aporte (pagó por la empresa)" : "Otra punta (ya contada en la empresa)" }
+    // Una transferencia entre el socio y la empresa (tipo «distribucion», p. ej. «Aporte a MSA» de PAM) también es la otra punta: la empresa ya
+    // la registra en su retiro o aporte. Visto con los datos reales 27/11 (v20): los 2 «Aporte a MSA» de PAM (3.500.000 + 1.100.000) se contaban
+    // dos veces contra el «Aporte del socio» −4.600.000 de MSA. Aporte desde la cuenta del socio = sólo lo que pagó a un TERCERO por la empresa.
+    return { socio: deQuien.clave, efecto: c.monto >= 0 && c.tipo !== "distribucion" ? "Aporte (pagó por la empresa)" : "Otra punta (ya contada en la empresa)" }
   }
   const efecto = c.tipo === "distribucion" ? (c.monto >= 0 ? "Retiro directo" : "Aporte del socio")
     : c.tipo === "reintegro" ? "Reintegro (contra su factura)"
@@ -461,7 +464,7 @@ export function armarTemplatesDelEjercicio(
   }
   /**
    * Mismo orden en todas las solapas, AGRUPADO DE PUNTA A PUNTA y la FECHA AL FINAL: tipo → responsable (la empresa del balance
-   * primero) → agrupadora → template → fecha.
+   * primero) → agrupadora → template → categoría → fecha.
    * ⚠️ cambió 27/11 (JMS): hasta acá era tipo → responsable → fecha, y mezclaba templates. *«de punta a punta debe estar agrupado. lo
    * último es la fecha… yo veré ej. Libertad expensas y recién ahí lo veo por fecha. Si es por fecha antes veré mezclado expensas
    * Libertad con expensas de Posadas, y no puedo auditar»*. Dos templates con el mismo nombre no se mezclan: desempata el id.
@@ -475,6 +478,8 @@ export function armarTemplatesDelEjercicio(
     || agrup(a).localeCompare(agrup(b), "es")
     || a.concepto.localeCompare(b.concepto, "es")
     || (a.egresoId ?? "").localeCompare(b.egresoId ?? "")
+    // Un template con varias categorías («Otros Gastos» tiene 8) se abre por categoría antes que por fecha (visto en v20, 27/11).
+    || (a.categ || "").localeCompare(b.categ || "", "es")
     || (a.fecha ?? "").localeCompare(b.fecha ?? ""))
   /**
    * 💳 La deuda al cierre: lo que salía y no salió. 🔑 Un ingreso pendiente (monto negativo) NO es

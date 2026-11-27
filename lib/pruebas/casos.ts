@@ -14377,6 +14377,9 @@ Importe Neto Gravado: $ 7338020,40
     const exp = (id: string, concepto: string, fecha: string) => ({ ...cu(id, "MSA", "Expensas", 10), concepto, fecha, egresoId: concepto, agrupadoraTemplate: "Fijos" })
     const ord = armarTemplatesDelEjercicio([exp("1", "Expensas Posadas", "2025-08-10"), exp("2", "Expensas Libertad", "2025-09-10"),
       exp("3", "Expensas Posadas", "2025-07-10"), exp("4", "Expensas Libertad", "2025-07-15")] as never, ej).detalle.map(c => c.id).join(",")
+    const og = (id: string, categ: string, fecha: string) => ({ ...cu(id, "MSA", categ, 10), concepto: "Otros Gastos", fecha, egresoId: "og", agrupadoraTemplate: "Varios" })
+    const ordC = armarTemplatesDelEjercicio([og("a", "ROLLOS", "2025-07-01"), og("b", "FLETES", "2025-08-01"), og("c", "ROLLOS", "2025-09-01")] as never, ej).detalle.map(c => c.id).join(",")
+    chequear("Templates", "Un template con varias categorías se abre por categoría antes que por fecha", "b,a,c", ordC, ordC === "b,a,c", "A-FEAT-1632")
     chequear("Templates", "Las cuotas van agrupadas por agrupadora y template, y recién después por fecha (no se mezclan dos templates)",
       "4,2,3,1", ord, ord === "4,2,3,1", "A-FEAT-1632")
     // 🤝 Socio y efecto de cada cuota, desde el código del pago (la misma lista de marcas que la 14.1).
@@ -14388,11 +14391,12 @@ Importe Neto Gravado: $ 7338020,40
       efectoEnSocio({ tipo: "reintegro", monto: 20, banco: bk("CUENTA JMS") }),
       efectoEnSocio({ tipo: "egreso", monto: 10, banco: bk("CTA MSA", "PAM") }),
       efectoEnSocio({ tipo: "egreso", monto: -10, banco: bk("CTA MSA", "MA") }),
+      efectoEnSocio({ tipo: "distribucion", monto: 30, banco: bk("CTA MSA", "PAM") }),
       efectoEnSocio({ tipo: "egreso", monto: 10, banco: bk("LIB") }),
       efectoEnSocio({ tipo: "egreso", monto: 10, banco: bk("CTA AFA") }),
       efectoEnSocio({ tipo: "egreso", monto: 10 }),
     ].map(e => `${e.socio || "—"}:${e.efecto || "—"}`).join(" · ")
-    const espEf = "MA:Retiro directo · PAM:Aporte del socio · MA:Pago por su cuenta · JMS:Reintegro (contra su factura) · PAM:Aporte (pagó por la empresa) · MA:Otra punta (ya contada en la empresa) · MA / PAM:Libertad · —:— · —:—"
+    const espEf = "MA:Retiro directo · PAM:Aporte del socio · MA:Pago por su cuenta · JMS:Reintegro (contra su factura) · PAM:Aporte (pagó por la empresa) · MA:Otra punta (ya contada en la empresa) · PAM:Otra punta (ya contada en la empresa) · MA / PAM:Libertad · —:— · —:—"
     chequear("Templates", "Socio y efecto de cada cuota: retiro, aporte, pago por su cuenta, reintegro, aporte desde la cuenta del socio, Libertad; lo que no es de un socio queda vacío",
       espEf, efs, efs === espEf, "A-FEAT-1632")
   }
