@@ -145,7 +145,7 @@ export function DetalleFactura({ empresa = "MSA", facturaId, onCerrar }: { empre
             </table>
           </div>
         )}
-        <BloqueStock renglones={renglones} entregas={entregas} stock={stock} ocupado={ocupado} eleccion={eleccion} setEleccion={setEleccion} accion={accionStock} />
+        <BloqueStock fechaFactura={f?.fecha_emision ?? null} renglones={renglones} entregas={entregas} stock={stock} ocupado={ocupado} eleccion={eleccion} setEleccion={setEleccion} accion={accionStock} />
         <div className="flex justify-end"><Button variant="outline" size="sm" onClick={onCerrar}>Cerrar</Button></div>
       </DialogContent>
     </Dialog>
@@ -159,8 +159,8 @@ export function DetalleFactura({ empresa = "MSA", facturaId, onCerrar }: { empre
  *  · sin entrada — «＋ Cargar la entrada» con los kilos y el precio de la factura;
  *  · sin insumo — elegir qué insumo del stock es (se aprende para la próxima).
  */
-function BloqueStock({ renglones, entregas, stock, ocupado, eleccion, setEleccion, accion }: {
-  renglones: any[]; entregas: any[]; stock: EstadoStock | null; ocupado: boolean; eleccion: Eleccion
+function BloqueStock({ fechaFactura, renglones, entregas, stock, ocupado, eleccion, setEleccion, accion }: {
+  fechaFactura: string | null; renglones: any[]; entregas: any[]; stock: EstadoStock | null; ocupado: boolean; eleccion: Eleccion
   setEleccion: (f: (e: Eleccion) => Eleccion) => void
   accion: (a: string, extra?: Record<string, unknown>) => Promise<void>
 }) {
@@ -236,7 +236,16 @@ function BloqueStock({ renglones, entregas, stock, ocupado, eleccion, setEleccio
                     <span className="block">
                       <span className="text-red-700">Sin entrada al stock.</span>
                       {p.cantidadStock != null
-                        ? <Button size="sm" className="ml-1 h-6 text-xs" disabled={ocupado} onClick={() => { if (confirm(`Se carga la entrada de ${nombre(p.insumoStockId)}: ${fmt(p.cantidadStock, 0)} ${uni(p.insumoStockId)}${p.precioStock != null ? ` a $ ${fmt(p.precioStock)}` : ""}, con la fecha de la factura, y el stock sube eso. ¿Seguro?`)) void accion("registrar", { n: r.n, insumo_stock_id: insElegido }) }}>
+                        ? <Button size="sm" className="ml-1 h-6 text-xs" disabled={ocupado} onClick={() => {
+                            // La fecha que cuenta para el stock es la de LLEGADA al campo (una factura puede llegar antes o después que la mercadería)
+                            const f0 = dmy(fechaFactura)
+                            const txt = prompt(`Se carga la entrada de ${nombre(p.insumoStockId)}: ${fmt(p.cantidadStock, 0)} ${uni(p.insumoStockId)}${p.precioStock != null ? ` a $ ${fmt(p.precioStock)}` : ""}, y el stock sube eso.
+¿Qué día llegó al campo? (dd/mm/aaaa)`, f0)
+                            if (txt == null) return
+                            const m = txt.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+                            if (!m) { alert("Fecha inválida: usá dd/mm/aaaa"); return }
+                            void accion("registrar", { n: r.n, insumo_stock_id: insElegido, fecha: `${m[3]}-${m[2]!.padStart(2, "0")}-${m[1]!.padStart(2, "0")}` })
+                          }}>
                             ＋ Cargar la entrada ({fmt(p.cantidadStock, 0)} {uni(p.insumoStockId)}{p.precioStock != null ? ` a $ ${fmt(p.precioStock)}` : ""})
                           </Button>
                         : <span className="ml-1 text-amber-800">No sé convertir «{r.unidad || "?"}» a {uni(p.insumoStockId) || "la unidad del stock"}: cargala desde Productivo → Insumos.</span>}

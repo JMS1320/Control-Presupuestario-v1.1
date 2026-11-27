@@ -36,7 +36,7 @@ async function moverStock(prod: any, insumoId: string, delta: number, precio: nu
   if (error) throw new Error("stock: " + error.message)
 }
 
-async function aplicar(sb: any, empresa: string, ctx: Ctx, p: PropuestaRenglon, entradaId: string | null, insumoId: string, automatico: boolean) {
+async function aplicar(sb: any, empresa: string, ctx: Ctx, p: PropuestaRenglon, entradaId: string | null, insumoId: string, automatico: boolean, fechaLlegada?: string | null) {
   const prod = sb.schema("productivo")
   const r = ctx.renglones.find(x => x.n === p.n)!
   const usd = ctx.moneda !== "ARS"
@@ -69,7 +69,8 @@ async function aplicar(sb: any, empresa: string, ctx: Ctx, p: PropuestaRenglon, 
     if (!(Number(cantidad) > 0)) throw new Error(`No sé convertir «${r.unidad ?? "?"}» a la unidad del stock: cargá la entrada a mano.`)
     const precio = p.precioStock
     const { data: nuevo, error: eI } = await prod.from("movimientos_insumos").insert({
-      fecha: ctx.f.fecha_emision, insumo_stock_id: insumoId, tipo: "compra", cantidad, costo_unitario: precio,
+      // La fecha es la de LLEGADA al campo (la que cuenta para el stock y las mediciones); por default, la de la factura.
+      fecha: fechaLlegada || ctx.f.fecha_emision, insumo_stock_id: insumoId, tipo: "compra", cantidad, costo_unitario: precio,
       monto_total: precio == null ? null : r2(cantidad! * precio), proveedor: ctx.f.denominacion_emisor, cuit: ctx.f.cuit, empresa,
       moneda: usd ? "USD" : "ARS", costo_unitario_moneda: usd && precio != null ? precio / tc : null, tipo_cambio: usd ? tc : null,
       observaciones: `Entrada cargada desde la factura ${ctx.numero} (renglón ${p.n}: ${r.descripcion})`,
@@ -148,7 +149,8 @@ export async function POST(request: Request) {
       }
       const p = ctx.propuestas.find(x => x.n === n)
       if (!p) return NextResponse.json({ ok: false, error: "Ese renglón ya está vinculado." }, { status: 409 })
-      await aplicar(sb, empresa, ctx, p, accion === "vincular" ? String(b.movimiento_id || "") || null : null, insumoId, false)
+      const fecha = /^\d{4}-\d{2}-\d{2}$/.test(String(b.fecha || "")) ? String(b.fecha) : null
+      await aplicar(sb, empresa, ctx, p, accion === "vincular" ? String(b.movimiento_id || "") || null : null, insumoId, false, fecha)
       return respuesta((await cargar(sb, empresa, id))!)
     }
     if (accion === "insumo") {
