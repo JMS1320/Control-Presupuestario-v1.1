@@ -40,6 +40,8 @@
 
 ## 📨 PARA JAVIER
 
+### ⏳ Dos tablas nuevas para el detalle de las facturas (2026-11-26) — AVISO PREVIO (JMS: «Q9 sí, avanzá»). `scripts/310` con deshacer. `public.factura_lecturas` (una fila por factura leída: formato, control, lo que no se leyó) y `public.factura_renglones` (un renglón por artículo: cantidad, precio, IVA, insumo del stock al que corresponde, y la huella leído ↔ corregido). Capa nueva: no modifica ninguna tabla existente. RLS igual que el resto (`ver_segun_permiso` / `escribir_segun_permiso`) y las dos se mapean en `recurso_tablas` al recurso `productivo` (como `entrega_factura`). → A-FEAT-1651.
+
 ### ✅ Columna `racion_pct_pv` (numeric) en `public.presupuesto_variables` (2026-11-26) — ✅ APLICADA el 26/11 (aviso previo) (JMS: «avanzá tranquilo con todos los pasos»). `scripts/308` con deshacer. Es el «% del peso vivo» de la ración que el plan del año pisa para una campaña. Sin RLS ni permisos.
 
 ### ✅ Columnas `dieta` (text) en `productivo.actividad_insumos` y `public.presupuesto_variables`, y `dieta_default` (text) en `productivo.actividades` (2026-11-26) — aviso previo; se aplica a continuación (JMS lo pidió). `scripts/305` con deshacer. Sin RLS ni permisos.
