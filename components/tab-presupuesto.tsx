@@ -400,7 +400,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   /** Celda de hacienda disponible sobre la que se está presupuestando una venta. */
   const [presupuestando, setPresupuestando] = useState<DatosPresupuestar | null>(null)
   /** 🐂 A-FEAT-1667 — la venta presupuestada abierta desde la celda (se edita en el lote). */
-  const [ventaAbierta, setVentaAbierta] = useState<{ titulo: string; lotes: VentaLoteCelda[] } | null>(null)
+  const [ventaAbierta, setVentaAbierta] = useState<{ titulo: string; lotes: VentaLoteCelda[]; nuevaCategoria?: string } | null>(null)
   const [preciosHac, setPreciosHac] = useState<PrecioHacienda[]>([])
 
   // 24 meses: las cuotas de arrendamiento llegan hasta may-2028 (campaña 27/28)
@@ -2969,6 +2969,10 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
                           {Object.keys(c.montos).length === 0 && (
                             <span className="ml-2 text-[10px] text-amber-600">sin venta presupuestada</span>
                           )}
+                          {/* 🐂 Una venta nueva de esta categoría: se carga como lote en el editor de Productivo (A-FEAT-1667) */}
+                          <button type="button" className="ml-2 rounded border border-emerald-300 bg-white px-1 text-[10px] text-emerald-800 hover:bg-emerald-100"
+                            title="Presupuestar una venta nueva de esta categoría: se carga como lote en el editor de Productivo"
+                            onClick={() => setVentaAbierta({ titulo: `${c.categoria} — venta nueva`, lotes: [], nuevaCategoria: c.categoria })}>＋ venta</button>
                         </td>
                         {meses.map(m => {
                           const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
@@ -2980,7 +2984,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
                               className={`px-3 py-1.5 text-right text-xs ${
                                 esActual ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
                               {valor > 0 ? (
-                                <button type="button" className="hover:underline" title="Clic: abrir la venta y editarla (se guarda en el lote; si corrés la fecha, la ración se corre con ella)"
+                                <button type="button" className="hover:underline" title="Clic: abrir la venta en el editor del lote (Productivo): peso, desbaste, CZ, precio, plazo y su plan del año"
                                   onClick={() => setVentaAbierta({ titulo: `${c.categoria} — venta de ${MESES[m.mes - 1]} ${m.anio}`, lotes: c.lotes?.[clave] ?? [] })}>
                                   {fmt(valor)}
                                   {c.estimado[clave] && <span className="ml-0.5 text-amber-500">*</span>}
@@ -3821,7 +3825,7 @@ Clic para presupuestar la venta`}
         </CardContent>
       </Card>
 
-      <PresupuestoVentaLote abierto={!!ventaAbierta} titulo={ventaAbierta?.titulo ?? ""} lotes={ventaAbierta?.lotes ?? []}
+      <PresupuestoVentaLote abierto={!!ventaAbierta} titulo={ventaAbierta?.titulo ?? ""} lotes={ventaAbierta?.lotes ?? []} nuevaCategoria={ventaAbierta?.nuevaCategoria ?? null}
         onCerrar={() => setVentaAbierta(null)} onGuardado={() => { void cargarHacienda(); void cargarDatos() }} />
 
       {/* Presupuestar una venta de hacienda desde la celda de disponible */}

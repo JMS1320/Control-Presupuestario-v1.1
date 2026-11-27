@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Plus, Trash2, PackageOpen, Wand2, Scale, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import {
-  segmentosCurva, curvaDeLote, tramosParaCosto, solapamientos, gananciaEsManual,
+  segmentosCurva, curvaDeLote, tramosParaCosto, solapamientos, gananciaEsManual, tramoHastaLaVenta,
   type TramoLote, type LoteCurva,
 } from "@/lib/productivo/tramos"
 import {
@@ -152,41 +152,9 @@ export function PanelLotesHacienda({ linea, onCambio }: {
   const curvaDe = (l: LoteStock) => curvaDeLote(l as unknown as LoteCurva, tramosDe(l.id), actividades)
 
   const guardar = async (f: any) => {
-    if (!f.categoria || !f.fecha_disponible || !f.cantidad) {
-      alert("Categoría, cantidad y fecha disponible son obligatorias"); return
-    }
-    const payload = {
-      empresa: "MSA",
-      ciclo_id: f.ciclo_id || null,
-      categoria: f.categoria,
-      origen: f.origen || "stock_inicial",
-      cantidad: parseNum(String(f.cantidad)),
-      fecha_disponible: f.fecha_disponible,
-      peso_base_kg: parseNum(String(f.peso_base_kg)),
-      fecha_peso: f.fecha_peso || f.fecha_disponible || null,
-      // 🐣 Cuándo y con cuánto nació (script 304; JMS 25/11: «si quiero cambiar los kg lo cambio para el lote y eso afecte al gasto»).
-      // Vacío = no se sabe (la curva del ternero al pie no se arma desde el nacimiento).
-      fecha_nacimiento: f.fecha_nacimiento || null,
-      peso_nacimiento_kg: String(f.peso_nacimiento_kg ?? "").trim() === "" ? null : parseNum(String(f.peso_nacimiento_kg)),
-      ganancia_diaria_kg: parseNum(String(f.ganancia_diaria_kg)),
-      ganancia_override: Boolean(f.ganancia_override),
-      fecha_venta_estimada: f.fecha_venta_estimada || null,
-      // Vacío = venta externa. Con actividad, el lote es un traspaso interno y no genera caja.
-      destino_actividad_id: f.destino_actividad_id || null,
-      precio_kg_override: String(f.precio_kg_override ?? "").trim() === ""
-        ? null : parseNum(String(f.precio_kg_override)),
-      plazo_cobro: String(f.plazo_cobro ?? "0").trim() || "0",
-      pct_desbaste: parseNum(String(f.pct_desbaste ?? "5")) / 100,
-      pct_cz: parseNum(String(f.pct_cz ?? "4")) / 100,
-      alicuota_iva: parseNum(String(f.alicuota_iva ?? "10,5")) / 100,
-      alicuota_iibb: parseNum(String(f.alicuota_iibb ?? "1")) / 100,
-      notas: f.notas || null,
-      updated_at: new Date().toISOString(),
-    }
-    const { error } = f.id
-      ? await supabase.schema("productivo").from("stock_lotes").update(payload).eq("id", f.id)
-      : await supabase.schema("productivo").from("stock_lotes").insert(payload)
-    if (error) { alert("Error: " + error.message); return }
+    const error = await guardarLote(f)
+    if (error === "faltan") return
+    if (error) { alert("Error: " + error); return }
     setModal(null)
     await cargar(); onCambio?.()
   }
@@ -529,19 +497,7 @@ export function PanelLotesHacienda({ linea, onCambio }: {
                       <td className="px-3 py-2 text-right">
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" size="sm" className="h-6 text-xs"
-                            onClick={() => setModal({
-                              ...l,
-                              cantidad: String(l.cantidad),
-                              peso_base_kg: String(l.peso_base_kg),
-                              peso_nacimiento_kg: (l as any).peso_nacimiento_kg == null ? "" : fmtAR(Number((l as any).peso_nacimiento_kg)),
-                              ganancia_diaria_kg: String(l.ganancia_diaria_kg),
-                              precio_kg_override: l.precio_kg_override ?? "",
-                              plazo_cobro: String(l.plazo_cobro ?? "0"),
-                              pct_desbaste: fmtAR(Number(l.pct_desbaste ?? 0.05) * 100),
-                              pct_cz: fmtAR(Number(l.pct_cz ?? 0.04) * 100),
-                              alicuota_iva: fmtAR(Number(l.alicuota_iva ?? 0.105) * 100),
-                              alicuota_iibb: fmtAR(Number(l.alicuota_iibb ?? 0.01) * 100),
-                            })}>Editar</Button>
+                            onClick={() => setModal(datosParaEditar(l))}>Editar</Button>
                           <Button variant="ghost" size="sm" className="h-6 px-1"
                             onClick={() => borrar(l.id)}>
                             <Trash2 className="h-3 w-3 text-gray-400" />
@@ -590,6 +546,112 @@ export function PanelLotesHacienda({ linea, onCambio }: {
         onCerrar={() => setModalPesada(false)}
         onListo={async () => { await cargar(); onCambio?.() }} />
     </Card>
+  )
+}
+
+/**
+ * 💾 Guarda un lote (alta o edición) — la MISMA escritura para Productivo y para el presupuesto (A-FEAT-1667, JMS 26/11: «dale
+ * con el editor de Productivo»). Devuelve el mensaje de error, "faltan" si faltan obligatorios (ya avisado), o null.
+ */
+export async function guardarLote(f: any): Promise<string | null> {
+  if (!f.categoria || !f.fecha_disponible || !f.cantidad) {
+    alert("Categoría, cantidad y fecha disponible son obligatorias"); return "faltan"
+  }
+    const payload = {
+      empresa: "MSA",
+      ciclo_id: f.ciclo_id || null,
+      categoria: f.categoria,
+      origen: f.origen || "stock_inicial",
+      cantidad: parseNum(String(f.cantidad)),
+      fecha_disponible: f.fecha_disponible,
+      peso_base_kg: parseNum(String(f.peso_base_kg)),
+      fecha_peso: f.fecha_peso || f.fecha_disponible || null,
+      // 🐣 Cuándo y con cuánto nació (script 304; JMS 25/11: «si quiero cambiar los kg lo cambio para el lote y eso afecte al gasto»).
+      // Vacío = no se sabe (la curva del ternero al pie no se arma desde el nacimiento).
+      fecha_nacimiento: f.fecha_nacimiento || null,
+      peso_nacimiento_kg: String(f.peso_nacimiento_kg ?? "").trim() === "" ? null : parseNum(String(f.peso_nacimiento_kg)),
+      ganancia_diaria_kg: parseNum(String(f.ganancia_diaria_kg)),
+      ganancia_override: Boolean(f.ganancia_override),
+      fecha_venta_estimada: f.fecha_venta_estimada || null,
+      // Vacío = venta externa. Con actividad, el lote es un traspaso interno y no genera caja.
+      destino_actividad_id: f.destino_actividad_id || null,
+      precio_kg_override: String(f.precio_kg_override ?? "").trim() === ""
+        ? null : parseNum(String(f.precio_kg_override)),
+      plazo_cobro: String(f.plazo_cobro ?? "0").trim() || "0",
+      pct_desbaste: parseNum(String(f.pct_desbaste ?? "5")) / 100,
+      pct_cz: parseNum(String(f.pct_cz ?? "4")) / 100,
+      alicuota_iva: parseNum(String(f.alicuota_iva ?? "10,5")) / 100,
+      alicuota_iibb: parseNum(String(f.alicuota_iibb ?? "1")) / 100,
+      notas: f.notas || null,
+      updated_at: new Date().toISOString(),
+    }
+    const { error } = f.id
+      ? await supabase.schema("productivo").from("stock_lotes").update(payload).eq("id", f.id)
+      : await supabase.schema("productivo").from("stock_lotes").insert(payload)
+  return error ? error.message : null
+}
+
+/** El formulario del editor armado desde un lote guardado (los % se muestran en 0–100, los números en es-AR). */
+export function datosParaEditar(l: LoteStock): any {
+  return {
+    ...l,
+    cantidad: String(l.cantidad),
+    peso_base_kg: String(l.peso_base_kg),
+    peso_nacimiento_kg: (l as any).peso_nacimiento_kg == null ? "" : fmtAR(Number((l as any).peso_nacimiento_kg)),
+    ganancia_diaria_kg: String(l.ganancia_diaria_kg),
+    precio_kg_override: l.precio_kg_override ?? "",
+    plazo_cobro: String(l.plazo_cobro ?? "0"),
+    pct_desbaste: fmtAR(Number(l.pct_desbaste ?? 0.05) * 100),
+    pct_cz: fmtAR(Number(l.pct_cz ?? 0.04) * 100),
+    alicuota_iva: fmtAR(Number(l.alicuota_iva ?? 0.105) * 100),
+    alicuota_iibb: fmtAR(Number(l.alicuota_iibb ?? 0.01) * 100),
+  }
+}
+
+/**
+ * 🐂 El editor de lote de Productivo, para abrirlo desde OTRA pantalla (el presupuesto: clic en una venta de hacienda o
+ * «＋ venta»). Carga lo que el editor necesita y guarda con `guardarLote`: un solo editor, una sola escritura.
+ * `loteId` = editar ese lote · `nuevaCategoria` = lote nuevo de esa categoría (una venta que no está en ningún lote).
+ */
+export function EditorLoteHacienda({ loteId, nuevaCategoria, onCerrar, onGuardado }: {
+  loteId?: string | null; nuevaCategoria?: string | null; onCerrar: () => void; onGuardado: () => void
+}) {
+  const [datos, setDatos] = useState<any>(null)
+  const [ctx, setCtx] = useState<{ tramos: TramoLote[]; actividades: Actividad[]; insumos: InsumoActividad[]; centros: { id: string; nombre: string }[] } | null>(null)
+  useEffect(() => {
+    let vivo = true
+    void (async () => {
+      const p = supabase.schema("productivo")
+      const [{ data: l }, { data: tr }, { data: acts }, { data: ins }, { data: ccs }] = await Promise.all([
+        loteId ? p.from("stock_lotes").select("*").eq("id", loteId).maybeSingle() : Promise.resolve({ data: null } as any),
+        loteId ? p.from("lote_tramos").select("*").eq("lote_id", loteId).order("orden") : Promise.resolve({ data: [] } as any),
+        p.from("actividades").select("*").eq("activo", true).order("nombre"),
+        p.from("actividad_insumos").select("*").order("orden"),
+        supabase.from("centros_costo").select("id, nombre").eq("tipo", "actividad").eq("activo", true),
+      ])
+      if (!vivo) return
+      setCtx({ tramos: (tr || []) as TramoLote[], actividades: (acts || []) as Actividad[], insumos: (ins || []) as InsumoActividad[],
+        centros: ((ccs || []) as any[]).map(c => ({ id: String(c.id), nombre: String(c.nombre) })) })
+      setDatos(l ? datosParaEditar(l as LoteStock) : {
+        origen: "stock_inicial", categoria: nuevaCategoria || "Ternero Recria",
+        cantidad: "", peso_base_kg: "", ganancia_diaria_kg: "0,5", fecha_disponible: hoyArgentina(),
+        fecha_venta_estimada: "", precio_kg_override: "", plazo_cobro: "0",
+        pct_desbaste: "5", pct_cz: "4", alicuota_iva: "10,5", alicuota_iibb: "1",
+        notas: "Venta cargada desde el presupuesto",
+      })
+    })()
+    return () => { vivo = false }
+  }, [loteId, nuevaCategoria])
+  if (!datos || !ctx) return null
+  return (
+    <ModalLote datos={datos} onCerrar={onCerrar} tramos={ctx.tramos} actividades={ctx.actividades} insumos={ctx.insumos}
+      centrosCosto={ctx.centros}
+      onGuardar={async f => {
+        const error = await guardarLote(f)
+        if (error === "faltan") return
+        if (error) { alert("Error: " + error); return }
+        onGuardado(); onCerrar()
+      }} />
   )
 }
 
@@ -825,7 +887,15 @@ function ModalLote({ datos, onCerrar, onGuardar, tramos, actividades, insumos, c
               <div>
                 <label className="text-xs text-gray-500">Fecha de venta</label>
                 <Input type="date" className="h-8" value={f.fecha_venta_estimada || ""}
-                  onChange={e => setF({ ...f, fecha_venta_estimada: e.target.value })} />
+                  onChange={e => {
+                    const nueva = e.target.value
+                    // 🐂 Más días hasta la venta → más ración: el período del plan del año que llegaba a la venta se corre con ella
+                    // (A-FEAT-1667; antes lo hacía sólo la ventanita del presupuesto). Va al borrador: se ve y se guarda con Guardar.
+                    const mover = nueva ? tramoHastaLaVenta(tramosDraft, f.fecha_venta_estimada || null, nueva) : null
+                    if (mover) setTramosDraft(prev => prev.map(t => t.id === mover.id ? { ...t, fecha_hasta: mover.hastaNueva } : t))
+                    setF({ ...f, fecha_venta_estimada: nueva, _movioTramo: mover ? `el plan del año se corre: hasta ${mover.hastaNueva.split("-").reverse().join("/")}` : f._movioTramo })
+                  }} />
+                {f._movioTramo && <p className="mt-1 text-[10px] text-emerald-700">↻ {f._movioTramo}</p>}
               </div>
               <div>
                 <label className="text-xs text-gray-500">Plazo de cobro</label>
