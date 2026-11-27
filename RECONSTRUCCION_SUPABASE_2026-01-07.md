@@ -13433,3 +13433,8 @@ Las decisiones (remitente → bloque) y la foto del antes están FUERA DE GIT, e
 - **Script 306 (DATOS)** `scripts/306-creep-hembras-al-pie.sql` (deshacer: `…-deshacer.sql`), 26/11, A-FEAT-1665: tramo de Cría 01/11/26→28/02/27 y nacimiento (01/07 · 30 kg) del lote «Ternera al Pie» 26/27.
 - **Script 307 (DATOS)** `scripts/307-dieta-silo-engorde.sql` (deshacer: `…-deshacer.sql`), 26/11, A-FEAT-1665: dieta «Con silo de sorgo» en la receta de Engorde (3 renglones kg/cab/día) y elegida en el plan 26/27.
 - **Script 308 (ESTRUCTURA)** `scripts/308-plan-racion-pct-pv.sql` (deshacer: `…-deshacer.sql`), 26/11, A-FEAT-1665: `public.presupuesto_variables` + `racion_pct_pv numeric` (el plan del año pisa el % del peso vivo de la ración). Verificado con EXPLAIN UPDATE.
+
+### 2026-11-26 — scripts 309 (datos) y 310 (estructura)
+- **309** (DATOS, con OK de JMS): maíz de Longo — la entrada del 29/08 queda vinculada a la FC 0002-531 con su precio ($ 270,50/kg) y se carga la compra de la FC 0002-540 (25.560 kg, $ 287,09/kg) con su vínculo; `stock_insumos.cantidad` del Maíz Granel +25.560. Deshacer: `scripts/309-…-deshacer.sql`.
+- **310** (ESTRUCTURA): `public.factura_lecturas` y `public.factura_renglones` (detalle de las facturas artículo por artículo, A-FEAT-1651), RLS `ver_segun_permiso` / `escribir_segun_permiso`, GRANT a authenticated y service_role, y su mapeo en `recurso_tablas` (recurso `productivo`). Deshacer: `scripts/310-detalle-de-facturas-deshacer.sql`.
+- **311** (DATOS, capa nueva): el detalle de las 18 facturas de insumos de MSA con PDF (28 renglones, todas cierran), leído con el lector de la app. Deshacer: `scripts/311-detalle-facturas-hacia-atras-deshacer.sql`.

@@ -3,6 +3,8 @@
 
 import { nuevasPrimero } from "@/lib/importar/orden-preview"
 import { ModalVincularCompras } from "./modal-vincular-compras"
+import { DetalleFactura } from "./detalle-factura"
+import { esFacturaDeInsumos } from "@/lib/facturas-detalle/insumos"
 import { comprasSinFacturaDelProveedor } from "@/lib/productivo/compras-factura"
 import { ModalOrdenesDeFactura } from "./tarifas-contratistas"
 import { conversionDe } from "@/lib/pagos/moneda-factura"
@@ -987,6 +989,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   /** 🛒 A-FEAT-1557 etapa 3 — proveedores con compras sin factura (por CUIT) y facturas ya vinculadas a compras. */
   const [comprasLibres, setComprasLibres] = useState<{ porCuit: Map<string, { n: number; desde: string }>; vinculadas: Set<string> }>({ porCuit: new Map(), vinculadas: new Set() })
   const [recargaComprasLibres, setRecargaComprasLibres] = useState(0)
+  /** 🧾 A-FEAT-1651 — proveedores de insumos (aprendidos) y lecturas del detalle ya hechas; la factura abierta en el detalle. */
+  const [insumosInfo, setInsumosInfo] = useState<{ proveedores: Set<string>; lecturas: Map<string, string> }>({ proveedores: new Set(), lecturas: new Map() })
+  const [facturaDetalle, setFacturaDetalle] = useState<string | null>(null)
   useEffect(() => {
     if (schemaName !== 'msa') return
     ;(async () => {
@@ -1009,6 +1014,15 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
           porCuit.set(g.cuit, { n: (p?.n ?? 0) + 1, desde: p && p.desde < g.fecha ? p.desde : g.fecha })
         }
         setComprasLibres({ porCuit, vinculadas: new Set((vincs || []).map((v: any) => v.factura_id)) })
+        // 🧾 A-FEAT-1651: proveedores «de insumos» aprendidos del uso (compras registradas con CUIT + facturas ya vinculadas a entradas)
+        const [{ data: compras }, { data: lects }] = await Promise.all([
+          prod.from('movimientos_insumos').select('cuit').eq('tipo', 'compra').not('cuit', 'is', null),
+          supabase.from('factura_lecturas').select('comprobante_id, estado').eq('empresa', 'MSA'),
+        ])
+        const ids = Array.from(new Set((vincs || []).map((v: any) => String(v.factura_id))))
+        const { data: fvs } = ids.length ? await supabase.schema('msa').from('comprobantes_arca').select('cuit').in('id', ids) : { data: [] as any[] }
+        const prov = new Set<string>([...(compras || []), ...(fvs || [])].map((r: any) => String(r.cuit || '').replace(/\D/g, '')).filter(Boolean))
+        setInsumosInfo({ proveedores: prov, lecturas: new Map((lects || []).map((l: any) => [String(l.comprobante_id), String(l.estado)])) })
       } catch (e) { console.error('No se pudieron leer las compras sin factura', e) }
     })()
   }, [schemaName, recargaComprasLibres])
@@ -8566,6 +8580,19 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                                 </button></Permisable>
                               ) : null
                             })()}
+                            {/* 🧾 A-FEAT-1651: factura de insumos → su detalle (artículo por artículo) y si entró al stock. Ámbar = sin compra en el stock. */}
+                            {schemaName === 'msa' && esFacturaDeInsumos({ cuit: factura.cuit, nro_cuenta: (factura as any).nro_cuenta }, insumosInfo.proveedores) && (() => {
+                              const sinCompra = !comprasLibres.vinculadas.has(factura.id)
+                              const leida = insumosInfo.lecturas.get(factura.id)
+                              return (
+                                <button type="button" onClick={() => setFacturaDetalle(factura.id)}
+                                  className={`rounded px-1 text-[11px] whitespace-nowrap ${sinCompra ? 'bg-amber-200 text-amber-900 hover:bg-amber-300 font-semibold' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                                  title={(sinCompra ? 'Factura de insumos SIN compra en el stock: registrala o vinculala. ' : 'Factura de insumos vinculada al stock. ')
+                                    + (leida ? `Detalle leído (${leida}).` : 'Click: ver su detalle artículo por artículo.')}>
+                                  🧾{sinCompra ? ' sin compra' : ''}
+                                </button>
+                              )
+                            })()}
                             {/* 🚜 A-FEAT-1557: es de un contratista con órdenes ejecutadas sin factura → proponer cuáles cobra */}
                             {(() => {
                               const n = comprasSinFacturaDelProveedor({ id: factura.id, cuit: factura.cuit, fecha: factura.fecha_emision }, ordenesLibres.porCuit, ordenesLibres.atadas)
@@ -13397,6 +13424,7 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
       </Dialog>
       <ModalVincularCompras abierto={!!facturaVincularCompras} facturaId={facturaVincularCompras}
         onCerrar={() => setFacturaVincularCompras(null)} onGuardado={() => setRecargaComprasLibres(n => n + 1)} />
+      <DetalleFactura empresa="MSA" facturaId={facturaDetalle} onCerrar={() => { setFacturaDetalle(null); setRecargaComprasLibres(n => n + 1) }} />
       {facturaOrdenes && <ModalOrdenesDeFactura facturaId={facturaOrdenes} empresa={empresa}
         onCerrar={() => setFacturaOrdenes(null)} onGuardado={() => setRecargaComprasLibres(n => n + 1)} />}
     </div>

@@ -5888,6 +5888,18 @@ Bancarios*), queda plano, porque anidar ahí sería un clic de más para ver lo 
 
 ---
 
+## 🧾 Egresos → Facturas → el detalle de una factura de insumos *(nuevo 2026-11-26)*
+
+En las facturas de **insumos** (maíz, concentrado, sales, rollos, fertilizantes, agroquímicos, semillas) de los proveedores a los que
+ya les registraste una compra, aparece **🧾** al final de la fila. Click → el detalle del papel artículo por artículo (cantidad,
+precio, IVA), si cierra con el total, el link al PDF y a qué entrada al stock está vinculada.
+- **«🧾 sin compra»** en ámbar: la factura no tiene su compra en el stock. Registrala en Productivo → Insumos → Registrar compra
+  (o vinculala si ya estaba).
+- La primera vez que la abrís se lee sola del PDF; después se muestra lo guardado. «Volver a leer» la relee.
+- Veterinarios (Alcorta) todavía no.
+
+⚠️ Sin probar todavía → A-TEST-1398
+
 ## 🏢 Presupuesto → MSA o MA *(nuevo 2026-11-26)*
 
 Arriba, al lado de «Presupuesto», el selector **MSA | MA** cambia de empresa. Cada una muestra **lo que tiene**:
