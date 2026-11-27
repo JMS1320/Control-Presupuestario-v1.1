@@ -5884,6 +5884,17 @@ Bancarios*), queda plano, porque anidar ahí sería un clic de más para ver lo 
 
 ---
 
+## 🏢 Presupuesto → MSA o MA *(nuevo 2026-11-26)*
+
+Arriba, al lado de «Presupuesto», el selector **MSA | MA** cambia de empresa. Cada una muestra **lo que tiene**:
+- **MA**: sus arrendamientos **y los de PAM** (los cobra ella), sus templates (lo que comparte con MSA sigue en el de MSA), la
+  **caja como gasto** (no tiene detalle de caja) y la **tarjeta sin sumar** (lo que paga con la tarjeta ya está en sus templates de
+  consumo). No tiene hacienda, costos de producción, plan del año ni cuentas contables.
+- El saldo de arranque de MA sale de **su Galicia**. El método de cada template se elige igual que en MSA, desde su renglón.
+- PAM no tiene presupuesto.
+
+⚠️ Sin probar todavía → A-TEST-1397
+
 ## 🌾 Presupuesto → Actividades y costos 🟡 *(nuevo 2026-07-30, sin testear)*
 
 > Botón **"Actividades y costos"** arriba a la derecha del Presupuesto, al lado de "Precios y TC".

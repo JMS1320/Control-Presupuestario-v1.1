@@ -42,7 +42,7 @@ interface Inversion {
 }
 interface CentroCosto { id: string; nombre: string; tipo: string | null }
 
-export function ConfiguradorInversiones({ onCambio }: { onCambio?: () => void } = {}) {
+export function ConfiguradorInversiones({ onCambio, empresa = "MSA" }: { onCambio?: () => void; empresa?: string } = {}) {
   const [cargando, setCargando] = useState(true)
   const [items, setItems] = useState<Inversion[]>([])
   const [centros, setCentros] = useState<CentroCosto[]>([])
@@ -54,13 +54,13 @@ export function ConfiguradorInversiones({ onCambio }: { onCambio?: () => void } 
     try {
       const [inv, cc] = await Promise.all([
         supabase.from("presupuesto_inversiones").select("*")
-          .eq("empresa", "MSA").eq("escenario", "base").eq("activo", true).order("nombre"),
+          .eq("empresa", empresa).eq("escenario", "base").eq("activo", true).order("nombre"),
         supabase.from("centros_costo").select("id, nombre, tipo").eq("activo", true).order("nombre"),
       ])
       setItems((inv.data || []) as Inversion[])
       setCentros((cc.data || []) as CentroCosto[])
     } finally { setCargando(false) }
-  }, [])
+  }, [empresa])
 
   useEffect(() => { cargar() }, [cargar])
 
@@ -91,7 +91,7 @@ export function ConfiguradorInversiones({ onCambio }: { onCambio?: () => void } 
 
   const crear = async () => {
     const { data, error } = await supabase.from("presupuesto_inversiones").insert({
-      empresa: "MSA", campana, escenario: "base", nombre: "Inversión nueva", estado: "prevista",
+      empresa, campana, escenario: "base", nombre: "Inversión nueva", estado: "prevista",
     }).select().single()
     if (error) { alert("Error: " + error.message); return }
     await cargar()

@@ -88,6 +88,7 @@ import {
   tipoEfectivo,
 } from "@/lib/presupuesto/templates"
 import type { PuntoSerie } from "@/lib/precios/serie"
+import { EMPRESAS_PRESUPUESTO, esDeLaEmpresa, empresasDeContratos, cuentaBancoPropia, bloquesDeEmpresa, tipoEnPresupuesto, type EmpresaPresupuesto } from "@/lib/presupuesto/empresa"
 import { traerTodo } from "@/lib/supabase-paginado"
 import { avisarSiIncompleta } from "@/lib/ui/avisar-lectura"
 
@@ -284,6 +285,10 @@ function subAgrupa(ag: Agrupador): boolean {
  * de una cuenta: había que salir de la pestaña y volver a entrar. El token es el aviso.
  */
 export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number } = {}) {
+  /** 🏢 De qué empresa es el presupuesto (A-FEAT-1666: MSA y MA; cada una con SU estructura → `lib/presupuesto/empresa.ts`). */
+  const [empresaP, setEmpresaP] = useState<EmpresaPresupuesto>("MSA")
+  const bloques = bloquesDeEmpresa(empresaP)
+  const banco = cuentaBancoPropia(empresaP)
   const [cargando, setCargando] = useState(true)
   const [agrupadoresBase, setAgrupadores] = useState<Agrupador[]>([])
   const [sueldoFilasBase, setSueldoFilas] = useState<FilaSueldo[]>([])
@@ -407,7 +412,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    * MISMO lugar que el Cash Flow, para que los dos digan lo mismo. Sólo MSA: es la empresa del presupuesto.
    * El objeto de filtros es fijo (useMemo): el hook vuelve a cargar cada vez que cambia.
    */
-  const filtrosReales = useMemo<CashFlowFilters>(() => ({ empresasFacturas: ["MSA"], empresasTemplates: ["MSA"] }), [])
+  const filtrosReales = useMemo<CashFlowFilters>(() => ({ empresasFacturas: [empresaP], empresasTemplates: [empresaP] }), [empresaP])
   const { data: filasCashFlow, cargarDatos: recargarReales } = useMultiCashFlowData(filtrosReales)
   useEffect(() => { if (recargarToken) void recargarReales({ silencioso: true }) // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recargarToken])
@@ -450,7 +455,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     for (const f of filasCashFlow || []) {
       const fr: FilaReal = { id: f.id, origen: f.origen, fecha_estimada: f.fecha_estimada, fecha_pago: f.fecha_pago ?? null,
         estado: f.estado, medio_pago: (f as any).medio_pago ?? null, debitos: Number(f.debitos) || 0, creditos: Number(f.creditos) || 0 }
-      if (!["", "banco", "msa_galicia"].includes(String(fr.medio_pago ?? "").trim().toLowerCase())) continue
+      if (!["", "banco", banco.tabla].includes(String(fr.medio_pago ?? "").trim().toLowerCase())) continue
       if (!yaSeMovio(fr, hoy)) continue
       const fc = fechaDeCaja(fr)
       if (mesDe(fc) !== mes || fc > hoy) continue
@@ -574,8 +579,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   // ── Carga de datos ──────────────────────────────────────────────────────────
 
   useEffect(() => {
-    cargarDatos()
-  }, [recargarToken])
+    cargarDatos() // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recargarToken, empresaP])
 
   const cargarDatos = async () => {
     setCargando(true)
@@ -619,7 +624,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   const cargarVariables = async (ipc: PuntoSerie[]): Promise<Set<string>> => {
     const [{ data: vsTodas }, { data: ajs }, { data: hist }] = await Promise.all([
       supabase.from("presupuesto_variables").select("*")
-        .eq("empresa", "MSA").eq("escenario", "base").eq("activo", true),
+        .eq("empresa", empresaP).eq("escenario", "base").eq("activo", true),
       supabase.from("presupuesto_variable_ajustes").select("*").order("orden"),
       supabase.from("presupuesto_historia_cuentas").select("nro_cuenta, anio, mes, monto"),
     ])
@@ -682,7 +687,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   /** Inversiones (P-36). Se reparten en su plazo desde el mes de arranque. */
   const cargarInversiones = async () => {
     const { data } = await supabase.from("presupuesto_inversiones").select("*")
-      .eq("empresa", "MSA").eq("escenario", "base").eq("activo", true).neq("estado", "descartada")
+      .eq("empresa", empresaP).eq("escenario", "base").eq("activo", true).neq("estado", "descartada")
     const filas = ((data || []) as any[]).map(i => {
       const montos: Record<string, number> = {}
       const total = Number(i.monto) || 0
@@ -703,12 +708,13 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   }
 
   const cargarCuentas = async (ipc: PuntoSerie[], cubiertasPorVariable: Set<string> = new Set()) => {
+    if (!bloques.cuentasContables) { setCuentas([]); setCuentasSinPres([]); return }
     const [{ data: hist }, { data: conf }, { data: prov }, { data: cfgGen }] = await Promise.all([
       supabase.from("presupuesto_historia_cuentas")
         .select("nro_cuenta, cuenta_contable, anio, mes, monto, facturas, proveedores"),
-      supabase.from("presupuesto_cuenta_config").select("*").eq("empresa", "MSA"),
+      supabase.from("presupuesto_cuenta_config").select("*").eq("empresa", empresaP),
       supabase.from("presupuesto_historia_cuenta_proveedor").select("nro_cuenta, cuit, anio, mes, monto"),
-      supabase.from("presupuesto_config").select("inflacion_mensual").eq("empresa", "MSA").maybeSingle(),
+      supabase.from("presupuesto_config").select("inflacion_mensual").eq("empresa", empresaP).maybeSingle(),
     ])
     const historia: PuntoHistorico[] = ((hist || []) as any[]).map(r => ({
       nro_cuenta: String(r.nro_cuenta), anio: Number(r.anio), mes: Number(r.mes),
@@ -775,8 +781,9 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    * nada que leer más que la actividad y el tramo.
    */
   const cargarCostosProduccion = async () => {
+    if (!bloques.costosProduccion) { setCostoProd([]); setSinPlan([]); return }
     const [{ data: lotes }, { data: tra }, { data: acts }, { data: ins }, { data: tc }, { data: ciclos }, { data: asig }, { data: centros }, { data: planRaw }, { data: ipcRaw }, { data: ajRaw }] = await Promise.all([
-      supabase.schema("productivo").from("stock_lotes").select("*").eq("empresa", "MSA"),
+      supabase.schema("productivo").from("stock_lotes").select("*").eq("empresa", empresaP),
       supabase.schema("productivo").from("lote_tramos").select("*").order("orden"),
       supabase.schema("productivo").from("actividades").select("*"),
       supabase.schema("productivo").from("actividad_insumos").select("*").order("orden"),
@@ -784,7 +791,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       supabase.schema("productivo").from("stock_ciclos").select("*"),
       supabase.from("campo_campana_actividad").select("campana, centro_costo_id, has_netas"),
       supabase.from("centros_costo").select("id, nombre").eq("tipo", "actividad"),
-      supabase.from("presupuesto_variables").select("*").eq("empresa", "MSA").eq("activo", true),
+      supabase.from("presupuesto_variables").select("*").eq("empresa", empresaP).eq("activo", true),
       supabase.from("indices_ipc").select("anio, mes, valor_ipc"),
       supabase.schema("productivo").from("actividad_insumo_ajustes").select("*").order("orden"),
     ])
@@ -793,7 +800,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     // 🏷️ A-FEAT-1663 C1/Q7 — los renglones de receta marcados «fuera del presupuesto» (ej. sanidad e IATF, que van por su cuenta
     // contable) no suman en la grilla. La receta no cambia y el Margen no se toca: es una marca del presupuesto (script 299).
     const { data: fueraRec } = await supabase.from("presupuesto_marcas").select("fila_id, detalle")
-      .eq("empresa", "MSA").eq("origen_tabla", "actividad_insumos").eq("marca", "fuera")
+      .eq("empresa", empresaP).eq("origen_tabla", "actividad_insumos").eq("marca", "fuera")
     const idsFuera = new Map(((fueraRec || []) as any[]).map(r => [String(r.fila_id), String(r.detalle || "").replace(/^\[script \d+\]\s*/, "")]))
     const todosIns = ((ins || []) as InsumoActividad[]).filter(i => listaActs.some(a => a.id === (i as any).actividad_id))
     const fueraPorActividad: Record<string, string[]> = {}
@@ -987,7 +994,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    */
   const cargarConfig = async () => {
     const { data } = await supabase.from("presupuesto_config")
-      .select("saldo_inicial, mes_inicial, arranque_modo, fecha_arranque, composicion_saldo").eq("empresa", "MSA").maybeSingle()
+      .select("saldo_inicial, mes_inicial, arranque_modo, fecha_arranque, composicion_saldo").eq("empresa", empresaP).maybeSingle()
     const modo = (data?.arranque_modo ?? "manual") as "manual" | "ultimo_conciliado"
     setArranqueModo(modo)
     // 📍 A-FEAT-1660 — lo declarado (se guarda aunque el modo sea el extracto) y el último conciliado (siempre:
@@ -995,7 +1002,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     setSaldoDeclarado(Number(data?.saldo_inicial) || 0)
     setFechaArranqueDecl((data as any)?.fecha_arranque ?? null)
     setComposicionSaldo(Array.isArray((data as any)?.composicion_saldo) ? (data as any).composicion_saldo : null)
-    const { data: ult } = await supabase.from("msa_galicia")
+    const { data: ult } = await (banco.schema === "ma" ? supabase.schema("ma").from(banco.tabla) : supabase.from(banco.tabla))
       .select("fecha, saldo")
       .eq("estado", "conciliado").not("saldo", "is", null)
       .order("fecha", { ascending: false }).order("orden", { ascending: false })
@@ -1019,7 +1026,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
 
   const guardarArranqueModo = async (modo: "manual" | "ultimo_conciliado") => {
     const { error } = await supabase.from("presupuesto_config")
-      .upsert({ empresa: "MSA", arranque_modo: modo, updated_at: new Date().toISOString() },
+      .upsert({ empresa: empresaP, arranque_modo: modo, updated_at: new Date().toISOString() },
         { onConflict: "empresa" })
     if (error) { alert("Error: " + error.message); return }
     setArranqueModo(modo)
@@ -1028,7 +1035,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
 
   const guardarSaldoInicial = async (monto: number, mes: string) => {
     const { error } = await supabase.from("presupuesto_config")
-      .upsert({ empresa: "MSA", saldo_inicial: monto, mes_inicial: mes, updated_at: new Date().toISOString() },
+      .upsert({ empresa: empresaP, saldo_inicial: monto, mes_inicial: mes, updated_at: new Date().toISOString() },
         { onConflict: "empresa" })
     if (error) { alert("Error: " + error.message); return }
     setSaldoInicial(monto); setMesInicial(mes); setEditandoSaldo(false)
@@ -1036,7 +1043,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
 
   /** 🏷️ A-FEAT-1660 etapa 2 — las marcas del presupuesto (supuestos: no cambian la factura ni la cuota). */
   const cargarMarcas = async () => {
-    const { data, error } = await supabase.from("presupuesto_marcas").select("origen_tabla, fila_id, marca").eq("empresa", "MSA")
+    const { data, error } = await supabase.from("presupuesto_marcas").select("origen_tabla, fila_id, marca").eq("empresa", empresaP)
     if (error) { console.error("presupuesto_marcas", error); return }
     const m: Record<string, MarcaPresupuesto> = {}
     for (const r of (data || []) as any[]) m[`${r.origen_tabla}|${r.fila_id}`] = r.marca
@@ -1090,14 +1097,14 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     if (marca === null) {
       for (const f of filas) {
         const { error } = await supabase.from("presupuesto_marcas").delete()
-          .eq("empresa", "MSA").eq("origen_tabla", f.origen_tabla || "").eq("fila_id", f.id)
+          .eq("empresa", empresaP).eq("origen_tabla", f.origen_tabla || "").eq("fila_id", f.id)
         if (error) { alert("No se pudo deshacer: " + error.message); break }
       }
     } else {
       const { data: u } = await supabase.auth.getUser()
       const quien = u?.user?.email ?? null
       const filasMarca = filas.map(f => ({
-        empresa: "MSA", origen_tabla: f.origen_tabla || "", fila_id: f.id, origen: f.origen, marca,
+        empresa: empresaP, origen_tabla: f.origen_tabla || "", fila_id: f.id, origen: f.origen, marca,
         fecha_fila: fechaDeCaja(f) || null, monto: Math.round(((Number(f.creditos) || 0) - (Number(f.debitos) || 0)) * 100) / 100,
         detalle: [f.nombre_proveedor, f.detalle].filter(Boolean).join(" · ").slice(0, 500),
         marcado_at: new Date().toISOString(), marcado_por: quien,
@@ -1112,7 +1119,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   const guardarDeclarado = async (d: { fecha: string; composicion: ComposicionItem[] }) => {
     const monto = totalComposicion(d.composicion)
     const { error } = await supabase.from("presupuesto_config")
-      .upsert({ empresa: "MSA", saldo_inicial: monto, mes_inicial: d.fecha.slice(0, 7), fecha_arranque: d.fecha,
+      .upsert({ empresa: empresaP, saldo_inicial: monto, mes_inicial: d.fecha.slice(0, 7), fecha_arranque: d.fecha,
         composicion_saldo: d.composicion, updated_at: new Date().toISOString() }, { onConflict: "empresa" })
     if (error) { alert("Error: " + error.message); return }
     await cargarConfig()
@@ -1124,11 +1131,12 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       .from("egresos_sin_factura")
       .select("id, nombre_referencia, categ, cuenta_agrupadora, responsable, periodicidad, aplica_generacion, cuotas, tipo_recurrencia, tipo")
       .eq("activo", true)
-      .or("responsable.ilike.%MSA%,responsable.eq.ambas")
+      .or(empresaP === "MA" ? "responsable.ilike.%MA%" : "responsable.ilike.%MSA%,responsable.eq.ambas")
       .not("cuenta_agrupadora", "is", null)
       .order("cuenta_agrupadora")
+      .then(r => ({ ...r, data: (r.data || []).filter(t => esDeLaEmpresa(t.responsable, empresaP)) }))
 
-    if (!templates || templates.length === 0) return
+    if (!templates || templates.length === 0) { setAgrupadores([]); return }
 
     const templateIds = templates.map(t => t.id)
 
@@ -1168,7 +1176,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         const f: FilaReal = { id: "", origen: "TEMPLATE", fecha_estimada: c.fecha_estimada || c.fecha_vencimiento || "",
           fecha_pago: c.fecha_pago, estado: c.estado || "", medio_pago: c.medio_pago, debitos: Number(c.monto) || 0, creditos: 0 }
         if (!f.fecha_estimada || mesDe(f.fecha_estimada) !== mesHoy) continue
-        if (!["", "banco", "msa_galicia"].includes(String(f.medio_pago ?? "").trim().toLowerCase())) continue
+        if (!["", "banco", banco.tabla].includes(String(f.medio_pago ?? "").trim().toLowerCase())) continue
         if (!yaSeMovio(f, hoy) || fechaDeCaja(f) > hoy) continue
         total += f.debitos; n++
         porTemplate[c.egreso_id] = (porTemplate[c.egreso_id] || 0) + f.debitos
@@ -1199,7 +1207,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     // Métodos elegidos a mano. Sin fila, el método se hereda de `cuotas`.
     const { data: cfgs } = await supabase
       .from("presupuesto_template_config").select("template_id, metodo, monto_manual")
-      .eq("empresa", "MSA")
+      .eq("empresa", empresaP)
     const cfgPorTemplate: Record<string, ConfigTemplate> = {}
     for (const c of ((cfgs || []) as any[])) {
       cfgPorTemplate[String(c.template_id)] = {
@@ -1219,7 +1227,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       const info: TemplateInfo = {
         id: t.id, nombre: t.nombre_referencia,
         agrupador: t.cuenta_agrupadora ?? null,
-        tipo: t.tipo ?? null,
+        tipo: tipoEnPresupuesto(empresaP, t.categ, t.tipo ?? null),
         tipo_contable: tipoPorCateg[String(t.categ ?? "").trim().toUpperCase()] ?? null,
         cuotas: t.cuotas ?? null,
         tipo_recurrencia: t.tipo_recurrencia ?? null,
@@ -1305,7 +1313,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     const { data: contratos } = await supabase
       .from("contratos_arrendamiento")
       .select("id, empresa, campania, centro_costo, has, qq_ha_total, grano, dias_cobro_disponible")
-      .eq("empresa", "MSA")
+      .in("empresa", empresasDeContratos(empresaP))
       .eq("activo", true)
 
     if (!contratos || contratos.length === 0) { setCampos([]); return }
@@ -1486,7 +1494,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   // ── INGRESOS: ganadería (venta de destete) ──────────────────────────────────
   const cargarGanaderia = async () => {
     const [{ data: proyecciones }, { data: preciosHac }] = await Promise.all([
-      supabase.from("presupuesto_ganaderia").select("*").eq("activo", true).eq("empresa", "MSA"),
+      supabase.from("presupuesto_ganaderia").select("*").eq("activo", true).eq("empresa", empresaP),
       supabase.from("precios_hacienda").select("categoria, anio, mes, precio_pesos_kg"),
     ])
     if (!proyecciones || proyecciones.length === 0) { setGanaderia([]); return }
@@ -1508,10 +1516,11 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
 
   // ── INGRESOS: venta de hacienda (lotes de Productivo) ───────────────────────
   const cargarHacienda = async () => {
+    if (!bloques.hacienda) { setHacienda({ categorias: [], iibb: {} }); return }
     const [{ data: lotes }, { data: precios }, { data: ciclos }, { data: tra }, { data: acts }, { data: pes }] = await Promise.all([
-      supabase.schema("productivo").from("stock_lotes").select("*").eq("empresa", "MSA"),
+      supabase.schema("productivo").from("stock_lotes").select("*").eq("empresa", empresaP),
       supabase.from("precios_hacienda").select("categoria, anio, mes, precio_pesos_kg, peso_desde, peso_hasta"),
-      supabase.schema("productivo").from("stock_ciclos").select("*").eq("empresa", "MSA"),
+      supabase.schema("productivo").from("stock_ciclos").select("*").eq("empresa", empresaP),
       // Tramos y actividades: la curva de peso del lote es quebrada si cambia de actividad,
       // y el peso a la venta define la banda de precio -> tiene que ser la MISMA que en Productivo.
       supabase.schema("productivo").from("lote_tramos").select("*").order("orden"),
@@ -1646,7 +1655,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         .select("id, nombre, empresa, sueldo_presupuesto, francos_dias_promedio, premio_mes, premio_multiplo")
         .neq("activo", false),
       supabase.from("presupuesto_config")
-        .select("inflacion_mensual, ipc_escalon_meses, suss_base").eq("empresa", "MSA").maybeSingle(),
+        .select("inflacion_mensual, ipc_escalon_meses, suss_base").eq("empresa", empresaP).maybeSingle(),
     ])
     const paramsS: ParametrosSueldos = {
       ipcEscalonMeses: cfgS?.ipc_escalon_meses ?? null,
@@ -1664,8 +1673,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         premio_mes: e.premio_mes == null ? null : Number(e.premio_mes),
         premio_multiplo: e.premio_multiplo == null ? null : Number(e.premio_multiplo),
       }
-      const empresa = String(e.empresa || "")
-      if (!empresa.toLowerCase().includes("msa") && empresa.toLowerCase() !== "ambas") continue
+      if (!esDeLaEmpresa(e.empresa, empresaP)) continue
       const lineas = proyectarEmpleado(emp, mm, paramsS)
       if (lineas.length === 0) continue          // sin sueldo de presupuesto → cae al período
       conSueldoPropio.add(emp.nombre)
@@ -1687,8 +1695,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     for (const p of (periodos || [])) {
       const emp = p.empleado as any
       if (!emp) continue
-      const empresa: string = emp.empresa || ""
-      if (!empresa.toLowerCase().includes("msa") && empresa.toLowerCase() !== "ambas") continue
+      if (!esDeLaEmpresa(emp.empresa, empresaP)) continue
 
       const nombre: string = emp.nombre
       if (conSueldoPropio.has(nombre)) continue   // el presupuestado manda
@@ -1991,7 +1998,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     ]
 
     return {
-      empresa: "MSA",
+      empresa: empresaP,
       campana: null,
       meses: mm,
       ingresos,
@@ -2010,7 +2017,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   }
 
   const nombreArchivoExport = () =>
-    `Presupuesto_MSA_${new Date().toISOString().slice(0, 10)}`
+    `Presupuesto_${empresaP}_${new Date().toISOString().slice(0, 10)}`
 
   /**
    * 🧭 Los PADRONES — lo que debería existir, para poder ver lo que falta (`A-FEAT-119`).
@@ -2450,8 +2457,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         value={t.metodo.manual ? t.metodo.metodo : "__auto__"}
         onChange={async e => {
           const v = e.target.value
-          const err = v === "__auto__" ? await quitarMetodoTemplate(t.id)
-            : await guardarMetodoTemplate(t.id, { metodo: v as any, monto_manual: v === "manual" ? (t.montoManual ?? null) : null })
+          const err = v === "__auto__" ? await quitarMetodoTemplate(t.id, empresaP)
+            : await guardarMetodoTemplate(t.id, { metodo: v as any, monto_manual: v === "manual" ? (t.montoManual ?? null) : null }, empresaP)
           if (err) alert("Error: " + err.message); else await cargarDatos()
         }}>
         <option value="__auto__">Automático ({ETIQUETA_METODO[t.metodo.metodo]})</option>
@@ -2463,7 +2470,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
           onBlur={async e => {
             const n = parseNumeroAR(e.target.value)
             if (n === (t.montoManual ?? 0)) return
-            const err = await guardarMetodoTemplate(t.id, { metodo: "manual", monto_manual: n })
+            const err = await guardarMetodoTemplate(t.id, { metodo: "manual", monto_manual: n }, empresaP)
             if (err) alert("Error: " + err.message); else await cargarDatos()
           }} />
       )}
@@ -2512,7 +2519,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     const r = filaId
       ? (dieta ? await supabase.from("presupuesto_variables").update({ dieta, updated_at: new Date().toISOString() }).eq("id", filaId)
                : await supabase.from("presupuesto_variables").delete().eq("id", filaId))
-      : dieta ? await supabase.from("presupuesto_variables").insert({ empresa: "MSA", escenario: "base", campana, concepto: `Dieta ${campana}`,
+      : dieta ? await supabase.from("presupuesto_variables").insert({ empresa: empresaP, escenario: "base", campana, concepto: `Dieta ${campana}`,
           actividad_id: actividadId, dieta, cantidad: 0, precio: 0, distribucion: "calendario", fuente_cantidad: "manual", fuente_precio: "manual",
           fundamento: "Dieta del año elegida desde el presupuesto", activo: true }) : { error: null }
     if (r.error) { alert("No se pudo guardar la dieta: " + r.error.message); return }
@@ -2531,10 +2538,22 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-gray-800">Presupuesto MSA</h2>
+          <h2 className="flex items-center gap-2 text-xl font-semibold text-gray-800">
+            Presupuesto {empresaP}
+            {/* 🏢 Cada empresa con SU estructura (A-FEAT-1666): MA no tiene hacienda, costos de producción ni plan del año */}
+            <span className="inline-flex overflow-hidden rounded border text-xs font-normal">
+              {EMPRESAS_PRESUPUESTO.map(e => (
+                <button key={e} type="button" disabled={cargando}
+                  className={`px-2 py-0.5 ${e === empresaP ? "bg-gray-800 text-white" : "bg-white text-gray-600 hover:bg-gray-100"}`}
+                  onClick={() => setEmpresaP(e)}>{e}</button>
+              ))}
+            </span>
+          </h2>
           <p className="text-sm text-gray-500">
-            Ingresos (arrendamientos y hacienda) + egresos (templates, sueldos, cuentas
-            contables y costos de producción) · {meses[0].label} – {meses[meses.length-1].label}
+            {empresaP === "MA"
+              ? "Ingresos (arrendamientos propios y de PAM) + egresos (sus templates, la caja como gasto)"
+              : "Ingresos (arrendamientos y hacienda) + egresos (templates, sueldos, cuentas contables y costos de producción)"}
+            {" "}· {meses[0].label} – {meses[meses.length-1].label}
           </p>
         </div>
         <div className="flex gap-2">
@@ -2618,7 +2637,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
             <DialogTitle>Inversiones</DialogTitle>
             <DialogDescription>Nombre, monto, mes de arranque, plazo y por qué se invierte. Al cerrar, la grilla se actualiza.</DialogDescription>
           </DialogHeader>
-          <ConfiguradorInversiones onCambio={() => void cargarInversiones()} />
+          <ConfiguradorInversiones empresa={empresaP} onCambio={() => void cargarInversiones()} />
         </DialogContent>
       </Dialog>
 
@@ -3598,7 +3617,7 @@ Clic para presupuestar la venta`}
                 <tr className="border-t-2 border-gray-400 bg-gray-800">
                   <td className="sticky left-0 z-10 bg-gray-800 px-4 py-3 font-bold text-white flex items-center gap-2">
                     <TrendingDown className="h-4 w-4" />
-                    TOTAL EGRESOS MSA
+                    TOTAL EGRESOS {empresaP}
                     {seccionesVisibles.some(s => s.tipo !== "egreso") && (
                       <span className="font-normal text-[10px] text-gray-300">
                         (incluye distribuciones)
@@ -3831,7 +3850,7 @@ Clic para presupuestar la venta`}
           <span className="text-amber-500">*</span>
           Precio o TC arrastrado de otro mes
         </span>
-        <span>· Montos en pesos · Solo MSA</span>
+        <span>· Montos en pesos · Solo {empresaP}</span>
         <Badge variant="outline" className="text-xs">Ingresos: arrendamientos · Egresos: templates + sueldos</Badge>
       </div>
     </div>

@@ -47,6 +47,12 @@
   vacío.
 - Y cada bloque lee **su** fuente: MA factura arrendamiento con Fac C (no está inscripta en IVA), tiene sus templates, su consumo y sus
   cuentas. → A-FEAT-1666.
+- ✅ **Hecho 26/11 (paso 1)**: el presupuesto es de **MSA y MA** (PAM no tiene). Lo que cambia de una a otra vive en
+  `lib/presupuesto/empresa.ts` (un solo lugar): **MA** = sus templates (lo que comparte con MSA queda en MSA, para no contarlo dos
+  veces) · contratos **suyos y de PAM** (los cobra ella; al renovarse pasan a ser suyos) · arranque desde **su Galicia** · la **caja
+  como gasto sólo en el presupuesto** (no tiene detalle de caja; el template sigue «financiero» para el Dashboard) · la **tarjeta no
+  suma** (se desglosa en sus templates de consumo) · sin hacienda, costos de producción, plan del año ni cuentas contables. Se rige
+  «por lo interno», como el Dashboard «Por responsable», pero a nivel template (el responsable), no pago por pago.
 
 ---
 

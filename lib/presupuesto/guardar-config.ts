@@ -11,17 +11,17 @@ import type { MetodoTemplate } from './templates'
 import type { ConfigCuenta } from './modos'
 
 /** El método elegido a mano para un template (gana sobre el automático). */
-export async function guardarMetodoTemplate(templateId: string, cfg: { metodo: MetodoTemplate; monto_manual?: number | null }) {
+export async function guardarMetodoTemplate(templateId: string, cfg: { metodo: MetodoTemplate; monto_manual?: number | null }, empresa: string = 'MSA') {
   const { error } = await supabase.from('presupuesto_template_config').upsert({
-    empresa: 'MSA', template_id: templateId, metodo: cfg.metodo,
+    empresa, template_id: templateId, metodo: cfg.metodo,
     monto_manual: cfg.monto_manual ?? null, updated_at: new Date().toISOString(),
   }, { onConflict: 'empresa,template_id' })
   return error
 }
 
 /** Vuelve el template al método automático (borra la elección a mano). */
-export async function quitarMetodoTemplate(templateId: string) {
-  const { error } = await supabase.from('presupuesto_template_config').delete().eq('empresa', 'MSA').eq('template_id', templateId)
+export async function quitarMetodoTemplate(templateId: string, empresa: string = 'MSA') {
+  const { error } = await supabase.from('presupuesto_template_config').delete().eq('empresa', empresa).eq('template_id', templateId)
   return error
 }
 

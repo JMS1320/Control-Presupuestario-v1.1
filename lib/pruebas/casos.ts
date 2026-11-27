@@ -334,6 +334,7 @@ import { calcularArranque, clasificarFila, lineaDeSaldo, controlDosFuentes, tota
 import { recortarPorFamilia } from "@/lib/presupuesto/templates"
 import { pesoInicialTramo, gananciaDesdeNacimiento, tramoHastaLaVenta, planPorDefecto } from "@/lib/productivo/tramos"
 import { insumosDeDieta, dietasDe } from "@/lib/productivo/actividades"
+import { esDeLaEmpresa, empresasDeContratos, tipoEnPresupuesto, bloquesDeEmpresa } from "@/lib/presupuesto/empresa"
 import { costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, aplicarPlanRacion, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
@@ -9150,6 +9151,15 @@ export function correrCasos(): Resultado[] {
     const vRes = `${v1?.id}→${v1?.hastaNueva} · ${v2 ? "movió" : "nada"} · ${v3 ? "movió" : "nada"}`
     chequear("Productivo", "🐂 Si la venta se corre, el plan del año que llega a la venta se estira (más días de ración); si terminaba lejos o la fecha cae antes, no se toca",
       "r→2027-04-30 · nada · nada", vRes, vRes === "r→2027-04-30 · nada · nada", "A-FEAT-1667")
+    // 🏢 A-FEAT-1666: el presupuesto de MA con SU estructura — sus templates (no los compartidos con MSA), contratos suyos + de PAM,
+    // la caja como gasto (la tarjeta no: se desglosa en sus consumos) y sin hacienda / costos de producción / cuentas de MSA
+    const resp = ["MA", "PAM/MA/Duhau", "MSA", "MSA/PAM", "PAM", "ambas", "MSA/PAM/MA"]
+    const deMA = resp.filter(r => esDeLaEmpresa(r, "MA")).join(","), deMSA = resp.filter(r => esDeLaEmpresa(r, "MSA")).join(",")
+    const b = bloquesDeEmpresa("MA")
+    const vMA = `MA: ${deMA} · MSA: ${deMSA} · contratos ${empresasDeContratos("MA").join("+")} · caja ${tipoEnPresupuesto("MA", "CAJA", "financiero")} / en MSA ${tipoEnPresupuesto("MSA", "CAJA", "financiero")} · tarjeta ${tipoEnPresupuesto("MA", "Tarjetas MA", "financiero")} · bloques ${[b.hacienda, b.costosProduccion, b.cuentasContables].join(",")}`
+    const eMA = "MA: MA,PAM/MA/Duhau · MSA: MSA,MSA/PAM,ambas,MSA/PAM/MA · contratos MA+PAM · caja egreso / en MSA financiero · tarjeta financiero · bloques false,false,false"
+    chequear("Presupuesto", "🏢 Presupuesto de MA: sus templates (lo compartido con MSA queda en MSA), contratos suyos y de PAM, caja = gasto, tarjeta no, sin hacienda ni costos de producción",
+      eMA, vMA, vMA === eMA, "A-FEAT-1666")
     // 🥣 Dietas (script 305): sin dieta = va en todas; con dieta = sólo en la suya; la elegida manda (si no, la de default)
     const insD = [{ c: "Maíz", dieta: "Maíz y concentrado" }, { c: "Conc", dieta: "Maíz y concentrado" }, { c: "Maíz", dieta: "Con silo" }, { c: "Silo", dieta: "Con silo" }, { c: "Sal", dieta: null }]
     const dRes = `${insumosDeDieta(insD, "Con silo").map(i => i.c).join("+")} · ${insumosDeDieta(insD, "Maíz y concentrado").map(i => i.c).join("+")} · ${insumosDeDieta(insD, null).map(i => i.c).join("+")} · ${dietasDe(insD).join("/")}`
