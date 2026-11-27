@@ -312,7 +312,7 @@ dest. ${mesAnio(fd)}${esReal ? " ✓" : ""}`
         `${n1(c.descarte)}  (${pct(c.rodeo > 0 ? c.descarte / c.rodeo : 0)} del rodeo)`
         // 🐄 A-FEAT-1672: el descarte REAL, cuando el servicio siguiente ya ocurrió (rodeo − vacas que llegaron)
         + (c.cierre_real ? (c.cierre_real.difDescarte != null && Math.abs(c.cierre_real.difDescarte) > 0.01
-            ? `\n⚠ real ${n1(c.cierre_real.descarte)} (cargado a mano ${n1(c.descarte)})` : `\n✓ real (${c.cierre_real.fuente})`) : ""),
+            ? `\n✓ real (a mano decía ${n1(Number(c.ciclo.real_descarte))})` : `\n✓ real (${c.cierre_real.fuente})`) : ""),
       clase: "font-medium text-amber-700" },
     { label: "Terneras retenidas",    get: c => {
         const chk = chequeoReposicion(c)
@@ -322,7 +322,7 @@ dest. ${mesAnio(fd)}${esReal ? " ✓" : ""}`
           + (chk ? ` · hoy marcadas ${n1(chk.marcadas)}` : "")
           // 🐄 A-FEAT-1672: las retenidas REALES (vaquillonas de reposición al servicio siguiente) contra lo cargado
           + (c.cierre_real ? (c.cierre_real.difRetenidas != null && Math.abs(c.cierre_real.difRetenidas) > 0.01
-              ? `\n⚠ real ${n1(c.cierre_real.retenidas)} (cargado a mano ${n1(c.retenidas)})` : `\n✓ real (${c.cierre_real.fuente})`) : "")
+              ? `\n✓ real (a mano decía ${n1(Number(c.ciclo.real_retenidas))})` : `\n✓ real (${c.cierre_real.fuente})`) : "")
       }, clase: "text-blue-700", sep: true },
     { label: "Toritos retenidos",     get: c => c.toritos > 0 ? n1(c.toritos) : "—", clase: "text-blue-700" },
     { label: "Terneros a venta",      get: c => n1(c.terneros_venta), clase: "font-medium text-emerald-700" },

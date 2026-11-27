@@ -148,7 +148,7 @@ export interface CicloCalculado {
   /**
    * 🐄 A-FEAT-1672 paso 2 — el CIERRE REAL de este ciclo, cuando el servicio SIGUIENTE ya ocurrió: lo que de verdad salió del rodeo
    * (descarte = rodeo − vacas que llegaron al servicio siguiente: incluye ventas de CUT y muertes) y las vaquillonas que de verdad
-   * quedaron de reposición. Si el ciclo tenía el dato cargado a mano, manda lo de a mano y acá queda la diferencia a la vista.
+   * quedaron de reposición. Manda SIEMPRE lo real (cierre = inicio del siguiente); si el ciclo tenía un dato a mano, queda la diferencia a la vista.
    */
   cierre_real?: { descarte: number; retenidas: number; fuente: string; difDescarte: number | null; difRetenidas: number | null } | null
 }
@@ -321,12 +321,11 @@ export function calcularLineaTiempo(ciclos: CicloStock[], reales?: Record<string
         difDescarte: p.ciclo.real_descarte != null ? Number(p.ciclo.real_descarte) - descReal : null,
         difRetenidas: p.ciclo.real_retenidas != null ? Number(p.ciclo.real_retenidas) - retReal : null,
       }
-      // Lo real reemplaza a la proyección donde no hay dato a mano (el de a mano manda y se muestra la diferencia)
-      if (p.ciclo.real_descarte == null) p.descarte = descReal
-      if (p.ciclo.real_retenidas == null) {
-        p.retenidas = retReal
-        p.terneras_venta = Math.max(0, p.terneras - retReal)
-      }
+      // El cierre ES el inicio del ciclo siguiente (JMS 27/11: «debe también cerrar con lo real, cierre = inicio siguiente»): lo real
+      // reemplaza a lo proyectado Y a lo cargado a mano; lo que decía a mano queda a la vista (difDescarte / difRetenidas).
+      p.descarte = descReal
+      p.retenidas = retReal
+      p.terneras_venta = Math.max(0, p.terneras - retReal)
       p.vacas_cierre = real.vacas
       p.vaquillonas_cierre = real.vaquillonas
     }
