@@ -12,6 +12,15 @@
 
 ## 🧪 <a id="guia-pruebas-2026-10-05"></a>GUÍA DE PRUEBAS — vigente al 1 de noviembre (todo en `desarrollo` salvo lo marcado)
 
+> 🆕 **27/11 — PRESUPUESTO: stock de insumos, raciones del feed lot, rodeo real y ventas de hacienda** (todo en `desarrollo`; antes, que arriba a la derecha diga `9e7966e2` o posterior). En este orden:
+> 1. 🧾 **Detalle de las facturas de insumos** (Egresos → Facturas → 🧾) → [A-TEST-1398](#a-test-1398); y su **vínculo con la entrada al stock** renglón por renglón (✨ vinculada sola — revisá · «＋ Cargar la entrada» pide la fecha de llegada) → [A-TEST-1400](#a-test-1400).
+> 2. 🌽 **El stock en el presupuesto** (🌾 Costos de producción → «🌽 El stock primero»; la receta dice qué insumo del stock come) → [A-TEST-1401](#a-test-1401).
+> 3. 📅 **El plan del año del lote** (cada renglón de la ración con su fecha y varios períodos = las 3 raciones del feed lot) → [A-TEST-1404](#a-test-1404).
+> 4. 🐄 **Lo real reemplaza a la proyección del rodeo** (Evolución del rodeo: 26/27 = 191 + 74 reales; 25/26 cierra con lo real) y **⚖️ lotes vs stock** en Hacienda → [A-TEST-1407](#a-test-1407).
+> 5. 💰 **La venta registrada aparece en el presupuesto** (Toro, diciembre ≈ $ 14,6 M) → [A-TEST-1408](#a-test-1408).
+> 6. ✂️ **Vender el lote en partes y confirmarla con lo real** (Novillo 13 el 30/11 + 26 el resto; Vaq. Engorde 9; la ración baja; «Lote del presupuesto» en las ventas desde Movimientos) → [A-TEST-1410](#a-test-1410).
+> Ya en la base (sólo saberlo): scripts 312–322 — vínculo factura↔entrada (312/313), receta↔stock (314/315), silo de sorgo (316), corte recría→feed lot el 24/09 (317), concentrados de Biofarma y medición 4.950 (318), plan por lote (319), maíz 31.560 al 23/09 + 3 raciones (320), lotes = stock real (321), ventas parciales (322). **Para después**: A-BUG-1673 (pago de hoy vs saldo de ayer) · lote de venta de las 12 CUT · nacimientos 2026 en el stock (al pie = 0).
+
 > 🆕 **11/11 tarde — las notas 🌙 de la app (≈35, todas resueltas o anotadas).** Todo en `desarrollo` (antes, que Vercel haya publicado `70fdf061` o posterior). Se prueba **usando la app**, en cada pantalla; el cartel de cada proceso lo recuerda.
 > 0. 🔴 **ANTES**: publicar el **GAS 0.26.0** (`gas-buscar-pdf/Main.gs` entero → Implementar → Gestionar implementaciones → Nueva versión). Sin eso no anda «🗑️ Sacar de la carpeta».
 > 1. 📥 **Importar facturas** (Egresos → Facturas → Importar): FC precargado y «siempre Portal», fecha estimada con su origen y «guardar como pago usual» (día 10 para Alcorta, Massaglia, Miceli, ICT, Coop. Río Tala) → [A-TEST-1356](#a-test-1356), [A-TEST-1363](#a-test-1363).
