@@ -422,7 +422,7 @@ import { armarSaldosProductivos, sistemaProductivoAlCierre, diaAnterior } from "
 import { armarFilaDato, leerNumero, textoEstadoGuardado, MARCA_TENTATIVO, esTentativo, fuenteTentativo, confirmarFila, leyendaTentativo } from "@/lib/balance/datos-usuario-puro"
 import { coincideBusqueda, veredictoResuelve } from "@/lib/gas-pdf/veredicto"
 import { leerFacturaDelTexto, precargaDesdeLectura, cuitValido, parsearImporte } from "@/lib/gas-pdf/leer-factura"
-import { leerDetalleFactura } from "@/lib/facturas-detalle/leer-detalle"
+import { leerDetalleFactura, primeraCopia } from "@/lib/facturas-detalle/leer-detalle"
 import { controlDeLaCarga, camposDeLaCarga, huellaDeLaCarga, aNegativoSiNC, fcSugeridoImport, fechaManualValida, fechaEstimadaDeProveedor } from "@/lib/facturas/alta-factura"
 import { faltantesDelSubdiario } from "@/lib/gas-pdf/faltantes"
 import { parsearLineaMovimiento, parsearResumen as parsearResumenTarjeta } from "@/lib/tarjetas/parseo-resumen-pdf"
@@ -9172,6 +9172,16 @@ export function correrCasos(): Resultado[] {
     ].join(",")
     chequear("Facturas", "🧾 Factura de insumos: Longo maíz sí, AFA fertilizante sí, AFA flete no, AFA sin cuenta sí, proveedor sin compras no, veterinarios no; id del PDF desde el link",
       "true,true,false,true,false,false,19rwFWkD94dQ1Nnt0oH6g-XvX7bvxiwHF", vI, vI === "true,true,false,true,false,false,19rwFWkD94dQ1Nnt0oH6g-XvX7bvxiwHF", "A-FEAT-1651")
+    // 🧾 Copias de ARCA en línea con la marca AL FINAL (Longo): el renglón no se cuenta dos veces
+    const copia = (marca: string) => `FACTURA LONGO NESTOR SOC DE HECHO
+Código Producto / Servicio Cantidad
+Maíz quebrado 25,56 toneladas 287090,00 0,00 7338020,40 21% 8879004,68
+${marca}
+Importe Neto Gravado: $ 7338020,40
+`
+    const pc = primeraCopia(copia("ORIGINAL") + copia("DUPLICADO") + copia("TRIPLICADO"))
+    const vPc = `${(pc.match(/Maíz quebrado/g) || []).length} renglón · ${pc.includes("ORIGINAL") ? "con su pie" : "sin pie"}`
+    chequear("Facturas", "🧾 Factura de ARCA con la marca ORIGINAL al final de cada copia: se lee una sola copia (el renglón una vez)", "1 renglón · con su pie", vPc, vPc === "1 renglón · con su pie", "A-FEAT-1651")
     // 🥣 Dietas (script 305): sin dieta = va en todas; con dieta = sólo en la suya; la elegida manda (si no, la de default)
     const insD = [{ c: "Maíz", dieta: "Maíz y concentrado" }, { c: "Conc", dieta: "Maíz y concentrado" }, { c: "Maíz", dieta: "Con silo" }, { c: "Silo", dieta: "Con silo" }, { c: "Sal", dieta: null }]
     const dRes = `${insumosDeDieta(insD, "Con silo").map(i => i.c).join("+")} · ${insumosDeDieta(insD, "Maíz y concentrado").map(i => i.c).join("+")} · ${insumosDeDieta(insD, null).map(i => i.c).join("+")} · ${dietasDe(insD).join("/")}`

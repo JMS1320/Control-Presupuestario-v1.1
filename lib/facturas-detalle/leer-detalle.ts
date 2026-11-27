@@ -117,8 +117,18 @@ const suma = (ns: (number | null)[]) => r2(ns.reduce<number>((a, b) => a + (b ??
 
 /** Las facturas de ARCA vienen en ORIGINAL + DUPLICADO + TRIPLICADO en el mismo PDF: se lee sólo la primera copia. */
 export function primeraCopia(texto: string): string {
+  const cortes: number[] = []
   const m = texto.match(/(?:^|\n)[ \t]*(DUPLICADO|TRIPLICADO)[ \t]*\r?(?:\n|$)/)
-  return m && m.index != null && m.index > 0 ? texto.slice(0, m.index) : texto
+  if (m && m.index != null && m.index > 0) cortes.push(m.index)
+  // ⚠️ 26/11: en las facturas de ARCA en línea (Longo, Arroyo Tala) la marca ORIGINAL/DUPLICADO va al FINAL de cada copia, así
+  // que cortar en «DUPLICADO» se llevaba el renglón de la segunda copia y lo contaba dos veces. La segunda copia empieza repitiendo
+  // la primera línea del papel: se corta también ahí, y gana el corte más temprano.
+  const primera = texto.split(/\r?\n/).map(x => x.trim()).find(Boolean)
+  if (primera && primera.length >= 8) {
+    const i = texto.indexOf(primera, texto.indexOf(primera) + primera.length)
+    if (i > 0) cortes.push(i)
+  }
+  return cortes.length ? texto.slice(0, Math.min(...cortes)) : texto
 }
 
 function alicuotaDe(s: string): { alicuota: number | null; exento: boolean } {
