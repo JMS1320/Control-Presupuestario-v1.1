@@ -990,7 +990,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
   const [comprasLibres, setComprasLibres] = useState<{ porCuit: Map<string, { n: number; desde: string }>; vinculadas: Set<string> }>({ porCuit: new Map(), vinculadas: new Set() })
   const [recargaComprasLibres, setRecargaComprasLibres] = useState(0)
   /** 🧾 A-FEAT-1651 — proveedores de insumos (aprendidos) y lecturas del detalle ya hechas; la factura abierta en el detalle. */
-  const [insumosInfo, setInsumosInfo] = useState<{ proveedores: Set<string>; lecturas: Map<string, string> }>({ proveedores: new Set(), lecturas: new Map() })
+  const [insumosInfo, setInsumosInfo] = useState<{ proveedores: Set<string>; lecturas: Map<string, string>; solas: Set<string> }>({ proveedores: new Set(), lecturas: new Map(), solas: new Set() })
   const [facturaDetalle, setFacturaDetalle] = useState<string | null>(null)
   useEffect(() => {
     if (schemaName !== 'msa') return
@@ -999,7 +999,7 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         const prod = supabase.schema('productivo')
         const [{ data: movs }, { data: vincs }] = await Promise.all([
           prod.from('movimientos_insumos').select('id, compra_id, cuit, fecha').eq('tipo', 'compra').not('compra_id', 'is', null),
-          prod.from('entrega_factura').select('movimiento_id, factura_id'),
+          prod.from('entrega_factura').select('movimiento_id, factura_id, automatico, revisado_at'),
         ])
         const conFactura = new Set((vincs || []).map((v: any) => v.movimiento_id))
         const grupos = new Map<string, { cuit: string; fecha: string }>()
@@ -1022,7 +1022,9 @@ export function VistaFacturasArca({ empresa = 'MSA', userRole = 'admin' }: { emp
         const ids = Array.from(new Set((vincs || []).map((v: any) => String(v.factura_id))))
         const { data: fvs } = ids.length ? await supabase.schema('msa').from('comprobantes_arca').select('cuit').in('id', ids) : { data: [] as any[] }
         const prov = new Set<string>([...(compras || []), ...(fvs || [])].map((r: any) => String(r.cuit || '').replace(/\D/g, '')).filter(Boolean))
-        setInsumosInfo({ proveedores: prov, lecturas: new Map((lects || []).map((l: any) => [String(l.comprobante_id), String(l.estado)])) })
+        // ✨ facturas con un vínculo al stock hecho por la app y todavía sin revisar
+        const solas = new Set<string>((vincs || []).filter((v: any) => v.automatico && !v.revisado_at).map((v: any) => String(v.factura_id)))
+        setInsumosInfo({ proveedores: prov, lecturas: new Map((lects || []).map((l: any) => [String(l.comprobante_id), String(l.estado)])), solas })
       } catch (e) { console.error('No se pudieron leer las compras sin factura', e) }
     })()
   }, [schemaName, recargaComprasLibres])
@@ -8584,12 +8586,13 @@ Queda sin imputar, para imputarla a un subdiario.`)) return
                             {schemaName === 'msa' && esFacturaDeInsumos({ cuit: factura.cuit, nro_cuenta: (factura as any).nro_cuenta }, insumosInfo.proveedores) && (() => {
                               const sinCompra = !comprasLibres.vinculadas.has(factura.id)
                               const leida = insumosInfo.lecturas.get(factura.id)
+                              const sola = insumosInfo.solas.has(factura.id)
                               return (
                                 <button type="button" onClick={() => setFacturaDetalle(factura.id)}
-                                  className={`rounded px-1 text-[11px] whitespace-nowrap ${sinCompra ? 'bg-amber-200 text-amber-900 hover:bg-amber-300 font-semibold' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-                                  title={(sinCompra ? 'Factura de insumos SIN compra en el stock: registrala o vinculala. ' : 'Factura de insumos vinculada al stock. ')
+                                  className={`rounded px-1 text-[11px] whitespace-nowrap ${sinCompra ? 'bg-amber-200 text-amber-900 hover:bg-amber-300 font-semibold' : sola ? 'bg-violet-200 text-violet-900 hover:bg-violet-300 font-semibold' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                                  title={(sinCompra ? 'Factura de insumos SIN compra en el stock: registrala o vinculala. ' : sola ? '✨ La app la vinculó sola con su entrada al stock: revisá que esté bien. ' : 'Factura de insumos vinculada al stock. ')
                                     + (leida ? `Detalle leído (${leida}).` : 'Click: ver su detalle artículo por artículo.')}>
-                                  🧾{sinCompra ? ' sin compra' : ''}
+                                  🧾{sinCompra ? ' sin compra' : sola ? ' ✨ revisá' : ''}
                                 </button>
                               )
                             })()}

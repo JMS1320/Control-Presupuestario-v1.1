@@ -336,6 +336,7 @@ import { pesoInicialTramo, gananciaDesdeNacimiento, tramoHastaLaVenta, planPorDe
 import { insumosDeDieta, dietasDe } from "@/lib/productivo/actividades"
 import { esDeLaEmpresa, empresasDeContratos, tipoEnPresupuesto, bloquesDeEmpresa } from "@/lib/presupuesto/empresa"
 import { esCuentaDeInsumos, esFacturaDeInsumos, fileIdDeDrive } from "@/lib/facturas-detalle/insumos"
+import { proponerPorRenglon, factorUnidad, notaDelVinculo, insumoPorNombre } from "@/lib/productivo/vinculo-renglon"
 import { costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, aplicarPlanRacion, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
@@ -9182,6 +9183,39 @@ Importe Neto Gravado: $ 7338020,40
     const pc = primeraCopia(copia("ORIGINAL") + copia("DUPLICADO") + copia("TRIPLICADO"))
     const vPc = `${(pc.match(/Maíz quebrado/g) || []).length} renglón · ${pc.includes("ORIGINAL") ? "con su pie" : "sin pie"}`
     chequear("Facturas", "🧾 Factura de ARCA con la marca ORIGINAL al final de cada copia: se lee una sola copia (el renglón una vez)", "1 renglón · con su pie", vPc, vPc === "1 renglón · con su pie", "A-FEAT-1651")
+    // ✨ A-FEAT-1663 stock paso 1: la factura se vincula SOLA con su entrada sólo si es inequívoco; si no, propone; sin entrada, ofrece cargarla
+    {
+      const ins = [{ id: "maiz", producto: "Maíz Granel", unidad: "kg" }, { id: "nov", producto: "Concentrado Novillo 35 10", unidad: "kg" },
+        { id: "ter", producto: "Concentrado Terneros", unidad: "kg" }, { id: "map", producto: "MAP", unidad: "kg" }]
+      const apr = [{ cuit: "30628173563", descripcion: "maiz quebrado", insumoStockId: "maiz" }]
+      const fac = (o: any = {}) => ({ fecha: "2026-11-20", cuit: "30628173563", proveedor: "LONGO NESTOR SOC DE HECHO", moneda: "ARS", tipoCambio: null, estadoLectura: "cierra", ...o })
+      const ren = (o: any = {}) => ({ n: 1, descripcion: "Maíz quebrado", cantidad: 25.56, unidad: "toneladas", neto: 7338020.4, insumoStockId: null, ...o })
+      const ent = (o: any = {}) => ({ id: "e1", fecha: "2026-11-10", insumoStockId: "maiz", cantidad: 20000, costoUnitario: null, proveedor: "Longo", cuit: "30628173563", ...o })
+      const uno = (args: any) => { const x = proponerPorRenglon({ factura: fac(), renglones: [ren()], entradas: [ent()], aprendidos: apr, insumos: ins, ...args })[0]!; return `${x.estado}${x.entrada ? ":" + x.entrada.id : ""}` }
+      const a = proponerPorRenglon({ factura: fac(), renglones: [ren()], entradas: [ent()], aprendidos: apr, insumos: ins })[0]!
+      const vR = [
+        `${a.estado} ${a.cantidadStock} kg a ${a.precioStock}`,
+        uno({ entradas: [ent(), ent({ id: "e2", cantidad: 25000 })] }),                       // dos entradas posibles: propone la más parecida
+        uno({ factura: fac({ estadoLectura: "no-cierra" }) }),                                // la lectura no cierra
+        uno({ aprendidos: [] }),                                                               // sólo por el nombre
+        uno({ entradas: [ent({ cantidad: 10000 })] }),                                         // difiere más de 30 %
+        uno({ entradas: [ent({ fecha: "2026-05-01" })] }),                                     // fuera de la ventana
+        uno({ entradas: [ent({ cuit: null, proveedor: "Longo" })] }),                          // entrada sin CUIT, por el nombre del proveedor
+        uno({ entradas: [ent({ cuit: "30999999999" })] }),                                     // otro proveedor
+        uno({ renglones: [ren({ noVincularSolo: true })] }),                                   // ya dijo «no es ésta»
+        uno({ renglones: [ren({ unidad: "20B" })] }),                                          // unidad sin conversión
+        uno({ renglones: [ren(), ren({ n: 2 })] }),                                            // dos renglones del mismo insumo
+        uno({ renglones: [ren({ descripcion: "Flete" })], aprendidos: [] }),                    // no sé qué insumo es
+      ].join(" | ")
+      const eR = "auto 25560 kg a 287.09 | propuesta:e2 | propuesta:e1 | propuesta:e1 | propuesta:e1 | sin-entrada | auto:e1 | sin-entrada | propuesta:e1 | propuesta:e1 | propuesta:e1 | sin-insumo"
+      chequear("Productivo", "✨ Factura ↔ entrada al stock por renglón: se vincula SOLA sólo si la lectura cierra, el artículo ya se aprendió, hay UNA entrada del proveedor en la ventana, la unidad se convierte y la cantidad difiere ≤ 30 %; si no, propone",
+        eR, vR, vR === eR, "A-FEAT-1663")
+      const nota = notaDelVinculo({ cantidadStock: 25560, precioStock: 287.09 }, { cantidad: 20000, costoUnitario: null }, "kg", true, "0003-00000540")
+      const vN = `${factorUnidad("toneladas", "kg")} ${factorUnidad("KGS", "kg")} ${factorUnidad("lt", "L")} ${factorUnidad("20B", "L")} · ${insumoPorNombre("CONCENTRADO NOVILLO 35-10 S-BO25", ins)} ${insumoPorNombre("Map Granel.", ins)} ${insumoPorNombre("Concentrado", ins)} · ${nota}`
+      const eN = "1000 1 1 null · nov map null · ✨ vinculada sola a la factura 0003-00000540 · la entrada decía 20.000 kg a $ — → la factura dice 25.560 kg a $ 287,09: se corrigió"
+      chequear("Productivo", "✨ Unidades de la factura al stock (t→kg, KGS, lt→L; bidón de 20 no), insumo por el nombre (empate = no sabe) y la huella del vínculo (lo que decía la entrada y lo que dice la factura)",
+        eN, vN, vN === eN, "A-FEAT-1663")
+    }
     // 🥣 Dietas (script 305): sin dieta = va en todas; con dieta = sólo en la suya; la elegida manda (si no, la de default)
     const insD = [{ c: "Maíz", dieta: "Maíz y concentrado" }, { c: "Conc", dieta: "Maíz y concentrado" }, { c: "Maíz", dieta: "Con silo" }, { c: "Silo", dieta: "Con silo" }, { c: "Sal", dieta: null }]
     const dRes = `${insumosDeDieta(insD, "Con silo").map(i => i.c).join("+")} · ${insumosDeDieta(insD, "Maíz y concentrado").map(i => i.c).join("+")} · ${insumosDeDieta(insD, null).map(i => i.c).join("+")} · ${dietasDe(insD).join("/")}`

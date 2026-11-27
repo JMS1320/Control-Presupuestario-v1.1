@@ -60,6 +60,12 @@ export async function POST(request: Request) {
   const { lectura, renglones } = filasDeLectura(empresa, id, fileId, d, quien)
   const { error: eL } = await supabase.from("factura_lecturas").upsert(lectura, { onConflict: "empresa,comprobante_id" })
   if (eL) return NextResponse.json({ ok: false, error: "No se pudo guardar la lectura: " + eL.message }, { status: 500 })
+  // Lo que se eligió o aprendió en cada renglón (qué insumo es, «no vincular solo») sobrevive a una lectura nueva.
+  const { data: previos } = await supabase.from("factura_renglones").select("n, insumo_stock_id, no_vincular_solo").eq("empresa", empresa).eq("comprobante_id", id)
+  for (const r of renglones as any[]) {
+    const p = (previos || []).find((x: any) => x.n === r.n)
+    if (p) { r.insumo_stock_id = p.insumo_stock_id; r.no_vincular_solo = !!p.no_vincular_solo }
+  }
   const { error: eD } = await supabase.from("factura_renglones").delete().eq("empresa", empresa).eq("comprobante_id", id)
   if (eD) return NextResponse.json({ ok: false, error: "No se pudo reemplazar el detalle anterior: " + eD.message }, { status: 500 })
   if (renglones.length) {

@@ -16,6 +16,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 const schemaDe = (e: string) => (e === "PAM" ? "pam" : e === "MA" ? "ma" : "msa")
 const fmt = (n: number | null | undefined, d = 2) => n == null ? "—" : Number(n).toLocaleString("es-AR", { minimumFractionDigits: d, maximumFractionDigits: d })
 const dmy = (f?: string | null) => (f ? String(f).slice(0, 10).split("-").reverse().join("/") : "—")
+type EstadoStock = { propuestas: any[]; vinculos: any[]; entradas: any[]; insumos: any[] }
+type Eleccion = Record<number, { insumo?: string; entrada?: string }>
 const ESTADO: Record<string, { txt: string; cls: string }> = {
   "cierra": { txt: "✓ cierra con el papel", cls: "bg-emerald-100 text-emerald-800" },
   "no-cierra": { txt: "⚠ no cierra: revisar", cls: "bg-red-100 text-red-800" },
@@ -32,6 +34,23 @@ export function DetalleFactura({ empresa = "MSA", facturaId, onCerrar }: { empre
   const [entregas, setEntregas] = useState<any[]>([])
   const [leyendo, setLeyendo] = useState(false)
   const [aviso, setAviso] = useState<string | null>(null)
+  /** ✨ La entrada al stock de cada renglón (A-FEAT-1663 stock paso 1): propuestas, vínculos y entradas posibles. */
+  const [stock, setStock] = useState<EstadoStock | null>(null)
+  const [ocupado, setOcupado] = useState(false)
+  const [eleccion, setEleccion] = useState<Record<number, { insumo?: string; entrada?: string }>>({})
+
+  const accionStock = useCallback(async (accion: string, extra: Record<string, unknown> = {}) => {
+    if (!facturaId) return
+    setOcupado(true)
+    try {
+      const r = await fetch("/api/facturas/vincular-stock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ empresa, comprobante_id: facturaId, accion, ...extra }) })
+      const j = await r.json().catch(() => ({}))
+      if (!j.ok) { setAviso(j.error || "No se pudo vincular con el stock."); return }
+      setStock({ propuestas: j.propuestas || [], vinculos: j.vinculos || [], entradas: j.entradas || [], insumos: j.insumos || [] })
+      if (accion !== "ver" && accion !== "auto") setEleccion({})
+    } catch (e) { setAviso("No se pudo vincular con el stock: " + (e as Error).message) }
+    finally { setOcupado(false) }
+  }, [empresa, facturaId])
 
   const cargar = useCallback(async () => {
     if (!facturaId) return
@@ -42,11 +61,13 @@ export function DetalleFactura({ empresa = "MSA", facturaId, onCerrar }: { empre
       supabase.from("factura_lecturas").select("*").eq("empresa", empresa).eq("comprobante_id", facturaId).maybeSingle(),
       supabase.from("factura_renglones").select("*").eq("empresa", empresa).eq("comprobante_id", facturaId).order("n"),
       supabase.schema("productivo").from("entrega_factura")
-        .select("cantidad, precio_unitario, movimiento:movimientos_insumos(fecha, cantidad, stock_insumos(producto, unidad_medida))").eq("factura_id", facturaId),
+        .select("cantidad, precio_unitario, renglon_n, movimiento:movimientos_insumos(fecha, cantidad, stock_insumos(producto, unidad_medida))").eq("factura_id", facturaId),
     ])
     setF(fa); setLectura(le); setRenglones((re || []) as any[]); setEntregas((en || []) as any[])
+    // Lo de un origen conocido se procesa solo (§ 📄 punto 6): con el detalle leído, se vinculan solos los renglones inequívocos.
+    if (le && (re || []).length) void accionStock("auto")
     return { fa, le }
-  }, [empresa, facturaId])
+  }, [empresa, facturaId, accionStock])
 
   const leer = useCallback(async () => {
     if (!facturaId) return
@@ -60,7 +81,7 @@ export function DetalleFactura({ empresa = "MSA", facturaId, onCerrar }: { empre
   }, [empresa, facturaId, cargar])
 
   useEffect(() => {
-    if (!facturaId) { setF(null); setLectura(null); setRenglones([]); setEntregas([]); return }
+    if (!facturaId) { setF(null); setLectura(null); setRenglones([]); setEntregas([]); setStock(null); setEleccion({}); return }
     void (async () => {
       const r = await cargar()
       // Lo de un proveedor conocido se procesa solo: si nunca se leyó y tiene su PDF, se lee al abrir.
@@ -124,14 +145,111 @@ export function DetalleFactura({ empresa = "MSA", facturaId, onCerrar }: { empre
             </table>
           </div>
         )}
-        <div className="rounded border border-dashed p-2 text-xs">
-          <p className="font-medium">Entrada al stock</p>
-          {entregas.length === 0
-            ? <p className="text-red-700">Esta factura no está vinculada a ninguna entrada al stock.</p>
-            : <ul className="list-disc pl-5">{entregas.map((e, i) => <li key={i}>{dmy(e.movimiento?.fecha)} · {e.movimiento?.stock_insumos?.producto} · {fmt(e.cantidad, 0)} {e.movimiento?.stock_insumos?.unidad_medida || ""}{e.precio_unitario != null ? ` a $ ${fmt(e.precio_unitario)}` : ""}</li>)}</ul>}
-        </div>
+        <BloqueStock renglones={renglones} entregas={entregas} stock={stock} ocupado={ocupado} eleccion={eleccion} setEleccion={setEleccion} accion={accionStock} />
         <div className="flex justify-end"><Button variant="outline" size="sm" onClick={onCerrar}>Cerrar</Button></div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * ✨ La entrada al stock, renglón por renglón. Cuatro estados por renglón:
+ *  · vinculado — con su entrada; si lo hizo la app sola, «✨ vinculada sola — revisá» con la huella y «Está bien» / «No es ésta»;
+ *  · propuesta — la entrada que más encaja, por qué no se vinculó sola y «Vincular»;
+ *  · sin entrada — «＋ Cargar la entrada» con los kilos y el precio de la factura;
+ *  · sin insumo — elegir qué insumo del stock es (se aprende para la próxima).
+ */
+function BloqueStock({ renglones, entregas, stock, ocupado, eleccion, setEleccion, accion }: {
+  renglones: any[]; entregas: any[]; stock: EstadoStock | null; ocupado: boolean; eleccion: Eleccion
+  setEleccion: (f: (e: Eleccion) => Eleccion) => void
+  accion: (a: string, extra?: Record<string, unknown>) => Promise<void>
+}) {
+  const insumo = (id: string | null | undefined) => stock?.insumos.find((i: any) => i.id === id)
+  const nombre = (id: string | null | undefined) => insumo(id)?.producto ?? "—"
+  const uni = (id: string | null | undefined) => insumo(id)?.unidad_medida ?? ""
+  const elegir = (n: number, k: "insumo" | "entrada", v: string) => setEleccion(e => ({ ...e, [n]: { ...e[n], [k]: v } }))
+  const deEsteRenglon = (r: any) => (stock?.vinculos || []).filter((v: any) => v.renglon_n === r.n ||
+    (v.renglon_n == null && r.insumo_stock_id && v.movimiento?.insumo_stock_id === r.insumo_stock_id))
+  const sueltos = (stock?.vinculos || []).filter((v: any) => !renglones.some(r => deEsteRenglon(r).includes(v)))
+  const fichaVinculo = (v: any) => {
+    const solo = v.automatico && !v.revisado_at
+    return (
+      <div key={v.id} className={`mt-0.5 rounded px-2 py-1 ${solo ? "border border-violet-300 bg-violet-50" : "bg-emerald-50"}`}>
+        {solo ? <span className="mr-1 rounded bg-violet-200 px-1.5 py-0.5 font-medium text-violet-900">✨ vinculada sola — revisá</span>
+          : <span className="mr-1 text-emerald-800">✓</span>}
+        entrada del {dmy(v.movimiento?.fecha)} · {v.movimiento?.stock_insumos?.producto} · {fmt(v.cantidad, 0)} {v.movimiento?.stock_insumos?.unidad_medida || ""}{v.precio_unitario != null ? ` a $ ${fmt(v.precio_unitario)}` : ""}
+        {v.automatico && v.revisado_at && <span className="ml-1 text-gray-500">(✨ vinculada sola · revisada {dmy(v.revisado_at)})</span>}
+        {v.notas && <span className="block text-[11px] text-gray-600">{v.notas}</span>}
+        {v.antes && (
+          <span className="mt-0.5 flex gap-1">
+            {solo && <Button size="sm" variant="outline" className="h-6 text-xs" disabled={ocupado} onClick={() => void accion("revisado", { vinculo_id: v.id })}>Está bien</Button>}
+            <Button size="sm" variant="outline" className="h-6 text-xs" disabled={ocupado}
+              onClick={() => { if (confirm(v.antes?.creado ? "Se borra la entrada que cargó la factura y el stock vuelve atrás. ¿Seguro?" : "La entrada vuelve a los kilos y el precio que tenía, y se desvincula. ¿Seguro?")) void accion("deshacer", { vinculo_id: v.id }) }}>
+              {solo ? "No es ésta" : "Desvincular"}
+            </Button>
+          </span>
+        )}
+      </div>
+    )
+  }
+  return (
+    <div className="rounded border border-dashed p-2 text-xs">
+      <p className="font-medium">Entrada al stock {ocupado && <span className="font-normal text-gray-500">· buscando…</span>}</p>
+      {renglones.length === 0 && (entregas.length === 0
+        ? <p className="text-red-700">Esta factura no está vinculada a ninguna entrada al stock.</p>
+        : <ul className="list-disc pl-5">{entregas.map((e, i) => <li key={i}>{dmy(e.movimiento?.fecha)} · {e.movimiento?.stock_insumos?.producto} · {fmt(e.cantidad, 0)} {e.movimiento?.stock_insumos?.unidad_medida || ""}{e.precio_unitario != null ? ` a $ ${fmt(e.precio_unitario)}` : ""}</li>)}</ul>)}
+      {renglones.length > 0 && !stock && <p className="text-gray-500">Buscando las entradas de esta factura…</p>}
+      {renglones.length > 0 && stock && (
+        <ul className="mt-1 space-y-1.5">
+          {renglones.map(r => {
+            const vs = deEsteRenglon(r)
+            const p = stock.propuestas.find((x: any) => x.n === r.n)
+            const el = eleccion[r.n] || {}
+            const insElegido = el.insumo || p?.insumoStockId || r.insumo_stock_id || ""
+            const cabecera = <span className="font-medium">#{r.n} {r.descripcion} · {fmt(r.cantidad, 2)} {r.unidad || ""}</span>
+            if (vs.length) return <li key={r.n}>{cabecera}{vs.map(fichaVinculo)}</li>
+            if (!p) return <li key={r.n}>{cabecera}</li>
+            const candidatas = [p.entrada, ...(p.otras || [])].filter(Boolean)
+            const entradaElegida = el.entrada || p.entrada?.id || ""
+            return (
+              <li key={r.n}>
+                {cabecera}
+                <div className="mt-0.5 rounded bg-amber-50 px-2 py-1">
+                  <select className="mr-1 h-6 rounded border px-1 text-xs" value={insElegido} disabled={ocupado}
+                    onChange={e => { elegir(r.n, "insumo", e.target.value); void accion("insumo", { n: r.n, insumo_stock_id: e.target.value || null }) }}>
+                    <option value="">— qué insumo del stock es —</option>
+                    {stock.insumos.slice().sort((a: any, b: any) => String(a.producto).localeCompare(String(b.producto))).map((i: any) => <option key={i.id} value={i.id}>{i.producto} ({i.unidad_medida})</option>)}
+                  </select>
+                  {p.fuenteInsumo === "nombre" && <span className="text-gray-500">(por el nombre)</span>}
+                  {p.estado === "propuesta" && (
+                    <span className="block">
+                      Entrada posible:{" "}
+                      <select className="h-6 rounded border px-1 text-xs" value={entradaElegida} disabled={ocupado} onChange={e => elegir(r.n, "entrada", e.target.value)}>
+                        {candidatas.map((c: any) => <option key={c.id} value={c.id}>{dmy(c.fecha)} · {fmt(c.cantidad, 0)} {uni(c.insumoStockId)} · {c.proveedor || ""}{c.costoUnitario != null ? ` · $ ${fmt(c.costoUnitario)}` : " · sin precio"}</option>)}
+                      </select>
+                      {p.cantidadStock != null && <span className="ml-1">→ la factura dice {fmt(p.cantidadStock, 0)} {uni(p.insumoStockId)}{p.precioStock != null ? ` a $ ${fmt(p.precioStock)}` : ""}</span>}
+                      <Button size="sm" className="ml-1 h-6 text-xs" disabled={ocupado || !entradaElegida} onClick={() => void accion("vincular", { n: r.n, movimiento_id: entradaElegida, insumo_stock_id: insElegido })}>Vincular</Button>
+                      <span className="block text-[11px] text-amber-800">No se vinculó sola: {(p.motivos || []).join(" · ")}</span>
+                    </span>
+                  )}
+                  {p.estado === "sin-entrada" && (
+                    <span className="block">
+                      <span className="text-red-700">Sin entrada al stock.</span>
+                      {p.cantidadStock != null
+                        ? <Button size="sm" className="ml-1 h-6 text-xs" disabled={ocupado} onClick={() => { if (confirm(`Se carga la entrada de ${nombre(p.insumoStockId)}: ${fmt(p.cantidadStock, 0)} ${uni(p.insumoStockId)}${p.precioStock != null ? ` a $ ${fmt(p.precioStock)}` : ""}, con la fecha de la factura, y el stock sube eso. ¿Seguro?`)) void accion("registrar", { n: r.n, insumo_stock_id: insElegido }) }}>
+                            ＋ Cargar la entrada ({fmt(p.cantidadStock, 0)} {uni(p.insumoStockId)}{p.precioStock != null ? ` a $ ${fmt(p.precioStock)}` : ""})
+                          </Button>
+                        : <span className="ml-1 text-amber-800">No sé convertir «{r.unidad || "?"}» a {uni(p.insumoStockId) || "la unidad del stock"}: cargala desde Productivo → Insumos.</span>}
+                    </span>
+                  )}
+                  {p.estado === "sin-insumo" && <span className="block text-amber-800">Elegí qué insumo es: la próxima factura de este artículo se reconoce sola.</span>}
+                </div>
+              </li>
+            )
+          })}
+          {sueltos.length > 0 && <li><span className="font-medium">Otras entradas vinculadas a esta factura</span>{sueltos.map(fichaVinculo)}</li>}
+        </ul>
+      )}
+    </div>
   )
 }
