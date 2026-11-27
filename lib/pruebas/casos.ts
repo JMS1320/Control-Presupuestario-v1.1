@@ -333,12 +333,12 @@ import { vinculoDelMail } from "@/lib/pagos/vinculo-mail-pago"
 import { calcularArranque, clasificarFila, lineaDeSaldo, controlDosFuentes, totalComposicion, estaEnLaGrilla, type FilaReal } from "@/lib/presupuesto/arranque"
 import { recortarPorFamilia } from "@/lib/presupuesto/templates"
 import { pesoInicialTramo, gananciaDesdeNacimiento, tramoHastaLaVenta, planPorDefecto } from "@/lib/productivo/tramos"
-import { insumosDeDieta, dietasDe } from "@/lib/productivo/actividades"
+import { insumosDeDieta, dietasDe, consumoMensual as consumoMensualPL } from "@/lib/productivo/actividades"
 import { esDeLaEmpresa, empresasDeContratos, tipoEnPresupuesto, bloquesDeEmpresa } from "@/lib/presupuesto/empresa"
 import { esCuentaDeInsumos, esFacturaDeInsumos, fileIdDeDrive } from "@/lib/facturas-detalle/insumos"
 import { proponerPorRenglon, factorUnidad, notaDelVinculo, insumoPorNombre } from "@/lib/productivo/vinculo-renglon"
 import { stockAlInicio, netearStock, consumoEntre } from "@/lib/presupuesto/stock-presupuesto"
-import { costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, aplicarPlanRacion, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
+import { costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, aplicarPlanRacion, aplicarPlanLote, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
 import { campanaDeFecha, faltantesTemplateNuevo, periodicidadDeEmpresa, esDeOtraEmpresa } from "@/lib/templates/nuevo-desde-conciliacion"
@@ -9244,6 +9244,28 @@ Importe Neto Gravado: $ 7338020,40
       const eS = "15560 · null · 0 avisa · 15000 · 6000 | nov 8000+4000 · dic 2297+1263 · oct 0 · alcanza hasta 2026-11 · compra desde 2026-12 8840 kg"
       chequear("Presupuesto", "🌽 El stock en el presupuesto: arranca con medición + entradas − consumo estimado (sin medición no descuenta; negativo = 0 con aviso); cubre primero, repartido entre actividades, y la compra aparece el mes que no alcanza",
         eS, vS, vS === eS, "A-FEAT-1663")
+    }
+    // 📅 A-FEAT-1670: el plan del año del LOTE — cada renglón con su fecha dentro del tramo, encima del plan de la actividad y de la receta
+    {
+      const act: any = { id: "cria", empresa: "MSA", tipo: "cria", nombre: "Cría", ganancia_diaria_kg: 0, racion_pct_pv: 0.01, pct_mortandad: 0, notas: null, activo: true }
+      const base: any = { actividad_id: "cria", orden: 1, unidad: "kg", momento: "diario", moneda: "ARS", categoria_insumo_id: null, producto: null, notas: null }
+      const ins: any[] = [{ ...base, id: "maiz", concepto: "Maíz", modo: "pct_racion", valor: 0.85, precio_unitario: 300 },
+                          { ...base, id: "conc", concepto: "Concentrado", modo: "pct_racion", valor: 0.15, precio_unitario: 1500 },
+                          { ...base, id: "sal", concepto: "Sal", modo: "kg_cabeza_dia", valor: 0.1, precio_unitario: 100 }]
+      const plan = [
+        { lote_id: "L1", receta_insumo_id: "conc", campana: "26/27", cantidad: null, precio: null, moneda: null, iva_pct: null, fecha_desde: "2026-12-16", fecha_hasta: null },
+        { lote_id: "L1", receta_insumo_id: "sal", campana: "26/27", cantidad: 0, precio: null, moneda: null, iva_pct: null, fecha_desde: null, fecha_hasta: null },
+        { lote_id: "L2", receta_insumo_id: "maiz", campana: "26/27", cantidad: 0.5, precio: null, moneda: null, iva_pct: null, fecha_desde: null, fecha_hasta: null },
+      ]
+      const pl = aplicarPlanLote(ins, "L1", "26/27", plan)
+      const cm = consumoMensualPL({ actividad: act, insumos: pl.insumos as any, cabezas: 10, desde: "2026-12-01", hasta: "2027-02-01", peso_inicial_kg: 100 } as any)
+      const kg = (mes: string, c: string) => Math.round(cm.find(m => m.mes === mes)?.items.find(i => i.concepto === c)?.cantidad ?? 0)
+      const otro = aplicarPlanLote(ins, "L2", "26/27", plan).insumos.find(i => i.id === "maiz")?.valor
+      const vL = `dic maíz ${kg("2026-12", "Maíz")} · dic conc ${kg("2026-12", "Concentrado")} · ene conc ${kg("2027-01", "Concentrado")} · sal ${pl.insumos.some(i => i.id === "sal") ? "va" : "no va"} · lote 2 maíz ${otro} · ${pl.cambios.join(" / ")}`
+      // dic: 31 días × 10 cab × 1 kg/día (1 % de 100 kg) × 0,85 = 264 · conc desde el 16/12: 16 días × 10 × 0,15 = 24 · ene 31 × 1,5 = 46,5 (redondea a 46 por la coma flotante)
+      const eL = "dic maíz 264 · dic conc 24 · ene conc 46 · sal no va · lote 2 maíz 0.5 · Concentrado: plan del lote desde 16/12 / Sal: este año no (plan del lote)"
+      chequear("Presupuesto", "📅 Plan del año del lote: un renglón con fecha propia come sólo esos días del tramo; «este año no» lo saca; el plan de un lote no toca a otro",
+        eL, vL, vL === eL, "A-FEAT-1670")
     }
     // 🥣 Dietas (script 305): sin dieta = va en todas; con dieta = sólo en la suya; la elegida manda (si no, la de default)
     const insD = [{ c: "Maíz", dieta: "Maíz y concentrado" }, { c: "Conc", dieta: "Maíz y concentrado" }, { c: "Maíz", dieta: "Con silo" }, { c: "Silo", dieta: "Con silo" }, { c: "Sal", dieta: null }]

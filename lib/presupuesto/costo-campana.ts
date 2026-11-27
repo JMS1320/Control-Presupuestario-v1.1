@@ -174,3 +174,36 @@ export function aplicarPlanRacion<A extends { id: string; racion_pct_pv: number 
   }
   return { actividad: act, insumos: ins, cambios }
 }
+
+/**
+ * 📅 A-FEAT-1670 — El plan del año del LOTE (JMS 27/11: «el plan del año debería mostrar cuál es el plan del año, cada cosa con su fecha…
+ * y yo debería poder cambiar una o la otra» · «a, por lote»). Fila de `presupuesto_variables` con `lote_id` + `receta_insumo_id` + `campana`:
+ * pisa ESE renglón sólo para ESE lote — `fecha_desde` / `fecha_hasta` (cuándo come, dentro del tramo), `cantidad` (% de la mezcla o
+ * kg/cab/día), `precio`, `moneda`, `iva_pct`; cantidad 0 = «este año no». Va encima del plan de la actividad (y éste, encima de la receta).
+ */
+export interface PlanLoteFila {
+  lote_id: string; receta_insumo_id: string; campana: string
+  cantidad: number | null; precio: number | null; moneda: string | null; iva_pct: number | null
+  fecha_desde: string | null; fecha_hasta: string | null
+}
+export function aplicarPlanLote<I extends { id: string; valor: number; precio_unitario: number | null; moneda: string; iva_pct?: number | null; ventana?: { desde?: string | null; hasta?: string | null } | null }>(
+  insumos: I[], loteId: string, campana: string, plan: PlanLoteFila[],
+): { insumos: I[]; cambios: string[] } {
+  const cambios: string[] = []
+  const out: I[] = []
+  const dm = (f: string) => f.split("-").reverse().slice(0, 2).join("/")
+  for (const i of insumos) {
+    const p = plan.find(x => x.lote_id === loteId && x.receta_insumo_id === i.id && x.campana === campana)
+    if (!p) { out.push(i); continue }
+    if (p.cantidad === 0) { cambios.push(`${(i as any).concepto ?? "renglón"}: este año no (plan del lote)`); continue }
+    const ventana = p.fecha_desde || p.fecha_hasta ? { desde: p.fecha_desde, hasta: p.fecha_hasta } : (i.ventana ?? null)
+    out.push({ ...i,
+      valor: p.cantidad != null ? Number(p.cantidad) : i.valor,
+      precio_unitario: p.precio != null ? Number(p.precio) : i.precio_unitario,
+      moneda: (p.moneda || i.moneda) as any,
+      iva_pct: p.iva_pct != null ? Number(p.iva_pct) : i.iva_pct,
+      ventana })
+    cambios.push(`${(i as any).concepto ?? "renglón"}: plan del lote${p.fecha_desde ? ` desde ${dm(p.fecha_desde)}` : ""}${p.fecha_hasta ? ` hasta ${dm(p.fecha_hasta)}` : ""}`)
+  }
+  return { insumos: out, cambios }
+}

@@ -114,6 +114,11 @@ export interface InsumoActividad {
   dieta?: string | null
   /** IVA % que suma la caja del presupuesto (script 302). */
   iva_pct?: number | null
+  /**
+   * 📅 Desde / hasta propios de este renglón DENTRO del tramo (A-FEAT-1670: el plan del año del lote, «cada cosa con su fecha»).
+   * Mismo criterio que el tramo: `hasta` no cuenta. Vacío = todo el tramo. Sólo se aplica a los modos por día (ración, kg/cab/día).
+   */
+  ventana?: { desde?: string | null; hasta?: string | null } | null
 
   // ── La base propia del costo ────────────────────────────────────────────────
   // Un costo no se aplica sobre "lo que haya": se aplica sobre LO SUYO. El mantenimiento de
@@ -264,7 +269,7 @@ export function consumoMensual(t: Tramo): ConsumoMes[] {
   // (oct→abr), el mes de abril tiene CERO días y se descarta, pero marzo tampoco daba
   // `esUltimo` porque su fin (31/3) es menor que `hasta` (1/4) — y los costos "al
   // terminar", como la cosecha, no caían nunca.
-  const buckets: { anio: number; mes: number; dias: number }[] = []
+  const buckets: { anio: number; mes: number; dias: number; ini: string; finExcl: string }[] = []
   const cursor = new Date(desde.getFullYear(), desde.getMonth(), 1)
 
   while (cursor <= hasta) {
@@ -276,7 +281,10 @@ export function consumoMensual(t: Tramo): ConsumoMes[] {
     const fin = finMes > hasta ? hasta : finMes
     const dias = Math.max(0, Math.round((fin.getTime() - ini.getTime()) / 86400000) + (iso(fin) === iso(hasta) ? 0 : 1))
 
-    if (dias > 0) buckets.push({ anio, mes, dias })
+    if (dias > 0) {
+      const fx = new Date(fin); if (iso(fin) !== iso(hasta)) fx.setDate(fx.getDate() + 1)
+      buckets.push({ anio, mes, dias, ini: iso(ini), finExcl: iso(fx) })
+    }
     cursor.setMonth(cursor.getMonth() + 1)
   }
 
@@ -297,8 +305,16 @@ export function consumoMensual(t: Tramo): ConsumoMes[] {
 
     const items: ConsumoMes['items'] = []
     for (const ins of insumosDeDieta(t.insumos, t.dieta ?? t.actividad.dieta_default ?? null)) {
+      // 📅 Un renglón con fechas propias dentro del tramo come sólo esos días del mes (A-FEAT-1670)
+      let diasIns = dias
+      if (ins.ventana && (ins.ventana.desde || ins.ventana.hasta) && (ins.modo === 'pct_racion' || ins.modo === 'kg_cabeza_dia')) {
+        const a = ins.ventana.desde && ins.ventana.desde > b.ini ? ins.ventana.desde : b.ini
+        const z = ins.ventana.hasta && ins.ventana.hasta < b.finExcl ? ins.ventana.hasta : b.finExcl
+        diasIns = Math.max(0, Math.round((Date.parse(z + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000))
+        if (diasIns === 0) continue
+      }
       const { cantidad, aplica } = cantidadDelItem(ins, {
-        racKgDia, dias, diasTotales, cabezas: t.cabezas, pesoProm: pProm,
+        racKgDia, dias: diasIns, diasTotales, cabezas: t.cabezas, pesoProm: pProm,
         hectareas: t.hectareas ?? 0, valorProduccion: t.valor_produccion ?? 0,
         esPrimero, esUltimo,
       })
