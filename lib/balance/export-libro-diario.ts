@@ -617,6 +617,8 @@ const COLS_TEMPLATES: Columna[] = [
   { ancho: 16, z: MONEDA },         // Débito
   { ancho: 16, z: MONEDA },         // Crédito
   { ancho: 10, z: ENTERO },         // Nro de «Por mes» (A-FEAT-1513)
+  { ancho: 14 },                    // Contable (código del pago)
+  { ancho: 14 },                    // Interno (código del pago)
 ]
 
 /** Hacienda: cabezas enteras, coeficientes con dos decimales, importes en Contabilidad. */
@@ -2499,6 +2501,9 @@ export function hojaDeTemplates(t: TemplatesDelEjercicio): unknown[][] {
   const f: unknown[][] = [[
     "Fecha", "Concepto", "Proveedor", "Categoría", "Cuenta contable", "Nro cuenta",
     "Centro de costo", "Responsable", "Estado", "Débito", "Crédito", "Nro (fila de «Por mes»)",
+    // 🏷️ JMS 27/11: el código contable e interno del PAGO, para filtrar desde el maestro (A-FEAT-1632 paso 2). Van al final:
+    //    `scripts/reporte-items/d_templates.py` lee las 12 primeras por posición.
+    "Contable", "Interno",
   ]]
   const nroFila = numerarFilasPorMes(t)
   // Ordenado por tipo, responsable (la empresa del balance primero) y fecha: el orden lo pone
@@ -2511,6 +2516,7 @@ export function hojaDeTemplates(t: TemplatesDelEjercicio): unknown[][] {
     c.centro_costo, c.responsable, c.estado,
     c.monto >= 0 ? money(c.monto) : "", c.monto < 0 ? money(-c.monto) : "",
     c.filaPorMes ? nroFila.get(c.filaPorMes) ?? "" : "",
+    c.banco?.contable ?? "", c.banco?.interno ?? "",
   ]
   // 🗂️ A-FEAT-1342: un bloque por tipo, con su subtotal.
   let tipoActual: string | null = null

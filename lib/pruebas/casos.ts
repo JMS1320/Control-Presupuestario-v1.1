@@ -14351,10 +14351,17 @@ Importe Neto Gravado: $ 7338020,40
     const nroCol = (pm[enc] as any[]).length - 1
     const filaSeg = pm.find(r => r[2] === "Seguros") as any[]
     const nroSeg = filaSeg[nroCol]
-    const cuotasSeg = cq.filter(r => (r as any[])[3] === "Seguros").map(r => (r as any[])[(cq[0] as any[]).length - 1])
+    const cuotasSeg = cq.filter(r => (r as any[])[3] === "Seguros").map(r => (r as any[])[(cq[0] as any[]).indexOf("Nro (fila de «Por mes»)")])
     const v = `Seguros Nro ${nroSeg} · sus cuotas: ${cuotasSeg.join(",")}`
     chequear("Templates", "El Nro de una fila de «Por mes» es el que llevan sus cuotas en «Cuotas»: filtrando por ese Nro se ve qué la forma",
       `Seguros Nro ${nroSeg} · sus cuotas: ${nroSeg},${nroSeg}`, v, typeof nroSeg === "number" && v === `Seguros Nro ${nroSeg} · sus cuotas: ${nroSeg},${nroSeg}`, "A-FEAT-1513")
+    // 🏷️ JMS 27/11: «Cuotas» lleva el código contable e interno del PAGO (el del movimiento del banco), para filtrar desde el maestro.
+    const conCod = armarTemplatesDelEjercicio([{ ...cu("d", "MSA", "Seguros", 70), banco: { cuenta: "Galicia", comprobante: "", contable: "CTA MA", interno: "DIST MA", respaldo: 70, motivo: null } },
+      cu("e", "MSA", "Seguros", 20)] as never, ej)
+    const hc = hojaDeTemplates(conCod), ic = (hc[0] as any[]).indexOf("Contable"), ii = (hc[0] as any[]).indexOf("Interno")
+    const cods = hc.filter(r => (r as any[])[3] === "Seguros").map(r => `${(r as any[])[ic] || "—"}/${(r as any[])[ii] || "—"}`).join(" · ")
+    chequear("Templates", "«Cuotas» trae el código contable e interno del pago (vacío si la cuota no tiene movimiento)",
+      "CTA MA/DIST MA · —/—", cods, ic > 0 && ii === ic + 1 && cods === "CTA MA/DIST MA · —/—", "A-FEAT-1632")
   }
 
   // ══ 💵 Operaciones en dólares: US$ × TC = pesos, y la compraventa con su otra punta en pesos (A-FEAT-1530) ══
