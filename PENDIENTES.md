@@ -377,6 +377,12 @@ es un error de la guía y hay que corregirla, no ignorarla.
 
 ### <a id="camino-1"></a>🛤️ Camino 1 — BALANCE: papeles de trabajo del balance MSA 25/26 al contador, por módulos terminados
 
+> ▶️▶️▶️ **AL RETOMAR «CAMINO 1» — el contexto mínimo, antes de cualquier otra cosa** *(JMS 25/11: «quiero que al retomar camino 1 ya las tengas en cuenta como parte del contexto. Y además recuerdes el paso a paso que ideamos, desde donde nos hemos desviado un poco pero queda asentado»)*:
+> 1. **Las 3 páginas** (protocolo punto 7, abajo): leer sus `respuestas` ENTERAS, comparar con el conteo de la tabla y atender lo nuevo primero — preguntas abiertas del balance · balance formato contador · cuentas internas desde 2025. Están fijadas en la barra lateral de claude.ai de JMS.
+> 2. **El paso a paso** (🔁 MÉTODO DE TRABAJO, abajo): el balance se trabaja en el orden del trabajo real —(1) exportar los libros y auditarlos → (2) auditar → (3) envío al contador → (4) presentación— y no se avanza sin el «dado por bueno» de JMS. **Seguimos en el paso 1**, y el libro de Templates NO está dado por bueno.
+> 3. **El desvío, asentado**: del 21 al 25/11 se trabajó el balance EN LÍNEA formato contador (A-FEAT-1632, capa nueva en la rama `jms/tanda-2026-11-21-balance-en-linea`, sin mergear) con la cadena de la diferencia. Sirve al paso 1 —se audita desde el crudo— pero no lo reemplaza. Al volver al paso 1, lo primero sigue siendo recordarle a JMS bajar el set de libros (v19) y verificarlo contra el punto 43 de A-FEAT-1629.
+> 4. **Qué sigue lo elige JMS** (§ 🚦): ofrecerle la lista —volver al paso 1, o seguir con lo que esperan las 3 páginas— y no arrancar solo.
+>
 > 🧭🧭🧭 **MAPA DEL BALANCE — los objetivos totales, dónde vive cada uno y cómo se sigue entre sesiones** *(JMS 18/11/2026: «esto no se
 > logrará en una sola sesión: tiene que haber trazabilidad para no empezar a fallar entre sesiones»)*
 >
@@ -389,7 +395,7 @@ es un error de la guía y hay que corregirla, no ignorarla.
 > | **M2** | **Papeles del balance — ENVÍO AL CONTADOR** | Lo que se le manda: incluye lo de M1, sin notas internas, y queda registrado qué se envió y cuándo. | Carpeta `- Comunicacion JMS Claude - Archivos/Balance/- Enviados/2026/Enviar` (lo enviado) · hoja «Enviado vs hoy» del reporte · lista de pedidos al contador | Envío del 11–12/11 (ya en poder del contador) · su balance presentado, asentado el 17/11 (scripts 282 y 283) | 🟡 Enviado una vez; falta el circuito | Tildar en el sistema qué papel se envió y en qué versión (A-FEAT-1624 etapas 3–6) · auditoría de su balance contra lo nuestro (gastos: hecho; falta el resto) · pedirle lo que falta (lista P1–P13) · «No informado» | [A-FEAT-1624](#a-feat-1624) · [A-FEAT-1628](#a-feat-1628) · [A-FEAT-1629](#a-feat-1629) puntos 14 y 25 |
 > | **M3** | **Papeles del balance — EXPORT PARA SOCIOS** | El reporte de presentación: mismo contenido que M1, pulido para leer e imprimir, en PDF. | `scripts/reporte-items/` (generador) · `Protocolo de generación de reportes.md` (reglas) · salida en `…/Balance/Reporte MSA 25-26 (items)/vN/` | **v15**, 18/11: 222 páginas, índice con página, links, 14 PDF por tema | 🟡 Vigente: sólo el LARGO (v15). El corto y el intermedio no quedan (JMS 18/11); hay que ver cómo acortarlo | Recortes (JMS va punto por punto; material en `v14/Recortes B - antes y despues/`) · qué lleva el PDF «para revisar con el contador» · PDF corto para imprimir · MA, PAM y Grupo | [A-FEAT-1629](#a-feat-1629) puntos 25 y 26 |
 > | **M4** | **Balance PROPIO (interno)** | El análisis económico de JMS: activo menos pasivo de punta a punta, en pesos y dólares, corriente y no corriente, con la ganancia desglosada. Distinto de lo que presenta el contador. | En la base: `balance_fotos` / `balance_foto_valores`, versión `jms` · pantalla «📸 Balance propio» · `lib/balance/balance-propio*.ts` · página de trabajo https://claude.ai/artifact/4o9qkjgFkATtg85KwNXeKP · Excel y PDF en `…/Balance/Balance interno MSA 25-26/` | Excel y PDF **v1 del 18/11** (ganancia total US$ 240.684,29 · corriente 125.978,95 · líquido 39.590,47) | 🟡 MSA armado y tentativo; MA con foto semestral; PAM sin armar | Preguntas abiertas AB1–AB7 de la página (dólares, stocks, arrendamiento MA, camioneta, cuenta de MA, Libertad) · llevar a la app el desglose nuevo (impuesto diferido, lo fiscal separado) · cuenta interna separada por contraparte · revisión del 24/25 · MA y PAM | [A-FEAT-1190](#a-feat-1190) · [A-DEC-1034](#a-dec-1034) · [A-FEAT-1626](#a-feat-1626) · [A-FEAT-1288](#a-feat-1288) · [A-FEAT-1629](#a-feat-1629) puntos 15–24 |
-> | **M5** | **Balance EN LÍNEA — a la fecha que se pida** | Lo mismo que M1–M3 (contable) y que M4 (interno), pero no del ejercicio cerrado sino al día en que se pide: el prebalance con lo cargado hasta hoy. Son dos: en línea contable y en línea interno. | Libro F «Balance en línea» de la app (`lib/balance/balance-en-linea*.ts`) · tabla `balance_contador_cuentas` (las 107 cuentas del contador con su «tratamiento»: sistema / cierre / contador) · Excel «Balance contador MSA 25-26 - con formulas y mapa v1» (de un agente, **sin revisar**) | Sólo la especificación (17/11) | 🔵 Sin desarrollar | Revisar el mapa «cuenta del contador → de dónde sale» · decidir qué se calcula y qué se pide al contador (amortizaciones, diferido, IIBB) · construirlo en la app para los dos balances · SUSS + cuota solidaria = lo que se carga en el template | [A-FEAT-1509](#a-feat-1509) · [A-FEAT-1629](#a-feat-1629) punto 14 |
+> | **M5** | **Balance EN LÍNEA — a la fecha que se pida** | Lo mismo que M1–M3 (contable) y que M4 (interno), pero no del ejercicio cerrado sino al día en que se pide: el prebalance con lo cargado hasta hoy. Son dos: en línea contable y en línea interno. | Libro F «Balance en línea» de la app (`lib/balance/balance-en-linea*.ts`) · tabla `balance_contador_cuentas` (las 107 cuentas del contador con su «tratamiento»: sistema / cierre / contador) · Excel «Balance contador MSA 25-26 - con formulas y mapa v1» (de un agente, **sin revisar**) · ⚠️ **22/11: capa nueva fuera de la app** — `scripts/balance-tres-capas.mts` (rama `jms/tanda-2026-11-21-balance-en-linea`, sin mergear), Excel `…/Balance formato contador/v3.2/`, página https://claude.ai/artifact/SaFj1SiA1pj1733yv98Uju, preguntas abiertas https://claude.ai/artifact/UXvNbq99jzeXxSmFqkudtG, y la **cadena de la diferencia** (`scripts/balance-tres-capas-cadena.json`) | Sólo la especificación (17/11) · **22/11: v3.2 del balance formato contador (v3.1 + datos de origen en el detalle), 37 controles ✓, ecuación −49,5 M trazada** | 🟡 Capa en prueba, JMS revisa | Revisar el mapa «cuenta del contador → de dónde sale» · decidir qué se calcula y qué se pide al contador (amortizaciones, diferido, IIBB) · construirlo en la app para los dos balances · SUSS + cuota solidaria = lo que se carga en el template | [A-FEAT-1509](#a-feat-1509) · [A-FEAT-1629](#a-feat-1629) punto 14 |
 > | **M6** | **PREVISIÓN del balance al cierre** | El balance en línea de hoy más lo presupuestado hasta el cierre del ejercicio (30/06/27): el prebalance proyectado. Es el resultado 1 del norte del proyecto. | Presupuesto de la app + M5 | Nada | 🔵 Sin empezar (2ª instancia, después de M5) | Todo: depende de M5 y de que el presupuesto esté afinado | Norte en `CLAUDE.md` § 🏁 · [A-FEAT-09](#a-feat-09) |
 >
 > **Cómo se relacionan:** M1 es la base → M2 la incluye → M3 es M1 presentado. M4 es otro balance, con otro criterio. M5 es M1/M4 «a hoy». M6 es M5 más el presupuesto.
@@ -422,6 +428,14 @@ es un error de la guía y hay que corregirla, no ignorarla.
 > 4. **Al cerrar**: actualizar en este mapa «Última entrega», «Estado» y «Qué falta» del objetivo tocado; commit y push.
 > 5. **Antes de guardar `PENDIENTES.md` por programa**: leer todo primero y verificar que lo que se va a escribir no sea más chico que lo que había *(el 17/11 un script lo dejó vacío y se commiteó así; se restauró el 18/11 desde el historial — commit `5953c135`)*.
 > 6. **La rama**: el mapa, el dossier y el generador del reporte **están en `desarrollo` desde el 18/11** (merge `b537c32a`, con OK de JMS; pruebas 1568/1568, type-check sin empeorar y build en verde). Lo que se trabaje después en una rama aparte se suma a `desarrollo` al cerrar: si no, las otras terminales no lo ven.
+> 7. **📄 Las páginas (artifacts) en seguimiento** *(JMS 25/11: «cómo hacemos con los artifacts varios que tenemos en seguimiento… son parte de la sesión»)*: la tabla de abajo es la lista. **Al abrir** se lee la colección `respuestas` ENTERA de cada página 🟢 abierta y se compara el conteo con el de la tabla: si subió, hay algo nuevo de JMS y se atiende antes que nada. **Al cerrar** se actualiza el conteo y la fecha. Una página cuyas preguntas están todas contestadas y pasadas a su pendiente pasa a ⚪ cerrada (no se borra).
+>
+> | Página | Qué es | Pendiente | Estado | Respuestas al cerrar (fecha) |
+> |---|---|---|---|---|
+> | https://claude.ai/artifact/UXvNbq99jzeXxSmFqkudtG | Balance · **preguntas abiertas** (Q1 tipo «a cuenta de impuestos», Q2 FCI, Q3 diferencia de cambio, Q4 socios en la ecuación, Q5 protocolo de páginas) | A-FEAT-1632 · A-DEC-1036 | 🟢 espera a JMS | 0 (25/11) |
+> | https://claude.ai/artifact/SaFj1SiA1pj1733yv98Uju | **Balance formato contador** MSA 25/26 v3.2 (el reporte; comentarios por renglón `v3-F-<Nro>`) | A-FEAT-1632 | 🟢 JMS revisa | 22 (25/11) — 21 de la v2 y 1 de la v3 (B228), todos procesados |
+> | https://claude.ai/artifact/479mSTYBEw1Szstw7iVpUt | **Cuentas internas** entre PAM, MSA, MA y socios desde 2025 (Q1–Q6) | A-FEAT-1635 | 🟢 espera a JMS | 0 (25/11) |
+> | 9 páginas anteriores del balance (01/11–18/11: Balance interno MSA, Auditoría gastos contador, Socios MA PAM: definir, Casos Enviado vs Hoy, Balance propio MSA, Libros y papeles, Control de la plata, Balance 25/26 respuestas, Preguntas del balance 25/26) | historia | — | ⚪ **fuera de seguimiento** (JMS 25/11: «son estas 3 las que me interesan») | — |
 
 
 *(Lo escribió la sesión que armó el Libro Diario consensuado, «Estanco», el 30/10. La historia completa está en `D:\Users\josem\Documents\Jose\- Desarrollo de Software\Sesion Claude Estanco\ESTADO - cierre sesion 2026-10-28.md` §1-12 y en `TRASPASO-T1-2026-10-30.md`, parte A. Es solo archivo: ya no se trabaja ahí.)*
@@ -1298,6 +1312,8 @@ cerrados lo achica de verdad **sin perder un solo ID**.*
 | A-FEAT-1667 | 🟢 | 🟠 Media — presupuesto / productivo | 🐂 **Ventas de hacienda: ir a la venta desde el presupuesto, editarla en su origen, y que la ración siga sola** — JMS 26/11 (fila «Ternero Recria $ 75.697.560»): *«yo debería poder ir a la venta desde acá y poder editarla, pero que la edición se guarde en el origen. Lógicamente que si eso implica seguir dando ración, entonces se debe actualizar sólo el plan productivo del año: más días, más ración, en caso de que esa categoría esté con ración»*. Idea: clic en la celda → la venta presupuestada del lote (fecha, cabezas, kg, precio) en su pantalla de origen; si la fecha de venta se corre, el período del lote (que es el plan del año, A-FEAT-1665) se estira hasta la nueva fecha → más días de ración. Q7 26/11: Recría queda en 1,5 % del peso vivo (como está). ✅ **HECHO 26/11** (`00980e42`): clic en un monto de «Venta de hacienda» → ventana con los lotes de ese mes (fecha de venta, cabezas, $/kg —vacío = tabla—, plazo) que **guarda en el lote** (`productivo.stock_lotes`); si la fecha se corre, el último tramo del lote que llegaba a la venta (±31 días) se estira o se acorta con ella (`tramoHastaLaVenta`, 1 caso) y la ventana dice qué movió. ⚠️ **cambió 26/11 noche** (JMS, con la ventana a la vista: «no creo que acá esté todo… no me muestra los kg, desbaste» → «dale con el editor de Productivo»): la ventanita propia se reemplazó por **el editor de lote de Productivo** abierto sobre la grilla (`EditorLoteHacienda` + `guardarLote`, la misma escritura que Productivo → Evolución rodeo → Editar): peso a la fecha, desbaste y CZ (con el de la tabla), $/kg bruto o neto, IVA, IIBB, plazo y el plan del año del lote. Con un lote se abre directo; con varios, la lista y «✏️ Editar lote». **＋ venta** en cada categoría abre el editor con un lote nuevo de esa categoría. Correr la fecha de venta mueve el período del plan del año que llega a ella **dentro del editor** (se ve antes de guardar, «↻ el plan del año se corre: hasta …»), así que ahora vale también editando desde Productivo. La venta REAL sigue en su circuito (JMS: «eso lo vemos aparte»). → [A-TEST-1396](#a-test-1396) | `@presupuesto` |
 | A-TEST-1390 | 🟢 | 🟡 Media | 🧪 **Probar la tanda de notas del 22/11** (A-FEAT-1642, 1643, 1644, 1646, 1648, 1649, A-BUG-1650). Casos 1592/1592, type-check sin empeorar, build compila. ✅ En desarrollo desde el 22/11 (3e0b06eb, OK de JMS). **Qué probar vos:** (1) **Ingresos → MSA → Arrendamientos**: arriba el switch «📋 Tabla / 📊 Posición» y la barra por campaña (verde $ cerrado · azul U$S sin pesificar · ámbar sin vender); Rojas 26/27 tiene que decir **Cuota 1, 2A, 2B, 3A, 3B de 3** y Nazarenas **1A, 1B, 2 de 2**; cada venta con su chip de moneda. Probá las dos vistas y decime cuál queda. (2) **Egresos → Facturas MSA → Facturas**: filtro en cada encabezado; filtrá un proveedor → el título dice «N con los filtros de columna · quitarlos». Con edición masiva, «todas» tilda sólo las filtradas. (3) Facturas → **sin PDF**: el botón dice «📂 Buscar en su carpeta» y al lado «📧 Carpeta y también el mail». (4) **Mails → Registro**: el botón dice «Releer la lista»; la columna «Qué hizo» muestra búsquedas de facturas y reenvíos. (5) **Cash Flow**: prendé sólo «pendiente» en Estado → los números de Origen y Comprobante bajan a lo que queda. Adversario: con un filtro de columna puesto en Facturas, «todas» NO tilda las ocultas. | `@egresos/mails` |
 | A-DEC-1035 | 🔵 | 🟡 Media — camino 1 (al pasar) | 🧪 **Insumos (agroquímicos, semillas): ¿la compra va al ACTIVO o al GASTO?** (JMS 21/11: *«uno compra, gasta 80, le quedan 20 en el activo y 80 fueron al gasto. Esa es la correcta… cuando se empieza a mezclar a veces es un problema»*). Hoy hay cuentas de los dos lados y se pueden mezclar. Lo correcto: lo usado al gasto, lo que queda al activo. Para el balance en línea (A-FEAT-1632) se propone: compras en su cuenta como están + stock al cierre al activo + «diferencia de inventario» en resultado, sin contar dos veces. A decidir el criterio permanente. | `@productivo/insumos` |
+| A-DEC-1036 | 🔵 | 🟡 Media — camino 1 | 🧾 **Pagos que SALEN pero NO son gasto: SICORE, anticipo de Ganancias, percepciones, IVA bancario, retenciones de IIBB** (JMS 22/11: *«sería un pendiente a resolver, no tengo claridad para responderte ahora»*). Hoy los templates tienen tipo «egreso» y van al resultado del balance (SICORE 2.480.336,09 · anticipo Ganancias 2.338.842,70 · percepciones 328.851,26 · IVA bancario 647.767,95; y una retención de IIBB de 8.347,05 en el libro de compras imputada a 112107). El tipo del template decide a la vez **resultado** y **presupuesto**, y estos pagos necesitan estar en el Cash Flow sin ser gasto. Propuesta de Claude (no decidida): un tipo nuevo «a cuenta de impuestos». SICORE: desde mar-26 cada quincena pagada = lo retenido en la app al centavo; antes, 1.711.121,67 sin detalle. Las dos puntas → página de preguntas abiertas del balance (Q1). | `@reportes/balance` |
+| A-FEAT-1638 | 🔵 | 🟡 Media — camino 1 | 🔍 **Revisar con cuidado la provisión de compras de ESTE ejercicio y cómo se refleja en activo/pasivo** (JMS 22/11: *«tengamos por pendiente revisarlo cuidadosamente… no está resuelto, luego yo te diré qué hay que ver»* — **espera sus indicaciones**). Lo visto 22/11 (sólo lectura): 10 facturas (640.379 sin IVA): 3 pagadas en el ejercicio (Coop. eléctrica ×2 el 15/12/25, Parador 23/06/26) · 6 en estado «anterior» sin pago vinculado (Pan American ×2, Parador 22/12, Coop. agua ×2, NC Federación Patronal) · 1 pendiente (Penduzzu 16.000). «Provisión para gastos» del balance propio en 0 (JMS 18/11); falta ver si lo no pagado está en Proveedores. | `@reportes/balance` |
 | A-BUG-1613 | 🟢 | 🔴 Alta — bloquea guardar órdenes | ✅ *11/11: script 268 corrido con OK de JMS — CHECK «no vacía» y `varchar(20)`; JMS vuelve a «Actualizar Orden».* 🧱 **La orden agrícola no guarda con dosis en kg/ha o g/ha: la base sólo acepta L y cc** (JMS 11/11, captura: *«new row for relation lineas_orden_agricola violates check constraint lineas_orden_agricola_unidad_dosis_check»* — siembra con Soja DM60K60 y Mezcla Sojera en kg/ha). **Causa**: [A-BUG-1238](#a-bug-1238) (05/11) amplió las unidades en la pantalla (L, cc, kg, g y la del insumo) pero no se tocó el CHECK de `productivo.lineas_orden_agricola.unidad_dosis` (`'L','cc'`), y la columna es `varchar(5)` (una unidad como «unidad» tampoco entraría). **Propuesto (script 268, estructura → aviso a Javier y OK de JMS)**: CHECK = no vacía, y la columna a `varchar(20)`. No cambia datos. Espera el OK. | `@productivo/insumos` |
 | A-FEAT-1614 | 🧊 | 🟠 Alta — productivo, a diseñar con JMS | 🌱 **Orden agrícola: la DOSIS a calibrar y la CANTIDAD a entregar son dos datos distintos** (JMS 11/11: *«uno quiere sembrar 65 kg por ha pero se da más insumo por el gasto de más por las cabeceras. Entonces pongo 1500 kg de ferti en vez de 65 kg × 19,5 ha. Pero eso en la orden puede generar que calibren para 1500 kg y terminen usando 1600. Por ahora preciso que entiendas el problema»*). **El problema**: hoy la línea tiene un solo número; si se pone lo entregado (1.500 kg), la dosis que se lee es 1.500 ÷ 19,5 = 77 kg/ha y el margen se vuelve dosis. **Idea a charlar**: (1) dosis a calibrar (kg/ha) — lo que se le dice a la máquina; (2) cantidad a entregar (kg) — lo que sale del stock, con margen; la diferencia = margen esperado; (3) al cerrar la orden, lo que sobró vuelve al stock (o lo que faltó se registra), así el stock y el costo por ha salen de lo **usado**, no de lo entregado. Sin arrancar: JMS pidió por ahora que se entienda. | `@productivo/insumos` |
 | A-FEAT-1615 | 🟢 | 🟡 Media | 📅 **Cash Flow: «± días» alrededor de hoy** (nota 🌙 JMS 11/11: *«agregar una cantidad de días. Si pongo 0 es hoy. Si es 1 es ayer, hoy y mañana»*). **Hecho**: en la fila «Desde:», un campo «± días»: 0 = sólo hoy, 1 = de ayer a mañana, 3 = de hace 3 días a dentro de 3; muestra el rango y «quitar»; lo sin fecha se sigue viendo (como la ventana); «Ver todo» lo borra. Se combina con los demás chips. `rangoAlrededorDeHoy` / `pasaRango` (`lib/pagos/filtros-cash-flow.ts`), 1 caso. → [A-TEST-1370](#a-test-1370) | `@cashflow` |
@@ -19354,4 +19370,123 @@ en línea)** construido desde abajo. Cerrado para MSA, se repite para MA y PAM.
    filtros. Control: contra la base y contra el v18.
 2. **Balance en línea formato contador** con nuestros renglones, desde ese crudo. Control: todo el crudo entra a un renglón o a «no va».
 3. Informe de lo que no cerró, con su lista, y la guía de qué mirar.
+
+**4 · 21/11 — TANDA SIN SUPERVISIÓN: entregada la v1 (rama `jms/tanda-2026-11-21-balance-en-linea`, SIN MERGEAR — espera la revisión de JMS)**
+
+- **Qué se hizo**: `scripts/balance-tres-capas.mts` (sólo LEE la base; usa las mismas funciones que Reportes → Balance) arma un Excel con
+  «Balance» (estructura del contador, renglones nuestros, filas agrupadas +/−), «Control» y los tres crudos («Crudo · Diario / Templates /
+  Sueldos», un renglón por comprobante / cuota / sueldo, con el **Nro balance** al que va o «NO VA» + motivo).
+  - Excel: `- Comunicacion JMS Claude - Archivos/Balance/Excels trabajando con claude/Balance formato contador/v1/Balance formato contador MSA 25-26 v1.xlsx`
+  - Página para revisar y contestar (respuestas en la colección `respuestas`, con dictado): https://claude.ai/artifact/SaFj1SiA1pj1733yv98Uju
+- **Criterios aplicados** (los del punto 3): libro diario total − IVA (otros tributos al gasto), provisiones del ejercicio en renglones propios;
+  templates de MSA por agrupadora → template (egresos); financiero sólo ganancia/pérdida (intereses; inversiones = rescates − suscripciones +
+  saldo final − inicial; movimientos entre cuentas propias a la vista); sueldos de empleados por empleado → partes según el tipo de empleado
+  (bruto guardado); stocks inicio − cierre (balance propio, versión jms); fiscal, bienes de uso y PN del contador, marcados. Signo del contador.
+- **Controles (todos ✓)**: contra el v18 — compras 563 / 294.180.363,99 / IVA 32.125.487,56 · ventas 13 / 466.959.423,73 · templates MSA
+  1.445 cuotas, egresos 66.914.486,47, financiero −32.644.262,55, socios 54.906.595,00, reintegros 2.619.146,77, total 91.795.965,69 · sueldos
+  62.865.712,75 + 81.154.400,28 = 144.020.113,03. Integridad: diario, templates (2.790 cuotas del ejercicio = 2.790 en el crudo) y sueldos
+  entran enteros a un renglón o a «NO VA».
+- **Resultado v1**: activo 1.467.845.305,08 · pasivo −150.714.480,75 · PN (contador) −940.037.216,58 · resultado −392.203.893,74 (ganancia) ·
+  **ecuación −15.110.285,99** (a la vista, no forzada). Coincidencias con el contador: intereses del plazo fijo −2.111.472,89 al centavo; sueldos
+  58.598.487,75 vs 58.588.081,43.
+- **Preguntas en la página** (P1–P6): caja $ 29,0 M sumada como gasto (riesgo de doble con sus templates) · FCI da 30,2 M de ganancia vs ~13,2 M del
+  contador · compra/venta de dólares ($ 45,4 M) fuera del resultado, falta la diferencia de cambio · restar la provisión del 24/25 (2 facturas) ·
+  sueldo «MA» $ 19,5 M dentro de empleados · el signo.
+- **Lo que NO se hizo**: nada en la app ni en los libros actuales (capa aparte); cuentas con socios sin trabajar (cuenta socios del balance propio,
+  tentativa); contable/interno en el diario (sólo en templates, por el pago).
+
+**5 · 21/11 — v2 de la tanda: SOCIOS sumados (contable e interno) y protocolo «¿terminé?» aplicado** (rama `jms/tanda-2026-11-21-balance-en-linea`, sin mergear)
+
+- **Socios** (JMS: *«incorporalo de la manera ya consensuada… el control es que dé contra los filtrados de las tablas raw… afectación por
+  contable y por interno, los paralelos»*): la 14.1 replicada fuera de la app (mismas funciones, + Libertad por semestre con el extracto) y la
+  capa interna. Solapa «Crudo · Socios» con contable e interno. **Contra lo esperado para el v19 (punto 43 de A-FEAT-1629), los cinco al
+  centavo**: JMS −47.074.051,72 · AMS −8.092.248,73 · MA −45.593.911,03 · PAM +12.401.959,62 · Cotitulares −1.756.595,00. Interno: MA
+  −94.009.781,72 (compensación 48.415.870,69) · JMS −47.647.083,55 · AMS −9.431.532,10 · PAM +12.392.959,62; control de la capa 0; 20 sin resolver.
+- Dos causas encontradas en la 1ª pasada (y corregidas): la 14.1 sin el renglón de Libertad daba MA −44.863.910,89 y PAM +12.533.501,75; sin el
+  extracto, el cuadro de Libertad daba MA −45.830.947,77 (le faltaban las facturas pagadas con LIB).
+- **34 controles, todos ✓**. Excel `…/Balance formato contador/v2/` (la v1 queda). Página v2 (misma URL) con «ver» = el crudo de cada renglón y
+  el bloque «lo que NO va». Preguntas: P1 caja · P2 FCI (el extracto sugiere ~52,4 M de ganancia vs 30,2 M de templates vs 13,2 M del contador)
+  · P3 dólares · P4 provisión 24/25 $ 12.456.000,14 (= la provisión para gastos del contador al 30/06/25) · P6 signo · P7 cómo entran los socios.
+  El sueldo de MA se sacó de las preguntas: es gerente general (script 133) → gasto de MSA; en lo interno, dividendo.
+- Programa: avisa cada etapa con su hora (JMS: *«chequeá cada tanto si se traba o avanza por etapas»*); tarda ~10 min, casi todo en leer el banco
+  de cada cuota.
+
+**6 · 22/11 — RESPUESTAS de JMS en la página (21 comentarios por renglón/sección, 4 con captura; P1–P7 sin contestar como tales) y lo que se le propuso**
+
+- **Errores de la página (míos)**: el «ver» de los renglones de SUELDOS muestra el bruto del empleado en cada parte (B185–B188 iguales) → corregir
+  a la parte; y la «Diferencia» de Ruben Sigot (2.770.200) son sus FRANCOS: tiene cantidad (6,5/6/8/8/8/6,5) pero no `valor_franco` (implícito
+  64.000 y 66.800 en junio) → renglón «Francos» como Extras. Los 835.000 de «Extras» son el aguinaldo A+B de junio.
+- **No van al gasto (propuesta, espera OK)**: B105 retenciones IIBB 8.347,05 (crédito fiscal); B140/B141 SICORE 2.480.336,09 (retenciones a
+  proveedores, se pagan por cuenta de ellos); y candidatos del mismo tipo: anticipo de Ganancias 2.338.842,70, percepción Ganancias 194.388,99,
+  percepción IVA 134.462,27, IVA bancario 647.767,95.
+- **B063** (arrendamientos agrícolas 12.456.000,14 = 2 × 6.228.000,07): son las 2 facturas provisionadas el 24/25; HOY NO se neutralizan (= P4).
+- **B172 caja 29 M**: en templates sólo está la punta del banco; la entrada a caja vive en las cajas → sumar esa punta (= P1).
+- **Socios (sección «no van»)**: «LIB» 14.317.100,99 = expensas + AYSA de Libertad pagadas por MSA (13 movimientos); ya entran a socios por la
+  regla del semestre → cambiar el rótulo «sin encuadrar». «CTA QUINTA X» 9.000 (02/06/26, medialunas reunión Benicasa, interno DIST PAM): el
+  código no existe → decidir a qué cuenta va (dato, con su OK). Los 400.000 del 16/05/26 (albañil chalet) ya están en el template de MA; aparece
+  porque lo pagó una cuenta de MSA.
+- **Presentación**: Ingresos siempre con Arrendamientos · Cereales · Hacienda (en cero si no hubo) + los que tengan movimiento; % sobre el total
+  del bloque (compras y ventas); ganancia sin rojo y gasto entre paréntesis (A-FEAT-1628 A5); PN = el del contador al 30/06/25; Inmobiliario y
+  Red Vial agrupados con el lote como renglón (complementario como una partida más); B173 netos en 0 con el número; Comisión cuenta bancaria
+  (B115) por cuenta → detalle; B053 seguros cultivo cuelga de «42» solo (ubicarlo con lo agrícola, va con A-FEAT-1633).
+- **Del «ver» (protocolo de páginas, a confirmar)**: el detalle como un nivel más del desplegable de la izquierda; cerrar un grupo cierra sus
+  detalles. Datos de origen de a poco: venta de hacienda (cabezas, kg promedio, precio), link a la factura (B089), y dónde más sirve.
+  ✅ **Hecho v3.2 (22/11, JMS «esto sí tratá de hacerlo»)**: el crudo del diario trae en cada VENTA cabezas · kilos · kg promedio · precio ($/kg o
+  $/cabeza) · categoría, línea por línea de la liquidación (granos: toneladas y precio), y en cada FACTURA de compra el 📎 a su PDF (249 de 345:
+  las cargadas sin PDF y las del histórico no lo tienen; las ventas todavía no guardan PDF — `pdf_drive_url` vacío en las 13). Mismos números
+  que la v3.1 (37 ✓, sin paso en la cadena: no mueve resultado). Falta «dónde más sirve»: se suma de a poco a pedido.
+- **Impuestos rurales**: hoy van por FECHA de pago de la cuota (mezcla cuotas 2025 y 2026); el papel del Inmobiliario ya tiene «lo que va al
+  ejercicio» → alinear.
+
+**7 · 22/11 (2ª) — v3 hecha con lo que JMS confirmó** (Excel `…/Balance formato contador/v3/`, misma página; preguntas abiertas en una página
+aparte que muestra sólo lo vigente: https://claude.ai/artifact/UXvNbq99jzeXxSmFqkudtG)
+
+- **Hecho**: provisión 24/25 revertida en bloque propio (JMS: «ya quedamos que se revertiría») · movimientos entre cuentas propias FUERA del
+  resultado, en un control con las dos puntas (JMS: «no llevar al gasto nada vía interbancarias»; la caja da 14.082.135,56 porque de las cajas de
+  la app sólo hay Sigot feb–may 26 y 1 de AMS) · Inmobiliario / Red Vial por lote + los saldos del ejercicio anterior de `ajustes_balance`
+  (7.115.206,05; JMS: «lo que importa es que entre al gasto… dentro de inmobiliario y red vial») · ventas en 5 grupos fijos · sueldos: detalle
+  por parte y francos de Sigot (sin `valor_franco`) · PN del contador al inicio y al cierre (es el saldo de arranque) · bancario por cuenta ·
+  «LIB» = Libertad · página: ganancia +, gasto entre paréntesis, % del bloque, el detalle se abre como un nivel más y se cierra con su grupo.
+- **Control**: 35 ✓. Resultado −392,2 M → −426,6 M = −12.456.000,14 − 29.036.135,56 + 7.115.206,05. Ecuación −15,1 M → −49,5 M por lo mismo; se
+  explica en el ARRANQUE (nuestro activo + pasivo al 30/06/25 no da el PN del contador: −141,0 M) y en los socios fuera (Q4).
+- **Abierto (en la página de preguntas)**: Q1 los templates de impuestos a cuenta (SICORE, anticipo de Ganancias, percepciones, IVA bancario)
+  tienen tipo «egreso»: el tipo decide a la vez resultado y presupuesto → propuesta de un tipo nuevo «a cuenta de impuestos» · Q2 FCI · Q3
+  diferencia de cambio · Q4 socios · Q5 protocolo de páginas. Provisión de ESTE ejercicio (10 facturas): 3 pagadas en el ejercicio, 6 en estado
+  «anterior» sin pago vinculado, 1 pendiente (Penduzzu 16.000) → falta ver si las no pagadas están en Proveedores.
+- ⚠️ **cambió 22/11 (3ª)**: JMS dejó B1/B2 y B6 como pendientes sin decidir → [A-DEC-1036](#a-dec-1036) (pagos que salen y no son gasto; Q1 de
+  la página de preguntas queda como propuesta, no como pregunta urgente) y [A-FEAT-1638](#a-feat-1638) (provisión de este ejercicio: espera
+  sus indicaciones).
+
+**8 · 22/11 — LA CADENA DE LA DIFERENCIA** (JMS: *«sería bueno llevar una cadena de saldos y controles para ir teniendo la trazabilidad de cómo
+va cambiando la diferencia hasta llegar a terminado, pero trazado y auditable»*)
+
+- **Cómo se trabaja de acá en más**: todo cambio del balance en línea que mueva el resultado o un saldo se registra como un paso en
+  `scripts/balance-tres-capas-cadena.json` (versión, fecha, cambio, quién lo decidió, motivo, efecto en resultado y patrimonial). El programa
+  controla que **partida (v1) + Σ pasos = la diferencia de hoy** (si no, «falta registrar un cambio») y descompone lo que queda en **brecha de
+  arranque** (−141.026.901,00: nuestro activo + pasivo al 30/06/25 contra el PN del contador) + **variación patrimonial que el resultado no explica**
+  (+91.539.685,36). Solapa «Cadena» del Excel (v3.1) y bloque «1b» de la página.
+- Hoy: v1 −15.110.285,99 → v2 (socios fuera, 0) → v3 −12.456.000,14 (provisión 24/25) → −29.036.135,56 (caja fuera) → +7.115.206,05 (saldos
+  anteriores) = **−49.487.215,64**. 37 controles ✓.
+- Lo que sigue para achicarla, cuando JMS lo elija: la brecha de arranque (qué tenía el contador al 30/06/25 que nuestro balance propio no:
+  anticipos 31,7 M, provisión 12,46 M, cuenta socio 45,9 M…) y las cuentas con socios (Q4).
+
+## <a id="a-feat-1635"></a>A-FEAT-1635 — Saldos INTERNOS entre las cuentas desde el 31/12/2024 en cero 🤝
+
+**1 · 21/11 — v1 entregada (tanda sin supervisión, rama `jms/tanda-2026-11-21-balance-en-linea`, sin mergear)**
+
+- **Pedido** (JMS 21/11): ante todo PAM ↔ MSA, y también PAM y MSA con cada socio y los socios entre sí, todo en cero al 31/12/2024; saldos
+  al **28/02/2026** y a **hoy**; lo que importa es el INTERNO. (Donde dictó «MCA» es MSA.)
+- **Cómo**: `scripts/cuentas-internas-desde-2025.mts` (sólo lee; ~1 min) — la marca interna de cada movimiento (vacía → la contable; la del
+  histórico, de la nota), con las reglas de la capa interna (`lib/balance/capa-interna.ts`): CTA/DIST/RET/GASTO X → X le debe al titular; LIB a su
+  pozo; Desglosar abre tarjeta y pólizas; una transferencia entre cuentas de la app se cuenta UNA vez (del lado de más arriba, salvo que ese lado no
+  tenga extracto a esa fecha). Sólo PLATA (banco, caja, tarjeta), no facturas ni sueldos devengados.
+- **Resultado** (1.168 movimientos marcados, todos ubicados: 712 en pares, 31 espejos, 393 propios, 2 terceros, 42 sin resolver). PAM ↔ MSA: al
+  28/02/26 MSA le debe a PAM 13.718.815,49; a hoy 5.965.205,09. Otros: MA ↔ MSA a hoy MA le debe 97,1 M · MA ↔ PAM MA le debe 47,4 M · JMS ↔ MSA 16,7 M ·
+  AMS ↔ MSA 17,4 M · Cotitulares ↔ PAM 33,2 M (todo en el Excel y la página).
+- **Encontrado en la 1ª pasada**: «RET 1 / AP 1» en la CA de PAM = MSA (descripciones «Retiro de MSA a PAM» / «Aporte PAM a MSA»; neto: PAM le aportó
+  a MSA 14.300.100,00 en 2025) · 6 retiros/aportes entre cuentas de la app se contaban de los dos lados (corregido) · «Trabucco» es un proveedor (aparte).
+- **Huecos de extracto** (Q1): Galicia CC MSA ene–jun 2025; CA MA hasta 07/10/25; CC PAM hasta 24/09/25; VISA MA hasta 29/09/25; y para «hoy», VISA PAM
+  hasta 30/04/26, CA PAM hasta 22/07/26, CC PAM hasta 07/08/26.
+- **Entregables**: Excel `…/Cuentas internas desde 2025/v1/` · página https://claude.ai/artifact/479mSTYBEw1Szstw7iVpUt (Q1 extractos · Q2 «1» = MSA ·
+  Q3 distribuciones a Manuel, Mechi, Soledad · Q4 Libertad · Q5 los 42 sin resolver · Q6 sólo plata o también facturas y sueldos).
 
