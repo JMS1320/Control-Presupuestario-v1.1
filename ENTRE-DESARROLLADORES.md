@@ -40,6 +40,8 @@
 
 ## 📨 PARA JAVIER
 
+### 🔔 Tres columnas en `public.presupuesto_variables` (2026-11-27) — aviso previo. `scripts/319` con deshacer: `lote_id uuid` (FK a `productivo.stock_lotes`, `on delete cascade`), `fecha_desde date`, `fecha_hasta date` + índice parcial por lote. Es el plan del año POR LOTE (cada renglón de la ración con su fecha). Sólo agrega columnas; la tabla ya tiene su RLS. → A-FEAT-1670.
+
 ### ✅ Una columna en `productivo.actividad_insumos` (2026-11-27) — ✅ APLICADA el 27/11 (aviso previo). `scripts/314` con deshacer: `insumo_stock_id uuid` (FK a `productivo.stock_insumos`, `on delete set null`): qué insumo del stock usa cada renglón de la receta (hasta acá se unían por el nombre). Sólo agrega una columna; la app ya lee la tabla con `select *`. → A-FEAT-1663.
 
 ### ✅ Cinco columnas en `productivo.entrega_factura` y una en `public.factura_renglones` (2026-11-27) — ✅ APLICADA el 27/11 (aviso previo) (JMS: «dale, seguí hasta terminarlo», paso 1 del stock). `scripts/312` con deshacer. En `entrega_factura`: `renglon_n` (a qué renglón de la factura corresponde el vínculo), `automatico` (lo hizo la app sola, default `false`), `antes` (jsonb: lo que tenía la entrada antes de que la factura la corrigiera — la huella, y lo que usa «deshacer»), `revisado_at` / `revisado_por` (JMS miró el vínculo solo). En `factura_renglones`: `no_vincular_solo` (boolean, default `false`: JMS dijo «no es ésta» y ese renglón no se vuelve a vincular solo). Sólo se AGREGAN columnas: nada existente cambia, no hay RLS ni permisos nuevos. → A-FEAT-1663.
