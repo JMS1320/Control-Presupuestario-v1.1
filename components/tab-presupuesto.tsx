@@ -13,6 +13,7 @@ import { stockAlInicio, netearStock, type AporteConsumo } from "@/lib/presupuest
 import { esModoRacion, campanaDeMes, tcPorMesConArrastre, costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, aplicarPlanRacion, aplicarPlanLote, type RenglonPlan, type PlanRacionFila, type PlanLoteFila } from "@/lib/presupuesto/costo-campana"
 import { PresupuestoPlanLote } from "@/components/presupuesto-plan-lote"
 import { cobroVentaSinLiquidacion } from "@/lib/productivo/venta-condiciones"
+import { piezasDeLote, cortesDeVenta, cortarTramoPorVentas, type VentaParcial } from "@/lib/ganaderia/ventas-parciales"
 import { PresupuestoPlanRacion, type DatosPlanRacion, type RacionReceta, type RacionPlanFila } from "@/components/presupuesto-plan-racion"
 import { claveActividad } from "@/lib/presupuesto/margen"
 import { guardarMetodoTemplate, quitarMetodoTemplate, guardarConfigCuenta } from "@/lib/presupuesto/guardar-config"
@@ -861,6 +862,13 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     const retenidasDe = new Map(calcularLineaTiempo(((ciclos || []) as any[]), realesRodeo).map(c => [String((c.ciclo as any).id), Number(c.retenidas) || 0]))
     const extraAlPie = (l: LoteStock) => /ternera.*al pie/i.test(String(l.categoria)) && (l as any).ciclo_id ? (retenidasDe.get(String((l as any).ciclo_id)) || 0) : 0
     const sinPlanAcc: typeof sinPlan = []
+    // ✂️ A-FEAT-1675 — ventas parciales presupuestadas y ventas firmes de cada lote (bajan las cabezas que comen)
+    const [{ data: parRac }, { data: venRac }] = await Promise.all([
+      supabase.schema("productivo").from("lote_ventas_plan").select("*"),
+      supabase.schema("productivo").from("stock_ventas").select("lote_id, fecha_venta, cantidad").not("lote_id", "is", null),
+    ])
+    const parcialesRac = ((parRac || []) as any[]) as VentaParcial[]
+    const ventasRac = ((venRac || []) as any[]).map(v => ({ lote_id: v.lote_id ? String(v.lote_id) : null, fecha_venta: String(v.fecha_venta), cantidad: Number(v.cantidad) || 0 }))
     /** 🌽 Lo que come cada renglón de ración que sabe de qué insumo del stock sale (script 314): para netear el stock. */
     const aportes: (AporteConsumo & { unidad: string | null; act: string; loteId: string; concepto: string })[] = []
     for (const l of ((lotes || []) as LoteStock[])) {
@@ -875,7 +883,9 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       const rango = mios.map((t: any) => `${dmy(t.fecha_desde)}–${dmy(t.fecha_hasta)}`).join(", ")
       const extra = extraAlPie(l)
       const nombreLote = `${l.categoria} · ${fmtN(Number(l.cantidad) || 0)} cab${extra ? ` (+ ${fmtN(extra, 1)} retenidas al pie)` : ""} · plan del año ${rango} · disponible ${dmy(l.fecha_disponible)}`
-      for (const tA of tramosParaCosto(l as unknown as LoteCurva, mios, listaActs, deRacion)) {
+      // ✂️ A-FEAT-1675 C — el tramo se corta en cada venta (parcial presupuestada o firme): desde ahí comen las cabezas que quedan
+      const cortesL = cortesDeVenta(l.id, parcialesRac, ventasRac)
+      for (const tA0 of tramosParaCosto(l as unknown as LoteCurva, mios, listaActs, deRacion)) for (const tA of cortarTramoPorVentas(tA0 as any, cortesL) as typeof tA0[]) {
         const t0 = extra && tA.hasta <= String(l.fecha_disponible) ? { ...tA, cabezas: tA.cabezas + extra } : tA
         const campT = campanaDeMes(t0.desde.slice(0, 7))
         const pr = aplicarPlanRacion(t0.actividad as any, t0.insumos as any[], campT, planRacion)
@@ -1623,6 +1633,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
 
     const listaVentas = ((vs || []) as VentaStock[])
     const ventasDe = (id: string) => listaVentas.filter(v => v.lote_id === id)
+    const { data: parHac } = await supabase.schema("productivo").from("lote_ventas_plan").select("*")
+    const parcialesHac = ((parHac || []) as any[]) as VentaParcial[]
     // ⚖️ A-FEAT-1672 — control: lo que el presupuesto tiene para vender de la hacienda que ya existe, contra el stock real de hoy
     try {
       const hoyC = hoyArgentina()
@@ -1652,7 +1664,10 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       // genera caja. Aparece en el Margen como traspaso —ingreso de una, costo de la otra—,
       // pero acá sería plata que nunca llega.
       if ((l as any).destino_actividad_id) continue
-      const v = valuarLoteConPrecios(l, ventasDe(l.id), listaPrecios, curvaDe(l))
+      // ✂️ A-FEAT-1675 A — el lote se valúa por piezas: el resto a la fecha del lote y cada venta parcial pendiente a la suya
+      for (const pieza of piezasDeLote(l as any, parcialesHac, ventasDe(l.id))) {
+      const lp = pieza.lote as LoteStock
+      const v = valuarLoteConPrecios(lp, pieza.ventas as any, listaPrecios, pieza.pesoPropio ? undefined : curvaDe(l))
       if (!v.proyectado || v.cuotas.length === 0) continue
       const f = fila(l.categoria)
       // El cobro puede venir en varias cuotas: cada una cae en su mes
@@ -1662,11 +1677,13 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         const lv = (f.lotes[q.mes] ??= [])
         const ya = lv.find(x => x.id === l.id)
         if (ya) ya.monto += q.monto
-        else lv.push({ id: l.id, categoria: l.categoria, cantidad: Number(l.cantidad) || 0, fecha_venta: (l as any).fecha_venta_estimada ?? null,
-          precio_kg_override: (l as any).precio_kg_override == null ? null : Number((l as any).precio_kg_override), plazo_cobro: (l as any).plazo_cobro ?? null, monto: q.monto })
+        else lv.push({ id: l.id, categoria: pieza.parcial ? `${l.categoria} (venta parcial ${String(pieza.parcial.fecha_venta).split("-").reverse().join("/")})` : l.categoria,
+          cantidad: Number(lp.cantidad) || 0, fecha_venta: (lp as any).fecha_venta_estimada ?? null,
+          precio_kg_override: (lp as any).precio_kg_override == null ? null : Number((lp as any).precio_kg_override), plazo_cobro: (lp as any).plazo_cobro ?? null, monto: q.monto })
       }
       // El IIBB de la venta se paga el mes SIGUIENTE al cobro
       if (v.mes_iibb) iibbPorMes[v.mes_iibb] = (iibbPorMes[v.mes_iibb] || 0) + v.iibb
+      }
     }
 
     // ── Capa 1b 💰 A-BUG-1674 — las VENTAS YA REGISTRADAS en Productivo y todavía sin cobrar (JMS 27/11: «acabo de cargar venta de 3 toros y

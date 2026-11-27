@@ -5933,6 +5933,16 @@ precio, IVA), si cierra con el total, el link al PDF y a qué entrada al stock e
 
 ⚠️ Sin probar todavía → A-TEST-1398 · A-TEST-1400
 
+## ✂️ Lote → vender en partes *(nuevo 2026-11-27)*
+
+En el editor de un lote (Productivo, o clic en la venta desde el presupuesto), **✂️ Ventas parciales presupuestadas**:
+- «＋ venta parcial»: fecha y cabezas (peso, precio y plazo vacíos = los del lote). El resto se vende en la fecha del lote.
+- Desde la fecha de cada venta, la ración del lote come con las cabezas que quedan.
+- **«Confirmar →»** abre la confirmación de la venta real (kilos, precio, caravanas) precargada; al confirmar queda **✓ confirmada** y pasa a venta firme.
+- Si la venta la cargás desde **Movimientos de hacienda → Completar la venta**, elegí el **Lote del presupuesto**: así no se cuenta dos veces, y una parcial con esas cabezas queda confirmada sola.
+
+⚠️ Sin probar todavía → A-TEST-1410
+
 ## 🐄 Evolución del rodeo → lo real reemplaza a la proyección *(nuevo 2026-11-27)*
 
 La evolución del rodeo es la **proyección**; lo **real** la va reemplazando a medida que ocurre:

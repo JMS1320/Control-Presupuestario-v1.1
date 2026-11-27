@@ -338,6 +338,7 @@ import { esDeLaEmpresa, empresasDeContratos, tipoEnPresupuesto, bloquesDeEmpresa
 import { esCuentaDeInsumos, esFacturaDeInsumos, fileIdDeDrive } from "@/lib/facturas-detalle/insumos"
 import { proponerPorRenglon, factorUnidad, notaDelVinculo, insumoPorNombre } from "@/lib/productivo/vinculo-renglon"
 import { stockAlInicio, netearStock, consumoEntre } from "@/lib/presupuesto/stock-presupuesto"
+import { piezasDeLote, cortesDeVenta, cortarTramoPorVentas } from "@/lib/ganaderia/ventas-parciales"
 import { aperturasReales, stockHaciendaAl, vientresDelStock, controlLotesVsStock } from "@/lib/ganaderia/rodeo-real"
 import { calcularLineaTiempo as lineaRodeoReal } from "@/lib/ganaderia/ciclo"
 import { costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, aplicarPlanRacion, aplicarPlanLote, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
@@ -9324,6 +9325,22 @@ Importe Neto Gravado: $ 7338020,40
       const eC = "Novillo 0→39 · Ternera Recria 12→0 · Ternero Recria 40→0 · Torito 9→8 · Vaquillona Engorde 0→9"
       chequear("Productivo", "⚖️ Lotes de venta del presupuesto vs stock real: marca cada categoría que no coincide (lo vendido y los lotes futuros no cuentan; el rodeo de cría tampoco)",
         eC, vC, vC === eC, "A-FEAT-1672")
+    }
+    // ✂️ A-FEAT-1675: el lote de 39 novillos se divide: 13 el 30/11 (parcial) y el resto a la fecha del lote; una confirmada ya no se proyecta;
+    // la ración come con 39 hasta el 30/11 y con 26 desde ahí (y si hay una venta firme de 5 el 10/12, con 21)
+    {
+      const lote: any = { id: "N", cantidad: 39, fecha_venta_estimada: "2026-12-15", precio_kg_override: 5300, plazo_cobro: null, peso_base_kg: 254, fecha_peso: "2026-08-03" }
+      const par = (o: any) => ({ id: "p", lote_id: "N", fecha_venta: "2026-11-30", cabezas: 13, peso_kg: null, precio_kg: null, plazo_cobro: null, venta_id: null, ...o })
+      const pz = piezasDeLote(lote, [par({}), par({ id: "q", fecha_venta: "2026-11-01", cabezas: 4, venta_id: "v1" })], [{ cantidad: 4 }])
+      const vP = pz.map(x => `${x.parcial ? "parcial" : "resto"} ${x.lote.cantidad} cab ${x.lote.fecha_venta_estimada}${x.ventas.length ? " −" + x.ventas.reduce((t, v) => t + v.cantidad, 0) : ""}`).join(" · ")
+      const conPeso = piezasDeLote(lote, [par({ peso_kg: 420, precio_kg: 5600 })], [])[1]!
+      const cortes = cortesDeVenta("N", [par({})], [{ lote_id: "N", fecha_venta: "2026-12-10", cantidad: 5 }, { lote_id: "X", fecha_venta: "2026-12-01", cantidad: 9 }])
+      const tr = cortarTramoPorVentas({ desde: "2026-09-24", hasta: "2026-12-15", cabezas: 39, peso_inicial_kg: 250, actividad: { ganancia_diaria_kg: 1 } } as any, cortes)
+      const vT = tr.map(t => `${t.desde}→${t.hasta} ${t.cabezas} cab ${t.peso_inicial_kg} kg`).join(" | ")
+      const vV = `${vP} || con peso: ${conPeso.lote.peso_base_kg} kg al ${conPeso.lote.fecha_peso} a $ ${conPeso.lote.precio_kg_override} (${conPeso.pesoPropio ? "propio" : "curva"}) || ${vT}`
+      const eV = "resto 26 cab 2026-12-15 −4 · parcial 13 cab 2026-11-30 || con peso: 420 kg al 2026-11-30 a $ 5600 (propio) || 2026-09-24→2026-11-30 39 cab 250 kg | 2026-11-30→2026-12-10 26 cab 317 kg | 2026-12-10→2026-12-15 21 cab 327 kg"
+      chequear("Productivo", "✂️ Venta parcial del lote: el resto queda a la fecha del lote, cada parcial a la suya (la confirmada no se proyecta); la ración come con las cabezas que quedan en cada fecha",
+        eV, vV, vV === eV, "A-FEAT-1675")
     }
     // 🥣 Dietas (script 305): sin dieta = va en todas; con dieta = sólo en la suya; la elegida manda (si no, la de default)
     const insD = [{ c: "Maíz", dieta: "Maíz y concentrado" }, { c: "Conc", dieta: "Maíz y concentrado" }, { c: "Maíz", dieta: "Con silo" }, { c: "Silo", dieta: "Con silo" }, { c: "Sal", dieta: null }]

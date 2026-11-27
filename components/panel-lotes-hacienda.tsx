@@ -1,6 +1,7 @@
 "use client"
 
 
+import { VentasParcialesLote } from "@/components/ventas-parciales-lote"
 import { hoyArgentina } from "@/lib/fechas"
 // Cabezas disponibles para vender. Dos orígenes:
 //   · stock_inicial → la foto de arranque (la recría que se retuvo y no se vendió)
@@ -1019,6 +1020,9 @@ function ModalLote({ datos, onCerrar, onGuardar, tramos, actividades, insumos, c
               <strong>{n1(pesoHoy)} kg</strong>
             </p>
           )}
+
+          {/* ✂️ A-FEAT-1675 — dividir la venta del lote en ventas parciales y confirmarlas (también desde el presupuesto: es este mismo editor) */}
+          {!f.destino_actividad_id && <VentasParcialesLote lote={f} />}
 
           <div>
             <label className="text-xs text-gray-500">Notas</label>

@@ -99,8 +99,10 @@ export interface LoteAConfirmar {
   esGordo: boolean
 }
 
-export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirmado }: {
+export function ModalConfirmarVentaHacienda({ lote, editar, parcialId, onCerrar, onConfirmado }: {
   lote: LoteAConfirmar | null
+  /** ✂️ A-FEAT-1675 — si se confirma una VENTA PARCIAL presupuestada del lote, queda atada a la venta firme y deja de proyectarse. */
+  parcialId?: string | null
   /** Cuando viene, el modal edita esa venta en vez de crear una nueva. */
   editar?: VentaAEditar | null
   onCerrar: () => void
@@ -359,6 +361,10 @@ export function ModalConfirmarVentaHacienda({ lote, editar, onCerrar, onConfirma
       }).select("id").single()
       if (e1 || !venta) { alert("Error al registrar la venta: " + (e1?.message ?? "")); return }
       await registrarCliente()
+      if (parcialId) {
+        const { error: eP } = await p.from("lote_ventas_plan").update({ venta_id: venta.id, updated_at: new Date().toISOString() }).eq("id", parcialId)
+        if (eP) alert("La venta se registró pero no se pudo marcar la venta parcial como confirmada: " + eP.message)
+      }
 
       // 2 · El movimiento de stock. Se GENERA desde la venta: si se cargara a mano habría dos
       //     fuentes de verdad sobre la misma salida de animales.
