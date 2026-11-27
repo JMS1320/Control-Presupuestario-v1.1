@@ -12,6 +12,7 @@ import { dietasDe } from "@/lib/productivo/actividades"
 import { stockAlInicio, netearStock, type AporteConsumo } from "@/lib/presupuesto/stock-presupuesto"
 import { esModoRacion, campanaDeMes, tcPorMesConArrastre, costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, aplicarPlanRacion, aplicarPlanLote, type RenglonPlan, type PlanRacionFila, type PlanLoteFila } from "@/lib/presupuesto/costo-campana"
 import { PresupuestoPlanLote } from "@/components/presupuesto-plan-lote"
+import { cobroVentaSinLiquidacion } from "@/lib/productivo/venta-condiciones"
 import { PresupuestoPlanRacion, type DatosPlanRacion, type RacionReceta, type RacionPlanFila } from "@/components/presupuesto-plan-racion"
 import { claveActividad } from "@/lib/presupuesto/margen"
 import { guardarMetodoTemplate, quitarMetodoTemplate, guardarConfigCuenta } from "@/lib/presupuesto/guardar-config"
@@ -318,6 +319,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       disponible: Record<string, DisponibleCategoria>
       /** 🐂 Qué lotes forman la plata de cada mes (para abrir la venta y editarla en el lote). */
       lotes?: Record<string, VentaLoteCelda[]>
+      /** 💰 A-BUG-1674 — ventas YA REGISTRADAS en Productivo, todavía sin cobrar, que suman en ese mes (cliente, cabezas, importe). */
+      registradas?: Record<string, string[]>
     }[]
     iibb: Record<string, number>
   }>({ categorias: [], iibb: {} })
@@ -1639,8 +1642,9 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       estimado: Record<string, boolean>
       disponible: Record<string, DisponibleCategoria>
       lotes: Record<string, VentaLoteCelda[]>
+      registradas: Record<string, string[]>
     }> = {}
-    const fila = (cat: string) => (porCat[cat] ??= { montos: {}, estimado: {}, disponible: {}, lotes: {} })
+    const fila = (cat: string) => (porCat[cat] ??= { montos: {}, estimado: {}, disponible: {}, lotes: {}, registradas: {} })
     const iibbPorMes: Record<string, number> = {}
 
     for (const l of listaLotes) {
@@ -1664,6 +1668,41 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       // El IIBB de la venta se paga el mes SIGUIENTE al cobro
       if (v.mes_iibb) iibbPorMes[v.mes_iibb] = (iibbPorMes[v.mes_iibb] || 0) + v.iibb
     }
+
+    // ── Capa 1b 💰 A-BUG-1674 — las VENTAS YA REGISTRADAS en Productivo y todavía sin cobrar (JMS 27/11: «acabo de cargar venta de 3 toros y
+    // no aparece en el presupuesto»). Al registrarla, las cabezas salen del lote (capa 1) pero su plata no entraba en ningún lado: ahora entra en
+    // el mes de cobro, con su IVA si todavía no tiene liquidación (la misma cuenta que el Cash Flow: `cobroVentaSinLiquidacion`). Lo ya
+    // facturado lo muestra la factura (se suma sólo el remanente). Una venta sin lote (toros) entra igual, en su categoría.
+    try {
+      const mesHoyV = mesArgentina()
+      const { data: vu } = await supabase.from("ventas_unificadas")
+        .select("venta_id, empresa, fecha_cobro, monto_pesos, facturado, cliente_nombre, cantidad, cuota_id").eq("venta_tipo", "ganaderia")
+      const pend = ((vu || []) as any[]).filter(v => (v.empresa || "MSA") === empresaP && v.fecha_cobro && String(v.fecha_cobro).slice(0, 7) >= mesHoyV
+        && (Number(v.monto_pesos) || 0) - (Number(v.facturado) || 0) > 0.01)
+      if (pend.length) {
+        const P = supabase.schema("productivo")
+        const [{ data: svs }, { data: cats }] = await Promise.all([
+          P.from("stock_ventas").select("id, categoria_id, alicuota_iva, alicuota_iibb").in("id", pend.map(v => v.venta_id)),
+          P.from("categorias_hacienda").select("id, nombre"),
+        ])
+        const nomCat = new Map(((cats || []) as any[]).map(c => [String(c.id), String(c.nombre)]))
+        for (const v of pend) {
+          const sv: any = ((svs || []) as any[]).find(x => x.id === v.venta_id) || {}
+          const lote = v.cuota_id ? listaLotes.find(l => l.id === v.cuota_id) : null
+          const cat = lote?.categoria ?? nomCat.get(String(sv.categoria_id)) ?? "Hacienda"
+          const neto = (Number(v.monto_pesos) || 0) - (Number(v.facturado) || 0)
+          const cv = cobroVentaSinLiquidacion(neto, sv.alicuota_iva)
+          const mes = String(v.fecha_cobro).slice(0, 7)
+          const f = fila(cat)
+          f.montos[mes] = (f.montos[mes] || 0) + cv.cobro
+          ;(f.registradas[mes] ??= []).push(`registrada: ${v.cliente_nombre || "cliente"} · ${Number(v.cantidad) || 0} cab · $ ${Math.round(neto).toLocaleString("es-AR")} + IVA ${cv.alicuota} % (cobro ${String(v.fecha_cobro).split("-").reverse().join("/")})`)
+          if (Number(sv.alicuota_iibb) > 0) {
+            const [a, m] = mes.split("-").map(Number); const sig = `${m === 12 ? a! + 1 : a}-${String(m === 12 ? 1 : m! + 1).padStart(2, "0")}`
+            iibbPorMes[sig] = (iibbPorMes[sig] || 0) + neto * Number(sv.alicuota_iibb)
+          }
+        }
+      }
+    } catch (e) { console.error("No se pudieron sumar las ventas de hacienda ya registradas", e) }
 
     // ── Capa 2: lo que existe y no tiene venta, por diferencia contra la fuente
     const mesActual = mesArgentina()
@@ -3087,10 +3126,11 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
                               className={`px-3 py-1.5 text-right text-xs ${
                                 esActual ? "bg-blue-50 border-l-2 border-blue-300" : ""}`}>
                               {valor > 0 ? (
-                                <button type="button" className="hover:underline" title="Clic: abrir la venta en el editor del lote (Productivo): peso, desbaste, CZ, precio, plazo y su plan del año"
+                                <button type="button" className="hover:underline" title={`${(c.registradas?.[clave] ?? []).length ? `💰 ${(c.registradas?.[clave] ?? []).join("\n")}\n` : ""}Clic: abrir la venta en el editor del lote (Productivo): peso, desbaste, CZ, precio, plazo y su plan del año`}
                                   onClick={() => setVentaAbierta({ titulo: `${c.categoria} — venta de ${MESES[m.mes - 1]} ${m.anio}`, lotes: c.lotes?.[clave] ?? [] })}>
                                   {fmt(valor)}
                                   {c.estimado[clave] && <span className="ml-0.5 text-amber-500">*</span>}
+                                  {(c.registradas?.[clave] ?? []).length > 0 && <span className="ml-0.5 text-emerald-700" title="Incluye ventas ya registradas en Productivo (sin cobrar)">💰</span>}
                                 </button>
                               ) : disp ? (
                                 /* Sin venta no hay plata: se informan cabezas y peso promedio,
