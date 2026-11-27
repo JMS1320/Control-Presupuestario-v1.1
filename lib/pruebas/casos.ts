@@ -358,6 +358,7 @@ import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla,
   cambioSoloEste, ACCIONES_MAIL, NOMBRE_ACCION_MAIL,
   juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves, ordenarParaLista, rangoDelDia, ordenarCronologico, leerBusqueda, coincideBusquedaMail, textoBuscable } from "@/lib/mails/registro"
 import { pasaGrupos, clickChipGrupo, chipPrendido, sexoDeCategoria, sexoACorregir, hojaDe } from "@/lib/productivo/grupos-terneros"
+import { deOtraCategoria } from "@/lib/ganaderia/confirmar-venta"
 import { opcionesDeColumna, filtrarPorColumnas, seleccionConBusqueda, listaPegada, cruzarPegadas, restoDePegadas, coincideBusqueda as coincideBusquedaColumna } from "@/lib/ui/filtro-columna"
 import { valorFiltroCuota } from "@/lib/templates/filtro-cuotas"
 import { partesDeRuta, problemaDeRuta, estadoDestino, idDeLinkDrive } from "@/lib/archivo/destinos"
@@ -12220,6 +12221,13 @@ Importe Neto Gravado: $ 7338020,40
         const vC = cs.map(c => `${c.animal.id}:${hojaDe({ ...c.animal, sexo: c.nuevo })}`).join(" ") + " | a Novillo: " + sexoACorregir(an, "Novillo").map(c => c.animal.id).join("") + " | a otra: " + sexoACorregir(an, "Otra").length
         chequear("Productivo", "🔁 Pasar 2 «machos» a Ternera Recría les corrige el sexo; el marcado reposición queda ternera rep; la hembra no se toca",
           "a:terneras_rep b:hembras_resto | a Novillo: c | a otra: 0", vC, vC === "a:terneras_rep b:hembras_resto | a Novillo: c | a otra: 0", "A-FEAT-1669")
+      }
+      // ⚠️ A-FEAT-1669: en la confirmación de venta, las caravanas que no son de la categoría del lote se avisan
+      {
+        const fs = [{ id: "1", categoria: "Ternero Recria" }, { id: "2", categoria: "Ternera Recria" }, { id: "3", categoria: null }, { id: "4", categoria: "ternero recría" }]
+        const vV = deOtraCategoria(fs, "Ternero Recria").map(f => f.id).join("") + " | sin lote: " + deOtraCategoria(fs, null).length
+        chequear("Productivo", "⚠️ Venta: avisa las caravanas de otra categoría que el lote (la hembra y la sin categoría; mayúsculas y tildes no cuentan)",
+          "23 | sin lote: 0", vV, vV === "23 | sin lote: 0", "A-FEAT-1669")
       }
       // 🔽 nota JMS 10/11: la tabla de Cuotas con filtro por columna — fechas por mes, monto es-AR, la CATEG de la cuota manda
       {

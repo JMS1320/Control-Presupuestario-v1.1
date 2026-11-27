@@ -184,3 +184,16 @@ export function netoDeVenta(
   const cz = bruto * (pctCz || 0)
   return { bruto, cz, flete: flete || 0, neto: bruto - cz - (flete || 0) }
 }
+
+/**
+ * ⚠️ A-FEAT-1669 (JMS 27/11: «cuando haga la venta quiero poner la venta real, tantos machos y tantas hembras, con sus caravanas
+ * que coincidan»): las caravanas pegadas cuya ficha NO es de la categoría del lote que se vende. La venta descuenta el stock de
+ * la categoría del lote y da de baja las caravanas: si una es de otra categoría, stock y caravanas quedan diciendo cosas
+ * distintas. AVISA, no frena (puede tener una explicación que sólo sabe el usuario). Sin categoría cargada también avisa.
+ */
+export function deOtraCategoria<T extends { categoria: string | null }>(fichas: T[], categoriaLote: string | null | undefined): T[] {
+  const norm = (x: string | null | undefined) => String(x ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase()
+  const c = norm(categoriaLote)
+  if (!c) return []
+  return fichas.filter(f => norm(f.categoria) !== c)
+}
