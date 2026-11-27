@@ -92,6 +92,9 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
   const [cargando, setCargando] = useState(false)
   /** Las ventas de este papel: las que vienen por props, o las que se encuentran al editar. */
   const [ventasCtx, setVentasCtx] = useState<VentaOrigen[]>([])
+  /** 💰 A-FEAT-1677 B9 — una liquidación cargada SUELTA: las ventas de hacienda registradas sin liquidar, para atarla a la suya (si no, el
+   *  presupuesto contaría la plata dos veces: la venta y la liquidación). Si no hay venta cargada, la liquidación cuenta sola. */
+  const [ventasPend, setVentasPend] = useState<{ id: string; fecha: string; cliente: string; cuit: string; cantidad: number; remanente: number }[] | null>(null)
   const [fecha, setFecha] = useState('')
   const [consignatario, setConsignatario] = useState({ cuit: '', nombre: '' })
   const [nroComp, setNroComp] = useState('')
@@ -137,6 +140,14 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
     limpiar()
     if (comprobanteId) { void cargarParaEditar(comprobanteId); return }
     setVentasCtx(ventas)
+    setVentasPend(null)
+    if (!ventas.length) {
+      void supabase.from('ventas_unificadas').select('venta_id, fecha_venta, cliente_nombre, cliente_cuit, cantidad, monto_pesos, facturado').eq('venta_tipo', 'ganaderia')
+        .then(({ data }) => setVentasPend(((data || []) as any[])
+          .map(v => ({ id: String(v.venta_id), fecha: String(v.fecha_venta || ''), cliente: String(v.cliente_nombre || ''), cuit: String(v.cliente_cuit || '').replace(/\D/g, ''),
+            cantidad: Number(v.cantidad) || 0, remanente: (Number(v.monto_pesos) || 0) - (Number(v.facturado) || 0) }))
+          .filter(v => v.remanente > 0.01).sort((a, b) => b.fecha.localeCompare(a.fecha))))
+    }
     if (ventas.length) {
       const pre = ventas.map(v => precargaDesdeVenta(v))
       setFecha(ventas.map(v => v.fecha).sort().slice(-1)[0] || '')
@@ -437,6 +448,32 @@ export function ModalLiquidacionHacienda({ open, onOpenChange, ventas, comproban
 
         {/* 🎚️ Lo que se tiene que cobrar según las ventas — chiquito, siempre a la vista. Pedido del
             usuario 2026-10-01: «son tantos kg × tal precio menos tanto de CZ = tanto a cobrar». */}
+        {!esEdicion && ventas.length === 0 && ventasPend && (
+          <div className="rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-900">
+            <b>¿De qué venta registrada es esta liquidación?</b>{' '}
+            {ventasPend.length === 0
+              ? 'No hay ventas de hacienda registradas sin liquidar: la liquidación cuenta sola en el presupuesto y el Cash Flow (no se duplica).'
+              : 'Tildá la venta (o las ventas) que liquida: así el presupuesto cuenta la plata una sola vez. Si la venta no está cargada, dejá todo sin tildar.'}
+            {ventasPend.length > 0 && (
+              <div className="mt-1 max-h-32 space-y-0.5 overflow-y-auto">
+                {ventasPend.map(v => {
+                  const sel = ventasCtx.some(x => x.id === v.id)
+                  const mismo = !!consignatario.cuit && consignatario.cuit.replace(/\D/g, '') === v.cuit
+                  return (
+                    <label key={v.id} className={`flex items-center gap-1.5 ${mismo ? 'font-semibold' : ''}`}>
+                      <input type="checkbox" checked={sel} onChange={async e => {
+                        if (e.target.checked) { const [vd] = await cargarVentasHacienda(supabase, [v.id]); if (vd) setVentasCtx(prev => [...prev.filter(x => x.id !== v.id), vd]) }
+                        else setVentasCtx(prev => prev.filter(x => x.id !== v.id))
+                      }} />
+                      {fmtF(v.fecha)} · {v.cliente || 'sin cliente'} · {v.cantidad} cab · ${fmtAR(v.remanente)} sin liquidar{mismo ? ' · mismo CUIT' : ''}
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
         {ventasCtx.length > 0 && (
           <div className="rounded bg-slate-50 border px-3 py-1.5 text-xs text-slate-700 tabular-nums space-y-0.5">
             {ventasCtx.map(v => {

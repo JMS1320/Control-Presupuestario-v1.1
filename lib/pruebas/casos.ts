@@ -340,7 +340,7 @@ import { proponerPorRenglon, factorUnidad, notaDelVinculo, insumoPorNombre } fro
 import { stockAlInicio, netearStock, consumoEntre } from "@/lib/presupuesto/stock-presupuesto"
 import { piezasDeLote, cortesDeVenta, cortarTramoPorVentas } from "@/lib/ganaderia/ventas-parciales"
 import { armarFoto, loQueDecia } from "@/lib/presupuesto/fotos"
-import { aperturasReales, stockHaciendaAl, vientresDelStock, controlLotesVsStock } from "@/lib/ganaderia/rodeo-real"
+import { aperturasReales, stockHaciendaAl, vientresDelStock, controlLotesVsStock, cantidadSegunCiclo } from "@/lib/ganaderia/rodeo-real"
 import { calcularLineaTiempo as lineaRodeoReal } from "@/lib/ganaderia/ciclo"
 import { costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, aplicarPlanRacion, aplicarPlanLote, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
@@ -9245,7 +9245,8 @@ Importe Neto Gravado: $ 7338020,40
       // B11 (A-FEAT-1677): una compra que entró el 10/11 (ya comprada y pagada) está disponible para noviembre: sin `hoy` no se contaba
       const conCompra = { ...maiz, entradas: [...maiz.entradas, { fecha: "2026-11-10", cantidad: 10000 }] }
       const b11 = `${Math.round(stockAlInicio(conCompra, kg, "2026-11").kg!)}→${Math.round(stockAlInicio(conCompra, kg, "2026-11", "2026-11-27").kg!)}`
-      if (b11 !== "15560→25560") throw new Error("B11: la entrada del mes hasta hoy tiene que sumar al stock del mes: " + b11)
+      chequear("Presupuesto", "🌽 B11: una compra que entró en el mes en curso (hasta hoy) suma al stock del mes — no se vuelve a presupuestar como compra",
+        "15560→25560", b11, b11 === "15560→25560", "A-FEAT-1677")
       const ap = [
         { clave: "Engorde|l1|Maíz", insumoStockId: "m", mes: "2026-11", kg: 8000, costo: 2_400_000 },
         { clave: "Recría|l2|Maíz", insumoStockId: "m", mes: "2026-11", kg: 4000, costo: 1_200_000 },
@@ -9335,6 +9336,12 @@ Importe Neto Gravado: $ 7338020,40
       const ctl = controlLotesVsStock(lotesC, id => (id === "5" ? 55 : 0), { "Novillo": 39, "Vaquillona Engorde": 9, "Torito": 8, "Vaca": 191, "Vaquillona de Reposicion": 74 }, "2026-11-27")
       const vC = ctl.map(f => `${f.categoria} ${f.presupuesto}→${f.stock}`).join(" · ")
       const eC = "Novillo 0→39 · Ternera Recria 12→0 · Ternero Recria 40→0 · Torito 9→8 · Vaquillona Engorde 0→9"
+      // M4: el lote que nace del ciclo 27/28 toma las cabezas del ciclo de hoy (con el rodeo real); el cambiado a mano conserva las suyas
+      const c27b = l.find(c => c.ciclo.campania === "27/28")!
+      const lt = (o: any) => cantidadSegunCiclo({ ciclo_id: "c", origen: "destete", categoria: "Ternero al Pie", cantidad: 110.5, cantidad_calculada: 110.5, ...o }, l)
+      const vM4 = `${lt({}).cantidad === Math.round(c27b.terneros_venta * 100) / 100 ? "sigue al ciclo" : "no"} · ${lt({ cantidad: 100 }).cantidad} a mano · ${cantidadSegunCiclo({ ciclo_id: "c", origen: "destete", categoria: "Ternera al Pie", cantidad: 1, cantidad_calculada: 1 }, l).cantidad === Math.round(c27b.terneras_venta * 100) / 100 ? "hembras del ciclo" : "no"} · ${lt({ ciclo_id: null }).cantidad}`
+      chequear("Productivo", "🐄 M4: un lote que nace de un ciclo sigue al ciclo de hoy (machos y hembras a venta); si se cambió a mano, manda lo de a mano",
+        "sigue al ciclo · 100 a mano · hembras del ciclo · 110.5", vM4, vM4 === "sigue al ciclo · 100 a mano · hembras del ciclo · 110.5", "A-FEAT-1677")
       chequear("Productivo", "⚖️ Lotes de venta del presupuesto vs stock real: marca cada categoría que no coincide (lo vendido y los lotes futuros no cuentan; el rodeo de cría tampoco)",
         eC, vC, vC === eC, "A-FEAT-1672")
     }

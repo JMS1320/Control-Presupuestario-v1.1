@@ -59,13 +59,17 @@ export function consumoEntre(kgPorMes: Record<string, number>, a: string, b: str
   return total
 }
 
-export function stockAlInicio(s: StockParaPresupuesto, kgPorMes: Record<string, number>, inicioMes: string): StockAlInicio {
+/**
+ * `hoy` (A-FEAT-1677 B11): las ENTRADAS del mes en curso que ya ocurrieron (hasta hoy) también están disponibles para el mes — ya se compraron
+ * (y si se pagaron, están en el saldo): sin esto la ración del mes las volvía a presupuestar como compra. Sin `hoy`, como antes.
+ */
+export function stockAlInicio(s: StockParaPresupuesto, kgPorMes: Record<string, number>, inicioMes: string, hoy?: string): StockAlInicio {
   const inicio = `${inicioMes}-01`
   if (!s.medicion) return { kg: null, explicacion: `${s.producto}: sin medición del stock — no se descuenta (medilo desde Productivo → Insumos)`, aviso: "sin medición" }
   const m = s.medicion
   let kg: number, partes: string[]
   if (m.fecha < inicio) {
-    const ent = s.entradas.filter(e => e.fecha > m.fecha && e.fecha < inicio)
+    const ent = s.entradas.filter(e => e.fecha > m.fecha && (e.fecha < inicio || (!!hoy && e.fecha <= hoy)))
     const sumE = ent.reduce((t, e) => t + (Number(e.cantidad) || 0), 0)
     const cons = consumoEntre(kgPorMes, m.fecha, inicio)
     kg = m.cantidad + sumE - cons
@@ -74,12 +78,14 @@ export function stockAlInicio(s: StockParaPresupuesto, kgPorMes: Record<string, 
     partes.push(`− consumo estimado hasta el ${dmy(inicio)}: ${nf(cons)}`)
   } else {
     // Medido en el mes en curso: se lleva hacia atrás al 1° (lo comido desde el 1° vuelve, lo que entró antes de medir se saca).
-    const ent = s.entradas.filter(e => e.fecha >= inicio && e.fecha <= m.fecha)
-    const sumE = ent.reduce((t, e) => t + (Number(e.cantidad) || 0), 0)
+    // Medido en el mes en curso: lo disponible para el mes = lo medido + lo que se comió desde el 1° hasta la medición (vuelve) + lo que entró
+    // DESPUÉS de medir hasta hoy (B11). Lo que entró antes de medir ya está en lo medido.
+    const despues = hoy ? s.entradas.filter(e => e.fecha > m.fecha && e.fecha <= hoy) : []
+    const sumD = despues.reduce((t, e) => t + (Number(e.cantidad) || 0), 0)
     const cons = consumoEntre(kgPorMes, inicio, m.fecha)
-    kg = m.cantidad + cons - sumE
+    kg = m.cantidad + cons + sumD
     partes = [`medición ${dmy(m.fecha)}: ${nf(m.cantidad)}`, `+ consumo estimado desde el ${dmy(inicio)}: ${nf(cons)}`]
-    if (ent.length) partes.push(`− entradas ${ent.map(e => `${dmy(e.fecha)} ${nf(e.cantidad)}`).join(", ")}`)
+    if (despues.length) partes.push(`+ entradas ${despues.map(e => `${dmy(e.fecha)} ${nf(e.cantidad)}`).join(", ")}`)
   }
   const u = s.unidad ? ` ${s.unidad}` : ""
   if (kg < 0) return { kg: 0, explicacion: `${s.producto}: ${partes.join(" ")} = ${nf(kg)}${u} → se toma 0`, aviso: "el consumo estimado supera lo medido + lo que entró: conviene medir de nuevo" }

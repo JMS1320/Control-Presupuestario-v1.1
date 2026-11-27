@@ -2,7 +2,7 @@
 
 
 import { mesArgentina, hoyArgentina } from "@/lib/fechas"
-import { cargarAperturasReales, cargarStockHaciendaHoy, controlLotesVsStock, type AperturaReal, type FilaControlLotes } from "@/lib/ganaderia/rodeo-real"
+import { cargarAperturasReales, cargarStockHaciendaHoy, controlLotesVsStock, cantidadSegunCiclo, type AperturaReal, type FilaControlLotes } from "@/lib/ganaderia/rodeo-real"
 import { useMultiCashFlowData, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
 import { calcularArranque, lineaDeSaldo, controlDosFuentes, totalComposicion, fechaDeCaja, yaSeMovio, mesDe, claveMarca, estaEnLaGrilla, esLiquidacionHacienda, type FilaReal, type MarcaPresupuesto } from "@/lib/presupuesto/arranque"
 import { PresupuestoArranque, type ComposicionItem } from "@/components/presupuesto-arranque"
@@ -912,7 +912,10 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     const ventasRac = ((venRac || []) as any[]).map(v => ({ lote_id: v.lote_id ? String(v.lote_id) : null, fecha_venta: String(v.fecha_venta), cantidad: Number(v.cantidad) || 0 }))
     /** 🌽 Lo que come cada renglón de ración que sabe de qué insumo del stock sale (script 314): para netear el stock. */
     const aportes: (AporteConsumo & { unidad: string | null; act: string; loteId: string; concepto: string })[] = []
-    for (const l of ((lotes || []) as LoteStock[])) {
+    // 🐄 A-FEAT-1677 M4 — los lotes que nacen de un ciclo comen con las cabezas del ciclo de HOY (salvo que se hayan cambiado a mano)
+    const lineaLotes = calcularLineaTiempo(((ciclos || []) as any[]), realesRodeo)
+    const lotesAj = ((lotes || []) as LoteStock[]).map(l => ({ ...l, cantidad: cantidadSegunCiclo(l as any, lineaLotes).cantidad }))
+    for (const l of lotesAj) {
       const mios = listaTramos.filter(t => t.lote_id === l.id)
       if (mios.length === 0 && !(l as any).destino_actividad_id && String(l.fecha_disponible || "") >= `${mesArgentina()}-01`) {
         const pr = planPorDefecto(l as any)
@@ -989,7 +992,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         const al = stockAlInicio({ id, producto: String(sRow.producto), unidad: sRow.unidad_medida,
           medicion: med ? { fecha: String(med.fecha), cantidad: Number(med.cantidad) || 0 } : null,
           entradas: ((ents || []) as any[]).filter(e => String(e.insumo_stock_id) === id).map(e => ({ fecha: String(e.fecha), cantidad: Number(e.cantidad) || 0 })) },
-          kgPorMes, mesHoy)
+          kgPorMes, mesHoy, hoyArgentina())   // B11: las entradas del mes hasta hoy también están
         inicial[id] = al.kg
         resumenStock.push({ id, producto: String(sRow.producto), unidad: String(sRow.unidad_medida || ""), explicacion: al.explicacion, aviso: al.aviso, inicial: al.kg,
           ultimoMesCubierto: null, primerMesCompra: null, kgComprar: 0, costoCubierto: 0 })
@@ -1671,7 +1674,9 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         .order("id").range(d, h)),
     ])
 
-    const listaLotes = ((lotes || []) as LoteStock[])
+    // 🐄 A-FEAT-1677 M4 — la cantidad de un lote que nace de un ciclo es la del ciclo de HOY (con el rodeo real), salvo que esté cambiada a mano
+    const lineaLotesH = calcularLineaTiempo(((ciclos || []) as any[]), await cargarAperturasReales(supabase, (ciclos || []) as any[], hoyArgentina()))
+    const listaLotes = ((lotes || []) as LoteStock[]).map(l => ({ ...l, cantidad: cantidadSegunCiclo(l as any, lineaLotesH).cantidad }))
     const ids = listaLotes.map(l => l.id)
     const { data: vs } = ids.length
       ? await supabase.schema("productivo").from("stock_ventas").select("lote_id, cantidad").in("lote_id", ids)

@@ -58,7 +58,7 @@ for (const s of stk || []) {
   for (const a of aportes.filter(a => a.insumoStockId === s.id)) kgPorMes[a.mes] = (kgPorMes[a.mes] || 0) + a.kg
   const med = (meds || []).find((m: any) => m.insumo_stock_id === s.id)
   const al = stockAlInicio({ id: s.id, producto: s.producto, unidad: s.unidad_medida, medicion: med ? { fecha: med.fecha, cantidad: Number(med.cantidad) } : null,
-    entradas: (ents || []).filter((e: any) => e.insumo_stock_id === s.id).map((e: any) => ({ fecha: e.fecha, cantidad: Number(e.cantidad) })) }, kgPorMes, hoy)
+    entradas: (ents || []).filter((e: any) => e.insumo_stock_id === s.id).map((e: any) => ({ fecha: e.fecha, cantidad: Number(e.cantidad) })) }, kgPorMes, hoy, new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10))
   inicial[s.id] = al.kg
   console.log(al.explicacion, al.aviso ? `⚠ ${al.aviso}` : "")
   console.log("   kg por mes:", Object.entries(kgPorMes).filter(([m]) => m >= "2026-08").sort().map(([m, k]) => `${m} ${Math.round(k)}`).join(" · "))

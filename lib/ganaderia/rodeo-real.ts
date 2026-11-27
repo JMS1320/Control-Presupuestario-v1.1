@@ -10,7 +10,7 @@
  * Sólo se usa el stock si los movimientos ya existían a esa fecha (empiezan el 30/06/2025): antes no hay de dónde sacar lo real.
  * Pura salvo `cargarAperturasReales`, que lee la base.
  */
-import { fechaServicio, type CicloStock } from "./ciclo"
+import { fechaServicio, type CicloStock, type CicloCalculado } from "./ciclo"
 
 export interface MovHacienda { fecha: string; categoria: string; tipo: string; cantidad: number }
 
@@ -123,4 +123,22 @@ export async function cargarStockHaciendaHoy(sb: any, hoy: string): Promise<Reco
   ])
   const nombre = new Map(((cats || []) as any[]).map(c => [String(c.id), String(c.nombre)]))
   return stockHaciendaAl(((movs || []) as any[]).map(m => ({ fecha: String(m.fecha), categoria: nombre.get(String(m.categoria_id)) ?? "?", tipo: String(m.tipo), cantidad: Number(m.cantidad) || 0 })), hoy)
+}
+
+// ── 🐄 A-FEAT-1677 M4 — los lotes que NACEN de un ciclo siguen al ciclo ──────────────────────────────────────────────────────────────────
+// JMS 27/11: «M4 sí». Un lote generado desde un ciclo (destete: terneros / terneras a venta; descarte) guarda su cantidad, y el ciclo cambia
+// (el rodeo real, la preñez, la reposición). Si la cantidad del lote es la que calculó el ciclo (`cantidad_calculada`), manda el ciclo de HOY;
+// si JMS la cambió a mano, manda la suya.
+
+export function cantidadSegunCiclo(
+  l: { ciclo_id?: string | null; origen?: string | null; categoria: string; cantidad: number | string; cantidad_calculada?: number | string | null },
+  linea: CicloCalculado[],
+): { cantidad: number; delCiclo: number | null; aMano: boolean } {
+  const actual = Number(l.cantidad) || 0
+  if (!l.ciclo_id || (l.origen !== "destete" && l.origen !== "descarte")) return { cantidad: actual, delCiclo: null, aMano: false }
+  const c = linea.find(x => String((x.ciclo as any).id) === String(l.ciclo_id))
+  if (!c) return { cantidad: actual, delCiclo: null, aMano: false }
+  const delCiclo = l.origen === "descarte" ? c.descarte : /hembra|ternera/i.test(l.categoria) ? c.terneras_venta : c.terneros_venta
+  const aMano = l.cantidad_calculada != null && Math.abs(actual - Number(l.cantidad_calculada)) > 0.01
+  return { cantidad: aMano ? actual : Math.round(delCiclo * 100) / 100, delCiclo, aMano }
 }
