@@ -47,3 +47,55 @@ export function seleccionConBusqueda(todas: string[], visibles: string[], marcad
   const elegidas = visibles.filter(v => !marcadas || marcadas.has(v))
   return elegidas.length === todas.length ? null : new Set(elegidas)
 }
+
+// ── 📋 PEGAR UNA LISTA desde Excel (A-FEAT-1668, JMS 26/11: «copiar las 7 celdas del Excel, en vertical, pegarlas en el
+// filtro y que el sistema reconozca que quiero ver esas 7, preseleccionadas, y con OK me las filtre») ───────────────────
+
+/** Pura: la forma de comparar un valor pegado contra uno de la lista — sin espacios ni mayúsculas. */
+export function compactar(s: string): string {
+  return String(s ?? "").toLowerCase().replace(/\s+/g, "")
+}
+
+/**
+ * Pura: si lo pegado es una LISTA (varias celdas: un renglón por celda, o separadas por tab), sus valores sin vacíos y sin
+ * repetir. Un solo valor → null (se usa como búsqueda común).
+ */
+export function listaPegada(texto: string): string[] | null {
+  const partes = String(texto ?? "").split(/[\r\n\t]+/).map(s => s.trim()).filter(Boolean)
+  const unicas = [...new Set(partes)]
+  return unicas.length >= 2 ? unicas : null
+}
+
+/** Pura: clave de cruce. Si es sólo número, sin los ceros de adelante (Excel come el 0 de `032 010012326481`). */
+function claveCruce(s: string): string {
+  const c = compactar(s)
+  return /^\d+$/.test(c) ? c.replace(/^0+(?=\d)/, "") : c
+}
+
+/**
+ * Pura: cruza lo pegado contra las opciones de la columna. Cada pegado matchea por valor o etiqueta, sin espacios, y si es
+ * número también sin los ceros de adelante. Devuelve los valores encontrados y los pegados que no están (nunca se descartan
+ * en silencio: la pantalla los muestra).
+ */
+export function cruzarPegadas(pegadas: string[], opciones: OpcionColumna[]): { encontradas: Set<string>; noEncontradas: string[] } {
+  const indice = new Map<string, string[]>()
+  for (const o of opciones) for (const k of new Set([claveCruce(o.valor), claveCruce(o.etiqueta)])) {
+    const l = indice.get(k) ?? []; l.push(o.valor); indice.set(k, l)
+  }
+  const encontradas = new Set<string>()
+  const noEncontradas: string[] = []
+  for (const p of pegadas) {
+    const vs = indice.get(claveCruce(p))
+    if (vs) vs.forEach(v => encontradas.add(v)); else noEncontradas.push(p)
+  }
+  return { encontradas, noEncontradas }
+}
+
+/** Pura: si una opción coincide con lo escrito en el buscador — también sin espacios (escribir `32010012326` encuentra `032 010012326…`). */
+export function coincideBusqueda(o: OpcionColumna, q: string): boolean {
+  const t = q.trim().toLowerCase()
+  if (!t) return true
+  if (o.etiqueta.toLowerCase().includes(t) || o.valor.toLowerCase().includes(t)) return true
+  const c = compactar(t)
+  return !!c && (compactar(o.etiqueta).includes(c) || compactar(o.valor).includes(c))
+}

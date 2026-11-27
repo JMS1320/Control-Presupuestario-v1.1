@@ -356,7 +356,7 @@ import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla,
   claveDeTipoMail, problemaDeTipoNuevo, contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarPendientesArriba,
   cambioSoloEste, ACCIONES_MAIL, NOMBRE_ACCION_MAIL,
   juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves, ordenarParaLista, rangoDelDia, ordenarCronologico, leerBusqueda, coincideBusquedaMail, textoBuscable } from "@/lib/mails/registro"
-import { opcionesDeColumna, filtrarPorColumnas, seleccionConBusqueda } from "@/lib/ui/filtro-columna"
+import { opcionesDeColumna, filtrarPorColumnas, seleccionConBusqueda, listaPegada, cruzarPegadas, coincideBusqueda as coincideBusquedaColumna } from "@/lib/ui/filtro-columna"
 import { valorFiltroCuota } from "@/lib/templates/filtro-cuotas"
 import { partesDeRuta, problemaDeRuta, estadoDestino, idDeLinkDrive } from "@/lib/archivo/destinos"
 import { mailsParaArchivar, mailsParaCuota, agruparPorRegla, anioDeMail, vinculosConArchivos, controlArchivado, agruparPorTema, estadoSeleccion } from "@/lib/mails/lotes"
@@ -12116,6 +12116,27 @@ Importe Neto Gravado: $ 7338020,40
         chequear("Filtro por columna", "🔎 Con búsqueda se filtra sólo lo que coincide y está tildado (lo elegido antes que no coincide sale)",
           "Impuesto Automotores+Impuesto Inmobiliario · Impuesto Automotores · ninguna · todas", vB,
           vB === "Impuesto Automotores+Impuesto Inmobiliario · Impuesto Automotores · ninguna · todas", "A-FEAT-1598")
+      }
+      // 📋 A-FEAT-1668 (JMS 26/11): pegar en el filtro una lista de caravanas copiada de Excel
+      {
+        const ops = ["032 010012326481", "032 010012326528", "032 010012326590", "184", "222"].map(v => ({ valor: v, etiqueta: v, cuenta: 1 }))
+        // Excel: celdas en columna (CRLF), una con el 0 comido y sin espacio, una repetida, una vacía, una que no existe
+        const pegado = ["032 010012326481", "32010012326528", "032010012326590", "", "32010012326528", "032 099999999999", ""].join("\r\n")
+        const l = listaPegada(pegado)
+        const { encontradas, noEncontradas } = cruzarPegadas(l ?? [], ops)
+        const vP = `${l?.length} · ${[...encontradas].sort().join("+")} · no: ${noEncontradas.join("+")} · una sola: ${listaPegada("032 010012326481\n")}`
+        const espP = "4 · 032 010012326481+032 010012326528+032 010012326590 · no: 032 099999999999 · una sola: null"
+        chequear("Filtro por columna", "📋 Pegar una lista de Excel: cada celda una caravana; sin espacios y sin el 0 que come Excel; las que no están se listan; una sola celda es búsqueda común",
+          espP, vP, vP === espP, "A-FEAT-1668")
+        // control: pegadas = encontradas + no encontradas (las repetidas cuentan una vez)
+        const vC2 = `${(l ?? []).length} = ${encontradas.size} + ${noEncontradas.length}`
+        chequear("Filtro por columna", "📋 Control del pegado: lo pegado (sin repetir) = encontradas + no están",
+          "4 = 3 + 1", vC2, vC2 === "4 = 3 + 1", "A-FEAT-1668")
+        // la caravana interna: «184» no matchea «1840» ni la oficial que contiene 184
+        const vI = [...cruzarPegadas(["184", "0222"], ops).encontradas].sort().join("+")
+        chequear("Filtro por columna", "📋 Interna pegada: exacta (184 no trae otras que contienen 184; 0222 = 222)", "184+222", vI, vI === "184+222", "A-FEAT-1668")
+        const vB2 = [coincideBusquedaColumna(ops[0], "32010012326"), coincideBusquedaColumna(ops[0], "0100 1232"), coincideBusquedaColumna(ops[3], "590")].join(" ")
+        chequear("Filtro por columna", "🔎 Buscar escribiendo sin espacios encuentra la caravana con espacio", "true true false", vB2, vB2 === "true true false", "A-FEAT-1668")
       }
       // 🔽 nota JMS 10/11: la tabla de Cuotas con filtro por columna — fechas por mes, monto es-AR, la CATEG de la cuota manda
       {

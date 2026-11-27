@@ -285,6 +285,10 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   const [buscaCaravana, setBuscaCaravana] = useState('')
   /** 🔽 A-FEAT-1555 (JMS 05/11: «prefiero que todo tenga filtro»): filtro tipo Excel por columna del historial. */
   const [filtrosHist, setFiltrosHist] = useState<Record<string, Set<string> | null>>({})
+  // 🔽 A-FEAT-1668: filtro tipo Excel en cada columna del Registro de Terneros. Las CARAVANAS (oficial e interna) son un
+  // solo filtro para las dos vistas: lo que se filtra (o se pega) en el Registro sigue puesto en el Historial y al revés.
+  const [filtrosReg, setFiltrosReg] = useState<Record<string, Set<string> | null>>({})
+  const [filtrosCarav, setFiltrosCarav] = useState<{ oficial?: Set<string> | null; interna?: Set<string> | null }>({})
   // Segmentadores (múltiples: uno por población). Cada uno reporta sus secciones y su config.
   const segNextId = useRef(1)
   const [segmentadorIds, setSegmentadorIds] = useState<number[]>([0])
@@ -906,7 +910,45 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
     if (filtroGrupo === 'terneras_rep') return !!t.es_torito && t.sexo === 'Hembra'
     return true
   }
-  const ternerosVista = ternerosFiltrados.filter(t => (filtroGrupo ? t.activo : true) && pasaGrupo(t))
+  const ternerosGrupo = ternerosFiltrados.filter(t => (filtroGrupo ? t.activo : true) && pasaGrupo(t))
+  // 🔽 A-FEAT-1668: el valor de cada columna del Registro, como se ve (es lo que lista el filtro)
+  const fmtKgFiltro = (n: number | null | undefined) => n == null ? null : `${Math.round(n).toLocaleString('es-AR')} kg`
+  const fmtGanFiltro = (n: number | null | undefined) => n == null ? null : (n >= 0 ? '+' : '') + n.toFixed(3).replace('.', ',')
+  const valoresReg: Record<string, (t: Ternero) => string | null> = {
+    oficial: t => t.caravana_oficial ?? null,
+    interna: t => t.caravana_interna ?? null,
+    sexo: t => t.sexo ?? null,
+    pelo: t => t.pelo ? (PELO_LABEL[t.pelo] ?? t.pelo) : null,
+    rep: t => t.es_torito ? (t.sexo === 'Hembra' ? '♀ rep' : '🐂 torito') : 'no',
+    categoria: t => t.categorias_hacienda?.nombre ?? null,
+    hijo_de: t => t.hijo_de ?? null,
+    madre: t => t.madre ?? null,
+    pelo_madre: t => t.pelo_madre ? (PELO_LABEL[t.pelo_madre] ?? t.pelo_madre) : null,
+    padre: t => t.padre ?? null,
+    nacimiento: t => t.fecha_nacimiento ? formatFecha(t.fecha_nacimiento) : t.anio_nacimiento ? String(t.anio_nacimiento) : null,
+    peso_nac: t => fmtKgFiltro(t.peso_nacimiento),
+    ultima: t => { const u = getUltimaPesada(t.pesadas_terneros); return u ? formatFecha(u.fecha) : 'sin pesada' },
+    pesoHoy: t => t.activo ? fmtKgFiltro(getPesoEstimadoHoy(t.pesadas_terneros, gananciaDiaria)) : null,
+    ganUlt2: t => fmtGanFiltro(getGananciaUlt2(t.pesadas_terneros)),
+    ganPaP: t => fmtGanFiltro(getGananciaPuntaAPunta(t.pesadas_terneros)),
+    obs: t => t.observaciones?.trim() || null,
+    estado: t => t.activo ? 'Activo' : `Baja${t.motivo_baja ? ' — ' + t.motivo_baja : ''}`,
+  }
+  const filtrosRegEf = { ...filtrosReg, ...filtrosCarav }
+  const ternerosVista = filtrarPorColumnas(ternerosGrupo, filtrosRegEf, valoresReg)
+  /** Cada lista cuenta sobre lo filtrado por las DEMÁS columnas (como en Excel y en el Historial). */
+  const opcionesReg: Record<string, ReturnType<typeof opcionesDeColumna>> = Object.fromEntries(Object.keys(valoresReg).map(col => [col,
+    opcionesDeColumna(filtrarPorColumnas(ternerosGrupo, { ...filtrosRegEf, [col]: null }, valoresReg), valoresReg[col])]))
+  const hayFiltroReg = Object.values(filtrosRegEf).some(Boolean)
+  const cambiarFiltroReg = (col: string, s: Set<string> | null) =>
+    col === 'oficial' || col === 'interna' ? setFiltrosCarav(x => ({ ...x, [col]: s })) : setFiltrosReg(x => ({ ...x, [col]: s }))
+  /** Encabezado del Registro: el filtro tipo Excel y, si la columna ordena, la flecha para ordenar al lado. */
+  const encReg = (col: string, titulo: string, orden?: string) => (
+    <span className="inline-flex items-center whitespace-nowrap">
+      <FiltroColumna titulo={titulo} opciones={opcionesReg[col] ?? []} seleccion={filtrosRegEf[col as keyof typeof filtrosRegEf] ?? null} onChange={s => cambiarFiltroReg(col, s)} />
+      {orden && <button type="button" onClick={() => toggleSort(orden)} title="Ordenar" className="px-0.5 text-gray-400 hover:text-blue-700">{arrowSort(orden) || '↕'}</button>}
+    </span>
+  )
   const toggleSort = (col: string) => setSort(prev => prev.col === col ? { col, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'desc' })
   const arrowSort = (col: string) => sort.col === col ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''
   const sortVal = (t: Ternero, col: string): number | string => {
@@ -960,22 +1002,6 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
       return p ? p.peso_kg.toFixed(1).replace('.', ',') : null
     }])),
   }
-  const filasHist = filtrarPorColumnas(conPesadasHist, filtrosHist, valoresHist)
-  // 🐄 A-FEAT-1636: bloques por sección de peso (el orden de los segmentadores, de la más liviana a la
-  // más pesada). Los que no entraron en ningún segmentador (otra población, sin peso) van al final.
-  const hayAsignaciones = Object.values(segAsign).some(m => Object.keys(m).length > 0)
-  const ordenSeccion = (id: string) => { const a = seccionesDe(id); return a.length ? Math.min(...a.map(x => x.orden)) : Infinity }
-  const bloquesHist: { clave: string | null; filas: TerneroHist[] }[] = (() => {
-    if (!hayAsignaciones || !agruparPorSeccion) return [{ clave: null, filas: filasHist }]
-    const orden = [...filasHist].sort((a, b) => ordenSeccion(a.id) - ordenSeccion(b.id))
-    const out: { clave: string | null; filas: TerneroHist[] }[] = []
-    for (const t of orden) {
-      const k = textoSeccion(seccionesDe(t.id)) ?? 'Sin sección (fuera de los segmentadores)'
-      const ult = out[out.length - 1]
-      if (ult && ult.clave === k) ult.filas.push(t); else out.push({ clave: k, filas: [t] })
-    }
-    return out
-  })()
   /** Promedio de peso en una fecha, sobre los que tienen pesada ese día. */
   const promPesoEn = (lista: Ternero[], f: string) => {
     const ps = lista.map(t => t.pesadas_terneros.find(p => p.fecha === f)?.peso_kg).filter((v): v is number => v != null)
@@ -1021,8 +1047,31 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
     : modoEst === 'rodeo' ? `a ${ganRodeoReal ? fmtGan(ganRodeoReal.prom) : fmtGan(ganManualNum)} kg/día (rodeo, ${textoGanHist})`
     : modoEst === 'seccion' ? `con la ganancia de cada sección (${textoGanHist})` : `cabeza por cabeza (${textoGanHist})`
   /** Cada lista cuenta sobre lo filtrado por las DEMÁS columnas (como en Excel y en Mails). */
+  // 🔽 A-FEAT-1668: las columnas del final también se filtran (el valor como se ve), y las caravanas son el filtro común con el Registro
+  valoresHist.est = t => { const e = estimadoHoyDe(t); return e == null ? null : `${fmt1(e)} kg` }
+  valoresHist.gan = t => { const g = ganHistDe(t)?.kgDia; return g == null ? null : fmtGan(g) }
+  valoresHist.pap = t => { const g = ganPaPDe(t); return g == null ? null : fmtGan(g) }
+  const filtrosHistEf: Record<string, Set<string> | null> = { ...filtrosHist, ...filtrosCarav }
+  const cambiarFiltroHist = (col: string, s: Set<string> | null) =>
+    col === 'oficial' || col === 'interna' ? setFiltrosCarav(x => ({ ...x, [col]: s })) : setFiltrosHist(x => ({ ...x, [col]: s }))
   const opcionesHist: Record<string, ReturnType<typeof opcionesDeColumna>> = Object.fromEntries(Object.keys(valoresHist).map(col => [col,
-    opcionesDeColumna(filtrarPorColumnas(conPesadasHist, { ...filtrosHist, [col]: null }, valoresHist), valoresHist[col])]))
+    opcionesDeColumna(filtrarPorColumnas(conPesadasHist, { ...filtrosHistEf, [col]: null }, valoresHist), valoresHist[col])]))
+  const filasHist = filtrarPorColumnas(conPesadasHist, filtrosHistEf, valoresHist)
+  // 🐄 A-FEAT-1636: bloques por sección de peso (el orden de los segmentadores, de la más liviana a la
+  // más pesada). Los que no entraron en ningún segmentador (otra población, sin peso) van al final.
+  const hayAsignaciones = Object.values(segAsign).some(m => Object.keys(m).length > 0)
+  const ordenSeccion = (id: string) => { const a = seccionesDe(id); return a.length ? Math.min(...a.map(x => x.orden)) : Infinity }
+  const bloquesHist: { clave: string | null; filas: TerneroHist[] }[] = (() => {
+    if (!hayAsignaciones || !agruparPorSeccion) return [{ clave: null, filas: filasHist }]
+    const orden = [...filasHist].sort((a, b) => ordenSeccion(a.id) - ordenSeccion(b.id))
+    const out: { clave: string | null; filas: TerneroHist[] }[] = []
+    for (const t of orden) {
+      const k = textoSeccion(seccionesDe(t.id)) ?? 'Sin sección (fuera de los segmentadores)'
+      const ult = out[out.length - 1]
+      if (ult && ult.clave === k) ult.filas.push(t); else out.push({ clave: k, filas: [t] })
+    }
+    return out
+  })()
 
   // ─── Render ──────────────────────────────────────────────────────────────
 
@@ -1397,30 +1446,48 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                   </span>
                 </div>
               )}
+              <TestsDelProceso proceso="productivo/pesadas" pantalla="productivo" />
+              {hayFiltroReg && (() => {
+                // 🔽 A-FEAT-1668: con filtro, lo que se ve y su control contra el total de la vista
+                const act = ternerosVista.filter(t => t.activo)
+                const ultimas = act.map(t => getUltimaPesada(t.pesadas_terneros)?.peso_kg).filter((v): v is number => v != null)
+                const hoy = act.map(t => getPesoEstimadoHoy(t.pesadas_terneros, gananciaDiaria)).filter((v): v is number => v != null)
+                const prom = (v: number[]) => v.length ? formatPeso(v.reduce((a, b) => a + b, 0) / v.length) : '—'
+                return (
+                  <div className="mb-2 flex flex-wrap items-center gap-3 rounded border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-900">
+                    <span>🔽 Filtrado: <b>{ternerosVista.length}</b> de {ternerosGrupo.length} caravanas ({act.length} activas)</span>
+                    <span>Prom. últ. pesada: <b>{prom(ultimas)}</b> <span className="text-blue-600">(sobre {ultimas.length})</span></span>
+                    <span>Prom. peso hoy est.: <b>{prom(hoy)}</b></span>
+                    {(filtrosCarav.oficial || filtrosCarav.interna) && <span className="text-blue-600">· el filtro de caravanas sigue en el Historial de pesadas</span>}
+                    <button type="button" className="ml-auto rounded border border-blue-300 bg-white px-2 py-0.5 hover:bg-blue-100"
+                      onClick={() => { setFiltrosReg({}); setFiltrosCarav({}) }}>✕ Quitar filtros</button>
+                  </div>
+                )
+              })()}
               <Table>
                 <TableHeader>
                   <TableRow className="bg-gray-50">
                     <TableHead className="text-xs w-6"></TableHead>
-                    <TableHead className="text-xs cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('caravana')}>Carav. Oficial{arrowSort('caravana')}</TableHead>
-                    <TableHead className="text-xs cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('interna')}>Carav. Interna{arrowSort('interna')}</TableHead>
-                    <TableHead className="text-xs cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('sexo')}>Sexo{arrowSort('sexo')}</TableHead>
-                    <TableHead className="text-xs">Pelo</TableHead>
-                    <TableHead className="text-xs">Reposición</TableHead>
-                    <TableHead className="text-xs">Categoría</TableHead>
+                    <TableHead className="text-xs">{encReg('oficial', 'Carav. Oficial', 'caravana')}</TableHead>
+                    <TableHead className="text-xs">{encReg('interna', 'Carav. Interna', 'interna')}</TableHead>
+                    <TableHead className="text-xs">{encReg('sexo', 'Sexo', 'sexo')}</TableHead>
+                    <TableHead className="text-xs">{encReg('pelo', 'Pelo')}</TableHead>
+                    <TableHead className="text-xs">{encReg('rep', 'Reposición')}</TableHead>
+                    <TableHead className="text-xs">{encReg('categoria', 'Categoría')}</TableHead>
                     {subTab === config.showExtraTorito && <>
-                      <TableHead className="text-xs">Hijo de</TableHead>
-                      <TableHead className="text-xs">Carav. Madre</TableHead>
-                      <TableHead className="text-xs">Pelo Madre</TableHead>
-                      <TableHead className="text-xs">Padre</TableHead>
-                      <TableHead className="text-xs">Nacimiento</TableHead>
-                      <TableHead className="text-xs">Peso Nac.</TableHead>
+                      <TableHead className="text-xs">{encReg('hijo_de', 'Hijo de')}</TableHead>
+                      <TableHead className="text-xs">{encReg('madre', 'Carav. Madre')}</TableHead>
+                      <TableHead className="text-xs">{encReg('pelo_madre', 'Pelo Madre')}</TableHead>
+                      <TableHead className="text-xs">{encReg('padre', 'Padre')}</TableHead>
+                      <TableHead className="text-xs">{encReg('nacimiento', 'Nacimiento')}</TableHead>
+                      <TableHead className="text-xs">{encReg('peso_nac', 'Peso Nac.')}</TableHead>
                     </>}
-                    <TableHead className="text-xs cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('ultima')}>Últ. Pesada{arrowSort('ultima')}</TableHead>
-                    <TableHead className="text-xs cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('pesoHoy')}>Peso hoy est.{arrowSort('pesoHoy')}</TableHead>
-                    <TableHead className="text-xs text-center whitespace-nowrap cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('ganUlt2')}>Gan. últ. 2{arrowSort('ganUlt2')}</TableHead>
-                    <TableHead className="text-xs text-center whitespace-nowrap cursor-pointer select-none hover:text-blue-700" onClick={() => toggleSort('ganPaP')}>Gan. p→p{arrowSort('ganPaP')}</TableHead>
-                    <TableHead className="text-xs">Obs.</TableHead>
-                    <TableHead className="text-xs">Estado</TableHead>
+                    <TableHead className="text-xs">{encReg('ultima', 'Últ. Pesada', 'ultima')}</TableHead>
+                    <TableHead className="text-xs">{encReg('pesoHoy', 'Peso hoy est.', 'pesoHoy')}</TableHead>
+                    <TableHead className="text-xs text-center">{encReg('ganUlt2', 'Gan. últ. 2', 'ganUlt2')}</TableHead>
+                    <TableHead className="text-xs text-center">{encReg('ganPaP', 'Gan. p→p', 'ganPaP')}</TableHead>
+                    <TableHead className="text-xs">{encReg('obs', 'Obs.')}</TableHead>
+                    <TableHead className="text-xs">{encReg('estado', 'Estado')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -2273,8 +2340,8 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                 {/* 🐄 A-FEAT-1654 (JMS 25/11): encabezado fijo — queda a la vista al bajar por las caravanas */}
                 <TableHeader className="sticky top-0 z-10 bg-gray-50 shadow-[0_1px_0_#e5e7eb]">
                   <TableRow className="bg-gray-50">
-                    <TableHead className="text-xs whitespace-nowrap sticky left-0 z-20 bg-gray-50"><FiltroColumna titulo="Carav. Oficial" opciones={opcionesHist.oficial} seleccion={filtrosHist.oficial ?? null} onChange={s => setFiltrosHist(x => ({ ...x, oficial: s }))} /></TableHead>
-                    <TableHead className="text-xs whitespace-nowrap"><FiltroColumna titulo="Carav. Int." opciones={opcionesHist.interna} seleccion={filtrosHist.interna ?? null} onChange={s => setFiltrosHist(x => ({ ...x, interna: s }))} /></TableHead>
+                    <TableHead className="text-xs whitespace-nowrap sticky left-0 z-20 bg-gray-50"><FiltroColumna titulo="Carav. Oficial" opciones={opcionesHist.oficial} seleccion={filtrosHistEf.oficial ?? null} onChange={s => cambiarFiltroHist('oficial', s)} /></TableHead>
+                    <TableHead className="text-xs whitespace-nowrap"><FiltroColumna titulo="Carav. Int." opciones={opcionesHist.interna} seleccion={filtrosHistEf.interna ?? null} onChange={s => cambiarFiltroHist('interna', s)} /></TableHead>
                     <TableHead className="text-xs"><FiltroColumna titulo="Sexo" opciones={opcionesHist.sexo} seleccion={filtrosHist.sexo ?? null} onChange={s => setFiltrosHist(x => ({ ...x, sexo: s }))} /></TableHead>
                     {hayAsignaciones && <TableHead className="text-xs whitespace-nowrap text-emerald-800"><FiltroColumna titulo="Sección" opciones={opcionesHist.seccion} seleccion={filtrosHist.seccion ?? null} onChange={s => setFiltrosHist(x => ({ ...x, seccion: s }))} /></TableHead>}
                     {todasFechas.map(f => (
@@ -2285,7 +2352,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                     ))}
                     {/* 🐄 A-FEAT-1654 (JMS 25/11): al final, el estimado de hoy y la ganancia diaria entre dos pesadas a elegir */}
                     <TableHead className="text-xs text-center whitespace-nowrap text-amber-700 border-l" title="Última pesada + ganancia diaria × los días desde esa pesada. Las bajas no se estiman. Si a una caravana le falta la ganancia elegida, usa la de su sección, después la del rodeo y por último la manual (pasá el mouse por el número).">
-                      Estimado hoy
+                      <FiltroColumna titulo="Estimado hoy" opciones={opcionesHist.est ?? []} seleccion={filtrosHistEf.est ?? null} onChange={s => cambiarFiltroHist('est', s)} />
                       <div className="mt-0.5 flex items-center justify-center gap-1 text-[10px] font-normal">
                         <select className="rounded border px-1 py-0 text-[10px]" value={modoEst} onChange={e => setModoEst(e.target.value as ModoGananciaEstimado)}>
                           <option value="manual">ganancia manual</option>
@@ -2302,7 +2369,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                       <div className="text-[9px] font-normal text-amber-600">{textoModoEst}{modoEst === 'rodeo' && ganRodeoReal ? ` · sobre ${ganRodeoReal.n} cab.` : ''}</div>
                     </TableHead>
                     <TableHead className="text-xs text-center whitespace-nowrap text-indigo-700">
-                      Ganancia kg/día
+                      <FiltroColumna titulo="Ganancia kg/día" opciones={opcionesHist.gan ?? []} seleccion={filtrosHistEf.gan ?? null} onChange={s => cambiarFiltroHist('gan', s)} />
                       <div className="mt-0.5 flex items-center justify-center gap-1 text-[10px] font-normal">
                         <select className="rounded border px-1 py-0 text-[10px]" value={ganDesde ?? ''}
                           title="Desde qué pesada se mide. «Sus 2 últimas»: cada caravana entre sus dos últimas pesadas (si faltó a una, toma las suyas)."
@@ -2319,7 +2386,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                       </div>
                     </TableHead>
                     <TableHead className="text-xs text-center whitespace-nowrap text-violet-700" title="Ganancia diaria de la 1ª a la última pesada de cada caravana">
-                      Punta a punta<div className="text-[9px] font-normal text-violet-600">kg/día, 1ª → última</div>
+                      <FiltroColumna titulo="Punta a punta" opciones={opcionesHist.pap ?? []} seleccion={filtrosHistEf.pap ?? null} onChange={s => cambiarFiltroHist('pap', s)} /><div className="text-[9px] font-normal text-violet-600">kg/día, 1ª → última</div>
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -2434,7 +2501,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                   {/* ── Filas de totales por grupo ── */}
                   {todasFechas.length > 0 && (() => {
                     // 🔽 A-FEAT-1555: con un filtro puesto, los totales suman SÓLO lo filtrado (como el subtotal de Excel)
-                    const filtrado = Object.values(filtrosHist).some(Boolean) || !!buscaCaravana.trim()
+                    const filtrado = Object.values(filtrosHistEf).some(Boolean) || !!buscaCaravana.trim()
                     const mL = filtrado ? filasHist.filter(t => t.sexo === 'Macho') : machos
                     const hL = filtrado ? filasHist.filter(t => t.sexo === 'Hembra') : hembras
                     const tL = filtrado ? filasHist : terneros

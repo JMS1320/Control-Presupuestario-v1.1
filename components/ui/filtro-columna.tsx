@@ -12,13 +12,19 @@
  * ⚠️ cambió 11/11 (nota JMS 10/11): CON TEXTO EN EL BUSCADOR se trabaja como Excel — la lista arranca con todo lo que
  * coincide tildado, y al aceptar el filtro queda SÓLO con lo que coincide y está tildado (`seleccionConBusqueda`). Antes
  * se sumaba a lo que ya estaba elegido y no se veía.
+ *
+ * 📋 26/11 (A-FEAT-1668): se puede PEGAR UNA LISTA en el buscador (varias celdas de Excel, en vertical): la lista muestra
+ * sólo las encontradas, tildadas, y arriba el control «pegaste N · M encontradas · K no están: …». Aceptar filtra.
+ * El cruce es sin espacios y, si es número, sin los ceros de adelante (Excel come el 0 de la caravana).
  */
 
 import { useMemo, useState } from "react"
 import { Filter } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Input } from "@/components/ui/input"
-import { seleccionConBusqueda, type OpcionColumna } from "@/lib/ui/filtro-columna"
+import { seleccionConBusqueda, listaPegada, cruzarPegadas, coincideBusqueda, type OpcionColumna } from "@/lib/ui/filtro-columna"
+
+interface Pegado { total: number; encontradas: Set<string>; noEncontradas: string[] }
 
 export function FiltroColumna({ titulo, opciones, seleccion, onChange }: {
   titulo: string
@@ -30,14 +36,17 @@ export function FiltroColumna({ titulo, opciones, seleccion, onChange }: {
   const [abierto, setAbierto] = useState(false)
   /** Lo que se está eligiendo, todavía sin aplicar (null = todas). */
   const [borrador, setBorrador] = useState<Set<string> | null>(seleccion)
+  /** 📋 Una lista pegada: manda sobre el buscador hasta que se escriba otra cosa o se quite. */
+  const [pegado, setPegado] = useState<Pegado | null>(null)
   const visibles = useMemo(() => {
-    const q = busqueda.trim().toLowerCase()
-    return q ? opciones.filter(o => o.etiqueta.toLowerCase().includes(q) || o.valor.toLowerCase().includes(q)) : opciones
-  }, [opciones, busqueda])
+    if (pegado) return opciones.filter(o => pegado.encontradas.has(o.valor))
+    const q = busqueda.trim()
+    return q ? opciones.filter(o => coincideBusqueda(o, q)) : opciones
+  }, [opciones, busqueda, pegado])
   const activo = seleccion !== null
-  /** Con búsqueda: lo tildado entre lo que coincide (null = todo lo que coincide). Se reinicia al cambiar el texto. */
+  /** Con búsqueda (o lista pegada): lo tildado entre lo que coincide (null = todo lo que coincide). */
   const [marcadasBusqueda, setMarcadasBusqueda] = useState<Set<string> | null>(null)
-  const buscando = busqueda.trim() !== ""
+  const buscando = busqueda.trim() !== "" || pegado !== null
   const marcado = (v: string) => buscando ? (!marcadasBusqueda || marcadasBusqueda.has(v)) : (!borrador || borrador.has(v))
   const alternar = (v: string) => {
     if (buscando) {
@@ -53,12 +62,22 @@ export function FiltroColumna({ titulo, opciones, seleccion, onChange }: {
   const abrirOCerrar = (a: boolean) => {
     setAbierto(a)
     if (a) setBorrador(seleccion)
-    else { setBusqueda(""); setMarcadasBusqueda(null) }
+    else { setBusqueda(""); setMarcadasBusqueda(null); setPegado(null) }
   }
   const aceptar = () => {
     if (buscando) onChange(seleccionConBusqueda(opciones.map(o => o.valor), visibles.map(o => o.valor), marcadasBusqueda))
     else onChange(borrador && borrador.size === opciones.length ? null : borrador)
     abrirOCerrar(false)
+  }
+  /** 📋 Si lo pegado son varias celdas, se cruza contra la lista; un solo valor se pega como búsqueda común. */
+  const alPegar = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const lista = listaPegada(e.clipboardData.getData("text"))
+    if (!lista) return
+    e.preventDefault()
+    const { encontradas, noEncontradas } = cruzarPegadas(lista, opciones)
+    setBusqueda("")
+    setMarcadasBusqueda(null)
+    setPegado({ total: lista.length, encontradas, noEncontradas })
   }
   const elegidos = buscando
     ? visibles.filter(o => !marcadasBusqueda || marcadasBusqueda.has(o.valor)).length
@@ -75,13 +94,34 @@ export function FiltroColumna({ titulo, opciones, seleccion, onChange }: {
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 p-0">
         <div className="border-b p-2">
-          <Input autoFocus placeholder={`Buscar en ${titulo.toLowerCase()}…`} value={busqueda} onChange={e => { setBusqueda(e.target.value); setMarcadasBusqueda(null) }}
-            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); aceptar() } }} className="h-7 text-xs" />
+          <Input autoFocus placeholder={`Buscar en ${titulo.toLowerCase()}… o pegá una lista`} value={busqueda}
+            onChange={e => { setBusqueda(e.target.value); setMarcadasBusqueda(null); setPegado(null) }}
+            onPaste={alPegar}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); if (elegidos > 0) aceptar() } }} className="h-7 text-xs" />
+          {!pegado && <p className="mt-1 text-[10px] text-muted-foreground">📋 Podés pegar varias celdas copiadas de Excel (en columna).</p>}
         </div>
+        {pegado && (
+          <div className={`border-b p-2 text-[11px] ${pegado.noEncontradas.length ? "bg-amber-50" : "bg-emerald-50"}`}>
+            <div className="flex items-start gap-2">
+              <span className="flex-1">
+                📋 Pegaste <b>{pegado.total}</b> · <b className="text-emerald-700">{pegado.encontradas.size} encontradas</b>
+                {pegado.noEncontradas.length > 0
+                  ? <> · <b className="text-amber-800">{pegado.noEncontradas.length} no están</b></>
+                  : <> · ✓ todas</>}
+              </span>
+              <button type="button" className="text-muted-foreground hover:underline" onClick={() => { setPegado(null); setMarcadasBusqueda(null) }}>✕ quitar</button>
+            </div>
+            {pegado.noEncontradas.length > 0 && (
+              <div className="mt-1 max-h-20 overflow-y-auto font-mono text-[10px] text-amber-900" title="Lo pegado que no aparece en esta columna (con los demás filtros puestos)">
+                {pegado.noEncontradas.map(v => <div key={v}>{v}</div>)}
+              </div>
+            )}
+          </div>
+        )}
         <div className="flex gap-1 border-b p-2 text-[11px]">
           <button type="button" className="rounded bg-muted px-2 py-0.5 hover:bg-muted/70" onClick={() => buscando ? setMarcadasBusqueda(null) : setBorrador(null)}>Todas</button>
           <button type="button" className="rounded bg-muted px-2 py-0.5 hover:bg-muted/70" onClick={() => buscando ? setMarcadasBusqueda(new Set()) : setBorrador(new Set())}>Ninguna</button>
-          {buscando && <span className="self-center text-muted-foreground">se filtra sólo lo que coincide</span>}
+          {buscando && <span className="self-center text-muted-foreground">{pegado ? "se filtra sólo lo pegado" : "se filtra sólo lo que coincide"}</span>}
           <span className="ml-auto self-center text-muted-foreground">{opciones.length} distintos</span>
         </div>
         <div className="max-h-72 overflow-y-auto p-1">
@@ -92,7 +132,7 @@ export function FiltroColumna({ titulo, opciones, seleccion, onChange }: {
               <span className="tabular-nums text-muted-foreground">{o.cuenta}</span>
             </label>
           ))}
-          {visibles.length === 0 && <p className="p-2 text-xs text-muted-foreground">Nada coincide con «{busqueda}».</p>}
+          {visibles.length === 0 && <p className="p-2 text-xs text-muted-foreground">{pegado ? "Nada de lo pegado está en esta columna." : `Nada coincide con «${busqueda}».`}</p>}
         </div>
         <div className="flex items-center gap-2 border-t p-2 text-xs">
           <span className="text-muted-foreground">{elegidos} de {buscando ? visibles.length : opciones.length} elegidos</span>
