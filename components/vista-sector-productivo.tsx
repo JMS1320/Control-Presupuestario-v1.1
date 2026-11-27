@@ -5,6 +5,7 @@ import { ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
 import { sexoACorregir } from "@/lib/productivo/grupos-terneros"
 import { CATS_PLANILLA, CATS_TERNEROS, totalVientres as calcVientres } from "@/lib/productivo/planilla-hacienda"
 import { totalRenglones, importeRenglon, controlCaravanas, renglonVacio, type RenglonVenta } from "@/lib/ganaderia/venta-movimiento"
+import { condicionesVenta } from "@/lib/productivo/venta-condiciones"
 import { cabezasHoy } from "@/lib/productivo/cabezas-hoy"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { toggleChip, esSoloEste, tituloChip } from "@/lib/ui/chips"
@@ -1174,6 +1175,9 @@ function TabHacienda() {
   /** Cabezas vendidas SIN caravana (descripción opcional) → stock_ventas.animales_sueltos. */
   const [sinCaravanaVenta, setSinCaravanaVenta] = useState<string[]>([])
   const [buscarCaravanaVenta, setBuscarCaravanaVenta] = useState('')
+  /** 💵 A-FEAT-1676: plazo de cobro (días) y fecha de cobro — la fecha escrita manda; si no, fecha de venta + plazo (como «Completar venta»). */
+  const [plazoVenta, setPlazoVenta] = useState('')
+  const [fechaCobroVenta, setFechaCobroVenta] = useState('')
   const [caravanasSeleccionadas, setCaravanasSeleccionadas] = useState<string[]>([])
   // Mortandad terneros — selector caravanas múltiples
   const [ternerosParaBaja, setTernerosParaBaja] = useState<{ id: string, caravana_interna: string | null, caravana_oficial: string | null, sexo: string | null, pelo: string | null }[]>([])
@@ -1428,7 +1432,7 @@ function TabHacienda() {
     setFilasAnimales([])   // que la próxima carga no arrastre los animales de la anterior
     setCaravanasActivasCUT([])
     setCaravanasSeleccionadas([])
-    setRenglonesVenta([renglonVacio()]); setSinCaravanaVenta([]); setBuscarCaravanaVenta('')
+    setRenglonesVenta([renglonVacio()]); setSinCaravanaVenta([]); setBuscarCaravanaVenta(''); setPlazoVenta(''); setFechaCobroVenta('')
     setTernerosParaBaja([])
     setTernerosSeleccionadosBaja(new Set())
     setMotivoBajaTernero('')
@@ -1663,6 +1667,7 @@ function TabHacienda() {
      */
     let ventaCreadaId: string | null = null
     if (nuevoMov.tipo === 'venta') {
+      const cobro = condicionesVenta({ netoCalculado: null, netoEscrito: '', alicuotaIva: '', fechaVenta: nuevoMov.fecha, plazoDias: plazoVenta, fechaCobroEscrita: fechaCobroVenta })
       const { data: sv, error: eVenta } = await supabase.schema('productivo').from('stock_ventas')
         .insert({
           lote_id: null,                     // venta directa desde el stock, no desde un lote
@@ -1675,6 +1680,8 @@ function TabHacienda() {
           monto_neto: datos.monto_total ?? null,
           cliente_nombre: nuevoMov.proveedor_cliente || null,
           cliente_cuit: nuevoMov.cuit || null,
+          plazo_cobro: cobro.plazoTexto,       // 💵 A-FEAT-1676
+          fecha_cobro: cobro.fechaCobro,
           animales_sueltos: sinCaravanaVenta.length
             ? sinCaravanaVenta.map(d => ({ descripcion: d.trim() || `${categorias.find(c => c.id === nuevoMov.categoria_id)?.nombre ?? 'Animal'} sin caravana`, kg: null }))
             : null,
@@ -3421,6 +3428,23 @@ function TabHacienda() {
                           {!tot.completo && tot.cabezas > 0 && <span className="ml-1 text-amber-700">(falta precio o kg en algún renglón)</span>}
                         </span>
                       </div>
+                      {(() => {
+                        // 💵 A-FEAT-1676 (JMS 27/11: «faltó poder poner el plazo de pago»)
+                        const cobro = condicionesVenta({ netoCalculado: null, netoEscrito: '', alicuotaIva: '', fechaVenta: nuevoMov.fecha, plazoDias: plazoVenta, fechaCobroEscrita: fechaCobroVenta })
+                        const delPlazo = !fechaCobroVenta && cobro.fechaCobro ? cobro.fechaCobro : ''
+                        return (
+                          <div className="flex flex-wrap items-center gap-1.5 border-t pt-1.5 text-xs">
+                            <span>Plazo de cobro</span>
+                            <Input type="text" inputMode="numeric" placeholder="0" value={plazoVenta} onChange={e => setPlazoVenta(e.target.value.replace(/[^\d]/g, ''))} className="h-7 w-14 text-center" />
+                            <span className="text-muted-foreground">días · fecha de cobro</span>
+                            <Input type="date" value={fechaCobroVenta || delPlazo} onChange={e => setFechaCobroVenta(e.target.value)} className="h-7 w-36" />
+                            {fechaCobroVenta && <button type="button" className="text-muted-foreground hover:text-red-600" title="Volver a la fecha del plazo" onClick={() => setFechaCobroVenta('')}>✕</button>}
+                            <span className="ml-auto text-muted-foreground">
+                              Al Cash Flow entra a cobrar el <b>{(cobro.fechaCobro || nuevoMov.fecha).split('-').reverse().join('/')}</b>{cobro.fechaCobro ? '' : ' (sin plazo: la fecha de la venta)'}
+                            </span>
+                          </div>
+                        )
+                      })()}
                     </div>
                   )
                 })() : (<>
