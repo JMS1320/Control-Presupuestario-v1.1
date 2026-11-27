@@ -1,5 +1,7 @@
 "use client"
 
+import { esSoloEste, tituloChip, PISTA_CTRL_CLICK } from "@/lib/ui/chips"
+import { type GrupoTernero, type HojaGrupo, NOMBRE_GRUPO, enGrupo, pasaGrupos, chipPrendido, clickChipGrupo, describirHojas } from "@/lib/productivo/grupos-terneros"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { useState, useEffect, useRef, Fragment } from "react"
 import { Button } from "@/components/ui/button"
@@ -336,7 +338,8 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   const [nMasPesadas, setNMasPesadas] = useState('40')
   // 🐄 A-FEAT-1251 — confirmar la reposición subiendo la planilla de las hembras confirmadas
   const [modalRepExcel, setModalRepExcel] = useState(false)
-  const [filtroGrupo, setFiltroGrupo] = useState<null | 'machos' | 'hembras' | 'toritos' | 'terneras_rep'>(null)
+  // 🖱️ 27/11: chips con el gesto de toda la app (click suma/resta · Ctrl+click sólo ése) — vacío = todos
+  const [filtroGrupo, setFiltroGrupo] = useState<Set<HojaGrupo>>(new Set())
   const [sort, setSort] = useState<{ col: string | null; dir: 'asc' | 'desc' }>({ col: null, dir: 'desc' })
   const [terneroEditando, setTerneroEditando] = useState<Ternero | null>(null)
   const [editForm, setEditForm] = useState({
@@ -432,7 +435,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   const seleccionarNMasPesadas = () => {
     const n = parseInt(nMasPesadas) || 0
     const ranked = ternerosFiltrados
-      .filter(t => t.activo && pasaGrupo(t))
+      .filter(t => t.activo && pasaGrupos(t, filtroGrupo))
       .map(t => ({ id: t.id, peso: getPesoEstimadoHoy(t.pesadas_terneros, gananciaDiaria) }))
       .filter(t => t.peso != null)
       .sort((a, b) => (b.peso as number) - (a.peso as number))
@@ -902,15 +905,8 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
 
   // Terneros ordenados: activos primero (por ganancia desc), inactivos al final
   // Filtro rápido por grupo (chips). Con filtro activo, oculta inactivos.
-  const pasaGrupo = (t: Ternero): boolean => {
-    if (!filtroGrupo) return true
-    if (filtroGrupo === 'machos') return t.sexo === 'Macho'
-    if (filtroGrupo === 'hembras') return t.sexo === 'Hembra'
-    if (filtroGrupo === 'toritos') return !!t.es_torito && t.sexo === 'Macho'
-    if (filtroGrupo === 'terneras_rep') return !!t.es_torito && t.sexo === 'Hembra'
-    return true
-  }
-  const ternerosGrupo = ternerosFiltrados.filter(t => (filtroGrupo ? t.activo : true) && pasaGrupo(t))
+  const hayGrupo = filtroGrupo.size > 0
+  const ternerosGrupo = ternerosFiltrados.filter(t => (hayGrupo ? t.activo : true) && pasaGrupos(t, filtroGrupo))
   // 🔽 A-FEAT-1668: el valor de cada columna del Registro, como se ve (es lo que lista el filtro)
   const fmtKgFiltro = (n: number | null | undefined) => n == null ? null : `${Math.round(n).toLocaleString('es-AR')} kg`
   const fmtGanFiltro = (n: number | null | undefined) => n == null ? null : (n >= 0 ? '+' : '') + n.toFixed(3).replace('.', ',')
@@ -936,6 +932,9 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
   }
   const filtrosRegEf = { ...filtrosReg, ...filtrosCarav }
   const ternerosVista = filtrarPorColumnas(ternerosGrupo, filtrosRegEf, valoresReg)
+  // el número de cada chip cuenta sobre lo filtrado por lo demás (filtros de columna), como en toda la app
+  const activosParaChips = filtrarPorColumnas(ternerosFiltrados.filter(t => t.activo), filtrosRegEf, valoresReg)
+  const cuentaGrupo = (g: GrupoTernero) => activosParaChips.filter(t => enGrupo(t, g)).length
   /** Cada lista cuenta sobre lo filtrado por las DEMÁS columnas (como en Excel y en el Historial). */
   const opcionesReg: Record<string, ReturnType<typeof opcionesDeColumna>> = Object.fromEntries(Object.keys(valoresReg).map(col => [col,
     opcionesDeColumna(filtrarPorColumnas(ternerosGrupo, { ...filtrosRegEf, [col]: null }, valoresReg), valoresReg[col])]))
@@ -1085,29 +1084,30 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
             <Baby className="h-3 w-3 mr-1" />
             {ternerosActivos.length} terneros
           </Badge>
-          <button type="button" onClick={() => setFiltroGrupo(g => g === 'machos' ? null : 'machos')}
-            className={`px-2 py-0.5 rounded-full border text-xs text-sky-700 border-sky-300 ${filtroGrupo === 'machos' ? 'bg-sky-200 ring-1 ring-sky-500' : 'bg-sky-50'}`}>
-            ♂ {machos.length} machos
+          <button type="button" onClick={e => setFiltroGrupo(h => clickChipGrupo(h, 'machos', esSoloEste(e)))} title={tituloChip(NOMBRE_GRUPO.machos)}
+            className={`px-2 py-0.5 rounded-full border text-xs text-sky-700 border-sky-300 ${chipPrendido(filtroGrupo, 'machos') ? 'bg-sky-200 ring-1 ring-sky-500' : 'bg-sky-50'}`}>
+            ♂ {cuentaGrupo('machos')} machos
           </button>
-          <button type="button" onClick={() => setFiltroGrupo(g => g === 'hembras' ? null : 'hembras')}
-            className={`px-2 py-0.5 rounded-full border text-xs text-pink-700 border-pink-300 ${filtroGrupo === 'hembras' ? 'bg-pink-200 ring-1 ring-pink-500' : 'bg-pink-50'}`}>
-            ♀ {hembras.length} hembras
+          <button type="button" onClick={e => setFiltroGrupo(h => clickChipGrupo(h, 'hembras', esSoloEste(e)))} title={tituloChip(NOMBRE_GRUPO.hembras)}
+            className={`px-2 py-0.5 rounded-full border text-xs text-pink-700 border-pink-300 ${chipPrendido(filtroGrupo, 'hembras') ? 'bg-pink-200 ring-1 ring-pink-500' : 'bg-pink-50'}`}>
+            ♀ {cuentaGrupo('hembras')} hembras
           </button>
           {toritos.length > 0 && (
-            <button type="button" onClick={() => setFiltroGrupo(g => g === 'toritos' ? null : 'toritos')}
-              className={`px-2 py-0.5 rounded-full border text-xs text-amber-700 border-amber-300 ${filtroGrupo === 'toritos' ? 'bg-amber-200 ring-1 ring-amber-500' : 'bg-amber-50'}`}>
-              🐂 {toritos.length} toritos
+            <button type="button" onClick={e => setFiltroGrupo(h => clickChipGrupo(h, 'toritos', esSoloEste(e)))} title={tituloChip(NOMBRE_GRUPO.toritos)}
+              className={`px-2 py-0.5 rounded-full border text-xs text-amber-700 border-amber-300 ${chipPrendido(filtroGrupo, 'toritos') ? 'bg-amber-200 ring-1 ring-amber-500' : 'bg-amber-50'}`}>
+              🐂 {cuentaGrupo('toritos')} toritos
             </button>
           )}
           {ternerasRep.length > 0 && (
-            <button type="button" onClick={() => setFiltroGrupo(g => g === 'terneras_rep' ? null : 'terneras_rep')}
-              className={`px-2 py-0.5 rounded-full border text-xs text-pink-800 border-pink-400 ${filtroGrupo === 'terneras_rep' ? 'bg-pink-200 ring-1 ring-pink-600' : 'bg-pink-100'}`}>
-              ♀ {ternerasRep.length} terneras rep
+            <button type="button" onClick={e => setFiltroGrupo(h => clickChipGrupo(h, 'terneras_rep', esSoloEste(e)))} title={tituloChip(NOMBRE_GRUPO.terneras_rep)}
+              className={`px-2 py-0.5 rounded-full border text-xs text-pink-800 border-pink-400 ${chipPrendido(filtroGrupo, 'terneras_rep') ? 'bg-pink-200 ring-1 ring-pink-600' : 'bg-pink-100'}`}>
+              ♀ {cuentaGrupo('terneras_rep')} terneras rep
             </button>
           )}
-          {filtroGrupo && (
-            <button type="button" onClick={() => setFiltroGrupo(null)} className="text-xs text-blue-600 hover:underline">✕ ver todos</button>
+          {hayGrupo && (
+            <button type="button" onClick={() => setFiltroGrupo(new Set())} className="text-xs text-blue-600 hover:underline">✕ ver todos</button>
           )}
+          <span className="text-[10px] text-muted-foreground">{PISTA_CTRL_CLICK}</span>
           {conPesadas.length > 0 && (
             <Badge variant="outline" className="text-green-700 border-green-300 bg-green-50">
               <Scale className="h-3 w-3 mr-1" />
@@ -1435,7 +1435,7 @@ export function TabTerneros({ modo = 'recria' }: { modo?: 'recria' | 'cria' } = 
                   <span className="flex items-center gap-1 ml-2">
                     <button type="button" onClick={seleccionarNMasPesadas} className="px-2 py-1 rounded bg-white border border-amber-400 text-amber-800 hover:bg-amber-100">Seleccionar</button>
                     <Input value={nMasPesadas} onChange={e => setNMasPesadas(e.target.value)} className="h-7 w-14 text-center" />
-                    <span className="text-amber-700">más pesadas {filtroGrupo ? `(de ${filtroGrupo === 'terneras_rep' ? 'terneras rep' : filtroGrupo})` : '(usá un chip de arriba para acotar sexo)'}</span>
+                    <span className="text-amber-700">más pesadas {hayGrupo ? `(de ${describirHojas(filtroGrupo)})` : '(usá un chip de arriba para acotar sexo)'}</span>
                   </span>
                   <span className="ml-auto flex items-center gap-2">
                     <button type="button" onClick={() => setModalRepExcel(true)} className="px-2 py-1 rounded bg-white border border-pink-400 text-pink-700 hover:bg-pink-50">📥 Confirmar hembras desde Excel</button>

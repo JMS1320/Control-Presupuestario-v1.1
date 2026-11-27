@@ -357,6 +357,7 @@ import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla,
   claveDeTipoMail, problemaDeTipoNuevo, contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarPendientesArriba,
   cambioSoloEste, ACCIONES_MAIL, NOMBRE_ACCION_MAIL,
   juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves, ordenarParaLista, rangoDelDia, ordenarCronologico, leerBusqueda, coincideBusquedaMail, textoBuscable } from "@/lib/mails/registro"
+import { pasaGrupos, clickChipGrupo, chipPrendido } from "@/lib/productivo/grupos-terneros"
 import { opcionesDeColumna, filtrarPorColumnas, seleccionConBusqueda, listaPegada, cruzarPegadas, restoDePegadas, coincideBusqueda as coincideBusquedaColumna } from "@/lib/ui/filtro-columna"
 import { valorFiltroCuota } from "@/lib/templates/filtro-cuotas"
 import { partesDeRuta, problemaDeRuta, estadoDestino, idDeLinkDrive } from "@/lib/archivo/destinos"
@@ -12171,6 +12172,22 @@ Importe Neto Gravado: $ 7338020,40
         const vR = `${[...(selR ?? [])].join("+")} · control ${resto.length} + ${encontradas.size} = ${ops.length} · nada pegado: ${restoDePegadas(ops, new Set()).length}`
         chequear("Filtro por columna", "⇄ «Todas menos las pegadas»: el filtro queda con el resto de la columna; resto + pegadas = todas",
           "184+222 · control 2 + 3 = 5 · nada pegado: 5", vR, vR === "184+222 · control 2 + 3 = 5 · nada pegado: 5", "A-FEAT-1668")
+      }
+      // 🖱️ JMS 27/11: los chips de grupo del Registro de Terneros siguen el protocolo de chips (varios prendidos = unión; ninguno = todos)
+      {
+        const ts = [{ sexo: "Macho", es_torito: false }, { sexo: "Macho", es_torito: true }, { sexo: "Hembra", es_torito: false }, { sexo: "Hembra", es_torito: true }]
+        // las hojas: macho sin torito · torito · hembra sin rep · ternera rep
+        const c = (h: Set<any>) => ts.map((t, k) => pasaGrupos(t, h) ? "MTHR"[k] : "").join("") || "-"
+        let h: Set<any> = new Set()
+        const pasos: string[] = [c(h)]
+        h = clickChipGrupo(h, "hembras"); pasos.push(c(h) + (chipPrendido(h, "terneras_rep") ? "(rep✓)" : ""))   // hembras prende también rep
+        h = clickChipGrupo(h, "terneras_rep"); pasos.push(c(h))                                                    // apagar rep → hembras sin rep
+        h = clickChipGrupo(h, "machos"); pasos.push(c(h))                                                          // + machos (con toritos)
+        h = clickChipGrupo(h, "toritos", true); pasos.push(c(h))                                                   // ctrl+click → sólo toritos
+        h = clickChipGrupo(h, "toritos"); pasos.push(c(h))                                                         // apagarlo → todos
+        const vG = pasos.join(" ")
+        chequear("Productivo", "🖱️ Chips de terneros padre/hijo: hembras prende también rep; apagar rep deja las hembras que NO son de rep; Ctrl+click sólo ése",
+          "MTHR HR(rep✓) H MTH T MTHR", vG, vG === "MTHR HR(rep✓) H MTH T MTHR", "A-FEAT-1668")
       }
       // 🔽 nota JMS 10/11: la tabla de Cuotas con filtro por columna — fechas por mes, monto es-AR, la CATEG de la cuota manda
       {
