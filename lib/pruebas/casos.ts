@@ -335,6 +335,7 @@ import { recortarPorFamilia } from "@/lib/presupuesto/templates"
 import { pesoInicialTramo, gananciaDesdeNacimiento, tramoHastaLaVenta, planPorDefecto } from "@/lib/productivo/tramos"
 import { insumosDeDieta, dietasDe } from "@/lib/productivo/actividades"
 import { esDeLaEmpresa, empresasDeContratos, tipoEnPresupuesto, bloquesDeEmpresa } from "@/lib/presupuesto/empresa"
+import { esCuentaDeInsumos, esFacturaDeInsumos, fileIdDeDrive } from "@/lib/facturas-detalle/insumos"
 import { costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, aplicarPlanRacion, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
@@ -9161,6 +9162,16 @@ export function correrCasos(): Resultado[] {
     const eMA = "MA: MA,PAM/MA/Duhau · MSA: MSA,MSA/PAM,ambas,MSA/PAM/MA · contratos MA+PAM · caja egreso / en MSA financiero · tarjeta financiero · bloques false,false,false"
     chequear("Presupuesto", "🏢 Presupuesto de MA: sus templates (lo compartido con MSA queda en MSA), contratos suyos y de PAM, caja = gasto, tarjeta no, sin hacienda ni costos de producción",
       eMA, vMA, vMA === eMA, "A-FEAT-1666")
+    // 🧾 A-FEAT-1651 etapa 2: factura «de insumos» = proveedor aprendido del uso + cuenta de insumos (o sin cuenta); AFA acopio y veterinarios afuera
+    const provI = new Set(["30525718626", "30628173563"])
+    const vI = [
+      esFacturaDeInsumos({ cuit: "30-62817356-3", nro_cuenta: "4230501" }, provI), esFacturaDeInsumos({ cuit: "30525718626", nro_cuenta: "421106" }, provI),
+      esFacturaDeInsumos({ cuit: "30525718626", nro_cuenta: "421301" }, provI), esFacturaDeInsumos({ cuit: "30525718626", nro_cuenta: null }, provI),
+      esFacturaDeInsumos({ cuit: "30999999999", nro_cuenta: "4230501" }, provI), esCuentaDeInsumos("42307"),
+      fileIdDeDrive("https://drive.google.com/file/d/19rwFWkD94dQ1Nnt0oH6g-XvX7bvxiwHF/view?usp=drivesdk"),
+    ].join(",")
+    chequear("Facturas", "🧾 Factura de insumos: Longo maíz sí, AFA fertilizante sí, AFA flete no, AFA sin cuenta sí, proveedor sin compras no, veterinarios no; id del PDF desde el link",
+      "true,true,false,true,false,false,19rwFWkD94dQ1Nnt0oH6g-XvX7bvxiwHF", vI, vI === "true,true,false,true,false,false,19rwFWkD94dQ1Nnt0oH6g-XvX7bvxiwHF", "A-FEAT-1651")
     // 🥣 Dietas (script 305): sin dieta = va en todas; con dieta = sólo en la suya; la elegida manda (si no, la de default)
     const insD = [{ c: "Maíz", dieta: "Maíz y concentrado" }, { c: "Conc", dieta: "Maíz y concentrado" }, { c: "Maíz", dieta: "Con silo" }, { c: "Silo", dieta: "Con silo" }, { c: "Sal", dieta: null }]
     const dRes = `${insumosDeDieta(insD, "Con silo").map(i => i.c).join("+")} · ${insumosDeDieta(insD, "Maíz y concentrado").map(i => i.c).join("+")} · ${insumosDeDieta(insD, null).map(i => i.c).join("+")} · ${dietasDe(insD).join("/")}`
