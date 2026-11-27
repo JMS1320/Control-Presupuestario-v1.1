@@ -1129,7 +1129,8 @@ Ese fue el caso real: 2 toritos marcados que el stock nunca vio.
 - **📋 Pegar una lista de caravanas**: copiás de tu Excel las celdas de caravanas (en columna, todas juntas), abrís el filtro de **Carav. Oficial** (o **Interna**) y las pegás con **Ctrl+V** en el buscador. Quedan tildadas sólo las encontradas y arriba dice **«Pegaste 7 · 6 encontradas · 1 no están»** con la lista de las que no aparecen. **Aceptar** filtra. Da igual si la caravana viene con espacio o sin él, o si Excel le comió el 0 de adelante. Sirve en cualquier filtro de columna de la app.
 - **⇄ Quedarte con el resto**: después de pegar, el botón **«Todas menos las pegadas»** invierte la lista — quedan tildadas todas las caravanas de la columna salvo las que pegaste, y **Aceptar** filtra eso. **«Sólo las pegadas»** vuelve a lo pegado.
 - **El filtro de caravanas es uno solo para las dos vistas**: lo que filtrás o pegás en el Registro sigue puesto al abrir el Historial de pesadas, y al revés.
-  ⚠️ Sin probar todavía (quedarte con el resto) → A-TEST-1402
+- **Chips de grupo** (♂ machos · ♀ hembras · 🐂 toritos · ♀ terneras rep): como en toda la app — click prende o apaga (se pueden prender varios), **Ctrl+click** deja sólo ése, **✕ ver todos** vuelve. Cada número cuenta sobre lo que dejan los filtros de columna.
+  ⚠️ Sin probar todavía (quedarte con el resto y los chips) → A-TEST-1402
 
 ### Análisis por segmento (columnas) 🟡
 - Cada columna es un **Segmento** (＋ Segmento). **Fuente** = elegís una sección de cualquier segmentador (etiqueta "A·Machos: 230/250"). Copia Cantidad + Peso inicio (editables).

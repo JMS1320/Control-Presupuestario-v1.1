@@ -357,6 +357,7 @@ import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla,
   claveDeTipoMail, problemaDeTipoNuevo, contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarPendientesArriba,
   cambioSoloEste, ACCIONES_MAIL, NOMBRE_ACCION_MAIL,
   juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves, ordenarParaLista, rangoDelDia, ordenarCronologico, leerBusqueda, coincideBusquedaMail, textoBuscable } from "@/lib/mails/registro"
+import { pasaGrupos } from "@/lib/productivo/grupos-terneros"
 import { opcionesDeColumna, filtrarPorColumnas, seleccionConBusqueda, listaPegada, cruzarPegadas, restoDePegadas, coincideBusqueda as coincideBusquedaColumna } from "@/lib/ui/filtro-columna"
 import { valorFiltroCuota } from "@/lib/templates/filtro-cuotas"
 import { partesDeRuta, problemaDeRuta, estadoDestino, idDeLinkDrive } from "@/lib/archivo/destinos"
@@ -12171,6 +12172,14 @@ Importe Neto Gravado: $ 7338020,40
         const vR = `${[...(selR ?? [])].join("+")} · control ${resto.length} + ${encontradas.size} = ${ops.length} · nada pegado: ${restoDePegadas(ops, new Set()).length}`
         chequear("Filtro por columna", "⇄ «Todas menos las pegadas»: el filtro queda con el resto de la columna; resto + pegadas = todas",
           "184+222 · control 2 + 3 = 5 · nada pegado: 5", vR, vR === "184+222 · control 2 + 3 = 5 · nada pegado: 5", "A-FEAT-1668")
+      }
+      // 🖱️ JMS 27/11: los chips de grupo del Registro de Terneros siguen el protocolo de chips (varios prendidos = unión; ninguno = todos)
+      {
+        const ts = [{ sexo: "Macho", es_torito: false }, { sexo: "Macho", es_torito: true }, { sexo: "Hembra", es_torito: false }, { sexo: "Hembra", es_torito: true }]
+        const c = (g: string[]) => ts.filter(t => pasaGrupos(t, new Set(g as any))).length
+        const vG = [c([]), c(["machos"]), c(["machos", "hembras"]), c(["toritos", "terneras_rep"]), c(["machos", "toritos"])].join(" ")
+        chequear("Productivo", "🖱️ Chips de terneros: ninguno = todos · machos+hembras = todos · toritos+terneras rep = las 2 de reposición · machos+toritos no cuenta dos veces",
+          "4 2 4 2 2", vG, vG === "4 2 4 2 2", "A-FEAT-1668")
       }
       // 🔽 nota JMS 10/11: la tabla de Cuotas con filtro por columna — fechas por mes, monto es-AR, la CATEG de la cuota manda
       {
