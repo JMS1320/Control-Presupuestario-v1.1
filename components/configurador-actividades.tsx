@@ -82,6 +82,8 @@ export function ConfiguradorActividades() {
   const [planFilas, setPlanFilas] = useState<any[]>([])
   const [editorPlan, setEditorPlan] = useState<RenglonParaPlan | null>(null)
   const [planRacion, setPlanRacion] = useState<DatosPlanRacion | null>(null)
+  /** 🌽 Los insumos del stock, para decir qué come cada renglón de ración (A-FEAT-1663 stock paso 2). */
+  const [stockInsumos, setStockInsumos] = useState<{ id: string; producto: string; unidad_medida: string | null }[]>([])
   const campHoy = campanaDeMes(mesArgentina())
   const campSig = (() => { const [a, b] = campHoy.split("/").map(Number); return `${String((a! + 1) % 100).padStart(2, "0")}/${String((b! + 1) % 100).padStart(2, "0")}` })()
   const campanasPlan = [campHoy, campSig]
@@ -89,12 +91,14 @@ export function ConfiguradorActividades() {
   const cargar = useCallback(async () => {
     setCargando(true)
     try {
-      const [{ data: acts, error: e1 }, { data: ins, error: e2 }, { data: tc }, { data: pl }] = await Promise.all([
+      const [{ data: acts, error: e1 }, { data: ins, error: e2 }, { data: tc }, { data: pl }, { data: stk }] = await Promise.all([
         supabase.schema("productivo").from("actividades").select("*").order("tipo").order("nombre"),
         supabase.schema("productivo").from("actividad_insumos").select("*").order("orden"),
         supabase.from("tipos_cambio").select("anio, mes, tc_presupuestado"),
         supabase.from("presupuesto_variables").select("*").eq("empresa", "MSA").eq("activo", true),
+        supabase.schema("productivo").from("stock_insumos").select("id, producto, unidad_medida").order("producto"),
       ])
+      setStockInsumos((stk || []) as any[])
       setPlanFilas(((pl || []) as any[]).filter(r => r.actividad_id || r.receta_insumo_id))
       // Sin chequear el error un data null se ve igual que "no hay nada" y la pantalla
       // queda vacía sin decir por qué.
@@ -161,6 +165,7 @@ export function ConfiguradorActividades() {
         concepto: v.concepto, modo: v.modo, valor: v.valor, unidad: v.unidad,
         momento: v.momento, moneda: v.moneda, precio_unitario: v.precio_unitario, iva_pct: (v as any).iva_pct ?? null,
         dieta: ((v as any).dieta ?? "").trim() || null,
+        insumo_stock_id: (v as any).insumo_stock_id || null,
         producto: v.producto, notas: v.notas, orden: v.orden,
         updated_at: new Date().toISOString(),
       }).eq("id", v.id)
@@ -350,7 +355,7 @@ export function ConfiguradorActividades() {
                           <thead>
                             <tr className="border-b text-[10px] text-gray-500">
                               <th className="py-1 text-left font-medium">Concepto</th>
-                              <th className="py-1 text-left font-medium" title="Dietas alternativas: el renglón va sólo en esa dieta. Vacío = va en todas. Ej.: «Con silo de sorgo».">Dieta</th>
+                              <th className="py-1 text-left font-medium" title="Arriba (sólo ración): qué insumo del stock come. Abajo: dietas alternativas — el renglón va sólo en esa dieta; vacío = va en todas.">Del stock · Dieta</th>
                               <th className="py-1 text-left font-medium">Cómo escala</th>
                               <th className="py-1 text-right font-medium">Valor</th>
                               <th className="py-1 text-left font-medium">Unidad</th>
@@ -386,6 +391,15 @@ export function ConfiguradorActividades() {
                                     })}
                                   </td>
                                   <td className="py-1 pr-2">
+                                    {/* 🌽 Qué insumo del STOCK come este renglón: con eso el presupuesto usa primero lo que hay y compra cuando no alcanza */}
+                                    {esModoRacion(i.modo) && (
+                                      <select className="mb-0.5 h-6 w-28 rounded border border-gray-200 px-1 text-[10px]" value={(i as any).insumo_stock_id ?? ""}
+                                        title="Del stock: qué insumo come este renglón. El presupuesto usa primero lo que hay en el stock y pone la compra el mes en que no alcanza."
+                                        onChange={e => guardarInsumo(i, { insumo_stock_id: e.target.value || null } as any)}>
+                                        <option value="">— del stock: ninguno —</option>
+                                        {stockInsumos.map(x => <option key={x.id} value={x.id}>{x.producto}</option>)}
+                                      </select>
+                                    )}
                                     {/* 🥣 Dieta del renglón (vacío = todas) */}
                                     <Input className="h-7 w-28 text-xs" placeholder="todas" list={`dietas-${a.id}`} value={(i as any).dieta ?? ""}
                                       onChange={e => setInsumos(prev => prev.map(x => x.id === i.id ? ({ ...x, dieta: e.target.value } as any) : x))}

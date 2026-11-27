@@ -8,6 +8,7 @@ import { PresupuestoArranque, type ComposicionItem } from "@/components/presupue
 import { MenuFilaTemplate } from "@/components/presupuesto-menu-template"
 import { EditorPlanRenglon, type RenglonParaPlan } from "@/components/presupuesto-plan-renglon"
 import { dietasDe } from "@/lib/productivo/actividades"
+import { stockAlInicio, netearStock, type AporteConsumo } from "@/lib/presupuesto/stock-presupuesto"
 import { esModoRacion, campanaDeMes, tcPorMesConArrastre, costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, aplicarPlanRacion, type RenglonPlan, type PlanRacionFila } from "@/lib/presupuesto/costo-campana"
 import { PresupuestoPlanRacion, type DatosPlanRacion, type RacionReceta, type RacionPlanFila } from "@/components/presupuesto-plan-racion"
 import { claveActividad } from "@/lib/presupuesto/margen"
@@ -390,6 +391,9 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   const [editorTramos, setEditorTramos] = useState<{ lote: string; tramos: { id: string; actividad: string; desde: string; hasta: string }[] } | null>(null)
   const [guardandoTramos, setGuardandoTramos] = useState(false)
   /** 🧭 Lotes sin plan del año, con lo que propone la receta (A-FEAT-1665 b). Se crean con un clic de JMS, no solos. */
+  /** 🌽 El stock en el presupuesto (A-FEAT-1663 stock paso 3): con cuánto arranca cada insumo, hasta cuándo alcanza y desde cuándo se compra. */
+  const [stockPres, setStockPres] = useState<{ id: string; producto: string; unidad: string; explicacion: string; aviso: string | null; inicial: number | null
+    ultimoMesCubierto: string | null; primerMesCompra: string | null; kgComprar: number; costoCubierto: number }[]>([])
   const [sinPlan, setSinPlan] = useState<{ loteId: string; nombre: string; actividadId: string | null; propuesta: ReturnType<typeof planPorDefecto> }[]>([])
   /** 🥣 El plan del año de la ración de una actividad, para una campaña. */
   const [planRacionAbierto, setPlanRacionAbierto] = useState<DatosPlanRacion | null>(null)
@@ -781,7 +785,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    * nada que leer más que la actividad y el tramo.
    */
   const cargarCostosProduccion = async () => {
-    if (!bloques.costosProduccion) { setCostoProd([]); setSinPlan([]); return }
+    if (!bloques.costosProduccion) { setCostoProd([]); setSinPlan([]); setStockPres([]); return }
     const [{ data: lotes }, { data: tra }, { data: acts }, { data: ins }, { data: tc }, { data: ciclos }, { data: asig }, { data: centros }, { data: planRaw }, { data: ipcRaw }, { data: ajRaw }] = await Promise.all([
       supabase.schema("productivo").from("stock_lotes").select("*").eq("empresa", empresaP),
       supabase.schema("productivo").from("lote_tramos").select("*").order("orden"),
@@ -841,6 +845,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     const retenidasDe = new Map(calcularLineaTiempo(((ciclos || []) as any[])).map(c => [String((c.ciclo as any).id), Number(c.retenidas) || 0]))
     const extraAlPie = (l: LoteStock) => /ternera.*al pie/i.test(String(l.categoria)) && (l as any).ciclo_id ? (retenidasDe.get(String((l as any).ciclo_id)) || 0) : 0
     const sinPlanAcc: typeof sinPlan = []
+    /** 🌽 Lo que come cada renglón de ración que sabe de qué insumo del stock sale (script 314): para netear el stock. */
+    const aportes: (AporteConsumo & { unidad: string | null; act: string; loteId: string; concepto: string })[] = []
     for (const l of ((lotes || []) as LoteStock[])) {
       const mios = listaTramos.filter(t => t.lote_id === l.id)
       if (mios.length === 0 && !(l as any).destino_actividad_id && String(l.fecha_disponible || "") >= `${mesArgentina()}-01`) {
@@ -868,6 +874,9 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
             const iva = Number(dRac?.iva_pct) || 0
             const costo = it.costo * (1 + iva / 100)
             sumar(nombre, m.mes, costo)
+            if (dRac?.insumo_stock_id && Number(it.cantidad) > 0)
+              aportes.push({ clave: `${nombre}|${l.id}|${it.concepto}`, insumoStockId: String(dRac.insumo_stock_id), mes: m.mes, kg: Number(it.cantidad), costo,
+                unidad: it.unidad ?? null, act: nombre, loteId: l.id, concepto: it.concepto })
             lote.montos[m.mes] = (lote.montos[m.mes] || 0) + costo
             const ins = (lote.insumos[it.concepto] ??= { concepto: it.concepto, montos: {}, detalle: {} })
             // La regla a la vista (JMS 25/11: «acá no estoy pudiendo editar ni ver»)
@@ -883,6 +892,60 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         }
       }
     }
+
+    // ── 1b) 🌽 EL STOCK PRIMERO (A-FEAT-1663 stock paso 3): lo que hay en el stock cubre la ración de los primeros meses; lo cubierto no es
+    // plata del presupuesto (ya se compró) y la compra aparece el mes en que no alcanza. Stock al 1° del mes = última medición + entradas
+    // − consumo estimado (el de esta misma grilla). Sólo los renglones que dicen qué insumo del stock comen.
+    const resumenStock: typeof stockPres = []
+    const idsStock = Array.from(new Set(aportes.map(a => a.insumoStockId)))
+    if (idsStock.length) {
+      const mesHoy = mesArgentina()
+      const [{ data: stk }, { data: meds }, { data: ents }] = await Promise.all([
+        supabase.schema("productivo").from("stock_insumos").select("id, producto, unidad_medida").in("id", idsStock),
+        supabase.schema("productivo").from("mediciones_insumo").select("insumo_stock_id, fecha, cantidad").in("insumo_stock_id", idsStock).order("fecha", { ascending: false }),
+        supabase.schema("productivo").from("movimientos_insumos").select("insumo_stock_id, fecha, cantidad").eq("tipo", "compra").in("insumo_stock_id", idsStock),
+      ])
+      const uniN = (u: string | null | undefined) => { const x = String(u || "").trim().toLowerCase(); return /^(kg|kgs|kilos?)$/.test(x) ? "kg" : x }
+      const inicial: Record<string, number | null> = {}
+      const validos: AporteConsumo[] = []
+      for (const sRow of ((stk || []) as any[])) {
+        const id = String(sRow.id)
+        // La ración se cuenta en la unidad de la receta: sólo se netea si coincide con la del stock (kg con kg).
+        const mios = aportes.filter(a => a.insumoStockId === id && uniN(a.unidad) === uniN(sRow.unidad_medida))
+        validos.push(...mios)
+        const kgPorMes: Record<string, number> = {}
+        for (const a of mios) kgPorMes[a.mes] = (kgPorMes[a.mes] || 0) + a.kg
+        const med = ((meds || []) as any[]).find(m => String(m.insumo_stock_id) === id)
+        const al = stockAlInicio({ id, producto: String(sRow.producto), unidad: sRow.unidad_medida,
+          medicion: med ? { fecha: String(med.fecha), cantidad: Number(med.cantidad) || 0 } : null,
+          entradas: ((ents || []) as any[]).filter(e => String(e.insumo_stock_id) === id).map(e => ({ fecha: String(e.fecha), cantidad: Number(e.cantidad) || 0 })) },
+          kgPorMes, mesHoy)
+        inicial[id] = al.kg
+        resumenStock.push({ id, producto: String(sRow.producto), unidad: String(sRow.unidad_medida || ""), explicacion: al.explicacion, aviso: al.aviso, inicial: al.kg,
+          ultimoMesCubierto: null, primerMesCompra: null, kgComprar: 0, costoCubierto: 0 })
+      }
+      const net = netearStock(validos, inicial, mesHoy)
+      const porClave = new Map(aportes.map(a => [a.clave, a]))
+      for (const [k, c] of net.cubierto) {
+        if (!(c.costo > 0) && !(c.kg > 0)) continue
+        const mes = k.slice(k.lastIndexOf("|") + 1), a = porClave.get(k.slice(0, k.lastIndexOf("|")))
+        if (!a) continue
+        const lote = desglose[a.act]?.[a.loteId], ins = lote?.insumos[a.concepto]
+        sumar(a.act, mes, -c.costo)
+        if (lote) lote.montos[mes] = (lote.montos[mes] || 0) - c.costo
+        if (ins) {
+          ins.montos[mes] = (ins.montos[mes] || 0) - c.costo
+          ins.detalle[mes] = `${ins.detalle[mes] || ""} · 🌽 ${fmtN(c.kg)} kg salen del stock (−$ ${fmtN(c.costo)}: ya se compró)`
+        }
+        const r = resumenStock.find(x => x.id === a.insumoStockId)
+        if (r) r.costoCubierto += c.costo
+      }
+      for (const r of resumenStock) {
+        const n = net.porInsumo[r.id]
+        if (n) Object.assign(r, { ultimoMesCubierto: n.ultimoMesCubierto, primerMesCompra: n.primerMesCompra, kgComprar: n.kgComprar })
+      }
+    }
+    setStockPres(resumenStock)
 
     // ── 2) RECETA POR CAMPAÑA + PLAN DEL AÑO (A-FEAT-1663) — cabezas del rodeo de cada campaña, hectáreas de la campaña ──
     const claves = meses.map(m => `${m.anio}-${String(m.mes).padStart(2, "0")}`)
@@ -3334,6 +3397,29 @@ Clic para presupuestar la venta`}
                         })}
                       </tr>
                       {filaSinPlan}
+                      {abierto && stockPres.length > 0 && (
+                        <tr className="border-b bg-lime-50/70">
+                          <td colSpan={meses.length + 1} className="px-4 py-1.5 pl-8 text-[11px] text-lime-950">
+                            🌽 <strong>El stock primero</strong> — la ración de los primeros meses sale de lo que ya hay (no es plata del presupuesto); la compra aparece el mes en que no alcanza:
+                            <ul className="mt-1 space-y-0.5">
+                              {stockPres.map(x => {
+                                const mmA = (k: string | null) => k ? `${k.slice(5)}/${k.slice(2, 4)}` : "—"
+                                return (
+                                  <li key={x.id}>
+                                    <strong>{x.producto}</strong>: {x.inicial == null ? "sin medición — no se descuenta" : `${Math.round(x.inicial).toLocaleString("es-AR")} ${x.unidad}`}
+                                    {x.inicial != null && (x.primerMesCompra
+                                      ? <> · alcanza {x.ultimoMesCubierto ? `hasta ${mmA(x.ultimoMesCubierto)}` : "para parte del mes"} · <strong>se compra desde {mmA(x.primerMesCompra)}</strong> ({Math.round(x.kgComprar).toLocaleString("es-AR")} {x.unidad} en el período)</>
+                                      : <> · alcanza para todo el período</>)}
+                                    {x.costoCubierto > 0 && <> · descuenta {fmt(x.costoCubierto)}</>}
+                                    {x.aviso && <span className="ml-1 text-amber-800">⚠ {x.aviso}</span>}
+                                    <span className="block text-[10px] text-gray-600">{x.explicacion}</span>
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          </td>
+                        </tr>
+                      )}
                       {abierto && costoProd.map(c => {
                         // 🔍 Paso 3 — cada actividad se abre en sus lotes, y cada lote en sus insumos (pasando el mouse por una
                         // celda de insumo: cantidad, precio, TC, días y peso). «✏️ editar» abre el editor COMPLETO de las recetas.

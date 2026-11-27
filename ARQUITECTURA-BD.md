@@ -742,6 +742,9 @@ de la cuota elegida, y es un acto explícito del usuario, fila por fila.
   `revisado_at` / `revisado_por`. Y `factura_renglones.insumo_stock_id` es lo APRENDIDO (este artículo de este proveedor es este
   insumo); `no_vincular_solo` = JMS dijo «no es ésta». Lógica: `lib/productivo/vinculo-renglon.ts` (pura) +
   `lib/productivo/vinculo-renglon-db.ts` (lee) + `app/api/facturas/vincular-stock` (escribe, con la sesión del usuario).
+- 🌽 **`productivo.actividad_insumos.insumo_stock_id`** (script 314): qué insumo del stock come cada renglón de la receta (antes se
+  unían por el nombre). Lo usa el presupuesto para netear el stock (`lib/presupuesto/stock-presupuesto.ts`): stock al 1° del mes =
+  última `mediciones_insumo` + entradas (`movimientos_insumos` compra) posteriores − consumo estimado de la ración.
 - 🔁 **Trigger `trg_costo_compras_sigue_tc`** en `msa.comprobantes_arca` (AFTER UPDATE OF `tc_pago`,
   `tipo_cambio`) → `productivo.costo_compras_sigue_tc()`: recalcula en pesos, al `tc_pago` (o al de la
   factura si se borra), las compras USD vinculadas: el movimiento, el vínculo y el costo de

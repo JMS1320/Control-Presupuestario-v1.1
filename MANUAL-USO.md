@@ -5910,6 +5910,18 @@ precio, IVA), si cierra con el total, el link al PDF y a qué entrada al stock e
 
 ⚠️ Sin probar todavía → A-TEST-1398 · A-TEST-1400
 
+## 🌽 Presupuesto → el stock primero *(nuevo 2026-11-27)*
+
+En **✏️ editar receta**, cada renglón de ración (maíz, concentrado) dice arriba de la dieta **qué insumo del stock come**. Con eso, el
+presupuesto usa primero lo que hay: en **🌾 Costos de producción** aparece la fila verde **🌽 El stock primero**, con cada insumo:
+- con cuánto arranca el mes (la última medición + lo que entró − lo que se estima que se comió, con la cuenta a la vista);
+- hasta qué mes alcanza y **desde qué mes se compra**;
+- cuánto le descuenta al presupuesto (lo que sale del stock ya se compró: no es plata a pagar).
+En el detalle de cada celda de ración dice cuántos kg salen del stock. Un insumo **sin medición no se descuenta** (lo avisa): medilo desde
+Productivo → Insumos. Cada medición nueva corrige el arranque.
+
+⚠️ Sin probar todavía → A-TEST-1401
+
 ## 🏢 Presupuesto → MSA o MA *(nuevo 2026-11-26)*
 
 Arriba, al lado de «Presupuesto», el selector **MSA | MA** cambia de empresa. Cada una muestra **lo que tiene**:

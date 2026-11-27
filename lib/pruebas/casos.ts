@@ -337,6 +337,7 @@ import { insumosDeDieta, dietasDe } from "@/lib/productivo/actividades"
 import { esDeLaEmpresa, empresasDeContratos, tipoEnPresupuesto, bloquesDeEmpresa } from "@/lib/presupuesto/empresa"
 import { esCuentaDeInsumos, esFacturaDeInsumos, fileIdDeDrive } from "@/lib/facturas-detalle/insumos"
 import { proponerPorRenglon, factorUnidad, notaDelVinculo, insumoPorNombre } from "@/lib/productivo/vinculo-renglon"
+import { stockAlInicio, netearStock, consumoEntre } from "@/lib/presupuesto/stock-presupuesto"
 import { costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, aplicarPlanRacion, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
@@ -9215,6 +9216,33 @@ Importe Neto Gravado: $ 7338020,40
       const eN = "1000 1 1 null · nov map ter null · ✨ vinculada sola a la factura 0003-00000540 · la entrada decía 20.000 kg a $ — → la factura dice 25.560 kg a $ 287,09: se corrigió"
       chequear("Productivo", "✨ Unidades de la factura al stock (t→kg, KGS, lt→L; bidón de 20 no), insumo por el nombre (terneros = ternero; empate = no sabe) y la huella del vínculo (lo que decía la entrada y lo que dice la factura)",
         eN, vN, vN === eN, "A-FEAT-1663")
+    }
+    // 🌽 A-FEAT-1663 stock paso 3: stock al 1° = medición + entradas − consumo estimado; se usa primero y la compra aparece el mes que no alcanza
+    {
+      const kg = { "2026-09": 9000, "2026-10": 12400, "2026-11": 12000, "2026-12": 12400, "2027-01": 12400 }   // kg por mes de la ración
+      const maiz = { id: "m", producto: "Maíz Granel", unidad: "kg", medicion: { fecha: "2026-09-19", cantidad: 6000 },
+        entradas: [{ fecha: "2026-10-06", cantidad: 25560 }, { fecha: "2026-12-15", cantidad: 20000 }] }
+      const al = stockAlInicio(maiz, kg, "2026-11")
+      // 20/09→01/11: 9000 × 12/30 = 3600 + 12400 = 16000 → 6000 + 25560 − 16000 = 15560 (la entrada futura del 15/12 no cuenta)
+      const sinMed = stockAlInicio({ ...maiz, medicion: null }, kg, "2026-11")
+      const neg = stockAlInicio({ ...maiz, entradas: [] }, kg, "2026-11")
+      const enMes = stockAlInicio({ ...maiz, medicion: { fecha: "2026-11-16", cantidad: 9000 }, entradas: [] }, kg, "2026-11")   // + 15 días de nov = 6000
+      const ap = [
+        { clave: "Engorde|l1|Maíz", insumoStockId: "m", mes: "2026-11", kg: 8000, costo: 2_400_000 },
+        { clave: "Recría|l2|Maíz", insumoStockId: "m", mes: "2026-11", kg: 4000, costo: 1_200_000 },
+        { clave: "Engorde|l1|Maíz", insumoStockId: "m", mes: "2026-12", kg: 8000, costo: 2_400_000 },
+        { clave: "Recría|l2|Maíz", insumoStockId: "m", mes: "2026-12", kg: 4400, costo: 1_320_000 },
+        { clave: "Engorde|l1|Maíz", insumoStockId: "m", mes: "2026-10", kg: 99999, costo: 1 },   // mes pasado: no se netea
+      ]
+      const n = netearStock(ap, { m: al.kg }, "2026-11")
+      const c = (k: string) => Math.round(n.cubierto.get(k)?.kg ?? 0)
+      const pi = n.porInsumo["m"]!
+      const vS = `${Math.round(al.kg!)} · ${sinMed.kg} · ${neg.kg} ${neg.aviso ? "avisa" : "no avisa"} · ${Math.round(enMes.kg!)} · ${Math.round(consumoEntre(kg, "2026-11-01", "2026-11-16"))}` +
+        ` | nov ${c("Engorde|l1|Maíz|2026-11")}+${c("Recría|l2|Maíz|2026-11")} · dic ${c("Engorde|l1|Maíz|2026-12")}+${c("Recría|l2|Maíz|2026-12")} · oct ${c("Engorde|l1|Maíz|2026-10")}` +
+        ` · alcanza hasta ${pi.ultimoMesCubierto} · compra desde ${pi.primerMesCompra} ${Math.round(pi.kgComprar)} kg`
+      const eS = "15560 · null · 0 avisa · 15000 · 6000 | nov 8000+4000 · dic 2297+1263 · oct 0 · alcanza hasta 2026-11 · compra desde 2026-12 8840 kg"
+      chequear("Presupuesto", "🌽 El stock en el presupuesto: arranca con medición + entradas − consumo estimado (sin medición no descuenta; negativo = 0 con aviso); cubre primero, repartido entre actividades, y la compra aparece el mes que no alcanza",
+        eS, vS, vS === eS, "A-FEAT-1663")
     }
     // 🥣 Dietas (script 305): sin dieta = va en todas; con dieta = sólo en la suya; la elegida manda (si no, la de default)
     const insD = [{ c: "Maíz", dieta: "Maíz y concentrado" }, { c: "Conc", dieta: "Maíz y concentrado" }, { c: "Maíz", dieta: "Con silo" }, { c: "Silo", dieta: "Con silo" }, { c: "Sal", dieta: null }]
