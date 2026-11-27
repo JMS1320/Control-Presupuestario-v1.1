@@ -30,34 +30,52 @@ import { resolverTipo, type TipoCuenta } from "@/lib/presupuesto/templates"
 import { normalizar, CONTRAPARTES_DEL_BALANCE } from "./cuentas-corrientes"
 
 /**
- * 🤝 A-FEAT-1632 punto 9 (JMS 27/11: *«que el número que se vea en el detalle de socios se pueda ver desglosado desde el crudo»*). A qué socio
- * afecta una cuota y cómo, mirado desde la empresa del balance. El socio sale del CÓDIGO DEL PAGO (JMS: «del pago») con la MISMA lista de
- * marcas que arma la 14.1 (`CONTRAPARTES_DEL_BALANCE`, sólo los socios); los efectos son los del protocolo de socios (CLAUDE.md § 🧮, 22/11).
- * Vacío = la cuota no toca la cuenta de ningún socio.
+ * 🤝 A-FEAT-1632 punto 9 — CON QUIÉN y CÓMO, mirado desde el RESPONSABLE de la cuota (JMS 27/11: *«si voy a MA estoy mirando desde MA… en
+ * socio debería estar viendo la contraparte, que en este caso es MSA»* · *«agregá titular de la cuenta que pagó y al lado si es cta cte,
+ * tarjeta, caja»*). Sale del PAGO (JMS: «del pago»): la cuenta que pagó (titular y medio) y su código contable, con la MISMA lista de marcas
+ * de socios que arma la 14.1 (`CONTRAPARTES_DEL_BALANCE`).
+ * - **Pagó / Medio**: quién puso la plata y desde qué (cuenta corriente, caja de ahorro, tarjeta, caja, echeq; «en US$» si es en dólares).
+ * - **Contraparte**: la otra punta respecto del responsable — quien le pagó (si no fue él) o a cuenta de quién fue (el código CTA). Vacía si
+ *   pagó él mismo y no toca a nadie.
+ * - **Efecto**: qué significa para el responsable. Sólo las TRANSFERENCIAS DIRECTAS tienen dos puntas (JMS 27/11): la que está del lado del
+ *   socio dice «otra punta, ya contada en MSA» (visto con datos reales: los 15 «Retiro MA mensual» en la caja de MA y los 2 «Aporte a MSA» de
+ *   PAM se contaban dos veces). Un pago a un tercero por cuenta de otro tiene una sola punta.
  */
-export const EFECTOS_SOCIO = ["Retiro directo", "Aporte del socio", "Pago por su cuenta", "Cobro por su cuenta", "Reintegro (contra su factura)",
-  "Aporte (pagó por la empresa)", "Otra punta (ya contada en la empresa)", "Libertad"] as const
-export function efectoEnSocio(c: Pick<CuotaTemplate, "tipo" | "monto" | "banco">, empresa = "MSA"): { socio: string; efecto: string } {
+const nombreParte = (clave: string) => clave === "COTITULARES" ? "Cotitulares" : clave
+export function medioDeCuenta(cuenta: string): string {
+  const c = cuenta ?? ""
+  const palabra = (w: string) => new RegExp(`(^|[^A-Za-z])${w}([^A-Za-z]|$)`).test(c)
+  const base = /VISA|tarjeta|master|amex/i.test(c) ? "Tarjeta" : /echeq/i.test(c) ? "Echeq" : /^caja/i.test(c) ? "Caja"
+    : palabra("CC") || /cta\.? cte|cuenta corriente|Santander|Provincia/i.test(c) ? "Cuenta corriente" : palabra("CA") || /caja de ahorro/i.test(c) ? "Caja de ahorro" : c ? "Otra" : ""
+  return base && /US\$|d[oó]lar/i.test(c) ? `${base} en US$` : base
+}
+export function contraparteDeCuota(c: Pick<CuotaTemplate, "tipo" | "monto" | "banco" | "responsable">, empresa = "MSA"):
+  { pago: string; medio: string; contraparte: string; efecto: string } {
+  const cuenta = c.banco?.cuenta ?? ""
+  if (!cuenta) return { pago: "", medio: "", contraparte: "", efecto: "" }
+  const R = (c.responsable || "").split("/")[0].trim().toUpperCase()
+  const T = (c.banco?.titular ?? "").trim().toUpperCase()
+  const out = { pago: nombreParte(T), medio: medioDeCuenta(cuenta) }
   const cod = normalizar(c.banco?.contable)
-  if (!cod) return { socio: "", efecto: "" }
-  if (cod === "LIB") return { socio: "MA / PAM", efecto: "Libertad" }
-  const socio = CONTRAPARTES_DEL_BALANCE.find(x => x.socio && x.etiquetasContable.some(e => normalizar(e) === cod))
-  const titular = (c.banco?.titular ?? "").trim().toUpperCase()
-  if (!socio) {
-    // «CTA MSA» en el banco de MA o de PAM. Si SALIÓ plata, el socio pagó algo de la empresa: le aporta. Si ENTRÓ, es la otra punta de
-    // lo que la empresa le pasó (un retiro): ya está contado del lado de la empresa y no se cuenta dos veces (igual que la 14.1).
-    // Visto con los datos reales 27/11: los 15 «Retiro MA mensual» (49.595.000) figuraban también como aporte desde la caja de ahorro de MA.
-    const deQuien = CONTRAPARTES_DEL_BALANCE.find(x => x.socio && x.clave === titular)
-    if (cod !== `CTA ${empresa}` || !deQuien || titular === empresa) return { socio: "", efecto: "" }
-    // Una transferencia entre el socio y la empresa (tipo «distribucion», p. ej. «Aporte a MSA» de PAM) también es la otra punta: la empresa ya
-    // la registra en su retiro o aporte. Visto con los datos reales 27/11 (v20): los 2 «Aporte a MSA» de PAM (3.500.000 + 1.100.000) se contaban
-    // dos veces contra el «Aporte del socio» −4.600.000 de MSA. Aporte desde la cuenta del socio = sólo lo que pagó a un TERCERO por la empresa.
-    return { socio: deQuien.clave, efecto: c.monto >= 0 && c.tipo !== "distribucion" ? "Aporte (pagó por la empresa)" : "Otra punta (ya contada en la empresa)" }
+  if (cod === "LIB") return { ...out, contraparte: "MA / PAM", efecto: "Libertad" }
+  // Y = la parte que nombra el código «CTA …» (un socio, o la empresa misma con «CTA MSA»)
+  const Y = cod === `CTA ${empresa}` ? empresa : CONTRAPARTES_DEL_BALANCE.find(x => x.socio && x.etiquetasContable.some(e => normalizar(e) === cod))?.clave ?? ""
+  const entra = c.monto < 0
+  if (T && T !== R) {
+    // lo pagó (o cobró) OTRO: él es la contraparte
+    const efecto = Y && Y !== T && Y !== R ? `${nombreParte(T)} ${entra ? "cobró" : "pagó"}, a cuenta de ${nombreParte(Y)}` : `${nombreParte(T)} le ${entra ? "cobró" : "pagó"}${cod ? "" : " ⚠️ sin código"}`
+    return { ...out, contraparte: nombreParte(T), efecto }
   }
-  const efecto = c.tipo === "distribucion" ? (c.monto >= 0 ? "Retiro directo" : "Aporte del socio")
-    : c.tipo === "reintegro" ? "Reintegro (contra su factura)"
-    : c.monto >= 0 ? "Pago por su cuenta" : "Cobro por su cuenta"
-  return { socio: socio.clave, efecto }
+  if (!Y || Y === R) return { ...out, contraparte: "", efecto: "" }
+  // lo pagó el propio responsable, con el código de otro
+  if (Y === empresa) {
+    const directa = c.tipo === "distribucion" || entra
+    return { ...out, contraparte: empresa, efecto: directa ? `${entra ? "Recibió de" : "Aporte a"} ${empresa} — otra punta, ya contada en ${empresa}` : `Pagó por cuenta de ${empresa}` }
+  }
+  const efecto = c.tipo === "distribucion" ? `${entra ? "Aporte de" : "Retiro de"} ${nombreParte(Y)}`
+    : c.tipo === "reintegro" ? `Reintegro a ${nombreParte(Y)} (contra su factura)`
+    : `${entra ? "Cobró" : "Pagó"} por cuenta de ${nombreParte(Y)}`
+  return { ...out, contraparte: nombreParte(Y), efecto }
 }
 
 /**

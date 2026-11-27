@@ -71,7 +71,7 @@ import {
   TOTALIZADORAS_BANCARIAS,
   type GastosBancarios, type FilaConceptoPorMes, type RetirosYAportes, type FondoComun,
 } from "./papeles-bancarios"
-import { ORDEN_TIPOS, NOMBRE_TIPO, SIN_AGRUPADORA, partirEnImpuestosYOtros, efectoEnSocio, armarTemplatesDelEjercicio, type TemplatesDelEjercicio, type CuotaTemplate, type TipoTemplate } from "./templates-libro"
+import { ORDEN_TIPOS, NOMBRE_TIPO, SIN_AGRUPADORA, partirEnImpuestosYOtros, contraparteDeCuota, armarTemplatesDelEjercicio, type TemplatesDelEjercicio, type CuotaTemplate, type TipoTemplate } from "./templates-libro"
 import type { ValuacionHacienda, PrecioMag, PrecioMercado, PrecioCabeza } from "./hacienda-stock"
 import { resumenControlCuotas, conProblema, type ControlCuotasTemplates } from "./control-cuotas-templates"
 import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
@@ -619,8 +619,10 @@ const COLS_TEMPLATES: Columna[] = [
   { ancho: 10, z: ENTERO },         // Nro de «Por mes» (A-FEAT-1513)
   { ancho: 14 },                    // Contable (código del pago)
   { ancho: 14 },                    // Interno (código del pago)
-  { ancho: 12 },                    // Socio (A-FEAT-1632)
-  { ancho: 26 },                    // Efecto en el socio
+  { ancho: 11 },                    // Pagó (titular de la cuenta) — A-FEAT-1632
+  { ancho: 17 },                    // Medio
+  { ancho: 13 },                    // Contraparte
+  { ancho: 44 },                    // Efecto
 ]
 
 /** Hacienda: cabezas enteras, coeficientes con dos decimales, importes en Contabilidad. */
@@ -2506,8 +2508,8 @@ export function hojaDeTemplates(t: TemplatesDelEjercicio): unknown[][] {
     // 🏷️ JMS 27/11: el código contable e interno del PAGO, para filtrar desde el maestro (A-FEAT-1632 paso 2). Van al final:
     //    `scripts/reporte-items/d_templates.py` lee las 12 primeras por posición.
     "Contable", "Interno",
-    // 🤝 A-FEAT-1632 punto 9: a qué socio afecta la cuota y cómo (la misma lista de marcas que la 14.1).
-    "Socio", "Efecto en el socio",
+    // 🤝 A-FEAT-1632 punto 9 (JMS 27/11): con quién y cómo, desde el responsable — quién pagó, con qué medio, la contraparte y el efecto.
+    "Pagó", "Medio", "Contraparte", "Efecto",
   ]]
   const nroFila = numerarFilasPorMes(t)
   // Ordenado por tipo, responsable (la empresa del balance primero) y fecha: el orden lo pone
@@ -2521,7 +2523,7 @@ export function hojaDeTemplates(t: TemplatesDelEjercicio): unknown[][] {
     c.monto >= 0 ? money(c.monto) : "", c.monto < 0 ? money(-c.monto) : "",
     c.filaPorMes ? nroFila.get(c.filaPorMes) ?? "" : "",
     c.banco?.contable ?? "", c.banco?.interno ?? "",
-    ...((e) => [e.socio, e.efecto])(efectoEnSocio(c)),
+    ...((e) => [e.pago, e.medio, e.contraparte, e.efecto])(contraparteDeCuota(c)),
   ]
   // 🗂️ A-FEAT-1342: un bloque por tipo, con su subtotal.
   let tipoActual: string | null = null
@@ -3499,6 +3501,10 @@ export async function descargarPapelesDelBalance(a: Parameters<typeof armarWorkb
     if (!armado.solapas.length) continue
     VISTAS.set(armado.wb, armado.vistas)
     hoja(armado.wb, "Control del papel", hojaControlDelPapel(p, armado, empresa, etiqueta, generado, deLibro), [{ ancho: 34 }, { ancho: 60 }, { ancho: 60 }])
+    // 🧭 JMS 27/11: «un índice con links a las hojas en Templates, así puedo ir y volver rápidamente; también el link de regreso, tal como
+    //    hicimos en otro reporte» → el mismo índice del H para auditar (agregarIndiceH): MSA, MA y PAM plegados, cada solapa un link, y en
+    //    cada solapa «⬅ Índice» en A1.
+    if (p.id === "templates") agregarIndiceH(armado.wb)
     fechasReales(armado.wb)
     const datos = await aplicarVistas(XLSX.write(armado.wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer, vistasDe(armado.wb))
     // dos partes cuyo nombre recortado coincide no se pisan dentro del .zip: la segunda lleva « 2», la tercera « 3»…

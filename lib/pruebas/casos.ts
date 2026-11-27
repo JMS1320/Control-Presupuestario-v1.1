@@ -254,7 +254,7 @@ import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiarios
 import { PRESENTADO_ARCA_COMPRAS, compararConPresentado } from "@/lib/balance/presentado-arca"
 import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/balance/facturas-fijas"
 import { controlarCuotasTemplates, campaniaDelControl, claveDeNombre, CONTROL_CUOTAS_TEMPLATES, ultimoDiaDelMes, type ComisionesDelMes, type CuotaParaControl, type TemplateControlado, type EntradaControlCuotas } from "@/lib/balance/control-cuotas-templates"
-import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuestosYOtros, templatesACuentaDeSocio, efectoEnSocio } from "@/lib/balance/templates-libro"
+import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuestosYOtros, templatesACuentaDeSocio, contraparteDeCuota, medioDeCuenta } from "@/lib/balance/templates-libro"
 import { hojaAutomotores, pulirLibroH, hojaDeProvisionCobros, hojaDeBancos, hojaDeRetiros } from "@/lib/balance/export-libro-diario"
 import { renglonesDeRespaldo, hojaDeRespaldos, itemsDelRespaldo, idDeArchivoDrive, carpetasDelRespaldo, linksALasCopias, urlDeArchivoDrive } from "@/lib/balance/respaldos"
 import { planDelEspejo, resumenesQueFaltan, carpetaDelEjercicio } from "@/lib/balance/espejo-ulises"
@@ -14382,23 +14382,32 @@ Importe Neto Gravado: $ 7338020,40
     chequear("Templates", "Un template con varias categorías se abre por categoría antes que por fecha", "b,a,c", ordC, ordC === "b,a,c", "A-FEAT-1632")
     chequear("Templates", "Las cuotas van agrupadas por agrupadora y template, y recién después por fecha (no se mezclan dos templates)",
       "4,2,3,1", ord, ord === "4,2,3,1", "A-FEAT-1632")
-    // 🤝 Socio y efecto de cada cuota, desde el código del pago (la misma lista de marcas que la 14.1).
-    const bk = (contable: string, titular = "MSA") => ({ cuenta: "Galicia", comprobante: "", titular, contable, respaldo: 0, motivo: null })
+    // 🤝 Con quién y cómo, desde el RESPONSABLE de la cuota (JMS 27/11): pagó · medio · contraparte · efecto. Casos tomados de los datos reales.
+    const bk = (cuenta: string, titular: string, contable: string) => ({ cuenta, comprobante: "", titular, contable, respaldo: 0, motivo: null })
+    const ver = (responsable: string, tipo: string, monto: number, banco?: ReturnType<typeof bk>) => {
+      const e = contraparteDeCuota({ responsable, tipo: tipo as never, monto, banco }); return `${e.pago || "—"}/${e.medio || "—"}/${e.contraparte || "—"}/${e.efecto || "—"}` }
     const efs = [
-      efectoEnSocio({ tipo: "distribucion", monto: 100, banco: bk("CTA MA") }),
-      efectoEnSocio({ tipo: "distribucion", monto: -50, banco: bk("CTA PAM") }),
-      efectoEnSocio({ tipo: "egreso", monto: 30, banco: bk("cta ma") }),
-      efectoEnSocio({ tipo: "reintegro", monto: 20, banco: bk("CUENTA JMS") }),
-      efectoEnSocio({ tipo: "egreso", monto: 10, banco: bk("CTA MSA", "PAM") }),
-      efectoEnSocio({ tipo: "egreso", monto: -10, banco: bk("CTA MSA", "MA") }),
-      efectoEnSocio({ tipo: "distribucion", monto: 30, banco: bk("CTA MSA", "PAM") }),
-      efectoEnSocio({ tipo: "egreso", monto: 10, banco: bk("LIB") }),
-      efectoEnSocio({ tipo: "egreso", monto: 10, banco: bk("CTA AFA") }),
-      efectoEnSocio({ tipo: "egreso", monto: 10 }),
-    ].map(e => `${e.socio || "—"}:${e.efecto || "—"}`).join(" · ")
-    const espEf = "MA:Retiro directo · PAM:Aporte del socio · MA:Pago por su cuenta · JMS:Reintegro (contra su factura) · PAM:Aporte (pagó por la empresa) · MA:Otra punta (ya contada en la empresa) · PAM:Otra punta (ya contada en la empresa) · MA / PAM:Libertad · —:— · —:—"
-    chequear("Templates", "Socio y efecto de cada cuota: retiro, aporte, pago por su cuenta, reintegro, aporte desde la cuenta del socio, Libertad; lo que no es de un socio queda vacío",
+      ver("MSA", "distribucion", 100, bk("Galicia CC $ MSA", "MSA", "CTA MA")),        // Retiro MA mensual, en la solapa de MSA
+      ver("MA", "distribucion", -100, bk("Galicia CA $ MA", "MA", "CTA MSA")),        // el mismo retiro, recibido en la caja de MA
+      ver("MA", "egreso", 30, bk("Galicia CC $ MSA", "MSA", "CTA MA")),               // Inmobiliario de MA pagado por MSA
+      ver("MA", "egreso", 30, bk("Galicia CC $ PAM", "PAM", "DIST MA")),              // Inmobiliario de MA pagado por PAM
+      ver("PAM", "distribucion", 50, bk("Galicia CC $ PAM", "PAM", "CTA MSA")),       // Aporte a MSA de PAM (la otra punta)
+      ver("MSA", "distribucion", -50, bk("Galicia CC $ MSA", "MSA", "CTA PAM")),      // el mismo aporte, del lado de MSA
+      ver("MSA", "reintegro", 20, bk("Galicia CC $ MSA", "MSA", "CUENTA JMS")),
+      ver("PAM", "egreso", 10, bk("VISA Business MSA", "MSA", "CTA MA")),             // gasto de PAM pagado por MSA a cuenta de MA
+      ver("MA", "egreso", 10, bk("Galicia CA $ MA", "MA", "LIB")),
+      ver("MA", "egreso", 10, bk("Galicia CA $ MA", "MA", "")),                       // pagó ella misma: no toca a nadie
+      ver("MA", "egreso", 10),                                                         // sin pago
+    ].join(" · ")
+    const espEf = ["MSA/Cuenta corriente/MA/Retiro de MA", "MA/Caja de ahorro/MSA/Recibió de MSA — otra punta, ya contada en MSA", "MSA/Cuenta corriente/MSA/MSA le pagó",
+      "PAM/Cuenta corriente/PAM/PAM le pagó", "PAM/Cuenta corriente/MSA/Aporte a MSA — otra punta, ya contada en MSA", "MSA/Cuenta corriente/PAM/Aporte de PAM",
+      "MSA/Cuenta corriente/JMS/Reintegro a JMS (contra su factura)", "MSA/Tarjeta/MSA/MSA pagó, a cuenta de MA", "MA/Caja de ahorro/MA / PAM/Libertad",
+      "MA/Caja de ahorro/—/—", "—/—/—/—"].join(" · ")
+    chequear("Templates", "Con quién y cómo, desde el responsable: retiro de los dos lados (el del socio es la otra punta), pagado por MSA o por PAM, aporte, reintegro, a cuenta de otro, Libertad",
       espEf, efs, efs === espEf, "A-FEAT-1632")
+    const medios = ["Galicia CC $ MSA", "Galicia CA $ MA", "VISA Galicia PAM", "Caja Sigot", "Galicia CA US$ MSA", "Caja dólares MA", "Santander CC $ MSA", "Echeqs de terceros MSA"].map(medioDeCuenta).join(" · ")
+    const espM = "Cuenta corriente · Caja de ahorro · Tarjeta · Caja · Caja de ahorro en US$ · Caja en US$ · Cuenta corriente · Echeq"
+    chequear("Templates", "El medio de pago sale del nombre de la cuenta", espM, medios, medios === espM, "A-FEAT-1632")
   }
 
   // ══ 💵 Operaciones en dólares: US$ × TC = pesos, y la compraventa con su otra punta en pesos (A-FEAT-1530) ══
