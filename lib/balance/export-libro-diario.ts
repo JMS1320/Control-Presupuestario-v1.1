@@ -71,7 +71,7 @@ import {
   TOTALIZADORAS_BANCARIAS,
   type GastosBancarios, type FilaConceptoPorMes, type RetirosYAportes, type FondoComun,
 } from "./papeles-bancarios"
-import { ORDEN_TIPOS, NOMBRE_TIPO, SIN_AGRUPADORA, partirEnImpuestosYOtros, armarTemplatesDelEjercicio, type TemplatesDelEjercicio, type CuotaTemplate, type TipoTemplate } from "./templates-libro"
+import { ORDEN_TIPOS, NOMBRE_TIPO, SIN_AGRUPADORA, partirEnImpuestosYOtros, efectoEnSocio, armarTemplatesDelEjercicio, type TemplatesDelEjercicio, type CuotaTemplate, type TipoTemplate } from "./templates-libro"
 import type { ValuacionHacienda, PrecioMag, PrecioMercado, PrecioCabeza } from "./hacienda-stock"
 import { resumenControlCuotas, conProblema, type ControlCuotasTemplates } from "./control-cuotas-templates"
 import { PAPELES_SIN_ORIGEN, type StockInsumos } from "./stock-insumos"
@@ -619,6 +619,8 @@ const COLS_TEMPLATES: Columna[] = [
   { ancho: 10, z: ENTERO },         // Nro de «Por mes» (A-FEAT-1513)
   { ancho: 14 },                    // Contable (código del pago)
   { ancho: 14 },                    // Interno (código del pago)
+  { ancho: 12 },                    // Socio (A-FEAT-1632)
+  { ancho: 26 },                    // Efecto en el socio
 ]
 
 /** Hacienda: cabezas enteras, coeficientes con dos decimales, importes en Contabilidad. */
@@ -2504,6 +2506,8 @@ export function hojaDeTemplates(t: TemplatesDelEjercicio): unknown[][] {
     // 🏷️ JMS 27/11: el código contable e interno del PAGO, para filtrar desde el maestro (A-FEAT-1632 paso 2). Van al final:
     //    `scripts/reporte-items/d_templates.py` lee las 12 primeras por posición.
     "Contable", "Interno",
+    // 🤝 A-FEAT-1632 punto 9: a qué socio afecta la cuota y cómo (la misma lista de marcas que la 14.1).
+    "Socio", "Efecto en el socio",
   ]]
   const nroFila = numerarFilasPorMes(t)
   // Ordenado por tipo, responsable (la empresa del balance primero) y fecha: el orden lo pone
@@ -2517,6 +2521,7 @@ export function hojaDeTemplates(t: TemplatesDelEjercicio): unknown[][] {
     c.monto >= 0 ? money(c.monto) : "", c.monto < 0 ? money(-c.monto) : "",
     c.filaPorMes ? nroFila.get(c.filaPorMes) ?? "" : "",
     c.banco?.contable ?? "", c.banco?.interno ?? "",
+    ...((e) => [e.socio, e.efecto])(efectoEnSocio(c)),
   ]
   // 🗂️ A-FEAT-1342: un bloque por tipo, con su subtotal.
   let tipoActual: string | null = null

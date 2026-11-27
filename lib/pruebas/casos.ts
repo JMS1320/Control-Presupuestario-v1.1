@@ -254,7 +254,7 @@ import { armarEjercicio, claveSubdiario, esDelEjercicio, esProvision, subdiarios
 import { PRESENTADO_ARCA_COMPRAS, compararConPresentado } from "@/lib/balance/presentado-arca"
 import { controlarFacturasFijas, mesesTerminados, explicarFila } from "@/lib/balance/facturas-fijas"
 import { controlarCuotasTemplates, campaniaDelControl, claveDeNombre, CONTROL_CUOTAS_TEMPLATES, ultimoDiaDelMes, type ComisionesDelMes, type CuotaParaControl, type TemplateControlado, type EntradaControlCuotas } from "@/lib/balance/control-cuotas-templates"
-import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuestosYOtros, templatesACuentaDeSocio } from "@/lib/balance/templates-libro"
+import { armarTemplatesDelEjercicio, desdeCuota, SIN_AGRUPADORA, partirEnImpuestosYOtros, templatesACuentaDeSocio, efectoEnSocio } from "@/lib/balance/templates-libro"
 import { hojaAutomotores, pulirLibroH, hojaDeProvisionCobros, hojaDeBancos, hojaDeRetiros } from "@/lib/balance/export-libro-diario"
 import { renglonesDeRespaldo, hojaDeRespaldos, itemsDelRespaldo, idDeArchivoDrive, carpetasDelRespaldo, linksALasCopias, urlDeArchivoDrive } from "@/lib/balance/respaldos"
 import { planDelEspejo, resumenesQueFaltan, carpetaDelEjercicio } from "@/lib/balance/espejo-ulises"
@@ -9242,6 +9242,10 @@ Importe Neto Gravado: $ 7338020,40
       const sinMed = stockAlInicio({ ...maiz, medicion: null }, kg, "2026-11")
       const neg = stockAlInicio({ ...maiz, entradas: [] }, kg, "2026-11")
       const enMes = stockAlInicio({ ...maiz, medicion: { fecha: "2026-11-16", cantidad: 9000 }, entradas: [] }, kg, "2026-11")   // + 15 días de nov = 6000
+      // B11 (A-FEAT-1677): una compra que entró el 10/11 (ya comprada y pagada) está disponible para noviembre: sin `hoy` no se contaba
+      const conCompra = { ...maiz, entradas: [...maiz.entradas, { fecha: "2026-11-10", cantidad: 10000 }] }
+      const b11 = `${Math.round(stockAlInicio(conCompra, kg, "2026-11").kg!)}→${Math.round(stockAlInicio(conCompra, kg, "2026-11", "2026-11-27").kg!)}`
+      if (b11 !== "15560→25560") throw new Error("B11: la entrada del mes hasta hoy tiene que sumar al stock del mes: " + b11)
       const ap = [
         { clave: "Engorde|l1|Maíz", insumoStockId: "m", mes: "2026-11", kg: 8000, costo: 2_400_000 },
         { clave: "Recría|l2|Maíz", insumoStockId: "m", mes: "2026-11", kg: 4000, costo: 1_200_000 },
@@ -14368,6 +14372,22 @@ Importe Neto Gravado: $ 7338020,40
       exp("3", "Expensas Posadas", "2025-07-10"), exp("4", "Expensas Libertad", "2025-07-15")] as never, ej).detalle.map(c => c.id).join(",")
     chequear("Templates", "Las cuotas van agrupadas por agrupadora y template, y recién después por fecha (no se mezclan dos templates)",
       "4,2,3,1", ord, ord === "4,2,3,1", "A-FEAT-1632")
+    // 🤝 Socio y efecto de cada cuota, desde el código del pago (la misma lista de marcas que la 14.1).
+    const bk = (contable: string, titular = "MSA") => ({ cuenta: "Galicia", comprobante: "", titular, contable, respaldo: 0, motivo: null })
+    const efs = [
+      efectoEnSocio({ tipo: "distribucion", monto: 100, banco: bk("CTA MA") }),
+      efectoEnSocio({ tipo: "distribucion", monto: -50, banco: bk("CTA PAM") }),
+      efectoEnSocio({ tipo: "egreso", monto: 30, banco: bk("cta ma") }),
+      efectoEnSocio({ tipo: "reintegro", monto: 20, banco: bk("CUENTA JMS") }),
+      efectoEnSocio({ tipo: "egreso", monto: 10, banco: bk("CTA MSA", "PAM") }),
+      efectoEnSocio({ tipo: "egreso", monto: -10, banco: bk("CTA MSA", "MA") }),
+      efectoEnSocio({ tipo: "egreso", monto: 10, banco: bk("LIB") }),
+      efectoEnSocio({ tipo: "egreso", monto: 10, banco: bk("CTA AFA") }),
+      efectoEnSocio({ tipo: "egreso", monto: 10 }),
+    ].map(e => `${e.socio || "—"}:${e.efecto || "—"}`).join(" · ")
+    const espEf = "MA:Retiro directo · PAM:Aporte del socio · MA:Pago por su cuenta · JMS:Reintegro (contra su factura) · PAM:Aporte (pagó por la empresa) · MA:Otra punta (ya contada en la empresa) · MA / PAM:Libertad · —:— · —:—"
+    chequear("Templates", "Socio y efecto de cada cuota: retiro, aporte, pago por su cuenta, reintegro, aporte desde la cuenta del socio, Libertad; lo que no es de un socio queda vacío",
+      espEf, efs, efs === espEf, "A-FEAT-1632")
   }
 
   // ══ 💵 Operaciones en dólares: US$ × TC = pesos, y la compraventa con su otra punta en pesos (A-FEAT-1530) ══

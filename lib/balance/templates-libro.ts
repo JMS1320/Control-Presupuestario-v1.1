@@ -27,7 +27,35 @@
  */
 import type { Ejercicio } from "./ejercicio"
 import { resolverTipo, type TipoCuenta } from "@/lib/presupuesto/templates"
-import { normalizar } from "./cuentas-corrientes"
+import { normalizar, CONTRAPARTES_DEL_BALANCE } from "./cuentas-corrientes"
+
+/**
+ * 🤝 A-FEAT-1632 punto 9 (JMS 27/11: *«que el número que se vea en el detalle de socios se pueda ver desglosado desde el crudo»*). A qué socio
+ * afecta una cuota y cómo, mirado desde la empresa del balance. El socio sale del CÓDIGO DEL PAGO (JMS: «del pago») con la MISMA lista de
+ * marcas que arma la 14.1 (`CONTRAPARTES_DEL_BALANCE`, sólo los socios); los efectos son los del protocolo de socios (CLAUDE.md § 🧮, 22/11).
+ * Vacío = la cuota no toca la cuenta de ningún socio.
+ */
+export const EFECTOS_SOCIO = ["Retiro directo", "Aporte del socio", "Pago por su cuenta", "Cobro por su cuenta", "Reintegro (contra su factura)",
+  "Aporte (pagó por la empresa)", "Otra punta (ya contada en la empresa)", "Libertad"] as const
+export function efectoEnSocio(c: Pick<CuotaTemplate, "tipo" | "monto" | "banco">, empresa = "MSA"): { socio: string; efecto: string } {
+  const cod = normalizar(c.banco?.contable)
+  if (!cod) return { socio: "", efecto: "" }
+  if (cod === "LIB") return { socio: "MA / PAM", efecto: "Libertad" }
+  const socio = CONTRAPARTES_DEL_BALANCE.find(x => x.socio && x.etiquetasContable.some(e => normalizar(e) === cod))
+  const titular = (c.banco?.titular ?? "").trim().toUpperCase()
+  if (!socio) {
+    // «CTA MSA» en el banco de MA o de PAM. Si SALIÓ plata, el socio pagó algo de la empresa: le aporta. Si ENTRÓ, es la otra punta de
+    // lo que la empresa le pasó (un retiro): ya está contado del lado de la empresa y no se cuenta dos veces (igual que la 14.1).
+    // Visto con los datos reales 27/11: los 15 «Retiro MA mensual» (49.595.000) figuraban también como aporte desde la caja de ahorro de MA.
+    const deQuien = CONTRAPARTES_DEL_BALANCE.find(x => x.socio && x.clave === titular)
+    if (cod !== `CTA ${empresa}` || !deQuien || titular === empresa) return { socio: "", efecto: "" }
+    return { socio: deQuien.clave, efecto: c.monto >= 0 ? "Aporte (pagó por la empresa)" : "Otra punta (ya contada en la empresa)" }
+  }
+  const efecto = c.tipo === "distribucion" ? (c.monto >= 0 ? "Retiro directo" : "Aporte del socio")
+    : c.tipo === "reintegro" ? "Reintegro (contra su factura)"
+    : c.monto >= 0 ? "Pago por su cuenta" : "Cobro por su cuenta"
+  return { socio: socio.clave, efecto }
+}
 
 /**
  * 🗂️ **QUÉ ES cada cuota: egreso, ingreso, distribución, financiero…** (A-FEAT-1342, 2026-10-24).

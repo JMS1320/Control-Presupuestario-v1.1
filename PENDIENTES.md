@@ -19522,6 +19522,15 @@ va cambiando la diferencia hasta llegar a terminado, pero trazado y auditable»*
   falta mirar las otras cuentas de MSA.
 - ✅ **Orden (JMS 27/11, regla nueva en CLAUDE.md § 🧮)**: las cuotas van tipo → responsable → agrupadora → template → **fecha al final** (antes
   tipo → responsable → fecha). Versión `2f96b1d6`; caso nuevo (1667/1667).
+- ✅ **P2 hecho (JMS: «hacelo ahora, después bajo todo junto»)**: «Cuotas» trae **Socio** y **Efecto en el socio** (`efectoEnSocio` en
+  `lib/balance/templates-libro.ts`, con la misma lista de marcas que la 14.1). Efectos: Retiro directo · Aporte del socio · Pago por su cuenta ·
+  Cobro por su cuenta · Reintegro (contra su factura) · Aporte (pagó por la empresa) · Otra punta (ya contada en la empresa) · Libertad.
+  **Verificado con los datos reales (sólo lectura)**: MA retiro 49.595.000,00 + pago por su cuenta Galicia 8.099.786,24 = 57.694.786,24 = CTA MA
+  con template en Galicia MSA ✓ · MA por VISA 1.946.731,49 = subtotal «MSA VISA» de la 14.1 ✓ · Caja Sigot 800.000 ✓ · PAM retiro 8.155.000 +
+  pago 788.916,51 = CTA PAM con template ✓ · PAM aporte −4.600.000 = haber de la 14.1 ✓ · JMS reintegros 2.619.146,77 ✓ · Cotitulares 1.756.595 ✓ ·
+  Libertad pagada por MSA 14.317.100,99 = «LIB sin tratar» de la 14.1 ✓. Corregido al verificar: lo que el socio RECIBE con «CTA MSA» (15
+  «Retiro MA mensual» en la caja de ahorro de MA, −49.595.000; PAM −3.555.000) es la otra punta, no un aporte. 1668/1668, type-check sin empeorar.
+  Sigue P3 (Libro Diario y Sueldos) cuando JMS lo diga.
 
 ## <a id="a-feat-1635"></a>A-FEAT-1635 — Saldos INTERNOS entre las cuentas desde el 31/12/2024 en cero 🤝
 
