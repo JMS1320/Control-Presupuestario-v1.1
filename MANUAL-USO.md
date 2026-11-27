@@ -5947,7 +5947,7 @@ En el editor de un lote (Productivo, o clic en la venta desde el presupuesto), *
 
 La evolución del rodeo es la **proyección**; lo **real** la va reemplazando a medida que ocurre:
 - Cuando el **servicio ya ocurrió**, las vacas y vaquillonas a servicio salen del **stock de hacienda a esa fecha** (dice «✓ real · stock de hacienda al …»).
-- El ciclo anterior **cierra con lo real**: el descarte (los vientres que no llegaron al servicio siguiente) y las vaquillonas de reposición. Si había un número cargado a mano, manda el de a mano y se ve la diferencia («⚠ real 74 (cargado a mano 60)»).
+- El ciclo anterior **cierra con lo real**: el descarte (los vientres que no llegaron al servicio siguiente) y las vaquillonas de reposición. El cierre es siempre el inicio del ciclo siguiente: lo real manda aunque hubiera un número cargado a mano, y se ve qué decía («✓ real (a mano decía 60)»).
 - Los ciclos que todavía no pasaron siguen proyectados, partiendo de lo real.
 - Arriba, «Hoy en el stock de hacienda» muestra el rodeo de hoy contra el ciclo en curso.
 
