@@ -357,7 +357,7 @@ import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla,
   claveDeTipoMail, problemaDeTipoNuevo, contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarPendientesArriba,
   cambioSoloEste, ACCIONES_MAIL, NOMBRE_ACCION_MAIL,
   juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves, ordenarParaLista, rangoDelDia, ordenarCronologico, leerBusqueda, coincideBusquedaMail, textoBuscable } from "@/lib/mails/registro"
-import { pasaGrupos, clickChipGrupo, chipPrendido } from "@/lib/productivo/grupos-terneros"
+import { pasaGrupos, clickChipGrupo, chipPrendido, sexoDeCategoria, sexoACorregir, hojaDe } from "@/lib/productivo/grupos-terneros"
 import { opcionesDeColumna, filtrarPorColumnas, seleccionConBusqueda, listaPegada, cruzarPegadas, restoDePegadas, coincideBusqueda as coincideBusquedaColumna } from "@/lib/ui/filtro-columna"
 import { valorFiltroCuota } from "@/lib/templates/filtro-cuotas"
 import { partesDeRuta, problemaDeRuta, estadoDestino, idDeLinkDrive } from "@/lib/archivo/destinos"
@@ -12188,6 +12188,16 @@ Importe Neto Gravado: $ 7338020,40
         const vG = pasos.join(" ")
         chequear("Productivo", "🖱️ Chips de terneros padre/hijo: hembras prende también rep; apagar rep deja las hembras que NO son de rep; Ctrl+click sólo ése",
           "MTHR HR(rep✓) H MTH T MTHR", vG, vG === "MTHR HR(rep✓) H MTH T MTHR", "A-FEAT-1668")
+      }
+      // 🔁 A-FEAT-1669 (JMS 27/11): el cambio de categoría a una del otro sexo corrige el sexo; la marca rep sigue (torito → ternera rep)
+      {
+        const vS = ["Ternera Recria", "Vaquillona de Reposicion", "Vaca CUT/Descarte", "Ternero Recria", "Torito", "Novillo", "Otra"].map(n => sexoDeCategoria(n) ?? "-").join(" ")
+        chequear("Productivo", "🔁 El sexo que dice cada categoría", "Hembra Hembra Hembra Macho Macho Macho -", vS, vS === "Hembra Hembra Hembra Macho Macho Macho -", "A-FEAT-1669")
+        const an = [{ id: "a", sexo: "Macho", es_torito: true }, { id: "b", sexo: "Macho", es_torito: false }, { id: "c", sexo: "Hembra", es_torito: false }]
+        const cs = sexoACorregir(an, "Ternera Recria")
+        const vC = cs.map(c => `${c.animal.id}:${hojaDe({ ...c.animal, sexo: c.nuevo })}`).join(" ") + " | a Novillo: " + sexoACorregir(an, "Novillo").map(c => c.animal.id).join("") + " | a otra: " + sexoACorregir(an, "Otra").length
+        chequear("Productivo", "🔁 Pasar 2 «machos» a Ternera Recría les corrige el sexo; el marcado reposición queda ternera rep; la hembra no se toca",
+          "a:terneras_rep b:hembras_resto | a Novillo: c | a otra: 0", vC, vC === "a:terneras_rep b:hembras_resto | a Novillo: c | a otra: 0", "A-FEAT-1669")
       }
       // 🔽 nota JMS 10/11: la tabla de Cuotas con filtro por columna — fechas por mes, monto es-AR, la CATEG de la cuota manda
       {

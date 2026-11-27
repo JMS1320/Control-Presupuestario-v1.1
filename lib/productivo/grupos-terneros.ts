@@ -63,3 +63,22 @@ export function clickChipGrupo(hojas: Set<HojaGrupo>, g: GrupoTernero, soloEste 
 export function describirHojas(hojas: Set<HojaGrupo>): string {
   return (Object.keys(NOMBRE_HOJA) as HojaGrupo[]).filter(h => hojas.has(h)).map(h => NOMBRE_HOJA[h]).join(' + ')
 }
+
+/**
+ * 🔁 El sexo que dice el NOMBRE de una categoría (A-FEAT-1669, JMS 27/11: «si yo hago un cambio de categoría y digo que 2 que
+ * eran machos son hembras, la aplicación les tiene que cambiar el sexo automáticamente. Eso es así»).
+ * Ternera / Vaquillona / Vaca → Hembra · Ternero / Torito / Toro / Novillo → Macho · otra cosa → null (no se toca el sexo).
+ */
+export function sexoDeCategoria(nombre: string | null | undefined): 'Macho' | 'Hembra' | null {
+  const n = String(nombre ?? '').trim().toLowerCase()
+  if (/^(ternera|vaquillona|vaca)\b/.test(n)) return 'Hembra'
+  if (/^(ternero|torito|toro|novill)/.test(n)) return 'Macho'
+  return null
+}
+
+/** Pura: de los animales que pasan a `destino`, los que tienen otro sexo (o ninguno) y hay que corregir. */
+export function sexoACorregir<T extends { id: string; sexo: string | null }>(animales: T[], destino: string | null | undefined): { animal: T; nuevo: 'Macho' | 'Hembra' }[] {
+  const nuevo = sexoDeCategoria(destino)
+  if (!nuevo) return []
+  return animales.filter(a => a.sexo !== nuevo).map(animal => ({ animal, nuevo }))
+}
