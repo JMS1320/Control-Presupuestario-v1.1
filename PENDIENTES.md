@@ -19531,6 +19531,31 @@ va cambiando la diferencia hasta llegar a terminado, pero trazado y auditable»*
   Libertad pagada por MSA 14.317.100,99 = «LIB sin tratar» de la 14.1 ✓. Corregido al verificar: lo que el socio RECIBE con «CTA MSA» (15
   «Retiro MA mensual» en la caja de ahorro de MA, −49.595.000; PAM −3.555.000) es la otra punta, no un aporte. 1668/1668, type-check sin empeorar.
   Sigue P3 (Libro Diario y Sueldos) cuando JMS lo diga.
+- ⚠️ **cambió 27/11 (misma tarde) — «Socio / Efecto en el socio» se reemplazó por PAGÓ · MEDIO · CONTRAPARTE · EFECTO, leídos desde el RESPONSABLE**
+  (JMS: *«si voy a MA estoy mirando desde MA… socio sería MSA y no MA»* · *«titular de la cuenta que pagó y al lado si es cta cte, tarjeta, caja»*).
+  Sólo las transferencias directas tienen dos puntas (JMS). `contraparteDeCuota` / `medioDeCuenta` en `lib/balance/templates-libro.ts`. Además:
+  **índice con links** (el de «H para auditar», `agregarIndiceH`) y «⬅ Índice» en A1 de cada solapa del libro Templates. Versión `f2afa3d0`; 1672/1672.
+- 🧭 **GUÍA DEL CONTROL — desde el crudo (libro Templates) hasta el detalle de socios (libro «Socios y Libertad», solapa 14.1, «DETALLE — …»)**.
+  Verificada con los datos reales el 27/11 (sólo lectura); todos cierran al centavo. En Excel: filtrar y mirar la suma de Débito − Crédito.
+  - **C1 · MA, retiros**: «H · MSA · Cuotas», Contraparte = MA → 15 cuotas, 49.595.000,00 («Retiro de MA»).
+  - **C2 · MA, gastos suyos que pagó MSA por banco**: «H · MA · Cuotas», Pagó = MSA, Medio = Cuenta corriente, Efecto = «MSA le pagó» → 33,
+    8.059.624,34; más «H · PAM · Cuotas», Efecto = «MSA pagó, a cuenta de MA» → 2, 40.161,90. Con C1: 57.694.786,24. **+ 3.048.290,18 sin template
+    + 2.221.333,00 de Sueldos = 62.964.409,42 = subtotal «MSA Galicia cta cte» de Mercedes Areco** ✓ (los dos últimos todavía no están en el crudo: P3).
+  - **C3 · MA por tarjeta**: «H · MA · Cuotas», Pagó = MSA, Medio = Tarjeta → 20, 1.946.731,49 = subtotal «MSA VISA» ✓.
+  - **C4 · MA por caja**: Pagó = MSA, Medio = Caja → 2, 800.000,00 = «MSA Caja Sigot» ✓.
+  - **C5 · PAM**: «H · MSA · Cuotas», Contraparte = PAM → «Retiro de PAM» 9, 8.155.000,00 y «Aporte de PAM» 2, −4.600.000,00 (en Crédito); «H · PAM ·
+    Cuotas», Contable = CTA PAM → 788.916,51. **8.155.000 + 788.916,51 + 1.942.368,00 sin template = 10.886.284,51 = debe de «MSA Galicia cta cte» de la
+    Sucesión; haber 4.600.000,00 = el aporte** ✓.
+  - **C6 · JMS**: «H · MSA · Cuotas», Contraparte = JMS → 4, 2.619.146,77 (reintegros). **+ 37.834.647,76 de Sueldos + 348.471,00 sin template =
+    40.802.265,53 = «MSA Galicia cta cte» de José María** ✓. AMS: todo es Sueldos (23.803.334,73), nada en Templates.
+  - **C7 · Cotitulares**: Contraparte = Cotitulares → 1, 1.756.595,00 = «DETALLE — Cotitulares» ✓.
+  - **C8 · Libertad pagada por MSA**: Efecto = Libertad y Pagó = MSA, en «H · MA · Cuotas» (5, 7.160.373,44) y en «H · PAM · Cuotas» (9, 7.156.727,55) =
+    14.317.100,99 = «LIB» en «TODAVÍA SIN TRATAR» de la 14.1 ✓.
+  - **C9 · Las otras puntas NO se suman**: «H · MA · Cuotas», Efecto empieza con «Recibió de MSA» → −49.595.000,00 = C1 con signo contrario ✓; «H · PAM
+    · Cuotas»: «Recibió de MSA» −8.155.000,00 y «Aporte a MSA» 4.600.000,00 = C5 con signo contrario ✓.
+  - **C10 · Alertas**: Efecto contiene «⚠️ sin código» → MSA pagó gastos de MA (3, 33.537,00) y de PAM (11, 146.002,94) SIN marca de socio: no entran a
+    ninguna cuenta con socios. A revisar con JMS (¿falta el CTA?). Y lo pagado por PAM a MA («PAM le pagó»/«le cobró», contable DIST MA, unos 6,9 M) no es
+    de la 14.1 de MSA: es la cuenta interna PAM↔MA ([A-FEAT-1635](#a-feat-1635)).
 
 ## <a id="a-feat-1635"></a>A-FEAT-1635 — Saldos INTERNOS entre las cuentas desde el 31/12/2024 en cero 🤝
 
