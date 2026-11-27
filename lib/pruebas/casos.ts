@@ -357,7 +357,7 @@ import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla,
   claveDeTipoMail, problemaDeTipoNuevo, contraparteDeMail, asuntoBase, reglaParaAlcance, mailsQueAlcanza, estadoSeguimiento, ordenarPendientesArriba,
   cambioSoloEste, ACCIONES_MAIL, NOMBRE_ACCION_MAIL,
   juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves, ordenarParaLista, rangoDelDia, ordenarCronologico, leerBusqueda, coincideBusquedaMail, textoBuscable } from "@/lib/mails/registro"
-import { opcionesDeColumna, filtrarPorColumnas, seleccionConBusqueda, listaPegada, cruzarPegadas, coincideBusqueda as coincideBusquedaColumna } from "@/lib/ui/filtro-columna"
+import { opcionesDeColumna, filtrarPorColumnas, seleccionConBusqueda, listaPegada, cruzarPegadas, restoDePegadas, coincideBusqueda as coincideBusquedaColumna } from "@/lib/ui/filtro-columna"
 import { valorFiltroCuota } from "@/lib/templates/filtro-cuotas"
 import { partesDeRuta, problemaDeRuta, estadoDestino, idDeLinkDrive } from "@/lib/archivo/destinos"
 import { mailsParaArchivar, mailsParaCuota, agruparPorRegla, anioDeMail, vinculosConArchivos, controlArchivado, agruparPorTema, estadoSeleccion } from "@/lib/mails/lotes"
@@ -12165,6 +12165,12 @@ Importe Neto Gravado: $ 7338020,40
         chequear("Filtro por columna", "📋 Interna pegada: exacta (184 no trae otras que contienen 184; 0222 = 222)", "184+222", vI, vI === "184+222", "A-FEAT-1668")
         const vB2 = [coincideBusquedaColumna(ops[0], "32010012326"), coincideBusquedaColumna(ops[0], "0100 1232"), coincideBusquedaColumna(ops[3], "590")].join(" ")
         chequear("Filtro por columna", "🔎 Buscar escribiendo sin espacios encuentra la caravana con espacio", "true true false", vB2, vB2 === "true true false", "A-FEAT-1668")
+        // ⇄ JMS 27/11: «que ponga las caravanas y me seleccione el resto» → el filtro queda con todo MENOS lo pegado
+        const resto = restoDePegadas(ops, encontradas)
+        const selR = seleccionConBusqueda(ops.map(o => o.valor), resto, null)
+        const vR = `${[...(selR ?? [])].join("+")} · control ${resto.length} + ${encontradas.size} = ${ops.length} · nada pegado: ${restoDePegadas(ops, new Set()).length}`
+        chequear("Filtro por columna", "⇄ «Todas menos las pegadas»: el filtro queda con el resto de la columna; resto + pegadas = todas",
+          "184+222 · control 2 + 3 = 5 · nada pegado: 5", vR, vR === "184+222 · control 2 + 3 = 5 · nada pegado: 5", "A-FEAT-1668")
       }
       // 🔽 nota JMS 10/11: la tabla de Cuotas con filtro por columna — fechas por mes, monto es-AR, la CATEG de la cuota manda
       {

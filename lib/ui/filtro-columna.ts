@@ -91,6 +91,14 @@ export function cruzarPegadas(pegadas: string[], opciones: OpcionColumna[]): { e
   return { encontradas, noEncontradas }
 }
 
+/**
+ * Pura (A-FEAT-1668, JMS 27/11: «que ponga las caravanas y me seleccione el resto»): los valores de la columna que NO
+ * están entre los encontrados de lo pegado, en el orden de la lista.
+ */
+export function restoDePegadas(opciones: OpcionColumna[], encontradas: Set<string>): string[] {
+  return opciones.filter(o => !encontradas.has(o.valor)).map(o => o.valor)
+}
+
 /** Pura: si una opción coincide con lo escrito en el buscador — también sin espacios (escribir `32010012326` encuentra `032 010012326…`). */
 export function coincideBusqueda(o: OpcionColumna, q: string): boolean {
   const t = q.trim().toLowerCase()
