@@ -2,6 +2,7 @@
 
 
 import { mesArgentina, hoyArgentina } from "@/lib/fechas"
+import { cargarAperturasReales, type AperturaReal } from "@/lib/ganaderia/rodeo-real"
 import { useMultiCashFlowData, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
 import { calcularArranque, lineaDeSaldo, controlDosFuentes, totalComposicion, fechaDeCaja, yaSeMovio, mesDe, claveMarca, estaEnLaGrilla, esLiquidacionHacienda, type FilaReal, type MarcaPresupuesto } from "@/lib/presupuesto/arranque"
 import { PresupuestoArranque, type ComposicionItem } from "@/components/presupuesto-arranque"
@@ -850,7 +851,9 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     const desglose: Record<string, Record<string, { nombre: string; montos: Record<string, number>; insumos: Record<string, Ins>; tramos: { id: string; actividad: string; desde: string; hasta: string }[] }>> = {}
     // 🐮 A-FEAT-1665 — al pie comen TODOS los terneros del ciclo: las hembras que se retienen para reposición no tienen lote propio
     // hasta el destete, así que en los períodos ANTERIORES al destete se suman al lote de hembras al pie (JMS 26/11).
-    const retenidasDe = new Map(calcularLineaTiempo(((ciclos || []) as any[])).map(c => [String((c.ciclo as any).id), Number(c.retenidas) || 0]))
+    // 🐄 A-FEAT-1672 — los ciclos con el servicio ya ocurrido toman los vientres del stock de hacienda a esa fecha
+    const realesRodeo = await cargarAperturasReales(supabase, (ciclos || []) as any[], hoyArgentina())
+    const retenidasDe = new Map(calcularLineaTiempo(((ciclos || []) as any[]), realesRodeo).map(c => [String((c.ciclo as any).id), Number(c.retenidas) || 0]))
     const extraAlPie = (l: LoteStock) => /ternera.*al pie/i.test(String(l.categoria)) && (l as any).ciclo_id ? (retenidasDe.get(String((l as any).ciclo_id)) || 0) : 0
     const sinPlanAcc: typeof sinPlan = []
     /** 🌽 Lo que come cada renglón de ración que sabe de qué insumo del stock sale (script 314): para netear el stock. */
@@ -963,7 +966,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     const campanas = Array.from(new Set(claves.map(campanaDeMes)))
     const desdeMes = mesArgentina()
     const tcPorMes = tcPorMesConArrastre(((tc || []) as any[]).map(r => ({ anio: Number(r.anio), mes: Number(r.mes), valor: Number(r.tc_real ?? r.tc_presupuestado) || null })), claves)
-    const linea = calcularLineaTiempo(((ciclos || []) as any[]))
+    const linea = calcularLineaTiempo(((ciclos || []) as any[]), realesRodeo)
     const nombreCentro = new Map(((centros || []) as any[]).map(c => [String(c.id), String(c.nombre)]))
     const hasDe: Record<string, number> = {}   // `${claveActividad}|${campana}`
     for (const a of ((asig || []) as any[])) {
@@ -1677,7 +1680,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       }))
 
     // Destetes que todavía no ocurrieron: los pasados ya están en la pesada
-    const linea = calcularLineaTiempo((ciclos || []) as CicloStock[])
+    const linea = calcularLineaTiempo((ciclos || []) as CicloStock[], await cargarAperturasReales(supabase, (ciclos || []) as any[], hoyArgentina()))
     const existenciasCiclos = existenciasDeCiclos(
       linea.map(c => ({
         id: c.ciclo.id,

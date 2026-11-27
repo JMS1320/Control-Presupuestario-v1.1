@@ -24,6 +24,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, Scale, AlertTriangle, ChevronDown, ChevronRight, Pencil } from "lucide-react"
 import { calcularLineaTiempo } from "@/lib/ganaderia/ciclo"
+import { cargarAperturasReales, type AperturaReal } from "@/lib/ganaderia/rodeo-real"
+import { hoyArgentina } from "@/lib/fechas"
 import { EditorCostoActividad, type CostoEditable } from "@/components/editor-costo-actividad"
 import {
   calcularMargen, pctGastoVentaPorDefecto, claveActividad, resolverCostoDirecto, claveMes,
@@ -365,7 +367,7 @@ export function PanelMargen({ onCargarPrecio, recargarToken = 0 }: {
       // abre con el cierre de la anterior— y por eso `vacas_apertura` está en NULL de la segunda
       // campaña en adelante. `calcularLineaTiempo()` es la función que lo resuelve, y es la misma
       // que usa Productivo → Evolución del rodeo, así que dan el mismo número.
-      const linea = calcularLineaTiempo(((ciclosFull || []) as any[]))
+      const linea = calcularLineaTiempo(((ciclosFull || []) as any[]), await cargarAperturasReales(supabase, (ciclosFull || []) as any[], hoyArgentina()))
       const cicloCamp = linea.find(c => String(c.ciclo.campania) === campana)
       const cabezasCampana = cicloCamp ? cicloCamp.rodeo : 0
       // Todas las categorías del ciclo, para que cada costo use la suya.

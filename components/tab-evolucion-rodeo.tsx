@@ -8,6 +8,8 @@
 // Modelo: solapa "ciclo ganadero" del Excel. Ver PENDIENTES § CICLO GANADERO.
 
 import { useState, useEffect, useCallback } from "react"
+import { cargarAperturasReales, type AperturaReal } from "@/lib/ganaderia/rodeo-real"
+import { hoyArgentina } from "@/lib/fechas"
 import { supabase } from "@/lib/supabase"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -57,6 +59,7 @@ export function TabEvolucionRodeo() {
   const [modalPropuesta, setModalPropuesta] = useState(false)
   const [aplicando, setAplicando] = useState(false)
 
+  const [reales, setReales] = useState<Record<string, AperturaReal>>({})
   const cargar = useCallback(async () => {
     setCargando(true)
     try {
@@ -70,6 +73,8 @@ export function TabEvolucionRodeo() {
       if (errCria) console.error("Error cargando ciclos_cria:", errCria)
       setCiclos((data || []) as CicloStock[])
       setCria((cc || []) as FilaCicloCria[])
+      // 🐄 A-FEAT-1672 — el servicio que ya ocurrió toma los vientres del stock de hacienda a esa fecha
+      setReales(await cargarAperturasReales(supabase, (data || []) as CicloStock[], hoyArgentina()))
 
       // Hembras marcadas (es_torito en hembra = reposición) por fecha de pesada
       // ✂️ A-BUG-1379: de a tandas.
@@ -91,7 +96,7 @@ export function TabEvolucionRodeo() {
 
   useEffect(() => { cargar() }, [cargar])
 
-  const linea = calcularLineaTiempo(ciclos)
+  const linea = calcularLineaTiempo(ciclos, reales)
 
   const guardar = async (f: any) => {
     const payload = {
@@ -267,13 +272,13 @@ export function TabEvolucionRodeo() {
 
   // Filas de la tabla: concepto + valor por período
   const filas: { label: string; get: (c: CicloCalculado, i: number) => string; clase?: string; sep?: boolean }[] = [
-    { label: "Vacas",                 get: c => n1(c.vacas) },
+    { label: "Vacas",                 get: c => n1(c.vacas) + (c.apertura_real ? `\n✓ real · ${c.apertura_real.fuente}` : c.apertura_manual ? "" : "\nproyectado") },
     // Se ve de dónde vienen: son las retenidas en el destete de la campaña anterior.
     { label: "Vaquillonas de rep.",   get: (c, i) => {
         const prev = linea[i - 1]
         const fd = prev ? fechasCampania(prev.ciclo.campania)?.destete : null
         const origen = fd ? ` (ret. ${Number(fd.slice(5,7))}/${fd.slice(2,4)})` : ""
-        return n1(c.vaquillonas) + origen
+        return n1(c.vaquillonas) + origen + (c.apertura_real ? `\n✓ real (stock al servicio)` : "")
       } },
     { label: "RODEO (a servicio)",    get: (c, i) => {
         const serv = mesAnio(fechasCampania(c.ciclo.campania)?.servicio)
@@ -301,7 +306,10 @@ dest. ${mesAnio(fd)}${esReal ? " ✓" : ""}`
     { label: "Vacas refugo + mortandad", get: c =>
         // El % que importa es sobre el RODEO, no sobre las falladas: es el dato que se
         // lee y se compara. El % sobre falladas es sólo la mecánica del cálculo.
-        `${n1(c.descarte)}  (${pct(c.rodeo > 0 ? c.descarte / c.rodeo : 0)} del rodeo)`,
+        `${n1(c.descarte)}  (${pct(c.rodeo > 0 ? c.descarte / c.rodeo : 0)} del rodeo)`
+        // 🐄 A-FEAT-1672: el descarte REAL, cuando el servicio siguiente ya ocurrió (rodeo − vacas que llegaron)
+        + (c.cierre_real ? (c.cierre_real.difDescarte != null && Math.abs(c.cierre_real.difDescarte) > 0.01
+            ? `\n⚠ real ${n1(c.cierre_real.descarte)} (cargado a mano ${n1(c.descarte)})` : `\n✓ real (${c.cierre_real.fuente})`) : ""),
       clase: "font-medium text-amber-700" },
     { label: "Terneras retenidas",    get: c => {
         const chk = chequeoReposicion(c)
@@ -309,6 +317,9 @@ dest. ${mesAnio(fd)}${esReal ? " ✓" : ""}`
         return `${n1(c.retenidas)}  (${sobreRodeo} del rodeo)`
           + (c.retencion_excede ? " ⚠" : "")
           + (chk ? ` · hoy marcadas ${n1(chk.marcadas)}` : "")
+          // 🐄 A-FEAT-1672: las retenidas REALES (vaquillonas de reposición al servicio siguiente) contra lo cargado
+          + (c.cierre_real ? (c.cierre_real.difRetenidas != null && Math.abs(c.cierre_real.difRetenidas) > 0.01
+              ? `\n⚠ real ${n1(c.cierre_real.retenidas)} (cargado a mano ${n1(c.retenidas)})` : `\n✓ real (${c.cierre_real.fuente})`) : "")
       }, clase: "text-blue-700", sep: true },
     { label: "Toritos retenidos",     get: c => c.toritos > 0 ? n1(c.toritos) : "—", clase: "text-blue-700" },
     { label: "Terneros a venta",      get: c => n1(c.terneros_venta), clase: "font-medium text-emerald-700" },
@@ -396,6 +407,12 @@ ${serv}`
                       <div className="flex items-center justify-end gap-1">
                         {c.ciclo.campania}
                         {c.tiene_reales && <Badge variant="default" className="text-[9px] px-1">real</Badge>}
+                        {c.apertura_real && (
+                          <span className="rounded bg-emerald-100 px-1 text-[9px] font-normal text-emerald-800"
+                            title={`Vacas y vaquillonas a servicio tomadas del ${c.apertura_real.fuente} (el servicio ya ocurrió): reemplazan a la proyección.`}>
+                            vientres reales
+                          </span>
+                        )}
                         {c.apertura_manual && !c.tiene_reales && (
                           <span title="Apertura cargada a mano (no hereda del período anterior)">
                             <RotateCcw className="h-3 w-3 text-blue-500" />

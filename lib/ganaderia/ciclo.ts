@@ -1,4 +1,5 @@
 import { categoriaPrecio, resolverPrecioHacienda, type PrecioHacienda } from './calculo'
+import type { AperturaReal } from './rodeo-real'
 
 // Motor del CICLO GANADERO — evolución proyectada del rodeo (línea de tiempo).
 // Modelo: solapa "ciclo ganadero" de `exports_app/- Desarrollo Presuesto..xlsx`.
@@ -27,6 +28,7 @@ import { categoriaPrecio, resolverPrecioHacienda, type PrecioHacienda } from './
 // cambio, encadena limpio: rodeo(N+1) = rodeo(N) − refugo(N) + retenidas(N).
 
 /** Meses del ciclo. Si alguna vez se corren, se cambian acá y no en 20 lugares. */
+
 export const MES_SERVICIO = 10
 export const MES_PARICION = 7
 export const MES_DESTETE  = 3
@@ -138,6 +140,17 @@ export interface CicloCalculado {
   tiene_reales: boolean
   /** true si la apertura la escribió el usuario en vez de heredarla. */
   apertura_manual: boolean
+  /**
+   * 🐄 A-FEAT-1672 — la apertura salió del STOCK REAL de hacienda a la fecha del servicio (el servicio ya ocurrió). NULL = proyectada
+   * (heredada del ciclo anterior) o cargada a mano.
+   */
+  apertura_real?: AperturaReal | null
+  /**
+   * 🐄 A-FEAT-1672 paso 2 — el CIERRE REAL de este ciclo, cuando el servicio SIGUIENTE ya ocurrió: lo que de verdad salió del rodeo
+   * (descarte = rodeo − vacas que llegaron al servicio siguiente: incluye ventas de CUT y muertes) y las vaquillonas que de verdad
+   * quedaron de reposición. Si el ciclo tenía el dato cargado a mano, manda lo de a mano y acá queda la diferencia a la vista.
+   */
+  cierre_real?: { descarte: number; retenidas: number; fuente: string; difDescarte: number | null; difRetenidas: number | null } | null
 }
 
 /**
@@ -270,25 +283,53 @@ export function ordenarPorCampania(a: CicloStock, b: CicloStock): number {
  * se destetan durante el período N son el producto del servicio del período N−1. Por eso
  * `calcularCiclo` recibe `rodeoPrev` como base del destete y de las falladas.
  */
-export function calcularLineaTiempo(ciclos: CicloStock[]): CicloCalculado[] {
+export function calcularLineaTiempo(ciclos: CicloStock[], reales?: Record<string, AperturaReal> | null): CicloCalculado[] {
   const ordenados = [...ciclos].sort(ordenarPorCampania)
   const out: CicloCalculado[] = []
 
   for (let i = 0; i < ordenados.length; i++) {
     const prev = out[i - 1]
+    const c = ordenados[i]!
 
-    const apertura = prev
+    // 🐄 A-FEAT-1672: si el servicio ya ocurrió, lo REAL (stock de hacienda a esa fecha) reemplaza a la proyección.
+    // Lo cargado a mano en el ciclo sigue mandando (calcularCiclo lo prefiere).
+    const real = reales?.[String(c.campania)] ?? null
+    const manual = c.vacas_apertura != null || c.vaquillonas_apertura != null
+    const apertura = real && !manual
+      ? { vacas: real.vacas, vaquillonas: real.vaquillonas }
+      : prev
       ? {
           vacas: Math.max(0, prev.vacas + prev.vaquillonas - prev.descarte),
           vaquillonas: prev.retenidas,
         }
       : undefined
 
-    const calc = calcularCiclo(ordenados[i]!, apertura, prev?.rodeo)
+    const calc = calcularCiclo(c, apertura, prev?.rodeo)
+    calc.apertura_real = real && !manual ? real : null
 
     // El cierre es literalmente la apertura del siguiente.
     calc.vacas_cierre = Math.max(0, calc.vacas + calc.vaquillonas - calc.descarte)
     calc.vaquillonas_cierre = calc.retenidas
+
+    // 🐄 Paso 2: este ciclo ya cerró si el servicio SIGUIENTE ocurrió (tiene apertura real) → su descarte y sus retenidas reales.
+    if (prev && real && !manual) {
+      const p = prev
+      const descReal = Math.max(0, p.rodeo - real.vacas)
+      const retReal = real.vaquillonas
+      p.cierre_real = {
+        descarte: descReal, retenidas: retReal, fuente: real.fuente,
+        difDescarte: p.ciclo.real_descarte != null ? Number(p.ciclo.real_descarte) - descReal : null,
+        difRetenidas: p.ciclo.real_retenidas != null ? Number(p.ciclo.real_retenidas) - retReal : null,
+      }
+      // Lo real reemplaza a la proyección donde no hay dato a mano (el de a mano manda y se muestra la diferencia)
+      if (p.ciclo.real_descarte == null) p.descarte = descReal
+      if (p.ciclo.real_retenidas == null) {
+        p.retenidas = retReal
+        p.terneras_venta = Math.max(0, p.terneras - retReal)
+      }
+      p.vacas_cierre = real.vacas
+      p.vaquillonas_cierre = real.vaquillonas
+    }
 
     out.push(calc)
   }

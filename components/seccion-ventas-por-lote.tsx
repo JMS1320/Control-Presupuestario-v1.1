@@ -1,7 +1,8 @@
 "use client"
 
 
-import { mesArgentina } from "@/lib/fechas"
+import { mesArgentina, hoyArgentina } from "@/lib/fechas"
+import { cargarAperturasReales, type AperturaReal } from "@/lib/ganaderia/rodeo-real"
 // VENTAS → Ganadería · las ventas de hacienda, **separadas por actividad**.
 //
 // ── Por qué existe ───────────────────────────────────────────────────────────
@@ -313,7 +314,7 @@ export function SeccionVentasPorLote() {
       // ── El desglose del destete, campaña por campaña ──────────────────────
       // `calcularLineaTiempo()` es la MISMA que usa Evolución del rodeo y el margen: el rodeo
       // rueda año a año y cada campaña abre con el cierre de la anterior.
-      const linea = calcularLineaTiempo(((ciclosCria || []) as any[]))
+      const linea = calcularLineaTiempo(((ciclosCria || []) as any[]), await cargarAperturasReales(supabase, (ciclosCria || []) as any[], hoyArgentina()))
       setDesgloses(linea.map(c => {
         const camp = String(c.ciclo.campania)
         const presupuestado = filas

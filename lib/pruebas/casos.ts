@@ -338,6 +338,8 @@ import { esDeLaEmpresa, empresasDeContratos, tipoEnPresupuesto, bloquesDeEmpresa
 import { esCuentaDeInsumos, esFacturaDeInsumos, fileIdDeDrive } from "@/lib/facturas-detalle/insumos"
 import { proponerPorRenglon, factorUnidad, notaDelVinculo, insumoPorNombre } from "@/lib/productivo/vinculo-renglon"
 import { stockAlInicio, netearStock, consumoEntre } from "@/lib/presupuesto/stock-presupuesto"
+import { aperturasReales, stockHaciendaAl, vientresDelStock } from "@/lib/ganaderia/rodeo-real"
+import { calcularLineaTiempo as lineaRodeoReal } from "@/lib/ganaderia/ciclo"
 import { costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, aplicarPlanRacion, aplicarPlanLote, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
 import { planCancelacionNC, esNotaCreditoArca, paresCreditoNC, sumarAlDetalle } from "@/lib/pagos/cancelacion-nc"
@@ -9278,6 +9280,35 @@ Importe Neto Gravado: $ 7338020,40
       const eF = "3 períodos · sep 5301 · oct 27511 · nov 27300"
       chequear("Presupuesto", "📅 Cambios de ración en el plan del lote: varios períodos del mismo renglón, cada uno con su cantidad, y el stock lo siente así",
         eF, vF, vF === eF, "A-FEAT-1670")
+    }
+    // 🐄 A-FEAT-1672: el servicio que YA ocurrió toma los vientres del stock de hacienda a esa fecha; el futuro proyecta desde ese real; lo manual manda
+    {
+      const mv = (fecha: string, categoria: string, tipo: string, cantidad: number) => ({ fecha, categoria, tipo, cantidad })
+      const movs = [
+        mv("2025-06-30", "Vaca", "ajuste_stock", 150), mv("2025-06-30", "Vaquillona de Reposicion", "ajuste_stock", 28),
+        mv("2025-07-31", "Vaca", "cambio_categoria", 45), mv("2026-09-30", "Vaca", "cambio_categoria", 25), mv("2026-09-30", "Vaca", "cambio_categoria", -6),
+        mv("2026-09-30", "Vaca CUT/Descarte", "cambio_categoria", 6), mv("2025-12-31", "Vaca", "mortandad", 3), mv("2026-08-09", "Vaca", "mortandad", 1),
+        mv("2026-09-02", "Vaca", "cambio_categoria", -4), mv("2026-01-26", "Vaca", "cambio_categoria", -4), mv("2026-02-18", "Vaca", "cambio_categoria", -7),
+        mv("2026-03-29", "Vaca", "cambio_categoria", -4), mv("2025-12-31", "Vaquillona de Reposicion", "cambio_categoria", -28),
+        mv("2026-10-01", "Vaquillona de Reposicion", "cambio_categoria", 74), mv("2026-11-01", "Vaca", "venta", 10),
+      ]
+      const v = vientresDelStock(stockHaciendaAl(movs, "2026-10-01"))
+      const base: any = { empresa: "MSA", orden: 0, fecha_destete: null, pct_destete: 0.85, pct_machos: 0.5, pct_descarte_falladas: 0.8, pct_reposicion: 0.25,
+        peso_destete_kg: 197, peso_destete_macho_kg: null, peso_destete_hembra_kg: null, peso_descarte_kg: 450, toritos_retenidos: 0,
+        real_destetados: null, real_machos: null, real_hembras: null, real_descarte: null, real_retenidas: null, notas: null, id: "" }
+      const ciclos = [
+        { ...base, id: "a", campania: "25/26", fecha_servicio: "2025-10-01", vacas_apertura: 192, vaquillonas_apertura: 28, real_retenidas: 60 },
+        { ...base, id: "b", campania: "26/27", fecha_servicio: null, vacas_apertura: null, vaquillonas_apertura: null },
+        { ...base, id: "c", campania: "27/28", fecha_servicio: null, vacas_apertura: null, vaquillonas_apertura: null },
+      ]
+      const reales = aperturasReales(ciclos, movs, "2026-11-27")
+      const l = lineaRodeoReal(ciclos, reales)
+      const sinReal = lineaRodeoReal(ciclos)
+      const c26 = l.find(c => c.ciclo.campania === "26/27")!, c27 = l.find(c => c.ciclo.campania === "27/28")!, c25 = l.find(c => c.ciclo.campania === "25/26")!
+      const vR = `stock 01/10/26: ${v.vacas}+${v.vaquillonas} · 26/27 ${c26.vacas}+${c26.vaquillonas}=${c26.rodeo} (${c26.apertura_real ? "real" : "proyectado"}) · sin real ${sinReal.find(c => c.ciclo.campania === "26/27")!.rodeo} · 27/28 ${c27.apertura_real ? "real" : "proyectado"} · 25/26 ${c25.rodeo} ${c25.apertura_manual ? "a mano" : ""} · reales ${Object.keys(reales).join(",")} · cierre 25/26: descarte ${c25.cierre_real?.descarte} (usado ${c25.descarte}) · retenidas ${c25.cierre_real?.retenidas} (a mano ${c25.retenidas}, dif ${c25.cierre_real?.difRetenidas})`
+      const eR = "stock 01/10/26: 191+74 · 26/27 191+74=265 (real) · sin real 280 · 27/28 proyectado · 25/26 220 a mano · reales 25/26,26/27 · cierre 25/26: descarte 29 (usado 29) · retenidas 74 (a mano 60, dif -14)"
+      chequear("Productivo", "🐄 El rodeo real reemplaza a la proyección: el servicio del 01/10/26 ya ocurrió → 191 vacas + 74 vaquillonas del stock (no los 200 + 60 proyectados); 27/28 sigue proyectado; lo cargado a mano manda; el ciclo 25/26 cierra con su descarte real (220 − 191 = 29) y las retenidas reales (74) a la vista contra las 60 cargadas a mano",
+        eR, vR, vR === eR, "A-FEAT-1672")
     }
     // 🥣 Dietas (script 305): sin dieta = va en todas; con dieta = sólo en la suya; la elegida manda (si no, la de default)
     const insD = [{ c: "Maíz", dieta: "Maíz y concentrado" }, { c: "Conc", dieta: "Maíz y concentrado" }, { c: "Maíz", dieta: "Con silo" }, { c: "Silo", dieta: "Con silo" }, { c: "Sal", dieta: null }]
