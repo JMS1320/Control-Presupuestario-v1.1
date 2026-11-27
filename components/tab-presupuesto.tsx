@@ -18,7 +18,7 @@ import { piezasDeLote, cortesDeVenta, cortarTramoPorVentas, type VentaParcial } 
 import { PresupuestoPlanRacion, type DatosPlanRacion, type RacionReceta, type RacionPlanFila } from "@/components/presupuesto-plan-racion"
 import { claveActividad } from "@/lib/presupuesto/margen"
 import { guardarMetodoTemplate, quitarMetodoTemplate, guardarConfigCuenta } from "@/lib/presupuesto/guardar-config"
-import { useState, useEffect, useMemo, Fragment } from "react"
+import { useState, useEffect, useMemo, useRef, Fragment } from "react"
 import { supabase } from "@/lib/supabase"
 import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -637,7 +637,14 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     cargarDatos() // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recargarToken, empresaP])
 
+  /**
+   * 🔁 A-FEAT-1677 B12 — cada carga lleva su número. Si una carga VIEJA (p. ej. la de MSA, cuando ya se pidió MA) termina DESPUÉS de la nueva,
+   * pisó la pantalla con datos de la otra empresa: se vuelve a cargar lo vigente. Si la nueva todavía no terminó, ella pisa al final.
+   */
+  const cargaSeq = useRef(0), cargaTerminada = useRef(0)
+  const cargaVigente = useRef<() => Promise<void>>(async () => {})
   const cargarDatos = async () => {
+    const mia = ++cargaSeq.current
     setCargando(true)
     try {
       // `cargarGanaderia` (tabla presupuesto_ganaderia) quedó OBSOLETA: la reemplazan la
@@ -655,9 +662,11 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         cargarInversiones(),
       ])
     } finally {
-      setCargando(false)
+      if (mia === cargaSeq.current) { cargaTerminada.current = mia; setCargando(false) }
+      else if (cargaTerminada.current === cargaSeq.current) void cargaVigente.current()   // la vigente ya terminó y esta vieja la pisó
     }
   }
+  cargaVigente.current = cargarDatos
 
   const cargarIpc = async (): Promise<PuntoSerie[]> => {
     const { data } = await supabase.from("indices_ipc").select("anio, mes, valor_ipc")
