@@ -120,6 +120,24 @@ forma de trabajo permanente que tenemos»**.*
 - Es la pieza 1 de arriba (el disparador) mirada al revés: además de aprovechar lo que llega solo, **dejar rastro de lo que se hace** para
   que la próxima vez llegue solo. → [A-AUTO-11](PENDIENTES.md#a-auto-11) (el calendario de procesos).
 
+#### ⏸️ Antes de diseñar: ¿en qué MOMENTO del flujo de trabajo pasa esto? (REGLA)
+*JMS 2026-11-26, sobre vincular la compra de maíz con su factura: **«esto te lo voy a remarcar siempre para que esté en nuestro norte… cuando
+pensemos cómo desarrollar, hay que frenar un momento y pensar cuál es el momento de trabajo dentro del flujo de trabajo óptimo»** · y sobre
+marcar qué proveedores son de insumos: **«no tengo tiempo para ponerme a hacer una lista ahora. Tiene que ser dentro del flujo de trabajo»**.*
+
+> **Cada pieza se diseña sobre el momento en que la persona YA está haciendo ese trabajo: ahí se carga, ahí se confirma, ahí se revisa.
+> Nunca una lista o una configuración aparte que hay que acordarse de mantener.**
+
+- Se pregunta primero: **¿quién está haciendo qué, y cuándo, cuando este dato aparece?** (JMS compra → registra la compra; llega la factura
+  → él la paga → ahí la vincula o revisa lo vinculado). El desarrollo se engancha a ese momento.
+- **La configuración se aprende del uso**: un proveedor «de insumos» es el que ya tiene una compra registrada, no uno que alguien tildó en un
+  maestro. Si hace falta una marca, se pone en el mismo gesto de trabajo (al vincular, al registrar), no en otra pantalla.
+- **Lo que la app hace sola se VE**: un vínculo automático aparece marcado («🔗 vinculado solo — revisá») en el lugar donde la persona va a
+  pasar igual (la factura que va a pagar), para que lo controle sin buscarlo.
+
+*Motivo: una automatización que exige una lista previa o un paso fuera del flujo no se usa — el dato vuelve a entrar tarde o nunca (caso:
+la compra de maíz de Longo del 06/10 y dos de concentrado de septiembre, facturadas y pagadas, nunca entraron al stock).*
+
 #### 🔑 La quinta pieza: el PERMISO — automatizar también es poder delegar
 Automatizar no es sólo *que el sistema haga más*: también es **que la tarea pueda pasar a otra
 persona**. Y eso lo bloquea algo que no se ve en el diseño: **quién tiene acceso**.
