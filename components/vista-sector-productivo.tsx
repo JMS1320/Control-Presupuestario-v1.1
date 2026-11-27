@@ -3,6 +3,8 @@
 
 import { ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
 import { sexoACorregir } from "@/lib/productivo/grupos-terneros"
+import { CATS_PLANILLA, CATS_TERNEROS, totalVientres as calcVientres } from "@/lib/productivo/planilla-hacienda"
+import { precioDeVenta, controlCaravanas, type ModoPrecio } from "@/lib/ganaderia/venta-movimiento"
 import { cabezasHoy } from "@/lib/productivo/cabezas-hoy"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { toggleChip, esSoloEste, tituloChip } from "@/lib/ui/chips"
@@ -1166,6 +1168,10 @@ function TabHacienda() {
   const [detalleCUT, setDetalleCUT] = useState<{ rodeo: string, vacias: number, vaciasTotales: number, fecha: string, caravanas: string[], tipo_origen: 'tacto' | 'cambio_categoria' }[] | null>(null)
   const [cargandoCUT, setCargandoCUT] = useState(false)
   const [caravanasActivasCUT, setCaravanasActivasCUT] = useState<{ id: string, caravana: string }[]>([])
+  /** 🐄 A-FEAT-1671: precio de la venta por kg o por cabeza, y filtro de la lista de caravanas. */
+  const [modoPrecioVenta, setModoPrecioVenta] = useState<ModoPrecio>('kg')
+  const [precioCabezaVenta, setPrecioCabezaVenta] = useState('')
+  const [buscarCaravanaVenta, setBuscarCaravanaVenta] = useState('')
   const [caravanasSeleccionadas, setCaravanasSeleccionadas] = useState<string[]>([])
   // Mortandad terneros — selector caravanas múltiples
   const [ternerosParaBaja, setTernerosParaBaja] = useState<{ id: string, caravana_interna: string | null, caravana_oficial: string | null, sexo: string | null, pelo: string | null }[]>([])
@@ -1283,12 +1289,15 @@ function TabHacienda() {
   }
 
   const cargarCaravanasParaBaja = async (categoriaId: string) => {
-    const cat = categorias.find(c => c.id === categoriaId)
-    const esCUT = cat?.nombre.toLowerCase().includes('cut') || cat?.nombre.toLowerCase().includes('descarte')
-    if (!esCUT) { setCaravanasActivasCUT([]); setCaravanasSeleccionadas([]); return }
+    // 🐄 A-FEAT-1671 (JMS 27/11): las caravanas se piden en el mismo paso para TODA categoría con animales identificados
+    // (hasta el 27/11 sólo la CUT; el resto se adjudicaba después con «💰 venta → Completar venta»).
+    setBuscarCaravanaVenta('')
     const { data } = await supabase.schema('productivo').from('terneros')
-      .select('id, caravana_oficial, pelo').eq('categoria_id', categoriaId).eq('activo', true).order('caravana_oficial')
-    setCaravanasActivasCUT((data || []).filter(d => d.caravana_oficial).map(d => ({ id: d.id, caravana: `${d.caravana_oficial}${d.pelo ? ' - ' + d.pelo : ''}` })))
+      .select('id, caravana_oficial, caravana_interna, pelo').eq('categoria_id', categoriaId).eq('activo', true).order('caravana_oficial')
+    setCaravanasActivasCUT((data || []).filter(d => d.caravana_oficial || d.caravana_interna).map(d => ({
+      id: d.id,
+      caravana: [d.caravana_interna ? `#${d.caravana_interna}` : null, d.caravana_oficial, d.pelo].filter(Boolean).join(' · '),
+    })))
     setCaravanasSeleccionadas([])
   }
 
@@ -1417,6 +1426,7 @@ function TabHacienda() {
     setFilasAnimales([])   // que la próxima carga no arrastre los animales de la anterior
     setCaravanasActivasCUT([])
     setCaravanasSeleccionadas([])
+    setModoPrecioVenta('kg'); setPrecioCabezaVenta(''); setBuscarCaravanaVenta('')
     setTernerosParaBaja([])
     setTernerosSeleccionadosBaja(new Set())
     setMotivoBajaTernero('')
@@ -1613,6 +1623,19 @@ function TabHacienda() {
     if (nuevoMov.peso_total_kg) datos.peso_total_kg = parseNum(nuevoMov.peso_total_kg)
     if (nuevoMov.precio_por_kg) datos.precio_por_kg = parseNum(nuevoMov.precio_por_kg)
     if (nuevoMov.monto_total) datos.monto_total = parseNum(nuevoMov.monto_total)
+    // 🐄 A-FEAT-1671: venta con precio POR CABEZA → importe = precio × cabezas, sin $/kg inventado
+    let notaPrecio: string | null = null
+    if (nuevoMov.tipo === 'venta' && modoPrecioVenta === 'cabeza') {
+      const pv = precioDeVenta({ modo: 'cabeza', cabezas: N, precioCabeza: precioCabezaVenta, montoEscrito: nuevoMov.monto_total })
+      delete datos.precio_por_kg
+      if (pv.monto != null) datos.monto_total = pv.monto
+      notaPrecio = pv.nota
+    }
+    // 🐄 A-FEAT-1671: el control caravanas = cabezas (avisa, no frena)
+    if (nuevoMov.tipo === 'venta' && caravanasActivasCUT.length > 0 && caravanasSeleccionadas.length !== N) {
+      const c = controlCaravanas(caravanasSeleccionadas.length, N)
+      if (!confirm(`Venta de ${N} cabezas: ${c.texto}.\n\nLas que no tildes siguen activas en el rodeo (después se pueden adjudicar con «💰 venta»). ¿Guardar igual?`)) return
+    }
     if (nuevoMov.campo_origen) datos.campo_origen = nuevoMov.campo_origen
     if (nuevoMov.campo_destino) datos.campo_destino = nuevoMov.campo_destino
     if (nuevoMov.proveedor_cliente) datos.proveedor_cliente = nuevoMov.proveedor_cliente
@@ -1649,7 +1672,7 @@ function TabHacienda() {
           monto_neto: datos.monto_total ?? null,
           cliente_nombre: nuevoMov.proveedor_cliente || null,
           cliente_cuit: nuevoMov.cuit || null,
-          notas: ['Creada desde Productivo → Movimientos de hacienda.', nuevoMov.observaciones]
+          notas: ['Creada desde Productivo → Movimientos de hacienda.', notaPrecio, nuevoMov.observaciones]
             .filter(Boolean).join(' — '),
         })
         .select('id').single()
@@ -1680,11 +1703,12 @@ function TabHacienda() {
       return
     }
 
-    // Si es venta desde CUT y hay caravanas seleccionadas → marcar como baja en terneros
+    // Venta con caravanas tildadas → vendidas y colgadas de SU venta (igual que «Completar venta»), cualquier categoría
     if (nuevoMov.tipo === 'venta' && caravanasSeleccionadas.length > 0) {
-      await supabase.schema('productivo').from('terneros')
-        .update({ activo: false, fecha_baja: nuevoMov.fecha, motivo_baja: 'Vendido' })
+      const { error: eCar } = await supabase.schema('productivo').from('terneros')
+        .update({ activo: false, fecha_baja: nuevoMov.fecha, motivo_baja: 'Vendido', stock_venta_id: ventaCreadaId })
         .in('id', caravanasSeleccionadas)
+      if (eCar) toast.error('La venta se registró, pero las caravanas no quedaron vendidas: ' + eCar.message + ' — adjudicalas con «💰 venta».')
     }
 
     // Si es mortandad de ternero y se seleccionaron caravanas → marcar terneros como inactivos
@@ -1753,22 +1777,7 @@ function TabHacienda() {
   } | null>(null)
   const [cargandoPreview, setCargandoPreview] = useState(false)
 
-  const CATS_PLANILLA = [
-    { db: 'Vaca', label: 'Vaca', grupo: 'cria' },
-    { db: 'Vaquillona Preñada', label: 'Vaq. Preñada', grupo: 'cria' },
-    { db: 'Vaca CUT/Descarte', label: 'CUT/Descarte', grupo: 'cria' },
-    { db: 'Toro', label: 'Toro', grupo: 'cria' },
-    { db: 'Ternero Recria', label: 'Ternero', grupo: 'recria' },
-    { db: 'Ternera Recria', label: 'Ternera', grupo: 'recria' },
-    { db: 'Torito', label: 'Torito', grupo: 'recria' },
-    { db: 'Vaquillona de Reposicion', label: 'Vaq. Reposición', grupo: 'recria' },
-    { db: 'Novillo', label: 'Novillo', grupo: 'recria' },
-    { db: 'Vaquillona Engorde', label: 'Vaq. Engorde', grupo: 'recria' },
-  ]
-  const CATS_TERNEROS = [
-    { db: 'Ternero al Pie', label: 'Ternero al Pie', grupo: 'terneros' },
-    { db: 'Ternera al Pie', label: 'Ternera al Pie', grupo: 'terneros' },
-  ]
+  // 🐄 columnas de la planilla y Total Vientres: lib/productivo/planilla-hacienda.ts (27/11: Vaq. Reposición en CRÍA)
 
   // Helper: resolver rango de fechas desde estado del modal
   const resolverRangoFechas = () => {
@@ -2030,8 +2039,8 @@ function TabHacienda() {
       highlight: r.highlight,
     }))
 
-    const idxVaca = 0, idxVaq = 1
-    const totalVientres = existenciaFinal[idxVaca] + existenciaFinal[idxVaq]
+    const vientres = calcVientres(existenciaFinal)
+    const totalVientres = vientres.total
 
     return {
       headers, builtRows, cutData, cut, totalVientres, esApertura,
@@ -2056,7 +2065,7 @@ function TabHacienda() {
         gruposCria: nCria,
         gruposRecria: nRecria,
         rows: datos.builtRows,
-        totalVientres: `Vaca (${fmtNum(datos.existenciaFinal[0])}) + Vaq. Preñada (${fmtNum(datos.existenciaFinal[1])}) = ${fmtNum(datos.totalVientres)}`,
+        totalVientres: calcVientres(datos.existenciaFinal).texto,
         cutData: datos.cutData,
         cut: datos.cut,
       })
@@ -2108,7 +2117,7 @@ function TabHacienda() {
       builtRows.forEach(r => aoa.push(r.vals))
 
       aoa.push([])
-      aoa.push(['', 'Total Vientres', `Vaca + Vaquillona = ${totalVientres}`])
+      aoa.push(['', 'Total Vientres', calcVientres(existenciaFinal).texto])
 
       const ws = XLSX.utils.aoa_to_sheet(aoa)
       ws['!cols'] = [
@@ -2385,7 +2394,7 @@ function TabHacienda() {
       doc.setFontSize(9)
       doc.setTextColor(...sepia)
       doc.setFont('helvetica', 'bold')
-      doc.text(`Total Vientres: Vaca (${fmtNum(existenciaFinal[0])}) + Vaq. Preñada (${fmtNum(existenciaFinal[1])}) = ${fmtNum(totalVientres)}`, 15, finalY + 7)
+      doc.text(`Total Vientres: ${calcVientres(existenciaFinal).texto}`, 15, finalY + 7)
 
       // ═══ PÁGINA 2: DETALLE MOVIMIENTOS (solo si hay) ═══
       // Sanitizar texto para jsPDF (caracteres Unicode no soportados por helvetica)
@@ -3370,13 +3379,37 @@ function TabHacienda() {
                     <Input type="text" placeholder="0,00" value={nuevoMov.peso_total_kg} onChange={e => setNuevoMov(p => ({ ...p, peso_total_kg: e.target.value }))} />
                   </div>
                   <div>
-                    <Label>Precio por kg</Label>
-                    <Input type="text" placeholder="0,00" value={nuevoMov.precio_por_kg} onChange={e => setNuevoMov(p => ({ ...p, precio_por_kg: e.target.value }))} />
+                    {nuevoMov.tipo === 'venta' && (
+                      <div className="mb-1 flex gap-1 text-[11px]">
+                        {(['kg', 'cabeza'] as const).map(m => (
+                          <button key={m} type="button" onClick={() => setModoPrecioVenta(m)}
+                            className={`rounded border px-2 py-0.5 ${modoPrecioVenta === m ? 'border-primary bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>
+                            {m === 'kg' ? '$ por kg' : '$ por cabeza'}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {nuevoMov.tipo === 'venta' && modoPrecioVenta === 'cabeza' ? (
+                      <>
+                        <Label>Precio por cabeza</Label>
+                        <Input type="text" placeholder="0,00" value={precioCabezaVenta} onChange={e => setPrecioCabezaVenta(e.target.value)} />
+                      </>
+                    ) : (
+                      <>
+                        <Label>Precio por kg</Label>
+                        <Input type="text" placeholder="0,00" value={nuevoMov.precio_por_kg} onChange={e => setNuevoMov(p => ({ ...p, precio_por_kg: e.target.value }))} />
+                      </>
+                    )}
                   </div>
                 </div>
                 <div>
                   <Label>Monto Total</Label>
-                  <Input type="text" placeholder="0,00" value={nuevoMov.monto_total} onChange={e => setNuevoMov(p => ({ ...p, monto_total: e.target.value }))} />
+                  {nuevoMov.tipo === 'venta' && modoPrecioVenta === 'cabeza' ? (() => {
+                    const pv = precioDeVenta({ modo: 'cabeza', cabezas: parseInt(nuevoMov.cantidad) || 0, precioCabeza: precioCabezaVenta })
+                    return <p className="rounded border bg-muted/40 px-2 py-1.5 text-sm">{pv.nota ?? 'Poné la cantidad y el precio por cabeza'}</p>
+                  })() : (
+                    <Input type="text" placeholder="0,00" value={nuevoMov.monto_total} onChange={e => setNuevoMov(p => ({ ...p, monto_total: e.target.value }))} />
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -3416,12 +3449,23 @@ function TabHacienda() {
                   <Input value={nuevoMov.observaciones} onChange={e => setNuevoMov(p => ({ ...p, observaciones: e.target.value }))} />
                 </div>
 
-                {/* Selector de caravanas a dar de baja — solo Venta desde CUT */}
-                {nuevoMov.tipo === 'venta' && caravanasActivasCUT.length > 0 && (
+                {/* 🐄 A-FEAT-1671: las caravanas que salen — toda categoría con animales identificados (antes sólo CUT) */}
+                {nuevoMov.tipo === 'venta' && caravanasActivasCUT.length > 0 && (() => {
+                  const q = buscarCaravanaVenta.trim().toLowerCase()
+                  const visibles = q ? caravanasActivasCUT.filter(c => c.caravana.toLowerCase().includes(q)) : caravanasActivasCUT
+                  const ctl = controlCaravanas(caravanasSeleccionadas.length, parseInt(nuevoMov.cantidad) || 0)
+                  return (
                   <div>
-                    <Label>Caravanas que salen <span className="text-muted-foreground text-xs">({caravanasSeleccionadas.length} seleccionadas)</span></Label>
+                    <Label>Caravanas que salen <span className="text-muted-foreground text-xs">({caravanasSeleccionadas.length} de {caravanasActivasCUT.length} tildadas)</span></Label>
+                    <div className="mt-1 flex items-center gap-1 text-[11px]">
+                      <Input value={buscarCaravanaVenta} onChange={e => setBuscarCaravanaVenta(e.target.value)} placeholder="Buscar caravana…" className="h-7 flex-1 text-xs" />
+                      <button type="button" className="rounded bg-muted px-2 py-1 hover:bg-muted/70"
+                        onClick={() => setCaravanasSeleccionadas(prev => [...new Set([...prev, ...visibles.map(c => c.id)])])}>Todas{q ? ' (las que coinciden)' : ''}</button>
+                      <button type="button" className="rounded bg-muted px-2 py-1 hover:bg-muted/70" onClick={() => setCaravanasSeleccionadas([])}>Ninguna</button>
+                    </div>
+                    <p className={`mt-1 text-xs ${ctl.ok ? 'text-emerald-700' : 'text-amber-700 font-medium'}`}>{ctl.ok ? ctl.texto : `⚠️ ${ctl.texto}`}</p>
                     <div className="border rounded-md p-2 max-h-40 overflow-y-auto space-y-1 mt-1">
-                      {caravanasActivasCUT.map(car => (
+                      {visibles.map(car => (
                         <label key={car.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 px-1 py-0.5 rounded">
                           <input
                             type="checkbox"
@@ -3436,7 +3480,8 @@ function TabHacienda() {
                       ))}
                     </div>
                   </div>
-                )}
+                  )
+                })()}
               </>
             )}
           </div>

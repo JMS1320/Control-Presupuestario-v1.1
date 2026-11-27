@@ -929,6 +929,13 @@ de descarte"*. No hace falta que salgan de un lote.
 1. **Productivo → Hacienda → Ver Movimientos**.
 2. **+ Nuevo Movimiento**, tipo **Venta**. Aparece un aviso verde recordando que se va a crear la
    venta. Cargá lo que tengas; lo que falte se completa después.
+   - **Las caravanas se eligen ahí mismo** *(desde 2026-11-27, cualquier categoría con animales identificados — antes sólo la
+     CUT)*: al elegir la categoría aparece la lista de sus caravanas activas, con buscador y **Todas / Ninguna**. Arriba dice si
+     cierra: **✓ N caravanas = N cabezas**, o **⚠️ faltan / sobran**. Si no coincide, al guardar pregunta antes (las no tildadas
+     siguen en el rodeo y se adjudican después con **💰 venta**).
+   - **Precio por kg o por cabeza**: con **$ por cabeza** ponés el precio de cada animal y el monto es precio × cabezas (para
+     toros o vacas que se venden por cabeza). No se inventa un $/kg.
+   ⚠️ Sin probar todavía → A-TEST-1406
 3. En la grilla, cada venta muestra su estado a la derecha:
    - **⚠ sin venta** (ámbar) — dio de baja animales pero **no entra al circuito comercial**
    - **💰 venta** — ya la tiene

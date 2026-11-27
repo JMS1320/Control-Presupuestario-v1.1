@@ -361,6 +361,8 @@ import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla,
   juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves, ordenarParaLista, rangoDelDia, ordenarCronologico, leerBusqueda, coincideBusquedaMail, textoBuscable } from "@/lib/mails/registro"
 import { pasaGrupos, clickChipGrupo, chipPrendido, sexoDeCategoria, sexoACorregir, hojaDe } from "@/lib/productivo/grupos-terneros"
 import { deOtraCategoria } from "@/lib/ganaderia/confirmar-venta"
+import { precioDeVenta, controlCaravanas } from "@/lib/ganaderia/venta-movimiento"
+import { CATS_PLANILLA as CATS_PLANILLA_HAC, totalVientres as totalVientresPlanilla } from "@/lib/productivo/planilla-hacienda"
 import { opcionesDeColumna, filtrarPorColumnas, seleccionConBusqueda, listaPegada, cruzarPegadas, restoDePegadas, coincideBusqueda as coincideBusquedaColumna } from "@/lib/ui/filtro-columna"
 import { valorFiltroCuota } from "@/lib/templates/filtro-cuotas"
 import { partesDeRuta, problemaDeRuta, estadoDestino, idDeLinkDrive } from "@/lib/archivo/destinos"
@@ -12270,6 +12272,27 @@ Importe Neto Gravado: $ 7338020,40
         const vV = deOtraCategoria(fs, "Ternero Recria").map(f => f.id).join("") + " | sin lote: " + deOtraCategoria(fs, null).length
         chequear("Productivo", "⚠️ Venta: avisa las caravanas de otra categoría que el lote (la hembra y la sin categoría; mayúsculas y tildes no cuentan)",
           "23 | sin lote: 0", vV, vV === "23 | sin lote: 0", "A-FEAT-1669")
+      }
+      // 🐄 JMS 27/11: la Vaq. Reposición va en CRÍA y es vientre (entra al servicio del 1/10); la CUT no
+      {
+        const cria = CATS_PLANILLA_HAC.filter(c => c.grupo === "cria").map(c => c.label).join(",")
+        // Existencia final de septiembre 2026 vista por JMS: Vaca 191 · Vaq. Preñada 0 · CUT 12 · Toro 13 → con las 74 de reposición
+        const fila = CATS_PLANILLA_HAC.map(c => ({ "Vaca": 191, "Vaquillona Preñada": 0, "Vaquillona de Reposicion": 74, "Vaca CUT/Descarte": 12, "Toro": 13 } as Record<string, number>)[c.db] ?? 0)
+        const v = totalVientresPlanilla(fila)
+        const vP = `${cria} | ${v.total} | ${v.texto}`
+        const espP = "Vaca,Vaq. Preñada,Vaq. Reposición,CUT/Descarte,Toro | 265 | Vaca (191) + Vaq. Preñada (0) + Vaq. Reposición (74) = 265"
+        chequear("Productivo", "🐄 Planilla de hacienda: Vaq. Reposición en CRÍA; Total Vientres = Vaca + Vaq. Preñada + Vaq. Reposición (por nombre; la CUT no)",
+          espP, vP, vP === espP, "A-FEAT-1669")
+      }
+      // 🐄 A-FEAT-1671 (JMS 27/11): la venta desde Productivo, por kg o por cabeza, y el control caravanas = cabezas
+      {
+        const c1 = precioDeVenta({ modo: "cabeza", cabezas: 2, precioCabeza: "1.500.000,00", kg: "1.600" })
+        const c2 = precioDeVenta({ modo: "kg", cabezas: 2, precioKg: "2.000", kg: "1.600" })
+        const c3 = precioDeVenta({ modo: "kg", cabezas: 2, precioKg: "2.000", kg: "1.600", montoEscrito: "3.100.000" })
+        const vPV = `${c1.precio_kg}/${c1.monto} · ${c2.precio_kg}/${c2.monto} · ${c3.monto} | ${controlCaravanas(2, 2).ok} ${controlCaravanas(1, 2).texto} · ${controlCaravanas(3, 2).texto}`
+        const espPV = "null/3000000 · 2000/3200000 · 3100000 | true faltan 1 caravana(s): tildaste 1 de 2 cabezas · sobran 1 caravana(s): tildaste 3 para 2 cabezas"
+        chequear("Productivo", "🐄 Venta: por cabeza el importe = precio × cabezas sin $/kg inventado; por kg kg × precio salvo importe escrito; control caravanas = cabezas",
+          espPV, vPV, vPV === espPV, "A-FEAT-1671")
       }
       // 🔽 nota JMS 10/11: la tabla de Cuotas con filtro por columna — fechas por mes, monto es-AR, la CATEG de la cuota manda
       {
