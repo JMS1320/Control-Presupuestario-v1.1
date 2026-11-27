@@ -416,7 +416,7 @@ es un error de la guía y hay que corregirla, no ignorarla.
 >
 > | Paso | Qué es | Requisitos de JMS | Estado | Dado por bueno |
 > |---|---|---|---|---|
-> | 1 | Exportar los libros del sistema y auditarlos libro por libro | «todo es todo»: el libro tiene que traer TODO y cerrar contra la base (CLAUDE.md) · nombres cortos · bloques que suman / no suman | 🟡 **En curso.** ⚠️ **cambió 21/11 — el libro de Templates NO está cerrado**: el hito del 19/11 fue *corregir los errores encontrados*; JMS tiene que volver a recorrerlo y recién ahí lo da por terminado (puntos 29–40 y 44 del dossier A-FEAT-1629). ▶️▶️ **AL RETOMAR EL TRABAJO SOBRE EL CRUDO, PRIMERO (recordárselo a JMS)**: bajar el set de libros de nuevo (en `desarrollo` desde el commit 59eaff55) y verificarlo contra la lista del **punto 43** (Templates igual que el v18; «Socios y Libertad» con AMS, MA y Cotitulares nuevos). **Después**: seguir auditando desde el libro «Templates» con lo que JMS encuentre (solapa «H · MSA · Egresos» ya auditada; siguen «Cuotas», «Por mes», las de cada agrupadora, MA y PAM). Último libro bajado y auditado: `Export Balance App/v18`. | ⏳ sin dar por bueno (19/11 se corrigieron errores; falta su recorrida) |
+> | 1 | Exportar los libros del sistema y auditarlos libro por libro | «todo es todo»: el libro tiene que traer TODO y cerrar contra la base (CLAUDE.md) · nombres cortos · bloques que suman / no suman | 🟡 **En curso.** ⚠️ **cambió 21/11 — el libro de Templates NO está cerrado**: el hito del 19/11 fue *corregir los errores encontrados*; JMS tiene que volver a recorrerlo y recién ahí lo da por terminado (puntos 29–40 y 44 del dossier A-FEAT-1629). ▶️▶️ **AL RETOMAR EL TRABAJO SOBRE EL CRUDO, PRIMERO (recordárselo a JMS)**: bajar el set de libros de nuevo (en `desarrollo` desde el commit 59eaff55) y verificarlo contra la lista del **punto 43** (Templates igual que el v18; «Socios y Libertad» con AMS, MA y Cotitulares nuevos). **Después**: seguir auditando desde el libro «Templates» con lo que JMS encuentre (solapa «H · MSA · Egresos» ya auditada; siguen «Cuotas», «Por mes», las de cada agrupadora, MA y PAM). Último libro bajado y auditado: `Export Balance App/v18`. ✅ **27/11: v19 bajado y comparado — cumple el punto 43** (A-FEAT-1629 punto 45); sigue la recorrida de Templates MSA desde «Cuotas». | ⏳ sin dar por bueno (19/11 se corrigieron errores; falta su recorrida) |
 > | 2 | Auditar | a definir | 🔵 | — |
 > | 3 | Envío al contador | a definir | 🔵 | — |
 > | 4 | Presentación a socios | a definir | 🔵 | — |
@@ -19281,6 +19281,24 @@ JMS las escribió en el mismo archivo del balance presentado (columnas F y G; lo
   **punto 43** (14.1: AMS −8.092.248,73 · MA −45.593.911,03 · Cotitulares −1.756.595,00 · total −90.114.846,86; Templates igual al v18,
   total MSA 91.795.965,69; Sueldos 144.020.113,03). Después, JMS recorre de nuevo el libro de Templates.
 - Ese paso **es el paso 1 del plan nuevo** de [A-FEAT-1632](#a-feat-1632) (el crudo completo): no se reemplaza, se encadena.
+
+**45 · 27/11 — v19 BAJADO Y COMPARADO contra v18 (celda por celda, los 8 libros)**
+
+- Ruta: `Balance/Excels trabajando con claude/Export Balance App/v19/` (zip descomprimido ahí; versión de la app `36496790`).
+- ✅ **Lo esperado del punto 43 se cumple**: 14.1 AMS −8.092.248,73 · MA −45.593.911,03 · Cotitulares −1.756.595,00 · total
+  −90.114.846,86 (PAM +12.401.959,62, JMS −47.074.051,72) · solapa «I · Interno por socio» con los mismos AMS y MA · Templates **MSA sin
+  una celda distinta** del v18 · **Sueldos, Libro Diario y Saldos sin cambios**.
+- 🔎 **Cambios que no estaban en la lista (explicados)**:
+  1. **Templates · MA**: el template «FLIA» (MA, 4 cuotas: +2.001.000 que entró en nov-25 de JMS, −175.000 dic-25 y −150.000 ene-26 a AMS;
+     neto −1.676.000) pasó del bloque «no suma» al de **egresos**. Causa: **script 292** (22/11, camino 3, OK de JMS en la página de MA:
+     FLIA tipo NO → egreso). ⏳ Se mira al llegar a las solapas de MA: un template con neto de entrada dentro de egresos le baja el gasto
+     a MA en 1.676.000.
+  2. **Stocks / Balance en línea**: los kilos al 30/06/26 de terneras (236,5 → 223,2) y terneros (244,8 → 257) cambiaron con el
+     historial de pesadas (camino 4); cabezas iguales (81 y 96). Stock valorizado ≈ +905.319; renglón «Vacas de cría» del balance en línea
+     738.642.404,07 → 739.457.191,17 (+814.787,10). ⏳ Se mira al auditar Stocks: un valor del cierre 25/26 que se mueve por trabajo posterior.
+  3. **04.1 Cheques dados**: 9 → 10 cheques «vigentes» con fecha de débito pasada (pasó el tiempo, no cambió el dato).
+  4. **04.3 Respaldo cuentas a pagar**: se corre todo un renglón por el nuevo «Cotitulares» (las 3.119 celdas distintas son ese corrimiento).
+- ▶️ Sigue: JMS recorre el libro de Templates (MSA) desde «Cuotas».
 
 ## <a id="a-feat-1632"></a>A-FEAT-1632 — Las TRES CAPAS del balance: crudo → desglose → esquema del contador 🧱
 
