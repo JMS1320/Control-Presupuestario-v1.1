@@ -16,15 +16,18 @@
  * 📋 26/11 (A-FEAT-1668): se puede PEGAR UNA LISTA en el buscador (varias celdas de Excel, en vertical): la lista muestra
  * sólo las encontradas, tildadas, y arriba el control «pegaste N · M encontradas · K no están: …». Aceptar filtra.
  * El cruce es sin espacios y, si es número, sin los ceros de adelante (Excel come el 0 de la caravana).
+ * ⇄ 27/11 (JMS: «que ponga las caravanas y me seleccione el resto»): «Todas menos las pegadas» invierte — la lista muestra
+ * el resto, tildado, y Aceptar filtra eso.
  */
 
 import { useMemo, useState } from "react"
 import { Filter } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Input } from "@/components/ui/input"
-import { seleccionConBusqueda, listaPegada, cruzarPegadas, coincideBusqueda, type OpcionColumna } from "@/lib/ui/filtro-columna"
+import { seleccionConBusqueda, listaPegada, cruzarPegadas, coincideBusqueda, restoDePegadas, type OpcionColumna } from "@/lib/ui/filtro-columna"
 
-interface Pegado { total: number; encontradas: Set<string>; noEncontradas: string[] }
+/** `modo` «pegadas» = quedarse con lo pegado · «resto» = con todo MENOS lo pegado (JMS 27/11). */
+interface Pegado { total: number; encontradas: Set<string>; noEncontradas: string[]; modo: "pegadas" | "resto" }
 
 export function FiltroColumna({ titulo, opciones, seleccion, onChange }: {
   titulo: string
@@ -39,7 +42,10 @@ export function FiltroColumna({ titulo, opciones, seleccion, onChange }: {
   /** 📋 Una lista pegada: manda sobre el buscador hasta que se escriba otra cosa o se quite. */
   const [pegado, setPegado] = useState<Pegado | null>(null)
   const visibles = useMemo(() => {
-    if (pegado) return opciones.filter(o => pegado.encontradas.has(o.valor))
+    if (pegado) {
+      if (pegado.modo === "resto") { const r = new Set(restoDePegadas(opciones, pegado.encontradas)); return opciones.filter(o => r.has(o.valor)) }
+      return opciones.filter(o => pegado.encontradas.has(o.valor))
+    }
     const q = busqueda.trim()
     return q ? opciones.filter(o => coincideBusqueda(o, q)) : opciones
   }, [opciones, busqueda, pegado])
@@ -77,7 +83,7 @@ export function FiltroColumna({ titulo, opciones, seleccion, onChange }: {
     const { encontradas, noEncontradas } = cruzarPegadas(lista, opciones)
     setBusqueda("")
     setMarcadasBusqueda(null)
-    setPegado({ total: lista.length, encontradas, noEncontradas })
+    setPegado({ total: lista.length, encontradas, noEncontradas, modo: "pegadas" })
   }
   const elegidos = buscando
     ? visibles.filter(o => !marcadasBusqueda || marcadasBusqueda.has(o.valor)).length
@@ -111,6 +117,16 @@ export function FiltroColumna({ titulo, opciones, seleccion, onChange }: {
               </span>
               <button type="button" className="text-muted-foreground hover:underline" onClick={() => { setPegado(null); setMarcadasBusqueda(null) }}>✕ quitar</button>
             </div>
+            <div className="mt-1.5 flex gap-1">
+              {(["pegadas", "resto"] as const).map(m => (
+                <button key={m} type="button"
+                  className={`rounded border px-2 py-0.5 ${pegado.modo === m ? "border-primary bg-primary text-primary-foreground" : "bg-background hover:bg-muted"}`}
+                  title={m === "pegadas" ? "Filtrar sólo lo que pegaste" : "Filtrar todo lo de esta columna MENOS lo que pegaste"}
+                  onClick={() => { setPegado({ ...pegado, modo: m }); setMarcadasBusqueda(null) }}>
+                  {m === "pegadas" ? `✓ Sólo las pegadas (${pegado.encontradas.size})` : `⇄ Todas menos las pegadas (${opciones.length - pegado.encontradas.size})`}
+                </button>
+              ))}
+            </div>
             {pegado.noEncontradas.length > 0 && (
               <div className="mt-1 max-h-20 overflow-y-auto font-mono text-[10px] text-amber-900" title="Lo pegado que no aparece en esta columna (con los demás filtros puestos)">
                 {pegado.noEncontradas.map(v => <div key={v}>{v}</div>)}
@@ -121,7 +137,7 @@ export function FiltroColumna({ titulo, opciones, seleccion, onChange }: {
         <div className="flex gap-1 border-b p-2 text-[11px]">
           <button type="button" className="rounded bg-muted px-2 py-0.5 hover:bg-muted/70" onClick={() => buscando ? setMarcadasBusqueda(null) : setBorrador(null)}>Todas</button>
           <button type="button" className="rounded bg-muted px-2 py-0.5 hover:bg-muted/70" onClick={() => buscando ? setMarcadasBusqueda(new Set()) : setBorrador(new Set())}>Ninguna</button>
-          {buscando && <span className="self-center text-muted-foreground">{pegado ? "se filtra sólo lo pegado" : "se filtra sólo lo que coincide"}</span>}
+          {buscando && <span className="self-center text-muted-foreground">{pegado ? (pegado.modo === "resto" ? "se filtra todo menos lo pegado" : "se filtra sólo lo pegado") : "se filtra sólo lo que coincide"}</span>}
           <span className="ml-auto self-center text-muted-foreground">{opciones.length} distintos</span>
         </div>
         <div className="max-h-72 overflow-y-auto p-1">
@@ -132,7 +148,7 @@ export function FiltroColumna({ titulo, opciones, seleccion, onChange }: {
               <span className="tabular-nums text-muted-foreground">{o.cuenta}</span>
             </label>
           ))}
-          {visibles.length === 0 && <p className="p-2 text-xs text-muted-foreground">{pegado ? "Nada de lo pegado está en esta columna." : `Nada coincide con «${busqueda}».`}</p>}
+          {visibles.length === 0 && <p className="p-2 text-xs text-muted-foreground">{pegado ? (pegado.modo === "resto" ? "Pegaste todo lo que hay en esta columna: no queda resto." : "Nada de lo pegado está en esta columna.") : `Nada coincide con «${busqueda}».`}</p>}
         </div>
         <div className="flex items-center gap-2 border-t p-2 text-xs">
           <span className="text-muted-foreground">{elegidos} de {buscando ? visibles.length : opciones.length} elegidos</span>
