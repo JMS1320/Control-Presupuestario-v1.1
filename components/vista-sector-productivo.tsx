@@ -4,7 +4,7 @@
 import { ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
 import { sexoACorregir } from "@/lib/productivo/grupos-terneros"
 import { CATS_PLANILLA, CATS_TERNEROS, totalVientres as calcVientres } from "@/lib/productivo/planilla-hacienda"
-import { precioDeVenta, controlCaravanas, type ModoPrecio } from "@/lib/ganaderia/venta-movimiento"
+import { totalRenglones, importeRenglon, controlCaravanas, renglonVacio, type RenglonVenta } from "@/lib/ganaderia/venta-movimiento"
 import { cabezasHoy } from "@/lib/productivo/cabezas-hoy"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { toggleChip, esSoloEste, tituloChip } from "@/lib/ui/chips"
@@ -1169,8 +1169,10 @@ function TabHacienda() {
   const [cargandoCUT, setCargandoCUT] = useState(false)
   const [caravanasActivasCUT, setCaravanasActivasCUT] = useState<{ id: string, caravana: string }[]>([])
   /** 🐄 A-FEAT-1671: precio de la venta por kg o por cabeza, y filtro de la lista de caravanas. */
-  const [modoPrecioVenta, setModoPrecioVenta] = useState<ModoPrecio>('kg')
-  const [precioCabezaVenta, setPrecioCabezaVenta] = useState('')
+  /** Renglones de precio de la venta («2 toros a tanto y 1 a tanto»): cada uno $/kg o $/cabeza. */
+  const [renglonesVenta, setRenglonesVenta] = useState<RenglonVenta[]>([renglonVacio()])
+  /** Cabezas vendidas SIN caravana (descripción opcional) → stock_ventas.animales_sueltos. */
+  const [sinCaravanaVenta, setSinCaravanaVenta] = useState<string[]>([])
   const [buscarCaravanaVenta, setBuscarCaravanaVenta] = useState('')
   const [caravanasSeleccionadas, setCaravanasSeleccionadas] = useState<string[]>([])
   // Mortandad terneros — selector caravanas múltiples
@@ -1426,7 +1428,7 @@ function TabHacienda() {
     setFilasAnimales([])   // que la próxima carga no arrastre los animales de la anterior
     setCaravanasActivasCUT([])
     setCaravanasSeleccionadas([])
-    setModoPrecioVenta('kg'); setPrecioCabezaVenta(''); setBuscarCaravanaVenta('')
+    setRenglonesVenta([renglonVacio()]); setSinCaravanaVenta([]); setBuscarCaravanaVenta('')
     setTernerosParaBaja([])
     setTernerosSeleccionadosBaja(new Set())
     setMotivoBajaTernero('')
@@ -1610,6 +1612,7 @@ function TabHacienda() {
     }
 
     // ── Otros tipos ───────────────────────────────────────────────────────
+    if (nuevoMov.tipo === 'venta') N = totalRenglones(renglonesVenta).cabezas   // 🐄 A-FEAT-1671: las cabezas son la suma de los renglones
     if (!nuevoMov.categoria_id || !N) {
       toast.error('Categoría y cantidad son obligatorios')
       return
@@ -1623,18 +1626,18 @@ function TabHacienda() {
     if (nuevoMov.peso_total_kg) datos.peso_total_kg = parseNum(nuevoMov.peso_total_kg)
     if (nuevoMov.precio_por_kg) datos.precio_por_kg = parseNum(nuevoMov.precio_por_kg)
     if (nuevoMov.monto_total) datos.monto_total = parseNum(nuevoMov.monto_total)
-    // 🐄 A-FEAT-1671: venta con precio POR CABEZA → importe = precio × cabezas, sin $/kg inventado
+    // 🐄 A-FEAT-1671: la venta sale de sus RENGLONES (cabezas, kilos e importe = Σ; $/kg sólo si es uno solo para todos)
     let notaPrecio: string | null = null
-    if (nuevoMov.tipo === 'venta' && modoPrecioVenta === 'cabeza') {
-      const pv = precioDeVenta({ modo: 'cabeza', cabezas: N, precioCabeza: precioCabezaVenta, montoEscrito: nuevoMov.monto_total })
-      delete datos.precio_por_kg
-      if (pv.monto != null) datos.monto_total = pv.monto
-      notaPrecio = pv.nota
-    }
-    // 🐄 A-FEAT-1671: el control caravanas = cabezas (avisa, no frena)
-    if (nuevoMov.tipo === 'venta' && caravanasActivasCUT.length > 0 && caravanasSeleccionadas.length !== N) {
-      const c = controlCaravanas(caravanasSeleccionadas.length, N)
-      if (!confirm(`Venta de ${N} cabezas: ${c.texto}.\n\nLas que no tildes siguen activas en el rodeo (después se pueden adjudicar con «💰 venta»). ¿Guardar igual?`)) return
+    if (nuevoMov.tipo === 'venta') {
+      const tot = totalRenglones(renglonesVenta)
+      delete datos.peso_total_kg; delete datos.precio_por_kg; delete datos.monto_total
+      if (tot.kg != null) datos.peso_total_kg = tot.kg
+      if (tot.precio_kg != null) datos.precio_por_kg = tot.precio_kg
+      if (tot.monto != null) datos.monto_total = tot.monto
+      notaPrecio = tot.nota
+      // el control caravanas + sin caravana = cabezas (avisa, no frena)
+      const c = controlCaravanas(caravanasSeleccionadas.length, N, sinCaravanaVenta.length)
+      if (!c.ok && !confirm(`Venta de ${N} cabezas: ${c.texto}.\n\nLas caravanas que no tildes siguen activas en el rodeo (después se adjudican con «💰 venta»). ¿Guardar igual?`)) return
     }
     if (nuevoMov.campo_origen) datos.campo_origen = nuevoMov.campo_origen
     if (nuevoMov.campo_destino) datos.campo_destino = nuevoMov.campo_destino
@@ -1672,6 +1675,9 @@ function TabHacienda() {
           monto_neto: datos.monto_total ?? null,
           cliente_nombre: nuevoMov.proveedor_cliente || null,
           cliente_cuit: nuevoMov.cuit || null,
+          animales_sueltos: sinCaravanaVenta.length
+            ? sinCaravanaVenta.map(d => ({ descripcion: d.trim() || `${categorias.find(c => c.id === nuevoMov.categoria_id)?.nombre ?? 'Animal'} sin caravana`, kg: null }))
+            : null,
           notas: ['Creada desde Productivo → Movimientos de hacienda.', notaPrecio, nuevoMov.observaciones]
             .filter(Boolean).join(' — '),
         })
@@ -3370,47 +3376,69 @@ function TabHacienda() {
                   </div>
                   <div>
                     <Label>Cantidad *</Label>
-                    <Input type="text" placeholder="0" value={nuevoMov.cantidad} onChange={e => setNuevoMov(p => ({ ...p, cantidad: e.target.value }))} />
+                    {nuevoMov.tipo === 'venta' ? (
+                      <p className="rounded border bg-muted/40 px-2 py-1.5 text-sm" title="La suma de las cabezas de los renglones de precio">
+                        {totalRenglones(renglonesVenta).cabezas} <span className="text-xs text-muted-foreground">(suma de los renglones)</span>
+                      </p>
+                    ) : (
+                      <Input type="text" placeholder="0" value={nuevoMov.cantidad} onChange={e => setNuevoMov(p => ({ ...p, cantidad: e.target.value }))} />
+                    )}
                   </div>
                 </div>
+                {nuevoMov.tipo === 'venta' ? (() => {
+                  // 🐄 A-FEAT-1671 (JMS 27/11: «debería poder agregar renglones siempre: 2 toros a tanto y 1 toro a tanto»)
+                  const tot = totalRenglones(renglonesVenta)
+                  const setR = (i: number, cambio: Partial<RenglonVenta>) => setRenglonesVenta(rs => rs.map((r, k) => k === i ? { ...r, ...cambio } : r))
+                  const f2 = (n: number) => n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                  return (
+                    <div className="space-y-1.5 rounded-md border p-2">
+                      <Label>Precio — un renglón por precio</Label>
+                      {renglonesVenta.map((r, i) => {
+                        const imp = importeRenglon(r)
+                        return (
+                          <div key={i} className="flex flex-wrap items-center gap-1.5 text-xs">
+                            <Input type="text" placeholder="cab." value={r.cabezas} onChange={e => setR(i, { cabezas: e.target.value.replace(/[^\d]/g, '') })} className="h-7 w-14 text-center" />
+                            <span className="text-muted-foreground">cab.</span>
+                            {(['kg', 'cabeza'] as const).map(m => (
+                              <button key={m} type="button" onClick={() => setR(i, { modo: m })}
+                                className={`rounded border px-1.5 py-0.5 ${r.modo === m ? 'border-primary bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>
+                                {m === 'kg' ? '$/kg' : '$/cabeza'}
+                              </button>
+                            ))}
+                            <Input type="text" placeholder={r.modo === 'kg' ? '$ por kg' : '$ por cabeza'} value={r.precio} onChange={e => setR(i, { precio: e.target.value })} className="h-7 w-28" />
+                            <Input type="text" placeholder={r.modo === 'kg' ? 'kg totales' : 'kg (opcional)'} value={r.kg} onChange={e => setR(i, { kg: e.target.value })} className="h-7 w-24" />
+                            <span className="ml-auto tabular-nums">{imp != null ? `$ ${f2(imp)}` : <span className="text-muted-foreground">—</span>}</span>
+                            {renglonesVenta.length > 1 && (
+                              <button type="button" className="text-muted-foreground hover:text-red-600" title="Quitar renglón" onClick={() => setRenglonesVenta(rs => rs.filter((_, k) => k !== i))}>✕</button>
+                            )}
+                          </div>
+                        )
+                      })}
+                      <div className="flex items-center gap-2 border-t pt-1.5 text-xs">
+                        <button type="button" className="rounded bg-muted px-2 py-0.5 hover:bg-muted/70" onClick={() => setRenglonesVenta(rs => [...rs, renglonVacio()])}>＋ agregar renglón</button>
+                        <span className="ml-auto font-medium">
+                          {tot.cabezas} cab.{tot.kg != null ? ` · ${tot.kg.toLocaleString('es-AR')} kg` : ''} · {tot.monto != null ? `$ ${f2(tot.monto)}` : 'importe —'}
+                          {!tot.completo && tot.cabezas > 0 && <span className="ml-1 text-amber-700">(falta precio o kg en algún renglón)</span>}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })() : (<>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label>Peso Total (kg)</Label>
                     <Input type="text" placeholder="0,00" value={nuevoMov.peso_total_kg} onChange={e => setNuevoMov(p => ({ ...p, peso_total_kg: e.target.value }))} />
                   </div>
                   <div>
-                    {nuevoMov.tipo === 'venta' && (
-                      <div className="mb-1 flex gap-1 text-[11px]">
-                        {(['kg', 'cabeza'] as const).map(m => (
-                          <button key={m} type="button" onClick={() => setModoPrecioVenta(m)}
-                            className={`rounded border px-2 py-0.5 ${modoPrecioVenta === m ? 'border-primary bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>
-                            {m === 'kg' ? '$ por kg' : '$ por cabeza'}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {nuevoMov.tipo === 'venta' && modoPrecioVenta === 'cabeza' ? (
-                      <>
-                        <Label>Precio por cabeza</Label>
-                        <Input type="text" placeholder="0,00" value={precioCabezaVenta} onChange={e => setPrecioCabezaVenta(e.target.value)} />
-                      </>
-                    ) : (
-                      <>
-                        <Label>Precio por kg</Label>
-                        <Input type="text" placeholder="0,00" value={nuevoMov.precio_por_kg} onChange={e => setNuevoMov(p => ({ ...p, precio_por_kg: e.target.value }))} />
-                      </>
-                    )}
+                    <Label>Precio por kg</Label>
+                    <Input type="text" placeholder="0,00" value={nuevoMov.precio_por_kg} onChange={e => setNuevoMov(p => ({ ...p, precio_por_kg: e.target.value }))} />
                   </div>
                 </div>
                 <div>
                   <Label>Monto Total</Label>
-                  {nuevoMov.tipo === 'venta' && modoPrecioVenta === 'cabeza' ? (() => {
-                    const pv = precioDeVenta({ modo: 'cabeza', cabezas: parseInt(nuevoMov.cantidad) || 0, precioCabeza: precioCabezaVenta })
-                    return <p className="rounded border bg-muted/40 px-2 py-1.5 text-sm">{pv.nota ?? 'Poné la cantidad y el precio por cabeza'}</p>
-                  })() : (
-                    <Input type="text" placeholder="0,00" value={nuevoMov.monto_total} onChange={e => setNuevoMov(p => ({ ...p, monto_total: e.target.value }))} />
-                  )}
+                  <Input type="text" placeholder="0,00" value={nuevoMov.monto_total} onChange={e => setNuevoMov(p => ({ ...p, monto_total: e.target.value }))} />
                 </div>
+                </>)}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label>Campo Origen</Label>
@@ -3450,10 +3478,10 @@ function TabHacienda() {
                 </div>
 
                 {/* 🐄 A-FEAT-1671: las caravanas que salen — toda categoría con animales identificados (antes sólo CUT) */}
-                {nuevoMov.tipo === 'venta' && caravanasActivasCUT.length > 0 && (() => {
+                {nuevoMov.tipo === 'venta' && !!nuevoMov.categoria_id && (() => {
                   const q = buscarCaravanaVenta.trim().toLowerCase()
                   const visibles = q ? caravanasActivasCUT.filter(c => c.caravana.toLowerCase().includes(q)) : caravanasActivasCUT
-                  const ctl = controlCaravanas(caravanasSeleccionadas.length, parseInt(nuevoMov.cantidad) || 0)
+                  const ctl = controlCaravanas(caravanasSeleccionadas.length, totalRenglones(renglonesVenta).cabezas, sinCaravanaVenta.length)
                   return (
                   <div>
                     <Label>Caravanas que salen <span className="text-muted-foreground text-xs">({caravanasSeleccionadas.length} de {caravanasActivasCUT.length} tildadas)</span></Label>
@@ -3464,6 +3492,7 @@ function TabHacienda() {
                       <button type="button" className="rounded bg-muted px-2 py-1 hover:bg-muted/70" onClick={() => setCaravanasSeleccionadas([])}>Ninguna</button>
                     </div>
                     <p className={`mt-1 text-xs ${ctl.ok ? 'text-emerald-700' : 'text-amber-700 font-medium'}`}>{ctl.ok ? ctl.texto : `⚠️ ${ctl.texto}`}</p>
+                    {caravanasActivasCUT.length === 0 && <p className="mt-1 text-xs text-muted-foreground">Esta categoría no tiene caravanas cargadas: sumá las cabezas como «sin caravana».</p>}
                     <div className="border rounded-md p-2 max-h-40 overflow-y-auto space-y-1 mt-1">
                       {visibles.map(car => (
                         <label key={car.id} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 px-1 py-0.5 rounded">
@@ -3478,6 +3507,19 @@ function TabHacienda() {
                           <span className="font-mono text-xs">{car.caravana}</span>
                         </label>
                       ))}
+                    </div>
+                    {/* 🐄 A-FEAT-1671 (JMS 27/11: «tenemos toros sin identificar por caravana… 2 con caravana y uno sin caravana»):
+                        la cabeza sin caravana se suma con una descripción opcional (va a animales_sueltos de la venta). */}
+                    <div className="mt-1 space-y-1">
+                      {sinCaravanaVenta.map((d, i) => (
+                        <div key={i} className="flex items-center gap-1 text-xs">
+                          <span className="text-muted-foreground">Sin caravana:</span>
+                          <Input value={d} onChange={e => setSinCaravanaVenta(xs => xs.map((x, k) => k === i ? e.target.value : x))}
+                            placeholder="descripción si la tenés (ej. toro colorado viejo)" className="h-6 flex-1 text-xs" />
+                          <button type="button" className="text-muted-foreground hover:text-red-600" onClick={() => setSinCaravanaVenta(xs => xs.filter((_, k) => k !== i))}>✕</button>
+                        </div>
+                      ))}
+                      <button type="button" className="rounded bg-muted px-2 py-0.5 text-[11px] hover:bg-muted/70" onClick={() => setSinCaravanaVenta(xs => [...xs, ''])}>＋ cabeza sin caravana</button>
                     </div>
                   </div>
                   )

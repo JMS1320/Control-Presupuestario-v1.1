@@ -933,8 +933,12 @@ de descarte"*. No hace falta que salgan de un lote.
      CUT)*: al elegir la categoría aparece la lista de sus caravanas activas, con buscador y **Todas / Ninguna**. Arriba dice si
      cierra: **✓ N caravanas = N cabezas**, o **⚠️ faltan / sobran**. Si no coincide, al guardar pregunta antes (las no tildadas
      siguen en el rodeo y se adjudican después con **💰 venta**).
-   - **Precio por kg o por cabeza**: con **$ por cabeza** ponés el precio de cada animal y el monto es precio × cabezas (para
-     toros o vacas que se venden por cabeza). No se inventa un $/kg.
+   - **Cabezas sin caravana**: **＋ cabeza sin caravana** suma una cabeza que no tiene caravana (con una descripción si la
+     tenés). El control cuenta **caravanas + sin caravana = cabezas**.
+   - **El precio va en renglones**: un renglón por precio (ej. *2 toros a $ X por cabeza* y *1 toro a $ Y por kg*), cada uno
+     **$/kg** (con sus kilos) o **$/cabeza**; **＋ agregar renglón** suma otro. La **Cantidad** es la suma de los renglones y el
+     total muestra cabezas, kilos e importe. Es una sola venta (un cliente, una factura). Si todos los renglones son por kg al
+     mismo precio, ése es el $/kg de la venta; si no, queda el importe y el detalle de los renglones en sus notas.
    ⚠️ Sin probar todavía → A-TEST-1406
 3. En la grilla, cada venta muestra su estado a la derecha:
    - **⚠ sin venta** (ámbar) — dio de baja animales pero **no entra al circuito comercial**
