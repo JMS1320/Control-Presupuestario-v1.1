@@ -218,13 +218,18 @@ etiqueta `Ajuste + (en Compras)` / `Ajuste - (en Mortandad)` (`:1604`).
 🟨 Que el ajuste inicial de 188 cabezas aparezca como "Compras" es engañoso a la vista, pero el
 detalle lo aclara. ❓ ¿Preferís que los ajustes tengan su propia fila?
 
-🟩 Las columnas: 10 categorías adultas (**CRÍA** 4 + **RECRÍA/ENGORDE** 6) · **Subtotal Adultos** ·
+🟩 Las columnas: 10 categorías adultas (**CRÍA** 5 + **RECRÍA/ENGORDE** 5 — ⚠️ hasta el 27/11 era 4 + 6) · **Subtotal Adultos** ·
 2 de terneros al pie · **Subtotal Terneros** · **Total General** (`:1445-1449`).
 
-🟩 Al pie, **Total Vientres** = `Vaca` + `Vaquillona Preñada` de la Existencia Final (`:1492-1493`).
-
-🟨 Se toma por **posición fija** (índices 0 y 1), no por nombre: si alguien reordena `CATS_PLANILLA`,
-el Total Vientres cambia de significado en silencio.
+⚠️ **cambió 2026-11-27** (JMS: *«la vaquillona de reposición debe ir en cría porque está inseminada… El 1 de octubre, todos los
+vientres entorados: son las vacas y las vaquillonas de reposición. No las CUT de descarte, porque ésas no entran al servicio»*):
+- **Vaq. Reposición está en el grupo CRÍA** (CRÍA 5 + RECRÍA/ENGORDE 5). La ternera que se retiene sigue en recría como Ternera
+  Recría marcada reposición; pasarla a Vaquillona de Reposición es decir que entró al servicio del 1/10 (`MES_SERVICIO`).
+- 🟩 Al pie, **Total Vientres** = `Vaca` + `Vaquillona Preñada` + `Vaquillona de Reposicion` de la Existencia Final, **por nombre**
+  (`totalVientres` en `lib/productivo/planilla-hacienda.ts`, donde viven también las columnas). Las planillas viejas no cambian de
+  número: Vaq. Reposición estuvo siempre en 0 hasta el 01/10/2026.
+- *(Hasta el 27/11 eran Vaca + Vaq. Preñada por **posición fija** —índices 0 y 1—: reordenar las columnas le cambiaba el
+  significado en silencio. Eso se corrigió con el mismo cambio.)*
 
 ### 6.4 · El detalle CUT / Descarte — la conciliación de la categoría
 

@@ -3,6 +3,7 @@
 
 import { ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
 import { sexoACorregir } from "@/lib/productivo/grupos-terneros"
+import { CATS_PLANILLA, CATS_TERNEROS, totalVientres as calcVientres } from "@/lib/productivo/planilla-hacienda"
 import { cabezasHoy } from "@/lib/productivo/cabezas-hoy"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { toggleChip, esSoloEste, tituloChip } from "@/lib/ui/chips"
@@ -1753,22 +1754,7 @@ function TabHacienda() {
   } | null>(null)
   const [cargandoPreview, setCargandoPreview] = useState(false)
 
-  const CATS_PLANILLA = [
-    { db: 'Vaca', label: 'Vaca', grupo: 'cria' },
-    { db: 'Vaquillona Preñada', label: 'Vaq. Preñada', grupo: 'cria' },
-    { db: 'Vaca CUT/Descarte', label: 'CUT/Descarte', grupo: 'cria' },
-    { db: 'Toro', label: 'Toro', grupo: 'cria' },
-    { db: 'Ternero Recria', label: 'Ternero', grupo: 'recria' },
-    { db: 'Ternera Recria', label: 'Ternera', grupo: 'recria' },
-    { db: 'Torito', label: 'Torito', grupo: 'recria' },
-    { db: 'Vaquillona de Reposicion', label: 'Vaq. Reposición', grupo: 'recria' },
-    { db: 'Novillo', label: 'Novillo', grupo: 'recria' },
-    { db: 'Vaquillona Engorde', label: 'Vaq. Engorde', grupo: 'recria' },
-  ]
-  const CATS_TERNEROS = [
-    { db: 'Ternero al Pie', label: 'Ternero al Pie', grupo: 'terneros' },
-    { db: 'Ternera al Pie', label: 'Ternera al Pie', grupo: 'terneros' },
-  ]
+  // 🐄 columnas de la planilla y Total Vientres: lib/productivo/planilla-hacienda.ts (27/11: Vaq. Reposición en CRÍA)
 
   // Helper: resolver rango de fechas desde estado del modal
   const resolverRangoFechas = () => {
@@ -2030,8 +2016,8 @@ function TabHacienda() {
       highlight: r.highlight,
     }))
 
-    const idxVaca = 0, idxVaq = 1
-    const totalVientres = existenciaFinal[idxVaca] + existenciaFinal[idxVaq]
+    const vientres = calcVientres(existenciaFinal)
+    const totalVientres = vientres.total
 
     return {
       headers, builtRows, cutData, cut, totalVientres, esApertura,
@@ -2056,7 +2042,7 @@ function TabHacienda() {
         gruposCria: nCria,
         gruposRecria: nRecria,
         rows: datos.builtRows,
-        totalVientres: `Vaca (${fmtNum(datos.existenciaFinal[0])}) + Vaq. Preñada (${fmtNum(datos.existenciaFinal[1])}) = ${fmtNum(datos.totalVientres)}`,
+        totalVientres: calcVientres(datos.existenciaFinal).texto,
         cutData: datos.cutData,
         cut: datos.cut,
       })
@@ -2108,7 +2094,7 @@ function TabHacienda() {
       builtRows.forEach(r => aoa.push(r.vals))
 
       aoa.push([])
-      aoa.push(['', 'Total Vientres', `Vaca + Vaquillona = ${totalVientres}`])
+      aoa.push(['', 'Total Vientres', calcVientres(existenciaFinal).texto])
 
       const ws = XLSX.utils.aoa_to_sheet(aoa)
       ws['!cols'] = [
@@ -2385,7 +2371,7 @@ function TabHacienda() {
       doc.setFontSize(9)
       doc.setTextColor(...sepia)
       doc.setFont('helvetica', 'bold')
-      doc.text(`Total Vientres: Vaca (${fmtNum(existenciaFinal[0])}) + Vaq. Preñada (${fmtNum(existenciaFinal[1])}) = ${fmtNum(totalVientres)}`, 15, finalY + 7)
+      doc.text(`Total Vientres: ${calcVientres(existenciaFinal).texto}`, 15, finalY + 7)
 
       // ═══ PÁGINA 2: DETALLE MOVIMIENTOS (solo si hay) ═══
       // Sanitizar texto para jsPDF (caracteres Unicode no soportados por helvetica)
