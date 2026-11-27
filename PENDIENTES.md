@@ -19555,7 +19555,8 @@ va cambiando la diferencia hasta llegar a terminado, pero trazado y auditable»*
   - **C9 · Las otras puntas NO se suman**: «H · MA · Cuotas», Efecto empieza con «Recibió de MSA» → −49.595.000,00 = C1 con signo contrario ✓; «H · PAM
     · Cuotas»: «Recibió de MSA» −8.155.000,00 y «Aporte a MSA» 4.600.000,00 = C5 con signo contrario ✓.
   - **C10 · Alertas**: Efecto contiene «⚠️ sin código» → MSA pagó gastos de MA (3, 33.537,00) y de PAM (11, 146.002,94) SIN marca de socio: no entran a
-    ninguna cuenta con socios. A revisar con JMS (¿falta el CTA?). Y lo pagado por PAM a MA («PAM le pagó»/«le cobró», contable DIST MA, unos 6,9 M) no es
+    ninguna cuenta con socios. A revisar con JMS (¿falta el CTA?). ⚠️ *Visto en v22 (27/11)*: son las cuotas de **«Seguro Accidentes Personales»**
+    (Federación Patronal) de MA y de PAM, que están en el bloque de abajo que **no suma** (seguros con póliza): no tienen Nro y no entran a los totales. Y lo pagado por PAM a MA («PAM le pagó»/«le cobró», contable DIST MA, unos 6,9 M) no es
     de la 14.1 de MSA: es la cuenta interna PAM↔MA ([A-FEAT-1635](#a-feat-1635)).
 
 ## <a id="a-feat-1635"></a>A-FEAT-1635 — Saldos INTERNOS entre las cuentas desde el 31/12/2024 en cero 🤝

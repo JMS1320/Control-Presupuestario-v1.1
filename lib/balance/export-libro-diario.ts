@@ -3795,6 +3795,13 @@ export function agregarIndiceH(wb: XLSX.WorkBook): void {
     const c = wb.Sheets[n]?.A1 as (XLSX.CellObject & { l?: unknown }) | undefined
     // JMS 09/11: «que lo tenga siempre a mano… son tantas solapas». La fila 1 queda fija arriba en todas: el link se ve si se nota.
     if (c) { c.l = { Target: `#'${NOMBRE}'!A1`, Tooltip: "Volver al índice" }; if (c.t === "s") { c.v = `⬅ Índice  ·  ${c.v}`; delete (c as { w?: string }).w } }
+    // 🧭 visto en v22 (27/11): los papeles de Inmobiliario y Red Vial empiezan en B1 y su A1 está vacía → se crea con el link.
+    else if (wb.Sheets[n]) {
+      const ws = wb.Sheets[n] as XLSX.WorkSheet
+      ;(ws as Record<string, unknown>).A1 = { t: "s", v: "⬅ Índice", l: { Target: `#'${NOMBRE}'!A1`, Tooltip: "Volver al índice" } }
+      // que el rango de la hoja incluya A1 (si arrancaba en B1, Excel no la mostraría)
+      if (ws["!ref"]) { const r = XLSX.utils.decode_range(ws["!ref"]); r.s.c = 0; r.s.r = 0; ws["!ref"] = XLSX.utils.encode_range(r) }
+    }
   }
 }
 
