@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 🔔 Tres columnas en `public.presupuesto_variables` (2026-11-27) — aviso previo. `scripts/319` con deshacer: `lote_id uuid` (FK a `productivo.stock_lotes`, `on delete cascade`), `fecha_desde date`, `fecha_hasta date` + índice parcial por lote. Es el plan del año POR LOTE (cada renglón de la ración con su fecha). Sólo agrega columnas; la tabla ya tiene su RLS. → A-FEAT-1670.
+### ✅ Tres columnas en `public.presupuesto_variables` (2026-11-27) — ✅ APLICADA el 27/11 (aviso previo). `scripts/319` con deshacer: `lote_id uuid` (FK a `productivo.stock_lotes`, `on delete cascade`), `fecha_desde date`, `fecha_hasta date` + índice parcial por lote. Es el plan del año POR LOTE (cada renglón de la ración con su fecha). Sólo agrega columnas; la tabla ya tiene su RLS. → A-FEAT-1670.
 
 ### ✅ Una columna en `productivo.actividad_insumos` (2026-11-27) — ✅ APLICADA el 27/11 (aviso previo). `scripts/314` con deshacer: `insumo_stock_id uuid` (FK a `productivo.stock_insumos`, `on delete set null`): qué insumo del stock usa cada renglón de la receta (hasta acá se unían por el nombre). Sólo agrega una columna; la app ya lee la tabla con `select *`. → A-FEAT-1663.
 

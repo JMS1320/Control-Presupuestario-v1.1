@@ -9,7 +9,8 @@ import { MenuFilaTemplate } from "@/components/presupuesto-menu-template"
 import { EditorPlanRenglon, type RenglonParaPlan } from "@/components/presupuesto-plan-renglon"
 import { dietasDe } from "@/lib/productivo/actividades"
 import { stockAlInicio, netearStock, type AporteConsumo } from "@/lib/presupuesto/stock-presupuesto"
-import { esModoRacion, campanaDeMes, tcPorMesConArrastre, costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, aplicarPlanRacion, type RenglonPlan, type PlanRacionFila } from "@/lib/presupuesto/costo-campana"
+import { esModoRacion, campanaDeMes, tcPorMesConArrastre, costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, aplicarPlanRacion, aplicarPlanLote, type RenglonPlan, type PlanRacionFila, type PlanLoteFila } from "@/lib/presupuesto/costo-campana"
+import { PresupuestoPlanLote } from "@/components/presupuesto-plan-lote"
 import { PresupuestoPlanRacion, type DatosPlanRacion, type RacionReceta, type RacionPlanFila } from "@/components/presupuesto-plan-racion"
 import { claveActividad } from "@/lib/presupuesto/margen"
 import { guardarMetodoTemplate, quitarMetodoTemplate, guardarConfigCuenta } from "@/lib/presupuesto/guardar-config"
@@ -388,6 +389,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   const [editorInversiones, setEditorInversiones] = useState(false)
   /** 📅 Editar desde el presupuesto los tramos de un lote (el «desde / hasta» del plan del año). Edita el MISMO tramo que leen
    *  mediciones de stock, Margen, ventas por lote y lotes: no es una copia (JMS 26/11). */
+  /** 📅 A-FEAT-1670 — el plan del año del lote, todo junto (tramos + cada renglón de la ración con su fecha). */
+  const [planLoteAbierto, setPlanLoteAbierto] = useState<{ id: string; nombre: string } | null>(null)
   const [editorTramos, setEditorTramos] = useState<{ lote: string; tramos: { id: string; actividad: string; desde: string; hasta: string }[] } | null>(null)
   const [guardandoTramos, setGuardandoTramos] = useState(false)
   /** 🧭 Lotes sin plan del año, con lo que propone la receta (A-FEAT-1665 b). Se crean con un clic de JMS, no solos. */
@@ -829,14 +832,19 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
 
     // 🥣 La dieta de cada actividad en cada campaña: la que eligió el plan del año (fila con actividad_id + dieta); si no, la de default.
     const dietaPlan: Record<string, { id: string; dieta: string }> = {}   // `${actividadId}|${campana}`
-    for (const p of ((planRaw || []) as any[])) if (p.actividad_id && p.dieta) dietaPlan[`${p.actividad_id}|${p.campana}`] = { id: String(p.id), dieta: String(p.dieta) }
+    for (const p of ((planRaw || []) as any[])) if (p.actividad_id && p.dieta && !p.lote_id) dietaPlan[`${p.actividad_id}|${p.campana}`] = { id: String(p.id), dieta: String(p.dieta) }
     // 🥣 El plan del año de la RACIÓN: % del peso vivo de la actividad y renglones de ración pisados por campaña (A-FEAT-1665 c)
     const idsRacion = new Set(deRacion.map(i => String((i as any).id)))
     const planRacion: (PlanRacionFila & { id: string })[] = ((planRaw || []) as any[])
-      .filter(p => p.racion_pct_pv != null || (p.receta_insumo_id && idsRacion.has(String(p.receta_insumo_id))))
+      .filter(p => !p.lote_id && (p.racion_pct_pv != null || (p.receta_insumo_id && idsRacion.has(String(p.receta_insumo_id)))))
       .map(p => ({ id: String(p.id), actividad_id: p.actividad_id ? String(p.actividad_id) : null, receta_insumo_id: p.receta_insumo_id ? String(p.receta_insumo_id) : null,
         campana: String(p.campana), racion_pct_pv: p.racion_pct_pv == null ? null : Number(p.racion_pct_pv), cantidad: p.cantidad == null ? null : Number(p.cantidad),
         precio: p.precio == null ? null : Number(p.precio), moneda: p.moneda ?? null, iva_pct: p.iva_pct == null ? null : Number(p.iva_pct) }))
+    // 📅 A-FEAT-1670 — el plan del año de cada LOTE (va encima del de la actividad): cada renglón con su fecha, cuánto y precio
+    const planLote: PlanLoteFila[] = ((planRaw || []) as any[]).filter(p => p.lote_id && p.receta_insumo_id).map(p => ({
+      lote_id: String(p.lote_id), receta_insumo_id: String(p.receta_insumo_id), campana: String(p.campana),
+      cantidad: p.cantidad == null ? null : Number(p.cantidad), precio: p.precio == null ? null : Number(p.precio), moneda: p.moneda ?? null,
+      iva_pct: p.iva_pct == null ? null : Number(p.iva_pct), fecha_desde: p.fecha_desde ?? null, fecha_hasta: p.fecha_hasta ?? null }))
     // ── 1) RACIÓN: lote → tramo → curva de peso (como siempre) ──
     type Ins = { concepto: string; montos: Record<string, number>; detalle: Record<string, string>; resumen?: string }
     const desglose: Record<string, Record<string, { nombre: string; montos: Record<string, number>; insumos: Record<string, Ins>; tramos: { id: string; actividad: string; desde: string; hasta: string }[] }>> = {}
@@ -863,7 +871,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
         const t0 = extra && tA.hasta <= String(l.fecha_disponible) ? { ...tA, cabezas: tA.cabezas + extra } : tA
         const campT = campanaDeMes(t0.desde.slice(0, 7))
         const pr = aplicarPlanRacion(t0.actividad as any, t0.insumos as any[], campT, planRacion)
-        const t = { ...t0, actividad: pr.actividad as any, insumos: pr.insumos as any[], dieta: dietaPlan[`${t0.actividad.id}|${campT}`]?.dieta ?? null }
+        const pl = aplicarPlanLote(pr.insumos as any[], l.id, campT, planLote)
+        const t = { ...t0, actividad: pr.actividad as any, insumos: pl.insumos as any[], dieta: dietaPlan[`${t0.actividad.id}|${campT}`]?.dieta ?? null }
         const nombre = t.actividad.nombre
         const lote = ((desglose[nombre] ??= {})[l.id] ??= { nombre: nombreLote, montos: {}, insumos: {},
           tramos: (mios as any[]).map(x => ({ id: String(x.id), actividad: listaActs.find(a => a.id === x.actividad_id)?.nombre ?? "—", desde: String(x.fecha_desde), hasta: String(x.fecha_hasta) })) })
@@ -885,6 +894,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
               dRac.precio_unitario != null ? `${dRac.moneda === "USD" ? "US$" : "$"} ${fmtN(Number(dRac.precio_unitario), 2)}/${dRac.unidad || "u"}` : "sin precio",
               iva ? `+ IVA ${fmtN(iva, 1)} %` : "sin IVA",
               `peso prom. ${fmtN(m.peso_prom_kg)} kg · ${fmtN(t.cabezas)} cab`,
+              (() => { const e: any = (t.insumos as any[]).find(x => x.concepto === it.concepto); const dd = (f: string) => f.split("-").reverse().slice(0, 2).join("/")
+                return `come ${dd(e?.ventana?.desde || t.desde)} → ${dd(e?.ventana?.hasta || t.hasta)}${e?.ventana ? " (plan del lote)" : ""}` })(),
             ].join(" · ") : undefined
             ins.montos[m.mes] = (ins.montos[m.mes] || 0) + costo
             ins.detalle[m.mes] = `${fmtN(it.cantidad, 2)} ${it.unidad || ""} · ${it.moneda === "USD" ? `US$ ${fmtN(it.monto_origen, 2)} × TC ${fmtN(it.tc || 0, 2)}` : `$ ${fmtN(it.monto_origen, 2)}`}${iva ? ` + IVA ${fmtN(iva, 1)} %` : ""} · ${m.dias} días · peso prom. ${fmtN(m.peso_prom_kg)} kg`
@@ -976,7 +987,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       }
     }
     // El plan del año: filas de presupuesto_variables atadas a un renglón de receta (o propias de una actividad)
-    const plan: RenglonPlan[] = ((planRaw || []) as any[]).filter(p => (p.receta_insumo_id || p.actividad_id) && !p.dieta && p.racion_pct_pv == null
+    const plan: RenglonPlan[] = ((planRaw || []) as any[]).filter(p => (p.receta_insumo_id || p.actividad_id) && !p.lote_id && !p.dieta && p.racion_pct_pv == null
       && !(p.receta_insumo_id && idsRacion.has(String(p.receta_insumo_id)))).map(p => ({
       id: String(p.id), receta_insumo_id: p.receta_insumo_id ? String(p.receta_insumo_id) : null, actividad_id: p.actividad_id ? String(p.actividad_id) : null,
       concepto: String(p.concepto), campana: String(p.campana), cantidad: p.cantidad == null ? null : Number(p.cantidad), unidad: p.unidad,
@@ -2653,6 +2664,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       {/* 🔍 A-FEAT-1661 paso 3 — el editor COMPLETO de las actividades (el mismo de «Actividades y costos»), abierto desde la fila
           de costos de producción. Al cerrarlo, el presupuesto se recalcula. */}
       <PresupuestoPlanRacion datos={planRacionAbierto} onCerrar={() => setPlanRacionAbierto(null)} onGuardado={() => void cargarDatos()} />
+      <PresupuestoPlanLote lote={planLoteAbierto} onCerrar={() => setPlanLoteAbierto(null)} onGuardado={() => void cargarDatos()} />
 
       {/* 📅 Tramos del lote = plan del año (desde / hasta). Guarda en productivo.lote_tramos. */}
       <Dialog open={!!editorTramos} onOpenChange={o => { if (!o) setEditorTramos(null) }}>
@@ -3509,7 +3521,7 @@ Clic para presupuestar la venta`}
                                       {!!l.tramos?.length && (
                                         <button type="button" className="ml-2 rounded border border-violet-300 px-1 text-[10px] text-violet-800 hover:bg-violet-100"
                                           title="Cambiar desde / hasta de este lote este año (plan del año). La receta no cambia."
-                                          onClick={e => { e.stopPropagation(); setEditorTramos({ lote: l.nombre.split(" · ")[0], tramos: l.tramos!.map(t => ({ ...t })) }) }}>📅 plan del año</button>
+                                          onClick={e => { e.stopPropagation(); setPlanLoteAbierto({ id: l.id, nombre: l.nombre.split(" · ")[0]! }) }}>📅 plan del año</button>
                                       )}
                                     </td>
                                     {celdas(l.montos, "text-gray-500")}

@@ -99,7 +99,7 @@ export function ConfiguradorActividades() {
         supabase.schema("productivo").from("stock_insumos").select("id, producto, unidad_medida").order("producto"),
       ])
       setStockInsumos((stk || []) as any[])
-      setPlanFilas(((pl || []) as any[]).filter(r => r.actividad_id || r.receta_insumo_id))
+      setPlanFilas(((pl || []) as any[]).filter(r => (r.actividad_id || r.receta_insumo_id) && !r.lote_id))   // el plan POR LOTE (A-FEAT-1670) se ve en el 📅 del lote
       // Sin chequear el error un data null se ve igual que "no hay nada" y la pantalla
       // queda vacía sin decir por qué.
       if (e1 || e2) { alert("Error cargando actividades: " + (e1 || e2)!.message); return }

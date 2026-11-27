@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs"
 import { tramosParaCosto } from "../lib/productivo/tramos"
 import { consumoMensual } from "../lib/productivo/actividades"
 import { calcularLineaTiempo } from "../lib/ganaderia/ciclo"
-import { esModoRacion, campanaDeMes, aplicarPlanRacion } from "../lib/presupuesto/costo-campana"
+import { esModoRacion, campanaDeMes, aplicarPlanRacion, aplicarPlanLote } from "../lib/presupuesto/costo-campana"
 import { stockAlInicio, netearStock } from "../lib/presupuesto/stock-presupuesto"
 const mesArgentina = () => new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 7)   // hora argentina
 const env = Object.fromEntries(readFileSync(".env.local", "utf8").split(/\r?\n/).filter(l => l.includes("=") && !l.startsWith("#")).map(l => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim().replace(/^"|"$/g, "")]))
@@ -23,8 +23,9 @@ const deRacion = (ins || []).filter((i: any) => listaActs.some((a: any) => a.id 
 const tcs = (tc || []).map((r: any) => ({ anio: Number(r.anio), mes: Number(r.mes), valor: Number(r.tc_presupuestado) || 0 }))
 const idsRac = new Set(deRacion.map((i: any) => String(i.id)))
 const dietaPlan: Record<string, string> = {}
-for (const p of planRaw || []) if (p.actividad_id && p.dieta) dietaPlan[`${p.actividad_id}|${p.campana}`] = p.dieta
-const planRacion = (planRaw || []).filter((p: any) => p.racion_pct_pv != null || (p.receta_insumo_id && idsRac.has(String(p.receta_insumo_id))))
+for (const p of planRaw || []) if (p.actividad_id && p.dieta && !p.lote_id) dietaPlan[`${p.actividad_id}|${p.campana}`] = p.dieta
+const planLote = (planRaw || []).filter((p: any) => p.lote_id && p.receta_insumo_id).map((p: any) => ({ lote_id: String(p.lote_id), receta_insumo_id: String(p.receta_insumo_id), campana: String(p.campana), cantidad: p.cantidad == null ? null : Number(p.cantidad), precio: p.precio == null ? null : Number(p.precio), moneda: p.moneda ?? null, iva_pct: p.iva_pct == null ? null : Number(p.iva_pct), fecha_desde: p.fecha_desde ?? null, fecha_hasta: p.fecha_hasta ?? null }))
+const planRacion = (planRaw || []).filter((p: any) => !p.lote_id).filter((p: any) => p.racion_pct_pv != null || (p.receta_insumo_id && idsRac.has(String(p.receta_insumo_id))))
   .map((p: any) => ({ id: String(p.id), actividad_id: p.actividad_id, receta_insumo_id: p.receta_insumo_id, campana: String(p.campana), racion_pct_pv: p.racion_pct_pv == null ? null : Number(p.racion_pct_pv),
     cantidad: p.cantidad == null ? null : Number(p.cantidad), precio: p.precio == null ? null : Number(p.precio), moneda: p.moneda ?? null, iva_pct: p.iva_pct == null ? null : Number(p.iva_pct) }))
 const retenidasDe = new Map(calcularLineaTiempo(ciclos || []).map((c: any) => [String(c.ciclo.id), Number(c.retenidas) || 0]))
@@ -37,7 +38,7 @@ for (const l of lotes || []) {
     const t0 = extra && tA.hasta <= String(l.fecha_disponible) ? { ...tA, cabezas: tA.cabezas + extra } : tA
     const campT = campanaDeMes(t0.desde.slice(0, 7))
     const pr = aplicarPlanRacion(t0.actividad as any, t0.insumos as any[], campT, planRacion as any)
-    const t = { ...t0, actividad: pr.actividad as any, insumos: pr.insumos as any[], dieta: dietaPlan[`${t0.actividad.id}|${campT}`] ?? null }
+    const t = { ...t0, actividad: pr.actividad as any, insumos: aplicarPlanLote(pr.insumos as any[], l.id, campT, planLote as any).insumos as any[], dieta: dietaPlan[`${t0.actividad.id}|${campT}`] ?? null }
     for (const m of consumoMensual({ ...t, tiposCambio: tcs } as any)) for (const it of m.items) {
       const d: any = deRacion.find((x: any) => x.actividad_id === t.actividad.id && x.concepto === it.concepto)
       if (d?.insumo_stock_id && it.cantidad > 0) aportes.push({ clave: `${t.actividad.nombre}|${l.categoria}|${it.concepto}`, insumoStockId: String(d.insumo_stock_id), mes: m.mes, kg: it.cantidad, costo: it.costo * (1 + (Number(d.iva_pct) || 0) / 100) })

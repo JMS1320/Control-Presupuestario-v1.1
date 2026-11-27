@@ -745,6 +745,10 @@ de la cuota elegida, y es un acto explícito del usuario, fila por fila.
 - 🌽 **`productivo.actividad_insumos.insumo_stock_id`** (script 314): qué insumo del stock come cada renglón de la receta (antes se
   unían por el nombre). Lo usa el presupuesto para netear el stock (`lib/presupuesto/stock-presupuesto.ts`): stock al 1° del mes =
   última `mediciones_insumo` + entradas (`movimientos_insumos` compra) posteriores − consumo estimado de la ración.
+- 📅 **`public.presupuesto_variables.lote_id` / `fecha_desde` / `fecha_hasta`** (script 319): el plan del año POR LOTE — fila con
+  `lote_id` + `receta_insumo_id` + `campana` pisa ese renglón de la ración sólo para ese lote (cuándo come dentro del tramo, cuánto,
+  precio; cantidad 0 = este año no). Orden: receta → plan de la actividad (sin `lote_id`) → plan del lote. `aplicarPlanLote` en
+  `lib/presupuesto/costo-campana.ts`; la ventana la aplica `consumoMensual` (`lib/productivo/actividades.ts`).
 - 🔁 **Trigger `trg_costo_compras_sigue_tc`** en `msa.comprobantes_arca` (AFTER UPDATE OF `tc_pago`,
   `tipo_cambio`) → `productivo.costo_compras_sigue_tc()`: recalcula en pesos, al `tc_pago` (o al de la
   factura si se borra), las compras USD vinculadas: el movimiento, el vínculo y el costo de

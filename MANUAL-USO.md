@@ -5915,6 +5915,17 @@ precio, IVA), si cierra con el total, el link al PDF y a qué entrada al stock e
 
 ⚠️ Sin probar todavía → A-TEST-1398 · A-TEST-1400
 
+## 📅 Presupuesto → el plan del año de un lote *(nuevo 2026-11-27)*
+
+En 🌾 Costos de producción, cada lote tiene **📅 plan del año**. Ahí está todo lo que va a pasar este año con ese lote:
+- cada **etapa** (Cría, Recría, Engorde) con su desde / hasta;
+- adentro, cada **renglón de la ración** (maíz, concentrado…), con lo que dice la receta y lo que querés para **este lote**: cuánto, precio, IVA, **desde y hasta cuándo come** (dentro de la etapa) o «este año no».
+
+Lo que cambies vale sólo para ese lote y ese año: **la receta no cambia** (para eso está «✏️ receta»). Vacío = lo de la receta. En la grilla,
+pasando el mouse por un insumo del lote, dice desde y hasta cuándo come.
+
+⚠️ Sin probar todavía → A-TEST-1404
+
 ## 🌽 Presupuesto → el stock primero *(nuevo 2026-11-27)*
 
 En **✏️ editar receta**, cada renglón de ración (maíz, concentrado) dice arriba de la dieta **qué insumo del stock come**. Con eso, el
