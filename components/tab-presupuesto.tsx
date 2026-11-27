@@ -2,7 +2,7 @@
 
 
 import { mesArgentina, hoyArgentina } from "@/lib/fechas"
-import { cargarAperturasReales, type AperturaReal } from "@/lib/ganaderia/rodeo-real"
+import { cargarAperturasReales, cargarStockHaciendaHoy, controlLotesVsStock, type AperturaReal, type FilaControlLotes } from "@/lib/ganaderia/rodeo-real"
 import { useMultiCashFlowData, type CashFlowFilters } from "@/hooks/useMultiCashFlowData"
 import { calcularArranque, lineaDeSaldo, controlDosFuentes, totalComposicion, fechaDeCaja, yaSeMovio, mesDe, claveMarca, estaEnLaGrilla, esLiquidacionHacienda, type FilaReal, type MarcaPresupuesto } from "@/lib/presupuesto/arranque"
 import { PresupuestoArranque, type ComposicionItem } from "@/components/presupuesto-arranque"
@@ -308,6 +308,8 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
    *                 las toneladas de soja a fijar.
    * Se listan sólo las categorías que tienen algo (venta o disponible).
    */
+  /** ⚖️ A-FEAT-1672 — lotes de venta del presupuesto que no coinciden con el stock real de hacienda (avisa; JMS ajusta). */
+  const [controlLotes, setControlLotes] = useState<FilaControlLotes[]>([])
   const [hacienda, setHacienda] = useState<{
     categorias: {
       categoria: string
@@ -1618,6 +1620,12 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
 
     const listaVentas = ((vs || []) as VentaStock[])
     const ventasDe = (id: string) => listaVentas.filter(v => v.lote_id === id)
+    // ⚖️ A-FEAT-1672 — control: lo que el presupuesto tiene para vender de la hacienda que ya existe, contra el stock real de hoy
+    try {
+      const hoyC = hoyArgentina()
+      setControlLotes(controlLotesVsStock(listaLotes as any[], id => ventasDe(id).reduce((t, v) => t + Number(v.cantidad || 0), 0),
+        await cargarStockHaciendaHoy(supabase, hoyC), hoyC))
+    } catch (e) { console.error("No se pudo armar el control de lotes vs stock", e); setControlLotes([]) }
     const listaPrecios = (precios || []) as PrecioHacienda[]
     setPreciosHac(listaPrecios)
     const listaTramos = (tra || []) as TramoLote[]
@@ -3040,6 +3048,23 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
                       </tr>
                     )}
 
+                    {(expandidos["__hacienda__"] ?? true) && controlLotes.length > 0 && (
+                      <tr className="border-b bg-amber-50">
+                        <td colSpan={meses.length + 1} className="px-4 py-1.5 pl-8 text-[11px] text-amber-900">
+                          ⚖️ <strong>Los lotes del presupuesto no coinciden con el stock real de hacienda</strong> en {controlLotes.length} categoría(s) — revisá las cantidades
+                          (desde el lote, con «＋ venta» / el editor del lote, o registrando la venta concreta):
+                          <ul className="mt-1 space-y-0.5">
+                            {controlLotes.map(f => (
+                              <li key={f.categoria}>
+                                <strong>{f.categoria}</strong>: presupuesto {f.presupuesto.toLocaleString("es-AR", { maximumFractionDigits: 1 })} · stock {f.stock.toLocaleString("es-AR", { maximumFractionDigits: 1 })}
+                                <span className={f.dif > 0 ? "text-emerald-800" : "text-red-700"}> ({f.dif > 0 ? "+" : ""}{f.dif.toLocaleString("es-AR", { maximumFractionDigits: 1 })})</span>
+                                {f.lotes.length > 0 && <span className="text-gray-500"> · lotes: {f.lotes.join(", ")}</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        </td>
+                      </tr>
+                    )}
                     {(expandidos["__hacienda__"] ?? true) && hacienda.categorias.map(c => (
                       <tr key={`hac-${c.categoria}`} className="border-b bg-emerald-50/30 hover:bg-emerald-50">
                         <td className="sticky left-0 z-10 bg-emerald-50/30 px-4 py-1.5 pl-8 text-xs text-gray-600">

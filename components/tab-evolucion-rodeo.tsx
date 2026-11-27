@@ -8,7 +8,7 @@
 // Modelo: solapa "ciclo ganadero" del Excel. Ver PENDIENTES § CICLO GANADERO.
 
 import { useState, useEffect, useCallback } from "react"
-import { cargarAperturasReales, type AperturaReal } from "@/lib/ganaderia/rodeo-real"
+import { cargarAperturasReales, cargarStockHaciendaHoy, type AperturaReal } from "@/lib/ganaderia/rodeo-real"
 import { hoyArgentina } from "@/lib/fechas"
 import { supabase } from "@/lib/supabase"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -60,6 +60,8 @@ export function TabEvolucionRodeo() {
   const [aplicando, setAplicando] = useState(false)
 
   const [reales, setReales] = useState<Record<string, AperturaReal>>({})
+  /** ⚖️ A-FEAT-1672 — el stock de hacienda de HOY, para controlar el ciclo en curso contra lo real. */
+  const [stockHoy, setStockHoy] = useState<Record<string, number> | null>(null)
   const cargar = useCallback(async () => {
     setCargando(true)
     try {
@@ -75,6 +77,7 @@ export function TabEvolucionRodeo() {
       setCria((cc || []) as FilaCicloCria[])
       // 🐄 A-FEAT-1672 — el servicio que ya ocurrió toma los vientres del stock de hacienda a esa fecha
       setReales(await cargarAperturasReales(supabase, (data || []) as CicloStock[], hoyArgentina()))
+      setStockHoy(await cargarStockHaciendaHoy(supabase, hoyArgentina()))
 
       // Hembras marcadas (es_torito en hembra = reposición) por fecha de pesada
       // ✂️ A-BUG-1379: de a tandas.
@@ -343,6 +346,21 @@ ${serv}`
             Cada período abre con el cierre del anterior. Editá lo que quieras: lo que cargues
             como <strong>real</strong> pisa el cálculo y recalcula todo lo posterior.
           </p>
+          {/* ⚖️ A-FEAT-1672 — el ciclo en curso contra el stock real de hoy */}
+          {stockHoy && (() => {
+            const hoy = hoyArgentina()
+            const enCurso = [...linea].reverse().find(c => c.apertura_real && c.apertura_real.fecha <= hoy)
+            const g = (re: RegExp) => Object.entries(stockHoy).filter(([k]) => re.test(k.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase())).reduce((t, [, n]) => t + n, 0)
+            const vacas = g(/^vaca$/), repo = g(/^vaquillona de reposicion$/), cut = g(/cut|descarte/), toros = g(/^toro$/)
+            const salieron = enCurso ? enCurso.rodeo - (vacas + repo) : null
+            return (
+              <p className="mt-1 rounded bg-emerald-50 px-2 py-1 text-xs text-emerald-900">
+                ⚖️ <strong>Hoy en el stock de hacienda:</strong> {vacas} vacas · {repo} vaquillonas de reposición · {cut} CUT/descarte · {toros} toros
+                {enCurso && <> — ciclo {enCurso.ciclo.campania}: {enCurso.rodeo} a servicio ({enCurso.apertura_real!.fuente})
+                  {salieron != null && Math.abs(salieron) > 0.01 ? <>; desde el servicio salieron del rodeo <strong>{salieron}</strong> (van al descarte real cuando ocurra el servicio siguiente)</> : <>; sin salidas desde el servicio</>}</>}
+              </p>
+            )
+          })()}
         </div>
         <div className="flex gap-2">
           {propuestas.length > 0 && (

@@ -5931,6 +5931,19 @@ precio, IVA), si cierra con el total, el link al PDF y a qué entrada al stock e
 
 ⚠️ Sin probar todavía → A-TEST-1398 · A-TEST-1400
 
+## 🐄 Evolución del rodeo → lo real reemplaza a la proyección *(nuevo 2026-11-27)*
+
+La evolución del rodeo es la **proyección**; lo **real** la va reemplazando a medida que ocurre:
+- Cuando el **servicio ya ocurrió**, las vacas y vaquillonas a servicio salen del **stock de hacienda a esa fecha** (dice «✓ real · stock de hacienda al …»).
+- El ciclo anterior **cierra con lo real**: el descarte (los vientres que no llegaron al servicio siguiente) y las vaquillonas de reposición. Si había un número cargado a mano, manda el de a mano y se ve la diferencia («⚠ real 74 (cargado a mano 60)»).
+- Los ciclos que todavía no pasaron siguen proyectados, partiendo de lo real.
+- Arriba, «Hoy en el stock de hacienda» muestra el rodeo de hoy contra el ciclo en curso.
+
+En **Presupuesto → Hacienda**, la fila ámbar **⚖️ Los lotes del presupuesto no coinciden con el stock real** lista cada categoría donde lo presupuestado
+para vender no coincide con el stock (por cambios de categoría, sexo, selección). No cambia nada sola: ajustás desde el lote o registrando la venta.
+
+⚠️ Sin probar todavía → A-TEST-1407
+
 ## 📅 Presupuesto → el plan del año de un lote *(nuevo 2026-11-27)*
 
 En 🌾 Costos de producción, cada lote tiene **📅 plan del año**. Ahí está todo lo que va a pasar este año con ese lote:

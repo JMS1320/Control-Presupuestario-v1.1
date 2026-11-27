@@ -338,7 +338,7 @@ import { esDeLaEmpresa, empresasDeContratos, tipoEnPresupuesto, bloquesDeEmpresa
 import { esCuentaDeInsumos, esFacturaDeInsumos, fileIdDeDrive } from "@/lib/facturas-detalle/insumos"
 import { proponerPorRenglon, factorUnidad, notaDelVinculo, insumoPorNombre } from "@/lib/productivo/vinculo-renglon"
 import { stockAlInicio, netearStock, consumoEntre } from "@/lib/presupuesto/stock-presupuesto"
-import { aperturasReales, stockHaciendaAl, vientresDelStock } from "@/lib/ganaderia/rodeo-real"
+import { aperturasReales, stockHaciendaAl, vientresDelStock, controlLotesVsStock } from "@/lib/ganaderia/rodeo-real"
 import { calcularLineaTiempo as lineaRodeoReal } from "@/lib/ganaderia/ciclo"
 import { costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, aplicarPlanRacion, aplicarPlanLote, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
 import { calcularVinculacionPago, tcDeFactura, aPagarEnPesos, totalEnPesos, conversionDe, textoConversion, esMonedaExtranjera, necesitaTcDePago, parsearTcPago, tcParaEditar } from "@/lib/pagos/moneda-factura"
@@ -9311,6 +9311,19 @@ Importe Neto Gravado: $ 7338020,40
       const eR = "stock 01/10/26: 191+74 · 26/27 191+74=265 (real) · sin real 280 · 27/28 proyectado · 25/26 220 a mano · reales 25/26,26/27 · cierre 25/26: descarte 29 (usado 29) · retenidas 74 (a mano 60, dif -14)"
       chequear("Productivo", "🐄 El rodeo real reemplaza a la proyección: el servicio del 01/10/26 ya ocurrió → 191 vacas + 74 vaquillonas del stock (no los 200 + 60 proyectados); 27/28 sigue proyectado; lo cargado a mano manda; el ciclo 25/26 cierra con su descarte real (220 − 191 = 29) y las retenidas reales (74) a la vista contra las 60 cargadas a mano",
         eR, vR, vR === eR, "A-FEAT-1672")
+      // Control: lotes de venta del presupuesto vs stock real (hoy: 39 novillos y 9 vaq. engorde en stock; los lotes dicen ternero/ternera recría)
+      const lotesC = [
+        { id: "1", categoria: "Ternero Recria", cantidad: 40, origen: "stock_inicial", fecha_disponible: "2026-08-03" },
+        { id: "2", categoria: "Ternera Recria", cantidad: 12, origen: "stock_inicial", fecha_disponible: "2026-08-03" },
+        { id: "3", categoria: "Torito", cantidad: 9, origen: "stock_inicial", fecha_disponible: "2026-08-03" },
+        { id: "4", categoria: "Ternero al Pie", cantidad: 110.5, origen: "destete", fecha_disponible: "2028-03-01", fecha_nacimiento: null },
+        { id: "5", categoria: "Ternero Recria", cantidad: 55, origen: "stock_inicial", fecha_disponible: "2026-07-06" },
+      ]
+      const ctl = controlLotesVsStock(lotesC, id => (id === "5" ? 55 : 0), { "Novillo": 39, "Vaquillona Engorde": 9, "Torito": 8, "Vaca": 191, "Vaquillona de Reposicion": 74 }, "2026-11-27")
+      const vC = ctl.map(f => `${f.categoria} ${f.presupuesto}→${f.stock}`).join(" · ")
+      const eC = "Novillo 0→39 · Ternera Recria 12→0 · Ternero Recria 40→0 · Torito 9→8 · Vaquillona Engorde 0→9"
+      chequear("Productivo", "⚖️ Lotes de venta del presupuesto vs stock real: marca cada categoría que no coincide (lo vendido y los lotes futuros no cuentan; el rodeo de cría tampoco)",
+        eC, vC, vC === eC, "A-FEAT-1672")
     }
     // 🥣 Dietas (script 305): sin dieta = va en todas; con dieta = sólo en la suya; la elegida manda (si no, la de default)
     const insD = [{ c: "Maíz", dieta: "Maíz y concentrado" }, { c: "Conc", dieta: "Maíz y concentrado" }, { c: "Maíz", dieta: "Con silo" }, { c: "Silo", dieta: "Con silo" }, { c: "Sal", dieta: null }]

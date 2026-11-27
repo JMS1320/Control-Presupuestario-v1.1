@@ -72,3 +72,55 @@ export async function cargarAperturasReales(sb: any, ciclos: Pick<CicloStock, "c
   const lista: MovHacienda[] = ((movs || []) as any[]).map(m => ({ fecha: String(m.fecha), categoria: nombre.get(String(m.categoria_id)) ?? "?", tipo: String(m.tipo), cantidad: Number(m.cantidad) || 0 }))
   return aperturasReales(ciclos, lista, hoy)
 }
+
+// ── 🐄 A-FEAT-1672 paso 3 — Control: los LOTES DE VENTA del presupuesto contra el STOCK REAL de hacienda ────────────────────────────────
+// JMS 27/11: «eso hay que cambiarlo, pero eventualmente puede mostrar el sistema la necesidad de rever cantidades por incongruencias;
+// entonces yo ajusto desde presupuesto o desde la venta concreta». Avisa, no cambia nada solo: un plan puede diferir a propósito.
+
+/** Categorías que son RODEO de cría (no se comparan contra lotes de venta). */
+const DEL_RODEO = new Set(["vaca", "vaquillona de reposicion", "vaquillona prenada", "toro"])
+
+export interface FilaControlLotes { categoria: string; presupuesto: number; stock: number; dif: number; lotes: string[] }
+
+/**
+ * Por categoría: las cabezas de los lotes del presupuesto que YA EXISTEN (stock inicial, ya disponibles o ya nacidos; menos lo vendido)
+ * contra el stock de hacienda de hoy. Devuelve sólo las categorías con diferencia (stock − presupuesto).
+ */
+export function controlLotesVsStock(
+  lotes: { id: string; categoria: string; cantidad: number; origen: string; fecha_disponible: string; fecha_nacimiento?: string | null }[],
+  vendidas: (loteId: string) => number,
+  stock: Record<string, number>,
+  hoy: string,
+): FilaControlLotes[] {
+  const filas = new Map<string, FilaControlLotes>()
+  const fila = (cat: string) => {
+    const k = norm(cat)
+    if (!filas.has(k)) filas.set(k, { categoria: cat, presupuesto: 0, stock: 0, dif: 0, lotes: [] })
+    return filas.get(k)!
+  }
+  for (const l of lotes) {
+    const existe = l.origen === "stock_inicial" || l.fecha_disponible <= hoy || (!!l.fecha_nacimiento && l.fecha_nacimiento <= hoy)
+    if (!existe || DEL_RODEO.has(norm(l.categoria))) continue
+    const n = Math.max(0, (Number(l.cantidad) || 0) - vendidas(l.id))
+    if (n <= 0.001) continue
+    const f = fila(l.categoria); f.presupuesto += n; f.lotes.push(`${l.categoria} ${n.toLocaleString("es-AR", { maximumFractionDigits: 1 })}`)
+  }
+  for (const [cat, n] of Object.entries(stock)) {
+    if (DEL_RODEO.has(norm(cat)) || Math.abs(n) < 0.001) continue
+    fila(cat).stock += n
+  }
+  const out: FilaControlLotes[] = []
+  for (const f of filas.values()) { f.dif = Math.round((f.stock - f.presupuesto) * 10) / 10; if (Math.abs(f.dif) > 0.01) out.push(f) }
+  return out.sort((a, b) => a.categoria.localeCompare(b.categoria))
+}
+
+/** El stock de hacienda de hoy, por categoría (lee la base). */
+export async function cargarStockHaciendaHoy(sb: any, hoy: string): Promise<Record<string, number>> {
+  const P = sb.schema("productivo")
+  const [{ data: movs }, { data: cats }] = await Promise.all([
+    P.from("movimientos_hacienda").select("fecha, categoria_id, tipo, cantidad"),
+    P.from("categorias_hacienda").select("id, nombre"),
+  ])
+  const nombre = new Map(((cats || []) as any[]).map(c => [String(c.id), String(c.nombre)]))
+  return stockHaciendaAl(((movs || []) as any[]).map(m => ({ fecha: String(m.fecha), categoria: nombre.get(String(m.categoria_id)) ?? "?", tipo: String(m.tipo), cantidad: Number(m.cantidad) || 0 })), hoy)
+}
