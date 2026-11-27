@@ -12,6 +12,7 @@ import { dietasDe } from "@/lib/productivo/actividades"
 import { stockAlInicio, netearStock, type AporteConsumo } from "@/lib/presupuesto/stock-presupuesto"
 import { esModoRacion, campanaDeMes, tcPorMesConArrastre, costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, aplicarPlanRacion, aplicarPlanLote, type RenglonPlan, type PlanRacionFila, type PlanLoteFila } from "@/lib/presupuesto/costo-campana"
 import { PresupuestoPlanLote } from "@/components/presupuesto-plan-lote"
+import { armarFoto } from "@/lib/presupuesto/fotos"
 import { cobroVentaSinLiquidacion } from "@/lib/productivo/venta-condiciones"
 import { piezasDeLote, cortesDeVenta, cortarTramoPorVentas, type VentaParcial } from "@/lib/ganaderia/ventas-parciales"
 import { PresupuestoPlanRacion, type DatosPlanRacion, type RacionReceta, type RacionPlanFila } from "@/components/presupuesto-plan-racion"
@@ -295,6 +296,9 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
   const bloques = bloquesDeEmpresa(empresaP)
   const banco = cuentaBancoPropia(empresaP)
   const [cargando, setCargando] = useState(true)
+  /** 📸 A-FEAT-1677 M3 — la foto del mes en curso (la automática) y cuántas hay; para comparar presupuesto vs ejecutado. */
+  const [fotoMes, setFotoMes] = useState<{ fecha: string; motivo: string; cuantas: number } | null>(null)
+  const [fotografiando, setFotografiando] = useState(false)
   const [agrupadoresBase, setAgrupadores] = useState<Agrupador[]>([])
   const [sueldoFilasBase, setSueldoFilas] = useState<FilaSueldo[]>([])
   const [camposBase, setCampos] = useState<FilaCampo[]>([])
@@ -2177,7 +2181,7 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       { familia: "Sin configurar", clave: "produccion", etiqueta: "Tramos de actividad", cuando: "Sale del lote: curva de peso, ración y días de cada tramo", usos: usos["fijo:produccion"] ?? 0 },
       { familia: "Sin configurar", clave: "arrendamiento", etiqueta: "Arrendamiento en 3 capas", cuando: "Fijado (con factura) · presupuestado (Matba × TC) · disponible a fijar. Las tres NO son lo mismo", usos: usos["fijo:arrendamiento"] ?? 0 },
       { familia: "Sin configurar", clave: "ingresos", etiqueta: "Venta de hacienda", cuando: "Lote con fecha de venta, valorizado en el mes de cobro", usos: usos["fijo:ingresos"] ?? 0 },
-      { familia: "Sin configurar", clave: "inversion", etiqueta: "Inversión cargada a mano", cuando: "Se muestra pero NO suma al total: sale plata, no es gasto del período", usos: usos["fijo:inversion"] ?? 0 },
+      { familia: "Sin configurar", clave: "inversion", etiqueta: "Inversión cargada a mano", cuando: "No suma al total de egresos (no es gasto operativo), pero sale plata: baja el saldo", usos: usos["fijo:inversion"] ?? 0 },
     ]
 
     return {
@@ -2455,6 +2459,47 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       facturas: Object.keys(pagadoMes.porCuenta).length, marcados: arranque?.marcados.mesEnCurso.length || 0, renglones: pagadoMes.renglones }
   }, [pagadoMes, tplPagadoMesActual, arranque])
 
+  /** 📸 A-FEAT-1677 M3 — arma la foto con lo que muestra la grilla ahora (renglones con sus montos por mes y los totales). */
+  const construirFoto = (motivo: "automatica" | "manual") => armarFoto({
+    empresa: empresaP, fecha: hoyArgentina(), motivo, saldoInicio: arranque ? saldoInicioMes.inicio : saldoInicial,
+    bloques: [
+      { bloque: "templates", filas: agrupadores.flatMap(ag => ag.templates.map(t => ({ clave: `tpl:${t.id}`, nombre: `${ag.nombre} · ${t.nombre}`, montos: t.montos }))) },
+      { bloque: "cuentas", filas: cuentas.map(c => ({ clave: `cta:${c.nro}`, nombre: `${c.nro} ${c.nombre}`, montos: Object.fromEntries(c.celdas.map(x => [x.mes, x.monto])) })) },
+      { bloque: "sueldos", filas: sueldoFilas.map(sf => ({ clave: `sue:${sf.nombre}`, nombre: sf.nombre, montos: sf.montos })) },
+      { bloque: "costos de producción", filas: costoProd.map(c => ({ clave: `prod:${c.nombre}`, nombre: c.nombre, montos: c.montos })) },
+      { bloque: "inversiones", filas: inversiones.map((i: any) => ({ clave: `inv:${i.id ?? i.nombre}`, nombre: i.nombre, montos: i.montos })) },
+      { bloque: "arrendamientos", filas: campos.map(c => ({ clave: `arr:${c.campo}`, nombre: c.campo,
+        montos: Object.fromEntries(Array.from(new Set([...Object.keys(c.fijado), ...Object.keys(c.presupuestado), ...Object.keys(c.disponible)]))
+          .map(k => [k, (c.fijado[k] || 0) + (c.presupuestado[k] || 0) + (c.disponible[k] || 0)])) })) },
+      { bloque: "hacienda", filas: hacienda.categorias.map(c => ({ clave: `hac:${c.categoria}`, nombre: c.categoria, montos: c.montos })) },
+      { bloque: "IIBB", filas: [{ clave: "iibb", nombre: "IIBB total", montos: iibbTotalPorMes }] },
+    ],
+    ingresos: totalIngresosPorMes, egresos: totalesPorMes, inversiones: totalInversionesPorMes, saldo: saldoAcumuladoPorMes,
+  })
+  const guardarFoto = async (motivo: "automatica" | "manual", nota?: string) => {
+    const f = construirFoto(motivo)
+    const { data: u } = await supabase.auth.getUser()
+    const { error } = await supabase.from("presupuesto_fotos").insert({ ...f, nota: nota ?? null, creado_por: u?.user?.email ?? null })
+    if (error && !/duplicate|unique/i.test(error.message)) { console.error("No se pudo guardar la foto del presupuesto", error); return false }
+    return true
+  }
+  // La foto AUTOMÁTICA del mes: la primera vez que se abre el presupuesto en el mes, con todo cargado (lo hace la app, no JMS — § 🗓️).
+  useEffect(() => {
+    if (cargando || !filasCashFlow || totalesPorMes == null || Object.keys(totalesPorMes).length === 0) return
+    let vivo = true
+    void (async () => {
+      const mes = mesArgentina()
+      const { data } = await supabase.from("presupuesto_fotos").select("fecha, motivo").eq("empresa", empresaP).eq("mes", mes).order("created_at")
+      if (!vivo) return
+      const lista = (data || []) as any[]
+      if (!lista.some(x => x.motivo === "automatica")) { await guardarFoto("automatica"); if (!vivo) return
+        setFotoMes({ fecha: hoyArgentina(), motivo: "automatica", cuantas: lista.length + 1 }) }
+      else setFotoMes({ fecha: String(lista.find(x => x.motivo === "automatica")!.fecha), motivo: "automatica", cuantas: lista.length })
+    })()
+    return () => { vivo = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cargando, empresaP, filasCashFlow])
+
   /** Con las dos fuentes (extracto y lo declarado a hoy): el extracto llevado a hoy contra lo declarado. */
   const controlArranque = useMemo(() => {
     if (!extractoUlt || !fechaArranqueDecl || fechaArranqueDecl !== hoyArgentina()) return null
@@ -2486,7 +2531,9 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
     if (arranque) {
       const claves = meses.map(m => `${m.anio}-${String(m.mes).padStart(2, "0")}`)
       const flujo: Record<string, number> = {}
-      for (const k of claves) flujo[k] = (totalIngresosPorMes[k] || 0) - (totalesPorMes[k] || 0)
+      // 🏗️ A-FEAT-1677 B10 (JMS 27/11: «las inversiones productivas… son un gasto en lo que implica al impacto de saldos»): no son gasto
+      // operativo (no van al total de egresos) pero la plata sale: bajan el saldo.
+      for (const k of claves) flujo[k] = (totalIngresosPorMes[k] || 0) - (totalesPorMes[k] || 0) - (totalInversionesPorMes[k] || 0)
       return lineaDeSaldo({ meses: claves, mesActual: mesArgentina(), saldoHoy: saldoInicioMes.inicio,
         vencidosNeto: arranque.vencidos.neto, flujoPorMes: flujo, ajusteMesActual: saldoInicioMes.fueraDeGrilla })
     }
@@ -2500,11 +2547,11 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
       const clave = `${m.anio}-${String(m.mes).padStart(2,"0")}`
       if (!empezo && clave < mesArranqueViejo) { salida[clave] = null; continue }
       empezo = true
-      acum += (totalIngresosPorMes[clave] || 0) - (totalesPorMes[clave] || 0)
+      acum += (totalIngresosPorMes[clave] || 0) - (totalesPorMes[clave] || 0) - (totalInversionesPorMes[clave] || 0)
       salida[clave] = acum
     }
     return salida
-  }, [meses, saldoInicial, mesInicial, totalIngresosPorMes, totalesPorMes, arranque, ajusteMesActual, saldoInicioMes])
+  }, [meses, saldoInicial, mesInicial, totalIngresosPorMes, totalesPorMes, arranque, ajusteMesActual, saldoInicioMes, totalInversionesPorMes])
 
   const hayIngresos = campos.length > 0 || ganaderia.length > 0
     || hacienda.categorias.length > 0
@@ -2765,6 +2812,14 @@ export function TabPresupuesto({ recargarToken = 0 }: { recargarToken?: number }
           {/* 🧭 Lo que FALTA — el tablero de huecos (A-FEAT-119). Va acá, en la barra del
               presupuesto, porque la pregunta «¿está completo?» se hace mirando esta pantalla. */}
           <PanelHuecosPresupuesto padrones={padrones} />
+          {/* 📸 A-FEAT-1677 M3 — la foto del mes (automática) y congelar otra a mano */}
+          <Button variant="outline" size="sm" className="gap-1" disabled={cargando || fotografiando}
+            title={fotoMes ? `Foto automática del mes tomada el ${fotoMes.fecha.split("-").reverse().join("/")} (${fotoMes.cuantas} foto(s) este mes). Clic: congelar otra foto del presupuesto como está ahora.` : "Congelar una foto del presupuesto como está ahora (para comparar después contra lo que pasó)"}
+            onClick={async () => { setFotografiando(true); const nota = prompt("Nota para esta foto (opcional):") ?? undefined
+              const ok = await guardarFoto("manual", nota || undefined); setFotografiando(false)
+              if (ok) setFotoMes(f => ({ fecha: f?.fecha ?? hoyArgentina(), motivo: "automatica", cuantas: (f?.cuantas ?? 0) + 1 })) }}>
+            📸 {fotoMes ? `Foto ${fotoMes.fecha.split("-").reverse().slice(0, 2).join("/")}` : "Foto"}
+          </Button>
           <Button variant="outline" size="sm" onClick={() => toggleTodos(true)}>Expandir todo</Button>
           <Button variant="outline" size="sm" onClick={() => toggleTodos(false)}>Colapsar todo</Button>
           <Button variant="outline" size="sm" className="gap-1"
@@ -3507,7 +3562,9 @@ Clic para presupuestar la venta`}
                 {costoProd.length > 0 && (() => {
                   const abierto = expandidos["__costoprod__"] ?? false
                   const dmyP = (f: string) => f.split("-").reverse().join("/")
-                  const filaSinPlan = abierto && sinPlan.length > 0 && (
+                  // 🧭 A-FEAT-1677 M5 (JMS 27/11: «ok»): el aviso de lotes sin plan del año se ve aunque el bloque esté cerrado — un lote sin
+                  // plan no suma ración y el costo queda corto sin que nadie lo note.
+                  const filaSinPlan = sinPlan.length > 0 && (
                     <tr className="border-b bg-amber-50/60">
                       <td colSpan={meses.length + 1} className="px-4 py-1.5 pl-8 text-[11px] text-amber-900">
                         🧭 <strong>{sinPlan.length} lote(s) sin plan del año</strong> — no suman ración. Lo que propone la receta:
@@ -3814,7 +3871,7 @@ Clic para presupuestar la venta`}
                           <span className="ml-2 text-xs font-normal text-orange-700">
                             {inversiones.length === 0
                               ? "sin inversiones cargadas — se cargan en el botón «Inversiones»"
-                              : `${inversiones.length} · fuera del total de egresos`}
+                              : `${inversiones.length} · fuera del gasto operativo, pero bajan el saldo`}
                             {sinJust > 0 && <span className="ml-1 text-amber-700">· {sinJust} sin justificar</span>}
                           </span>
                           <button type="button" className="ml-2 rounded border border-orange-300 px-1 text-[10px] font-normal text-orange-800 hover:bg-orange-100"
@@ -3939,7 +3996,7 @@ Clic para presupuestar la venta`}
                           const v = inicio[k]
                           const fin = saldoAcumuladoPorMes[k]
                           const venc = k === mesHoy ? arranque.vencidos.neto + saldoInicioMes.fueraDeGrilla : 0
-                          const res = (totalIngresosPorMes[k] || 0) - (totalesPorMes[k] || 0)
+                          const res = (totalIngresosPorMes[k] || 0) - (totalesPorMes[k] || 0) - (totalInversionesPorMes[k] || 0)
                           const cierra = v != null && fin != null && Math.abs(v + venc + res - fin) < 1
                           return (
                             <td key={k} className={`px-3 py-2 text-right text-xs font-semibold ${v == null ? "text-gray-600" : "text-gray-100"} ${k === mesActualClave ? "border-l-2 border-blue-400" : ""}`}

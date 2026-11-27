@@ -40,7 +40,7 @@
 
 ## 📨 PARA JAVIER
 
-### 🔔 Tabla nueva `public.presupuesto_fotos` (2026-11-27) — aviso previo. `scripts/323` con deshacer: la foto mensual del presupuesto (renglones y totales por mes, en jsonb), una automática por empresa y mes (índice único parcial) + manuales. RLS `ver_segun_permiso` / `escribir_segun_permiso`, GRANT a authenticated y service_role, y mapeo en `recurso_tablas` copiando el recurso de `presupuesto_config`. No toca tablas existentes. → A-FEAT-1677 M3.
+### ✅ Tabla nueva `public.presupuesto_fotos` (2026-11-27) — ✅ APLICADA el 27/11 (aviso previo; el mapeo quedó con recurso `presupuesto`, como `presupuesto_marcas`). `scripts/323` con deshacer: la foto mensual del presupuesto (renglones y totales por mes, en jsonb), una automática por empresa y mes (índice único parcial) + manuales. RLS `ver_segun_permiso` / `escribir_segun_permiso`, GRANT a authenticated y service_role, y mapeo en `recurso_tablas` copiando el recurso de `presupuesto_config`. No toca tablas existentes. → A-FEAT-1677 M3.
 
 ### ✅ Tabla nueva `productivo.lote_ventas_plan` (2026-11-27) — ✅ APLICADA el 27/11 (aviso previo). `scripts/322` con deshacer: las ventas parciales presupuestadas de un lote (fecha, cabezas, peso/precio/plazo opcionales, `venta_id` → `stock_ventas` al confirmarla). RLS `ver_segun_permiso` / `escribir_segun_permiso`, GRANT a authenticated y service_role, y mapeo en `recurso_tablas` al recurso `productivo` (como `stock_lotes`). No toca tablas existentes. → A-FEAT-1675.
 

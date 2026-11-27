@@ -339,6 +339,7 @@ import { esCuentaDeInsumos, esFacturaDeInsumos, fileIdDeDrive } from "@/lib/fact
 import { proponerPorRenglon, factorUnidad, notaDelVinculo, insumoPorNombre } from "@/lib/productivo/vinculo-renglon"
 import { stockAlInicio, netearStock, consumoEntre } from "@/lib/presupuesto/stock-presupuesto"
 import { piezasDeLote, cortesDeVenta, cortarTramoPorVentas } from "@/lib/ganaderia/ventas-parciales"
+import { armarFoto, loQueDecia } from "@/lib/presupuesto/fotos"
 import { aperturasReales, stockHaciendaAl, vientresDelStock, controlLotesVsStock } from "@/lib/ganaderia/rodeo-real"
 import { calcularLineaTiempo as lineaRodeoReal } from "@/lib/ganaderia/ciclo"
 import { costoRecetaCampana, costoPlanCampana, elegirPlanOReceta, campanaDeMes, mesEnCampana, aplicarPlanRacion, aplicarPlanLote, type RenglonPlan } from "@/lib/presupuesto/costo-campana"
@@ -9348,6 +9349,18 @@ Importe Neto Gravado: $ 7338020,40
       const eV = "resto 26 cab 2026-12-15 −4 · parcial 13 cab 2026-11-30 || con peso: 420 kg al 2026-11-30 a $ 5600 (propio) || 2026-09-24→2026-11-30 39 cab 250 kg | 2026-11-30→2026-12-10 26 cab 317 kg | 2026-12-10→2026-12-15 21 cab 327 kg"
       chequear("Productivo", "✂️ Venta parcial del lote: el resto queda a la fecha del lote, cada parcial a la suya (la confirmada no se proyecta); la ración come con las cabezas que quedan en cada fecha",
         eV, vV, vV === eV, "A-FEAT-1675")
+    }
+    // 📸 A-FEAT-1677 M3: la foto guarda cada renglón con sus montos por mes (sin ceros) y los totales; «lo que decía» para un mes, por bloque
+    {
+      const fo = armarFoto({ empresa: "MSA", fecha: "2026-11-27", motivo: "automatica", saldoInicio: 62500000,
+        bloques: [{ bloque: "templates", filas: [{ clave: "tpl:a", nombre: "Impuestos · Dividendos", montos: { "2026-11": 6300000, "2026-12": 0 } }, { clave: "tpl:b", nombre: "vacío", montos: {} }] },
+                  { bloque: "sueldos", filas: [{ clave: "sue:x", nombre: "Peón", montos: { "2026-11": 1000000.004 } }] }],
+        ingresos: { "2026-11": 0 }, egresos: { "2026-11": 7300000 }, inversiones: {}, saldo: { "2026-10": null, "2026-11": 55200000 } })
+      const d = loQueDecia(fo, "2026-11")
+      const vF = `${fo.mes} · ${fo.filas.length} filas · ${JSON.stringify(fo.filas[0]!.montos)} · ${d.porBloque["templates"]}+${d.porBloque["sueldos"]} = ${d.egresos} · saldo ${d.saldo} · ${Object.keys(fo.totales.saldo).join(",")}`
+      const eF = '2026-11 · 2 filas · {"2026-11":6300000} · 6300000+1000000 = 7300000 · saldo 55200000 · 2026-11'
+      chequear("Presupuesto", "📸 La foto del presupuesto: renglones con sus montos por mes (sin ceros ni vacíos) y los totales; lo que decía para un mes, por bloque",
+        eF, vF, vF === eF, "A-FEAT-1677")
     }
     // 🥣 Dietas (script 305): sin dieta = va en todas; con dieta = sólo en la suya; la elegida manda (si no, la de default)
     const insD = [{ c: "Maíz", dieta: "Maíz y concentrado" }, { c: "Conc", dieta: "Maíz y concentrado" }, { c: "Maíz", dieta: "Con silo" }, { c: "Silo", dieta: "Con silo" }, { c: "Sal", dieta: null }]

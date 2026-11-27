@@ -26,7 +26,7 @@ create policy ver_segun_permiso on public.presupuesto_fotos for select to authen
 create policy escribir_segun_permiso on public.presupuesto_fotos for all to authenticated using (puede_escribir('public','presupuesto_fotos')) with check (puede_escribir('public','presupuesto_fotos'));
 grant select, insert, update, delete on public.presupuesto_fotos to authenticated, service_role;
 insert into public.recurso_tablas (schema_nombre, tabla, recurso, motivo, restringe_lectura)
-select 'public', 'presupuesto_fotos', r.recurso, '[script 323] Fotos mensuales del presupuesto (A-FEAT-1677 M3): como presupuesto_config.', r.restringe_lectura
-  from public.recurso_tablas r where r.schema_nombre = 'public' and r.tabla = 'presupuesto_config'
-   and not exists (select 1 from public.recurso_tablas x where x.schema_nombre = 'public' and x.tabla = 'presupuesto_fotos');
+select 'public', 'presupuesto_fotos', 'presupuesto', '[script 323] Fotos mensuales del presupuesto (A-FEAT-1677 M3): como presupuesto_marcas.', false
+ where not exists (select 1 from public.recurso_tablas x where x.schema_nombre = 'public' and x.tabla = 'presupuesto_fotos');
+-- (corrido el 27/11: primero se intentó copiar el recurso de presupuesto_config, que no está mapeada → no insertó; se mapeó como presupuesto_marcas)
 commit;
