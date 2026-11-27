@@ -97,6 +97,9 @@ export function ModalCompletarVentaHacienda({
 }) {
   const [destinos, setDestinos] = useState<Destino[]>([])
   const [destinoId, setDestinoId] = useState("")
+  /** ✂️ A-FEAT-1675 D — de qué LOTE del presupuesto sale esta venta (si no, el presupuesto la contaría dos veces: la venta y el lote). */
+  const [loteId, setLoteId] = useState("")
+  const [lotesCat, setLotesCat] = useState<{ id: string; categoria: string; cantidad: number; fecha_venta_estimada: string | null }[]>([])
   const [cliente, setCliente] = useState({ cuit: "", nombre: "" })
   const [kgCarga, setKgCarga] = useState("")
   const [desbaste, setDesbaste] = useState("")
@@ -227,14 +230,26 @@ export function ModalCompletarVentaHacienda({
         })
     }
 
+    // ✂️ A-FEAT-1675 D — los lotes del presupuesto de esta categoría (con cabezas), para atar la venta a su lote
+    supabase.schema("productivo").from("stock_lotes").select("id, categoria, cantidad, fecha_venta_estimada, destino_actividad_id").eq("empresa", "MSA")
+      .then(({ data }) => {
+        const norm = (x: string) => x.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim()
+        const cat = norm(String(movimiento.categoria_nombre ?? ""))
+        const ls = ((data || []) as any[]).filter(l => !l.destino_actividad_id && Number(l.cantidad) > 0 && cat && norm(String(l.categoria)) === cat)
+          .map(l => ({ id: String(l.id), categoria: String(l.categoria), cantidad: Number(l.cantidad), fecha_venta_estimada: l.fecha_venta_estimada ?? null }))
+        setLotesCat(ls)
+        if (!movimiento.stock_venta_id && ls.length === 1) setLoteId(ls[0]!.id)
+      })
+
     // Si la venta ya existe, se traen SUS valores: la ventana edita la venta, no la duplica.
     if (movimiento.stock_venta_id) {
       supabase.schema("productivo").from("stock_ventas")
-        .select("destino_id, pct_desbaste, pct_cz, kg_totales, precio_kg, kg_carne, cliente_cuit, cliente_nombre, notas, carga_id, animales_sueltos, monto_neto, alicuota_iva, plazo_cobro, fecha_cobro")
+        .select("destino_id, pct_desbaste, pct_cz, kg_totales, precio_kg, kg_carne, cliente_cuit, cliente_nombre, notas, carga_id, animales_sueltos, monto_neto, alicuota_iva, plazo_cobro, fecha_cobro, lote_id")
         .eq("id", movimiento.stock_venta_id).single()
         .then(({ data: v }) => {
           if (!v) return
           setDestinoId(v.destino_id ?? "")
+          setLoteId((v as any).lote_id ?? "")
           setDesbaste(v.pct_desbaste != null ? String(v.pct_desbaste).replace(".", ",") : "")
           setCz(v.pct_cz != null ? String(v.pct_cz).replace(".", ",") : "")
           if (v.kg_totales != null) setKgCarga(String(v.kg_totales).replace(".", ","))
@@ -416,6 +431,7 @@ export function ModalCompletarVentaHacienda({
         cliente_nombre: cliente.nombre || null,
         cliente_cuit: cliente.cuit || null,
         notas: notas || null,
+        lote_id: loteId || null,
         carga_id: cargaFinal || null,
         animales_sueltos: sueltos
           .filter(x => x.descripcion.trim() || x.kg.trim())
@@ -428,9 +444,16 @@ export function ModalCompletarVentaHacienda({
         if (error) throw error
       } else {
         const { data, error } = await prod.from("stock_ventas")
-          .insert({ ...datosVenta, lote_id: null }).select("id").single()
+          .insert({ ...datosVenta }).select("id").single()
         if (error || !data) throw error ?? new Error("no se pudo crear la venta")
         ventaId = data.id
+      }
+      // ✂️ A-FEAT-1675 — si el lote tenía una venta PARCIAL presupuestada con estas cabezas, queda confirmada con esta venta
+      if (loteId && ventaId) {
+        const { data: pars } = await prod.from("lote_ventas_plan").select("id, cabezas, fecha_venta").eq("lote_id", loteId).is("venta_id", null)
+        const par = ((pars || []) as any[]).filter(x => Math.abs(Number(x.cabezas) - Number(movimiento.cantidad)) < 0.01)
+          .sort((a, b) => Math.abs(Date.parse(a.fecha_venta) - Date.parse(movimiento.fecha)) - Math.abs(Date.parse(b.fecha_venta) - Date.parse(movimiento.fecha)))[0]
+        if (par) await prod.from("lote_ventas_plan").update({ venta_id: ventaId, updated_at: new Date().toISOString() }).eq("id", par.id)
       }
 
       // El movimiento queda colgado de SU venta, y con los mismos números: una sola verdad.
@@ -546,6 +569,17 @@ export function ModalCompletarVentaHacienda({
                 Sin CUIT esta venta no se va a poder cruzar con su factura.
               </p>
             )}
+          </div>
+
+          <div>
+            <Label className="text-xs">Lote del presupuesto</Label>
+            <select className="mt-1 h-9 w-full rounded border px-2 text-sm" value={loteId} onChange={e => setLoteId(e.target.value)}>
+              <option value="">— ninguno (no estaba presupuestada) —</option>
+              {lotesCat.map(l => <option key={l.id} value={l.id}>{l.categoria} · {l.cantidad} cab{l.fecha_venta_estimada ? ` · venta ${l.fecha_venta_estimada.split("-").reverse().join("/")}` : ""}</option>)}
+            </select>
+            <p className="mt-1 text-[10px] text-gray-500">
+              {lotesCat.length && !loteId ? "⚠ Si estos animales estaban presupuestados en un lote, elegilo: si no, el presupuesto cuenta la venta dos veces (la registrada y la del lote)." : "La venta sale del lote: el presupuesto deja de proyectar esas cabezas y la ración baja desde la fecha."}
+            </p>
           </div>
 
           <div>
