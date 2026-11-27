@@ -1128,7 +1128,7 @@ Ese fue el caso real: 2 toritos marcados que el stock nunca vio.
 - **🔽 Filtro tipo Excel en todas las columnas** — en el **Registro de Terneros** (oficial, interna, sexo, pelo, reposición, categoría, los datos de nacimiento, última pesada, peso hoy, ganancias, observaciones y estado; la flechita ↕ al lado ordena) y en la tabla de caravanas del historial (también **Estimado hoy**, **Ganancia** y **Punta a punta**). Con un filtro puesto en el Registro aparece arriba una barra azul: cuántas se ven de cuántas, el promedio de la última pesada y del peso de hoy, y **✕ Quitar filtros**.
 - **📋 Pegar una lista de caravanas**: copiás de tu Excel las celdas de caravanas (en columna, todas juntas), abrís el filtro de **Carav. Oficial** (o **Interna**) y las pegás con **Ctrl+V** en el buscador. Quedan tildadas sólo las encontradas y arriba dice **«Pegaste 7 · 6 encontradas · 1 no están»** con la lista de las que no aparecen. **Aceptar** filtra. Da igual si la caravana viene con espacio o sin él, o si Excel le comió el 0 de adelante. Sirve en cualquier filtro de columna de la app.
 - **El filtro de caravanas es uno solo para las dos vistas**: lo que filtrás o pegás en el Registro sigue puesto al abrir el Historial de pesadas, y al revés.
-  ⚠️ Sin probar todavía → A-TEST-1398
+  ⚠️ Sin probar todavía → A-TEST-1399
 
 ### Análisis por segmento (columnas) 🟡
 - Cada columna es un **Segmento** (＋ Segmento). **Fuente** = elegís una sección de cualquier segmentador (etiqueta "A·Machos: 230/250"). Copia Cantidad + Peso inicio (editables).
