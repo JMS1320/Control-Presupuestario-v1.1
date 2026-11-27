@@ -431,13 +431,23 @@ export function armarTemplatesDelEjercicio(
     if (socio) { aCuentaSocio.push({ ...c, socio }); continue }
     detalle.push(c)
   }
-  // Mismo orden en las dos solapas: tipo → responsable (la empresa del balance primero) → fecha.
+  /**
+   * Mismo orden en todas las solapas, AGRUPADO DE PUNTA A PUNTA y la FECHA AL FINAL: tipo → responsable (la empresa del balance
+   * primero) → agrupadora → template → fecha.
+   * ⚠️ cambió 27/11 (JMS): hasta acá era tipo → responsable → fecha, y mezclaba templates. *«de punta a punta debe estar agrupado. lo
+   * último es la fecha… yo veré ej. Libertad expensas y recién ahí lo veo por fecha. Si es por fecha antes veré mezclado expensas
+   * Libertad con expensas de Posadas, y no puedo auditar»*. Dos templates con el mismo nombre no se mezclan: desempata el id.
+   */
+  const agrup = (c: CuotaTemplate) => (c.agrupadoraTemplate ?? "").trim()
   detalle.sort((a, b) =>
     ORDEN_TIPOS.indexOf(tipoDe(a)) - ORDEN_TIPOS.indexOf(tipoDe(b))
     || ordenResp(a.responsable) - ordenResp(b.responsable)
     || (a.responsable || "").localeCompare(b.responsable || "", "es")
-    || (a.fecha ?? "").localeCompare(b.fecha ?? "")
-    || a.concepto.localeCompare(b.concepto, "es"))
+    || Number(!agrup(a)) - Number(!agrup(b))
+    || agrup(a).localeCompare(agrup(b), "es")
+    || a.concepto.localeCompare(b.concepto, "es")
+    || (a.egresoId ?? "").localeCompare(b.egresoId ?? "")
+    || (a.fecha ?? "").localeCompare(b.fecha ?? ""))
   /**
    * 💳 La deuda al cierre: lo que salía y no salió. 🔑 Un ingreso pendiente (monto negativo) NO es
    * deuda — es plata a cobrar — y por eso no va al papel 04 (en 25/26 no hay ninguno).

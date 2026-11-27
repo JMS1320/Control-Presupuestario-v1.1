@@ -1590,6 +1590,10 @@ ese lugar afecte a todo lo que lo usa.
   nunca va a ser tan peligroso»)*. Los maestros crudos (📍 acá: libro diario, templates, sueldos) traen TODO, se filtran con pocos botones
   por código contable e interno y vienen ordenados en escalones; cada nivel de arriba (desglose, esquema del contador) da el mismo total que
   su crudo, con el control a la vista. → [A-FEAT-1632](PENDIENTES.md#a-feat-1632).
+  🪜 **Y el orden es AGRUPADO DE PUNTA A PUNTA, con la FECHA AL FINAL** *(JMS 27/11, «lo hemos charlado muchas veces»: «yo veré ej. Libertad
+  expensas y recién ahí lo veo por fecha. Si es por fecha antes veré mezclado expensas Libertad con expensas de Posadas, y no puedo
+  auditar»)*. Todo listado para auditar se ordena por sus escalones (📍 acá, en templates: tipo → responsable → agrupadora → template →
+  fecha) y la fecha sólo desempata adentro del último grupo. Ordenar por fecha antes que por grupo mezcla cosas distintas.
 - 🔗 **Una diferencia que hay que cerrar se lleva en CADENA, paso por paso, hasta llegar a cero** *(JMS 22/11, sobre la ecuación del balance
   en línea: «sería bueno llevar una cadena de saldos y controles para ir teniendo la trazabilidad de cómo va cambiando la diferencia hasta
   llegar a terminado, pero trazado y auditable» · «sí, pasala a las reglas»)*. Toda diferencia que se va achicando a lo largo de varias

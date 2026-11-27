@@ -12002,7 +12002,7 @@ Importe Neto Gravado: $ 7338020,40
     const pt = partirEnImpuestosYOtros(todoT)!
     const v10 = `imp ${pt.impuestos.detalle.map(c => c.id).join(",")} = ${pt.impuestos.totalDebitos} · otros ${pt.otros.detalle.map(c => c.id).join(",")} = ${pt.otros.totalDebitos} · todo ${todoT.totalDebitos}`
     chequear("Balance", "Templates en dos solapas (nota 10): Impuestos por la agrupadora del template (o la categoría si no tiene) y Otros; suman el total",
-      "imp abl,deb,iibb = 150 · otros com = 50 · todo 200", v10, v10 === "imp abl,deb,iibb = 150 · otros com = 50 · todo 200", "A-FEAT-1422")
+      "imp deb,abl,iibb = 150 · otros com = 50 · todo 200", v10, v10 === "imp deb,abl,iibb = 150 · otros com = 50 · todo 200", "A-FEAT-1422")
     // 🚗 Nota 9: el desglose de la flota — cada débito repartido por la prima de cada vehículo y su responsable.
     const lect = { poliza: "F", endoso: 0, personas: [], cuotasEndoso: [{ vencimiento: "2025-08-01", importe: 400 }],
       vehiculos: [{ patente: "AAA111", prima: 300, certificado: 1 }, { patente: "BBB222", prima: 100, certificado: 2 }] }
@@ -14362,6 +14362,12 @@ Importe Neto Gravado: $ 7338020,40
     const cods = hc.filter(r => (r as any[])[3] === "Seguros").map(r => `${(r as any[])[ic] || "—"}/${(r as any[])[ii] || "—"}`).join(" · ")
     chequear("Templates", "«Cuotas» trae el código contable e interno del pago (vacío si la cuota no tiene movimiento)",
       "CTA MA/DIST MA · —/—", cods, ic > 0 && ii === ic + 1 && cods === "CTA MA/DIST MA · —/—", "A-FEAT-1632")
+    // 🪜 JMS 27/11: agrupado de punta a punta y la fecha AL FINAL — Expensas Libertad no se mezcla con Expensas Posadas.
+    const exp = (id: string, concepto: string, fecha: string) => ({ ...cu(id, "MSA", "Expensas", 10), concepto, fecha, egresoId: concepto, agrupadoraTemplate: "Fijos" })
+    const ord = armarTemplatesDelEjercicio([exp("1", "Expensas Posadas", "2025-08-10"), exp("2", "Expensas Libertad", "2025-09-10"),
+      exp("3", "Expensas Posadas", "2025-07-10"), exp("4", "Expensas Libertad", "2025-07-15")] as never, ej).detalle.map(c => c.id).join(",")
+    chequear("Templates", "Las cuotas van agrupadas por agrupadora y template, y recién después por fecha (no se mezclan dos templates)",
+      "4,2,3,1", ord, ord === "4,2,3,1", "A-FEAT-1632")
   }
 
   // ══ 💵 Operaciones en dólares: US$ × TC = pesos, y la compraventa con su otra punta en pesos (A-FEAT-1530) ══
