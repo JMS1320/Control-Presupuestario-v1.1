@@ -1525,6 +1525,9 @@ ese lugar afecte a todo lo que lo usa.
   para Excels de auditoría, propuestas, «Datos a revisar», inconsistencias y respuestas en el chat. *Motivo, el caso: el pago del
   18/06/26 de la caja de ahorro de PAM no se podía decidir con «PAGO CON TRANSFERENCIA»; con «FARMACITY SA» se decidió en un
   segundo (gasto médico de MA → DIST MA).* Un renglón sin ficha obliga a salir a buscar, y ahí se traba la auditoría.
+  🧾 **Y si hay FACTURA, su CONTENIDO y el LINK al PDF** *(JMS 26/11, revisando compras de insumos: «son muchas, pero siempre precisaré que
+  me digas el contenido y el link de la factura»)*: qué artículos, cantidades y precios dice (no sólo el neto y la cuenta), y el enlace
+  al PDF archivado (el 📎 de la factura) para abrirla con un clic. Sin el contenido, «¿esta factura es esta compra?» no se puede contestar.
 - 🔄 **Después de un cambio, la pantalla NO se recarga entera: se queda donde estaba, con sus filtros** *(regla del usuario
   2026-11-11, en Egresos sin Factura: «cuando hago cambios me recarga toda la pág. debería funcionar como Cash Flow. **Todo en
   general así por protocolo**» · «cuando tengo algo filtrado por texto y aplico algún cambio, cuando regresa no me lo deja
