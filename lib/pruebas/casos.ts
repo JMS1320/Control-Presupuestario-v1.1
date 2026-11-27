@@ -359,6 +359,7 @@ import { grupoDeMail, filtrarMails, contarMails, contarPorTipo, problemaDeRegla,
   juntarConPendientes, claseDeProcesado, gravedadDeMail, agruparGraves, ordenarParaLista, rangoDelDia, ordenarCronologico, leerBusqueda, coincideBusquedaMail, textoBuscable } from "@/lib/mails/registro"
 import { pasaGrupos, clickChipGrupo, chipPrendido, sexoDeCategoria, sexoACorregir, hojaDe } from "@/lib/productivo/grupos-terneros"
 import { deOtraCategoria } from "@/lib/ganaderia/confirmar-venta"
+import { precioDeVenta, controlCaravanas } from "@/lib/ganaderia/venta-movimiento"
 import { CATS_PLANILLA as CATS_PLANILLA_HAC, totalVientres as totalVientresPlanilla } from "@/lib/productivo/planilla-hacienda"
 import { opcionesDeColumna, filtrarPorColumnas, seleccionConBusqueda, listaPegada, cruzarPegadas, restoDePegadas, coincideBusqueda as coincideBusquedaColumna } from "@/lib/ui/filtro-columna"
 import { valorFiltroCuota } from "@/lib/templates/filtro-cuotas"
@@ -12251,6 +12252,16 @@ Importe Neto Gravado: $ 7338020,40
         const espP = "Vaca,Vaq. Preñada,Vaq. Reposición,CUT/Descarte,Toro | 265 | Vaca (191) + Vaq. Preñada (0) + Vaq. Reposición (74) = 265"
         chequear("Productivo", "🐄 Planilla de hacienda: Vaq. Reposición en CRÍA; Total Vientres = Vaca + Vaq. Preñada + Vaq. Reposición (por nombre; la CUT no)",
           espP, vP, vP === espP, "A-FEAT-1669")
+      }
+      // 🐄 A-FEAT-1671 (JMS 27/11): la venta desde Productivo, por kg o por cabeza, y el control caravanas = cabezas
+      {
+        const c1 = precioDeVenta({ modo: "cabeza", cabezas: 2, precioCabeza: "1.500.000,00", kg: "1.600" })
+        const c2 = precioDeVenta({ modo: "kg", cabezas: 2, precioKg: "2.000", kg: "1.600" })
+        const c3 = precioDeVenta({ modo: "kg", cabezas: 2, precioKg: "2.000", kg: "1.600", montoEscrito: "3.100.000" })
+        const vPV = `${c1.precio_kg}/${c1.monto} · ${c2.precio_kg}/${c2.monto} · ${c3.monto} | ${controlCaravanas(2, 2).ok} ${controlCaravanas(1, 2).texto} · ${controlCaravanas(3, 2).texto}`
+        const espPV = "null/3000000 · 2000/3200000 · 3100000 | true faltan 1 caravana(s): tildaste 1 de 2 cabezas · sobran 1 caravana(s): tildaste 3 para 2 cabezas"
+        chequear("Productivo", "🐄 Venta: por cabeza el importe = precio × cabezas sin $/kg inventado; por kg kg × precio salvo importe escrito; control caravanas = cabezas",
+          espPV, vPV, vPV === espPV, "A-FEAT-1671")
       }
       // 🔽 nota JMS 10/11: la tabla de Cuotas con filtro por columna — fechas por mes, monto es-AR, la CATEG de la cuota manda
       {
