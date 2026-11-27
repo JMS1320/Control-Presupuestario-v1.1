@@ -2,6 +2,7 @@
 
 
 import { ajusteDeMarcas, descuadreDestino } from "@/lib/productivo/reposicion"
+import { sexoACorregir } from "@/lib/productivo/grupos-terneros"
 import { cabezasHoy } from "@/lib/productivo/cabezas-hoy"
 import { TestsDelProceso } from "@/components/tests-del-proceso"
 import { toggleChip, esSoloEste, tituloChip } from "@/lib/ui/chips"
@@ -1194,6 +1195,32 @@ function TabHacienda() {
   const [soloIdentificarCambio, setSoloIdentificarCambio] = useState(false)
   const [identificadasDestino, setIdentificadasDestino] = useState<number | null>(null)
 
+  /**
+   * 🔁 A-FEAT-1669 (JMS 27/11): si el cambio de categoría pasa animales a una categoría del otro sexo (Ternero Recría →
+   * Ternera Recría), se les corrige el SEXO de la ficha y queda la huella en sus observaciones. La marca de reposición no
+   * se toca: un macho marcado reposición era «torito»; corregido a hembra pasa a ser «ternera rep» solo.
+   */
+  const corregirSexoCambio = async (ids: string[], fechaMov: string): Promise<number> => {
+    const destino = categorias.find(c => c.id === nuevoMov.categoria_destino_id)?.nombre
+    const aCorregir = sexoACorregir(ternerosParaCambio.filter(t => ids.includes(t.id)), destino)
+    if (aCorregir.length === 0) return 0
+    const { data: obs } = await supabase.schema('productivo').from('terneros').select('id, observaciones').in('id', aCorregir.map(c => c.animal.id))
+    const obsPorId = new Map((obs ?? []).map((o: any) => [o.id, o.observaciones as string | null]))
+    const fechaTxt = fechaMov.split('-').reverse().join('/')
+    let hechos = 0
+    for (const { animal, nuevo } of aCorregir) {
+      const huella = `${hoyArgentina().split('-').reverse().join('/')}: sexo corregido ${animal.sexo ?? '(vacío)'} → ${nuevo} al pasar a ${destino} (cambio de categoría del ${fechaTxt})`
+      const previa = obsPorId.get(animal.id)
+      const { error } = await supabase.schema('productivo').from('terneros')
+        .update({ sexo: nuevo, observaciones: previa ? `${previa} · ${huella}` : huella })
+        .eq('id', animal.id)
+      if (error) toast.error(`No se pudo corregir el sexo de ${animal.caravana_oficial || animal.caravana_interna}: ${error.message}`)
+      else hechos++
+    }
+    if (hechos) toast.info(`🔁 Sexo corregido en ${hechos} caravana(s) → ${aCorregir[0].nuevo}`)
+    return hechos
+  }
+
   const cargarTernerosParaCambio = async (categoriaId: string) => {
     const { data } = await supabase.schema('productivo').from('terneros')
       .select('id, caravana_interna, caravana_oficial, sexo, es_torito')
@@ -1439,6 +1466,7 @@ function TabHacienda() {
           .update({ categoria_id: nuevoMov.categoria_destino_id })
           .in('id', [...ternerosSeleccionadosCambio])
         if (eId) { toast.error('No se pudo identificar: ' + eId.message); return }
+        await corregirSexoCambio([...ternerosSeleccionadosCambio], nuevoMov.fecha)
         toast.success(`${ternerosSeleccionadosCambio.size} identificado(s) en el destino — sin movimiento de stock`)
         setMostrarModalMov(false)
         resetNuevoMov()
@@ -1510,6 +1538,8 @@ function TabHacienda() {
           .in('id', ids)
         if (eT) {
           toast.error('Movimiento OK pero error al actualizar terneros: ' + eT.message)
+        } else {
+          await corregirSexoCambio(ids, nuevoMov.fecha)
         }
       }
 
@@ -3098,6 +3128,18 @@ function TabHacienda() {
                         ? <>Identificar: {ternerosSeleccionadosCambio.size} — no mueve stock</>
                         : <>Se mueven: {ternerosSeleccionadosCambio.size + (parseInt(sinIdentCambio) || 0)} cabezas ({ternerosSeleccionadosCambio.size} identificadas{(parseInt(sinIdentCambio) || 0) > 0 ? ` + ${parseInt(sinIdentCambio)} sin identificar` : ''})</>}
                     </p>
+                    {(() => {
+                      const destinoNom = categorias.find(c => c.id === nuevoMov.categoria_destino_id)?.nombre
+                      const cs = sexoACorregir(ternerosParaCambio.filter(t => ternerosSeleccionadosCambio.has(t.id)), destinoNom)
+                      if (cs.length === 0) return null
+                      return (
+                        <p className="text-xs rounded bg-amber-50 border border-amber-300 text-amber-900 px-2 py-1">
+                          🔁 <b>{cs.length} caravana(s) cambian de sexo</b> → {cs[0].nuevo}: {cs.map(c => c.animal.caravana_oficial || c.animal.caravana_interna).join(', ')}.
+                          {' '}Se les corrige en la ficha al guardar (queda anotado en sus observaciones).
+                          {cs.some(c => c.animal.es_torito) && <> Las marcadas reposición pasan a ser {cs[0].nuevo === 'Hembra' ? 'terneras rep' : 'toritos'}.</>}
+                        </p>
+                      )
+                    })()}
                     {nuevoMov.categoria_destino_id && identificadasDestino != null && (() => {
                       // 🧮 Control a la vista: cabezas (stock) vs. individuos identificados en el destino, antes y después.
                       const cabezas = stock.find(x => String(x.categoria_id) === String(nuevoMov.categoria_destino_id))?.cantidad ?? 0

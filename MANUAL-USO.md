@@ -996,6 +996,9 @@ escribiste viene precargada** como razón. Le agregás caravana y pelo si los te
 tenés caravana, guardá igual: queda identificado por su razón.
 
 ### Al cargar un cambio de categoría nuevo
+🔁 **Si el destino es del otro sexo** (ej. Ternero Recría → Ternera Recría, porque un «macho» era hembra), la app les corrige el **sexo** a las caravanas tildadas al guardar: lo avisa antes en un cartel ámbar y lo deja anotado en sus observaciones. La marca de reposición se mantiene (un torito corregido a hembra pasa a ser ternera rep). El stock y la planilla cambian sólo desde la fecha del movimiento.
+⚠️ Sin probar todavía → A-TEST-1403
+
 En el modal, tocá **«identificarlos uno por uno»** y se abren tantas filas como cabezas estés
 moviendo. **La razón va por animal**: una se descarta por machorra y la de al lado por diarrea, y
 ése es justo el dato por el que se lleva la planilla.
