@@ -5737,13 +5737,23 @@ y cuál es el **saldo de hoy**. Se abre con un clic.
 - **El puente** (sólo con «Último conciliado»): lo que el sistema dice que se pagó y se cobró entre esa fecha y hoy,
   renglón por renglón. Saldo del extracto − pagado + cobrado = **saldo estimado de hoy**.
 - **Impagos vencidos**: lo impago de meses anteriores (facturas, cuotas, sueldos). Se restan en el mes actual.
-- **Ya pagado este mes**: lo que la columna del mes igual restaba pero ya salió de la cuenta; se devuelve.
-- **La columna del mes en curso muestra sólo lo que falta del mes**: lo ya pagado o cobrado (por estado o porque lo
-  marcaste) se descuenta de su fila, y la celda lo dice al pasar el mouse.
-- **Abajo de la grilla**: **SALDO DE INICIO** (en el mes en curso, el saldo de hoy; después, el final del mes anterior),
+- ⚠️ cambió 27/11 (A-FEAT-1677): **el SALDO DE INICIO del mes en curso es el declarado (o el del extracto) a SU fecha**, sin tocar.
+  **Lo pagado o cobrado DESPUÉS de esa fecha aparece en la columna del mes** en que salió la plata y baja el saldo final
+  (ej.: Imp. sobre Dividendos pagado el 27/11 con saldo al 25/11 → se ve en noviembre). Sólo sale de la columna lo que ya está
+  adentro del saldo (pagado hasta su fecha); la celda lo dice. Una cuota pagada antes de su mes se muda al mes en que se pagó.
+  Lo pagado después del saldo que ninguna columna trae (un vencido de factura, una liquidación) va en el renglón
+  «± Cobrado / pagado después del saldo…». El «saldo estimado de hoy» de la barra de arriba sigue siendo informativo.
+- **Abajo de la grilla**: **SALDO DE INICIO** (en el mes en curso, el declarado a su fecha; después, el final del mes anterior),
   **+ Vencidos de meses anteriores** (sólo el mes en curso) y **SALDO ACUMULADO** (el final de cada mes). Pasando el mouse
   por el saldo de inicio: inicio + vencidos + resultado = final, con ✓ (o ⚠️ si no cierra).
 - **Disponible a fijar** (arrendamientos) **no suma** salvo que marques la celda **«suma»** (verde); gris tachado = no suma.
+- **Inversiones** (productivas): no van al total de egresos (no son gasto del mes), pero **bajan el saldo** del mes en que se pagan.
+- **📸 Foto** (barra de arriba): la app guarda sola una foto del presupuesto la primera vez que lo abrís en cada mes; con el botón
+  congelás otra (con nota). Sirve para comparar después lo presupuestado contra lo que pasó (la comparación todavía no está).
+- **Liquidación de hacienda cargada suelta** (Ingresos → Liquidaciones): pregunta **«¿De qué venta registrada es?»**; tildala para
+  que el presupuesto no cuente la plata dos veces. Si no hay venta cargada, la liquidación cuenta sola.
+- **Lotes que nacen de un ciclo** (terneros del destete, descarte): toman las cabezas del ciclo de hoy (con el rodeo real) salvo
+  que las cambies a mano.
 - **Ventas de hacienda ya hechas**: fila propia en INGRESOS, cada cuota en su mes.
 - **⋯ al lado de cada template** (Presupuesto → grilla): **corregir el monto de una cuota** (pregunta si propagar a las
   futuras, igual que en Templates), **sacarlo del presupuesto** entero o **un mes** («No cuenta este mes»: no toca el
