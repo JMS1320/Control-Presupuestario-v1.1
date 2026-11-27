@@ -5898,7 +5898,17 @@ precio, IVA), si cierra con el total, el link al PDF y a qué entrada al stock e
 - La primera vez que la abrís se lee sola del PDF; después se muestra lo guardado. «Volver a leer» la relee.
 - Veterinarios (Alcorta) todavía no.
 
-⚠️ Sin probar todavía → A-TEST-1398
+**La entrada al stock, renglón por renglón** *(nuevo 2026-11-27)* — abajo del detalle, cada artículo dice cómo está:
+- **✓ entrada del …**: vinculado, con su nota (qué decía la entrada y qué dice la factura).
+- **✨ vinculada sola — revisá** (violeta): la app la vinculó sola porque era inequívoca (el artículo ya se había vinculado antes,
+  una sola entrada de ese proveedor, la lectura cierra, en pesos). **La factura manda**: la entrada tomó sus kilos y su precio, y el
+  stock se movió por la diferencia. «Está bien» la da por revisada; «No es ésta» la deja como estaba (y ese renglón no se vuelve a
+  vincular solo). En la lista, el botón dice **🧾 ✨ revisá**.
+- **Entrada posible** (ámbar): elegí la entrada y **Vincular**; abajo dice por qué no se vinculó sola.
+- **Sin entrada al stock**: **＋ Cargar la entrada** la crea con los kilos y el precio de la factura, a su fecha.
+- Si no sabe qué insumo es, elegilo de la lista: la próxima factura de ese artículo lo reconoce sola.
+
+⚠️ Sin probar todavía → A-TEST-1398 · A-TEST-1400
 
 ## 🏢 Presupuesto → MSA o MA *(nuevo 2026-11-26)*
 

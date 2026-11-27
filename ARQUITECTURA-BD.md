@@ -736,6 +736,12 @@ de la cuota elegida, y es un acto explícito del usuario, fila por fila.
   entregas); al lado `moneda` (ARS/USD), `costo_unitario_moneda` (el precio en esa moneda) y `tipo_cambio`.
 - El vínculo con la factura es `productivo.entrega_factura` (`precio_unitario` en pesos; `notas` con el
   pactado, el % de descuento y el TC — la huella).
+- ✨ **Desde 27/11 (script 312), el vínculo es POR RENGLÓN de la factura** (A-FEAT-1663 stock paso 1): `renglon_n` (el
+  renglón de `public.factura_renglones`), `automatico` (lo hizo la app sola: «✨ vinculada sola — revisá»), `antes` (jsonb: la
+  entrada como estaba antes de que la factura la corrigiera, o `{creado: true}` si la cargó la factura — es lo que usa «deshacer»),
+  `revisado_at` / `revisado_por`. Y `factura_renglones.insumo_stock_id` es lo APRENDIDO (este artículo de este proveedor es este
+  insumo); `no_vincular_solo` = JMS dijo «no es ésta». Lógica: `lib/productivo/vinculo-renglon.ts` (pura) +
+  `lib/productivo/vinculo-renglon-db.ts` (lee) + `app/api/facturas/vincular-stock` (escribe, con la sesión del usuario).
 - 🔁 **Trigger `trg_costo_compras_sigue_tc`** en `msa.comprobantes_arca` (AFTER UPDATE OF `tc_pago`,
   `tipo_cambio`) → `productivo.costo_compras_sigue_tc()`: recalcula en pesos, al `tc_pago` (o al de la
   factura si se borra), las compras USD vinculadas: el movimiento, el vínculo y el costo de

@@ -9211,9 +9211,9 @@ Importe Neto Gravado: $ 7338020,40
       chequear("Productivo", "✨ Factura ↔ entrada al stock por renglón: se vincula SOLA sólo si la lectura cierra, el artículo ya se aprendió, hay UNA entrada del proveedor en la ventana, la unidad se convierte y la cantidad difiere ≤ 30 %; si no, propone",
         eR, vR, vR === eR, "A-FEAT-1663")
       const nota = notaDelVinculo({ cantidadStock: 25560, precioStock: 287.09 }, { cantidad: 20000, costoUnitario: null }, "kg", true, "0003-00000540")
-      const vN = `${factorUnidad("toneladas", "kg")} ${factorUnidad("KGS", "kg")} ${factorUnidad("lt", "L")} ${factorUnidad("20B", "L")} · ${insumoPorNombre("CONCENTRADO NOVILLO 35-10 S-BO25", ins)} ${insumoPorNombre("Map Granel.", ins)} ${insumoPorNombre("Concentrado", ins)} · ${nota}`
-      const eN = "1000 1 1 null · nov map null · ✨ vinculada sola a la factura 0003-00000540 · la entrada decía 20.000 kg a $ — → la factura dice 25.560 kg a $ 287,09: se corrigió"
-      chequear("Productivo", "✨ Unidades de la factura al stock (t→kg, KGS, lt→L; bidón de 20 no), insumo por el nombre (empate = no sabe) y la huella del vínculo (lo que decía la entrada y lo que dice la factura)",
+      const vN = `${factorUnidad("toneladas", "kg")} ${factorUnidad("KGS", "kg")} ${factorUnidad("lt", "L")} ${factorUnidad("20B", "L")} · ${insumoPorNombre("CONCENTRADO NOVILLO 35-10 S-BO25", ins)} ${insumoPorNombre("Map Granel.", ins)} ${insumoPorNombre("CONCENTRADO TERNERO RECRIA-BO25", ins)} ${insumoPorNombre("Concentrado", ins)} · ${nota}`
+      const eN = "1000 1 1 null · nov map ter null · ✨ vinculada sola a la factura 0003-00000540 · la entrada decía 20.000 kg a $ — → la factura dice 25.560 kg a $ 287,09: se corrigió"
+      chequear("Productivo", "✨ Unidades de la factura al stock (t→kg, KGS, lt→L; bidón de 20 no), insumo por el nombre (terneros = ternero; empate = no sabe) y la huella del vínculo (lo que decía la entrada y lo que dice la factura)",
         eN, vN, vN === eN, "A-FEAT-1663")
     }
     // 🥣 Dietas (script 305): sin dieta = va en todas; con dieta = sólo en la suya; la elegida manda (si no, la de default)

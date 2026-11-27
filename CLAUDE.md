@@ -132,8 +132,9 @@ marcar qué proveedores son de insumos: **«no tengo tiempo para ponerme a hacer
   → él la paga → ahí la vincula o revisa lo vinculado). El desarrollo se engancha a ese momento.
 - **La configuración se aprende del uso**: un proveedor «de insumos» es el que ya tiene una compra registrada, no uno que alguien tildó en un
   maestro. Si hace falta una marca, se pone en el mismo gesto de trabajo (al vincular, al registrar), no en otra pantalla.
-- **Lo que la app hace sola se VE**: un vínculo automático aparece marcado («🔗 vinculado solo — revisá») en el lugar donde la persona va a
-  pasar igual (la factura que va a pagar), para que lo controle sin buscarlo.
+- **Lo que la app hace sola se VE**: un vínculo automático aparece marcado en el lugar donde la persona va a pasar igual (la factura que
+  va a pagar), para que lo controle sin buscarlo. 📍 **Acá:** **«✨ vinculada sola — revisá»** en violeta, con «Está bien» / «No es ésta»
+  (⚠️ cambió 26/11 — JMS: el 🔗 *«ya se usa para otra cosa»*).
 
 *Motivo: una automatización que exige una lista previa o un paso fuera del flujo no se usa — el dato vuelve a entrar tarde o nunca (caso:
 la compra de maíz de Longo del 06/10 y dos de concentrado de septiembre, facturadas y pagadas, nunca entraron al stock).*

@@ -60,7 +60,9 @@ const sinTildes = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "")
 export function normalizarDescripcion(s: string | null | undefined): string {
   return sinTildes(String(s ?? "")).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()
 }
+/** Las palabras que pesan, en singular (terneros = ternero). */
 const palabras = (s: string) => normalizarDescripcion(s).split(" ").filter(w => w.length >= 3 && !SIN_PESO.has(w) && !/^\d+$/.test(w))
+  .map(w => (w.length > 4 && w.endsWith("s") ? w.slice(0, -1) : w))
 
 export interface RenglonFactura {
   n: number

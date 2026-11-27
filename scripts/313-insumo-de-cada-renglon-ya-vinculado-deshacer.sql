@@ -1,0 +1,7 @@
+-- Deshace el [script 313]: vuelve a null exactamente las filas que llenó (antes estaban todas en null: verificado 27/11).
+begin;
+update public.factura_renglones set insumo_stock_id = null where id in (
+'21621ec0-7f37-450f-a40a-fe722a5b0409','2ce44d3a-5720-469d-8ee0-68bcaf08a9e3','362a41f4-af87-4400-a315-a59bf7beb0ca','416bbe2a-b0dc-4cf3-b3f2-c4b21d90d925','45fc8f30-be93-4325-bde0-063f3ce277be','4e314a83-5d8f-442c-8edc-2e887e9c2411','74e6237d-897a-45c0-8292-43c8fb4ba0e9','a1d1b8bc-7997-4439-b4d6-a23b88bba5b9','b0bcd68d-2494-41ea-8030-7239586e0923','b31cacb6-567d-4c86-ae81-13a3aad1996f','b703947e-5be4-4573-b5e3-2834a3fb5bcc','cddb71e3-e5c3-45ce-9e09-db15c917c60f','d0258f3c-2a1b-4748-bcb8-ffd0ba4ce4e1','d47d8915-2aab-4ee5-aafc-d3cfc35492b2','fece8c5a-213e-4939-9cad-47ddf351e016');
+update productivo.entrega_factura set renglon_n = null where id in (
+'0594f9ca-af9d-40c1-a622-6b450d666120','05f61e9b-c45c-404a-a5b4-d2206aafe65f','0e9425e0-51dd-4c17-b259-e66c6e5437fa','477ef5c6-57ee-4f9b-87d3-94e03f4379e5','53603545-229c-461f-9267-fae1f07d34b6','55d674d0-809a-4439-8f62-802f2c6aa4e1','58c4959e-e5a0-41c1-9c85-6c9e0bff249d','89e3082f-9672-41f0-b60f-473b2125e96f','9754040f-3f6d-46ae-b817-06c081b8a19b','acaa393c-500a-4377-bd02-171b7dfda581','b5391f89-5c4a-4b13-b58e-0e3e971db387','c803ba53-2dc4-44da-8697-533c8d2c15ad','cdc27386-3841-47bc-86ad-39d5ef5a23c3','e0223516-45c9-4b7d-850f-6cd4cfaade7c');
+commit;
