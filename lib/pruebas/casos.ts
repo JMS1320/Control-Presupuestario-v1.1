@@ -9266,6 +9266,17 @@ Importe Neto Gravado: $ 7338020,40
       const eL = "dic maíz 264 · dic conc 24 · ene conc 46 · sal no va · lote 2 maíz 0.5 · Concentrado: plan del lote desde 16/12 / Sal: este año no (plan del lote)"
       chequear("Presupuesto", "📅 Plan del año del lote: un renglón con fecha propia come sólo esos días del tramo; «este año no» lo saca; el plan de un lote no toca a otro",
         eL, vL, vL === eL, "A-FEAT-1670")
+      // Tres raciones seguidas del feed lot (24/09, 25/09, 06/10): cada período con su cantidad; el silo come lo de cada período
+      const silo: any = { ...base, id: "silo", concepto: "Silo", modo: "kg_cabeza_dia", valor: 17.5, precio_unitario: 0 }
+      const per = (d: string, h: string | null, c: number) => ({ lote_id: "F", receta_insumo_id: "silo", campana: "26/27", cantidad: c, precio: null, moneda: null, iva_pct: null, fecha_desde: d, fecha_hasta: h })
+      const pf = aplicarPlanLote([silo], "F", "26/27", [per("2026-10-06", null, 17.5), per("2026-09-24", "2026-09-25", 13.08), per("2026-09-25", "2026-10-06", 14.81)])
+      const cf = consumoMensualPL({ actividad: act, insumos: pf.insumos as any, cabezas: 52, desde: "2026-09-24", hasta: "2026-12-15", peso_inicial_kg: 300 } as any)
+      const kgS = (mes: string) => Math.round(cf.find(m => m.mes === mes)?.items.filter(i => i.concepto === "Silo").reduce((t, i) => t + i.cantidad, 0) ?? 0)
+      const vF = `${pf.insumos.length} períodos · sep ${kgS("2026-09")} · oct ${kgS("2026-10")} · nov ${kgS("2026-11")}`
+      // sep: 24/09 680 + 25..30 (6 d) × 770,1 = 5.301 · oct: 1..5 (5 d) × 770,1 + 6..31 (26 d) × 910 = 27.511 · nov 30 × 910 = 27.300
+      const eF = "3 períodos · sep 5301 · oct 27511 · nov 27300"
+      chequear("Presupuesto", "📅 Cambios de ración en el plan del lote: varios períodos del mismo renglón, cada uno con su cantidad, y el stock lo siente así",
+        eF, vF, vF === eF, "A-FEAT-1670")
     }
     // 🥣 Dietas (script 305): sin dieta = va en todas; con dieta = sólo en la suya; la elegida manda (si no, la de default)
     const insD = [{ c: "Maíz", dieta: "Maíz y concentrado" }, { c: "Conc", dieta: "Maíz y concentrado" }, { c: "Maíz", dieta: "Con silo" }, { c: "Silo", dieta: "Con silo" }, { c: "Sal", dieta: null }]

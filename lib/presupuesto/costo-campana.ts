@@ -193,17 +193,23 @@ export function aplicarPlanLote<I extends { id: string; valor: number; precio_un
   const out: I[] = []
   const dm = (f: string) => f.split("-").reverse().slice(0, 2).join("/")
   for (const i of insumos) {
-    const p = plan.find(x => x.lote_id === loteId && x.receta_insumo_id === i.id && x.campana === campana)
-    if (!p) { out.push(i); continue }
-    if (p.cantidad === 0) { cambios.push(`${(i as any).concepto ?? "renglón"}: este año no (plan del lote)`); continue }
-    const ventana = p.fecha_desde || p.fecha_hasta ? { desde: p.fecha_desde, hasta: p.fecha_hasta } : (i.ventana ?? null)
-    out.push({ ...i,
-      valor: p.cantidad != null ? Number(p.cantidad) : i.valor,
-      precio_unitario: p.precio != null ? Number(p.precio) : i.precio_unitario,
-      moneda: (p.moneda || i.moneda) as any,
-      iva_pct: p.iva_pct != null ? Number(p.iva_pct) : i.iva_pct,
-      ventana })
-    cambios.push(`${(i as any).concepto ?? "renglón"}: plan del lote${p.fecha_desde ? ` desde ${dm(p.fecha_desde)}` : ""}${p.fecha_hasta ? ` hasta ${dm(p.fecha_hasta)}` : ""}`)
+    // Puede haber VARIOS períodos del mismo renglón (cambios de ración: JMS 27/11 «las dietas que son 3 deben estar registradas las 3 tal
+    // cual fueron y que afecten así al stock»): cada fila es un período con su cantidad; fuera de los períodos cargados, ese renglón no come.
+    const ps = plan.filter(x => x.lote_id === loteId && x.receta_insumo_id === i.id && x.campana === campana)
+      .sort((a, b) => String(a.fecha_desde ?? "").localeCompare(String(b.fecha_desde ?? "")))
+    if (!ps.length) { out.push(i); continue }
+    const vivos = ps.filter(p => p.cantidad !== 0)
+    if (!vivos.length) { cambios.push(`${(i as any).concepto ?? "renglón"}: este año no (plan del lote)`); continue }
+    for (const p of vivos) {
+      const ventana = p.fecha_desde || p.fecha_hasta ? { desde: p.fecha_desde, hasta: p.fecha_hasta } : (i.ventana ?? null)
+      out.push({ ...i,
+        valor: p.cantidad != null ? Number(p.cantidad) : i.valor,
+        precio_unitario: p.precio != null ? Number(p.precio) : i.precio_unitario,
+        moneda: (p.moneda || i.moneda) as any,
+        iva_pct: p.iva_pct != null ? Number(p.iva_pct) : i.iva_pct,
+        ventana })
+      cambios.push(`${(i as any).concepto ?? "renglón"}: plan del lote${p.fecha_desde ? ` desde ${dm(p.fecha_desde)}` : ""}${p.fecha_hasta ? ` hasta ${dm(p.fecha_hasta)}` : ""}${p.cantidad != null ? ` (${Number(p.cantidad).toLocaleString("es-AR", { maximumFractionDigits: 4 })})` : ""}`)
+    }
   }
   return { insumos: out, cambios }
 }

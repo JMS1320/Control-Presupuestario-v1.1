@@ -19,7 +19,10 @@ import { parseNumeroAR, fmtNumeroAR } from "@/lib/format/numero"
 import { esModoRacion, campanaDeMes } from "@/lib/presupuesto/costo-campana"
 import { insumosDeDieta } from "@/lib/productivo/actividades"
 
-type Fila = { valor: string; precio: string; iva: string; desde: string; hasta: string; cero: boolean }
+type Periodo = { valor: string; precio: string; iva: string; desde: string; hasta: string }
+/** Un renglón de la ración en el plan del lote: uno o varios PERÍODOS (cambios de ración), o «este año no». */
+type Fila = { cero: boolean; periodos: Periodo[] }
+const periodoVacio = (): Periodo => ({ valor: "", precio: "", iva: "", desde: "", hasta: "" })
 const dmy = (f?: string | null) => (f ? String(f).slice(0, 10).split("-").reverse().join("/") : "—")
 const esPct = (modo: string) => modo === "pct_racion"
 const aVista = (modo: string, v: number) => (esPct(modo) ? v * 100 : v)
@@ -71,13 +74,17 @@ export function PresupuestoPlanLote({ lote, onCerrar, onGuardado }: {
         for (const t of (tr || []) as any[]) {
           const camp = campanaDeMes(String(t.fecha_desde).slice(0, 7))
           for (const i of rac.filter(x => x.actividad_id === t.actividad_id)) {
-            const p = pLote.find(x => String(x.receta_insumo_id) === String(i.id) && String(x.campana) === camp)
+            const ps = pLote.filter(x => String(x.receta_insumo_id) === String(i.id) && String(x.campana) === camp)
+              .sort((a, b) => String(a.fecha_desde ?? "").localeCompare(String(b.fecha_desde ?? "")))
+            const cero = ps.length > 0 && ps.every(p => p.cantidad != null && Number(p.cantidad) === 0)
             f[`${t.id}|${i.id}`] = {
-              cero: p?.cantidad === 0 || p?.cantidad === "0",
-              valor: p && p.cantidad != null && Number(p.cantidad) !== 0 ? fmtNumeroAR(aVista(i.modo, Number(p.cantidad)), 3) : "",
-              precio: p?.precio != null ? fmtNumeroAR(Number(p.precio), 2) : "",
-              iva: p?.iva_pct != null ? fmtNumeroAR(Number(p.iva_pct), 1) : "",
-              desde: p?.fecha_desde ?? "", hasta: p?.fecha_hasta ?? "",
+              cero,
+              periodos: cero || !ps.length ? [periodoVacio()] : ps.map(p => ({
+                valor: p.cantidad != null && Number(p.cantidad) !== 0 ? fmtNumeroAR(aVista(i.modo, Number(p.cantidad)), 3) : "",
+                precio: p.precio != null ? fmtNumeroAR(Number(p.precio), 2) : "",
+                iva: p.iva_pct != null ? fmtNumeroAR(Number(p.iva_pct), 1) : "",
+                desde: p.fecha_desde ?? "", hasta: p.fecha_hasta ?? "",
+              })),
             }
           }
         }
@@ -92,11 +99,18 @@ export function PresupuestoPlanLote({ lote, onCerrar, onGuardado }: {
       const fe = fechas[t.id]; if (!fe) continue
       if (!fe.desde || !fe.hasta || fe.desde >= fe.hasta) e.push(`${acts.find(a => a.id === t.actividad_id)?.nombre ?? "Tramo"}: «desde» tiene que ser antes que «hasta»`)
       for (const i of ins.filter(x => x.actividad_id === t.actividad_id)) {
-        const f = filas[`${t.id}|${i.id}`]; if (!f) continue
-        const d = f.desde || fe.desde, h = f.hasta || fe.hasta
-        if (d >= h) e.push(`${i.concepto}: «desde» tiene que ser antes que «hasta»`)
-        if ((f.desde && (f.desde < fe.desde || f.desde > fe.hasta)) || (f.hasta && (f.hasta < fe.desde || f.hasta > fe.hasta)))
-          e.push(`${i.concepto}: las fechas tienen que estar dentro del tramo (${dmy(fe.desde)} → ${dmy(fe.hasta)})`)
+        const f = filas[`${t.id}|${i.id}`]; if (!f || f.cero) continue
+        const usados = f.periodos.filter(x => x.valor || x.precio || x.iva || x.desde || x.hasta)
+        for (const x of usados) {
+          const d = x.desde || fe.desde, h = x.hasta || fe.hasta
+          if (d >= h) e.push(`${i.concepto}: «desde» tiene que ser antes que «hasta»`)
+          if ((x.desde && (x.desde < fe.desde || x.desde > fe.hasta)) || (x.hasta && (x.hasta < fe.desde || x.hasta > fe.hasta)))
+            e.push(`${i.concepto}: las fechas tienen que estar dentro del tramo (${dmy(fe.desde)} → ${dmy(fe.hasta)})`)
+        }
+        if (usados.length > 1) {
+          const ord = usados.map(x => ({ d: x.desde || fe.desde, h: x.hasta || fe.hasta })).sort((a, b) => a.d.localeCompare(b.d))
+          for (let k = 1; k < ord.length; k++) if (ord[k]!.d < ord[k - 1]!.h) e.push(`${i.concepto}: dos períodos se pisan (${dmy(ord[k - 1]!.d)}–${dmy(ord[k - 1]!.h)} y ${dmy(ord[k]!.d)}–${dmy(ord[k]!.h)})`)
+        }
       }
     }
     return e
@@ -105,6 +119,9 @@ export function PresupuestoPlanLote({ lote, onCerrar, onGuardado }: {
   if (!lote) return null
   const num = (t: string) => (t.trim() === "" ? null : parseNumeroAR(t))
   const setF = (k: string, c: Partial<Fila>) => setFilas(p => ({ ...p, [k]: { ...p[k]!, ...c } }))
+  const setP = (k: string, idx: number, c: Partial<Periodo>) => setFilas(p => ({ ...p, [k]: { ...p[k]!, periodos: p[k]!.periodos.map((x, j) => j === idx ? { ...x, ...c } : x) } }))
+  const masPeriodo = (k: string) => setFilas(p => ({ ...p, [k]: { ...p[k]!, periodos: [...p[k]!.periodos, periodoVacio()] } }))
+  const sacarPeriodo = (k: string, idx: number) => setFilas(p => ({ ...p, [k]: { ...p[k]!, periodos: p[k]!.periodos.length > 1 ? p[k]!.periodos.filter((_, j) => j !== idx) : [periodoVacio()] } }))
 
   const guardar = async () => {
     setGuardando(true)
@@ -120,17 +137,25 @@ export function PresupuestoPlanLote({ lote, onCerrar, onGuardado }: {
         const camp = campanaDeMes(String(fe?.desde || t.fecha_desde).slice(0, 7))
         for (const i of ins.filter(x => x.actividad_id === t.actividad_id)) {
           const f = filas[`${t.id}|${i.id}`]; if (!f) continue
-          const v = num(f.valor), pr = num(f.precio), iva = num(f.iva)
-          const vacio = !f.cero && v == null && pr == null && iva == null && !f.desde && !f.hasta
-          const existente = planLote.find(x => String(x.receta_insumo_id) === String(i.id) && (String(x.campana) === camp || String(x.campana) === campanaDeMes(String(t.fecha_desde).slice(0, 7))))
-          const fila = { empresa: "MSA", escenario: "base", campana: camp, concepto: `${i.concepto} · ${lote.nombre}`, receta_insumo_id: i.id, lote_id: lote.id,
-            cantidad: f.cero ? 0 : v == null ? null : desdeVista(i.modo, v), precio: pr, iva_pct: iva, fecha_desde: f.desde || null, fecha_hasta: f.hasta || null,
-            distribucion: "calendario", fuente_cantidad: "manual", fuente_precio: "manual", activo: true, fundamento: "Plan del año del lote",
-            updated_at: new Date().toISOString() }
-          const r = existente
-            ? (vacio ? await supabase.from("presupuesto_variables").delete().eq("id", existente.id) : await supabase.from("presupuesto_variables").update(fila).eq("id", existente.id))
-            : vacio ? { error: null } : await supabase.from("presupuesto_variables").insert(fila)
-          if (r.error) errs.push(`${i.concepto}: ${r.error.message}`)
+          const campOrig = campanaDeMes(String(t.fecha_desde).slice(0, 7))
+          // Se reescriben TODOS los períodos del renglón (borrar y volver a cargar): así un período quitado no queda colgado.
+          const viejos = planLote.filter(x => String(x.receta_insumo_id) === String(i.id) && (String(x.campana) === camp || String(x.campana) === campOrig))
+          if (viejos.length) {
+            const { error } = await supabase.from("presupuesto_variables").delete().in("id", viejos.map(x => x.id))
+            if (error) { errs.push(`${i.concepto}: ${error.message}`); continue }
+          }
+          const base = { empresa: "MSA", escenario: "base", campana: camp, concepto: `${i.concepto} · ${lote.nombre}`, receta_insumo_id: i.id, lote_id: lote.id,
+            distribucion: "calendario", fuente_cantidad: "manual", fuente_precio: "manual", activo: true, fundamento: "Plan del año del lote" }
+          const nuevos = f.cero
+            ? [{ ...base, cantidad: 0, precio: null, iva_pct: null, fecha_desde: null, fecha_hasta: null }]
+            : f.periodos.filter(x => x.valor || x.precio || x.iva || x.desde || x.hasta).map(x => {
+                const v = num(x.valor)
+                return { ...base, cantidad: v == null ? null : desdeVista(i.modo, v), precio: num(x.precio), iva_pct: num(x.iva), fecha_desde: x.desde || null, fecha_hasta: x.hasta || null }
+              })
+          if (nuevos.length) {
+            const { error } = await supabase.from("presupuesto_variables").insert(nuevos)
+            if (error) errs.push(`${i.concepto}: ${error.message}`)
+          }
         }
       }
     } finally { setGuardando(false) }
@@ -191,31 +216,40 @@ export function PresupuestoPlanLote({ lote, onCerrar, onGuardado }: {
                       const k = `${t.id}|${i.id}`, f = filas[k]; if (!f) return null
                       const pA = planAct.find(p => String(p.receta_insumo_id) === String(i.id) && String(p.campana) === camp)
                       const fuera = !enDieta.has(String(i.id))
-                      const tienePlan = f.cero || !!f.valor || !!f.precio || !!f.iva || !!f.desde || !!f.hasta
-                      return (
-                        <tr key={k} className={`border-b align-top ${fuera ? "opacity-50" : ""}`}>
+                      const tienePlan = f.cero || f.periodos.some(x => x.valor || x.precio || x.iva || x.desde || x.hasta)
+                      return f.periodos.map((x, idx) => (
+                        <tr key={`${k}|${idx}`} className={`${idx === f.periodos.length - 1 ? "border-b" : ""} align-top ${fuera ? "opacity-50" : ""}`}>
                           <td className="py-1 pr-2">
-                            <span className="font-medium">{i.concepto}</span>
-                            <span className={`ml-1 rounded px-1 text-[9px] ${tienePlan ? "bg-emerald-100 text-emerald-800" : "bg-gray-100 text-gray-500"}`}>{tienePlan ? "plan del lote" : pA ? "plan de la actividad" : "receta"}</span>
-                            {i.insumo_stock_id && <span className="block text-[10px] text-gray-500">del stock: {stock.get(String(i.insumo_stock_id)) ?? "—"}</span>}
-                            {fuera && <span className="block text-[10px] text-amber-700">no está en la dieta de este año ({dieta})</span>}
+                            {idx === 0 && <>
+                              <span className="font-medium">{i.concepto}</span>
+                              <span className={`ml-1 rounded px-1 text-[9px] ${tienePlan ? "bg-emerald-100 text-emerald-800" : "bg-gray-100 text-gray-500"}`}>{tienePlan ? "plan del lote" : pA ? "plan de la actividad" : "receta"}</span>
+                              {i.insumo_stock_id && <span className="block text-[10px] text-gray-500">del stock: {stock.get(String(i.insumo_stock_id)) ?? "—"}</span>}
+                              {fuera && <span className="block text-[10px] text-amber-700">no está en la dieta de este año ({dieta})</span>}
+                            </>}
+                            {idx > 0 && <span className="pl-3 text-[10px] text-gray-500">↳ período {idx + 1}</span>}
+                            {idx === f.periodos.length - 1 && !f.cero && (
+                              <button type="button" className="mt-0.5 block text-[10px] text-blue-700 hover:underline" title="Otro período con otra cantidad (un cambio de ración)" onClick={() => masPeriodo(k)}>＋ período (cambio de ración)</button>
+                            )}
                           </td>
-                          <td className="pr-2 text-gray-600">{fmtNumeroAR(aVista(i.modo, Number(i.valor)), 2)} {unidadVista(i.modo, i.unidad)}{i.precio_unitario != null ? ` · ${i.moneda === "USD" ? "US$" : "$"} ${fmtNumeroAR(Number(i.precio_unitario), 2)}` : ""}{i.iva_pct != null ? ` · IVA ${fmtNumeroAR(Number(i.iva_pct), 1)} %` : ""}</td>
-                          <td className="pr-2 text-gray-600">{pA ? (pA.cantidad === 0 || pA.cantidad === "0" ? "este año 0" : [pA.cantidad != null ? `${fmtNumeroAR(aVista(i.modo, Number(pA.cantidad)), 2)}` : null, pA.precio != null ? `$ ${fmtNumeroAR(Number(pA.precio), 2)}` : null].filter(Boolean).join(" · ") || "—") : "—"}</td>
-                          <td className="pr-1"><input className="h-7 w-20 rounded border px-1 text-xs" placeholder={fmtNumeroAR(aVista(i.modo, Number(pA?.cantidad ?? i.valor)), 2)} disabled={f.cero} value={f.valor} onChange={e => setF(k, { valor: e.target.value })} /></td>
-                          <td className="pr-1"><input className="h-7 w-20 rounded border px-1 text-xs" placeholder={i.precio_unitario != null ? fmtNumeroAR(Number(pA?.precio ?? i.precio_unitario), 2) : ""} disabled={f.cero} value={f.precio} onChange={e => setF(k, { precio: e.target.value })} /></td>
-                          <td className="pr-1"><input className="h-7 w-14 rounded border px-1 text-xs" placeholder={i.iva_pct != null ? fmtNumeroAR(Number(i.iva_pct), 1) : ""} disabled={f.cero} value={f.iva} onChange={e => setF(k, { iva: e.target.value })} /></td>
+                          <td className="pr-2 text-gray-600">{idx === 0 && <>{fmtNumeroAR(aVista(i.modo, Number(i.valor)), 2)} {unidadVista(i.modo, i.unidad)}{i.precio_unitario != null ? ` · ${i.moneda === "USD" ? "US$" : "$"} ${fmtNumeroAR(Number(i.precio_unitario), 2)}` : ""}{i.iva_pct != null ? ` · IVA ${fmtNumeroAR(Number(i.iva_pct), 1)} %` : ""}</>}</td>
+                          <td className="pr-2 text-gray-600">{idx === 0 && (pA ? (Number(pA.cantidad) === 0 && pA.cantidad != null ? "este año 0" : [pA.cantidad != null ? `${fmtNumeroAR(aVista(i.modo, Number(pA.cantidad)), 2)}` : null, pA.precio != null ? `$ ${fmtNumeroAR(Number(pA.precio), 2)}` : null].filter(Boolean).join(" · ") || "—") : "—")}</td>
+                          <td className="pr-1"><input className="h-7 w-20 rounded border px-1 text-xs" placeholder={fmtNumeroAR(aVista(i.modo, Number(pA?.cantidad ?? i.valor)), 2)} disabled={f.cero} value={x.valor} onChange={e => setP(k, idx, { valor: e.target.value })} /></td>
+                          <td className="pr-1"><input className="h-7 w-20 rounded border px-1 text-xs" placeholder={i.precio_unitario != null ? fmtNumeroAR(Number(pA?.precio ?? i.precio_unitario), 2) : ""} disabled={f.cero} value={x.precio} onChange={e => setP(k, idx, { precio: e.target.value })} /></td>
+                          <td className="pr-1"><input className="h-7 w-14 rounded border px-1 text-xs" placeholder={i.iva_pct != null ? fmtNumeroAR(Number(i.iva_pct), 1) : ""} disabled={f.cero} value={x.iva} onChange={e => setP(k, idx, { iva: e.target.value })} /></td>
                           <td className="pr-1">
-                            <input type="date" className="h-7 rounded border px-1 text-xs" disabled={f.cero} value={f.desde} min={fe.desde} max={fe.hasta} onChange={e => setF(k, { desde: e.target.value })} />
-                            {!f.desde && <span className="block text-[10px] text-gray-400">{dmy(fe.desde)} (el tramo)</span>}
+                            <input type="date" className="h-7 rounded border px-1 text-xs" disabled={f.cero} value={x.desde} min={fe.desde} max={fe.hasta} onChange={e => setP(k, idx, { desde: e.target.value })} />
+                            {!x.desde && <span className="block text-[10px] text-gray-400">{dmy(fe.desde)} (el tramo)</span>}
                           </td>
                           <td className="pr-1">
-                            <input type="date" className="h-7 rounded border px-1 text-xs" disabled={f.cero} value={f.hasta} min={fe.desde} max={fe.hasta} onChange={e => setF(k, { hasta: e.target.value })} />
-                            {!f.hasta && <span className="block text-[10px] text-gray-400">{dmy(fe.hasta)} (el tramo)</span>}
+                            <input type="date" className="h-7 rounded border px-1 text-xs" disabled={f.cero} value={x.hasta} min={fe.desde} max={fe.hasta} onChange={e => setP(k, idx, { hasta: e.target.value })} />
+                            {!x.hasta && <span className="block text-[10px] text-gray-400">{dmy(fe.hasta)} (el tramo)</span>}
                           </td>
-                          <td><input type="checkbox" checked={f.cero} onChange={e => setF(k, { cero: e.target.checked })} /></td>
+                          <td>
+                            {idx === 0 && <input type="checkbox" title="Este año no" checked={f.cero} onChange={e => setF(k, { cero: e.target.checked })} />}
+                            {f.periodos.length > 1 && !f.cero && <button type="button" className="ml-1 text-[10px] text-red-700 hover:underline" title="Quitar este período" onClick={() => sacarPeriodo(k, idx)}>✕</button>}
+                          </td>
                         </tr>
-                      )
+                      ))
                     })}
                   </tbody>
                 </table>
@@ -224,7 +258,7 @@ export function PresupuestoPlanLote({ lote, onCerrar, onGuardado }: {
           )
         })}
         {errores.length > 0 && <ul className="list-disc pl-5 text-xs text-red-700">{errores.map((e, i) => <li key={i}>{e}</li>)}</ul>}
-        <p className="text-[11px] text-gray-500">«hasta» no se come (igual que el tramo): hasta el 01/03 = come hasta el 28/02. Para cambiar la receta permanente: «✏️ receta».</p>
+        <p className="text-[11px] text-gray-500">«hasta» no se come (igual que el tramo): hasta el 01/03 = come hasta el 28/02. Con varios períodos (cambios de ración), fuera de los períodos cargados ese renglón no come. Para cambiar la receta permanente: «✏️ receta».</p>
         <div className="flex justify-end gap-2">
           <Button variant="outline" size="sm" onClick={onCerrar}>Cancelar</Button>
           <Button size="sm" disabled={guardando || cargando || errores.length > 0} onClick={() => void guardar()}>{guardando ? "Guardando…" : "Guardar"}</Button>
