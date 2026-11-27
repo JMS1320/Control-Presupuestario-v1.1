@@ -69,7 +69,7 @@ export type ClaseArranque =
   | 'otra_cuenta'   // se paga desde otra cuenta (cajas, cotitulares…): no mueve este saldo
 
 /** Medios de pago que mueven la cuenta corriente (el saldo de arranque). */
-const MEDIOS_DE_LA_CUENTA = new Set(['', 'banco', 'msa_galicia'])
+const MEDIOS_DE_LA_CUENTA = new Set(['', 'banco'])   // + la cuenta propia de la empresa (clasificarFila)
 /** Estados que dicen que la plata YA salió (o entró). */
 const YA_SALIO = new Set(['pagado', 'debito', 'cobrado', 'conciliado'])
 
@@ -87,8 +87,10 @@ export function yaSeMovio(f: FilaReal, hoy: string): boolean {
   return false
 }
 
-export function clasificarFila(f: FilaReal, fechaArranque: string, hoy: string): ClaseArranque {
-  if (!MEDIOS_DE_LA_CUENTA.has(norm(f.medio_pago))) return 'otra_cuenta'
+export function clasificarFila(f: FilaReal, fechaArranque: string, hoy: string, cuenta: string = 'msa_galicia'): ClaseArranque {
+  // A-FEAT-1677 B3: la cuenta propia es la de la EMPRESA del presupuesto (MA: ma_galicia), no siempre la de MSA
+  const m = norm(f.medio_pago)
+  if (!MEDIOS_DE_LA_CUENTA.has(m) && m !== norm(cuenta)) return 'otra_cuenta'
   if (yaSeMovio(f, hoy)) {
     const fc = fechaDeCaja(f)
     if (!fc || fc <= fechaArranque) return 'en_saldo'
@@ -132,6 +134,8 @@ export function calcularArranque(p: {
   filas: FilaReal[]
   /** Marcas del presupuesto por `claveMarca`. Sin marcas, se comporta como la etapa 1. */
   marcas?: Record<string, MarcaPresupuesto>
+  /** La cuenta bancaria propia de la empresa (`msa_galicia`, `ma_galicia`): sus pagos mueven el saldo. */
+  cuenta?: string
 }): ResultadoArranque {
   const puente: FilaReal[] = []
   const vencidos: FilaReal[] = []
@@ -142,7 +146,7 @@ export function calcularArranque(p: {
   const impagosPorMes: Record<string, number> = {}
   let otraCant = 0, otraNeto = 0, enSaldo = 0
   for (const f of p.filas) {
-    const c = clasificarFila(f, p.fechaArranque, p.hoy)
+    const c = clasificarFila(f, p.fechaArranque, p.hoy, p.cuenta)
     if (c === 'puente') puente.push(f)
     else if (c === 'vencido') (saca(f) ? marcVenc : vencidos).push(f)
     else if (c === 'impago') {

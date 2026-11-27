@@ -9082,6 +9082,13 @@ export function correrCasos(): Resultado[] {
     chequear("Presupuesto", "📍 Registrado «pagado» con fecha de pago futura → impago de su mes, no puente",
       "impago", clasificarFila(f("z", "pagado", "2026-12-01", 1, { fecha_pago: "2026-12-01" }), "2026-09-23", "2026-11-25"),
       clasificarFila(f("z", "pagado", "2026-12-01", 1, { fecha_pago: "2026-12-01" }), "2026-09-23", "2026-11-25") === "impago", "A-FEAT-1660")
+    // A-FEAT-1677 B3: en MA, un pago desde la Galicia de MA mueve el saldo de MA; uno desde la de MSA, no
+    {
+      const pg = (medio: string) => ({ ...f("m", "pagado", "2026-11-26", 1, { fecha_pago: "2026-11-26" }), medio_pago: medio })
+      const vB3 = `${clasificarFila(pg("ma_galicia"), "2026-11-25", "2026-11-27", "ma_galicia")} · ${clasificarFila(pg("msa_galicia"), "2026-11-25", "2026-11-27", "ma_galicia")} · ${clasificarFila(pg("msa_galicia"), "2026-11-25", "2026-11-27")}`
+      chequear("Presupuesto", "📍 La cuenta que mueve el saldo es la de la empresa: MA = Galicia de MA (la de MSA es «otra cuenta» para MA); MSA igual que antes",
+        "puente · otra_cuenta · puente", vB3, vB3 === "puente · otra_cuenta · puente", "A-FEAT-1677")
+    }
   }
 
   // ══ 👪 A-BUG-1662 — templates de una familia (uno por campaña): cada uno proyecta sólo en su campaña ══
